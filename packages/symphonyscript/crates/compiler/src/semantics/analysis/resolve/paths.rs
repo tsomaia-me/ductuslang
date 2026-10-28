@@ -777,10 +777,8 @@ impl Engine<'_> {
         };
         let outer = array.shape.outer().ok_or(Internal::missed("array shape"))?;
         let sig = some!(self.sig(index_node, need));
-        if sig.is_error() {
-            return Ok(Some(Val::Error));
-        }
-        if !sig.reactive && !sig.frame {
+        let evaluated = !sig.reactive && !sig.frame && !sig.is_error();
+        if evaluated {
             if !matches!(sig.kind, Kind::Int | Kind::Any) {
                 let unless_values = self.untypable_values(index_node)?;
                 self.error_unless_values(
@@ -794,7 +792,7 @@ impl Engine<'_> {
                 return Ok(Some(Val::Error));
             }
             let position = match some!(self.cval(Query::Eval(index_node, EvalTy::Exact), need)) {
-                CVal::Int(position) => position,
+                CVal::Int(position) => Some(position),
                 CVal::F32(_)
                 | CVal::F64(_)
                 | CVal::Bool(_)
@@ -810,9 +808,11 @@ impl Engine<'_> {
                     )?;
                     return Ok(Some(Val::Error));
                 }
-                CVal::Error => return Ok(Some(Val::Error)),
+                CVal::Error => None,
             };
-            if (0..i128::from(outer)).contains(&position) {
+            if let Some(position) = position
+                && (0..i128::from(outer)).contains(&position)
+            {
                 let position =
                     usize::try_from(position).map_err(|_| Internal::missed("array element"))?;
                 let chosen = base_val.slice(position)?;
@@ -831,7 +831,7 @@ impl Engine<'_> {
         let group = self.existing_group(base, &base_val, scope)?;
         let columns: Vec<Vec<NodeId>> = rows.iter().map(Val::nodes).collect();
         let width = inner.count();
-        let elements = (0..width)
+        let elements: Vec<NodeId> = (0..width)
             .map(|position| {
                 let items = columns
                     .iter()
@@ -856,6 +856,9 @@ impl Engine<'_> {
                 Ok(pick)
             })
             .collect::<Result<_, Internal>>()?;
+        if evaluated {
+            self.memo.eager_reads.push((index_node, elements.clone()));
+        }
         Ok(Some(self.shaped(inner, elements)))
     }
 
@@ -1349,6 +1352,7 @@ impl Engine<'_> {
         mut node: NodeId,
     ) -> Result<NodeId, Internal> {
         while let Op::Use(inner) = self.node(node)?.op {
+            self.memo.use_steps.set(self.memo.use_steps.get() + 1);
             node = inner;
         }
         Ok(node)

@@ -1,4 +1,4 @@
-use symphonyscript_core::Value;
+use symphonyscript_core::{BinaryOp, Value};
 
 use crate::diagnostics::Code;
 use crate::semantics::Internal;
@@ -263,7 +263,8 @@ impl Engine<'_> {
                     scope,
                     "only `+` takes arrays, which it joins; every other operator takes single values",
                 )?;
-                return Ok(Some(Val::Error));
+                let operands = lhs.nodes().into_iter().chain(rhs.nodes()).collect();
+                return Ok(Some(self.refused_binary(op, operands, loc, scope)?));
             }
             if !(arrays.0 || self.holds_array(&lhs)) || !(arrays.1 || self.holds_array(&rhs)) {
                 self.error(Code::ArrayOperand, loc, scope, JOIN_SINGLE)?;
@@ -291,6 +292,7 @@ impl Engine<'_> {
         }
         self.single_operand(&lhs, Code::ArrayOperand, OPERAND);
         self.single_operand(&rhs, Code::ArrayOperand, OPERAND);
+        let operands = lhs.nodes().into_iter().chain(rhs.nodes()).collect();
         Ok(Some(match (lhs, rhs) {
             (Val::Scalar(lhs), Val::Scalar(rhs)) => {
                 self.scalar(Op::Binary(op, lhs, rhs), loc, scope)?
@@ -303,9 +305,40 @@ impl Engine<'_> {
                     scope,
                     "operators apply to single values, not arrays",
                 )?;
-                Val::Error
+                self.refused_binary(op, operands, loc, scope)?
             }
         }))
+    }
+
+    fn refused_binary(
+        &mut self,
+        op: symphonyscript_core::BinaryOp,
+        operands: Vec<NodeId>,
+        loc: Loc,
+        scope: ScopeId,
+    ) -> Result<Val, Internal> {
+        match op {
+            BinaryOp::And
+            | BinaryOp::Or
+            | BinaryOp::Lt
+            | BinaryOp::Le
+            | BinaryOp::Gt
+            | BinaryOp::Ge
+            | BinaryOp::Is
+            | BinaryOp::IsNot => {
+                let kept = self.push_node(Op::Bool(false), loc, scope)?;
+                self.memo.kept_types.insert(kept);
+                self.memo.kept_operands.insert(kept, operands);
+                Ok(Val::Scalar(kept))
+            }
+            BinaryOp::Add
+            | BinaryOp::Sub
+            | BinaryOp::Mul
+            | BinaryOp::Div
+            | BinaryOp::IntDiv
+            | BinaryOp::Rem
+            | BinaryOp::Pow => Ok(Val::Error),
+        }
     }
 
     fn if_val(
@@ -334,18 +367,17 @@ impl Engine<'_> {
             }
             Val::Error => return Ok(Some(Val::Error)),
         };
-        let vals =
-            match some!(self.branches(vec![then, otherwise], condition, (loc, scope), need)?) {
-                Branches::Whole(nodes) => {
-                    let &[then, otherwise] = nodes.as_slice() else {
-                        return Ok(Some(Val::Error));
-                    };
-                    let choice = self.push_node(Op::If(condition, then, otherwise), loc, scope)?;
-                    self.record_choice_arrays(choice, &nodes)?;
-                    return Ok(Some(Val::Scalar(choice)));
-                }
-                Branches::Each(vals) => vals,
-            };
+        let vals = match some!(self.branches(vec![then, otherwise], (loc, scope), need)?) {
+            Branches::Whole(nodes) => {
+                let &[then, otherwise] = nodes.as_slice() else {
+                    return Ok(Some(Val::Error));
+                };
+                let choice = self.push_node(Op::If(condition, then, otherwise), loc, scope)?;
+                self.record_choice_arrays(choice, &nodes)?;
+                return Ok(Some(Val::Scalar(choice)));
+            }
+            Branches::Each(vals) => vals,
+        };
         let Some((shape, pairs)) = self.zip_shapes(&vals, loc, scope)? else {
             return Ok(Some(Val::Error));
         };
@@ -364,7 +396,6 @@ impl Engine<'_> {
     fn branches(
         &mut self,
         vals: Vec<Val>,
-        selector: NodeId,
         (loc, scope): (Loc, ScopeId),
         need: &mut Vec<Query>,
     ) -> Result<Option<Branches>, Internal> {
@@ -386,7 +417,6 @@ impl Engine<'_> {
                 return Ok(Some(Branches::Whole(self.boxed_all(&vals, loc, scope)?)));
             }
         }
-        let reactive = some!(self.sig(selector, need)).reactive;
         if !opaque {
             let rows_agree = vals.iter().all(|val| match val {
                 Val::Array(array) => array.shape.inner() == first.inner(),
@@ -395,40 +425,8 @@ impl Engine<'_> {
             if !rows_agree && !recursive_body {
                 return Ok(Some(Branches::Each(vals)));
             }
-            return Ok(Some(Branches::Whole(self.boxed_all(&vals, loc, scope)?)));
         }
-        let mut definite = false;
-        for val in &vals {
-            if let Val::Scalar(node) = val
-                && self.definite_array(*node)?
-            {
-                definite = true;
-            }
-        }
-        if !reactive || definite {
-            return Ok(Some(Branches::Whole(self.boxed_all(&vals, loc, scope)?)));
-        }
-        let Some(shape) = vals
-            .iter()
-            .find(|val| !self.holds_array(val))
-            .map(Val::shape)
-        else {
-            return Ok(Some(Branches::Each(vals)));
-        };
-        let mut each = Vec::new();
-        for val in vals {
-            let Val::Scalar(node) = val else {
-                each.push(val);
-                continue;
-            };
-            if !self.arrays.contains(&node) {
-                each.push(val);
-                continue;
-            }
-            let nodes = self.projected(node, &shape, (Code::TypeMismatch, BRANCHES), loc, scope)?;
-            each.push(self.shaped(shape.clone(), nodes));
-        }
-        Ok(Some(Branches::Each(each)))
+        Ok(Some(Branches::Whole(self.boxed_all(&vals, loc, scope)?)))
     }
 
     fn boxed_all(
@@ -870,7 +868,7 @@ impl Engine<'_> {
         if let Some(Some(value)) = otherwise_val {
             all.push(value);
         }
-        let all = match some!(self.branches(all, scrutinee_node, (loc, scope), need)?) {
+        let all = match some!(self.branches(all, (loc, scope), need)?) {
             Branches::Whole(nodes) => {
                 let mut values = nodes.clone();
                 let otherwise = if has_otherwise { values.pop() } else { None };

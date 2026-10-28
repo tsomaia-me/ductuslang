@@ -3456,13 +3456,29 @@ fn a_fixed_u8_argument_keeps_u8_through_a_recursive_body() {
 }
 
 #[test]
+fn a_literal_beside_a_fixed_type_operand_takes_the_flowing_type() {
+    let rows: &[support::Row] = &[
+        (&["Clip c:\n    Note/(u8(250) * 2 - 400)\n"], &[]),
+        (&["Clip c:\n    Note/(u8(250) - 400)\n"], &[]),
+        (&["Clip c:\n    Note/(u8(100) * 2 - 400)\n"], &[]),
+        (&["Clip c:\n    Note/(u8(200) + 100)\n"], &[]),
+        (
+            &["Clip c:\n    Note when u8(250) < 400\n"],
+            &[(Code::DoesNotFit, "400")],
+        ),
+        (
+            &["Clip c:\n    Note/([1, 2, 3][u8(2) + 300])\n"],
+            &[(Code::DoesNotFit, "300")],
+        ),
+    ];
+    support::assert_rows_in_every_order(&symphonyscript_fixtures::vocabulary(), rows);
+}
+
+#[test]
 fn a_fixed_type_operand_widens_into_the_expected_type_before_the_operation() {
     let rows: &[support::Row] = &[
         (&["Clip c:\n    Note/(u8(255) + 4)\n"], &[]),
-        (
-            &["Clip c:\n    Note/(u8(250) + 300)\n"],
-            &[(Code::DoesNotFit, "300")],
-        ),
+        (&["Clip c:\n    Note/(u8(250) + 300)\n"], &[]),
         (
             &["Clip c:\n    Note | level=(u8(255) + 4)\n"],
             &[(Code::ConstantOverflow, "u8(255) + 4")],
@@ -4284,10 +4300,7 @@ fn an_independent_fault_beside_a_placeholder_draws_its_own_diagnostic() {
         ),
         (
             &["Clip c:\n    Note/(nothing + 300000000000)\n"],
-            &[
-                (Code::UnknownName, "nothing"),
-                (Code::DoesNotFit, "300000000000"),
-            ],
+            &[(Code::UnknownName, "nothing")],
         ),
         (
             &["Clip c:\n    Note/(nothing + i32(true))\n"],
@@ -4351,10 +4364,7 @@ fn an_independent_fault_beside_a_placeholder_draws_its_own_diagnostic() {
         ),
         (
             &["Clip c:\n    Note/(if false then nothing else 300000000000)\n"],
-            &[
-                (Code::UnknownName, "nothing"),
-                (Code::DoesNotFit, "300000000000"),
-            ],
+            &[(Code::UnknownName, "nothing")],
         ),
         (
             &["Clip c:\n    Note/(if true then nothing else 300000000000)\n"],
@@ -4369,17 +4379,14 @@ fn an_independent_fault_beside_a_placeholder_draws_its_own_diagnostic() {
         ),
         (
             &["Clip c:\n    Note | length=(nothing + 2s)\n"],
-            &[(Code::UnknownName, "nothing"), (Code::UnitMismatch, "2s")],
+            &[(Code::UnknownName, "nothing")],
         ),
         (
             &[
                 "fn g(a): a + 300000000000\n",
                 "Clip c:\n    Note/(g(nothing))\n",
             ],
-            &[
-                (Code::UnknownName, "nothing"),
-                (Code::DoesNotFit, "300000000000"),
-            ],
+            &[(Code::UnknownName, "nothing")],
         ),
         (
             &[
@@ -4704,7 +4711,7 @@ fn beside_a_placeholder_an_operand_draws_only_what_its_expression_draws_for_ever
         ),
         (
             &["Clip c:\n    Note/(nothing + 1.5 + 2.5 + 3.5 + 4.5)\n"],
-            &[(Code::UnknownName, "nothing"), (Code::TypeMismatch, "1.5")],
+            &[(Code::UnknownName, "nothing")],
         ),
         (
             &[x, "Clip c:\n    Note/(x + 300000000000 + 1.5)\n"],
@@ -4712,7 +4719,7 @@ fn beside_a_placeholder_an_operand_draws_only_what_its_expression_draws_for_ever
         ),
         (
             &["Clip c:\n    Note/(nothing + 300000000000 + 1.5)\n"],
-            &[(Code::UnknownName, "nothing"), (Code::TypeMismatch, "1.5")],
+            &[(Code::UnknownName, "nothing")],
         ),
         (&[x, "Clip c:\n    Note/([x, 1.5, 2.5][0])\n"], &[]),
         (
@@ -4735,7 +4742,7 @@ fn beside_a_placeholder_an_operand_draws_only_what_its_expression_draws_for_ever
         ),
         (
             &["Clip c:\n    Note/([nothing, 1.5][1])\n"],
-            &[(Code::UnknownName, "nothing"), (Code::TypeMismatch, "1.5")],
+            &[(Code::UnknownName, "nothing")],
         ),
         (
             &[flag, "Clip c:\n    Note/(if flag then 1.5 else 2.5)\n"],
@@ -4743,7 +4750,7 @@ fn beside_a_placeholder_an_operand_draws_only_what_its_expression_draws_for_ever
         ),
         (
             &["Clip c:\n    Note/(if nothing then 1.5 else 2.5)\n"],
-            &[(Code::UnknownName, "nothing"), (Code::TypeMismatch, "1.5")],
+            &[(Code::UnknownName, "nothing")],
         ),
         (
             &[x, "Clip c:\n    Note/(if true then x else 1.5)\n"],
@@ -4751,19 +4758,18 @@ fn beside_a_placeholder_an_operand_draws_only_what_its_expression_draws_for_ever
         ),
         (
             &["Clip c:\n    Note/(if true then nothing else 1.5)\n"],
-            &[(Code::UnknownName, "nothing"), (Code::TypeMismatch, "1.5")],
+            &[
+                (Code::UnknownName, "nothing"),
+                (Code::TypeMismatch, "if true then nothing else 1.5"),
+            ],
         ),
         (
             &[flag, "Clip c:\n    Note when flag or 1 or 2\n"],
-            &[(Code::OperandType, "flag or 1"), (Code::TypeMismatch, "2")],
+            &[(Code::TypeMismatch, "1"), (Code::TypeMismatch, "2")],
         ),
         (
             &["Clip c:\n    Note when nothing or 1 or 2\n"],
-            &[
-                (Code::UnknownName, "nothing"),
-                (Code::OperandType, "nothing or 1"),
-                (Code::TypeMismatch, "2"),
-            ],
+            &[(Code::UnknownName, "nothing"), (Code::TypeMismatch, "2")],
         ),
         (
             &["Clip c:\n    Note | length=(1bars + 2s + 3s)\n"],
@@ -4771,7 +4777,7 @@ fn beside_a_placeholder_an_operand_draws_only_what_its_expression_draws_for_ever
         ),
         (
             &["Clip c:\n    Note | length=(nothing + 2s + 3s)\n"],
-            &[(Code::UnknownName, "nothing"), (Code::UnitMismatch, "2s")],
+            &[(Code::UnknownName, "nothing")],
         ),
         (
             &[x, "fn g(a): a + 1.5 + 2.5\n", "Clip c:\n    Note/(g(x))\n"],
@@ -4782,7 +4788,7 @@ fn beside_a_placeholder_an_operand_draws_only_what_its_expression_draws_for_ever
                 "fn g(a): a + 1.5 + 2.5\n",
                 "Clip c:\n    Note/(g(nothing))\n",
             ],
-            &[(Code::UnknownName, "nothing"), (Code::TypeMismatch, "1.5")],
+            &[(Code::UnknownName, "nothing")],
         ),
         (
             &[
@@ -4796,7 +4802,7 @@ fn beside_a_placeholder_an_operand_draws_only_what_its_expression_draws_for_ever
         ),
         (
             &["Clip c:\n    Note/((if true then [nothing, 1.5] else [2.5, 3])[0])\n"],
-            &[(Code::UnknownName, "nothing"), (Code::TypeMismatch, "1.5")],
+            &[(Code::UnknownName, "nothing")],
         ),
         (
             &[
@@ -4826,11 +4832,7 @@ fn beside_a_placeholder_an_operand_draws_only_what_its_expression_draws_for_ever
         ),
         (
             &["Env e | pitch=(nothing + 2ms + 1ms)\n"],
-            &[
-                (Code::UnknownName, "nothing"),
-                (Code::TypeMismatch, "2ms"),
-                (Code::UnitMismatch, "2ms"),
-            ],
+            &[(Code::UnknownName, "nothing")],
         ),
     ];
     support::assert_rows_in_every_order(&symphonyscript_fixtures::envelope_vocabulary(), rows);
@@ -4860,10 +4862,7 @@ fn beside_a_placeholder_an_operand_draws_only_what_its_expression_draws_for_ever
         ),
         (
             &["Clip c:\n    Note | level=(nothing + \"GET\")\n"],
-            &[
-                (Code::UnknownName, "nothing"),
-                (Code::TypeMismatch, "\"GET\""),
-            ],
+            &[(Code::UnknownName, "nothing")],
         ),
     ];
     support::assert_rows_in_every_order(&support::signature_vocabulary(), rows);
@@ -4877,7 +4876,7 @@ fn the_operand_that_keeps_a_flow_beside_a_placeholder_is_chosen_in_the_expressio
     let rows: &[support::Row] = &[
         (
             &[f, "Clip c:\n    Note/(nothing + 1.5 + f(2.5))\n"],
-            &[(Code::UnknownName, "nothing"), (Code::TypeMismatch, "1.5")],
+            &[(Code::UnknownName, "nothing")],
         ),
         (
             &[x, f, "Clip c:\n    Note/(x + 1.5 + f(2.5))\n"],
@@ -4885,10 +4884,7 @@ fn the_operand_that_keeps_a_flow_beside_a_placeholder_is_chosen_in_the_expressio
         ),
         (
             &[g, "Clip c:\n    Note/(nothing + g(2.5) + 1.5)\n"],
-            &[
-                (Code::UnknownName, "nothing"),
-                (Code::TypeMismatch, "nothing + g(2.5) + 1.5"),
-            ],
+            &[(Code::UnknownName, "nothing")],
         ),
         (
             &[x, g, "Clip c:\n    Note/(x + g(2.5) + 1.5)\n"],
@@ -4896,10 +4892,7 @@ fn the_operand_that_keeps_a_flow_beside_a_placeholder_is_chosen_in_the_expressio
         ),
         (
             &[f, "Clip c:\n    Note/(nothing + f(2.5))\n"],
-            &[
-                (Code::UnknownName, "nothing"),
-                (Code::TypeMismatch, "nothing + f(2.5)"),
-            ],
+            &[(Code::UnknownName, "nothing")],
         ),
         (
             &[f, "Clip c:\n    Note/(1 + f(2.5))\n"],
@@ -4932,16 +4925,12 @@ fn beside_a_placeholder_an_operand_draws_only_where_its_twin_draws_with_its_twin
             &["Clip c:\n    Note/(nothing + 1.5 + i32(true))\n"],
             &[
                 (Code::UnknownName, "nothing"),
-                (Code::TypeMismatch, "1.5"),
                 (Code::ConversionType, "i32(true)"),
             ],
         ),
         (
             &["Clip c:\n    Note when nothing and 1\n"],
-            &[
-                (Code::UnknownName, "nothing"),
-                (Code::OperandType, "nothing and 1"),
-            ],
+            &[(Code::UnknownName, "nothing")],
         ),
         (
             &["Clip c:\n    Note/(if (1 + true) then nothing else 2.5)\n"],
@@ -4956,10 +4945,7 @@ fn beside_a_placeholder_an_operand_draws_only_where_its_twin_draws_with_its_twin
         ),
         (
             &["Clip c:\n    Note/((nothing - true) + true)\n"],
-            &[
-                (Code::UnknownName, "nothing"),
-                (Code::OperandType, "nothing - true"),
-            ],
+            &[(Code::UnknownName, "nothing")],
         ),
         (
             &[x, "Clip c:\n    Note/((x - true) + true)\n"],
@@ -4967,20 +4953,14 @@ fn beside_a_placeholder_an_operand_draws_only_where_its_twin_draws_with_its_twin
         ),
         (
             &["Clip c:\n    Note when nothing < true\n"],
-            &[
-                (Code::UnknownName, "nothing"),
-                (Code::OperandType, "nothing < true"),
-            ],
+            &[(Code::UnknownName, "nothing")],
         ),
     ];
     support::assert_rows_in_every_order(&symphonyscript_fixtures::vocabulary(), rows);
     let rows: &[support::Row] = &[
         (
             &["Env e | attack=(nothing * 2ms + true)\n"],
-            &[
-                (Code::UnknownName, "nothing"),
-                (Code::OperandType, "nothing * 2ms + true"),
-            ],
+            &[(Code::UnknownName, "nothing")],
         ),
         (
             &[x, "Env e | attack=(x * 2ms + true)\n"],
@@ -5004,7 +4984,7 @@ fn beside_a_placeholder_an_operand_draws_only_where_its_twin_draws_with_its_twin
     ];
     support::assert_rows_in_every_order(&support::signature_vocabulary(), rows);
     let compiler = symphonyscript::Compiler::new(&envelope).expect("it compiles");
-    let text = "Env e | attack=(nothing * 2ms + true)\n";
+    let text = "input x = 1\nEnv e | attack=(x * 2ms + true)\n";
     let summaries: Vec<String> = support::errors(compiler.check(&[support::source(text)]))
         .into_iter()
         .filter(|diagnostic| diagnostic.code == Code::OperandType)
@@ -5091,6 +5071,829 @@ fn an_own_typed_fault_inside_a_position_draws_whether_or_not_the_position_draws_
             &[(Code::IndexOutOfRange, "5")],
         ),
         (&["Clip c:\n    Note/(60 + [1, 2][1])\n"], &[]),
+    ];
+    support::assert_rows_in_every_order(&symphonyscript_fixtures::vocabulary(), rows);
+}
+
+const LEAVES: [&str; 10] = [
+    "q",
+    "1",
+    "1.5",
+    "true",
+    "Wave::Saw",
+    "\"a\"",
+    "[1, 2]",
+    "[1, 2][5]",
+    "300000000000",
+    "i32(true)",
+];
+const NAME: usize = 0;
+const OUT_OF_RANGE: usize = 7;
+const TOO_LARGE: usize = 8;
+const CONVERTED_BOOL: usize = 9;
+const BINARY: [&str; 10] = ["+", "-", "*", "/", "div", "%", "and", "or", "<", "is"];
+const UNARY: [&str; 6] = ["-", "not", "i32", "u8", "len", "bytes"];
+
+#[derive(Clone)]
+enum Generated {
+    Leaf(usize),
+    Unary(usize, Box<Generated>),
+    Binary(usize, Box<Generated>, Box<Generated>),
+    If(Box<Generated>, Box<Generated>, Box<Generated>),
+    Index(Box<Generated>, Box<Generated>),
+    Slice(Box<Generated>, Box<Generated>),
+}
+
+#[derive(Clone, Copy, PartialEq, Debug)]
+enum Reach {
+    Read,
+    Unread,
+    Unsure,
+}
+
+#[derive(Clone, PartialEq, Debug)]
+enum Model {
+    Int(i128),
+    Float(f64),
+    Bool(bool),
+    Str,
+    Wave,
+    Array(Vec<i128>),
+    Fault,
+    Placeholder,
+    Unsure,
+}
+
+#[derive(Clone, Copy, PartialEq, Debug)]
+enum Kind {
+    Int,
+    Float,
+    Bool,
+    Str,
+    Wave,
+    Array,
+    Fault,
+    Placeholder,
+    Unsure,
+}
+
+struct LeafSite {
+    leaf: usize,
+    start: usize,
+    end: usize,
+    read: Reach,
+    takes_type: bool,
+}
+
+impl Generated {
+    fn holds_name(&self) -> bool {
+        match self {
+            Generated::Leaf(leaf) => *leaf == NAME,
+            Generated::Unary(_, operand) => operand.holds_name(),
+            Generated::Binary(_, lhs, rhs)
+            | Generated::Index(lhs, rhs)
+            | Generated::Slice(lhs, rhs) => lhs.holds_name() || rhs.holds_name(),
+            Generated::If(condition, then, otherwise) => {
+                condition.holds_name() || then.holds_name() || otherwise.holds_name()
+            }
+        }
+    }
+
+    fn compound(&self) -> bool {
+        !matches!(self, Generated::Leaf(_))
+    }
+
+    fn print(&self, out: &mut String, read: Reach, sites: &mut Vec<LeafSite>) {
+        match self {
+            Generated::Leaf(leaf) => {
+                let start = out.len();
+                out.push_str(LEAVES[*leaf]);
+                sites.push(LeafSite {
+                    leaf: *leaf,
+                    start,
+                    end: out.len(),
+                    read,
+                    takes_type: false,
+                });
+            }
+            Generated::Unary(op, operand) => {
+                match UNARY[*op] {
+                    "-" => out.push('-'),
+                    "not" => out.push_str("not "),
+                    name => {
+                        out.push_str(name);
+                        out.push('(');
+                        operand.print(out, read, sites);
+                        out.push(')');
+                        return;
+                    }
+                }
+                operand.operand(out, read, sites);
+            }
+            Generated::Binary(op, lhs, rhs) => {
+                let first = sites.len();
+                lhs.operand(out, read, sites);
+                out.push(' ');
+                out.push_str(BINARY[*op]);
+                out.push(' ');
+                let second = sites.len();
+                rhs.operand(out, read, sites);
+                if ["+", "-", "*", "%", "<", "is"].contains(&BINARY[*op]) {
+                    for (own, partner, at) in [(lhs, rhs, first), (rhs, lhs, second)] {
+                        if matches!(**own, Generated::Leaf(TOO_LARGE))
+                            && partner.fixed_integer()
+                            && let Some(site) = sites.get_mut(at)
+                        {
+                            site.takes_type = true;
+                        }
+                    }
+                }
+            }
+            Generated::If(condition, then, otherwise) => {
+                out.push_str("if ");
+                condition.operand(out, read, sites);
+                let (then_read, otherwise_read) = match read {
+                    Reach::Read => match condition.value() {
+                        Model::Bool(true) => (Reach::Read, Reach::Unread),
+                        Model::Bool(false) => (Reach::Unread, Reach::Read),
+                        Model::Unsure => (Reach::Unsure, Reach::Unsure),
+                        _ => (Reach::Unread, Reach::Unread),
+                    },
+                    other => (other, other),
+                };
+                out.push_str(" then ");
+                then.operand(out, then_read, sites);
+                out.push_str(" else ");
+                otherwise.operand(out, otherwise_read, sites);
+            }
+            Generated::Index(base, index) => {
+                base.operand(out, read, sites);
+                out.push('[');
+                index.print(out, read, sites);
+                out.push(']');
+            }
+            Generated::Slice(base, bound) => {
+                base.operand(out, read, sites);
+                out.push('[');
+                bound.print(out, read, sites);
+                out.push_str("..]");
+            }
+        }
+    }
+
+    fn operand(&self, out: &mut String, read: Reach, sites: &mut Vec<LeafSite>) {
+        if self.compound() {
+            out.push('(');
+            self.print(out, read, sites);
+            out.push(')');
+        } else {
+            self.print(out, read, sites);
+        }
+    }
+
+    fn fixed_integer(&self) -> bool {
+        match self {
+            Generated::Unary(op, operand) => {
+                matches!(UNARY[*op], "i32" | "u8")
+                    && !matches!(
+                        operand.kind(),
+                        Kind::Array | Kind::Placeholder | Kind::Unsure
+                    )
+            }
+            Generated::Leaf(leaf) => *leaf == CONVERTED_BOOL,
+            Generated::Binary(..)
+            | Generated::If(..)
+            | Generated::Index(..)
+            | Generated::Slice(..) => false,
+        }
+    }
+
+    fn kind(&self) -> Kind {
+        match self {
+            Generated::Leaf(leaf) => match LEAVES[*leaf] {
+                "q" => Kind::Unsure,
+                "1.5" => Kind::Float,
+                "true" => Kind::Bool,
+                "Wave::Saw" => Kind::Wave,
+                "\"a\"" => Kind::Str,
+                "[1, 2]" => Kind::Array,
+                _ => Kind::Int,
+            },
+            Generated::Unary(op, operand) => {
+                let inner = operand.kind();
+                match (UNARY[*op], inner) {
+                    (_, Kind::Placeholder) => Kind::Placeholder,
+                    (_, Kind::Unsure) | ("-" | "i32" | "u8", Kind::Array) => Kind::Unsure,
+                    ("not", _) => Kind::Bool,
+                    ("i32" | "u8", _) => Kind::Int,
+                    ("-", Kind::Int | Kind::Float) => inner,
+                    ("len", Kind::Array) => Kind::Int,
+                    ("bytes", Kind::Array) => Kind::Array,
+                    ("len" | "bytes", Kind::Str) => Kind::Unsure,
+                    ("len", _) => Kind::Placeholder,
+                    _ => Kind::Fault,
+                }
+            }
+            Generated::Binary(op, lhs, rhs) => {
+                let (a, b) = (lhs.kind(), rhs.kind());
+                let numeric = |kind: Kind| matches!(kind, Kind::Int | Kind::Float);
+                match (BINARY[*op], a, b) {
+                    (_, Kind::Placeholder, _) | (_, _, Kind::Placeholder) => Kind::Placeholder,
+                    (_, Kind::Unsure, _) | (_, _, Kind::Unsure) => Kind::Unsure,
+                    ("+", Kind::Array, Kind::Array) => Kind::Array,
+                    (_, Kind::Array, _) | (_, _, Kind::Array) => Kind::Placeholder,
+                    ("and" | "or" | "<" | "is", ..) => Kind::Bool,
+                    ("+", Kind::Str, Kind::Str) => Kind::Str,
+                    ("/", a, b) if numeric(a) && numeric(b) => Kind::Float,
+                    ("div", Kind::Int, Kind::Int) => Kind::Int,
+                    ("div", ..) => Kind::Fault,
+                    (_, Kind::Int, Kind::Int) => Kind::Int,
+                    (_, a, b) if numeric(a) && numeric(b) => Kind::Float,
+                    _ => Kind::Fault,
+                }
+            }
+            Generated::If(condition, then, otherwise) => {
+                let (c, a, b) = (condition.kind(), then.kind(), otherwise.kind());
+                if [c, a, b].contains(&Kind::Placeholder) {
+                    return Kind::Placeholder;
+                }
+                if [c, a, b].contains(&Kind::Unsure) {
+                    return Kind::Unsure;
+                }
+                if c == Kind::Array {
+                    return Kind::Placeholder;
+                }
+                if c != Kind::Bool || a == Kind::Fault || b == Kind::Fault {
+                    return Kind::Fault;
+                }
+                match (a, b) {
+                    (a, b) if a == b => a,
+                    (Kind::Int, Kind::Float) | (Kind::Float, Kind::Int) => Kind::Float,
+                    (Kind::Array, _) | (_, Kind::Array) => Kind::Unsure,
+                    _ => Kind::Fault,
+                }
+            }
+            Generated::Index(base, index) => match (base.kind(), index.kind()) {
+                (Kind::Placeholder, _) | (_, Kind::Placeholder) => Kind::Placeholder,
+                (Kind::Unsure | Kind::Str, _) | (_, Kind::Unsure) => Kind::Unsure,
+                (Kind::Array, Kind::Int | Kind::Fault) => Kind::Int,
+                (Kind::Array, Kind::Array) => Kind::Unsure,
+                _ => Kind::Placeholder,
+            },
+            Generated::Slice(base, bound) => match (base.kind(), bound.kind()) {
+                (Kind::Placeholder, _) | (_, Kind::Placeholder) => Kind::Placeholder,
+                (Kind::Unsure | Kind::Str, _) | (_, Kind::Unsure) => Kind::Unsure,
+                (Kind::Array, Kind::Int) => Kind::Array,
+                (Kind::Array, _) => Kind::Unsure,
+                _ => Kind::Placeholder,
+            },
+        }
+    }
+
+    fn value(&self) -> Model {
+        match self.kind() {
+            Kind::Unsure => return Model::Unsure,
+            Kind::Placeholder => return Model::Placeholder,
+            Kind::Fault => return Model::Fault,
+            Kind::Int | Kind::Float | Kind::Bool | Kind::Str | Kind::Wave | Kind::Array => {}
+        }
+        let small = |value: &Model| match value {
+            Model::Int(value) => value.abs() < 1 << 24,
+            _ => true,
+        };
+        match self {
+            Generated::Leaf(leaf) => match LEAVES[*leaf] {
+                "1" => Model::Int(1),
+                "300000000000" => Model::Int(300_000_000_000),
+                "1.5" => Model::Float(1.5),
+                "true" => Model::Bool(true),
+                "Wave::Saw" => Model::Wave,
+                "\"a\"" => Model::Str,
+                "[1, 2]" => Model::Array(vec![1, 2]),
+                _ => Model::Fault,
+            },
+            Generated::Unary(op, operand) => match (UNARY[*op], operand.value()) {
+                (_, Model::Unsure) => Model::Unsure,
+                (_, Model::Fault | Model::Placeholder) => Model::Fault,
+                ("-", Model::Int(value)) => Model::Int(-value),
+                ("-", Model::Float(value)) => Model::Float(-value),
+                ("not", Model::Bool(value)) => Model::Bool(!value),
+                ("len", Model::Array(items)) => Model::Int(items.len() as i128),
+                ("not", _) => Model::Fault,
+                _ => Model::Unsure,
+            },
+            Generated::Binary(op, lhs, rhs) => {
+                let (a, b) = (lhs.value(), rhs.value());
+                if a == Model::Unsure || b == Model::Unsure {
+                    return Model::Unsure;
+                }
+                if matches!(a, Model::Fault | Model::Placeholder)
+                    || matches!(b, Model::Fault | Model::Placeholder)
+                {
+                    return Model::Fault;
+                }
+                let mixed = matches!(
+                    (&a, &b),
+                    (Model::Int(_), Model::Float(_)) | (Model::Float(_), Model::Int(_))
+                );
+                if mixed && !(small(&a) && small(&b)) {
+                    return Model::Unsure;
+                }
+                let float = |value: &Model| match value {
+                    Model::Int(value) => Some(*value as f64),
+                    Model::Float(value) => Some(*value),
+                    _ => None,
+                };
+                match (BINARY[*op], &a, &b) {
+                    ("and", Model::Bool(x), Model::Bool(y)) => Model::Bool(*x && *y),
+                    ("or", Model::Bool(x), Model::Bool(y)) => Model::Bool(*x || *y),
+                    ("is", Model::Bool(x), Model::Bool(y)) => Model::Bool(x == y),
+                    ("is", Model::Wave, Model::Wave) => Model::Bool(true),
+                    ("is", Model::Str, Model::Str) => Model::Bool(true),
+                    ("is", Model::Int(x), Model::Int(y)) => Model::Bool(x == y),
+                    ("<", Model::Int(x), Model::Int(y)) => Model::Bool(x < y),
+                    ("is" | "<", x, y) => match (float(x), float(y)) {
+                        (Some(x), Some(y)) if BINARY[*op] == "is" => Model::Bool(x == y),
+                        (Some(x), Some(y)) => Model::Bool(x < y),
+                        _ => Model::Fault,
+                    },
+                    ("+", Model::Array(x), Model::Array(y)) => {
+                        Model::Array(x.iter().chain(y).copied().collect())
+                    }
+                    ("+", Model::Int(x), Model::Int(y)) => Model::Int(x + y),
+                    ("-", Model::Int(x), Model::Int(y)) => Model::Int(x - y),
+                    ("*", Model::Int(x), Model::Int(y)) => Model::Int(x * y),
+                    ("div", Model::Int(x), Model::Int(y)) if *y != 0 => {
+                        Model::Int(x.div_euclid(*y) - i128::from(y < &0 && x.rem_euclid(*y) != 0))
+                    }
+                    ("%", Model::Int(x), Model::Int(y)) if *y != 0 => {
+                        let remainder = x % y;
+                        Model::Int(if remainder != 0 && (remainder < 0) != (*y < 0) {
+                            remainder + y
+                        } else {
+                            remainder
+                        })
+                    }
+                    ("+" | "-" | "*" | "/", x, y) => match (float(x), float(y)) {
+                        (Some(x), Some(y)) => Model::Float(match BINARY[*op] {
+                            "+" => x + y,
+                            "-" => x - y,
+                            "*" => x * y,
+                            _ => x / y,
+                        }),
+                        _ => Model::Fault,
+                    },
+                    _ => Model::Unsure,
+                }
+            }
+            Generated::If(condition, then, otherwise) => match condition.value() {
+                Model::Bool(true) => then.value(),
+                Model::Bool(false) => otherwise.value(),
+                Model::Unsure => Model::Unsure,
+                _ => Model::Fault,
+            },
+            Generated::Index(base, index) => match (base.value(), index.value()) {
+                (Model::Unsure, _) | (_, Model::Unsure) => Model::Unsure,
+                (Model::Array(items), Model::Int(position)) => usize::try_from(position)
+                    .ok()
+                    .and_then(|position| items.get(position).copied())
+                    .map_or(Model::Fault, Model::Int),
+                _ => Model::Fault,
+            },
+            Generated::Slice(base, bound) => match (base.value(), bound.value()) {
+                (Model::Unsure, _) | (_, Model::Unsure) => Model::Unsure,
+                (Model::Array(items), Model::Int(from)) => {
+                    let from = usize::try_from(from.clamp(0, items.len() as i128)).unwrap_or(0);
+                    Model::Array(items.get(from..).unwrap_or_default().to_vec())
+                }
+                _ => Model::Fault,
+            },
+        }
+    }
+}
+
+fn generated(depth: usize) -> Vec<Generated> {
+    let leaves: Vec<Generated> = (0..LEAVES.len()).map(Generated::Leaf).collect();
+    if depth <= 1 {
+        return leaves;
+    }
+    let below = generated(depth - 1);
+    let mut found = leaves;
+    for operand in &below {
+        for op in 0..UNARY.len() {
+            found.push(Generated::Unary(op, Box::new(operand.clone())));
+        }
+    }
+    for lhs in &below {
+        for rhs in &below {
+            for op in 0..BINARY.len() {
+                found.push(Generated::Binary(
+                    op,
+                    Box::new(lhs.clone()),
+                    Box::new(rhs.clone()),
+                ));
+            }
+            found.push(Generated::Index(
+                Box::new(lhs.clone()),
+                Box::new(rhs.clone()),
+            ));
+            found.push(Generated::Slice(
+                Box::new(lhs.clone()),
+                Box::new(rhs.clone()),
+            ));
+        }
+    }
+    for condition in &below {
+        for then in &below {
+            for otherwise in &below {
+                found.push(Generated::If(
+                    Box::new(condition.clone()),
+                    Box::new(then.clone()),
+                    Box::new(otherwise.clone()),
+                ));
+            }
+        }
+    }
+    found
+}
+
+fn sampled_depth_three(pool: &[Generated], count: usize) -> Vec<Generated> {
+    let mut state: u64 = 0x9e37_79b9_7f4a_7c15;
+    let mut next = |bound: usize| {
+        state ^= state << 13;
+        state ^= state >> 7;
+        state ^= state << 17;
+        (state % bound as u64) as usize
+    };
+    let compound: Vec<&Generated> = pool.iter().filter(|expr| expr.compound()).collect();
+    let pick = |next: &mut dyn FnMut(usize) -> usize| -> Generated {
+        if next(3) == 0 {
+            pool[next(pool.len())].clone()
+        } else {
+            compound[next(compound.len())].clone()
+        }
+    };
+    (0..count)
+        .map(|_| {
+            let shape = next(5);
+            let first = pick(&mut next);
+            let second = pick(&mut next);
+            match shape {
+                0 => Generated::Unary(next(UNARY.len()), Box::new(first)),
+                1 => Generated::Binary(next(BINARY.len()), Box::new(first), Box::new(second)),
+                2 => Generated::If(Box::new(first), Box::new(second), Box::new(pick(&mut next))),
+                3 => Generated::Index(Box::new(first), Box::new(second)),
+                _ => Generated::Slice(Box::new(first), Box::new(second)),
+            }
+        })
+        .collect()
+}
+
+struct Placed {
+    vocabulary: usize,
+    items: Vec<String>,
+    offset: usize,
+    takes_types: bool,
+}
+
+fn placed(expression: &str) -> Vec<Placed> {
+    let within = |head: &str, tail: &str, vocabulary: usize, takes_types: bool| Placed {
+        vocabulary,
+        items: vec![format!("{head}{expression}{tail}")],
+        offset: head.len(),
+        takes_types,
+    };
+    let annotated = "let a: i32 = ";
+    vec![
+        within("Clip c:\n    Note/(", ")\n", 0, true),
+        within("Clip c:\n    Note when (", ")\n", 0, false),
+        within("Clip c:\n    Note | velocity=(", ")\n", 0, true),
+        within("Clip c | data=(", ")\n", 1, false),
+        Placed {
+            vocabulary: 0,
+            items: vec![
+                format!("{annotated}{expression}\n"),
+                "Clip c:\n    Note/(a)\n".to_string(),
+            ],
+            offset: annotated.len(),
+            takes_types: true,
+        },
+    ]
+}
+
+type Spans = std::collections::BTreeSet<(Code, String, u32, u32)>;
+
+fn spanned_errors(compiler: &Compiler, sources: &[Source]) -> Spans {
+    support::errors(compiler.check(sources))
+        .into_iter()
+        .map(|diagnostic| {
+            (
+                diagnostic.code,
+                diagnostic.span.file.clone(),
+                diagnostic.span.range.start,
+                diagnostic.span.range.end,
+            )
+        })
+        .collect()
+}
+
+fn common_to_twins(compiler: &Compiler, program: &str) -> Spans {
+    let twins = [
+        "input q: i32 = 0\n",
+        "let q = 1\n",
+        "input q: f64 = 0.5\n",
+        "let q = 0.5\n",
+        "input q = false\n",
+        "let q = false\n",
+        "input q = Wave::Sine\n",
+        "let q = Wave::Sine\n",
+        "let q = \"a\"\n",
+        "input q: i32[..4] = []\n",
+        "let q = [1]\n",
+        "let q = c\n",
+    ];
+    let mut common: Option<Spans> = None;
+    for twin in twins {
+        let found: Spans = spanned_errors(
+            compiler,
+            &[
+                Source {
+                    path: "main.sym".into(),
+                    text: program.to_string(),
+                },
+                Source {
+                    path: "twin.sym".into(),
+                    text: twin.to_string(),
+                },
+            ],
+        )
+        .into_iter()
+        .filter(|(_, file, ..)| file == "main.sym")
+        .collect();
+        common = Some(match common {
+            None => found,
+            Some(common) => common.intersection(&found).cloned().collect(),
+        });
+    }
+    common.unwrap_or_default()
+}
+
+fn own_fault(site: &LeafSite, base: u32, whole: bool) -> Option<((Code, String, u32, u32), bool)> {
+    let (code, start, end) = match site.leaf {
+        OUT_OF_RANGE => (Code::IndexOutOfRange, site.end - 2, site.end - 1),
+        TOO_LARGE => (Code::DoesNotFit, site.start, site.end),
+        CONVERTED_BOOL => (Code::ConversionType, site.start, site.end),
+        _ => return None,
+    };
+    let required = match (site.read, site.leaf) {
+        (Reach::Read, TOO_LARGE) => site.takes_type || whole,
+        (_, CONVERTED_BOOL) | (Reach::Read, _) => true,
+        (Reach::Unread | Reach::Unsure, _) => false,
+    };
+    let key = (
+        code,
+        "main.sym".to_string(),
+        base + start as u32,
+        base + end as u32,
+    );
+    Some((key, required))
+}
+
+#[test]
+fn every_fault_beside_another_fault_draws_by_the_placeholder_rule() {
+    let pool = generated(2);
+    let mut expressions: Vec<Generated> = pool.clone();
+    expressions.extend(sampled_depth_three(&pool, 3000));
+    let compilers = [
+        Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("the vocabulary compiles"),
+        Compiler::new(&support::signature_vocabulary()).expect("the vocabulary compiles"),
+    ];
+    let mut failures = Vec::new();
+    let mut programs = 0;
+    for expression in &expressions {
+        let mut text = String::new();
+        let mut sites = Vec::new();
+        expression.print(&mut text, Reach::Read, &mut sites);
+        for place in placed(&text) {
+            let compiler = &compilers[place.vocabulary];
+            for order in support::permutations(&(0..place.items.len()).collect::<Vec<_>>()) {
+                let before: usize = order
+                    .iter()
+                    .take_while(|index| **index != 0)
+                    .map(|index| place.items[*index].len())
+                    .sum();
+                let program: String = order
+                    .iter()
+                    .map(|index| place.items[*index].as_str())
+                    .collect();
+                let base = (before + place.offset) as u32;
+                let found = spanned_errors(
+                    compiler,
+                    &[Source {
+                        path: "main.sym".into(),
+                        text: program.clone(),
+                    }],
+                );
+                programs += 1;
+                if expression.holds_name() {
+                    let mut expected = common_to_twins(compiler, &program);
+                    for site in sites.iter().filter(|site| site.leaf == NAME) {
+                        expected.insert((
+                            Code::UnknownName,
+                            "main.sym".into(),
+                            base + site.start as u32,
+                            base + site.end as u32,
+                        ));
+                    }
+                    if found != expected {
+                        failures.push(format!(
+                            "{program}\n  found {found:?}\n  twins {expected:?}"
+                        ));
+                    }
+                    continue;
+                }
+                let whole = |site: &LeafSite| {
+                    site.start == 0 && site.end == text.len() && place.takes_types
+                };
+                for site in &sites {
+                    let Some((key, required)) = own_fault(site, base, whole(site)) else {
+                        continue;
+                    };
+                    if required && !found.contains(&key) {
+                        failures.push(format!("{program}\n  misses {key:?}\n  found {found:?}"));
+                    }
+                    let unread = site.read == Reach::Unread && site.leaf != CONVERTED_BOOL;
+                    if unread && found.contains(&key) {
+                        failures.push(format!("{program}\n  draws {key:?} in an unread part"));
+                    }
+                }
+            }
+        }
+    }
+    assert_eq!(programs, 31620);
+    assert!(
+        failures.is_empty(),
+        "{} failures:\n{}",
+        failures.len(),
+        failures
+            .iter()
+            .take(40)
+            .cloned()
+            .collect::<Vec<_>>()
+            .join("\n")
+    );
+}
+
+#[test]
+fn every_seed_row_of_the_placeholder_rule_draws_what_its_rule_gives() {
+    let verse = "Clip verse:\n    Note/60\n";
+    let rows: &[support::Row] = &[
+        (
+            &["Clip intro:\n    Plays: verse+\n", verse],
+            &[(Code::ExpressionSyntax, "\n")],
+        ),
+        (
+            &["input fill_on = false+\n"],
+            &[(Code::ExpressionSyntax, "\n")],
+        ),
+        (
+            &["let b = bytes-(\"GET\")\n"],
+            &[(Code::NotAValue, "bytes")],
+        ),
+        (
+            &["Clip c:\n    Note/([1, 2, 3][1.5 + [1, 2][5]])\n"],
+            &[
+                (Code::IndexType, "1.5 + [1, 2][5]"),
+                (Code::IndexOutOfRange, "5"),
+            ],
+        ),
+        (
+            &["Clip c:\n    for i in 0..(1.5 + [1, 2][5]):\n        Note/60\n"],
+            &[
+                (Code::RangeBound, "1.5 + [1, 2][5]"),
+                (Code::IndexOutOfRange, "5"),
+            ],
+        ),
+        (
+            &["Clip c:\n    Note | velocity=rand(1.5 + [1, 2][5], 1)\n"],
+            &[
+                (Code::OperandType, "rand(1.5 + [1, 2][5], 1)"),
+                (Code::IndexOutOfRange, "5"),
+            ],
+        ),
+        (
+            &["Clip c:\n    Note/(true + [1, 2][5])\n"],
+            &[
+                (Code::OperandType, "true + [1, 2][5]"),
+                (Code::IndexOutOfRange, "5"),
+            ],
+        ),
+        (
+            &["Clip c:\n    Note/(if 1 + [1, 2][5] then 1 else 2)\n"],
+            &[
+                (Code::ConditionType, "1 + [1, 2][5]"),
+                (Code::IndexOutOfRange, "5"),
+            ],
+        ),
+        (
+            &["let a: i32 = 1.5 + [1, 2][5]\n", "Clip c:\n    Note/(a)\n"],
+            &[
+                (Code::TypeMismatch, "1.5 + [1, 2][5]"),
+                (Code::IndexOutOfRange, "5"),
+            ],
+        ),
+        (
+            &["Clip c:\n    Note/(if [1, 2][5] > 0 then Wave::Saw else Wave::Sine)\n"],
+            &[
+                (
+                    Code::TypeMismatch,
+                    "if [1, 2][5] > 0 then Wave::Saw else Wave::Sine",
+                ),
+                (Code::IndexOutOfRange, "5"),
+            ],
+        ),
+        (
+            &["Clip c:\n    Note/([1.5, 2.5][i32(true)])\n"],
+            &[
+                (Code::ConversionType, "i32(true)"),
+                (Code::TypeMismatch, "[1.5, 2.5][i32(true)]"),
+            ],
+        ),
+        (
+            &["Clip c:\n    Note/(1.5 + [1, 2][i32(true)])\n"],
+            &[
+                (Code::ConversionType, "i32(true)"),
+                (Code::TypeMismatch, "1.5 + [1, 2][i32(true)]"),
+            ],
+        ),
+        (
+            &["Clip c:\n    Note when not (1 + q)\n"],
+            &[(Code::UnknownName, "q")],
+        ),
+        (
+            &["Clip c:\n    Note when 1 + q\n"],
+            &[(Code::UnknownName, "q")],
+        ),
+        (
+            &["Clip c:\n    Note/((true and q) + 1)\n"],
+            &[
+                (Code::UnknownName, "q"),
+                (Code::OperandType, "(true and q) + 1"),
+            ],
+        ),
+        (
+            &["Clip c:\n    Note/((q > 0) * 2)\n"],
+            &[(Code::UnknownName, "q"), (Code::OperandType, "(q > 0) * 2")],
+        ),
+        (
+            &["input b = true\n", "Clip c:\n    Note/(b + [1, 2][5])\n"],
+            &[
+                (Code::OperandType, "b + [1, 2][5]"),
+                (Code::IndexOutOfRange, "5"),
+            ],
+        ),
+        (
+            &["fn h(v): v + 0.5\n", "Clip c:\n    Note/(h(q))\n"],
+            &[(Code::UnknownName, "q")],
+        ),
+        (
+            &["Clip c:\n    Note/([q, 1.5, 2][2])\n"],
+            &[(Code::UnknownName, "q")],
+        ),
+        (
+            &[
+                "input section = 0\n",
+                "let sections = [verse, chorus]\n",
+                "Clip intro:\n    for s in sections:\n        Starts: s\n",
+                "Clip outro:\n    Plays: sections[section]\n",
+            ],
+            &[(Code::UnknownName, "verse"), (Code::UnknownName, "chorus")],
+        ),
+        (
+            &[
+                "input gate = false\n",
+                "state rising = gate and not gate{q}\n",
+                "Clip c:\n    Note when rising\n",
+            ],
+            &[(Code::UnknownName, "q")],
+        ),
+        (
+            &["Clip c:\n    Note/(q + 1)\n"],
+            &[(Code::UnknownName, "q")],
+        ),
+        (
+            &["Clip c:\n    Note/([q, 1, 2][1])\n"],
+            &[(Code::UnknownName, "q")],
+        ),
+        (
+            &["Clip c:\n    Note/(1.5 + [1, 2][1])\n"],
+            &[(Code::TypeMismatch, "1.5 + [1, 2][1]")],
+        ),
+        (
+            &["Clip c:\n    Note/((if false then [1, 2][5] else 3) + 60)\n"],
+            &[],
+        ),
+        (&["Clip intro:\n    Plays: verse\n", verse], &[]),
     ];
     support::assert_rows_in_every_order(&symphonyscript_fixtures::vocabulary(), rows);
 }

@@ -201,7 +201,19 @@ impl Engine<'_> {
         (params, lets): (&BTreeSet<&str>, &BTreeMap<&str, ExprId>),
         namespace: &Namespace,
     ) -> Result<bool, Internal> {
-        let mut stack: Vec<(ExprId, bool)> = args.into_iter().map(|arg| (arg, false)).collect();
+        self.variable_array(
+            args.into_iter().map(|arg| (arg, false)).collect(),
+            (params, lets),
+            namespace,
+        )
+    }
+
+    fn variable_array(
+        &self,
+        mut stack: Vec<(ExprId, bool)>,
+        (params, lets): (&BTreeSet<&str>, &BTreeMap<&str, ExprId>),
+        namespace: &Namespace,
+    ) -> Result<bool, Internal> {
         let mut seen_lets = FastSet::default();
         while let Some((expr, top_level)) = stack.pop() {
             match &self.hir.expr(expr)?.kind {
@@ -239,8 +251,96 @@ impl Engine<'_> {
                     stack.extend([(*lhs, top_level), (*rhs, top_level)]);
                 }
                 ExprKind::Slice { base, .. } => stack.push((*base, top_level)),
+                ExprKind::If(condition, then, otherwise) => {
+                    if let ExprKind::Bool(taken) = self.hir.expr(*condition)?.kind {
+                        stack.push((if taken { *then } else { *otherwise }, top_level));
+                    } else if self.variable_choice(
+                        (*condition, &[*then, *otherwise], top_level),
+                        (params, lets),
+                        namespace,
+                    )? {
+                        return Ok(true);
+                    }
+                }
+                ExprKind::Match {
+                    scrutinee,
+                    arms,
+                    otherwise,
+                } => {
+                    let values: Vec<ExprId> =
+                        arms.iter().map(|arm| arm.value).chain(*otherwise).collect();
+                    if self.variable_choice(
+                        (*scrutinee, &values, top_level),
+                        (params, lets),
+                        namespace,
+                    )? {
+                        return Ok(true);
+                    }
+                }
                 _ => {}
             }
+        }
+        Ok(false)
+    }
+
+    fn variable_choice(
+        &self,
+        (selector, arms, top_level): (ExprId, &[ExprId], bool),
+        scope: (&BTreeSet<&str>, &BTreeMap<&str, ExprId>),
+        namespace: &Namespace,
+    ) -> Result<bool, Internal> {
+        let mut variable = Vec::with_capacity(arms.len());
+        for arm in arms {
+            variable.push(self.variable_array(vec![(*arm, top_level)], scope, namespace)?);
+        }
+        if !self.selector_reads_cell((selector, top_level), scope, namespace)? {
+            return Ok(variable.iter().all(|certain| *certain));
+        }
+        if variable.iter().any(|certain| *certain) {
+            return Ok(true);
+        }
+        let mut lengths = Vec::new();
+        for arm in arms {
+            if let ExprKind::Array(elements) = &self.hir.expr(*arm)?.kind {
+                lengths.push(elements.len());
+            }
+        }
+        Ok(lengths.iter().any(|length| Some(length) != lengths.first()))
+    }
+
+    fn selector_reads_cell(
+        &self,
+        (selector, top_level): (ExprId, bool),
+        (params, lets): (&BTreeSet<&str>, &BTreeMap<&str, ExprId>),
+        namespace: &Namespace,
+    ) -> Result<bool, Internal> {
+        let mut stack = vec![(selector, top_level)];
+        let mut seen_lets = FastSet::default();
+        let mut seen_locals = BTreeSet::new();
+        while let Some((expr, top_level)) = stack.pop() {
+            let kind = &self.hir.expr(expr)?.kind;
+            if let ExprKind::Name(name) = kind {
+                if !top_level && params.contains(name.as_str()) {
+                    continue;
+                }
+                if !top_level && let Some(local) = lets.get(name.as_str()) {
+                    if seen_locals.insert(name.as_str()) {
+                        stack.push((*local, false));
+                    }
+                    continue;
+                }
+                match namespace.get(name) {
+                    Some(Decl::Input(_) | Decl::State(_)) => return Ok(true),
+                    Some(Decl::Let(id)) => {
+                        if !self.hir.is_prelude_let(id) && seen_lets.insert(id) {
+                            stack.push((self.hir.let_decl(id)?.value, true));
+                        }
+                    }
+                    Some(_) | None => {}
+                }
+                continue;
+            }
+            stack.extend(kind.children().into_iter().map(|child| (child, top_level)));
         }
         Ok(false)
     }

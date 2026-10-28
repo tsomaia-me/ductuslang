@@ -56,6 +56,12 @@ impl Argument {
     }
 }
 
+enum Template {
+    Root(NodeId),
+    Failed,
+    Reentered,
+}
+
 struct Call {
     key: CallKey,
     function: FnId,
@@ -307,7 +313,7 @@ impl Engine<'_> {
         feeds: &[Feed],
         (call, nesting): (NodeId, u64),
         need: &mut Vec<Query>,
-    ) -> Result<Option<Option<NodeId>>, Internal> {
+    ) -> Result<Option<Template>, Internal> {
         let key = TemplateKey {
             function,
             args: shapes.to_vec(),
@@ -329,11 +335,14 @@ impl Engine<'_> {
         };
         let val = some!(self.val(Query::Expr(body, scope), need));
         let Some(root) = self.boxed_body(body, scope, &val)? else {
-            return Ok(Some(None));
+            return Ok(Some(Template::Failed));
         };
+        if self.in_progress(Query::Sig(root)) {
+            return Ok(Some(Template::Reentered));
+        }
         let sig = some!(self.sig(root, need));
         if sig.reactive && self.hir.fn_decl(function)?.faulty_head {
-            return Ok(Some(None));
+            return Ok(Some(Template::Failed));
         }
         if sig.reactive {
             let reading = format!(
@@ -341,10 +350,10 @@ impl Engine<'_> {
                 self.function_name(function)?
             );
             self.reactive_recursion(call, function, reading)?;
-            return Ok(Some(None));
+            return Ok(Some(Template::Failed));
         }
         self.template_units(scope, root)?;
-        Ok(Some(Some(root)))
+        Ok(Some(Template::Root(root)))
     }
 
     fn result_fits(
@@ -415,8 +424,13 @@ impl Engine<'_> {
                     (node, call.key.nesting),
                     need
                 )?) {
-                    Some(root) if self.result_fits(root, own, node, call.function)? => root,
-                    _ => return self.failed_call(&call, node, Ctx::Global),
+                    Template::Root(root) if self.result_fits(root, own, node, call.function)? => {
+                        root
+                    }
+                    Template::Reentered => return Ok(Some(CVal::Error)),
+                    Template::Root(_) | Template::Failed => {
+                        return self.failed_call(&call, node, Ctx::Global);
+                    }
                 };
                 let defaults = some!(self.default_work(&call, need)?);
                 if !self.within_call_limit(node, call.function)? {
@@ -605,8 +619,9 @@ impl Engine<'_> {
             (node, call.key.nesting),
             need
         )?) {
-            Some(root) if self.result_fits(root, own, node, call.function)? => root,
-            _ => {
+            Template::Root(root) if self.result_fits(root, own, node, call.function)? => root,
+            Template::Reentered => return Ok(Some(CVal::Error)),
+            Template::Root(_) | Template::Failed => {
                 let caller = self.machine_mut()?.frames.len().saturating_sub(1);
                 return self.failed_call(&call, node, Ctx::Frame(caller));
             }

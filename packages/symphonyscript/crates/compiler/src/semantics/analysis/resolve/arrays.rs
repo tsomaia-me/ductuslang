@@ -14,7 +14,6 @@ use crate::semantics::analysis::bound_val::BoundVal;
 use crate::semantics::analysis::c_val::CVal;
 use crate::semantics::analysis::engine::Engine;
 use crate::semantics::analysis::eval_ty::EvalTy;
-use crate::semantics::analysis::family_key::FamilyKey;
 use crate::semantics::analysis::fast_hash::{FastMap, FastSet};
 use crate::semantics::analysis::history_cell::HistoryCell;
 use crate::semantics::analysis::ids::{BindingId, NodeId, ScopeId};
@@ -270,6 +269,7 @@ impl Engine<'_> {
                 for bare in self.bare_leaves(&array.elements)? {
                     self.unplaced_placeholder(bare)?;
                 }
+                self.memo.own_typed.extend(array.elements.iter().copied());
                 let length = array.shape.outer().unwrap_or(0);
                 return Ok(Some(self.scalar(
                     Op::Number(Number::Int(i128::from(length)), Suffix::None),
@@ -297,6 +297,10 @@ impl Engine<'_> {
         let found = some!(self.layout_of(node, need)?);
         let certain = found.certain;
         let length = self.length_of_layout(node, found, (loc, scope))?;
+        if matches!(length, Val::Scalar(measured) if !matches!(self.node(measured)?.op, Op::Builtin(..)))
+        {
+            self.memo.own_typed.push(node);
+        }
         if certain {
             self.memo.lengths.insert(node, length.clone());
         }
@@ -616,7 +620,7 @@ impl Engine<'_> {
         let Some(whole) = self.boxed(&base_val, loc, scope)? else {
             return Ok(Some(Val::Error));
         };
-        Ok(Some(self.scalar(
+        let sliced = self.scalar(
             Op::Slice {
                 base: whole,
                 lower,
@@ -624,7 +628,11 @@ impl Engine<'_> {
             },
             loc,
             scope,
-        )?))
+        )?;
+        for (bound, _) in lower.iter().chain(upper.iter()) {
+            self.memo.eager_reads.push((*bound, sliced.nodes()));
+        }
+        Ok(Some(sliced))
     }
 
     fn known_bound(
@@ -830,13 +838,10 @@ impl Engine<'_> {
         if !typed {
             return Ok(None);
         }
-        let key = FamilyKey {
-            function,
-            args: args
-                .iter()
-                .map(|arg| self.family_shape(arg.as_ref()))
-                .collect::<Result<_, _>>()?,
-        };
+        let (key, shapes) = self.family_key(function, args)?;
+        if self.memo.family_shapes.get(&key) != Some(&shapes) {
+            return Ok(None);
+        }
         let Some(&scope) = self
             .memo
             .family_scopes

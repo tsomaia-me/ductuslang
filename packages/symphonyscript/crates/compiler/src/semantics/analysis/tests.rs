@@ -1288,7 +1288,7 @@ fn a_recursive_array_result_takes_the_shape_it_yields_in_the_type_its_use_expect
         ),
         (
             format!("{CHORD_FN}input f = true\nClip c:\n    Note/((if f then chord(1) else [1, 2])[0])\n"),
-            vec![Code::TypeMismatch],
+            vec![],
             vec![],
         ),
         (
@@ -1385,7 +1385,7 @@ fn a_recursive_array_result_fills_an_array_attribute_or_input_of_its_shape() {
         (
             format!("{CHORD_FN}input f = true\nChord a | notes=(if f then chord(1) else [1, 2])\n"),
             "notes",
-            vec![Code::TypeMismatch],
+            vec![Code::VariableArray],
             None,
         ),
         (
@@ -2177,7 +2177,7 @@ fn a_lookup_that_misses_is_an_internal_error() {
     let mut hir = built(&vocabulary, "Session s\n");
     hir.top.push(Top::Input(foreign_input));
     let mut report = Report::default();
-    let found = analyze::program(
+    let (found, _) = analyze::program(
         &hir,
         &vocabulary,
         &variants,

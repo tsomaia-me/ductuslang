@@ -3,7 +3,7 @@ use symphonyscript_core::Vocabulary;
 use super::checker::Checker;
 use crate::semantics::Internal;
 use crate::semantics::collection::{Collected, StandIn, Variants};
-use crate::semantics::ir::{Hir, Top};
+use crate::semantics::ir::{ExprId, Hir, Top};
 use crate::semantics::reporting::Report;
 
 pub(crate) fn check_scopes(
@@ -13,7 +13,8 @@ pub(crate) fn check_scopes(
     variants: &Variants,
     prelude: bool,
     report: &mut Report,
-) -> Result<(), Internal> {
+) -> Result<Vec<ExprId>, Internal> {
+    let mut placeholders = Vec::new();
     for (position, top) in hir.top.iter().enumerate() {
         if hir.is_prelude_top(position) != prelude {
             continue;
@@ -47,6 +48,7 @@ pub(crate) fn check_scopes(
             }
             Top::Placement(id) => checker.top_placement(id)?,
         }
+        placeholders.extend(checker.into_placeholders());
     }
-    Ok(())
+    Ok(placeholders)
 }

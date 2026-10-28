@@ -193,6 +193,7 @@ impl Engine<'_> {
             }
         }
         let mut used = FastSet::default();
+        let mut ends = FastMap::default();
         for (index, node) in self.nodes.iter().enumerate() {
             self.flow_step();
             let Op::Use(inner) = node.op else {
@@ -201,7 +202,7 @@ impl Engine<'_> {
             if self.in_name_probe(node.scope)? {
                 continue;
             }
-            let target = self.through_uses(inner)?;
+            let target = self.use_end(inner, &mut ends)?;
             if !self.is_bare_value(target)? {
                 continue;
             }
@@ -318,6 +319,32 @@ impl Engine<'_> {
             Member::Cell(binding) => self.typing.own.get(&binding).copied(),
             Member::Value(node) => self.memo.bare_enums.get(&node).map(|id| Scalar::Enum(*id)),
         }
+    }
+
+    fn use_end(
+        &self,
+        node: NodeId,
+        ends: &mut FastMap<NodeId, NodeId>,
+    ) -> Result<NodeId, Internal> {
+        let mut path = Vec::new();
+        let mut current = node;
+        let end = loop {
+            if let Some(end) = ends.get(&current) {
+                break *end;
+            }
+            self.memo.use_steps.set(self.memo.use_steps.get() + 1);
+            match self.node(current)?.op {
+                Op::Use(inner) => {
+                    path.push(current);
+                    current = inner;
+                }
+                _ => break current,
+            }
+        };
+        for step in path {
+            ends.insert(step, end);
+        }
+        Ok(end)
     }
 
     fn flow_step(&self) {

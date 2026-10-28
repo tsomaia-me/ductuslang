@@ -23,6 +23,13 @@ enum Visit {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
+enum Operand {
+    Value,
+    FieldBase,
+    Callee,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
 enum Mode {
     Body,
     Arm,
@@ -37,6 +44,8 @@ pub(super) struct Checker<'a> {
     frames: Vec<Frame>,
     unknown_bodies: BTreeSet<BlockId>,
     in_state: bool,
+    in_destination: bool,
+    placeholders: Vec<ExprId>,
     report: &'a mut Report,
 }
 
@@ -56,8 +65,14 @@ impl<'a> Checker<'a> {
             frames: Vec::new(),
             unknown_bodies: BTreeSet::new(),
             in_state: false,
+            in_destination: false,
+            placeholders: Vec::new(),
             report,
         }
+    }
+
+    pub fn into_placeholders(self) -> Vec<ExprId> {
+        self.placeholders
     }
 
     pub fn state(&mut self, id: StateId) -> Result<(), Internal> {
@@ -480,8 +495,8 @@ impl<'a> Checker<'a> {
         frame: Option<usize>,
         wire_clause: bool,
     ) -> Result<(), Internal> {
-        let mut stack = vec![(root, false)];
-        while let Some((id, field_base)) = stack.pop() {
+        let mut stack = vec![(root, Operand::Value)];
+        while let Some((id, operand)) = stack.pop() {
             let expr = self.hir.expr(id)?;
             match &expr.kind {
                 ExprKind::Name(name) => {
@@ -495,6 +510,9 @@ impl<'a> Checker<'a> {
                             expr.loc,
                             format!("`{name}` names nothing in scope"),
                         );
+                        if operand == Operand::Value && !self.in_destination {
+                            self.placeholders.push(id);
+                        }
                     }
                 }
                 ExprKind::To => {
@@ -505,7 +523,7 @@ impl<'a> Checker<'a> {
                             expr.loc,
                             "`to` is written only in a wire placement's `/expr`, gate and attribute clause",
                         );
-                    } else if !field_base {
+                    } else if operand != Operand::FieldBase {
                         self.report.error(
                             self.hir,
                             Code::MisplacedTo,
@@ -514,7 +532,15 @@ impl<'a> Checker<'a> {
                         );
                     }
                 }
-                ExprKind::Field(base, _) => stack.push((*base, true)),
+                ExprKind::Field(base, _) => stack.push((*base, Operand::FieldBase)),
+                ExprKind::Call(callee, args) => {
+                    stack.push((*callee, Operand::Callee));
+                    stack.extend(
+                        args.values()
+                            .into_iter()
+                            .map(|value| (value, Operand::Value)),
+                    );
+                }
                 ExprKind::History {
                     target,
                     offset,
@@ -537,24 +563,29 @@ impl<'a> Checker<'a> {
                             format!("`{}` names nothing in scope", target.text),
                         );
                     }
-                    stack.push((*offset, false));
-                    stack.extend(fallback.iter().map(|value| (*value, false)));
+                    stack.push((*offset, Operand::Value));
+                    stack.extend(fallback.iter().map(|value| (*value, Operand::Value)));
                 }
                 ExprKind::Match {
                     scrutinee,
                     arms,
                     otherwise,
                 } => {
-                    stack.push((*scrutinee, false));
+                    stack.push((*scrutinee, Operand::Value));
                     for arm in arms {
                         if !matches!(self.hir.expr(arm.label)?.kind, ExprKind::Name(_)) {
-                            stack.push((arm.label, false));
+                            stack.push((arm.label, Operand::Value));
                         }
-                        stack.push((arm.value, false));
+                        stack.push((arm.value, Operand::Value));
                     }
-                    stack.extend(otherwise.iter().map(|value| (*value, false)));
+                    stack.extend(otherwise.iter().map(|value| (*value, Operand::Value)));
                 }
-                other => stack.extend(other.children().into_iter().map(|child| (child, false))),
+                other => stack.extend(
+                    other
+                        .children()
+                        .into_iter()
+                        .map(|child| (child, Operand::Value)),
+                ),
             }
         }
         Ok(())
@@ -664,7 +695,10 @@ impl<'a> Checker<'a> {
                                 self.expr(value, frame, true)?;
                             }
                         }
-                        self.expr(wire.destination, frame, false)?;
+                        self.in_destination = true;
+                        let checked = self.expr(wire.destination, frame, false);
+                        self.in_destination = false;
+                        checked?;
                     }
                     BodyItem::Bundle { members, each, .. } => {
                         previous = None;

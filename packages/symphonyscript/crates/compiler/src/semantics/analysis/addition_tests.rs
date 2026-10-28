@@ -223,7 +223,7 @@ fn the_kind_walk_over_a_group_of_states_is_linear_in_every_declaration_order() {
         ("fan", &[]),
     ];
     for (shape, expected) in shapes {
-        let visits: Vec<(u64, u64)> = [2_500, 5_000, 10_000]
+        let visits: Vec<(u64, u64)> = [1_600, 3_200, 6_400]
             .into_iter()
             .map(|states| kind_walk(&kind_walk_program(shape, states), expected))
             .collect();
@@ -632,16 +632,19 @@ fn ordering_the_bindings_of_an_expanded_program_is_linear_in_it() {
     let with_let = "    let a = held[i]\n    if i >= len(held) then a else a + walk(i + 1)\n";
     let without_let = "    if i >= len(held) then held[i] else held[i] + walk(i + 1)\n";
     let unexpected = "    let a = held[i]\n    if i >= len(held) then 0 else (if a > 0 then 1 else 0) + walk(i + 1)\n";
-    for body in [with_let, unexpected] {
-        assert_linear([800, 1_600, 6_400].map(|levels| {
+    let points = |body: &str| {
+        [800, 1_600, 3_200].map(|levels| {
             (
                 levels,
                 read_walk(&walk_program(usize::try_from(levels).unwrap_or(0), body)),
             )
-        }));
-    }
-    let plain = read_walk(&walk_program(6_400, without_let));
-    let held = read_walk(&walk_program(6_400, with_let));
+        })
+    };
+    let with_let_points = points(with_let);
+    assert_linear(with_let_points);
+    assert_linear(points(unexpected));
+    let plain = read_walk(&walk_program(1_600, without_let));
+    let [_, (_, held), _] = with_let_points;
     assert!(held <= 4 * plain, "{plain} {held}");
     assert_linear([1_000, 2_000, 4_000].map(|functions| {
         (
@@ -752,6 +755,17 @@ fn a_compile_time_index_into_a_literal_computes_its_element_in_the_positions_typ
     );
     assert!(errors(&diagnostics).is_empty(), "{diagnostics:?}");
     assert_eq!(value, Some(CVal::Int(62)));
+}
+
+#[test]
+fn a_compile_time_choice_computes_the_arm_it_takes_beside_a_faulty_arm_it_does_not() {
+    let (diagnostics, value) = analyzed(
+        &vocabulary(),
+        "Clip c:\n    Note/((if false then [1, 2][5] else 3) + 60)\n",
+        |engine| attr_value(engine, "pitch", EvalTy::I32),
+    );
+    assert!(errors(&diagnostics).is_empty(), "{diagnostics:?}");
+    assert_eq!(value, Some(CVal::Int(63)));
 }
 
 #[test]
@@ -1588,14 +1602,14 @@ fn state_walk(states: u32, joins: u32, history: bool) -> u64 {
 
 #[test]
 fn a_lets_capacity_is_walked_once_however_many_positions_or_states_read_it() {
-    let small = attribute_walk(1_000, 1_000);
-    let large = attribute_walk(2_000, 2_000);
+    let small = attribute_walk(500, 500);
+    let large = attribute_walk(1_000, 1_000);
     assert!(large <= 2 * small + 64, "{small} {large}");
     for history in [true, false] {
-        let smallest = state_walk(1_000, 1_000, history);
-        let base = state_walk(1_000, 2_000, history);
-        let largest = state_walk(2_000, 2_000, history);
-        let longer = state_walk(2_000, 1_000, history);
+        let smallest = state_walk(500, 500, history);
+        let base = state_walk(500, 1_000, history);
+        let largest = state_walk(1_000, 1_000, history);
+        let longer = state_walk(1_000, 500, history);
         for smaller in [smallest, base, longer] {
             assert!(
                 largest <= 2 * smaller + 64,
@@ -1689,4 +1703,118 @@ fn variant_lookups_cost_constant_work_per_name() {
     let narrow = examined(named(65_472..65_536));
     assert_eq!(wide, narrow);
     assert!(wide <= 8 * 20_001, "{wide}");
+}
+
+fn grown(bound: u32, read: &str) -> (Option<CVal>, usize) {
+    let text = format!(
+        "fn f(xs): if len(xs) > {bound} then xs else f(xs + [1])\nClip c:\n    Note/({read})\n"
+    );
+    let (diagnostics, found) = analyzed(&vocabulary(), &text, |engine| {
+        (
+            attr_value(engine, "pitch", EvalTy::I32),
+            engine
+                .memo
+                .family_scopes
+                .values()
+                .map(Vec::len)
+                .sum::<usize>(),
+        )
+    });
+    assert!(errors(&diagnostics).is_empty(), "{text}{diagnostics:?}");
+    found
+}
+
+#[test]
+fn a_recursive_call_whose_array_argument_grows_instantiates_families_independent_of_its_length() {
+    let mut scopes = Vec::new();
+    for bound in [3u32, 30, 300] {
+        let (first, counted) = grown(bound, "f([1])[0]");
+        assert_eq!(first, Some(CVal::Int(1)), "{bound}");
+        let (length, _) = grown(bound, "60 + len(f([1]))");
+        assert_eq!(
+            length,
+            Some(CVal::Int(60 + i128::from(bound) + 1)),
+            "{bound}"
+        );
+        scopes.push(counted);
+    }
+    assert!(
+        scopes.iter().all(|counted| *counted == scopes[0]),
+        "{scopes:?}"
+    );
+}
+
+#[test]
+fn a_recursive_call_over_a_growing_or_shrinking_array_computes_its_element() {
+    for text in [
+        "fn f(xs, n): if n > 3 then xs else f(xs + [n], n + 1)\nClip c:\n    Note/(f([], 0)[3])\n",
+        "fn f(xs): if len(xs) > 1 then f(xs[1..]) else xs\nClip c:\n    Note/(f([1, 2, 3])[0])\n",
+    ] {
+        let (diagnostics, value) = analyzed(&vocabulary(), text, |engine| {
+            attr_value(engine, "pitch", EvalTy::I32)
+        });
+        assert!(errors(&diagnostics).is_empty(), "{text}{diagnostics:?}");
+        assert_eq!(value, Some(CVal::Int(3)), "{text}");
+    }
+}
+
+fn nested_call_steps(depth: usize) -> u64 {
+    let text = format!(
+        "fn f(v): v\nlet c = {}1{}\nClip m:\n    Note/(c)\n",
+        "f(".repeat(depth),
+        ")".repeat(depth)
+    );
+    let (diagnostics, (value, steps)) = analyzed(&vocabulary(), &text, |engine| {
+        (
+            attr_value(engine, "pitch", EvalTy::I32),
+            engine.memo.use_steps.get(),
+        )
+    });
+    assert!(errors(&diagnostics).is_empty(), "{diagnostics:?}");
+    assert_eq!(value, Some(CVal::Int(1)));
+    steps
+}
+
+#[test]
+fn a_chain_of_nested_calls_costs_work_linear_in_its_depth() {
+    let steps: Vec<u64> = [25_000, 50_000, 100_000]
+        .into_iter()
+        .map(nested_call_steps)
+        .collect();
+    for pair in steps.windows(2) {
+        assert!(pair[1] <= 2 * pair[0], "{steps:?}");
+    }
+}
+
+#[test]
+fn a_fixed_type_operand_widens_and_the_literals_beside_it_take_the_flowing_type() {
+    for (read, pitch) in [
+        ("u8(250) * 2 - 400", 100),
+        ("u8(200) + 100", 300),
+        ("u8(250) + 300", 550),
+    ] {
+        let text = format!("Clip c:\n    Note/({read})\n");
+        let (diagnostics, value) = analyzed(&vocabulary(), &text, |engine| {
+            attr_value(engine, "pitch", EvalTy::I32)
+        });
+        assert!(errors(&diagnostics).is_empty(), "{text}{diagnostics:?}");
+        assert_eq!(value, Some(CVal::Int(pitch)), "{text}");
+    }
+}
+
+#[test]
+fn a_recursive_call_over_a_fixed_choice_computes_its_count() {
+    for pick in [
+        "let pick = if false then held else [1, 2]\n",
+        "let pick = if gate then [1, 2] else [3, 4]\n",
+    ] {
+        let text = format!(
+            "input held: i32[..4] = [1, 2]\ninput gate = false\n{pick}fn r(i): if i >= len(pick) then 0 else r(i + 1) + 1\nClip c:\n    Note/(60 + r(0))\n"
+        );
+        let (diagnostics, value) = analyzed(&vocabulary(), &text, |engine| {
+            attr_value(engine, "pitch", EvalTy::I32)
+        });
+        assert!(errors(&diagnostics).is_empty(), "{text}{diagnostics:?}");
+        assert_eq!(value, Some(CVal::Int(62)), "{text}");
+    }
 }

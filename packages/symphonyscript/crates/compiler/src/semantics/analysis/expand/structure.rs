@@ -250,6 +250,7 @@ impl Engine<'_> {
                 None,
                 unless_values,
             )?;
+            self.demand_cval(node, own_type(&sig, EvalTy::Default))?;
             return Ok(None);
         }
         Ok(match self.demand_cval(node, EvalTy::Exact)? {

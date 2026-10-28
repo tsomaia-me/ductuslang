@@ -30,6 +30,7 @@ mod eval_ty;
 mod eval_ty_of;
 mod evaluation;
 mod expand;
+mod family_arg;
 mod family_key;
 mod fast_hash;
 mod feed;

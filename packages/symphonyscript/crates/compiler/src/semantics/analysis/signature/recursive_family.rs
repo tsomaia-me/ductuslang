@@ -3,6 +3,7 @@ use crate::semantics::Internal;
 use crate::semantics::analysis::arg_shape::ArgShape;
 use crate::semantics::analysis::arg_sig::ArgSig;
 use crate::semantics::analysis::engine::Engine;
+use crate::semantics::analysis::family_arg::FamilyArg;
 use crate::semantics::analysis::family_key::FamilyKey;
 use crate::semantics::analysis::ids::{NodeId, ScopeId};
 use crate::semantics::analysis::kind::Kind;
@@ -15,6 +16,7 @@ use crate::semantics::analysis::unify_kinds::unify_kinds;
 use crate::semantics::analysis::val::Val;
 use crate::semantics::analysis::width::Width;
 use crate::semantics::ir::FnId;
+use crate::semantics::reporting::grouped;
 
 impl Engine<'_> {
     pub(super) fn recursive_sig(
@@ -24,13 +26,7 @@ impl Engine<'_> {
         args: &[Option<Val>],
         need: &mut Vec<Query>,
     ) -> Result<Option<Sig>, Internal> {
-        let key = FamilyKey {
-            function,
-            args: args
-                .iter()
-                .map(|arg| self.family_shape(arg.as_ref()))
-                .collect::<Result<_, _>>()?,
-        };
+        let (key, shapes) = self.family_key(function, args)?;
         if self.body_certainly_reads_cell(function)? {
             if !self.hir.fn_decl(function)?.faulty_head {
                 let reading = format!(
@@ -41,7 +37,7 @@ impl Engine<'_> {
             }
             return Ok(Some(Sig::ERROR));
         }
-        let sig = self.family_sig(node, &key, need)?;
+        let sig = self.family_sig(node, (&key, &shapes), need)?;
         self.link_family(node, &key)?;
         Ok(sig)
     }
@@ -78,14 +74,22 @@ impl Engine<'_> {
     fn family_sig(
         &mut self,
         node: NodeId,
-        key: &FamilyKey,
+        (key, shapes): (&FamilyKey, &[ArgShape]),
         need: &mut Vec<Query>,
     ) -> Result<Option<Sig>, Internal> {
         let function = key.function;
         loop {
             match self.memo.rec_families.get(key).copied() {
                 None => {
-                    let scope = self.instantiate(function, &key.args, node)?;
+                    if self.memo.probing_families.len() as u64 >= self.limits.nesting_depth {
+                        self.memo.deep_families.insert(key.clone());
+                        self.memo
+                            .rec_families
+                            .insert(key.clone(), RecFamily::Failed);
+                        continue;
+                    }
+                    self.memo.family_shapes.insert(key.clone(), shapes.to_vec());
+                    let scope = self.instantiate(function, shapes, node)?;
                     self.memo.probes.insert(scope);
                     self.memo.probing_families.insert(key.clone());
                     self.memo
@@ -113,7 +117,7 @@ impl Engine<'_> {
                     }
                     let family = if sig.open { None } else { sig.family };
                     let kind = if sig.is_error() { Kind::Any } else { sig.kind };
-                    let settled = self.instantiate(function, &key.args, node)?;
+                    let settled = self.instantiate(function, &self.family_args(key)?, node)?;
                     self.memo
                         .family_scopes
                         .entry(key.clone())
@@ -149,7 +153,7 @@ impl Engine<'_> {
                     let state = if sig.is_error() {
                         RecFamily::Failed
                     } else if rises(kind, sig.kind) && (sig.open || sig.family == family) {
-                        let settled = self.instantiate(function, &key.args, node)?;
+                        let settled = self.instantiate(function, &self.family_args(key)?, node)?;
                         self.memo
                             .family_scopes
                             .entry(key.clone())
@@ -179,7 +183,19 @@ impl Engine<'_> {
                 Some(RecFamily::Known(kind, family)) => {
                     return Ok(Some(Sig::of(kind, Width::Flexible, false, family)));
                 }
-                Some(RecFamily::Failed) => return Ok(Some(Sig::ERROR)),
+                Some(RecFamily::Failed) => {
+                    if self.memo.deep_families.contains(key)
+                        && !self.in_probe(self.node(node)?.scope)?
+                    {
+                        let message = format!(
+                            "the evaluation goes deeper than {} nested calls: {}",
+                            grouped(self.limits.nesting_depth),
+                            self.function_name(function)?
+                        );
+                        self.error_at_node(Code::RecursionDepth, node, message)?;
+                    }
+                    return Ok(Some(Sig::ERROR));
+                }
             }
         }
     }
@@ -232,10 +248,31 @@ impl Engine<'_> {
         Ok(Some(Some(joined)))
     }
 
-    pub(in crate::semantics::analysis) fn family_shape(
+    pub(in crate::semantics::analysis) fn family_key(
         &self,
-        arg: Option<&Val>,
-    ) -> Result<ArgShape, Internal> {
+        function: FnId,
+        args: &[Option<Val>],
+    ) -> Result<(FamilyKey, Vec<ArgShape>), Internal> {
+        let shapes: Vec<ArgShape> = args
+            .iter()
+            .map(|arg| self.family_shape(arg.as_ref()))
+            .collect::<Result<_, _>>()?;
+        let key = FamilyKey {
+            function,
+            args: shapes.iter().map(family_arg).collect(),
+        };
+        Ok((key, shapes))
+    }
+
+    fn family_args(&self, key: &FamilyKey) -> Result<Vec<ArgShape>, Internal> {
+        self.memo
+            .family_shapes
+            .get(key)
+            .cloned()
+            .ok_or(Internal::missed("family shapes"))
+    }
+
+    fn family_shape(&self, arg: Option<&Val>) -> Result<ArgShape, Internal> {
         let sig_of = |node: &NodeId| {
             let sig = self.known_sig(*node)?;
             Ok(ArgSig {
@@ -257,6 +294,28 @@ impl Engine<'_> {
             ),
             Some(Val::Error) => ArgShape::Default,
         })
+    }
+}
+
+fn family_arg(shape: &ArgShape) -> FamilyArg {
+    match shape {
+        ArgShape::Default => FamilyArg::Default,
+        ArgShape::Scalar(sig) => FamilyArg::Scalar(*sig),
+        ArgShape::Array(lengths, sigs) => FamilyArg::Array {
+            rows: lengths
+                .split_last()
+                .map(|(_, rows)| rows.to_vec())
+                .unwrap_or_default(),
+            element: sigs.iter().copied().reduce(|one, other| ArgSig {
+                kind: unify_kinds(one.kind, other.kind).unwrap_or(Kind::Error),
+                width: Width::Flexible,
+                family: if one.family == other.family {
+                    one.family
+                } else {
+                    None
+                },
+            }),
+        },
     }
 }
 

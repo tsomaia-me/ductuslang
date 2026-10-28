@@ -68,7 +68,8 @@ impl Engine<'_> {
             }
             let sig = self.known_sig(node)?;
             let placeholder = sig.is_error();
-            if placeholder && !self.holds_placeholder(node)? {
+            if placeholder {
+                self.own_operands(node, selection, &mut stack)?;
                 continue;
             }
             let Some((sig, group_of)) = self.grouped_sig(node, sig)? else {
@@ -96,6 +97,7 @@ impl Engine<'_> {
                         self.carried_kind(node, sig.kind)?,
                         Kind::Enum(_) | Kind::Bare
                     ) {
+                        self.own_operands(node, selection, &mut stack)?;
                         continue;
                     }
                     expected = None;
@@ -111,6 +113,10 @@ impl Engine<'_> {
                     );
                     self.error_at_node(Code::UnknownName, node, message)?;
                 }
+            }
+            if self.memo.kept_types.contains(&node) {
+                self.own_operands(node, selection, &mut stack)?;
+                continue;
             }
             let selection = match (sig.reactive || sig.frame || placeholder, selection) {
                 (false, Selection::Chosen) => {
@@ -201,7 +207,10 @@ impl Engine<'_> {
                             stack.push((then, ty, passed_over, flows));
                             stack.push((otherwise, ty, selection, flows));
                         }
-                        Some(_) => {}
+                        Some(_) => {
+                            stack.push((then, ty, passed_over, flows));
+                            stack.push((otherwise, ty, passed_over, flows));
+                        }
                         None => {
                             stack.push((then, ty, selection, flows));
                             stack.push((otherwise, ty, selection, flows));
@@ -272,11 +281,20 @@ impl Engine<'_> {
                             }
                             match picked.and_then(|position| items.get(position)) {
                                 Some(item) => stack.push((*item, ty, selection, flows)),
-                                None if selection == Selection::Evaluated => {}
-                                None => self.index_outside(index, position, length_of(&items))?,
+                                None => {
+                                    self.shared_selectors(&items, &mut stack)?;
+                                    if selection != Selection::Evaluated {
+                                        self.index_outside(index, position, length_of(&items))?;
+                                    }
+                                }
                             }
                         }
-                        Some(_) => {}
+                        Some(_) => {
+                            self.shared_selectors(&items, &mut stack)?;
+                            stack.extend(
+                                items.into_iter().map(|item| (item, ty, passed_over, flows)),
+                            )
+                        }
                         None => {
                             stack.extend(items.into_iter().map(|item| (item, ty, selection, flows)))
                         }
@@ -389,6 +407,137 @@ impl Engine<'_> {
         Ok(())
     }
 
+    fn own_operands(
+        &mut self,
+        node: NodeId,
+        selection: Selection,
+        stack: &mut Vec<(NodeId, Option<Scalar>, Selection, bool)>,
+    ) -> Result<(), Internal> {
+        let passed_over = Selection::PassedOver;
+        let selection = match selection {
+            Selection::Evaluated => Selection::Chosen,
+            Selection::Chosen | Selection::PassedOver => selection,
+        };
+        let op = self.node(node)?.op.clone();
+        let mut operands: Vec<(NodeId, Selection)> = Vec::new();
+        match op {
+            Op::If(condition, then, otherwise) => {
+                operands.push((condition, selection));
+                let taken = match self.taken(condition, EvalTy::Bool, selection)? {
+                    Taken::Known(CVal::Bool(true)) => Some(true),
+                    Taken::Known(CVal::Bool(false)) => Some(false),
+                    Taken::Known(_) | Taken::Faulty => {
+                        operands.extend([(then, passed_over), (otherwise, passed_over)]);
+                        None
+                    }
+                    Taken::Runtime => {
+                        operands.extend([(then, selection), (otherwise, selection)]);
+                        None
+                    }
+                };
+                if let Some(then_taken) = taken {
+                    let (taken, other) = if then_taken {
+                        (then, otherwise)
+                    } else {
+                        (otherwise, then)
+                    };
+                    operands.extend([(taken, selection), (other, passed_over)]);
+                }
+            }
+            Op::Pick { index, items } => {
+                operands.push((index, selection));
+                let position_ty = own_type(&self.known_sig(index)?, EvalTy::Exact);
+                match self.taken(index, position_ty, selection)? {
+                    Taken::Known(CVal::Int(position)) => {
+                        let picked = usize::try_from(position)
+                            .ok()
+                            .filter(|position| *position < items.len());
+                        if picked.is_none() {
+                            self.shared_selectors(&items, stack)?;
+                            self.index_outside(index, position, length_of(&items))?;
+                        }
+                        for (row, item) in items.iter().enumerate() {
+                            let read = if Some(row) == picked {
+                                selection
+                            } else {
+                                passed_over
+                            };
+                            operands.push((*item, read));
+                        }
+                    }
+                    Taken::Known(_) | Taken::Faulty => {
+                        self.shared_selectors(&items, stack)?;
+                        operands.extend(items.iter().map(|item| (*item, passed_over)));
+                    }
+                    Taken::Runtime => operands.extend(items.iter().map(|item| (*item, selection))),
+                }
+            }
+            other => operands.extend(
+                other
+                    .operands()
+                    .into_iter()
+                    .map(|operand| (operand, selection)),
+            ),
+        }
+        if let Some(kept) = self.memo.kept_operands.get(&node).cloned() {
+            for operand in kept {
+                self.demand_sig(operand)?;
+                operands.push((operand, selection));
+            }
+        }
+        for (operand, selection) in operands {
+            if matches!(self.node(operand)?.op, Op::Bare(_)) {
+                continue;
+            }
+            stack.push((operand, None, selection, false));
+        }
+        Ok(())
+    }
+
+    fn shared_selectors(
+        &self,
+        items: &[NodeId],
+        stack: &mut Vec<(NodeId, Option<Scalar>, Selection, bool)>,
+    ) -> Result<(), Internal> {
+        for item in items {
+            if let Op::If(selector, ..)
+            | Op::Match {
+                scrutinee: selector,
+                ..
+            } = &self.node(*item)?.op
+            {
+                stack.push((*selector, None, Selection::Chosen, false));
+            }
+        }
+        Ok(())
+    }
+
+    fn taken(
+        &mut self,
+        selector: NodeId,
+        ty: EvalTy,
+        selection: Selection,
+    ) -> Result<Taken, Internal> {
+        let sig = self.known_sig(selector)?;
+        if sig.is_error() {
+            return Ok(Taken::Faulty);
+        }
+        if sig.reactive || sig.frame || selection == Selection::PassedOver {
+            return Ok(Taken::Runtime);
+        }
+        let fitting = match ty {
+            EvalTy::Bool => matches!(sig.kind, Kind::Bool | Kind::Any),
+            _ => matches!(sig.kind, Kind::Int | Kind::Any),
+        };
+        if !fitting {
+            return Ok(Taken::Faulty);
+        }
+        Ok(match self.demand_cval(selector, ty)? {
+            CVal::Error => Taken::Faulty,
+            value => Taken::Known(value),
+        })
+    }
+
     pub(super) fn history_type(&self, node: NodeId) -> Result<Option<Scalar>, Internal> {
         Ok(self
             .history_bindings(node)?
@@ -476,15 +625,6 @@ impl Engine<'_> {
             return Ok(false);
         };
         Ok(self.incompatibility(node, &sig, expected, false)?.is_some())
-    }
-
-    fn holds_placeholder(&self, node: NodeId) -> Result<bool, Internal> {
-        Ok(self
-            .node(node)?
-            .op
-            .operands()
-            .iter()
-            .any(|operand| self.memo.sigs.get(operand).is_some_and(Sig::is_error)))
     }
 
     fn chosen(&mut self, node: NodeId, ty: EvalTy) -> Result<Option<CVal>, Internal> {
@@ -713,6 +853,12 @@ fn compared(own: Option<Scalar>, pair: Option<Scalar>) -> Option<Scalar> {
         (Some(own), Some(pair)) if numeric(own) && numeric(pair) => Some(own),
         _ => pair,
     }
+}
+
+enum Taken {
+    Known(CVal),
+    Faulty,
+    Runtime,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]

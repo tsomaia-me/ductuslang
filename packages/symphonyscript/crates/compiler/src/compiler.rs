@@ -124,7 +124,8 @@ impl Compiler {
                 return (report.finish(&hir.files), None);
             }
         }
-        let inspected = analyze::program(
+        let front = report.diagnostics.len();
+        let (inspected, placeholders) = analyze::program(
             &hir,
             &self.vocabulary,
             &self.variants,
@@ -132,6 +133,27 @@ impl Compiler {
             &mut report,
             inspect,
         );
+        if !placeholders.is_empty() {
+            let analysis = analyze::Analysis {
+                hir: &hir,
+                vocabulary: &self.vocabulary,
+                variants: &self.variants,
+                limits: self.limits,
+                texts: sources
+                    .iter()
+                    .map(|source| source.text.as_str())
+                    .chain(
+                        self.vocabulary
+                            .prelude()
+                            .iter()
+                            .map(|file| file.text.as_str()),
+                    )
+                    .collect(),
+            };
+            let found = report.diagnostics.split_off(front);
+            let kept = analyze::name_twins(&analysis, &placeholders, found);
+            report.diagnostics.extend(kept);
+        }
         (report.finish(&hir.files), inspected)
     }
 }
