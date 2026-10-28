@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, VecDeque};
+use std::rc::Rc;
 
 use symphonyscript_core::{
     EnumDecl, EnumId, FamilyDecl, FamilyId, Limits, NodeKind, NodeKindDecl, UnitDecl, Vocabulary,
@@ -32,7 +33,7 @@ use super::wire::Wire;
 use crate::diagnostics::Code;
 use crate::semantics::Internal;
 use crate::semantics::collection::{Collected, Variants};
-use crate::semantics::ir::{FnId, Hir, Loc, PlacementId};
+use crate::semantics::ir::{ExprId, FnId, Hir, Loc, PlacementId};
 use crate::semantics::reporting::{Report, grouped};
 
 const ID_SPACE: u64 = 1 << 32;
@@ -111,6 +112,9 @@ pub(crate) struct Engine<'a> {
     waiting: FastSet<Query>,
     cyclic: FastSet<(Query, Query)>,
     cycle_members: FastSet<Query>,
+    pub(super) candidate_edges: FastMap<(Query, Query), (ExprId, ItemRef, String)>,
+    pub(super) open_candidates: FastMap<(ExprId, ItemRef, String), Rc<[Query]>>,
+    drawn_candidate_cycles: FastSet<(ItemRef, String)>,
     pub(super) current: Option<Query>,
 }
 
@@ -182,6 +186,9 @@ impl<'a> Engine<'a> {
             waiting: FastSet::default(),
             cyclic: FastSet::default(),
             cycle_members: FastSet::default(),
+            candidate_edges: FastMap::default(),
+            open_candidates: FastMap::default(),
+            drawn_candidate_cycles: FastSet::default(),
             current: None,
         };
         engine.source_global = engine.push_scope(
@@ -297,6 +304,13 @@ impl<'a> Engine<'a> {
             let mut progressed = false;
             for dep in need {
                 if self.waiting.contains(&dep) {
+                    if let Some(cut) = self.candidate_cut(&stack, position, dep)? {
+                        for (query, _) in stack.drain(cut + 1..) {
+                            self.waiting.remove(&query);
+                        }
+                        progressed = true;
+                        break;
+                    }
                     if self.cyclic.insert((top, dep)) {
                         self.cycle(&stack, position, dep)?;
                         progressed = true;
@@ -1093,12 +1107,37 @@ impl<'a> Engine<'a> {
         }
     }
 
-    pub(super) fn cycle(
+    fn candidate_cut(
         &mut self,
         stack: &[(Query, Option<usize>)],
         top: usize,
         dep: Query,
-    ) -> Result<(), Internal> {
+    ) -> Result<Option<usize>, Internal> {
+        let mut lower = dep;
+        let mut position = top;
+        loop {
+            let &(query, parent) = stack
+                .get(position)
+                .ok_or(Internal::missed("demand stack entry"))?;
+            if let Some(key) = self.candidate_edges.get(&(query, lower)).cloned() {
+                let (path, _) = self.demand_path(stack, top, dep)?;
+                self.open_candidates.insert(key, path.into());
+                return Ok(Some(position));
+            }
+            if query == dep {
+                return Ok(None);
+            }
+            lower = query;
+            position = parent.ok_or(Internal::missed("cycle dependency"))?;
+        }
+    }
+
+    fn demand_path(
+        &self,
+        stack: &[(Query, Option<usize>)],
+        top: usize,
+        dep: Query,
+    ) -> Result<(Vec<Query>, Option<usize>), Internal> {
         let mut path = Vec::new();
         let mut current = Some(top);
         loop {
@@ -1113,6 +1152,16 @@ impl<'a> Engine<'a> {
             }
         }
         path.reverse();
+        Ok((path, current))
+    }
+
+    pub(super) fn cycle(
+        &mut self,
+        stack: &[(Query, Option<usize>)],
+        top: usize,
+        dep: Query,
+    ) -> Result<(), Internal> {
+        let (path, mut current) = self.demand_path(stack, top, dep)?;
         let through_local_let = path
             .iter()
             .any(|query| matches!(query, Query::Let(_, LetRef::Local(_))));
@@ -1168,6 +1217,80 @@ impl<'a> Engine<'a> {
                         | Query::Attr(..)
                 )
             }));
+        self.declaration_cycle(&path, names, &locs)
+    }
+
+    pub(super) fn live_candidate_cycle(
+        &mut self,
+        item: ItemRef,
+        name: &str,
+        path: &[Query],
+    ) -> Result<bool, Internal> {
+        if !self.cycle_evaluating(path)? {
+            return Ok(false);
+        }
+        if self.drawn_candidate_cycles.insert((item, name.to_string())) {
+            self.draw_candidate_cycle(path)?;
+        }
+        Ok(true)
+    }
+
+    fn cycle_evaluating(&self, path: &[Query]) -> Result<bool, Internal> {
+        let mut values = Vec::new();
+        for query in path {
+            let value = match *query {
+                Query::Attr(item, attr) => match self.memo.attrs.get(&(item, attr)) {
+                    Some(BoundVal::Scalar(Bound::Value(node))) => Some(*node),
+                    Some(_) | None => None,
+                },
+                Query::Let(scope, local) => match self.memo.lets.get(&(scope, local)) {
+                    Some(BoundVal::Scalar(Bound::Value(node))) => Some(*node),
+                    Some(_) | None => None,
+                },
+                Query::Expr(expr, scope) => match self.memo.exprs.get(&(expr, scope)) {
+                    Some(Val::Scalar(node)) => Some(*node),
+                    Some(_) | None => None,
+                },
+                Query::Sig(node) => Some(node),
+                Query::Param(..)
+                | Query::Input(_)
+                | Query::State(_)
+                | Query::Destination(_)
+                | Query::Eval(..) => None,
+            };
+            if let Some(node) = value {
+                values.push(node);
+                values.push(self.through_uses(node)?);
+            }
+        }
+        Ok(self
+            .current
+            .iter()
+            .chain(self.waiting.iter())
+            .any(|query| matches!(query, Query::Eval(node, _) if values.contains(node))))
+    }
+
+    fn draw_candidate_cycle(&mut self, path: &[Query]) -> Result<(), Internal> {
+        let mut names = Vec::new();
+        let mut locs = Vec::new();
+        for query in path {
+            if let Some((name, loc)) = self.declaration(*query)? {
+                names.push(name);
+                locs.push(loc);
+            }
+        }
+        if names.is_empty() {
+            return Ok(());
+        }
+        self.declaration_cycle(path, names, &locs)
+    }
+
+    fn declaration_cycle(
+        &mut self,
+        path: &[Query],
+        mut names: Vec<String>,
+        locs: &[Loc],
+    ) -> Result<(), Internal> {
         let first = names
             .first()
             .cloned()

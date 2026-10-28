@@ -169,6 +169,9 @@ impl Engine<'_> {
             sig = element_of(sig, group, self.memo.held_reads.contains(&node));
         }
         sig.frame = matches!(op, Op::Arg(_)) || sigs.iter().any(|operand| operand.frame);
+        if self.memo.open_joins.contains(&node) {
+            sig = Sig::open(false);
+        }
         if self.memo.frame_joins.contains(&node) {
             sig.frame = true;
             sig.reactive = false;

@@ -133,7 +133,21 @@ impl Engine<'_> {
                     return Ok(Some(Val::Error));
                 }
                 if sig.open && self.in_probe(scope)? {
-                    return Ok(Some(Val::Scalar(self.open_source(node)?)));
+                    let source = self.open_source(node)?;
+                    let mut call = source;
+                    while let Op::Use(inner) | Op::Chosen(inner) = self.node(call)?.op {
+                        call = inner;
+                    }
+                    if let Op::Recursive { function, .. } = self.node(call)?.op
+                        && let Some(template) = self.template_of(scope)?
+                    {
+                        self.memo
+                            .open_reads
+                            .entry(template)
+                            .or_default()
+                            .push(function);
+                    }
+                    return Ok(Some(Val::Scalar(source)));
                 }
                 if sig.kind != Kind::Node {
                     self.error(
@@ -169,6 +183,15 @@ impl Engine<'_> {
                 }
             }
         };
+        if let Some(Query::Expr(expr, _)) = self.current
+            && let Some(path) = self
+                .open_candidates
+                .get(&(expr, item, name.text.clone()))
+                .cloned()
+            && self.live_candidate_cycle(item, &name.text, &path)?
+        {
+            return Ok(Some(Val::Error));
+        }
         self.step(item, name, loc, scope, need)
     }
 
@@ -203,19 +226,61 @@ impl Engine<'_> {
     ) -> Result<Option<Val>, Internal> {
         let instances = some!(self.reference_instances(root, need)?);
         let mut reads: Vec<(ItemRef, Val)> = Vec::with_capacity(instances.len());
+        let mut open = Vec::new();
         let mut missing = false;
+        let requester = self.current;
+        let path_expr = match requester {
+            Some(Query::Expr(expr, _)) => Some(expr),
+            Some(_) | None => None,
+        };
         for instance in &instances {
             crate::semantics::counted_walk::CountedWalk::PathsFramePath.step();
+            if let Some(expr) = path_expr
+                && let Some(path) = self
+                    .open_candidates
+                    .get(&(expr, *instance, name.text.clone()))
+            {
+                open.push((*instance, path.clone()));
+                continue;
+            }
+            let before = need.len();
             match self.candidate_read(*instance, name, loc, scope, need)? {
                 Some(Some(val)) => reads.push((*instance, val)),
                 Some(None) => {}
-                None => missing = true,
+                None => {
+                    missing = true;
+                    if let (Some(requester), Some(expr)) = (requester, path_expr) {
+                        for dep in need.get(before..).unwrap_or_default() {
+                            self.candidate_edges
+                                .insert((requester, *dep), (expr, *instance, name.text.clone()));
+                        }
+                    }
+                }
             }
         }
         if missing {
             return Ok(None);
         }
         let Some((_, last)) = reads.last() else {
+            if !open.is_empty() {
+                let join = self.push_node(Op::Bool(false), loc, scope)?;
+                self.memo.open_joins.insert(join);
+                let head = self.push_node(Op::Use(join), loc, scope)?;
+                self.memo.frame_joins.insert(head);
+                self.memo.frame_reads.insert(
+                    head,
+                    FrameRead {
+                        start: root,
+                        arms: Vec::new(),
+                        open,
+                        name: name.clone(),
+                        loc,
+                        position: 0,
+                        scope,
+                    },
+                );
+                return Ok(Some(Val::Scalar(head)));
+            }
             return match instances.first() {
                 Some(first) => self.step(*first, name, loc, scope, need),
                 None => Ok(Some(Val::Error)),
@@ -263,13 +328,35 @@ impl Engine<'_> {
                 FrameRead {
                     start: root,
                     arms: chosen,
+                    open: open.clone(),
                     name: name.clone(),
+                    loc,
+                    position,
                     scope,
                 },
             );
             elements.push(head);
         }
         Ok(Some(self.shaped(shape, elements)))
+    }
+
+    pub(in crate::semantics::analysis) fn open_arm(
+        &mut self,
+        read: &FrameRead,
+        item: ItemRef,
+        need: &mut Vec<Query>,
+    ) -> Result<Option<Option<NodeId>>, Internal> {
+        let key = (read.start, read.position, item);
+        if let Some(arm) = self.memo.open_arms.get(&key) {
+            return Ok(Some(*arm));
+        }
+        let val = some!(self.step(item, &read.name, read.loc, read.scope, need)?);
+        let arm = val.nodes().get(read.position).copied();
+        if arm.is_none() {
+            self.error(Code::TypeMismatch, read.loc, read.scope, CHOSEN_PATHS)?;
+        }
+        self.memo.open_arms.insert(key, arm);
+        Ok(Some(arm))
     }
 
     fn candidate_read(

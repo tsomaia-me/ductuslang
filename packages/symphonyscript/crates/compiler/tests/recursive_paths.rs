@@ -336,9 +336,10 @@ enum Chooser {
     IfInMatch,
     JoinedLiterals,
     IfOverArrays,
+    NestedArray,
 }
 
-const CHOOSERS: [Chooser; 21] = [
+const CHOOSERS: [Chooser; 22] = [
     Chooser::IfOnParameter,
     Chooser::IfOnDepth,
     Chooser::ParameterArray,
@@ -360,6 +361,7 @@ const CHOOSERS: [Chooser; 21] = [
     Chooser::IfInMatch,
     Chooser::JoinedLiterals,
     Chooser::IfOverArrays,
+    Chooser::NestedArray,
 ];
 
 impl Chooser {
@@ -385,6 +387,7 @@ impl Chooser {
             Chooser::MatchOfArrays => "m[1]",
             Chooser::JoinedLiterals => "([c] + [d])[i]",
             Chooser::IfOverArrays => "(if i > 0 then rs else [other, verse])[0]",
+            Chooser::NestedArray => "[[c, d], [d, c]][i][0]",
         }
     }
 
@@ -408,7 +411,8 @@ impl Chooser {
             | Chooser::MatchOfArrays
             | Chooser::IfInMatch
             | Chooser::JoinedLiterals
-            | Chooser::IfOverArrays => &[0, 1],
+            | Chooser::IfOverArrays
+            | Chooser::NestedArray => &[0, 1],
         }
     }
 
@@ -432,7 +436,8 @@ impl Chooser {
             | Chooser::RecursiveHelper
             | Chooser::MatchOfArrays
             | Chooser::JoinedLiterals
-            | Chooser::IfOverArrays => &[1, 3, 30],
+            | Chooser::IfOverArrays
+            | Chooser::NestedArray => &[1, 3, 30],
         }
     }
 
@@ -457,7 +462,8 @@ impl Chooser {
             | Chooser::IfHelper
             | Chooser::RecursiveHelper
             | Chooser::MatchOfArrays
-            | Chooser::JoinedLiterals => index > 0,
+            | Chooser::JoinedLiterals
+            | Chooser::NestedArray => index > 0,
         }
     }
 
@@ -487,7 +493,8 @@ impl Chooser {
             | Chooser::IfHelper
             | Chooser::RecursiveHelper
             | Chooser::JoinedLiterals
-            | Chooser::IfOverArrays => "",
+            | Chooser::IfOverArrays
+            | Chooser::NestedArray => "",
         }
     }
 }
@@ -675,7 +682,7 @@ fn a_reference_a_recursive_body_chooses_by_a_frame_value_reads_the_chosen_refere
         failures.len(),
         failures.iter().take(8).cloned().collect::<String>()
     );
-    assert_eq!(programs, 7_000);
+    assert_eq!(programs, 7_336);
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -918,7 +925,7 @@ fn an_array_attribute_read_through_a_reference_a_recursive_body_chooses_has_the_
         failures.len(),
         failures.iter().take(8).cloned().collect::<String>()
     );
-    assert_eq!(programs, 18_992);
+    assert_eq!(programs, 19_904);
 }
 
 #[test]
@@ -1399,15 +1406,17 @@ enum CallStart {
     LetArray,
     SelfRead,
     SelfReadWrapped,
+    SelfReadInPartner,
 }
 
-const CALL_STARTS: [CallStart; 6] = [
+const CALL_STARTS: [CallStart; 7] = [
     CallStart::Alone,
     CallStart::LetIf,
     CallStart::LetMatch,
     CallStart::LetArray,
     CallStart::SelfRead,
     CallStart::SelfReadWrapped,
+    CallStart::SelfReadInPartner,
 ];
 
 const SITE_ARRAYS: [[&str; 2]; 3] = [["verse", "other"], ["tail", "verse"], ["other", "tail"]];
@@ -1433,7 +1442,10 @@ fn beside(array: [&str; 2]) -> &'static str {
 
 impl CallStart {
     fn self_reading(self) -> bool {
-        matches!(self, CallStart::SelfRead | CallStart::SelfReadWrapped)
+        matches!(
+            self,
+            CallStart::SelfRead | CallStart::SelfReadWrapped | CallStart::SelfReadInPartner
+        )
     }
 
     fn expression(self, helper: PathHelper) -> String {
@@ -1442,7 +1454,7 @@ impl CallStart {
             CallStart::LetIf => "(if i > 0 then rp else c)".to_string(),
             CallStart::LetMatch => "m".to_string(),
             CallStart::LetArray => "[rp, c][i]".to_string(),
-            CallStart::SelfRead => "sf(xs, i, n - 1)".to_string(),
+            CallStart::SelfRead | CallStart::SelfReadInPartner => "sf(xs, i, n - 1)".to_string(),
             CallStart::SelfReadWrapped => "w(xs, i, n - 1)".to_string(),
         }
     }
@@ -1454,7 +1466,8 @@ impl CallStart {
             | CallStart::LetIf
             | CallStart::LetArray
             | CallStart::SelfRead
-            | CallStart::SelfReadWrapped => "",
+            | CallStart::SelfReadWrapped
+            | CallStart::SelfReadInPartner => "",
         }
     }
 
@@ -1476,7 +1489,7 @@ impl CallStart {
                     beside(array)
                 }
             }
-            CallStart::SelfRead | CallStart::SelfReadWrapped => {
+            CallStart::SelfRead | CallStart::SelfReadWrapped | CallStart::SelfReadInPartner => {
                 let mut chosen = element(index);
                 for _ in 0..3 {
                     chosen = if gain_of(chosen) > 2 {
@@ -1505,12 +1518,18 @@ fn call_start_program(
     items.push("fn f(c): c.gain\n".to_string());
     items.push("fn g(c, n): if n < 1 then c.gain else g(c, n - 1)\n".to_string());
     if start.self_reading() {
-        let value = if recursive {
-            format!("if n < 1 then xs[i] else (if {read} > 2 then xs[1] else xs[0])")
+        let choice = format!("if {read} > 2 then xs[1] else xs[0]");
+        if start == CallStart::SelfReadInPartner {
+            items.push("fn sf(xs, i, n): if n < 1 then xs[i] else sp(xs, i, n)\n".to_string());
+            items.push(format!("fn sp(xs, i, n):\n{local}    {choice}\n"));
         } else {
-            "xs[i]".to_string()
-        };
-        items.push(format!("fn sf(xs, i, n):\n{local}    {value}\n"));
+            let value = if recursive {
+                format!("if n < 1 then xs[i] else ({choice})")
+            } else {
+                "xs[i]".to_string()
+            };
+            items.push(format!("fn sf(xs, i, n):\n{local}    {value}\n"));
+        }
         items.push("fn w(xs, i, n): sf(xs, i, n)\n".to_string());
     } else {
         let value = if recursive {
@@ -1593,7 +1612,7 @@ fn a_path_start_chosen_by_a_recursive_call_names_the_instances_that_calls_own_ev
         failures.len(),
         failures.iter().take(8).cloned().collect::<String>()
     );
-    assert_eq!(programs, 4_928);
+    assert_eq!(programs, 5_152);
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -1955,12 +1974,14 @@ enum CandidateFault {
     LacksAttribute,
     ReadsCell,
     ClosesCycle,
+    EveryCandidateClosesCycle,
 }
 
-const CANDIDATE_FAULTS: [CandidateFault; 3] = [
+const CANDIDATE_FAULTS: [CandidateFault; 4] = [
     CandidateFault::LacksAttribute,
     CandidateFault::ReadsCell,
     CandidateFault::ClosesCycle,
+    CandidateFault::EveryCandidateClosesCycle,
 ];
 
 const FAULT_CHOOSERS: [&str; 4] = [
@@ -1973,6 +1994,7 @@ const FAULT_CHOOSERS: [&str; 4] = [
 fn candidate_fault_program(
     (fault, chooser, consumer): (CandidateFault, &str, Consumer),
     (index, depth, reversed, recursive): (usize, u32, bool, bool),
+    second: Option<bool>,
 ) -> String {
     let local = consumer.local(chooser);
     let read = consumer.read(chooser);
@@ -1984,12 +2006,19 @@ fn candidate_fault_program(
     let (other, faulty) = match fault {
         CandidateFault::LacksAttribute => ("Clip other | gain=3:\n    Note\n", "verse.hook"),
         CandidateFault::ReadsCell => ("Clip other | gain=gv:\n    Note\n", "other"),
-        CandidateFault::ClosesCycle => ("Clip other | gain=k.gain:\n    Note\n", "other"),
+        CandidateFault::ClosesCycle | CandidateFault::EveryCandidateClosesCycle => {
+            ("Clip other | gain=k.gain:\n    Note\n", "other")
+        }
+    };
+    let verse = if fault == CandidateFault::EveryCandidateClosesCycle {
+        "Clip verse | gain=k.gain:\n    Note as hook\n"
+    } else {
+        "Clip verse | gain=2:\n    Note as hook\n"
     };
     let mut items = vec![
         "Session main\n".to_string(),
         "input gv = 1.0\n".to_string(),
-        "Clip verse | gain=2:\n    Note as hook\n".to_string(),
+        verse.to_string(),
         other.to_string(),
         "fn f(c): c.gain\n".to_string(),
         "fn g(c, n): if n < 1 then c.gain else g(c, n - 1)\n".to_string(),
@@ -2000,6 +2029,13 @@ fn candidate_fault_program(
             "Clip k | gain=h(verse, {faulty}, [verse, {faulty}], {index}, {depth}):\n    Note\n"
         ),
     ];
+    if let Some(wrong) = second {
+        let offset = 2 + i32::from(wrong);
+        items.push("Clip tail | gain=4:\n    Note\n".to_string());
+        items.push(format!(
+            "Clip z:\n    Note/([60][i32(h(other, tail, [other, tail], 0, {depth})) - {offset}])\n"
+        ));
+    }
     if reversed {
         items.reverse();
     }
@@ -2014,37 +2050,47 @@ fn a_fault_of_a_candidate_binding_draws_only_when_the_evaluation_chooses_that_ca
         for chooser in FAULT_CHOOSERS {
             for consumer in START_CONSUMERS {
                 for index in [0, 1] {
-                    for depth in [1, 3] {
-                        for reversed in [false, true] {
-                            let program = |recursive| {
-                                candidate_fault_program(
-                                    (fault, chooser, consumer),
-                                    (index, depth, reversed, recursive),
-                                )
-                            };
-                            let (text, twin) = (program(true), program(false));
-                            if fault == CandidateFault::ClosesCycle && index == 0 {
-                                continue;
-                            }
-                            let mut expected = found(&twin);
-                            if fault == CandidateFault::ReadsCell
-                                && index == 1
-                                && consumer != Consumer::RecursiveArgument
-                            {
-                                let call = format!("h(verse, other, [verse, other], 1, {depth})");
-                                *expected.entry((Code::ReactiveRecursion, call)).or_default() += 1;
-                            }
-                            let drawn = found(&text);
-                            programs += 1;
-                            let faulty_twin = !found(&twin).is_empty();
-                            let twin_faults = index == 1
+                    let seconds: &[Option<bool>] =
+                        if fault == CandidateFault::ClosesCycle && index == 0 {
+                            &[None, Some(false), Some(true)]
+                        } else {
+                            &[None]
+                        };
+                    for (depth, reversed, second) in [1, 3]
+                        .into_iter()
+                        .flat_map(|depth| [false, true].map(|reversed| (depth, reversed)))
+                        .flat_map(|(depth, reversed)| {
+                            seconds.iter().map(move |second| (depth, reversed, *second))
+                        })
+                    {
+                        let program = |recursive| {
+                            candidate_fault_program(
+                                (fault, chooser, consumer),
+                                (index, depth, reversed, recursive),
+                                second,
+                            )
+                        };
+                        let (text, twin) = (program(true), program(false));
+                        let mut expected = found(&twin);
+                        if fault == CandidateFault::ReadsCell
+                            && index == 1
+                            && consumer != Consumer::RecursiveArgument
+                        {
+                            let call = format!("h(verse, other, [verse, other], 1, {depth})");
+                            *expected.entry((Code::ReactiveRecursion, call)).or_default() += 1;
+                        }
+                        let drawn = found(&text);
+                        programs += 1;
+                        let faulty_twin = !found(&twin).is_empty();
+                        let twin_faults = second == Some(true)
+                            || fault == CandidateFault::EveryCandidateClosesCycle
+                            || index == 1
                                 && (fault != CandidateFault::ReadsCell
                                     || consumer == Consumer::RecursiveArgument);
-                            if drawn != expected || faulty_twin != twin_faults {
-                                failures.push(format!(
-                                    "{fault:?} {chooser} {consumer:?} {index} {depth} {reversed}\n{text}\n  found {drawn:?}\n  expected {expected:?}\n"
+                        if drawn != expected || faulty_twin != twin_faults {
+                            failures.push(format!(
+                                    "{fault:?} {chooser} {consumer:?} {index} {depth} {reversed} {second:?}\n{text}\n  found {drawn:?}\n  expected {expected:?}\n"
                                 ));
-                            }
                         }
                     }
                 }
@@ -2057,5 +2103,5 @@ fn a_fault_of_a_candidate_binding_draws_only_when_the_evaluation_chooses_that_ca
         failures.len(),
         failures.iter().take(8).cloned().collect::<String>()
     );
-    assert_eq!(programs, 320);
+    assert_eq!(programs, 640);
 }

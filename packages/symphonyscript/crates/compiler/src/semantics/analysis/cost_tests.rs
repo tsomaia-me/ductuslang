@@ -892,20 +892,46 @@ enum ReferenceBody {
     Length,
     FirstGain,
     ChosenGain,
+    ReadsGrowing,
+    CandidatesGrowingUnderReads,
+    ElementsGrowing,
+    CandidatesGrowingUnderElements,
 }
 
-const REFERENCE_BODIES: [ReferenceBody; 3] = [
+const REFERENCE_BODIES: [ReferenceBody; 7] = [
     ReferenceBody::Length,
     ReferenceBody::FirstGain,
     ReferenceBody::ChosenGain,
+    ReferenceBody::ReadsGrowing,
+    ReferenceBody::CandidatesGrowingUnderReads,
+    ReferenceBody::ElementsGrowing,
+    ReferenceBody::CandidatesGrowingUnderElements,
 ];
 
-fn reference_array_program(body: ReferenceBody, k: usize, call_first: bool) -> String {
+const FIXED_COUNT: usize = 8;
+
+fn reference_array_program(body: ReferenceBody, size: usize, call_first: bool) -> String {
+    let (k, m) = match body {
+        ReferenceBody::ReadsGrowing | ReferenceBody::ElementsGrowing => (FIXED_COUNT, size),
+        ReferenceBody::CandidatesGrowingUnderReads
+        | ReferenceBody::CandidatesGrowingUnderElements => (size, FIXED_COUNT),
+        ReferenceBody::Length | ReferenceBody::FirstGain | ReferenceBody::ChosenGain => (size, 1),
+    };
     let references = (0..k)
         .map(|index| format!("r{index}"))
         .collect::<Vec<_>>()
         .join(", ");
+    let reads = vec!["c[i].gain"; m].join(" + ");
+    let elements = format!("len(q([{}], 1))", vec!["c[i]"; m].join(", "));
     let (read, reader) = match body {
+        ReferenceBody::ReadsGrowing | ReferenceBody::CandidatesGrowingUnderReads => (
+            reads.as_str(),
+            format!("Clip k | gain=g([{references}], 0, 3):\n    Note\n"),
+        ),
+        ReferenceBody::ElementsGrowing | ReferenceBody::CandidatesGrowingUnderElements => (
+            elements.as_str(),
+            format!("Clip k:\n    Note/(g([{references}], 0, 3))\n"),
+        ),
         ReferenceBody::Length => (
             "len(c)",
             format!("Clip k:\n    Note/(g([{references}], 0, 3))\n"),
@@ -923,6 +949,7 @@ fn reference_array_program(body: ReferenceBody, k: usize, call_first: bool) -> S
         reader,
         format!("fn g(c, i, n): if n < 1 then {read} else g(c, i, n - 1)\n"),
         "Session main\n".to_string(),
+        "fn q(xs, m): if m < 1 then xs else q(xs, m - 1)\n".to_string(),
     ];
     items.extend((0..k).map(|index| format!("Clip r{index} | gain={index}:\n    Note\n")));
     if !call_first {
@@ -949,7 +976,7 @@ fn a_recursive_call_over_an_array_of_references_costs_work_linear_in_its_element
                     "call last"
                 }
             );
-            let texts = sizes.map(|k| reference_array_program(body, k, call_first));
+            let texts = sizes.map(|size| reference_array_program(body, size, call_first));
             let runs = texts.each_ref().map(|text| measured(&compiler, text));
             for (run, k) in runs.iter().zip(sizes) {
                 if let Some(first) = run.errors.first() {
@@ -973,5 +1000,5 @@ fn a_recursive_call_over_an_array_of_references_costs_work_linear_in_its_element
         }
     }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
-    assert_eq!(rows, 6);
+    assert_eq!(rows, 14);
 }

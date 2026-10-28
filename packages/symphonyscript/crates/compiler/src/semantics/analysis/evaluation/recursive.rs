@@ -373,20 +373,38 @@ impl Engine<'_> {
             | CVal::Array(_)
             | CVal::Error => return Ok(Some(CVal::Error)),
         };
-        let Some(&(_, arm)) = read.arms.iter().find(|(candidate, _)| *candidate == item) else {
-            if !self.may_name(item, &read.name.text)? {
-                let owner = self.item_description(item)?;
-                self.error(
-                    Code::UnknownAttribute,
-                    read.name.loc,
-                    read.scope,
-                    format!(
-                        "{owner} has no child, wire or attribute `{}`",
-                        read.name.text
-                    ),
-                )?;
+        let chosen = read
+            .arms
+            .iter()
+            .find(|(candidate, _)| *candidate == item)
+            .map(|(_, arm)| *arm);
+        let open = read.open.iter().find(|(candidate, _)| *candidate == item);
+        let arm = match (chosen, open) {
+            (Some(arm), _) => arm,
+            (None, Some((_, path))) => {
+                if self.live_candidate_cycle(item, &read.name.text, path)? {
+                    return Ok(Some(CVal::Error));
+                }
+                match some!(self.open_arm(read, item, need)?) {
+                    Some(arm) => arm,
+                    None => return Ok(Some(CVal::Error)),
+                }
             }
-            return Ok(Some(CVal::Error));
+            (None, None) => {
+                if !self.may_name(item, &read.name.text)? {
+                    let owner = self.item_description(item)?;
+                    self.error(
+                        Code::UnknownAttribute,
+                        read.name.loc,
+                        read.scope,
+                        format!(
+                            "{owner} has no child, wire or attribute `{}`",
+                            read.name.text
+                        ),
+                    )?;
+                }
+                return Ok(Some(CVal::Error));
+            }
         };
         if some!(self.sig(arm, need)).reactive {
             let record = self.frame(0)?;
