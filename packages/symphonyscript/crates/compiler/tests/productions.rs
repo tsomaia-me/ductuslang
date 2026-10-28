@@ -503,11 +503,29 @@ fn every_case_names_a_production_of_the_spec() {
         .iter()
         .map(|(production, _, _)| *production)
         .filter(|name| !productions.iter().any(|production| production == name))
+        .filter(|name| !RETIRING_PRODUCTIONS.contains(name))
         .collect();
     assert!(
         unknown.is_empty(),
         "cases naming no production: {unknown:?}"
     );
+}
+
+const RETIRING_PRODUCTIONS: [&str; 1] = ["Bounded"];
+
+#[test]
+fn every_retiring_production_has_left_the_spec_and_keeps_its_case() {
+    let productions = spec_productions();
+    for name in RETIRING_PRODUCTIONS {
+        assert!(
+            !productions.iter().any(|production| production == name),
+            "{name} is still a production of the spec"
+        );
+        assert!(
+            CASES.iter().any(|(production, _, _)| *production == name),
+            "{name} has no case"
+        );
+    }
 }
 
 const SMALL_PRODUCTIONS: [&str; 3] = ["Song", "Verse", "Chorus"];
