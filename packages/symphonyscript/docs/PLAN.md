@@ -222,6 +222,7 @@ Exit:
 - The state shared between the committing thread and a thread preparing a reload holds under loom at a preemption bound of 3 and under Miri with `-Zmiri-many-seeds`.
 - The compiler reports each fixture Program's memory in bytes, equal to what `Runtime::new` allocates under the counting allocator, and refuses a program over `memory_bytes` with the figure in the error (SPEC §12.6).
 - A benchmark over the fixture projects records compile time and Program size with and without shared bodies in the progress file.
+- A diagnostic drawn over a chain of called functions carries related spans linear in the chain's length, and a chain of 4,000 faulty functions compiles in work linear in 4,000.
 - Reload matching follows SPEC §13.3's search bound, and a benchmark over generated edits measures Myers' cost against edit distance and sequence length, recorded in the progress file.
 - Golden traces cover states and histories, triggers, variable arrays at every level, strings, records, sums, maps and documents; a string written past its capacity or in invalid UTF-8, and a document written past its budget or invalid, are refused with the capacity or the byte position in the error.
 - Golden traces cover `for` expressions over arrays, maps and ranges, each evaluating its body once per live element, and a native function that calls a lambda at runtime; a counting allocator shows neither allocates in `commit`.
