@@ -9,7 +9,7 @@ The implementation runs in five milestones. The owner approves this plan once; t
 - **Owner:** decides direction.
 - **Head:** the session that drives this plan. It briefs implementers and reviewers, sorts every gap, edits the documents, decides what the decision rules let it decide, and keeps the head notes in `.memory/symphonyscript/notes.md`. The head owns the decisions and the architecture, and the reviewers own the code's correctness against them. The head runs implementers and reviewers in parallel wherever the work allows.
 - **Implementer:** one agent per milestone, Opus at effort `high`. An implementer takes its whole scope in its first brief, and new scope goes to a fresh implementer.
-- **Reviewer:** a fresh agent per cold review, Opus at effort `xhigh` for M2, M2b, M2e, M2c, M2d, M3 and M5 and `high` for M1, M4a and M4b. In M2, M2b, M2e, M2c, M2d, M3 and M5 a second fresh reviewer, Fable at effort `xhigh`, reviews the hot path in the same cold review, and the Opus reviewer the rest of the diff: in M2, compile-time evaluation and its limits (SPEC §4.6, §6.3) and inference (SPEC §3.6, §4); in M2b, the types and capacities of arrays and states (SPEC §3.7, §6.6) and bounded evaluation (§6.3, §4.6); in M2e, Infer's capacity rules and the `for` expression's evaluation (SPEC §5.10, §7.9, §4.6); in M2c, the capacities and bindings of strings, records, sums and arrays with capacities at every level (SPEC §3.2, §3.3, §3.7, §3.8, §3.9, §4.4), maps (§3.10) and documents' budgets, typed reads and equality (§3.11); in M2d, pattern types and expansion (§6.4) and triggers (§6.6); in M3, Lower's constant folding, the runtime (SPEC §5's built-ins, §12) and reload (SPEC §13); in M5, the adapter (ARCHITECTURE §10) and the kernel move operations.
+- **Reviewers:** four fresh agents per cold review, one per lens of § Reviews, on the models its table names; an Opus reviewer runs at effort `xhigh` for M2, M2b, M2e, M2c, M2d, M3 and M5 and `high` for M1, M4a and M4b, and Fable at `xhigh`. A warm review resumes a cold reviewer.
 - Implementers and reviewers start no agents of their own.
 
 ### Decisions
@@ -41,10 +41,19 @@ The implementation runs in five milestones. The owner approves this plan once; t
 
 ### Reviews
 
-- A reviewer reviews a whole milestone, never single commits: the milestone's diff against SPEC, ARCHITECTURE, this plan's exit criteria and CLAUDE.md, running the checks itself.
-- A reviewer builds only on an export of the tip under review, `git archive <tip> packages/symphonyscript` into a new directory, runs each check there judged by its own exit code with nothing chained after it, runs its probes in a copy of the export, and changes and commits nothing in the repository.
+- A cold review is four fresh reviewers in parallel, each on the whole milestone's diff, never single commits, against SPEC, ARCHITECTURE, this plan's exit criteria and CLAUDE.md. Each covers its lens first, then reviews the whole diff freely:
+
+| Lens | Covers first | Reviewer |
+|---|---|---|
+| 1 | SPEC conformance, rule by rule | Opus 5.5 |
+| 2 | Adversarial programs and probes | Opus 5.5 |
+| 3 | The hot path and the speed targets | Fable, or Opus 5.5 at `xhigh` when Fable is out |
+| 4 | Code and test quality | Opus 5.5 |
+
+- Lens 3's hot path: in M2, compile-time evaluation and its limits (SPEC §4.6, §6.3) and inference (SPEC §3.6, §4); in M2b, the types and capacities of arrays and states (SPEC §3.7, §6.6) and bounded evaluation (§6.3, §4.6); in M2e, Infer's capacity rules and the `for` expression's evaluation (SPEC §5.10, §7.9, §4.6); in M2c, the capacities and bindings of strings, records, sums and arrays with capacities at every level (SPEC §3.2, §3.3, §3.7, §3.8, §3.9, §4.4), maps (§3.10) and documents' budgets, typed reads and equality (§3.11); in M2d, pattern types and expansion (§6.4) and triggers (§6.6); in M3, Lower's constant folding, the runtime (SPEC §5's built-ins, §12) and reload (SPEC §13); in M5, the adapter (ARCHITECTURE §10) and the kernel move operations; in M1, M4a and M4b, the speed targets and any cost the milestone's exit lines state.
+- The four share one build of the tip under review: the head exports it, `git archive <tip> packages/symphonyscript` into a new directory, builds it there and runs the four checks once, each judged by its own exit code with nothing chained after it. Each reviewer reads those results, runs its probes against that build from a folder of its own, and changes and commits nothing in the repository.
 - A reviewer rates each defect. Blocking: a wrong program accepted, a valid program rejected on a path an ordinary program takes, a panic or internal-error, nondeterminism, or a cost past linear on ordinary input. Major: the same on an unusual path, or an exit criterion not met. Minor: everything else.
-- At every cold review the hot-path reviewer measures the time per unit of the compiler's heavy work against these targets, in the `dev` profile the tests run, with no other build on the machine, and reports each figure with its method; a figure past its target is a finding rated Major, and Blocking when an ordinary program meets it:
+- At every cold review the lens 3 reviewer measures the time per unit of the compiler's heavy work against these targets, in the `dev` profile the tests run, with no other build on the machine, and reports each figure with its method; a figure past its target is a finding rated Major, and Blocking when an ordinary program meets it:
 
 | Work | Measured by | Target |
 |---|---|---|
@@ -53,11 +62,11 @@ The implementation runs in five milestones. The owner approves this plan once; t
 | A level of nesting | the deep-expressions fixture at depth 100,000, each construct | 2 µs |
 | A program of the breaker corpus | Check over every program, median and 99th percentile | 0.5 ms and 2 ms |
 
-- A reviewer checks the ordinary paths and the common defects, then goes beyond them to every pattern `.claude/docs/REVIEWING.md` shows, each with its bad and good form.
+- A reviewer works by `docs/REVIEWING.md`, and checks for every smell of `docs/SMELLS.md` and every pattern of `.claude/docs/REVIEWING.md` § Known anti-patterns, § General, § Tests made to look good, § Fixes, § Rust and § Compilers, and from M3 § Real-time audio and music DSLs, each with its bad and good form.
 - The head consolidates the findings with a verdict on each, has the implementer fix the accepted ones, and sorts the rest by the decision rules.
 - The head briefs each fix as the property it must hold, with an adversarial test and a test over valid input beside the reported case, and checks a reviewer's proposed fix against the SPEC before briefing it. A fix to a whole class of defects is briefed as a sweep of every place the property covers, never as a list of places, and every row of its tests runs in every order of its top-level items.
 - The implementer fixes every finding the head sends it, whoever wrote the code and whichever milestone it came from, and declines none. An item that cannot be built as the documents stand is a gap (§ Decisions), never a reason to skip it. It proves each fix with a test that fails without its change, beside the valid-input rows that must keep passing.
-- A milestone gets at most two cold reviews: the first, and a second when the head judges the fixes need fresh eyes. Warm reviews, in which the reviewer that found an issue checks its fix, are unlimited. A cold review is never launched mid-round on a tip whose resolver is being rewritten.
+- A milestone gets one cold review. A warm review resumes a reviewer whose accepted findings a fix round built: it checks the fixes of its own accepted findings and reviews in full all code the round changed. A Blocking defect it sees stays in the round; anything else it sees goes into the ledger (§ Carried findings) for the next milestone's cold review. Warm reviews are unlimited. A cold review is never launched mid-round on a tip whose resolver is being rewritten.
 - A milestone is done when its exit criteria pass and its last review's accepted findings are fixed and checked. The head then records it in the head notes and starts the next one.
 
 ### Carried findings
@@ -77,7 +86,7 @@ A finding, gap, limitation, review note or task that is not built in the round t
 - Rust edition 2024. Every crate forbids `unsafe` code, and a clippy warning fails the checks.
 - One public entity per file, the file named after it; modules are folders.
 - No comments in authored files (repository CLAUDE.md).
-- Code follows `.claude/docs/CODING.md` § Good patterns. Where another rule of that file names another product's tools or conflicts with this plan, this plan decides.
+- An implementer works by `docs/IMPLEMENTING.md`, and its code avoids every smell of `docs/SMELLS.md` and follows `.claude/docs/CODING.md` § How you build rules 1 to 4 and 7 to 9, § Tests but for its TypeScript, route, component, journey and visual rules, and § Good patterns, its § Hot paths from M3. Where a rule of that file conflicts with this plan, this plan decides.
 - `Cargo.lock` is committed, as a workspace with binaries commits it.
 - Dependencies: `libm` in core; `unicode-ident`, `unicode-normalization`, `unicode-width`, `rowan` and `num-bigint` in the compiler; `lsp-server` and `lsp-types` in the tool; the IntelliJ Platform Gradle Plugin for the JetBrains plugin; synaptic-kernel in the adapter. Dev-dependencies for tests are the implementer's choice.
 
