@@ -33,7 +33,10 @@ pub struct Checker {
 
 impl Checker {
     pub fn new(budget: Duration) -> Result<Checker, Failed> {
-        let vocabulary = symphonyscript_fixtures::vocabulary();
+        Checker::with_vocabulary(budget, symphonyscript_fixtures::vocabulary())
+    }
+
+    pub fn with_vocabulary(budget: Duration, vocabulary: Vocabulary) -> Result<Checker, Failed> {
         let compiler = Compiler::new(&vocabulary)?;
         Ok(Checker {
             compiler: Arc::new(compiler),

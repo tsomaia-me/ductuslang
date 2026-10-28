@@ -4,10 +4,10 @@ use std::process::ExitCode;
 
 use serde::Serialize;
 use symphonyscript_evolve::{
-    Checker, Program, ProgramSource, Signal, arguments, dedup_key, shrunk,
+    Checker, Program, ProgramSource, Signal, arguments, dedup_key, named_vocabulary, shrunk,
 };
 
-const USAGE: &str = "usage: evolve-shrink [--budget <seconds>] [--memory-bound <bytes per source byte>] <program.json> <signal>";
+const USAGE: &str = "usage: evolve-shrink [--budget <seconds>] [--memory-bound <bytes per source byte>] [--vocabulary <name>] <program.json> <signal>";
 
 #[derive(Serialize)]
 struct Shrunk {
@@ -38,8 +38,14 @@ fn run() -> Result<(), String> {
     let text = std::fs::read_to_string(path).map_err(|error| format!("{path}: {error}"))?;
     let program: Program =
         serde_json::from_str(&text).map_err(|error| format!("{path}: {error}"))?;
-    let checker = Checker::new(arguments.budget)
-        .map_err(|failed| format!("the fixture vocabulary does not compile: {failed:?}"))?
+    let vocabulary = named_vocabulary(&arguments.vocabulary)?;
+    let checker = Checker::with_vocabulary(arguments.budget, vocabulary)
+        .map_err(|failed| {
+            format!(
+                "the vocabulary `{}` does not compile: {failed:?}",
+                arguments.vocabulary
+            )
+        })?
         .with_memory_bound(arguments.memory_bound);
     let finding = checker
         .finding(&program, signal)
