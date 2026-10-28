@@ -5660,7 +5660,16 @@ fn own_fault(site: &LeafSite, base: u32, whole: bool) -> Option<((Code, String, 
 }
 
 #[test]
-fn every_fault_beside_another_fault_draws_by_the_placeholder_rule() {
+fn every_fault_beside_another_fault_draws_by_the_placeholder_rule_in_the_odd_expressions() {
+    faults_draw_by_the_placeholder_rule(0, 15_810);
+}
+
+#[test]
+fn every_fault_beside_another_fault_draws_by_the_placeholder_rule_in_the_even_expressions() {
+    faults_draw_by_the_placeholder_rule(1, 15_810);
+}
+
+fn faults_draw_by_the_placeholder_rule(part: usize, expected_programs: usize) {
     let pool = generated(2);
     let mut expressions: Vec<Generated> = pool.clone();
     expressions.extend(sampled_depth_three(&pool, 3000));
@@ -5670,7 +5679,7 @@ fn every_fault_beside_another_fault_draws_by_the_placeholder_rule() {
     ];
     let mut failures = Vec::new();
     let mut programs = 0;
-    for expression in &expressions {
+    for expression in expressions.iter().skip(part).step_by(2) {
         let mut text = String::new();
         let mut sites = Vec::new();
         expression.print(&mut text, Reach::Read, &mut sites);
@@ -5730,7 +5739,7 @@ fn every_fault_beside_another_fault_draws_by_the_placeholder_rule() {
             }
         }
     }
-    assert_eq!(programs, 31620);
+    assert_eq!(programs, expected_programs);
     assert!(
         failures.is_empty(),
         "{} failures:\n{}",

@@ -237,10 +237,6 @@ fn the_recursive_call_limit_follows_the_compilations_limits() {
         recursive_calls: 1_000,
         ..Limits::default()
     };
-    let raised = Limits {
-        recursive_calls: 1_048_575,
-        ..Limits::default()
-    };
     let default = Limits::default();
     let refusal = |bound: &str| refused(&format!("exceeds the {bound} distinct recursive calls"));
     follows(
@@ -251,9 +247,35 @@ fn the_recursive_call_limit_follows_the_compilations_limits() {
             (default, recursing(6), None),
             (thousand, recursing(1_000), None),
             (thousand, recursing(1_001), refusal("1,000")),
-            (default, recursing(1_000_001), refusal("1,000,000")),
-            (raised, recursing(1_048_576), refusal("1,048,575")),
         ],
+    );
+}
+
+#[test]
+fn the_recursive_call_limit_refuses_the_call_past_its_default() {
+    follows(
+        Code::RecursionLimit,
+        &[(
+            Limits::default(),
+            recursing(1_000_001),
+            refused("exceeds the 1,000,000 distinct recursive calls"),
+        )],
+    );
+}
+
+#[test]
+fn the_recursive_call_limit_refuses_the_call_past_a_raised_limit() {
+    let raised = Limits {
+        recursive_calls: 1_048_575,
+        ..Limits::default()
+    };
+    follows(
+        Code::RecursionLimit,
+        &[(
+            raised,
+            recursing(1_048_576),
+            refused("exceeds the 1,048,575 distinct recursive calls"),
+        )],
     );
 }
 

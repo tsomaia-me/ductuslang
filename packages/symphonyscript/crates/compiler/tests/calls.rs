@@ -1138,6 +1138,14 @@ fn a_join_whose_length_would_reach_two_to_the_thirty_one_draws_length_limit_befo
             ],
             limited,
         ),
+    ];
+    support::assert_rows_in_every_order(&vocabulary(), rows);
+}
+
+#[test]
+fn a_join_whose_length_stays_below_two_to_the_thirty_one_draws_no_length_limit() {
+    let doubling = "fn f(n): if n is 0 then [1] else f(n - 1) + f(n - 1)\n";
+    let rows: &[support::Row] = &[
         (&[doubling, "Clip c:\n    Note/(60 + len(f(30)))\n"], &[]),
         (&[doubling, "Clip c:\n    Note/(60 + f(30)[5])\n"], &[]),
         (
@@ -1150,17 +1158,29 @@ fn a_join_whose_length_would_reach_two_to_the_thirty_one_draws_length_limit_befo
         ),
     ];
     support::assert_rows_in_every_order(&vocabulary(), rows);
-    let reactive = [
-        "input i = 0\n",
-        "fn f(n) bounded 31 else [1]: f(n - 1) + f(n - 1)\n",
-        "Clip c:\n    Note/(len(f(i)))\n",
-    ];
+}
+
+const DOUBLING_ON_AN_INPUT: [&str; 3] = [
+    "input i = 0\n",
+    "fn f(n) bounded 31 else [1]: f(n - 1) + f(n - 1)\n",
+    "Clip c:\n    Note/(len(f(i)))\n",
+];
+
+#[test]
+fn a_doubling_bounded_function_called_on_an_input_draws_inline_limit() {
+    let reactive = DOUBLING_ON_AN_INPUT;
     let inline_limited = vec![(Code::InlineLimit, "f(n - 1)".to_string())];
     let defaults = Compiler::new(&vocabulary()).expect("the vocabulary compiles");
     assert_eq!(
         support::error_texts(&defaults, &reactive.concat()),
         inline_limited
     );
+}
+
+#[test]
+fn a_lowered_inline_limit_refuses_a_doubling_bounded_function_on_an_input_in_every_order() {
+    let reactive = DOUBLING_ON_AN_INPUT;
+    let inline_limited = vec![(Code::InlineLimit, "f(n - 1)".to_string())];
     let thousand = Compiler::with_limits(
         &vocabulary(),
         Limits {

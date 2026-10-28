@@ -561,10 +561,11 @@ fn cases(flow: &Flow, shared: bool) -> Vec<Vec<&'static Position>> {
     found
 }
 
-fn every_flow_meets_its_uses(reactive: bool, shared: bool) {
+fn every_flow_meets_its_uses(reactive: bool, shared: bool, routes: &[Route]) {
     let failures: Vec<String> = std::thread::scope(|threads| {
-        let routes: Vec<_> = ROUTES
-            .into_iter()
+        let routes: Vec<_> = routes
+            .iter()
+            .copied()
             .filter(|route| !(reactive && *route == Route::Carrier))
             .map(|route| threads.spawn(move || route_meets_its_uses(reactive, shared, route)))
             .collect();
@@ -612,23 +613,43 @@ fn route_meets_its_uses(reactive: bool, shared: bool, route: Route) -> Vec<Strin
 }
 
 #[test]
-fn a_reactive_flow_meets_its_uses_in_every_order() {
-    every_flow_meets_its_uses(true, true);
+fn a_reactive_flow_meets_its_uses_in_every_order_directly_aliased_carried_or_written() {
+    every_flow_meets_its_uses(true, true, &ROUTES[..5]);
 }
 
 #[test]
-fn a_compile_time_flow_meets_its_uses_in_every_order() {
-    every_flow_meets_its_uses(false, true);
+fn a_reactive_flow_meets_its_uses_in_every_order_compared() {
+    every_flow_meets_its_uses(true, true, &[Route::Compared]);
+}
+
+#[test]
+fn a_reactive_flow_meets_its_uses_in_every_order_partnered() {
+    every_flow_meets_its_uses(true, true, &[Route::Partnered]);
+}
+
+#[test]
+fn a_reactive_flow_meets_its_uses_in_every_order_typed_or_in_a_cycle() {
+    every_flow_meets_its_uses(true, true, &[Route::Typed, Route::Cycle]);
+}
+
+#[test]
+fn a_compile_time_flow_meets_its_uses_in_every_order_directly_aliased_carried_or_written() {
+    every_flow_meets_its_uses(false, true, &ROUTES[..5]);
+}
+
+#[test]
+fn a_compile_time_flow_meets_its_uses_in_every_order_compared_partnered_typed_or_in_a_cycle() {
+    every_flow_meets_its_uses(false, true, &ROUTES[5..]);
 }
 
 #[test]
 fn a_reactive_flow_meets_enums_of_different_variants_in_every_order() {
-    every_flow_meets_its_uses(true, false);
+    every_flow_meets_its_uses(true, false, &ROUTES);
 }
 
 #[test]
 fn a_compile_time_flow_meets_enums_of_different_variants_in_every_order() {
-    every_flow_meets_its_uses(false, false);
+    every_flow_meets_its_uses(false, false, &ROUTES);
 }
 
 fn distinct_vocabulary() -> Vocabulary {

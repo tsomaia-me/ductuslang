@@ -101,8 +101,21 @@ fn every_code_has_a_lesson_that_names_its_code_and_its_section() {
 
 #[test]
 fn every_lesson_draws_its_code_in_its_sym_error_example_and_passes_check_in_its_fix() {
+    lessons_hold(
+        Code::ALL
+            .iter()
+            .filter(|code| **code != Code::RecursionLimit),
+    );
+}
+
+#[test]
+fn the_recursion_limit_lesson_draws_its_code_in_its_error_example_and_passes_in_its_fix() {
+    lessons_hold([Code::RecursionLimit].iter());
+}
+
+fn lessons_hold<'a>(codes: impl Iterator<Item = &'a Code>) {
     let mut failures = Vec::new();
-    for code in Code::ALL {
+    for code in codes {
         for example in examples(code.lesson()) {
             let found = diagnostics(&example.setup, &example.text);
             let codes: Vec<Code> = found.iter().map(|diagnostic| diagnostic.code).collect();

@@ -1617,8 +1617,7 @@ fn a_state_settled_as_a_fixed_array_is_used_as_a_fixed_array() {
     }
 }
 
-#[test]
-fn a_compile_time_condition_chooses_its_arm_before_layout_and_capacity() {
+fn compile_time_condition_rows(part: usize) {
     let cells = [
         "input note = 60\n",
         "input a: i32[..5] = []\n",
@@ -1692,7 +1691,7 @@ fn a_compile_time_condition_chooses_its_arm_before_layout_and_capacity() {
             &[(Code::RaggedArray, "[[1], 2]", 0)],
         ),
     ];
-    for (declarations, expected) in rows {
+    for (declarations, expected) in rows.iter().skip(part).step_by(2) {
         let mut items: Vec<&str> = cells.to_vec();
         items.extend_from_slice(declarations);
         for text in in_every_order(&items) {
@@ -1703,9 +1702,19 @@ fn a_compile_time_condition_chooses_its_arm_before_layout_and_capacity() {
         ("if flag then a else [1, 2, 3, 4, 5, 6, 7]", 7),
         ("if flag then [note, note] else [note, note, note]", 3),
     ];
-    for (value, capacity) in choices {
-        assert_ordered_capacity(&cells, value, capacity);
+    for (value, capacity) in choices.iter().skip(part).step_by(2) {
+        assert_ordered_capacity(&cells, value, *capacity);
     }
+}
+
+#[test]
+fn a_compile_time_condition_chooses_its_arm_before_layout_and_capacity_in_its_odd_rows() {
+    compile_time_condition_rows(0);
+}
+
+#[test]
+fn a_compile_time_condition_chooses_its_arm_before_layout_and_capacity_in_its_even_rows() {
+    compile_time_condition_rows(1);
 }
 
 #[test]

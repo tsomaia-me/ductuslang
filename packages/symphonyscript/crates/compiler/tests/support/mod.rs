@@ -104,8 +104,11 @@ pub fn checked_files(files: &[(&str, &str)]) -> Vec<Diagnostic> {
     errors(checked_files_all(files))
 }
 
+thread_local! {
+    static EXAMPLE: Compiler = Compiler::new(&vocabulary()).expect("the example vocabulary compiles");
+}
+
 pub fn checked_files_all(files: &[(&str, &str)]) -> Vec<Diagnostic> {
-    let compiler = Compiler::new(&vocabulary()).expect("the example vocabulary compiles");
     let sources: Vec<Source> = files
         .iter()
         .map(|(path, text)| Source {
@@ -113,7 +116,7 @@ pub fn checked_files_all(files: &[(&str, &str)]) -> Vec<Diagnostic> {
             text: (*text).into(),
         })
         .collect();
-    compiler.check(&sources)
+    EXAMPLE.with(|compiler| compiler.check(&sources))
 }
 
 pub fn check_codes(text: &str) -> Vec<(Code, u32, u32)> {

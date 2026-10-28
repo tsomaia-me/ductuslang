@@ -211,18 +211,26 @@ fn kind_walk_program(shape: &str, states: u32) -> String {
 }
 
 #[test]
-fn the_kind_walk_over_a_group_of_states_is_linear_in_every_declaration_order() {
-    use crate::diagnostics::Code;
-    let shapes: [(&str, &[Code]); 7] = [
+fn the_kind_walk_over_a_ring_or_chain_of_states_is_linear_in_every_declaration_order() {
+    kind_walks_are_linear(&[
         ("forward ring", &[]),
         ("reversed ring", &[]),
         ("integer chain", &[]),
-        ("float chain", &[Code::FloatToInteger]),
+        ("float chain", &[crate::diagnostics::Code::FloatToInteger]),
+    ]);
+}
+
+#[test]
+fn the_kind_walk_over_states_holding_a_float_or_a_fan_is_linear_in_every_declaration_order() {
+    kind_walks_are_linear(&[
         ("float at the end", &[]),
         ("float at the start", &[]),
         ("fan", &[]),
-    ];
-    for (shape, expected) in shapes {
+    ]);
+}
+
+fn kind_walks_are_linear(shapes: &[(&str, &[crate::diagnostics::Code])]) {
+    for (shape, expected) in shapes.iter().copied() {
         let visits: Vec<(u64, u64)> = [1_600, 3_200, 6_400]
             .into_iter()
             .map(|states| kind_walk(&kind_walk_program(shape, states), expected))
@@ -631,25 +639,38 @@ pub(super) fn assert_linear(points: [(u64, u64); 3]) {
     assert!(linear(points), "{points:?}");
 }
 
+const WITH_LET: &str = "    let a = held[i]\n    if i >= len(held) then a else a + walk(i + 1)\n";
+
+fn walk_points(body: &str) -> [(u64, u64); 3] {
+    [800, 1_600, 3_200].map(|levels| {
+        (
+            levels,
+            read_walk(&walk_program(usize::try_from(levels).unwrap_or(0), body)),
+        )
+    })
+}
+
 #[test]
 fn ordering_the_bindings_of_an_expanded_program_is_linear_in_it() {
-    let with_let = "    let a = held[i]\n    if i >= len(held) then a else a + walk(i + 1)\n";
+    assert_linear(walk_points(WITH_LET));
+}
+
+#[test]
+fn ordering_the_bindings_of_an_expanded_program_walks_a_let_at_most_four_times_its_reads() {
     let without_let = "    if i >= len(held) then held[i] else held[i] + walk(i + 1)\n";
-    let unexpected = "    let a = held[i]\n    if i >= len(held) then 0 else (if a > 0 then 1 else 0) + walk(i + 1)\n";
-    let points = |body: &str| {
-        [800, 1_600, 3_200].map(|levels| {
-            (
-                levels,
-                read_walk(&walk_program(usize::try_from(levels).unwrap_or(0), body)),
-            )
-        })
-    };
-    let with_let_points = points(with_let);
-    assert_linear(with_let_points);
-    assert_linear(points(unexpected));
     let plain = read_walk(&walk_program(1_600, without_let));
-    let [_, (_, held), _] = with_let_points;
+    let held = read_walk(&walk_program(1_600, WITH_LET));
     assert!(held <= 4 * plain, "{plain} {held}");
+}
+
+#[test]
+fn ordering_the_bindings_of_an_expanded_program_whose_let_a_choice_reads_is_linear_in_it() {
+    let unexpected = "    let a = held[i]\n    if i >= len(held) then 0 else (if a > 0 then 1 else 0) + walk(i + 1)\n";
+    assert_linear(walk_points(unexpected));
+}
+
+#[test]
+fn ordering_the_bindings_of_a_chain_of_functions_is_linear_in_it() {
     assert_linear([1_000, 2_000, 4_000].map(|functions| {
         (
             functions,

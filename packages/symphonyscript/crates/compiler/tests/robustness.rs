@@ -28,7 +28,16 @@ fn tokens(text: &str, vocabulary: &Vocabulary) -> Vec<(usize, usize)> {
 }
 
 #[test]
-fn no_mutant_of_an_example_or_fixture_draws_an_internal_error_or_panics() {
+fn no_mutant_of_an_example_or_fixture_draws_an_internal_error_or_panics_in_the_odd_samples() {
+    mutants_draw_no_internal_error(0);
+}
+
+#[test]
+fn no_mutant_of_an_example_or_fixture_draws_an_internal_error_or_panics_in_the_even_samples() {
+    mutants_draw_no_internal_error(1);
+}
+
+fn mutants_draw_no_internal_error(half: usize) {
     let mut checked = 0;
     let mut index = 0;
     let mut failures = Vec::new();
@@ -38,7 +47,7 @@ fn no_mutant_of_an_example_or_fixture_draws_an_internal_error_or_panics() {
             .iter()
             .flat_map(|text| mutants(text, &tokens(text, &vocabulary)))
         {
-            let sampled = index % SAMPLED_ONE_IN == 0;
+            let sampled = index % SAMPLED_ONE_IN == 0 && (index / SAMPLED_ONE_IN) % 2 == half;
             index += 1;
             if !sampled {
                 continue;
@@ -61,7 +70,7 @@ fn no_mutant_of_an_example_or_fixture_draws_an_internal_error_or_panics() {
             }
         }
     }
-    assert!(checked > 5_000, "{checked} mutants checked");
+    assert!(checked > 5_000 / 2, "{checked} mutants checked");
     assert_eq!(failures, Vec::<String>::new());
 }
 

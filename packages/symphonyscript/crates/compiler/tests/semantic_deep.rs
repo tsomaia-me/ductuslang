@@ -49,7 +49,7 @@ fn bodies(head: &str, cycle: &[&str]) -> String {
 }
 
 #[test]
-fn m1_deep_sources_pass_every_stage_on_a_small_stack() {
+fn m1_deep_brackets_and_indexes_pass_every_stage_on_a_small_stack() {
     on_small_stack(|| {
         let text = format!(
             "let a = {}\nlet b = {}\nlet c = {}\nlet d = {}\n",
@@ -62,6 +62,12 @@ fn m1_deep_sources_pass_every_stage_on_a_small_stack() {
             code_counts(&text),
             BTreeMap::from([(Code::UnknownName, DEPTH)])
         );
+    });
+}
+
+#[test]
+fn m1_deep_operators_calls_and_strings_pass_every_stage_on_a_small_stack() {
+    on_small_stack(|| {
         let text = format!(
             "let a = {}1\nlet b = {}x\nlet c = {}\nlet d = {}\nlet e = 2{}\nClip c:\n    Note/{}\n",
             "-".repeat(DEPTH),
@@ -75,6 +81,12 @@ fn m1_deep_sources_pass_every_stage_on_a_small_stack() {
             code_counts(&text),
             BTreeMap::from([(Code::DuplicateName, 1), (Code::UnknownName, 1 + DEPTH)])
         );
+    });
+}
+
+#[test]
+fn m1_deep_placements_and_bodies_pass_every_stage_on_a_small_stack() {
+    on_small_stack(|| {
         let text = format!("Clip c:\n    {}\n", nested("[", "Note", "]"));
         assert_eq!(
             code_counts(&text),
