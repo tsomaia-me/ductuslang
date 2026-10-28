@@ -341,6 +341,8 @@ The tests keep a table mapping each error rule of the SPEC, by section and sente
 
 Each change recompiles the whole project.
 
+Every stage's work is linear in the program plus the elements of the array values the compilation builds, each value built once: an array value is held by its elements, so a join of n single-element operands or a compile-time recursion whose argument grows one element a level builds values whose elements together are quadratic in n, and the nesting depth (SPEC §6.3) bounds the recursion's n.
+
 No source overflows the native stack, however deeply it nests. Every stage, and every operation on the syntax tree and on the Program (building, walking, comparing, cloning, hashing, printing, validating and dropping), works without recursion that grows with the source's nesting, as the runtime evaluator does (§4).
 
 ### 7.1 Error recovery
