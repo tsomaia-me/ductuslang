@@ -52,6 +52,14 @@ const NAME_CODES: [Code; 11] = [
     Code::MisplacedTo,
 ];
 
+const QUIET_CODES: [Code; 5] = [
+    Code::IndexOutOfRange,
+    Code::DoesNotFit,
+    Code::IntegerOverflow,
+    Code::ConstantOverflow,
+    Code::LengthLimit,
+];
+
 pub(crate) struct Engine<'a> {
     pub hir: &'a Hir,
     pub vocabulary: &'a Vocabulary,
@@ -746,7 +754,7 @@ impl<'a> Engine<'a> {
     }
 
     fn suppressed(&self, code: Code, scope: ScopeId) -> Result<bool, Internal> {
-        if code == Code::IndexOutOfRange && self.quiet_range() {
+        if QUIET_CODES.contains(&code) && self.quiet() {
             return Ok(true);
         }
         if self.in_name_probe(scope)? && !self.in_trial(scope)? {
@@ -1236,7 +1244,7 @@ impl<'a> Engine<'a> {
         if !self.cycle_evaluating(path)? {
             return Ok(false);
         }
-        if self.drawn_candidate_cycles.insert((item, name.to_string())) {
+        if !self.quiet() && self.drawn_candidate_cycles.insert((item, name.to_string())) {
             self.draw_candidate_cycle(path)?;
         }
         Ok(true)

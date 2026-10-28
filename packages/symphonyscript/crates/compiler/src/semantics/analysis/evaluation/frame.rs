@@ -1,5 +1,4 @@
-use std::rc::Rc;
-
+use super::checks::Checks;
 use crate::semantics::analysis::c_val::CVal;
 use crate::semantics::analysis::call_key::CallKey;
 use crate::semantics::analysis::eval_ty::EvalTy;
@@ -21,6 +20,6 @@ pub(crate) struct Frame {
     pub unbounded: u64,
     pub faults: FastSet<u32>,
     pub templates: FastSet<ScopeId>,
-    pub checking: bool,
-    pub check_open: Option<Rc<FastSet<FnId>>>,
+    pub checks: Checks,
+    pub tainted: bool,
 }

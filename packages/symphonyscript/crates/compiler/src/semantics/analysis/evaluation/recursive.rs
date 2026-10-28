@@ -3,6 +3,7 @@ use std::rc::Rc;
 
 use symphonyscript_core::FamilyId;
 
+use super::checks::Checks;
 use super::ctx::Ctx;
 use super::frame::Frame;
 use super::is_float_ty::is_float_ty;
@@ -176,17 +177,28 @@ impl Engine<'_> {
         match ctx {
             Ctx::Global => self.run_machine(call, node, own, need),
             Ctx::Frame(caller) => {
-                if self
-                    .frame(caller)?
-                    .check_open
-                    .as_ref()
-                    .is_some_and(|open| open.contains(&function))
-                {
-                    return Ok(Some(CVal::Error));
+                if self.frame(caller)?.checks.quiet() {
+                    if let Some((value, reach)) = self.memo.quiet_calls.get(&call.key).cloned() {
+                        self.reach(reach, node, ctx)?;
+                        return Ok(Some(value));
+                    }
+                    if let Some(value) = self.machine_mut()?.tainted_calls.get(&call.key).cloned() {
+                        self.taint(caller)?;
+                        return Ok(Some(value));
+                    }
                 }
                 self.push_frame(call, node, own, need)
             }
         }
+    }
+
+    fn taint(&mut self, frame: usize) -> Result<(), Internal> {
+        self.machine_mut()?
+            .frames
+            .get_mut(frame)
+            .ok_or(Internal::missed("evaluation frame"))?
+            .tainted = true;
+        Ok(())
     }
 
     fn call_nesting(&mut self, function: FnId, node: NodeId, ctx: Ctx) -> Result<u64, Internal> {
@@ -408,6 +420,9 @@ impl Engine<'_> {
             }
         };
         if some!(self.sig(arm, need)).reactive {
+            if self.frame(frame)?.checks.quiet() {
+                return Ok(Some(CVal::Error));
+            }
             let record = self.frame(0)?;
             let (call, function) = (record.call, record.function);
             self.reactive_body(call, function)?;
@@ -417,7 +432,7 @@ impl Engine<'_> {
     }
 
     fn lacking_choice(&mut self, read: &FrameRead, item: ItemRef) -> Result<(), Internal> {
-        if self.may_name(item, &read.name.text)? {
+        if self.quiet() || self.may_name(item, &read.name.text)? {
             return Ok(());
         }
         let owner = self.item_description(item)?;
@@ -449,10 +464,10 @@ impl Engine<'_> {
     }
 
     fn begin_checks(&mut self, frame: usize, root: NodeId, ty: EvalTy) -> Result<bool, Internal> {
-        if self.frame(frame)?.checking {
+        if !matches!(self.frame(frame)?.checks, Checks::Unchecked) {
             return Ok(false);
         }
-        let mut starts = Vec::new();
+        let mut pending = Vec::new();
         for head in self.frame_heads(frame)? {
             CountedWalk::RecursiveBeginChecks.step();
             let read = self
@@ -460,35 +475,70 @@ impl Engine<'_> {
                 .frame_reads
                 .get(&head)
                 .ok_or(Internal::missed("frame read"))?;
-            starts.push((frame, read.start, EvalTy::Node));
+            pending.push(read.start);
         }
-        if starts.is_empty() {
+        let Some(start) = pending.pop() else {
             return Ok(false);
-        }
+        };
         let machine = self.machine_mut()?;
-        let open: FastSet<FnId> = machine
-            .open
-            .iter()
-            .filter(|(_, count)| **count > 0)
-            .map(|(function, _)| *function)
-            .collect();
+        machine
+            .frames
+            .get_mut(frame)
+            .ok_or(Internal::missed("evaluation frame"))?
+            .checks = Checks::Running {
+            start,
+            pending,
+            log: Vec::new(),
+        };
+        machine.work.push((frame, root, ty));
+        machine.work.push((frame, start, EvalTy::Node));
+        Ok(true)
+    }
+
+    fn next_start(&mut self, frame: usize, node: NodeId, ty: EvalTy) -> Result<(), Internal> {
+        let machine = self.machine_mut()?;
         let record = machine
             .frames
             .get_mut(frame)
             .ok_or(Internal::missed("evaluation frame"))?;
-        record.checking = true;
-        record.check_open = Some(Rc::new(open));
-        machine.work.push((frame, root, ty));
-        machine.work.extend(starts);
-        Ok(true)
+        let Checks::Running {
+            start,
+            pending,
+            log,
+        } = &mut record.checks
+        else {
+            return Ok(());
+        };
+        if *start != node || ty != EvalTy::Node {
+            return Ok(());
+        }
+        if std::mem::take(&mut record.tainted) {
+            for entry in log.iter() {
+                record.memo.remove(entry);
+            }
+        }
+        log.clear();
+        machine.tainted_calls.clear();
+        if let Some(next) = pending.pop() {
+            *start = next;
+            machine.work.push((frame, next, EvalTy::Node));
+        }
+        Ok(())
     }
 
     fn ends_checks(&self, frame: usize, node: NodeId, ty: EvalTy) -> Result<bool, Internal> {
         let record = self.frame(frame)?;
-        Ok(record.checking && record.root == node && record.ty == ty)
+        Ok(matches!(record.checks, Checks::Running { .. })
+            && record.root == node
+            && record.ty == ty)
     }
 
     fn check_heads(&mut self, frame: usize) -> Result<(), Internal> {
+        self.machine_mut()?
+            .frames
+            .get_mut(frame)
+            .ok_or(Internal::missed("evaluation frame"))?
+            .checks = Checks::Done;
         let enclosing = self.fault_frame.replace(frame);
         let checked = self.checked_heads(frame);
         self.fault_frame = enclosing;
@@ -520,11 +570,23 @@ impl Engine<'_> {
         Ok(())
     }
 
-    pub(in crate::semantics::analysis) fn quiet_range(&self) -> bool {
+    pub(super) fn quiet_unevaluated(
+        &self,
+        frame: usize,
+        node: NodeId,
+        ty: EvalTy,
+    ) -> Result<bool, Internal> {
+        let query = Query::Eval(node, ty);
+        Ok(self.frame(frame)?.checks.quiet()
+            && !self.memo.evals.contains_key(&(node, ty))
+            && !self.poisoned(query))
+    }
+
+    pub(in crate::semantics::analysis) fn quiet(&self) -> bool {
         self.fault_frame
             .zip(self.active.as_ref())
             .and_then(|(frame, machine)| machine.frames.get(frame))
-            .is_some_and(|record| record.checking)
+            .is_some_and(|record| record.checks.quiet())
     }
 
     pub(super) fn reactive_body(&mut self, call: NodeId, function: FnId) -> Result<(), Internal> {
@@ -644,13 +706,14 @@ impl Engine<'_> {
                         unbounded,
                         faults: FastSet::default(),
                         templates,
-                        checking: false,
-                        check_open: None,
+                        checks: Checks::Unchecked,
+                        tainted: false,
                     }],
                     work,
                     open: [(call.function, 1)].into_iter().collect(),
                     open_keys: [call.key.clone()].into_iter().collect(),
                     too_deep: false,
+                    tainted_calls: FastMap::default(),
                 }
             }
         };
@@ -688,6 +751,7 @@ impl Engine<'_> {
             let memoized = self.frame_value(frame, current, ty)?;
             if memoized.is_some() && !self.ends_checks(frame, current, ty)? {
                 self.machine_mut()?.work.pop();
+                self.next_start(frame, current, ty)?;
                 continue;
             }
             let mut outer = Vec::new();
@@ -714,7 +778,11 @@ impl Engine<'_> {
                         .get_mut(frame)
                         .ok_or(Internal::missed("evaluation frame"))?;
                     record.memo.insert((current, ty), value.clone());
+                    if let Checks::Running { log, .. } = &mut record.checks {
+                        log.push((current, ty));
+                    }
                     let completes = record.root == current && record.ty == ty;
+                    self.next_start(frame, current, ty)?;
                     if completes && self.begin_checks(frame, current, ty)? {
                         continue;
                     }
@@ -737,16 +805,32 @@ impl Engine<'_> {
                         if let Some(parent) = machine.frames.last_mut() {
                             parent.faults.extend(done.faults.iter().copied());
                             parent.templates.extend(done.templates.iter().copied());
+                            parent.tainted |= done.tainted;
                         }
                         machine.open_keys.remove(&key);
                         if let Some(open) = machine.open.get_mut(&function) {
                             *open = open.saturating_sub(1);
                         }
-                        let value = self.call_result(call, current, expected, value)?;
+                        let quiet = matches!(done.checks, Checks::Quiet);
+                        let enclosing = self.fault_frame;
+                        if quiet {
+                            self.fault_frame = frame.checked_sub(1);
+                        }
+                        let value = self.call_result(call, current, expected, value);
+                        self.fault_frame = enclosing;
+                        let value = value?;
                         let reach: (Vec<u32>, Vec<ScopeId>) = (
                             done.faults.into_iter().collect(),
                             done.templates.into_iter().collect(),
                         );
+                        if quiet {
+                            if done.tainted {
+                                self.machine_mut()?.tainted_calls.insert(key, value);
+                            } else {
+                                self.memo.quiet_calls.insert(key, (value, reach));
+                            }
+                            continue;
+                        }
                         self.memo.calls.insert(key.clone(), value.clone());
                         self.memo.key_reach.insert(key, reach.clone());
                         if frame == 0 {
@@ -793,6 +877,12 @@ impl Engine<'_> {
             .last()
             .map_or(0, |frame| frame.unbounded);
         let repeats = self.machine_mut()?.open_keys.contains(&call.key);
+        let caller = self.machine_mut()?.frames.len().saturating_sub(1);
+        let quiet = self.frame(caller)?.checks.quiet();
+        if !bounded && (repeats || depth >= self.limits.nesting_depth) && quiet {
+            self.taint(caller)?;
+            return Ok(Some(CVal::Error));
+        }
         if !bounded && (repeats || depth >= self.limits.nesting_depth) {
             let mut names: Vec<String> = Vec::new();
             let functions: Vec<FnId> = self
@@ -829,11 +919,14 @@ impl Engine<'_> {
             Template::Root(root) if self.result_fits(root, own, node, call.function)? => root,
             Template::Reentered => return Ok(Some(CVal::Error)),
             Template::Root(_) | Template::Failed => {
-                let caller = self.machine_mut()?.frames.len().saturating_sub(1);
                 return self.failed_call(&call, node, Ctx::Frame(caller));
             }
         };
         let defaults = some!(self.default_work(&call, need)?);
+        if quiet && self.call_count >= self.limits.recursive_calls {
+            self.taint(caller)?;
+            return Ok(Some(CVal::Error));
+        }
         if !self.within_call_limit(node, call.function)? {
             return Ok(Some(CVal::Error));
         }
@@ -844,10 +937,6 @@ impl Engine<'_> {
             .collect();
         let machine = self.machine_mut()?;
         let index = machine.frames.len();
-        let check_open = machine
-            .frames
-            .last()
-            .and_then(|caller| caller.check_open.clone());
         *machine.open.entry(call.function).or_insert(0) += 1;
         machine.open_keys.insert(call.key.clone());
         machine.frames.push(Frame {
@@ -863,8 +952,12 @@ impl Engine<'_> {
             unbounded: depth.saturating_add(u64::from(!bounded)),
             faults: FastSet::default(),
             templates,
-            checking: false,
-            check_open,
+            checks: if quiet {
+                Checks::Quiet
+            } else {
+                Checks::Unchecked
+            },
+            tainted: false,
         });
         machine.work.push((index, root, ty));
         machine

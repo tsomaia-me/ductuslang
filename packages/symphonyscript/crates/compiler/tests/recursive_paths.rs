@@ -3329,3 +3329,626 @@ fn two_outermost_calls_choosing_two_cycles_through_one_declaration_draw_one_decl
     );
     assert_eq!(programs, 24);
 }
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum UntakenStart {
+    Recursive,
+    Direct,
+    Inlined,
+    Slice,
+}
+
+const UNTAKEN_STARTS: [UntakenStart; 4] = [
+    UntakenStart::Recursive,
+    UntakenStart::Direct,
+    UntakenStart::Inlined,
+    UntakenStart::Slice,
+];
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum StartFault {
+    None,
+    Outside,
+    Fit,
+    Overflow,
+    Depth,
+}
+
+const START_FAULTS: [StartFault; 5] = [
+    StartFault::None,
+    StartFault::Outside,
+    StartFault::Fit,
+    StartFault::Overflow,
+    StartFault::Depth,
+];
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Guard {
+    AtEnd,
+    BeforeEnd,
+    IfFalse,
+    IfDeep,
+    Taken,
+}
+
+const GUARDS: [Guard; 5] = [
+    Guard::AtEnd,
+    Guard::BeforeEnd,
+    Guard::IfFalse,
+    Guard::IfDeep,
+    Guard::Taken,
+];
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum StartReader {
+    Path,
+    LocalLet,
+    RecursiveArgument,
+}
+
+const START_READERS: [StartReader; 3] = [
+    StartReader::Path,
+    StartReader::LocalLet,
+    StartReader::RecursiveArgument,
+];
+
+impl StartFault {
+    fn index(self) -> &'static str {
+        match self {
+            StartFault::None | StartFault::Depth => "i % len(xs)",
+            StartFault::Outside => "i",
+            StartFault::Fit => "u8(i + 300) - 300",
+            StartFault::Overflow => "i + 2 ** 126 * 4",
+        }
+    }
+
+    fn index_at(self, level: usize) -> String {
+        match self {
+            StartFault::None | StartFault::Depth => format!("{level} % {level}"),
+            StartFault::Outside => level.to_string(),
+            StartFault::Fit => format!("u8({level} + 300) - 300"),
+            StartFault::Overflow => format!("{level} + 2 ** 126 * 4"),
+        }
+    }
+
+    fn at_every_level(self) -> bool {
+        match self {
+            StartFault::Fit | StartFault::Overflow | StartFault::Depth => true,
+            StartFault::None | StartFault::Outside => false,
+        }
+    }
+
+    fn drawn(self, start: UntakenStart) -> Option<(Code, &'static str)> {
+        match (self, start) {
+            (StartFault::None, _) => None,
+            (StartFault::Outside, UntakenStart::Recursive) => Some((Code::IndexOutOfRange, "p")),
+            (StartFault::Outside, UntakenStart::Direct) => Some((Code::IndexOutOfRange, "i")),
+            (StartFault::Outside, UntakenStart::Inlined) => Some((Code::IndexOutOfRange, "q")),
+            (StartFault::Outside, UntakenStart::Slice) => Some((Code::IndexOutOfRange, "0")),
+            (StartFault::Fit, _) => Some((Code::DoesNotFit, "300")),
+            (StartFault::Overflow, _) => Some((Code::IntegerOverflow, "2 ** 126 * 4")),
+            (StartFault::Depth, _) => Some((Code::RecursionDepth, "pk(xs, p, m - 1)")),
+        }
+    }
+}
+
+impl UntakenStart {
+    fn later_reads(self) -> &'static [bool] {
+        match self {
+            UntakenStart::Recursive => &[false, true],
+            UntakenStart::Direct | UntakenStart::Inlined | UntakenStart::Slice => &[false],
+        }
+    }
+
+    fn faults(self) -> &'static [StartFault] {
+        match self {
+            UntakenStart::Recursive => &START_FAULTS,
+            UntakenStart::Direct | UntakenStart::Inlined | UntakenStart::Slice => {
+                &START_FAULTS[..4]
+            }
+        }
+    }
+
+    fn text(self, fault: StartFault) -> String {
+        let index = fault.index();
+        match self {
+            UntakenStart::Recursive => {
+                let depth = if fault == StartFault::Depth {
+                    200_000
+                } else {
+                    1
+                };
+                format!("pk(xs, {index}, {depth})")
+            }
+            UntakenStart::Direct => format!("xs[{index}]"),
+            UntakenStart::Inlined => format!("pick(xs, {index})"),
+            UntakenStart::Slice => format!("xs[{index}..][0]"),
+        }
+    }
+}
+
+impl Guard {
+    fn reads_taken(self, level: usize, depth: usize) -> bool {
+        match self {
+            Guard::AtEnd | Guard::BeforeEnd => level < depth,
+            Guard::IfFalse | Guard::IfDeep => false,
+            Guard::Taken => true,
+        }
+    }
+
+    fn body(self, read: &str) -> String {
+        let next = "h(xs, i + 1)";
+        match self {
+            Guard::AtEnd => format!("if i >= len(xs) then 0 else {read} + {next}"),
+            Guard::BeforeEnd => format!("if i < len(xs) then {read} + {next} else 0"),
+            Guard::IfFalse => {
+                format!("if i >= len(xs) then 0 else (if false then {read} else 0) + {next}")
+            }
+            Guard::IfDeep => {
+                format!("if i >= len(xs) then 0 else (if i > 100 then {read} else 0) + {next}")
+            }
+            Guard::Taken => format!("if i >= len(xs) then {read} else {read} + {next}"),
+        }
+    }
+}
+
+struct UntakenCase {
+    start: UntakenStart,
+    fault: StartFault,
+    guard: Guard,
+    reader: StartReader,
+    depth: usize,
+    later: bool,
+    reversed: bool,
+}
+
+impl UntakenCase {
+    fn expected(&self) -> BTreeSet<(Code, String)> {
+        let (mut expected, _) = self.drawn_by_h();
+        if self.later {
+            expected.extend(
+                self.fault
+                    .drawn(self.start)
+                    .map(|(code, at)| (code, at.to_string())),
+            );
+        }
+        expected
+    }
+
+    fn drawn_by_h(&self) -> (BTreeSet<(Code, String)>, usize) {
+        let taken: Vec<usize> = (0..=self.depth)
+            .filter(|level| self.guard.reads_taken(*level, self.depth))
+            .collect();
+        let fires = taken
+            .iter()
+            .any(|level| self.fault.at_every_level() || *level == self.depth);
+        let total = taken
+            .iter()
+            .map(|level| {
+                if (level % self.depth).is_multiple_of(2) {
+                    2
+                } else {
+                    3
+                }
+            })
+            .sum();
+        match self.fault.drawn(self.start) {
+            Some((code, at)) if fires => ([(code, at.to_string())].into(), total),
+            Some(_) | None => (BTreeSet::new(), total),
+        }
+    }
+
+    fn program(&self, unrolled: bool) -> String {
+        let start = self.start.text(self.fault);
+        let (local, read) = match self.reader {
+            StartReader::Path => (String::new(), format!("i32(({start}).gain)")),
+            StartReader::LocalLet => (format!("    let e = {start}\n"), "i32(e.gain)".to_string()),
+            StartReader::RecursiveArgument => (String::new(), format!("i32(gs({start}, 2))")),
+        };
+        let body = self.guard.body(&read);
+        let function = if unrolled {
+            (0..=self.depth)
+                .map(|level| {
+                    let name = |level: usize| match level {
+                        0 => "h".to_string(),
+                        _ => format!("h{level}"),
+                    };
+                    let next = if level < self.depth {
+                        format!("{}(xs, i + 1)", name(level + 1))
+                    } else {
+                        "0".to_string()
+                    };
+                    format!(
+                        "fn {}(xs, i):\n{local}    {}\n",
+                        name(level),
+                        body.replace("h(xs, i + 1)", &next)
+                    )
+                })
+                .collect()
+        } else {
+            format!("fn h(xs, i):\n{local}    {body}\n")
+        };
+        let references = (0..self.depth)
+            .map(|level| if level % 2 == 0 { "verse" } else { "other" })
+            .collect::<Vec<_>>()
+            .join(", ");
+        let (faults, total) = self.drawn_by_h();
+        let reader = if faults.is_empty() {
+            format!("Clip k:\n    Note/([60][h([{references}], 0) - {total}])\n")
+        } else {
+            format!("Clip k | gain=h([{references}], 0):\n    Note\n")
+        };
+        let depth = if self.fault == StartFault::Depth {
+            200_000
+        } else {
+            1
+        };
+        let later = format!(
+            "pk([{references}], {}, {depth})",
+            self.fault.index_at(self.depth)
+        );
+        let later = match self.fault {
+            StartFault::None => format!("Clip z:\n    Note/([60][i32(({later}).gain) - 2])\n"),
+            StartFault::Outside | StartFault::Fit | StartFault::Overflow | StartFault::Depth => {
+                format!("Clip z | gain=({later}).gain:\n    Note\n")
+            }
+        };
+        let mut items = vec![
+            "Session main\n".to_string(),
+            "Clip verse | gain=2:\n    Note\n".to_string(),
+            "Clip other | gain=3:\n    Note\n".to_string(),
+            "fn pk(xs, p, m): if m < 1 then xs[p] else pk(xs, p, m - 1)\n".to_string(),
+            "fn pick(ys, q): ys[q]\n".to_string(),
+            "fn gs(c, n): if n < 1 then c.gain else gs(c, n - 1)\n".to_string(),
+            function,
+            reader,
+        ];
+        if self.later {
+            items.push(later);
+        }
+        if self.reversed {
+            items.reverse();
+        }
+        items.concat()
+    }
+}
+
+fn drawn_keys(text: &str) -> BTreeSet<(Code, String)> {
+    found(text).into_keys().collect()
+}
+
+fn untaken_start_rows(start: UntakenStart) -> (Vec<String>, usize) {
+    let mut failures = Vec::new();
+    let mut programs = 0;
+    for fault in start.faults().iter().copied() {
+        for guard in GUARDS {
+            for reader in START_READERS {
+                for (depth, later) in [1, 3, 30]
+                    .into_iter()
+                    .flat_map(|depth| start.later_reads().iter().map(move |later| (depth, *later)))
+                {
+                    for reversed in [false, true] {
+                        let case = UntakenCase {
+                            start,
+                            fault,
+                            guard,
+                            reader,
+                            depth,
+                            later,
+                            reversed,
+                        };
+                        let expected = case.expected();
+                        let text = case.program(false);
+                        let drawn = drawn_keys(&text);
+                        let twin = (guard == Guard::Taken).then(|| drawn_keys(&case.program(true)));
+                        programs += 1;
+                        if drawn != expected || twin.as_ref().is_some_and(|twin| *twin != expected)
+                        {
+                            failures.push(format!(
+                                "{start:?} {fault:?} {guard:?} {reader:?} {depth} {later} {reversed}\n{text}\n  found {drawn:?}\n  twin {twin:?}\n  expected {expected:?}\n"
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+    }
+    (failures, programs)
+}
+
+#[test]
+fn evaluating_the_start_of_an_untaken_arm_draws_no_fit_range_overflow_or_depth_diagnostic_in_any_frame()
+ {
+    let (failures, programs) = in_parallel(&UNTAKEN_STARTS, untaken_start_rows);
+    assert!(
+        failures.is_empty(),
+        "{} of {programs} programs fail:\n{}",
+        failures.len(),
+        failures.iter().take(8).cloned().collect::<String>()
+    );
+    assert_eq!(programs, 1_980);
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum OpenCallArm {
+    IfFalse,
+    IfDeep,
+    AboveOne,
+}
+
+const OPEN_CALL_ARMS: [OpenCallArm; 3] = [
+    OpenCallArm::IfFalse,
+    OpenCallArm::IfDeep,
+    OpenCallArm::AboveOne,
+];
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum OpenCallTerm {
+    TakenRead,
+    Recursion,
+    UntakenRead,
+}
+
+impl OpenCallArm {
+    fn condition(self) -> &'static str {
+        match self {
+            OpenCallArm::IfFalse => "false",
+            OpenCallArm::IfDeep => "n > 100",
+            OpenCallArm::AboveOne => "n > 1",
+        }
+    }
+
+    fn takes(self, n: i64) -> bool {
+        match self {
+            OpenCallArm::IfFalse => false,
+            OpenCallArm::IfDeep => n > 100,
+            OpenCallArm::AboveOne => n > 1,
+        }
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum OpenCallUse {
+    H(i64),
+    G(i64),
+}
+
+struct OpenCallModel<'a> {
+    offset: i64,
+    arm: OpenCallArm,
+    terms: &'a [OpenCallTerm],
+    taken_read: bool,
+    memo: BTreeMap<(bool, i64), i64>,
+    open: BTreeSet<(bool, i64)>,
+}
+
+impl OpenCallModel<'_> {
+    fn g(&mut self, m: i64) -> Option<i64> {
+        if let Some(value) = self.memo.get(&(false, m)) {
+            return Some(*value);
+        }
+        if !self.open.insert((false, m)) {
+            return None;
+        }
+        let other = m >= 1 && self.h(m - 1)? > 2;
+        self.open.remove(&(false, m));
+        let gain = if other { 3 } else { 2 };
+        self.memo.insert((false, m), gain);
+        Some(gain)
+    }
+
+    fn h(&mut self, n: i64) -> Option<i64> {
+        if let Some(value) = self.memo.get(&(true, n)) {
+            return Some(*value);
+        }
+        if n > 200 || !self.open.insert((true, n)) {
+            return None;
+        }
+        let mut value = 0;
+        if n < 1 {
+            value = 1;
+        } else {
+            for term in self.terms {
+                value += match term {
+                    OpenCallTerm::TakenRead if self.taken_read => self.g(n)?,
+                    OpenCallTerm::TakenRead => 0,
+                    OpenCallTerm::Recursion => self.h(n - 1)?,
+                    OpenCallTerm::UntakenRead if self.arm.takes(n) => self.g(n + self.offset)?,
+                    OpenCallTerm::UntakenRead => 0,
+                };
+            }
+        }
+        self.open.remove(&(true, n));
+        self.memo.insert((true, n), value);
+        Some(value)
+    }
+}
+
+fn open_call_rows(offset: i64) -> (Vec<String>, usize) {
+    let orders = [
+        [
+            OpenCallTerm::TakenRead,
+            OpenCallTerm::Recursion,
+            OpenCallTerm::UntakenRead,
+        ],
+        [
+            OpenCallTerm::TakenRead,
+            OpenCallTerm::UntakenRead,
+            OpenCallTerm::Recursion,
+        ],
+        [
+            OpenCallTerm::Recursion,
+            OpenCallTerm::TakenRead,
+            OpenCallTerm::UntakenRead,
+        ],
+        [
+            OpenCallTerm::Recursion,
+            OpenCallTerm::UntakenRead,
+            OpenCallTerm::TakenRead,
+        ],
+        [
+            OpenCallTerm::UntakenRead,
+            OpenCallTerm::TakenRead,
+            OpenCallTerm::Recursion,
+        ],
+        [
+            OpenCallTerm::UntakenRead,
+            OpenCallTerm::Recursion,
+            OpenCallTerm::TakenRead,
+        ],
+    ];
+    let mut failures = Vec::new();
+    let mut programs = 0;
+    for arm in OPEN_CALL_ARMS {
+        for terms in &orders {
+            for taken_read in [true, false] {
+                for depth in [1, 2, 3, 6] {
+                    for uses in [
+                        vec![OpenCallUse::H(depth)],
+                        vec![OpenCallUse::H(depth), OpenCallUse::G(depth + offset)],
+                        vec![OpenCallUse::H(depth), OpenCallUse::G(depth + offset + 1)],
+                        vec![OpenCallUse::G(depth + offset)],
+                    ] {
+                        let mut model = OpenCallModel {
+                            offset,
+                            arm,
+                            terms,
+                            taken_read,
+                            memo: BTreeMap::new(),
+                            open: BTreeSet::new(),
+                        };
+                        let values: Option<Vec<i64>> = uses
+                            .iter()
+                            .map(|used| match used {
+                                OpenCallUse::H(n) => model.h(*n),
+                                OpenCallUse::G(m) => model.g(*m),
+                            })
+                            .collect();
+                        let Some(values) = values else {
+                            continue;
+                        };
+                        let body: Vec<String> = terms
+                            .iter()
+                            .filter_map(|term| match term {
+                                OpenCallTerm::TakenRead => {
+                                    taken_read.then(|| "i32(g(xs, n).gain)".to_string())
+                                }
+                                OpenCallTerm::Recursion => Some("h(xs, n - 1)".to_string()),
+                                OpenCallTerm::UntakenRead => Some(format!(
+                                    "(if {} then i32(g(xs, n + {offset}).gain) else 0)",
+                                    arm.condition()
+                                )),
+                            })
+                            .collect();
+                        for reversed in [false, true] {
+                            for wrong in [false, true] {
+                                let mut expected = Found::new();
+                                let notes: String = uses
+                                    .iter()
+                                    .zip(&values)
+                                    .enumerate()
+                                    .map(|(position, (used, value))| {
+                                        let read = match used {
+                                            OpenCallUse::H(n) => format!("h([verse, other], {n})"),
+                                            OpenCallUse::G(m) => {
+                                                format!("i32(g([verse, other], {m}).gain)")
+                                            }
+                                        };
+                                        let past = wrong && position + 1 == uses.len();
+                                        let offset = value + i64::from(past);
+                                        if past {
+                                            expected.insert(
+                                                (
+                                                    Code::IndexOutOfRange,
+                                                    format!("{read} - {offset}"),
+                                                ),
+                                                1,
+                                            );
+                                        }
+                                        format!("    Note/([60][{read} - {offset}])\n")
+                                    })
+                                    .collect();
+                                let mut items = [
+                                    "Session main\n".to_string(),
+                                    "Clip verse | gain=2:\n    Note\n".to_string(),
+                                    "Clip other | gain=3:\n    Note\n".to_string(),
+                                    "fn g(xs, m): if m < 1 then xs[0] else (if h(xs, m - 1) > 2 then xs[1] else xs[0])\n".to_string(),
+                                    format!("fn h(xs, n): if n < 1 then 1 else {}\n", body.join(" + ")),
+                                    format!("Clip k:\n{notes}"),
+                                ];
+                                if reversed {
+                                    items.reverse();
+                                }
+                                let text = items.concat();
+                                let drawn = found(&text);
+                                programs += 1;
+                                if drawn != expected {
+                                    failures.push(format!(
+                                        "{offset} {arm:?} {terms:?} {taken_read} {depth} {uses:?} {reversed} {wrong}\n{text}\n  found {drawn:?}\n  expected {expected:?}\n"
+                                    ));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    (failures, programs)
+}
+
+fn open_function_rows() -> (Vec<String>, usize) {
+    let mut failures = Vec::new();
+    let mut programs = 0;
+    for lacking in [false, true] {
+        for condition in ["false", "n > 100"] {
+            for depth in [1, 3] {
+                for reversed in [false, true] {
+                    let second = if lacking { "verse.tone" } else { "other" };
+                    let expected: Found = if lacking {
+                        [((Code::UnknownAttribute, "gain".to_string()), 1)].into()
+                    } else {
+                        Found::new()
+                    };
+                    let mut items = [
+                        "Session main\n".to_string(),
+                        "Clip verse | gain=2:\n    Note as tone\n".to_string(),
+                        "Clip other | gain=3:\n    Note\n".to_string(),
+                        "fn g(xs, m): if h(xs, m - 5) > 0 then xs[1] else xs[0]\n".to_string(),
+                        format!(
+                            "fn h(xs, n): if n < 1 then 1 else h(xs, n - 1) + (if {condition} then i32(g(xs, n).gain) else 0)\n"
+                        ),
+                        format!("Clip k:\n    Note/([60][h([verse, {second}], {depth}) - 1])\n"),
+                    ];
+                    if reversed {
+                        items.reverse();
+                    }
+                    let text = items.concat();
+                    let drawn = found(&text);
+                    programs += 1;
+                    if drawn != expected {
+                        failures.push(format!(
+                            "{lacking} {condition} {depth} {reversed}\n{text}\n  found {drawn:?}\n  expected {expected:?}\n"
+                        ));
+                    }
+                }
+            }
+        }
+    }
+    (failures, programs)
+}
+
+#[test]
+fn an_untaken_arms_start_that_reaches_an_open_call_leaves_no_value_any_later_evaluation_reads() {
+    let (mut failures, mut programs) = in_parallel(&[0, 1, 2], open_call_rows);
+    let (open, open_programs) = open_function_rows();
+    failures.extend(open);
+    programs += open_programs;
+    assert!(
+        failures.is_empty(),
+        "{} of {programs} programs fail:\n{}",
+        failures.len(),
+        failures.iter().take(8).cloned().collect::<String>()
+    );
+    assert_eq!(programs, 5_584);
+}

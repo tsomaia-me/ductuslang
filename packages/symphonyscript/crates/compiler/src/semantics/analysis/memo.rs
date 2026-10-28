@@ -17,6 +17,8 @@ use super::sig::Sig;
 use super::val::Val;
 use crate::semantics::ir::{ExprId, InputId};
 
+type Reached = (Vec<u32>, Vec<ScopeId>);
+
 #[derive(Default)]
 pub(crate) struct Memo {
     pub exprs: FastMap<(ExprId, ScopeId), Val>,
@@ -120,6 +122,7 @@ pub(crate) struct Memo {
     pub family_shapes: FastMap<super::family_key::FamilyKey, Vec<super::arg_shape::ArgShape>>,
     pub deep_families: super::fast_hash::FastSet<super::family_key::FamilyKey>,
     pub key_reach: FastMap<CallKey, (Vec<u32>, Vec<ScopeId>)>,
+    pub quiet_calls: FastMap<CallKey, (CVal, Reached)>,
     pub fault_sites: FastMap<u32, Vec<NodeId>>,
     pub template_sites: FastMap<ScopeId, Vec<NodeId>>,
     pub named_bodies: super::fast_hash::FastSet<crate::semantics::ir::FnId>,

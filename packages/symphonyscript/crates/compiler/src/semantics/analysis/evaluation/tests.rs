@@ -53,6 +53,7 @@ fn a_miss_in_the_recursive_evaluators_own_state_is_an_internal_error() {
                 open: FastMap::default(),
                 open_keys: Default::default(),
                 too_deep: false,
+                tainted_calls: FastMap::default(),
             },
         );
         assert_eq!(
@@ -83,13 +84,14 @@ fn a_miss_in_the_recursive_evaluators_own_state_is_an_internal_error() {
                 unbounded: 1,
                 faults: Default::default(),
                 templates: Default::default(),
-                checking: false,
-                check_open: None,
+                checks: super::checks::Checks::Unchecked,
+                tainted: false,
             }],
             work: Vec::new(),
             open: FastMap::default(),
             open_keys: Default::default(),
             too_deep: false,
+            tainted_calls: FastMap::default(),
         });
         assert_eq!(engine.frame_arg(0, 0), Err(Internal::missed("argument")));
         assert_eq!(
