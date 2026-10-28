@@ -82,6 +82,7 @@ pub(crate) struct Memo {
     pub string_bytes: FastMap<NodeId, NodeId>,
     pub lengths: FastMap<NodeId, Val>,
     pub from_ends: FastMap<(ExprId, super::ids::ScopeId), NodeId>,
+    pub from_end_indexes: super::fast_hash::FastSet<NodeId>,
     pub boxings: FastMap<(Vec<NodeId>, Vec<u32>), NodeId>,
     pub binding_layouts: FastMap<super::ids::BindingId, super::layout::Layout>,
     pub settled: super::fast_hash::FastSet<super::ids::BindingId>,

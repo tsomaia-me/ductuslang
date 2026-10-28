@@ -137,7 +137,10 @@ impl Engine<'_> {
                 self.error_at_node(
                     crate::diagnostics::Code::IndexOutOfRange,
                     node,
-                    crate::semantics::analysis::outside_i64::outside_i64(value),
+                    crate::semantics::analysis::outside_i64::outside_i64(
+                        crate::semantics::analysis::i64_position::I64Position::SliceBound,
+                        value,
+                    ),
                 )?;
                 return Ok(Some(None));
             }

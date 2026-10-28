@@ -2,7 +2,9 @@ use crate::diagnostics::Code;
 use crate::semantics::Internal;
 use crate::semantics::analysis::arg_shape::ArgShape;
 use crate::semantics::analysis::arg_sig::ArgSig;
+use crate::semantics::analysis::c_val::CVal;
 use crate::semantics::analysis::engine::Engine;
+use crate::semantics::analysis::eval_ty::EvalTy;
 use crate::semantics::analysis::family_arg::FamilyArg;
 use crate::semantics::analysis::family_key::FamilyKey;
 use crate::semantics::analysis::ids::{NodeId, ScopeId};
@@ -26,7 +28,7 @@ impl Engine<'_> {
         args: &[Option<Val>],
         need: &mut Vec<Query>,
     ) -> Result<Option<Sig>, Internal> {
-        let (key, shapes) = self.family_key(function, args)?;
+        let (key, shapes) = some!(self.family_key(function, args, need)?);
         if self.body_certainly_reads_cell(function)? {
             if !self.hir.fn_decl(function)?.faulty_head {
                 let reading = format!(
@@ -252,16 +254,17 @@ impl Engine<'_> {
         &self,
         function: FnId,
         args: &[Option<Val>],
-    ) -> Result<(FamilyKey, Vec<ArgShape>), Internal> {
-        let shapes: Vec<ArgShape> = args
-            .iter()
-            .map(|arg| self.family_shape(arg.as_ref()))
-            .collect::<Result<_, _>>()?;
+        need: &mut Vec<Query>,
+    ) -> Result<Option<(FamilyKey, Vec<ArgShape>)>, Internal> {
+        let mut shapes = Vec::with_capacity(args.len());
+        for arg in args {
+            shapes.push(some!(self.family_shape(arg.as_ref(), need)?));
+        }
         let key = FamilyKey {
             function,
             args: shapes.iter().map(family_arg).collect(),
         };
-        Ok((key, shapes))
+        Ok(Some((key, shapes)))
     }
 
     fn family_args(&self, key: &FamilyKey) -> Result<Vec<ArgShape>, Internal> {
@@ -272,28 +275,47 @@ impl Engine<'_> {
             .ok_or(Internal::missed("family shapes"))
     }
 
-    fn family_shape(&self, arg: Option<&Val>) -> Result<ArgShape, Internal> {
-        let sig_of = |node: &NodeId| {
-            let sig = self.known_sig(*node)?;
-            Ok(ArgSig {
+    fn family_shape(
+        &self,
+        arg: Option<&Val>,
+        need: &mut Vec<Query>,
+    ) -> Result<Option<ArgShape>, Internal> {
+        let Some(arg) = arg else {
+            return Ok(Some(ArgShape::Default));
+        };
+        let mut sigs = Vec::new();
+        for node in arg.nodes() {
+            let sig = self.known_sig(node)?;
+            let item = if sig.kind == Kind::Node && !sig.reactive && !sig.frame {
+                match some!(self.cval(Query::Eval(node, EvalTy::Node), need)) {
+                    CVal::Node(item) => Some(item),
+                    CVal::Int(_)
+                    | CVal::F32(_)
+                    | CVal::F64(_)
+                    | CVal::Bool(_)
+                    | CVal::Enum(..)
+                    | CVal::Str(_)
+                    | CVal::Array(_)
+                    | CVal::Error => None,
+                }
+            } else {
+                None
+            };
+            sigs.push(ArgSig {
                 kind: sig.kind,
                 width: Width::Flexible,
                 family: sig.family,
-            })
-        };
-        Ok(match arg {
-            None => ArgShape::Default,
-            Some(Val::Scalar(node)) => ArgShape::Scalar(sig_of(node)?),
-            Some(Val::Array(array)) => ArgShape::Array(
-                array.shape.lengths(),
-                array
-                    .elements
-                    .iter()
-                    .map(sig_of)
-                    .collect::<Result<_, Internal>>()?,
-            ),
-            Some(Val::Error) => ArgShape::Default,
-        })
+                node: item,
+            });
+        }
+        Ok(Some(match arg {
+            Val::Scalar(_) => match sigs.pop() {
+                Some(sig) => ArgShape::Scalar(sig),
+                None => return Err(Internal::missed("argument signature")),
+            },
+            Val::Array(array) => ArgShape::Array(array.shape.lengths(), sigs),
+            Val::Error => ArgShape::Default,
+        }))
     }
 }
 
@@ -311,6 +333,11 @@ fn family_arg(shape: &ArgShape) -> FamilyArg {
                 width: Width::Flexible,
                 family: if one.family == other.family {
                     one.family
+                } else {
+                    None
+                },
+                node: if one.node == other.node {
+                    one.node
                 } else {
                     None
                 },

@@ -6,6 +6,7 @@ use crate::semantics::analysis::engine::Engine;
 use crate::semantics::analysis::eval_ty_of::eval_ty_of;
 use crate::semantics::analysis::fast_hash::FastMap;
 use crate::semantics::analysis::ids::NodeId;
+use crate::semantics::analysis::layout_shaped::layout_shaped;
 use crate::semantics::analysis::lengths_of::lengths_of;
 use crate::semantics::analysis::op::Op;
 use crate::semantics::analysis::shape_need::ShapeNeed;
@@ -127,7 +128,7 @@ impl Engine<'_> {
                 continue;
             }
             let op = self.node(node)?.op.clone();
-            if let Op::Slice { .. } = op
+            if layout_shaped(&op)
                 && let (Ok(Some(layout)), true) = {
                     let found = self.known_layout(node)?;
                     (found.shaped, found.certain)

@@ -11,6 +11,7 @@ use crate::semantics::analysis::c_val::CVal;
 use crate::semantics::analysis::destination::Destination;
 use crate::semantics::analysis::engine::Engine;
 use crate::semantics::analysis::eval_ty::EvalTy;
+use crate::semantics::analysis::fast_hash::FastMap;
 use crate::semantics::analysis::ids::{NodeId, ScopeId, WireId};
 use crate::semantics::analysis::item_ref::ItemRef;
 use crate::semantics::analysis::kind::Kind;
@@ -147,6 +148,11 @@ impl Engine<'_> {
                     )?;
                     return Ok(Some(Val::Error));
                 }
+                if sig.frame
+                    && let Some(val) = some!(self.frame_path(node, name, loc, scope, need)?)
+                {
+                    return Ok(Some(val));
+                }
                 match some!(self.cval(Query::Eval(node, EvalTy::Node), need)) {
                     CVal::Node(item) => item,
                     CVal::Int(_)
@@ -161,6 +167,117 @@ impl Engine<'_> {
             }
         };
         self.step(item, name, loc, scope, need)
+    }
+
+    fn frame_path(
+        &mut self,
+        root: NodeId,
+        name: &Ident,
+        loc: Loc,
+        scope: ScopeId,
+        need: &mut Vec<Query>,
+    ) -> Result<Option<Option<Val>>, Internal> {
+        let mut read: FastMap<NodeId, Val> = FastMap::default();
+        let mut stack = vec![(root, false)];
+        while let Some((node, ready)) = stack.pop() {
+            crate::semantics::counted_walk::CountedWalk::PathsFramePath.step();
+            if read.contains_key(&node) {
+                continue;
+            }
+            let op = self.node(node)?.op.clone();
+            let (parts, chooser) = match &op {
+                Op::NodeRef(item) => {
+                    let val = some!(self.step(*item, name, loc, scope, need)?);
+                    read.insert(node, val);
+                    continue;
+                }
+                Op::Use(inner) | Op::Chosen(inner) => (vec![*inner], None),
+                Op::Pick { index, items } => (items.clone(), Some(Chooser::Pick(*index))),
+                Op::If(condition, then, otherwise) => {
+                    (vec![*then, *otherwise], Some(Chooser::If(*condition)))
+                }
+                Op::Number(..)
+                | Op::Const(_)
+                | Op::Bool(_)
+                | Op::Str(_)
+                | Op::Concat(_)
+                | Op::Variant(..)
+                | Op::Bare(_)
+                | Op::Pi
+                | Op::Read(_)
+                | Op::Arg(_)
+                | Op::Unary(..)
+                | Op::Binary(..)
+                | Op::Match { .. }
+                | Op::Element { .. }
+                | Op::Array(_)
+                | Op::Convert(..)
+                | Op::Annotate(..)
+                | Op::Builtin(..)
+                | Op::Recursive { .. }
+                | Op::ToRead { .. }
+                | Op::Join(..)
+                | Op::Slice { .. }
+                | Op::History { .. }
+                | Op::Native { .. } => return Ok(Some(None)),
+            };
+            if !ready {
+                stack.push((node, true));
+                stack.extend(parts.iter().map(|part| (*part, false)));
+                continue;
+            }
+            let vals = parts
+                .iter()
+                .map(|part| read.get(part).cloned().ok_or(Internal::missed("path part")))
+                .collect::<Result<Vec<Val>, Internal>>()?;
+            let Some(chooser) = chooser else {
+                let inner = vals
+                    .into_iter()
+                    .next()
+                    .ok_or(Internal::missed("path part"))?;
+                read.insert(node, inner);
+                continue;
+            };
+            let shape = vals.first().map(Val::shape).unwrap_or_default();
+            let val = if vals.iter().any(|val| matches!(val, Val::Error)) {
+                Val::Error
+            } else if vals
+                .iter()
+                .any(|val| val.shape().lengths() != shape.lengths())
+            {
+                self.error(Code::TypeMismatch, loc, scope, CHOSEN_PATHS)?;
+                Val::Error
+            } else {
+                let mut elements = Vec::with_capacity(shape.count());
+                for position in 0..shape.count() {
+                    let column = vals
+                        .iter()
+                        .map(|val| {
+                            val.nodes()
+                                .get(position)
+                                .copied()
+                                .ok_or(Internal::missed("path element"))
+                        })
+                        .collect::<Result<Vec<NodeId>, Internal>>()?;
+                    let chosen = match (chooser, column.as_slice()) {
+                        (Chooser::Pick(index), _) => Op::Pick {
+                            index,
+                            items: column,
+                        },
+                        (Chooser::If(condition), [then, otherwise]) => {
+                            Op::If(condition, *then, *otherwise)
+                        }
+                        (Chooser::If(_), _) => return Err(Internal::missed("path arm")),
+                    };
+                    elements.push(self.push_node(chosen, loc, scope)?);
+                }
+                self.shaped(shape, elements)
+            };
+            read.insert(node, val);
+        }
+        Ok(Some(Some(
+            read.remove(&root).ok_or(Internal::missed("path read"))?,
+        )))
     }
 
     fn step(
@@ -1417,3 +1534,12 @@ impl Engine<'_> {
         })
     }
 }
+
+#[derive(Clone, Copy)]
+enum Chooser {
+    Pick(NodeId),
+    If(NodeId),
+}
+
+const CHOSEN_PATHS: &str =
+    "the references this path chooses among hold attributes of different shapes";

@@ -7,6 +7,7 @@ use crate::semantics::analysis::engine::Engine;
 use crate::semantics::analysis::eval_ty::EvalTy;
 use crate::semantics::analysis::eval_ty_of::eval_ty_of;
 use crate::semantics::analysis::evaluation::own_type;
+use crate::semantics::analysis::i64_position::I64Position;
 use crate::semantics::analysis::ids::NodeId;
 use crate::semantics::analysis::is_float::is_float;
 use crate::semantics::analysis::is_integer::is_integer;
@@ -188,7 +189,12 @@ impl Engine<'_> {
                     | BinaryOp::Rem
                     | BinaryOp::Pow => {
                         stack.push((lhs, ty, selection, flows));
-                        stack.push((rhs, ty, selection, flows));
+                        if self.outside_offset(node, rhs, selection)? {
+                            let offset_ty = self.synth(rhs)?;
+                            stack.push((rhs, offset_ty, selection, false));
+                        } else {
+                            stack.push((rhs, ty, selection, flows));
+                        }
                     }
                 },
                 Op::If(condition, then, otherwise) => {
@@ -306,7 +312,7 @@ impl Engine<'_> {
                     stack.push((index, index_ty, selection, false));
                     stack.push((base, ty, selection, flows));
                     if selection == Selection::Chosen {
-                        self.fixed_cell_index(base, index)?;
+                        self.cell_index(base, index)?;
                     }
                 }
                 Op::Array(elements) => {
@@ -373,7 +379,11 @@ impl Engine<'_> {
                         if let Some(CVal::Int(value)) = self.chosen(*bound, position_ty)?
                             && i64::try_from(value).is_err()
                         {
-                            self.error_at_node(Code::IndexOutOfRange, *bound, outside_i64(value))?;
+                            self.error_at_node(
+                                Code::IndexOutOfRange,
+                                *bound,
+                                outside_i64(I64Position::SliceBound, value),
+                            )?;
                         }
                     }
                     stack.push((base, ty, selection, flows));
@@ -826,24 +836,55 @@ impl Engine<'_> {
         })
     }
 
-    fn fixed_cell_index(&mut self, base: NodeId, index: NodeId) -> Result<(), Internal> {
+    fn cell_index(&mut self, base: NodeId, index: NodeId) -> Result<(), Internal> {
         if !self.known_sig(base)?.reactive || self.memo.projected_indexes.contains(&index) {
             return Ok(());
         }
-        let found = self.known_layout(base)?;
-        let (Ok(Some(layout)), true) = (found.shaped, found.certain) else {
-            return Ok(());
-        };
-        let (false, Some(length)) = (layout.variable, layout.outer()) else {
-            return Ok(());
-        };
         let position_ty = own_type(&self.known_sig(index)?, EvalTy::Exact);
-        if let Some(CVal::Int(position)) = self.chosen(index, position_ty)?
-            && !(0..i128::from(length)).contains(&position)
+        let Some(CVal::Int(position)) = self.chosen(index, position_ty)? else {
+            return Ok(());
+        };
+        let found = self.known_layout(base)?;
+        if let (Ok(Some(layout)), true) = (found.shaped, found.certain)
+            && let (false, Some(length)) = (layout.variable, layout.outer())
         {
-            self.index_outside(index, position, u64::from(length))?;
+            if !(0..i128::from(length)).contains(&position) {
+                self.index_outside(index, position, u64::from(length))?;
+            }
+            return Ok(());
+        }
+        if i64::try_from(position).is_err() {
+            self.error_at_node(
+                Code::IndexOutOfRange,
+                index,
+                outside_i64(I64Position::Index, position),
+            )?;
         }
         Ok(())
+    }
+
+    fn outside_offset(
+        &mut self,
+        node: NodeId,
+        offset: NodeId,
+        selection: Selection,
+    ) -> Result<bool, Internal> {
+        if selection != Selection::Chosen || !self.memo.from_end_indexes.contains(&node) {
+            return Ok(false);
+        }
+        let offset_ty = own_type(&self.known_sig(offset)?, EvalTy::Exact);
+        let Some(CVal::Int(value)) = self.chosen(offset, offset_ty)? else {
+            return Ok(false);
+        };
+        if i64::try_from(value).is_ok() {
+            return Ok(false);
+        }
+        self.error_at_node(
+            Code::IndexOutOfRange,
+            offset,
+            outside_i64(I64Position::Offset, value),
+        )?;
+        Ok(true)
     }
 }
 

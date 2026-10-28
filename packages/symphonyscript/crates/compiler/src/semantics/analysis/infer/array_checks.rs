@@ -7,6 +7,7 @@ use crate::semantics::analysis::bound::Bound;
 use crate::semantics::analysis::engine::Engine;
 use crate::semantics::analysis::ids::NodeId;
 use crate::semantics::analysis::kind::Kind;
+use crate::semantics::analysis::layout_shaped::layout_shaped;
 use crate::semantics::analysis::op::Op;
 use crate::semantics::analysis::resolve::LENGTH_LIMIT;
 use crate::semantics::analysis::sig::Sig;
@@ -185,6 +186,17 @@ impl Engine<'_> {
         Ok(format!(
             "pass a fixed `{form}` here, such as an input annotated `{form}`"
         ))
+    }
+
+    pub(super) fn fixed_lengths(&mut self, node: NodeId) -> Result<Option<Vec<u32>>, Internal> {
+        if !layout_shaped(&self.node(node)?.op) {
+            return Ok(None);
+        }
+        let found = self.known_layout(node)?;
+        Ok(match (found.shaped, found.certain) {
+            (Ok(Some(layout)), true) if !layout.variable => Some(layout.lengths),
+            _ => None,
+        })
     }
 
     pub(super) fn single_value_fault(

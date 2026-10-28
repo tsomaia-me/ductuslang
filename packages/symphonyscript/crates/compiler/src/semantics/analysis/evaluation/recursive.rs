@@ -399,6 +399,10 @@ impl Engine<'_> {
         loc: crate::semantics::ir::Loc,
         scope: ScopeId,
     ) -> Result<NodeId, Internal> {
+        if let Some(item) = sig.node {
+            *slot += 1;
+            return self.push_node(Op::NodeRef(item), loc, scope);
+        }
         let node = self.push_node(Op::Arg(*slot), loc, scope)?;
         *slot += 1;
         let mut arg_sig = Sig::of(sig.kind, sig.width, false, sig.family);
@@ -990,6 +994,7 @@ fn arg_key(value: &CVal, flexible: bool, ty: EvalTy, family: Option<FamilyId>) -
         kind,
         width,
         family,
+        node: None,
     };
     match value {
         CVal::Int(value) if flexible => (
@@ -1030,7 +1035,13 @@ fn arg_key(value: &CVal, flexible: bool, ty: EvalTy, family: Option<FamilyId>) -
             ArgKey::Str(text.clone()),
             arg_sig(Kind::Str, Width::Fixed(symphonyscript_core::Scalar::Str)),
         ),
-        CVal::Node(item) => (ArgKey::Node(*item), arg_sig(Kind::Node, Width::Flexible)),
+        CVal::Node(item) => (
+            ArgKey::Node(*item),
+            ArgSig {
+                node: Some(*item),
+                ..arg_sig(Kind::Node, Width::Flexible)
+            },
+        ),
         CVal::Array(_) | CVal::Error => (ArgKey::Error, arg_sig(Kind::Error, Width::Flexible)),
     }
 }

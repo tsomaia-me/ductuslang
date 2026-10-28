@@ -24,6 +24,7 @@ use crate::semantics::analysis::item_ref::ItemRef;
 use crate::semantics::analysis::kind::Kind;
 use crate::semantics::analysis::kind_of::kind_of;
 use crate::semantics::analysis::layout::Layout;
+use crate::semantics::analysis::layout_shaped::layout_shaped;
 use crate::semantics::analysis::lengths_of::lengths_of;
 use crate::semantics::analysis::let_ref::LetRef;
 use crate::semantics::analysis::locals_owner::LocalsOwner;
@@ -612,7 +613,10 @@ impl Engine<'_> {
                     self.memo.attrs.insert((item, attr), bound);
                     return Ok(true);
                 }
-                let val = self.attr_elements(val, &decl.ty.lengths, expr, scope)?;
+                let Some(val) = self.attr_elements(val, &decl.ty.lengths, expr, scope, need)?
+                else {
+                    return Ok(false);
+                };
                 let Some(sigs) = self.element_sigs(&val, need) else {
                     return Ok(false);
                 };
@@ -897,7 +901,7 @@ impl Engine<'_> {
                 shapes.insert(node, Ok(lengths));
                 continue;
             }
-            if let Op::Slice { .. } = self.node(node)?.op
+            if layout_shaped(&self.node(node)?.op)
                 && let Some((found, _)) = self.memo.layouts.get(&node)
                 && let (Ok(Some(layout)), true) = (&found.shaped, found.certain)
             {
@@ -1080,15 +1084,22 @@ impl Engine<'_> {
         lengths: &[u32],
         expr: ExprId,
         scope: ScopeId,
-    ) -> Result<Val, Internal> {
+        need: &mut Vec<Query>,
+    ) -> Result<Option<Val>, Internal> {
         let Val::Scalar(node) = val else {
-            return Ok(val);
+            return Ok(Some(val));
         };
-        if !self.arrays.contains(&node) {
-            return Ok(val);
+        if !self.arrays.contains(&node) || lengths.is_empty() {
+            return Ok(Some(val));
         }
-        if lengths.is_empty() {
-            return Ok(val);
+        if layout_shaped(&self.node(node)?.op) {
+            let found = some!(self.layout_of(node, need)?);
+            if let (Ok(Some(layout)), true) = (&found.shaped, found.certain)
+                && !layout.variable
+                && layout.lengths != lengths
+            {
+                return Ok(Some(val));
+            }
         }
         let shape = Shape::from_lengths(lengths);
         let loc = self.hir.expr(expr)?.loc;
@@ -1100,7 +1111,7 @@ impl Engine<'_> {
             scope,
         )?;
         self.memo.attribute_projections.insert(node);
-        Ok(Val::array(shape, nodes))
+        Ok(Some(Val::array(shape, nodes)))
     }
 
     fn bind_attr(

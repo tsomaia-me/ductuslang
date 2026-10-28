@@ -525,11 +525,9 @@ impl Engine<'_> {
             Some(Val::Array(_) | Val::Error) => return Ok(Some(offset)),
             None => return Ok(None),
         };
-        Ok(Some(self.push_node(
-            Op::Binary(BinaryOp::Sub, length, offset),
-            loc,
-            scope,
-        )?))
+        let index = self.push_node(Op::Binary(BinaryOp::Sub, length, offset), loc, scope)?;
+        self.memo.from_end_indexes.insert(index);
+        Ok(Some(index))
     }
 
     pub(in crate::semantics::analysis) fn slice(
@@ -844,7 +842,9 @@ impl Engine<'_> {
         if !typed {
             return Ok(None);
         }
-        let (key, shapes) = self.family_key(function, args)?;
+        let Some((key, shapes)) = self.family_key(function, args, &mut Vec::new())? else {
+            return Ok(None);
+        };
         if self.memo.family_shapes.get(&key) != Some(&shapes) {
             return Ok(None);
         }
@@ -1295,14 +1295,14 @@ impl Engine<'_> {
                     Ok(layouts.first().cloned().flatten())
                 }
             },
-            Op::History { cell, fallback, .. } => match fallback {
-                Some(_) => Ok(layouts.first().cloned().flatten()),
-                None => match cell {
-                    HistoryCell::Input(input) => {
-                        let bound = some!(self.bound(Query::Input(*input), need));
-                        Ok(self.bound_layout(&bound)?)
-                    }
-                    HistoryCell::Let(_) | HistoryCell::State(_) => Err(None),
+            Op::History { cell, fallback, .. } => match cell {
+                HistoryCell::Input(input) => {
+                    let bound = some!(self.bound(Query::Input(*input), need));
+                    Ok(self.bound_layout(&bound)?)
+                }
+                HistoryCell::Let(_) | HistoryCell::State(_) => match fallback {
+                    Some(_) => Ok(layouts.first().cloned().flatten()),
+                    None => Err(None),
                 },
             },
             Op::Native { native, .. } => {
@@ -1488,12 +1488,13 @@ impl Engine<'_> {
         }
         Ok(Some(
             match some!(self.cval(Query::Eval(node, EvalTy::Exact), need)) {
-                CVal::Int(value) => Some(Some(if from_end {
+                CVal::Int(value) if i64::try_from(value).is_ok() => Some(Some(if from_end {
                     i128::from(length) - value
                 } else {
                     value
                 })),
-                CVal::F32(_)
+                CVal::Int(_)
+                | CVal::F32(_)
                 | CVal::F64(_)
                 | CVal::Bool(_)
                 | CVal::Enum(..)

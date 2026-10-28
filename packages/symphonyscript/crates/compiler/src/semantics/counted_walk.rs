@@ -58,6 +58,7 @@ pub(crate) enum CountedWalk {
     PathsWrittenDestination,
     PathsEnclosingWire,
     PathsCandidates,
+    PathsFramePath,
     ReadsCellBodyReadsCell,
     ReadsCellBodyCertainlyReadsCell,
     ReadsCellVariableArray,
@@ -141,7 +142,7 @@ thread_local! {
 
 impl CountedWalk {
     #[cfg(test)]
-    pub(crate) const ALL: [CountedWalk; 132] = [
+    pub(crate) const ALL: [CountedWalk; 133] = [
         CountedWalk::InlineCountsOf,
         CountedWalk::InlineCountsCallSites,
         CountedWalk::RecursiveFunctionsRecursiveFunctions,
@@ -200,6 +201,7 @@ impl CountedWalk {
         CountedWalk::PathsWrittenDestination,
         CountedWalk::PathsEnclosingWire,
         CountedWalk::PathsCandidates,
+        CountedWalk::PathsFramePath,
         CountedWalk::ReadsCellBodyReadsCell,
         CountedWalk::ReadsCellBodyCertainlyReadsCell,
         CountedWalk::ReadsCellVariableArray,

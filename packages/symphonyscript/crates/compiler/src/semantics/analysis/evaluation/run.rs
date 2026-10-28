@@ -29,12 +29,14 @@ use crate::semantics::analysis::destination::Destination;
 use crate::semantics::analysis::engine::Engine;
 use crate::semantics::analysis::eval_ty::EvalTy;
 use crate::semantics::analysis::fast_hash::FastMap;
+use crate::semantics::analysis::i64_position::I64Position;
 use crate::semantics::analysis::ids::NodeId;
 use crate::semantics::analysis::is_integer::is_integer;
 use crate::semantics::analysis::kind::Kind;
 use crate::semantics::analysis::lengths_of::lengths_of;
 use crate::semantics::analysis::map_leaves::map_leaves;
 use crate::semantics::analysis::op::Op;
+use crate::semantics::analysis::outside_i64::outside_i64;
 use crate::semantics::analysis::piece::Piece;
 use crate::semantics::analysis::query::Query;
 use crate::semantics::analysis::sig::Sig;
@@ -621,6 +623,19 @@ impl Engine<'_> {
         ctx: Ctx,
         need: &mut Vec<Query>,
     ) -> Result<Option<CVal>, Internal> {
+        if self.memo.from_end_indexes.contains(&node) {
+            let offset_ty = own_type(&some!(self.sig(rhs, need)), EvalTy::Exact);
+            if let CVal::Int(value) = some!(self.child(rhs, offset_ty, ctx, need)?)
+                && i64::try_from(value).is_err()
+            {
+                self.error_at_node(
+                    Code::IndexOutOfRange,
+                    rhs,
+                    outside_i64(I64Position::Offset, value),
+                )?;
+                return Ok(Some(CVal::Error));
+            }
+        }
         if self.memo.deferred_sums.contains(&node) && op != BinaryOp::Add {
             let a = self.typed_child(lhs, (own, partner), ctx, need)?;
             let b = self.typed_child(rhs, (own, partner), ctx, need)?;

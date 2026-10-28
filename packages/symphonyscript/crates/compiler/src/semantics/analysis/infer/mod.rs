@@ -68,16 +68,20 @@ impl Engine<'_> {
             let lengths = match &position.val {
                 Val::Array(array) => array.shape.lengths(),
                 Val::Scalar(node) if self.arrays.contains(node) => {
-                    let (code, message) = if position.ty.lengths.is_empty() {
-                        self.single_value_fault(&position, "an array")?
+                    if let Some(lengths) = self.fixed_lengths(*node)? {
+                        lengths
                     } else {
-                        (
-                            Code::TypeMismatch,
-                            "the value's array shape differs from the attribute's type".into(),
-                        )
-                    };
-                    self.require_shape(*node, position.ty.lengths.clone(), code, message);
-                    position.ty.lengths.clone()
+                        let (code, message) = if position.ty.lengths.is_empty() {
+                            self.single_value_fault(&position, "an array")?
+                        } else {
+                            (
+                                Code::TypeMismatch,
+                                "the value's array shape differs from the attribute's type".into(),
+                            )
+                        };
+                        self.require_shape(*node, position.ty.lengths.clone(), code, message);
+                        position.ty.lengths.clone()
+                    }
                 }
                 Val::Scalar(node) if self.demand_sig(*node)?.is_error() => {
                     position.ty.lengths.clone()
