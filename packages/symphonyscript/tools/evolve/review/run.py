@@ -53,8 +53,8 @@ def against(sha, baselines):
 
 def built(sha, run):
     export = run / "export"
-    archive = subprocess.run(["git", "-C", str(HERE), "archive", f"{sha}:{PACKAGE}"], check=True,
-                             capture_output=True).stdout
+    top = git(HERE, "rev-parse", "--show-toplevel").stdout.strip()
+    archive = subprocess.run(["git", "-C", top, "archive", f"{sha}:{PACKAGE}"], check=True, capture_output=True).stdout
     export.mkdir(parents=True)
     subprocess.run(["tar", "-x", "-C", str(export)], input=archive, check=True)
     tools = export / "tools" / "evolve"
