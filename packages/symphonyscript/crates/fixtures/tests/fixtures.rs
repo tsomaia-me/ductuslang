@@ -93,7 +93,7 @@ fn the_listed_undeclared_names_appear_in_their_examples() {
 fn the_spec_has_sym_and_sym_error_examples() {
     let examples = spec_examples();
     let count = |tag: &str| examples.iter().filter(|example| example.tag == tag).count();
-    assert_eq!(count("sym"), 31);
+    assert_eq!(count("sym"), 49);
     assert!(count("ebnf") > 0);
     let errors: Vec<(&str, &str)> = examples
         .iter()
@@ -103,7 +103,23 @@ fn the_spec_has_sym_and_sym_error_examples() {
     assert_eq!(
         errors,
         [
+            (
+                "3.9",
+                "input port: i32? = none\n\nSynth s:\n    Osc | freq=port\n"
+            ),
+            (
+                "3.11",
+                "input body: json[..4096] = json {}\n\nstate small: json[..256] = body[\"items\"]\n"
+            ),
             ("4.1", "Clip melody:\n    Note/300000000000\n"),
+            (
+                "5.10",
+                "input held: i32[..10] = []\n\nlet total = 1 + for x in held into sum from 0: sum + x\n"
+            ),
+            (
+                "5.10",
+                "input held: i32[..10] = []\n\nlet high = len(for x in held into kept from []: if x > 60 then kept + [x] else kept)\n"
+            ),
             (
                 "6.3",
                 "input n = 5\n\nfn fib(k): if k < 2 then k else fib(k - 1) + fib(k - 2)\n\nClip c:\n    Note/(fib(n))\n"
@@ -112,6 +128,45 @@ fn the_spec_has_sym_and_sym_error_examples() {
                 "6.6",
                 "input note = 60\n\nstate recent = recent{1, []} + [note]\n"
             ),
+            ("6.7", "input g = x: x + 1\n"),
+            (
+                "6.7",
+                "fn bar(n): n + 1\n\nlet baz = bar\nlet same = baz is bar\n\nClip c:\n    Note when same\n"
+            ),
+            ("6.7", "let f = x: f(x)\n\nClip c:\n    Note/(f(60))\n"),
+            (
+                "6.7",
+                "fn apply(f: (i32) -> i32, x: i32) -> i32: f(x)\n\nClip c:\n    Note/(apply((a, b): a + b, 60))\n"
+            ),
+            (
+                "6.8",
+                "fn shorter[const N](xs: i32[N]) -> i32[N - 1]: xs[1..]\n\nClip c:\n    Note/(len(shorter([60])))\n"
+            ),
+            (
+                "6.8",
+                "fn half[const N](xs: i32[N]) -> i32[N / 2]: xs[..N div 2]\n\nClip c:\n    Note/(half([60, 64, 67, 72])[0])\n"
+            ),
+            (
+                "6.8",
+                "fn same[T](a: T, b: T) -> T: a\n\nClip c:\n    Note/(same(60i32, true))\n"
+            ),
+            (
+                "6.8",
+                "fn tail[const N](xs: i32[N + 1]) -> i32[N]: xs[1..]\n\nClip c:\n    Note/(tail([60, 64, 67])[0])\n"
+            ),
+            (
+                "6.8",
+                "type Pair[A, B]:\n    left: A\n    right: B\n\nlet p: Pair = {left: 1i32}\n\nClip c:\n    Note/(p.left)\n"
+            ),
+            (
+                "7.9",
+                "Clip c:\n    for i, k in 0..4:\n        Note/(60 + k)\n"
+            ),
+            (
+                "7.9",
+                "input n = 4\n\nlet total = for i in 0..n into sum from 0: sum + i\n\nClip c:\n    Note/total\n"
+            ),
+            ("10.2", "Pad kick | hit={}\n"),
         ]
     );
 }

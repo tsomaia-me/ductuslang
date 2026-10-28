@@ -1,6 +1,9 @@
 mod support;
 
-use symphonyscript_fixtures::spec_productions;
+use std::collections::BTreeSet;
+use std::path::{Path, PathBuf};
+
+use symphonyscript_fixtures::{PENDING_PRODUCTIONS, pending_lines, spec_productions};
 
 const CASES: &[(&str, &str, &str)] = &[
     (
@@ -432,17 +435,70 @@ fn every_production_case_parses_to_its_tree() {
     }
 }
 
-#[test]
-fn every_production_of_the_spec_has_a_case() {
-    let productions = spec_productions();
-    let missing: Vec<&String> = productions
+fn pending_list_problems(
+    productions: &[String],
+    cases: &[&str],
+    list: &Path,
+    write: bool,
+) -> Vec<String> {
+    let has_case = |name: &str| cases.contains(&name);
+    if write {
+        let uncased: Vec<&String> = productions.iter().filter(|name| !has_case(name)).collect();
+        let text: String = uncased.iter().map(|name| format!("{name}\n")).collect();
+        std::fs::write(list, text)
+            .unwrap_or_else(|error| panic!("{} writes: {error}", list.display()));
+        return vec![format!(
+            "wrote {} with {} lines; run again without SYMPHONY_PENDING_PRODUCTIONS to check it",
+            list.display(),
+            uncased.len()
+        )];
+    }
+    let listed = pending_lines(list);
+    let mut problems: Vec<String> = productions
         .iter()
-        .filter(|name| !CASES.iter().any(|(production, _, _)| production == name))
+        .filter_map(|name| match (listed.contains(name), has_case(name)) {
+            (true, true) => Some(format!(
+                "{name} has a parse case: remove the line `{name}` from {}",
+                list.display()
+            )),
+            (false, false) => Some(format!(
+                "{name} has no parse case: add the line `{name}` to {}",
+                list.display()
+            )),
+            _ => None,
+        })
         .collect();
-    assert!(
-        missing.is_empty(),
-        "productions without a parse test: {missing:?}"
+    let names: BTreeSet<&String> = productions.iter().collect();
+    problems.extend(
+        listed
+            .iter()
+            .filter(|line| !names.contains(line))
+            .map(|line| {
+                format!(
+                    "no production is `{line}`: remove the line from {}",
+                    list.display()
+                )
+            }),
     );
+    problems
+}
+
+#[test]
+fn the_pending_list_names_exactly_the_productions_of_the_spec_without_a_case() {
+    let write = std::env::var("SYMPHONY_PENDING_PRODUCTIONS").is_ok_and(|mode| mode == "write");
+    let cases: Vec<&str> = CASES.iter().map(|(production, _, _)| *production).collect();
+    let problems = pending_list_problems(
+        &spec_productions(),
+        &cases,
+        Path::new(PENDING_PRODUCTIONS),
+        write,
+    );
+    assert!(problems.is_empty(), "{}", problems.join("\n"));
+}
+
+#[test]
+fn every_case_names_a_production_of_the_spec() {
+    let productions = spec_productions();
     let unknown: Vec<&str> = CASES
         .iter()
         .map(|(production, _, _)| *production)
@@ -452,4 +508,87 @@ fn every_production_of_the_spec_has_a_case() {
         unknown.is_empty(),
         "cases naming no production: {unknown:?}"
     );
+}
+
+const SMALL_PRODUCTIONS: [&str; 3] = ["Song", "Verse", "Chorus"];
+
+const SMALL_CASES: [&str; 1] = ["Song"];
+
+fn small_problems(list: &Path, write: bool) -> Vec<String> {
+    let productions: Vec<String> = SMALL_PRODUCTIONS
+        .iter()
+        .map(|name| name.to_string())
+        .collect();
+    pending_list_problems(&productions, &SMALL_CASES, list, write)
+}
+
+fn list_file(name: &str, text: &str) -> PathBuf {
+    let path = Path::new(env!("CARGO_TARGET_TMPDIR")).join(name);
+    std::fs::write(&path, text).expect("the list writes");
+    path
+}
+
+#[test]
+fn a_listed_production_with_a_case_fails_naming_its_line() {
+    let list = list_file(
+        "pending-productions-listed-cased.txt",
+        "# pending\n\nSong\nVerse\nChorus\n",
+    );
+    assert_eq!(
+        small_problems(&list, false),
+        [format!(
+            "Song has a parse case: remove the line `Song` from {}",
+            list.display()
+        )]
+    );
+}
+
+#[test]
+fn an_unlisted_production_without_a_case_fails_naming_its_line() {
+    let list = list_file("pending-productions-unlisted-uncased.txt", "Verse\n");
+    assert_eq!(
+        small_problems(&list, false),
+        [format!(
+            "Chorus has no parse case: add the line `Chorus` to {}",
+            list.display()
+        )]
+    );
+}
+
+#[test]
+fn a_listed_line_that_names_no_production_fails_naming_it() {
+    let list = list_file(
+        "pending-productions-no-production.txt",
+        "Verse\nChorus\nBridge\n",
+    );
+    assert_eq!(
+        small_problems(&list, false),
+        [format!(
+            "no production is `Bridge`: remove the line from {}",
+            list.display()
+        )]
+    );
+}
+
+#[test]
+fn a_list_that_names_exactly_the_productions_without_a_case_passes() {
+    let list = list_file("pending-productions-exact.txt", "Chorus\nVerse\n");
+    assert_eq!(small_problems(&list, false), Vec::<String>::new());
+}
+
+#[test]
+fn the_write_mode_writes_the_productions_without_a_case_in_spec_order_and_fails() {
+    let list = list_file("pending-productions-write.txt", "Song\n");
+    assert_eq!(
+        small_problems(&list, true),
+        [format!(
+            "wrote {} with 2 lines; run again without SYMPHONY_PENDING_PRODUCTIONS to check it",
+            list.display()
+        )]
+    );
+    assert_eq!(
+        std::fs::read_to_string(&list).expect("the list reads"),
+        "Verse\nChorus\n"
+    );
+    assert_eq!(small_problems(&list, false), Vec::<String>::new());
 }
