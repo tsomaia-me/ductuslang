@@ -211,6 +211,7 @@ pub fn assert_rows_in_every_order(vocabulary: &Vocabulary, rows: &[Row]) {
 pub fn signature_vocabulary() -> Vocabulary {
     let mut v = Vocabulary::builder("signatures");
     let beats = v.unit_family("beats").base("beats").unit("bars", 4.0);
+    v.enumeration("Wave", ["Sine", "Saw", "Square"]);
     let clip = v.node("Clip");
     let note = v.node("Note");
     v.kind(clip)

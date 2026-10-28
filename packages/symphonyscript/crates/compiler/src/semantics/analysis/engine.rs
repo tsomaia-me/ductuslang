@@ -802,6 +802,7 @@ impl<'a> Engine<'a> {
             fault: None,
             template: None,
             signing: self.signing(),
+            node: None,
         });
     }
 
@@ -976,6 +977,7 @@ impl<'a> Engine<'a> {
             fault,
             template,
             signing: self.signing(),
+            node: Some(node),
         });
         Ok(())
     }
@@ -1026,6 +1028,7 @@ impl<'a> Engine<'a> {
             fault,
             template,
             signing: self.signing(),
+            node: Some(node),
         });
         Ok(())
     }
@@ -1056,6 +1059,7 @@ impl<'a> Engine<'a> {
             fault,
             template,
             signing: self.signing(),
+            node: None,
         });
         Ok(())
     }

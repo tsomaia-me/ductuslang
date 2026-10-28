@@ -1187,6 +1187,7 @@ impl Engine<'_> {
                 scope,
                 "the value's shape differs from its annotated type",
             )?;
+            self.memo.own_typed.extend(val.nodes());
             return Ok(BoundVal::Error);
         }
         let scalar = annotation.map(|annotation| annotation.scalar);
@@ -1198,6 +1199,7 @@ impl Engine<'_> {
                         node,
                         "the value does not have the annotated type; a conversion states the rounding",
                     )?;
+                    self.memo.own_typed.extend(val.nodes());
                     return Ok(BoundVal::Error);
                 }
             }

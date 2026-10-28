@@ -284,7 +284,7 @@ const RULES: &[Rule] = &[
     rule(
         "5.3",
         "operand-type",
-        "let a = 1 and true\nClip c:\n    Note/a\n",
+        "let a = 1 and 2\nClip c:\n    Note when a\n",
     ),
     rule(
         "5.4",

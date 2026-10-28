@@ -67,7 +67,7 @@ impl Engine<'_> {
         need: &mut Vec<Query>,
     ) -> Result<Option<CVal>, Internal> {
         let sig = some!(self.sig(node, need));
-        if sig.is_error() || sig.reactive {
+        if sig.is_error() || sig.reactive || self.memo.kept_types.contains(&node) {
             return Ok(Some(CVal::Error));
         }
         let own = self.expected_own(node, &sig, ty)?;

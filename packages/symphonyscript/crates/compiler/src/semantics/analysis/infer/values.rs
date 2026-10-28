@@ -9,6 +9,7 @@ use crate::semantics::analysis::c_val::CVal;
 use crate::semantics::analysis::engine::Engine;
 use crate::semantics::analysis::eval_ty::EvalTy;
 use crate::semantics::analysis::eval_ty_of::eval_ty_of;
+use crate::semantics::analysis::fast_hash::FastSet;
 use crate::semantics::analysis::ids::{BindingId, NodeId};
 use crate::semantics::analysis::is_float::is_float;
 use crate::semantics::analysis::is_integer::is_integer;
@@ -26,6 +27,76 @@ impl Engine<'_> {
                 self.fit(*node, value, ty)?;
             }
         }
+        Ok(())
+    }
+
+    pub(super) fn retract_unread_evaluations(&mut self) -> Result<(), Internal> {
+        if self.memo.eager_reads.is_empty() {
+            return Ok(());
+        }
+        let read: FastSet<NodeId> = self
+            .typing
+            .checked
+            .iter()
+            .chain(self.typing.evaluated.iter())
+            .map(|(node, ..)| *node)
+            .collect();
+        let passed_over: FastSet<NodeId> = self
+            .typing
+            .passed_over
+            .iter()
+            .map(|(node, ..)| *node)
+            .collect();
+        let mut unread: FastSet<NodeId> = FastSet::default();
+        for (root, built) in std::mem::take(&mut self.memo.eager_reads) {
+            if built.iter().any(|node| read.contains(node))
+                || !built.iter().any(|node| passed_over.contains(node))
+            {
+                continue;
+            }
+            let mut stack = vec![root];
+            while let Some(node) = stack.pop() {
+                if !unread.insert(node) {
+                    continue;
+                }
+                let op = &self.node(node)?.op;
+                match op {
+                    Op::Use(_)
+                    | Op::Chosen(_)
+                    | Op::Read(_)
+                    | Op::Recursive { .. }
+                    | Op::History { .. }
+                    | Op::ToRead { .. }
+                    | Op::Arg(_) => {}
+                    Op::Number(..)
+                    | Op::Const(_)
+                    | Op::Bool(_)
+                    | Op::Str(_)
+                    | Op::Concat(_)
+                    | Op::Variant(..)
+                    | Op::Bare(_)
+                    | Op::Pi
+                    | Op::NodeRef(_)
+                    | Op::Unary(..)
+                    | Op::Binary(..)
+                    | Op::If(..)
+                    | Op::Match { .. }
+                    | Op::Pick { .. }
+                    | Op::Element { .. }
+                    | Op::Array(_)
+                    | Op::Convert(..)
+                    | Op::Annotate(..)
+                    | Op::Builtin(..)
+                    | Op::Join(..)
+                    | Op::Slice { .. }
+                    | Op::Native { .. } => stack.extend(op.operands()),
+                }
+            }
+        }
+        self.deferred.retain(|deferred| {
+            !(matches!(deferred.code, Code::IndexOutOfRange | Code::DoesNotFit)
+                && deferred.node.is_some_and(|node| unread.contains(&node)))
+        });
         Ok(())
     }
 

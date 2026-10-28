@@ -755,6 +755,17 @@ fn a_compile_time_index_into_a_literal_computes_its_element_in_the_positions_typ
 }
 
 #[test]
+fn a_compile_time_choice_computes_the_arm_it_takes_beside_a_faulty_arm_it_does_not() {
+    let (diagnostics, value) = analyzed(
+        &vocabulary(),
+        "Clip c:\n    Note/((if false then [1, 2][5] else 3) + 60)\n",
+        |engine| attr_value(engine, "pitch", EvalTy::I32),
+    );
+    assert!(errors(&diagnostics).is_empty(), "{diagnostics:?}");
+    assert_eq!(value, Some(CVal::Int(63)));
+}
+
+#[test]
 fn a_qualified_variant_in_an_array_that_only_len_reads_computes_its_length() {
     for text in in_every_order(&[
         "input w = Wave::Saw\n",

@@ -128,7 +128,7 @@ impl Engine<'_> {
             Op::Unary(UnaryOp::Not, _) => {
                 if !matches!(at(0)?.kind, Kind::Bool | Kind::Any) {
                     self.error_at_node(Code::OperandType, node, "`not` takes a `bool`")?;
-                    return Ok(Sig::ERROR);
+                    return Ok(self.kept_bool(node, reactive));
                 }
                 Sig::of(Kind::Bool, Width::Fixed(Scalar::Bool), reactive, None)
             }
@@ -238,6 +238,7 @@ impl Engine<'_> {
                     if matches!(first.kind, Kind::Any | Kind::Error) {
                         return Ok(Sig::ERROR);
                     }
+                    self.memo.kept_types.insert(node);
                 }
                 Sig::of(
                     kind_of(*target),
@@ -268,7 +269,7 @@ impl Engine<'_> {
         })
     }
 
-    fn elements_sig(
+    pub(super) fn elements_sig(
         &mut self,
         node: NodeId,
         items: &[NodeId],
@@ -476,10 +477,10 @@ impl Engine<'_> {
             BinaryOp::Lt | BinaryOp::Le | BinaryOp::Gt | BinaryOp::Ge => {
                 if !numeric {
                     self.error_at_node(Code::OperandType, node, Self::operand_type_message(op))?;
-                    return Ok(Sig::ERROR);
+                    return Ok(self.kept_bool(node, reactive));
                 }
                 if self.one_family(node, &[lhs, rhs])?.is_none() {
-                    return Ok(Sig::ERROR);
+                    return Ok(self.kept_bool(node, reactive));
                 }
                 Sig::of(Kind::Bool, Width::Fixed(Scalar::Bool), reactive, None)
             }
@@ -495,7 +496,7 @@ impl Engine<'_> {
                     };
                 if !comparable {
                     self.error_at_node(Code::OperandType, node, Self::operand_type_message(op))?;
-                    return Ok(Sig::ERROR);
+                    return Ok(self.kept_bool(node, reactive));
                 }
                 if (a.kind == Kind::Str || b.kind == Kind::Str) && reactive {
                     self.error_at_node(
@@ -503,23 +504,43 @@ impl Engine<'_> {
                         node,
                         "a string exists only at compile time, and this comparison of strings reads a cell",
                     )?;
-                    return Ok(Sig::ERROR);
+                    return Ok(self.kept_bool(node, reactive));
                 }
                 if numeric && self.one_family(node, &[lhs, rhs])?.is_none() {
-                    return Ok(Sig::ERROR);
+                    return Ok(self.kept_bool(node, reactive));
                 }
                 Sig::of(Kind::Bool, Width::Fixed(Scalar::Bool), reactive, None)
             }
             BinaryOp::And | BinaryOp::Or => {
-                if !matches!(a.kind, Kind::Bool | Kind::Any)
-                    || !matches!(b.kind, Kind::Bool | Kind::Any)
-                {
-                    self.error_at_node(Code::OperandType, node, Self::operand_type_message(op))?;
-                    return Ok(Sig::ERROR);
+                let logical = |sig: &Sig| matches!(sig.kind, Kind::Bool | Kind::Any);
+                match (logical(&a), logical(&b)) {
+                    (true, true) => {}
+                    (false, false) => {
+                        self.error_at_node(
+                            Code::OperandType,
+                            node,
+                            Self::operand_type_message(op),
+                        )?;
+                        return Ok(self.kept_bool(node, reactive));
+                    }
+                    (true, false) | (false, true) => {
+                        let refused = if logical(&a) { rhs.0 } else { lhs.0 };
+                        self.error_at_node(
+                            Code::TypeMismatch,
+                            refused,
+                            "this value has the wrong type here; `bool` is expected",
+                        )?;
+                        return Ok(self.kept_bool(node, reactive));
+                    }
                 }
                 Sig::of(Kind::Bool, Width::Fixed(Scalar::Bool), reactive, None)
             }
         })
+    }
+
+    fn kept_bool(&mut self, node: NodeId, reactive: bool) -> Sig {
+        self.memo.kept_types.insert(node);
+        Sig::of(Kind::Bool, Width::Fixed(Scalar::Bool), reactive, None)
     }
 
     pub(in crate::semantics::analysis) fn operand_type_message(op: BinaryOp) -> &'static str {

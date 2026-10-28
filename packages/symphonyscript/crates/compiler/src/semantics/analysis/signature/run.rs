@@ -1,4 +1,4 @@
-use symphonyscript_core::{BinaryOp, Builtin, UnaryOp};
+use symphonyscript_core::{BinaryOp, Builtin, Scalar, UnaryOp};
 
 use super::extra::Extra;
 use crate::semantics::Internal;
@@ -130,7 +130,13 @@ impl Engine<'_> {
                 }
             }
         } else if errors && !matches!(op, Op::Recursive { .. }) {
-            Sig::ERROR
+            match self.kept_type(node, &op, &sigs, group)? {
+                Some(sig) => {
+                    self.memo.kept_types.insert(node);
+                    sig
+                }
+                None => Sig::ERROR,
+            }
         } else if open && !joins(&op) {
             Sig::open(reactive)
         } else {
@@ -147,6 +153,58 @@ impl Engine<'_> {
         sig.frame = matches!(op, Op::Arg(_)) || sigs.iter().any(|operand| operand.frame);
         self.memo.sigs.insert(node, sig);
         Ok(true)
+    }
+
+    fn kept_type(
+        &mut self,
+        node: NodeId,
+        op: &Op,
+        sigs: &[Sig],
+        group: Option<Sig>,
+    ) -> Result<Option<Sig>, Internal> {
+        let reactive = sigs.iter().any(|operand| operand.reactive);
+        Ok(match op {
+            Op::Binary(
+                BinaryOp::And
+                | BinaryOp::Or
+                | BinaryOp::Lt
+                | BinaryOp::Le
+                | BinaryOp::Gt
+                | BinaryOp::Ge
+                | BinaryOp::Is
+                | BinaryOp::IsNot,
+                ..,
+            )
+            | Op::Unary(UnaryOp::Not, _) => Some(Sig::of(
+                Kind::Bool,
+                Width::Fixed(Scalar::Bool),
+                reactive,
+                None,
+            )),
+            Op::Convert(target, _) => Some(Sig::of(
+                kind_of(*target),
+                Width::Fixed(*target),
+                reactive,
+                None,
+            )),
+            Op::Pick { items, .. } => {
+                let item_sigs = sigs.get(1..).unwrap_or_default();
+                if item_sigs.iter().any(Sig::is_error)
+                    || group.is_some_and(|group| group.is_error())
+                {
+                    return Ok(None);
+                }
+                self.elements_sig(node, items, item_sigs)?
+                    .map(|(kind, width, family)| Sig::of(kind, width, reactive, family))
+            }
+            Op::Element { .. } => match sigs.first() {
+                Some(base) if !base.is_error() => {
+                    Some(Sig::of(base.kind, base.width, reactive, base.family))
+                }
+                Some(_) | None => None,
+            },
+            _ => None,
+        })
     }
 
     fn arm_forms(

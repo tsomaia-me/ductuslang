@@ -52,7 +52,10 @@ impl Engine<'_> {
             }
             match self.array_position(&position)? {
                 ArrayPosition::Usual => {}
-                ArrayPosition::Faulty => continue,
+                ArrayPosition::Faulty => {
+                    self.memo.own_typed.extend(position.val.nodes());
+                    continue;
+                }
                 ArrayPosition::Variable => {
                     for node in position.val.nodes() {
                         self.demand_sig(node)?;
@@ -83,15 +86,24 @@ impl Engine<'_> {
                 Val::Error => continue,
             };
             if lengths != position.ty.lengths {
-                let (code, message) = if position.ty.lengths.is_empty() {
-                    self.single_value_fault(&position, "an array")?
-                } else {
-                    (
-                        Code::TypeMismatch,
-                        "the value's array shape differs from the attribute's type".into(),
-                    )
-                };
-                self.error(code, position.loc, position.scope, message)?;
+                let mut faulty = false;
+                for node in position.val.nodes() {
+                    faulty |= self.demand_sig(node)?.is_error();
+                }
+                if !faulty {
+                    let (code, message) = if position.ty.lengths.is_empty() {
+                        self.single_value_fault(&position, "an array")?
+                    } else {
+                        (
+                            Code::TypeMismatch,
+                            "the value's array shape differs from the attribute's type".into(),
+                        )
+                    };
+                    self.error(code, position.loc, position.scope, message)?;
+                }
+                if position.ty.lengths.is_empty() {
+                    self.memo.own_typed.extend(position.val.nodes());
+                }
                 continue;
             }
             for node in position.val.nodes() {
@@ -165,6 +177,10 @@ impl Engine<'_> {
         for (node, typed, passed_over, ..) in detached {
             self.check_detached(node, typed, passed_over, &mut roots)?;
         }
+        for node in self.memo.own_typed.clone() {
+            self.demand_sig(node)?;
+            self.check_detached(node, (None, false), false, &mut roots)?;
+        }
         for index in 0..self.bindings.len() {
             let binding = BindingId(u32::try_from(index).unwrap_or(u32::MAX));
             if let Some(own) = self.typing.own.get(&binding).copied() {
@@ -180,6 +196,7 @@ impl Engine<'_> {
             }
         }
         self.values(&roots)?;
+        self.retract_unread_evaluations()?;
         self.capacities()?;
         self.capacity_checks(&variable_positions)?;
         self.state_checks()?;

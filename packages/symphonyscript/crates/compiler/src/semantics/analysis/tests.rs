@@ -2177,7 +2177,7 @@ fn a_lookup_that_misses_is_an_internal_error() {
     let mut hir = built(&vocabulary, "Session s\n");
     hir.top.push(Top::Input(foreign_input));
     let mut report = Report::default();
-    let found = analyze::program(
+    let (found, _) = analyze::program(
         &hir,
         &vocabulary,
         &variants,

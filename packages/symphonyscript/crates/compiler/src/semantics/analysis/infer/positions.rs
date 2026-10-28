@@ -4,7 +4,6 @@ use symphonyscript_core::{AttrUnit, BinaryOp, Scalar, Ty, UnaryOp};
 
 use super::position::Position;
 use super::role::Role;
-use crate::diagnostics::Code;
 use crate::semantics::Internal;
 use crate::semantics::analysis::attr_value_source::AttrValueSource;
 use crate::semantics::analysis::bound_val::BoundVal;
@@ -20,7 +19,6 @@ use crate::semantics::analysis::let_ref::LetRef;
 use crate::semantics::analysis::locals_owner::LocalsOwner;
 use crate::semantics::analysis::query::Query;
 use crate::semantics::analysis::scope_kind::ScopeKind;
-use crate::semantics::analysis::sig::Sig;
 use crate::semantics::analysis::some::some;
 use crate::semantics::analysis::val::Val;
 use crate::semantics::ir::{ExprId, ExprKind, Loc, Top};
@@ -264,7 +262,6 @@ impl Engine<'_> {
         let start = found.len();
         let root_scope = scope;
         let mut faults = Vec::new();
-        let mut refusals = Vec::new();
         let mut stack = vec![(
             root,
             scope,
@@ -305,12 +302,9 @@ impl Engine<'_> {
                 }
             }
             let children = kind.children();
-            let placeheld = children
+            let refused = !children
                 .iter()
                 .any(|child| matches!(self.memo.exprs.get(&(*child, scope)), Some(Val::Error)));
-            if !placeheld {
-                continue;
-            }
             let chosen = self.chosen_child(&kind, scope)?;
             let read = match kind {
                 ExprKind::Array(_) => picked,
@@ -323,7 +317,7 @@ impl Engine<'_> {
                 };
                 let unread = read.is_some_and(|read| read != position);
                 let (child_typed, through) = match child_flow(&kind, position, typed) {
-                    _ if unread => ((None, false), false),
+                    _ if unread || refused => ((None, false), false),
                     flow => flow,
                 };
                 let origin = origin.clone().filter(|_| through);
@@ -346,8 +340,9 @@ impl Engine<'_> {
                 };
                 let passed_over = passed_over
                     || unread
-                    || chosen
-                        .is_some_and(|chosen| position != chosen && arm_position(&kind, position));
+                    || chosen.is_some_and(|chosen| {
+                        chosen != Some(position) && arm_position(&kind, position)
+                    });
                 match val {
                     Val::Error => stack.push((
                         *child,
@@ -363,14 +358,6 @@ impl Engine<'_> {
                         if sig.is_error() {
                             faults.push(self.node(node)?.loc);
                         }
-                        let refusal = match kind {
-                            ExprKind::Binary(op, lhs, rhs) if !self.arrays.contains(&node) => {
-                                let partner = if *child == lhs { rhs } else { lhs };
-                                refused_for_every_partner(op, &sig)
-                                    .map(|message| (message, partner))
-                            }
-                            _ => None,
-                        };
                         let (typed, origin) = if self.arrays.contains(&node) {
                             ((None, false), None)
                         } else if sig.kind == Kind::Str && reads_bytes(child_typed, origin.as_ref())
@@ -379,16 +366,6 @@ impl Engine<'_> {
                         } else {
                             (child_typed, origin)
                         };
-                        if let Some((message, partner)) = refusal {
-                            let operand = (found.len(), (*child, scope), child_loc);
-                            refusals.push((
-                                loc,
-                                scope,
-                                message,
-                                self.hir.expr(partner)?.loc,
-                                operand,
-                            ));
-                        }
                         found.push((node, typed, passed_over, origin, child_group, member));
                     }
                     Val::Array(array) => {
@@ -407,19 +384,6 @@ impl Engine<'_> {
                         }
                     }
                 }
-            }
-        }
-        for (at, scope, message, partner, (index, own, own_loc)) in refusals.into_iter().rev() {
-            if faults.iter().any(|fault| partner.contains(*fault)) {
-                continue;
-            }
-            self.error(Code::OperandType, at, scope, message)?;
-            faults.push(at);
-            if let Some(entry) = found.get_mut(index) {
-                entry.1 = (None, false);
-                entry.3 = None;
-                entry.4 = own;
-                entry.5 = (own_loc, own);
             }
         }
         if !faults.is_empty() {
@@ -553,7 +517,11 @@ impl Engine<'_> {
             .filter(|position| *position < length))
     }
 
-    fn chosen_child(&mut self, kind: &ExprKind, scope: ScopeId) -> Result<Option<usize>, Internal> {
+    fn chosen_child(
+        &mut self,
+        kind: &ExprKind,
+        scope: ScopeId,
+    ) -> Result<Option<Option<usize>>, Internal> {
         let (selector, condition) = match kind {
             ExprKind::If(selector, ..) => (*selector, true),
             ExprKind::Match { scrutinee, .. } => (*scrutinee, false),
@@ -576,20 +544,26 @@ impl Engine<'_> {
             | ExprKind::Binary(..) => return Ok(None),
         };
         let Some(Val::Scalar(node)) = self.memo.exprs.get(&(selector, scope)).cloned() else {
-            return Ok(None);
+            return Ok(Some(None));
         };
         let sig = self.demand_sig(node)?;
-        if sig.reactive || sig.frame || sig.is_error() {
+        if sig.is_error() {
+            return Ok(Some(None));
+        }
+        if sig.reactive || sig.frame {
             return Ok(None);
         }
         if !condition {
-            return Ok(Some(0));
+            return Ok(Some(Some(0)));
         }
-        Ok(match self.demand_cval(node, EvalTy::Bool)? {
+        if !matches!(sig.kind, Kind::Bool | Kind::Any) {
+            return Ok(Some(None));
+        }
+        Ok(Some(match self.demand_cval(node, EvalTy::Bool)? {
             CVal::Bool(true) => Some(1),
             CVal::Bool(false) => Some(2),
             _ => None,
-        })
+        }))
     }
 
     fn as_converted(&self, val: Val) -> Val {
@@ -612,25 +586,6 @@ pub(super) type Detached = (
 );
 
 type Ranked = (Loc, Loc, usize);
-
-fn refused_for_every_partner(op: BinaryOp, sig: &Sig) -> Option<&'static str> {
-    let refused = match op {
-        BinaryOp::Add => !sig.is_numeric() && sig.kind != Kind::Str,
-        BinaryOp::Sub
-        | BinaryOp::Mul
-        | BinaryOp::Div
-        | BinaryOp::Rem
-        | BinaryOp::Pow
-        | BinaryOp::Lt
-        | BinaryOp::Le
-        | BinaryOp::Gt
-        | BinaryOp::Ge => !sig.is_numeric(),
-        BinaryOp::IntDiv => !matches!(sig.kind, Kind::Int | Kind::Any),
-        BinaryOp::And | BinaryOp::Or => !matches!(sig.kind, Kind::Bool | Kind::Any),
-        BinaryOp::Is | BinaryOp::IsNot => false,
-    };
-    (refused && !sig.is_error()).then(|| Engine::operand_type_message(op))
-}
 
 fn reads_bytes(typed: (Option<Scalar>, bool), origin: Option<&Position>) -> bool {
     typed.0 == Some(Scalar::U8)
