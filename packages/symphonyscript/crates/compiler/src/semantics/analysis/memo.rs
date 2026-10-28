@@ -69,6 +69,7 @@ pub(crate) struct Memo {
     pub layout_visits: u64,
     pub flow_work: std::cell::Cell<u64>,
     pub use_steps: std::cell::Cell<u64>,
+    pub use_ends: std::cell::RefCell<FastMap<NodeId, NodeId>>,
     pub arm_walks: std::cell::Cell<u64>,
     pub choice_arrays: super::fast_hash::FastMap<NodeId, (bool, bool)>,
     pub query_runs: u64,

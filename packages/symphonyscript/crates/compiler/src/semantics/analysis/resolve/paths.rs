@@ -1474,13 +1474,26 @@ impl Engine<'_> {
 
     pub(in crate::semantics::analysis) fn through_uses(
         &self,
-        mut node: NodeId,
+        node: NodeId,
     ) -> Result<NodeId, Internal> {
-        while let Op::Use(inner) = self.node(node)?.op {
+        let mut path = Vec::new();
+        let mut current = node;
+        let end = loop {
+            if let Some(end) = self.memo.use_ends.borrow().get(&current).copied() {
+                break end;
+            }
             self.memo.use_steps.set(self.memo.use_steps.get() + 1);
-            node = inner;
-        }
-        Ok(node)
+            let Op::Use(inner) = self.node(current)?.op else {
+                break current;
+            };
+            path.push(current);
+            current = inner;
+        };
+        self.memo
+            .use_ends
+            .borrow_mut()
+            .extend(path.into_iter().map(|step| (step, end)));
+        Ok(end)
     }
 
     pub(in crate::semantics::analysis) fn attr_named(

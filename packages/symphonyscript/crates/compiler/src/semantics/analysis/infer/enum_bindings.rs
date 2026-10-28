@@ -53,9 +53,20 @@ impl Engine<'_> {
         let mut waiting = flows.members.clone();
         let mut blocked = FastSet::default();
         let mut by_uses = Vec::new();
+        let order = FlowOrder::new(&reads_first, &readers_first, &flows);
+        let mut dirty = Dirty::all(&order);
+        let mut verified = false;
         loop {
-            let mut changed = false;
-            for &member in &reads_first {
+            let mut changed = Vec::new();
+            let mut cursor = 0;
+            while let Some(position) = dirty.reads.range(cursor..).next().copied() {
+                dirty.reads.remove(&position);
+                cursor = position + 1;
+                let member = order
+                    .reads_first
+                    .get(position)
+                    .copied()
+                    .ok_or(Internal::missed("flow member"))?;
                 self.flow_step();
                 if !waiting.contains(&member) || blocked.contains(&member) {
                     continue;
@@ -72,31 +83,43 @@ impl Engine<'_> {
                     .any(|read| blocked.contains(read));
                 if expected.len() > 1 || reads_blocked {
                     blocked.insert(member);
-                    changed = true;
+                    dirty.touch(member, &order);
+                    changed.push(member);
                     continue;
                 }
                 match self.carried_enum(self.member_node(member)?, &flows)? {
                     Carried::Clash => {
                         waiting.remove(&member);
                         self.mark_untyped(member)?;
-                        changed = true;
+                        dirty.touch(member, &order);
+                        changed.push(member);
                     }
                     Carried::Enum(own) => {
                         waiting.remove(&member);
                         self.take_enum(member, own, &flows, &mut pushed)?;
-                        changed = true;
+                        dirty.touch(member, &order);
+                        changed.push(member);
                     }
                     Carried::Open => {
                         if let [own] = expected {
                             waiting.remove(&member);
                             by_uses.push(member);
                             self.take_enum(member, *own, &flows, &mut pushed)?;
-                            changed = true;
+                            dirty.touch(member, &order);
+                            changed.push(member);
                         }
                     }
                 }
             }
-            for &member in &readers_first {
+            let mut cursor = 0;
+            while let Some(position) = dirty.readers.range(cursor..).next().copied() {
+                dirty.readers.remove(&position);
+                cursor = position + 1;
+                let member = order
+                    .readers_first
+                    .get(position)
+                    .copied()
+                    .ok_or(Internal::missed("flow member"))?;
                 self.flow_step();
                 if !waiting.contains(&member)
                     || blocked.contains(&member)
@@ -110,16 +133,23 @@ impl Engine<'_> {
                         waiting.remove(&member);
                         by_uses.push(member);
                         self.take_enum(member, *own, &flows, &mut pushed)?;
-                        changed = true;
+                        dirty.touch(member, &order);
+                        changed.push(member);
                     }
                     _ => {
                         blocked.insert(member);
-                        changed = true;
+                        dirty.touch(member, &order);
+                        changed.push(member);
                     }
                 }
             }
             let mut compared = Vec::new();
-            for &member in &readers_first {
+            for position in std::mem::take(&mut dirty.partners) {
+                let member = order
+                    .readers_first
+                    .get(position)
+                    .copied()
+                    .ok_or(Internal::missed("flow member"))?;
                 self.flow_step();
                 if !waiting.contains(&member)
                     || blocked.contains(&member)
@@ -141,7 +171,8 @@ impl Engine<'_> {
                 }
             }
             for (member, enums) in compared {
-                changed = true;
+                dirty.touch(member, &order);
+                changed.push(member);
                 match enums.as_slice() {
                     [own] => {
                         waiting.remove(&member);
@@ -152,9 +183,15 @@ impl Engine<'_> {
                     }
                 }
             }
-            if !changed {
+            if !changed.is_empty() {
+                verified = false;
+                continue;
+            }
+            if verified {
                 break;
             }
+            verified = true;
+            dirty = Dirty::all(&order);
         }
         for member in by_uses {
             if self.member_expected(member, &flows, &pushed).len() > 1 {
@@ -995,4 +1032,74 @@ fn distinct_enums(scalars: impl Iterator<Item = Scalar>) -> Vec<Scalar> {
         }
     }
     enums
+}
+
+struct FlowOrder {
+    reads_first: Vec<Member>,
+    readers_first: Vec<Member>,
+    read_position: FastMap<Member, usize>,
+    reader_position: FastMap<Member, usize>,
+    neighbours: FastMap<Member, Vec<Member>>,
+}
+
+impl FlowOrder {
+    fn new(reads_first: &[Member], readers_first: &[Member], flows: &Flows) -> FlowOrder {
+        let mut neighbours: FastMap<Member, Vec<Member>> = FastMap::default();
+        for (reader, reads) in &flows.values {
+            for read in reads {
+                neighbours.entry(*reader).or_default().push(*read);
+                neighbours.entry(*read).or_default().push(*reader);
+            }
+        }
+        for (member, partners) in &flows.partners {
+            neighbours
+                .entry(*member)
+                .or_default()
+                .extend(partners.iter().copied());
+        }
+        FlowOrder {
+            reads_first: reads_first.to_vec(),
+            readers_first: readers_first.to_vec(),
+            read_position: reads_first
+                .iter()
+                .enumerate()
+                .map(|(position, member)| (*member, position))
+                .collect(),
+            reader_position: readers_first
+                .iter()
+                .enumerate()
+                .map(|(position, member)| (*member, position))
+                .collect(),
+            neighbours,
+        }
+    }
+}
+
+struct Dirty {
+    reads: std::collections::BTreeSet<usize>,
+    readers: std::collections::BTreeSet<usize>,
+    partners: std::collections::BTreeSet<usize>,
+}
+
+impl Dirty {
+    fn all(order: &FlowOrder) -> Dirty {
+        Dirty {
+            reads: (0..order.reads_first.len()).collect(),
+            readers: (0..order.readers_first.len()).collect(),
+            partners: (0..order.readers_first.len()).collect(),
+        }
+    }
+
+    fn touch(&mut self, member: Member, order: &FlowOrder) {
+        let around = order.neighbours.get(&member).into_iter().flatten();
+        for touched in std::iter::once(&member).chain(around) {
+            if let Some(position) = order.read_position.get(touched) {
+                self.reads.insert(*position);
+            }
+            if let Some(position) = order.reader_position.get(touched) {
+                self.readers.insert(*position);
+                self.partners.insert(*position);
+            }
+        }
+    }
 }

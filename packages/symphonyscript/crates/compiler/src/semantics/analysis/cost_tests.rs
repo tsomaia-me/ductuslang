@@ -656,3 +656,207 @@ fn every_walk_of_check_over_an_array_literal_costs_work_linear_in_the_program_in
  {
     assert_costs_linear(Construct::ArrayLiteral, 14);
 }
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Chain {
+    ScalarAlias,
+    VariantAlias,
+    ComparedVariants,
+    ArrayAlias,
+    EmptyJoin,
+    Identity,
+    JoinFromLiteral,
+    JoinFromNote,
+    ReactiveAlias,
+    ReactiveArrayAlias,
+    Operator,
+    VariableGrowth,
+    Windowed,
+}
+
+const CHAINS: [Chain; 13] = [
+    Chain::ScalarAlias,
+    Chain::VariantAlias,
+    Chain::ComparedVariants,
+    Chain::ArrayAlias,
+    Chain::EmptyJoin,
+    Chain::Identity,
+    Chain::JoinFromLiteral,
+    Chain::JoinFromNote,
+    Chain::ReactiveAlias,
+    Chain::ReactiveArrayAlias,
+    Chain::Operator,
+    Chain::VariableGrowth,
+    Chain::Windowed,
+];
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum ChainRead {
+    Pitch,
+    Index,
+    Len,
+}
+
+const CHAIN_READS: [ChainRead; 3] = [ChainRead::Pitch, ChainRead::Index, ChainRead::Len];
+
+impl Chain {
+    fn holds_array(self) -> bool {
+        !matches!(
+            self,
+            Chain::ScalarAlias
+                | Chain::VariantAlias
+                | Chain::ComparedVariants
+                | Chain::ReactiveAlias
+                | Chain::Operator
+        )
+    }
+
+    fn grows(self) -> bool {
+        matches!(self, Chain::JoinFromLiteral | Chain::JoinFromNote)
+    }
+
+    fn first_and_step(self) -> (&'static str, &'static str) {
+        match self {
+            Chain::ScalarAlias => ("1", "{}"),
+            Chain::VariantAlias => ("Saw", "{}"),
+            Chain::ComparedVariants => ("Saw", "Sine"),
+            Chain::ArrayAlias => ("[0, 1, 2, 3]", "{}"),
+            Chain::EmptyJoin => ("[0, 1, 2, 3]", "{} + []"),
+            Chain::Identity => ("[0, 1, 2, 3]", "id({})"),
+            Chain::JoinFromLiteral => ("[1]", "{} + [1]"),
+            Chain::JoinFromNote => ("[note]", "{} + [note]"),
+            Chain::ReactiveAlias => ("note", "{}"),
+            Chain::ReactiveArrayAlias => ("[note, note, note, note]", "{}"),
+            Chain::Operator => ("1", "{} + 1"),
+            Chain::VariableGrowth => ("held", "{} + [1]"),
+            Chain::Windowed => ("[1]", "({} + [1])[^4..]"),
+        }
+    }
+
+    fn value(self, read: ChainRead, n: usize) -> Option<usize> {
+        match (self, read) {
+            (Chain::ScalarAlias, ChainRead::Pitch) => Some(1),
+            (Chain::ArrayAlias | Chain::EmptyJoin | Chain::Identity, ChainRead::Index) => Some(3),
+            (
+                Chain::ArrayAlias | Chain::EmptyJoin | Chain::Identity | Chain::Windowed,
+                ChainRead::Len,
+            ) => Some(4),
+            (Chain::JoinFromLiteral | Chain::Windowed, ChainRead::Index) => Some(1),
+            (Chain::JoinFromLiteral | Chain::JoinFromNote, ChainRead::Len) => Some(n),
+            (Chain::Operator, ChainRead::Pitch) => Some(n),
+            _ => None,
+        }
+    }
+}
+
+fn chain_read(read: ChainRead, last: &str) -> String {
+    match read {
+        ChainRead::Pitch => last.to_string(),
+        ChainRead::Index => format!("{last}[3]"),
+        ChainRead::Len => format!("len({last})"),
+    }
+}
+
+fn chain_items(chain: Chain, read: ChainRead, n: usize, checked: bool) -> Vec<String> {
+    let (first, step) = chain.first_and_step();
+    let mut items = vec![
+        "input note = 60\n".to_string(),
+        "input held: i32[..4] = [1, 2, 3, 4]\n".to_string(),
+        "fn id(x): x\n".to_string(),
+        format!("let v0 = {first}\n"),
+    ];
+    for i in 1..n {
+        items.push(format!(
+            "let v{i} = {}\n",
+            step.replace("{}", &format!("v{}", i - 1))
+        ));
+    }
+    let value = chain_read(read, &format!("v{}", n - 1));
+    let pitch = match chain.value(read, n) {
+        Some(expected) if checked => format!("[60][{value} - {expected}]"),
+        Some(_) | None => value,
+    };
+    if chain == Chain::ComparedVariants {
+        items.push("let t1 = v0 is v1\n".to_string());
+        for i in 2..n {
+            items.push(format!("let t{i} = (v{} is v{i}) and t{}\n", i - 1, i - 1));
+        }
+        items.push(format!(
+            "Synth s:\n    Osc | wave=v0\nClip c:\n    Note when t{}\n",
+            n - 1
+        ));
+    } else if chain == Chain::VariantAlias {
+        items.push(format!("Synth s:\n    Osc | wave={pitch}\n"));
+    } else {
+        items.push(reader(&pitch));
+    }
+    items
+}
+
+fn chain_program(chain: Chain, read: ChainRead, n: usize, reversed: bool, checked: bool) -> String {
+    let mut items = chain_items(chain, read, n, checked);
+    if reversed {
+        items.reverse();
+    }
+    items.concat()
+}
+
+#[test]
+fn every_walk_that_follows_a_chain_of_lets_costs_work_linear_in_the_chain_and_the_elements_it_builds()
+ {
+    let compiler = Compiler::new(&vocabulary()).expect("the vocabulary compiles");
+    let mut failures = Vec::new();
+    let mut rows = 0;
+    for chain in CHAINS {
+        for read in CHAIN_READS {
+            if chain.holds_array() == (read == ChainRead::Pitch) {
+                continue;
+            }
+            for reversed in [false, true] {
+                rows += 1;
+                let smallest = if chain.grows() { 100 } else { 1_625 };
+                let sizes = [smallest, 2 * smallest, 4 * smallest];
+                let name = format!(
+                    "{chain:?} {read:?} {}",
+                    if reversed { "reversed" } else { "forward" }
+                );
+                let checked = chain_program(chain, read, smallest, reversed, true);
+                let errors = measured(&compiler, &checked).errors;
+                if !errors.is_empty() {
+                    failures.push(format!("{name}: its value check draws {errors:?}"));
+                }
+                let texts = sizes.map(|n| chain_program(chain, read, n, reversed, false));
+                let runs = texts.each_ref().map(|text| measured(&compiler, text));
+                for (run, n) in runs.iter().zip(sizes) {
+                    if let Some(first) = run.errors.first() {
+                        failures.push(format!("{name} {n}: {first}"));
+                    }
+                }
+                let size = |run: usize| {
+                    let built = if chain.grows() {
+                        sizes[run] * (sizes[run] + 1) / 2
+                    } else {
+                        0
+                    };
+                    u64::try_from(texts[run].len() + built).unwrap_or(u64::MAX)
+                };
+                for (index, (counter, _)) in runs[0].counts.iter().enumerate() {
+                    let points = [0, 1, 2].map(|run| {
+                        (
+                            size(run),
+                            runs[run].counts.get(index).map_or(0, |(_, count)| *count),
+                        )
+                    });
+                    if !linear(points) {
+                        failures.push(format!(
+                            "{name}: {counter} {:?}",
+                            points.map(|(_, count)| count)
+                        ));
+                    }
+                }
+            }
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    assert_eq!(rows, 42);
+}
