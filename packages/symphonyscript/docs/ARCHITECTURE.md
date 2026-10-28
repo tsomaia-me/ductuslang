@@ -32,10 +32,10 @@ Only `symphonyscript-core` runs on devices. Everything in it builds without `std
 
 ## 2. The vocabulary
 
-A framework author builds a vocabulary in Rust. `v.node(name)` and `v.wire(name)` return a kind's typed handle at once, and `v.kind(handle)` and `v.wire_kind(handle)` configure it, so a kind can accept itself or a kind declared after it. The framework's consumer keeps the handles and matches them against the Program. A handle compares, hashes and looks up by its kind's index alone, so two builds of one vocabulary give equal handles; the vocabulary stamp tells vocabularies apart, and only `build()` rejects a handle from another builder (SPEC §10.1). A part of the SPEC §1.3 vocabulary:
+A framework author builds a vocabulary in Rust; `Vocabulary::builder` takes its name and its version (SPEC §15.8). `v.node(name)` and `v.wire(name)` return a kind's typed handle at once, and `v.kind(handle)` and `v.wire_kind(handle)` configure it, so a kind can accept itself or a kind declared after it. The framework's consumer keeps the handles and matches them against the Program. A handle compares, hashes and looks up by its kind's index alone, so two builds of one vocabulary give equal handles; the vocabulary stamp tells vocabularies apart, and only `build()` rejects a handle from another builder (SPEC §10.1). A part of the SPEC §1.3 vocabulary:
 
 ```rust
-let mut v = Vocabulary::builder("music");
+let mut v = Vocabulary::builder("music", "2.1.0");
 
 let beats = v.unit_family("beats").base("beats").unit("bars", 4.0);
 let wave = v.enumeration("Wave", ["Sine", "Saw", "Square"]);
@@ -305,12 +305,12 @@ impl Compiler {
 pub fn compile(sources: &[Source], vocab: &Vocabulary) -> Result<Compiled, Failed>;
 pub fn eval(source: &str, vocab: &Vocabulary) -> Result<Runtime, Failed>;
 
-pub struct Source { pub path: String, pub text: String }
+pub struct Source { pub package: String, pub path: String, pub text: String }
 pub struct Compiled { pub program: Program, pub warnings: Vec<Diagnostic> }
 pub struct Failed { pub diagnostics: Vec<Diagnostic> }
 ```
 
-`Compiler::new` parses and resolves the prelude once and reports its errors as vocabulary errors (SPEC §10.1). The tool and the language server keep one `Compiler`; `compile` and `eval` build one for a single call. `Source.path` is relative to the project's source root, with `/` separators. `Limits`, in `symphonyscript-core`, holds every resource limit of SPEC §4.6, §6.3, §12.6 and §13.3: recursive calls, nesting depth, inlined calls, expansion steps, expanded items, memory bytes and the reload search bound, and beside each limit but the reload search bound its warning value, a field named after the limit with `_warning` appended, whose default is half the limit's (SPEC §4.6). `Limits` also holds `shared_body_threshold`, the number of body nodes past which Lower shares a body (stage 8), 1,000 by default, set as a limit is and drawing no diagnostic. `Limits::default()` takes each default, a warning's among them, from one file of constants in core; `Compiler::new`, `compile` and `eval` use the defaults, and `Compiler::with_limits` takes others. The inline default is 100,000 (SPEC §4.6). `Compiler::with_limits` refuses no setting: a compilation whose ids fill an id space draws one `expansion-limit` diagnostic naming the bound, never `internal-error`. A limit's diagnostic prints the bound in force grouped by thousands, as the SPEC writes numbers: `1,000,000` by default, `2,000,000` when raised and `10` when lowered.
+`Compiler::new` parses and resolves the prelude once and reports its errors as vocabulary errors (SPEC §10.1). The tool and the language server keep one `Compiler`; `compile` and `eval` build one for a single call. `Source.package` is the identity of the source's package (SPEC §15.1), empty for the project, and `Source.path` is relative to that package's source root, with `/` separators; the caller supplies the sources of every library of the build at the versions SPEC §15.7 chooses. `Limits`, in `symphonyscript-core`, holds every resource limit of SPEC §4.6, §6.3, §12.6 and §13.3: recursive calls, nesting depth, inlined calls, expansion steps, expanded items, memory bytes and the reload search bound, and beside each limit but the reload search bound its warning value, a field named after the limit with `_warning` appended, whose default is half the limit's (SPEC §4.6). `Limits` also holds `shared_body_threshold`, the number of body nodes past which Lower shares a body (stage 8), 1,000 by default, set as a limit is and drawing no diagnostic. `Limits::default()` takes each default, a warning's among them, from one file of constants in core; `Compiler::new`, `compile` and `eval` use the defaults, and `Compiler::with_limits` takes others. The inline default is 100,000 (SPEC §4.6). `Compiler::with_limits` refuses no setting: a compilation whose ids fill an id space draws one `expansion-limit` diagnostic naming the bound, never `internal-error`. A limit's diagnostic prints the bound in force grouped by thousands, as the SPEC writes numbers: `1,000,000` by default, `2,000,000` when raised and `10` when lowered.
 
 The compiler performs no file I/O; the caller supplies every source. This keeps the compiler usable in editors, build scripts and WebAssembly. Stages:
 
@@ -403,19 +403,26 @@ fn play(project: &Project, args: &[String]) -> Result<(), ToolError> {
 
 | Subcommand | Provided by | Does |
 |---|---|---|
-| `new <name>` | tool | creates a project: `symphony.toml` and `src/` with a starter file |
+| `new <name>` | tool | creates a project: `symphony.toml` and `src/` with a starter file and `package.sym` |
 | `check` | tool | compiles and prints diagnostics |
 | `dump` | tool | prints the Program |
 | `lsp` | tool | runs the language server |
+| `add <source>` | `sym` | requires a library in the project's package file and fetches it |
+| `remove <name>` | `sym` | removes a library from the project's package file |
+| `update` | `sym` | raises the build's libraries to newer releases |
 | any other | framework | playing, rendering, exporting |
 
 - **Commands.** A framework command is `fn(&Project, &[String]) -> Result<(), ToolError>`, receiving the project and the command's arguments.
-- **Projects.** A `Project` holds its root, the settings of its `symphony.toml`, and its sources: every `.sym` file under `source`, found recursively, each with its path relative to `source`. Those paths fix the top-level order (SPEC §2.1).
+- **`sym`.** Users run one command, `sym`, under every framework. It runs `add`, `remove` and `update` itself, and runs every other command, `check`, `dump` and `lsp` among them, as the framework binary its project's `symphony.toml` names, with the same arguments.
+- **Packages.** `add <source>` writes `require "<source>@<version>"` into the project's package file, the newest release when the source names no version, then fetches the library and writes its lock lines. `remove <name>` removes the library's `require` and `use` items and the lock lines no other library needs. `update` raises every library, or the one it names, to its newest patch release, and with `--minor` to its newest minor release; `update --major <name>` moves that library to its next major after checking that every library of the build that requires it has a release on that major, and otherwise names each that has none.
+- **Fetching.** Before a compile, the tool chooses the build's versions (SPEC §15.7), fetches each release and commit over https into a cache that every project on the machine shares, keyed by identity and by version or commit, reads local libraries in place, and passes every library's sources to the compiler (§7).
+- **Lock file.** `symphony.lock`, beside `symphony.toml`, holds one line per fetched release of the build: its source with its version and the SHA-256 hash of its files, as `github.com/acme/scales@2.1.4 sha256-…`. The tool writes it, and nobody edits it. A fetched release whose hash differs from its line stops the build, naming the library; a commit needs no line, since a commit's name is its hash.
+- **Projects.** A `Project` holds its root, the settings of its `symphony.toml`, and its sources: every `.sym` file under `source`, found recursively, each with its path relative to `source`, and the sources of every library of its build under its identity (SPEC §15.1). Those paths fix the top-level order (SPEC §2.1).
 - **Dump.** `dump` prints every field of the Program in the Program's order, deterministically, and two floats with distinct bits print distinctly.
 - **Single files.** `check`, `dump` and the framework's subcommands accept a lone `.sym` file in place of a project; it is a project of one source whose path is the file's name.
 - **Watch.** `watch(project, vocab, consumer)` recompiles on save, prepares a reload, lets the consumer accept it, installs it, and drives the consumer (§5, §6). Frameworks call it from their own commands.
 - **`symphony.toml`** holds `tool`, the name of the framework's binary, `source`, the source root (default `src`), and an optional `[limits]` table, each key a field of `Limits` (§7), a limit's warning value keyed `<name>_warning` beside the limit's `<name>`, and `shared_body_threshold` among them. Every tool command, the language server's included, takes `--limit <name>=<value>`; a flag overrides the file, and the file the default.
-- **Editor.** A VS Code extension and a JetBrains plugin. Each holds a static syntax grammar, or for JetBrains the server's semantic tokens where its platform reads no grammar, and a language client that reads `symphony.toml` and starts `<tool> lsp`. For a lone `.sym` file each starts the tool its `symphonyscript.tool` setting names; with no setting it stays inactive and says why. Other editors use their own language-client configuration.
+- **Editor.** A VS Code extension and a JetBrains plugin. Each holds a static syntax grammar, or for JetBrains the server's semantic tokens where its platform reads no grammar, and a language client that reads `symphony.toml` and starts `sym lsp`. For a lone `.sym` file each starts the tool its `symphonyscript.tool` setting names; with no setting it stays inactive and says why. Other editors use their own language-client configuration.
 - **Language server.** Diagnostics; completion of attributes after `|`, accepted child kinds in a body, valid destinations after a wire's `:`, enum variants where an enum is expected; hover with documentation and inferred types with their origin, where a compile-time value shows its value and the type each use chose, and a cell shows that it is reactive, its one type and the inputs it reads; go to definition; find references; rename of instances, patterns, functions, inputs and `let`s; an outline of top-level items; semantic tokens, which mark inputs and reactive `let`s apart from compile-time values; hover on a sum or an alias shows its alternatives or its target; completion of a record's fields after `.`; rename of record types, aliases and fields; hover on a pattern or a use shows the pattern's type (SPEC §6.4), the same on both.
 - **Diagnostics.** `check` and the framework's commands print each diagnostic as its summary and help, then its lesson under `── why ──`, then its spans under `── where ──`, primary first, each with its label; `--brief` leaves out the lesson. The language server sends the summary and the help, and the lesson on request.
 

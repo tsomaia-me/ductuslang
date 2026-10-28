@@ -37,3 +37,12 @@ GenericParam
 TypeArgs
 TypeArg
 LoopHead
+PackageFile
+PackageItem
+PackageDecl
+Require
+QualifiedName
+Use
+UseName
+Publish
+PublishName
