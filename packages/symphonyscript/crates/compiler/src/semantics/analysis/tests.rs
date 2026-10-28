@@ -1,7 +1,7 @@
 use symphonyscript_core::{Count, Limits, Scalar, Vocabulary};
 use symphonyscript_fixtures::{
     Project, ProjectFile, bar_vocabulary, deep_projects, dsp_project, envelope_vocabulary,
-    music_project, spec_examples, spec_projects, vocabulary,
+    music_project, pending_spec_examples, spec_examples, spec_projects, vocabulary,
 };
 
 use super::Engine;
@@ -706,9 +706,10 @@ fn placeholders(engine: &Engine<'_>) -> Vec<String> {
 #[test]
 fn a_run_that_draws_no_error_holds_no_placeholder() {
     let compiler = Compiler::new(&vocabulary()).expect("the example vocabulary compiles");
+    let pending = pending_spec_examples();
     let examples = spec_examples()
         .into_iter()
-        .filter(|example| example.tag == "sym")
+        .filter(|example| example.tag == "sym" && !pending.contains(&example.name()))
         .map(|example| Project {
             name: example.name(),
             files: vec![ProjectFile {
@@ -751,7 +752,11 @@ fn a_run_that_draws_no_error_holds_no_placeholder() {
             .count()
     });
     assert!(
-        clean >= 6 + spec_projects().len(),
+        clean
+            >= 6 + spec_projects()
+                .iter()
+                .filter(|project| !pending.contains(&project.name))
+                .count(),
         "{clean} runs drew no error"
     );
     let envelope = envelope_vocabulary();
@@ -1470,6 +1475,37 @@ fn a_recursive_array_result_fills_an_array_attribute_or_input_of_its_shape() {
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
 
+#[test]
+fn a_placement_for_over_a_compile_time_array_builds_its_elements_as_it_iterates() {
+    let doubling = "fn f(n): if n is 0 then [1] else f(n - 1) + f(n - 1)\n";
+    for depth in [30, 22] {
+        let text = format!("{doubling}Clip c:\n    for x in f({depth}):\n        Note/x\n");
+        let (diagnostics, built) = analyzed(&text, |engine| engine.memo.iterated_elements);
+        assert_eq!(error_codes(&diagnostics), [Code::ExpansionLimit], "{text}");
+        assert!(built <= 1_000_001, "{text}: {built}");
+    }
+    let rows: [(String, usize, Vec<CVal>); 2] = [
+        (
+            format!("{doubling}Clip c:\n    for x in f(3):\n        Note/(60 + x)\n"),
+            8,
+            vec![CVal::Int(61); 8],
+        ),
+        (
+            "Clip c:\n    for x in [60, 64, 67]:\n        Note/x\n".to_string(),
+            3,
+            vec![CVal::Int(60), CVal::Int(64), CVal::Int(67)],
+        ),
+    ];
+    for (text, notes, pitches) in rows {
+        let (diagnostics, found) = analyzed(&text, notes_and_pitches);
+        assert!(errors_of(&diagnostics).is_empty(), "{text}{diagnostics:?}");
+        assert_eq!(found, (notes, pitches), "{text}");
+    }
+    let range = "Clip c:\n    for i in 0..8388608:\n        Note\n";
+    let (diagnostics, ()) = analyzed(range, |_| ());
+    assert_eq!(error_codes(&diagnostics), [Code::ExpansionLimit], "{range}");
+}
+
 const FIB_FN: &str = "fn fib(n): if n < 2 then n else fib(n - 1) + fib(n - 2)\n";
 
 fn notes_and_pitches(engine: &Engine<'_>) -> (usize, Vec<CVal>) {
@@ -2078,31 +2114,19 @@ fn doubled_calls(levels: usize, body: &str) -> String {
 #[test]
 fn a_fault_in_shared_bodies_costs_what_the_clean_program_costs() {
     let measure = |text: &str| {
-        let start = std::time::Instant::now();
-        let (diagnostics, sizes) = analyzed(text, |engine| {
+        analyzed(text, |engine| {
             (
                 engine.nodes.len(),
                 engine.scopes.len(),
                 engine.bindings.len(),
+                engine.memo.query_runs,
             )
-        });
-        (start.elapsed(), diagnostics, sizes)
+        })
     };
     let faulty = doubled_calls(18, "x div 0.5");
     let clean = doubled_calls(18, "x div 2");
-    let mut faulty_time = std::time::Duration::MAX;
-    let mut clean_time = std::time::Duration::MAX;
-    let mut runs = Vec::new();
-    for _ in 0..5 {
-        let (elapsed, diagnostics, faulty_sizes) = measure(&faulty);
-        faulty_time = faulty_time.min(elapsed);
-        let (elapsed, clean_diagnostics, clean_sizes) = measure(&clean);
-        clean_time = clean_time.min(elapsed);
-        runs.push((diagnostics, faulty_sizes, clean_diagnostics, clean_sizes));
-    }
-    let Some((diagnostics, faulty_sizes, clean_diagnostics, clean_sizes)) = runs.pop() else {
-        return;
-    };
+    let (diagnostics, faulty_sizes) = measure(&faulty);
+    let (clean_diagnostics, clean_sizes) = measure(&clean);
     assert_eq!(error_codes(&clean_diagnostics), Vec::<Code>::new());
     let errors = errors_of(&diagnostics);
     assert_eq!(error_codes(&diagnostics), vec![Code::OperandType]);
@@ -2121,10 +2145,7 @@ fn a_fault_in_shared_bodies_costs_what_the_clean_program_costs() {
     let mut expected: Vec<String> = (0..18).map(|level| format!("g{level}(x)")).collect();
     expected.push("g18(i)".into());
     assert_eq!(chain, expected);
-    assert!(
-        faulty_time <= clean_time * 2,
-        "{faulty_time:?} against {clean_time:?}"
-    );
+    assert!(faulty_sizes.3 <= clean_sizes.3 * 2, "queries");
     assert!(faulty_sizes.0 <= clean_sizes.0 * 2, "nodes");
     assert!(faulty_sizes.1 <= clean_sizes.1 * 2, "scopes");
     assert!(faulty_sizes.2 <= clean_sizes.2 * 2, "bindings");

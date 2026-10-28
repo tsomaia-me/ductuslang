@@ -1112,6 +1112,96 @@ fn a_name_inside_a_faulty_part_of_a_kept_item_is_a_placeholder_wherever_it_is_us
 }
 
 #[test]
+fn a_state_header_cut_by_a_fault_declares_its_name_as_a_placeholder() {
+    let input = "input a = 0\n";
+    let read = "Clip c:\n    Note/(60 + t)\n";
+    let rows: &[support::Row] = &[
+        (
+            &[input, "state[1 t = t{1, 0} + a\n", read],
+            &[(Code::StateSyntax, "t")],
+        ),
+        (
+            &[input, "state[ t = t{1, 0} + a\n", read],
+            &[(Code::StateSyntax, "t")],
+        ),
+        (
+            &[input, "state[x] t = t{1, 0} + a\n", read],
+            &[(Code::StateSyntax, "x")],
+        ),
+        (
+            &[
+                input,
+                "state[1 t = t{1, 0} + a\n",
+                "Clip c:\n    Note when t > 0\n",
+            ],
+            &[(Code::StateSyntax, "t")],
+        ),
+        (
+            &[
+                input,
+                "state[1 t = t{1, 0} + a\n",
+                "state u = t + 1\n",
+                "Clip c:\n    Note/(60 + u)\n",
+            ],
+            &[(Code::StateSyntax, "t")],
+        ),
+        (&[input, "state[1] t = t{1, 0} + a\n", read], &[]),
+        (&[input, "state t = a{1, 0}\n", read], &[]),
+    ];
+    support::assert_rows_in_every_order(&vocabulary(), rows);
+}
+
+#[test]
+fn every_top_level_header_cut_by_a_fault_declares_its_names_as_placeholders() {
+    let read_a = "Clip c:\n    Note/(60 + a)\n";
+    let read_x = "Clip c:\n    Note/(60 + x)\n";
+    let call_f = "Clip c:\n    Note/(60 + f(1))\n";
+    let place_p = "Clip c:\n    P\n";
+    let rows: &[support::Row] = &[
+        (&["input [a = 0\n", read_a], &[(Code::InputSyntax, "[")]),
+        (&["let [x = 5\n", read_x], &[(Code::LetSyntax, "[")]),
+        (&["let (x = 5\n", read_x], &[(Code::LetSyntax, "(")]),
+        (&["fn (f(a): a\n", call_f], &[(Code::FnSyntax, "(")]),
+        (
+            &["pattern (P():\n    Note\n", place_p],
+            &[(Code::PatternSyntax, "(")],
+        ),
+        (
+            &["fn f(n) bounded [3 else 0: f(n - 1)\n", call_f],
+            &[(Code::FnSyntax, "[")],
+        ),
+        (&["input a: i32[ = 0\n", read_a], &[(Code::TypeSyntax, "=")]),
+        (&["let x: i32[ = 5\n", read_x], &[(Code::TypeSyntax, "=")]),
+        (&["input a 0\n", read_a], &[(Code::InputSyntax, "0")]),
+        (&["input a =\n", read_a], &[(Code::ExpressionSyntax, "\n")]),
+        (&["let x 5\n", read_x], &[(Code::LetSyntax, "5")]),
+        (&["fn f(a b): a\n", call_f], &[(Code::FnSyntax, "b")]),
+        (
+            &["pattern P(a b):\n    Note/a\n", "Clip c:\n    P | a=1\n"],
+            &[(Code::PatternSyntax, "b")],
+        ),
+        (&["fn f(a) a\n", call_f], &[(Code::FnSyntax, "a")]),
+        (
+            &["pattern P()\n    Note\n", place_p],
+            &[(Code::PatternSyntax, "\n")],
+        ),
+        (&["fn f(a = (1): a\n", call_f], &[(Code::FnSyntax, ":")]),
+        (
+            &[
+                "pattern P(default r = (1):\n    Note/r\n",
+                "Clip c:\n    P/60\n",
+            ],
+            &[(Code::PatternSyntax, ":")],
+        ),
+        (
+            &["Clip [c:\n    Note\n", "Clip d | gain=c.gain:\n    Note\n"],
+            &[(Code::PlacementSyntax, "[")],
+        ),
+    ];
+    support::assert_rows_in_every_order(&vocabulary(), rows);
+}
+
+#[test]
 fn a_missing_closer_marks_the_expression_it_closes_and_not_the_next_item() {
     let compiler = symphonyscript::Compiler::new(&vocabulary()).expect("the vocabulary compiles");
     type Row<'a> = (&'a [&'a str], &'a [Code], &'a [(Code, &'a str)]);

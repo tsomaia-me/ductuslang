@@ -12,6 +12,7 @@ pub(crate) struct FnDecl {
     pub params: Vec<Param>,
     pub skipped_params: UnknownNames,
     pub faulty_head: bool,
+    pub cut: bool,
     pub bound: Option<FnBound>,
     pub lets: Vec<LetDecl>,
     pub value: ExprId,

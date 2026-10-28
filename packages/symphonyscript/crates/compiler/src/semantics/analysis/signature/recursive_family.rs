@@ -31,6 +31,16 @@ impl Engine<'_> {
                 .map(|arg| self.family_shape(arg.as_ref()))
                 .collect::<Result<_, _>>()?,
         };
+        if self.body_certainly_reads_cell(function)? {
+            if !self.hir.fn_decl(function)?.faulty_head {
+                let reading = format!(
+                    "the body of the recursive function `{}` reads a cell",
+                    self.function_name(function)?
+                );
+                self.reactive_recursion(node, function, reading)?;
+            }
+            return Ok(Some(Sig::ERROR));
+        }
         let sig = self.family_sig(node, &key, need)?;
         self.link_family(node, &key)?;
         Ok(sig)
@@ -222,7 +232,10 @@ impl Engine<'_> {
         Ok(Some(Some(joined)))
     }
 
-    fn family_shape(&self, arg: Option<&Val>) -> Result<ArgShape, Internal> {
+    pub(in crate::semantics::analysis) fn family_shape(
+        &self,
+        arg: Option<&Val>,
+    ) -> Result<ArgShape, Internal> {
         let sig_of = |node: &NodeId| {
             let sig = self.known_sig(*node)?;
             Ok(ArgSig {

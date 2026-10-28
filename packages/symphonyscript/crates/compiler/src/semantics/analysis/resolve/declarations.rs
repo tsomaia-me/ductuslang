@@ -60,11 +60,27 @@ impl Engine<'_> {
         Ok(())
     }
 
-    fn let_reads_cell(&self, root: LetId) -> Result<bool, Internal> {
+    pub(in crate::semantics::analysis) fn let_reads_cell(
+        &self,
+        root: LetId,
+    ) -> Result<bool, Internal> {
+        self.names_read_cell(vec![root], Vec::new())
+    }
+
+    pub(in crate::semantics::analysis) fn function_reads_cell(
+        &self,
+        root: FnId,
+    ) -> Result<bool, Internal> {
+        self.names_read_cell(Vec::new(), vec![root])
+    }
+
+    fn names_read_cell(
+        &self,
+        mut lets: Vec<LetId>,
+        mut functions: Vec<FnId>,
+    ) -> Result<bool, Internal> {
         let hir = self.hir;
         let namespace = &self.collected.source;
-        let mut lets = vec![root];
-        let mut functions = Vec::new();
         let mut seen_lets = FastSet::default();
         let mut seen_functions = FastSet::default();
         loop {

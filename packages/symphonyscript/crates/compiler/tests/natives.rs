@@ -92,9 +92,10 @@ fn a_native_call_with_a_cell_runs_at_runtime_unless_it_takes_a_string() {
             &[],
         ),
         (
-            "input i = 1\nClip c:\n    Note/(text_length(i))\n",
+            "input n = 0\nClip c:\n    Note/(tag(\"abc\", n))\n",
             &[Code::CompileTimeNative],
         ),
+        ("Clip c:\n    Note/(tag(\"abc\", 2))\n", &[]),
         (
             "input i = 1\nClip c:\n    Note/(text_length(\"a{i}\"))\n",
             &[Code::ReactiveString],
@@ -103,6 +104,22 @@ fn a_native_call_with_a_cell_runs_at_runtime_unless_it_takes_a_string() {
     for (text, expected) in rows {
         assert_eq!(codes(text), *expected, "{text}");
     }
+    let clauses: &[Row] = &[
+        (
+            &["input n = 0\n", "Clip c:\n    Note/(tag(\"abc\", n))\n"],
+            &[(Code::CompileTimeNative, "tag(\"abc\", n)")],
+        ),
+        (&["Clip c:\n    Note/(tag(\"abc\", 2))\n"], &[]),
+        (
+            &[
+                "input n = 0\n",
+                "Clip c:\n    Note/(text_length(label(n)))\n",
+            ],
+            &[(Code::CompileTimeNative, "label(n)")],
+        ),
+        (&["Clip c:\n    Note/(text_length(label(2)))\n"], &[]),
+    ];
+    support::assert_rows_in_every_order(&native_vocabulary(), clauses);
 }
 
 #[test]
@@ -435,16 +452,36 @@ fn a_cell_reading_string_at_a_u8_array_parameter_draws_one_reactive_string() {
 }
 
 #[test]
-fn an_unset_variable_array_attribute_is_bound_to_its_default_as_a_variable_array() {
+fn an_unset_variable_array_attribute_reads_as_the_fixed_array_of_its_default() {
     let unset = "Clip b:\n    Note\n";
+    let seq = "Clip b | seq=[7, 8]:\n    Note\n";
+    let sequence = "Clip b | sequence=[]:\n    Note\n";
+    let joined = "Clip a | seq=b.seq + [1, 2, 3]:\n    Note\n";
     let rows: &[Row] = &[
         (&["Clip c:\n    Note/(len(b.sequence))\n", unset], &[]),
         (&["Clip c | sequence=b.sequence:\n    Note\n", unset], &[]),
-        (&["Clip c:\n    Note/(b.sequence[0])\n", unset], &[]),
+        (
+            &["Clip c:\n    Note/(d.sequence[0])\n", "Clip d:\n    Note\n"],
+            &[(Code::IndexOutOfRange, "0")],
+        ),
+        (
+            &[
+                "Clip c:\n    Note/(d.sequence[0])\n",
+                "Clip d | sequence=[]:\n    Note\n",
+            ],
+            &[(Code::IndexOutOfRange, "0")],
+        ),
         (&["Clip a | gain=len(b.seq):\n    Note\n", unset], &[]),
         (&["Clip a | seq=b.seq:\n    Note\n", unset], &[]),
         (&["Clip a:\n    Note/(b.seq[1])\n", unset], &[]),
-        (&["Clip a:\n    Note/(b.seq[7])\n", unset], &[]),
+        (
+            &["Clip a:\n    Note/(b.seq[7])\n", unset],
+            &[(Code::IndexOutOfRange, "7")],
+        ),
+        (
+            &["Clip a:\n    Note/(b.seq[7])\n", seq],
+            &[(Code::IndexOutOfRange, "7")],
+        ),
         (
             &["Clip a | gain=b.seq:\n    Note\n", unset],
             &[(Code::TypeMismatch, "b.seq")],
@@ -454,12 +491,21 @@ fn an_unset_variable_array_attribute_is_bound_to_its_default_as_a_variable_array
             &[(Code::TypeMismatch, "[7, 8]")],
         ),
         (
-            &["Clip a:\n    Note/(len(b.rows) + b.rows[1][0])\n", unset],
+            &[
+                "Clip a | seq=b.seq:\n    Note/(len(b.rows) + b.rows[1][0])\n",
+                unset,
+            ],
             &[],
         ),
+        (&["Clip a | seq=b.sequence:\n    Note\n", unset], &[]),
+        (&["Clip a | seq=b.sequence:\n    Note\n", sequence], &[]),
         (
-            &["Clip a | seq=b.sequence:\n    Note\n", unset],
-            &[(Code::CapacityExceeded, "b.sequence")],
+            &[joined, unset],
+            &[(Code::CapacityExceeded, "b.seq + [1, 2, 3]")],
+        ),
+        (
+            &[joined, seq],
+            &[(Code::CapacityExceeded, "b.seq + [1, 2, 3]")],
         ),
         (
             &["Clip c | sequence=[1, 2]:\n    Note/(len(c.sequence))\n"],
@@ -467,4 +513,15 @@ fn an_unset_variable_array_attribute_is_bound_to_its_default_as_a_variable_array
         ),
     ];
     support::assert_rows_in_every_order(&native_vocabulary(), rows);
+    let compiler = Compiler::new(&native_vocabulary()).expect("the vocabulary compiles");
+    for b in [unset, seq] {
+        let found = support::errors(compiler.check(&[support::source(&format!("{joined}{b}"))]));
+        let [diagnostic] = found.as_slice() else {
+            panic!("{b}{found:?}");
+        };
+        assert!(
+            diagnostic.summary.contains("up to 5 elements"),
+            "{b}{diagnostic:?}"
+        );
+    }
 }

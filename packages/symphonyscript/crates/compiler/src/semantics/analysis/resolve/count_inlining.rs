@@ -1,6 +1,7 @@
 use super::bound_sources::bound_sources;
 use super::defaulted::defaulted;
 use super::found::Found;
+use super::reads_cell::holds_cell;
 use crate::semantics::Internal;
 use crate::semantics::analysis::attr_value_source::AttrValueSource;
 use crate::semantics::analysis::engine::Engine;
@@ -9,6 +10,7 @@ use crate::semantics::analysis::ids::{InstanceId, ScopeId, WireId};
 use crate::semantics::analysis::item_ref::ItemRef;
 use crate::semantics::analysis::let_ref::LetRef;
 use crate::semantics::analysis::param_source::ParamSource;
+use crate::semantics::analysis::query::Query;
 use crate::semantics::analysis::scope_kind::ScopeKind;
 use crate::semantics::collection::{BuiltinName, Decl};
 use crate::semantics::ir::{Args, ExprId, ExprKind, FnId, Top};
@@ -65,6 +67,10 @@ impl Engine<'_> {
                     }
                     Called::Unresolved => continue,
                 };
+                if self.rejected_recursion(function, args, scope)? {
+                    stack.extend(args.values().into_iter().rev());
+                    continue;
+                }
                 let inlined = if self.is_recursive(function)? {
                     0
                 } else {
@@ -82,6 +88,64 @@ impl Engine<'_> {
             }
         }
         Ok(())
+    }
+
+    fn rejected_recursion(
+        &mut self,
+        function: FnId,
+        args: &Args,
+        scope: ScopeId,
+    ) -> Result<bool, Internal> {
+        if !self.is_recursive(function)? || self.bounded_cycle(function)? {
+            return Ok(false);
+        }
+        let body_reads = match self.memo.reads_cell.get(&function) {
+            Some(known) => *known,
+            None => self.function_reads_cell(function)?,
+        };
+        if body_reads {
+            return Ok(true);
+        }
+        let mut stack = args.values();
+        while let Some(expr) = stack.pop() {
+            let kind = &self.hir.expr(expr)?.kind;
+            match kind {
+                ExprKind::Field(..) => return Ok(true),
+                ExprKind::Name(name) => {
+                    let reads = match self.find(name, scope)? {
+                        Found::Decl(Decl::Input(_) | Decl::State(_)) => true,
+                        Found::Decl(Decl::Let(id)) => self
+                            .memo
+                            .lets
+                            .get(&(self.source_global, LetRef::Top(id)))
+                            .is_some_and(holds_cell),
+                        Found::Query(Query::Input(_) | Query::State(_)) => true,
+                        Found::Query(query) => match self.bound(query, &mut Vec::new()) {
+                            Some(bound) => holds_cell(&bound),
+                            None => {
+                                if let Query::Let(_, LetRef::Top(id)) = query {
+                                    self.let_reads_cell(id)?
+                                } else {
+                                    false
+                                }
+                            }
+                        },
+                        Found::Val(val) => val
+                            .nodes()
+                            .iter()
+                            .any(|node| self.memo.sigs.get(node).is_some_and(|sig| sig.reactive)),
+                        Found::Decl(_) | Found::Item(_) | Found::Placeholder | Found::Nothing => {
+                            false
+                        }
+                    };
+                    if reads {
+                        return Ok(true);
+                    }
+                }
+                _ => stack.extend(kind.children()),
+            }
+        }
+        Ok(false)
     }
 
     fn called(&mut self, callee: ExprId, args: &Args, scope: ScopeId) -> Result<Called, Internal> {
@@ -160,7 +224,9 @@ impl Engine<'_> {
         Ok(count)
     }
 
-    fn value_roots(&mut self) -> Result<Vec<(ExprId, ScopeId)>, Internal> {
+    pub(in crate::semantics::analysis) fn value_roots(
+        &mut self,
+    ) -> Result<Vec<(ExprId, ScopeId)>, Internal> {
         let hir = self.hir;
         let global = self.source_global;
         let mut roots = Vec::new();

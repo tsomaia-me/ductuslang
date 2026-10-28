@@ -85,6 +85,7 @@ impl Engine<'_> {
                     && let Some(length) = layout.outer()
                     && length > *capacity
                 {
+                    let help = self.capacity_fix(*node, (*capacity, length), true)?;
                     self.error_helped(
                         Code::CapacityExceeded,
                         loc,
@@ -92,7 +93,7 @@ impl Engine<'_> {
                         format!(
                             "`{name}` holds {length} elements, more than its annotated capacity {capacity}"
                         ),
-                        Self::capacity_help(*capacity),
+                        help,
                     )?;
                     self.memo.lets.insert((scope, local), BoundVal::Error);
                     return Ok(true);
@@ -352,9 +353,12 @@ impl Engine<'_> {
         let annotation = decl.ty.as_ref().and_then(|ty| self.annotation(ty));
         let unusable = decl.ty.is_some() && annotation.is_none();
         let value_loc = self.hir.expr(decl.value)?.loc;
+        let written = val.clone();
         let Some(val) = self.as_bytes(val, annotation.as_ref(), value_loc, global, need)? else {
             return Ok(false);
         };
+        let from_string =
+            matches!(&written, Val::Scalar(node) if self.memo.string_bytes.contains_key(node));
         let Some(val) = self.input_elements(val, annotation.as_ref(), decl.value, need)? else {
             return Ok(false);
         };
@@ -429,7 +433,13 @@ impl Engine<'_> {
                 .as_ref()
                 .map(|name| name.text.clone())
                 .unwrap_or_default();
-            return self.variable_input(input, (&val, annotation, capacity), name, loc);
+            return self.variable_input(
+                input,
+                (&val, annotation, capacity),
+                name,
+                loc,
+                from_string,
+            );
         }
         if let Some(annotation) = &annotation
             && annotation.lengths != val.shape().lengths()
@@ -489,6 +499,7 @@ impl Engine<'_> {
         (val, annotation, capacity): (&Val, &Annotation, u32),
         name: String,
         loc: Loc,
+        from_string: bool,
     ) -> Result<bool, Internal> {
         let global = self.source_global;
         let (inner, length) = match val {
@@ -529,7 +540,11 @@ impl Engine<'_> {
                 format!(
                     "the initializer holds {length} elements, more than the capacity {capacity}"
                 ),
-                Self::capacity_help(capacity),
+                if from_string {
+                    Self::string_capacity_help(capacity, length, true)
+                } else {
+                    Self::capacity_help(capacity)
+                },
             )?;
             self.memo.inputs.insert(input, BoundVal::Error);
             return Ok(true);
@@ -702,14 +717,7 @@ impl Engine<'_> {
             loc,
             scope,
         };
-        let bound = self.bind_attr(&Val::Scalar(node), &[sig], &spec)?;
-        if let (BoundVal::Scalar(Bound::Value(value)), Some(capacity)) = (&bound, decl.ty.capacity)
-        {
-            self.memo
-                .variable_defaults
-                .insert(*value, (decl.ty.lengths.clone(), capacity));
-        }
-        Ok(Some(bound))
+        Ok(Some(self.bind_attr(&Val::Scalar(node), &[sig], &spec)?))
     }
 
     fn variable_attr(

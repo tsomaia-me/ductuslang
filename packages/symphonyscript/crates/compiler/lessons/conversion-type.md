@@ -5,7 +5,7 @@
 A `bool` or a variant has no number to convert.
 
 ```sym-error
-let a = f32(true)
+let a = i32(true)
 Clip c:
     Note/a
 ```
@@ -13,5 +13,5 @@ Clip c:
 `true` is a `bool`.
 
 ```sym
-let a = f32(1)
+let a = i32(1)
 ```

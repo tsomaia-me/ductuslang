@@ -537,7 +537,10 @@ impl Engine<'_> {
         Ok(false)
     }
 
-    fn bounded_cycle(&self, function: FnId) -> Result<bool, Internal> {
+    pub(in crate::semantics::analysis) fn bounded_cycle(
+        &self,
+        function: FnId,
+    ) -> Result<bool, Internal> {
         self.collected
             .bounded_cycle
             .get(function.index())

@@ -39,6 +39,16 @@ impl Faults {
         Self { marks }
     }
 
+    pub fn first_in(&self, range: Range<u32>) -> Option<u32> {
+        let from = self
+            .marks
+            .partition_point(|(start, _)| *start < range.start);
+        self.marks
+            .get(from)
+            .map(|(start, _)| *start)
+            .filter(|start| *start < range.end)
+    }
+
     pub fn touch(&self, range: Range<u32>) -> bool {
         let end = range.end.max(range.start + 1);
         let before = self.marks.partition_point(|(start, _)| *start < end);

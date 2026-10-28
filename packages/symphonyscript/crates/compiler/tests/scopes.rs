@@ -477,7 +477,55 @@ fn a_summary_reads_as_a_sentence_in_the_programs_names() {
             "to.seq",
             "the destination candidates hold `seq` with different types or unit families, the `Clip` named `b` and the `Lane` named `l` among them, and a `to` read takes one",
         ),
+        (
+            support::signature_vocabulary,
+            &[
+                "input f = false\n",
+                "Clip as g | data=(if f then \"GET\" else \"AB\") + \"C\"\n",
+            ],
+            Code::ReactiveString,
+            "(if f then \"GET\" else \"AB\") + \"C\"",
+            "a string exists only at compile time, and this one reads a cell",
+        ),
+        (
+            vocabulary,
+            &[
+                "input f = false\n",
+                "Track t | label=(\"x\" + (if f then \"a\" else \"b\"))\n",
+            ],
+            Code::ReactiveString,
+            "\"x\" + (if f then \"a\" else \"b\")",
+            "a string exists only at compile time, and this one reads a cell",
+        ),
+        (
+            vocabulary,
+            &[
+                "input f = false\n",
+                "Clip c:\n    Note when (if f then \"a\" else \"b\") is \"a\"\n",
+            ],
+            Code::ReactiveString,
+            "(if f then \"a\" else \"b\") is \"a\"",
+            "a string exists only at compile time, and this comparison of strings reads a cell",
+        ),
+        (
+            vocabulary,
+            &[
+                "input f = false\n",
+                "Track t | label=(if f then \"x\" else \"y\")\n",
+            ],
+            Code::ReactiveString,
+            "if f then \"x\" else \"y\"",
+            "a string exists only at compile time, and this one reads a cell",
+        ),
+        (
+            vocabulary,
+            &["input n = 1\n", "Track t | label=\"x{n}\"\n"],
+            Code::ReactiveString,
+            "n",
+            "a string exists only at compile time, and this interpolation reads a cell",
+        ),
     ];
+    support::assert_rows_in_every_order(&vocabulary(), &[(&["Track t | label=\"x\"\n"], &[])]);
     for (vocabulary, items, code, at, summary) in rows {
         let compiler = Compiler::new(&vocabulary()).expect("the vocabulary compiles");
         for order in support::permutations(items) {
@@ -541,6 +589,11 @@ fn in_code_that_nothing_expands_a_path_from_an_as_name_resolves_through_its_writ
     let deeper = "pattern P():\n    Note as n\n    Note | velocity=n.nothing.velocity\n";
     let looped =
         "pattern P():\n    Note as n\n    for i in 0..0:\n        Note | velocity=n.nothing\n";
+    let voice = "pattern Voice():\n    Note\n    Note as m\n";
+    let verse = "Clip verse:\n    Note\n";
+    let past_note = "pattern P():\n    Note as n\n    Note | velocity=n.velocity.x\n";
+    let past_member = "pattern P():\n    Voice as k\n    Note | velocity=k.m.velocity.x\n";
+    let past_wire = "pattern P():\n    Plays as w: verse\n    Note | velocity=w.gain.x\n";
     let attribute = (Code::UnknownAttribute, "nothing");
     let anonymous = [(Code::NamedInFor, "n"), (Code::UnknownName, "n")];
     let rows: &[support::Row] = &[
@@ -589,6 +642,46 @@ fn in_code_that_nothing_expands_a_path_from_an_as_name_resolves_through_its_writ
                 clip,
             ],
             &[],
+        ),
+        (
+            &[past_note, clip],
+            &[(Code::UnknownAttribute, "n.velocity.x")],
+        ),
+        (
+            &[voice, past_member, clip],
+            &[(Code::UnknownAttribute, "k.m.velocity.x")],
+        ),
+        (
+            &[verse, past_wire, clip],
+            &[(Code::UnknownAttribute, "w.gain.x")],
+        ),
+        (
+            &[
+                voice,
+                "pattern P():\n    Voice as k\n    Note | velocity=k.m.velocity\n",
+                clip,
+            ],
+            &[],
+        ),
+        (
+            &[
+                verse,
+                "pattern P():\n    Plays as w: verse\n    Note | velocity=w.gain\n",
+                clip,
+            ],
+            &[],
+        ),
+        (
+            &[past_note, used],
+            &[(Code::UnknownAttribute, "n.velocity.x")],
+        ),
+        (
+            &[voice, past_member, used],
+            &[(Code::UnknownAttribute, "k.m.velocity.x")],
+        ),
+        (
+            &[verse, past_wire, used],
+            &[(Code::UnknownAttribute, "w.gain.x")],
         ),
         (&[note, used], &[attribute]),
         (&[q, named_use, used], &[attribute]),
@@ -653,6 +746,9 @@ fn in_code_that_nothing_expands_a_path_from_an_as_name_resolves_through_its_writ
         (v, member),
         (&*format!("{q}{r}"), chained),
         ("", arm),
+        ("", past_note),
+        (voice, past_member),
+        (verse, past_wire),
     ] {
         let unused = summaries(format!("{declared}{body}{clip}"));
         assert_eq!(unused.len(), 1, "{body}");
@@ -672,6 +768,7 @@ fn in_code_that_nothing_expands_a_to_path_resolves_against_a_destination_that_ne
         "Track verse\n",
         "Clip chorus:\n    Note as hook\n",
     );
+    let plain = "Clip verse:\n    Note\n";
     let unknown = |text| (Code::UnknownAttribute, text);
     let rows: &[support::Row] = &[
         (
@@ -744,7 +841,34 @@ fn in_code_that_nothing_expands_a_to_path_resolves_against_a_destination_that_ne
                 chorus,
                 "pattern Unused():\n    Plays | gain=to.hook: (if x then verse else chorus)\n",
             ],
-            &[],
+            &[(Code::UnknownAttribute, "to.hook")],
+        ),
+        (
+            &[
+                flag,
+                plain,
+                chorus,
+                "pattern Unused():\n    Plays | gain=to.hook: (if x then chorus else verse)\n",
+            ],
+            &[(Code::UnknownAttribute, "to.hook")],
+        ),
+        (
+            &[
+                flag,
+                plain,
+                chorus,
+                "pattern Unused():\n    Plays | gain=to.hook: [chorus, verse][0]\n",
+            ],
+            &[(Code::UnknownAttribute, "to.hook")],
+        ),
+        (
+            &[
+                flag,
+                plain,
+                chorus,
+                "pattern Unused():\n    Plays | gain=to.hook: (if x then chorus else chorus)\n",
+            ],
+            &[(Code::MisplacedTo, "hook")],
         ),
         (
             &[
@@ -853,6 +977,28 @@ fn in_code_that_nothing_expands_a_to_path_resolves_against_a_destination_that_ne
         ),
     ];
     support::assert_rows_in_every_order(&vocabulary(), rows);
+    let compiler = Compiler::new(&vocabulary()).expect("the vocabulary compiles");
+    for choice in ["(if x then chorus else verse)", "[chorus, verse][0]"] {
+        let text =
+            format!("{flag}{plain}{chorus}pattern Unused():\n    Plays | gain=to.hook: {choice}\n");
+        let found = support::errors(compiler.check(&[support::source(&text)]));
+        let labels: Vec<(&str, &str)> = found
+            .iter()
+            .flat_map(|diagnostic| &diagnostic.related)
+            .map(|related| {
+                let range = &related.span.range;
+                (
+                    &text[range.start as usize..range.end as usize],
+                    related.label.as_str(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            labels,
+            [("Clip verse", "the `Clip` named `verse` has no `to.hook`")],
+            "{text}"
+        );
+    }
 }
 
 #[test]

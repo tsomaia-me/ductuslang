@@ -275,6 +275,11 @@ pub fn signature_vocabulary() -> Vocabulary {
         ),
         shrink,
     );
+    v.native(
+        "label",
+        NativeSignature::new([NativeType::Value(Ty::I32)], NativeType::Value(Ty::STR)),
+        label,
+    );
     v.build().expect("the signature vocabulary builds")
 }
 
@@ -350,4 +355,14 @@ fn shrink(args: &[NativeArg<'_>], out: &mut NativeOut<'_>) {
             }
         }
     }
+}
+
+fn label(args: &[NativeArg<'_>], out: &mut NativeOut<'_>) {
+    let text = match args.first() {
+        Some(NativeArg::Value(Value::I32(number))) => number.to_string(),
+        Some(NativeArg::Value(_) | NativeArg::Elements(_) | NativeArg::Text(_)) | None => {
+            String::new()
+        }
+    };
+    out.set_text(&text);
 }

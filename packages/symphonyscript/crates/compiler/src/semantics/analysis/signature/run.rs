@@ -65,6 +65,17 @@ impl Engine<'_> {
                 Some(sig) => Extra::History(sig),
                 None => Extra::None,
             }),
+            Op::If(_, then, otherwise) => self.arm_forms(node, &[*then, *otherwise], need)?,
+            Op::Match {
+                arms, otherwise, ..
+            } => {
+                let values: Vec<NodeId> = arms
+                    .iter()
+                    .map(|(_, value)| *value)
+                    .chain(*otherwise)
+                    .collect();
+                self.arm_forms(node, &values, need)?
+            }
             Op::Number(..)
             | Op::Const(_)
             | Op::Bool(_)
@@ -79,8 +90,6 @@ impl Engine<'_> {
             | Op::Arg(_)
             | Op::Unary(..)
             | Op::Binary(..)
-            | Op::If(..)
-            | Op::Match { .. }
             | Op::Pick { .. }
             | Op::Element { .. }
             | Op::Array(_)
@@ -138,6 +147,102 @@ impl Engine<'_> {
         sig.frame = matches!(op, Op::Arg(_)) || sigs.iter().any(|operand| operand.frame);
         self.memo.sigs.insert(node, sig);
         Ok(true)
+    }
+
+    fn arm_forms(
+        &mut self,
+        choice: NodeId,
+        arms: &[NodeId],
+        need: &mut Vec<Query>,
+    ) -> Result<Option<Extra>, Internal> {
+        if !arms.iter().any(|arm| self.arrays.contains(arm)) {
+            return Ok(Some(Extra::None));
+        }
+        let single = arms.iter().any(|arm| !self.arrays.contains(arm));
+        let mut definite = Vec::with_capacity(arms.len());
+        let mut array = false;
+        for arm in arms {
+            let known = self.definite_array(*arm)?;
+            definite.push(known);
+            if known || (self.arrays.contains(arm) && self.bounded_recursion(*arm)?) {
+                array = true;
+            }
+        }
+        let mut forms = Vec::with_capacity(arms.len());
+        let mut outers = Vec::with_capacity(arms.len());
+        for &arm in arms {
+            if !self.arrays.contains(&arm) {
+                let settled = self.reaches_recursion(arm)?;
+                forms.push((if settled { None } else { Some(false) }, None));
+                continue;
+            }
+            if let Some(lengths) = self.known_lengths(arm)? {
+                forms.push(match lengths.split_last() {
+                    Some((outer, inner)) => {
+                        outers.push(*outer);
+                        (Some(true), inner.iter().copied().collect())
+                    }
+                    None => (Some(false), None),
+                });
+                continue;
+            }
+            if !self.rests_on_recursion(arm)? {
+                forms.push((self.definite_array(arm)?.then_some(true), None));
+                continue;
+            }
+            let beside_array = arms
+                .iter()
+                .zip(&definite)
+                .any(|(other, known)| *other != arm && *known);
+            if !(single && array || beside_array) {
+                forms.push((None, None));
+                continue;
+            }
+            let Some(sig) = self.sig(arm, need) else {
+                return Ok(None);
+            };
+            if sig.reactive || sig.frame || sig.is_error() {
+                forms.push((None, None));
+                continue;
+            }
+            let Some(found) = self.layout_of(arm, need)? else {
+                return Ok(None);
+            };
+            forms.push(match found.shaped {
+                Ok(Some(layout)) => {
+                    outers.push(layout.outer());
+                    (Some(true), Some(layout.inner().to_vec()))
+                }
+                Ok(None) => (Some(false), None),
+                Err(_) => (None, None),
+            });
+        }
+        let lengths = agreed_lengths(&forms, &outers);
+        self.memo.choice_lengths.insert(choice, lengths);
+        Ok(Some(Extra::Arms(forms)))
+    }
+
+    fn bounded_recursion(&self, node: NodeId) -> Result<bool, Internal> {
+        let Op::Recursive { function, .. } = self.node(node)?.op else {
+            return Ok(false);
+        };
+        self.bounded_cycle(function)
+    }
+
+    fn reaches_recursion(&self, root: NodeId) -> Result<bool, Internal> {
+        let mut stack = vec![root];
+        let mut seen = crate::semantics::analysis::fast_hash::FastSet::default();
+        while let Some(node) = stack.pop() {
+            if !seen.insert(node) {
+                continue;
+            }
+            match &self.node(node)?.op {
+                Op::Recursive { .. } => return Ok(true),
+                Op::Use(_) | Op::Read(_) => {}
+                op => stack.extend(op.operands()),
+            }
+        }
+        Ok(false)
     }
 
     fn history_sig(
@@ -325,4 +430,32 @@ fn joins(op: &Op) -> bool {
         | Op::History { .. }
         | Op::Native { .. } => false,
     }
+}
+
+fn agreed_lengths(
+    forms: &[(Option<bool>, Option<Vec<u32>>)],
+    outers: &[Option<u32>],
+) -> Option<Vec<Option<u32>>> {
+    let mut rows = None;
+    for form in forms {
+        let (Some(true), Some(inner)) = form else {
+            return None;
+        };
+        match rows {
+            None => rows = Some(inner),
+            Some(first) if first == inner => {}
+            Some(_) => return None,
+        }
+    }
+    let outer = match outers.split_first() {
+        Some((first, rest))
+            if outers.len() == forms.len() && rest.iter().all(|outer| outer == first) =>
+        {
+            *first
+        }
+        Some(_) | None => None,
+    };
+    let mut lengths: Vec<Option<u32>> = rows?.iter().copied().map(Some).collect();
+    lengths.push(outer);
+    Some(lengths)
 }

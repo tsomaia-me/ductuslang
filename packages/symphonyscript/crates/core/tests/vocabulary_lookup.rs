@@ -1,4 +1,6 @@
-use symphonyscript_core::{Count, Vocabulary};
+use symphonyscript_core::{
+    Count, NativeArg, NativeOut, NativeSignature, NativeType, Ty, Vocabulary,
+};
 
 #[test]
 fn handles_look_up_by_index_alone() {
@@ -50,4 +52,29 @@ fn counts_bound_numbers() {
     assert!(Count::Any.contains(u32::MAX));
     assert_eq!(Count::Between(1, 3).min(), 1);
     assert_eq!(Count::AtLeast(4).max(), None);
+}
+
+fn zero(_: &[NativeArg<'_>], _: &mut NativeOut<'_>) {}
+
+#[test]
+fn a_native_id_looks_up_only_in_its_own_vocabulary() {
+    let signature =
+        || NativeSignature::new([NativeType::Value(Ty::I32)], NativeType::Value(Ty::I32));
+    let mut a = Vocabulary::builder("a");
+    let first = a.native("first", signature(), zero);
+    let second = a.native("second", signature(), zero);
+    let mut b = Vocabulary::builder("b");
+    b.native("other", signature(), zero);
+    let a = a.build().expect("a is valid");
+    let b = b.build().expect("b is valid");
+    let name = |vocabulary: &Vocabulary, id| vocabulary.native(id).map(|decl| decl.name.clone());
+    assert_eq!(name(&a, first).as_deref(), Some("first"));
+    assert_eq!(name(&a, second).as_deref(), Some("second"));
+    assert_eq!(a.native_named("second"), Some(second));
+    assert_eq!(a.native_at(1), Some(second));
+    assert_eq!(a.native_at(2), None);
+    assert_eq!(name(&b, first), None);
+    assert_eq!(name(&b, second), None);
+    let other = b.native_named("other").expect("b declares other");
+    assert_eq!(name(&a, other), None);
 }

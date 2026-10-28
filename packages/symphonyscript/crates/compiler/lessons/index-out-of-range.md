@@ -9,9 +9,18 @@ Clip c:
     Note/([1, 2, 3][5])
 ```
 
-The array holds three elements.
+The array holds three elements: keep the index inside the array, from 0 to its length minus one.
 
 ```sym
 Clip c:
     Note/([1, 2, 3][2])
+```
+
+An empty array holds no element to read: give it elements, or read the element only where `len(…)` is above 0.
+
+```sym natives
+Clip a:
+    Note/(if len(b.sequence) > 0 then b.sequence[0] else 60)
+Clip b:
+    Note
 ```

@@ -16,6 +16,7 @@ impl Engine<'_> {
         }
         let mut entries: Vec<InstanceId> = Vec::new();
         for (index, record) in self.instances.iter().enumerate() {
+            self.memo.reach_work += 1;
             if self.node_decl(record.kind)?.entry {
                 entries.push(InstanceId(u32::try_from(index).unwrap_or(u32::MAX)));
             }
@@ -43,6 +44,7 @@ impl Engine<'_> {
         let mut reached: HashSet<InstanceId> = HashSet::new();
         let mut stack = entries;
         while let Some(instance) = stack.pop() {
+            self.memo.reach_work += 1;
             if !reached.insert(instance) {
                 continue;
             }
@@ -62,15 +64,17 @@ impl Engine<'_> {
                 }
             }
         }
-        let sites: HashMap<InstanceId, PlacementId> = self
-            .top_instances
-            .iter()
-            .map(|(placement, instance)| (*instance, *placement))
-            .collect();
+        let mut sites: HashMap<InstanceId, PlacementId> = HashMap::new();
+        for (placement, instance) in &self.top_instances {
+            self.memo.reach_reports += 1;
+            sites.insert(*instance, *placement);
+        }
         for instance in self.top_level.clone() {
+            self.memo.reach_work += 1;
             if reached.contains(&instance) {
                 continue;
             }
+            self.memo.reach_reports += 1;
             let record = self.instance(instance)?;
             let placement = self.hir.placement(record.placement)?;
             let loc = placement.name.as_ref().map_or(record.loc, |name| name.loc);

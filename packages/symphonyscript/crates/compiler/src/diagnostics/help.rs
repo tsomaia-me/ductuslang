@@ -1,5 +1,37 @@
 use super::code::Code;
 
+pub(crate) fn stray_closer_help(closer: char) -> Option<String> {
+    let opener = opener_of(closer)?;
+    Some(format!(
+        "remove the `{closer}`, or match it with an opening `{opener}`"
+    ))
+}
+
+pub(crate) fn mismatched_closer_help(found: char, expected: char) -> Option<String> {
+    let opener = opener_of(expected)?;
+    opener_of(found)?;
+    Some(format!(
+        "remove the `{found}`, or replace it with the `{expected}` that closes the open `{opener}`"
+    ))
+}
+
+pub(crate) fn index_outside_help(length: u64) -> Option<String> {
+    (length == 0).then(|| {
+        String::from(
+            "the array is empty: give it elements, or read the element only where `len(…)` is above 0",
+        )
+    })
+}
+
+fn opener_of(closer: char) -> Option<char> {
+    Some(match closer {
+        ')' => '(',
+        ']' => '[',
+        '}' => '{',
+        _ => return None,
+    })
+}
+
 pub(super) fn help(code: Code) -> Option<&'static str> {
     Some(match code {
         Code::TabIndentation => "indent with spaces",

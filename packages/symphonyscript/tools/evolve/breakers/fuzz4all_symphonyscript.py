@@ -17,6 +17,7 @@ from pathlib import Path
 os.environ["OPENAI_API_KEY"] = "unused"
 os.environ["OPENAI_BASE_URL"] = "http://127.0.0.1:9"
 
+import fuzz4all_shim
 import Fuzz4All.target.target as fuzz4all_target
 from Fuzz4All.fuzz import fuzz
 from Fuzz4All.target.target import FResult, Target

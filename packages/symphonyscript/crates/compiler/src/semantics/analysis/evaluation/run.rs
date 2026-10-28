@@ -178,40 +178,11 @@ impl Engine<'_> {
         Ok(match item {
             Some(item) => item,
             None => {
-                self.error_at_node(
-                    Code::IndexOutOfRange,
-                    index,
-                    format!(
-                        "the index {position} is outside the array of length {}",
-                        array.len()
-                    ),
-                )?;
+                let length = u64::try_from(array.len()).unwrap_or(u64::MAX);
+                self.index_outside(index, position, length)?;
                 CVal::Error
             }
         })
-    }
-
-    fn live_element(
-        &mut self,
-        base: NodeId,
-        array: &CArray,
-        position: i128,
-        own: EvalTy,
-        need: &mut Vec<Query>,
-    ) -> Result<Option<Option<CVal>>, Internal> {
-        let found = some!(self.layout_of(base, need)?);
-        let Ok(Some(layout)) = found.shaped else {
-            return Ok(Some(None));
-        };
-        if !layout.variable {
-            return Ok(Some(None));
-        }
-        let last = array.len().checked_sub(1);
-        let index = if position < 0 { Some(0) } else { last };
-        Ok(Some(Some(match index.and_then(|index| array.get(index)) {
-            Some(item) => item.clone(),
-            None => zero_of(layout.inner(), own),
-        })))
     }
 
     fn takes_a_type(&self, node: NodeId) -> Result<bool, Internal> {
@@ -304,14 +275,8 @@ impl Engine<'_> {
                 match item {
                     Some(item) => some!(self.typed_child(item, (own, partner), ctx, need)?),
                     None => {
-                        self.error_at_node(
-                            Code::IndexOutOfRange,
-                            index,
-                            format!(
-                                "the index {position} is outside the array of length {}",
-                                items.len()
-                            ),
-                        )?;
+                        let length = u64::try_from(items.len()).unwrap_or(u64::MAX);
+                        self.index_outside(index, position, length)?;
                         CVal::Error
                     }
                 }
@@ -325,12 +290,6 @@ impl Engine<'_> {
                 let Some(position) = int_position(position) else {
                     return Ok(Some(CVal::Error));
                 };
-                if let CVal::Array(array) = &value
-                    && usize::try_from(position).map_or(true, |position| position >= array.len())
-                    && let Some(live) = some!(self.live_element(base, array, position, own, need)?)
-                {
-                    return Ok(Some(live));
-                }
                 self.element(base, index, value, position)?
             }
             Op::Array(elements) => {
@@ -494,6 +453,9 @@ impl Engine<'_> {
                 }
             }
             Op::Convert(_, operand) => {
+                if !some!(self.sig(operand, need)).is_numeric() {
+                    return Ok(Some(CVal::Error));
+                }
                 let operand_ty = if is_float_ty(own) {
                     own
                 } else {
@@ -662,7 +624,27 @@ impl Engine<'_> {
         ctx: Ctx,
         need: &mut Vec<Query>,
     ) -> Result<Option<CVal>, Internal> {
-        if self.memo.deferred_sums.contains(&node) {
+        if self.memo.deferred_sums.contains(&node) && op != BinaryOp::Add {
+            let a = self.typed_child(lhs, (own, partner), ctx, need)?;
+            let b = self.typed_child(rhs, (own, partner), ctx, need)?;
+            match (some!(a), some!(b)) {
+                (CVal::Error, _) | (_, CVal::Error) => return Ok(Some(CVal::Error)),
+                (CVal::Array(_), _) | (_, CVal::Array(_)) => {
+                    self.error_at_node(Code::ArrayOperand, node, SINGLE_OPERANDS)?;
+                    return Ok(Some(CVal::Error));
+                }
+                (
+                    CVal::Int(_)
+                    | CVal::F32(_)
+                    | CVal::F64(_)
+                    | CVal::Bool(_)
+                    | CVal::Enum(..)
+                    | CVal::Str(_)
+                    | CVal::Node(_),
+                    _,
+                ) => {}
+            }
+        } else if self.memo.deferred_sums.contains(&node) {
             let a = self.typed_child(lhs, (own, partner), ctx, need)?;
             let b = self.typed_child(rhs, (own, partner), ctx, need)?;
             match (some!(a), some!(b)) {
@@ -1421,18 +1403,5 @@ fn takes_expected(op: &Op) -> bool {
     }
 }
 
-fn zero_of(lengths: &[u32], ty: EvalTy) -> CVal {
-    let mut value = match ty {
-        EvalTy::F32 | EvalTy::DefaultF32 => CVal::F32(0.0),
-        EvalTy::F64 | EvalTy::DefaultF64 => CVal::F64(0.0),
-        EvalTy::Bool => CVal::Bool(false),
-        EvalTy::Enum(id) => CVal::Enum(id, 0),
-        EvalTy::Exact | EvalTy::Default | EvalTy::U8 | EvalTy::I32 | EvalTy::I64 => CVal::Int(0),
-        EvalTy::Str | EvalTy::Node => CVal::Error,
-    };
-    for length in lengths {
-        let count = usize::try_from(*length).unwrap_or(0);
-        value = CVal::Array(CArray::new(vec![value; count]));
-    }
-    value
-}
+const SINGLE_OPERANDS: &str =
+    "only `+` takes arrays, which it joins; every other operator takes single values";

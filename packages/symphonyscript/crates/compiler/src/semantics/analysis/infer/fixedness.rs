@@ -149,14 +149,75 @@ impl Engine<'_> {
     }
 
     fn state_reads(
-        &self,
+        &mut self,
         init: NodeId,
         unbound: &mut Vec<Query>,
     ) -> Result<Vec<StateId>, Internal> {
+        let mut computed: FastMap<BindingId, (Vec<StateId>, bool)> = FastMap::default();
+        loop {
+            let (found, _, missing) = self.scan_state_reads(init, &computed, unbound)?;
+            if missing.is_empty() {
+                return Ok(found);
+            }
+            self.settle_binding_reads(missing, &mut computed, unbound)?;
+        }
+    }
+
+    fn settle_binding_reads(
+        &mut self,
+        mut work: Vec<BindingId>,
+        computed: &mut FastMap<BindingId, (Vec<StateId>, bool)>,
+        unbound: &mut Vec<Query>,
+    ) -> Result<(), Internal> {
+        let mut active: FastSet<BindingId> = work.iter().copied().collect();
+        while let Some(&binding) = work.last() {
+            if computed.contains_key(&binding)
+                || self.memo.binding_state_reads.contains_key(&binding)
+            {
+                work.pop();
+                continue;
+            }
+            let init = self.binding(binding)?.init;
+            let (found, clean, missing) = self.scan_state_reads(init, computed, unbound)?;
+            let cyclic = missing.iter().any(|child| active.contains(child));
+            let waiting: Vec<BindingId> = missing
+                .into_iter()
+                .filter(|child| !active.contains(child))
+                .collect();
+            if !waiting.is_empty() {
+                for child in waiting {
+                    active.insert(child);
+                    work.push(child);
+                }
+                continue;
+            }
+            work.pop();
+            active.remove(&binding);
+            let clean = clean && !cyclic;
+            if clean {
+                self.memo
+                    .binding_state_reads
+                    .insert(binding, found.clone().into());
+            }
+            computed.insert(binding, (found, clean));
+        }
+        Ok(())
+    }
+
+    fn scan_state_reads(
+        &mut self,
+        init: NodeId,
+        computed: &FastMap<BindingId, (Vec<StateId>, bool)>,
+        unbound: &mut Vec<Query>,
+    ) -> Result<(Vec<StateId>, bool, Vec<BindingId>), Internal> {
         let mut found = Vec::new();
+        let mut clean = true;
+        let mut missing = Vec::new();
+        let mut cells = Vec::new();
         let mut seen = FastSet::default();
         let mut stack = vec![init];
         while let Some(node) = stack.pop() {
+            self.memo.settlement_visits += 1;
             if !seen.insert(node) {
                 continue;
             }
@@ -166,18 +227,17 @@ impl Engine<'_> {
                     BindingKind::Input { .. }
                     | BindingKind::Let
                     | BindingKind::Param
-                    | BindingKind::Attr { .. } => stack.push(self.binding(*binding)?.init),
+                    | BindingKind::Attr { .. } => cells.push(*binding),
                 },
                 Op::History { cell, fallback, .. } => {
                     match cell {
                         HistoryCell::State(state) => found.push(*state),
                         HistoryCell::Let(id) if self.let_bound(*id).is_none() => {
+                            clean = false;
                             unbound.push(self.history_cell_query(*cell));
                         }
                         HistoryCell::Input(_) | HistoryCell::Let(_) => {
-                            for binding in self.history_bindings(node)? {
-                                stack.push(self.binding(binding)?.init);
-                            }
+                            cells.extend(self.history_bindings(node)?);
                         }
                     }
                     stack.extend(fallback.iter().copied());
@@ -185,7 +245,17 @@ impl Engine<'_> {
                 op => stack.extend(op.operands()),
             }
         }
-        Ok(found)
+        for binding in cells {
+            if let Some(known) = self.memo.binding_state_reads.get(&binding) {
+                found.extend(known.iter().copied());
+            } else if let Some((known, known_clean)) = computed.get(&binding) {
+                found.extend(known.iter().copied());
+                clean &= *known_clean;
+            } else {
+                missing.push(binding);
+            }
+        }
+        Ok((found, clean, missing))
     }
 
     fn settle_group(

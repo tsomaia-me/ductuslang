@@ -78,6 +78,12 @@ impl Engine<'_> {
             if index.contains_key(&node) || self.memo.kind_components.contains_key(&node) {
                 continue;
             }
+            if let Some(query) = self.memo.kind_pending.get(&node).copied()
+                && self.bound(query, &mut Vec::new()).is_none()
+            {
+                missing.push(query);
+                continue;
+            }
             index.insert(node, nodes.len());
             nodes.push(node);
             let found = self.kind_edges(node, false, &mut missing)?;
@@ -88,7 +94,10 @@ impl Engine<'_> {
             }
             targets.push(found);
         }
-        if !missing.is_empty() {
+        if let Some(query) = missing.first().copied() {
+            for node in nodes {
+                self.memo.kind_pending.insert(node, query);
+            }
             need.extend(missing);
             return Ok(None);
         }
@@ -137,6 +146,8 @@ impl Engine<'_> {
         cut: bool,
         missing: &mut Vec<Query>,
     ) -> Result<Vec<NodeId>, Internal> {
+        self.memo.kind_visits += 1;
+        self.memo.settlement_visits += 1;
         let op = &self.node(node)?.op;
         let mut found = op.operands();
         let extra = match op {
@@ -450,6 +461,7 @@ impl Engine<'_> {
                     let sig = self.read_sig(binding, init)?;
                     self.memo.history_kinds.insert(read, Some(sig));
                     self.memo.sigs.remove(&read);
+                    self.forget_drawn(&[read]);
                     self.demand_sig(read)?;
                     vec![read]
                 }
@@ -507,10 +519,26 @@ impl Engine<'_> {
                 }
             }
         }
+        self.forget_drawn(&removed);
         for node in removed {
             self.demand_sig(node)?;
         }
         Ok(())
+    }
+
+    fn forget_drawn(&mut self, nodes: &[NodeId]) {
+        let forgotten: FastSet<NodeId> = nodes.iter().copied().collect();
+        let drawn = |deferred: &crate::semantics::analysis::deferred::Deferred| {
+            deferred
+                .signing
+                .is_some_and(|node| forgotten.contains(&node))
+        };
+        if let Some(stop) = self.stop.as_mut() {
+            let before = self.deferred.get(..stop.deferred).unwrap_or_default();
+            let dropped = before.iter().filter(|deferred| drawn(deferred)).count();
+            stop.deferred = stop.deferred.saturating_sub(dropped);
+        }
+        self.deferred.retain(|deferred| !drawn(deferred));
     }
 
     fn unsettled_kinds(

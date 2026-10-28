@@ -138,12 +138,19 @@ impl HirBuilder<'_> {
                     }
                 });
                 let regions = param_regions(node.syntax(), SyntaxKind::ParamList);
+                let cut = node
+                    .bounded()
+                    .is_some_and(|bounded| self.faults.touch(bounded.syntax().range()))
+                    || node
+                        .body()
+                        .is_none_or(|body| self.faults.touch(body.syntax().range()));
                 let decl = FnDecl {
                     name: self.ident(node.name()),
                     params,
                     bound,
                     skipped_params: skipped_params(&regions),
                     faulty_head: !regions.is_empty(),
+                    cut,
                     lets,
                     value,
                     loc,
@@ -213,7 +220,7 @@ impl HirBuilder<'_> {
     pub(super) fn type_ref(&mut self, node: &ast::TypeRef<'_>) -> TypeRef {
         let loc = self.loc(node.syntax().range());
         let base = match node.base() {
-            Some(token) if self.faults.touch(token.range()) => TypeBase::Error,
+            _ if self.faults.touch(node.syntax().range()) => TypeBase::Error,
             Some(token) => match scalar_type(&token) {
                 Some(scalar) => TypeBase::Scalar(scalar),
                 None => match self.ident(node.enum_name()) {
@@ -236,6 +243,26 @@ impl HirBuilder<'_> {
             capacity,
             loc,
         }
+    }
+
+    pub(super) fn header_names(&self, item: &NodeView<'_>) -> Vec<String> {
+        let mut names = Vec::new();
+        let Some(fault) = self.faults.first_in(item.range()) else {
+            return names;
+        };
+        let mut token = item.first_token();
+        while let Some(current) = token {
+            if matches!(current.kind(), SyntaxKind::Newline | SyntaxKind::Indent)
+                || current.range().start >= item.range().end
+            {
+                break;
+            }
+            if current.kind() == SyntaxKind::Ident && current.range().start >= fault {
+                names.push(Name::new(current.clone()).text());
+            }
+            token = current.next_token();
+        }
+        names
     }
 
     pub(super) fn ident(&self, name: Option<Name<'_>>) -> Option<Ident> {
@@ -269,6 +296,5 @@ fn digits_value(text: &str) -> Option<u64> {
 }
 
 fn length_value(text: &str) -> Option<u32> {
-    let digits: String = text.chars().filter(|c| *c != '_').collect();
-    digits.parse::<u32>().ok()
+    digits_value(text).map(|value| u32::try_from(value).unwrap_or(u32::MAX))
 }

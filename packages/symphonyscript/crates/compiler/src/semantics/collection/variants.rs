@@ -8,6 +8,8 @@ use crate::semantics::Internal;
 pub(crate) struct Variants {
     owners: HashMap<String, EnumId>,
     positions: Vec<HashMap<String, u16>>,
+    #[cfg(test)]
+    examined: std::sync::Arc<std::sync::atomic::AtomicU64>,
 }
 
 impl Variants {
@@ -28,10 +30,23 @@ impl Variants {
     }
 
     pub fn owner(&self, name: &str) -> Option<EnumId> {
+        self.examine();
         self.owners.get(name).copied()
     }
 
+    #[cfg(test)]
+    pub fn examined(&self) -> u64 {
+        self.examined.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    fn examine(&self) {
+        #[cfg(test)]
+        self.examined
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    }
+
     pub fn position(&self, enumeration: EnumId, name: &str) -> Result<Option<u16>, Internal> {
+        self.examine();
         Ok(self
             .positions
             .get(enumeration.index())

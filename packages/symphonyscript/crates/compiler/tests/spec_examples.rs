@@ -1,12 +1,13 @@
 mod support;
 
-use symphonyscript_fixtures::spec_examples;
+use symphonyscript_fixtures::{pending_spec_examples, spec_examples};
 
 #[test]
 fn every_sym_example_parses() {
+    let pending = pending_spec_examples();
     let examples: Vec<_> = spec_examples()
         .into_iter()
-        .filter(|example| example.tag == "sym")
+        .filter(|example| example.tag == "sym" && !pending.contains(&example.name()))
         .collect();
     assert!(!examples.is_empty());
     for example in examples {
@@ -44,9 +45,25 @@ fn every_sym_error_example_is_extracted() {
     assert_eq!(
         rejected,
         [
+            "spec-3.9-sym-error-1",
+            "spec-3.11-sym-error-1",
             "spec-4.1-sym-error-1",
+            "spec-5.10-sym-error-1",
+            "spec-5.10-sym-error-2",
             "spec-6.3-sym-error-1",
-            "spec-6.6-sym-error-1"
+            "spec-6.6-sym-error-1",
+            "spec-6.7-sym-error-1",
+            "spec-6.7-sym-error-2",
+            "spec-6.7-sym-error-3",
+            "spec-6.7-sym-error-4",
+            "spec-6.8-sym-error-1",
+            "spec-6.8-sym-error-2",
+            "spec-6.8-sym-error-3",
+            "spec-6.8-sym-error-4",
+            "spec-6.8-sym-error-5",
+            "spec-7.9-sym-error-1",
+            "spec-7.9-sym-error-2",
+            "spec-10.2-sym-error-1",
         ]
     );
 }

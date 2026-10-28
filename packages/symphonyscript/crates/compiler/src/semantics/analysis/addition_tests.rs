@@ -143,6 +143,98 @@ fn settling_a_group_of_states_costs_work_linear_in_it_in_every_declaration_order
     }
 }
 
+fn kind_walk(text: &str, expected: &[crate::diagnostics::Code]) -> (u64, u64) {
+    let (diagnostics, visits) = analyzed(&vocabulary(), text, |engine| {
+        (engine.memo.kind_visits, engine.memo.settlement_visits)
+    });
+    let codes: Vec<crate::diagnostics::Code> = errors(&diagnostics)
+        .iter()
+        .map(|diagnostic| diagnostic.code)
+        .collect();
+    assert_eq!(codes, expected, "{diagnostics:?}");
+    visits
+}
+
+fn kind_walk_program(shape: &str, states: u32) -> String {
+    let last = states - 1;
+    let lines: Vec<String> = (0..states)
+        .map(|state| {
+            let previous = (state + last) % states;
+            let next = (state + 1) % states;
+            match shape {
+                "forward ring" | "reversed ring" => {
+                    format!("state s{state} = (s{previous}{{1, []}} + [note])[^8..]\n")
+                }
+                "integer chain" if state == 0 => String::from("state p0 = y{1, 0}\n"),
+                "integer chain" => format!("state p{state} = p{previous}{{1, 0}}\n"),
+                "float chain" if state == 0 => String::from("state p0 = y{1, 0.0}\n"),
+                "float chain" => format!("state p{state} = p{previous}{{1, 0.0}}\n"),
+                "float at the end" if state == last => {
+                    format!("state p{state} = p0{{1, 0.5}}\n")
+                }
+                "float at the end" => format!("state p{state} = p{next}{{1, 0}}\n"),
+                "float at the start" if state == 0 => {
+                    format!("state p0 = p{last}{{1, 0.5}}\n")
+                }
+                "float at the start" => format!("state p{state} = p{previous}{{1, 0}}\n"),
+                _ => format!("state p{state} = y{{1, 0}}\n"),
+            }
+        })
+        .collect();
+    let body = if shape == "reversed ring" {
+        lines.iter().rev().cloned().collect::<String>()
+    } else {
+        lines.concat()
+    };
+    let (head, read) = match shape {
+        "forward ring" | "reversed ring" => (
+            "input note = 60\n",
+            format!("Clip c:\n    Note/(s{last}[0])\n"),
+        ),
+        "integer chain" => (
+            "input x = 1\nlet y = x * 2\n",
+            format!("Clip c:\n    Note/(p{last})\n"),
+        ),
+        "float chain" => (
+            "input x = 1\nlet y = x * 0.5\n",
+            format!("Clip c:\n    Note/(p{last})\n"),
+        ),
+        "float at the end" | "float at the start" => {
+            ("", String::from("Clip c:\n    Note | brightness=p0\n"))
+        }
+        _ => (
+            "input x = 1.5\nlet y = x * 2\n",
+            format!("Clip c:\n    Note | brightness=p{last}\n"),
+        ),
+    };
+    format!("{head}{body}{read}")
+}
+
+#[test]
+fn the_kind_walk_over_a_group_of_states_is_linear_in_every_declaration_order() {
+    use crate::diagnostics::Code;
+    let shapes: [(&str, &[Code]); 7] = [
+        ("forward ring", &[]),
+        ("reversed ring", &[]),
+        ("integer chain", &[]),
+        ("float chain", &[Code::FloatToInteger]),
+        ("float at the end", &[]),
+        ("float at the start", &[]),
+        ("fan", &[]),
+    ];
+    for (shape, expected) in shapes {
+        let visits: Vec<(u64, u64)> = [2_500, 5_000, 10_000]
+            .into_iter()
+            .map(|states| kind_walk(&kind_walk_program(shape, states), expected))
+            .collect();
+        for pair in visits.windows(2) {
+            let (smaller, larger) = (pair[0], pair[1]);
+            assert!(larger.0 <= 2 * smaller.0 + 64, "{shape}: {visits:?}");
+            assert!(larger.1 <= 2 * smaller.1 + 64, "{shape}: {visits:?}");
+        }
+    }
+}
+
 fn wire_cycle_work(filters: u32, feeds: impl Fn(u32) -> Vec<u32>) -> (usize, u64) {
     let body: String = (0..filters)
         .map(|filter| {
@@ -629,6 +721,134 @@ fn a_compile_time_match_on_a_bare_variant_computes_its_chosen_arm() {
 }
 
 #[test]
+fn a_choice_whose_arms_agree_in_shape_computes_its_chosen_arm() {
+    let held = "input held: i32[..4] = [1, 2]\n";
+    let f = "fn f(n): if n > 3 then [1] else [1] + f(n + 1)\n";
+    let rows: [(&[&str], i128); 3] = [
+        (&[held, "Clip c:\n    Note/(if false then 7 else 5)\n"], 5),
+        (&[f, "Clip c:\n    Note/(f(0)[0])\n"], 1),
+        (
+            &[f, "Clip c:\n    Note/((if false then f(0) else [1])[0])\n"],
+            1,
+        ),
+    ];
+    for (items, expected) in rows {
+        for text in in_every_order(items) {
+            let (diagnostics, value) = analyzed(&vocabulary(), &text, |engine| {
+                attr_value(engine, "pitch", EvalTy::I32)
+            });
+            assert!(errors(&diagnostics).is_empty(), "{text}{diagnostics:?}");
+            assert_eq!(value, Some(CVal::Int(expected)), "{text}");
+        }
+    }
+}
+
+#[test]
+fn a_compile_time_index_into_a_literal_computes_its_element_in_the_positions_type() {
+    let (diagnostics, value) = analyzed(
+        &vocabulary(),
+        "Clip c:\n    Note/(60 + [1, 2][1])\n",
+        |engine| attr_value(engine, "pitch", EvalTy::I32),
+    );
+    assert!(errors(&diagnostics).is_empty(), "{diagnostics:?}");
+    assert_eq!(value, Some(CVal::Int(62)));
+}
+
+#[test]
+fn a_qualified_variant_in_an_array_that_only_len_reads_computes_its_length() {
+    for text in in_every_order(&[
+        "input w = Wave::Saw\n",
+        "Clip c:\n    Note/(60 + len([w]))\n",
+    ]) {
+        let (diagnostics, value) = analyzed(&vocabulary(), &text, |engine| {
+            attr_value(engine, "pitch", EvalTy::I32)
+        });
+        assert!(errors(&diagnostics).is_empty(), "{text}{diagnostics:?}");
+        assert_eq!(value, Some(CVal::Int(61)), "{text}");
+    }
+}
+
+#[test]
+fn a_call_beside_the_inline_limit_computes_its_value() {
+    let four = Limits {
+        inlined_calls: 4,
+        ..Limits::default()
+    };
+    let rows: [(&[&str], Limits, i128); 7] = [
+        (
+            &[
+                "let fixed = [1, 2]\n",
+                "fn r(i): if i >= len(fixed) then 0 else r(i + 1) + 1\n",
+                "Clip c:\n    Note/(60 + r(0))\n",
+            ],
+            four,
+            62,
+        ),
+        (
+            &[
+                "input note = 60\n",
+                "let cells = [note, note, note]\n",
+                "fn r(i): if i >= len(cells) then 0 else r(i + 1) + 1\n",
+                "Clip c:\n    Note/(60 + r(0))\n",
+            ],
+            four,
+            63,
+        ),
+        (
+            &[
+                "input held: i32[..4] = []\n",
+                "let cells = [len(held), 1]\n",
+                "fn r(i): if i >= len(cells) then 0 else r(i + 1) + 1\n",
+                "Clip c:\n    Note/(60 + r(0))\n",
+            ],
+            four,
+            62,
+        ),
+        (
+            &["fn h(x): x + 1\n", "Clip c:\n    Note/(h(h(h(60))))\n"],
+            four,
+            63,
+        ),
+        (
+            &[
+                "fn r(i): if i is 0 then 0 else r(i - 1) + 1\n",
+                "Clip c:\n    Note/(60 + r(3))\n",
+            ],
+            Limits::default(),
+            63,
+        ),
+        (
+            &[
+                "input fixed: i32[2] = [1, 2]\n",
+                "fn r(i): if i >= len(fixed) then 0 else r(i + 1) + 1\n",
+                "Clip c:\n    Note/(60 + r(0))\n",
+            ],
+            four,
+            62,
+        ),
+        (
+            &[
+                "input fixed: i32[2] = [1, 2]\n",
+                "fn h(x): x + 1\n",
+                "fn r(i): if i >= len(fixed) then 0 else r(i + 1) + h(h(h(i)))\n",
+                "Clip c:\n    Note/(60 + r(0))\n",
+            ],
+            four,
+            67,
+        ),
+    ];
+    for (items, limits, pitch) in rows {
+        for text in in_every_order(items) {
+            let (diagnostics, value) = analyzed_within(&vocabulary(), limits, &text, |engine| {
+                attr_value(engine, "pitch", EvalTy::I32)
+            });
+            assert!(errors(&diagnostics).is_empty(), "{text}{diagnostics:?}");
+            assert_eq!(value, Some(CVal::Int(pitch)), "{text}");
+        }
+    }
+}
+
+#[test]
 fn a_fixed_type_operand_widens_into_the_expected_type_before_the_operation() {
     let pitches: [(&[&str], i128); 9] = [
         (&["Clip c:\n    Note/(u8(255) + 4)\n"], 259),
@@ -963,6 +1183,37 @@ fn a_join_holds_its_operands_and_builds_its_elements_only_where_a_value_needs_th
 }
 
 #[test]
+fn a_compile_time_slice_holds_its_base_and_its_bounds() {
+    let (_, reference, _, _) = doubling_work("60 + len(f(k))", 30);
+    for (read, expected) in [
+        ("60 + len(f(k)[5..])", 1_073_741_879),
+        ("60 + len(f(k)[5..^9])", 1_073_741_870),
+        ("60 + len(f(k)[5..9])", 64),
+    ] {
+        let (value, built, _, _) = doubling_work(read, 30);
+        assert_eq!(value, Some(CVal::Int(expected)), "{read}");
+        assert_eq!(built, reference, "{read}");
+    }
+    let (element, _, _, _) = doubling_work("f(k)[1..3][1]", 3);
+    assert_eq!(element, Some(CVal::Int(1)));
+    for text in in_every_order(&[
+        "fn f(n): if n is 0 then [1] else f(n - 1) + f(n - 1)\n",
+        "let p: i32[1073741824] = f(30)\n",
+        "Clip c:\n    Note/(p[0..])\n",
+    ]) {
+        let (built_before, _) = CArray::work();
+        let (diagnostics, ()) = analyzed(&vocabulary(), &text, |_| ());
+        let (built_after, _) = CArray::work();
+        let found: Vec<crate::diagnostics::Code> = errors(&diagnostics)
+            .iter()
+            .map(|found| found.code)
+            .collect();
+        assert_eq!(found, [crate::diagnostics::Code::TypeMismatch], "{text}");
+        assert!(built_after - built_before <= reference, "{text}");
+    }
+}
+
+#[test]
 fn a_bounded_expansion_types_its_passed_over_branches_in_work_linear_in_its_levels() {
     let nodes = |bound: u32| {
         let text = format!(
@@ -995,8 +1246,22 @@ fn set_attr_value(engine: &Engine<'_>, name: &str, ty: EvalTy) -> Option<CVal> {
 }
 
 #[test]
-fn an_unset_variable_array_attribute_reads_as_a_variable_array_holding_its_default() {
-    let rows: [(&[&str], &str, EvalTy, CVal); 7] = [
+fn an_unset_variable_array_attribute_reads_as_the_fixed_array_of_its_default() {
+    let unset = "Clip b:\n    Note\n";
+    let seq = "Clip b | seq=[7, 8]:\n    Note\n";
+    let rows: [(&[&str], &str, EvalTy, CVal); 9] = [
+        (
+            &["Clip a:\n    Note/(60 + len(b.seq))\n", unset],
+            "pitch",
+            EvalTy::I32,
+            CVal::Int(62),
+        ),
+        (
+            &["Clip a:\n    Note/(60 + len(b.seq))\n", seq],
+            "pitch",
+            EvalTy::I32,
+            CVal::Int(62),
+        ),
         (
             &[
                 "Clip c:\n    Note/(len(d.sequence))\n",
@@ -1007,34 +1272,31 @@ fn an_unset_variable_array_attribute_reads_as_a_variable_array_holding_its_defau
             CVal::Int(0),
         ),
         (
-            &["Clip c:\n    Note/(d.sequence[0])\n", "Clip d:\n    Note\n"],
-            "pitch",
-            EvalTy::I32,
-            CVal::Int(0),
-        ),
-        (
-            &[
-                "Clip a | gain=len(b.seq):\n    Note\n",
-                "Clip b:\n    Note\n",
-            ],
+            &["Clip a | gain=len(b.seq):\n    Note\n", unset],
             "gain",
             EvalTy::F32,
             CVal::F32(2.0),
         ),
         (
-            &["Clip a:\n    Note/(b.seq[1])\n", "Clip b:\n    Note\n"],
+            &["Clip a:\n    Note/(b.seq[1])\n", unset],
             "pitch",
             EvalTy::I32,
             CVal::Int(8),
         ),
         (
-            &["Clip a:\n    Note/(len(b.rows))\n", "Clip b:\n    Note\n"],
+            &["Clip a:\n    Note/(b.seq[1])\n", seq],
+            "pitch",
+            EvalTy::I32,
+            CVal::Int(8),
+        ),
+        (
+            &["Clip a:\n    Note/(len(b.rows))\n", unset],
             "pitch",
             EvalTy::I32,
             CVal::Int(2),
         ),
         (
-            &["Clip a:\n    Note/(b.rows[1][0])\n", "Clip b:\n    Note\n"],
+            &["Clip a:\n    Note/(b.rows[1][0])\n", unset],
             "pitch",
             EvalTy::I32,
             CVal::Int(3),
@@ -1094,6 +1356,75 @@ fn a_layout_walk_over_a_chain_of_slices_costs_work_linear_in_the_chain() {
         for pair in visits.windows(2) {
             if let [shorter, longer] = pair {
                 assert!(*longer <= 2 * *shorter + 64, "{visits:?}");
+            }
+        }
+    }
+}
+
+fn nested_choices(depth: usize, runtime: bool) -> String {
+    let condition = if runtime { "flag" } else { "false" };
+    format!(
+        "input held: i32[..4] = [1, 2]\ninput flag = true\nClip c:\n    Note/((if false then {}held{} else [[1]])[0][0])\n",
+        format!("(if {condition} then ").repeat(depth),
+        " else [1, 2])".repeat(depth)
+    )
+}
+
+fn let_choices(depth: usize, _: bool) -> String {
+    let mut text =
+        String::from("input held: i32[..4] = [1, 2]\ninput flag = true\nlet c0 = held\n");
+    for level in 1..=depth {
+        text.push_str(&format!(
+            "let c{level} = if flag then c{} else c{}\n",
+            level - 1,
+            level - 1
+        ));
+    }
+    text.push_str(&format!(
+        "Clip c:\n    Note/((if false then c{depth} else [[1]])[0][0])\n"
+    ));
+    text
+}
+
+fn nested_joins(depth: usize, _: bool) -> String {
+    format!(
+        "input held: i32[..4] = [1, 2]\nClip c:\n    Note/((if false then held{} else [[1]])[0][0])\n",
+        " + [1]".repeat(depth)
+    )
+}
+
+#[test]
+fn a_chain_of_nested_choices_holding_array_arms_costs_work_linear_in_its_depth() {
+    type Chain = fn(usize, bool) -> String;
+    let chains: [(Chain, bool); 4] = [
+        (nested_choices, true),
+        (nested_choices, false),
+        (let_choices, true),
+        (nested_joins, true),
+    ];
+    for (chain, runtime) in chains {
+        let walks: Vec<u64> = [2_500, 5_000, 10_000]
+            .into_iter()
+            .map(|depth| {
+                let text = chain(depth, runtime);
+                let (diagnostics, walks) =
+                    analyzed(&vocabulary(), &text, |engine| engine.memo.arm_walks.get());
+                let codes: Vec<_> = errors(&diagnostics)
+                    .iter()
+                    .map(|diagnostic| (diagnostic.code, diagnostic.span.range.start))
+                    .collect();
+                let outer = u32::try_from(text.find("if false then").unwrap_or(0)).unwrap_or(0);
+                assert_eq!(
+                    codes,
+                    [(crate::diagnostics::Code::TypeMismatch, outer)],
+                    "{depth}"
+                );
+                walks
+            })
+            .collect();
+        for pair in walks.windows(2) {
+            if let [shorter, longer] = pair {
+                assert!(*longer <= 2 * *shorter + 64, "{walks:?}");
             }
         }
     }
@@ -1191,4 +1522,171 @@ fn erroneous_flows_report_in_work_linear_in_their_number() {
     assert_linear(points.map(|(uses, (flow, _, _))| (uses, flow)));
     assert_linear(points.map(|(uses, (_, queries, _))| (uses, queries)));
     assert_linear(points.map(|(uses, (_, _, nodes))| (uses, nodes)));
+}
+
+fn three_vocabulary() -> symphonyscript_core::Vocabulary {
+    let mut v = symphonyscript_core::Vocabulary::builder("three");
+    let clip = v.node("Clip");
+    let note = v.node("Note");
+    v.kind(clip)
+        .top_level(symphonyscript_core::Count::Any)
+        .children(note, symphonyscript_core::Count::Any)
+        .attr::<symphonyscript_core::Bounded<i32, 3>>("three")
+        .default(symphonyscript_core::Bounded::default());
+    v.kind(note).attr::<i32>("pitch").default(60).default_attr();
+    v.build().expect("the three vocabulary builds")
+}
+
+fn joined_let(name: &str, joins: u32) -> String {
+    format!(
+        "input held: i32[..1] = []\nlet {name} = held{}\n",
+        " + [1]".repeat(usize::try_from(joins).unwrap_or(0))
+    )
+}
+
+fn attribute_walk(positions: u32, joins: u32) -> u64 {
+    let mut text = joined_let("x", joins);
+    for position in 0..positions {
+        text.push_str(&format!("Clip c{position} | three=x:\n    Note\n"));
+    }
+    let (diagnostics, visits) = analyzed(&three_vocabulary(), &text, |engine| {
+        engine.memo.capacity_visits
+    });
+    let found = errors(&diagnostics);
+    assert_eq!(found.len(), usize::try_from(positions).unwrap_or(0));
+    let holds = format!("holds up to {} elements", joins + 1);
+    for diagnostic in found {
+        assert_eq!(diagnostic.code, crate::diagnostics::Code::CapacityExceeded);
+        assert!(diagnostic.summary.contains(&holds), "{diagnostic:?}");
+    }
+    visits
+}
+
+fn state_walk(states: u32, joins: u32, history: bool) -> u64 {
+    let mut text = joined_let("t", joins);
+    let read = if history { "t{1, []}" } else { "t" };
+    for state in 0..states {
+        text.push_str(&format!("state s{state} = {read}[^2..]\n"));
+    }
+    text.push_str("Clip c:\n    Note/(s0[0])\n");
+    let (diagnostics, (visits, capacities)) = analyzed(&vocabulary(), &text, |engine| {
+        let capacities: Vec<Option<u32>> = (0..states)
+            .map(|state| state_capacity(engine, state))
+            .collect();
+        (
+            engine.memo.settlement_visits + engine.memo.capacity_visits,
+            capacities,
+        )
+    });
+    assert!(errors(&diagnostics).is_empty(), "{diagnostics:?}");
+    assert!(
+        capacities.iter().all(|capacity| *capacity == Some(2)),
+        "{capacities:?}"
+    );
+    visits
+}
+
+#[test]
+fn a_lets_capacity_is_walked_once_however_many_positions_or_states_read_it() {
+    let small = attribute_walk(1_000, 1_000);
+    let large = attribute_walk(2_000, 2_000);
+    assert!(large <= 2 * small + 64, "{small} {large}");
+    for history in [true, false] {
+        let smallest = state_walk(1_000, 1_000, history);
+        let base = state_walk(1_000, 2_000, history);
+        let largest = state_walk(2_000, 2_000, history);
+        let longer = state_walk(2_000, 1_000, history);
+        for smaller in [smallest, base, longer] {
+            assert!(
+                largest <= 2 * smaller + 64,
+                "history {history}: {smallest} {base} {longer} {largest}"
+            );
+        }
+    }
+}
+
+#[test]
+fn reachability_warnings_cost_work_linear_in_the_instances() {
+    let work = |clips: usize| {
+        let mut text = String::from("Session s\n");
+        for clip in 0..clips {
+            text.push_str(&format!("Clip c{clip}\n"));
+        }
+        let (diagnostics, work) = analyzed(&vocabulary(), &text, |engine| engine.memo.reach_work);
+        assert_eq!(diagnostics.len(), clips, "{diagnostics:?}");
+        work
+    };
+    let (small, large) = (work(10_000), work(40_000));
+    assert!(large <= 4 * small + 64, "{small} {large}");
+}
+
+#[test]
+fn reporting_reachability_warnings_costs_work_linear_in_the_warnings() {
+    for clips in [1_000u64, 2_000, 4_000] {
+        let mut text = String::from("Session s\n");
+        for clip in 0..clips {
+            text.push_str(&format!("Clip c{clip}\n"));
+        }
+        let (diagnostics, reports) =
+            analyzed(&vocabulary(), &text, |engine| engine.memo.reach_reports);
+        let warnings = diagnostics
+            .iter()
+            .filter(|diagnostic| diagnostic.code == crate::diagnostics::Code::UnreachableInstance)
+            .count();
+        assert_eq!(warnings, usize::try_from(clips).unwrap_or(usize::MAX));
+        assert_eq!(diagnostics.len(), warnings, "{diagnostics:?}");
+        let per_instance = 2;
+        assert!(reports <= per_instance * (clips + 1), "{clips} {reports}");
+    }
+}
+
+#[test]
+fn an_integer_that_would_reach_two_to_the_127_costs_what_its_reference_costs() {
+    let work = |text: &str| {
+        let (diagnostics, work) =
+            analyzed(&vocabulary(), text, |engine| engine.memo.evaluation_work);
+        assert_eq!(errors(&diagnostics).len(), 1, "{text}{diagnostics:?}");
+        work
+    };
+    let just_under = "170141183460469231731687303715884105727";
+    let reference = work("Clip c:\n    Note/(2 ** 127)\n");
+    for text in [
+        "Clip c:\n    Note/(2 ** 1000000000)\n".to_string(),
+        "let e = 2 ** 2 ** 2 ** 2 ** 2\nClip c:\n    Note/e\n".to_string(),
+        format!("Clip c:\n    Note/({just_under} * {just_under})\n"),
+    ] {
+        assert!(work(&text) <= 10 * reference.max(1), "{text}");
+    }
+}
+
+#[test]
+fn variant_lookups_cost_constant_work_per_name() {
+    let vocabulary_over = |names: Vec<String>| {
+        let mut v = symphonyscript_core::Vocabulary::builder("wide");
+        let variants = v.enumeration("E", &names);
+        let other = v.enumeration("F", ["Other"]);
+        let kind = v.node("K");
+        v.kind(kind)
+            .top_level(symphonyscript_core::Count::Any)
+            .attr_enum("e", variants, "V65535")
+            .attr_enum("f", other, "Other");
+        v.build().expect("the vocabulary builds")
+    };
+    let named = |range: std::ops::Range<usize>| range.map(|index| format!("V{index}")).collect();
+    let mut text = String::new();
+    for index in 0..20_000 {
+        text.push_str(&format!("K k{index} | e=V{}\n", 65_472 + index % 64));
+    }
+    text.push_str("K x | e=Other\n");
+    let examined = |names: Vec<String>| {
+        let (diagnostics, examined) = analyzed(&vocabulary_over(names), &text, |engine| {
+            engine.variants.examined()
+        });
+        assert_eq!(errors(&diagnostics).len(), 1, "{diagnostics:?}");
+        examined
+    };
+    let wide = examined(named(0..65_536));
+    let narrow = examined(named(65_472..65_536));
+    assert_eq!(wide, narrow);
+    assert!(wide <= 8 * 20_001, "{wide}");
 }

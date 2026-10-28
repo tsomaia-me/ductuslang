@@ -23,7 +23,7 @@ use super::lexed::Lexed;
 use super::nfc::nfc;
 use super::syntax_kind::SyntaxKind;
 use super::token::Token;
-use crate::diagnostics::{Code, Diagnostic};
+use crate::diagnostics::{Code, Diagnostic, stray_closer_help};
 use crate::source::Source;
 
 pub(crate) struct Lexer<'a> {
@@ -974,12 +974,18 @@ impl<'a> Lexer<'a> {
             self.pos += c.len_utf8();
         }
         let text = &self.text[start..self.pos];
-        self.error(
+        let mut diagnostic = Diagnostic::new(
             Code::UnexpectedCharacter,
-            start,
-            self.pos,
+            self.span(start, self.pos),
             format!("unexpected `{}`", text.escape_debug()),
         );
+        let mut chars = text.chars();
+        if let (Some(closer), None) = (chars.next(), chars.next())
+            && let Some(help) = stray_closer_help(closer)
+        {
+            diagnostic = diagnostic.with_help(help);
+        }
+        self.diagnostics.push(diagnostic);
         self.push(SyntaxKind::Error, start);
     }
 

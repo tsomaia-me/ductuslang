@@ -22,11 +22,36 @@ impl Engine<'_> {
     pub(super) fn check(
         &mut self,
         root: NodeId,
-        (expected, flows): (Option<Scalar>, bool),
+        typed: (Option<Scalar>, bool),
         condition: bool,
         roots: &mut Vec<(NodeId, Option<Scalar>)>,
     ) -> Result<(), Internal> {
-        let mut stack = vec![(root, expected, Selection::Chosen, flows)];
+        self.check_from(root, typed, (condition, Selection::Chosen), roots)
+    }
+
+    pub(super) fn check_detached(
+        &mut self,
+        root: NodeId,
+        typed: (Option<Scalar>, bool),
+        passed_over: bool,
+        roots: &mut Vec<(NodeId, Option<Scalar>)>,
+    ) -> Result<(), Internal> {
+        let selection = if passed_over {
+            Selection::PassedOver
+        } else {
+            Selection::Chosen
+        };
+        self.check_from(root, typed, (false, selection), roots)
+    }
+
+    fn check_from(
+        &mut self,
+        root: NodeId,
+        (expected, flows): (Option<Scalar>, bool),
+        (condition, selection): (bool, Selection),
+        roots: &mut Vec<(NodeId, Option<Scalar>)>,
+    ) -> Result<(), Internal> {
+        let mut stack = vec![(root, expected, selection, flows)];
         let mut condition_root = condition;
         while let Some((node, expected, selection, flows)) = stack.pop() {
             #[cfg(test)]
@@ -42,29 +67,14 @@ impl Engine<'_> {
                 continue;
             }
             let sig = self.known_sig(node)?;
-            if sig.is_error() {
+            let placeholder = sig.is_error();
+            if placeholder && !self.holds_placeholder(node)? {
                 continue;
             }
-            let mut group_of = self.memo.groups.get(&node).copied();
-            let sig = match group_of {
-                Some(group) => {
-                    let group = self.known_sig(group)?;
-                    if group.is_error() {
-                        continue;
-                    }
-                    if sig.reactive && sig.is_numeric() && group.is_numeric() {
-                        group_of = None;
-                        sig
-                    } else {
-                        Sig {
-                            kind: group.kind,
-                            ..sig
-                        }
-                    }
-                }
-                None => sig,
+            let Some((sig, group_of)) = self.grouped_sig(node, sig)? else {
+                continue;
             };
-            let expected = match (sig.width, expected) {
+            let mut expected = match (sig.width, expected) {
                 (Width::Fixed(own), Some(target))
                     if !flows
                         && !sig.reactive
@@ -76,13 +86,20 @@ impl Engine<'_> {
                 }
                 _ => expected,
             };
-            let flows = flows && expected.is_some();
+            let mut flows = flows && expected.is_some() && !placeholder;
             let as_condition = std::mem::take(&mut condition_root);
-            if selection != Selection::Evaluated {
-                if let Some(expected) = expected
-                    && !self.compatible(node, &sig, expected, as_condition)?
+            if selection != Selection::Evaluated && !placeholder {
+                if let Some(target) = expected
+                    && !self.compatible(node, &sig, target, as_condition)?
                 {
-                    continue;
+                    if matches!(
+                        self.carried_kind(node, sig.kind)?,
+                        Kind::Enum(_) | Kind::Bare
+                    ) {
+                        continue;
+                    }
+                    expected = None;
+                    flows = false;
                 }
                 if let (Some(Scalar::Enum(id)), Op::Bare(name)) = (expected, &self.node(node)?.op)
                     && self.variants.position(id, name)?.is_none()
@@ -95,7 +112,7 @@ impl Engine<'_> {
                     self.error_at_node(Code::UnknownName, node, message)?;
                 }
             }
-            let selection = match (sig.reactive || sig.frame, selection) {
+            let selection = match (sig.reactive || sig.frame || placeholder, selection) {
                 (false, Selection::Chosen) => {
                     roots.push((node, expected));
                     Selection::Evaluated
@@ -103,6 +120,7 @@ impl Engine<'_> {
                 (true, _) | (false, Selection::Evaluated | Selection::PassedOver) => selection,
             };
             let ty = match expected {
+                _ if placeholder => None,
                 Some(expected) => Some(expected),
                 None => self.synth(node)?,
             };
@@ -255,14 +273,7 @@ impl Engine<'_> {
                             match picked.and_then(|position| items.get(position)) {
                                 Some(item) => stack.push((*item, ty, selection, flows)),
                                 None if selection == Selection::Evaluated => {}
-                                None => self.error_at_node(
-                                    Code::IndexOutOfRange,
-                                    index,
-                                    format!(
-                                        "the index {position} is outside the array of length {}",
-                                        items.len()
-                                    ),
-                                )?,
+                                None => self.index_outside(index, position, length_of(&items))?,
                             }
                         }
                         Some(_) => {}
@@ -287,12 +298,13 @@ impl Engine<'_> {
                     );
                 }
                 Op::Convert(target, operand) => {
-                    let operand_ty = if is_float(target) {
+                    let converts = is_float(target) && self.known_sig(operand)?.is_numeric();
+                    let operand_ty = if converts {
                         Some(target)
                     } else {
                         self.synth(operand)?
                     };
-                    stack.push((operand, operand_ty, selection, is_float(target)));
+                    stack.push((operand, operand_ty, selection, converts));
                 }
                 Op::Annotate(target, operand) => {
                     stack.push((operand, Some(target), selection, true))
@@ -428,6 +440,53 @@ impl Engine<'_> {
         Ok(Some(leaves))
     }
 
+    fn grouped_sig(
+        &self,
+        node: NodeId,
+        sig: Sig,
+    ) -> Result<Option<(Sig, Option<NodeId>)>, Internal> {
+        if sig.is_error() {
+            return Ok(Some((sig, None)));
+        }
+        let Some(group) = self.memo.groups.get(&node).copied() else {
+            return Ok(Some((sig, None)));
+        };
+        let group_sig = self.known_sig(group)?;
+        if group_sig.is_error() {
+            return Ok(None);
+        }
+        if sig.reactive && sig.is_numeric() && group_sig.is_numeric() {
+            return Ok(Some((sig, None)));
+        }
+        Ok(Some((
+            Sig {
+                kind: group_sig.kind,
+                ..sig
+            },
+            Some(group),
+        )))
+    }
+
+    pub(super) fn refuses(&mut self, node: NodeId, expected: Scalar) -> Result<bool, Internal> {
+        let sig = self.known_sig(node)?;
+        if sig.is_error() {
+            return Ok(false);
+        }
+        let Some((sig, _)) = self.grouped_sig(node, sig)? else {
+            return Ok(false);
+        };
+        Ok(self.incompatibility(node, &sig, expected, false)?.is_some())
+    }
+
+    fn holds_placeholder(&self, node: NodeId) -> Result<bool, Internal> {
+        Ok(self
+            .node(node)?
+            .op
+            .operands()
+            .iter()
+            .any(|operand| self.memo.sigs.get(operand).is_some_and(Sig::is_error)))
+    }
+
     fn chosen(&mut self, node: NodeId, ty: EvalTy) -> Result<Option<CVal>, Internal> {
         let sig = self.known_sig(node)?;
         if sig.reactive || sig.frame || sig.is_error() {
@@ -526,12 +585,32 @@ impl Engine<'_> {
         expected: Scalar,
         condition: bool,
     ) -> Result<bool, Internal> {
+        let Some((code, message)) = self.incompatibility(node, sig, expected, condition)? else {
+            return Ok(true);
+        };
+        self.error_at_node(code, node, message)?;
+        Ok(false)
+    }
+
+    pub(super) fn incompatibility(
+        &mut self,
+        node: NodeId,
+        sig: &Sig,
+        expected: Scalar,
+        condition: bool,
+    ) -> Result<Option<(Code, String)>, Internal> {
         let is_cell = matches!(
             self.node(self.through_uses(node)?)?.op,
             Op::Read(_) | Op::History { .. }
         ) || matches!(sig.width, Width::Adaptive)
             && matches!(self.node(node)?.op, Op::ToRead { .. });
         let fits_kind = match (self.carried_kind(node, sig.kind)?, expected) {
+            (Kind::Str, Scalar::Str) if sig.reactive => {
+                return Ok(Some((
+                    Code::ReactiveString,
+                    "a string exists only at compile time, and this one reads a cell".into(),
+                )));
+            }
             (Kind::Bool, Scalar::Bool) | (Kind::Str, Scalar::Str) => true,
             (Kind::Enum(id), Scalar::Enum(other)) => id == other,
             (Kind::Bare, Scalar::Enum(_)) | (Kind::Any, _) => true,
@@ -539,57 +618,52 @@ impl Engine<'_> {
             (Kind::Float, scalar) if is_float(scalar) => true,
             (Kind::Float, scalar) if is_integer(scalar) => {
                 if self.holds_a_float_cell(node)? {
-                    return Ok(true);
+                    return Ok(None);
                 }
-                if is_cell {
-                    self.error_at_node(
+                return Ok(Some(if is_cell {
+                    (
                         Code::FloatToInteger,
-                        node,
-                        "a float cell is used where an integer is expected; a conversion states the rounding",
-                    )?;
+                        "a float cell is used where an integer is expected; a conversion states the rounding".into(),
+                    )
                 } else {
-                    self.error_at_node(
+                    (
                         Code::TypeMismatch,
-                        node,
-                        "a float value stands where an integer is expected; a conversion states the rounding",
-                    )?;
-                }
-                return Ok(false);
+                        "a float value stands where an integer is expected; a conversion states the rounding".into(),
+                    )
+                }));
             }
             _ => false,
         };
         if !fits_kind && condition {
-            self.error_at_node(Code::ConditionType, node, "a gate or a guard is a `bool`")?;
-            return Ok(false);
+            return Ok(Some((
+                Code::ConditionType,
+                "a gate or a guard is a `bool`".into(),
+            )));
         }
         if !fits_kind {
-            self.error_at_node(
+            return Ok(Some((
                 Code::TypeMismatch,
-                node,
                 format!(
                     "this value has the wrong type here; `{}` is expected",
                     self.scalar_name(expected)?
                 ),
-            )?;
-            return Ok(false);
+            )));
         }
         if let Width::Fixed(scalar) | Width::Widened(scalar) = sig.width
             && !is_cell
             && (is_integer(scalar) || is_float(scalar))
             && !widens(scalar, expected)
         {
-            self.error_at_node(
+            return Ok(Some((
                 Code::TypeMismatch,
-                node,
                 format!(
                     "a `{}` value does not widen into `{}`",
                     self.scalar_name(scalar)?,
                     self.scalar_name(expected)?
                 ),
-            )?;
-            return Ok(false);
+            )));
         }
-        Ok(true)
+        Ok(None)
     }
 
     pub(in crate::semantics::analysis) fn scalar_name(
@@ -623,14 +697,14 @@ impl Engine<'_> {
         if let Some(CVal::Int(position)) = self.chosen(index, position_ty)?
             && !(0..i128::from(length)).contains(&position)
         {
-            self.error_at_node(
-                Code::IndexOutOfRange,
-                index,
-                format!("the index {position} is outside the array of length {length}"),
-            )?;
+            self.index_outside(index, position, u64::from(length))?;
         }
         Ok(())
     }
+}
+
+fn length_of<T>(items: &[T]) -> u64 {
+    u64::try_from(items.len()).unwrap_or(u64::MAX)
 }
 
 fn compared(own: Option<Scalar>, pair: Option<Scalar>) -> Option<Scalar> {

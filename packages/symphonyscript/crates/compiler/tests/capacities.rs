@@ -605,6 +605,132 @@ fn a_history_read_has_its_cells_kind_for_an_input_a_let_and_a_state() {
 }
 
 #[test]
+fn a_history_reads_provisional_kind_leaves_no_diagnostic_behind() {
+    let x = "input x = 1\n";
+    let gate = "input gate = false\n";
+    let held = "input held: i32[..10] = []\n";
+    let probe = "let probe = held[s..]\n";
+    let read = "Clip c:\n    Note/(probe[0])\n";
+    let rows: &[support::Row] = &[
+        (
+            &[
+                x,
+                held,
+                "let y = x + 1\n",
+                "state s = y{1, 0.5}\n",
+                probe,
+                read,
+            ],
+            &[(Code::TypeMismatch, "0.5")],
+        ),
+        (
+            &[
+                gate,
+                "let y = not gate\n",
+                "state s = y{1, 0}\n",
+                "let b = not s\n",
+                "Clip c:\n    Note when b\n",
+            ],
+            &[(Code::TypeMismatch, "0")],
+        ),
+        (
+            &[
+                x,
+                "let y = x + 1\n",
+                "state s = y{1, 0.5}\n",
+                "let m = match s:\n    0: 1\n    else: 2\n",
+                "Clip c:\n    Note/(m)\n",
+            ],
+            &[(Code::TypeMismatch, "0.5")],
+        ),
+        (
+            &[
+                x,
+                held,
+                "state p = q{1, 0.5}\n",
+                "state q = x + 1\n",
+                "let probe = held[p..]\n",
+                read,
+            ],
+            &[(Code::TypeMismatch, "0.5")],
+        ),
+        (
+            &[
+                x,
+                held,
+                "state s = y{1, 0}\n",
+                "let y = x + 1\n",
+                probe,
+                read,
+            ],
+            &[],
+        ),
+        (
+            &[
+                x,
+                held,
+                "let y = x * 0.5\n",
+                "state s = y{1, 0.0}\n",
+                probe,
+                read,
+            ],
+            &[(Code::IndexType, "s")],
+        ),
+    ];
+    support::assert_rows_in_every_order(&vocabulary(), rows);
+}
+
+#[test]
+fn a_history_read_of_a_let_whose_initializer_drew_an_error_draws_nothing_of_its_own() {
+    let rows: &[support::Row] = &[
+        (
+            &[
+                "input note = 60\n",
+                "let t = zzz\n",
+                "state s = (t{1, []} + [note])[^8..]\n",
+                "Clip c:\n    Note/(len(s))\n",
+            ],
+            &[(Code::UnknownName, "zzz")],
+        ),
+        (
+            &[
+                "input note = 60\n",
+                "let t = note + true\n",
+                "state s = (t{1, []} + [note])[^8..]\n",
+                "Clip c:\n    Note/(len(s))\n",
+            ],
+            &[(Code::OperandType, "note + true")],
+        ),
+        (
+            &[
+                "input note = 60\n",
+                "let t = zzz + [note]\n",
+                "state s = (t{1, []} + [note])[^8..]\n",
+                "Clip c:\n    Note/(len(s))\n",
+            ],
+            &[(Code::UnknownName, "zzz")],
+        ),
+        (
+            &[
+                "let t = 3\n",
+                "state s = t{1, 0}\n",
+                "Clip c:\n    Note/(s)\n",
+            ],
+            &[(Code::HistoryTarget, "t{1, 0}")],
+        ),
+        (
+            &[
+                "let t = 3\n",
+                "state s = t{1, 0}\n",
+                "Clip c:\n    Note/(60 + s)\n",
+            ],
+            &[(Code::HistoryTarget, "t{1, 0}")],
+        ),
+    ];
+    support::assert_rows_in_every_order(&vocabulary(), rows);
+}
+
+#[test]
 fn a_history_read_of_a_reactive_let_has_the_lets_layout() {
     let held = "input held: i32[..10] = []\n";
     let played = "let played = held + [note]\n";
@@ -926,6 +1052,488 @@ fn the_arms_of_a_choice_are_type_checked_against_one_another_whatever_chooses() 
         ),
     ];
     support::assert_rows_in_every_order(&symphonyscript_fixtures::vocabulary(), rows);
+    let held = "input held: i32[..4] = [1, 2]\n";
+    let note = "input note = 60\n";
+    let direct = |value: &'static str| -> [&'static str; 3] { [held, note, value] };
+    let rows: &[support::Row] = &[
+        (
+            &direct("Clip c:\n    Note/(if false then held else 5)\n"),
+            &[(Code::TypeMismatch, "if false then held else 5")],
+        ),
+        (
+            &direct("Clip c:\n    Note/(if false then held else note)\n"),
+            &[(Code::TypeMismatch, "if false then held else note")],
+        ),
+        (
+            &direct("Clip c:\n    Note/(if false then held[..2] else 5)\n"),
+            &[(Code::TypeMismatch, "if false then held[..2] else 5")],
+        ),
+        (
+            &[
+                held,
+                note,
+                "fn g(i): if i > 5 then held else note\n",
+                "Clip c:\n    Note/(g(0))\n",
+            ],
+            &[(Code::TypeMismatch, "if i > 5 then held else note")],
+        ),
+        (
+            &[
+                held,
+                note,
+                "fn g(i): if i > 5 then [1, 2] else held[i] + 1\n",
+                "Clip c:\n    Note/(g(0))\n",
+            ],
+            &[(Code::TypeMismatch, "if i > 5 then [1, 2] else held[i] + 1")],
+        ),
+        (
+            &[
+                held,
+                note,
+                "fn g(i):\n    match i:\n        7: held\n        else: note\n",
+                "Clip c:\n    Note/(g(0))\n",
+            ],
+            &[(
+                Code::TypeMismatch,
+                "match i:\n        7: held\n        else: note\n",
+            )],
+        ),
+        (
+            &[
+                held,
+                note,
+                "fn g(i):\n    match i:\n        7: [1, 2]\n        else: held[i] + 1\n",
+                "Clip c:\n    Note/(g(0))\n",
+            ],
+            &[(
+                Code::TypeMismatch,
+                "match i:\n        7: [1, 2]\n        else: held[i] + 1\n",
+            )],
+        ),
+        (
+            &[
+                held,
+                note,
+                "fn f(i) bounded 2 else [1]: f(i + 1) + [i]\n",
+                "Clip c:\n    Note/(if false then f(0) else 5)\n",
+            ],
+            &[(Code::TypeMismatch, "if false then f(0) else 5")],
+        ),
+        (&direct("Clip c:\n    Note/(if false then 7 else 5)\n"), &[]),
+        (
+            &[
+                held,
+                note,
+                "let a = if false then held else [1, 2]\n",
+                "Clip c:\n    Note/(a[0])\n",
+            ],
+            &[],
+        ),
+        (
+            &[
+                held,
+                note,
+                "let x = if false then held else 5\n",
+                "Clip c:\n    Note/x\n",
+            ],
+            &[(Code::TypeMismatch, "if false then held else 5")],
+        ),
+        (
+            &[
+                held,
+                note,
+                "input flag = false\n",
+                "Clip c:\n    Note/(if flag then held else 5)\n",
+            ],
+            &[(Code::TypeMismatch, "if flag then held else 5")],
+        ),
+    ];
+    support::assert_rows_in_every_order(&symphonyscript_fixtures::vocabulary(), rows);
+    let flag = "input flag = true\n";
+    let grid = "input rows: i32[3][..10] = [[1, 2, 3]]\n";
+    let first = "Clip c:\n    Note/(g(0)[0])\n";
+    let read_a = "Clip c:\n    Note/(a[0])\n";
+    let rows: &[support::Row] = &[
+        (
+            &[held, "fn g(i): if i > 5 then [[1]] else held\n", first],
+            &[(Code::TypeMismatch, "if i > 5 then [[1]] else held")],
+        ),
+        (
+            &[held, "fn g(i): if i > 5 then held else [[1]]\n", first],
+            &[(Code::TypeMismatch, "if i > 5 then held else [[1]]")],
+        ),
+        (
+            &[
+                held,
+                "Clip c:\n    Note/((if false then [[1]] else held)[0])\n",
+            ],
+            &[(Code::TypeMismatch, "if false then [[1]] else held")],
+        ),
+        (
+            &[
+                held,
+                "fn g(i): if i > 5 then [[1]] else [held[i]] + [1]\n",
+                first,
+            ],
+            &[(
+                Code::TypeMismatch,
+                "if i > 5 then [[1]] else [held[i]] + [1]",
+            )],
+        ),
+        (
+            &[
+                held,
+                "fn g(i): if i > 5 then [held[i]] + [1] else [[1]]\n",
+                first,
+            ],
+            &[(
+                Code::TypeMismatch,
+                "if i > 5 then [held[i]] + [1] else [[1]]",
+            )],
+        ),
+        (
+            &[grid, "fn g(i): if i > 5 then rows else [1, 2]\n", first],
+            &[(Code::TypeMismatch, "if i > 5 then rows else [1, 2]")],
+        ),
+        (
+            &[grid, "Clip c:\n    Note/(if false then rows[0] else 5)\n"],
+            &[(Code::TypeMismatch, "if false then rows[0] else 5")],
+        ),
+        (
+            &[
+                grid,
+                note,
+                "Clip c:\n    Note/(if false then rows[0] else note)\n",
+            ],
+            &[(Code::TypeMismatch, "if false then rows[0] else note")],
+        ),
+        (
+            &[held, "let a = if false then [[1]] else held\n", read_a],
+            &[(Code::TypeMismatch, "if false then [[1]] else held")],
+        ),
+        (
+            &[
+                held,
+                "fn g(i): if i > 5 then [[1]] else held\n",
+                "let a = g(0)\n",
+                read_a,
+            ],
+            &[(Code::TypeMismatch, "if i > 5 then [[1]] else held")],
+        ),
+        (
+            &[
+                grid,
+                "let x = if false then rows[0] else 5\n",
+                "Clip c:\n    Note/(x)\n",
+            ],
+            &[(Code::TypeMismatch, "if false then rows[0] else 5")],
+        ),
+        (
+            &["Clip c:\n    Note/((if false then [[1]] else [1, 2])[0])\n"],
+            &[(Code::TypeMismatch, "if false then [[1]] else [1, 2]")],
+        ),
+        (
+            &["fn g(i): if i > 5 then [[1]] else [1, 2]\n", first],
+            &[(Code::TypeMismatch, "if i > 5 then [[1]] else [1, 2]")],
+        ),
+        (
+            &["let a = if false then [[1]] else [1, 2]\n", read_a],
+            &[(Code::TypeMismatch, "if false then [[1]] else [1, 2]")],
+        ),
+        (
+            &[
+                "fn g(i): if i > 5 then [[1]] else [1, 2]\n",
+                "let a = g(0)\n",
+                read_a,
+            ],
+            &[(Code::TypeMismatch, "if i > 5 then [[1]] else [1, 2]")],
+        ),
+        (
+            &[
+                "fn g(i):\n    match i:\n        7: [[1]]\n        else: [1, 2]\n",
+                first,
+            ],
+            &[(
+                Code::TypeMismatch,
+                "match i:\n        7: [[1]]\n        else: [1, 2]\n",
+            )],
+        ),
+        (
+            &[flag, "fn g(i): if flag then [[1]] else [1, 2]\n", first],
+            &[(Code::TypeMismatch, "if flag then [[1]] else [1, 2]")],
+        ),
+        (
+            &[
+                held,
+                flag,
+                "Clip c:\n    Note/((if flag then [[1]] else held)[0])\n",
+            ],
+            &[(Code::TypeMismatch, "if flag then [[1]] else held")],
+        ),
+        (
+            &[
+                held,
+                "input other: i32[..6] = [1]\n",
+                "Clip c:\n    Note/((if false then held else other)[0])\n",
+            ],
+            &[],
+        ),
+        (
+            &[
+                flag,
+                "Clip c:\n    Note/((if flag then [1, 2] else [3, 4])[1])\n",
+            ],
+            &[],
+        ),
+        (
+            &[
+                flag,
+                "Clip c:\n    Note/((if flag then [1, 2] else [1, 2, 3])[0])\n",
+            ],
+            &[],
+        ),
+        (
+            &[
+                held,
+                "Clip c:\n    Note/((if false then bytes(held) else [[1]])[0][0])\n",
+            ],
+            &[(Code::TypeMismatch, "if false then bytes(held) else [[1]]")],
+        ),
+        (
+            &[
+                held,
+                flag,
+                "Clip c:\n    Note/((if false then (if flag then held else held) else [[1]])[0][0])\n",
+            ],
+            &[(
+                Code::TypeMismatch,
+                "if false then (if flag then held else held) else [[1]]",
+            )],
+        ),
+        (
+            &[
+                held,
+                "Clip c:\n    Note/((if false then (if true then held else [1, 2]) else [[1]])[0][0])\n",
+            ],
+            &[(
+                Code::TypeMismatch,
+                "if false then (if true then held else [1, 2]) else [[1]]",
+            )],
+        ),
+        (
+            &[
+                held,
+                flag,
+                "fn g(i): if i > 5 then (if flag then held else [1, 2]) else [[1]]\n",
+                "Clip c:\n    Note/(g(0)[0][0])\n",
+            ],
+            &[(
+                Code::TypeMismatch,
+                "if i > 5 then (if flag then held else [1, 2]) else [[1]]",
+            )],
+        ),
+        (
+            &[
+                held,
+                note,
+                "fn h(i):\n    match i:\n        7: held\n        else: [1, 2]\n",
+                "fn g(i): if i > 5 then h(note) else [[1]]\n",
+                "Clip c:\n    Note/(g(0)[0][0])\n",
+            ],
+            &[(Code::TypeMismatch, "if i > 5 then h(note) else [[1]]")],
+        ),
+        (
+            &[
+                held,
+                flag,
+                "let inner = if flag then held else held\n",
+                "Clip c:\n    Note/((if false then inner else [[1]])[0][0])\n",
+            ],
+            &[(Code::TypeMismatch, "if false then inner else [[1]]")],
+        ),
+        (
+            &[
+                held,
+                "let b = bytes(held)\n",
+                "Clip c:\n    Note/((if false then b else [[1]])[0][0])\n",
+            ],
+            &[(Code::TypeMismatch, "if false then b else [[1]]")],
+        ),
+        (
+            &[
+                held,
+                "fn g(i): if i > 5 then bytes(held) else 5\n",
+                "Clip c:\n    Note/(g(0))\n",
+            ],
+            &[(Code::TypeMismatch, "if i > 5 then bytes(held) else 5")],
+        ),
+        (
+            &[
+                held,
+                "state s = (if false then held{1} else [[1]])[0][0]\n",
+                "Clip c:\n    Note/(s)\n",
+            ],
+            &[(Code::TypeMismatch, "if false then held{1} else [[1]]")],
+        ),
+        (
+            &[
+                held,
+                "state t = held\n",
+                "state s = (if false then t{1, []} else [[1]])[0][0]\n",
+                "Clip c:\n    Note/(s)\n",
+            ],
+            &[(Code::TypeMismatch, "if false then t{1, []} else [[1]]")],
+        ),
+        (
+            &[
+                held,
+                flag,
+                "Clip c:\n    Note/((if false then (if flag then held else held) else [1, 2])[0])\n",
+            ],
+            &[],
+        ),
+        (
+            &[
+                held,
+                "state s = (if false then held{1} else [1])[0]\n",
+                "Clip c:\n    Note/(s)\n",
+            ],
+            &[],
+        ),
+        (
+            &[
+                "fn f(n): if n > 3 then [1] else [1] + f(n + 1)\n",
+                "Clip c:\n    Note/((if false then f(0) else [[1]])[0][0])\n",
+            ],
+            &[(Code::TypeMismatch, "if false then f(0) else [[1]]")],
+        ),
+        (
+            &[
+                "fn f(n): if n > 3 then [1] else [1] + f(n + 1)\n",
+                "Clip c:\n    Note/((if false then [[1]] else f(0))[0][0])\n",
+            ],
+            &[(Code::TypeMismatch, "if false then [[1]] else f(0)")],
+        ),
+        (
+            &[
+                held,
+                "fn f(i) bounded 3 else [0]: [held[i]] + f(i + 1)\n",
+                "Clip c:\n    Note/((if false then f(0) else [[1]])[0][0])\n",
+            ],
+            &[(Code::TypeMismatch, "if false then f(0) else [[1]]")],
+        ),
+        (
+            &[
+                "fn f(i) bounded 2 else [1]: f(i + 1) + [i]\n",
+                "Clip c:\n    Note/(if false then f(0) else 5)\n",
+            ],
+            &[(Code::TypeMismatch, "if false then f(0) else 5")],
+        ),
+        (
+            &[
+                "fn f(n): if n > 3 then [[1]] else [1] + f(n + 1)\n",
+                "Clip c:\n    Note/(f(0)[0])\n",
+            ],
+            &[(
+                Code::TypeMismatch,
+                "if n > 3 then [[1]] else [1] + f(n + 1)",
+            )],
+        ),
+        (
+            &[
+                "fn f(n): if n > 3 then [1] else [1] + f(n + 1)\n",
+                "Clip c:\n    Note/((if false then f(0) else [1])[0])\n",
+            ],
+            &[],
+        ),
+        (
+            &[
+                "fn f(n): if n > 3 then [1] else [1] + f(n + 1)\n",
+                "Clip c:\n    Note/(f(0)[0])\n",
+            ],
+            &[],
+        ),
+        (
+            &[
+                "fn f(n): if n > 3 then [1] else [1] + f(n + 1)\n",
+                "fn k(n): if n > 0 then k(n - 1) else (if false then f(n) else [[1]])[0][0]\n",
+                "Clip c:\n    Note/(k(1))\n",
+            ],
+            &[(Code::TypeMismatch, "if false then f(n) else [[1]]")],
+        ),
+        (
+            &[
+                "fn f(n):\n    match n:\n        0: [1]\n        else: f(n - 1)\n",
+                "fn k(n): if n > 0 then k(n - 1) else (if false then f(n) else [[1]])[0][0]\n",
+                "Clip c:\n    Note/(k(1))\n",
+            ],
+            &[(Code::TypeMismatch, "if false then f(n) else [[1]]")],
+        ),
+        (
+            &[
+                "fn f(n): if n > 3 then f(n - 1) else [1]\n",
+                "fn k(n): if n > 0 then k(n - 1) else (if false then f(n) else [[1]])[0][0]\n",
+                "Clip c:\n    Note/(k(1))\n",
+            ],
+            &[(Code::TypeMismatch, "if false then f(n) else [[1]]")],
+        ),
+        (
+            &[
+                "fn g(n): if n > 0 then g(n - 1) else [1]\n",
+                "fn f(n): if n > 3 then g(n) else f(n + 1)\n",
+                "Clip c:\n    Note/((if false then f(0) else [[1]])[0][0])\n",
+            ],
+            &[(Code::TypeMismatch, "if false then f(0) else [[1]]")],
+        ),
+        (
+            &[
+                "fn g(n): if n > 0 then g(n - 1) else [1]\n",
+                "fn f(n): if n > 3 then g(n) else f(n + 1)\n",
+                "Clip c:\n    Note/((if false then f(0) else [1])[0])\n",
+            ],
+            &[],
+        ),
+    ];
+    support::assert_rows_in_every_order(&symphonyscript_fixtures::vocabulary(), rows);
+    let rows: &[support::Row] = &[
+        (
+            &[
+                held,
+                "Song s:\n    Clip as c:\n        Note/((if false then mirror(held) else [[1]])[0][0])\n",
+            ],
+            &[(Code::TypeMismatch, "if false then mirror(held) else [[1]]")],
+        ),
+        (
+            &[
+                held,
+                "Song s:\n    Clip as c:\n        Note/((if false then mirror(held) else [1])[0])\n",
+            ],
+            &[],
+        ),
+    ];
+    support::assert_rows_in_every_order(&symphonyscript_fixtures::native_vocabulary(), rows);
+    let sec = "input sec = 0\n";
+    let rows: &[support::Row] = &[
+        (
+            &[
+                sec,
+                "Clip a:\n    Plays | gain=((if false then to.seq else [[1]])[0][0]): [b, c][sec]\n",
+                "Clip b\n",
+                "Clip c\n",
+            ],
+            &[(Code::TypeMismatch, "if false then to.seq else [[1]]")],
+        ),
+        (
+            &[
+                sec,
+                "Clip a:\n    Plays | gain=((if false then to.seq else [1])[0]): [b, c][sec]\n",
+                "Clip b\n",
+                "Clip c\n",
+            ],
+            &[],
+        ),
+    ];
+    support::assert_rows_in_every_order(&support::to_array_vocabulary(), rows);
 }
 
 #[test]
@@ -986,6 +1594,83 @@ fn an_annotation_holds_only_an_initializer_of_its_rows() {
             assert_eq!(codes(&text), expected.to_vec(), "{text}");
         }
     }
+}
+
+#[test]
+fn a_type_whose_length_or_capacity_is_missing_or_malformed_is_a_placeholder() {
+    let read = "Clip c:\n    Note/(g[0])\n";
+    support::assert_rows_in_every_order(
+        &vocabulary(),
+        &[
+            (
+                &["input g: i32[..] = [1, 2]\n", read],
+                &[(Code::TypeSyntax, "]")],
+            ),
+            (
+                &["let g: i32[..] = [1, 2]\n", read],
+                &[(Code::TypeSyntax, "]")],
+            ),
+            (
+                &["input g: i32[] = [1, 2]\n", read],
+                &[(Code::TypeSyntax, "]")],
+            ),
+            (
+                &["input g: i32[..x] = [1, 2]\n", read],
+                &[(Code::TypeSyntax, "x")],
+            ),
+            (
+                &["input x = 1\n", "state g: i32[..] = [x, x]\n", read],
+                &[(Code::TypeSyntax, "]")],
+            ),
+            (&["input g: i32[..2] = [1, 2]\n", read], &[]),
+            (
+                &["input g: i32[..1] = [1, 2]\n", read],
+                &[(Code::CapacityExceeded, "[1, 2]")],
+            ),
+            (
+                &["input g: i32[..0x10] = [1, 2]\n", read],
+                &[(Code::TypeSyntax, "0x10")],
+            ),
+            (
+                &["input g: i32[0b11] = [1, 2, 3]\n", read],
+                &[(Code::TypeSyntax, "0b11")],
+            ),
+            (
+                &["input g: i32[3i32] = [1, 2, 3]\n", read],
+                &[(Code::TypeSyntax, "3i32")],
+            ),
+            (
+                &["input g: i32[..1.5] = [1]\n", read],
+                &[(Code::TypeSyntax, "1.5")],
+            ),
+            (
+                &["let g: i32[..0x10] = [1, 2]\n", read],
+                &[(Code::TypeSyntax, "0x10")],
+            ),
+            (
+                &["let g: i32[0b11] = [1, 2, 3]\n", read],
+                &[(Code::TypeSyntax, "0b11")],
+            ),
+            (
+                &["let g: i32[3i32] = [1, 2, 3]\n", read],
+                &[(Code::TypeSyntax, "3i32")],
+            ),
+            (
+                &["let g: i32[..1.5] = [1]\n", read],
+                &[(Code::TypeSyntax, "1.5")],
+            ),
+            (
+                &["input g: i32[..99999999999999999999] = [1]\n", read],
+                &[(Code::LengthLimit, "99999999999999999999")],
+            ),
+            (
+                &["input g: i32[..2147483648] = [1]\n", read],
+                &[(Code::LengthLimit, "2147483648")],
+            ),
+            (&["input g: i32[..1_0] = [1, 2]\n", read], &[]),
+            (&["input g: i32[..2147483647] = [1]\n", read], &[]),
+        ],
+    );
 }
 
 #[test]
@@ -1769,6 +2454,115 @@ fn every_diagnostic_carries_a_help_that_states_its_fix() {
             Code::UnknownName,
             "declare the name, or correct its spelling",
         ),
+        (
+            vocabulary,
+            &[
+                "input a = 0\n",
+                "state s = a{1, 0 } }\n",
+                "Clip c:\n    Note/(s)\n",
+            ],
+            Code::UnexpectedCharacter,
+            "remove the `}`, or match it with an opening `{`",
+        ),
+        (
+            vocabulary,
+            &[
+                "input a = 0\n",
+                "state s = a{1, 0 } )\n",
+                "Clip c:\n    Note/(s)\n",
+            ],
+            Code::StateSyntax,
+            "remove the `)`, or match it with an opening `(`",
+        ),
+        (
+            vocabulary,
+            &["Clip c:\n    Note/60 ]\n"],
+            Code::PlacementSyntax,
+            "remove the `]`, or match it with an opening `[`",
+        ),
+        (
+            vocabulary,
+            &["Clip c:\n    Note/(1 }\n        + 2)\n"],
+            Code::DefaultArgSyntax,
+            "remove the `}`, or replace it with the `)` that closes the open `(`",
+        ),
+        (
+            vocabulary,
+            &["let f = [1, 2)\n", "Clip c:\n    Note/(f[0])\n"],
+            Code::ExpressionSyntax,
+            "remove the `)`, or replace it with the `]` that closes the open `[`",
+        ),
+        (
+            vocabulary,
+            &["input x: u8[..2] = \"GET\"\n", "Clip c:\n    Note/(x[0])\n"],
+            Code::CapacityExceeded,
+            "write a string of at most 2 bytes, or annotate a capacity of at least 3, as in `u8[..3]`",
+        ),
+        (
+            vocabulary,
+            &["let x: u8[..1] = \"GE\"\n", "Clip c:\n    Note/(x[0])\n"],
+            Code::CapacityExceeded,
+            "write a string of at most 1 byte, or annotate a capacity of at least 2, as in `u8[..2]`",
+        ),
+        (
+            support::signature_vocabulary,
+            &["Clip c | data=\"GET GET GET\":\n    Note\n"],
+            Code::CapacityExceeded,
+            "write a string of at most 8 bytes",
+        ),
+        (
+            support::signature_vocabulary,
+            &[
+                "input f = false\n",
+                "Clip c | data=(if f then \"GET\" else \"ABCDEFGHI\"):\n    Note\n",
+            ],
+            Code::CapacityExceeded,
+            "write a string of at most 8 bytes",
+        ),
+        (
+            support::signature_vocabulary,
+            &[
+                "input f = false\n",
+                "let r: u8[..2] = if f then \"GET\" else \"AB\"\n",
+                "Clip c | data=r:\n    Note\n",
+            ],
+            Code::CapacityExceeded,
+            "write a string of at most 2 bytes, or annotate a capacity of at least 3, as in `u8[..3]`",
+        ),
+        (
+            support::signature_vocabulary,
+            &[
+                "input held: i32[..9] = []\n",
+                "Clip c | data=held:\n    Note\n",
+            ],
+            Code::CapacityExceeded,
+            "slice the value to its newest 8 elements with `[^8..]`",
+        ),
+        (
+            vocabulary,
+            &["input x: i32[..1] = [1, 2]\n", "Clip c:\n    Note/(x[0])\n"],
+            Code::CapacityExceeded,
+            "slice the value to its newest element with `[^1..]`",
+        ),
+        (
+            vocabulary,
+            &[
+                "input b: i32[..10][3] = []\n",
+                "Clip c:\n    Note/(b[0][0])\n",
+            ],
+            Code::TypeSyntax,
+            "write the capacity as the last, outermost length, as in `i32[3][..10]`",
+        ),
+        (
+            vocabulary,
+            &[
+                "input a = 0\n",
+                "state[x] t = a{1}\n",
+                "Clip c:\n    Note/(t)\n",
+            ],
+            Code::StateSyntax,
+            "write the depth in digits, as in `state[N] name = …` with N the deepest offset the state reads",
+        ),
     ];
     for (vocabulary, items, code, help) in rows {
         let compiler = Compiler::new(&vocabulary()).expect("the vocabulary compiles");
@@ -1781,6 +2575,37 @@ fn every_diagnostic_carries_a_help_that_states_its_fix() {
             assert_eq!(
                 (diagnostic.code, diagnostic.help.as_deref()),
                 (*code, Some(*help)),
+                "{text}"
+            );
+        }
+    }
+    let natives = Compiler::new(&symphonyscript_fixtures::native_vocabulary())
+        .expect("the native vocabulary compiles");
+    for (read, summary, help) in [
+        (
+            "Clip a:\n    Note/(b.sequence[0])\n",
+            "the index 0 is outside the array of length 0",
+            "the array is empty: give it elements, or read the element only where `len(…)` is above 0",
+        ),
+        (
+            "Clip a:\n    Note/(b.seq[7])\n",
+            "the index 7 is outside the array of length 2",
+            "keep the index inside the array, from 0 to its length minus one",
+        ),
+    ] {
+        for order in support::permutations(&[read, "Clip b:\n    Note\n"]) {
+            let text = order.concat();
+            let found = support::errors(natives.check(&[support::source(&text)]));
+            let [diagnostic] = found.as_slice() else {
+                panic!("{text}{found:?}");
+            };
+            assert_eq!(
+                (
+                    diagnostic.code,
+                    diagnostic.summary.as_str(),
+                    diagnostic.help.as_deref()
+                ),
+                (Code::IndexOutOfRange, summary, Some(help)),
                 "{text}"
             );
         }
@@ -1814,6 +2639,84 @@ fn every_diagnostic_carries_a_help_that_states_its_fix() {
         ],
         "{found:?}"
     );
+    support::assert_rows_in_every_order(
+        &vocabulary(),
+        &[
+            (
+                &[
+                    "input a = 0\n",
+                    "state s = a{1, 0 }\n",
+                    "Clip c:\n    Note/(s)\n",
+                ],
+                &[],
+            ),
+            (&["Clip c:\n    Note/(1\n        + 2)\n"], &[]),
+            (
+                &["input x: u8[..3] = \"GET\"\n", "Clip c:\n    Note/(x[0])\n"],
+                &[],
+            ),
+            (
+                &["input x: u8[..2] = \"GE\"\n", "Clip c:\n    Note/(x[0])\n"],
+                &[],
+            ),
+            (
+                &[
+                    "input b: i32[3][..10] = []\n",
+                    "Clip c:\n    Note/(b[0][0])\n",
+                ],
+                &[],
+            ),
+            (
+                &[
+                    "input a = 0\n",
+                    "state[1] t = a{1}\n",
+                    "Clip c:\n    Note/(t)\n",
+                ],
+                &[],
+            ),
+        ],
+    );
+    support::assert_rows_in_every_order(
+        &support::signature_vocabulary(),
+        &[
+            (
+                &[
+                    "input f = false\n",
+                    "Clip c | data=(if f then \"GET\" else \"ABCDEFGH\"):\n    Note\n",
+                ],
+                &[],
+            ),
+            (
+                &[
+                    "input f = false\n",
+                    "let r: u8[..3] = if f then \"GET\" else \"AB\"\n",
+                    "Clip c | data=r:\n    Note\n",
+                ],
+                &[],
+            ),
+        ],
+    );
+    let depth = [
+        "input a = 0\n",
+        "state[0] t = a{1}\n",
+        "Clip c:\n    Note/(t)\n",
+    ];
+    for order in support::permutations(&depth) {
+        let text = order.concat();
+        let found = support::errors(compiler.check(&[support::source(&text)]));
+        let summaries: Vec<(Code, &str)> = found
+            .iter()
+            .map(|diagnostic| (diagnostic.code, diagnostic.summary.as_str()))
+            .collect();
+        assert_eq!(
+            summaries,
+            [(
+                Code::HistoryDepth,
+                "this history read reaches 1 step back, deeper than `[0]`; `[1]` covers every read of this state"
+            )],
+            "{text}"
+        );
+    }
     for (call, summary) in [
         ("f(1, 2)", "`f` takes at most 1 argument, not 2"),
         ("g(1, 2, 3)", "`g` takes at most 2 arguments, not 3"),

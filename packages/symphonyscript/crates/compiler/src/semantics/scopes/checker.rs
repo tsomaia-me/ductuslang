@@ -271,7 +271,8 @@ impl<'a> Checker<'a> {
                     "an array length or capacity in a type is at least 1",
                 ),
                 Some(length) if *length < LENGTH_LIMIT => {}
-                Some(_) | None => self.report.error(
+                None => {}
+                Some(_) => self.report.error(
                     self.hir,
                     Code::LengthLimit,
                     *loc,
@@ -591,6 +592,7 @@ impl<'a> Checker<'a> {
                 }
                 if (in_unknown && self.visible(frame, &kind.text)?)
                     || self.namespace.is_duplicated(&kind.text)
+                    || found.is_none() && self.may_declare(frame, &kind.text)?
                 {
                     return Ok(());
                 }

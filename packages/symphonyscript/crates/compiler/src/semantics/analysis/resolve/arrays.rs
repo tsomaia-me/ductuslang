@@ -14,6 +14,7 @@ use crate::semantics::analysis::bound_val::BoundVal;
 use crate::semantics::analysis::c_val::CVal;
 use crate::semantics::analysis::engine::Engine;
 use crate::semantics::analysis::eval_ty::EvalTy;
+use crate::semantics::analysis::family_key::FamilyKey;
 use crate::semantics::analysis::fast_hash::{FastMap, FastSet};
 use crate::semantics::analysis::history_cell::HistoryCell;
 use crate::semantics::analysis::ids::{BindingId, NodeId, ScopeId};
@@ -27,7 +28,7 @@ use crate::semantics::analysis::settling::Settling;
 use crate::semantics::analysis::shape_fault::ShapeFault;
 use crate::semantics::analysis::some::some;
 use crate::semantics::analysis::val::Val;
-use crate::semantics::ir::{ExprId, Loc, Number, SliceBound, StateId, Suffix};
+use crate::semantics::ir::{ExprId, FnId, Loc, Number, SliceBound, StateId, Suffix};
 
 impl Engine<'_> {
     pub(in crate::semantics::analysis) fn join_val(
@@ -88,61 +89,89 @@ impl Engine<'_> {
         &self,
         root: NodeId,
     ) -> Result<bool, Internal> {
-        let mut node = root;
-        loop {
-            if !self.arrays.contains(&node) {
-                return Ok(false);
-            }
-            match &self.node(node)?.op {
-                Op::Use(inner) | Op::Chosen(inner) | Op::Annotate(_, inner) => node = *inner,
-                Op::Read(binding) => {
-                    if self.memo.binding_layouts.contains_key(binding) {
-                        return Ok(true);
+        let mut leaves = vec![root];
+        while let Some(mut node) = leaves.pop() {
+            loop {
+                self.memo.arm_walks.set(self.memo.arm_walks.get() + 1);
+                if !self.arrays.contains(&node) {
+                    return Ok(false);
+                }
+                match &self.node(node)?.op {
+                    Op::Use(inner) | Op::Chosen(inner) | Op::Annotate(_, inner) => node = *inner,
+                    Op::Read(binding) => {
+                        if self.memo.binding_layouts.contains_key(binding) {
+                            break;
+                        }
+                        node = self.binding(*binding)?.init;
                     }
-                    node = self.binding(*binding)?.init;
-                }
-                Op::Join(..)
-                | Op::Slice { .. }
-                | Op::Array(_)
-                | Op::History { .. }
-                | Op::Native { .. }
-                | Op::Builtin(Builtin::Bytes, _) => return Ok(true),
-                Op::If(_, then, otherwise) => {
-                    return Ok(self.definite_array(*then)? && self.definite_array(*otherwise)?);
-                }
-                Op::Match {
-                    arms, otherwise, ..
-                } => {
-                    for (_, value) in arms {
-                        if !self.definite_array(*value)? {
+                    Op::Join(..)
+                    | Op::Slice { .. }
+                    | Op::Array(_)
+                    | Op::History { .. }
+                    | Op::Native { .. }
+                    | Op::Builtin(Builtin::Bytes, _) => break,
+                    Op::If(..) | Op::Match { .. }
+                        if self
+                            .memo
+                            .choice_arrays
+                            .get(&node)
+                            .is_some_and(|(definite, _)| *definite) =>
+                    {
+                        break;
+                    }
+                    Op::If(_, then, otherwise) => {
+                        leaves.extend([*then, *otherwise]);
+                        break;
+                    }
+                    Op::Match {
+                        arms, otherwise, ..
+                    } => {
+                        leaves.extend(arms.iter().map(|(_, value)| *value));
+                        leaves.extend(otherwise.iter().copied());
+                        break;
+                    }
+                    Op::Number(..)
+                    | Op::Const(_)
+                    | Op::Bool(_)
+                    | Op::Str(_)
+                    | Op::Concat(_)
+                    | Op::Variant(..)
+                    | Op::Bare(_)
+                    | Op::Pi
+                    | Op::NodeRef(_)
+                    | Op::Arg(_)
+                    | Op::Unary(..)
+                    | Op::Binary(..)
+                    | Op::Pick { .. }
+                    | Op::Element { .. }
+                    | Op::Convert(..)
+                    | Op::Builtin(..)
+                    | Op::Recursive { .. } => return Ok(false),
+                    Op::ToRead { attrs, .. } => {
+                        if self.to_read_layout(attrs)?.is_none() {
                             return Ok(false);
                         }
+                        break;
                     }
-                    return Ok(match otherwise {
-                        Some(value) => self.definite_array(*value)?,
-                        None => true,
-                    });
                 }
-                Op::Number(..)
-                | Op::Const(_)
-                | Op::Bool(_)
-                | Op::Str(_)
-                | Op::Concat(_)
-                | Op::Variant(..)
-                | Op::Bare(_)
-                | Op::Pi
-                | Op::NodeRef(_)
-                | Op::Arg(_)
-                | Op::Unary(..)
-                | Op::Binary(..)
-                | Op::Pick { .. }
-                | Op::Element { .. }
-                | Op::Convert(..)
-                | Op::Builtin(..)
-                | Op::Recursive { .. } => return Ok(false),
-                Op::ToRead { attrs, .. } => return Ok(self.to_read_layout(attrs)?.is_some()),
             }
         }
+        Ok(true)
+    }
+
+    pub(in crate::semantics::analysis) fn record_choice_arrays(
+        &mut self,
+        choice: NodeId,
+        arms: &[NodeId],
+    ) -> Result<(), Internal> {
+        let mut definite = true;
+        let mut rests = false;
+        for arm in arms {
+            definite &= self.definite_array(*arm)?;
+            rests |= self.rests_on_recursion(*arm)?;
+        }
+        self.memo.choice_arrays.insert(choice, (definite, rests));
+        Ok(())
     }
 
     pub(in crate::semantics::analysis) fn rests_on_recursion(
@@ -152,6 +181,7 @@ impl Engine<'_> {
         let mut stack = vec![root];
         let mut seen = FastSet::default();
         while let Some(node) = stack.pop() {
+            self.memo.arm_walks.set(self.memo.arm_walks.get() + 1);
             if !self.arrays.contains(&node) || !seen.insert(node) {
                 continue;
             }
@@ -174,6 +204,12 @@ impl Engine<'_> {
                         stack.push(self.binding(*binding)?.init);
                     }
                 }
+                Op::If(..) | Op::Match { .. }
+                    if self
+                        .memo
+                        .choice_arrays
+                        .get(&node)
+                        .is_some_and(|(_, rests)| !*rests) => {}
                 Op::If(_, then, otherwise) => stack.extend([*then, *otherwise]),
                 Op::Match {
                     arms, otherwise, ..
@@ -204,6 +240,24 @@ impl Engine<'_> {
         Ok(false)
     }
 
+    fn bare_leaves(&self, roots: &[NodeId]) -> Result<Vec<NodeId>, Internal> {
+        let mut found = Vec::new();
+        let mut seen = FastSet::default();
+        let mut stack = roots.to_vec();
+        while let Some(node) = stack.pop() {
+            if !seen.insert(node) {
+                continue;
+            }
+            match &self.node(node)?.op {
+                Op::Bare(_) => found.push(node),
+                Op::Use(_) | Op::Read(_) => {}
+                op => stack.extend(op.operands()),
+            }
+        }
+        found.sort();
+        Ok(found)
+    }
+
     pub(in crate::semantics::analysis) fn length_val(
         &mut self,
         val: Val,
@@ -213,6 +267,9 @@ impl Engine<'_> {
     ) -> Result<Option<Val>, Internal> {
         let node = match &val {
             Val::Array(array) => {
+                for bare in self.bare_leaves(&array.elements)? {
+                    self.unplaced_placeholder(bare)?;
+                }
                 let length = array.shape.outer().unwrap_or(0);
                 return Ok(Some(self.scalar(
                     Op::Number(Number::Int(i128::from(length)), Suffix::None),
@@ -304,11 +361,20 @@ impl Engine<'_> {
         let Val::Scalar(node) = val else {
             return Ok(Some(val));
         };
-        if !wants_bytes || self.arrays.contains(&node) {
+        if !wants_bytes {
             return Ok(Some(val));
         }
         if let Some(bytes) = self.memo.string_bytes.get(&node) {
             return Ok(Some(Val::Scalar(*bytes)));
+        }
+        if self.reaches_choice(node)? {
+            return Ok(Some(match some!(self.choice_bytes(node, need)?) {
+                Some(bytes) => Val::Scalar(bytes),
+                None => val,
+            }));
+        }
+        if self.arrays.contains(&node) {
+            return Ok(Some(val));
         }
         let sig = some!(self.sig(node, need));
         if sig.kind != Kind::Str || sig.reactive {
@@ -319,6 +385,123 @@ impl Engine<'_> {
             self.memo.string_bytes.insert(node, created);
         }
         Ok(Some(bytes))
+    }
+
+    pub(in crate::semantics::analysis) fn choice_bytes(
+        &mut self,
+        root: NodeId,
+        need: &mut Vec<Query>,
+    ) -> Result<Option<Option<NodeId>>, Internal> {
+        let mut order = Vec::new();
+        let mut seen = FastSet::default();
+        let mut strings = FastSet::default();
+        let mut stack = vec![(root, false)];
+        while let Some((node, expanded)) = stack.pop() {
+            if expanded {
+                order.push(node);
+                continue;
+            }
+            if !seen.insert(node) {
+                continue;
+            }
+            stack.push((node, true));
+            let arms = match &self.node(node)?.op {
+                Op::Use(inner) | Op::Chosen(inner) => vec![*inner],
+                Op::If(_, then, otherwise) => vec![*then, *otherwise],
+                Op::Match {
+                    arms, otherwise, ..
+                } => arms
+                    .iter()
+                    .map(|(_, value)| *value)
+                    .chain(*otherwise)
+                    .collect(),
+                _ => {
+                    let sig = some!(self.sig(node, need));
+                    if sig.is_error() || (sig.kind == Kind::Str && sig.reactive) {
+                        return Ok(Some(None));
+                    }
+                    if sig.kind == Kind::Str {
+                        strings.insert(node);
+                    }
+                    Vec::new()
+                }
+            };
+            stack.extend(arms.into_iter().map(|arm| (arm, false)));
+        }
+        if strings.is_empty() {
+            return Ok(Some(None));
+        }
+        let mut bytes: FastMap<NodeId, NodeId> = FastMap::default();
+        for node in order {
+            let record = self.node(node)?.clone();
+            let mapped = |inner: &NodeId| {
+                bytes
+                    .get(inner)
+                    .copied()
+                    .ok_or(Internal::missed("the bytes of an arm"))
+            };
+            let created = match &record.op {
+                Op::Use(inner) | Op::Chosen(inner) => mapped(inner)?,
+                Op::If(condition, then, otherwise) => self.push_node(
+                    Op::If(*condition, mapped(then)?, mapped(otherwise)?),
+                    record.loc,
+                    record.scope,
+                )?,
+                Op::Match {
+                    scrutinee,
+                    arms,
+                    otherwise,
+                } => {
+                    let arms = arms
+                        .iter()
+                        .map(|(label, value)| Ok((*label, mapped(value)?)))
+                        .collect::<Result<Vec<_>, Internal>>()?;
+                    let otherwise = otherwise.as_ref().map(mapped).transpose()?;
+                    self.push_node(
+                        Op::Match {
+                            scrutinee: *scrutinee,
+                            arms,
+                            otherwise,
+                        },
+                        record.loc,
+                        record.scope,
+                    )?
+                }
+                _ if !strings.contains(&node) => node,
+                _ => match self.memo.string_bytes.get(&node) {
+                    Some(created) => *created,
+                    None => {
+                        let created = self.push_node(
+                            Op::Builtin(Builtin::Bytes, vec![node]),
+                            record.loc,
+                            record.scope,
+                        )?;
+                        self.memo.string_bytes.insert(node, created);
+                        created
+                    }
+                },
+            };
+            bytes.insert(node, created);
+        }
+        let created = bytes
+            .get(&root)
+            .copied()
+            .ok_or(Internal::missed("the bytes of a choice"))?;
+        self.memo.string_bytes.insert(root, created);
+        Ok(Some(Some(created)))
+    }
+
+    pub(in crate::semantics::analysis) fn reaches_choice(
+        &self,
+        mut node: NodeId,
+    ) -> Result<bool, Internal> {
+        loop {
+            match &self.node(node)?.op {
+                Op::Use(inner) | Op::Chosen(inner) => node = *inner,
+                Op::If(..) | Op::Match { .. } => return Ok(true),
+                _ => return Ok(false),
+            }
+        }
     }
 
     pub(in crate::semantics::analysis) fn counted_from_end(
@@ -477,17 +660,224 @@ impl Engine<'_> {
         self.layout_in(root, None, need)
     }
 
-    fn reads_variable_default(&self, root: NodeId) -> Result<bool, Internal> {
+    pub(in crate::semantics::analysis) fn known_lengths(
+        &self,
+        root: NodeId,
+    ) -> Result<Option<Vec<Option<u32>>>, Internal> {
+        self.lengths_on_any_path(root, false)
+    }
+
+    fn lengths_on_any_path(
+        &self,
+        root: NodeId,
+        in_template: bool,
+    ) -> Result<Option<Vec<Option<u32>>>, Internal> {
+        let mut steps = Vec::new();
+        let mut alternatives: Vec<(NodeId, usize)> = Vec::new();
+        let mut seen = FastSet::default();
         let mut node = root;
-        loop {
-            if self.memo.variable_defaults.contains_key(&node) {
-                return Ok(true);
+        let mut lengths = loop {
+            let found = 'path: loop {
+                if !self.arrays.contains(&node) {
+                    break 'path Some(Vec::new());
+                }
+                if in_template && !seen.insert(node) {
+                    break 'path None;
+                }
+                if let Some(found) = self.cached_layout(node, None) {
+                    match found.shaped {
+                        Ok(Some(layout)) => break 'path Some(open_lengths(&layout)),
+                        Ok(None) => break 'path Some(Vec::new()),
+                        Err(_) => return Ok(None),
+                    }
+                }
+                match &self.node(node)?.op {
+                    Op::Use(inner) | Op::Chosen(inner) | Op::Annotate(_, inner) => node = *inner,
+                    Op::Read(binding) => match self.memo.binding_layouts.get(binding) {
+                        Some(layout) => break 'path Some(open_lengths(layout)),
+                        None => node = self.binding(*binding)?.init,
+                    },
+                    Op::Element { base, .. } => {
+                        steps.push(Step::Indexed);
+                        node = *base;
+                    }
+                    Op::Slice { base, .. } | Op::Join(base, _) => {
+                        steps.push(Step::Resized);
+                        node = *base;
+                    }
+                    Op::Array(elements) => {
+                        let Some(first) = elements.first() else {
+                            break 'path None;
+                        };
+                        steps.push(Step::Wrapped(
+                            u32::try_from(elements.len()).unwrap_or(u32::MAX),
+                        ));
+                        node = *first;
+                    }
+                    Op::If(_, then, otherwise) => match self.memo.choice_lengths.get(&node) {
+                        Some(Some(lengths)) => break 'path Some(lengths.clone()),
+                        Some(None) | None if in_template => {
+                            alternatives.push((*otherwise, steps.len()));
+                            node = *then;
+                        }
+                        Some(None) | None => break 'path None,
+                    },
+                    Op::Match {
+                        arms, otherwise, ..
+                    } => match self.memo.choice_lengths.get(&node) {
+                        Some(Some(lengths)) => break 'path Some(lengths.clone()),
+                        Some(None) | None if in_template => {
+                            let mut values = arms.iter().map(|(_, value)| *value).chain(*otherwise);
+                            let Some(first) = values.next() else {
+                                break 'path None;
+                            };
+                            alternatives.extend(values.map(|value| (value, steps.len())));
+                            node = first;
+                        }
+                        Some(None) | None => break 'path None,
+                    },
+                    Op::Builtin(Builtin::Bytes, args) => match args.first() {
+                        Some(operand) if self.arrays.contains(operand) => node = *operand,
+                        Some(_) => break 'path Some(vec![None]),
+                        None => break 'path None,
+                    },
+                    Op::Native { native, .. } => {
+                        let decl = self
+                            .vocabulary
+                            .native(*native)
+                            .ok_or(Internal::missed("native function"))?;
+                        break 'path Some(
+                            native_layout(&decl.signature.result)
+                                .as_ref()
+                                .map(open_lengths)
+                                .unwrap_or_default(),
+                        );
+                    }
+                    Op::ToRead { attrs, .. } => {
+                        break 'path Some(
+                            self.to_read_layout(attrs)?
+                                .as_ref()
+                                .map(open_lengths)
+                                .unwrap_or_default(),
+                        );
+                    }
+                    Op::History { .. } => match self.history_bindings(node)?.as_slice() {
+                        [binding] if self.settled_layout(*binding)? => {
+                            match self.memo.binding_layouts.get(binding) {
+                                Some(layout) => break 'path Some(open_lengths(layout)),
+                                None => break 'path None,
+                            }
+                        }
+                        _ => break 'path None,
+                    },
+                    Op::Recursive { .. } if in_template => break 'path None,
+                    Op::Recursive { function, args } => {
+                        break 'path self.recursive_lengths(*function, args)?;
+                    }
+                    Op::Number(..)
+                    | Op::Const(_)
+                    | Op::Bool(_)
+                    | Op::Str(_)
+                    | Op::Concat(_)
+                    | Op::Variant(..)
+                    | Op::Bare(_)
+                    | Op::Pi
+                    | Op::NodeRef(_)
+                    | Op::Arg(_)
+                    | Op::Unary(..)
+                    | Op::Binary(..)
+                    | Op::Pick { .. }
+                    | Op::Convert(..)
+                    | Op::Builtin(..) => break 'path None,
+                }
+            };
+            if let Some(found) = found {
+                break found;
             }
-            match self.node(node)?.op {
-                Op::Use(inner) | Op::Chosen(inner) => node = inner,
-                _ => return Ok(false),
+            let Some((alternative, depth)) = alternatives.pop() else {
+                return Ok(None);
+            };
+            steps.truncate(depth);
+            node = alternative;
+        };
+        for step in steps.into_iter().rev() {
+            match step {
+                Step::Indexed => {
+                    if lengths.pop().is_none() {
+                        return Ok(None);
+                    }
+                }
+                Step::Resized => match lengths.last_mut() {
+                    Some(outer) => *outer = None,
+                    None => return Ok(None),
+                },
+                Step::Wrapped(length) => lengths.push(Some(length)),
             }
         }
+        Ok(Some(lengths))
+    }
+
+    fn recursive_lengths(
+        &self,
+        function: FnId,
+        args: &[Option<Val>],
+    ) -> Result<Option<Vec<Option<u32>>>, Internal> {
+        let typed = args
+            .iter()
+            .flatten()
+            .flat_map(Val::nodes)
+            .all(|node| self.memo.sigs.contains_key(&node));
+        if !typed {
+            return Ok(None);
+        }
+        let key = FamilyKey {
+            function,
+            args: args
+                .iter()
+                .map(|arg| self.family_shape(arg.as_ref()))
+                .collect::<Result<_, _>>()?,
+        };
+        let Some(&scope) = self
+            .memo
+            .family_scopes
+            .get(&key)
+            .and_then(|scopes| scopes.last())
+        else {
+            return Ok(None);
+        };
+        let body = self.hir.fn_decl(function)?.value;
+        let root = match self.memo.bounded_roots.get(&(function, scope)) {
+            Some(joined) => *joined,
+            None => match self.memo.exprs.get(&(body, scope)) {
+                Some(Val::Scalar(node)) => *node,
+                Some(Val::Array(array)) => {
+                    let mut lengths: Vec<Option<u32>> =
+                        array.shape.lengths().into_iter().map(Some).collect();
+                    if let Some(outer) = lengths.last_mut() {
+                        *outer = None;
+                    }
+                    return Ok(Some(lengths));
+                }
+                Some(Val::Error) | None => return Ok(None),
+            },
+        };
+        let Some(mut lengths) = self.lengths_on_any_path(root, true)? else {
+            return Ok(None);
+        };
+        if let Some(outer) = lengths.last_mut() {
+            *outer = None;
+        }
+        Ok(Some(lengths))
+    }
+
+    fn settled_layout(&self, binding: BindingId) -> Result<bool, Internal> {
+        Ok(match self.binding(binding)?.kind {
+            BindingKind::State { .. } => self.memo.settled.contains(&binding),
+            BindingKind::Input { .. }
+            | BindingKind::Let
+            | BindingKind::Param
+            | BindingKind::Attr { .. } => true,
+        })
     }
 
     fn cached_layout(&self, node: NodeId, assumed: Option<&Assumed>) -> Option<LayoutFound> {
@@ -556,7 +946,7 @@ impl Engine<'_> {
                 found.insert(node, fault(None));
                 continue;
             }
-            if !sig.reactive && !sig.frame && !self.reads_variable_default(node)? {
+            if !sig.reactive && !sig.frame {
                 let Some(value) = self.cval(Query::Eval(node, EvalTy::Default), need) else {
                     missing = true;
                     continue;
@@ -733,11 +1123,6 @@ impl Engine<'_> {
                     None => Ok(layouts.first().cloned().flatten()),
                 },
             },
-            Op::Annotate(..) if self.memo.variable_defaults.contains_key(&node) => Ok(self
-                .memo
-                .variable_defaults
-                .get(&node)
-                .map(|(inner, _)| Layout::variable(inner.clone()))),
             Op::Use(_) | Op::Chosen(_) | Op::Annotate(..) => Ok(layouts.first().cloned().flatten()),
             Op::Element { base, .. } => match layouts.first().cloned().flatten() {
                 Some(layout) => {
@@ -1177,6 +1562,18 @@ impl Engine<'_> {
             .ok_or(Internal::missed("native function"))?;
         Ok(native_layout(&decl.signature.result).is_some())
     }
+}
+
+enum Step {
+    Indexed,
+    Resized,
+    Wrapped(u32),
+}
+
+fn open_lengths(layout: &Layout) -> Vec<Option<u32>> {
+    let mut lengths: Vec<Option<u32>> = layout.inner().iter().copied().map(Some).collect();
+    lengths.push(layout.outer());
+    lengths
 }
 
 fn scalar_found() -> LayoutFound {

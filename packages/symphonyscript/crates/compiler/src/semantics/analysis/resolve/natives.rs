@@ -86,8 +86,16 @@ impl Engine<'_> {
             }
             let open = matches!(param, symphonyscript_core::NativeType::Open(_));
             let dimensions = ty.lengths.len() + usize::from(open || ty.capacity.is_some());
-            if ty.scalar == Scalar::U8
-                && dimensions == 1
+            let wants_bytes = ty.scalar == Scalar::U8 && dimensions == 1;
+            if wants_bytes
+                && let Val::Scalar(node) = val
+                && self.reaches_choice(node)?
+                && let Some(bytes) = some!(self.choice_bytes(node, need)?)
+            {
+                operands.push(bytes);
+                continue;
+            }
+            if wants_bytes
                 && let Val::Scalar(node) = val
                 && !self.arrays.contains(&node)
             {

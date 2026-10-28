@@ -5,6 +5,7 @@ import subprocess
 import tempfile
 from pathlib import Path
 
+import fuzz4all_shim
 from Fuzz4All.target.target import FResult
 
 WARNING_CODES = {"integer-input", "unreachable-instance", "no-entry-instance"}

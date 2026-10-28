@@ -4,6 +4,7 @@ use crate::diagnostics::Code;
 use crate::semantics::Internal;
 use crate::semantics::analysis::engine::Engine;
 use crate::semantics::analysis::ids::{NodeId, ScopeId};
+use crate::semantics::analysis::kind::Kind;
 use crate::semantics::analysis::op::Op;
 use crate::semantics::analysis::piece::Piece;
 use crate::semantics::analysis::query::Query;
@@ -270,10 +271,9 @@ impl Engine<'_> {
             }
             return Ok(Some(self.join_val(expr, (lhs, rhs), loc, scope)?));
         }
-        if let (symphonyscript_core::BinaryOp::Add, Val::Scalar(left), Val::Scalar(right)) =
-            (op, &lhs, &rhs)
-            && self.arrays.contains(left)
-            && self.arrays.contains(right)
+        let joins = op == symphonyscript_core::BinaryOp::Add;
+        if let (Val::Scalar(left), Val::Scalar(right)) = (&lhs, &rhs)
+            && (!joins || self.arrays.contains(left) && self.arrays.contains(right))
             && (self.rests_on_recursion(*left)? || self.rests_on_recursion(*right)?)
         {
             let (left, right) = (*left, *right);
@@ -281,10 +281,12 @@ impl Engine<'_> {
             let right_sig = self.sig(right, need);
             let (left_sig, right_sig) = (some!(left_sig), some!(right_sig));
             if !left_sig.reactive && !right_sig.reactive {
-                let sum = self.push_node(Op::Binary(op, left, right), loc, scope)?;
-                self.arrays.insert(sum);
-                self.memo.deferred_sums.insert(sum);
-                return Ok(Some(Val::Scalar(sum)));
+                let settled = self.push_node(Op::Binary(op, left, right), loc, scope)?;
+                if joins {
+                    self.arrays.insert(settled);
+                }
+                self.memo.deferred_sums.insert(settled);
+                return Ok(Some(Val::Scalar(settled)));
             }
         }
         self.single_operand(&lhs, Code::ArrayOperand, OPERAND);
@@ -338,11 +340,9 @@ impl Engine<'_> {
                     let &[then, otherwise] = nodes.as_slice() else {
                         return Ok(Some(Val::Error));
                     };
-                    return Ok(Some(self.scalar(
-                        Op::If(condition, then, otherwise),
-                        loc,
-                        scope,
-                    )?));
+                    let choice = self.push_node(Op::If(condition, then, otherwise), loc, scope)?;
+                    self.record_choice_arrays(choice, &nodes)?;
+                    return Ok(Some(Val::Scalar(choice)));
                 }
                 Branches::Each(vals) => vals,
             };
@@ -377,6 +377,14 @@ impl Engine<'_> {
         let recursive_body = self.template_of(scope)?.is_some();
         if !opaque && !differ {
             return Ok(Some(Branches::Each(vals)));
+        }
+        for val in &vals {
+            if let Val::Scalar(node) = val
+                && !self.arrays.contains(node)
+                && some!(self.sig(*node, need)).kind == Kind::Str
+            {
+                return Ok(Some(Branches::Whole(self.boxed_all(&vals, loc, scope)?)));
+            }
         }
         let reactive = some!(self.sig(selector, need)).reactive;
         if !opaque {
@@ -863,10 +871,11 @@ impl Engine<'_> {
             all.push(value);
         }
         let all = match some!(self.branches(all, scrutinee_node, (loc, scope), need)?) {
-            Branches::Whole(mut nodes) => {
-                let otherwise = if has_otherwise { nodes.pop() } else { None };
-                let arms = label_nodes.iter().copied().zip(nodes).collect();
-                return Ok(Some(self.scalar(
+            Branches::Whole(nodes) => {
+                let mut values = nodes.clone();
+                let otherwise = if has_otherwise { values.pop() } else { None };
+                let arms = label_nodes.iter().copied().zip(values).collect();
+                let choice = self.push_node(
                     Op::Match {
                         scrutinee: scrutinee_node,
                         arms,
@@ -874,7 +883,9 @@ impl Engine<'_> {
                     },
                     loc,
                     scope,
-                )?));
+                )?;
+                self.record_choice_arrays(choice, &nodes)?;
+                return Ok(Some(Val::Scalar(choice)));
             }
             Branches::Each(vals) => vals,
         };
