@@ -11,7 +11,7 @@ use crate::semantics::analysis::c_val::CVal;
 use crate::semantics::analysis::destination::Destination;
 use crate::semantics::analysis::engine::Engine;
 use crate::semantics::analysis::eval_ty::EvalTy;
-use crate::semantics::analysis::fast_hash::FastMap;
+use crate::semantics::analysis::fast_hash::FastSet;
 use crate::semantics::analysis::ids::{NodeId, ScopeId, WireId};
 use crate::semantics::analysis::item_ref::ItemRef;
 use crate::semantics::analysis::kind::Kind;
@@ -19,6 +19,7 @@ use crate::semantics::analysis::locals_owner::LocalsOwner;
 use crate::semantics::analysis::op::Op;
 use crate::semantics::analysis::param_source::ParamSource;
 use crate::semantics::analysis::query::Query;
+use crate::semantics::analysis::rec_family::RecFamily;
 use crate::semantics::analysis::scope_kind::ScopeKind;
 use crate::semantics::analysis::shape::Shape;
 use crate::semantics::analysis::site::Site;
@@ -26,7 +27,7 @@ use crate::semantics::analysis::some::some;
 use crate::semantics::analysis::val::Val;
 use crate::semantics::collection::Decl;
 use crate::semantics::ir::{
-    ExprId, ExprKind, Ident, Loc, PatternId, PlacementId, WireId as HirWireId,
+    ExprId, ExprKind, FnId, Ident, Loc, PatternId, PlacementId, WireId as HirWireId,
 };
 
 enum Shortcut<T> {
@@ -111,6 +112,7 @@ impl Engine<'_> {
             | Op::Chosen(_)
             | Op::Arg(_)
             | Op::Unary(..)
+            | Op::Names(..)
             | Op::Binary(..)
             | Op::If(..)
             | Op::Match { .. }
@@ -130,6 +132,9 @@ impl Engine<'_> {
                 if sig.is_error() {
                     return Ok(Some(Val::Error));
                 }
+                if sig.open && self.in_probe(scope)? {
+                    return Ok(Some(Val::Scalar(node)));
+                }
                 if sig.kind != Kind::Node {
                     self.error(
                         Code::UnknownAttribute,
@@ -148,10 +153,8 @@ impl Engine<'_> {
                     )?;
                     return Ok(Some(Val::Error));
                 }
-                if sig.frame
-                    && let Some(val) = some!(self.frame_path(node, name, loc, scope, need)?)
-                {
-                    return Ok(Some(val));
+                if sig.frame {
+                    return self.frame_path(node, name, loc, scope, need);
                 }
                 match some!(self.cval(Query::Eval(node, EvalTy::Node), need)) {
                     CVal::Node(item) => item,
@@ -176,26 +179,106 @@ impl Engine<'_> {
         loc: Loc,
         scope: ScopeId,
         need: &mut Vec<Query>,
-    ) -> Result<Option<Option<Val>>, Internal> {
-        let mut read: FastMap<NodeId, Val> = FastMap::default();
-        let mut stack = vec![(root, false)];
-        while let Some((node, ready)) = stack.pop() {
+    ) -> Result<Option<Val>, Internal> {
+        let instances = some!(self.reference_instances(root, need)?);
+        let mut vals = Vec::with_capacity(instances.len());
+        let mut missing = false;
+        for instance in &instances {
             crate::semantics::counted_walk::CountedWalk::PathsFramePath.step();
-            if read.contains_key(&node) {
+            match self.step(*instance, name, loc, scope, need)? {
+                Some(val) => vals.push(val),
+                None => missing = true,
+            }
+        }
+        if missing {
+            return Ok(None);
+        }
+        let Some((last, rest)) = vals.split_last() else {
+            return Err(Internal::missed("path start"));
+        };
+        if vals.iter().any(|val| matches!(val, Val::Error)) {
+            return Ok(Some(Val::Error));
+        }
+        let shape = last.shape();
+        if vals
+            .iter()
+            .any(|val| val.shape().lengths() != shape.lengths())
+        {
+            self.error(Code::TypeMismatch, loc, scope, CHOSEN_PATHS)?;
+            return Ok(Some(Val::Error));
+        }
+        let mut tests = Vec::with_capacity(rest.len());
+        for instance in instances.iter().take(rest.len()) {
+            tests.push(self.push_node(Op::Names(root, *instance), loc, scope)?);
+        }
+        let last_nodes = last.nodes();
+        let rest_nodes: Vec<Vec<NodeId>> = rest.iter().map(Val::nodes).collect();
+        let mut elements = Vec::with_capacity(shape.count());
+        for position in 0..shape.count() {
+            let mut chosen = last_nodes
+                .get(position)
+                .copied()
+                .ok_or(Internal::missed("path element"))?;
+            for (test, nodes) in tests.iter().zip(&rest_nodes).rev() {
+                let read = nodes
+                    .get(position)
+                    .copied()
+                    .ok_or(Internal::missed("path element"))?;
+                chosen = self.push_node(Op::If(*test, read, chosen), loc, scope)?;
+            }
+            elements.push(chosen);
+        }
+        Ok(Some(self.shaped(shape, elements)))
+    }
+
+    pub(in crate::semantics::analysis) fn reference_instances(
+        &self,
+        root: NodeId,
+        need: &mut Vec<Query>,
+    ) -> Result<Option<Vec<ItemRef>>, Internal> {
+        let mut instances = Vec::new();
+        let mut held: FastSet<ItemRef> = FastSet::default();
+        let mut seen: FastSet<NodeId> = FastSet::default();
+        let mut stack = vec![root];
+        let mut pending = false;
+        while let Some(node) = stack.pop() {
+            crate::semantics::counted_walk::CountedWalk::PathsReferenceInstances.step();
+            if !seen.insert(node) {
                 continue;
             }
-            let op = self.node(node)?.op.clone();
-            let (parts, chooser) = match &op {
+            match &self.node(node)?.op {
                 Op::NodeRef(item) => {
-                    let val = some!(self.step(*item, name, loc, scope, need)?);
-                    read.insert(node, val);
-                    continue;
+                    if held.insert(*item) {
+                        instances.push(*item);
+                    }
                 }
-                Op::Use(inner) | Op::Chosen(inner) => (vec![*inner], None),
-                Op::Pick { index, items } => (items.clone(), Some(Chooser::Pick(*index))),
-                Op::If(condition, then, otherwise) => {
-                    (vec![*then, *otherwise], Some(Chooser::If(*condition)))
+                Op::Use(inner) | Op::Chosen(inner) => stack.push(*inner),
+                Op::If(_, then, otherwise) => stack.extend([*otherwise, *then]),
+                Op::Match {
+                    arms, otherwise, ..
+                } => {
+                    stack.extend(*otherwise);
+                    stack.extend(arms.iter().rev().map(|(_, value)| *value));
                 }
+                Op::Pick { items, .. } | Op::Array(items) => stack.extend(items.iter().rev()),
+                Op::Element { base, .. } | Op::Slice { base, .. } => stack.push(*base),
+                Op::Join(lhs, rhs) => stack.extend([*rhs, *lhs]),
+                Op::Arg(_) => {
+                    let among = self
+                        .memo
+                        .arg_instances
+                        .get(&node)
+                        .ok_or(Internal::missed("argument instances"))?;
+                    for item in among.iter() {
+                        if held.insert(*item) {
+                            instances.push(*item);
+                        }
+                    }
+                }
+                Op::Recursive { function, .. } => match self.family_roots(node, *function, need)? {
+                    Some(roots) => stack.extend(roots.into_iter().rev()),
+                    None => pending = true,
+                },
                 Op::Number(..)
                 | Op::Const(_)
                 | Op::Bool(_)
@@ -204,80 +287,63 @@ impl Engine<'_> {
                 | Op::Variant(..)
                 | Op::Bare(_)
                 | Op::Pi
+                | Op::Names(..)
                 | Op::Read(_)
-                | Op::Arg(_)
                 | Op::Unary(..)
                 | Op::Binary(..)
-                | Op::Match { .. }
-                | Op::Element { .. }
-                | Op::Array(_)
                 | Op::Convert(..)
                 | Op::Annotate(..)
                 | Op::Builtin(..)
-                | Op::Recursive { .. }
                 | Op::ToRead { .. }
-                | Op::Join(..)
-                | Op::Slice { .. }
                 | Op::History { .. }
-                | Op::Native { .. } => return Ok(Some(None)),
-            };
-            if !ready {
-                stack.push((node, true));
-                stack.extend(parts.iter().map(|part| (*part, false)));
-                continue;
+                | Op::Native { .. } => return Err(Internal::missed("path start")),
             }
-            let vals = parts
-                .iter()
-                .map(|part| read.get(part).cloned().ok_or(Internal::missed("path part")))
-                .collect::<Result<Vec<Val>, Internal>>()?;
-            let Some(chooser) = chooser else {
-                let inner = vals
-                    .into_iter()
-                    .next()
-                    .ok_or(Internal::missed("path part"))?;
-                read.insert(node, inner);
-                continue;
-            };
-            let shape = vals.first().map(Val::shape).unwrap_or_default();
-            let val = if vals.iter().any(|val| matches!(val, Val::Error)) {
-                Val::Error
-            } else if vals
-                .iter()
-                .any(|val| val.shape().lengths() != shape.lengths())
-            {
-                self.error(Code::TypeMismatch, loc, scope, CHOSEN_PATHS)?;
-                Val::Error
-            } else {
-                let mut elements = Vec::with_capacity(shape.count());
-                for position in 0..shape.count() {
-                    let column = vals
-                        .iter()
-                        .map(|val| {
-                            val.nodes()
-                                .get(position)
-                                .copied()
-                                .ok_or(Internal::missed("path element"))
-                        })
-                        .collect::<Result<Vec<NodeId>, Internal>>()?;
-                    let chosen = match (chooser, column.as_slice()) {
-                        (Chooser::Pick(index), _) => Op::Pick {
-                            index,
-                            items: column,
-                        },
-                        (Chooser::If(condition), [then, otherwise]) => {
-                            Op::If(condition, *then, *otherwise)
-                        }
-                        (Chooser::If(_), _) => return Err(Internal::missed("path arm")),
-                    };
-                    elements.push(self.push_node(chosen, loc, scope)?);
-                }
-                self.shaped(shape, elements)
-            };
-            read.insert(node, val);
         }
-        Ok(Some(Some(
-            read.remove(&root).ok_or(Internal::missed("path read"))?,
-        )))
+        Ok((!pending).then_some(instances))
+    }
+
+    fn family_roots(
+        &self,
+        call: NodeId,
+        function: FnId,
+        need: &mut Vec<Query>,
+    ) -> Result<Option<Vec<NodeId>>, Internal> {
+        let key = self
+            .memo
+            .call_families
+            .get(&call)
+            .ok_or(Internal::missed("call family"))?;
+        let scope = match self.memo.rec_families.get(key) {
+            Some(RecFamily::Probing(scope) | RecFamily::Settling { scope, .. }) => Some(*scope),
+            Some(RecFamily::Known(..) | RecFamily::Failed) | None => self
+                .memo
+                .family_scopes
+                .get(key)
+                .and_then(|scopes| scopes.last())
+                .copied(),
+        };
+        let Some(scope) = scope else {
+            return Ok(Some(Vec::new()));
+        };
+        let decl = self.hir.fn_decl(function)?;
+        let mut bodies = vec![decl.value];
+        if let Some(bound) = decl.bound.as_ref().filter(|bound| bound.bound.is_some()) {
+            bodies.push(bound.fallback);
+        }
+        let mut roots = Vec::new();
+        let mut pending = false;
+        for body in bodies {
+            let query = Query::Expr(body, scope);
+            match self.memo.exprs.get(&(body, scope)) {
+                Some(val) => roots.extend(val.nodes()),
+                None if self.in_progress(query) => {}
+                None => {
+                    need.push(query);
+                    pending = true;
+                }
+            }
+        }
+        Ok((!pending).then_some(roots))
     }
 
     fn step(
@@ -756,6 +822,7 @@ impl Engine<'_> {
                 | Op::Read(_)
                 | Op::Arg(_)
                 | Op::Unary(..)
+                | Op::Names(..)
                 | Op::Binary(..)
                 | Op::Element { .. }
                 | Op::Array(_)
@@ -1456,6 +1523,7 @@ impl Engine<'_> {
                 | Op::Read(_)
                 | Op::Arg(_)
                 | Op::Unary(..)
+                | Op::Names(..)
                 | Op::Binary(..)
                 | Op::Convert(..)
                 | Op::Builtin(..)
@@ -1546,12 +1614,6 @@ impl Engine<'_> {
             ItemRef::Use(_) => &[],
         })
     }
-}
-
-#[derive(Clone, Copy)]
-enum Chooser {
-    Pick(NodeId),
-    If(NodeId),
 }
 
 const CHOSEN_PATHS: &str =

@@ -122,7 +122,7 @@ impl Engine<'_> {
             Op::Use(inner) | Op::Chosen(inner) | Op::Unary(UnaryOp::Neg, inner) => {
                 self.known(*inner)?.0
             }
-            Op::Unary(UnaryOp::Not, _) => Some(Scalar::Bool),
+            Op::Unary(UnaryOp::Not, _) | Op::Names(..) => Some(Scalar::Bool),
             Op::Binary(op, lhs, rhs) => {
                 let combined = self.combine(&[*lhs, *rhs])?;
                 match op {

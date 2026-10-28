@@ -2,7 +2,8 @@ mod support;
 
 use std::collections::BTreeMap;
 
-use symphonyscript::Code;
+use symphonyscript::{Code, Compiler};
+use symphonyscript_fixtures::native_vocabulary;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Path {
@@ -310,4 +311,496 @@ fn a_path_through_a_node_reference_parameter_of_a_recursive_function_reads_as_at
         failures.iter().take(12).cloned().collect::<String>()
     );
     assert_eq!(programs, 4_320);
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Chooser {
+    IfOnParameter,
+    IfOnDepth,
+    ParameterArray,
+    LiteralOfParameters,
+    LiteralOfInstances,
+    TopLevelLet,
+    FromEnd,
+    NestedIf,
+    IndexedChoice,
+    SliceFrom,
+    SliceTo,
+    SliceFromEnd,
+    TopLevelLetSlice,
+    LocalMatch,
+    MatchHelper,
+    IfHelper,
+    RecursiveHelper,
+    MatchOfArrays,
+    IfInMatch,
+}
+
+const CHOOSERS: [Chooser; 19] = [
+    Chooser::IfOnParameter,
+    Chooser::IfOnDepth,
+    Chooser::ParameterArray,
+    Chooser::LiteralOfParameters,
+    Chooser::LiteralOfInstances,
+    Chooser::TopLevelLet,
+    Chooser::FromEnd,
+    Chooser::NestedIf,
+    Chooser::IndexedChoice,
+    Chooser::SliceFrom,
+    Chooser::SliceTo,
+    Chooser::SliceFromEnd,
+    Chooser::TopLevelLetSlice,
+    Chooser::LocalMatch,
+    Chooser::MatchHelper,
+    Chooser::IfHelper,
+    Chooser::RecursiveHelper,
+    Chooser::MatchOfArrays,
+    Chooser::IfInMatch,
+];
+
+impl Chooser {
+    fn expression(self) -> &'static str {
+        match self {
+            Chooser::IfOnParameter => "(if i > 0 then d else c)",
+            Chooser::IfOnDepth => "(if n < 0 then c else d)",
+            Chooser::ParameterArray => "xs[i]",
+            Chooser::LiteralOfParameters => "[c, d][i]",
+            Chooser::LiteralOfInstances => "[verse, other][i]",
+            Chooser::TopLevelLet => "rs[i]",
+            Chooser::FromEnd => "xs[^i]",
+            Chooser::NestedIf => "(if i > 0 then (if n < 0 then c else d) else c)",
+            Chooser::IndexedChoice => "[(if i > 0 then d else c), c][0]",
+            Chooser::SliceFrom => "xs[i..][0]",
+            Chooser::SliceTo => "xs[..i + 1][1]",
+            Chooser::SliceFromEnd => "xs[^i..][0]",
+            Chooser::TopLevelLetSlice => "rs[i..][0]",
+            Chooser::LocalMatch | Chooser::IfInMatch => "m",
+            Chooser::MatchHelper => "selm(c, d, i)",
+            Chooser::IfHelper => "sel(c, d, i)",
+            Chooser::RecursiveHelper => "pickr(c, d, i, 2)",
+            Chooser::MatchOfArrays => "m[1]",
+        }
+    }
+
+    fn locals(self) -> &'static str {
+        match self {
+            Chooser::LocalMatch => "    let m = match i:\n        0: c\n        else: d\n",
+            Chooser::MatchOfArrays => {
+                "    let m = match i:\n        0: [d, c]\n        else: [c, d]\n"
+            }
+            Chooser::IfInMatch => {
+                "    let m = match i:\n        0: c\n        else: (if n < 0 then c else d)\n"
+            }
+            Chooser::IfOnParameter
+            | Chooser::IfOnDepth
+            | Chooser::ParameterArray
+            | Chooser::LiteralOfParameters
+            | Chooser::LiteralOfInstances
+            | Chooser::TopLevelLet
+            | Chooser::FromEnd
+            | Chooser::NestedIf
+            | Chooser::IndexedChoice
+            | Chooser::SliceFrom
+            | Chooser::SliceTo
+            | Chooser::SliceFromEnd
+            | Chooser::TopLevelLetSlice
+            | Chooser::MatchHelper
+            | Chooser::IfHelper
+            | Chooser::RecursiveHelper => "",
+        }
+    }
+}
+
+const HELPERS: [&str; 6] = [
+    "fn f(c): c.gain\n",
+    "fn g(c, n): if n < 1 then c.gain else g(c, n - 1)\n",
+    "fn gb(c, n): if n < 1 then c.back.gain else gb(c, n - 1)\n",
+    "fn sel(c, d, p): if p > 0 then d else c\n",
+    "fn selm(c, d, p):\n    match p:\n        0: c\n        else: d\n",
+    "fn pickr(c, d, p, m): if m < 1 then (if p > 0 then d else c) else pickr(c, d, p, m - 1)\n",
+];
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Consumer {
+    Path,
+    Child,
+    Wire,
+    LocalLet,
+    InlinedCall,
+    RecursiveArgument,
+    RecursiveWireArgument,
+}
+
+const CONSUMERS: [Consumer; 7] = [
+    Consumer::Path,
+    Consumer::Child,
+    Consumer::Wire,
+    Consumer::LocalLet,
+    Consumer::InlinedCall,
+    Consumer::RecursiveArgument,
+    Consumer::RecursiveWireArgument,
+];
+
+impl Consumer {
+    fn read(self, chosen: &str) -> String {
+        match self {
+            Consumer::Path => format!("({chosen}).gain"),
+            Consumer::Child => format!("({chosen}).hook.velocity"),
+            Consumer::Wire => format!("({chosen}).back.gain"),
+            Consumer::LocalLet => "e.gain".to_string(),
+            Consumer::InlinedCall => format!("f({chosen})"),
+            Consumer::RecursiveArgument => format!("g({chosen}, 2)"),
+            Consumer::RecursiveWireArgument => format!("gb({chosen}, 2)"),
+        }
+    }
+
+    fn local(self, chosen: &str) -> String {
+        match self {
+            Consumer::LocalLet => format!("    let e = ({chosen})\n"),
+            Consumer::Path
+            | Consumer::Child
+            | Consumer::Wire
+            | Consumer::InlinedCall
+            | Consumer::RecursiveArgument
+            | Consumer::RecursiveWireArgument => String::new(),
+        }
+    }
+}
+
+const CHOSEN_BINDINGS: [Binding; 2] = [Binding::Constant, Binding::Default];
+
+fn chosen_clause(binding: Binding, attribute: &str) -> String {
+    match binding {
+        Binding::Constant => format!(" | {attribute}=3"),
+        Binding::Default | Binding::Input | Binding::ReactiveLet => String::new(),
+    }
+}
+
+fn chosen_value(binding: Binding) -> i32 {
+    match binding {
+        Binding::Constant => 3,
+        Binding::Default | Binding::Input | Binding::ReactiveLet => 1,
+    }
+}
+
+fn chosen_function(chooser: Chooser, (local, read): (&str, &str), recursive: bool) -> String {
+    let value = if recursive {
+        format!("if n < 1 then {read} else h(c, d, xs, i, n - 1)")
+    } else {
+        read.to_string()
+    };
+    format!(
+        "fn h(c, d, xs, i, n):\n{}{local}    {value}\n",
+        chooser.locals()
+    )
+}
+
+fn chosen_program(
+    (chooser, consumer, binding): (Chooser, Consumer, Binding),
+    scale: i32,
+    (depth, reversed, recursive): (u32, bool, bool),
+) -> String {
+    let chosen = chooser.expression();
+    let local = consumer.local(chosen);
+    let read = consumer.read(chosen);
+    let mut items = vec![
+        "Session main\n".to_string(),
+        "Clip verse | gain=5:\n    Note as hook | velocity=5\n    Plays as back | gain=5: tail\n"
+            .to_string(),
+        format!(
+            "Clip other{}:\n    Note as hook{}\n    Plays as back{}: tail\n",
+            chosen_clause(binding, "gain"),
+            chosen_clause(binding, "velocity"),
+            chosen_clause(binding, "gain"),
+        ),
+        "Clip tail:\n    Note\n".to_string(),
+        "let rs = [verse, other]\n".to_string(),
+    ];
+    items.extend(HELPERS.iter().map(|helper| helper.to_string()));
+    items.push(chosen_function(chooser, (&local, &read), recursive));
+    let call = format!("h(verse, other, [verse, other], 1, {depth})");
+    let read = match scale {
+        1 => call,
+        _ => format!("{call} * {scale}"),
+    };
+    items.push(format!(
+        "Clip k:\n    Note/([60][i32({read}) - {}])\n",
+        chosen_value(binding) * scale
+    ));
+    if reversed {
+        items.reverse();
+    }
+    items.concat()
+}
+
+fn twin_failure(text: &str, twin: &str) -> Option<String> {
+    let expected = found(twin);
+    let drawn = found(text);
+    if expected
+        .keys()
+        .any(|(code, _)| *code == Code::IndexOutOfRange)
+    {
+        return Some(format!(
+            "{twin}\n  the twin reads a wrong value: {expected:?}\n"
+        ));
+    }
+    (drawn != expected).then(|| format!("{text}\n  found {drawn:?}\n  twin {expected:?}\n"))
+}
+
+#[test]
+fn a_reference_a_recursive_body_chooses_by_a_frame_value_reads_the_chosen_reference_at_every_consumer()
+ {
+    let mut failures = Vec::new();
+    let mut programs = 0;
+    for chooser in CHOOSERS {
+        for consumer in CONSUMERS {
+            for binding in CHOSEN_BINDINGS {
+                for scale in [1, 2] {
+                    for depth in DEPTHS {
+                        for reversed in [false, true] {
+                            let case = (chooser, consumer, binding);
+                            let text = chosen_program(case, scale, (depth, reversed, true));
+                            let twin = chosen_program(case, scale, (depth, reversed, false));
+                            programs += 1;
+                            if let Some(failure) = twin_failure(&text, &twin) {
+                                failures.push(format!(
+                                    "{chooser:?} {consumer:?} {binding:?} {scale} {depth} {reversed}\n{failure}"
+                                ));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    assert!(
+        failures.is_empty(),
+        "{} of {programs} programs fail:\n{}",
+        failures.len(),
+        failures.iter().take(8).cloned().collect::<String>()
+    );
+    assert_eq!(programs, 3_192);
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum ArrayAttribute {
+    VariableSet,
+    VariableDefault,
+    VariableWithDefaultSet,
+    VariableWithDefault,
+    FixedSet,
+    FixedDefault,
+    RowsSet,
+    RowsDefault,
+}
+
+const ARRAY_ATTRIBUTES: [ArrayAttribute; 8] = [
+    ArrayAttribute::VariableSet,
+    ArrayAttribute::VariableDefault,
+    ArrayAttribute::VariableWithDefaultSet,
+    ArrayAttribute::VariableWithDefault,
+    ArrayAttribute::FixedSet,
+    ArrayAttribute::FixedDefault,
+    ArrayAttribute::RowsSet,
+    ArrayAttribute::RowsDefault,
+];
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum ArrayRead {
+    Length,
+    First,
+    Last,
+    SliceThenFirst,
+    JoinThenFirst,
+}
+
+const ARRAY_READS: [ArrayRead; 5] = [
+    ArrayRead::Length,
+    ArrayRead::First,
+    ArrayRead::Last,
+    ArrayRead::SliceThenFirst,
+    ArrayRead::JoinThenFirst,
+];
+
+impl ArrayAttribute {
+    fn name(self) -> &'static str {
+        match self {
+            ArrayAttribute::VariableSet | ArrayAttribute::VariableDefault => "sequence",
+            ArrayAttribute::VariableWithDefaultSet | ArrayAttribute::VariableWithDefault => "seq",
+            ArrayAttribute::FixedSet | ArrayAttribute::FixedDefault => "trio",
+            ArrayAttribute::RowsSet | ArrayAttribute::RowsDefault => "rows",
+        }
+    }
+
+    fn chosen(self) -> Option<&'static str> {
+        match self {
+            ArrayAttribute::VariableSet | ArrayAttribute::VariableWithDefaultSet => Some("[1, 2]"),
+            ArrayAttribute::FixedSet => Some("[1, 2, 3]"),
+            ArrayAttribute::RowsSet => Some("[[1, 2]]"),
+            ArrayAttribute::VariableDefault
+            | ArrayAttribute::VariableWithDefault
+            | ArrayAttribute::FixedDefault
+            | ArrayAttribute::RowsDefault => None,
+        }
+    }
+
+    fn other(self) -> &'static str {
+        match self {
+            ArrayAttribute::VariableSet
+            | ArrayAttribute::VariableDefault
+            | ArrayAttribute::FixedSet
+            | ArrayAttribute::FixedDefault => "[4, 5, 6]",
+            ArrayAttribute::VariableWithDefaultSet | ArrayAttribute::VariableWithDefault => {
+                "[4, 5, 6, 7]"
+            }
+            ArrayAttribute::RowsSet | ArrayAttribute::RowsDefault => "[[4, 5], [6, 7], [8, 9]]",
+        }
+    }
+
+    fn rows(self) -> Vec<Vec<i32>> {
+        match self {
+            ArrayAttribute::VariableSet | ArrayAttribute::VariableWithDefaultSet => {
+                vec![vec![1], vec![2]]
+            }
+            ArrayAttribute::VariableDefault => Vec::new(),
+            ArrayAttribute::VariableWithDefault => vec![vec![7], vec![8]],
+            ArrayAttribute::FixedSet => vec![vec![1], vec![2], vec![3]],
+            ArrayAttribute::FixedDefault => vec![vec![0], vec![0], vec![0]],
+            ArrayAttribute::RowsSet => vec![vec![1, 2]],
+            ArrayAttribute::RowsDefault => vec![vec![1, 2], vec![3, 4]],
+        }
+    }
+
+    fn nested(self) -> bool {
+        matches!(self, ArrayAttribute::RowsSet | ArrayAttribute::RowsDefault)
+    }
+
+    fn read(self, read: ArrayRead, value: &str) -> String {
+        let leaf = if self.nested() { "[1]" } else { "" };
+        let joined = if self.nested() { "[[9, 9]]" } else { "[9]" };
+        match read {
+            ArrayRead::Length => format!("len({value})"),
+            ArrayRead::First => format!("{value}[0]{leaf}"),
+            ArrayRead::Last => format!("{value}[^1]{leaf}"),
+            ArrayRead::SliceThenFirst => format!("{value}[0..][0]{leaf}"),
+            ArrayRead::JoinThenFirst => format!("({value} + {joined})[0]{leaf}"),
+        }
+    }
+
+    fn expected(self, read: ArrayRead) -> Option<i32> {
+        let rows = self.rows();
+        let leaf = |row: &Vec<i32>| row.get(usize::from(self.nested())).copied();
+        match read {
+            ArrayRead::Length => i32::try_from(rows.len()).ok(),
+            ArrayRead::First | ArrayRead::SliceThenFirst | ArrayRead::JoinThenFirst => {
+                rows.first().and_then(leaf)
+            }
+            ArrayRead::Last => rows.last().and_then(leaf),
+        }
+    }
+}
+
+const ARRAY_CONSUMERS: [Consumer; 2] = [Consumer::Path, Consumer::LocalLet];
+
+fn array_program(
+    chooser: Chooser,
+    consumer: Consumer,
+    (attribute, read): (ArrayAttribute, ArrayRead),
+    (depth, reversed, recursive): (u32, bool, bool),
+    expected: i32,
+) -> String {
+    let chosen = chooser.expression();
+    let name = attribute.name();
+    let value = match consumer {
+        Consumer::LocalLet => format!("e.{name}"),
+        Consumer::Path
+        | Consumer::Child
+        | Consumer::Wire
+        | Consumer::InlinedCall
+        | Consumer::RecursiveArgument
+        | Consumer::RecursiveWireArgument => format!("({chosen}).{name}"),
+    };
+    let local = consumer.local(chosen);
+    let read = attribute.read(read, &value);
+    let chosen_clause = attribute
+        .chosen()
+        .map(|literal| format!(" | {name}={literal}"))
+        .unwrap_or_default();
+    let mut items = [
+        format!("Clip verse | {name}={}:\n    Note\n", attribute.other()),
+        format!("Clip other{chosen_clause}:\n    Note\n"),
+        "let rs = [verse, other]\n".to_string(),
+        "fn sel(c, d, p): if p > 0 then d else c\n".to_string(),
+        "fn selm(c, d, p):\n    match p:\n        0: c\n        else: d\n".to_string(),
+        "fn pickr(c, d, p, m): if m < 1 then (if p > 0 then d else c) else pickr(c, d, p, m - 1)\n"
+            .to_string(),
+        chosen_function(chooser, (&local, &read), recursive),
+        format!(
+            "Song s:\n    Clip:\n        Note/([60][h(verse, other, [verse, other], 1, {depth}) - {expected}])\n"
+        ),
+    ];
+    if reversed {
+        items.reverse();
+    }
+    items.concat()
+}
+
+fn found_with(compiler: &Compiler, text: &str) -> Found {
+    let mut found = Found::new();
+    for (code, at) in support::error_texts(compiler, text) {
+        *found.entry((code, at)).or_default() += 1;
+    }
+    found
+}
+
+#[test]
+fn an_array_attribute_read_through_a_reference_a_recursive_body_chooses_has_the_attributes_type_and_layout()
+ {
+    let compiler = Compiler::new(&native_vocabulary()).expect("the native vocabulary compiles");
+    let mut failures = Vec::new();
+    let mut programs = 0;
+    for chooser in CHOOSERS {
+        for consumer in ARRAY_CONSUMERS {
+            for attribute in ARRAY_ATTRIBUTES {
+                for read in ARRAY_READS {
+                    let Some(expected) = attribute.expected(read) else {
+                        continue;
+                    };
+                    for depth in DEPTHS {
+                        for reversed in [false, true] {
+                            let program = |recursive| {
+                                array_program(
+                                    chooser,
+                                    consumer,
+                                    (attribute, read),
+                                    (depth, reversed, recursive),
+                                    expected,
+                                )
+                            };
+                            let (text, twin) = (program(true), program(false));
+                            let drawn = found_with(&compiler, &text);
+                            let twin_drawn = found_with(&compiler, &twin);
+                            programs += 1;
+                            if twin_drawn
+                                .keys()
+                                .any(|(code, _)| *code == Code::IndexOutOfRange)
+                                || drawn != twin_drawn
+                            {
+                                failures.push(format!(
+                                    "{chooser:?} {consumer:?} {attribute:?} {read:?} {depth} {reversed}\n{text}\n  found {drawn:?}\n  twin {twin_drawn:?}\n"
+                                ));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    assert!(
+        failures.is_empty(),
+        "{} of {programs} programs fail:\n{}",
+        failures.len(),
+        failures.iter().take(8).cloned().collect::<String>()
+    );
+    assert_eq!(programs, 8_208);
 }

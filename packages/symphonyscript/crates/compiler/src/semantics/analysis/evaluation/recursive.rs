@@ -11,6 +11,7 @@ use super::own_type::own_type;
 use crate::diagnostics::Code;
 use crate::semantics::Internal;
 use crate::semantics::analysis::arg_key::ArgKey;
+use crate::semantics::analysis::arg_reference::ArgReference;
 use crate::semantics::analysis::arg_shape::ArgShape;
 use crate::semantics::analysis::arg_sig::ArgSig;
 use crate::semantics::analysis::bound::Bound;
@@ -44,7 +45,7 @@ struct Argument {
 impl Argument {
     fn keyed(&self) -> (ArgKey, ArgShape) {
         match (self.lengths.is_empty(), self.leaves.first()) {
-            (true, Some((key, sig))) => (key.clone(), ArgShape::Scalar(*sig)),
+            (true, Some((key, sig))) => (key.clone(), ArgShape::Scalar(sig.clone())),
             _ => {
                 let (keys, sigs) = self.leaves.iter().cloned().unzip();
                 (
@@ -282,13 +283,13 @@ impl Engine<'_> {
             let source = match shape {
                 ArgShape::Default => ParamSource::Default,
                 ArgShape::Scalar(sig) => {
-                    let node = self.arg_node(&mut slot, *sig, loc, caller)?;
+                    let node = self.arg_node(&mut slot, sig, loc, caller)?;
                     ParamSource::Bound(BoundVal::Scalar(Bound::Value(node)))
                 }
                 ArgShape::Array(lengths, sigs) => {
                     let mut bounds = Vec::with_capacity(sigs.len());
                     for sig in sigs {
-                        bounds.push(Bound::Value(self.arg_node(&mut slot, *sig, loc, caller)?));
+                        bounds.push(Bound::Value(self.arg_node(&mut slot, sig, loc, caller)?));
                     }
                     let shape = crate::semantics::analysis::shape::Shape::from_lengths(lengths);
                     ParamSource::Bound(BoundVal::Array(Rc::new((shape, bounds))))
@@ -395,11 +396,11 @@ impl Engine<'_> {
     fn arg_node(
         &mut self,
         slot: &mut u32,
-        sig: ArgSig,
+        sig: &ArgSig,
         loc: crate::semantics::ir::Loc,
         scope: ScopeId,
     ) -> Result<NodeId, Internal> {
-        if let Some(item) = sig.node {
+        if let ArgReference::Instance(item) = sig.node {
             *slot += 1;
             return self.push_node(Op::NodeRef(item), loc, scope);
         }
@@ -408,6 +409,9 @@ impl Engine<'_> {
         let mut arg_sig = Sig::of(sig.kind, sig.width, false, sig.family);
         arg_sig.frame = true;
         self.memo.arg_sigs.insert(node, arg_sig);
+        if let ArgReference::Among(instances) = &sig.node {
+            self.memo.arg_instances.insert(node, instances.clone());
+        }
         Ok(node)
     }
 
@@ -994,7 +998,7 @@ fn arg_key(value: &CVal, flexible: bool, ty: EvalTy, family: Option<FamilyId>) -
         kind,
         width,
         family,
-        node: None,
+        node: ArgReference::Unknown,
     };
     match value {
         CVal::Int(value) if flexible => (
@@ -1038,7 +1042,7 @@ fn arg_key(value: &CVal, flexible: bool, ty: EvalTy, family: Option<FamilyId>) -
         CVal::Node(item) => (
             ArgKey::Node(*item),
             ArgSig {
-                node: Some(*item),
+                node: ArgReference::Instance(*item),
                 ..arg_sig(Kind::Node, Width::Flexible)
             },
         ),

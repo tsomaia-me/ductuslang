@@ -23,6 +23,7 @@ pub(crate) fn layout_shaped(op: &Op) -> bool {
         | Op::Read(_)
         | Op::Arg(_)
         | Op::Unary(..)
+        | Op::Names(..)
         | Op::Binary(..)
         | Op::Pick { .. }
         | Op::Convert(..)

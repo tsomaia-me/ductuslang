@@ -126,6 +126,7 @@ impl Engine<'_> {
             | Op::Chosen(_)
             | Op::Arg(_)
             | Op::Unary(..)
+            | Op::Names(..)
             | Op::Binary(..)
             | Op::If(..)
             | Op::Match { .. }

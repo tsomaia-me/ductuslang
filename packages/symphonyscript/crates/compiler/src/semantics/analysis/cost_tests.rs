@@ -744,7 +744,33 @@ impl Chain {
             (Chain::JoinFromLiteral | Chain::Windowed, ChainRead::Index) => Some(1),
             (Chain::JoinFromLiteral | Chain::JoinFromNote, ChainRead::Len) => Some(n),
             (Chain::Operator, ChainRead::Pitch) => Some(n),
-            _ => None,
+            (
+                Chain::ScalarAlias
+                | Chain::VariantAlias
+                | Chain::ComparedVariants
+                | Chain::ReactiveAlias
+                | Chain::Operator,
+                ChainRead::Index | ChainRead::Len,
+            )
+            | (
+                Chain::VariantAlias
+                | Chain::ComparedVariants
+                | Chain::ArrayAlias
+                | Chain::EmptyJoin
+                | Chain::Identity
+                | Chain::JoinFromLiteral
+                | Chain::JoinFromNote
+                | Chain::ReactiveAlias
+                | Chain::ReactiveArrayAlias
+                | Chain::VariableGrowth
+                | Chain::Windowed,
+                ChainRead::Pitch,
+            )
+            | (
+                Chain::JoinFromNote | Chain::ReactiveArrayAlias | Chain::VariableGrowth,
+                ChainRead::Index,
+            )
+            | (Chain::ReactiveArrayAlias | Chain::VariableGrowth, ChainRead::Len) => None,
         }
     }
 }
@@ -859,4 +885,93 @@ fn every_walk_that_follows_a_chain_of_lets_costs_work_linear_in_the_chain_and_th
     }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
     assert_eq!(rows, 42);
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum ReferenceBody {
+    Length,
+    FirstGain,
+    ChosenGain,
+}
+
+const REFERENCE_BODIES: [ReferenceBody; 3] = [
+    ReferenceBody::Length,
+    ReferenceBody::FirstGain,
+    ReferenceBody::ChosenGain,
+];
+
+fn reference_array_program(body: ReferenceBody, k: usize, call_first: bool) -> String {
+    let references = (0..k)
+        .map(|index| format!("r{index}"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let (read, reader) = match body {
+        ReferenceBody::Length => (
+            "len(c)",
+            format!("Clip k:\n    Note/(g([{references}], 0, 3))\n"),
+        ),
+        ReferenceBody::FirstGain => (
+            "c[0].gain",
+            format!("Clip k | gain=g([{references}], 0, 3):\n    Note\n"),
+        ),
+        ReferenceBody::ChosenGain => (
+            "c[i].gain",
+            format!("Clip k | gain=g([{references}], 0, 3):\n    Note\n"),
+        ),
+    };
+    let mut items = vec![
+        reader,
+        format!("fn g(c, i, n): if n < 1 then {read} else g(c, i, n - 1)\n"),
+        "Session main\n".to_string(),
+    ];
+    items.extend((0..k).map(|index| format!("Clip r{index} | gain={index}:\n    Note\n")));
+    if !call_first {
+        items.reverse();
+    }
+    items.concat()
+}
+
+#[test]
+fn a_recursive_call_over_an_array_of_references_costs_work_linear_in_its_elements_in_either_order()
+{
+    let compiler = Compiler::new(&vocabulary()).expect("the vocabulary compiles");
+    let mut failures = Vec::new();
+    let mut rows = 0;
+    for body in REFERENCE_BODIES {
+        for call_first in [true, false] {
+            rows += 1;
+            let sizes = [200, 400, 800];
+            let name = format!(
+                "{body:?} {}",
+                if call_first {
+                    "call first"
+                } else {
+                    "call last"
+                }
+            );
+            let texts = sizes.map(|k| reference_array_program(body, k, call_first));
+            let runs = texts.each_ref().map(|text| measured(&compiler, text));
+            for (run, k) in runs.iter().zip(sizes) {
+                if let Some(first) = run.errors.first() {
+                    failures.push(format!("{name} {k}: {first}"));
+                }
+            }
+            for (index, (counter, _)) in runs[0].counts.iter().enumerate() {
+                let points = [0, 1, 2].map(|run| {
+                    (
+                        u64::try_from(texts[run].len()).unwrap_or(u64::MAX),
+                        runs[run].counts.get(index).map_or(0, |(_, count)| *count),
+                    )
+                });
+                if !linear(points) {
+                    failures.push(format!(
+                        "{name}: {counter} {:?}",
+                        points.map(|(_, count)| count)
+                    ));
+                }
+            }
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    assert_eq!(rows, 6);
 }

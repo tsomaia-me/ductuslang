@@ -611,6 +611,7 @@ impl Engine<'_> {
             | Op::Read(_)
             | Op::Arg(_)
             | Op::Unary(..)
+            | Op::Names(..)
             | Op::Binary(..)
             | Op::Convert(..)
             | Op::Annotate(..)

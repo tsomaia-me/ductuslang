@@ -132,6 +132,7 @@ impl Engine<'_> {
                 }
                 Sig::of(Kind::Bool, Width::Fixed(Scalar::Bool), reactive, None)
             }
+            Op::Names(..) => Sig::of(Kind::Bool, Width::Fixed(Scalar::Bool), reactive, None),
             Op::Binary(op, lhs, rhs) => {
                 self.binary_sig(node, *op, (*lhs, at(0)?), (*rhs, at(1)?))?
             }

@@ -1,5 +1,6 @@
 use crate::diagnostics::Code;
 use crate::semantics::Internal;
+use crate::semantics::analysis::arg_reference::ArgReference;
 use crate::semantics::analysis::arg_shape::ArgShape;
 use crate::semantics::analysis::arg_sig::ArgSig;
 use crate::semantics::analysis::c_val::CVal;
@@ -29,6 +30,7 @@ impl Engine<'_> {
         need: &mut Vec<Query>,
     ) -> Result<Option<Sig>, Internal> {
         let (key, shapes) = some!(self.family_key(function, args, need)?);
+        self.memo.call_families.insert(node, key.clone());
         if self.body_certainly_reads_cell(function)? {
             if !self.hir.fn_decl(function)?.faulty_head {
                 let reading = format!(
@@ -257,8 +259,15 @@ impl Engine<'_> {
         need: &mut Vec<Query>,
     ) -> Result<Option<(FamilyKey, Vec<ArgShape>)>, Internal> {
         let mut shapes = Vec::with_capacity(args.len());
+        let mut missing = false;
         for arg in args {
-            shapes.push(some!(self.family_shape(arg.as_ref(), need)?));
+            match self.family_shape(arg.as_ref(), need)? {
+                Some(shape) => shapes.push(shape),
+                None => missing = true,
+            }
+        }
+        if missing {
+            return Ok(None);
         }
         let key = FamilyKey {
             function,
@@ -284,29 +293,26 @@ impl Engine<'_> {
             return Ok(Some(ArgShape::Default));
         };
         let mut sigs = Vec::new();
+        let mut missing = false;
         for node in arg.nodes() {
+            crate::semantics::counted_walk::CountedWalk::RecursiveFamilyFamilyShape.step();
             let sig = self.known_sig(node)?;
-            let item = if sig.kind == Kind::Node && !sig.reactive && !sig.frame {
-                match some!(self.cval(Query::Eval(node, EvalTy::Node), need)) {
-                    CVal::Node(item) => Some(item),
-                    CVal::Int(_)
-                    | CVal::F32(_)
-                    | CVal::F64(_)
-                    | CVal::Bool(_)
-                    | CVal::Enum(..)
-                    | CVal::Str(_)
-                    | CVal::Array(_)
-                    | CVal::Error => None,
+            let reference = match self.arg_reference(node, &sig, need)? {
+                Some(reference) => reference,
+                None => {
+                    missing = true;
+                    ArgReference::Unknown
                 }
-            } else {
-                None
             };
             sigs.push(ArgSig {
                 kind: sig.kind,
                 width: Width::Flexible,
                 family: sig.family,
-                node: item,
+                node: reference,
             });
+        }
+        if missing {
+            return Ok(None);
         }
         Ok(Some(match arg {
             Val::Scalar(_) => match sigs.pop() {
@@ -317,18 +323,49 @@ impl Engine<'_> {
             Val::Error => ArgShape::Default,
         }))
     }
+
+    fn arg_reference(
+        &self,
+        node: NodeId,
+        sig: &Sig,
+        need: &mut Vec<Query>,
+    ) -> Result<Option<ArgReference>, Internal> {
+        if sig.kind != Kind::Node || sig.reactive {
+            return Ok(Some(ArgReference::Unknown));
+        }
+        if sig.frame {
+            let instances = some!(self.reference_instances(node, need)?);
+            return Ok(Some(match instances.as_slice() {
+                [instance] => ArgReference::Instance(*instance),
+                _ => ArgReference::Among(instances.into()),
+            }));
+        }
+        Ok(Some(
+            match some!(self.cval(Query::Eval(node, EvalTy::Node), need)) {
+                CVal::Node(item) => ArgReference::Instance(item),
+                CVal::Int(_)
+                | CVal::F32(_)
+                | CVal::F64(_)
+                | CVal::Bool(_)
+                | CVal::Enum(..)
+                | CVal::Str(_)
+                | CVal::Array(_)
+                | CVal::Error => ArgReference::Unknown,
+            },
+        ))
+    }
 }
 
 fn family_arg(shape: &ArgShape) -> FamilyArg {
     match shape {
         ArgShape::Default => FamilyArg::Default,
-        ArgShape::Scalar(sig) => FamilyArg::Scalar(*sig),
+        ArgShape::Scalar(sig) => FamilyArg::Scalar(sig.clone()),
         ArgShape::Array(lengths, sigs) => FamilyArg::Array {
             rows: lengths
                 .split_last()
                 .map(|(_, rows)| rows.to_vec())
                 .unwrap_or_default(),
-            element: sigs.iter().copied().reduce(|one, other| ArgSig {
+            element: sigs.iter().cloned().reduce(|one, other| ArgSig {
                 kind: unify_kinds(one.kind, other.kind).unwrap_or(Kind::Error),
                 width: Width::Flexible,
                 family: if one.family == other.family {
@@ -339,7 +376,7 @@ fn family_arg(shape: &ArgShape) -> FamilyArg {
                 node: if one.node == other.node {
                     one.node
                 } else {
-                    None
+                    ArgReference::Unknown
                 },
             }),
         },

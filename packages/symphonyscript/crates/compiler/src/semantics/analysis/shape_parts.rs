@@ -33,6 +33,7 @@ pub(crate) fn shape_parts(engine: &Engine<'_>, op: &Op) -> Result<Vec<NodeId>, I
         | Op::NodeRef(_)
         | Op::Arg(_)
         | Op::Unary(..)
+        | Op::Names(..)
         | Op::Binary(..)
         | Op::Pick { .. }
         | Op::Convert(..)

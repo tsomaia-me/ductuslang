@@ -140,6 +140,7 @@ impl Engine<'_> {
                     | Op::NodeRef(_)
                     | Op::Arg(_)
                     | Op::Unary(..)
+                    | Op::Names(..)
                     | Op::Binary(..)
                     | Op::Pick { .. }
                     | Op::Element { .. }
@@ -227,6 +228,7 @@ impl Engine<'_> {
                 | Op::NodeRef(_)
                 | Op::Arg(_)
                 | Op::Unary(..)
+                | Op::Names(..)
                 | Op::Pick { .. }
                 | Op::Array(_)
                 | Op::Convert(..)
@@ -797,6 +799,7 @@ impl Engine<'_> {
                     | Op::NodeRef(_)
                     | Op::Arg(_)
                     | Op::Unary(..)
+                    | Op::Names(..)
                     | Op::Binary(..)
                     | Op::Pick { .. }
                     | Op::Convert(..)
@@ -1095,6 +1098,7 @@ impl Engine<'_> {
             | Op::NodeRef(_)
             | Op::Arg(_)
             | Op::Unary(..)
+            | Op::Names(..)
             | Op::Binary(..)
             | Op::Pick { .. }
             | Op::Convert(..)
@@ -1344,6 +1348,7 @@ impl Engine<'_> {
             | Op::NodeRef(_)
             | Op::Arg(_)
             | Op::Unary(..)
+            | Op::Names(..)
             | Op::Binary(..)
             | Op::Pick { .. }
             | Op::Convert(..)

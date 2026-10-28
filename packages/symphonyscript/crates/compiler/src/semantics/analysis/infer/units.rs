@@ -404,6 +404,7 @@ impl Engine<'_> {
                         | Op::NodeRef(_)
                         | Op::Arg(_)
                         | Op::Unary(UnaryOp::Not, _)
+                        | Op::Names(..)
                         | Op::Binary(
                             BinaryOp::Div
                             | BinaryOp::Is

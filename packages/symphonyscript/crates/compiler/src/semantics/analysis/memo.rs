@@ -100,6 +100,8 @@ pub(crate) struct Memo {
     pub default_scales: FastMap<NodeId, f64>,
     pub calls: FastMap<CallKey, CVal>,
     pub arg_sigs: FastMap<NodeId, Sig>,
+    pub arg_instances: FastMap<NodeId, std::rc::Rc<[super::item_ref::ItemRef]>>,
+    pub call_families: FastMap<NodeId, super::family_key::FamilyKey>,
     pub templates: FastMap<super::template_key::TemplateKey, ScopeId>,
     pub template_feeds: FastMap<ScopeId, Vec<super::feed::Feed>>,
     pub template_takers: FastMap<ScopeId, Vec<NodeId>>,

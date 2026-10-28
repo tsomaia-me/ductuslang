@@ -89,6 +89,7 @@ impl Engine<'_> {
             | Op::Chosen(_)
             | Op::Arg(_)
             | Op::Unary(..)
+            | Op::Names(..)
             | Op::Binary(..)
             | Op::Pick { .. }
             | Op::Element { .. }
@@ -193,7 +194,8 @@ impl Engine<'_> {
                 | BinaryOp::IsNot,
                 ..,
             )
-            | Op::Unary(UnaryOp::Not, _) => Some(Sig::of(
+            | Op::Unary(UnaryOp::Not, _)
+            | Op::Names(..) => Some(Sig::of(
                 Kind::Bool,
                 Width::Fixed(Scalar::Bool),
                 reactive,
@@ -500,6 +502,7 @@ fn joins(op: &Op) -> bool {
         | Op::Read(_)
         | Op::Arg(_)
         | Op::Unary(UnaryOp::Not, _)
+        | Op::Names(..)
         | Op::Recursive { .. }
         | Op::ToRead { .. }
         | Op::Join(..)
