@@ -14,6 +14,7 @@ use crate::semantics::analysis::bound_val::BoundVal;
 use crate::semantics::analysis::c_val::CVal;
 use crate::semantics::analysis::engine::Engine;
 use crate::semantics::analysis::eval_ty::EvalTy;
+use crate::semantics::analysis::family_key::FamilyKey;
 use crate::semantics::analysis::fast_hash::{FastMap, FastSet};
 use crate::semantics::analysis::history_cell::HistoryCell;
 use crate::semantics::analysis::ids::{BindingId, NodeId, ScopeId};
@@ -27,7 +28,7 @@ use crate::semantics::analysis::settling::Settling;
 use crate::semantics::analysis::shape_fault::ShapeFault;
 use crate::semantics::analysis::some::some;
 use crate::semantics::analysis::val::Val;
-use crate::semantics::ir::{ExprId, Loc, Number, SliceBound, StateId, Suffix};
+use crate::semantics::ir::{ExprId, FnId, Loc, Number, SliceBound, StateId, Suffix};
 
 impl Engine<'_> {
     pub(in crate::semantics::analysis) fn join_val(
@@ -628,94 +629,141 @@ impl Engine<'_> {
         &self,
         root: NodeId,
     ) -> Result<Option<Vec<Option<u32>>>, Internal> {
+        self.lengths_on_any_path(root, false)
+    }
+
+    fn lengths_on_any_path(
+        &self,
+        root: NodeId,
+        in_template: bool,
+    ) -> Result<Option<Vec<Option<u32>>>, Internal> {
         let mut steps = Vec::new();
+        let mut alternatives: Vec<(NodeId, usize)> = Vec::new();
+        let mut seen = FastSet::default();
         let mut node = root;
         let mut lengths = loop {
-            if !self.arrays.contains(&node) {
-                break Vec::new();
-            }
-            if let Some(found) = self.cached_layout(node, None) {
-                match found.shaped {
-                    Ok(Some(layout)) => break open_lengths(&layout),
-                    Ok(None) => break Vec::new(),
-                    Err(_) => return Ok(None),
+            let found = 'path: loop {
+                if !self.arrays.contains(&node) {
+                    break 'path Some(Vec::new());
                 }
-            }
-            match &self.node(node)?.op {
-                Op::Use(inner) | Op::Chosen(inner) | Op::Annotate(_, inner) => node = *inner,
-                Op::Read(binding) => match self.memo.binding_layouts.get(binding) {
-                    Some(layout) => break open_lengths(layout),
-                    None => node = self.binding(*binding)?.init,
-                },
-                Op::Element { base, .. } => {
-                    steps.push(Step::Indexed);
-                    node = *base;
+                if in_template && !seen.insert(node) {
+                    break 'path None;
                 }
-                Op::Slice { base, .. } | Op::Join(base, _) => {
-                    steps.push(Step::Resized);
-                    node = *base;
-                }
-                Op::Array(elements) => {
-                    let Some(first) = elements.first() else {
-                        return Ok(None);
-                    };
-                    steps.push(Step::Wrapped(
-                        u32::try_from(elements.len()).unwrap_or(u32::MAX),
-                    ));
-                    node = *first;
-                }
-                Op::If(..) | Op::Match { .. } => match self.memo.choice_lengths.get(&node) {
-                    Some(Some(lengths)) => break lengths.clone(),
-                    Some(None) | None => return Ok(None),
-                },
-                Op::Builtin(Builtin::Bytes, args) => match args.first() {
-                    Some(operand) if self.arrays.contains(operand) => node = *operand,
-                    Some(_) => break vec![None],
-                    None => return Ok(None),
-                },
-                Op::Native { native, .. } => {
-                    let decl = self
-                        .vocabulary
-                        .native(*native)
-                        .ok_or(Internal::missed("native function"))?;
-                    break native_layout(&decl.signature.result)
-                        .as_ref()
-                        .map(open_lengths)
-                        .unwrap_or_default();
-                }
-                Op::ToRead { attrs, .. } => {
-                    break self
-                        .to_read_layout(attrs)?
-                        .as_ref()
-                        .map(open_lengths)
-                        .unwrap_or_default();
-                }
-                Op::History { .. } => match self.history_bindings(node)?.as_slice() {
-                    [binding] if self.settled_layout(*binding)? => {
-                        match self.memo.binding_layouts.get(binding) {
-                            Some(layout) => break open_lengths(layout),
-                            None => return Ok(None),
-                        }
+                if let Some(found) = self.cached_layout(node, None) {
+                    match found.shaped {
+                        Ok(Some(layout)) => break 'path Some(open_lengths(&layout)),
+                        Ok(None) => break 'path Some(Vec::new()),
+                        Err(_) => return Ok(None),
                     }
-                    _ => return Ok(None),
-                },
-                Op::Number(..)
-                | Op::Const(_)
-                | Op::Bool(_)
-                | Op::Str(_)
-                | Op::Concat(_)
-                | Op::Variant(..)
-                | Op::Bare(_)
-                | Op::Pi
-                | Op::NodeRef(_)
-                | Op::Arg(_)
-                | Op::Unary(..)
-                | Op::Binary(..)
-                | Op::Pick { .. }
-                | Op::Convert(..)
-                | Op::Builtin(..)
-                | Op::Recursive { .. } => return Ok(None),
+                }
+                match &self.node(node)?.op {
+                    Op::Use(inner) | Op::Chosen(inner) | Op::Annotate(_, inner) => node = *inner,
+                    Op::Read(binding) => match self.memo.binding_layouts.get(binding) {
+                        Some(layout) => break 'path Some(open_lengths(layout)),
+                        None => node = self.binding(*binding)?.init,
+                    },
+                    Op::Element { base, .. } => {
+                        steps.push(Step::Indexed);
+                        node = *base;
+                    }
+                    Op::Slice { base, .. } | Op::Join(base, _) => {
+                        steps.push(Step::Resized);
+                        node = *base;
+                    }
+                    Op::Array(elements) => {
+                        let Some(first) = elements.first() else {
+                            break 'path None;
+                        };
+                        steps.push(Step::Wrapped(
+                            u32::try_from(elements.len()).unwrap_or(u32::MAX),
+                        ));
+                        node = *first;
+                    }
+                    Op::If(_, then, otherwise) => match self.memo.choice_lengths.get(&node) {
+                        Some(Some(lengths)) => break 'path Some(lengths.clone()),
+                        Some(None) | None if in_template => {
+                            alternatives.push((*otherwise, steps.len()));
+                            node = *then;
+                        }
+                        Some(None) | None => break 'path None,
+                    },
+                    Op::Match {
+                        arms, otherwise, ..
+                    } => match self.memo.choice_lengths.get(&node) {
+                        Some(Some(lengths)) => break 'path Some(lengths.clone()),
+                        Some(None) | None if in_template => {
+                            let mut values = arms.iter().map(|(_, value)| *value).chain(*otherwise);
+                            let Some(first) = values.next() else {
+                                break 'path None;
+                            };
+                            alternatives.extend(values.map(|value| (value, steps.len())));
+                            node = first;
+                        }
+                        Some(None) | None => break 'path None,
+                    },
+                    Op::Builtin(Builtin::Bytes, args) => match args.first() {
+                        Some(operand) if self.arrays.contains(operand) => node = *operand,
+                        Some(_) => break 'path Some(vec![None]),
+                        None => break 'path None,
+                    },
+                    Op::Native { native, .. } => {
+                        let decl = self
+                            .vocabulary
+                            .native(*native)
+                            .ok_or(Internal::missed("native function"))?;
+                        break 'path Some(
+                            native_layout(&decl.signature.result)
+                                .as_ref()
+                                .map(open_lengths)
+                                .unwrap_or_default(),
+                        );
+                    }
+                    Op::ToRead { attrs, .. } => {
+                        break 'path Some(
+                            self.to_read_layout(attrs)?
+                                .as_ref()
+                                .map(open_lengths)
+                                .unwrap_or_default(),
+                        );
+                    }
+                    Op::History { .. } => match self.history_bindings(node)?.as_slice() {
+                        [binding] if self.settled_layout(*binding)? => {
+                            match self.memo.binding_layouts.get(binding) {
+                                Some(layout) => break 'path Some(open_lengths(layout)),
+                                None => break 'path None,
+                            }
+                        }
+                        _ => break 'path None,
+                    },
+                    Op::Recursive { .. } if in_template => break 'path None,
+                    Op::Recursive { function, args } => {
+                        break 'path self.recursive_lengths(*function, args)?;
+                    }
+                    Op::Number(..)
+                    | Op::Const(_)
+                    | Op::Bool(_)
+                    | Op::Str(_)
+                    | Op::Concat(_)
+                    | Op::Variant(..)
+                    | Op::Bare(_)
+                    | Op::Pi
+                    | Op::NodeRef(_)
+                    | Op::Arg(_)
+                    | Op::Unary(..)
+                    | Op::Binary(..)
+                    | Op::Pick { .. }
+                    | Op::Convert(..)
+                    | Op::Builtin(..) => break 'path None,
+                }
+            };
+            if let Some(found) = found {
+                break found;
             }
+            let Some((alternative, depth)) = alternatives.pop() else {
+                return Ok(None);
+            };
+            steps.truncate(depth);
+            node = alternative;
         };
         for step in steps.into_iter().rev() {
             match step {
@@ -730,6 +778,59 @@ impl Engine<'_> {
                 },
                 Step::Wrapped(length) => lengths.push(Some(length)),
             }
+        }
+        Ok(Some(lengths))
+    }
+
+    fn recursive_lengths(
+        &self,
+        function: FnId,
+        args: &[Option<Val>],
+    ) -> Result<Option<Vec<Option<u32>>>, Internal> {
+        let typed = args
+            .iter()
+            .flatten()
+            .flat_map(Val::nodes)
+            .all(|node| self.memo.sigs.contains_key(&node));
+        if !typed {
+            return Ok(None);
+        }
+        let key = FamilyKey {
+            function,
+            args: args
+                .iter()
+                .map(|arg| self.family_shape(arg.as_ref()))
+                .collect::<Result<_, _>>()?,
+        };
+        let Some(&scope) = self
+            .memo
+            .family_scopes
+            .get(&key)
+            .and_then(|scopes| scopes.last())
+        else {
+            return Ok(None);
+        };
+        let body = self.hir.fn_decl(function)?.value;
+        let root = match self.memo.bounded_roots.get(&(function, scope)) {
+            Some(joined) => *joined,
+            None => match self.memo.exprs.get(&(body, scope)) {
+                Some(Val::Scalar(node)) => *node,
+                Some(Val::Array(array)) => {
+                    let mut lengths: Vec<Option<u32>> =
+                        array.shape.lengths().into_iter().map(Some).collect();
+                    if let Some(outer) = lengths.last_mut() {
+                        *outer = None;
+                    }
+                    return Ok(Some(lengths));
+                }
+                Some(Val::Error) | None => return Ok(None),
+            },
+        };
+        let Some(mut lengths) = self.lengths_on_any_path(root, true)? else {
+            return Ok(None);
+        };
+        if let Some(outer) = lengths.last_mut() {
+            *outer = None;
         }
         Ok(Some(lengths))
     }

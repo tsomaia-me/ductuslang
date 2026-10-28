@@ -159,11 +159,12 @@ impl Engine<'_> {
             return Ok(Some(Extra::None));
         }
         let single = arms.iter().any(|arm| !self.arrays.contains(arm));
+        let mut definite = Vec::with_capacity(arms.len());
         let mut array = false;
         for arm in arms {
-            if self.definite_array(*arm)?
-                || (self.arrays.contains(arm) && self.bounded_recursion(*arm)?)
-            {
+            let known = self.definite_array(*arm)?;
+            definite.push(known);
+            if known || (self.arrays.contains(arm) && self.bounded_recursion(*arm)?) {
                 array = true;
             }
         }
@@ -189,7 +190,11 @@ impl Engine<'_> {
                 forms.push((self.definite_array(arm)?.then_some(true), None));
                 continue;
             }
-            if !(single && array) {
+            let beside_array = arms
+                .iter()
+                .zip(&definite)
+                .any(|(other, known)| *other != arm && *known);
+            if !(single && array || beside_array) {
                 forms.push((None, None));
                 continue;
             }

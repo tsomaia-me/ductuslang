@@ -232,7 +232,10 @@ impl Engine<'_> {
         Ok(Some(Some(joined)))
     }
 
-    fn family_shape(&self, arg: Option<&Val>) -> Result<ArgShape, Internal> {
+    pub(in crate::semantics::analysis) fn family_shape(
+        &self,
+        arg: Option<&Val>,
+    ) -> Result<ArgShape, Internal> {
         let sig_of = |node: &NodeId| {
             let sig = self.known_sig(*node)?;
             Ok(ArgSig {

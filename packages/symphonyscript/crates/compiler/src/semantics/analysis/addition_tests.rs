@@ -723,7 +723,15 @@ fn a_compile_time_match_on_a_bare_variant_computes_its_chosen_arm() {
 #[test]
 fn a_choice_whose_arms_agree_in_shape_computes_its_chosen_arm() {
     let held = "input held: i32[..4] = [1, 2]\n";
-    let rows: [(&[&str], i128); 1] = [(&[held, "Clip c:\n    Note/(if false then 7 else 5)\n"], 5)];
+    let f = "fn f(n): if n > 3 then [1] else [1] + f(n + 1)\n";
+    let rows: [(&[&str], i128); 3] = [
+        (&[held, "Clip c:\n    Note/(if false then 7 else 5)\n"], 5),
+        (&[f, "Clip c:\n    Note/(f(0)[0])\n"], 1),
+        (
+            &[f, "Clip c:\n    Note/((if false then f(0) else [1])[0])\n"],
+            1,
+        ),
+    ];
     for (items, expected) in rows {
         for text in in_every_order(items) {
             let (diagnostics, value) = analyzed(&vocabulary(), &text, |engine| {
