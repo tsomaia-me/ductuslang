@@ -182,6 +182,7 @@ impl Engine<'_> {
         for cell in pending {
             let mut stack = vec![self.binding(*cell)?.init];
             while let Some(node) = stack.pop() {
+                crate::semantics::counted_walk::CountedWalk::EnumBindingsFlows.step();
                 self.flow_step();
                 if !carried.insert(node) {
                     continue;
@@ -195,6 +196,7 @@ impl Engine<'_> {
         let mut used = FastSet::default();
         let mut ends = FastMap::default();
         for (index, node) in self.nodes.iter().enumerate() {
+            crate::semantics::counted_walk::CountedWalk::EnumBindingsFlows.step();
             self.flow_step();
             let Op::Use(inner) = node.op else {
                 continue;
@@ -216,6 +218,7 @@ impl Engine<'_> {
         }
         let read: FastSet<NodeId> = self.memo.groups.values().copied().collect();
         for group in &self.memo.group_list {
+            crate::semantics::counted_walk::CountedWalk::EnumBindingsFlows.step();
             if read.contains(group) && self.is_bare_value(*group)? {
                 members.insert(Member::Value(*group));
             }
@@ -254,6 +257,7 @@ impl Engine<'_> {
         for start in sorted {
             let mut stack = vec![(start, false)];
             while let Some((member, expanded)) = stack.pop() {
+                crate::semantics::counted_walk::CountedWalk::EnumBindingsFlows.step();
                 self.flow_step();
                 if done.contains(&member) {
                     continue;
@@ -509,6 +513,7 @@ impl Engine<'_> {
         let mut seen = FastSet::default();
         let mut stack = vec![root];
         while let Some(node) = stack.pop() {
+            crate::semantics::counted_walk::CountedWalk::EnumBindingsValueBares.step();
             self.flow_step();
             if !seen.insert(node) {
                 continue;
@@ -592,6 +597,7 @@ impl Engine<'_> {
         let mut seen = FastSet::default();
         let mut stack = vec![root];
         while let Some(node) = stack.pop() {
+            crate::semantics::counted_walk::CountedWalk::EnumBindingsValueReads.step();
             self.flow_step();
             if !seen.insert(node) {
                 continue;
@@ -642,6 +648,7 @@ impl Engine<'_> {
         let mut values: FastMap<NodeId, Option<Scalar>> = FastMap::default();
         let mut stack = vec![(root, false)];
         while let Some((node, ready)) = stack.pop() {
+            crate::semantics::counted_walk::CountedWalk::EnumBindingsCarriedEnum.step();
             if values.contains_key(&node) {
                 continue;
             }
@@ -779,6 +786,7 @@ impl Engine<'_> {
             let mut flow = vec![start];
             let mut stack = vec![start];
             while let Some(member) = stack.pop() {
+                crate::semantics::counted_walk::CountedWalk::EnumBindingsFlowsWithoutEnum.step();
                 self.flow_step();
                 for other in neighbours.get(&member).into_iter().flatten() {
                     if seen.insert(*other) {
@@ -903,6 +911,7 @@ impl Engine<'_> {
         let mut seen = FastSet::default();
         let mut stack = vec![root];
         while let Some(node) = stack.pop() {
+            crate::semantics::counted_walk::CountedWalk::EnumBindingsWritesVariant.step();
             self.flow_step();
             if !seen.insert(node) {
                 continue;
@@ -920,6 +929,7 @@ impl Engine<'_> {
         let mut aliases: FastMap<NodeId, Vec<Loc>> = FastMap::default();
         let mut values = Vec::with_capacity(self.memo.lets.len());
         for ((scope, local), bound) in &self.memo.lets {
+            crate::semantics::counted_walk::CountedWalk::EnumBindingsLetWriters.step();
             self.flow_step();
             let Some(decl) = self.let_decl(*scope, *local)? else {
                 continue;

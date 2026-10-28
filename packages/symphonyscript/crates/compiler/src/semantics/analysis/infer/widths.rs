@@ -105,6 +105,7 @@ impl Engine<'_> {
         let mut members = Vec::new();
         let mut pending = vec![root];
         while let Some(binding) = pending.pop() {
+            crate::semantics::counted_walk::CountedWalk::WidthsSettleNatural.step();
             if self.typing.natural.contains_key(&binding) || parts.contains_key(&binding) {
                 continue;
             }
@@ -124,6 +125,7 @@ impl Engine<'_> {
         }
         let mut work = members.clone();
         while let Some(member) = work.pop() {
+            crate::semantics::counted_walk::CountedWalk::WidthsSettleNatural.step();
             let (own, cells) = parts
                 .get(&member)
                 .ok_or(Internal::missed("natural width"))?;

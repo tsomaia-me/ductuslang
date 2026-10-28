@@ -296,6 +296,7 @@ impl Engine<'_> {
         };
         let mut current = Some(scope);
         while let Some(id) = current {
+            crate::semantics::counted_walk::CountedWalk::PathsWrittenBase.step();
             let record = self.scope_of(id)?;
             match &record.kind {
                 ScopeKind::ForVar { name: var, .. } if var == name => {
@@ -558,6 +559,7 @@ impl Engine<'_> {
     fn written_clause(&self, scope: ScopeId) -> Result<Option<(HirWireId, ScopeId)>, Internal> {
         let mut current = Some(scope);
         while let Some(id) = current {
+            crate::semantics::counted_walk::CountedWalk::PathsWrittenClause.step();
             let record = self.scope_of(id)?;
             match record.kind {
                 ScopeKind::WrittenClause { wire } => {
@@ -583,6 +585,7 @@ impl Engine<'_> {
         let mut exprs = vec![self.hir.wire(wire)?.destination];
         let mut roots = Vec::new();
         while let Some(expr) = exprs.pop() {
+            crate::semantics::counted_walk::CountedWalk::PathsWrittenDestination.step();
             match &self.hir.expr(expr)?.kind {
                 ExprKind::If(_, then, otherwise) => {
                     exprs.push(*otherwise);
@@ -606,6 +609,7 @@ impl Engine<'_> {
         let mut candidates = Vec::new();
         let mut stack: Vec<NodeId> = roots.into_iter().rev().collect();
         while let Some(node) = stack.pop() {
+            crate::semantics::counted_walk::CountedWalk::PathsWrittenDestination.step();
             match &self.node(node)?.op {
                 Op::NodeRef(item) => {
                     if !candidates.contains(item) {
@@ -654,6 +658,7 @@ impl Engine<'_> {
     fn enclosing_wire(&self, scope: ScopeId) -> Result<Option<WireId>, Internal> {
         let mut current = Some(scope);
         while let Some(id) = current {
+            crate::semantics::counted_walk::CountedWalk::PathsEnclosingWire.step();
             let scope = self.scope_of(id)?;
             if let ScopeKind::WireClause { wire } = scope.kind {
                 return Ok(Some(wire));
@@ -1308,6 +1313,7 @@ impl Engine<'_> {
         let mut found = Vec::new();
         let mut stack = vec![root];
         while let Some(node) = stack.pop() {
+            crate::semantics::counted_walk::CountedWalk::PathsCandidates.step();
             match &self.node(node)?.op {
                 Op::NodeRef(item) => found.push(*item),
                 Op::If(_, then, otherwise) => {

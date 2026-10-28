@@ -40,6 +40,7 @@ impl Engine<'_> {
             let root = NodeId(u32::try_from(index).map_err(|_| Internal::missed("node"))?);
             let mut stack = vec![(root, false)];
             while let Some((node, ready)) = stack.pop() {
+                crate::semantics::counted_walk::CountedWalk::OrderMarkReachingReads.step();
                 if node.index() < marked || known.contains_key(&node) {
                     continue;
                 }
@@ -94,6 +95,7 @@ impl Engine<'_> {
         ready.reverse();
         let mut order = Vec::with_capacity(count);
         while let Some(binding) = ready.pop() {
+            crate::semantics::counted_walk::CountedWalk::OrderBindingOrder.step();
             order.push(binding);
             let targets = reads
                 .get(binding.index())

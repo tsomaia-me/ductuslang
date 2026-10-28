@@ -116,6 +116,7 @@ impl Engine<'_> {
             self.detached_roots(root, (None, false), None, &mut detached)?;
         }
         for index in 0..self.bindings.len() {
+            crate::semantics::counted_walk::CountedWalk::ModInfer.step();
             let binding = BindingId(u32::try_from(index).unwrap_or(u32::MAX));
             self.demand_sig(self.binding(binding)?.init)?;
         }
@@ -182,6 +183,7 @@ impl Engine<'_> {
             self.check_detached(node, (None, false), false, &mut roots)?;
         }
         for index in 0..self.bindings.len() {
+            crate::semantics::counted_walk::CountedWalk::ModInfer.step();
             let binding = BindingId(u32::try_from(index).unwrap_or(u32::MAX));
             if let Some(own) = self.typing.own.get(&binding).copied() {
                 let init = self.binding(binding)?.init;
@@ -190,6 +192,7 @@ impl Engine<'_> {
             }
         }
         for index in 0..self.wires.len() {
+            crate::semantics::counted_walk::CountedWalk::ModInfer.step();
             let wire = WireId(u32::try_from(index).unwrap_or(u32::MAX));
             if let Some(Destination::Select { node, .. }) = self.memo.destinations.get(&wire) {
                 self.destination_labels(*node)?;

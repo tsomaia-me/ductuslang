@@ -958,6 +958,7 @@ impl Engine<'_> {
         let mut unfit = Vec::new();
         let mut parts = vec![(node, value.clone())];
         while let Some((at, part)) = parts.pop() {
+            crate::semantics::counted_walk::CountedWalk::RunFit.step();
             match (&self.node(at)?.op, &part) {
                 (Op::Array(elements), CVal::Array(array)) if elements.len() == array.len() => {
                     parts.extend(elements.iter().copied().zip(array.items().iter().cloned()));

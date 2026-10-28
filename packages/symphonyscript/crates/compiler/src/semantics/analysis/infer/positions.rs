@@ -51,10 +51,12 @@ impl Engine<'_> {
         mut positions: Vec<Position>,
     ) -> Result<Vec<Position>, Internal> {
         for index in 0..self.instances.len() {
+            crate::semantics::counted_walk::CountedWalk::PositionsPositions.step();
             let instance = InstanceId(u32::try_from(index).unwrap_or(u32::MAX));
             self.item_positions(ItemRef::Instance(instance), &mut positions)?;
         }
         for index in 0..self.wires.len() {
+            crate::semantics::counted_walk::CountedWalk::PositionsPositions.step();
             let wire = WireId(u32::try_from(index).unwrap_or(u32::MAX));
             self.demand(Query::Destination(wire))?;
             self.item_positions(ItemRef::Wire(wire), &mut positions)?;
@@ -272,6 +274,7 @@ impl Engine<'_> {
             None,
         )];
         while let Some((expr, scope, typed, passed_over, origin, flow, picked)) = stack.pop() {
+            crate::semantics::counted_walk::CountedWalk::PositionsDetachedRoots.step();
             if !self.typing.detached_walks.insert((expr, scope)) {
                 continue;
             }

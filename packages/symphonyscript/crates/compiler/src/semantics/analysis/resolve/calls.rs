@@ -436,6 +436,7 @@ impl Engine<'_> {
     fn same_path(&self, first: ExprId, second: ExprId) -> Result<bool, Internal> {
         let mut pairs = vec![(first, second)];
         while let Some((left, right)) = pairs.pop() {
+            crate::semantics::counted_walk::CountedWalk::CallsSamePath.step();
             match (&self.hir.expr(left)?.kind, &self.hir.expr(right)?.kind) {
                 (ExprKind::Name(a), ExprKind::Name(b)) if a == b => {}
                 (ExprKind::Field(a, name), ExprKind::Field(b, other))
@@ -602,6 +603,7 @@ impl Engine<'_> {
     fn nesting_of(&self, scope: ScopeId) -> Result<Rc<Vec<(FnId, u64)>>, Internal> {
         let mut current = Some(scope);
         while let Some(id) = current {
+            crate::semantics::counted_walk::CountedWalk::CallsNestingOf.step();
             let record = self.scope_of(id)?;
             match &record.kind {
                 ScopeKind::Locals(locals) => return Ok(locals.nesting.clone()),
@@ -726,6 +728,7 @@ impl Engine<'_> {
     pub(super) fn inside_function_body(&self, scope: ScopeId) -> Result<bool, Internal> {
         let mut current = Some(scope);
         while let Some(id) = current {
+            crate::semantics::counted_walk::CountedWalk::CallsInsideFunctionBody.step();
             let record = self.scope_of(id)?;
             match &record.kind {
                 ScopeKind::Locals(locals) => {
@@ -973,6 +976,7 @@ impl Engine<'_> {
         let mut parts: FastMap<(ExprId, ScopeId), Vec<(ExprId, ScopeId)>> = FastMap::default();
         let mut stack = vec![(root, scope, false)];
         while let Some((expr, scope, ready)) = stack.pop() {
+            crate::semantics::counted_walk::CountedWalk::CallsArmType.step();
             if found.contains_key(&(expr, scope)) {
                 continue;
             }

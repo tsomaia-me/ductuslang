@@ -5,7 +5,7 @@ use super::reads_cell::holds_cell;
 use crate::semantics::Internal;
 use crate::semantics::analysis::attr_value_source::AttrValueSource;
 use crate::semantics::analysis::engine::Engine;
-use crate::semantics::analysis::fast_hash::FastSet;
+use crate::semantics::analysis::fast_hash::{FastMap, FastSet};
 use crate::semantics::analysis::ids::{InstanceId, ScopeId, WireId};
 use crate::semantics::analysis::item_ref::ItemRef;
 use crate::semantics::analysis::let_ref::LetRef;
@@ -45,12 +45,14 @@ impl Engine<'_> {
             defaults: self.evaluated_defaults.clone(),
             reached: FastSet::default(),
         };
+        let mut arg_reads = FastMap::default();
         for (root, scope) in self.value_roots()? {
             if self.inside_function_body(scope)? {
                 continue;
             }
             let mut stack = vec![root];
             while let Some(expr) = stack.pop() {
+                crate::semantics::counted_walk::CountedWalk::CountInliningCountInlining.step();
                 if self.memo.exprs.contains_key(&(expr, scope)) {
                     continue;
                 }
@@ -67,7 +69,7 @@ impl Engine<'_> {
                     }
                     Called::Unresolved => continue,
                 };
-                if self.rejected_recursion(function, args, scope)? {
+                if self.rejected_recursion(function, args, scope, &mut arg_reads)? {
                     stack.extend(args.values().into_iter().rev());
                     continue;
                 }
@@ -95,6 +97,7 @@ impl Engine<'_> {
         function: FnId,
         args: &Args,
         scope: ScopeId,
+        arg_reads: &mut FastMap<(ExprId, ScopeId), bool>,
     ) -> Result<bool, Internal> {
         if !self.is_recursive(function)? || self.bounded_cycle(function)? {
             return Ok(false);
@@ -106,46 +109,70 @@ impl Engine<'_> {
         if body_reads {
             return Ok(true);
         }
-        let mut stack = args.values();
-        while let Some(expr) = stack.pop() {
-            let kind = &self.hir.expr(expr)?.kind;
-            match kind {
-                ExprKind::Field(..) => return Ok(true),
-                ExprKind::Name(name) => {
-                    let reads = match self.find(name, scope)? {
-                        Found::Decl(Decl::Input(_) | Decl::State(_)) => true,
-                        Found::Decl(Decl::Let(id)) => self
-                            .memo
-                            .lets
-                            .get(&(self.source_global, LetRef::Top(id)))
-                            .is_some_and(holds_cell),
-                        Found::Query(Query::Input(_) | Query::State(_)) => true,
-                        Found::Query(query) => match self.bound(query, &mut Vec::new()) {
-                            Some(bound) => holds_cell(&bound),
-                            None => {
-                                if let Query::Let(_, LetRef::Top(id)) = query {
-                                    self.let_reads_cell(id)?
-                                } else {
-                                    false
-                                }
-                            }
-                        },
-                        Found::Val(val) => val
-                            .nodes()
-                            .iter()
-                            .any(|node| self.memo.sigs.get(node).is_some_and(|sig| sig.reactive)),
-                        Found::Decl(_) | Found::Item(_) | Found::Placeholder | Found::Nothing => {
-                            false
-                        }
-                    };
-                    if reads {
-                        return Ok(true);
-                    }
-                }
-                _ => stack.extend(kind.children()),
+        for value in args.values() {
+            if self.expr_reads_cell(value, scope, arg_reads)? {
+                return Ok(true);
             }
         }
         Ok(false)
+    }
+
+    fn expr_reads_cell(
+        &mut self,
+        root: ExprId,
+        scope: ScopeId,
+        known: &mut FastMap<(ExprId, ScopeId), bool>,
+    ) -> Result<bool, Internal> {
+        let mut stack = vec![(root, false)];
+        while let Some((expr, children_known)) = stack.pop() {
+            crate::semantics::counted_walk::CountedWalk::CountInliningRejectedRecursion.step();
+            if known.contains_key(&(expr, scope)) {
+                continue;
+            }
+            let kind = &self.hir.expr(expr)?.kind;
+            let reads = match kind {
+                ExprKind::Field(..) => true,
+                ExprKind::Name(name) => self.name_reads_cell(name, scope)?,
+                _ if children_known => kind
+                    .children()
+                    .iter()
+                    .any(|child| known.get(&(*child, scope)) == Some(&true)),
+                _ => {
+                    stack.push((expr, true));
+                    stack.extend(kind.children().into_iter().map(|child| (child, false)));
+                    continue;
+                }
+            };
+            known.insert((expr, scope), reads);
+        }
+        Ok(known.get(&(root, scope)) == Some(&true))
+    }
+
+    fn name_reads_cell(&mut self, name: &str, scope: ScopeId) -> Result<bool, Internal> {
+        Ok(match self.find(name, scope)? {
+            Found::Decl(Decl::Input(_) | Decl::State(_)) => true,
+            Found::Decl(Decl::Let(id)) => self
+                .memo
+                .lets
+                .get(&(self.source_global, LetRef::Top(id)))
+                .is_some_and(holds_cell),
+            Found::Query(Query::Input(_) | Query::State(_)) => true,
+            Found::Query(query) => match self.bound(query, &mut Vec::new()) {
+                Some(bound) => holds_cell(&bound),
+                None => {
+                    if let Query::Let(_, LetRef::Top(id)) = query {
+                        self.let_reads_cell(id)?
+                    } else {
+                        false
+                    }
+                }
+            },
+            Found::Val(val) => val
+                .nodes()
+                .iter()
+                .any(|node| self.memo.sigs.get(node).is_some_and(|sig| sig.reactive)),
+            Found::Decl(_) | Found::Item(_) | Found::Placeholder | Found::Nothing => false,
+        })
     }
 
     fn called(&mut self, callee: ExprId, args: &Args, scope: ScopeId) -> Result<Called, Internal> {
@@ -195,6 +222,7 @@ impl Engine<'_> {
                 .map(|param| Reached::Default(start, *param)),
         );
         while let Some(reached) = stack.pop() {
+            crate::semantics::counted_walk::CountedWalk::CountInliningReached.step();
             if !counted.reached.insert(reached) {
                 continue;
             }
@@ -242,6 +270,7 @@ impl Engine<'_> {
             }
         }
         for index in 0..self.instances.len() {
+            crate::semantics::counted_walk::CountedWalk::CountInliningValueRoots.step();
             let id = InstanceId(u32::try_from(index).map_err(|_| Internal::missed("instance"))?);
             self.attr_roots(ItemRef::Instance(id), &mut roots)?;
             let record = self.instance(id)?;
@@ -250,6 +279,7 @@ impl Engine<'_> {
             }
         }
         for index in 0..self.wires.len() {
+            crate::semantics::counted_walk::CountedWalk::CountInliningValueRoots.step();
             let id = WireId(u32::try_from(index).map_err(|_| Internal::missed("wire"))?);
             let record = self.wire(id)?;
             let decl = hir.wire(record.wire)?;

@@ -44,6 +44,8 @@ pub(crate) fn recursive_functions(
         let mut unsure = false;
         let mut stack = roots;
         while let Some(expr) = stack.pop() {
+            crate::semantics::counted_walk::CountedWalk::RecursiveFunctionsRecursiveFunctions
+                .step();
             let kind = &hir.expr(expr)?.kind;
             if let ExprKind::Call(callee, _) = kind
                 && let ExprKind::Name(name) = &hir.expr(*callee)?.kind

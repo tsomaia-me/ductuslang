@@ -26,6 +26,7 @@ pub(crate) fn strongly_connected(edges: &[Vec<usize>]) -> Result<Vec<Vec<usize>>
         let mut work: Vec<(usize, usize)> = vec![(root, 0)];
         visit(root, &mut next, &mut marks, &mut stack)?;
         while let Some(&mut (node, ref mut edge)) = work.last_mut() {
+            crate::semantics::counted_walk::CountedWalk::StronglyConnectedStronglyConnected.step();
             let targets = edges.get(node).ok_or(Internal::missed("graph node"))?;
             if let Some(&target) = targets.get(*edge) {
                 *edge += 1;

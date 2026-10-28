@@ -17,6 +17,7 @@ use crate::semantics::ir::StateId;
 impl Engine<'_> {
     pub(super) fn mark_own_history(&mut self) -> Result<(), Internal> {
         for index in 0..self.hir.states.len() {
+            crate::semantics::counted_walk::CountedWalk::HistoryReadsMarkOwnHistory.step();
             let state = StateId(u32::try_from(index).unwrap_or(u32::MAX));
             self.mark_own(state)?;
         }
@@ -75,6 +76,7 @@ impl Engine<'_> {
         let mut missing = Vec::new();
         let mut stack = vec![start];
         while let Some(node) = stack.pop() {
+            crate::semantics::counted_walk::CountedWalk::HistoryReadsKindComponent.step();
             if index.contains_key(&node) || self.memo.kind_components.contains_key(&node) {
                 continue;
             }
@@ -324,6 +326,7 @@ impl Engine<'_> {
             let mut seen = vec![false; members.len()];
             let mut affected = Vec::new();
             while let Some(position) = changed.pop() {
+                crate::semantics::counted_walk::CountedWalk::HistoryReadsSettleKinds.step();
                 match seen.get_mut(position) {
                     Some(mark) if !*mark => *mark = true,
                     Some(_) | None => continue,
@@ -510,6 +513,7 @@ impl Engine<'_> {
         let mut stack = members.to_vec();
         let mut removed = Vec::new();
         while let Some(node) = stack.pop() {
+            crate::semantics::counted_walk::CountedWalk::HistoryReadsInvalidateReaders.step();
             for reader in readers.get(&node).into_iter().flatten() {
                 if seen.insert(*reader) {
                     self.memo.sigs.remove(reader);

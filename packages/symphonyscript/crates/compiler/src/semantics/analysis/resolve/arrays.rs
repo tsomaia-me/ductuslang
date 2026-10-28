@@ -244,6 +244,7 @@ impl Engine<'_> {
         let mut seen = FastSet::default();
         let mut stack = roots.to_vec();
         while let Some(node) = stack.pop() {
+            crate::semantics::counted_walk::CountedWalk::ArraysBareLeaves.step();
             if !seen.insert(node) {
                 continue;
             }
@@ -403,6 +404,7 @@ impl Engine<'_> {
         let mut strings = FastSet::default();
         let mut stack = vec![(root, false)];
         while let Some((node, expanded)) = stack.pop() {
+            crate::semantics::counted_walk::CountedWalk::ArraysChoiceBytes.step();
             if expanded {
                 order.push(node);
                 continue;

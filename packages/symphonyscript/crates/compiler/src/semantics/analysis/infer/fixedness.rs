@@ -17,6 +17,7 @@ type Fallbacks = FastMap<BindingId, Vec<Option<Layout>>>;
 impl Engine<'_> {
     pub(super) fn settle_states(&mut self) -> Result<(), Internal> {
         for index in 0..self.hir.states.len() {
+            crate::semantics::counted_walk::CountedWalk::FixednessSettleStates.step();
             let state = StateId(u32::try_from(index).map_err(|_| Internal::missed("state"))?);
             let mut previous = None;
             loop {
@@ -171,6 +172,7 @@ impl Engine<'_> {
     ) -> Result<(), Internal> {
         let mut active: FastSet<BindingId> = work.iter().copied().collect();
         while let Some(&binding) = work.last() {
+            crate::semantics::counted_walk::CountedWalk::FixednessSettleBindingReads.step();
             if computed.contains_key(&binding)
                 || self.memo.binding_state_reads.contains_key(&binding)
             {
@@ -274,6 +276,7 @@ impl Engine<'_> {
         let mut layouts: Vec<Option<Layout>> = vec![None; group.len()];
         let mut pending: Vec<usize> = (0..group.len()).rev().collect();
         while let Some(position) = pending.pop() {
+            crate::semantics::counted_walk::CountedWalk::FixednessSettleGroup.step();
             let binding = *group.get(position).ok_or(Internal::missed("state"))?;
             if assumed.members.get(&binding) == Some(&true) {
                 continue;

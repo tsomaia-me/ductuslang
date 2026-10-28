@@ -98,6 +98,7 @@ impl Engine<'_> {
             .filter(|branch| *branch != chosen)
             .collect();
         while let Some(expr) = stack.pop() {
+            crate::semantics::counted_walk::CountedWalk::SelectionPassOver.step();
             let kind = &self.hir.expr(expr)?.kind;
             if let ExprKind::Call(..) = kind {
                 self.memo.passed_over_calls.insert((expr, scope));

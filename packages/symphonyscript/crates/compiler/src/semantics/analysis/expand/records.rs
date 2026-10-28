@@ -88,6 +88,7 @@ impl<'a> Engine<'a> {
     ) -> Result<Option<Decl>, Internal> {
         let mut current = Some(scope);
         while let Some(id) = current {
+            crate::semantics::counted_walk::CountedWalk::RecordsKindDecl.step();
             let scope = self.scope_of(id)?;
             if let ScopeKind::Global { prelude } = scope.kind {
                 let namespace = if prelude {

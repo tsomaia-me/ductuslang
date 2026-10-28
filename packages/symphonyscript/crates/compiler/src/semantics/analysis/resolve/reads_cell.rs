@@ -27,6 +27,7 @@ impl Engine<'_> {
         let mut reads = false;
         let mut missing = false;
         while let Some(function) = functions.pop() {
+            crate::semantics::counted_walk::CountedWalk::ReadsCellBodyReadsCell.step();
             if !seen.insert(function) {
                 continue;
             }
@@ -52,6 +53,7 @@ impl Engine<'_> {
             stack.push(decl.value);
             stack.extend(decl.bound.iter().map(|bound| bound.fallback));
             while let Some(expr) = stack.pop() {
+                crate::semantics::counted_walk::CountedWalk::ReadsCellBodyReadsCell.step();
                 let kind = &hir.expr(expr)?.kind;
                 match kind {
                     ExprKind::Name(name) if !locals.contains(name.as_str()) => {
@@ -144,6 +146,7 @@ impl Engine<'_> {
             let mut read_locals = BTreeSet::new();
             let mut stack = vec![value];
             while let Some(expr) = stack.pop() {
+                crate::semantics::counted_walk::CountedWalk::ReadsCellBodyCertainlyReadsCell.step();
                 let kind = &hir.expr(expr)?.kind;
                 match kind {
                     ExprKind::Name(name) if params.contains(name.as_str()) => {}
@@ -216,6 +219,7 @@ impl Engine<'_> {
     ) -> Result<bool, Internal> {
         let mut seen_lets = FastSet::default();
         while let Some((expr, top_level)) = stack.pop() {
+            crate::semantics::counted_walk::CountedWalk::ReadsCellVariableArray.step();
             match &self.hir.expr(expr)?.kind {
                 ExprKind::Name(name)
                     if top_level
@@ -318,6 +322,7 @@ impl Engine<'_> {
         let mut seen_lets = FastSet::default();
         let mut seen_locals = BTreeSet::new();
         while let Some((expr, top_level)) = stack.pop() {
+            crate::semantics::counted_walk::CountedWalk::ReadsCellSelectorReadsCell.step();
             let kind = &self.hir.expr(expr)?.kind;
             if let ExprKind::Name(name) = kind {
                 if !top_level && params.contains(name.as_str()) {

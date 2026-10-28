@@ -12,6 +12,7 @@ pub(crate) fn map_leaves<E>(
     };
     let mut stack: Vec<(CArray, bool)> = vec![(root.clone(), false)];
     while let Some((array, ready)) = stack.pop() {
+        crate::semantics::counted_walk::CountedWalk::MapLeavesMapLeaves.step();
         if mapped.contains_key(&array.identity()) {
             continue;
         }

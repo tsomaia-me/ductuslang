@@ -76,6 +76,7 @@ impl Engine<'_> {
             }
         }
         while let Some(instance) = self.body_queue.pop_front() {
+            crate::semantics::counted_walk::CountedWalk::ExpansionExpand.step();
             self.expand_body(instance)?;
         }
         Ok(())
@@ -373,6 +374,7 @@ impl Engine<'_> {
         let mut blocks = vec![root];
         let mut sites: Vec<(Site, Loc)> = Vec::new();
         while let Some(block) = blocks.pop() {
+            crate::semantics::counted_walk::CountedWalk::ExpansionNamedSites.step();
             for item in &hir.block(block)?.items {
                 match item {
                     BodyItem::Placement(id) if hir.placement(*id)?.name.is_some() => {
@@ -408,6 +410,7 @@ impl Engine<'_> {
     fn local_visible(&self, scope: ScopeId, name: &str) -> Result<bool, Internal> {
         let mut current = Some(scope);
         while let Some(id) = current {
+            crate::semantics::counted_walk::CountedWalk::ExpansionLocalVisible.step();
             let record = self.scope_of(id)?;
             match &record.kind {
                 ScopeKind::Locals(locals) if locals.names.contains_key(name) => return Ok(true),
@@ -572,6 +575,7 @@ impl Engine<'_> {
             walk,
         }];
         while let Some(frame) = frames.pop() {
+            crate::semantics::counted_walk::CountedWalk::ExpansionItems.step();
             if self.limit_reached {
                 return Ok(());
             }

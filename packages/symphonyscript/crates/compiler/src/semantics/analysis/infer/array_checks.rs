@@ -151,6 +151,7 @@ impl Engine<'_> {
         use symphonyscript_core::Builtin;
         let mut leaves = vec![node];
         while let Some(leaf) = leaves.pop() {
+            crate::semantics::counted_walk::CountedWalk::ArrayChecksIsStringBytes.step();
             match &self.node(leaf)?.op {
                 Op::Use(inner) | Op::Chosen(inner) => leaves.push(*inner),
                 Op::If(_, then, otherwise) => leaves.extend([*then, *otherwise]),
@@ -292,6 +293,7 @@ impl Engine<'_> {
         use crate::semantics::analysis::op::Op;
         use crate::semantics::ir::StateId;
         for index in 0..self.hir.states.len() {
+            crate::semantics::counted_walk::CountedWalk::ArrayChecksStateChecks.step();
             let state = StateId(u32::try_from(index).unwrap_or(u32::MAX));
             let Some(BoundVal::Scalar(Bound::Cell(binding))) =
                 self.memo.states.get(&state).cloned()
@@ -481,6 +483,7 @@ impl Engine<'_> {
         use crate::semantics::analysis::binding_kind::BindingKind;
         use crate::semantics::analysis::ids::BindingId;
         for index in 0..self.bindings.len() {
+            crate::semantics::counted_walk::CountedWalk::ArrayChecksAnnotatedCapacities.step();
             let binding = BindingId(u32::try_from(index).unwrap_or(u32::MAX));
             let record = self.binding(binding)?.clone();
             if !matches!(record.kind, BindingKind::Let | BindingKind::State { .. }) {

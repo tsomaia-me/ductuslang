@@ -132,6 +132,7 @@ impl Engine<'_> {
     pub(super) fn capacities(&mut self) -> Result<(), Internal> {
         let mut members: Vec<(StateId, BindingId)> = Vec::new();
         for index in 0..self.hir.states.len() {
+            crate::semantics::counted_walk::CountedWalk::CapacitiesCapacities.step();
             let state = StateId(u32::try_from(index).unwrap_or(u32::MAX));
             let Some(BoundVal::Scalar(Bound::Cell(binding))) =
                 self.memo.states.get(&state).cloned()
@@ -277,6 +278,7 @@ impl Engine<'_> {
     fn cover(&self, init: NodeId, covered: &mut FastSet<NodeId>) -> Result<(), Internal> {
         let mut stack = vec![init];
         while let Some(node) = stack.pop() {
+            crate::semantics::counted_walk::CountedWalk::CapacitiesCover.step();
             if !covered.insert(node) {
                 continue;
             }
@@ -293,6 +295,7 @@ impl Engine<'_> {
         let env = Env::default();
         let mut done: FastMap<NodeId, Extent> = FastMap::default();
         for index in 0..self.nodes.len() {
+            crate::semantics::counted_walk::CountedWalk::CapacitiesLengthLimits.step();
             let node = NodeId(u32::try_from(index).map_err(|_| Internal::missed("node"))?);
             let Op::Join(lhs, rhs) = self.node(node)?.op else {
                 continue;
@@ -462,6 +465,7 @@ impl Engine<'_> {
         let mut seen = FastSet::default();
         let mut stack = vec![init];
         while let Some(node) = stack.pop() {
+            crate::semantics::counted_walk::CountedWalk::CapacitiesStateDependencies.step();
             if !seen.insert(node) {
                 continue;
             }
@@ -574,6 +578,7 @@ impl Engine<'_> {
         }
         let mut env = Env::default();
         for bound in self.memo.states.values() {
+            crate::semantics::counted_walk::CountedWalk::CapacitiesIsVariable.step();
             let BoundVal::Scalar(Bound::Cell(binding)) = bound else {
                 continue;
             };

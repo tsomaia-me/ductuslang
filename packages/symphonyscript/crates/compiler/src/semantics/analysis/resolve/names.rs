@@ -24,6 +24,7 @@ impl Engine<'_> {
         let mut current = Some(scope);
         let mut skip_locals: Option<ScopeId> = None;
         while let Some(id) = current {
+            crate::semantics::counted_walk::CountedWalk::NamesFind.step();
             let parent = self.scope_of(id)?.parent;
             match &self.scope_of(id)?.kind {
                 ScopeKind::ForVar { name: var, value } if var == name => {

@@ -252,6 +252,7 @@ impl HirBuilder<'_> {
         };
         let mut token = item.first_token();
         while let Some(current) = token {
+            crate::semantics::counted_walk::CountedWalk::HirBuilderHeaderNames.step();
             if matches!(current.kind(), SyntaxKind::Newline | SyntaxKind::Indent)
                 || current.range().start >= item.range().end
             {

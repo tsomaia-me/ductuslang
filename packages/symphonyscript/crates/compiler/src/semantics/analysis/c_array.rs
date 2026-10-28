@@ -169,6 +169,7 @@ impl CArray {
         let mut out = Vec::with_capacity(end.saturating_sub(start));
         let mut stack: Vec<(&CArray, usize, usize)> = vec![(self, start, end)];
         while let Some((array, start, end)) = stack.pop() {
+            crate::semantics::counted_walk::CountedWalk::CArrayRange.step();
             if start >= end {
                 continue;
             }
@@ -227,6 +228,7 @@ impl CArray {
         let mut found = Vec::new();
         let mut stack: Vec<(&CArray, usize)> = vec![(self, 0)];
         while let Some((array, index)) = stack.pop() {
+            crate::semantics::counted_walk::CountedWalk::CArrayLeaves.step();
             let Some(item) = array.items().get(index) else {
                 continue;
             };
@@ -243,6 +245,7 @@ impl CArray {
         let mut seen: FastSet<(*const Repr, usize, usize)> = FastSet::default();
         let mut stack: Vec<(&CArray, usize, usize)> = vec![(self, 0, self.len())];
         while let Some((array, start, end)) = stack.pop() {
+            crate::semantics::counted_walk::CountedWalk::CArrayAllLeaves.step();
             if start >= end || !seen.insert((Rc::as_ptr(&array.0), start, end)) {
                 continue;
             }
@@ -288,6 +291,7 @@ impl PartialEq for CArray {
     fn eq(&self, other: &Self) -> bool {
         let mut pairs: Vec<(&CArray, &CArray)> = vec![(self, other)];
         while let Some((left, right)) = pairs.pop() {
+            crate::semantics::counted_walk::CountedWalk::CArrayEq.step();
             if Rc::ptr_eq(&left.0, &right.0) {
                 continue;
             }
@@ -314,6 +318,7 @@ impl fmt::Debug for CArray {
         let mut out = String::from("[");
         let mut stack: Vec<(&CArray, usize)> = vec![(self, 0)];
         while let Some((array, index)) = stack.pop() {
+            crate::semantics::counted_walk::CountedWalk::CArrayFmt.step();
             let Some(item) = array.items().get(index) else {
                 out.push(']');
                 continue;

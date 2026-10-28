@@ -38,6 +38,7 @@ impl Engine<'_> {
         let mut seen = FastSet::default();
         let mut stack = vec![scrutinee];
         while let Some(node) = stack.pop() {
+            crate::semantics::counted_walk::CountedWalk::ScrutineeTyChoiceTy.step();
             if !seen.insert(node) {
                 continue;
             }

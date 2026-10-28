@@ -134,6 +134,7 @@ impl Engine<'_> {
             for decl in &self.hir.states {
                 let mut stack = vec![decl.value];
                 while let Some(current) = stack.pop() {
+                    crate::semantics::counted_walk::CountedWalk::HistoryInStateInitializer.step();
                     if found.insert(current) {
                         stack.extend(self.hir.expr(current)?.kind.children());
                     }
@@ -284,6 +285,7 @@ impl Engine<'_> {
         let mut seen = FastSet::default();
         let mut stack = vec![init];
         while let Some(node) = stack.pop() {
+            crate::semantics::counted_walk::CountedWalk::HistoryHistoryReads.step();
             if !seen.insert(node) {
                 continue;
             }

@@ -303,6 +303,7 @@ impl Engine<'_> {
         let mut stack = vec![root];
         let mut seen = crate::semantics::analysis::fast_hash::FastSet::default();
         while let Some(node) = stack.pop() {
+            crate::semantics::counted_walk::CountedWalk::RunReachesRecursion.step();
             if !seen.insert(node) {
                 continue;
             }

@@ -31,6 +31,7 @@ pub(super) fn error_names(node: &NodeView<'_>) -> Vec<String> {
     let mut names = Vec::new();
     let mut stack: Vec<NodeView<'_>> = node.children().collect();
     while let Some(current) = stack.pop() {
+        crate::semantics::counted_walk::CountedWalk::BodiesErrorNames.step();
         match current.kind() {
             SyntaxKind::ErrorNode => names.extend(skipped_names(&current)),
             SyntaxKind::Body => {}
@@ -61,6 +62,7 @@ fn head(node: &NodeView<'_>) -> std::ops::Range<u32> {
             ElementView::Node(child) => {
                 let mut token = child.last_token();
                 while let Some(current) = token.clone() {
+                    crate::semantics::counted_walk::CountedWalk::BodiesHead.step();
                     if current.range().start < child.range().start {
                         token = None;
                         break;
@@ -127,6 +129,7 @@ impl<'p> HirBuilder<'_> {
         mut pending: Vec<(ast::Block<'p>, BlockId)>,
     ) -> Result<(), Internal> {
         while let Some((node, id)) = pending.pop() {
+            crate::semantics::counted_walk::CountedWalk::BodiesFill.step();
             let mut items = Vec::new();
             let mut skipped = Vec::new();
             let mut previous = None;

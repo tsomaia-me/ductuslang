@@ -68,6 +68,7 @@ impl InlineCounts {
             }
             let mut stack = vec![start];
             while let Some(&index) = stack.last() {
+                crate::semantics::counted_walk::CountedWalk::InlineCountsOf.step();
                 let visit = visit_of(&state, index)?;
                 if visit == Visit::Done {
                     stack.pop();
@@ -223,6 +224,7 @@ fn call_sites(
     let mut found = Vec::new();
     let mut stack = roots;
     while let Some(expr) = stack.pop() {
+        crate::semantics::counted_walk::CountedWalk::InlineCountsCallSites.step();
         *walked = walked.saturating_add(1);
         let kind = &hir.expr(expr)?.kind;
         if let ExprKind::Call(callee, args) = kind

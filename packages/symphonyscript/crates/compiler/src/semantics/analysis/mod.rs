@@ -92,4 +92,6 @@ pub(crate) use engine::Engine;
 #[cfg(test)]
 mod addition_tests;
 #[cfg(test)]
+mod cost_tests;
+#[cfg(test)]
 mod tests;

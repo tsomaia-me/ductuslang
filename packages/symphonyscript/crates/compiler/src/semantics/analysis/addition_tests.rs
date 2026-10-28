@@ -620,11 +620,15 @@ fn chain_program(functions: usize) -> String {
     text
 }
 
-fn assert_linear(points: [(u64, u64); 3]) {
-    let [(n1, w1), (n2, w2), (n3, w3)] = points;
+pub(super) fn linear(points: [(u64, u64); 3]) -> bool {
+    let [(n1, w1), (n2, w2), (n3, w3)] = points.map(|(n, w)| (i128::from(n), i128::from(w)));
     let first = (w2 - w1) * (n3 - n2);
     let second = (w3 - w2) * (n2 - n1);
-    assert!(4 * second <= 5 * first, "{points:?}");
+    4 * second <= 5 * first
+}
+
+pub(super) fn assert_linear(points: [(u64, u64); 3]) {
+    assert!(linear(points), "{points:?}");
 }
 
 #[test]

@@ -11,6 +11,7 @@ impl Engine<'_> {
         let mut seen = FastSet::default();
         let mut stack = vec![node];
         while let Some(current) = stack.pop() {
+            crate::semantics::counted_walk::CountedWalk::UntypableReadsUntypableReads.step();
             if !seen.insert(current) {
                 continue;
             }

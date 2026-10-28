@@ -15,6 +15,7 @@ impl Engine<'_> {
     pub(super) fn synth(&mut self, root: NodeId) -> Result<Option<Scalar>, Internal> {
         let mut stack = vec![(root, false)];
         while let Some((node, ready)) = stack.pop() {
+            crate::semantics::counted_walk::CountedWalk::SynthSynth.step();
             if self.typing.synth.contains_key(&node) {
                 continue;
             }

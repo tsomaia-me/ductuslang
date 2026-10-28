@@ -14,6 +14,7 @@ use crate::semantics::ir::Loc;
 impl Engine<'_> {
     pub(crate) fn check_program(&mut self) -> Result<(), Internal> {
         for index in 0..self.wires.len() {
+            crate::semantics::counted_walk::CountedWalk::CountsCheckProgram.step();
             let wire = WireId(u32::try_from(index).unwrap_or(u32::MAX));
             let known = matches!(
                 self.checked_destination(wire)?,
@@ -26,6 +27,7 @@ impl Engine<'_> {
         }
         self.top_level_counts()?;
         for index in 0..self.instances.len() {
+            crate::semantics::counted_walk::CountedWalk::CountsCheckProgram.step();
             let instance = InstanceId(u32::try_from(index).unwrap_or(u32::MAX));
             self.children_counts(instance)?;
         }
@@ -217,6 +219,7 @@ impl Engine<'_> {
         let mut incoming_fixed: BTreeMap<(InstanceId, WireKind), Vec<WireId>> = BTreeMap::new();
         let mut incoming_any: BTreeMap<(InstanceId, WireKind), Vec<WireId>> = BTreeMap::new();
         for index in 0..self.wires.len() {
+            crate::semantics::counted_walk::CountedWalk::CountsWireCounts.step();
             let wire = WireId(u32::try_from(index).unwrap_or(u32::MAX));
             let (kind, source, loc) = {
                 let record = self.wire(wire)?;
@@ -261,6 +264,7 @@ impl Engine<'_> {
             }
         }
         for index in 0..self.instances.len() {
+            crate::semantics::counted_walk::CountedWalk::CountsWireCounts.step();
             let instance = InstanceId(u32::try_from(index).unwrap_or(u32::MAX));
             let decl = self.node_decl(self.instance(instance)?.kind)?;
             for (wire_kind, count) in &decl.outgoing {

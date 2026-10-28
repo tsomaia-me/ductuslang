@@ -54,6 +54,7 @@ impl Engine<'_> {
         let mut stack = vec![(root, expected, selection, flows)];
         let mut condition_root = condition;
         while let Some((node, expected, selection, flows)) = stack.pop() {
+            crate::semantics::counted_walk::CountedWalk::CheckCheckFrom.step();
             #[cfg(test)]
             {
                 self.typing.checks += 1;
@@ -581,6 +582,7 @@ impl Engine<'_> {
         let mut leaves = Vec::new();
         let mut pending = vec![arg];
         while let Some(node) = pending.pop() {
+            crate::semantics::counted_walk::CountedWalk::CheckNativeArgument.step();
             match &self.node(node)?.op {
                 Op::Array(elements) => pending.extend(elements.iter().rev()),
                 _ => leaves.push(node),
@@ -638,6 +640,7 @@ impl Engine<'_> {
     pub(super) fn destination_labels(&mut self, root: NodeId) -> Result<(), Internal> {
         let mut stack = vec![root];
         while let Some(node) = stack.pop() {
+            crate::semantics::counted_walk::CountedWalk::CheckDestinationLabels.step();
             match self.node(node)?.op.clone() {
                 Op::If(_, then, otherwise) => stack.extend([then, otherwise]),
                 Op::Pick { items, .. } => stack.extend(items),
@@ -705,6 +708,7 @@ impl Engine<'_> {
         };
         let mut pending = elements.clone();
         while let Some(element) = pending.pop() {
+            crate::semantics::counted_walk::CountedWalk::CheckHoldsAFloatCell.step();
             match &self.node(self.through_uses(element)?)?.op {
                 Op::Array(inner) => pending.extend(inner.iter().copied()),
                 Op::Read(_) | Op::History { .. } => {

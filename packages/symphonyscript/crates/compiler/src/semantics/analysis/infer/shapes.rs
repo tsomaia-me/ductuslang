@@ -102,6 +102,7 @@ impl Engine<'_> {
     fn shape_at(&mut self, root: NodeId, ty: Option<Scalar>) -> Result<Option<Vec<u32>>, Internal> {
         let mut stack = vec![(root, false)];
         while let Some((node, ready)) = stack.pop() {
+            crate::semantics::counted_walk::CountedWalk::ShapesShapeAt.step();
             if self.typing.shapes.contains_key(&(node, ty)) {
                 continue;
             }

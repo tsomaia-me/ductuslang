@@ -11,6 +11,7 @@
 pub(crate) mod analysis;
 pub(crate) mod analyze;
 pub(crate) mod collection;
+pub(crate) mod counted_walk;
 mod internal;
 pub(crate) mod ir;
 pub(crate) mod reporting;

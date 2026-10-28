@@ -921,6 +921,7 @@ impl Engine<'_> {
         let mut parents: BTreeMap<(usize, bool), ((usize, bool), ExprId)> = BTreeMap::new();
         let mut queue = VecDeque::from([start]);
         while let Some(state) = queue.pop_front() {
+            crate::semantics::counted_walk::CountedWalk::RecursiveUnboundedCycle.step();
             let calls = self
                 .collected
                 .calls
@@ -941,6 +942,7 @@ impl Engine<'_> {
                     let mut cycle = vec![(state.0, *call)];
                     let mut current = state;
                     while let Some((previous, through)) = parents.get(&current) {
+                        crate::semantics::counted_walk::CountedWalk::RecursiveUnboundedCycle.step();
                         cycle.push((previous.0, *through));
                         current = *previous;
                     }

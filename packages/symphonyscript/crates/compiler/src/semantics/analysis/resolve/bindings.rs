@@ -862,6 +862,7 @@ impl Engine<'_> {
         let mut stack = vec![(root, false)];
         let mut missing = false;
         while let Some((node, ready)) = stack.pop() {
+            crate::semantics::counted_walk::CountedWalk::BindingsDefaultShape.step();
             if shapes.contains_key(&node) {
                 continue;
             }

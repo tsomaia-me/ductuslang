@@ -25,6 +25,7 @@ impl Engine<'_> {
             );
         }
         for index in 0..self.bindings.len() {
+            crate::semantics::counted_walk::CountedWalk::CompileTimeEnumsCompileTimeEnums.step();
             let binding = BindingId(u32::try_from(index).map_err(|_| Internal::missed("binding"))?);
             let expected = self.typing.own.get(&binding).copied().and_then(enum_of);
             stack.push((self.binding(binding)?.init, expected));
@@ -32,6 +33,7 @@ impl Engine<'_> {
         let mut given: FastMap<NodeId, Vec<EnumId>> = FastMap::default();
         let mut seen = FastSet::default();
         while let Some((node, expected)) = stack.pop() {
+            crate::semantics::counted_walk::CountedWalk::CompileTimeEnumsCompileTimeEnums.step();
             if !seen.insert((node, expected)) {
                 continue;
             }

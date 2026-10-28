@@ -41,6 +41,7 @@ impl HirBuilder<'_> {
         let mut frames = vec![Frame::Enter(root, fallback)];
         let mut built: Vec<ExprId> = Vec::new();
         while let Some(frame) = frames.pop() {
+            crate::semantics::counted_walk::CountedWalk::ExpressionsExpr.step();
             match frame {
                 Frame::Enter(None, loc) => built.push(self.push(ExprKind::Error, loc)),
                 Frame::Enter(Some(expr), _) => {
@@ -444,6 +445,7 @@ fn unescape(text: &str) -> Option<String> {
     let mut out = String::with_capacity(text.len());
     let mut chars = text.chars();
     while let Some(c) = chars.next() {
+        crate::semantics::counted_walk::CountedWalk::ExpressionsUnescape.step();
         if c != '\\' {
             out.push(c);
             continue;

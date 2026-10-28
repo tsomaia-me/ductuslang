@@ -273,6 +273,7 @@ impl<'a> Engine<'a> {
         let mut stack: Vec<(Query, Option<usize>)> = vec![(query, None)];
         let mut stalled = 0;
         while let Some((top, _)) = stack.last().copied() {
+            crate::semantics::counted_walk::CountedWalk::EngineDemand.step();
             let position = stack.len() - 1;
             if self.is_done(top) {
                 stack.pop();
@@ -847,6 +848,7 @@ impl<'a> Engine<'a> {
         let mut seen = super::fast_hash::FastSet::default();
         let mut pending = vec![template];
         while let Some(current) = pending.pop() {
+            crate::semantics::counted_walk::CountedWalk::EngineTemplateSites.step();
             if !seen.insert(current) {
                 continue;
             }
@@ -1142,6 +1144,7 @@ impl<'a> Engine<'a> {
         if names.is_empty() {
             let mut outer = None;
             while let Some(position) = current {
+                crate::semantics::counted_walk::CountedWalk::EngineCycle.step();
                 let &(query, parent) = stack
                     .get(position)
                     .ok_or(Internal::missed("demand stack entry"))?;

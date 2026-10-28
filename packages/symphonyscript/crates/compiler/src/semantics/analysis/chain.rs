@@ -36,6 +36,7 @@ impl Chain {
         let mut locs = Vec::new();
         let mut current = self.0.as_ref();
         while let Some(link) = current {
+            crate::semantics::counted_walk::CountedWalk::ChainToVec.step();
             locs.push(link.loc);
             current = link.rest.0.as_ref();
         }
@@ -46,6 +47,7 @@ impl Chain {
         let mut depth = 0;
         let mut current = self.0.as_ref();
         while let Some(link) = current {
+            crate::semantics::counted_walk::CountedWalk::ChainDepth.step();
             depth += 1;
             current = link.rest.0.as_ref();
         }
@@ -56,6 +58,7 @@ impl Chain {
         let mut links = Vec::new();
         let mut current = self.0.as_ref();
         while let Some(link) = current {
+            crate::semantics::counted_walk::CountedWalk::ChainRebase.step();
             if links.len() == keep {
                 break;
             }
@@ -72,6 +75,7 @@ impl Chain {
         let mut links = Vec::new();
         let mut current = self.0.as_ref();
         while let Some(link) = current {
+            crate::semantics::counted_walk::CountedWalk::ChainLabelled.step();
             links.push((link.loc, link.label));
             current = link.rest.0.as_ref();
         }
@@ -82,6 +86,7 @@ impl Chain {
         let mut inner = Vec::new();
         let mut current = self.0.as_ref();
         while let Some(link) = current {
+            crate::semantics::counted_walk::CountedWalk::ChainOutermostPaths.step();
             match link.rest.0.as_ref() {
                 Some(_) => inner.push((link.loc, link.label)),
                 None => {
@@ -139,6 +144,7 @@ impl Drop for Chain {
     fn drop(&mut self) {
         let mut current = self.0.take();
         while let Some(link) = current {
+            crate::semantics::counted_walk::CountedWalk::ChainDrop.step();
             current = match Rc::try_unwrap(link) {
                 Ok(mut link) => link.rest.0.take(),
                 Err(_) => None,

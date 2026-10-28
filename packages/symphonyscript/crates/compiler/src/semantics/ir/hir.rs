@@ -104,6 +104,7 @@ impl Hir {
         let mut unknown = UnknownNames::default();
         let mut blocks = vec![root];
         while let Some(block) = blocks.pop() {
+            crate::semantics::counted_walk::CountedWalk::HirBodyUnknown.step();
             let block = self.block(block)?;
             unknown.join(&block.unknown);
             for item in &block.items {
@@ -128,6 +129,7 @@ impl Hir {
         let mut found = Vec::new();
         let mut blocks = vec![root];
         while let Some(block) = blocks.pop() {
+            crate::semantics::counted_walk::CountedWalk::HirNestedPlacements.step();
             for item in &self.block(block)?.items {
                 match item {
                     BodyItem::Placement(id) => {

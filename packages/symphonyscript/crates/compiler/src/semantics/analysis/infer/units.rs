@@ -60,6 +60,7 @@ impl Engine<'_> {
                 let feed = (unit.family, unit.default_unit, position.loc);
                 let mut stack = vec![node];
                 while let Some(current) = stack.pop() {
+                    crate::semantics::counted_walk::CountedWalk::UnitsUnits.step();
                     if !seen.insert((current, feed.0, feed.1)) {
                         continue;
                     }
@@ -154,6 +155,7 @@ impl Engine<'_> {
             .map(|(node, _)| *node)
             .collect();
         while let Some(node) = stack.pop() {
+            crate::semantics::counted_walk::CountedWalk::UnitsUnderPlaceholders.step();
             if reached.insert(node) {
                 stack.extend(self.carried_operands(node)?);
                 if let Op::Native { args, .. } = &self.node(node)?.op {
@@ -284,6 +286,7 @@ impl Engine<'_> {
         let mut reached = HashSet::new();
         let mut stack = vec![root];
         while let Some(node) = stack.pop() {
+            crate::semantics::counted_walk::CountedWalk::UnitsCarriedIn.step();
             if self.template_of(self.node(node)?.scope)? != Some(template) || !reached.insert(node)
             {
                 continue;
@@ -301,6 +304,7 @@ impl Engine<'_> {
         let mut seen: HashSet<NodeId> = HashSet::new();
         let mut stack = vec![root];
         while let Some(node) = stack.pop() {
+            crate::semantics::counted_walk::CountedWalk::UnitsTemplateNodes.step();
             if !seen.insert(node) || self.template_of(self.node(node)?.scope)? != Some(template) {
                 continue;
             }

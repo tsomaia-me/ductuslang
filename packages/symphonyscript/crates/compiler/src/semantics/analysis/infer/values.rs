@@ -56,6 +56,7 @@ impl Engine<'_> {
             }
             let mut stack = vec![root];
             while let Some(node) = stack.pop() {
+                crate::semantics::counted_walk::CountedWalk::ValuesRetractUnreadEvaluations.step();
                 if !unread.insert(node) {
                     continue;
                 }
@@ -102,6 +103,7 @@ impl Engine<'_> {
 
     pub(super) fn input_fits(&mut self) -> Result<(), Internal> {
         for index in 0..self.bindings.len() {
+            crate::semantics::counted_walk::CountedWalk::ValuesInputFits.step();
             let binding = BindingId(u32::try_from(index).unwrap_or(u32::MAX));
             let record = self.binding(binding)?.clone();
             let BindingKind::Input { .. } = record.kind else {
@@ -156,6 +158,7 @@ impl Engine<'_> {
         let mut kinds: crate::semantics::analysis::fast_hash::FastMap<NodeId, (bool, bool, bool)> =
             crate::semantics::analysis::fast_hash::FastMap::default();
         for ((node, ty), value) in &self.memo.evals {
+            crate::semantics::counted_walk::CountedWalk::ValuesConsistency.step();
             if let Some(target) = self.flexible_use(*node)?
                 && !value.is_error()
             {
@@ -172,6 +175,7 @@ impl Engine<'_> {
         }
         let mut uses: BTreeMap<NodeId, Vec<(NodeId, EvalTy, CVal)>> = BTreeMap::new();
         for ((node, ty), value) in &self.memo.evals {
+            crate::semantics::counted_walk::CountedWalk::ValuesConsistency.step();
             if let Some(target) = self.flexible_use(*node)?
                 && !value.is_error()
                 && kinds
@@ -250,6 +254,7 @@ impl Engine<'_> {
     pub(super) fn consistent_shapes(&mut self) -> Result<(), Internal> {
         let mut uses: BTreeMap<NodeId, Vec<(NodeId, Vec<u32>)>> = BTreeMap::new();
         for ((node, _), value) in &self.memo.evals {
+            crate::semantics::counted_walk::CountedWalk::ValuesConsistentShapes.step();
             if let Op::Use(target) = self.node(*node)?.op
                 && self.arrays.contains(&target)
                 && !value.is_error()
@@ -286,6 +291,7 @@ impl Engine<'_> {
     pub(super) fn integer_inputs(&mut self) -> Result<(), Internal> {
         let mut inputs: BTreeMap<InputId, (usize, usize, Loc)> = BTreeMap::new();
         for index in 0..self.bindings.len() {
+            crate::semantics::counted_walk::CountedWalk::ValuesIntegerInputs.step();
             let binding = BindingId(u32::try_from(index).unwrap_or(u32::MAX));
             let record = self.binding(binding)?;
             let BindingKind::Input { input, .. } = record.kind else {

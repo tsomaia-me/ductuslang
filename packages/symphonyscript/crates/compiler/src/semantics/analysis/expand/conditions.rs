@@ -27,6 +27,7 @@ impl Engine<'_> {
         let mut found = Vec::new();
         let mut current = head;
         while let Some(id) = current {
+            crate::semantics::counted_walk::CountedWalk::ConditionsConditionsOf.step();
             let link = self
                 .condition_links
                 .get(id.index())
@@ -81,6 +82,7 @@ impl Engine<'_> {
         let hir = self.hir;
         let mut blocks = vec![root];
         while let Some(block) = blocks.pop() {
+            crate::semantics::counted_walk::CountedWalk::ConditionsMaySupplyWires.step();
             for item in &hir.block(block)?.items {
                 match item {
                     BodyItem::Wire(_) => return Ok(true),

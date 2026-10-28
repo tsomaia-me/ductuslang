@@ -59,6 +59,7 @@ impl Engine<'_> {
     ) -> Result<(), Internal> {
         let mut stack = vec![(root, expected)];
         while let Some((node, expected)) = stack.pop() {
+            crate::semantics::counted_walk::CountedWalk::ExpectationsExpect.step();
             if !self.typing.expected_seen.insert((node, expected)) {
                 continue;
             }

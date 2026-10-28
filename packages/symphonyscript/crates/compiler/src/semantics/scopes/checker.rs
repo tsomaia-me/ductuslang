@@ -180,6 +180,7 @@ impl<'a> Checker<'a> {
             let mut found = Vec::new();
             let mut stack = vec![local.value];
             while let Some(id) = stack.pop() {
+                crate::semantics::counted_walk::CountedWalk::CheckerLetCycles.step();
                 let kind = &self.hir.expr(id)?.kind;
                 if let ExprKind::Name(name) = kind
                     && let Some(position) = positions.get(name.as_str())
@@ -202,6 +203,7 @@ impl<'a> Checker<'a> {
             *visit = Visit::Open;
             let mut path: Vec<(usize, usize)> = vec![(start, 0)];
             while let Some((node, next)) = path.last().copied() {
+                crate::semantics::counted_walk::CountedWalk::CheckerLetCycles.step();
                 let Some(&target) = reads.get(node).ok_or(missed)?.get(next) else {
                     *state.get_mut(node).ok_or(missed)? = Visit::Done;
                     path.pop();
@@ -384,6 +386,7 @@ impl<'a> Checker<'a> {
     fn may_declare(&self, frame: Option<usize>, name: &str) -> Result<bool, Internal> {
         let mut current = frame;
         while let Some(index) = current {
+            crate::semantics::counted_walk::CountedWalk::CheckerMayDeclare.step();
             let frame = self
                 .frames
                 .get(index)
@@ -399,6 +402,7 @@ impl<'a> Checker<'a> {
     fn visible(&self, frame: Option<usize>, name: &str) -> Result<bool, Internal> {
         let mut current = frame;
         while let Some(index) = current {
+            crate::semantics::counted_walk::CountedWalk::CheckerVisible.step();
             let frame = self
                 .frames
                 .get(index)
@@ -418,6 +422,7 @@ impl<'a> Checker<'a> {
     ) -> Result<Option<Option<Loc>>, Internal> {
         let mut current = frame;
         while let Some(index) = current {
+            crate::semantics::counted_walk::CountedWalk::CheckerVisibleAt.step();
             let frame = self
                 .frames
                 .get(index)
@@ -455,6 +460,7 @@ impl<'a> Checker<'a> {
     ) -> Result<Option<Loc>, Internal> {
         let mut current = frame;
         while let Some(index) = current {
+            crate::semantics::counted_walk::CountedWalk::CheckerEnclosingBodyName.step();
             let frame = self
                 .frames
                 .get(index)
@@ -475,6 +481,7 @@ impl<'a> Checker<'a> {
     fn visible_local(&self, frame: Option<usize>, name: &str) -> Result<Option<Loc>, Internal> {
         let mut current = frame;
         while let Some(index) = current {
+            crate::semantics::counted_walk::CountedWalk::CheckerVisibleLocal.step();
             let frame = self
                 .frames
                 .get(index)
@@ -497,6 +504,7 @@ impl<'a> Checker<'a> {
     ) -> Result<(), Internal> {
         let mut stack = vec![(root, Operand::Value)];
         while let Some((id, operand)) = stack.pop() {
+            crate::semantics::counted_walk::CountedWalk::CheckerExpr.step();
             let expr = self.hir.expr(id)?;
             match &expr.kind {
                 ExprKind::Name(name) => {
@@ -664,6 +672,7 @@ impl<'a> Checker<'a> {
 
     fn blocks(&mut self, mut pending: Vec<(BlockId, Option<usize>, Mode)>) -> Result<(), Internal> {
         while let Some((block, parent, mode)) = pending.pop() {
+            crate::semantics::counted_walk::CountedWalk::CheckerBlocks.step();
             let frame = match mode {
                 Mode::Body => Some(self.body_frame(block, parent, None)?),
                 Mode::Arm => parent,
@@ -826,6 +835,7 @@ impl<'a> Checker<'a> {
     fn anonymous_names(&mut self, block: BlockId) -> Result<(), Internal> {
         let mut blocks = vec![block];
         while let Some(block) = blocks.pop() {
+            crate::semantics::counted_walk::CountedWalk::CheckerAnonymousNames.step();
             for item in &self.hir.block(block)?.items {
                 match item {
                     BodyItem::Placement(id) => {
@@ -879,6 +889,7 @@ impl<'a> Checker<'a> {
         let mut blocks = vec![block];
         let mut found: Vec<Ident> = Vec::new();
         while let Some(block) = blocks.pop() {
+            crate::semantics::counted_walk::CountedWalk::CheckerBodyNames.step();
             for item in &self.hir.block(block)?.items {
                 match item {
                     BodyItem::Placement(id) if Some(*id) == unnamed => {

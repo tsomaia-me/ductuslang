@@ -14,6 +14,7 @@ pub(super) fn number_literal(text: &str, vocabulary: &Vocabulary) -> Option<(Num
     let mut digits = String::new();
     let mut fraction = 0i64;
     while let Some(&byte) = bytes.get(position) {
+        crate::semantics::counted_walk::CountedWalk::NumberLiteralNumberLiteral.step();
         if byte.is_ascii_digit() {
             digits.push(char::from(byte));
         } else if byte != b'_' {
@@ -27,6 +28,7 @@ pub(super) fn number_literal(text: &str, vocabulary: &Vocabulary) -> Option<(Num
         is_float = true;
         position += 1;
         while let Some(&byte) = bytes.get(position) {
+            crate::semantics::counted_walk::CountedWalk::NumberLiteralNumberLiteral.step();
             if byte.is_ascii_digit() {
                 digits.push(char::from(byte));
                 fraction += 1;
@@ -45,6 +47,7 @@ pub(super) fn number_literal(text: &str, vocabulary: &Vocabulary) -> Option<(Num
             let negative = bytes.get(position + 1) == Some(&b'-');
             position = first;
             while let Some(&byte) = bytes.get(position) {
+                crate::semantics::counted_walk::CountedWalk::NumberLiteralNumberLiteral.step();
                 if byte.is_ascii_digit() {
                     exponent = exponent
                         .saturating_mul(10)

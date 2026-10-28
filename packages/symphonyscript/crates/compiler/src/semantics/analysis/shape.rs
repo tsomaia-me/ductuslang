@@ -45,6 +45,7 @@ impl Shape {
         let mut lengths = Vec::new();
         let mut current = self.0.clone();
         while let Some(dimension) = current {
+            crate::semantics::counted_walk::CountedWalk::ShapeLengths.step();
             lengths.push(dimension.length);
             current = dimension.inner.0.clone();
         }
@@ -56,6 +57,7 @@ impl Shape {
         let mut depth = 0;
         let mut current = self.0.as_ref();
         while let Some(dimension) = current {
+            crate::semantics::counted_walk::CountedWalk::ShapeDepth.step();
             depth += 1;
             current = dimension.inner.0.as_ref();
         }
@@ -66,6 +68,7 @@ impl Shape {
         let mut count: usize = 1;
         let mut current = self.0.as_ref();
         while let Some(dimension) = current {
+            crate::semantics::counted_walk::CountedWalk::ShapeCount.step();
             count = count.saturating_mul(dimension.length as usize);
             current = dimension.inner.0.as_ref();
         }
@@ -108,6 +111,7 @@ impl Drop for Shape {
     fn drop(&mut self) {
         let mut current = self.0.take();
         while let Some(dimension) = current {
+            crate::semantics::counted_walk::CountedWalk::ShapeDrop.step();
             current = match Rc::try_unwrap(dimension) {
                 Ok(mut dimension) => dimension.inner.0.take(),
                 Err(_) => None,
