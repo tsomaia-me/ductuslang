@@ -38,7 +38,9 @@ fn resolved(
         return Ok(());
     }
     let mut engine = Engine::new(hir, vocabulary, &collected, variants, limits);
-    let outcome = engine.resolve_prelude_lets();
+    let outcome = engine
+        .resolve_prelude_lets()
+        .and_then(|()| engine.draw_declaration_cycles());
     engine.flush_diagnostics();
     report.diagnostics.append(&mut engine.report.diagnostics);
     outcome

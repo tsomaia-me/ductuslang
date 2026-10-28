@@ -133,21 +133,7 @@ impl Engine<'_> {
                     return Ok(Some(Val::Error));
                 }
                 if sig.open && self.in_probe(scope)? {
-                    let source = self.open_source(node)?;
-                    let mut call = source;
-                    while let Op::Use(inner) | Op::Chosen(inner) = self.node(call)?.op {
-                        call = inner;
-                    }
-                    if let Op::Recursive { function, .. } = self.node(call)?.op
-                        && let Some(template) = self.template_of(scope)?
-                    {
-                        self.memo
-                            .open_reads
-                            .entry(template)
-                            .or_default()
-                            .push(function);
-                    }
-                    return Ok(Some(Val::Scalar(source)));
+                    return Ok(Some(Val::Scalar(self.open_source(node)?)));
                 }
                 if sig.open && sig.frame {
                     return self.frame_path(node, name, loc, scope, need);

@@ -116,12 +116,7 @@ impl Engine<'_> {
                         return Ok(self.pending(root, Sig::open(false), need));
                     };
                     self.memo.probing_families.remove(key);
-                    let reads_partner = self
-                        .memo
-                        .open_reads
-                        .get(&scope)
-                        .is_some_and(|read| read.iter().any(|other| *other != function));
-                    if (sig.open || reads_partner)
+                    if sig.open
                         && !sig.is_error()
                         && !self.memo.probing_families.is_empty()
                         && self.in_probe(self.node(node)?.scope)?

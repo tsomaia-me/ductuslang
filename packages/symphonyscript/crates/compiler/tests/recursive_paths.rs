@@ -1808,6 +1808,93 @@ fn a_path_start_chosen_by_a_recursive_call_names_the_instances_that_calls_own_ev
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum OpenReader {
+    Partner,
+    Separate,
+}
+
+fn open_reader_program(
+    reader: OpenReader,
+    (verse, other): (i32, i32),
+    (depth, offset, reversed): (i32, i32, bool),
+) -> String {
+    let (functions, read) = match reader {
+        OpenReader::Partner => (
+            [
+                "fn f(xs, n): if n < 1 then xs[0] else g(xs, n)\n".to_string(),
+                "fn g(xs, n): if f(xs, n - 1).gain > 2 then xs[1] else xs[0]\n".to_string(),
+            ],
+            format!("f([verse, other], {depth}).gain"),
+        ),
+        OpenReader::Separate => (
+            [
+                "fn f(xs, n): if n < 1 then xs[0] else (if f(xs, n - 1).gain > 2 then xs[1] else xs[0])\n"
+                    .to_string(),
+                format!("fn h(xs, n): if n < 1 then f(xs, {depth}).gain else h(xs, n - 1)\n"),
+            ],
+            "h([verse, other], 2)".to_string(),
+        ),
+    };
+    let mut items = vec![
+        "Session main\n".to_string(),
+        format!("Clip verse | gain={verse}:\n    Note\n"),
+        format!("Clip other | gain={other}:\n    Note\n"),
+    ];
+    items.extend(functions);
+    items.push(format!(
+        "Clip k:\n    Note/([60][i32({read}) - {offset}])\n"
+    ));
+    if reversed {
+        items.reverse();
+    }
+    items.concat()
+}
+
+#[test]
+fn a_probe_reading_another_familys_open_result_through_a_path_reads_the_chosen_instance() {
+    let mut failures = Vec::new();
+    let mut programs = 0;
+    for reader in [OpenReader::Partner, OpenReader::Separate] {
+        for gains in [(2, 2), (2, 3), (3, 2), (3, 3)] {
+            for depth in [0, 1, 3] {
+                let gain = (0..depth).fold(
+                    gains.0,
+                    |chosen, _| {
+                        if chosen > 2 { gains.1 } else { gains.0 }
+                    },
+                );
+                for wrong in [false, true] {
+                    for reversed in [false, true] {
+                        let offset = gain + i32::from(wrong);
+                        let text = open_reader_program(reader, gains, (depth, offset, reversed));
+                        let drawn: Vec<Code> =
+                            found(&text).into_keys().map(|(code, _)| code).collect();
+                        let expected = if wrong {
+                            vec![Code::IndexOutOfRange]
+                        } else {
+                            Vec::new()
+                        };
+                        programs += 1;
+                        if drawn != expected {
+                            failures.push(format!(
+                                "{reader:?} {gains:?} {depth} {wrong} {reversed}\n{text}\n  found {drawn:?}\n  expected {expected:?}\n"
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+    }
+    assert!(
+        failures.is_empty(),
+        "{} of {programs} programs fail:\n{}",
+        failures.len(),
+        failures.iter().take(8).cloned().collect::<String>()
+    );
+    assert_eq!(programs, 96);
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum OpenChooser {
     IfTrue,
     IfFalse,
@@ -2697,15 +2784,12 @@ fn lacking_step_rows(path: StepPath, chooser: StepChooser) -> (Vec<String>, usiz
                     for frame in
                         FrameValue::of(count, &chooser.indices(count), chooser.reaches_outside())
                     {
-                        if frame == FrameValue::Outside
+                        let twin_ranges = frame == FrameValue::Outside
                             && arm != StepArm::Taken
                             && matches!(
                                 consumer,
                                 StepConsumer::LetStep | StepConsumer::RecursiveArgument
-                            )
-                        {
-                            continue;
-                        }
+                            );
                         for depth in chooser.depths().iter().copied() {
                             for reversed in [false, true] {
                                 let case = StepCase {
@@ -2724,7 +2808,7 @@ fn lacking_step_rows(path: StepPath, chooser: StepChooser) -> (Vec<String>, usiz
                                 let drawn = found_summaries(&text);
                                 let twin_drawn = found_summaries(&twin);
                                 programs += 1;
-                                if drawn != expected || twin_drawn != expected {
+                                if drawn != expected || !twin_ranges && twin_drawn != expected {
                                     failures.push(format!(
                                         "{path:?} {chooser:?} {holds:?} {consumer:?} {arm:?} {frame:?} {depth} {reversed}\n{text}\n  found {drawn:?}\n  twin {twin_drawn:?}\n  expected {expected:?}\n"
                                     ));
@@ -2784,13 +2868,9 @@ fn a_fault_of_a_candidate_binding_draws_only_when_the_evaluation_chooses_that_ca
                             Levels::Alternating(..) => index,
                         };
                         let checked = reading || unread == 1;
-                        let cycle = matches!(
-                            fault,
-                            CandidateFault::ClosesCycle | CandidateFault::EveryCandidateClosesCycle
-                        );
-                        let both = chosen.contains(&0) && chosen.contains(&1);
-                        if cycle && !chosen.contains(&unread)
-                            || fault == CandidateFault::EveryCandidateClosesCycle && both
+                        if fault == CandidateFault::ClosesCycle
+                            && consumer == Consumer::RecursiveArgument
+                            && !chosen.contains(&unread)
                         {
                             continue;
                         }
@@ -2818,7 +2898,7 @@ fn a_fault_of_a_candidate_binding_draws_only_when_the_evaluation_chooses_that_ca
                                     reading
                                 }
                                 CandidateFault::LacksAttribute => checked,
-                                CandidateFault::ClosesCycle => reading,
+                                CandidateFault::ClosesCycle => checked,
                                 CandidateFault::ReadsCell => {
                                     reading && consumer == Consumer::RecursiveArgument
                                 }
@@ -2843,5 +2923,59 @@ fn a_fault_of_a_candidate_binding_draws_only_when_the_evaluation_chooses_that_ca
         failures.len(),
         failures.iter().take(8).cloned().collect::<String>()
     );
-    assert_eq!(programs, 60_224);
+    assert_eq!(programs, 61_616);
+}
+
+fn two_calls_program(index: usize, levels: Levels, reversed: bool, recursive: bool) -> String {
+    let depth = levels.depth();
+    let mut items = [
+        "Session main\n".to_string(),
+        "Clip verse | gain=k.gain:\n    Note as hook\n".to_string(),
+        "Clip other | gain=k.gain:\n    Note\n".to_string(),
+        levels.functions(
+            ("c, d, xs, i, n", "", "(xs[i]).gain"),
+            |next| format!("c, d, xs, {next}, n - 1"),
+            recursive,
+        ),
+        format!(
+            "Clip k | gain=h(verse, other, [verse, other], {index}, {depth}) + h(verse, other, [verse, other], {}, {depth}):\n    Note\n",
+            1 - index
+        ),
+    ];
+    if reversed {
+        items.reverse();
+    }
+    items.concat()
+}
+
+#[test]
+fn two_outermost_calls_choosing_two_cycles_through_one_declaration_draw_one_declaration_cycle() {
+    let mut failures = Vec::new();
+    let mut programs = 0;
+    for (index, levels) in Levels::of(&[0, 1], &[1, 3, 30]) {
+        for reversed in [false, true] {
+            let text = two_calls_program(index, levels, reversed, true);
+            let twin = two_calls_program(index, levels, reversed, false);
+            let drawn = found(&text);
+            let expected = found(&twin);
+            let cycles: usize = drawn
+                .iter()
+                .filter(|((code, _), _)| *code == Code::DeclarationCycle)
+                .map(|(_, count)| *count)
+                .sum();
+            programs += 1;
+            if drawn != expected || cycles != 1 {
+                failures.push(format!(
+                    "{index} {levels:?} {reversed}\n{text}\n  found {drawn:?}\n  twin {expected:?}\n"
+                ));
+            }
+        }
+    }
+    assert!(
+        failures.is_empty(),
+        "{} of {programs} programs fail:\n{}",
+        failures.len(),
+        failures.iter().take(8).cloned().collect::<String>()
+    );
+    assert_eq!(programs, 24);
 }

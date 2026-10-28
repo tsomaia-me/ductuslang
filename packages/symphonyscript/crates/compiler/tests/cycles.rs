@@ -502,3 +502,21 @@ fn wire_cycles_draw_one_diagnostic_per_component_naming_its_shortest_cycle_and_w
         }
     }
 }
+
+#[test]
+fn a_declaration_cycle_drawn_before_the_recursive_call_limit_stops_the_compilation_is_kept() {
+    let limits = Limits {
+        recursive_calls: 5,
+        ..Limits::default()
+    };
+    let compiler = Compiler::with_limits(&vocabulary(), limits).expect("the vocabulary compiles");
+    let text =
+        "let a = b\nlet b = a\nfn r(n): if n < 1 then 0 else r(n - 1)\nClip c:\n    Note/(r(10))\n";
+    assert_eq!(
+        named_errors(&compiler, text),
+        vec![
+            named(Code::DeclarationCycle, &["a", "b"]),
+            named(Code::RecursionLimit, &[])
+        ]
+    );
+}

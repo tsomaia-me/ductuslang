@@ -115,6 +115,7 @@ pub(crate) struct Engine<'a> {
     pub(super) candidate_edges: FastMap<(Query, Query), (ExprId, ItemRef, String)>,
     pub(super) open_candidates: FastMap<(ExprId, ItemRef, String), Rc<[Query]>>,
     drawn_candidate_cycles: FastSet<(ItemRef, String)>,
+    pub(super) found_cycles: Vec<Vec<(Loc, String)>>,
     pub(super) current: Option<Query>,
 }
 
@@ -189,6 +190,7 @@ impl<'a> Engine<'a> {
             candidate_edges: FastMap::default(),
             open_candidates: FastMap::default(),
             drawn_candidate_cycles: FastSet::default(),
+            found_cycles: Vec::new(),
             current: None,
         };
         engine.source_global = engine.push_scope(
@@ -225,6 +227,7 @@ impl<'a> Engine<'a> {
         if !self.ids_exhausted {
             outcome?;
         }
+        self.draw_declaration_cycles()?;
         self.flush_diagnostics();
         Ok(())
     }
@@ -254,6 +257,7 @@ impl<'a> Engine<'a> {
         if self.stop.is_some() {
             return Ok(());
         }
+        self.draw_declaration_cycles()?;
         let related = match scope {
             Some(scope) => self
                 .chain(scope)?
@@ -1291,15 +1295,12 @@ impl<'a> Engine<'a> {
     fn declaration_cycle(
         &mut self,
         path: &[Query],
-        mut names: Vec<String>,
+        names: Vec<String>,
         locs: &[Loc],
     ) -> Result<(), Internal> {
-        let first = names
-            .first()
-            .cloned()
-            .ok_or(Internal::missed("cycle declaration"))?;
-        names.push(first);
-        let &loc = locs.first().ok_or(Internal::missed("cycle declaration"))?;
+        if names.is_empty() {
+            return Err(Internal::missed("cycle declaration"));
+        }
         let reported = path.iter().any(|query| {
             matches!(query, Query::Let(scope, LetRef::Top(id))
                 if *scope == self.source_global && self.memo.cyclic_lets.contains(id))
@@ -1307,15 +1308,8 @@ impl<'a> Engine<'a> {
         if reported {
             return Ok(());
         }
-        let message = format!("these declarations reach themselves: {}", names.join(" → "));
-        let related: Vec<(Loc, String)> = locs
-            .get(1..)
-            .ok_or(Internal::missed("cycle declaration"))?
-            .iter()
-            .map(|other| (*other, "a declaration on the cycle".to_string()))
-            .collect();
-        self.report
-            .error_with(self.hir, Code::DeclarationCycle, loc, &related, message);
+        self.found_cycles
+            .push(locs.iter().copied().zip(names).collect());
         Ok(())
     }
 

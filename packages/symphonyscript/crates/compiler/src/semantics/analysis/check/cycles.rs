@@ -6,6 +6,7 @@ use crate::semantics::analysis::engine::Engine;
 use crate::semantics::analysis::ids::{InstanceId, WireId};
 use crate::semantics::analysis::item_ref::ItemRef;
 use crate::semantics::collection::strongly_connected;
+use crate::semantics::ir::Loc;
 use crate::semantics::reporting::grouped;
 
 impl Engine<'_> {
@@ -109,6 +110,80 @@ impl Engine<'_> {
                     names.join(" → ")
                 ),
             );
+        }
+        Ok(())
+    }
+
+    pub(crate) fn draw_declaration_cycles(&mut self) -> Result<(), Internal> {
+        let cycles = std::mem::take(&mut self.found_cycles);
+        let mut members: Vec<(Loc, String)> = cycles.iter().flatten().cloned().collect();
+        members.sort();
+        members.dedup();
+        let position = |member: &(Loc, String)| {
+            members
+                .binary_search(member)
+                .map_err(|_| Internal::missed("cycle declaration"))
+        };
+        let mut edges: Vec<Vec<usize>> = vec![Vec::new(); members.len()];
+        for cycle in &cycles {
+            for (step, from) in cycle.iter().enumerate() {
+                let to = cycle
+                    .get((step + 1) % cycle.len())
+                    .ok_or(Internal::missed("cycle declaration"))?;
+                edges
+                    .get_mut(position(from)?)
+                    .ok_or(Internal::missed("cycle declaration"))?
+                    .push(position(to)?);
+            }
+        }
+        for targets in &mut edges {
+            targets.sort_unstable();
+            targets.dedup();
+        }
+        let components = strongly_connected(&edges)?;
+        let mut component_of: Vec<usize> = vec![0; edges.len()];
+        for (home, component) in components.iter().enumerate() {
+            for member in component {
+                *component_of
+                    .get_mut(*member)
+                    .ok_or(Internal::missed("cycle declaration"))? = home;
+            }
+        }
+        for (home, component) in components.iter().enumerate() {
+            let &first = component
+                .iter()
+                .min()
+                .ok_or(Internal::missed("cycle declaration"))?;
+            let targets: Vec<usize> = edges
+                .get(first)
+                .ok_or(Internal::missed("cycle declaration"))?
+                .iter()
+                .copied()
+                .filter(|target| component_of.get(*target) == Some(&home))
+                .collect();
+            if targets.is_empty() {
+                continue;
+            }
+            let path = self.cycle_path(&edges, &component_of, home, first, &targets)?;
+            let mut names = Vec::new();
+            let mut locs = Vec::new();
+            for member in path {
+                let (loc, name) = members
+                    .get(member)
+                    .ok_or(Internal::missed("cycle declaration"))?;
+                names.push(name.clone());
+                locs.push(*loc);
+            }
+            let &loc = locs.first().ok_or(Internal::missed("cycle declaration"))?;
+            let related: Vec<(Loc, String)> = locs
+                .get(1..locs.len() - 1)
+                .ok_or(Internal::missed("cycle declaration"))?
+                .iter()
+                .map(|other| (*other, "a declaration on the cycle".to_string()))
+                .collect();
+            let message = format!("these declarations reach themselves: {}", names.join(" → "));
+            self.report
+                .error_with(self.hir, Code::DeclarationCycle, loc, &related, message);
         }
         Ok(())
     }

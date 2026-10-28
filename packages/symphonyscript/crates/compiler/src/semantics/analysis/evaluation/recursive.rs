@@ -499,10 +499,14 @@ impl Engine<'_> {
             let Some(CVal::Node(item)) = self.frame_value(frame, read.start, EvalTy::Node)? else {
                 continue;
             };
-            let holds = read.arms.iter().any(|(candidate, _)| *candidate == item)
-                || read.open.iter().any(|(candidate, _)| *candidate == item);
-            if !holds {
-                self.lacking_choice(&read, item)?;
+            if read.arms.iter().any(|(candidate, _)| *candidate == item) {
+                continue;
+            }
+            match read.open.iter().find(|(candidate, _)| *candidate == item) {
+                Some((_, path)) => {
+                    self.live_candidate_cycle(item, &read.name.text, path)?;
+                }
+                None => self.lacking_choice(&read, item)?,
             }
         }
         Ok(())

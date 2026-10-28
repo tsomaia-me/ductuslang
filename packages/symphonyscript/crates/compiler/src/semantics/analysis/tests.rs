@@ -3562,7 +3562,7 @@ fn a_patterns_lets_see_the_names_of_its_body() {
                 "pattern P():\n    let a = n.velocity\n    Note as n | velocity=a\n    Note",
                 "Clip c:\n    P",
             ],
-            vec![(Code::DeclarationCycle, "velocity=a")],
+            vec![(Code::DeclarationCycle, "a")],
             vec![],
         ),
         (
@@ -3606,7 +3606,7 @@ fn a_patterns_lets_see_the_names_of_its_body() {
             chain.split(" → ")
         })
         .collect();
-    if names != ["n.velocity", "a", "n.velocity"] {
+    if names != ["a", "n.velocity", "a"] {
         failures.push(format!("{cycle:?} names {names:?}"));
     }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
