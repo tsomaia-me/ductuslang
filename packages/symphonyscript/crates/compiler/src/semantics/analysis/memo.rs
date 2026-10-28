@@ -67,6 +67,8 @@ pub(crate) struct Memo {
     pub kind_pending: FastMap<NodeId, Query>,
     pub layout_visits: u64,
     pub flow_work: std::cell::Cell<u64>,
+    pub arm_walks: std::cell::Cell<u64>,
+    pub choice_arrays: super::fast_hash::FastMap<NodeId, (bool, bool)>,
     pub query_runs: u64,
     pub blocked_walks: FastMap<crate::semantics::ir::StateId, (u32, crate::semantics::ir::StateId)>,
     pub evaluation_work: u64,

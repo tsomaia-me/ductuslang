@@ -89,61 +89,89 @@ impl Engine<'_> {
         &self,
         root: NodeId,
     ) -> Result<bool, Internal> {
-        let mut node = root;
-        loop {
-            if !self.arrays.contains(&node) {
-                return Ok(false);
-            }
-            match &self.node(node)?.op {
-                Op::Use(inner) | Op::Chosen(inner) | Op::Annotate(_, inner) => node = *inner,
-                Op::Read(binding) => {
-                    if self.memo.binding_layouts.contains_key(binding) {
-                        return Ok(true);
+        let mut leaves = vec![root];
+        while let Some(mut node) = leaves.pop() {
+            loop {
+                self.memo.arm_walks.set(self.memo.arm_walks.get() + 1);
+                if !self.arrays.contains(&node) {
+                    return Ok(false);
+                }
+                match &self.node(node)?.op {
+                    Op::Use(inner) | Op::Chosen(inner) | Op::Annotate(_, inner) => node = *inner,
+                    Op::Read(binding) => {
+                        if self.memo.binding_layouts.contains_key(binding) {
+                            break;
+                        }
+                        node = self.binding(*binding)?.init;
                     }
-                    node = self.binding(*binding)?.init;
-                }
-                Op::Join(..)
-                | Op::Slice { .. }
-                | Op::Array(_)
-                | Op::History { .. }
-                | Op::Native { .. }
-                | Op::Builtin(Builtin::Bytes, _) => return Ok(true),
-                Op::If(_, then, otherwise) => {
-                    return Ok(self.definite_array(*then)? && self.definite_array(*otherwise)?);
-                }
-                Op::Match {
-                    arms, otherwise, ..
-                } => {
-                    for (_, value) in arms {
-                        if !self.definite_array(*value)? {
+                    Op::Join(..)
+                    | Op::Slice { .. }
+                    | Op::Array(_)
+                    | Op::History { .. }
+                    | Op::Native { .. }
+                    | Op::Builtin(Builtin::Bytes, _) => break,
+                    Op::If(..) | Op::Match { .. }
+                        if self
+                            .memo
+                            .choice_arrays
+                            .get(&node)
+                            .is_some_and(|(definite, _)| *definite) =>
+                    {
+                        break;
+                    }
+                    Op::If(_, then, otherwise) => {
+                        leaves.extend([*then, *otherwise]);
+                        break;
+                    }
+                    Op::Match {
+                        arms, otherwise, ..
+                    } => {
+                        leaves.extend(arms.iter().map(|(_, value)| *value));
+                        leaves.extend(otherwise.iter().copied());
+                        break;
+                    }
+                    Op::Number(..)
+                    | Op::Const(_)
+                    | Op::Bool(_)
+                    | Op::Str(_)
+                    | Op::Concat(_)
+                    | Op::Variant(..)
+                    | Op::Bare(_)
+                    | Op::Pi
+                    | Op::NodeRef(_)
+                    | Op::Arg(_)
+                    | Op::Unary(..)
+                    | Op::Binary(..)
+                    | Op::Pick { .. }
+                    | Op::Element { .. }
+                    | Op::Convert(..)
+                    | Op::Builtin(..)
+                    | Op::Recursive { .. } => return Ok(false),
+                    Op::ToRead { attrs, .. } => {
+                        if self.to_read_layout(attrs)?.is_none() {
                             return Ok(false);
                         }
+                        break;
                     }
-                    return Ok(match otherwise {
-                        Some(value) => self.definite_array(*value)?,
-                        None => true,
-                    });
                 }
-                Op::Number(..)
-                | Op::Const(_)
-                | Op::Bool(_)
-                | Op::Str(_)
-                | Op::Concat(_)
-                | Op::Variant(..)
-                | Op::Bare(_)
-                | Op::Pi
-                | Op::NodeRef(_)
-                | Op::Arg(_)
-                | Op::Unary(..)
-                | Op::Binary(..)
-                | Op::Pick { .. }
-                | Op::Element { .. }
-                | Op::Convert(..)
-                | Op::Builtin(..)
-                | Op::Recursive { .. } => return Ok(false),
-                Op::ToRead { attrs, .. } => return Ok(self.to_read_layout(attrs)?.is_some()),
             }
         }
+        Ok(true)
+    }
+
+    pub(in crate::semantics::analysis) fn record_choice_arrays(
+        &mut self,
+        choice: NodeId,
+        arms: &[NodeId],
+    ) -> Result<(), Internal> {
+        let mut definite = true;
+        let mut rests = false;
+        for arm in arms {
+            definite &= self.definite_array(*arm)?;
+            rests |= self.rests_on_recursion(*arm)?;
+        }
+        self.memo.choice_arrays.insert(choice, (definite, rests));
+        Ok(())
     }
 
     pub(in crate::semantics::analysis) fn rests_on_recursion(
@@ -153,6 +181,7 @@ impl Engine<'_> {
         let mut stack = vec![root];
         let mut seen = FastSet::default();
         while let Some(node) = stack.pop() {
+            self.memo.arm_walks.set(self.memo.arm_walks.get() + 1);
             if !self.arrays.contains(&node) || !seen.insert(node) {
                 continue;
             }
@@ -175,6 +204,12 @@ impl Engine<'_> {
                         stack.push(self.binding(*binding)?.init);
                     }
                 }
+                Op::If(..) | Op::Match { .. }
+                    if self
+                        .memo
+                        .choice_arrays
+                        .get(&node)
+                        .is_some_and(|(_, rests)| !*rests) => {}
                 Op::If(_, then, otherwise) => stack.extend([*then, *otherwise]),
                 Op::Match {
                     arms, otherwise, ..

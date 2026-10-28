@@ -1361,6 +1361,75 @@ fn a_layout_walk_over_a_chain_of_slices_costs_work_linear_in_the_chain() {
     }
 }
 
+fn nested_choices(depth: usize, runtime: bool) -> String {
+    let condition = if runtime { "flag" } else { "false" };
+    format!(
+        "input held: i32[..4] = [1, 2]\ninput flag = true\nClip c:\n    Note/((if false then {}held{} else [[1]])[0][0])\n",
+        format!("(if {condition} then ").repeat(depth),
+        " else [1, 2])".repeat(depth)
+    )
+}
+
+fn let_choices(depth: usize, _: bool) -> String {
+    let mut text =
+        String::from("input held: i32[..4] = [1, 2]\ninput flag = true\nlet c0 = held\n");
+    for level in 1..=depth {
+        text.push_str(&format!(
+            "let c{level} = if flag then c{} else c{}\n",
+            level - 1,
+            level - 1
+        ));
+    }
+    text.push_str(&format!(
+        "Clip c:\n    Note/((if false then c{depth} else [[1]])[0][0])\n"
+    ));
+    text
+}
+
+fn nested_joins(depth: usize, _: bool) -> String {
+    format!(
+        "input held: i32[..4] = [1, 2]\nClip c:\n    Note/((if false then held{} else [[1]])[0][0])\n",
+        " + [1]".repeat(depth)
+    )
+}
+
+#[test]
+fn a_chain_of_nested_choices_holding_array_arms_costs_work_linear_in_its_depth() {
+    type Chain = fn(usize, bool) -> String;
+    let chains: [(Chain, bool); 4] = [
+        (nested_choices, true),
+        (nested_choices, false),
+        (let_choices, true),
+        (nested_joins, true),
+    ];
+    for (chain, runtime) in chains {
+        let walks: Vec<u64> = [2_500, 5_000, 10_000]
+            .into_iter()
+            .map(|depth| {
+                let text = chain(depth, runtime);
+                let (diagnostics, walks) =
+                    analyzed(&vocabulary(), &text, |engine| engine.memo.arm_walks.get());
+                let codes: Vec<_> = errors(&diagnostics)
+                    .iter()
+                    .map(|diagnostic| (diagnostic.code, diagnostic.span.range.start))
+                    .collect();
+                let outer = u32::try_from(text.find("if false then").unwrap_or(0)).unwrap_or(0);
+                assert_eq!(
+                    codes,
+                    [(crate::diagnostics::Code::TypeMismatch, outer)],
+                    "{depth}"
+                );
+                walks
+            })
+            .collect();
+        for pair in walks.windows(2) {
+            if let [shorter, longer] = pair {
+                assert!(*longer <= 2 * *shorter + 64, "{walks:?}");
+            }
+        }
+    }
+}
+
 fn big(args: &[symphonyscript_core::NativeArg<'_>], out: &mut symphonyscript_core::NativeOut<'_>) {
     if let Some(symphonyscript_core::NativeArg::Value(value)) = args.first() {
         out.push(*value);

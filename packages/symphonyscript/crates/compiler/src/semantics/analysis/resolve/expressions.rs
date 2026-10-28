@@ -340,11 +340,9 @@ impl Engine<'_> {
                     let &[then, otherwise] = nodes.as_slice() else {
                         return Ok(Some(Val::Error));
                     };
-                    return Ok(Some(self.scalar(
-                        Op::If(condition, then, otherwise),
-                        loc,
-                        scope,
-                    )?));
+                    let choice = self.push_node(Op::If(condition, then, otherwise), loc, scope)?;
+                    self.record_choice_arrays(choice, &nodes)?;
+                    return Ok(Some(Val::Scalar(choice)));
                 }
                 Branches::Each(vals) => vals,
             };
@@ -873,10 +871,11 @@ impl Engine<'_> {
             all.push(value);
         }
         let all = match some!(self.branches(all, scrutinee_node, (loc, scope), need)?) {
-            Branches::Whole(mut nodes) => {
-                let otherwise = if has_otherwise { nodes.pop() } else { None };
-                let arms = label_nodes.iter().copied().zip(nodes).collect();
-                return Ok(Some(self.scalar(
+            Branches::Whole(nodes) => {
+                let mut values = nodes.clone();
+                let otherwise = if has_otherwise { values.pop() } else { None };
+                let arms = label_nodes.iter().copied().zip(values).collect();
+                let choice = self.push_node(
                     Op::Match {
                         scrutinee: scrutinee_node,
                         arms,
@@ -884,7 +883,9 @@ impl Engine<'_> {
                     },
                     loc,
                     scope,
-                )?));
+                )?;
+                self.record_choice_arrays(choice, &nodes)?;
+                return Ok(Some(Val::Scalar(choice)));
             }
             Branches::Each(vals) => vals,
         };
