@@ -95,6 +95,8 @@ enum Chooser {
     Enum,
     EnumInput,
     Integer,
+    Parameter,
+    ParameterMatch,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -435,7 +437,9 @@ fn arm(form: Form, content: Content, index: usize, hosted: bool) -> Option<Arm> 
 impl Chooser {
     fn items(self) -> Vec<String> {
         let item = match self {
-            Chooser::True | Chooser::False => return Vec::new(),
+            Chooser::True | Chooser::False | Chooser::Parameter | Chooser::ParameterMatch => {
+                return Vec::new();
+            }
             Chooser::Flag => "input flag = false\n",
             Chooser::Enum => "let w = Wave::Saw\n",
             Chooser::EnumInput => "input w = Wave::Saw\n",
@@ -446,7 +450,7 @@ impl Chooser {
 
     fn taken(self) -> Option<usize> {
         match self {
-            Chooser::True | Chooser::Enum => Some(0),
+            Chooser::True | Chooser::Enum | Chooser::Parameter | Chooser::ParameterMatch => Some(0),
             Chooser::False => Some(1),
             Chooser::Flag | Chooser::EnumInput | Chooser::Integer => None,
         }
@@ -454,8 +458,20 @@ impl Chooser {
 
     fn is_match(self) -> bool {
         match self {
-            Chooser::Enum | Chooser::EnumInput | Chooser::Integer => true,
-            Chooser::True | Chooser::False | Chooser::Flag => false,
+            Chooser::Enum | Chooser::EnumInput | Chooser::Integer | Chooser::ParameterMatch => true,
+            Chooser::True | Chooser::False | Chooser::Flag | Chooser::Parameter => false,
+        }
+    }
+
+    fn is_parameter(self) -> bool {
+        match self {
+            Chooser::Parameter | Chooser::ParameterMatch => true,
+            Chooser::True
+            | Chooser::False
+            | Chooser::Flag
+            | Chooser::Enum
+            | Chooser::EnumInput
+            | Chooser::Integer => false,
         }
     }
 
@@ -469,6 +485,10 @@ impl Chooser {
             }
             Chooser::Integer => {
                 format!("match k:\n{indent}    1: {first}\n{indent}    else: {second}\n")
+            }
+            Chooser::Parameter => format!("if m is 0 then {first} else {second}"),
+            Chooser::ParameterMatch => {
+                format!("match m:\n{indent}    0: {first}\n{indent}    else: {second}\n")
             }
         }
     }
@@ -491,6 +511,7 @@ struct Layout {
     bound: Option<&'static str>,
     hosted: bool,
     signature: bool,
+    read_in_body: bool,
 }
 
 impl Position {
@@ -509,6 +530,28 @@ impl Position {
             | Position::Argument
             | Position::Result
             | Position::RecursiveArgument
+            | Position::RecursiveResult
+            | Position::StateInit
+            | Position::OuterArm => false,
+        }
+    }
+
+    fn read_in_body(self) -> bool {
+        match self {
+            Position::Scalar
+            | Position::IndexBase
+            | Position::JoinLeft
+            | Position::JoinRight
+            | Position::SliceBase
+            | Position::Len
+            | Position::Native
+            | Position::Argument
+            | Position::RecursiveArgument => true,
+            Position::TopLet
+            | Position::LocalLet
+            | Position::Iterable
+            | Position::Attribute
+            | Position::Result
             | Position::RecursiveResult
             | Position::StateInit
             | Position::OuterArm => false,
@@ -641,6 +684,7 @@ impl Position {
         Layout {
             items,
             bound,
+            read_in_body: self.read_in_body(),
             hosted: self.hosted(),
             signature,
         }
@@ -676,6 +720,19 @@ fn assemble(
     let mut lets = locals.concat();
     let mut extra = Vec::new();
     let in_slot = match (chooser.is_match(), layout.bound) {
+        _ if chooser.is_parameter() => {
+            let end = if value.ends_with('\n') { "" } else { "\n" };
+            let read = if layout.read_in_body {
+                body_read(&layout.items)
+            } else {
+                "ch".to_string()
+            };
+            extra.push(format!(
+                "fn rc(m):\n{lets}    let ch = {marked}{end}    if m > 0 then rc(m - 1) else {read}\n"
+            ));
+            lets.clear();
+            "rc(0)".to_string()
+        }
         (true, None) if layout.hosted => {
             lets.push_str(&format!("    let ch = {marked}"));
             "ch".to_string()
@@ -694,6 +751,11 @@ fn assemble(
     let mut items: Vec<String> = declarations.to_vec();
     items.extend(extra);
     for item in &layout.items {
+        let item = if chooser.is_parameter() && layout.read_in_body && item.contains(SLOT) {
+            format!("{READER}{SLOT}{READ_END}")
+        } else {
+            item.clone()
+        };
         items.push(item.replace('\u{2}', &lets).replacen(&slot, &in_slot, 1));
     }
     if reversed {
@@ -707,6 +769,22 @@ fn assemble(
         start,
         end,
     }
+}
+
+const READER: &str = "Clip c:\n    Note/(";
+
+const READ_END: &str = ")\n";
+
+fn body_read(items: &[String]) -> String {
+    items
+        .iter()
+        .find_map(|item| {
+            item.strip_prefix(READER)?
+                .strip_suffix(READ_END)
+                .filter(|read| read.contains(SLOT))
+        })
+        .expect("a position read in the body reads its slot in a note's pitch")
+        .replace(SLOT, "ch")
 }
 
 type Spans = BTreeSet<(Code, usize, usize)>;
@@ -879,7 +957,7 @@ fn arms_hold(chooser: Chooser) -> Outcome {
 }
 
 fn check_case(case: &Case, compilers: &mut Compilers, outcome: &mut Outcome) {
-    let hosted = case.position.hosted();
+    let hosted = case.position.hosted() || case.chooser.is_parameter();
     let (Some(first), Some(second)) = (
         arm(case.forms.0, case.contents.0, 0, hosted),
         arm(case.forms.1, case.contents.1, 1, hosted),
@@ -887,6 +965,11 @@ fn check_case(case: &Case, compilers: &mut Compilers, outcome: &mut Outcome) {
         return;
     };
     if case.position.signature() && case.relation == Relation::Family {
+        return;
+    }
+    if case.chooser.is_parameter()
+        && (reads_cell(case.forms.0, case.contents.0) || reads_cell(case.forms.1, case.contents.1))
+    {
         return;
     }
     let taken = case.chooser.taken();
@@ -910,7 +993,14 @@ fn check_case(case: &Case, compilers: &mut Compilers, outcome: &mut Outcome) {
         }
         (true, None) => Some(value_twin(case.relation, case.contents)),
     };
-    let other = twin.as_ref().unwrap_or(&first).text.clone();
+    let other = if case.chooser.is_parameter() {
+        let Some(literal) = unified(case.relation, taken_content).literal() else {
+            return;
+        };
+        literal
+    } else {
+        twin.as_ref().unwrap_or(&first).text.clone()
+    };
     let layout = case.position.layout(taken_content.dimensions(), &other);
     let compiler = if layout.signature {
         &compilers.signature
@@ -926,7 +1016,11 @@ fn check_case(case: &Case, compilers: &mut Compilers, outcome: &mut Outcome) {
         declarations.extend(part.items.iter().cloned());
         locals.extend(part.locals.iter().cloned());
     }
-    let indent = if layout.hosted { "    " } else { "" };
+    let indent = if layout.hosted || case.chooser.is_parameter() {
+        "    "
+    } else {
+        ""
+    };
     let choice = case.chooser.render(&first.text, &second.text, indent);
     let build = |value: &str| {
         assemble(
@@ -1138,4 +1232,14 @@ fn the_arms_of_a_match_on_an_enum_input_agree_wherever_it_stands() {
 #[test]
 fn the_arms_of_a_match_on_an_integer_input_agree_wherever_it_stands() {
     assert_arms_hold(Chooser::Integer, 32080, 0);
+}
+
+#[test]
+fn the_arms_of_a_choice_on_a_compile_time_recursive_functions_parameter_agree_wherever_it_stands() {
+    assert_arms_hold(Chooser::Parameter, 12406, 0);
+}
+
+#[test]
+fn the_arms_of_a_match_on_a_compile_time_recursive_functions_parameter_agree_wherever_it_stands() {
+    assert_arms_hold(Chooser::ParameterMatch, 12406, 0);
 }

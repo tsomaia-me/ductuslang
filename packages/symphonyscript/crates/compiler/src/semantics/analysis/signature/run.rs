@@ -142,7 +142,13 @@ impl Engine<'_> {
             Sig::open(reactive)
         } else {
             let mut sig = self.rule(node, &op, &operands, &sigs, extra)?;
-            let unsettled = sig.family.is_none() && sig.is_numeric() || matches!(op, Op::Array(_));
+            let open_arm = op
+                .choice_arms()
+                .iter()
+                .any(|arm| self.memo.sigs.get(arm).is_some_and(|arm| arm.open));
+            let unsettled = sig.family.is_none() && sig.is_numeric()
+                || matches!(op, Op::Array(_))
+                || open_arm && !sig.is_numeric();
             if open && unsettled && !sig.is_error() {
                 sig.open = true;
             }

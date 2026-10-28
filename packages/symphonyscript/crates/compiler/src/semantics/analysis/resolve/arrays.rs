@@ -1158,8 +1158,8 @@ impl Engine<'_> {
                 })),
                 Some(arm) => Ok(layouts.get(arm).cloned().flatten()),
                 None => {
-                    let reactive = some!(self.sig(*condition, need)).reactive;
-                    self.choice_layout(node, &layouts, reactive)
+                    let sig = some!(self.sig(*condition, need));
+                    self.choice_layout(node, &layouts, sig.reactive || sig.frame)
                 }
             },
             Op::Array(elements) => {
@@ -1445,7 +1445,7 @@ impl Engine<'_> {
         }
     }
 
-    fn choice_layout(&self, node: NodeId, layouts: &[Option<Layout>], reactive: bool) -> Shaped {
+    fn choice_layout(&self, node: NodeId, layouts: &[Option<Layout>], per_run: bool) -> Shaped {
         let first = layouts.first().cloned().flatten();
         if layouts.iter().all(|layout| *layout == first) {
             return Ok(first);
@@ -1462,7 +1462,7 @@ impl Engine<'_> {
                 .as_ref()
                 .is_some_and(|layout| layout.inner() == inner.as_slice())
         });
-        if agree && reactive {
+        if agree && per_run {
             Ok(Some(Layout::variable(inner)))
         } else {
             Err(Some(ShapeFault {
