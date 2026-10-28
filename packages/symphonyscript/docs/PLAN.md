@@ -44,6 +44,15 @@ The implementation runs in five milestones. The owner approves this plan once; t
 - A reviewer reviews a whole milestone, never single commits: the milestone's diff against SPEC, ARCHITECTURE, this plan's exit criteria and CLAUDE.md, running the checks itself.
 - A reviewer builds only on an export of the tip under review, `git archive <tip> packages/symphonyscript` into a new directory, runs each check there judged by its own exit code with nothing chained after it, runs its probes in a copy of the export, and changes and commits nothing in the repository.
 - A reviewer rates each defect. Blocking: a wrong program accepted, a valid program rejected on a path an ordinary program takes, a panic or internal-error, nondeterminism, or a cost past linear on ordinary input. Major: the same on an unusual path, or an exit criterion not met. Minor: everything else.
+- At every cold review the hot-path reviewer measures the time per unit of the compiler's heavy work against these targets, in the `dev` profile the tests run, with no other build on the machine, and reports each figure with its method; a figure past its target is a finding rated Major, and Blocking when an ordinary program meets it:
+
+| Work | Measured by | Target |
+|---|---|---|
+| A compile-time recursive call | a program making 1,000,000 distinct calls | 2 µs |
+| An inlined call | a program inlining 1,000,000 calls | 2 µs |
+| A level of nesting | the deep-expressions fixture at depth 100,000, each construct | 2 µs |
+| A program of the breaker corpus | Check over every program, median and 99th percentile | 0.5 ms and 2 ms |
+
 - A reviewer checks the ordinary paths and the common defects, then goes beyond them to every pattern `.claude/docs/REVIEWING.md` shows, each with its bad and good form.
 - The head consolidates the findings with a verdict on each, has the implementer fix the accepted ones, and sorts the rest by the decision rules.
 - The head briefs each fix as the property it must hold, with an adversarial test and a test over valid input beside the reported case, and checks a reviewer's proposed fix against the SPEC before briefing it. A fix to a whole class of defects is briefed as a sweep of every place the property covers, never as a list of places, and every row of its tests runs in every order of its top-level items.
