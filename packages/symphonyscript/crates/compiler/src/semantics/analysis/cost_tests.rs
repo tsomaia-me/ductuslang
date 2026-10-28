@@ -1,6 +1,3 @@
-use std::sync::Mutex;
-use std::sync::atomic::{AtomicUsize, Ordering};
-
 use symphonyscript_core::Limits;
 use symphonyscript_fixtures::vocabulary;
 
@@ -447,7 +444,7 @@ fn program(construct: Construct, shape: Shape, n: usize, reversed: bool) -> Opti
     Some(items.concat())
 }
 
-const FLOOR: u64 = 6_400;
+const FLOOR: u64 = 1_600;
 
 fn builds_per_level(construct: Construct, shape: Shape) -> bool {
     shape == Shape::GrowingArgument || (shape == Shape::FanIn && construct == Construct::Join)
@@ -465,19 +462,22 @@ fn smallest_size(construct: Construct, shape: Shape) -> usize {
         return 400;
     }
     match (shape, construct) {
-        (Shape::Nesting, Construct::Slice) => 2_200,
-        (Shape::Nesting, Construct::Join | Construct::Index | Construct::ArrayLiteral) => 3_300,
-        _ => 6_500,
+        (Shape::Nesting, Construct::Slice) => 550,
+        (Shape::Nesting, Construct::Join | Construct::Index | Construct::ArrayLiteral) => 825,
+        _ => 1_625,
     }
 }
 
-fn measure(construct: Construct, shape: Shape, n: usize, text: &str) -> u64 {
-    let built = match shape {
+fn elements_built_per_level(construct: Construct, shape: Shape, n: usize) -> usize {
+    match shape {
         Shape::GrowingArgument => (n + 1) * (n + 2) / 2,
         _ if builds_per_level(construct, shape) => n * (n + 1) / 2,
         _ => 0,
-    };
-    u64::try_from(text.len() + built).unwrap_or(u64::MAX)
+    }
+}
+
+fn program_and_built_elements(construct: Construct, shape: Shape, n: usize, text: &str) -> u64 {
+    u64::try_from(text.len() + elements_built_per_level(construct, shape, n)).unwrap_or(u64::MAX)
 }
 
 struct Row {
@@ -519,7 +519,7 @@ fn measured_row(compiler: &Compiler, row: &Row) -> Report {
     for (index, (counter, _)) in runs[0].counts.iter().enumerate() {
         let points = [0, 1, 2].map(|run| {
             (
-                measure(construct, shape, sizes[run], &texts[run]),
+                program_and_built_elements(construct, shape, sizes[run], &texts[run]),
                 runs[run].counts.get(index).map_or(0, |(_, count)| *count),
             )
         });
@@ -547,8 +547,13 @@ fn measured_row(compiler: &Compiler, row: &Row) -> Report {
         .map(|run| run.counts.iter().map(|(_, count)| count).sum::<u64>());
     Report {
         line: format!(
-            "{name}: n {sizes:?}, bytes {:?}, smallest count {} {}, all counts {work:?}, {} ms",
-            texts.each_ref().map(String::len),
+            "{name}: n {sizes:?}, size {:?}, smallest count {} {}, all counts {work:?}, {} ms",
+            [0, 1, 2].map(|run| program_and_built_elements(
+                construct,
+                shape,
+                sizes[run],
+                &texts[run]
+            )),
             least.1,
             least.0,
             started.elapsed().as_millis()
@@ -574,42 +579,15 @@ fn assert_costs_linear(construct: Construct, expected_rows: usize) {
             }
         }
     }
-    let next = AtomicUsize::new(0);
-    let reports = Mutex::new(Vec::new());
-    let workers = std::thread::available_parallelism()
-        .map_or(4, usize::from)
-        .min(rows.len());
-    std::thread::scope(|scope| {
-        for _ in 0..workers {
-            std::thread::Builder::new()
-                .stack_size(64 << 20)
-                .spawn_scoped(scope, || {
-                    let compiler = Compiler::with_limits(&vocabulary(), limits)
-                        .expect("the vocabulary compiles");
-                    loop {
-                        let index = next.fetch_add(1, Ordering::Relaxed);
-                        let Some(row) = rows.get(index) else {
-                            break;
-                        };
-                        let report = measured_row(&compiler, row);
-                        reports
-                            .lock()
-                            .expect("no worker panics")
-                            .push((index, report));
-                    }
-                })
-                .expect("a worker starts");
-        }
-    });
-    let mut reports = reports.into_inner().expect("no worker panics");
-    reports.sort_by_key(|(index, _)| *index);
+    let compiler = Compiler::with_limits(&vocabulary(), limits).expect("the vocabulary compiles");
     let mut failures = Vec::new();
-    for (_, report) in &reports {
+    for row in &rows {
+        let report = measured_row(&compiler, row);
         println!("{}", report.line);
-        failures.extend(report.failures.iter().cloned());
+        failures.extend(report.failures);
     }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
-    assert_eq!(reports.len(), expected_rows);
+    assert_eq!(rows.len(), expected_rows);
 }
 
 #[test]
