@@ -266,8 +266,19 @@ impl Engine<'_> {
                 let operands = lhs.nodes().into_iter().chain(rhs.nodes()).collect();
                 return Ok(Some(self.refused_binary(op, operands, loc, scope)?));
             }
-            if !(arrays.0 || self.holds_array(&lhs)) || !(arrays.1 || self.holds_array(&rhs)) {
-                self.error(Code::ArrayOperand, loc, scope, JOIN_SINGLE)?;
+            let singles: Vec<NodeId> = [(arrays.0, &lhs), (arrays.1, &rhs)]
+                .into_iter()
+                .filter(|(array, val)| !(*array || self.holds_array(val)))
+                .flat_map(|(_, val)| val.nodes())
+                .collect();
+            if !singles.is_empty() {
+                let mut placeholder = false;
+                for single in singles {
+                    placeholder |= some!(self.sig(single, need)).is_error();
+                }
+                if !placeholder {
+                    self.error(Code::ArrayOperand, loc, scope, JOIN_SINGLE)?;
+                }
                 return Ok(Some(Val::Error));
             }
             return Ok(Some(self.join_val(expr, (lhs, rhs), loc, scope)?));

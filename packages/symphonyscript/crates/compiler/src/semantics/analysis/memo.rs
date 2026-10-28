@@ -122,6 +122,7 @@ pub(crate) struct Memo {
     pub kept_operands: FastMap<NodeId, Vec<NodeId>>,
     pub eager_reads: Vec<(NodeId, Vec<NodeId>)>,
     pub iterated_elements: u64,
+    pub native_capacities: Vec<(NodeId, u32)>,
     pub attribute_projections: super::fast_hash::FastSet<NodeId>,
     pub defaulted: FastMap<NodeId, Vec<super::ids::BindingId>>,
     pub boxes: FastMap<(ExprId, ScopeId), NodeId>,

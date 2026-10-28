@@ -68,7 +68,12 @@ impl HirBuilder<'_> {
     }
 
     pub(super) fn match_block(&mut self, block: &ast::MatchBlock<'_>) -> ExprId {
-        let loc = self.loc(block.syntax().range());
+        let range = block.syntax().range();
+        let last_arm = block
+            .else_arm()
+            .map(|arm| arm.syntax().range().end)
+            .or_else(|| block.arms().last().map(|arm| arm.syntax().range().end));
+        let loc = self.loc(range.start..last_arm.unwrap_or(range.end));
         let scrutinee = self.expr(block.scrutinee(), loc);
         let arms = block
             .arms()

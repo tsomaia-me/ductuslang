@@ -284,7 +284,9 @@ impl Engine<'_> {
             return Ok(Some(known.clone()));
         }
         if !self.arrays.contains(&node) {
-            self.error(Code::NotAnArray, loc, scope, NOT_AN_ARRAY)?;
+            if !some!(self.sig(node, need)).is_error() {
+                self.error(Code::NotAnArray, loc, scope, NOT_AN_ARRAY)?;
+            }
             return Ok(Some(Val::Error));
         }
         if some!(self.sig(node, need)).frame && self.rests_on_recursion(node)? {
@@ -575,12 +577,14 @@ impl Engine<'_> {
         match &base_val {
             Val::Error => return Ok(Some(Val::Error)),
             Val::Scalar(node) if !self.arrays.contains(node) => {
-                self.error(
-                    Code::NotAnArray,
-                    self.hir.expr(base)?.loc,
-                    scope,
-                    "only an array is sliced",
-                )?;
+                if !some!(self.sig(*node, need)).is_error() {
+                    self.error(
+                        Code::NotAnArray,
+                        self.hir.expr(base)?.loc,
+                        scope,
+                        "only an array is sliced",
+                    )?;
+                }
                 return Ok(Some(Val::Error));
             }
             Val::Scalar(_) | Val::Array(_) => {}

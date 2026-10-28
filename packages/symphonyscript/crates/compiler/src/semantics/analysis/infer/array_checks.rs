@@ -612,25 +612,34 @@ impl Engine<'_> {
                 continue;
             }
             if let Some(capacity) = ty.capacity {
-                let holds = match self.extent(*arg)? {
-                    Some(held) => Some(held),
-                    None => self.fixed_length(*arg)?,
-                };
-                if let Some(holds) = holds
-                    && holds > capacity
-                    && holds < LENGTH_LIMIT
-                {
-                    let help = self.capacity_fix(*arg, (capacity, holds), false)?;
-                    self.error_helped(
-                        Code::CapacityExceeded,
-                        loc,
-                        scope,
-                        format!(
-                            "this argument holds up to {holds} elements, more than the parameter's capacity {capacity}"
-                        ),
-                        help,
-                    )?;
-                }
+                self.memo.native_capacities.push((*arg, capacity));
+            }
+        }
+        Ok(())
+    }
+
+    pub(super) fn native_capacity_checks(&mut self) -> Result<(), Internal> {
+        for (arg, capacity) in std::mem::take(&mut self.memo.native_capacities) {
+            let holds = match self.extent(arg)? {
+                Some(held) => Some(held),
+                None => self.fixed_length(arg)?,
+            };
+            if let Some(holds) = holds
+                && holds > capacity
+                && holds < LENGTH_LIMIT
+            {
+                let help = self.capacity_fix(arg, (capacity, holds), false)?;
+                let node = self.node(arg)?;
+                let (loc, scope) = (node.loc, node.scope);
+                self.error_helped(
+                    Code::CapacityExceeded,
+                    loc,
+                    scope,
+                    format!(
+                        "this argument holds up to {holds} elements, more than the parameter's capacity {capacity}"
+                    ),
+                    help,
+                )?;
             }
         }
         Ok(())

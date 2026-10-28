@@ -69,6 +69,46 @@ pub(crate) enum Op {
 }
 
 impl Op {
+    pub fn choice_arms(&self) -> Vec<NodeId> {
+        match self {
+            Op::If(_, then, otherwise) => vec![*then, *otherwise],
+            Op::Match {
+                arms, otherwise, ..
+            } => arms
+                .iter()
+                .map(|(_, value)| *value)
+                .chain(*otherwise)
+                .collect(),
+            Op::Number(..)
+            | Op::Const(_)
+            | Op::Bool(_)
+            | Op::Str(_)
+            | Op::Concat(_)
+            | Op::Variant(..)
+            | Op::Bare(_)
+            | Op::Pi
+            | Op::NodeRef(_)
+            | Op::Read(_)
+            | Op::Use(_)
+            | Op::Chosen(_)
+            | Op::Arg(_)
+            | Op::Unary(..)
+            | Op::Binary(..)
+            | Op::Pick { .. }
+            | Op::Element { .. }
+            | Op::Array(_)
+            | Op::Convert(..)
+            | Op::Annotate(..)
+            | Op::Builtin(..)
+            | Op::Recursive { .. }
+            | Op::ToRead { .. }
+            | Op::Join(..)
+            | Op::Slice { .. }
+            | Op::History { .. }
+            | Op::Native { .. } => Vec::new(),
+        }
+    }
+
     pub fn operands(&self) -> Vec<NodeId> {
         match self {
             Op::Number(..)

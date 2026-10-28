@@ -199,6 +199,7 @@ impl Engine<'_> {
         self.retract_unread_evaluations()?;
         self.capacities()?;
         self.capacity_checks(&variable_positions)?;
+        self.native_capacity_checks()?;
         self.state_checks()?;
         self.annotated_capacities()?;
         self.reactive_shapes()?;

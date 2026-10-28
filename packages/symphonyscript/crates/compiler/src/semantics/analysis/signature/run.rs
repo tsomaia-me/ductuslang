@@ -108,6 +108,7 @@ impl Engine<'_> {
             return Ok(false);
         };
         let sigs: Vec<Sig> = sigs.into_iter().flatten().collect();
+        let forms_known = arm_forms_known(&extra);
         let open = sigs.iter().any(|operand| operand.open);
         let reactive = sigs.iter().any(|operand| operand.reactive);
         let errors = sigs.iter().any(Sig::is_error)
@@ -147,6 +148,17 @@ impl Engine<'_> {
             }
             sig
         };
+        if sig.reactive && forms_known && !sig.is_error() {
+            let arms = op.choice_arms();
+            if !arms.is_empty() {
+                let Some(chosen) = self.chosen_arm(&op, need)? else {
+                    return Ok(false);
+                };
+                if let Some(arm) = chosen.and_then(|position| arms.get(position)) {
+                    sig.reactive = self.memo.sigs.get(arm).is_some_and(|arm| arm.reactive);
+                }
+            }
+        }
         if let Some(group) = group {
             sig = element_of(sig, group, self.memo.held_reads.contains(&node));
         }
@@ -516,4 +528,15 @@ fn agreed_lengths(
     let mut lengths: Vec<Option<u32>> = rows?.iter().copied().map(Some).collect();
     lengths.push(outer);
     Some(lengths)
+}
+
+fn arm_forms_known(extra: &Extra) -> bool {
+    match extra {
+        Extra::Arms(forms) => forms.iter().all(|(array, rows)| match array {
+            Some(true) => rows.is_some(),
+            Some(false) => true,
+            None => false,
+        }),
+        Extra::None | Extra::Read(_) | Extra::ToRead { .. } | Extra::History(_) => true,
+    }
 }
