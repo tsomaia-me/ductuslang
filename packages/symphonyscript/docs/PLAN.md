@@ -157,6 +157,7 @@ Exit:
 - A fault in a branch that a compile-time recursion passes over is reported in work linear in the recursion's depth, counted by the test, the property the removal of bounded expansion keeps.
 - Every code has a lesson, every lesson's `sym` examples pass Check and its `sym-error` examples draw its code, and every diagnostic the error-rule table's programs draw has a summary of one to three lines.
 - The robustness corpus gains mutants of the new examples, and none draws internal-error or panics.
+- Compile-time calls are fast: Check over a program that makes 1,000,000 distinct compile-time recursive calls takes under 2 s in the `dev` profile the tests run, with no other build on the machine, recorded in the progress file with the time per call before and after; the recursion-limit lesson's example is that program.
 
 ## M2c: Language additions 2
 
