@@ -12,12 +12,21 @@ fn codes(text: &str) -> Vec<Code> {
 }
 
 #[test]
-fn a_million_iterations_and_uses_in_all_are_accepted_and_one_more_is_not() {
-    let million = "pattern P():\n    for j in 0..0:\n        Note\nClip c:\n    for i in 0..500000:\n        P\n";
-    assert_eq!(codes(million), vec![]);
-    let one_more =
-        format!("{million}    for k in 0..1:\n        for j in 0..0:\n            Note\n");
-    assert_eq!(codes(&one_more), vec![Code::ExpansionLimit]);
+fn a_limits_worth_of_iterations_and_uses_in_all_is_accepted_and_one_more_is_not() {
+    let thousand = Limits {
+        expansion_steps: 1_000,
+        ..Limits::default()
+    };
+    let codes_within = |text: &str| -> Vec<Code> {
+        errors_within(thousand, text)
+            .into_iter()
+            .map(|(code, _)| code)
+            .collect()
+    };
+    let limit = "pattern P():\n    for j in 0..0:\n        Note\nClip c:\n    for i in 0..500:\n        P\n";
+    assert_eq!(codes_within(limit), vec![]);
+    let one_more = format!("{limit}    for k in 0..1:\n        for j in 0..0:\n            Note\n");
+    assert_eq!(codes_within(&one_more), vec![Code::ExpansionLimit]);
 }
 
 #[test]
@@ -167,6 +176,10 @@ fn the_inline_limit_follows_the_compilations_limits() {
         inlined_calls: 10,
         ..Limits::default()
     };
+    let thousand = Limits {
+        inlined_calls: 1_000,
+        ..Limits::default()
+    };
     let two_million = Limits {
         inlined_calls: 2_000_000,
         ..Limits::default()
@@ -179,11 +192,10 @@ fn the_inline_limit_follows_the_compilations_limits() {
             (ten, inlining(10), None),
             (ten, inlining(11), refusal("10")),
             (default, inlining(11), None),
-            (default, inlining(1_000_000), None),
+            (thousand, inlining(1_000), None),
+            (thousand, inlining(1_001), refusal("1,000")),
+            (thousand, inlining(2_047), refusal("1,000")),
             (default, inlining(1_000_001), refusal("1,000,000")),
-            (default, inlining(1_048_575), refusal("1,000,000")),
-            (two_million, inlining(1_048_575), None),
-            (two_million, inlining(2_000_000), None),
             (two_million, inlining(2_000_001), refusal("2,000,000")),
         ],
     );
@@ -221,6 +233,10 @@ fn the_recursive_call_limit_follows_the_compilations_limits() {
         recursive_calls: 5,
         ..Limits::default()
     };
+    let thousand = Limits {
+        recursive_calls: 1_000,
+        ..Limits::default()
+    };
     let raised = Limits {
         recursive_calls: 1_048_575,
         ..Limits::default()
@@ -233,9 +249,9 @@ fn the_recursive_call_limit_follows_the_compilations_limits() {
             (five, recursing(5), None),
             (five, recursing(6), refusal("5")),
             (default, recursing(6), None),
-            (default, recursing(1_000_000), None),
+            (thousand, recursing(1_000), None),
+            (thousand, recursing(1_001), refusal("1,000")),
             (default, recursing(1_000_001), refusal("1,000,000")),
-            (raised, recursing(1_048_575), None),
             (raised, recursing(1_048_576), refusal("1,048,575")),
         ],
     );
@@ -245,6 +261,10 @@ fn the_recursive_call_limit_follows_the_compilations_limits() {
 fn the_expansion_step_limit_follows_the_compilations_limits() {
     let ten = Limits {
         expansion_steps: 10,
+        ..Limits::default()
+    };
+    let thousand = Limits {
+        expansion_steps: 1_000,
         ..Limits::default()
     };
     let two_million = Limits {
@@ -265,9 +285,9 @@ fn the_expansion_step_limit_follows_the_compilations_limits() {
             (ten, uses(5), None),
             (ten, uses(6), refusal("10")),
             (default, iterations(11), None),
-            (default, empty_iterations(1_000_000), None),
+            (thousand, empty_iterations(1_000), None),
+            (thousand, empty_iterations(1_001), refusal("1,000")),
             (default, empty_iterations(1_000_001), refusal("1,000,000")),
-            (two_million, empty_iterations(2_000_000), None),
             (
                 two_million,
                 empty_iterations(2_000_001),
@@ -281,6 +301,10 @@ fn the_expansion_step_limit_follows_the_compilations_limits() {
 fn the_expanded_item_limit_follows_the_compilations_limits() {
     let ten = Limits {
         expanded_items: 10,
+        ..Limits::default()
+    };
+    let thousand = Limits {
+        expanded_items: 1_000,
         ..Limits::default()
     };
     let raised = Limits {
@@ -298,9 +322,9 @@ fn the_expanded_item_limit_follows_the_compilations_limits() {
             (ten, wires(8), None),
             (ten, wires(9), refusal("10")),
             (default, iterations(10), None),
-            (default, iterations(999_999), None),
+            (thousand, iterations(999), None),
+            (thousand, iterations(1_000), refusal("1,000")),
             (default, iterations(1_000_000), refusal("1,000,000")),
-            (raised, iterations(1_000_000), None),
             (raised, iterations(1_000_001), refusal("1,000,001")),
         ],
     );
