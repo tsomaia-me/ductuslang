@@ -201,9 +201,25 @@ fn every_sym_error_example_is_rejected() {
     assert_eq!(
         rejected,
         [
+            "spec-3.9-sym-error-1",
+            "spec-3.11-sym-error-1",
             "spec-4.1-sym-error-1",
+            "spec-5.10-sym-error-1",
+            "spec-5.10-sym-error-2",
             "spec-6.3-sym-error-1",
-            "spec-6.6-sym-error-1"
+            "spec-6.6-sym-error-1",
+            "spec-6.7-sym-error-1",
+            "spec-6.7-sym-error-2",
+            "spec-6.7-sym-error-3",
+            "spec-6.7-sym-error-4",
+            "spec-6.8-sym-error-1",
+            "spec-6.8-sym-error-2",
+            "spec-6.8-sym-error-3",
+            "spec-6.8-sym-error-4",
+            "spec-6.8-sym-error-5",
+            "spec-7.9-sym-error-1",
+            "spec-7.9-sym-error-2",
+            "spec-10.2-sym-error-1",
         ]
     );
 }
