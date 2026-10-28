@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use symphonyscript_core::Builtin;
+use symphonyscript_core::{BinaryOp, Builtin};
 
 use crate::semantics::Internal;
 use crate::semantics::analysis::bound::Bound;
@@ -197,29 +197,50 @@ impl Engine<'_> {
 impl Engine<'_> {
     fn measures_variable_cell(
         &self,
-        mut stack: Vec<ExprId>,
+        args: Vec<ExprId>,
         (params, lets): (&BTreeSet<&str>, &BTreeMap<&str, ExprId>),
         namespace: &Namespace,
     ) -> Result<bool, Internal> {
-        while let Some(expr) = stack.pop() {
-            let kind = &self.hir.expr(expr)?.kind;
-            if let ExprKind::Name(name) = kind
-                && !params.contains(name.as_str())
-                && !lets.contains_key(name.as_str())
-            {
-                let variable = match namespace.get(name) {
-                    Some(Decl::Input(id)) => annotated_capacity(self.hir.input(id)?.ty.as_ref()),
-                    Some(Decl::State(id)) => {
-                        annotated_capacity(self.hir.state(id)?.ty.as_ref())
-                            || self.settled_variable(id)
+        let mut stack: Vec<(ExprId, bool)> = args.into_iter().map(|arg| (arg, false)).collect();
+        let mut seen_lets = FastSet::default();
+        while let Some((expr, top_level)) = stack.pop() {
+            match &self.hir.expr(expr)?.kind {
+                ExprKind::Name(name)
+                    if top_level
+                        || !params.contains(name.as_str()) && !lets.contains_key(name.as_str()) =>
+                {
+                    match namespace.get(name) {
+                        Some(Decl::Input(id)) => {
+                            if annotated_capacity(self.hir.input(id)?.ty.as_ref()) {
+                                return Ok(true);
+                            }
+                        }
+                        Some(Decl::State(id)) => {
+                            if annotated_capacity(self.hir.state(id)?.ty.as_ref())
+                                || self.settled_variable(id)
+                            {
+                                return Ok(true);
+                            }
+                        }
+                        Some(Decl::Let(id)) => {
+                            if self.hir.is_prelude_let(id) || !seen_lets.insert(id) {
+                                continue;
+                            }
+                            let decl = self.hir.let_decl(id)?;
+                            if annotated_capacity(decl.ty.as_ref()) {
+                                return Ok(true);
+                            }
+                            stack.push((decl.value, true));
+                        }
+                        Some(_) | None => {}
                     }
-                    Some(_) | None => false,
-                };
-                if variable {
-                    return Ok(true);
                 }
+                ExprKind::Binary(BinaryOp::Add, lhs, rhs) => {
+                    stack.extend([(*lhs, top_level), (*rhs, top_level)]);
+                }
+                ExprKind::Slice { base, .. } => stack.push((*base, top_level)),
+                _ => {}
             }
-            stack.extend(kind.children());
         }
         Ok(false)
     }

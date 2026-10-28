@@ -766,7 +766,36 @@ fn a_call_beside_the_inline_limit_computes_its_value() {
         inlined_calls: 4,
         ..Limits::default()
     };
-    let rows: [(&[&str], Limits, i128); 4] = [
+    let rows: [(&[&str], Limits, i128); 7] = [
+        (
+            &[
+                "let fixed = [1, 2]\n",
+                "fn r(i): if i >= len(fixed) then 0 else r(i + 1) + 1\n",
+                "Clip c:\n    Note/(60 + r(0))\n",
+            ],
+            four,
+            62,
+        ),
+        (
+            &[
+                "input note = 60\n",
+                "let cells = [note, note, note]\n",
+                "fn r(i): if i >= len(cells) then 0 else r(i + 1) + 1\n",
+                "Clip c:\n    Note/(60 + r(0))\n",
+            ],
+            four,
+            63,
+        ),
+        (
+            &[
+                "input held: i32[..4] = []\n",
+                "let cells = [len(held), 1]\n",
+                "fn r(i): if i >= len(cells) then 0 else r(i + 1) + 1\n",
+                "Clip c:\n    Note/(60 + r(0))\n",
+            ],
+            four,
+            62,
+        ),
         (
             &["fn h(x): x + 1\n", "Clip c:\n    Note/(h(h(h(60))))\n"],
             four,

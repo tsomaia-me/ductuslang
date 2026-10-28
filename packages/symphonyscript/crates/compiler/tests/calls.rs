@@ -1375,6 +1375,96 @@ fn a_call_rejected_as_reactive_recursion_adds_nothing_to_the_inline_count() {
             ],
             &[],
         ),
+        (
+            &[
+                "input held: i32[..4] = []\n",
+                "input note = 60\n",
+                "let grown = held + [note]\n",
+                h,
+                "fn r(i): if i >= len(grown) then 0 else r(i + 1) + h(h(h(h(h(i)))))\n",
+                "Clip c:\n    Note/(60 + r(0))\n",
+            ],
+            &[(Code::ReactiveRecursion, "r(0)")],
+        ),
+        (
+            &[
+                "input held: i32[..4] = []\n",
+                "input note = 60\n",
+                "let grown: i32[..5] = held + [note]\n",
+                h,
+                "fn r(i): if i >= len(grown) then 0 else r(i + 1) + h(h(h(h(h(i)))))\n",
+                "Clip c:\n    Note/(60 + r(0))\n",
+            ],
+            &[(Code::ReactiveRecursion, "r(0)")],
+        ),
+        (
+            &[
+                "input held: i32[..4] = []\n",
+                "input note = 60\n",
+                "let grown = held + [note]\n",
+                h,
+                "fn r(i, held = 0): if i >= len(grown) then held else r(i + 1, held) + h(h(h(h(h(i)))))\n",
+                "Clip c:\n    Note/(60 + r(0))\n",
+            ],
+            &[(Code::ReactiveRecursion, "r(0)")],
+        ),
+        (
+            &[
+                "input note = 60\n",
+                "let one: i32[..5] = [note]\n",
+                h,
+                "fn r(i): if i >= len(one) then 0 else r(i + 1) + h(h(h(h(h(i)))))\n",
+                "Clip c:\n    Note/(60 + r(0))\n",
+            ],
+            &[(Code::ReactiveRecursion, "r(0)")],
+        ),
+        (
+            &[
+                "input held: i32[..4] = []\n",
+                "let tail = held[1..]\n",
+                h,
+                "fn r(i): if i >= len(tail) then 0 else r(i + 1) + h(h(h(h(h(i)))))\n",
+                "Clip c:\n    Note/(60 + r(0))\n",
+            ],
+            &[(Code::ReactiveRecursion, "r(0)")],
+        ),
+        (
+            &[
+                "input held: i32[..4] = []\n",
+                "let same = held\n",
+                "let tail = same[1..]\n",
+                h,
+                "fn r(i): if i >= len(tail) then 0 else r(i + 1) + h(h(h(h(h(i)))))\n",
+                "Clip c:\n    Note/(60 + r(0))\n",
+            ],
+            &[(Code::ReactiveRecursion, "r(0)")],
+        ),
+        (
+            &[
+                "let fixed = [1, 2]\n",
+                "fn r(i): if i >= len(fixed) then 0 else r(i + 1) + 1\n",
+                "Clip c:\n    Note/(60 + r(0))\n",
+            ],
+            &[],
+        ),
+        (
+            &[
+                "input note = 60\n",
+                "let cells = [note, note, note]\n",
+                "fn r(i): if i >= len(cells) then 0 else r(i + 1) + 1\n",
+                "Clip c:\n    Note/(60 + r(0))\n",
+            ],
+            &[],
+        ),
+        (
+            &[
+                "input held: i32[..4] = []\n",
+                "let cells = [len(held), 1]\n",
+                "fn r(i): if i >= len(cells) then 0 else r(i + 1) + 1\n",
+                "Clip c:\n    Note/(60 + r(0))\n",
+            ],
+            &[],
+        ),
     ];
     for (items, expected) in rows {
         let mut expected: Vec<(Code, String)> = expected
