@@ -1,14 +1,20 @@
 import argparse
+import gzip
 import json
 import math
 import os
+import platform
 import shutil
 import subprocess
+import sys
+import tempfile
 import time
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timezone
 from pathlib import Path
 
+import figures
 import verdicts
 from programs import MAIN, key, read_jsonl, write_jsonl_gz
 
@@ -19,6 +25,13 @@ CORPORA = EVOLVE / "corpora"
 PACKAGE = "packages/symphonyscript"
 OVERLAID = ("src", "Cargo.toml", "Cargo.lock")
 SHARD = 2000
+BUDGET_SECONDS = 5
+PROFILES = {"dev": "debug", "release": "release"}
+CHECK_OUTPUTS = ("verdicts.jsonl.gz", "diff.md", "diff-full.md", "check-times.json.gz", "build.log")
+BUSY_LOAD = 12.0
+QUIET_LOAD = 6.0
+POLL_SECONDS = 15
+THUMB = "thumbv7em-none-eabihf"
 
 
 def git(repository, *arguments, check=True):
@@ -51,8 +64,8 @@ def against(sha, baselines):
     return recorded if recorded.exists() else RUNS / sha / "verdicts.jsonl.gz"
 
 
-def built(sha, run):
-    export = run / "export"
+def built(sha, run, build, profile):
+    export = build / "export"
     top = git(HERE, "rev-parse", "--show-toplevel").stdout.strip()
     archive = subprocess.run(["git", "-C", top, "archive", f"{sha}:{PACKAGE}"], check=True, capture_output=True).stdout
     export.mkdir(parents=True)
@@ -66,9 +79,10 @@ def built(sha, run):
         else:
             shutil.copy2(EVOLVE / name, tools / name)
     with open(run / "build.log", "w") as log:
-        subprocess.run(["cargo", "build", "--release", "--bins"], cwd=tools, stdout=log, stderr=subprocess.STDOUT,
-                       env={**os.environ, "CARGO_TARGET_DIR": str(run / "target")}, check=True)
-    return run / "target" / "release"
+        subprocess.run(["cargo", "build", "--profile", profile, "--bins"], cwd=tools, stdout=log,
+                       stderr=subprocess.STDOUT, env={**os.environ, "CARGO_TARGET_DIR": str(build / "target")},
+                       check=True)
+    return build / "target" / PROFILES[profile]
 
 
 def code_table(binaries):
@@ -92,8 +106,8 @@ def shard(binaries, programs, warnings, work, alone, index, vocabulary, members)
     with open(given, "w", encoding="utf-8") as out:
         for program_key in members:
             out.write(json.dumps({"id": program_key, "sources": programs[program_key]["sources"]}) + "\n")
-    finished = subprocess.run([binaries / "evolve-check", "--vocabulary", vocabulary, given, taken],
-                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    finished = subprocess.run([binaries / "evolve-check", "--budget", str(BUDGET_SECONDS), "--vocabulary", vocabulary,
+                               given, taken], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     found = {}
     if taken.exists():
         for line in taken.read_text(encoding="utf-8").splitlines():
@@ -101,10 +115,10 @@ def shard(binaries, programs, warnings, work, alone, index, vocabulary, members)
                 raw = json.loads(line)
             except json.JSONDecodeError:
                 continue
-            found[raw["id"]] = verdicts.compact(raw, warnings), verdicts.detail(raw)
+            found[raw["id"]] = verdicts.compact(raw, warnings), verdicts.detail(raw), raw["elapsed_ms"]
     if alone:
         for program_key in members:
-            found.setdefault(program_key, verdicts.aborted(finished.returncode))
+            found.setdefault(program_key, (*verdicts.aborted(finished.returncode), None))
     return found
 
 
@@ -133,11 +147,15 @@ def checked_again(found, previous, keys):
 def check(arguments):
     sha = short_sha(HERE, arguments.revision)
     run = RUNS / sha
-    shutil.rmtree(run, ignore_errors=True)
-    run.mkdir(parents=True)
+    run.mkdir(parents=True, exist_ok=True)
+    for name in CHECK_OUTPUTS:
+        (run / name).unlink(missing_ok=True)
+    build = arguments.build or run / "build"
+    if not arguments.build:
+        shutil.rmtree(build, ignore_errors=True)
     load = os.getloadavg()[0]
     started = time.monotonic()
-    binaries = built(sha, run)
+    binaries = built(sha, run, build, arguments.profile)
     build_seconds = time.monotonic() - started
     table = code_table(binaries)
     warnings = {code for code, row in table.items() if row["warning"]}
@@ -149,23 +167,33 @@ def check(arguments):
         baseline = previous_baseline(HERE, sha, arguments.baselines)
         base = baseline.name.removesuffix(".jsonl.gz") if baseline else None
     previous = {record["key"]: record for record in read_jsonl(baseline)} if baseline else {}
-    started = time.monotonic()
-    found = checked(binaries, programs, warnings, list(programs), arguments.jobs, run / "work" / "shards", False)
+    check_load, started = settled(arguments.settle_below), time.monotonic()
+    found = checked(binaries, programs, warnings, list(programs), arguments.jobs, build / "work" / "shards", False)
     again = checked_again(found, previous, list(programs))
-    found.update(checked(binaries, programs, warnings, again, arguments.jobs, run / "work" / "alone", True))
+    found.update(checked(binaries, programs, warnings, again, arguments.jobs, build / "work" / "alone", True))
     check_seconds = time.monotonic() - started
     current = {program_key: {"key": program_key, "set": programs[program_key]["set"], **found[program_key][0]}
                for program_key in sorted(programs)}
     details = {program_key: found[program_key][1] for program_key in programs if found[program_key][1]}
     write_jsonl_gz(run / "verdicts.jsonl.gz", current.values())
-    notes = [f"Machine time: build {build_seconds:.0f} s, check {check_seconds:.0f} s with {arguments.jobs} jobs; "
+    times = {"profile": arguments.profile, "jobs": arguments.jobs, "budget_s": BUDGET_SECONDS,
+             "load": round(check_load, 2),
+             "programs": [{"key": program_key, "set": programs[program_key]["set"],
+                           "elapsed_ms": found[program_key][2]} for program_key in sorted(programs)]}
+    with gzip.open(run / "check-times.json.gz", "wt", encoding="utf-8") as out:
+        json.dump(times, out)
+    notes = [f"Machine time: build {build_seconds:.0f} s in the {arguments.profile} profile, check "
+             f"{check_seconds:.0f} s with {arguments.jobs} jobs; "
              f"1-minute load {load:.1f} before, {os.getloadavg()[0]:.1f} after.",
              f"Checked again alone, as slow now or at the baseline or without a verdict from their shard: "
              f"{len(again)}; slow after: {sum(found[k][0]['outcome'] == 'slow' for k in again)}."]
     heading = f"Verdicts at {sha} against {base}" if base else f"Verdicts at {sha}, no baseline"
-    (run / "diff.md").write_text(verdicts.render(heading, programs, current, previous, details, table, notes))
-    for name in ("export", "target", "work"):
-        shutil.rmtree(run / name)
+    (run / "diff-full.md").write_text(verdicts.render(heading, programs, current, previous, details, table, notes))
+    (run / "diff.md").write_text(verdicts.summary(heading, programs, current, previous, details, table, notes,
+                                                  "diff-full.md"))
+    shutil.rmtree(build / "work")
+    if not arguments.build:
+        shutil.rmtree(build)
     print(run / "diff.md")
 
 
@@ -177,6 +205,101 @@ def record(arguments):
     print(target)
 
 
+def settled(below, poll=POLL_SECONDS):
+    while True:
+        load = os.getloadavg()[0]
+        if below is None or load < below:
+            return load
+        time.sleep(poll)
+
+
+def now():
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+def step(name, command, cwd, env=None, below=None):
+    return {"name": name, "command": [str(part) for part in command], "cwd": str(cwd), "env": env or {},
+            "below": below}
+
+
+def performed(planned, results, settle=settled):
+    load = settle(planned["below"])
+    log = results / f"{planned['name']}.log"
+    started, clock = now(), time.monotonic()
+    with open(log, "w") as out:
+        try:
+            code = subprocess.run(planned["command"], cwd=planned["cwd"], env={**os.environ, **planned["env"]},
+                                  stdout=out, stderr=subprocess.STDOUT).returncode
+        except OSError as error:
+            out.write(f"{error}\n")
+            code = 127
+    return {"name": planned["name"], "command": planned["command"], "cwd": planned["cwd"], "env": planned["env"],
+            "waited_for_load_below": planned["below"], "load": round(load, 2), "started": started,
+            "seconds": round(time.monotonic() - clock, 1), "exit": code, "log": log.name}
+
+
+def shared_steps(sha, top, into, run, jobs, baselines, against):
+    export, package = into / "export", into / "export" / PACKAGE
+    cargo = {"CARGO_TARGET_DIR": str(into / "target"), "CARGO_BUILD_JOBS": str(jobs),
+             "NEXTEST_TEST_THREADS": str(jobs), "RUST_TEST_THREADS": str(jobs)}
+    verdict_diff = [sys.executable, HERE / "run.py", "check", sha, "--profile", "dev", "--jobs", jobs,
+                    "--settle-below", QUIET_LOAD, "--build", into / "check", "--baselines", baselines, *(["--against", against] if against else [])]
+    return [step("archive", ["git", "-C", top, "archive", "--output", into / "export.tar", sha, PACKAGE], top),
+            step("extract", ["tar", "-x", "-f", into / "export.tar", "-C", export], into),
+            step("rustc", ["rustc", "--version", "--verbose"], package),
+            step("cargo-nextest", ["cargo", "nextest", "--version"], package),
+            step("build", ["cargo", "build", "--workspace", "--all-targets"], package, cargo, BUSY_LOAD),
+            step("fmt", ["cargo", "fmt", "--check"], package, cargo, BUSY_LOAD),
+            step("clippy", ["cargo", "clippy", "--workspace", "--all-targets", "--", "-D", "warnings"], package,
+                 cargo, BUSY_LOAD),
+            step("nextest", ["cargo", "nextest", "run", "--workspace"], package, cargo, BUSY_LOAD),
+            step("doctest", ["cargo", "test", "--workspace", "--doc"], package, cargo, BUSY_LOAD),
+            step("thumbv7em", ["cargo", "build", "-p", "symphonyscript-core", "--target", THUMB], package, cargo,
+                 BUSY_LOAD),
+            step("verdicts", verdict_diff, HERE, None, BUSY_LOAD),
+            step("figures", [sys.executable, HERE / "run.py", "figures", into / "check" / "target" / PROFILES["dev"],
+                             run / "check-times.json.gz", run / "figures.json"], HERE, None, QUIET_LOAD)]
+
+
+def manifest(tip, into, run, records, started, jobs):
+    pipeline = git(HERE, "rev-parse", "HEAD").stdout.strip()
+    edited = git(HERE, "status", "--porcelain", "--", str(EVOLVE)).stdout.strip()
+    return {"tip": tip, "export": str(into / "export" / PACKAGE), "target": str(into / "target"),
+            "evolve_binaries": str(into / "check" / "target" / PROFILES["dev"]), "profile": "dev", "jobs": jobs,
+            "pipeline": {"commit": pipeline, "uncommitted_changes": bool(edited)},
+            "host": {"name": platform.node(), "system": platform.platform(), "cpus": os.cpu_count()},
+            "started": started, "written": now(),
+            "results": sorted(path.name for path in run.iterdir() if path.name != "manifest.json"),
+            "commands": records}
+
+
+def shared(arguments):
+    sha = short_sha(HERE, arguments.revision)
+    tip = git(HERE, "rev-parse", "--verify", f"{sha}^{{commit}}").stdout.strip()
+    top = Path(git(HERE, "rev-parse", "--show-toplevel").stdout.strip())
+    into = (arguments.into or Path(tempfile.mkdtemp(prefix=f"symphonyscript-{sha}-"))).resolve()
+    into.mkdir(parents=True, exist_ok=True)
+    if any(into.iterdir()):
+        sys.exit(f"{into} is not empty; the shared step exports into a new directory")
+    (into / "export").mkdir()
+    run = RUNS / sha
+    shutil.rmtree(run, ignore_errors=True)
+    run.mkdir(parents=True)
+    started, records = now(), []
+    for planned in shared_steps(sha, top, into, run, arguments.jobs, arguments.baselines, arguments.against):
+        records.append(performed(planned, run))
+        print(f"{planned['name']}: exit {records[-1]['exit']}, {records[-1]['seconds']} s, "
+              f"load {records[-1]['load']}", flush=True)
+        (run / "manifest.json").write_text(json.dumps(manifest(tip, into, run, records, started, arguments.jobs),
+                                                      indent=2) + "\n")
+    print(run / "manifest.json")
+    sys.exit(0 if all(record["exit"] == 0 for record in records) else 1)
+
+
+def measured(arguments):
+    figures.measure(arguments.binaries, arguments.times, arguments.out)
+
+
 def main():
     parser = argparse.ArgumentParser(description="Check every corpus and the generated mutants at a commit and "
                                                  "diff the verdicts against the previous reviewed commit's baseline.")
@@ -185,14 +308,38 @@ def main():
     checking.add_argument("revision", nargs="?", default="HEAD")
     checking.add_argument("--against", help="a commit whose recorded baseline, or else whose last run, to diff "
                                            "against instead of the nearest ancestor's baseline")
-    checking.add_argument("--jobs", type=int, default=max(1, (os.cpu_count() or 2) // 2))
+    checking.add_argument("--profile", choices=sorted(PROFILES), default="release",
+                          help="the cargo profile the evolve tools build in")
+    checking.add_argument("--build", type=Path, default=None,
+                          help="a new directory to export and build in, kept after the run; by default "
+                               "review-runs/<sha>/build, deleted after it")
+    checking.add_argument("--settle-below", type=float, default=None,
+                          help="wait after the build until the 1-minute load is below this before checking, "
+                               "since the check times every program")
+    sharing = commands.add_parser("shared", help="the shared step before a review: export the tip, build it in the "
+                                                 "dev profile, run the four checks, the verdict diff and the speed "
+                                                 "figures, and write review-runs/<sha>/manifest.json beside every "
+                                                 "log and result; cargo-nextest must be on PATH")
+    sharing.add_argument("revision", nargs="?", default="HEAD")
+    sharing.add_argument("--into", type=Path, default=None,
+                         help="a new directory for the export and its builds, kept for the reviewers' probes; "
+                              "by default a new temporary directory")
+    sharing.add_argument("--against", help="as for check")
+    for command in (checking, sharing):
+        command.add_argument("--jobs", type=int, default=max(1, (os.cpu_count() or 2) // 2))
     recording = commands.add_parser("record", help="record review-runs/<sha>/verdicts.jsonl.gz as the baseline")
     recording.add_argument("revision", nargs="?", default="HEAD")
-    for command in (checking, recording):
+    for command in (checking, sharing, recording):
         command.add_argument("--baselines", type=Path, default=None)
+    measuring = commands.add_parser("figures", help="take the speed figures with the evolve tools' binaries and "
+                                                    "a check's check-times.json.gz")
+    measuring.add_argument("binaries", type=Path)
+    measuring.add_argument("times", type=Path)
+    measuring.add_argument("out", type=Path)
     arguments = parser.parse_args()
-    arguments.baselines = arguments.baselines or default_baselines()
-    {"check": check, "record": record}[arguments.command](arguments)
+    if arguments.command != "figures":
+        arguments.baselines = arguments.baselines or default_baselines()
+    {"check": check, "record": record, "shared": shared, "figures": measured}[arguments.command](arguments)
 
 
 if __name__ == "__main__":
