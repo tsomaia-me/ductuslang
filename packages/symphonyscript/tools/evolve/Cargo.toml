@@ -35,5 +35,9 @@ path = "src/bin/evolve_codes.rs"
 name = "evolve-time"
 path = "src/bin/evolve_time.rs"
 
+[[bin]]
+name = "evolve-probe"
+path = "src/bin/evolve_probe.rs"
+
 [profile.dev]
 opt-level = 1
