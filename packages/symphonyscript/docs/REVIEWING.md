@@ -2,6 +2,11 @@
 
 How a SymphonyScript reviewer covers its lens, reviews the whole diff, reviews a fix round and reports. PLAN § Reviews decides the lenses, the shared build, the ratings and the speed targets; `SMELLS.md` and the general sections PLAN § Reviews names hold the defects to check for.
 
+## How you work
+
+- Read code by the function, and send independent reads and probes in one turn, because every turn costs latency and every whole file you read stays in your context to the end.
+- Read whole only what you judge; for a fact, grep for it and read the lines it names, because a review that compacts loses minutes to re-reading its own work.
+
 ## Your lens first
 
 - **Lens 1, SPEC conformance.** Walk every SPEC section the milestone touches sentence by sentence, probe a valid and a faulty program for each rule, and check the rule's row in `tests/error_rules.rs`, because a rule nobody probed is a rule nobody checked. Then list what the milestone adds against every consumer `SMELLS.md` § A construct that misses a consumer names, and probe each pair, because a defect in a pair nobody probes survives every review that reads only the diff.
@@ -9,7 +14,7 @@ How a SymphonyScript reviewer covers its lens, reviews the whole diff, reviews a
 - **Lens 3, the hot path and the speed targets.** Run each walk on the hot path at three doubling sizes, in every shape its input takes (a chain, a ring, nesting, sharing, many readers of one value, a growing argument) and in forward and reversed declaration order, counting work, before you measure the targets, because a walk is linear in the shapes its test builds and can be quadratic in the rest.
 - **Lens 4, code and test quality.** Read every changed function for the smells and the general patterns, every classifier for a catch-all arm, and every test for expected values from the documents, a class generated rather than listed, and a row that can fail, because a test that cannot fail passes the defect it was written for.
 
-## Then the whole diff
+## Then your part of the diff
 
 - **Sweep the class before you report.** On a finding, generate its class's programs over every dimension it varies and every declaration order, and report every member with the rule that decides them, because a review that reports one member of a class buys a round for each next member.
 - **Apply every help.** Apply the code a help quotes and compile again, because a help that reads well can name an edit the compiler refuses.

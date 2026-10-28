@@ -63,7 +63,7 @@ The enum `Wave` has the variants `Sine`, `Saw` and `Square`. The unit family `be
 
 ### 2.1 Files
 
-A project is a package (§15.1): a set of `.sym` files compiled together, found in every folder under its source root. All files of a package share one namespace (§6.5), and no file imports another; a package takes in and gives out names only through its package file (§15.2). Files are ordered by the byte-wise order of their paths, and items within a file by source order. This order is the program's top-level order. A source file whose path equals a prelude file's path (§10.1) is an error.
+A project is a package (§15.1): a set of `.sym` files compiled together, found in every folder under its root, the folder holding its package file (§15.2). All files of a package share one namespace (§6.5), and no file imports another; a package takes in and gives out names only through its package file (§15.2). Files are ordered by the byte-wise order of their paths, and items within a file by source order. This order is the program's top-level order. A source file whose path equals a prelude file's path (§10.1) is an error.
 
 ```ebnf
 File    ::= TopItem*
@@ -1777,7 +1777,7 @@ SymphonyScript has none of the following:
 
 ### 15.1 Packages
 
-A package is a set of `.sym` files compiled together: every `.sym` file in every folder under its source root. A project is a package; a library is a package that another package requires (§15.3); a vocabulary's prelude is a library (§15.6). A package's files share its namespace (§6.5), and a name it declares is visible outside it only when it publishes the name (§15.5). A library's source root is its folder `src`, or the folder its settings name (ARCHITECTURE §9).
+A package is a set of `.sym` files compiled together: every `.sym` file in every folder under its root, the folder holding its package file (§15.2). A project is a package; a library is a package that another package requires (§15.3); a vocabulary's prelude is a library (§15.6). A package's files share its namespace (§6.5), and a name it declares is visible outside it only when it publishes the name (§15.5).
 
 A package's identity is its source (§15.3) without its version: `github.com/acme/drums`. A local library's identity is its path from the project's root, `../util`, and the prelude's is `prelude`. A build holds one package of each identity.
 
@@ -1791,7 +1791,7 @@ PackageItem ::= PackageDecl | Require | Use | Publish
 PackageDecl ::= 'package' RecordLit NEWLINE
 ```
 
-A package's package file is `package.sym` at its source root. It holds these items only, in any order, and no declaration. A `package.sym` in any other folder of the package, and a `package`, `require`, `use` or `publish` item in any other file, is an error naming the package file.
+A package's package file is `package.sym`, and the folder holding it is the package's root. It holds these items only, in any order, and no declaration. A `package.sym` in any other folder of the package, and a `package`, `require`, `use` or `publish` item in any other file, is an error naming the package file.
 
 The `package` item states the package's identity as a record (§3.8) of the built-in type `Package`. Its fields are compile-time values, and none reaches the Program:
 
@@ -1804,7 +1804,7 @@ The `package` item states the package's identity as a record (§3.8) of the buil
 | `contributors` | an array of strings, as `authors` |
 | `vocabulary` | the vocabulary it is written for (§15.8) |
 
-A library's package file holds a `package` item with a `name` and a `version`; a project's may hold none. Two `package` items are an error.
+A library's package file holds a `package` item with a `name` and a `version`, and a project's holds one with its `vocabulary` (§15.8). Two `package` items are an error.
 
 ```sym-package
 package {
@@ -1885,6 +1885,6 @@ A commit the project requires replaces every version the build requires of that 
 
 ### 15.8 A package's vocabulary
 
-A vocabulary has a name and a version (§10.1, §15.7). A library's `package` item states the vocabulary it is written for as `"<name>@<version>"`, the lowest version it accepts within that version's major: `vocabulary: "drums@2.1.0"`. A library that states none uses no kind, enum, unit, attribute or prelude name. A library written for a vocabulary of another name than the build's, of another major, or of a higher version, is an error naming the library and both vocabularies.
+A vocabulary has a name and a version (§10.1, §15.7). A package's `package` item states the vocabulary it is written for as `"<name>@<version>"`, the lowest version it accepts within that version's major: `vocabulary: "drums@2.1.0"`. A project's states the vocabulary of the framework that runs it (ARCHITECTURE §9). A library that states none uses no kind, enum, unit, attribute or prelude name. A library written for a vocabulary of another name than the project's, of another major, or of a higher version, is an error naming the library and both vocabularies, and so is a project whose framework's vocabulary differs that way from the one it states.
 
 A vocabulary raises its major when it removes or changes a kind, an attribute, an enum variant, a unit or a name its prelude publishes, and its minor when it adds one.
