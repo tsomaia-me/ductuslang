@@ -162,7 +162,7 @@ The `for` expression, iterables with one or two loop names, the removal of `boun
 Steps:
 1. The lexer and the parser: `into`, the `for` expression in its one-line and block forms, the loop head with one or two names in placement `for`s, bundles and `for` expressions, and `bounded` out of the grammar, with the tests over SPEC.md's examples and rule sentences passing again.
 2. Resolve and Infer: iterables over arrays, maps and ranges with the bound rule (SPEC §7.9), and a slice's capacity from its bounds' maximum by the same rule (SPEC §3.7); the loop names' scope and the name rules of SPEC §6.5 over loop names, accumulators and a block form's local `let`s; the accumulator's type and every capacity in it (SPEC §5.10); a `for` expression evaluated at compile time when it reads no cell and one cell otherwise, its compile-time iterations counted toward SPEC §4.6's `for` iterations; its body inlined once and counted once; the removal of bounded expansion and its memo nesting; and the new help on a recursive call that reads a cell (SPEC §6.3).
-3. The limits: a `<name>_warning` field beside every limit that draws an error, its default half the limit's in the constants file, the `Limits` fields that `[limits]` keys name, and the warning diagnostic, naming what the limit's error names (SPEC §4.6, ARCHITECTURE §7, §9).
+3. The limits: a `<name>_warning` field beside every limit that draws an error, its default half the limit's in the constants file, the `Limits` fields that `options` keys name (ARCHITECTURE §9), and the warning diagnostic, naming what the limit's error names (SPEC §4.6, ARCHITECTURE §7, §9).
 4. Check, diagnostics and tests: the errors of the new rules, a summary and a help on each, a lesson for every new code, and a test for each rule of SPEC §5.10 and §7.9.
 
 Exit:
@@ -230,7 +230,7 @@ Steps:
 1. The lexer and the parser: the keywords `package`, `require`, `use` and `publish`, the package file's items, and qualified names wherever a name refers to a top-level declaration, with the tests over SPEC.md's examples and rule sentences passing again.
 2. The compiler's input: `Source.package` (ARCHITECTURE §7), a namespace per package, the build's top-level order across packages (SPEC §15.1), and the prelude as a library with its package file.
 3. Resolve: `require` by local path, `use` in its four forms, `publish` with renames and republishing, qualified names, shadowing of prelude names, and the name rules of SPEC §15.3 to §15.6.
-4. Versions and vocabularies: the choice of versions over the required versions (SPEC §15.7), the vocabulary's name and version in `Vocabulary::builder` (ARCHITECTURE §2), and a library's `vocabulary` checked against the build's (SPEC §15.8).
+4. Versions, vocabularies and options: the choice of versions over the required versions (SPEC §15.7), the vocabulary's name and version in `Vocabulary::builder` (ARCHITECTURE §2), a library's `vocabulary` checked against the build's (SPEC §15.8), the build's limits combined from the packages' `options` with `LimitOverrides` over them (SPEC §15.2, ARCHITECTURE §7), and the raised-limit warning.
 5. Check and diagnostics: the errors of the new rules, a summary and a help on each, and a lesson for every new code.
 
 Exit:
@@ -240,6 +240,7 @@ Exit:
 - A project's declaration shadows a prelude name, `prelude::<name>` reaches the prelude's, and a library's top-level input is named `<identity>::<name>` in the Program.
 - Two majors of one library in a build are refused naming both requirements, and the highest required version within a major is the one built.
 - A library written for another vocabulary, another major or a higher version is refused naming both vocabularies.
+- A library stating a work limit above the project's raises the build's value and draws the warning naming the library and both values, the project stating the same value silences it, and a library's memory limit is read only in a build the library starts.
 - Every code has a lesson, and the robustness corpus gains mutants of the package files, none drawing internal-error or panicking.
 
 ## M3: Runtime and reload
@@ -284,7 +285,7 @@ Steps:
 2. The language server on `lsp-server`.
 3. The VS Code extension: the static grammar and the language client.
 4. The JetBrains plugin: highlighting from the grammar or the server's semantic tokens, and the language client on the IntelliJ Platform's LSP API.
-5. Packages in the tool: `sym`, fetching releases and commits into the cache, the choice of versions across fetched libraries, the lock file, and `add`, `remove` and `update` (ARCHITECTURE §9).
+5. Packages in the tool: `sym`, fetching releases and commits into the cache, the choice of versions across fetched libraries, the lock file, and `add`, `remove`, `update` and `calibrate` (ARCHITECTURE §9).
 
 Exit:
 - End-to-end tests for `new` and `check`, and for single-file mode.
@@ -294,7 +295,7 @@ Exit:
 - `check` prints each diagnostic as ARCHITECTURE §9 renders it, the lesson under `── why ──` and the spans under `── where ──`, and `--brief` leaves out the lesson.
 - The language server handles M2's deep sources on a thread with a 1 MiB stack.
 - The `package` record's `options` and `--limit` reach the compiler and the language server, a flag overriding the record.
-- Against a local git server fixture, `sym add`, `remove` and `update` at each level change the package file and the lock file as ARCHITECTURE §9 says; a fetched release whose hash differs from its lock line stops the build naming the library; `sym check` runs the project's framework binary.
+- Against a local git server fixture, `sym add`, `remove` and `update` at each level change the package file and the lock file as ARCHITECTURE §9 says; a fetched release whose hash differs from its lock line stops the build naming the library; `sym check` runs the project's framework binary; `sym calibrate` writes the limits its libraries raise into the project's `options`, after which the build draws no raised-limit warning.
 
 ## M4b: Delivery
 
