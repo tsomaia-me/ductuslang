@@ -764,13 +764,15 @@ impl Engine<'_> {
         }
         let array = match &base_val {
             Val::Array(array) => array.clone(),
-            Val::Scalar(_) => {
-                self.error(
-                    Code::NotAnArray,
-                    self.hir.expr(base)?.loc,
-                    scope,
-                    "only an array is indexed",
-                )?;
+            Val::Scalar(node) => {
+                if !some!(self.sig(*node, need)).is_error() {
+                    self.error(
+                        Code::NotAnArray,
+                        self.hir.expr(base)?.loc,
+                        scope,
+                        "only an array is indexed",
+                    )?;
+                }
                 return Ok(Some(Val::Error));
             }
             Val::Error => return Ok(Some(Val::Error)),

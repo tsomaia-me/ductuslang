@@ -43,6 +43,7 @@ impl Engine<'_> {
                 let array = match &val {
                     Val::Array(array) if array.shape.depth() == 1 => array.clone(),
                     Val::Error => return Ok(None),
+                    Val::Scalar(node) if self.demand_sig(*node)?.is_error() => return Ok(None),
                     Val::Array(_) | Val::Scalar(_) => {
                         self.error(Code::IterableType, loc, scope, ITERABLE)?;
                         return Ok(None);

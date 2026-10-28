@@ -115,7 +115,9 @@ impl Engine<'_> {
             if let Val::Scalar(node) = val
                 && !self.arrays.contains(&node)
             {
-                self.error(Code::TypeMismatch, loc, scope, ARRAY_PARAM)?;
+                if !some!(self.sig(node, need)).is_error() {
+                    self.error(Code::TypeMismatch, loc, scope, ARRAY_PARAM)?;
+                }
                 return Ok(Some(Val::Error));
             }
             let Some(node) = self.boxed(&val, arg_loc, scope)? else {
