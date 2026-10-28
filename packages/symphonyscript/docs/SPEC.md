@@ -675,6 +675,7 @@ A call invokes a built-in, a prelude function, native functions included (§10.1
 | `pi` | the float constant π |
 | `len(xs)` | the live length of the array `xs`, the number of characters of the string `xs`, the entries of the map `xs` (§3.10), or the elements or entries of the document `xs` (§3.11): on a fixed array or a compile-time string a flexible integer known at compile time, otherwise an `i32` |
 | `bytes(x)` | a `u8` array: a string's UTF-8 bytes, a fixed array of them for a compile-time string and a variable array of four times the string's capacity for a runtime string; a `u8` array itself; and any other integer array element by element as `u8(x)` converts |
+| `transform(xs, f)` | the array of `f(x)` for each element `x` of the array `xs`, in order, of `xs`'s length and capacity and of `f`'s result type, with `f` a function reference or a lambda of one parameter (§6.7); evaluated as a `for` expression over `xs` is (§5.10) |
 | `keys(m)`, `values(m)` | a map's keys and values as variable arrays of its capacity (§3.10); a document's as array views (§3.11) |
 | `typeof(v)` | the kind of the document value `v`, a `Json` (§3.11) |
 
