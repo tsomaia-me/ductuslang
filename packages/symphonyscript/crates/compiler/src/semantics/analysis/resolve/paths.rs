@@ -194,7 +194,7 @@ impl Engine<'_> {
             return Ok(None);
         }
         let Some((last, rest)) = vals.split_last() else {
-            return Err(Internal::missed("path start"));
+            return Ok(Some(Val::Error));
         };
         if vals.iter().any(|val| matches!(val, Val::Error)) {
             return Ok(Some(Val::Error));
@@ -264,12 +264,13 @@ impl Engine<'_> {
                 Op::Element { base, .. } | Op::Slice { base, .. } => stack.push(*base),
                 Op::Join(lhs, rhs) => stack.extend([*rhs, *lhs]),
                 Op::Arg(_) => {
-                    let among = self
+                    for item in self
                         .memo
                         .arg_instances
                         .get(&node)
-                        .ok_or(Internal::missed("argument instances"))?;
-                    for item in among.iter() {
+                        .into_iter()
+                        .flat_map(|among| among.iter())
+                    {
                         if held.insert(*item) {
                             instances.push(*item);
                         }

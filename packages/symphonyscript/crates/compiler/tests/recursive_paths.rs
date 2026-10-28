@@ -804,3 +804,41 @@ fn an_array_attribute_read_through_a_reference_a_recursive_body_chooses_has_the_
     );
     assert_eq!(programs, 8_208);
 }
+
+#[test]
+fn a_reference_argument_an_error_leaves_unknown_draws_what_its_twin_draws() {
+    let header = "Session main\nClip verse | gain=2:\n    Note\nClip other | gain=3:\n    Note\n";
+    let mut failures = Vec::new();
+    for argument in ["[verse, other][5]", "[verse, nothing][1]", "xs[i]"] {
+        for reversed in [false, true] {
+            let program = |recursive: bool| {
+                let callee = if recursive {
+                    "fn g(c, n): if n < 1 then c.gain else g(c, n - 1)\n"
+                } else {
+                    "fn g(c, n): c.gain\n"
+                };
+                let caller = if recursive {
+                    format!("fn h(xs, i, n): if n < 1 then g({argument}, 2) else h(xs, i, n - 1)\n")
+                } else {
+                    format!("fn h(xs, i, n): g({argument}, 2)\n")
+                };
+                let mut items = [
+                    header.to_string(),
+                    callee.to_string(),
+                    caller,
+                    "Clip k | gain=h([verse, other], 5, 3):\n    Note\n".to_string(),
+                ];
+                if reversed {
+                    items.reverse();
+                }
+                items.concat()
+            };
+            let (text, twin) = (program(true), program(false));
+            let (drawn, expected) = (found(&text), found(&twin));
+            if drawn != expected || expected.is_empty() {
+                failures.push(format!("{text}\n  found {drawn:?}\n  twin {expected:?}\n"));
+            }
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.concat());
+}
