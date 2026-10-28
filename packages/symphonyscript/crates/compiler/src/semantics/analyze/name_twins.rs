@@ -5,7 +5,7 @@ use symphonyscript_core::{Limits, Vocabulary};
 use super::program::program;
 use crate::diagnostics::{Code, Diagnostic};
 use crate::semantics::collection::Variants;
-use crate::semantics::ir::{ExprId, ExprKind, Hir, build_file};
+use crate::semantics::ir::{ExprId, ExprKind, Hir, Top, build_file};
 use crate::semantics::reporting::{Report, span};
 use crate::source::Source;
 use crate::syntax::parse;
@@ -45,7 +45,7 @@ pub(crate) fn name_twins(
     }
     let path = twin_path(hir);
     let mut runs = Vec::new();
-    for declaration in declarations(analysis.vocabulary) {
+    for declaration in declarations(analysis.vocabulary, hir) {
         let Some(found) = twin_run(analysis, placeholders, &fresh, &path, &declaration) else {
             return diagnostics;
         };
@@ -142,19 +142,42 @@ fn twin_run(
     )
 }
 
-fn declarations(vocabulary: &Vocabulary) -> Vec<(&'static str, String)> {
+fn declarations(vocabulary: &Vocabulary, hir: &Hir) -> Vec<(&'static str, String)> {
     let mut found = vec![
         ("input", ": i32 = 0".to_string()),
+        ("let", " = 1".to_string()),
         ("input", ": f64 = 0.5".to_string()),
+        ("let", " = 0.5".to_string()),
         ("input", " = false".to_string()),
+        ("let", " = false".to_string()),
         ("let", " = \"a\"".to_string()),
+        ("input", ": i32[..4] = []".to_string()),
+        ("let", " = [1]".to_string()),
     ];
     if let Some(variant) = vocabulary.enums().first().and_then(|decl| {
         decl.variants
             .first()
             .map(|variant| format!(" = {}::{variant}", decl.name))
     }) {
-        found.push(("input", variant));
+        found.push(("input", variant.clone()));
+        found.push(("let", variant));
+    }
+    let mut kinds = BTreeSet::new();
+    for (position, top) in hir.top.iter().enumerate() {
+        let Top::Placement(id) = top else {
+            continue;
+        };
+        let Ok(placement) = hir.placement(*id) else {
+            continue;
+        };
+        if hir.is_prelude_top(position) {
+            continue;
+        }
+        if let (Some(kind), Some(name)) = (&placement.kind, &placement.name)
+            && kinds.insert(kind.text.clone())
+        {
+            found.push(("let", format!(" = {}", name.text)));
+        }
     }
     found
 }

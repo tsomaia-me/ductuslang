@@ -479,6 +479,12 @@ impl Engine<'_> {
                     .map(|operand| (operand, selection)),
             ),
         }
+        if let Some(kept) = self.memo.kept_operands.get(&node).cloned() {
+            for operand in kept {
+                self.demand_sig(operand)?;
+                operands.push((operand, selection));
+            }
+        }
         for (operand, selection) in operands {
             if matches!(self.node(operand)?.op, Op::Bare(_)) {
                 continue;

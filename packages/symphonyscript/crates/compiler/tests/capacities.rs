@@ -708,10 +708,7 @@ fn a_history_read_of_a_let_whose_initializer_drew_an_error_draws_nothing_of_its_
                 "state s = (t{1, []} + [note])[^8..]\n",
                 "Clip c:\n    Note/(len(s))\n",
             ],
-            &[
-                (Code::UnknownName, "zzz"),
-                (Code::ArrayOperand, "zzz + [note]"),
-            ],
+            &[(Code::UnknownName, "zzz")],
         ),
         (
             &[

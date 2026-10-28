@@ -4405,10 +4405,7 @@ fn an_independent_fault_beside_a_placeholder_draws_its_own_diagnostic() {
         ),
         (
             &["Clip c:\n    Note/(nothing[5] + 1)\n"],
-            &[
-                (Code::UnknownName, "nothing"),
-                (Code::NotAnArray, "nothing"),
-            ],
+            &[(Code::UnknownName, "nothing")],
         ),
         (
             &[
@@ -4948,10 +4945,7 @@ fn beside_a_placeholder_an_operand_draws_only_where_its_twin_draws_with_its_twin
         ),
         (
             &["Clip c:\n    Note/((nothing - true) + true)\n"],
-            &[
-                (Code::UnknownName, "nothing"),
-                (Code::OperandType, "nothing - true"),
-            ],
+            &[(Code::UnknownName, "nothing")],
         ),
         (
             &[x, "Clip c:\n    Note/((x - true) + true)\n"],
@@ -4959,10 +4953,7 @@ fn beside_a_placeholder_an_operand_draws_only_where_its_twin_draws_with_its_twin
         ),
         (
             &["Clip c:\n    Note when nothing < true\n"],
-            &[
-                (Code::UnknownName, "nothing"),
-                (Code::OperandType, "nothing < true"),
-            ],
+            &[(Code::UnknownName, "nothing")],
         ),
     ];
     support::assert_rows_in_every_order(&symphonyscript_fixtures::vocabulary(), rows);
@@ -5609,10 +5600,17 @@ fn spanned_errors(compiler: &Compiler, sources: &[Source]) -> Spans {
 fn common_to_twins(compiler: &Compiler, program: &str) -> Spans {
     let twins = [
         "input q: i32 = 0\n",
+        "let q = 1\n",
         "input q: f64 = 0.5\n",
+        "let q = 0.5\n",
         "input q = false\n",
+        "let q = false\n",
         "input q = Wave::Sine\n",
+        "let q = Wave::Sine\n",
         "let q = \"a\"\n",
+        "input q: i32[..4] = []\n",
+        "let q = [1]\n",
+        "let q = c\n",
     ];
     let mut common: Option<Spans> = None;
     for twin in twins {
@@ -5649,7 +5647,7 @@ fn own_fault(site: &LeafSite, base: u32, whole: bool) -> Option<((Code, String, 
     };
     let required = match (site.read, site.leaf) {
         (Reach::Read, TOO_LARGE) => site.takes_type || whole,
-        (Reach::Read, _) => true,
+        (_, CONVERTED_BOOL) | (Reach::Read, _) => true,
         (Reach::Unread | Reach::Unsure, _) => false,
     };
     let key = (
@@ -5856,6 +5854,27 @@ fn every_seed_row_of_the_placeholder_rule_draws_what_its_rule_gives() {
         ),
         (
             &["fn h(v): v + 0.5\n", "Clip c:\n    Note/(h(q))\n"],
+            &[(Code::UnknownName, "q")],
+        ),
+        (
+            &["Clip c:\n    Note/([q, 1.5, 2][2])\n"],
+            &[(Code::UnknownName, "q")],
+        ),
+        (
+            &[
+                "input section = 0\n",
+                "let sections = [verse, chorus]\n",
+                "Clip intro:\n    for s in sections:\n        Starts: s\n",
+                "Clip outro:\n    Plays: sections[section]\n",
+            ],
+            &[(Code::UnknownName, "verse"), (Code::UnknownName, "chorus")],
+        ),
+        (
+            &[
+                "input gate = false\n",
+                "state rising = gate and not gate{q}\n",
+                "Clip c:\n    Note when rising\n",
+            ],
             &[(Code::UnknownName, "q")],
         ),
         (

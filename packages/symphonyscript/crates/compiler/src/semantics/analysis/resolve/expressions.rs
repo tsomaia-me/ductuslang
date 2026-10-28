@@ -1,4 +1,4 @@
-use symphonyscript_core::Value;
+use symphonyscript_core::{BinaryOp, Value};
 
 use crate::diagnostics::Code;
 use crate::semantics::Internal;
@@ -263,7 +263,8 @@ impl Engine<'_> {
                     scope,
                     "only `+` takes arrays, which it joins; every other operator takes single values",
                 )?;
-                return Ok(Some(Val::Error));
+                let operands = lhs.nodes().into_iter().chain(rhs.nodes()).collect();
+                return Ok(Some(self.refused_binary(op, operands, loc, scope)?));
             }
             if !(arrays.0 || self.holds_array(&lhs)) || !(arrays.1 || self.holds_array(&rhs)) {
                 self.error(Code::ArrayOperand, loc, scope, JOIN_SINGLE)?;
@@ -291,6 +292,7 @@ impl Engine<'_> {
         }
         self.single_operand(&lhs, Code::ArrayOperand, OPERAND);
         self.single_operand(&rhs, Code::ArrayOperand, OPERAND);
+        let operands = lhs.nodes().into_iter().chain(rhs.nodes()).collect();
         Ok(Some(match (lhs, rhs) {
             (Val::Scalar(lhs), Val::Scalar(rhs)) => {
                 self.scalar(Op::Binary(op, lhs, rhs), loc, scope)?
@@ -303,9 +305,40 @@ impl Engine<'_> {
                     scope,
                     "operators apply to single values, not arrays",
                 )?;
-                Val::Error
+                self.refused_binary(op, operands, loc, scope)?
             }
         }))
+    }
+
+    fn refused_binary(
+        &mut self,
+        op: symphonyscript_core::BinaryOp,
+        operands: Vec<NodeId>,
+        loc: Loc,
+        scope: ScopeId,
+    ) -> Result<Val, Internal> {
+        match op {
+            BinaryOp::And
+            | BinaryOp::Or
+            | BinaryOp::Lt
+            | BinaryOp::Le
+            | BinaryOp::Gt
+            | BinaryOp::Ge
+            | BinaryOp::Is
+            | BinaryOp::IsNot => {
+                let kept = self.push_node(Op::Bool(false), loc, scope)?;
+                self.memo.kept_types.insert(kept);
+                self.memo.kept_operands.insert(kept, operands);
+                Ok(Val::Scalar(kept))
+            }
+            BinaryOp::Add
+            | BinaryOp::Sub
+            | BinaryOp::Mul
+            | BinaryOp::Div
+            | BinaryOp::IntDiv
+            | BinaryOp::Rem
+            | BinaryOp::Pow => Ok(Val::Error),
+        }
     }
 
     fn if_val(
