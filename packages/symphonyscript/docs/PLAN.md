@@ -150,7 +150,7 @@ Steps:
 Exit:
 - M2b's exit criteria hold over the SPEC as it now reads: every rule that names an error has its test and its row, every `sym` example that declares its names passes Check, and every `sym-error` example is rejected.
 - Every `sym` example of SPEC §5.10 and §7.9 passes every stage through Check, and every `sym-error` example of them is rejected.
-- For a `for` expression over a variable array, Check's time, Infer's node count and Program size grow linearly in the array's capacity, measured up to a capacity of 10,000.
+- For a `for` expression over a variable array, Check's time and Infer's node count grow linearly in the array's capacity, measured up to a capacity of 10,000; the Program's size for the same sources is M3's exit line, since Lower first builds the Program there.
 - Every form of SPEC §7.9's bound rule has a test whose minimum and maximum are derived by hand, for a range and for a slice, and a slice whose bound has no maximum by its form takes the whole array's capacity.
 - Each limit draws its warning at its warning value and its error at its limit.
 - A program written with `bounded` is rejected with a help naming the `for` expression.
@@ -230,6 +230,7 @@ Exit:
 - The state shared between the committing thread and a thread preparing a reload holds under loom at a preemption bound of 3 and under Miri with `-Zmiri-many-seeds`.
 - The compiler reports each fixture Program's memory in bytes, equal to what `Runtime::new` allocates under the counting allocator, and refuses a program over `memory_bytes` with the figure in the error (SPEC §12.6).
 - A benchmark over the fixture projects records compile time and Program size with and without shared bodies in the progress file, and sharing does not make the compiler significantly slower.
+- For a `for` expression over a variable array, the Program's size grows linearly in the array's capacity, measured up to a capacity of 10,000, as the owner ruled for M2e's sources.
 - A diagnostic drawn over a chain of called functions carries related spans linear in the chain's length, and a chain of 4,000 faulty functions compiles in work linear in 4,000.
 - Reload matching follows SPEC §13.3's search bound, and a benchmark over generated edits measures Myers' cost against edit distance and sequence length, recorded in the progress file.
 - Golden traces cover states and histories, triggers, variable arrays at every level, strings, records, sums, maps and documents; a string written past its capacity or in invalid UTF-8, and a document written past its budget or invalid, are refused with the capacity or the byte position in the error.
