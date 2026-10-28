@@ -1803,6 +1803,7 @@ The `package` item states the package's identity as a record (§3.8) of the buil
 | `authors` | an array of strings, each naming a person: `"Ada Lovelace <ada@example.com>"` |
 | `contributors` | an array of strings, as `authors` |
 | `vocabulary` | the vocabulary it is written for (§15.8) |
+| `options` | the settings of the build it starts: the limits of §4.6, §6.3 and §12.6 and their warning values (ARCHITECTURE §9) |
 
 A library's package file holds a `package` item with a `name` and a `version`, and a project's holds one with its `vocabulary` (§15.8). Two `package` items are an error.
 

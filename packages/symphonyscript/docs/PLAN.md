@@ -293,7 +293,7 @@ Exit:
 - The JetBrains plugin starts the language server for a sample project in IntelliJ IDEA, highlights its sources and shows its diagnostics.
 - `check` prints each diagnostic as ARCHITECTURE §9 renders it, the lesson under `── why ──` and the spans under `── where ──`, and `--brief` leaves out the lesson.
 - The language server handles M2's deep sources on a thread with a 1 MiB stack.
-- `symphony.toml`'s `[limits]` and `--limit` reach the compiler and the language server, a flag overriding the file.
+- The `package` record's `options` and `--limit` reach the compiler and the language server, a flag overriding the record.
 - Against a local git server fixture, `sym add`, `remove` and `update` at each level change the package file and the lock file as ARCHITECTURE §9 says; a fetched release whose hash differs from its lock line stops the build naming the library; `sym check` runs the project's framework binary.
 
 ## M4b: Delivery
@@ -311,7 +311,7 @@ Exit:
 - A write through a generated method longer than a variable-array input's capacity does not compile, shown by a compile-fail test.
 - End-to-end tests for `dump`, and for `check` printing the memory figure.
 - `codegen` handles M2's deep sources on a thread with a 1 MiB stack.
-- `symphony.toml`'s `[limits]` and `--limit` reach the runtime, a flag overriding the file.
+- The `package` record's `options` and `--limit` reach the runtime, a flag overriding the record.
 - `codegen` emits the Program's function table and call nodes, and a generated Program's shared bodies run as the library's do.
 - A CI job on an x86_64 Linux runner asserts the pinned vocabulary stamp 0x35f8efc8552d30a7, so the stamp's encoding is machine-independent (SPEC §13.1).
 
