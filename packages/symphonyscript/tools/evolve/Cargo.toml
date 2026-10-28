@@ -23,5 +23,13 @@ path = "src/bin/evolve_check.rs"
 name = "evolve-shrink"
 path = "src/bin/evolve_shrink.rs"
 
+[[bin]]
+name = "evolve-mutants"
+path = "src/bin/evolve_mutants.rs"
+
+[[bin]]
+name = "evolve-codes"
+path = "src/bin/evolve_codes.rs"
+
 [profile.dev]
 opt-level = 1
