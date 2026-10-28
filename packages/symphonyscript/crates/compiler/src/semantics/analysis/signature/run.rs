@@ -89,7 +89,6 @@ impl Engine<'_> {
             | Op::Chosen(_)
             | Op::Arg(_)
             | Op::Unary(..)
-            | Op::Names(..)
             | Op::Binary(..)
             | Op::Pick { .. }
             | Op::Element { .. }
@@ -170,6 +169,10 @@ impl Engine<'_> {
             sig = element_of(sig, group, self.memo.held_reads.contains(&node));
         }
         sig.frame = matches!(op, Op::Arg(_)) || sigs.iter().any(|operand| operand.frame);
+        if self.memo.frame_joins.contains(&node) {
+            sig.frame = true;
+            sig.reactive = false;
+        }
         self.memo.sigs.insert(node, sig);
         Ok(true)
     }
@@ -194,8 +197,7 @@ impl Engine<'_> {
                 | BinaryOp::IsNot,
                 ..,
             )
-            | Op::Unary(UnaryOp::Not, _)
-            | Op::Names(..) => Some(Sig::of(
+            | Op::Unary(UnaryOp::Not, _) => Some(Sig::of(
                 Kind::Bool,
                 Width::Fixed(Scalar::Bool),
                 reactive,
@@ -502,7 +504,6 @@ fn joins(op: &Op) -> bool {
         | Op::Read(_)
         | Op::Arg(_)
         | Op::Unary(UnaryOp::Not, _)
-        | Op::Names(..)
         | Op::Recursive { .. }
         | Op::ToRead { .. }
         | Op::Join(..)

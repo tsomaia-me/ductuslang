@@ -79,7 +79,6 @@ impl Engine<'_> {
                     | Op::Pi
                     | Op::NodeRef(_)
                     | Op::Unary(..)
-                    | Op::Names(..)
                     | Op::Binary(..)
                     | Op::If(..)
                     | Op::Match { .. }

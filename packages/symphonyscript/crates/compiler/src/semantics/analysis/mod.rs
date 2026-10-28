@@ -36,6 +36,7 @@ mod family_key;
 mod fast_hash;
 mod feed;
 mod float_for;
+mod frame_read;
 mod history_cell;
 mod i64_position;
 mod ids;

@@ -22,6 +22,7 @@ use crate::semantics::analysis::engine::Engine;
 use crate::semantics::analysis::eval_ty::EvalTy;
 use crate::semantics::analysis::fast_hash::{FastMap, FastSet};
 use crate::semantics::analysis::feed::Feed;
+use crate::semantics::analysis::frame_read::FrameRead;
 use crate::semantics::analysis::ids::{NodeId, ScopeId};
 use crate::semantics::analysis::kind::Kind;
 use crate::semantics::analysis::map_leaves::map_leaves;
@@ -346,15 +347,62 @@ impl Engine<'_> {
             return Ok(Some(Template::Failed));
         }
         if sig.reactive {
-            let reading = format!(
-                "the body of the recursive function `{}` reads a cell",
-                self.function_name(function)?
-            );
-            self.reactive_recursion(call, function, reading)?;
+            self.reactive_body(call, function)?;
             return Ok(Some(Template::Failed));
         }
         self.template_units(scope, root)?;
         Ok(Some(Template::Root(root)))
+    }
+
+    pub(super) fn frame_read(
+        &mut self,
+        read: &FrameRead,
+        frame: usize,
+        (own, partner): (EvalTy, Option<EvalTy>),
+        need: &mut Vec<Query>,
+    ) -> Result<Option<CVal>, Internal> {
+        let ctx = Ctx::Frame(frame);
+        let item = match some!(self.child(read.start, EvalTy::Node, ctx, need)?) {
+            CVal::Node(item) => item,
+            CVal::Int(_)
+            | CVal::F32(_)
+            | CVal::F64(_)
+            | CVal::Bool(_)
+            | CVal::Enum(..)
+            | CVal::Str(_)
+            | CVal::Array(_)
+            | CVal::Error => return Ok(Some(CVal::Error)),
+        };
+        let Some(&(_, arm)) = read.arms.iter().find(|(candidate, _)| *candidate == item) else {
+            if !self.may_name(item, &read.name.text)? {
+                let owner = self.item_description(item)?;
+                self.error(
+                    Code::UnknownAttribute,
+                    read.name.loc,
+                    read.scope,
+                    format!(
+                        "{owner} has no child, wire or attribute `{}`",
+                        read.name.text
+                    ),
+                )?;
+            }
+            return Ok(Some(CVal::Error));
+        };
+        if some!(self.sig(arm, need)).reactive {
+            let record = self.frame(0)?;
+            let (call, function) = (record.call, record.function);
+            self.reactive_body(call, function)?;
+            return Ok(Some(CVal::Error));
+        }
+        self.typed_child(arm, (own, partner), ctx, need)
+    }
+
+    pub(super) fn reactive_body(&mut self, call: NodeId, function: FnId) -> Result<(), Internal> {
+        let reading = format!(
+            "the body of the recursive function `{}` reads a cell",
+            self.function_name(function)?
+        );
+        self.reactive_recursion(call, function, reading)
     }
 
     fn result_fits(

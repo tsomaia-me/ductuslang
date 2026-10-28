@@ -200,7 +200,6 @@ impl Engine<'_> {
             | Op::Chosen(_)
             | Op::Arg(_)
             | Op::Unary(UnaryOp::Not, _)
-            | Op::Names(..)
             | Op::Binary(..)
             | Op::If(..)
             | Op::Match { .. }
@@ -246,6 +245,11 @@ impl Engine<'_> {
         ctx: Ctx,
         need: &mut Vec<Query>,
     ) -> Result<Option<CVal>, Internal> {
+        if let Ctx::Frame(frame) = ctx
+            && let Some(read) = self.memo.frame_reads.get(&node).cloned()
+        {
+            return self.frame_read(&read, frame, (own, partner), need);
+        }
         let op = self.node(node)?.op.clone();
         Ok(Some(match op {
             Op::Read(_) | Op::History { .. } => CVal::Error,
@@ -378,19 +382,6 @@ impl Engine<'_> {
                 },
             },
             Op::Concat(pieces) => return self.concat(&pieces, ctx, need),
-            Op::Names(reference, instance) => {
-                match some!(self.child(reference, EvalTy::Node, ctx, need)?) {
-                    CVal::Node(item) => CVal::Bool(item == instance),
-                    CVal::Int(_)
-                    | CVal::F32(_)
-                    | CVal::F64(_)
-                    | CVal::Bool(_)
-                    | CVal::Enum(..)
-                    | CVal::Str(_)
-                    | CVal::Array(_)
-                    | CVal::Error => CVal::Error,
-                }
-            }
             Op::Unary(UnaryOp::Not, operand) => {
                 match some!(self.child(operand, EvalTy::Bool, ctx, need)?) {
                     CVal::Bool(value) => CVal::Bool(!value),
@@ -1420,7 +1411,6 @@ fn takes_expected(op: &Op) -> bool {
         | Op::Read(_)
         | Op::Arg(_)
         | Op::Unary(UnaryOp::Not, _)
-        | Op::Names(..)
         | Op::Convert(..)
         | Op::Annotate(..)
         | Op::Recursive { .. }

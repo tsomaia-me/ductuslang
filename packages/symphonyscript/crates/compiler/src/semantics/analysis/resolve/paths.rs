@@ -12,6 +12,7 @@ use crate::semantics::analysis::destination::Destination;
 use crate::semantics::analysis::engine::Engine;
 use crate::semantics::analysis::eval_ty::EvalTy;
 use crate::semantics::analysis::fast_hash::FastSet;
+use crate::semantics::analysis::frame_read::FrameRead;
 use crate::semantics::analysis::ids::{NodeId, ScopeId, WireId};
 use crate::semantics::analysis::item_ref::ItemRef;
 use crate::semantics::analysis::kind::Kind;
@@ -112,7 +113,6 @@ impl Engine<'_> {
             | Op::Chosen(_)
             | Op::Arg(_)
             | Op::Unary(..)
-            | Op::Names(..)
             | Op::Binary(..)
             | Op::If(..)
             | Op::Match { .. }
@@ -202,55 +202,90 @@ impl Engine<'_> {
         need: &mut Vec<Query>,
     ) -> Result<Option<Val>, Internal> {
         let instances = some!(self.reference_instances(root, need)?);
-        let mut vals = Vec::with_capacity(instances.len());
+        let mut reads: Vec<(ItemRef, Val)> = Vec::with_capacity(instances.len());
         let mut missing = false;
         for instance in &instances {
             crate::semantics::counted_walk::CountedWalk::PathsFramePath.step();
-            match self.step(*instance, name, loc, scope, need)? {
-                Some(val) => vals.push(val),
+            match self.candidate_read(*instance, name, loc, scope, need)? {
+                Some(Some(val)) => reads.push((*instance, val)),
+                Some(None) => {}
                 None => missing = true,
             }
         }
         if missing {
             return Ok(None);
         }
-        let Some((last, rest)) = vals.split_last() else {
-            return Ok(Some(Val::Error));
+        let Some((_, last)) = reads.last() else {
+            return match instances.first() {
+                Some(first) => self.step(*first, name, loc, scope, need),
+                None => Ok(Some(Val::Error)),
+            };
         };
-        if vals.iter().any(|val| matches!(val, Val::Error)) {
+        if reads.iter().any(|(_, val)| matches!(val, Val::Error)) {
             return Ok(Some(Val::Error));
         }
         let shape = last.shape();
-        if vals
+        if reads
             .iter()
-            .any(|val| val.shape().lengths() != shape.lengths())
+            .any(|(_, val)| val.shape().lengths() != shape.lengths())
         {
             self.error(Code::TypeMismatch, loc, scope, CHOSEN_PATHS)?;
             return Ok(Some(Val::Error));
         }
-        let tested = if rest.is_empty() { &vals[..] } else { rest };
-        let mut tests = Vec::with_capacity(tested.len());
-        for instance in instances.iter().take(tested.len()) {
-            tests.push(self.push_node(Op::Names(root, *instance), loc, scope)?);
+        let passed = self.push_node(Op::Bool(false), loc, scope)?;
+        self.memo.frame_joins.insert(passed);
+        let mut arms: Vec<(ItemRef, Vec<NodeId>)> = Vec::with_capacity(reads.len());
+        for (item, val) in reads {
+            arms.push((item, val.nodes()));
         }
-        let last_nodes = last.nodes();
-        let tested_nodes: Vec<Vec<NodeId>> = tested.iter().map(Val::nodes).collect();
         let mut elements = Vec::with_capacity(shape.count());
         for position in 0..shape.count() {
-            let mut chosen = last_nodes
-                .get(position)
-                .copied()
-                .ok_or(Internal::missed("path element"))?;
-            for (test, nodes) in tests.iter().zip(&tested_nodes).rev() {
+            let mut chosen = Vec::with_capacity(arms.len());
+            for (item, nodes) in &arms {
                 let read = nodes
                     .get(position)
                     .copied()
                     .ok_or(Internal::missed("path element"))?;
-                chosen = self.push_node(Op::If(*test, read, chosen), loc, scope)?;
+                chosen.push((*item, read));
             }
-            elements.push(chosen);
+            let mut joined: Option<NodeId> = None;
+            for (_, read) in chosen.iter().rev() {
+                joined = Some(match joined {
+                    None => *read,
+                    Some(after) => self.push_node(Op::If(passed, *read, after), loc, scope)?,
+                });
+            }
+            let joined = joined.ok_or(Internal::missed("path element"))?;
+            let head = self.push_node(Op::Use(joined), loc, scope)?;
+            self.memo.frame_joins.insert(head);
+            self.memo.frame_reads.insert(
+                head,
+                FrameRead {
+                    start: root,
+                    arms: chosen,
+                    name: name.clone(),
+                    scope,
+                },
+            );
+            elements.push(head);
         }
         Ok(Some(self.shaped(shape, elements)))
+    }
+
+    fn candidate_read(
+        &mut self,
+        item: ItemRef,
+        name: &Ident,
+        loc: Loc,
+        scope: ScopeId,
+        need: &mut Vec<Query>,
+    ) -> Result<Option<Option<Val>>, Internal> {
+        if self.child_named(item, &name.text)?.is_none()
+            && self.attr_named(item, &name.text)?.is_none()
+        {
+            return Ok(Some(None));
+        }
+        Ok(self.step(item, name, loc, scope, need)?.map(Some))
     }
 
     pub(in crate::semantics::analysis) fn reference_instances(
@@ -310,7 +345,6 @@ impl Engine<'_> {
                 | Op::Variant(..)
                 | Op::Bare(_)
                 | Op::Pi
-                | Op::Names(..)
                 | Op::Read(_)
                 | Op::Unary(..)
                 | Op::Binary(..)
@@ -859,7 +893,6 @@ impl Engine<'_> {
                 | Op::Read(_)
                 | Op::Arg(_)
                 | Op::Unary(..)
-                | Op::Names(..)
                 | Op::Binary(..)
                 | Op::Element { .. }
                 | Op::Array(_)
@@ -1056,7 +1089,10 @@ impl Engine<'_> {
             .map(|row| base_val.slice(row))
             .collect::<Result<_, _>>()?;
         let inner = array.shape.inner();
-        let group = self.existing_group(base, &base_val, scope)?;
+        let group = match self.existing_group(base, &base_val, scope)? {
+            None if outer == 0 => some!(self.sliced_group(base, scope, need)?),
+            group => group,
+        };
         let columns: Vec<Vec<NodeId>> = rows.iter().map(Val::nodes).collect();
         let width = inner.count();
         let elements: Vec<NodeId> = (0..width)
@@ -1088,6 +1124,22 @@ impl Engine<'_> {
             self.memo.eager_reads.push((index_node, elements.clone()));
         }
         Ok(Some(self.shaped(inner, elements)))
+    }
+
+    fn sliced_group(
+        &mut self,
+        base: ExprId,
+        scope: ScopeId,
+        need: &mut Vec<Query>,
+    ) -> Result<Option<Option<NodeId>>, Internal> {
+        let ExprKind::Slice { base: sliced, .. } = self.hir.expr(base)?.kind else {
+            return Ok(Some(None));
+        };
+        let val = some!(self.val(Query::Expr(sliced, scope), need));
+        if val.nodes().is_empty() {
+            return Ok(Some(None));
+        }
+        Ok(Some(Some(self.value_group(sliced, &val, scope)?)))
     }
 
     fn bound_element(
@@ -1560,7 +1612,6 @@ impl Engine<'_> {
                 | Op::Read(_)
                 | Op::Arg(_)
                 | Op::Unary(..)
-                | Op::Names(..)
                 | Op::Binary(..)
                 | Op::Convert(..)
                 | Op::Builtin(..)

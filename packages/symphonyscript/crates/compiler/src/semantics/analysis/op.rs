@@ -18,7 +18,6 @@ pub(crate) enum Op {
     Bare(String),
     Pi,
     NodeRef(ItemRef),
-    Names(NodeId, ItemRef),
     Read(BindingId),
     Use(NodeId),
     Chosen(NodeId),
@@ -89,7 +88,6 @@ impl Op {
             | Op::Bare(_)
             | Op::Pi
             | Op::NodeRef(_)
-            | Op::Names(..)
             | Op::Read(_)
             | Op::Use(_)
             | Op::Chosen(_)
@@ -140,7 +138,6 @@ impl Op {
                 })
                 .collect(),
             Op::Unary(_, operand)
-            | Op::Names(operand, _)
             | Op::Convert(_, operand)
             | Op::Annotate(_, operand)
             | Op::Use(operand)

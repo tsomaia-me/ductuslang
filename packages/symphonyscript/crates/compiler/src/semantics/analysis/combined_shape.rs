@@ -78,7 +78,6 @@ pub(crate) fn combined_shape(
         | Op::Read(_)
         | Op::Arg(_)
         | Op::Unary(..)
-        | Op::Names(..)
         | Op::Binary(..)
         | Op::Pick { .. }
         | Op::Convert(..)

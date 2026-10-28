@@ -635,7 +635,6 @@ impl<'a> Engine<'a> {
             | Op::NodeRef(_)
             | Op::Arg(_)
             | Op::Unary(..)
-            | Op::Names(..)
             | Op::Binary(..)
             | Op::Pick { .. }
             | Op::Convert(..)
