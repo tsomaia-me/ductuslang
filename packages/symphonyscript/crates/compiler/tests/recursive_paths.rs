@@ -248,6 +248,31 @@ fn program(case: &Case, recursive: bool) -> String {
 
 type Found = BTreeMap<(Code, String), usize>;
 
+fn in_parallel<T: Copy + Send + Sync>(
+    items: &[T],
+    rows: impl Fn(T) -> (Vec<String>, usize) + Sync,
+) -> (Vec<String>, usize) {
+    std::thread::scope(|threads| {
+        let workers: Vec<_> = items
+            .iter()
+            .map(|item| {
+                let rows = &rows;
+                threads.spawn(move || rows(*item))
+            })
+            .collect();
+        let mut failures = Vec::new();
+        let mut programs = 0;
+        for worker in workers {
+            let (found, counted) = worker
+                .join()
+                .unwrap_or_else(|_| (vec!["a worker panicked".to_string()], 0));
+            failures.extend(found);
+            programs += counted;
+        }
+        (failures, programs)
+    })
+}
+
 fn found(text: &str) -> Found {
     let mut found = Found::new();
     for diagnostic in support::checked(text) {
@@ -571,22 +596,112 @@ fn chosen_value(binding: Binding) -> i32 {
     }
 }
 
-fn chosen_function(chooser: Chooser, (local, read): (&str, &str), recursive: bool) -> String {
-    let value = if recursive {
-        format!("if n < 1 then {read} else h(c, d, xs, i, n - 1)")
-    } else {
-        read.to_string()
-    };
-    format!(
-        "fn h(c, d, xs, i, n):\n{}{local}    {value}\n",
-        chooser.locals()
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Levels {
+    Base(i32),
+    Alternating(usize, i32),
+}
+
+const ALTERNATING_DEPTHS: [i32; 3] = [1, 3, 30];
+
+impl Levels {
+    fn depth(self) -> i32 {
+        match self {
+            Levels::Base(depth) | Levels::Alternating(_, depth) => depth,
+        }
+    }
+
+    fn reads(self, index: usize) -> Vec<(usize, i32)> {
+        match self {
+            Levels::Base(depth) => vec![(index, depth)],
+            Levels::Alternating(sum, depth) => (0..depth)
+                .map(|level| {
+                    let chosen = if level % 2 == 0 { index } else { sum - index };
+                    (chosen, depth - level)
+                })
+                .collect(),
+        }
+    }
+
+    fn functions(
+        self,
+        (params, locals, read): (&str, &str, &str),
+        args: impl Fn(&str) -> String,
+        recursive: bool,
+    ) -> String {
+        match self {
+            Levels::Base(_) if recursive => format!(
+                "fn h({params}):\n{locals}    if n < 1 then {read} else h({})\n",
+                args("i")
+            ),
+            Levels::Base(_) => format!("fn h({params}):\n{locals}    {read}\n"),
+            Levels::Alternating(sum, _) if recursive => format!(
+                "fn h({params}):\n{locals}    if n < 1 then 0 else {read} + h({})\n",
+                args(&format!("{sum} - i"))
+            ),
+            Levels::Alternating(sum, depth) => {
+                let depth = usize::try_from(depth).unwrap_or_default();
+                let next = args(&format!("{sum} - i"));
+                let name = |level: usize| match level {
+                    0 => "h".to_string(),
+                    _ => format!("h{level}"),
+                };
+                (0..=depth)
+                    .map(|level| {
+                        let rest = if level < depth {
+                            format!("{}({next})", name(level + 1))
+                        } else {
+                            "0".to_string()
+                        };
+                        format!(
+                            "fn {}({params}):\n{locals}    if n < 1 then 0 else {read} + {rest}\n",
+                            name(level)
+                        )
+                    })
+                    .collect()
+            }
+        }
+    }
+
+    fn of(indices: &[usize], depths: &[i32]) -> Vec<(usize, Levels)> {
+        let mut values = Vec::new();
+        for index in indices {
+            for depth in depths {
+                values.push((*index, Levels::Base(*depth)));
+            }
+        }
+        if let [first, second] = indices {
+            for index in indices {
+                for depth in ALTERNATING_DEPTHS {
+                    values.push((*index, Levels::Alternating(first + second, depth)));
+                }
+            }
+        }
+        values
+    }
+}
+
+fn chosen_function(
+    chooser: Chooser,
+    (local, read): (&str, &str),
+    levels: Levels,
+    recursive: bool,
+) -> String {
+    levels.functions(
+        (
+            "c, d, xs, i, n",
+            &format!("{}{local}", chooser.locals()),
+            read,
+        ),
+        |next| format!("c, d, xs, {next}, n - 1"),
+        recursive,
     )
 }
 
 fn chosen_program(
     (chooser, consumer, binding): (Chooser, Consumer, Binding),
     (scale, index): (i32, usize),
-    (depth, reversed, recursive): (i32, bool, bool),
+    (levels, reversed, recursive): (Levels, bool, bool),
 ) -> String {
     let chosen = chooser.expression();
     let local = consumer.local(chosen);
@@ -605,19 +720,29 @@ fn chosen_program(
         "let rs = [verse, other]\n".to_string(),
     ];
     items.extend(HELPERS.iter().map(|helper| helper.to_string()));
-    items.push(chosen_function(chooser, (&local, &read), recursive));
-    let call = format!("h(verse, other, [verse, other], {index}, {depth})");
+    items.push(chosen_function(chooser, (&local, &read), levels, recursive));
+    let call = format!(
+        "h(verse, other, [verse, other], {index}, {})",
+        levels.depth()
+    );
     let read = match scale {
         1 => call,
         _ => format!("{call} * {scale}"),
     };
+    let offset: i32 = levels
+        .reads(index)
+        .into_iter()
+        .map(|(chosen, depth)| {
+            if chooser.chooses_other(chosen, depth) {
+                chosen_value(binding)
+            } else {
+                5
+            }
+        })
+        .sum();
     items.push(format!(
         "Clip k:\n    Note/([60][i32({read}) - {}])\n",
-        if chooser.chooses_other(index, depth) {
-            chosen_value(binding) * scale
-        } else {
-            5 * scale
-        }
+        offset * scale
     ));
     if reversed {
         items.reverse();
@@ -625,19 +750,21 @@ fn chosen_program(
     items.concat()
 }
 
-fn frame_values(chooser: Chooser) -> Vec<(usize, i32)> {
-    let mut values = Vec::new();
-    for index in chooser.indices() {
-        for depth in chooser.depths() {
-            values.push((*index, *depth));
-        }
-    }
-    values
+fn frame_values(chooser: Chooser) -> Vec<(usize, Levels)> {
+    Levels::of(chooser.indices(), chooser.depths())
 }
 
-fn twin_failure(text: &str, twin: &str) -> Option<String> {
-    let expected = found(twin);
-    let drawn = found(text);
+fn codes_at(text: &str, levels: Levels) -> Found {
+    let mut drawn = found(text);
+    if let Levels::Alternating(..) = levels {
+        drawn.values_mut().for_each(|count| *count = 1);
+    }
+    drawn
+}
+
+fn twin_failure(text: &str, twin: &str, levels: Levels) -> Option<String> {
+    let expected = codes_at(twin, levels);
+    let drawn = codes_at(text, levels);
     if expected
         .keys()
         .any(|(code, _)| *code == Code::IndexOutOfRange)
@@ -652,22 +779,22 @@ fn twin_failure(text: &str, twin: &str) -> Option<String> {
 #[test]
 fn a_reference_a_recursive_body_chooses_by_a_frame_value_reads_the_chosen_reference_at_every_consumer()
  {
-    let mut failures = Vec::new();
-    let mut programs = 0;
-    for chooser in CHOOSERS {
+    let (failures, programs) = in_parallel(&CHOOSERS, |chooser| {
+        let mut failures = Vec::new();
+        let mut programs = 0;
         for consumer in CONSUMERS {
             for binding in CHOSEN_BINDINGS {
                 for scale in [1, 2] {
-                    for (index, depth) in frame_values(chooser) {
+                    for (index, levels) in frame_values(chooser) {
                         for reversed in [false, true] {
                             let case = (chooser, consumer, binding);
                             let frame = (scale, index);
-                            let text = chosen_program(case, frame, (depth, reversed, true));
-                            let twin = chosen_program(case, frame, (depth, reversed, false));
+                            let text = chosen_program(case, frame, (levels, reversed, true));
+                            let twin = chosen_program(case, frame, (levels, reversed, false));
                             programs += 1;
-                            if let Some(failure) = twin_failure(&text, &twin) {
+                            if let Some(failure) = twin_failure(&text, &twin, levels) {
                                 failures.push(format!(
-                                    "{chooser:?} {consumer:?} {binding:?} {scale} {index} {depth} {reversed}\n{failure}"
+                                    "{chooser:?} {consumer:?} {binding:?} {scale} {index} {levels:?} {reversed}\n{failure}"
                                 ));
                             }
                         }
@@ -675,14 +802,15 @@ fn a_reference_a_recursive_body_chooses_by_a_frame_value_reads_the_chosen_refere
                 }
             }
         }
-    }
+        (failures, programs)
+    });
     assert!(
         failures.is_empty(),
         "{} of {programs} programs fail:\n{}",
         failures.len(),
         failures.iter().take(8).cloned().collect::<String>()
     );
-    assert_eq!(programs, 7_336);
+    assert_eq!(programs, 14_056);
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -828,7 +956,7 @@ fn array_program(
     chooser: Chooser,
     consumer: Consumer,
     (attribute, read): (ArrayAttribute, ArrayRead),
-    (index, depth, reversed, recursive): (usize, i32, bool, bool),
+    (index, levels, reversed, recursive): (usize, Levels, bool, bool),
     expected: i32,
 ) -> String {
     let chosen = chooser.expression();
@@ -856,9 +984,10 @@ fn array_program(
         "fn selm(c, d, p):\n    match p:\n        0: c\n        else: d\n".to_string(),
         "fn pickr(c, d, p, m): if m < 1 then (if p > 0 then d else c) else pickr(c, d, p, m - 1)\n"
             .to_string(),
-        chosen_function(chooser, (&local, &read), recursive),
+        chosen_function(chooser, (&local, &read), levels, recursive),
         format!(
-            "Song s:\n    Clip:\n        Note/([60][h(verse, other, [verse, other], {index}, {depth}) - {expected}])\n"
+            "Song s:\n    Clip:\n        Note/([60][h(verse, other, [verse, other], {index}, {}) - {expected}])\n",
+            levels.depth()
         ),
     ];
     if reversed {
@@ -878,16 +1007,22 @@ fn found_with(compiler: &Compiler, text: &str) -> Found {
 #[test]
 fn an_array_attribute_read_through_a_reference_a_recursive_body_chooses_has_the_attributes_type_and_layout()
  {
-    let compiler = Compiler::new(&native_vocabulary()).expect("the native vocabulary compiles");
-    let mut failures = Vec::new();
-    let mut programs = 0;
-    for chooser in CHOOSERS {
+    let (failures, programs) = in_parallel(&CHOOSERS, |chooser| {
+        let compiler = Compiler::new(&native_vocabulary()).expect("the native vocabulary compiles");
+        let mut failures = Vec::new();
+        let mut programs = 0;
         for consumer in ARRAY_CONSUMERS {
             for attribute in ARRAY_ATTRIBUTES {
                 for read in ARRAY_READS {
-                    for (index, depth) in frame_values(chooser) {
-                        let other = chooser.chooses_other(index, depth);
-                        let Some(expected) = attribute.expected(read, other) else {
+                    for (index, levels) in frame_values(chooser) {
+                        let Some(expected) = levels
+                            .reads(index)
+                            .into_iter()
+                            .map(|(chosen, depth)| {
+                                attribute.expected(read, chooser.chooses_other(chosen, depth))
+                            })
+                            .sum::<Option<i32>>()
+                        else {
                             continue;
                         };
                         for reversed in [false, true] {
@@ -896,7 +1031,7 @@ fn an_array_attribute_read_through_a_reference_a_recursive_body_chooses_has_the_
                                     chooser,
                                     consumer,
                                     (attribute, read),
-                                    (index, depth, reversed, recursive),
+                                    (index, levels, reversed, recursive),
                                     expected,
                                 )
                             };
@@ -910,7 +1045,7 @@ fn an_array_attribute_read_through_a_reference_a_recursive_body_chooses_has_the_
                                 || drawn != twin_drawn
                             {
                                 failures.push(format!(
-                                    "{chooser:?} {consumer:?} {attribute:?} {read:?} {index} {depth} {reversed}\n{text}\n  found {drawn:?}\n  twin {twin_drawn:?}\n"
+                                    "{chooser:?} {consumer:?} {attribute:?} {read:?} {index} {levels:?} {reversed}\n{text}\n  found {drawn:?}\n  twin {twin_drawn:?}\n"
                                 ));
                             }
                         }
@@ -918,14 +1053,15 @@ fn an_array_attribute_read_through_a_reference_a_recursive_body_chooses_has_the_
                 }
             }
         }
-    }
+        (failures, programs)
+    });
     assert!(
         failures.is_empty(),
         "{} of {programs} programs fail:\n{}",
         failures.len(),
         failures.iter().take(8).cloned().collect::<String>()
     );
-    assert_eq!(programs, 19_904);
+    assert_eq!(programs, 37_504);
 }
 
 #[test]
@@ -1088,9 +1224,61 @@ const START_HELPERS: [&str; 3] = [
     "fn pickr(c, d, p, m): if m < 1 then (if p > 0 then d else c) else pickr(c, d, p, m - 1)\n",
 ];
 
+impl Start {
+    fn levels(self, candidates: usize, fault: Fault) -> Vec<(usize, Levels, i32)> {
+        let value = |fault| {
+            self.frame_value(candidates, fault)
+                .and_then(|value| usize::try_from(value).ok())
+        };
+        let Some(index) = value(fault) else {
+            return Vec::new();
+        };
+        let mut values = vec![(
+            index,
+            Levels::Base(2),
+            match fault {
+                Fault::Inside(candidate) => GAINS.get(candidate).copied().unwrap_or_default(),
+                Fault::Outside | Fault::Saturating | Fault::Depth => 2,
+            },
+        )];
+        let partner = match fault {
+            Fault::Inside(candidate) => value(Fault::Inside(1 - candidate)),
+            Fault::Outside | Fault::Saturating | Fault::Depth => {
+                [Fault::Inside(0), Fault::Inside(1)]
+                    .into_iter()
+                    .filter_map(value)
+                    .find(|partner| *partner != index)
+            }
+        };
+        let Some(partner) = partner else {
+            return values;
+        };
+        for depth in ALTERNATING_DEPTHS {
+            let levels = Levels::Alternating(index + partner, depth);
+            let offset = match fault {
+                Fault::Inside(candidate) => levels
+                    .reads(index)
+                    .into_iter()
+                    .map(|(chosen, _)| {
+                        let candidate = if chosen == index {
+                            candidate
+                        } else {
+                            1 - candidate
+                        };
+                        GAINS.get(candidate).copied().unwrap_or_default()
+                    })
+                    .sum(),
+                Fault::Outside | Fault::Saturating | Fault::Depth => 2,
+            };
+            values.push((index, levels, offset));
+        }
+        values
+    }
+}
+
 fn start_program(
     (start, fault, consumer): (Start, Fault, Consumer),
-    (candidates, index): (usize, i32),
+    (candidates, index, levels, expected): (usize, usize, Levels, i32),
     (reversed, recursive): (bool, bool),
 ) -> String {
     let chosen = start.expression(candidates, fault);
@@ -1102,10 +1290,6 @@ fn start_program(
         "[verse]"
     };
     let pair = if candidates == 2 { "[c, d]" } else { "[c, c]" };
-    let expected = match fault {
-        Fault::Inside(candidate) => GAINS.get(candidate).copied().unwrap_or_default(),
-        Fault::Outside | Fault::Saturating | Fault::Depth => 2,
-    };
     let mut items = vec![
         "Session main\n".to_string(),
         "Clip verse | gain=2:\n    Note\n".to_string(),
@@ -1117,10 +1301,12 @@ fn start_program(
     items.push(chosen_function(
         Chooser::ParameterArray,
         (&local, &read),
+        levels,
         recursive,
     ));
     items.push(format!(
-        "Clip k:\n    Note/([60][i32(h(verse, other, {array}, {index}, 2)) - {expected}])\n"
+        "Clip k:\n    Note/([60][i32(h(verse, other, {array}, {index}, {})) - {expected}])\n",
+        levels.depth()
     ));
     if reversed {
         items.reverse();
@@ -1136,32 +1322,32 @@ fn a_path_through_a_frame_chosen_start_evaluates_the_start_in_the_frame_however_
     for start in STARTS {
         for fault in FAULTS {
             for candidates in [1, 2] {
-                let Some(index) = start.frame_value(candidates, fault) else {
-                    continue;
-                };
-                for consumer in START_CONSUMERS {
-                    for reversed in [false, true] {
-                        let program = |recursive| {
-                            start_program(
-                                (start, fault, consumer),
-                                (candidates, index),
-                                (reversed, recursive),
-                            )
-                        };
-                        let (text, twin) = (program(true), program(false));
-                        let (drawn, expected) = (found(&text), found(&twin));
-                        programs += 1;
-                        let codes: Vec<Code> = expected.keys().map(|(code, _)| *code).collect();
-                        let twin_holds_the_fault = match fault.code() {
-                            Some(code) => {
-                                !codes.is_empty() && codes.iter().all(|found| *found == code)
-                            }
-                            None => codes.is_empty(),
-                        };
-                        if !twin_holds_the_fault || drawn != expected {
-                            failures.push(format!(
-                                "{start:?} {fault:?} {candidates} {consumer:?} {reversed}\n{text}\n  found {drawn:?}\n  twin {expected:?}\n"
+                for (index, levels, offset) in start.levels(candidates, fault) {
+                    for consumer in START_CONSUMERS {
+                        for reversed in [false, true] {
+                            let program = |recursive| {
+                                start_program(
+                                    (start, fault, consumer),
+                                    (candidates, index, levels, offset),
+                                    (reversed, recursive),
+                                )
+                            };
+                            let (text, twin) = (program(true), program(false));
+                            let (drawn, expected) =
+                                (codes_at(&text, levels), codes_at(&twin, levels));
+                            programs += 1;
+                            let codes: Vec<Code> = expected.keys().map(|(code, _)| *code).collect();
+                            let twin_holds_the_fault = match fault.code() {
+                                Some(code) => {
+                                    !codes.is_empty() && codes.iter().all(|found| *found == code)
+                                }
+                                None => codes.is_empty(),
+                            };
+                            if !twin_holds_the_fault || drawn != expected {
+                                failures.push(format!(
+                                "{start:?} {fault:?} {candidates} {consumer:?} {levels:?} {reversed}\n{text}\n  found {drawn:?}\n  twin {expected:?}\n"
                             ));
+                            }
                         }
                     }
                 }
@@ -1174,7 +1360,7 @@ fn a_path_through_a_frame_chosen_start_evaluates_the_start_in_the_frame_however_
         failures.len(),
         failures.iter().take(8).cloned().collect::<String>()
     );
-    assert_eq!(programs, 424);
+    assert_eq!(programs, 1_384);
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -1507,7 +1693,7 @@ impl CallStart {
 fn call_start_program(
     (helper, start, consumer): (PathHelper, CallStart, Consumer),
     (sites, index, wrong): (&[[&'static str; 2]], usize, bool),
-    (reversed, recursive): (bool, bool),
+    (levels, reversed, recursive): (Levels, bool, bool),
 ) -> (String, Found) {
     let chosen = start.expression(helper);
     let local = consumer.local(&chosen);
@@ -1532,24 +1718,26 @@ fn call_start_program(
         }
         items.push("fn w(xs, i, n): sf(xs, i, n)\n".to_string());
     } else {
-        let value = if recursive {
-            format!("if n < 1 then {read} else h(c, xs, i, n - 1)")
-        } else {
-            read
-        };
-        items.push(format!(
-            "fn h(c, xs, i, n):\n{}{local}    {value}\n",
-            start.locals()
+        items.push(levels.functions(
+            ("c, xs, i, n", &format!("{}{local}", start.locals()), &read),
+            |next| format!("c, xs, {next}, n - 1"),
+            recursive,
         ));
     }
     let mut expected = Found::new();
     for (position, array) in sites.iter().enumerate() {
-        let gain = gain_of(start.chosen(*array, index)) + i32::from(wrong);
+        let gain = levels
+            .reads(index)
+            .into_iter()
+            .map(|(chosen, _)| gain_of(start.chosen(*array, chosen)))
+            .sum::<i32>()
+            + i32::from(wrong);
         let elements = array.join(", ");
+        let depth = levels.depth();
         let call = if start.self_reading() {
-            format!("sf([{elements}], {index}, 3).gain")
+            format!("sf([{elements}], {index}, {depth}).gain")
         } else {
-            format!("h({}, [{elements}], {index}, 3)", beside(*array))
+            format!("h({}, [{elements}], {index}, {depth})", beside(*array))
         };
         let offset = format!("i32({call}) - {gain}");
         if wrong {
@@ -1568,25 +1756,28 @@ fn call_start_program(
 #[test]
 fn a_path_start_chosen_by_a_recursive_call_names_the_instances_that_calls_own_evaluation_returns() {
     let sets = site_sets();
-    let mut failures = Vec::new();
-    let mut programs = 0;
-    for start in CALL_STARTS {
-        let helpers: &[PathHelper] = if start.self_reading() {
-            &[PathHelper::Element]
+    let (failures, programs) = in_parallel(&CALL_STARTS, |start| {
+        let mut failures = Vec::new();
+        let mut programs = 0;
+        let (helpers, frames): (&[PathHelper], Vec<(usize, Levels)>) = if start.self_reading() {
+            (
+                &[PathHelper::Element],
+                vec![(0, Levels::Base(3)), (1, Levels::Base(3))],
+            )
         } else {
-            &PATH_HELPERS
+            (&PATH_HELPERS, Levels::of(&[0, 1], &[3]))
         };
         for helper in helpers.iter().copied() {
             for consumer in START_CONSUMERS {
                 for sites in &sets {
-                    for index in [0, 1] {
+                    for (index, levels) in frames.iter().copied() {
                         for wrong in [false, true] {
                             for reversed in [false, true] {
                                 let program = |recursive| {
                                     call_start_program(
                                         (helper, start, consumer),
                                         (sites, index, wrong),
-                                        (reversed, recursive),
+                                        (levels, reversed, recursive),
                                     )
                                 };
                                 let (text, expected) = program(true);
@@ -1596,7 +1787,7 @@ fn a_path_start_chosen_by_a_recursive_call_names_the_instances_that_calls_own_ev
                                     model_failure(&text, twin.as_deref(), &expected)
                                 {
                                     failures.push(format!(
-                                        "{start:?} {helper:?} {consumer:?} {sites:?} {index} {wrong} {reversed}\n{failure}"
+                                        "{start:?} {helper:?} {consumer:?} {sites:?} {index} {levels:?} {wrong} {reversed}\n{failure}"
                                     ));
                                 }
                             }
@@ -1605,14 +1796,15 @@ fn a_path_start_chosen_by_a_recursive_call_names_the_instances_that_calls_own_ev
                 }
             }
         }
-    }
+        (failures, programs)
+    });
     assert!(
         failures.is_empty(),
         "{} of {programs} programs fail:\n{}",
         failures.len(),
         failures.iter().take(8).cloned().collect::<String>()
     );
-    assert_eq!(programs, 5_152);
+    assert_eq!(programs, 18_592);
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -1714,42 +1906,49 @@ impl OpenChooser {
 
 fn open_choice_program(
     (chooser, open, known, consumer): (OpenChooser, OpenArm, &str, Consumer),
-    index: usize,
+    (index, levels): (usize, Levels),
     (reversed, recursive): (bool, bool),
 ) -> String {
     let chosen = chooser.expression(open.text(), known);
     let local = consumer.local(&chosen);
     let read = consumer.read(&chosen);
-    let value = if recursive {
-        format!("if n < 1 then {read} else h(c, i, n - 1)")
-    } else {
-        read
-    };
     let helper = if recursive {
         "fn pickr(c, d, p, m): if m < 1 then (if p > 0 then d else c) else pickr(c, d, p, m - 1)\n"
     } else {
         "fn pickr(c, d, p, m): if p > 0 then d else c\n"
     };
-    let instance = if chooser.takes_open(index) {
-        open.chosen(index)
-    } else if known == "c" {
-        "tail"
-    } else {
-        known
+    let instance = |index| {
+        if chooser.takes_open(index) {
+            open.chosen(index)
+        } else if known == "c" {
+            "tail"
+        } else {
+            known
+        }
     };
+    let offset: i32 = levels
+        .reads(index)
+        .into_iter()
+        .map(|(chosen, _)| gain_of(instance(chosen)))
+        .sum();
     let mut items = trio_items();
     items.extend([
         helper.to_string(),
         "let rp = pickr(verse, other, 1, 2)\n".to_string(),
         "fn f(c): c.gain\n".to_string(),
         "fn g(c, n): if n < 1 then c.gain else g(c, n - 1)\n".to_string(),
-        format!(
-            "fn h(c, i, n):\n{}{local}    {value}\n",
-            chooser.locals(open.text(), known)
+        levels.functions(
+            (
+                "c, i, n",
+                &format!("{}{local}", chooser.locals(open.text(), known)),
+                &read,
+            ),
+            |next| format!("c, {next}, n - 1"),
+            recursive,
         ),
         format!(
-            "Clip k:\n    Note/([60][i32(h(tail, {index}, 3)) - {}])\n",
-            gain_of(instance)
+            "Clip k:\n    Note/([60][i32(h(tail, {index}, {})) - {offset}])\n",
+            levels.depth()
         ),
     ]);
     if reversed {
@@ -1766,16 +1965,16 @@ fn a_family_probes_path_through_an_open_recursive_call_settles_no_family_from_th
         for open in OPEN_ARMS {
             for known in ["verse", "c"] {
                 for consumer in START_CONSUMERS {
-                    for index in [0, 1] {
+                    for frame in Levels::of(&[0, 1], &[3]) {
                         for reversed in [false, true] {
                             let case = (chooser, open, known, consumer);
-                            let text = open_choice_program(case, index, (reversed, true));
-                            let twin = open_choice_program(case, index, (reversed, false));
+                            let text = open_choice_program(case, frame, (reversed, true));
+                            let twin = open_choice_program(case, frame, (reversed, false));
                             programs += 1;
                             if let Some(failure) = model_failure(&text, Some(&twin), &Found::new())
                             {
                                 failures.push(format!(
-                                    "{chooser:?} {open:?} {known} {consumer:?} {index} {reversed}\n{failure}"
+                                    "{chooser:?} {open:?} {known} {consumer:?} {frame:?} {reversed}\n{failure}"
                                 ));
                             }
                         }
@@ -1790,7 +1989,7 @@ fn a_family_probes_path_through_an_open_recursive_call_settles_no_family_from_th
         failures.len(),
         failures.iter().take(8).cloned().collect::<String>()
     );
-    assert_eq!(programs, 896);
+    assert_eq!(programs, 3_584);
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -1900,15 +2099,15 @@ impl HeldRead {
 
 fn held_program(
     (held, consumer): (HeldReference, HeldRead),
-    (index, top_level, reversed, recursive): (usize, bool, bool, bool),
+    ((index, levels), top_level, reversed, recursive): ((usize, Levels), bool, bool, bool),
 ) -> String {
     let reference = held.reference();
     let read = consumer.read(reference);
-    let value = if recursive {
-        format!("if n < 1 then {read} else h(c, i, n - 1)")
-    } else {
-        read
-    };
+    let offset: i32 = levels
+        .reads(index)
+        .into_iter()
+        .map(|(chosen, _)| held.chosen_gain(chosen))
+        .sum();
     let mut items = vec![
         "Session main\n".to_string(),
         "Clip verse | gain=2:\n    Note as hook | velocity=2\n".to_string(),
@@ -1920,10 +2119,14 @@ fn held_program(
         "fn g(c, n): if n < 1 then c.gain else g(c, n - 1)\n".to_string(),
         "fn f(c): c.gain\n".to_string(),
         format!("let rp = {}\n", held.value()),
-        format!("fn h(c, i, n):\n{}    {value}\n", consumer.local(reference)),
+        levels.functions(
+            ("c, i, n", &consumer.local(reference), &read),
+            |next| format!("c, {next}, n - 1"),
+            recursive,
+        ),
         format!(
-            "Clip k:\n    Note/([60][i32(h(verse, {index}, 3)) - {}])\n",
-            held.chosen_gain(index)
+            "Clip k:\n    Note/([60][i32(h(verse, {index}, {})) - {offset}])\n",
+            levels.depth()
         ),
     ];
     if top_level {
@@ -1942,17 +2145,17 @@ fn a_top_level_let_holding_a_recursive_calls_reference_reads_through_a_path_in_a
     let mut programs = 0;
     for held in HELD_REFERENCES {
         for consumer in HELD_READS {
-            for index in [0, 1] {
+            for frame in Levels::of(&[0, 1], &[3]) {
                 for top_level in [false, true] {
                     for reversed in [false, true] {
                         let program = |recursive| {
-                            held_program((held, consumer), (index, top_level, reversed, recursive))
+                            held_program((held, consumer), (frame, top_level, reversed, recursive))
                         };
                         let (text, twin) = (program(true), program(false));
                         programs += 1;
                         if let Some(failure) = model_failure(&text, Some(&twin), &Found::new()) {
                             failures.push(format!(
-                                "{held:?} {consumer:?} {index} {top_level} {reversed}\n{failure}"
+                                "{held:?} {consumer:?} {frame:?} {top_level} {reversed}\n{failure}"
                             ));
                         }
                     }
@@ -1966,7 +2169,7 @@ fn a_top_level_let_holding_a_recursive_calls_reference_reads_through_a_path_in_a
         failures.len(),
         failures.iter().take(8).cloned().collect::<String>()
     );
-    assert_eq!(programs, 240);
+    assert_eq!(programs, 960);
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -1993,16 +2196,12 @@ const FAULT_CHOOSERS: [&str; 4] = [
 
 fn candidate_fault_program(
     (fault, chooser, consumer): (CandidateFault, &str, Consumer),
-    (index, depth, reversed, recursive): (usize, u32, bool, bool),
+    (index, levels, reversed, recursive): (usize, Levels, bool, bool),
     second: Option<bool>,
 ) -> String {
     let local = consumer.local(chooser);
     let read = consumer.read(chooser);
-    let value = if recursive {
-        format!("if n < 1 then {read} else h(c, d, xs, i, n - 1)")
-    } else {
-        read
-    };
+    let depth = levels.depth();
     let (other, faulty) = match fault {
         CandidateFault::LacksAttribute => ("Clip other | gain=3:\n    Note\n", "verse.hook"),
         CandidateFault::ReadsCell => ("Clip other | gain=gv:\n    Note\n", "other"),
@@ -2024,7 +2223,11 @@ fn candidate_fault_program(
         "fn g(c, n): if n < 1 then c.gain else g(c, n - 1)\n".to_string(),
         "fn pickr(c, d, p, m): if m < 1 then (if p > 0 then d else c) else pickr(c, d, p, m - 1)\n"
             .to_string(),
-        format!("fn h(c, d, xs, i, n):\n{local}    {value}\n"),
+        levels.functions(
+            ("c, d, xs, i, n", &local, &read),
+            |next| format!("c, d, xs, {next}, n - 1"),
+            recursive,
+        ),
         format!(
             "Clip k | gain=h(verse, {faulty}, [verse, {faulty}], {index}, {depth}):\n    Note\n"
         ),
@@ -2537,23 +2740,11 @@ fn lacking_step_rows(path: StepPath, chooser: StepChooser) -> (Vec<String>, usiz
 }
 
 fn lacking_step_failures() -> (Vec<String>, usize) {
-    std::thread::scope(|threads| {
-        let workers: Vec<_> = STEP_PATHS
-            .iter()
-            .flat_map(|path| STEP_CHOOSERS.iter().map(move |chooser| (*path, *chooser)))
-            .map(|(path, chooser)| threads.spawn(move || lacking_step_rows(path, chooser)))
-            .collect();
-        let mut failures = Vec::new();
-        let mut programs = 0;
-        for worker in workers {
-            let (found, counted) = worker
-                .join()
-                .unwrap_or_else(|_| (vec!["a worker panicked".to_string()], 0));
-            failures.extend(found);
-            programs += counted;
-        }
-        (failures, programs)
-    })
+    let pairs: Vec<(StepPath, StepChooser)> = STEP_PATHS
+        .iter()
+        .flat_map(|path| STEP_CHOOSERS.iter().map(move |chooser| (*path, *chooser)))
+        .collect();
+    in_parallel(&pairs, |(path, chooser)| lacking_step_rows(path, chooser))
 }
 
 #[test]
@@ -2563,47 +2754,79 @@ fn a_fault_of_a_candidate_binding_draws_only_when_the_evaluation_chooses_that_ca
     for fault in CANDIDATE_FAULTS {
         for chooser in FAULT_CHOOSERS {
             for consumer in START_CONSUMERS {
-                for index in [0, 1] {
-                    let seconds: &[Option<bool>] =
-                        if fault == CandidateFault::ClosesCycle && index == 0 {
+                for (index, levels) in Levels::of(&[0, 1], &[1, 3, 30]) {
+                    let seconds: &[Option<bool>] = match levels {
+                        Levels::Base(_) if fault == CandidateFault::ClosesCycle && index == 0 => {
                             &[None, Some(false), Some(true)]
-                        } else {
-                            &[None]
-                        };
-                    for (depth, reversed, second) in [1, 3]
+                        }
+                        Levels::Base(_) | Levels::Alternating(..) => &[None],
+                    };
+                    for (reversed, second) in [false, true]
                         .into_iter()
-                        .flat_map(|depth| [false, true].map(|reversed| (depth, reversed)))
-                        .flat_map(|(depth, reversed)| {
-                            seconds.iter().map(move |second| (depth, reversed, *second))
-                        })
+                        .flat_map(|reversed| seconds.iter().map(move |second| (reversed, *second)))
                     {
                         let program = |recursive| {
                             candidate_fault_program(
                                 (fault, chooser, consumer),
-                                (index, depth, reversed, recursive),
+                                (index, levels, reversed, recursive),
                                 second,
                             )
                         };
+                        let chosen: Vec<usize> = levels
+                            .reads(index)
+                            .into_iter()
+                            .map(|(chosen, _)| chosen)
+                            .collect();
+                        let reading = chosen.contains(&1);
+                        let unread = match levels {
+                            Levels::Base(_) => index,
+                            Levels::Alternating(sum, depth) if depth % 2 == 1 => sum - index,
+                            Levels::Alternating(..) => index,
+                        };
+                        let checked = reading || unread == 1;
+                        let cycle = matches!(
+                            fault,
+                            CandidateFault::ClosesCycle | CandidateFault::EveryCandidateClosesCycle
+                        );
+                        let both = chosen.contains(&0) && chosen.contains(&1);
+                        if cycle && !chosen.contains(&unread)
+                            || fault == CandidateFault::EveryCandidateClosesCycle && both
+                        {
+                            continue;
+                        }
                         let (text, twin) = (program(true), program(false));
-                        let mut expected = found(&twin);
+                        let mut expected = codes_at(&twin, levels);
                         if fault == CandidateFault::ReadsCell
-                            && index == 1
+                            && reading
                             && consumer != Consumer::RecursiveArgument
                         {
-                            let call = format!("h(verse, other, [verse, other], 1, {depth})");
+                            let call = format!(
+                                "h(verse, other, [verse, other], {index}, {})",
+                                levels.depth()
+                            );
                             *expected.entry((Code::ReactiveRecursion, call)).or_default() += 1;
                         }
-                        let drawn = found(&text);
+                        let drawn = codes_at(&text, levels);
                         programs += 1;
                         let faulty_twin = !found(&twin).is_empty();
                         let twin_faults = second == Some(true)
                             || fault == CandidateFault::EveryCandidateClosesCycle
-                            || index == 1
-                                && (fault != CandidateFault::ReadsCell
-                                    || consumer == Consumer::RecursiveArgument);
+                            || match fault {
+                                CandidateFault::LacksAttribute
+                                    if consumer == Consumer::RecursiveArgument =>
+                                {
+                                    reading
+                                }
+                                CandidateFault::LacksAttribute => checked,
+                                CandidateFault::ClosesCycle => reading,
+                                CandidateFault::ReadsCell => {
+                                    reading && consumer == Consumer::RecursiveArgument
+                                }
+                                CandidateFault::EveryCandidateClosesCycle => true,
+                            };
                         if drawn != expected || faulty_twin != twin_faults {
                             failures.push(format!(
-                                    "{fault:?} {chooser} {consumer:?} {index} {depth} {reversed} {second:?}\n{text}\n  found {drawn:?}\n  expected {expected:?}\n"
+                                    "{fault:?} {chooser} {consumer:?} {index} {levels:?} {reversed} {second:?}\n{text}\n  found {drawn:?}\n  expected {expected:?}\n  twin faults {faulty_twin}\n"
                                 ));
                         }
                     }
@@ -2620,5 +2843,5 @@ fn a_fault_of_a_candidate_binding_draws_only_when_the_evaluation_chooses_that_ca
         failures.len(),
         failures.iter().take(8).cloned().collect::<String>()
     );
-    assert_eq!(programs, 59_392);
+    assert_eq!(programs, 60_224);
 }
