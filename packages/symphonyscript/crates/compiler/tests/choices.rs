@@ -732,8 +732,8 @@ fn capacity(content: Content) -> usize {
     }
 }
 
-fn runtime_twin(relation: Relation, contents: (Content, Content)) -> Arm {
-    let widened = |content: Content| match relation {
+fn unified(relation: Relation, content: Content) -> Content {
+    match relation {
         Relation::Widening => content.with_element(Element::Float),
         Relation::OneType
         | Relation::Lengths
@@ -741,8 +741,11 @@ fn runtime_twin(relation: Relation, contents: (Content, Content)) -> Arm {
         | Relation::ScalarAndArray
         | Relation::Dimension
         | Relation::NoWidening => content,
-    };
-    let (first, second) = (widened(contents.0), widened(contents.1));
+    }
+}
+
+fn value_twin(relation: Relation, contents: (Content, Content)) -> Arm {
+    let (first, second) = (unified(relation, contents.0), unified(relation, contents.1));
     let element = first.element();
     let ty = element_type(element).expect("the arms of an agreeing pair hold numbers");
     let scalar = format!("input tw: {ty} = {}\n", element_zero(element));
@@ -779,6 +782,19 @@ fn runtime_twin(relation: Relation, contents: (Content, Content)) -> Arm {
     }
 }
 
+fn taken_twin(relation: Relation, form: Form, content: Content, hosted: bool) -> Arm {
+    if relation == Relation::Widening && reads_cell(form, content) {
+        return value_twin(relation, (content, content));
+    }
+    let unified = unified(relation, content);
+    let form = if form == Form::Integer && unified == Content::Scalar(Element::Float) {
+        Form::Float
+    } else {
+        form
+    };
+    arm(form, unified, 2, hosted).expect("the taken arm's form holds the unified type")
+}
+
 fn reads_cell(form: Form, content: Content) -> bool {
     let held_cell = match content {
         Content::Variable(_) => true,
@@ -805,7 +821,6 @@ fn reads_cell(form: Form, content: Content) -> bool {
 #[derive(Default)]
 struct Outcome {
     programs: usize,
-    pending: usize,
     failures: Vec<String>,
 }
 
@@ -869,10 +884,6 @@ fn check_case(case: &Case, compilers: &mut Compilers, outcome: &mut Outcome) {
         return;
     }
     let taken = case.chooser.taken();
-    if taken.is_some() && case.relation == Relation::Widening {
-        outcome.pending += 1;
-        return;
-    }
     let taken_content = match taken {
         Some(1) => case.contents.1,
         Some(_) | None => case.contents.0,
@@ -889,9 +900,9 @@ fn check_case(case: &Case, compilers: &mut Compilers, outcome: &mut Outcome) {
             } else {
                 case.forms.1
             };
-            Some(arm(form, taken_content, 2, hosted).expect("the taken arm's form holds it"))
+            Some(taken_twin(case.relation, form, taken_content, hosted))
         }
-        (true, None) => Some(runtime_twin(case.relation, case.contents)),
+        (true, None) => Some(value_twin(case.relation, case.contents)),
     };
     let other = twin.as_ref().unwrap_or(&first).text.clone();
     let layout = case.position.layout(taken_content.dimensions(), &other);
@@ -944,14 +955,16 @@ fn check_case(case: &Case, compilers: &mut Compilers, outcome: &mut Outcome) {
                 .twins
                 .entry(twin_built.text.clone())
                 .or_insert_with(|| spans(compiler, &twin_built.text));
-            let arm_start = taken.map(|index| {
-                let offset = if index == 0 {
-                    choice.find(&first.text)
-                } else {
-                    choice.rfind(&second.text)
-                };
-                built.start + offset.unwrap_or(0)
-            });
+            let arm_start = taken
+                .filter(|_| case.relation != Relation::Widening)
+                .map(|index| {
+                    let offset = if index == 0 {
+                        choice.find(&first.text)
+                    } else {
+                        choice.rfind(&second.text)
+                    };
+                    built.start + offset.unwrap_or(0)
+                });
             mapped(twin_found, &twin_built, &built, arm_start)
         }
     };
@@ -1010,7 +1023,7 @@ fn shown(found: &Spans, text: &str) -> String {
         .join(", ")
 }
 
-fn assert_arms_hold(chooser: Chooser, programs: usize, pending: usize) {
+fn assert_arms_hold(chooser: Chooser, programs: usize) {
     let outcome = arms_hold(chooser);
     assert!(
         outcome.failures.is_empty(),
@@ -1025,35 +1038,35 @@ fn assert_arms_hold(chooser: Chooser, programs: usize, pending: usize) {
             .collect::<Vec<_>>()
             .join("\n")
     );
-    assert_eq!((outcome.programs, outcome.pending), (programs, pending));
+    assert_eq!(outcome.programs, programs);
 }
 
 #[test]
 fn the_arms_of_a_compile_time_true_choice_agree_wherever_it_stands() {
-    assert_arms_hold(Chooser::True, 27372, 4708);
+    assert_arms_hold(Chooser::True, 32080);
 }
 
 #[test]
 fn the_arms_of_a_compile_time_false_choice_agree_wherever_it_stands() {
-    assert_arms_hold(Chooser::False, 27372, 4708);
+    assert_arms_hold(Chooser::False, 32080);
 }
 
 #[test]
 fn the_arms_of_a_runtime_choice_agree_wherever_it_stands() {
-    assert_arms_hold(Chooser::Flag, 32080, 0);
+    assert_arms_hold(Chooser::Flag, 32080);
 }
 
 #[test]
 fn the_arms_of_a_compile_time_enum_match_agree_wherever_it_stands() {
-    assert_arms_hold(Chooser::Enum, 27372, 4708);
+    assert_arms_hold(Chooser::Enum, 32080);
 }
 
 #[test]
 fn the_arms_of_a_match_on_an_enum_input_agree_wherever_it_stands() {
-    assert_arms_hold(Chooser::EnumInput, 32080, 0);
+    assert_arms_hold(Chooser::EnumInput, 32080);
 }
 
 #[test]
 fn the_arms_of_a_match_on_an_integer_input_agree_wherever_it_stands() {
-    assert_arms_hold(Chooser::Integer, 32080, 0);
+    assert_arms_hold(Chooser::Integer, 32080);
 }
