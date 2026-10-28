@@ -666,13 +666,13 @@ const RULES: &[Rule] = &[
         "5.8",
         "Converting a `bool` or an enum value is an error.",
         "conversion-type",
-        "let a = f32(true)\nClip c:\n    Note/a\n",
+        "let a = i32(true)\nClip c:\n    Note/a\n",
     ),
     rule(
         "5.8",
         "Converting a `bool` or an enum value is an error.",
         "conversion-type",
-        "let a = f32(Wave::Saw)\nClip c:\n    Note/a\n",
+        "let a = i32(Wave::Saw)\nClip c:\n    Note/a\n",
     ),
     rule(
         "5.9",

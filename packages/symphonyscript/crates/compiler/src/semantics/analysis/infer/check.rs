@@ -298,12 +298,13 @@ impl Engine<'_> {
                     );
                 }
                 Op::Convert(target, operand) => {
-                    let operand_ty = if is_float(target) {
+                    let converts = is_float(target) && self.known_sig(operand)?.is_numeric();
+                    let operand_ty = if converts {
                         Some(target)
                     } else {
                         self.synth(operand)?
                     };
-                    stack.push((operand, operand_ty, selection, is_float(target)));
+                    stack.push((operand, operand_ty, selection, converts));
                 }
                 Op::Annotate(target, operand) => {
                     stack.push((operand, Some(target), selection, true))

@@ -371,29 +371,25 @@ impl Engine<'_> {
                             }
                             _ => None,
                         };
-                        if let Some((message, partner)) = refusal {
-                            refusals.push((loc, scope, message, self.hir.expr(partner)?.loc));
-                            let own = (*child, scope);
-                            found.push((
-                                node,
-                                (None, false),
-                                passed_over,
-                                None,
-                                own,
-                                (child_loc, own),
-                            ));
+                        let (typed, origin) = if self.arrays.contains(&node) {
+                            ((None, false), None)
+                        } else if sig.kind == Kind::Str && reads_bytes(child_typed, origin.as_ref())
+                        {
+                            ((None, false), origin)
                         } else {
-                            let (typed, origin) = if self.arrays.contains(&node) {
-                                ((None, false), None)
-                            } else if sig.kind == Kind::Str
-                                && reads_bytes(child_typed, origin.as_ref())
-                            {
-                                ((None, false), origin)
-                            } else {
-                                (child_typed, origin)
-                            };
-                            found.push((node, typed, passed_over, origin, child_group, member));
+                            (child_typed, origin)
+                        };
+                        if let Some((message, partner)) = refusal {
+                            let operand = (found.len(), (*child, scope), child_loc);
+                            refusals.push((
+                                loc,
+                                scope,
+                                message,
+                                self.hir.expr(partner)?.loc,
+                                operand,
+                            ));
                         }
+                        found.push((node, typed, passed_over, origin, child_group, member));
                     }
                     Val::Array(array) => {
                         for node in array.elements.iter().copied() {
@@ -413,12 +409,18 @@ impl Engine<'_> {
                 }
             }
         }
-        for (at, scope, message, partner) in refusals.into_iter().rev() {
+        for (at, scope, message, partner, (index, own, own_loc)) in refusals.into_iter().rev() {
             if faults.iter().any(|fault| partner.contains(*fault)) {
                 continue;
             }
             self.error(Code::OperandType, at, scope, message)?;
             faults.push(at);
+            if let Some(entry) = found.get_mut(index) {
+                entry.1 = (None, false);
+                entry.3 = None;
+                entry.4 = own;
+                entry.5 = (own_loc, own);
+            }
         }
         if !faults.is_empty() {
             for entry in found.get_mut(start..).unwrap_or_default() {
@@ -624,7 +626,8 @@ fn refused_for_every_partner(op: BinaryOp, sig: &Sig) -> Option<&'static str> {
         | BinaryOp::Gt
         | BinaryOp::Ge => !sig.is_numeric(),
         BinaryOp::IntDiv => !matches!(sig.kind, Kind::Int | Kind::Any),
-        BinaryOp::And | BinaryOp::Or | BinaryOp::Is | BinaryOp::IsNot => false,
+        BinaryOp::And | BinaryOp::Or => !matches!(sig.kind, Kind::Bool | Kind::Any),
+        BinaryOp::Is | BinaryOp::IsNot => false,
     };
     (refused && !sig.is_error()).then(|| Engine::operand_type_message(op))
 }

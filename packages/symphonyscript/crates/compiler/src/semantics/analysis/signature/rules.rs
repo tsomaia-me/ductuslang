@@ -235,7 +235,9 @@ impl Engine<'_> {
                         | Kind::Error => "a conversion takes a number",
                     };
                     self.error_at_node(Code::ConversionType, node, message)?;
-                    return Ok(Sig::ERROR);
+                    if matches!(first.kind, Kind::Any | Kind::Error) {
+                        return Ok(Sig::ERROR);
+                    }
                 }
                 Sig::of(
                     kind_of(*target),

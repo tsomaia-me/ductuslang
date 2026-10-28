@@ -453,6 +453,9 @@ impl Engine<'_> {
                 }
             }
             Op::Convert(_, operand) => {
+                if !some!(self.sig(operand, need)).is_numeric() {
+                    return Ok(Some(CVal::Error));
+                }
                 let operand_ty = if is_float_ty(own) {
                     own
                 } else {

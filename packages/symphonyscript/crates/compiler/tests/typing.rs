@@ -4761,7 +4761,7 @@ fn beside_a_placeholder_an_operand_draws_only_what_its_expression_draws_for_ever
             &["Clip c:\n    Note when nothing or 1 or 2\n"],
             &[
                 (Code::UnknownName, "nothing"),
-                (Code::TypeMismatch, "1"),
+                (Code::OperandType, "nothing or 1"),
                 (Code::TypeMismatch, "2"),
             ],
         ),
@@ -4929,6 +4929,21 @@ fn beside_a_placeholder_an_operand_draws_only_where_its_twin_draws_with_its_twin
             &[(Code::OperandType, "2 + true")],
         ),
         (
+            &["Clip c:\n    Note/(nothing + 1.5 + i32(true))\n"],
+            &[
+                (Code::UnknownName, "nothing"),
+                (Code::TypeMismatch, "1.5"),
+                (Code::ConversionType, "i32(true)"),
+            ],
+        ),
+        (
+            &["Clip c:\n    Note when nothing and 1\n"],
+            &[
+                (Code::UnknownName, "nothing"),
+                (Code::OperandType, "nothing and 1"),
+            ],
+        ),
+        (
             &["Clip c:\n    Note/(if (1 + true) then nothing else 2.5)\n"],
             &[
                 (Code::OperandType, "1 + true"),
@@ -5032,6 +5047,39 @@ fn an_own_typed_fault_inside_a_position_draws_whether_or_not_the_position_draws_
             &[
                 (Code::TypeMismatch, "1.5 + 300000000000"),
                 (Code::DoesNotFit, "300000000000"),
+            ],
+        ),
+        (
+            &["Clip c:\n    Note/(1.5 + i32(true))\n"],
+            &[
+                (Code::TypeMismatch, "1.5 + i32(true)"),
+                (Code::ConversionType, "i32(true)"),
+            ],
+        ),
+        (
+            &["Synth s:\n    Osc | freq=f64(true)\n"],
+            &[(Code::ConversionType, "f64(true)")],
+        ),
+        (
+            &["Clip c:\n    Note/(i32(true) + 1)\n"],
+            &[(Code::ConversionType, "i32(true)")],
+        ),
+        (
+            &[
+                "input flag = true\n",
+                "Synth s:\n    Osc | freq=f64(flag)\n",
+            ],
+            &[(Code::ConversionType, "f64(flag)")],
+        ),
+        (
+            &["Clip c:\n    Note/([1, 2][i32(true)])\n"],
+            &[(Code::ConversionType, "i32(true)")],
+        ),
+        (
+            &[x, "Clip c:\n    Note/(x + 1.5 + i32(true))\n"],
+            &[
+                (Code::TypeMismatch, "x + 1.5 + i32(true)"),
+                (Code::ConversionType, "i32(true)"),
             ],
         ),
         (
