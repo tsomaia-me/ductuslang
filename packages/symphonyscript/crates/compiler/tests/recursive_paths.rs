@@ -1660,3 +1660,179 @@ fn a_family_probes_path_through_an_open_recursive_call_settles_no_family_from_th
     );
     assert_eq!(programs, 896);
 }
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum HeldReference {
+    RecursiveCall,
+    RecursiveElement,
+    ArrayOfCall,
+    InlinedCall,
+    Element,
+    Instance,
+}
+
+const HELD_REFERENCES: [HeldReference; 6] = [
+    HeldReference::RecursiveCall,
+    HeldReference::RecursiveElement,
+    HeldReference::ArrayOfCall,
+    HeldReference::InlinedCall,
+    HeldReference::Element,
+    HeldReference::Instance,
+];
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum HeldRead {
+    Attribute,
+    Child,
+    InlinedCall,
+    LocalLet,
+    RecursiveArgument,
+}
+
+const HELD_READS: [HeldRead; 5] = [
+    HeldRead::Attribute,
+    HeldRead::Child,
+    HeldRead::InlinedCall,
+    HeldRead::LocalLet,
+    HeldRead::RecursiveArgument,
+];
+
+impl HeldReference {
+    fn value(self) -> &'static str {
+        match self {
+            HeldReference::RecursiveCall => "pickr(verse, other, 1, 2)",
+            HeldReference::RecursiveElement => "pk([verse, other], 1, 2)",
+            HeldReference::ArrayOfCall => "[pickr(verse, other, 1, 2), verse]",
+            HeldReference::InlinedCall => "sel(verse, other, 1)",
+            HeldReference::Element => "[verse, other][1]",
+            HeldReference::Instance => "other",
+        }
+    }
+
+    fn reference(self) -> &'static str {
+        match self {
+            HeldReference::ArrayOfCall => "rp[i]",
+            HeldReference::RecursiveCall
+            | HeldReference::RecursiveElement
+            | HeldReference::InlinedCall
+            | HeldReference::Element
+            | HeldReference::Instance => "rp",
+        }
+    }
+
+    fn top_read(self) -> &'static str {
+        match self {
+            HeldReference::ArrayOfCall => "rp[0].gain",
+            HeldReference::RecursiveCall
+            | HeldReference::RecursiveElement
+            | HeldReference::InlinedCall
+            | HeldReference::Element
+            | HeldReference::Instance => "rp.gain",
+        }
+    }
+
+    fn chosen_gain(self, index: usize) -> i32 {
+        match self {
+            HeldReference::ArrayOfCall if index > 0 => 2,
+            HeldReference::RecursiveCall
+            | HeldReference::RecursiveElement
+            | HeldReference::ArrayOfCall
+            | HeldReference::InlinedCall
+            | HeldReference::Element
+            | HeldReference::Instance => 3,
+        }
+    }
+}
+
+impl HeldRead {
+    fn local(self, reference: &str) -> String {
+        match self {
+            HeldRead::LocalLet => format!("    let e = {reference}\n"),
+            HeldRead::Attribute
+            | HeldRead::Child
+            | HeldRead::InlinedCall
+            | HeldRead::RecursiveArgument => String::new(),
+        }
+    }
+
+    fn read(self, reference: &str) -> String {
+        match self {
+            HeldRead::Attribute => format!("{reference}.gain"),
+            HeldRead::Child => format!("{reference}.hook.velocity"),
+            HeldRead::InlinedCall => format!("f({reference})"),
+            HeldRead::LocalLet => "e.gain".to_string(),
+            HeldRead::RecursiveArgument => format!("g({reference}, 2)"),
+        }
+    }
+}
+
+fn held_program(
+    (held, consumer): (HeldReference, HeldRead),
+    (index, top_level, reversed, recursive): (usize, bool, bool, bool),
+) -> String {
+    let reference = held.reference();
+    let read = consumer.read(reference);
+    let value = if recursive {
+        format!("if n < 1 then {read} else h(c, i, n - 1)")
+    } else {
+        read
+    };
+    let mut items = vec![
+        "Session main\n".to_string(),
+        "Clip verse | gain=2:\n    Note as hook | velocity=2\n".to_string(),
+        "Clip other | gain=3:\n    Note as hook | velocity=3\n".to_string(),
+        "fn pickr(c, d, p, m): if m < 1 then (if p > 0 then d else c) else pickr(c, d, p, m - 1)\n"
+            .to_string(),
+        "fn pk(xs, p, m): if m < 1 then xs[p] else pk(xs, p, m - 1)\n".to_string(),
+        "fn sel(c, d, p): if p > 0 then d else c\n".to_string(),
+        "fn g(c, n): if n < 1 then c.gain else g(c, n - 1)\n".to_string(),
+        "fn f(c): c.gain\n".to_string(),
+        format!("let rp = {}\n", held.value()),
+        format!("fn h(c, i, n):\n{}    {value}\n", consumer.local(reference)),
+        format!(
+            "Clip k:\n    Note/([60][i32(h(verse, {index}, 3)) - {}])\n",
+            held.chosen_gain(index)
+        ),
+    ];
+    if top_level {
+        items.push(format!("Clip t | gain={}:\n    Note\n", held.top_read()));
+    }
+    if reversed {
+        items.reverse();
+    }
+    items.concat()
+}
+
+#[test]
+fn a_top_level_let_holding_a_recursive_calls_reference_reads_through_a_path_in_a_recursive_body_as_at_top_level()
+ {
+    let mut failures = Vec::new();
+    let mut programs = 0;
+    for held in HELD_REFERENCES {
+        for consumer in HELD_READS {
+            for index in [0, 1] {
+                for top_level in [false, true] {
+                    for reversed in [false, true] {
+                        let program = |recursive| {
+                            held_program((held, consumer), (index, top_level, reversed, recursive))
+                        };
+                        let (text, twin) = (program(true), program(false));
+                        programs += 1;
+                        if let Some(failure) = model_failure(&text, Some(&twin), &Found::new()) {
+                            failures.push(format!(
+                                "{held:?} {consumer:?} {index} {top_level} {reversed}\n{failure}"
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+    }
+    assert!(
+        failures.is_empty(),
+        "{} of {programs} programs fail:\n{}",
+        failures.len(),
+        failures.iter().take(8).cloned().collect::<String>()
+    );
+    assert_eq!(programs, 240);
+}

@@ -116,7 +116,11 @@ impl Engine<'_> {
                         return Ok(self.pending(root, Sig::open(false), need));
                     };
                     self.memo.probing_families.remove(key);
-                    if sig.open && !sig.is_error() && !self.memo.probing_families.is_empty() {
+                    if sig.open
+                        && !sig.is_error()
+                        && !self.memo.probing_families.is_empty()
+                        && self.in_probe(self.node(node)?.scope)?
+                    {
                         self.memo.rec_families.remove(key);
                         return Ok(Some(Sig::open(false)));
                     }
