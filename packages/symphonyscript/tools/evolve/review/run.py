@@ -213,6 +213,10 @@ def settled(below, poll=POLL_SECONDS):
         time.sleep(poll)
 
 
+def limit(below):
+    return below if below is not None and math.isfinite(below) else None
+
+
 def now():
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
@@ -234,16 +238,16 @@ def performed(planned, results, settle=settled):
             out.write(f"{error}\n")
             code = 127
     return {"name": planned["name"], "command": planned["command"], "cwd": planned["cwd"], "env": planned["env"],
-            "waited_for_load_below": planned["below"], "load": round(load, 2), "started": started,
+            "waited_for_load_below": limit(planned["below"]), "load": round(load, 2), "started": started,
             "seconds": round(time.monotonic() - clock, 1), "exit": code, "log": log.name}
 
 
-def shared_steps(sha, top, into, run, jobs, baselines, against):
+def shared_steps(sha, top, into, run, jobs, baselines, against, quiet=QUIET_LOAD):
     export, package = into / "export", into / "export" / PACKAGE
     cargo = {"CARGO_TARGET_DIR": str(into / "target"), "CARGO_BUILD_JOBS": str(jobs),
              "NEXTEST_TEST_THREADS": str(jobs), "RUST_TEST_THREADS": str(jobs)}
     verdict_diff = [sys.executable, HERE / "run.py", "check", sha, "--profile", "dev", "--jobs", jobs,
-                    "--settle-below", QUIET_LOAD, "--build", into / "check", "--baselines", baselines, *(["--against", against] if against else [])]
+                    "--settle-below", quiet, "--build", into / "check", "--baselines", baselines, *(["--against", against] if against else [])]
     return [step("archive", ["git", "-C", top, "archive", "--output", into / "export.tar", sha, PACKAGE], top),
             step("extract", ["tar", "-x", "-f", into / "export.tar", "-C", export], into),
             step("rustc", ["rustc", "--version", "--verbose"], package),
@@ -258,14 +262,15 @@ def shared_steps(sha, top, into, run, jobs, baselines, against):
                  BUSY_LOAD),
             step("verdicts", verdict_diff, HERE, None, BUSY_LOAD),
             step("figures", [sys.executable, HERE / "run.py", "figures", into / "check" / "target" / PROFILES["dev"],
-                             run / "check-times.json.gz", run / "figures.json"], HERE, None, QUIET_LOAD)]
+                             run / "check-times.json.gz", run / "figures.json"], HERE, None, quiet)]
 
 
-def manifest(tip, into, run, records, started, jobs):
+def manifest(tip, into, run, records, started, jobs, quiet=QUIET_LOAD):
     pipeline = git(HERE, "rev-parse", "HEAD").stdout.strip()
     edited = git(HERE, "status", "--porcelain", "--", str(EVOLVE)).stdout.strip()
     return {"tip": tip, "export": str(into / "export" / PACKAGE), "target": str(into / "target"),
             "evolve_binaries": str(into / "check" / "target" / PROFILES["dev"]), "profile": "dev", "jobs": jobs,
+            "load_limits": {"builds_and_checks": BUSY_LOAD, "timed_steps": limit(quiet)},
             "pipeline": {"commit": pipeline, "uncommitted_changes": bool(edited)},
             "host": {"name": platform.node(), "system": platform.platform(), "cpus": os.cpu_count()},
             "started": started, "written": now(),
@@ -286,12 +291,13 @@ def shared(arguments):
     shutil.rmtree(run, ignore_errors=True)
     run.mkdir(parents=True)
     started, records = now(), []
-    for planned in shared_steps(sha, top, into, run, arguments.jobs, arguments.baselines, arguments.against):
+    for planned in shared_steps(sha, top, into, run, arguments.jobs, arguments.baselines, arguments.against,
+                                arguments.quiet_below):
         records.append(performed(planned, run))
         print(f"{planned['name']}: exit {records[-1]['exit']}, {records[-1]['seconds']} s, "
               f"load {records[-1]['load']}", flush=True)
-        (run / "manifest.json").write_text(json.dumps(manifest(tip, into, run, records, started, arguments.jobs),
-                                                      indent=2) + "\n")
+        shape = manifest(tip, into, run, records, started, arguments.jobs, arguments.quiet_below)
+        (run / "manifest.json").write_text(json.dumps(shape, indent=2) + "\n")
     print(run / "manifest.json")
     sys.exit(0 if all(record["exit"] == 0 for record in records) else 1)
 
@@ -325,6 +331,9 @@ def main():
                          help="a new directory for the export and its builds, kept for the reviewers' probes; "
                               "by default a new temporary directory")
     sharing.add_argument("--against", help="as for check")
+    sharing.add_argument("--quiet-below", type=float, default=QUIET_LOAD,
+                         help="the 1-minute load the timed steps, the verdict check and the figures, wait to fall "
+                              "below; inf takes them at any load, and the manifest records the load each began at")
     for command in (checking, sharing):
         command.add_argument("--jobs", type=int, default=max(1, (os.cpu_count() or 2) // 2))
     recording = commands.add_parser("record", help="record review-runs/<sha>/verdicts.jsonl.gz as the baseline")

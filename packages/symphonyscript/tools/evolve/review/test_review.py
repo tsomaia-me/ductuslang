@@ -253,8 +253,8 @@ class Running(unittest.TestCase):
         self.assertEqual(shape["tip"], "f" * 40)
         self.assertEqual(shape["results"], ["after.log", "failing.log", "first.log", "missing.log"])
         self.assertEqual(shape["commands"], records)
-        self.assertEqual(set(shape), {"tip", "export", "target", "evolve_binaries", "profile", "jobs", "pipeline",
-                                      "host", "started", "written", "results", "commands"})
+        self.assertEqual(set(shape), {"tip", "export", "target", "evolve_binaries", "profile", "jobs", "load_limits",
+                                      "pipeline", "host", "started", "written", "results", "commands"})
 
     def test_the_shared_step_runs_the_four_checks_as_commands_of_their_own_in_the_dev_profile(self):
         into, results = Path("/into"), Path("/results")
@@ -278,6 +278,8 @@ class Running(unittest.TestCase):
         self.assertEqual({each["name"]: each["below"] for each in planned if each["below"]},
                          {**dict.fromkeys(["build", "fmt", "clippy", "nextest", "doctest", "thumbv7em", "verdicts"],
                                           12.0), "figures": 6.0})
+        quiet = run.shared_steps("abc1234", Path("/top"), into, results, 4, Path("/baselines"), None, float("inf"))
+        self.assertEqual([quiet[-2]["command"][9], quiet[-1]["below"]], ["inf", float("inf")])
         self.assertTrue(all(each["cwd"] == "/into/export/packages/symphonyscript"
                             for each in planned if each["command"][0] in ("cargo", "rustc")))
         self.assertTrue(all(each["env"]["CARGO_TARGET_DIR"] == "/into/target" for each in planned
