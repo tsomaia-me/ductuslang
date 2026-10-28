@@ -63,7 +63,7 @@ The enum `Wave` has the variants `Sine`, `Saw` and `Square`. The unit family `be
 
 ### 2.1 Files
 
-A project is a set of `.sym` files compiled together. All files share one namespace (§6.5); no file imports another. Files are ordered by the byte-wise order of their paths, and items within a file by source order. This order is the program's top-level order. A source file whose path equals a prelude file's path (§10.1) is an error.
+A project is a package (§15.1): a set of `.sym` files compiled together, found in every folder under its root, the folder holding its package file (§15.2). All files of a package share one namespace (§6.5), and no file imports another; a package takes in and gives out names only through its package file (§15.2). Files are ordered by the byte-wise order of their paths, and items within a file by source order. This order is the program's top-level order. A source file whose path equals a prelude file's path (§10.1) is an error.
 
 ```ebnf
 File    ::= TopItem*
@@ -101,6 +101,7 @@ input let state fn pattern type default const children
 if then else match when for in into from as on without
 is not and or div to true false none
 u8 i32 i64 f32 f64 bool str map json node wire
+package require use publish
 ```
 
 The words `recurrent` and `string` are reserved and are never names; `null` is a word of JSON text inside a document literal (§3.11) and is never a name. The tokens `==` and `!=` are reserved and rejected by the lexer, and their diagnostic points to `is` and `is not`. `^` stands only at the start of an index or a slice bound (§5.5); anywhere else it is an error.
@@ -222,7 +223,7 @@ The vocabulary declares unit families. Each family has a base unit and further u
 - An attribute may belong to a family and then has a default unit. A plain number bound to it is in that default unit.
 - A unit value bound to an attribute of a different family, or of no family, is an error.
 - `+`, `-`, `%`, comparisons, `min`, `max`, `clamp`, the first two arguments of `lerp`, array literals, and the arms of `if` and `match` take operands of one family. A plain value among them, a number or a plain cell, takes that family and is read in the default unit of the attribute its family value reaches, as a literal with that unit's suffix would be: `length=2bars + 1` is 9 beats, and where the default unit is `ms`, `1s + 3` is the float 1.003 s. An array literal's family value reaches every attribute that a read of the literal reaches, whole or at any index, so in `let a = [1bars, 2]` read as `length=(a[0])` the `2` is 2 beats. A fixed-type integer read in a unit whose scale is not an integer is the float it widens into: the expected type (§4.2), or with none `f32` for an `i32` and `f64` for an `i64` (§4.3). Where the family value reaches no attribute of the family, as when `/` or `div` makes it a plain number or a comparison a `bool`, the plain value is an error, and so is a family value that reaches two attributes of the family with different default units.
-- `/` and `div` of two values in the same family yield a plain number. Multiplying or dividing a unit value by a plain number keeps the family. Dividing a plain number by a unit value, multiplying two unit values, `**` on a unit value, and a unit value as a range bound are errors.
+- `/` and `div` of two values in the same family yield a plain number. Multiplying or dividing a unit value by a plain number keeps the family. Dividing a plain number by a unit value, multiplying two unit values, `**` on a unit value, and a unit value as a range bound, an index, a slice bound or a `^` offset (§5.5) are errors.
 - Unary minus, conversions, `abs`, `floor`, `ceil` and `round` keep the family of their operand. The other built-ins take plain numbers.
 - A value's family comes from its own initializer or expression, never from its uses: `input d = 5ms` and `let e = d * 2` are in `time`, and `input p = 5.0` is plain. A value in a family holds base units, and the host writes such inputs in base units (§12.1). A plain cell bound to an attribute of a family is read in that attribute's default unit, as a plain number is; a plain cell read at two attributes of one family with different default units is an error naming both.
 
@@ -496,8 +497,8 @@ A compile-time value is computed by the rules of §5, except that a flexible int
 - The bounds of a range in a `for`, and an index or a slice bound known at compile time, are integers that fit `i64`. A range's loop variable is a flexible integer, so each use chooses its type.
 - A call to a recursive function (§6.3) computes flexible integer arguments exactly and every other argument in the type its call gives it: a fixed type, or for a flexible float its expected type or the default of §4.5. Its whole body computes in those types, and an operation they do not allow, such as `div` on a float, is an error naming the call. Its result may be an array, with the shape of the value the call yields in the type its use expects; a value that holds the call and has different shapes at two of its uses is an error naming both, as in §4.1. A reactive value whose shape comes from such a result alone takes the shape the call yields with the defaults of §4.5, and a use that yields another shape is an error naming both.
 - A value that structure depends on, such as a range bound or a recursive call's result, is computed before the expansion that depends on it.
-- A compilation evaluates at most 1,000,000 distinct recursive calls and inlines at most 100,000 calls of other functions, a call counting each time the body holding it is inlined or expanded, and once in a recursive function's body or its parameters' defaults, which are evaluated rather than inlined, and its expansion runs at most 1,000,000 `for` iterations and pattern uses, the iterations of a compile-time `for` expression (§5.10) counting among them, and yields at most 1,000,000 instances and wires. A recursive call repeats an earlier one, counts once and reuses its value, only when its argument values, argument types and families, expected type and the default unit its plain values are read in (§3.6) are all equal, a function reference passed as an argument (§6.7), directly or through a `let`, counting by its declaration, a lambda's being its source position, and the values of the names its body reads. Exceeding a limit is an error naming the call or the expansion. Each number here, §6.3's nesting depth and §12.6's memory limit are default limits that a project or a single compilation may set otherwise (ARCHITECTURE §7, §9).
-- Every limit that draws an error has a warning value beside it, whose default is half the limit's default and which a project or a single compilation sets as it sets the limit. A count that passes the warning value draws a warning naming what the limit's error names: the call, the expansion, or for the memory limit the Program; a count that passes the limit draws the error. The reload search bound (§13.3) draws no error and has no warning.
+- A compilation evaluates at most 1,000,000 distinct recursive calls and inlines at most 100,000 calls of other functions, a call counting each time the body holding it is inlined or expanded, and once in a recursive function's body or its parameters' defaults, which are evaluated rather than inlined, and its expansion runs at most 1,000,000 `for` iterations and pattern uses, the iterations of a compile-time `for` expression (§5.10) counting among them, and yields at most 1,000,000 instances and wires. A recursive call repeats an earlier one, counts once and reuses its value, only when its argument values, argument types and families, expected type and the default unit its plain values are read in (§3.6) are all equal, a function reference passed as an argument (§6.7), directly or through a `let`, counting by its declaration, a lambda's being its source position, and the values of the names its body reads. Exceeding a limit is an error naming the call or the expansion. Each number here, §6.3's nesting depth and §12.6's memory limit are default limits that a package's `options` (§15.2) or a single compilation may set otherwise (ARCHITECTURE §7, §9).
+- Every limit that draws an error has a warning value beside it, whose default is half the limit's default and which a package's `options` or a single compilation sets as it sets the limit. A count that passes the warning value draws a warning naming what the limit's error names: the call, the expansion, or for the memory limit the Program; a count that passes the limit draws the error. The reload search bound (§13.3) draws no error and has no warning.
 
 In §6.4's `Arp`, `steps` counts the iterations exactly, and `i` is an `i32` in each pitch. `Note/(2147483647 + 1)` is an error, as `Note/2147483648` is.
 
@@ -978,7 +979,7 @@ Patterns never appear in the Program.
 
 ### 6.5 Names and scope
 
-All top-level names share one namespace across the project: inputs, `let`s, states, functions, patterns, record types, top-level instances, the built-ins (§5.7), and the vocabulary's kinds, enums and prelude declarations. A duplicate is an error naming both declarations; a source declaration shadows a prelude declaration of its name (§10.1). Top-level declarations refer to each other regardless of order. A declared name of any kind, top-level or local, that equals a variant of a vocabulary enum is an error.
+All top-level names of a package share one namespace across its files: inputs, `let`s, states, functions, patterns, record types, top-level instances, the names its package file brings in (§15.4), the built-ins (§5.7), and, in a package written for a vocabulary, the vocabulary's kinds and enums and the names its prelude publishes (§15.6). A duplicate is an error naming both declarations; a declaration of the package and a name its package file brings in shadow a prelude name (§15.6). Top-level declarations refer to each other regardless of order. A declared name of any kind, top-level or local, that equals a variant of a vocabulary enum is an error.
 
 Inside a body, the `as` names of that body's children and wires are visible regardless of order, and so are those of every enclosing body up to a pattern's body, and the top-level names. A child or wire name shadows top-level names, built-ins and prelude names within its body and the bodies nested in it. A child or wire name equal to a name of its own body or of an enclosing body, or to an attribute of its parent's kind, is an error, also when the two names stand in different arms of one `when` block. A child or wire name equal to a pattern parameter, a pattern declaration or a `for` variable visible where it is declared is an error, and so is a pattern declaration equal to a child or wire name of its body. A `for` variable is visible in its body, and a `for` variable equal to a visible name is an error; so is a `for` expression's loop name, its accumulator or its block form's local `let` (§5.10), or a lambda's parameter (§6.7), equal to a visible name. A `for` expression's loop names, its accumulator and its block form's local `let`s are distinct names, as a function's parameters and local `let`s are (§6.3). A bracket name (§6.8) equal to a top-level name is an error. In a function, parameters and local `let`s shadow top-level names; in a pattern, parameters and the body's declarations do. A record's field names are scoped to its type (§3.8).
 
@@ -1578,6 +1579,7 @@ An instance or wire is active when its own gate, the conditions of the `when` bl
 | Attribute | name; type; default; unit family and default unit; flag character; whether it is its kind's default attribute; the binding it takes: any value, an input or a constant |
 | Enum | name; variants |
 | Unit family | name; base unit; units and their scales |
+| Identity | the vocabulary's name and its version (§15.8) |
 | Prelude | functions, patterns, record types and named values such as note names, in SymphonyScript source, and native functions, implemented in Rust |
 
 A count is exactly *n*, at least *n*, at most *n*, between *n* and *m*, or any number. A child kind absent from a kind's accepted list is not accepted. A wire kind connects only the source and destination kinds it lists; a node kind bounds how many wires of each kind it takes, and takes any number where it states no count. Each kind has at most one default attribute, and its flag characters are distinct. An attribute takes any value unless it states otherwise. An attribute that takes an input has no default, and a program binds it to an input (§10.2); an attribute that takes a constant is bound to a compile-time value. A record attribute names a record type the prelude declares, or takes a record of any type, whose type the bound value supplies; a string attribute states a capacity (§3.3) or takes compile-time strings only. A map attribute names its key and value types and its capacity (§3.10); a document attribute names its budget, or takes any document, whose budget the bound value supplies (§3.11). A sum is never an attribute's type (§3.9).
@@ -1595,9 +1597,10 @@ A vocabulary is invalid, and no program compiles against it, when:
 - a unit's scale is not a positive finite number, a unit name repeats, within a family or across families, an attribute's default unit is not in its family, or a unit name begins with `_`, or with `x` and a hexadecimal digit, `b` and a binary digit, `o` and an octal digit, or `e` or `E` and a digit or sign (§2.6);
 - an integer attribute belongs to a family with a unit whose scale is not an integer;
 - a native function's signature holds a type outside §3, or a variable-array result whose capacity it does not state;
-- the prelude fails to parse or to resolve its names.
+- the prelude fails to parse or to resolve its names;
+- its version is not a version (§15.7).
 
-The prelude's source is ordinary source compiled with the program. It holds `input`, `let`, `fn`, `pattern` and `type` declarations only, and its declarations and native functions share the top-level namespace (§6.5). A prelude input is the framework's: the framework states its type, its capacity and its default, as `input path: str[..2048] = ""`. A project never changes a prelude input; a framework that leaves a value to the project takes it as an `input` parameter (§6.4). It is parsed and resolved once per vocabulary; its declarations are type-checked where programs use them, and an error found there is a program error located in the prelude. A source declaration with a prelude declaration's name shadows it in the program's source. Prelude bodies see only prelude declarations, the vocabulary's names and the built-ins, so source declarations never change them.
+The prelude's source is ordinary source compiled with the program, and the prelude is a library, the framework's, that reaches programs as §15.6 says. It holds `input`, `let`, `fn`, `pattern` and `type` declarations only, beside its package file (§15.2), and its declarations and native functions share its own namespace (§6.5). A prelude input is the framework's: the framework states its type, its capacity and its default, as `input path: str[..2048] = ""`. A project never changes a prelude input; a framework that leaves a value to the project takes it as an `input` parameter (§6.4). It is parsed and resolved once per vocabulary; its declarations are type-checked where programs use them, and an error found there is a program error located in the prelude. A program's declaration with a prelude name shadows it in the program's package (§15.6). Prelude bodies see only prelude declarations, the vocabulary's names and the built-ins, so source declarations never change them.
 
 A native function is a prelude function the vocabulary implements in Rust. Its declaration gives its name and its signature: the bracket parameters it takes (§6.8), and the type of each parameter and of its result, each a type of §3, where an array parameter may leave its capacity open, written `i32[..]`, and a variable-array result states its capacity as a number or as the capacity of one array parameter; the array result of a native function that runs only at compile time is a fixed array of the length it yields. Its parameters and result take plain values (§3.6). A parameter may be a function type (§6.7), whose argument is a function reference. A call reads each argument in its parameter's type as a fixed-type position does (§4.2, §4.3). A call whose arguments are all compile-time values, a function reference among them when its body reads no cell, is evaluated by the compiler, and any other call runs at runtime; a string parameter is written `str[..N]` or, open, `str[..]`, and a string result states its capacity as an array result does (§3.3). A native function calls a function reference it receives with argument values of the function type's parameter types, and each call runs the referenced body with its parameters bound to them and yields its value: the compiler runs it when it evaluates the call, and the runtime when it runs the call, the native function writing its result into the buffer the runtime provides. A lambda whose body calls a native function with a lambda of its own nests that call in the outer one; the depth of this nesting is fixed by the expressions and counts toward the nesting limit (§6.3), which the compiler checks, so a call at runtime never passes it. A native function is pure and total: it yields the same value for the same arguments on every target, allocates nothing and never fails. The vocabulary's author upholds this, a native function that takes a lambda included, so how many times it calls the lambda is its author's; the compiler and the runtime rely on it.
 
@@ -1656,6 +1659,7 @@ Every instance and wire has a path, with segments joined by `.`:
 - A named pattern use contributes its name, and an anonymous use contributes the pattern's name and its position among the parent's anonymous uses of that pattern: `verse.Arp:0.Note:2`. The items a use expands to take their paths under its segment and do not count among the parent's entries, so in `Clip verse: Note/40 Arp/48 Note/41` the last note is `verse.Note:1`.
 - A use that stands in for a single placement (§6.4) gives that placement the use's path.
 - An input or a state declared in a pattern has the path of its use followed by its name: `verse.low.gain`.
+- A top-level input or state of a library is named by its package's identity (§15.1), `::` and its name: `prelude::path`, `github.com/acme/drums::swing`.
 
 ## 12. Runtime semantics
 
@@ -1762,10 +1766,128 @@ SymphonyScript has none of the following:
 - **Varying structure.** Gates vary activation (§9), and destinations vary among fixed candidates (§8.2). A different structure is a different Program, loaded by reload (§13).
 - **Node references held at runtime** (§3.5).
 - **Closures.** No function is a value at runtime. A function's body is inlined or stored once as a shared body (§11), and a lambda is inlined or evaluated by the native function or the shared body that receives it (§6.7, §10.1); nothing passes or holds a function while the Program runs.
-- **Modules.** There are no imports, exports or visibility levels; one namespace spans the project (§6.5).
 - **Metadata attributes.** No construct attaches metadata to a declaration.
 - **Bitwise operators.** `^` only counts from an array's end (§5.5).
 - **Readable gate state** (§9.3).
 - **Aborting evaluation** (§12.4).
 - **Structural sharing.** Every cell holds its own value in its own buffer (§12.6); a derived array, map or document is a copy bounded by its capacity.
 - **Allocation while running** (§12.6).
+
+## 15. Packages
+
+### 15.1 Packages
+
+A package is a set of `.sym` files compiled together: every `.sym` file in every folder under its root, the folder holding its package file (§15.2). A project is a package; a library is a package that another package requires (§15.3); a vocabulary's prelude is a library (§15.6). A package's files share its namespace (§6.5), and a name it declares is visible outside it only when it publishes the name (§15.5).
+
+A package's identity is its source (§15.3) without its version: `github.com/acme/drums`. A local library's identity is its path from the project's root, `../util`, and the prelude's is `prelude`. A build holds one package of each identity.
+
+The build's top-level order (§2.1) runs through the prelude, then the libraries in the byte-wise order of their identities, then the project, each package in its own file order.
+
+### 15.2 The package file
+
+```ebnf
+PackageFile ::= PackageItem*
+PackageItem ::= PackageDecl | Require | Use | Publish
+PackageDecl ::= 'package' RecordLit NEWLINE
+```
+
+A package's package file is `package.sym`, and the folder holding it is the package's root. It holds these items only, in any order, and no declaration. A `package.sym` in any other folder of the package, and a `package`, `require`, `use` or `publish` item in any other file, is an error naming the package file.
+
+The `package` item states the package's identity as a record (§3.8) of the built-in type `Package`. Its fields are compile-time values, and none reaches the Program:
+
+| Field | Holds |
+|---|---|
+| `name` | the package's name, an identifier (§2.4) |
+| `version` | its version (§15.7) |
+| `license` | its license, an SPDX license expression |
+| `authors` | an array of strings, each naming a person: `"Ada Lovelace <ada@example.com>"` |
+| `contributors` | an array of strings, as `authors` |
+| `vocabulary` | the vocabulary it is written for (§15.8) |
+| `options` | the build's settings, a record combined across the build's packages as below |
+
+A library's package file holds a `package` item with a `name` and a `version`, and a project's holds one with its `vocabulary` (§15.8). Two `package` items are an error.
+
+The `options` field holds the limits of §4.6, §6.3, §12.6 and §13.3, each with its warning value beside it, and the sharing threshold, by the names ARCHITECTURE §9 gives them. A limit on a compilation's work, the recursive calls, inlined calls, expansion steps and expanded items of §4.6 and the nesting depth of §6.3, takes in a build the highest value any package of the build states, and a library whose value is above the starting package's, stated or default, draws a warning at the starting package's `package` item naming the library, the limit and both values. The memory limit, the reload search bound and the sharing threshold take the starting package's value alone, and a library's is read only in a build the library starts. A warning value combines as its limit does.
+
+```sym-package
+package {
+    name: "scales",
+    version: "2.4.1",
+    license: "MIT",
+    authors: ["Ada Lovelace <ada@example.com>"],
+}
+
+require "github.com/acme/util@1.2.0"
+use util as u
+
+publish major, minor
+```
+
+### 15.3 Requiring a package
+
+```ebnf
+Require       ::= 'require' StringLit ('as' Name)? NEWLINE
+QualifiedName ::= Name '::' Name
+```
+
+A `require` item names a library by its source, a string literal without interpolation:
+
+- `"<host>/<path>@<version>"` is the release `<version>` of the git repository at `https://<host>/<path>`: the commit its tag `v<version>` names;
+- `"<host>/<path>@<commit>"` is that repository at the commit named by 7 to 40 hexadecimal digits;
+- `"./<path>"` and `"../<path>"` are the library in that folder, relative to the requiring package's root.
+
+A required library is reached by the `name` its `package` item states, or by the name `as` gives: `require "github.com/other/scales@1.0.0" as oscales`. Two required libraries of one name, and a required library named like a declaration of the package or `prelude`, are an error whose help names `as`.
+
+A `require` item makes every name the library publishes reachable as a qualified name in every file of the package: `scales::major`. A qualified name stands wherever a name refers to a top-level declaration (§6.5); one that the library does not publish is an error naming the library.
+
+A commit and a local path stand only in the project's package file and in the package files of libraries the project reaches through local paths. In a library fetched by its source, either is an error.
+
+### 15.4 Using names
+
+```ebnf
+Use     ::= 'use' Name (':' UseName (',' UseName)* | 'as' Name)? NEWLINE
+UseName ::= Name ('as' Name)?
+```
+
+A `use` item brings a required library's published names into the package's namespace (§6.5):
+
+- `use drums` brings every name `drums` publishes;
+- `use drums: Kit, Snare` brings those two, and `use drums: Kit as Set, Snare` brings `Kit` as `Set`;
+- `use drums as d` brings no name, and `d::Kit` reaches `drums::Kit`.
+
+A `use` of a name that no `require` item of the package names is an error. A name a `use` item brings that equals another name of the package's namespace, other than a prelude name (§15.6), is an error naming both, whose help names a narrower `use` or `as`, unless both name one declaration: a library's declaration that another library republishes (§15.5) is one name.
+
+### 15.5 Publishing
+
+```ebnf
+Publish     ::= 'publish' PublishName (',' PublishName)* NEWLINE
+PublishName ::= (Name | QualifiedName) ('as' Name)?
+```
+
+A library publishes the names its `publish` items list, and only those; every other declaration of it is visible only inside it. A published name names a top-level declaration of the library, a name a `use` item brings, or a qualified name of a library it requires, and the last two republish that library's declaration. `as` publishes it under another name. A name published twice, a published name that names nothing, and a `publish` item in a project are errors.
+
+```sym-package
+use scales: major
+
+publish Drum as Kick, Kit, Hit
+publish major
+publish scales::minor as Minor
+```
+
+### 15.6 The prelude
+
+The prelude of a vocabulary (§10.1) is a library that every package written for that vocabulary requires without a `require` item: the project always, and a library whose `package` item states that vocabulary (§15.8). In such a package, every name the prelude publishes is reachable unqualified and as `prelude::<name>`. A declaration of the package and a name a `use` item brings shadow a prelude name of their spelling in that package, and `prelude::<name>` still reaches it. The prelude's package file lists what it publishes, and a prelude declaration it does not publish is visible only inside the prelude.
+
+### 15.7 Versions
+
+A version is three decimal integers without signs or leading zeros, joined by `.`: `MAJOR.MINOR.PATCH`, as `2.4.1`. Versions compare by their major, then their minor, then their patch.
+
+A build holds one version of each library: the highest version any package of the build requires of it. Two requirements of one library with different majors are an error naming each requiring package and the version it requires. A library raises its major when it removes or changes a name it publishes, and its minor when it publishes a new one.
+
+A commit the project requires replaces every version the build requires of that library. The newest release tag in the commit's history gives the commit's major, and a major other than that of the build's other requirements of the library is the error above. A fetched release whose `package` item states another version than its tag names is an error naming both.
+
+### 15.8 A package's vocabulary
+
+A vocabulary has a name and a version (§10.1, §15.7). A package's `package` item states the vocabulary it is written for as `"<name>@<version>"`, the lowest version it accepts within that version's major: `vocabulary: "drums@2.1.0"`. A project's states the vocabulary of the framework that runs it (ARCHITECTURE §9). A library that states none uses no kind, enum, unit, attribute or prelude name. A library written for a vocabulary of another name than the project's, of another major, or of a higher version, is an error naming the library and both vocabularies, and so is a project whose framework's vocabulary differs that way from the one it states.
+
+A vocabulary raises its major when it removes or changes a kind, an attribute, an enum variant, a unit or a name its prelude publishes, and its minor when it adds one.

@@ -13,6 +13,11 @@ How a SymphonyScript implementer runs a round, fixes an item and hands back. PLA
 - Record a row the documents contradict as a gap and never adjust it, because a row is the head's reading of the documents, and an adjusted row hides a misreading from the one who made it.
 - Before you call a red run a code fault, run the failing file alone and read the load, and run again a target reported failed whose every test printed `ok`, because other sessions' builds share the machine.
 
+## How you build a construct
+
+1. **Hold the construct with a generated test before you hand back.** Generate its programs over its forms, the operators, the positions it stands in and the declaration orders, with expected values from the documents or from ARCHITECTURE §7's twins, as § How you fix an item step 2 does for a class, and name in the progress file every form the generator leaves out, because a reviewer generates the same programs, and each defect it finds that your generator would have found costs a fix round.
+2. **Diff the verdicts of your tip before you hand back.** Run step 5 of § How you fix an item from an export of the milestone's start and of your tip, and the review pipeline's `check <tip>` in `tools/evolve/review`, and explain in the progress file every moved verdict outside the constructs you built, because a construct changes every program its rules reach, and a verdict that moved unexplained is the next review's finding.
+
 ## How you fix an item
 
 1. **Fix the class, not the case.** State the item's property in one sentence citing its SPEC or ARCHITECTURE section, and write in the progress file what its class varies: the construct's forms, the operators, the positions and the declaration orders, because a fix proven on the reported form leaves every other form of its class to the next review, a round each.

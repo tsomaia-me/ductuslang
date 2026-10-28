@@ -9,7 +9,7 @@ The implementation runs in five milestones. The owner approves this plan once; t
 - **Owner:** decides direction.
 - **Head:** the session that drives this plan. It briefs implementers and reviewers, sorts every gap, edits the documents, decides what the decision rules let it decide, and keeps the head notes in `.memory/symphonyscript/notes.md`. The head owns the decisions and the architecture, and the reviewers own the code's correctness against them. The head runs implementers and reviewers in parallel wherever the work allows.
 - **Implementer:** one agent per milestone, Opus at effort `high`. An implementer takes its whole scope in its first brief, and new scope goes to a fresh implementer.
-- **Reviewers:** four fresh agents per cold review, one per lens of § Reviews, on the models its table names; an Opus reviewer runs at effort `xhigh` for M2, M2b, M2e, M2c, M2d, M3 and M5 and `high` for M1, M4a and M4b, and Fable at `xhigh`. A warm review resumes a cold reviewer.
+- **Reviewers:** four fresh agents per cold review, one per lens of § Reviews, on the models its table names; an Opus reviewer runs at effort `high` and Fable at `xhigh`. A warm review resumes a cold reviewer.
 - Implementers and reviewers start no agents of their own.
 
 ### Decisions
@@ -41,7 +41,7 @@ The implementation runs in five milestones. The owner approves this plan once; t
 
 ### Reviews
 
-- A cold review is four fresh reviewers in parallel, each on the whole milestone's diff, never single commits, against SPEC, ARCHITECTURE, this plan's exit criteria and CLAUDE.md. Each covers its lens first, then reviews the whole diff freely:
+- A cold review is four fresh reviewers in parallel, each on the whole milestone's diff, never single commits, against SPEC, ARCHITECTURE, this plan's exit criteria and CLAUDE.md. Each covers its lens first over the whole diff, then reviews freely its part of the diff: the head divides the diff's files into four parts of about equal size and names each reviewer's part in its brief, and a reviewer reads whatever else its judgment needs:
 
 | Lens | Covers first | Reviewer |
 |---|---|---|
@@ -50,10 +50,10 @@ The implementation runs in five milestones. The owner approves this plan once; t
 | 3 | The hot path and the speed targets | Fable, or Opus 5.5 at `xhigh` when Fable is out |
 | 4 | Code and test quality | Opus 5.5 |
 
-- Lens 3's hot path: in M2, compile-time evaluation and its limits (SPEC §4.6, §6.3) and inference (SPEC §3.6, §4); in M2b, the types and capacities of arrays and states (SPEC §3.7, §6.6) and bounded evaluation (§6.3, §4.6); in M2e, Infer's capacity rules and the `for` expression's evaluation (SPEC §5.10, §7.9, §4.6); in M2c, the capacities and bindings of strings, records, sums and arrays with capacities at every level (SPEC §3.2, §3.3, §3.7, §3.8, §3.9, §4.4), maps (§3.10) and documents' budgets, typed reads and equality (§3.11); in M2d, pattern types and expansion (§6.4) and triggers (§6.6); in M3, Lower's constant folding, the runtime (SPEC §5's built-ins, §12) and reload (SPEC §13); in M5, the adapter (ARCHITECTURE §10) and the kernel move operations; in M1, M4a and M4b, the speed targets and any cost the milestone's exit lines state.
-- The four share one build of the tip under review: the head exports it, `git archive <tip> packages/symphonyscript` into a new directory, builds it there and runs the four checks once, each judged by its own exit code with nothing chained after it. Each reviewer reads those results, runs its probes against that build from a folder of its own, and changes and commits nothing in the repository.
-- A reviewer rates each defect. Blocking: a wrong program accepted, a valid program rejected on a path an ordinary program takes, a panic or internal-error, nondeterminism, or a cost past linear on ordinary input. Major: the same on an unusual path, or an exit criterion not met. Minor: everything else.
-- At every cold review the lens 3 reviewer measures the time per unit of the compiler's heavy work against these targets, in the `dev` profile the tests run, with no other build on the machine, and reports each figure with its method; a figure past its target is a finding rated Major, and Blocking when an ordinary program meets it:
+- Lens 3's hot path: in M2, compile-time evaluation and its limits (SPEC §4.6, §6.3) and inference (SPEC §3.6, §4); in M2b, the types and capacities of arrays and states (SPEC §3.7, §6.6) and bounded evaluation (§6.3, §4.6); in M2e, Infer's capacity rules and the `for` expression's evaluation (SPEC §5.10, §7.9, §4.6); in M2c, the capacities and bindings of strings, records, sums and arrays with capacities at every level (SPEC §3.2, §3.3, §3.7, §3.8, §3.9, §4.4), maps (§3.10) and documents' budgets, typed reads and equality (§3.11); in M2d, pattern types and expansion (§6.4) and triggers (§6.6); in M2f, name resolution across packages and the choice of versions (SPEC §15); in M3, Lower's constant folding, the runtime (SPEC §5's built-ins, §12) and reload (SPEC §13); in M5, the adapter (ARCHITECTURE §10) and the kernel move operations; in M1, M4a and M4b, the speed targets and any cost the milestone's exit lines state.
+- Before the reviewers start, the head's shared step runs once on a fresh export of the tip, `git archive <tip> packages/symphonyscript` into a new directory: it builds the export in the `dev` profile, runs the four checks, each judged by its own exit code with nothing chained after it, runs the review pipeline's verdict diff against the last reviewed tip, and takes the speed figures below; it writes every result beside a manifest naming the tip, each command and its exit code. Each reviewer checks the manifest's tip against its own, reads those results, runs its probes against that build from a folder of its own, each probe with a budget of 30 s, one past it run once more alone in a fresh process with a budget of 120 s and reported as past it, and changes and commits nothing in the repository. The lens 4 reviewer runs the four checks again on an export of its own, and a result that differs from the shared one is a finding against the shared step.
+- A reviewer rates each defect. Blocking: a wrong program accepted, a valid program rejected on a path an ordinary program takes, a panic or internal-error, nondeterminism, or a cost past linear on ordinary input, in the program and the array values it builds (ARCHITECTURE §7). Major: the same on an unusual path, or an exit criterion not met. Minor: everything else.
+- At every cold review the shared step measures the time per unit of the compiler's heavy work against these targets, in the `dev` profile the tests run, with no other build or probe on the machine, and the lens 3 reviewer judges each figure and reports it with its method; a figure past its target is a finding rated Major, and Blocking when an ordinary program meets it:
 
 | Work | Measured by | Target |
 |---|---|---|
@@ -66,7 +66,7 @@ The implementation runs in five milestones. The owner approves this plan once; t
 - The head consolidates the findings with a verdict on each, has the implementer fix the accepted ones, and sorts the rest by the decision rules.
 - The head briefs each fix as the property it must hold, with an adversarial test and a test over valid input beside the reported case, and checks a reviewer's proposed fix against the SPEC before briefing it. A fix to a whole class of defects is briefed as a sweep of every place the property covers, never as a list of places, and every row of its tests runs in every order of its top-level items.
 - The implementer fixes every finding the head sends it, whoever wrote the code and whichever milestone it came from, and declines none. An item that cannot be built as the documents stand is a gap (§ Decisions), never a reason to skip it. It proves each fix with a test that fails without its change, beside the valid-input rows that must keep passing.
-- A milestone gets one cold review. A warm review resumes a reviewer whose accepted findings a fix round built: it checks the fixes of its own accepted findings and reviews in full all code the round changed. A Blocking defect it sees stays in the round; anything else it sees goes into the ledger (§ Carried findings) for the next milestone's cold review. Warm reviews are unlimited. A cold review is never launched mid-round on a tip whose resolver is being rewritten.
+- A milestone gets one cold review. A warm review resumes a reviewer whose accepted findings a fix round built: it reads the shared step's results for the round's tip, checks the fixes of its own accepted findings and reviews in full all code the round changed. A Blocking defect it sees stays in the round; anything else it sees goes into the ledger (§ Carried findings) for the next milestone's cold review. Warm reviews are unlimited. A cold review is never launched mid-round on a tip whose resolver is being rewritten.
 - A milestone is done when its exit criteria pass and its last review's accepted findings are fixed and checked. The head then records it in the head notes and starts the next one.
 
 ### Carried findings
@@ -162,7 +162,7 @@ The `for` expression, iterables with one or two loop names, the removal of `boun
 Steps:
 1. The lexer and the parser: `into`, the `for` expression in its one-line and block forms, the loop head with one or two names in placement `for`s, bundles and `for` expressions, and `bounded` out of the grammar, with the tests over SPEC.md's examples and rule sentences passing again.
 2. Resolve and Infer: iterables over arrays, maps and ranges with the bound rule (SPEC §7.9), and a slice's capacity from its bounds' maximum by the same rule (SPEC §3.7); the loop names' scope and the name rules of SPEC §6.5 over loop names, accumulators and a block form's local `let`s; the accumulator's type and every capacity in it (SPEC §5.10); a `for` expression evaluated at compile time when it reads no cell and one cell otherwise, its compile-time iterations counted toward SPEC §4.6's `for` iterations; its body inlined once and counted once; the removal of bounded expansion and its memo nesting; and the new help on a recursive call that reads a cell (SPEC §6.3).
-3. The limits: a `<name>_warning` field beside every limit that draws an error, its default half the limit's in the constants file, the `Limits` fields that `[limits]` keys name, and the warning diagnostic, naming what the limit's error names (SPEC §4.6, ARCHITECTURE §7, §9).
+3. The limits: a `<name>_warning` field beside every limit that draws an error, its default half the limit's in the constants file, the `Limits` fields that `options` keys name (ARCHITECTURE §9), and the warning diagnostic, naming what the limit's error names (SPEC §4.6, ARCHITECTURE §7, §9).
 4. Check, diagnostics and tests: the errors of the new rules, a summary and a help on each, a lesson for every new code, and a test for each rule of SPEC §5.10 and §7.9.
 
 Exit:
@@ -222,9 +222,30 @@ Exit:
 - The robustness corpus gains mutants of the new examples, and none draws internal-error or panics.
 - A pattern with `children` used 10,000 times, each with a body, passes every stage through Check on a thread with a 1 MiB stack.
 
+## M2f: Packages
+
+Packages in the language: the package file and its `package` record, `require` by local path, `use`, `publish`, qualified names, the prelude as a library, versions, a vocabulary's name and version, and the Program's names for a library's inputs and states (SPEC §15, §11.1): lexing, parsing and the semantics through Check, with a lesson for every new code. Fetching, the cache, the lock file and the `sym` commands are M4a's.
+
+Steps:
+1. The lexer and the parser: the keywords `package`, `require`, `use` and `publish`, the package file's items, and qualified names wherever a name refers to a top-level declaration, with the tests over SPEC.md's examples and rule sentences passing again.
+2. The compiler's input: `Source.package` (ARCHITECTURE §7), a namespace per package, the build's top-level order across packages (SPEC §15.1), and the prelude as a library with its package file.
+3. Resolve: `require` by local path, `use` in its four forms, `publish` with renames and republishing, qualified names, shadowing of prelude names, and the name rules of SPEC §15.3 to §15.6.
+4. Versions, vocabularies and options: the choice of versions over the required versions (SPEC §15.7), the vocabulary's name and version in `Vocabulary::builder` (ARCHITECTURE §2), a library's `vocabulary` checked against the build's (SPEC §15.8), the build's limits combined from the packages' `options` with `LimitOverrides` over them (SPEC §15.2, ARCHITECTURE §7), and the raised-limit warning.
+5. Check and diagnostics: the errors of the new rules, a summary and a help on each, and a lesson for every new code.
+
+Exit:
+- M2d's exit criteria hold over the SPEC as it now reads.
+- Every `sym-package` example of the SPEC parses as a package file, and a fixture project requiring two local libraries, one republishing the other, compiles with each name reached unqualified, qualified and renamed as its package file says.
+- A library's unpublished declaration is refused outside it, naming the library; a name a `use` brings that clashes is refused with a narrower `use` as its help; one declaration reached through two libraries is one name.
+- A project's declaration shadows a prelude name, `prelude::<name>` reaches the prelude's, and a library's top-level input is named `<identity>::<name>` in the Program.
+- Two majors of one library in a build are refused naming both requirements, and the highest required version within a major is the one built.
+- A library written for another vocabulary, another major or a higher version is refused naming both vocabularies.
+- A library stating a work limit above the project's raises the build's value and draws the warning naming the library and both values, the project stating the same value silences it, and a library's memory limit is read only in a build the library starts.
+- Every code has a lesson, and the robustness corpus gains mutants of the package files, none drawing internal-error or panicking.
+
 ## M3: Runtime and reload
 
-Lowering, the runtime, `eval`, the `Consumer` trait and reload, for the language as M2, M2b, M2e, M2c and M2d leave it.
+Lowering, the runtime, `eval`, the `Consumer` trait and reload, for the language as M2, M2b, M2e, M2c, M2d and M2f leave it.
 
 Steps:
 1. Lower: constant folding with the canonical NaN, the cell graph in dependency order, paths, filled defaults, the string table, the Program in SPEC §11's order, the memory figure (SPEC §12.6), and the choice per non-recursive function between inlining and one shared body by Q6's measure over the resolved body instances (body nodes times call sites less one over `shared_body_threshold`; small and single-site bodies inlined; one shared body per distinct set of argument and result types; a call with only compile-time arguments folded; ARCHITECTURE §7), with a function table and a call node in the Program.
@@ -257,13 +278,14 @@ Exit:
 
 ## M4a: Language server and editors
 
-The tool's frame, the language server, the VS Code extension and the JetBrains plugin: the tooling that needs the compiler alone. It needs M2d and runs beside M3 (§ Order).
+The tool's frame, the language server, the VS Code extension and the JetBrains plugin: the tooling that needs the compiler alone. It needs M2f and runs beside M3 (§ Order).
 
 Steps:
 1. The tool: `Tool::new`, framework commands, `Project`, `new`, `check` and single-file mode, the diagnostics' rendering with the summary, the help, the lesson under `── why ──`, the spans under `── where ──` and `--brief` (ARCHITECTURE §9), and the `lsp` command.
 2. The language server on `lsp-server`.
 3. The VS Code extension: the static grammar and the language client.
 4. The JetBrains plugin: highlighting from the grammar or the server's semantic tokens, and the language client on the IntelliJ Platform's LSP API.
+5. Packages in the tool: `sym`, fetching releases and commits into the cache, the choice of versions across fetched libraries, the lock file, and `add`, `remove`, `update` and `calibrate` (ARCHITECTURE §9).
 
 Exit:
 - End-to-end tests for `new` and `check`, and for single-file mode.
@@ -272,7 +294,8 @@ Exit:
 - The JetBrains plugin starts the language server for a sample project in IntelliJ IDEA, highlights its sources and shows its diagnostics.
 - `check` prints each diagnostic as ARCHITECTURE §9 renders it, the lesson under `── why ──` and the spans under `── where ──`, and `--brief` leaves out the lesson.
 - The language server handles M2's deep sources on a thread with a 1 MiB stack.
-- `symphony.toml`'s `[limits]` and `--limit` reach the compiler and the language server, a flag overriding the file.
+- The `package` record's `options` and `--limit` reach the compiler and the language server, a flag overriding the record.
+- Against a local git server fixture, `sym add`, `remove` and `update` at each level change the package file and the lock file as ARCHITECTURE §9 says; a fetched release whose hash differs from its lock line stops the build naming the library; `sym check` runs the project's framework binary; `sym calibrate` writes the limits its libraries raise into the project's `options`, after which the build draws no raised-limit warning.
 
 ## M4b: Delivery
 
@@ -289,7 +312,7 @@ Exit:
 - A write through a generated method longer than a variable-array input's capacity does not compile, shown by a compile-fail test.
 - End-to-end tests for `dump`, and for `check` printing the memory figure.
 - `codegen` handles M2's deep sources on a thread with a 1 MiB stack.
-- `symphony.toml`'s `[limits]` and `--limit` reach the runtime, a flag overriding the file.
+- The `package` record's `options` and `--limit` reach the runtime, a flag overriding the record.
 - `codegen` emits the Program's function table and call nodes, and a generated Program's shared bodies run as the library's do.
 - A CI job on an x86_64 Linux runner asserts the pinned vocabulary stamp 0x35f8efc8552d30a7, so the stamp's encoding is machine-independent (SPEC §13.1).
 
@@ -311,4 +334,4 @@ Exit:
 
 ## Order
 
-M1, M2, M2b, M2e, M2c, M2d and M3 run in order. M4a needs M2d and runs beside M3. M4b and M5 each need M3 and run one after the other, M4b first.
+M1, M2, M2b, M2e, M2c, M2d, M2f and M3 run in order. M4a needs M2f and runs beside M3. M4b and M5 each need M3 and run one after the other, M4b first.
