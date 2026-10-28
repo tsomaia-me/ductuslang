@@ -896,9 +896,11 @@ enum ReferenceBody {
     CandidatesGrowingUnderReads,
     ElementsGrowing,
     CandidatesGrowingUnderElements,
+    UntakenReadsGrowing,
+    CandidatesGrowingUnderUntakenReads,
 }
 
-const REFERENCE_BODIES: [ReferenceBody; 7] = [
+const REFERENCE_BODIES: [ReferenceBody; 9] = [
     ReferenceBody::Length,
     ReferenceBody::FirstGain,
     ReferenceBody::ChosenGain,
@@ -906,15 +908,20 @@ const REFERENCE_BODIES: [ReferenceBody; 7] = [
     ReferenceBody::CandidatesGrowingUnderReads,
     ReferenceBody::ElementsGrowing,
     ReferenceBody::CandidatesGrowingUnderElements,
+    ReferenceBody::UntakenReadsGrowing,
+    ReferenceBody::CandidatesGrowingUnderUntakenReads,
 ];
 
 const FIXED_COUNT: usize = 8;
 
 fn reference_array_program(body: ReferenceBody, size: usize, call_first: bool) -> String {
     let (k, m) = match body {
-        ReferenceBody::ReadsGrowing | ReferenceBody::ElementsGrowing => (FIXED_COUNT, size),
+        ReferenceBody::ReadsGrowing
+        | ReferenceBody::ElementsGrowing
+        | ReferenceBody::UntakenReadsGrowing => (FIXED_COUNT, size),
         ReferenceBody::CandidatesGrowingUnderReads
-        | ReferenceBody::CandidatesGrowingUnderElements => (size, FIXED_COUNT),
+        | ReferenceBody::CandidatesGrowingUnderElements
+        | ReferenceBody::CandidatesGrowingUnderUntakenReads => (size, FIXED_COUNT),
         ReferenceBody::Length | ReferenceBody::FirstGain | ReferenceBody::ChosenGain => (size, 1),
     };
     let references = (0..k)
@@ -923,6 +930,7 @@ fn reference_array_program(body: ReferenceBody, size: usize, call_first: bool) -
         .join(", ");
     let reads = vec!["c[i].gain"; m].join(" + ");
     let elements = format!("len(q([{}], 1))", vec!["c[i]"; m].join(", "));
+    let untaken = format!("(if false then {reads} else 0)");
     let (read, reader) = match body {
         ReferenceBody::ReadsGrowing | ReferenceBody::CandidatesGrowingUnderReads => (
             reads.as_str(),
@@ -931,6 +939,10 @@ fn reference_array_program(body: ReferenceBody, size: usize, call_first: bool) -
         ReferenceBody::ElementsGrowing | ReferenceBody::CandidatesGrowingUnderElements => (
             elements.as_str(),
             format!("Clip k:\n    Note/(g([{references}], 0, 3))\n"),
+        ),
+        ReferenceBody::UntakenReadsGrowing | ReferenceBody::CandidatesGrowingUnderUntakenReads => (
+            untaken.as_str(),
+            format!("Clip k | gain=g([{references}], 0, 3):\n    Note\n"),
         ),
         ReferenceBody::Length => (
             "len(c)",
@@ -1000,5 +1012,5 @@ fn a_recursive_call_over_an_array_of_references_costs_work_linear_in_its_element
         }
     }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
-    assert_eq!(rows, 14);
+    assert_eq!(rows, 18);
 }

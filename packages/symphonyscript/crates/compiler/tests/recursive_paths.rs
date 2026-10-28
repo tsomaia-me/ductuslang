@@ -1,6 +1,6 @@
 mod support;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use symphonyscript::{Code, Compiler};
 use symphonyscript_fixtures::native_vocabulary;
@@ -2042,6 +2042,520 @@ fn candidate_fault_program(
     items.concat()
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum StepPath {
+    Gain,
+    Child,
+    Wire,
+}
+
+const STEP_PATHS: [StepPath; 3] = [StepPath::Gain, StepPath::Child, StepPath::Wire];
+
+const HOLDERS: [(&str, [i32; 3]); 3] = [
+    ("verse", [2, 12, 22]),
+    ("other", [3, 13, 23]),
+    ("third", [5, 15, 25]),
+];
+
+const LACKING_CLIPS: [&str; 3] = ["bare0", "bare1", "bare2"];
+
+impl StepPath {
+    fn first(self) -> &'static str {
+        match self {
+            StepPath::Gain => "gain",
+            StepPath::Child => "hook",
+            StepPath::Wire => "back",
+        }
+    }
+
+    fn rest(self) -> &'static str {
+        match self {
+            StepPath::Gain => "",
+            StepPath::Child => ".velocity",
+            StepPath::Wire => ".gain",
+        }
+    }
+
+    fn slot(self) -> usize {
+        match self {
+            StepPath::Gain => 0,
+            StepPath::Child => 1,
+            StepPath::Wire => 2,
+        }
+    }
+
+    fn candidate(self, position: usize, holds: bool) -> String {
+        let (holder, _) = HOLDERS[position];
+        match (holds, self) {
+            (true, _) => holder.to_string(),
+            (false, StepPath::Gain) => format!("{holder}.tone{position}"),
+            (false, StepPath::Child | StepPath::Wire) => LACKING_CLIPS[position].to_string(),
+        }
+    }
+
+    fn lacking(self, position: usize) -> String {
+        let (kind, name) = match self {
+            StepPath::Gain => ("Note", format!("tone{position}")),
+            StepPath::Child | StepPath::Wire => ("Clip", LACKING_CLIPS[position].to_string()),
+        };
+        format!(
+            "the `{kind}` named `{name}` has no child, wire or attribute `{}`",
+            self.first()
+        )
+    }
+
+    fn value(self, position: usize) -> i32 {
+        HOLDERS[position].1[self.slot()]
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum StepChooser {
+    Element,
+    Literal,
+    IfOnParameter,
+    RecursiveHelper,
+    IfOnDepth,
+}
+
+const STEP_CHOOSERS: [StepChooser; 5] = [
+    StepChooser::Element,
+    StepChooser::Literal,
+    StepChooser::IfOnParameter,
+    StepChooser::RecursiveHelper,
+    StepChooser::IfOnDepth,
+];
+
+impl StepChooser {
+    fn expression(self) -> &'static str {
+        match self {
+            StepChooser::Element => "xs[i]",
+            StepChooser::Literal => "[c, d][i]",
+            StepChooser::IfOnParameter => "(if i > 0 then d else c)",
+            StepChooser::RecursiveHelper => "pickr(c, d, i, 2)",
+            StepChooser::IfOnDepth => "(if n > 50 then c else d)",
+        }
+    }
+
+    fn chosen(self, index: usize, depth: i32) -> usize {
+        match self {
+            StepChooser::Element | StepChooser::Literal => index,
+            StepChooser::IfOnParameter | StepChooser::RecursiveHelper => usize::from(index > 0),
+            StepChooser::IfOnDepth => usize::from(depth <= 50),
+        }
+    }
+
+    fn counts(self) -> &'static [usize] {
+        match self {
+            StepChooser::Element => &[2, 3],
+            StepChooser::Literal
+            | StepChooser::IfOnParameter
+            | StepChooser::RecursiveHelper
+            | StepChooser::IfOnDepth => &[2],
+        }
+    }
+
+    fn depths(self) -> &'static [i32] {
+        match self {
+            StepChooser::IfOnDepth => &[1, 3, 30, 60],
+            StepChooser::Element
+            | StepChooser::Literal
+            | StepChooser::IfOnParameter
+            | StepChooser::RecursiveHelper => &[1, 3, 30],
+        }
+    }
+
+    fn reaches_outside(self) -> bool {
+        matches!(self, StepChooser::Element | StepChooser::Literal)
+    }
+
+    fn length(self, count: usize) -> usize {
+        match self {
+            StepChooser::Element => count,
+            StepChooser::Literal
+            | StepChooser::IfOnParameter
+            | StepChooser::RecursiveHelper
+            | StepChooser::IfOnDepth => 2,
+        }
+    }
+
+    fn indices(self, count: usize) -> Vec<usize> {
+        match self {
+            StepChooser::IfOnDepth => vec![0],
+            StepChooser::Element
+            | StepChooser::Literal
+            | StepChooser::IfOnParameter
+            | StepChooser::RecursiveHelper => (0..count).collect(),
+        }
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum StepConsumer {
+    Path,
+    LetStart,
+    LetStep,
+    InlinedStart,
+    InlinedStep,
+    RecursiveArgument,
+    ArrayOfStep,
+    Match,
+}
+
+const STEP_CONSUMERS: [StepConsumer; 8] = [
+    StepConsumer::Path,
+    StepConsumer::LetStart,
+    StepConsumer::LetStep,
+    StepConsumer::InlinedStart,
+    StepConsumer::InlinedStep,
+    StepConsumer::RecursiveArgument,
+    StepConsumer::ArrayOfStep,
+    StepConsumer::Match,
+];
+
+impl StepConsumer {
+    fn local(self, path: StepPath, start: &str) -> String {
+        match self {
+            StepConsumer::LetStart => format!("    let e = {start}\n"),
+            StepConsumer::LetStep => format!("    let e = ({start}).{}\n", path.first()),
+            StepConsumer::Match => {
+                format!("    let e = match 1:\n        0: c\n        else: {start}\n")
+            }
+            StepConsumer::Path
+            | StepConsumer::InlinedStart
+            | StepConsumer::InlinedStep
+            | StepConsumer::RecursiveArgument
+            | StepConsumer::ArrayOfStep => String::new(),
+        }
+    }
+
+    fn read(self, path: StepPath, start: &str) -> String {
+        let (first, rest) = (path.first(), path.rest());
+        match self {
+            StepConsumer::Path => format!("({start}).{first}{rest}"),
+            StepConsumer::LetStart | StepConsumer::Match => format!("e.{first}{rest}"),
+            StepConsumer::LetStep => format!("e{rest}"),
+            StepConsumer::InlinedStart => format!("fs({start})"),
+            StepConsumer::InlinedStep => format!("ft(({start}).{first})"),
+            StepConsumer::RecursiveArgument => format!("gs({start}, 2)"),
+            StepConsumer::ArrayOfStep => format!("[({start}).{first}][0]{rest}"),
+        }
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum StepArm {
+    Taken,
+    IfFalse,
+    IfDeep,
+}
+
+const STEP_ARMS: [StepArm; 3] = [StepArm::Taken, StepArm::IfFalse, StepArm::IfDeep];
+
+impl StepArm {
+    fn wrap(self, read: &str) -> String {
+        match self {
+            StepArm::Taken => format!("i32({read})"),
+            StepArm::IfFalse => format!("(if false then i32({read}) else 0)"),
+            StepArm::IfDeep => format!("(if n > 100 then i32({read}) else 0)"),
+        }
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum FrameValue {
+    Fixed(usize),
+    Alternating(usize, usize),
+    Outside,
+}
+
+const OUTSIDE: usize = 5;
+
+impl FrameValue {
+    fn at(self, level: i32) -> usize {
+        match self {
+            FrameValue::Fixed(index) => index,
+            FrameValue::Outside => OUTSIDE,
+            FrameValue::Alternating(first, _) if level % 2 == 0 => first,
+            FrameValue::Alternating(_, second) => second,
+        }
+    }
+
+    fn index(self) -> usize {
+        self.at(0)
+    }
+
+    fn next(self) -> String {
+        match self {
+            FrameValue::Fixed(_) | FrameValue::Outside => "i".to_string(),
+            FrameValue::Alternating(first, second) => format!("{} - i", first + second),
+        }
+    }
+
+    fn of(count: usize, indices: &[usize], outside: bool) -> Vec<FrameValue> {
+        let mut values: Vec<FrameValue> = indices
+            .iter()
+            .map(|index| FrameValue::Fixed(*index))
+            .collect();
+        values.extend(
+            indices
+                .iter()
+                .map(|index| FrameValue::Alternating(*index, (index + 1) % count.max(2))),
+        );
+        if outside {
+            values.push(FrameValue::Outside);
+        }
+        values
+    }
+}
+
+struct StepCase {
+    path: StepPath,
+    chooser: StepChooser,
+    holds: Vec<bool>,
+    consumer: StepConsumer,
+    arm: StepArm,
+    frame: FrameValue,
+    depth: i32,
+    reversed: bool,
+}
+
+impl StepCase {
+    fn levels(&self) -> Vec<(i32, bool)> {
+        match self.frame {
+            FrameValue::Fixed(_) | FrameValue::Outside => (0..=self.depth)
+                .map(|level| (level, level == self.depth))
+                .collect(),
+            FrameValue::Alternating(..) => (0..=self.depth)
+                .map(|level| (level, level < self.depth))
+                .collect(),
+        }
+    }
+
+    fn unrolled(&self) -> bool {
+        matches!(self.frame, FrameValue::Alternating(..)) || self.depth > 50
+    }
+
+    fn expected(&self) -> (BTreeSet<(Code, String, String)>, i32) {
+        let mut drawn = BTreeSet::new();
+        let mut value = 0;
+        let mut faulty = false;
+        for (level, reads) in self.levels() {
+            let chosen = self
+                .chooser
+                .chosen(self.frame.at(level), self.depth - level);
+            let taken = reads && self.arm == StepArm::Taken;
+            let Some(holds) = self.holds.get(chosen) else {
+                if taken {
+                    faulty = true;
+                    drawn.insert((
+                        Code::IndexOutOfRange,
+                        "i".to_string(),
+                        format!(
+                            "the index {OUTSIDE} is outside the array of length {}",
+                            self.chooser.length(self.holds.len())
+                        ),
+                    ));
+                }
+                continue;
+            };
+            let lacks = !holds;
+            let checked = taken || self.consumer != StepConsumer::RecursiveArgument;
+            if lacks && checked {
+                drawn.insert((
+                    Code::UnknownAttribute,
+                    self.path.first().to_string(),
+                    self.path.lacking(chosen),
+                ));
+            }
+            if taken {
+                faulty |= lacks;
+                value += self.path.value(chosen);
+            }
+        }
+        (drawn, if faulty { 0 } else { value })
+    }
+
+    fn body(&self, callee: Option<&str>) -> String {
+        let start = self.chooser.expression();
+        let arm = self.arm.wrap(&self.consumer.read(self.path, start));
+        let call = |next: &str| match callee {
+            Some(callee) => format!("{callee}(c, d, xs, {next}, n - 1)"),
+            None => "0".to_string(),
+        };
+        let value = match self.frame {
+            FrameValue::Fixed(_) | FrameValue::Outside => {
+                format!("if n < 1 then {arm} else {}", call("i"))
+            }
+            FrameValue::Alternating(..) => {
+                format!("if n < 1 then 0 else {arm} + {}", call(&self.frame.next()))
+            }
+        };
+        format!("{}    {value}\n", self.consumer.local(self.path, start))
+    }
+
+    fn functions(&self, recursive: bool) -> Vec<String> {
+        if recursive {
+            return vec![format!("fn h(c, d, xs, i, n):\n{}", self.body(Some("h")))];
+        }
+        if !self.unrolled() {
+            let start = self.chooser.expression();
+            let arm = self.arm.wrap(&self.consumer.read(self.path, start));
+            return vec![format!(
+                "fn h(c, d, xs, i, n):\n{}    {arm}\n",
+                self.consumer.local(self.path, start)
+            )];
+        }
+        let depth = usize::try_from(self.depth).unwrap_or_default();
+        (0..=depth)
+            .map(|level| {
+                let next = (level < depth).then(|| format!("h{}", level + 1));
+                format!(
+                    "fn h{level}(c, d, xs, i, n):\n{}",
+                    self.body(next.as_deref())
+                )
+            })
+            .collect()
+    }
+
+    fn program(&self, recursive: bool) -> String {
+        let (first, rest) = (self.path.first(), self.path.rest());
+        let candidates: Vec<String> = self
+            .holds
+            .iter()
+            .enumerate()
+            .map(|(position, holds)| self.path.candidate(position, *holds))
+            .collect();
+        let (_, offset) = self.expected();
+        let callee = if recursive || !self.unrolled() {
+            "h"
+        } else {
+            "h0"
+        };
+        let mut items = vec!["Session main\n".to_string()];
+        for (position, (name, [gain, velocity, wire])) in HOLDERS.iter().enumerate() {
+            items.push(format!(
+                "Clip {name} | gain={gain}:\n    Note as hook | velocity={velocity}\n    Note as tone{position}\n    Plays as back | gain={wire}: tail\n"
+            ));
+        }
+        for (position, name) in LACKING_CLIPS.iter().enumerate() {
+            items.push(format!(
+                "Clip {name} | gain={}:\n    Note\n",
+                4 + 2 * position
+            ));
+        }
+        items.extend([
+            "Clip tail:\n    Note\n".to_string(),
+            "fn pickr(c, d, p, m): if m < 1 then (if p > 0 then d else c) else pickr(c, d, p, m - 1)\n".to_string(),
+            format!("fn fs(c): c.{first}{rest}\n"),
+            format!("fn ft(c): c{rest}\n"),
+            format!("fn gs(c, n): if n < 1 then c.{first}{rest} else gs(c, n - 1)\n"),
+        ]);
+        items.extend(self.functions(recursive));
+        items.push(format!(
+            "Clip k:\n    Note/([60][{callee}({}, {}, [{}], {}, {}) - {offset}])\n",
+            candidates[0],
+            candidates[1],
+            candidates.join(", "),
+            self.frame.index(),
+            self.depth
+        ));
+        if self.reversed {
+            items.reverse();
+        }
+        items.concat()
+    }
+}
+
+fn found_summaries(text: &str) -> BTreeSet<(Code, String, String)> {
+    support::checked(text)
+        .into_iter()
+        .map(|diagnostic| {
+            let range = diagnostic.span.range;
+            let at = text
+                .get(range.start as usize..range.end as usize)
+                .unwrap_or("?")
+                .to_string();
+            (diagnostic.code, at, diagnostic.summary)
+        })
+        .collect()
+}
+
+fn lacking_step_rows(path: StepPath, chooser: StepChooser) -> (Vec<String>, usize) {
+    let mut failures = Vec::new();
+    let mut programs = 0;
+    for count in chooser.counts().iter().copied() {
+        for mask in 0..(1u32 << count) {
+            let holds: Vec<bool> = (0..count)
+                .map(|position| mask & (1 << position) != 0)
+                .collect();
+            for consumer in STEP_CONSUMERS {
+                for arm in STEP_ARMS {
+                    for frame in
+                        FrameValue::of(count, &chooser.indices(count), chooser.reaches_outside())
+                    {
+                        if frame == FrameValue::Outside
+                            && arm != StepArm::Taken
+                            && matches!(
+                                consumer,
+                                StepConsumer::LetStep | StepConsumer::RecursiveArgument
+                            )
+                        {
+                            continue;
+                        }
+                        for depth in chooser.depths().iter().copied() {
+                            for reversed in [false, true] {
+                                let case = StepCase {
+                                    path,
+                                    chooser,
+                                    holds: holds.clone(),
+                                    consumer,
+                                    arm,
+                                    frame,
+                                    depth,
+                                    reversed,
+                                };
+                                let (expected, _) = case.expected();
+                                let text = case.program(true);
+                                let twin = case.program(false);
+                                let drawn = found_summaries(&text);
+                                let twin_drawn = found_summaries(&twin);
+                                programs += 1;
+                                if drawn != expected || twin_drawn != expected {
+                                    failures.push(format!(
+                                        "{path:?} {chooser:?} {holds:?} {consumer:?} {arm:?} {frame:?} {depth} {reversed}\n{text}\n  found {drawn:?}\n  twin {twin_drawn:?}\n  expected {expected:?}\n"
+                                    ));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    (failures, programs)
+}
+
+fn lacking_step_failures() -> (Vec<String>, usize) {
+    std::thread::scope(|threads| {
+        let workers: Vec<_> = STEP_PATHS
+            .iter()
+            .flat_map(|path| STEP_CHOOSERS.iter().map(move |chooser| (*path, *chooser)))
+            .map(|(path, chooser)| threads.spawn(move || lacking_step_rows(path, chooser)))
+            .collect();
+        let mut failures = Vec::new();
+        let mut programs = 0;
+        for worker in workers {
+            let (found, counted) = worker
+                .join()
+                .unwrap_or_else(|_| (vec!["a worker panicked".to_string()], 0));
+            failures.extend(found);
+            programs += counted;
+        }
+        (failures, programs)
+    })
+}
+
 #[test]
 fn a_fault_of_a_candidate_binding_draws_only_when_the_evaluation_chooses_that_candidate() {
     let mut failures = Vec::new();
@@ -2097,11 +2611,14 @@ fn a_fault_of_a_candidate_binding_draws_only_when_the_evaluation_chooses_that_ca
             }
         }
     }
+    let (lacking, lacking_programs) = lacking_step_failures();
+    failures.extend(lacking);
+    programs += lacking_programs;
     assert!(
         failures.is_empty(),
         "{} of {programs} programs fail:\n{}",
         failures.len(),
         failures.iter().take(8).cloned().collect::<String>()
     );
-    assert_eq!(programs, 640);
+    assert_eq!(programs, 59_392);
 }

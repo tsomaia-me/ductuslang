@@ -149,6 +149,9 @@ impl Engine<'_> {
                     }
                     return Ok(Some(Val::Scalar(source)));
                 }
+                if sig.open && sig.frame {
+                    return self.frame_path(node, name, loc, scope, need);
+                }
                 if sig.kind != Kind::Node {
                     self.error(
                         Code::UnknownAttribute,
@@ -262,29 +265,25 @@ impl Engine<'_> {
             return Ok(None);
         }
         let Some((_, last)) = reads.last() else {
-            if !open.is_empty() {
-                let join = self.push_node(Op::Bool(false), loc, scope)?;
-                self.memo.open_joins.insert(join);
-                let head = self.push_node(Op::Use(join), loc, scope)?;
-                self.memo.frame_joins.insert(head);
-                self.memo.frame_reads.insert(
-                    head,
-                    FrameRead {
-                        start: root,
-                        arms: Vec::new(),
-                        open,
-                        name: name.clone(),
-                        loc,
-                        position: 0,
-                        scope,
-                    },
-                );
-                return Ok(Some(Val::Scalar(head)));
+            if instances.is_empty() && !self.known_sig(root)?.open {
+                return Ok(Some(Val::Error));
             }
-            return match instances.first() {
-                Some(first) => self.step(*first, name, loc, scope, need),
-                None => Ok(Some(Val::Error)),
-            };
+            let join = self.push_node(Op::Bool(false), loc, scope)?;
+            self.memo.open_joins.insert(join);
+            let head = self.push_node(Op::Use(join), loc, scope)?;
+            self.frame_head(
+                head,
+                FrameRead {
+                    start: root,
+                    arms: Vec::new(),
+                    open,
+                    name: name.clone(),
+                    loc,
+                    position: 0,
+                    scope,
+                },
+            )?;
+            return Ok(Some(Val::Scalar(head)));
         };
         if reads.iter().any(|(_, val)| matches!(val, Val::Error)) {
             return Ok(Some(Val::Error));
@@ -322,8 +321,7 @@ impl Engine<'_> {
             }
             let joined = joined.ok_or(Internal::missed("path element"))?;
             let head = self.push_node(Op::Use(joined), loc, scope)?;
-            self.memo.frame_joins.insert(head);
-            self.memo.frame_reads.insert(
+            self.frame_head(
                 head,
                 FrameRead {
                     start: root,
@@ -334,10 +332,23 @@ impl Engine<'_> {
                     position,
                     scope,
                 },
-            );
+            )?;
             elements.push(head);
         }
         Ok(Some(self.shaped(shape, elements)))
+    }
+
+    fn frame_head(&mut self, head: NodeId, read: FrameRead) -> Result<(), Internal> {
+        if let Some(template) = self.template_of(read.scope)? {
+            self.memo
+                .template_heads
+                .entry(template)
+                .or_default()
+                .push(head);
+        }
+        self.memo.frame_joins.insert(head);
+        self.memo.frame_reads.insert(head, read);
+        Ok(())
     }
 
     pub(in crate::semantics::analysis) fn open_arm(
@@ -424,6 +435,7 @@ impl Engine<'_> {
                     Some(roots) => stack.extend(roots.into_iter().rev()),
                     None => pending = true,
                 },
+                Op::Bool(_) if self.memo.open_joins.contains(&node) => {}
                 Op::Number(..)
                 | Op::Const(_)
                 | Op::Bool(_)
@@ -1726,6 +1738,9 @@ impl Engine<'_> {
                 break end;
             }
             self.memo.use_steps.set(self.memo.use_steps.get() + 1);
+            if self.memo.frame_reads.contains_key(&current) {
+                break current;
+            }
             let Op::Use(inner) = self.node(current)?.op else {
                 break current;
             };

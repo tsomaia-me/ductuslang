@@ -24,6 +24,7 @@ use crate::semantics::analysis::fast_hash::{FastMap, FastSet};
 use crate::semantics::analysis::feed::Feed;
 use crate::semantics::analysis::frame_read::FrameRead;
 use crate::semantics::analysis::ids::{NodeId, ScopeId};
+use crate::semantics::analysis::item_ref::ItemRef;
 use crate::semantics::analysis::kind::Kind;
 use crate::semantics::analysis::map_leaves::map_leaves;
 use crate::semantics::analysis::op::Op;
@@ -173,7 +174,17 @@ impl Engine<'_> {
         };
         match ctx {
             Ctx::Global => self.run_machine(call, node, own, need),
-            Ctx::Frame(_) => self.push_frame(call, node, own, need),
+            Ctx::Frame(caller) => {
+                if self
+                    .frame(caller)?
+                    .check_open
+                    .as_ref()
+                    .is_some_and(|open| open.contains(&function))
+                {
+                    return Ok(Some(CVal::Error));
+                }
+                self.push_frame(call, node, own, need)
+            }
         }
     }
 
@@ -391,18 +402,7 @@ impl Engine<'_> {
                 }
             }
             (None, None) => {
-                if !self.may_name(item, &read.name.text)? {
-                    let owner = self.item_description(item)?;
-                    self.error(
-                        Code::UnknownAttribute,
-                        read.name.loc,
-                        read.scope,
-                        format!(
-                            "{owner} has no child, wire or attribute `{}`",
-                            read.name.text
-                        ),
-                    )?;
-                }
+                self.lacking_choice(read, item)?;
                 return Ok(Some(CVal::Error));
             }
         };
@@ -413,6 +413,106 @@ impl Engine<'_> {
             return Ok(Some(CVal::Error));
         }
         self.typed_child(arm, (own, partner), ctx, need)
+    }
+
+    fn lacking_choice(&mut self, read: &FrameRead, item: ItemRef) -> Result<(), Internal> {
+        if self.may_name(item, &read.name.text)? {
+            return Ok(());
+        }
+        let owner = self.item_description(item)?;
+        self.error(
+            Code::UnknownAttribute,
+            read.name.loc,
+            read.scope,
+            format!(
+                "{owner} has no child, wire or attribute `{}`",
+                read.name.text
+            ),
+        )
+    }
+
+    fn frame_heads(&self, frame: usize) -> Result<Vec<NodeId>, Internal> {
+        Ok(self
+            .frame(frame)?
+            .templates
+            .iter()
+            .filter_map(|template| self.memo.template_heads.get(template))
+            .flatten()
+            .copied()
+            .collect())
+    }
+
+    fn begin_checks(&mut self, frame: usize, root: NodeId, ty: EvalTy) -> Result<bool, Internal> {
+        if self.frame(frame)?.checking {
+            return Ok(false);
+        }
+        let mut starts = Vec::new();
+        for head in self.frame_heads(frame)? {
+            let read = self
+                .memo
+                .frame_reads
+                .get(&head)
+                .ok_or(Internal::missed("frame read"))?;
+            starts.push((frame, read.start, EvalTy::Node));
+        }
+        if starts.is_empty() {
+            return Ok(false);
+        }
+        let machine = self.machine_mut()?;
+        let open: FastSet<FnId> = machine
+            .open
+            .iter()
+            .filter(|(_, count)| **count > 0)
+            .map(|(function, _)| *function)
+            .collect();
+        let record = machine
+            .frames
+            .get_mut(frame)
+            .ok_or(Internal::missed("evaluation frame"))?;
+        record.checking = true;
+        record.check_open = Some(Rc::new(open));
+        machine.work.push((frame, root, ty));
+        machine.work.extend(starts);
+        Ok(true)
+    }
+
+    fn ends_checks(&self, frame: usize, node: NodeId, ty: EvalTy) -> Result<bool, Internal> {
+        let record = self.frame(frame)?;
+        Ok(record.checking && record.root == node && record.ty == ty)
+    }
+
+    fn check_heads(&mut self, frame: usize) -> Result<(), Internal> {
+        let enclosing = self.fault_frame.replace(frame);
+        let checked = self.checked_heads(frame);
+        self.fault_frame = enclosing;
+        checked
+    }
+
+    fn checked_heads(&mut self, frame: usize) -> Result<(), Internal> {
+        for head in self.frame_heads(frame)? {
+            let read = self
+                .memo
+                .frame_reads
+                .get(&head)
+                .cloned()
+                .ok_or(Internal::missed("frame read"))?;
+            let Some(CVal::Node(item)) = self.frame_value(frame, read.start, EvalTy::Node)? else {
+                continue;
+            };
+            let holds = read.arms.iter().any(|(candidate, _)| *candidate == item)
+                || read.open.iter().any(|(candidate, _)| *candidate == item);
+            if !holds {
+                self.lacking_choice(&read, item)?;
+            }
+        }
+        Ok(())
+    }
+
+    pub(in crate::semantics::analysis) fn quiet_range(&self) -> bool {
+        self.fault_frame
+            .zip(self.active.as_ref())
+            .and_then(|(frame, machine)| machine.frames.get(frame))
+            .is_some_and(|record| record.checking)
     }
 
     pub(super) fn reactive_body(&mut self, call: NodeId, function: FnId) -> Result<(), Internal> {
@@ -532,6 +632,8 @@ impl Engine<'_> {
                         unbounded,
                         faults: FastSet::default(),
                         templates,
+                        checking: false,
+                        check_open: None,
                     }],
                     work,
                     open: [(call.function, 1)].into_iter().collect(),
@@ -571,17 +673,27 @@ impl Engine<'_> {
                 .work
                 .last()
                 .ok_or(Internal::missed("evaluation work"))?;
-            if self.frame_value(frame, current, ty)?.is_some() {
+            let memoized = self.frame_value(frame, current, ty)?;
+            if memoized.is_some() && !self.ends_checks(frame, current, ty)? {
                 self.machine_mut()?.work.pop();
                 continue;
             }
-            self.frame_need.clear();
-            self.frame_pushed = false;
             let mut outer = Vec::new();
-            let enclosing = self.fault_frame.replace(frame);
-            let evaluated = self.evaluate(current, ty, Ctx::Frame(frame), &mut outer);
-            self.fault_frame = enclosing;
-            match evaluated? {
+            let evaluated = match memoized {
+                Some(value) => {
+                    self.check_heads(frame)?;
+                    Some(value)
+                }
+                None => {
+                    self.frame_need.clear();
+                    self.frame_pushed = false;
+                    let enclosing = self.fault_frame.replace(frame);
+                    let evaluated = self.evaluate(current, ty, Ctx::Frame(frame), &mut outer);
+                    self.fault_frame = enclosing;
+                    evaluated?
+                }
+            };
+            match evaluated {
                 Some(value) => {
                     let machine = self.machine_mut()?;
                     machine.work.pop();
@@ -590,7 +702,16 @@ impl Engine<'_> {
                         .get_mut(frame)
                         .ok_or(Internal::missed("evaluation frame"))?;
                     record.memo.insert((current, ty), value.clone());
-                    if record.root == current && record.ty == ty {
+                    let completes = record.root == current && record.ty == ty;
+                    if completes && self.begin_checks(frame, current, ty)? {
+                        continue;
+                    }
+                    let machine = self.machine_mut()?;
+                    let record = machine
+                        .frames
+                        .get_mut(frame)
+                        .ok_or(Internal::missed("evaluation frame"))?;
+                    if completes {
                         let (key, call, expected, function) = (
                             record.key.clone(),
                             record.call,
@@ -711,6 +832,10 @@ impl Engine<'_> {
             .collect();
         let machine = self.machine_mut()?;
         let index = machine.frames.len();
+        let check_open = machine
+            .frames
+            .last()
+            .and_then(|caller| caller.check_open.clone());
         *machine.open.entry(call.function).or_insert(0) += 1;
         machine.open_keys.insert(call.key.clone());
         machine.frames.push(Frame {
@@ -726,6 +851,8 @@ impl Engine<'_> {
             unbounded: depth.saturating_add(u64::from(!bounded)),
             faults: FastSet::default(),
             templates,
+            checking: false,
+            check_open,
         });
         machine.work.push((index, root, ty));
         machine

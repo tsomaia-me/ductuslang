@@ -104,6 +104,7 @@ pub(crate) struct Memo {
     pub call_families: FastMap<NodeId, super::family_key::FamilyKey>,
     pub frame_joins: super::fast_hash::FastSet<NodeId>,
     pub frame_reads: FastMap<NodeId, super::frame_read::FrameRead>,
+    pub template_heads: FastMap<ScopeId, Vec<NodeId>>,
     pub templates: FastMap<super::template_key::TemplateKey, ScopeId>,
     pub template_feeds: FastMap<ScopeId, Vec<super::feed::Feed>>,
     pub template_takers: FastMap<ScopeId, Vec<NodeId>>,

@@ -742,6 +742,9 @@ impl<'a> Engine<'a> {
     }
 
     fn suppressed(&self, code: Code, scope: ScopeId) -> Result<bool, Internal> {
+        if code == Code::IndexOutOfRange && self.quiet_range() {
+            return Ok(true);
+        }
         if self.in_name_probe(scope)? && !self.in_trial(scope)? {
             return Ok(!NAME_CODES.contains(&code));
         }
