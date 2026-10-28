@@ -1,6 +1,7 @@
 use std::collections::BTreeSet;
 
 use symphonyscript::{Code, Compiler, Diagnostic, Severity, Source};
+use symphonyscript_core::Limits;
 use symphonyscript_fixtures::{
     SPEC, bounded_vocabulary, native_vocabulary, prelude_vocabulary, vocabulary,
 };
@@ -12,6 +13,7 @@ enum Setup {
     Bounded,
     Natives,
     AtPreludePath,
+    LowLimits,
 }
 
 struct Rule {
@@ -53,6 +55,15 @@ const fn at_prelude_path(section: &'static str, code: &'static str, program: &'s
         section,
         code,
         setup: Setup::AtPreludePath,
+        program,
+    }
+}
+
+const fn low_limits(section: &'static str, code: &'static str, program: &'static str) -> Rule {
+    Rule {
+        section,
+        code,
+        setup: Setup::LowLimits,
         program,
     }
 }
@@ -264,7 +275,7 @@ const RULES: &[Rule] = &[
         "inline-limit",
         "fn h0(x): x\nfn h1(x): h0(x) + h0(x) + h0(x) + h0(x) + h0(x) + h0(x) + h0(x) + h0(x) + h0(x) + h0(x)\nfn h2(x): h1(x) + h1(x) + h1(x) + h1(x) + h1(x) + h1(x) + h1(x) + h1(x) + h1(x) + h1(x)\nfn h3(x): h2(x) + h2(x) + h2(x) + h2(x) + h2(x) + h2(x) + h2(x) + h2(x) + h2(x) + h2(x)\nfn h4(x): h3(x) + h3(x) + h3(x) + h3(x) + h3(x) + h3(x) + h3(x) + h3(x) + h3(x) + h3(x)\nfn h5(x): h4(x) + h4(x) + h4(x) + h4(x) + h4(x) + h4(x) + h4(x) + h4(x) + h4(x) + h4(x)\nfn h6(x): h5(x) + h5(x) + h5(x) + h5(x) + h5(x) + h5(x) + h5(x) + h5(x) + h5(x) + h5(x)\nClip k:\n    Note/(h6(1))\n",
     ),
-    rule(
+    low_limits(
         "4.6",
         "recursion-limit",
         "fn f(a, b, c): if a < 1 then 0 else f(a - 1, b + 1, c) + f(a - 1, b, c + 1) + f(a - 1, b, c)\nClip k:\n    Note/(f(200, 0, 0))\n",
@@ -794,6 +805,15 @@ fn diagnostics(rule: &Rule) -> Vec<Diagnostic> {
         Setup::Natives => Compiler::new(&native_vocabulary())
             .expect("the native vocabulary compiles")
             .check(&[source]),
+        Setup::LowLimits => Compiler::with_limits(
+            &vocabulary(),
+            Limits {
+                recursive_calls: 1_000,
+                ..Limits::default()
+            },
+        )
+        .expect("the example vocabulary compiles")
+        .check(&[source]),
         Setup::AtPreludePath => Compiler::new(&prelude_vocabulary(""))
             .expect("the prelude vocabulary compiles")
             .check(&[Source {

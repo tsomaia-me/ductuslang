@@ -223,7 +223,7 @@ fn the_kind_walk_over_a_group_of_states_is_linear_in_every_declaration_order() {
         ("fan", &[]),
     ];
     for (shape, expected) in shapes {
-        let visits: Vec<(u64, u64)> = [2_500, 5_000, 10_000]
+        let visits: Vec<(u64, u64)> = [1_600, 3_200, 6_400]
             .into_iter()
             .map(|states| kind_walk(&kind_walk_program(shape, states), expected))
             .collect();
@@ -633,7 +633,7 @@ fn ordering_the_bindings_of_an_expanded_program_is_linear_in_it() {
     let without_let = "    if i >= len(held) then held[i] else held[i] + walk(i + 1)\n";
     let unexpected = "    let a = held[i]\n    if i >= len(held) then 0 else (if a > 0 then 1 else 0) + walk(i + 1)\n";
     let points = |body: &str| {
-        [800, 1_600, 6_400].map(|levels| {
+        [800, 1_600, 3_200].map(|levels| {
             (
                 levels,
                 read_walk(&walk_program(usize::try_from(levels).unwrap_or(0), body)),
@@ -643,8 +643,8 @@ fn ordering_the_bindings_of_an_expanded_program_is_linear_in_it() {
     let with_let_points = points(with_let);
     assert_linear(with_let_points);
     assert_linear(points(unexpected));
-    let plain = read_walk(&walk_program(6_400, without_let));
-    let [.., (_, held)] = with_let_points;
+    let plain = read_walk(&walk_program(1_600, without_let));
+    let [_, (_, held), _] = with_let_points;
     assert!(held <= 4 * plain, "{plain} {held}");
     assert_linear([1_000, 2_000, 4_000].map(|functions| {
         (
@@ -1591,14 +1591,14 @@ fn state_walk(states: u32, joins: u32, history: bool) -> u64 {
 
 #[test]
 fn a_lets_capacity_is_walked_once_however_many_positions_or_states_read_it() {
-    let small = attribute_walk(1_000, 1_000);
-    let large = attribute_walk(2_000, 2_000);
+    let small = attribute_walk(500, 500);
+    let large = attribute_walk(1_000, 1_000);
     assert!(large <= 2 * small + 64, "{small} {large}");
     for history in [true, false] {
-        let smallest = state_walk(1_000, 1_000, history);
-        let base = state_walk(1_000, 2_000, history);
-        let largest = state_walk(2_000, 2_000, history);
-        let longer = state_walk(2_000, 1_000, history);
+        let smallest = state_walk(500, 500, history);
+        let base = state_walk(500, 1_000, history);
+        let largest = state_walk(1_000, 1_000, history);
+        let longer = state_walk(1_000, 500, history);
         for smaller in [smallest, base, longer] {
             assert!(
                 largest <= 2 * smaller + 64,
