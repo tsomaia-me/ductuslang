@@ -1014,3 +1014,91 @@ fn a_recursive_call_over_an_array_of_references_costs_work_linear_in_its_element
     assert!(failures.is_empty(), "{}", failures.join("\n"));
     assert_eq!(rows, 18);
 }
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum TemplateWalk {
+    PerInstance,
+    PerLevelUnderUntakenRead,
+}
+
+fn template_walk_program(walk: TemplateWalk, size: usize, call_first: bool) -> String {
+    let references = (0..size)
+        .map(|index| format!("r{index}"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let read = match walk {
+        TemplateWalk::PerInstance => "xs[i].gain",
+        TemplateWalk::PerLevelUnderUntakenRead => "(if false then xs[i].gain else 0)",
+    };
+    let mut items = vec![
+        format!(
+            "Clip k | gain=h(r0, [{references}], 0, {}):\n    Note\n",
+            size - 1
+        ),
+        format!(
+            "fn h(c, xs, i, n): if n < 1 then 0 else {read} + c.gain + h(xs[i], xs, i + 1, n - 1)\n"
+        ),
+        "Session main\n".to_string(),
+    ];
+    items.extend((0..size).map(|index| format!("Clip r{index} | gain={}:\n    Note\n", index % 7)));
+    if !call_first {
+        items.reverse();
+    }
+    items.concat()
+}
+
+#[test]
+fn a_recursive_body_with_a_template_per_level_checks_each_frames_heads_in_work_linear_in_its_levels()
+ {
+    let compiler = Compiler::new(&vocabulary()).expect("the vocabulary compiles");
+    let mut failures = Vec::new();
+    let mut rows = 0;
+    for walk in [
+        TemplateWalk::PerInstance,
+        TemplateWalk::PerLevelUnderUntakenRead,
+    ] {
+        for call_first in [true, false] {
+            rows += 1;
+            let sizes = [100, 200, 400];
+            let name = format!("{walk:?} call first {call_first}");
+            let texts = sizes.map(|size| template_walk_program(walk, size, call_first));
+            let runs = texts.each_ref().map(|text| measured(&compiler, text));
+            for (run, size) in runs.iter().zip(sizes) {
+                if let Some(first) = run.errors.first() {
+                    failures.push(format!("{name} {size}: {first}"));
+                }
+            }
+            for (index, (counter, _)) in runs[0].counts.iter().enumerate() {
+                let checks = HEAD_CHECKS
+                    .iter()
+                    .any(|walk| format!("{walk:?}") == *counter);
+                let points = [0, 1, 2].map(|run| {
+                    let size = sizes[run];
+                    let measure = if checks {
+                        size
+                    } else {
+                        texts[run].len() + size * size
+                    };
+                    (
+                        u64::try_from(measure).unwrap_or(u64::MAX),
+                        runs[run].counts.get(index).map_or(0, |(_, count)| *count),
+                    )
+                });
+                if !linear(points) {
+                    failures.push(format!(
+                        "{name}: {counter} {:?}",
+                        points.map(|(_, count)| count)
+                    ));
+                }
+            }
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    assert_eq!(rows, 4);
+}
+
+const HEAD_CHECKS: [CountedWalk; 3] = [
+    CountedWalk::RecursiveFrameHeads,
+    CountedWalk::RecursiveBeginChecks,
+    CountedWalk::RecursiveCheckedHeads,
+];

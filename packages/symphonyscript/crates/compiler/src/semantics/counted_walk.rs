@@ -112,6 +112,9 @@ pub(crate) enum CountedWalk {
     ValuesIntegerInputs,
     WidthsSettleNatural,
     RecursiveUnboundedCycle,
+    RecursiveFrameHeads,
+    RecursiveBeginChecks,
+    RecursiveCheckedHeads,
     RecursiveFamilyFamilyShape,
     RunFit,
     CountsCheckProgram,
@@ -139,12 +142,12 @@ pub(crate) enum CountedWalk {
 
 #[cfg(test)]
 thread_local! {
-    static STEPS: [std::cell::Cell<u64>; 135] = const { [const { std::cell::Cell::new(0) }; 135] };
+    static STEPS: [std::cell::Cell<u64>; 138] = const { [const { std::cell::Cell::new(0) }; 138] };
 }
 
 impl CountedWalk {
     #[cfg(test)]
-    pub(crate) const ALL: [CountedWalk; 135] = [
+    pub(crate) const ALL: [CountedWalk; 138] = [
         CountedWalk::InlineCountsOf,
         CountedWalk::InlineCountsCallSites,
         CountedWalk::RecursiveFunctionsRecursiveFunctions,
@@ -257,6 +260,9 @@ impl CountedWalk {
         CountedWalk::ValuesIntegerInputs,
         CountedWalk::WidthsSettleNatural,
         CountedWalk::RecursiveUnboundedCycle,
+        CountedWalk::RecursiveFrameHeads,
+        CountedWalk::RecursiveBeginChecks,
+        CountedWalk::RecursiveCheckedHeads,
         CountedWalk::RecursiveFamilyFamilyShape,
         CountedWalk::RunFit,
         CountedWalk::CountsCheckProgram,

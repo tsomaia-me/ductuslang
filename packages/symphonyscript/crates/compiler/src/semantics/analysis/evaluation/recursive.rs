@@ -35,6 +35,7 @@ use crate::semantics::analysis::some::some;
 use crate::semantics::analysis::template_key::TemplateKey;
 use crate::semantics::analysis::val::Val;
 use crate::semantics::analysis::width::Width;
+use crate::semantics::counted_walk::CountedWalk;
 use crate::semantics::ir::{ExprId, FnId};
 use crate::semantics::reporting::grouped;
 
@@ -432,12 +433,17 @@ impl Engine<'_> {
     }
 
     fn frame_heads(&self, frame: usize) -> Result<Vec<NodeId>, Internal> {
+        let root = self.frame(frame)?.root;
+        let Some(template) = self.template_of(self.node(root)?.scope)? else {
+            return Ok(Vec::new());
+        };
         Ok(self
-            .frame(frame)?
-            .templates
-            .iter()
-            .filter_map(|template| self.memo.template_heads.get(template))
+            .memo
+            .template_heads
+            .get(&template)
+            .into_iter()
             .flatten()
+            .inspect(|_| CountedWalk::RecursiveFrameHeads.step())
             .copied()
             .collect())
     }
@@ -448,6 +454,7 @@ impl Engine<'_> {
         }
         let mut starts = Vec::new();
         for head in self.frame_heads(frame)? {
+            CountedWalk::RecursiveBeginChecks.step();
             let read = self
                 .memo
                 .frame_reads
@@ -490,6 +497,7 @@ impl Engine<'_> {
 
     fn checked_heads(&mut self, frame: usize) -> Result<(), Internal> {
         for head in self.frame_heads(frame)? {
+            CountedWalk::RecursiveCheckedHeads.step();
             let read = self
                 .memo
                 .frame_reads

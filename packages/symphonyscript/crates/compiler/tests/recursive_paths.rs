@@ -2917,13 +2917,363 @@ fn a_fault_of_a_candidate_binding_draws_only_when_the_evaluation_chooses_that_ca
     let (lacking, lacking_programs) = lacking_step_failures();
     failures.extend(lacking);
     programs += lacking_programs;
+    let (crossing, crossing_programs) = in_parallel(&CALLEE_REACHES, callee_template_rows);
+    failures.extend(crossing);
+    programs += crossing_programs;
     assert!(
         failures.is_empty(),
         "{} of {programs} programs fail:\n{}",
         failures.len(),
         failures.iter().take(8).cloned().collect::<String>()
     );
-    assert_eq!(programs, 61_616);
+    assert_eq!(programs, 63_416);
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum CalleeReach {
+    Direct,
+    Through,
+    Twice,
+    AtBase,
+    Own(OwnStep),
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum OwnStep {
+    Appended,
+    Prepended,
+    Sliced,
+}
+
+const CALLEE_REACHES: [CalleeReach; 7] = [
+    CalleeReach::Direct,
+    CalleeReach::Through,
+    CalleeReach::Twice,
+    CalleeReach::AtBase,
+    CalleeReach::Own(OwnStep::Appended),
+    CalleeReach::Own(OwnStep::Prepended),
+    CalleeReach::Own(OwnStep::Sliced),
+];
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum CalleeRead {
+    Taken,
+    Untaken,
+    Child,
+}
+
+const CALLEE_READS: [CalleeRead; 3] = [CalleeRead::Taken, CalleeRead::Untaken, CalleeRead::Child];
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum CallerHolds {
+    NoSlot,
+    Lacking,
+    Cycle,
+    Integer,
+}
+
+const CALLER_HOLDS: [CallerHolds; 4] = [
+    CallerHolds::NoSlot,
+    CallerHolds::Lacking,
+    CallerHolds::Cycle,
+    CallerHolds::Integer,
+];
+
+impl CalleeReach {
+    fn holds(self) -> &'static [CallerHolds] {
+        match self {
+            CalleeReach::Own(_) => &CALLER_HOLDS[..3],
+            CalleeReach::Direct
+            | CalleeReach::Through
+            | CalleeReach::Twice
+            | CalleeReach::AtBase => &CALLER_HOLDS,
+        }
+    }
+
+    fn indices(self, depth: usize) -> [usize; 2] {
+        match self {
+            CalleeReach::Own(OwnStep::Sliced) => [depth + 1, depth + 2],
+            CalleeReach::Own(OwnStep::Appended | OwnStep::Prepended) => [1, 2],
+            CalleeReach::Direct
+            | CalleeReach::Through
+            | CalleeReach::Twice
+            | CalleeReach::AtBase => [0, 1],
+        }
+    }
+}
+
+impl OwnStep {
+    fn step(self, depth: usize, [first, second]: [usize; 2]) -> (&'static str, String, String) {
+        match self {
+            OwnStep::Appended => ("xs + [other]", "i".to_string(), "3 - i".to_string()),
+            OwnStep::Prepended => (
+                "[other] + xs",
+                "i + 1".to_string(),
+                format!("(if i > {depth} - n and i < {depth} - n + 2 then 0 else {depth} - n + 2)"),
+            ),
+            OwnStep::Sliced => (
+                "xs[1..]",
+                "i - 1".to_string(),
+                format!("{} - i - 2 * ({depth} - n)", first + second - 1),
+            ),
+        }
+    }
+}
+
+impl CalleeRead {
+    fn text(self) -> &'static str {
+        match self {
+            CalleeRead::Taken => "i32(xs[i].gain)",
+            CalleeRead::Untaken => "(if false then i32(xs[i].gain) else 0) + 1",
+            CalleeRead::Child => "i32(xs[i].hook.velocity)",
+        }
+    }
+
+    fn value(self, verse: bool) -> usize {
+        match (self, verse) {
+            (CalleeRead::Untaken, _) => 1,
+            (CalleeRead::Taken, true) => 2,
+            (CalleeRead::Taken, false) => 3,
+            (CalleeRead::Child, true) => 12,
+            (CalleeRead::Child, false) => 13,
+        }
+    }
+}
+
+impl CallerHolds {
+    fn slot(self) -> usize {
+        match self {
+            CallerHolds::Integer => 5,
+            CallerHolds::NoSlot | CallerHolds::Lacking | CallerHolds::Cycle => 2,
+        }
+    }
+
+    fn element(self) -> &'static str {
+        match self {
+            CallerHolds::NoSlot => "other",
+            CallerHolds::Lacking | CallerHolds::Integer => "verse.tone",
+            CallerHolds::Cycle => "cyc",
+        }
+    }
+}
+
+fn recursive_function(
+    (name, params): (&str, &str),
+    (condition, base): (&str, &str),
+    step: impl Fn(Option<&str>) -> String,
+    levels: Option<usize>,
+) -> String {
+    let Some(levels) = levels else {
+        return format!(
+            "fn {name}({params}): if {condition} then {base} else {}\n",
+            step(Some(name))
+        );
+    };
+    let named = |level: usize| match level {
+        0 => name.to_string(),
+        _ => format!("{name}{level}"),
+    };
+    (0..=levels)
+        .map(|level| {
+            let next = (level < levels).then(|| named(level + 1));
+            format!(
+                "fn {}({params}): if {condition} then {base} else {}\n",
+                named(level),
+                step(next.as_deref())
+            )
+        })
+        .collect()
+}
+
+struct CalleeCase {
+    reach: CalleeReach,
+    read: CalleeRead,
+    holds: CallerHolds,
+    depth: usize,
+    alternating: bool,
+    index: usize,
+    reversed: bool,
+}
+
+impl CalleeCase {
+    fn total(&self) -> usize {
+        let [first, _] = self.reach.indices(self.depth);
+        let choice = |level: usize| {
+            let flipped = self.alternating && level % 2 == 1;
+            self.read.value((self.index == first) != flipped)
+        };
+        match self.reach {
+            CalleeReach::Own(_) | CalleeReach::AtBase => choice(self.depth),
+            CalleeReach::Twice => (0..self.depth).map(|level| 2 * choice(level)).sum(),
+            CalleeReach::Direct | CalleeReach::Through => (0..self.depth).map(choice).sum(),
+        }
+    }
+
+    fn own_function(&self, own: OwnStep, unrolled: bool) -> (String, String) {
+        let depth = self.depth;
+        let (argument, constant, alternating) = own.step(depth, self.reach.indices(depth));
+        let next = if self.alternating {
+            alternating
+        } else {
+            constant
+        };
+        let function = recursive_function(
+            ("g", "xs, i, n"),
+            ("n < 1", self.read.text()),
+            |callee| {
+                callee.map_or("0".to_string(), |g| {
+                    format!("{g}({argument}, {next}, n - 1)")
+                })
+            },
+            unrolled.then_some(depth),
+        );
+        let element = self.holds.element();
+        let start = match own {
+            OwnStep::Sliced => {
+                let mut elements = vec![element; depth + 1];
+                elements.extend(["verse", "other"]);
+                elements.join(", ")
+            }
+            OwnStep::Appended | OwnStep::Prepended => format!("{element}, verse, other"),
+        };
+        (function, format!("g([{start}], {}, {depth})", self.index))
+    }
+
+    fn caller_functions(&self, unrolled: bool) -> (String, String) {
+        let depth = self.depth;
+        let index = self.index;
+        let levels = |count: usize| unrolled.then_some(count);
+        let mut functions = recursive_function(
+            ("g", "xs, i, n"),
+            ("n < 1", self.read.text()),
+            |callee| callee.map_or("0".to_string(), |g| format!("{g}(xs, i, n - 1)")),
+            levels(1),
+        );
+        if self.reach == CalleeReach::Through {
+            functions.push_str(&recursive_function(
+                ("p", "zs, k, n"),
+                ("n < 1", "g(zs, k, 1)"),
+                |callee| callee.map_or("0".to_string(), |p| format!("{p}(zs, k, n - 1)")),
+                levels(1),
+            ));
+        }
+        let next_index = if self.alternating { "1 - j" } else { "j" };
+        let (params, condition, array, chosen, next, call) = match self.holds {
+            CallerHolds::NoSlot => (
+                "m",
+                "m < 1",
+                "[verse, other, verse.tone]",
+                if self.alternating {
+                    format!("(m + {}) % 2", index + depth)
+                } else {
+                    index.to_string()
+                },
+                "m - 1".to_string(),
+                format!("h({depth})"),
+            ),
+            CallerHolds::Lacking | CallerHolds::Cycle | CallerHolds::Integer => (
+                "ys, k, j, n",
+                "n < 1",
+                "ys",
+                "j".to_string(),
+                format!("ys, k, {next_index}, n - 1"),
+                format!(
+                    "h([verse, other, {}], {}, {index}, {depth})",
+                    self.holds.element(),
+                    self.holds.slot()
+                ),
+            ),
+        };
+        let callee = match self.reach {
+            CalleeReach::Through => format!("p({array}, {chosen}, 1)"),
+            CalleeReach::Twice => {
+                format!("g({array}, {chosen}, 1) + g({array}, {chosen}, 1)")
+            }
+            CalleeReach::Direct | CalleeReach::AtBase | CalleeReach::Own(_) => {
+                format!("g({array}, {chosen}, 1)")
+            }
+        };
+        let at_base = self.reach == CalleeReach::AtBase;
+        let base = if at_base { callee.as_str() } else { "0" };
+        functions.push_str(&recursive_function(
+            ("h", params),
+            (condition, base),
+            |caller| {
+                let recursion = caller.map_or("0".to_string(), |h| format!("{h}({next})"));
+                if at_base {
+                    recursion
+                } else {
+                    format!("{callee} + {recursion}")
+                }
+            },
+            levels(depth),
+        ));
+        (functions, call)
+    }
+
+    fn program(&self, unrolled: bool) -> String {
+        let (functions, call) = match self.reach {
+            CalleeReach::Own(own) => self.own_function(own, unrolled),
+            CalleeReach::Direct
+            | CalleeReach::Through
+            | CalleeReach::Twice
+            | CalleeReach::AtBase => self.caller_functions(unrolled),
+        };
+        let mut items = vec![
+            "Session main\n".to_string(),
+            "Clip verse | gain=2:\n    Note as hook | velocity=12\n    Note as tone\n".to_string(),
+            "Clip other | gain=3:\n    Note as hook | velocity=13\n".to_string(),
+            functions,
+            format!(
+                "Clip k | gain={call}:\n    Note/([60][i32(k.gain) - {}])\n",
+                self.total()
+            ),
+        ];
+        if self.holds == CallerHolds::Cycle {
+            items.push("Clip cyc | gain=k.gain:\n    Note as hook | velocity=k.gain\n".to_string());
+        }
+        if self.reversed {
+            items.reverse();
+        }
+        items.concat()
+    }
+}
+
+fn callee_template_rows(reach: CalleeReach) -> (Vec<String>, usize) {
+    let mut failures = Vec::new();
+    let mut programs = 0;
+    for read in CALLEE_READS {
+        for holds in reach.holds().iter().copied() {
+            for depth in [1, 3, 30] {
+                for alternating in [false, true] {
+                    for index in reach.indices(depth) {
+                        for reversed in [false, true] {
+                            let case = CalleeCase {
+                                reach,
+                                read,
+                                holds,
+                                depth,
+                                alternating,
+                                index,
+                                reversed,
+                            };
+                            let text = case.program(false);
+                            let twin = case.program(true);
+                            let drawn = found(&text);
+                            let expected = found(&twin);
+                            programs += 1;
+                            if !expected.is_empty() || drawn != expected {
+                                failures.push(format!(
+                                    "{reach:?} {read:?} {holds:?} {depth} {alternating} {index} {reversed}\n{text}\n  found {drawn:?}\n  twin {expected:?}\n"
+                                ));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    (failures, programs)
 }
 
 fn two_calls_program(index: usize, levels: Levels, reversed: bool, recursive: bool) -> String {
