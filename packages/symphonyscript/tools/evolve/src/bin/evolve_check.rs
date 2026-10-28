@@ -5,9 +5,9 @@ use std::io::{BufRead, BufReader, BufWriter, Write};
 use std::process::ExitCode;
 use std::time::Instant;
 
-use symphonyscript_evolve::{Checker, Program, arguments};
+use symphonyscript_evolve::{Checker, Program, arguments, named_vocabulary};
 
-const USAGE: &str = "usage: evolve-check [--budget <seconds>] [--memory-bound <bytes per source byte>] <programs.jsonl> <verdicts.jsonl>";
+const USAGE: &str = "usage: evolve-check [--budget <seconds>] [--memory-bound <bytes per source byte>] [--vocabulary <name>] <programs.jsonl> <verdicts.jsonl>";
 
 fn main() -> ExitCode {
     std::panic::set_hook(Box::new(|_| {}));
@@ -25,8 +25,14 @@ fn run() -> Result<(), String> {
     let [input, output] = arguments.positional.as_slice() else {
         return Err(USAGE.to_string());
     };
-    let checker = Checker::new(arguments.budget)
-        .map_err(|failed| format!("the fixture vocabulary does not compile: {failed:?}"))?
+    let vocabulary = named_vocabulary(&arguments.vocabulary)?;
+    let checker = Checker::with_vocabulary(arguments.budget, vocabulary)
+        .map_err(|failed| {
+            format!(
+                "the vocabulary `{}` does not compile: {failed:?}",
+                arguments.vocabulary
+            )
+        })?
         .with_memory_bound(arguments.memory_bound);
     let reader = BufReader::new(File::open(input).map_err(|error| format!("{input}: {error}"))?);
     let mut writer =

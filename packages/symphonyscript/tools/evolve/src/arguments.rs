@@ -1,18 +1,21 @@
 use std::time::Duration;
 
 use crate::checker::DEFAULT_BUDGET;
+use crate::named_vocabulary::VOCABULARY_NAMES;
 use crate::over_memory_bound::DEFAULT_MEMORY_BOUND;
 
 #[derive(Clone, PartialEq, Debug)]
 pub struct Arguments {
     pub budget: Duration,
     pub memory_bound: u64,
+    pub vocabulary: String,
     pub positional: Vec<String>,
 }
 
 pub fn arguments(raw: impl IntoIterator<Item = String>) -> Result<Arguments, String> {
     let mut budget = DEFAULT_BUDGET;
     let mut memory_bound = DEFAULT_MEMORY_BOUND;
+    let mut vocabulary = VOCABULARY_NAMES[0].to_string();
     let mut positional = Vec::new();
     let mut raw = raw.into_iter();
     while let Some(argument) = raw.next() {
@@ -36,12 +39,18 @@ pub fn arguments(raw: impl IntoIterator<Item = String>) -> Result<Arguments, Str
                     format!("--memory-bound takes a number of bytes per source byte, not `{value}`")
                 })?;
             }
+            "--vocabulary" => {
+                vocabulary = raw
+                    .next()
+                    .ok_or_else(|| "--vocabulary takes a vocabulary's name".to_string())?;
+            }
             _ => positional.push(argument),
         }
     }
     Ok(Arguments {
         budget,
         memory_bound,
+        vocabulary,
         positional,
     })
 }
