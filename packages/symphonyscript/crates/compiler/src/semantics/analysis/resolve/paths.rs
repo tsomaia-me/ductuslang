@@ -133,7 +133,7 @@ impl Engine<'_> {
                     return Ok(Some(Val::Error));
                 }
                 if sig.open && self.in_probe(scope)? {
-                    return Ok(Some(Val::Scalar(node)));
+                    return Ok(Some(Val::Scalar(self.open_source(node)?)));
                 }
                 if sig.kind != Kind::Node {
                     self.error(
@@ -172,6 +172,27 @@ impl Engine<'_> {
         self.step(item, name, loc, scope, need)
     }
 
+    fn open_source(&self, start: NodeId) -> Result<NodeId, Internal> {
+        let mut seen: FastSet<NodeId> = FastSet::default();
+        let mut stack = vec![start];
+        while let Some(node) = stack.pop() {
+            if !seen.insert(node) {
+                continue;
+            }
+            let Some(sig) = self.memo.sigs.get(&node) else {
+                continue;
+            };
+            if !sig.open {
+                continue;
+            }
+            if sig.kind == Kind::Any {
+                return Ok(node);
+            }
+            stack.extend(self.node(node)?.op.operands().into_iter().rev());
+        }
+        Err(Internal::missed("open value"))
+    }
+
     fn frame_path(
         &mut self,
         root: NodeId,
@@ -207,19 +228,20 @@ impl Engine<'_> {
             self.error(Code::TypeMismatch, loc, scope, CHOSEN_PATHS)?;
             return Ok(Some(Val::Error));
         }
-        let mut tests = Vec::with_capacity(rest.len());
-        for instance in instances.iter().take(rest.len()) {
+        let tested = if rest.is_empty() { &vals[..] } else { rest };
+        let mut tests = Vec::with_capacity(tested.len());
+        for instance in instances.iter().take(tested.len()) {
             tests.push(self.push_node(Op::Names(root, *instance), loc, scope)?);
         }
         let last_nodes = last.nodes();
-        let rest_nodes: Vec<Vec<NodeId>> = rest.iter().map(Val::nodes).collect();
+        let tested_nodes: Vec<Vec<NodeId>> = tested.iter().map(Val::nodes).collect();
         let mut elements = Vec::with_capacity(shape.count());
         for position in 0..shape.count() {
             let mut chosen = last_nodes
                 .get(position)
                 .copied()
                 .ok_or(Internal::missed("path element"))?;
-            for (test, nodes) in tests.iter().zip(&rest_nodes).rev() {
+            for (test, nodes) in tests.iter().zip(&tested_nodes).rev() {
                 let read = nodes
                     .get(position)
                     .copied()
@@ -309,42 +331,56 @@ impl Engine<'_> {
         function: FnId,
         need: &mut Vec<Query>,
     ) -> Result<Option<Vec<NodeId>>, Internal> {
-        let key = self
-            .memo
-            .call_families
-            .get(&call)
-            .ok_or(Internal::missed("call family"))?;
-        let scope = match self.memo.rec_families.get(key) {
-            Some(RecFamily::Probing(scope) | RecFamily::Settling { scope, .. }) => Some(*scope),
-            Some(RecFamily::Known(..) | RecFamily::Failed) | None => self
-                .memo
-                .family_scopes
-                .get(key)
-                .and_then(|scopes| scopes.last())
-                .copied(),
-        };
-        let Some(scope) = scope else {
+        let Some(key) = self.memo.call_families.get(&call) else {
             return Ok(Some(Vec::new()));
         };
+        let mut scopes = Vec::new();
+        if let Some(RecFamily::Probing(scope) | RecFamily::Settling { scope, .. }) =
+            self.memo.rec_families.get(key)
+        {
+            scopes.push(*scope);
+        }
+        scopes.extend(
+            self.memo
+                .family_scopes
+                .get(key)
+                .into_iter()
+                .flat_map(|settled| settled.iter().rev())
+                .copied(),
+        );
+        scopes.extend(self.memo.family_probes.get(key).copied());
         let decl = self.hir.fn_decl(function)?;
         let mut bodies = vec![decl.value];
         if let Some(bound) = decl.bound.as_ref().filter(|bound| bound.bound.is_some()) {
             bodies.push(bound.fallback);
         }
-        let mut roots = Vec::new();
-        let mut pending = false;
-        for body in bodies {
-            let query = Query::Expr(body, scope);
-            match self.memo.exprs.get(&(body, scope)) {
-                Some(val) => roots.extend(val.nodes()),
-                None if self.in_progress(query) => {}
-                None => {
-                    need.push(query);
-                    pending = true;
+        let mut waiting = None;
+        for scope in scopes {
+            let mut roots = Vec::new();
+            let mut complete = true;
+            for body in &bodies {
+                match self.memo.exprs.get(&(*body, scope)) {
+                    Some(val) => roots.extend(val.nodes()),
+                    None => {
+                        complete = false;
+                        let query = Query::Expr(*body, scope);
+                        if waiting.is_none() && !self.in_progress(query) {
+                            waiting = Some(query);
+                        }
+                    }
                 }
             }
+            if complete {
+                return Ok(Some(roots));
+            }
         }
-        Ok((!pending).then_some(roots))
+        match waiting {
+            Some(query) => {
+                need.push(query);
+                Ok(None)
+            }
+            None => Ok(Some(Vec::new())),
+        }
     }
 
     fn step(

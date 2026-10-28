@@ -308,7 +308,7 @@ fn a_path_through_a_node_reference_parameter_of_a_recursive_function_reads_as_at
         failures.is_empty(),
         "{} of {programs} programs fail:\n{}",
         failures.len(),
-        failures.iter().take(12).cloned().collect::<String>()
+        failures.iter().take(8).cloned().collect::<String>()
     );
     assert_eq!(programs, 4_320);
 }
@@ -841,4 +841,822 @@ fn a_reference_argument_an_error_leaves_unknown_draws_what_its_twin_draws() {
         }
     }
     assert!(failures.is_empty(), "{}", failures.concat());
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Start {
+    Element,
+    FromEnd,
+    LiteralOfOne,
+    LiteralOfTwo,
+    TopLevelLet,
+    SliceThenFirst,
+    NestedLiteral,
+    SaturatingIndex,
+    RecursiveHelper,
+    RecursiveArrayHelper,
+}
+
+const STARTS: [Start; 10] = [
+    Start::Element,
+    Start::FromEnd,
+    Start::LiteralOfOne,
+    Start::LiteralOfTwo,
+    Start::TopLevelLet,
+    Start::SliceThenFirst,
+    Start::NestedLiteral,
+    Start::SaturatingIndex,
+    Start::RecursiveHelper,
+    Start::RecursiveArrayHelper,
+];
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Fault {
+    Outside,
+    Saturating,
+    Depth,
+    Inside(usize),
+}
+
+const FAULTS: [Fault; 5] = [
+    Fault::Outside,
+    Fault::Saturating,
+    Fault::Depth,
+    Fault::Inside(0),
+    Fault::Inside(1),
+];
+
+const GAINS: [i32; 2] = [2, 3];
+
+impl Fault {
+    fn code(self) -> Option<Code> {
+        match self {
+            Fault::Outside => Some(Code::IndexOutOfRange),
+            Fault::Saturating => Some(Code::ConstantOverflow),
+            Fault::Depth => Some(Code::RecursionDepth),
+            Fault::Inside(_) => None,
+        }
+    }
+}
+
+impl Start {
+    fn expression(self, candidates: usize, fault: Fault) -> String {
+        let two = candidates == 2;
+        let other = if two { "d" } else { "c" };
+        let depth = if fault == Fault::Depth { 5000 } else { 2 };
+        match self {
+            Start::Element => "xs[i]".to_string(),
+            Start::FromEnd => "xs[^i]".to_string(),
+            Start::LiteralOfOne if two => "[c, d][i]".to_string(),
+            Start::LiteralOfOne => "[c][i]".to_string(),
+            Start::LiteralOfTwo if two => "[c, d, c][i]".to_string(),
+            Start::LiteralOfTwo => "[c, c][i]".to_string(),
+            Start::TopLevelLet => "rs[i]".to_string(),
+            Start::SliceThenFirst => "xs[i..][0]".to_string(),
+            Start::NestedLiteral if two => "[[c, d]][0][i]".to_string(),
+            Start::NestedLiteral => "[[c]][0][i]".to_string(),
+            Start::SaturatingIndex => "xs[i32(i) * 2147483647]".to_string(),
+            Start::RecursiveHelper => format!("pickr(c, {other}, i, {depth})"),
+            Start::RecursiveArrayHelper => format!("pk(c, {other}, {depth})[i]"),
+        }
+    }
+
+    fn frame_value(self, candidates: usize, fault: Fault) -> Option<i32> {
+        let indexed = !matches!(self, Start::RecursiveHelper);
+        let chosen = |candidate: usize| {
+            let candidate = i32::try_from(candidate).ok()?;
+            let count = i32::try_from(candidates).ok()?;
+            match self {
+                Start::FromEnd => Some(count - candidate),
+                Start::SaturatingIndex => (candidate == 0).then_some(0),
+                Start::Element
+                | Start::LiteralOfOne
+                | Start::LiteralOfTwo
+                | Start::TopLevelLet
+                | Start::SliceThenFirst
+                | Start::NestedLiteral
+                | Start::RecursiveHelper
+                | Start::RecursiveArrayHelper => Some(candidate),
+            }
+        };
+        match fault {
+            Fault::Inside(candidate) if candidate < candidates => chosen(candidate),
+            Fault::Inside(_) => None,
+            Fault::Outside if self == Start::SaturatingIndex => Some(1),
+            Fault::Outside => indexed.then_some(3),
+            Fault::Saturating => (self == Start::SaturatingIndex).then_some(2),
+            Fault::Depth => {
+                matches!(self, Start::RecursiveHelper | Start::RecursiveArrayHelper).then_some(0)
+            }
+        }
+    }
+}
+
+const START_CONSUMERS: [Consumer; 4] = [
+    Consumer::Path,
+    Consumer::LocalLet,
+    Consumer::InlinedCall,
+    Consumer::RecursiveArgument,
+];
+
+const START_HELPERS: [&str; 3] = [
+    "fn f(c): c.gain\n",
+    "fn g(c, n): if n < 1 then c.gain else g(c, n - 1)\n",
+    "fn pickr(c, d, p, m): if m < 1 then (if p > 0 then d else c) else pickr(c, d, p, m - 1)\n",
+];
+
+fn start_program(
+    (start, fault, consumer): (Start, Fault, Consumer),
+    (candidates, index): (usize, i32),
+    (reversed, recursive): (bool, bool),
+) -> String {
+    let chosen = start.expression(candidates, fault);
+    let local = consumer.local(&chosen);
+    let read = consumer.read(&chosen);
+    let array = if candidates == 2 {
+        "[verse, other]"
+    } else {
+        "[verse]"
+    };
+    let pair = if candidates == 2 { "[c, d]" } else { "[c, c]" };
+    let expected = match fault {
+        Fault::Inside(candidate) => GAINS.get(candidate).copied().unwrap_or_default(),
+        Fault::Outside | Fault::Saturating | Fault::Depth => 2,
+    };
+    let mut items = vec![
+        "Session main\n".to_string(),
+        "Clip verse | gain=2:\n    Note\n".to_string(),
+        "Clip other | gain=3:\n    Note\n".to_string(),
+        format!("let rs = {array}\n"),
+        format!("fn pk(c, d, m): if m < 1 then {pair} else pk(c, d, m - 1)\n"),
+    ];
+    items.extend(START_HELPERS.iter().map(|helper| helper.to_string()));
+    items.push(chosen_function(
+        Chooser::ParameterArray,
+        (&local, &read),
+        recursive,
+    ));
+    items.push(format!(
+        "Clip k:\n    Note/([60][i32(h(verse, other, {array}, {index}, 2)) - {expected}])\n"
+    ));
+    if reversed {
+        items.reverse();
+    }
+    items.concat()
+}
+
+#[test]
+fn a_path_through_a_frame_chosen_start_evaluates_the_start_in_the_frame_however_many_instances_it_names()
+ {
+    let mut failures = Vec::new();
+    let mut programs = 0;
+    for start in STARTS {
+        for fault in FAULTS {
+            for candidates in [1, 2] {
+                let Some(index) = start.frame_value(candidates, fault) else {
+                    continue;
+                };
+                if (start, fault) == (Start::SliceThenFirst, Fault::Outside) {
+                    continue;
+                }
+                for consumer in START_CONSUMERS {
+                    for reversed in [false, true] {
+                        let program = |recursive| {
+                            start_program(
+                                (start, fault, consumer),
+                                (candidates, index),
+                                (reversed, recursive),
+                            )
+                        };
+                        let (text, twin) = (program(true), program(false));
+                        let (drawn, expected) = (found(&text), found(&twin));
+                        programs += 1;
+                        let codes: Vec<Code> = expected.keys().map(|(code, _)| *code).collect();
+                        let twin_holds_the_fault = match fault.code() {
+                            Some(code) => {
+                                !codes.is_empty() && codes.iter().all(|found| *found == code)
+                            }
+                            None => codes.is_empty(),
+                        };
+                        if !twin_holds_the_fault || drawn != expected {
+                            failures.push(format!(
+                                "{start:?} {fault:?} {candidates} {consumer:?} {reversed}\n{text}\n  found {drawn:?}\n  twin {expected:?}\n"
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+    }
+    assert!(
+        failures.is_empty(),
+        "{} of {programs} programs fail:\n{}",
+        failures.len(),
+        failures.iter().take(8).cloned().collect::<String>()
+    );
+    assert_eq!(programs, 408);
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum InnerCall {
+    OnCycle,
+    Partner,
+    Settled,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Wrapping {
+    Bare,
+    Element,
+    Choice,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum OuterCallee {
+    Itself,
+    Separate,
+    Partner,
+    Inlined,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum CallUse {
+    Path,
+    Length,
+    TopLet,
+}
+
+impl InnerCall {
+    fn text(self) -> &'static str {
+        match self {
+            InnerCall::OnCycle => "a(c, m - 1)",
+            InnerCall::Partner => "b(c, m - 1)",
+            InnerCall::Settled => "s(c, 1)",
+        }
+    }
+}
+
+impl Wrapping {
+    fn wrap(self, inner: &str) -> String {
+        match self {
+            Wrapping::Bare => inner.to_string(),
+            Wrapping::Element => format!("[{inner}][0]"),
+            Wrapping::Choice => format!("(if m > 5 then c else {inner})"),
+        }
+    }
+}
+
+impl OuterCallee {
+    fn call(self, argument: &str) -> String {
+        match self {
+            OuterCallee::Itself => format!("a({argument}, m - 1)"),
+            OuterCallee::Separate => format!("idr({argument}, 1)"),
+            OuterCallee::Partner => format!("b({argument}, m - 1)"),
+            OuterCallee::Inlined => format!("f({argument})"),
+        }
+    }
+}
+
+impl CallUse {
+    fn items(self, depth: u32) -> Vec<String> {
+        match self {
+            CallUse::Path => vec![format!(
+                "Clip k:\n    Note/([60][i32(a(verse, {depth}).gain) - 2])\n"
+            )],
+            CallUse::Length => vec![format!(
+                "Clip k:\n    Note/([60][len([a(verse, {depth})]) - 1])\n"
+            )],
+            CallUse::TopLet => vec![
+                format!("let t = a(verse, {depth})\n"),
+                "Clip k:\n    Note/([60][i32(t.gain) - 2])\n".to_string(),
+            ],
+        }
+    }
+}
+
+fn keyed_program(
+    (inner, wrapping, outer, used): (InnerCall, Wrapping, OuterCallee, CallUse),
+    (depth, reversed, recursive): (u32, bool, bool),
+) -> String {
+    let body = if recursive {
+        format!(
+            "if m < 1 then c else {}",
+            outer.call(&wrapping.wrap(inner.text()))
+        )
+    } else {
+        "c".to_string()
+    };
+    let mut items = vec![
+        "Session main\n".to_string(),
+        "Clip verse | gain=2:\n    Note\n".to_string(),
+        format!("fn a(c, m): {body}\n"),
+        "fn b(c, m): if m < 1 then c else a(c, m - 1)\n".to_string(),
+        "fn idr(x, k): if k < 1 then x else idr(x, k - 1)\n".to_string(),
+        "fn s(c, m): if m < 1 then c else s(c, m - 1)\n".to_string(),
+        "fn f(x): x\n".to_string(),
+    ];
+    items.extend(used.items(depth));
+    if reversed {
+        items.reverse();
+    }
+    items.concat()
+}
+
+#[test]
+fn keying_a_recursive_calls_reference_argument_that_is_a_call_on_the_callers_cycle_draws_what_its_twin_draws()
+ {
+    let mut failures = Vec::new();
+    let mut programs = 0;
+    for inner in [InnerCall::OnCycle, InnerCall::Partner, InnerCall::Settled] {
+        for wrapping in [Wrapping::Bare, Wrapping::Element, Wrapping::Choice] {
+            for outer in [
+                OuterCallee::Itself,
+                OuterCallee::Separate,
+                OuterCallee::Partner,
+                OuterCallee::Inlined,
+            ] {
+                for used in [CallUse::Path, CallUse::Length, CallUse::TopLet] {
+                    for depth in [0, 2, 7] {
+                        for reversed in [false, true] {
+                            let case = (inner, wrapping, outer, used);
+                            let text = keyed_program(case, (depth, reversed, true));
+                            let twin = keyed_program(case, (depth, reversed, false));
+                            let (drawn, expected) = (found(&text), found(&twin));
+                            programs += 1;
+                            if !expected.is_empty() || drawn != expected {
+                                failures.push(format!(
+                                    "{inner:?} {wrapping:?} {outer:?} {used:?} {depth} {reversed}\n{text}\n  found {drawn:?}\n  twin {expected:?}\n"
+                                ));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    assert!(
+        failures.is_empty(),
+        "{} of {programs} programs fail:\n{}",
+        failures.len(),
+        failures.iter().take(8).cloned().collect::<String>()
+    );
+    assert_eq!(programs, 648);
+}
+
+const TRIO: [(&str, i32); 3] = [("verse", 2), ("other", 3), ("tail", 4)];
+
+fn gain_of(instance: &str) -> i32 {
+    TRIO.iter()
+        .find(|(name, _)| *name == instance)
+        .map(|(_, gain)| *gain)
+        .unwrap_or_default()
+}
+
+fn trio_items() -> Vec<String> {
+    let mut items = vec!["Session main\n".to_string()];
+    items.extend(
+        TRIO.iter()
+            .map(|(name, gain)| format!("Clip {name} | gain={gain}:\n    Note\n")),
+    );
+    items
+}
+
+fn model_failure(text: &str, twin: Option<&str>, expected: &Found) -> Option<String> {
+    let drawn = found(text);
+    let twin_drawn = twin.map(found);
+    if twin_drawn.as_ref().is_some_and(|twin| twin != expected) || drawn != *expected {
+        return Some(format!(
+            "{text}\n  found {drawn:?}\n  twin {twin_drawn:?}\n  expected {expected:?}\n"
+        ));
+    }
+    None
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum PathHelper {
+    Element,
+    Slice,
+    Literal,
+    ArrayResult,
+    Choice,
+}
+
+const PATH_HELPERS: [PathHelper; 5] = [
+    PathHelper::Element,
+    PathHelper::Slice,
+    PathHelper::Literal,
+    PathHelper::ArrayResult,
+    PathHelper::Choice,
+];
+
+impl PathHelper {
+    fn declaration(self, recursive: bool) -> String {
+        let body = match self {
+            PathHelper::Element => "xs[p]",
+            PathHelper::Slice => "xs[p..][0]",
+            PathHelper::Literal => "[xs[0], xs[1]][p]",
+            PathHelper::Choice => "(if p > 0 then xs[1] else xs[0])",
+            PathHelper::ArrayResult if recursive => {
+                return "fn pk(xs, m): if m < 1 then xs else pk(xs, m - 1)\n".to_string();
+            }
+            PathHelper::ArrayResult => return "fn pk(xs, m): xs\n".to_string(),
+        };
+        if recursive {
+            format!("fn pickr(xs, p, m): if m < 1 then {body} else pickr(xs, p, m - 1)\n")
+        } else {
+            format!("fn pickr(xs, p, m): {body}\n")
+        }
+    }
+
+    fn call(self, array: &str, index: &str) -> String {
+        match self {
+            PathHelper::ArrayResult => format!("pk({array}, 2)[{index}]"),
+            PathHelper::Element | PathHelper::Slice | PathHelper::Literal | PathHelper::Choice => {
+                format!("pickr({array}, {index}, 2)")
+            }
+        }
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum CallStart {
+    Alone,
+    LetIf,
+    LetMatch,
+    LetArray,
+    SelfRead,
+    SelfReadWrapped,
+}
+
+const CALL_STARTS: [CallStart; 6] = [
+    CallStart::Alone,
+    CallStart::LetIf,
+    CallStart::LetMatch,
+    CallStart::LetArray,
+    CallStart::SelfRead,
+    CallStart::SelfReadWrapped,
+];
+
+const SITE_ARRAYS: [[&str; 2]; 3] = [["verse", "other"], ["tail", "verse"], ["other", "tail"]];
+
+fn site_sets() -> Vec<Vec<[&'static str; 2]>> {
+    let mut sets = vec![vec![SITE_ARRAYS[0]]];
+    for first in SITE_ARRAYS {
+        for second in SITE_ARRAYS {
+            if first != second {
+                sets.push(vec![first, second]);
+            }
+        }
+    }
+    sets
+}
+
+fn beside(array: [&str; 2]) -> &'static str {
+    TRIO.iter()
+        .map(|(name, _)| *name)
+        .find(|name| !array.contains(name))
+        .unwrap_or("verse")
+}
+
+impl CallStart {
+    fn self_reading(self) -> bool {
+        matches!(self, CallStart::SelfRead | CallStart::SelfReadWrapped)
+    }
+
+    fn expression(self, helper: PathHelper) -> String {
+        match self {
+            CallStart::Alone => helper.call("xs", "i"),
+            CallStart::LetIf => "(if i > 0 then rp else c)".to_string(),
+            CallStart::LetMatch => "m".to_string(),
+            CallStart::LetArray => "[rp, c][i]".to_string(),
+            CallStart::SelfRead => "sf(xs, i, n - 1)".to_string(),
+            CallStart::SelfReadWrapped => "w(xs, i, n - 1)".to_string(),
+        }
+    }
+
+    fn locals(self) -> &'static str {
+        match self {
+            CallStart::LetMatch => "    let m = match i:\n        0: rp\n        else: c\n",
+            CallStart::Alone
+            | CallStart::LetIf
+            | CallStart::LetArray
+            | CallStart::SelfRead
+            | CallStart::SelfReadWrapped => "",
+        }
+    }
+
+    fn chosen(self, array: [&'static str; 2], index: usize) -> &'static str {
+        let element = |position: usize| array.get(position).copied().unwrap_or("verse");
+        match self {
+            CallStart::Alone => element(index),
+            CallStart::LetIf => {
+                if index > 0 {
+                    "other"
+                } else {
+                    beside(array)
+                }
+            }
+            CallStart::LetMatch | CallStart::LetArray => {
+                if index == 0 {
+                    "other"
+                } else {
+                    beside(array)
+                }
+            }
+            CallStart::SelfRead | CallStart::SelfReadWrapped => {
+                let mut chosen = element(index);
+                for _ in 0..3 {
+                    chosen = if gain_of(chosen) > 2 {
+                        element(1)
+                    } else {
+                        element(0)
+                    };
+                }
+                chosen
+            }
+        }
+    }
+}
+
+fn call_start_program(
+    (helper, start, consumer): (PathHelper, CallStart, Consumer),
+    (sites, index, wrong): (&[[&'static str; 2]], usize, bool),
+    (reversed, recursive): (bool, bool),
+) -> (String, Found) {
+    let chosen = start.expression(helper);
+    let local = consumer.local(&chosen);
+    let read = consumer.read(&chosen);
+    let mut items = trio_items();
+    items.push(helper.declaration(recursive));
+    items.push(format!("let rp = {}\n", helper.call("[verse, other]", "1")));
+    items.push("fn f(c): c.gain\n".to_string());
+    items.push("fn g(c, n): if n < 1 then c.gain else g(c, n - 1)\n".to_string());
+    if start.self_reading() {
+        let value = if recursive {
+            format!("if n < 1 then xs[i] else (if {read} > 2 then xs[1] else xs[0])")
+        } else {
+            "xs[i]".to_string()
+        };
+        items.push(format!("fn sf(xs, i, n):\n{local}    {value}\n"));
+        items.push("fn w(xs, i, n): sf(xs, i, n)\n".to_string());
+    } else {
+        let value = if recursive {
+            format!("if n < 1 then {read} else h(c, xs, i, n - 1)")
+        } else {
+            read
+        };
+        items.push(format!(
+            "fn h(c, xs, i, n):\n{}{local}    {value}\n",
+            start.locals()
+        ));
+    }
+    let mut expected = Found::new();
+    for (position, array) in sites.iter().enumerate() {
+        let gain = gain_of(start.chosen(*array, index)) + i32::from(wrong);
+        let elements = array.join(", ");
+        let call = if start.self_reading() {
+            format!("sf([{elements}], {index}, 3).gain")
+        } else {
+            format!("h({}, [{elements}], {index}, 3)", beside(*array))
+        };
+        let offset = format!("i32({call}) - {gain}");
+        if wrong {
+            *expected
+                .entry((Code::IndexOutOfRange, offset.clone()))
+                .or_default() += 1;
+        }
+        items.push(format!("Clip k{position}:\n    Note/([60][{offset}])\n"));
+    }
+    if reversed {
+        items.reverse();
+    }
+    (items.concat(), expected)
+}
+
+#[test]
+fn a_path_start_chosen_by_a_recursive_call_names_the_instances_that_calls_own_evaluation_returns() {
+    let sets = site_sets();
+    let mut failures = Vec::new();
+    let mut programs = 0;
+    for start in CALL_STARTS {
+        let helpers: &[PathHelper] = if start.self_reading() {
+            &[PathHelper::Element]
+        } else {
+            &PATH_HELPERS
+        };
+        for helper in helpers.iter().copied() {
+            for consumer in START_CONSUMERS {
+                for sites in &sets {
+                    for index in [0, 1] {
+                        for wrong in [false, true] {
+                            for reversed in [false, true] {
+                                let program = |recursive| {
+                                    call_start_program(
+                                        (helper, start, consumer),
+                                        (sites, index, wrong),
+                                        (reversed, recursive),
+                                    )
+                                };
+                                let (text, expected) = program(true);
+                                let twin = (!start.self_reading()).then(|| program(false).0);
+                                programs += 1;
+                                if let Some(failure) =
+                                    model_failure(&text, twin.as_deref(), &expected)
+                                {
+                                    failures.push(format!(
+                                        "{start:?} {helper:?} {consumer:?} {sites:?} {index} {wrong} {reversed}\n{failure}"
+                                    ));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    assert!(
+        failures.is_empty(),
+        "{} of {programs} programs fail:\n{}",
+        failures.len(),
+        failures.iter().take(8).cloned().collect::<String>()
+    );
+    assert_eq!(programs, 4_928);
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum OpenChooser {
+    IfTrue,
+    IfFalse,
+    MatchOnLiteral,
+    NestedIf,
+    IfOnParameter,
+    ElseArmIf,
+    MatchOnParameter,
+}
+
+const OPEN_CHOOSERS: [OpenChooser; 7] = [
+    OpenChooser::IfTrue,
+    OpenChooser::IfFalse,
+    OpenChooser::MatchOnLiteral,
+    OpenChooser::NestedIf,
+    OpenChooser::IfOnParameter,
+    OpenChooser::ElseArmIf,
+    OpenChooser::MatchOnParameter,
+];
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum OpenArm {
+    Instances,
+    Parameter,
+    ParameterChosen,
+    TopLet,
+}
+
+const OPEN_ARMS: [OpenArm; 4] = [
+    OpenArm::Instances,
+    OpenArm::Parameter,
+    OpenArm::ParameterChosen,
+    OpenArm::TopLet,
+];
+
+impl OpenArm {
+    fn text(self) -> &'static str {
+        match self {
+            OpenArm::Instances => "pickr(verse, other, 1, 2)",
+            OpenArm::Parameter => "pickr(c, other, 1, 2)",
+            OpenArm::ParameterChosen => "pickr(c, other, i, 2)",
+            OpenArm::TopLet => "rp",
+        }
+    }
+
+    fn chosen(self, index: usize) -> &'static str {
+        match self {
+            OpenArm::ParameterChosen if index == 0 => "tail",
+            OpenArm::Instances
+            | OpenArm::Parameter
+            | OpenArm::ParameterChosen
+            | OpenArm::TopLet => "other",
+        }
+    }
+}
+
+impl OpenChooser {
+    fn expression(self, open: &str, known: &str) -> String {
+        match self {
+            OpenChooser::IfTrue => format!("(if true then {open} else {known})"),
+            OpenChooser::IfFalse => format!("(if false then {open} else {known})"),
+            OpenChooser::MatchOnLiteral | OpenChooser::MatchOnParameter => "m".to_string(),
+            OpenChooser::NestedIf => {
+                format!("(if true then (if false then {known} else {open}) else {known})")
+            }
+            OpenChooser::IfOnParameter => format!("(if i > 0 then {open} else {known})"),
+            OpenChooser::ElseArmIf => {
+                format!("(if i < 1 then {known} else (if true then {open} else {known}))")
+            }
+        }
+    }
+
+    fn locals(self, open: &str, known: &str) -> String {
+        let scrutinee = match self {
+            OpenChooser::MatchOnLiteral => "1",
+            OpenChooser::MatchOnParameter => "i",
+            OpenChooser::IfTrue
+            | OpenChooser::IfFalse
+            | OpenChooser::NestedIf
+            | OpenChooser::IfOnParameter
+            | OpenChooser::ElseArmIf => return String::new(),
+        };
+        format!("    let m = match {scrutinee}:\n        0: {known}\n        else: {open}\n")
+    }
+
+    fn takes_open(self, index: usize) -> bool {
+        match self {
+            OpenChooser::IfTrue | OpenChooser::MatchOnLiteral | OpenChooser::NestedIf => true,
+            OpenChooser::IfFalse => false,
+            OpenChooser::IfOnParameter | OpenChooser::ElseArmIf | OpenChooser::MatchOnParameter => {
+                index > 0
+            }
+        }
+    }
+}
+
+fn open_choice_program(
+    (chooser, open, known, consumer): (OpenChooser, OpenArm, &str, Consumer),
+    index: usize,
+    (reversed, recursive): (bool, bool),
+) -> String {
+    let chosen = chooser.expression(open.text(), known);
+    let local = consumer.local(&chosen);
+    let read = consumer.read(&chosen);
+    let value = if recursive {
+        format!("if n < 1 then {read} else h(c, i, n - 1)")
+    } else {
+        read
+    };
+    let helper = if recursive {
+        "fn pickr(c, d, p, m): if m < 1 then (if p > 0 then d else c) else pickr(c, d, p, m - 1)\n"
+    } else {
+        "fn pickr(c, d, p, m): if p > 0 then d else c\n"
+    };
+    let instance = if chooser.takes_open(index) {
+        open.chosen(index)
+    } else if known == "c" {
+        "tail"
+    } else {
+        known
+    };
+    let mut items = trio_items();
+    items.extend([
+        helper.to_string(),
+        "let rp = pickr(verse, other, 1, 2)\n".to_string(),
+        "fn f(c): c.gain\n".to_string(),
+        "fn g(c, n): if n < 1 then c.gain else g(c, n - 1)\n".to_string(),
+        format!(
+            "fn h(c, i, n):\n{}{local}    {value}\n",
+            chooser.locals(open.text(), known)
+        ),
+        format!(
+            "Clip k:\n    Note/([60][i32(h(tail, {index}, 3)) - {}])\n",
+            gain_of(instance)
+        ),
+    ]);
+    if reversed {
+        items.reverse();
+    }
+    items.concat()
+}
+
+#[test]
+fn a_family_probes_path_through_an_open_recursive_call_settles_no_family_from_the_starts_kind() {
+    let mut failures = Vec::new();
+    let mut programs = 0;
+    for chooser in OPEN_CHOOSERS {
+        for open in OPEN_ARMS {
+            for known in ["verse", "c"] {
+                for consumer in START_CONSUMERS {
+                    for index in [0, 1] {
+                        for reversed in [false, true] {
+                            let case = (chooser, open, known, consumer);
+                            let text = open_choice_program(case, index, (reversed, true));
+                            let twin = open_choice_program(case, index, (reversed, false));
+                            programs += 1;
+                            if let Some(failure) = model_failure(&text, Some(&twin), &Found::new())
+                            {
+                                failures.push(format!(
+                                    "{chooser:?} {open:?} {known} {consumer:?} {index} {reversed}\n{failure}"
+                                ));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    assert!(
+        failures.is_empty(),
+        "{} of {programs} programs fail:\n{}",
+        failures.len(),
+        failures.iter().take(8).cloned().collect::<String>()
+    );
+    assert_eq!(programs, 896);
 }

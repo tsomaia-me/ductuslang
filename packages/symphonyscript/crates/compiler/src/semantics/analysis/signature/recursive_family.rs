@@ -95,6 +95,7 @@ impl Engine<'_> {
                     self.memo.family_shapes.insert(key.clone(), shapes.to_vec());
                     let scope = self.instantiate(function, shapes, node)?;
                     self.memo.probes.insert(scope);
+                    self.memo.family_probes.insert(key.clone(), scope);
                     self.memo.probing_families.insert(key.clone());
                     self.memo
                         .rec_families
@@ -365,21 +366,42 @@ fn family_arg(shape: &ArgShape) -> FamilyArg {
                 .split_last()
                 .map(|(_, rows)| rows.to_vec())
                 .unwrap_or_default(),
-            element: sigs.iter().cloned().reduce(|one, other| ArgSig {
-                kind: unify_kinds(one.kind, other.kind).unwrap_or(Kind::Error),
-                width: Width::Flexible,
-                family: if one.family == other.family {
-                    one.family
-                } else {
-                    None
-                },
-                node: if one.node == other.node {
-                    one.node
-                } else {
-                    ArgReference::Unknown
-                },
-            }),
+            element: sigs
+                .iter()
+                .cloned()
+                .reduce(|one, other| ArgSig {
+                    kind: unify_kinds(one.kind, other.kind).unwrap_or(Kind::Error),
+                    width: Width::Flexible,
+                    family: if one.family == other.family {
+                        one.family
+                    } else {
+                        None
+                    },
+                    node: ArgReference::Unknown,
+                })
+                .map(|element| ArgSig {
+                    node: element_references(sigs),
+                    ..element
+                }),
         },
+    }
+}
+
+fn element_references(sigs: &[ArgSig]) -> ArgReference {
+    let mut items = Vec::with_capacity(sigs.len());
+    for sig in sigs {
+        match &sig.node {
+            ArgReference::Unknown => return ArgReference::Unknown,
+            ArgReference::Instance(item) => items.push(*item),
+            ArgReference::Among(among) => items.extend(among.iter().copied()),
+        }
+    }
+    items.sort_unstable();
+    items.dedup();
+    match items.as_slice() {
+        [] => ArgReference::Unknown,
+        [item] => ArgReference::Instance(*item),
+        _ => ArgReference::Among(items.into()),
     }
 }
 
