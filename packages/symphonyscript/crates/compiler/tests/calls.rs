@@ -306,8 +306,15 @@ fn a_call_that_a_bounded_expansion_repeats_is_named_once_with_its_levels() {
             "{text}"
         );
     };
-    let defaults = Compiler::new(&vocabulary()).expect("the vocabulary compiles");
-    limited(&defaults, &format!("{input}{deep}{use_f}"), "999,999");
+    let ten_thousand = Compiler::with_limits(
+        &vocabulary(),
+        Limits {
+            inlined_calls: 10_000,
+            ..Limits::default()
+        },
+    )
+    .expect("the vocabulary compiles");
+    limited(&ten_thousand, &format!("{input}{deep}{use_f}"), "9,999");
     let thousand = Compiler::with_limits(
         &vocabulary(),
         Limits {
@@ -1131,14 +1138,6 @@ fn a_join_whose_length_would_reach_two_to_the_thirty_one_draws_length_limit_befo
             ],
             limited,
         ),
-        (
-            &[
-                "input i = 0\n",
-                "fn f(n) bounded 31 else [1]: f(n - 1) + f(n - 1)\n",
-                "Clip c:\n    Note/(len(f(i)))\n",
-            ],
-            &[(Code::InlineLimit, "f(n - 1)")],
-        ),
         (&[doubling, "Clip c:\n    Note/(60 + len(f(30)))\n"], &[]),
         (&[doubling, "Clip c:\n    Note/(60 + f(30)[5])\n"], &[]),
         (
@@ -1151,6 +1150,33 @@ fn a_join_whose_length_would_reach_two_to_the_thirty_one_draws_length_limit_befo
         ),
     ];
     support::assert_rows_in_every_order(&vocabulary(), rows);
+    let reactive = [
+        "input i = 0\n",
+        "fn f(n) bounded 31 else [1]: f(n - 1) + f(n - 1)\n",
+        "Clip c:\n    Note/(len(f(i)))\n",
+    ];
+    let inline_limited = vec![(Code::InlineLimit, "f(n - 1)".to_string())];
+    let defaults = Compiler::new(&vocabulary()).expect("the vocabulary compiles");
+    assert_eq!(
+        support::error_texts(&defaults, &reactive.concat()),
+        inline_limited
+    );
+    let thousand = Compiler::with_limits(
+        &vocabulary(),
+        Limits {
+            inlined_calls: 1000,
+            ..Limits::default()
+        },
+    )
+    .expect("the vocabulary compiles");
+    for order in support::permutations(&reactive) {
+        let text = order.concat();
+        assert_eq!(
+            support::error_texts(&thousand, &text),
+            inline_limited,
+            "{text}"
+        );
+    }
 }
 
 #[test]

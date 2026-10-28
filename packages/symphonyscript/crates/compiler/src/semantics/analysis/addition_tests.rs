@@ -632,16 +632,19 @@ fn ordering_the_bindings_of_an_expanded_program_is_linear_in_it() {
     let with_let = "    let a = held[i]\n    if i >= len(held) then a else a + walk(i + 1)\n";
     let without_let = "    if i >= len(held) then held[i] else held[i] + walk(i + 1)\n";
     let unexpected = "    let a = held[i]\n    if i >= len(held) then 0 else (if a > 0 then 1 else 0) + walk(i + 1)\n";
-    for body in [with_let, unexpected] {
-        assert_linear([800, 1_600, 6_400].map(|levels| {
+    let points = |body: &str| {
+        [800, 1_600, 6_400].map(|levels| {
             (
                 levels,
                 read_walk(&walk_program(usize::try_from(levels).unwrap_or(0), body)),
             )
-        }));
-    }
+        })
+    };
+    let with_let_points = points(with_let);
+    assert_linear(with_let_points);
+    assert_linear(points(unexpected));
     let plain = read_walk(&walk_program(6_400, without_let));
-    let held = read_walk(&walk_program(6_400, with_let));
+    let [.., (_, held)] = with_let_points;
     assert!(held <= 4 * plain, "{plain} {held}");
     assert_linear([1_000, 2_000, 4_000].map(|functions| {
         (
