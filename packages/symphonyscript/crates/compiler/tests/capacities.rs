@@ -105,8 +105,8 @@ fn a_state_with_no_capacity_is_an_error() {
     }
 }
 
-fn ordered_codes(items: &[&str]) -> Vec<(String, Vec<Code>)> {
-    in_every_order(items)
+fn ordered_codes(orders: support::Orders, items: &[&str]) -> Vec<(String, Vec<Code>)> {
+    in_orders(orders, items)
         .into_iter()
         .map(|text| {
             let found = codes(&text);
@@ -116,6 +116,10 @@ fn ordered_codes(items: &[&str]) -> Vec<(String, Vec<Code>)> {
 }
 
 fn assert_ordered_capacity(items: &[&str], value: &str, capacity: u32) {
+    assert_ordered_capacity_in(support::Orders::Every, items, value, capacity);
+}
+
+fn assert_ordered_capacity_in(orders: support::Orders, items: &[&str], value: &str, capacity: u32) {
     let mut probes = vec![(capacity, vec![])];
     if capacity > 1 {
         probes.push((capacity - 1, vec![Code::CapacityExceeded]));
@@ -125,23 +129,27 @@ fn assert_ordered_capacity(items: &[&str], value: &str, capacity: u32) {
         let mut all: Vec<&str> = items.to_vec();
         all.push(&probe);
         all.push("Clip c:\n    Note/(probe[0])\n");
-        for (text, found) in ordered_codes(&all) {
+        for (text, found) in ordered_codes(orders, &all) {
             assert_eq!(found, expected, "{text}");
         }
     }
 }
 
 fn assert_ordered_codes(items: &[&str], expected: &[Code]) {
-    for (text, found) in ordered_codes(items) {
+    assert_ordered_codes_in(support::Orders::Every, items, expected);
+}
+
+fn assert_ordered_codes_in(orders: support::Orders, items: &[&str], expected: &[Code]) {
+    for (text, found) in ordered_codes(orders, items) {
         assert_eq!(found, expected, "{text}");
     }
 }
 
 const NOTE: &str = "input note = 60\n";
 
-#[test]
-fn the_state_rules_see_the_history_reads_an_inlined_call_reaches() {
-    assert_ordered_codes(
+fn the_state_rules_see_the_history_reads_an_inlined_call_reaches_in(orders: support::Orders) {
+    assert_ordered_codes_in(
+        orders,
         &[
             NOTE,
             "fn f(x): x + [note]\n",
@@ -155,14 +163,15 @@ fn the_state_rules_see_the_history_reads_an_inlined_call_reaches() {
         "fn push(xs, x): (xs + [x])[^8..]\n",
         "state recent = push(recent{1, []}, note)\n",
     ];
-    assert_ordered_capacity(&push, "recent", 8);
+    assert_ordered_capacity_in(orders, &push, "recent", 8);
     let keep = [
         NOTE,
         "fn keep(xs): xs[^8..]\n",
         "state s = keep(s{1, []} + [note])\n",
     ];
-    assert_ordered_capacity(&keep, "s", 8);
-    assert_ordered_codes(
+    assert_ordered_capacity_in(orders, &keep, "s", 8);
+    assert_ordered_codes_in(
+        orders,
         &[
             NOTE,
             "fn id(x): x\n",
@@ -178,26 +187,40 @@ fn the_state_rules_see_the_history_reads_an_inlined_call_reaches() {
     ];
     let mut gain = step.to_vec();
     gain.push("Clip c | gain=s:\n    Note\n");
-    assert_ordered_codes(&gain, &[]);
+    assert_ordered_codes_in(orders, &gain, &[]);
     let mut pitch = step.to_vec();
     pitch.push("Clip c:\n    Note/(s)\n");
-    assert_ordered_codes(&pitch, &[Code::FloatToInteger]);
+    assert_ordered_codes_in(orders, &pitch, &[Code::FloatToInteger]);
 }
 
 #[test]
-fn a_states_fixed_array_is_settled_over_its_group() {
+fn the_state_rules_see_the_history_reads_an_inlined_call_reaches() {
+    the_state_rules_see_the_history_reads_an_inlined_call_reaches_in(
+        support::Orders::ForwardAndReversed,
+    );
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_the_state_rules_see_the_history_reads_an_inlined_call_reaches() {
+    the_state_rules_see_the_history_reads_an_inlined_call_reaches_in(support::Orders::Every);
+}
+
+fn a_states_fixed_array_is_settled_over_its_group_in(orders: support::Orders) {
     let recent = "state recent = (recent{1, []} + [note])[^8..]\n";
     let last = [NOTE, recent, "state last = recent{1, []}[^1..]\n"];
     let mut read = last.to_vec();
     read.push("Clip c:\n    Note/(last[0])\n");
-    assert_ordered_codes(&read, &[]);
-    assert_ordered_capacity(&last, "last", 1);
-    assert_ordered_capacity(
+    assert_ordered_codes_in(orders, &read, &[]);
+    assert_ordered_capacity_in(orders, &last, "last", 1);
+    assert_ordered_capacity_in(
+        orders,
         &[NOTE, recent, "state older = recent{2, []}[..4]\n"],
         "older",
         4,
     );
-    assert_ordered_capacity(
+    assert_ordered_capacity_in(
+        orders,
         &[
             NOTE,
             "state p = (q{1, []} + [note])[^1000000000..]\n",
@@ -211,7 +234,8 @@ fn a_states_fixed_array_is_settled_over_its_group() {
         "state[3] echo = ring{3, []}[^5..]\n",
         "state[3] echo = ring{3, [0]}[^5..]\n",
     ] {
-        assert_ordered_codes(
+        assert_ordered_codes_in(
+            orders,
             &[
                 NOTE,
                 ring,
@@ -220,9 +244,10 @@ fn a_states_fixed_array_is_settled_over_its_group() {
             ],
             &[],
         );
-        assert_ordered_capacity(&[NOTE, ring, echo], "echo", 5);
+        assert_ordered_capacity_in(orders, &[NOTE, ring, echo], "echo", 5);
     }
-    assert_ordered_codes(
+    assert_ordered_codes_in(
+        orders,
         &[
             NOTE,
             "state recent = recent{1, []} + [note]\n",
@@ -230,7 +255,8 @@ fn a_states_fixed_array_is_settled_over_its_group() {
         ],
         &[Code::UnboundedState],
     );
-    assert_ordered_codes(
+    assert_ordered_codes_in(
+        orders,
         &[
             NOTE,
             "state p = q{1, []} + [note]\n",
@@ -239,6 +265,17 @@ fn a_states_fixed_array_is_settled_over_its_group() {
         ],
         &[Code::UnboundedState],
     );
+}
+
+#[test]
+fn a_states_fixed_array_is_settled_over_its_group() {
+    a_states_fixed_array_is_settled_over_its_group_in(support::Orders::ForwardAndReversed);
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_a_states_fixed_array_is_settled_over_its_group() {
+    a_states_fixed_array_is_settled_over_its_group_in(support::Orders::Every);
 }
 
 #[test]
@@ -333,7 +370,12 @@ fn a_history_read_of_an_input_takes_its_initial_value_as_its_fallback() {
 type OrderedRow<'a> = (&'a [&'a str], &'a [(Code, &'a str, usize)]);
 
 fn in_every_order(items: &[&str]) -> Vec<String> {
-    support::permutations(items)
+    in_orders(support::Orders::Every, items)
+}
+
+fn in_orders(orders: support::Orders, items: &[&str]) -> Vec<String> {
+    orders
+        .of(items)
         .into_iter()
         .map(|order| order.concat())
         .collect()
@@ -393,8 +435,7 @@ fn a_history_reads_fallback_takes_the_cells_type() {
     }
 }
 
-#[test]
-fn a_history_read_has_its_cells_kind_for_an_input_a_let_and_a_state() {
+fn a_history_read_has_its_cells_kind_for_an_input_a_let_and_a_state_in(orders: support::Orders) {
     let rows: &[support::Row] = &[
         (
             &[
@@ -601,11 +642,23 @@ fn a_history_read_has_its_cells_kind_for_an_input_a_let_and_a_state() {
             &[],
         ),
     ];
-    support::assert_rows_in_every_order(&vocabulary(), rows);
+    support::assert_rows_in_orders(orders, &vocabulary(), rows);
 }
 
 #[test]
-fn a_history_reads_provisional_kind_leaves_no_diagnostic_behind() {
+fn a_history_read_has_its_cells_kind_for_an_input_a_let_and_a_state() {
+    a_history_read_has_its_cells_kind_for_an_input_a_let_and_a_state_in(
+        support::Orders::ForwardAndReversed,
+    );
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_a_history_read_has_its_cells_kind_for_an_input_a_let_and_a_state() {
+    a_history_read_has_its_cells_kind_for_an_input_a_let_and_a_state_in(support::Orders::Every);
+}
+
+fn a_history_reads_provisional_kind_leaves_no_diagnostic_behind_in(orders: support::Orders) {
     let x = "input x = 1\n";
     let gate = "input gate = false\n";
     let held = "input held: i32[..10] = []\n";
@@ -677,7 +730,20 @@ fn a_history_reads_provisional_kind_leaves_no_diagnostic_behind() {
             &[(Code::IndexType, "s")],
         ),
     ];
-    support::assert_rows_in_every_order(&vocabulary(), rows);
+    support::assert_rows_in_orders(orders, &vocabulary(), rows);
+}
+
+#[test]
+fn a_history_reads_provisional_kind_leaves_no_diagnostic_behind() {
+    a_history_reads_provisional_kind_leaves_no_diagnostic_behind_in(
+        support::Orders::ForwardAndReversed,
+    );
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_a_history_reads_provisional_kind_leaves_no_diagnostic_behind() {
+    a_history_reads_provisional_kind_leaves_no_diagnostic_behind_in(support::Orders::Every);
 }
 
 #[test]
@@ -730,16 +796,17 @@ fn a_history_read_of_a_let_whose_initializer_drew_an_error_draws_nothing_of_its_
     support::assert_rows_in_every_order(&vocabulary(), rows);
 }
 
-#[test]
-fn a_history_read_of_a_reactive_let_has_the_lets_layout() {
+fn a_history_read_of_a_reactive_let_has_the_lets_layout_in(orders: support::Orders) {
     let held = "input held: i32[..10] = []\n";
     let played = "let played = held + [note]\n";
-    assert_ordered_capacity(
+    assert_ordered_capacity_in(
+        orders,
         &[held, NOTE, played, "state s = (played{1, []})[^20..]\n"],
         "s",
         11,
     );
-    assert_ordered_capacity(
+    assert_ordered_capacity_in(
+        orders,
         &[
             held,
             NOTE,
@@ -750,7 +817,8 @@ fn a_history_read_of_a_reactive_let_has_the_lets_layout() {
         "s",
         8,
     );
-    assert_ordered_capacity(
+    assert_ordered_capacity_in(
+        orders,
         &[NOTE, "state recent = (recent{1, []} + [note])[^8..]\n"],
         "recent",
         8,
@@ -815,7 +883,18 @@ fn a_history_read_of_a_reactive_let_has_the_lets_layout() {
             &[(Code::TypeMismatch, "pair{1, [0]}")],
         ),
     ];
-    support::assert_rows_in_every_order(&vocabulary(), rows);
+    support::assert_rows_in_orders(orders, &vocabulary(), rows);
+}
+
+#[test]
+fn a_history_read_of_a_reactive_let_has_the_lets_layout() {
+    a_history_read_of_a_reactive_let_has_the_lets_layout_in(support::Orders::ForwardAndReversed);
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_a_history_read_of_a_reactive_let_has_the_lets_layout() {
+    a_history_read_of_a_reactive_let_has_the_lets_layout_in(support::Orders::Every);
 }
 
 #[test]
@@ -857,8 +936,7 @@ fn a_chain_of_slices_keeps_its_capacity_and_its_length() {
     support::assert_rows_in_every_order(&vocabulary(), rows);
 }
 
-#[test]
-fn a_history_read_counts_as_an_operand_of_its_cells_integer_width() {
+fn a_history_read_counts_as_an_operand_of_its_cells_integer_width_in(orders: support::Orders) {
     let wide = "Clip c:\n    Note when s > 3000000000\n";
     let rows: &[support::Row] = &[
         (
@@ -942,11 +1020,25 @@ fn a_history_read_counts_as_an_operand_of_its_cells_integer_width() {
             &[],
         ),
     ];
-    support::assert_rows_in_every_order(&symphonyscript_fixtures::vocabulary(), rows);
+    support::assert_rows_in_orders(orders, &symphonyscript_fixtures::vocabulary(), rows);
 }
 
 #[test]
-fn the_arms_of_a_choice_are_type_checked_against_one_another_whatever_chooses() {
+fn a_history_read_counts_as_an_operand_of_its_cells_integer_width() {
+    a_history_read_counts_as_an_operand_of_its_cells_integer_width_in(
+        support::Orders::ForwardAndReversed,
+    );
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_a_history_read_counts_as_an_operand_of_its_cells_integer_width() {
+    a_history_read_counts_as_an_operand_of_its_cells_integer_width_in(support::Orders::Every);
+}
+
+fn the_arms_of_a_choice_are_type_checked_against_one_another_whatever_chooses_in(
+    orders: support::Orders,
+) {
     let a = "input a: i32[..5] = []\n";
     let flag = "input flag = false\n";
     let rows: &[support::Row] = &[
@@ -988,7 +1080,7 @@ fn the_arms_of_a_choice_are_type_checked_against_one_another_whatever_chooses() 
             &[(Code::TypeMismatch, "if true then [note, note] else 5")],
         ),
     ];
-    support::assert_rows_in_every_order(&symphonyscript_fixtures::vocabulary(), rows);
+    support::assert_rows_in_orders(orders, &symphonyscript_fixtures::vocabulary(), rows);
     let held = "input held: i32[..4] = [1, 2]\n";
     let note = "input note = 60\n";
     let direct = |value: &'static str| -> [&'static str; 3] { [held, note, value] };
@@ -1053,7 +1145,7 @@ fn the_arms_of_a_choice_are_type_checked_against_one_another_whatever_chooses() 
             &[(Code::TypeMismatch, "if false then f(0) else 5")],
         ),
     ];
-    support::assert_rows_in_every_order(&symphonyscript_fixtures::vocabulary(), rows);
+    support::assert_rows_in_orders(orders, &symphonyscript_fixtures::vocabulary(), rows);
     let flag = "input flag = true\n";
     let grid = "input rows: i32[3][..10] = [[1, 2, 3]]\n";
     let first = "Clip c:\n    Note/(g(0)[0])\n";
@@ -1377,7 +1469,7 @@ fn the_arms_of_a_choice_are_type_checked_against_one_another_whatever_chooses() 
             &[],
         ),
     ];
-    support::assert_rows_in_every_order(&symphonyscript_fixtures::vocabulary(), rows);
+    support::assert_rows_in_orders(orders, &symphonyscript_fixtures::vocabulary(), rows);
     let rows: &[support::Row] = &[
         (
             &[
@@ -1394,7 +1486,7 @@ fn the_arms_of_a_choice_are_type_checked_against_one_another_whatever_chooses() 
             &[],
         ),
     ];
-    support::assert_rows_in_every_order(&symphonyscript_fixtures::native_vocabulary(), rows);
+    support::assert_rows_in_orders(orders, &symphonyscript_fixtures::native_vocabulary(), rows);
     let sec = "input sec = 0\n";
     let rows: &[support::Row] = &[
         (
@@ -1416,11 +1508,25 @@ fn the_arms_of_a_choice_are_type_checked_against_one_another_whatever_chooses() 
             &[],
         ),
     ];
-    support::assert_rows_in_every_order(&support::to_array_vocabulary(), rows);
+    support::assert_rows_in_orders(orders, &support::to_array_vocabulary(), rows);
 }
 
 #[test]
-fn an_annotation_holds_only_an_initializer_of_its_rows() {
+fn the_arms_of_a_choice_are_type_checked_against_one_another_whatever_chooses() {
+    the_arms_of_a_choice_are_type_checked_against_one_another_whatever_chooses_in(
+        support::Orders::ForwardAndReversed,
+    );
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_the_arms_of_a_choice_are_type_checked_against_one_another_whatever_chooses() {
+    the_arms_of_a_choice_are_type_checked_against_one_another_whatever_chooses_in(
+        support::Orders::Every,
+    );
+}
+
+fn an_annotation_holds_only_an_initializer_of_its_rows_in(orders: support::Orders) {
     let cells = [
         "input a: i32[..5] = []\n",
         "input g: i32[3][..10] = []\n",
@@ -1473,10 +1579,21 @@ fn an_annotation_holds_only_an_initializer_of_its_rows() {
         let mut items: Vec<&str> = cells.to_vec();
         items.push(declaration);
         items.push(clip);
-        for text in in_every_order(&items) {
+        for text in in_orders(orders, &items) {
             assert_eq!(codes(&text), expected.to_vec(), "{text}");
         }
     }
+}
+
+#[test]
+fn an_annotation_holds_only_an_initializer_of_its_rows() {
+    an_annotation_holds_only_an_initializer_of_its_rows_in(support::Orders::ForwardAndReversed);
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_an_annotation_holds_only_an_initializer_of_its_rows() {
+    an_annotation_holds_only_an_initializer_of_its_rows_in(support::Orders::Every);
 }
 
 #[test]
@@ -1556,8 +1673,7 @@ fn a_type_whose_length_or_capacity_is_missing_or_malformed_is_a_placeholder() {
     );
 }
 
-#[test]
-fn a_state_settled_as_a_fixed_array_is_used_as_a_fixed_array() {
+fn a_state_settled_as_a_fixed_array_is_used_as_a_fixed_array_in(orders: support::Orders) {
     let fixed = "state s = (s{1, [0, 0]} + [note])[1..]\n";
     let variable = "state r = (r{1, []} + [note])[^8..]\n";
     let rows: &[OrderedRow] = &[
@@ -1611,13 +1727,26 @@ fn a_state_settled_as_a_fixed_array_is_used_as_a_fixed_array() {
         ),
     ];
     for (items, expected) in rows {
-        for text in in_every_order(items) {
+        for text in in_orders(orders, items) {
             support::expect_codes(&text, expected);
         }
     }
 }
 
-fn compile_time_condition_rows(part: usize) {
+#[test]
+fn a_state_settled_as_a_fixed_array_is_used_as_a_fixed_array() {
+    a_state_settled_as_a_fixed_array_is_used_as_a_fixed_array_in(
+        support::Orders::ForwardAndReversed,
+    );
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_a_state_settled_as_a_fixed_array_is_used_as_a_fixed_array() {
+    a_state_settled_as_a_fixed_array_is_used_as_a_fixed_array_in(support::Orders::Every);
+}
+
+fn compile_time_condition_rows(orders: support::Orders, part: usize, parts: usize) {
     let cells = [
         "input note = 60\n",
         "input a: i32[..5] = []\n",
@@ -1691,10 +1820,10 @@ fn compile_time_condition_rows(part: usize) {
             &[(Code::RaggedArray, "[[1], 2]", 0)],
         ),
     ];
-    for (declarations, expected) in rows.iter().skip(part).step_by(2) {
+    for (declarations, expected) in rows.iter().skip(part).step_by(parts) {
         let mut items: Vec<&str> = cells.to_vec();
         items.extend_from_slice(declarations);
-        for text in in_every_order(&items) {
+        for text in in_orders(orders, &items) {
             support::expect_codes(&text, expected);
         }
     }
@@ -1702,23 +1831,33 @@ fn compile_time_condition_rows(part: usize) {
         ("if flag then a else [1, 2, 3, 4, 5, 6, 7]", 7),
         ("if flag then [note, note] else [note, note, note]", 3),
     ];
-    for (value, capacity) in choices.iter().skip(part).step_by(2) {
-        assert_ordered_capacity(&cells, value, *capacity);
+    for (value, capacity) in choices.iter().skip(part).step_by(parts) {
+        assert_ordered_capacity_in(orders, &cells, value, *capacity);
     }
 }
 
 #[test]
-fn a_compile_time_condition_chooses_its_arm_before_layout_and_capacity_in_its_odd_rows() {
-    compile_time_condition_rows(0);
+fn a_compile_time_condition_chooses_its_arm_before_layout_and_capacity_forward_and_reversed() {
+    compile_time_condition_rows(support::Orders::ForwardAndReversed, 0, 1);
 }
 
 #[test]
-fn a_compile_time_condition_chooses_its_arm_before_layout_and_capacity_in_its_even_rows() {
-    compile_time_condition_rows(1);
+#[ignore = "exhaustive"]
+fn exhaustive_a_compile_time_condition_chooses_its_arm_before_layout_and_capacity_in_its_odd_rows()
+{
+    compile_time_condition_rows(support::Orders::Every, 0, 2);
 }
 
 #[test]
-fn a_compile_time_match_on_a_bare_variant_chooses_its_arm_before_layout_and_capacity() {
+#[ignore = "exhaustive"]
+fn exhaustive_a_compile_time_condition_chooses_its_arm_before_layout_and_capacity_in_its_even_rows()
+{
+    compile_time_condition_rows(support::Orders::Every, 1, 2);
+}
+
+fn a_compile_time_match_on_a_bare_variant_chooses_its_arm_before_layout_and_capacity_in(
+    orders: support::Orders,
+) {
     let cell = "input a: i32[..5] = []\n";
     let probe = "let probe: i32[..5] = m\n";
     let clip = "Clip c:\n    Note/(probe[0])\n";
@@ -1759,11 +1898,12 @@ fn a_compile_time_match_on_a_bare_variant_chooses_its_arm_before_layout_and_capa
     for (declarations, expected) in rows {
         let mut items: Vec<&str> = vec![cell, probe, clip];
         items.extend_from_slice(declarations);
-        for text in in_every_order(&items) {
+        for text in in_orders(orders, &items) {
             support::expect_codes(&text, expected);
         }
     }
-    assert_ordered_capacity(
+    assert_ordered_capacity_in(
+        orders,
         &[cell, "input v = Wave::Saw\n"],
         "match v:\n    Saw: a\n    else: [1, 2, 3, 4, 5, 6, 7]",
         7,
@@ -1771,14 +1911,28 @@ fn a_compile_time_match_on_a_bare_variant_chooses_its_arm_before_layout_and_capa
 }
 
 #[test]
-fn a_group_of_states_takes_its_least_capacities_together() {
+fn a_compile_time_match_on_a_bare_variant_chooses_its_arm_before_layout_and_capacity() {
+    a_compile_time_match_on_a_bare_variant_chooses_its_arm_before_layout_and_capacity_in(
+        support::Orders::ForwardAndReversed,
+    );
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_a_compile_time_match_on_a_bare_variant_chooses_its_arm_before_layout_and_capacity() {
+    a_compile_time_match_on_a_bare_variant_chooses_its_arm_before_layout_and_capacity_in(
+        support::Orders::Every,
+    );
+}
+
+fn a_group_of_states_takes_its_least_capacities_together_in(orders: support::Orders) {
     let pair = [
         NOTE,
         "state p = (q{1, []} + [note])[^5..]\n",
         "state q = (p{1, []} + [note, note])[^7..]\n",
     ];
-    assert_ordered_capacity(&pair, "p", 5);
-    assert_ordered_capacity(&pair, "q", 7);
+    assert_ordered_capacity_in(orders, &pair, "p", 5);
+    assert_ordered_capacity_in(orders, &pair, "q", 7);
     let ring = [
         NOTE,
         "state s0 = (s2{1, []} + [note])[^8..]\n",
@@ -1786,8 +1940,19 @@ fn a_group_of_states_takes_its_least_capacities_together() {
         "state s2 = (s1{1, []} + [note])[^8..]\n",
     ];
     for state in ["s0", "s1", "s2"] {
-        assert_ordered_capacity(&ring, state, 8);
+        assert_ordered_capacity_in(orders, &ring, state, 8);
     }
+}
+
+#[test]
+fn a_group_of_states_takes_its_least_capacities_together() {
+    a_group_of_states_takes_its_least_capacities_together_in(support::Orders::ForwardAndReversed);
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_a_group_of_states_takes_its_least_capacities_together() {
+    a_group_of_states_takes_its_least_capacities_together_in(support::Orders::Every);
 }
 
 #[test]
@@ -1945,8 +2110,9 @@ fn a_capacity_reaching_two_to_the_thirty_one_draws_length_limit_where_it_arises(
     );
 }
 
-#[test]
-fn a_runtime_choice_between_a_variable_and_a_fixed_array_is_one_variable_array_wherever_read() {
+fn a_runtime_choice_between_a_variable_and_a_fixed_array_is_one_variable_array_wherever_read_in(
+    orders: support::Orders,
+) {
     let held = "input held: i32[..10] = []\n";
     let gate = "input gate = false\n";
     let step = "input step = 0\n";
@@ -2041,7 +2207,7 @@ fn a_runtime_choice_between_a_variable_and_a_fixed_array_is_one_variable_array_w
             &[],
         ),
     ];
-    support::assert_rows_in_every_order(&symphonyscript_fixtures::vocabulary(), rows);
+    support::assert_rows_in_orders(orders, &symphonyscript_fixtures::vocabulary(), rows);
     let state = "state s = if gate then held else s{1, [0]}\n";
     for (value, capacity) in [
         ("if gate then held else [0]", 10),
@@ -2057,6 +2223,22 @@ fn a_runtime_choice_between_a_variable_and_a_fixed_array_is_one_variable_array_w
         &format!("input held: i32[..10] = []\ninput gate = false\n{state}"),
         "s",
         10,
+    );
+}
+
+#[test]
+fn a_runtime_choice_between_a_variable_and_a_fixed_array_is_one_variable_array_wherever_read() {
+    a_runtime_choice_between_a_variable_and_a_fixed_array_is_one_variable_array_wherever_read_in(
+        support::Orders::ForwardAndReversed,
+    );
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_a_runtime_choice_between_a_variable_and_a_fixed_array_is_one_variable_array_wherever_read()
+ {
+    a_runtime_choice_between_a_variable_and_a_fixed_array_is_one_variable_array_wherever_read_in(
+        support::Orders::Every,
     );
 }
 

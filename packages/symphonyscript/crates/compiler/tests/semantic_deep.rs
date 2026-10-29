@@ -49,7 +49,8 @@ fn bodies(head: &str, cycle: &[&str]) -> String {
 }
 
 #[test]
-fn m1_deep_brackets_and_indexes_pass_every_stage_on_a_small_stack() {
+#[ignore = "stress"]
+fn stress_m1_deep_brackets_and_indexes_pass_every_stage_on_a_small_stack() {
     on_small_stack(|| {
         let text = format!(
             "let a = {}\nlet b = {}\nlet c = {}\nlet d = {}\n",
@@ -66,7 +67,8 @@ fn m1_deep_brackets_and_indexes_pass_every_stage_on_a_small_stack() {
 }
 
 #[test]
-fn m1_deep_operators_calls_and_strings_pass_every_stage_on_a_small_stack() {
+#[ignore = "stress"]
+fn stress_m1_deep_operators_calls_and_strings_pass_every_stage_on_a_small_stack() {
     on_small_stack(|| {
         let text = format!(
             "let a = {}1\nlet b = {}x\nlet c = {}\nlet d = {}\nlet e = 2{}\nClip c:\n    Note/{}\n",
@@ -85,7 +87,8 @@ fn m1_deep_operators_calls_and_strings_pass_every_stage_on_a_small_stack() {
 }
 
 #[test]
-fn m1_deep_placements_and_bodies_pass_every_stage_on_a_small_stack() {
+#[ignore = "stress"]
+fn stress_m1_deep_placements_and_bodies_pass_every_stage_on_a_small_stack() {
     on_small_stack(|| {
         let text = format!("Clip c:\n    {}\n", nested("[", "Note", "]"));
         assert_eq!(
@@ -110,7 +113,9 @@ fn m1_deep_placements_and_bodies_pass_every_stage_on_a_small_stack() {
 }
 
 #[test]
-fn deep_valid_programs_a_deep_array_type_and_a_long_call_chain_pass_check_on_a_small_stack() {
+#[ignore = "stress"]
+fn stress_deep_valid_programs_a_deep_array_type_and_a_long_call_chain_pass_check_on_a_small_stack()
+{
     let workers: Vec<_> = deep_projects()
         .into_iter()
         .map(|project| {
@@ -132,7 +137,8 @@ fn deep_valid_programs_a_deep_array_type_and_a_long_call_chain_pass_check_on_a_s
 }
 
 #[test]
-fn deeply_nested_kinds_pass_check_on_a_small_stack() {
+#[ignore = "stress"]
+fn stress_deeply_nested_kinds_pass_check_on_a_small_stack() {
     on_small_stack(|| {
         let mut v = Vocabulary::builder("nested");
         let group = v.node("Group");
@@ -165,7 +171,8 @@ fn deeply_nested_kinds_pass_check_on_a_small_stack() {
 }
 
 #[test]
-fn a_bounded_function_expanded_100000_levels_deep_passes_check_on_a_small_stack() {
+#[ignore = "stress"]
+fn stress_a_bounded_function_expanded_100000_levels_deep_passes_check_on_a_small_stack() {
     on_small_stack(|| {
         let expanded = format!(
             "input held: i32[..4] = []\nfn walk(i) bounded {DEPTH} else 0:\n    if i >= len(held) then 0 else held[i] + walk(i + 1)\nClip c:\n    Note/(walk(0))\n"
@@ -179,7 +186,8 @@ fn a_bounded_function_expanded_100000_levels_deep_passes_check_on_a_small_stack(
 }
 
 #[test]
-fn a_chain_of_100000_slices_passes_check_on_a_small_stack() {
+#[ignore = "stress"]
+fn stress_a_chain_of_100000_slices_passes_check_on_a_small_stack() {
     on_small_stack(|| {
         let chained = format!(
             "input held: i32[..4] = []\nlet s = held{}\nClip c:\n    Note/(s[0])\n",

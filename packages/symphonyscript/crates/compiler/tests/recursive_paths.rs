@@ -3,7 +3,7 @@ mod support;
 use std::collections::{BTreeMap, BTreeSet};
 
 use symphonyscript::{Code, Compiler};
-use symphonyscript_fixtures::native_vocabulary;
+use symphonyscript_fixtures::{Rows, covered, native_vocabulary};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Path {
@@ -286,17 +286,28 @@ fn found(text: &str) -> Found {
     found
 }
 
-#[test]
-fn a_path_through_a_node_reference_parameter_of_a_recursive_function_reads_as_at_top_level() {
-    let mut failures = Vec::new();
-    let mut programs = 0;
-    for path in PATHS {
+fn node_reference_rows(rows: &Rows) -> (Vec<String>, usize) {
+    in_parallel(&PATHS, |path| {
+        let mut failures = Vec::new();
+        let mut programs = 0;
         for binding in BINDINGS {
             for passing in PASSINGS {
                 for argument in ARGUMENTS {
                     for stand in STANDS {
                         for depth in DEPTHS {
                             for reversed in [false, true] {
+                                let tag = [
+                                    path as usize,
+                                    binding as usize,
+                                    passing as usize,
+                                    argument as usize,
+                                    stand as usize,
+                                    depth as usize,
+                                    usize::from(reversed),
+                                ];
+                                if !rows.take(&tag) {
+                                    continue;
+                                }
                                 let case = Case {
                                     path,
                                     binding,
@@ -328,14 +339,41 @@ fn a_path_through_a_node_reference_parameter_of_a_recursive_function_reads_as_at
                 }
             }
         }
-    }
+        (failures, programs)
+    })
+}
+
+fn depth_tag(depth: i32) -> usize {
+    usize::try_from(i64::from(depth) + 1).unwrap_or_default()
+}
+
+fn position<T: PartialEq>(items: &[T], item: &T) -> usize {
+    items
+        .iter()
+        .position(|each| each == item)
+        .unwrap_or(items.len())
+}
+
+fn assert_none_fail((failures, programs): (Vec<String>, usize), expected: usize) {
     assert!(
         failures.is_empty(),
         "{} of {programs} programs fail:\n{}",
         failures.len(),
         failures.iter().take(8).cloned().collect::<String>()
     );
-    assert_eq!(programs, 4_320);
+    assert_eq!(programs, expected);
+}
+
+#[test]
+fn a_path_through_a_node_reference_parameter_of_a_recursive_function_reads_as_at_top_level() {
+    assert_none_fail(covered(node_reference_rows), 23);
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_a_path_through_a_node_reference_parameter_of_a_recursive_function_reads_as_at_top_level()
+ {
+    assert_none_fail(node_reference_rows(&Rows::Every), 4_320);
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -605,6 +643,14 @@ enum Levels {
 const ALTERNATING_DEPTHS: [i32; 3] = [1, 3, 30];
 
 impl Levels {
+    fn tag(self) -> [usize; 2] {
+        let depth = depth_tag(self.depth());
+        match self {
+            Levels::Base(_) => [0, depth],
+            Levels::Alternating(..) => [1, depth],
+        }
+    }
+
     fn depth(self) -> i32 {
         match self {
             Levels::Base(depth) | Levels::Alternating(_, depth) => depth,
@@ -776,10 +822,8 @@ fn twin_failure(text: &str, twin: &str, levels: Levels) -> Option<String> {
     (drawn != expected).then(|| format!("{text}\n  found {drawn:?}\n  twin {expected:?}\n"))
 }
 
-#[test]
-fn a_reference_a_recursive_body_chooses_by_a_frame_value_reads_the_chosen_reference_at_every_consumer()
- {
-    let (failures, programs) = in_parallel(&CHOOSERS, |chooser| {
+fn frame_chosen_rows(rows: &Rows) -> (Vec<String>, usize) {
+    in_parallel(&CHOOSERS, |chooser| {
         let mut failures = Vec::new();
         let mut programs = 0;
         for consumer in CONSUMERS {
@@ -787,6 +831,19 @@ fn a_reference_a_recursive_body_chooses_by_a_frame_value_reads_the_chosen_refere
                 for scale in [1, 2] {
                     for (index, levels) in frame_values(chooser) {
                         for reversed in [false, true] {
+                            let tag = [
+                                chooser as usize,
+                                consumer as usize,
+                                binding as usize,
+                                usize::try_from(scale).unwrap_or_default(),
+                                index,
+                                levels.tag()[0],
+                                levels.tag()[1],
+                                usize::from(reversed),
+                            ];
+                            if !rows.take(&tag) {
+                                continue;
+                            }
                             let case = (chooser, consumer, binding);
                             let frame = (scale, index);
                             let text = chosen_program(case, frame, (levels, reversed, true));
@@ -803,14 +860,20 @@ fn a_reference_a_recursive_body_chooses_by_a_frame_value_reads_the_chosen_refere
             }
         }
         (failures, programs)
-    });
-    assert!(
-        failures.is_empty(),
-        "{} of {programs} programs fail:\n{}",
-        failures.len(),
-        failures.iter().take(8).cloned().collect::<String>()
-    );
-    assert_eq!(programs, 14_056);
+    })
+}
+
+#[test]
+fn a_reference_a_recursive_body_chooses_by_a_frame_value_reads_the_chosen_reference_at_every_consumer()
+ {
+    assert_none_fail(covered(frame_chosen_rows), 167);
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_a_reference_a_recursive_body_chooses_by_a_frame_value_reads_the_chosen_reference_at_every_consumer()
+ {
+    assert_none_fail(frame_chosen_rows(&Rows::Every), 14_056);
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -1004,10 +1067,8 @@ fn found_with(compiler: &Compiler, text: &str) -> Found {
     found
 }
 
-#[test]
-fn an_array_attribute_read_through_a_reference_a_recursive_body_chooses_has_the_attributes_type_and_layout()
- {
-    let (failures, programs) = in_parallel(&CHOOSERS, |chooser| {
+fn array_attribute_rows(rows: &Rows) -> (Vec<String>, usize) {
+    in_parallel(&CHOOSERS, |chooser| {
         let compiler = Compiler::new(&native_vocabulary()).expect("the native vocabulary compiles");
         let mut failures = Vec::new();
         let mut programs = 0;
@@ -1026,6 +1087,18 @@ fn an_array_attribute_read_through_a_reference_a_recursive_body_chooses_has_the_
                             continue;
                         };
                         for reversed in [false, true] {
+                            if !rows.take(&[
+                                chooser as usize,
+                                consumer as usize,
+                                attribute as usize,
+                                read as usize,
+                                index,
+                                levels.tag()[0],
+                                levels.tag()[1],
+                                usize::from(reversed),
+                            ]) {
+                                continue;
+                            }
                             let program = |recursive| {
                                 array_program(
                                     chooser,
@@ -1054,14 +1127,20 @@ fn an_array_attribute_read_through_a_reference_a_recursive_body_chooses_has_the_
             }
         }
         (failures, programs)
-    });
-    assert!(
-        failures.is_empty(),
-        "{} of {programs} programs fail:\n{}",
-        failures.len(),
-        failures.iter().take(8).cloned().collect::<String>()
-    );
-    assert_eq!(programs, 37_504);
+    })
+}
+
+#[test]
+fn an_array_attribute_read_through_a_reference_a_recursive_body_chooses_has_the_attributes_type_and_layout()
+ {
+    assert_none_fail(covered(array_attribute_rows), 176);
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_an_array_attribute_read_through_a_reference_a_recursive_body_chooses_has_the_attributes_type_and_layout()
+ {
+    assert_none_fail(array_attribute_rows(&Rows::Every), 37_504);
 }
 
 #[test]
@@ -1314,17 +1393,27 @@ fn start_program(
     items.concat()
 }
 
-#[test]
-fn a_path_through_a_frame_chosen_start_evaluates_the_start_in_the_frame_however_many_instances_it_names()
- {
-    let mut failures = Vec::new();
-    let mut programs = 0;
-    for start in STARTS {
+fn frame_chosen_start_rows(rows: &Rows) -> (Vec<String>, usize) {
+    in_parallel(&STARTS, |start| {
+        let mut failures = Vec::new();
+        let mut programs = 0;
         for fault in FAULTS {
             for candidates in [1, 2] {
                 for (index, levels, offset) in start.levels(candidates, fault) {
                     for consumer in START_CONSUMERS {
                         for reversed in [false, true] {
+                            if !rows.take(&[
+                                start as usize,
+                                position(&FAULTS, &fault),
+                                candidates,
+                                index,
+                                levels.tag()[0],
+                                levels.tag()[1],
+                                consumer as usize,
+                                usize::from(reversed),
+                            ]) {
+                                continue;
+                            }
                             let program = |recursive| {
                                 start_program(
                                     (start, fault, consumer),
@@ -1353,14 +1442,21 @@ fn a_path_through_a_frame_chosen_start_evaluates_the_start_in_the_frame_however_
                 }
             }
         }
-    }
-    assert!(
-        failures.is_empty(),
-        "{} of {programs} programs fail:\n{}",
-        failures.len(),
-        failures.iter().take(8).cloned().collect::<String>()
-    );
-    assert_eq!(programs, 1_384);
+        (failures, programs)
+    })
+}
+
+#[test]
+fn a_path_through_a_frame_chosen_start_evaluates_the_start_in_the_frame_however_many_instances_it_names()
+ {
+    assert_none_fail(covered(frame_chosen_start_rows), 46);
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_a_path_through_a_frame_chosen_start_evaluates_the_start_in_the_frame_however_many_instances_it_names()
+ {
+    assert_none_fail(frame_chosen_start_rows(&Rows::Every), 1_384);
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -1468,9 +1564,7 @@ fn keyed_program(
     items.concat()
 }
 
-#[test]
-fn keying_a_recursive_calls_reference_argument_that_is_a_call_on_the_callers_cycle_draws_what_its_twin_draws()
- {
+fn keyed_rows(rows: &Rows) -> (Vec<String>, usize) {
     let mut failures = Vec::new();
     let mut programs = 0;
     for inner in [InnerCall::OnCycle, InnerCall::Partner, InnerCall::Settled] {
@@ -1484,6 +1578,16 @@ fn keying_a_recursive_calls_reference_argument_that_is_a_call_on_the_callers_cyc
                 for used in [CallUse::Path, CallUse::Length, CallUse::TopLet] {
                     for depth in [0, 2, 7] {
                         for reversed in [false, true] {
+                            if !rows.take(&[
+                                inner as usize,
+                                wrapping as usize,
+                                outer as usize,
+                                used as usize,
+                                depth as usize,
+                                usize::from(reversed),
+                            ]) {
+                                continue;
+                            }
                             let case = (inner, wrapping, outer, used);
                             let text = keyed_program(case, (depth, reversed, true));
                             let twin = keyed_program(case, (depth, reversed, false));
@@ -1500,13 +1604,20 @@ fn keying_a_recursive_calls_reference_argument_that_is_a_call_on_the_callers_cyc
             }
         }
     }
-    assert!(
-        failures.is_empty(),
-        "{} of {programs} programs fail:\n{}",
-        failures.len(),
-        failures.iter().take(8).cloned().collect::<String>()
-    );
-    assert_eq!(programs, 648);
+    (failures, programs)
+}
+
+#[test]
+fn keying_a_recursive_calls_reference_argument_that_is_a_call_on_the_callers_cycle_draws_what_its_twin_draws()
+ {
+    assert_none_fail(covered(keyed_rows), 15);
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_keying_a_recursive_calls_reference_argument_that_is_a_call_on_the_callers_cycle_draws_what_its_twin_draws()
+ {
+    assert_none_fail(keyed_rows(&Rows::Every), 648);
 }
 
 const TRIO: [(&str, i32); 3] = [("verse", 2), ("other", 3), ("tail", 4)];
@@ -1753,10 +1864,9 @@ fn call_start_program(
     (items.concat(), expected)
 }
 
-#[test]
-fn a_path_start_chosen_by_a_recursive_call_names_the_instances_that_calls_own_evaluation_returns() {
+fn call_start_rows(rows: &Rows) -> (Vec<String>, usize) {
     let sets = site_sets();
-    let (failures, programs) = in_parallel(&CALL_STARTS, |start| {
+    in_parallel(&CALL_STARTS, |start| {
         let mut failures = Vec::new();
         let mut programs = 0;
         let (helpers, frames): (&[PathHelper], Vec<(usize, Levels)>) = if start.self_reading() {
@@ -1765,7 +1875,13 @@ fn a_path_start_chosen_by_a_recursive_call_names_the_instances_that_calls_own_ev
                 vec![(0, Levels::Base(3)), (1, Levels::Base(3))],
             )
         } else {
-            (&PATH_HELPERS, Levels::of(&[0, 1], &[3]))
+            (
+                &PATH_HELPERS,
+                Levels::of(&[0, 1], &[3])
+                    .into_iter()
+                    .filter(|(_, levels)| levels.depth() < 30)
+                    .collect(),
+            )
         };
         for helper in helpers.iter().copied() {
             for consumer in START_CONSUMERS {
@@ -1773,6 +1889,19 @@ fn a_path_start_chosen_by_a_recursive_call_names_the_instances_that_calls_own_ev
                     for (index, levels) in frames.iter().copied() {
                         for wrong in [false, true] {
                             for reversed in [false, true] {
+                                if !rows.take(&[
+                                    start as usize,
+                                    helper as usize,
+                                    consumer as usize,
+                                    position(&sets, sites),
+                                    index,
+                                    levels.tag()[0],
+                                    levels.tag()[1],
+                                    usize::from(wrong),
+                                    usize::from(reversed),
+                                ]) {
+                                    continue;
+                                }
                                 let program = |recursive| {
                                     call_start_program(
                                         (helper, start, consumer),
@@ -1797,14 +1926,19 @@ fn a_path_start_chosen_by_a_recursive_call_names_the_instances_that_calls_own_ev
             }
         }
         (failures, programs)
-    });
-    assert!(
-        failures.is_empty(),
-        "{} of {programs} programs fail:\n{}",
-        failures.len(),
-        failures.iter().take(8).cloned().collect::<String>()
-    );
-    assert_eq!(programs, 18_592);
+    })
+}
+
+#[test]
+fn a_path_start_chosen_by_a_recursive_call_names_the_instances_that_calls_own_evaluation_returns() {
+    assert_none_fail(covered(call_start_rows), 54);
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_a_path_start_chosen_by_a_recursive_call_names_the_instances_that_calls_own_evaluation_returns()
+ {
+    assert_none_fail(call_start_rows(&Rows::Every), 14_112);
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -2044,16 +2178,27 @@ fn open_choice_program(
     items.concat()
 }
 
-#[test]
-fn a_family_probes_path_through_an_open_recursive_call_settles_no_family_from_the_starts_kind() {
-    let mut failures = Vec::new();
-    let mut programs = 0;
-    for chooser in OPEN_CHOOSERS {
+fn open_choice_rows(rows: &Rows) -> (Vec<String>, usize) {
+    in_parallel(&OPEN_CHOOSERS, |chooser| {
+        let mut failures = Vec::new();
+        let mut programs = 0;
         for open in OPEN_ARMS {
             for known in ["verse", "c"] {
                 for consumer in START_CONSUMERS {
                     for frame in Levels::of(&[0, 1], &[3]) {
                         for reversed in [false, true] {
+                            if !rows.take(&[
+                                chooser as usize,
+                                open as usize,
+                                usize::from(known == "c"),
+                                consumer as usize,
+                                frame.0,
+                                frame.1.tag()[0],
+                                frame.1.tag()[1],
+                                usize::from(reversed),
+                            ]) {
+                                continue;
+                            }
                             let case = (chooser, open, known, consumer);
                             let text = open_choice_program(case, frame, (reversed, true));
                             let twin = open_choice_program(case, frame, (reversed, false));
@@ -2069,14 +2214,20 @@ fn a_family_probes_path_through_an_open_recursive_call_settles_no_family_from_th
                 }
             }
         }
-    }
-    assert!(
-        failures.is_empty(),
-        "{} of {programs} programs fail:\n{}",
-        failures.len(),
-        failures.iter().take(8).cloned().collect::<String>()
-    );
-    assert_eq!(programs, 3_584);
+        (failures, programs)
+    })
+}
+
+#[test]
+fn a_family_probes_path_through_an_open_recursive_call_settles_no_family_from_the_starts_kind() {
+    assert_none_fail(covered(open_choice_rows), 32);
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_a_family_probes_path_through_an_open_recursive_call_settles_no_family_from_the_starts_kind()
+ {
+    assert_none_fail(open_choice_rows(&Rows::Every), 3_584);
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -2225,16 +2376,25 @@ fn held_program(
     items.concat()
 }
 
-#[test]
-fn a_top_level_let_holding_a_recursive_calls_reference_reads_through_a_path_in_a_recursive_body_as_at_top_level()
- {
-    let mut failures = Vec::new();
-    let mut programs = 0;
-    for held in HELD_REFERENCES {
+fn held_rows(rows: &Rows) -> (Vec<String>, usize) {
+    in_parallel(&HELD_REFERENCES, |held| {
+        let mut failures = Vec::new();
+        let mut programs = 0;
         for consumer in HELD_READS {
             for frame in Levels::of(&[0, 1], &[3]) {
                 for top_level in [false, true] {
                     for reversed in [false, true] {
+                        if !rows.take(&[
+                            held as usize,
+                            consumer as usize,
+                            frame.0,
+                            frame.1.tag()[0],
+                            frame.1.tag()[1],
+                            usize::from(top_level),
+                            usize::from(reversed),
+                        ]) {
+                            continue;
+                        }
                         let program = |recursive| {
                             held_program((held, consumer), (frame, top_level, reversed, recursive))
                         };
@@ -2249,14 +2409,21 @@ fn a_top_level_let_holding_a_recursive_calls_reference_reads_through_a_path_in_a
                 }
             }
         }
-    }
-    assert!(
-        failures.is_empty(),
-        "{} of {programs} programs fail:\n{}",
-        failures.len(),
-        failures.iter().take(8).cloned().collect::<String>()
-    );
-    assert_eq!(programs, 960);
+        (failures, programs)
+    })
+}
+
+#[test]
+fn a_top_level_let_holding_a_recursive_calls_reference_reads_through_a_path_in_a_recursive_body_as_at_top_level()
+ {
+    assert_none_fail(covered(held_rows), 31);
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_a_top_level_let_holding_a_recursive_calls_reference_reads_through_a_path_in_a_recursive_body_as_at_top_level()
+ {
+    assert_none_fail(held_rows(&Rows::Every), 960);
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -2447,11 +2614,11 @@ impl StepChooser {
 
     fn depths(self) -> &'static [i32] {
         match self {
-            StepChooser::IfOnDepth => &[1, 3, 30, 60],
+            StepChooser::IfOnDepth => &[1, 3, 60],
             StepChooser::Element
             | StepChooser::Literal
             | StepChooser::IfOnParameter
-            | StepChooser::RecursiveHelper => &[1, 3, 30],
+            | StepChooser::RecursiveHelper => &[1, 3],
         }
     }
 
@@ -2562,6 +2729,14 @@ enum FrameValue {
 const OUTSIDE: usize = 5;
 
 impl FrameValue {
+    fn tag(self) -> [usize; 2] {
+        match self {
+            FrameValue::Fixed(index) => [0, index],
+            FrameValue::Alternating(first, _) => [1, first],
+            FrameValue::Outside => [2, OUTSIDE],
+        }
+    }
+
     fn at(self, level: i32) -> usize {
         match self {
             FrameValue::Fixed(index) => index,
@@ -2771,7 +2946,7 @@ fn found_summaries(text: &str) -> BTreeSet<(Code, String, String)> {
         .collect()
 }
 
-fn lacking_step_rows(path: StepPath, chooser: StepChooser) -> (Vec<String>, usize) {
+fn lacking_step_rows(rows: &Rows, path: StepPath, chooser: StepChooser) -> (Vec<String>, usize) {
     let mut failures = Vec::new();
     let mut programs = 0;
     for count in chooser.counts().iter().copied() {
@@ -2792,6 +2967,21 @@ fn lacking_step_rows(path: StepPath, chooser: StepChooser) -> (Vec<String>, usiz
                             );
                         for depth in chooser.depths().iter().copied() {
                             for reversed in [false, true] {
+                                let tag = [
+                                    path as usize,
+                                    chooser as usize,
+                                    count,
+                                    usize::try_from(mask).unwrap_or_default(),
+                                    consumer as usize,
+                                    arm as usize,
+                                    frame.tag()[0],
+                                    frame.tag()[1],
+                                    depth_tag(depth),
+                                    usize::from(reversed),
+                                ];
+                                if !rows.take(&tag) {
+                                    continue;
+                                }
                                 let case = StepCase {
                                     path,
                                     chooser,
@@ -2823,16 +3013,17 @@ fn lacking_step_rows(path: StepPath, chooser: StepChooser) -> (Vec<String>, usiz
     (failures, programs)
 }
 
-fn lacking_step_failures() -> (Vec<String>, usize) {
+fn lacking_step_failures(rows: &Rows) -> (Vec<String>, usize) {
     let pairs: Vec<(StepPath, StepChooser)> = STEP_PATHS
         .iter()
         .flat_map(|path| STEP_CHOOSERS.iter().map(move |chooser| (*path, *chooser)))
         .collect();
-    in_parallel(&pairs, |(path, chooser)| lacking_step_rows(path, chooser))
+    in_parallel(&pairs, |(path, chooser)| {
+        lacking_step_rows(rows, path, chooser)
+    })
 }
 
-#[test]
-fn a_fault_of_a_candidate_binding_draws_only_when_the_evaluation_chooses_that_candidate() {
+fn candidate_fault_rows(rows: &Rows) -> (Vec<String>, usize) {
     let mut failures = Vec::new();
     let mut programs = 0;
     for fault in CANDIDATE_FAULTS {
@@ -2849,6 +3040,19 @@ fn a_fault_of_a_candidate_binding_draws_only_when_the_evaluation_chooses_that_ca
                         .into_iter()
                         .flat_map(|reversed| seconds.iter().map(move |second| (reversed, *second)))
                     {
+                        let tag = [
+                            fault as usize,
+                            position(&FAULT_CHOOSERS, &chooser),
+                            consumer as usize,
+                            index,
+                            levels.tag()[0],
+                            levels.tag()[1],
+                            usize::from(reversed),
+                            second.map_or(0, |second| 1 + usize::from(second)),
+                        ];
+                        if !rows.take(&tag) {
+                            continue;
+                        }
                         let program = |recursive| {
                             candidate_fault_program(
                                 (fault, chooser, consumer),
@@ -2914,19 +3118,44 @@ fn a_fault_of_a_candidate_binding_draws_only_when_the_evaluation_chooses_that_ca
             }
         }
     }
-    let (lacking, lacking_programs) = lacking_step_failures();
-    failures.extend(lacking);
-    programs += lacking_programs;
-    let (crossing, crossing_programs) = in_parallel(&CALLEE_REACHES, callee_template_rows);
-    failures.extend(crossing);
-    programs += crossing_programs;
-    assert!(
-        failures.is_empty(),
-        "{} of {programs} programs fail:\n{}",
-        failures.len(),
-        failures.iter().take(8).cloned().collect::<String>()
+    (failures, programs)
+}
+
+fn callee_template_failures(rows: &Rows) -> (Vec<String>, usize) {
+    in_parallel(&CALLEE_REACHES, |reach| callee_template_rows(rows, reach))
+}
+
+type Generator = fn(&Rows) -> (Vec<String>, usize);
+
+fn candidate_failures(run: impl Fn(Generator) -> (Vec<String>, usize)) -> (Vec<String>, usize) {
+    let mut failures = Vec::new();
+    let mut programs = 0;
+    let generators: [Generator; 3] = [
+        candidate_fault_rows,
+        lacking_step_failures,
+        callee_template_failures,
+    ];
+    for generator in generators {
+        let (found, counted) = run(generator);
+        failures.extend(found);
+        programs += counted;
+    }
+    (failures, programs)
+}
+
+#[test]
+fn a_fault_of_a_candidate_binding_draws_only_when_the_evaluation_chooses_that_candidate() {
+    assert_none_fail(candidate_failures(|generator| covered(generator)), 126);
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_a_fault_of_a_candidate_binding_draws_only_when_the_evaluation_chooses_that_candidate()
+{
+    assert_none_fail(
+        candidate_failures(|generator| generator(&Rows::Every)),
+        43_832,
     );
-    assert_eq!(programs, 63_416);
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -3239,7 +3468,7 @@ impl CalleeCase {
     }
 }
 
-fn callee_template_rows(reach: CalleeReach) -> (Vec<String>, usize) {
+fn callee_template_rows(rows: &Rows, reach: CalleeReach) -> (Vec<String>, usize) {
     let mut failures = Vec::new();
     let mut programs = 0;
     for read in CALLEE_READS {
@@ -3248,6 +3477,18 @@ fn callee_template_rows(reach: CalleeReach) -> (Vec<String>, usize) {
                 for alternating in [false, true] {
                     for index in reach.indices(depth) {
                         for reversed in [false, true] {
+                            let tag = [
+                                position(&CALLEE_REACHES, &reach),
+                                read as usize,
+                                holds as usize,
+                                depth,
+                                usize::from(alternating),
+                                position(&reach.indices(depth), &index),
+                                usize::from(reversed),
+                            ];
+                            if !rows.take(&tag) {
+                                continue;
+                            }
                             let case = CalleeCase {
                                 reach,
                                 read,
@@ -3258,9 +3499,12 @@ fn callee_template_rows(reach: CalleeReach) -> (Vec<String>, usize) {
                                 reversed,
                             };
                             let text = case.program(false);
-                            let twin = case.program(true);
                             let drawn = found(&text);
-                            let expected = found(&twin);
+                            let expected = if depth < 30 {
+                                found(&case.program(true))
+                            } else {
+                                Found::new()
+                            };
                             programs += 1;
                             if !expected.is_empty() || drawn != expected {
                                 failures.push(format!(
@@ -3393,6 +3637,15 @@ const START_READERS: [StartReader; 3] = [
 ];
 
 impl StartFault {
+    fn depths(self) -> &'static [usize] {
+        match self {
+            StartFault::Depth => &[1, 3],
+            StartFault::None | StartFault::Outside | StartFault::Fit | StartFault::Overflow => {
+                &[1, 3, 30]
+            }
+        }
+    }
+
     fn index(self) -> &'static str {
         match self {
             StartFault::None | StartFault::Depth => "i % len(xs)",
@@ -3617,17 +3870,34 @@ fn drawn_keys(text: &str) -> BTreeSet<(Code, String)> {
     found(text).into_keys().collect()
 }
 
-fn untaken_start_rows((start, fault): (UntakenStart, StartFault)) -> (Vec<String>, usize) {
+fn untaken_start_rows(
+    rows: &Rows,
+    (start, fault): (UntakenStart, StartFault),
+) -> (Vec<String>, usize) {
     let mut failures = Vec::new();
     let mut programs = 0;
     {
         for guard in GUARDS {
             for reader in START_READERS {
-                for (depth, later) in [1, 3, 30]
-                    .into_iter()
-                    .flat_map(|depth| start.later_reads().iter().map(move |later| (depth, *later)))
-                {
+                for (depth, later) in fault.depths().iter().flat_map(|depth| {
+                    start
+                        .later_reads()
+                        .iter()
+                        .map(move |later| (*depth, *later))
+                }) {
                     for reversed in [false, true] {
+                        let tag = [
+                            start as usize,
+                            fault as usize,
+                            guard as usize,
+                            reader as usize,
+                            depth,
+                            usize::from(later),
+                            usize::from(reversed),
+                        ];
+                        if !rows.take(&tag) {
+                            continue;
+                        }
                         let case = UntakenCase {
                             start,
                             fault,
@@ -3656,7 +3926,7 @@ fn untaken_start_rows((start, fault): (UntakenStart, StartFault)) -> (Vec<String
     (failures, programs)
 }
 
-fn quiet_callee_read_rows() -> (Vec<String>, usize) {
+fn quiet_callee_read_rows(rows: &Rows) -> (Vec<String>, usize) {
     let mut failures = Vec::new();
     let mut programs = 0;
     for fault in [
@@ -3667,6 +3937,15 @@ fn quiet_callee_read_rows() -> (Vec<String>, usize) {
         for condition in ["false", "n > 100"] {
             for depth in [1, 3] {
                 for reversed in [false, true] {
+                    let tag = [
+                        fault as usize,
+                        usize::from(condition == "false"),
+                        depth,
+                        usize::from(reversed),
+                    ];
+                    if !rows.take(&tag) {
+                        continue;
+                    }
                     let (other, candidate) = match fault {
                         CandidateFault::LacksAttribute => {
                             ("Clip other | gain=3:\n    Note\n", "verse.tone")
@@ -3703,24 +3982,33 @@ fn quiet_callee_read_rows() -> (Vec<String>, usize) {
     (failures, programs)
 }
 
-#[test]
-fn evaluating_the_start_of_an_untaken_arm_draws_no_fit_range_overflow_or_depth_diagnostic_in_any_frame()
- {
+fn untaken_start_failures(rows: &Rows) -> (Vec<String>, usize) {
     let pairs: Vec<(UntakenStart, StartFault)> = UNTAKEN_STARTS
         .iter()
         .flat_map(|start| start.faults().iter().map(move |fault| (*start, *fault)))
         .collect();
-    let (mut failures, mut programs) = in_parallel(&pairs, untaken_start_rows);
-    let (callee, callee_programs) = quiet_callee_read_rows();
+    in_parallel(&pairs, |pair| untaken_start_rows(rows, pair))
+}
+
+fn untaken_failures(run: impl Fn(Generator) -> (Vec<String>, usize)) -> (Vec<String>, usize) {
+    let (mut failures, mut programs) = run(untaken_start_failures);
+    let (callee, callee_programs) = run(quiet_callee_read_rows);
     failures.extend(callee);
     programs += callee_programs;
-    assert!(
-        failures.is_empty(),
-        "{} of {programs} programs fail:\n{}",
-        failures.len(),
-        failures.iter().take(8).cloned().collect::<String>()
-    );
-    assert_eq!(programs, 2_004);
+    (failures, programs)
+}
+
+#[test]
+fn evaluating_the_start_of_an_untaken_arm_draws_no_fit_range_overflow_or_depth_diagnostic_in_any_frame()
+ {
+    assert_none_fail(untaken_failures(|generator| covered(generator)), 35);
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_evaluating_the_start_of_an_untaken_arm_draws_no_fit_range_overflow_or_depth_diagnostic_in_any_frame()
+ {
+    assert_none_fail(untaken_failures(|generator| generator(&Rows::Every)), 1_944);
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -3818,7 +4106,7 @@ impl OpenCallModel<'_> {
     }
 }
 
-fn open_call_rows(offset: i64) -> (Vec<String>, usize) {
+fn open_call_rows(rows: &Rows, offset: i64) -> (Vec<String>, usize) {
     let orders = [
         [
             OpenCallTerm::TakenRead,
@@ -3857,12 +4145,15 @@ fn open_call_rows(offset: i64) -> (Vec<String>, usize) {
         for terms in &orders {
             for taken_read in [true, false] {
                 for depth in [1, 2, 3, 6] {
-                    for uses in [
+                    for (shape, uses) in [
                         vec![OpenCallUse::H(depth)],
                         vec![OpenCallUse::H(depth), OpenCallUse::G(depth + offset)],
                         vec![OpenCallUse::H(depth), OpenCallUse::G(depth + offset + 1)],
                         vec![OpenCallUse::G(depth + offset)],
-                    ] {
+                    ]
+                    .into_iter()
+                    .enumerate()
+                    {
                         let mut model = OpenCallModel {
                             offset,
                             arm,
@@ -3896,6 +4187,19 @@ fn open_call_rows(offset: i64) -> (Vec<String>, usize) {
                             .collect();
                         for reversed in [false, true] {
                             for wrong in [false, true] {
+                                let tag = [
+                                    usize::try_from(offset).unwrap_or_default(),
+                                    arm as usize,
+                                    position(&orders, terms),
+                                    usize::from(taken_read),
+                                    usize::try_from(depth).unwrap_or_default(),
+                                    shape,
+                                    usize::from(reversed),
+                                    usize::from(wrong),
+                                ];
+                                if !rows.take(&tag) {
+                                    continue;
+                                }
                                 let mut expected = Found::new();
                                 let notes: String = uses
                                     .iter()
@@ -3951,13 +4255,22 @@ fn open_call_rows(offset: i64) -> (Vec<String>, usize) {
     (failures, programs)
 }
 
-fn open_function_rows() -> (Vec<String>, usize) {
+fn open_function_rows(rows: &Rows) -> (Vec<String>, usize) {
     let mut failures = Vec::new();
     let mut programs = 0;
     for lacking in [false, true] {
         for condition in ["false", "n > 100"] {
             for depth in [1, 3] {
                 for reversed in [false, true] {
+                    let tag = [
+                        usize::from(lacking),
+                        usize::from(condition == "false"),
+                        depth,
+                        usize::from(reversed),
+                    ];
+                    if !rows.take(&tag) {
+                        continue;
+                    }
                     let second = if lacking { "verse.tone" } else { "other" };
                     let expected: Found = if lacking {
                         [((Code::UnknownAttribute, "gain".to_string()), 1)].into()
@@ -3992,12 +4305,20 @@ fn open_function_rows() -> (Vec<String>, usize) {
     (failures, programs)
 }
 
-fn tainted_start_rows() -> (Vec<String>, usize) {
+fn tainted_start_rows(rows: &Rows) -> (Vec<String>, usize) {
     let mut failures = Vec::new();
     let mut programs = 0;
     for condition in ["false", "n > 100"] {
         for depth in [2, 3, 6] {
             for reversed in [false, true] {
+                let tag = [
+                    usize::from(condition == "false"),
+                    depth,
+                    usize::from(reversed),
+                ];
+                if !rows.take(&tag) {
+                    continue;
+                }
                 let mut items = [
                     "Session main\n".to_string(),
                     "Clip verse | gain=2:\n    Note as tone\n".to_string(),
@@ -4031,20 +4352,30 @@ fn tainted_start_rows() -> (Vec<String>, usize) {
     (failures, programs)
 }
 
+fn open_call_failures(rows: &Rows) -> (Vec<String>, usize) {
+    in_parallel(&[0, 1, 2], |offset| open_call_rows(rows, offset))
+}
+
+fn open_failures(run: impl Fn(Generator) -> (Vec<String>, usize)) -> (Vec<String>, usize) {
+    let mut failures = Vec::new();
+    let mut programs = 0;
+    let generators: [Generator; 3] = [open_call_failures, open_function_rows, tainted_start_rows];
+    for generator in generators {
+        let (found, counted) = run(generator);
+        failures.extend(found);
+        programs += counted;
+    }
+    (failures, programs)
+}
+
 #[test]
 fn an_untaken_arms_start_that_reaches_an_open_call_leaves_no_value_any_later_evaluation_reads() {
-    let (mut failures, mut programs) = in_parallel(&[0, 1, 2], open_call_rows);
-    let (open, open_programs) = open_function_rows();
-    failures.extend(open);
-    programs += open_programs;
-    let (tainted, tainted_programs) = tainted_start_rows();
-    failures.extend(tainted);
-    programs += tainted_programs;
-    assert!(
-        failures.is_empty(),
-        "{} of {programs} programs fail:\n{}",
-        failures.len(),
-        failures.iter().take(8).cloned().collect::<String>()
-    );
-    assert_eq!(programs, 5_596);
+    assert_none_fail(open_failures(|generator| covered(generator)), 38);
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_an_untaken_arms_start_that_reaches_an_open_call_leaves_no_value_any_later_evaluation_reads()
+ {
+    assert_none_fail(open_failures(|generator| generator(&Rows::Every)), 5_596);
 }

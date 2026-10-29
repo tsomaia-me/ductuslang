@@ -32,6 +32,8 @@ BUSY_LOAD = 12.0
 QUIET_LOAD = 6.0
 POLL_SECONDS = 15
 THUMB = "thumbv7em-none-eabihf"
+EXHAUSTIVE = "test(/(^|::)exhaustive_/)"
+STRESS = "test(/(^|::)stress_/)"
 
 
 def git(repository, *arguments, check=True):
@@ -242,7 +244,12 @@ def performed(planned, results, settle=settled):
             "seconds": round(time.monotonic() - clock, 1), "exit": code, "log": log.name}
 
 
-def shared_steps(sha, top, into, run, jobs, baselines, against, quiet=QUIET_LOAD):
+def ignored_tests(name, expression, package, cargo, below):
+    return step(name, ["cargo", "nextest", "run", "--workspace", "--run-ignored", "all", "-E", expression], package,
+                cargo, below)
+
+
+def shared_steps(sha, top, into, run, jobs, baselines, against, quiet=QUIET_LOAD, stress=False):
     export, package = into / "export", into / "export" / PACKAGE
     cargo = {"CARGO_TARGET_DIR": str(into / "target"), "CARGO_BUILD_JOBS": str(jobs),
              "NEXTEST_TEST_THREADS": str(jobs), "RUST_TEST_THREADS": str(jobs)}
@@ -257,6 +264,8 @@ def shared_steps(sha, top, into, run, jobs, baselines, against, quiet=QUIET_LOAD
             step("clippy", ["cargo", "clippy", "--workspace", "--all-targets", "--", "-D", "warnings"], package,
                  cargo, BUSY_LOAD),
             step("nextest", ["cargo", "nextest", "run", "--workspace"], package, cargo, BUSY_LOAD),
+            ignored_tests("nextest-exhaustive", EXHAUSTIVE, package, cargo, BUSY_LOAD),
+            *([ignored_tests("nextest-stress", STRESS, package, cargo, quiet)] if stress else []),
             step("doctest", ["cargo", "test", "--workspace", "--doc"], package, cargo, BUSY_LOAD),
             step("thumbv7em", ["cargo", "build", "-p", "symphonyscript-core", "--target", THUMB], package, cargo,
                  BUSY_LOAD),
@@ -292,7 +301,7 @@ def shared(arguments):
     run.mkdir(parents=True)
     started, records = now(), []
     for planned in shared_steps(sha, top, into, run, arguments.jobs, arguments.baselines, arguments.against,
-                                arguments.quiet_below):
+                                arguments.quiet_below, arguments.stress):
         records.append(performed(planned, run))
         print(f"{planned['name']}: exit {records[-1]['exit']}, {records[-1]['seconds']} s, "
               f"load {records[-1]['load']}", flush=True)
@@ -331,6 +340,9 @@ def main():
                          help="a new directory for the export and its builds, kept for the reviewers' probes; "
                               "by default a new temporary directory")
     sharing.add_argument("--against", help="as for check")
+    sharing.add_argument("--stress", action="store_true",
+                         help="also run the stress tests after the exhaustive ones, once the load is below "
+                              "--quiet-below")
     sharing.add_argument("--quiet-below", type=float, default=QUIET_LOAD,
                          help="the 1-minute load the timed steps, the verdict check and the figures, wait to fall "
                               "below; inf takes them at any load, and the manifest records the load each began at")

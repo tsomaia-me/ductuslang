@@ -2,6 +2,7 @@ mod support;
 
 use symphonyscript::{Code, Compiler, Diagnostic, Source};
 use symphonyscript_core::{Count, Vocabulary};
+use symphonyscript_fixtures::{Rows, covered};
 
 fn codes(text: &str) -> Vec<Code> {
     support::checked(text)
@@ -811,8 +812,7 @@ fn two_enum_vocabulary() -> Vocabulary {
 
 type Errors = Vec<(Code, String)>;
 
-#[test]
-fn a_carried_enum_meets_every_use_in_every_order() {
+fn a_carried_enum_meets_every_use_in_every_order_in(orders: support::Orders) {
     let compiler = Compiler::new(&two_enum_vocabulary()).expect("the vocabulary compiles");
     let errors_in = |text: &str| -> Errors {
         let source = Source {
@@ -907,7 +907,7 @@ fn a_carried_enum_meets_every_use_in_every_order() {
     cases.extend(accepted.into_iter().map(|items| (items, Some(Vec::new()))));
     for (items, expected) in cases {
         let mut first: Option<Errors> = None;
-        for order in support::permutations(&items) {
+        for order in orders.of(&items) {
             let text = format!("{}\n", order.join("\n"));
             let found = errors_in(&text);
             let wrong = match &expected {
@@ -922,6 +922,17 @@ fn a_carried_enum_meets_every_use_in_every_order() {
         }
     }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+#[test]
+fn a_carried_enum_meets_every_use_forward_and_reversed() {
+    a_carried_enum_meets_every_use_in_every_order_in(support::Orders::ForwardAndReversed);
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_a_carried_enum_meets_every_use_in_every_order() {
+    a_carried_enum_meets_every_use_in_every_order_in(support::Orders::Every);
 }
 
 #[test]
@@ -1537,7 +1548,16 @@ fn first_order_failing<W: PartialEq + std::fmt::Debug>(
     wanted: &W,
     found: impl Fn(&str) -> W,
 ) -> Option<String> {
-    support::permutations(items).into_iter().find_map(|order| {
+    first_order_failing_in(support::Orders::Every, items, wanted, found)
+}
+
+fn first_order_failing_in<W: PartialEq + std::fmt::Debug>(
+    orders: support::Orders,
+    items: &[&'static str],
+    wanted: &W,
+    found: impl Fn(&str) -> W,
+) -> Option<String> {
+    orders.of(items).into_iter().find_map(|order| {
         let text = format!("{}\n", order.join("\n"));
         let found = found(&text);
         (found != *wanted).then(|| format!("{text}expected {wanted:?}\nfound {found:?}"))
@@ -1545,6 +1565,10 @@ fn first_order_failing<W: PartialEq + std::fmt::Debug>(
 }
 
 fn expect_in_every_order(rows: &[Row]) {
+    expect_in_orders(support::Orders::Every, rows);
+}
+
+fn expect_in_orders(orders: support::Orders, rows: &[Row]) {
     let failures: Vec<String> = rows
         .iter()
         .filter_map(|(items, wanted)| {
@@ -1553,17 +1577,30 @@ fn expect_in_every_order(rows: &[Row]) {
                 .map(|(code, span)| (*code, (*span).to_string()))
                 .collect();
             wanted.sort();
-            first_order_failing(&with_session(items), &wanted, fixture_errors)
+            first_order_failing_in(orders, &with_session(items), &wanted, fixture_errors)
         })
         .collect();
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
 
 fn expect_located_in_every_order(rows: &[LocatedRow]) {
-    expect_located_with(rows, with_session, located_errors);
+    expect_located_in_orders(support::Orders::Every, rows);
+}
+
+fn expect_located_in_orders(orders: support::Orders, rows: &[LocatedRow]) {
+    expect_located_with_in(orders, rows, with_session, located_errors);
 }
 
 fn expect_located_with(
+    rows: &[LocatedRow],
+    items_of: fn(&[&'static str]) -> Vec<&'static str>,
+    found: fn(&str) -> Located,
+) {
+    expect_located_with_in(support::Orders::Every, rows, items_of, found);
+}
+
+fn expect_located_with_in(
+    orders: support::Orders,
     rows: &[LocatedRow],
     items_of: fn(&[&'static str]) -> Vec<&'static str>,
     found: fn(&str) -> Located,
@@ -1582,14 +1619,15 @@ fn expect_located_with(
                 })
                 .collect();
             wanted.sort();
-            first_order_failing(&items_of(items), &wanted, found)
+            first_order_failing_in(orders, &items_of(items), &wanted, found)
         })
         .collect();
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
 
-#[test]
-fn a_literal_whose_elements_disagree_draws_one_diagnostic_wherever_its_value_goes() {
+fn a_literal_whose_elements_disagree_draws_one_diagnostic_wherever_its_value_goes_in(
+    orders: support::Orders,
+) {
     const H: &str = "fn h(): [1, \"s\"]";
     const R: &str = "fn r(n): if n < 1 then [1, \"s\"] else r(n - 1)";
     const R_OK: &str = "fn r(n): if n < 1 then [1, 2] else r(n - 1)";
@@ -1841,7 +1879,22 @@ fn a_literal_whose_elements_disagree_draws_one_diagnostic_wherever_its_value_goe
             &[(Code::TypeMismatch, "[60, \"s\"]", &[])],
         ),
     ];
-    expect_located_in_every_order(&rows);
+    expect_located_in_orders(orders, &rows);
+}
+
+#[test]
+fn a_literal_whose_elements_disagree_draws_one_diagnostic_wherever_its_value_goes() {
+    a_literal_whose_elements_disagree_draws_one_diagnostic_wherever_its_value_goes_in(
+        support::Orders::ForwardAndReversed,
+    );
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_a_literal_whose_elements_disagree_draws_one_diagnostic_wherever_its_value_goes() {
+    a_literal_whose_elements_disagree_draws_one_diagnostic_wherever_its_value_goes_in(
+        support::Orders::Every,
+    );
 }
 
 #[test]
@@ -2871,8 +2924,7 @@ fn a_line_after_a_missing_block_reports_its_own_faults() {
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
 
-#[test]
-fn a_cell_read_through_a_literals_group_keeps_its_own_kind() {
+fn a_cell_read_through_a_literals_group_keeps_its_own_kind_in(orders: support::Orders) {
     const X: &str = "input x = 1";
     const C: &str = "input c = true";
     const Q: &str = "let q = if c then [x, 2.5] else [3, 4]";
@@ -2949,7 +3001,18 @@ fn a_cell_read_through_a_literals_group_keeps_its_own_kind() {
             &[(Code::TypeMismatch, "[x, \"s\"]")],
         ),
     ];
-    expect_in_every_order(&rows);
+    expect_in_orders(orders, &rows);
+}
+
+#[test]
+fn a_cell_read_through_a_literals_group_keeps_its_own_kind() {
+    a_cell_read_through_a_literals_group_keeps_its_own_kind_in(support::Orders::ForwardAndReversed);
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_a_cell_read_through_a_literals_group_keeps_its_own_kind() {
+    a_cell_read_through_a_literals_group_keeps_its_own_kind_in(support::Orders::Every);
 }
 
 fn as_given(items: &[&'static str]) -> Vec<&'static str> {
@@ -3165,8 +3228,7 @@ fn no_secondary_repeats_the_primary(text: &str) -> bool {
     })
 }
 
-#[test]
-fn inconsistent_uses_name_each_use_with_its_calls() {
+fn inconsistent_uses_name_each_use_with_its_calls_in(orders: support::Orders) {
     const IU: Code = Code::InconsistentUses;
     let rows: [LocatedRow; 13] = [
         (
@@ -3271,11 +3333,12 @@ fn inconsistent_uses_name_each_use_with_its_calls() {
             &[(IU, "e", &["e"])],
         ),
     ];
-    expect_located_in_every_order(&rows);
+    expect_located_in_orders(orders, &rows);
     let failures: Vec<String> = rows
         .iter()
         .filter_map(|(items, _)| {
-            first_order_failing(
+            first_order_failing_in(
+                orders,
                 &with_session(items),
                 &true,
                 no_secondary_repeats_the_primary,
@@ -3300,6 +3363,17 @@ fn inconsistent_uses_name_each_use_with_its_calls() {
     let mut both = vec![support::at(text, "f(a)", 0), support::at(text, "f(a)", 1)];
     both.sort();
     assert_eq!(calls, vec![both]);
+}
+
+#[test]
+fn inconsistent_uses_name_each_use_with_its_calls() {
+    inconsistent_uses_name_each_use_with_its_calls_in(support::Orders::ForwardAndReversed);
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_inconsistent_uses_name_each_use_with_its_calls() {
+    inconsistent_uses_name_each_use_with_its_calls_in(support::Orders::Every);
 }
 
 #[test]
@@ -5163,6 +5237,42 @@ impl Generated {
         !matches!(self, Generated::Leaf(_))
     }
 
+    fn form(&self) -> usize {
+        match self {
+            Generated::Leaf(leaf) => *leaf,
+            Generated::Unary(op, _) => LEAVES.len() + op,
+            Generated::Binary(op, ..) => LEAVES.len() + UNARY.len() + op,
+            Generated::Index(..) => LEAVES.len() + UNARY.len() + BINARY.len(),
+            Generated::Slice(..) => LEAVES.len() + UNARY.len() + BINARY.len() + 1,
+            Generated::If(..) => LEAVES.len() + UNARY.len() + BINARY.len() + 2,
+        }
+    }
+
+    fn class(&self) -> usize {
+        match self {
+            Generated::Leaf(leaf) => *leaf,
+            Generated::Unary(..) => LEAVES.len(),
+            Generated::Binary(..) => LEAVES.len() + 1,
+            Generated::Index(..) => LEAVES.len() + 2,
+            Generated::Slice(..) => LEAVES.len() + 3,
+            Generated::If(..) => LEAVES.len() + 4,
+        }
+    }
+
+    fn operand_classes(&self) -> [usize; 3] {
+        let absent = LEAVES.len() + 5;
+        match self {
+            Generated::Leaf(_) => [absent; 3],
+            Generated::Unary(_, operand) => [operand.class(), absent, absent],
+            Generated::Binary(_, lhs, rhs)
+            | Generated::Index(lhs, rhs)
+            | Generated::Slice(lhs, rhs) => [lhs.class(), rhs.class(), absent],
+            Generated::If(condition, then, otherwise) => {
+                [condition.class(), then.class(), otherwise.class()]
+            }
+        }
+    }
+
     fn print(&self, out: &mut String, read: Reach, sites: &mut Vec<LeafSite>) {
         match self {
             Generated::Leaf(leaf) => {
@@ -5660,16 +5770,28 @@ fn own_fault(site: &LeafSite, base: u32, whole: bool) -> Option<((Code, String, 
 }
 
 #[test]
-fn every_fault_beside_another_fault_draws_by_the_placeholder_rule_in_the_odd_expressions() {
-    faults_draw_by_the_placeholder_rule(0, 15_810);
+fn every_fault_beside_another_fault_draws_by_the_placeholder_rule() {
+    let (failures, programs) = covered(|rows| placeholder_rule_failures(rows, 0, 1));
+    assert_placeholder_rule(&failures, programs, 457);
 }
 
 #[test]
-fn every_fault_beside_another_fault_draws_by_the_placeholder_rule_in_the_even_expressions() {
-    faults_draw_by_the_placeholder_rule(1, 15_810);
+#[ignore = "exhaustive"]
+fn exhaustive_every_fault_beside_another_fault_draws_by_the_placeholder_rule_in_the_odd_expressions()
+ {
+    let (failures, programs) = placeholder_rule_failures(&Rows::Every, 0, 2);
+    assert_placeholder_rule(&failures, programs, 15_810);
 }
 
-fn faults_draw_by_the_placeholder_rule(part: usize, expected_programs: usize) {
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_every_fault_beside_another_fault_draws_by_the_placeholder_rule_in_the_even_expressions()
+ {
+    let (failures, programs) = placeholder_rule_failures(&Rows::Every, 1, 2);
+    assert_placeholder_rule(&failures, programs, 15_810);
+}
+
+fn placeholder_rule_failures(rows: &Rows, part: usize, parts: usize) -> (Vec<String>, usize) {
     let pool = generated(2);
     let mut expressions: Vec<Generated> = pool.clone();
     expressions.extend(sampled_depth_three(&pool, 3000));
@@ -5679,13 +5801,29 @@ fn faults_draw_by_the_placeholder_rule(part: usize, expected_programs: usize) {
     ];
     let mut failures = Vec::new();
     let mut programs = 0;
-    for expression in expressions.iter().skip(part).step_by(2) {
+    for expression in expressions.iter().skip(part).step_by(parts) {
         let mut text = String::new();
         let mut sites = Vec::new();
         expression.print(&mut text, Reach::Read, &mut sites);
-        for place in placed(&text) {
+        let [first, second, third] = expression.operand_classes();
+        for (placement, place) in placed(&text).into_iter().enumerate() {
             let compiler = &compilers[place.vocabulary];
-            for order in support::permutations(&(0..place.items.len()).collect::<Vec<_>>()) {
+            for (direction, order) in
+                support::permutations(&(0..place.items.len()).collect::<Vec<_>>())
+                    .into_iter()
+                    .enumerate()
+            {
+                let tag = [
+                    expression.form(),
+                    first,
+                    second,
+                    third,
+                    placement,
+                    direction,
+                ];
+                if !rows.take(&tag) {
+                    continue;
+                }
                 let before: usize = order
                     .iter()
                     .take_while(|index| **index != 0)
@@ -5739,7 +5877,10 @@ fn faults_draw_by_the_placeholder_rule(part: usize, expected_programs: usize) {
             }
         }
     }
-    assert_eq!(programs, expected_programs);
+    (failures, programs)
+}
+
+fn assert_placeholder_rule(failures: &[String], programs: usize, expected_programs: usize) {
     assert!(
         failures.is_empty(),
         "{} failures:\n{}",
@@ -5751,6 +5892,7 @@ fn faults_draw_by_the_placeholder_rule(part: usize, expected_programs: usize) {
             .collect::<Vec<_>>()
             .join("\n")
     );
+    assert_eq!(programs, expected_programs);
 }
 
 #[test]

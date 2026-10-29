@@ -53,7 +53,8 @@ fn checked(compiler: &Compiler, text: &str) -> Vec<(Code, String, Vec<String>)> 
 }
 
 #[test]
-fn erroneous_flows_report_one_diagnostic_per_use() {
+#[ignore = "stress"]
+fn stress_erroneous_flows_report_one_diagnostic_per_use() {
     let compiler = Compiler::new(&vocabulary()).expect("the vocabulary compiles");
     for uses in [2000, 8000] {
         let errors = checked(&compiler, &program(uses));

@@ -1,5 +1,6 @@
 use symphonyscript::{Code, Compiler, Severity, Source};
 use symphonyscript_core::{Count, Vocabulary};
+use symphonyscript_fixtures::{Rows, covered};
 
 #[derive(Clone, Copy, PartialEq)]
 enum Effect {
@@ -561,23 +562,34 @@ fn cases(flow: &Flow, shared: bool) -> Vec<Vec<&'static Position>> {
     found
 }
 
-fn every_flow_meets_its_uses(reactive: bool, shared: bool, routes: &[Route]) {
-    let failures: Vec<String> = std::thread::scope(|threads| {
+fn flows_meet_their_uses(
+    rows: &Rows,
+    reactive: bool,
+    shared: bool,
+    routes: &[Route],
+) -> (Vec<String>, usize) {
+    std::thread::scope(|threads| {
         let routes: Vec<_> = routes
             .iter()
             .copied()
             .filter(|route| !(reactive && *route == Route::Carrier))
-            .map(|route| threads.spawn(move || route_meets_its_uses(reactive, shared, route)))
+            .map(|route| threads.spawn(move || route_meets_its_uses(rows, reactive, shared, route)))
             .collect();
-        routes
-            .into_iter()
-            .flat_map(|route| {
-                route
-                    .join()
-                    .unwrap_or_else(|_| vec!["a route panicked".to_string()])
-            })
-            .collect()
-    });
+        let mut failures = Vec::new();
+        let mut programs = 0;
+        for route in routes {
+            let (found, counted) = route
+                .join()
+                .unwrap_or_else(|_| (vec!["a route panicked".to_string()], 0));
+            failures.extend(found);
+            programs += counted;
+        }
+        (failures, programs)
+    })
+}
+
+fn every_flow_meets_its_uses(reactive: bool, shared: bool, routes: &[Route]) {
+    let (failures, _) = flows_meet_their_uses(&Rows::Every, reactive, shared, routes);
     assert!(
         failures.is_empty(),
         "{} failures:\n{}",
@@ -586,14 +598,49 @@ fn every_flow_meets_its_uses(reactive: bool, shared: bool, routes: &[Route]) {
     );
 }
 
-fn route_meets_its_uses(reactive: bool, shared: bool, route: Route) -> Vec<String> {
+fn orders_taken(rows: &Rows, count: usize) -> Vec<(usize, Vec<usize>)> {
+    match rows {
+        Rows::Every => orders(count).into_iter().map(|order| (0, order)).collect(),
+        Rows::Recording(_) | Rows::Chosen(_) => {
+            let forward: Vec<usize> = (0..count).collect();
+            let reversed = forward.iter().rev().copied().collect();
+            vec![(0, forward), (1, reversed)]
+        }
+    }
+}
+
+fn use_tag(uses: &[&Position], at: usize) -> usize {
+    uses.get(at)
+        .and_then(|used| POSITIONS.iter().position(|each| each.name == used.name))
+        .unwrap_or(POSITIONS.len())
+}
+
+fn route_meets_its_uses(
+    rows: &Rows,
+    reactive: bool,
+    shared: bool,
+    route: Route,
+) -> (Vec<String>, usize) {
     let vocab = vocabulary(shared);
     let compiler = Compiler::new(&vocab.vocabulary).expect("the vocabulary compiles");
     let flow = Flow { reactive, route };
     let mut failures = Vec::new();
+    let mut programs = 0;
     for uses in cases(&flow, shared) {
         let items = program(&flow, &vocab, &uses);
-        for order in orders(items.len()) {
+        for (direction, order) in orders_taken(rows, items.len()) {
+            let tag = [
+                usize::from(reactive),
+                usize::from(shared),
+                route as usize,
+                use_tag(&uses, 0),
+                use_tag(&uses, 1),
+                direction,
+            ];
+            if !rows.take(&tag) {
+                continue;
+            }
+            programs += 1;
             let text: String = order
                 .iter()
                 .map(|index| format!("{}\n", items[*index]))
@@ -609,46 +656,80 @@ fn route_meets_its_uses(reactive: bool, shared: bool, route: Route) -> Vec<Strin
             }
         }
     }
-    failures
+    (failures, programs)
 }
 
 #[test]
-fn a_reactive_flow_meets_its_uses_in_every_order_directly_aliased_carried_or_written() {
+fn a_reactive_or_compile_time_flow_meets_its_uses_and_enums_of_different_variants_forward_and_reversed()
+ {
+    let (failures, programs) = covered(|rows| {
+        let mut failures = Vec::new();
+        let mut programs = 0;
+        for reactive in [true, false] {
+            for shared in [true, false] {
+                let (found, counted) = flows_meet_their_uses(rows, reactive, shared, &ROUTES);
+                failures.extend(found);
+                programs += counted;
+            }
+        }
+        (failures, programs)
+    });
+    assert!(
+        failures.is_empty(),
+        "{} failures:\n{}",
+        failures.len(),
+        failures.join("\n")
+    );
+    assert_eq!(programs, 412);
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_a_reactive_flow_meets_its_uses_in_every_order_directly_aliased_carried_or_written() {
     every_flow_meets_its_uses(true, true, &ROUTES[..5]);
 }
 
 #[test]
-fn a_reactive_flow_meets_its_uses_in_every_order_compared() {
+#[ignore = "exhaustive"]
+fn exhaustive_a_reactive_flow_meets_its_uses_in_every_order_compared() {
     every_flow_meets_its_uses(true, true, &[Route::Compared]);
 }
 
 #[test]
-fn a_reactive_flow_meets_its_uses_in_every_order_partnered() {
+#[ignore = "exhaustive"]
+fn exhaustive_a_reactive_flow_meets_its_uses_in_every_order_partnered() {
     every_flow_meets_its_uses(true, true, &[Route::Partnered]);
 }
 
 #[test]
-fn a_reactive_flow_meets_its_uses_in_every_order_typed_or_in_a_cycle() {
+#[ignore = "exhaustive"]
+fn exhaustive_a_reactive_flow_meets_its_uses_in_every_order_typed_or_in_a_cycle() {
     every_flow_meets_its_uses(true, true, &[Route::Typed, Route::Cycle]);
 }
 
 #[test]
-fn a_compile_time_flow_meets_its_uses_in_every_order_directly_aliased_carried_or_written() {
+#[ignore = "exhaustive"]
+fn exhaustive_a_compile_time_flow_meets_its_uses_in_every_order_directly_aliased_carried_or_written()
+ {
     every_flow_meets_its_uses(false, true, &ROUTES[..5]);
 }
 
 #[test]
-fn a_compile_time_flow_meets_its_uses_in_every_order_compared_partnered_typed_or_in_a_cycle() {
+#[ignore = "exhaustive"]
+fn exhaustive_a_compile_time_flow_meets_its_uses_in_every_order_compared_partnered_typed_or_in_a_cycle()
+ {
     every_flow_meets_its_uses(false, true, &ROUTES[5..]);
 }
 
 #[test]
-fn a_reactive_flow_meets_enums_of_different_variants_in_every_order() {
+#[ignore = "exhaustive"]
+fn exhaustive_a_reactive_flow_meets_enums_of_different_variants_in_every_order() {
     every_flow_meets_its_uses(true, false, &ROUTES);
 }
 
 #[test]
-fn a_compile_time_flow_meets_enums_of_different_variants_in_every_order() {
+#[ignore = "exhaustive"]
+fn exhaustive_a_compile_time_flow_meets_enums_of_different_variants_in_every_order() {
     every_flow_meets_its_uses(false, false, &ROUTES);
 }
 

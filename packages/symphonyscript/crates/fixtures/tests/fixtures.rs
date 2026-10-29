@@ -3,8 +3,8 @@ use symphonyscript_core::{
     Wire, dump,
 };
 use symphonyscript_fixtures::{
-    SPEC_SYM_EXAMPLES, dsp_project, music_project, native_vocabulary, spec_examples,
-    spec_productions, spec_projects, vocabulary, vocabulary_documented,
+    Rows, SPEC_SYM_EXAMPLES, covered, covering, dsp_project, music_project, native_vocabulary,
+    spec_examples, spec_productions, spec_projects, vocabulary, vocabulary_documented,
 };
 
 #[test]
@@ -314,4 +314,90 @@ fn two_builds_of_the_vocabulary_share_their_handles() {
     assert_eq!(text, dump(&program, &second));
     assert!(text.contains("  kind Clip\n"));
     assert!(text.contains("    transpose const i32 2\n"));
+}
+
+fn pairs(rows: &[&Vec<usize>]) -> std::collections::BTreeSet<(usize, usize, usize, usize)> {
+    let mut found = std::collections::BTreeSet::new();
+    for row in rows {
+        for (first, a) in row.iter().enumerate() {
+            for (second, b) in row.iter().enumerate().skip(first) {
+                found.insert((first, *a, second, *b));
+            }
+        }
+    }
+    found
+}
+
+#[test]
+fn a_covering_design_holds_every_pair_of_values_its_rows_hold_in_fewer_rows() {
+    let mut full: Vec<Vec<usize>> = vec![Vec::new()];
+    for size in [5, 4, 3, 3, 4, 3, 2] {
+        full = full
+            .into_iter()
+            .flat_map(|row| {
+                (0..size).map(move |value| {
+                    let mut grown = row.clone();
+                    grown.push(value * 7);
+                    grown
+                })
+            })
+            .collect();
+    }
+    assert_eq!(full.len(), 4_320);
+    let constrained: Vec<Vec<usize>> = full
+        .iter()
+        .filter(|row| row[0] != 28 || row[1] == 0)
+        .cloned()
+        .collect();
+    for (rows, most) in [(&full, 40), (&constrained, 40)] {
+        let chosen = covering(rows);
+        assert_eq!(chosen, covering(rows));
+        assert!(chosen.windows(2).all(|pair| pair[0] < pair[1]));
+        let picked: Vec<&Vec<usize>> = chosen.iter().map(|index| &rows[*index]).collect();
+        let every: Vec<&Vec<usize>> = rows.iter().collect();
+        assert_eq!(pairs(&picked), pairs(&every));
+        assert!(
+            picked.len() >= 20 && picked.len() <= most,
+            "{}",
+            picked.len()
+        );
+    }
+    assert_eq!(
+        covering(&[vec![0], vec![1], vec![1], vec![2]]),
+        vec![0, 1, 3]
+    );
+    assert_eq!(covering(&[]), Vec::<usize>::new());
+}
+
+#[test]
+fn a_covered_run_takes_only_the_rows_of_a_covering_design_of_the_rows_it_records() {
+    let run = |rows: &Rows| {
+        let mut taken = Vec::new();
+        for first in 0..4 {
+            for second in [10, 20, 30] {
+                for third in 0..2 {
+                    if rows.take(&[first, second, third]) {
+                        taken.push((first, second, third));
+                    }
+                }
+            }
+        }
+        taken
+    };
+    assert_eq!(run(&Rows::Every).len(), 24);
+    let taken = covered(run);
+    assert!(taken.len() >= 12 && taken.len() < 24, "{}", taken.len());
+    for first in 0..4 {
+        for second in [10, 20, 30] {
+            assert!(taken.iter().any(|row| row.0 == first && row.1 == second));
+        }
+        for third in 0..2 {
+            assert!(taken.iter().any(|row| row.0 == first && row.2 == third));
+        }
+    }
+    for second in [10, 20, 30] {
+        for third in 0..2 {
+            assert!(taken.iter().any(|row| row.1 == second && row.2 == third));
+        }
+    }
 }

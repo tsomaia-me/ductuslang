@@ -261,7 +261,8 @@ class Running(unittest.TestCase):
         planned = run.shared_steps("abc1234", Path("/top"), into, results, 4, Path("/baselines"), None)
         commands = {each["name"]: each["command"] for each in planned}
         self.assertEqual(list(commands), ["archive", "extract", "rustc", "cargo-nextest", "build", "fmt", "clippy",
-                                          "nextest", "doctest", "thumbv7em", "verdicts", "figures"])
+                                          "nextest", "nextest-exhaustive", "doctest", "thumbv7em", "verdicts",
+                                          "figures"])
         self.assertEqual(commands["archive"], ["git", "-C", "/top", "archive", "--output", "/into/export.tar",
                                                "abc1234", "packages/symphonyscript"])
         self.assertEqual(commands["build"], ["cargo", "build", "--workspace", "--all-targets"])
@@ -270,20 +271,36 @@ class Running(unittest.TestCase):
                           ["cargo", "clippy", "--workspace", "--all-targets", "--", "-D", "warnings"],
                           ["cargo", "nextest", "run", "--workspace"], ["cargo", "test", "--workspace", "--doc"],
                           ["cargo", "build", "-p", "symphonyscript-core", "--target", "thumbv7em-none-eabihf"]])
+        self.assertEqual(commands["nextest-exhaustive"], ["cargo", "nextest", "run", "--workspace", "--run-ignored",
+                                                          "all", "-E", "test(/(^|::)exhaustive_/)"])
         self.assertEqual(commands["verdicts"][2:], ["check", "abc1234", "--profile", "dev", "--jobs", "4",
                                                     "--settle-below", "6.0", "--build", "/into/check", "--baselines",
                                                     "/baselines"])
         self.assertEqual(commands["figures"][2:], ["figures", "/into/check/target/debug",
                                                    "/results/check-times.json.gz", "/results/figures.json"])
         self.assertEqual({each["name"]: each["below"] for each in planned if each["below"]},
-                         {**dict.fromkeys(["build", "fmt", "clippy", "nextest", "doctest", "thumbv7em", "verdicts"],
-                                          12.0), "figures": 6.0})
+                         {**dict.fromkeys(["build", "fmt", "clippy", "nextest", "nextest-exhaustive", "doctest",
+                                           "thumbv7em", "verdicts"], 12.0), "figures": 6.0})
         quiet = run.shared_steps("abc1234", Path("/top"), into, results, 4, Path("/baselines"), None, float("inf"))
         self.assertEqual([quiet[-2]["command"][9], quiet[-1]["below"]], ["inf", float("inf")])
         self.assertTrue(all(each["cwd"] == "/into/export/packages/symphonyscript"
                             for each in planned if each["command"][0] in ("cargo", "rustc")))
         self.assertTrue(all(each["env"]["CARGO_TARGET_DIR"] == "/into/target" for each in planned
                             if each["command"][0] == "cargo" and each["name"] != "cargo-nextest"))
+
+    def test_the_shared_step_runs_the_stress_tests_after_the_exhaustive_ones_on_a_quiet_host_when_asked(self):
+        into, results = Path("/into"), Path("/results")
+        planned = run.shared_steps("abc1234", Path("/top"), into, results, 4, Path("/baselines"), None, 5.0, True)
+        names = [each["name"] for each in planned]
+        self.assertEqual(names[names.index("nextest"):names.index("doctest")],
+                         ["nextest", "nextest-exhaustive", "nextest-stress"])
+        stress = planned[names.index("nextest-stress")]
+        self.assertEqual(stress["command"], ["cargo", "nextest", "run", "--workspace", "--run-ignored", "all", "-E",
+                                             "test(/(^|::)stress_/)"])
+        self.assertEqual((stress["below"], stress["cwd"], stress["env"]["NEXTEST_TEST_THREADS"]),
+                         (5.0, "/into/export/packages/symphonyscript", "4"))
+        default = run.shared_steps("abc1234", Path("/top"), into, results, 4, Path("/baselines"), None)
+        self.assertNotIn("nextest-stress", [each["name"] for each in default])
 
 
 if __name__ == "__main__":

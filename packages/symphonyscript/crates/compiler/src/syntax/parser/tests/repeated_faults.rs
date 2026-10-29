@@ -21,7 +21,8 @@ fn work_and_codes(line: &str, repetitions: usize) -> (usize, Vec<Code>) {
 }
 
 #[test]
-fn repeated_faults_cost_work_linear_in_their_number() {
+#[ignore = "stress"]
+fn stress_repeated_faults_cost_work_linear_in_their_number() {
     for (line, repetitions, faults) in [
         ("let a = (1 2\n", 8_000, &[Code::ExpressionSyntax][..]),
         (

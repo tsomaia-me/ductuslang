@@ -5,6 +5,7 @@ use symphonyscript::{Code, Compiler, Diagnostic, Severity, Source};
 use symphonyscript_core::{
     Bounded, Count, NativeArg, NativeOut, NativeSignature, NativeType, Ty, Value, Vocabulary,
 };
+pub use symphonyscript_fixtures::Orders;
 use symphonyscript_fixtures::vocabulary;
 
 pub fn source(text: &str) -> Source {
@@ -156,27 +157,7 @@ pub fn expect_codes(text: &str, expected: &[(Code, &str, usize)]) {
 }
 
 pub fn permutations<T: Copy>(items: &[T]) -> Vec<Vec<T>> {
-    let mut found = Vec::new();
-    let mut order: Vec<usize> = (0..items.len()).collect();
-    let mut counters = vec![0; items.len()];
-    found.push(order.iter().map(|index| items[*index]).collect());
-    let mut level = 0;
-    while level < items.len() {
-        if counters[level] < level {
-            if level % 2 == 0 {
-                order.swap(0, level);
-            } else {
-                order.swap(counters[level], level);
-            }
-            found.push(order.iter().map(|index| items[*index]).collect());
-            counters[level] += 1;
-            level = 0;
-        } else {
-            counters[level] = 0;
-            level += 1;
-        }
-    }
-    found
+    Orders::Every.of(items)
 }
 
 pub type Row<'a> = (&'a [&'a str], &'a [(Code, &'a str)]);
@@ -197,6 +178,10 @@ pub fn error_texts(compiler: &Compiler, text: &str) -> Vec<(Code, String)> {
 }
 
 pub fn assert_rows_in_every_order(vocabulary: &Vocabulary, rows: &[Row]) {
+    assert_rows_in_orders(Orders::Every, vocabulary, rows);
+}
+
+pub fn assert_rows_in_orders(orders: Orders, vocabulary: &Vocabulary, rows: &[Row]) {
     let compiler = Compiler::new(vocabulary).expect("the vocabulary compiles");
     for (items, expected) in rows {
         let mut expected: Vec<(Code, String)> = expected
@@ -204,7 +189,7 @@ pub fn assert_rows_in_every_order(vocabulary: &Vocabulary, rows: &[Row]) {
             .map(|(code, text)| (*code, (*text).to_string()))
             .collect();
         expected.sort();
-        for order in permutations(items) {
+        for order in orders.of(items) {
             let text = order.concat();
             assert_eq!(error_texts(&compiler, &text), expected, "{text}");
         }
