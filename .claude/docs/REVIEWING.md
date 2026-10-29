@@ -187,6 +187,34 @@ Fix: end the region before a line whose first word is followed by a name.
 Fix: inside an expression bracket, a line no expression continues ends the region; multi-line bundles and parenthesized placements (SPEC §7.6 to §7.8) keep parsing, shown by the line-break variants of the valid corpus.
 ```
 
+**A preference reported as a defect.** A finding names a program and the document sentence it breaks: a valid program rejected, a wrong program accepted, a wrong value, a panic or internal-error, nondeterminism, or a cost past linear in the program and the array values it builds (ARCHITECTURE §7). A verdict a document sentence decides, and a rule the reviewer would write otherwise, are no finding; a change of the rule is the owner's.\
+**Bad**
+```text
+Minor: `[]` should take `i32` as its element type when nothing fixes it, instead of each use choosing.
+```
+**Good**
+```text
+No finding: SPEC §3.2 decides it ("each use gives it its element type"), and `Note/([][0])` draws index-out-of-range as §5.5 says.
+```
+**Blocking by the path, not by the finding's size.** PLAN § Reviews rates by the path a program takes: Blocking on a path an ordinary program takes, Major on an unusual one or an exit criterion not met, Minor everything else; one generated row and a hundred rate the same, and a defect in new code rates as one in old.\
+**Bad**
+```text
+Blocking: a cycle through the reference an untaken arm hands to a second recursive function is not drawn (1 of 8 generated rows).
+```
+**Good**
+```text
+Major: a wrong program accepted on an unusual path, a nested helper called on a frame-chosen slice inside an untaken arm. Blocking is the ordinary path: a bounds-guarded recursion over clips with a helper, refused 108 of 108.
+```
+**A feature reported as a fix.** A fix repairs a mechanism the code already has. A finding whose property needs a mechanism the code lacks (a new walk, key, reader, template or check), a rule no document sentence decides, or a construct the milestone's steps do not name is a feature proposal: rated as the defect it answers, with what it needs named, for the head to take to the owner, never a fix for the round, because a feature built in a fix round is designed one gap at a time under reviews scoped to a diff.\
+**Bad**
+```text
+Blocking. Fix: resolve a path whose start the frame chooses per evaluation, through a template per distinct choice keyed by the frame value, and check the untaken arms against the chosen reference.
+```
+**Good**
+```text
+Blocking; feature, not fix. `fn h(c, d, i, n): if n < 1 then [c, d][i].gain else h(c, d, i, n - 1)` reads both candidates' bindings, so `h(verse, other, 1, 3)` is refused for `verse`'s live input. No SPEC sentence says which binding a frame-chosen read is, and the code reads no path per evaluation: needs the rule in §6.3 and that mechanism, planned as a step.
+```
+
 ### Rust
 
 **Clone to quiet the borrow checker.** The copy costs an allocation per call and hides that the borrow is too wide.\
