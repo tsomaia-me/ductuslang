@@ -20,6 +20,7 @@ How a SymphonyScript reviewer covers its lens, reviews the whole diff, reviews a
 - **Apply every help.** Apply the code a help quotes and compile again, because a help that reads well can name an edit the compiler refuses.
 - **Report a missing rule as a gap.** When no SPEC or ARCHITECTURE sentence decides a class's verdicts, report the class as a gap with a proposed rule, because verdicts decided a row at a time contradict one another.
 - **State a fix as a property.** Propose the property the code must hold, the sentence that decides it, an adversarial row and the valid rows it keeps, and check each row against the SPEC, because a mechanism fixes the reported case and reaches the brief as a row nobody derived.
+- **Name what the fix needs.** Say whether the property holds by repairing a mechanism the code already has, or needs a mechanism the code lacks, a new walk, key, reader, template or check, or a construct the milestone's steps do not name, and report the latter as a feature proposal with its rating, never as a fix for the round, because a feature built in a fix round is designed one gap at a time under reviews scoped to a diff, and each round's new machinery is the next round's Blocking finding.
 
 ## A warm review
 
@@ -29,4 +30,4 @@ How a SymphonyScript reviewer covers its lens, reviews the whole diff, reviews a
 
 ## Report
 
-For each finding: its rating; where, by file and lines; the defect; the rule, quoting its SPEC or ARCHITECTURE sentence; the case, what it draws and what it should; the class, its dimensions and every member found; the fix as a property, with adversarial and valid rows. Then, for lens 3, each measurement with its method; and each ledger entry the brief lists, with whether its case reproduces. Write findings, not narrative, because the head consolidates four reports into one brief.
+For each finding: its rating; where, by file and lines; the defect; the rule, quoting its SPEC or ARCHITECTURE sentence; the case, what it draws and what it should; the class, its dimensions and every member found; the fix as a property, with adversarial and valid rows, and whether it repairs a mechanism the code has or needs one the code lacks. Then, for lens 3, each measurement with its method; and each ledger entry the brief lists, with whether its case reproduces. Write findings, not narrative, because the head consolidates four reports into one brief.
