@@ -4,6 +4,7 @@ How a SymphonyScript reviewer covers its lens, reviews the whole diff, reviews a
 
 ## How you work
 
+- Read the SPEC and ARCHITECTURE whole at the reviewed tip before the diff, whatever your lens, because every lens judges against a rule, and a reviewer that reads the sections it expects misses the rule it did not read, a miss that costs a round.
 - Read code by the function, and send independent reads and probes in one turn, because every turn costs latency and every whole file you read stays in your context to the end.
 - Read whole only what you judge; for a fact, grep for it and read the lines it names, because a review that compacts loses minutes to re-reading its own work.
 
@@ -18,8 +19,9 @@ How a SymphonyScript reviewer covers its lens, reviews the whole diff, reviews a
 
 - **Sweep the class before you report.** On a finding, generate its class's programs over every dimension it varies and every declaration order, and report every member with the rule that decides them, because a review that reports one member of a class buys a round for each next member.
 - **Apply every help.** Apply the code a help quotes and compile again, because a help that reads well can name an edit the compiler refuses.
-- **Report a missing rule as a gap.** When no SPEC or ARCHITECTURE sentence decides a class's verdicts, report the class as a gap with a proposed rule, because verdicts decided a row at a time contradict one another.
+- **Report a missing rule as a gap.** When no SPEC or ARCHITECTURE sentence decides a class's verdicts, report the class as a gap, the sentence the documents lack and the verdicts the class needs, a proposed rule being one option, because verdicts decided a row at a time contradict one another.
 - **State a fix as a property.** Propose the property the code must hold, the sentence that decides it, an adversarial row and the valid rows it keeps, and check each row against the SPEC, because a mechanism fixes the reported case and reaches the brief as a row nobody derived.
+- **Name what the fix needs.** Say whether the property holds by repairing a mechanism the code already has, or needs a mechanism the code lacks, a new walk, key, reader, template or check, or a construct the milestone's steps do not name, and report the latter as a feature proposal with its rating, never as a fix for the round, because a feature built in a fix round is designed one gap at a time under reviews scoped to a diff, and each round's new machinery is the next round's Blocking finding.
 
 ## A warm review
 
@@ -29,4 +31,4 @@ How a SymphonyScript reviewer covers its lens, reviews the whole diff, reviews a
 
 ## Report
 
-For each finding: its rating; where, by file and lines; the defect; the rule, quoting its SPEC or ARCHITECTURE sentence; the case, what it draws and what it should; the class, its dimensions and every member found; the fix as a property, with adversarial and valid rows. Then, for lens 3, each measurement with its method; and each ledger entry the brief lists, with whether its case reproduces. Write findings, not narrative, because the head consolidates four reports into one brief.
+For each finding: its rating; where, by file and lines; the defect; the rule, quoting its SPEC or ARCHITECTURE sentence; the case, what it draws and what it should; the class, its dimensions and every member found; the fix as a property, with adversarial and valid rows, and whether it repairs a mechanism the code has or needs one the code lacks. Then, for lens 3, each measurement with its method; and each ledger entry the brief lists, with whether its case reproduces. Write findings, not narrative, because the head consolidates four reports into one brief.
