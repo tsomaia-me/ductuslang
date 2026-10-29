@@ -156,6 +156,7 @@ Exit:
 - Every code has a lesson, every lesson's `sym` examples pass Check and its `sym-error` examples draw its code, and every diagnostic the error-rule table's programs draw has a summary of one to three lines.
 - The robustness corpus gains mutants of the new examples, and none draws internal-error or panics.
 - A fixture vocabulary's native functions, one taking a string, are typed by their signatures, called at compile time with compile-time arguments, and refused with an argument that reads a cell where they take a string; a variable-array attribute accepts a value up to its capacity and refuses a larger one.
+- Closed at `3f94098` on 2026-10-29 after warm check 14 kept nothing Blocking, with 65 ledger entries open, every one carried to M2e, the frame-chosen reference construct's to step 3.
 
 ## M2e: Loops
 
