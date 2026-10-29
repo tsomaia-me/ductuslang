@@ -15,12 +15,14 @@ const HOOK = path.join(path.dirname(fileURLToPath(import.meta.url)), 'session.mj
 const ROOT = path.resolve(path.dirname(HOOK), '..', '..');
 const SESSION_ID = 'session-abc';
 const LESSONS = 'L1 Do X, because Y.\nL2 Do Z, because W.';
+const PREFERENCES = 'P1 Prefer X, because Y.';
 
-function makeProject(lessons) {
+function makeProject(lessons, preferences = PREFERENCES) {
   const project = mkdtempSync(path.join(os.tmpdir(), 'session-hook-project-'));
   if (lessons !== undefined) {
     mkdirSync(path.join(project, '.memory'));
     writeFileSync(path.join(project, '.memory', 'LESSONS.md'), lessons);
+    if (preferences !== null) writeFileSync(path.join(project, '.memory', 'OWNER_PREFERENCES.md'), preferences);
   }
   return project;
 }
@@ -46,11 +48,11 @@ function runHook({ project, source = 'startup', stdin, hook = HOOK, note }) {
   return { ...result, harness };
 }
 
-test('startup prints the lessons verbatim then the menu line and no last-messages line', () => {
+test('startup prints the lessons and the owner preferences verbatim then the menu line and no last-messages line', () => {
   const project = makeProject(`${LESSONS}\n`);
   const { stdout, status } = runHook({ project });
   assert.equal(status, 0);
-  assert.equal(stdout, `${LESSONS}\n${MENU_LINE}\n`);
+  assert.equal(stdout, `${LESSONS}\n${PREFERENCES}\n${MENU_LINE}\n`);
   assert.ok(!stdout.includes('messages:'));
 });
 
@@ -61,7 +63,7 @@ test('compact with no note says so, then the lessons, the menu line and the last
   const expectedPath = path.join(harness, SESSION_ID, LAST_MESSAGES_FILE);
   assert.equal(
     stdout,
-    `You were compacted and left no note.\n${LESSONS}\n${MENU_LINE}\nLast 50 messages: ${expectedPath}. Read them whole.\n`,
+    `You were compacted and left no note.\n${LESSONS}\n${PREFERENCES}\n${MENU_LINE}\nLast 50 messages: ${expectedPath}. Read them whole.\n`,
   );
 });
 
@@ -96,7 +98,7 @@ test('a startup or resume session start leaves a stored note in place', () => {
     const project = makeProject(LESSONS);
     const { stdout, status, harness } = runHook({ project, source, note: { role: 'builder', note: 'kept', time: 'now' } });
     assert.equal(status, 0);
-    assert.equal(stdout, `${LESSONS}\n${MENU_LINE}\n`);
+    assert.equal(stdout, `${LESSONS}\n${PREFERENCES}\n${MENU_LINE}\n`);
     assert.ok(existsSync(path.join(harness, SESSION_ID, NOTE_FILE)));
   }
 });
@@ -106,7 +108,7 @@ test('compact with a corrupt note says it is corrupt and keeps it', () => {
   const { stdout, status, harness } = runHook({ project, source: 'compact', note: '{"role": "builder", "no' });
   assert.equal(status, 0);
   const noteFile = path.join(harness, SESSION_ID, NOTE_FILE);
-  assert.ok(stdout.startsWith(`You were compacted and your note at ${noteFile} is corrupt: read it as it stands.\n${LESSONS}\n${MENU_LINE}\n`));
+  assert.ok(stdout.startsWith(`You were compacted and your note at ${noteFile} is corrupt: read it as it stands.\n${LESSONS}\n${PREFERENCES}\n${MENU_LINE}\n`));
   assert.ok(existsSync(noteFile));
 });
 
@@ -114,7 +116,10 @@ test('missing lessons file prints the not-found line then the menu line', () => 
   const project = makeProject();
   const { stdout, status } = runHook({ project });
   assert.equal(status, 0);
-  assert.equal(stdout, `LESSONS.md not found at ${path.join(project, '.memory', 'LESSONS.md')}\n${MENU_LINE}\n`);
+  assert.equal(
+    stdout,
+    `LESSONS.md not found at ${path.join(project, '.memory', 'LESSONS.md')}\nOWNER_PREFERENCES.md not found at ${path.join(project, '.memory', 'OWNER_PREFERENCES.md')}\n${MENU_LINE}\n`,
+  );
 });
 
 test('a lessons file over the limit is replaced by a pointer line', () => {
@@ -122,8 +127,40 @@ test('a lessons file over the limit is replaced by a pointer line', () => {
   const { stdout, status } = runHook({ project, source: 'compact' });
   assert.equal(status, 0);
   assert.ok(stdout.length < HOOK_OUTPUT_LIMIT);
-  assert.ok(stdout.startsWith(`You were compacted and left no note.\nLESSONS.md over the hook limit: read ${path.join(project, '.memory', 'LESSONS.md')}\n${MENU_LINE}\n`));
+  assert.ok(stdout.startsWith(`You were compacted and left no note.\nLESSONS.md over the hook limit: read ${path.join(project, '.memory', 'LESSONS.md')}\n${PREFERENCES}\n${MENU_LINE}\n`));
   assert.ok(stdout.includes('Last 50 messages:'));
+});
+
+test('a startup prints the owner preferences verbatim after the lessons', () => {
+  const project = makeProject(LESSONS, `${PREFERENCES}\n`);
+  const { stdout, status } = runHook({ project });
+  assert.equal(status, 0);
+  assert.equal(stdout, `${LESSONS}\n${PREFERENCES}\n${MENU_LINE}\n`);
+});
+
+test('a missing owner preferences file prints the not-found line after the lessons', () => {
+  const project = makeProject(LESSONS, null);
+  const { stdout, status } = runHook({ project });
+  assert.equal(status, 0);
+  assert.equal(stdout, `${LESSONS}\nOWNER_PREFERENCES.md not found at ${path.join(project, '.memory', 'OWNER_PREFERENCES.md')}\n${MENU_LINE}\n`);
+});
+
+test('an owner preferences file over the limit is replaced by a pointer line', () => {
+  const project = makeProject(LESSONS, 'x'.repeat(HOOK_OUTPUT_LIMIT));
+  const { stdout, status } = runHook({ project, source: 'compact' });
+  assert.equal(status, 0);
+  assert.ok(stdout.length < HOOK_OUTPUT_LIMIT);
+  assert.ok(stdout.startsWith(`You were compacted and left no note.\n${LESSONS}\nOWNER_PREFERENCES.md over the hook limit: read ${path.join(project, '.memory', 'OWNER_PREFERENCES.md')}\n${MENU_LINE}\n`));
+  assert.ok(stdout.includes('Last 50 messages:'));
+});
+
+test('the lessons keep priority over the owner preferences for the room left', () => {
+  const lessons = 'l'.repeat(HOOK_OUTPUT_LIMIT - 500);
+  const project = makeProject(lessons, 'p'.repeat(400));
+  const { stdout, status } = runHook({ project });
+  assert.equal(status, 0);
+  assert.ok(stdout.length < HOOK_OUTPUT_LIMIT);
+  assert.equal(stdout, `${lessons}\nOWNER_PREFERENCES.md over the hook limit: read ${path.join(project, '.memory', 'OWNER_PREFERENCES.md')}\n${MENU_LINE}\n`);
 });
 
 test('ordinary output stays under the limit', () => {
@@ -163,7 +200,7 @@ test('a project that is not a git repository reads its own lessons', () => {
   const project = makeProject(LESSONS);
   const { stdout, status } = runHook({ project });
   assert.equal(status, 0);
-  assert.equal(stdout, `${LESSONS}\n${MENU_LINE}\n`);
+  assert.equal(stdout, `${LESSONS}\n${PREFERENCES}\n${MENU_LINE}\n`);
 });
 
 test('compact without a session id keeps the lessons and the menu line', () => {
@@ -171,7 +208,7 @@ test('compact without a session id keeps the lessons and the menu line', () => {
   const stdin = JSON.stringify({ cwd: project, hook_event_name: 'SessionStart', source: 'compact' });
   const { stdout, status } = runHook({ project, stdin });
   assert.equal(status, 0);
-  assert.equal(stdout, `${LESSONS}\n${MENU_LINE}\n`);
+  assert.equal(stdout, `${LESSONS}\n${PREFERENCES}\n${MENU_LINE}\n`);
   assert.ok(!stdout.includes('messages:'));
   assert.ok(!stdout.includes('session hook failed'));
 });
@@ -196,7 +233,7 @@ test('a subagent compacting in the session leaves the main agent note in place a
     env: { ...process.env, CLAUDE_PROJECT_DIR: project, CLAUDE_HARNESS_DIR: harness },
   });
   assert.equal(result.status, 0);
-  assert.equal(result.stdout, `${LESSONS}\n${MENU_LINE}\n`);
+  assert.equal(result.stdout, `${LESSONS}\n${PREFERENCES}\n${MENU_LINE}\n`);
   assert.ok(existsSync(noteFile));
 });
 
@@ -221,7 +258,7 @@ test('a hook run through a symlinked directory still prints the menu line', () =
   symlinkSync(path.dirname(HOOK), linkedHooks);
   const { stdout, status } = runHook({ project, hook: path.join(linkedHooks, 'session.mjs') });
   assert.equal(status, 0);
-  assert.equal(stdout, `${LESSONS}\n${MENU_LINE}\n`);
+  assert.equal(stdout, `${LESSONS}\n${PREFERENCES}\n${MENU_LINE}\n`);
 });
 
 test('a session started from the app with no agent file is told to read builder.md as a builder', () => {

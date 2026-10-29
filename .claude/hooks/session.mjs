@@ -8,6 +8,7 @@ import { isEntryPoint, lastMessagesPath, notePath, parseLine, readStdin, roleFil
 
 export const HOOK_OUTPUT_LIMIT = 10000;
 const LESSONS_RELATIVE_PATH = path.join('.memory', 'LESSONS.md');
+const PREFERENCES_RELATIVE_PATH = path.join('.memory', 'OWNER_PREFERENCES.md');
 const READING_RELATIVE_PATH = path.join('.memory', 'READING.md');
 const COMPACT_SOURCE = 'compact';
 const LINE_BREAK = '\n';
@@ -60,12 +61,14 @@ function groundingParts(memory, stored, sessionId) {
   return [GUARD_LINE, 'Read, in order:', ...readingList(memory, stored, sessionId), NOTE_HEADING, stored.note, LAST_LINE];
 }
 
-function lessonsPart(lessonsPath, roomLeft) {
-  if (!existsSync(lessonsPath)) {
-    return `LESSONS.md not found at ${lessonsPath}`;
+function memoryFilePart(relativePath, memory, roomLeft) {
+  const name = path.basename(relativePath);
+  const file = path.join(memory, relativePath);
+  if (!existsSync(file)) {
+    return `${name} not found at ${file}`;
   }
-  const lessons = readFileSync(lessonsPath, 'utf8').replace(/\n+$/, '');
-  return lessons.length < roomLeft ? lessons : `LESSONS.md over the hook limit: read ${lessonsPath}`;
+  const content = readFileSync(file, 'utf8').replace(/\n+$/, '');
+  return content.length < roomLeft ? content : `${name} over the hook limit: read ${file}`;
 }
 
 function mainCheckout(project) {
@@ -100,8 +103,9 @@ function buildOutput(input) {
   if (stored && stored !== CORRUPT) return { text: render(groundingParts(memory, stored, input.session_id)), usedNote: noteFile };
   const head = compacted ? compactHead(noteFile, stored) : [];
   const tail = compacted ? [MENU_LINE, lastMessagesLine(input.session_id), ...requiredReadingLine(memory)] : [MENU_LINE];
-  const roomLeft = HOOK_OUTPUT_LIMIT - render([...head, '', ...tail]).length;
-  return { text: render([...head, lessonsPart(path.join(memory, LESSONS_RELATIVE_PATH), roomLeft), ...tail]), usedNote: null };
+  const lessons = memoryFilePart(LESSONS_RELATIVE_PATH, memory, HOOK_OUTPUT_LIMIT - render([...head, '', '', ...tail]).length);
+  const preferences = memoryFilePart(PREFERENCES_RELATIVE_PATH, memory, HOOK_OUTPUT_LIMIT - render([...head, lessons, '', ...tail]).length);
+  return { text: render([...head, lessons, preferences, ...tail]), usedNote: null };
 }
 
 async function main() {
