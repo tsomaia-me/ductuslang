@@ -249,7 +249,7 @@ def ignored_tests(name, expression, package, cargo, below):
                 cargo, below)
 
 
-def shared_steps(sha, top, into, run, jobs, baselines, against, quiet=QUIET_LOAD, stress=False):
+def shared_steps(sha, top, into, run, jobs, baselines, against, quiet=QUIET_LOAD, stress=False, exhaustive=False):
     export, package = into / "export", into / "export" / PACKAGE
     cargo = {"CARGO_TARGET_DIR": str(into / "target"), "CARGO_BUILD_JOBS": str(jobs),
              "NEXTEST_TEST_THREADS": str(jobs), "RUST_TEST_THREADS": str(jobs)}
@@ -264,7 +264,7 @@ def shared_steps(sha, top, into, run, jobs, baselines, against, quiet=QUIET_LOAD
             step("clippy", ["cargo", "clippy", "--workspace", "--all-targets", "--", "-D", "warnings"], package,
                  cargo, BUSY_LOAD),
             step("nextest", ["cargo", "nextest", "run", "--workspace"], package, cargo, BUSY_LOAD),
-            ignored_tests("nextest-exhaustive", EXHAUSTIVE, package, cargo, BUSY_LOAD),
+            *([ignored_tests("nextest-exhaustive", EXHAUSTIVE, package, cargo, BUSY_LOAD)] if exhaustive else []),
             *([ignored_tests("nextest-stress", STRESS, package, cargo, quiet)] if stress else []),
             step("doctest", ["cargo", "test", "--workspace", "--doc"], package, cargo, BUSY_LOAD),
             step("thumbv7em", ["cargo", "build", "-p", "symphonyscript-core", "--target", THUMB], package, cargo,
@@ -274,11 +274,12 @@ def shared_steps(sha, top, into, run, jobs, baselines, against, quiet=QUIET_LOAD
                              run / "check-times.json.gz", run / "figures.json"], HERE, None, quiet)]
 
 
-def manifest(tip, into, run, records, started, jobs, quiet=QUIET_LOAD):
+def manifest(tip, into, run, records, started, jobs, quiet=QUIET_LOAD, stress=False, exhaustive=False):
     pipeline = git(HERE, "rev-parse", "HEAD").stdout.strip()
     edited = git(HERE, "status", "--porcelain", "--", str(EVOLVE)).stdout.strip()
     return {"tip": tip, "export": str(into / "export" / PACKAGE), "target": str(into / "target"),
             "evolve_binaries": str(into / "check" / "target" / PROFILES["dev"]), "profile": "dev", "jobs": jobs,
+            "ignored_tests": {"exhaustive": exhaustive, "stress": stress},
             "load_limits": {"builds_and_checks": BUSY_LOAD, "timed_steps": limit(quiet)},
             "pipeline": {"commit": pipeline, "uncommitted_changes": bool(edited)},
             "host": {"name": platform.node(), "system": platform.platform(), "cpus": os.cpu_count()},
@@ -301,11 +302,12 @@ def shared(arguments):
     run.mkdir(parents=True)
     started, records = now(), []
     for planned in shared_steps(sha, top, into, run, arguments.jobs, arguments.baselines, arguments.against,
-                                arguments.quiet_below, arguments.stress):
+                                arguments.quiet_below, arguments.stress, arguments.exhaustive):
         records.append(performed(planned, run))
         print(f"{planned['name']}: exit {records[-1]['exit']}, {records[-1]['seconds']} s, "
               f"load {records[-1]['load']}", flush=True)
-        shape = manifest(tip, into, run, records, started, arguments.jobs, arguments.quiet_below)
+        shape = manifest(tip, into, run, records, started, arguments.jobs, arguments.quiet_below, arguments.stress,
+                         arguments.exhaustive)
         (run / "manifest.json").write_text(json.dumps(shape, indent=2) + "\n")
     print(run / "manifest.json")
     sys.exit(0 if all(record["exit"] == 0 for record in records) else 1)
@@ -340,8 +342,10 @@ def main():
                          help="a new directory for the export and its builds, kept for the reviewers' probes; "
                               "by default a new temporary directory")
     sharing.add_argument("--against", help="as for check")
+    sharing.add_argument("--exhaustive", action="store_true",
+                         help="also run the exhaustive tests after the unit tests")
     sharing.add_argument("--stress", action="store_true",
-                         help="also run the stress tests after the exhaustive ones, once the load is below "
+                         help="also run the stress tests after the unit and exhaustive tests, once the load is below "
                               "--quiet-below")
     sharing.add_argument("--quiet-below", type=float, default=QUIET_LOAD,
                          help="the 1-minute load the timed steps, the verdict check and the figures, wait to fall "

@@ -243,6 +243,8 @@ class Running(unittest.TestCase):
             records = [run.performed(each, results, lambda below: waited.append(below) or 2.5) for each in planned]
             logs = {record["log"]: (results / record["log"]).read_text() for record in records}
             shape = run.manifest("f" * 40, results / "into", results, records, "2026-10-28T00:00:00+00:00", 4)
+            asked = run.manifest("f" * 40, results / "into", results, records, "2026-10-28T00:00:00+00:00", 4, 6.0,
+                                 True, True)
         self.assertEqual(waited, [None, 12.0, 6.0, None])
         self.assertEqual([(r["name"], r["exit"], r["load"], r["log"]) for r in records],
                          [("first", 0, 2.5, "first.log"), ("failing", 3, 2.5, "failing.log"),
@@ -253,16 +255,17 @@ class Running(unittest.TestCase):
         self.assertEqual(shape["tip"], "f" * 40)
         self.assertEqual(shape["results"], ["after.log", "failing.log", "first.log", "missing.log"])
         self.assertEqual(shape["commands"], records)
-        self.assertEqual(set(shape), {"tip", "export", "target", "evolve_binaries", "profile", "jobs", "load_limits",
-                                      "pipeline", "host", "started", "written", "results", "commands"})
+        self.assertEqual(set(shape), {"tip", "export", "target", "evolve_binaries", "profile", "jobs", "ignored_tests",
+                                      "load_limits", "pipeline", "host", "started", "written", "results", "commands"})
+        self.assertEqual((shape["ignored_tests"], asked["ignored_tests"]),
+                         ({"exhaustive": False, "stress": False}, {"exhaustive": True, "stress": True}))
 
     def test_the_shared_step_runs_the_four_checks_as_commands_of_their_own_in_the_dev_profile(self):
         into, results = Path("/into"), Path("/results")
         planned = run.shared_steps("abc1234", Path("/top"), into, results, 4, Path("/baselines"), None)
         commands = {each["name"]: each["command"] for each in planned}
         self.assertEqual(list(commands), ["archive", "extract", "rustc", "cargo-nextest", "build", "fmt", "clippy",
-                                          "nextest", "nextest-exhaustive", "doctest", "thumbv7em", "verdicts",
-                                          "figures"])
+                                          "nextest", "doctest", "thumbv7em", "verdicts", "figures"])
         self.assertEqual(commands["archive"], ["git", "-C", "/top", "archive", "--output", "/into/export.tar",
                                                "abc1234", "packages/symphonyscript"])
         self.assertEqual(commands["build"], ["cargo", "build", "--workspace", "--all-targets"])
@@ -271,16 +274,14 @@ class Running(unittest.TestCase):
                           ["cargo", "clippy", "--workspace", "--all-targets", "--", "-D", "warnings"],
                           ["cargo", "nextest", "run", "--workspace"], ["cargo", "test", "--workspace", "--doc"],
                           ["cargo", "build", "-p", "symphonyscript-core", "--target", "thumbv7em-none-eabihf"]])
-        self.assertEqual(commands["nextest-exhaustive"], ["cargo", "nextest", "run", "--workspace", "--run-ignored",
-                                                          "all", "-E", "test(/(^|::)exhaustive_/)"])
         self.assertEqual(commands["verdicts"][2:], ["check", "abc1234", "--profile", "dev", "--jobs", "4",
                                                     "--settle-below", "6.0", "--build", "/into/check", "--baselines",
                                                     "/baselines"])
         self.assertEqual(commands["figures"][2:], ["figures", "/into/check/target/debug",
                                                    "/results/check-times.json.gz", "/results/figures.json"])
         self.assertEqual({each["name"]: each["below"] for each in planned if each["below"]},
-                         {**dict.fromkeys(["build", "fmt", "clippy", "nextest", "nextest-exhaustive", "doctest",
-                                           "thumbv7em", "verdicts"], 12.0), "figures": 6.0})
+                         {**dict.fromkeys(["build", "fmt", "clippy", "nextest", "doctest", "thumbv7em", "verdicts"],
+                                          12.0), "figures": 6.0})
         quiet = run.shared_steps("abc1234", Path("/top"), into, results, 4, Path("/baselines"), None, float("inf"))
         self.assertEqual([quiet[-2]["command"][9], quiet[-1]["below"]], ["inf", float("inf")])
         self.assertTrue(all(each["cwd"] == "/into/export/packages/symphonyscript"
@@ -288,9 +289,26 @@ class Running(unittest.TestCase):
         self.assertTrue(all(each["env"]["CARGO_TARGET_DIR"] == "/into/target" for each in planned
                             if each["command"][0] == "cargo" and each["name"] != "cargo-nextest"))
 
+    def test_the_shared_step_runs_the_exhaustive_tests_only_when_asked(self):
+        into, results = Path("/into"), Path("/results")
+        planned = run.shared_steps("abc1234", Path("/top"), into, results, 4, Path("/baselines"), None, 6.0, False,
+                                   True)
+        names = [each["name"] for each in planned]
+        self.assertEqual(names[names.index("nextest"):names.index("doctest")], ["nextest", "nextest-exhaustive"])
+        exhaustive = planned[names.index("nextest-exhaustive")]
+        self.assertEqual(exhaustive["command"], ["cargo", "nextest", "run", "--workspace", "--run-ignored", "all",
+                                                 "-E", "test(/(^|::)exhaustive_/)"])
+        self.assertEqual((exhaustive["below"], exhaustive["cwd"], exhaustive["env"]["NEXTEST_TEST_THREADS"]),
+                         (12.0, "/into/export/packages/symphonyscript", "4"))
+        for default in (run.shared_steps("abc1234", Path("/top"), into, results, 4, Path("/baselines"), None),
+                        run.shared_steps("abc1234", Path("/top"), into, results, 4, Path("/baselines"), None, 6.0,
+                                         True)):
+            self.assertNotIn("nextest-exhaustive", [each["name"] for each in default])
+
     def test_the_shared_step_runs_the_stress_tests_after_the_exhaustive_ones_on_a_quiet_host_when_asked(self):
         into, results = Path("/into"), Path("/results")
-        planned = run.shared_steps("abc1234", Path("/top"), into, results, 4, Path("/baselines"), None, 5.0, True)
+        planned = run.shared_steps("abc1234", Path("/top"), into, results, 4, Path("/baselines"), None, 5.0, True,
+                                   True)
         names = [each["name"] for each in planned]
         self.assertEqual(names[names.index("nextest"):names.index("doctest")],
                          ["nextest", "nextest-exhaustive", "nextest-stress"])

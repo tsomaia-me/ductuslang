@@ -12,3 +12,7 @@ Clip c | three=([1]):
     Note
 #expect no-entry-instance unknown-attribute
 ```
+
+## The shared step
+
+`python3 review/run.py shared <tip> [--into <dir>] [--against <commit>] [--exhaustive] [--stress] [--quiet-below <load>] [--jobs <n>]`, run from `tools/evolve`, is the head's shared step before a review (`docs/PLAN.md` § Reviews). It exports the tip, builds it in the `dev` profile, runs the four checks, each as a command of its own, the verdict diff and the speed figures, and writes `review-runs/<sha>/manifest.json` beside every log and result. The exhaustive tests run only under `--exhaustive`, after the unit tests, and the stress tests only under `--stress`, after them, as `docs/PLAN.md` § Work and checks says; the manifest's `ignored_tests` records whether each ran.
