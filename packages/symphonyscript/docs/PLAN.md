@@ -9,7 +9,7 @@ The implementation runs in five milestones. The owner approves this plan once; t
 - **Owner:** decides direction.
 - **Head:** the session that drives this plan. It briefs implementers and reviewers, sorts every gap, edits the documents, decides what the decision rules let it decide, and keeps the head notes in `.memory/symphonyscript/notes.md`. The head owns the decisions and the architecture, and the reviewers own the code's correctness against them. The head runs implementers and reviewers in parallel wherever the work allows.
 - **Implementer:** one agent per milestone, Opus at effort `high`. An implementer takes its whole scope in its first brief, and new scope goes to a fresh implementer.
-- **Reviewers:** four fresh agents per cold review, one per lens of § Reviews, on the models its table names; an Opus reviewer runs at effort `high` and Fable at `xhigh`, for M2c, M2g and M2h as for every milestone. A warm review resumes a cold reviewer.
+- **Reviewers:** four fresh agents per cold review, one per lens of § Reviews, on the models its table names; an Opus reviewer runs at effort `high` in a cold review and `medium` in a warm review, and Fable at `xhigh`, for M2c, M2g and M2h as for every milestone. A warm review resumes a cold reviewer or starts a fresh one.
 - Implementers and reviewers start no agents of their own.
 
 ### Decisions
