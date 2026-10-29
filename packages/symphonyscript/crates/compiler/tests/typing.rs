@@ -1548,7 +1548,16 @@ fn first_order_failing<W: PartialEq + std::fmt::Debug>(
     wanted: &W,
     found: impl Fn(&str) -> W,
 ) -> Option<String> {
-    support::permutations(items).into_iter().find_map(|order| {
+    first_order_failing_in(support::Orders::Every, items, wanted, found)
+}
+
+fn first_order_failing_in<W: PartialEq + std::fmt::Debug>(
+    orders: support::Orders,
+    items: &[&'static str],
+    wanted: &W,
+    found: impl Fn(&str) -> W,
+) -> Option<String> {
+    orders.of(items).into_iter().find_map(|order| {
         let text = format!("{}\n", order.join("\n"));
         let found = found(&text);
         (found != *wanted).then(|| format!("{text}expected {wanted:?}\nfound {found:?}"))
@@ -1556,6 +1565,10 @@ fn first_order_failing<W: PartialEq + std::fmt::Debug>(
 }
 
 fn expect_in_every_order(rows: &[Row]) {
+    expect_in_orders(support::Orders::Every, rows);
+}
+
+fn expect_in_orders(orders: support::Orders, rows: &[Row]) {
     let failures: Vec<String> = rows
         .iter()
         .filter_map(|(items, wanted)| {
@@ -1564,17 +1577,30 @@ fn expect_in_every_order(rows: &[Row]) {
                 .map(|(code, span)| (*code, (*span).to_string()))
                 .collect();
             wanted.sort();
-            first_order_failing(&with_session(items), &wanted, fixture_errors)
+            first_order_failing_in(orders, &with_session(items), &wanted, fixture_errors)
         })
         .collect();
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
 
 fn expect_located_in_every_order(rows: &[LocatedRow]) {
-    expect_located_with(rows, with_session, located_errors);
+    expect_located_in_orders(support::Orders::Every, rows);
+}
+
+fn expect_located_in_orders(orders: support::Orders, rows: &[LocatedRow]) {
+    expect_located_with_in(orders, rows, with_session, located_errors);
 }
 
 fn expect_located_with(
+    rows: &[LocatedRow],
+    items_of: fn(&[&'static str]) -> Vec<&'static str>,
+    found: fn(&str) -> Located,
+) {
+    expect_located_with_in(support::Orders::Every, rows, items_of, found);
+}
+
+fn expect_located_with_in(
+    orders: support::Orders,
     rows: &[LocatedRow],
     items_of: fn(&[&'static str]) -> Vec<&'static str>,
     found: fn(&str) -> Located,
@@ -1593,14 +1619,15 @@ fn expect_located_with(
                 })
                 .collect();
             wanted.sort();
-            first_order_failing(&items_of(items), &wanted, found)
+            first_order_failing_in(orders, &items_of(items), &wanted, found)
         })
         .collect();
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
 
-#[test]
-fn a_literal_whose_elements_disagree_draws_one_diagnostic_wherever_its_value_goes() {
+fn a_literal_whose_elements_disagree_draws_one_diagnostic_wherever_its_value_goes_in(
+    orders: support::Orders,
+) {
     const H: &str = "fn h(): [1, \"s\"]";
     const R: &str = "fn r(n): if n < 1 then [1, \"s\"] else r(n - 1)";
     const R_OK: &str = "fn r(n): if n < 1 then [1, 2] else r(n - 1)";
@@ -1852,7 +1879,22 @@ fn a_literal_whose_elements_disagree_draws_one_diagnostic_wherever_its_value_goe
             &[(Code::TypeMismatch, "[60, \"s\"]", &[])],
         ),
     ];
-    expect_located_in_every_order(&rows);
+    expect_located_in_orders(orders, &rows);
+}
+
+#[test]
+fn a_literal_whose_elements_disagree_draws_one_diagnostic_wherever_its_value_goes() {
+    a_literal_whose_elements_disagree_draws_one_diagnostic_wherever_its_value_goes_in(
+        support::Orders::ForwardAndReversed,
+    );
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_a_literal_whose_elements_disagree_draws_one_diagnostic_wherever_its_value_goes() {
+    a_literal_whose_elements_disagree_draws_one_diagnostic_wherever_its_value_goes_in(
+        support::Orders::Every,
+    );
 }
 
 #[test]
@@ -2882,8 +2924,7 @@ fn a_line_after_a_missing_block_reports_its_own_faults() {
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
 
-#[test]
-fn a_cell_read_through_a_literals_group_keeps_its_own_kind() {
+fn a_cell_read_through_a_literals_group_keeps_its_own_kind_in(orders: support::Orders) {
     const X: &str = "input x = 1";
     const C: &str = "input c = true";
     const Q: &str = "let q = if c then [x, 2.5] else [3, 4]";
@@ -2960,7 +3001,18 @@ fn a_cell_read_through_a_literals_group_keeps_its_own_kind() {
             &[(Code::TypeMismatch, "[x, \"s\"]")],
         ),
     ];
-    expect_in_every_order(&rows);
+    expect_in_orders(orders, &rows);
+}
+
+#[test]
+fn a_cell_read_through_a_literals_group_keeps_its_own_kind() {
+    a_cell_read_through_a_literals_group_keeps_its_own_kind_in(support::Orders::ForwardAndReversed);
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_a_cell_read_through_a_literals_group_keeps_its_own_kind() {
+    a_cell_read_through_a_literals_group_keeps_its_own_kind_in(support::Orders::Every);
 }
 
 fn as_given(items: &[&'static str]) -> Vec<&'static str> {
@@ -3176,8 +3228,7 @@ fn no_secondary_repeats_the_primary(text: &str) -> bool {
     })
 }
 
-#[test]
-fn inconsistent_uses_name_each_use_with_its_calls() {
+fn inconsistent_uses_name_each_use_with_its_calls_in(orders: support::Orders) {
     const IU: Code = Code::InconsistentUses;
     let rows: [LocatedRow; 13] = [
         (
@@ -3282,11 +3333,12 @@ fn inconsistent_uses_name_each_use_with_its_calls() {
             &[(IU, "e", &["e"])],
         ),
     ];
-    expect_located_in_every_order(&rows);
+    expect_located_in_orders(orders, &rows);
     let failures: Vec<String> = rows
         .iter()
         .filter_map(|(items, _)| {
-            first_order_failing(
+            first_order_failing_in(
+                orders,
                 &with_session(items),
                 &true,
                 no_secondary_repeats_the_primary,
@@ -3311,6 +3363,17 @@ fn inconsistent_uses_name_each_use_with_its_calls() {
     let mut both = vec![support::at(text, "f(a)", 0), support::at(text, "f(a)", 1)];
     both.sort();
     assert_eq!(calls, vec![both]);
+}
+
+#[test]
+fn inconsistent_uses_name_each_use_with_its_calls() {
+    inconsistent_uses_name_each_use_with_its_calls_in(support::Orders::ForwardAndReversed);
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_inconsistent_uses_name_each_use_with_its_calls() {
+    inconsistent_uses_name_each_use_with_its_calls_in(support::Orders::Every);
 }
 
 #[test]
