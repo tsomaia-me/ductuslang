@@ -3656,17 +3656,67 @@ fn untaken_start_rows(start: UntakenStart) -> (Vec<String>, usize) {
     (failures, programs)
 }
 
+fn quiet_callee_read_rows() -> (Vec<String>, usize) {
+    let mut failures = Vec::new();
+    let mut programs = 0;
+    for fault in [
+        CandidateFault::LacksAttribute,
+        CandidateFault::ClosesCycle,
+        CandidateFault::ReadsCell,
+    ] {
+        for condition in ["false", "n > 100"] {
+            for depth in [1, 3] {
+                for reversed in [false, true] {
+                    let (other, candidate) = match fault {
+                        CandidateFault::LacksAttribute => {
+                            ("Clip other | gain=3:\n    Note\n", "verse.tone")
+                        }
+                        CandidateFault::ClosesCycle | CandidateFault::EveryCandidateClosesCycle => {
+                            ("Clip other | gain=k.gain:\n    Note\n", "other")
+                        }
+                        CandidateFault::ReadsCell => ("Clip other | gain=gv:\n    Note\n", "other"),
+                    };
+                    let mut items = [
+                        "Session main\n".to_string(),
+                        "input gv = 1.0\n".to_string(),
+                        "Clip verse | gain=2:\n    Note as tone\n".to_string(),
+                        other.to_string(),
+                        "fn sel(xs, i, n): if n < 1 then (if i32(xs[i].gain) > 0 then xs[0] else xs[0]) else sel(xs, i, n - 1)\n".to_string(),
+                        format!("fn h(xs, i, n): if n < 1 then 0 else (if {condition} then i32(sel(xs, i, 1).gain) else 0) + 1 + h(xs, i, n - 1)\n"),
+                        format!("Clip k | gain=h([verse, {candidate}], 1, {depth}):\n    Note/([60][i32(k.gain) - {depth}])\n"),
+                    ];
+                    if reversed {
+                        items.reverse();
+                    }
+                    let text = items.concat();
+                    let drawn = found(&text);
+                    programs += 1;
+                    if !drawn.is_empty() {
+                        failures.push(format!(
+                            "{fault:?} {condition} {depth} {reversed}\n{text}\n  found {drawn:?}\n"
+                        ));
+                    }
+                }
+            }
+        }
+    }
+    (failures, programs)
+}
+
 #[test]
 fn evaluating_the_start_of_an_untaken_arm_draws_no_fit_range_overflow_or_depth_diagnostic_in_any_frame()
  {
-    let (failures, programs) = in_parallel(&UNTAKEN_STARTS, untaken_start_rows);
+    let (mut failures, mut programs) = in_parallel(&UNTAKEN_STARTS, untaken_start_rows);
+    let (callee, callee_programs) = quiet_callee_read_rows();
+    failures.extend(callee);
+    programs += callee_programs;
     assert!(
         failures.is_empty(),
         "{} of {programs} programs fail:\n{}",
         failures.len(),
         failures.iter().take(8).cloned().collect::<String>()
     );
-    assert_eq!(programs, 1_980);
+    assert_eq!(programs, 2_004);
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -3938,17 +3988,59 @@ fn open_function_rows() -> (Vec<String>, usize) {
     (failures, programs)
 }
 
+fn tainted_start_rows() -> (Vec<String>, usize) {
+    let mut failures = Vec::new();
+    let mut programs = 0;
+    for condition in ["false", "n > 100"] {
+        for depth in [2, 3, 6] {
+            for reversed in [false, true] {
+                let mut items = [
+                    "Session main\n".to_string(),
+                    "Clip verse | gain=2:\n    Note as tone\n".to_string(),
+                    format!(
+                        "fn g(xs, m): if h(xs, m - 1) > {} then xs[1] else xs[0]\n",
+                        depth - 1
+                    ),
+                    format!(
+                        "fn h(xs, n): if n < 1 then 1 else h(xs, n - 1) + 1 + (if {condition} then i32(g(xs, n).gain) else 0) + (if {condition} then i32(g(xs, n + 1).gain) else 0)\n"
+                    ),
+                    format!(
+                        "Clip k:\n    Note/([60][h([verse, verse.tone], {depth}) - {}])\n",
+                        depth + 1
+                    ),
+                ];
+                if reversed {
+                    items.reverse();
+                }
+                let text = items.concat();
+                let drawn = found(&text);
+                let expected: Found = [((Code::UnknownAttribute, "gain".to_string()), 1)].into();
+                programs += 1;
+                if drawn != expected {
+                    failures.push(format!(
+                        "{condition} {depth} {reversed}\n{text}\n  found {drawn:?}\n  expected {expected:?}\n"
+                    ));
+                }
+            }
+        }
+    }
+    (failures, programs)
+}
+
 #[test]
 fn an_untaken_arms_start_that_reaches_an_open_call_leaves_no_value_any_later_evaluation_reads() {
     let (mut failures, mut programs) = in_parallel(&[0, 1, 2], open_call_rows);
     let (open, open_programs) = open_function_rows();
     failures.extend(open);
     programs += open_programs;
+    let (tainted, tainted_programs) = tainted_start_rows();
+    failures.extend(tainted);
+    programs += tainted_programs;
     assert!(
         failures.is_empty(),
         "{} of {programs} programs fail:\n{}",
         failures.len(),
         failures.iter().take(8).cloned().collect::<String>()
     );
-    assert_eq!(programs, 5_584);
+    assert_eq!(programs, 5_596);
 }

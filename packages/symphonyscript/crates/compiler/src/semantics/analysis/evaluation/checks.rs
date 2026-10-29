@@ -1,13 +1,8 @@
-use crate::semantics::analysis::eval_ty::EvalTy;
 use crate::semantics::analysis::ids::NodeId;
 
 pub(crate) enum Checks {
     Unchecked,
-    Running {
-        start: NodeId,
-        pending: Vec<NodeId>,
-        log: Vec<(NodeId, EvalTy)>,
-    },
+    Running { start: NodeId, pending: Vec<NodeId> },
     Done,
     Quiet,
 }

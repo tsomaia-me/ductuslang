@@ -485,11 +485,7 @@ impl Engine<'_> {
             .frames
             .get_mut(frame)
             .ok_or(Internal::missed("evaluation frame"))?
-            .checks = Checks::Running {
-            start,
-            pending,
-            log: Vec::new(),
-        };
+            .checks = Checks::Running { start, pending };
         machine.work.push((frame, root, ty));
         machine.work.push((frame, start, EvalTy::Node));
         Ok(true)
@@ -501,23 +497,13 @@ impl Engine<'_> {
             .frames
             .get_mut(frame)
             .ok_or(Internal::missed("evaluation frame"))?;
-        let Checks::Running {
-            start,
-            pending,
-            log,
-        } = &mut record.checks
-        else {
+        let Checks::Running { start, pending } = &mut record.checks else {
             return Ok(());
         };
         if *start != node || ty != EvalTy::Node {
             return Ok(());
         }
-        if std::mem::take(&mut record.tainted) {
-            for entry in log.iter() {
-                record.memo.remove(entry);
-            }
-        }
-        log.clear();
+        record.tainted = false;
         machine.tainted_calls.clear();
         if let Some(next) = pending.pop() {
             *start = next;
@@ -778,9 +764,6 @@ impl Engine<'_> {
                         .get_mut(frame)
                         .ok_or(Internal::missed("evaluation frame"))?;
                     record.memo.insert((current, ty), value.clone());
-                    if let Checks::Running { log, .. } = &mut record.checks {
-                        log.push((current, ty));
-                    }
                     let completes = record.root == current && record.ty == ty;
                     self.next_start(frame, current, ty)?;
                     if completes && self.begin_checks(frame, current, ty)? {
