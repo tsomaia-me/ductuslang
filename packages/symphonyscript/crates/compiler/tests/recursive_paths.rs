@@ -3617,10 +3617,10 @@ fn drawn_keys(text: &str) -> BTreeSet<(Code, String)> {
     found(text).into_keys().collect()
 }
 
-fn untaken_start_rows(start: UntakenStart) -> (Vec<String>, usize) {
+fn untaken_start_rows((start, fault): (UntakenStart, StartFault)) -> (Vec<String>, usize) {
     let mut failures = Vec::new();
     let mut programs = 0;
-    for fault in start.faults().iter().copied() {
+    {
         for guard in GUARDS {
             for reader in START_READERS {
                 for (depth, later) in [1, 3, 30]
@@ -3706,7 +3706,11 @@ fn quiet_callee_read_rows() -> (Vec<String>, usize) {
 #[test]
 fn evaluating_the_start_of_an_untaken_arm_draws_no_fit_range_overflow_or_depth_diagnostic_in_any_frame()
  {
-    let (mut failures, mut programs) = in_parallel(&UNTAKEN_STARTS, untaken_start_rows);
+    let pairs: Vec<(UntakenStart, StartFault)> = UNTAKEN_STARTS
+        .iter()
+        .flat_map(|start| start.faults().iter().map(move |fault| (*start, *fault)))
+        .collect();
+    let (mut failures, mut programs) = in_parallel(&pairs, untaken_start_rows);
     let (callee, callee_programs) = quiet_callee_read_rows();
     failures.extend(callee);
     programs += callee_programs;
