@@ -271,7 +271,7 @@ def shared_steps(sha, top, into, run, jobs, baselines, against, quiet=QUIET_LOAD
                  BUSY_LOAD),
             step("verdicts", verdict_diff, HERE, None, BUSY_LOAD),
             step("figures", [sys.executable, HERE / "run.py", "figures", into / "check" / "target" / PROFILES["dev"],
-                             run / "check-times.json.gz", run / "figures.json"], HERE, None, quiet)]
+                             run / "check-times.json.gz", run / "figures.json"], HERE, None, figures.LOAD_BELOW)]
 
 
 def manifest(tip, into, run, records, started, jobs, quiet=QUIET_LOAD, stress=False, exhaustive=False):
@@ -280,7 +280,8 @@ def manifest(tip, into, run, records, started, jobs, quiet=QUIET_LOAD, stress=Fa
     return {"tip": tip, "export": str(into / "export" / PACKAGE), "target": str(into / "target"),
             "evolve_binaries": str(into / "check" / "target" / PROFILES["dev"]), "profile": "dev", "jobs": jobs,
             "ignored_tests": {"exhaustive": exhaustive, "stress": stress},
-            "load_limits": {"builds_and_checks": BUSY_LOAD, "timed_steps": limit(quiet)},
+            "load_limits": {"builds_and_checks": BUSY_LOAD, "timed_steps": limit(quiet),
+                            "figures": figures.LOAD_BELOW},
             "pipeline": {"commit": pipeline, "uncommitted_changes": bool(edited)},
             "host": {"name": platform.node(), "system": platform.platform(), "cpus": os.cpu_count()},
             "started": started, "written": now(),
@@ -314,7 +315,8 @@ def shared(arguments):
 
 
 def measured(arguments):
-    figures.measure(arguments.binaries, arguments.times, arguments.out)
+    figures.measure(arguments.binaries, arguments.times, CORPORA / f"{figures.BREAKER_SET}.jsonl.gz", arguments.out,
+                    lambda: settled(figures.LOAD_BELOW))
 
 
 def main():
@@ -348,8 +350,9 @@ def main():
                          help="also run the stress tests after the unit and exhaustive tests, once the load is below "
                               "--quiet-below")
     sharing.add_argument("--quiet-below", type=float, default=QUIET_LOAD,
-                         help="the 1-minute load the timed steps, the verdict check and the figures, wait to fall "
-                              "below; inf takes them at any load, and the manifest records the load each began at")
+                         help="the 1-minute load the stress tests and the verdict check wait to fall below; inf "
+                              "takes them at any load, and the manifest records the load each began at; the figures "
+                              f"always wait for a load below {figures.LOAD_BELOW:g}")
     for command in (checking, sharing):
         command.add_argument("--jobs", type=int, default=max(1, (os.cpu_count() or 2) // 2))
     recording = commands.add_parser("record", help="record review-runs/<sha>/verdicts.jsonl.gz as the baseline")

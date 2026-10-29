@@ -16,3 +16,12 @@ Clip c | three=([1]):
 ## The shared step
 
 `python3 review/run.py shared <tip> [--into <dir>] [--against <commit>] [--exhaustive] [--stress] [--quiet-below <load>] [--jobs <n>]`, run from `tools/evolve`, is the head's shared step before a review (`docs/PLAN.md` § Reviews). It exports the tip, builds it in the `dev` profile, runs the four checks, each as a command of its own, the verdict diff and the speed figures, and writes `review-runs/<sha>/manifest.json` beside every log and result. The exhaustive tests run only under `--exhaustive`, after the unit tests, and the stress tests only under `--stress`, after them, as `docs/PLAN.md` § Work and checks says; the manifest's `ignored_tests` records whether each ran.
+
+The speed figures, `figures.json`, are the step's last command. Each figure waits until the 1-minute load is below 4, records that load beside it, and is taken with one job: one `evolve-time` process that runs `Compiler::check` on its compile thread in the `dev` profile, one program at a time.
+
+- A compile-time recursive call: a program whose `g` makes 1,000,000 distinct recursive calls over trees of distinct sizes, three runs, the median divided by 1,000,000.
+- An inlined call: a program of 10,000 notes, each summing 100 calls `f(i, 0)` to `f(i, 99)` of a non-recursive `fn f(x, k): x + k` on an input, so Resolve and Infer each walk 1,000,000 distinct call sites, three runs, the median divided by 1,000,000.
+- A level of nesting: the deep-expressions fixture at depth 100,000 for each construct alone and for all of them together, three runs each, the median divided by the levels.
+- A program of the breaker corpus: every program of `corpora/breakers.jsonl.gz` checked once, with the verdict check's budget; a program the verdict check found past its budget is not run again, and it and a program past the budget here rank above every timed one; the median and the 99th percentile by nearest rank over every program.
+
+Each per-unit figure counts the program's other text, its lexing and parsing among it, in its time.

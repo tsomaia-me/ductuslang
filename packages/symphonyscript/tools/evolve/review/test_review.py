@@ -1,14 +1,16 @@
+import gzip
 import json
 import stat
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import corpus
 import figures
 import run
 import verdicts
-from programs import key, read_jsonl
+from programs import key, read_jsonl, write_jsonl_gz
 
 TABLE = {
     "expression-syntax": {"section": "5.1", "warning": False},
@@ -34,6 +36,17 @@ with open(taken, "w") as out:
         out.write(json.dumps({"id": program["id"], "diagnostics": [{"code": c, "message": ""} for c in text.split()
                   if c != "slow" and not c.isdigit()], "signals": ["slow"] if slow else [], "findings": [],
                   "elapsed_ms": None if slow else 1.0}) + "\\n")
+"""
+FAKE_TIME = """#!/usr/bin/env python3
+import json, sys
+from pathlib import Path
+given, taken = sys.argv[-2], sys.argv[-1]
+ids = [json.loads(line)["id"] for line in open(given) if line.strip()]
+with open(Path(sys.argv[0]).parent / "calls.log", "a") as log:
+    log.write(" ".join([sys.argv[sys.argv.index("--budget") + 1], *ids]) + "\\n")
+with open(taken, "w") as out:
+    for program_id in ids:
+        out.write(json.dumps({"id": program_id, "elapsed_ms": 2.0, "diagnostics": 0, "codes": []}) + "\\n")
 """
 
 
@@ -169,18 +182,54 @@ class Review(unittest.TestCase):
         self.assertIn("| `t1` | t#1 | accept | reject: type-mismatch |  |", full)
 
     def test_the_breaker_figure_ranks_a_program_past_the_budget_above_every_timed_one(self):
-        rows = [{"key": f"b{index}", "set": "breakers", "elapsed_ms": float(index + 1)} for index in range(98)]
-        rows += [{"key": "slow1", "set": "breakers", "elapsed_ms": None},
-                 {"key": "slow2", "set": "breakers", "elapsed_ms": None},
-                 {"key": "p1", "set": "probes", "elapsed_ms": 999.0}]
-        figure = figures.breaker_figure({"profile": "dev", "jobs": 4, "budget_s": 5, "load": 3.5, "programs": rows})
+        elapsed = {f"b{index}": float(index + 1) for index in range(98)}
+        elapsed.update({"slow1": None, "slow2": None})
+        figure = figures.breaker_figure({"profile": "dev", "budget_s": 5}, elapsed, 3.456)
         self.assertEqual({name: figure[name] for name in ("programs", "past_budget", "median_ms", "p99_ms",
                                                           "max_timed_ms", "load")},
                          {"programs": 100, "past_budget": 2, "median_ms": 50.0, "p99_ms": None,
-                          "max_timed_ms": 98.0, "load": 3.5})
+                          "max_timed_ms": 98.0, "load": 3.46})
+
+    def test_every_figure_is_taken_in_one_process_once_the_load_is_below_four_beside_its_load(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            fake = root / "evolve-time"
+            fake.write_text(FAKE_TIME)
+            fake.chmod(fake.stat().st_mode | stat.S_IEXEC)
+            breakers = [program(f"breaker {index}", "breakers") for index in range(3)]
+            write_jsonl_gz(root / "breakers.jsonl.gz",[{"key": key(each), **each} for each in breakers])
+            rows = [{"key": key(breakers[0]), "set": "breakers", "elapsed_ms": 9.0},
+                    {"key": key(breakers[1]), "set": "breakers", "elapsed_ms": None},
+                    {"key": key(breakers[2]), "set": "breakers", "elapsed_ms": 9.0},
+                    {"key": "p1", "set": "probes", "elapsed_ms": 1.0}]
+            with gzip.open(root / "times.json.gz", "wt", encoding="utf-8") as out:
+                json.dump({"profile": "dev", "jobs": 4, "budget_s": 5, "load": 9.0, "programs": rows}, out)
+            measured = [(figures.INLINED, "inlined", "inlined text", 4), (figures.NESTING, "not", "not text", 2)]
+            loads = iter([3.1, 3.2, 3.3])
+            with mock.patch.object(figures, "measured_programs", return_value=measured):
+                figures.measure(root, root / "times.json.gz", root / "breakers.jsonl.gz", root / "figures.json",
+                                lambda: next(loads))
+            taken = json.loads((root / "figures.json").read_text())
+            calls = (root / "calls.log").read_text().splitlines()
+        self.assertEqual(calls, [f"5 {key(breakers[0])} {key(breakers[2])}", "600 inlined#0 inlined#1 inlined#2",
+                                 "600 not#0 not#1 not#2"])
+        self.assertEqual(taken["load_below"], 4.0)
+        self.assertEqual([(each["load"], each.get("per_unit_us")) for each in taken["figures"]],
+                         [(3.1, None), (3.2, 500.0), (3.3, 1000.0)])
+        self.assertEqual({name: taken["figures"][0][name] for name in ("programs", "past_budget", "median_ms")},
+                         {"programs": 3, "past_budget": 1, "median_ms": 2.0})
+        self.assertTrue(all("one job" in each["method"] and "below 4.0" in each["method"]
+                            for each in taken["figures"]))
 
     def test_the_measured_programs_hold_a_million_calls_and_the_fixtures_depth_per_construct(self):
         self.assertEqual(sum((1 << (level + 1)) - 1 for level in figures.sizes_totalling(1_000_000)), 1_000_000)
+        inlined = dict((label, text) for _, label, text, _ in figures.measured_programs())["inlined"]
+        self.assertEqual(inlined.count("f(i, "), 1_000_000)
+        self.assertEqual({line.count("f(i, ") for line in inlined.splitlines()[3:]}, {100})
+        self.assertEqual(figures.inlining(200).splitlines()[:4],
+                         ["input i = 1", "fn f(x, k): x + k", "Clip c:",
+                          "    Note/(" + " + ".join(f"f(i, {index})" for index in range(100)) + ")"])
+        self.assertEqual(len(figures.inlining(200).splitlines()), 5)
         expressions = figures.deep_expressions(dict.fromkeys(figures.CONSTRUCTS, 3))
         self.assertEqual(expressions, 'input x = true\nfn f(v): v\nlet a = (((1)))\nlet b = [[[1]]]\n'
                                       'let c = f(f(f(1)))\nlet d = not not not x\nlet e = "{"{"{1}"}"}"\n'
@@ -281,9 +330,10 @@ class Running(unittest.TestCase):
                                                    "/results/check-times.json.gz", "/results/figures.json"])
         self.assertEqual({each["name"]: each["below"] for each in planned if each["below"]},
                          {**dict.fromkeys(["build", "fmt", "clippy", "nextest", "doctest", "thumbv7em", "verdicts"],
-                                          12.0), "figures": 6.0})
-        quiet = run.shared_steps("abc1234", Path("/top"), into, results, 4, Path("/baselines"), None, float("inf"))
-        self.assertEqual([quiet[-2]["command"][9], quiet[-1]["below"]], ["inf", float("inf")])
+                                          12.0), "figures": 4.0})
+        quiet = run.shared_steps("abc1234", Path("/top"), into, results, 4, Path("/baselines"), None, float("inf"),
+                                 True, True)
+        self.assertEqual([quiet[-2]["command"][9], quiet[-1]["name"], quiet[-1]["below"]], ["inf", "figures", 4.0])
         self.assertTrue(all(each["cwd"] == "/into/export/packages/symphonyscript"
                             for each in planned if each["command"][0] in ("cargo", "rustc")))
         self.assertTrue(all(each["env"]["CARGO_TARGET_DIR"] == "/into/target" for each in planned
