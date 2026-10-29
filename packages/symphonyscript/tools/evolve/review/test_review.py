@@ -37,6 +37,16 @@ with open(taken, "w") as out:
                   if c != "slow" and not c.isdigit()], "signals": ["slow"] if slow else [], "findings": [],
                   "elapsed_ms": None if slow else 1.0}) + "\\n")
 """
+VOCABULARY_CHECK = """#!/usr/bin/env python3
+import json, sys
+given, taken = sys.argv[-2], sys.argv[-1]
+vocabulary = sys.argv[sys.argv.index("--vocabulary") + 1]
+with open(taken, "w") as out:
+    for line in open(given):
+        program = json.loads(line)
+        out.write(json.dumps({"id": program["id"], "diagnostics": [{"code": vocabulary, "message": ""}],
+                              "signals": [], "findings": [], "elapsed_ms": 1.0}) + "\\n")
+"""
 FAKE_TIME = """#!/usr/bin/env python3
 import json, sys
 from pathlib import Path
@@ -261,6 +271,43 @@ class Running(unittest.TestCase):
             text = entry["sources"][0]["text"].rsplit(" ", 1)[0]
             self.assertEqual(found[program_key][:2], expected[text], text)
             self.assertEqual(found[program_key][2], None if text == "abort" else 1.0, text)
+
+    def test_each_probe_program_is_checked_under_the_vocabulary_its_tag_names_and_an_unknown_tag_is_reported(self):
+        tagged = ("#signature\nClip c:\n    Note\n#expect\n----\n#weird\nlet a = 1\n----\n\nlet b = 2\n"
+                  "#expect no-entry-instance\n----\n#bounded\nlet e = 5\n")
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "corpora").mkdir()
+            write_jsonl_gz(root / "corpora" / "probes.jsonl.gz",
+                           [{"origin": "p/a.sym", "sources": [{"path": "main.sym", "text": tagged}]},
+                            {"origin": "p/b.sym", "sources": [{"path": "main.sym", "text": "\nlet c = 3"}]}])
+            write_jsonl_gz(root / "corpora" / "breakers.jsonl.gz",
+                           [{"origin": "b.sym", "sources": [{"path": "main.sym", "text": "# Vocabulary: music\n"}]}])
+            for name, text in (("evolve-mutants", "#!/bin/sh\n"), ("evolve-check", VOCABULARY_CHECK)):
+                (root / name).write_text(text)
+                (root / name).chmod((root / name).stat().st_mode | stat.S_IEXEC)
+            programs = run.programs_at(root, root / "corpora")
+            unknown = run.unknown_tags(programs)
+            named = [program_key for program_key in programs if program_key not in unknown]
+            found = run.checked(root, programs, WARNINGS, named, 2, root / "work", False)
+        read = {each["origin"]: (each.get("vocabulary"), each.get("tag"), each["sources"][0]["text"])
+                for each in programs.values()}
+        self.assertEqual(read, {"p/a.sym:2": ("signature", None, "Clip c:\n    Note\n"),
+                                "p/a.sym:7": (None, "weird", "let a = 1\n"),
+                                "p/a.sym:10": ("main", None, "let b = 2\n"),
+                                "p/a.sym:14": ("bounded", None, "let e = 5\n"),
+                                "p/b.sym": (None, None, "\nlet c = 3"),
+                                "b.sym": (None, None, "# Vocabulary: music\n")})
+        by_origin = {programs[program_key]["origin"]: program_key for program_key in programs}
+        self.assertEqual({origin: found[program_key][0]["errors"] for origin, program_key in by_origin.items()
+                          if program_key in found},
+                         {"p/a.sym:2": ["signature"], "p/a.sym:10": ["main"], "p/a.sym:14": ["bounded"],
+                          "p/b.sym": ["main"], "b.sym": ["main"]})
+        self.assertEqual(unknown, {by_origin["p/a.sym:7"]: (*verdicts.unknown_tag("weird"), None)})
+        self.assertEqual(unknown[by_origin["p/a.sym:7"]][0]["outcome"], "unknown-tag")
+        self.assertEqual(run.unknown_tag_note(programs, unknown),
+                         "Probes whose tag names no vocabulary, reported and not checked: 1; p/a.sym:7 (#weird).")
+        self.assertIn("- Tag: #weird", verdicts.program_lines(programs[by_origin["p/a.sym:7"]], {"tag": "weird"}))
 
     def test_the_baseline_is_the_nearest_ancestor_with_one(self):
         with tempfile.TemporaryDirectory() as directory:

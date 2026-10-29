@@ -16,7 +16,7 @@ from pathlib import Path
 
 import figures
 import verdicts
-from programs import MAIN, key, read_jsonl, write_jsonl_gz
+from programs import MAIN, PROBES, key, probe_records, read_jsonl, write_jsonl_gz
 
 HERE = Path(__file__).resolve().parent
 EVOLVE = HERE.parent
@@ -95,8 +95,10 @@ def code_table(binaries):
 def programs_at(binaries, corpora):
     found = {}
     for corpus in sorted(corpora.glob("*.jsonl.gz")):
+        name = corpus.name.removesuffix(".jsonl.gz")
         for record in read_jsonl(corpus):
-            found.setdefault(key(record), {**record, "set": corpus.name.removesuffix(".jsonl.gz")})
+            for program in probe_records(record) if name == PROBES else [record]:
+                found.setdefault(key(program), {**program, "set": name})
     mutants = subprocess.run([binaries / "evolve-mutants"], check=True, capture_output=True, text=True).stdout
     for program in map(json.loads, mutants.splitlines()):
         found.setdefault(key(program), {**program, "set": "mutants"})
@@ -141,6 +143,17 @@ def checked(binaries, programs, warnings, keys, jobs, work, alone):
     return found
 
 
+def unknown_tags(programs):
+    return {program_key: (*verdicts.unknown_tag(program["tag"]), None) for program_key, program in programs.items()
+            if program.get("vocabulary", MAIN) is None}
+
+
+def unknown_tag_note(programs, keys):
+    named = "".join(f"; {programs[program_key]['origin']} (#{programs[program_key]['tag']})"
+                    for program_key in sorted(keys, key=lambda program_key: programs[program_key]["origin"]))
+    return f"Probes whose tag names no vocabulary, reported and not checked: {len(keys)}{named}."
+
+
 def checked_again(found, previous, keys):
     return [program_key for program_key in keys if program_key not in found
             or "slow" in (found[program_key][0]["outcome"], previous.get(program_key, {}).get("outcome"))]
@@ -169,10 +182,13 @@ def check(arguments):
         baseline = previous_baseline(HERE, sha, arguments.baselines)
         base = baseline.name.removesuffix(".jsonl.gz") if baseline else None
     previous = {record["key"]: record for record in read_jsonl(baseline)} if baseline else {}
+    unknown = unknown_tags(programs)
+    named = [program_key for program_key in programs if program_key not in unknown]
     check_load, started = settled(arguments.settle_below), time.monotonic()
-    found = checked(binaries, programs, warnings, list(programs), arguments.jobs, build / "work" / "shards", False)
-    again = checked_again(found, previous, list(programs))
+    found = checked(binaries, programs, warnings, named, arguments.jobs, build / "work" / "shards", False)
+    again = checked_again(found, previous, named)
     found.update(checked(binaries, programs, warnings, again, arguments.jobs, build / "work" / "alone", True))
+    found.update(unknown)
     check_seconds = time.monotonic() - started
     current = {program_key: {"key": program_key, "set": programs[program_key]["set"], **found[program_key][0]}
                for program_key in sorted(programs)}
@@ -188,7 +204,8 @@ def check(arguments):
              f"{check_seconds:.0f} s with {arguments.jobs} jobs; "
              f"1-minute load {load:.1f} before, {os.getloadavg()[0]:.1f} after.",
              f"Checked again alone, as slow now or at the baseline or without a verdict from their shard: "
-             f"{len(again)}; slow after: {sum(found[k][0]['outcome'] == 'slow' for k in again)}."]
+             f"{len(again)}; slow after: {sum(found[k][0]['outcome'] == 'slow' for k in again)}.",
+             unknown_tag_note(programs, unknown)]
     heading = f"Verdicts at {sha} against {base}" if base else f"Verdicts at {sha}, no baseline"
     (run / "diff-full.md").write_text(verdicts.render(heading, programs, current, previous, details, table, notes))
     (run / "diff.md").write_text(verdicts.summary(heading, programs, current, previous, details, table, notes,

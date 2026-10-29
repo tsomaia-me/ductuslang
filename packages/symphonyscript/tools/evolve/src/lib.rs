@@ -33,7 +33,7 @@ pub use differing_codes::differing_codes;
 pub use finding::Finding;
 pub use guarded::{Guarded, guarded};
 pub use measured::Measured;
-pub use named_vocabulary::{VOCABULARY_NAMES, named_vocabulary};
+pub use named_vocabulary::{PROBE_VOCABULARY_NAMES, VOCABULARY_NAMES, named_vocabulary};
 pub use over_memory_bound::over_memory_bound;
 pub use probe_block::{drawn_codes, probe_block};
 pub use probe_program::{DEFAULT_TAG, ProbeProgram, probe_programs};

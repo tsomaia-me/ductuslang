@@ -17,6 +17,8 @@ Clip c | three=([1]):
 
 `python3 review/run.py shared <tip> [--into <dir>] [--against <commit>] [--exhaustive] [--stress] [--quiet-below <load>] [--jobs <n>]`, run from `tools/evolve`, is the head's shared step before a review (`docs/PLAN.md` § Reviews). It exports the tip, builds it in the `dev` profile, runs the four checks, each as a command of its own, the verdict diff and the speed figures, and writes `review-runs/<sha>/manifest.json` beside every log and result. The exhaustive tests run only under `--exhaustive`, after the unit tests, and the stress tests only under `--stress`, after them, as `docs/PLAN.md` § Work and checks says; the manifest's `ignored_tests` records whether each ran.
 
+The verdict diff reads each program of `corpora/probes.jsonl.gz` as `evolve-probe` reads a file: the text splits at its `----` lines, a program's first-line tag chooses the vocabulary `evolve-check` checks it under, `#example` choosing `main`, and its `#expect` line is dropped. A probe whose tag names no vocabulary is not checked: it takes the verdict `unknown-tag`, and `diff.md` names it with its tag.
+
 The speed figures, `figures.json`, are the step's last command. Each figure waits until the 1-minute load is below 4, records that load beside it, and is taken with one job: one `evolve-time` process that runs `Compiler::check` on its compile thread in the `dev` profile, one program at a time.
 
 - A compile-time recursive call: a program whose `g` makes 1,000,000 distinct recursive calls over trees of distinct sizes, three runs, the median divided by 1,000,000.
