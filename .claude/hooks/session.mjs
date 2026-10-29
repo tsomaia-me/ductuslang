@@ -51,6 +51,7 @@ function readingList(memory, { role }, sessionId) {
   const files = [
     roleFile(HARNESS_ROOT, role),
     path.join(memory, LESSONS_RELATIVE_PATH),
+    path.join(memory, PREFERENCES_RELATIVE_PATH),
     path.join(memory, '.memory', 'lessons', `${role.toUpperCase()}.md`),
   ].filter((file) => file && existsSync(file));
   const lastMessages = `${lastMessagesPath(sessionId)} (the last ${MESSAGE_COUNT} messages)`;

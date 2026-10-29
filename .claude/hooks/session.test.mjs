@@ -81,8 +81,9 @@ test('compact with a note prints the guard, the reading list and the note under 
       'Read, in order:',
       `1. ${path.join(ROOT, '.claude', 'agents', 'builder.md')}`,
       `2. ${path.join(project, '.memory', 'LESSONS.md')}`,
-      `3. ${path.join(project, '.memory', 'lessons', 'BUILDER.md')}`,
-      `4. ${path.join(harness, SESSION_ID, LAST_MESSAGES_FILE)} (the last 50 messages)`,
+      `3. ${path.join(project, '.memory', 'OWNER_PREFERENCES.md')}`,
+      `4. ${path.join(project, '.memory', 'lessons', 'BUILDER.md')}`,
+      `5. ${path.join(harness, SESSION_ID, LAST_MESSAGES_FILE)} (the last 50 messages)`,
       '## Note from yourself',
       note,
       'Read every file your note lists, in its order.',
@@ -244,7 +245,7 @@ test('a reading list in the memory checkout joins the note reading list and the 
   const spec = path.join(project, 'SPEC.md');
   const withNote = runHook({ project, source: 'compact', note: { role: 'builder', note: 'n', time: 'now' } });
   assert.equal(withNote.status, 0);
-  assert.ok(withNote.stdout.includes(`3. ${spec} (whole)\n4. `));
+  assert.ok(withNote.stdout.includes(`4. ${spec} (whole)\n5. `));
   assert.ok(!withNote.stdout.includes('missing.md'));
   const noNote = runHook({ project, source: 'compact' });
   assert.equal(noNote.status, 0);
