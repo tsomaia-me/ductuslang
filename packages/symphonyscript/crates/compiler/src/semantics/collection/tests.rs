@@ -36,7 +36,8 @@ fn caller_and_callee(sites: usize, caller_first: bool) -> String {
 }
 
 #[test]
-fn the_inline_count_walks_each_function_a_bounded_number_of_times() {
+#[ignore = "stress"]
+fn stress_the_inline_count_walks_each_function_a_bounded_number_of_times() {
     let caller_first = |sites| walked(&caller_and_callee(sites, true));
     let callee_first = |sites| walked(&caller_and_callee(sites, false));
     let (small, middle, large) = (

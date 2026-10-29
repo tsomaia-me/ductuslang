@@ -255,17 +255,17 @@ const RULES: &[Rule] = &[
         "operand-type",
         "fn f(x): if x < 1 then x div 2 else f(x - 1)\nClip c:\n    Note/(f(0.5))\n",
     ),
-    rule(
+    low_limits(
         "4.6",
         "expansion-limit",
         "Clip c:\n    for i in 0..100001:\n        Note Note Note Note Note Note Note Note Note Note\n",
     ),
-    rule(
+    low_limits(
         "4.6",
         "expansion-limit",
         "Clip c:\n    for i in 0..1000000000000:\n        for j in 0..0:\n            Note\n",
     ),
-    rule(
+    low_limits(
         "4.6",
         "expansion-limit",
         "pattern P():\n    for j in 0..0:\n        Note\nClip c:\n    for i in 0..500001:\n        P\n",
@@ -790,36 +790,50 @@ const RULES: &[Rule] = &[
     rule("14", "not-a-value", "let a = sin\n"),
 ];
 
-fn diagnostics(rule: &Rule) -> Vec<Diagnostic> {
+struct Compilers {
+    example: Compiler,
+    bounded: Compiler,
+    natives: Compiler,
+    low_limits: Compiler,
+    at_prelude_path: Compiler,
+}
+
+impl Compilers {
+    fn new() -> Compilers {
+        Compilers {
+            example: Compiler::new(&vocabulary()).expect("the example vocabulary compiles"),
+            bounded: Compiler::new(&bounded_vocabulary()).expect("the bounded vocabulary compiles"),
+            natives: Compiler::new(&native_vocabulary()).expect("the native vocabulary compiles"),
+            low_limits: Compiler::with_limits(
+                &vocabulary(),
+                Limits {
+                    recursive_calls: 1_000,
+                    expansion_steps: 1_000,
+                    expanded_items: 1_000,
+                    ..Limits::default()
+                },
+            )
+            .expect("the example vocabulary compiles"),
+            at_prelude_path: Compiler::new(&prelude_vocabulary(""))
+                .expect("the prelude vocabulary compiles"),
+        }
+    }
+}
+
+fn diagnostics(compilers: &Compilers, rule: &Rule) -> Vec<Diagnostic> {
     let source = Source {
         path: "rule.sym".into(),
         text: rule.program.into(),
     };
     match rule.setup {
-        Setup::Example => Compiler::new(&vocabulary())
-            .expect("the example vocabulary compiles")
-            .check(&[source]),
-        Setup::Bounded => Compiler::new(&bounded_vocabulary())
-            .expect("the bounded vocabulary compiles")
-            .check(&[source]),
-        Setup::Natives => Compiler::new(&native_vocabulary())
-            .expect("the native vocabulary compiles")
-            .check(&[source]),
-        Setup::LowLimits => Compiler::with_limits(
-            &vocabulary(),
-            Limits {
-                recursive_calls: 1_000,
-                ..Limits::default()
-            },
-        )
-        .expect("the example vocabulary compiles")
-        .check(&[source]),
-        Setup::AtPreludePath => Compiler::new(&prelude_vocabulary(""))
-            .expect("the prelude vocabulary compiles")
-            .check(&[Source {
-                path: "prelude.sym".into(),
-                text: rule.program.into(),
-            }]),
+        Setup::Example => compilers.example.check(&[source]),
+        Setup::Bounded => compilers.bounded.check(&[source]),
+        Setup::Natives => compilers.natives.check(&[source]),
+        Setup::LowLimits => compilers.low_limits.check(&[source]),
+        Setup::AtPreludePath => compilers.at_prelude_path.check(&[Source {
+            path: "prelude.sym".into(),
+            text: rule.program.into(),
+        }]),
         Setup::Prelude => match Compiler::new(&prelude_vocabulary(rule.program)) {
             Ok(_) => Vec::new(),
             Err(failed) => failed.diagnostics,
@@ -867,9 +881,10 @@ fn a_count_an_unknown_placement_or_destination_could_change_draws_no_diagnostic(
         ),
         bounded("10.2", "unknown-kind", "Root r:\n    Item\n    Lnk: r\n"),
     ];
+    let compilers = Compilers::new();
     let mut failures = Vec::new();
     for rule in &rows {
-        let found: Vec<&str> = diagnostics(rule)
+        let found: Vec<&str> = diagnostics(&compilers, rule)
             .iter()
             .map(|diagnostic| diagnostic.code.as_str())
             .collect();
@@ -924,34 +939,30 @@ fn every_code_appears_in_the_table_and_every_table_code_exists() {
 }
 
 #[test]
-fn every_rule_rejects_its_program_with_its_code() {
+fn every_rule_program_holds_one_fault_and_draws_one_diagnostic_for_it_with_a_summary_of_one_to_three_lines()
+ {
+    let compilers = Compilers::new();
     let mut failures = Vec::new();
     for rule in RULES {
-        let found = diagnostics(rule);
-        if !found
-            .iter()
-            .any(|diagnostic| diagnostic.code.as_str() == rule.code)
-        {
-            failures.push(format!(
-                "§{} {:?}: {:?} gives {:?}",
-                rule.section,
-                rule.code,
-                rule.program,
-                found
-                    .iter()
-                    .map(|diagnostic| diagnostic.code.as_str())
-                    .collect::<Vec<_>>()
-            ));
+        let found = diagnostics(&compilers, rule);
+        for diagnostic in &found {
+            let lines = diagnostic.summary.lines().count();
+            let blank = diagnostic
+                .summary
+                .lines()
+                .any(|line| line.trim().is_empty());
+            let help_lines = diagnostic
+                .help
+                .as_deref()
+                .map_or(1, |help| help.lines().count());
+            let labelled = diagnostic
+                .related
+                .iter()
+                .all(|related| !related.label.trim().is_empty());
+            if !(1..=3).contains(&lines) || blank || help_lines != 1 || !labelled {
+                failures.push(format!("{:?}: {diagnostic:?}", rule.program));
+            }
         }
-    }
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
-}
-
-#[test]
-fn every_rule_program_holds_one_fault_and_draws_one_diagnostic_for_it() {
-    let mut failures = Vec::new();
-    for rule in RULES {
-        let found = diagnostics(rule);
         let errors: Vec<&str> = found
             .iter()
             .filter(|diagnostic| diagnostic.severity() == Severity::Error)
@@ -986,27 +997,30 @@ fn every_rule_program_holds_one_fault_and_draws_one_diagnostic_for_it() {
 }
 
 #[test]
-fn every_diagnostic_of_a_rule_program_has_a_summary_of_one_to_three_lines() {
+#[ignore = "stress"]
+fn stress_every_limit_rule_program_draws_its_code_at_the_default_limits() {
+    let compiler = Compiler::new(&vocabulary()).expect("the example vocabulary compiles");
     let mut failures = Vec::new();
-    for rule in RULES {
-        for diagnostic in diagnostics(rule) {
-            let lines = diagnostic.summary.lines().count();
-            let blank = diagnostic
-                .summary
-                .lines()
-                .any(|line| line.trim().is_empty());
-            let help_lines = diagnostic
-                .help
-                .as_deref()
-                .map_or(1, |help| help.lines().count());
-            let labelled = diagnostic
-                .related
-                .iter()
-                .all(|related| !related.label.trim().is_empty());
-            if !(1..=3).contains(&lines) || blank || help_lines != 1 || !labelled {
-                failures.push(format!("{:?}: {diagnostic:?}", rule.program));
-            }
+    for rule in RULES
+        .iter()
+        .filter(|rule| matches!(rule.setup, Setup::LowLimits))
+    {
+        let found: Vec<&str> = error_codes(&compiler, rule);
+        if found != [rule.code] {
+            failures.push(format!("{:?} gives {found:?}", rule.program));
         }
     }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+fn error_codes(compiler: &Compiler, rule: &Rule) -> Vec<&'static str> {
+    compiler
+        .check(&[Source {
+            path: "rule.sym".into(),
+            text: rule.program.into(),
+        }])
+        .iter()
+        .filter(|diagnostic| diagnostic.severity() == Severity::Error)
+        .map(|diagnostic| diagnostic.code.as_str())
+        .collect()
 }

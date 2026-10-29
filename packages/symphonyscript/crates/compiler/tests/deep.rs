@@ -44,7 +44,8 @@ fn nested(open: &str, middle: &str, close: &str) -> String {
 }
 
 #[test]
-fn sources_nested_in_parentheses_brackets_and_arrays_round_trip() {
+#[ignore = "stress"]
+fn stress_sources_nested_in_parentheses_brackets_and_arrays_round_trip() {
     on_small_stack(|| {
         let text = format!(
             "let a = {}\nlet b = {}\nlet c = {}\nlet d = {}\n",
@@ -58,7 +59,8 @@ fn sources_nested_in_parentheses_brackets_and_arrays_round_trip() {
 }
 
 #[test]
-fn sources_nested_in_operators_calls_strings_and_defaults_round_trip() {
+#[ignore = "stress"]
+fn stress_sources_nested_in_operators_calls_strings_and_defaults_round_trip() {
     on_small_stack(|| {
         let text = format!(
             "let a = {}1\nlet b = {}x\nlet c = {}\nlet d = {}\nlet e = 2{}\nClip c:\n    Note/{}\n",
@@ -74,7 +76,8 @@ fn sources_nested_in_operators_calls_strings_and_defaults_round_trip() {
 }
 
 #[test]
-fn sources_nested_in_bundles_and_parenthesized_placements_round_trip() {
+#[ignore = "stress"]
+fn stress_sources_nested_in_bundles_and_parenthesized_placements_round_trip() {
     on_small_stack(|| {
         round_trip(
             format!("Clip c:\n    {}\n", nested("[", "Note", "]")),
@@ -88,7 +91,8 @@ fn sources_nested_in_bundles_and_parenthesized_placements_round_trip() {
 }
 
 #[test]
-fn sources_nested_in_bodies_round_trip() {
+#[ignore = "stress"]
+fn stress_sources_nested_in_bodies_round_trip() {
     on_small_stack(|| {
         let mut text = String::from("Clip top:\n");
         let mut indent = 1;

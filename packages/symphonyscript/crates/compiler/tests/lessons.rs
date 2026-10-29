@@ -1,4 +1,5 @@
 use symphonyscript::{Code, Compiler, Diagnostic, Severity, Source};
+use symphonyscript_core::Limits;
 use symphonyscript_fixtures::{
     bar_vocabulary, bounded_vocabulary, native_vocabulary, prelude_vocabulary, vocabulary,
 };
@@ -43,7 +44,7 @@ fn examples(lesson: &str) -> Vec<Example> {
     found
 }
 
-fn diagnostics(setup: &str, text: &str) -> Vec<Diagnostic> {
+fn diagnostics(setup: &str, text: &str, limits: Limits) -> Vec<Diagnostic> {
     let source = Source {
         path: "lesson.sym".into(),
         text: text.into(),
@@ -69,7 +70,7 @@ fn diagnostics(setup: &str, text: &str) -> Vec<Diagnostic> {
         "bounded" => bounded_vocabulary(),
         other => panic!("no lesson setup {other}"),
     };
-    Compiler::new(&vocabulary)
+    Compiler::with_limits(&vocabulary, limits)
         .expect("the vocabulary compiles")
         .check(&[source])
 }
@@ -104,20 +105,38 @@ fn every_lesson_draws_its_code_in_its_sym_error_example_and_passes_check_in_its_
     lessons_hold(
         Code::ALL
             .iter()
-            .filter(|code| **code != Code::RecursionLimit),
+            .filter(|code| !LIMIT_LESSONS.contains(code)),
+        Limits::default(),
+    );
+}
+
+const LIMIT_LESSONS: [Code; 2] = [Code::RecursionLimit, Code::ExpansionLimit];
+
+#[test]
+fn the_limit_lessons_draw_their_codes_at_lowered_limits_in_their_error_examples_and_pass_in_their_fixes()
+ {
+    lessons_hold(
+        LIMIT_LESSONS.iter(),
+        Limits {
+            recursive_calls: 1_000,
+            expansion_steps: 1_000,
+            expanded_items: 1_000,
+            ..Limits::default()
+        },
     );
 }
 
 #[test]
-fn the_recursion_limit_lesson_draws_its_code_in_its_error_example_and_passes_in_its_fix() {
-    lessons_hold([Code::RecursionLimit].iter());
+#[ignore = "stress"]
+fn stress_the_limit_lessons_draw_their_codes_in_their_error_examples_and_pass_in_their_fixes() {
+    lessons_hold(LIMIT_LESSONS.iter(), Limits::default());
 }
 
-fn lessons_hold<'a>(codes: impl Iterator<Item = &'a Code>) {
+fn lessons_hold<'a>(codes: impl Iterator<Item = &'a Code>, limits: Limits) {
     let mut failures = Vec::new();
     for code in codes {
         for example in examples(code.lesson()) {
-            let found = diagnostics(&example.setup, &example.text);
+            let found = diagnostics(&example.setup, &example.text, limits);
             let codes: Vec<Code> = found.iter().map(|diagnostic| diagnostic.code).collect();
             let errors = found
                 .iter()

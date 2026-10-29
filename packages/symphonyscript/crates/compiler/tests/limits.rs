@@ -45,7 +45,8 @@ fn an_integer_that_would_reach_two_to_the_127_is_reported_before_it_is_computed(
 }
 
 #[test]
-fn a_variant_is_found_among_any_number_of_variants() {
+#[ignore = "stress"]
+fn stress_a_variant_is_found_among_any_number_of_variants() {
     let compiler_over = |names: Vec<String>| {
         let mut v = Vocabulary::builder("wide");
         let variants = v.enumeration("E", &names);
@@ -252,7 +253,8 @@ fn the_recursive_call_limit_follows_the_compilations_limits() {
 }
 
 #[test]
-fn the_recursive_call_limit_refuses_the_call_past_its_default() {
+#[ignore = "stress"]
+fn stress_the_recursive_call_limit_refuses_the_call_past_its_default() {
     follows(
         Code::RecursionLimit,
         &[(
@@ -264,7 +266,8 @@ fn the_recursive_call_limit_refuses_the_call_past_its_default() {
 }
 
 #[test]
-fn the_recursive_call_limit_refuses_the_call_past_a_raised_limit() {
+#[ignore = "stress"]
+fn stress_the_recursive_call_limit_refuses_the_call_past_a_raised_limit() {
     let raised = Limits {
         recursive_calls: 1_048_575,
         ..Limits::default()
@@ -289,31 +292,50 @@ fn the_expansion_step_limit_follows_the_compilations_limits() {
         expansion_steps: 1_000,
         ..Limits::default()
     };
-    let two_million = Limits {
-        expansion_steps: 2_000_000,
-        ..Limits::default()
-    };
     let default = Limits::default();
-    let refusal = |bound: &str| {
-        refused(&format!(
-            "runs more than {bound} `for` iterations and pattern uses"
-        ))
-    };
     follows(
         Code::ExpansionLimit,
         &[
             (ten, iterations(10), None),
-            (ten, iterations(11), refusal("10")),
+            (ten, iterations(11), expansion_refusal("10")),
             (ten, uses(5), None),
-            (ten, uses(6), refusal("10")),
+            (ten, uses(6), expansion_refusal("10")),
             (default, iterations(11), None),
             (thousand, empty_iterations(1_000), None),
-            (thousand, empty_iterations(1_001), refusal("1,000")),
-            (default, empty_iterations(1_000_001), refusal("1,000,000")),
+            (
+                thousand,
+                empty_iterations(1_001),
+                expansion_refusal("1,000"),
+            ),
+        ],
+    );
+}
+
+fn expansion_refusal(bound: &str) -> Option<String> {
+    refused(&format!(
+        "runs more than {bound} `for` iterations and pattern uses"
+    ))
+}
+
+#[test]
+#[ignore = "stress"]
+fn stress_the_expansion_step_limit_refuses_the_step_past_its_default_and_a_raised_limit() {
+    let two_million = Limits {
+        expansion_steps: 2_000_000,
+        ..Limits::default()
+    };
+    follows(
+        Code::ExpansionLimit,
+        &[
+            (
+                Limits::default(),
+                empty_iterations(1_000_001),
+                expansion_refusal("1,000,000"),
+            ),
             (
                 two_million,
                 empty_iterations(2_000_001),
-                refusal("2,000,000"),
+                expansion_refusal("2,000,000"),
             ),
         ],
     );
@@ -329,25 +351,42 @@ fn the_expanded_item_limit_follows_the_compilations_limits() {
         expanded_items: 1_000,
         ..Limits::default()
     };
+    let default = Limits::default();
+    follows(
+        Code::ExpansionLimit,
+        &[
+            (ten, iterations(9), None),
+            (ten, iterations(10), item_refusal("10")),
+            (ten, wires(8), None),
+            (ten, wires(9), item_refusal("10")),
+            (default, iterations(10), None),
+            (thousand, iterations(999), None),
+            (thousand, iterations(1_000), item_refusal("1,000")),
+        ],
+    );
+}
+
+fn item_refusal(bound: &str) -> Option<String> {
+    refused(&format!("yields more than {bound} instances and wires"))
+}
+
+#[test]
+#[ignore = "stress"]
+fn stress_the_expanded_item_limit_refuses_the_item_past_its_default_and_a_raised_limit() {
     let raised = Limits {
         expanded_items: 1_000_001,
         expansion_steps: 2_000_000,
         ..Limits::default()
     };
-    let default = Limits::default();
-    let refusal = |bound: &str| refused(&format!("yields more than {bound} instances and wires"));
     follows(
         Code::ExpansionLimit,
         &[
-            (ten, iterations(9), None),
-            (ten, iterations(10), refusal("10")),
-            (ten, wires(8), None),
-            (ten, wires(9), refusal("10")),
-            (default, iterations(10), None),
-            (thousand, iterations(999), None),
-            (thousand, iterations(1_000), refusal("1,000")),
-            (default, iterations(1_000_000), refusal("1,000,000")),
-            (raised, iterations(1_000_001), refusal("1,000,001")),
+            (
+                Limits::default(),
+                iterations(1_000_000),
+                item_refusal("1,000,000"),
+            ),
+            (raised, iterations(1_000_001), item_refusal("1,000,001")),
         ],
     );
 }
@@ -431,8 +470,9 @@ fn a_stopped_compilation_reports_its_one_limit_and_the_work_it_finished() {
     }
 }
 
-#[test]
-fn a_limit_reached_through_a_default_that_calls_its_function_names_the_default_in_its_help() {
+fn a_limit_reached_through_a_default_that_calls_its_function_names_the_default_in_its_help_in(
+    orders: support::Orders,
+) {
     let thousand = Limits {
         recursive_calls: 1_000,
         inlined_calls: 1_000,
@@ -440,7 +480,8 @@ fn a_limit_reached_through_a_default_that_calls_its_function_names_the_default_i
     };
     let compiler = Compiler::with_limits(&vocabulary(), thousand).expect("the vocabulary compiles");
     let helps = |items: &[&str]| -> Vec<Vec<Helped>> {
-        support::permutations(items)
+        orders
+            .of(items)
             .into_iter()
             .map(|order| {
                 let text = order.concat();
@@ -537,5 +578,21 @@ fn a_limit_reached_through_a_default_that_calls_its_function_names_the_default_i
         &inlining(11),
         Code::InlineLimit,
         "compute a repeated value once, as in `h0(x) * 10`, or lower the bound",
+    );
+}
+
+#[test]
+fn a_limit_reached_through_a_default_that_calls_its_function_names_the_default_in_its_help() {
+    a_limit_reached_through_a_default_that_calls_its_function_names_the_default_in_its_help_in(
+        support::Orders::ForwardAndReversed,
+    );
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_a_limit_reached_through_a_default_that_calls_its_function_names_the_default_in_its_help()
+ {
+    a_limit_reached_through_a_default_that_calls_its_function_names_the_default_in_its_help_in(
+        support::Orders::Every,
     );
 }

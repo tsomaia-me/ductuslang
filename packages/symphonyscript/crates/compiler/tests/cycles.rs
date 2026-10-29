@@ -292,8 +292,9 @@ fn cycles_up_to(length: u32) -> Vec<Vec<usize>> {
     cycles
 }
 
-#[test]
-fn every_cycle_of_declarations_draws_one_declaration_cycle_in_every_order() {
+fn every_cycle_of_declarations_draws_one_declaration_cycle_in_every_order_in(
+    orders: support::Orders,
+) {
     let compiler = Compiler::new(&vocabulary()).expect("the example vocabulary compiles");
     let cycles = cycles_up_to(3);
     let failures: Vec<String> = std::thread::scope(|threads| {
@@ -309,15 +310,14 @@ fn every_cycle_of_declarations_draws_one_declaration_cycle_in_every_order() {
                         {
                             let items = cycle_items(cycle, closing);
                             let lines: Vec<&str> = items.iter().map(String::as_str).collect();
-                            let failure =
-                                support::permutations(&lines).into_iter().find_map(|order| {
-                                    let text = format!("{}\n", order.join("\n"));
-                                    let found: Vec<Code> = named_errors(compiler, &text)
-                                        .into_iter()
-                                        .map(|(code, _)| code)
-                                        .collect();
-                                    (found != wanted).then(|| format!("{text}found {found:?}"))
-                                });
+                            let failure = orders.of(&lines).into_iter().find_map(|order| {
+                                let text = format!("{}\n", order.join("\n"));
+                                let found: Vec<Code> = named_errors(compiler, &text)
+                                    .into_iter()
+                                    .map(|(code, _)| code)
+                                    .collect();
+                                (found != wanted).then(|| format!("{text}found {found:?}"))
+                            });
                             failures.extend(failure);
                         }
                     }
@@ -331,6 +331,21 @@ fn every_cycle_of_declarations_draws_one_declaration_cycle_in_every_order() {
     });
     assert_eq!(cycles.len(), 211);
     assert!(failures.is_empty(), "{}", failures.join("\n\n"));
+}
+
+#[test]
+fn every_cycle_of_declarations_draws_one_declaration_cycle_forward_and_reversed() {
+    every_cycle_of_declarations_draws_one_declaration_cycle_in_every_order_in(
+        support::Orders::ForwardAndReversed,
+    );
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_every_cycle_of_declarations_draws_one_declaration_cycle_in_every_order() {
+    every_cycle_of_declarations_draws_one_declaration_cycle_in_every_order_in(
+        support::Orders::Every,
+    );
 }
 
 fn secondary_spans(compiler: &Compiler, text: &str) -> Vec<Vec<(u32, u32)>> {

@@ -3,6 +3,7 @@ mod support;
 use std::collections::{BTreeSet, HashMap};
 
 use symphonyscript::{Code, Compiler, Source};
+use symphonyscript_fixtures::{Rows, covered};
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 enum Element {
@@ -695,6 +696,7 @@ struct Case {
     chooser: Chooser,
     relation: Relation,
     forms: (Form, Form),
+    pair: usize,
     contents: (Content, Content),
     position: Position,
     reversed: bool,
@@ -911,15 +913,17 @@ struct Outcome {
 struct Compilers {
     fixture: Compiler,
     signature: Compiler,
+    arms: HashMap<(Form, Content, usize, bool), Option<Arm>>,
     twins: HashMap<String, Spans>,
 }
 
-fn arms_hold(chooser: Chooser) -> Outcome {
+fn arms_hold(rows: &Rows, chooser: Chooser) -> Outcome {
     let mut compilers = Compilers {
         fixture: Compiler::new(&symphonyscript_fixtures::vocabulary())
             .expect("the vocabulary compiles"),
         signature: Compiler::new(&support::signature_vocabulary())
             .expect("the vocabulary compiles"),
+        arms: HashMap::new(),
         twins: HashMap::new(),
     };
     let mut outcome = Outcome::default();
@@ -933,7 +937,7 @@ fn arms_hold(chooser: Chooser) -> Outcome {
         Relation::Lengths,
     ];
     for relation in relations {
-        for contents in pairs(relation) {
+        for (pair, contents) in pairs(relation).into_iter().enumerate() {
             for first_form in FORMS {
                 for second_form in FORMS {
                     for position in POSITIONS {
@@ -942,11 +946,12 @@ fn arms_hold(chooser: Chooser) -> Outcome {
                                 chooser,
                                 relation,
                                 forms: (first_form, second_form),
+                                pair,
                                 contents,
                                 position,
                                 reversed,
                             };
-                            check_case(&case, &mut compilers, &mut outcome);
+                            check_case(rows, &case, &mut compilers, &mut outcome);
                         }
                     }
                 }
@@ -956,12 +961,21 @@ fn arms_hold(chooser: Chooser) -> Outcome {
     outcome
 }
 
-fn check_case(case: &Case, compilers: &mut Compilers, outcome: &mut Outcome) {
+fn check_case(rows: &Rows, case: &Case, compilers: &mut Compilers, outcome: &mut Outcome) {
     let hosted = case.position.hosted() || case.chooser.is_parameter();
-    let (Some(first), Some(second)) = (
-        arm(case.forms.0, case.contents.0, 0, hosted),
-        arm(case.forms.1, case.contents.1, 1, hosted),
-    ) else {
+    let keys = [
+        (case.forms.0, case.contents.0, 0, hosted),
+        (case.forms.1, case.contents.1, 1, hosted),
+    ];
+    for key in keys {
+        compilers
+            .arms
+            .entry(key)
+            .or_insert_with(|| arm(key.0, key.1, key.2, hosted));
+    }
+    let (Some(Some(first)), Some(Some(second))) =
+        (compilers.arms.get(&keys[0]), compilers.arms.get(&keys[1]))
+    else {
         return;
     };
     if case.position.signature() && case.relation == Relation::Family {
@@ -977,6 +991,26 @@ fn check_case(case: &Case, compilers: &mut Compilers, outcome: &mut Outcome) {
         Some(1) => case.contents.1,
         Some(_) | None => case.contents.0,
     };
+    let literal = if case.chooser.is_parameter() {
+        let Some(literal) = unified(case.relation, taken_content).literal() else {
+            return;
+        };
+        Some(literal)
+    } else {
+        None
+    };
+    let tag = [
+        case.chooser as usize,
+        case.relation as usize,
+        case.pair,
+        case.forms.0 as usize,
+        case.forms.1 as usize,
+        case.position as usize,
+        usize::from(case.reversed),
+    ];
+    if !rows.take(&tag) {
+        return;
+    }
     let body_reads_cell = taken.is_none()
         || reads_cell(case.forms.0, case.contents.0)
         || reads_cell(case.forms.1, case.contents.1);
@@ -993,14 +1027,7 @@ fn check_case(case: &Case, compilers: &mut Compilers, outcome: &mut Outcome) {
         }
         (true, None) => Some(value_twin(case.relation, case.contents)),
     };
-    let other = if case.chooser.is_parameter() {
-        let Some(literal) = unified(case.relation, taken_content).literal() else {
-            return;
-        };
-        literal
-    } else {
-        twin.as_ref().unwrap_or(&first).text.clone()
-    };
+    let other = literal.unwrap_or_else(|| twin.as_ref().unwrap_or(first).text.clone());
     let layout = case.position.layout(taken_content.dimensions(), &other);
     let compiler = if layout.signature {
         &compilers.signature
@@ -1009,7 +1036,7 @@ fn check_case(case: &Case, compilers: &mut Compilers, outcome: &mut Outcome) {
     };
     let mut declarations = case.chooser.items();
     let mut locals = Vec::new();
-    for part in [Some(&first), Some(&second), twin.as_ref()]
+    for part in [Some(first), Some(second), twin.as_ref()]
         .into_iter()
         .flatten()
     {
@@ -1183,8 +1210,7 @@ fn shown(found: &Spans, text: &str) -> String {
         .join(", ")
 }
 
-fn assert_arms_hold(chooser: Chooser, programs: usize, landing_apart: usize) {
-    let outcome = arms_hold(chooser);
+fn assert_outcome(outcome: &Outcome, expected: (usize, usize)) {
     assert!(
         outcome.failures.is_empty(),
         "{} of {} programs fail:\n{}",
@@ -1198,48 +1224,105 @@ fn assert_arms_hold(chooser: Chooser, programs: usize, landing_apart: usize) {
             .collect::<Vec<_>>()
             .join("\n")
     );
-    assert_eq!(
-        (outcome.programs, outcome.landing_apart),
-        (programs, landing_apart)
+    assert_eq!((outcome.programs, outcome.landing_apart), expected);
+}
+
+fn assert_arms_hold(chooser: Chooser, programs: usize, landing_apart: usize) {
+    assert_outcome(&arms_hold(&Rows::Every, chooser), (programs, landing_apart));
+}
+
+fn assert_covered_arms_hold(chooser: Chooser, programs: usize, landing_apart: usize) {
+    assert_outcome(
+        &covered(|rows| arms_hold(rows, chooser)),
+        (programs, landing_apart),
     );
+}
+#[test]
+fn the_arms_of_a_compile_time_true_choice_agree_wherever_it_stands() {
+    assert_covered_arms_hold(Chooser::True, 344, 0);
 }
 
 #[test]
-fn the_arms_of_a_compile_time_true_choice_agree_wherever_it_stands() {
+#[ignore = "exhaustive"]
+fn exhaustive_the_arms_of_a_compile_time_true_choice_agree_wherever_it_stands() {
     assert_arms_hold(Chooser::True, 32080, 72);
 }
 
 #[test]
 fn the_arms_of_a_compile_time_false_choice_agree_wherever_it_stands() {
+    assert_covered_arms_hold(Chooser::False, 344, 1);
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_the_arms_of_a_compile_time_false_choice_agree_wherever_it_stands() {
     assert_arms_hold(Chooser::False, 32080, 72);
 }
 
 #[test]
 fn the_arms_of_a_runtime_choice_agree_wherever_it_stands() {
+    assert_covered_arms_hold(Chooser::Flag, 344, 0);
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_the_arms_of_a_runtime_choice_agree_wherever_it_stands() {
     assert_arms_hold(Chooser::Flag, 32080, 0);
 }
 
 #[test]
 fn the_arms_of_a_compile_time_enum_match_agree_wherever_it_stands() {
+    assert_covered_arms_hold(Chooser::Enum, 344, 0);
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_the_arms_of_a_compile_time_enum_match_agree_wherever_it_stands() {
     assert_arms_hold(Chooser::Enum, 32080, 48);
 }
 
 #[test]
 fn the_arms_of_a_match_on_an_enum_input_agree_wherever_it_stands() {
+    assert_covered_arms_hold(Chooser::EnumInput, 344, 0);
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_the_arms_of_a_match_on_an_enum_input_agree_wherever_it_stands() {
     assert_arms_hold(Chooser::EnumInput, 32080, 0);
 }
 
 #[test]
 fn the_arms_of_a_match_on_an_integer_input_agree_wherever_it_stands() {
+    assert_covered_arms_hold(Chooser::Integer, 344, 0);
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_the_arms_of_a_match_on_an_integer_input_agree_wherever_it_stands() {
     assert_arms_hold(Chooser::Integer, 32080, 0);
 }
 
 #[test]
 fn the_arms_of_a_choice_on_a_compile_time_recursive_functions_parameter_agree_wherever_it_stands() {
+    assert_covered_arms_hold(Chooser::Parameter, 292, 0);
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_the_arms_of_a_choice_on_a_compile_time_recursive_functions_parameter_agree_wherever_it_stands()
+ {
     assert_arms_hold(Chooser::Parameter, 12406, 0);
 }
 
 #[test]
 fn the_arms_of_a_match_on_a_compile_time_recursive_functions_parameter_agree_wherever_it_stands() {
+    assert_covered_arms_hold(Chooser::ParameterMatch, 292, 0);
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_the_arms_of_a_match_on_a_compile_time_recursive_functions_parameter_agree_wherever_it_stands()
+ {
     assert_arms_hold(Chooser::ParameterMatch, 12406, 0);
 }

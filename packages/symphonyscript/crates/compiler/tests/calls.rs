@@ -283,8 +283,9 @@ fn labelled(text: &str, diagnostic: &Diagnostic) -> Vec<(String, String)> {
         .collect()
 }
 
-#[test]
-fn a_call_that_a_bounded_expansion_repeats_is_named_once_with_its_levels() {
+fn a_call_that_a_bounded_expansion_repeats_is_named_once_with_its_levels_in(
+    orders: support::Orders,
+) {
     let input = "input n = 1\n";
     let deep = "fn f(x) bounded 2000000 else 0: if x > 3 then x else f(x + 1)\n";
     let use_f = "Clip c:\n    Note/(f(n))\n";
@@ -323,7 +324,7 @@ fn a_call_that_a_bounded_expansion_repeats_is_named_once_with_its_levels() {
         },
     )
     .expect("the vocabulary compiles");
-    for order in support::permutations(&[input, deep, use_f]) {
+    for order in orders.of(&[input, deep, use_f]) {
         limited(&thousand, &order.concat(), "999");
     }
     let every_level = "fn g(x) bounded 5 else 0: x div 0.5 + g(x + 1)\n";
@@ -355,7 +356,7 @@ fn a_call_that_a_bounded_expansion_repeats_is_named_once_with_its_levels() {
         ),
     ];
     for (items, expected) in rows {
-        for order in support::permutations(items) {
+        for order in orders.of(items) {
             let text = order.concat();
             let found = support::checked(&text);
             let [diagnostic] = found.as_slice() else {
@@ -369,6 +370,21 @@ fn a_call_that_a_bounded_expansion_repeats_is_named_once_with_its_levels() {
             assert_eq!(labelled(&text, diagnostic), expected, "{text}");
         }
     }
+}
+
+#[test]
+fn a_call_that_a_bounded_expansion_repeats_is_named_once_with_its_levels() {
+    a_call_that_a_bounded_expansion_repeats_is_named_once_with_its_levels_in(
+        support::Orders::ForwardAndReversed,
+    );
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_a_call_that_a_bounded_expansion_repeats_is_named_once_with_its_levels() {
+    a_call_that_a_bounded_expansion_repeats_is_named_once_with_its_levels_in(
+        support::Orders::Every,
+    );
 }
 
 #[test]
@@ -1167,7 +1183,8 @@ const DOUBLING_ON_AN_INPUT: [&str; 3] = [
 ];
 
 #[test]
-fn a_doubling_bounded_function_called_on_an_input_draws_inline_limit() {
+#[ignore = "stress"]
+fn stress_a_doubling_bounded_function_called_on_an_input_draws_inline_limit() {
     let reactive = DOUBLING_ON_AN_INPUT;
     let inline_limited = vec![(Code::InlineLimit, "f(n - 1)".to_string())];
     let defaults = Compiler::new(&vocabulary()).expect("the vocabulary compiles");
@@ -1305,8 +1322,9 @@ fn a_bounded_expansion_type_checks_every_branch_and_arm_while_it_expands_the_cho
     support::assert_rows_in_every_order(&vocabulary(), rows);
 }
 
-#[test]
-fn a_call_rejected_as_reactive_recursion_adds_nothing_to_the_inline_count() {
+fn a_call_rejected_as_reactive_recursion_adds_nothing_to_the_inline_count_in(
+    orders: support::Orders,
+) {
     let four = Compiler::with_limits(
         &vocabulary(),
         Limits {
@@ -1620,7 +1638,7 @@ fn a_call_rejected_as_reactive_recursion_adds_nothing_to_the_inline_count() {
             .map(|(code, text)| (*code, (*text).to_string()))
             .collect();
         expected.sort();
-        for order in support::permutations(items) {
+        for order in orders.of(items) {
             let text = order.concat();
             assert_eq!(support::error_texts(&four, &text), expected, "{text}");
         }
@@ -1628,7 +1646,21 @@ fn a_call_rejected_as_reactive_recursion_adds_nothing_to_the_inline_count() {
 }
 
 #[test]
-fn the_recursion_depth_summary_names_each_function_of_its_cycle_once() {
+fn a_call_rejected_as_reactive_recursion_adds_nothing_to_the_inline_count() {
+    a_call_rejected_as_reactive_recursion_adds_nothing_to_the_inline_count_in(
+        support::Orders::ForwardAndReversed,
+    );
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_a_call_rejected_as_reactive_recursion_adds_nothing_to_the_inline_count() {
+    a_call_rejected_as_reactive_recursion_adds_nothing_to_the_inline_count_in(
+        support::Orders::Every,
+    );
+}
+
+fn the_recursion_depth_summary_names_each_function_of_its_cycle_once_in(orders: support::Orders) {
     let compiler = Compiler::new(&vocabulary()).expect("the vocabulary compiles");
     let rows: &[(&[&str], &[&str])] = &[
         (
@@ -1654,7 +1686,7 @@ fn the_recursion_depth_summary_names_each_function_of_its_cycle_once() {
         ),
     ];
     for (items, names) in rows {
-        for order in support::permutations(items) {
+        for order in orders.of(items) {
             let text = order.concat();
             let found = support::errors(compiler.check(&[support::source(&text)]));
             let [diagnostic] = found.as_slice() else {
@@ -1676,7 +1708,7 @@ fn the_recursion_depth_summary_names_each_function_of_its_cycle_once() {
         "fn g(i): f(i + 1) + 1\n",
         "Clip c:\n    Note/(60 + f(0))\n",
     ];
-    for order in support::permutations(&bounded) {
+    for order in orders.of(&bounded) {
         let text = order.concat();
         let found = support::errors(compiler.check(&[support::source(&text)]));
         assert!(found.is_empty(), "{text}{found:?}");
@@ -1684,9 +1716,33 @@ fn the_recursion_depth_summary_names_each_function_of_its_cycle_once() {
 }
 
 #[test]
+fn the_recursion_depth_summary_names_each_function_of_its_cycle_once() {
+    the_recursion_depth_summary_names_each_function_of_its_cycle_once_in(
+        support::Orders::ForwardAndReversed,
+    );
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_the_recursion_depth_summary_names_each_function_of_its_cycle_once() {
+    the_recursion_depth_summary_names_each_function_of_its_cycle_once_in(support::Orders::Every);
+}
+
+#[test]
 fn a_recursive_call_whose_array_argument_grows_finishes_within_the_limits() {
+    array_arguments_finish_within_the_limits(&[3, 30], true);
+}
+
+#[test]
+#[ignore = "stress"]
+fn stress_a_recursive_call_whose_array_argument_grows_to_three_hundred_elements_finishes_within_the_limits()
+ {
+    array_arguments_finish_within_the_limits(&[300], false);
+}
+
+fn array_arguments_finish_within_the_limits(bounds: &[usize], finishing_rows: bool) {
     let mut rows: Vec<[String; 2]> = Vec::new();
-    for bound in [3, 30, 300] {
+    for bound in bounds {
         let grows = format!("fn f(xs): if len(xs) > {bound} then xs else f(xs + [1])\n");
         rows.push([grows.clone(), "Clip c:\n    Note/(f([1])[0])\n".into()]);
         rows.push([grows, "Clip c:\n    Note/(60 + len(f([1])))\n".into()]);
@@ -1721,7 +1777,7 @@ fn a_recursive_call_whose_array_argument_grows_finishes_within_the_limits() {
             "Clip c:\n    Note/(f([1, 2, 3])[0])\n",
         ),
     ];
-    for (function, clip) in finishing {
+    for (function, clip) in finishing.into_iter().filter(|_| finishing_rows) {
         rows.push([function.into(), clip.into()]);
     }
     let items: Vec<[&str; 2]> = rows
@@ -1736,7 +1792,8 @@ fn a_recursive_call_whose_array_argument_grows_finishes_within_the_limits() {
 }
 
 #[test]
-fn a_recursive_call_whose_array_argument_deepens_finishes_on_a_small_stack() {
+#[ignore = "stress"]
+fn stress_a_recursive_call_whose_array_argument_deepens_finishes_on_a_small_stack() {
     std::thread::Builder::new()
         .stack_size(1 << 20)
         .spawn(|| {

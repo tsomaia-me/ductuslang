@@ -71,19 +71,21 @@ pub fn corpora() -> Vec<(Vocabulary, Vec<String>)> {
     ]
 }
 
-pub fn mutants(text: &str, tokens: &[(usize, usize)]) -> Vec<String> {
-    let mut found = Vec::new();
-    for &(start, end) in tokens {
-        if start < end {
-            let mut deleted = text.to_string();
-            deleted.replace_range(start..end, "");
-            found.push(deleted);
-        }
-        for inserted in INSERTED {
-            let mut grown = text.to_string();
-            grown.insert_str(start, inserted);
-            found.push(grown);
-        }
+pub const MUTATIONS: usize = 1 + INSERTED.len();
+
+pub fn mutant(text: &str, (start, end): (usize, usize), mutation: usize) -> Option<String> {
+    let mut changed = text.to_string();
+    match mutation.checked_sub(1) {
+        None if start < end => changed.replace_range(start..end, ""),
+        None => return None,
+        Some(inserted) => changed.insert_str(start, INSERTED.get(inserted)?),
     }
-    found
+    Some(changed)
+}
+
+pub fn mutants(text: &str, tokens: &[(usize, usize)]) -> Vec<String> {
+    tokens
+        .iter()
+        .flat_map(|token| (0..MUTATIONS).filter_map(|mutation| mutant(text, *token, mutation)))
+        .collect()
 }

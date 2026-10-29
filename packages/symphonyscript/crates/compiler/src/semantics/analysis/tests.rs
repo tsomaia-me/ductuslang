@@ -1,7 +1,8 @@
 use symphonyscript_core::{Count, Limits, Scalar, Vocabulary};
 use symphonyscript_fixtures::{
-    Project, ProjectFile, bar_vocabulary, deep_projects, dsp_project, envelope_vocabulary,
-    music_project, pending_spec_examples, spec_examples, spec_projects, vocabulary,
+    Orders, Project, ProjectFile, bar_vocabulary, covered, deep_projects, dsp_project,
+    envelope_vocabulary, music_project, pending_spec_examples, spec_examples, spec_projects,
+    vocabulary,
 };
 
 use super::Engine;
@@ -705,7 +706,6 @@ fn placeholders(engine: &Engine<'_>) -> Vec<String> {
 
 #[test]
 fn a_run_that_draws_no_error_holds_no_placeholder() {
-    let compiler = Compiler::new(&vocabulary()).expect("the example vocabulary compiles");
     let pending = pending_spec_examples();
     let examples = spec_examples()
         .into_iter()
@@ -717,11 +717,49 @@ fn a_run_that_draws_no_error_holds_no_placeholder() {
                 text: example.text,
             }],
         });
-    let projects = [music_project(), dsp_project()]
-        .into_iter()
-        .chain(deep_projects())
-        .chain(examples);
-    let clean = std::thread::scope(|threads| {
+    let projects = [music_project(), dsp_project()].into_iter().chain(examples);
+    let clean = clean_runs_holding_no_placeholder(projects);
+    assert!(
+        clean
+            >= 2 + spec_projects()
+                .iter()
+                .filter(|project| !pending.contains(&project.name))
+                .count(),
+        "{clean} runs drew no error"
+    );
+
+    let envelope = envelope_vocabulary();
+    for text in IN_DEFAULT_UNITS.iter().chain(FIXED_IN_DEFAULT_UNITS) {
+        let (diagnostics, found) = analyzed_with(&envelope, text, placeholders);
+        assert_eq!(errors_of(&diagnostics), Vec::<&Diagnostic>::new(), "{text}");
+        assert_eq!(found, Vec::<String>::new(), "{text}");
+    }
+    let recursive_arrays = [
+        format!("{CHORD_FN}Clip c:\n    [Note/(chord(3)[0]) Note/(chord(3)[1]) Note/(chord(3)[2])]\n"),
+        format!("{R_FN}Clip c | gain=(r(0.1, 3)[0])\nOsc o | freq=(r(0.1, 3)[0])\n"),
+        format!("{CHORD_FN}Clip c:\n    for p in chord(3):\n        Note/p\n"),
+        format!("{CHORD_FN}let v: i32[3] = chord(1)\nlet x = [chord(1), chord(2)]\nClip c:\n    Note/(v[2] + x[1][2])\n"),
+        format!("{CHORD_FN}input f = true\ninput a = 1\ninput i = 0\nClip c:\n    Note/((if f then chord(1) else [1, 2, 3])[0])\n    Note/([a, chord(3)[0]][1])\n    Note/(chord(3)[i])\n"),
+        "fn g(k): if k < 1 then [[1, 2, 3], [4, 5, 6]] else g(k - 1)\nfn rev(a, k): if k < 1 then a else rev([a[1], a[0]], k - 1)\nfn grow(k): if k < 1 then [0] else [grow(k - 1)[0] + 1, 0]\nClip c:\n    Note/(g(2)[1][2] + rev([1, 2], 3)[0] + grow(3)[0])\n".into(),
+    ];
+    let held = "Session s\ninput f = true\nlet x = if f then Sine else Saw\n";
+    let enum_lets = [
+        format!("{held}Clip c:\n    Note when x is Wave::Saw\n    Note when Wave::Saw is x\n"),
+        format!("{held}input w = Wave::Saw\nlet g = x is not w\nClip c:\n    Note when g\n"),
+        format!(
+            "{held}let y = if f then Saw else Sine\nOsc o | wave=x\nClip c:\n    Note when x is y\n    Note when x is Saw\n"
+        ),
+    ];
+    for text in recursive_arrays.iter().chain(&enum_lets) {
+        let (diagnostics, found) = analyzed(text, placeholders);
+        assert_eq!(errors_of(&diagnostics), Vec::<&Diagnostic>::new(), "{text}");
+        assert_eq!(found, Vec::<String>::new(), "{text}");
+    }
+}
+
+fn clean_runs_holding_no_placeholder(projects: impl Iterator<Item = Project> + Send) -> usize {
+    let compiler = Compiler::new(&vocabulary()).expect("the example vocabulary compiles");
+    std::thread::scope(|threads| {
         let runs: Vec<_> = projects
             .map(|project| {
                 let compiler = &compiler;
@@ -750,42 +788,16 @@ fn a_run_that_draws_no_error_holds_no_placeholder() {
             .map(|run| run.join().expect("every run holds no placeholder"))
             .filter(|clean| *clean)
             .count()
-    });
-    assert!(
-        clean
-            >= 6 + spec_projects()
-                .iter()
-                .filter(|project| !pending.contains(&project.name))
-                .count(),
-        "{clean} runs drew no error"
+    })
+}
+
+#[test]
+#[ignore = "stress"]
+fn stress_a_run_over_a_deep_project_draws_no_error_and_holds_no_placeholder() {
+    assert_eq!(
+        clean_runs_holding_no_placeholder(deep_projects().into_iter()),
+        4
     );
-    let envelope = envelope_vocabulary();
-    for text in IN_DEFAULT_UNITS.iter().chain(FIXED_IN_DEFAULT_UNITS) {
-        let (diagnostics, found) = analyzed_with(&envelope, text, placeholders);
-        assert_eq!(errors_of(&diagnostics), Vec::<&Diagnostic>::new(), "{text}");
-        assert_eq!(found, Vec::<String>::new(), "{text}");
-    }
-    let recursive_arrays = [
-        format!("{CHORD_FN}Clip c:\n    [Note/(chord(3)[0]) Note/(chord(3)[1]) Note/(chord(3)[2])]\n"),
-        format!("{R_FN}Clip c | gain=(r(0.1, 3)[0])\nOsc o | freq=(r(0.1, 3)[0])\n"),
-        format!("{CHORD_FN}Clip c:\n    for p in chord(3):\n        Note/p\n"),
-        format!("{CHORD_FN}let v: i32[3] = chord(1)\nlet x = [chord(1), chord(2)]\nClip c:\n    Note/(v[2] + x[1][2])\n"),
-        format!("{CHORD_FN}input f = true\ninput a = 1\ninput i = 0\nClip c:\n    Note/((if f then chord(1) else [1, 2, 3])[0])\n    Note/([a, chord(3)[0]][1])\n    Note/(chord(3)[i])\n"),
-        "fn g(k): if k < 1 then [[1, 2, 3], [4, 5, 6]] else g(k - 1)\nfn rev(a, k): if k < 1 then a else rev([a[1], a[0]], k - 1)\nfn grow(k): if k < 1 then [0] else [grow(k - 1)[0] + 1, 0]\nClip c:\n    Note/(g(2)[1][2] + rev([1, 2], 3)[0] + grow(3)[0])\n".into(),
-    ];
-    let held = "Session s\ninput f = true\nlet x = if f then Sine else Saw\n";
-    let enum_lets = [
-        format!("{held}Clip c:\n    Note when x is Wave::Saw\n    Note when Wave::Saw is x\n"),
-        format!("{held}input w = Wave::Saw\nlet g = x is not w\nClip c:\n    Note when g\n"),
-        format!(
-            "{held}let y = if f then Saw else Sine\nOsc o | wave=x\nClip c:\n    Note when x is y\n    Note when x is Saw\n"
-        ),
-    ];
-    for text in recursive_arrays.iter().chain(&enum_lets) {
-        let (diagnostics, found) = analyzed(text, placeholders);
-        assert_eq!(errors_of(&diagnostics), Vec::<&Diagnostic>::new(), "{text}");
-        assert_eq!(found, Vec::<String>::new(), "{text}");
-    }
 }
 
 fn errors_of(diagnostics: &[Diagnostic]) -> Vec<&Diagnostic> {
@@ -929,6 +941,11 @@ fn an_arm_is_active_when_its_guard_holds_and_no_earlier_guard_does() {
             vec![held("section is 0", false), held("section is 1", false)],
         ]
     );
+}
+
+#[test]
+#[ignore = "stress"]
+fn stress_an_arm_of_the_deep_bodies_project_is_active_when_every_guard_above_it_holds() {
     let deep = deep_projects()
         .into_iter()
         .find(|project| project.name == "deep bodies")
@@ -960,7 +977,8 @@ fn an_arm_is_active_when_its_guard_holds_and_no_earlier_guard_does() {
 }
 
 #[test]
-fn guard_arms_cost_linear_time_and_memory() {
+#[ignore = "stress"]
+fn stress_guard_arms_cost_linear_time_and_memory() {
     let size = |arms: usize| {
         let mut text = String::from("input x = 0\nClip c:\n    when:\n");
         for arm in 0..arms {
@@ -1485,17 +1503,22 @@ fn a_placement_for_over_a_doubled_array_stops_at_the_expansion_limit(depth: usiz
 const DOUBLING: &str = "fn f(n): if n is 0 then [1] else f(n - 1) + f(n - 1)\n";
 
 #[test]
-fn a_placement_for_over_two_to_the_thirty_elements_builds_no_more_than_the_expansion_limit() {
+#[ignore = "stress"]
+fn stress_a_placement_for_over_two_to_the_thirty_elements_builds_no_more_than_the_expansion_limit()
+{
     a_placement_for_over_a_doubled_array_stops_at_the_expansion_limit(30);
 }
 
 #[test]
-fn a_placement_for_over_two_to_the_twenty_two_elements_builds_no_more_than_the_expansion_limit() {
+#[ignore = "stress"]
+fn stress_a_placement_for_over_two_to_the_twenty_two_elements_builds_no_more_than_the_expansion_limit()
+ {
     a_placement_for_over_a_doubled_array_stops_at_the_expansion_limit(22);
 }
 
 #[test]
-fn a_placement_for_over_a_range_past_the_expansion_limit_draws_expansion_limit() {
+#[ignore = "stress"]
+fn stress_a_placement_for_over_a_range_past_the_expansion_limit_draws_expansion_limit() {
     let range = "Clip c:\n    for i in 0..8388608:\n        Note\n";
     let (diagnostics, ()) = analyzed(range, |_| ());
     assert_eq!(error_codes(&diagnostics), [Code::ExpansionLimit], "{range}");
@@ -2091,7 +2114,8 @@ fn the_count_before_inlining_follows_the_defaults_each_call_leaves_open() {
 }
 
 #[test]
-fn expansion_stops_after_a_million_iterations_and_uses_whatever_the_loop_bounds() {
+#[ignore = "stress"]
+fn stress_expansion_stops_after_a_million_iterations_and_uses_whatever_the_loop_bounds() {
     let mut chain = String::new();
     for level in 1..25 {
         let next = level + 1;
@@ -3056,27 +3080,15 @@ fn a_whole_read_of_an_array_let_costs_constant_work() {
 }
 
 fn in_every_order(items: &[&str]) -> Vec<String> {
-    let text = |order: &[usize]| {
-        let lines: Vec<&str> = order.iter().map(|index| items[*index]).collect();
-        format!("{}\n", lines.join("\n"))
-    };
-    let mut order: Vec<usize> = (0..items.len()).collect();
-    let mut counters = vec![0; items.len()];
-    let mut found = vec![text(&order)];
-    let mut level = 0;
-    while level < items.len() {
-        if counters[level] < level {
-            let other = if level % 2 == 0 { 0 } else { counters[level] };
-            order.swap(other, level);
-            found.push(text(&order));
-            counters[level] += 1;
-            level = 0;
-        } else {
-            counters[level] = 0;
-            level += 1;
-        }
-    }
-    found
+    in_orders(Orders::Every, items)
+}
+
+fn in_orders(orders: Orders, items: &[&str]) -> Vec<String> {
+    orders
+        .of(items)
+        .into_iter()
+        .map(|order| format!("{}\n", order.join("\n")))
+        .collect()
 }
 
 fn codes_beside_the_entry_warning(diagnostics: &[Diagnostic]) -> Vec<Code> {
@@ -3299,8 +3311,7 @@ fn a_value_of_fixed_or_widened_type_keeps_its_ieee_value_where_it_is_used() {
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
 
-#[test]
-fn a_recursive_call_reuses_only_a_finished_calls_value() {
+fn a_recursive_call_reuses_only_a_finished_calls_value_in(orders: Orders) {
     let pitches =
         |values: &[i128]| -> Vec<CVal> { values.iter().map(|value| CVal::Int(*value)).collect() };
     let rows: Vec<(Vec<&str>, Vec<CVal>)> = vec![
@@ -3344,7 +3355,7 @@ fn a_recursive_call_reuses_only_a_finished_calls_value() {
     ];
     let mut failures = Vec::new();
     for (items, expected) in rows {
-        for text in in_every_order(&items) {
+        for text in in_orders(orders, &items) {
             let (diagnostics, (found, holes)) = analyzed(&text, |engine| {
                 (
                     attr_values(engine, "pitch", EvalTy::I32),
@@ -3364,7 +3375,17 @@ fn a_recursive_call_reuses_only_a_finished_calls_value() {
 }
 
 #[test]
-fn a_recursive_call_with_a_placeholder_argument_is_a_placeholder() {
+fn a_recursive_call_reuses_only_a_finished_calls_value() {
+    a_recursive_call_reuses_only_a_finished_calls_value_in(Orders::ForwardAndReversed);
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_a_recursive_call_reuses_only_a_finished_calls_value() {
+    a_recursive_call_reuses_only_a_finished_calls_value_in(Orders::Every);
+}
+
+fn a_recursive_call_with_a_placeholder_argument_is_a_placeholder_in(orders: Orders) {
     let functions = [
         "fn q(n): if n < 1 then 0 else q(n - 1)",
         "fn r(n, m = 2): if n < 1 then m else r(n - 1, m)",
@@ -3417,7 +3438,7 @@ fn a_recursive_call_with_a_placeholder_argument_is_a_placeholder() {
                 .copied()
                 .chain([placed.as_str()])
                 .collect();
-            for text in in_every_order(&items) {
+            for text in in_orders(orders, &items) {
                 let (diagnostics, (notes, cells)) = analyzed(&text, |engine| {
                     (notes_and_pitches(engine).0, input_cells(engine, "zz").1)
                 });
@@ -3446,6 +3467,17 @@ fn a_recursive_call_with_a_placeholder_argument_is_a_placeholder() {
         }
     }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+#[test]
+fn a_recursive_call_with_a_placeholder_argument_is_a_placeholder() {
+    a_recursive_call_with_a_placeholder_argument_is_a_placeholder_in(Orders::ForwardAndReversed);
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_a_recursive_call_with_a_placeholder_argument_is_a_placeholder() {
+    a_recursive_call_with_a_placeholder_argument_is_a_placeholder_in(Orders::Every);
 }
 
 fn errors_at(text: &str, diagnostics: &[Diagnostic]) -> Vec<(Code, String)> {
@@ -3615,6 +3647,35 @@ fn a_patterns_lets_see_the_names_of_its_body() {
 #[path = "../../../tests/robustness_corpus/mod.rs"]
 mod robustness_corpus;
 
+fn kinded_tokens(text: &str, vocabulary: &Vocabulary) -> Vec<((usize, usize), usize)> {
+    let source = Source {
+        path: "mutant.sym".into(),
+        text: text.into(),
+    };
+    crate::syntax::lex(&source, vocabulary)
+        .tokens
+        .iter()
+        .filter_map(|token| {
+            let start = usize::try_from(token.range.start).ok()?;
+            let end = usize::try_from(token.range.end).ok()?;
+            Some(((start, end), token.kind as usize))
+        })
+        .collect()
+}
+
+fn clean_mutant_failure(compiler: &Compiler, mutant: &str) -> Option<Option<String>> {
+    let sources = [Source {
+        path: "mutant.sym".into(),
+        text: mutant.to_string(),
+    }];
+    let (diagnostics, found) = compiler.analyzed(&sources, placeholders);
+    let found = found?;
+    if !errors_of(&diagnostics).is_empty() {
+        return None;
+    }
+    Some((!found.is_empty()).then(|| format!("{mutant:?}: {found:?}")))
+}
+
 fn mutants_draw_no_placeholder(shard: usize) {
     let mut failures = Vec::new();
     let mut clean = 0;
@@ -3622,39 +3683,20 @@ fn mutants_draw_no_placeholder(shard: usize) {
     for (vocabulary, texts) in robustness_corpus::corpora() {
         let compiler = Compiler::new(&vocabulary).expect("the vocabulary compiles");
         for text in &texts {
-            let source = Source {
-                path: "mutant.sym".into(),
-                text: text.clone(),
-            };
-            let tokens: Vec<(usize, usize)> = crate::syntax::lex(&source, &vocabulary)
-                .tokens
-                .iter()
-                .filter_map(|token| {
-                    let start = usize::try_from(token.range.start).ok()?;
-                    let end = usize::try_from(token.range.end).ok()?;
-                    Some((start, end))
-                })
+            let tokens: Vec<(usize, usize)> = kinded_tokens(text, &vocabulary)
+                .into_iter()
+                .map(|(span, _)| span)
                 .collect();
             for mutant in robustness_corpus::mutants(text, &tokens) {
                 index += 1;
                 if index % MUTANT_SHARDS != shard {
                     continue;
                 }
-                let sources = [Source {
-                    path: "mutant.sym".into(),
-                    text: mutant.clone(),
-                }];
-                let (diagnostics, found) = compiler.analyzed(&sources, placeholders);
-                let Some(found) = found else {
+                let Some(failure) = clean_mutant_failure(&compiler, &mutant) else {
                     continue;
                 };
-                if !errors_of(&diagnostics).is_empty() {
-                    continue;
-                }
                 clean += 1;
-                if !found.is_empty() {
-                    failures.push(format!("{mutant:?}: {found:?}"));
-                }
+                failures.extend(failure);
             }
         }
     }
@@ -3665,25 +3707,65 @@ fn mutants_draw_no_placeholder(shard: usize) {
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
 
+#[test]
+fn no_mutant_of_an_example_or_fixture_that_draws_no_error_holds_a_placeholder() {
+    let corpora = robustness_corpus::corpora();
+    let (failures, clean) = covered(|rows| {
+        let mut failures = Vec::new();
+        let mut clean = 0;
+        for (corpus, (vocabulary, texts)) in corpora.iter().enumerate() {
+            let compiler = Compiler::new(vocabulary).expect("the vocabulary compiles");
+            for text in texts {
+                for (span, kind) in kinded_tokens(text, vocabulary) {
+                    for mutation in 0..robustness_corpus::MUTATIONS {
+                        if !rows.take(&[corpus, kind, mutation]) {
+                            continue;
+                        }
+                        let Some(mutant) = robustness_corpus::mutant(text, span, mutation) else {
+                            continue;
+                        };
+                        let Some(failure) = clean_mutant_failure(&compiler, &mutant) else {
+                            continue;
+                        };
+                        clean += 1;
+                        failures.extend(failure);
+                    }
+                }
+            }
+        }
+        (failures, clean)
+    });
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    assert_eq!(clean, 25);
+}
+
 const MUTANT_SHARDS: usize = 4;
 
 #[test]
-fn no_mutant_of_an_example_or_fixture_that_draws_no_error_holds_a_placeholder_first_quarter() {
+#[ignore = "exhaustive"]
+fn exhaustive_no_mutant_of_an_example_or_fixture_that_draws_no_error_holds_a_placeholder_first_quarter()
+ {
     mutants_draw_no_placeholder(0);
 }
 
 #[test]
-fn no_mutant_of_an_example_or_fixture_that_draws_no_error_holds_a_placeholder_second_quarter() {
+#[ignore = "exhaustive"]
+fn exhaustive_no_mutant_of_an_example_or_fixture_that_draws_no_error_holds_a_placeholder_second_quarter()
+ {
     mutants_draw_no_placeholder(1);
 }
 
 #[test]
-fn no_mutant_of_an_example_or_fixture_that_draws_no_error_holds_a_placeholder_third_quarter() {
+#[ignore = "exhaustive"]
+fn exhaustive_no_mutant_of_an_example_or_fixture_that_draws_no_error_holds_a_placeholder_third_quarter()
+ {
     mutants_draw_no_placeholder(2);
 }
 
 #[test]
-fn no_mutant_of_an_example_or_fixture_that_draws_no_error_holds_a_placeholder_fourth_quarter() {
+#[ignore = "exhaustive"]
+fn exhaustive_no_mutant_of_an_example_or_fixture_that_draws_no_error_holds_a_placeholder_fourth_quarter()
+ {
     mutants_draw_no_placeholder(3);
 }
 

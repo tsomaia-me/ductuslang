@@ -3,15 +3,15 @@ mod support;
 
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
-use robustness_corpus::{corpora, mutants};
+use robustness_corpus::{MUTATIONS, corpora, mutant, mutants};
 use symphonyscript::syntax::lex;
 use symphonyscript::{Code, Compiler, Source};
 use symphonyscript_core::Vocabulary;
-use symphonyscript_fixtures::vocabulary;
+use symphonyscript_fixtures::{Rows, covered, vocabulary};
 
 const SAMPLED_ONE_IN: usize = 3;
 
-fn tokens(text: &str, vocabulary: &Vocabulary) -> Vec<(usize, usize)> {
+fn kinded_tokens(text: &str, vocabulary: &Vocabulary) -> Vec<((usize, usize), usize)> {
     let source = Source {
         path: "mutant.sym".into(),
         text: text.into(),
@@ -22,18 +22,78 @@ fn tokens(text: &str, vocabulary: &Vocabulary) -> Vec<(usize, usize)> {
         .filter_map(|token| {
             let start = usize::try_from(token.range.start).ok()?;
             let end = usize::try_from(token.range.end).ok()?;
-            Some((start, end))
+            Some(((start, end), token.kind as usize))
         })
         .collect()
 }
 
+fn tokens(text: &str, vocabulary: &Vocabulary) -> Vec<(usize, usize)> {
+    kinded_tokens(text, vocabulary)
+        .into_iter()
+        .map(|(span, _)| span)
+        .collect()
+}
+
+fn drawn_failure(compiler: &Compiler, mutant: &str) -> Option<String> {
+    let sources = [Source {
+        path: "mutant.sym".into(),
+        text: mutant.to_string(),
+    }];
+    match catch_unwind(AssertUnwindSafe(|| compiler.check(&sources))) {
+        Ok(diagnostics) => diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == Code::InternalError)
+            .then(|| format!("internal-error: {mutant:?}")),
+        Err(_) => Some(format!("panic: {mutant:?}")),
+    }
+}
+
+fn covered_mutants_draw_no_internal_error(
+    rows: &Rows,
+    corpora: &[(Vocabulary, Vec<String>)],
+) -> (Vec<String>, usize) {
+    let mut failures = Vec::new();
+    let mut checked = 0;
+    for (corpus, (vocabulary, texts)) in corpora.iter().enumerate() {
+        let compiler = Compiler::new(vocabulary).expect("the vocabulary compiles");
+        for text in texts {
+            for (span, kind) in kinded_tokens(text, vocabulary) {
+                for mutation in 0..MUTATIONS {
+                    if !rows.take(&[corpus, kind, mutation]) {
+                        continue;
+                    }
+                    let Some(mutant) = mutant(text, span, mutation) else {
+                        continue;
+                    };
+                    checked += 1;
+                    failures.extend(drawn_failure(&compiler, &mutant));
+                }
+            }
+        }
+    }
+    (failures, checked)
+}
+
 #[test]
-fn no_mutant_of_an_example_or_fixture_draws_an_internal_error_or_panics_in_the_odd_samples() {
+fn no_mutant_of_an_example_or_fixture_draws_an_internal_error_or_panics() {
+    let corpora = corpora();
+    let (failures, checked) =
+        covered(|rows| covered_mutants_draw_no_internal_error(rows, &corpora));
+    assert_eq!(failures, Vec::<String>::new());
+    assert_eq!(checked, 1_493);
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_no_mutant_of_an_example_or_fixture_draws_an_internal_error_or_panics_in_the_odd_samples()
+ {
     mutants_draw_no_internal_error(0);
 }
 
 #[test]
-fn no_mutant_of_an_example_or_fixture_draws_an_internal_error_or_panics_in_the_even_samples() {
+#[ignore = "exhaustive"]
+fn exhaustive_no_mutant_of_an_example_or_fixture_draws_an_internal_error_or_panics_in_the_even_samples()
+ {
     mutants_draw_no_internal_error(1);
 }
 
@@ -53,21 +113,7 @@ fn mutants_draw_no_internal_error(half: usize) {
                 continue;
             }
             checked += 1;
-            let sources = [Source {
-                path: "mutant.sym".into(),
-                text: mutant.clone(),
-            }];
-            match catch_unwind(AssertUnwindSafe(|| compiler.check(&sources))) {
-                Ok(diagnostics) => {
-                    if diagnostics
-                        .iter()
-                        .any(|diagnostic| diagnostic.code == Code::InternalError)
-                    {
-                        failures.push(format!("internal-error: {mutant:?}"));
-                    }
-                }
-                Err(_) => failures.push(format!("panic: {mutant:?}")),
-            }
+            failures.extend(drawn_failure(&compiler, &mutant));
         }
     }
     assert!(checked > 5_000 / 2, "{checked} mutants checked");
@@ -103,31 +149,30 @@ fn the_absences_that_are_normal_draw_no_internal_error() {
     }
 }
 
+const BOUNDED_READERS: [&str; 2] = [
+    "input held: i32[..10] = []\nfn lowest(i) bounded 10 else 127:\n    let a = held[i]\n    if i >= len(held) then 127 else min(a, lowest(i + 1))\nClip c:\n    Note/(lowest(0))\n",
+    "input held = [1, 2, 3]\nfn lowest(i) bounded 10 else 127:\n    let a = held[i]\n    if i >= 3 then 127 else min(a, lowest(i + 1))\nClip c:\n    Note/(lowest(0))\n",
+];
+
 #[test]
 fn no_mutant_of_a_bounded_function_reading_a_cell_through_a_let_draws_an_internal_error() {
+    let corpora = [(vocabulary(), BOUNDED_READERS.map(str::to_string).to_vec())];
+    let (failures, checked) =
+        covered(|rows| covered_mutants_draw_no_internal_error(rows, &corpora));
+    assert_eq!(failures, Vec::<String>::new());
+    assert_eq!(checked, 573);
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_no_mutant_of_a_bounded_function_reading_a_cell_through_a_let_draws_an_internal_error()
+{
     let vocabulary = vocabulary();
     let compiler = Compiler::new(&vocabulary).expect("the example vocabulary compiles");
     let mut failures = Vec::new();
-    for text in [
-        "input held: i32[..10] = []\nfn lowest(i) bounded 10 else 127:\n    let a = held[i]\n    if i >= len(held) then 127 else min(a, lowest(i + 1))\nClip c:\n    Note/(lowest(0))\n",
-        "input held = [1, 2, 3]\nfn lowest(i) bounded 10 else 127:\n    let a = held[i]\n    if i >= 3 then 127 else min(a, lowest(i + 1))\nClip c:\n    Note/(lowest(0))\n",
-    ] {
+    for text in BOUNDED_READERS {
         for mutant in mutants(text, &tokens(text, &vocabulary)) {
-            let sources = [Source {
-                path: "mutant.sym".into(),
-                text: mutant.clone(),
-            }];
-            match catch_unwind(AssertUnwindSafe(|| compiler.check(&sources))) {
-                Ok(diagnostics) => {
-                    if diagnostics
-                        .iter()
-                        .any(|diagnostic| diagnostic.code == Code::InternalError)
-                    {
-                        failures.push(format!("internal-error: {mutant:?}"));
-                    }
-                }
-                Err(_) => failures.push(format!("panic: {mutant:?}")),
-            }
+            failures.extend(drawn_failure(&compiler, &mutant));
         }
     }
     assert_eq!(failures, Vec::<String>::new());

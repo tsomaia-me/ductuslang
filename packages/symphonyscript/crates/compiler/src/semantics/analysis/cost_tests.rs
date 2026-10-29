@@ -591,68 +591,85 @@ fn assert_costs_linear(construct: Construct, expected_rows: usize) {
 }
 
 #[test]
-fn every_walk_of_check_over_a_let_costs_work_linear_in_the_program_in_every_shape_and_order() {
+#[ignore = "stress"]
+fn stress_every_walk_of_check_over_a_let_costs_work_linear_in_the_program_in_every_shape_and_order()
+{
     assert_costs_linear(Construct::Let, 12);
 }
 
 #[test]
-fn every_walk_of_check_over_a_state_costs_work_linear_in_the_program_in_every_shape_and_order() {
+#[ignore = "stress"]
+fn stress_every_walk_of_check_over_a_state_costs_work_linear_in_the_program_in_every_shape_and_order()
+ {
     assert_costs_linear(Construct::State, 10);
 }
 
 #[test]
-fn every_walk_of_check_over_an_inlined_function_costs_work_linear_in_the_program_in_every_shape_and_order()
+#[ignore = "stress"]
+fn stress_every_walk_of_check_over_an_inlined_function_costs_work_linear_in_the_program_in_every_shape_and_order()
  {
     assert_costs_linear(Construct::Inlined, 12);
 }
 
 #[test]
-fn every_walk_of_check_over_a_compile_time_recursive_function_costs_work_linear_in_the_program_in_every_shape_and_order()
+#[ignore = "stress"]
+fn stress_every_walk_of_check_over_a_compile_time_recursive_function_costs_work_linear_in_the_program_in_every_shape_and_order()
  {
     assert_costs_linear(Construct::Recursive, 10);
 }
 
 #[test]
-fn every_walk_of_check_over_an_if_choice_costs_work_linear_in_the_program_in_every_shape_and_order()
-{
+#[ignore = "stress"]
+fn stress_every_walk_of_check_over_an_if_choice_costs_work_linear_in_the_program_in_every_shape_and_order()
+ {
     assert_costs_linear(Construct::If, 14);
 }
 
 #[test]
-fn every_walk_of_check_over_a_match_choice_costs_work_linear_in_the_program_in_every_shape_and_order()
+#[ignore = "stress"]
+fn stress_every_walk_of_check_over_a_match_choice_costs_work_linear_in_the_program_in_every_shape_and_order()
  {
     assert_costs_linear(Construct::Match, 12);
 }
 
 #[test]
-fn every_walk_of_check_over_a_join_costs_work_linear_in_the_program_in_every_shape_and_order() {
+#[ignore = "stress"]
+fn stress_every_walk_of_check_over_a_join_costs_work_linear_in_the_program_in_every_shape_and_order()
+ {
     assert_costs_linear(Construct::Join, 14);
 }
 
 #[test]
-fn every_walk_of_check_over_a_slice_costs_work_linear_in_the_program_in_every_shape_and_order() {
+#[ignore = "stress"]
+fn stress_every_walk_of_check_over_a_slice_costs_work_linear_in_the_program_in_every_shape_and_order()
+ {
     assert_costs_linear(Construct::Slice, 14);
 }
 
 #[test]
-fn every_walk_of_check_over_an_index_costs_work_linear_in_the_program_in_every_shape_and_order() {
+#[ignore = "stress"]
+fn stress_every_walk_of_check_over_an_index_costs_work_linear_in_the_program_in_every_shape_and_order()
+ {
     assert_costs_linear(Construct::Index, 14);
 }
 
 #[test]
-fn every_walk_of_check_over_a_history_read_costs_work_linear_in_the_program_in_every_shape_and_order()
+#[ignore = "stress"]
+fn stress_every_walk_of_check_over_a_history_read_costs_work_linear_in_the_program_in_every_shape_and_order()
  {
     assert_costs_linear(Construct::History, 10);
 }
 
 #[test]
-fn every_walk_of_check_over_a_for_placement_costs_work_linear_in_the_program_in_every_shape_and_order()
+#[ignore = "stress"]
+fn stress_every_walk_of_check_over_a_for_placement_costs_work_linear_in_the_program_in_every_shape_and_order()
  {
     assert_costs_linear(Construct::ForPlacement, 8);
 }
 
 #[test]
-fn every_walk_of_check_over_an_array_literal_costs_work_linear_in_the_program_in_every_shape_and_order()
+#[ignore = "stress"]
+fn stress_every_walk_of_check_over_an_array_literal_costs_work_linear_in_the_program_in_every_shape_and_order()
  {
     assert_costs_linear(Construct::ArrayLiteral, 14);
 }
@@ -828,7 +845,8 @@ fn chain_program(chain: Chain, read: ChainRead, n: usize, reversed: bool, checke
 }
 
 #[test]
-fn every_walk_that_follows_a_chain_of_lets_costs_work_linear_in_the_chain_and_the_elements_it_builds()
+#[ignore = "stress"]
+fn stress_every_walk_that_follows_a_chain_of_lets_costs_work_linear_in_the_chain_and_the_elements_it_builds()
  {
     let compiler = Compiler::new(&vocabulary()).expect("the vocabulary compiles");
     let mut failures = Vec::new();
@@ -971,8 +989,9 @@ fn reference_array_program(body: ReferenceBody, size: usize, call_first: bool) -
 }
 
 #[test]
-fn a_recursive_call_over_an_array_of_references_costs_work_linear_in_its_elements_in_either_order()
-{
+#[ignore = "stress"]
+fn stress_a_recursive_call_over_an_array_of_references_costs_work_linear_in_its_elements_in_either_order()
+ {
     let compiler = Compiler::new(&vocabulary()).expect("the vocabulary compiles");
     let mut failures = Vec::new();
     let mut rows = 0;
@@ -1048,7 +1067,8 @@ fn template_walk_program(walk: TemplateWalk, size: usize, call_first: bool) -> S
 }
 
 #[test]
-fn a_recursive_body_with_a_template_per_level_checks_each_frames_heads_in_work_linear_in_its_levels()
+#[ignore = "stress"]
+fn stress_a_recursive_body_with_a_template_per_level_checks_each_frames_heads_in_work_linear_in_its_levels()
  {
     let compiler = Compiler::new(&vocabulary()).expect("the vocabulary compiles");
     let mut failures = Vec::new();

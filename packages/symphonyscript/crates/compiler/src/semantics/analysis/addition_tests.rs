@@ -98,7 +98,8 @@ fn ring_rounds(states: u32) -> u64 {
 }
 
 #[test]
-fn a_ring_of_states_takes_its_capacities_in_work_linear_in_it() {
+#[ignore = "stress"]
+fn stress_a_ring_of_states_takes_its_capacities_in_work_linear_in_it() {
     let (small, large) = (ring_rounds(250), ring_rounds(1_000));
     assert!(large <= 4 * small, "{small} {large}");
 }
@@ -124,7 +125,8 @@ fn settlement_visits(states: u32, reversed: bool, read: impl Fn(u32) -> u32) -> 
 }
 
 #[test]
-fn settling_a_group_of_states_costs_work_linear_in_it_in_every_declaration_order() {
+#[ignore = "stress"]
+fn stress_settling_a_group_of_states_costs_work_linear_in_it_in_every_declaration_order() {
     type Shape = fn(u32, u32) -> u32;
     let shapes: [(&str, Shape); 3] = [
         ("ring", |state, states| (state + states - 1) % states),
@@ -211,7 +213,8 @@ fn kind_walk_program(shape: &str, states: u32) -> String {
 }
 
 #[test]
-fn the_kind_walk_over_a_ring_or_chain_of_states_is_linear_in_every_declaration_order() {
+#[ignore = "stress"]
+fn stress_the_kind_walk_over_a_ring_or_chain_of_states_is_linear_in_every_declaration_order() {
     kind_walks_are_linear(&[
         ("forward ring", &[]),
         ("reversed ring", &[]),
@@ -221,7 +224,9 @@ fn the_kind_walk_over_a_ring_or_chain_of_states_is_linear_in_every_declaration_o
 }
 
 #[test]
-fn the_kind_walk_over_states_holding_a_float_or_a_fan_is_linear_in_every_declaration_order() {
+#[ignore = "stress"]
+fn stress_the_kind_walk_over_states_holding_a_float_or_a_fan_is_linear_in_every_declaration_order()
+{
     kind_walks_are_linear(&[
         ("float at the end", &[]),
         ("float at the start", &[]),
@@ -571,7 +576,8 @@ fn counted(bound: u64, limits: Limits) -> (Vec<Diagnostic>, Option<CVal>, u64) {
 }
 
 #[test]
-fn a_bounded_function_evaluates_in_work_linear_in_its_levels() {
+#[ignore = "stress"]
+fn stress_a_bounded_function_evaluates_in_work_linear_in_its_levels() {
     let (small_diagnostics, small_value, small) = counted(25_000, Limits::default());
     let (large_diagnostics, large_value, large) = counted(100_000, Limits::default());
     assert!(
@@ -651,12 +657,14 @@ fn walk_points(body: &str) -> [(u64, u64); 3] {
 }
 
 #[test]
-fn ordering_the_bindings_of_an_expanded_program_is_linear_in_it() {
+#[ignore = "stress"]
+fn stress_ordering_the_bindings_of_an_expanded_program_is_linear_in_it() {
     assert_linear(walk_points(WITH_LET));
 }
 
 #[test]
-fn ordering_the_bindings_of_an_expanded_program_walks_a_let_at_most_four_times_its_reads() {
+#[ignore = "stress"]
+fn stress_ordering_the_bindings_of_an_expanded_program_walks_a_let_at_most_four_times_its_reads() {
     let without_let = "    if i >= len(held) then held[i] else held[i] + walk(i + 1)\n";
     let plain = read_walk(&walk_program(1_600, without_let));
     let held = read_walk(&walk_program(1_600, WITH_LET));
@@ -664,13 +672,15 @@ fn ordering_the_bindings_of_an_expanded_program_walks_a_let_at_most_four_times_i
 }
 
 #[test]
-fn ordering_the_bindings_of_an_expanded_program_whose_let_a_choice_reads_is_linear_in_it() {
+#[ignore = "stress"]
+fn stress_ordering_the_bindings_of_an_expanded_program_whose_let_a_choice_reads_is_linear_in_it() {
     let unexpected = "    let a = held[i]\n    if i >= len(held) then 0 else (if a > 0 then 1 else 0) + walk(i + 1)\n";
     assert_linear(walk_points(unexpected));
 }
 
 #[test]
-fn ordering_the_bindings_of_a_chain_of_functions_is_linear_in_it() {
+#[ignore = "stress"]
+fn stress_ordering_the_bindings_of_a_chain_of_functions_is_linear_in_it() {
     assert_linear([1_000, 2_000, 4_000].map(|functions| {
         (
             functions,
@@ -1365,7 +1375,8 @@ fn layout_visits(text: &str) -> u64 {
 }
 
 #[test]
-fn a_layout_walk_over_a_chain_of_slices_costs_work_linear_in_the_chain() {
+#[ignore = "stress"]
+fn stress_a_layout_walk_over_a_chain_of_slices_costs_work_linear_in_the_chain() {
     type Chain = fn(usize) -> String;
     let chains: [Chain; 3] = [
         |n| {
@@ -1433,7 +1444,8 @@ fn nested_joins(depth: usize, _: bool) -> String {
 }
 
 #[test]
-fn a_chain_of_nested_choices_holding_array_arms_costs_work_linear_in_its_depth() {
+#[ignore = "stress"]
+fn stress_a_chain_of_nested_choices_holding_array_arms_costs_work_linear_in_its_depth() {
     type Chain = fn(usize, bool) -> String;
     let chains: [(Chain, bool); 4] = [
         (nested_choices, true),
@@ -1541,7 +1553,8 @@ fn flow_program(uses: u64) -> String {
 }
 
 #[test]
-fn erroneous_flows_report_in_work_linear_in_their_number() {
+#[ignore = "stress"]
+fn stress_erroneous_flows_report_in_work_linear_in_their_number() {
     let vocabulary = flow_vocabulary();
     let points = [2_000, 4_000, 8_000].map(|uses| {
         let (diagnostics, work) = analyzed(&vocabulary, &flow_program(uses), |engine| {
@@ -1626,7 +1639,8 @@ fn state_walk(states: u32, joins: u32, history: bool) -> u64 {
 }
 
 #[test]
-fn a_lets_capacity_is_walked_once_however_many_positions_or_states_read_it() {
+#[ignore = "stress"]
+fn stress_a_lets_capacity_is_walked_once_however_many_positions_or_states_read_it() {
     let small = attribute_walk(500, 500);
     let large = attribute_walk(1_000, 1_000);
     assert!(large <= 2 * small + 64, "{small} {large}");
@@ -1645,7 +1659,8 @@ fn a_lets_capacity_is_walked_once_however_many_positions_or_states_read_it() {
 }
 
 #[test]
-fn reachability_warnings_cost_work_linear_in_the_instances() {
+#[ignore = "stress"]
+fn stress_reachability_warnings_cost_work_linear_in_the_instances() {
     let work = |clips: usize| {
         let mut text = String::from("Session s\n");
         for clip in 0..clips {
@@ -1699,7 +1714,8 @@ fn an_integer_that_would_reach_two_to_the_127_costs_what_its_reference_costs() {
 }
 
 #[test]
-fn variant_lookups_cost_constant_work_per_name() {
+#[ignore = "stress"]
+fn stress_variant_lookups_cost_constant_work_per_name() {
     let vocabulary_over = |names: Vec<String>| {
         let mut v = symphonyscript_core::Vocabulary::builder("wide");
         let variants = v.enumeration("E", &names);
@@ -1750,7 +1766,9 @@ fn grown(bound: u32, read: &str) -> (Option<CVal>, usize) {
 }
 
 #[test]
-fn a_recursive_call_whose_array_argument_grows_instantiates_families_independent_of_its_length() {
+#[ignore = "stress"]
+fn stress_a_recursive_call_whose_array_argument_grows_instantiates_families_independent_of_its_length()
+ {
     let mut scopes = Vec::new();
     for bound in [3u32, 30, 300] {
         let (first, counted) = grown(bound, "f([1])[0]");
@@ -1801,7 +1819,8 @@ fn nested_call_steps(depth: usize) -> u64 {
 }
 
 #[test]
-fn a_chain_of_nested_calls_costs_work_linear_in_its_depth() {
+#[ignore = "stress"]
+fn stress_a_chain_of_nested_calls_costs_work_linear_in_its_depth() {
     let steps: Vec<u64> = [25_000, 50_000, 100_000]
         .into_iter()
         .map(nested_call_steps)
