@@ -4,7 +4,7 @@ use crate::semantics::analysis::meet_flexible::meet_flexible;
 use crate::semantics::analysis::sig::Sig;
 use crate::semantics::analysis::width::Width;
 
-pub(super) fn arith_width(a: &Sig, b: &Sig) -> Width {
+pub(crate) fn arith_width(a: &Sig, b: &Sig) -> Width {
     let settled = |width| match width {
         Width::Widened(scalar) => Width::Fixed(float_for(scalar)),
         other => other,

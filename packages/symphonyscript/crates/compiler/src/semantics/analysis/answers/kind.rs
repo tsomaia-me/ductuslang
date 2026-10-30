@@ -1,10 +1,5 @@
 use symphonyscript_core::{BinaryOp, Builtin, FamilyId, Scalar, UnaryOp, Value};
 
-use super::arith_width::arith_width;
-use super::branch_width::branch_width;
-use super::branch_width_of::branch_width_of;
-use super::extra::Extra;
-use super::operand::operand;
 use crate::diagnostics::Code;
 use crate::semantics::Internal;
 use crate::semantics::analysis::engine::Engine;
@@ -14,6 +9,11 @@ use crate::semantics::analysis::kind::Kind;
 use crate::semantics::analysis::kind_of::kind_of;
 use crate::semantics::analysis::op::Op;
 use crate::semantics::analysis::sig::Sig;
+use crate::semantics::analysis::signature::Extra;
+use crate::semantics::analysis::signature::arith_width;
+use crate::semantics::analysis::signature::branch_width;
+use crate::semantics::analysis::signature::branch_width_of;
+use crate::semantics::analysis::signature::operand;
 use crate::semantics::analysis::some::some;
 use crate::semantics::analysis::unify_kinds::unify_kinds;
 use crate::semantics::analysis::width::Width;
@@ -35,7 +35,59 @@ fn numeric_kind(a: Kind, b: Kind) -> Kind {
 }
 
 impl Engine<'_> {
-    pub(super) fn rule(
+    pub(in crate::semantics::analysis) fn kept_type(
+        &mut self,
+        node: NodeId,
+        op: &Op,
+        sigs: &[Sig],
+        group: Option<Sig>,
+    ) -> Result<Option<Sig>, Internal> {
+        let reactive = sigs.iter().any(|operand| operand.reactive);
+        Ok(match op {
+            Op::Binary(
+                BinaryOp::And
+                | BinaryOp::Or
+                | BinaryOp::Lt
+                | BinaryOp::Le
+                | BinaryOp::Gt
+                | BinaryOp::Ge
+                | BinaryOp::Is
+                | BinaryOp::IsNot,
+                ..,
+            )
+            | Op::Unary(UnaryOp::Not, _) => Some(Sig::of(
+                Kind::Bool,
+                Width::Fixed(Scalar::Bool),
+                reactive,
+                None,
+            )),
+            Op::Convert(target, _) => Some(Sig::of(
+                kind_of(*target),
+                Width::Fixed(*target),
+                reactive,
+                None,
+            )),
+            Op::Pick { items, .. } => {
+                let item_sigs = sigs.get(1..).unwrap_or_default();
+                if item_sigs.iter().any(Sig::is_error)
+                    || group.is_some_and(|group| group.is_error())
+                {
+                    return Ok(None);
+                }
+                self.elements_sig(node, items, item_sigs)?
+                    .map(|(kind, width, family)| Sig::of(kind, width, reactive, family))
+            }
+            Op::Element { .. } => match sigs.first() {
+                Some(base) if !base.is_error() => {
+                    Some(Sig::of(base.kind, base.width, reactive, base.family))
+                }
+                Some(_) | None => None,
+            },
+            _ => None,
+        })
+    }
+
+    pub(in crate::semantics::analysis) fn rule(
         &mut self,
         node: NodeId,
         op: &Op,
@@ -188,12 +240,15 @@ impl Engine<'_> {
                 let first = at(0)?;
                 if !matches!(first.kind, Kind::Int | Kind::Any) {
                     self.error_at_node(Code::IndexType, *index, "an index is an integer")?;
-                    return Ok(Sig::ERROR);
                 }
                 let item_sigs = sigs.get(1..).ok_or(Internal::missed("operand signature"))?;
                 let Some((kind, width, family)) = self.elements_sig(node, items, item_sigs)? else {
                     return Ok(Sig::ERROR);
                 };
+                if !matches!(first.kind, Kind::Int | Kind::Any) {
+                    self.memo.kept_types.insert(node);
+                    return Ok(Sig::of(kind, width, reactive, family));
+                }
                 let width = if first.reactive {
                     Width::Adaptive
                 } else {
@@ -205,7 +260,11 @@ impl Engine<'_> {
                 let (first, second) = (at(0)?, at(1)?);
                 if !matches!(second.kind, Kind::Int | Kind::Any) {
                     self.error_at_node(Code::IndexType, *index, "an index is an integer")?;
-                    return Ok(Sig::ERROR);
+                    if first.is_error() {
+                        return Ok(Sig::ERROR);
+                    }
+                    self.memo.kept_types.insert(node);
+                    return Ok(Sig::of(first.kind, first.width, reactive, first.family));
                 }
                 let width = if second.reactive {
                     Width::Adaptive
@@ -269,7 +328,7 @@ impl Engine<'_> {
         })
     }
 
-    pub(super) fn elements_sig(
+    pub(in crate::semantics::analysis) fn elements_sig(
         &mut self,
         node: NodeId,
         items: &[NodeId],
@@ -795,7 +854,7 @@ fn concatenates(a: &Sig, b: &Sig) -> bool {
     string_or_open(a) && string_or_open(b) && (a.kind == Kind::Str || b.kind == Kind::Str)
 }
 
-pub(super) fn arms_alike(extra: &Extra) -> bool {
+fn arms_alike(extra: &Extra) -> bool {
     let Extra::Arms(forms) = extra else {
         return true;
     };

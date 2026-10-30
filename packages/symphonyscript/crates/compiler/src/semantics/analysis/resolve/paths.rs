@@ -1124,19 +1124,8 @@ impl Engine<'_> {
         let outer = array.shape.outer().ok_or(Internal::missed("array shape"))?;
         let sig = some!(self.sig(index_node, need));
         let evaluated = !sig.reactive && !sig.frame && !sig.is_error();
-        if evaluated {
-            if !matches!(sig.kind, Kind::Int | Kind::Any) {
-                let unless_values = self.untypable_values(index_node)?;
-                self.error_unless_values(
-                    Code::IndexType,
-                    self.node(index_node)?.loc,
-                    scope,
-                    "an index is an integer",
-                    None,
-                    unless_values,
-                )?;
-                return Ok(Some(Val::Error));
-            }
+        let typed_index = matches!(sig.kind, Kind::Int | Kind::Any);
+        if evaluated && typed_index {
             let position = match some!(self.cval(Query::Eval(index_node, EvalTy::Exact), need)) {
                 CVal::Int(position) => Some(position),
                 CVal::F32(_)

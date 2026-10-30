@@ -5,7 +5,7 @@ use crate::semantics::analysis::kind::Kind;
 use crate::semantics::analysis::sig::Sig;
 use crate::semantics::analysis::width::Width;
 
-pub(super) fn branch_width_of(kind: Kind, a: Width, b: Width) -> Width {
+pub(crate) fn branch_width_of(kind: Kind, a: Width, b: Width) -> Width {
     match kind {
         Kind::Int | Kind::Float => {
             let left = Sig::of(kind, a, false, None);

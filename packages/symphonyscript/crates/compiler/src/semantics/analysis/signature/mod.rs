@@ -6,7 +6,12 @@ mod families;
 mod matches;
 mod operand;
 mod recursive_family;
-mod rules;
 mod run;
 #[cfg(test)]
 mod tests;
+
+pub(crate) use arith_width::arith_width;
+pub(crate) use branch_width::branch_width;
+pub(crate) use branch_width_of::branch_width_of;
+pub(crate) use extra::Extra;
+pub(crate) use operand::operand;

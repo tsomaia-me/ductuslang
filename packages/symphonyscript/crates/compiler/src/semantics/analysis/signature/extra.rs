@@ -1,6 +1,6 @@
 use crate::semantics::analysis::sig::Sig;
 
-pub(super) enum Extra {
+pub(crate) enum Extra {
     None,
     Read(Sig),
     ToRead { reactive: bool },

@@ -1,6 +1,7 @@
 mod answer;
 mod combined_shape;
 mod dimensions;
+mod kind;
 mod layout;
 mod layout_shaped;
 mod node_dimensions;

@@ -24,7 +24,7 @@ enum Label {
 }
 
 impl Engine<'_> {
-    pub(super) fn match_sig(
+    pub(in crate::semantics::analysis) fn match_sig(
         &mut self,
         node: NodeId,
         (scrutinee_node, arms, otherwise): (NodeId, &[(NodeId, NodeId)], Option<NodeId>),
