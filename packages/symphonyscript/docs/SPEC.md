@@ -31,7 +31,7 @@ Clip verse:
 
 Productions use EBNF: `::=` defines, `|` separates alternatives, `?` `*` `+` mark optional, repeated and one-or-more, `( )` groups, quoted text is literal, and `'a' … 'z'` is a range of characters. `NEWLINE`, `INDENT` and `DEDENT` are layout tokens (§2.2). `Name` is an identifier (§2.4). Every production appears once, in the section of the construct it defines.
 
-Examples are fenced blocks tagged by what they hold: `sym` for a program, `sym-error` for a rejected program, `ebnf` for productions and `text` for anything else. Every `sym` example parses, and compiles when it declares every name it uses; a name it uses without declaring stands for a declaration elsewhere in the same program. Every `sym-error` example is rejected for the reason the text beside it gives. `docs/pending-examples.txt` lists the examples of constructs the code does not build yet, and the test requires each of them to fail and every other example to hold. `docs/pending-productions.txt` lists the productions of constructs the code does not build yet, and the test requires each of them to have no parse case and every other production to have one. Examples use the example vocabulary (§1.3).
+Examples are fenced blocks tagged by what they hold: `sym` for a program, `sym-error` for a rejected program, `sym-package` for a package file (§15.2), `ebnf` for productions and `text` for anything else. Every `sym` example parses, and compiles when it declares every name it uses; a name it uses without declaring stands for a declaration elsewhere in the same program. Every `sym-error` example is rejected for the reason the text beside it gives. `docs/pending-examples.txt` lists the examples of constructs the code does not build yet, and the test requires each of them to fail and every other example to hold. `docs/pending-productions.txt` lists the productions of constructs the code does not build yet, and the test requires each of them to have no parse case and every other production to have one. Examples use the example vocabulary (§1.3).
 
 ### 1.3 Example vocabulary
 
@@ -165,7 +165,7 @@ A fixed array's contents may change at runtime when its elements read cells (§5
 Type       ::= FnType | Base ('|' Base)*
 FnType     ::= '(' (FnParam (',' FnParam)*)? ')' '->' Type
 FnParam    ::= (Name ':')? Type
-Base       ::= (ScalarType | StrType | MapType | JsonType | Name TypeArgs? | 'none' | '(' Type ')') Dims? '?'?
+Base       ::= (ScalarType | StrType | MapType | JsonType | (Name | QualifiedName) TypeArgs? | 'none' | '(' Type ')') Dims? '?'?
 Dims       ::= ('[' Size ']' | '[' '..' Size ']')+
 Size       ::= Expr
 ScalarType ::= 'u8' | 'i32' | 'i64' | 'f32' | 'f64' | 'bool'
@@ -257,7 +257,7 @@ A variable array is one cell (§4.4), held whole rather than element by element,
 ```ebnf
 TypeDecl  ::= 'type' Name GenericParams? (':' NEWLINE INDENT FieldDecl+ DEDENT | '=' Type NEWLINE)
 FieldDecl ::= Name ':' Type NEWLINE
-RecordLit ::= Name TypeArgs? '{' Fields '}'
+RecordLit ::= (Name | QualifiedName) TypeArgs? '{' Fields '}'
 Fields    ::= (Name ':' Expr (',' Name ':' Expr)* ','?)?
 ```
 
@@ -265,7 +265,7 @@ A `type` declaration names a type at top level, in the program's source or in th
 
 A record is a value with named fields, each of its own type. A field is a scalar, a string with a capacity (§3.3), an enum, a record, a sum of these (§3.9), a map (§3.10), a document with a budget (§3.11), a function type (§6.7) or an array of these; a field of a kind type is an error (§3.5), two fields of one name are an error, and a record type that reaches itself through its fields is an error, since its size would be unbounded. A field's name is scoped to its type and clashes with no other name; a keyword may be one (§2.5), and `past` and `dropped` may not, because a record can be held in a cell whose members they are (§5.7).
 
-A record literal names its type and lists fields by name, in any order: `Chord {root: 60, spread: 4}`. A field it leaves out holds its zero, so `Chord {}` is the record with every field at its zero: `0`, `0.0`, `false`, the enum's first variant, the empty string, the empty array, a record of zeros. The literal carries its type, so it stands wherever a value of that type stands; a literal naming a generic type writes the type's arguments or binds them from its fields (§6.8). `r.name` reads a field (§5.7). Records are not compared, interpolated or converted; `is` on records is an error.
+A record literal names its type and lists fields by name, in any order: `Chord {root: 60, spread: 4}`. A field it leaves out holds its zero, so `Chord {}` is the record with every field at its zero: `0`, `0.0`, `false`, the enum's first variant, the empty string, the empty array, a record of zeros; a field of function type (§6.7) has no zero and is written in every literal of its type. The literal carries its type, so it stands wherever a value of that type stands; a literal naming a generic type writes the type's arguments or binds them from its fields (§6.8). `r.name` reads a field (§5.7). Records are not compared, interpolated or converted; `is` on records is an error.
 
 A record whose fields read cells is a value of bindings, field by field, as a fixed array is (§4.4, §5.5): each leaf field is its own binding, and a variable-array field is one cell. A host-fed record cell is written per leaf field or whole (§12.1).
 
@@ -350,7 +350,7 @@ state hits({}): {str[..64]: i32}[..64] = (hits.past(1) + {req.path: (hits.past(1
 JsonType   ::= 'json' ('[' '..' Size ']')?
 JsonLit    ::= 'json' JsonValue
 JsonValue  ::= JsonObject | JsonArray | JsonString | '-'? JsonNumber | 'true' | 'false' | 'null'
-             | Name ('.' Name)* | Name '::' Name | 'to' ('.' Name)+ | '(' Expr ')'
+             | (Name | QualifiedName) ('.' Name)* | 'to' ('.' Name)+ | '(' Expr ')'
 JsonObject ::= '{' (JsonString ':' JsonValue (',' JsonString ':' JsonValue)*)? '}'
 JsonArray  ::= '[' (JsonValue (',' JsonValue)*)? ']'
 JsonString ::= '"' (JsonChar | JsonEscape)* '"'
@@ -481,7 +481,7 @@ Clip c:
 
 A derived cell whose rule is a fixed array literal whose elements read cells is an array of bindings (§5.5), not one cell, and one whose rule is a record literal a record of bindings (§3.8); a variable array (§3.7), a runtime string (§3.3), a derived cell that holds one (§6.6) and a `for` expression that reads a cell (§5.10) are each one cell. An element read with an index known at compile time, such as a literal, a compile-time `let` or a `for` variable, is its own binding with its own type; an element read through a runtime index is read in that read's type.
 
-The compiler resolves cell types once over the whole program. This always terminates, because cells form no cycles (§6.2).
+The compiler resolves cell types once over the whole program. This always terminates, because present reads form no cycles (§6.2), and cells whose history reads reach one another settle their widths together as §6.6 settles their kinds.
 
 ### 4.5 Defaults and annotations
 
@@ -535,7 +535,7 @@ MulExpr   ::= UnaryExpr (('*' | '/' | 'div' | '%') UnaryExpr)*
 UnaryExpr ::= '-' UnaryExpr | PowExpr
 PowExpr   ::= Postfix ('**' UnaryExpr)?
 Postfix   ::= Primary ('.' Name | '[' Index ']' | '(' Args? ')')*
-Primary   ::= NumberLit | BoolLit | StringLit | RecordLit | MapLit | JsonLit | 'none' | Name | Name '::' Name
+Primary   ::= NumberLit | BoolLit | StringLit | RecordLit | MapLit | JsonLit | 'none' | Name | QualifiedName
             | 'to' | Conversion | ArrayLit | '(' Expr ')'
 ArrayLit  ::= '[' (Expr (',' Expr)* ','?)? ']'
 Args      ::= Arg (',' Arg)* | NamedArg (',' NamedArg)*
@@ -563,7 +563,7 @@ Float arithmetic follows IEEE 754, including infinities and NaN: a float divided
 
 `is` and `is not` compare two scalars, enum values or strings of one type after widening; floats compare by IEEE 754 equality, and strings character by character. Two documents, or a document and a value that widens into one, compare by JSON value (§3.11). A record, a map or an array there is otherwise an error. `<`, `<=`, `>` and `>=` compare numbers. `and`, `or` and `not` take and yield `bool`.
 
-With a type name on the right, `is` and `is not` test a sum (§3.9): `x is none` is true when `x` holds no value, and `x is Circle`, with an alternative's type name, when `x` holds that alternative; no narrowing follows. With a `T?` as its left operand, `or` is the fallback: `x or y` yields `x`'s value when `x` is not `none` and `y` otherwise, `y` a `T` or a `T?` and the result the same; with a `bool` on the left `or` is the logical one. `or` keeps its precedence (§5.1), so a comparison on a fallback is parenthesized: `(port or 80) > 1024`.
+With a type name on the right, `is` and `is not` test a sum (§3.9): `x is none` is true when `x` holds no value, and `x is Circle`, with an alternative's type name, when `x` holds that alternative; no narrowing follows. With a `T?` as its left operand, `or` is the fallback: `x or y` yields `x`'s value when `x` is not `none` and `y` otherwise, `y` a `T` or a `T?` and the result the same; with a `bool` on the left `or` is the logical one, and with a `bool?` the fallback, so `flag or true` is `flag`'s value whenever `flag` holds one. Where the left operand is a document (§3.11) and the right is not, the right operand's type is the expected type of the left, which makes it a typed read as `T?`; a flexible right operand takes the defaults of §4.5. `or` keeps its precedence (§5.1), so a comparison on a fallback is parenthesized: `(port or 80) > 1024`.
 
 ### 5.4 Conditionals
 
@@ -588,7 +588,7 @@ state level = match wave:
 
 ```ebnf
 MatchBlock ::= 'match' Expr ':' NEWLINE INDENT MatchArm+ ElseArm? DEDENT
-MatchArm   ::= (Name | '-'? NumberLit | BoolLit | StringLit) ':' Expr NEWLINE
+MatchArm   ::= (Name | QualifiedName | '-'? NumberLit | BoolLit | StringLit) ':' Expr NEWLINE
 ElseArm    ::= 'else' ':' Expr NEWLINE
 ```
 
@@ -727,7 +727,7 @@ ForExprHead  ::= LoopHead 'into' Name (':' Type)? 'from' Expr ':'
 
 A `for` expression folds an iterable (§7.9) into one value. The name after `into` is its accumulator, which starts as the value after `from`. The body runs once per element of the iterable, in order, with the loop names (§7.9) and the accumulator in scope, and the value of each run is the accumulator of the next. The expression's value is the last accumulator, or the start when the iterable is empty.
 
-- The accumulator's type unifies the start and the body as `if` arms do (§4.2), and an annotation fixes it (§4.5).
+- The accumulator's type unifies the start and the body as `if` arms do (§4.2), and an annotation fixes it (§4.5); a capacity found by the next rule beyond an annotated one is an error naming both.
 - Every capacity or budget in the accumulator's type, an array's at every level, a string's, a map's and a document's, is found by applying the body's capacity or budget rule (§3.3, §3.7, §3.10, §3.11) to the start's once per iteration the iterable can run, stopping when it no longer grows. An array or a map runs at most its capacity of iterations, and a range at most the count its bounds allow (§7.9).
 - The block form is the whole value of a `let`, a local `let`, a derived cell's rule or a function body, never an operand, as `match` is (§5.4); its local `let`s are visible to its final expression. The one-line form stands without parentheses only as the whole value of a `let`, a local `let`, a derived cell's rule or a function body; anywhere else, as an operand, an argument, an attribute value, a gate, a scrutinee, a start or an iterable, it stands in parentheses.
 - A `for` expression whose iterable, start and body read no cell is a compile-time value (§4.6). Any other is one cell (§4.4), evaluated whole each time it runs (§12.2).
@@ -778,7 +778,7 @@ A cell is a value that changes while the graph runs. Its word says what a step o
 
 A host-fed `state` keeps the last value written and steps when a write changes it, an equal write being nothing. A host-fed `stream` and a host-fed `channel` step on every write, equal or not, and keep every write since the last commit as a pending step, up to a capacity: a `stream` forgets the oldest pending write when the capacity is full, and a `channel` refuses the write until a commit drains (§12.1). `[N]` after `stream` or `channel` states the capacity; absent, it is the largest capacity an attribute the cell is bound to states (§10.1), and 1 when it is bound to none. `[N]` on a `state` or on a derived cell is an error, and `[N]` below the capacity a bound attribute states is an error naming the attribute and its capacity; a larger `[N]` is always allowed. A cell's history depth is never declared (§6.6).
 
-The init is a compile-time value and gives a host-fed cell its type (§4.4); an annotation follows it. At load a host-fed cell holds its init. A cell may hold an array, a string, a record, a sum, a map or a document, never a node reference, and a function only as a record's field (§6.7); a string cell states its capacity (§3.3), a record init names its type (§3.8), a document cell states its budget (§3.11), and a cell annotated with a variable array type (§3.7) takes an init no longer than its capacity: `state held([]): i32[..10]`. The host writes a host-fed cell by its handle, by name (§12.1), whether or not an attribute is bound to it (§7.6). `stream tick(none)` is a cell that carries nothing, a clock the host steps; a cell of type `none` is legal.
+The init is a compile-time value and gives a host-fed cell its type (§4.4); an annotation follows it. At load a host-fed cell holds its init. A cell may hold an array, a string, a record, a sum, a map or a document, never a node reference, and a function only as the field of a record a derived cell holds (§6.7), since the host writes no function; a string cell states its capacity (§3.3), a record init names its type (§3.8), a document cell states its budget (§3.11), and a cell annotated with a variable array type (§3.7) takes an init no longer than its capacity: `state held([]): i32[..10]`. The host writes a host-fed cell by its handle, by name (§12.1), whether or not an attribute is bound to it (§7.6). `stream tick(none)` is a cell that carries nothing, a clock the host steps; a cell of type `none` is legal.
 
 ```sym
 state cutoff(0.5)
@@ -882,7 +882,7 @@ PatternParam   ::= 'default'? Marker? Name (':' Type)? ('=' Expr)?
 Marker         ::= 'const' | 'cell' | 'state' | 'stream' | 'channel' | 'out' ('state' | 'stream' | 'channel')?
 PatternItem    ::= CellDecl | LocalLet
 PlacementType  ::= PlacementEntry | '(' PlacementEntry (',' PlacementEntry)* ')'
-PlacementEntry ::= (Name | 'node' | 'wire' | '[' PlacementEntry ']') ('+' | '*' | '{' Count '}')?
+PlacementEntry ::= (Name | QualifiedName | 'node' | 'wire' | '[' PlacementEntry ']') ('+' | '*' | '{' Count '}')?
 Count          ::= Digits ('+' | '..' Digits)? | '..' Digits
 ```
 
@@ -905,7 +905,7 @@ A pattern is a named declaration of placements with parameters and a type. A use
 | `out state`, `out stream`, `out channel` | a host-fed cell of that kind and no other, because the writer's code depends on the buffer behind it |
 - A placement type lists entries with counts. An entry is a node kind, a wire kind, `node` for any node kind, `wire` for any wire kind, a pattern's name, meaning a use of that pattern, which stands only in a `children` parameter's type, or a bundle `[…]` of one node entry (§7.8). A count follows it: none for exactly one, `+` one or more, `*` zero or more, `{3}` exactly three, `{2+}` two or more, `{..4}` at most four, `{2..4}` two to four, both included. A single entry is written bare; a list is parenthesized.
 - A pattern's type is what a use places. A pattern whose body is a single node or wire placement, or a single use of such a pattern, stands in for that placement: its type is that kind, written bare; a use creates that one instance or wire, and the use's name becomes its name, replacing any `as` name the placement has. Only node stand-ins appear at top level. A stand-in wire placement writes no destination: the use writes it after the colon, as a wire placement does (§8.1), and `to` in the pattern's wire reads it (§8.3); a destination written in the pattern is an error. Every other pattern is a group, whose type is parenthesized and lists what the body places, one entry per node kind, wire kind and bundle shape in order of first placement, with the tightest count the body fixes: a placement written once counts one, inside a `when` arm too (§9.2); a bundle counts one bundle entry of its members' kind and count; a `for` whose count the declaration fixes counts its iterations, and one whose count depends on a parameter counts zero or more; a nested use counts its pattern's entries, and a `children` parameter its declared type; `(Clip)` is a group placing one `Clip` that does not stand in. A type written after `->` is a contract: the body places exactly the entries it names, each count inside the declared one, or the declaration is an error naming the placement that breaks it; a type the declaration leaves out is inferred.
-- A parameter marked `children` takes placements: the use's body, in ordinary body syntax. A pattern may declare several, naming disjoint entries, or the declaration is an error; a wire pattern declares none; `children` stands with no other modifier. The use's one body is partitioned: each item, after its own expansion, goes to the parameter whose type names the pattern it uses; else, when it is a bundle, to the parameter whose type has a bundle entry its members fit; else to the parameter naming its kind, `node` and `wire` naming every kind; each share keeps its relative order. An item no parameter takes is an error at the use, and so is a share outside its parameter's counts. A use with no body supplies nothing, which fits only counts that allow zero; a body on a use of a pattern without a `children` parameter is an error. The parameter's name written as a line in the pattern body, alone or with a gate, places its share there, once, never inside a `for`: as children of the instance whose body holds the line, at that point of its sequence (§7.3), or at the pattern body's top level, where its type joins the pattern's; the gate gates them. Written as a bundle's member, `[notes]`, it makes one bundle of its share, whose type then holds node entries only and takes no bundle (§7.8). Written as a line in the body of a nested use, it forwards its share to that use, whose own `children` parameters partition it as they partition any use's body. The use's body resolves its names where the use is written, as an argument does (§6.3); its `as` names are reachable through the use's name; a wire among its items has as its source the instance whose body holds the line.
+- A parameter marked `children` takes placements: the use's body, in ordinary body syntax. A pattern may declare several, naming disjoint entries, or the declaration is an error; a wire pattern declares none; `children` stands with no other modifier. The use's one body is partitioned: each item goes to the parameter whose type names the pattern it uses, by the pattern's name and before any expansion; else, when it is a bundle, to the parameter whose type has a bundle entry its members fit; else to the parameter naming its kind, `node` and `wire` naming every kind; a `when` block's items are partitioned one by one, each carrying the block's condition as its gate (§9.2); each share keeps its relative order. An item no parameter takes is an error at the use, and so is a share outside its parameter's counts. A use with no body supplies nothing, which fits only counts that allow zero; a body on a use of a pattern without a `children` parameter is an error. The parameter's name written as a line in the pattern body, alone or with a gate, places its share there, once, never inside a `for`: as children of the instance whose body holds the line, at that point of its sequence (§7.3), or at the pattern body's top level, where its type joins the pattern's; the gate gates them. Written as a bundle's member, `[notes]`, it makes one bundle of its share, whose type then holds node entries only and takes no bundle (§7.8). Written as a line in the body of a nested use, it forwards its share to that use, whose own `children` parameters partition it as they partition any use's body. The use's body resolves its names where the use is written, as an argument does (§6.3); its `as` names are reachable through the use's name; a wire among its items has as its source the instance whose body holds the line.
 - A wire placed directly in the body has as its source the instance whose body holds the use.
 - A pattern body sees top-level names, its parameters, its declarations and its own names (§6.5), never the names around its use. A top-level name written in the body resolves as usual, but the body has no name for the instance its own use creates.
 - Names inside an anonymous use are unreachable and never clash with names outside it. A named use (`Voice as v1`) makes them reachable through its name: `v1.osc`.
@@ -1027,7 +1027,7 @@ A bare name that is a variant of the enum its position expects resolves to that 
 Clock ::= 'on' (Atom | '(' Expr (',' Expr)* ')')
 ```
 
-A derived cell is computed by its rule, the expression after `=`. It runs when a cell it reads steps, and steps as its word says (§6.1): a `state` when the run changed its value, a `stream` at every run, and a `channel` at every run, a `channel` being a `stream` whose every clock carries every arrival, as below. A run reads each cell at its current value. With a clock, written after `on`, the cell runs only when a listed cell steps, whatever that cell's word, and reads every other cell as a parameter at that run; a single clock that is an atom (§7.5) is written bare, and anything else is parenthesized. A listed entry that never steps, a compile-time value among them, is an error. A cell's own word converts at its boundary, so a `state` reading a stream turns arrivals into values and a `stream` reading a state turns changes into arrivals, and no conversion is written.
+A derived cell is computed by its rule, the expression after `=`. It runs when a cell it reads steps, in the present or through a history read, and steps as its word says (§6.1): a `state` when the run changed its value, a `stream` at every run, and a `channel` at every run, a `channel` being a `stream` whose every clock carries every arrival, as below. A run reads each cell at its current value. With a clock, written after `on`, the cell runs only when a listed cell steps, whatever that cell's word, and reads every other cell as a parameter at that run; a single clock that is an atom (§7.5) is written bare, and anything else is parenthesized; an entry that is an expression is the anonymous `state` it stands for (below). A listed entry that never steps, a compile-time value among them, is an error, and so is a derived cell with no clock that reads no cell but its own history, since nothing runs it. A cell's own word converts at its boundary, so a `state` reading a stream turns arrivals into values and a `stream` reading a state turns changes into arrivals, and no conversion is written.
 
 ```sym
 state a(1)
@@ -1042,7 +1042,7 @@ state c4 on (a, b) = a + b
 
 At load, a derived cell without an init is evaluated once and that value is its first. A derived cell with an init holds the init at load and runs its rule from the first step of what it reads; the init is a compile-time value that fits the cell's type, which its rule gives (§4.4), and a start taken from another cell is written in the rule.
 
-`x.past(k)` reads the cell `x` as it was k of its own steps ago, and `x.past(k, fallback)` the same with a fallback; `k` is a positive integer known at compile time. Before `x` has stepped k times, `x.past(k)` yields the value `x` held at load, and `x.past(k, fallback)` yields the fallback. Every cell has a history, as deep as the deepest `past` read of it in the program, and a history read stands wherever an expression reads a cell. A history read yields the value its cell held at the end of that step, so a cell that reads its own history, or cells that read one another's, form no cycle; a cell that reads its own present value does (§6.2). A derived cell with no init whose rule reads its own past, directly or through other cells' pasts, writes a fallback on the read that closes the loop, or is an error whose help names the init. Whether a cell `x` changed at this step is `x is not x.past(1)`.
+`x.past(k)` reads the cell `x` as it was k of its own steps ago, and `x.past(k, fallback)` the same with a fallback; `k` is a positive integer known at compile time. Before `x` has stepped k times, `x.past(k)` yields the value `x` held at load, and `x.past(k, fallback)` yields the fallback. Every cell has a history, as deep as the deepest `past` read of it in the program, and a history read stands wherever an expression reads a cell. A history read yields the value its cell held at the end of that step, so a cell that reads its own history, or cells that read one another's, form no cycle; a cell that reads its own present value does (§6.2). A derived cell with no init whose rule reads its own past, directly or through other cells' pasts, writes a fallback on the read that closes the loop, or is an error whose help names the init. A compile-time value never steps, so `x.past(k)` on a parameter bound to one is the value itself. `x is not x.past(1)` tells whether `x`'s last step changed its value, not whether `x` stepped at this step; a cell with several clocks tells which of them stepped as `hits` does below. The comparison that decides a `state`'s step is §12.2's, over bits, so a step from `-0.0` to `0.0` is one that `is` does not see, and a canonical NaN (§12.5) written over a NaN is no step.
 
 ```sym
 state gate(false)
@@ -1060,16 +1060,17 @@ state recent([]) = (recent.past(1) + [note])[^8..]
 channel hit(Hit {})
 state bar(0)
 
-state hits on (hit, bar) = if bar is not bar.past(1) then 0 else hits.past(1, -1) + 1
+stream seen on (hit, bar) = bar
+state hits on (hit, bar) = if bar is not seen.past(1) then 0 else hits.past(1, -1) + 1
 ```
 
-`hits` counts the arrivals of `hit` since load or since `bar` last changed: it runs at load, at 0, at every arrival of `hit` and at every change of `bar`, and reads `hit` only as a clock.
+`seen` steps at every arrival of `hit` and every change of `bar` and holds `bar`, so `seen.past(1)` is `bar` as it was at the previous step of either, and `bar is not seen.past(1)` is whether this step is `bar`'s change. `hits` counts the arrivals of `hit` since load or since `bar` last changed: it runs at load, at 0, at every arrival of `hit` and at every change of `bar`, and reads `hit` only as a clock.
 
 A derived `channel` is a derived stream the compiler checks: each of its clocks, or each cell it reads when it has none, is a `channel`, host-fed or derived, or a cell that carries no arrivals, a `state` with no `stream` or `channel` upstream of it. A `stream`, or a `state` that reads a stream or a channel, among them is an error naming that cell, whose help says to write `stream` or to clock on the channel alone. So a `channel` forgot no arrival between the host and its reader, which is what the word promises on a parameter (§6.4) and an attribute (§10.1).
 
 - Derived cells are declared at top level and in pattern bodies (§6.4).
 - An expression that reads a cell and stands where a cell may stand, an attribute value (§7.6), a gate (§9.1), a wire's choice (§8.2), a clock entry, a function argument (§6.3) or a pattern argument (§6.4), is an anonymous derived `state`: it runs when what it reads steps and steps when its value changes. A `stream` or a `channel` stands there by its name.
-- A derived cell is typed as §4.4 says; its own history reads count as their fallbacks, or as its init, for its kind and are no uses of it. Each group of cells whose reads reach one another, present or history reads, settles its cells' kinds together: each history read of a cell of the group first counts as its fallback or init, then takes that cell's kind, and this repeats until no cell's kind changes. A derived cell may hold a string (§3.3), a record (§3.8), a sum (§3.9), a map (§3.10) or a document (§3.11), never a node reference.
+- A derived cell is typed as §4.4 says; its own history reads count as their fallbacks, or as its init, for its kind and are no uses of it. Each group of cells whose reads reach one another, present or history reads, settles its cells' kinds and widths together: each history read of a cell of the group first counts as its fallback or init, then takes that cell's kind, and this repeats until no cell's kind or width changes. A derived cell may hold a string (§3.3), a record (§3.8), a sum (§3.9), a map (§3.10) or a document (§3.11), never a node reference.
 - Whether derived cells hold fixed arrays is settled together over each group of cells whose reads reach one another, present or history reads, a cell alone being a group of one. Every cell of the group is first taken to hold a fixed array, each history read of it yielding a fixed array of that read's fallback's or the cell's init's length; a cell whose rule then yields no fixed array, or a fixed array of a length other than that of the fallbacks and the init of the reads of it, holds a variable array, and each history read of it then yields a variable array; this repeats until no cell changes, and the cells left hold fixed arrays. A history read of a cell outside the group has that cell's type. A derived cell that holds a variable array has the least capacity for which its rule's capacity is at most its own, each history read of a cell having that cell's capacity or its fallback's, whichever is larger; the cells of each group take their capacities together. A cell with no such capacity is an error, whose diagnostic shows the slice that bounds it.
 - A derived cell that holds a string takes its capacity as one that holds a variable array does, in characters; one that holds a document states its budget (§3.11).
 
@@ -1318,7 +1319,7 @@ A placement creates an instance of a node kind or uses a pattern. Its elements a
 ```ebnf
 TopPlacement ::= Kind Flags? 'as'? Name DefaultArg? Gate? Attrs? (NEWLINE | Body)
 Placement    ::= Kind Flags? ('as' Name)? DefaultArg? Gate? Attrs?
-Kind         ::= Name
+Kind         ::= Name | QualifiedName
 Body         ::= ':' (NEWLINE INDENT BodyItem+ DEDENT | InlineChildren NEWLINE)
 BodyItem     ::= Line | WirePlacement | ForBlock | WhenBlock
 Line         ::= Placement (NEWLINE | Body) | '(' Placement ')' NEWLINE | Bundle NEWLINE
@@ -1367,7 +1368,7 @@ FlagChar ::= "'" | '!' | '?' | '*' | '+' | '~' | '@' | '$'
 
 ```ebnf
 DefaultArg ::= '/' (Atom | '(' Expr ')')
-Atom       ::= '-'? NumberLit | BoolLit | StringLit | Name ('.' Name)* | Name '::' Name | 'to' ('.' Name)+
+Atom       ::= '-'? NumberLit | BoolLit | StringLit | (Name | QualifiedName) ('.' Name)* | 'to' ('.' Name)+
 ```
 
 `/expr` sets the kind's default attribute, which the vocabulary designates (§10.1): `Note/60` sets the pitch. Unparenthesized, the value is a single atom: a literal, optionally negative, a name, a dotted path, a qualified variant or `to.name`. Anything else is parenthesized: `Note/(base + 7)`. `/expr` on a kind without a default attribute is an error.
@@ -1376,13 +1377,13 @@ Atom       ::= '-'? NumberLit | BoolLit | StringLit | Name ('.' Name)* | Name ':
 
 ```ebnf
 Attrs     ::= '|' AttrEntry+
-AttrEntry ::= Name '=' Expr | Name '=>' Name | Name | '!' Name
+AttrEntry ::= Name '=' Expr | Name '=>' (Name | QualifiedName) ('.' Name)* | Name | '!' Name
 ```
 
 A single `|` opens the attribute clause, its first entry follows the `|` on the same line, and entries are separated by whitespace.
 
 - `name=expr` sets an attribute.
-- `name => cell` binds an attribute that takes a host-fed cell (§10.1) to one: `cell` names a host-fed cell of the kind the attribute takes, directly or through a pattern parameter bound to one, and the framework writes the cell through the attribute (§12.1). `=` on such an attribute, and `=>` on an attribute that takes a value or a constant, are errors.
+- `name => cell` binds an attribute that takes a host-fed cell (§10.1) to one: `cell` names a host-fed cell of the kind the attribute takes, by its name, by the path of a named pattern use's cell (`low.gain`, §6.4), by a library's qualified name (§15.3) or through a pattern parameter bound to one, and the framework writes the cell through the attribute (§12.1). `=` on such an attribute, and `=>` on an attribute that takes a value or a constant, are errors.
 - `name` sets a `bool` attribute to `true`; `!name` sets it to `false`.
 - Setting an attribute twice, by any combination of entries, flags and `/expr`, is an error.
 - Setting an attribute the kind does not declare is an error, and so is leaving unset an attribute the vocabulary gives no default (§10.1).
@@ -1725,11 +1726,13 @@ What a cell keeps between commits follows its word (§6.1). A `state` keeps its 
 
 A commit applies the staged writes and brings every cell up to date, in steps:
 
-1. The `state` writes come first, together, as one step: each host-fed `state` whose staged value differs bit for bit from its current value steps, and an equal one is unchanged. Then each pending write of every `stream` and `channel` is one step of its cell, taken one at a time in arrival order across all cells, by one sequence number per write.
-2. At each step, each derived cell that reads a stepped cell in the present, a history read being no present read, or that lists it in its clock (§6.6), runs, in dependency order, at most once per step.
-3. A `state` whose run yields a value bit-for-bit equal to its previous value is unchanged, and its readers do not run because of it. A `stream` and a `channel` step at every run, and their readers run.
+1. The `state` writes come first, together, as one step: each host-fed `state` whose staged value differs from its current value steps, and an equal one is unchanged. Then each pending write of every `stream` and `channel` is one step of its cell, taken one at a time in arrival order across all cells, by one sequence number per write.
+2. At each step, a derived cell without a clock runs when a cell it reads, in the present or through a history read, stepped, and a derived cell with a clock runs when a listed cell stepped (§6.6); the runs go in dependency order, a history read being no edge of that order, each cell at most once per step.
+3. A `state` whose run yields a value equal to its previous value is unchanged, and its readers do not run because of it. A `stream` and a `channel` step at every run, and their readers run.
 4. Each cell that stepped records its value for the history reads of it (§6.6).
-5. Activation (§9.3) and destination choices (§8.2) are recomputed after the last step.
+5. Activation (§9.3) and destination choices (§8.2) are recomputed at each step.
+
+Two values are equal here when their live parts hold the same bits: a scalar its bits, the canonical NaN (§12.5) equal to itself; a variable array or a string its live length and then its live elements or characters; a map its entries; a sum its tag and the value of its alternative; a record and a fixed array part by part; a document its text. Unused capacity is never compared.
 
 After a commit, every value the runtime holds reflects the same writes, and no read from the runtime sees part of a commit. A consumer that copies values elsewhere states what its own readers see.
 
@@ -1745,7 +1748,7 @@ A commit reports what changed, in the terms consumers use:
 - a wire's activation;
 - a wire's chosen destination.
 
-An attribute bound to a cell is reported once per step of its binding, and the consumer reads the value whole, a variable array with its live length; an attribute whose binding is an array or a record of bindings (§4.4) is reported once per step of any of them. So an attribute bound to a `state`, host-fed or derived, is reported only when its value differs bit for bit from its value before the commit, and one bound to a `stream` or a `channel` at every step of it, equal values included. Activation and a chosen destination are reported only when they differ from their value before the commit. Records come in the order of their steps; within one step, instance changes come first and wire changes after them, each in Program order (§11), and for one item attribute changes come in the order the vocabulary declares the attributes, then its activation, then a wire's chosen destination. Loading a Program evaluates every cell, activation and destination choice, and the first commit reports changes relative to that loaded state. A map attribute reports one change when any entry differs, and a document attribute one change when its text differs.
+An attribute bound to a cell is reported once per step of its binding, and the consumer reads the value whole, a variable array with its live length; an attribute whose binding is an array or a record of bindings (§4.4) is reported once per step of any of them. A `state` steps only when its value changes (§12.2), so an attribute bound to one is reported at each change, a value that returns within one commit to what it was before it being reported at each step it changed; one bound to a `stream` or a `channel` is reported at every step of it, equal values included. Activation and a chosen destination are reported at each step at which they changed. Records come in the order of their steps; within one step, instance changes come first and wire changes after them, each in Program order (§11), and for one item attribute changes come in the order the vocabulary declares the attributes, then its activation, then a wire's chosen destination. Loading a Program evaluates every cell, activation and destination choice, and the first commit reports changes relative to that loaded state. A map attribute reports one change when any entry differs, and a document attribute one change when its text differs.
 
 ### 12.4 Evaluation never fails
 
@@ -1795,7 +1798,7 @@ A variable array cell that the host has written keeps its live length, cut to it
 Each instance and wire of the new Program is matched with at most one of the old, of the same kind. Matching starts with the top-level instances and descends into each matched pair's sequence. At each level:
 
 1. Named items match by their path below their matched parent. An item whose path matches one of a different kind does not match.
-2. The parent's anonymous entries, bundles among them, match by a common subsequence of their keys. An entry's key is its kind, `bundle` for a bundle, with its attribute values, a wire's fixed destination, the names of its named descendants and, for a bundle, its members' keys. An attribute's value in a key is the bits of its constant, or a mark that it reads a cell; a string compares by its text and a destination by its path. After the common prefix and suffix are matched, the subsequence is the one Myers' difference algorithm finds, preferring a removal to an addition where both cost the same. The search runs up to an edit distance of 1,000 per sequence by default, a limit the host may set otherwise (ARCHITECTURE §5); past it, the unmatched middle is one gap for step 3.
+2. The parent's anonymous entries, bundles among them, match by a common subsequence of their keys. An entry's key is its kind, `bundle` for a bundle, with its attribute values, a wire's fixed destination, the names of its named descendants and, for a bundle, its members' keys. An attribute's value in a key is its constant, compared as §12.2 compares values, or a mark that it reads a cell; a string compares by its text and a destination by its path. After the common prefix and suffix are matched, the subsequence is the one Myers' difference algorithm finds, preferring a removal to an addition where both cost the same. The search runs up to an edit distance of 1,000 per sequence by default, a limit the host may set otherwise (ARCHITECTURE §5); past it, the unmatched middle is one gap for step 3.
 3. In each gap, between two consecutive matches of step 2 or before the first or after the last, the i-th unmatched entry of a kind on the old side pairs with the i-th unmatched entry of that kind on the new side, and they match with changed attributes.
 4. A matched bundle's members match within it by steps 1 to 3.
 
