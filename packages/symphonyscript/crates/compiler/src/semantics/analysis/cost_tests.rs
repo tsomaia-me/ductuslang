@@ -23,6 +23,7 @@ enum Construct {
     History,
     ForPlacement,
     ArrayLiteral,
+    ForExpression,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -62,6 +63,7 @@ fn step(construct: Construct, value: &str) -> Option<String> {
         Construct::Slice => format!("[{value}, 1][..1][0]"),
         Construct::Index => format!("[{value}, 1][0]"),
         Construct::ArrayLiteral => format!("[[{value}]][0][0]"),
+        Construct::ForExpression => format!("(for x in [{value}] into s from 0: s + x)"),
         Construct::Inlined => format!("g({value})"),
         Construct::Recursive => format!("r({value})"),
         Construct::Let
@@ -84,7 +86,8 @@ fn base(construct: Construct) -> &'static str {
         | Construct::Slice
         | Construct::Index
         | Construct::History
-        | Construct::ArrayLiteral => "note",
+        | Construct::ArrayLiteral
+        | Construct::ForExpression => "note",
     }
 }
 
@@ -107,6 +110,9 @@ fn growing(construct: Construct) -> Option<String> {
         }
         Construct::Index => format!("fn f(xs, m): {call}(xs + [xs[0]], m - 1) else len(xs)\n"),
         Construct::ArrayLiteral => format!("fn f(xs, m): {call}(xs + [m], m - 1) else len(xs)\n"),
+        Construct::ForExpression => format!(
+            "fn f(xs, m): {call}((for x in xs into a from [1]: a + [x]), m - 1) else len(xs)\n"
+        ),
         Construct::If => {
             format!("fn f(xs, m): {call}(if m > 0 then xs + [1] else xs, m - 1) else len(xs)\n")
         }
@@ -139,7 +145,8 @@ fn nested_function(construct: Construct) -> Option<Vec<String>> {
         | Construct::Join
         | Construct::Slice
         | Construct::Index
-        | Construct::ArrayLiteral => vec![format!("fn h(v): {}\n", step(construct, "v")?)],
+        | Construct::ArrayLiteral
+        | Construct::ForExpression => vec![format!("fn h(v): {}\n", step(construct, "v")?)],
     })
 }
 
@@ -672,6 +679,61 @@ fn stress_every_walk_of_check_over_a_for_placement_costs_work_linear_in_the_prog
 fn stress_every_walk_of_check_over_an_array_literal_costs_work_linear_in_the_program_in_every_shape_and_order()
  {
     assert_costs_linear(Construct::ArrayLiteral, 14);
+}
+
+#[test]
+#[ignore = "stress"]
+fn stress_every_walk_of_check_over_a_for_expression_costs_work_linear_in_the_program_in_every_shape_and_order()
+ {
+    assert_costs_linear(Construct::ForExpression, 14);
+}
+
+fn capacity_program(capacity: usize) -> String {
+    format!(
+        "input held: i32[..{capacity}] = []\nstate high = for x in held into kept from []: if x > 60 then kept + [x] else kept\nstate probe: i32[..{capacity}] = high\nClip c:\n    Note/(probe[0])\n"
+    )
+}
+
+fn capacity_failures(sizes: [usize; 3]) -> Vec<String> {
+    let compiler = Compiler::new(&vocabulary()).expect("the vocabulary compiles");
+    let runs = sizes.map(|capacity| measured(&compiler, &capacity_program(capacity)));
+    let mut failures = Vec::new();
+    for (run, capacity) in runs.iter().zip(sizes) {
+        if let Some(first) = run.errors.first() {
+            failures.push(format!("capacity {capacity}: {first}"));
+        }
+    }
+    for (index, (counter, _)) in runs[0].counts.iter().enumerate() {
+        let points = [0, 1, 2].map(|run| {
+            (
+                u64::try_from(sizes[run]).unwrap_or(u64::MAX),
+                runs[run].counts.get(index).map_or(0, |(_, count)| *count),
+            )
+        });
+        if !linear(points) {
+            failures.push(format!("{counter} {:?}", points.map(|(_, count)| count)));
+        }
+        if counter == "nodes" && points[0].1 != points[2].1 {
+            failures.push(format!(
+                "the body is built once, and the nodes number {:?}",
+                points.map(|(_, count)| count)
+            ));
+        }
+    }
+    failures
+}
+
+#[test]
+fn a_for_expression_over_a_variable_array_builds_its_body_once_whatever_its_capacity() {
+    let failures = capacity_failures([100, 200, 400]);
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+#[test]
+#[ignore = "stress"]
+fn stress_a_for_expression_over_a_variable_array_costs_check_work_linear_in_its_capacity() {
+    let failures = capacity_failures([2_500, 5_000, 10_000]);
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]

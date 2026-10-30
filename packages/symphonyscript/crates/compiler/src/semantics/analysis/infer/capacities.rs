@@ -300,10 +300,11 @@ impl Engine<'_> {
         for index in 0..self.nodes.len() {
             crate::semantics::counted_walk::CountedWalk::CapacitiesLengthLimits.step();
             let node = NodeId(u32::try_from(index).map_err(|_| Internal::missed("node"))?);
-            if let Op::For(for_node) = &self.node(node)?.op
-                && let ForIterable::Range(low, high) = for_node.iterable
-            {
-                self.range_bounds(node, (low, high))?;
+            if let Op::For(for_node) = &self.node(node)?.op {
+                if let ForIterable::Range(low, high) = for_node.iterable {
+                    self.range_bounds(node, (low, high))?;
+                }
+                self.for_length(node, &env, &mut done, covered)?;
                 continue;
             }
             let Op::Join(lhs, rhs) = self.node(node)?.op else {
@@ -1045,17 +1046,8 @@ impl Engine<'_> {
             left -= steps;
         }
         self.memo.loop_capacities.insert(for_node.accumulator, most);
-        if most >= LIMIT && self.memo.loop_reports.insert(node) {
-            self.error_at_node(
-                Code::LengthLimit,
-                node,
-                format!(
-                    "this `for` expression holds up to {most} elements, and an array's length and capacity are below 2³¹; a slice in its body, such as `[^8..]`, keeps the newest eight"
-                ),
-            )?;
-        }
         let Some(annotated) = accumulator.capacity else {
-            return Ok(Extent::Variable(Piecewise::constant(most.min(LIMIT))));
+            return Ok(Extent::Variable(Piecewise::constant(most)));
         };
         let annotated = i128::from(annotated);
         if most > annotated && self.memo.loop_reports.insert(node) {
@@ -1122,5 +1114,42 @@ impl Engine<'_> {
             )?;
         }
         Ok(())
+    }
+
+    fn for_length(
+        &mut self,
+        node: NodeId,
+        env: &Env,
+        done: &mut FastMap<NodeId, Extent>,
+        covered: &FastSet<NodeId>,
+    ) -> Result<(), Internal> {
+        let scope = self.node(node)?.scope;
+        if covered.contains(&node) || self.in_probe(scope)? || !self.known_sig(node)?.reactive {
+            return Ok(());
+        }
+        self.extent_into(node, env, done)?;
+        if !reaches_limit(done.get(&node)) {
+            return Ok(());
+        }
+        let most = self
+            .slot_of_accumulator(node)?
+            .and_then(|slot| self.memo.loop_capacities.get(&slot).copied())
+            .unwrap_or(LIMIT);
+        self.error_at_node_helped(
+            Code::LengthLimit,
+            node,
+            Vec::new(),
+            format!(
+                "this `for` expression holds up to {most} elements, and an array's length and capacity are below 2³¹"
+            ),
+            "slice the accumulator in the body to bound it, as in `(all + [x])[^8..]`".to_string(),
+        )
+    }
+
+    fn slot_of_accumulator(&self, node: NodeId) -> Result<Option<SlotId>, Internal> {
+        let Op::For(for_node) = &self.node(node)?.op else {
+            return Ok(None);
+        };
+        Ok(Some(for_node.accumulator))
     }
 }

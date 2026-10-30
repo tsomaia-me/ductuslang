@@ -9,9 +9,9 @@ input held: i32[..10] = []
 state total = 1 + for x in held into sum from 0: sum + x
 ```
 
-The `for` expression is the right operand of `+`.
+The `for` expression is the right operand of `+`; in parentheses it is one value.
 
 ```sym
 input held: i32[..10] = []
-state total = 1 + len(held)
+state total = 1 + (for x in held into sum from 0: sum + x)
 ```

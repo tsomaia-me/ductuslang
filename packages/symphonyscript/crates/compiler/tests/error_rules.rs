@@ -727,6 +727,46 @@ const RULES: &[Rule] = &[
         "named-in-for",
         "Clip c:\n    for i in 0..2:\n        Note as n\n",
     ),
+    rule(
+        "5.10",
+        "type-mismatch",
+        "let v = for x in [1] into a from 0: true\nClip c:\n    Note/v\n",
+    ),
+    rule(
+        "5.10",
+        "capacity-exceeded",
+        "input held: i32[..10] = []\nstate t = for x in held into a: i32[..3] from []: a + [x]\nClip c:\n    Note/(t[0])\n",
+    ),
+    rule(
+        "5.10",
+        "length-limit",
+        "input n = 1\nClip c:\n    Note/((for i in 0..100 into a from [n]: a + a)[0])\n",
+    ),
+    rule(
+        "6.5",
+        "for-variable-clash",
+        "let x = 1\nlet v = for x in [1] into a from 0: a + x\nClip c:\n    Note/v\n",
+    ),
+    rule(
+        "6.5",
+        "duplicate-local",
+        "let v = for x in [1] into x from 0: x\nClip c:\n    Note/v\n",
+    ),
+    rule(
+        "7.9",
+        "iterable-type",
+        "Clip c:\n    for i, k in 0..4:\n        Note/(60 + k)\n",
+    ),
+    rule(
+        "7.9",
+        "range-bound",
+        "input n = 4\nstate total = for i in 0..n into sum from 0: sum + i\nClip c:\n    Note/total\n",
+    ),
+    low_limits(
+        "4.6",
+        "expansion-limit",
+        "let v = for i in 0..2000 into s from 0: s + i\nClip c:\n    Note/v\n",
+    ),
     rule("8.1", "wire-syntax", "Clip c:\n    Plays\n"),
     rule("8.2", "destination-type", "Clip c:\n    Plays: 1\n"),
     rule(
