@@ -1,4 +1,4 @@
-use super::{BoundForm, Piecewise, Ratio, slice_transform};
+use super::{BoundForm, Extreme, Piecewise, Ratio, slice_transform};
 
 type Case = (BoundForm, BoundForm, &'static [(i128, i128)]);
 
@@ -18,7 +18,31 @@ fn a_slice_holds_the_most_elements_any_live_length_up_to_the_capacity_gives() {
         (End(5), Start(3), &[(0, 0), (3, 3), (5, 3), (8, 3), (50, 3)]),
         (Start(5), End(3), &[(0, 0), (8, 0), (9, 1), (12, 4)]),
         (End(4), End(1), &[(0, 0), (1, 0), (2, 1), (4, 3), (20, 3)]),
-        (Reactive, Reactive, &[(0, 0), (7, 7)]),
+        (
+            Reactive(Extreme::Unbounded),
+            Reactive(Extreme::Unbounded),
+            &[(0, 0), (7, 7)],
+        ),
+        (
+            Reactive(Extreme::Start(2)),
+            Reactive(Extreme::Start(4)),
+            &[(0, 0), (3, 1), (10, 2)],
+        ),
+        (
+            Absent,
+            Reactive(Extreme::Start(4)),
+            &[(0, 0), (3, 3), (10, 4)],
+        ),
+        (
+            Reactive(Extreme::End(8)),
+            Absent,
+            &[(0, 0), (8, 8), (100, 8)],
+        ),
+        (
+            Absent,
+            Reactive(Extreme::End(1)),
+            &[(0, 0), (1, 0), (10, 9)],
+        ),
         (Start(-3), Start(20), &[(0, 0), (10, 10), (25, 20)]),
     ];
     for (lower, upper, expected) in cases {

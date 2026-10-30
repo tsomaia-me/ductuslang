@@ -23,7 +23,6 @@ pub(crate) struct HirBuilder<'h> {
     pub(super) vocabulary: &'h Vocabulary,
     pub(super) dropped: bool,
     pub(super) report: &'h mut Report,
-    pub(super) loop_names: Vec<String>,
 }
 
 fn param_regions<'p>(decl: &NodeView<'p>, list: SyntaxKind) -> Vec<NodeView<'p>> {

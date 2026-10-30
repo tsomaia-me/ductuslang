@@ -9,7 +9,7 @@ use crate::semantics::Internal;
 use crate::semantics::collection::{Decl, Namespace, Variants};
 use crate::semantics::ir::{
     AttrValue, BlockId, BodyItem, ExprId, ExprKind, FnId, Hir, Ident, Iterable, LetDecl, Loc,
-    PatternId, PlacementId, StateId, TypeBase, TypeRef, UnknownNames,
+    LoopVar, PatternId, PlacementId, StateId, TypeBase, TypeRef, UnknownNames,
 };
 use crate::semantics::reporting::Report;
 
@@ -714,7 +714,7 @@ impl<'a> Checker<'a> {
                         }
                         if let Some(each) = each {
                             self.iterable(each.iterable, frame)?;
-                            let var_frame = self.for_var(each.var.as_ref(), frame)?;
+                            let var_frame = self.for_vars(&each.names, frame)?;
                             for member in &each.members {
                                 if let Some(name) = &self.hir.placement(*member)?.name {
                                     self.named_in_for(name);
@@ -725,14 +725,14 @@ impl<'a> Checker<'a> {
                         }
                     }
                     BodyItem::For {
-                        var,
+                        names,
                         iterable,
                         body,
                         ..
                     } => {
                         previous = None;
                         self.iterable(*iterable, frame)?;
-                        let var_frame = self.for_var(var.as_ref(), frame)?;
+                        let var_frame = self.for_vars(names, frame)?;
                         let body_frame = self.skipped_in(*body, var_frame)?;
                         pending.push((*body, body_frame, Mode::Anonymous));
                     }
@@ -794,30 +794,57 @@ impl<'a> Checker<'a> {
         Ok(())
     }
 
-    fn for_var(
+    fn for_vars(
         &mut self,
-        var: Option<&Ident>,
+        vars: &[LoopVar],
         frame: Option<usize>,
     ) -> Result<Option<usize>, Internal> {
-        let Some(var) = var else {
-            return Ok(frame);
-        };
-        self.declared(var)?;
-        if let Some(other) = self.visible_at(frame, &var.text)? {
-            let related: Vec<(Loc, String)> = other
-                .map(|loc| (loc, "the visible name it equals".to_string()))
-                .into_iter()
-                .collect();
-            self.report.error_with(
-                self.hir,
-                Code::ForVariableClash,
-                var.loc,
-                &related,
-                format!("the loop variable `{}` equals a visible name", var.text),
-            );
+        for var in vars {
+            if let Some(ty) = &var.ty {
+                self.type_ref(ty);
+            }
         }
-        let mut names = BTreeMap::new();
-        names.insert(var.text.clone(), var.loc);
+        let names: Vec<&Ident> = vars.iter().filter_map(|var| var.name.as_ref()).collect();
+        self.loop_frame(&names, frame)
+    }
+
+    fn loop_frame(
+        &mut self,
+        declared: &[&Ident],
+        frame: Option<usize>,
+    ) -> Result<Option<usize>, Internal> {
+        if declared.is_empty() {
+            return Ok(frame);
+        }
+        let mut names: BTreeMap<String, Loc> = BTreeMap::new();
+        for var in declared {
+            self.declared(var)?;
+            if let Some(earlier) = names.get(&var.text) {
+                let earlier = *earlier;
+                self.report.error_with(
+                    self.hir,
+                    Code::DuplicateLocal,
+                    var.loc,
+                    &[(earlier, "the first name".to_string())],
+                    format!("`{}` names two of the loop's names", var.text),
+                );
+                continue;
+            }
+            if let Some(other) = self.visible_at(frame, &var.text)? {
+                let related: Vec<(Loc, String)> = other
+                    .map(|loc| (loc, "the visible name it equals".to_string()))
+                    .into_iter()
+                    .collect();
+                self.report.error_with(
+                    self.hir,
+                    Code::ForVariableClash,
+                    var.loc,
+                    &related,
+                    format!("the loop name `{}` equals a visible name", var.text),
+                );
+            }
+            names.insert(var.text.clone(), var.loc);
+        }
         Ok(Some(self.frame(names, frame, FrameKind::ForVar)))
     }
 

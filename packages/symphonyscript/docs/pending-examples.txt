@@ -34,7 +34,6 @@ SPEC.md §6.8 1 sym
 SPEC.md §6.8 2 sym
 SPEC.md §6.8 3 sym
 SPEC.md §7.6 1 sym
-SPEC.md §7.8 1 sym
 SPEC.md §7.9 1 sym
 SPEC.md §7.9 2 sym
 SPEC.md §8.2 1 sym

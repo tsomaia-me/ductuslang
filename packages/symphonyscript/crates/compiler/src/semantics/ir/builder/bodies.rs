@@ -2,7 +2,7 @@ use super::hir_builder::HirBuilder;
 use super::index::index;
 use crate::semantics::Internal;
 use crate::semantics::ir::{
-    Attr, AttrValue, Block, BlockId, BodyItem, BundleFor, ExprKind, Ident, Iterable, Loc,
+    Attr, AttrValue, Block, BlockId, BodyItem, BundleFor, ExprKind, Iterable, Loc, LoopVar,
     Placement, PlacementId, UnknownNames, WhenArm, Wire, WireId,
 };
 use crate::syntax::ast::{self, AstNode, BodyItem as AstBodyItem, Member, Name};
@@ -146,7 +146,6 @@ impl<'p> HirBuilder<'_> {
                     let before = items.len();
                     self.dropped = false;
                     self.body_item(item, &mut items, &mut pending);
-                    skipped.append(&mut self.loop_names);
                     if self.dropped {
                         skipped.extend(skipped_names(&child));
                     } else {
@@ -163,7 +162,6 @@ impl<'p> HirBuilder<'_> {
                     let syntax = member.syntax().clone();
                     self.dropped = false;
                     self.member(member, position > 0, &mut items, &mut pending);
-                    skipped.append(&mut self.loop_names);
                     if self.dropped {
                         skipped.extend(skipped_names(&syntax));
                     } else {
@@ -220,10 +218,10 @@ impl<'p> HirBuilder<'_> {
             }
             AstBodyItem::For(node) => {
                 let loc = self.loc(node.syntax().range());
-                let (var, iterable) = self.loop_head(&node.head(), loc);
+                let (names, iterable) = self.loop_head(&node.head(), loc);
                 let body = self.nested(node.block(), pending);
                 items.push(BodyItem::For {
-                    var,
+                    names,
                     iterable,
                     body,
                     loc,
@@ -299,9 +297,9 @@ impl<'p> HirBuilder<'_> {
                             self.dropped = true;
                             return;
                         };
-                        let (var, iterable) = self.loop_head(&each.head(), each_loc);
+                        let (names, iterable) = self.loop_head(&each.head(), each_loc);
                         Some(BundleFor {
-                            var,
+                            names,
                             iterable,
                             members,
                             loc: each_loc,
@@ -486,21 +484,20 @@ impl<'p> HirBuilder<'_> {
         flags
     }
 
-    fn loop_head(&mut self, head: &ast::LoopHead<'p>, loc: Loc) -> (Option<Ident>, Iterable) {
-        let names = head.names();
-        let construct = match names.as_slice() {
-            [_, _, ..] => "a loop head with two names",
-            [ast::LoopName { ty: Some(_), .. }] => "an annotated loop name",
-            [ast::LoopName { ty: None, name }] => {
-                let var = self.ident(Some(name.clone()));
-                return (var, self.iterable(head.iterable(), loc));
-            }
-            [] => return (None, self.iterable(head.iterable(), loc)),
-        };
-        self.unbuilt(head.range(), construct, "7.9");
-        self.loop_names
-            .extend(names.iter().map(|loop_name| loop_name.name.text()));
-        (None, Iterable::Values(self.push(ExprKind::Error, loc)))
+    pub(super) fn loop_head(
+        &mut self,
+        head: &ast::LoopHead<'p>,
+        loc: Loc,
+    ) -> (Vec<LoopVar>, Iterable) {
+        let names = head
+            .names()
+            .into_iter()
+            .map(|loop_name| LoopVar {
+                name: self.ident(Some(loop_name.name)),
+                ty: loop_name.ty.map(|ty| self.type_ref(&ty)),
+            })
+            .collect();
+        (names, self.iterable(head.iterable(), loc))
     }
 
     fn iterable(&mut self, node: Option<ast::Iterable<'p>>, loc: Loc) -> Iterable {

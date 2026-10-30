@@ -20,7 +20,7 @@ use crate::semantics::analysis::some::some;
 use crate::semantics::analysis::val::Val;
 use crate::semantics::collection::Decl;
 use crate::semantics::ir::{
-    Attr, AttrValue, BlockId, BodyItem, ExprId, FnId, Ident, Iterable, LetId, Loc, Param,
+    Attr, AttrValue, BlockId, BodyItem, ExprId, FnId, Ident, Iterable, LetId, Loc, LoopVar, Param,
     PatternId, PlacementId, WireId,
 };
 
@@ -311,7 +311,7 @@ impl Engine<'_> {
 
     pub(in crate::semantics::analysis) fn name_probe_of(
         &mut self,
-        var: Option<&Ident>,
+        names: &[LoopVar],
         scope: ScopeId,
     ) -> Result<ScopeId, Internal> {
         let mut global = scope;
@@ -321,7 +321,11 @@ impl Engine<'_> {
         }
         let template = Some(self.names_global_of(global));
         let chain = self.chain(scope)?;
-        let kind = match var {
+        let (first, rest) = match names.split_first() {
+            Some((first, rest)) => (first.name.as_ref(), rest),
+            None => (None, names),
+        };
+        let kind = match first {
             Some(name) => ScopeKind::ForVar {
                 name: name.text.clone(),
                 value: Val::Error,
@@ -330,7 +334,8 @@ impl Engine<'_> {
                 names: BTreeMap::new(),
             },
         };
-        self.scope_in(kind, Some(scope), chain, template)
+        let probe = self.scope_in(kind, Some(scope), chain, template)?;
+        self.unbound_names(rest, probe)
     }
 
     pub(in crate::semantics::analysis) fn names_in(
@@ -382,6 +387,17 @@ impl Engine<'_> {
         )
     }
 
+    pub(in crate::semantics::analysis) fn unbound_names(
+        &mut self,
+        names: &[LoopVar],
+        scope: ScopeId,
+    ) -> Result<ScopeId, Internal> {
+        let mut inner = scope;
+        for var in names {
+            inner = self.unbound(var.name.as_ref(), inner)?;
+        }
+        Ok(inner)
+    }
     fn names_of(&mut self, mut work: Vec<Named>) -> Result<(), Internal> {
         let hir = self.hir;
         while let Some(next) = work.pop() {
@@ -427,7 +443,7 @@ impl Engine<'_> {
                     for expr in iterable_exprs(each.iterable) {
                         self.demand(Query::Expr(expr, scope))?;
                     }
-                    let inner = self.unbound(each.var.as_ref(), scope)?;
+                    let inner = self.unbound_names(&each.names, scope)?;
                     for member in each.members.iter().rev() {
                         work.push(Named::Placement(*member, inner));
                     }
@@ -437,7 +453,7 @@ impl Engine<'_> {
                 }
             }
             BodyItem::For {
-                var,
+                names,
                 iterable,
                 body,
                 ..
@@ -445,7 +461,7 @@ impl Engine<'_> {
                 for expr in iterable_exprs(*iterable) {
                     self.demand(Query::Expr(expr, scope))?;
                 }
-                let inner = self.unbound(var.as_ref(), scope)?;
+                let inner = self.unbound_names(names, scope)?;
                 work.push(Named::ForBody(*body, inner));
             }
             BodyItem::When {

@@ -19,7 +19,7 @@ use crate::semantics::analysis::site::Site;
 use crate::semantics::analysis::some::some;
 use crate::semantics::analysis::val::Val;
 use crate::semantics::collection::Decl;
-use crate::semantics::ir::{BlockId, BodyItem, Loc, PatternId, PlacementId, Top};
+use crate::semantics::ir::{BlockId, BodyItem, Loc, LoopVar, PatternId, PlacementId, Top};
 
 #[derive(Clone)]
 struct Walk {
@@ -44,7 +44,7 @@ enum Frame {
         walk: Walk,
     },
     For {
-        var: Option<String>,
+        names: Rc<[LoopVar]>,
         iteration: Iteration,
         body: ForBody,
         scope: ScopeId,
@@ -615,13 +615,13 @@ impl Engine<'_> {
                     self.placement_item(member, scope, &walk, &mut frames, &mut collectors)?;
                 }
                 Frame::For {
-                    var,
+                    names,
                     iteration,
                     body,
                     scope,
                     walk,
                 } => {
-                    let (value, iteration) = match iteration {
+                    let (value, position, iteration) = match iteration {
                         Iteration::Range { next, end, loc } => {
                             if next >= end {
                                 continue;
@@ -636,6 +636,7 @@ impl Engine<'_> {
                             )?;
                             (
                                 Val::Scalar(node),
+                                0,
                                 Iteration::Range {
                                     next: next + 1,
                                     end,
@@ -649,6 +650,7 @@ impl Engine<'_> {
                             };
                             (
                                 value,
+                                next,
                                 Iteration::Values {
                                     values,
                                     next: next + 1,
@@ -667,6 +669,7 @@ impl Engine<'_> {
                             }
                             (
                                 self.computed_element(base, next, loc, scope)?,
+                                next,
                                 Iteration::Elements {
                                     base,
                                     length,
@@ -679,20 +682,9 @@ impl Engine<'_> {
                     if !self.count_step(iteration.loc(), scope)? {
                         return Ok(());
                     }
-                    let chain = self.chain(scope)?;
-                    let var_scope = match &var {
-                        Some(name) => self.scope(
-                            ScopeKind::ForVar {
-                                name: name.clone(),
-                                value,
-                            },
-                            Some(scope),
-                            chain,
-                        )?,
-                        None => scope,
-                    };
+                    let var_scope = self.loop_scopes(&names, (value, position), scope)?;
                     frames.push(Frame::For {
-                        var,
+                        names,
                         iteration,
                         body: body.clone(),
                         scope,
@@ -821,15 +813,15 @@ impl Engine<'_> {
                 let mut inner = walk.clone();
                 inner.bundle = Some(collector);
                 if let Some(each) = each {
-                    match self.iteration(each.iterable, scope)? {
+                    match self.loop_iteration(&each.names, each.iterable, scope)? {
                         Some(iteration) if iteration.is_empty() => {
                             if self.first_unrun(each.loc, scope)? {
-                                let probe = self.name_probe_of(each.var.as_ref(), scope)?;
+                                let probe = self.name_probe_of(&each.names, scope)?;
                                 self.names_of_members(&each.members, probe)?;
                             }
                         }
                         Some(iteration) => frames.push(Frame::For {
-                            var: each.var.map(|var| var.text),
+                            names: each.names.into(),
                             iteration,
                             body: ForBody::Members(each.members),
                             scope,
@@ -849,19 +841,19 @@ impl Engine<'_> {
                 });
             }
             BodyItem::For {
-                var,
+                names,
                 iterable,
                 body,
                 loc,
-            } => match self.iteration(iterable, scope)? {
+            } => match self.loop_iteration(&names, iterable, scope)? {
                 Some(iteration) if iteration.is_empty() => {
                     if self.first_unrun(loc, scope)? {
-                        let probe = self.name_probe_of(var.as_ref(), scope)?;
+                        let probe = self.name_probe_of(&names, scope)?;
                         self.for_body_names(body, probe)?;
                     }
                 }
                 Some(iteration) => frames.push(Frame::For {
-                    var: var.map(|var| var.text),
+                    names: names.into(),
                     iteration,
                     body: ForBody::Block(body),
                     scope,

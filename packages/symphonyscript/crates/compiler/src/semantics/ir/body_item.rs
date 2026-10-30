@@ -1,8 +1,8 @@
 use super::bundle_for::BundleFor;
-use super::ident::Ident;
 use super::ids::{BlockId, PlacementId, WireId};
 use super::iterable::Iterable;
 use super::loc::Loc;
+use super::loop_var::LoopVar;
 use super::when_arm::WhenArm;
 
 #[derive(Clone, PartialEq, Debug)]
@@ -16,7 +16,7 @@ pub(crate) enum BodyItem {
         loc: Loc,
     },
     For {
-        var: Option<Ident>,
+        names: Vec<LoopVar>,
         iterable: Iterable,
         body: BlockId,
         loc: Loc,

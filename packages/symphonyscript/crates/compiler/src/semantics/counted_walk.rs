@@ -58,6 +58,7 @@ pub(crate) enum CountedWalk {
     PathsReferenceInstances,
     AnswersReadsCell,
     AnswersPathStart,
+    AnswersBoundRange,
     RunReachesRecursion,
     ArrayChecksIsStringBytes,
     ArrayChecksStateChecks,
@@ -140,7 +141,7 @@ thread_local! {
 
 impl CountedWalk {
     #[cfg(test)]
-    pub(crate) const ALL: [CountedWalk; 131] = [
+    pub(crate) const ALL: [CountedWalk; 132] = [
         CountedWalk::InlineCountsOf,
         CountedWalk::InlineCountsCallSites,
         CountedWalk::RecursiveFunctionsRecursiveFunctions,
@@ -199,6 +200,7 @@ impl CountedWalk {
         CountedWalk::PathsReferenceInstances,
         CountedWalk::AnswersReadsCell,
         CountedWalk::AnswersPathStart,
+        CountedWalk::AnswersBoundRange,
         CountedWalk::RunReachesRecursion,
         CountedWalk::ArrayChecksIsStringBytes,
         CountedWalk::ArrayChecksStateChecks,

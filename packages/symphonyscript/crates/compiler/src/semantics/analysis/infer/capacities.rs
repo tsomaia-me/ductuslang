@@ -8,7 +8,7 @@ use crate::semantics::analysis::answers::CellRead;
 use crate::semantics::analysis::bound::Bound;
 use crate::semantics::analysis::bound_val::BoundVal;
 use crate::semantics::analysis::c_val::CVal;
-use crate::semantics::analysis::capacity::{BoundForm, Piecewise, Ratio, slice_transform};
+use crate::semantics::analysis::capacity::{BoundForm, Extreme, Piecewise, Ratio, slice_transform};
 use crate::semantics::analysis::engine::Engine;
 use crate::semantics::analysis::eval_ty::EvalTy;
 use crate::semantics::analysis::fast_hash::{FastMap, FastSet};
@@ -66,7 +66,7 @@ fn fixed_slice(lower: BoundForm, upper: BoundForm, base: &Extent) -> Option<i128
     };
     let position = |form: BoundForm, absent: i128| match form {
         BoundForm::Absent => Some(absent),
-        BoundForm::Reactive => None,
+        BoundForm::Reactive(_) => None,
         BoundForm::Start(value) => Some(value.clamp(0, *length)),
         BoundForm::End(offset) => Some(length.saturating_sub(offset).clamp(0, *length)),
     };
@@ -78,7 +78,7 @@ fn fixed_slice(lower: BoundForm, upper: BoundForm, base: &Extent) -> Option<i128
 fn outside_i64(form: BoundForm) -> bool {
     match form {
         BoundForm::Start(value) | BoundForm::End(value) => i64::try_from(value).is_err(),
-        BoundForm::Absent | BoundForm::Reactive => false,
+        BoundForm::Absent | BoundForm::Reactive(_) => false,
     }
 }
 
@@ -683,7 +683,7 @@ impl Engine<'_> {
                         .ok_or(Internal::missed("capacity"))
                 })
                 .collect::<Result<_, _>>()?;
-            let value = self.combined_extent(node, &values, extra)?;
+            let value = self.combined_extent(node, (&operands, &values), extra)?;
             if from_env || operands.iter().any(|operand| dependent.contains(operand)) {
                 dependent.insert(node);
             } else {
@@ -755,7 +755,13 @@ impl Engine<'_> {
                 Parts::Operands(self.known_arms(&op, operands)?, None)
             }
             Op::Join(lhs, rhs) => Parts::Operands(vec![lhs, rhs], None),
-            Op::Slice { base, .. } => Parts::Operands(vec![base], None),
+            Op::Slice { base, lower, upper } => {
+                let mut operands = vec![base];
+                for (bound, _) in lower.iter().chain(upper.iter()) {
+                    operands.extend(self.bound_measures(*bound)?);
+                }
+                Parts::Operands(operands, None)
+            }
             Op::History { cell, fallback, .. } => {
                 let mut operands: Vec<NodeId> = fallback.into_iter().collect();
                 let mut extra = None;
@@ -825,7 +831,7 @@ impl Engine<'_> {
     fn combined_extent(
         &mut self,
         node: NodeId,
-        values: &[Extent],
+        (operands, values): (&[NodeId], &[Extent]),
         extra: Option<Extent>,
     ) -> Result<Extent, Internal> {
         let op = self.node(node)?.op.clone();
@@ -836,8 +842,14 @@ impl Engine<'_> {
                 .skip(1)
                 .fold(first.clone(), |total, value| total.join(value)),
             Op::Slice { lower, upper, .. } => {
-                let lower = self.bound_form(lower)?;
-                let upper = self.bound_form(upper)?;
+                let measured: FastMap<NodeId, Extent> = operands
+                    .iter()
+                    .copied()
+                    .zip(values.iter().cloned())
+                    .skip(1)
+                    .collect();
+                let lower = self.bound_form(lower, false, &measured)?;
+                let upper = self.bound_form(upper, true, &measured)?;
                 if outside_i64(lower) || outside_i64(upper) {
                     return Ok(Extent::Variable(Piecewise::constant(0)));
                 }
@@ -868,13 +880,36 @@ impl Engine<'_> {
         })
     }
 
-    fn bound_form(&mut self, bound: Option<(NodeId, bool)>) -> Result<BoundForm, Internal> {
+    fn bound_form(
+        &mut self,
+        bound: Option<(NodeId, bool)>,
+        upper: bool,
+        measured: &FastMap<NodeId, Extent>,
+    ) -> Result<BoundForm, Internal> {
         let Some((node, from_end)) = bound else {
             return Ok(BoundForm::Absent);
         };
         let sig = self.known_sig(node)?;
-        if sig.reactive || sig.is_error() || sig.frame {
-            return Ok(BoundForm::Reactive);
+        if sig.is_error() || sig.frame {
+            return Ok(BoundForm::Reactive(Extreme::Unbounded));
+        }
+        if sig.reactive {
+            let capacity = |array: NodeId| {
+                measured.get(&array).and_then(|extent| match extent {
+                    Extent::Fixed(length) => Some(*length),
+                    Extent::Variable(capacity) => {
+                        capacity.constant_value().map(|value| value.floor())
+                    }
+                })
+            };
+            let range = self.bound_range(node, &capacity)?;
+            let extreme = match (upper, from_end) {
+                (true, false) => range.max.map(Extreme::Start),
+                (true, true) => range.min.map(Extreme::End),
+                (false, false) => range.min.map(Extreme::Start),
+                (false, true) => range.max.map(Extreme::End),
+            };
+            return Ok(BoundForm::Reactive(extreme.unwrap_or(Extreme::Unbounded)));
         }
         Ok(match self.demand_cval(node, EvalTy::Exact)? {
             CVal::Int(value) if from_end => BoundForm::End(value),
@@ -886,7 +921,7 @@ impl Engine<'_> {
             | CVal::Str(_)
             | CVal::Node(_)
             | CVal::Array(_)
-            | CVal::Error => BoundForm::Reactive,
+            | CVal::Error => BoundForm::Reactive(Extreme::Unbounded),
         })
     }
 }

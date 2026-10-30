@@ -3,28 +3,16 @@ mod support;
 use symphonyscript::{Code, Compiler, Diagnostic};
 use symphonyscript_fixtures::{Rows, covered, spec_examples, vocabulary};
 
-const HEADS: [(&str, &str, Option<&str>); 6] = [
-    ("x", "60 + x", None),
-    ("x: i32", "60 + x", Some("an annotated loop name")),
-    ("i, x", "60 + i + x", Some("a loop head with two names")),
-    (
-        "i: i32, x",
-        "60 + i + x",
-        Some("a loop head with two names"),
-    ),
-    (
-        "i, x: i32",
-        "60 + i + x",
-        Some("a loop head with two names"),
-    ),
-    (
-        "i: i32, x: i32",
-        "60 + i + x",
-        Some("a loop head with two names"),
-    ),
+const HEADS: [(&str, &str, bool); 6] = [
+    ("x", "60 + x", false),
+    ("x: i32", "60 + x", false),
+    ("i, x", "60 + i + x", true),
+    ("i: i32, x", "60 + i + x", true),
+    ("i, x: i32", "60 + i + x", true),
+    ("i: i32, x: i32", "60 + i + x", true),
 ];
 
-const ITERABLES: [&str; 2] = ["0..4", "[1, 2]"];
+const ITERABLES: [(&str, bool); 2] = [("0..4", true), ("[1, 2]", false)];
 
 const SITES: [&str; 3] = [
     "Clip c:\n    H:\n        Note/(B)\n",
@@ -44,11 +32,8 @@ fn spanned<'t>(text: &'t str, diagnostic: &Diagnostic) -> &'t str {
         .unwrap_or_default()
 }
 
-fn unbuilt_at(found: &[Diagnostic], text: &str, construct: &str, summary: &str) -> bool {
-    matches!(found, [diagnostic]
-        if diagnostic.code == Code::UnbuiltConstruct
-            && spanned(text, diagnostic) == construct
-            && diagnostic.summary.contains(summary))
+fn one_at(found: &[Diagnostic], text: &str, code: Code, at: &str) -> bool {
+    matches!(found, [diagnostic] if diagnostic.code == code && spanned(text, diagnostic) == at)
 }
 
 fn head_rows(rows: &Rows) -> (Vec<String>, usize) {
@@ -56,8 +41,8 @@ fn head_rows(rows: &Rows) -> (Vec<String>, usize) {
     let mut failures = Vec::new();
     let mut programs = 0;
     for (site, template) in SITES.iter().enumerate() {
-        for (head, (names, body, construct)) in HEADS.iter().enumerate() {
-            for (iterable, values) in ITERABLES.iter().enumerate() {
+        for (head, (names, body, two)) in HEADS.iter().enumerate() {
+            for (iterable, (values, range)) in ITERABLES.iter().enumerate() {
                 if !rows.take(&[site, head, iterable]) {
                     continue;
                 }
@@ -77,17 +62,17 @@ fn head_rows(rows: &Rows) -> (Vec<String>, usize) {
                             .unwrap_or_default()
                             .to_string()
                     };
-                    let summary = "`for` expression (SPEC §5.10)";
-                    unbuilt_at(&twin_found, &twin, &whole(&twin), summary)
-                        && unbuilt_at(&found, &text, &whole(&text), summary)
+                    one_at(&twin_found, &twin, Code::UnbuiltConstruct, &whole(&twin))
+                        && one_at(&found, &text, Code::UnbuiltConstruct, &whole(&text))
+                } else if *two && *range {
+                    let second = names
+                        .split(", ")
+                        .nth(1)
+                        .and_then(|name| name.split(':').next())
+                        .unwrap_or_default();
+                    twin_found.is_empty() && one_at(&found, &text, Code::IterableType, second)
                 } else {
-                    match construct {
-                        None => twin_found.is_empty() && found.is_empty(),
-                        Some(construct) => {
-                            let summary = format!("{construct} (SPEC §7.9)");
-                            twin_found.is_empty() && unbuilt_at(&found, &text, &loop_head, &summary)
-                        }
-                    }
+                    twin_found.is_empty() && found.is_empty()
                 };
                 if !holds {
                     failures.push(format!(
@@ -111,18 +96,18 @@ fn assert_none_fail((failures, programs): (Vec<String>, usize), expected: usize)
 }
 
 #[test]
-fn a_loop_head_with_two_names_or_an_annotation_draws_unbuilt_construct_at_every_site() {
+fn a_loop_head_binds_one_or_two_annotated_names_at_every_site_and_a_range_binds_one() {
     assert_none_fail(covered(head_rows), 18);
 }
 
 #[test]
 #[ignore = "exhaustive"]
-fn exhaustive_a_loop_head_with_two_names_or_an_annotation_draws_unbuilt_construct_at_every_site() {
+fn exhaustive_a_loop_head_binds_one_or_two_annotated_names_at_every_site_and_a_range_binds_one() {
     assert_none_fail(head_rows(&Rows::Every), 36);
 }
 
 #[test]
-fn the_loop_heads_of_the_spec_parse_and_draw_unbuilt_construct_at_their_heads() {
+fn the_loop_heads_of_the_spec_bind_their_names_and_a_range_with_two_names_is_rejected() {
     let compiler = Compiler::new(&vocabulary()).expect("the vocabulary compiles");
     let example = |section: &str, tag: &str| {
         spec_examples()
@@ -134,21 +119,15 @@ fn the_loop_heads_of_the_spec_parse_and_draw_unbuilt_construct_at_their_heads() 
             .expect("the SPEC holds the example")
     };
     let strum = "let chord = [60, 64, 67]\n\nClip strum:\n    for i, p in chord:\n        Note/p | velocity=1.0 - i * 0.2\n".to_string();
-    for (text, head) in [
-        (example("7.8", "sym"), "for i, p in [60, 64, 67]"),
-        (strum, "for i, p in chord"),
-        (example("7.9", "sym-error"), "for i, k in 0..4"),
-    ] {
+    for text in [example("7.8", "sym"), strum] {
         assert_eq!(support::parsed(&text).diagnostics, vec![], "{text}");
         let found = errors(&compiler, &text);
-        assert!(
-            unbuilt_at(
-                &found,
-                &text,
-                head,
-                "a loop head with two names (SPEC §7.9)"
-            ),
-            "{text}\n  draws {found:?}"
-        );
+        assert!(found.is_empty(), "{text}\n  draws {found:?}");
     }
+    let rejected = example("7.9", "sym-error");
+    let found = errors(&compiler, &rejected);
+    assert!(
+        one_at(&found, &rejected, Code::IterableType, "k"),
+        "{rejected}\n  draws {found:?}"
+    );
 }

@@ -11,11 +11,78 @@ use crate::semantics::analysis::ids::{NodeId, ScopeId};
 use crate::semantics::analysis::kind::Kind;
 use crate::semantics::analysis::op::Op;
 use crate::semantics::analysis::query::Query;
+use crate::semantics::analysis::scope_kind::ScopeKind;
 use crate::semantics::analysis::some::some;
 use crate::semantics::analysis::val::Val;
-use crate::semantics::ir::{ExprId, ExprKind, Iterable, Loc, Number, Suffix};
+use crate::semantics::ir::{ExprId, ExprKind, Iterable, Loc, LoopVar, Number, Suffix};
 
 impl Engine<'_> {
+    pub(in crate::semantics::analysis) fn loop_iteration(
+        &mut self,
+        names: &[LoopVar],
+        iterable: Iterable,
+        scope: ScopeId,
+    ) -> Result<Option<Iteration>, Internal> {
+        if let (Iterable::Range(start, end), [_, second, ..]) = (iterable, names) {
+            let range = self.hir.expr(start)?.loc.to(self.hir.expr(end)?.loc);
+            let loc = second.name.as_ref().map_or(range, |name| name.loc);
+            self.error_helped(
+                Code::IterableType,
+                loc,
+                scope,
+                RANGE_NAMES.to_string(),
+                "write one name over a range, as in `for i in 0..4`".to_string(),
+            )?;
+            return Ok(None);
+        }
+        self.iteration(iterable, scope)
+    }
+
+    pub(in crate::semantics::analysis) fn loop_scopes(
+        &mut self,
+        names: &[LoopVar],
+        (value, position): (Val, usize),
+        scope: ScopeId,
+    ) -> Result<ScopeId, Internal> {
+        let bound: Vec<(&LoopVar, Val)> = match names {
+            [] => Vec::new(),
+            [one] => vec![(one, value)],
+            [index, element, ..] => {
+                let position =
+                    i128::try_from(position).map_err(|_| Internal::missed("a loop position"))?;
+                let index_value = match &index.name {
+                    Some(name) => Val::Scalar(self.push_node(
+                        Op::Number(Number::Int(position), Suffix::None),
+                        name.loc,
+                        scope,
+                    )?),
+                    None => Val::Error,
+                };
+                vec![(index, index_value), (element, value)]
+            }
+        };
+        let mut inner = scope;
+        for (var, value) in bound {
+            let Some(name) = &var.name else {
+                continue;
+            };
+            let value = match &var.ty {
+                Some(ty) => self.annotated_loop_value(ty, value, name, inner)?,
+                None => value,
+            };
+            let chain = self.chain(inner)?;
+            inner = self.scope(
+                ScopeKind::ForVar {
+                    name: name.text.clone(),
+                    value,
+                },
+                Some(inner),
+                chain,
+            )?;
+        }
+        Ok(inner)
+    }
+
     pub(in crate::semantics::analysis) fn iteration(
         &mut self,
         iterable: Iterable,
@@ -279,3 +346,6 @@ impl Engine<'_> {
 const ITERABLE: &str = "a `for` iterates over a range or an array of single values";
 
 const REACTIVE: &str = "a `for` iterates over a compile-time value, and this one reads a cell";
+
+const RANGE_NAMES: &str =
+    "a range binds one name; two names iterate an array, its positions and its elements";

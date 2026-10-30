@@ -43,6 +43,13 @@ impl Piecewise {
         }
     }
 
+    pub fn constant_value(&self) -> Option<Ratio> {
+        match self.points.as_slice() {
+            [(_, value)] if self.tail.is_zero() => Some(*value),
+            _ => None,
+        }
+    }
+
     pub fn start(&self) -> Ratio {
         self.points
             .first()
