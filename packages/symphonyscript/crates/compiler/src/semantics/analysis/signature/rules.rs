@@ -807,7 +807,7 @@ pub(super) fn arms_alike(extra: &Extra) -> bool {
     let Some(first) = rows.next() else {
         return true;
     };
-    rows.all(|other| other == first)
+    rows.all(|other| other.len() == first.len())
 }
 
 const ARM_SHAPES: &str = "the branches hold arrays of different shapes";

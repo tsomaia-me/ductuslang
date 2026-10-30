@@ -429,11 +429,11 @@ impl Engine<'_> {
             }
         }
         if !opaque {
-            let rows_agree = vals.iter().all(|val| match val {
-                Val::Array(array) => array.shape.inner() == first.inner(),
+            let depths_agree = vals.iter().all(|val| match val {
+                Val::Array(array) => array.shape.depth() == first.depth(),
                 Val::Scalar(_) | Val::Error => false,
             });
-            if !rows_agree && !recursive_body {
+            if !depths_agree && !recursive_body {
                 return Ok(Some(Branches::Each(vals)));
             }
         }

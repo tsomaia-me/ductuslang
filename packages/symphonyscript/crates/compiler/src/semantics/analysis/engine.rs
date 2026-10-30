@@ -6,6 +6,7 @@ use symphonyscript_core::{
     WireKind, WireKindDecl,
 };
 
+use super::answers::Dimensions;
 use super::binding::Binding;
 use super::bound::Bound;
 use super::bound_val::BoundVal;
@@ -613,8 +614,15 @@ impl<'a> Engine<'a> {
     pub fn push_node(&mut self, op: Op, loc: Loc, scope: ScopeId) -> Result<NodeId, Internal> {
         self.claim_id(self.nodes.len(), "values", loc)?;
         let id = NodeId(index(self.nodes.len()));
-        if self.may_hold_array(&op)? {
-            self.arrays.insert(id);
+        match self.dimensions_of(&op)? {
+            Dimensions::Known(0) => {}
+            Dimensions::Known(known) => {
+                self.arrays.insert(id);
+                self.memo.dimensions.insert(id, known);
+            }
+            Dimensions::Unknown => {
+                self.arrays.insert(id);
+            }
         }
         self.nodes.push(Node { op, loc, scope });
         Ok(id)
@@ -622,51 +630,6 @@ impl<'a> Engine<'a> {
 
     pub fn holds_array(&self, val: &Val) -> bool {
         matches!(val, Val::Scalar(node) if self.arrays.contains(node))
-    }
-
-    fn may_hold_array(&self, op: &Op) -> Result<bool, Internal> {
-        Ok(match op {
-            Op::Recursive { .. }
-            | Op::Element { .. }
-            | Op::Array(_)
-            | Op::Join(..)
-            | Op::Slice { .. }
-            | Op::Builtin(symphonyscript_core::Builtin::Bytes, _) => true,
-            Op::History { fallback, cell, .. } => match fallback {
-                Some(fallback) => self.arrays.contains(fallback),
-                None => self.history_holds_array(*cell)?,
-            },
-            Op::Native { native, .. } => self.native_returns_array(*native)?,
-            Op::Use(operand) | Op::Chosen(operand) | Op::Annotate(_, operand) => {
-                self.arrays.contains(operand)
-            }
-            Op::Read(binding) => self.arrays.contains(&self.binding(*binding)?.init),
-            Op::If(_, then, otherwise) => {
-                self.arrays.contains(then) || self.arrays.contains(otherwise)
-            }
-            Op::Match {
-                arms, otherwise, ..
-            } => {
-                arms.iter().any(|(_, value)| self.arrays.contains(value))
-                    || otherwise.is_some_and(|value| self.arrays.contains(&value))
-            }
-            Op::Number(..)
-            | Op::Const(_)
-            | Op::Bool(_)
-            | Op::Str(_)
-            | Op::Concat(_)
-            | Op::Variant(..)
-            | Op::Bare(_)
-            | Op::Pi
-            | Op::NodeRef(_)
-            | Op::Arg(_)
-            | Op::Unary(..)
-            | Op::Binary(..)
-            | Op::Pick { .. }
-            | Op::Convert(..)
-            | Op::Builtin(..) => false,
-            Op::ToRead { attrs, .. } => self.to_read_layout(attrs)?.is_some(),
-        })
     }
 
     pub fn push_binding(&mut self, binding: Binding) -> Result<BindingId, Internal> {

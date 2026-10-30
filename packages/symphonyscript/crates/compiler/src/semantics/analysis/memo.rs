@@ -39,6 +39,7 @@ pub(crate) struct Memo {
     pub state_exprs: Option<super::fast_hash::FastSet<ExprId>>,
     pub own_history: super::fast_hash::FastSet<NodeId>,
     pub owner_reads: Option<std::rc::Rc<super::answers::OwnerReads>>,
+    pub dimensions: FastMap<NodeId, usize>,
     pub layouts: FastMap<NodeId, (super::resolve::LayoutFound, u32)>,
     pub settle_epoch: u32,
     pub binding_capacities: FastMap<super::ids::BindingId, u32>,

@@ -7,6 +7,7 @@ use super::native_layout::native_layout;
 use super::shaped::Shaped;
 use crate::diagnostics::Code;
 use crate::semantics::Internal;
+use crate::semantics::analysis::answers::Dimensions;
 use crate::semantics::analysis::assumed::Assumed;
 use crate::semantics::analysis::binding_kind::BindingKind;
 use crate::semantics::analysis::bound::Bound;
@@ -142,10 +143,13 @@ impl Engine<'_> {
                     | Op::Unary(..)
                     | Op::Binary(..)
                     | Op::Pick { .. }
-                    | Op::Element { .. }
                     | Op::Convert(..)
                     | Op::Builtin(..)
                     | Op::Recursive { .. } => return Ok(false),
+                    Op::Element { .. } => match self.dimensions(node) {
+                        Dimensions::Known(_) => break,
+                        Dimensions::Unknown => return Ok(false),
+                    },
                     Op::ToRead { attrs, .. } => {
                         if self.to_read_layout(attrs)?.is_none() {
                             return Ok(false);
@@ -1146,21 +1150,14 @@ impl Engine<'_> {
                     message: "only an array is indexed",
                 })),
             },
-            Op::If(condition, ..)
-            | Op::Match {
-                scrutinee: condition,
-                ..
-            } => match some!(self.chosen_arm(op, need)?) {
+            Op::If(..) | Op::Match { .. } => match some!(self.chosen_arm(op, need)?) {
                 Some(_) if !arms_agree(&layouts) => Err(Some(ShapeFault {
                     node,
                     code: Code::TypeMismatch,
                     message: BRANCHES,
                 })),
                 Some(arm) => Ok(layouts.get(arm).cloned().flatten()),
-                None => {
-                    let sig = some!(self.sig(*condition, need));
-                    self.choice_layout(node, &layouts, sig.reactive || sig.frame)
-                }
+                None => self.choice_layout(node, &layouts),
             },
             Op::Array(elements) => {
                 let first = layouts.first().cloned().flatten();
@@ -1445,7 +1442,7 @@ impl Engine<'_> {
         }
     }
 
-    fn choice_layout(&self, node: NodeId, layouts: &[Option<Layout>], per_run: bool) -> Shaped {
+    fn choice_layout(&self, node: NodeId, layouts: &[Option<Layout>]) -> Shaped {
         let first = layouts.first().cloned().flatten();
         if layouts.iter().all(|layout| *layout == first) {
             return Ok(first);
@@ -1462,7 +1459,7 @@ impl Engine<'_> {
                 .as_ref()
                 .is_some_and(|layout| layout.inner() == inner.as_slice())
         });
-        if agree && per_run {
+        if agree {
             Ok(Some(Layout::variable(inner)))
         } else {
             Err(Some(ShapeFault {
@@ -1563,17 +1560,6 @@ impl Engine<'_> {
             None => Some(Layout::fixed(decl.ty.lengths.clone())),
         })
     }
-
-    pub(in crate::semantics::analysis) fn native_returns_array(
-        &self,
-        native: symphonyscript_core::NativeId,
-    ) -> Result<bool, Internal> {
-        let decl = self
-            .vocabulary
-            .native(native)
-            .ok_or(Internal::missed("native function"))?;
-        Ok(native_layout(&decl.signature.result).is_some())
-    }
 }
 
 enum Step {
@@ -1603,9 +1589,10 @@ fn fault(fault: Option<ShapeFault>) -> LayoutFound {
 }
 
 fn arms_agree(layouts: &[Option<Layout>]) -> bool {
-    let inner = |layout: &Option<Layout>| layout.as_ref().map(|layout| layout.inner().to_vec());
-    let first = layouts.first().map(inner).unwrap_or_default();
-    layouts.iter().all(|layout| inner(layout) == first)
+    let depth =
+        |layout: &Option<Layout>| layout.as_ref().map_or(0, |layout| layout.inner().len() + 1);
+    let first = layouts.first().map_or(0, depth);
+    layouts.iter().all(|layout| depth(layout) == first)
 }
 
 const LENGTH: &str = "an array's length and capacity are below 2³¹";
