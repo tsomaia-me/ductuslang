@@ -2,11 +2,24 @@ mod support;
 
 use symphonyscript::{Code, Compiler, Diagnostic, Source};
 use symphonyscript_fixtures::{
-    Project, dsp_project, music_project, pending_spec_examples, spec_projects, vocabulary,
+    Project, ProjectFile, dsp_project, music_project, pending_spec_examples, spec_projects,
+    vocabulary,
 };
 
+const DECLARATIONS: &str = "input root = 60\nlet step = 4\nlet span = step * 3\nlet lift = span + 1\nfn up(x): x + step\nfn twice(x): up(up(x))\nfn shifted(x, by): x + by\nlet top = twice(span)\nClip c:\n    Note/(twice(root) + shifted(lift, top))\n";
+
 fn projects() -> Vec<Project> {
-    let mut projects = vec![music_project(), dsp_project()];
+    let mut projects = vec![
+        music_project(),
+        dsp_project(),
+        Project {
+            name: "declarations".to_string(),
+            files: vec![ProjectFile {
+                path: "declarations.sym".to_string(),
+                text: DECLARATIONS.to_string(),
+            }],
+        },
+    ];
     let pending = pending_spec_examples();
     projects.extend(
         spec_projects()
@@ -113,7 +126,7 @@ fn a_second_declaration_of_a_name_is_exactly_one_duplicate_error() {
             }
         }
     }
-    assert!(cases > 10, "{cases} declarations duplicated");
+    assert!(cases > 20, "{cases} declarations duplicated");
 }
 
 #[test]
@@ -150,7 +163,7 @@ fn a_value_passed_through_a_function_keeps_its_meaning() {
             .collect();
         assert_eq!(errors(&wrapped), vec![], "{}", project.name);
     }
-    assert!(wraps > 3, "{wraps} values wrapped");
+    assert!(wraps > 5, "{wraps} values wrapped");
 }
 
 fn orders(sources: &[Source]) -> Vec<Vec<Source>> {
