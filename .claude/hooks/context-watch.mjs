@@ -4,7 +4,7 @@ import path from 'node:path';
 import { isEntryPoint, NOTE_ADVISED_CHARACTERS, parseLine, readStdin, sessionFolder } from './shared.mjs';
 
 export const TAIL_BYTES = 262144;
-const NOTE_ROOM_TOKENS = 25000;
+const NOTE_ROOM_TOKENS = 60000;
 const OUTPUT_RESERVE_TOKENS = 20000;
 const COMPACT_BUFFER_TOKENS = 13000;
 const STATE_FILE = 'context-watch.json';
