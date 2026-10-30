@@ -1,0 +1,23 @@
+Session main:
+    Includes: keys
+Track keys:
+    Piano
+    Starts: melody
+Clip melody:
+    Note/60
+#expect
+----
+let x = 1
+let x = 2
+Session main:
+    Includes: keys
+Track keys:
+    Piano
+    Starts: melody
+Clip melody:
+    Note/(x)
+#expect duplicate-name
+----
+Clip c | three=([1]):
+    Note
+#expect no-entry-instance unknown-attribute
