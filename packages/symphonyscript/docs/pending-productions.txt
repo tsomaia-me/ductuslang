@@ -27,6 +27,7 @@ CellDecl
 CellWord
 Init
 Result
+Marker
 PatternItem
 PlacementType
 PlacementEntry

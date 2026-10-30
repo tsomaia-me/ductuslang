@@ -47,7 +47,7 @@ Examples are fenced blocks tagged by what they hold: `sym` for a program, `sym-e
 | `Synth` | yes | none | `Osc`, `Filter`, `Mixer`, `Output` |
 | `Osc` | yes | `freq: f64 = 440` (default), `wave: Wave = Sine`, `rate: f32 = 1` | none |
 | `Filter`, `Mixer`, `Output` | yes | `Filter` has `cutoff: f32 = 1000` (default) | none |
-| `Pad` | yes | `hit: Hit` (default; takes an input), `gain: f32 = 1` | none |
+| `Pad` | yes | `hit: Hit` (default; takes `out state`), `gain: f32 = 1` | none |
 
 | Wire kind | From → to | Attributes (the default attribute marked "default") | Cyclic |
 |---|---|---|---|
@@ -863,8 +863,9 @@ This is an error: `fib` is recursive, and its argument reads the cell `n`; the h
 ```ebnf
 PatternDecl    ::= 'pattern' Name GenericParams? '(' PatternParams? ')' ('->' PlacementType)? ':' NEWLINE INDENT PatternItem* BodyItem+ DEDENT
 PatternParams  ::= PatternParam (',' PatternParam)*
-PatternParam   ::= 'default'? ('input' | 'const')? Name (':' Type)? ('=' Expr)?
+PatternParam   ::= 'default'? Marker? Name (':' Type)? ('=' Expr)?
                  | 'children' Name ':' PlacementType
+Marker         ::= 'const' | 'out' | 'out'? ('cell' | 'state' | 'stream' | 'channel')
 PatternItem    ::= CellDecl | LocalLet
 PlacementType  ::= PlacementEntry | '(' PlacementEntry (',' PlacementEntry)* ')'
 PlacementEntry ::= (Name | 'node' | 'wire' | '[' PlacementEntry ']') ('+' | '*' | '{' Count '}')?
@@ -876,7 +877,18 @@ A pattern is a named declaration of placements with parameters and a type. A use
 - Patterns are declared at top level. The body holds its declaration lines first, cells and `let`s in any order, then any body items (§7.1). Each expansion has its own cells and `let`s, visible throughout the body. A cell of a use is an ordinary cell of the Program (§11), named by the use's path (§11.1): `Voice as low` with `state gain(1.0)` in the pattern yields the cell `low.gain` under the use's parent, one per use, and one per iteration inside a `for`, and a host-fed one is the host's handle. A cell's init is a compile-time value that may read the pattern's compile-time parameters; a derived cell's rule may read the pattern's cells, parameters and `let`s. Two parameters or two declarations with one name, or a declaration named like a parameter, are an error.
 - A pattern is used with placement syntax, or with wire syntax when it stands in for a wire. The attribute clause supplies parameters in every entry form of §7.6, so `name` and `!name` supply a `bool` parameter, and `/expr` supplies the parameter marked `default`, of which there is at most one and which the clause may supply by name instead. `/expr` on a pattern without a `default` parameter is an error. Supplying a parameter twice is an error, and so is omitting a parameter that has no default value. A use carries no flags, and a body only for `children` parameters.
 - A use is replaced by the body's placements at the use's position, with each parameter bound to its argument as in a function call (§6.3), and the result is checked in place. Parameters are typed as a function's are (§6.3); a parameter's annotation fixes its type (§4.5), and a node kind or a wire kind there names a reference, `Osc[3]` three of them. An argument that needs an expected type, such as a bare variant in `Voice | shape=Saw`, takes it from the parameter's annotation or from the parameter's uses in the body. An argument may be a value, a cell or a value that reads cells, a reference (§3.5) or an array of references.
-- A parameter may state the binding it takes. `input` requires an argument that names an input, directly or through a parameter or a `let` that names one; `const` requires a compile-time argument; an argument of another kind is an error at the use naming the parameter. `default` marks the parameter `/expr` supplies. The words stand in the grammar's order; `input` with `const` on one parameter is an error, and an `input` parameter's default value names an input.
+- A parameter may carry a marker, which states what it accepts; the author writes it, and the compiler infers none from the body. A kind word accepts the cells of that kind, host-fed or derived, and a compile-time value, which widens into it; `out` before a kind word accepts a host-fed cell of exactly that kind, and `out` alone a host-fed cell of any kind. An argument the marker refuses is an error at the use naming the parameter and the marker. `default` marks the parameter `/expr` supplies. The words stand in the grammar's order, and a marked parameter's default value is one its marker accepts. A history read of a parameter (§6.6) stands under any marker but `const`.
+
+| marker | accepts |
+|---|---|
+| none | anything: a compile-time value, a reference, a cell |
+| `const` | a compile-time value, a reference among them |
+| `cell` | any cell, or a compile-time value a cell can hold; never a node, wire or function reference |
+| `state` | a `state`, or a compile-time value; never a `stream` or a `channel`, whose equal arrivals it would collapse |
+| `stream` | a `stream` or a `channel`, a channel being a stream that forgets nothing, or a compile-time value; never a `state` |
+| `channel` | a `channel`, or a compile-time value |
+| `out` | a host-fed cell of any kind; never a compile-time value or a derived cell |
+| `out state`, `out stream`, `out channel` | a host-fed cell of that kind and no other, because the writer's code depends on the buffer behind it |
 - A placement type lists entries with counts. An entry is a node kind, a wire kind, `node` for any node kind, `wire` for any wire kind, a pattern's name, meaning a use of that pattern, which stands only in a `children` parameter's type, or a bundle `[…]` of one node entry (§7.8). A count follows it: none for exactly one, `+` one or more, `*` zero or more, `{3}` exactly three, `{2+}` two or more, `{..4}` at most four, `{2..4}` two to four, both included. A single entry is written bare; a list is parenthesized.
 - A pattern's type is what a use places. A pattern whose body is a single node or wire placement, or a single use of such a pattern, stands in for that placement: its type is that kind, written bare; a use creates that one instance or wire, and the use's name becomes its name, replacing any `as` name the placement has. Only node stand-ins appear at top level. A stand-in wire placement writes no destination: the use writes it after the colon, as a wire placement does (§8.1), and `to` in the pattern's wire reads it (§8.3); a destination written in the pattern is an error. Every other pattern is a group, whose type is parenthesized and lists what the body places, one entry per node kind, wire kind and bundle shape in order of first placement, with the tightest count the body fixes: a placement written once counts one, inside a `when` arm too (§9.2); a bundle counts one bundle entry of its members' kind and count; a `for` whose count the declaration fixes counts its iterations, and one whose count depends on a parameter counts zero or more; a nested use counts its pattern's entries, and a `children` parameter its declared type; `(Clip)` is a group placing one `Clip` that does not stand in. A type written after `->` is a contract: the body places exactly the entries it names, each count inside the declared one, or the declaration is an error naming the placement that breaks it; a type the declaration leaves out is inferred.
 - A parameter marked `children` takes placements: the use's body, in ordinary body syntax. A pattern may declare several, naming disjoint entries, or the declaration is an error; a wire pattern declares none; `children` stands with no other modifier. The use's one body is partitioned: each item, after its own expansion, goes to the parameter whose type names the pattern it uses; else, when it is a bundle, to the parameter whose type has a bundle entry its members fit; else to the parameter naming its kind, `node` and `wire` naming every kind; each share keeps its relative order. An item no parameter takes is an error at the use, and so is a share outside its parameter's counts. A use with no body supplies nothing, which fits only counts that allow zero; a body on a use of a pattern without a `children` parameter is an error. The parameter's name written as a line in the pattern body, alone or with a gate, places its share there, once, never inside a `for`: as children of the instance whose body holds the line, at that point of its sequence (§7.3), or at the pattern body's top level, where its type joins the pattern's; the gate gates them. Written as a bundle's member, `[notes]`, it makes one bundle of its share, whose type then holds node entries only and takes no bundle (§7.8). Written as a line in the body of a nested use, it forwards its share to that use, whose own `children` parameters partition it as they partition any use's body. The use's body resolves its names where the use is written, as an argument does (§6.3); its `as` names are reachable through the use's name; a wire among its items has as its source the instance whose body holds the line.
@@ -942,11 +954,11 @@ Clip verse:
     Voice/60 | steps=8
 ```
 
-The Program holds the cells `verse.low.gain` and `verse.Voice:0.gain`. An `input` parameter takes an input the program declares, and `children` parameters take the use's body, split by what each names:
+The Program holds the cells `verse.low.gain` and `verse.Voice:0.gain`. An `out` parameter takes a host-fed cell the program declares, which the body binds with `=>` (§7.6), and `children` parameters take the use's body, split by what each names:
 
 ```sym
-pattern Drum(default input hit: Hit, gain: f32 = 1.0) -> Pad:
-    Pad | hit=hit gain=gain
+pattern Drum(default out state hit: Hit, gain: f32 = 1.0) -> Pad:
+    Pad | hit => hit gain=gain
 
 pattern Section(default root: i32, children notes: Note*, children links: Plays*) -> Clip:
     Clip | gain=0.8:
@@ -955,7 +967,7 @@ pattern Section(default root: i32, children notes: Note*, children links: Plays*
         Plays: intro
         links
 
-state kick_hit({}): Hit
+state kick_hit(Hit {})
 
 Drum kick /kick_hit | gain=0.9
 
@@ -1348,12 +1360,13 @@ Atom       ::= '-'? NumberLit | BoolLit | StringLit | Name ('.' Name)* | Name ':
 
 ```ebnf
 Attrs     ::= '|' AttrEntry+
-AttrEntry ::= Name '=' Expr | Name | '!' Name
+AttrEntry ::= Name '=' Expr | Name '=>' Name | Name | '!' Name
 ```
 
 A single `|` opens the attribute clause, its first entry follows the `|` on the same line, and entries are separated by whitespace.
 
 - `name=expr` sets an attribute.
+- `name => cell` binds an attribute that takes a host-fed cell (§10.1) to one: `cell` names a host-fed cell of the kind the attribute takes, directly or through a parameter or a `let` that names one, and the framework writes the cell through the attribute (§12.1). `=` on such an attribute, and `=>` on an attribute that takes a value or a constant, are errors.
 - `name` sets a `bool` attribute to `true`; `!name` sets it to `false`.
 - Setting an attribute twice, by any combination of entries, flags and `/expr`, is an error.
 - Setting an attribute the kind does not declare is an error, and so is leaving unset an attribute the vocabulary gives no default (§10.1).
@@ -1597,23 +1610,23 @@ An instance or wire is active when its own gate, the conditions of the `when` bl
 |---|---|
 | Node kind | name; attributes; whether it may stand at top level, and how many; accepted child kinds, and how many of each; how many incoming and outgoing wires of each wire kind it takes; whether it is an entry kind |
 | Wire kind | name; allowed source and destination kinds; attributes; whether it may form cycles |
-| Attribute | name; type; default; unit family and default unit; flag character; whether it is its kind's default attribute; the binding it takes: any value, an input or a constant |
+| Attribute | name; type; default; unit family and default unit; flag character; whether it is its kind's default attribute; the binding it takes: any value, a constant, or a host-fed cell of a kind or of any kind, with the least capacity its writer needs for a `stream` or a `channel` |
 | Enum | name; variants |
 | Unit family | name; base unit; units and their scales |
 | Identity | the vocabulary's name and its version (§15.8) |
 | Prelude | functions, patterns, record types and named values such as note names, in SymphonyScript source, and native functions, implemented in Rust |
 
-A count is exactly *n*, at least *n*, at most *n*, between *n* and *m*, or any number. A child kind absent from a kind's accepted list is not accepted. A wire kind connects only the source and destination kinds it lists; a node kind bounds how many wires of each kind it takes, and takes any number where it states no count. Each kind has at most one default attribute, and its flag characters are distinct. An attribute takes any value unless it states otherwise. An attribute that takes an input has no default, and a program binds it to an input (§10.2); an attribute that takes a constant is bound to a compile-time value. A record attribute names a record type the prelude declares, or takes a record of any type, whose type the bound value supplies; a string attribute states a capacity (§3.3) or takes compile-time strings only. A map attribute names its key and value types and its capacity (§3.10); a document attribute names its budget, or takes any document, whose budget the bound value supplies (§3.11). A sum is never an attribute's type (§3.9).
+A count is exactly *n*, at least *n*, at most *n*, between *n* and *m*, or any number. A child kind absent from a kind's accepted list is not accepted. A wire kind connects only the source and destination kinds it lists; a node kind bounds how many wires of each kind it takes, and takes any number where it states no count. Each kind has at most one default attribute, and its flag characters are distinct. An attribute takes any value unless it states otherwise. An attribute that takes a host-fed cell names the kind it takes, `state`, `stream` or `channel`, or any kind, the same sets as §6.4's `out` markers; it has no default, and a program binds it with `=>` (§7.6, §10.2). One that takes a `stream` or a `channel` states the least pending capacity its writer needs, and a cell with a smaller capacity is refused at the binding (§6.1). An attribute that takes a constant is bound to a compile-time value. A record attribute names a record type the prelude declares, or takes a record of any type, whose type the bound value supplies; a string attribute states a capacity (§3.3) or takes compile-time strings only. A map attribute names its key and value types and its capacity (§3.10); a document attribute names its budget, or takes any document, whose budget the bound value supplies (§3.11). A sum is never an attribute's type (§3.9).
 
 A vocabulary is invalid, and no program compiles against it, when:
 
-- a name it declares is not an ASCII identifier (§2.4), or is a keyword or reserved word (§2.5), a built-in name (§5.7) or a variant of one of its enums;
+- a name it declares is not an ASCII identifier (§2.4), or is a variant of one of its enums, or, for anything but an attribute, is a keyword or reserved word (§2.5), an attribute's name standing only in member positions;
 - two of its node kinds, wire kinds, enums and unit families share a name, a node kind or wire kind declares two attributes of one name, or an enum declares two variants of one name;
 - a kind has two default attributes, two of its attributes share a flag character, or a flag character is outside the set of §7.4 or flags an attribute that is not `bool`;
 - a count's minimum exceeds its maximum;
 - a declaration refers to a kind of another vocabulary;
 - an enum has no variants or more than 65,536, or an enum attribute's default is not one of its variants;
-- an attribute that takes an input has a default, a record attribute names a type the prelude does not declare, or a string, map or document attribute states a capacity or budget of 0;
+- an attribute that takes a host-fed cell has a default or states a capacity of 0, a record attribute names a type the prelude does not declare, or a string, map or document attribute states a capacity or budget of 0;
 - an array attribute, a native parameter or a native result has a length or capacity of 0 at any level, or of 2³¹ or more (§3.2);
 - a unit's scale is not a positive finite number, a unit name repeats, within a family or across families, an attribute's default unit is not in its family, or a unit name begins with `_`, or with `x` and a hexadecimal digit, `b` and a binary digit, `o` and an octal digit, or `e` or `E` and a digit or sign (§2.6);
 - an integer attribute belongs to a family with a unit whose scale is not an integer;
@@ -1621,7 +1634,7 @@ A vocabulary is invalid, and no program compiles against it, when:
 - the prelude fails to parse or to resolve its names;
 - its version is not a version (§15.7).
 
-The prelude's source is ordinary source compiled with the program, and the prelude is a library, the framework's, that reaches programs as §15.6 says. It holds `input`, `let`, `fn`, `pattern` and `type` declarations only, beside its package file (§15.2), and its declarations and native functions share its own namespace (§6.5). A prelude input is the framework's: the framework states its type, its capacity and its default, as `input path: str[..2048] = ""`. A project never changes a prelude input; a framework that leaves a value to the project takes it as an `input` parameter (§6.4). It is parsed and resolved once per vocabulary; its declarations are type-checked where programs use them, and an error found there is a program error located in the prelude. A program's declaration with a prelude name shadows it in the program's package (§15.6). Prelude bodies see only prelude declarations, the vocabulary's names and the built-ins, so source declarations never change them.
+The prelude's source is ordinary source compiled with the program, and the prelude is a library, the framework's, that reaches programs as §15.6 says. It holds cell, `let`, `fn`, `pattern` and `type` declarations only, beside its package file (§15.2), and its declarations and native functions share its own namespace (§6.5). A prelude cell is the framework's: the framework states its type, its capacity and its init, as `state path(""): str[..2048]`. A project never changes a prelude cell; a framework that leaves a value to the project takes it as an `out` parameter (§6.4). It is parsed and resolved once per vocabulary; its declarations are type-checked where programs use them, and an error found there is a program error located in the prelude. A program's declaration with a prelude name shadows it in the program's package (§15.6). Prelude bodies see only prelude declarations, the vocabulary's names and the built-ins, so source declarations never change them.
 
 A native function is a prelude function the vocabulary implements in Rust. Its declaration gives its name and its signature: the bracket parameters it takes (§6.8), and the type of each parameter and of its result, each a type of §3, where an array parameter may leave its capacity open, written `i32[..]`, and a variable-array result states its capacity as a number or as the capacity of one array parameter; the array result of a native function that runs only at compile time is a fixed array of the length it yields. Its parameters and result take plain values (§3.6). A parameter may be a function type (§6.7), whose argument is a function reference. A call reads each argument in its parameter's type as a fixed-type position does (§4.2, §4.3). A call whose arguments are all compile-time values, a function reference among them when its body reads no cell, is evaluated by the compiler, and any other call runs at runtime; a string parameter is written `str[..N]` or, open, `str[..]`, and a string result states its capacity as an array result does (§3.3). A native function calls a function reference it receives with argument values of the function type's parameter types, and each call runs the referenced body with its parameters bound to them and yields its value: the compiler runs it when it evaluates the call, and the runtime when it runs the call, the native function writing its result into the buffer the runtime provides. A lambda whose body calls a native function with a lambda of its own nests that call in the outer one; the depth of this nesting is fixed by the expressions and counts toward the nesting limit (§6.3), which the compiler checks, so a call at runtime never passes it. A native function is pure and total: it yields the same value for the same arguments on every target, allocates nothing and never fails. The vocabulary's author upholds this, a native function that takes a lambda included, so how many times it calls the lambda is its author's; the compiler and the runtime rely on it.
 
@@ -1636,20 +1649,20 @@ The compiler checks the expanded program (§6.4) against the vocabulary:
 - A wire whose destination is chosen at runtime counts toward the maximum of every candidate and toward the minimum of none.
 - Gated placements and wires count as ungated ones do, because a gate varies activation and never structure (§9.2): `when a: Output` followed by `else: Output` holds two `Output`s, and a gated wire counts toward its destination's minimum.
 - Every attribute value has the attribute's type and unit family.
-- Every attribute that takes an input is bound to an input, directly or through a parameter or a `let` that names one, and no input is bound to two such attributes; every attribute that takes a constant is bound to a compile-time value. A record attribute is bound to a value of its type, or, where it takes any record type, to a record.
+- Every attribute that takes a host-fed cell is bound with `=>` to a host-fed cell of the kind it names, directly or through a parameter or a `let` that names one, whose capacity is at least the one the attribute states; one cell may be bound to any number of attributes. Every attribute that takes a constant is bound to a compile-time value. A record attribute is bound to a value of its type, or, where it takes any record type, to a record.
 - Wires form cycles only as §8.4 allows.
 
 ```sym
-state hit({}): Hit
+state hit(Hit {})
 
-Pad kick | hit=hit
+Pad kick | hit => hit
 ```
 
 ```sym-error
-Pad kick | hit={}
+Pad kick | hit=Hit {}
 ```
 
-This is an error: `hit` takes an input, and `{}` is a constant.
+This is an error: `hit` takes a host-fed cell, bound with `=>`, and `Hit {}` is a constant.
 
 A top-level instance that no entry-kind instance reaches, through children and through wires to any candidate, draws a warning. A program with no entry-kind instance draws one warning that says so instead, and a vocabulary with no entry kind draws none.
 
