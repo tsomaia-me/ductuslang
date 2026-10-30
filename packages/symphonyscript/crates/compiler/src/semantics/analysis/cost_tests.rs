@@ -736,6 +736,48 @@ fn stress_a_for_expression_over_a_variable_array_costs_check_work_linear_in_its_
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
 
+fn nested_bodies(depth: usize, start: &str) -> String {
+    let mut value = String::from("0");
+    for level in (0..depth).rev() {
+        value = format!(
+            "(for x{level} in [1] into a{level} from {start}: a{level} + x{level} + {value})"
+        );
+    }
+    format!("let v = {value}\nClip c:\n    Note/([0][v])\n")
+}
+
+fn nesting_failures(sizes: [usize; 3]) -> Vec<String> {
+    let compiler = Compiler::new(&vocabulary()).expect("the vocabulary compiles");
+    let texts = sizes.map(|depth| nested_bodies(depth, "0"));
+    let runs = texts.each_ref().map(|text| measured(&compiler, text));
+    let mut failures = Vec::new();
+    for (index, (counter, _)) in runs[0].counts.iter().enumerate() {
+        let points = [0, 1, 2].map(|run| {
+            (
+                u64::try_from(texts[run].len()).unwrap_or(u64::MAX),
+                runs[run].counts.get(index).map_or(0, |(_, count)| *count),
+            )
+        });
+        if !linear(points) {
+            failures.push(format!("{counter} {:?}", points.map(|(_, count)| count)));
+        }
+    }
+    failures
+}
+
+#[test]
+fn for_expressions_nested_in_their_bodies_resolve_each_body_once() {
+    let failures = nesting_failures([50, 100, 200]);
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+#[test]
+#[ignore = "stress"]
+fn stress_for_expressions_nested_in_their_bodies_cost_work_linear_in_their_depth() {
+    let failures = nesting_failures([1_000, 2_000, 4_000]);
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Chain {
     ScalarAlias,

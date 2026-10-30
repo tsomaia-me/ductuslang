@@ -42,6 +42,7 @@ pub(super) struct Checker<'a> {
     variants: &'a Variants,
     namespace: &'a Namespace,
     frames: Vec<Frame>,
+    framed: BTreeSet<String>,
     unknown_bodies: BTreeSet<BlockId>,
     in_state: bool,
     in_destination: bool,
@@ -63,6 +64,7 @@ impl<'a> Checker<'a> {
             variants,
             namespace,
             frames: Vec::new(),
+            framed: BTreeSet::new(),
             unknown_bodies: BTreeSet::new(),
             in_state: false,
             in_destination: false,
@@ -342,6 +344,7 @@ impl<'a> Checker<'a> {
         parent: Option<usize>,
         kind: FrameKind,
     ) -> usize {
+        self.framed.extend(names.keys().cloned());
         self.frames.push(Frame {
             names,
             parent,
@@ -397,7 +400,7 @@ impl<'a> Checker<'a> {
     }
 
     fn visible(&self, frame: Option<usize>, name: &str) -> Result<bool, Internal> {
-        let mut current = frame;
+        let mut current = frame.filter(|_| self.framed.contains(name));
         while let Some(index) = current {
             crate::semantics::counted_walk::CountedWalk::CheckerVisible.step();
             let frame = self
@@ -417,7 +420,7 @@ impl<'a> Checker<'a> {
         frame: Option<usize>,
         name: &str,
     ) -> Result<Option<Option<Loc>>, Internal> {
-        let mut current = frame;
+        let mut current = frame.filter(|_| self.framed.contains(name));
         while let Some(index) = current {
             crate::semantics::counted_walk::CountedWalk::CheckerVisibleAt.step();
             let frame = self
@@ -455,7 +458,7 @@ impl<'a> Checker<'a> {
         frame: Option<usize>,
         name: &str,
     ) -> Result<Option<Loc>, Internal> {
-        let mut current = frame;
+        let mut current = frame.filter(|_| self.framed.contains(name));
         while let Some(index) = current {
             crate::semantics::counted_walk::CountedWalk::CheckerEnclosingBodyName.step();
             let frame = self
@@ -476,7 +479,7 @@ impl<'a> Checker<'a> {
     }
 
     fn visible_local(&self, frame: Option<usize>, name: &str) -> Result<Option<Loc>, Internal> {
-        let mut current = frame;
+        let mut current = frame.filter(|_| self.framed.contains(name));
         while let Some(index) = current {
             crate::semantics::counted_walk::CountedWalk::CheckerVisibleLocal.step();
             let frame = self
