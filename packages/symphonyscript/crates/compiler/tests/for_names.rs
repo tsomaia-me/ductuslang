@@ -191,6 +191,19 @@ fn the_names_of_the_spec_bind_and_their_repeats_are_rejected() {
             vec![Code::DuplicateLocal],
         ),
         (
+            "let v = for x: bool in [1, 2] into s from 0: s + 1\nClip c:\n    Note/v\n".to_string(),
+            vec![Code::TypeMismatch],
+        ),
+        (
+            "let v = for x: u8 in [1, 300] into s from 0: s + x\nClip c:\n    Note/v\n".to_string(),
+            vec![Code::DoesNotFit],
+        ),
+        (
+            "let v = for x: f32 in [1, 2] into s from 0: s + x\nClip c:\n    Note | velocity=v\n"
+                .to_string(),
+            vec![],
+        ),
+        (
             format!(
                 "{held}state v = for x: i32 in held into s: i32[..4] from []: s + [x]\nClip c:\n    Note/(v[0])\n"
             ),

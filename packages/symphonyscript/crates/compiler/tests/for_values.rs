@@ -50,11 +50,12 @@ const ITERABLES: [Iterable; 5] = [
     },
 ];
 
-const BODIES: [(&str, &str); 4] = [
+const BODIES: [(&str, &str); 5] = [
     ("0", "s + x"),
     ("[]", "s"),
     ("[]", "s + [x]"),
     ("[]", "(s + [x])[^2..]"),
+    ("0", "s + (for y in [x, x] into t from 0: t + y)"),
 ];
 
 const POSITIONS: [&str; 3] = ["V", "fn f(p): F\nV", "V"];
@@ -62,7 +63,7 @@ const POSITIONS: [&str; 3] = ["V", "fn f(p): F\nV", "V"];
 fn folded(iterable: &Iterable, body: usize) -> Folded {
     let Some(values) = iterable.values else {
         return match body {
-            0 => Folded::Cell,
+            0 | 4 => Folded::Cell,
             1 => Folded::Capacity(0),
             2 => Folded::Capacity(iterable.count),
             _ => Folded::Capacity(iterable.count.min(2)),
@@ -70,6 +71,7 @@ fn folded(iterable: &Iterable, body: usize) -> Folded {
     };
     match body {
         0 => Folded::Sum(values.iter().sum()),
+        4 => Folded::Sum(2 * values.iter().sum::<i128>()),
         1 => Folded::Value(Vec::new()),
         2 => Folded::Value(values.to_vec()),
         _ => Folded::Value(
@@ -230,13 +232,13 @@ fn assert_none_fail((failures, programs): (Vec<String>, usize), expected: usize)
 
 #[test]
 fn a_for_expression_folds_its_iterable_into_the_value_or_the_capacity_its_rules_give() {
-    assert_none_fail(covered(fold_rows), 20);
+    assert_none_fail(covered(fold_rows), 25);
 }
 
 #[test]
 #[ignore = "exhaustive"]
 fn exhaustive_a_for_expression_folds_its_iterable_into_the_value_or_the_capacity_its_rules_give() {
-    assert_none_fail(fold_rows(&Rows::Every), 60);
+    assert_none_fail(fold_rows(&Rows::Every), 75);
 }
 
 #[test]

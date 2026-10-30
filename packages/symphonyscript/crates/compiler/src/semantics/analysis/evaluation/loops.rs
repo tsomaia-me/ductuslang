@@ -10,6 +10,7 @@ use crate::semantics::Internal;
 use crate::semantics::analysis::c_val::CVal;
 use crate::semantics::analysis::engine::Engine;
 use crate::semantics::analysis::eval_ty::EvalTy;
+use crate::semantics::analysis::eval_ty_of::eval_ty_of;
 use crate::semantics::analysis::fast_hash::{FastMap, FastSet};
 use crate::semantics::analysis::for_iterable::ForIterable;
 use crate::semantics::analysis::for_node::ForNode;
@@ -57,12 +58,24 @@ impl Engine<'_> {
             }
             ForIterable::Values(values) => {
                 let sig = some!(self.sig(values, need));
-                let ty = if sig.kind == Kind::Int && sig.width == Width::Flexible {
+                let element = for_node.element.map(|slot| self.slot(slot)).transpose()?;
+                let annotated = element.and_then(|slot| match (slot.annotated, slot.sig.width) {
+                    (true, Width::Fixed(scalar)) => Some(eval_ty_of(Some(scalar))),
+                    _ => None,
+                });
+                let ty = if let Some(annotated) = annotated {
+                    annotated
+                } else if sig.kind == Kind::Int && sig.width == Width::Flexible {
                     EvalTy::Exact
                 } else {
                     own_type(&sig, EvalTy::Default)
                 };
-                match some!(self.child(values, ty, ctx, need)?) {
+                let value = some!(self.child(values, ty, ctx, need)?);
+                let value = match annotated {
+                    Some(annotated) => self.fit(values, value, annotated)?,
+                    None => value,
+                };
+                match value {
                     CVal::Array(array) => LoopItems::Array(array),
                     CVal::Int(_)
                     | CVal::F32(_)

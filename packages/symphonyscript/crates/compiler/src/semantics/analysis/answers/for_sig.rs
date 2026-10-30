@@ -46,7 +46,7 @@ impl Engine<'_> {
         &self,
         for_node: &ForNode,
     ) -> Result<bool, Internal> {
-        let own: Vec<SlotId> = [for_node.index, for_node.element, Some(for_node.accumulator)]
+        let mut own: Vec<SlotId> = [for_node.index, for_node.element, Some(for_node.accumulator)]
             .into_iter()
             .flatten()
             .collect();
@@ -61,6 +61,13 @@ impl Engine<'_> {
                 continue;
             }
             let op = &self.node(node)?.op;
+            if let Op::For(inner) = op {
+                own.extend(
+                    [inner.index, inner.element, Some(inner.accumulator)]
+                        .into_iter()
+                        .flatten(),
+                );
+            }
             if matches!(op, Op::Arg(_)) {
                 return Ok(true);
             }

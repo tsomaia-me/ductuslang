@@ -54,6 +54,24 @@ impl Engine<'_> {
         let Some(head) = some!(self.loop_head(for_expr, scope, need)?) else {
             return Ok(Some(Val::Error));
         };
+        let element_name = match for_expr.names.as_slice() {
+            [one] => Some(one),
+            [_, element, ..] => Some(element),
+            [] => None,
+        };
+        if let Some(var) = element_name
+            && let Some(name) = &var.name
+            && let Some((fixed, _)) = var.ty.as_ref().and_then(|ty| self.loop_annotation(ty))
+            && !holds_annotated(head.element.0.kind, fixed.kind)
+        {
+            self.error(
+                Code::TypeMismatch,
+                name.loc,
+                scope,
+                "the elements do not have the loop name's annotated type; a conversion states the rounding",
+            )?;
+            return Ok(Some(Val::Error));
+        }
         let annotated = match &for_expr.accumulator_ty {
             Some(ty) => match self.loop_annotation(ty) {
                 Some(fixed) => Some(fixed),
@@ -338,7 +356,7 @@ impl Engine<'_> {
             layout: element_type.1,
             capacity: None,
             source,
-            annotated: false,
+            annotated: element_name.is_some_and(|var| var.ty.is_some()),
         });
         let index = match for_expr.names.as_slice() {
             [index, _, ..] => {
@@ -545,3 +563,9 @@ const RANGE_NAMES: &str =
 
 const LAYOUTS: &str =
     "the start and the body of a `for` expression hold arrays of different shapes";
+
+fn holds_annotated(element: Kind, annotated: Kind) -> bool {
+    element == annotated
+        || matches!(element, Kind::Any | Kind::Error | Kind::Bare)
+        || element == Kind::Int && annotated == Kind::Float
+}
