@@ -1,1 +1,1 @@
-pub const RESERVED_WORDS: &[&str] = &["from", "recurrent", "string"];
+pub const RESERVED_WORDS: &[&str] = &["recurrent", "string"];

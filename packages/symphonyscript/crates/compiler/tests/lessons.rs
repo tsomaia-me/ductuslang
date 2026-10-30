@@ -87,7 +87,7 @@ fn every_code_has_a_lesson_that_names_its_code_and_its_section() {
             assert!(lesson.contains(&format!("(SPEC §{section})")), "{code}");
         }
         let examples = examples(lesson);
-        if *code == Code::InternalError {
+        if matches!(code, Code::InternalError | Code::UnbuiltConstruct) {
             assert!(examples.is_empty(), "{code}");
             continue;
         }

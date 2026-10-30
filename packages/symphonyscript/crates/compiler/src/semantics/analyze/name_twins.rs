@@ -123,7 +123,14 @@ fn twin_run(
     if !parsed.diagnostics.is_empty() {
         return None;
     }
-    build_file(&mut twin, path, &parsed, analysis.vocabulary).ok()?;
+    build_file(
+        &mut twin,
+        path,
+        &parsed,
+        analysis.vocabulary,
+        &mut Report::default(),
+    )
+    .ok()?;
     let mut report = Report::default();
     program(
         &twin,

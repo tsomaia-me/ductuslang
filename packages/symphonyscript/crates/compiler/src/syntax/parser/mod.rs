@@ -4,6 +4,7 @@ mod checkpoint;
 mod cost;
 mod expressions;
 mod items;
+mod loops;
 mod placements;
 mod starts_line;
 mod task;
@@ -39,6 +40,7 @@ pub(crate) struct Parser<'a> {
     detached: Vec<Range<u32>>,
     stray_reports: Vec<usize>,
     line_error: bool,
+    block_ended: bool,
     previous_line_error: bool,
     tasks: Vec<Task>,
 }
@@ -56,6 +58,7 @@ impl<'a> Parser<'a> {
             detached: Vec::new(),
             stray_reports: Vec::new(),
             line_error: false,
+            block_ended: false,
             previous_line_error: false,
             tasks: Vec::new(),
         }
@@ -211,6 +214,19 @@ impl<'a> Parser<'a> {
             Task::BundleForMembers { members } => self.bundle_for_members(members),
             Task::BundleEnd { members } => self.bundle_end(members),
             Task::Expr => self.expr(),
+            Task::WholeExpr { own_line } => self.whole_expr(own_line),
+            Task::ParenValue => self.paren_value(),
+            Task::ForExpr { own_line } => self.for_expr(own_line),
+            Task::ForExprInto {
+                checkpoint,
+                own_line,
+            } => self.for_expr_into(checkpoint, own_line),
+            Task::ForExprColon {
+                checkpoint,
+                own_line,
+            } => self.for_expr_colon(checkpoint, own_line),
+            Task::ForExprLets => self.for_expr_lets(),
+            Task::ForExprBlockEnd => self.for_expr_block_end(),
             Task::IfExpr => self.if_expr(),
             Task::IfThen => self.if_then(),
             Task::IfElse => self.if_else(),
@@ -455,6 +471,7 @@ impl<'a> Parser<'a> {
     }
 
     fn bump(&mut self) {
+        self.block_ended = false;
         self.flush_trivia();
         let Some(kind) = self.kind_at(self.pos) else {
             return;
@@ -808,7 +825,11 @@ impl<'a> Parser<'a> {
     }
 
     fn finish_line(&mut self, code: Code) {
-        if self.eat(SyntaxKind::Newline) || self.at_end() || self.at(SyntaxKind::Dedent) {
+        if self.block_ended
+            || self.eat(SyntaxKind::Newline)
+            || self.at_end()
+            || self.at(SyntaxKind::Dedent)
+        {
             return;
         }
         let found = self.describe();

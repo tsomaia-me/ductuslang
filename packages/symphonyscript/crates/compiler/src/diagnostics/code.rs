@@ -40,6 +40,7 @@ codes!(
     ExpressionSyntax,
     ChainedComparison,
     UnparenthesizedIf,
+    UnparenthesizedFor,
     MatchSyntax,
     MatchPosition,
     MixedArguments,
@@ -157,6 +158,7 @@ codes!(
     UnreachableInstance,
     NoEntryInstance,
     InternalError,
+    UnbuiltConstruct,
 );
 
 impl Code {
@@ -186,6 +188,7 @@ impl Code {
             Code::ExpressionSyntax => "expression-syntax",
             Code::ChainedComparison => "chained-comparison",
             Code::UnparenthesizedIf => "unparenthesized-if",
+            Code::UnparenthesizedFor => "unparenthesized-for",
             Code::MatchSyntax => "match-syntax",
             Code::MatchPosition => "match-position",
             Code::MixedArguments => "mixed-arguments",
@@ -303,6 +306,7 @@ impl Code {
             Code::UnreachableInstance => "unreachable-instance",
             Code::NoEntryInstance => "no-entry-instance",
             Code::InternalError => "internal-error",
+            Code::UnbuiltConstruct => "unbuilt-construct",
         }
     }
 
@@ -442,7 +446,8 @@ impl Code {
             Code::UnboundedState => "6.6",
             Code::CapacityExceeded => "3.7",
             Code::CompileTimeNative => "10.1",
-            Code::InternalError => return None,
+            Code::UnparenthesizedFor => "5.10",
+            Code::InternalError | Code::UnbuiltConstruct => return None,
         };
         Some(section)
     }
@@ -484,6 +489,7 @@ impl Code {
             | Code::ExpressionSyntax
             | Code::ChainedComparison
             | Code::UnparenthesizedIf
+            | Code::UnparenthesizedFor
             | Code::MatchSyntax
             | Code::MatchPosition
             | Code::MixedArguments
@@ -597,7 +603,8 @@ impl Code {
             | Code::UnboundedState
             | Code::CapacityExceeded
             | Code::CompileTimeNative
-            | Code::InternalError => Severity::Error,
+            | Code::InternalError
+            | Code::UnbuiltConstruct => Severity::Error,
         }
     }
 }

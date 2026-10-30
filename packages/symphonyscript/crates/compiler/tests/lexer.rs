@@ -219,21 +219,17 @@ fn identifiers_take_xid_characters_and_hash() {
 fn keywords_are_their_own_tokens() {
     assert_eq!(
         clean(
-            "input let fn pattern default if then else match when for in as is not and or div to true false i32 i64 f32 f64 bool"
+            "input let fn pattern default if then else match when for in into from as is not and or div to true false i32 i64 f32 f64 bool"
         ),
-        "InputKw _ LetKw _ FnKw _ PatternKw _ DefaultKw _ IfKw _ ThenKw _ ElseKw _ MatchKw _ WhenKw _ ForKw _ InKw _ AsKw _ IsKw _ NotKw _ AndKw _ OrKw _ DivKw _ ToKw _ TrueKw _ FalseKw _ I32Kw _ I64Kw _ F32Kw _ F64Kw _ BoolKw NL"
+        "InputKw _ LetKw _ FnKw _ PatternKw _ DefaultKw _ IfKw _ ThenKw _ ElseKw _ MatchKw _ WhenKw _ ForKw _ InKw _ IntoKw _ FromKw _ AsKw _ IsKw _ NotKw _ AndKw _ OrKw _ DivKw _ ToKw _ TrueKw _ FalseKw _ I32Kw _ I64Kw _ F32Kw _ F64Kw _ BoolKw NL"
     );
 }
 
 #[test]
 fn reserved_words_are_errors() {
     assert_eq!(
-        diagnostics("from recurrent string strings"),
-        vec![
-            (Code::ReservedWord, 0, 4),
-            (Code::ReservedWord, 5, 14),
-            (Code::ReservedWord, 15, 21),
-        ]
+        diagnostics("recurrent string strings from"),
+        vec![(Code::ReservedWord, 0, 9), (Code::ReservedWord, 10, 16),]
     );
 }
 

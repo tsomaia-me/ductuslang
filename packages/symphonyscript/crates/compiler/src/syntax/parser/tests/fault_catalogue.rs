@@ -75,7 +75,7 @@ const TOKEN_FAULTS: &[(Code, Hole, &str)] = &[
     ),
     (Code::MisplacedUnderscore, Number, "1⟦_⟧"),
     (Code::InvalidIdentifier, Name, "⟦__⟧"),
-    (Code::ReservedWord, Name, "⟦from⟧"),
+    (Code::ReservedWord, Name, "⟦recurrent⟧"),
     (Code::InvalidEscape, Text, "\"a⟦\\q⟧b\""),
     (Code::UnexpectedCharacter, Stray, "⟦&⟧"),
     (Code::MisplacedCaret, Stray, "⟦^⟧"),

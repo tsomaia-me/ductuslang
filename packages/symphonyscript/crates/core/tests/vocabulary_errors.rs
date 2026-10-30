@@ -42,7 +42,15 @@ fn names_must_be_ascii_identifiers() {
 
 #[test]
 fn names_must_not_be_keywords_or_reserved_words() {
-    for name in ["input", "match", "bool", "from", "recurrent", "string"] {
+    for name in [
+        "input",
+        "match",
+        "bool",
+        "into",
+        "from",
+        "recurrent",
+        "string",
+    ] {
         let mut v = Vocabulary::builder("v");
         let note = v.node("Note");
         v.kind(note).attr::<i32>(name);

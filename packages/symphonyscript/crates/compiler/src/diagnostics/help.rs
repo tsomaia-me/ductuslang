@@ -49,6 +49,9 @@ pub(super) fn help(code: Code) -> Option<&'static str> {
         Code::UnexpectedIndent => "indent a line only under a line that opens a block",
         Code::ChainedComparison => "join the comparisons with `and`, as in `a < b and b < c`",
         Code::UnparenthesizedIf => "parenthesize the `if`",
+        Code::UnparenthesizedFor => {
+            "parenthesize the `for` expression, as in `1 + (for x in held into sum from 0: sum + x)`"
+        }
         Code::MatchPosition => "make the `match` the whole value of a `let`",
         Code::MixedArguments => "pass every argument by position or every one by name",
         Code::ConversionSyntax => "parenthesize the converted value, as in `i32(x)`",
@@ -239,5 +242,6 @@ pub(super) fn help(code: Code) -> Option<&'static str> {
         }
         Code::NoEntryInstance => "place an instance of an entry kind, as in `Session s`",
         Code::InternalError => "report the compiler defect with the program that drew it",
+        Code::UnbuiltConstruct => "write the program without the construct the summary names",
     })
 }

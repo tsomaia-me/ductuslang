@@ -31,7 +31,10 @@ fn every_code_names_a_section_of_the_spec() {
     for code in Code::ALL {
         match code.section() {
             Some(section) => assert!(sections.contains(&section), "{code} names §{section}"),
-            None => assert_eq!(*code, Code::InternalError, "{code} names no section"),
+            None => assert!(
+                matches!(code, Code::InternalError | Code::UnbuiltConstruct),
+                "{code} names no section"
+            ),
         }
     }
 }

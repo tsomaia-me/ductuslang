@@ -91,7 +91,7 @@ const RULES: &[Rule] = &[
     rule("2.2", "semicolon", "let a = 1;\n"),
     rule("2.2", "unexpected-indent", "input a = 1\n    input b = 2\n"),
     rule("2.4", "invalid-identifier", "let _ = 1\n"),
-    rule("2.5", "reserved-word", "let from = 1\n"),
+    rule("2.5", "reserved-word", "let recurrent = 1\n"),
     rule("2.5", "reserved-token", "let a = 1 == 2\n"),
     rule("2.5", "misplaced-caret", "let a = 2 ^ 3\n"),
     rule("2.6", "misplaced-underscore", "let a = 10_\n"),
@@ -291,6 +291,11 @@ const RULES: &[Rule] = &[
         "5.1",
         "unparenthesized-if",
         "let a = 1 + if true then 1 else 2\n",
+    ),
+    rule(
+        "5.10",
+        "unparenthesized-for",
+        "input held: i32[..10] = []\nstate total = 1 + for x in held into sum from 0: sum + x\n",
     ),
     rule(
         "5.2",
@@ -914,7 +919,7 @@ fn every_rule_section_has_a_heading_in_the_spec() {
 fn every_code_appears_in_the_table_and_every_table_code_exists() {
     let names: BTreeSet<&str> = Code::ALL
         .iter()
-        .filter(|code| **code != Code::InternalError)
+        .filter(|code| !matches!(code, Code::InternalError | Code::UnbuiltConstruct))
         .map(|code| code.as_str())
         .collect();
     let table: BTreeSet<&str> = RULES.iter().map(|rule| rule.code).collect();

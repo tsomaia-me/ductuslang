@@ -94,7 +94,10 @@ impl Parser<'_> {
         if self.at(SyntaxKind::MatchKw) {
             self.then([Task::MatchBlock, Task::Finish]);
         } else {
-            self.then([Task::Expr, Task::FinishLineFinish(code)]);
+            self.then([
+                Task::WholeExpr { own_line: true },
+                Task::FinishLineFinish(code),
+            ]);
         }
     }
 
@@ -210,7 +213,10 @@ impl Parser<'_> {
                 self.finish();
             }
         } else {
-            self.then([Task::Expr, Task::FinishLineFinish(Code::FnSyntax)]);
+            self.then([
+                Task::WholeExpr { own_line: false },
+                Task::FinishLineFinish(Code::FnSyntax),
+            ]);
         }
     }
 
@@ -224,7 +230,7 @@ impl Parser<'_> {
             self.then([Task::MatchBlock, Task::FnBodyBlockEnd]);
         } else {
             self.then([
-                Task::Expr,
+                Task::WholeExpr { own_line: true },
                 Task::FinishLine(Code::FnSyntax),
                 Task::FnBodyBlockEnd,
             ]);

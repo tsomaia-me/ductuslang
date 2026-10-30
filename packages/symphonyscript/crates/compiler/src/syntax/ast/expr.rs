@@ -4,6 +4,7 @@ use super::binary_expr::BinaryExpr;
 use super::call_expr::CallExpr;
 use super::conversion::Conversion;
 use super::field_expr::FieldExpr;
+use super::for_expr::ForExpr;
 use super::history::History;
 use super::if_expr::IfExpr;
 use super::index_expr::IndexExpr;
@@ -19,6 +20,7 @@ use crate::syntax::{NodeView, SyntaxKind};
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub enum Expr<'p> {
     If(IfExpr<'p>),
+    For(ForExpr<'p>),
     Binary(BinaryExpr<'p>),
     Prefix(PrefixExpr<'p>),
     Paren(ParenExpr<'p>),
@@ -39,6 +41,7 @@ impl<'p> AstNode<'p> for Expr<'p> {
     fn cast(node: NodeView<'p>) -> Option<Self> {
         match node.kind() {
             SyntaxKind::IfExpr => IfExpr::cast(node).map(Expr::If),
+            SyntaxKind::ForExpr | SyntaxKind::ForExprBlock => ForExpr::cast(node).map(Expr::For),
             SyntaxKind::BinaryExpr => BinaryExpr::cast(node).map(Expr::Binary),
             SyntaxKind::PrefixExpr => PrefixExpr::cast(node).map(Expr::Prefix),
             SyntaxKind::ParenExpr => ParenExpr::cast(node).map(Expr::Paren),
@@ -60,6 +63,7 @@ impl<'p> AstNode<'p> for Expr<'p> {
     fn syntax(&self) -> &NodeView<'p> {
         match self {
             Expr::If(node) => node.syntax(),
+            Expr::For(node) => node.syntax(),
             Expr::Binary(node) => node.syntax(),
             Expr::Prefix(node) => node.syntax(),
             Expr::Paren(node) => node.syntax(),

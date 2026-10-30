@@ -26,6 +26,7 @@ pub(super) fn lesson(code: Code) -> &'static str {
         Code::ExpressionSyntax => include_str!("../../lessons/expression-syntax.md"),
         Code::ChainedComparison => include_str!("../../lessons/chained-comparison.md"),
         Code::UnparenthesizedIf => include_str!("../../lessons/unparenthesized-if.md"),
+        Code::UnparenthesizedFor => include_str!("../../lessons/unparenthesized-for.md"),
         Code::MatchSyntax => include_str!("../../lessons/match-syntax.md"),
         Code::MatchPosition => include_str!("../../lessons/match-position.md"),
         Code::MixedArguments => include_str!("../../lessons/mixed-arguments.md"),
@@ -145,5 +146,6 @@ pub(super) fn lesson(code: Code) -> &'static str {
         Code::UnreachableInstance => include_str!("../../lessons/unreachable-instance.md"),
         Code::NoEntryInstance => include_str!("../../lessons/no-entry-instance.md"),
         Code::InternalError => include_str!("../../lessons/internal-error.md"),
+        Code::UnbuiltConstruct => include_str!("../../lessons/unbuilt-construct.md"),
     }
 }

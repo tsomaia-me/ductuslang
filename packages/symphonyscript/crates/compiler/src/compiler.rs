@@ -50,7 +50,7 @@ impl Compiler {
             report
                 .diagnostics
                 .extend(parsed.diagnostics.iter().cloned());
-            if let Err(internal) = build_file(&mut hir, &file.path, &parsed, vocab) {
+            if let Err(internal) = build_file(&mut hir, &file.path, &parsed, vocab, &mut report) {
                 analyze::internal_error(&hir, &mut report, internal);
                 return Err(Failed {
                     diagnostics: report.finish(&hir.files),
@@ -120,7 +120,13 @@ impl Compiler {
             report
                 .diagnostics
                 .extend(parsed.diagnostics.iter().cloned());
-            if let Err(internal) = build_file(&mut hir, &source.path, &parsed, &self.vocabulary) {
+            if let Err(internal) = build_file(
+                &mut hir,
+                &source.path,
+                &parsed,
+                &self.vocabulary,
+                &mut report,
+            ) {
                 analyze::internal_error(&hir, &mut report, internal);
                 return (report.finish(&hir.files), None);
             }

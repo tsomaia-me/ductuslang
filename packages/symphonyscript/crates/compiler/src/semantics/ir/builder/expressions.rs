@@ -100,12 +100,16 @@ impl HirBuilder<'_> {
         )
     }
 
-    fn shape<'p>(&self, expr: &ast::Expr<'p>) -> (Shape, Vec<Option<ast::Expr<'p>>>) {
+    fn shape<'p>(&mut self, expr: &ast::Expr<'p>) -> (Shape, Vec<Option<ast::Expr<'p>>>) {
         match expr {
             ast::Expr::If(node) => (
                 Shape::If,
                 vec![node.condition(), node.then_branch(), node.else_branch()],
             ),
+            ast::Expr::For(node) => {
+                self.unbuilt(node.syntax().range(), "the `for` expression", "5.10");
+                (Shape::Leaf(ExprKind::Error), Vec::new())
+            }
             ast::Expr::Binary(node) => match node
                 .op()
                 .filter(|op| !self.faults.touch(op.range()))

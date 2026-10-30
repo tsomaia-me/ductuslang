@@ -109,6 +109,23 @@ pub(super) enum Task {
         members: usize,
     },
     Expr,
+    WholeExpr {
+        own_line: bool,
+    },
+    ParenValue,
+    ForExpr {
+        own_line: bool,
+    },
+    ForExprInto {
+        checkpoint: Checkpoint,
+        own_line: bool,
+    },
+    ForExprColon {
+        checkpoint: Checkpoint,
+        own_line: bool,
+    },
+    ForExprLets,
+    ForExprBlockEnd,
     IfExpr,
     IfThen,
     IfElse,

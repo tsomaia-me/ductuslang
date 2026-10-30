@@ -24,6 +24,10 @@ impl Parser<'_> {
     pub(super) fn expr(&mut self) {
         match self.peek() {
             Some(SyntaxKind::IfKw) => self.then([Task::IfExpr]),
+            Some(SyntaxKind::ForKw) => {
+                self.unparenthesized_for();
+                self.then([Task::ForExpr { own_line: true }]);
+            }
             Some(SyntaxKind::MatchKw) => {
                 self.misplaced_match();
                 self.then([Task::OrExpr]);
@@ -278,7 +282,7 @@ impl Parser<'_> {
                 self.start(SyntaxKind::ParenExpr);
                 self.bump();
                 self.then([
-                    Task::Expr,
+                    Task::ParenValue,
                     Task::Close {
                         kind: SyntaxKind::RParen,
                         code: Code::ExpressionSyntax,
@@ -293,6 +297,10 @@ impl Parser<'_> {
                     "an `if` that is an operand of another operator is parenthesized",
                 );
                 self.then([Task::IfExpr, rest]);
+            }
+            Some(SyntaxKind::ForKw) => {
+                self.unparenthesized_for();
+                self.then([Task::ForExpr { own_line: true }, rest]);
             }
             Some(SyntaxKind::MatchKw) => {
                 self.misplaced_match();

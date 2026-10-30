@@ -282,7 +282,7 @@ impl Parser<'_> {
             self.start(SyntaxKind::ParenExpr);
             self.bump();
             self.then([
-                Task::Expr,
+                Task::ParenValue,
                 Task::Close {
                     kind: SyntaxKind::RParen,
                     code: Code::DefaultArgSyntax,

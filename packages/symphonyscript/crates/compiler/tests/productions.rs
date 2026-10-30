@@ -127,6 +127,21 @@ const CASES: &[(&str, &str, &str)] = &[
         "File[LetDecl[let a = IfExpr[if NameRef[c] then Literal[1] else Literal[2]] NL] LetDecl[let b = BinaryExpr[NameRef[x] or NameRef[y]] NL]]",
     ),
     (
+        "ForExpr",
+        "let a = for x in xs into s from 0: s + x\nlet b = 1 + (for i, x in xs into s from 0: s + i * x)\n",
+        "File[LetDecl[let a = ForExpr[ForExprHead[for x in NameRef[xs] into s from Literal[0] :] BinaryExpr[NameRef[s] + NameRef[x]]] NL] LetDecl[let b = BinaryExpr[Literal[1] + ParenExpr[( ForExpr[ForExprHead[for i , x in NameRef[xs] into s from Literal[0] :] BinaryExpr[NameRef[s] + BinaryExpr[NameRef[i] * NameRef[x]]]] )]] NL]]",
+    ),
+    (
+        "ForExprBlock",
+        "state h = for x in xs into k from []:\n    let keep = x > 60\n    if keep then k + [x] else k\nfn f(xs):\n    for x in xs into n from 0:\n        n + x\n",
+        "File[StateDecl[state h = ForExprBlock[ForExprHead[for x in NameRef[xs] into k from ArrayLit[[ ]] :] NL > LocalLet[let keep = BinaryExpr[NameRef[x] > Literal[60]] NL] IfExpr[if NameRef[keep] then BinaryExpr[NameRef[k] + ArrayLit[[ NameRef[x] ]]] else NameRef[k]] NL <]] FnDecl[fn f ParamList[( Param[xs] )] : FnBody[NL > ForExprBlock[ForExprHead[for x in NameRef[xs] into n from Literal[0] :] NL > BinaryExpr[NameRef[n] + NameRef[x]] NL <] <]]]",
+    ),
+    (
+        "ForExprHead",
+        "let a = for i: i32, x: f32 in 0..4 into s: f32 from 0.0: s + x\n",
+        "File[LetDecl[let a = ForExpr[ForExprHead[for i : TypeRef[i32] , x : TypeRef[f32] in RangeExpr[Literal[0] .. Literal[4]] into s : TypeRef[f32] from Literal[0.0] :] BinaryExpr[NameRef[s] + NameRef[x]]] NL]]",
+    ),
+    (
         "IfExpr",
         "let a = if c then 1 else if d then 2 else 3\n",
         "File[LetDecl[let a = IfExpr[if NameRef[c] then Literal[1] else IfExpr[if NameRef[d] then Literal[2] else Literal[3]]] NL]]",
