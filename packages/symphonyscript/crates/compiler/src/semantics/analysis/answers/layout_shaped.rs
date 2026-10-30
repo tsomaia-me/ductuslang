@@ -1,4 +1,4 @@
-use super::op::Op;
+use crate::semantics::analysis::op::Op;
 
 pub(crate) fn layout_shaped(op: &Op) -> bool {
     match op {

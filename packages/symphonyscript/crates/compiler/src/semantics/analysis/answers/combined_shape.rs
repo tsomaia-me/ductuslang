@@ -1,7 +1,7 @@
-use super::ids::NodeId;
-use super::op::Op;
-use super::shape_fault::ShapeFault;
 use crate::diagnostics::Code;
+use crate::semantics::analysis::ids::NodeId;
+use crate::semantics::analysis::op::Op;
+use crate::semantics::analysis::shape_fault::ShapeFault;
 
 pub(crate) fn combined_shape(
     node: NodeId,

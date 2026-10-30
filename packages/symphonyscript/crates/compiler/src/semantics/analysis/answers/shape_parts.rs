@@ -1,7 +1,7 @@
-use super::engine::Engine;
-use super::ids::NodeId;
-use super::op::Op;
 use crate::semantics::Internal;
+use crate::semantics::analysis::engine::Engine;
+use crate::semantics::analysis::ids::NodeId;
+use crate::semantics::analysis::op::Op;
 
 pub(crate) fn shape_parts(engine: &Engine<'_>, op: &Op) -> Result<Vec<NodeId>, Internal> {
     Ok(match op {

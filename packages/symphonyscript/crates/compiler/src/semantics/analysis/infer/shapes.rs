@@ -1,16 +1,16 @@
 use symphonyscript_core::Scalar;
 
 use crate::semantics::Internal;
-use crate::semantics::analysis::combined_shape::combined_shape;
+use crate::semantics::analysis::answers::combined_shape;
+use crate::semantics::analysis::answers::layout_shaped;
+use crate::semantics::analysis::answers::shape_parts;
 use crate::semantics::analysis::engine::Engine;
 use crate::semantics::analysis::eval_ty_of::eval_ty_of;
 use crate::semantics::analysis::fast_hash::FastMap;
 use crate::semantics::analysis::ids::NodeId;
-use crate::semantics::analysis::layout_shaped::layout_shaped;
 use crate::semantics::analysis::lengths_of::lengths_of;
 use crate::semantics::analysis::op::Op;
 use crate::semantics::analysis::shape_need::ShapeNeed;
-use crate::semantics::analysis::shape_parts::shape_parts;
 use crate::semantics::ir::Loc;
 
 impl Engine<'_> {
