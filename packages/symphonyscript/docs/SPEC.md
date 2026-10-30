@@ -101,7 +101,7 @@ let state stream channel fn pattern type default const cell out children
 if then else match when for in into from as on without
 is not and or div to true false none
 u8 i32 i64 f32 f64 bool str json node wire
-package require use publish
+require use publish
 ```
 
 A keyword stands as a member name where nothing but a name can stand: after `|` in an attribute clause (§7.6), after `.` in a read (§5.6), as a key in a record literal and as a field in a `type` body (§3.8), so a vocabulary may name an attribute `channel` or `out` (§10.1). Everywhere else it is a keyword. The words `recurrent` and `string` are reserved and are never names; `null` is a word of JSON text inside a document literal (§3.11) and is never a name. The tokens `==` and `!=` are reserved and rejected by the lexer, and their diagnostic points to `is` and `is not`. `^` stands only at the start of an index or a slice bound (§5.5); anywhere else it is an error.
@@ -1845,12 +1845,12 @@ The build's top-level order (§2.1) runs through the prelude, then the libraries
 ```ebnf
 PackageFile ::= PackageItem*
 PackageItem ::= PackageDecl | Require | Use | Publish
-PackageDecl ::= 'package' '{' Fields '}' NEWLINE
+PackageDecl ::= RecordLit NEWLINE
 ```
 
-A package's package file is `package.sym`, and the folder holding it is the package's root. It holds these items only, in any order, and no declaration. A `package.sym` in any other folder of the package, and a `package`, `require`, `use` or `publish` item in any other file, is an error naming the package file.
+A package's package file is `package.sym`, and the folder holding it is the package's root. It holds these items only, in any order, and no declaration. A `package.sym` in any other folder of the package, and a `Package`, `require`, `use` or `publish` item in any other file, is an error naming the package file.
 
-The `package` item states the package's identity as a record (§3.8) of the built-in type `Package`. Its fields are compile-time values, and none reaches the Program:
+The `Package` item is a record literal (§3.8) of the built-in record type `Package`, the one record literal that stands as an item, its type name marking the item; a literal of another type there, and a declaration named `Package` anywhere (§6.5), are errors. It states the package's identity, and its fields are compile-time values, none of which reaches the Program:
 
 | Field | Holds |
 |---|---|
@@ -1862,12 +1862,12 @@ The `package` item states the package's identity as a record (§3.8) of the buil
 | `vocabulary` | the vocabulary it is written for (§15.8) |
 | `options` | the build's settings, a record combined across the build's packages as below |
 
-A library's package file holds a `package` item with a `name` and a `version`, and a project's holds one with its `vocabulary` (§15.8). Two `package` items are an error.
+A library's package file holds a `Package` item with a `name` and a `version`, and a project's holds one with its `vocabulary` (§15.8). Two `Package` items are an error.
 
-The `options` field holds the limits of §4.6, §6.3, §12.6 and §13.3, each with its warning value beside it, and the sharing threshold, by the names ARCHITECTURE §9 gives them. A limit on a compilation's work, the recursive calls, inlined calls, expansion steps and expanded items of §4.6 and the nesting depth of §6.3, takes in a build the highest value any package of the build states, and a library whose value is above the starting package's, stated or default, draws a warning at the starting package's `package` item naming the library, the limit and both values. The memory limit, the reload search bound and the sharing threshold take the starting package's value alone, and a library's is read only in a build the library starts. A warning value combines as its limit does.
+The `options` field holds the limits of §4.6, §6.3, §12.6 and §13.3, each with its warning value beside it, and the sharing threshold, by the names ARCHITECTURE §9 gives them. A limit on a compilation's work, the recursive calls, inlined calls, expansion steps and expanded items of §4.6 and the nesting depth of §6.3, takes in a build the highest value any package of the build states, and a library whose value is above the starting package's, stated or default, draws a warning at the starting package's `Package` item naming the library, the limit and both values. The memory limit, the reload search bound and the sharing threshold take the starting package's value alone, and a library's is read only in a build the library starts. A warning value combines as its limit does.
 
 ```sym-package
-package {
+Package {
     name: "scales",
     version: "2.4.1",
     license: "MIT",
@@ -1893,7 +1893,7 @@ A `require` item names a library by its source, a string literal without interpo
 - `"<host>/<path>@<commit>"` is that repository at the commit named by 7 to 40 hexadecimal digits;
 - `"./<path>"` and `"../<path>"` are the library in that folder, relative to the requiring package's root.
 
-A required library is reached by the `name` its `package` item states, or by the name `as` gives: `require "github.com/other/scales@1.0.0" as oscales`. Two required libraries of one name, and a required library named like a declaration of the package or `prelude`, are an error whose help names `as`.
+A required library is reached by the `name` its `Package` item states, or by the name `as` gives: `require "github.com/other/scales@1.0.0" as oscales`. Two required libraries of one name, and a required library named like a declaration of the package or `prelude`, are an error whose help names `as`.
 
 A `require` item makes every name the library publishes reachable as a qualified name in every file of the package: `scales::major`. A qualified name stands wherever a name refers to a top-level declaration (§6.5); one that the library does not publish is an error naming the library.
 
@@ -1935,7 +1935,7 @@ publish scales::minor as Minor
 
 ### 15.6 The prelude
 
-The prelude of a vocabulary (§10.1) is a library that every package written for that vocabulary requires without a `require` item: the project always, and a library whose `package` item states that vocabulary (§15.8). In such a package, every name the prelude publishes is reachable unqualified and as `prelude::<name>`. A declaration of the package and a name a `use` item brings shadow a prelude name of their spelling in that package, and `prelude::<name>` still reaches it. The prelude's package file lists what it publishes, and a prelude declaration it does not publish is visible only inside the prelude.
+The prelude of a vocabulary (§10.1) is a library that every package written for that vocabulary requires without a `require` item: the project always, and a library whose `Package` item states that vocabulary (§15.8). In such a package, every name the prelude publishes is reachable unqualified and as `prelude::<name>`. A declaration of the package and a name a `use` item brings shadow a prelude name of their spelling in that package, and `prelude::<name>` still reaches it. The prelude's package file lists what it publishes, and a prelude declaration it does not publish is visible only inside the prelude.
 
 ### 15.7 Versions
 
@@ -1943,10 +1943,10 @@ A version is three decimal integers without signs or leading zeros, joined by `.
 
 A build holds one version of each library: the highest version any package of the build requires of it. Two requirements of one library with different majors are an error naming each requiring package and the version it requires. A library raises its major when it removes or changes a name it publishes, and its minor when it publishes a new one.
 
-A commit the project requires replaces every version the build requires of that library. The newest release tag in the commit's history gives the commit's major, and a major other than that of the build's other requirements of the library is the error above. A fetched release whose `package` item states another version than its tag names is an error naming both.
+A commit the project requires replaces every version the build requires of that library. The newest release tag in the commit's history gives the commit's major, and a major other than that of the build's other requirements of the library is the error above. A fetched release whose `Package` item states another version than its tag names is an error naming both.
 
 ### 15.8 A package's vocabulary
 
-A vocabulary has a name and a version (§10.1, §15.7). A package's `package` item states the vocabulary it is written for as `"<name>@<version>"`, the lowest version it accepts within that version's major: `vocabulary: "drums@2.1.0"`. A project's states the vocabulary of the framework that runs it (ARCHITECTURE §9). A library that states none uses no kind, enum, unit, attribute or prelude name. A library written for a vocabulary of another name than the project's, of another major, or of a higher version, is an error naming the library and both vocabularies, and so is a project whose framework's vocabulary differs that way from the one it states.
+A vocabulary has a name and a version (§10.1, §15.7). A package's `Package` item states the vocabulary it is written for as `"<name>@<version>"`, the lowest version it accepts within that version's major: `vocabulary: "drums@2.1.0"`. A project's states the vocabulary of the framework that runs it (ARCHITECTURE §9). A library that states none uses no kind, enum, unit, attribute or prelude name. A library written for a vocabulary of another name than the project's, of another major, or of a higher version, is an error naming the library and both vocabularies, and so is a project whose framework's vocabulary differs that way from the one it states.
 
 A vocabulary raises its major when it removes or changes a kind, an attribute, an enum variant, a unit or a name its prelude publishes, and its minor when it adds one.
