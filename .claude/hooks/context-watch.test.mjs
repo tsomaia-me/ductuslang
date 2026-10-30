@@ -11,7 +11,7 @@ import { TAIL_BYTES } from './context-watch.mjs';
 const HOOK_PATH = path.join(path.dirname(fileURLToPath(import.meta.url)), 'context-watch.mjs');
 const OVERSIZED_ENTRY_BYTES = 400 * 1024;
 const WINDOW = '348000';
-const NOTICE = '**Compaction at 315k; you are at 290k.** Write your note now, before any other tool call: `pnpm grounding --role <ROLE>`, with the note on stdin, under 4,000 characters. Say what you are doing, the decisions in force, the next step, and at the end the files to re-read in order. Then carry on with your work; nothing else changes, and 25k is left after the note.';
+const NOTICE = '**Compaction at 315k; you are at 255k.** Write your note now, before any other tool call: `pnpm grounding --role <ROLE>`, with the note on stdin, under 4,000 characters. Say what you are doing, the decisions in force, the next step, and at the end the files to re-read in order. Then carry on with your work; nothing else changes, and 60k is left after the note.';
 
 function tempDir() {
   return mkdtempSync(path.join(os.tmpdir(), 'context-watch-test-'));
@@ -114,9 +114,9 @@ test('the notice fires once at the notice point and again only after the context
     assert.equal(result.status, 0);
     return result.stdout.trim();
   };
-  assert.equal(runAt(289999), '');
-  assert.equal(runAt(290000), NOTICE);
-  assert.equal(runAt(290000), '');
+  assert.equal(runAt(254999), '');
+  assert.equal(runAt(255000), NOTICE);
+  assert.equal(runAt(255000), '');
   assert.equal(runAt(314000), '');
   assert.equal(runAt(100000), '');
   assert.equal(runAt(295000), NOTICE);
@@ -143,9 +143,9 @@ test('concurrent hook runs print the notice exactly once', async () => {
 
 test('the notice point and its numbers follow the auto-compact window', () => {
   const rows = [
-    { window: '100000', cacheRead: 41999, output: 0, head: '' },
-    { window: '100000', cacheRead: 42000, output: 0, head: '**Compaction at 67k; you are at 42k.**' },
-    { window: '100000', cacheRead: 38490, output: 3510, head: '**Compaction at 67k; you are at 42k.**' },
+    { window: '200000', cacheRead: 106999, output: 0, head: '' },
+    { window: '200000', cacheRead: 107000, output: 0, head: '**Compaction at 167k; you are at 107k.**' },
+    { window: '200000', cacheRead: 103490, output: 3510, head: '**Compaction at 167k; you are at 107k.**' },
     { window: '', cacheRead: 900000, output: 0, head: '' },
   ];
   for (const { window, cacheRead, output, head } of rows) {
