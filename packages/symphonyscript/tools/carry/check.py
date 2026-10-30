@@ -16,7 +16,7 @@ BACKWARD_TARGETS = ("open", "taken", "owner")
 COMMIT = re.compile(r"`([0-9a-f]{7,40})`")
 MEMORY_COMMIT = re.compile(r"memory commit\s+`?([0-9a-f]{7,40})`?")
 QUOTED = re.compile(r'"[^"\n]+"|“[^”\n]+”')
-ROUND_BRIEF = re.compile(r"^(.*?)round-(\d+)([a-z]?)-brief\.md$")
+ROUND_BRIEF = re.compile(r"^(.*?)(?:fix-)?(round|step)-(\d+)([a-z]?)-brief\.md$")
 LEDGER_HEADING = re.compile(r"^(#{1,6})\s+(?:§\s*)?Ledger\b")
 LEDGER_LINE = re.compile(r"^\s*(?:[-*]\s+)?`?([^\s`:,]+?)`?\s*:\s*(\S.*)$")
 ENTRY_HEADING = re.compile(r"^###\s+([^\s.]+)\.?\s*(.*)$")
@@ -86,7 +86,12 @@ def newest_brief(directory):
     for name in names:
         match = ROUND_BRIEF.match(name)
         if match:
-            key = (natural_key(match.group(1)), int(match.group(2)), match.group(3))
+            key = (
+                natural_key(match.group(1)),
+                0 if match.group(2) == "step" else 1,
+                int(match.group(3)),
+                match.group(4),
+            )
             rounds.append((key, name))
     if rounds:
         return os.path.join(directory, max(rounds)[1])
