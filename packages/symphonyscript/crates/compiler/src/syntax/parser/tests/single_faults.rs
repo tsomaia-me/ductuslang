@@ -35,6 +35,7 @@ const LEXER_AND_PARSER_CODES: &[Code] = &[
     Code::ExpressionSyntax,
     Code::ChainedComparison,
     Code::UnparenthesizedIf,
+    Code::UnparenthesizedFor,
     Code::MatchSyntax,
     Code::MatchPosition,
     Code::MixedArguments,

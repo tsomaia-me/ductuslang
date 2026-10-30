@@ -25,6 +25,10 @@ const ADDITION_ITEMS: &[&str] = &[
     "fn f(bounded): bounded + 1\n",
     "let s = [1, 2, 3][^2..][..1]\n",
     "state[2] s = s{2, 0} + 1\n",
+    "let t = for i: i32, x in [1, 2] into s: i32 from 0: s + i * x\n",
+    "state h = for x in [1, 2] into k from []:\n    let keep = x > 1\n    if keep then k + [x] else k\n",
+    "fn f(p):\n    let a = 1 + (for x in p into s from 0: s + x)\n    for x in p into n from a:\n        n + x\n",
+    "Clip strum:\n    for i, p: i32 in [60, 64]:\n        Note/p\n    [for i: i32 in 0..2: Note/(for x in [i] into s from 0: s + x)]\n",
 ];
 
 pub(super) struct ValidItems {

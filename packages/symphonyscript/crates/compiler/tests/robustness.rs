@@ -163,6 +163,37 @@ fn no_mutant_of_a_recursive_function_reading_a_cell_through_a_let_draws_an_inter
     assert_eq!(checked, 550);
 }
 
+const LOOP_EXAMPLES: [&str; 5] = [
+    "input held: i32[..10] = []\nstate high = for x in held into kept from []:\n    let keep = x > 60\n    if keep then kept + [x] else kept\nstate total = 1 + (for i, x in held into sum from 0: sum + i * x)\nstate lowest = for x in held into low from 127: min(low, x)\nClip c:\n    Note/lowest\n",
+    "input held: i32[..10] = []\nstate total = 1 + for x in held into sum from 0: sum + x\nfn count(xs): len(xs)\nstate high = count(for x in held into kept from []: if x > 60 then kept + [x] else kept)\n",
+    "input steps = [true, false, false, true, false, false, true, false]\ninput pitches = [36, 36, 43, 36, 41, 36, 43, 48]\nClip seq:\n    for i in 0..8:\n        Note/(pitches[i]) when steps[i]\nlet chord = [60, 64, 67]\nClip strum:\n    for i, p in chord:\n        Note/p | velocity=1.0 - i * 0.2\n",
+    "input held: i32[..10] = []\nstate rises = for i in 1..len(held) into n from 0: if held[i] > held[i - 1] then n + 1 else n\ninput n = 4\nstate total = for i in 0..n into sum from 0: sum + i\nClip c:\n    for i, k in 0..4:\n        Note/(60 + k)\n    Note/total\n",
+    "Clip pad:\n    [Note/60 Note/64 Note/67]\n    [for i in 0..3: Note/(62 + i * 4)]\n    [for i, p in [60, 64, 67]: (Note/p | velocity=1.0 - i * 0.2)]\n",
+];
+
+#[test]
+fn no_mutant_of_a_for_expression_or_loop_head_example_draws_an_internal_error() {
+    let corpora = [(vocabulary(), LOOP_EXAMPLES.map(str::to_string).to_vec())];
+    let (failures, checked) =
+        covered(|rows| covered_mutants_draw_no_internal_error(rows, &corpora));
+    assert_eq!(failures, Vec::<String>::new());
+    assert_eq!(checked, 803);
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_no_mutant_of_a_for_expression_or_loop_head_example_draws_an_internal_error() {
+    let vocabulary = vocabulary();
+    let compiler = Compiler::new(&vocabulary).expect("the example vocabulary compiles");
+    let mut failures = Vec::new();
+    for text in LOOP_EXAMPLES {
+        for mutant in mutants(text, &tokens(text, &vocabulary)) {
+            failures.extend(drawn_failure(&compiler, &mutant));
+        }
+    }
+    assert_eq!(failures, Vec::<String>::new());
+}
+
 #[test]
 #[ignore = "exhaustive"]
 fn exhaustive_no_mutant_of_a_recursive_function_reading_a_cell_through_a_let_draws_an_internal_error()
