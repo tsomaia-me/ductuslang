@@ -220,7 +220,17 @@ impl Engine<'_> {
         let requester = self.current;
         let path_expr = match requester {
             Some(Query::Expr(expr, _)) => Some(expr),
-            Some(_) | None => None,
+            Some(
+                Query::Let(..)
+                | Query::Param(..)
+                | Query::Input(_)
+                | Query::State(_)
+                | Query::Attr(..)
+                | Query::Destination(_)
+                | Query::Sig(_)
+                | Query::Eval(..),
+            )
+            | None => None,
         };
         for instance in &instances {
             crate::semantics::counted_walk::CountedWalk::PathsFramePath.step();

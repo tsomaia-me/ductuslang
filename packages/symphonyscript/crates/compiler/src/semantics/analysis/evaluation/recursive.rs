@@ -540,8 +540,19 @@ impl Engine<'_> {
                 .get(&head)
                 .cloned()
                 .ok_or(Internal::missed("frame read"))?;
-            let Some(CVal::Node(item)) = self.frame_value(frame, read.start, EvalTy::Node)? else {
-                continue;
+            let item = match self.frame_value(frame, read.start, EvalTy::Node)? {
+                Some(CVal::Node(item)) => item,
+                Some(
+                    CVal::Int(_)
+                    | CVal::F32(_)
+                    | CVal::F64(_)
+                    | CVal::Bool(_)
+                    | CVal::Enum(..)
+                    | CVal::Str(_)
+                    | CVal::Array(_)
+                    | CVal::Error,
+                )
+                | None => continue,
             };
             if read.arms.iter().any(|(candidate, _)| *candidate == item) {
                 continue;

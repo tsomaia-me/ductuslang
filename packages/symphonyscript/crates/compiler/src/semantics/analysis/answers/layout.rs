@@ -441,7 +441,34 @@ impl Engine<'_> {
                 Some(binding) if self.memo.settled.contains(&binding) => None,
                 Some(_) | None => Some(*state),
             },
-            _ => None,
+            Op::History { .. }
+            | Op::Number(..)
+            | Op::Const(_)
+            | Op::Bool(_)
+            | Op::Str(_)
+            | Op::Concat(_)
+            | Op::Variant(..)
+            | Op::Bare(_)
+            | Op::Pi
+            | Op::NodeRef(_)
+            | Op::Use(_)
+            | Op::Chosen(_)
+            | Op::Arg(_)
+            | Op::Unary(..)
+            | Op::Binary(..)
+            | Op::If(..)
+            | Op::Match { .. }
+            | Op::Pick { .. }
+            | Op::Element { .. }
+            | Op::Array(_)
+            | Op::Convert(..)
+            | Op::Annotate(..)
+            | Op::Builtin(..)
+            | Op::Recursive { .. }
+            | Op::ToRead { .. }
+            | Op::Join(..)
+            | Op::Slice { .. }
+            | Op::Native { .. } => None,
         })
     }
 
@@ -880,7 +907,34 @@ impl Engine<'_> {
                     .state_binding(*state)
                     .is_some_and(|binding| self.memo.settled.contains(&binding)),
                 Op::Read(binding) => self.settled_read(*binding)?,
-                _ => true,
+                Op::History { .. }
+                | Op::Number(..)
+                | Op::Const(_)
+                | Op::Bool(_)
+                | Op::Str(_)
+                | Op::Concat(_)
+                | Op::Variant(..)
+                | Op::Bare(_)
+                | Op::Pi
+                | Op::NodeRef(_)
+                | Op::Use(_)
+                | Op::Chosen(_)
+                | Op::Arg(_)
+                | Op::Unary(..)
+                | Op::Binary(..)
+                | Op::If(..)
+                | Op::Match { .. }
+                | Op::Pick { .. }
+                | Op::Element { .. }
+                | Op::Array(_)
+                | Op::Convert(..)
+                | Op::Annotate(..)
+                | Op::Builtin(..)
+                | Op::Recursive { .. }
+                | Op::ToRead { .. }
+                | Op::Join(..)
+                | Op::Slice { .. }
+                | Op::Native { .. } => true,
             };
         Ok(Some(LayoutFound { shaped, certain }))
     }
@@ -957,7 +1011,33 @@ impl Engine<'_> {
                 }
                 Ok(Some(otherwise.map(|_| arms.len())))
             }
-            _ => Ok(Some(None)),
+            Op::Number(..)
+            | Op::Const(_)
+            | Op::Bool(_)
+            | Op::Str(_)
+            | Op::Concat(_)
+            | Op::Variant(..)
+            | Op::Bare(_)
+            | Op::Pi
+            | Op::NodeRef(_)
+            | Op::Read(_)
+            | Op::Use(_)
+            | Op::Chosen(_)
+            | Op::Arg(_)
+            | Op::Unary(..)
+            | Op::Binary(..)
+            | Op::Pick { .. }
+            | Op::Element { .. }
+            | Op::Array(_)
+            | Op::Convert(..)
+            | Op::Annotate(..)
+            | Op::Builtin(..)
+            | Op::Recursive { .. }
+            | Op::ToRead { .. }
+            | Op::Join(..)
+            | Op::Slice { .. }
+            | Op::History { .. }
+            | Op::Native { .. } => Ok(Some(None)),
         }
     }
 

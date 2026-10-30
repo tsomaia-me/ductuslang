@@ -1219,15 +1219,21 @@ impl<'a> Engine<'a> {
             let value = match *query {
                 Query::Attr(item, attr) => match self.memo.attrs.get(&(item, attr)) {
                     Some(BoundVal::Scalar(Bound::Value(node))) => Some(*node),
-                    Some(_) | None => None,
+                    Some(
+                        BoundVal::Scalar(Bound::Cell(_)) | BoundVal::Array(_) | BoundVal::Error,
+                    )
+                    | None => None,
                 },
                 Query::Let(scope, local) => match self.memo.lets.get(&(scope, local)) {
                     Some(BoundVal::Scalar(Bound::Value(node))) => Some(*node),
-                    Some(_) | None => None,
+                    Some(
+                        BoundVal::Scalar(Bound::Cell(_)) | BoundVal::Array(_) | BoundVal::Error,
+                    )
+                    | None => None,
                 },
                 Query::Expr(expr, scope) => match self.memo.exprs.get(&(expr, scope)) {
                     Some(Val::Scalar(node)) => Some(*node),
-                    Some(_) | None => None,
+                    Some(Val::Array(_) | Val::Error) | None => None,
                 },
                 Query::Sig(node) => Some(node),
                 Query::Param(..)

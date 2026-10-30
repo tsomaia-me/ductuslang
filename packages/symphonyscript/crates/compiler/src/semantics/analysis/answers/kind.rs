@@ -83,7 +83,32 @@ impl Engine<'_> {
                 }
                 Some(_) | None => None,
             },
-            _ => None,
+            Op::Binary(..)
+            | Op::Unary(..)
+            | Op::Number(..)
+            | Op::Const(_)
+            | Op::Bool(_)
+            | Op::Str(_)
+            | Op::Concat(_)
+            | Op::Variant(..)
+            | Op::Bare(_)
+            | Op::Pi
+            | Op::NodeRef(_)
+            | Op::Read(_)
+            | Op::Use(_)
+            | Op::Chosen(_)
+            | Op::Arg(_)
+            | Op::If(..)
+            | Op::Match { .. }
+            | Op::Array(_)
+            | Op::Annotate(..)
+            | Op::Builtin(..)
+            | Op::Recursive { .. }
+            | Op::ToRead { .. }
+            | Op::Join(..)
+            | Op::Slice { .. }
+            | Op::History { .. }
+            | Op::Native { .. } => None,
         })
     }
 
