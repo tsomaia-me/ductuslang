@@ -8,6 +8,7 @@ from unittest import mock
 
 import corpus
 import figures
+import programs
 import run
 import verdicts
 from programs import key, read_jsonl, write_jsonl_gz
@@ -58,6 +59,8 @@ with open(taken, "w") as out:
     for program_id in ids:
         out.write(json.dumps({"id": program_id, "elapsed_ms": 2.0, "diagnostics": 0, "codes": []}) + "\\n")
 """
+TAGS = "example main\nnative native\nbounded bounded\nenvelope envelope\nbar bar\nsignature signature\nto to\n"
+FAKE_PROBE = f"#!/bin/sh\n[ \"$1\" = --tags ] || exit 2\ncat <<'END'\n{TAGS}END\n"
 
 
 def verdict(outcome, errors=(), warnings=(), signals=(), program_set="mutants"):
@@ -298,7 +301,8 @@ class Running(unittest.TestCase):
                             {"origin": "p/b.sym", "sources": [{"path": "main.sym", "text": "\nlet c = 3"}]}])
             write_jsonl_gz(root / "corpora" / "breakers.jsonl.gz",
                            [{"origin": "b.sym", "sources": [{"path": "main.sym", "text": "# Vocabulary: music\n"}]}])
-            for name, text in (("evolve-mutants", "#!/bin/sh\n"), ("evolve-check", VOCABULARY_CHECK)):
+            for name, text in (("evolve-mutants", "#!/bin/sh\n"), ("evolve-check", VOCABULARY_CHECK),
+                               ("evolve-probe", FAKE_PROBE)):
                 (root / name).write_text(text)
                 (root / name).chmod((root / name).stat().st_mode | stat.S_IEXEC)
             programs = run.programs_at(root, root / "corpora")
@@ -323,6 +327,16 @@ class Running(unittest.TestCase):
         self.assertEqual(run.unknown_tag_note(programs, unknown),
                          "Probes whose tag names no vocabulary, reported and not checked: 1; p/a.sym:7 (#weird).")
         self.assertIn("- Tag: #weird", verdicts.program_lines(programs[by_origin["p/a.sym:7"]], {"tag": "weird"}))
+
+    def test_the_probe_tag_table_is_read_from_the_tags_evolve_probe_prints(self):
+        self.assertEqual(programs.tag_table(TAGS),
+                         {"example": "main", "native": "native", "bounded": "bounded", "envelope": "envelope",
+                          "bar": "bar", "signature": "signature", "to": "to"})
+        with tempfile.TemporaryDirectory() as directory:
+            fake = Path(directory) / "evolve-probe"
+            fake.write_text(FAKE_PROBE)
+            fake.chmod(fake.stat().st_mode | stat.S_IEXEC)
+            self.assertEqual(programs.probe_vocabularies(Path(directory)), programs.tag_table(TAGS))
 
     def test_the_baseline_is_the_nearest_ancestor_with_one(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -8,6 +8,22 @@ use symphonyscript_fixtures::{
 
 pub const VOCABULARY_NAMES: [&str; 4] = ["main", "native", "envelope", "bar"];
 pub const PROBE_VOCABULARY_NAMES: [&str; 3] = ["bounded", "signature", "to"];
+pub const PROBE_TAGS: [(&str, &str); 7] = [
+    ("example", "main"),
+    ("native", "native"),
+    ("bounded", "bounded"),
+    ("envelope", "envelope"),
+    ("bar", "bar"),
+    ("signature", "signature"),
+    ("to", "to"),
+];
+
+pub fn tagged_vocabulary(tag: &str) -> Option<&'static str> {
+    PROBE_TAGS
+        .iter()
+        .find(|(named, _)| *named == tag)
+        .map(|(_, vocabulary)| *vocabulary)
+}
 
 pub fn named_vocabulary(name: &str) -> Result<Vocabulary, String> {
     match name {

@@ -1,8 +1,5 @@
 #![forbid(unsafe_code)]
 
-#[path = "../../../../crates/compiler/tests/support/mod.rs"]
-mod support;
-
 use std::collections::BTreeMap;
 use std::io::{Read, Write};
 use std::process::{Command, ExitCode, Stdio};
@@ -12,21 +9,12 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use symphonyscript::{Compiler, Source};
-use symphonyscript_core::Vocabulary;
 use symphonyscript_evolve::{
-    PROBED_PATH, ProbeProgram, ProbeSummary, Probed, probe_block, probe_programs, probed,
+    PROBE_TAGS, PROBED_PATH, ProbeProgram, ProbeSummary, Probed, named_vocabulary, probe_block,
+    probe_programs, probed, tagged_vocabulary,
 };
 
-const USAGE: &str = "usage: evolve-probe [--budget <seconds>] [--jobs <n>] [--values] [--summary] <programs file>...";
-const TAGS: [&str; 7] = [
-    "example",
-    "native",
-    "bounded",
-    "envelope",
-    "bar",
-    "signature",
-    "to",
-];
+const USAGE: &str = "usage: evolve-probe [--budget <seconds>] [--jobs <n>] [--values] [--summary] <programs file>... | evolve-probe --tags";
 const DEFAULT_BUDGET: Duration = Duration::from_secs(30);
 const DEFAULT_JOBS: usize = 4;
 const GRACE: Duration = Duration::from_secs(5);
@@ -37,6 +25,7 @@ struct Options {
     jobs: usize,
     values: bool,
     summary: bool,
+    tags: bool,
     program: Option<String>,
     files: Vec<String>,
 }
@@ -54,6 +43,12 @@ fn main() -> ExitCode {
 
 fn run() -> Result<(), String> {
     let options = options(std::env::args().skip(1))?;
+    if options.tags {
+        for (tag, vocabulary) in PROBE_TAGS {
+            println!("{tag} {vocabulary}");
+        }
+        return Ok(());
+    }
     match &options.program {
         Some(tag) => probe_one(tag, options.budget),
         None => probe_all(&options),
@@ -66,6 +61,7 @@ fn options(raw: impl IntoIterator<Item = String>) -> Result<Options, String> {
         jobs: DEFAULT_JOBS,
         values: false,
         summary: false,
+        tags: false,
         program: None,
         files: Vec::new(),
     };
@@ -96,6 +92,7 @@ fn options(raw: impl IntoIterator<Item = String>) -> Result<Options, String> {
             }
             "--values" => options.values = true,
             "--summary" => options.summary = true,
+            "--tags" => options.tags = true,
             "--program" => {
                 options.program = Some(
                     raw.next()
@@ -111,21 +108,9 @@ fn options(raw: impl IntoIterator<Item = String>) -> Result<Options, String> {
     Ok(options)
 }
 
-fn tagged_vocabulary(tag: &str) -> Option<Vocabulary> {
-    match tag {
-        "example" => Some(symphonyscript_fixtures::vocabulary()),
-        "native" => Some(symphonyscript_fixtures::native_vocabulary()),
-        "bounded" => Some(symphonyscript_fixtures::bounded_vocabulary()),
-        "envelope" => Some(symphonyscript_fixtures::envelope_vocabulary()),
-        "bar" => Some(symphonyscript_fixtures::bar_vocabulary()),
-        "signature" => Some(support::signature_vocabulary()),
-        "to" => Some(support::to_array_vocabulary()),
-        _ => None,
-    }
-}
-
 fn probe_one(tag: &str, budget: Duration) -> Result<(), String> {
-    let vocabulary = tagged_vocabulary(tag).ok_or_else(|| format!("unknown tag `{tag}`"))?;
+    let name = tagged_vocabulary(tag).ok_or_else(|| format!("unknown tag `{tag}`"))?;
+    let vocabulary = named_vocabulary(name)?;
     let compiler = Compiler::new(&vocabulary)
         .map_err(|failed| format!("the vocabulary `{tag}` does not compile: {failed:?}"))?;
     let mut text = String::new();
@@ -155,13 +140,13 @@ fn probe_all(options: &Options) -> Result<(), String> {
         programs.extend(probe_programs(file, &content));
     }
     for program in &programs {
-        if !TAGS.contains(&program.tag.as_str()) {
+        if tagged_vocabulary(&program.tag).is_none() {
             return Err(format!(
                 "{}:{}: unknown tag `#{}`; the tags are {}",
                 program.file,
                 program.line,
                 program.tag,
-                TAGS.map(|tag| format!("#{tag}")).join(", ")
+                PROBE_TAGS.map(|(tag, _)| format!("#{tag}")).join(", ")
             ));
         }
     }

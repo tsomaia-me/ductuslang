@@ -17,7 +17,7 @@ from pathlib import Path
 
 import figures
 import verdicts
-from programs import MAIN, PROBES, key, probe_records, read_jsonl, write_jsonl_gz
+from programs import MAIN, PROBES, key, probe_records, probe_vocabularies, read_jsonl, write_jsonl_gz
 
 HERE = Path(__file__).resolve().parent
 EVOLVE = HERE.parent
@@ -98,11 +98,11 @@ def code_table(binaries):
 
 
 def programs_at(binaries, corpora):
-    found = {}
+    found, vocabularies = {}, probe_vocabularies(binaries)
     for corpus in sorted(corpora.glob("*.jsonl.gz")):
         name = corpus.name.removesuffix(".jsonl.gz")
         for record in read_jsonl(corpus):
-            for program in probe_records(record) if name == PROBES else [record]:
+            for program in probe_records(record, vocabularies) if name == PROBES else [record]:
                 found.setdefault(key(program), {**program, "set": name})
     mutants = subprocess.run([binaries / "evolve-mutants"], check=True, capture_output=True, text=True).stdout
     for program in map(json.loads, mutants.splitlines()):
