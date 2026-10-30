@@ -369,13 +369,48 @@ class Running(unittest.TestCase):
         self.assertEqual(shape["results"], ["after.log", "failing.log", "first.log", "missing.log"])
         self.assertEqual(shape["commands"], records)
         self.assertEqual(set(shape), {"tip", "export", "target", "evolve_binaries", "profile", "jobs", "ignored_tests",
-                                      "load_limits", "pipeline", "host", "started", "written", "results", "commands"})
+                                      "load_limits", "pipeline", "host", "started", "written", "results", "commands",
+                                      "test_times"})
+        self.assertEqual(shape["test_times"], {})
         self.assertEqual((shape["ignored_tests"], asked["ignored_tests"]),
                          ({"exhaustive": False, "stress": False}, {"exhaustive": True, "stress": True}))
         self.assertEqual((shape["load_limits"], asked["load_limits"], unbounded["load_limits"]),
                          ({"builds_and_checks": 12.0, "timed_steps": 6.0, "figures": 4.0},
                           {"builds_and_checks": 12.0, "timed_steps": 6.0, "figures": 6.0},
                           {"builds_and_checks": 12.0, "timed_steps": None, "figures": None}))
+
+    def test_the_manifest_lists_every_tests_time_and_status_slowest_first_for_the_unit_and_exhaustive_runs(self):
+        unit = ("   Compiling symphonyscript v0.1.0\n"
+                "    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.00s\n"
+                "    Starting 4 tests across 2 binaries (1 test skipped)\n"
+                "        PASS [   0.004s] symphonyscript-core types::small\n"
+                "        FAIL [   1.250s] symphonyscript typing::broken\n"
+                "--- STDOUT:              symphonyscript typing::broken ---\n"
+                "        PASS [   0.500s] printed\n"
+                "        SLOW [> 60.000s] symphonyscript typing::slow\n"
+                "        SKIP [         ] symphonyscript typing::exhaustive_forms\n"
+                "        PASS [  62.500s] (  3/4) symphonyscript typing::slow\n"
+                "------------\n"
+                "     Summary [  63.800s] 3 tests run: 2 passed, 1 failed, 1 skipped\n"
+                "        FAIL [   1.250s] symphonyscript typing::broken\n"
+                "error: test run failed\n")
+        exhaustive = "        PASS [  12.000s] symphonyscript typing::exhaustive_forms\n"
+        self.assertEqual(run.test_times(unit),
+                         [{"test": "symphonyscript typing::slow", "seconds": 62.5, "status": "pass"},
+                          {"test": "symphonyscript typing::broken", "seconds": 1.25, "status": "fail"},
+                          {"test": "symphonyscript-core types::small", "seconds": 0.004, "status": "pass"},
+                          {"test": "symphonyscript typing::exhaustive_forms", "seconds": None, "status": "skip"}])
+        with tempfile.TemporaryDirectory() as directory:
+            results = Path(directory)
+            records = []
+            for name, log in (("nextest", unit), ("nextest-exhaustive", exhaustive), ("nextest-stress", exhaustive)):
+                (results / f"{name}.log").write_text(log)
+                records.append({"name": name, "log": f"{name}.log"})
+            shape = run.manifest("f" * 40, results / "into", results, records, "2026-10-28T00:00:00+00:00", 4)
+            unit_only = run.manifest("f" * 40, results / "into", results, records[:1], "2026-10-28T00:00:00+00:00", 4)
+        forms = {"test": "symphonyscript typing::exhaustive_forms", "seconds": 12.0, "status": "pass"}
+        self.assertEqual(shape["test_times"], {"nextest": run.test_times(unit), "nextest-exhaustive": [forms]})
+        self.assertEqual(list(unit_only["test_times"]), ["nextest"])
 
     def test_the_shared_step_runs_the_four_checks_as_commands_of_their_own_in_the_dev_profile(self):
         into, results = Path("/into"), Path("/results")

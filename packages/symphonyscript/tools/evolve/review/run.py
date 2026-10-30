@@ -4,6 +4,7 @@ import json
 import math
 import os
 import platform
+import re
 import shutil
 import subprocess
 import sys
@@ -34,6 +35,10 @@ POLL_SECONDS = 15
 THUMB = "thumbv7em-none-eabihf"
 EXHAUSTIVE = "test(/(^|::)exhaustive_/)"
 STRESS = "test(/(^|::)stress_/)"
+TIMED_TESTS = ("nextest", "nextest-exhaustive")
+TEST_LINE = re.compile(r"\s*(?P<status>[A-Z][A-Z-]*) \[\s*(?P<seconds>[0-9.]+s)?\s*\]\s+(?:\(\s*\d+/\d+\)\s+)?"
+                       r"(?P<test>\S+ \S+)\s*")
+SUMMARY_LINE = re.compile(r"\s*Summary \[")
 
 
 def git(repository, *arguments, check=True):
@@ -314,6 +319,19 @@ def shared_steps(sha, top, into, run, jobs, baselines, against, quiet=None, stre
                  HERE)]
 
 
+def test_times(log):
+    found = {}
+    for line in log.splitlines():
+        if SUMMARY_LINE.match(line):
+            break
+        matched = TEST_LINE.fullmatch(line)
+        if matched and matched["test"] not in found:
+            seconds = matched["seconds"]
+            found[matched["test"]] = {"test": matched["test"], "seconds": float(seconds[:-1]) if seconds else None,
+                                      "status": matched["status"].lower()}
+    return sorted(found.values(), key=lambda row: (row["seconds"] is None, -(row["seconds"] or 0), row["test"]))
+
+
 def manifest(tip, into, run, records, started, jobs, quiet=None, stress=False, exhaustive=False):
     pipeline = git(HERE, "rev-parse", "HEAD").stdout.strip()
     edited = git(HERE, "status", "--porcelain", "--", str(EVOLVE)).stdout.strip()
@@ -325,7 +343,9 @@ def manifest(tip, into, run, records, started, jobs, quiet=None, stress=False, e
             "host": {"name": platform.node(), "system": platform.platform(), "cpus": os.cpu_count()},
             "started": started, "written": now(),
             "results": sorted(path.name for path in run.iterdir() if path.name != "manifest.json"),
-            "commands": records}
+            "commands": records,
+            "test_times": {record["name"]: test_times((run / record["log"]).read_text(errors="replace"))
+                           for record in records if record["name"] in TIMED_TESTS}}
 
 
 def shared(arguments):
