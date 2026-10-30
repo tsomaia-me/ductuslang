@@ -47,7 +47,7 @@ Examples are fenced blocks tagged by what they hold: `sym` for a program, `sym-e
 | `Synth` | yes | none | `Osc`, `Filter`, `Mixer`, `Output` |
 | `Osc` | yes | `freq: f64 = 440` (default), `wave: Wave = Sine`, `rate: f32 = 1` | none |
 | `Filter`, `Mixer`, `Output` | yes | `Filter` has `cutoff: f32 = 1000` (default) | none |
-| `Pad` | yes | `hit: Hit` (default; takes `out state`), `gain: f32 = 1` | none |
+| `Pad` | yes | `hit: Hit` (default; takes `out channel`, capacity 16), `gain: f32 = 1` | none |
 
 | Wire kind | From → to | Attributes (the default attribute marked "default") | Cyclic |
 |---|---|---|---|
@@ -263,9 +263,9 @@ Fields    ::= (Name ':' Expr (',' Name ':' Expr)* ','?)?
 
 A `type` declaration names a type at top level, in the program's source or in the vocabulary's prelude (§10.1), and shares the top-level namespace (§6.5). The block form declares a record; `type Name = Type` declares an alias, a name that is its type everywhere it is written, a sum (§3.9) included: `type Shape = Circle | Square`, `type Id = i64`. An alias of itself, directly or through other aliases, is an error. A `type` declaration may take bracket parameters (§6.8).
 
-A record is a value with named fields, each of its own type. A field is a scalar, a string with a capacity (§3.3), an enum, a record, a sum of these (§3.9), a map (§3.10), a document with a budget (§3.11), a function type (§6.7) or an array of these; a field of a kind type is an error (§3.5), two fields of one name are an error, and a record type that reaches itself through its fields is an error, since its size would be unbounded. A field's name is scoped to its type and clashes with no other name; a keyword may be one (§2.5), and `past`, `stepped` and `dropped` may not, because a record can be held in a cell whose members they are (§5.7).
+A record is a value with named fields, each of its own type. A field is a scalar, a string with a capacity (§3.3), an enum, a record, a sum of these (§3.9), a map (§3.10), a document with a budget (§3.11) or an array of these; a field of a kind type is an error (§3.5), two fields of one name are an error, and a record type that reaches itself through its fields is an error, since its size would be unbounded. A field's name is scoped to its type and clashes with no other name; a keyword may be one (§2.5), and `past`, `stepped` and `dropped` may not, because a record can be held in a cell whose members they are (§5.7).
 
-A record literal names its type and lists fields by name, in any order: `Chord {root: 60, spread: 4}`. A field it leaves out holds its zero, so `Chord {}` is the record with every field at its zero: `0`, `0.0`, `false`, the enum's first variant, the empty string, the empty array, a record of zeros; a field of function type (§6.7) has no zero and is written in every literal of its type. The literal carries its type, so it stands wherever a value of that type stands; a literal naming a generic type writes the type's arguments or binds them from its fields (§6.8). `r.name` reads a field (§5.7). Records are not compared, interpolated or converted; `is` on records is an error.
+A record literal names its type and lists fields by name, in any order: `Chord {root: 60, spread: 4}`. A field it leaves out holds its zero, so `Chord {}` is the record with every field at its zero: `0`, `0.0`, `false`, the enum's first variant, the empty string, the empty array, a record of zeros. The literal carries its type, so it stands wherever a value of that type stands; a literal naming a generic type writes the type's arguments or binds them from its fields (§6.8). `r.name` reads a field (§5.7). Records are not compared, interpolated or converted; `is` on records is an error.
 
 A record whose fields read cells is a value of bindings, field by field, as a fixed array is (§4.4, §5.5): each leaf field is its own binding, and a variable-array field is one cell. A host-fed record cell is written per leaf field or whole (§12.1).
 
@@ -284,8 +284,8 @@ Clip c:
 
 A sum type `A | B` holds a value of one of its alternatives, which are distinct types among scalars, strings, enums, records, aliases, arrays, maps, documents and `none`; `A | A` is an error. `none` is a type with one value, written `none`, and `T?` is `T | none`; `T??` is an error. A sum is stored as a tag and the slots of its largest alternative.
 
-- A value of an alternative widens into the sum (§4.3), and a sum into a sum that holds every alternative of it; nothing narrows implicitly, so a `T?` where a `T` is expected is an error whose help names `or`.
-- `match` reads a sum (§5.4). `x is none`, `x is not none` and `x is Circle`, with an alternative's type name, are `bool` tests (§5.3), and `x or y` yields `x`'s value, or `y` when `x` is `none` (§5.3).
+- A value of an alternative widens into the sum (§4.3), and a sum into a sum that holds every alternative of it; nothing narrows implicitly, so a `T?` where a `T` is expected is an error whose help names `??`.
+- `match` reads a sum (§5.4). `x is none`, `x is not none` and `x is Circle`, with an alternative's type name, are `bool` tests (§5.3), and `x ?? y` yields `x`'s value, or `y` when `x` is `none` (§5.3).
 - A record literal names its alternative: `Square {side: 1}` where a `Shape` is expected is a `Square`.
 - A sum stands in every value type position: a field, a cell, a `let`, a parameter, a result, an array element. It is never an attribute's type, and never holds a node reference.
 - Two sums compare with `is` when every alternative is a scalar, a string or an enum: equal when both are `none`, or both hold the same alternative with equal values. A sum with a record alternative is not compared.
@@ -300,7 +300,7 @@ type Shape = Circle | Square
 state port(none): i32?
 state shape(Square {side: 1}): Shape
 
-state bound = port or 80
+state bound = port ?? 80
 state area = match shape:
     Circle: pi * shape.r * shape.r
     Square: shape.side * shape.side
@@ -315,7 +315,7 @@ Synth s:
     Osc | freq=port
 ```
 
-This is an error: `port` may be `none`, and `freq` holds one `f64`; `port or 440` reads it with a fallback.
+This is an error: `port` may be `none`, and `freq` holds one `f64`; `port ?? 440` reads it with a fallback.
 
 ### 3.10 Maps
 
@@ -336,10 +336,10 @@ A map holds up to its capacity of entries, each a key of the key type and a valu
 state headers({}): {str[..32]: str[..256]}[..32]
 state req(Request {})
 
-state host = headers["host"] or "localhost"
+state host = headers["host"] ?? "localhost"
 state trimmed = headers without ["cookie", "set-cookie"]
 state with_host = headers + {"host": host}
-state hits({}): {str[..64]: i32}[..64] = (hits.past(1) + {req.path: (hits.past(1)[req.path] or 0) + 1})[^64..]
+state hits({}): {str[..64]: i32}[..64] = (hits.past(1) + {req.path: hits.past(1)[req.path] ?? 0 + 1})[^64..]
 ```
 
 `hits` counts requests per path and keeps the newest 64 paths.
@@ -367,7 +367,7 @@ A document is a JSON value: an object, an array, a string, a number, `true`, `fa
 - A view is a `json` value naming a part of a document: `v["key"]` an object's entry, `v[i]` an array's element, with `i` an integer of either width, `v.keys` and `v.values` an object's keys and values as array views. An absent key, an index into a value that is not an array or past the array's end, and a `null` node are the `Null` value, so a chain of reads never fails. `v.size` is an array's length or an object's entry count, an `i32`, and 0 for anything else. A document interpolates nowhere and is not ordered.
 - `v.kind` is the node's kind, a value of the built-in enum `Json`: `Object`, `Array`, `String`, `Number`, `Bool` or `Null` (§5.7).
 - `is` and `is not` compare two documents (§5.3), a language value on either side widening into a document first. Two documents are equal when they are the same JSON value: the same kind, numbers numerically (two integer nodes exactly, any other pair as `f64`), strings character by character, arrays element by element, objects by their keys in any order, each with equal values. So `v is none` is true when `v` is the `Null` value, `v is "bob"` when `v` is that string, `v is [1, 2]` when `v` is that array, and `v is json {"a": 1}` when `v` is an object holding exactly that entry.
-- A typed read: a `json` value where a type `T` other than a document is expected (§4.2) reads as `T?`, the value when the node fits `T` and `none` otherwise. A number fits an integer type when it is a whole number in the type's range, and a float type when it rounds to a finite value in it (§4.1); a string fits `str[..K]` when it has at most K characters, and an enum when its text names a variant; `true` and `false` fit `bool`; an array fits `T[..M]` when it has at most M elements and each fits `T`, and `T[n]` when it has exactly n; an object fits a record when every field it names fits the field's type, an absent field taking its zero and a key the record lacks being ignored, and fits a map when its entries fit the map's key and value types within its capacity; a value fits a sum when it fits an alternative, the first in the sum's order; a document fits `json[..M]` when its text is at most M bytes, and that read copies it. A read never cuts a value. `or` supplies the fallback (§5.3).
+- A typed read: a `json` value where a type `T` other than a document is expected (§4.2) reads as `T?`, the value when the node fits `T` and `none` otherwise. A number fits an integer type when it is a whole number in the type's range, and a float type when it rounds to a finite value in it (§4.1); a string fits `str[..K]` when it has at most K characters, and an enum when its text names a variant; `true` and `false` fit `bool`; an array fits `T[..M]` when it has at most M elements and each fits `T`, and `T[n]` when it has exactly n; an object fits a record when every field it names fits the field's type, an absent field taking its zero and a key the record lacks being ignored, and fits a map when its entries fit the map's key and value types within its capacity; a value fits a sum when it fits an alternative, the first in the sum's order; a document fits `json[..M]` when its text is at most M bytes, and that read copies it. A read never cuts a value. `??` supplies the fallback (§5.3).
 - The host writes a document cell as text (§12.1): a write past the budget, or one that is not valid JSON in valid UTF-8, is refused with the capacity or the byte position in the error, and the cell keeps its value. An object's repeated key keeps its last value in the first key's position; a number is an integer when its text has no fraction or exponent and fits `i64`, otherwise an `f64`, past its range an infinity, which fits no float type.
 
 ```sym
@@ -375,9 +375,9 @@ state body(json {}): json[..65536]
 
 state items = body["items"]
 state count = items.size
-state qty = items[0]["qty"] or 1
-state name: str[..64] = body["customer"]["name"] or "anonymous"
-state order: Order = body["order"] or Order {}
+state qty = items[0]["qty"] ?? 1
+state name: str[..64] = body["customer"]["name"] ?? "anonymous"
+state order: Order = body["order"] ?? Order {}
 state is_list = items.kind is Array
 state anonymous = body["customer"]["name"] is none
 state reply = json {"ok": true, "count": count, "echo": items, "order": order}
@@ -391,7 +391,7 @@ state body(json {}): json[..4096]
 state small: json[..256] = body["items"]
 ```
 
-This is an error: `body["items"]` may not fit `json[..256]`; `or json {}` supplies a fallback, and `json[..256]?` keeps the `none`.
+This is an error: `body["items"]` may not fit `json[..256]`; `?? json {}` supplies a fallback, and `json[..256]?` keeps the `none`.
 
 ## 4. Type inference
 
@@ -520,7 +520,8 @@ From loosest to tightest:
 | 7 | `*`, `/`, `div`, `%` | left |
 | 8 | unary `-` | prefix |
 | 9 | `**` | right |
-| 10 | `.name`, `[index]`, `(arguments)` | left |
+| 10 | `??` | left |
+| 11 | `.name`, `[index]`, `(arguments)` | left |
 
 ```ebnf
 Expr      ::= IfExpr | ForExpr | OrExpr
@@ -533,7 +534,8 @@ CmpOp     ::= 'is' 'not'? | '<' | '<=' | '>' | '>='
 AddExpr   ::= MulExpr (('+' | '-' | 'without') MulExpr)*
 MulExpr   ::= UnaryExpr (('*' | '/' | 'div' | '%') UnaryExpr)*
 UnaryExpr ::= '-' UnaryExpr | PowExpr
-PowExpr   ::= Postfix ('**' UnaryExpr)?
+PowExpr   ::= Fallback ('**' UnaryExpr)?
+Fallback  ::= Postfix ('??' Postfix)*
 Postfix   ::= Primary ('.' Name | '[' Index ']' | '(' Args? ')')*
 Primary   ::= NumberLit | BoolLit | StringLit | RecordLit | MapLit | JsonLit | 'none' | Name | QualifiedName
             | 'to' | Conversion | ArrayLit | '(' Expr ')'
@@ -543,7 +545,7 @@ Arg       ::= Expr | Lambda
 NamedArg  ::= Name '=' Arg
 ```
 
-Comparisons do not chain: `a < b < c` is an error. `-2 ** 2` is −4, and `n-1` is `n - 1`. An `if` that is an operand of another operator is parenthesized: `base + (if high then 12 else 0)`. An `if` that is a whole value, such as a `let`'s value, an attribute value or an argument, needs no parentheses. A `{` in an expression opens a map literal (§3.10), after a type name a record literal (§3.8), and after `json` a document literal (§3.11).
+Comparisons do not chain: `a < b < c` is an error. `-2 ** 2` is −4, and `n-1` is `n - 1`. `??` is the fallback on a `T?` (§5.3), and binds tighter than `**` and looser than a member read or a call, so `port ?? 80 > 1024`, `a * b ?? 1` and `-x ?? 1` apply the fallback first. An `if` that is an operand of another operator is parenthesized: `base + (if high then 12 else 0)`. An `if` that is a whole value, such as a `let`'s value, an attribute value or an argument, needs no parentheses. A `{` in an expression opens a map literal (§3.10), after a type name a record literal (§3.8), and after `json` a document literal (§3.11).
 
 Expressions evaluate the same way at compile time and at runtime; §4.6 states the differences in compile-time arithmetic.
 
@@ -563,7 +565,7 @@ Float arithmetic follows IEEE 754, including infinities and NaN: a float divided
 
 `is` and `is not` compare two scalars, enum values or strings of one type after widening; floats compare by IEEE 754 equality, and strings character by character. Two documents, or a document and a value that widens into one, compare by JSON value (§3.11). A record, a map or an array there is otherwise an error. `<`, `<=`, `>` and `>=` compare numbers. `and`, `or` and `not` take and yield `bool`.
 
-With a type name on the right, `is` and `is not` test a sum (§3.9): `x is none` is true when `x` holds no value, and `x is Circle`, with an alternative's type name, when `x` holds that alternative; no narrowing follows. With a `T?` as its left operand, `or` is the fallback: `x or y` yields `x`'s value when `x` is not `none` and `y` otherwise, `y` a `T` or a `T?` and the result the same; with a `bool` on the left `or` is the logical one, and with a `bool?` the fallback, so `flag or true` is `flag`'s value whenever `flag` holds one. Where the left operand is a document (§3.11) and the right is not, the right operand's type is the expected type of the left, which makes it a typed read as `T?`; a flexible right operand takes the defaults of §4.5. `or` keeps its precedence (§5.1), so a comparison on a fallback is parenthesized: `(port or 80) > 1024`.
+With a type name on the right, `is` and `is not` test a sum (§3.9): `x is none` is true when `x` holds no value, and `x is Circle`, with an alternative's type name, when `x` holds that alternative; no narrowing follows. `x ?? y`, with a `T?` as its left operand, is the fallback: it yields `x`'s value when `x` is not `none` and `y` otherwise, `y` a `T` or a `T?` and the result the same, a `bool?` included, so `flag ?? true` is `flag`'s value whenever `flag` holds one. Where the left operand is a document (§3.11) and the right is not, the right operand's type is the expected type of the left, which makes it a typed read as `T?`; a flexible right operand takes the defaults of §4.5. `or` takes `bool` operands only, and a `T?` beside it is an error whose help names `??`.
 
 ### 5.4 Conditionals
 
@@ -778,7 +780,7 @@ A cell is a value that changes while the graph runs. Its word says what a step o
 
 A host-fed `state` keeps the last value written and steps when a write changes it, an equal write being nothing. A host-fed `stream` and a host-fed `channel` step on every write, equal or not, and keep every write since the last commit as a pending step, up to a capacity: a `stream` forgets the oldest pending write when the capacity is full, and a `channel` refuses the write until a commit drains (§12.1). `[N]` after `stream` or `channel` states the capacity; absent, it is the largest capacity an attribute the cell is bound to states (§10.1), and 1 when it is bound to none. `[N]` on a `state` or on a derived cell is an error, and `[N]` below the capacity a bound attribute states is an error naming the attribute and its capacity; a larger `[N]` is always allowed. A cell's history depth is never declared (§6.6).
 
-The init is a compile-time value and gives a host-fed cell its type (§4.4); an annotation follows it. At load a host-fed cell holds its init. A cell may hold an array, a string, a record, a sum, a map or a document, never a node reference, and a function only as the field of a record a derived cell holds (§6.7), since the host writes no function; a string cell states its capacity (§3.3), a record init names its type (§3.8), a document cell states its budget (§3.11), and a cell annotated with a variable array type (§3.7) takes an init no longer than its capacity: `state held([]): i32[..10]`. The host writes a host-fed cell by its handle, by name (§12.1), whether or not an attribute is bound to it (§7.6). `stream tick(none)` is a cell that carries nothing, a clock the host steps; a cell of type `none` is legal.
+The init is a compile-time value and gives a host-fed cell its type (§4.4); an annotation follows it. At load a host-fed cell holds its init. A cell may hold an array, a string, a record, a sum, a map or a document, never a node reference or a function; a string cell states its capacity (§3.3), a record init names its type (§3.8), a document cell states its budget (§3.11), and a cell annotated with a variable array type (§3.7) takes an init no longer than its capacity: `state held([]): i32[..10]`. The host writes a host-fed cell by its handle, by name (§12.1), whether or not an attribute is bound to it (§7.6). `stream tick(none)` is a cell that carries nothing, a clock the host steps; a cell of type `none` is legal.
 
 ```sym
 state cutoff(0.5)
@@ -971,7 +973,7 @@ Clip verse:
 The Program holds the cells `verse.low.gain` and `verse.Voice:0.gain`. An `out` parameter takes a host-fed cell the program declares, which the body binds with `=>` (§7.6), and `children` parameters take the use's body, split by what each names:
 
 ```sym
-pattern Drum(default out state hit: Hit, gain: f32 = 1.0) -> Pad:
+pattern Drum(default out channel hit: Hit, gain: f32 = 1.0) -> Pad:
     Pad | hit => hit gain=gain
 
 pattern Section(default root: i32, children notes: Note*, children links: Plays*) -> Clip:
@@ -981,7 +983,7 @@ pattern Section(default root: i32, children notes: Note*, children links: Plays*
         Plays: intro
         links
 
-state kick_hit(Hit {})
+channel kick_hit(Hit {})
 
 Drum kick /kick_hit | gain=0.9
 
@@ -1093,14 +1095,13 @@ A lambda is a function written in place: `x: x * 2`, `(a, b): a + b`, `(x: i32) 
 
 A function reference is a compile-time value that names one declaration: a source function, a native function, a `math` function, or a lambda. It is that declaration, not a copy and not its name: its parameters with their annotations, its result, its bracket parameters, its body, and for a lambda the scope it is written in. Two references from one declaration are one function. A function's name and a lambda, written where a function reference stands, are function references.
 
-- A function reference stands in exactly these positions: the whole value of a compile-time `let`, top-level or local (§6.2, §6.3, §6.4); an argument where the receiving parameter has a function type or is called in the body; the callee of a call (§5.7); and the value of a record field of function type (§3.8). Anywhere else, as an operand, an array element, an `if` or `match` arm, an attribute value, a cell's init or rule, an interpolation or an `is` operand, it is an error whose summary says a function is not a value.
-- A record field of function type holds a declared function, a native function, a `math` function or a lambda, as a function reference; the field's type fixes the function's unannotated parameters and result, and agrees with its annotated ones or is an error. `r.f(x)` calls the function the field holds: where `r` is a compile-time value the call is inlined as §6.3 inlines one, and where `r` reads cells the call reaches one of the functions written for the field in the program, a finite set (§14).
+- A function reference stands in exactly these positions: the whole value of a compile-time `let`, top-level or local (§6.2, §6.3, §6.4); an argument where the receiving parameter has a function type or is called in the body; and the callee of a call (§5.7). Anywhere else, as an operand, an array element, an `if` or `match` arm, an attribute value, a cell's init or rule, a record field, an interpolation or an `is` operand, it is an error whose summary says a function is not a value.
 - A use substitutes the declaration. With `let baz = bar`, `baz(1.0, inc)` is `bar(1.0, inc)`, inlined and checked at that call as §6.3 says, `bar`'s annotated parameters fixed and its unannotated ones typed per call, and `count(held, baz)` is `count(held, bar)`. A recursive or a native function is called as §6.3 and §10.1 say, and a call through a reference is a call of the function for §6.3's recursion rule: `fn bar(n): if n < 1 then 0 else baz(n - 1)` with `let baz = bar` makes `bar` recursive, evaluated at compile time.
 - Where the body of the function that receives a reference calls its parameter, the call inlines the referenced body with its parameters bound to the call's arguments, as §6.3 inlines a call. Where the receiving parameter has a function type, the type flows into the function's parameters and result as their expected types (§4.2), and an annotation the function carries agrees with them or is an error; where it has none, the function's parameters are typed by those calls' arguments as §6.3 types a call. A native function that receives a reference calls it as §10.1 says. `each(xs, abs)` passes `math`'s `abs`, and `sort_by(notes, before)` with `fn before(a, b): a.pitch < b.pitch` passes `before`.
 - A lambda is a lexical closure with zero storage: it reads the names in scope where it is written and holds no value of its own. A `let` holding a lambda holds the lambda expression. A use inlines its body with its parameters bound to the call's arguments, and the body reads the names in scope where the lambda is written, at the `let`, never at the use.
 - A function reference has no type of its own; a use types it as a use types an unannotated function (§6.3). A `let` holding one may carry a function type, `let inc: (f64) -> f64 = x: x + 1`, which fixes the lambda's parameter and result types (§4.5); on a `let` holding a function, the annotation agrees with the function's own annotations or is an error, and fixes its unannotated parameters and result for uses through that `let`.
 - A `let` holding a function reference is a compile-time value whatever the body reads, because the body runs only at a use; a cell read in the body is read by that use, as an argument's read is (§6.3). The `let` is never a cell and never reaches the Program. A `let` whose lambda names the `let` itself is §6.2's cycle error.
-- A function type `(T1, T2) -> R` (§3.2) is the type of a function that takes parameters of the types `T1` and `T2` and yields an `R`. Its parameter and result types are value types, never function types. It stands as the type of a function's or a native function's parameter, of a compile-time `let` holding a function reference, and of a record field (§3.8); on any other `let`, a cell, an attribute or an array element it is an error.
+- A function type `(T1, T2) -> R` (§3.2) is the type of a function that takes parameters of the types `T1` and `T2` and yields an `R`. Its parameter and result types are value types, never function types. It stands only as the type of a function's or a native function's parameter and of a compile-time `let` holding a function reference, and on any other `let`, a cell, an attribute, a record field or an array element it is an error.
 - A parameter of a function type may carry a name, `(x: f64) -> f64`. The name labels the position for the reader and lets the body call the parameter by it, `f(x=seed)`, as named arguments name a source function's parameters (§5.7); the referenced function's own parameter names are its own and need not match.
 - A lambda's annotations fix its parameters' and its result's types as a function's do (§4.5).
 - The number of parameters a lambda takes comes from the receiving parameter's function type, or from the calls of that parameter in the body. A lambda or a function that takes another number, or calls of one parameter that pass different numbers of arguments, are an error.
@@ -1161,7 +1162,7 @@ let ten = f(5)
 state g(x: x + 1)
 ```
 
-This is an error: a function reference stands only in the positions above, and a cell holds a function only inside a record's field.
+This is an error: a function reference stands only in the positions above, and a cell holds no function.
 
 ```sym-error
 fn bar(n): n + 1
@@ -1669,7 +1670,7 @@ The compiler checks the expanded program (§6.4) against the vocabulary:
 - Wires form cycles only as §8.4 allows.
 
 ```sym
-state hit(Hit {})
+channel hit(Hit {})
 
 Pad kick | hit => hit
 ```
@@ -1733,7 +1734,7 @@ A commit applies the staged writes and brings every cell up to date, in steps:
 
 Two values are equal here when their live parts hold the same bits: a scalar its bits, the canonical NaN (§12.5) equal to itself; a variable array or a string its live length and then its live elements or characters; a map its entries; a sum its tag and the value of its alternative; a record and a fixed array part by part; a document its text. Unused capacity is never compared.
 
-After a commit, every value the runtime holds reflects the same writes, and no read from the runtime sees part of a commit. A consumer that copies values elsewhere states what its own readers see.
+At the end of each step every value the runtime holds reflects the same writes, and the consumer (ARCHITECTURE §6) reads the Program's values and the step's changes then, before the next step begins; no read sees part of a step. A consumer that copies values elsewhere states what its own readers see.
 
 A cell carries its value and its history from one commit to the next (§6.6); a derived cell's value is a function of the values and histories of the cells it reads and of its own history. Time-dependent behaviour comes from cells the host writes, such as `bar`, `beat` and `time`, combined with pure functions, histories and `rand`.
 
@@ -1747,7 +1748,7 @@ A commit reports what changed, in the terms consumers use:
 - a wire's activation;
 - a wire's chosen destination.
 
-An attribute bound to a cell is reported once per step of its binding, and the consumer reads the value whole, a variable array with its live length; an attribute whose binding is an array or a record of bindings (§4.4) is reported once per step of any of them. A `state` steps only when its value changes (§12.2), so an attribute bound to one is reported at each change, a value that returns within one commit to what it was before it being reported at each step it changed; one bound to a `stream` or a `channel` is reported at every step of it, equal values included. Activation and a chosen destination are reported at each step at which they changed. Records come in the order of their steps; within one step, instance changes come first and wire changes after them, each in Program order (§11), and for one item attribute changes come in the order the vocabulary declares the attributes, then its activation, then a wire's chosen destination. Loading a Program evaluates every cell, activation and destination choice, and the first commit reports changes relative to that loaded state. A map attribute reports one change when any entry differs, and a document attribute one change when its text differs.
+An attribute bound to a cell is reported once per step of its binding, and the consumer reads the value whole, a variable array with its live length; an attribute whose binding is an array or a record of bindings (§4.4) is reported once per step of any of them. A `state` steps only when its value changes (§12.2), so an attribute bound to one is reported at each change, a value that returns within one commit to what it was before it being reported at each step it changed; one bound to a `stream` or a `channel` is reported at every step of it, equal values included. Activation and a chosen destination are reported at each step at which they changed. The consumer receives each step's records at the end of that step (§12.2), so a value a later step overwrites is read before it is; within one step, instance changes come first and wire changes after them, each in Program order (§11), and for one item attribute changes come in the order the vocabulary declares the attributes, then its activation, then a wire's chosen destination. Loading a Program evaluates every cell, activation and destination choice, and the first commit reports changes relative to that loaded state. A map attribute reports one change when any entry differs, and a document attribute one change when its text differs.
 
 ### 12.4 Evaluation never fails
 
@@ -1819,7 +1820,7 @@ SymphonyScript has none of the following:
 - **Mutation and unbounded loops.** Bindings never change, and a cell changes only by taking a step (§6.1). The loops are the placement `for`, which runs at compile time (§7.9), and the `for` expression, which runs at most as often as its iterable allows (§5.10); patterns do not recurse (§6.4), and a function never recurses at runtime (§6.3).
 - **Varying structure.** Gates vary activation (§9), and destinations vary among fixed candidates (§8.2). A different structure is a different Program, loaded by reload (§13).
 - **References held at runtime** (§3.5).
-- **Functions made at runtime.** Every function a cell holds is one of a finite set written in the program. A function's body is inlined or stored once as a shared body (§11), a lambda is inlined or evaluated by the native function or the shared body that receives it (§6.7, §10.1), and a record field of function type holds one of the functions written for it (§6.7); nothing creates a function while the Program runs.
+- **Functions as values.** No function is a value at runtime, and no cell or record holds one. A function's body is inlined or stored once as a shared body (§11), and a lambda is inlined or evaluated by the native function or the shared body that receives it (§6.7, §10.1); nothing passes or holds a function while the Program runs.
 - **Metadata attributes.** No construct attaches metadata to a declaration.
 - **Bitwise operators.** `^` only counts from an array's end (§5.5).
 - **Readable gate state** (§9.3).
