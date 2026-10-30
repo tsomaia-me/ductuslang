@@ -5,7 +5,10 @@ use std::io::{BufRead, BufReader, BufWriter, Write};
 use std::process::ExitCode;
 
 use serde_json::json;
-use symphonyscript_evolve::{Checker, Guarded, Program, arguments, named_vocabulary};
+use symphonyscript_evolve::{
+    Checker, Guarded, Program, abandoned, arguments, named_vocabulary, restarted, resumed_output,
+    running_compiles,
+};
 
 const USAGE: &str =
     "usage: evolve-time [--budget <seconds>] [--vocabulary <name>] <programs.jsonl> <times.jsonl>";
@@ -34,15 +37,18 @@ fn run() -> Result<(), String> {
         )
     })?;
     let reader = BufReader::new(File::open(input).map_err(|error| format!("{input}: {error}"))?);
-    let mut writer =
-        BufWriter::new(File::create(output).map_err(|error| format!("{output}: {error}"))?);
-    for (index, line) in reader.lines().enumerate() {
+    let mut writer = BufWriter::new(
+        resumed_output(output, arguments.resume_at)
+            .map_err(|error| format!("{output}: {error}"))?,
+    );
+    for (index, line) in reader.lines().enumerate().skip(arguments.resume_at) {
         let line = line.map_err(|error| format!("{input}: {error}"))?;
         if line.trim().is_empty() {
             continue;
         }
         let program: Program = serde_json::from_str(&line)
             .map_err(|error| format!("{input}:{}: {error}", index + 1))?;
+        let running = running_compiles();
         let timed = match checker.compile(&program) {
             Guarded::Finished { value, elapsed, .. } => {
                 let mut codes: Vec<&str> = value
@@ -56,17 +62,23 @@ fn run() -> Result<(), String> {
                     "elapsed_ms": elapsed.as_secs_f64() * 1000.0,
                     "diagnostics": value.len(),
                     "codes": codes,
+                    "running_compiles": running,
                 })
             }
             Guarded::Panicked { message } => {
-                json!({"id": program.id, "elapsed_ms": null, "panic": message})
+                json!({"id": program.id, "elapsed_ms": null, "panic": message, "running_compiles": running})
             }
-            Guarded::TimedOut => json!({"id": program.id, "elapsed_ms": null}),
+            Guarded::TimedOut => {
+                json!({"id": program.id, "elapsed_ms": null, "running_compiles": running})
+            }
         };
         writeln!(writer, "{timed}").map_err(|error| format!("{output}: {error}"))?;
         writer
             .flush()
             .map_err(|error| format!("{output}: {error}"))?;
+        if abandoned() {
+            return Err(restarted(index + 1));
+        }
     }
     Ok(())
 }

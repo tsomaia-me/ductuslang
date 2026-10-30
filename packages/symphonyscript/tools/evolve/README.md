@@ -19,6 +19,8 @@ Clip c | three=([1]):
 
 The verdict diff reads each program of `corpora/probes.jsonl.gz` as `evolve-probe` reads a file: the text splits at its `----` lines, a program's first-line tag chooses the vocabulary `evolve-check` checks it under, as `evolve-probe --tags` prints it once per run, and its `#expect` line is dropped. A probe whose tag names no vocabulary is not checked: it takes the verdict `unknown-tag`, and `diff.md` names it with its tag.
 
+`evolve-check` and `evolve-time` compile each program on a thread under the budget. A compile past the budget is abandoned, and once that program's line is written the process replaces itself with a fresh run of the same command from the next line, appending to the same output, so no abandoned compile runs beside another program. `evolve-time` writes each program's `running_compiles`, the compiles still running when its compile began.
+
 The speed figures, `figures.json`, are the step's last command. Each figure waits until the 1-minute load is below the `--quiet-below` load, 4 when the flag is absent and no wait under `inf`, the figures together waiting at most 10 minutes, records that load beside it, and is taken with one job: one `evolve-time` process that runs `Compiler::check` on its compile thread in the `dev` profile, one program at a time.
 
 - A compile-time recursive call: a program whose `g` makes 1,000,000 distinct recursive calls over trees of distinct sizes, three runs, the median divided by 1,000,000.
