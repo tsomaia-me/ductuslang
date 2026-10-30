@@ -4,7 +4,8 @@ use symphonyscript_core::{
 };
 use symphonyscript_fixtures::{
     Rows, SPEC_SYM_EXAMPLES, covered, covering, dsp_project, music_project, native_vocabulary,
-    spec_examples, spec_productions, spec_projects, vocabulary, vocabulary_documented,
+    signature_vocabulary, spec_examples, spec_productions, spec_projects, to_array_vocabulary,
+    vocabulary, vocabulary_documented,
 };
 
 #[test]
@@ -41,6 +42,17 @@ fn the_vocabulary_stamp_is_pinned() {
 #[test]
 fn the_native_vocabulary_builds_with_one_stamp() {
     assert_eq!(native_vocabulary().stamp(), native_vocabulary().stamp());
+}
+
+#[test]
+fn the_signature_and_to_array_vocabularies_build_under_their_names_with_one_stamp() {
+    assert_eq!(
+        signature_vocabulary().stamp(),
+        signature_vocabulary().stamp()
+    );
+    assert_eq!(signature_vocabulary().stamp().name, "signatures");
+    assert_eq!(to_array_vocabulary().stamp(), to_array_vocabulary().stamp());
+    assert_eq!(to_array_vocabulary().stamp().name, "to-arrays");
 }
 
 #[test]

@@ -2,7 +2,7 @@ use std::process::{Command, Output};
 use std::time::Duration;
 
 use symphonyscript_evolve::{
-    DEFAULT_TAG, ProbeProgram, Probed, probe_block, probe_programs, probed,
+    DEFAULT_TAG, PROBE_TAGS, ProbeProgram, Probed, probe_block, probe_programs, probed,
 };
 
 const FIXTURE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/probe/programs.txt");
@@ -234,6 +234,45 @@ fn programs_run_in_parallel_print_in_file_order() {
         .collect();
     assert_eq!(one.len(), 12);
     assert_eq!(one, many);
+}
+
+#[test]
+fn the_tags_print_the_one_tag_table_and_every_tag_in_it_compiles_under_its_vocabulary() {
+    let output = probe(&["--tags"]);
+    assert!(output.status.success());
+    let printed: Vec<(String, String)> = String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .map(|line| match line.split_once(' ') {
+            Some((tag, vocabulary)) => (tag.to_string(), vocabulary.to_string()),
+            None => panic!("a tag line without a vocabulary: `{line}`"),
+        })
+        .collect();
+    let table: Vec<(String, String)> = PROBE_TAGS
+        .iter()
+        .map(|(tag, vocabulary)| (tag.to_string(), vocabulary.to_string()))
+        .collect();
+    assert_eq!(printed, table);
+    let file = concat!(env!("CARGO_TARGET_TMPDIR"), "/every-tag.txt");
+    let content: Vec<String> = PROBE_TAGS
+        .iter()
+        .map(|(tag, _)| format!("#{tag}\nClip c:\n    Note\n"))
+        .collect();
+    if let Err(error) = std::fs::write(file, content.join("----\n")) {
+        panic!("{file}: {error}");
+    }
+    let output = probe(&[file]);
+    assert!(output.status.success());
+    let blocks = blocks(&output);
+    assert_eq!(blocks.len(), PROBE_TAGS.len());
+    for ((tag, _), block) in PROBE_TAGS.iter().zip(&blocks) {
+        let mut lines = block.lines();
+        let header = lines.next().unwrap_or_default();
+        assert!(header.contains(&format!(" #{tag} ")), "{block}");
+        assert!(
+            !lines.next().unwrap_or_default().starts_with("panic"),
+            "{block}"
+        );
+    }
 }
 
 #[test]

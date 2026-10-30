@@ -4,6 +4,7 @@ import json
 import math
 import os
 import platform
+import re
 import shutil
 import subprocess
 import sys
@@ -16,7 +17,7 @@ from pathlib import Path
 
 import figures
 import verdicts
-from programs import MAIN, PROBES, key, probe_records, read_jsonl, write_jsonl_gz
+from programs import MAIN, PROBES, key, probe_records, probe_vocabularies, read_jsonl, write_jsonl_gz
 
 HERE = Path(__file__).resolve().parent
 EVOLVE = HERE.parent
@@ -34,6 +35,10 @@ POLL_SECONDS = 15
 THUMB = "thumbv7em-none-eabihf"
 EXHAUSTIVE = "test(/(^|::)exhaustive_/)"
 STRESS = "test(/(^|::)stress_/)"
+TIMED_TESTS = ("nextest", "nextest-exhaustive")
+TEST_LINE = re.compile(r"\s*(?P<status>[A-Z][A-Z-]*) \[\s*(?P<seconds>[0-9.]+s)?\s*\]\s+(?:\(\s*\d+/\d+\)\s+)?"
+                       r"(?P<test>\S+ \S+)\s*")
+SUMMARY_LINE = re.compile(r"\s*Summary \[")
 
 
 def git(repository, *arguments, check=True):
@@ -93,11 +98,11 @@ def code_table(binaries):
 
 
 def programs_at(binaries, corpora):
-    found = {}
+    found, vocabularies = {}, probe_vocabularies(binaries)
     for corpus in sorted(corpora.glob("*.jsonl.gz")):
         name = corpus.name.removesuffix(".jsonl.gz")
         for record in read_jsonl(corpus):
-            for program in probe_records(record) if name == PROBES else [record]:
+            for program in probe_records(record, vocabularies) if name == PROBES else [record]:
                 found.setdefault(key(program), {**program, "set": name})
     mutants = subprocess.run([binaries / "evolve-mutants"], check=True, capture_output=True, text=True).stdout
     for program in map(json.loads, mutants.splitlines()):
@@ -224,16 +229,36 @@ def record(arguments):
     print(target)
 
 
+def load_now():
+    return os.getloadavg()[0]
+
+
+def settling(below, bound, poll=POLL_SECONDS, read=load_now, sleep=time.sleep):
+    left = bound
+
+    def settle():
+        nonlocal left
+        load = read()
+        while not load < below and left > 0:
+            pause = min(poll, left)
+            sleep(pause)
+            left -= pause
+            load = read()
+        return load
+    return settle
+
+
 def settled(below, poll=POLL_SECONDS):
-    while True:
-        load = os.getloadavg()[0]
-        if below is None or load < below:
-            return load
-        time.sleep(poll)
+    return settling(math.inf if below is None else below, math.inf, poll)()
 
 
 def limit(below):
     return below if below is not None and math.isfinite(below) else None
+
+
+def load_limits(quiet):
+    return {"builds_and_checks": BUSY_LOAD, "timed_steps": QUIET_LOAD if quiet is None else quiet,
+            "figures": figures.LOAD_BELOW if quiet is None else quiet}
 
 
 def now():
@@ -266,12 +291,14 @@ def ignored_tests(name, expression, package, cargo, below):
                 cargo, below)
 
 
-def shared_steps(sha, top, into, run, jobs, baselines, against, quiet=QUIET_LOAD, stress=False, exhaustive=False):
+def shared_steps(sha, top, into, run, jobs, baselines, against, quiet=None, stress=False, exhaustive=False):
     export, package = into / "export", into / "export" / PACKAGE
+    limits = load_limits(quiet)
     cargo = {"CARGO_TARGET_DIR": str(into / "target"), "CARGO_BUILD_JOBS": str(jobs),
              "NEXTEST_TEST_THREADS": str(jobs), "RUST_TEST_THREADS": str(jobs)}
     verdict_diff = [sys.executable, HERE / "run.py", "check", sha, "--profile", "dev", "--jobs", jobs,
-                    "--settle-below", quiet, "--build", into / "check", "--baselines", baselines, *(["--against", against] if against else [])]
+                    "--settle-below", limits["timed_steps"], "--build", into / "check", "--baselines", baselines,
+                    *(["--against", against] if against else [])]
     return [step("archive", ["git", "-C", top, "archive", "--output", into / "export.tar", sha, PACKAGE], top),
             step("extract", ["tar", "-x", "-f", into / "export.tar", "-C", export], into),
             step("rustc", ["rustc", "--version", "--verbose"], package),
@@ -282,28 +309,43 @@ def shared_steps(sha, top, into, run, jobs, baselines, against, quiet=QUIET_LOAD
                  cargo, BUSY_LOAD),
             step("nextest", ["cargo", "nextest", "run", "--workspace"], package, cargo, BUSY_LOAD),
             *([ignored_tests("nextest-exhaustive", EXHAUSTIVE, package, cargo, BUSY_LOAD)] if exhaustive else []),
-            *([ignored_tests("nextest-stress", STRESS, package, cargo, quiet)] if stress else []),
+            *([ignored_tests("nextest-stress", STRESS, package, cargo, limits["timed_steps"])] if stress else []),
             step("doctest", ["cargo", "test", "--workspace", "--doc"], package, cargo, BUSY_LOAD),
             step("thumbv7em", ["cargo", "build", "-p", "symphonyscript-core", "--target", THUMB], package, cargo,
                  BUSY_LOAD),
             step("verdicts", verdict_diff, HERE, None, BUSY_LOAD),
             step("figures", [sys.executable, HERE / "run.py", "figures", into / "check" / "target" / PROFILES["dev"],
-                             run / "check-times.json.gz", run / "figures.json"], HERE, None, figures.LOAD_BELOW)]
+                             run / "check-times.json.gz", run / "figures.json", "--load-below", limits["figures"]],
+                 HERE)]
 
 
-def manifest(tip, into, run, records, started, jobs, quiet=QUIET_LOAD, stress=False, exhaustive=False):
+def test_times(log):
+    found = {}
+    for line in log.splitlines():
+        if SUMMARY_LINE.match(line):
+            break
+        matched = TEST_LINE.fullmatch(line)
+        if matched and matched["test"] not in found:
+            seconds = matched["seconds"]
+            found[matched["test"]] = {"test": matched["test"], "seconds": float(seconds[:-1]) if seconds else None,
+                                      "status": matched["status"].lower()}
+    return sorted(found.values(), key=lambda row: (row["seconds"] is None, -(row["seconds"] or 0), row["test"]))
+
+
+def manifest(tip, into, run, records, started, jobs, quiet=None, stress=False, exhaustive=False):
     pipeline = git(HERE, "rev-parse", "HEAD").stdout.strip()
     edited = git(HERE, "status", "--porcelain", "--", str(EVOLVE)).stdout.strip()
     return {"tip": tip, "export": str(into / "export" / PACKAGE), "target": str(into / "target"),
             "evolve_binaries": str(into / "check" / "target" / PROFILES["dev"]), "profile": "dev", "jobs": jobs,
             "ignored_tests": {"exhaustive": exhaustive, "stress": stress},
-            "load_limits": {"builds_and_checks": BUSY_LOAD, "timed_steps": limit(quiet),
-                            "figures": figures.LOAD_BELOW},
+            "load_limits": {name: limit(below) for name, below in load_limits(quiet).items()},
             "pipeline": {"commit": pipeline, "uncommitted_changes": bool(edited)},
             "host": {"name": platform.node(), "system": platform.platform(), "cpus": os.cpu_count()},
             "started": started, "written": now(),
             "results": sorted(path.name for path in run.iterdir() if path.name != "manifest.json"),
-            "commands": records}
+            "commands": records,
+            "test_times": {record["name"]: test_times((run / record["log"]).read_text(errors="replace"))
+                           for record in records if record["name"] in TIMED_TESTS}}
 
 
 def shared(arguments):
@@ -333,7 +375,7 @@ def shared(arguments):
 
 def measured(arguments):
     figures.measure(arguments.binaries, arguments.times, CORPORA / f"{figures.BREAKER_SET}.jsonl.gz", arguments.out,
-                    lambda: settled(figures.LOAD_BELOW))
+                    arguments.load_below, settling(arguments.load_below, figures.WAIT_SECONDS))
 
 
 def main():
@@ -366,10 +408,12 @@ def main():
     sharing.add_argument("--stress", action="store_true",
                          help="also run the stress tests after the unit and exhaustive tests, once the load is below "
                               "--quiet-below")
-    sharing.add_argument("--quiet-below", type=float, default=QUIET_LOAD,
-                         help="the 1-minute load the stress tests and the verdict check wait to fall below; inf "
-                              "takes them at any load, and the manifest records the load each began at; the figures "
-                              f"always wait for a load below {figures.LOAD_BELOW:g}")
+    sharing.add_argument("--quiet-below", type=float, default=None,
+                         help=f"the 1-minute load the stress tests, the verdict check and the figures wait to fall "
+                              f"below, by default {QUIET_LOAD:g} for the stress tests and the verdict check and "
+                              f"{figures.LOAD_BELOW:g} for the figures, which wait at most "
+                              f"{figures.WAIT_SECONDS // 60} minutes; inf takes them at any load, and the manifest "
+                              f"records the load each began at")
     for command in (checking, sharing):
         command.add_argument("--jobs", type=int, default=max(1, (os.cpu_count() or 2) // 2))
     recording = commands.add_parser("record", help="record review-runs/<sha>/verdicts.jsonl.gz as the baseline")
@@ -381,6 +425,9 @@ def main():
     measuring.add_argument("binaries", type=Path)
     measuring.add_argument("times", type=Path)
     measuring.add_argument("out", type=Path)
+    measuring.add_argument("--load-below", type=float, default=figures.LOAD_BELOW,
+                           help=f"the 1-minute load each figure waits to fall below, waiting at most "
+                                f"{figures.WAIT_SECONDS // 60} minutes across the figures; inf takes them at any load")
     arguments = parser.parse_args()
     if arguments.command != "figures":
         arguments.baselines = arguments.baselines or default_baselines()

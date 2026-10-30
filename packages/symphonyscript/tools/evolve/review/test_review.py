@@ -8,6 +8,7 @@ from unittest import mock
 
 import corpus
 import figures
+import programs
 import run
 import verdicts
 from programs import key, read_jsonl, write_jsonl_gz
@@ -58,6 +59,8 @@ with open(taken, "w") as out:
     for program_id in ids:
         out.write(json.dumps({"id": program_id, "elapsed_ms": 2.0, "diagnostics": 0, "codes": []}) + "\\n")
 """
+TAGS = "example main\nnative native\nbounded bounded\nenvelope envelope\nbar bar\nsignature signature\nto to\n"
+FAKE_PROBE = f"#!/bin/sh\n[ \"$1\" = --tags ] || exit 2\ncat <<'END'\n{TAGS}END\n"
 
 
 def verdict(outcome, errors=(), warnings=(), signals=(), program_set="mutants"):
@@ -194,7 +197,7 @@ class Review(unittest.TestCase):
     def test_the_breaker_figure_ranks_a_program_past_the_budget_above_every_timed_one(self):
         elapsed = {f"b{index}": float(index + 1) for index in range(98)}
         elapsed.update({"slow1": None, "slow2": None})
-        figure = figures.breaker_figure({"profile": "dev", "budget_s": 5}, elapsed, 3.456)
+        figure = figures.breaker_figure({"profile": "dev", "budget_s": 5}, elapsed, 3.456, 4.0)
         self.assertEqual({name: figure[name] for name in ("programs", "past_budget", "median_ms", "p99_ms",
                                                           "max_timed_ms", "load")},
                          {"programs": 100, "past_budget": 2, "median_ms": 50.0, "p99_ms": None,
@@ -217,7 +220,7 @@ class Review(unittest.TestCase):
             measured = [(figures.INLINED, "inlined", "inlined text", 4), (figures.NESTING, "not", "not text", 2)]
             loads = iter([3.1, 3.2, 3.3])
             with mock.patch.object(figures, "measured_programs", return_value=measured):
-                figures.measure(root, root / "times.json.gz", root / "breakers.jsonl.gz", root / "figures.json",
+                figures.measure(root, root / "times.json.gz", root / "breakers.jsonl.gz", root / "figures.json", 4.0,
                                 lambda: next(loads))
             taken = json.loads((root / "figures.json").read_text())
             calls = (root / "calls.log").read_text().splitlines()
@@ -228,8 +231,23 @@ class Review(unittest.TestCase):
                          [(3.1, None), (3.2, 500.0), (3.3, 1000.0)])
         self.assertEqual({name: taken["figures"][0][name] for name in ("programs", "past_budget", "median_ms")},
                          {"programs": 3, "past_budget": 1, "median_ms": 2.0})
-        self.assertTrue(all("one job" in each["method"] and "below 4.0" in each["method"]
-                            for each in taken["figures"]))
+        self.assertTrue(all("one job" in each["method"] and "below 4.0 or the figures have waited 10 minutes"
+                            in each["method"] for each in taken["figures"]))
+
+    def test_the_figures_wait_for_the_load_below_the_flag_for_at_most_ten_minutes_across_the_step(self):
+        def waiting(below, loads):
+            readings, slept, loads = [], [], iter(loads)
+            settle = run.settling(below, figures.WAIT_SECONDS, 15,
+                                  lambda: readings.append(next(loads)) or readings[-1], slept.append)
+            return settle, readings, slept
+        settle, readings, slept = waiting(4.0, [9.0] * 50)
+        self.assertEqual((settle(), sum(slept), len(readings)), (9.0, 600, 41))
+        self.assertEqual((settle(), sum(slept), len(readings)), (9.0, 600, 42))
+        settle, readings, slept = waiting(float("inf"), [9.0])
+        self.assertEqual((settle(), slept, readings), (9.0, [], [9.0]))
+        settle, readings, slept = waiting(4.0, [6.0, 5.0, 3.5, 9.0])
+        self.assertEqual((settle(), slept, readings), (3.5, [15, 15], [6.0, 5.0, 3.5]))
+        self.assertEqual(figures.waited(float("inf")), "at any load")
 
     def test_the_measured_programs_hold_a_million_calls_and_the_fixtures_depth_per_construct(self):
         self.assertEqual(sum((1 << (level + 1)) - 1 for level in figures.sizes_totalling(1_000_000)), 1_000_000)
@@ -283,7 +301,8 @@ class Running(unittest.TestCase):
                             {"origin": "p/b.sym", "sources": [{"path": "main.sym", "text": "\nlet c = 3"}]}])
             write_jsonl_gz(root / "corpora" / "breakers.jsonl.gz",
                            [{"origin": "b.sym", "sources": [{"path": "main.sym", "text": "# Vocabulary: music\n"}]}])
-            for name, text in (("evolve-mutants", "#!/bin/sh\n"), ("evolve-check", VOCABULARY_CHECK)):
+            for name, text in (("evolve-mutants", "#!/bin/sh\n"), ("evolve-check", VOCABULARY_CHECK),
+                               ("evolve-probe", FAKE_PROBE)):
                 (root / name).write_text(text)
                 (root / name).chmod((root / name).stat().st_mode | stat.S_IEXEC)
             programs = run.programs_at(root, root / "corpora")
@@ -308,6 +327,16 @@ class Running(unittest.TestCase):
         self.assertEqual(run.unknown_tag_note(programs, unknown),
                          "Probes whose tag names no vocabulary, reported and not checked: 1; p/a.sym:7 (#weird).")
         self.assertIn("- Tag: #weird", verdicts.program_lines(programs[by_origin["p/a.sym:7"]], {"tag": "weird"}))
+
+    def test_the_probe_tag_table_is_read_from_the_tags_evolve_probe_prints(self):
+        self.assertEqual(programs.tag_table(TAGS),
+                         {"example": "main", "native": "native", "bounded": "bounded", "envelope": "envelope",
+                          "bar": "bar", "signature": "signature", "to": "to"})
+        with tempfile.TemporaryDirectory() as directory:
+            fake = Path(directory) / "evolve-probe"
+            fake.write_text(FAKE_PROBE)
+            fake.chmod(fake.stat().st_mode | stat.S_IEXEC)
+            self.assertEqual(programs.probe_vocabularies(Path(directory)), programs.tag_table(TAGS))
 
     def test_the_baseline_is_the_nearest_ancestor_with_one(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -341,6 +370,8 @@ class Running(unittest.TestCase):
             shape = run.manifest("f" * 40, results / "into", results, records, "2026-10-28T00:00:00+00:00", 4)
             asked = run.manifest("f" * 40, results / "into", results, records, "2026-10-28T00:00:00+00:00", 4, 6.0,
                                  True, True)
+            unbounded = run.manifest("f" * 40, results / "into", results, records, "2026-10-28T00:00:00+00:00", 4,
+                                     float("inf"))
         self.assertEqual(waited, [None, 12.0, 6.0, None])
         self.assertEqual([(r["name"], r["exit"], r["load"], r["log"]) for r in records],
                          [("first", 0, 2.5, "first.log"), ("failing", 3, 2.5, "failing.log"),
@@ -352,9 +383,48 @@ class Running(unittest.TestCase):
         self.assertEqual(shape["results"], ["after.log", "failing.log", "first.log", "missing.log"])
         self.assertEqual(shape["commands"], records)
         self.assertEqual(set(shape), {"tip", "export", "target", "evolve_binaries", "profile", "jobs", "ignored_tests",
-                                      "load_limits", "pipeline", "host", "started", "written", "results", "commands"})
+                                      "load_limits", "pipeline", "host", "started", "written", "results", "commands",
+                                      "test_times"})
+        self.assertEqual(shape["test_times"], {})
         self.assertEqual((shape["ignored_tests"], asked["ignored_tests"]),
                          ({"exhaustive": False, "stress": False}, {"exhaustive": True, "stress": True}))
+        self.assertEqual((shape["load_limits"], asked["load_limits"], unbounded["load_limits"]),
+                         ({"builds_and_checks": 12.0, "timed_steps": 6.0, "figures": 4.0},
+                          {"builds_and_checks": 12.0, "timed_steps": 6.0, "figures": 6.0},
+                          {"builds_and_checks": 12.0, "timed_steps": None, "figures": None}))
+
+    def test_the_manifest_lists_every_tests_time_and_status_slowest_first_for_the_unit_and_exhaustive_runs(self):
+        unit = ("   Compiling symphonyscript v0.1.0\n"
+                "    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.00s\n"
+                "    Starting 4 tests across 2 binaries (1 test skipped)\n"
+                "        PASS [   0.004s] symphonyscript-core types::small\n"
+                "        FAIL [   1.250s] symphonyscript typing::broken\n"
+                "--- STDOUT:              symphonyscript typing::broken ---\n"
+                "        PASS [   0.500s] printed\n"
+                "        SLOW [> 60.000s] symphonyscript typing::slow\n"
+                "        SKIP [         ] symphonyscript typing::exhaustive_forms\n"
+                "        PASS [  62.500s] (  3/4) symphonyscript typing::slow\n"
+                "------------\n"
+                "     Summary [  63.800s] 3 tests run: 2 passed, 1 failed, 1 skipped\n"
+                "        FAIL [   1.250s] symphonyscript typing::broken\n"
+                "error: test run failed\n")
+        exhaustive = "        PASS [  12.000s] symphonyscript typing::exhaustive_forms\n"
+        self.assertEqual(run.test_times(unit),
+                         [{"test": "symphonyscript typing::slow", "seconds": 62.5, "status": "pass"},
+                          {"test": "symphonyscript typing::broken", "seconds": 1.25, "status": "fail"},
+                          {"test": "symphonyscript-core types::small", "seconds": 0.004, "status": "pass"},
+                          {"test": "symphonyscript typing::exhaustive_forms", "seconds": None, "status": "skip"}])
+        with tempfile.TemporaryDirectory() as directory:
+            results = Path(directory)
+            records = []
+            for name, log in (("nextest", unit), ("nextest-exhaustive", exhaustive), ("nextest-stress", exhaustive)):
+                (results / f"{name}.log").write_text(log)
+                records.append({"name": name, "log": f"{name}.log"})
+            shape = run.manifest("f" * 40, results / "into", results, records, "2026-10-28T00:00:00+00:00", 4)
+            unit_only = run.manifest("f" * 40, results / "into", results, records[:1], "2026-10-28T00:00:00+00:00", 4)
+        forms = {"test": "symphonyscript typing::exhaustive_forms", "seconds": 12.0, "status": "pass"}
+        self.assertEqual(shape["test_times"], {"nextest": run.test_times(unit), "nextest-exhaustive": [forms]})
+        self.assertEqual(list(unit_only["test_times"]), ["nextest"])
 
     def test_the_shared_step_runs_the_four_checks_as_commands_of_their_own_in_the_dev_profile(self):
         into, results = Path("/into"), Path("/results")
@@ -374,13 +444,16 @@ class Running(unittest.TestCase):
                                                     "--settle-below", "6.0", "--build", "/into/check", "--baselines",
                                                     "/baselines"])
         self.assertEqual(commands["figures"][2:], ["figures", "/into/check/target/debug",
-                                                   "/results/check-times.json.gz", "/results/figures.json"])
+                                                   "/results/check-times.json.gz", "/results/figures.json",
+                                                   "--load-below", "4.0"])
         self.assertEqual({each["name"]: each["below"] for each in planned if each["below"]},
-                         {**dict.fromkeys(["build", "fmt", "clippy", "nextest", "doctest", "thumbv7em", "verdicts"],
-                                          12.0), "figures": 4.0})
+                         dict.fromkeys(["build", "fmt", "clippy", "nextest", "doctest", "thumbv7em", "verdicts"], 12.0))
         quiet = run.shared_steps("abc1234", Path("/top"), into, results, 4, Path("/baselines"), None, float("inf"),
                                  True, True)
-        self.assertEqual([quiet[-2]["command"][9], quiet[-1]["name"], quiet[-1]["below"]], ["inf", "figures", 4.0])
+        self.assertEqual([quiet[-2]["command"][9], quiet[-1]["name"], quiet[-1]["command"][-2:], quiet[-1]["below"]],
+                         ["inf", "figures", ["--load-below", "inf"], None])
+        given = run.shared_steps("abc1234", Path("/top"), into, results, 4, Path("/baselines"), None, 5.0)
+        self.assertEqual([given[-2]["command"][9], given[-1]["command"][-1]], ["5.0", "5.0"])
         self.assertTrue(all(each["cwd"] == "/into/export/packages/symphonyscript"
                             for each in planned if each["command"][0] in ("cargo", "rustc")))
         self.assertTrue(all(each["env"]["CARGO_TARGET_DIR"] == "/into/target" for each in planned
