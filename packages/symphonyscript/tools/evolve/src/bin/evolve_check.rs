@@ -5,7 +5,9 @@ use std::io::{BufRead, BufReader, BufWriter, Write};
 use std::process::ExitCode;
 use std::time::Instant;
 
-use symphonyscript_evolve::{Checker, Program, arguments, named_vocabulary};
+use symphonyscript_evolve::{
+    Checker, Program, abandoned, arguments, named_vocabulary, restarted, resumed_output,
+};
 
 const USAGE: &str = "usage: evolve-check [--budget <seconds>] [--memory-bound <bytes per source byte>] [--vocabulary <name>] <programs.jsonl> <verdicts.jsonl>";
 
@@ -35,12 +37,14 @@ fn run() -> Result<(), String> {
         })?
         .with_memory_bound(arguments.memory_bound);
     let reader = BufReader::new(File::open(input).map_err(|error| format!("{input}: {error}"))?);
-    let mut writer =
-        BufWriter::new(File::create(output).map_err(|error| format!("{output}: {error}"))?);
+    let mut writer = BufWriter::new(
+        resumed_output(output, arguments.resume_at)
+            .map_err(|error| format!("{output}: {error}"))?,
+    );
     let started = Instant::now();
     let mut checked = 0usize;
     let mut flagged = 0usize;
-    for (index, line) in reader.lines().enumerate() {
+    for (index, line) in reader.lines().enumerate().skip(arguments.resume_at) {
         let line = line.map_err(|error| format!("{input}: {error}"))?;
         if line.trim().is_empty() {
             continue;
@@ -59,6 +63,12 @@ fn run() -> Result<(), String> {
         }
         let encoded = serde_json::to_string(&verdict).map_err(|error| error.to_string())?;
         writeln!(writer, "{encoded}").map_err(|error| format!("{output}: {error}"))?;
+        if abandoned() {
+            writer
+                .flush()
+                .map_err(|error| format!("{output}: {error}"))?;
+            return Err(restarted(index + 1));
+        }
     }
     writer
         .flush()

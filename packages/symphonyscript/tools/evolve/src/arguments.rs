@@ -3,12 +3,14 @@ use std::time::Duration;
 use crate::checker::DEFAULT_BUDGET;
 use crate::named_vocabulary::VOCABULARY_NAMES;
 use crate::over_memory_bound::DEFAULT_MEMORY_BOUND;
+use crate::restarted::RESUME_AT;
 
 #[derive(Clone, PartialEq, Debug)]
 pub struct Arguments {
     pub budget: Duration,
     pub memory_bound: u64,
     pub vocabulary: String,
+    pub resume_at: usize,
     pub positional: Vec<String>,
 }
 
@@ -16,6 +18,7 @@ pub fn arguments(raw: impl IntoIterator<Item = String>) -> Result<Arguments, Str
     let mut budget = DEFAULT_BUDGET;
     let mut memory_bound = DEFAULT_MEMORY_BOUND;
     let mut vocabulary = VOCABULARY_NAMES[0].to_string();
+    let mut resume_at = 0;
     let mut positional = Vec::new();
     let mut raw = raw.into_iter();
     while let Some(argument) = raw.next() {
@@ -44,6 +47,14 @@ pub fn arguments(raw: impl IntoIterator<Item = String>) -> Result<Arguments, Str
                     .next()
                     .ok_or_else(|| "--vocabulary takes a vocabulary's name".to_string())?;
             }
+            RESUME_AT => {
+                let value = raw
+                    .next()
+                    .ok_or_else(|| format!("{RESUME_AT} takes a line index"))?;
+                resume_at = value
+                    .parse()
+                    .map_err(|_| format!("{RESUME_AT} takes a line index, not `{value}`"))?;
+            }
             _ => positional.push(argument),
         }
     }
@@ -51,6 +62,7 @@ pub fn arguments(raw: impl IntoIterator<Item = String>) -> Result<Arguments, Str
         budget,
         memory_bound,
         vocabulary,
+        resume_at,
         positional,
     })
 }

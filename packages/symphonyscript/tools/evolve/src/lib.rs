@@ -17,6 +17,7 @@ mod probe_summary;
 mod probed;
 mod program;
 mod renamed;
+mod restarted;
 mod scaled;
 mod shrunk;
 mod shuffled;
@@ -31,15 +32,18 @@ pub use checker::{Checker, DEFAULT_BUDGET};
 pub use dedup_key::dedup_key;
 pub use differing_codes::differing_codes;
 pub use finding::Finding;
-pub use guarded::{Guarded, guarded};
+pub use guarded::{Guarded, abandoned, guarded, running_compiles};
 pub use measured::Measured;
-pub use named_vocabulary::{PROBE_VOCABULARY_NAMES, VOCABULARY_NAMES, named_vocabulary};
+pub use named_vocabulary::{
+    PROBE_TAGS, PROBE_VOCABULARY_NAMES, VOCABULARY_NAMES, named_vocabulary, tagged_vocabulary,
+};
 pub use over_memory_bound::over_memory_bound;
 pub use probe_block::{drawn_codes, probe_block};
 pub use probe_program::{DEFAULT_TAG, ProbeProgram, probe_programs};
 pub use probe_summary::ProbeSummary;
 pub use probed::{PROBED_PATH, Probed, ProbedDiagnostic, ProbedRelated, ProbedSpan, probed};
 pub use program::{Program, ProgramSource};
+pub use restarted::{RESUME_AT, restarted, resumed_output};
 pub use scaled::scaled;
 pub use shrunk::shrunk;
 pub use signal::{Signal, UnknownSignal};

@@ -14,6 +14,7 @@ DEPTH = 100_000
 LEVELS = 20
 RUNS = 3
 LOAD_BELOW = 4.0
+WAIT_SECONDS = 600
 BREAKER_SET = "breakers"
 BUDGET_SECONDS = 600
 TARGET_US = 2
@@ -79,7 +80,13 @@ def ranked(finished, count, quantile):
     return finished[index] if index < len(finished) else None
 
 
-def breaker_figure(times, elapsed, load):
+def waited(below):
+    if not math.isfinite(below):
+        return "at any load"
+    return f"once the 1-minute load is below {below} or the figures have waited {WAIT_SECONDS // 60} minutes"
+
+
+def breaker_figure(times, elapsed, load, below):
     finished = sorted(ms for ms in elapsed.values() if ms is not None)
     return {"work": BREAKERS[0], "measured_by": BREAKERS[1], "targets_ms": BREAKER_TARGETS_MS,
             "programs": len(elapsed), "past_budget": len(elapsed) - len(finished),
@@ -87,10 +94,10 @@ def breaker_figure(times, elapsed, load):
             "max_timed_ms": finished[-1] if finished else None, "load": round(load, 2),
             "method": f"Compiler::check as evolve-time times it on evolve-check's compile thread, counting "
                       f"allocations, each {BREAKER_SET} program once in one process, one job, {times['profile']} "
-                      f"profile, after every other command of the step and once the 1-minute load is below "
-                      f"{LOAD_BELOW}; a program the verdict check found past its {times['budget_s']} s budget is not "
-                      f"run again, and it and a program past the budget here rank above every timed one and read "
-                      f"as null; nearest-rank percentiles over all {len(elapsed)} programs"}
+                      f"profile, after every other command of the step and {waited(below)}; a program the verdict "
+                      f"check found past its {times['budget_s']} s budget is not run again, and it and a program "
+                      f"past the budget here rank above every timed one and read as null; nearest-rank percentiles "
+                      f"over all {len(elapsed)} programs"}
 
 
 def timed(binaries, programs, work, budget):
@@ -110,7 +117,7 @@ def breaker_elapsed(binaries, work, times, corpus):
     return {row["key"]: taken.get(row["key"]) for row in rows}
 
 
-def program_figure(binaries, work, figure, label, text, units, load):
+def program_figure(binaries, work, figure, label, text, units, load, below):
     runs = timed(binaries, [{"id": f"{label}#{number}", "sources": [{"path": "main.sym", "text": text}]}
                             for number in range(RUNS)], work, BUDGET_SECONDS)
     elapsed = [run["elapsed_ms"] for run in runs]
@@ -121,7 +128,7 @@ def program_figure(binaries, work, figure, label, text, units, load):
             "diagnostics": runs[0].get("diagnostics"), "codes": runs[0].get("codes"), "panic": runs[0].get("panic"),
             "method": f"Compiler::check as evolve-time times it on evolve-check's compile thread, counting "
                       f"allocations, {RUNS} runs in one process, one job, after every other command of the step "
-                      f"and once the 1-minute load is below {LOAD_BELOW}, the median divided by the {units} units; "
+                      f"and {waited(below)}, the median divided by the {units} units; "
                       f"the program's other text is counted in its time"}
 
 
@@ -133,17 +140,17 @@ def shown(figure):
             f"{figure['programs']} programs, {figure['past_budget']} past the budget, load {figure['load']:.2f}")
 
 
-def measure(binaries, times_path, corpus, out_path, settle):
+def measure(binaries, times_path, corpus, out_path, below, settle):
     with gzip.open(times_path, "rt", encoding="utf-8") as raw:
         times = json.load(raw)
     with tempfile.TemporaryDirectory() as directory:
         work = Path(directory)
         load = settle()
-        figures = [breaker_figure(times, breaker_elapsed(binaries, work, times, corpus), load)]
+        figures = [breaker_figure(times, breaker_elapsed(binaries, work, times, corpus), load, below)]
         print(shown(figures[0]), flush=True)
         for figure, label, text, units in measured_programs():
             load = settle()
-            figures.append(program_figure(binaries, work, figure, label, text, units, load))
+            figures.append(program_figure(binaries, work, figure, label, text, units, load, below))
             print(shown(figures[-1]), flush=True)
-    out_path.write_text(json.dumps({"profile": times["profile"], "load_below": LOAD_BELOW, "figures": figures},
-                                   indent=2) + "\n")
+    out_path.write_text(json.dumps({"profile": times["profile"], "load_below": below if math.isfinite(below) else None,
+                                    "figures": figures}, indent=2) + "\n")

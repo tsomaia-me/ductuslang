@@ -1,6 +1,7 @@
 import gzip
 import hashlib
 import json
+import subprocess
 
 MAIN = "main"
 SECRETS = ("sk-ant", "api_key")
@@ -9,8 +10,6 @@ SEPARATOR = "----"
 TAG = "#"
 EXPECT = "#expect"
 DEFAULT_TAG = "example"
-PROBE_VOCABULARIES = {"example": MAIN, "native": "native", "bounded": "bounded", "envelope": "envelope",
-                      "bar": "bar", "signature": "signature", "to": "to"}
 
 
 def key(program):
@@ -58,13 +57,22 @@ def probe_programs(text):
     return programs + probe_program(part)
 
 
-def probe_records(record):
+def tag_table(listing):
+    return dict(line.split() for line in listing.splitlines() if line.strip())
+
+
+def probe_vocabularies(binaries):
+    return tag_table(subprocess.run([binaries / "evolve-probe", "--tags"], check=True, capture_output=True,
+                                    text=True).stdout)
+
+
+def probe_records(record, vocabularies):
     [source] = record["sources"]
     if not any(line.rstrip() == SEPARATOR or line.lstrip().startswith(TAG) for line in probe_lines(source["text"])):
         return [record]
     records = []
     for line, tag, text in probe_programs(source["text"]):
-        vocabulary = PROBE_VOCABULARIES.get(tag)
+        vocabulary = vocabularies.get(tag)
         records.append({"origin": f"{record['origin']}:{line}", "sources": [{"path": source["path"], "text": text}],
                         "vocabulary": vocabulary, **({} if vocabulary else {"tag": tag})})
     return records

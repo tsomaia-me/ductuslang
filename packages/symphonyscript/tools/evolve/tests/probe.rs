@@ -2,7 +2,7 @@ use std::process::{Command, Output};
 use std::time::Duration;
 
 use symphonyscript_evolve::{
-    DEFAULT_TAG, ProbeProgram, Probed, probe_block, probe_programs, probed,
+    DEFAULT_TAG, PROBE_TAGS, ProbeProgram, Probed, probe_block, probe_programs, probed,
 };
 
 const FIXTURE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/probe/programs.txt");
@@ -234,6 +234,118 @@ fn programs_run_in_parallel_print_in_file_order() {
         .collect();
     assert_eq!(one.len(), 12);
     assert_eq!(one, many);
+}
+
+const CLASS: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/probe/class.txt");
+
+fn verdict(block: &str) -> String {
+    without_times(block)
+        .lines()
+        .skip(1)
+        .map(|line| format!("{line}\n"))
+        .collect()
+}
+
+#[test]
+fn a_file_holding_a_class_reports_each_programs_verdict_beside_it_in_the_order_written() {
+    let output = probe(&["--values", "--summary", CLASS]);
+    assert!(output.status.success());
+    let blocks = blocks(&output);
+    let headers: Vec<&str> = blocks
+        .iter()
+        .filter_map(|block| block.lines().next())
+        .collect();
+    assert_eq!(
+        headers,
+        [
+            format!("[1] #example {CLASS}:1"),
+            format!("[2] #example {CLASS}:10"),
+            format!("[3] #example {CLASS}:21"),
+            "summary: programs 3, clean 1, errors 2, warnings 1, panics 0, timeouts 0, ok 3, differs 0"
+                .to_string(),
+        ]
+    );
+    let verdicts: Vec<String> = blocks[..3].iter().map(|block| verdict(block)).collect();
+    assert_eq!(verdicts[0], "clean\nok\n");
+    assert!(
+        verdicts[1].starts_with("duplicate-name 2:5-2:6 ") && verdicts[1].ends_with("\nok\n"),
+        "{}",
+        verdicts[1]
+    );
+    assert!(
+        verdicts[2].contains("\nunknown-attribute 1:10-1:15 `Clip` has no attribute `three`\n")
+            && verdicts[2].starts_with("no-entry-instance ")
+            && verdicts[2].ends_with("\nok\n"),
+        "{}",
+        verdicts[2]
+    );
+}
+
+#[test]
+fn a_program_alone_in_its_file_draws_the_verdict_it_draws_in_its_class() {
+    let class: Vec<String> = blocks(&probe(&["--values", CLASS]))
+        .iter()
+        .map(|block| verdict(block))
+        .collect();
+    let content = std::fs::read_to_string(CLASS).unwrap_or_else(|error| panic!("{CLASS}: {error}"));
+    let alone: Vec<String> = content
+        .split("----\n")
+        .enumerate()
+        .map(|(index, program)| {
+            let file = format!("{}/class-{index}.txt", env!("CARGO_TARGET_TMPDIR"));
+            if let Err(error) = std::fs::write(&file, program) {
+                panic!("{file}: {error}");
+            }
+            let blocks = blocks(&probe(&["--values", &file]));
+            assert_eq!(blocks.len(), 1, "{file}");
+            verdict(&blocks[0])
+        })
+        .collect();
+    assert_eq!(alone.len(), 3);
+    assert_eq!(alone, class);
+    assert_eq!(
+        alone[1],
+        "duplicate-name 2:5-2:6 `x` is declared twice\nhelp: rename one of the two declarations\n  1:5-1:6 first declared here\nok\n"
+    );
+}
+
+#[test]
+fn the_tags_print_the_one_tag_table_and_every_tag_in_it_compiles_under_its_vocabulary() {
+    let output = probe(&["--tags"]);
+    assert!(output.status.success());
+    let printed: Vec<(String, String)> = String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .map(|line| match line.split_once(' ') {
+            Some((tag, vocabulary)) => (tag.to_string(), vocabulary.to_string()),
+            None => panic!("a tag line without a vocabulary: `{line}`"),
+        })
+        .collect();
+    let table: Vec<(String, String)> = PROBE_TAGS
+        .iter()
+        .map(|(tag, vocabulary)| (tag.to_string(), vocabulary.to_string()))
+        .collect();
+    assert_eq!(printed, table);
+    let file = concat!(env!("CARGO_TARGET_TMPDIR"), "/every-tag.txt");
+    let content: Vec<String> = PROBE_TAGS
+        .iter()
+        .map(|(tag, _)| format!("#{tag}\nClip c:\n    Note\n"))
+        .collect();
+    if let Err(error) = std::fs::write(file, content.join("----\n")) {
+        panic!("{file}: {error}");
+    }
+    let output = probe(&[file]);
+    assert!(output.status.success());
+    let blocks = blocks(&output);
+    assert_eq!(blocks.len(), PROBE_TAGS.len());
+    for ((tag, _), block) in PROBE_TAGS.iter().zip(&blocks) {
+        let mut lines = block.lines();
+        let header = lines.next().unwrap_or_default();
+        assert!(header.contains(&format!(" #{tag} ")), "{block}");
+        assert!(
+            !lines.next().unwrap_or_default().starts_with("panic"),
+            "{block}"
+        );
+    }
 }
 
 #[test]
