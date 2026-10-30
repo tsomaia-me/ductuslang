@@ -40,7 +40,6 @@ GenericParams
 GenericParam
 TypeArgs
 TypeArg
-LoopHead
 PackageFile
 PackageItem
 PackageDecl

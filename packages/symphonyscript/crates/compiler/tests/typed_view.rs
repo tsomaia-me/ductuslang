@@ -1,7 +1,7 @@
 mod support;
 
 use symphonyscript::syntax::ast::{
-    AstNode, BodyItem, Expr, Item, Iterable, Member, Name, StringPart,
+    AstNode, BodyItem, Expr, Item, Iterable, LoopHead, Member, Name, StringPart,
 };
 use symphonyscript::syntax::{Parsed, SyntaxKind};
 
@@ -155,15 +155,22 @@ fn placements_expose_their_parts() {
     };
     assert_eq!(bundle.members().count(), 1);
     let bundle_for = bundle.bundle_for().expect("a bundle for");
-    assert_eq!(text(bundle_for.variable()), "i");
-    assert!(matches!(bundle_for.iterable(), Some(Iterable::Range(_))));
+    let names = bundle_for.head().names();
+    assert_eq!(names.len(), 1);
+    assert_eq!(names[0].name.text(), "i");
+    assert!(matches!(
+        bundle_for.head().iterable(),
+        Some(Iterable::Range(_))
+    ));
     assert_eq!(bundle_for.members().count(), 1);
 
     let BodyItem::For(each) = &body[3] else {
         panic!("a for");
     };
-    assert_eq!(text(each.variable()), "s");
-    let Some(Iterable::Expr(list)) = each.iterable() else {
+    let names = each.head().names();
+    assert_eq!(names.len(), 1);
+    assert_eq!(names[0].name.text(), "s");
+    let Some(Iterable::Expr(list)) = each.head().iterable() else {
         panic!("an array iterable");
     };
     assert_eq!(list.syntax().to_string().trim(), "list");
@@ -387,7 +394,7 @@ fn a_missing_range_bound_or_arm_label_leaves_the_other_in_place() {
     let Some(BodyItem::For(each)) = block.items().next() else {
         panic!("a for");
     };
-    let Some(Iterable::Range(range)) = each.iterable() else {
+    let Some(Iterable::Range(range)) = each.head().iterable() else {
         panic!("a range");
     };
     assert!(range.start().is_none());
@@ -403,4 +410,79 @@ fn a_missing_range_bound_or_arm_label_leaves_the_other_in_place() {
         .expect("an arm");
     assert!(arm.label().is_none());
     assert_eq!(source(arm.value()), "1");
+}
+
+fn loop_names(head: &LoopHead<'_>) -> Vec<(String, String)> {
+    head.names()
+        .into_iter()
+        .map(|loop_name| {
+            let ty = loop_name
+                .ty
+                .map(|ty| ty.syntax().to_string().trim().to_string())
+                .unwrap_or_default();
+            (loop_name.name.text(), ty)
+        })
+        .collect()
+}
+
+fn iterable_text(head: &LoopHead<'_>) -> String {
+    head.iterable()
+        .map(|iterable| iterable.syntax().to_string().trim().to_string())
+        .unwrap_or_default()
+}
+
+fn pair(name: &str, ty: &str) -> (String, String) {
+    (name.to_string(), ty.to_string())
+}
+
+#[test]
+fn a_loop_head_exposes_its_names_their_annotations_and_its_iterable_at_each_site() {
+    let program = "Clip c:\n    for i: i32, p in chord:\n        Note/p\n    [for i, p: i32 in [60]: Note/p]\nlet t = for k: Wave, v in 0..n into s: f32[2] from x: s + v\n";
+    let parsed = clean(program);
+    let found = items(&parsed);
+    let Some(Item::Placement(clip)) = found.first() else {
+        panic!("a placement");
+    };
+    let block = clip.body().and_then(|body| body.block()).expect("a block");
+    let body: Vec<BodyItem> = block.items().collect();
+    let Some(BodyItem::For(each)) = body.first() else {
+        panic!("a for");
+    };
+    let head = each.head();
+    assert_eq!(loop_names(&head), [pair("i", "i32"), pair("p", "")]);
+    assert_eq!(iterable_text(&head), "chord");
+    assert_eq!(
+        &program[head.range().start as usize..head.range().end as usize],
+        "for i: i32, p in chord"
+    );
+    let Some(BodyItem::Line(line)) = body.get(1) else {
+        panic!("a line");
+    };
+    let Some(Member::Bundle(bundle)) = line.members().next() else {
+        panic!("a bundle");
+    };
+    let head = bundle.bundle_for().expect("a bundle for").head();
+    assert_eq!(loop_names(&head), [pair("i", ""), pair("p", "i32")]);
+    assert_eq!(iterable_text(&head), "[60]");
+    let Expr::For(fold) = let_value(&parsed, 1) else {
+        panic!("a for expression");
+    };
+    assert!(!fold.is_block());
+    let fold_head = fold.head().expect("a head");
+    let head = fold_head.loop_head();
+    assert_eq!(loop_names(&head), [pair("k", "Wave"), pair("v", "")]);
+    assert_eq!(iterable_text(&head), "0..n");
+    assert_eq!(
+        &program[head.range().start as usize..head.range().end as usize],
+        "for k: Wave, v in 0..n"
+    );
+    assert_eq!(text(fold_head.accumulator()), "s");
+    assert_eq!(
+        fold_head
+            .accumulator_type()
+            .map(|ty| ty.syntax().to_string().trim().to_string()),
+        Some("f32[2]".to_string())
+    );
+    assert_eq!(source(fold_head.start()), "x");
+    assert_eq!(source(fold.body()), "s + v");
 }

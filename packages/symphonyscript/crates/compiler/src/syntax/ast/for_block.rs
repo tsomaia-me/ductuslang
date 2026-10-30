@@ -1,8 +1,7 @@
 use super::ast_node::AstNode;
 use super::block::Block;
-use super::iterable::Iterable;
-use super::name::Name;
-use super::support::{child, name_at};
+use super::loop_head::LoopHead;
+use super::support::child;
 use crate::syntax::{NodeView, SyntaxKind};
 
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
@@ -19,12 +18,8 @@ impl<'p> AstNode<'p> for ForBlock<'p> {
 }
 
 impl<'p> ForBlock<'p> {
-    pub fn variable(&self) -> Option<Name<'p>> {
-        name_at(&self.0, 0)
-    }
-
-    pub fn iterable(&self) -> Option<Iterable<'p>> {
-        child(&self.0)
+    pub fn head(&self) -> LoopHead<'p> {
+        LoopHead::of(&self.0)
     }
 
     pub fn block(&self) -> Option<Block<'p>> {

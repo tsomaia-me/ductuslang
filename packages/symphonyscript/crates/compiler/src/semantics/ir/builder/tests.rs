@@ -33,6 +33,7 @@ fn a_write_into_a_block_the_builder_never_allocated_is_an_internal_error() {
         vocabulary: &vocabulary,
         dropped: false,
         report: &mut report,
+        loop_names: Vec::new(),
     };
     assert_eq!(
         builder.fill(vec![(block.clone(), BlockId(0))]),

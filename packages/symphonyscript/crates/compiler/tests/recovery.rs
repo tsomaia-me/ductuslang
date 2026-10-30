@@ -845,6 +845,14 @@ fn valid_multi_line_brackets_keep_their_lines_at_any_column() {
             "Clip c:\n    [Note/60\n    for i in xs: Note/i]\n",
             "Clip c:\n    [Note/60 for i in xs: Note/i]\n",
         ),
+        (
+            "Clip c:\n    [Note/60\n    for i: i32, p in xs: Note/p]\n",
+            "Clip c:\n    [Note/60 for i: i32, p in xs: Note/p]\n",
+        ),
+        (
+            "Clip c:\n    [for i: i32,\n    p: i32 in xs: Note/p]\n",
+            "Clip c:\n    [for i: i32, p: i32 in xs: Note/p]\n",
+        ),
     ] {
         assert_eq!(support::clean_tree(text), support::clean_tree(one_line));
     }

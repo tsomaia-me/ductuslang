@@ -1,8 +1,7 @@
 use super::ast_node::AstNode;
-use super::iterable::Iterable;
+use super::loop_head::LoopHead;
 use super::member::Member;
-use super::name::Name;
-use super::support::{child, children, name_at};
+use super::support::children;
 use crate::syntax::{NodeView, SyntaxKind};
 
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
@@ -19,12 +18,8 @@ impl<'p> AstNode<'p> for BundleFor<'p> {
 }
 
 impl<'p> BundleFor<'p> {
-    pub fn variable(&self) -> Option<Name<'p>> {
-        name_at(&self.0, 0)
-    }
-
-    pub fn iterable(&self) -> Option<Iterable<'p>> {
-        child(&self.0)
+    pub fn head(&self) -> LoopHead<'p> {
+        LoopHead::of(&self.0)
     }
 
     pub fn members(&self) -> impl Iterator<Item = Member<'p>> + use<'p> {

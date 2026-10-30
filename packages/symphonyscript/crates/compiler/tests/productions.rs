@@ -397,6 +397,11 @@ const CASES: &[(&str, &str, &str)] = &[
         "File[Placement[Clip c Body[: Block[NL > ForBlock[for i in RangeExpr[Literal[0] .. Literal[4]] : Block[NL > Placement[Note DefaultArg[/ NameRef[i]] NL] <]] ForBlock[for s in ArrayLit[[ NameRef[a] , NameRef[b] ]] : Block[Members[Placement[Note]] NL]] <]]]]",
     ),
     (
+        "LoopHead",
+        "Clip c:\n    for i: i32, p in xs:\n        Note/p\n    [for i, p: i32 in xs: Note/p]\nlet a = for k, v: f32 in 0..4 into s from 0: s + v\n",
+        "File[Placement[Clip c Body[: Block[NL > ForBlock[for i : TypeRef[i32] , p in NameRef[xs] : Block[NL > Placement[Note DefaultArg[/ NameRef[p]] NL] <]] Line[Bundle[[ BundleFor[for i , p : TypeRef[i32] in NameRef[xs] : Placement[Note DefaultArg[/ NameRef[p]]]] ]] NL] <]]] LetDecl[let a = ForExpr[ForExprHead[for k , v : TypeRef[f32] in RangeExpr[Literal[0] .. Literal[4]] into s from Literal[0] :] BinaryExpr[NameRef[s] + NameRef[v]]] NL]]",
+    ),
+    (
         "Iterable",
         "Clip c:\n    for i in a..b + 1:\n        Note\n    for s in list: Note\n",
         "File[Placement[Clip c Body[: Block[NL > ForBlock[for i in RangeExpr[NameRef[a] .. BinaryExpr[NameRef[b] + Literal[1]]] : Block[NL > Placement[Note NL] <]] ForBlock[for s in NameRef[list] : Block[Members[Placement[Note]] NL]] <]]]]",

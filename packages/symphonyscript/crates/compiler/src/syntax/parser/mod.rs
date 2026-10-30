@@ -4,6 +4,7 @@ mod checkpoint;
 mod cost;
 mod expressions;
 mod items;
+mod loop_header;
 mod loops;
 mod placements;
 mod starts_line;
@@ -20,6 +21,7 @@ use symphonyscript_core::{Span, Vocabulary};
 use self::bracket::Bracket;
 use self::checkpoint::Checkpoint;
 use self::cost::Cost;
+use self::loop_header::LoopHeader;
 use self::starts_line::starts_line;
 use self::task::Task;
 use self::tree_builder::TreeBuilder;
@@ -431,7 +433,7 @@ impl<'a> Parser<'a> {
                     ) => Bracket::Expression,
                     Some(SyntaxKind::Bundle) => Bracket::Bundle {
                         depth: self.lexer.depth_at(self.pos).unwrap_or(0) + 1,
-                        header: false,
+                        header: LoopHeader::Closed,
                     },
                     _ => Bracket::Other,
                 };
@@ -443,9 +445,9 @@ impl<'a> Parser<'a> {
             | SyntaxKind::InterpEnd => {
                 self.brackets.pop();
             }
-            SyntaxKind::ForKw | SyntaxKind::Colon => {
+            SyntaxKind::ForKw | SyntaxKind::InKw | SyntaxKind::Colon => {
                 if let Some(Bracket::Bundle { header, .. }) = self.brackets.last_mut() {
-                    *header = kind == SyntaxKind::ForKw;
+                    *header = header.after(kind);
                 }
             }
             SyntaxKind::Newline => self.brackets.clear(),
@@ -866,18 +868,16 @@ fn closer_char(kind: SyntaxKind) -> Option<char> {
     })
 }
 
-fn holds_stray_colon(line: &LineStart<'_>, depth: u32, mut header: bool) -> bool {
+fn holds_stray_colon(line: &LineStart<'_>, depth: u32, mut header: LoopHeader) -> bool {
     let first = std::iter::once((line.first, &line.first_depth));
     for (token, token_depth) in first.chain(line.rest.iter().zip(line.rest_depths)) {
         if *token_depth != depth {
             continue;
         }
-        match token.kind {
-            SyntaxKind::ForKw => header = true,
-            SyntaxKind::Colon if header => header = false,
-            SyntaxKind::Colon => return true,
-            _ => {}
+        if token.kind == SyntaxKind::Colon && header == LoopHeader::Closed {
+            return true;
         }
+        header = header.after(token.kind);
     }
     false
 }

@@ -63,7 +63,7 @@ impl LineShape {
             .unwrap_or_default();
         let second = tokens.get(1);
         let mut depth = 0usize;
-        let mut header = false;
+        let mut header: Option<bool> = None;
         let mut stray_colon = false;
         let mut unmatched_closer = false;
         for token in &tokens {
@@ -73,9 +73,10 @@ impl LineShape {
                     unmatched_closer = true
                 }
                 SyntaxKind::RParen | SyntaxKind::RBracket | SyntaxKind::RBrace => depth -= 1,
-                SyntaxKind::ForKw if depth == 0 => header = true,
-                SyntaxKind::Colon if depth == 0 && header => header = false,
-                SyntaxKind::Colon if depth == 0 => stray_colon = true,
+                SyntaxKind::ForKw if depth == 0 => header = Some(false),
+                SyntaxKind::InKw if depth == 0 && header == Some(false) => header = Some(true),
+                SyntaxKind::Colon if depth == 0 && header == Some(true) => header = None,
+                SyntaxKind::Colon if depth == 0 && header.is_none() => stray_colon = true,
                 _ => {}
             }
         }

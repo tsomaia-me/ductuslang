@@ -733,7 +733,8 @@ impl<'a> Checker<'a> {
                         previous = None;
                         self.iterable(*iterable, frame)?;
                         let var_frame = self.for_var(var.as_ref(), frame)?;
-                        pending.push((*body, var_frame, Mode::Anonymous));
+                        let body_frame = self.skipped_in(*body, var_frame)?;
+                        pending.push((*body, body_frame, Mode::Anonymous));
                     }
                     BodyItem::When {
                         arms, otherwise, ..
@@ -818,6 +819,20 @@ impl<'a> Checker<'a> {
         let mut names = BTreeMap::new();
         names.insert(var.text.clone(), var.loc);
         Ok(Some(self.frame(names, frame, FrameKind::ForVar)))
+    }
+
+    fn skipped_in(
+        &mut self,
+        body: BlockId,
+        parent: Option<usize>,
+    ) -> Result<Option<usize>, Internal> {
+        let unknown = self.hir.body_unknown(body)?;
+        if unknown.is_empty() {
+            return Ok(parent);
+        }
+        let frame = self.frame(BTreeMap::new(), parent, FrameKind::ForVar);
+        self.leave_unknown(frame, unknown)?;
+        Ok(Some(frame))
     }
 
     fn named_in_for(&mut self, name: &Ident) {

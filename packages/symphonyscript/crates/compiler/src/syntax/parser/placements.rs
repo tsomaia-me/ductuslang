@@ -457,9 +457,7 @@ impl Parser<'_> {
             ]);
         } else if self.at(SyntaxKind::ForKw) {
             self.start(SyntaxKind::BundleFor);
-            self.bump();
-            self.expect_name(Code::BundleSyntax, "the loop variable");
-            self.expect(SyntaxKind::InKw, Code::BundleSyntax, "`in`");
+            self.loop_head(Code::BundleSyntax);
             self.then([Task::Iterable, Task::BundleForAfterIterable { members }]);
         } else {
             self.then([Task::BundleEnd { members }]);

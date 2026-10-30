@@ -113,9 +113,7 @@ impl Parser<'_> {
 
     pub(super) fn for_block(&mut self) {
         self.start(SyntaxKind::ForBlock);
-        self.bump();
-        self.expect_name(Code::ForSyntax, "the loop variable");
-        self.expect(SyntaxKind::InKw, Code::ForSyntax, "`in`");
+        self.loop_head(Code::ForSyntax);
         self.then([Task::Iterable, Task::ForAfterIterable]);
     }
 

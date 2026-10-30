@@ -23,6 +23,7 @@ pub(crate) struct HirBuilder<'h> {
     pub(super) vocabulary: &'h Vocabulary,
     pub(super) dropped: bool,
     pub(super) report: &'h mut Report,
+    pub(super) loop_names: Vec<String>,
 }
 
 fn param_regions<'p>(decl: &NodeView<'p>, list: SyntaxKind) -> Vec<NodeView<'p>> {
@@ -262,9 +263,9 @@ impl HirBuilder<'_> {
         Loc::new(self.file, range)
     }
 
-    pub(super) fn unbuilt(&mut self, range: Range<u32>, construct: &str, section: &str) -> bool {
+    pub(super) fn unbuilt(&mut self, range: Range<u32>, construct: &str, section: &str) {
         if self.faults.touch(range.clone()) {
-            return false;
+            return;
         }
         let loc = self.loc(range);
         self.report.error(
@@ -273,7 +274,6 @@ impl HirBuilder<'_> {
             loc,
             format!("this compiler does not build {construct} (SPEC §{section})"),
         );
-        true
     }
 
     pub(super) fn push(&mut self, kind: ExprKind, loc: Loc) -> ExprId {

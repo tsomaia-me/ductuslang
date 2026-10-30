@@ -28,6 +28,7 @@ pub(crate) fn build_file(
         vocabulary,
         dropped: false,
         report,
+        loop_names: Vec::new(),
     };
     let mut previous = None;
     let mut skipped = Vec::new();
