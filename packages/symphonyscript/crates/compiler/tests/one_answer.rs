@@ -117,6 +117,10 @@ const DECIDING_NONE: &[(&str, &str)] = &[
         "where a diagnostic stands beside a fault, ARCHITECTURE §7's placeholder rule",
     ),
     (
+        "analysis/infer/positions.rs holds_a_syntax_gap",
+        "an operator that holds an operand a syntax fault leaves missing draws nothing, ARCHITECTURE §7's placeholder rule",
+    ),
+    (
         "analysis/infer/positions.rs picked_element",
         "where a diagnostic stands beside a fault, ARCHITECTURE §7's placeholder rule",
     ),

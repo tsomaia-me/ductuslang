@@ -179,7 +179,13 @@ impl Engine<'_> {
                 )?;
             }
         }
-        for (node, typed, passed_over, ..) in detached {
+        for (node, typed, passed_over, origin, .., quiet) in detached {
+            let unit_read = origin.is_some_and(|origin| origin.unit.is_some());
+            let typed = if quiet && !unit_read {
+                (None, false)
+            } else {
+                typed
+            };
             self.check_detached(node, typed, passed_over, &mut roots)?;
         }
         for node in self.memo.own_typed.clone() {

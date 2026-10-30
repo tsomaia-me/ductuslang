@@ -4122,6 +4122,73 @@ fn one_fault_draws_one_diagnostic_at_the_fault() {
 }
 
 #[test]
+fn a_choice_holding_an_operand_a_syntax_fault_leaves_missing_draws_its_syntax_diagnostic_alone() {
+    let inputs = "input l = 1\ninput k: i32[..4] = [1, 2]\n";
+    let positions: [(&str, &str); 3] = [
+        ("let j = ", "\nClip c:\n    Note/(j)\n"),
+        ("state j = ", "\nClip c:\n    Note/(j)\n"),
+        ("Clip c:\n    Note/(", ")\n"),
+    ];
+    let mut choices = Vec::new();
+    for condition in ["5", "l", "k[0]"] {
+        choices.push((
+            format!("if {condition}] > 1 then 1 else [3]"),
+            format!("if {condition} > 1 then 1 else [3]"),
+            Code::TypeMismatch,
+        ));
+        choices.push((
+            format!("if {condition} then else 2"),
+            format!("if {condition} then 1 else 2"),
+            Code::ConditionType,
+        ));
+        choices.push((
+            format!("if {condition} then 1 else"),
+            format!("if {condition} then 1 else 2"),
+            Code::ConditionType,
+        ));
+    }
+    choices.push((
+        "if then 1 else [3]".to_string(),
+        "if l > 1 then 1 else [3]".to_string(),
+        Code::TypeMismatch,
+    ));
+    let mut failures = Vec::new();
+    for (before, after) in positions {
+        for (faulty, twin, drawn) in &choices {
+            let text = format!("{inputs}{before}{faulty}{after}");
+            let found = codes(&text);
+            if found.is_empty() || found.iter().any(|code| *code != Code::ExpressionSyntax) {
+                failures.push(format!(
+                    "{text:?}: expected the syntax diagnostic alone, found {found:?}"
+                ));
+            }
+            let text = format!("{inputs}{before}{twin}{after}");
+            let found = codes(&text);
+            if found != [*drawn] {
+                failures.push(format!("{text:?}: expected {drawn:?}, found {found:?}"));
+            }
+        }
+    }
+    let envelope = symphonyscript_fixtures::envelope_vocabulary();
+    for (value, drawn) in [
+        ("p + ", Code::ExpressionSyntax),
+        ("p[ + 1s", Code::ExpressionSyntax),
+        ("if p then 1s else", Code::ExpressionSyntax),
+        ("if p then 1s else 2s", Code::ConditionType),
+    ] {
+        let text = format!("let p = 3\nEnv e | attack=({value}) pitch=p\n");
+        let found: Vec<Code> = support::checked_with(&envelope, &text)
+            .iter()
+            .map(|diagnostic| diagnostic.code)
+            .collect();
+        if found != [drawn] {
+            failures.push(format!("{text:?}: expected {drawn:?}, found {found:?}"));
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+#[test]
 fn a_bytes_result_of_another_shape_than_a_fixed_attributes_draws_the_shape_diagnostic_alone() {
     let binding = "Clip c | fixed=(bytes(xs)):\n    Note\n";
     support::assert_rows_in_every_order(

@@ -272,8 +272,10 @@ impl Engine<'_> {
             origin.cloned(),
             ((root, scope), None, None),
             None,
+            false,
         )];
-        while let Some((expr, scope, typed, passed_over, origin, flow, picked)) = stack.pop() {
+        while let Some((expr, scope, typed, passed_over, origin, flow, picked, quiet)) = stack.pop()
+        {
             crate::semantics::counted_walk::CountedWalk::PositionsDetachedRoots.step();
             if !self.typing.detached_walks.insert((expr, scope)) {
                 continue;
@@ -301,6 +303,7 @@ impl Engine<'_> {
                         origin.clone(),
                         (group, rank.or(Some(loc)), landing),
                         picked,
+                        quiet,
                     ));
                 }
             }
@@ -308,6 +311,7 @@ impl Engine<'_> {
             let refused = !children
                 .iter()
                 .any(|child| matches!(self.memo.exprs.get(&(*child, scope)), Some(Val::Error)));
+            let gapped = self.holds_a_syntax_gap(&kind)?;
             let chosen = self.chosen_child(&kind, scope)?;
             let read = match kind {
                 ExprKind::Array(_) => picked,
@@ -341,6 +345,7 @@ impl Engine<'_> {
                     _ if arm_position(&kind, position) => picked,
                     _ => None,
                 };
+                let quiet = quiet || gapped;
                 let passed_over = passed_over
                     || unread
                     || chosen.is_some_and(|chosen| {
@@ -355,6 +360,7 @@ impl Engine<'_> {
                         origin,
                         (child_group, child_rank, child_landing),
                         child_picked,
+                        quiet,
                     )),
                     Val::Scalar(node) => {
                         let sig = self.demand_sig(node)?;
@@ -369,7 +375,7 @@ impl Engine<'_> {
                         } else {
                             (child_typed, origin)
                         };
-                        found.push((node, typed, passed_over, origin, child_group, member));
+                        found.push((node, typed, passed_over, origin, child_group, member, quiet));
                     }
                     Val::Array(array) => {
                         for node in array.elements.iter().copied() {
@@ -383,6 +389,7 @@ impl Engine<'_> {
                                 None,
                                 child_group,
                                 member,
+                                quiet,
                             ));
                         }
                     }
@@ -402,7 +409,7 @@ impl Engine<'_> {
 
     pub(super) fn one_fault_per_flow(&mut self, detached: &mut [Detached]) -> Result<(), Internal> {
         let mut groups: BTreeMap<(ExprId, ScopeId), Vec<Ranked>> = BTreeMap::new();
-        for (index, (node, .., group, (rank, _))) in detached.iter().enumerate() {
+        for (index, (node, .., group, (rank, _), _)) in detached.iter().enumerate() {
             groups
                 .entry(*group)
                 .or_default()
@@ -413,11 +420,12 @@ impl Engine<'_> {
             let mut refused_kind = None;
             let mut refused_unit = None;
             for (_, _, index) in &members {
-                let (node, (expected, flows), _, origin, ..) = detached
+                let (node, (expected, flows), _, origin, .., quiet) = detached
                     .get(*index)
                     .cloned()
                     .ok_or(Internal::missed("a detached entry"))?;
                 if refused_kind.is_none()
+                    && !quiet
                     && flows
                     && let Some(expected) = expected
                     && self.refuses(node, expected)?
@@ -520,6 +528,37 @@ impl Engine<'_> {
             .filter(|position| *position < length))
     }
 
+    fn holds_a_syntax_gap(&self, kind: &ExprKind) -> Result<bool, Internal> {
+        match kind {
+            ExprKind::Convert(..)
+            | ExprKind::Field(..)
+            | ExprKind::Index(..)
+            | ExprKind::IndexFromEnd(..)
+            | ExprKind::Slice { .. }
+            | ExprKind::History { .. }
+            | ExprKind::Call(..)
+            | ExprKind::Unary(..)
+            | ExprKind::Binary(..)
+            | ExprKind::If(..)
+            | ExprKind::Match { .. } => {
+                for child in kind.children() {
+                    if matches!(self.hir.expr(child)?.kind, ExprKind::Error) {
+                        return Ok(true);
+                    }
+                }
+                Ok(false)
+            }
+            ExprKind::Error
+            | ExprKind::Number(..)
+            | ExprKind::Bool(_)
+            | ExprKind::Str(_)
+            | ExprKind::Name(_)
+            | ExprKind::Variant { .. }
+            | ExprKind::To
+            | ExprKind::Array(_) => Ok(false),
+        }
+    }
+
     fn chosen_child(
         &mut self,
         kind: &ExprKind,
@@ -586,6 +625,7 @@ pub(super) type Detached = (
     Option<Position>,
     (ExprId, ScopeId),
     (Loc, (ExprId, ScopeId)),
+    bool,
 );
 
 type Ranked = (Loc, Loc, usize);
