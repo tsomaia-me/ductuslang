@@ -80,7 +80,7 @@ fn no_mutant_of_an_example_or_fixture_draws_an_internal_error_or_panics() {
     let (failures, checked) =
         covered(|rows| covered_mutants_draw_no_internal_error(rows, &corpora));
     assert_eq!(failures, Vec::<String>::new());
-    assert_eq!(checked, 1_493);
+    assert_eq!(checked, 1_309);
 }
 
 #[test]

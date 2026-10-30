@@ -19,6 +19,8 @@ const BRACKETS: [SyntaxKind; 8] = [
     SyntaxKind::ParenExpr,
 ];
 
+const HISTORY_READ: &str = "input note = 60\nstate recent = (recent{1, []} + [note])[^8..]\nClip c:\n    Note/(recent[^1])\n";
+
 fn valid_sources() -> Vec<String> {
     let pending = pending_spec_examples();
     let examples = spec_examples()
@@ -29,7 +31,10 @@ fn valid_sources() -> Vec<String> {
         .into_iter()
         .flat_map(|project| project.files)
         .map(|file| file.text);
-    examples.chain(files).collect()
+    examples
+        .chain(files)
+        .chain([HISTORY_READ.to_string()])
+        .collect()
 }
 
 fn indentation_of_line_at(text: &str, offset: usize) -> usize {

@@ -93,7 +93,7 @@ fn the_listed_undeclared_names_appear_in_their_examples() {
 fn the_spec_has_sym_and_sym_error_examples() {
     let examples = spec_examples();
     let count = |tag: &str| examples.iter().filter(|example| example.tag == tag).count();
-    assert_eq!(count("sym"), 49);
+    assert_eq!(count("sym"), 50);
     assert!(count("ebnf") > 0);
     let errors: Vec<(&str, &str)> = examples
         .iter()
@@ -105,30 +105,30 @@ fn the_spec_has_sym_and_sym_error_examples() {
         [
             (
                 "3.9",
-                "input port: i32? = none\n\nSynth s:\n    Osc | freq=port\n"
+                "state port(none): i32?\n\nSynth s:\n    Osc | freq=port\n"
             ),
             (
                 "3.11",
-                "input body: json[..4096] = json {}\n\nstate small: json[..256] = body[\"items\"]\n"
+                "state body(json {}): json[..4096]\n\nstate small: json[..256] = body[\"items\"]\n"
             ),
             ("4.1", "Clip melody:\n    Note/300000000000\n"),
             (
                 "5.10",
-                "input held: i32[..10] = []\n\nlet total = 1 + for x in held into sum from 0: sum + x\n"
+                "state held([]): i32[..10]\n\nstate total = 1 + for x in held into sum from 0: sum + x\n"
             ),
             (
                 "5.10",
-                "input held: i32[..10] = []\n\nlet high = len(for x in held into kept from []: if x > 60 then kept + [x] else kept)\n"
+                "fn count(xs): xs.size\n\nstate held([]): i32[..10]\n\nstate high = count(for x in held into kept from []: if x > 60 then kept + [x] else kept)\n"
             ),
             (
                 "6.3",
-                "input n = 5\n\nfn fib(k): if k < 2 then k else fib(k - 1) + fib(k - 2)\n\nClip c:\n    Note/(fib(n))\n"
+                "state n(5)\n\nfn fib(k): if k < 2 then k else fib(k - 1) + fib(k - 2)\n\nClip c:\n    Note/(fib(n))\n"
             ),
             (
                 "6.6",
-                "input note = 60\n\nstate recent = recent{1, []} + [note]\n"
+                "state note(60)\n\nstate recent = recent.past(1, []) + [note]\n"
             ),
-            ("6.7", "input g = x: x + 1\n"),
+            ("6.7", "state g(x: x + 1)\n"),
             (
                 "6.7",
                 "fn bar(n): n + 1\n\nlet baz = bar\nlet same = baz is bar\n\nClip c:\n    Note when same\n"
@@ -140,7 +140,7 @@ fn the_spec_has_sym_and_sym_error_examples() {
             ),
             (
                 "6.8",
-                "fn shorter[const N](xs: i32[N]) -> i32[N - 1]: xs[1..]\n\nClip c:\n    Note/(len(shorter([60])))\n"
+                "fn shorter[const N](xs: i32[N]) -> i32[N - 1]: xs[1..]\n\nClip c:\n    Note/(shorter([60]).size)\n"
             ),
             (
                 "6.8",
@@ -156,7 +156,7 @@ fn the_spec_has_sym_and_sym_error_examples() {
             ),
             (
                 "6.8",
-                "type Pair[A, B]:\n    left: A\n    right: B\n\nlet p: Pair = {left: 1i32}\n\nClip c:\n    Note/(p.left)\n"
+                "type Pair[A, B]:\n    left: A\n    right: B\n\nlet p = Pair {left: 1i32}\n\nClip c:\n    Note/(p.left)\n"
             ),
             (
                 "7.9",
@@ -164,9 +164,9 @@ fn the_spec_has_sym_and_sym_error_examples() {
             ),
             (
                 "7.9",
-                "input n = 4\n\nlet total = for i in 0..n into sum from 0: sum + i\n\nClip c:\n    Note/total\n"
+                "state n(4)\n\nstate total = for i in 0..n into sum from 0: sum + i\n\nClip c:\n    Note/total\n"
             ),
-            ("10.2", "Pad kick | hit={}\n"),
+            ("10.2", "Pad kick | hit=Hit {}\n")
         ]
     );
 }
@@ -181,11 +181,7 @@ fn spec_projects_are_the_self_contained_examples() {
     assert_eq!(projects.len(), expected);
     assert_eq!(projects[0].name, "spec-1.1-sym-1");
     assert_eq!(projects[0].files[0].path, "spec-1.1-sym-1.sym");
-    assert!(
-        projects[0].files[0]
-            .text
-            .starts_with("input cutoff = 0.5\n")
-    );
+    assert!(projects[0].files[0].text.starts_with("state cutoff(0.5)\n"));
 }
 
 #[test]

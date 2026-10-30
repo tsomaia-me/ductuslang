@@ -1,7 +1,7 @@
 use symphonyscript_core::Vocabulary;
 use symphonyscript_fixtures::{
     bar_vocabulary, dsp_project, envelope_vocabulary, music_project, native_vocabulary,
-    spec_examples, vocabulary,
+    pending_spec_examples, spec_examples, vocabulary,
 };
 
 const INSERTED: &[&str] = &[
@@ -53,9 +53,10 @@ const NATIVE_PROGRAMS: &[&str] = &[
 ];
 
 pub fn corpora() -> Vec<(Vocabulary, Vec<String>)> {
+    let pending = pending_spec_examples();
     let mut texts: Vec<String> = spec_examples()
         .into_iter()
-        .filter(|example| example.tag == "sym")
+        .filter(|example| example.tag == "sym" && !pending.contains(&example.name()))
         .map(|example| example.text)
         .collect();
     for project in [music_project(), dsp_project()] {
