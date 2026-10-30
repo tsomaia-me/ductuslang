@@ -27,8 +27,8 @@ The implementation runs in five milestones. The owner approves this plan once; t
 
 ### Work and checks
 
-- Commits go directly on `main` in the main checkout, one step at a time, each step passing the checks. There are no pull requests. The head pushes `main` to `origin`, never forced, after each hand-back, each merge of `docs` and each document commit of its own; nothing else pushes `main`, and no backup branch is kept.
-- One implementer commits on `main` at a time. Further implementers run beside it in git worktrees of their own, each committing on a branch that the head merges into `main` with a merge commit, where their files are disjoint from the others': M4a beside M3, and the parallel steps a milestone names; every other rule of this section binds them. The SPEC and ARCHITECTURE are edited and committed on the branch `docs`, in its worktree, at any time, because the tests read the SPEC's examples and its error rules word for word and a sentence written before its code lands turns `main`'s checks red; the head merges `docs` into `main` with a merge commit before every launch, and a launch is refused while `docs` holds commits `main` lacks (`git merge-base --is-ancestor docs main`). This plan is edited on `main`, in a window with no implementer committing there, or on a worktree branch merged into `main` in such a window; so are the guides `docs/SMELLS.md`, `docs/IMPLEMENTING.md` and `docs/REVIEWING.md`, each change disclosed to the owner as what it changes and committed on the owner's approval in the session. The package's `CLAUDE.md` changes only in a setup PR the owner merges. A change to a tool, such as the breakers or the batch runner, is made on a worktree branch and merged into `main` in a window with no implementer committing there.
+- Commits go directly on `main` in the main checkout, one step at a time, each step passing the checks. There are no pull requests. The head pushes `main` to `origin`, never forced, after each hand-back and each document commit of its own; nothing else pushes `main`, and no backup branch is kept.
+- One implementer commits on `main` at a time. Further implementers run beside it in git worktrees of their own, each committing on a branch that the head merges into `main` with a merge commit, where their files are disjoint from the others': M4a beside M3, and the parallel steps a milestone names; every other rule of this section binds them. The SPEC and ARCHITECTURE are edited and committed on the branch `docs`, in its worktree, at any time, because the tests read the SPEC's examples and its error rules word for word and a sentence written before its code lands turns `main`'s checks red; `docs` reaches `main` through a pull request the owner approves and merges, and a launch is refused while `docs` holds commits `main` lacks (`git merge-base --is-ancestor docs main`). This plan is edited on `main`, in a window with no implementer committing there, or on a worktree branch merged into `main` in such a window; so are the guides `docs/SMELLS.md`, `docs/IMPLEMENTING.md` and `docs/REVIEWING.md`, each change disclosed to the owner as what it changes and committed on the owner's approval in the session. The package's `CLAUDE.md` changes only in a setup PR the owner merges. A change to a tool, such as the breakers or the batch runner, is made on a worktree branch and merged into `main` in a window with no implementer committing there.
 - The implementer keeps its progress in `.memory/symphonyscript/M<n>.md`: steps done, the gaps it found, and the next step. After a compaction it continues from the repository and that file, and it pushes the file after every commit with `.claude/scripts/memory-push.sh symphonyscript/M<n>.md`.
 - An implementer changes nothing outside `packages/symphonyscript` but its progress file, and leaves the repository root's `Cargo.toml`, `packages/symphonyscript/rust-toolchain.toml` and `packages/symphonyscript/tools/evolve/` alone, except that where its change to the compiler's public API breaks `tools/evolve`'s build, it adapts that use of the API so `cargo test` there passes.
 - In the main checkout an agent stages a new file by its path alone, `git add -- <path>`, and commits with `git commit -m "<message>" -- <its paths>`, and never runs `git add -A`, `git add .`, `git commit -a`, `git stash`, `git reset`, or `git checkout -- <path>` on a file it did not change, so the owner's staged changes stay as they are.
@@ -168,6 +168,8 @@ Steps:
 3. Resolve and Infer: iterables over arrays, maps and ranges with the bound rule (SPEC §7.9), and a slice's capacity from its bounds' maximum by the same rule (SPEC §3.7); the loop names' scope and the name rules of SPEC §6.5 over loop names, accumulators and a block form's local `let`s; the accumulator's type and every capacity in it (SPEC §5.10); a `for` expression evaluated at compile time when it reads no cell and one cell otherwise, its compile-time iterations counted toward SPEC §4.6's `for` iterations; its body inlined once and counted once; the removal of bounded expansion and its memo nesting; the new help on a recursive call that reads a cell (SPEC §6.3); and references to wire instances as values beside node references (SPEC §3.5): a `let`, a parameter, an argument, a path start and an iterable element, and a reference refused in an input, a state, a reactive `let`, a record and an attribute. The frame-chosen reference construct of SPEC §6.3 and ARCHITECTURE §7 stage 6, built in M2b's fix rounds, is consolidated here from those sentences after step 1, with every open ledger entry on it as its rows, the Blocking findings M2b's warm checks keep in it included, and the milestone's cold review covers it.
 4. The limits: a `<name>_warning` field beside every limit that draws an error, its default half the limit's in the constants file, the `Limits` fields that `options` keys name (ARCHITECTURE §9), and the warning diagnostic, naming what the limit's error names (SPEC §4.6, ARCHITECTURE §7, §9).
 5. Check, diagnostics and tests: the errors of the new rules, a summary and a help on each, a lesson for every new code, and a test for each rule of SPEC §5.10 and §7.9.
+6. The cell grammar: `state`, `stream` and `channel` with the init in parentheses and the rule after `=`, `[N]` on a stream or a channel, `.past(k)` and `.past(k, f)`, `.stepped`, `on` with one entry or a list; `input`, `.previous`, `x{k, f}` and the `History` production out of the grammar; the keywords `state stream channel cell out` with the member-position rule of SPEC §2.5; the `input` lines of the test programs, the lessons and the fixtures rewritten to the new form, with the tests over SPEC.md's examples and rule sentences passing again.
+7. The expression and binding grammar: `??` at its level, `AltType` after `is` and as a `match` label, the dot form and the members of SPEC §5.7, `math::` names, record literals with their type names, map literals in bare braces and the type `{K: V}[..N]`, `map` out of the keywords, `=>` in the attribute clause, the markers `const`, `cell`, `state`, `stream`, `channel` and `out` on pattern parameters and `cell` on function parameters, `Package {…}` and `package` out of the keywords; every production of SPEC.md parses, and the pending lists name only what a later milestone's semantics build.
 
 Exit:
 - M2b's exit criteria hold over the SPEC as it now reads: every rule that names an error has its test and its row, every `sym` example that declares its names passes Check, and every `sym-error` example is rejected.
@@ -182,6 +184,8 @@ Exit:
 - Every code has a lesson, every lesson's `sym` examples pass Check and its `sym-error` examples draw its code, and every diagnostic the error-rule table's programs draw has a summary of one to three lines.
 - The robustness corpus gains mutants of the new examples, and none draws internal-error or panics.
 - Compile-time calls are fast: Check over a program that makes 1,000,000 distinct compile-time recursive calls takes under 2 s in the `dev` profile the tests run, with no other build on the machine, recorded in the progress file with the time per call before and after; the recursion-limit lesson's example is that program.
+- Every `sym` example of SPEC.md parses, and `docs/pending-examples.txt` and `docs/pending-productions.txt` name only what a later milestone's semantics build, no parser work among them.
+- No test program, lesson or fixture holds `input`, `.previous` or `x{k, f}`.
 
 ## M2c: Strings, records and capacities
 
@@ -199,7 +203,7 @@ Step 2 touches files the others do not and runs in a worktree of its own beside 
 Exit:
 - M2e's exit criteria hold over the SPEC as it now reads: every rule that names an error has its test and its row, every `sym` example that declares its names passes Check, and every `sym-error` example is rejected.
 - Each row of SPEC §3.3's capacity table and each inner-level case of §3.7 has tests whose values are derived by hand.
-- A fixture vocabulary with an attribute that takes an input, one that takes a constant, a record attribute of a prelude type, one taking any record and a runtime string attribute accepts what SPEC §10.2 allows, refuses the rest, and yields a Program whose bindings a host follows to the inputs it writes.
+- A fixture vocabulary with an attribute that takes a host-fed cell bound with `=>`, one that takes a constant, a record attribute of a prelude type, one taking any record and a runtime string attribute accepts what SPEC §10.2 allows, refuses the rest, and yields a Program whose bindings a host follows to the inputs it writes.
 - Every code has a lesson, every lesson's `sym` examples pass Check and its `sym-error` examples draw its code, and every diagnostic the error-rule table's programs draw has a summary of one to three lines.
 - The robustness corpus gains mutants of the new examples, and none draws internal-error or panics.
 - A record type of 1,000 fields and an array with capacities at 8 levels pass every stage through Check on a thread with a 1 MiB stack.
@@ -209,10 +213,10 @@ Exit:
 `none` and sums, maps, documents, sum `match` labels, and the vocabulary's map and document attributes: lexing, parsing and the semantics through Check, with a lesson for every new code. M3 builds their runtime.
 
 Steps:
-1. The lexer and the parser: `none`, `|` and `?` in types, `map`, `json` with the lexer's JSON mode, `without`, map and document literals, and sum `match` labels, with the tests over SPEC.md's examples and rule sentences passing again.
+1. The lexer and the parser: `none`, `|` and `?` in types, `{K: V}[..N]`, `json` with the lexer's JSON mode, `without`, map literals in bare braces and document literals, `??`, and `AltType` labels, with the tests over SPEC.md's examples and rule sentences passing again.
 2. The vocabulary: `attr_map`, `attr_json`, `attr_json_any`, `build()`'s new errors and the stamp.
 3. Core's `document` module: the RFC 8259 parser into a node pool within a budget, iterative, with kinds, views, equality and typed reads, built without `std` for the compiler and the runtime alike (ARCHITECTURE §4, §7).
-4. Collect, Resolve and Infer: sums with their cycles, the name rules of SPEC §6.5 over the new declarations, the new literals and operators, sums (widening, `or`, `match` narrowing, `is`), maps (joins, `without`, slices, lookups as `V?`), documents (views and budgets, typed reads, literals, `typeof`, equality) and their compile-time evaluation.
+4. Collect, Resolve and Infer: sums with their cycles, the name rules of SPEC §6.5 over the new declarations, the new literals and operators, sums (widening, `??`, `match` narrowing, `is`), maps (joins, `without`, slices, lookups as `V?`), documents (views and budgets, typed reads, literals, `kind`, equality) and their compile-time evaluation.
 5. Check and diagnostics: the map and document attribute rules, a `T?` at an attribute, the errors of the new rules, a summary and a help on each, and a lesson for every new code.
 
 Steps 2 and 3 touch files the others do not and run in worktrees of their own beside step 1 (§ Work and checks), merged before step 4.
@@ -220,7 +224,7 @@ Steps 2 and 3 touch files the others do not and run in worktrees of their own be
 Exit:
 - M2c's exit criteria hold over the SPEC as it now reads.
 - Each fit rule of SPEC §3.11's typed read has tests whose values are derived by hand.
-- Every rule of SPEC §3.9 has its test: widening in and no narrowing, `match` coverage and narrowing per arm, `or`, `is`, a record literal choosing its alternative, and a `T?` refused at an attribute.
+- Every rule of SPEC §3.9 has its test: widening in and no narrowing, `match` coverage and narrowing per arm, `??`, `is`, a record literal choosing its alternative, and a `T?` refused at an attribute.
 - Every operation of SPEC §3.10 and every rule of §3.11 has its test, `is` between documents and between a document and each value that widens into one among them; core's `document` module accepts every valid document and refuses every invalid one of a conformance corpus with the byte position, refuses a document past its budget naming it, and parses 64 KiB in time linear in its length.
 - A fixture vocabulary with a map attribute and a document attribute accepts what SPEC §10.2 allows and refuses the rest.
 - Every code has a lesson, every lesson's `sym` examples pass Check and its `sym-error` examples draw its code, and every diagnostic the error-rule table's programs draw has a summary of one to three lines.
@@ -242,23 +246,25 @@ Exit:
 - M2g's exit criteria hold over the SPEC as it now reads.
 - Every rule of SPEC §6.7 and §6.8 has its test: a lambda's arity, annotations and scope, a function type refused outside a parameter and a compile-time `let`, a function type's named parameters called by name, a lambda passed on, a function and a built-in passed with and without a function type, a compile-time `let` holding a lambda or a function, called and passed, its use reactive when the lambda's body reads a cell, a function reference refused outside its positions, a lambda's body reading the scope it is written in, a `let` reaching itself through its lambda, bracket parameters bound and unified from arguments, a bracket parameter bare in no parameter type, a size expression checked at its call, a size out of range or a float, a value parameter in every position SPEC §6.8 lists, a type argument as an expression, constraints, the defaults of a flexible argument, a record literal binding a generic type's parameters, and a generic type named without its arguments.
 - A fixture vocabulary's native function that takes a lambda is evaluated at compile time with compile-time arguments, running the lambda's body at each of its calls, and a generic native function binds its bracket parameters from its arguments.
+- A function reference is refused in a record field and in a cell (SPEC §6.7, §14).
 - Every code has a lesson, every lesson's `sym` examples pass Check and its `sym-error` examples draw its code, and every diagnostic the error-rule table's programs draw has a summary of one to three lines.
 - The robustness corpus gains mutants of the new examples, and none draws internal-error or panics.
 
 ## M2d: Language additions 3
 
-Pattern types, inputs and states in patterns, state triggers, the `input` and `const` parameter modifiers, the `children` parameters, wire patterns and pattern generics: lexing, parsing and the semantics through Check, with a lesson for every new code. M3 builds their runtime.
+Pattern types, cells in patterns, clocks, the parameter markers `const`, `cell`, `state`, `stream`, `channel` and `out`, the `=>` binding, the lossless check of a derived `channel`, the `children` parameters, wire patterns and pattern generics: lexing, parsing and the semantics through Check, with a lesson for every new code. M3 builds their runtime.
 
 Steps:
-1. The lexer and the parser: `const`, `children`, `on`, `node`, `wire`, placement types with counts and bundle entries, the `children` parameters and a use's body, the classification of patterns before bodies and wire patterns used as wires (SPEC §7.1), `input` and `state` lines in pattern bodies, and bracket parameters on patterns, with the tests over SPEC.md's examples and rule sentences passing again.
-2. Collect, Expand and Resolve: a pattern's inputs and states under each use's path, a use's body partitioned among its `children` parameters, the parameter modifiers, the name rules of SPEC §6.5 over the new declarations, triggers, and a pattern's bracket parameters bound in Expand from a node reference or a placement (ARCHITECTURE §7).
-3. Infer: pattern types inferred and checked against their declarations, triggers typed as reactive `let`s, and a pattern's other bracket parameters bound from its arguments (SPEC §6.8).
+1. The lexer and the parser: `const`, `children`, `on`, `node`, `wire`, placement types with counts and bundle entries, the `children` parameters and a use's body, the classification of patterns before bodies and wire patterns used as wires (SPEC §7.1), `state`, `stream` and `channel` lines in pattern bodies, and bracket parameters on patterns, with the tests over SPEC.md's examples and rule sentences passing again.
+2. Collect, Expand and Resolve: a pattern's cells under each use's path, a use's body partitioned among its `children` parameters, the six markers with SPEC §6.4's widening and `out` exact, `=>` checked against `takes` with the capacity floor (SPEC §6.1, §7.6, §10.2), the name rules of SPEC §6.5 over the new declarations, clocks, and a pattern's bracket parameters bound in Expand from a node reference or a placement (ARCHITECTURE §7).
+3. Infer: pattern types inferred and checked against their declarations, clocks typed as SPEC §6.6 types them, the lossless check of a derived `channel` over the clock graph, and a pattern's other bracket parameters bound from its arguments (SPEC §6.8).
 4. Check and diagnostics: the errors of the new rules, SPEC §10.2's checks on each use's expansion against the kind a type parameter binds, a summary and a help on each, and a lesson for every new code.
 
 Exit:
 - M2h's exit criteria hold over the SPEC as it now reads: every rule that names an error has its test and its row, every `sym` example that declares its names passes Check, and every `sym-error` example is rejected.
 - Every pattern in the SPEC's examples has the type SPEC §6.4 gives it, inferred, and a declared type the body breaks is rejected naming the placement; a `children` parameter refuses a use's body outside its counts, and a wire pattern is used as a wire with its name, gate and `to`.
-- Two uses of a pattern that declares an input and a state yield two inputs and two states named by the uses' paths, listed at the uses' positions.
+- Two uses of a pattern that declares a host-fed and a derived cell yield two of each, named by the uses' paths, listed at the uses' positions.
+- A `stream` or `channel` marker refuses a `state` and an expression over an event cell with the help of SPEC §6.4, `out` refuses a constant and a derived cell, and a derived `channel` with a `stream` upstream is refused naming it.
 - A pattern whose type parameter binds to a node kind expands per use, and each use's expansion is checked by SPEC §10.2 against the kind it binds; a pattern's value parameter binds from its arguments as a function's does.
 - Every code has a lesson, every lesson's `sym` examples pass Check and its `sym-error` examples draw its code, and every diagnostic the error-rule table's programs draw has a summary of one to three lines.
 - The robustness corpus gains mutants of the new examples, and none draws internal-error or panics.
@@ -290,9 +296,9 @@ Exit:
 Lowering, the runtime, `eval`, the `Consumer` trait and reload, for the language as M2, M2b, M2e, M2c, M2g, M2h, M2d and M2f leave it.
 
 Steps:
-1. Lower: constant folding with the canonical NaN, the cell graph in dependency order, paths, filled defaults, the string table, the Program in SPEC §11's order, the memory figure (SPEC §12.6), and the choice per non-recursive function between inlining and one shared body by Q6's measure over the resolved body instances (body nodes times call sites less one over `shared_body_threshold`; small and single-site bodies inlined; one shared body per distinct set of argument and result types; a call with only compile-time arguments folded; ARCHITECTURE §7), with a function table and a call node in the Program.
-2. The runtime: validation in `Runtime::new`, commit and changes, the evaluator without recursion, states with their histories and triggers, variable arrays with joins and slices at every level, `For` nodes, each evaluating its body subtree once per element, strings stored one `u32` per character with UTF-8 at the boundary, records per leaf field, sums as a tag and slots, maps, documents parsed at the boundary by core's `document` module and read through views and typed reads, native functions at runtime with a callback for each lambda argument, taken from the vocabulary `Runtime::new` takes, whose stamp it checks (SPEC §13.1), typed attribute handles, the builder's `Attr<T>` read by `rt.attr` in the attribute's Rust type (ARCHITECTURE §2, §4), and writes (SPEC §12, ARCHITECTURE §4).
-3. `eval` and the `Consumer` trait.
+1. Lower: constant folding with the canonical NaN, the cell graph in dependency order, paths, filled defaults, the string table, the Program in SPEC §11's order, the memory figure and a commit's most work (SPEC §12.6), the in-place marks (ARCHITECTURE §7 stage 8), and the choice per non-recursive function between inlining and one shared body by Q6's measure over the resolved body instances (body nodes times call sites less one over `shared_body_threshold`; small and single-site bodies inlined; one shared body per distinct set of argument and result types; a call with only compile-time arguments folded; ARCHITECTURE §7), with a function table and a call node in the Program.
+2. The runtime: validation in `Runtime::new`, commit and changes, the evaluator without recursion, the three cell words with their histories as SPEC §6.6 reads them, host-fed streams and channels with their pending buffers drained in arrival order through the producer handle, `write` and `write_at`, clocks and cycles of reads, variable arrays with joins and slices at every level, `For` nodes, each evaluating its body subtree once per element, strings stored one `u32` per character with UTF-8 at the boundary, records per leaf field, sums as a tag and slots, maps, documents parsed at the boundary by core's `document` module and read through views and typed reads, native functions at runtime with a callback for each lambda argument, taken from the vocabulary `Runtime::new` takes, whose stamp it checks (SPEC §13.1), typed attribute handles, the builder's `Attr<T>` read by `rt.attr` in the attribute's Rust type (ARCHITECTURE §2, §4), and writes (SPEC §12, ARCHITECTURE §4).
+3. `eval`, and the `Consumer` trait with `apply` once per step inside `commit` and `commit_steps` for a host without a consumer.
 4. Reload: `reload_snapshot`, `prepare` and `install`, inputs (SPEC §13.2), matching (SPEC §13.3), the report (ARCHITECTURE §5).
 5. Fixture pairs of projects, before and after an edit, for the reload tests.
 
@@ -300,7 +306,7 @@ Exit:
 - Commit traces match golden traces for the fixture projects.
 - A counting allocator shows `commit` allocates nothing.
 - Golden values for float built-ins, saturation, division by zero, float `%`, the canonical NaN, clamped indexing and `rand` (SPEC §5.2, §5.5, §5.7, §12.5) match bit for bit.
-- Change reports carry element indices for array attributes and follow the order of SPEC §12.3.
+- Change reports name the attribute, one per step of its binding, in the order of SPEC §12.3, the consumer run after every step.
 - A test for each rule of SPEC §13.
 - Inserting one anonymous note into a playing clip reports exactly one addition.
 - M2's deep sources lower, load, commit, reload, compare, clone, dump and drop on a thread with a 1 MiB stack.
@@ -315,7 +321,7 @@ Exit:
 - For a `for` expression over a variable array, the Program's size grows linearly in the array's capacity, measured up to a capacity of 10,000, as the owner ruled for M2e's sources.
 - A diagnostic drawn over a chain of called functions carries related spans linear in the chain's length, and a chain of 4,000 faulty functions compiles in work linear in 4,000.
 - Reload matching follows SPEC §13.3's search bound, and a benchmark over generated edits measures Myers' cost against edit distance and sequence length, recorded in the progress file.
-- Golden traces cover states and histories, triggers, variable arrays at every level, strings, records, sums, maps and documents; a string written past its capacity or in invalid UTF-8, and a document written past its budget or invalid, are refused with the capacity or the byte position in the error.
+- Golden traces cover cells and histories, clocks, streams and channels with pending writes, `dropped`, `stepped`, cycles of reads and reload's re-evaluation of kept cells (SPEC §6.6, §12.1, §13.5), variable arrays at every level, strings, records, sums, maps and documents; a string written past its capacity or in invalid UTF-8, and a document written past its budget or invalid, are refused with the capacity or the byte position in the error.
 - Golden traces cover `for` expressions over arrays, maps and ranges, each evaluating its body once per live element, and a native function that calls a lambda at runtime; a counting allocator shows neither allocates in `commit`.
 
 ## M4a: Language server and editors
@@ -344,14 +350,14 @@ Exit:
 Generated Rust, `dump`, the watch loop, and what of the tool needs the runtime.
 
 Steps:
-1. `codegen::generate` and a fixture framework's `build.rs` that uses it, with a typed write method for each input whose variable-array inputs take core's bounded list type (ARCHITECTURE §8).
+1. `codegen::generate`, the generated engine computing every cell bit for bit with the evaluator (ARCHITECTURE §8), a fixture framework's `build.rs` that uses it, a typed write method for each host-fed `state` and a typed producer for each `stream` and `channel`, variable-array cells taking core's bounded list type.
 2. The tool's `dump`, and `check` printing the memory figure (SPEC §12.6).
 3. The watch loop: recompile, prepare, consumer acceptance, install.
 
 Exit:
 - Every fixture project compiled through the library and through `codegen` gives equal Programs and equal commit traces.
 - A generated Program builds for `thumbv7em-none-eabihf`.
-- A write through a generated method longer than a variable-array input's capacity does not compile, shown by a compile-fail test.
+- A write through a generated method longer than a variable-array cell's capacity does not compile, shown by a compile-fail test.
 - End-to-end tests for `dump`, and for `check` printing the memory figure.
 - `codegen` handles M2's deep sources on a thread with a 1 MiB stack.
 - The `package` record's `options` and `--limit` reach the runtime, a flag overriding the record.
