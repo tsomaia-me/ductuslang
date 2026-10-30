@@ -339,7 +339,7 @@ state req(Request {})
 state host = headers["host"] ?? "localhost"
 state trimmed = headers without ["cookie", "set-cookie"]
 state with_host = headers + {"host": host}
-state hits({}): {str[..64]: i32}[..64] = (hits.past(1) + {req.path: hits.past(1)[req.path] ?? 0 + 1})[^64..]
+state hits({}): {str[..64]: i32}[..64] = (hits.past(1) + {req.path: (hits.past(1)[req.path] ?? 0) + 1})[^64..]
 ```
 
 `hits` counts requests per path and keeps the newest 64 paths.
@@ -516,11 +516,11 @@ From loosest to tightest:
 | 3 | `and` | left |
 | 4 | `not` | prefix |
 | 5 | `is`, `is not`, `<`, `<=`, `>`, `>=` | none |
-| 6 | `+`, `-`, `without` | left |
-| 7 | `*`, `/`, `div`, `%` | left |
-| 8 | unary `-` | prefix |
-| 9 | `**` | right |
-| 10 | `??` | left |
+| 6 | `??` | right |
+| 7 | `+`, `-`, `without` | left |
+| 8 | `*`, `/`, `div`, `%` | left |
+| 9 | unary `-` | prefix |
+| 10 | `**` | right |
 | 11 | `.name`, `[index]`, `(arguments)` | left |
 
 ```ebnf
@@ -529,13 +529,13 @@ IfExpr    ::= 'if' Expr 'then' Expr 'else' Expr
 OrExpr    ::= AndExpr ('or' AndExpr)*
 AndExpr   ::= NotExpr ('and' NotExpr)*
 NotExpr   ::= 'not' NotExpr | CmpExpr
-CmpExpr   ::= AddExpr (CmpOp AddExpr | 'is' 'not'? Base)?
+CmpExpr   ::= Fallback (CmpOp Fallback | 'is' 'not'? Base)?
 CmpOp     ::= 'is' 'not'? | '<' | '<=' | '>' | '>='
+Fallback  ::= AddExpr ('??' Fallback)?
 AddExpr   ::= MulExpr (('+' | '-' | 'without') MulExpr)*
 MulExpr   ::= UnaryExpr (('*' | '/' | 'div' | '%') UnaryExpr)*
 UnaryExpr ::= '-' UnaryExpr | PowExpr
-PowExpr   ::= Fallback ('**' UnaryExpr)?
-Fallback  ::= Postfix ('??' Postfix)*
+PowExpr   ::= Postfix ('**' UnaryExpr)?
 Postfix   ::= Primary ('.' Name | '[' Index ']' | '(' Args? ')')*
 Primary   ::= NumberLit | BoolLit | StringLit | RecordLit | MapLit | JsonLit | 'none' | Name | QualifiedName
             | 'to' | Conversion | ArrayLit | '(' Expr ')'
@@ -545,7 +545,7 @@ Arg       ::= Expr | Lambda
 NamedArg  ::= Name '=' Arg
 ```
 
-Comparisons do not chain: `a < b < c` is an error. `-2 ** 2` is −4, and `n-1` is `n - 1`. `??` is the fallback on a `T?` (§5.3), and binds tighter than `**` and looser than a member read or a call, so `port ?? 80 > 1024`, `a * b ?? 1` and `-x ?? 1` apply the fallback first. An `if` that is an operand of another operator is parenthesized: `base + (if high then 12 else 0)`. An `if` that is a whole value, such as a `let`'s value, an attribute value or an argument, needs no parentheses. A `{` in an expression opens a map literal (§3.10), after a type name a record literal (§3.8), and after `json` a document literal (§3.11).
+Comparisons do not chain: `a < b < c` is an error. `-2 ** 2` is −4, and `n-1` is `n - 1`. `??` is the fallback on a `T?` (§5.3), and binds looser than arithmetic and tighter than a comparison, so `port ?? 80 > 1024` is `(port ?? 80) > 1024`, `x ?? base + 1` falls back to `base + 1`, `x ?? -1` needs no parentheses, and `-x ?? 1` is an error, since unary minus takes no `T?`; `(x ?? 0) + 1` adds to the resolved value. An `if` that is an operand of another operator is parenthesized: `base + (if high then 12 else 0)`. An `if` that is a whole value, such as a `let`'s value, an attribute value or an argument, needs no parentheses. A `{` in an expression opens a map literal (§3.10), after a type name a record literal (§3.8), and after `json` a document literal (§3.11).
 
 Expressions evaluate the same way at compile time and at runtime; §4.6 states the differences in compile-time arithmetic.
 
