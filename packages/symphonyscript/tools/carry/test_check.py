@@ -110,6 +110,27 @@ class CheckTest(unittest.TestCase):
         failures, _ = self.run_check()
         self.assertIn("m2-fix-round-10-brief.md", failures[0])
 
+    def test_newest_brief_takes_a_later_step_of_the_milestone(self):
+        self.write_brief("m2e-step-1-brief.md", BRIEF_WITH_LEDGER)
+        self.write_brief("m2e-step-2-brief.md", BRIEF_WITHOUT_LEDGER)
+        self.write_ledger([("Open (1)", [entry("1", [])])])
+        failures, _ = self.run_check()
+        self.assertIn("m2e-step-2-brief.md", failures[0])
+
+    def test_newest_brief_takes_a_later_milestone_step_over_an_earlier_fix_round(self):
+        self.write_brief("m2b-fix-round-15-brief.md", BRIEF_WITH_LEDGER)
+        self.write_brief("m2e-step-1-brief.md", BRIEF_WITHOUT_LEDGER)
+        self.write_ledger([("Open (1)", [entry("1", [])])])
+        failures, _ = self.run_check()
+        self.assertIn("m2e-step-1-brief.md", failures[0])
+
+    def test_newest_brief_takes_a_fix_round_over_the_steps_of_its_milestone(self):
+        self.write_brief("m2e-step-7-brief.md", BRIEF_WITH_LEDGER)
+        self.write_brief("m2e-fix-round-1-brief.md", BRIEF_WITHOUT_LEDGER)
+        self.write_ledger([("Open (1)", [entry("1", [])])])
+        failures, _ = self.run_check()
+        self.assertIn("m2e-fix-round-1-brief.md", failures[0])
+
     def test_newest_brief_falls_back_to_modification_time(self):
         for name in os.listdir(self.briefs):
             os.remove(os.path.join(self.briefs, name))
