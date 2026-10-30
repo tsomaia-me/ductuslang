@@ -1,16 +1,20 @@
 import gzip
 import json
 import math
-import os
 import statistics
 import subprocess
 import tempfile
 from pathlib import Path
 
+from programs import key, read_jsonl
+
 CALLS = 1_000_000
+CALLS_PER_NOTE = 100
 DEPTH = 100_000
 LEVELS = 20
 RUNS = 3
+LOAD_BELOW = 4.0
+BREAKER_SET = "breakers"
 BUDGET_SECONDS = 600
 TARGET_US = 2
 BREAKER_TARGETS_MS = {"median": 0.5, "p99": 2}
@@ -38,9 +42,8 @@ def recursing(total):
 
 
 def inlining(total):
-    functions = "".join(f"fn f{level}(x): f{level - 1}(x) + f{level - 1}(x)\n" for level in range(1, LEVELS))
-    notes = "".join(f"    Note/(f{level}(i))\n" for level in sizes_totalling(total))
-    return "input i = 1\nfn f0(x): x\n" + functions + "Clip c:\n" + notes
+    note = "    Note/(" + " + ".join(f"f(i, {index})" for index in range(CALLS_PER_NOTE)) + ")\n"
+    return "input i = 1\nfn f(x, k): x + k\nClip c:\n" + note * (total // CALLS_PER_NOTE)
 
 
 def nested(opening, middle, closing, depth):
@@ -76,32 +79,40 @@ def ranked(finished, count, quantile):
     return finished[index] if index < len(finished) else None
 
 
-def breaker_figure(times):
-    rows = [row for row in times["programs"] if row["set"] == "breakers"]
-    finished = sorted(row["elapsed_ms"] for row in rows if row["elapsed_ms"] is not None)
+def breaker_figure(times, elapsed, load):
+    finished = sorted(ms for ms in elapsed.values() if ms is not None)
     return {"work": BREAKERS[0], "measured_by": BREAKERS[1], "targets_ms": BREAKER_TARGETS_MS,
-            "programs": len(rows), "past_budget": len(rows) - len(finished),
-            "median_ms": ranked(finished, len(rows), 0.5), "p99_ms": ranked(finished, len(rows), 0.99),
-            "max_timed_ms": finished[-1] if finished else None, "load": times["load"],
-            "method": f"Compiler::check as evolve-check times it on its compile thread, counting allocations, for "
-                      f"each breakers program in the verdicts step, {times['jobs']} shards in parallel, "
-                      f"{times['profile']} profile; a program checked again alone takes its alone time; a program "
-                      f"past the {times['budget_s']} s budget ranks above every timed one and reads as null; "
-                      f"nearest-rank percentiles over all {len(rows)} programs"}
+            "programs": len(elapsed), "past_budget": len(elapsed) - len(finished),
+            "median_ms": ranked(finished, len(elapsed), 0.5), "p99_ms": ranked(finished, len(elapsed), 0.99),
+            "max_timed_ms": finished[-1] if finished else None, "load": round(load, 2),
+            "method": f"Compiler::check as evolve-time times it on evolve-check's compile thread, counting "
+                      f"allocations, each {BREAKER_SET} program once in one process, one job, {times['profile']} "
+                      f"profile, after every other command of the step and once the 1-minute load is below "
+                      f"{LOAD_BELOW}; a program the verdict check found past its {times['budget_s']} s budget is not "
+                      f"run again, and it and a program past the budget here rank above every timed one and read "
+                      f"as null; nearest-rank percentiles over all {len(elapsed)} programs"}
 
 
-def timed(binaries, label, text, work):
+def timed(binaries, programs, work, budget):
     given, taken = work / "given.jsonl", work / "taken.jsonl"
     with open(given, "w", encoding="utf-8") as out:
-        for number in range(RUNS):
-            out.write(json.dumps({"id": f"{label}#{number}", "sources": [{"path": "main.sym", "text": text}]}) + "\n")
-    load = os.getloadavg()[0]
-    subprocess.run([binaries / "evolve-time", "--budget", str(BUDGET_SECONDS), given, taken], check=True)
-    return load, [json.loads(line) for line in taken.read_text(encoding="utf-8").splitlines() if line.strip()]
+        for program in programs:
+            out.write(json.dumps(program) + "\n")
+    subprocess.run([binaries / "evolve-time", "--budget", str(budget), given, taken], check=True)
+    return [json.loads(line) for line in taken.read_text(encoding="utf-8").splitlines() if line.strip()]
 
 
-def program_figure(binaries, work, figure, label, text, units):
-    load, runs = timed(binaries, label, text, work)
+def breaker_elapsed(binaries, work, times, corpus):
+    sources = {key(record): record["sources"] for record in read_jsonl(corpus)}
+    rows = [row for row in times["programs"] if row["set"] == BREAKER_SET]
+    again = [{"id": row["key"], "sources": sources[row["key"]]} for row in rows if row["elapsed_ms"] is not None]
+    taken = {run["id"]: run["elapsed_ms"] for run in timed(binaries, again, work, times["budget_s"])}
+    return {row["key"]: taken.get(row["key"]) for row in rows}
+
+
+def program_figure(binaries, work, figure, label, text, units, load):
+    runs = timed(binaries, [{"id": f"{label}#{number}", "sources": [{"path": "main.sym", "text": text}]}
+                            for number in range(RUNS)], work, BUDGET_SECONDS)
     elapsed = [run["elapsed_ms"] for run in runs]
     median = statistics.median(elapsed) if None not in elapsed else None
     return {"work": figure[0], "measured_by": figure[1], "program": label, "target_us": TARGET_US,
@@ -109,8 +120,9 @@ def program_figure(binaries, work, figure, label, text, units):
             "median_ms": median, "per_unit_us": median * 1000 / units if median is not None else None,
             "diagnostics": runs[0].get("diagnostics"), "codes": runs[0].get("codes"), "panic": runs[0].get("panic"),
             "method": f"Compiler::check as evolve-time times it on evolve-check's compile thread, counting "
-                      f"allocations, {RUNS} runs in one process, the median divided by the {units} units; the "
-                      f"program's other text is counted in its time"}
+                      f"allocations, {RUNS} runs in one process, one job, after every other command of the step "
+                      f"and once the 1-minute load is below {LOAD_BELOW}, the median divided by the {units} units; "
+                      f"the program's other text is counted in its time"}
 
 
 def shown(figure):
@@ -121,13 +133,17 @@ def shown(figure):
             f"{figure['programs']} programs, {figure['past_budget']} past the budget, load {figure['load']:.2f}")
 
 
-def measure(binaries, times_path, out_path):
+def measure(binaries, times_path, corpus, out_path, settle):
     with gzip.open(times_path, "rt", encoding="utf-8") as raw:
         times = json.load(raw)
-    figures = [breaker_figure(times)]
-    print(shown(figures[0]), flush=True)
     with tempfile.TemporaryDirectory() as directory:
+        work = Path(directory)
+        load = settle()
+        figures = [breaker_figure(times, breaker_elapsed(binaries, work, times, corpus), load)]
+        print(shown(figures[0]), flush=True)
         for figure, label, text, units in measured_programs():
-            figures.append(program_figure(binaries, Path(directory), figure, label, text, units))
+            load = settle()
+            figures.append(program_figure(binaries, work, figure, label, text, units, load))
             print(shown(figures[-1]), flush=True)
-    out_path.write_text(json.dumps({"profile": times["profile"], "figures": figures}, indent=2) + "\n")
+    out_path.write_text(json.dumps({"profile": times["profile"], "load_below": LOAD_BELOW, "figures": figures},
+                                   indent=2) + "\n")

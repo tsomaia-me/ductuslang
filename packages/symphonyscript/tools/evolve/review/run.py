@@ -16,7 +16,7 @@ from pathlib import Path
 
 import figures
 import verdicts
-from programs import MAIN, key, read_jsonl, write_jsonl_gz
+from programs import MAIN, PROBES, key, probe_records, read_jsonl, write_jsonl_gz
 
 HERE = Path(__file__).resolve().parent
 EVOLVE = HERE.parent
@@ -95,8 +95,10 @@ def code_table(binaries):
 def programs_at(binaries, corpora):
     found = {}
     for corpus in sorted(corpora.glob("*.jsonl.gz")):
+        name = corpus.name.removesuffix(".jsonl.gz")
         for record in read_jsonl(corpus):
-            found.setdefault(key(record), {**record, "set": corpus.name.removesuffix(".jsonl.gz")})
+            for program in probe_records(record) if name == PROBES else [record]:
+                found.setdefault(key(program), {**program, "set": name})
     mutants = subprocess.run([binaries / "evolve-mutants"], check=True, capture_output=True, text=True).stdout
     for program in map(json.loads, mutants.splitlines()):
         found.setdefault(key(program), {**program, "set": "mutants"})
@@ -141,6 +143,17 @@ def checked(binaries, programs, warnings, keys, jobs, work, alone):
     return found
 
 
+def unknown_tags(programs):
+    return {program_key: (*verdicts.unknown_tag(program["tag"]), None) for program_key, program in programs.items()
+            if program.get("vocabulary", MAIN) is None}
+
+
+def unknown_tag_note(programs, keys):
+    named = "".join(f"; {programs[program_key]['origin']} (#{programs[program_key]['tag']})"
+                    for program_key in sorted(keys, key=lambda program_key: programs[program_key]["origin"]))
+    return f"Probes whose tag names no vocabulary, reported and not checked: {len(keys)}{named}."
+
+
 def checked_again(found, previous, keys):
     return [program_key for program_key in keys if program_key not in found
             or "slow" in (found[program_key][0]["outcome"], previous.get(program_key, {}).get("outcome"))]
@@ -169,10 +182,13 @@ def check(arguments):
         baseline = previous_baseline(HERE, sha, arguments.baselines)
         base = baseline.name.removesuffix(".jsonl.gz") if baseline else None
     previous = {record["key"]: record for record in read_jsonl(baseline)} if baseline else {}
+    unknown = unknown_tags(programs)
+    named = [program_key for program_key in programs if program_key not in unknown]
     check_load, started = settled(arguments.settle_below), time.monotonic()
-    found = checked(binaries, programs, warnings, list(programs), arguments.jobs, build / "work" / "shards", False)
-    again = checked_again(found, previous, list(programs))
+    found = checked(binaries, programs, warnings, named, arguments.jobs, build / "work" / "shards", False)
+    again = checked_again(found, previous, named)
     found.update(checked(binaries, programs, warnings, again, arguments.jobs, build / "work" / "alone", True))
+    found.update(unknown)
     check_seconds = time.monotonic() - started
     current = {program_key: {"key": program_key, "set": programs[program_key]["set"], **found[program_key][0]}
                for program_key in sorted(programs)}
@@ -188,7 +204,8 @@ def check(arguments):
              f"{check_seconds:.0f} s with {arguments.jobs} jobs; "
              f"1-minute load {load:.1f} before, {os.getloadavg()[0]:.1f} after.",
              f"Checked again alone, as slow now or at the baseline or without a verdict from their shard: "
-             f"{len(again)}; slow after: {sum(found[k][0]['outcome'] == 'slow' for k in again)}."]
+             f"{len(again)}; slow after: {sum(found[k][0]['outcome'] == 'slow' for k in again)}.",
+             unknown_tag_note(programs, unknown)]
     heading = f"Verdicts at {sha} against {base}" if base else f"Verdicts at {sha}, no baseline"
     (run / "diff-full.md").write_text(verdicts.render(heading, programs, current, previous, details, table, notes))
     (run / "diff.md").write_text(verdicts.summary(heading, programs, current, previous, details, table, notes,
@@ -249,7 +266,7 @@ def ignored_tests(name, expression, package, cargo, below):
                 cargo, below)
 
 
-def shared_steps(sha, top, into, run, jobs, baselines, against, quiet=QUIET_LOAD, stress=False):
+def shared_steps(sha, top, into, run, jobs, baselines, against, quiet=QUIET_LOAD, stress=False, exhaustive=False):
     export, package = into / "export", into / "export" / PACKAGE
     cargo = {"CARGO_TARGET_DIR": str(into / "target"), "CARGO_BUILD_JOBS": str(jobs),
              "NEXTEST_TEST_THREADS": str(jobs), "RUST_TEST_THREADS": str(jobs)}
@@ -264,22 +281,24 @@ def shared_steps(sha, top, into, run, jobs, baselines, against, quiet=QUIET_LOAD
             step("clippy", ["cargo", "clippy", "--workspace", "--all-targets", "--", "-D", "warnings"], package,
                  cargo, BUSY_LOAD),
             step("nextest", ["cargo", "nextest", "run", "--workspace"], package, cargo, BUSY_LOAD),
-            ignored_tests("nextest-exhaustive", EXHAUSTIVE, package, cargo, BUSY_LOAD),
+            *([ignored_tests("nextest-exhaustive", EXHAUSTIVE, package, cargo, BUSY_LOAD)] if exhaustive else []),
             *([ignored_tests("nextest-stress", STRESS, package, cargo, quiet)] if stress else []),
             step("doctest", ["cargo", "test", "--workspace", "--doc"], package, cargo, BUSY_LOAD),
             step("thumbv7em", ["cargo", "build", "-p", "symphonyscript-core", "--target", THUMB], package, cargo,
                  BUSY_LOAD),
             step("verdicts", verdict_diff, HERE, None, BUSY_LOAD),
             step("figures", [sys.executable, HERE / "run.py", "figures", into / "check" / "target" / PROFILES["dev"],
-                             run / "check-times.json.gz", run / "figures.json"], HERE, None, quiet)]
+                             run / "check-times.json.gz", run / "figures.json"], HERE, None, figures.LOAD_BELOW)]
 
 
-def manifest(tip, into, run, records, started, jobs, quiet=QUIET_LOAD):
+def manifest(tip, into, run, records, started, jobs, quiet=QUIET_LOAD, stress=False, exhaustive=False):
     pipeline = git(HERE, "rev-parse", "HEAD").stdout.strip()
     edited = git(HERE, "status", "--porcelain", "--", str(EVOLVE)).stdout.strip()
     return {"tip": tip, "export": str(into / "export" / PACKAGE), "target": str(into / "target"),
             "evolve_binaries": str(into / "check" / "target" / PROFILES["dev"]), "profile": "dev", "jobs": jobs,
-            "load_limits": {"builds_and_checks": BUSY_LOAD, "timed_steps": limit(quiet)},
+            "ignored_tests": {"exhaustive": exhaustive, "stress": stress},
+            "load_limits": {"builds_and_checks": BUSY_LOAD, "timed_steps": limit(quiet),
+                            "figures": figures.LOAD_BELOW},
             "pipeline": {"commit": pipeline, "uncommitted_changes": bool(edited)},
             "host": {"name": platform.node(), "system": platform.platform(), "cpus": os.cpu_count()},
             "started": started, "written": now(),
@@ -301,18 +320,20 @@ def shared(arguments):
     run.mkdir(parents=True)
     started, records = now(), []
     for planned in shared_steps(sha, top, into, run, arguments.jobs, arguments.baselines, arguments.against,
-                                arguments.quiet_below, arguments.stress):
+                                arguments.quiet_below, arguments.stress, arguments.exhaustive):
         records.append(performed(planned, run))
         print(f"{planned['name']}: exit {records[-1]['exit']}, {records[-1]['seconds']} s, "
               f"load {records[-1]['load']}", flush=True)
-        shape = manifest(tip, into, run, records, started, arguments.jobs, arguments.quiet_below)
+        shape = manifest(tip, into, run, records, started, arguments.jobs, arguments.quiet_below, arguments.stress,
+                         arguments.exhaustive)
         (run / "manifest.json").write_text(json.dumps(shape, indent=2) + "\n")
     print(run / "manifest.json")
     sys.exit(0 if all(record["exit"] == 0 for record in records) else 1)
 
 
 def measured(arguments):
-    figures.measure(arguments.binaries, arguments.times, arguments.out)
+    figures.measure(arguments.binaries, arguments.times, CORPORA / f"{figures.BREAKER_SET}.jsonl.gz", arguments.out,
+                    lambda: settled(figures.LOAD_BELOW))
 
 
 def main():
@@ -340,12 +361,15 @@ def main():
                          help="a new directory for the export and its builds, kept for the reviewers' probes; "
                               "by default a new temporary directory")
     sharing.add_argument("--against", help="as for check")
+    sharing.add_argument("--exhaustive", action="store_true",
+                         help="also run the exhaustive tests after the unit tests")
     sharing.add_argument("--stress", action="store_true",
-                         help="also run the stress tests after the exhaustive ones, once the load is below "
+                         help="also run the stress tests after the unit and exhaustive tests, once the load is below "
                               "--quiet-below")
     sharing.add_argument("--quiet-below", type=float, default=QUIET_LOAD,
-                         help="the 1-minute load the timed steps, the verdict check and the figures, wait to fall "
-                              "below; inf takes them at any load, and the manifest records the load each began at")
+                         help="the 1-minute load the stress tests and the verdict check wait to fall below; inf "
+                              "takes them at any load, and the manifest records the load each began at; the figures "
+                              f"always wait for a load below {figures.LOAD_BELOW:g}")
     for command in (checking, sharing):
         command.add_argument("--jobs", type=int, default=max(1, (os.cpu_count() or 2) // 2))
     recording = commands.add_parser("record", help="record review-runs/<sha>/verdicts.jsonl.gz as the baseline")

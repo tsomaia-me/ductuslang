@@ -37,6 +37,10 @@ def aborted(exit_code):
     return {"outcome": "abort", "errors": [], "warnings": [], "signals": []}, {"exit": exit_code}
 
 
+def unknown_tag(tag):
+    return {"outcome": "unknown-tag", "errors": [], "warnings": [], "signals": []}, {"tag": tag}
+
+
 def change(before, after):
     parts = [] if before["outcome"] == after["outcome"] else [f"{before['outcome']} → {after['outcome']}"]
     for field, label in FIELDS:
@@ -89,6 +93,7 @@ def program_lines(program, extra):
     lines = []
     if extra:
         lines += [f"- Exit: {extra['exit']}"] if "exit" in extra else []
+        lines += [f"- Tag: #{extra['tag']}"] if "tag" in extra else []
         lines += [f"- Panic: {extra['panic']}"] if extra.get("panic") else []
         lines += [f"- Internal error: {message}" for message in extra.get("internal", [])]
         lines += [f"- Finding {finding['signal']}: {', '.join(finding['codes']) or '-'}"

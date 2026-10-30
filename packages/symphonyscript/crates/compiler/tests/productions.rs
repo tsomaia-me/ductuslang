@@ -511,7 +511,7 @@ fn every_case_names_a_production_of_the_spec() {
     );
 }
 
-const RETIRING_PRODUCTIONS: [&str; 1] = ["Bounded"];
+const RETIRING_PRODUCTIONS: [&str; 4] = ["Bounded", "InputDecl", "StateDecl", "History"];
 
 #[test]
 fn every_retiring_production_has_left_the_spec_and_keeps_its_case() {

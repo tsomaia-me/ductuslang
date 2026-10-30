@@ -5,7 +5,7 @@ How a SymphonyScript reviewer covers its lens, reviews the whole diff, reviews a
 ## How you work
 
 - Read the SPEC and ARCHITECTURE whole at the reviewed tip before the diff, whatever your lens, because every lens judges against a rule, and a reviewer that reads the sections it expects misses the rule it did not read, a miss that costs a round.
-- Read code by the function, and send independent reads and probes in one turn, because every turn costs latency and every whole file you read stays in your context to the end.
+- Read the round's diff whole in one turn, `git diff -W <start>..<tip> -- packages/symphonyscript`, then code beyond it by the function, and send independent reads and probes in one turn, because every turn costs latency and every whole file you read stays in your context to the end.
 - Read whole only what you judge; for a fact, grep for it and read the lines it names, because a review that compacts loses minutes to re-reading its own work.
 
 ## Your lens first
