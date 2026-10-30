@@ -1139,7 +1139,7 @@ fn the_arms_of_a_choice_are_type_checked_against_one_another_whatever_chooses_in
             &[
                 held,
                 note,
-                "fn f(i) bounded 2 else [1]: f(i + 1) + [i]\n",
+                "fn f(i): if i > 1 then [1] else f(i + 1) + [i]\n",
                 "Clip c:\n    Note/(if false then f(0) else 5)\n",
             ],
             &[(Code::TypeMismatch, "if false then f(0) else 5")],
@@ -1342,14 +1342,14 @@ fn the_arms_of_a_choice_are_type_checked_against_one_another_whatever_chooses_in
         (
             &[
                 held,
-                "fn f(i) bounded 3 else [0]: [held[i]] + f(i + 1)\n",
+                "fn f(i): if i > 2 then [0] else [i] + f(i + 1)\n",
                 "Clip c:\n    Note/((if false then f(0) else [[1]])[0][0])\n",
             ],
             &[(Code::TypeMismatch, "if false then f(0) else [[1]]")],
         ),
         (
             &[
-                "fn f(i) bounded 2 else [1]: f(i + 1) + [i]\n",
+                "fn f(i): if i > 1 then [1] else f(i + 1) + [i]\n",
                 "Clip c:\n    Note/(if false then f(0) else 5)\n",
             ],
             &[(Code::TypeMismatch, "if false then f(0) else 5")],
@@ -1422,7 +1422,7 @@ fn the_arms_of_a_choice_are_type_checked_against_one_another_whatever_chooses_in
             &[
                 held,
                 flag,
-                "fn f(i) bounded 3 else [0]: [held[i]] + f(i + 1)\n",
+                "fn f(i): if i > 2 then [0] else [i] + f(i + 1)\n",
                 "Clip c:\n    Note/((if flag then f(0) else [[1]])[0][0])\n",
             ],
             &[(Code::TypeMismatch, "if flag then f(0) else [[1]]")],
@@ -2352,7 +2352,7 @@ fn every_diagnostic_carries_a_help_that_states_its_fix() {
                 "Clip c:\n    Note/(fib(n))\n",
             ],
             Code::ReactiveRecursion,
-            "declare a bound on `fib`, written `bounded N else fallback`, as in `bounded 10 else 0`",
+            "write the recursion over the cell as a `for` expression, as in `for x in held into low from 127: min(low, x)`",
         ),
         (
             vocabulary,

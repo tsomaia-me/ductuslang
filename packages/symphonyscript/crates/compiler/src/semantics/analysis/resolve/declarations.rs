@@ -269,9 +269,6 @@ impl Engine<'_> {
                 queries.push(Query::Param(scope, position));
             }
         }
-        if let Some(bound) = &decl.bound {
-            queries.push(Query::Expr(bound.fallback, scope));
-        }
         Ok(queries)
     }
 

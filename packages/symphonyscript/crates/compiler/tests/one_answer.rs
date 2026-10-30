@@ -209,14 +209,6 @@ const DECIDING_NONE: &[(&str, &str)] = &[
         "the instances a path or a wire destination names, SPEC §5.6 and §8.2",
     ),
     (
-        "analysis/resolve/selection.rs pass_over",
-        "which arm a compile-time choice takes, by evaluating its chooser",
-    ),
-    (
-        "analysis/resolve/selection.rs selected",
-        "which arm a compile-time choice takes, by evaluating its chooser",
-    ),
-    (
         "ir/builder/expressions.rs negation",
         "the literal a minus sign forms with a number, SPEC §4.1",
     ),
@@ -262,8 +254,6 @@ const CATCH_ALLS_OUTSIDE: &[&str] = &[
     "analysis/resolve/paths.rs to_path",
     "analysis/resolve/paths.rs written_base",
     "analysis/resolve/paths.rs written_destination",
-    "analysis/resolve/selection.rs pass_over",
-    "analysis/resolve/selection.rs selected",
     "scopes/checker.rs expr",
 ];
 

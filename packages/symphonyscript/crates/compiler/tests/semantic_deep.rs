@@ -3,7 +3,7 @@ mod support;
 use std::collections::BTreeMap;
 
 use symphonyscript::{Code, Compiler, Source};
-use symphonyscript_core::{Count, Vocabulary};
+use symphonyscript_core::{Count, LimitOverrides, Vocabulary};
 use symphonyscript_fixtures::deep_projects;
 
 const DEPTH: usize = 100_000;
@@ -172,16 +172,33 @@ fn stress_deeply_nested_kinds_pass_check_on_a_small_stack() {
 
 #[test]
 #[ignore = "stress"]
-fn stress_a_bounded_function_expanded_100000_levels_deep_passes_check_on_a_small_stack() {
+fn stress_a_call_chain_and_a_recursion_100000_levels_deep_pass_check_on_a_small_stack() {
     on_small_stack(|| {
-        let expanded = format!(
-            "input held: i32[..4] = []\nfn walk(i) bounded {DEPTH} else 0:\n    if i >= len(held) then 0 else held[i] + walk(i + 1)\nClip c:\n    Note/(walk(0))\n"
-        );
+        let mut expanded = String::from("input held: i32[..4] = []\n");
+        for level in 0..DEPTH {
+            expanded.push_str(&format!(
+                "fn walk{level}(i): if i >= len(held) then 0 else held[i] + walk{}(i + 1)\n",
+                level + 1
+            ));
+        }
+        expanded.push_str(&format!(
+            "fn walk{DEPTH}(i): 0\nClip c:\n    Note/(walk0(0))\n"
+        ));
         assert_eq!(code_counts(&expanded), BTreeMap::new());
+        let deep = LimitOverrides {
+            nesting_depth: Some(u64::try_from(2 * DEPTH).unwrap_or(u64::MAX)),
+            ..LimitOverrides::default()
+        };
+        let compiler = Compiler::with_limits(&symphonyscript_fixtures::vocabulary(), deep)
+            .expect("the vocabulary compiles");
         let evaluated = format!(
-            "fn count(i) bounded {DEPTH} else 0: count(i + 1) + 1\nClip c:\n    Note/(count(0) - {DEPTH})\n"
+            "fn count(i): if i >= {DEPTH} then 0 else count(i + 1) + 1\nClip c:\n    Note/(count(0) - {DEPTH})\n"
         );
-        assert_eq!(code_counts(&evaluated), BTreeMap::new());
+        let diagnostics = compiler.check(&[Source {
+            path: "evaluated.sym".into(),
+            text: evaluated,
+        }]);
+        assert_eq!(support::errors(diagnostics), vec![]);
     });
 }
 

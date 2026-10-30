@@ -283,125 +283,56 @@ fn labelled(text: &str, diagnostic: &Diagnostic) -> Vec<(String, String)> {
         .collect()
 }
 
-fn a_call_that_a_bounded_expansion_repeats_is_named_once_with_its_levels_in(
-    orders: support::Orders,
-) {
-    let input = "input n = 1\n";
-    let deep = "fn f(x) bounded 2000000 else 0: if x > 3 then x else f(x + 1)\n";
-    let use_f = "Clip c:\n    Note/(f(n))\n";
-    let limited = |compiler: &Compiler, text: &str, levels: &str| {
-        let found = support::errors(compiler.check(&[support::source(text)]));
+fn a_fault_inside_inlined_calls_names_each_call_innermost_first_in(orders: support::Orders) {
+    let items = [
+        "input n = 1\n",
+        "fn h(x): x div 0.5\n",
+        "fn w(x): h(x) + 1\n",
+        "Clip c:\n    Note/(w(n))\n",
+    ];
+    let expected: Vec<(String, String)> = [("h(x)", "in this call"), ("w(n)", "in this call")]
+        .iter()
+        .map(|(call, label)| (call.to_string(), label.to_string()))
+        .collect();
+    for order in orders.of(&items) {
+        let text = order.concat();
+        let found = support::checked(&text);
         let [diagnostic] = found.as_slice() else {
             panic!("{text}{found:?}");
         };
-        assert_eq!(diagnostic.code, Code::InlineLimit, "{text}");
-        assert_eq!(
-            labelled(text, diagnostic),
-            vec![
-                (
-                    "f(x + 1)".to_string(),
-                    format!("in this call, repeated over {levels} levels")
-                ),
-                ("f(n)".to_string(), "in this call".to_string()),
-            ],
-            "{text}"
-        );
-    };
-    let ten_thousand = Compiler::with_limits(
-        &vocabulary(),
-        LimitOverrides {
-            inlined_calls: Some(10_000),
-            ..LimitOverrides::default()
-        },
-    )
-    .expect("the vocabulary compiles");
-    limited(&ten_thousand, &format!("{input}{deep}{use_f}"), "9,999");
-    let thousand = Compiler::with_limits(
-        &vocabulary(),
-        LimitOverrides {
-            inlined_calls: Some(1000),
-            ..LimitOverrides::default()
-        },
-    )
-    .expect("the vocabulary compiles");
-    for order in orders.of(&[input, deep, use_f]) {
-        limited(&thousand, &order.concat(), "999");
-    }
-    let every_level = "fn g(x) bounded 5 else 0: x div 0.5 + g(x + 1)\n";
-    let wrapped = "fn k(x): g(x) + 1\n";
-    let rows: &[(&[&str], Labels)] = &[
-        (
-            &[input, every_level, "Clip c:\n    Note/(g(n))\n"],
-            &[
-                ("g(x + 1)", "in this call, repeated over 4 levels"),
-                ("g(n)", "in this call"),
-            ],
-        ),
-        (
-            &[input, every_level, wrapped, "Clip c:\n    Note/(k(n))\n"],
-            &[
-                ("g(x + 1)", "in this call, repeated over 4 levels"),
-                ("g(x)", "in this call"),
-                ("k(n)", "in this call"),
-            ],
-        ),
-        (
-            &[
-                input,
-                "fn h(x): x div 0.5\n",
-                "fn w(x): h(x) + 1\n",
-                "Clip c:\n    Note/(w(n))\n",
-            ],
-            &[("h(x)", "in this call"), ("w(n)", "in this call")],
-        ),
-    ];
-    for (items, expected) in rows {
-        for order in orders.of(items) {
-            let text = order.concat();
-            let found = support::checked(&text);
-            let [diagnostic] = found.as_slice() else {
-                panic!("{text}{found:?}");
-            };
-            assert_eq!(diagnostic.code, Code::OperandType, "{text}");
-            let expected: Vec<(String, String)> = expected
-                .iter()
-                .map(|(call, label)| (call.to_string(), label.to_string()))
-                .collect();
-            assert_eq!(labelled(&text, diagnostic), expected, "{text}");
-        }
+        assert_eq!(diagnostic.code, Code::OperandType, "{text}");
+        assert_eq!(labelled(&text, diagnostic), expected, "{text}");
     }
 }
 
 #[test]
-fn a_call_that_a_bounded_expansion_repeats_is_named_once_with_its_levels() {
-    a_call_that_a_bounded_expansion_repeats_is_named_once_with_its_levels_in(
+fn a_fault_inside_inlined_calls_names_each_call_innermost_first() {
+    a_fault_inside_inlined_calls_names_each_call_innermost_first_in(
         support::Orders::ForwardAndReversed,
     );
 }
 
 #[test]
 #[ignore = "exhaustive"]
-fn exhaustive_a_call_that_a_bounded_expansion_repeats_is_named_once_with_its_levels() {
-    a_call_that_a_bounded_expansion_repeats_is_named_once_with_its_levels_in(
-        support::Orders::Every,
-    );
+fn exhaustive_a_fault_inside_inlined_calls_names_each_call_innermost_first() {
+    a_fault_inside_inlined_calls_names_each_call_innermost_first_in(support::Orders::Every);
 }
 
 #[test]
-fn reactive_recursion_names_its_chain_of_calls_and_the_functions_that_lack_a_bound() {
+fn reactive_recursion_names_its_chain_of_calls_and_its_help_names_the_for_expression() {
     let input = "input n = 1\n";
-    let a = "fn a(x) bounded 3 else 0: b(x)\n";
+    let help = "write the recursion over the cell as a `for` expression, as in `for x in held into low from 127: min(low, x)`";
     let rows: &[Recursion] = &[
         (
             &[
                 input,
-                a,
+                "fn a(x): b(x)\n",
                 "fn b(x): if x > 0 then a(x - 1) else 0\n",
                 "Clip c:\n    Note/(a(n))\n",
             ],
             "a(n)",
-            &["`a` → `b` → `a`", "`b` has none"],
-            "declare a bound on `b`, written `bounded N else fallback`, as in `bounded 10 else 0`",
+            &["this call of `a` reads a cell", "`a` → `b` → `a`"],
+            help,
             &[
                 ("b(x)", "`a` calls `b` here"),
                 ("a(x - 1)", "`b` calls `a` here"),
@@ -410,23 +341,12 @@ fn reactive_recursion_names_its_chain_of_calls_and_the_functions_that_lack_a_bou
         (
             &[
                 input,
-                "fn f(x): if x > 0 then f(x - 1) else 0\n",
-                "Clip c:\n    Note/(f(n))\n",
-            ],
-            "f(n)",
-            &["`f` → `f`", "`f` has none"],
-            "declare a bound on `f`, written `bounded N else fallback`, as in `bounded 10 else 0`",
-            &[("f(x - 1)", "`f` calls `f` here")],
-        ),
-        (
-            &[
-                input,
                 "fn fib(k): if k < 2 then k else fib(k - 1) + fib(k - 2)\n",
                 "Clip c:\n    Note/(fib(n))\n",
             ],
             "fib(n)",
-            &["`fib` → `fib`", "`fib` has none"],
-            "declare a bound on `fib`, written `bounded N else fallback`, as in `bounded 10 else 0`",
+            &["this call of `fib` reads a cell", "`fib` → `fib`"],
+            help,
             &[("fib(k - 1)", "`fib` calls `fib` here")],
         ),
         (
@@ -440,7 +360,7 @@ fn reactive_recursion_names_its_chain_of_calls_and_the_functions_that_lack_a_bou
                 "the body of the recursive function `g` reads a cell",
                 "`g` → `g`",
             ],
-            "declare a bound on `g`, written `bounded N else fallback`, as in `bounded 10 else 0`",
+            help,
             &[("g(x - 1)", "`g` calls `g` here")],
         ),
     ];
@@ -471,22 +391,80 @@ fn reactive_recursion_names_its_chain_of_calls_and_the_functions_that_lack_a_bou
             assert_eq!(labelled(&text, diagnostic), expected, "{text}");
         }
     }
+}
+
+#[test]
+fn a_function_written_with_a_bound_draws_one_fn_syntax_at_the_bound_whose_help_names_the_for_expression()
+ {
+    let help = "remove the bound and write the loop as a `for` expression, as in `for x in held into low from 127: min(low, x)`";
+    let rows: &[(&[&str], &str)] = &[
+        (
+            &[
+                "fn f(n) bounded 100 else 0: if n < 1 then 0 else f(n - 1)\n",
+                "Clip c:\n    Note/(f(3))\n",
+            ],
+            "bounded",
+        ),
+        (
+            &[
+                "input held: i32[..10] = []\n",
+                "fn lowest(i) bounded 10 else 127:\n    let a = held[i]\n    if i >= len(held) then 127 else min(a, lowest(i + 1))\n",
+                "Clip c:\n    Note/(lowest(0))\n",
+            ],
+            "bounded",
+        ),
+        (
+            &[
+                "fn f(x) bounded 3 else 0: x\n",
+                "Clip c:\n    Note/(f(1))\n",
+            ],
+            "bounded",
+        ),
+    ];
+    for (items, at) in rows {
+        for order in support::permutations(items) {
+            let text = order.concat();
+            let found = support::checked(&text);
+            let [diagnostic] = found.as_slice() else {
+                panic!("{text}{found:?}");
+            };
+            let range = &diagnostic.span.range;
+            assert_eq!(
+                (
+                    diagnostic.code,
+                    &text[range.start as usize..range.end as usize]
+                ),
+                (Code::FnSyntax, *at),
+                "{text}"
+            );
+            assert_eq!(diagnostic.help.as_deref(), Some(help), "{text}");
+        }
+    }
     support::assert_rows_in_every_order(
         &vocabulary(),
-        &[(
-            &[
-                input,
-                a,
-                "fn b(x) bounded 3 else 0: if x > 0 then a(x - 1) else 0\n",
-                "Clip c:\n    Note/(a(n))\n",
-            ],
-            &[],
-        )],
+        &[
+            (
+                &[
+                    "fn fib(n): if n < 2 then n else fib(n - 1) + fib(n - 2)\n",
+                    "let lengths = [fib(3), fib(4), fib(5), fib(6)]\n",
+                    "Clip c:\n    Note/(lengths[3])\n",
+                ],
+                &[],
+            ),
+            (
+                &[
+                    "let bounded = 3\n",
+                    "fn f(bounded): bounded + 1\n",
+                    "Clip c:\n    Note/(f(bounded))\n",
+                ],
+                &[],
+            ),
+        ],
     );
 }
 
 #[test]
-fn an_unbounded_call_whose_body_reads_a_cell_through_a_local_let_draws_reactive_recursion() {
+fn a_recursive_call_whose_body_reads_a_cell_through_a_local_let_draws_reactive_recursion() {
     let call = "Clip c:\n    Note/(lowest(0))\n";
     let rows: &[support::Row] = &[
         (
@@ -512,14 +490,6 @@ fn an_unbounded_call_whose_body_reads_a_cell_through_a_local_let_draws_reactive_
                 call,
             ],
             &[(Code::FnSyntax, "10")],
-        ),
-        (
-            &[
-                "input held: i32[..10] = []\n",
-                "fn lowest(i) bounded 10 else 127:\n    let a = held[i]\n    if i >= len(held) then 127 else min(a, lowest(i + 1))\n",
-                call,
-            ],
-            &[],
         ),
     ];
     support::assert_rows_in_every_order(&symphonyscript_fixtures::vocabulary(), rows);
@@ -582,82 +552,6 @@ fn an_endless_recursion_draws_one_recursion_depth() {
         (
             &["fn g(n): g(n + 1)\n", "Clip c:\n    Note/(g(0))\n"],
             &[(Code::RecursionDepth, "g(n + 1)")],
-        ),
-    ];
-    support::assert_rows_in_every_order(&symphonyscript_fixtures::vocabulary(), rows);
-}
-
-#[test]
-fn a_bounded_functions_fallback_is_type_checked_against_its_body_at_every_call() {
-    let depth = |fallback: &str| {
-        format!(
-            "fn depth(k) bounded 3 else {fallback}:\n    if k < 1 then 0 else 1 + depth(k - 1)\n"
-        )
-    };
-    let pair = |fallback: &str| {
-        format!(
-            "fn pair(k) bounded 3 else {fallback}:\n    if k < 1 then [k, k] else pair(k - 1)\n"
-        )
-    };
-    let lowest = |fallback: &str| {
-        format!(
-            "fn lowest(i) bounded 10 else {fallback}:\n    if i >= len(held) then 127 else min(held[i], lowest(i + 1))\n"
-        )
-    };
-    let (list, boolean, variant) = (depth("[0, 1]"), depth("true"), depth("Wave::Saw"));
-    let (parameters, zero, parameter) = (depth("[k, k]"), depth("0"), depth("k"));
-    let (rows_fallback, longer) = (pair("[[0, 0]]"), pair("[0, 0, 0]"));
-    let (held_list, held_scalar) = (lowest("[127]"), lowest("127"));
-    let n = "input n = 2\n";
-    let held = "input held: i32[..10] = []\n";
-    let shallow = "Clip c:\n    Note/(60 + depth(2))\n";
-    let deep = "Clip c:\n    Note/(60 + depth(5))\n";
-    let reactive = "Clip c:\n    Note/(60 + depth(n))\n";
-    let lowest_call = "Clip c:\n    Note/(lowest(0))\n";
-    let pair_call = "Clip c:\n    Note/(pair(1)[0])\n";
-    let rows: &[support::Row] = &[
-        (&[&list, shallow], &[(Code::TypeMismatch, "[0, 1]")]),
-        (
-            &[
-                "let v = if true then 0 else [0, 1]\n",
-                "Clip c:\n    Note/(v)\n",
-            ],
-            &[(Code::TypeMismatch, "if true then 0 else [0, 1]")],
-        ),
-        (&[&list, deep], &[(Code::TypeMismatch, "[0, 1]")]),
-        (&[&list, n, reactive], &[(Code::TypeMismatch, "[0, 1]")]),
-        (&[&boolean, n, reactive], &[(Code::TypeMismatch, "true")]),
-        (&[&boolean, shallow], &[(Code::TypeMismatch, "true")]),
-        (
-            &[&variant, n, reactive],
-            &[(Code::TypeMismatch, "Wave::Saw")],
-        ),
-        (&[&variant, shallow], &[(Code::TypeMismatch, "Wave::Saw")]),
-        (&[&parameters, shallow], &[(Code::TypeMismatch, "[k, k]")]),
-        (
-            &[&parameters, n, reactive],
-            &[(Code::TypeMismatch, "[k, k]")],
-        ),
-        (
-            &[&rows_fallback, pair_call],
-            &[(Code::TypeMismatch, "[[0, 0]]")],
-        ),
-        (
-            &[held, &held_list, lowest_call],
-            &[(Code::TypeMismatch, "[127]")],
-        ),
-        (&[&zero, shallow], &[]),
-        (&[&zero, n, reactive], &[]),
-        (&[&parameter, n, reactive], &[]),
-        (&[&longer, pair_call], &[]),
-        (&[held, &held_scalar, lowest_call], &[]),
-        (
-            &[
-                "fn r(n) bounded 3 else []:\n    if n < 1 then [[0, 0]] else r(n - 1) + [[n, n]]\n",
-                "input m = 2\n",
-                "Clip c:\n    Note/(len(r(2)) + len(r(m)))\n",
-            ],
-            &[],
         ),
     ];
     support::assert_rows_in_every_order(&symphonyscript_fixtures::vocabulary(), rows);
@@ -762,9 +656,7 @@ fn a_range_bound_or_index_holding_a_recursive_call_evaluates_the_call_before_jud
 fn an_operator_over_recursive_calls_takes_the_shapes_their_results_settle_to() {
     let doubling = "fn f(n): if n is 0 then [1] else f(n - 1) + f(n - 1)\n";
     let growing = "fn g(n): if n is 0 then [1] else g(n - 1) + [n]\n";
-    let bounded = "fn f(n) bounded 3 else [1]: f(n - 1) + f(n - 1)\n";
-    let held_input = "input i = 2\ninput held: i32[..4] = []\n";
-    let doubled_held = "fn h(n) bounded 3 else held: h(n - 1) + h(n - 1)\n";
+    let rising = "fn f(n): if n is 3 then [1] else f(n + 1) + f(n + 1)\n";
     let read_one = "Clip c:\n    Note/(60 + len(f(1)))\n";
     let rows: &[support::Row] = &[
         (&[doubling, "Clip c:\n    Note/(60 + len(f(3)))\n"], &[]),
@@ -820,73 +712,11 @@ fn an_operator_over_recursive_calls_takes_the_shapes_their_results_settle_to() {
             ],
             &[],
         ),
-        (&[bounded, "Clip c:\n    Note/(60 + len(f(0)))\n"], &[]),
-        (
-            &[
-                "fn f(n) bounded 3 else [1]: f(n - 1) + f(n - 2)\n",
-                "Clip c:\n    Note/(60 + len(f(0)))\n",
-            ],
-            &[],
-        ),
-        (
-            &[
-                "input i = 2\n",
-                bounded,
-                "Clip c:\n    Note/(60 + len(f(i)))\n",
-            ],
-            &[],
-        ),
-        (
-            &[
-                "input i = 2\n",
-                bounded,
-                "let p: i32[8] = f(i)\n",
-                "Clip c:\n    Note/(p[7])\n",
-            ],
-            &[],
-        ),
-        (
-            &[
-                "input i = 2\n",
-                bounded,
-                "let n: u8 = len(f(i))\n",
-                "Clip c:\n    Note/(n)\n",
-            ],
-            &[],
-        ),
-        (
-            &[held_input, doubled_held, "Clip c:\n    Note/(len(h(i)))\n"],
-            &[],
-        ),
-        (
-            &[
-                held_input,
-                doubled_held,
-                "let q: i32[..32] = h(i)\n",
-                "Clip c:\n    Note/(len(q))\n",
-            ],
-            &[],
-        ),
-        (
-            &[
-                held_input,
-                doubled_held,
-                "let n: u8 = len(h(i))\n",
-                "Clip c:\n    Note/(n)\n",
-            ],
-            &[(Code::TypeMismatch, "len(h(i))")],
-        ),
+        (&[rising, "Clip c:\n    Note/(60 + len(f(0)))\n"], &[]),
         (
             &[
                 "fn s(n): if n is 0 then 1 else s(n - 1) + s(n - 1)\n",
                 "Clip c:\n    Note/(60 + s(3))\n",
-            ],
-            &[],
-        ),
-        (
-            &[
-                "fn f(n) bounded 3 else 0: f(n - 1) + f(n - 1)\n",
-                "Clip c:\n    Note/(60 + f(0))\n",
             ],
             &[],
         ),
@@ -1036,59 +866,34 @@ fn an_operator_over_recursive_calls_takes_the_shapes_their_results_settle_to() {
         ),
     ];
     support::assert_rows_in_every_order(&vocabulary(), rows);
-    let compiler = Compiler::new(&vocabulary()).expect("the vocabulary compiles");
-    let narrow = [
-        held_input,
-        doubled_held,
-        "let q: i32[..31] = h(i)\n",
-        "Clip c:\n    Note/(len(q))\n",
-    ];
-    for order in support::permutations(&narrow) {
-        let text = order.concat();
-        let found = support::errors(compiler.check(&[support::source(&text)]));
-        let summaries: Vec<(Code, &str)> = found
-            .iter()
-            .map(|diagnostic| (diagnostic.code, diagnostic.summary.as_str()))
-            .collect();
-        assert_eq!(
-            summaries,
-            [(
-                Code::CapacityExceeded,
-                "`q` holds up to 32 elements, more than its annotated capacity 31"
-            )],
-            "{text}"
-        );
-    }
 }
 
 #[test]
 fn every_join_the_evaluation_performs_compares_the_shapes_of_its_rows() {
-    let appending = "fn f(n) bounded 3 else [[1, 2]]: f(n - 1) + [[3]]\n";
-    let unbounded = "fn f(n): if n is 0 then [[1, 2]] else f(n - 1) + [[3]]\n";
+    let appending = "fn f(n): if n is 0 then [[1, 2]] else f(n - 1) + [[3]]\n";
     let ragged = &[(Code::RaggedArray, "f(n - 1) + [[3]]")];
     let rows: &[support::Row] = &[
-        (&[appending, "Clip c:\n    Note/(60 + len(f(0)))\n"], ragged),
         (
             &[
-                "fn f(n) bounded 3 else [[1, 2]]: [[3]] + f(n - 1)\n",
-                "Clip c:\n    Note/(60 + len(f(0)))\n",
+                "fn f(n): if n is 0 then [[1, 2]] else [[3]] + f(n - 1)\n",
+                "Clip c:\n    Note/(60 + len(f(2)))\n",
             ],
             &[(Code::RaggedArray, "[[3]] + f(n - 1)")],
         ),
-        (&[unbounded, "Clip c:\n    Note/(60 + len(f(2)))\n"], ragged),
-        (&[unbounded, "Clip c:\n    Note/(60 + len(f(3)))\n"], ragged),
+        (&[appending, "Clip c:\n    Note/(60 + len(f(2)))\n"], ragged),
+        (&[appending, "Clip c:\n    Note/(60 + len(f(3)))\n"], ragged),
         (
             &[
-                "fn f(n) bounded 3 else [[[1, 2]]]: f(n - 1) + [[[3]]]\n",
-                "Clip c:\n    Note/(60 + len(f(0)))\n",
+                "fn f(n): if n is 0 then [[[1, 2]]] else f(n - 1) + [[[3]]]\n",
+                "Clip c:\n    Note/(60 + len(f(2)))\n",
             ],
             &[(Code::RaggedArray, "f(n - 1) + [[[3]]]")],
         ),
         (
             &[
-                "fn f(n) bounded 3 else [[1, 2]]: f(n - 1) + g(n)\n",
-                "fn g(n) bounded 3 else [[3]]: g(n - 1) + g(n - 1)\n",
-                "Clip c:\n    Note/(60 + len(f(0)))\n",
+                "fn f(n): if n is 0 then [[1, 2]] else f(n - 1) + g(n)\n",
+                "fn g(n): if n is 0 then [[3]] else g(n - 1) + g(n - 1)\n",
+                "Clip c:\n    Note/(60 + len(f(1)))\n",
             ],
             &[(Code::RaggedArray, "f(n - 1) + g(n)")],
         ),
@@ -1103,7 +908,7 @@ fn every_join_the_evaluation_performs_compares_the_shapes_of_its_rows() {
         (
             &[
                 appending,
-                "let p: i32[2][4] = f(0)\n",
+                "let p: i32[2][4] = f(3)\n",
                 "Clip c:\n    Note/(p[0][0])\n",
             ],
             ragged,
@@ -1122,14 +927,6 @@ fn every_join_the_evaluation_performs_compares_the_shapes_of_its_rows() {
             ],
             &[(Code::RaggedArray, "[[1, 2]] + [[3]]")],
         ),
-        (
-            &[
-                "input i = 1\n",
-                appending,
-                "Clip c:\n    Note/(len(f(i)))\n",
-            ],
-            ragged,
-        ),
     ];
     support::assert_rows_in_every_order(&vocabulary(), rows);
 }
@@ -1145,13 +942,6 @@ fn a_join_whose_length_would_reach_two_to_the_thirty_one_draws_length_limit_befo
         ),
         (
             &[doubling, "Clip c:\n    Note/(60 + len(f(40)))\n"],
-            limited,
-        ),
-        (
-            &[
-                "fn f(n) bounded 31 else [1]: f(n - 1) + f(n - 1)\n",
-                "Clip c:\n    Note/(60 + len(f(0)))\n",
-            ],
             limited,
         ),
     ];
@@ -1176,74 +966,10 @@ fn a_join_whose_length_stays_below_two_to_the_thirty_one_draws_no_length_limit()
     support::assert_rows_in_every_order(&vocabulary(), rows);
 }
 
-const DOUBLING_ON_AN_INPUT: [&str; 3] = [
-    "input i = 0\n",
-    "fn f(n) bounded 31 else [1]: f(n - 1) + f(n - 1)\n",
-    "Clip c:\n    Note/(len(f(i)))\n",
-];
-
 #[test]
-#[ignore = "stress"]
-fn stress_a_doubling_bounded_function_called_on_an_input_draws_inline_limit() {
-    let reactive = DOUBLING_ON_AN_INPUT;
-    let inline_limited = vec![(Code::InlineLimit, "f(n - 1)".to_string())];
-    let defaults = Compiler::new(&vocabulary()).expect("the vocabulary compiles");
-    assert_eq!(
-        support::error_texts(&defaults, &reactive.concat()),
-        inline_limited
-    );
-}
-
-#[test]
-fn a_lowered_inline_limit_refuses_a_doubling_bounded_function_on_an_input_in_every_order() {
-    let reactive = DOUBLING_ON_AN_INPUT;
-    let inline_limited = vec![(Code::InlineLimit, "f(n - 1)".to_string())];
-    let thousand = Compiler::with_limits(
-        &vocabulary(),
-        LimitOverrides {
-            inlined_calls: Some(1000),
-            ..LimitOverrides::default()
-        },
-    )
-    .expect("the vocabulary compiles");
-    for order in support::permutations(&reactive) {
-        let text = order.concat();
-        assert_eq!(
-            support::error_texts(&thousand, &text),
-            inline_limited,
-            "{text}"
-        );
-    }
-}
-
-#[test]
-fn a_bounded_expansion_type_checks_every_branch_and_arm_while_it_expands_the_chosen_one() {
+fn a_choice_in_a_called_body_is_type_checked_in_both_arms() {
     let held = "input held: i32[..4] = [1, 2]\n";
-    let read = "Clip c:\n    Note/(f(0))\n";
-    let mismatched_arms = "fn f(i) bounded 3 else 0:\n    match i:\n        0: n + f(i + 1)\n        7: true\n        else: 1\n";
     let rows: &[support::Row] = &[
-        (
-            &[
-                held,
-                "fn f(i) bounded 3 else 0: if i > 5 then true else held[i] + f(i + 1)\n",
-                read,
-            ],
-            &[(
-                Code::TypeMismatch,
-                "if i > 5 then true else held[i] + f(i + 1)",
-            )],
-        ),
-        (
-            &[
-                held,
-                "fn f(i) bounded 3 else 0: if i > 5 then 1.5 else held[i] + f(i + 1)\n",
-                read,
-            ],
-            &[(
-                Code::TypeMismatch,
-                "if i > 5 then 1.5 else held[i] + f(i + 1)",
-            )],
-        ),
         (
             &[
                 held,
@@ -1253,70 +979,21 @@ fn a_bounded_expansion_type_checks_every_branch_and_arm_while_it_expands_the_cho
             &[(Code::TypeMismatch, "if i > 5 then 1.5 else held[i] + 1")],
         ),
         (
-            &["input n = 0\n", mismatched_arms, read],
+            &[
+                "fn f(i): if i > 5 then true else [1, 2][0] + f(i + 1)\n",
+                "Clip c:\n    Note/(f(0))\n",
+            ],
             &[(
                 Code::TypeMismatch,
-                "match i:\n        0: n + f(i + 1)\n        7: true\n        else: 1\n",
+                "if i > 5 then true else [1, 2][0] + f(i + 1)",
             )],
         ),
         (
             &[
-                held,
-                "fn f(i) bounded 3 else 0: if i > 5 then [1, 2][7] else held[i] + f(i + 1)\n",
-                read,
+                "fn f(i): if i > 5 then [1, 2][7] else [1, 2][0] + f(i + 1)\n",
+                "Clip c:\n    Note/(f(0))\n",
             ],
-            &[],
-        ),
-        (
-            &[
-                held,
-                "fn f(i) bounded 3 else 0: if i > 5 then true else f(i + 1) + 1\n",
-                read,
-            ],
-            &[(Code::TypeMismatch, "if i > 5 then true else f(i + 1) + 1")],
-        ),
-        (
-            &[
-                held,
-                "input note = 60\n",
-                "fn f(i) bounded 3 else 0: if i > 5 then held else note + f(i + 1)\n",
-                read,
-            ],
-            &[(
-                Code::TypeMismatch,
-                "if i > 5 then held else note + f(i + 1)",
-            )],
-        ),
-        (
-            &[
-                held,
-                "fn f(i) bounded 3 else [0]: if i > 5 then [[1]] else [held[i]] + f(i + 1)\n",
-                "Clip c:\n    Note/(f(0)[0])\n",
-            ],
-            &[(
-                Code::TypeMismatch,
-                "if i > 5 then [[1]] else [held[i]] + f(i + 1)",
-            )],
-        ),
-        (
-            &[
-                held,
-                "fn f(i) bounded 3 else [0]: if i > 5 then [[1]] else [held[i]] + f(i + 1)\n",
-                "let a = f(0)\n",
-                "Clip c:\n    Note/(a[0])\n",
-            ],
-            &[(
-                Code::TypeMismatch,
-                "if i > 5 then [[1]] else [held[i]] + f(i + 1)",
-            )],
-        ),
-        (
-            &[
-                held,
-                "fn f(i) bounded 3 else [0]: if i > 5 then [1, 2, 3] else [held[i]] + f(i + 1)\n",
-                "Clip c:\n    Note/(f(0)[0])\n",
-            ],
-            &[],
+            &[(Code::IndexOutOfRange, "7")],
         ),
     ];
     support::assert_rows_in_every_order(&vocabulary(), rows);
@@ -1703,16 +1380,6 @@ fn the_recursion_depth_summary_names_each_function_of_its_cycle_once_in(orders: 
             assert_eq!(named, *names, "{text}{diagnostic:?}");
         }
     }
-    let bounded = [
-        "fn f(i) bounded 500 else 0: g(i)\n",
-        "fn g(i): f(i + 1) + 1\n",
-        "Clip c:\n    Note/(60 + f(0))\n",
-    ];
-    for order in orders.of(&bounded) {
-        let text = order.concat();
-        let found = support::errors(compiler.check(&[support::source(&text)]));
-        assert!(found.is_empty(), "{text}{found:?}");
-    }
 }
 
 #[test]
@@ -1759,10 +1426,6 @@ fn array_arguments_finish_within_the_limits(bounds: &[usize], finishing_rows: bo
         (
             "fn f(xs, n): if n > 3 then xs else f(xs + [[1]], n + 1)\n",
             "Clip c:\n    Note/(f([[1]], 0)[0][0])\n",
-        ),
-        (
-            "fn f(xs) bounded 8 else xs: if len(xs) > 3 then xs else f(xs + [1])\n",
-            "Clip c:\n    Note/(f([1])[0])\n",
         ),
         (
             "fn f(xs): if len(xs) > 0 then xs else f(xs + [1])\n",

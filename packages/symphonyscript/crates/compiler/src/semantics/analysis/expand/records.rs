@@ -455,7 +455,6 @@ impl<'a> Engine<'a> {
                 params,
                 names,
                 recursive: false,
-                nesting: std::rc::Rc::new(Vec::new()),
             }),
             Some(global),
             chain,

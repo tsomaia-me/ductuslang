@@ -120,12 +120,7 @@ impl Parser<'_> {
         self.start(SyntaxKind::FnDecl);
         self.bump();
         self.expect_name(Code::FnSyntax, "the function's name");
-        self.param_list(
-            SyntaxKind::ParamList,
-            Code::FnSyntax,
-            false,
-            Task::FnAfterParams,
-        );
+        self.param_list(SyntaxKind::ParamList, Code::FnSyntax, false, Task::FnColon);
     }
 
     pub(super) fn pattern_decl(&mut self) {
@@ -184,38 +179,18 @@ impl Parser<'_> {
         }
     }
 
-    pub(super) fn fn_after_params(&mut self) {
-        if !self.at(SyntaxKind::BoundedKw) {
-            self.fn_colon();
-            return;
-        }
-        self.start(SyntaxKind::Bounded);
-        self.bump();
-        let zero = self.at(SyntaxKind::Number)
-            && self
-                .current_text()
-                .bytes()
-                .all(|byte| byte == b'0' || byte == b'_');
-        if zero {
-            self.error(Code::FnSyntax, "a bound is a positive integer");
-            self.bump();
-        } else {
-            self.digits(Code::FnSyntax, "the bound, a positive integer in digits");
-        }
-        self.expect(
-            SyntaxKind::ElseKw,
-            Code::FnSyntax,
-            "`else` and the fallback",
-        );
-        self.then([Task::Expr, Task::Finish, Task::FnColon]);
-    }
-
     pub(super) fn fn_colon(&mut self) {
-        let equals = self.at(SyntaxKind::Eq);
+        let help = if self.at(SyntaxKind::Eq) {
+            Some(FN_COLON)
+        } else if self.at(SyntaxKind::Ident) && self.current_text() == "bounded" {
+            Some(FN_BOUND)
+        } else {
+            None
+        };
         let reported = self.diagnostics.len();
         let colon = self.colon_or_skip(Code::FnSyntax, "`:` and the body");
-        if equals && let Some(diagnostic) = self.diagnostics.get_mut(reported) {
-            diagnostic.help = Some(FN_COLON.to_string());
+        if let (Some(help), Some(diagnostic)) = (help, self.diagnostics.get_mut(reported)) {
+            diagnostic.help = Some(help.to_string());
         }
         if colon {
             self.bump();
@@ -347,3 +322,5 @@ const CAPACITY_LAST: &str =
     "write the capacity as the last, outermost length, as in `i32[3][..10]`";
 
 const FN_COLON: &str = "write `:` before a function's body, as in `fn double(x): x * 2`";
+
+const FN_BOUND: &str = "remove the bound and write the loop as a `for` expression, as in `for x in held into low from 127: min(low, x)`";

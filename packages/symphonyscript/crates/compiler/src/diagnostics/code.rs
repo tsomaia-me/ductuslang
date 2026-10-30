@@ -78,7 +78,6 @@ codes!(
     ForVariableClash,
     DuplicateLocal,
     ParameterOrder,
-    NeedlessBound,
     DuplicateDefaultParameter,
     NamedInFor,
     MisplacedTo,
@@ -225,7 +224,6 @@ impl Code {
             Code::ForVariableClash => "for-variable-clash",
             Code::DuplicateLocal => "duplicate-local",
             Code::ParameterOrder => "parameter-order",
-            Code::NeedlessBound => "needless-bound",
             Code::DuplicateDefaultParameter => "duplicate-default-parameter",
             Code::NamedInFor => "named-in-for",
             Code::MisplacedTo => "misplaced-to",
@@ -443,7 +441,6 @@ impl Code {
             Code::StateValue => "6.6",
             Code::UnboundedState => "6.6",
             Code::CapacityExceeded => "3.7",
-            Code::NeedlessBound => "6.3",
             Code::CompileTimeNative => "10.1",
             Code::InternalError => return None,
         };
@@ -599,7 +596,6 @@ impl Code {
             | Code::StateValue
             | Code::UnboundedState
             | Code::CapacityExceeded
-            | Code::NeedlessBound
             | Code::CompileTimeNative
             | Code::InternalError => Severity::Error,
         }

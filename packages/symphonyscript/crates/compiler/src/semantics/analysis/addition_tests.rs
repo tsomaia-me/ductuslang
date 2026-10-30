@@ -309,25 +309,6 @@ fn states_whose_history_reads_reach_one_another_take_their_least_capacities_toge
     assert_eq!(capacities, (Some(3), Some(4)));
 }
 
-fn expansion_size(levels: usize) -> usize {
-    let text = format!(
-        "input held: i32[..4] = []\nfn walk(i) bounded {levels} else 0:\n    if i >= len(held) then 0 else held[i] + walk(i + 1)\nClip c:\n    Note/(walk(0))\n"
-    );
-    let (diagnostics, nodes) = analyzed(&vocabulary(), &text, |engine| engine.nodes.len());
-    assert!(errors(&diagnostics).is_empty(), "{diagnostics:?}");
-    nodes
-}
-
-#[test]
-fn a_bounded_call_expands_in_work_linear_in_its_levels() {
-    let (small, middle, large) = (
-        expansion_size(100),
-        expansion_size(200),
-        expansion_size(400),
-    );
-    assert_eq!(large - middle, 2 * (middle - small));
-}
-
 #[test]
 fn a_state_settled_as_a_fixed_array_expands_a_loop_over_its_length() {
     let items = [
@@ -415,24 +396,19 @@ fn a_for_expands_once_per_element_or_per_value_of_its_computed_range() {
 
 #[test]
 fn a_recursive_call_evaluates_its_omitted_default_and_yields_its_body() {
-    let rows: [(&str, &str, i128); 4] = [
+    let rows: [(&str, &str, i128); 3] = [
         (
             "fn f(n, x = f(0, 1)): if n < 1 then x else n\n",
             "Note/(f(3))",
             3,
         ),
         (
-            "fn f(x, y = f(x)) bounded 3 else 0: x\n",
+            "fn f(x, y = f(x - 1, 0)): if x < 1 then 0 else x\n",
             "Note/(f(1, 0) + 60)",
             61,
         ),
         (
-            "fn f(x, y) bounded 3 else 0: f(x, y)\n",
-            "Note/(f(1, 0) + 60)",
-            60,
-        ),
-        (
-            "fn f(x, y = x + 1) bounded 3 else 0: if x > 0 then f(x - 1) + y else y\n",
+            "fn f(x, y = x + 1): if x > 0 then f(x - 1) + y else y\n",
             "Note/(f(2) + 60)",
             66,
         ),
@@ -508,26 +484,6 @@ fn bytes_converts_each_integer_as_u8_converts() {
 }
 
 #[test]
-fn a_bounded_call_yields_its_fallback_nested_inside_its_bound() {
-    let cases: [(&str, i128); 3] = [
-        ("fn count(i) bounded 3 else 100: count(i + 1) + 1\n", 103),
-        ("fn count(i) bounded 2 else 100: count(i) + 1\n", 102),
-        (
-            "fn count(i) bounded 2 else 0: g(i) + 1\nfn g(i) bounded 2 else 0: count(i) + 10\n",
-            22,
-        ),
-    ];
-    for (functions, expected) in cases {
-        let text = format!("{functions}Clip c:\n    Note/(count(0))\n");
-        let (diagnostics, value) = analyzed(&vocabulary(), &text, |engine| {
-            attr_value(engine, "pitch", EvalTy::I32)
-        });
-        assert!(errors(&diagnostics).is_empty(), "{diagnostics:?}");
-        assert_eq!(value, Some(CVal::Int(expected)), "{functions}");
-    }
-}
-
-#[test]
 fn a_fixed_u8_argument_computes_in_u8_through_a_recursive_body() {
     let text =
         "fn r(x, n): if n < 1 then x + u8(1) else r(x, n - 1)\nClip c:\n    Note/(r(u8(3), 1))\n";
@@ -562,10 +518,15 @@ fn reaching_the_nesting_limit_costs_work_linear_in_the_limit() {
     assert!(large <= 10 * small, "{small} {large}");
 }
 
-fn counted(bound: u64, limits: LimitOverrides) -> (Vec<Diagnostic>, Option<CVal>, u64) {
+fn counted(levels: u64, recursive_calls: u64) -> (Vec<Diagnostic>, Option<CVal>, u64) {
     let text = format!(
-        "fn count(i) bounded {bound} else 0: count(i + 1) + 1\nClip c:\n    Note/(count(0) - {bound})\n"
+        "fn count(i): if i >= {levels} then 0 else count(i + 1) + 1\nClip c:\n    Note/(count(0) - {levels})\n"
     );
+    let limits = LimitOverrides {
+        recursive_calls: Some(recursive_calls),
+        nesting_depth: Some(2 * levels),
+        ..LimitOverrides::default()
+    };
     let (diagnostics, (value, work)) = analyzed_within(&vocabulary(), limits, &text, |engine| {
         (
             attr_value(engine, "pitch", EvalTy::I32),
@@ -577,9 +538,9 @@ fn counted(bound: u64, limits: LimitOverrides) -> (Vec<Diagnostic>, Option<CVal>
 
 #[test]
 #[ignore = "stress"]
-fn stress_a_bounded_function_evaluates_in_work_linear_in_its_levels() {
-    let (small_diagnostics, small_value, small) = counted(25_000, LimitOverrides::default());
-    let (large_diagnostics, large_value, large) = counted(100_000, LimitOverrides::default());
+fn stress_a_recursion_evaluates_in_work_linear_in_its_depth() {
+    let (small_diagnostics, small_value, small) = counted(25_000, 1_000_000);
+    let (large_diagnostics, large_value, large) = counted(100_000, 1_000_000);
     assert!(
         errors(&small_diagnostics).is_empty(),
         "{small_diagnostics:?}"
@@ -593,11 +554,7 @@ fn stress_a_bounded_function_evaluates_in_work_linear_in_its_levels() {
         (Some(CVal::Int(0)), Some(CVal::Int(0)))
     );
     assert!(large <= 4 * small, "{small} {large}");
-    let limits = LimitOverrides {
-        recursive_calls: Some(20_000),
-        ..LimitOverrides::default()
-    };
-    let (diagnostics, _, work) = counted(2_000_000, limits);
+    let (diagnostics, _, work) = counted(2_000_000, 20_000);
     let codes: Vec<_> = errors(&diagnostics)
         .iter()
         .map(|diagnostic| diagnostic.code)
@@ -613,9 +570,18 @@ fn read_walk(text: &str) -> u64 {
 }
 
 fn walk_program(levels: usize, body: &str) -> String {
-    format!(
-        "input held: i32[..4] = []\nfn walk(i) bounded {levels} else 0:\n{body}Clip c:\n    Note/(walk(0))\n"
-    )
+    let mut text = String::from("input held: i32[..4] = []\n");
+    for level in 0..levels {
+        let next = format!("walk{}(", level + 1);
+        text.push_str(&format!(
+            "fn walk{level}(i):\n{}",
+            body.replace("walk(", &next)
+        ));
+    }
+    text.push_str(&format!(
+        "fn walk{levels}(i): 0\nClip c:\n    Note/(walk0(0))\n"
+    ));
+    text
 }
 
 fn chain_program(functions: usize) -> String {
@@ -704,41 +670,6 @@ fn in_every_order(items: &[&str]) -> Vec<String> {
             .collect();
     }
     orders.into_iter().map(|order| order.concat()).collect()
-}
-
-fn passed_over_expansion_nodes(scrutinee: &[&str], bound: u32) -> Vec<(String, usize)> {
-    let function = format!(
-        "fn pick(i) bounded {bound} else 0:\n    match w:\n        Saw: held[0]\n        else: pick(i + 1) + pick(i + 2)\n"
-    );
-    let mut items = vec!["input held = [1, 2, 3]\n", function.as_str()];
-    items.extend_from_slice(scrutinee);
-    items.push("Clip c:\n    Note/(pick(0))\n");
-    in_every_order(&items)
-        .into_iter()
-        .map(|text| {
-            let (diagnostics, nodes) =
-                analyzed_within(&vocabulary(), LimitOverrides::default(), &text, |engine| {
-                    engine.nodes.len()
-                });
-            assert!(errors(&diagnostics).is_empty(), "{text}{diagnostics:?}");
-            (text, nodes)
-        })
-        .collect()
-}
-
-#[test]
-fn a_compile_time_match_in_an_expansion_expands_only_its_chosen_arm() {
-    let scrutinees: [&[&str]; 2] = [
-        &["let w = Saw\n", "Osc o | wave=w\n"],
-        &["let w = Wave::Saw\n"],
-    ];
-    for scrutinee in scrutinees {
-        let small = passed_over_expansion_nodes(scrutinee, 4);
-        let large = passed_over_expansion_nodes(scrutinee, 12);
-        for ((text, small), (_, large)) in small.iter().zip(&large) {
-            assert_eq!(small, large, "{text}");
-        }
-    }
 }
 
 #[test]
@@ -1042,7 +973,7 @@ fn a_flexible_float_meeting_a_fixed_u8_operand_computes_in_f32() {
 fn an_operator_over_recursive_calls_computes_with_the_shapes_their_results_settle_to() {
     let doubling = "fn f(n): if n is 0 then [1] else f(n - 1) + f(n - 1)\n";
     let growing = "fn g(n): if n is 0 then [1] else g(n - 1) + [n]\n";
-    let bounded = "fn f(n) bounded 3 else [1]: f(n - 1) + f(n - 1)\n";
+    let rising = "fn f(n): if n is 3 then [1] else f(n + 1) + f(n + 1)\n";
     let pitches: &[(&[&str], i128)] = &[
         (&[doubling, "Clip c:\n    Note/(60 + len(f(3)))\n"], 68),
         (&[growing, "Clip c:\n    Note/(60 + g(3)[3])\n"], 63),
@@ -1054,27 +985,13 @@ fn an_operator_over_recursive_calls_computes_with_the_shapes_their_results_settl
             ],
             64,
         ),
-        (&[bounded, "Clip c:\n    Note/(60 + len(f(0)))\n"], 68),
-        (
-            &[
-                "fn f(n) bounded 3 else [1]: f(n - 1) + f(n - 2)\n",
-                "Clip c:\n    Note/(60 + len(f(0)))\n",
-            ],
-            68,
-        ),
+        (&[rising, "Clip c:\n    Note/(60 + len(f(0)))\n"], 68),
         (
             &[
                 "fn s(n): if n is 0 then 1 else s(n - 1) + s(n - 1)\n",
                 "Clip c:\n    Note/(60 + s(3))\n",
             ],
             68,
-        ),
-        (
-            &[
-                "fn f(n) bounded 3 else 0: f(n - 1) + f(n - 1)\n",
-                "Clip c:\n    Note/(60 + f(0))\n",
-            ],
-            60,
         ),
         (
             &[
@@ -1134,14 +1051,6 @@ fn an_operator_over_recursive_calls_computes_with_the_shapes_their_results_settl
             &[
                 "fn f(n): if n is 0 then [[1, 2]] else [f(n - 1)[0] + f(n - 1)[0]]\n",
                 "Clip c:\n    Note/(60 + len(f(2)[0]))\n",
-            ],
-            68,
-        ),
-        (
-            &[
-                "input i = 2\n",
-                bounded,
-                "Clip c:\n    Note/(60 + len(f(i)))\n",
             ],
             68,
         ),
@@ -1207,7 +1116,7 @@ fn a_join_holds_its_operands_and_builds_its_elements_only_where_a_value_needs_th
         .into_iter()
         .map(|bound| {
             let text = format!(
-                "fn f(n) bounded {bound} else [[1, 2]]: f(n - 1) + [[3]]\nClip c:\n    Note/(60 + len(f(0)))\n"
+                "fn f(n): if n is {bound} then [[1, 2]] else f(n + 1) + [[3]]\nClip c:\n    Note/(60 + len(f(0)))\n"
             );
             let (built_before, _) = CArray::work();
             let (diagnostics, ()) = analyzed(&vocabulary(), &text, |_| ());
@@ -1260,20 +1169,6 @@ fn a_compile_time_slice_holds_its_base_and_its_bounds() {
         assert_eq!(found, [crate::diagnostics::Code::TypeMismatch], "{text}");
         assert!(built_after - built_before <= reference, "{text}");
     }
-}
-
-#[test]
-fn a_bounded_expansion_types_its_passed_over_branches_in_work_linear_in_its_levels() {
-    let nodes = |bound: u32| {
-        let text = format!(
-            "input held: i32[..4] = [1, 2]\nfn f(i) bounded {bound} else 0: if i > 1000 then f(i + 1) + f(i + 2) else held[0] + f(i + 1)\nClip c:\n    Note/(f(0))\n"
-        );
-        let (diagnostics, nodes) = analyzed(&vocabulary(), &text, |engine| engine.nodes.len());
-        assert!(errors(&diagnostics).is_empty(), "{text}{diagnostics:?}");
-        nodes
-    };
-    let counts = [nodes(100), nodes(200), nodes(300)];
-    assert_eq!(counts[2] - counts[1], counts[1] - counts[0], "{counts:?}");
 }
 
 fn set_attr_value(engine: &Engine<'_>, name: &str, ty: EvalTy) -> Option<CVal> {

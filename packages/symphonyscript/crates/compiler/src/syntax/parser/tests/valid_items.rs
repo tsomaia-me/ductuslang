@@ -22,7 +22,7 @@ const BODY_ITEMS: &[SyntaxKind] = &[
 const ADDITION_ITEMS: &[&str] = &[
     "let u = u8(3) + 2u8\n",
     "input k: u8[..4] = []\n",
-    "fn f(i) bounded 2 else 0: f(i + 1)\n",
+    "fn f(bounded): bounded + 1\n",
     "let s = [1, 2, 3][^2..][..1]\n",
     "state[2] s = s{2, 0} + 1\n",
 ];

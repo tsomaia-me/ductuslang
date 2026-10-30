@@ -479,28 +479,17 @@ impl Engine<'_> {
         );
         scopes.extend(self.memo.family_probes.get(key).copied());
         let decl = self.hir.fn_decl(function)?;
-        let mut bodies = vec![decl.value];
-        if let Some(bound) = decl.bound.as_ref().filter(|bound| bound.bound.is_some()) {
-            bodies.push(bound.fallback);
-        }
+        let body = decl.value;
         let mut waiting = None;
         for scope in scopes {
-            let mut roots = Vec::new();
-            let mut complete = true;
-            for body in &bodies {
-                match self.memo.exprs.get(&(*body, scope)) {
-                    Some(val) => roots.extend(val.nodes()),
-                    None => {
-                        complete = false;
-                        let query = Query::Expr(*body, scope);
-                        if waiting.is_none() && !self.in_progress(query) {
-                            waiting = Some(query);
-                        }
+            match self.memo.exprs.get(&(body, scope)) {
+                Some(val) => return Ok(Some(val.nodes().into_iter().collect())),
+                None => {
+                    let query = Query::Expr(body, scope);
+                    if waiting.is_none() && !self.in_progress(query) {
+                        waiting = Some(query);
                     }
                 }
-            }
-            if complete {
-                return Ok(Some(roots));
             }
         }
         match waiting {

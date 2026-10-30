@@ -24,15 +24,6 @@ impl Engine<'_> {
         let hir = self.hir;
         let node = hir.expr(expr)?;
         let loc = node.loc;
-        if matches!(node.kind, ExprKind::If(..) | ExprKind::Match { .. })
-            && self.in_expansion(scope)?
-        {
-            match self.selected(&node.kind, scope, need)? {
-                None => return Ok(false),
-                Some(Some(branch)) => self.pass_over(&node.kind, branch, scope)?,
-                Some(None) => {}
-            }
-        }
         let val = match &node.kind {
             ExprKind::Error | ExprKind::To => Some(Val::Error),
             ExprKind::Number(number, suffix) => {

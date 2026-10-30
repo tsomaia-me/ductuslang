@@ -70,7 +70,6 @@ pub(super) fn help(code: Code) -> Option<&'static str> {
         Code::ForVariableClash => "rename the `for` variable",
         Code::DuplicateLocal => "rename one of the two",
         Code::ParameterOrder => "move the parameters that have defaults after the others",
-        Code::NeedlessBound => "remove the bound",
         Code::DuplicateDefaultParameter => "mark one parameter `default`",
         Code::NamedInFor => "remove the `as` name",
         Code::ZeroLength => "write a length or capacity of at least 1",
@@ -82,7 +81,9 @@ pub(super) fn help(code: Code) -> Option<&'static str> {
         Code::MatchIncomplete => "add the missing arms or an `else:` arm",
         Code::RedundantElse => "remove the `else:` arm",
         Code::FloatToInteger => "convert explicitly, as in `i32(x)`",
-        Code::ReactiveRecursion => "declare a bound on the function, as in `bounded 10 else 0`",
+        Code::ReactiveRecursion => {
+            "write the recursion over the cell as a `for` expression, as in `for x in held into low from 127: min(low, x)`"
+        }
         Code::UnexpectedCharacter => {
             "remove the character, or write the word the language uses, as in `and`"
         }
@@ -206,9 +207,7 @@ pub(super) fn help(code: Code) -> Option<&'static str> {
             "label the arm with a variant of the scrutinee's enum or a literal of its type"
         }
         Code::ToCandidates => "give every candidate the attribute with one type and unit family",
-        Code::RecursionDepth => {
-            "let the recursion reach its base case within the limit, or declare `bounded N else fallback`"
-        }
+        Code::RecursionDepth => "let the recursion reach its base case within the limit",
         Code::RecursionLimit => "reduce the distinct arguments the recursion computes",
         Code::LimitWarning => {
             "reduce the work the limit counts, or raise its warning value in the package's `options`"

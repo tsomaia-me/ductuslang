@@ -498,49 +498,26 @@ fn a_limit_reached_through_a_default_that_calls_its_function_names_the_default_i
             .collect()
     };
     let named = |code: Code, call: &str| {
-        let param = if call == "f()" { "x" } else { "y" };
         vec![(
             code,
             call.to_string(),
-            Some(format!(
-                "pass `{param}` in the call, or give it a default that does not call `f`, since `{param}`'s default makes every call of `f` another"
+            Some(String::from(
+                "pass `y` in the call, or give it a default that does not call `f`, since `y`'s default makes every call of `f` another",
             )),
         )]
     };
-    let equal = "fn f(x, y = f(x)) bounded 3 else 0: x\n";
-    let rising = "fn f(x, y = f(x + 1)) bounded 3 else 0: x + y\n";
-    let input = "input i = 1\n";
+    let equal = "fn f(x, y = f(x)): x\n";
+    let rising = "fn f(x, y = f(x + 1)): x + y\n";
     let compile_time = "Clip c:\n    Note/(f(1) + 60)\n";
-    let reactive = "Clip c:\n    Note/(f(i) + 60)\n";
-    let rows: [(&[&str], Vec<Helped>); 8] = [
-        (&[equal, compile_time], named(Code::RecursionLimit, "f(x)")),
-        (
-            &[
-                "fn f(x = f()) bounded 3 else 0: x\n",
-                "Clip c:\n    Note/(f() + 60)\n",
-            ],
-            named(Code::RecursionLimit, "f()"),
-        ),
-        (&[input, equal, reactive], named(Code::InlineLimit, "f(x)")),
+    let rows: [(&[&str], Vec<Helped>); 3] = [
         (
             &[rising, compile_time],
             named(Code::RecursionLimit, "f(x + 1)"),
         ),
-        (
-            &[input, rising, reactive],
-            named(Code::InlineLimit, "f(x + 1)"),
-        ),
         (&[equal, "Clip c:\n    Note/(f(1, 0) + 60)\n"], vec![]),
         (
             &[
-                "fn f(x, y) bounded 3 else 0: f(x, y)\n",
-                "Clip c:\n    Note/(f(1, 0) + 60)\n",
-            ],
-            vec![],
-        ),
-        (
-            &[
-                "fn f(x, y = x + 1) bounded 3 else 0: if x > 0 then f(x - 1) + y else y\n",
+                "fn f(x, y = x + 1): if x > 0 then f(x - 1) + y else y\n",
                 "Clip c:\n    Note/(f(2) + 60)\n",
             ],
             vec![],

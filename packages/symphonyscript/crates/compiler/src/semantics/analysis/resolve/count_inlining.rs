@@ -99,7 +99,7 @@ impl Engine<'_> {
         scope: ScopeId,
         arg_reads: &mut ScopedReads,
     ) -> Result<bool, Internal> {
-        if !self.is_recursive(function)? || self.bounded_cycle(function)? {
+        if !self.is_recursive(function)? {
             return Ok(false);
         }
         if !self.function_reads_cell(function)?.is_value() {

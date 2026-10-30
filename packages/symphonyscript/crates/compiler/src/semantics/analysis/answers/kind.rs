@@ -578,18 +578,11 @@ impl Engine<'_> {
                     return Ok(Sig::ERROR);
                 }
                 let Some(kind) = unify_kinds(second.kind, third.kind) else {
-                    let (at, message) = if self.memo.fallback_joins.contains(&node) {
-                        (
-                            *otherwise,
-                            "the fallback of a bounded function and its body yield values of different types",
-                        )
-                    } else {
-                        (
-                            node,
-                            "the branches of an `if` hold values of different types",
-                        )
-                    };
-                    self.error_at_node(Code::TypeMismatch, at, message)?;
+                    self.error_at_node(
+                        Code::TypeMismatch,
+                        node,
+                        "the branches of an `if` hold values of different types",
+                    )?;
                     return Ok(Sig::ERROR);
                 };
                 let Some(family) =
@@ -597,7 +590,7 @@ impl Engine<'_> {
                 else {
                     return Ok(Sig::ERROR);
                 };
-                if !self.memo.fallback_joins.contains(&node) && !arms_alike(&extra) {
+                if !arms_alike(&extra) {
                     self.error_at_node(Code::TypeMismatch, node, ARM_SHAPES)?;
                     return Ok(Sig::ERROR);
                 }

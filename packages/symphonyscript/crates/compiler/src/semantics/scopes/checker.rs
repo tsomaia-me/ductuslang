@@ -118,9 +118,6 @@ impl<'a> Checker<'a> {
             self.expr(local.value, Some(locals), false)?;
         }
         self.expr(decl.value, Some(locals), false)?;
-        if let Some(bound) = &decl.bound {
-            self.expr(bound.fallback, Some(locals), false)?;
-        }
         self.let_cycles(&decl.lets)?;
         Ok(())
     }

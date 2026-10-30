@@ -1,5 +1,6 @@
 mod annotation;
 mod arrays;
+mod bare_label;
 mod bind_fault;
 mod bind_spec;
 mod bindings;
@@ -17,7 +18,6 @@ mod names;
 mod native_layout;
 mod natives;
 mod paths;
-mod selection;
 mod shaped;
 
 pub(crate) use found::Found;

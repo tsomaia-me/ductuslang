@@ -8,9 +8,8 @@ use super::index::index;
 use super::scalar_type::scalar_type;
 use crate::semantics::Internal;
 use crate::semantics::ir::{
-    Expr, ExprId, ExprKind, FnBound, FnDecl, FnId, Hir, Ident, Input, InputId, LetDecl, LetId, Loc,
-    Param, PatternDecl, PatternId, PlacementId, StateDecl, StateId, Top, TypeBase, TypeRef,
-    UnknownNames,
+    Expr, ExprId, ExprKind, FnDecl, FnId, Hir, Ident, Input, InputId, LetDecl, LetId, Loc, Param,
+    PatternDecl, PatternId, PlacementId, StateDecl, StateId, Top, TypeBase, TypeRef, UnknownNames,
 };
 use crate::syntax::ast::{self, AstNode, Item, Name};
 use crate::syntax::{ElementView, NodeView, SyntaxKind, Walk};
@@ -124,33 +123,12 @@ impl HirBuilder<'_> {
                     }
                     None => (Vec::new(), self.push(ExprKind::Error, loc)),
                 };
-                let bound = node.bounded().map(|bounded| {
-                    let bound_loc = self.loc(bounded.syntax().range());
-                    let bound = bounded
-                        .bound()
-                        .filter(|token| !self.faults.touch(token.range()))
-                        .and_then(|token| digits_value(token.text()))
-                        .filter(|bound| *bound > 0);
-                    FnBound {
-                        bound,
-                        fallback: self.expr(bounded.fallback(), bound_loc),
-                        loc: bound_loc,
-                    }
-                });
                 let regions = param_regions(node.syntax(), SyntaxKind::ParamList);
-                let cut = node
-                    .bounded()
-                    .is_some_and(|bounded| self.faults.touch(bounded.syntax().range()))
-                    || node
-                        .body()
-                        .is_none_or(|body| self.faults.touch(body.syntax().range()));
                 let decl = FnDecl {
                     name: self.ident(node.name()),
                     params,
-                    bound,
                     skipped_params: skipped_params(&regions),
                     faulty_head: !regions.is_empty(),
-                    cut,
                     lets,
                     value,
                     loc,

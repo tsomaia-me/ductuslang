@@ -9,7 +9,6 @@ use super::defaulted::defaulted;
 use super::found::Found;
 use crate::diagnostics::Code;
 use crate::semantics::Internal;
-use crate::semantics::analysis::answers::ArmShape;
 use crate::semantics::analysis::engine::Engine;
 use crate::semantics::analysis::ids::ScopeId;
 use crate::semantics::analysis::limit::Limit;
@@ -20,8 +19,6 @@ use crate::semantics::analysis::op::Op;
 use crate::semantics::analysis::param_source::ParamSource;
 use crate::semantics::analysis::query::Query;
 use crate::semantics::analysis::scope_kind::ScopeKind;
-use crate::semantics::analysis::some::some;
-use crate::semantics::analysis::unify_kinds::unify_kinds;
 use crate::semantics::analysis::val::Val;
 use crate::semantics::collection::{BuiltinName, Decl};
 use crate::semantics::ir::{Args, ExprId, ExprKind, FnDecl, FnId, Loc};
@@ -199,17 +196,7 @@ impl Engine<'_> {
             pending |= self.named_function(function, loc, scope, need)?.is_none();
             return Ok((!pending).then_some(Val::Error));
         }
-        let recursive = self.is_recursive(function)?;
-        if recursive && self.bounded_cycle(function)? {
-            match self.call_reads_cell(function, &sources, need)? {
-                None => return Ok(None),
-                Some(true) => {
-                    return self.expand_bounded(function, sources, expr, loc, scope, need);
-                }
-                Some(false) => {}
-            }
-        }
-        if recursive {
+        if self.is_recursive(function)? {
             let mut vals = Vec::new();
             let mut missing = false;
             for source in &sources {
@@ -258,70 +245,17 @@ impl Engine<'_> {
                 created
             }
         };
-        self.inlined_value(decl.value, (expr, scope), call_scope, need)
-    }
-
-    fn expand_bounded(
-        &mut self,
-        function: FnId,
-        sources: Vec<ParamSource>,
-        expr: ExprId,
-        loc: Loc,
-        scope: ScopeId,
-        need: &mut Vec<Query>,
-    ) -> Result<Option<Val>, Internal> {
-        let decl = self.hir.fn_decl(function)?;
-        let Some(bound) = decl.bound.as_ref() else {
-            return Err(Internal::missed("bound"));
-        };
-        let Some(limit) = bound.bound else {
-            return Ok(Some(Val::Error));
-        };
-        let nesting = self.nesting_in(scope, function)?;
-        let body = if nesting >= limit || self.memo.passed_over_calls.contains(&(expr, scope)) {
-            bound.fallback
-        } else {
-            decl.value
-        };
-        let call_scope = match self.memo.call_scopes.get(&(expr, scope)) {
-            Some(existing) => *existing,
-            None => {
-                let count = self.inline_count(function, &sources)?;
-                if !self.charge_inlined(count, function, loc, scope)? {
-                    return Ok(Some(Val::Error));
-                }
-                let created = self.call_scope(function, sources, loc, scope, false)?;
-                self.deepen(created, function, nesting.saturating_add(1))?;
-                self.memo.call_scopes.insert((expr, scope), created);
-                created
-            }
-        };
-        if nesting == 0 && !some!(self.fallback_agrees(function, call_scope, true, need)?) {
-            return Ok(Some(Val::Error));
-        }
-        self.inlined_value(body, (expr, scope), call_scope, need)
+        self.inlined_value(decl, (expr, scope), call_scope, need)
     }
 
     fn inlined_value(
         &mut self,
-        body: ExprId,
+        decl: &FnDecl,
         (expr, scope): (ExprId, ScopeId),
         call_scope: ScopeId,
         need: &mut Vec<Query>,
     ) -> Result<Option<Val>, Internal> {
-        let fallback = self
-            .hir
-            .fn_decl(self.owner_of(call_scope)?)?
-            .bound
-            .as_ref()
-            .is_some_and(|bound| bound.fallback == body);
-        let ScopeKind::Locals(locals) = &self.scope_of(call_scope)?.kind else {
-            return Err(Internal::missed("locals scope"));
-        };
-        let LocalsOwner::Fn(function) = locals.owner else {
-            return Err(Internal::missed("function scope"));
-        };
-        let decl = self.hir.fn_decl(function)?;
+        let body = decl.value;
         let mut locals_ready = true;
         for index in 0..decl.params.len() {
             locals_ready &= self
@@ -329,9 +263,6 @@ impl Engine<'_> {
                 .is_some();
         }
         for index in 0..decl.lets.len() {
-            if fallback {
-                break;
-            }
             locals_ready &= self
                 .bound(
                     Query::Let(
@@ -565,117 +496,6 @@ impl Engine<'_> {
         )
     }
 
-    pub(in crate::semantics::analysis) fn bounded_cycle(
-        &self,
-        function: FnId,
-    ) -> Result<bool, Internal> {
-        self.collected
-            .bounded_cycle
-            .get(function.index())
-            .copied()
-            .ok_or(Internal::missed("function"))
-    }
-
-    fn call_reads_cell(
-        &mut self,
-        function: FnId,
-        sources: &[ParamSource],
-        need: &mut Vec<Query>,
-    ) -> Result<Option<bool>, Internal> {
-        let mut reads = false;
-        let mut missing = false;
-        for source in sources {
-            let ParamSource::Arg { expr, scope } = source else {
-                continue;
-            };
-            let Some(val) = self.val(Query::Expr(*expr, *scope), need) else {
-                missing = true;
-                continue;
-            };
-            for node in val.nodes() {
-                match self.sig(node, need) {
-                    Some(sig) => reads |= sig.reactive,
-                    None => missing = true,
-                }
-            }
-        }
-        if missing {
-            return Ok(None);
-        }
-        if reads {
-            return Ok(Some(true));
-        }
-        Ok(Some(!self.function_reads_cell(function)?.is_value()))
-    }
-
-    pub(in crate::semantics::analysis) fn nesting_in(
-        &self,
-        scope: ScopeId,
-        function: FnId,
-    ) -> Result<u64, Internal> {
-        Ok(self
-            .nesting_of(scope)?
-            .iter()
-            .find(|(owner, _)| *owner == function)
-            .map_or(0, |(_, depth)| *depth))
-    }
-
-    pub(in crate::semantics::analysis) fn in_expansion(
-        &self,
-        scope: ScopeId,
-    ) -> Result<bool, Internal> {
-        Ok(!self.nesting_of(scope)?.is_empty())
-    }
-
-    fn nesting_of(&self, scope: ScopeId) -> Result<Rc<Vec<(FnId, u64)>>, Internal> {
-        let mut current = Some(scope);
-        while let Some(id) = current {
-            crate::semantics::counted_walk::CountedWalk::CallsNestingOf.step();
-            let record = self.scope_of(id)?;
-            match &record.kind {
-                ScopeKind::Locals(locals) => return Ok(locals.nesting.clone()),
-                ScopeKind::ParamPrefix { locals, .. } => current = Some(*locals),
-                ScopeKind::Global { .. } => break,
-                ScopeKind::Body { .. }
-                | ScopeKind::ForVar { .. }
-                | ScopeKind::WireClause { .. }
-                | ScopeKind::WrittenClause { .. } => {
-                    current = record.parent;
-                }
-            }
-        }
-        Ok(Rc::new(Vec::new()))
-    }
-
-    fn owner_of(&self, scope: ScopeId) -> Result<FnId, Internal> {
-        let ScopeKind::Locals(locals) = &self.scope_of(scope)?.kind else {
-            return Err(Internal::missed("locals scope"));
-        };
-        let LocalsOwner::Fn(function) = locals.owner else {
-            return Err(Internal::missed("function scope"));
-        };
-        Ok(function)
-    }
-
-    fn deepen(&mut self, scope: ScopeId, function: FnId, depth: u64) -> Result<(), Internal> {
-        let record = self
-            .scopes
-            .get_mut(scope.index())
-            .ok_or(Internal::missed("scope"))?;
-        let ScopeKind::Locals(locals) = &mut record.kind else {
-            return Err(Internal::missed("locals scope"));
-        };
-        let mut nesting: Vec<(FnId, u64)> = locals
-            .nesting
-            .iter()
-            .copied()
-            .filter(|(owner, _)| *owner != function)
-            .collect();
-        nesting.push((function, depth));
-        locals.nesting = Rc::new(nesting);
-        Ok(())
-    }
-
     pub(in crate::semantics::analysis) fn is_recursive(
         &self,
         function: FnId,
@@ -828,11 +648,6 @@ impl Engine<'_> {
         } else {
             self.template_of(caller)?
         };
-        let nesting = if recursive {
-            Rc::new(Vec::new())
-        } else {
-            self.nesting_of(caller)?
-        };
         let base = match self.template_of(caller)? {
             Some(outer) if recursive && inside_recursion => {
                 self.memo.template_base.get(&outer).copied()
@@ -850,7 +665,6 @@ impl Engine<'_> {
                 params,
                 names,
                 recursive,
-                nesting,
             }),
             Some(global),
             chain,
@@ -955,45 +769,6 @@ impl Engine<'_> {
             }
         }
         Ok(complete.then_some(sources))
-    }
-
-    pub(in crate::semantics::analysis) fn fallback_agrees(
-        &mut self,
-        function: FnId,
-        scope: ScopeId,
-        kinds: bool,
-        need: &mut Vec<Query>,
-    ) -> Result<Option<bool>, Internal> {
-        let decl = self.hir.fn_decl(function)?;
-        let Some(fallback) = decl.bound.as_ref().map(|bound| bound.fallback) else {
-            return Ok(Some(true));
-        };
-        let body = decl.value;
-        let body_type = some!(self.arm_type(body, scope, need)?);
-        let fallback_type = some!(self.arm_type(fallback, scope, need)?);
-        let kinds_agree = match (body_type.kind, fallback_type.kind) {
-            (Some(body), Some(fallback)) => !kinds || unify_kinds(body, fallback).is_some(),
-            _ => true,
-        };
-        let shapes_agree = match (&body_type.shape, &fallback_type.shape) {
-            (ArmShape::Single, ArmShape::Array(_)) | (ArmShape::Array(_), ArmShape::Single) => {
-                false
-            }
-            (ArmShape::Array(Some(body)), ArmShape::Array(Some(fallback))) => body == fallback,
-            _ => true,
-        };
-        let message = match (kinds_agree, shapes_agree) {
-            (true, true) => return Ok(Some(true)),
-            (false, _) => {
-                "the fallback of a bounded function and its body yield values of different types"
-            }
-            (true, false) => {
-                "the fallback of a bounded function and its body hold arrays of different shapes"
-            }
-        };
-        let loc = self.hir.expr(fallback)?.loc;
-        self.error(Code::TypeMismatch, loc, scope, message)?;
-        Ok(Some(false))
     }
 }
 

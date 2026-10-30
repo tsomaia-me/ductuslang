@@ -129,9 +129,7 @@ impl Engine<'_> {
         for arm in arms {
             let known = self.definite_array(*arm)?;
             definite.push(known);
-            if known || (self.arrays.contains(arm) && self.bounded_recursion(*arm)?) {
-                array = true;
-            }
+            array |= known;
         }
         let mut forms = Vec::with_capacity(arms.len());
         let mut outers = Vec::with_capacity(arms.len());
@@ -185,13 +183,6 @@ impl Engine<'_> {
         let lengths = agreed_lengths(&forms, &outers);
         self.memo.choice_lengths.insert(choice, lengths);
         Ok(Some(Extra::Arms(forms)))
-    }
-
-    fn bounded_recursion(&self, node: NodeId) -> Result<bool, Internal> {
-        let Op::Recursive { function, .. } = self.node(node)?.op else {
-            return Ok(false);
-        };
-        self.bounded_cycle(function)
     }
 
     pub(in crate::semantics::analysis) fn history_sig(

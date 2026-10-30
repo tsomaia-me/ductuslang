@@ -8,7 +8,6 @@ pub(crate) struct Collected {
     pub source: Namespace,
     pub prelude: Namespace,
     pub recursive: Vec<bool>,
-    pub bounded_cycle: Vec<bool>,
     pub calls: Vec<Vec<(usize, ExprId)>>,
     pub inline: InlineCounts,
     pub cyclic_patterns: Vec<bool>,

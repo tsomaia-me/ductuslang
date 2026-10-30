@@ -23,7 +23,6 @@ pub(super) enum Task {
     ParamAfter {
         pattern: bool,
     },
-    FnAfterParams,
     FnColon,
     FnBody,
     FnLets,

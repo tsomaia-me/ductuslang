@@ -17,7 +17,7 @@ pub(crate) struct Frame {
     pub expected: EvalTy,
     pub feeds: Vec<Feed>,
     pub memo: FastMap<(NodeId, EvalTy), CVal>,
-    pub unbounded: u64,
+    pub depth: u64,
     pub faults: FastSet<u32>,
     pub templates: FastSet<ScopeId>,
     pub checks: Checks,

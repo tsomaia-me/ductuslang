@@ -426,20 +426,17 @@ impl Engine<'_> {
             return Ok(None);
         };
         let body = self.hir.fn_decl(function)?.value;
-        let root = match self.memo.bounded_roots.get(&(function, scope)) {
-            Some(joined) => *joined,
-            None => match self.memo.exprs.get(&(body, scope)) {
-                Some(Val::Scalar(node)) => *node,
-                Some(Val::Array(array)) => {
-                    let mut lengths: Vec<Option<u32>> =
-                        array.shape.lengths().into_iter().map(Some).collect();
-                    if let Some(outer) = lengths.last_mut() {
-                        *outer = None;
-                    }
-                    return Ok(Some(lengths));
+        let root = match self.memo.exprs.get(&(body, scope)) {
+            Some(Val::Scalar(node)) => *node,
+            Some(Val::Array(array)) => {
+                let mut lengths: Vec<Option<u32>> =
+                    array.shape.lengths().into_iter().map(Some).collect();
+                if let Some(outer) = lengths.last_mut() {
+                    *outer = None;
                 }
-                Some(Val::Error) | None => return Ok(None),
-            },
+                return Ok(Some(lengths));
+            }
+            Some(Val::Error) | None => return Ok(None),
         };
         let Some(mut lengths) = self.lengths_on_any_path(root, true)? else {
             return Ok(None);

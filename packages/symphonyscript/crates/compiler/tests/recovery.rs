@@ -1167,7 +1167,7 @@ fn every_top_level_header_cut_by_a_fault_declares_its_names_as_placeholders() {
             &[(Code::PatternSyntax, "(")],
         ),
         (
-            &["fn f(n) bounded [3 else 0: f(n - 1)\n", call_f],
+            &["fn f(n) [3 else 0: f(n - 1)\n", call_f],
             &[(Code::FnSyntax, "[")],
         ),
         (&["input a: i32[ = 0\n", read_a], &[(Code::TypeSyntax, "=")]),

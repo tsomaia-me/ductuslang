@@ -1,4 +1,3 @@
-use super::fn_bound::FnBound;
 use super::ident::Ident;
 use super::ids::ExprId;
 use super::let_decl::LetDecl;
@@ -12,8 +11,6 @@ pub(crate) struct FnDecl {
     pub params: Vec<Param>,
     pub skipped_params: UnknownNames,
     pub faulty_head: bool,
-    pub cut: bool,
-    pub bound: Option<FnBound>,
     pub lets: Vec<LetDecl>,
     pub value: ExprId,
     pub loc: Loc,

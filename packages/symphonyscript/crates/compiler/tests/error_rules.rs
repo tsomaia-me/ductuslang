@@ -470,7 +470,7 @@ const RULES: &[Rule] = &[
     rule(
         "6.3",
         "reactive-recursion",
-        "input n = 1\nfn a(x) bounded 3 else 0: b(x)\nfn b(x): if x > 0 then a(x - 1) else 0\nClip c:\n    Note/(a(n))\n",
+        "input n = 1\nfn a(x): b(x)\nfn b(x): if x > 0 then a(x - 1) else 0\nClip c:\n    Note/(a(n))\n",
     ),
     rule(
         "6.3",
@@ -609,9 +609,7 @@ const RULES: &[Rule] = &[
         "named-builtin-arguments",
         "let a = checksum(text=\"x\")\nClip c:\n    Note/a\n",
     ),
-    rule("6.3", "needless-bound", "fn f(x) bounded 3 else 0: x\n"),
-    rule("6.3", "fn-syntax", "fn f(x) bounded else 0: f(x)\n"),
-    rule("6.3", "fn-syntax", "fn f(x) bounded 0 else 0: f(x)\n"),
+    rule("6.3", "fn-syntax", "fn f(x) bounded 3 else 0: x\n"),
     rule(
         "6.5",
         "child-name-clash",

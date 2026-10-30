@@ -80,7 +80,6 @@ impl InlineCounts {
                     let mut roots: Vec<ExprId> =
                         decl.lets.iter().map(|local| local.value).collect();
                     roots.push(decl.value);
-                    roots.extend(decl.bound.iter().map(|bound| bound.fallback));
                     let body_sites = sites(index, roots)?;
                     let default_sites: Vec<Vec<CallSite>> = decl
                         .params

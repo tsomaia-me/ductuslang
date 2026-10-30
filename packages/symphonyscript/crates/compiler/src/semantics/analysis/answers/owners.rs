@@ -81,7 +81,6 @@ impl Owners {
                 .collect();
             roots.extend(decl.lets.iter().map(|local| local.value));
             roots.push(decl.value);
-            roots.extend(decl.bound.iter().map(|bound| bound.fallback));
             return Ok(Some((roots, locals, true)));
         }
         let attribute = owner - self.lets - self.fns;

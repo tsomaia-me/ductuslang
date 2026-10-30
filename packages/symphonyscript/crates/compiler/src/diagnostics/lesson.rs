@@ -64,7 +64,6 @@ pub(super) fn lesson(code: Code) -> &'static str {
         Code::ForVariableClash => include_str!("../../lessons/for-variable-clash.md"),
         Code::DuplicateLocal => include_str!("../../lessons/duplicate-local.md"),
         Code::ParameterOrder => include_str!("../../lessons/parameter-order.md"),
-        Code::NeedlessBound => include_str!("../../lessons/needless-bound.md"),
         Code::DuplicateDefaultParameter => {
             include_str!("../../lessons/duplicate-default-parameter.md")
         }

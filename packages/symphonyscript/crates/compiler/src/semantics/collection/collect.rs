@@ -116,35 +116,13 @@ pub(crate) fn collect(
             declare(hir, &base, &mut source, &mut first, &name, decl, report);
         }
     }
-    let (recursive, bounded_cycle, unresolved, calls) =
-        recursive_functions(hir, &source, &prelude)?;
-    for (index, decl) in hir.fns.iter().enumerate() {
-        let (Some(bound), Some(false), Some(false), false) = (
-            &decl.bound,
-            recursive.get(index),
-            unresolved.get(index),
-            decl.cut,
-        ) else {
-            continue;
-        };
-        let name = decl
-            .name
-            .as_ref()
-            .map_or(String::new(), |name| name.text.clone());
-        report.error(
-            hir,
-            Code::NeedlessBound,
-            bound.loc,
-            format!("a bound applies to a recursive function, and `{name}` reaches itself through no call"),
-        );
-    }
+    let (recursive, calls) = recursive_functions(hir, &source, &prelude)?;
     let inline = InlineCounts::of(hir, &source, &prelude, &recursive)?;
     let graph = PatternGraph::of(hir, &source, &prelude, report)?;
     Ok(Collected {
         source,
         prelude,
         recursive,
-        bounded_cycle,
         calls,
         inline,
         cyclic_patterns: graph.cyclic,

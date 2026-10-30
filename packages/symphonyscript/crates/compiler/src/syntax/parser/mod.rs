@@ -154,7 +154,6 @@ impl<'a> Parser<'a> {
             Task::FnDecl => self.fn_decl(),
             Task::Param { pattern } => self.param(pattern),
             Task::ParamAfter { pattern } => self.param_after(pattern),
-            Task::FnAfterParams => self.fn_after_params(),
             Task::FnColon => self.fn_colon(),
             Task::FnBody => self.fn_body(),
             Task::FnLets => self.fn_lets(),

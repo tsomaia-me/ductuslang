@@ -80,7 +80,7 @@ fn no_mutant_of_an_example_or_fixture_draws_an_internal_error_or_panics() {
     let (failures, checked) =
         covered(|rows| covered_mutants_draw_no_internal_error(rows, &corpora));
     assert_eq!(failures, Vec::<String>::new());
-    assert_eq!(checked, 1_309);
+    assert_eq!(checked, 1_286);
 }
 
 #[test]
@@ -149,28 +149,28 @@ fn the_absences_that_are_normal_draw_no_internal_error() {
     }
 }
 
-const BOUNDED_READERS: [&str; 2] = [
-    "input held: i32[..10] = []\nfn lowest(i) bounded 10 else 127:\n    let a = held[i]\n    if i >= len(held) then 127 else min(a, lowest(i + 1))\nClip c:\n    Note/(lowest(0))\n",
-    "input held = [1, 2, 3]\nfn lowest(i) bounded 10 else 127:\n    let a = held[i]\n    if i >= 3 then 127 else min(a, lowest(i + 1))\nClip c:\n    Note/(lowest(0))\n",
+const RECURSIVE_READERS: [&str; 2] = [
+    "input held: i32[..10] = []\nfn lowest(i):\n    let a = held[i]\n    if i >= len(held) then 127 else min(a, lowest(i + 1))\nClip c:\n    Note/(lowest(0))\n",
+    "input held = [1, 2, 3]\nfn lowest(i):\n    let a = held[i]\n    if i >= 3 then 127 else min(a, lowest(i + 1))\nClip c:\n    Note/(lowest(0))\n",
 ];
 
 #[test]
-fn no_mutant_of_a_bounded_function_reading_a_cell_through_a_let_draws_an_internal_error() {
-    let corpora = [(vocabulary(), BOUNDED_READERS.map(str::to_string).to_vec())];
+fn no_mutant_of_a_recursive_function_reading_a_cell_through_a_let_draws_an_internal_error() {
+    let corpora = [(vocabulary(), RECURSIVE_READERS.map(str::to_string).to_vec())];
     let (failures, checked) =
         covered(|rows| covered_mutants_draw_no_internal_error(rows, &corpora));
     assert_eq!(failures, Vec::<String>::new());
-    assert_eq!(checked, 573);
+    assert_eq!(checked, 550);
 }
 
 #[test]
 #[ignore = "exhaustive"]
-fn exhaustive_no_mutant_of_a_bounded_function_reading_a_cell_through_a_let_draws_an_internal_error()
-{
+fn exhaustive_no_mutant_of_a_recursive_function_reading_a_cell_through_a_let_draws_an_internal_error()
+ {
     let vocabulary = vocabulary();
     let compiler = Compiler::new(&vocabulary).expect("the example vocabulary compiles");
     let mut failures = Vec::new();
-    for text in BOUNDED_READERS {
+    for text in RECURSIVE_READERS {
         for mutant in mutants(text, &tokens(text, &vocabulary)) {
             failures.extend(drawn_failure(&compiler, &mutant));
         }

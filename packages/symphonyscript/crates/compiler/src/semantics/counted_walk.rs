@@ -37,9 +37,7 @@ pub(crate) enum CountedWalk {
     ArraysChoiceBytes,
     BindingsDefaultShape,
     CallsSamePath,
-    CallsNestingOf,
     CallsInsideFunctionBody,
-    CallsArmType,
     CountInliningCountInlining,
     CountInliningReached,
     CountInliningValueRoots,
@@ -60,7 +58,6 @@ pub(crate) enum CountedWalk {
     PathsReferenceInstances,
     AnswersReadsCell,
     AnswersPathStart,
-    SelectionPassOver,
     RunReachesRecursion,
     ArrayChecksIsStringBytes,
     ArrayChecksStateChecks,
@@ -107,7 +104,7 @@ pub(crate) enum CountedWalk {
     ValuesConsistentShapes,
     ValuesIntegerInputs,
     WidthsSettleNatural,
-    RecursiveUnboundedCycle,
+    RecursiveCallCycle,
     RecursiveFrameHeads,
     RecursiveBeginChecks,
     RecursiveCheckedHeads,
@@ -138,12 +135,12 @@ pub(crate) enum CountedWalk {
 
 #[cfg(test)]
 thread_local! {
-    static STEPS: [std::cell::Cell<u64>; 134] = const { [const { std::cell::Cell::new(0) }; 134] };
+    static STEPS: [std::cell::Cell<u64>; 131] = const { [const { std::cell::Cell::new(0) }; 131] };
 }
 
 impl CountedWalk {
     #[cfg(test)]
-    pub(crate) const ALL: [CountedWalk; 134] = [
+    pub(crate) const ALL: [CountedWalk; 131] = [
         CountedWalk::InlineCountsOf,
         CountedWalk::InlineCountsCallSites,
         CountedWalk::RecursiveFunctionsRecursiveFunctions,
@@ -181,9 +178,7 @@ impl CountedWalk {
         CountedWalk::ArraysChoiceBytes,
         CountedWalk::BindingsDefaultShape,
         CountedWalk::CallsSamePath,
-        CountedWalk::CallsNestingOf,
         CountedWalk::CallsInsideFunctionBody,
-        CountedWalk::CallsArmType,
         CountedWalk::CountInliningCountInlining,
         CountedWalk::CountInliningReached,
         CountedWalk::CountInliningValueRoots,
@@ -204,7 +199,6 @@ impl CountedWalk {
         CountedWalk::PathsReferenceInstances,
         CountedWalk::AnswersReadsCell,
         CountedWalk::AnswersPathStart,
-        CountedWalk::SelectionPassOver,
         CountedWalk::RunReachesRecursion,
         CountedWalk::ArrayChecksIsStringBytes,
         CountedWalk::ArrayChecksStateChecks,
@@ -251,7 +245,7 @@ impl CountedWalk {
         CountedWalk::ValuesConsistentShapes,
         CountedWalk::ValuesIntegerInputs,
         CountedWalk::WidthsSettleNatural,
-        CountedWalk::RecursiveUnboundedCycle,
+        CountedWalk::RecursiveCallCycle,
         CountedWalk::RecursiveFrameHeads,
         CountedWalk::RecursiveBeginChecks,
         CountedWalk::RecursiveCheckedHeads,

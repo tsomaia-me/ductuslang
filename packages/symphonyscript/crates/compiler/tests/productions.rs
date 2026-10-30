@@ -243,13 +243,8 @@ const CASES: &[(&str, &str, &str)] = &[
     ),
     (
         "FnDecl",
-        "fn f(): 1\nfn g(x):\n    x\n",
-        "File[FnDecl[fn f ParamList[( )] : FnBody[Literal[1] NL]] FnDecl[fn g ParamList[( Param[x] )] : FnBody[NL > NameRef[x] NL <]]]",
-    ),
-    (
-        "Bounded",
-        "fn f(n) bounded 10 else 0: f(n + 1)\n",
-        "File[FnDecl[fn f ParamList[( Param[n] )] Bounded[bounded 10 else Literal[0]] : FnBody[CallExpr[NameRef[f] ArgList[( BinaryExpr[NameRef[n] + Literal[1]] )]] NL]]]",
+        "fn f(): 1\nfn g(x):\n    x\nfn h(bounded): bounded\n",
+        "File[FnDecl[fn f ParamList[( )] : FnBody[Literal[1] NL]] FnDecl[fn g ParamList[( Param[x] )] : FnBody[NL > NameRef[x] NL <]] FnDecl[fn h ParamList[( Param[bounded] )] : FnBody[NameRef[bounded] NL]]]",
     ),
     (
         "StateDecl",
@@ -511,7 +506,7 @@ fn every_case_names_a_production_of_the_spec() {
     );
 }
 
-const RETIRING_PRODUCTIONS: [&str; 4] = ["Bounded", "InputDecl", "StateDecl", "History"];
+const RETIRING_PRODUCTIONS: [&str; 3] = ["InputDecl", "StateDecl", "History"];
 
 #[test]
 fn every_retiring_production_has_left_the_spec_and_keeps_its_case() {

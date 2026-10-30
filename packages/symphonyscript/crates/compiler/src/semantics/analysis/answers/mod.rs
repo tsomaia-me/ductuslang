@@ -1,5 +1,4 @@
 mod answer;
-mod arm_type;
 mod cell_read;
 mod cell_reads;
 mod combined_shape;
@@ -18,7 +17,6 @@ mod scrutinee_ty;
 mod shape_parts;
 mod variable;
 
-pub(crate) use arm_type::ArmShape;
 pub(crate) use cell_read::CellRead;
 pub(crate) use combined_shape::combined_shape;
 pub(crate) use dimensions::Dimensions;

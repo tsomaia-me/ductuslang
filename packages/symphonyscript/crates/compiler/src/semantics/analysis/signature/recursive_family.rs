@@ -10,7 +10,6 @@ use crate::semantics::analysis::family_arg::FamilyArg;
 use crate::semantics::analysis::family_key::FamilyKey;
 use crate::semantics::analysis::ids::{NodeId, ScopeId};
 use crate::semantics::analysis::kind::Kind;
-use crate::semantics::analysis::op::Op;
 use crate::semantics::analysis::query::Query;
 use crate::semantics::analysis::rec_family::RecFamily;
 use crate::semantics::analysis::sig::Sig;
@@ -174,11 +173,7 @@ impl Engine<'_> {
                             scope: settled,
                         }
                     } else if sig.open || sig.family == family {
-                        if some!(self.fallback_agrees(function, scope, false, need)?) {
-                            RecFamily::Known(kind, family)
-                        } else {
-                            RecFamily::Failed
-                        }
+                        RecFamily::Known(kind, family)
                     } else {
                         self.error_at_node(
                             Code::MixedFamilies,
@@ -229,32 +224,9 @@ impl Engine<'_> {
         scope: ScopeId,
         need: &mut Vec<Query>,
     ) -> Result<Option<Option<NodeId>>, Internal> {
-        let decl = self.hir.fn_decl(function)?;
-        let body = decl.value;
-        let fallback = decl
-            .bound
-            .as_ref()
-            .filter(|bound| bound.bound.is_some())
-            .map(|bound| (bound.fallback, bound.loc));
+        let body = self.hir.fn_decl(function)?.value;
         let val = some!(self.val(Query::Expr(body, scope), need));
-        let Some(root) = self.boxed_body(body, scope, &val)? else {
-            return Ok(Some(None));
-        };
-        let Some((fallback, loc)) = fallback else {
-            return Ok(Some(Some(root)));
-        };
-        if let Some(joined) = self.memo.bounded_roots.get(&(function, scope)) {
-            return Ok(Some(Some(*joined)));
-        }
-        let val = some!(self.val(Query::Expr(fallback, scope), need));
-        let Some(other) = self.boxed_body(fallback, scope, &val)? else {
-            return Ok(Some(None));
-        };
-        let condition = self.push_node(Op::Bool(false), loc, scope)?;
-        let joined = self.push_node(Op::If(condition, root, other), loc, scope)?;
-        self.memo.bounded_roots.insert((function, scope), joined);
-        self.memo.fallback_joins.insert(joined);
-        Ok(Some(Some(joined)))
+        Ok(Some(self.boxed_body(body, scope, &val)?))
     }
 
     pub(in crate::semantics::analysis) fn family_key(

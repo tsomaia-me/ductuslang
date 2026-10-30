@@ -156,14 +156,12 @@ impl Engine<'_> {
             Ctx::Global => self.memo.call_feeds.get(&node).cloned().unwrap_or_default(),
             Ctx::Frame(frame) => self.frame(frame)?.feeds.clone(),
         };
-        let nesting = self.call_nesting(function, node, ctx)?;
         let key = CallKey {
             function,
             args: keys,
             shapes: shapes.clone(),
             expected: own,
             units: unit_set(&feeds),
-            nesting,
         };
         if let Some(value) = self.memo.calls.get(&key).cloned() {
             self.reach_key(&key, node, ctx)?;
@@ -201,39 +199,6 @@ impl Engine<'_> {
             .ok_or(Internal::missed("evaluation frame"))?
             .tainted = true;
         Ok(())
-    }
-
-    fn call_nesting(&mut self, function: FnId, node: NodeId, ctx: Ctx) -> Result<u64, Internal> {
-        if self.limit_of(function)?.is_none() {
-            return Ok(0);
-        }
-        self.memo.evaluation_work += 1;
-        let (outer, chain) = match ctx {
-            Ctx::Global => (node, 0),
-            Ctx::Frame(_) => {
-                let machine = self
-                    .active
-                    .as_ref()
-                    .ok_or(Internal::missed("evaluation machine"))?;
-                let outer = machine
-                    .frames
-                    .first()
-                    .ok_or(Internal::missed("evaluation frame"))?
-                    .call;
-                (outer, machine.open.get(&function).copied().unwrap_or(0))
-            }
-        };
-        let base = self.nesting_in(self.node(outer)?.scope, function)?;
-        Ok(base.saturating_add(chain))
-    }
-
-    fn limit_of(&self, function: FnId) -> Result<Option<u64>, Internal> {
-        Ok(self
-            .hir
-            .fn_decl(function)?
-            .bound
-            .as_ref()
-            .and_then(|bound| bound.bound))
     }
 
     fn argument(
@@ -339,7 +304,7 @@ impl Engine<'_> {
         function: FnId,
         shapes: &[ArgShape],
         feeds: &[Feed],
-        (call, nesting): (NodeId, u64),
+        call: NodeId,
         need: &mut Vec<Query>,
     ) -> Result<Option<Template>, Internal> {
         let key = TemplateKey {
@@ -356,11 +321,7 @@ impl Engine<'_> {
                 scope
             }
         };
-        let decl = self.hir.fn_decl(function)?;
-        let body = match (decl.bound.as_ref(), self.limit_of(function)?) {
-            (Some(bound), Some(limit)) if nesting >= limit => bound.fallback,
-            _ => decl.value,
-        };
+        let body = self.hir.fn_decl(function)?.value;
         let val = some!(self.val(Query::Expr(body, scope), need));
         let Some(root) = self.boxed_body(body, scope, &val)? else {
             return Ok(Some(Template::Failed));
@@ -668,7 +629,7 @@ impl Engine<'_> {
                     call.function,
                     &call.shapes,
                     &call.feeds,
-                    (node, call.key.nesting),
+                    node,
                     need
                 )?) {
                     Template::Root(root) if self.result_fits(root, own, node, call.function)? => {
@@ -688,7 +649,6 @@ impl Engine<'_> {
                     .template_of(self.node(root)?.scope)?
                     .into_iter()
                     .collect();
-                let unbounded = u64::from(self.limit_of(call.function)?.is_none());
                 let mut work = vec![(0, root, ty)];
                 work.extend(defaults.into_iter().map(|(node, ty)| (0, node, ty)));
                 Machine {
@@ -702,14 +662,13 @@ impl Engine<'_> {
                         expected: own,
                         feeds: call.feeds,
                         memo: FastMap::default(),
-                        unbounded,
+                        depth: 1,
                         faults: FastSet::default(),
                         templates,
                         checks: Checks::Unchecked,
                         tainted: false,
                     }],
                     work,
-                    open: [(call.function, 1)].into_iter().collect(),
                     open_keys: [call.key.clone()].into_iter().collect(),
                     too_deep: false,
                     deep_warned: false,
@@ -789,12 +748,8 @@ impl Engine<'_> {
                         .get_mut(frame)
                         .ok_or(Internal::missed("evaluation frame"))?;
                     if completes {
-                        let (key, call, expected, function) = (
-                            record.key.clone(),
-                            record.call,
-                            record.expected,
-                            record.function,
-                        );
+                        let (key, call, expected) =
+                            (record.key.clone(), record.call, record.expected);
                         let done = machine
                             .frames
                             .pop()
@@ -805,9 +760,6 @@ impl Engine<'_> {
                             parent.tainted |= done.tainted;
                         }
                         machine.open_keys.remove(&key);
-                        if let Some(open) = machine.open.get_mut(&function) {
-                            *open = open.saturating_sub(1);
-                        }
                         let quiet = matches!(done.checks, Checks::Quiet);
                         let enclosing = self.fault_frame;
                         if quiet {
@@ -867,20 +819,19 @@ impl Engine<'_> {
         own: EvalTy,
         need: &mut Vec<Query>,
     ) -> Result<Option<CVal>, Internal> {
-        let bounded = self.limit_of(call.function)?.is_some();
         let depth = self
             .machine_mut()?
             .frames
             .last()
-            .map_or(0, |frame| frame.unbounded);
+            .map_or(0, |frame| frame.depth);
         let repeats = self.machine_mut()?.open_keys.contains(&call.key);
         let caller = self.machine_mut()?.frames.len().saturating_sub(1);
         let quiet = self.frame(caller)?.checks.quiet();
-        if !bounded && (repeats || depth >= self.limits.nesting_depth) && quiet {
+        if (repeats || depth >= self.limits.nesting_depth) && quiet {
             self.taint(caller)?;
             return Ok(Some(CVal::Error));
         }
-        if !bounded && (repeats || depth >= self.limits.nesting_depth) {
+        if repeats || depth >= self.limits.nesting_depth {
             let names = self.nested_names(call.function)?;
             self.error_at_node(
                 Code::RecursionDepth,
@@ -893,10 +844,7 @@ impl Engine<'_> {
             self.machine_mut()?.too_deep = true;
             return Ok(Some(CVal::Error));
         }
-        if !bounded
-            && !quiet
-            && depth >= self.limits.nesting_depth_warning
-            && !self.machine_mut()?.deep_warned
+        if !quiet && depth >= self.limits.nesting_depth_warning && !self.machine_mut()?.deep_warned
         {
             self.machine_mut()?.deep_warned = true;
             let names = self.nested_names(call.function)?;
@@ -912,19 +860,14 @@ impl Engine<'_> {
                 Limit::NestingDepth.warning_help(),
             )?;
         }
-        let root = match some!(self.template(
-            call.function,
-            &call.shapes,
-            &call.feeds,
-            (node, call.key.nesting),
-            need
-        )?) {
-            Template::Root(root) if self.result_fits(root, own, node, call.function)? => root,
-            Template::Reentered => return Ok(Some(CVal::Error)),
-            Template::Root(_) | Template::Failed => {
-                return self.failed_call(&call, node, Ctx::Frame(caller));
-            }
-        };
+        let root =
+            match some!(self.template(call.function, &call.shapes, &call.feeds, node, need)?) {
+                Template::Root(root) if self.result_fits(root, own, node, call.function)? => root,
+                Template::Reentered => return Ok(Some(CVal::Error)),
+                Template::Root(_) | Template::Failed => {
+                    return self.failed_call(&call, node, Ctx::Frame(caller));
+                }
+            };
         let defaults = some!(self.default_work(&call, need)?);
         if quiet && self.call_count >= self.limits.recursive_calls {
             self.taint(caller)?;
@@ -940,7 +883,6 @@ impl Engine<'_> {
             .collect();
         let machine = self.machine_mut()?;
         let index = machine.frames.len();
-        *machine.open.entry(call.function).or_insert(0) += 1;
         machine.open_keys.insert(call.key.clone());
         machine.frames.push(Frame {
             key: call.key,
@@ -952,7 +894,7 @@ impl Engine<'_> {
             expected: own,
             feeds: call.feeds,
             memo: FastMap::default(),
-            unbounded: depth.saturating_add(u64::from(!bounded)),
+            depth: depth.saturating_add(1),
             faults: FastSet::default(),
             templates,
             checks: if quiet {
@@ -1226,75 +1168,56 @@ impl Engine<'_> {
         function: FnId,
         reading: String,
     ) -> Result<(), Internal> {
-        let Some(cycle) = self.unbounded_cycle(function)? else {
-            return self.error_at_node(Code::ReactiveRecursion, node, reading);
-        };
+        let help = Code::ReactiveRecursion
+            .help()
+            .map(String::from)
+            .ok_or(Internal::missed("help"))?;
         let mut chain = vec![format!("`{}`", self.function_name(function)?)];
-        let mut unbounded: Vec<String> = Vec::new();
         let mut related = Vec::new();
+        let Some(cycle) = self.call_cycle(function)? else {
+            return self.error_at_node_helped(
+                Code::ReactiveRecursion,
+                node,
+                related,
+                reading,
+                help,
+            );
+        };
         for (step, (caller, call)) in cycle.iter().enumerate() {
             let callee = cycle.get(step + 1).map_or(function, |(next, _)| *next);
             let caller_name = self.function_name(*caller)?;
             let callee_name = self.function_name(callee)?;
-            let named = format!("`{caller_name}`");
-            if self.hir.fn_decl(*caller)?.bound.is_none() && !unbounded.contains(&named) {
-                unbounded.push(named);
-            }
             related.push((
                 self.hir.expr(*call)?.loc,
                 format!("`{caller_name}` calls `{callee_name}` here"),
             ));
             chain.push(format!("`{callee_name}`"));
         }
-        let listed = listed(&unbounded);
-        let has = if unbounded.len() == 1 { "has" } else { "have" };
         let summary = format!(
-            "{reading}, so the cycle of calls {} needs a bound on each of its functions, and {listed} {has} none",
+            "{reading}, and the cycle of calls {} is evaluated by the compiler, so no argument or body on it may read a cell",
             chain.join(" → ")
-        );
-        let help = format!(
-            "declare a bound on {listed}, written `bounded N else fallback`, as in `bounded 10 else 0`"
         );
         self.error_at_node_helped(Code::ReactiveRecursion, node, related, summary, help)
     }
 
-    fn unbounded_cycle(&self, function: FnId) -> Result<Option<Vec<(FnId, ExprId)>>, Internal> {
-        let unbounded = |index: usize| -> Result<bool, Internal> {
-            Ok(self
-                .hir
-                .fns
-                .get(index)
-                .ok_or(Internal::missed("function"))?
-                .bound
-                .is_none())
-        };
-        let start = (function.index(), unbounded(function.index())?);
-        let mut parents: BTreeMap<(usize, bool), ((usize, bool), ExprId)> = BTreeMap::new();
+    fn call_cycle(&self, function: FnId) -> Result<Option<Vec<(FnId, ExprId)>>, Internal> {
+        let start = function.index();
+        let mut parents: BTreeMap<usize, (usize, ExprId)> = BTreeMap::new();
         let mut queue = VecDeque::from([start]);
-        while let Some(state) = queue.pop_front() {
-            crate::semantics::counted_walk::CountedWalk::RecursiveUnboundedCycle.step();
+        while let Some(caller) = queue.pop_front() {
+            crate::semantics::counted_walk::CountedWalk::RecursiveCallCycle.step();
             let calls = self
                 .collected
                 .calls
-                .get(state.0)
+                .get(caller)
                 .ok_or(Internal::missed("function"))?;
             for (target, call) in calls {
-                if !self
-                    .collected
-                    .recursive
-                    .get(*target)
-                    .copied()
-                    .unwrap_or(false)
-                {
-                    continue;
-                }
-                let next = (*target, state.1 || unbounded(*target)?);
-                if *target == start.0 && next.1 {
-                    let mut cycle = vec![(state.0, *call)];
-                    let mut current = state;
+                if *target == start {
+                    let mut cycle = vec![(caller, *call)];
+                    let mut current = caller;
                     while let Some((previous, through)) = parents.get(&current) {
-                        crate::semantics::counted_walk::CountedWalk::RecursiveUnboundedCycle.step();
-                        cycle.push((previous.0, *through));
+                        crate::semantics::counted_walk::CountedWalk::RecursiveCallCycle.step();
+                        cycle.push((*previous, *through));
                         current = *previous;
                     }
                     cycle.reverse();
@@ -1307,22 +1230,20 @@ impl Engine<'_> {
                             .collect(),
                     ));
                 }
-                if *target == start.0 || parents.contains_key(&next) {
+                let recursive = self
+                    .collected
+                    .recursive
+                    .get(*target)
+                    .copied()
+                    .unwrap_or(false);
+                if !recursive || parents.contains_key(target) {
                     continue;
                 }
-                parents.insert(next, (state, *call));
-                queue.push_back(next);
+                parents.insert(*target, (caller, *call));
+                queue.push_back(*target);
             }
         }
         Ok(None)
-    }
-}
-
-fn listed(names: &[String]) -> String {
-    match names.split_last() {
-        Some((last, [])) => last.clone(),
-        Some((last, rest)) => format!("{} and {last}", rest.join(", ")),
-        None => String::new(),
     }
 }
 
