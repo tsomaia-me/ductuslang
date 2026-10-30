@@ -1,4 +1,4 @@
-#![allow(dead_code)]
+#![allow(dead_code, unused_imports)]
 
 use symphonyscript::syntax::{ElementView, NodeView, Parsed, SyntaxKind, Walk, parse};
 use symphonyscript::{Code, Compiler, Diagnostic, Severity, Source};
