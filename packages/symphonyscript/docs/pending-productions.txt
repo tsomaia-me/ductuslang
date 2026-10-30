@@ -23,12 +23,15 @@ Arg
 ForExpr
 ForExprBlock
 ForExprHead
+CellDecl
+CellWord
+Init
 Result
 PatternItem
 PlacementType
 PlacementEntry
 Count
-Steps
+Clock
 Lambda
 LambdaParams
 LambdaParam

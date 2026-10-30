@@ -8,13 +8,13 @@ This document defines SymphonyScript: what a source program may contain, what it
 
 SymphonyScript describes graphs: nodes placed inside other nodes, wires between nodes, and values that change while the graph runs. Music graphs (sessions, tracks, clips, notes) and audio graphs (oscillators, filters, mixers) are written the same way.
 
-A program is compiled against exactly one vocabulary. The vocabulary declares every node kind, wire kind, enum, unit and prelude declaration a program may use, together with the rules for combining them (§10). Source code declares no kinds; it declares functions, patterns and record types (§3.8). It places instances of the vocabulary's kinds, sets their attributes, connects them with wires, and binds attributes to values that change at runtime, inputs the host writes among them.
+A program is compiled against exactly one vocabulary. The vocabulary declares every node kind, wire kind, enum, unit and prelude declaration a program may use, together with the rules for combining them (§10). Source code declares no kinds; it declares functions, patterns and record types (§3.8). It places instances of the vocabulary's kinds, sets their attributes, connects them with wires, and binds attributes to cells, values that change at runtime, the ones the host writes among them.
 
-Compilation produces a Program (§11): a complete description of instances, wires, inputs and computed values. A host loads the Program into the runtime, writes inputs and commits (§12). Consumers read the Program and the reported changes and interpret them. The meaning of a kind belongs to its consumer, not to the language.
+Compilation produces a Program (§11): a complete description of instances, wires and cells. A host loads the Program into the runtime, writes the cells that are its to write and commits (§12). Consumers read the Program and the reported changes and interpret them. The meaning of a kind belongs to its consumer, not to the language.
 
 ```sym
-input cutoff = 0.5
-let wobble = cutoff * 0.8
+state cutoff(0.5)
+state wobble = cutoff * 0.8
 
 Clip intro:
     Note/48 Note/52 Note/55
@@ -67,7 +67,7 @@ A project is a package (§15.1): a set of `.sym` files compiled together, found 
 
 ```ebnf
 File    ::= TopItem*
-TopItem ::= InputDecl | LetDecl | StateDecl | FnDecl | PatternDecl | TypeDecl | TopPlacement
+TopItem ::= CellDecl | LetDecl | FnDecl | PatternDecl | TypeDecl | TopPlacement
 ```
 
 ### 2.2 Layout
@@ -76,7 +76,7 @@ Indentation is significant. Leading whitespace consists of spaces; a tab in lead
 
 The lexer keeps a stack of indentation columns, starting with column 0. A line indented deeper than the top of the stack pushes its column and emits `INDENT`. A line indented less pops columns, emitting one `DEDENT` per popped column, and must land exactly on a column still on the stack. Every line holding a token ends with `NEWLINE`, including a last line with no line break after it. At end of input the lexer emits a `DEDENT` for every column on the stack above 0.
 
-Inside `( )`, `[ ]`, a history read's `{ }` (§6.6) and the braces of a record, map or document literal (§3.8, §3.10, §3.11), layout is suspended: newlines are whitespace and no layout tokens are emitted.
+Inside `( )`, `[ ]` and the braces of a record, map or document literal (§3.8, §3.10, §3.11), layout is suspended: newlines are whitespace and no layout tokens are emitted.
 
 An attribute clause (§7.6) continues onto each following line whose first token sits exactly at the column of the clause's first entry, while that column is deeper than the top of the stack and no `:` has closed the clause; `::` closes nothing. The line break before such a line emits no `NEWLINE`, and the line emits no `INDENT` or `DEDENT`. The lexer tracks each clause's first-entry column for this rule, and a line that misses the column only by the display width of wide characters is an error whose diagnostic shows the column.
 
@@ -97,14 +97,14 @@ By convention, kinds, patterns and enum variants are written in PascalCase, and 
 Keywords are never names:
 
 ```text
-input let state fn pattern type default const children
+let state stream channel fn pattern type default const cell out children
 if then else match when for in into from as on without
 is not and or div to true false none
 u8 i32 i64 f32 f64 bool str map json node wire
 package require use publish
 ```
 
-The words `recurrent` and `string` are reserved and are never names; `null` is a word of JSON text inside a document literal (§3.11) and is never a name. The tokens `==` and `!=` are reserved and rejected by the lexer, and their diagnostic points to `is` and `is not`. `^` stands only at the start of an index or a slice bound (§5.5); anywhere else it is an error.
+A keyword stands as a member name where nothing but a name can stand: after `|` in an attribute clause (§7.6), after `.` in a read (§5.6), as a key in a record literal and as a field in a `type` body (§3.8), so a vocabulary may name an attribute `channel` or `out` (§10.1). Everywhere else it is a keyword. The words `recurrent` and `string` are reserved and are never names; `null` is a word of JSON text inside a document literal (§3.11) and is never a name. The tokens `==` and `!=` are reserved and rejected by the lexer, and their diagnostic points to `is` and `is not`. `^` stands only at the start of an index or a slice bound (§5.5); anywhere else it is an error.
 
 ### 2.6 Literals
 
@@ -159,7 +159,7 @@ An array has one element type and a length. A fixed array's length is fixed at c
 
 `[]` is the empty array, of length 0; each use gives it its element type, as a flexible value's use does (§4.1).
 
-A fixed array's contents may change at runtime when its elements are reactive (§5.5).
+A fixed array's contents may change at runtime when its elements read cells (§5.5).
 
 ```ebnf
 Type       ::= FnType | Base ('|' Base)*
@@ -187,15 +187,15 @@ A string has a capacity, the most characters it holds, fixed at compile time. A 
 | `s[i]` | 1 |
 | a slice `s[a..b]` | the most characters it holds for any length of `s` up to its capacity and any value of its bounds that read cells, as a variable array's slice (§3.7) |
 | `if` and `match` | the largest capacity among the arms |
-| a state | §6.6 |
-| an input, an annotation, a parameter, a record field or an attribute written `str[..N]` | N |
+| a derived cell | §6.6 |
+| a host-fed cell, an annotation, a parameter, a record field or an attribute written `str[..N]` | N |
 
-A string that comes from outside the program states its capacity: an input (§6.1), a record field (§3.8), a vocabulary attribute and a native function's parameter or result (§10.1) are written `str[..N]`, and `str` without a capacity there is an error whose help names `str[..N]`. Elsewhere `str` without a capacity takes the value's: `let a: str = "hello"` holds 5. A string's memory is 4 bytes per character of its capacity (§12.6).
+A string that comes from outside the program states its capacity: a host-fed cell (§6.1), a record field (§3.8), a vocabulary attribute and a native function's parameter or result (§10.1) are written `str[..N]`, and `str` without a capacity there is an error whose help names `str[..N]`. Elsewhere `str` without a capacity takes the value's: `let a: str = "hello"` holds 5. A string's memory is 4 bytes per character of its capacity (§12.6).
 
 A string binds to a string attribute whose capacity is at least its own; a compile-time string binds to an attribute that states no capacity, and a runtime string there is an error. A string where a `u8` array is expected is `bytes` of it (§5.7): a native function's `u8[..]` parameter given `"GET"` receives `[71, 69, 84]`. A string converts to bytes nowhere else, and nothing makes a string from bytes.
 
 ```sym
-input name: str[..32] = ""
+state name(""): str[..32]
 
 Track lead | title="lead: {name}":
     Piano
@@ -213,7 +213,7 @@ The vocabulary declares enums. Every variant is a plain name with no data. Where
 
 ### 3.5 Node references
 
-A reference names an instance of a node kind or of a wire kind. A Program's instances are fixed at compile time (§14), so every reference is a compile-time value. A reference stands wherever a compile-time `let` stands: as the value of a compile-time `let` (§6.2), alone or in an array; as a function's or a pattern's argument, bound to its parameter (§6.3, §6.4); at the start of an attribute path (§5.6); and as an element of a `for` iterable (§7.9); a node reference also stands as a wire destination (§8.2). A node kind or a wire kind in a type (§3.2) is a reference to an instance of that kind, and `Osc[3]` an array of three; `Osc[..3]` is an error, since a variable array is a runtime value (§3.7). References are never stored in an input, a reactive `let`, a state, a record or an attribute.
+A reference names an instance of a node kind or of a wire kind. A Program's instances are fixed at compile time (§14), so every reference is a compile-time value. A reference stands wherever a compile-time `let` stands: as the value of a compile-time `let` (§6.2), alone or in an array; as a function's or a pattern's argument, bound to its parameter (§6.3, §6.4); at the start of an attribute path (§5.6); and as an element of a `for` iterable (§7.9); a node reference also stands as a wire destination (§8.2). A node kind or a wire kind in a type (§3.2) is a reference to an instance of that kind, and `Osc[3]` an array of three; `Osc[..3]` is an error, since a variable array is a runtime value (§3.7). References are never stored in a cell, a record or an attribute.
 
 ### 3.6 Units
 
@@ -225,7 +225,7 @@ The vocabulary declares unit families. Each family has a base unit and further u
 - `+`, `-`, `%`, comparisons, `min`, `max`, `clamp`, the first two arguments of `lerp`, array literals, and the arms of `if` and `match` take operands of one family. A plain value among them, a number or a plain cell, takes that family and is read in the default unit of the attribute its family value reaches, as a literal with that unit's suffix would be: `length=2bars + 1` is 9 beats, and where the default unit is `ms`, `1s + 3` is the float 1.003 s. An array literal's family value reaches every attribute that a read of the literal reaches, whole or at any index, so in `let a = [1bars, 2]` read as `length=(a[0])` the `2` is 2 beats. A fixed-type integer read in a unit whose scale is not an integer is the float it widens into: the expected type (§4.2), or with none `f32` for an `i32` and `f64` for an `i64` (§4.3). Where the family value reaches no attribute of the family, as when `/` or `div` makes it a plain number or a comparison a `bool`, the plain value is an error, and so is a family value that reaches two attributes of the family with different default units.
 - `/` and `div` of two values in the same family yield a plain number. Multiplying or dividing a unit value by a plain number keeps the family. Dividing a plain number by a unit value, multiplying two unit values, `**` on a unit value, and a unit value as a range bound, an index, a slice bound or a `^` offset (§5.5) are errors.
 - Unary minus, conversions, `abs`, `floor`, `ceil` and `round` keep the family of their operand. The other built-ins take plain numbers.
-- A value's family comes from its own initializer or expression, never from its uses: `input d = 5ms` and `let e = d * 2` are in `time`, and `input p = 5.0` is plain. A value in a family holds base units, and the host writes such inputs in base units (§12.1). A plain cell bound to an attribute of a family is read in that attribute's default unit, as a plain number is; a plain cell read at two attributes of one family with different default units is an error naming both.
+- A value's family comes from its own init or expression, never from its uses: `state d(5ms)` and `state e = d * 2` are in `time`, and `state p(5.0)` is plain. A value in a family holds base units, and the host writes such cells in base units (§12.1). A plain cell bound to an attribute of a family is read in that attribute's default unit, as a plain number is; a plain cell read at two attributes of one family with different default units is an error naming both.
 
 Families never convert into each other. A family whose relation to another depends on runtime values, such as beats and seconds under a changing tempo, stays separate, and the consumer converts.
 
@@ -239,16 +239,16 @@ The first note lasts 8 beats; the second lasts 0.5 beats, the attribute's defaul
 
 ### 3.7 Variable arrays
 
-A variable array holds from 0 up to its capacity of elements, and its live length changes at runtime. Its type writes `..` before the capacity: `i32[..10]` holds up to ten `i32`s. A value is a variable array when its length depends on a cell: an input annotated with such a type (§6.1), a join or slice whose length reads a cell (§5.5), an `if` or `match` that chooses at runtime among arms of different lengths, a state that holds one (§6.6), and any value built from these. A compile-time array has a known length and is a fixed array.
+A variable array holds from 0 up to its capacity of elements, and its live length changes at runtime. Its type writes `..` before the capacity: `i32[..10]` holds up to ten `i32`s. A value is a variable array when its length depends on a cell: a host-fed cell annotated with such a type (§6.1), a join or slice whose length reads a cell (§5.5), an `if` or `match` that chooses at runtime among arms of different lengths, a derived cell that holds one (§6.6), and any value built from these. A compile-time array has a known length and is a fixed array.
 
 | Value | Capacity |
 |---|---|
 | a fixed array | its length |
-| an input or annotation `T[..N]` | N |
+| a host-fed cell or an annotation `T[..N]` | N |
 | `a + b` | the sum of the capacities of `a` and `b` |
 | a slice `xs[a..b]` | the most elements it holds for any live length of `xs` up to its capacity and any value of its bounds that read cells between their minimum and maximum read from their forms (§7.9), a bound with none by its form taking any value: `xs[^8..]` holds at most 8, `xs[1..]` one fewer than `xs`, and `xs[..min(n, 4)]` at most 4 |
 | `if` and `match` | the largest capacity among the arms |
-| a state | §6.6 |
+| a derived cell | §6.6 |
 
 A variable array is one cell (§4.4), held whole rather than element by element, from its own level down: `i32[..4][3]` is three cells, each a row with its own live length, and `i32[..4][..10]` is one cell. `len(xs[i])` on such a row is an `i32` (§5.7), and the capacity of a value at an inner level follows the table at that level. It binds to a variable-array attribute (§10.1) of its element type whose capacity is at least its own, and a fixed array binds to one when its length is at most the capacity; a variable array where a fixed array is expected is an error. An index past its live length reads its last live element (§5.5), and an index into an empty array yields the element type's zero: `0`, `0.0`, `false` or the enum's first variant.
 
@@ -266,14 +266,14 @@ A record is a value with named fields, each of its own type. A field is a scalar
 
 A record literal lists fields by name, in any order; a field it leaves out holds its zero, so `{}` is the record with every field at its zero: `0`, `0.0`, `false`, the enum's first variant, the empty string, the empty array, a record of zeros. A literal has no type of its own: it takes the record type its position expects (§4.2), and a literal where no record type is expected is an error. `r.name` reads a field (§5.6). Records are not compared, interpolated or converted; `is` on records is an error.
 
-A record whose fields read cells is a value of bindings, field by field, as a fixed array is (§4.4, §5.5): each leaf field is its own binding, and a variable-array field is one cell. A record input is written per leaf field or whole (§12.1).
+A record whose fields read cells is a value of bindings, field by field, as a fixed array is (§4.4, §5.5): each leaf field is its own binding, and a variable-array field is one cell. A host-fed record cell is written per leaf field or whole (§12.1).
 
 ```sym
 type Chord:
     root: i32
     spread: i32
 
-input chord: Chord = { root: 60, spread: 4 }
+state chord({ root: 60, spread: 4 }): Chord
 
 Clip c:
     Note/(chord.root) Note/(chord.root + chord.spread)
@@ -286,7 +286,7 @@ A sum type `A | B` holds a value of one of its alternatives, which are distinct 
 - A value of an alternative widens into the sum (§4.3), and a sum into a sum that holds every alternative of it; nothing narrows implicitly, so a `T?` where a `T` is expected is an error whose help names `or`.
 - `match` reads a sum (§5.4). `x is none`, `x is not none` and `x is Circle`, with an alternative's type name, are `bool` tests (§5.3), and `x or y` yields `x`'s value, or `y` when `x` is `none` (§5.3).
 - A record literal in a sum position takes the one alternative whose fields it names; two is an error whose help says to name the type on a `let`, and `{}` in a position of two record alternatives is that error.
-- A sum stands in every value type position: a field, an input, a `let`, a state, a parameter, a result, an array element. It is never an attribute's type, and never holds a node reference.
+- A sum stands in every value type position: a field, a cell, a `let`, a parameter, a result, an array element. It is never an attribute's type, and never holds a node reference.
 - Two sums compare with `is` when every alternative is a scalar, a string or an enum: equal when both are `none`, or both hold the same alternative with equal values. A sum with a record alternative is not compared.
 
 ```sym
@@ -296,11 +296,11 @@ type Square:
     side: f32
 type Shape = Circle | Square
 
-input port: i32? = none
-input shape: Shape = {side: 1}
+state port(none): i32?
+state shape({side: 1}): Shape
 
-let bound = port or 80
-let area = match shape:
+state bound = port or 80
+state area = match shape:
     Circle: pi * shape.r * shape.r
     Square: shape.side * shape.side
 ```
@@ -308,7 +308,7 @@ let area = match shape:
 `{side: 1}` is a `Square`, the one alternative with a field `side`; in the `Circle` arm `shape` is a `Circle`.
 
 ```sym-error
-input port: i32? = none
+state port(none): i32?
 
 Synth s:
     Osc | freq=port
@@ -329,16 +329,16 @@ A map holds up to its capacity of entries, each a key of the key type and a valu
 - A map literal is written `map` before its braces and lists entries `key: value`, each key an expression read in the key type (§4.2), a string literal, a number or a bare variant among them; two keys that are equal compile-time values are an error, and `map {}` is the empty map. A literal takes the map type its position expects; where none is expected it takes its key and value types from its entries, as an array literal takes its element type, with its entry count as its capacity, and `map {}` there is an error whose help says to name the type.
 - `m[k]` yields the entry's value as a `V?` (§3.9), `none` when the key is absent. `m + n` joins two maps, `n`'s entries winning on a shared key and its new keys following `m`'s, with the capacity the sum of the two; `m without k` and `m without ks`, `ks` an array of keys, yield `m` less those entries, with `m`'s capacity; `m[a..b]` slices a map by its entry order as an array is sliced (§5.5), so `(m + n)[^64..]` keeps the newest 64 entries. `len(m)` is the number of entries, `keys(m)` and `values(m)` variable arrays of the key and value types with the map's capacity (§5.7).
 - A map compares with nothing and interpolates nowhere; a key compares as `is` compares its type. A map built only from compile-time values is a compile-time value, and `for k in keys(m)` iterates it (§7.9).
-- A map input is written whole or one entry by key (§12.1), and a state may hold a map (§6.6).
+- A host-fed map cell is written whole or one entry by key (§12.1), and a derived cell may hold a map (§6.6).
 
 ```sym
-input headers: map[str[..32], str[..256]][..32] = map {}
-input req: Request = {}
+state headers(map {}): map[str[..32], str[..256]][..32]
+state req({}): Request
 
-let host = headers["host"] or "localhost"
-let trimmed = headers without ["cookie", "set-cookie"]
-let with_host = headers + map {"host": host}
-state hits = (hits{1, map {}} + map {req.path: (hits{1, map {}}[req.path] or 0) + 1})[^64..]
+state host = headers["host"] or "localhost"
+state trimmed = headers without ["cookie", "set-cookie"]
+state with_host = headers + map {"host": host}
+state hits(map {}) = (hits.past(1) + map {req.path: (hits.past(1)[req.path] or 0) + 1})[^64..]
 ```
 
 `hits` counts requests per path and keeps the newest 64 paths.
@@ -362,30 +362,30 @@ A document is a JSON value: an object, an array, a string, a number, `true`, `fa
 
 - A document literal is the keyword `json` followed by JSON text, `json {"a": 1}`, `json [1, "b"]`, `json "text"`, `json 12.5`, `json true`, `json null`, and is written no other way. Inside it, strings, numbers, keys and the words `true`, `false` and `null` are JSON's, so a document is pasted unchanged: a string has JSON's escapes, `\uXXXX` naming a character and a surrogate pair one character, and no interpolation; a number has no prefix, separator or suffix; `null` stands nowhere else in a program (§2.5). A name, a path or a qualified variant stands for its value, and `( )` holds any expression, whose strings are the language's: `json {"count": count, "msg": ("hi {name}"), "echo": items}`; a value there widens into the document. Layout is suspended inside its braces and brackets (§2.2). A literal that reads cells is rebuilt at the commits that change them (§12.2); its budget is the sum of its parts' widest text, as a string's capacity counts its interpolations (§3.3).
 - A value where a document is expected (§4.2) widens into one (§4.3): a scalar or a string as itself, an enum variant as its name, `none` as `null`, a record as an object by its fields, an array as an array, a map as an object, a sum as its value, and a view spliced in. Nothing narrows a document implicitly. A document is never edited: a program reads parts out through typed reads and builds new documents from values.
-- An input, a state or a record field of document type states its budget. Every other document value derives its budget: a view from its document, a parameter written `json` from its argument, a literal from its parts; `let a: json = json {}` says the same twice.
+- A cell or a record field of document type states its budget. Every other document value derives its budget: a view from its document, a parameter written `json` from its argument, a literal from its parts; `let a: json = json {}` says the same twice.
 - A view is a `json` value naming a part of a document: `v["key"]` an object's entry, `v[i]` an array's element, with `i` an integer of either width, `keys(v)` and `values(v)` an object's keys and values as array views. An absent key, an index into a value that is not an array or past the array's end, and a `null` node are the `Null` value, so a chain of reads never fails. `len(v)` is an array's length or an object's entry count, an `i32`, and 0 for anything else. A document interpolates nowhere and is not ordered.
 - `typeof(v)` is the node's kind, a value of the built-in enum `Json`: `Object`, `Array`, `String`, `Number`, `Bool` or `Null` (§5.7, §6.5).
 - `is` and `is not` compare two documents (§5.3), a language value on either side widening into a document first. Two documents are equal when they are the same JSON value: the same kind, numbers numerically (two integer nodes exactly, any other pair as `f64`), strings character by character, arrays element by element, objects by their keys in any order, each with equal values. So `v is none` is true when `v` is the `Null` value, `v is "bob"` when `v` is that string, `v is [1, 2]` when `v` is that array, and `v is json {"a": 1}` when `v` is an object holding exactly that entry.
 - A typed read: a `json` value where a type `T` other than a document is expected (§4.2) reads as `T?`, the value when the node fits `T` and `none` otherwise. A number fits an integer type when it is a whole number in the type's range, and a float type when it rounds to a finite value in it (§4.1); a string fits `str[..K]` when it has at most K characters, and an enum when its text names a variant; `true` and `false` fit `bool`; an array fits `T[..M]` when it has at most M elements and each fits `T`, and `T[n]` when it has exactly n; an object fits a record when every field it names fits the field's type, an absent field taking its zero and a key the record lacks being ignored, and fits a map when its entries fit the map's key and value types within its capacity; a value fits a sum when it fits an alternative, the first in the sum's order; a document fits `json[..M]` when its text is at most M bytes, and that read copies it. A read never cuts a value. `or` supplies the fallback (§5.3).
-- The host writes a document input as text (§12.1): a write past the budget, or one that is not valid JSON in valid UTF-8, is refused with the capacity or the byte position in the error, and the input keeps its value. An object's repeated key keeps its last value in the first key's position; a number is an integer when its text has no fraction or exponent and fits `i64`, otherwise an `f64`, past its range an infinity, which fits no float type.
+- The host writes a document cell as text (§12.1): a write past the budget, or one that is not valid JSON in valid UTF-8, is refused with the capacity or the byte position in the error, and the cell keeps its value. An object's repeated key keeps its last value in the first key's position; a number is an integer when its text has no fraction or exponent and fits `i64`, otherwise an `f64`, past its range an infinity, which fits no float type.
 
 ```sym
-input body: json[..65536] = json {}
+state body(json {}): json[..65536]
 
-let items = body["items"]
-let count = len(items)
-let qty = items[0]["qty"] or 1
-let name: str[..64] = body["customer"]["name"] or "anonymous"
-let order: Order = body["order"] or {}
-let is_list = typeof(items) is Array
-let anonymous = body["customer"]["name"] is none
-let reply = json {"ok": true, "count": count, "echo": items, "order": order}
+state items = body["items"]
+state count = len(items)
+state qty = items[0]["qty"] or 1
+state name: str[..64] = body["customer"]["name"] or "anonymous"
+state order: Order = body["order"] or {}
+state is_list = typeof(items) is Array
+state anonymous = body["customer"]["name"] is none
+state reply = json {"ok": true, "count": count, "echo": items, "order": order}
 ```
 
 `items` is a view, two integers; `reply` is rebuilt at each commit that changes `body`.
 
 ```sym-error
-input body: json[..4096] = json {}
+state body(json {}): json[..4096]
 
 state small: json[..256] = body["items"]
 ```
@@ -427,10 +427,10 @@ When one flexible value has an integer use and a float use, the float use's valu
 
 ### 4.2 Expected types
 
-The type a position requires flows into the expression filling it: through operators, `if` and `match` arms, array literals and function arguments, down to the flexible values inside. It stops at the operands of comparisons, at an index, and at the operands of `div` when it is a float type; those take their types from each other or from the defaults of §4.5, and the result then widens into the position. An integer type flows through `div`, so with `input n = 4`, `Note/(n div 2)` reads `n` as an `i32`. A fixed-type operand meeting an expected type widens into it (§4.3) before the operation, so `Note/(u8(255) + 4)` computes in `i32` and is 259; a cell is read in it as §4.4 says, and any other fixed-type operand is an error. An annotation (§4.5) is the type its initializer's position requires, so `input w: Wave = Saw` takes `Saw` in `Wave`.
+The type a position requires flows into the expression filling it: through operators, `if` and `match` arms, array literals and function arguments, down to the flexible values inside. It stops at the operands of comparisons, at an index, and at the operands of `div` when it is a float type; those take their types from each other or from the defaults of §4.5, and the result then widens into the position. An integer type flows through `div`, so with `state n(4)`, `Note/(n div 2)` reads `n` as an `i32`. A fixed-type operand meeting an expected type widens into it (§4.3) before the operation, so `Note/(u8(255) + 4)` computes in `i32` and is 259; a cell is read in it as §4.4 says, and any other fixed-type operand is an error. An annotation (§4.5) is the type its init's position requires, so `state w(Saw): Wave` takes `Saw` in `Wave`.
 
 ```sym
-input cutoff = 0.5
+state cutoff(0.5)
 
 Clip melody:
     Note | brightness=cutoff * 0.8
@@ -438,22 +438,22 @@ Clip melody:
 
 With `brightness` of type `f32`, `0.8` is an `f32`, and `cutoff` is read as one.
 
-The operands of `is` and `is not` give each other their expected type, so in `wave is Saw` the variant resolves in `wave`'s enum. A `let` whose initializer needs an expected type, such as a bare variant or a record literal (§3.8), takes it from those of its uses that expect a type, when they all expect one, whether it is compile-time or reactive, and a use that expects no type reads it in that type; a bare variant is no flexible value (§4.1). A parameter's annotation is the type its argument is read in, and a result annotation the body's expected type (§6.3, §6.4).
+The operands of `is` and `is not` give each other their expected type, so in `wave is Saw` the variant resolves in `wave`'s enum. A `let` or a derived cell whose value needs an expected type, such as a bare variant, takes it from those of its uses that expect a type, when they all expect one, and a use that expects no type reads it in that type; a bare variant is no flexible value (§4.1). A parameter's annotation is the type its argument is read in, and a result annotation the body's expected type (§6.3, §6.4).
 
 ### 4.3 Widening
 
 These implicit widenings exist, and no others: `u8` to `i32`, `i64`, `f32` and `f64`, `i32` to `i64`, `i32` to `f32`, `i32` to `f64`, `i64` to `f64`, `f32` to `f64`, a value into a sum that holds its type, and a sum into a sum that holds every alternative of it (§3.9). A value never narrows implicitly, and a float never becomes an integer implicitly; conversions are explicit (§5.8). Widening `i32` to `f32` and `i64` to `f64` rounds integers beyond the float's exact range: an `i32` cell holding 16777217 reaches an `f32` attribute as 16777216.
 
-When an operator's operands have different fixed types, both widen to the smallest type both widen into. With no such type, the expression is an error. A flexible float meeting an operand of fixed integer type makes the operation a float one, `f64` for an `i64` operand and `f32` for an `i32` one, and the integer widens into it: with `input n = 4`, `n * 0.5 > 1` computes in `f64`. A `u8` operand counts as an `i32` one there, `u8` widening exactly into `f32`. Built-ins widen their operands as operators do.
+When an operator's operands have different fixed types, both widen to the smallest type both widen into. With no such type, the expression is an error. A flexible float meeting an operand of fixed integer type makes the operation a float one, `f64` for an `i64` operand and `f32` for an `i32` one, and the integer widens into it: with `state n(4)`, `n * 0.5 > 1` computes in `f64`. A `u8` operand counts as an `i32` one there, `u8` widening exactly into `f32`. Built-ins widen their operands as operators do.
 
 ### 4.4 Cell types
 
-An input, and a `let` that reads an input (a reactive `let`), is a cell: it holds one value at runtime, so it has exactly one type.
+A cell holds one value at runtime, so it has exactly one type.
 
-An input's type comes from its initializer alone, never from its uses; a string input states its capacity (§3.3) and a record input its type (§3.8), since a record literal has none of its own. Its kind is the initializer's (§4.5): integer, float, `bool` or one particular enum, with the initializer's array shape. An array input has one kind for all its elements, a float one when any element is a float one (§3.2). An integer input is an `i64` and a float input an `f64`, unless an annotation gives the type (§4.5), and the initializer computes in that type. Each use reads the input in the type the use expects: an integer input saturates into a narrower integer type and converts into a float type, rounding beyond the float's exact range, and a float input rounds into `f32`. Where the use expects no type, the input is read in its own type. A float input used where an integer is expected is an error; a conversion (§5.8) states the rounding. The initial value must fit every use.
+A host-fed cell (§6.1) is typed from its init alone, never from its uses; a string cell states its capacity (§3.3) and a record init names its type (§3.8). Its kind is the init's (§4.5): integer, float, `bool` or one particular enum, with the init's array shape. An array cell has one kind for all its elements, a float one when any element is a float one (§3.2). An integer cell is an `i64` and a float cell an `f64`, unless an annotation gives the type (§4.5), and the init computes in that type. Each use reads the cell in the type the use expects: an integer cell saturates into a narrower integer type and converts into a float type, rounding beyond the float's exact range, and a float cell rounds into `f32`. Where the use expects no type, the cell is read in its own type. A float cell used where an integer is expected is an error; a conversion (§5.8) states the rounding. The init must fit every use.
 
 ```sym
-input cutoff = 0.5
+state cutoff(0.5)
 
 Clip melody:
     Note | brightness=cutoff
@@ -462,40 +462,40 @@ Synth lead:
     Osc | freq=cutoff * 4000
 ```
 
-`cutoff` is an `f64` input. It reaches `brightness` rounded to `f32`, and `freq` at full precision.
+`cutoff` is an `f64` cell. It reaches `brightness` rounded to `f32`, and `freq` at full precision.
 
-An integer input whose every use expects a float draws a warning, because its host cannot write a fraction; `1.0` in place of `1` makes it a float input.
+An integer host-fed cell whose every use expects a float draws a warning, because its host cannot write a fraction; `1.0` in place of `1` makes it a float cell.
 
-A reactive `let` is typed as an input is, except for its width. Its kind comes from its initializer (§4.5); its width is the widest its uses of that kind expect; and each use reads it in the use's type, as each use reads an input. A float `let` used where an integer is expected is an error. Its uses include the operands it feeds in other reactive `let`s' initializers, so expected types flow from attributes back through reactive `let`s to the inputs they read. A reactive `let` whose uses fix no width takes the default of §4.5, and defaults apply to a reader before the `let`s it reads:
+A derived cell (§6.6) is typed as a host-fed cell is, except for its width. Its kind comes from its rule (§4.5); its width is the widest its uses of that kind expect; and each use reads it in the use's type, as each use reads a host-fed cell. A float derived cell used where an integer is expected is an error. Its uses include the operands it feeds in other derived cells' rules, so expected types flow from attributes back through derived cells to the host-fed cells they read. A derived cell whose uses fix no width takes the default of §4.5, and defaults apply to a reader before the cells it reads:
 
 ```sym
-input a = 1
-let b = a + 0.5
+state a(1)
+state b = a + 0.5
 
 Clip c:
     Note when b > 1
 ```
 
-`b` is a float `let` with the default width `f32`, and its initializer reads `a`, an `i64` input, as an `f32`.
+`b` is a float cell with the default width `f32`, and its rule reads `a`, an `i64` cell, as an `f32`.
 
-A fixed array `let` whose elements read cells is an array of bindings (§5.5), not one cell, and a record `let` a record of bindings (§3.8); a variable array (§3.7), a runtime string (§3.3), a state (§6.6) and a `for` expression that reads a cell (§5.10) are each one cell. An element read with an index known at compile time, such as a literal, a compile-time `let` or a `for` variable, is its own binding with its own type; an element read through a runtime index is read in that read's type.
+A derived cell whose rule is a fixed array literal whose elements read cells is an array of bindings (§5.5), not one cell, and one whose rule is a record literal a record of bindings (§3.8); a variable array (§3.7), a runtime string (§3.3), a derived cell that holds one (§6.6) and a `for` expression that reads a cell (§5.10) are each one cell. An element read with an index known at compile time, such as a literal, a compile-time `let` or a `for` variable, is its own binding with its own type; an element read through a runtime index is read in that read's type.
 
 The compiler resolves cell types once over the whole program. This always terminates, because cells form no cycles (§6.2).
 
 ### 4.5 Defaults and annotations
 
-A cell's kind is its initializer's: `bool`, an enum, integer or float, element by element for an array. A numeric initializer is a float one when its result is a float under §5: when it holds a float literal, `pi`, `/`, a float built-in, `rand`, a float conversion or a float unit value, or reads a float cell or a float compile-time `let`, or calls a recursive function whose body is a float one for the call's argument kinds. Every other numeric initializer is an integer one.
+A cell's kind is its init's or its rule's: `bool`, an enum, integer or float, element by element for an array. A numeric init or rule is a float one when its result is a float under §5: when it holds a float literal, `pi`, `/`, a float built-in, `rand`, a float conversion or a float unit value, or reads a float cell or a float `let`, or calls a recursive function whose body is a float one for the call's argument kinds. Every other numeric init or rule is an integer one.
 
-A reactive `let` whose uses fix no width takes `f32` when it is a float, and the widest integer type among its operands when it is an integer, an operand that is a reactive `let` counting with the widest integer type among its own operands, found the same way, so a `let` reading an `i64` input, directly or through other `let`s, stays `i64`. A flexible value in a position that fixes no type (§4.1) takes `i32`, or `i64` when its value does not fit `i32`, and a flexible float takes `f32`, or `f64` when its value lies outside `f32`'s finite range.
+A derived cell whose uses fix no width takes `f32` when it is a float, and the widest integer type among its operands when it is an integer, an operand that is a derived cell counting with the widest integer type among its own operands, found the same way, so a derived cell reading an `i64` cell, directly or through other derived cells, stays `i64`. A flexible value in a position that fixes no type (§4.1) takes `i32`, or `i64` when its value does not fit `i32`, and a flexible float takes `f32`, or `f64` when its value lies outside `f32`'s finite range.
 
-An annotation fixes a type outright: `input fine: f32 = 0` is a float input stored as `f32`, and its uses read it as §4.4 says. A suffix does the same for a literal: `0f64`. An annotation on a function or pattern parameter, a local `let`, a `for` variable, a `for` expression's accumulator, a lambda's parameter or a result fixes its type the same way (§5.10, §6.3, §6.4, §6.7, §7.9), and a node kind or a wire kind there names a reference (§3.5). Annotations are per binder: in a function, a pattern or a lambda, one parameter may be annotated and another inferred, as in `fn shift(x, by: i32): x + by`.
+An annotation fixes a type outright: `state fine(0): f32` is a float cell stored as `f32`, and its uses read it as §4.4 says. A suffix does the same for a literal: `0f64`. An annotation on a function or pattern parameter, a local `let`, a `for` variable, a `for` expression's accumulator, a lambda's parameter or a result fixes its type the same way (§5.10, §6.3, §6.4, §6.7, §7.9), and a node kind or a wire kind there names a reference (§3.5). Annotations are per binder: in a function, a pattern or a lambda, one parameter may be annotated and another inferred, as in `fn shift(x, by: i32): x + by`.
 
 ### 4.6 Compile-time evaluation
 
 A compile-time value is computed by the rules of §5, except that a flexible integer computes exactly and a fixed-type integer operation that saturates is an error; a conversion saturates as §5.8 says and is no error. A flexible integer whose magnitude reaches 2¹²⁷, positive or negative, is an error. A float type that flows into a flexible value (§4.2) makes it a float of that type from its literals up, so `2 ** -1` is 0.5 where a frequency expects it (§4.1) and `16777216 + 1` is 16777216 where an `f32` does; a flexible float computes in the type its use chooses.
 
 - The bounds of a range in a `for`, and an index or a slice bound known at compile time, are integers that fit `i64`. A range's loop variable is a flexible integer, so each use chooses its type.
-- A call to a recursive function (§6.3) computes flexible integer arguments exactly and every other argument in the type its call gives it: a fixed type, or for a flexible float its expected type or the default of §4.5. Its whole body computes in those types, and an operation they do not allow, such as `div` on a float, is an error naming the call. Its result may be an array, with the shape of the value the call yields in the type its use expects; a value that holds the call and has different shapes at two of its uses is an error naming both, as in §4.1. A reactive value whose shape comes from such a result alone takes the shape the call yields with the defaults of §4.5, and a use that yields another shape is an error naming both.
+- A call to a recursive function (§6.3) computes flexible integer arguments exactly and every other argument in the type its call gives it: a fixed type, or for a flexible float its expected type or the default of §4.5. Its whole body computes in those types, and an operation they do not allow, such as `div` on a float, is an error naming the call. Its result may be an array, with the shape of the value the call yields in the type its use expects; a value that holds the call and has different shapes at two of its uses is an error naming both, as in §4.1. A cell whose shape comes from such a result alone takes the shape the call yields with the defaults of §4.5, and a use that yields another shape is an error naming both.
 - A value that structure depends on, such as a range bound or a recursive call's result, is computed before the expansion that depends on it.
 - A compilation evaluates at most 1,000,000 distinct recursive calls and inlines at most 100,000 calls of other functions, a call counting each time the body holding it is inlined or expanded, and once in a recursive function's body or its parameters' defaults, which are evaluated rather than inlined, and its expansion runs at most 1,000,000 `for` iterations and pattern uses, the iterations of a compile-time `for` expression (§5.10) counting among them, and yields at most 1,000,000 instances and wires. A recursive call repeats an earlier one, counts once and reuses its value, only when its argument values, argument types and families, expected type and the default unit its plain values are read in (§3.6) are all equal, a function reference passed as an argument (§6.7), directly or through a `let`, counting by its declaration, a lambda's being its source position, and the values of the names its body reads. Exceeding a limit is an error naming the call or the expansion. Each number here, §6.3's nesting depth and §12.6's memory limit are default limits that a package's `options` (§15.2) or a single compilation may set otherwise (ARCHITECTURE §7, §9).
 - Every limit that draws an error has a warning value beside it, whose default is half the limit's default and which a package's `options` or a single compilation sets as it sets the limit. A count that passes the warning value draws a warning naming what the limit's error names: the call, the expansion, or for the memory limit the Program; a count that passes the limit draws the error. The reload search bound (§13.3) draws no error and has no warning.
@@ -534,7 +534,7 @@ MulExpr   ::= UnaryExpr (('*' | '/' | 'div' | '%') UnaryExpr)*
 UnaryExpr ::= '-' UnaryExpr | PowExpr
 PowExpr   ::= Postfix ('**' UnaryExpr)?
 Postfix   ::= Primary ('.' Name | '[' Index ']' | '(' Args? ')')*
-Primary   ::= NumberLit | BoolLit | StringLit | RecordLit | MapLit | JsonLit | 'none' | Name | Name '::' Name | History
+Primary   ::= NumberLit | BoolLit | StringLit | RecordLit | MapLit | JsonLit | 'none' | Name | Name '::' Name
             | 'to' | Conversion | ArrayLit | '(' Expr ')'
 ArrayLit  ::= '[' (Expr (',' Expr)* ','?)? ']'
 Args      ::= Arg (',' Arg)* | NamedArg (',' NamedArg)*
@@ -542,7 +542,7 @@ Arg       ::= Expr | Lambda
 NamedArg  ::= Name '=' Arg
 ```
 
-Comparisons do not chain: `a < b < c` is an error. `-2 ** 2` is −4, and `n-1` is `n - 1`. An `if` that is an operand of another operator is parenthesized: `base + (if high then 12 else 0)`. An `if` that is a whole value, such as a `let`'s value, an attribute value or an argument, needs no parentheses. A `{` directly after a name, whitespace apart, opens a history read (§6.6); any other `{` in an expression opens a record literal (§3.8); `map {` opens a map literal (§3.10) and `json` a document literal (§3.11).
+Comparisons do not chain: `a < b < c` is an error. `-2 ** 2` is −4, and `n-1` is `n - 1`. An `if` that is an operand of another operator is parenthesized: `base + (if high then 12 else 0)`. An `if` that is a whole value, such as a `let`'s value, an attribute value or an argument, needs no parentheses. A `{` in an expression opens a record literal (§3.8); `map {` opens a map literal (§3.10) and `json` a document literal (§3.11).
 
 Expressions evaluate the same way at compile time and at runtime; §4.6 states the differences in compile-time arithmetic.
 
@@ -569,17 +569,17 @@ With a type name on the right, `is` and `is not` test a sum (§3.9): `x is none`
 `if c then a else b` yields `a` when `c` is true and `b` otherwise. The condition is a `bool`. Both branches are type-checked, and only the chosen branch is evaluated; at compile time only the chosen branch is checked for fit and index range. `else` is mandatory, and `else if` chains:
 
 ```sym
-input loud = false
-input quiet = false
-let gain = if loud then 0.9 else if quiet then 0.3 else 0.6
+state loud(false)
+state quiet(false)
+state gain = if loud then 0.9 else if quiet then 0.3 else 0.6
 ```
 
 `match` selects a value by an enum, an integer, a `bool`, a string or a sum (§3.9):
 
 ```sym
-input wave = Wave::Saw
+state wave(Wave::Saw)
 
-let level = match wave:
+state level = match wave:
     Sine: 1.0
     Saw: 0.8
     else: 0.6
@@ -595,7 +595,7 @@ ElseArm    ::= 'else' ':' Expr NEWLINE
 - A `match` on an enum or a `bool` covers every value or ends with `else:`, and an `else:` after arms that cover every value is an error. A `match` on an integer or a string ends with `else:`.
 - On a sum, a label is an alternative's type name or `none`. Inside the arm the scrutinee, when it is a name, reads as that alternative; in `else` it reads as the alternatives no arm labels, and as that one type when one is left. A `match` on a sum covers every alternative or ends with `else:`, and a label that is no alternative of it is an error.
 - The first matching arm wins. Arms are checked and evaluated as `if` branches are, and arm values unify as `if` branches do (§4.2).
-- `match` is the whole value of a `let`, top-level or local, of a function body or of a wire destination (§8.2), never an operand: its arms need layout, and layout is suspended inside parentheses.
+- `match` is the whole value of a `let`, top-level or local, of a derived cell's rule, of a function body or of a wire destination (§8.2), never an operand: its arms need layout, and layout is suspended inside parentheses.
 
 ### 5.5 Arrays and indexing
 
@@ -612,29 +612,29 @@ Bound ::= '^'? Expr
 
 A string is indexed and sliced as the array of its characters (§3.3): `s[i]` is the one-character string at `i`, clamped as an index is, and the empty string when `s` is empty; `s[a..b]` is a string; `^k` counts characters from the end. `"a日b"[1..]` is `"日b"`, and `"a日b"[^1]` is `"b"`.
 
-An array literal whose elements read cells is reactive, and each element is bound separately:
+An array literal whose elements read cells is an array of bindings, each element bound separately:
 
 ```sym
-input a = 1
-input b = 2
-input i = 0
-let c = [a, b, a + b]
+state a(1)
+state b(2)
+state i(0)
+state c = [a, b, a + b]
 ```
 
 - `c[1]`, with an index known at compile time, is the same binding as `b`. A change to `a` does not reach it.
 - `c[2]` is a cell of its own, computed from `a` and `b`.
 - `c[i]` depends on `i` and on every element.
 
-A fixed-array expression that reads cells is evaluated element by element; a variable array is evaluated whole (§3.7). With `let row = grid[i]`, `row[1]` is `grid[i][1]`, and `if flag then [60, 64] else [62, 65]` chooses each element separately.
+A fixed-array expression that reads cells is evaluated element by element; a variable array is evaluated whole (§3.7). With `state row = grid[i]`, `row[1]` is `grid[i][1]`, and `if flag then [60, 64] else [62, 65]` chooses each element separately.
 
 `a + b` with two arrays joins them, the elements of `a` followed by those of `b`. Their elements unify as an array literal's do (§4.2), and their rows have one shape. The join of two fixed arrays is a fixed array, `[1, 2] + [3]` being `[1, 2, 3]`; any other join is a variable array. Every other operator takes scalars only, and `+` of an array and a scalar is an error.
 
 ```sym
-input held: i32[..10] = []
-input step = 0
-input note = 60
+state held([]): i32[..10]
+state step(0)
+state note(60)
 
-let played = held + [note]
+state played = held + [note]
 
 Clip arp:
     Note/(played[step % len(played)])
@@ -642,7 +642,7 @@ Clip arp:
 
 ### 5.6 Attribute reads
 
-`x.name` reads attribute `name` of the instance or wire `x`. The read is the same binding the attribute holds: a constant, an input, a cell, or the vocabulary default when the source sets none.
+`x.name` reads attribute `name` of the instance or wire `x`. The read is the same binding the attribute holds: a constant, a cell, or the vocabulary default when the source sets none.
 
 - A path starts at a name in scope (§6.5), a parameter or a `let` holding a reference (§3.5) included, or at a reference chosen at compile time by an index, an `if`, a `match` or a call: `sections[0].gain`. It steps through children, named wires and the names inside named pattern uses: `chorus.back`, `lead.v1.osc`.
 - A path whose start is chosen at runtime is an error; `to.path` reads an attribute along a path from a wire's destination, which may be chosen at runtime (§8.3).
@@ -719,54 +719,62 @@ A `for` expression folds an iterable (§7.9) into one value. The name after `int
 
 - The accumulator's type unifies the start and the body as `if` arms do (§4.2), and an annotation fixes it (§4.5).
 - Every capacity or budget in the accumulator's type, an array's at every level, a string's, a map's and a document's, is found by applying the body's capacity or budget rule (§3.3, §3.7, §3.10, §3.11) to the start's once per iteration the iterable can run, stopping when it no longer grows. An array or a map runs at most its capacity of iterations, and a range at most the count its bounds allow (§7.9).
-- The block form is the whole value of a `let`, a local `let`, a state or a function body, never an operand, as `match` is (§5.4); its local `let`s are visible to its final expression. The one-line form stands without parentheses only as the whole value of a `let`, a local `let`, a state or a function body; anywhere else, as an operand, an argument, an attribute value, a gate, a scrutinee, a start or an iterable, it stands in parentheses.
-- A `for` expression whose iterable, start and body read no cell is a compile-time value (§4.6). Any other is one cell (§4.4), evaluated whole each time it is evaluated (§12.2).
+- The block form is the whole value of a `let`, a local `let`, a derived cell's rule or a function body, never an operand, as `match` is (§5.4); its local `let`s are visible to its final expression. The one-line form stands without parentheses only as the whole value of a `let`, a local `let`, a derived cell's rule or a function body; anywhere else, as an operand, an argument, an attribute value, a gate, a scrutinee, a start or an iterable, it stands in parentheses.
+- A `for` expression whose iterable, start and body read no cell is a compile-time value (§4.6). Any other is one cell (§4.4), evaluated whole each time it runs (§12.2).
 - Its loop names, its accumulator and its local `let`s follow §6.5's name rules.
 - The body is inlined once, however many times it runs, and counts once toward §4.6's inline limit.
 
 ```sym
-input held: i32[..10] = []
+state held([]): i32[..10]
 
-let high = for x in held into kept from []:
+state high = for x in held into kept from []:
     let keep = x > 60
     if keep then kept + [x] else kept
 
-let total = 1 + (for i, x in held into sum from 0: sum + i * x)
+state total = 1 + (for i, x in held into sum from 0: sum + i * x)
 ```
 
 `high` keeps the held notes above 60 in their order and holds at most 10, since each run adds at most one element to a start of none; `total` weighs each note by its position.
 
 ```sym-error
-input held: i32[..10] = []
+state held([]): i32[..10]
 
-let total = 1 + for x in held into sum from 0: sum + x
+state total = 1 + for x in held into sum from 0: sum + x
 ```
 
 This is an error: a `for` expression that is an operand stands in parentheses.
 
 ```sym-error
-input held: i32[..10] = []
+state held([]): i32[..10]
 
-let high = len(for x in held into kept from []: if x > 60 then kept + [x] else kept)
+state high = len(for x in held into kept from []: if x > 60 then kept + [x] else kept)
 ```
 
 This is an error: a `for` expression that is an argument stands in parentheses, although an `if` there needs none (§5.1).
 
 ## 6. Declarations
 
-### 6.1 Inputs
+### 6.1 Cells
 
 ```ebnf
-InputDecl ::= 'input' Name (':' Type)? '=' Expr NEWLINE
+CellDecl ::= CellWord ('[' Digits ']')? Name Init? (':' Type)? Clock? ('=' (Expr NEWLINE | MatchBlock | ForExprBlock) | NEWLINE)
+CellWord ::= 'state' | 'stream' | 'channel'
+Init     ::= '(' Expr ')'
 ```
 
-An input is a cell the host writes (§12.1). Its initializer is a compile-time value and gives the input its type (§4.4). An input may be an array, a string or a record; the host then writes single elements or leaf fields, or the whole value. A string input states its capacity (§3.3), and a record input its type (§3.8). Inputs are declared at top level and in pattern bodies (§6.4). An input annotated with a variable array type (§3.7) takes an initializer no longer than its capacity: `input held: i32[..10] = []`.
+A cell is a value that changes while the graph runs. Its word says what a step of it is: a `state` steps when its value changes, a `stream` and a `channel` step on every arrival or run. Its form says who feeds it: a declaration with an init in parentheses and no rule is host-fed, a cell the host writes (§12.1); a declaration with a rule after `=` is derived, computed by the program (§6.6), with or without an init. A declaration with neither is an error. Cells are declared at top level and in pattern bodies (§6.4). `Clock` is §6.6's and stands on a derived cell only.
+
+A host-fed `state` keeps the last value written and steps when a write changes it, an equal write being nothing. A host-fed `stream` and a host-fed `channel` step on every write, equal or not, and keep every write since the last commit as a pending step, up to a capacity: a `stream` forgets the oldest pending write when the capacity is full, and a `channel` refuses the write until a commit drains (§12.1). `[N]` after `stream` or `channel` states the capacity; absent, it is the largest capacity an attribute the cell is bound to states (§10.1), and 1 when it is bound to none. `[N]` on a `state` or on a derived cell is an error, and `[N]` below the capacity a bound attribute states is an error naming the attribute and its capacity. A cell's history depth is never declared (§6.6).
+
+The init is a compile-time value and gives a host-fed cell its type (§4.4); an annotation follows it. A cell may hold an array, a string, a record, a sum, a map or a document, never a node reference or a function; a string cell states its capacity (§3.3), a record init names its type (§3.8), a document cell states its budget (§3.11), and a cell annotated with a variable array type (§3.7) takes an init no longer than its capacity: `state held([]): i32[..10]`. The host writes a host-fed cell by its handle, by name (§12.1), whether or not an attribute is bound to it (§7.6). `stream tick(none)` is a cell that carries nothing, a clock the host steps; a cell of type `none` is legal.
 
 ```sym
-input cutoff = 0.5
-input steps = [true, false, false, true, false, false, true, false]
-input name: str[..32] = ""
-input hit: Hit = {}
+state cutoff(0.5)
+state steps([true, false, false, true, false, false, true, false])
+state name(""): str[..32]
+state hit(Hit {})
+stream mic(0.0)
+channel[16] notes(Hit {})
 ```
 
 ### 6.2 Lets
@@ -775,12 +783,12 @@ input hit: Hit = {}
 LetDecl ::= 'let' Name (':' Type)? '=' (Expr NEWLINE | Lambda NEWLINE | MatchBlock | ForExprBlock)
 ```
 
-A `let` names a value. A `let` that reads no input, directly or through other declarations, is a compile-time value (§4.1). A `let` that reads an input, other than one holding a function reference (§6.7), is reactive: a cell, or for an array an array of bindings (§4.4), recomputed when what it reads changes (§12.2). A declaration that reaches itself through `let`s, inputs, attribute reads, function bodies or the lambda a `let` holds is an error naming the cycle, as in `let a = b + 1` with `let b = a + 1`, and in `let f = x: f(x)`, whose recursion is written with `fn`; a function reaching itself through calls follows §6.3.
+A `let` names a compile-time value (§4.1). A `let` that reads a cell, directly or through other declarations, is an error whose help names `state`, except a `let` holding a function reference (§6.7), whose body runs only at a use. A declaration that reaches itself through `let`s, cells, attribute reads, function bodies or the lambda a `let` holds is an error naming the cycle, as in `let a = b + 1` with `let b = a + 1`, and in `let f = x: f(x)`, whose recursion is written with `fn`; a function reaching itself through calls follows §6.3.
 
-A compile-time `let` may hold a reference (§3.5) or an array of them, or a function reference (§6.7). It stands for its value wherever it is used and never reaches the Program. Every `let`, top-level or local, a function's local `let` and a pattern's `let` among them (§6.3, §6.4), holds a function reference as §6.7 says. A `let` holding references that reads an input is an error; a choice among instances at runtime is written in the destination itself (§8.2).
+A `let` may hold a reference (§3.5) or an array of them, or a function reference (§6.7). It stands for its value wherever it is used and never reaches the Program. Every `let`, top-level or local, a function's local `let` and a pattern's `let` among them (§6.3, §6.4), holds a function reference as §6.7 says. A choice among instances at runtime is written in the destination itself (§8.2).
 
 ```sym
-input section = 0
+state section(0)
 
 let sections = [verse, chorus, bridge]
 
@@ -806,10 +814,10 @@ Param    ::= Name (':' Type)? ('=' Expr)?
 A function computes one value from its parameters.
 
 - A body is one expression, or local `let`s followed by one expression or `match`, the local `let`s visible throughout the body. Two parameters or two local `let`s with one name, or a local `let` named like a parameter, are an error.
-- A call to a non-recursive function evaluates the body in the function's own scope, with each parameter bound to its argument, and the argument evaluated in the caller's scope. The compiler checks the result in place, as the body inlined at the call. A parameter is typed as a `let` holding its argument would be: bound to a compile-time argument it is a compile-time value, flexible when the argument is (§4.1), and bound to an argument that reads cells it is typed as a reactive `let` is (§4.4), each use reading it in the use's type.
+- A call to a non-recursive function evaluates the body in the function's own scope, with each parameter bound to its argument, and the argument evaluated in the caller's scope. The compiler checks the result in place, as the body inlined at the call. A parameter is typed as a `let` holding its argument would be: bound to a compile-time argument it is a compile-time value, flexible when the argument is (§4.1), and bound to an argument that reads cells it is typed as a derived cell is (§4.4), each use reading it in the use's type.
 - Whether a call to a non-recursive function is inlined at its use or invokes the function's body stored once in the Program as a shared body (§11) is the compiler's choice by cost, and changes no value. A call whose arguments are all compile-time values is evaluated by the compiler either way.
-- A parameter's annotation fixes its type (§4.5): a compile-time argument fits it and a reactive one is read in it, as an input is read at a use (§4.4). A parameter annotated with a node kind or a wire kind takes a reference (§3.5), and a parameter bound to a reference reads attributes through it as a path does (§5.6). A result annotation is the body's expected type (§4.2). A local `let`'s annotation is its initializer's expected type.
-- A call whose arguments read cells yields a reactive value.
+- A parameter's annotation fixes its type (§4.5): a compile-time argument fits it and one that reads cells is read in it, as a cell is read at a use (§4.4). A parameter annotated with a node kind or a wire kind takes a reference (§3.5), and a parameter bound to a reference reads attributes through it as a path does (§5.6). A result annotation is the body's expected type (§4.2). A local `let`'s annotation is its initializer's expected type.
+- A call whose arguments read cells yields a value that reads them.
 - A parameter with a default follows every parameter without one, and its default may read earlier parameters. A positional call may omit trailing parameters that have defaults; a named call may omit any parameter that has a default. A call that supplies more arguments than the function has parameters, names a parameter the function lacks, or names one twice is an error.
 
 ```sym
@@ -829,9 +837,9 @@ let lengths = [fib(3), fib(4), fib(5), fib(6)]
 ```
 
 ```sym
-input held: i32[..10] = []
+state held([]): i32[..10]
 
-let lowest = for x in held into low from 127: min(low, x)
+state lowest = for x in held into low from 127: min(low, x)
 
 Clip c:
     Note/lowest
@@ -840,7 +848,7 @@ Clip c:
 `lowest` is the lowest held note, or 127 while none is held.
 
 ```sym-error
-input n = 5
+state n(5)
 
 fn fib(k): if k < 2 then k else fib(k - 1) + fib(k - 2)
 
@@ -848,7 +856,7 @@ Clip c:
     Note/(fib(n))
 ```
 
-This is an error: `fib` is recursive, and its argument reads the input `n`; the help says to write a `for` expression, as `lowest` is written.
+This is an error: `fib` is recursive, and its argument reads the cell `n`; the help says to write a `for` expression, as `lowest` is written.
 
 ### 6.4 Patterns
 
@@ -857,17 +865,17 @@ PatternDecl    ::= 'pattern' Name GenericParams? '(' PatternParams? ')' ('->' Pl
 PatternParams  ::= PatternParam (',' PatternParam)*
 PatternParam   ::= 'default'? ('input' | 'const')? Name (':' Type)? ('=' Expr)?
                  | 'children' Name ':' PlacementType
-PatternItem    ::= InputDecl | LocalLet | StateDecl
+PatternItem    ::= CellDecl | LocalLet
 PlacementType  ::= PlacementEntry | '(' PlacementEntry (',' PlacementEntry)* ')'
 PlacementEntry ::= (Name | 'node' | 'wire' | '[' PlacementEntry ']') ('+' | '*' | '{' Count '}')?
 Count          ::= Digits ('+' | '..' Digits)? | '..' Digits
 ```
 
-A pattern is a named declaration of placements with parameters and a type. A use places them as one node, one wire or a group, with inputs and states of its own, and the pattern's name stands in a `children` type and in the paths of what a use places (§11.1).
+A pattern is a named declaration of placements with parameters and a type. A use places them as one node, one wire or a group, with cells of its own, and the pattern's name stands in a `children` type and in the paths of what a use places (§11.1).
 
-- Patterns are declared at top level. The body holds its declaration lines first, inputs, `let`s and states in any order, then any body items (§7.1). Each expansion has its own inputs, `let`s and states, visible throughout the body. An input or a state of a use is an ordinary input or state of the Program (§11), named by the use's path (§11.1): `Voice as low` with `input gain` in the pattern yields the input `low.gain` under the use's parent, one per use, and one per iteration inside a `for`. An input's initializer is a compile-time value that may read the pattern's compile-time parameters; a state may read the pattern's inputs, parameters and `let`s. Two parameters or two declarations with one name, or a declaration named like a parameter, are an error.
+- Patterns are declared at top level. The body holds its declaration lines first, cells and `let`s in any order, then any body items (§7.1). Each expansion has its own cells and `let`s, visible throughout the body. A cell of a use is an ordinary cell of the Program (§11), named by the use's path (§11.1): `Voice as low` with `state gain(1.0)` in the pattern yields the cell `low.gain` under the use's parent, one per use, and one per iteration inside a `for`, and a host-fed one is the host's handle. A cell's init is a compile-time value that may read the pattern's compile-time parameters; a derived cell's rule may read the pattern's cells, parameters and `let`s. Two parameters or two declarations with one name, or a declaration named like a parameter, are an error.
 - A pattern is used with placement syntax, or with wire syntax when it stands in for a wire. The attribute clause supplies parameters in every entry form of §7.6, so `name` and `!name` supply a `bool` parameter, and `/expr` supplies the parameter marked `default`, of which there is at most one and which the clause may supply by name instead. `/expr` on a pattern without a `default` parameter is an error. Supplying a parameter twice is an error, and so is omitting a parameter that has no default value. A use carries no flags, and a body only for `children` parameters.
-- A use is replaced by the body's placements at the use's position, with each parameter bound to its argument as in a function call (§6.3), and the result is checked in place. Parameters are typed as a function's are (§6.3); a parameter's annotation fixes its type (§4.5), and a node kind or a wire kind there names a reference, `Osc[3]` three of them. An argument that needs an expected type, such as a bare variant in `Voice | shape=Saw`, takes it from the parameter's annotation or from the parameter's uses in the body. An argument may be a value, a reactive value, a reference (§3.5) or an array of references.
+- A use is replaced by the body's placements at the use's position, with each parameter bound to its argument as in a function call (§6.3), and the result is checked in place. Parameters are typed as a function's are (§6.3); a parameter's annotation fixes its type (§4.5), and a node kind or a wire kind there names a reference, `Osc[3]` three of them. An argument that needs an expected type, such as a bare variant in `Voice | shape=Saw`, takes it from the parameter's annotation or from the parameter's uses in the body. An argument may be a value, a cell or a value that reads cells, a reference (§3.5) or an array of references.
 - A parameter may state the binding it takes. `input` requires an argument that names an input, directly or through a parameter or a `let` that names one; `const` requires a compile-time argument; an argument of another kind is an error at the use naming the parameter. `default` marks the parameter `/expr` supplies. The words stand in the grammar's order; `input` with `const` on one parameter is an error, and an `input` parameter's default value names an input.
 - A placement type lists entries with counts. An entry is a node kind, a wire kind, `node` for any node kind, `wire` for any wire kind, a pattern's name, meaning a use of that pattern, which stands only in a `children` parameter's type, or a bundle `[…]` of one node entry (§7.8). A count follows it: none for exactly one, `+` one or more, `*` zero or more, `{3}` exactly three, `{2+}` two or more, `{..4}` at most four, `{2..4}` two to four, both included. A single entry is written bare; a list is parenthesized.
 - A pattern's type is what a use places. A pattern whose body is a single node or wire placement, or a single use of such a pattern, stands in for that placement: its type is that kind, written bare; a use creates that one instance or wire, and the use's name becomes its name, replacing any `as` name the placement has. Only node stand-ins appear at top level. A stand-in wire placement writes no destination: the use writes it after the colon, as a wire placement does (§8.1), and `to` in the pattern's wire reads it (§8.3); a destination written in the pattern is an error. Every other pattern is a group, whose type is parenthesized and lists what the body places, one entry per node kind, wire kind and bundle shape in order of first placement, with the tightest count the body fixes: a placement written once counts one, inside a `when` arm too (§9.2); a bundle counts one bundle entry of its members' kind and count; a `for` whose count the declaration fixes counts its iterations, and one whose count depends on a parameter counts zero or more; a nested use counts its pattern's entries, and a `children` parameter its declared type; `(Clip)` is a group placing one `Clip` that does not stand in. A type written after `->` is a contract: the body places exactly the entries it names, each count inside the declared one, or the declaration is an error naming the placement that breaks it; a type the declaration leaves out is inferred.
@@ -920,11 +928,11 @@ Clip verse:
     Up as octave | semis=7: chorus
 ```
 
-`octave` is a `Plays` wire from `verse` to `chorus`, and `verse.octave.transpose` is 7. A pattern's inputs are the host's way into each use:
+`octave` is a `Plays` wire from `verse` to `chorus`, and `verse.octave.transpose` is 7. A pattern's host-fed cells are the host's way into each use:
 
 ```sym
 pattern Voice(default root: i32, const steps = 4) -> (Note*, Starts):
-    input gain = 1.0
+    state gain(1.0)
     for i in 0..steps:
         Note/(root + i) | velocity=gain
     Starts: intro
@@ -934,7 +942,7 @@ Clip verse:
     Voice/60 | steps=8
 ```
 
-The Program holds the inputs `verse.low.gain` and `verse.Voice:0.gain`. An `input` parameter takes an input the program declares, and `children` parameters take the use's body, split by what each names:
+The Program holds the cells `verse.low.gain` and `verse.Voice:0.gain`. An `input` parameter takes an input the program declares, and `children` parameters take the use's body, split by what each names:
 
 ```sym
 pattern Drum(default input hit: Hit, gain: f32 = 1.0) -> Pad:
@@ -947,7 +955,7 @@ pattern Section(default root: i32, children notes: Note*, children links: Plays*
         Plays: intro
         links
 
-input kick_hit: Hit = {}
+state kick_hit({}): Hit
 
 Drum kick /kick_hit | gain=0.9
 
@@ -979,7 +987,7 @@ Patterns never appear in the Program.
 
 ### 6.5 Names and scope
 
-All top-level names of a package share one namespace across its files: inputs, `let`s, states, functions, patterns, record types, top-level instances, the names its package file brings in (§15.4), the built-ins (§5.7), and, in a package written for a vocabulary, the vocabulary's kinds and enums and the names its prelude publishes (§15.6). A duplicate is an error naming both declarations; a declaration of the package and a name its package file brings in shadow a prelude name (§15.6). Top-level declarations refer to each other regardless of order. A declared name of any kind, top-level or local, that equals a variant of a vocabulary enum is an error.
+All top-level names of a package share one namespace across its files: cells, `let`s, functions, patterns, record types, top-level instances, the names its package file brings in (§15.4), the built-ins (§5.7), and, in a package written for a vocabulary, the vocabulary's kinds and enums and the names its prelude publishes (§15.6). A duplicate is an error naming both declarations; a declaration of the package and a name its package file brings in shadow a prelude name (§15.6). Top-level declarations refer to each other regardless of order. A declared name of any kind, top-level or local, that equals a variant of a vocabulary enum is an error.
 
 Inside a body, the `as` names of that body's children and wires are visible regardless of order, and so are those of every enclosing body up to a pattern's body, and the top-level names. A child or wire name shadows top-level names, built-ins and prelude names within its body and the bodies nested in it. A child or wire name equal to a name of its own body or of an enclosing body, or to an attribute of its parent's kind, is an error, also when the two names stand in different arms of one `when` block. A child or wire name equal to a pattern parameter, a pattern declaration or a `for` variable visible where it is declared is an error, and so is a pattern declaration equal to a child or wire name of its body. A `for` variable is visible in its body, and a `for` variable equal to a visible name is an error; so is a `for` expression's loop name, its accumulator or its block form's local `let` (§5.10), or a lambda's parameter (§6.7), equal to a visible name. A `for` expression's loop names, its accumulator and its block form's local `let`s are distinct names, as a function's parameters and local `let`s are (§6.3). A bracket name (§6.8) equal to a top-level name is an error. In a function, parameters and local `let`s shadow top-level names; in a pattern, parameters and the body's declarations do. A record's field names are scoped to its type (§3.8).
 
@@ -987,48 +995,61 @@ A function or pattern that nothing uses has its names resolved, cycles among its
 
 A bare name that is a variant of the enum its position expects resolves to that variant (§3.4). Every other name resolves in scope.
 
-### 6.6 States
+### 6.6 Derived cells
 
 ```ebnf
-StateDecl ::= 'state' ('[' Digits ']')? Name (':' Type)? Steps? '=' (Expr NEWLINE | MatchBlock | ForExprBlock)
-Steps     ::= 'on' (Atom | '(' Expr (',' Expr)* ')')
-History   ::= Name '{' Expr (',' Expr)? '}'
+Clock ::= 'on' (Atom | '(' Expr (',' Expr)* ')')
 ```
 
-A state is a cell that remembers: its initializer may read the past values of cells. `x{k, fallback}` in a state's initializer reads `x` as it was k steps of that state ago, and yields `fallback` until the state has taken k steps. A state takes a step each time it is evaluated (§12.2): at load, and at each commit that changes a cell it reads in the present, a history read being no present read, or the value of one of its triggers. A trigger, written after `on`, is an expression evaluated as a reactive `let` is, whose value never enters the state's; a single trigger that is an atom (§7.5) is written bare, and anything else is parenthesized. A trigger that reads no cell is an error, since it never changes. Whether a trigger `x` changed at this step is `x is not x{1}`. A history read yields the value its cell held at the end of the commit of that step, so a state that reads its own history, or states that read one another's, form no cycle; a state that reads its own present value does (§6.2).
+A derived cell is computed by its rule, the expression after `=`. It runs when a cell it reads steps, and steps as its word says (§6.1): a `state` when the run changed its value, a `stream` at every run, and a `channel` at every run, a `channel` being a `stream` whose every clock carries every arrival, as below. A run reads each cell at its current value. With a clock, written after `on`, the cell runs only when a listed cell steps, whatever that cell's word, and reads every other cell as a parameter at that run; a single clock that is an atom (§7.5) is written bare, and anything else is parenthesized. A listed entry that never steps, a compile-time value among them, is an error. A cell's own word converts at its boundary, so a `state` reading a stream turns arrivals into values and a `stream` reading a state turns changes into arrivals, and no conversion is written.
 
 ```sym
-input gate = false
-input level = 0.0
-input note = 60
-
-state rising = gate and not gate{1}
-state held = if rising then level else held{1, 0.0}
-state recent = (recent{1, []} + [note])[^8..]
+state a(1)
+stream b(2)
+state c1 = a + b
+state c2 on b = a + b
+state c3 on a = a + b
+state c4 on (a, b) = a + b
 ```
 
-`rising` is true at the commit where `gate` turns true, `held` keeps the `level` of that commit, and `recent` holds the last eight notes, the oldest falling off; `(recent{1, []} + [note])[..8]` keeps the first eight instead.
+`c1` runs at `a`'s changes and `b`'s arrivals; `c2` at `b`'s arrivals only, reading `a` as a parameter; `c3` at `a`'s changes only; `c4` is `c1` written out.
+
+At load, a derived cell without an init is evaluated once and that value is its first. A derived cell with an init holds the init at load and runs its rule from the first step of what it reads; the init is a compile-time value that fits the cell's type, which its rule gives (§4.4).
+
+`x.past(k)` reads the cell `x` as it was k of its own steps ago, and `x.past(k, fallback)` the same with a fallback; `k` is a positive integer known at compile time. Before `x` has stepped k times, `x.past(k)` yields the value `x` held at load, and `x.past(k, fallback)` yields the fallback. Every cell has a history, as deep as the deepest `past` read of it in the program, and a history read stands wherever an expression reads a cell. A history read yields the value its cell held at the end of that step, so a cell that reads its own history, or cells that read one another's, form no cycle; a cell that reads its own present value does (§6.2). A derived cell with no init whose rule reads its own past, directly or through other cells' pasts, writes a fallback on the read that closes the loop, or is an error whose help names the init. Whether a cell `x` changed at this step is `x is not x.past(1)`.
 
 ```sym
-input hit: Hit = {}
-input bar = 0
+state gate(false)
+state level(0.0)
+state note(60)
 
-state hits on (hit, bar) = if bar is not bar{1} then 0 else hits{1, -1} + 1
+state rising = gate and not gate.past(1)
+state held = if rising then level else held.past(1, 0.0)
+state recent([]) = (recent.past(1) + [note])[^8..]
 ```
 
-`hits` counts the changes of `hit` since load or since `bar` last changed: it steps at load, at 0, and at each commit that changes `hit` or `bar`, and reads `hit` only as a trigger.
+`rising` is true at the step where `gate` turns true, `held` keeps the `level` of that step, its fallback standing in for an init, and `recent` holds the last eight notes, the oldest falling off, starting from its init; `(recent.past(1) + [note])[..8]` keeps the first eight instead.
 
-- States are declared at top level and in pattern bodies (§6.4). History reads stand only in a state's initializer, so `let`s and functions stay pure.
-- The offset `k` is a positive integer known at compile time. A history read names an input, a state or a reactive `let`. Its fallback has the cell's type, and is required except for an input, whose fallback is its initial value.
-- `[N]` states the deepest offset the state reads; a deeper offset is an error whose diagnostic gives the N that covers it.
-- A state is typed as a reactive `let` is (§4.4, §4.5); its own history reads count as their fallbacks for its kind and are no uses of it. Each group of states whose reads reach one another, present or history reads, settles its states' kinds together: each history read of a state of the group first counts as its fallback, then takes that state's kind, and this repeats until no state's kind changes. A state may hold a string (§3.3), a record (§3.8), a sum (§3.9), a map (§3.10) or a document (§3.11), never a node reference.
-- Whether states hold fixed arrays is settled together over each group of states whose reads reach one another, present or history reads, a state alone being a group of one. Every state of the group is first taken to hold a fixed array, each history read of it yielding a fixed array of that read's fallback's length; a state whose initializer then yields no fixed array, or a fixed array of a length other than that of the fallbacks of the reads of it, holds a variable array, and each history read of it then yields a variable array; this repeats until no state changes, and the states left hold fixed arrays. A history read of a state outside the group has that state's type. A state that holds a variable array has the least capacity for which its initializer's capacity is at most its own, each history read of a state having that state's capacity or its fallback's, whichever is larger; the states of each group take their capacities together. A state with no such capacity is an error, whose diagnostic shows the slice that bounds it.
-- A state that holds a string takes its capacity as a state that holds a variable array does, in characters; a state that holds a document states its budget (§3.11).
+```sym
+channel hit(Hit {})
+state bar(0)
+
+state hits on (hit, bar) = if bar is not bar.past(1) then 0 else hits.past(1, -1) + 1
+```
+
+`hits` counts the arrivals of `hit` since load or since `bar` last changed: it runs at load, at 0, at every arrival of `hit` and at every change of `bar`, and reads `hit` only as a clock.
+
+A derived `channel` is a derived stream the compiler checks: each of its clocks, or each cell it reads when it has none, is a `channel`, host-fed or derived, or a cell that carries no arrivals, a `state` with no `stream` or `channel` upstream of it. A `stream`, or a `state` that reads a stream or a channel, among them is an error naming that cell, whose help says to write `stream` or to clock on the channel alone. So a `channel` forgot no arrival between the host and its reader, which is what the word promises on a parameter (§6.4) and an attribute (§10.1).
+
+- Derived cells are declared at top level and in pattern bodies (§6.4).
+- A derived cell is typed as §4.4 says; its own history reads count as their fallbacks, or as its init, for its kind and are no uses of it. Each group of cells whose reads reach one another, present or history reads, settles its cells' kinds together: each history read of a cell of the group first counts as its fallback or init, then takes that cell's kind, and this repeats until no cell's kind changes. A derived cell may hold a string (§3.3), a record (§3.8), a sum (§3.9), a map (§3.10) or a document (§3.11), never a node reference.
+- Whether derived cells hold fixed arrays is settled together over each group of cells whose reads reach one another, present or history reads, a cell alone being a group of one. Every cell of the group is first taken to hold a fixed array, each history read of it yielding a fixed array of that read's fallback's or the cell's init's length; a cell whose rule then yields no fixed array, or a fixed array of a length other than that of the fallbacks and the init of the reads of it, holds a variable array, and each history read of it then yields a variable array; this repeats until no cell changes, and the cells left hold fixed arrays. A history read of a cell outside the group has that cell's type. A derived cell that holds a variable array has the least capacity for which its rule's capacity is at most its own, each history read of a cell having that cell's capacity or its fallback's, whichever is larger; the cells of each group take their capacities together. A cell with no such capacity is an error, whose diagnostic shows the slice that bounds it.
+- A derived cell that holds a string takes its capacity as one that holds a variable array does, in characters; one that holds a document states its budget (§3.11).
 
 ```sym-error
-input note = 60
+state note(60)
 
-state recent = recent{1, []} + [note]
+state recent = recent.past(1, []) + [note]
 ```
 
 This is an error: `recent` grows by one element at every step, so no capacity holds it; `[^8..]` keeps the newest eight.
@@ -1045,12 +1066,12 @@ A lambda is a function written in place: `x: x * 2`, `(a, b): a + b`, `(x: i32) 
 
 A function reference is a compile-time value that names one declaration: a source function, a native function, a built-in, or a lambda. It is that declaration, not a copy and not its name: its parameters with their annotations, its result, its bracket parameters, its body, and for a lambda the scope it is written in. Two references from one declaration are one function. A function's name and a lambda, written where a function reference stands, are function references.
 
-- A function reference stands in exactly these positions: the whole value of a compile-time `let`, top-level or local (§6.2, §6.3, §6.4); an argument where the receiving parameter has a function type or is called in the body; and the callee of a call (§5.7). Anywhere else, as an operand, an array element, an `if` or `match` arm, an attribute value, an input, a state, a record field, an interpolation or an `is` operand, it is an error whose summary says a function is not a value.
+- A function reference stands in exactly these positions: the whole value of a compile-time `let`, top-level or local (§6.2, §6.3, §6.4); an argument where the receiving parameter has a function type or is called in the body; and the callee of a call (§5.7). Anywhere else, as an operand, an array element, an `if` or `match` arm, an attribute value, a cell, a record field, an interpolation or an `is` operand, it is an error whose summary says a function is not a value.
 - A use substitutes the declaration. With `let baz = bar`, `baz(1.0, inc)` is `bar(1.0, inc)`, inlined and checked at that call as §6.3 says, `bar`'s annotated parameters fixed and its unannotated ones typed per call, and `count(held, baz)` is `count(held, bar)`. A recursive or a native function is called as §6.3 and §10.1 say, and a call through a reference is a call of the function for §6.3's recursion rule: `fn bar(n): if n < 1 then 0 else baz(n - 1)` with `let baz = bar` makes `bar` recursive, evaluated at compile time.
 - Where the body of the function that receives a reference calls its parameter, the call inlines the referenced body with its parameters bound to the call's arguments, as §6.3 inlines a call. Where the receiving parameter has a function type, the type flows into the function's parameters and result as their expected types (§4.2), and an annotation the function carries agrees with them or is an error; where it has none, the function's parameters are typed by those calls' arguments as §6.3 types a call. A native function that receives a reference calls it as §10.1 says. `each(xs, len)` passes the built-in `len`, and `sort_by(notes, before)` with `fn before(a, b): a.pitch < b.pitch` passes `before`.
 - A `let` holding a lambda holds the lambda expression. A use inlines its body with its parameters bound to the call's arguments, and the body reads the names in scope where the lambda is written, at the `let`, never at the use.
 - A function reference has no type of its own; a use types it as a use types an unannotated function (§6.3). A `let` holding one may carry a function type, `let inc: (f64) -> f64 = x: x + 1`, which fixes the lambda's parameter and result types (§4.5); on a `let` holding a function, the annotation agrees with the function's own annotations or is an error, and fixes its unannotated parameters and result for uses through that `let`.
-- A `let` holding a function reference is a compile-time value whatever the body reads, because the body runs only at a use; a cell read in the body makes that use reactive, as an argument's read does (§6.3). The `let` is never a cell and never reaches the Program. A `let` whose lambda names the `let` itself is §6.2's cycle error.
+- A `let` holding a function reference is a compile-time value whatever the body reads, because the body runs only at a use; a cell read in the body is read by that use, as an argument's read is (§6.3). The `let` is never a cell and never reaches the Program. A `let` whose lambda names the `let` itself is §6.2's cycle error.
 - A function type `(T1, T2) -> R` (§3.2) is the type of a function that takes parameters of the types `T1` and `T2` and yields an `R`. Its parameter and result types are value types, never function types. It stands only as the type of a function's or a native function's parameter and of a compile-time `let` holding a function reference, and on any other `let`, an input, a state, an attribute, a record field or an array element it is an error.
 - A parameter of a function type may carry a name, `(x: f64) -> f64`. The name labels the position for the reader and lets the body call the parameter by it, `f(x=seed)`, as named arguments name a source function's parameters (§5.7); the referenced function's own parameter names are its own and need not match.
 - A lambda's annotations fix its parameters' and its result's types as a function's do (§4.5).
@@ -1061,25 +1082,25 @@ A function reference is a compile-time value that names one declaration: a sourc
 fn count(xs, keep: (i32) -> bool):
     for x in xs into n from 0: if keep(x) then n + 1 else n
 
-input held: i32[..10] = []
-input threshold = 60
+state held([]): i32[..10]
+state threshold(60)
 
-let high = count(held, p: p > 60)
-let low = count(held, (p: i32) -> bool: p < 48)
-let above = count(held, p: p > threshold)
+state high = count(held, p: p > 60)
+state low = count(held, (p: i32) -> bool: p < 48)
+state above = count(held, p: p > threshold)
 
 fn is_high(p): p > 60
 
-let named = count(held, is_high)
+state named = count(held, is_high)
 
 fn count_high(xs):
     let keep = p: p > 60
     count(xs, keep)
 
-let local = count_high(held)
+state local = count_high(held)
 ```
 
-`above` reads `threshold` where its lambda is written, so it follows the input. `is_high` takes `p` as an `i32` and yields a `bool` from `count`'s function type, so `named` equals `high`, and so does `local`, whose local `let` holds the same lambda.
+`above` reads `threshold` where its lambda is written, so it follows the cell. `is_high` takes `p` as an `i32` and yields a `bool` from `count`'s function type, so `named` equals `high`, and so does `local`, whose local `let` holds the same lambda.
 
 A compile-time `let` holds a function reference, and a function type may name its parameters:
 
@@ -1109,10 +1130,10 @@ let ten = f(5)
 `ten` is 10: `dbl`'s body reads the `g` in scope where the lambda is written, never the local `g` of `f`.
 
 ```sym-error
-input g = x: x + 1
+state g(x: x + 1)
 ```
 
-This is an error: a function reference stands only in the positions above, and an input is a cell.
+This is an error: a function reference stands only in the positions above, and a cell holds no function.
 
 ```sym-error
 fn bar(n): n + 1
@@ -1176,7 +1197,7 @@ fn first[T, const N: i32](xs: T[N]) -> T: xs[0]
 
 fn mid[T: f32 | f64](a: T, b: T) -> T: (a + b) / 2
 
-input note: i32 = 60
+state note(60): i32
 
 let pitches: i32[3] = [60, 64, 67]
 let start: Stack[i32, 8] = {}
@@ -1340,8 +1361,8 @@ A single `|` opens the attribute clause, its first entry follows the `|` on the 
 The clause continues on following lines that start at its first entry's column (§2.2), without another `|`:
 
 ```sym
-input cutoff = 0.5
-let wobble = cutoff * 0.8
+state cutoff(0.5)
+state wobble = cutoff * 0.8
 
 Clip melody:
     Note/62 | velocity=0.7
@@ -1399,15 +1420,15 @@ A placement `for` repeats its body once for each element of its iterable. The it
 - a map (§3.10), entry by entry in insertion order;
 - a range `a..b`, which counts from `a` up to but excluding `b` and is empty when `b` is not above `a`.
 
-A bound of a range or of a slice (§3.7) has a minimum and a maximum read from its form: a literal and a compile-time value are their own minimum and maximum; `len(a)` of an array, a string or a map lies between 0 and `a`'s capacity (§3.3, §3.7, §3.10), and a document's `len` has no maximum by its form; `min(x, y)` has the smaller of its operands' minimums and the smaller of their maximums, and `max(x, y)` the larger of each; `x + y` has the sum of its operands' minimums and the sum of their maximums, and `x - y` has `x`'s minimum less `y`'s maximum and `x`'s maximum less `y`'s minimum. An operand that reads a cell and has none on a side by these forms is unbounded on that side, and these rules carry an unbounded side as they carry a number: `min(n, 16)` with an input `n` has the maximum 16 and no minimum, and `16 - n` has neither. A range's iteration count is at most its upper bound's maximum less its lower bound's minimum. An upper bound of a range that reads a cell and has no maximum, or a lower bound that reads a cell and has no minimum, is an error.
+A bound of a range or of a slice (§3.7) has a minimum and a maximum read from its form: a literal and a compile-time value are their own minimum and maximum; `len(a)` of an array, a string or a map lies between 0 and `a`'s capacity (§3.3, §3.7, §3.10), and a document's `len` has no maximum by its form; `min(x, y)` has the smaller of its operands' minimums and the smaller of their maximums, and `max(x, y)` the larger of each; `x + y` has the sum of its operands' minimums and the sum of their maximums, and `x - y` has `x`'s minimum less `y`'s maximum and `x`'s maximum less `y`'s minimum. An operand that reads a cell and has none on a side by these forms is unbounded on that side, and these rules carry an unbounded side as they carry a number: `min(n, 16)` with a cell `n` has the maximum 16 and no minimum, and `16 - n` has neither. A range's iteration count is at most its upper bound's maximum less its lower bound's minimum. An upper bound of a range that reads a cell and has no maximum, or a lower bound that reads a cell and has no minimum, is an error.
 
 A loop head binds one name or two. With one name, it is the element over an array, the key over a map and the value over a range. With two names, the first is the element's position and the second the element: over an array the index and the element, the index a flexible integer as a range's value is (§4.6), and over a map the key and the value. A range binds one name, and two are an error. An annotation fixes its name's type (§4.5).
 
 A placement `for`'s iterable is a compile-time value, and its loop names are compile-time values; an iterable there that reads a cell is an error. Placements in a `for` body are anonymous; `as` there is an error.
 
 ```sym
-input steps = [true, false, false, true, false, false, true, false]
-input pitches = [36, 36, 43, 36, 41, 36, 43, 48]
+state steps([true, false, false, true, false, false, true, false])
+state pitches([36, 36, 43, 36, 41, 36, 43, 48])
 
 Clip seq:
     for i in 0..8:
@@ -1423,12 +1444,12 @@ Clip strum:
 In `strum`, `i` is each note's position and `p` its pitch.
 
 ```sym
-input held: i32[..10] = []
-input counts: map[str[..16], i32][..8] = map {}
+state held([]): i32[..10]
+state counts(map {}): map[str[..16], i32][..8]
 
-let rises = for i in 1..len(held) into n from 0: if held[i] > held[i - 1] then n + 1 else n
-let total = for k, v in counts into sum from 0: sum + v
-let names = for k in counts into all from "": all + k
+state rises = for i in 1..len(held) into n from 0: if held[i] > held[i - 1] then n + 1 else n
+state total = for k, v in counts into sum from 0: sum + v
+state names = for k in counts into all from "": all + k
 ```
 
 `rises` runs at most 9 times, the maximum 10 of `len(held)` less the minimum 1. One name over `counts` binds its key, so `names` joins the keys and holds at most 128 characters, 16 for each of at most 8 iterations.
@@ -1442,9 +1463,9 @@ Clip c:
 This is an error: a range binds one name.
 
 ```sym-error
-input n = 4
+state n(4)
 
-let total = for i in 0..n into sum from 0: sum + i
+state total = for i in 0..n into sum from 0: sum + i
 
 Clip c:
     Note/total
@@ -1486,8 +1507,8 @@ A destination is a node reference: a name or a path, an `if` choosing between no
 - A destination names an instance placed elsewhere. It is never an inline placement or a pattern use written in the destination, and it contains no `to`.
 
 ```sym
-input section = 0
-input fill_on = false
+state section(0)
+state fill_on(false)
 
 Clip verse:
     Note/65 Note/67
@@ -1507,7 +1528,7 @@ Inside a wire placement's `/expr`, gate and attribute clause, `to` starts a path
 - `to` alone, a `to` path that ends at an instance or a wire, and `to` written outside a wire placement are errors; a function body is outside every wire placement.
 
 ```sym
-input section = 0
+state section(0)
 
 Clip verse:
     Plays | gain=to.hook.velocity: [chorus, bridge][section]
@@ -1619,7 +1640,7 @@ The compiler checks the expanded program (§6.4) against the vocabulary:
 - Wires form cycles only as §8.4 allows.
 
 ```sym
-input hit: Hit = {}
+state hit({}): Hit
 
 Pad kick | hit=hit
 ```
@@ -1639,9 +1660,9 @@ Compilation produces a Program. It contains:
 - the identity of the vocabulary it was compiled against;
 - every instance: its kind, path, attributes and gate, and its sequence of children, bundles and wires in source order;
 - every wire: its kind, path, source, destination candidates and choice, attributes and gate;
-- every record type an input, a cell or an attribute holds, with its fields, and every compile-time document (§3.11);
-- every input: its name, type, unit family and initial value, in top-level order, a pattern's inputs at their use's position (§6.4);
-- every reactive cell that something reads, in dependency order;
+- every record type a cell or an attribute holds, with its fields, and every compile-time document (§3.11);
+- every host-fed cell: its word, name, type, unit family, init and, for a `stream` or a `channel`, its capacity, in top-level order, a pattern's cells at their use's position (§6.4);
+- every derived cell that something reads, with its word, in dependency order;
 - every function body the compiler stores once, a shared body (§6.3), with the cells that invoke it through call nodes carrying their arguments;
 - the top-level instances in top-level order (§2.1).
 
@@ -1658,8 +1679,8 @@ Every instance and wire has a path, with segments joined by `.`:
 - An anonymous child or wire extends it with its kind and its position among the parent's anonymous entries of that kind, counted from 0 in sequence order, bundle members included: `verse.Note:2`.
 - A named pattern use contributes its name, and an anonymous use contributes the pattern's name and its position among the parent's anonymous uses of that pattern: `verse.Arp:0.Note:2`. The items a use expands to take their paths under its segment and do not count among the parent's entries, so in `Clip verse: Note/40 Arp/48 Note/41` the last note is `verse.Note:1`.
 - A use that stands in for a single placement (§6.4) gives that placement the use's path.
-- An input or a state declared in a pattern has the path of its use followed by its name: `verse.low.gain`.
-- A top-level input or state of a library is named by its package's identity (§15.1), `::` and its name: `prelude::path`, `github.com/acme/drums::swing`.
+- A cell declared in a pattern has the path of its use followed by its name: `verse.low.gain`.
+- A top-level cell of a library is named by its package's identity (§15.1), `::` and its name: `prelude::path`, `github.com/acme/drums::swing`.
 
 ## 12. Runtime semantics
 
