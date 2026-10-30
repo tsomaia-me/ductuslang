@@ -130,15 +130,12 @@
       "Bash(node_modules/.bin/wrangler r2 bucket delete*)",
       "Bash(node_modules/.bin/wrangler queues delete*)",
       "Bash(git push * --force*)",
-      "Bash(git push origin main)",
       "Bash(git push origin HEAD:main)",
       "Read(**/.env*)",
       "Bash(git -C * push*--force*)",
       "Bash(git -C * push* -f*)",
       "Bash(git -C * push origin main)",
       "Bash(git -C * push origin HEAD:main)",
-      "Bash(git push origin main:main*)",
-      "Bash(git push origin main *)",
       "Bash(git -C * reset --hard*)"
     ]
   },
