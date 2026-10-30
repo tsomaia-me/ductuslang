@@ -108,10 +108,10 @@ impl Engine<'_> {
                     return self.computed_iteration(node, loc, scope);
                 }
                 let array = match &val {
-                    Val::Array(array) if array.shape.depth() == 1 => array.clone(),
+                    Val::Array(array) => array.clone(),
                     Val::Error => return Ok(None),
                     Val::Scalar(node) if self.demand_sig(*node)?.is_error() => return Ok(None),
-                    Val::Array(_) | Val::Scalar(_) => {
+                    Val::Scalar(_) => {
                         self.error(Code::IterableType, loc, scope, ITERABLE)?;
                         return Ok(None);
                     }
@@ -146,9 +146,17 @@ impl Engine<'_> {
                     }
                 }
                 let group = self.value_group(expr, &val, scope)?;
-                let mut values = Vec::with_capacity(array.elements.len());
+                let mut reads = Vec::with_capacity(array.elements.len());
                 for element in &array.elements {
-                    values.push(Val::Scalar(self.chosen_read(*element, group, loc, scope)?));
+                    reads.push(self.chosen_read(*element, group, loc, scope)?);
+                }
+                let read = Val::array(array.shape.clone(), reads);
+                let length = array.shape.outer().unwrap_or(0);
+                let mut values = Vec::new();
+                for position in 0..length {
+                    let position = usize::try_from(position)
+                        .map_err(|_| Internal::missed("an element's position"))?;
+                    values.push(read.slice(position)?);
                 }
                 Some(Iteration::Values {
                     values,
@@ -185,12 +193,7 @@ impl Engine<'_> {
                 return Ok(None);
             }
         };
-        let lengths = array.lengths();
-        if lengths.len() != 1 {
-            self.error(Code::IterableType, loc, scope, ITERABLE)?;
-            return Ok(None);
-        }
-        self.require_shape(node, lengths, Code::IterableType, ITERABLE);
+        self.require_shape(node, array.lengths(), Code::IterableType, ITERABLE);
         Ok(Some(Iteration::Elements {
             base: node,
             length: array.len(),
@@ -344,7 +347,7 @@ impl Engine<'_> {
     }
 }
 
-const ITERABLE: &str = "a `for` iterates over a range or an array of single values";
+const ITERABLE: &str = "a `for` iterates over a range or an array";
 
 const REACTIVE: &str = "a `for` iterates over a compile-time value, and this one reads a cell";
 
