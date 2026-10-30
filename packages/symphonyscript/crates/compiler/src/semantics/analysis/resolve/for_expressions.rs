@@ -160,7 +160,13 @@ impl Engine<'_> {
                 None => {
                     let Some(layout) = merged_layout(head.start_layout.as_ref(), body_layout)
                     else {
-                        self.error(Code::TypeMismatch, loc, scope, LAYOUTS)?;
+                        self.error_helped(
+                            Code::TypeMismatch,
+                            loc,
+                            scope,
+                            LAYOUTS.to_string(),
+                            crate::diagnostics::for_start_and_body_help(),
+                        )?;
                         self.memo
                             .loop_templates
                             .insert((expr, scope), LoopTemplate::Final(None));

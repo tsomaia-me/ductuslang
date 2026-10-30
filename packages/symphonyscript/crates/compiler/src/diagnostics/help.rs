@@ -23,6 +23,21 @@ pub(crate) fn index_outside_help(length: u64) -> Option<String> {
     })
 }
 
+pub(crate) fn for_start_and_body_help() -> String {
+    String::from(
+        "give the start and the body values of one type and shape, as the two arms of an `if` are",
+    )
+}
+
+pub(crate) fn accumulator_capacity_help(annotated: i128, holds: i128) -> String {
+    let kept = if annotated == 1 {
+        String::from("its newest element with `[^1..]`")
+    } else {
+        format!("its newest {annotated} elements with `[^{annotated}..]`")
+    };
+    format!("slice the body's value to {kept}, or annotate a capacity of at least {holds}")
+}
+
 fn opener_of(closer: char) -> Option<char> {
     Some(match closer {
         ')' => '(',
@@ -70,7 +85,7 @@ pub(super) fn help(code: Code) -> Option<&'static str> {
         Code::DuplicateName => "rename one of the two declarations",
         Code::CompileTimeNative => "pass arguments known at compile time",
         Code::ChildNameClash => "rename one of the two",
-        Code::ForVariableClash => "rename the `for` variable",
+        Code::ForVariableClash => "rename the name the `for` binds",
         Code::DuplicateLocal => "rename one of the two",
         Code::ParameterOrder => "move the parameters that have defaults after the others",
         Code::DuplicateDefaultParameter => "mark one parameter `default`",

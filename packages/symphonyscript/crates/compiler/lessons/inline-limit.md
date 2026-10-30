@@ -1,6 +1,6 @@
 # inline-limit
 
-A compilation inlines at most 1,000,000 calls of functions that are not recursive. (SPEC §4.6)
+A compilation inlines at most 1,000,000 calls of functions that are not recursive, a call counting each time the body holding it is inlined or expanded, and a `for` expression's body counting once however many times it runs. (SPEC §4.6)
 
 Each call copies its function's body, so nested calls can multiply without end.
 

@@ -17,6 +17,9 @@ mod severity;
 
 pub use code::Code;
 pub use diagnostic::Diagnostic;
-pub(crate) use help::{index_outside_help, mismatched_closer_help, stray_closer_help};
+pub(crate) use help::{
+    accumulator_capacity_help, for_start_and_body_help, index_outside_help, mismatched_closer_help,
+    stray_closer_help,
+};
 pub use related::Related;
 pub use severity::Severity;

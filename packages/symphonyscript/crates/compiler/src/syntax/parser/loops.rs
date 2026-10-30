@@ -40,7 +40,7 @@ impl Parser<'_> {
     pub(super) fn unparenthesized_for(&mut self) {
         self.error(
             Code::UnparenthesizedFor,
-            "a `for` expression that is not the whole value of a `let`, a cell's rule or a function body stands in parentheses",
+            "a `for` expression that is not the whole value of a `let`, a local `let`, a derived cell's rule or a function body stands in parentheses",
         );
     }
 

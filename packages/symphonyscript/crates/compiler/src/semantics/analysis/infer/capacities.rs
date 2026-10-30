@@ -1051,12 +1051,14 @@ impl Engine<'_> {
         };
         let annotated = i128::from(annotated);
         if most > annotated && self.memo.loop_reports.insert(node) {
-            self.error_at_node(
+            self.error_at_node_helped(
                 Code::CapacityExceeded,
                 node,
+                Vec::new(),
                 format!(
                     "this `for` expression holds up to {most} elements, more than the annotated capacity {annotated} of its accumulator"
                 ),
+                crate::diagnostics::accumulator_capacity_help(annotated, most),
             )?;
         }
         Ok(Extent::Variable(Piecewise::constant(annotated)))

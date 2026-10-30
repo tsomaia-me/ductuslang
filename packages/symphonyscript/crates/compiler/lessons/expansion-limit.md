@@ -1,6 +1,6 @@
 # expansion-limit
 
-A compilation runs at most 1,000,000 `for` iterations and pattern uses and yields at most 1,000,000 instances and wires. (SPEC §4.6)
+A compilation runs at most 1,000,000 `for` iterations and pattern uses, the iterations of a compile-time `for` expression counting among them, and yields at most 1,000,000 instances and wires. (SPEC §4.6)
 
 The limit keeps a mistaken bound from building an endless program.
 

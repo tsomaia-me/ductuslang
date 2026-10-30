@@ -762,6 +762,16 @@ const RULES: &[Rule] = &[
         "range-bound",
         "input n = 4\nstate total = for i in 0..n into sum from 0: sum + i\nClip c:\n    Note/total\n",
     ),
+    rule(
+        "7.9",
+        "does-not-fit",
+        "Clip c:\n    for x: u8 in [1, 300]:\n        Note/x\n",
+    ),
+    rule(
+        "5.10",
+        "inline-limit",
+        "fn h0(x): x\nfn h1(x): h0(x) + h0(x) + h0(x) + h0(x) + h0(x) + h0(x) + h0(x) + h0(x) + h0(x) + h0(x)\nfn h2(x): h1(x) + h1(x) + h1(x) + h1(x) + h1(x) + h1(x) + h1(x) + h1(x) + h1(x) + h1(x)\nfn h3(x): h2(x) + h2(x) + h2(x) + h2(x) + h2(x) + h2(x) + h2(x) + h2(x) + h2(x) + h2(x)\nfn h4(x): h3(x) + h3(x) + h3(x) + h3(x) + h3(x) + h3(x) + h3(x) + h3(x) + h3(x) + h3(x)\nfn h5(x): h4(x) + h4(x) + h4(x) + h4(x) + h4(x) + h4(x) + h4(x) + h4(x) + h4(x) + h4(x)\nfn h6(x): h5(x) + h5(x) + h5(x) + h5(x) + h5(x) + h5(x) + h5(x) + h5(x) + h5(x) + h5(x)\nlet v = for i in 0..2 into s from 0: s + h6(i)\nClip k:\n    Note/(v)\n",
+    ),
     low_limits(
         "4.6",
         "expansion-limit",

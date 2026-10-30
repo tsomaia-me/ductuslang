@@ -283,7 +283,7 @@ impl Engine<'_> {
                 Code::ReactiveIterable,
                 loc,
                 scope,
-                "a `for` iterates over a compile-time value, and this bound reads a cell",
+                "a placement `for` iterates over a compile-time value, and this bound reads a cell",
             )?;
             return Ok(None);
         }
@@ -349,7 +349,8 @@ impl Engine<'_> {
 
 const ITERABLE: &str = "a `for` iterates over a range or an array";
 
-const REACTIVE: &str = "a `for` iterates over a compile-time value, and this one reads a cell";
+const REACTIVE: &str =
+    "a placement `for` iterates over a compile-time value, and this one reads a cell";
 
 const RANGE_NAMES: &str =
     "a range binds one name; two names iterate an array, its positions and its elements";

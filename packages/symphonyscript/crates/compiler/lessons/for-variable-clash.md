@@ -1,8 +1,8 @@
 # for-variable-clash
 
-A `for` variable equal to a visible name is an error. (SPEC §6.5)
+A `for` variable equal to a visible name is an error, and so is a `for` expression's loop name, its accumulator or its block form's local `let` equal to a visible name. (SPEC §6.5)
 
-The variable would hide that name in the loop's body.
+The name would hide the visible one in the loop's body.
 
 ```sym-error
 Clip c:

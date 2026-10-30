@@ -510,9 +510,17 @@ fn the_accumulator_takes_the_type_its_start_and_body_unify_to_as_if_arms_do_and_
             let text = reading(written);
             let found = errors(&compiler, &text);
             let place = if spanned.is_empty() { written } else { spanned };
+            let helped = |diagnostic: &Diagnostic| {
+                code != Code::TypeMismatch
+                    || !written.starts_with("for")
+                    || diagnostic.help.as_deref()
+                        == Some(
+                            "give the start and the body values of one type and shape, as the two arms of an `if` are",
+                        )
+            };
             assert!(
                 matches!(found.as_slice(), [diagnostic]
-                    if diagnostic.code == code && at(&text, diagnostic) == place),
+                    if diagnostic.code == code && at(&text, diagnostic) == place && helped(diagnostic)),
                 "{text}\n  draws {found:?}, not one {code:?} at {place:?}"
             );
         }
@@ -530,9 +538,14 @@ fn a_capacity_past_an_annotated_accumulator_names_both_and_the_fix_its_help_name
         matches!(found.as_slice(), [diagnostic]
             if diagnostic.code == Code::CapacityExceeded
                 && diagnostic.summary.contains("10")
-                && diagnostic.summary.contains("annotated capacity 3")),
+                && diagnostic.summary.contains("annotated capacity 3")
+                && diagnostic.help.as_deref() == Some("slice the body's value to its newest 3 elements with `[^3..]`, or annotate a capacity of at least 10")),
         "{text}\n  draws {found:?}"
     );
-    let fixed = text.replace("kept + [x]", "(kept + [x])[^3..]");
-    assert_eq!(errors(&compiler, &fixed), vec![], "{fixed}");
+    for fixed in [
+        text.replace("kept + [x]", "(kept + [x])[^3..]"),
+        text.replace("i32[..3]", "i32[..10]"),
+    ] {
+        assert_eq!(errors(&compiler, &fixed), vec![], "{fixed}");
+    }
 }

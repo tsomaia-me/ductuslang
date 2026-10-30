@@ -30,7 +30,13 @@ impl Engine<'_> {
             return Err(Internal::missed("operand signature"));
         };
         let Some(kind) = unify_kinds(start.kind, body.kind) else {
-            self.error_at_node(Code::TypeMismatch, node, START_AND_BODY)?;
+            self.error_at_node_helped(
+                Code::TypeMismatch,
+                node,
+                Vec::new(),
+                START_AND_BODY.to_string(),
+                crate::diagnostics::for_start_and_body_help(),
+            )?;
             return Ok(Sig::ERROR);
         };
         let Some(family) =

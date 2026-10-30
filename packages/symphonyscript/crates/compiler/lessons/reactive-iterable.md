@@ -1,8 +1,8 @@
 # reactive-iterable
 
-An iterable that reads a cell is an error. (SPEC §7.9)
+A placement `for`'s iterable is a compile-time value, and an iterable there that reads a cell is an error. (SPEC §7.9)
 
-A `for` expands when the program compiles.
+A placement `for` expands when the program compiles, so its iterations cannot wait on a cell; a `for` expression folds a cell's elements instead.
 
 ```sym-error
 input x = 1

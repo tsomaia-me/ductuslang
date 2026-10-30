@@ -1,6 +1,6 @@
 # capacity-exceeded
 
-A value bound to a variable-array attribute or annotation holds at most its capacity. (SPEC §3.7)
+A value bound to a variable-array attribute or annotation holds at most its capacity (SPEC §3.7), and a `for` expression whose body's rule finds a capacity beyond its accumulator's annotated one is an error naming both (SPEC §5.10).
 
 The runtime holds every variable array in a buffer of its capacity.
 

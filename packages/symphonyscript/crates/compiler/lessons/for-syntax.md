@@ -1,8 +1,8 @@
 # for-syntax
 
-A `for` is `for`, a name, `in`, an iterable, `:` and its body. (SPEC §7.9)
+A `for` is `for`, one name or two separated by `,`, each with an optional annotation, `in`, an iterable, `:` and its body. (SPEC §7.9)
 
-The name is the loop variable its body reads.
+The names are the loop's variables its body reads.
 
 ```sym-error
 Clip c:
@@ -10,7 +10,7 @@ Clip c:
         Note
 ```
 
-The `for` has no variable.
+The `for` has no name.
 
 ```sym
 Clip c:
