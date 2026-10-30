@@ -27,6 +27,8 @@ use crate::semantics::analysis::frame_read::FrameRead;
 use crate::semantics::analysis::ids::{NodeId, ScopeId};
 use crate::semantics::analysis::item_ref::ItemRef;
 use crate::semantics::analysis::kind::Kind;
+use crate::semantics::analysis::limit::Limit;
+use crate::semantics::analysis::limit_warning::warned;
 use crate::semantics::analysis::map_leaves::map_leaves;
 use crate::semantics::analysis::op::Op;
 use crate::semantics::analysis::param_source::ParamSource;
@@ -678,7 +680,7 @@ impl Engine<'_> {
                     }
                 };
                 let defaults = some!(self.default_work(&call, need)?);
-                if !self.within_call_limit(node, call.function)? {
+                if !self.within_call_limit(node, call.function, false)? {
                     return Ok(Some(CVal::Error));
                 }
                 let ty = self.body_type(root, own)?;
@@ -710,6 +712,7 @@ impl Engine<'_> {
                     open: [(call.function, 1)].into_iter().collect(),
                     open_keys: [call.key.clone()].into_iter().collect(),
                     too_deep: false,
+                    deep_warned: false,
                     tainted_calls: FastMap::default(),
                 }
             }
@@ -878,30 +881,36 @@ impl Engine<'_> {
             return Ok(Some(CVal::Error));
         }
         if !bounded && (repeats || depth >= self.limits.nesting_depth) {
-            let mut names: Vec<String> = Vec::new();
-            let functions: Vec<FnId> = self
-                .machine_mut()?
-                .frames
-                .iter()
-                .map(|frame| frame.function)
-                .collect();
-            for function in functions.into_iter().chain([call.function]) {
-                let name = self.function_name(function)?;
-                if !names.contains(&name) {
-                    names.push(name);
-                }
-            }
+            let names = self.nested_names(call.function)?;
             self.error_at_node(
                 Code::RecursionDepth,
                 node,
                 format!(
-                    "the evaluation goes deeper than {} nested calls: {}",
+                    "the evaluation goes deeper than {} nested calls: {names}",
                     grouped(self.limits.nesting_depth),
-                    names.join(" → ")
                 ),
             )?;
             self.machine_mut()?.too_deep = true;
             return Ok(Some(CVal::Error));
+        }
+        if !bounded
+            && !quiet
+            && depth >= self.limits.nesting_depth_warning
+            && !self.machine_mut()?.deep_warned
+        {
+            self.machine_mut()?.deep_warned = true;
+            let names = self.nested_names(call.function)?;
+            let counted = format!(
+                "the evaluation goes deeper than {} nested calls",
+                grouped(self.limits.nesting_depth_warning)
+            );
+            self.error_at_node_helped(
+                Code::LimitWarning,
+                node,
+                Vec::new(),
+                format!("{}: {names}", warned(&counted, self.limits.nesting_depth)),
+                Limit::NestingDepth.warning_help(),
+            )?;
         }
         let root = match some!(self.template(
             call.function,
@@ -921,7 +930,7 @@ impl Engine<'_> {
             self.taint(caller)?;
             return Ok(Some(CVal::Error));
         }
-        if !self.within_call_limit(node, call.function)? {
+        if !self.within_call_limit(node, call.function, quiet)? {
             return Ok(Some(CVal::Error));
         }
         let ty = self.body_type(root, own)?;
@@ -1102,9 +1111,51 @@ impl Engine<'_> {
         })
     }
 
-    fn within_call_limit(&mut self, node: NodeId, function: FnId) -> Result<bool, Internal> {
+    fn nested_names(&mut self, last: FnId) -> Result<String, Internal> {
+        let mut names: Vec<String> = Vec::new();
+        let functions: Vec<FnId> = self
+            .machine_mut()?
+            .frames
+            .iter()
+            .map(|frame| frame.function)
+            .collect();
+        for function in functions.into_iter().chain([last]) {
+            let name = self.function_name(function)?;
+            if !names.contains(&name) {
+                names.push(name);
+            }
+        }
+        Ok(names.join(" → "))
+    }
+
+    fn within_call_limit(
+        &mut self,
+        node: NodeId,
+        function: FnId,
+        quiet: bool,
+    ) -> Result<bool, Internal> {
         self.call_count += 1;
         if self.call_count <= self.limits.recursive_calls {
+            if !quiet
+                && !self.call_warning_reported
+                && self.call_count > self.limits.recursive_calls_warning
+            {
+                self.call_warning_reported = true;
+                let counted = format!(
+                    "this call of `{}` exceeds {} distinct recursive calls",
+                    self.function_name(function)?,
+                    grouped(self.limits.recursive_calls_warning)
+                );
+                let at = {
+                    let record = self.node(node)?;
+                    (record.loc, record.scope)
+                };
+                self.warn_limit(
+                    Limit::RecursiveCalls,
+                    at,
+                    (counted, self.limits.recursive_calls),
+                )?;
+            }
             return Ok(true);
         }
         if !self.call_limit_reported {

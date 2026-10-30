@@ -280,6 +280,11 @@ const RULES: &[Rule] = &[
         "recursion-limit",
         "fn f(a, b, c): if a < 1 then 0 else f(a - 1, b + 1, c) + f(a - 1, b, c + 1) + f(a - 1, b, c)\nClip k:\n    Note/(f(200, 0, 0))\n",
     ),
+    rule(
+        "4.6",
+        "limit-warning",
+        "fn r(n): if n < 1 then 0 else r(n - 1)\nClip c:\n    Note/(r(512))\n",
+    ),
     rule("5.1", "expression-syntax", "let a = (1 +)\n"),
     rule("5.1", "chained-comparison", "let a = 1 < 2 < 3\n"),
     rule(

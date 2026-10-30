@@ -13,5 +13,6 @@ pub(crate) struct Machine {
     pub open: FastMap<FnId, u64>,
     pub open_keys: FastSet<CallKey>,
     pub too_deep: bool,
+    pub deep_warned: bool,
     pub tainted_calls: FastMap<CallKey, CVal>,
 }

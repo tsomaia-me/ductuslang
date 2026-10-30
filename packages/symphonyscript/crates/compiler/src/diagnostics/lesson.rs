@@ -126,6 +126,7 @@ pub(super) fn lesson(code: Code) -> &'static str {
         Code::ReactiveRecursion => include_str!("../../lessons/reactive-recursion.md"),
         Code::RecursionDepth => include_str!("../../lessons/recursion-depth.md"),
         Code::RecursionLimit => include_str!("../../lessons/recursion-limit.md"),
+        Code::LimitWarning => include_str!("../../lessons/limit-warning.md"),
         Code::ReactiveNodeReference => include_str!("../../lessons/reactive-node-reference.md"),
         Code::DoesNotFit => include_str!("../../lessons/does-not-fit.md"),
         Code::IntegerOverflow => include_str!("../../lessons/integer-overflow.md"),

@@ -138,6 +138,7 @@ codes!(
     ReactiveRecursion,
     RecursionDepth,
     RecursionLimit,
+    LimitWarning,
     ReactiveNodeReference,
     DoesNotFit,
     IntegerOverflow,
@@ -284,6 +285,7 @@ impl Code {
             Code::ReactiveRecursion => "reactive-recursion",
             Code::RecursionDepth => "recursion-depth",
             Code::RecursionLimit => "recursion-limit",
+            Code::LimitWarning => "limit-warning",
             Code::ReactiveNodeReference => "reactive-node-reference",
             Code::DoesNotFit => "does-not-fit",
             Code::IntegerOverflow => "integer-overflow",
@@ -410,6 +412,7 @@ impl Code {
             Code::ReactiveRecursion => "6.3",
             Code::RecursionDepth => "6.3",
             Code::RecursionLimit => "4.6",
+            Code::LimitWarning => "4.6",
             Code::ReactiveNodeReference => "6.2",
             Code::DoesNotFit => "4.1",
             Code::IntegerOverflow => "4.6",
@@ -457,9 +460,10 @@ impl Code {
 
     pub fn severity(self) -> Severity {
         match self {
-            Code::IntegerInput | Code::UnreachableInstance | Code::NoEntryInstance => {
-                Severity::Warning
-            }
+            Code::IntegerInput
+            | Code::UnreachableInstance
+            | Code::NoEntryInstance
+            | Code::LimitWarning => Severity::Warning,
             Code::UnexpectedCharacter
             | Code::TabIndentation
             | Code::DedentMismatch

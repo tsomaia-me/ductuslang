@@ -85,6 +85,7 @@ impl Engine<'_> {
                 if total > self.limits.inlined_calls {
                     return self.report_inline_limit(function, node.loc, scope);
                 }
+                self.warn_inlined(total, function, (node.loc, scope))?;
                 stack.extend(args.values().into_iter().rev());
             }
         }

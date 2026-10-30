@@ -12,6 +12,7 @@ use crate::semantics::Internal;
 use crate::semantics::analysis::answers::ArmShape;
 use crate::semantics::analysis::engine::Engine;
 use crate::semantics::analysis::ids::ScopeId;
+use crate::semantics::analysis::limit::Limit;
 use crate::semantics::analysis::local_name::LocalName;
 use crate::semantics::analysis::locals::Locals;
 use crate::semantics::analysis::locals_owner::LocalsOwner;
@@ -530,10 +531,38 @@ impl Engine<'_> {
         }
         self.inlined = self.inlined.saturating_add(count);
         if self.inlined <= self.limits.inlined_calls {
+            self.warn_inlined(self.inlined, function, (loc, scope))?;
             return Ok(true);
         }
         self.report_inline_limit(function, loc, scope)?;
         Ok(false)
+    }
+
+    pub(in crate::semantics::analysis) fn warn_inlined(
+        &mut self,
+        total: u64,
+        function: FnId,
+        at: (Loc, ScopeId),
+    ) -> Result<(), Internal> {
+        if self.inline_warning_reported || total <= self.limits.inlined_calls_warning {
+            return Ok(());
+        }
+        self.inline_warning_reported = true;
+        let name = self
+            .hir
+            .fn_decl(function)?
+            .name
+            .as_ref()
+            .map_or(String::new(), |name| name.text.clone());
+        let counted = format!(
+            "this call of `{name}` makes the compilation inline more than {} calls",
+            grouped(self.limits.inlined_calls_warning)
+        );
+        self.warn_limit(
+            Limit::InlinedCalls,
+            at,
+            (counted, self.limits.inlined_calls),
+        )
     }
 
     pub(in crate::semantics::analysis) fn bounded_cycle(

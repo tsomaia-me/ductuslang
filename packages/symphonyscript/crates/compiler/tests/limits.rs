@@ -1,8 +1,8 @@
 mod support;
 
-use symphonyscript::{Code, Compiler, Severity, Source};
+use symphonyscript::{Code, Compiler, Diagnostic, Severity, Source};
 use symphonyscript_core::{Count, LimitOverrides, Vocabulary};
-use symphonyscript_fixtures::vocabulary;
+use symphonyscript_fixtures::{Rows, covered, vocabulary};
 
 fn codes(text: &str) -> Vec<Code> {
     support::checked(text)
@@ -595,4 +595,338 @@ fn exhaustive_a_limit_reached_through_a_default_that_calls_its_function_names_th
     a_limit_reached_through_a_default_that_calls_its_function_names_the_default_in_its_help_in(
         support::Orders::Every,
     );
+}
+
+struct Counted {
+    key: &'static str,
+    program: fn(u64) -> String,
+    error: Code,
+    counted: fn(u64) -> String,
+}
+
+fn counted_sites() -> [Counted; 9] {
+    [
+        Counted {
+            key: "recursive_calls",
+            program: recursing,
+            error: Code::RecursionLimit,
+            counted: |warning| {
+                format!("this call of `g` exceeds {warning} distinct recursive calls")
+            },
+        },
+        Counted {
+            key: "nesting_depth",
+            program: nested,
+            error: Code::RecursionDepth,
+            counted: |warning| format!("the evaluation goes deeper than {warning} nested calls"),
+        },
+        Counted {
+            key: "inlined_calls",
+            program: inlining,
+            error: Code::InlineLimit,
+            counted: |warning| format!("makes the compilation inline more than {warning} calls"),
+        },
+        Counted {
+            key: "inlined_calls",
+            program: inlining_into_a_let,
+            error: Code::InlineLimit,
+            counted: |warning| format!("makes the compilation inline more than {warning} calls"),
+        },
+        Counted {
+            key: "inlined_calls",
+            program: inlining_into_a_bound,
+            error: Code::InlineLimit,
+            counted: |warning| format!("makes the compilation inline more than {warning} calls"),
+        },
+        Counted {
+            key: "expansion_steps",
+            program: iterations,
+            error: Code::ExpansionLimit,
+            counted: |warning| {
+                format!("the expansion runs more than {warning} `for` iterations and pattern uses")
+            },
+        },
+        Counted {
+            key: "expansion_steps",
+            program: uses_in_a_body,
+            error: Code::ExpansionLimit,
+            counted: |warning| {
+                format!("the expansion runs more than {warning} `for` iterations and pattern uses")
+            },
+        },
+        Counted {
+            key: "expanded_items",
+            program: |count| iterations(count - 1),
+            error: Code::ExpansionLimit,
+            counted: |warning| {
+                format!("the expansion yields more than {warning} instances and wires")
+            },
+        },
+        Counted {
+            key: "expanded_items",
+            program: |count| wires(count as usize - 2),
+            error: Code::ExpansionLimit,
+            counted: |warning| {
+                format!("the expansion yields more than {warning} instances and wires")
+            },
+        },
+    ]
+}
+
+fn inlining_into_a_let(total: u64) -> String {
+    let mut text = String::from("input i = 1\nfn f0(x): x\n");
+    for level in 1..20 {
+        let below = level - 1;
+        text.push_str(&format!("fn f{level}(x): f{below}(x) + f{below}(x)\n"));
+    }
+    let calls: Vec<String> = sizes_totalling(total)
+        .into_iter()
+        .map(|level| format!("f{level}(i)"))
+        .collect();
+    text.push_str(&format!(
+        "let v = {}\nClip c:\n    Note/(v)\n",
+        calls.join(" + ")
+    ));
+    text
+}
+
+fn inlining_into_a_bound(total: u64) -> String {
+    let calls = vec!["f(0)"; total as usize].join(" + ");
+    format!("fn f(x): x\nClip c:\n    for k in 0..({calls}):\n        Note\n")
+}
+
+fn uses_in_a_body(count: u64) -> String {
+    format!(
+        "pattern P():\n    for j in 0..0:\n        Note\nClip c:\n{}",
+        "    P\n".repeat(count as usize)
+    )
+}
+
+fn limit_and_warning(key: &str, limit: Option<u64>, warning: Option<u64>) -> LimitOverrides {
+    let mut overrides = LimitOverrides::default();
+    let (limit_field, warning_field) = match key {
+        "recursive_calls" => (
+            &mut overrides.recursive_calls,
+            &mut overrides.recursive_calls_warning,
+        ),
+        "nesting_depth" => (
+            &mut overrides.nesting_depth,
+            &mut overrides.nesting_depth_warning,
+        ),
+        "inlined_calls" => (
+            &mut overrides.inlined_calls,
+            &mut overrides.inlined_calls_warning,
+        ),
+        "expansion_steps" => (
+            &mut overrides.expansion_steps,
+            &mut overrides.expansion_steps_warning,
+        ),
+        "expanded_items" => (
+            &mut overrides.expanded_items,
+            &mut overrides.expanded_items_warning,
+        ),
+        other => panic!("no limit {other}"),
+    };
+    *limit_field = limit;
+    *warning_field = warning;
+    overrides
+}
+
+fn checked_within(overrides: LimitOverrides, text: &str) -> Vec<Diagnostic> {
+    Compiler::with_limits(&vocabulary(), overrides)
+        .expect("the vocabulary compiles")
+        .check(&[support::source(text)])
+}
+
+const UNFITTING_INPUT: &str = "input wide: u8 = 300\n";
+
+fn a_count_past_its_warning_value_draws_the_warning_where_the_limit_would_draw_its_error_in(
+    rows: &Rows,
+) -> (Vec<String>, usize) {
+    let limit = 10;
+    let mut failures = Vec::new();
+    let mut taken = 0;
+    for (site_tag, site) in counted_sites().iter().enumerate() {
+        for (warning_tag, warning) in [5, 10, 15].into_iter().enumerate() {
+            for (count_tag, count) in [4, 7, 12].into_iter().enumerate() {
+                for (beside_tag, beside) in ["", UNFITTING_INPUT].into_iter().enumerate() {
+                    if (count > limit && !beside.is_empty())
+                        || !rows.take(&[site_tag, warning_tag, count_tag, beside_tag])
+                    {
+                        continue;
+                    }
+                    taken += 1;
+                    let text = format!("{beside}{}", (site.program)(count));
+                    let found = checked_within(
+                        limit_and_warning(site.key, Some(limit), Some(warning)),
+                        &text,
+                    );
+                    let warns = warning < limit && count > warning;
+                    let mut expected: Vec<Code> = Vec::new();
+                    if !beside.is_empty() {
+                        expected.push(Code::DoesNotFit);
+                    }
+                    if warns {
+                        expected.push(Code::LimitWarning);
+                    }
+                    if count > limit {
+                        expected.push(site.error);
+                    }
+                    expected.sort();
+                    let mut codes: Vec<Code> = found
+                        .iter()
+                        .filter(|diagnostic| {
+                            diagnostic.severity() == Severity::Error
+                                || diagnostic.code == Code::LimitWarning
+                        })
+                        .map(|diagnostic| diagnostic.code)
+                        .collect();
+                    codes.sort();
+                    let row = format!("{} at limit {limit}, warning {warning}:\n{text}", site.key);
+                    if codes != expected {
+                        failures.push(format!("{row}\n  draws {codes:?}, expected {expected:?}"));
+                        continue;
+                    }
+                    if !warns {
+                        continue;
+                    }
+                    let Some(drawn) = found
+                        .iter()
+                        .find(|diagnostic| diagnostic.code == Code::LimitWarning)
+                    else {
+                        continue;
+                    };
+                    let summary = format!(
+                        "{}, the warning value of the limit of {limit}",
+                        (site.counted)(warning)
+                    );
+                    let help = format!(
+                        "reduce the work, or raise `{key}_warning` in the package's `options` or with `--limit {key}_warning=<value>`",
+                        key = site.key
+                    );
+                    let twin = checked_within(
+                        limit_and_warning(site.key, Some(warning), None),
+                        &(site.program)(count),
+                    );
+                    let error = twin.iter().find(|diagnostic| diagnostic.code == site.error);
+                    let placed = error.is_some_and(|error| {
+                        let shift = beside.len() as u32;
+                        drawn.span.range.start == error.span.range.start + shift
+                            && drawn.span.range.end == error.span.range.end + shift
+                            && drawn.related.len() == error.related.len()
+                            && drawn
+                                .related
+                                .iter()
+                                .zip(&error.related)
+                                .all(|(ours, theirs)| {
+                                    ours.label == theirs.label
+                                        && ours.span.range.start == theirs.span.range.start + shift
+                                })
+                    });
+                    if !drawn.summary.contains(&summary)
+                        || drawn.help.as_deref() != Some(help.as_str())
+                        || !placed
+                    {
+                        failures.push(format!("{row}\n  draws {drawn:?}\n  twin {error:?}"));
+                    }
+                }
+            }
+        }
+    }
+    (failures, taken)
+}
+
+#[test]
+fn a_count_past_its_warning_value_draws_the_warning_where_the_limit_would_draw_its_error() {
+    let (mut failures, _) = covered(|rows| {
+        a_count_past_its_warning_value_draws_the_warning_where_the_limit_would_draw_its_error_in(
+            rows,
+        )
+    });
+    let each_site = (0..counted_sites().len()).flat_map(|site| {
+        [
+            [site, 0, 0, 0],
+            [site, 0, 1, 0],
+            [site, 0, 2, 0],
+            [site, 1, 2, 0],
+        ]
+        .into_iter()
+        .map(|tag| tag.to_vec())
+    });
+    let (each_failures, taken) =
+        a_count_past_its_warning_value_draws_the_warning_where_the_limit_would_draw_its_error_in(
+            &Rows::Chosen(std::sync::Mutex::new(each_site.collect())),
+        );
+    assert_eq!(taken, 36);
+    failures.extend(each_failures);
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_a_count_past_its_warning_value_draws_the_warning_where_the_limit_would_draw_its_error()
+ {
+    let (failures, taken) =
+        a_count_past_its_warning_value_draws_the_warning_where_the_limit_would_draw_its_error_in(
+            &Rows::Every,
+        );
+    assert_eq!(taken, 135);
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+#[test]
+#[ignore = "stress"]
+fn stress_each_limit_draws_its_warning_past_half_its_default() {
+    let rows = [
+        (
+            recursing(500_001),
+            "this call of `g` exceeds 500,000 distinct recursive calls, the warning value of the limit of 1,000,000",
+        ),
+        (
+            nested(513),
+            "the evaluation goes deeper than 512 nested calls, the warning value of the limit of 1,024: r",
+        ),
+        (
+            inlining(500_001),
+            "makes the compilation inline more than 500,000 calls, the warning value of the limit of 1,000,000",
+        ),
+        (
+            empty_iterations(500_001),
+            "the expansion runs more than 500,000 `for` iterations and pattern uses, the warning value of the limit of 1,000,000",
+        ),
+        (
+            iterations(500_000),
+            "the expansion yields more than 500,000 instances and wires, the warning value of the limit of 1,000,000",
+        ),
+    ];
+    let compiler = Compiler::new(&vocabulary()).expect("the vocabulary compiles");
+    for (text, summary) in rows {
+        let found: Vec<(Code, String)> = compiler
+            .check(&[support::source(&text)])
+            .into_iter()
+            .filter(|diagnostic| diagnostic.code != Code::NoEntryInstance)
+            .map(|diagnostic| (diagnostic.code, diagnostic.summary))
+            .collect();
+        assert!(
+            matches!(found.as_slice(), [(Code::LimitWarning, drawn)] if drawn.ends_with(summary)),
+            "{found:?} against {summary:?}"
+        );
+    }
+}
+
+#[test]
+fn a_call_whose_inlining_passes_the_warning_value_and_the_limit_at_once_draws_the_error_alone() {
+    let overrides = limit_and_warning("inlined_calls", Some(10), Some(5));
+    for (text, expected) in [
+        (inlining(7), vec![Code::LimitWarning]),
+        (inlining(15), vec![Code::InlineLimit]),
+        (inlining(14), vec![Code::LimitWarning, Code::InlineLimit]),
+    ] {
+        let codes: Vec<Code> = checked_within(overrides, &text)
+            .iter()
+            .filter(|diagnostic| diagnostic.code != Code::NoEntryInstance)
+            .map(|diagnostic| diagnostic.code)
+            .collect();
+        assert_eq!(codes, expected, "{text}");
+    }
 }

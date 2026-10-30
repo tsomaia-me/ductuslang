@@ -210,6 +210,9 @@ pub(super) fn help(code: Code) -> Option<&'static str> {
             "let the recursion reach its base case within the limit, or declare `bounded N else fallback`"
         }
         Code::RecursionLimit => "reduce the distinct arguments the recursion computes",
+        Code::LimitWarning => {
+            "reduce the work the limit counts, or raise its warning value in the package's `options`"
+        }
         Code::ReactiveNodeReference => {
             "choose the destination in the wire itself, as in `Plays: [verse, chorus][i]`"
         }

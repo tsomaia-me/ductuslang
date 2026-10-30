@@ -17,6 +17,7 @@ use crate::semantics::analysis::ids::{InstanceId, ScopeId, UseId, WireId};
 use crate::semantics::analysis::index::index;
 use crate::semantics::analysis::instance::Instance;
 use crate::semantics::analysis::item_ref::ItemRef;
+use crate::semantics::analysis::limit::Limit;
 use crate::semantics::analysis::local_name::LocalName;
 use crate::semantics::analysis::locals::Locals;
 use crate::semantics::analysis::locals_owner::LocalsOwner;
@@ -122,6 +123,13 @@ impl<'a> Engine<'a> {
             self.stop(Code::ExpansionLimit, loc, Some(scope), (message, None))?;
             return Ok(false);
         }
+        if self.expanded - 1 == self.limits.expanded_items_warning {
+            let counted = format!(
+                "the expansion yields more than {} instances and wires",
+                grouped(self.limits.expanded_items_warning)
+            );
+            self.warn_limit(Limit::ExpandedItems, (loc, scope), (counted, bound))?;
+        }
         Ok(true)
     }
 
@@ -143,6 +151,13 @@ impl<'a> Engine<'a> {
             );
             self.stop(Code::ExpansionLimit, loc, Some(scope), (message, None))?;
             return Ok(false);
+        }
+        if self.steps - 1 == self.limits.expansion_steps_warning {
+            let counted = format!(
+                "the expansion runs more than {} `for` iterations and pattern uses",
+                grouped(self.limits.expansion_steps_warning)
+            );
+            self.warn_limit(Limit::ExpansionSteps, (loc, scope), (counted, bound))?;
         }
         Ok(true)
     }

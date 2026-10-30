@@ -112,8 +112,10 @@ pub(crate) struct Engine<'a> {
     pub evaluated_bodies: FastSet<FnId>,
     pub evaluated_defaults: FastSet<(FnId, usize)>,
     pub inline_limit_reported: bool,
+    pub inline_warning_reported: bool,
     pub cycle_spans: Vec<Loc>,
     pub call_limit_reported: bool,
+    pub call_warning_reported: bool,
     pub typing: super::infer::Typing,
     pub deferred: Vec<super::deferred::Deferred>,
     #[cfg(test)]
@@ -187,8 +189,10 @@ impl<'a> Engine<'a> {
             evaluated_bodies: FastSet::default(),
             evaluated_defaults: FastSet::default(),
             inline_limit_reported: false,
+            inline_warning_reported: false,
             cycle_spans: Vec::new(),
             call_limit_reported: false,
+            call_warning_reported: false,
             typing: super::infer::Typing::default(),
             deferred: Vec::new(),
             #[cfg(test)]

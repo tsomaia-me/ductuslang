@@ -51,6 +51,8 @@ mod kind_of;
 mod layout;
 mod lengths_of;
 mod let_ref;
+mod limit;
+mod limit_warning;
 mod local_name;
 mod locals;
 mod locals_owner;
