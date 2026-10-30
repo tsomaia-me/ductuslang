@@ -232,3 +232,16 @@ fn a_block_form_after_a_one_line_function_colon_draws_one_fn_syntax_and_builds_n
     assert_eq!(codes, [Code::FnSyntax], "{text}");
     assert_eq!(support::codes(&text).len(), 1, "{text}");
 }
+
+#[test]
+fn a_block_form_that_stands_as_an_operand_or_an_argument_draws_unparenthesized_for() {
+    let compiler = Compiler::new(&vocabulary()).expect("the vocabulary compiles");
+    let block = "for x in held into s from 0:\n    s + x";
+    let mut failures = Vec::new();
+    for template in ["state v = 1 + F\n", "fn g(a): a\nstate v = g(F)\n"] {
+        let text = format!("{HELD}{}", template.replace('F', block));
+        let at = HELD.len() + template.find('F').unwrap_or(0);
+        failures.extend(unparenthesized_at(&compiler, &text, at).err());
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}

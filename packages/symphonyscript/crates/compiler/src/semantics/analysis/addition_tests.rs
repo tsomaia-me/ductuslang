@@ -563,6 +563,48 @@ fn stress_a_recursion_evaluates_in_work_linear_in_its_depth() {
     assert!(work <= small, "{work} {small}");
 }
 
+fn passed_over(levels: u64) -> (Vec<crate::diagnostics::Code>, u64, usize) {
+    let text = format!(
+        "fn count(i): if i >= {levels} then 0 else count(i + 1) + (if i < 0 then 1 div 0.5 else 0) + (if i < 0 then [1][5] else 0)\nClip c:\n    Note/(count(0))\n"
+    );
+    let limits = LimitOverrides {
+        nesting_depth: Some(2 * levels),
+        ..LimitOverrides::default()
+    };
+    let (diagnostics, (work, nodes)) = analyzed_within(&vocabulary(), limits, &text, |engine| {
+        (engine.memo.evaluation_work, engine.nodes.len())
+    });
+    let codes = errors(&diagnostics)
+        .iter()
+        .map(|diagnostic| diagnostic.code)
+        .collect();
+    (codes, work, nodes)
+}
+
+#[test]
+fn a_fault_in_a_branch_a_compile_time_recursion_passes_over_draws_once_in_work_linear_in_its_depth()
+{
+    let sizes = [100, 200, 400];
+    let measured: Vec<(Vec<crate::diagnostics::Code>, u64, usize)> =
+        sizes.iter().map(|levels| passed_over(*levels)).collect();
+    for (levels, (codes, _, _)) in sizes.iter().zip(&measured) {
+        assert_eq!(
+            codes,
+            &vec![crate::diagnostics::Code::OperandType],
+            "{levels} levels"
+        );
+    }
+    for pair in measured.windows(2) {
+        let [(_, small_work, small_nodes), (_, large_work, large_nodes)] = pair else {
+            continue;
+        };
+        assert!(
+            *large_work <= 2 * small_work + 64 && *large_nodes <= 2 * small_nodes + 64,
+            "{measured:?}"
+        );
+    }
+}
+
 fn read_walk(text: &str) -> u64 {
     let (diagnostics, work) = analyzed(&vocabulary(), text, |engine| engine.memo.read_walk);
     assert!(errors(&diagnostics).is_empty(), "{diagnostics:?}");

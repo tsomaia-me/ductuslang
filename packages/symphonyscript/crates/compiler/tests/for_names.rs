@@ -229,3 +229,63 @@ fn the_names_of_the_spec_bind_and_their_repeats_are_rejected() {
         assert_eq!(found, expected, "{text}");
     }
 }
+
+#[test]
+fn a_block_let_is_visible_throughout_its_block_and_the_names_of_one_head_and_block_are_distinct() {
+    let compiler = Compiler::new(&vocabulary()).expect("the vocabulary compiles");
+    let block = |lets: &str| {
+        format!(
+            "let v = for x in [3] into s from 0:\n{lets}    s + b\nClip q:\n    Note/([0][v])\n"
+        )
+    };
+    let spanned = |text: &str, diagnostic: &Diagnostic| {
+        text.get(diagnostic.span.range.start as usize..diagnostic.span.range.end as usize)
+            .unwrap_or_default()
+            .to_string()
+    };
+    for (text, expected, at) in [
+        (
+            block("    let a = x + 1\n    let b = a + 1\n"),
+            Code::IndexOutOfRange,
+            "v",
+        ),
+        (
+            block("    let b = a + 1\n    let a = x + 1\n"),
+            Code::IndexOutOfRange,
+            "v",
+        ),
+        (
+            block("    let a = b\n    let b = a\n"),
+            Code::DeclarationCycle,
+            "a",
+        ),
+        (
+            block("    let b = 0\n    let b = 0\n"),
+            Code::DuplicateLocal,
+            "b",
+        ),
+        (
+            "Clip q:\n    for i, i in [1, 2]:\n        Note\n".to_string(),
+            Code::DuplicateLocal,
+            "i",
+        ),
+        (
+            "Clip q:\n    [for i, i in [1, 2]: Note]\n".to_string(),
+            Code::DuplicateLocal,
+            "i",
+        ),
+    ] {
+        let found = errors(&compiler, &text);
+        let holds = match found.as_slice() {
+            [diagnostic] if diagnostic.code == expected && spanned(&text, diagnostic) == at => {
+                expected != Code::IndexOutOfRange
+                    || diagnostic.summary.starts_with("the index 5 is outside")
+            }
+            _ => false,
+        };
+        assert!(
+            holds,
+            "{text}\n  draws {found:?}, not one {expected:?} at {at:?}"
+        );
+    }
+}

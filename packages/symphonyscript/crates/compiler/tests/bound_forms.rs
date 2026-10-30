@@ -5,7 +5,7 @@ use symphonyscript_fixtures::{Rows, covered, vocabulary};
 
 const CELLS: &str = "input a: i32[..5] = []\ninput i = 1\nlet k = 4\n";
 
-const FORMS: [&str; 11] = [
+const FORMS: [&str; 16] = [
     "4",
     "k",
     "len(a)",
@@ -17,9 +17,14 @@ const FORMS: [&str; 11] = [
     "max(min(i, 3), 1)",
     "i + 2",
     "i",
+    "max(i, 2) + 1",
+    "min(i, 4) + 1",
+    "4 - min(i, 1)",
+    "4 - max(i, 2)",
+    "16 - i",
 ];
 
-const RANGES: [(Option<i128>, Option<i128>); 11] = [
+const RANGES: [(Option<i128>, Option<i128>); 16] = [
     (Some(4), Some(4)),
     (Some(4), Some(4)),
     (Some(0), Some(5)),
@@ -30,6 +35,11 @@ const RANGES: [(Option<i128>, Option<i128>); 11] = [
     (None, Some(3)),
     (Some(1), Some(3)),
     (None, None),
+    (None, None),
+    (Some(3), None),
+    (None, Some(5)),
+    (Some(3), None),
+    (None, Some(2)),
     (None, None),
 ];
 
@@ -174,13 +184,13 @@ fn assert_none_fail((failures, programs): (Vec<String>, usize), expected: usize)
 
 #[test]
 fn every_bound_form_gives_a_slice_and_a_range_the_minimum_and_maximum_its_form_reads() {
-    assert_none_fail(covered(bound_rows), 55);
+    assert_none_fail(covered(bound_rows), 80);
 }
 
 #[test]
 #[ignore = "exhaustive"]
 fn exhaustive_every_bound_form_gives_a_slice_and_a_range_the_minimum_and_maximum_its_form_reads() {
-    assert_none_fail(bound_rows(&Rows::Every), 110);
+    assert_none_fail(bound_rows(&Rows::Every), 160);
 }
 
 #[test]
@@ -205,4 +215,18 @@ fn the_bounds_of_the_spec_give_their_capacities_and_a_range_bound_without_a_maxi
     );
     let fixed = text.replace("0..n", "0..min(n, 16)");
     assert_eq!(errors(&compiler, &fixed), vec![], "{fixed}");
+    for (range, bound) in [
+        ("0..16 - n", "16 - n"),
+        ("16 - n..20", "16 - n"),
+        ("min(n, 16)..20", "min(n, 16)"),
+    ] {
+        let unbounded = text.replace("0..n", range);
+        let found = errors(&compiler, &unbounded);
+        assert!(
+            matches!(found.as_slice(), [diagnostic]
+                if diagnostic.code == Code::RangeBound
+                    && unbounded.get(diagnostic.span.range.start as usize..diagnostic.span.range.end as usize) == Some(bound)),
+            "{unbounded}\n  draws {found:?}"
+        );
+    }
 }

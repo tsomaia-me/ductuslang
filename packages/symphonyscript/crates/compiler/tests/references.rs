@@ -9,7 +9,7 @@ const TARGETS: &str =
 const REFERENCES: [(&str, &str, i128); 2] =
     [("verse.hook", "pitch", 64), ("chorus.back", "transpose", 2)];
 
-const ACCESSES: [(&str, &str); 7] = [
+const ACCESSES: [(&str, &str); 8] = [
     ("", "R.A"),
     ("let r = R\n", "r.A"),
     ("let rs = [R]\n", "rs[0].A"),
@@ -20,6 +20,7 @@ const ACCESSES: [(&str, &str); 7] = [
         "f(R, 1)",
     ),
     ("placement", ""),
+    ("pattern", ""),
 ];
 
 const REFUSALS: [(&str, Code); 4] = [
@@ -62,7 +63,11 @@ fn reference_rows(rows: &Rows) -> (Vec<String>, usize) {
                 }
                 programs += 1;
                 let fill = |text: &str| text.replace('R', reference).replace('A', attribute);
-                let rest = if *prefix == "placement" {
+                let rest = if *prefix == "pattern" {
+                    fill(&format!(
+                        "pattern P(x):\n    Note/([0][x.A - {offset}])\nClip c:\n    P | x=R\n"
+                    ))
+                } else if *prefix == "placement" {
                     fill(&format!(
                         "Clip c:\n    for x in [R]:\n        Note/([0][x.A - {offset}])\n"
                     ))
@@ -103,13 +108,13 @@ fn assert_none_fail((failures, programs): (Vec<String>, usize), expected: usize)
 
 #[test]
 fn a_reference_to_a_node_or_a_wire_reads_its_attribute_in_every_position_it_stands_in() {
-    assert_none_fail(covered(reference_rows), 14);
+    assert_none_fail(covered(reference_rows), 16);
 }
 
 #[test]
 #[ignore = "exhaustive"]
 fn exhaustive_a_reference_to_a_node_or_a_wire_reads_its_attribute_in_every_position_it_stands_in() {
-    assert_none_fail(reference_rows(&Rows::Every), 28);
+    assert_none_fail(reference_rows(&Rows::Every), 32);
 }
 
 #[test]

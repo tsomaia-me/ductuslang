@@ -333,3 +333,206 @@ fn a_compile_time_for_counts_each_iteration_toward_the_expansion_limit_and_its_w
         assert_eq!(found, expected, "{text}");
     }
 }
+
+#[test]
+fn a_for_expression_starts_from_its_start_and_yields_the_start_over_an_empty_iterable() {
+    let compiler = Compiler::new(&vocabulary()).expect("the vocabulary compiles");
+    let mut failures = Vec::new();
+    for (value, folded) in [
+        ("for x in [3, 5, 7] into s from 10: s + x", Folded::Sum(25)),
+        (
+            "for x in [3, 5] into s from [9]: s + [x]",
+            Folded::Value(vec![9, 3, 5]),
+        ),
+        ("for x in [] into s from 4: s + x", Folded::Sum(4)),
+        (
+            "for x in [] into s from [7, 8]: s + [x]",
+            Folded::Value(vec![7, 8]),
+        ),
+        ("for i in 4..4 into s from 9: s + i", Folded::Sum(9)),
+        ("for i in 5..2 into s from 9: s + i", Folded::Sum(9)),
+        (
+            "for i in 5..2 into s from [6]: s + [i]",
+            Folded::Value(vec![6]),
+        ),
+    ] {
+        let text = format!("{CELLS}let v = {value}\n");
+        failures.extend(holds(&compiler, &text, &folded).err());
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+const READERS: [(&str, &str, &str, &str, &str); 4] = [
+    ("[3, 5, 7]", "3..6", "0", "s + x", ""),
+    ("[3, 5, c]", "3..min(c, 6)", "0", "s + x", "the iterable"),
+    ("[3, 5, 7]", "3..6", "n", "s + x", "the start"),
+    ("[3, 5, 7]", "3..6", "0", "s + x + n", "the body"),
+];
+
+const PLACES: [&str; 3] = [
+    "let v = F\n",
+    "fn f(p): F\nlet v = f(0)\n",
+    "let v = 0 + (F)\n",
+];
+
+fn cell_rows(rows: &Rows) -> (Vec<String>, usize) {
+    let compiler = Compiler::new(&vocabulary()).expect("the vocabulary compiles");
+    let mut failures = Vec::new();
+    let mut programs = 0;
+    for (reader, (array, range, start, body, _)) in READERS.iter().enumerate() {
+        for (form, (iterable, sum)) in [(array, 15), (range, 12)].into_iter().enumerate() {
+            for (place, template) in PLACES.iter().enumerate() {
+                if !rows.take(&[reader, form, place]) {
+                    continue;
+                }
+                programs += 1;
+                let value = format!("for x in {iterable} into s from {start}: {body}");
+                let text = format!("{CELLS}{}", template.replace('F', &value));
+                let expected = if reader == 0 {
+                    Folded::Sum(sum)
+                } else {
+                    Folded::Cell
+                };
+                let read = format!("{text}Clip k:\n    Note/([0][v])\n");
+                let outcome = match expected {
+                    Folded::Cell => {
+                        let found = errors(&compiler, &read);
+                        if found.is_empty() {
+                            Ok(())
+                        } else {
+                            Err(format!("{read}\n  draws {found:?}, not a cell's nothing\n"))
+                        }
+                    }
+                    Folded::Sum(_) | Folded::Value(_) | Folded::Capacity(_) => {
+                        holds(&compiler, &text, &expected)
+                    }
+                };
+                failures.extend(outcome.err());
+            }
+        }
+    }
+    (failures, programs)
+}
+
+#[test]
+fn a_for_expression_is_a_compile_time_value_only_when_its_iterable_start_and_body_read_no_cell() {
+    assert_none_fail(covered(cell_rows), 12);
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_a_for_expression_is_a_compile_time_value_only_when_its_iterable_start_and_body_read_no_cell()
+ {
+    assert_none_fail(cell_rows(&Rows::Every), 24);
+}
+
+#[test]
+fn a_for_expressions_body_counts_once_toward_the_inline_limit_however_many_times_it_runs() {
+    let compiler = Compiler::with_limits(
+        &vocabulary(),
+        LimitOverrides {
+            inlined_calls: Some(10),
+            ..LimitOverrides::default()
+        },
+    )
+    .expect("the example vocabulary compiles");
+    let calls = |count: usize| vec!["f(x)"; count].join(" + ");
+    for (iterable, count, expected) in [
+        ("0..100", 1, vec![]),
+        ("0..100", 10, vec![]),
+        ("0..2", 6, vec![]),
+        ("0..2", 11, vec![Code::InlineLimit]),
+        ("held", 10, vec![]),
+        ("held", 11, vec![Code::InlineLimit]),
+    ] {
+        let word = if iterable == "held" { "state" } else { "let" };
+        let text = format!(
+            "{CELLS}fn f(y): y\n{word} v = for x in {iterable} into s from 0: s + {}\nClip k:\n    Note/(v)\n",
+            calls(count)
+        );
+        let found: Vec<Code> = errors(&compiler, &text)
+            .iter()
+            .map(|diagnostic| diagnostic.code)
+            .collect();
+        assert_eq!(found, expected, "{text}");
+    }
+}
+
+#[test]
+fn the_accumulator_takes_the_type_its_start_and_body_unify_to_as_if_arms_do_and_an_annotation_fixes_it()
+ {
+    let compiler = Compiler::new(&vocabulary()).expect("the vocabulary compiles");
+    let reading = |value: &str| format!("let v = {value}\nClip k:\n    Note/([0, 0][v])\n");
+    let at = |text: &str, diagnostic: &Diagnostic| {
+        text.get(diagnostic.span.range.start as usize..diagnostic.span.range.end as usize)
+            .unwrap_or_default()
+            .to_string()
+    };
+    for (value, twin, code, spanned) in [
+        (
+            "for x in [1, 2] into s from 0: s + 0.5",
+            Some("if true then 0 else 0.5"),
+            Code::IndexType,
+            "v",
+        ),
+        (
+            "for x in [1, 2] into s from 0.5: s + x",
+            Some("if true then 0.5 else 1"),
+            Code::IndexType,
+            "v",
+        ),
+        (
+            "for x in [1, 2] into s from 0: s + x",
+            None,
+            Code::IndexOutOfRange,
+            "v",
+        ),
+        (
+            "for x in [1, 2] into s: f32 from 0: s + x",
+            None,
+            Code::IndexType,
+            "v",
+        ),
+        (
+            "for x in [1, 2] into s from []: 0",
+            Some("if true then [] else 0"),
+            Code::TypeMismatch,
+            "",
+        ),
+        (
+            "for x in [1, 2] into s from 0: [x]",
+            Some("if true then 0 else [1]"),
+            Code::TypeMismatch,
+            "",
+        ),
+    ] {
+        for written in std::iter::once(value).chain(twin) {
+            let text = reading(written);
+            let found = errors(&compiler, &text);
+            let place = if spanned.is_empty() { written } else { spanned };
+            assert!(
+                matches!(found.as_slice(), [diagnostic]
+                    if diagnostic.code == code && at(&text, diagnostic) == place),
+                "{text}\n  draws {found:?}, not one {code:?} at {place:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn a_capacity_past_an_annotated_accumulator_names_both_and_the_fix_its_help_names_passes() {
+    let compiler = Compiler::new(&vocabulary()).expect("the vocabulary compiles");
+    let text = format!(
+        "{CELLS}state t = for x in held into kept: i32[..3] from []: kept + [x]\nClip k:\n    Note/(t[0])\n"
+    );
+    let found = errors(&compiler, &text);
+    assert!(
+        matches!(found.as_slice(), [diagnostic]
+            if diagnostic.code == Code::CapacityExceeded
+                && diagnostic.summary.contains("10")
+                && diagnostic.summary.contains("annotated capacity 3")),
+        "{text}\n  draws {found:?}"
+    );
+    let fixed = text.replace("kept + [x]", "(kept + [x])[^3..]");
+    assert_eq!(errors(&compiler, &fixed), vec![], "{fixed}");
+}
