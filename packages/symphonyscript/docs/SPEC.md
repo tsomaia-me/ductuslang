@@ -100,7 +100,7 @@ Keywords are never names:
 let state stream channel fn pattern type default const cell out children
 if then else match when for in into from as on without
 is not and or div to true false none
-u8 i32 i64 f32 f64 bool str map json node wire
+u8 i32 i64 f32 f64 bool str json node wire
 package require use publish
 ```
 
@@ -257,14 +257,15 @@ A variable array is one cell (§4.4), held whole rather than element by element,
 ```ebnf
 TypeDecl  ::= 'type' Name GenericParams? (':' NEWLINE INDENT FieldDecl+ DEDENT | '=' Type NEWLINE)
 FieldDecl ::= Name ':' Type NEWLINE
-RecordLit ::= '{' (Name ':' Expr (',' Name ':' Expr)* ','?)? '}'
+RecordLit ::= Name TypeArgs? '{' Fields '}'
+Fields    ::= (Name ':' Expr (',' Name ':' Expr)* ','?)?
 ```
 
 A `type` declaration names a type at top level, in the program's source or in the vocabulary's prelude (§10.1), and shares the top-level namespace (§6.5). The block form declares a record; `type Name = Type` declares an alias, a name that is its type everywhere it is written, a sum (§3.9) included: `type Shape = Circle | Square`, `type Id = i64`. An alias of itself, directly or through other aliases, is an error. A `type` declaration may take bracket parameters (§6.8).
 
-A record is a value with named fields, each of its own type. A field is a scalar, a string with a capacity (§3.3), an enum, a record, a sum of these (§3.9), a map (§3.10), a document with a budget (§3.11) or an array of these; a field of a kind type is an error (§3.5), two fields of one name are an error, and a record type that reaches itself through its fields is an error, since its size would be unbounded. A field's name is scoped to its type and clashes with no other name.
+A record is a value with named fields, each of its own type. A field is a scalar, a string with a capacity (§3.3), an enum, a record, a sum of these (§3.9), a map (§3.10), a document with a budget (§3.11) or an array of these; a field of a kind type is an error (§3.5), two fields of one name are an error, and a record type that reaches itself through its fields is an error, since its size would be unbounded. A field's name is scoped to its type and clashes with no other name; a keyword may be one (§2.5), and `past` and `dropped` may not, because a record can be held in a cell whose members they are (§5.7).
 
-A record literal lists fields by name, in any order; a field it leaves out holds its zero, so `{}` is the record with every field at its zero: `0`, `0.0`, `false`, the enum's first variant, the empty string, the empty array, a record of zeros. A literal has no type of its own: it takes the record type its position expects (§4.2), and a literal where no record type is expected is an error. `r.name` reads a field (§5.6). Records are not compared, interpolated or converted; `is` on records is an error.
+A record literal names its type and lists fields by name, in any order: `Chord {root: 60, spread: 4}`. A field it leaves out holds its zero, so `Chord {}` is the record with every field at its zero: `0`, `0.0`, `false`, the enum's first variant, the empty string, the empty array, a record of zeros. The literal carries its type, so it stands wherever a value of that type stands; a literal naming a generic type writes the type's arguments or binds them from its fields (§6.8). `r.name` reads a field (§5.7). Records are not compared, interpolated or converted; `is` on records is an error.
 
 A record whose fields read cells is a value of bindings, field by field, as a fixed array is (§4.4, §5.5): each leaf field is its own binding, and a variable-array field is one cell. A host-fed record cell is written per leaf field or whole (§12.1).
 
@@ -273,7 +274,7 @@ type Chord:
     root: i32
     spread: i32
 
-state chord({ root: 60, spread: 4 }): Chord
+state chord(Chord {root: 60, spread: 4})
 
 Clip c:
     Note/(chord.root) Note/(chord.root + chord.spread)
@@ -285,7 +286,7 @@ A sum type `A | B` holds a value of one of its alternatives, which are distinct 
 
 - A value of an alternative widens into the sum (§4.3), and a sum into a sum that holds every alternative of it; nothing narrows implicitly, so a `T?` where a `T` is expected is an error whose help names `or`.
 - `match` reads a sum (§5.4). `x is none`, `x is not none` and `x is Circle`, with an alternative's type name, are `bool` tests (§5.3), and `x or y` yields `x`'s value, or `y` when `x` is `none` (§5.3).
-- A record literal in a sum position takes the one alternative whose fields it names; two is an error whose help says to name the type on a `let`, and `{}` in a position of two record alternatives is that error.
+- A record literal names its alternative: `Square {side: 1}` where a `Shape` is expected is a `Square`.
 - A sum stands in every value type position: a field, a cell, a `let`, a parameter, a result, an array element. It is never an attribute's type, and never holds a node reference.
 - Two sums compare with `is` when every alternative is a scalar, a string or an enum: equal when both are `none`, or both hold the same alternative with equal values. A sum with a record alternative is not compared.
 
@@ -297,7 +298,7 @@ type Square:
 type Shape = Circle | Square
 
 state port(none): i32?
-state shape({side: 1}): Shape
+state shape(Square {side: 1}): Shape
 
 state bound = port or 80
 state area = match shape:
@@ -305,7 +306,7 @@ state area = match shape:
     Square: shape.side * shape.side
 ```
 
-`{side: 1}` is a `Square`, the one alternative with a field `side`; in the `Circle` arm `shape` is a `Circle`.
+`Square {side: 1}` is a `Square`; in the `Circle` arm `shape` is a `Circle`.
 
 ```sym-error
 state port(none): i32?
@@ -319,26 +320,26 @@ This is an error: `port` may be `none`, and `freq` holds one `f64`; `port or 440
 ### 3.10 Maps
 
 ```ebnf
-MapType ::= 'map' '[' Type ',' Type ']' '[' '..' Size ']'
-MapLit  ::= 'map' '{' (Entry (',' Entry)* ','?)? '}'
+MapType ::= '{' Type ':' Type '}' '[' '..' Size ']'
+MapLit  ::= '{' (Entry (',' Entry)* ','?)? '}'
 Entry   ::= Expr ':' Expr
 ```
 
-A map holds up to its capacity of entries, each a key of the key type and a value of the value type, in the order the entries were added. A key type is a scalar, a string with a capacity or an enum; a value type is any value type but a node reference. A map is one cell (§4.4), held whole.
+A map holds up to its capacity of entries, each a key of the key type and a value of the value type, in the order the entries were added. A key type is a scalar, a string with a capacity or an enum; a value type is any value type but a node reference. The type `{K: V}[..N]` holds up to N entries. A map literal whose entries read cells is a value of bindings, entry by entry, as a fixed array is (§4.4, §5.5), and any other map value is one cell (§4.4), held whole.
 
-- A map literal is written `map` before its braces and lists entries `key: value`, each key an expression read in the key type (§4.2), a string literal, a number or a bare variant among them; two keys that are equal compile-time values are an error, and `map {}` is the empty map. A literal takes the map type its position expects; where none is expected it takes its key and value types from its entries, as an array literal takes its element type, with its entry count as its capacity, and `map {}` there is an error whose help says to name the type.
+- A map literal is written in braces and lists entries `key: value`, each key an expression read in the key type (§4.2), a string literal, a number or a bare variant among them; two keys that are equal compile-time values are an error, and `{}` is the empty map. A literal takes the map type its position expects; where none is expected it takes its key and value types from its entries, as an array literal takes its element type, with its entry count as its capacity, and `{}` there is an error whose help says to name the type.
 - `m[k]` yields the entry's value as a `V?` (§3.9), `none` when the key is absent. `m + n` joins two maps, `n`'s entries winning on a shared key and its new keys following `m`'s, with the capacity the sum of the two; `m without k` and `m without ks`, `ks` an array of keys, yield `m` less those entries, with `m`'s capacity; `m[a..b]` slices a map by its entry order as an array is sliced (§5.5), so `(m + n)[^64..]` keeps the newest 64 entries. `m.size`, `m.capacity`, `m.keys` and `m.values` are its members (§5.7).
 - A map compares with nothing and interpolates nowhere; a key compares as `is` compares its type. A map built only from compile-time values is a compile-time value, and `for k in m.keys` iterates it (§7.9).
 - A host-fed map cell is written whole or one entry by key (§12.1), and a derived cell may hold a map (§6.6).
 
 ```sym
-state headers(map {}): map[str[..32], str[..256]][..32]
-state req({}): Request
+state headers({}): {str[..32]: str[..256]}[..32]
+state req(Request {})
 
 state host = headers["host"] or "localhost"
 state trimmed = headers without ["cookie", "set-cookie"]
-state with_host = headers + map {"host": host}
-state hits(map {}) = (hits.past(1) + map {req.path: (hits.past(1)[req.path] or 0) + 1})[^64..]
+state with_host = headers + {"host": host}
+state hits({}): {str[..64]: i32}[..64] = (hits.past(1) + {req.path: (hits.past(1)[req.path] or 0) + 1})[^64..]
 ```
 
 `hits` counts requests per path and keeps the newest 64 paths.
@@ -542,7 +543,7 @@ Arg       ::= Expr | Lambda
 NamedArg  ::= Name '=' Arg
 ```
 
-Comparisons do not chain: `a < b < c` is an error. `-2 ** 2` is −4, and `n-1` is `n - 1`. An `if` that is an operand of another operator is parenthesized: `base + (if high then 12 else 0)`. An `if` that is a whole value, such as a `let`'s value, an attribute value or an argument, needs no parentheses. A `{` in an expression opens a record literal (§3.8); `map {` opens a map literal (§3.10) and `json` a document literal (§3.11).
+Comparisons do not chain: `a < b < c` is an error. `-2 ** 2` is −4, and `n-1` is `n - 1`. An `if` that is an operand of another operator is parenthesized: `base + (if high then 12 else 0)`. An `if` that is a whole value, such as a `let`'s value, an attribute value or an argument, needs no parentheses. A `{` in an expression opens a map literal (§3.10), after a type name a record literal (§3.8), and after `json` a document literal (§3.11).
 
 Expressions evaluate the same way at compile time and at runtime; §4.6 states the differences in compile-time arithmetic.
 
@@ -1205,7 +1206,7 @@ A function, a pattern, a `type` declaration and a native function's signature (�
 - A function's or a pattern's type parameter may also bind to a node kind or a wire kind, from an argument that is a reference (§3.5); for a pattern, §10.2's checks run on each use's expansion against the kind it binds, and a constraint written on such a parameter is an error, those checks being its check.
 - A bracket parameter's annotation is its constraint. On a type parameter it is a type the parameter must bind to, a sum listing the types it may bind to, one of them at each call or use, or an alias naming that set; on a value parameter it is the integer type of its value. A bracket parameter without a constraint binds to whatever its arguments give, and the body is checked per call or use with that binding.
 - In a type, the first bracket list after a generic type's name is its arguments, one for each bracket parameter in order and read by the parameter it fills: a type for a type parameter, and for a value parameter a compile-time integer expression, as a size is (§3.2), the enclosing declaration's value parameters among what it reads. Later bracket lists are dimensions (§3.2), and after any other name every bracket list is a dimension: `Stack[i32, 8][4]` holds four stacks, and `Chord[4]` four chords.
-- A record literal (§3.8) takes the generic type its position names with its arguments. Where its position names a generic type without arguments, the literal binds the type's parameters from its fields as a call binds them from its arguments: two fields that bind one parameter differently are an error naming both, and a parameter that no field binds is an error whose help says to annotate the type's arguments. Anywhere else, a generic type named without its arguments is an error whose help names its parameters.
+- A record literal (§3.8) names its generic type with its arguments, `Stack[i32, 8] {}`, or without them, `Pair {left: 1i32, right: true}`, and then binds the type's parameters from its fields as a call binds them from its arguments: two fields that bind one parameter differently are an error naming both, and a parameter that no field binds is an error whose help says to write the type's arguments. Anywhere else, a generic type named without its arguments is an error whose help names its parameters.
 - An instantiated record's shape is its fields' shapes, so a reload keeps it as it keeps any record (§13.2, §13.5).
 
 ```sym
@@ -1214,7 +1215,7 @@ type Stack[T, const N]:
     top: i32
 
 fn push[T, const N](s: Stack[T, N], x: T) -> Stack[T, N]:
-    {items: (s.items + [x])[..N], top: s.top + 1}
+    Stack[T, N] {items: (s.items + [x])[..N], top: s.top + 1}
 
 fn first[T, const N: i32](xs: T[N]) -> T: xs[0]
 
@@ -1223,8 +1224,8 @@ fn mid[T: f32 | f64](a: T, b: T) -> T: (a + b) / 2
 state note(60): i32
 
 let pitches: i32[3] = [60, 64, 67]
-let start: Stack[i32, 8] = {}
-let big: Stack[i32, 4 * 2] = {}
+let start = Stack[i32, 8] {}
+let big = Stack[i32, 4 * 2] {}
 let pushed = push(start, note)
 let centre = mid(0.25f32, 0.75f32)
 
@@ -1268,7 +1269,7 @@ type Pair[A, B]:
     left: A
     right: B
 
-let p: Pair = {left: 1i32, right: true}
+let p = Pair {left: 1i32, right: true}
 ```
 
 `p` is a `Pair[i32, bool]`, its parameters bound from its fields.
@@ -1296,13 +1297,13 @@ type Pair[A, B]:
     left: A
     right: B
 
-let p: Pair = {left: 1i32}
+let p = Pair {left: 1i32}
 
 Clip c:
     Note/(p.left)
 ```
 
-This is an error: no field of the literal binds `B`; the help says to annotate the type's arguments, as `Pair[i32, bool]`.
+This is an error: no field of the literal binds `B`; the help says to write the type's arguments, as `Pair[i32, bool] {left: 1i32}`.
 
 ## 7. Placements
 
@@ -1469,7 +1470,7 @@ In `strum`, `i` is each note's position and `p` its pitch.
 
 ```sym
 state held([]): i32[..10]
-state counts(map {}): map[str[..16], i32][..8]
+state counts({}): {str[..16]: i32}[..8]
 
 state rises = for i in 1..held.size into n from 0: if held[i] > held[i - 1] then n + 1 else n
 state total = for k, v in counts into sum from 0: sum + v
@@ -1833,7 +1834,7 @@ The build's top-level order (§2.1) runs through the prelude, then the libraries
 ```ebnf
 PackageFile ::= PackageItem*
 PackageItem ::= PackageDecl | Require | Use | Publish
-PackageDecl ::= 'package' RecordLit NEWLINE
+PackageDecl ::= 'package' '{' Fields '}' NEWLINE
 ```
 
 A package's package file is `package.sym`, and the folder holding it is the package's root. It holds these items only, in any order, and no declaration. A `package.sym` in any other folder of the package, and a `package`, `require`, `use` or `publish` item in any other file, is an error naming the package file.
