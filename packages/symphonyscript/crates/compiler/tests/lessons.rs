@@ -1,5 +1,5 @@
 use symphonyscript::{Code, Compiler, Diagnostic, Severity, Source};
-use symphonyscript_core::Limits;
+use symphonyscript_core::LimitOverrides;
 use symphonyscript_fixtures::{
     bar_vocabulary, bounded_vocabulary, native_vocabulary, prelude_vocabulary, vocabulary,
 };
@@ -44,7 +44,7 @@ fn examples(lesson: &str) -> Vec<Example> {
     found
 }
 
-fn diagnostics(setup: &str, text: &str, limits: Limits) -> Vec<Diagnostic> {
+fn diagnostics(setup: &str, text: &str, limits: LimitOverrides) -> Vec<Diagnostic> {
     let source = Source {
         path: "lesson.sym".into(),
         text: text.into(),
@@ -106,7 +106,7 @@ fn every_lesson_draws_its_code_in_its_sym_error_example_and_passes_check_in_its_
         Code::ALL
             .iter()
             .filter(|code| !LIMIT_LESSONS.contains(code)),
-        Limits::default(),
+        LimitOverrides::default(),
     );
 }
 
@@ -117,11 +117,11 @@ fn the_limit_lessons_draw_their_codes_at_lowered_limits_in_their_error_examples_
  {
     lessons_hold(
         LIMIT_LESSONS.iter(),
-        Limits {
-            recursive_calls: 1_000,
-            expansion_steps: 1_000,
-            expanded_items: 1_000,
-            ..Limits::default()
+        LimitOverrides {
+            recursive_calls: Some(1_000),
+            expansion_steps: Some(1_000),
+            expanded_items: Some(1_000),
+            ..LimitOverrides::default()
         },
     );
 }
@@ -129,10 +129,10 @@ fn the_limit_lessons_draw_their_codes_at_lowered_limits_in_their_error_examples_
 #[test]
 #[ignore = "stress"]
 fn stress_the_limit_lessons_draw_their_codes_in_their_error_examples_and_pass_in_their_fixes() {
-    lessons_hold(LIMIT_LESSONS.iter(), Limits::default());
+    lessons_hold(LIMIT_LESSONS.iter(), LimitOverrides::default());
 }
 
-fn lessons_hold<'a>(codes: impl Iterator<Item = &'a Code>, limits: Limits) {
+fn lessons_hold<'a>(codes: impl Iterator<Item = &'a Code>, limits: LimitOverrides) {
     let mut failures = Vec::new();
     for code in codes {
         for example in examples(code.lesson()) {

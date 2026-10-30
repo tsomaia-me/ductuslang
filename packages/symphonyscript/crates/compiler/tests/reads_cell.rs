@@ -175,9 +175,9 @@ fn exhaustive_a_value_reads_a_cell_by_the_bindings_it_reaches_at_every_position_
 fn a_recursive_call_counts_toward_the_inline_limit_unless_it_reads_a_cell() {
     let four = Compiler::with_limits(
         &vocabulary(),
-        symphonyscript_core::Limits {
-            inlined_calls: 4,
-            ..symphonyscript_core::Limits::default()
+        symphonyscript_core::LimitOverrides {
+            inlined_calls: Some(4),
+            ..symphonyscript_core::LimitOverrides::default()
         },
     )
     .expect("the vocabulary compiles");

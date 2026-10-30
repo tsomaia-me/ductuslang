@@ -3,7 +3,7 @@ mod support;
 use std::collections::BTreeSet;
 
 use symphonyscript::{Code, Compiler, Diagnostic, Severity, Source};
-use symphonyscript_core::Limits;
+use symphonyscript_core::LimitOverrides;
 use symphonyscript_fixtures::vocabulary;
 
 type Named = (Code, BTreeSet<String>);
@@ -200,9 +200,9 @@ fn a_cycle_in_the_demand_engine_draws_its_one_rules_diagnostic() {
         .iter()
         .filter_map(|(items, wanted)| first_order_failing(&compiler, items, wanted))
         .collect();
-    let shallow = Limits {
-        nesting_depth: 6,
-        ..Limits::default()
+    let shallow = LimitOverrides {
+        nesting_depth: Some(6),
+        ..LimitOverrides::default()
     };
     let compiler = Compiler::with_limits(&vocabulary(), shallow).expect("the vocabulary compiles");
     failures.extend(first_order_failing(
@@ -370,7 +370,7 @@ fn secondary_spans(compiler: &Compiler, text: &str) -> Vec<Vec<(u32, u32)>> {
 
 #[test]
 fn an_evaluation_that_goes_too_deep_names_the_outermost_call_it_ends() {
-    let rows: [(&[&str], &str, &str, Limits); 4] = [
+    let rows: [(&[&str], &str, &str, LimitOverrides); 4] = [
         (
             &[
                 "fn f(n): if n < 1 then f(0) else 1",
@@ -378,7 +378,7 @@ fn an_evaluation_that_goes_too_deep_names_the_outermost_call_it_ends() {
             ],
             "Note/(f(0))",
             "f(0)",
-            Limits::default(),
+            LimitOverrides::default(),
         ),
         (
             &[
@@ -388,7 +388,7 @@ fn an_evaluation_that_goes_too_deep_names_the_outermost_call_it_ends() {
             ],
             "Note/(a(1))",
             "a(1)",
-            Limits::default(),
+            LimitOverrides::default(),
         ),
         (
             &[
@@ -397,7 +397,7 @@ fn an_evaluation_that_goes_too_deep_names_the_outermost_call_it_ends() {
             ],
             "Note/(down(1024))",
             "down(1024)",
-            Limits::default(),
+            LimitOverrides::default(),
         ),
         (
             &[
@@ -407,9 +407,9 @@ fn an_evaluation_that_goes_too_deep_names_the_outermost_call_it_ends() {
             ],
             "Note/(if even(10) then 1 else 2)",
             "even(10)",
-            Limits {
-                nesting_depth: 6,
-                ..Limits::default()
+            LimitOverrides {
+                nesting_depth: Some(6),
+                ..LimitOverrides::default()
             },
         ),
     ];
@@ -520,9 +520,9 @@ fn wire_cycles_draw_one_diagnostic_per_component_naming_its_shortest_cycle_and_w
 
 #[test]
 fn a_declaration_cycle_drawn_before_the_recursive_call_limit_stops_the_compilation_is_kept() {
-    let limits = Limits {
-        recursive_calls: 5,
-        ..Limits::default()
+    let limits = LimitOverrides {
+        recursive_calls: Some(5),
+        ..LimitOverrides::default()
     };
     let compiler = Compiler::with_limits(&vocabulary(), limits).expect("the vocabulary compiles");
     let text =

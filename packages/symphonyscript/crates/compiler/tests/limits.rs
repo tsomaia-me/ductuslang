@@ -1,7 +1,7 @@
 mod support;
 
 use symphonyscript::{Code, Compiler, Severity, Source};
-use symphonyscript_core::{Count, Limits, Vocabulary};
+use symphonyscript_core::{Count, LimitOverrides, Vocabulary};
 use symphonyscript_fixtures::vocabulary;
 
 fn codes(text: &str) -> Vec<Code> {
@@ -13,9 +13,9 @@ fn codes(text: &str) -> Vec<Code> {
 
 #[test]
 fn a_limits_worth_of_iterations_and_uses_in_all_is_accepted_and_one_more_is_not() {
-    let thousand = Limits {
-        expansion_steps: 1_000,
-        ..Limits::default()
+    let thousand = LimitOverrides {
+        expansion_steps: Some(1_000),
+        ..LimitOverrides::default()
     };
     let codes_within = |text: &str| -> Vec<Code> {
         errors_within(thousand, text)
@@ -83,7 +83,7 @@ fn stress_a_variant_is_found_among_any_number_of_variants() {
     assert_eq!(errors(&narrow), vec![Code::UnknownName]);
 }
 
-fn errors_within(limits: Limits, text: &str) -> Vec<(Code, String)> {
+fn errors_within(limits: LimitOverrides, text: &str) -> Vec<(Code, String)> {
     let compiler = Compiler::with_limits(&vocabulary(), limits).expect("the vocabulary compiles");
     support::errors(compiler.check(&[support::source(text)]))
         .into_iter()
@@ -91,7 +91,7 @@ fn errors_within(limits: Limits, text: &str) -> Vec<(Code, String)> {
         .collect()
 }
 
-fn follows(code: Code, rows: &[(Limits, String, Option<String>)]) {
+fn follows(code: Code, rows: &[(LimitOverrides, String, Option<String>)]) {
     for (limits, text, refusal) in rows {
         let errors = errors_within(*limits, text);
         match refusal {
@@ -173,19 +173,19 @@ fn refused(fragment: &str) -> Option<String> {
 
 #[test]
 fn the_inline_limit_follows_the_compilations_limits() {
-    let ten = Limits {
-        inlined_calls: 10,
-        ..Limits::default()
+    let ten = LimitOverrides {
+        inlined_calls: Some(10),
+        ..LimitOverrides::default()
     };
-    let thousand = Limits {
-        inlined_calls: 1_000,
-        ..Limits::default()
+    let thousand = LimitOverrides {
+        inlined_calls: Some(1_000),
+        ..LimitOverrides::default()
     };
-    let two_million = Limits {
-        inlined_calls: 2_000_000,
-        ..Limits::default()
+    let two_million = LimitOverrides {
+        inlined_calls: Some(2_000_000),
+        ..LimitOverrides::default()
     };
-    let default = Limits::default();
+    let default = LimitOverrides::default();
     let refusal = |bound: &str| refused(&format!("inline more than {bound} calls"));
     follows(
         Code::InlineLimit,
@@ -204,15 +204,15 @@ fn the_inline_limit_follows_the_compilations_limits() {
 
 #[test]
 fn the_nesting_depth_follows_the_compilations_limits() {
-    let five = Limits {
-        nesting_depth: 5,
-        ..Limits::default()
+    let five = LimitOverrides {
+        nesting_depth: Some(5),
+        ..LimitOverrides::default()
     };
-    let fifteen_hundred = Limits {
-        nesting_depth: 1_500,
-        ..Limits::default()
+    let fifteen_hundred = LimitOverrides {
+        nesting_depth: Some(1_500),
+        ..LimitOverrides::default()
     };
-    let default = Limits::default();
+    let default = LimitOverrides::default();
     let refusal = |bound: &str| refused(&format!("deeper than {bound} nested calls"));
     follows(
         Code::RecursionDepth,
@@ -230,15 +230,15 @@ fn the_nesting_depth_follows_the_compilations_limits() {
 
 #[test]
 fn the_recursive_call_limit_follows_the_compilations_limits() {
-    let five = Limits {
-        recursive_calls: 5,
-        ..Limits::default()
+    let five = LimitOverrides {
+        recursive_calls: Some(5),
+        ..LimitOverrides::default()
     };
-    let thousand = Limits {
-        recursive_calls: 1_000,
-        ..Limits::default()
+    let thousand = LimitOverrides {
+        recursive_calls: Some(1_000),
+        ..LimitOverrides::default()
     };
-    let default = Limits::default();
+    let default = LimitOverrides::default();
     let refusal = |bound: &str| refused(&format!("exceeds the {bound} distinct recursive calls"));
     follows(
         Code::RecursionLimit,
@@ -258,7 +258,7 @@ fn stress_the_recursive_call_limit_refuses_the_call_past_its_default() {
     follows(
         Code::RecursionLimit,
         &[(
-            Limits::default(),
+            LimitOverrides::default(),
             recursing(1_000_001),
             refused("exceeds the 1,000,000 distinct recursive calls"),
         )],
@@ -268,9 +268,9 @@ fn stress_the_recursive_call_limit_refuses_the_call_past_its_default() {
 #[test]
 #[ignore = "stress"]
 fn stress_the_recursive_call_limit_refuses_the_call_past_a_raised_limit() {
-    let raised = Limits {
-        recursive_calls: 1_048_575,
-        ..Limits::default()
+    let raised = LimitOverrides {
+        recursive_calls: Some(1_048_575),
+        ..LimitOverrides::default()
     };
     follows(
         Code::RecursionLimit,
@@ -284,15 +284,15 @@ fn stress_the_recursive_call_limit_refuses_the_call_past_a_raised_limit() {
 
 #[test]
 fn the_expansion_step_limit_follows_the_compilations_limits() {
-    let ten = Limits {
-        expansion_steps: 10,
-        ..Limits::default()
+    let ten = LimitOverrides {
+        expansion_steps: Some(10),
+        ..LimitOverrides::default()
     };
-    let thousand = Limits {
-        expansion_steps: 1_000,
-        ..Limits::default()
+    let thousand = LimitOverrides {
+        expansion_steps: Some(1_000),
+        ..LimitOverrides::default()
     };
-    let default = Limits::default();
+    let default = LimitOverrides::default();
     follows(
         Code::ExpansionLimit,
         &[
@@ -320,15 +320,15 @@ fn expansion_refusal(bound: &str) -> Option<String> {
 #[test]
 #[ignore = "stress"]
 fn stress_the_expansion_step_limit_refuses_the_step_past_its_default_and_a_raised_limit() {
-    let two_million = Limits {
-        expansion_steps: 2_000_000,
-        ..Limits::default()
+    let two_million = LimitOverrides {
+        expansion_steps: Some(2_000_000),
+        ..LimitOverrides::default()
     };
     follows(
         Code::ExpansionLimit,
         &[
             (
-                Limits::default(),
+                LimitOverrides::default(),
                 empty_iterations(1_000_001),
                 expansion_refusal("1,000,000"),
             ),
@@ -343,15 +343,15 @@ fn stress_the_expansion_step_limit_refuses_the_step_past_its_default_and_a_raise
 
 #[test]
 fn the_expanded_item_limit_follows_the_compilations_limits() {
-    let ten = Limits {
-        expanded_items: 10,
-        ..Limits::default()
+    let ten = LimitOverrides {
+        expanded_items: Some(10),
+        ..LimitOverrides::default()
     };
-    let thousand = Limits {
-        expanded_items: 1_000,
-        ..Limits::default()
+    let thousand = LimitOverrides {
+        expanded_items: Some(1_000),
+        ..LimitOverrides::default()
     };
-    let default = Limits::default();
+    let default = LimitOverrides::default();
     follows(
         Code::ExpansionLimit,
         &[
@@ -373,16 +373,16 @@ fn item_refusal(bound: &str) -> Option<String> {
 #[test]
 #[ignore = "stress"]
 fn stress_the_expanded_item_limit_refuses_the_item_past_its_default_and_a_raised_limit() {
-    let raised = Limits {
-        expanded_items: 1_000_001,
-        expansion_steps: 2_000_000,
-        ..Limits::default()
+    let raised = LimitOverrides {
+        expanded_items: Some(1_000_001),
+        expansion_steps: Some(2_000_000),
+        ..LimitOverrides::default()
     };
     follows(
         Code::ExpansionLimit,
         &[
             (
-                Limits::default(),
+                LimitOverrides::default(),
                 iterations(1_000_000),
                 item_refusal("1,000,000"),
             ),
@@ -402,21 +402,21 @@ fn a_stopped_compilation_reports_its_one_limit_and_the_work_it_finished() {
     );
     let unsupplied = "pattern P(n):\n    Note\nClip d:\n    P\n";
     let unfitting = "Clip e:\n    Note/300000000000\n";
-    let items = |value| Limits {
-        expanded_items: value,
-        ..Limits::default()
+    let items = |value| LimitOverrides {
+        expanded_items: Some(value),
+        ..LimitOverrides::default()
     };
-    let steps = |value| Limits {
-        expansion_steps: value,
-        ..Limits::default()
+    let steps = |value| LimitOverrides {
+        expansion_steps: Some(value),
+        ..LimitOverrides::default()
     };
-    let inlined = |value| Limits {
-        inlined_calls: value,
-        ..Limits::default()
+    let inlined = |value| LimitOverrides {
+        inlined_calls: Some(value),
+        ..LimitOverrides::default()
     };
-    let recursive = |value| Limits {
-        recursive_calls: value,
-        ..Limits::default()
+    let recursive = |value| LimitOverrides {
+        recursive_calls: Some(value),
+        ..LimitOverrides::default()
     };
     let rows = [
         (
@@ -473,10 +473,10 @@ fn a_stopped_compilation_reports_its_one_limit_and_the_work_it_finished() {
 fn a_limit_reached_through_a_default_that_calls_its_function_names_the_default_in_its_help_in(
     orders: support::Orders,
 ) {
-    let thousand = Limits {
-        recursive_calls: 1_000,
-        inlined_calls: 1_000,
-        ..Limits::default()
+    let thousand = LimitOverrides {
+        recursive_calls: Some(1_000),
+        inlined_calls: Some(1_000),
+        ..LimitOverrides::default()
     };
     let compiler = Compiler::with_limits(&vocabulary(), thousand).expect("the vocabulary compiles");
     let helps = |items: &[&str]| -> Vec<Vec<Helped>> {
@@ -551,7 +551,7 @@ fn a_limit_reached_through_a_default_that_calls_its_function_names_the_default_i
             assert_eq!(found, expected, "{items:?}");
         }
     }
-    let varying = |limits: Limits, text: &str, code: Code, help: &str| {
+    let varying = |limits: LimitOverrides, text: &str, code: Code, help: &str| {
         let compiler =
             Compiler::with_limits(&vocabulary(), limits).expect("the vocabulary compiles");
         let found: Vec<(Code, Option<String>)> =
@@ -562,18 +562,18 @@ fn a_limit_reached_through_a_default_that_calls_its_function_names_the_default_i
         assert_eq!(found, vec![(code, Some(help.to_string()))], "{text}");
     };
     varying(
-        Limits {
-            recursive_calls: 5,
-            ..Limits::default()
+        LimitOverrides {
+            recursive_calls: Some(5),
+            ..LimitOverrides::default()
         },
         &recursing(6),
         Code::RecursionLimit,
         "reduce the distinct arguments the recursion computes",
     );
     varying(
-        Limits {
-            inlined_calls: 10,
-            ..Limits::default()
+        LimitOverrides {
+            inlined_calls: Some(10),
+            ..LimitOverrides::default()
         },
         &inlining(11),
         Code::InlineLimit,

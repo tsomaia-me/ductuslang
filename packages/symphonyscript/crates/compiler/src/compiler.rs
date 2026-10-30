@@ -8,7 +8,7 @@
     )
 )]
 
-use symphonyscript_core::{Limits, Span, Vocabulary};
+use symphonyscript_core::{LimitOverrides, Limits, Span, Vocabulary};
 
 use crate::diagnostics::{Code, Diagnostic, Severity};
 use crate::failed::Failed;
@@ -29,10 +29,11 @@ pub struct Compiler {
 
 impl Compiler {
     pub fn new(vocab: &Vocabulary) -> Result<Compiler, Failed> {
-        Self::with_limits(vocab, Limits::default())
+        Self::with_limits(vocab, LimitOverrides::default())
     }
 
-    pub fn with_limits(vocab: &Vocabulary, limits: Limits) -> Result<Compiler, Failed> {
+    pub fn with_limits(vocab: &Vocabulary, overrides: LimitOverrides) -> Result<Compiler, Failed> {
+        let limits = overrides.applied_to(Limits::default());
         let mut hir = Hir::default();
         let mut report = Report::default();
         let mut files: Vec<Source> = vocab

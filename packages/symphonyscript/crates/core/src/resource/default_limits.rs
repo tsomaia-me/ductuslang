@@ -1,6 +1,14 @@
 pub(super) const RECURSIVE_CALLS: u64 = 1_000_000;
+pub(super) const RECURSIVE_CALLS_WARNING: u64 = RECURSIVE_CALLS / 2;
 pub(super) const NESTING_DEPTH: u64 = 1_024;
+pub(super) const NESTING_DEPTH_WARNING: u64 = NESTING_DEPTH / 2;
 pub(super) const INLINED_CALLS: u64 = 1_000_000;
+pub(super) const INLINED_CALLS_WARNING: u64 = INLINED_CALLS / 2;
 pub(super) const EXPANSION_STEPS: u64 = 1_000_000;
+pub(super) const EXPANSION_STEPS_WARNING: u64 = EXPANSION_STEPS / 2;
 pub(super) const EXPANDED_ITEMS: u64 = 1_000_000;
+pub(super) const EXPANDED_ITEMS_WARNING: u64 = EXPANDED_ITEMS / 2;
+pub(super) const MEMORY_BYTES: u64 = 1_073_741_824;
+pub(super) const MEMORY_BYTES_WARNING: u64 = MEMORY_BYTES / 2;
 pub(super) const RELOAD_EDIT_DISTANCE: u64 = 1_000;
+pub(super) const SHARED_BODY_THRESHOLD: u64 = 1_000;

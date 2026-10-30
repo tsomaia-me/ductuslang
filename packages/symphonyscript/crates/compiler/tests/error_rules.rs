@@ -1,7 +1,7 @@
 use std::collections::BTreeSet;
 
 use symphonyscript::{Code, Compiler, Diagnostic, Severity, Source};
-use symphonyscript_core::Limits;
+use symphonyscript_core::LimitOverrides;
 use symphonyscript_fixtures::{
     SPEC, bounded_vocabulary, native_vocabulary, prelude_vocabulary, vocabulary,
 };
@@ -806,11 +806,11 @@ impl Compilers {
             natives: Compiler::new(&native_vocabulary()).expect("the native vocabulary compiles"),
             low_limits: Compiler::with_limits(
                 &vocabulary(),
-                Limits {
-                    recursive_calls: 1_000,
-                    expansion_steps: 1_000,
-                    expanded_items: 1_000,
-                    ..Limits::default()
+                LimitOverrides {
+                    recursive_calls: Some(1_000),
+                    expansion_steps: Some(1_000),
+                    expanded_items: Some(1_000),
+                    ..LimitOverrides::default()
                 },
             )
             .expect("the example vocabulary compiles"),

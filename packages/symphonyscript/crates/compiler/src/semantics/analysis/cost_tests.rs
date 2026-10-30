@@ -1,4 +1,4 @@
-use symphonyscript_core::Limits;
+use symphonyscript_core::LimitOverrides;
 use symphonyscript_fixtures::vocabulary;
 
 use super::Engine;
@@ -563,9 +563,9 @@ fn measured_row(compiler: &Compiler, row: &Row) -> Report {
 }
 
 fn assert_costs_linear(construct: Construct, expected_rows: usize) {
-    let limits = Limits {
-        nesting_depth: 1_000_000,
-        ..Limits::default()
+    let limits = LimitOverrides {
+        nesting_depth: Some(1_000_000),
+        ..LimitOverrides::default()
     };
     let mut rows = Vec::new();
     for shape in SHAPES {

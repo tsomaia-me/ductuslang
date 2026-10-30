@@ -1,7 +1,7 @@
 mod support;
 
 use symphonyscript::{Code, Compiler, Diagnostic};
-use symphonyscript_core::Limits;
+use symphonyscript_core::LimitOverrides;
 use symphonyscript_fixtures::vocabulary;
 
 fn spans(text: &str, diagnostics: &[Diagnostic]) -> Vec<(Code, String, Vec<String>)> {
@@ -309,18 +309,18 @@ fn a_call_that_a_bounded_expansion_repeats_is_named_once_with_its_levels_in(
     };
     let ten_thousand = Compiler::with_limits(
         &vocabulary(),
-        Limits {
-            inlined_calls: 10_000,
-            ..Limits::default()
+        LimitOverrides {
+            inlined_calls: Some(10_000),
+            ..LimitOverrides::default()
         },
     )
     .expect("the vocabulary compiles");
     limited(&ten_thousand, &format!("{input}{deep}{use_f}"), "9,999");
     let thousand = Compiler::with_limits(
         &vocabulary(),
-        Limits {
-            inlined_calls: 1000,
-            ..Limits::default()
+        LimitOverrides {
+            inlined_calls: Some(1000),
+            ..LimitOverrides::default()
         },
     )
     .expect("the vocabulary compiles");
@@ -1200,9 +1200,9 @@ fn a_lowered_inline_limit_refuses_a_doubling_bounded_function_on_an_input_in_eve
     let inline_limited = vec![(Code::InlineLimit, "f(n - 1)".to_string())];
     let thousand = Compiler::with_limits(
         &vocabulary(),
-        Limits {
-            inlined_calls: 1000,
-            ..Limits::default()
+        LimitOverrides {
+            inlined_calls: Some(1000),
+            ..LimitOverrides::default()
         },
     )
     .expect("the vocabulary compiles");
@@ -1327,9 +1327,9 @@ fn a_call_rejected_as_reactive_recursion_adds_nothing_to_the_inline_count_in(
 ) {
     let four = Compiler::with_limits(
         &vocabulary(),
-        Limits {
-            inlined_calls: 4,
-            ..Limits::default()
+        LimitOverrides {
+            inlined_calls: Some(4),
+            ..LimitOverrides::default()
         },
     )
     .expect("the vocabulary compiles");

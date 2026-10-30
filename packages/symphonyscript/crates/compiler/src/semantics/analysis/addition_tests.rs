@@ -1,4 +1,4 @@
-use symphonyscript_core::{BinaryOp, Limits, Scalar};
+use symphonyscript_core::{BinaryOp, LimitOverrides, Scalar};
 use symphonyscript_fixtures::{native_vocabulary, vocabulary};
 
 use super::Engine;
@@ -21,12 +21,12 @@ fn analyzed<R>(
     text: &str,
     inspect: impl FnOnce(&Engine<'_>) -> R,
 ) -> (Vec<Diagnostic>, R) {
-    analyzed_within(vocabulary, Limits::default(), text, inspect)
+    analyzed_within(vocabulary, LimitOverrides::default(), text, inspect)
 }
 
 fn analyzed_within<R>(
     vocabulary: &symphonyscript_core::Vocabulary,
-    limits: Limits,
+    limits: LimitOverrides,
     text: &str,
     inspect: impl FnOnce(&Engine<'_>) -> R,
 ) -> (Vec<Diagnostic>, R) {
@@ -539,9 +539,9 @@ fn a_fixed_u8_argument_computes_in_u8_through_a_recursive_body() {
 }
 
 fn deepening_work(nesting_depth: u64) -> u64 {
-    let limits = Limits {
-        nesting_depth,
-        ..Limits::default()
+    let limits = LimitOverrides {
+        nesting_depth: Some(nesting_depth),
+        ..LimitOverrides::default()
     };
     let text =
         "fn fib(n): if n < 2 then n else fib(n - 1) + fib(n - -1)\nClip c:\n    Note/(fib(6))\n";
@@ -562,7 +562,7 @@ fn reaching_the_nesting_limit_costs_work_linear_in_the_limit() {
     assert!(large <= 10 * small, "{small} {large}");
 }
 
-fn counted(bound: u64, limits: Limits) -> (Vec<Diagnostic>, Option<CVal>, u64) {
+fn counted(bound: u64, limits: LimitOverrides) -> (Vec<Diagnostic>, Option<CVal>, u64) {
     let text = format!(
         "fn count(i) bounded {bound} else 0: count(i + 1) + 1\nClip c:\n    Note/(count(0) - {bound})\n"
     );
@@ -578,8 +578,8 @@ fn counted(bound: u64, limits: Limits) -> (Vec<Diagnostic>, Option<CVal>, u64) {
 #[test]
 #[ignore = "stress"]
 fn stress_a_bounded_function_evaluates_in_work_linear_in_its_levels() {
-    let (small_diagnostics, small_value, small) = counted(25_000, Limits::default());
-    let (large_diagnostics, large_value, large) = counted(100_000, Limits::default());
+    let (small_diagnostics, small_value, small) = counted(25_000, LimitOverrides::default());
+    let (large_diagnostics, large_value, large) = counted(100_000, LimitOverrides::default());
     assert!(
         errors(&small_diagnostics).is_empty(),
         "{small_diagnostics:?}"
@@ -593,9 +593,9 @@ fn stress_a_bounded_function_evaluates_in_work_linear_in_its_levels() {
         (Some(CVal::Int(0)), Some(CVal::Int(0)))
     );
     assert!(large <= 4 * small, "{small} {large}");
-    let limits = Limits {
-        recursive_calls: 20_000,
-        ..Limits::default()
+    let limits = LimitOverrides {
+        recursive_calls: Some(20_000),
+        ..LimitOverrides::default()
     };
     let (diagnostics, _, work) = counted(2_000_000, limits);
     let codes: Vec<_> = errors(&diagnostics)
@@ -717,7 +717,7 @@ fn passed_over_expansion_nodes(scrutinee: &[&str], bound: u32) -> Vec<(String, u
         .into_iter()
         .map(|text| {
             let (diagnostics, nodes) =
-                analyzed_within(&vocabulary(), Limits::default(), &text, |engine| {
+                analyzed_within(&vocabulary(), LimitOverrides::default(), &text, |engine| {
                     engine.nodes.len()
                 });
             assert!(errors(&diagnostics).is_empty(), "{text}{diagnostics:?}");
@@ -819,11 +819,11 @@ fn a_qualified_variant_in_an_array_that_only_len_reads_computes_its_length() {
 
 #[test]
 fn a_call_beside_the_inline_limit_computes_its_value() {
-    let four = Limits {
-        inlined_calls: 4,
-        ..Limits::default()
+    let four = LimitOverrides {
+        inlined_calls: Some(4),
+        ..LimitOverrides::default()
     };
-    let rows: [(&[&str], Limits, i128); 7] = [
+    let rows: [(&[&str], LimitOverrides, i128); 7] = [
         (
             &[
                 "let fixed = [1, 2]\n",
@@ -863,7 +863,7 @@ fn a_call_beside_the_inline_limit_computes_its_value() {
                 "fn r(i): if i is 0 then 0 else r(i - 1) + 1\n",
                 "Clip c:\n    Note/(60 + r(3))\n",
             ],
-            Limits::default(),
+            LimitOverrides::default(),
             63,
         ),
         (
