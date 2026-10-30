@@ -1,6 +1,7 @@
 use super::ctx::Ctx;
 use super::frame::Frame;
 use super::machine::Machine;
+use super::machine_key::MachineKey;
 use crate::semantics::Internal;
 use crate::semantics::analysis::call_key::CallKey;
 use crate::semantics::analysis::eval_ty::EvalTy;
@@ -39,13 +40,15 @@ fn a_miss_in_the_recursive_evaluators_own_state_is_an_internal_error() {
             engine.recursive(call, (function, Vec::new()), EvalTy::Exact, ctx, &mut need)
         };
 
-        engine.machines.insert(key.clone(), Machine::default());
+        engine
+            .machines
+            .insert(MachineKey::Call(key.clone()), Machine::default());
         assert_eq!(
             evaluated(engine, Ctx::Global),
             Err(Internal::missed("evaluation work"))
         );
         engine.machines.insert(
-            key.clone(),
+            MachineKey::Call(key.clone()),
             Machine {
                 frames: Vec::new(),
                 work: vec![(0, call, EvalTy::Exact)],
@@ -71,8 +74,10 @@ fn a_miss_in_the_recursive_evaluators_own_state_is_an_internal_error() {
 
         engine.active = Some(Machine {
             frames: vec![Frame {
-                key,
-                function,
+                key: Some(key),
+                function: Some(function),
+                run: None,
+                loops: FastMap::default(),
                 args: Vec::new(),
                 call,
                 root: call,

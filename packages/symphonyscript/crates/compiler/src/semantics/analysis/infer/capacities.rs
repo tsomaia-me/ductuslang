@@ -12,8 +12,10 @@ use crate::semantics::analysis::capacity::{BoundForm, Extreme, Piecewise, Ratio,
 use crate::semantics::analysis::engine::Engine;
 use crate::semantics::analysis::eval_ty::EvalTy;
 use crate::semantics::analysis::fast_hash::{FastMap, FastSet};
+use crate::semantics::analysis::for_iterable::ForIterable;
+use crate::semantics::analysis::for_node::ForNode;
 use crate::semantics::analysis::history_cell::HistoryCell;
-use crate::semantics::analysis::ids::{BindingId, NodeId};
+use crate::semantics::analysis::ids::{BindingId, NodeId, SlotId};
 use crate::semantics::analysis::let_ref::LetRef;
 use crate::semantics::analysis::op::Op;
 use crate::semantics::analysis::resolve::LayoutFound;
@@ -298,6 +300,12 @@ impl Engine<'_> {
         for index in 0..self.nodes.len() {
             crate::semantics::counted_walk::CountedWalk::CapacitiesLengthLimits.step();
             let node = NodeId(u32::try_from(index).map_err(|_| Internal::missed("node"))?);
+            if let Op::For(for_node) = &self.node(node)?.op
+                && let ForIterable::Range(low, high) = for_node.iterable
+            {
+                self.range_bounds(node, (low, high))?;
+                continue;
+            }
             let Op::Join(lhs, rhs) = self.node(node)?.op else {
                 continue;
             };
@@ -683,7 +691,7 @@ impl Engine<'_> {
                         .ok_or(Internal::missed("capacity"))
                 })
                 .collect::<Result<_, _>>()?;
-            let value = self.combined_extent(node, (&operands, &values), extra)?;
+            let value = self.combined_extent(node, (&operands, &values), extra, env)?;
             if from_env || operands.iter().any(|operand| dependent.contains(operand)) {
                 dependent.insert(node);
             } else {
@@ -696,6 +704,9 @@ impl Engine<'_> {
 
     fn reads_env(&self, node: NodeId, env: &Env) -> Result<bool, Internal> {
         let op = &self.node(node)?.op;
+        if let Op::Slot(_) = op {
+            return Ok(true);
+        }
         let binding = if let Op::Read(binding) = op {
             Some(*binding)
         } else if let Op::History { cell, .. } = op {
@@ -821,6 +832,19 @@ impl Engine<'_> {
                 None => Parts::Leaf(Extent::Fixed(0)),
             },
             Op::Builtin(Builtin::Bytes, args) => Parts::Operands(args, None),
+            Op::Slot(slot) => Parts::Leaf(self.slot_extent(slot)?),
+            Op::For(ref for_node) => {
+                let mut operands = Vec::new();
+                match for_node.iterable {
+                    ForIterable::Values(values) => operands.push(values),
+                    ForIterable::Range(low, high) => {
+                        operands.extend(self.bound_measures(low)?);
+                        operands.extend(self.bound_measures(high)?);
+                    }
+                }
+                operands.push(for_node.start);
+                Parts::Operands(operands, None)
+            }
             Op::Array(elements) => Parts::Leaf(Extent::Fixed(
                 i128::try_from(elements.len()).unwrap_or(i128::MAX),
             )),
@@ -833,6 +857,7 @@ impl Engine<'_> {
         node: NodeId,
         (operands, values): (&[NodeId], &[Extent]),
         extra: Option<Extent>,
+        env: &Env,
     ) -> Result<Extent, Internal> {
         let op = self.node(node)?.op.clone();
         let first = values.first().cloned().unwrap_or(Extent::Fixed(0));
@@ -866,6 +891,7 @@ impl Engine<'_> {
                 .skip(1)
                 .fold(first.clone(), |widest, value| widest.choice(value)),
             Op::Native { .. } => Extent::Variable(first.capacity()),
+            Op::For(ref for_node) => self.for_extent(node, for_node, (operands, values), env)?,
             Op::History { .. } => {
                 let reading = match extra {
                     Some(extra) => extra,
@@ -923,5 +949,178 @@ impl Engine<'_> {
             | CVal::Array(_)
             | CVal::Error => BoundForm::Reactive(Extreme::Unbounded),
         })
+    }
+
+    fn slot_extent(&self, slot: SlotId) -> Result<Extent, Internal> {
+        if let Some(capacity) = self.memo.slot_extents.get(&slot) {
+            return Ok(Extent::Variable(capacity.clone()));
+        }
+        let record = self.slot(slot)?;
+        Ok(match &record.layout {
+            None => Extent::Fixed(0),
+            Some(layout) if !layout.variable => {
+                Extent::Fixed(i128::from(layout.outer().unwrap_or(0)))
+            }
+            Some(_) => {
+                let capacity = match (record.capacity, self.memo.loop_capacities.get(&slot)) {
+                    (Some(annotated), _) => i128::from(annotated),
+                    (None, Some(found)) => *found,
+                    (None, None) => 0,
+                };
+                Extent::Variable(Piecewise::constant(capacity))
+            }
+        })
+    }
+
+    fn for_extent(
+        &mut self,
+        node: NodeId,
+        for_node: &ForNode,
+        (operands, values): (&[NodeId], &[Extent]),
+        env: &Env,
+    ) -> Result<Extent, Internal> {
+        let accumulator = self.slot(for_node.accumulator)?.clone();
+        let Some(layout) = &accumulator.layout else {
+            return Ok(Extent::Fixed(0));
+        };
+        if !layout.variable {
+            return Ok(Extent::Fixed(i128::from(layout.outer().unwrap_or(0))));
+        }
+        let measured: FastMap<NodeId, Extent> = operands
+            .iter()
+            .copied()
+            .zip(values.iter().cloned())
+            .collect();
+        let held = |extent: Option<&Extent>| match extent {
+            Some(Extent::Fixed(length)) => *length,
+            Some(Extent::Variable(capacity)) => capacity.start().floor(),
+            None => 0,
+        };
+        let count = match for_node.iterable {
+            ForIterable::Values(values) => held(measured.get(&values)),
+            ForIterable::Range(low, high) => {
+                let capacity = |array: NodeId| {
+                    measured.get(&array).and_then(|extent| match extent {
+                        Extent::Fixed(length) => Some(*length),
+                        Extent::Variable(capacity) => {
+                            capacity.constant_value().map(|value| value.floor())
+                        }
+                    })
+                };
+                let low = self.bound_range(low, &capacity)?;
+                let high = self.bound_range(high, &capacity)?;
+                match (low.min, high.max) {
+                    (Some(low), Some(high)) => high.saturating_sub(low).max(0),
+                    (None, _) | (_, None) => 0,
+                }
+            }
+        };
+        let start = held(measured.get(&for_node.start));
+        self.memo
+            .slot_extents
+            .insert(for_node.accumulator, Piecewise::affine(0, 1));
+        let function = self.capacity_with(for_node.body, env);
+        self.memo.slot_extents.remove(&for_node.accumulator);
+        let function = function?;
+        let mut current = start;
+        let mut most = start;
+        let mut left = count;
+        while left > 0 && current < LIMIT {
+            let at = Ratio::int(current);
+            let next = function.at(at).floor();
+            if next <= current {
+                break;
+            }
+            let growth = next - current;
+            let steps = match function.segment_at(at) {
+                (slope, Some(end)) if slope == Ratio::int(1) => (end - at)
+                    .div(Ratio::int(growth))
+                    .map_or(1, |steps| steps.floor().max(1)),
+                (slope, None) if slope == Ratio::int(1) => left,
+                (_, _) => 1,
+            }
+            .min(left);
+            current = current.saturating_add(growth.saturating_mul(steps));
+            most = most.max(current);
+            left -= steps;
+        }
+        self.memo.loop_capacities.insert(for_node.accumulator, most);
+        if most >= LIMIT && self.memo.loop_reports.insert(node) {
+            self.error_at_node(
+                Code::LengthLimit,
+                node,
+                format!(
+                    "this `for` expression holds up to {most} elements, and an array's length and capacity are below 2³¹; a slice in its body, such as `[^8..]`, keeps the newest eight"
+                ),
+            )?;
+        }
+        let Some(annotated) = accumulator.capacity else {
+            return Ok(Extent::Variable(Piecewise::constant(most.min(LIMIT))));
+        };
+        let annotated = i128::from(annotated);
+        if most > annotated && self.memo.loop_reports.insert(node) {
+            self.error_at_node(
+                Code::CapacityExceeded,
+                node,
+                format!(
+                    "this `for` expression holds up to {most} elements, more than the annotated capacity {annotated} of its accumulator"
+                ),
+            )?;
+        }
+        Ok(Extent::Variable(Piecewise::constant(annotated)))
+    }
+
+    fn range_bounds(
+        &mut self,
+        node: NodeId,
+        (low, high): (NodeId, NodeId),
+    ) -> Result<(), Internal> {
+        let scope = self.node(node)?.scope;
+        if self.in_probe(scope)? || !self.known_sig(node)?.reactive {
+            return Ok(());
+        }
+        let mut measured: FastMap<NodeId, i128> = FastMap::default();
+        for bound in [low, high] {
+            for array in self.bound_measures(bound)? {
+                let capacity = match self.extent_with(array, &Env::default())? {
+                    Extent::Fixed(length) => length,
+                    Extent::Variable(capacity) => capacity.start().floor(),
+                };
+                measured.insert(array, capacity);
+            }
+        }
+        let capacity = |array: NodeId| measured.get(&array).copied();
+        for (bound, upper) in [(low, false), (high, true)] {
+            let sig = self.known_sig(bound)?;
+            if !sig.reactive || sig.is_error() {
+                continue;
+            }
+            let range = self.bound_range(bound, &capacity)?;
+            let (side, example) = if upper {
+                (range.max, "0..min(n, 16)")
+            } else {
+                (range.min, "max(n, 0)..16")
+            };
+            if side.is_some() {
+                continue;
+            }
+            let message = if upper {
+                "this upper bound of the range reads a cell, and its form gives it no maximum"
+            } else {
+                "this lower bound of the range reads a cell, and its form gives it no minimum"
+            };
+            let (loc, scope) = {
+                let record = self.node(bound)?;
+                (record.loc, record.scope)
+            };
+            self.error_helped(
+                Code::RangeBound,
+                loc,
+                scope,
+                message.to_string(),
+                format!("bound it by its form, as in `{example}`"),
+            )?;
+        }
+        Ok(())
     }
 }

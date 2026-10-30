@@ -145,6 +145,7 @@ impl Engine<'_> {
             | Op::Pi
             | Op::NodeRef(_)
             | Op::Arg(_)
+            | Op::Slot(_)
             | Op::Unary(..)
             | Op::Binary(..)
             | Op::If(..)
@@ -155,6 +156,7 @@ impl Engine<'_> {
             | Op::Convert(..)
             | Op::Builtin(..)
             | Op::Recursive { .. }
+            | Op::For(_)
             | Op::ToRead { .. }
             | Op::Join(..)
             | Op::Slice { .. }

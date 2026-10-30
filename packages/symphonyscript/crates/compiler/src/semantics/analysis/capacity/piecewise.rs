@@ -43,6 +43,21 @@ impl Piecewise {
         }
     }
 
+    pub fn segment_at(&self, t: Ratio) -> (Ratio, Option<Ratio>) {
+        let mut previous: Option<(Ratio, Ratio)> = None;
+        for &(point, value) in &self.points {
+            if point > t {
+                let slope = match previous {
+                    Some((left, left_value)) => (value - left_value).div(point - left),
+                    None => Some(Ratio::zero()),
+                };
+                return (slope.unwrap_or(Ratio::zero()), Some(point));
+            }
+            previous = Some((point, value));
+        }
+        (self.tail, None)
+    }
+
     pub fn constant_value(&self) -> Option<Ratio> {
         match self.points.as_slice() {
             [(_, value)] if self.tail.is_zero() => Some(*value),

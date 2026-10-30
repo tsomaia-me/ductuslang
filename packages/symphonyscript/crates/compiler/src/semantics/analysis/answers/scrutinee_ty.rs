@@ -66,12 +66,14 @@ impl Engine<'_> {
                 | Op::NodeRef(_)
                 | Op::Read(_)
                 | Op::Arg(_)
+                | Op::Slot(_)
                 | Op::Unary(..)
                 | Op::Binary(..)
                 | Op::Convert(..)
                 | Op::Annotate(..)
                 | Op::Builtin(..)
                 | Op::Recursive { .. }
+                | Op::For(_)
                 | Op::ToRead { .. }
                 | Op::History { .. }
                 | Op::Native { .. } => return Ok(None),

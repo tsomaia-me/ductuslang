@@ -235,23 +235,18 @@ impl Engine<'_> {
                 continue;
             };
             let (owner, sources) = (locals.owner, locals.params.clone());
-            let (params, lets) = match owner {
-                crate::semantics::analysis::locals_owner::LocalsOwner::Fn(function) => {
-                    let decl = hir.fn_decl(function)?;
-                    (&decl.params, decl.lets.len())
-                }
-                crate::semantics::analysis::locals_owner::LocalsOwner::Pattern(pattern) => {
-                    let decl = hir.pattern(pattern)?;
-                    (&decl.params, decl.lets.len())
-                }
-            };
+            let (params, lets) = self.owner_locals(owner)?;
+            let defaults: Vec<Option<crate::semantics::ir::ExprId>> =
+                params.iter().map(|param| param.default).collect();
+            let lets = lets.len();
             for (position, source) in sources.iter().enumerate() {
                 match source {
                     ParamSource::Arg { expr, scope } => roots.push((*expr, *scope)),
                     ParamSource::Default => {
-                        let default = params
+                        let default = defaults
                             .get(position)
-                            .and_then(|param| param.default)
+                            .copied()
+                            .flatten()
                             .ok_or(Internal::missed("parameter default"))?;
                         if !self.inside_function_body(id)? {
                             let count = u32::try_from(position)

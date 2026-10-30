@@ -1,6 +1,7 @@
 use symphonyscript_core::{BinaryOp, Scalar, UnaryOp};
 
 use super::args::Args;
+use super::for_expr::ForExpr;
 use super::ident::Ident;
 use super::ids::ExprId;
 use super::match_arm::MatchArm;
@@ -45,6 +46,7 @@ pub(crate) enum ExprKind {
         arms: Vec<MatchArm>,
         otherwise: Option<ExprId>,
     },
+    For(Box<ForExpr>),
 }
 
 impl ExprKind {
@@ -102,6 +104,7 @@ impl ExprKind {
                 children.extend(otherwise.iter().copied());
                 children
             }
+            ExprKind::For(for_expr) => for_expr.children(),
         }
     }
 }

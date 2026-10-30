@@ -66,9 +66,11 @@ impl Engine<'_> {
                     | Op::Chosen(_)
                     | Op::Read(_)
                     | Op::Recursive { .. }
+                    | Op::For(_)
                     | Op::History { .. }
                     | Op::ToRead { .. }
-                    | Op::Arg(_) => {}
+                    | Op::Arg(_)
+                    | Op::Slot(_) => {}
                     Op::Number(..)
                     | Op::Const(_)
                     | Op::Bool(_)

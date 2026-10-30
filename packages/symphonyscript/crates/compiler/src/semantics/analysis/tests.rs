@@ -46,14 +46,7 @@ fn graph_size(calls: usize) -> (usize, usize) {
     let mut hir = Hir::default();
     hir.seal_prelude();
     let parsed = parse(&source, &vocabulary);
-    build_file(
-        &mut hir,
-        &source.path,
-        &parsed,
-        &vocabulary,
-        &mut crate::semantics::reporting::Report::default(),
-    )
-    .expect("the chain builds");
+    build_file(&mut hir, &source.path, &parsed, &vocabulary).expect("the chain builds");
     let mut report = Report::default();
     let variants = Variants::of(&vocabulary).expect("the vocabulary's variants index");
     let collected = collect(&hir, &vocabulary, &variants, &mut report).expect("the chain collects");
@@ -2207,14 +2200,7 @@ fn built(vocabulary: &Vocabulary, text: &str) -> Hir {
     let mut hir = Hir::default();
     hir.seal_prelude();
     let parsed = parse(&source, vocabulary);
-    build_file(
-        &mut hir,
-        &source.path,
-        &parsed,
-        vocabulary,
-        &mut crate::semantics::reporting::Report::default(),
-    )
-    .expect("the program builds");
+    build_file(&mut hir, &source.path, &parsed, vocabulary).expect("the program builds");
     hir
 }
 

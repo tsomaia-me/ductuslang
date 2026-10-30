@@ -9,6 +9,7 @@ mod expr;
 mod expr_kind;
 mod float_lit;
 mod fn_decl;
+mod for_expr;
 mod hir;
 mod ident;
 mod ids;
@@ -45,6 +46,7 @@ pub(crate) use expr::Expr;
 pub(crate) use expr_kind::ExprKind;
 pub(crate) use float_lit::FloatLit;
 pub(crate) use fn_decl::FnDecl;
+pub(crate) use for_expr::ForExpr;
 pub(crate) use hir::Hir;
 pub(crate) use ident::Ident;
 pub(crate) use ids::{

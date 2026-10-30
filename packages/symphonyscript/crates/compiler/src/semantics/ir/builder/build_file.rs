@@ -5,7 +5,6 @@ use super::faults::Faults;
 use super::hir_builder::HirBuilder;
 use crate::semantics::Internal;
 use crate::semantics::ir::{Hir, UnknownNames};
-use crate::semantics::reporting::Report;
 use crate::syntax::ast::{AstNode, Item};
 use crate::syntax::{Parsed, SyntaxKind};
 
@@ -14,7 +13,6 @@ pub(crate) fn build_file(
     path: &str,
     parsed: &Parsed,
     vocabulary: &Vocabulary,
-    report: &mut Report,
 ) -> Result<(), Internal> {
     let file = u32::try_from(hir.files.len()).unwrap_or(u32::MAX);
     hir.files.push(path.to_string());
@@ -27,7 +25,6 @@ pub(crate) fn build_file(
         faults: Faults::new(&parsed.diagnostics, &parsed.detached, root.syntax()),
         vocabulary,
         dropped: false,
-        report,
     };
     let mut previous = None;
     let mut skipped = Vec::new();

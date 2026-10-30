@@ -15,14 +15,7 @@ fn walked(text: &str) -> u64 {
     let mut hir = Hir::default();
     hir.seal_prelude();
     let parsed = parse(&source, &vocabulary);
-    build_file(
-        &mut hir,
-        &source.path,
-        &parsed,
-        &vocabulary,
-        &mut crate::semantics::reporting::Report::default(),
-    )
-    .expect("the program builds");
+    build_file(&mut hir, &source.path, &parsed, &vocabulary).expect("the program builds");
     let variants = Variants::of(&vocabulary).expect("the vocabulary's variants index");
     let mut report = Report::default();
     let collected =

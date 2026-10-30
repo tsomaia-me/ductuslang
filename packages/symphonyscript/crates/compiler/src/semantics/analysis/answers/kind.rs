@@ -96,6 +96,7 @@ impl Engine<'_> {
             | Op::Use(_)
             | Op::Chosen(_)
             | Op::Arg(_)
+            | Op::Slot(_)
             | Op::Unary(..)
             | Op::Binary(..)
             | Op::Pick { .. }
@@ -105,6 +106,7 @@ impl Engine<'_> {
             | Op::Annotate(..)
             | Op::Builtin(..)
             | Op::Recursive { .. }
+            | Op::For(_)
             | Op::Join(..)
             | Op::Slice { .. }
             | Op::Native { .. } => Some(Extra::None),
@@ -238,7 +240,9 @@ impl Engine<'_> {
             | Op::Pi
             | Op::NodeRef(_)
             | Op::Arg(_)
+            | Op::Slot(_)
             | Op::Recursive { .. } => None,
+            Op::For(for_node) => self.combine(&[for_node.start, for_node.body])?,
         })
     }
 
@@ -279,6 +283,7 @@ impl Engine<'_> {
                 | Op::NodeRef(_)
                 | Op::Read(_)
                 | Op::Arg(_)
+                | Op::Slot(_)
                 | Op::Unary(..)
                 | Op::Binary(..)
                 | Op::Pick { .. }
@@ -288,6 +293,7 @@ impl Engine<'_> {
                 | Op::Annotate(..)
                 | Op::Builtin(..)
                 | Op::Recursive { .. }
+                | Op::For(_)
                 | Op::ToRead { .. }
                 | Op::Join(..)
                 | Op::Slice { .. }
@@ -327,6 +333,7 @@ impl Engine<'_> {
                 | Op::Use(_)
                 | Op::Chosen(_)
                 | Op::Arg(_)
+                | Op::Slot(_)
                 | Op::Unary(..)
                 | Op::Binary(..)
                 | Op::If(..)
@@ -337,6 +344,7 @@ impl Engine<'_> {
                 | Op::Annotate(..)
                 | Op::Builtin(..)
                 | Op::Recursive { .. }
+                | Op::For(_)
                 | Op::ToRead { .. }
                 | Op::Join(..)
                 | Op::Slice { .. }
@@ -370,6 +378,7 @@ impl Engine<'_> {
                 Op::Bare(_)
                 | Op::NodeRef(_)
                 | Op::Arg(_)
+                | Op::Slot(_)
                 | Op::Unary(..)
                 | Op::Binary(..)
                 | Op::If(..)
@@ -381,6 +390,7 @@ impl Engine<'_> {
                 | Op::Annotate(..)
                 | Op::Builtin(..)
                 | Op::Recursive { .. }
+                | Op::For(_)
                 | Op::ToRead { .. }
                 | Op::Join(..)
                 | Op::Slice { .. }
@@ -453,12 +463,14 @@ impl Engine<'_> {
             | Op::Use(_)
             | Op::Chosen(_)
             | Op::Arg(_)
+            | Op::Slot(_)
             | Op::If(..)
             | Op::Match { .. }
             | Op::Array(_)
             | Op::Annotate(..)
             | Op::Builtin(..)
             | Op::Recursive { .. }
+            | Op::For(_)
             | Op::ToRead { .. }
             | Op::Join(..)
             | Op::Slice { .. }
@@ -506,6 +518,8 @@ impl Engine<'_> {
             Op::NodeRef(_) => Sig::of(Kind::Node, Width::Flexible, false, None),
             Op::Use(_) | Op::Chosen(_) => at(0)?,
             Op::Arg(_) => return Err(Internal::missed("argument signature")),
+            Op::Slot(slot) => self.slot(*slot)?.sig,
+            Op::For(for_node) => self.for_sig(node, for_node, sigs)?,
             Op::Read(binding) => match extra {
                 Extra::Read(init) => self.read_sig(*binding, init)?,
                 Extra::None | Extra::ToRead { .. } | Extra::History(_) | Extra::Arms(_) => {
@@ -1290,8 +1304,10 @@ pub(crate) fn joins(op: &Op) -> bool {
         | Op::NodeRef(_)
         | Op::Read(_)
         | Op::Arg(_)
+        | Op::Slot(_)
         | Op::Unary(UnaryOp::Not, _)
         | Op::Recursive { .. }
+        | Op::For(_)
         | Op::ToRead { .. }
         | Op::Join(..)
         | Op::Slice { .. }

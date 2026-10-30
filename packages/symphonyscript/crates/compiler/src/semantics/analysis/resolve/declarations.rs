@@ -202,6 +202,7 @@ impl Engine<'_> {
             match owner {
                 LocalsOwner::Fn(function) => self.memo.named_bodies.insert(function),
                 LocalsOwner::Pattern(pattern) => patterns.insert(pattern),
+                LocalsOwner::For(_) => false,
             };
         }
         Ok(())
@@ -566,10 +567,7 @@ impl Engine<'_> {
                 let ScopeKind::Locals(locals) = &self.scope_of(scope)?.kind else {
                     return Err(Internal::missed("locals scope"));
                 };
-                let params = match locals.owner {
-                    LocalsOwner::Fn(function) => &self.hir.fn_decl(function)?.params,
-                    LocalsOwner::Pattern(pattern) => &self.hir.pattern(pattern)?.params,
-                };
+                let params = self.owner_locals(locals.owner)?.0;
                 let param = params
                     .get(index as usize)
                     .ok_or(Internal::missed("parameter"))?;

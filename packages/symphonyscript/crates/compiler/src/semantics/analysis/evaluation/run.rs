@@ -199,6 +199,7 @@ impl Engine<'_> {
             | Op::Read(_)
             | Op::Chosen(_)
             | Op::Arg(_)
+            | Op::Slot(_)
             | Op::Unary(UnaryOp::Not, _)
             | Op::Binary(..)
             | Op::If(..)
@@ -210,6 +211,7 @@ impl Engine<'_> {
             | Op::Annotate(..)
             | Op::Builtin(..)
             | Op::Recursive { .. }
+            | Op::For(_)
             | Op::ToRead { .. }
             | Op::Join(..)
             | Op::Slice { .. }
@@ -323,6 +325,11 @@ impl Engine<'_> {
                 Ctx::Frame(frame) => self.frame_arg(frame, slot)?,
                 Ctx::Global => return Err(Internal::missed("evaluation frame")),
             },
+            Op::Slot(slot) => match ctx {
+                Ctx::Frame(frame) => self.slot_value(frame, slot)?,
+                Ctx::Global => return Err(Internal::missed("evaluation frame")),
+            },
+            Op::For(for_node) => return self.for_value(node, &for_node, (own, partner), ctx, need),
             Op::Number(number, suffix) => self.literal(node, &number, suffix, own)?,
             Op::Const(value) => match value {
                 Value::U8(value) => CVal::Int(i128::from(value)),
@@ -1410,10 +1417,12 @@ fn takes_expected(op: &Op) -> bool {
         | Op::NodeRef(_)
         | Op::Read(_)
         | Op::Arg(_)
+        | Op::Slot(_)
         | Op::Unary(UnaryOp::Not, _)
         | Op::Convert(..)
         | Op::Annotate(..)
         | Op::Recursive { .. }
+        | Op::For(_)
         | Op::ToRead { .. }
         | Op::History { .. }
         | Op::Native { .. } => false,

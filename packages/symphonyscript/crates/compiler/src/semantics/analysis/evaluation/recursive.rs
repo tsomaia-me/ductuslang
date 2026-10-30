@@ -8,6 +8,7 @@ use super::ctx::Ctx;
 use super::frame::Frame;
 use super::is_float_ty::is_float_ty;
 use super::machine::Machine;
+use super::machine_key::MachineKey;
 use super::own_type::own_type;
 use crate::diagnostics::Code;
 use crate::semantics::Internal;
@@ -388,7 +389,9 @@ impl Engine<'_> {
             }
             let record = self.frame(0)?;
             let (call, function) = (record.call, record.function);
-            self.reactive_body(call, function)?;
+            if let Some(function) = function {
+                self.reactive_body(call, function)?;
+            }
             return Ok(Some(CVal::Error));
         }
         self.typed_child(arm, (own, partner), ctx, need)
@@ -622,7 +625,8 @@ impl Engine<'_> {
         own: EvalTy,
         need: &mut Vec<Query>,
     ) -> Result<Option<CVal>, Internal> {
-        let machine = match self.machines.remove(&call.key) {
+        let root_key = MachineKey::Call(call.key.clone());
+        let machine = match self.machines.remove(&root_key) {
             Some(machine) => machine,
             None => {
                 let root = match some!(self.template(
@@ -653,8 +657,9 @@ impl Engine<'_> {
                 work.extend(defaults.into_iter().map(|(node, ty)| (0, node, ty)));
                 Machine {
                     frames: vec![Frame {
-                        key: call.key.clone(),
-                        function: call.function,
+                        key: Some(call.key.clone()),
+                        function: Some(call.function),
+                        run: None,
                         args: call.values,
                         call: node,
                         root,
@@ -662,6 +667,7 @@ impl Engine<'_> {
                         expected: own,
                         feeds: call.feeds,
                         memo: FastMap::default(),
+                        loops: FastMap::default(),
                         depth: 1,
                         faults: FastSet::default(),
                         templates,
@@ -676,8 +682,16 @@ impl Engine<'_> {
                 }
             }
         };
-        let root_key = call.key;
         self.active = Some(machine);
+        self.drive(root_key, node, need)
+    }
+
+    pub(super) fn drive(
+        &mut self,
+        root_key: MachineKey,
+        node: NodeId,
+        need: &mut Vec<Query>,
+    ) -> Result<Option<CVal>, Internal> {
         loop {
             self.memo.evaluation_work += 1;
             if self.machine_mut()?.too_deep {
@@ -695,9 +709,9 @@ impl Engine<'_> {
                     faults.into_iter().collect(),
                     templates.into_iter().collect(),
                 );
-                for frame in machine.frames {
-                    self.memo.calls.insert(frame.key.clone(), CVal::Error);
-                    self.memo.key_reach.insert(frame.key, reach.clone());
+                for key in machine.frames.into_iter().filter_map(|frame| frame.key) {
+                    self.memo.calls.insert(key.clone(), CVal::Error);
+                    self.memo.key_reach.insert(key, reach.clone());
                 }
                 self.reach(reach, node, Ctx::Global)?;
                 return Ok(Some(CVal::Error));
@@ -747,9 +761,16 @@ impl Engine<'_> {
                         .frames
                         .get_mut(frame)
                         .ok_or(Internal::missed("evaluation frame"))?;
+                    if completes && record.run.is_some() {
+                        match self.loop_step(frame, value)? {
+                            Some(value) => return Ok(Some(value)),
+                            None => continue,
+                        }
+                    }
                     if completes {
                         let (key, call, expected) =
                             (record.key.clone(), record.call, record.expected);
+                        let key = key.ok_or(Internal::missed("call key"))?;
                         let done = machine
                             .frames
                             .pop()
@@ -885,8 +906,9 @@ impl Engine<'_> {
         let index = machine.frames.len();
         machine.open_keys.insert(call.key.clone());
         machine.frames.push(Frame {
-            key: call.key,
-            function: call.function,
+            key: Some(call.key),
+            function: Some(call.function),
+            run: None,
             args: call.values,
             call: node,
             root,
@@ -894,6 +916,7 @@ impl Engine<'_> {
             expected: own,
             feeds: call.feeds,
             memo: FastMap::default(),
+            loops: FastMap::default(),
             depth: depth.saturating_add(1),
             faults: FastSet::default(),
             templates,
@@ -939,7 +962,7 @@ impl Engine<'_> {
         }
     }
 
-    fn reach(
+    pub(super) fn reach(
         &mut self,
         (faults, templates): (Vec<u32>, Vec<ScopeId>),
         node: NodeId,
@@ -1059,7 +1082,7 @@ impl Engine<'_> {
             .machine_mut()?
             .frames
             .iter()
-            .map(|frame| frame.function)
+            .filter_map(|frame| frame.function)
             .collect();
         for function in functions.into_iter().chain([last]) {
             let name = self.function_name(function)?;
@@ -1117,13 +1140,13 @@ impl Engine<'_> {
         Ok(false)
     }
 
-    fn machine_mut(&mut self) -> Result<&mut Machine, Internal> {
+    pub(super) fn machine_mut(&mut self) -> Result<&mut Machine, Internal> {
         self.active
             .as_mut()
             .ok_or(Internal::missed("evaluation machine"))
     }
 
-    fn frame(&self, frame: usize) -> Result<&Frame, Internal> {
+    pub(super) fn frame(&self, frame: usize) -> Result<&Frame, Internal> {
         self.active
             .as_ref()
             .ok_or(Internal::missed("evaluation machine"))?

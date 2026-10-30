@@ -90,7 +90,7 @@ impl Engine<'_> {
                     | Op::Convert(..)
                     | Op::Builtin(..)
                     | Op::Recursive { .. } => return Ok(false),
-                    Op::Element { .. } => match self.dimensions(node) {
+                    Op::Element { .. } | Op::For(_) | Op::Slot(_) => match self.dimensions(node) {
                         Dimensions::Known(_) => break,
                         Dimensions::Unknown => return Ok(false),
                     },
@@ -147,6 +147,8 @@ impl Engine<'_> {
                 | Op::NodeRef(_)
                 | Op::Chosen(_)
                 | Op::Arg(_)
+                | Op::Slot(_)
+                | Op::For(_)
                 | Op::Unary(..)
                 | Op::Binary(..)
                 | Op::If(..)
@@ -220,6 +222,8 @@ impl Engine<'_> {
                 | Op::Pi
                 | Op::NodeRef(_)
                 | Op::Arg(_)
+                | Op::Slot(_)
+                | Op::For(_)
                 | Op::Unary(..)
                 | Op::Pick { .. }
                 | Op::Array(_)
@@ -351,6 +355,24 @@ impl Engine<'_> {
                         }
                         _ => break 'path None,
                     },
+                    Op::Slot(slot) => {
+                        break 'path Some(
+                            self.slot(*slot)?
+                                .layout
+                                .as_ref()
+                                .map(open_lengths)
+                                .unwrap_or_default(),
+                        );
+                    }
+                    Op::For(for_node) => {
+                        break 'path Some(
+                            self.slot(for_node.accumulator)?
+                                .layout
+                                .as_ref()
+                                .map(open_lengths)
+                                .unwrap_or_default(),
+                        );
+                    }
                     Op::Recursive { .. } if in_template => break 'path None,
                     Op::Recursive { function, args } => {
                         break 'path self.recursive_lengths(*function, args)?;
@@ -497,6 +519,7 @@ impl Engine<'_> {
             | Op::Use(_)
             | Op::Chosen(_)
             | Op::Arg(_)
+            | Op::Slot(_)
             | Op::Unary(..)
             | Op::Binary(..)
             | Op::If(..)
@@ -508,6 +531,7 @@ impl Engine<'_> {
             | Op::Annotate(..)
             | Op::Builtin(..)
             | Op::Recursive { .. }
+            | Op::For(_)
             | Op::ToRead { .. }
             | Op::Join(..)
             | Op::Slice { .. }
@@ -687,12 +711,14 @@ impl Engine<'_> {
             | Op::Pi
             | Op::NodeRef(_)
             | Op::Arg(_)
+            | Op::Slot(_)
             | Op::Unary(..)
             | Op::Binary(..)
             | Op::Pick { .. }
             | Op::Convert(..)
             | Op::Builtin(..)
             | Op::Recursive { .. }
+            | Op::For(_)
             | Op::ToRead { .. }
             | Op::Native { .. } => Vec::new(),
         })
@@ -935,6 +961,8 @@ impl Engine<'_> {
             | Op::Convert(..)
             | Op::Builtin(..)
             | Op::Recursive { .. } => Ok(None),
+            Op::Slot(slot) => Ok(self.slot(*slot)?.layout.clone()),
+            Op::For(for_node) => Ok(self.slot(for_node.accumulator)?.layout.clone()),
             Op::ToRead { attrs, .. } => Ok(self.to_read_layout(attrs)?),
         };
         let certain = certain
@@ -963,6 +991,7 @@ impl Engine<'_> {
                 | Op::Use(_)
                 | Op::Chosen(_)
                 | Op::Arg(_)
+                | Op::Slot(_)
                 | Op::Unary(..)
                 | Op::Binary(..)
                 | Op::If(..)
@@ -974,6 +1003,7 @@ impl Engine<'_> {
                 | Op::Annotate(..)
                 | Op::Builtin(..)
                 | Op::Recursive { .. }
+                | Op::For(_)
                 | Op::ToRead { .. }
                 | Op::Join(..)
                 | Op::Slice { .. }
@@ -1067,6 +1097,7 @@ impl Engine<'_> {
             | Op::Use(_)
             | Op::Chosen(_)
             | Op::Arg(_)
+            | Op::Slot(_)
             | Op::Unary(..)
             | Op::Binary(..)
             | Op::Pick { .. }
@@ -1076,6 +1107,7 @@ impl Engine<'_> {
             | Op::Annotate(..)
             | Op::Builtin(..)
             | Op::Recursive { .. }
+            | Op::For(_)
             | Op::ToRead { .. }
             | Op::Join(..)
             | Op::Slice { .. }

@@ -17,10 +17,8 @@ const ITERABLES: [(&str, bool); 2] = [("0..4", true), ("[1, 2]", false)];
 const SITES: [&str; 3] = [
     "Clip c:\n    H:\n        Note/(B)\n",
     "Clip c:\n    [H: Note/(B)]\n",
-    "let v = H into s from 0: s + B\nClip c:\n    Note\n",
+    "let v = H into s from 0: s + B\nClip c:\n    Note/v\n",
 ];
-
-const FOR_EXPRESSION_SITE: usize = 2;
 
 fn errors(compiler: &Compiler, text: &str) -> Vec<Diagnostic> {
     support::errors(compiler.check(&[support::source(text)]))
@@ -54,17 +52,7 @@ fn head_rows(rows: &Rows) -> (Vec<String>, usize) {
                 let twin = program(&format!("for x in {values}"), "60 + x");
                 let found = errors(&compiler, &text);
                 let twin_found = errors(&compiler, &twin);
-                let holds = if site == FOR_EXPRESSION_SITE {
-                    let whole = |text: &str| {
-                        text.trim_start_matches("let v = ")
-                            .split('\n')
-                            .next()
-                            .unwrap_or_default()
-                            .to_string()
-                    };
-                    one_at(&twin_found, &twin, Code::UnbuiltConstruct, &whole(&twin))
-                        && one_at(&found, &text, Code::UnbuiltConstruct, &whole(&text))
-                } else if *two && *range {
+                let holds = if *two && *range {
                     let second = names
                         .split(", ")
                         .nth(1)

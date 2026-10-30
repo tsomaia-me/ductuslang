@@ -2,7 +2,9 @@ use crate::semantics::analysis::op::Op;
 
 pub(crate) fn layout_shaped(op: &Op) -> bool {
     match op {
-        Op::Slice { .. } | Op::History { .. } | Op::Native { .. } => true,
+        Op::Slice { .. } | Op::History { .. } | Op::Native { .. } | Op::For(_) | Op::Slot(_) => {
+            true
+        }
         Op::Element { .. }
         | Op::If(..)
         | Op::Match { .. }

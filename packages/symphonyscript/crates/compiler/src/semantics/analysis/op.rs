@@ -1,7 +1,8 @@
 use symphonyscript_core::{AttrId, BinaryOp, Builtin, EnumId, NativeId, Scalar, UnaryOp, Value};
 
+use super::for_node::ForNode;
 use super::history_cell::HistoryCell;
-use super::ids::{BindingId, NodeId, WireId};
+use super::ids::{BindingId, NodeId, SlotId, WireId};
 use super::item_ref::ItemRef;
 use super::piece::Piece;
 use super::val::Val;
@@ -62,6 +63,8 @@ pub(crate) enum Op {
         offset: u64,
         fallback: Option<NodeId>,
     },
+    For(Box<ForNode>),
+    Slot(SlotId),
     Native {
         native: NativeId,
         args: Vec<NodeId>,
@@ -105,7 +108,9 @@ impl Op {
             | Op::Join(..)
             | Op::Slice { .. }
             | Op::History { .. }
-            | Op::Native { .. } => Vec::new(),
+            | Op::Native { .. }
+            | Op::For(_)
+            | Op::Slot(_) => Vec::new(),
         }
     }
 
@@ -121,7 +126,9 @@ impl Op {
             | Op::NodeRef(_)
             | Op::Read(_)
             | Op::Arg(_)
-            | Op::ToRead { .. } => Vec::new(),
+            | Op::ToRead { .. }
+            | Op::Slot(_) => Vec::new(),
+            Op::For(for_node) => for_node.operands(),
             Op::Join(lhs, rhs) => vec![*lhs, *rhs],
             Op::Slice { base, lower, upper } => {
                 let mut operands = vec![*base];

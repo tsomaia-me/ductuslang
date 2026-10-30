@@ -403,6 +403,7 @@ impl Engine<'_> {
                         | Op::Pi
                         | Op::NodeRef(_)
                         | Op::Arg(_)
+                        | Op::Slot(_)
                         | Op::Unary(UnaryOp::Not, _)
                         | Op::Binary(
                             BinaryOp::Div
@@ -436,6 +437,7 @@ impl Engine<'_> {
                             _,
                         )
                         | Op::Recursive { .. }
+                        | Op::For(_)
                         | Op::ToRead { .. }
                         | Op::Native { .. } => false,
                     };

@@ -68,15 +68,9 @@ impl Engine<'_> {
         while scope < self.scopes.len() {
             let id = ScopeId(u32::try_from(scope).unwrap_or(u32::MAX));
             if let ScopeKind::Locals(locals) = &self.scope_of(id)?.kind {
-                let (params, lets) = match locals.owner {
-                    LocalsOwner::Fn(function) => {
-                        let decl = self.hir.fn_decl(function)?;
-                        (decl.params.len(), decl.lets.len())
-                    }
-                    LocalsOwner::Pattern(pattern) => {
-                        let decl = self.hir.pattern(pattern)?;
-                        (decl.params.len(), decl.lets.len())
-                    }
+                let (params, lets) = {
+                    let (params, lets) = self.owner_locals(locals.owner)?;
+                    (params.len(), lets.len())
                 };
                 for index in 0..params {
                     self.demand(Query::Param(id, u32::try_from(index).unwrap_or(u32::MAX)))?;
@@ -540,7 +534,8 @@ impl Engine<'_> {
             | ExprKind::Unary(..)
             | ExprKind::Binary(..)
             | ExprKind::If(..)
-            | ExprKind::Match { .. } => {
+            | ExprKind::Match { .. }
+            | ExprKind::For(_) => {
                 for child in kind.children() {
                     if matches!(self.hir.expr(child)?.kind, ExprKind::Error) {
                         return Ok(true);
@@ -583,7 +578,8 @@ impl Engine<'_> {
             | ExprKind::History { .. }
             | ExprKind::Call(..)
             | ExprKind::Unary(..)
-            | ExprKind::Binary(..) => return Ok(None),
+            | ExprKind::Binary(..)
+            | ExprKind::For(_) => return Ok(None),
         };
         let Some(Val::Scalar(node)) = self.memo.exprs.get(&(selector, scope)).cloned() else {
             return Ok(Some(None));
@@ -660,7 +656,8 @@ fn arm_position(kind: &ExprKind, position: usize) -> bool {
         | ExprKind::History { .. }
         | ExprKind::Call(..)
         | ExprKind::Unary(..)
-        | ExprKind::Binary(..) => false,
+        | ExprKind::Binary(..)
+        | ExprKind::For(_) => false,
     }
 }
 
@@ -710,6 +707,7 @@ fn child_flow(
         | ExprKind::Slice { .. }
         | ExprKind::History { .. }
         | ExprKind::Call(..)
-        | ExprKind::Match { .. } => own,
+        | ExprKind::Match { .. }
+        | ExprKind::For(_) => own,
     }
 }

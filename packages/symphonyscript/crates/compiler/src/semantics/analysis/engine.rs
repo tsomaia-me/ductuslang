@@ -74,6 +74,7 @@ pub(crate) struct Engine<'a> {
     pub report: Report,
     pub scopes: Vec<Scope>,
     pub nodes: Vec<Node>,
+    pub slots: Vec<super::slot::Slot>,
     pub arrays: FastSet<NodeId>,
     pub bindings: Vec<Binding>,
     pub instances: Vec<Instance>,
@@ -102,7 +103,7 @@ pub(crate) struct Engine<'a> {
     pub unknown_wires: bool,
     pub unknown_destinations: FastSet<symphonyscript_core::WireKind>,
     pub active: Option<super::evaluation::Machine>,
-    pub machines: FastMap<super::call_key::CallKey, super::evaluation::Machine>,
+    pub machines: FastMap<super::evaluation::MachineKey, super::evaluation::Machine>,
     pub frame_need: Vec<(NodeId, super::eval_ty::EvalTy)>,
     pub frame_pushed: bool,
     pub fault_frame: Option<usize>,
@@ -151,6 +152,7 @@ impl<'a> Engine<'a> {
             report: Report::default(),
             scopes: Vec::new(),
             nodes: Vec::new(),
+            slots: Vec::new(),
             arrays: FastSet::default(),
             bindings: Vec::new(),
             instances: Vec::new(),
@@ -576,6 +578,12 @@ impl<'a> Engine<'a> {
 
     pub fn node(&self, id: NodeId) -> Result<&Node, Internal> {
         self.nodes.get(id.index()).ok_or(Internal::missed("node"))
+    }
+
+    pub fn slot(&self, id: super::ids::SlotId) -> Result<&super::slot::Slot, Internal> {
+        self.slots
+            .get(id.index())
+            .ok_or(Internal::missed("loop slot"))
     }
 
     pub fn binding(&self, id: BindingId) -> Result<&Binding, Internal> {

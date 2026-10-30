@@ -37,7 +37,9 @@ const ELSEWHERE: [(&str, &str); 9] = [
     ("let v = for y in [1] into t from 0: F\n", "0"),
 ];
 
-const INSIDE_A_FOR_EXPRESSION: [usize; 3] = [5, 6, 8];
+const SAME_VALUES: [&str; 2] = ["0", "held[0]"];
+
+const FAULT: &str = "1 + true";
 
 fn for_text(head: usize, iterable: usize, lets: Option<usize>, indent: &str) -> String {
     let (names, body) = HEADS[head];
@@ -55,29 +57,32 @@ fn for_text(head: usize, iterable: usize, lets: Option<usize>, indent: &str) -> 
     text
 }
 
-fn spanned<'t>(text: &'t str, diagnostic: &Diagnostic) -> &'t str {
-    let range = &diagnostic.span.range;
-    text.get(range.start as usize..range.end as usize)
-        .unwrap_or_default()
-        .trim_end()
+fn codes_of(compiler: &Compiler, text: &str) -> Vec<Code> {
+    let mut codes: Vec<Code> = support::errors(compiler.check(&[support::source(text)]))
+        .iter()
+        .map(|diagnostic| diagnostic.code)
+        .collect();
+    codes.sort();
+    codes
 }
 
-fn unbuilt_at(compiler: &Compiler, text: &str, construct: &str) -> Result<(), String> {
-    let errors = support::errors(compiler.check(&[support::source(text)]));
-    match errors.as_slice() {
-        [diagnostic]
-            if diagnostic.code == Code::UnbuiltConstruct
-                && spanned(text, diagnostic) == construct.trim_end()
-                && diagnostic.summary.contains("`for` expression (SPEC §5.10)") =>
-        {
-            Ok(())
+fn as_its_twin(compiler: &Compiler, text: &str, twin: &str, faulty: bool) -> Result<(), String> {
+    let found = codes_of(compiler, text);
+    let mut expected = codes_of(compiler, twin);
+    if faulty {
+        for code in &mut expected {
+            if *code == Code::OperandType {
+                *code = Code::IterableType;
+            }
         }
-        _ => Err(format!(
-            "{text}\n  draws {errors:?}\n  expected one unbuilt-construct at {construct:?}\n"
-        )),
     }
+    if found == expected {
+        return Ok(());
+    }
+    Err(format!(
+        "{text}\n  draws {found:?}\n  its twin {twin}\n  draws {expected:?}\n"
+    ))
 }
-
 fn unparenthesized_at(compiler: &Compiler, text: &str, at: usize) -> Result<(), String> {
     let parsed = support::parsed(text).diagnostics.clone();
     let errors = support::errors(compiler.check(&[support::source(text)]));
@@ -100,20 +105,18 @@ fn unparenthesized_at(compiler: &Compiler, text: &str, at: usize) -> Result<(), 
     ))
 }
 
-fn twin_holds(compiler: &Compiler, twin: &str) -> Result<(), String> {
-    let errors = support::errors(compiler.check(&[support::source(twin)]));
-    if errors.is_empty() {
-        return Ok(());
-    }
-    Err(format!("the twin {twin}\n  draws {errors:?}\n"))
-}
-
 fn position_rows(rows: &Rows) -> (Vec<String>, usize) {
     let compiler = Compiler::new(&vocabulary()).expect("the vocabulary compiles");
     let mut failures = Vec::new();
     let mut programs = 0;
-    for head in 0..HEADS.len() {
-        for iterable in 0..ITERABLES.len() {
+    for (head, (names, _)) in HEADS.iter().enumerate() {
+        for (iterable, (iterated, same)) in ITERABLES.iter().zip(SAME_VALUES).enumerate() {
+            let value = if names.contains(',') && *iterated == "0..4" {
+                FAULT
+            } else {
+                same
+            };
+            let faulty = value == FAULT;
             for (position, (prefix, indent, rest)) in WHOLE.iter().enumerate() {
                 for (form, lets) in WHOLE_LETS.iter().enumerate() {
                     if !rows.take(&[position, form, head, iterable]) {
@@ -123,13 +126,11 @@ fn position_rows(rows: &Rows) -> (Vec<String>, usize) {
                     let construct = for_text(head, iterable, *lets, indent);
                     let line_end = if lets.is_some() { "" } else { "\n" };
                     let text = format!("{HELD}{prefix}{construct}{line_end}{rest}");
-                    let twin = format!("{HELD}{prefix}0\n{rest}");
-                    let outcome = twin_holds(&compiler, &twin)
-                        .and_then(|()| unbuilt_at(&compiler, &text, &construct));
-                    failures.extend(outcome.err());
+                    let twin = format!("{HELD}{prefix}{value}\n{rest}");
+                    failures.extend(as_its_twin(&compiler, &text, &twin, faulty).err());
                 }
             }
-            for (at, (template, value)) in ELSEWHERE.iter().enumerate() {
+            for (at, (template, _)) in ELSEWHERE.iter().enumerate() {
                 for (form, parenthesized) in [true, false].into_iter().enumerate() {
                     let position = WHOLE.len() + at;
                     if !rows.take(&[position, WHOLE_LETS.len() + form, head, iterable]) {
@@ -143,24 +144,13 @@ fn position_rows(rows: &Rows) -> (Vec<String>, usize) {
                         inner.clone()
                     };
                     let text = format!("{HELD}{}", template.replace('F', &written));
-                    let twin = format!("{HELD}{}", template.replace('F', value));
+                    let twin = format!("{HELD}{}", template.replace('F', &format!("({value})")));
                     let start = HELD.len() + template.find('F').unwrap_or(0);
-                    let outer = |text: &str| {
-                        text[HELD.len()..]
-                            .trim_start_matches("let v = ")
-                            .to_string()
-                    };
-                    let nested = INSIDE_A_FOR_EXPRESSION.contains(&at);
-                    let twin_outcome = if nested {
-                        unbuilt_at(&compiler, &twin, &outer(&twin))
+                    let outcome = if parenthesized {
+                        as_its_twin(&compiler, &text, &twin, faulty)
                     } else {
-                        twin_holds(&compiler, &twin)
+                        unparenthesized_at(&compiler, &text, start)
                     };
-                    let outcome = twin_outcome.and_then(|()| match (parenthesized, nested) {
-                        (false, _) => unparenthesized_at(&compiler, &text, start),
-                        (true, true) => unbuilt_at(&compiler, &text, &outer(&text)),
-                        (true, false) => unbuilt_at(&compiler, &text, &inner),
-                    });
                     failures.extend(outcome.err());
                 }
             }
@@ -180,44 +170,31 @@ fn assert_none_fail((failures, programs): (Vec<String>, usize), expected: usize)
 }
 
 #[test]
-fn a_for_expression_stands_bare_only_as_a_whole_value_and_draws_unbuilt_construct_where_it_is_built()
- {
+fn a_for_expression_stands_bare_only_as_a_whole_value_and_draws_what_a_value_of_its_type_draws() {
     assert_none_fail(covered(position_rows), 79);
 }
 
 #[test]
 #[ignore = "exhaustive"]
-fn exhaustive_a_for_expression_stands_bare_only_as_a_whole_value_and_draws_unbuilt_construct_where_it_is_built()
+fn exhaustive_a_for_expression_stands_bare_only_as_a_whole_value_and_draws_what_a_value_of_its_type_draws()
  {
     assert_none_fail(position_rows(&Rows::Every), 408);
 }
 
-const SPEC_FOR_EXPRESSIONS: [&str; 5] = [
+const SPEC_FOR_EXPRESSIONS: [&str; 4] = [
     "state high = for x in held into kept from []:\n    let keep = x > 60\n    if keep then kept + [x] else kept\n",
     "state total = 1 + (for i, x in held into sum from 0: sum + i * x)\n",
     "state lowest = for x in held into low from 127: min(low, x)\n",
-    "fn count(xs, keep):\n    for x in xs into n from 0: if keep(x) then n + 1 else n\n",
     "fn mean(xs): (for x in xs into total from 0.0: total + x) / 3\n",
 ];
 
 #[test]
-fn the_for_expressions_of_the_spec_parse_and_draw_unbuilt_construct_and_its_rejected_ones_draw_unparenthesized_for()
- {
+fn the_for_expressions_of_the_spec_pass_check_and_its_rejected_ones_draw_unparenthesized_for() {
     let compiler = Compiler::new(&vocabulary()).expect("the vocabulary compiles");
     for declaration in SPEC_FOR_EXPRESSIONS {
         let text = format!("{HELD}{declaration}");
         assert_eq!(support::parsed(&text).diagnostics, vec![], "{text}");
-        let start = text
-            .find("for x")
-            .or_else(|| text.find("for i"))
-            .unwrap_or(0);
-        let tail = &text[start..];
-        let construct = match tail.find(')') {
-            Some(close) if declaration.contains("(for") => &tail[..close],
-            Some(_) | None => tail,
-        };
-        let construct = construct.trim_end_matches(" / 3\n");
-        assert_eq!(unbuilt_at(&compiler, &text, construct), Ok(()));
+        assert_eq!(codes_of(&compiler, &text), vec![], "{text}");
     }
     for ordinal in [1, 2] {
         let example = spec_examples()

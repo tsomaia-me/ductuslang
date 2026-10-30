@@ -193,7 +193,8 @@ impl Engine<'_> {
                     | ExprKind::Unary(..)
                     | ExprKind::Binary(..)
                     | ExprKind::If(..)
-                    | ExprKind::Match { .. } => None,
+                    | ExprKind::Match { .. }
+                    | ExprKind::For(_) => None,
                 };
                 self.choice_step(*condition, &[*then, *otherwise], taken, done, position)?
             }
@@ -206,6 +207,13 @@ impl Engine<'_> {
                     arms.iter().map(|arm| arm.value).chain(*otherwise).collect();
                 self.choice_step(*scrutinee, &values, None, done, position)?
             }
+            ExprKind::For(for_expr) => match joined(done, &for_expr.children()) {
+                Step::Known(answer) if answer.reads.is_cell() => {
+                    Step::Known(Answer::of(answer.reads, Variable::Whole))
+                }
+                Step::Known(answer) => Step::Known(Answer::of(answer.reads, Variable::Unknown)),
+                missing @ Step::Missing(_) => missing,
+            },
         })
     }
 
@@ -529,7 +537,8 @@ impl Engine<'_> {
                 | ExprKind::Unary(..)
                 | ExprKind::Binary(..)
                 | ExprKind::If(..)
-                | ExprKind::Match { .. } => return Ok(None),
+                | ExprKind::Match { .. }
+                | ExprKind::For(_) => return Ok(None),
             }
         };
         let decl = match position {

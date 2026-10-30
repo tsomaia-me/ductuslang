@@ -13,7 +13,11 @@ mod is_f32;
 mod is_float_builtin;
 mod is_float_ty;
 mod is_int_ty;
+mod loop_items;
+mod loop_run;
+mod loops;
 mod machine;
+mod machine_key;
 mod native;
 mod of_scalar;
 mod own_type;
@@ -29,6 +33,7 @@ mod ty_name;
 mod with_point;
 
 pub(crate) use machine::Machine;
+pub(crate) use machine_key::MachineKey;
 #[cfg(test)]
 pub(crate) use native::native_slots;
 pub(crate) use native::native_ty;

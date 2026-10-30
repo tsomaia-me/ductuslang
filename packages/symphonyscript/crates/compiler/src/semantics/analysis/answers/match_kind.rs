@@ -208,6 +208,7 @@ impl Engine<'_> {
             | Op::Use(_)
             | Op::Chosen(_)
             | Op::Arg(_)
+            | Op::Slot(_)
             | Op::Unary(..)
             | Op::Binary(..)
             | Op::If(..)
@@ -219,6 +220,7 @@ impl Engine<'_> {
             | Op::Annotate(..)
             | Op::Builtin(..)
             | Op::Recursive { .. }
+            | Op::For(_)
             | Op::ToRead { .. }
             | Op::Join(..)
             | Op::Slice { .. }

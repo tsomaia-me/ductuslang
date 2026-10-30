@@ -8,8 +8,8 @@ use crate::diagnostics::Code;
 use crate::semantics::Internal;
 use crate::semantics::collection::{Decl, Namespace, Variants};
 use crate::semantics::ir::{
-    AttrValue, BlockId, BodyItem, ExprId, ExprKind, FnId, Hir, Ident, Iterable, LetDecl, Loc,
-    LoopVar, PatternId, PlacementId, StateId, TypeBase, TypeRef, UnknownNames,
+    AttrValue, BlockId, BodyItem, ExprId, ExprKind, FnId, ForExpr, Hir, Ident, Iterable, LetDecl,
+    Loc, LoopVar, PatternId, PlacementId, StateId, TypeBase, TypeRef, UnknownNames,
 };
 use crate::semantics::reporting::Report;
 
@@ -499,8 +499,8 @@ impl<'a> Checker<'a> {
         frame: Option<usize>,
         wire_clause: bool,
     ) -> Result<(), Internal> {
-        let mut stack = vec![(root, Operand::Value)];
-        while let Some((id, operand)) = stack.pop() {
+        let mut stack = vec![(root, Operand::Value, frame)];
+        while let Some((id, operand, frame)) = stack.pop() {
             crate::semantics::counted_walk::CountedWalk::CheckerExpr.step();
             let expr = self.hir.expr(id)?;
             match &expr.kind {
@@ -537,13 +537,13 @@ impl<'a> Checker<'a> {
                         );
                     }
                 }
-                ExprKind::Field(base, _) => stack.push((*base, Operand::FieldBase)),
+                ExprKind::Field(base, _) => stack.push((*base, Operand::FieldBase, frame)),
                 ExprKind::Call(callee, args) => {
-                    stack.push((*callee, Operand::Callee));
+                    stack.push((*callee, Operand::Callee, frame));
                     stack.extend(
                         args.values()
                             .into_iter()
-                            .map(|value| (value, Operand::Value)),
+                            .map(|value| (value, Operand::Value, frame)),
                     );
                 }
                 ExprKind::History {
@@ -568,28 +568,45 @@ impl<'a> Checker<'a> {
                             format!("`{}` names nothing in scope", target.text),
                         );
                     }
-                    stack.push((*offset, Operand::Value));
-                    stack.extend(fallback.iter().map(|value| (*value, Operand::Value)));
+                    stack.push((*offset, Operand::Value, frame));
+                    stack.extend(fallback.iter().map(|value| (*value, Operand::Value, frame)));
                 }
                 ExprKind::Match {
                     scrutinee,
                     arms,
                     otherwise,
                 } => {
-                    stack.push((*scrutinee, Operand::Value));
+                    stack.push((*scrutinee, Operand::Value, frame));
                     for arm in arms {
                         if !matches!(self.hir.expr(arm.label)?.kind, ExprKind::Name(_)) {
-                            stack.push((arm.label, Operand::Value));
+                            stack.push((arm.label, Operand::Value, frame));
                         }
-                        stack.push((arm.value, Operand::Value));
+                        stack.push((arm.value, Operand::Value, frame));
                     }
-                    stack.extend(otherwise.iter().map(|value| (*value, Operand::Value)));
+                    stack.extend(
+                        otherwise
+                            .iter()
+                            .map(|value| (*value, Operand::Value, frame)),
+                    );
+                }
+                ExprKind::For(for_expr) => {
+                    let inner = self.for_expression_frame(for_expr, frame)?;
+                    stack.push((for_expr.body, Operand::Value, inner));
+                    for local in for_expr.lets.iter().rev() {
+                        stack.push((local.value, Operand::Value, inner));
+                    }
+                    stack.push((for_expr.start, Operand::Value, frame));
+                    match for_expr.iterable {
+                        Iterable::Range(start, end) => stack
+                            .extend([(end, Operand::Value, frame), (start, Operand::Value, frame)]),
+                        Iterable::Values(values) => stack.push((values, Operand::Value, frame)),
+                    }
                 }
                 other => stack.extend(
                     other
                         .children()
                         .into_iter()
-                        .map(|child| (child, Operand::Value)),
+                        .map(|child| (child, Operand::Value, frame)),
                 ),
             }
         }
@@ -808,6 +825,31 @@ impl<'a> Checker<'a> {
         self.loop_frame(&names, frame)
     }
 
+    fn for_expression_frame(
+        &mut self,
+        for_expr: &ForExpr,
+        frame: Option<usize>,
+    ) -> Result<Option<usize>, Internal> {
+        for ty in for_expr
+            .names
+            .iter()
+            .filter_map(|var| var.ty.as_ref())
+            .chain(for_expr.accumulator_ty.as_ref())
+        {
+            self.type_ref(ty);
+        }
+        let declared: Vec<&Ident> = for_expr
+            .names
+            .iter()
+            .filter_map(|var| var.name.as_ref())
+            .chain(for_expr.accumulator.as_ref())
+            .chain(for_expr.lets.iter().filter_map(|local| local.name.as_ref()))
+            .collect();
+        let inner = self.loop_frame(&declared, frame)?;
+        self.let_cycles(&for_expr.lets)?;
+        Ok(inner)
+    }
+
     fn loop_frame(
         &mut self,
         declared: &[&Ident],
@@ -826,7 +868,7 @@ impl<'a> Checker<'a> {
                     Code::DuplicateLocal,
                     var.loc,
                     &[(earlier, "the first name".to_string())],
-                    format!("`{}` names two of the loop's names", var.text),
+                    format!("`{}` is bound twice by this `for`", var.text),
                 );
                 continue;
             }
@@ -840,7 +882,10 @@ impl<'a> Checker<'a> {
                     Code::ForVariableClash,
                     var.loc,
                     &related,
-                    format!("the loop name `{}` equals a visible name", var.text),
+                    format!(
+                        "`{}` equals a visible name, and a `for` binds only new names",
+                        var.text
+                    ),
                 );
             }
             names.insert(var.text.clone(), var.loc);

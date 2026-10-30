@@ -77,12 +77,14 @@ pub(crate) fn combined_shape(
         | Op::NodeRef(_)
         | Op::Read(_)
         | Op::Arg(_)
+        | Op::Slot(_)
         | Op::Unary(..)
         | Op::Binary(..)
         | Op::Pick { .. }
         | Op::Convert(..)
         | Op::Builtin(..)
         | Op::Recursive { .. }
+        | Op::For(_)
         | Op::ToRead { .. } => Ok(first),
     }
 }

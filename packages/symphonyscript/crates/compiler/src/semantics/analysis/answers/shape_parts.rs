@@ -32,12 +32,14 @@ pub(crate) fn shape_parts(engine: &Engine<'_>, op: &Op) -> Result<Vec<NodeId>, I
         | Op::Pi
         | Op::NodeRef(_)
         | Op::Arg(_)
+        | Op::Slot(_)
         | Op::Unary(..)
         | Op::Binary(..)
         | Op::Pick { .. }
         | Op::Convert(..)
         | Op::Builtin(..)
         | Op::Recursive { .. }
+        | Op::For(_)
         | Op::ToRead { .. } => Vec::new(),
     })
 }

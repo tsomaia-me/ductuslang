@@ -16,7 +16,6 @@ use crate::semantics::analysis::frame_read::FrameRead;
 use crate::semantics::analysis::ids::{NodeId, ScopeId, WireId};
 use crate::semantics::analysis::item_ref::ItemRef;
 use crate::semantics::analysis::kind::Kind;
-use crate::semantics::analysis::locals_owner::LocalsOwner;
 use crate::semantics::analysis::op::Op;
 use crate::semantics::analysis::param_source::ParamSource;
 use crate::semantics::analysis::query::Query;
@@ -75,7 +74,8 @@ impl Engine<'_> {
             | ExprKind::Unary(..)
             | ExprKind::Binary(..)
             | ExprKind::If(..)
-            | ExprKind::Match { .. } => {}
+            | ExprKind::Match { .. }
+            | ExprKind::For(_) => {}
         }
         let base_val = some!(self.val(Query::Expr(base, scope), need));
         let node = match base_val {
@@ -112,6 +112,7 @@ impl Engine<'_> {
             | Op::Use(_)
             | Op::Chosen(_)
             | Op::Arg(_)
+            | Op::Slot(_)
             | Op::Unary(..)
             | Op::Binary(..)
             | Op::If(..)
@@ -123,6 +124,7 @@ impl Engine<'_> {
             | Op::Annotate(..)
             | Op::Builtin(..)
             | Op::Recursive { .. }
+            | Op::For(_)
             | Op::ToRead { .. }
             | Op::Join(..)
             | Op::Slice { .. }
@@ -414,6 +416,8 @@ impl Engine<'_> {
                 Op::Pick { items, .. } | Op::Array(items) => stack.extend(items.iter().rev()),
                 Op::Element { base, .. } | Op::Slice { base, .. } => stack.push(*base),
                 Op::Join(lhs, rhs) => stack.extend([*rhs, *lhs]),
+                Op::For(for_node) => stack.extend([for_node.body, for_node.start]),
+                Op::Slot(slot) => stack.extend(self.slot(*slot)?.source),
                 Op::Arg(_) => {
                     for item in self
                         .memo
@@ -976,6 +980,7 @@ impl Engine<'_> {
                 | Op::Pi
                 | Op::Read(_)
                 | Op::Arg(_)
+                | Op::Slot(_)
                 | Op::Unary(..)
                 | Op::Binary(..)
                 | Op::Element { .. }
@@ -983,6 +988,7 @@ impl Engine<'_> {
                 | Op::Convert(..)
                 | Op::Builtin(..)
                 | Op::Recursive { .. }
+                | Op::For(_)
                 | Op::ToRead { .. }
                 | Op::Join(..)
                 | Op::Slice { .. }
@@ -1298,7 +1304,8 @@ impl Engine<'_> {
                 | ExprKind::Unary(..)
                 | ExprKind::Binary(..)
                 | ExprKind::If(..)
-                | ExprKind::Match { .. } => break None,
+                | ExprKind::Match { .. }
+                | ExprKind::For(_) => break None,
             }
         };
         let mut current = below;
@@ -1497,10 +1504,7 @@ impl Engine<'_> {
                 let ScopeKind::Locals(locals) = &self.scope_of(scope)?.kind else {
                     return Err(Internal::missed("locals scope"));
                 };
-                let params = match locals.owner {
-                    LocalsOwner::Fn(function) => &self.hir.fn_decl(function)?.params,
-                    LocalsOwner::Pattern(pattern) => &self.hir.pattern(pattern)?.params,
-                };
+                let params = self.owner_locals(locals.owner)?.0;
                 match locals.params.get(index as usize) {
                     Some(ParamSource::Arg { expr, scope }) => Some((*expr, *scope)),
                     Some(ParamSource::Default) => params
@@ -1524,10 +1528,7 @@ impl Engine<'_> {
         let ScopeKind::Locals(locals) = &self.scope_of(scope)?.kind else {
             return Err(Internal::missed("locals scope"));
         };
-        let params = match locals.owner {
-            LocalsOwner::Fn(function) => &self.hir.fn_decl(function)?.params,
-            LocalsOwner::Pattern(pattern) => &self.hir.pattern(pattern)?.params,
-        };
+        let params = self.owner_locals(locals.owner)?.0;
         let expr = match locals.params.get(index as usize) {
             Some(ParamSource::Arg { expr, .. }) => Some(*expr),
             Some(ParamSource::Default) => {
@@ -1684,11 +1685,13 @@ impl Engine<'_> {
                 | Op::Pi
                 | Op::Read(_)
                 | Op::Arg(_)
+                | Op::Slot(_)
                 | Op::Unary(..)
                 | Op::Binary(..)
                 | Op::Convert(..)
                 | Op::Builtin(..)
                 | Op::Recursive { .. }
+                | Op::For(_)
                 | Op::Element { .. }
                 | Op::Array(_)
                 | Op::ToRead { .. }

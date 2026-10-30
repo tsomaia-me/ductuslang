@@ -3,7 +3,10 @@ use symphonyscript_core::{BinaryOp, Scalar, UnaryOp};
 use super::hir_builder::HirBuilder;
 use super::number_literal::number_literal;
 use super::scalar_type::scalar_type;
-use crate::semantics::ir::{Args, ExprId, ExprKind, Ident, Loc, MatchArm, SliceBound, StrPart};
+use crate::semantics::ir::{
+    Args, ExprId, ExprKind, ForExpr, Ident, Iterable, LetDecl, Loc, LoopVar, MatchArm, SliceBound,
+    StrPart, TypeRef,
+};
 use crate::syntax::ast::{self, AstNode, StringPart};
 use crate::syntax::{SyntaxKind, TokenView};
 
@@ -29,6 +32,15 @@ enum Shape {
     Positional(usize),
     Named(Vec<Ident>),
     Str(Vec<Option<String>>),
+    For(Box<ForShape>),
+}
+
+struct ForShape {
+    names: Vec<LoopVar>,
+    range: bool,
+    accumulator: Option<Ident>,
+    accumulator_ty: Option<TypeRef>,
+    lets: Vec<(Option<Ident>, Loc, Option<ExprId>)>,
 }
 
 enum Frame<'p> {
@@ -107,8 +119,10 @@ impl HirBuilder<'_> {
                 vec![node.condition(), node.then_branch(), node.else_branch()],
             ),
             ast::Expr::For(node) => {
-                self.unbuilt(node.syntax().range(), "the `for` expression", "5.10");
-                (Shape::Leaf(ExprKind::Error), Vec::new())
+                if self.faults.touch(node.syntax().range()) {
+                    return (Shape::Leaf(ExprKind::Error), Vec::new());
+                }
+                self.for_shape(node)
             }
             ast::Expr::Binary(node) => match node
                 .op()
@@ -330,7 +344,97 @@ impl HirBuilder<'_> {
                     .collect();
                 self.push(ExprKind::Str(parts), loc)
             }
+            Shape::For(shape) => {
+                let ForShape {
+                    names,
+                    range,
+                    accumulator,
+                    accumulator_ty,
+                    lets,
+                } = *shape;
+                let iterable = if range {
+                    let start = next(self);
+                    Iterable::Range(start, next(self))
+                } else {
+                    Iterable::Values(next(self))
+                };
+                let start = next(self);
+                let lets = lets
+                    .into_iter()
+                    .map(|(name, let_loc, built)| LetDecl {
+                        name,
+                        ty: None,
+                        value: built.unwrap_or_else(|| next(self)),
+                        loc: let_loc,
+                    })
+                    .collect();
+                let body = next(self);
+                self.push(
+                    ExprKind::For(Box::new(ForExpr {
+                        names,
+                        iterable,
+                        accumulator,
+                        accumulator_ty,
+                        start,
+                        lets,
+                        body,
+                    })),
+                    loc,
+                )
+            }
         }
+    }
+
+    fn for_shape<'p>(&mut self, node: &ast::ForExpr<'p>) -> (Shape, Vec<Option<ast::Expr<'p>>>) {
+        let Some(head) = node.head() else {
+            return (Shape::Leaf(ExprKind::Error), Vec::new());
+        };
+        let loop_head = head.loop_head();
+        let names = loop_head
+            .names()
+            .into_iter()
+            .map(|loop_name| LoopVar {
+                name: self.ident(Some(loop_name.name)),
+                ty: loop_name.ty.map(|ty| self.type_ref(&ty)),
+            })
+            .collect();
+        let mut children = Vec::new();
+        let range = match loop_head.iterable() {
+            Some(ast::Iterable::Range(range)) => {
+                children.extend([range.start(), range.end()]);
+                true
+            }
+            Some(ast::Iterable::Expr(expr)) => {
+                children.push(Some(expr));
+                false
+            }
+            None => {
+                children.push(None);
+                false
+            }
+        };
+        children.push(head.start());
+        let mut lets = Vec::new();
+        for local in node.lets() {
+            let let_loc = self.loc(local.syntax().range());
+            let name = self.ident(local.name());
+            match local.match_block() {
+                Some(block) => lets.push((name, let_loc, Some(self.match_block(&block)))),
+                None => {
+                    lets.push((name, let_loc, None));
+                    children.push(local.value());
+                }
+            }
+        }
+        children.push(node.body());
+        let shape = ForShape {
+            names,
+            range,
+            accumulator: self.ident(head.accumulator()),
+            accumulator_ty: head.accumulator_type().map(|ty| self.type_ref(&ty)),
+            lets,
+        };
+        (Shape::For(Box::new(shape)), children)
     }
 
     fn negation<'p>(&self, operand: Option<ast::Expr<'p>>) -> (Shape, Vec<Option<ast::Expr<'p>>>) {
@@ -362,7 +466,8 @@ impl HirBuilder<'_> {
             | ExprKind::Unary(..)
             | ExprKind::Binary(..)
             | ExprKind::If(..)
-            | ExprKind::Match { .. } => (Shape::Unary(UnaryOp::Neg), vec![operand]),
+            | ExprKind::Match { .. }
+            | ExprKind::For(_) => (Shape::Unary(UnaryOp::Neg), vec![operand]),
         }
     }
 

@@ -102,7 +102,19 @@ impl Engine<'_> {
         if let Some(group) = group {
             sig = element_of(sig, group, self.memo.held_reads.contains(&node));
         }
-        sig.frame = matches!(op, Op::Arg(_)) || sigs.iter().any(|operand| operand.frame);
+        sig.frame = if let Op::For(for_node) = &op {
+            let outer = for_node
+                .iterable
+                .nodes()
+                .into_iter()
+                .chain([for_node.start])
+                .any(|operand| self.memo.sigs.get(&operand).is_some_and(|sig| sig.frame));
+            outer || self.reaches_outer_frame(for_node)?
+        } else if let Op::Slot(slot) = &op {
+            self.slot(*slot)?.sig.frame
+        } else {
+            matches!(op, Op::Arg(_)) || sigs.iter().any(|operand| operand.frame)
+        };
         if self.memo.open_joins.contains(&node) {
             sig = Sig::open(false);
         }

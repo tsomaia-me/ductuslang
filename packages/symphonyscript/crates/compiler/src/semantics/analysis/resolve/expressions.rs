@@ -94,6 +94,7 @@ impl Engine<'_> {
                 arms,
                 otherwise,
             } => self.match_val(*scrutinee, arms, *otherwise, loc, scope, need)?,
+            ExprKind::For(for_expr) => self.for_expression(expr, for_expr, loc, scope, need)?,
         };
         let Some(val) = val else {
             return Ok(false);
@@ -816,7 +817,8 @@ impl Engine<'_> {
                 | ExprKind::Unary(..)
                 | ExprKind::Binary(..)
                 | ExprKind::If(..)
-                | ExprKind::Match { .. } => self.val(Query::Expr(arm.label, scope), need),
+                | ExprKind::Match { .. }
+                | ExprKind::For(_) => self.val(Query::Expr(arm.label, scope), need),
             };
             labels.push(label);
             let value = self.val(Query::Expr(arm.value, scope), need);

@@ -10,6 +10,7 @@ mod count_inlining;
 mod declarations;
 mod defaulted;
 mod expressions;
+mod for_expressions;
 mod found;
 mod history;
 mod layout_found;
@@ -18,6 +19,7 @@ mod loop_values;
 mod names;
 mod native_layout;
 mod natives;
+mod owner_locals;
 mod paths;
 mod shaped;
 

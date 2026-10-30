@@ -421,7 +421,7 @@ impl Engine<'_> {
         if self.inline_limit_reported {
             return Ok(false);
         }
-        if self.inside_function_body(scope)? {
+        if self.inside_function_body(scope)? || self.in_trial(scope)? {
             return Ok(true);
         }
         let count = self.inline_count(function, sources)?;
@@ -581,6 +581,9 @@ impl Engine<'_> {
             crate::semantics::counted_walk::CountedWalk::CallsInsideFunctionBody.step();
             let record = self.scope_of(id)?;
             match &record.kind {
+                ScopeKind::Locals(locals) if matches!(locals.owner, LocalsOwner::For(_)) => {
+                    current = record.parent;
+                }
                 ScopeKind::Locals(locals) => {
                     return Ok(matches!(locals.owner, LocalsOwner::Fn(_)));
                 }

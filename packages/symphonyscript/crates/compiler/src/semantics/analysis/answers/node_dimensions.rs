@@ -23,6 +23,10 @@ impl Engine<'_> {
     ) -> Result<Dimensions, Internal> {
         Ok(match op {
             Op::Recursive { .. } => Dimensions::Unknown,
+            Op::For(for_node) => {
+                layout_dimensions(self.slot(for_node.accumulator)?.layout.as_ref())
+            }
+            Op::Slot(slot) => layout_dimensions(self.slot(*slot)?.layout.as_ref()),
             Op::Element { base, .. } => match self.dimensions(*base) {
                 Dimensions::Known(known) => Dimensions::Known(known.saturating_sub(1)),
                 Dimensions::Unknown => Dimensions::Unknown,

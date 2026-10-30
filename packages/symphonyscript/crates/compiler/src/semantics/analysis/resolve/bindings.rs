@@ -28,7 +28,6 @@ use crate::semantics::analysis::kind_of::kind_of;
 use crate::semantics::analysis::layout::Layout;
 use crate::semantics::analysis::lengths_of::lengths_of;
 use crate::semantics::analysis::let_ref::LetRef;
-use crate::semantics::analysis::locals_owner::LocalsOwner;
 use crate::semantics::analysis::op::Op;
 use crate::semantics::analysis::param_source::ParamSource;
 use crate::semantics::analysis::query::Query;
@@ -171,10 +170,7 @@ impl Engine<'_> {
                 let ScopeKind::Locals(locals) = &self.scope_of(scope)?.kind else {
                     return Err(Internal::missed("locals scope"));
                 };
-                let lets = match locals.owner {
-                    LocalsOwner::Fn(function) => &self.hir.fn_decl(function)?.lets,
-                    LocalsOwner::Pattern(pattern) => &self.hir.pattern(pattern)?.lets,
-                };
+                let lets = self.owner_locals(locals.owner)?.1;
                 Some(
                     lets.get(index as usize)
                         .ok_or(Internal::missed("local let"))?,
@@ -198,10 +194,7 @@ impl Engine<'_> {
             .get(index as usize)
             .cloned()
             .ok_or(Internal::missed("parameter"))?;
-        let params = match owner {
-            LocalsOwner::Fn(function) => &self.hir.fn_decl(function)?.params,
-            LocalsOwner::Pattern(pattern) => &self.hir.pattern(pattern)?.params,
-        };
+        let params = self.owner_locals(owner)?.0;
         let param = params
             .get(index as usize)
             .ok_or(Internal::missed("parameter"))?;

@@ -240,7 +240,8 @@ impl Engine<'_> {
             | ExprKind::Unary(..)
             | ExprKind::Binary(..)
             | ExprKind::If(..)
-            | ExprKind::Match { .. } => some!(self.computed_bound(expr, scope)?),
+            | ExprKind::Match { .. }
+            | ExprKind::For(_) => some!(self.computed_bound(expr, scope)?),
         };
         if i64::try_from(value).is_err() {
             let loc = self.hir.expr(expr)?.loc;

@@ -22,6 +22,19 @@ type Reached = (Vec<u32>, Vec<ScopeId>);
 #[derive(Default)]
 pub(crate) struct Memo {
     pub exprs: FastMap<(ExprId, ScopeId), Val>,
+    pub loop_params: FastMap<ExprId, Vec<crate::semantics::ir::Param>>,
+    pub slot_extents: FastMap<super::ids::SlotId, super::capacity::Piecewise>,
+    pub loop_capacities: FastMap<super::ids::SlotId, i128>,
+    pub loop_reports: super::fast_hash::FastSet<NodeId>,
+    pub loop_templates: FastMap<(ExprId, ScopeId), super::loop_template::LoopTemplate>,
+    pub loop_slots: FastMap<
+        ScopeId,
+        (
+            Option<super::ids::SlotId>,
+            super::ids::SlotId,
+            super::ids::SlotId,
+        ),
+    >,
     pub bare_matches: Vec<NodeId>,
     pub bare_scrutinees: FastMap<NodeId, EnumId>,
     pub bare_enums: FastMap<NodeId, EnumId>,

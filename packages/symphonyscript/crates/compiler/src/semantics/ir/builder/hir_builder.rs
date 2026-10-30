@@ -6,13 +6,11 @@ use super::bodies::skipped_names;
 use super::faults::Faults;
 use super::index::index;
 use super::scalar_type::scalar_type;
-use crate::diagnostics::Code;
 use crate::semantics::Internal;
 use crate::semantics::ir::{
     Expr, ExprId, ExprKind, FnDecl, FnId, Hir, Ident, Input, InputId, LetDecl, LetId, Loc, Param,
     PatternDecl, PatternId, PlacementId, StateDecl, StateId, Top, TypeBase, TypeRef, UnknownNames,
 };
-use crate::semantics::reporting::Report;
 use crate::syntax::ast::{self, AstNode, Item, Name};
 use crate::syntax::{ElementView, NodeView, SyntaxKind, Walk};
 
@@ -22,7 +20,6 @@ pub(crate) struct HirBuilder<'h> {
     pub(super) faults: Faults,
     pub(super) vocabulary: &'h Vocabulary,
     pub(super) dropped: bool,
-    pub(super) report: &'h mut Report,
 }
 
 fn param_regions<'p>(decl: &NodeView<'p>, list: SyntaxKind) -> Vec<NodeView<'p>> {
@@ -260,19 +257,6 @@ impl HirBuilder<'_> {
 
     pub(super) fn loc(&self, range: Range<u32>) -> Loc {
         Loc::new(self.file, range)
-    }
-
-    pub(super) fn unbuilt(&mut self, range: Range<u32>, construct: &str, section: &str) {
-        if self.faults.touch(range.clone()) {
-            return;
-        }
-        let loc = self.loc(range);
-        self.report.error(
-            self.hir,
-            Code::UnbuiltConstruct,
-            loc,
-            format!("this compiler does not build {construct} (SPEC §{section})"),
-        );
     }
 
     pub(super) fn push(&mut self, kind: ExprKind, loc: Loc) -> ExprId {
