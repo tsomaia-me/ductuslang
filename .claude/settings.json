@@ -1,7 +1,7 @@
 {
   "env": {
     "NODE_USE_ENV_PROXY": "1",
-    "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "500000"
+    "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "700000"
   },
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
   "idleCompaction": false,
