@@ -41,12 +41,10 @@ pub(crate) enum CountedWalk {
     CallsInsideFunctionBody,
     CallsArmType,
     CountInliningCountInlining,
-    CountInliningRejectedRecursion,
     CountInliningReached,
     CountInliningValueRoots,
     DeclarationsResolvePreludeLets,
     DeclarationsUnusedLets,
-    DeclarationsNamesReadCell,
     DeclarationsUntakenDefaults,
     DeclarationsNameProbeOf,
     DeclarationsNamesOf,
@@ -60,10 +58,8 @@ pub(crate) enum CountedWalk {
     PathsCandidates,
     PathsFramePath,
     PathsReferenceInstances,
-    ReadsCellBodyReadsCell,
-    ReadsCellBodyCertainlyReadsCell,
-    ReadsCellVariableArray,
-    ReadsCellSelectorReadsCell,
+    AnswersReadsCell,
+    AnswersPathStart,
     SelectionPassOver,
     RunReachesRecursion,
     ArrayChecksIsStringBytes,
@@ -142,12 +138,12 @@ pub(crate) enum CountedWalk {
 
 #[cfg(test)]
 thread_local! {
-    static STEPS: [std::cell::Cell<u64>; 138] = const { [const { std::cell::Cell::new(0) }; 138] };
+    static STEPS: [std::cell::Cell<u64>; 134] = const { [const { std::cell::Cell::new(0) }; 134] };
 }
 
 impl CountedWalk {
     #[cfg(test)]
-    pub(crate) const ALL: [CountedWalk; 138] = [
+    pub(crate) const ALL: [CountedWalk; 134] = [
         CountedWalk::InlineCountsOf,
         CountedWalk::InlineCountsCallSites,
         CountedWalk::RecursiveFunctionsRecursiveFunctions,
@@ -189,12 +185,10 @@ impl CountedWalk {
         CountedWalk::CallsInsideFunctionBody,
         CountedWalk::CallsArmType,
         CountedWalk::CountInliningCountInlining,
-        CountedWalk::CountInliningRejectedRecursion,
         CountedWalk::CountInliningReached,
         CountedWalk::CountInliningValueRoots,
         CountedWalk::DeclarationsResolvePreludeLets,
         CountedWalk::DeclarationsUnusedLets,
-        CountedWalk::DeclarationsNamesReadCell,
         CountedWalk::DeclarationsUntakenDefaults,
         CountedWalk::DeclarationsNameProbeOf,
         CountedWalk::DeclarationsNamesOf,
@@ -208,10 +202,8 @@ impl CountedWalk {
         CountedWalk::PathsCandidates,
         CountedWalk::PathsFramePath,
         CountedWalk::PathsReferenceInstances,
-        CountedWalk::ReadsCellBodyReadsCell,
-        CountedWalk::ReadsCellBodyCertainlyReadsCell,
-        CountedWalk::ReadsCellVariableArray,
-        CountedWalk::ReadsCellSelectorReadsCell,
+        CountedWalk::AnswersReadsCell,
+        CountedWalk::AnswersPathStart,
         CountedWalk::SelectionPassOver,
         CountedWalk::RunReachesRecursion,
         CountedWalk::ArrayChecksIsStringBytes,

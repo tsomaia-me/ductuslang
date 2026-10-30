@@ -578,7 +578,7 @@ impl Engine<'_> {
         if reads {
             return Ok(Some(true));
         }
-        self.body_reads_cell(function, need)
+        Ok(Some(!self.function_reads_cell(function)?.is_value()))
     }
 
     pub(in crate::semantics::analysis) fn nesting_in(

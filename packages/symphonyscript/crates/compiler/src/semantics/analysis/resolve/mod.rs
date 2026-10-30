@@ -17,9 +17,9 @@ mod names;
 mod native_layout;
 mod natives;
 mod paths;
-mod reads_cell;
 mod selection;
 mod shaped;
 
+pub(crate) use found::Found;
 pub(crate) use layout_found::LayoutFound;
 pub(crate) use length_limit::LENGTH_LIMIT;

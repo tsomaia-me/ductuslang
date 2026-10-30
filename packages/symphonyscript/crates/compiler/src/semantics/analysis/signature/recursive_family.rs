@@ -31,7 +31,7 @@ impl Engine<'_> {
     ) -> Result<Option<Sig>, Internal> {
         let (key, shapes) = some!(self.family_key(function, args, need)?);
         self.memo.call_families.insert(node, key.clone());
-        if self.body_certainly_reads_cell(function)? {
+        if self.function_reads_cell(function)?.is_cell() {
             if !self.hir.fn_decl(function)?.faulty_head {
                 let reading = format!(
                     "the body of the recursive function `{}` reads a cell",

@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 use crate::diagnostics::Code;
 use crate::semantics::Internal;
@@ -20,9 +20,9 @@ use crate::semantics::analysis::scope_kind::ScopeKind;
 use crate::semantics::analysis::site::Site;
 use crate::semantics::analysis::some::some;
 use crate::semantics::analysis::val::Val;
-use crate::semantics::collection::{Decl, strongly_connected};
+use crate::semantics::collection::Decl;
 use crate::semantics::ir::{
-    Attr, AttrValue, BlockId, BodyItem, ExprId, ExprKind, FnId, Ident, Iterable, LetId, Loc, Param,
+    Attr, AttrValue, BlockId, BodyItem, ExprId, FnId, Ident, Iterable, LetId, Loc, Param,
     PatternId, PlacementId, WireId,
 };
 
@@ -54,118 +54,12 @@ impl Engine<'_> {
             let id = LetId(u32::try_from(position).map_err(|_| Internal::missed("let"))?);
             if !self.hir.is_prelude_let(id)
                 && !self.memo.lets.contains_key(&(global, LetRef::Top(id)))
-                && self.let_reads_cell(id)?
+                && !self.let_reads_cell(id)?.is_value()
             {
                 self.demand(Query::Let(global, LetRef::Top(id)))?;
             }
         }
         Ok(())
-    }
-
-    pub(in crate::semantics::analysis) fn let_reads_cell(
-        &mut self,
-        root: LetId,
-    ) -> Result<bool, Internal> {
-        self.owner_reads_cell(root.index())
-    }
-
-    pub(in crate::semantics::analysis) fn function_reads_cell(
-        &mut self,
-        root: FnId,
-    ) -> Result<bool, Internal> {
-        self.owner_reads_cell(self.hir.lets.len() + root.index())
-    }
-
-    fn owner_reads_cell(&mut self, owner: usize) -> Result<bool, Internal> {
-        if self.memo.names_read_cell.is_none() {
-            self.memo.names_read_cell = Some(self.names_read_cell()?);
-        }
-        self.memo
-            .names_read_cell
-            .as_ref()
-            .and_then(|reads| reads.get(owner).copied())
-            .ok_or(Internal::missed("read owner"))
-    }
-
-    fn names_read_cell(&self) -> Result<Vec<bool>, Internal> {
-        let lets = self.hir.lets.len();
-        let owners = lets + self.hir.fns.len();
-        let mut reads = Vec::with_capacity(owners);
-        let mut edges = Vec::with_capacity(owners);
-        for owner in 0..owners {
-            let (direct, targets) = self.owner_names(owner, lets)?;
-            reads.push(direct);
-            edges.push(targets);
-        }
-        for component in strongly_connected(&edges)? {
-            let read = |owner: &usize| reads.get(*owner).copied().unwrap_or(false);
-            let component_reads = component.iter().any(|member| {
-                read(member)
-                    || edges
-                        .get(*member)
-                        .is_some_and(|targets| targets.iter().any(read))
-            });
-            for member in component {
-                if let Some(owner_reads) = reads.get_mut(member) {
-                    *owner_reads = component_reads;
-                }
-            }
-        }
-        Ok(reads)
-    }
-
-    fn owner_names(&self, owner: usize, lets: usize) -> Result<(bool, Vec<usize>), Internal> {
-        let hir = self.hir;
-        let namespace = &self.collected.source;
-        let (mut stack, locals) = if owner < lets {
-            let id = LetId(index(owner));
-            if hir.is_prelude_let(id) {
-                return Ok((false, Vec::new()));
-            }
-            (vec![hir.let_decl(id)?.value], BTreeSet::new())
-        } else {
-            let function = FnId(index(owner - lets));
-            if hir.is_prelude_fn(function) {
-                return Ok((false, Vec::new()));
-            }
-            let decl = hir.fn_decl(function)?;
-            let locals: BTreeSet<&str> = decl
-                .params
-                .iter()
-                .filter_map(|param| param.name.as_ref())
-                .chain(decl.lets.iter().filter_map(|local| local.name.as_ref()))
-                .map(|name| name.text.as_str())
-                .collect();
-            let mut stack: Vec<ExprId> = decl
-                .params
-                .iter()
-                .filter_map(|param| param.default)
-                .collect();
-            stack.extend(decl.lets.iter().map(|local| local.value));
-            stack.push(decl.value);
-            stack.extend(decl.bound.iter().map(|bound| bound.fallback));
-            (stack, locals)
-        };
-        let mut direct = false;
-        let mut targets = Vec::new();
-        while let Some(expr) = stack.pop() {
-            crate::semantics::counted_walk::CountedWalk::DeclarationsNamesReadCell.step();
-            let kind = &hir.expr(expr)?.kind;
-            match kind {
-                ExprKind::Name(name) if !locals.contains(name.as_str()) => {
-                    match namespace.get(name) {
-                        Some(Decl::Input(_) | Decl::State(_)) => direct = true,
-                        Some(Decl::Let(id)) => targets.push(id.index()),
-                        Some(Decl::Fn(callee)) => targets.push(lets + callee.index()),
-                        Some(_) | None => {}
-                    }
-                }
-                ExprKind::Field(..) => direct = true,
-                _ => {}
-            }
-            stack.extend(kind.children());
-        }
-        Ok((direct, targets))
     }
 
     pub(in crate::semantics::analysis) fn unexpanded_names(
