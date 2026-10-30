@@ -194,7 +194,7 @@ class Review(unittest.TestCase):
     def test_the_breaker_figure_ranks_a_program_past_the_budget_above_every_timed_one(self):
         elapsed = {f"b{index}": float(index + 1) for index in range(98)}
         elapsed.update({"slow1": None, "slow2": None})
-        figure = figures.breaker_figure({"profile": "dev", "budget_s": 5}, elapsed, 3.456)
+        figure = figures.breaker_figure({"profile": "dev", "budget_s": 5}, elapsed, 3.456, 4.0)
         self.assertEqual({name: figure[name] for name in ("programs", "past_budget", "median_ms", "p99_ms",
                                                           "max_timed_ms", "load")},
                          {"programs": 100, "past_budget": 2, "median_ms": 50.0, "p99_ms": None,
@@ -217,7 +217,7 @@ class Review(unittest.TestCase):
             measured = [(figures.INLINED, "inlined", "inlined text", 4), (figures.NESTING, "not", "not text", 2)]
             loads = iter([3.1, 3.2, 3.3])
             with mock.patch.object(figures, "measured_programs", return_value=measured):
-                figures.measure(root, root / "times.json.gz", root / "breakers.jsonl.gz", root / "figures.json",
+                figures.measure(root, root / "times.json.gz", root / "breakers.jsonl.gz", root / "figures.json", 4.0,
                                 lambda: next(loads))
             taken = json.loads((root / "figures.json").read_text())
             calls = (root / "calls.log").read_text().splitlines()
@@ -228,8 +228,23 @@ class Review(unittest.TestCase):
                          [(3.1, None), (3.2, 500.0), (3.3, 1000.0)])
         self.assertEqual({name: taken["figures"][0][name] for name in ("programs", "past_budget", "median_ms")},
                          {"programs": 3, "past_budget": 1, "median_ms": 2.0})
-        self.assertTrue(all("one job" in each["method"] and "below 4.0" in each["method"]
-                            for each in taken["figures"]))
+        self.assertTrue(all("one job" in each["method"] and "below 4.0 or the figures have waited 10 minutes"
+                            in each["method"] for each in taken["figures"]))
+
+    def test_the_figures_wait_for_the_load_below_the_flag_for_at_most_ten_minutes_across_the_step(self):
+        def waiting(below, loads):
+            readings, slept, loads = [], [], iter(loads)
+            settle = run.settling(below, figures.WAIT_SECONDS, 15,
+                                  lambda: readings.append(next(loads)) or readings[-1], slept.append)
+            return settle, readings, slept
+        settle, readings, slept = waiting(4.0, [9.0] * 50)
+        self.assertEqual((settle(), sum(slept), len(readings)), (9.0, 600, 41))
+        self.assertEqual((settle(), sum(slept), len(readings)), (9.0, 600, 42))
+        settle, readings, slept = waiting(float("inf"), [9.0])
+        self.assertEqual((settle(), slept, readings), (9.0, [], [9.0]))
+        settle, readings, slept = waiting(4.0, [6.0, 5.0, 3.5, 9.0])
+        self.assertEqual((settle(), slept, readings), (3.5, [15, 15], [6.0, 5.0, 3.5]))
+        self.assertEqual(figures.waited(float("inf")), "at any load")
 
     def test_the_measured_programs_hold_a_million_calls_and_the_fixtures_depth_per_construct(self):
         self.assertEqual(sum((1 << (level + 1)) - 1 for level in figures.sizes_totalling(1_000_000)), 1_000_000)
@@ -341,6 +356,8 @@ class Running(unittest.TestCase):
             shape = run.manifest("f" * 40, results / "into", results, records, "2026-10-28T00:00:00+00:00", 4)
             asked = run.manifest("f" * 40, results / "into", results, records, "2026-10-28T00:00:00+00:00", 4, 6.0,
                                  True, True)
+            unbounded = run.manifest("f" * 40, results / "into", results, records, "2026-10-28T00:00:00+00:00", 4,
+                                     float("inf"))
         self.assertEqual(waited, [None, 12.0, 6.0, None])
         self.assertEqual([(r["name"], r["exit"], r["load"], r["log"]) for r in records],
                          [("first", 0, 2.5, "first.log"), ("failing", 3, 2.5, "failing.log"),
@@ -355,6 +372,10 @@ class Running(unittest.TestCase):
                                       "load_limits", "pipeline", "host", "started", "written", "results", "commands"})
         self.assertEqual((shape["ignored_tests"], asked["ignored_tests"]),
                          ({"exhaustive": False, "stress": False}, {"exhaustive": True, "stress": True}))
+        self.assertEqual((shape["load_limits"], asked["load_limits"], unbounded["load_limits"]),
+                         ({"builds_and_checks": 12.0, "timed_steps": 6.0, "figures": 4.0},
+                          {"builds_and_checks": 12.0, "timed_steps": 6.0, "figures": 6.0},
+                          {"builds_and_checks": 12.0, "timed_steps": None, "figures": None}))
 
     def test_the_shared_step_runs_the_four_checks_as_commands_of_their_own_in_the_dev_profile(self):
         into, results = Path("/into"), Path("/results")
@@ -374,13 +395,16 @@ class Running(unittest.TestCase):
                                                     "--settle-below", "6.0", "--build", "/into/check", "--baselines",
                                                     "/baselines"])
         self.assertEqual(commands["figures"][2:], ["figures", "/into/check/target/debug",
-                                                   "/results/check-times.json.gz", "/results/figures.json"])
+                                                   "/results/check-times.json.gz", "/results/figures.json",
+                                                   "--load-below", "4.0"])
         self.assertEqual({each["name"]: each["below"] for each in planned if each["below"]},
-                         {**dict.fromkeys(["build", "fmt", "clippy", "nextest", "doctest", "thumbv7em", "verdicts"],
-                                          12.0), "figures": 4.0})
+                         dict.fromkeys(["build", "fmt", "clippy", "nextest", "doctest", "thumbv7em", "verdicts"], 12.0))
         quiet = run.shared_steps("abc1234", Path("/top"), into, results, 4, Path("/baselines"), None, float("inf"),
                                  True, True)
-        self.assertEqual([quiet[-2]["command"][9], quiet[-1]["name"], quiet[-1]["below"]], ["inf", "figures", 4.0])
+        self.assertEqual([quiet[-2]["command"][9], quiet[-1]["name"], quiet[-1]["command"][-2:], quiet[-1]["below"]],
+                         ["inf", "figures", ["--load-below", "inf"], None])
+        given = run.shared_steps("abc1234", Path("/top"), into, results, 4, Path("/baselines"), None, 5.0)
+        self.assertEqual([given[-2]["command"][9], given[-1]["command"][-1]], ["5.0", "5.0"])
         self.assertTrue(all(each["cwd"] == "/into/export/packages/symphonyscript"
                             for each in planned if each["command"][0] in ("cargo", "rustc")))
         self.assertTrue(all(each["env"]["CARGO_TARGET_DIR"] == "/into/target" for each in planned

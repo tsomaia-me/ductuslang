@@ -19,7 +19,7 @@ Clip c | three=([1]):
 
 The verdict diff reads each program of `corpora/probes.jsonl.gz` as `evolve-probe` reads a file: the text splits at its `----` lines, a program's first-line tag chooses the vocabulary `evolve-check` checks it under, `#example` choosing `main`, and its `#expect` line is dropped. A probe whose tag names no vocabulary is not checked: it takes the verdict `unknown-tag`, and `diff.md` names it with its tag.
 
-The speed figures, `figures.json`, are the step's last command. Each figure waits until the 1-minute load is below 4, records that load beside it, and is taken with one job: one `evolve-time` process that runs `Compiler::check` on its compile thread in the `dev` profile, one program at a time.
+The speed figures, `figures.json`, are the step's last command. Each figure waits until the 1-minute load is below the `--quiet-below` load, 4 when the flag is absent and no wait under `inf`, the figures together waiting at most 10 minutes, records that load beside it, and is taken with one job: one `evolve-time` process that runs `Compiler::check` on its compile thread in the `dev` profile, one program at a time.
 
 - A compile-time recursive call: a program whose `g` makes 1,000,000 distinct recursive calls over trees of distinct sizes, three runs, the median divided by 1,000,000.
 - An inlined call: a program of 10,000 notes, each summing 100 calls `f(i, 0)` to `f(i, 99)` of a non-recursive `fn f(x, k): x + k` on an input, so Resolve and Infer each walk 1,000,000 distinct call sites, three runs, the median divided by 1,000,000.
