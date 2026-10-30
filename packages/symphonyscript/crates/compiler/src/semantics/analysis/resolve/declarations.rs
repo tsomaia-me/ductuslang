@@ -2,18 +2,16 @@ use std::collections::BTreeMap;
 
 use crate::diagnostics::Code;
 use crate::semantics::Internal;
-use crate::semantics::analysis::binding_kind::BindingKind;
 use crate::semantics::analysis::bound_val::BoundVal;
 use crate::semantics::analysis::chain::Chain;
 use crate::semantics::analysis::engine::Engine;
 use crate::semantics::analysis::expand::item_kind::ItemKind;
 use crate::semantics::analysis::fast_hash::FastSet;
-use crate::semantics::analysis::ids::{NodeId, ScopeId};
+use crate::semantics::analysis::ids::ScopeId;
 use crate::semantics::analysis::index::index;
 use crate::semantics::analysis::item_ref::ItemRef;
 use crate::semantics::analysis::let_ref::LetRef;
 use crate::semantics::analysis::locals_owner::LocalsOwner;
-use crate::semantics::analysis::op::Op;
 use crate::semantics::analysis::param_source::ParamSource;
 use crate::semantics::analysis::query::Query;
 use crate::semantics::analysis::scope_kind::ScopeKind;
@@ -539,33 +537,6 @@ impl Engine<'_> {
             self.error(Code::DestinationType, loc, scope, message)?;
         }
         Ok(())
-    }
-
-    fn holds_no_instance(&self, node: NodeId) -> Result<bool, Internal> {
-        let mut node = node;
-        loop {
-            node = match &self.node(node)?.op {
-                Op::Chosen(inner) | Op::Use(inner) => *inner,
-                Op::Read(binding) => {
-                    return Ok(matches!(
-                        self.binding(*binding)?.kind,
-                        BindingKind::Input { .. } | BindingKind::State { .. }
-                    ));
-                }
-                op => {
-                    return Ok(matches!(
-                        op,
-                        Op::Number(..)
-                            | Op::Const(_)
-                            | Op::Bool(_)
-                            | Op::Str(_)
-                            | Op::Concat(_)
-                            | Op::Variant(..)
-                            | Op::Pi
-                    ));
-                }
-            };
-        }
     }
 
     pub(in crate::semantics::analysis) fn declaration(

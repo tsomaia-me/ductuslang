@@ -1,20 +1,28 @@
 mod answer;
+mod arm_type;
+mod cell_read;
+mod cell_reads;
 mod combined_shape;
 mod dimensions;
 mod kind;
 mod layout;
 mod layout_shaped;
+mod match_kind;
 mod node_dimensions;
 mod owner_reads;
 mod owners;
 mod reads;
 mod reads_cell;
 mod scoped_reads;
+mod scrutinee_ty;
 mod shape_parts;
 mod variable;
 
+pub(crate) use arm_type::ArmShape;
+pub(crate) use cell_read::CellRead;
 pub(crate) use combined_shape::combined_shape;
 pub(crate) use dimensions::Dimensions;
+pub(crate) use kind::joins;
 pub(crate) use layout_shaped::layout_shaped;
 pub(crate) use owner_reads::OwnerReads;
 pub(crate) use scoped_reads::ScopedReads;

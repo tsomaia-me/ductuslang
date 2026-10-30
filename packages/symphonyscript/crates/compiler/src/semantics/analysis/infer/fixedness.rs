@@ -1,4 +1,5 @@
 use crate::semantics::Internal;
+use crate::semantics::analysis::answers::CellRead;
 use crate::semantics::analysis::assumed::Assumed;
 use crate::semantics::analysis::binding_kind::BindingKind;
 use crate::semantics::analysis::engine::Engine;
@@ -223,28 +224,29 @@ impl Engine<'_> {
             if !seen.insert(node) {
                 continue;
             }
-            match &self.node(node)?.op {
-                Op::Read(binding) => match self.binding(*binding)?.kind {
+            match self.cell_read(node)? {
+                CellRead::Binding(binding) => match self.binding(binding)?.kind {
                     BindingKind::State { state } => found.push(state),
                     BindingKind::Input { .. }
                     | BindingKind::Let
                     | BindingKind::Param
-                    | BindingKind::Attr { .. } => cells.push(*binding),
+                    | BindingKind::Attr { .. } => cells.push(binding),
                 },
-                Op::History { cell, fallback, .. } => {
+                CellRead::History { cell, fallback } => {
                     match cell {
-                        HistoryCell::State(state) => found.push(*state),
-                        HistoryCell::Let(id) if self.let_bound(*id).is_none() => {
+                        HistoryCell::State(state) => found.push(state),
+                        HistoryCell::Let(id) if self.let_bound(id).is_none() => {
                             clean = false;
-                            unbound.push(self.history_cell_query(*cell));
+                            unbound.push(self.history_cell_query(cell));
                         }
                         HistoryCell::Input(_) | HistoryCell::Let(_) => {
                             cells.extend(self.history_bindings(node)?);
                         }
                     }
-                    stack.extend(fallback.iter().copied());
+                    stack.extend(fallback);
                 }
-                op => stack.extend(op.operands()),
+                CellRead::Named(inner) => stack.push(inner),
+                CellRead::Operands(operands) => stack.extend(operands),
             }
         }
         for binding in cells {

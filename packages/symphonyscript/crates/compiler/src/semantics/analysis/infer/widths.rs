@@ -2,6 +2,7 @@ use symphonyscript_core::Scalar;
 
 use crate::diagnostics::Code;
 use crate::semantics::Internal;
+use crate::semantics::analysis::answers::CellRead;
 use crate::semantics::analysis::binding_kind::BindingKind;
 use crate::semantics::analysis::engine::Engine;
 use crate::semantics::analysis::fast_hash::{FastMap, FastSet};
@@ -9,7 +10,6 @@ use crate::semantics::analysis::ids::{BindingId, NodeId};
 use crate::semantics::analysis::is_float::is_float;
 use crate::semantics::analysis::is_integer::is_integer;
 use crate::semantics::analysis::kind::Kind;
-use crate::semantics::analysis::op::Op;
 use crate::semantics::analysis::rank::rank;
 use crate::semantics::analysis::width::Width;
 
@@ -175,13 +175,13 @@ impl Engine<'_> {
                 widest = wider(widest, self.read_free_width(node)?);
                 continue;
             }
-            match &self.node(node)?.op {
-                Op::Read(read) => cells.push(*read),
-                Op::History { .. } if !self.memo.own_history.contains(&node) => {
+            match self.cell_read(node)? {
+                CellRead::Binding(read) => cells.push(read),
+                CellRead::History { .. } if !self.memo.own_history.contains(&node) => {
                     cells.extend(self.history_bindings(node)?);
                 }
-                op => {
-                    nodes.extend(op.operands());
+                CellRead::History { .. } | CellRead::Named(_) | CellRead::Operands(_) => {
+                    nodes.extend(self.node(node)?.op.operands());
                     widest = wider(widest, self.fixed_integer_width(node)?);
                 }
             }

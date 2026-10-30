@@ -143,41 +143,6 @@ impl Engine<'_> {
         }
     }
 
-    fn is_string_bytes(
-        &self,
-        node: crate::semantics::analysis::ids::NodeId,
-    ) -> Result<bool, Internal> {
-        use crate::semantics::analysis::kind::Kind;
-        use crate::semantics::analysis::op::Op;
-        use symphonyscript_core::Builtin;
-        let mut leaves = vec![node];
-        while let Some(leaf) = leaves.pop() {
-            crate::semantics::counted_walk::CountedWalk::ArrayChecksIsStringBytes.step();
-            match &self.node(leaf)?.op {
-                Op::Use(inner) | Op::Chosen(inner) => leaves.push(*inner),
-                Op::If(_, then, otherwise) => leaves.extend([*then, *otherwise]),
-                Op::Match {
-                    arms, otherwise, ..
-                } => leaves.extend(arms.iter().map(|(_, value)| *value).chain(*otherwise)),
-                Op::Builtin(Builtin::Bytes, operands) => {
-                    let [operand] = operands.as_slice() else {
-                        return Ok(false);
-                    };
-                    if !self
-                        .memo
-                        .sigs
-                        .get(operand)
-                        .is_some_and(|sig| sig.kind == Kind::Str)
-                    {
-                        return Ok(false);
-                    }
-                }
-                _ => return Ok(false),
-            }
-        }
-        Ok(true)
-    }
-
     fn fixed_help(&self, ty: &symphonyscript_core::Ty) -> Result<String, Internal> {
         let mut form = self.scalar_name(ty.scalar)?;
         for length in &ty.lengths {

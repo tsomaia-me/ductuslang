@@ -1,4 +1,5 @@
 use crate::semantics::Internal;
+use crate::semantics::analysis::answers::CellRead;
 use crate::semantics::analysis::bound::Bound;
 use crate::semantics::analysis::bound_val::BoundVal;
 use crate::semantics::analysis::engine::Engine;
@@ -150,12 +151,11 @@ impl Engine<'_> {
     ) -> Result<Vec<NodeId>, Internal> {
         self.memo.kind_visits += 1;
         self.memo.settlement_visits += 1;
-        let op = &self.node(node)?.op;
-        let mut found = op.operands();
-        let extra = match op {
-            Op::Read(binding) => Some(Ok(*binding)),
-            Op::History { cell, .. } => Some(Err(*cell)),
-            _ => None,
+        let mut found = self.node(node)?.op.operands();
+        let extra = match self.cell_read(node)? {
+            CellRead::Binding(binding) => Some(Ok(binding)),
+            CellRead::History { cell, .. } => Some(Err(cell)),
+            CellRead::Named(_) | CellRead::Operands(_) => None,
         };
         if let Some(group) = self.memo.groups.get(&node) {
             found.push(*group);
@@ -193,13 +193,15 @@ impl Engine<'_> {
         let mut outside = Vec::new();
         for (position, node) in members.iter().enumerate() {
             index.insert(*node, position);
-            let read = match self.node(*node)?.op {
-                Op::History {
+            let read = match self.cell_read(*node)? {
+                CellRead::History {
                     cell: cell @ (HistoryCell::Let(_) | HistoryCell::State(_)),
                     fallback,
-                    ..
                 } => Some((cell, fallback)),
-                _ => None,
+                CellRead::History { .. }
+                | CellRead::Binding(_)
+                | CellRead::Named(_)
+                | CellRead::Operands(_) => None,
             };
             let read = match read {
                 Some((cell, fallback)) if !self.own_read(*node, cell)? => Some(fallback),

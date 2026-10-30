@@ -3,6 +3,7 @@ use symphonyscript_core::{BinaryOp, EnumId, Scalar};
 use super::position::Position;
 use crate::diagnostics::Code;
 use crate::semantics::Internal;
+use crate::semantics::analysis::answers::CellRead;
 use crate::semantics::analysis::binding_kind::BindingKind;
 use crate::semantics::analysis::bound::Bound;
 use crate::semantics::analysis::bound_val::BoundVal;
@@ -654,18 +655,17 @@ impl Engine<'_> {
                 }
                 continue;
             }
-            let read = match op {
-                Op::Read(binding) => Some(Member::Cell(*binding)),
-                Op::Use(inner) => {
-                    let target = self.through_uses(*inner)?;
+            let read = match self.cell_read(node)? {
+                CellRead::Binding(binding) => Some(Member::Cell(binding)),
+                CellRead::Named(inner) => {
+                    let target = self.through_uses(inner)?;
                     members
                         .contains(&Member::Value(target))
                         .then_some(Member::Value(target))
                 }
-                _ if node != root && members.contains(&Member::Value(node)) => {
-                    Some(Member::Value(node))
-                }
-                _ => None,
+                CellRead::History { .. } | CellRead::Operands(_) => (node != root
+                    && members.contains(&Member::Value(node)))
+                .then_some(Member::Value(node)),
             };
             match read {
                 Some(read) => {

@@ -320,7 +320,7 @@ impl Engine<'_> {
         })
     }
 
-    pub(super) fn prefix_scope(
+    pub(in crate::semantics::analysis) fn prefix_scope(
         &mut self,
         locals: ScopeId,
         count: u32,

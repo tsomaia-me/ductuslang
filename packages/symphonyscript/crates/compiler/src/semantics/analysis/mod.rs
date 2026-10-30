@@ -70,7 +70,6 @@ mod rec_family;
 mod resolve;
 mod scope;
 mod scope_kind;
-mod scrutinee_ty;
 mod settling;
 mod shape;
 mod shape_fault;

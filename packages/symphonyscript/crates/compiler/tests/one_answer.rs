@@ -3,110 +3,237 @@ use std::path::{Path, PathBuf};
 
 const MODULE: &str = "analysis/answers/";
 
-const DECIDING_NONE: &[&str] = &[
-    "analysis/evaluation/run.rs compute",
-    "analysis/evaluation/run.rs fit",
-    "analysis/evaluation/run.rs takes_a_type",
-    "analysis/evaluation/run.rs takes_expected",
-    "analysis/expand/structure.rs range_bound",
-    "analysis/infer/check.rs check_from",
-    "analysis/infer/check.rs destination_labels",
-    "analysis/infer/check.rs own_operands",
-    "analysis/infer/expectations.rs expect",
-    "analysis/infer/positions.rs arm_position",
-    "analysis/infer/positions.rs child_flow",
-    "analysis/infer/positions.rs chosen_child",
-    "analysis/infer/positions.rs detached_roots",
-    "analysis/infer/positions.rs picked_element",
-    "analysis/infer/units.rs carried_operands",
-    "analysis/infer/units.rs read_in_units_of",
-    "analysis/infer/values.rs retract_unread_evaluations",
-    "analysis/infer/widths.rs natural_parts",
-    "analysis/op.rs choice_arms",
-    "analysis/op.rs operands",
-    "analysis/resolve/calls.rs same_path",
-    "analysis/resolve/declarations.rs holds_no_instance",
-    "analysis/resolve/expressions.rs match_val",
-    "analysis/resolve/expressions.rs run_expr",
-    "analysis/resolve/names.rs unplaced_placeholder",
-    "analysis/resolve/names.rs unplaced_variant",
-    "analysis/resolve/paths.rs bound_slice",
-    "analysis/resolve/paths.rs candidates",
-    "analysis/resolve/paths.rs chosen_read",
-    "analysis/resolve/paths.rs field",
-    "analysis/resolve/paths.rs reference_instances",
-    "analysis/resolve/paths.rs to_path",
-    "analysis/resolve/paths.rs written_base",
-    "analysis/resolve/paths.rs written_destination",
-    "analysis/resolve/selection.rs pass_over",
-    "analysis/resolve/selection.rs selected",
-    "ir/builder/expressions.rs negation",
-    "ir/expr_kind.rs children",
-    "scopes/checker.rs expr",
-];
-
-const STILL_DECIDING: &[(&str, &str)] = &[
-    ("analysis/carried_enum_of.rs carried_enum_of", "kind"),
-    ("analysis/infer/array_checks.rs is_string_bytes", "kind"),
-    ("analysis/infer/bare_scrutinees.rs bare_scrutinees", "kind"),
-    ("analysis/infer/capacities.rs combined_extent", "shape"),
-    ("analysis/infer/capacities.rs cover", "shape"),
-    ("analysis/infer/capacities.rs extent_parts", "shape"),
+const DECIDING_NONE: &[(&str, &str)] = &[
     (
-        "analysis/infer/capacities.rs state_dependencies",
-        "reads a cell",
+        "analysis/carried_enum_of.rs carried_enum_of",
+        "the enum a bare variant takes from its expected type, SPEC §4.2's enum flow",
     ),
-    ("analysis/infer/check.rs holds_a_float_cell", "kind"),
-    ("analysis/infer/check.rs native_argument", "shape"),
+    (
+        "analysis/evaluation/run.rs compute",
+        "the compile-time value of a node, evaluated by SPEC §4.6",
+    ),
+    (
+        "analysis/evaluation/run.rs fit",
+        "whether a compile-time value fits its type, SPEC §4.1's fit check",
+    ),
+    (
+        "analysis/evaluation/run.rs takes_a_type",
+        "the expected type that flows into an operand, SPEC §4.2",
+    ),
+    (
+        "analysis/evaluation/run.rs takes_expected",
+        "the expected type that flows into an operand, SPEC §4.2",
+    ),
+    (
+        "analysis/expand/structure.rs range_bound",
+        "a range bound written as a literal, read before evaluation",
+    ),
+    (
+        "analysis/infer/bare_scrutinees.rs bare_scrutinees",
+        "the enum a bare variant takes from its expected type, SPEC §4.2's enum flow",
+    ),
+    (
+        "analysis/infer/capacities.rs combined_extent",
+        "a variable array's capacity by SPEC §3.7's and §6.6's equations, over the module's shapes",
+    ),
+    (
+        "analysis/infer/capacities.rs cover",
+        "a variable array's capacity by SPEC §3.7's and §6.6's equations, over the module's shapes",
+    ),
+    (
+        "analysis/infer/capacities.rs extent_parts",
+        "a variable array's capacity by SPEC §3.7's and §6.6's equations, over the module's shapes",
+    ),
+    (
+        "analysis/infer/check.rs check_from",
+        "the diagnostics of Check against the types Infer settled",
+    ),
+    (
+        "analysis/infer/check.rs destination_labels",
+        "the instances a path or a wire destination names, SPEC §5.6 and §8.2",
+    ),
+    (
+        "analysis/infer/check.rs native_argument",
+        "the element nodes of an array literal passed to a native, for the argument check",
+    ),
+    (
+        "analysis/infer/check.rs own_operands",
+        "where a diagnostic stands beside a fault, ARCHITECTURE §7's placeholder rule",
+    ),
     (
         "analysis/infer/compile_time_enums.rs compile_time_enums",
-        "kind",
+        "the enum a bare variant takes from its expected type, SPEC §4.2's enum flow",
     ),
-    ("analysis/infer/compile_time_enums.rs enum_kind", "kind"),
-    ("analysis/infer/enum_bindings.rs carried_enum", "kind"),
-    ("analysis/infer/enum_bindings.rs member_of", "kind"),
-    ("analysis/infer/enum_bindings.rs use_end", "kind"),
-    ("analysis/infer/enum_bindings.rs value_bares", "kind"),
-    ("analysis/infer/enum_bindings.rs value_parts", "kind"),
     (
-        "analysis/infer/enum_bindings.rs value_reads",
-        "reads a cell",
+        "analysis/infer/compile_time_enums.rs enum_kind",
+        "the enum a bare variant takes from its expected type, SPEC §4.2's enum flow",
     ),
-    ("analysis/infer/enum_bindings.rs writes_variant", "kind"),
-    ("analysis/infer/fixedness.rs group_fallbacks", "shape"),
     (
-        "analysis/infer/fixedness.rs scan_state_reads",
-        "reads a cell",
+        "analysis/infer/enum_bindings.rs carried_enum",
+        "the enum a bare variant takes from its expected type, SPEC §4.2's enum flow",
     ),
-    ("analysis/infer/history_reads.rs kind_edges", "kind"),
-    ("analysis/infer/history_reads.rs settle_kinds", "kind"),
-    ("analysis/infer/order.rs reads_of", "reads a cell"),
-    ("analysis/infer/synth.rs synth", "kind"),
-    ("analysis/infer/synth.rs synth_of", "kind"),
-    ("analysis/resolve/arrays.rs bare_leaves", "kind"),
-    ("analysis/resolve/arrays.rs choice_bytes", "shape"),
-    ("analysis/resolve/arrays.rs reaches_choice", "shape"),
-    ("analysis/resolve/calls.rs arm_parts", "kind"),
-    ("analysis/resolve/calls.rs combined_arm_type", "kind"),
-    ("analysis/resolve/history.rs history_reads", "reads a cell"),
-    ("analysis/scrutinee_ty.rs choice_ty", "kind"),
-    ("analysis/signature/matches.rs label", "kind"),
-    ("analysis/signature/run.rs joins", "kind"),
-    ("analysis/signature/run.rs reaches_recursion", "shape"),
-    ("analysis/signature/run.rs run_sig", "kind"),
+    (
+        "analysis/infer/enum_bindings.rs member_of",
+        "the enum a bare variant takes from its expected type, SPEC §4.2's enum flow",
+    ),
+    (
+        "analysis/infer/enum_bindings.rs use_end",
+        "the enum a bare variant takes from its expected type, SPEC §4.2's enum flow",
+    ),
+    (
+        "analysis/infer/enum_bindings.rs value_bares",
+        "the enum a bare variant takes from its expected type, SPEC §4.2's enum flow",
+    ),
+    (
+        "analysis/infer/enum_bindings.rs value_parts",
+        "the enum a bare variant takes from its expected type, SPEC §4.2's enum flow",
+    ),
+    (
+        "analysis/infer/enum_bindings.rs writes_variant",
+        "the enum a bare variant takes from its expected type, SPEC §4.2's enum flow",
+    ),
+    (
+        "analysis/infer/expectations.rs expect",
+        "the expected type that flows into an operand, SPEC §4.2",
+    ),
+    (
+        "analysis/infer/fixedness.rs group_fallbacks",
+        "which history fallbacks settle together, reading the module's layout",
+    ),
+    (
+        "analysis/infer/positions.rs arm_position",
+        "where a diagnostic stands beside a fault, ARCHITECTURE §7's placeholder rule",
+    ),
+    (
+        "analysis/infer/positions.rs child_flow",
+        "the expected type that flows into an operand, SPEC §4.2",
+    ),
+    (
+        "analysis/infer/positions.rs chosen_child",
+        "where a diagnostic stands beside a fault, ARCHITECTURE §7's placeholder rule",
+    ),
+    (
+        "analysis/infer/positions.rs detached_roots",
+        "where a diagnostic stands beside a fault, ARCHITECTURE §7's placeholder rule",
+    ),
+    (
+        "analysis/infer/positions.rs picked_element",
+        "where a diagnostic stands beside a fault, ARCHITECTURE §7's placeholder rule",
+    ),
+    (
+        "analysis/infer/units.rs carried_operands",
+        "the unit family a value carries, SPEC §3.6",
+    ),
+    (
+        "analysis/infer/units.rs read_in_units_of",
+        "the unit family a value carries, SPEC §3.6",
+    ),
+    (
+        "analysis/infer/values.rs retract_unread_evaluations",
+        "which compile-time evaluations no read keeps, for their diagnostics",
+    ),
+    (
+        "analysis/op.rs choice_arms",
+        "the operands of a node, the structure every walk follows",
+    ),
+    (
+        "analysis/op.rs operands",
+        "the operands of a node, the structure every walk follows",
+    ),
+    (
+        "analysis/resolve/arrays.rs bare_leaves",
+        "the enum a bare variant takes from its expected type, SPEC §4.2's enum flow",
+    ),
+    (
+        "analysis/resolve/arrays.rs choice_bytes",
+        "the byte array a choice of strings builds, SPEC §3.3",
+    ),
+    (
+        "analysis/resolve/arrays.rs reaches_choice",
+        "the byte array a choice of strings builds, SPEC §3.3",
+    ),
+    (
+        "analysis/resolve/calls.rs same_path",
+        "whether two argument expressions write the same name or path",
+    ),
+    (
+        "analysis/resolve/expressions.rs match_val",
+        "the node the resolver builds for each expression form",
+    ),
+    (
+        "analysis/resolve/expressions.rs run_expr",
+        "the node the resolver builds for each expression form",
+    ),
+    (
+        "analysis/resolve/names.rs unplaced_placeholder",
+        "the name a bare-variant placeholder prints in its diagnostic",
+    ),
+    (
+        "analysis/resolve/names.rs unplaced_variant",
+        "the name a bare-variant placeholder prints in its diagnostic",
+    ),
+    (
+        "analysis/resolve/paths.rs bound_slice",
+        "the instances a path or a wire destination names, SPEC §5.6 and §8.2",
+    ),
+    (
+        "analysis/resolve/paths.rs candidates",
+        "the instances a path or a wire destination names, SPEC §5.6 and §8.2",
+    ),
+    (
+        "analysis/resolve/paths.rs chosen_read",
+        "the instances a path or a wire destination names, SPEC §5.6 and §8.2",
+    ),
+    (
+        "analysis/resolve/paths.rs field",
+        "the instances a path or a wire destination names, SPEC §5.6 and §8.2",
+    ),
+    (
+        "analysis/resolve/paths.rs reference_instances",
+        "the instances a path or a wire destination names, SPEC §5.6 and §8.2",
+    ),
+    (
+        "analysis/resolve/paths.rs to_path",
+        "the instances a path or a wire destination names, SPEC §5.6 and §8.2",
+    ),
+    (
+        "analysis/resolve/paths.rs written_base",
+        "the instances a path or a wire destination names, SPEC §5.6 and §8.2",
+    ),
+    (
+        "analysis/resolve/paths.rs written_destination",
+        "the instances a path or a wire destination names, SPEC §5.6 and §8.2",
+    ),
+    (
+        "analysis/resolve/selection.rs pass_over",
+        "which arm a compile-time choice takes, by evaluating its chooser",
+    ),
+    (
+        "analysis/resolve/selection.rs selected",
+        "which arm a compile-time choice takes, by evaluating its chooser",
+    ),
+    (
+        "ir/builder/expressions.rs negation",
+        "the literal a minus sign forms with a number, SPEC §4.1",
+    ),
+    (
+        "ir/expr_kind.rs children",
+        "the operands of a node, the structure every walk follows",
+    ),
+    (
+        "scopes/checker.rs expr",
+        "which names an expression uses, for scope checks",
+    ),
 ];
 
 const CATCH_ALLS_OUTSIDE: &[&str] = &[
     "analysis/carried_enum_of.rs carried_enum_of",
-    "analysis/infer/array_checks.rs is_string_bytes",
     "analysis/infer/bare_scrutinees.rs bare_scrutinees",
     "analysis/infer/capacities.rs combined_extent",
     "analysis/infer/capacities.rs cover",
     "analysis/infer/capacities.rs extent_parts",
-    "analysis/infer/capacities.rs state_dependencies",
     "analysis/infer/check.rs check_from",
     "analysis/infer/check.rs destination_labels",
-    "analysis/infer/check.rs holds_a_float_cell",
     "analysis/infer/check.rs native_argument",
     "analysis/infer/check.rs own_operands",
     "analysis/infer/compile_time_enums.rs compile_time_enums",
@@ -115,27 +242,17 @@ const CATCH_ALLS_OUTSIDE: &[&str] = &[
     "analysis/infer/enum_bindings.rs member_of",
     "analysis/infer/enum_bindings.rs use_end",
     "analysis/infer/enum_bindings.rs value_bares",
-    "analysis/infer/enum_bindings.rs value_reads",
     "analysis/infer/enum_bindings.rs writes_variant",
     "analysis/infer/expectations.rs expect",
     "analysis/infer/fixedness.rs group_fallbacks",
-    "analysis/infer/fixedness.rs scan_state_reads",
-    "analysis/infer/history_reads.rs kind_edges",
-    "analysis/infer/history_reads.rs settle_kinds",
-    "analysis/infer/order.rs reads_of",
     "analysis/infer/positions.rs detached_roots",
     "analysis/infer/positions.rs picked_element",
-    "analysis/infer/synth.rs synth",
     "analysis/infer/units.rs carried_operands",
-    "analysis/infer/widths.rs natural_parts",
     "analysis/resolve/arrays.rs bare_leaves",
     "analysis/resolve/arrays.rs choice_bytes",
     "analysis/resolve/arrays.rs reaches_choice",
-    "analysis/resolve/calls.rs arm_parts",
     "analysis/resolve/calls.rs same_path",
-    "analysis/resolve/declarations.rs holds_no_instance",
     "analysis/resolve/expressions.rs match_val",
-    "analysis/resolve/history.rs history_reads",
     "analysis/resolve/names.rs unplaced_placeholder",
     "analysis/resolve/paths.rs chosen_read",
     "analysis/resolve/paths.rs to_path",
@@ -143,8 +260,6 @@ const CATCH_ALLS_OUTSIDE: &[&str] = &[
     "analysis/resolve/paths.rs written_destination",
     "analysis/resolve/selection.rs pass_over",
     "analysis/resolve/selection.rs selected",
-    "analysis/signature/matches.rs label",
-    "analysis/signature/run.rs reaches_recursion",
     "scopes/checker.rs expr",
 ];
 
@@ -356,18 +471,15 @@ fn listed(sites: impl IntoIterator<Item = &'static str>) -> BTreeSet<String> {
 }
 
 #[test]
-fn every_match_over_an_expression_or_an_op_outside_the_answers_module_is_listed_with_what_it_decides()
- {
+fn every_match_over_an_expression_or_an_op_outside_the_answers_module_decides_another_question() {
     let found = inventory();
     let outside: BTreeSet<String> = found
         .iter()
         .filter(|matched| !matched.site.starts_with(MODULE))
         .map(|matched| matched.site.clone())
         .collect();
-    let none = listed(DECIDING_NONE.iter().copied());
-    let still = listed(STILL_DECIDING.iter().map(|(site, _)| *site));
-    assert!(none.is_disjoint(&still), "a site listed twice");
-    let classified: BTreeSet<String> = none.union(&still).cloned().collect();
+    let classified = listed(DECIDING_NONE.iter().map(|(site, _)| *site));
+    assert_eq!(classified.len(), DECIDING_NONE.len(), "a site listed twice");
     let unlisted: Vec<&String> = outside.difference(&classified).collect();
     let gone: Vec<&String> = classified.difference(&outside).collect();
     assert!(

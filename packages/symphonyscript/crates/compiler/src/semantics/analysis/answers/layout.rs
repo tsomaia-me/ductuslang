@@ -121,6 +121,52 @@ impl Engine<'_> {
         Ok(())
     }
 
+    pub(in crate::semantics::analysis) fn reaches_recursion(
+        &self,
+        root: NodeId,
+    ) -> Result<bool, Internal> {
+        let mut stack = vec![root];
+        let mut seen = FastSet::default();
+        while let Some(node) = stack.pop() {
+            crate::semantics::counted_walk::CountedWalk::RunReachesRecursion.step();
+            if !seen.insert(node) {
+                continue;
+            }
+            let op = &self.node(node)?.op;
+            match op {
+                Op::Recursive { .. } => return Ok(true),
+                Op::Use(_) | Op::Read(_) => {}
+                Op::Number(..)
+                | Op::Const(_)
+                | Op::Bool(_)
+                | Op::Str(_)
+                | Op::Concat(_)
+                | Op::Variant(..)
+                | Op::Bare(_)
+                | Op::Pi
+                | Op::NodeRef(_)
+                | Op::Chosen(_)
+                | Op::Arg(_)
+                | Op::Unary(..)
+                | Op::Binary(..)
+                | Op::If(..)
+                | Op::Match { .. }
+                | Op::Pick { .. }
+                | Op::Element { .. }
+                | Op::Array(_)
+                | Op::Convert(..)
+                | Op::Annotate(..)
+                | Op::Builtin(..)
+                | Op::ToRead { .. }
+                | Op::Join(..)
+                | Op::Slice { .. }
+                | Op::History { .. }
+                | Op::Native { .. } => stack.extend(op.operands()),
+            }
+        }
+        Ok(false)
+    }
+
     pub(in crate::semantics::analysis) fn rests_on_recursion(
         &self,
         root: NodeId,

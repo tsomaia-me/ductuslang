@@ -2,8 +2,6 @@ use std::collections::BTreeSet;
 
 use symphonyscript_core::Scalar;
 
-use super::branch_width_of::branch_width_of;
-use super::operand::operand;
 use crate::diagnostics::Code;
 use crate::semantics::Internal;
 use crate::semantics::analysis::binding_kind::BindingKind;
@@ -12,6 +10,8 @@ use crate::semantics::analysis::ids::NodeId;
 use crate::semantics::analysis::kind::Kind;
 use crate::semantics::analysis::op::Op;
 use crate::semantics::analysis::sig::Sig;
+use crate::semantics::analysis::signature::branch_width_of;
+use crate::semantics::analysis::signature::operand;
 use crate::semantics::analysis::unify_kinds::unify_kinds;
 use crate::semantics::analysis::width::Width;
 use crate::semantics::ir::{Number, Suffix};
@@ -168,12 +168,20 @@ impl Engine<'_> {
         typed: Option<Scalar>,
     ) -> Result<Option<Label>, Internal> {
         let op = self.node(label)?.op.clone();
-        let found = match (&op, scrutinee.kind) {
-            (Op::Bare(name), Kind::Enum(id)) => {
-                self.variants.position(id, name)?.map(Label::Variant)
-            }
-            (Op::Bool(value), Kind::Bool) => Some(Label::Bool(*value)),
-            (Op::Number(Number::Int(value), suffix), Kind::Int) => {
+        let found = match &op {
+            Op::Bare(name) => match scrutinee.kind {
+                Kind::Enum(id) => self.variants.position(id, name)?.map(Label::Variant),
+                Kind::Int
+                | Kind::Float
+                | Kind::Bool
+                | Kind::Str
+                | Kind::Node
+                | Kind::Bare
+                | Kind::Any
+                | Kind::Error => None,
+            },
+            Op::Bool(value) => (scrutinee.kind == Kind::Bool).then_some(Label::Bool(*value)),
+            Op::Number(Number::Int(value), suffix) if scrutinee.kind == Kind::Int => {
                 let family = match suffix {
                     Suffix::Unit { family, .. } => Some(*family),
                     Suffix::Type(scalar)
@@ -189,7 +197,33 @@ impl Engine<'_> {
                 }
                 self.exact_label(*value, *suffix)?.map(Label::Int)
             }
-            _ => None,
+            Op::Number(..)
+            | Op::Const(_)
+            | Op::Str(_)
+            | Op::Concat(_)
+            | Op::Variant(..)
+            | Op::Pi
+            | Op::NodeRef(_)
+            | Op::Read(_)
+            | Op::Use(_)
+            | Op::Chosen(_)
+            | Op::Arg(_)
+            | Op::Unary(..)
+            | Op::Binary(..)
+            | Op::If(..)
+            | Op::Match { .. }
+            | Op::Pick { .. }
+            | Op::Element { .. }
+            | Op::Array(_)
+            | Op::Convert(..)
+            | Op::Annotate(..)
+            | Op::Builtin(..)
+            | Op::Recursive { .. }
+            | Op::ToRead { .. }
+            | Op::Join(..)
+            | Op::Slice { .. }
+            | Op::History { .. }
+            | Op::Native { .. } => None,
         };
         if found.is_none() {
             return self.bad_label(label, scrutinee, typed);

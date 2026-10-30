@@ -2,6 +2,7 @@ use super::bindings::{ANNOTATED_ROWS, ANNOTATED_SHAPE, Rows};
 use super::found::Found;
 use crate::diagnostics::Code;
 use crate::semantics::Internal;
+use crate::semantics::analysis::answers::CellRead;
 use crate::semantics::analysis::binding::Binding;
 use crate::semantics::analysis::binding_kind::BindingKind;
 use crate::semantics::analysis::bound::Bound;
@@ -289,18 +290,19 @@ impl Engine<'_> {
             if !seen.insert(node) {
                 continue;
             }
-            let op = &self.node(node)?.op;
-            match op {
-                Op::History { cell, .. } => found.push((node, *cell)),
-                Op::Read(binding) => {
-                    if self.inlined_binding(*binding)? {
-                        stack.push(self.binding(*binding)?.init);
-                    }
-                    continue;
+            match self.cell_read(node)? {
+                CellRead::History { cell, fallback } => {
+                    found.push((node, cell));
+                    stack.extend(fallback);
                 }
-                _ => {}
+                CellRead::Binding(binding) => {
+                    if self.inlined_binding(binding)? {
+                        stack.push(self.binding(binding)?.init);
+                    }
+                }
+                CellRead::Named(inner) => stack.push(inner),
+                CellRead::Operands(operands) => stack.extend(operands),
             }
-            stack.extend(op.operands());
         }
         found.sort_by_key(|(node, _)| *node);
         Ok(found)

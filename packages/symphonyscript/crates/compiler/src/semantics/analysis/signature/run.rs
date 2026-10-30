@@ -1,7 +1,6 @@
-use symphonyscript_core::{BinaryOp, Builtin, UnaryOp};
-
 use super::extra::Extra;
 use crate::semantics::Internal;
+use crate::semantics::analysis::answers::joins;
 use crate::semantics::analysis::binding::Binding;
 use crate::semantics::analysis::binding_kind::BindingKind;
 use crate::semantics::analysis::bound::Bound;
@@ -35,72 +34,7 @@ impl Engine<'_> {
             },
             None => None,
         };
-        let extra = match &op {
-            Op::Read(binding) => {
-                let init = self.binding(*binding)?.init;
-                self.sig(init, need).map(Extra::Read)
-            }
-            Op::ToRead { wire, attrs, .. } => self.destination_read_reactive(*wire, attrs, need),
-            Op::History {
-                cell: crate::semantics::analysis::history_cell::HistoryCell::Input(input),
-                ..
-            } => match self.bound(Query::Input(*input), need) {
-                Some(bound) => match self.first_binding(&bound) {
-                    Some(binding) => {
-                        let init = self.binding(binding)?.init;
-                        let record = self.binding(binding)?.clone();
-                        self.sig(init, need).map(|init| {
-                            let kind = match record.annotation {
-                                Some(annotation) => kind_of(annotation),
-                                None => self.cell_kind(&record, init.kind),
-                            };
-                            Extra::History(Sig::of(kind, Width::Adaptive, true, init.family))
-                        })
-                    }
-                    None => Some(Extra::History(Sig::ERROR)),
-                },
-                None => None,
-            },
-            Op::History { .. } => self.history_sig(node, need)?.map(|found| match found {
-                Some(sig) => Extra::History(sig),
-                None => Extra::None,
-            }),
-            Op::If(_, then, otherwise) => self.arm_forms(node, &[*then, *otherwise], need)?,
-            Op::Match {
-                arms, otherwise, ..
-            } => {
-                let values: Vec<NodeId> = arms
-                    .iter()
-                    .map(|(_, value)| *value)
-                    .chain(*otherwise)
-                    .collect();
-                self.arm_forms(node, &values, need)?
-            }
-            Op::Number(..)
-            | Op::Const(_)
-            | Op::Bool(_)
-            | Op::Str(_)
-            | Op::Concat(_)
-            | Op::Variant(..)
-            | Op::Bare(_)
-            | Op::Pi
-            | Op::NodeRef(_)
-            | Op::Use(_)
-            | Op::Chosen(_)
-            | Op::Arg(_)
-            | Op::Unary(..)
-            | Op::Binary(..)
-            | Op::Pick { .. }
-            | Op::Element { .. }
-            | Op::Array(_)
-            | Op::Convert(..)
-            | Op::Annotate(..)
-            | Op::Builtin(..)
-            | Op::Recursive { .. }
-            | Op::Join(..)
-            | Op::Slice { .. }
-            | Op::Native { .. } => Some(Extra::None),
-        };
+        let extra = self.sig_extra(node, &op, need)?;
         if sigs.iter().any(Option::is_none) {
             return Ok(false);
         }
@@ -180,7 +114,7 @@ impl Engine<'_> {
         Ok(true)
     }
 
-    fn arm_forms(
+    pub(in crate::semantics::analysis) fn arm_forms(
         &mut self,
         choice: NodeId,
         arms: &[NodeId],
@@ -260,24 +194,7 @@ impl Engine<'_> {
         self.bounded_cycle(function)
     }
 
-    fn reaches_recursion(&self, root: NodeId) -> Result<bool, Internal> {
-        let mut stack = vec![root];
-        let mut seen = crate::semantics::analysis::fast_hash::FastSet::default();
-        while let Some(node) = stack.pop() {
-            crate::semantics::counted_walk::CountedWalk::RunReachesRecursion.step();
-            if !seen.insert(node) {
-                continue;
-            }
-            match &self.node(node)?.op {
-                Op::Recursive { .. } => return Ok(true),
-                Op::Use(_) | Op::Read(_) => {}
-                op => stack.extend(op.operands()),
-            }
-        }
-        Ok(false)
-    }
-
-    fn history_sig(
+    pub(in crate::semantics::analysis) fn history_sig(
         &mut self,
         node: NodeId,
         need: &mut Vec<Query>,
@@ -316,7 +233,7 @@ impl Engine<'_> {
         Ok(Some(Some(self.read_sig(binding, init)?)))
     }
 
-    fn destination_read_reactive(
+    pub(in crate::semantics::analysis) fn destination_read_reactive(
         &self,
         wire: crate::semantics::analysis::ids::WireId,
         attrs: &[(
@@ -343,7 +260,7 @@ impl Engine<'_> {
         (!missing).then_some(Extra::ToRead { reactive })
     }
 
-    fn first_binding(
+    pub(in crate::semantics::analysis) fn first_binding(
         &self,
         bound: &BoundVal,
     ) -> Option<crate::semantics::analysis::ids::BindingId> {
@@ -405,62 +322,6 @@ fn element_of(own: Sig, group: Sig, held: bool) -> Sig {
         width,
         family: group.family.or(own.family),
         ..own
-    }
-}
-
-fn joins(op: &Op) -> bool {
-    match op {
-        Op::Use(_)
-        | Op::Chosen(_)
-        | Op::Unary(UnaryOp::Neg, _)
-        | Op::If(..)
-        | Op::Match { .. }
-        | Op::Pick { .. }
-        | Op::Element { .. }
-        | Op::Array(_)
-        | Op::Convert(..)
-        | Op::Annotate(..) => true,
-        Op::Binary(op, _, _) => matches!(
-            op,
-            BinaryOp::Add
-                | BinaryOp::Sub
-                | BinaryOp::Rem
-                | BinaryOp::Lt
-                | BinaryOp::Le
-                | BinaryOp::Gt
-                | BinaryOp::Ge
-                | BinaryOp::Is
-                | BinaryOp::IsNot
-        ),
-        Op::Builtin(builtin, _) => matches!(
-            builtin,
-            Builtin::Abs
-                | Builtin::Min
-                | Builtin::Max
-                | Builtin::Clamp
-                | Builtin::Lerp
-                | Builtin::Floor
-                | Builtin::Ceil
-                | Builtin::Round
-        ),
-        Op::Number(..)
-        | Op::Const(_)
-        | Op::Bool(_)
-        | Op::Str(_)
-        | Op::Concat(_)
-        | Op::Variant(..)
-        | Op::Bare(_)
-        | Op::Pi
-        | Op::NodeRef(_)
-        | Op::Read(_)
-        | Op::Arg(_)
-        | Op::Unary(UnaryOp::Not, _)
-        | Op::Recursive { .. }
-        | Op::ToRead { .. }
-        | Op::Join(..)
-        | Op::Slice { .. }
-        | Op::History { .. }
-        | Op::Native { .. } => false,
     }
 }
 

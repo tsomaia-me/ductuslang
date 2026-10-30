@@ -4,6 +4,7 @@ use symphonyscript_core::{Builtin, NativeType};
 
 use crate::diagnostics::Code;
 use crate::semantics::Internal;
+use crate::semantics::analysis::answers::CellRead;
 use crate::semantics::analysis::bound::Bound;
 use crate::semantics::analysis::bound_val::BoundVal;
 use crate::semantics::analysis::c_val::CVal;
@@ -469,25 +470,26 @@ impl Engine<'_> {
             if !seen.insert(node) {
                 continue;
             }
-            match &self.node(node)?.op {
-                Op::Read(binding) => {
-                    if self.is_state(*binding)? {
-                        found.push(*binding);
+            match self.cell_read(node)? {
+                CellRead::Binding(binding) => {
+                    if self.is_state(binding)? {
+                        found.push(binding);
                     } else {
-                        stack.push(self.binding(*binding)?.init);
+                        stack.push(self.binding(binding)?.init);
                     }
                 }
-                Op::History { cell, fallback, .. } => {
-                    if let Some(binding) = self.history_cell_binding(*cell)? {
+                CellRead::History { cell, fallback } => {
+                    if let Some(binding) = self.history_cell_binding(cell)? {
                         if self.is_state(binding)? {
                             found.push(binding);
                         } else {
                             stack.push(self.binding(binding)?.init);
                         }
                     }
-                    stack.extend(fallback.iter().copied());
+                    stack.extend(fallback);
                 }
-                op => stack.extend(op.operands()),
+                CellRead::Named(inner) => stack.push(inner),
+                CellRead::Operands(operands) => stack.extend(operands),
             }
         }
         Ok(found)

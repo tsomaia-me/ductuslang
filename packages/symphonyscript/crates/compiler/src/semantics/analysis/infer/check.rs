@@ -712,26 +712,6 @@ impl Engine<'_> {
         })
     }
 
-    fn holds_a_float_cell(&mut self, node: NodeId) -> Result<bool, Internal> {
-        let Op::Array(elements) = &self.node(node)?.op else {
-            return Ok(false);
-        };
-        let mut pending = elements.clone();
-        while let Some(element) = pending.pop() {
-            crate::semantics::counted_walk::CountedWalk::CheckHoldsAFloatCell.step();
-            match &self.node(self.through_uses(element)?)?.op {
-                Op::Array(inner) => pending.extend(inner.iter().copied()),
-                Op::Read(_) | Op::History { .. } => {
-                    if self.known_sig(element)?.kind == Kind::Float {
-                        return Ok(true);
-                    }
-                }
-                _ => {}
-            }
-        }
-        Ok(false)
-    }
-
     pub(in crate::semantics::analysis) fn compatible(
         &mut self,
         node: NodeId,

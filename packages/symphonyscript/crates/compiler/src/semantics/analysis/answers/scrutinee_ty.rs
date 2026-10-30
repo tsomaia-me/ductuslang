@@ -1,15 +1,19 @@
-use super::engine::Engine;
-use super::eval_ty::EvalTy;
-use super::evaluation::own_type;
-use super::fast_hash::FastSet;
-use super::ids::NodeId;
-use super::kind::Kind;
-use super::op::Op;
-use super::sig::Sig;
 use crate::semantics::Internal;
+use crate::semantics::analysis::engine::Engine;
+use crate::semantics::analysis::eval_ty::EvalTy;
+use crate::semantics::analysis::evaluation::own_type;
+use crate::semantics::analysis::fast_hash::FastSet;
+use crate::semantics::analysis::ids::NodeId;
+use crate::semantics::analysis::kind::Kind;
+use crate::semantics::analysis::op::Op;
+use crate::semantics::analysis::sig::Sig;
 
 impl Engine<'_> {
-    pub(super) fn scrutinee_ty(&self, scrutinee: NodeId, sig: &Sig) -> Option<EvalTy> {
+    pub(in crate::semantics::analysis) fn scrutinee_ty(
+        &self,
+        scrutinee: NodeId,
+        sig: &Sig,
+    ) -> Option<EvalTy> {
         if sig.kind != Kind::Bare {
             return Some(own_type(sig, EvalTy::Exact));
         }
@@ -19,7 +23,7 @@ impl Engine<'_> {
             .map(|id| EvalTy::Enum(*id))
     }
 
-    pub(super) fn choice_ty(
+    pub(in crate::semantics::analysis) fn choice_ty(
         &self,
         scrutinee: NodeId,
         sig: &Sig,

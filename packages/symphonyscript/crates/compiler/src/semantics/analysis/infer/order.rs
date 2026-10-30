@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use crate::semantics::Internal;
+use crate::semantics::analysis::answers::CellRead;
 use crate::semantics::analysis::engine::Engine;
 use crate::semantics::analysis::fast_hash::{FastMap, FastSet};
 use crate::semantics::analysis::ids::{BindingId, NodeId};
@@ -17,9 +18,11 @@ impl Engine<'_> {
                 continue;
             }
             self.memo.read_walk += 1;
-            match &self.node(node)?.op {
-                Op::Read(binding) => found.push(*binding),
-                op => stack.extend(op.operands()),
+            match self.cell_read(node)? {
+                CellRead::Binding(binding) => found.push(binding),
+                CellRead::History { fallback, .. } => stack.extend(fallback),
+                CellRead::Named(inner) => stack.push(inner),
+                CellRead::Operands(operands) => stack.extend(operands),
             }
         }
         Ok(found)

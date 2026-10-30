@@ -2,12 +2,14 @@ use symphonyscript_core::{BinaryOp, Builtin, FamilyId, Scalar, UnaryOp, Value};
 
 use crate::diagnostics::Code;
 use crate::semantics::Internal;
+use crate::semantics::analysis::binding_kind::BindingKind;
 use crate::semantics::analysis::engine::Engine;
 use crate::semantics::analysis::float_for::float_for;
 use crate::semantics::analysis::ids::NodeId;
 use crate::semantics::analysis::kind::Kind;
 use crate::semantics::analysis::kind_of::kind_of;
 use crate::semantics::analysis::op::Op;
+use crate::semantics::analysis::query::Query;
 use crate::semantics::analysis::sig::Sig;
 use crate::semantics::analysis::signature::Extra;
 use crate::semantics::analysis::signature::arith_width;
@@ -35,6 +37,359 @@ fn numeric_kind(a: Kind, b: Kind) -> Kind {
 }
 
 impl Engine<'_> {
+    pub(in crate::semantics::analysis) fn sig_extra(
+        &mut self,
+        node: NodeId,
+        op: &Op,
+        need: &mut Vec<Query>,
+    ) -> Result<Option<Extra>, Internal> {
+        Ok(match op {
+            Op::Read(binding) => {
+                let init = self.binding(*binding)?.init;
+                self.sig(init, need).map(Extra::Read)
+            }
+            Op::ToRead { wire, attrs, .. } => self.destination_read_reactive(*wire, attrs, need),
+            Op::History {
+                cell: crate::semantics::analysis::history_cell::HistoryCell::Input(input),
+                ..
+            } => match self.bound(Query::Input(*input), need) {
+                Some(bound) => match self.first_binding(&bound) {
+                    Some(binding) => {
+                        let init = self.binding(binding)?.init;
+                        let record = self.binding(binding)?.clone();
+                        self.sig(init, need).map(|init| {
+                            let kind = match record.annotation {
+                                Some(annotation) => kind_of(annotation),
+                                None => self.cell_kind(&record, init.kind),
+                            };
+                            Extra::History(Sig::of(kind, Width::Adaptive, true, init.family))
+                        })
+                    }
+                    None => Some(Extra::History(Sig::ERROR)),
+                },
+                None => None,
+            },
+            Op::History { .. } => self.history_sig(node, need)?.map(|found| match found {
+                Some(sig) => Extra::History(sig),
+                None => Extra::None,
+            }),
+            Op::If(_, then, otherwise) => self.arm_forms(node, &[*then, *otherwise], need)?,
+            Op::Match {
+                arms, otherwise, ..
+            } => {
+                let values: Vec<NodeId> = arms
+                    .iter()
+                    .map(|(_, value)| *value)
+                    .chain(*otherwise)
+                    .collect();
+                self.arm_forms(node, &values, need)?
+            }
+            Op::Number(..)
+            | Op::Const(_)
+            | Op::Bool(_)
+            | Op::Str(_)
+            | Op::Concat(_)
+            | Op::Variant(..)
+            | Op::Bare(_)
+            | Op::Pi
+            | Op::NodeRef(_)
+            | Op::Use(_)
+            | Op::Chosen(_)
+            | Op::Arg(_)
+            | Op::Unary(..)
+            | Op::Binary(..)
+            | Op::Pick { .. }
+            | Op::Element { .. }
+            | Op::Array(_)
+            | Op::Convert(..)
+            | Op::Annotate(..)
+            | Op::Builtin(..)
+            | Op::Recursive { .. }
+            | Op::Join(..)
+            | Op::Slice { .. }
+            | Op::Native { .. } => Some(Extra::None),
+        })
+    }
+
+    fn history_bindings_type(&self, op: &Op) -> Result<Option<Scalar>, Internal> {
+        let Op::History { cell, .. } = op else {
+            return Ok(None);
+        };
+        use crate::semantics::analysis::bound::Bound;
+        use crate::semantics::analysis::bound_val::BoundVal;
+        use crate::semantics::analysis::history_cell::HistoryCell;
+        use crate::semantics::analysis::let_ref::LetRef;
+        let bound = match cell {
+            HistoryCell::Input(input) => self.memo.inputs.get(input),
+            HistoryCell::Let(id) => self
+                .memo
+                .lets
+                .get(&(self.global_of_let(*id), LetRef::Top(*id))),
+            HistoryCell::State(state) => self.memo.states.get(state),
+        };
+        let binding = match bound {
+            Some(BoundVal::Scalar(Bound::Cell(binding))) => Some(*binding),
+            Some(BoundVal::Array(array)) => array.1.iter().find_map(|item| match item {
+                Bound::Cell(binding) => Some(*binding),
+                Bound::Value(_) => None,
+            }),
+            Some(BoundVal::Scalar(Bound::Value(_)) | BoundVal::Error) | None => None,
+        };
+        Ok(binding.and_then(|binding| self.typing.own.get(&binding).copied()))
+    }
+
+    pub(in crate::semantics::analysis) fn synth_of(
+        &mut self,
+        op: &Op,
+        sig: &Sig,
+    ) -> Result<Option<Scalar>, Internal> {
+        match sig.kind {
+            Kind::Bool => return Ok(Some(Scalar::Bool)),
+            Kind::Enum(id) => return Ok(Some(Scalar::Enum(id))),
+            Kind::Str => return Ok(Some(Scalar::Str)),
+            Kind::Int | Kind::Float | Kind::Node | Kind::Bare | Kind::Any | Kind::Error => {}
+        }
+        Ok(match op {
+            Op::Read(binding) => self.typing.own.get(binding).copied(),
+            Op::Use(inner) | Op::Chosen(inner) | Op::Unary(UnaryOp::Neg, inner) => {
+                self.known(*inner)?.0
+            }
+            Op::Unary(UnaryOp::Not, _) => Some(Scalar::Bool),
+            Op::Binary(op, lhs, rhs) => {
+                let combined = self.combine(&[*lhs, *rhs])?;
+                match op {
+                    BinaryOp::Div => combined.map(float_for),
+                    BinaryOp::Add
+                    | BinaryOp::Sub
+                    | BinaryOp::Mul
+                    | BinaryOp::IntDiv
+                    | BinaryOp::Rem
+                    | BinaryOp::Pow
+                    | BinaryOp::Is
+                    | BinaryOp::IsNot
+                    | BinaryOp::Lt
+                    | BinaryOp::Le
+                    | BinaryOp::Gt
+                    | BinaryOp::Ge
+                    | BinaryOp::And
+                    | BinaryOp::Or => combined,
+                }
+            }
+            Op::If(_, then, otherwise) => self.combine(&[*then, *otherwise])?,
+            Op::Match {
+                arms, otherwise, ..
+            } => {
+                let mut values: Vec<NodeId> = arms.iter().map(|(_, value)| *value).collect();
+                values.extend(otherwise.iter().copied());
+                self.combine(&values)?
+            }
+            Op::Pick { items, .. } | Op::Array(items) => self.combine(items)?,
+            Op::Element { base, .. } => self.known(*base)?.0,
+            Op::Convert(target, _) | Op::Annotate(target, _) => Some(*target),
+            Op::Builtin(builtin, args) => match builtin {
+                Builtin::Abs | Builtin::Min | Builtin::Max | Builtin::Clamp => {
+                    self.combine(args)?
+                }
+                Builtin::Rand => Some(Scalar::F32),
+                Builtin::Floor
+                | Builtin::Ceil
+                | Builtin::Round
+                | Builtin::Sqrt
+                | Builtin::Sin
+                | Builtin::Cos
+                | Builtin::Tan
+                | Builtin::Exp
+                | Builtin::Log
+                | Builtin::Lerp => self.combine(args)?.map(float_for),
+                Builtin::Len => Some(Scalar::I32),
+                Builtin::Bytes => Some(Scalar::U8),
+            },
+            Op::Join(lhs, rhs) => self.combine(&[*lhs, *rhs])?,
+            Op::Slice { base, .. } => self.known(*base)?.0,
+            Op::History { fallback, .. } => {
+                let node_ty = self.history_bindings_type(op)?;
+                match (node_ty, fallback) {
+                    (Some(scalar), _) => Some(scalar),
+                    (None, Some(fallback)) => self.known(*fallback)?.0,
+                    (None, None) => None,
+                }
+            }
+            Op::Native { native, .. } => {
+                let decl = self
+                    .vocabulary
+                    .native(*native)
+                    .ok_or(Internal::missed("native function"))?;
+                Some(
+                    crate::semantics::analysis::evaluation::native_ty(&decl.signature.result)
+                        .scalar,
+                )
+            }
+            Op::ToRead { attrs, .. } => {
+                let (item, attr) = attrs.first().ok_or(Internal::missed("attribute"))?;
+                self.attr_decl(*item, *attr)?.map(|decl| decl.ty.scalar)
+            }
+            Op::Number(..)
+            | Op::Const(_)
+            | Op::Bool(_)
+            | Op::Str(_)
+            | Op::Concat(_)
+            | Op::Variant(..)
+            | Op::Bare(_)
+            | Op::Pi
+            | Op::NodeRef(_)
+            | Op::Arg(_)
+            | Op::Recursive { .. } => None,
+        })
+    }
+
+    pub(in crate::semantics::analysis) fn is_string_bytes(
+        &self,
+        node: NodeId,
+    ) -> Result<bool, Internal> {
+        let mut leaves = vec![node];
+        while let Some(leaf) = leaves.pop() {
+            crate::semantics::counted_walk::CountedWalk::ArrayChecksIsStringBytes.step();
+            match &self.node(leaf)?.op {
+                Op::Use(inner) | Op::Chosen(inner) => leaves.push(*inner),
+                Op::If(_, then, otherwise) => leaves.extend([*then, *otherwise]),
+                Op::Match {
+                    arms, otherwise, ..
+                } => leaves.extend(arms.iter().map(|(_, value)| *value).chain(*otherwise)),
+                Op::Builtin(Builtin::Bytes, operands) => {
+                    let [operand] = operands.as_slice() else {
+                        return Ok(false);
+                    };
+                    if !self
+                        .memo
+                        .sigs
+                        .get(operand)
+                        .is_some_and(|sig| sig.kind == Kind::Str)
+                    {
+                        return Ok(false);
+                    }
+                }
+                Op::Number(..)
+                | Op::Const(_)
+                | Op::Bool(_)
+                | Op::Str(_)
+                | Op::Concat(_)
+                | Op::Variant(..)
+                | Op::Bare(_)
+                | Op::Pi
+                | Op::NodeRef(_)
+                | Op::Read(_)
+                | Op::Arg(_)
+                | Op::Unary(..)
+                | Op::Binary(..)
+                | Op::Pick { .. }
+                | Op::Element { .. }
+                | Op::Array(_)
+                | Op::Convert(..)
+                | Op::Annotate(..)
+                | Op::Builtin(..)
+                | Op::Recursive { .. }
+                | Op::ToRead { .. }
+                | Op::Join(..)
+                | Op::Slice { .. }
+                | Op::History { .. }
+                | Op::Native { .. } => return Ok(false),
+            }
+        }
+        Ok(true)
+    }
+
+    pub(in crate::semantics::analysis) fn holds_a_float_cell(
+        &self,
+        node: NodeId,
+    ) -> Result<bool, Internal> {
+        let Op::Array(elements) = &self.node(node)?.op else {
+            return Ok(false);
+        };
+        let mut pending = elements.clone();
+        while let Some(element) = pending.pop() {
+            crate::semantics::counted_walk::CountedWalk::CheckHoldsAFloatCell.step();
+            match &self.node(self.through_uses(element)?)?.op {
+                Op::Array(inner) => pending.extend(inner.iter().copied()),
+                Op::Read(_) | Op::History { .. } => {
+                    if self.known_sig(element)?.kind == Kind::Float {
+                        return Ok(true);
+                    }
+                }
+                Op::Number(..)
+                | Op::Const(_)
+                | Op::Bool(_)
+                | Op::Str(_)
+                | Op::Concat(_)
+                | Op::Variant(..)
+                | Op::Bare(_)
+                | Op::Pi
+                | Op::NodeRef(_)
+                | Op::Use(_)
+                | Op::Chosen(_)
+                | Op::Arg(_)
+                | Op::Unary(..)
+                | Op::Binary(..)
+                | Op::If(..)
+                | Op::Match { .. }
+                | Op::Pick { .. }
+                | Op::Element { .. }
+                | Op::Convert(..)
+                | Op::Annotate(..)
+                | Op::Builtin(..)
+                | Op::Recursive { .. }
+                | Op::ToRead { .. }
+                | Op::Join(..)
+                | Op::Slice { .. }
+                | Op::Native { .. } => {}
+            }
+        }
+        Ok(false)
+    }
+
+    pub(in crate::semantics::analysis) fn holds_no_instance(
+        &self,
+        node: NodeId,
+    ) -> Result<bool, Internal> {
+        let mut node = node;
+        loop {
+            node = match &self.node(node)?.op {
+                Op::Chosen(inner) | Op::Use(inner) => *inner,
+                Op::Read(binding) => {
+                    return Ok(matches!(
+                        self.binding(*binding)?.kind,
+                        BindingKind::Input { .. } | BindingKind::State { .. }
+                    ));
+                }
+                Op::Number(..)
+                | Op::Const(_)
+                | Op::Bool(_)
+                | Op::Str(_)
+                | Op::Concat(_)
+                | Op::Variant(..)
+                | Op::Pi => return Ok(true),
+                Op::Bare(_)
+                | Op::NodeRef(_)
+                | Op::Arg(_)
+                | Op::Unary(..)
+                | Op::Binary(..)
+                | Op::If(..)
+                | Op::Match { .. }
+                | Op::Pick { .. }
+                | Op::Element { .. }
+                | Op::Array(_)
+                | Op::Convert(..)
+                | Op::Annotate(..)
+                | Op::Builtin(..)
+                | Op::Recursive { .. }
+                | Op::ToRead { .. }
+                | Op::Join(..)
+                | Op::Slice { .. }
+                | Op::History { .. }
+                | Op::Native { .. } => return Ok(false),
+            };
+        }
+    }
+
     pub(in crate::semantics::analysis) fn kept_type(
         &mut self,
         node: NodeId,
@@ -895,3 +1250,59 @@ fn arms_alike(extra: &Extra) -> bool {
 }
 
 const ARM_SHAPES: &str = "the branches hold arrays of different shapes";
+
+pub(crate) fn joins(op: &Op) -> bool {
+    match op {
+        Op::Use(_)
+        | Op::Chosen(_)
+        | Op::Unary(UnaryOp::Neg, _)
+        | Op::If(..)
+        | Op::Match { .. }
+        | Op::Pick { .. }
+        | Op::Element { .. }
+        | Op::Array(_)
+        | Op::Convert(..)
+        | Op::Annotate(..) => true,
+        Op::Binary(op, _, _) => matches!(
+            op,
+            BinaryOp::Add
+                | BinaryOp::Sub
+                | BinaryOp::Rem
+                | BinaryOp::Lt
+                | BinaryOp::Le
+                | BinaryOp::Gt
+                | BinaryOp::Ge
+                | BinaryOp::Is
+                | BinaryOp::IsNot
+        ),
+        Op::Builtin(builtin, _) => matches!(
+            builtin,
+            Builtin::Abs
+                | Builtin::Min
+                | Builtin::Max
+                | Builtin::Clamp
+                | Builtin::Lerp
+                | Builtin::Floor
+                | Builtin::Ceil
+                | Builtin::Round
+        ),
+        Op::Number(..)
+        | Op::Const(_)
+        | Op::Bool(_)
+        | Op::Str(_)
+        | Op::Concat(_)
+        | Op::Variant(..)
+        | Op::Bare(_)
+        | Op::Pi
+        | Op::NodeRef(_)
+        | Op::Read(_)
+        | Op::Arg(_)
+        | Op::Unary(UnaryOp::Not, _)
+        | Op::Recursive { .. }
+        | Op::ToRead { .. }
+        | Op::Join(..)
+        | Op::Slice { .. }
+        | Op::History { .. }
+        | Op::Native { .. } => false,
+    }
+}
