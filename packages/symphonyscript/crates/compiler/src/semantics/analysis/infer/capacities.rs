@@ -1068,7 +1068,7 @@ impl Engine<'_> {
         (low, high): (NodeId, NodeId),
     ) -> Result<(), Internal> {
         let scope = self.node(node)?.scope;
-        if self.in_probe(scope)? || !self.known_sig(node)?.reactive {
+        if self.in_probe(scope)? || !self.memo.sigs.get(&node).is_some_and(|sig| sig.reactive) {
             return Ok(());
         }
         let mut measured: FastMap<NodeId, i128> = FastMap::default();
@@ -1124,7 +1124,10 @@ impl Engine<'_> {
         covered: &FastSet<NodeId>,
     ) -> Result<(), Internal> {
         let scope = self.node(node)?.scope;
-        if covered.contains(&node) || self.in_probe(scope)? || !self.known_sig(node)?.reactive {
+        if covered.contains(&node)
+            || self.in_probe(scope)?
+            || !self.memo.sigs.get(&node).is_some_and(|sig| sig.reactive)
+        {
             return Ok(());
         }
         self.extent_into(node, env, done)?;

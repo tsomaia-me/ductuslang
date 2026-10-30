@@ -191,6 +191,12 @@ fn the_names_of_the_spec_bind_and_their_repeats_are_rejected() {
             vec![Code::DuplicateLocal],
         ),
         (
+            format!(
+                "{held}state total: = for x in held into sum from 0: sum + x\nClip c:\n    Note/total\n"
+            ),
+            vec![Code::TypeSyntax],
+        ),
+        (
             "let v = for x: bool in [1, 2] into s from 0: s + 1\nClip c:\n    Note/v\n".to_string(),
             vec![Code::TypeMismatch],
         ),

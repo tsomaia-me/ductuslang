@@ -39,7 +39,6 @@ struct Head {
     start: NodeId,
     start_sig: Sig,
     start_layout: Option<Layout>,
-    runtime: bool,
 }
 
 impl Engine<'_> {
@@ -81,30 +80,34 @@ impl Engine<'_> {
         };
         loop {
             let state = self.memo.loop_templates.get(&(expr, scope)).cloned();
-            let (template, types, round, settled) = match state {
+            let (template, types, round) = match state {
                 Some(LoopTemplate::Final(node)) => {
                     return Ok(Some(node.map_or(Val::Error, Val::Scalar)));
                 }
-                Some(LoopTemplate::Trial {
+                Some(LoopTemplate::Trying {
                     scope: template,
                     types,
                     round,
-                }) => (template, types, round, false),
-                Some(LoopTemplate::Settled {
-                    scope: template,
-                    types,
-                }) => (template, types, 0, true),
+                }) => (template, types, round),
                 None => {
-                    let types = LoopTypes {
-                        accumulator: annotated
-                            .clone()
-                            .unwrap_or((head.start_sig, head.start_layout.clone())),
-                        runtime: head.runtime,
+                    let types = match (&annotated, self.memo.loop_guesses.get(&expr)) {
+                        (Some(fixed), _) => LoopTypes {
+                            accumulator: fixed.clone(),
+                        },
+                        (None, Some(earlier)) => earlier.clone(),
+                        (None, None) => LoopTypes {
+                            accumulator: (
+                                head.start_sig,
+                                head.start_layout
+                                    .as_ref()
+                                    .map(|layout| Layout::variable(layout.inner().to_vec())),
+                            ),
+                        },
                     };
-                    let template = self.loop_body(expr, for_expr, &head, &types, scope, true)?;
+                    let template = self.loop_body(expr, for_expr, &head, &types, scope)?;
                     self.memo.loop_templates.insert(
                         (expr, scope),
-                        LoopTemplate::Trial {
+                        LoopTemplate::Trying {
                             scope: template,
                             types,
                             round: 0,
@@ -122,21 +125,37 @@ impl Engine<'_> {
                 continue;
             };
             let body_sig = some!(self.sig(body, need));
-            let body_layout = match self.loop_layout(body, need)? {
-                Some(layout) => layout,
-                None => return Ok(None),
+            let shaped = some!(self.layout_of(body, need)?).shaped;
+            let body_layout = match shaped {
+                Ok(layout) => layout,
+                Err(_) if round == 0 && annotated.is_none() => {
+                    let exact = LoopTypes {
+                        accumulator: (head.start_sig, head.start_layout.clone()),
+                    };
+                    let template = self.loop_body(expr, for_expr, &head, &exact, scope)?;
+                    self.memo.loop_templates.insert(
+                        (expr, scope),
+                        LoopTemplate::Trying {
+                            scope: template,
+                            types: exact,
+                            round: 1,
+                        },
+                    );
+                    continue;
+                }
+                Err(fault) => {
+                    if let Some(fault) = fault {
+                        self.error_at_node(fault.code, fault.node, fault.message)?;
+                    }
+                    self.memo
+                        .loop_templates
+                        .insert((expr, scope), LoopTemplate::Final(None));
+                    continue;
+                }
             };
-            if settled {
-                let node = self.loop_node(&head, body, template, (loc, scope))?;
-                self.memo
-                    .loop_templates
-                    .insert((expr, scope), LoopTemplate::Final(Some(node)));
-                continue;
-            }
             let next = match &annotated {
                 Some(fixed) => LoopTypes {
                     accumulator: fixed.clone(),
-                    runtime: types.runtime || body_sig.reactive,
                 },
                 None => {
                     let Some(layout) = merged_layout(head.start_layout.as_ref(), body_layout)
@@ -149,19 +168,15 @@ impl Engine<'_> {
                     };
                     LoopTypes {
                         accumulator: (unified(head.start_sig, body_sig), layout),
-                        runtime: types.runtime || body_sig.reactive,
                     }
                 }
             };
-            let state = if next == types || round + 1 >= ROUNDS {
-                let template = self.loop_body(expr, for_expr, &head, &types, scope, false)?;
-                LoopTemplate::Settled {
-                    scope: template,
-                    types,
-                }
+            let state = if settled(&next, &types) || round + 1 >= ROUNDS {
+                self.memo.loop_guesses.insert(expr, types);
+                LoopTemplate::Final(Some(self.loop_node(&head, body, template, (loc, scope))?))
             } else {
-                let template = self.loop_body(expr, for_expr, &head, &next, scope, true)?;
-                LoopTemplate::Trial {
+                let template = self.loop_body(expr, for_expr, &head, &next, scope)?;
+                LoopTemplate::Trying {
                     scope: template,
                     types: next,
                     round: round + 1,
@@ -179,7 +194,7 @@ impl Engine<'_> {
     ) -> Result<Option<Option<Head>>, Internal> {
         let start_expr = for_expr.start;
         let start_val = self.val(Query::Expr(start_expr, scope), need);
-        let (iterable, element, iterable_reactive) = match for_expr.iterable {
+        let (iterable, element) = match for_expr.iterable {
             Iterable::Range(low, high) => {
                 let low_val = self.val(Query::Expr(low, scope), need);
                 let high_val = self.val(Query::Expr(high, scope), need);
@@ -239,11 +254,7 @@ impl Engine<'_> {
                     }
                 }
                 let element = Sig::of(Kind::Int, Width::Flexible, false, None);
-                (
-                    ForIterable::Range(low, high),
-                    (element, None),
-                    low_sig.reactive || high_sig.reactive,
-                )
+                (ForIterable::Range(low, high), (element, None))
             }
             Iterable::Values(values) => {
                 let Some(values_val) = self.val(Query::Expr(values, scope), need) else {
@@ -266,11 +277,7 @@ impl Engine<'_> {
                 };
                 let inner = layout.inner().to_vec();
                 let element_layout = (!inner.is_empty()).then(|| Layout::fixed(inner));
-                (
-                    ForIterable::Values(node),
-                    (sig, element_layout),
-                    sig.reactive,
-                )
+                (ForIterable::Values(node), (sig, element_layout))
             }
         };
         let Some(start_val) = start_val else {
@@ -293,7 +300,6 @@ impl Engine<'_> {
             start,
             start_sig,
             start_layout,
-            runtime: iterable_reactive || start_sig.reactive,
         })))
     }
 
@@ -331,13 +337,12 @@ impl Engine<'_> {
         head: &Head,
         types: &LoopTypes,
         scope: ScopeId,
-        trial: bool,
     ) -> Result<ScopeId, Internal> {
         let loc = self.hir.expr(expr)?.loc;
-        let runtime = types.runtime;
+
         let typed = |sig: Sig| Sig {
-            reactive: runtime,
-            frame: !runtime,
+            reactive: false,
+            frame: true,
             open: false,
             ..sig
         };
@@ -384,13 +389,7 @@ impl Engine<'_> {
             source: None,
             annotated: for_expr.accumulator_ty.is_some(),
         });
-        let id = ScopeId(id_index(self.scopes.len()));
-        let template = if trial {
-            self.memo.probes.insert(id);
-            Some(id)
-        } else {
-            self.template_of(scope)?
-        };
+        let template = self.template_of(scope)?;
         let chain = self.chain(scope)?;
         let body_scope = self.scope_in(
             ScopeKind::Locals(Locals {
@@ -568,4 +567,12 @@ fn holds_annotated(element: Kind, annotated: Kind) -> bool {
     element == annotated
         || matches!(element, Kind::Any | Kind::Error | Kind::Bare)
         || element == Kind::Int && annotated == Kind::Float
+}
+
+fn settled(next: &LoopTypes, assumed: &LoopTypes) -> bool {
+    let (next_sig, next_layout) = &next.accumulator;
+    let (sig, layout) = &assumed.accumulator;
+    (next_sig.kind == sig.kind || sig.kind == Kind::Any)
+        && next_sig.family == sig.family
+        && next_layout == layout
 }
