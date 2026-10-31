@@ -5759,6 +5759,12 @@ fn common_to_twins(compiler: &Compiler, program: &str) -> Spans {
     let twins = [
         "state q(0): i32\n",
         "let q = 1\n",
+        "state q(0): u8\n",
+        "let q = u8(1)\n",
+        "state q(0): i64\n",
+        "let q = i64(1)\n",
+        "state q(0.5): f32\n",
+        "let q = f32(0.5)\n",
         "state q(0.5): f64\n",
         "let q = 0.5\n",
         "state q(false)\n",

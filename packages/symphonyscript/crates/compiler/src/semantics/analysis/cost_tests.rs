@@ -162,11 +162,13 @@ fn nested_function(construct: Construct) -> Option<Vec<String>> {
     })
 }
 
-fn items(construct: Construct, shape: Shape, n: usize) -> Option<Vec<String>> {
+fn items(construct: Construct, shape: Shape, n: usize, faulty: bool) -> Option<Vec<String>> {
     let mut items: Vec<String> = HEADER.iter().map(|item| (*item).to_string()).collect();
     items.push(RECURSIVE.to_string());
     let last = n - 1;
-    let start = base(construct);
+    let start = if faulty { "q" } else { base(construct) };
+    let one = if faulty { "q" } else { "1" };
+    let zero = if faulty { "q" } else { "0" };
     match (shape, construct) {
         (Shape::Chain, Construct::Let) => {
             items.push(format!("let v0 = {start} + 1\n"));
@@ -209,7 +211,7 @@ fn items(construct: Construct, shape: Shape, n: usize) -> Option<Vec<String>> {
         (Shape::Ring, Construct::Past) => {
             for i in 0..n {
                 let previous = (i + last) % n;
-                items.push(format!("state s{i}(0) = s{previous}.past(1) + 1\n"));
+                items.push(format!("state s{i}(0) = s{previous}.past(1) + {one}\n"));
             }
             items.push(reader("s0"));
         }
@@ -231,7 +233,7 @@ fn items(construct: Construct, shape: Shape, n: usize) -> Option<Vec<String>> {
             items.push(reader("t"));
         }
         (Shape::Chain, Construct::ForPlacement) => {
-            items.push("let v0 = 1\n".to_string());
+            items.push(format!("let v0 = {one}\n"));
             let mut clip = String::from("Clip c:\n");
             for i in 1..n {
                 items.push(format!("let v{i} = v{} + 1\n", i - 1));
@@ -254,14 +256,14 @@ fn items(construct: Construct, shape: Shape, n: usize) -> Option<Vec<String>> {
             for i in 0..n {
                 let previous = (i + last) % n;
                 items.push(format!("let l{i} = s{i} + 1\n"));
-                items.push(format!("state s{i} = l{previous}.past(1, 0)\n"));
+                items.push(format!("state s{i} = l{previous}.past(1, {zero})\n"));
             }
             items.push(reader("s0"));
         }
         (Shape::Ring, Construct::State | Construct::History) => {
             for i in 0..n {
                 let previous = (i + last) % n;
-                items.push(format!("state s{i} = s{previous}.past(1, 0) + 1\n"));
+                items.push(format!("state s{i} = s{previous}.past(1, {zero}) + 1\n"));
             }
             items.push(reader("s0"));
         }
@@ -269,7 +271,7 @@ fn items(construct: Construct, shape: Shape, n: usize) -> Option<Vec<String>> {
             for i in 0..n {
                 let previous = (i + last) % n;
                 items.push(format!(
-                    "state s{i} = match k:\n    1: s{previous}.past(1, 0)\n    else: 0\n"
+                    "state s{i} = match k:\n    1: s{previous}.past(1, {zero})\n    else: 0\n"
                 ));
             }
             items.push(reader("s0"));
@@ -279,7 +281,10 @@ fn items(construct: Construct, shape: Shape, n: usize) -> Option<Vec<String>> {
                 let previous = (i + last) % n;
                 items.push(format!(
                     "state s{i} = {}\n",
-                    step(construct, &format!("s{previous}.past(1, 0)"))?
+                    step(
+                        construct,
+                        &format!("s{previous}.past(1, 0){}", if faulty { " + q" } else { "" })
+                    )?
                 ));
             }
             items.push(reader("s0"));
@@ -295,14 +300,14 @@ fn items(construct: Construct, shape: Shape, n: usize) -> Option<Vec<String>> {
             | Construct::Past,
         ) => return None,
         (Shape::Nesting, Construct::History) => {
-            let fallback = format!("{}0{}", "note.past(1, ".repeat(n), ")".repeat(n));
+            let fallback = format!("{}{zero}{}", "note.past(1, ".repeat(n), ")".repeat(n));
             items.push(format!("state s = {fallback}\n"));
             items.push(reader("s"));
         }
         (Shape::Nesting, Construct::ForPlacement) => {
             let mut clip = String::from("Clip c:\n");
             for i in 0..n {
-                clip.push_str(&format!("{}for j{i} in 0..1:\n", "    ".repeat(i + 1)));
+                clip.push_str(&format!("{}for j{i} in 0..{one}:\n", "    ".repeat(i + 1)));
             }
             clip.push_str(&format!("{}Note/(j{last})\n", "    ".repeat(n + 1)));
             items.push(clip);
@@ -335,7 +340,7 @@ fn items(construct: Construct, shape: Shape, n: usize) -> Option<Vec<String>> {
             items.push(reader(&sum((0..n).map(|i| format!("t{i}")))));
         }
         (Shape::Sharing, Construct::ForPlacement) => {
-            items.push("let a = [1, 2]\n".to_string());
+            items.push(format!("let a = [{one}, 2]\n"));
             items.push(format!(
                 "Clip c:\n{}",
                 "    for j in a:\n        Note/(j)\n".repeat(n)
@@ -353,7 +358,7 @@ fn items(construct: Construct, shape: Shape, n: usize) -> Option<Vec<String>> {
         }
         (Shape::FanIn, Construct::State | Construct::History) => {
             let read = if construct == Construct::History {
-                "{1, 0}"
+                ".past(1, 0)"
             } else {
                 ""
             };
@@ -377,7 +382,11 @@ fn items(construct: Construct, shape: Shape, n: usize) -> Option<Vec<String>> {
         }
         (Shape::FanIn, Construct::ForPlacement) => {
             for i in 0..n {
-                items.push(format!("let v{i} = {i}\n"));
+                items.push(if faulty {
+                    format!("let v{i} = q + {i}\n")
+                } else {
+                    format!("let v{i} = {i}\n")
+                });
             }
             let elements = (0..n)
                 .map(|i| format!("v{i}"))
@@ -415,10 +424,10 @@ fn items(construct: Construct, shape: Shape, n: usize) -> Option<Vec<String>> {
         }
         (Shape::GrowingArgument, _) => {
             items.push(growing(construct)?);
-            items.push(reader(&format!("f([1], {} - 100000)", 100_000 + n)));
+            items.push(reader(&format!("f([{one}], {} - 100000)", 100_000 + n)));
         }
         (Shape::NestedCalls, Construct::Recursive) => {
-            let value = format!("{}1{}", "r(".repeat(n), ")".repeat(n));
+            let value = format!("{}{one}{}", "r(".repeat(n), ")".repeat(n));
             items.push(reader(&value));
         }
         (Shape::NestedCalls, _) => {
@@ -488,12 +497,70 @@ fn measured(compiler: &Compiler, text: &str) -> Measured {
     Measured { errors, counts }
 }
 
-fn program(construct: Construct, shape: Shape, n: usize, reversed: bool) -> Option<String> {
-    let mut items = items(construct, shape, n)?;
+fn program(
+    construct: Construct,
+    shape: Shape,
+    n: usize,
+    (reversed, faulty): (bool, bool),
+) -> Option<String> {
+    let mut items = items(construct, shape, n, faulty)?;
     if reversed {
         items.reverse();
     }
     Some(items.concat())
+}
+
+const CONSTRUCTS: [Construct; 15] = [
+    Construct::Let,
+    Construct::State,
+    Construct::Inlined,
+    Construct::DotCall,
+    Construct::Recursive,
+    Construct::If,
+    Construct::Match,
+    Construct::Join,
+    Construct::Slice,
+    Construct::Index,
+    Construct::History,
+    Construct::Past,
+    Construct::ForPlacement,
+    Construct::ArrayLiteral,
+    Construct::ForExpression,
+];
+
+#[test]
+fn every_cost_row_draws_nothing_and_its_erroneous_twin_draws_only_its_unknown_name_303() {
+    let limits = LimitOverrides {
+        nesting_depth: Some(1_000_000),
+        ..LimitOverrides::default()
+    };
+    let compiler = Compiler::with_limits(&vocabulary(), limits).expect("the vocabulary compiles");
+    let mut failures = Vec::new();
+    let mut rows = 0;
+    for construct in CONSTRUCTS {
+        for shape in SHAPES {
+            for faulty in [false, true] {
+                let Some(text) = program(construct, shape, 3, (false, faulty)) else {
+                    continue;
+                };
+                rows += 1;
+                let errors = measured(&compiler, &text).errors;
+                let drawn = if faulty {
+                    !errors.is_empty()
+                        && errors.iter().all(|error| error.starts_with("UnknownName"))
+                } else {
+                    errors.is_empty()
+                };
+                if !drawn {
+                    failures.push(format!(
+                        "{construct:?} {shape:?} faulty {faulty}: {errors:?}\n{text}"
+                    ));
+                }
+            }
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    assert_eq!(rows, 178);
 }
 
 const FLOOR: u64 = 1_600;
@@ -536,6 +603,7 @@ struct Row {
     construct: Construct,
     shape: Shape,
     reversed: bool,
+    faulty: bool,
 }
 
 struct Report {
@@ -548,19 +616,32 @@ fn measured_row(compiler: &Compiler, row: &Row) -> Report {
         construct,
         shape,
         reversed,
+        faulty,
     } = *row;
     let smallest = smallest_size(construct, shape);
     let sizes = [smallest, 2 * smallest, 4 * smallest];
-    let texts = sizes.map(|n| program(construct, shape, n, reversed).unwrap_or_default());
+    let texts = sizes.map(|n| program(construct, shape, n, (reversed, faulty)).unwrap_or_default());
     let started = std::time::Instant::now();
     let runs = texts.each_ref().map(|text| measured(compiler, text));
     let name = format!(
-        "{construct:?} {shape:?} {}",
-        if reversed { "reversed" } else { "forward" }
+        "{construct:?} {shape:?} {}{}",
+        if reversed { "reversed" } else { "forward" },
+        if faulty { " beside a fault (303)" } else { "" }
     );
     let mut failures = Vec::new();
     for (run, n) in runs.iter().zip(sizes) {
-        if let Some(first) = run.errors.first() {
+        if faulty {
+            let unknown = run
+                .errors
+                .iter()
+                .all(|error| error.starts_with("UnknownName"));
+            if run.errors.is_empty() || !unknown {
+                failures.push(format!(
+                    "{name} {n}: draws {:?}, where its one fault is `q`",
+                    run.errors
+                ));
+            }
+        } else if let Some(first) = run.errors.first() {
             failures.push(format!(
                 "{name} {n}: {} errors, the first {first}",
                 run.errors.len()
@@ -622,12 +703,15 @@ fn assert_costs_linear(construct: Construct, expected_rows: usize) {
     let mut rows = Vec::new();
     for shape in SHAPES {
         for reversed in [false, true] {
-            if items(construct, shape, 1).is_some() {
-                rows.push(Row {
-                    construct,
-                    shape,
-                    reversed,
-                });
+            for faulty in [false, true] {
+                if items(construct, shape, 1, faulty).is_some() {
+                    rows.push(Row {
+                        construct,
+                        shape,
+                        reversed,
+                        faulty,
+                    });
+                }
             }
         }
     }
@@ -646,105 +730,105 @@ fn assert_costs_linear(construct: Construct, expected_rows: usize) {
 #[ignore = "stress"]
 fn stress_every_walk_of_check_over_a_let_costs_work_linear_in_the_program_in_every_shape_and_order()
 {
-    assert_costs_linear(Construct::Let, 12);
+    assert_costs_linear(Construct::Let, 24);
 }
 
 #[test]
 #[ignore = "stress"]
 fn stress_every_walk_of_check_over_a_state_costs_work_linear_in_the_program_in_every_shape_and_order()
  {
-    assert_costs_linear(Construct::State, 10);
+    assert_costs_linear(Construct::State, 20);
 }
 
 #[test]
 #[ignore = "stress"]
 fn stress_every_walk_of_check_over_an_inlined_function_costs_work_linear_in_the_program_in_every_shape_and_order()
  {
-    assert_costs_linear(Construct::Inlined, 12);
+    assert_costs_linear(Construct::Inlined, 24);
 }
 
 #[test]
 #[ignore = "stress"]
 fn stress_every_walk_of_check_over_a_dot_call_costs_work_linear_in_the_program_in_every_shape_and_order()
  {
-    assert_costs_linear(Construct::DotCall, 12);
+    assert_costs_linear(Construct::DotCall, 24);
 }
 
 #[test]
 #[ignore = "stress"]
 fn stress_every_walk_of_check_over_a_compile_time_recursive_function_costs_work_linear_in_the_program_in_every_shape_and_order()
  {
-    assert_costs_linear(Construct::Recursive, 10);
+    assert_costs_linear(Construct::Recursive, 20);
 }
 
 #[test]
 #[ignore = "stress"]
 fn stress_every_walk_of_check_over_an_if_choice_costs_work_linear_in_the_program_in_every_shape_and_order()
  {
-    assert_costs_linear(Construct::If, 14);
+    assert_costs_linear(Construct::If, 28);
 }
 
 #[test]
 #[ignore = "stress"]
 fn stress_every_walk_of_check_over_a_match_choice_costs_work_linear_in_the_program_in_every_shape_and_order()
  {
-    assert_costs_linear(Construct::Match, 12);
+    assert_costs_linear(Construct::Match, 24);
 }
 
 #[test]
 #[ignore = "stress"]
 fn stress_every_walk_of_check_over_a_join_costs_work_linear_in_the_program_in_every_shape_and_order()
  {
-    assert_costs_linear(Construct::Join, 14);
+    assert_costs_linear(Construct::Join, 28);
 }
 
 #[test]
 #[ignore = "stress"]
 fn stress_every_walk_of_check_over_a_slice_costs_work_linear_in_the_program_in_every_shape_and_order()
  {
-    assert_costs_linear(Construct::Slice, 14);
+    assert_costs_linear(Construct::Slice, 28);
 }
 
 #[test]
 #[ignore = "stress"]
 fn stress_every_walk_of_check_over_an_index_costs_work_linear_in_the_program_in_every_shape_and_order()
  {
-    assert_costs_linear(Construct::Index, 14);
+    assert_costs_linear(Construct::Index, 28);
 }
 
 #[test]
 #[ignore = "stress"]
 fn stress_every_walk_of_check_over_a_history_read_costs_work_linear_in_the_program_in_every_shape_and_order()
  {
-    assert_costs_linear(Construct::History, 10);
+    assert_costs_linear(Construct::History, 20);
 }
 
 #[test]
 #[ignore = "stress"]
 fn stress_every_walk_of_check_over_a_history_read_without_a_fallback_costs_work_linear_in_the_program_in_every_shape_and_order()
  {
-    assert_costs_linear(Construct::Past, 8);
+    assert_costs_linear(Construct::Past, 16);
 }
 
 #[test]
 #[ignore = "stress"]
 fn stress_every_walk_of_check_over_a_for_placement_costs_work_linear_in_the_program_in_every_shape_and_order()
  {
-    assert_costs_linear(Construct::ForPlacement, 8);
+    assert_costs_linear(Construct::ForPlacement, 16);
 }
 
 #[test]
 #[ignore = "stress"]
 fn stress_every_walk_of_check_over_an_array_literal_costs_work_linear_in_the_program_in_every_shape_and_order()
  {
-    assert_costs_linear(Construct::ArrayLiteral, 14);
+    assert_costs_linear(Construct::ArrayLiteral, 28);
 }
 
 #[test]
 #[ignore = "stress"]
 fn stress_every_walk_of_check_over_a_for_expression_costs_work_linear_in_the_program_in_every_shape_and_order()
  {
-    assert_costs_linear(Construct::ForExpression, 14);
+    assert_costs_linear(Construct::ForExpression, 28);
 }
 
 fn capacity_program(capacity: usize) -> String {
