@@ -100,12 +100,11 @@ impl Engine<'_> {
         if !self.counted_iteration(node)? {
             return Ok(Some(CVal::Error));
         }
-        let (args, function, feeds, depth, mode, sink, untaken) = match ctx {
+        let (args, feeds, depth, mode, sink, untaken) = match ctx {
             Ctx::Frame(frame) => {
                 let parent = self.frame(frame)?;
                 (
                     parent.args.clone(),
-                    parent.function,
                     parent.feeds.clone(),
                     parent.depth,
                     self.mode_of(frame)?,
@@ -115,7 +114,6 @@ impl Engine<'_> {
             }
             Ctx::Global => (
                 Vec::new(),
-                None,
                 self.memo.call_feeds.get(&node).cloned().unwrap_or_default(),
                 0,
                 Mode::Taken,
@@ -125,8 +123,6 @@ impl Engine<'_> {
         };
         let first = items.item(0);
         let record = Frame {
-            key: None,
-            function,
             run: Some(LoopRun {
                 items,
                 next: 0,
@@ -143,6 +139,7 @@ impl Engine<'_> {
             feeds,
             memo: FastMap::default(),
             loops: FastMap::default(),
+            held: None,
             depth,
             faults: FastSet::default(),
             templates: FastSet::default(),
@@ -211,6 +208,7 @@ impl Engine<'_> {
             run.values = [CVal::Int(position), element, value];
             record.memo.clear();
             record.loops.clear();
+            record.held = None;
             let (root, ty) = (record.root, record.ty);
             machine.work.push((frame, root, ty));
             return Ok(None);

@@ -21,7 +21,8 @@ use crate::semantics::analysis::bound::Bound;
 use crate::semantics::analysis::bound_val::BoundVal;
 use crate::semantics::analysis::c_val::CVal;
 use crate::semantics::analysis::call_done::CallDone;
-use crate::semantics::analysis::call_key::CallKey;
+use crate::semantics::analysis::call_parts::CallParts;
+use crate::semantics::analysis::call_scratch::CallScratch;
 use crate::semantics::analysis::engine::Engine;
 use crate::semantics::analysis::eval_ty::EvalTy;
 use crate::semantics::analysis::fast_hash::{FastMap, FastSet};
@@ -47,27 +48,6 @@ use crate::semantics::counted_walk::CountedWalk;
 use crate::semantics::ir::{ExprId, FnId};
 use crate::semantics::reporting::grouped;
 
-struct Argument {
-    leaves: Vec<(ArgKey, ArgSig)>,
-    lengths: Vec<u32>,
-    values: Vec<CVal>,
-}
-
-impl Argument {
-    fn keyed(&self) -> (ArgKey, ArgShape) {
-        match (self.lengths.is_empty(), self.leaves.first()) {
-            (true, Some((key, sig))) => (key.clone(), ArgShape::Scalar(sig.clone())),
-            _ => {
-                let (keys, sigs) = self.leaves.iter().cloned().unzip();
-                (
-                    ArgKey::Array(keys),
-                    ArgShape::Array(self.lengths.clone(), sigs),
-                )
-            }
-        }
-    }
-}
-
 enum Template {
     Root(NodeId),
     Failed,
@@ -80,8 +60,12 @@ enum Reuse {
     Evaluate,
 }
 
+enum Reached {
+    Call(CallId),
+    Value(Option<CVal>),
+}
+
 struct Call {
-    key: CallKey,
     id: CallId,
     function: FnId,
     values: Vec<CVal>,
@@ -98,84 +82,20 @@ impl Engine<'_> {
         ctx: Ctx,
         need: &mut Vec<Query>,
     ) -> Result<Option<CVal>, Internal> {
-        let mut keys = Vec::new();
-        let mut values = Vec::new();
-        let mut shapes = Vec::new();
-        let mut missing = false;
-        for arg in &args {
-            match arg {
-                None => {
-                    keys.push(ArgKey::Default);
-                    shapes.push(ArgShape::Default);
-                }
-                Some(Val::Scalar(arg)) => match self.argument(*arg, own, ctx, need)? {
-                    Some(argument) => {
-                        values.extend(argument.values.iter().cloned());
-                        let (key, shape) = argument.keyed();
-                        keys.push(key);
-                        shapes.push(shape);
-                    }
-                    None => missing = true,
-                },
-                Some(Val::Array(array)) => {
-                    let mut parts = Vec::new();
-                    for element in &array.elements {
-                        match self.argument(*element, own, ctx, need)? {
-                            Some(argument) => parts.push(argument),
-                            None => missing = true,
-                        }
-                    }
-                    if missing {
-                        continue;
-                    }
-                    let inner = parts
-                        .first()
-                        .map(|part| part.lengths.clone())
-                        .unwrap_or_default();
-                    if parts.iter().any(|part| part.lengths != inner) {
-                        self.error_at_node(
-                            Code::RaggedArray,
-                            node,
-                            "the elements of an array are arrays of one length, or all single values",
-                        )?;
-                        keys.push(ArgKey::Error);
-                        continue;
-                    }
-                    let mut lengths = inner;
-                    lengths.extend(array.shape.lengths());
-                    let mut element_keys = Vec::new();
-                    let mut sigs = Vec::new();
-                    for part in parts {
-                        for (key, sig) in part.leaves {
-                            element_keys.push(key);
-                            sigs.push(sig);
-                        }
-                        values.extend(part.values);
-                    }
-                    keys.push(ArgKey::Array(element_keys));
-                    shapes.push(ArgShape::Array(lengths, sigs));
-                }
-                Some(Val::Error) => keys.push(ArgKey::Error),
-            }
-        }
-        if missing {
-            return Ok(None);
-        }
-        if keys.contains(&ArgKey::Error) {
-            return Ok(Some(CVal::Error));
-        }
-        let feeds = match ctx {
-            Ctx::Global => self.memo.call_feeds.get(&node).cloned().unwrap_or_default(),
-            Ctx::Frame(frame) => self.frame(frame)?.feeds.clone(),
+        let held = match ctx {
+            Ctx::Frame(caller) => match self.frame(caller)?.held {
+                Some((held, ty, id)) if held == node && ty == own => Some(id),
+                Some(_) | None => None,
+            },
+            Ctx::Global => None,
         };
-        let key = CallKey {
-            function,
-            args: keys,
-            shapes: shapes.clone(),
-            expected: own,
-            units: unit_set(&feeds),
+        let id = match held {
+            Some(id) => id,
+            None => match self.reached_call(node, function, &args, own, ctx, need)? {
+                Reached::Call(id) => id,
+                Reached::Value(value) => return Ok(value),
+            },
         };
-        let id = self.call_id(&key);
         let mode = match ctx {
             Ctx::Global => Mode::Taken,
             Ctx::Frame(caller) => {
@@ -209,7 +129,7 @@ impl Engine<'_> {
                 }
                 let request = self.sink;
                 self.link(&request, Reachable::Call(id));
-                self.reach_key(&key, node, ctx)?;
+                self.reach_key(id, node, ctx)?;
                 return Ok(Some(value));
             }
             Reuse::Unreferenced(opened) => {
@@ -220,18 +140,145 @@ impl Engine<'_> {
             }
             Reuse::Evaluate => {}
         }
+        if held.is_some() {
+            match self.reached_call(node, function, &args, own, ctx, need)? {
+                Reached::Call(_) => {}
+                Reached::Value(value) => return Ok(value),
+            }
+        }
+        let feeds = match ctx {
+            Ctx::Global => self.memo.call_feeds.get(&node).cloned().unwrap_or_default(),
+            Ctx::Frame(frame) => self.frame(frame)?.feeds.clone(),
+        };
         let call = Call {
-            key,
             id,
             function,
-            values,
-            shapes,
+            values: std::mem::take(&mut self.call_scratch.values),
+            shapes: std::mem::take(&mut self.call_scratch.shapes),
             feeds,
         };
         match ctx {
             Ctx::Global => self.run_machine(call, node, own, need),
             Ctx::Frame(_) => self.push_frame(call, node, own, need),
         }
+    }
+
+    fn reached_call(
+        &mut self,
+        node: NodeId,
+        function: FnId,
+        args: &[Option<Val>],
+        own: EvalTy,
+        ctx: Ctx,
+        need: &mut Vec<Query>,
+    ) -> Result<Reached, Internal> {
+        let mut scratch = std::mem::take(&mut self.call_scratch);
+        scratch.clear();
+        let reached = self.call_parts(node, args, own, ctx, need, &mut scratch);
+        let reached = match reached {
+            Ok(Some(())) if scratch.keys.contains(&ArgKey::Error) => {
+                Ok(Reached::Value(Some(CVal::Error)))
+            }
+            Ok(Some(())) => {
+                let feeds = match ctx {
+                    Ctx::Global => self.memo.call_feeds.get(&node),
+                    Ctx::Frame(frame) => Some(&self.frame(frame)?.feeds),
+                };
+                unit_set_into(feeds.map_or(&[], Vec::as_slice), &mut scratch.units);
+                let id = self.memo.call_keys.intern(CallParts {
+                    function,
+                    args: &scratch.keys,
+                    shapes: &scratch.shapes,
+                    expected: own,
+                    units: &scratch.units,
+                });
+                Ok(Reached::Call(id))
+            }
+            Ok(None) => Ok(Reached::Value(None)),
+            Err(error) => Err(error),
+        };
+        self.call_scratch = scratch;
+        reached
+    }
+
+    fn call_parts(
+        &mut self,
+        node: NodeId,
+        args: &[Option<Val>],
+        own: EvalTy,
+        ctx: Ctx,
+        need: &mut Vec<Query>,
+        scratch: &mut CallScratch,
+    ) -> Result<Option<()>, Internal> {
+        let mut missing = false;
+        for arg in args {
+            match arg {
+                None => {
+                    scratch.keys.push(ArgKey::Default);
+                    scratch.shapes.push(ArgShape::Default);
+                }
+                Some(Val::Scalar(arg)) => {
+                    let start = scratch.leaves.len();
+                    let parts = (&mut scratch.leaves, &mut scratch.values);
+                    match self.argument(*arg, own, ctx, need, parts)? {
+                        Some(lengths) if lengths.is_empty() => match scratch.leaves.pop() {
+                            Some((key, sig)) => {
+                                scratch.keys.push(key);
+                                scratch.shapes.push(ArgShape::Scalar(sig));
+                            }
+                            None => return Err(Internal::missed("argument")),
+                        },
+                        Some(lengths) => {
+                            let (keys, sigs) = scratch.leaves.drain(start..).unzip();
+                            scratch.keys.push(ArgKey::Array(keys));
+                            scratch.shapes.push(ArgShape::Array(lengths, sigs));
+                        }
+                        None => missing = true,
+                    }
+                }
+                Some(Val::Array(array)) => {
+                    let start = scratch.leaves.len();
+                    let first_value = scratch.values.len();
+                    let mut inner: Option<Vec<u32>> = None;
+                    let mut ragged = false;
+                    let mut held = true;
+                    for element in &array.elements {
+                        let parts = (&mut scratch.leaves, &mut scratch.values);
+                        match self.argument(*element, own, ctx, need, parts)? {
+                            Some(lengths) => match &inner {
+                                Some(first) => ragged |= *first != lengths,
+                                None => inner = Some(lengths),
+                            },
+                            None => {
+                                missing = true;
+                                held = false;
+                            }
+                        }
+                    }
+                    if !held {
+                        continue;
+                    }
+                    if ragged {
+                        scratch.leaves.truncate(start);
+                        scratch.values.truncate(first_value);
+                        self.error_at_node(
+                            Code::RaggedArray,
+                            node,
+                            "the elements of an array are arrays of one length, or all single values",
+                        )?;
+                        scratch.keys.push(ArgKey::Error);
+                        continue;
+                    }
+                    let mut lengths = inner.unwrap_or_default();
+                    lengths.extend(array.shape.lengths());
+                    let (keys, sigs) = scratch.leaves.drain(start..).unzip();
+                    scratch.keys.push(ArgKey::Array(keys));
+                    scratch.shapes.push(ArgShape::Array(lengths, sigs));
+                }
+                Some(Val::Error) => scratch.keys.push(ArgKey::Error),
+            }
+        }
+        Ok((!missing).then_some(()))
     }
 
     fn call_reuse(&self, id: CallId, mode: Mode) -> Result<Reuse, Internal> {
@@ -325,12 +372,16 @@ impl Engine<'_> {
         let start = self.frame(caller)?.untaken_start;
         let mut names: Vec<String> = Vec::new();
         let functions: Vec<FnId> = self
-            .machine_mut()?
+            .active
+            .as_ref()
+            .ok_or(Internal::missed("evaluation machine"))?
             .frames
             .get(start..=caller)
             .unwrap_or_default()
             .iter()
-            .filter_map(|frame| frame.function)
+            .filter_map(|frame| frame.id)
+            .filter_map(|id| self.memo.call_keys.key(id))
+            .map(|key| key.function)
             .collect();
         for function in functions.into_iter().chain([last]) {
             let name = self.function_name(function)?;
@@ -383,15 +434,6 @@ impl Engine<'_> {
         Ok(())
     }
 
-    fn call_id(&mut self, key: &CallKey) -> CallId {
-        if let Some(id) = self.memo.call_ids.get(key) {
-            return *id;
-        }
-        let id = CallId(u32::try_from(self.memo.call_ids.len()).unwrap_or(u32::MAX));
-        self.memo.call_ids.insert(key.clone(), id);
-        id
-    }
-
     fn frame_mut(&mut self, frame: usize) -> Result<&mut Frame, Internal> {
         self.machine_mut()?
             .frames
@@ -420,7 +462,8 @@ impl Engine<'_> {
         own: EvalTy,
         ctx: Ctx,
         need: &mut Vec<Query>,
-    ) -> Result<Option<Argument>, Internal> {
+        (leaves, values): (&mut Vec<(ArgKey, ArgSig)>, &mut Vec<CVal>),
+    ) -> Result<Option<Vec<u32>>, Internal> {
         let sig = some!(self.sig(arg, need));
         let settled = match sig.kind {
             Kind::Bare => self.carried_enum_of(arg)?,
@@ -435,20 +478,15 @@ impl Engine<'_> {
         };
         if let Some(id) = settled {
             let value = some!(self.child(arg, EvalTy::Enum(id), ctx, need)?);
-            let leaves = vec![arg_key(&value, false, EvalTy::Enum(id), None)];
-            return Ok(Some(Argument {
-                leaves,
-                lengths: Vec::new(),
-                values: vec![value],
-            }));
+            leaves.push(arg_key(&value, false, EvalTy::Enum(id), None));
+            values.push(value);
+            return Ok(Some(Vec::new()));
         }
         if sig.kind == Kind::Bare {
             self.unplaced_variant(arg)?;
-            return Ok(Some(Argument {
-                leaves: vec![arg_key(&CVal::Error, false, own, None)],
-                lengths: Vec::new(),
-                values: vec![CVal::Error],
-            }));
+            leaves.push(arg_key(&CVal::Error, false, own, None));
+            values.push(CVal::Error);
+            return Ok(Some(Vec::new()));
         }
         let flexible = sig.width == Width::Flexible;
         let ty = if flexible && sig.kind == Kind::Int {
@@ -457,19 +495,16 @@ impl Engine<'_> {
             own_type(&sig, own)
         };
         let value = some!(self.typed_child(arg, (ty, false), ctx, need)?);
-        let (lengths, values) = match &value {
-            CVal::Array(array) => (array.lengths(), array.leaves()),
-            leaf => (Vec::new(), vec![leaf.clone()]),
+        let CVal::Array(array) = value else {
+            leaves.push(arg_key(&value, flexible, ty, sig.family));
+            values.push(value);
+            return Ok(Some(Vec::new()));
         };
-        let leaves = values
-            .iter()
-            .map(|value| arg_key(value, flexible, ty, sig.family))
-            .collect();
-        Ok(Some(Argument {
-            leaves,
-            lengths,
-            values,
-        }))
+        for leaf in array.leaves() {
+            leaves.push(arg_key(&leaf, flexible, ty, sig.family));
+            values.push(leaf);
+        }
+        Ok(Some(array.lengths()))
     }
 
     pub(in crate::semantics::analysis) fn instantiate(
@@ -984,7 +1019,7 @@ impl Engine<'_> {
         own: EvalTy,
         need: &mut Vec<Query>,
     ) -> Result<Option<CVal>, Internal> {
-        let root_key = MachineKey::Call(call.key.clone());
+        let root_key = MachineKey::Call(call.id);
         let machine = match self.machines.remove(&root_key) {
             Some(machine) => machine,
             None => {
@@ -1023,8 +1058,6 @@ impl Engine<'_> {
                     .collect();
                 Machine {
                     frames: vec![Frame {
-                        key: Some(call.key.clone()),
-                        function: Some(call.function),
                         run: None,
                         args: call.values,
                         call: node,
@@ -1034,6 +1067,7 @@ impl Engine<'_> {
                         feeds: call.feeds,
                         memo: FastMap::default(),
                         loops: FastMap::default(),
+                        held: None,
                         depth: 1,
                         faults: FastSet::default(),
                         templates,
@@ -1104,7 +1138,7 @@ impl Engine<'_> {
                     }
                 }
                 for frame in machine.frames {
-                    let (Some(key), Some(id)) = (frame.key, frame.id) else {
+                    let Some(id) = frame.id else {
                         continue;
                     };
                     let done = CallDone {
@@ -1115,7 +1149,7 @@ impl Engine<'_> {
                         callees: frame.callees,
                     };
                     self.memo.calls.insert(id, done);
-                    self.memo.key_reach.insert(key, reach.clone());
+                    self.memo.key_reach.insert(id, reach.clone());
                 }
                 self.reach(reach, node, Ctx::Global)?;
                 return Ok(Some(CVal::Error));
@@ -1187,9 +1221,7 @@ impl Engine<'_> {
                         }
                     }
                     if completes {
-                        let (key, id, call, expected) =
-                            (record.key.clone(), record.id, record.call, record.expected);
-                        let key = key.ok_or(Internal::missed("call key"))?;
+                        let (id, call, expected) = (record.id, record.call, record.expected);
                         let id = id.ok_or(Internal::missed("call id"))?;
                         let mut done = machine
                             .frames
@@ -1236,7 +1268,7 @@ impl Engine<'_> {
                         });
                         if !kept {
                             self.memo.calls.insert(id, entry);
-                            self.memo.key_reach.insert(key, reach.clone());
+                            self.memo.key_reach.insert(id, reach.clone());
                         }
                         self.link(&sink, Reachable::Call(id));
                         if frame == 0 {
@@ -1369,10 +1401,11 @@ impl Engine<'_> {
         if rerun {
             machine.rerun.insert(call.id);
         }
+        if let Some(parent) = machine.frames.get_mut(caller) {
+            parent.held = Some((node, own, call.id));
+        }
         machine.frames.push(Frame {
-            key: Some(call.key),
             id: Some(call.id),
-            function: Some(call.function),
             run: None,
             args: call.values,
             call: node,
@@ -1382,6 +1415,7 @@ impl Engine<'_> {
             feeds: call.feeds,
             memo: FastMap::default(),
             loops: FastMap::default(),
+            held: None,
             depth: depth.saturating_add(1),
             faults: FastSet::default(),
             templates,
@@ -1424,13 +1458,28 @@ impl Engine<'_> {
         self.memo.calls.insert(call.id, done);
         self.memo
             .key_reach
-            .insert(call.key.clone(), (Vec::new(), templates.clone()));
+            .insert(call.id, (Vec::new(), templates.clone()));
         self.reach((Vec::new(), templates), node, ctx)?;
         Ok(Some(CVal::Error))
     }
 
-    fn reach_key(&mut self, key: &CallKey, node: NodeId, ctx: Ctx) -> Result<(), Internal> {
-        match self.memo.key_reach.get(key).cloned() {
+    fn reach_key(&mut self, id: CallId, node: NodeId, ctx: Ctx) -> Result<(), Internal> {
+        if let Ctx::Frame(frame) = ctx {
+            let Some((faults, templates)) = self.memo.key_reach.get(&id) else {
+                return Ok(());
+            };
+            let record = self
+                .active
+                .as_mut()
+                .ok_or(Internal::missed("evaluation machine"))?
+                .frames
+                .get_mut(frame)
+                .ok_or(Internal::missed("evaluation frame"))?;
+            record.faults.extend(faults.iter().copied());
+            record.templates.extend(templates.iter().copied());
+            return Ok(());
+        }
+        match self.memo.key_reach.get(&id).cloned() {
             Some(reach) => self.reach(reach, node, ctx),
             None => Ok(()),
         }
@@ -1557,10 +1606,14 @@ impl Engine<'_> {
     fn nested_names(&mut self, last: FnId) -> Result<String, Internal> {
         let mut names: Vec<String> = Vec::new();
         let functions: Vec<FnId> = self
-            .machine_mut()?
+            .active
+            .as_ref()
+            .ok_or(Internal::missed("evaluation machine"))?
             .frames
             .iter()
-            .filter_map(|frame| frame.function)
+            .filter_map(|frame| frame.id)
+            .filter_map(|id| self.memo.call_keys.key(id))
+            .map(|key| key.function)
             .collect();
         for function in functions.into_iter().chain([last]) {
             let name = self.function_name(function)?;
@@ -1756,13 +1809,16 @@ impl Engine<'_> {
 }
 
 fn unit_set(feeds: &[Feed]) -> Vec<(FamilyId, usize)> {
-    let mut units: Vec<(FamilyId, usize)> = feeds
-        .iter()
-        .map(|(family, unit, _)| (*family, *unit))
-        .collect();
+    let mut units = Vec::new();
+    unit_set_into(feeds, &mut units);
+    units
+}
+
+fn unit_set_into(feeds: &[Feed], units: &mut Vec<(FamilyId, usize)>) {
+    units.clear();
+    units.extend(feeds.iter().map(|(family, unit, _)| (*family, *unit)));
     units.sort_by_key(|(family, unit)| (family.index(), *unit));
     units.dedup();
-    units
 }
 
 fn arg_key(value: &CVal, flexible: bool, ty: EvalTy, family: Option<FamilyId>) -> (ArgKey, ArgSig) {

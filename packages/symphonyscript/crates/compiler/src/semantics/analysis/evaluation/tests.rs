@@ -35,6 +35,7 @@ fn a_miss_in_the_recursive_evaluators_own_state_is_an_internal_error() {
             expected: EvalTy::Exact,
             units: Vec::new(),
         };
+        let id = engine.memo.call_keys.intern(key.parts());
         let mut need = Vec::new();
         let mut evaluated = |engine: &mut crate::semantics::analysis::Engine<'_>, ctx| {
             engine.recursive(call, (function, Vec::new()), EvalTy::Exact, ctx, &mut need)
@@ -42,13 +43,13 @@ fn a_miss_in_the_recursive_evaluators_own_state_is_an_internal_error() {
 
         engine
             .machines
-            .insert(MachineKey::Call(key.clone()), Machine::default());
+            .insert(MachineKey::Call(id), Machine::default());
         assert_eq!(
             evaluated(engine, Ctx::Global),
             Err(Internal::missed("evaluation work"))
         );
         engine.machines.insert(
-            MachineKey::Call(key.clone()),
+            MachineKey::Call(id),
             Machine {
                 frames: Vec::new(),
                 work: vec![(0, call, EvalTy::Exact)],
@@ -76,10 +77,9 @@ fn a_miss_in_the_recursive_evaluators_own_state_is_an_internal_error() {
 
         engine.active = Some(Machine {
             frames: vec![Frame {
-                key: Some(key),
-                function: Some(function),
                 run: None,
                 loops: FastMap::default(),
+                held: None,
                 args: Vec::new(),
                 call,
                 root: call,

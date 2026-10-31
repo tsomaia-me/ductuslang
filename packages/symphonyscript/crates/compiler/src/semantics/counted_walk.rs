@@ -146,10 +146,12 @@ pub(crate) enum CountedWalk {
     RecursiveFamilyWaiters,
     RecursiveFamilyReprobes,
     RecursiveFamilyReprobeScopes,
+    CallKeysIntern,
+    CallKeysProbe,
 }
 
 #[cfg(test)]
-const WALKS: usize = 146;
+const WALKS: usize = 148;
 
 #[cfg(test)]
 thread_local! {
@@ -305,6 +307,8 @@ impl CountedWalk {
         CountedWalk::RecursiveFamilyWaiters,
         CountedWalk::RecursiveFamilyReprobes,
         CountedWalk::RecursiveFamilyReprobeScopes,
+        CountedWalk::CallKeysIntern,
+        CountedWalk::CallKeysProbe,
     ];
 
     pub(crate) fn step(self) {

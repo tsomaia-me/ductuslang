@@ -2,6 +2,7 @@ use symphonyscript_core::FamilyId;
 
 use super::arg_key::ArgKey;
 use super::arg_shape::ArgShape;
+use super::call_parts::CallParts;
 use super::eval_ty::EvalTy;
 use crate::semantics::ir::FnId;
 
@@ -12,4 +13,16 @@ pub(crate) struct CallKey {
     pub shapes: Vec<ArgShape>,
     pub expected: EvalTy,
     pub units: Vec<(FamilyId, usize)>,
+}
+
+impl CallKey {
+    pub fn parts(&self) -> CallParts<'_> {
+        CallParts {
+            function: self.function,
+            args: &self.args,
+            shapes: &self.shapes,
+            expected: self.expected,
+            units: &self.units,
+        }
+    }
 }

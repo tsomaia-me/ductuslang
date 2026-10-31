@@ -5,7 +5,6 @@ use symphonyscript_core::FamilyId;
 use super::bound_slice::BoundSlice;
 use super::bound_val::BoundVal;
 use super::c_val::CVal;
-use super::call_key::CallKey;
 use super::destination::Destination;
 use super::eval_ty::EvalTy;
 use super::fast_hash::FastMap;
@@ -108,7 +107,7 @@ pub(crate) struct Memo {
     pub pattern_bodies: FastMap<ScopeId, ScopeId>,
     pub takes_family: FastMap<NodeId, FamilyId>,
     pub default_scales: FastMap<NodeId, f64>,
-    pub call_ids: FastMap<CallKey, super::ids::CallId>,
+    pub call_keys: super::call_keys::CallKeys,
     pub calls: FastMap<super::ids::CallId, super::call_done::CallDone>,
     pub counted: super::fast_hash::FastSet<super::ids::CallId>,
     pub recorded: FastMap<super::reachable::Reachable, super::fault_state::FaultState>,
@@ -147,7 +146,7 @@ pub(crate) struct Memo {
     pub open_joins: super::fast_hash::FastSet<NodeId>,
     pub open_arms: FastMap<(NodeId, usize, super::item_ref::ItemRef), Option<NodeId>>,
     pub family_shapes: FastMap<super::family_key::FamilyKey, Vec<super::arg_shape::ArgShape>>,
-    pub key_reach: FastMap<CallKey, (Vec<u32>, Vec<ScopeId>)>,
+    pub key_reach: FastMap<super::ids::CallId, (Vec<u32>, Vec<ScopeId>)>,
     pub fault_sites: FastMap<u32, Vec<NodeId>>,
     pub reactive_faults: super::fast_hash::FastSet<u32>,
     pub template_sites: FastMap<ScopeId, Vec<NodeId>>,

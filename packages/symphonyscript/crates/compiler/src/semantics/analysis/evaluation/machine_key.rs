@@ -1,9 +1,8 @@
-use crate::semantics::analysis::call_key::CallKey;
 use crate::semantics::analysis::eval_ty::EvalTy;
-use crate::semantics::analysis::ids::NodeId;
+use crate::semantics::analysis::ids::{CallId, NodeId};
 
-#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub(crate) enum MachineKey {
-    Call(CallKey),
+    Call(CallId),
     Loop(NodeId, EvalTy),
 }
