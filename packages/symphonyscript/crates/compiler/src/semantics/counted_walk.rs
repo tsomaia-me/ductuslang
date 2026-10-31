@@ -148,10 +148,15 @@ pub(crate) enum CountedWalk {
     RecursiveFamilyReprobeScopes,
     InternerIntern,
     InternerProbe,
+    CallKeyOwned,
+    TemplateKeyOwned,
+    MachineFreshFrame,
+    FrameForeignSlot,
+    FrameReadClone,
 }
 
 #[cfg(test)]
-const WALKS: usize = 148;
+const WALKS: usize = 153;
 
 #[cfg(test)]
 thread_local! {
@@ -309,6 +314,11 @@ impl CountedWalk {
         CountedWalk::RecursiveFamilyReprobeScopes,
         CountedWalk::InternerIntern,
         CountedWalk::InternerProbe,
+        CountedWalk::CallKeyOwned,
+        CountedWalk::TemplateKeyOwned,
+        CountedWalk::MachineFreshFrame,
+        CountedWalk::FrameForeignSlot,
+        CountedWalk::FrameReadClone,
     ];
 
     pub(crate) fn step(self) {

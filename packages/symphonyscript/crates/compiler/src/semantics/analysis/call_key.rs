@@ -29,6 +29,7 @@ impl Interned for CallKey {
     }
 
     fn owned(parts: CallParts<'_>) -> CallKey {
+        crate::semantics::counted_walk::CountedWalk::CallKeyOwned.step();
         CallKey {
             template: parts.template,
             args: parts.args.to_vec(),

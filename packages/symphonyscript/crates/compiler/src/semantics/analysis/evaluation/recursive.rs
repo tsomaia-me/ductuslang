@@ -535,17 +535,21 @@ impl Engine<'_> {
         };
         let mut slot = 0u32;
         let mut params = Vec::new();
+        let mut arguments = Vec::new();
         for shape in shapes {
             let source = match shape {
                 ArgShape::Default => ParamSource::Default,
                 ArgShape::Scalar(sig) => {
                     let node = self.arg_node(&mut slot, sig, loc, caller)?;
+                    arguments.push(node);
                     ParamSource::Bound(BoundVal::Scalar(Bound::Value(node)))
                 }
                 ArgShape::Array(lengths, sigs) => {
                     let mut bounds = Vec::with_capacity(sigs.len());
                     for sig in sigs {
-                        bounds.push(Bound::Value(self.arg_node(&mut slot, sig, loc, caller)?));
+                        let node = self.arg_node(&mut slot, sig, loc, caller)?;
+                        arguments.push(node);
+                        bounds.push(Bound::Value(node));
                     }
                     let shape = crate::semantics::analysis::shape::Shape::from_lengths(lengths);
                     ParamSource::Bound(BoundVal::Array(Rc::new((shape, bounds))))
@@ -560,7 +564,21 @@ impl Engine<'_> {
             .map(|(position, _)| position)
             .collect();
         self.charge_evaluated(function, &defaulted, loc, caller)?;
-        self.call_scope(function, params, loc, caller, true)
+        let template = self.call_scope(function, params, loc, caller, true)?;
+        for node in arguments {
+            let count = self
+                .memo
+                .slot_counts
+                .entry(SlotOwner::Template(template))
+                .or_insert(0);
+            let order = Some((template, *count));
+            *count = count.saturating_add(1);
+            self.nodes
+                .get_mut(node.index())
+                .ok_or(Internal::missed("node"))?
+                .order = order;
+        }
+        Ok(template)
     }
 
     fn template(
@@ -1452,7 +1470,10 @@ impl Engine<'_> {
             opened,
             args,
             mut feeds,
-        } = machine.spares.pop().unwrap_or_default();
+        } = machine.spares.pop().unwrap_or_else(|| {
+            CountedWalk::MachineFreshFrame.step();
+            FrameSpare::default()
+        });
         templates.extend(template);
         feeds.extend_from_slice(&call.feeds);
         let index = machine.frames.len();
@@ -1770,6 +1791,7 @@ impl Engine<'_> {
         {
             return Ok(Some(slot));
         }
+        CountedWalk::FrameForeignSlot.step();
         Ok(self.memo.foreign_slots.get(&(owner, node)).copied())
     }
 

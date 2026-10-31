@@ -456,6 +456,7 @@ fn measured(compiler: &Compiler, text: &str) -> Measured {
     let (diagnostics, found) = compiler.analyzed(&[source], |engine: &Engine<'_>| {
         let memo = &engine.memo;
         vec![
+            ("calls", engine.call_count),
             ("capacity_rounds", memo.capacity_rounds),
             ("settlement_visits", memo.settlement_visits),
             ("kind_visits", memo.kind_visits),
@@ -1313,10 +1314,7 @@ fn template_walk_program(walk: TemplateWalk, size: usize, call_first: bool) -> S
     items.concat()
 }
 
-#[test]
-#[ignore = "stress"]
-fn stress_a_recursive_body_with_a_template_per_level_checks_each_frames_heads_in_work_linear_in_its_levels()
- {
+fn template_walk_failures(sizes: [usize; 3], growth: bool) -> Vec<String> {
     let compiler = Compiler::new(&vocabulary()).expect("the vocabulary compiles");
     let mut failures = Vec::new();
     let mut rows = 0;
@@ -1326,13 +1324,16 @@ fn stress_a_recursive_body_with_a_template_per_level_checks_each_frames_heads_in
     ] {
         for call_first in [true, false] {
             rows += 1;
-            let sizes = [100, 200, 400];
             let name = format!("{walk:?} call first {call_first}");
             let texts = sizes.map(|size| template_walk_program(walk, size, call_first));
             let runs = texts.each_ref().map(|text| measured(&compiler, text));
             for (run, size) in runs.iter().zip(sizes) {
                 if let Some(first) = run.errors.first() {
                     failures.push(format!("{name} {size}: {first}"));
+                }
+                let clones = walk_count(run, "FrameReadClone");
+                if clones > 0 {
+                    failures.push(format!("{name} {size}: {clones} frame reads cloned"));
                 }
             }
             for (index, (counter, _)) in runs[0].counts.iter().enumerate() {
@@ -1351,7 +1352,7 @@ fn stress_a_recursive_body_with_a_template_per_level_checks_each_frames_heads_in
                         runs[run].counts.get(index).map_or(0, |(_, count)| *count),
                     )
                 });
-                if !linear(points) {
+                if growth && !linear(points) {
                     failures.push(format!(
                         "{name}: {counter} {:?}",
                         points.map(|(_, count)| count)
@@ -1360,8 +1361,23 @@ fn stress_a_recursive_body_with_a_template_per_level_checks_each_frames_heads_in
             }
         }
     }
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
     assert_eq!(rows, 4);
+    failures
+}
+
+#[test]
+fn a_recursive_body_with_a_template_per_level_clones_no_frame_read_and_checks_each_frames_heads_in_work_linear_in_its_levels_345()
+ {
+    let failures = template_walk_failures([10, 20, 40], false);
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+#[test]
+#[ignore = "stress"]
+fn stress_a_recursive_body_with_a_template_per_level_checks_each_frames_heads_in_work_linear_in_its_levels()
+ {
+    let failures = template_walk_failures([100, 200, 400], true);
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
 
 const HEAD_CHECKS: [CountedWalk; 3] = [
@@ -1504,6 +1520,10 @@ fn untaken_work_failures(divisor: usize, depth: Option<u64>) -> Vec<String> {
                 let passes = work == UntakenWork::Descending;
                 if deep != run.errors.len() || (deep > 0) != passes {
                     failures.push(format!("{name} {size}: {:?}", run.errors));
+                }
+                let clones = walk_count(run, "FrameReadClone");
+                if clones > 0 {
+                    failures.push(format!("{name} {size}: {clones} frame reads cloned"));
                 }
             }
             for (index, (counter, _)) in runs[0].counts.iter().enumerate() {
@@ -1775,6 +1795,7 @@ fn distinct_call_failures(calls: [u64; 3]) -> Vec<String> {
         if !limited {
             failures.push(format!("300 at {limit} calls: {:?}", run.errors));
         }
+        failures.extend(machine_failures(run, limit));
     }
     for (index, (counter, _)) in runs[0].counts.iter().enumerate() {
         let points = [0, 1, 2].map(|run| {
@@ -1789,6 +1810,40 @@ fn distinct_call_failures(calls: [u64; 3]) -> Vec<String> {
                 points.map(|(_, count)| count)
             ));
         }
+    }
+    failures
+}
+
+fn walk_count(run: &Measured, walk: &str) -> u64 {
+    run.counts
+        .iter()
+        .find(|(name, _)| name == walk)
+        .map_or(0, |(_, count)| *count)
+}
+
+fn machine_failures(run: &Measured, limit: u64) -> Vec<String> {
+    let deepest_nesting = 201;
+    let distinct = walk_count(run, "calls");
+    let mut failures = Vec::new();
+    for (walk, most) in [
+        ("CallKeyOwned", distinct),
+        ("InternerIntern", 6 * limit),
+        ("TemplateKeyOwned", 1),
+        ("MachineFreshFrame", deepest_nesting),
+        ("FrameForeignSlot", 0),
+    ] {
+        let count = walk_count(run, walk);
+        if count > most {
+            failures.push(format!(
+                "300 at {limit} calls: {walk} {count}, more than {most}"
+            ));
+        }
+    }
+    if distinct <= limit || walk_count(run, "CallKeyOwned") < distinct {
+        failures.push(format!(
+            "300 at {limit} calls: {} call keys for {distinct} distinct calls",
+            walk_count(run, "CallKeyOwned")
+        ));
     }
     failures
 }

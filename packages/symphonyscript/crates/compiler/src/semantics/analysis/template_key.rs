@@ -30,6 +30,7 @@ impl Interned for TemplateKey {
     }
 
     fn owned(parts: TemplateParts<'_>) -> TemplateKey {
+        crate::semantics::counted_walk::CountedWalk::TemplateKeyOwned.step();
         TemplateKey {
             function: parts.function,
             args: parts.args.to_vec(),
