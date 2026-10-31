@@ -439,23 +439,92 @@ fn a_derived_cells_init_counts_for_its_own_past_and_fits_the_type_its_rule_gives
             ],
             &[],
         ),
+        (
+            &[
+                "state t(0) = r.past(1)\n",
+                "state r = t + 1\n",
+                "Clip c:\n    Note/(t)\n",
+            ],
+            &[],
+        ),
+        (
+            &[
+                "state t(0.5) = r.past(1)\n",
+                "state r = t + 1\n",
+                "Clip c:\n    Note/(r)\n",
+            ],
+            &[(Code::TypeMismatch, "0.5")],
+        ),
+        (
+            &[
+                "state t(0) = r.past(1)\n",
+                "state r(0.5) = t + 1\n",
+                "Clip c:\n    Note | brightness=r\n",
+            ],
+            &[],
+        ),
+        (
+            &[
+                "state n(1)\n",
+                "state t = r.past(1)\n",
+                "state r([1, 2]) = [t[1] + n, t[0]]\n",
+                "Clip c:\n    Note/(t[0] + r[1])\n",
+            ],
+            &[],
+        ),
+        (
+            &[
+                "state note(60)\n",
+                "state t = r.past(1)\n",
+                "state r([]) = (t + [note])[^4..]\n",
+                "Clip c:\n    Note/(note)\n",
+            ],
+            &[],
+        ),
+        (
+            &[
+                "state n(1)\n",
+                "state t = r.past(1)\n",
+                "state r = [n, n]\n",
+                "Clip c:\n    Note/(t[0])\n",
+            ],
+            &[],
+        ),
     ];
     support::assert_rows_in_every_order(&symphonyscript_fixtures::vocabulary(), rows);
     let compiler = symphonyscript::Compiler::new(&symphonyscript_fixtures::vocabulary())
         .expect("the vocabulary compiles");
-    let items = [
-        "state a = b.past(1) + 1\n",
-        "state b = a.past(1) + 1\n",
-        "Clip c:\n    Note/(a + b)\n",
+    let cycles: &[&[(&str, &str)]] = &[
+        &[
+            ("state a = b.past(1) + 1\n", "b.past(1)"),
+            ("state b = a.past(1) + 1\n", "a.past(1)"),
+        ],
+        &[
+            ("state a = b + 1\n", ""),
+            ("state b = a.past(1)\n", "a.past(1)"),
+        ],
+        &[
+            ("state d = a.past(1) + 1\n", "a.past(1)"),
+            ("state a = b + 1\n", ""),
+            ("state b = d.past(1)\n", "d.past(1)"),
+        ],
     ];
-    for order in support::permutations(&items) {
-        let text = order.concat();
-        let found = support::error_texts(&compiler, &text);
-        let one_cycle = matches!(
-            found.as_slice(),
-            [(Code::HistoryFallback, read)] if read == "a.past(1)" || read == "b.past(1)"
-        );
-        assert!(one_cycle, "{text}\n{found:?}");
+    for cycle in cycles {
+        let mut items: Vec<(&str, &str)> = cycle.to_vec();
+        items.push(("Clip c:\n    Note/(a + b)\n", ""));
+        for order in support::permutations(&items) {
+            let text: String = order.iter().map(|(item, _)| *item).collect();
+            let earliest = order
+                .iter()
+                .map(|(_, read)| *read)
+                .find(|read| !read.is_empty())
+                .unwrap_or_default();
+            assert_eq!(
+                support::error_texts(&compiler, &text),
+                vec![(Code::HistoryFallback, earliest.to_string())],
+                "{text}"
+            );
+        }
     }
 }
 

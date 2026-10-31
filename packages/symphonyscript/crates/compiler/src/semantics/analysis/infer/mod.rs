@@ -220,6 +220,7 @@ impl Engine<'_> {
         self.capacity_checks(&variable_positions)?;
         self.native_capacity_checks()?;
         self.state_checks()?;
+        self.unstarted_cycles()?;
         self.annotated_capacities()?;
         self.reactive_shapes()?;
         self.input_fits()?;

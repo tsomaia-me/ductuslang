@@ -132,6 +132,7 @@ pub(crate) enum CountedWalk {
     CheckerBlocks,
     CheckerAnonymousNames,
     CheckerBodyNames,
+    CellGroupsOf,
 }
 
 #[cfg(test)]
@@ -141,7 +142,7 @@ thread_local! {
 
 impl CountedWalk {
     #[cfg(test)]
-    pub(crate) const ALL: [CountedWalk; 132] = [
+    pub(crate) const ALL: [CountedWalk; 133] = [
         CountedWalk::InlineCountsOf,
         CountedWalk::InlineCountsCallSites,
         CountedWalk::RecursiveFunctionsRecursiveFunctions,
@@ -274,6 +275,7 @@ impl CountedWalk {
         CountedWalk::CheckerBlocks,
         CountedWalk::CheckerAnonymousNames,
         CountedWalk::CheckerBodyNames,
+        CountedWalk::CellGroupsOf,
     ];
 
     pub(crate) fn step(self) {

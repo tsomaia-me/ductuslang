@@ -3,6 +3,7 @@ use std::collections::BTreeMap;
 use symphonyscript_core::Vocabulary;
 
 use super::builtin_name::BuiltinName;
+use super::cell_groups::CellGroups;
 use super::collected::Collected;
 use super::decl::Decl;
 use super::inline_counts::InlineCounts;
@@ -122,6 +123,7 @@ pub(crate) fn collect(
     let (recursive, calls) = recursive_functions(hir, &source, &prelude)?;
     let inline = InlineCounts::of(hir, &source, &prelude, &recursive)?;
     let graph = PatternGraph::of(hir, &source, &prelude, report)?;
+    let cell_groups = CellGroups::of(hir, &source)?;
     Ok(Collected {
         source,
         prelude,
@@ -131,6 +133,7 @@ pub(crate) fn collect(
         cyclic_patterns: graph.cyclic,
         stand_ins: graph.stand_ins,
         placeholder_patterns: graph.placeholders,
+        cell_groups,
     })
 }
 

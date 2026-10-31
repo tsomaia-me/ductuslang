@@ -1,3 +1,4 @@
+use super::cell_groups::CellGroups;
 use super::inline_counts::InlineCounts;
 use super::namespace::Namespace;
 use super::stand_in::StandIn;
@@ -13,4 +14,5 @@ pub(crate) struct Collected {
     pub cyclic_patterns: Vec<bool>,
     pub stand_ins: Vec<Option<StandIn>>,
     pub placeholder_patterns: Vec<bool>,
+    pub cell_groups: CellGroups,
 }

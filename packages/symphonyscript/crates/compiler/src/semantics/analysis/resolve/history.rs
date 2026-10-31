@@ -155,38 +155,36 @@ impl Engine<'_> {
             HistoryCell::Input(_) => return Ok(Some(Unwritten::Cell)),
             HistoryCell::State(state) => match self.cell_init(state, need)? {
                 Some(Some(found)) => return Ok(Some(found)),
+                Some(None) if self.group_in_progress(state) => {
+                    return Ok(Some(Unwritten::Cell));
+                }
                 Some(None) => Query::State(state),
                 None => return Ok(None),
             },
             HistoryCell::Let(id) => Query::Let(self.global_of_let(id), LetRef::Top(id)),
         };
         if self.in_progress(query) {
-            let name = &target.text;
-            let word = match cell {
-                HistoryCell::State(state) => match self.hir.state(state)?.word {
-                    CellWord::State => "state",
-                    CellWord::Stream => "stream",
-                    CellWord::Channel => "channel",
-                },
-                HistoryCell::Input(_) | HistoryCell::Let(_) => "state",
-            };
-            self.error_helped(
-                Code::HistoryFallback,
-                loc,
-                scope,
-                format!(
-                    "this read of `{name}` lies on a cycle of history reads with its reader, and `{name}` has no init and the read no fallback, so it has no value at load"
-                ),
-                format!(
-                    "give `{name}` an init, as in `{word} {name}(0) = …`, or this read a fallback, as in `{name}.past(1, 0)`"
-                ),
-            )?;
+            let (message, help) = unstarted(&target.text, "state");
+            self.error_helped(Code::HistoryFallback, loc, scope, message, help)?;
             return Ok(Some(Unwritten::Fault));
         }
         if self.bound(query, need).is_none() {
             return Ok(None);
         }
         Ok(Some(Unwritten::Cell))
+    }
+
+    fn group_in_progress(&self, state: StateId) -> bool {
+        let (states, lets) = self.collected.cell_groups.group_of(state);
+        states
+            .iter()
+            .any(|member| self.in_progress(Query::State(*member)))
+            || lets.iter().any(|member| {
+                self.in_progress(Query::Let(
+                    self.global_of_let(*member),
+                    LetRef::Top(*member),
+                ))
+            })
     }
 
     pub(in crate::semantics::analysis) fn cell_init(
@@ -451,9 +449,120 @@ impl Engine<'_> {
             }
         })
     }
+
+    pub(in crate::semantics::analysis) fn unstarted_cycles(&mut self) -> Result<(), Internal> {
+        let count = self.hir.states.len();
+        let mut edges: Vec<Vec<usize>> = vec![Vec::new(); count];
+        let mut reads: Vec<(usize, usize, NodeId)> = Vec::new();
+        for (index, out) in edges.iter_mut().enumerate() {
+            crate::semantics::counted_walk::CountedWalk::HistoryHistoryReads.step();
+            let state = StateId(u32::try_from(index).map_err(|_| Internal::missed("state"))?);
+            if self.hir.state(state)?.init.is_some() {
+                continue;
+            }
+            let Some(binding) = self.state_binding(state) else {
+                continue;
+            };
+            let mut seen = FastSet::default();
+            let mut stack = vec![self.binding(binding)?.init];
+            while let Some(node) = stack.pop() {
+                crate::semantics::counted_walk::CountedWalk::HistoryHistoryReads.step();
+                if !seen.insert(node) {
+                    continue;
+                }
+                match self.cell_read(node)? {
+                    CellRead::Binding(read) => match self.binding(read)?.kind {
+                        BindingKind::State { state: target } => out.push(target.index()),
+                        BindingKind::Input { .. } => {}
+                        BindingKind::Let | BindingKind::Param | BindingKind::Attr { .. } => {
+                            stack.push(self.binding(read)?.init);
+                        }
+                    },
+                    CellRead::History {
+                        cell: HistoryCell::State(target),
+                        fallback: None,
+                    } => {
+                        out.push(target.index());
+                        reads.push((index, target.index(), node));
+                    }
+                    CellRead::History { fallback, .. } => stack.extend(fallback),
+                    CellRead::Named(inner) => stack.push(inner),
+                    CellRead::Operands(operands) => stack.extend(operands),
+                }
+            }
+        }
+        let mut component_of = vec![usize::MAX; count];
+        for (component, members) in crate::semantics::collection::strongly_connected(&edges)?
+            .into_iter()
+            .enumerate()
+        {
+            for member in members {
+                if let Some(slot) = component_of.get_mut(member) {
+                    *slot = component;
+                }
+            }
+        }
+        let mut earliest: crate::semantics::analysis::fast_hash::FastMap<usize, (Loc, usize)> =
+            crate::semantics::analysis::fast_hash::FastMap::default();
+        for (reader, target, node) in reads {
+            let (Some(from), Some(to)) = (component_of.get(reader), component_of.get(target))
+            else {
+                continue;
+            };
+            let target_state =
+                StateId(u32::try_from(target).map_err(|_| Internal::missed("state"))?);
+            if from != to
+                || self.hir.state(target_state)?.init.is_some()
+                || self.state_binding(target_state).is_none()
+            {
+                continue;
+            }
+            let loc = self.node(node)?.loc;
+            let slot = earliest.entry(*from).or_insert((loc, target));
+            if loc < slot.0 {
+                *slot = (loc, target);
+            }
+        }
+        let mut found: Vec<(Loc, usize)> = earliest.into_values().collect();
+        found.sort_unstable();
+        for (loc, target) in found {
+            let decl = self.hir.state(StateId(
+                u32::try_from(target).map_err(|_| Internal::missed("state"))?,
+            ))?;
+            let name = decl
+                .name
+                .as_ref()
+                .map_or(String::new(), |name| name.text.clone());
+            let word = match decl.word {
+                CellWord::State => "state",
+                CellWord::Stream => "stream",
+                CellWord::Channel => "channel",
+            };
+            let (message, help) = unstarted(&name, word);
+            self.error_helped(
+                Code::HistoryFallback,
+                loc,
+                self.source_global,
+                message,
+                help,
+            )?;
+        }
+        Ok(())
+    }
 }
 
 const OFFSET: &str = "the offset of a history read is a positive integer known at compile time";
 
 pub(in crate::semantics::analysis) const STRING_CELL: &str =
     "a cell holding a string (SPEC §3.3) is a construct this compiler does not build";
+
+fn unstarted(name: &str, word: &str) -> (String, String) {
+    (
+        format!(
+            "this read of `{name}` lies on a cycle of history reads with its reader, and `{name}` has no init and the read no fallback, so it has no value at load"
+        ),
+        format!(
+            "give `{name}` an init, as in `{word} {name}(0) = …`, or this read a fallback, as in `{name}.past(1, 0)`"
+        ),
+    )
+}

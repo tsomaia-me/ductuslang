@@ -1,5 +1,6 @@
 mod builtin_name;
 mod call_site;
+mod cell_groups;
 mod collect;
 mod collected;
 mod decl;

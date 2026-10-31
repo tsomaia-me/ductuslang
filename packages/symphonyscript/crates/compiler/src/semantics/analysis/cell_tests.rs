@@ -4,6 +4,7 @@ use symphonyscript_fixtures::vocabulary;
 use super::Engine;
 use super::history_cell::HistoryCell;
 use super::ids::BindingId;
+use super::layout::Layout;
 use crate::compiler::Compiler;
 use crate::diagnostics::{Code, Severity};
 use crate::semantics::ir::{CellWord, InputId, StateId};
@@ -130,4 +131,92 @@ fn a_cell_carries_its_word_its_capacity_and_the_depth_of_its_deepest_past_read()
     });
     assert_eq!(errors, vec![]);
     assert_eq!(depth, 2);
+}
+
+fn in_both_orders(items: [&str; 2], rest: &str) -> [String; 2] {
+    [
+        format!("{}{}{rest}", items[0], items[1]),
+        format!("{}{}{rest}", items[1], items[0]),
+    ]
+}
+
+#[test]
+fn a_history_read_with_neither_fallback_nor_init_takes_its_cells_type_once_the_group_settles() {
+    for text in in_both_orders(
+        ["state t(0) = r.past(1)\n", "state r = t + 1\n"],
+        "Clip c:\n    Note when t > 1\n",
+    ) {
+        let (errors, cells) = analyzed(&text, |engine| (own(engine, "t"), own(engine, "r")));
+        assert_eq!(errors, vec![], "{text}");
+        assert_eq!(cells, (Some(Scalar::I32), Some(Scalar::I32)), "{text}");
+    }
+    for text in in_both_orders(
+        ["state t(0) = r.past(1)\n", "state r(0.5) = t + 1\n"],
+        "Clip c:\n    Note | brightness=r\n",
+    ) {
+        let (errors, cells) = analyzed(&text, |engine| (own(engine, "t"), own(engine, "r")));
+        assert_eq!(errors, vec![], "{text}");
+        assert!(
+            matches!(
+                cells,
+                (
+                    Some(Scalar::F32 | Scalar::F64),
+                    Some(Scalar::F32 | Scalar::F64)
+                )
+            ),
+            "{text}\n{cells:?}"
+        );
+    }
+    let layout = |engine: &Engine<'_>, name: &str| {
+        binding_named(engine, name)
+            .and_then(|binding| engine.memo.binding_layouts.get(&binding).cloned())
+    };
+    let capacity = |engine: &Engine<'_>, name: &str| {
+        binding_named(engine, name)
+            .and_then(|binding| engine.memo.binding_capacities.get(&binding).copied())
+    };
+    for text in in_both_orders(
+        [
+            "state t = r.past(1)\n",
+            "state r([1, 2]) = [t[1] + n, t[0]]\n",
+        ],
+        "state n(1)\nClip c:\n    Note/(t[0] + r[1])\n",
+    ) {
+        let (errors, layouts) =
+            analyzed(&text, |engine| (layout(engine, "t"), layout(engine, "r")));
+        assert_eq!(errors, vec![], "{text}");
+        let fixed = Some(Layout::fixed(vec![2]));
+        assert_eq!(layouts, (fixed.clone(), fixed), "{text}");
+    }
+    for text in in_both_orders(
+        [
+            "state t = r.past(1)\n",
+            "state r([]) = (t + [note])[^4..]\n",
+        ],
+        "state note(60)\nClip c:\n    Note/(note)\n",
+    ) {
+        let (errors, held) = analyzed(&text, |engine| {
+            (
+                layout(engine, "t"),
+                layout(engine, "r"),
+                capacity(engine, "t"),
+                capacity(engine, "r"),
+            )
+        });
+        assert_eq!(errors, vec![], "{text}");
+        let variable = Some(Layout::variable(Vec::new()));
+        assert_eq!(
+            held,
+            (variable.clone(), variable, Some(4), Some(4)),
+            "{text}"
+        );
+    }
+    for text in in_both_orders(
+        ["state t = r.past(1)\n", "state r = [n, n]\n"],
+        "state n(1)\nClip c:\n    Note/(t[0])\n",
+    ) {
+        let (errors, held) = analyzed(&text, |engine| layout(engine, "t"));
+        assert_eq!(errors, vec![], "{text}");
+        assert_eq!(held, Some(Layout::fixed(vec![2])), "{text}");
+    }
 }
