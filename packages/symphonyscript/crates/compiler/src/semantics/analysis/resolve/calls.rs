@@ -166,8 +166,11 @@ impl Engine<'_> {
         for val in vals.into_iter().flatten() {
             self.single_operand(
                 &val,
-                Code::ArrayOperand,
-                "built-ins apply to single values, not arrays",
+                (
+                    Code::ArrayOperand,
+                    "built-ins apply to single values, not arrays",
+                ),
+                (loc, scope),
             );
             match val {
                 Val::Scalar(node) => operands.push(node),

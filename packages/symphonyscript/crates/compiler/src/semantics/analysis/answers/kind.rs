@@ -726,7 +726,7 @@ impl Engine<'_> {
     ) -> Result<bool, Internal> {
         for (bound, _) in bounds {
             let bound_sig = self.known_sig(*bound)?;
-            if bound_sig.is_error() {
+            if bound_sig.is_error() || self.arrays.contains(bound) {
                 continue;
             }
             if !matches!(bound_sig.kind, Kind::Int | Kind::Any) {

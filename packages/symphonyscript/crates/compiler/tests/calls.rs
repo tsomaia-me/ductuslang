@@ -725,7 +725,7 @@ fn an_operator_over_recursive_calls_takes_the_shapes_their_results_settle_to() {
                 "fn f(n): if n is 0 then [1] else f(n - 1) + 1\n",
                 "Clip c:\n    Note/(f(2).size)\n",
             ],
-            &[(Code::ArrayOperand, "f(n - 1)")],
+            &[(Code::ArrayOperand, "f(n - 1) + 1")],
         ),
         (
             &[

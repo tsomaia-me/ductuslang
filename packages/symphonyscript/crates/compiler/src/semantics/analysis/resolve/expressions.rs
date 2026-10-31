@@ -162,11 +162,15 @@ impl Engine<'_> {
             match part {
                 StrPart::Text(text) => pieces.push(Piece::Text(text.clone())),
                 StrPart::Hole(_) => match holes.next() {
-                    Some((_, Some(Val::Scalar(node)))) => {
+                    Some((hole, Some(Val::Scalar(node)))) => {
+                        let hole_loc = self.hir.expr(hole)?.loc;
                         self.single_operand(
                             &Val::Scalar(node),
-                            Code::InterpolationType,
-                            "an interpolation holds a single value, not an array",
+                            (
+                                Code::InterpolationType,
+                                "an interpolation holds a single value, not an array",
+                            ),
+                            (hole_loc, scope),
                         );
                         pieces.push(Piece::Value(node));
                     }
@@ -251,7 +255,9 @@ impl Engine<'_> {
         scope: ScopeId,
         op: impl Fn(NodeId) -> Op,
     ) -> Result<Val, Internal> {
-        self.single_operand(&operand, Code::ArrayOperand, OPERAND);
+        if !matches!(operand, Val::Scalar(node) if self.definite_array(node)?) {
+            self.single_operand(&operand, (Code::ArrayOperand, OPERAND), (loc, scope));
+        }
         Ok(match operand {
             Val::Scalar(operand) if self.definite_array(operand)? => {
                 self.error(
@@ -338,8 +344,8 @@ impl Engine<'_> {
                 return Ok(Some(Val::Scalar(settled)));
             }
         }
-        self.single_operand(&lhs, Code::ArrayOperand, OPERAND);
-        self.single_operand(&rhs, Code::ArrayOperand, OPERAND);
+        self.single_operand(&lhs, (Code::ArrayOperand, OPERAND), (loc, scope));
+        self.single_operand(&rhs, (Code::ArrayOperand, OPERAND), (loc, scope));
         let operands = lhs.nodes().into_iter().chain(rhs.nodes()).collect();
         Ok(Some(match (lhs, rhs) {
             (Val::Scalar(lhs), Val::Scalar(rhs)) => {
@@ -399,8 +405,11 @@ impl Engine<'_> {
     ) -> Result<Option<Val>, Internal> {
         self.single_operand(
             &condition,
-            Code::ConditionType,
-            "the condition of an `if` is a `bool`, not an array",
+            (
+                Code::ConditionType,
+                "the condition of an `if` is a `bool`, not an array",
+            ),
+            (loc, scope),
         );
         let condition = match condition {
             Val::Scalar(condition) => condition,
@@ -501,19 +510,25 @@ impl Engine<'_> {
             lengths,
             code,
             message: message.into(),
+            at: None,
         });
     }
 
     pub(in crate::semantics::analysis) fn single_operand(
         &mut self,
         val: &Val,
-        code: Code,
-        message: &'static str,
+        (code, message): (Code, &'static str),
+        at: (Loc, ScopeId),
     ) {
         if let Val::Scalar(node) = val
             && self.arrays.contains(node)
         {
-            self.require_shape(*node, Vec::new(), code, message);
+            self.memo.shapes.entry(*node).or_insert_with(|| ShapeNeed {
+                lengths: Vec::new(),
+                code,
+                message: message.to_string(),
+                at: Some(at),
+            });
         }
     }
 
@@ -942,8 +957,11 @@ impl Engine<'_> {
         if let Some(scrutinee_val) = &scrutinee_val {
             self.single_operand(
                 scrutinee_val,
-                Code::MatchScrutinee,
-                "a `match` selects by a single value, not an array",
+                (
+                    Code::MatchScrutinee,
+                    "a `match` selects by a single value, not an array",
+                ),
+                (self.hir.expr(scrutinee)?.loc, scope),
             );
         }
         let scrutinee_node = match scrutinee_val {

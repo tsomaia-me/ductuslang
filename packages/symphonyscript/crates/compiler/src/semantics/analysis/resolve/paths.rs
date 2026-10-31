@@ -1086,8 +1086,8 @@ impl Engine<'_> {
         let (base_val, index_val) = (some!(base_val), some!(index_val));
         self.single_operand(
             &index_val,
-            Code::IndexType,
-            "an index is an integer, not an array",
+            (Code::IndexType, "an index is an integer, not an array"),
+            (loc, scope),
         );
         let index_node = match index_val {
             Val::Scalar(node) => node,
@@ -1122,8 +1122,8 @@ impl Engine<'_> {
         let (base_val, offset_val) = (some!(base_val), some!(offset_val));
         self.single_operand(
             &offset_val,
-            Code::IndexType,
-            "an index is an integer, not an array",
+            (Code::IndexType, "an index is an integer, not an array"),
+            (loc, scope),
         );
         let offset_node = match offset_val {
             Val::Scalar(node) => node,

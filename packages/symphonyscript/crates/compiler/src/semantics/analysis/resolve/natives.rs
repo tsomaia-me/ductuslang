@@ -75,9 +75,11 @@ impl Engine<'_> {
                 return Ok(Some(Val::Error));
             }
             if !array_param {
-                self.single_operand(&val, Code::TypeMismatch, SCALAR_PARAM);
                 match val {
-                    Val::Scalar(node) if !self.definite_array(node)? => operands.push(node),
+                    Val::Scalar(node) if !self.definite_array(node)? => {
+                        self.single_operand(&val, (Code::TypeMismatch, SCALAR_PARAM), (loc, scope));
+                        operands.push(node);
+                    }
                     Val::Scalar(_) | Val::Array(_) | Val::Error => {
                         self.error(Code::TypeMismatch, loc, scope, SCALAR_PARAM)?;
                         return Ok(Some(Val::Error));

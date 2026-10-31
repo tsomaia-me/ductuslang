@@ -3154,3 +3154,78 @@ fn a_disagreeing_literal_is_a_placeholder_at_every_holder_and_draws_its_own_diag
         .collect();
     support::assert_rows_in_every_order(&symphonyscript_fixtures::vocabulary(), &rows);
 }
+
+#[test]
+fn a_variable_array_where_a_single_value_stands_draws_at_its_holder_once_385() {
+    let held = "state s0([1, 1]): i32[..2]\n";
+    let deep = "fn r1(n): if n > 0 then r1(n - 1) else [1, 1]\n";
+    let l1 = "let l1 = s0\n";
+    let rows: &[support::Row] = &[
+        (
+            &[
+                held,
+                deep,
+                "Clip c:\n    Note/(if (if true then s0 else r1(1)) > 0 then 1 else 2)\n",
+            ],
+            &[(Code::ArrayOperand, "(if true then s0 else r1(1)) > 0")],
+        ),
+        (
+            &[
+                held,
+                l1,
+                "Clip c:\n    Note/(-(if true then [1, 1] else l1))\n",
+            ],
+            &[(Code::ArrayOperand, "-(if true then [1, 1] else l1)")],
+        ),
+        (
+            &[held, "Clip c:\n    Note/(-s0)\n"],
+            &[(Code::ArrayOperand, "-s0")],
+        ),
+        (
+            &[held, "Clip c:\n    Note/(i32(if true then s0 else s0))\n"],
+            &[(Code::ArrayOperand, "i32(if true then s0 else s0)")],
+        ),
+        (
+            &[held, "Clip c:\n    Note/(abs(if true then s0 else s0))\n"],
+            &[(Code::ArrayOperand, "abs(if true then s0 else s0)")],
+        ),
+        (
+            &[
+                held,
+                "Clip c:\n    Note/([1, 2][if true then s0 else s0])\n",
+            ],
+            &[(Code::IndexType, "[1, 2][if true then s0 else s0]")],
+        ),
+        (
+            &[
+                held,
+                "Clip c:\n    Note/([1, 2][(if true then s0 else s0)..][0])\n",
+            ],
+            &[(Code::IndexType, "[1, 2][(if true then s0 else s0)..]")],
+        ),
+        (
+            &[held, "Clip c:\n    Note/((if true then s0 else s0) * 2)\n"],
+            &[(Code::ArrayOperand, "(if true then s0 else s0) * 2")],
+        ),
+        (
+            &[
+                held,
+                deep,
+                "Clip c:\n    Note/(-(if true then s0 else r1(1)))\n",
+            ],
+            &[(Code::ArrayOperand, "-(if true then s0 else r1(1))")],
+        ),
+        (
+            &[
+                "fn f(n): if n is 0 then [1] else f(n - 1) + 1\n",
+                "Clip c:\n    Note/(f(2).size)\n",
+            ],
+            &[(Code::ArrayOperand, "f(n - 1) + 1")],
+        ),
+        (
+            &["Clip c:\n    Note/(-(if true then [1, 1] else [2, 2]))\n"],
+            &[(Code::ArrayOperand, "-(if true then [1, 1] else [2, 2])")],
+        ),
+    ];
+    support::assert_rows_in_every_order(&symphonyscript_fixtures::vocabulary(), rows);
+}

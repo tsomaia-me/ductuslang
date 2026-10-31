@@ -153,7 +153,10 @@ impl Engine<'_> {
         if value.is_error() || lengths_of(&value) == need.lengths {
             return Ok(value);
         }
-        self.error_at_node(need.code, node, need.message)?;
+        match need.at {
+            Some((loc, scope)) => self.error(need.code, loc, scope, need.message)?,
+            None => self.error_at_node(need.code, node, need.message)?,
+        }
         Ok(CVal::Error)
     }
 

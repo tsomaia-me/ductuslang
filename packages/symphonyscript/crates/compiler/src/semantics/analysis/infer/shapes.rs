@@ -52,7 +52,10 @@ impl Engine<'_> {
                         deferred.loc != loc
                             || !matches!(deferred.code, Code::TypeMismatch | Code::FloatToInteger)
                     });
-                    self.error_at_node(need.code, node, need.message)?;
+                    match need.at {
+                        Some((at, scope)) => self.error(need.code, at, scope, need.message)?,
+                        None => self.error_at_node(need.code, node, need.message)?,
+                    }
                     break;
                 }
             }

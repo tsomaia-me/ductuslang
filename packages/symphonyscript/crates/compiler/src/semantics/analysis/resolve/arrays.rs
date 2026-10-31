@@ -402,7 +402,7 @@ impl Engine<'_> {
                 continue;
             };
             let val = some!(self.unless_faulty_literal(bound.value, Some(val), scope, need)?);
-            self.single_operand(&val, Code::IndexType, BOUND_TYPE);
+            self.single_operand(&val, (Code::IndexType, BOUND_TYPE), (loc, scope));
             match val {
                 Val::Scalar(node) => nodes.push(Some((node, bound.from_end))),
                 Val::Array(_) if some!(self.placeholder_array(&val, need)?) => {
