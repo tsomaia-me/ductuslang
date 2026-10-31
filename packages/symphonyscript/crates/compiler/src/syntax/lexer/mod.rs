@@ -53,6 +53,7 @@ pub(crate) struct Lexer<'a> {
     cut_constructs: Vec<Range<u32>>,
     resume_line: Option<usize>,
     finished: bool,
+    json_next: bool,
     work: usize,
 }
 
@@ -85,6 +86,7 @@ impl<'a> Lexer<'a> {
             cut_constructs: Vec::new(),
             resume_line: None,
             finished: false,
+            json_next: false,
             work: 0,
         }
     }
@@ -353,6 +355,7 @@ impl<'a> Lexer<'a> {
         self.clause = None;
         self.clause_pending = false;
         self.finished = false;
+        self.json_next = false;
         self.push(SyntaxKind::Newline, from);
         self.resume_line = Some(suspension.offset);
     }
@@ -503,6 +506,7 @@ impl<'a> Lexer<'a> {
             }
             match self.modes.last() {
                 Some(Mode::String { .. }) => self.string_part(),
+                Some(Mode::Json { .. }) => self.json_token(),
                 _ => self.token(),
             }
         }
@@ -520,6 +524,7 @@ impl<'a> Lexer<'a> {
         self.clause_pending = false;
         if self.depth == 0 && self.line_has_token {
             self.push(SyntaxKind::Newline, start);
+            self.json_next = false;
             self.pending_newline = Some(self.tokens.len() - 1);
             self.line_has_token = false;
         } else {
@@ -535,7 +540,9 @@ impl<'a> Lexer<'a> {
     fn unterminated_start(&self) -> Option<usize> {
         self.modes.iter().find_map(|mode| match mode {
             Mode::String { start, .. } => Some(*start),
-            Mode::Interp { .. } | Mode::Brace { .. } => None,
+            Mode::Interp { .. } | Mode::Brace { .. } | Mode::Json { .. } | Mode::Code { .. } => {
+                None
+            }
         })
     }
 
@@ -561,6 +568,9 @@ impl<'a> Lexer<'a> {
             return;
         };
         let next = chars.next();
+        if std::mem::take(&mut self.json_next) && self.json_value(c, next) {
+            return;
+        }
         match c {
             ' ' | '\t' => {
                 let len = rest.len() - rest.trim_start_matches([' ', '\t']).len();
@@ -614,6 +624,213 @@ impl<'a> Lexer<'a> {
             c if is_ident_start(c) => self.ident(),
             _ => self.punct(c, next),
         }
+    }
+
+    fn json_value(&mut self, c: char, next: Option<char>) -> bool {
+        let start = self.pos;
+        let rest = &self.text[start..];
+        match c {
+            ' ' | '\t' | '-' => {
+                self.json_next = true;
+                false
+            }
+            '/' if next == Some('/') => {
+                self.json_next = true;
+                false
+            }
+            '[' if rest[1..].trim_start_matches([' ', '\t']).starts_with("..") => false,
+            '{' | '[' => {
+                self.modes.push(Mode::Json { depth: self.depth });
+                self.pos += 1;
+                let kind = if c == '{' {
+                    SyntaxKind::LBrace
+                } else {
+                    SyntaxKind::LBracket
+                };
+                self.push(kind, start);
+                true
+            }
+            '"' => {
+                self.json_string();
+                true
+            }
+            '0'..='9' => {
+                self.json_number();
+                true
+            }
+            _ if word(rest) == "null" => {
+                self.pos += 4;
+                self.push(SyntaxKind::JsonNull, start);
+                true
+            }
+            _ => false,
+        }
+    }
+
+    fn json_token(&mut self) {
+        let start = self.pos;
+        let rest = &self.text[start..];
+        let Some(c) = rest.chars().next() else {
+            return;
+        };
+        match c {
+            '"' => self.json_string(),
+            '0'..='9' => self.json_number(),
+            '(' => {
+                self.modes.push(Mode::Code { depth: self.depth });
+                self.pos += 1;
+                self.push(SyntaxKind::LParen, start);
+            }
+            '{' => {
+                self.pos += 1;
+                self.push(SyntaxKind::LBrace, start);
+            }
+            '}' => {
+                self.pos += 1;
+                self.push(SyntaxKind::RBrace, start);
+            }
+            _ if word(rest) == "null" => {
+                self.pos += 4;
+                self.push(SyntaxKind::JsonNull, start);
+            }
+            _ => self.token(),
+        }
+    }
+
+    fn json_string(&mut self) {
+        let start = self.pos;
+        let rest = &self.text[start..];
+        let mut chars = rest.char_indices().skip(1).peekable();
+        let mut end = None;
+        let mut line_end = rest.len();
+        while let Some((offset, c)) = chars.next() {
+            match c {
+                '"' => {
+                    end = Some(offset + 1);
+                    break;
+                }
+                '\n' => {
+                    line_end = offset;
+                    break;
+                }
+                '\r' if rest[offset..].starts_with("\r\n") => {
+                    line_end = offset;
+                    break;
+                }
+                '\\' => match chars.peek().copied() {
+                    Some((_, '"' | '\\' | '/' | 'b' | 'f' | 'n' | 'r' | 't')) => {
+                        chars.next();
+                    }
+                    Some((at, 'u')) => {
+                        chars.next();
+                        let mut digits = 0;
+                        let mut last = at + 1;
+                        while digits < 4
+                            && let Some((offset, digit)) = chars.peek().copied()
+                            && digit.is_ascii_hexdigit()
+                        {
+                            chars.next();
+                            digits += 1;
+                            last = offset + 1;
+                        }
+                        if digits < 4 {
+                            self.error(
+                                Code::JsonSyntax,
+                                start + offset,
+                                start + last,
+                                "`\\u` in JSON text is followed by four hexadecimal digits",
+                            );
+                        }
+                    }
+                    Some((at, escaped)) if escaped != '\n' && escaped != '\r' => {
+                        chars.next();
+                        self.error(
+                            Code::JsonSyntax,
+                            start + offset,
+                            start + at + escaped.len_utf8(),
+                            format!("`\\{escaped}` is not an escape of JSON text"),
+                        );
+                    }
+                    _ => self.error(
+                        Code::JsonSyntax,
+                        start + offset,
+                        start + offset + 1,
+                        "a backslash at the end of a line escapes nothing",
+                    ),
+                },
+                c if u32::from(c) < 0x20 => self.error(
+                    Code::JsonSyntax,
+                    start + offset,
+                    start + offset + c.len_utf8(),
+                    "a control character stands in a JSON string only as an escape",
+                ),
+                _ => {}
+            }
+        }
+        match end {
+            Some(end) => self.pos += end,
+            None => {
+                self.pos += line_end;
+                self.cut_constructs.push(start as u32..self.pos as u32);
+                self.error(
+                    Code::JsonSyntax,
+                    start,
+                    self.pos,
+                    "this JSON string does not end on its line",
+                );
+            }
+        }
+        self.push(SyntaxKind::JsonString, start);
+    }
+
+    fn json_number(&mut self) {
+        let start = self.pos;
+        let bytes = self.text.as_bytes();
+        let digits = |mut at: usize| {
+            while bytes.get(at).is_some_and(u8::is_ascii_digit) {
+                at += 1;
+            }
+            at
+        };
+        let leading_zero =
+            bytes.get(start) == Some(&b'0') && bytes.get(start + 1).is_some_and(u8::is_ascii_digit);
+        let mut end = digits(start);
+        if bytes.get(end) == Some(&b'.') && bytes.get(end + 1).is_some_and(u8::is_ascii_digit) {
+            end = digits(end + 1);
+        }
+        if matches!(bytes.get(end), Some(b'e' | b'E')) {
+            let digit_at = match bytes.get(end + 1) {
+                Some(b'+' | b'-') => end + 2,
+                _ => end + 1,
+            };
+            if bytes.get(digit_at).is_some_and(u8::is_ascii_digit) {
+                end = digits(digit_at);
+            }
+        }
+        let tail = self.text[end..]
+            .char_indices()
+            .find(|(_, c)| !is_ident_continue(*c))
+            .map_or(self.text.len() - end, |(offset, _)| offset);
+        self.pos = end + tail;
+        if leading_zero {
+            self.error(
+                Code::JsonSyntax,
+                start,
+                end,
+                "a number in JSON text has no leading zero",
+            );
+        } else if tail > 0 {
+            self.error(
+                Code::JsonSyntax,
+                end,
+                self.pos,
+                format!(
+                    "`{}` directly follows a number in JSON text, which has no prefix, separator or suffix",
+                    &self.text[end..self.pos]
+                ),
+            );
+        }
+        self.push(SyntaxKind::JsonNumber, start);
     }
 
     fn string_part(&mut self) {
@@ -694,6 +911,9 @@ impl<'a> Lexer<'a> {
         let text = &self.text[start..self.pos];
         let name = nfc(text);
         let kind = SyntaxKind::keyword(&name).unwrap_or(SyntaxKind::Ident);
+        if kind == SyntaxKind::JsonKw {
+            self.json_next = true;
+        }
         if !text.chars().any(|c| c != '_' && c != '#') {
             self.error(
                 Code::InvalidIdentifier,
@@ -934,12 +1154,14 @@ impl<'a> Lexer<'a> {
                 self.push(SyntaxKind::Error, start);
                 return;
             }
+            ('=', Some('>')) => (SyntaxKind::FatArrow, 2),
             ('=', _) => (SyntaxKind::Eq, 1),
             ('|', _) => (SyntaxKind::Pipe, 1),
             ('/', _) => (SyntaxKind::Slash, 1),
             ('.', Some('.')) => (SyntaxKind::Dot2, 2),
             ('.', _) => (SyntaxKind::Dot, 1),
             ('+', _) => (SyntaxKind::Plus, 1),
+            ('-', Some('>')) => (SyntaxKind::Arrow, 2),
             ('-', _) => (SyntaxKind::Minus, 1),
             ('*', Some('*')) => (SyntaxKind::Star2, 2),
             ('*', _) => (SyntaxKind::Star, 1),
@@ -950,6 +1172,7 @@ impl<'a> Lexer<'a> {
             ('>', _) => (SyntaxKind::Gt, 1),
             ('!', _) => (SyntaxKind::Bang, 1),
             ('\'', _) => (SyntaxKind::Quote, 1),
+            ('?', Some('?')) => (SyntaxKind::Question2, 2),
             ('?', _) => (SyntaxKind::Question, 1),
             ('~', _) => (SyntaxKind::Tilde, 1),
             ('@', _) => (SyntaxKind::At, 1),
@@ -1024,7 +1247,9 @@ impl<'a> Lexer<'a> {
                 }
                 SyntaxKind::RParen | SyntaxKind::RBracket | SyntaxKind::RBrace => {
                     self.depth = self.depth.saturating_sub(1);
-                    while let Some(Mode::Brace { depth }) = self.modes.last()
+                    while let Some(
+                        Mode::Brace { depth } | Mode::Json { depth } | Mode::Code { depth },
+                    ) = self.modes.last()
                         && *depth >= self.depth
                     {
                         self.modes.pop();

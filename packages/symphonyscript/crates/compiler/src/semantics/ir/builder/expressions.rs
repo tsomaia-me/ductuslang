@@ -11,7 +11,7 @@ use crate::semantics::ir::{
 use crate::syntax::ast::{self, AstNode, StringPart};
 use crate::syntax::{SyntaxKind, TokenView};
 
-enum Shape {
+pub(super) enum Shape {
     Leaf(ExprKind),
     Paren,
     Unary(UnaryOp),
@@ -36,7 +36,7 @@ enum Shape {
     For(Box<ForShape>),
 }
 
-struct ForShape {
+pub(super) struct ForShape {
     names: Vec<LoopVar>,
     range: bool,
     accumulator: Option<Ident>,
@@ -246,7 +246,25 @@ impl HirBuilder<'_> {
                 }
                 (Shape::Named(names), children)
             }
+            ast::Expr::Json(node) => self.unbuilt(node.syntax().range(), DOCUMENT_LITERAL),
         }
+    }
+
+    pub(super) fn unbuilt<'p>(
+        &mut self,
+        range: std::ops::Range<u32>,
+        construct: &str,
+    ) -> (Shape, Vec<Option<ast::Expr<'p>>>) {
+        self.draw_unbuilt(range, construct);
+        (Shape::Leaf(ExprKind::Error), Vec::new())
+    }
+
+    pub(super) fn draw_unbuilt(&mut self, range: std::ops::Range<u32>, construct: &str) {
+        self.draw(
+            Code::UnbuiltConstruct,
+            range,
+            &format!("{construct} is a construct this compiler does not build"),
+        );
     }
 
     fn finish(&mut self, shape: Shape, loc: Loc, children: Vec<ExprId>) -> ExprId {
@@ -617,3 +635,4 @@ fn unescape(text: &str) -> Option<String> {
     }
     Some(out)
 }
+const DOCUMENT_LITERAL: &str = "a document literal (SPEC §3.11)";

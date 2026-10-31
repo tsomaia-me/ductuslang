@@ -49,6 +49,7 @@ codes!(
     FnSyntax,
     PatternSyntax,
     CellSyntax,
+    JsonSyntax,
     HistoryTarget,
     HistoryFallback,
     HistoryOffset,
@@ -194,6 +195,7 @@ impl Code {
             Code::FnSyntax => "fn-syntax",
             Code::PatternSyntax => "pattern-syntax",
             Code::CellSyntax => "cell-syntax",
+            Code::JsonSyntax => "json-syntax",
             Code::HistoryTarget => "history-target",
             Code::HistoryFallback => "history-fallback",
             Code::HistoryOffset => "history-offset",
@@ -427,6 +429,7 @@ impl Code {
             Code::NoEntryInstance => "10.2",
             Code::MisplacedCaret => "2.5",
             Code::CellSyntax => "6.1",
+            Code::JsonSyntax => "3.11",
             Code::LengthLimit => "3.2",
             Code::VariableArray => "3.7",
             Code::HistoryTarget => "6.6",
@@ -581,6 +584,7 @@ impl Code {
             | Code::WireCycle
             | Code::MisplacedCaret
             | Code::CellSyntax
+            | Code::JsonSyntax
             | Code::LengthLimit
             | Code::VariableArray
             | Code::HistoryTarget

@@ -610,6 +610,12 @@ const RULES: &[Rule] = &[
         "state a([]): i32[..4]\nlet b: i32[..2] = a\n",
     ),
     rule("3.7", "capacity-exceeded", "state a([1, 2, 3]): i32[..2]\n"),
+    rule("3.11", "json-syntax", "let d = json {\"n\": 0x10}\n"),
+    rule("3.11", "json-syntax", "let d = json [01]\n"),
+    rule("3.11", "json-syntax", "let d = json \"a\\q\"\n"),
+    rule("3.11", "json-syntax", "let d = json {\"a\": \"b}\n"),
+    rule("3.11", "json-syntax", "let d = json {a: 1}\n"),
+    rule("3.11", "json-syntax", "let d = json [1, +]\n"),
     rule(
         "4.6",
         "index-out-of-range",

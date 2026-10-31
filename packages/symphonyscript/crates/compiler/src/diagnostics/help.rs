@@ -133,6 +133,9 @@ pub(super) fn help(code: Code) -> Option<&'static str> {
         Code::CellSyntax => {
             "declare the cell at top level as `state`, `stream` or `channel`, a name, an init in parentheses, a rule after `=` or both, as in `state level(0)` or `state count = level + 1`"
         }
+        Code::JsonSyntax => {
+            "write the document as JSON text after `json`, as in `json {\"count\": 16}`"
+        }
         Code::CellCapacity => {
             "remove `[N]`, which states the pending capacity of a host-fed `stream` or `channel` alone"
         }

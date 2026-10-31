@@ -35,6 +35,7 @@ pub(super) fn lesson(code: Code) -> &'static str {
         Code::FnSyntax => include_str!("../../lessons/fn-syntax.md"),
         Code::PatternSyntax => include_str!("../../lessons/pattern-syntax.md"),
         Code::CellSyntax => include_str!("../../lessons/cell-syntax.md"),
+        Code::JsonSyntax => include_str!("../../lessons/json-syntax.md"),
         Code::HistoryTarget => include_str!("../../lessons/history-target.md"),
         Code::HistoryFallback => include_str!("../../lessons/history-fallback.md"),
         Code::HistoryOffset => include_str!("../../lessons/history-offset.md"),

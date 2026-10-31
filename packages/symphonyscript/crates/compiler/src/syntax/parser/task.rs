@@ -177,4 +177,9 @@ pub(super) enum Task {
     StringLit,
     StringLoop,
     InterpEnd,
+    JsonLit,
+    JsonValue,
+    JsonEntry,
+    JsonObjectLoop,
+    JsonArrayLoop,
 }

@@ -21,6 +21,7 @@ impl<'p> Flags<'p> {
             .filter_map(|element| element.into_token())
             .flat_map(|token| match token.kind() {
                 SyntaxKind::Star2 => vec!['*', '*'],
+                SyntaxKind::Question2 => vec!['?', '?'],
                 _ => token.text().chars().collect(),
             })
             .collect()

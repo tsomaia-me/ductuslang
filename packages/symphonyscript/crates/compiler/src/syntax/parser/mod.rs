@@ -4,6 +4,7 @@ mod checkpoint;
 mod cost;
 mod expressions;
 mod items;
+mod json;
 mod loop_header;
 mod loops;
 mod placements;
@@ -267,6 +268,11 @@ impl<'a> Parser<'a> {
             Task::StringLit => self.string_lit(),
             Task::StringLoop => self.string_loop(),
             Task::InterpEnd => self.interp_end(),
+            Task::JsonLit => self.json_lit(),
+            Task::JsonValue => self.json_value(),
+            Task::JsonEntry => self.json_entry(),
+            Task::JsonObjectLoop => self.json_object_loop(),
+            Task::JsonArrayLoop => self.json_array_loop(),
         }
     }
 

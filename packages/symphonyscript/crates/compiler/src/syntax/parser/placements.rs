@@ -9,6 +9,7 @@ pub(super) const FLAG_TOKENS: &[SyntaxKind] = &[
     SyntaxKind::Quote,
     SyntaxKind::Bang,
     SyntaxKind::Question,
+    SyntaxKind::Question2,
     SyntaxKind::Star,
     SyntaxKind::Star2,
     SyntaxKind::Plus,

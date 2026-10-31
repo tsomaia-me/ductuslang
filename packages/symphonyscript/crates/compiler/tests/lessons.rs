@@ -64,7 +64,7 @@ fn diagnostics(setup: &str, text: &str, limits: LimitOverrides) -> Vec<Diagnosti
                 Err(failed) => failed.diagnostics,
             };
         }
-        "" => vocabulary(),
+        "" | "unbuilt" => vocabulary(),
         "natives" => native_vocabulary(),
         "bars" => bar_vocabulary(),
         "bounded" => bounded_vocabulary(),
@@ -145,6 +145,12 @@ fn lessons_hold<'a>(codes: impl Iterator<Item = &'a Code>, limits: LimitOverride
                 .count();
             let holds = if example.error {
                 codes.contains(code)
+            } else if example.setup == "unbuilt" {
+                codes.contains(&Code::UnbuiltConstruct)
+                    && found.iter().all(|diagnostic| {
+                        diagnostic.severity() != Severity::Error
+                            || diagnostic.code == Code::UnbuiltConstruct
+                    })
             } else {
                 errors == 0 && !codes.contains(code)
             };

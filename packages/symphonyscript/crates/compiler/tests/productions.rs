@@ -441,6 +441,46 @@ const CASES: &[(&str, &str, &str)] = &[
         "Clip c:\n    when x: Note\n    else:\n        Note\n",
         "File[Placement[Clip c Body[: Block[NL > WhenBlock[when NameRef[x] : Block[Members[Placement[Note]] NL] WhenElse[else : Block[NL > Placement[Note NL] <]]] <]]]]",
     ),
+    (
+        "JsonLit",
+        "let a = json {\"a\": 1, \"b\": [true, null]}\n",
+        "File[LetDecl[let a = JsonLit[json JsonObject[{ JsonEntry[\"a\" : JsonAtom[1]] , JsonEntry[\"b\" : JsonArray[[ JsonAtom[true] , JsonAtom[null] ]]] }]] NL]]",
+    ),
+    (
+        "JsonValue",
+        "let a = json [{}, [], \"s\", -1, 2.5, true, false, null, n, n.x, Wave::Saw, to.gain, (n + 1)]\n",
+        "File[LetDecl[let a = JsonLit[json JsonArray[[ JsonObject[{ }] , JsonArray[[ ]] , JsonAtom[\"s\"] , JsonAtom[- 1] , JsonAtom[2.5] , JsonAtom[true] , JsonAtom[false] , JsonAtom[null] , NameRef[n] , FieldExpr[NameRef[n] . x] , VariantRef[Wave :: Saw] , FieldExpr[ToExpr[to] . gain] , ParenExpr[( BinaryExpr[NameRef[n] + Literal[1]] )] ]]] NL]]",
+    ),
+    (
+        "JsonObject",
+        "let a = json {\"k\": {\"j\": [1, {\"i\": []}]}}\n",
+        "File[LetDecl[let a = JsonLit[json JsonObject[{ JsonEntry[\"k\" : JsonObject[{ JsonEntry[\"j\" : JsonArray[[ JsonAtom[1] , JsonObject[{ JsonEntry[\"i\" : JsonArray[[ ]]] }] ]]] }]] }]] NL]]",
+    ),
+    (
+        "JsonArray",
+        "let a = json [[1, 2], [], [[3]]]\n",
+        "File[LetDecl[let a = JsonLit[json JsonArray[[ JsonArray[[ JsonAtom[1] , JsonAtom[2] ]] , JsonArray[[ ]] , JsonArray[[ JsonArray[[ JsonAtom[3] ]] ]] ]]] NL]]",
+    ),
+    (
+        "JsonString",
+        "let a = json [\"\", \"plain\", \"a{b}\"]\n",
+        "File[LetDecl[let a = JsonLit[json JsonArray[[ JsonAtom[\"\"] , JsonAtom[\"plain\"] , JsonAtom[\"a{b}\"] ]]] NL]]",
+    ),
+    (
+        "JsonChar",
+        "let a = json \"any text: { } [ ] // here\"\n",
+        "File[LetDecl[let a = JsonLit[json JsonAtom[\"any text: { } [ ] // here\"]] NL]]",
+    ),
+    (
+        "JsonEscape",
+        "let a = json \"\\\" \\\\ \\/ \\b \\f \\n \\r \\t \\u00e9\"\n",
+        "File[LetDecl[let a = JsonLit[json JsonAtom[\"\\\" \\\\ \\/ \\b \\f \\n \\r \\t \\u00e9\"]] NL]]",
+    ),
+    (
+        "JsonNumber",
+        "let a = json [0, 7, 120, -3, 0.5, 1e3, 2E-2, 6.02e+23]\n",
+        "File[LetDecl[let a = JsonLit[json JsonArray[[ JsonAtom[0] , JsonAtom[7] , JsonAtom[120] , JsonAtom[- 3] , JsonAtom[0.5] , JsonAtom[1e3] , JsonAtom[2E-2] , JsonAtom[6.02e+23] ]]] NL]]",
+    ),
 ];
 
 #[test]

@@ -12,14 +12,6 @@ MapType
 MapLit
 Entry
 JsonType
-JsonLit
-JsonValue
-JsonObject
-JsonArray
-JsonString
-JsonChar
-JsonEscape
-JsonNumber
 AltType
 Fallback
 Arg

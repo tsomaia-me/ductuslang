@@ -27,6 +27,8 @@ fn render(text: &str, tokens: &[symphonyscript::syntax::Token]) -> String {
                 SyntaxKind::Ident
                 | SyntaxKind::Number
                 | SyntaxKind::StringText
+                | SyntaxKind::JsonString
+                | SyntaxKind::JsonNumber
                 | SyntaxKind::Comment
                 | SyntaxKind::Error => format!("{:?}({piece})", token.kind),
                 kind => format!("{kind:?}"),
@@ -219,17 +221,21 @@ fn identifiers_take_xid_characters_and_hash() {
 fn keywords_are_their_own_tokens() {
     assert_eq!(
         clean(
-            "let state stream channel cell out fn pattern default if then else match when for in into from as on is not and or div to true false i32 i64 f32 f64 bool"
+            "let state stream channel cell out fn pattern default if then else match when for in into from as on is not and or div to true false i32 i64 f32 f64 bool type const children without none str json node wire require use publish"
         ),
-        "LetKw _ StateKw _ StreamKw _ ChannelKw _ CellKw _ OutKw _ FnKw _ PatternKw _ DefaultKw _ IfKw _ ThenKw _ ElseKw _ MatchKw _ WhenKw _ ForKw _ InKw _ IntoKw _ FromKw _ AsKw _ OnKw _ IsKw _ NotKw _ AndKw _ OrKw _ DivKw _ ToKw _ TrueKw _ FalseKw _ I32Kw _ I64Kw _ F32Kw _ F64Kw _ BoolKw NL"
+        "LetKw _ StateKw _ StreamKw _ ChannelKw _ CellKw _ OutKw _ FnKw _ PatternKw _ DefaultKw _ IfKw _ ThenKw _ ElseKw _ MatchKw _ WhenKw _ ForKw _ InKw _ IntoKw _ FromKw _ AsKw _ OnKw _ IsKw _ NotKw _ AndKw _ OrKw _ DivKw _ ToKw _ TrueKw _ FalseKw _ I32Kw _ I64Kw _ F32Kw _ F64Kw _ BoolKw _ TypeKw _ ConstKw _ ChildrenKw _ WithoutKw _ NoneKw _ StrKw _ JsonKw _ NodeKw _ WireKw _ RequireKw _ UseKw _ PublishKw NL"
     );
 }
 
 #[test]
 fn reserved_words_are_errors() {
     assert_eq!(
-        diagnostics("recurrent string strings from"),
-        vec![(Code::ReservedWord, 0, 9), (Code::ReservedWord, 10, 16),]
+        diagnostics("recurrent string strings from null nulls"),
+        vec![
+            (Code::ReservedWord, 0, 9),
+            (Code::ReservedWord, 10, 16),
+            (Code::ReservedWord, 30, 34),
+        ]
     );
 }
 
@@ -508,5 +514,78 @@ fn keyword_and_word_lists_agree_with_core() {
     for (raw, kind) in SyntaxKind::ALL.iter().enumerate() {
         assert_eq!(*kind as u16 as usize, raw);
         assert_eq!(SyntaxKind::from_raw(raw as u16), Some(*kind));
+    }
+}
+
+#[test]
+fn the_arrows_and_the_fallback_are_tokens_of_their_own() {
+    assert_eq!(
+        clean("a->b c=>d e??f g?h i-j k=l m>n"),
+        "Ident(a) Arrow Ident(b) _ Ident(c) FatArrow Ident(d) _ Ident(e) Question2 Ident(f) _ Ident(g) Question Ident(h) _ Ident(i) Minus Ident(j) _ Ident(k) Eq Ident(l) _ Ident(m) Gt Ident(n) NL"
+    );
+}
+
+#[test]
+fn a_document_literal_lexes_its_text_in_json_mode_with_parentheses_returning_to_the_language() {
+    for (text, tokens) in [
+        (
+            "json {\"a\": [1, \"b\", true, null], \"n\": -1.5e3}",
+            "JsonKw _ LBrace JsonString(\"a\") Colon _ LBracket JsonNumber(1) Comma _ JsonString(\"b\") Comma _ TrueKw Comma _ JsonNull RBracket Comma _ JsonString(\"n\") Colon _ Minus JsonNumber(1.5e3) RBrace NL",
+        ),
+        (
+            "json {\"count\": (count + 1)}",
+            "JsonKw _ LBrace JsonString(\"count\") Colon _ LParen Ident(count) _ Plus _ Number(1) RParen RBrace NL",
+        ),
+        (
+            "json {\"msg\": (\"hi {name}\"), \"raw\": \"hi {name}\"}",
+            "JsonKw _ LBrace JsonString(\"msg\") Colon _ LParen StringStart StringText(hi ) InterpStart Ident(name) InterpEnd StringEnd RParen Comma _ JsonString(\"raw\") Colon _ JsonString(\"hi {name}\") RBrace NL",
+        ),
+        (
+            "json \"a\\u00e9\\n\\/\"",
+            "JsonKw _ JsonString(\"a\\u00e9\\n\\/\") NL",
+        ),
+        ("json -12", "JsonKw _ Minus JsonNumber(12) NL"),
+        ("json 0", "JsonKw _ JsonNumber(0) NL"),
+        ("json null", "JsonKw _ JsonNull NL"),
+        ("json count.x", "JsonKw _ Ident(count) Dot Ident(x) NL"),
+        (
+            "json [json {}]",
+            "JsonKw _ LBracket JsonKw _ LBrace RBrace RBracket NL",
+        ),
+        (
+            "x: json[..64] = 5",
+            "Ident(x) Colon _ JsonKw LBracket Dot2 Number(64) RBracket _ Eq _ Number(5) NL",
+        ),
+        (
+            "let d = json {\n    \"a\": 1,\n    \"b\": [2]\n}\nNote",
+            "LetKw _ Ident(d) _ Eq _ JsonKw _ LBrace _ _ JsonString(\"a\") Colon _ JsonNumber(1) Comma _ _ JsonString(\"b\") Colon _ LBracket JsonNumber(2) RBracket _ RBrace NL Ident(Note) NL",
+        ),
+        (
+            "let a = {\"k\": 1}",
+            "LetKw _ Ident(a) _ Eq _ LBrace StringStart StringText(k) StringEnd Colon _ Number(1) RBrace NL",
+        ),
+    ] {
+        assert_eq!(clean(text), tokens, "{text}");
+    }
+}
+
+#[test]
+fn json_text_takes_json_numbers_strings_and_escapes_only() {
+    for (text, piece) in [
+        ("json 0x10", "x10"),
+        ("json 01", "01"),
+        ("json 5ms", "ms"),
+        ("json 1_000", "_000"),
+        ("json \"a\\q\"", "\\q"),
+        ("json \"a\\u12\"", "\\u12"),
+        ("json \"a\tb\"", "\t"),
+        ("json [\"a]", "\"a]"),
+    ] {
+        let start = text.find(piece).expect("the piece is in the text") as u32;
+        assert_eq!(
+            diagnostics(text),
+            vec![(Code::JsonSyntax, start, start + piece.len() as u32)],
+            "{text}"
+        );
     }
 }

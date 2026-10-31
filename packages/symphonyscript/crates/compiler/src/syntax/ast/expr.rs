@@ -7,6 +7,7 @@ use super::field_expr::FieldExpr;
 use super::for_expr::ForExpr;
 use super::if_expr::IfExpr;
 use super::index_expr::IndexExpr;
+use super::json_lit::JsonLit;
 use super::literal::Literal;
 use super::name_ref::NameRef;
 use super::paren_expr::ParenExpr;
@@ -33,6 +34,7 @@ pub enum Expr<'p> {
     Field(FieldExpr<'p>),
     Index(IndexExpr<'p>),
     Call(CallExpr<'p>),
+    Json(JsonLit<'p>),
 }
 
 impl<'p> AstNode<'p> for Expr<'p> {
@@ -53,6 +55,7 @@ impl<'p> AstNode<'p> for Expr<'p> {
             SyntaxKind::FieldExpr => FieldExpr::cast(node).map(Expr::Field),
             SyntaxKind::IndexExpr => IndexExpr::cast(node).map(Expr::Index),
             SyntaxKind::CallExpr => CallExpr::cast(node).map(Expr::Call),
+            SyntaxKind::JsonLit => JsonLit::cast(node).map(Expr::Json),
             _ => None,
         }
     }
@@ -74,6 +77,7 @@ impl<'p> AstNode<'p> for Expr<'p> {
             Expr::Field(node) => node.syntax(),
             Expr::Index(node) => node.syntax(),
             Expr::Call(node) => node.syntax(),
+            Expr::Json(node) => node.syntax(),
         }
     }
 }

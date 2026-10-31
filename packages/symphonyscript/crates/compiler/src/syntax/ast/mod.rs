@@ -1,3 +1,20 @@
+macro_rules! ast_node {
+    ($name:ident) => {
+        #[derive(Clone, PartialEq, Eq, Hash, Debug)]
+        pub struct $name<'p>(crate::syntax::NodeView<'p>);
+
+        impl<'p> super::ast_node::AstNode<'p> for $name<'p> {
+            fn cast(node: crate::syntax::NodeView<'p>) -> Option<Self> {
+                (node.kind() == crate::syntax::SyntaxKind::$name).then_some(Self(node))
+            }
+
+            fn syntax(&self) -> &crate::syntax::NodeView<'p> {
+                &self.0
+            }
+        }
+    };
+}
+
 mod arg_list;
 mod array_lit;
 mod ast_node;
@@ -34,6 +51,12 @@ mod init;
 mod interpolation;
 mod item;
 mod iterable;
+mod json_array;
+mod json_atom;
+mod json_entry;
+mod json_lit;
+mod json_object;
+mod json_value;
 mod let_decl;
 mod line;
 mod literal;
@@ -103,6 +126,12 @@ pub use init::Init;
 pub use interpolation::Interpolation;
 pub use item::Item;
 pub use iterable::Iterable;
+pub use json_array::JsonArray;
+pub use json_atom::JsonAtom;
+pub use json_entry::JsonEntry;
+pub use json_lit::JsonLit;
+pub use json_object::JsonObject;
+pub use json_value::JsonValue;
 pub use let_decl::LetDecl;
 pub use line::Line;
 pub use literal::Literal;

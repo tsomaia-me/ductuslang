@@ -75,7 +75,10 @@ fn unclosed(node: &NodeView<'_>) -> Option<Range<u32>> {
         | SyntaxKind::ArgList
         | SyntaxKind::Conversion
         | SyntaxKind::DefaultArg => SyntaxKind::RParen,
-        SyntaxKind::ArrayLit | SyntaxKind::IndexExpr => SyntaxKind::RBracket,
+        SyntaxKind::ArrayLit | SyntaxKind::IndexExpr | SyntaxKind::JsonArray => {
+            SyntaxKind::RBracket
+        }
+        SyntaxKind::JsonObject => SyntaxKind::RBrace,
         _ => return None,
     };
     let opener = match closer {

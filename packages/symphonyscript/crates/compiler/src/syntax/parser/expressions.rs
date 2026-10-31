@@ -271,6 +271,7 @@ impl Parser<'_> {
                     self.then([rest]);
                 }
             }
+            Some(SyntaxKind::JsonKw) => self.then([Task::JsonLit, rest]),
             Some(SyntaxKind::LBracket) => self.then([Task::ArrayLit, rest]),
             Some(SyntaxKind::LParen) => {
                 self.start(SyntaxKind::ParenExpr);
@@ -308,6 +309,14 @@ impl Parser<'_> {
                 );
             }
         }
+    }
+
+    pub(super) fn qualified_name(&mut self, code: Code) {
+        self.start(SyntaxKind::VariantRef);
+        self.bump();
+        self.bump();
+        self.expect_name(code, "a name after `::`");
+        self.finish();
     }
 
     pub(super) fn variant_ref(&mut self) {
