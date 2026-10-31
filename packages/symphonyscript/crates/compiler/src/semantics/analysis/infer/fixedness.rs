@@ -35,6 +35,7 @@ impl Engine<'_> {
                 previous = Some(need);
             }
         }
+        self.deferred_annotations()?;
         Ok(())
     }
 

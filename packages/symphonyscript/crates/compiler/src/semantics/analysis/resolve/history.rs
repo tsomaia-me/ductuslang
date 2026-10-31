@@ -221,6 +221,55 @@ impl Engine<'_> {
         Ok(false)
     }
 
+    pub(in crate::semantics::analysis) fn deferred_annotations(&mut self) -> Result<(), Internal> {
+        let mut bindings: Vec<BindingId> = self.typing.deferred_layouts.iter().copied().collect();
+        bindings.sort_unstable();
+        for binding in bindings {
+            crate::semantics::counted_walk::CountedWalk::HistoryHistoryReads.step();
+            let BindingKind::State { state } = self.binding(binding)?.kind else {
+                continue;
+            };
+            let decl = self.hir.state(state)?;
+            let Some(annotation) = decl.ty.as_ref().and_then(|ty| self.annotation(ty)) else {
+                continue;
+            };
+            let loc = self.hir.expr(decl.value)?.loc;
+            let global = self.source_global;
+            let init = self.binding(binding)?.init;
+            let mut need = Vec::new();
+            let message = if annotation.capacity.is_some() {
+                match self.annotated_rows(init, &annotation, &mut need)? {
+                    Some(Rows::Differ) => Some(ANNOTATED_ROWS),
+                    Some(Rows::Agree | Rows::Faulty) | None => None,
+                }
+            } else if let Some((length, rows)) = annotation.lengths.split_last() {
+                match self.layout_of(init, &mut need)? {
+                    Some(found) => match found.shaped {
+                        Ok(Some(held)) => (held.inner() != rows
+                            || (found.certain && !held.variable && held.outer() != Some(*length)))
+                        .then_some(ANNOTATED_SHAPE),
+                        Ok(None) => Some(ANNOTATED_SHAPE),
+                        Err(_) => None,
+                    },
+                    None => None,
+                }
+            } else {
+                None
+            };
+            if let Some(message) = message {
+                self.error(Code::TypeMismatch, loc, global, message)?;
+                let collected = self.collected;
+                let (states, _) = collected.cell_groups.group_of(state);
+                for member in states.iter().copied() {
+                    if let Some(binding) = self.state_binding(member) {
+                        self.typing.shape_faulted.insert(binding);
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
     pub(in crate::semantics::analysis) fn deferred(&self, binding: BindingId) -> bool {
         self.typing.deferred_layouts.contains(&binding) && !self.memo.settled.contains(&binding)
     }

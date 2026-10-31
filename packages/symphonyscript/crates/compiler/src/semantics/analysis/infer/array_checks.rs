@@ -278,7 +278,9 @@ impl Engine<'_> {
                 continue;
             };
             let init = self.binding(binding)?.init;
-            if let Some(start) = self.init_node(binding)? {
+            if !self.typing.shape_faulted.contains(&binding)
+                && let Some(start) = self.init_node(binding)?
+            {
                 self.held_check(start, HistoryCell::State(state), start, Held::Init)?;
             }
             if let Some(layout) = self.memo.binding_layouts.get(&binding).cloned()

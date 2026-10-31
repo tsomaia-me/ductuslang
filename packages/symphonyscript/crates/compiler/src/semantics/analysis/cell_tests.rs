@@ -340,3 +340,63 @@ fn an_open_kind_or_shape_in_a_group_takes_its_cells_init_and_the_reads_of_it_tak
         );
     }
 }
+
+type AnnotatedRow<'a> = (&'a [&'a str; 2], &'a str, &'a [(Code, &'a str)]);
+
+#[test]
+fn an_annotation_on_a_cell_of_an_open_group_is_checked_against_its_rule_once_the_group_settles() {
+    let fixed_reader = "Clip c:\n    Note/(t[0] + r[1])\n";
+    let fixed = "state r = [t[1], t[0]]\n";
+    let variable = "state r = (t + [1])[^4..]\n";
+    let rows: &[AnnotatedRow] = &[
+        (
+            &["state t([1, 2]): i32[2] = r.past(1)\n", fixed],
+            fixed_reader,
+            &[],
+        ),
+        (
+            &["state t([1, 2]): i32[3] = r.past(1)\n", fixed],
+            fixed_reader,
+            &[(Code::TypeMismatch, "r.past(1)")],
+        ),
+        (
+            &["state t([]): i32[..4] = r.past(1)\n", variable],
+            "Clip c:\n    Note\n",
+            &[],
+        ),
+        (
+            &[
+                "state t([1, 2]) = r.past(1)\n",
+                "state r: i32[2] = [t[1], t[0]]\n",
+            ],
+            fixed_reader,
+            &[],
+        ),
+        (
+            &[
+                "state t([1, 2]) = r.past(1)\n",
+                "state r: i32[3] = [t[1], t[0]]\n",
+            ],
+            fixed_reader,
+            &[(Code::TypeMismatch, "[t[1], t[0]]")],
+        ),
+        (
+            &[
+                "state t([]) = r.past(1)\n",
+                "state r: i32[..4] = (t + [1])[^4..]\n",
+            ],
+            "Clip c:\n    Note\n",
+            &[],
+        ),
+    ];
+    for (items, reader, expected) in rows {
+        let expected: Vec<(Code, String)> = expected
+            .iter()
+            .map(|(code, text)| (*code, (*text).to_string()))
+            .collect();
+        for text in forward_and_reversed(&items[..], reader) {
+            let (errors, ()) = analyzed(&text, |_| ());
+            assert_eq!(errors, expected, "{text}");
+        }
+    }
+}
