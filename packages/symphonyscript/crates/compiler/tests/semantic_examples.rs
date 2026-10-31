@@ -65,46 +65,66 @@ fn pending_list_problems(
     write: bool,
     failure: impl Fn(&SpecExample) -> Option<&'static str>,
 ) -> Vec<String> {
-    let examples: Vec<(String, SpecExample)> = examples
+    let examples: Vec<(String, SpecExample, Option<&'static str>)> = examples
         .into_iter()
         .filter(|example| example.tag == "sym" || example.tag == "sym-error")
-        .map(|example| (pending_key(document, &example), example))
+        .map(|example| {
+            let failed = failure(&example);
+            (pending_key(document, &example), example, failed)
+        })
         .collect();
+    let listed = pending_lines(list);
+    let unlisted_failures = examples.iter().filter_map(|(key, example, failed)| {
+        failed.filter(|_| !listed.contains(key)).map(|failed| {
+            format!(
+                "{} {failed}: add the line `{key}` to {}",
+                example.name(),
+                list.display()
+            )
+        })
+    });
     if write {
         let failing: BTreeSet<&String> = examples
             .iter()
-            .filter(|(_, example)| failure(example).is_some())
-            .map(|(key, _)| key)
+            .filter(|(.., failed)| failed.is_some())
+            .map(|(key, ..)| key)
             .collect();
-        let text: String = failing.iter().map(|key| format!("{key}\n")).collect();
-        std::fs::write(list, text)
+        let text = std::fs::read_to_string(list)
+            .unwrap_or_else(|error| panic!("{} reads: {error}", list.display()));
+        let mut kept = 0;
+        let mut written = String::new();
+        for line in text.lines() {
+            let key = line.trim();
+            let document = key.is_empty() || key.starts_with('#');
+            let pending = failing.contains(&key.to_string());
+            if document || pending {
+                kept += usize::from(pending);
+                written.push_str(line);
+                written.push('\n');
+            }
+        }
+        std::fs::write(list, written)
             .unwrap_or_else(|error| panic!("{} writes: {error}", list.display()));
-        return vec![format!(
-            "wrote {} with {} lines; run again without SYMPHONY_PENDING_EXAMPLES to check it",
-            list.display(),
-            failing.len()
+        let mut problems = vec![format!(
+            "wrote {} with {kept} lines; run again without SYMPHONY_PENDING_EXAMPLES to check it",
+            list.display()
         )];
+        problems.extend(unlisted_failures);
+        return problems;
     }
-    let listed = pending_lines(list);
-    let keys: BTreeSet<&String> = examples.iter().map(|(key, _)| key).collect();
+    let keys: BTreeSet<&String> = examples.iter().map(|(key, ..)| key).collect();
     let mut problems: Vec<String> = examples
         .iter()
-        .filter_map(
-            |(key, example)| match (listed.contains(key), failure(example)) {
-                (true, None) => Some(format!(
-                    "{} holds the rule: remove the line `{key}` from {}",
-                    example.name(),
-                    list.display()
-                )),
-                (false, Some(failure)) => Some(format!(
-                    "{} {failure}: add the line `{key}` to {}",
-                    example.name(),
-                    list.display()
-                )),
-                _ => None,
-            },
-        )
+        .filter(|(key, _, failed)| listed.contains(key) && failed.is_none())
+        .map(|(key, example, _)| {
+            format!(
+                "{} holds the rule: remove the line `{key}` from {}",
+                example.name(),
+                list.display()
+            )
+        })
         .collect();
+    problems.extend(unlisted_failures);
     problems.extend(
         listed
             .iter()
@@ -351,8 +371,41 @@ fn a_list_that_names_exactly_the_failing_examples_passes() {
 }
 
 #[test]
-fn the_write_mode_writes_the_failing_examples_sorted_and_fails() {
-    let list = list_file("pending-write.txt", "SMALL.md §1 1 sym\n");
+fn the_write_mode_removes_the_lines_of_examples_that_hold_the_rule_and_fails_on_a_failing_example_it_does_not_list_296()
+ {
+    let list = list_file(
+        "pending-write.txt",
+        "# pending\nSMALL.md §1 1 sym\nSMALL.md §1.1 1 sym\nSMALL.md §1 2 sym\n",
+    );
+    assert_eq!(
+        small_document_problems(&list, true),
+        [
+            format!(
+                "wrote {} with 1 lines; run again without SYMPHONY_PENDING_EXAMPLES to check it",
+                list.display()
+            ),
+            format!(
+                "spec-1-sym-error-1 is accepted: add the line `SMALL.md §1 1 sym-error` to {}",
+                list.display()
+            ),
+            format!(
+                "spec-1.2-sym-1 does not parse: add the line `SMALL.md §1.2 1 sym` to {}",
+                list.display()
+            ),
+        ]
+    );
+    assert_eq!(
+        std::fs::read_to_string(&list).expect("the list reads"),
+        "# pending\nSMALL.md §1.1 1 sym\n"
+    );
+}
+
+#[test]
+fn the_write_mode_keeps_a_list_that_names_every_failing_example_296() {
+    let list = list_file(
+        "pending-write-exact.txt",
+        "SMALL.md §1.2 1 sym\nSMALL.md §1 1 sym\nSMALL.md §1.1 1 sym\nSMALL.md §1 1 sym-error\n",
+    );
     assert_eq!(
         small_document_problems(&list, true),
         [format!(
@@ -362,7 +415,7 @@ fn the_write_mode_writes_the_failing_examples_sorted_and_fails() {
     );
     assert_eq!(
         std::fs::read_to_string(&list).expect("the list reads"),
-        "SMALL.md §1 1 sym-error\nSMALL.md §1.1 1 sym\nSMALL.md §1.2 1 sym\n"
+        "SMALL.md §1.2 1 sym\nSMALL.md §1.1 1 sym\nSMALL.md §1 1 sym-error\n"
     );
     assert_eq!(small_document_problems(&list, false), Vec::<String>::new());
 }

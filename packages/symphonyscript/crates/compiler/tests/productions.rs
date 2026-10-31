@@ -697,33 +697,52 @@ fn pending_list_problems(
     write: bool,
 ) -> Vec<String> {
     let has_case = |name: &str| cases.contains(&name);
-    if write {
-        let uncased: Vec<&String> = productions.iter().filter(|name| !has_case(name)).collect();
-        let text: String = uncased.iter().map(|name| format!("{name}\n")).collect();
-        std::fs::write(list, text)
-            .unwrap_or_else(|error| panic!("{} writes: {error}", list.display()));
-        return vec![format!(
-            "wrote {} with {} lines; run again without SYMPHONY_PENDING_PRODUCTIONS to check it",
-            list.display(),
-            uncased.len()
-        )];
-    }
     let listed = pending_lines(list);
-    let mut problems: Vec<String> = productions
+    let names: BTreeSet<&String> = productions.iter().collect();
+    let uncased_unlisted = productions
         .iter()
-        .filter_map(|name| match (listed.contains(name), has_case(name)) {
-            (true, true) => Some(format!(
-                "{name} has a parse case: remove the line `{name}` from {}",
-                list.display()
-            )),
-            (false, false) => Some(format!(
+        .filter(|name| !listed.contains(*name) && !has_case(name))
+        .map(|name| {
+            format!(
                 "{name} has no parse case: add the line `{name}` to {}",
                 list.display()
-            )),
-            _ => None,
+            )
+        });
+    if write {
+        let text = std::fs::read_to_string(list)
+            .unwrap_or_else(|error| panic!("{} reads: {error}", list.display()));
+        let mut kept = 0;
+        let mut written = String::new();
+        for line in text.lines() {
+            let name = line.trim();
+            let document = name.is_empty() || name.starts_with('#');
+            let pending = names.contains(&name.to_string()) && !has_case(name);
+            if document || pending {
+                kept += usize::from(pending);
+                written.push_str(line);
+                written.push('\n');
+            }
+        }
+        std::fs::write(list, written)
+            .unwrap_or_else(|error| panic!("{} writes: {error}", list.display()));
+        let mut problems = vec![format!(
+            "wrote {} with {kept} lines; run again without SYMPHONY_PENDING_PRODUCTIONS to check it",
+            list.display()
+        )];
+        problems.extend(uncased_unlisted);
+        return problems;
+    }
+    let mut problems: Vec<String> = productions
+        .iter()
+        .filter(|name| listed.contains(*name) && has_case(name))
+        .map(|name| {
+            format!(
+                "{name} has a parse case: remove the line `{name}` from {}",
+                list.display()
+            )
         })
         .collect();
-    let names: BTreeSet<&String> = productions.iter().collect();
+    problems.extend(uncased_unlisted);
     problems.extend(
         listed
             .iter()
@@ -832,8 +851,44 @@ fn a_list_that_names_exactly_the_productions_without_a_case_passes() {
 }
 
 #[test]
-fn the_write_mode_writes_the_productions_without_a_case_in_spec_order_and_fails() {
-    let list = list_file("pending-productions-write.txt", "Song\n");
+fn the_write_mode_removes_the_lines_of_productions_with_a_case_and_fails_on_a_production_without_one_296()
+ {
+    let list = list_file(
+        "pending-productions-write.txt",
+        "# pending\nSong\nVerse\nBridge\n",
+    );
+    assert_eq!(
+        small_problems(&list, true),
+        [
+            format!(
+                "wrote {} with 1 lines; run again without SYMPHONY_PENDING_PRODUCTIONS to check it",
+                list.display()
+            ),
+            format!(
+                "Chorus has no parse case: add the line `Chorus` to {}",
+                list.display()
+            ),
+        ]
+    );
+    assert_eq!(
+        std::fs::read_to_string(&list).expect("the list reads"),
+        "# pending\nVerse\n"
+    );
+    assert_eq!(
+        small_problems(&list, false),
+        [format!(
+            "Chorus has no parse case: add the line `Chorus` to {}",
+            list.display()
+        )]
+    );
+}
+
+#[test]
+fn the_write_mode_keeps_a_list_that_names_every_production_without_a_case_296() {
+    let list = list_file(
+        "pending-productions-write-exact.txt",
+        "Chorus\nSong\nVerse\n",
+    );
     assert_eq!(
         small_problems(&list, true),
         [format!(
@@ -843,7 +898,7 @@ fn the_write_mode_writes_the_productions_without_a_case_in_spec_order_and_fails(
     );
     assert_eq!(
         std::fs::read_to_string(&list).expect("the list reads"),
-        "Verse\nChorus\n"
+        "Chorus\nVerse\n"
     );
     assert_eq!(small_problems(&list, false), Vec::<String>::new());
 }
