@@ -489,6 +489,7 @@ impl Engine<'_> {
                     None => pending = true,
                 },
                 Op::Bool(_) if self.memo.open_joins.contains(&node) => {}
+                Op::History { .. } => {}
                 Op::Number(..)
                 | Op::Const(_)
                 | Op::Bool(_)
@@ -504,7 +505,6 @@ impl Engine<'_> {
                 | Op::Annotate(..)
                 | Op::Builtin(..)
                 | Op::ToRead { .. }
-                | Op::History { .. }
                 | Op::Stepped(_)
                 | Op::Native { .. } => return Err(Internal::missed("path start")),
             }

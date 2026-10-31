@@ -707,3 +707,30 @@ fn a_dot_call_whose_receiver_is_a_faults_placeholder_draws_the_fault_alone_395()
         )],
     );
 }
+
+#[test]
+fn a_dot_call_on_a_history_read_whose_fallback_is_a_node_reference_draws_the_reference_refusal_396()
+{
+    let g = "fn g(v): v + 1\n";
+    let clip = "Clip c:\n    Note/(s0)\n";
+    let rows: &[support::Row] = &[
+        (
+            &[g, "state s0 = s0.past(1, c).g()\n", clip],
+            &[(Code::ReactiveNodeReference, "s0.past(1, c)")],
+        ),
+        (
+            &[g, "state s0 = g(s0.past(1, c))\n", clip],
+            &[(Code::ReactiveNodeReference, "s0.past(1, c)")],
+        ),
+        (
+            &[g, "let q = c\n", "state s0 = s0.past(1, q).g()\n", clip],
+            &[(Code::ReactiveNodeReference, "s0.past(1, q)")],
+        ),
+        (
+            &[g, "state s0 = s0.past(1, q).g()\n", clip],
+            &[(Code::UnknownName, "q")],
+        ),
+        (&[g, "state s0 = s0.past(1, 0).g()\n", clip], &[]),
+    ];
+    support::assert_rows_in_every_order(&symphonyscript_fixtures::vocabulary(), rows);
+}
