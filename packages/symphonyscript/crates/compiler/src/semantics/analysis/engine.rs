@@ -846,9 +846,16 @@ impl<'a> Engine<'a> {
             Some(super::fault_state::FaultState::Recorded { .. }) => false,
             None => self.complete(&to),
         };
-        if settled {
-            return;
+        if !settled {
+            self.edge(from, to);
         }
+    }
+
+    pub(in crate::semantics::analysis) fn edge(
+        &mut self,
+        from: &super::sink::Sink,
+        to: super::reachable::Reachable,
+    ) {
         let target = match from {
             super::sink::Sink::Reached => {
                 self.draw_reached(to);

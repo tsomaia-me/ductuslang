@@ -865,13 +865,13 @@ impl Engine<'_> {
                 }) = machine.frames.first()
                 {
                     let outer = self.sink;
-                    self.link(&outer, *target);
+                    self.edge(&outer, *target);
                 }
                 for pair in machine.frames.windows(2) {
                     if let [outer, inner] = pair
                         && let Sink::Into(target) = &inner.sink
                     {
-                        self.link(&outer.sink, *target);
+                        self.edge(&outer.sink, *target);
                     }
                 }
                 for frame in machine.frames {
