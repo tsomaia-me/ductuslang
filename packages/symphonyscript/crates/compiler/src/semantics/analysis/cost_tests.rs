@@ -2110,3 +2110,179 @@ fn a_recursive_argument_that_grows_a_dimension_per_level_holds_a_node_per_templa
         failures.join("\n")
     );
 }
+
+fn work_now() -> Vec<u64> {
+    let (built, visited) = CArray::work();
+    let mut work: Vec<u64> = CountedWalk::ALL.iter().map(|walk| walk.steps()).collect();
+    work.extend([built, visited]);
+    work
+}
+
+fn work_name(index: usize) -> String {
+    CountedWalk::ALL.get(index).map_or_else(
+        || ["built_elements", "visited_arrays"][index - CountedWalk::ALL.len()].to_string(),
+        |walk| format!("{walk:?}"),
+    )
+}
+
+thread_local! {
+    static TWIN_PASS_START: std::cell::RefCell<Vec<u64>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+fn mark_twin_pass() {
+    TWIN_PASS_START.with(|start| *start.borrow_mut() = work_now());
+}
+
+fn twin_pass_work(compiler: &Compiler, text: &str) -> (Vec<String>, Vec<u64>) {
+    let source = Source {
+        path: "cost.sym".into(),
+        text: text.into(),
+    };
+    TWIN_PASS_START.with(|start| start.borrow_mut().clear());
+    crate::compiler::BEFORE_TWINS.with(|hook| hook.set(mark_twin_pass));
+    let diagnostics = compiler.check(&[source]);
+    crate::compiler::BEFORE_TWINS.with(|hook| hook.set(|| ()));
+    let after = work_now();
+    let start = TWIN_PASS_START.with(|start| start.borrow().clone());
+    let errors = diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.severity() == Severity::Error)
+        .map(|diagnostic| format!("{:?} {:?}", diagnostic.code, diagnostic.summary))
+        .collect();
+    let work = if start.is_empty() {
+        vec![0; after.len()]
+    } else {
+        after
+            .iter()
+            .zip(&start)
+            .map(|(after, before)| after - before)
+            .collect()
+    };
+    (errors, work)
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum BesideTwins {
+    Recursion,
+    JoinChain,
+}
+
+impl BesideTwins {
+    fn program(self, size: usize, placeholders: usize) -> String {
+        match self {
+            BesideTwins::Recursion => {
+                let mut text = format!(
+                    "fn f(a, b, c): if a < 1 then 0 else f(a - 1, b + 1, c) + f(a - 1, b, c + 1) + f(a - 1, b, c)\nClip k:\n    Note/(f({size}, 0, 0) % 100)\n"
+                );
+                for index in 0..placeholders {
+                    text.push_str(&format!("    Note/(zz{index})\n"));
+                }
+                text
+            }
+            BesideTwins::JoinChain => {
+                let mut text = String::from("let v0 = [1]\n");
+                for index in 1..size {
+                    text.push_str(&format!("let v{index} = v{} + [1]\n", index - 1));
+                }
+                text.push_str(&format!("Clip c:\n    Note/(v{}[0])\n", size - 1));
+                for index in 0..placeholders {
+                    text.push_str(&format!("    Note/(zz{index})\n"));
+                }
+                text
+            }
+        }
+    }
+}
+
+fn beside_twins_failures(
+    shapes: [(BesideTwins, [usize; 3]); 2],
+    placeholders: [usize; 3],
+) -> Vec<String> {
+    let compiler = Compiler::new(&vocabulary()).expect("the vocabulary compiles");
+    let scan = CountedWalk::ALL
+        .iter()
+        .position(|walk| *walk == CountedWalk::NameTwinsScan);
+    let mut failures = Vec::new();
+    for (shape, sizes) in shapes {
+        let mut runs = Vec::new();
+        let mut lengths = Vec::new();
+        for (size, count) in sizes
+            .iter()
+            .map(|size| (*size, 1))
+            .chain(placeholders.iter().map(|count| (sizes[0], *count)))
+        {
+            let text = shape.program(size, count);
+            let (errors, work) = twin_pass_work(&compiler, &text);
+            let unknown = errors
+                .iter()
+                .filter(|error| error.starts_with("UnknownName"))
+                .count();
+            if (unknown, errors.len()) != (count, count) {
+                failures.push(format!("299 {shape:?} at {size} with {count}: {errors:?}"));
+            }
+            lengths.push(u64::try_from(text.len()).unwrap_or(u64::MAX));
+            runs.push(work);
+        }
+        let Some(first) = runs.first() else {
+            continue;
+        };
+        for (index, done) in first.iter().enumerate() {
+            let by_size = [0, 1, 2].map(|run| runs[run].get(index).copied().unwrap_or(0));
+            let flat = by_size.iter().all(|work| work == done);
+            let scanned =
+                Some(index) == scan && linear([0, 1, 2].map(|run| (lengths[run], by_size[run])));
+            if !flat && !scanned {
+                failures.push(format!(
+                    "299 {shape:?}: the twin pass's {} {by_size:?} at sizes {sizes:?}",
+                    work_name(index)
+                ));
+            }
+            let by_count = [3, 4, 5].map(|run| {
+                (
+                    u64::try_from(placeholders[run - 3]).unwrap_or(u64::MAX),
+                    runs[run].get(index).copied().unwrap_or(0),
+                )
+            });
+            let by_length = [3, 4, 5].map(|run| (lengths[run], by_count[run - 3].1));
+            let grows_with_count = linear(by_count) || (Some(index) == scan && linear(by_length));
+            if !grows_with_count {
+                failures.push(format!(
+                    "299 {shape:?}: the twin pass's {} {:?} at {placeholders:?} placeholders",
+                    work_name(index),
+                    by_count.map(|(_, work)| work)
+                ));
+            }
+        }
+        if runs.iter().any(|work| work.iter().all(|done| *done == 0)) {
+            failures.push(format!("299 {shape:?}: a run held no twin pass"));
+        }
+    }
+    failures
+}
+
+#[test]
+fn a_placeholder_beside_a_recursion_or_a_join_chain_costs_the_twin_pass_the_same_whatever_their_size_299()
+ {
+    let failures = beside_twins_failures(
+        [
+            (BesideTwins::Recursion, [20, 26, 33]),
+            (BesideTwins::JoinChain, [25, 50, 100]),
+        ],
+        [1, 2, 4],
+    );
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+#[test]
+#[ignore]
+fn stress_a_placeholder_beside_a_recursion_or_a_join_chain_costs_the_twin_pass_the_same_whatever_their_size_299()
+ {
+    let failures = beside_twins_failures(
+        [
+            (BesideTwins::Recursion, [57, 71, 90]),
+            (BesideTwins::JoinChain, [250, 500, 1_000]),
+        ],
+        [1, 2, 4],
+    );
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}

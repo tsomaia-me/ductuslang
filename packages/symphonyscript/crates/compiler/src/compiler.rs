@@ -20,6 +20,11 @@ use crate::semantics::reporting::Report;
 use crate::source::Source;
 use crate::syntax::parse;
 
+#[cfg(test)]
+thread_local! {
+    pub(crate) static BEFORE_TWINS: std::cell::Cell<fn()> = const { std::cell::Cell::new(|| ()) };
+}
+
 pub struct Compiler {
     vocabulary: Vocabulary,
     variants: Variants,
@@ -152,6 +157,8 @@ impl Compiler {
                     .collect(),
             };
             let found = report.diagnostics.split_off(front);
+            #[cfg(test)]
+            BEFORE_TWINS.with(|hook| hook.get()());
             match analyze::name_twins(&analysis, &placeholders, &found) {
                 Ok(kept) => report.diagnostics.extend(kept),
                 Err(internal) => {
