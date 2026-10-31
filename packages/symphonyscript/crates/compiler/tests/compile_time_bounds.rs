@@ -472,3 +472,113 @@ fn exhaustive_a_bound_beside_a_placeholder_base_draws_its_own_fault_and_the_base
     let failures = placeholder_base_rows(&symphonyscript_fixtures::Rows::Every);
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
+
+const UNREAD_FAULTS: [(&str, Code, bool); 2] = [
+    ("[1, 2][5]", Code::IndexOutOfRange, false),
+    ("2147483647 + 1", Code::DoesNotFit, true),
+];
+
+const SELECTING_READS: [&str; 6] = [
+    "{a}[{p}]",
+    "{a}[^{q}]",
+    "{a}[{a}.size - {q}]",
+    "{a}[i]",
+    "{a}[{p}..][0]",
+    "{a}[^{q}..][0]",
+];
+
+fn unread_element_rows(rows: &symphonyscript_fixtures::Rows) -> Vec<String> {
+    let compiler =
+        Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("the vocabulary compiles");
+    let mut failures = Vec::new();
+    for (fault, (element, code, at_read)) in UNREAD_FAULTS.iter().enumerate() {
+        for faulty_at in 0..2usize {
+            let literal = if faulty_at == 0 {
+                format!("[{element}, 3]")
+            } else {
+                format!("[3, {element}]")
+            };
+            for (named, base) in [&literal[..], "a"].into_iter().enumerate() {
+                if *at_read && named == 1 {
+                    continue;
+                }
+                for (form, shape) in SELECTING_READS.iter().enumerate() {
+                    for selected in 0..2usize {
+                        if !rows.take(&[fault, faulty_at, named, form, selected]) {
+                            continue;
+                        }
+                        let read = shape
+                            .replace("{a}", base)
+                            .replace("{p}", &selected.to_string())
+                            .replace("{q}", &(2 - selected).to_string());
+                        let mut items = vec![
+                            format!("let i = {selected}\n"),
+                            format!("Clip c:\n    Note/({read})\n"),
+                        ];
+                        if named == 1 {
+                            items.push(format!("let a = {literal}\n"));
+                        }
+                        let expected = if selected != faulty_at {
+                            Vec::new()
+                        } else if *at_read {
+                            vec![(*code, read.clone())]
+                        } else {
+                            vec![(*code, "5".to_string())]
+                        };
+                        for reversed in [false, true] {
+                            let mut ordered = items.clone();
+                            if reversed {
+                                ordered.reverse();
+                            }
+                            let text = ordered.concat();
+                            let found = support::error_texts(&compiler, &text);
+                            if found != expected {
+                                failures.push(format!(
+                                    "290: {text}\n  draws {found:?}\n  expected {expected:?}"
+                                ));
+                            }
+                        }
+                    }
+                }
+                let text = format!(
+                    "Clip c:\n    Note/({base}.size)\n{}",
+                    if named == 1 {
+                        format!("let a = {literal}\n")
+                    } else {
+                        String::new()
+                    }
+                );
+                let found = support::error_texts(&compiler, &text);
+                if !found.is_empty() {
+                    failures.push(format!("290: {text}\n  draws {found:?}"));
+                }
+            }
+        }
+    }
+    failures
+}
+
+#[test]
+fn every_compile_time_index_form_reads_only_the_element_it_selects() {
+    let failures = symphonyscript_fixtures::covered(unread_element_rows);
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_every_compile_time_index_form_reads_only_the_element_it_selects() {
+    let failures = unread_element_rows(&symphonyscript_fixtures::Rows::Every);
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+#[test]
+fn a_runtime_index_reads_every_element_and_draws_its_fault() {
+    let compiler =
+        Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("the vocabulary compiles");
+    let text = "state k(1)\nClip c:\n    Note/([[1, 2][5], 3][k])\n";
+    assert_eq!(
+        support::error_texts(&compiler, text),
+        vec![(Code::IndexOutOfRange, "5".to_string())],
+        "290: {text}"
+    );
+}

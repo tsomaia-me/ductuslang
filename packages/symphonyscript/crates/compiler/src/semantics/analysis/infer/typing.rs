@@ -25,6 +25,7 @@ pub(crate) struct Typing {
     pub natural: FastMap<BindingId, Option<Scalar>>,
     pub shapes: FastMap<(NodeId, Option<Scalar>), Option<Vec<u32>>>,
     pub detached_walks: FastSet<(ExprId, ScopeId)>,
+    pub measured_elements: Vec<NodeId>,
     pub open_reads: FastSet<NodeId>,
     pub deferred_layouts: FastSet<BindingId>,
     pub shape_faulted: FastSet<BindingId>,

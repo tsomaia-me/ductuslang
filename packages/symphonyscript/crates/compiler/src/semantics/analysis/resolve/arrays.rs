@@ -109,7 +109,9 @@ impl Engine<'_> {
                 for bare in self.bare_leaves(&array.elements)? {
                     self.unplaced_placeholder(bare)?;
                 }
-                self.memo.own_typed.extend(array.elements.iter().copied());
+                self.typing
+                    .measured_elements
+                    .extend(array.elements.iter().copied());
                 let length = array.shape.outer().unwrap_or(0);
                 return Ok(Some(self.scalar(
                     Op::Number(Number::Int(i128::from(length)), Suffix::None),
