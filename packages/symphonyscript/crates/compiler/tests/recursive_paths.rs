@@ -4877,3 +4877,158 @@ fn exhaustive_a_body_that_reads_its_own_recursive_result_through_a_path_at_any_a
     );
     assert_eq!(programs, 384);
 }
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum CycleChooser {
+    Index,
+    Choice,
+    Literal,
+    LocalMatch,
+}
+
+const CYCLE_CHOOSERS: [CycleChooser; 4] = [
+    CycleChooser::Index,
+    CycleChooser::Choice,
+    CycleChooser::Literal,
+    CycleChooser::LocalMatch,
+];
+
+const CYCLE_ATTRIBUTES: [(bool, &str); 5] = [
+    (false, "gain"),
+    (true, "gain"),
+    (true, "trio"),
+    (true, "sequence"),
+    (true, "rows"),
+];
+
+const CYCLE_READERS: [(Option<usize>, Option<usize>); 6] = [
+    (Some(0), Some(1)),
+    (Some(0), Some(0)),
+    (Some(1), Some(0)),
+    (Some(1), Some(1)),
+    (Some(0), None),
+    (None, Some(1)),
+];
+
+impl CycleChooser {
+    fn local(self) -> &'static str {
+        match self {
+            CycleChooser::LocalMatch => {
+                "    let e = match i:\n        0: c[0]\n        else: c[1]\n"
+            }
+            CycleChooser::Index | CycleChooser::Choice | CycleChooser::Literal => "",
+        }
+    }
+
+    fn read(self, attribute: &str) -> String {
+        match self {
+            CycleChooser::Index => format!("c[i].{attribute}"),
+            CycleChooser::Choice => format!("(if i > 0 then c[1] else c[0]).{attribute}"),
+            CycleChooser::Literal => format!("[c[0], c[1]][i].{attribute}"),
+            CycleChooser::LocalMatch => format!("e.{attribute}"),
+        }
+    }
+}
+
+fn chosen_cycle_program(
+    (chooser, (native, attribute)): (CycleChooser, (bool, &str)),
+    (literal, readers, reversed, recursive): (bool, (Option<usize>, Option<usize>), bool, bool),
+) -> String {
+    let array = if literal { "[r0, r1]" } else { "rs" };
+    let read = chooser.read(attribute);
+    let body = if recursive {
+        format!("    if n < 1 then {read} else g(c, i, n - 1)\n")
+    } else {
+        format!("    {read}\n")
+    };
+    let clause = |reader: Option<usize>| match reader {
+        Some(index) => format!(" | {attribute}=g({array}, {index}, 3)"),
+        None => String::new(),
+    };
+    let mut items = vec![
+        if native {
+            "Song main\n"
+        } else {
+            "Session main\n"
+        }
+        .to_string(),
+        format!("fn g(c, i, n):\n{}{body}", chooser.local()),
+        format!("Clip r0{}:\n    Note\n", clause(readers.0)),
+        format!("Clip r1{}:\n    Note\n", clause(readers.1)),
+    ];
+    if !literal {
+        items.push("let rs = [r0, r1]\n".to_string());
+    }
+    if reversed {
+        items.reverse();
+    }
+    items.concat()
+}
+
+fn chosen_cycle_rows(rows: &Rows) -> (Vec<String>, usize) {
+    let native = Compiler::new(&native_vocabulary()).expect("the native vocabulary compiles");
+    let mut failures = Vec::new();
+    let mut programs = 0;
+    for chooser in CYCLE_CHOOSERS {
+        for (position, attribute) in CYCLE_ATTRIBUTES.iter().enumerate() {
+            for literal in [false, true] {
+                for (reader, readers) in CYCLE_READERS.iter().enumerate() {
+                    for reversed in [false, true] {
+                        let tag = [
+                            chooser as usize,
+                            position,
+                            usize::from(literal),
+                            reader,
+                            usize::from(reversed),
+                        ];
+                        if !rows.take(&tag) {
+                            continue;
+                        }
+                        let program = |recursive| {
+                            chosen_cycle_program(
+                                (chooser, *attribute),
+                                (literal, *readers, reversed, recursive),
+                            )
+                        };
+                        let (text, twin) = (program(true), program(false));
+                        let found_in = |text: &str| {
+                            if attribute.0 {
+                                found_with(&native, text)
+                            } else {
+                                found(text)
+                            }
+                        };
+                        let drawn = found_in(&text);
+                        let expected = found_in(&twin);
+                        let cycles = |found: &Found| {
+                            found
+                                .keys()
+                                .any(|(code, _)| *code == Code::DeclarationCycle)
+                        };
+                        let depth = drawn.keys().any(|(code, _)| *code == Code::RecursionDepth);
+                        programs += 1;
+                        if drawn != expected || depth || !cycles(&expected) {
+                            failures.push(format!(
+                                "342 {chooser:?} {attribute:?} {literal} {readers:?} {reversed}\n{text}\n  found {drawn:?}\n  twin {expected:?}\n"
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+    }
+    (failures, programs)
+}
+
+#[test]
+fn a_cycle_through_a_chosen_candidate_draws_the_twins_declaration_cycle_whichever_call_site_typed_it_first_342()
+ {
+    assert_none_fail(covered(chosen_cycle_rows), 32);
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_a_cycle_through_a_chosen_candidate_draws_the_twins_declaration_cycle_whichever_call_site_typed_it_first_342()
+ {
+    assert_none_fail(chosen_cycle_rows(&Rows::Every), 480);
+}

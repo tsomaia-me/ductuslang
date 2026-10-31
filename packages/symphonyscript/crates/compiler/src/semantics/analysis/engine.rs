@@ -1361,6 +1361,9 @@ impl<'a> Engine<'a> {
                 locs.push(loc);
             }
         }
+        if names.is_empty() && self.evaluated_cycle(&path)? {
+            return Ok(());
+        }
         if names.is_empty() {
             let mut outer = None;
             while let Some(position) = current {
@@ -1509,6 +1512,45 @@ impl<'a> Engine<'a> {
             self.declaration_cycle(&queries, names, &locs)?;
         }
         Ok(true)
+    }
+
+    fn function_query(&self, scope: ScopeId) -> Result<Option<Query>, Internal> {
+        let Some(template) = self.template_of(scope)? else {
+            return Ok(None);
+        };
+        let ScopeKind::Locals(locals) = &self.scope_of(template)?.kind else {
+            return Ok(None);
+        };
+        let super::locals_owner::LocalsOwner::Fn(function) = locals.owner else {
+            return Ok(None);
+        };
+        Ok(Some(Query::Expr(
+            self.hir.fn_decl(function)?.value,
+            template,
+        )))
+    }
+
+    fn evaluated_cycle(&mut self, path: &[Query]) -> Result<bool, Internal> {
+        let mut read = None;
+        let mut steps = Vec::new();
+        for query in path {
+            let Query::Eval(node, _) = *query else {
+                continue;
+            };
+            if let Some(&(item, attr)) = self.memo.attr_reads.get(&node) {
+                if let Some(function) = self.function_query(self.node(node)?.scope)? {
+                    steps.push(function);
+                }
+                steps.push(Query::Attr(item, attr));
+                read.get_or_insert((item, attr));
+            } else if let Some(binding) = self.memo.value_bindings.get(&node) {
+                steps.push(*binding);
+            }
+        }
+        match read {
+            Some(read) => self.draw_evaluation_cycle(read, steps),
+            None => Ok(false),
+        }
     }
 
     fn cycle_evaluating(&self, path: &[Query]) -> Result<bool, Internal> {
