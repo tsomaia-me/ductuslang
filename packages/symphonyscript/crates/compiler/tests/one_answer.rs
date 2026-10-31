@@ -213,6 +213,14 @@ const DECIDING_NONE: &[(&str, &str)] = &[
         "the instances a path or a wire destination names, SPEC §5.6 and §8.2",
     ),
     (
+        "analyze/kept.rs kind",
+        "the expressions a twin program copies, ARCHITECTURE §7's placeholder rule",
+    ),
+    (
+        "analyze/twin_program.rs enter",
+        "the names an expression holding a placeholder demands, ARCHITECTURE §7's placeholder rule",
+    ),
+    (
         "ir/builder/expressions.rs negation",
         "the literal a minus sign forms with a number, SPEC §4.1",
     ),

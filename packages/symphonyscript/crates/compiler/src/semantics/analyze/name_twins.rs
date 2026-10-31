@@ -3,11 +3,12 @@ use std::collections::{BTreeMap, BTreeSet};
 use symphonyscript_core::{Limits, Vocabulary};
 
 use super::program::program;
+use super::twin_program::TwinProgram;
 use crate::diagnostics::{Code, Diagnostic};
 use crate::semantics::Internal;
 use crate::semantics::collection::Variants;
 use crate::semantics::counted_walk::CountedWalk;
-use crate::semantics::ir::{ExprId, ExprKind, Hir, Top, build_file};
+use crate::semantics::ir::{ExprId, ExprKind, Hir, LetId, Top, build_file};
 use crate::semantics::reporting::{Report, span};
 use crate::source::Source;
 use crate::syntax::parse;
@@ -20,6 +21,14 @@ pub(crate) struct Analysis<'a> {
     pub variants: &'a Variants,
     pub limits: Limits,
     pub texts: Vec<&'a str>,
+    pub computed_lets: Vec<LetId>,
+}
+
+struct Twins {
+    fresh: BTreeMap<String, String>,
+    originals: BTreeMap<String, String>,
+    held: BTreeSet<Key>,
+    path: String,
 }
 
 pub(crate) fn name_twins(
@@ -27,62 +36,179 @@ pub(crate) fn name_twins(
     placeholders: &[ExprId],
     diagnostics: &[Diagnostic],
 ) -> Result<Vec<Diagnostic>, Internal> {
-    let hir = analysis.hir;
-    let taken = marked_counters(&analysis.texts);
-    let mut originals: BTreeMap<String, String> = BTreeMap::new();
-    let mut fresh: BTreeMap<String, String> = BTreeMap::new();
-    let mut counter = 0;
-    let mut held: BTreeSet<Key> = BTreeSet::new();
-    for id in placeholders {
-        let expr = hir.expr(*id)?;
-        let ExprKind::Name(name) = &expr.kind else {
-            return Err(Internal::missed("name placeholder"));
+    let twins = Twins::of(analysis, placeholders)?;
+    let (declarations, referenced) = declarations(analysis.vocabulary, analysis.hir);
+    let Some(twin) = TwinProgram::of(
+        analysis.hir,
+        placeholders,
+        &referenced,
+        &analysis.computed_lets,
+    )?
+    else {
+        return whole_program(analysis, placeholders, diagnostics);
+    };
+    let mut report = Report::default();
+    program(
+        &twin.hir,
+        analysis.vocabulary,
+        analysis.variants,
+        analysis.limits,
+        &twin.demanded,
+        &mut report,
+        |_| (),
+    );
+    let null = report.finish(&twin.hir.files);
+    twins.kept(analysis, &twin, (diagnostics, &null), &declarations)
+}
+
+fn whole_program(
+    analysis: &Analysis<'_>,
+    placeholders: &[ExprId],
+    diagnostics: &[Diagnostic],
+) -> Result<Vec<Diagnostic>, Internal> {
+    let twins = Twins::of(analysis, placeholders)?;
+    let (declarations, _) = declarations(analysis.vocabulary, analysis.hir);
+    let whole = TwinProgram {
+        hir: analysis.hir.clone(),
+        placeholders: placeholders.to_vec(),
+        demanded: Vec::new(),
+    };
+    twins.kept(analysis, &whole, (diagnostics, diagnostics), &declarations)
+}
+
+impl Twins {
+    fn of(analysis: &Analysis<'_>, placeholders: &[ExprId]) -> Result<Twins, Internal> {
+        let hir = analysis.hir;
+        let taken = marked_counters(&analysis.texts);
+        let mut twins = Twins {
+            fresh: BTreeMap::new(),
+            originals: BTreeMap::new(),
+            held: BTreeSet::new(),
+            path: twin_path(hir),
         };
-        let at = span(hir, expr.loc);
-        held.insert((Code::UnknownName, at.file, at.range.start, at.range.end));
-        if !fresh.contains_key(name) {
-            let marked = unused_counter(&taken, &mut counter);
-            fresh.insert(name.clone(), format!("{MARK}{marked}{name}"));
-            originals.insert(marked, name.clone());
+        let mut counter = 0;
+        for id in placeholders {
+            let expr = hir.expr(*id)?;
+            let ExprKind::Name(name) = &expr.kind else {
+                return Err(Internal::missed("name placeholder"));
+            };
+            let at = span(hir, expr.loc);
+            twins
+                .held
+                .insert((Code::UnknownName, at.file, at.range.start, at.range.end));
+            if !twins.fresh.contains_key(name) {
+                let marked = unused_counter(&taken, &mut counter);
+                twins
+                    .fresh
+                    .insert(name.clone(), format!("{MARK}{marked}{name}"));
+                twins.originals.insert(marked, name.clone());
+            }
         }
+        Ok(twins)
     }
-    let path = twin_path(hir);
-    let mut runs = Vec::new();
-    for declaration in declarations(analysis.vocabulary, hir) {
-        let Some(found) = twin_run(analysis, placeholders, &fresh, &path, &declaration)? else {
+
+    fn kept(
+        &self,
+        analysis: &Analysis<'_>,
+        twin: &TwinProgram,
+        (diagnostics, null): (&[Diagnostic], &[Diagnostic]),
+        declarations: &[(&str, String)],
+    ) -> Result<Vec<Diagnostic>, Internal> {
+        let mut runs = Vec::new();
+        for declaration in declarations {
+            let Some(found) = self.twin_run(analysis, twin, declaration)? else {
+                return Ok(diagnostics.to_vec());
+            };
+            runs.push(found);
+        }
+        let Some((first, rest)) = runs.split_first() else {
             return Ok(diagnostics.to_vec());
         };
-        runs.push(found);
-    }
-    let Some((first, rest)) = runs.split_first() else {
-        return Ok(diagnostics.to_vec());
-    };
-    let mut common: BTreeSet<Key> = first.iter().map(key).collect();
-    for run in rest {
-        let keys: BTreeSet<Key> = run.iter().map(key).collect();
-        common.retain(|found| keys.contains(found));
-    }
-    let original: BTreeSet<Key> = diagnostics.iter().map(key).collect();
-    let mut kept: Vec<Diagnostic> = diagnostics
-        .iter()
-        .filter(|diagnostic| common.contains(&key(diagnostic)) || held.contains(&key(diagnostic)))
-        .cloned()
-        .collect();
-    kept.extend(
-        first
+        let mut common: BTreeSet<Key> = first.iter().map(key).collect();
+        for run in rest {
+            let keys: BTreeSet<Key> = run.iter().map(key).collect();
+            common.retain(|found| keys.contains(found));
+        }
+        let original: BTreeSet<Key> = diagnostics.iter().map(key).collect();
+        let outside: BTreeSet<Key> = null.iter().map(key).collect();
+        let mut kept: Vec<Diagnostic> = diagnostics
             .iter()
             .filter(|diagnostic| {
-                common.contains(&key(diagnostic)) && !original.contains(&key(diagnostic))
+                let found = key(diagnostic);
+                common.contains(&found) || self.held.contains(&found) || !outside.contains(&found)
             })
-            .map(|diagnostic| restored(diagnostic, &originals, &path)),
-    );
-    kept.extend(
-        runs.iter()
-            .flatten()
-            .filter(|diagnostic| diagnostic.code == Code::InternalError)
-            .map(|diagnostic| restored(diagnostic, &originals, &path)),
-    );
-    Ok(kept)
+            .cloned()
+            .collect();
+        kept.extend(
+            first
+                .iter()
+                .filter(|diagnostic| {
+                    let found = key(diagnostic);
+                    common.contains(&found)
+                        && !original.contains(&found)
+                        && !outside.contains(&found)
+                })
+                .map(|diagnostic| restored(diagnostic, &self.originals, &self.path)),
+        );
+        kept.extend(
+            runs.iter()
+                .flatten()
+                .filter(|diagnostic| diagnostic.code == Code::InternalError)
+                .map(|diagnostic| restored(diagnostic, &self.originals, &self.path)),
+        );
+        Ok(kept)
+    }
+
+    fn twin_run(
+        &self,
+        analysis: &Analysis<'_>,
+        program_to_twin: &TwinProgram,
+        (keyword, rest): &(&str, String),
+    ) -> Result<Option<Vec<Diagnostic>>, Internal> {
+        let mut twin = program_to_twin.hir.clone();
+        for id in &program_to_twin.placeholders {
+            let expr = twin
+                .exprs
+                .get_mut(id.index())
+                .ok_or(Internal::missed("name placeholder"))?;
+            let ExprKind::Name(name) = &expr.kind else {
+                return Err(Internal::missed("name placeholder"));
+            };
+            let twin_name = self.fresh.get(name).ok_or(Internal::missed("twin name"))?;
+            expr.kind = ExprKind::Name(twin_name.clone());
+        }
+        let text: String = self
+            .fresh
+            .values()
+            .map(|name| format!("{keyword} {name}{rest}\n"))
+            .collect();
+        let source = Source {
+            path: self.path.clone(),
+            text,
+        };
+        let parsed = parse(&source, analysis.vocabulary);
+        if !parsed.diagnostics.is_empty() {
+            return Ok(None);
+        }
+        build_file(&mut twin, &self.path, &parsed, analysis.vocabulary)?;
+        let mut report = Report::default();
+        program(
+            &twin,
+            analysis.vocabulary,
+            analysis.variants,
+            analysis.limits,
+            &program_to_twin.demanded,
+            &mut report,
+            |_| (),
+        );
+        Ok(Some(
+            report
+                .finish(&twin.files)
+                .into_iter()
+                .filter(|diagnostic| diagnostic.span.file != self.path)
+                .collect(),
+        ))
+    }
 }
 
 type Key = (Code, String, u32, u32);
@@ -96,57 +222,9 @@ fn key(diagnostic: &Diagnostic) -> Key {
     )
 }
 
-fn twin_run(
-    analysis: &Analysis<'_>,
-    placeholders: &[ExprId],
-    fresh: &BTreeMap<String, String>,
-    path: &str,
-    (keyword, rest): &(&str, String),
-) -> Result<Option<Vec<Diagnostic>>, Internal> {
-    let mut twin = analysis.hir.clone();
-    for id in placeholders {
-        let expr = twin
-            .exprs
-            .get_mut(id.index())
-            .ok_or(Internal::missed("name placeholder"))?;
-        let ExprKind::Name(name) = &expr.kind else {
-            return Err(Internal::missed("name placeholder"));
-        };
-        let twin_name = fresh.get(name).ok_or(Internal::missed("twin name"))?;
-        expr.kind = ExprKind::Name(twin_name.clone());
-    }
-    let text: String = fresh
-        .values()
-        .map(|name| format!("{keyword} {name}{rest}\n"))
-        .collect();
-    let source = Source {
-        path: path.to_string(),
-        text,
-    };
-    let parsed = parse(&source, analysis.vocabulary);
-    if !parsed.diagnostics.is_empty() {
-        return Ok(None);
-    }
-    build_file(&mut twin, path, &parsed, analysis.vocabulary)?;
-    let mut report = Report::default();
-    program(
-        &twin,
-        analysis.vocabulary,
-        analysis.variants,
-        analysis.limits,
-        &mut report,
-        |_| (),
-    );
-    Ok(Some(
-        report
-            .finish(&twin.files)
-            .into_iter()
-            .filter(|diagnostic| diagnostic.span.file != path)
-            .collect(),
-    ))
-}
+type Declarations = (Vec<(&'static str, String)>, Vec<String>);
 
-fn declarations(vocabulary: &Vocabulary, hir: &Hir) -> Vec<(&'static str, String)> {
+fn declarations(vocabulary: &Vocabulary, hir: &Hir) -> Declarations {
     let mut found = vec![
         ("state", "(0): i32".to_string()),
         ("let", " = 1".to_string()),
@@ -167,6 +245,7 @@ fn declarations(vocabulary: &Vocabulary, hir: &Hir) -> Vec<(&'static str, String
         found.push(("let", format!(" = {variant}")));
     }
     let mut kinds = BTreeSet::new();
+    let mut referenced = Vec::new();
     for (position, top) in hir.top.iter().enumerate() {
         let Top::Placement(id) = top else {
             continue;
@@ -181,9 +260,10 @@ fn declarations(vocabulary: &Vocabulary, hir: &Hir) -> Vec<(&'static str, String
             && kinds.insert(kind.text.clone())
         {
             found.push(("let", format!(" = {}", name.text)));
+            referenced.push(name.text.clone());
         }
     }
-    found
+    (found, referenced)
 }
 
 fn marked_counters(texts: &[&str]) -> BTreeSet<String> {

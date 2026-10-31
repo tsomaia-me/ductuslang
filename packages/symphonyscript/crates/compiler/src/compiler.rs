@@ -126,15 +126,16 @@ impl Compiler {
             }
         }
         let front = report.diagnostics.len();
-        let (inspected, placeholders) = analyze::program(
+        let (inspected, unresolved) = analyze::program(
             &hir,
             &self.vocabulary,
             &self.variants,
             self.limits,
+            &[],
             &mut report,
             inspect,
         );
-        if !placeholders.is_empty() {
+        if !unresolved.names.is_empty() {
             let analysis = analyze::Analysis {
                 hir: &hir,
                 vocabulary: &self.vocabulary,
@@ -150,9 +151,10 @@ impl Compiler {
                             .map(|file| file.text.as_str()),
                     )
                     .collect(),
+                computed_lets: unresolved.computed_lets,
             };
             let found = report.diagnostics.split_off(front);
-            match analyze::name_twins(&analysis, &placeholders, &found) {
+            match analyze::name_twins(&analysis, &unresolved.names, &found) {
                 Ok(kept) => report.diagnostics.extend(kept),
                 Err(internal) => {
                     report.diagnostics.extend(found);
