@@ -10,6 +10,7 @@ use crate::semantics::analysis::family_arg::FamilyArg;
 use crate::semantics::analysis::family_key::FamilyKey;
 use crate::semantics::analysis::ids::{NodeId, ScopeId};
 use crate::semantics::analysis::kind::Kind;
+use crate::semantics::analysis::op::Op;
 use crate::semantics::analysis::query::Query;
 use crate::semantics::analysis::rec_family::RecFamily;
 use crate::semantics::analysis::sig::Sig;
@@ -269,6 +270,29 @@ impl Engine<'_> {
         let Some(arg) = arg else {
             return Ok(Some(ArgShape::Default));
         };
+        if let Val::Scalar(node) = arg
+            && self.arrays.contains(node)
+            && matches!(self.node(*node)?.op, Op::Slice { .. })
+        {
+            let sig = self.known_sig(*node)?;
+            if sig.kind == Kind::Node && !sig.reactive {
+                let instances = some!(self.reference_instances(*node, need)?);
+                if let Ok(length) = u32::try_from(instances.len())
+                    && length > 0
+                {
+                    let sigs = instances
+                        .into_iter()
+                        .map(|item| ArgSig {
+                            kind: Kind::Node,
+                            width: Width::Flexible,
+                            family: sig.family,
+                            node: ArgReference::Instance(item),
+                        })
+                        .collect();
+                    return Ok(Some(ArgShape::Array(vec![length], sigs)));
+                }
+            }
+        }
         let mut sigs = Vec::new();
         let mut missing = false;
         for node in arg.nodes() {

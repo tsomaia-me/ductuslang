@@ -4544,3 +4544,86 @@ fn exhaustive_every_outermost_call_whose_evaluation_reaches_a_chosen_cell_draws_
     );
     assert_eq!(programs, 48);
 }
+
+fn sliced_argument_program(
+    slice: &str,
+    i: u32,
+    value: u32,
+    recursive: bool,
+    reversed: bool,
+) -> String {
+    let function = if recursive {
+        format!("fn h(xs, i, n): if n < 1 then i32(pk({slice}, 0, 1).gain) else h(xs, i, n - 1)\n")
+    } else {
+        format!("fn h(xs, i, n): i32(pk({slice}, 0, 1).gain)\n")
+    };
+    let mut items = [
+        "Session main\n".to_string(),
+        "Clip verse | gain=2:\n    Note\n".to_string(),
+        "Clip other | gain=3:\n    Note\n".to_string(),
+        "fn pk(xs, i, m): if m < 1 then xs[i] else pk(xs, i, m - 1)\n".to_string(),
+        function,
+        format!("Clip k:\n    Note/([60][h([verse, other], {i}, 1) - {value}])\n"),
+    ];
+    if reversed {
+        items[1..].reverse();
+    }
+    items.concat()
+}
+
+fn sliced_argument_rows(rows: &Rows) -> (Vec<String>, usize) {
+    let compiler =
+        Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("the vocabulary compiles");
+    let mut failures = Vec::new();
+    let mut programs = 0;
+    let forms: [(&str, [(u32, u32); 2]); 3] = [
+        ("xs[i..]", [(0, 2), (1, 3)]),
+        ("xs[^i..]", [(1, 3), (2, 2)]),
+        ("xs[..i + 1]", [(0, 2), (1, 2)]),
+    ];
+    for (f, (slice, cases)) in forms.iter().enumerate() {
+        for (c, (i, value)) in cases.iter().enumerate() {
+            for (r, recursive) in [true, false].into_iter().enumerate() {
+                for (o, reversed) in [false, true].into_iter().enumerate() {
+                    if !rows.take(&[f, c, r, o]) {
+                        continue;
+                    }
+                    programs += 1;
+                    let text = sliced_argument_program(slice, *i, *value, recursive, reversed);
+                    let found = support::error_texts(&compiler, &text);
+                    if !found.is_empty() {
+                        failures.push(format!("355: {text}\n  draws {found:?}\n"));
+                    }
+                }
+            }
+        }
+    }
+    (failures, programs)
+}
+
+#[test]
+fn a_frame_bounded_slice_of_references_passed_to_a_recursive_call_keys_its_family_as_its_elements_do()
+ {
+    let (failures, programs) = covered(sliced_argument_rows);
+    assert!(
+        failures.is_empty(),
+        "{} of {programs} fail:\n{}",
+        failures.len(),
+        failures.concat()
+    );
+    assert_eq!(programs, 7);
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_a_frame_bounded_slice_of_references_passed_to_a_recursive_call_keys_its_family_as_its_elements_do()
+ {
+    let (failures, programs) = sliced_argument_rows(&Rows::Every);
+    assert!(
+        failures.is_empty(),
+        "{} of {programs} fail:\n{}",
+        failures.len(),
+        failures.concat()
+    );
+    assert_eq!(programs, 24);
+}
