@@ -8,7 +8,7 @@ use crate::diagnostics::{Code, Diagnostic};
 use crate::semantics::Internal;
 use crate::semantics::collection::Variants;
 use crate::semantics::counted_walk::CountedWalk;
-use crate::semantics::ir::{ExprId, ExprKind, Hir, LetId, Top, build_file};
+use crate::semantics::ir::{ExprId, ExprKind, Hir, Top, build_file};
 use crate::semantics::reporting::{Report, span};
 use crate::source::Source;
 use crate::syntax::parse;
@@ -21,7 +21,6 @@ pub(crate) struct Analysis<'a> {
     pub variants: &'a Variants,
     pub limits: Limits,
     pub texts: Vec<&'a str>,
-    pub computed_lets: Vec<LetId>,
 }
 
 struct Twins {
@@ -38,13 +37,7 @@ pub(crate) fn name_twins(
 ) -> Result<Vec<Diagnostic>, Internal> {
     let twins = Twins::of(analysis, placeholders)?;
     let (declarations, referenced) = declarations(analysis.vocabulary, analysis.hir);
-    let Some(twin) = TwinProgram::of(
-        analysis.hir,
-        placeholders,
-        &referenced,
-        &analysis.computed_lets,
-    )?
-    else {
+    let Some(twin) = TwinProgram::of(analysis.hir, placeholders, &referenced)? else {
         return whole_program(analysis, placeholders, diagnostics);
     };
     let mut report = Report::default();
@@ -53,7 +46,6 @@ pub(crate) fn name_twins(
         analysis.vocabulary,
         analysis.variants,
         analysis.limits,
-        &twin.demanded,
         &mut report,
         |_| (),
     );
@@ -71,7 +63,6 @@ fn whole_program(
     let whole = TwinProgram {
         hir: analysis.hir.clone(),
         placeholders: placeholders.to_vec(),
-        demanded: Vec::new(),
     };
     twins.kept(analysis, &whole, (diagnostics, diagnostics), &declarations)
 }
@@ -114,12 +105,27 @@ impl Twins {
         (diagnostics, null): (&[Diagnostic], &[Diagnostic]),
         declarations: &[(&str, String)],
     ) -> Result<Vec<Diagnostic>, Internal> {
-        let mut runs = Vec::new();
-        for declaration in declarations {
-            let Some(found) = self.twin_run(analysis, twin, declaration)? else {
-                return Ok(diagnostics.to_vec());
+        let mut sources = Vec::new();
+        for (keyword, rest) in declarations {
+            let source = Source {
+                path: self.path.clone(),
+                text: self
+                    .fresh
+                    .values()
+                    .map(|name| format!("{keyword} {name}{rest}\n"))
+                    .collect(),
             };
-            runs.push(found);
+            let parsed = parse(&source, analysis.vocabulary);
+            if !parsed.diagnostics.is_empty() {
+                return Ok(diagnostics.to_vec());
+            }
+            sources.push(parsed);
+        }
+        let original: BTreeSet<Key> = diagnostics.iter().map(key).collect();
+        let outside: BTreeSet<Key> = null.iter().map(key).collect();
+        let mut runs = Vec::new();
+        for parsed in &sources {
+            runs.push(self.twin_run(analysis, twin, parsed)?);
         }
         let Some((first, rest)) = runs.split_first() else {
             return Ok(diagnostics.to_vec());
@@ -129,8 +135,6 @@ impl Twins {
             let keys: BTreeSet<Key> = run.iter().map(key).collect();
             common.retain(|found| keys.contains(found));
         }
-        let original: BTreeSet<Key> = diagnostics.iter().map(key).collect();
-        let outside: BTreeSet<Key> = null.iter().map(key).collect();
         let mut kept: Vec<Diagnostic> = diagnostics
             .iter()
             .filter(|diagnostic| {
@@ -163,8 +167,8 @@ impl Twins {
         &self,
         analysis: &Analysis<'_>,
         program_to_twin: &TwinProgram,
-        (keyword, rest): &(&str, String),
-    ) -> Result<Option<Vec<Diagnostic>>, Internal> {
+        parsed: &crate::syntax::Parsed,
+    ) -> Result<Vec<Diagnostic>, Internal> {
         let mut twin = program_to_twin.hir.clone();
         for id in &program_to_twin.placeholders {
             let expr = twin
@@ -177,37 +181,21 @@ impl Twins {
             let twin_name = self.fresh.get(name).ok_or(Internal::missed("twin name"))?;
             expr.kind = ExprKind::Name(twin_name.clone());
         }
-        let text: String = self
-            .fresh
-            .values()
-            .map(|name| format!("{keyword} {name}{rest}\n"))
-            .collect();
-        let source = Source {
-            path: self.path.clone(),
-            text,
-        };
-        let parsed = parse(&source, analysis.vocabulary);
-        if !parsed.diagnostics.is_empty() {
-            return Ok(None);
-        }
-        build_file(&mut twin, &self.path, &parsed, analysis.vocabulary)?;
+        build_file(&mut twin, &self.path, parsed, analysis.vocabulary)?;
         let mut report = Report::default();
         program(
             &twin,
             analysis.vocabulary,
             analysis.variants,
             analysis.limits,
-            &program_to_twin.demanded,
             &mut report,
             |_| (),
         );
-        Ok(Some(
-            report
-                .finish(&twin.files)
-                .into_iter()
-                .filter(|diagnostic| diagnostic.span.file != self.path)
-                .collect(),
-        ))
+        Ok(report
+            .finish(&twin.files)
+            .into_iter()
+            .filter(|diagnostic| diagnostic.span.file != self.path)
+            .collect())
     }
 }
 

@@ -4,7 +4,6 @@ mod name_twins;
 mod prelude;
 mod program;
 mod twin_program;
-mod unresolved;
 
 pub(crate) use internal_error::internal_error;
 pub(crate) use name_twins::{Analysis, name_twins};

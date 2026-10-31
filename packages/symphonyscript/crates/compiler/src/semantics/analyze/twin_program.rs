@@ -4,13 +4,12 @@ use super::kept::Kept;
 use crate::semantics::Internal;
 use crate::semantics::counted_walk::CountedWalk;
 use crate::semantics::ir::{
-    AttrValue, BlockId, BodyItem, ExprId, ExprKind, Hir, Iterable, LetId, Placement, Top,
+    AttrValue, BlockId, BodyItem, ExprId, ExprKind, Hir, Iterable, Placement, Top,
 };
 
 pub(super) struct TwinProgram {
     pub hir: Hir,
     pub placeholders: Vec<ExprId>,
-    pub demanded: Vec<LetId>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
@@ -23,12 +22,10 @@ enum Item {
 enum Shape {
     Container,
     Whole,
-    Callable,
 }
 
 struct Entry {
     parent: Option<Item>,
-    top: usize,
     shape: Shape,
     declared: Vec<String>,
     nested: Vec<BlockId>,
@@ -50,7 +47,6 @@ impl TwinProgram {
         hir: &Hir,
         placeholders: &[ExprId],
         referenced: &[String],
-        computed: &[LetId],
     ) -> Result<Option<TwinProgram>, Internal> {
         let wanted: BTreeSet<ExprId> = placeholders.iter().copied().collect();
         let mut index = Index::default();
@@ -63,27 +59,7 @@ impl TwinProgram {
             return Ok(None);
         }
         let kept = index.closure(hir, referenced)?;
-        let demanded: Vec<LetId> = index
-            .holding
-            .iter()
-            .filter_map(|item| match item {
-                Item::Top(position) => match hir.top.get(*position) {
-                    Some(Top::Let(id)) if computed.binary_search(id).is_ok() => Some(*id),
-                    Some(
-                        Top::Let(_)
-                        | Top::Input(_)
-                        | Top::State(_)
-                        | Top::Fn(_)
-                        | Top::Pattern(_)
-                        | Top::Placement(_)
-                        | Top::Placeholder(_),
-                    )
-                    | None => None,
-                },
-                Item::Body(..) => None,
-            })
-            .collect();
-        kept.compacted(hir, placeholders, &demanded).map(Some)
+        kept.compacted(hir, placeholders).map(Some)
     }
 }
 
@@ -133,7 +109,7 @@ impl Index {
                     .collect();
                 exprs.extend(decl.lets.iter().map(|local| local.value));
                 exprs.push(decl.value);
-                (decl.name.clone(), Shape::Callable, exprs, Vec::new(), None)
+                (decl.name.clone(), Shape::Whole, exprs, Vec::new(), None)
             }
             Top::Pattern(id) => {
                 let decl = hir.pattern(id)?;
@@ -145,7 +121,7 @@ impl Index {
                 exprs.extend(decl.lets.iter().map(|local| local.value));
                 (
                     decl.name.clone(),
-                    Shape::Callable,
+                    Shape::Whole,
                     exprs,
                     vec![decl.body],
                     None,
@@ -189,7 +165,7 @@ impl Index {
         let mut refs: BTreeSet<String> = kinds.into_iter().collect();
         let mut stack = exprs;
         while let Some(id) = stack.pop() {
-            CountedWalk::NameTwinsRegion.step();
+            CountedWalk::NameTwinsScan.step();
             if wanted.contains(&id) && self.owned.insert(id) {
                 self.holding.insert(item);
             }
@@ -235,7 +211,6 @@ impl Index {
             item,
             Entry {
                 parent,
-                top,
                 shape,
                 declared,
                 nested: nested.clone(),
@@ -366,7 +341,7 @@ impl Index {
             }
         }
         let mut region: BTreeSet<Item> = BTreeSet::new();
-        let mut called: BTreeSet<usize> = BTreeSet::new();
+        let mut read: BTreeSet<String> = BTreeSet::new();
         while let Some((item, whole, held)) = work.pop() {
             CountedWalk::NameTwinsRegion.step();
             let entry = self
@@ -394,20 +369,21 @@ impl Index {
                     }
                 }
             }
-            if !entered || !called.insert(entry.top) {
+            if !entered {
                 continue;
             }
-            let owner = self
-                .entries
-                .get(&Item::Top(entry.top))
-                .ok_or(Internal::missed("twin item"))?;
-            if owner.shape != Shape::Callable {
-                continue;
-            }
-            for name in &owner.declared {
-                for caller in self.referrers.get(name).into_iter().flatten() {
-                    work.push((*caller, false, true));
+            let mut holder = Some(item);
+            while let Some(at) = holder {
+                let record = self.entries.get(&at).ok_or(Internal::missed("twin item"))?;
+                for name in &record.declared {
+                    if !read.insert(name.clone()) {
+                        continue;
+                    }
+                    for reader in self.referrers.get(name).into_iter().flatten() {
+                        work.push((*reader, false, true));
+                    }
                 }
+                holder = record.parent;
             }
         }
         Ok(kept)

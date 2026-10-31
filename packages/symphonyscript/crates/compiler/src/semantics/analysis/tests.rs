@@ -2216,7 +2216,6 @@ fn a_lookup_that_misses_is_an_internal_error() {
         &vocabulary,
         &variants,
         Limits::default(),
-        &[],
         &mut report,
         |_| (),
     );
@@ -3801,7 +3800,6 @@ fn the_name_twins_draw_an_internal_error_for_a_placeholder_that_is_no_name_304()
         variants: &variants,
         limits: Limits::default(),
         texts: vec![source.text.as_str()],
-        computed_lets: Vec::new(),
     };
     let mut names = Vec::new();
     let mut others = Vec::new();

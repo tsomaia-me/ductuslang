@@ -122,7 +122,6 @@ pub(crate) struct Engine<'a> {
     pub call_warning_reported: bool,
     pub typing: super::infer::Typing,
     pub deferred: Vec<super::deferred::Deferred>,
-    pub demanded_lets: FastSet<crate::semantics::ir::LetId>,
     #[cfg(test)]
     pub run_query: fn(&mut Engine<'a>, Query, &mut Vec<Query>) -> Result<bool, Internal>,
     waiting: FastSet<Query>,
@@ -205,7 +204,6 @@ impl<'a> Engine<'a> {
             call_warning_reported: false,
             typing: super::infer::Typing::default(),
             deferred: Vec::new(),
-            demanded_lets: FastSet::default(),
             #[cfg(test)]
             run_query: Engine::run,
             waiting: FastSet::default(),

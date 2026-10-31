@@ -45,7 +45,6 @@ impl Kept {
         &self,
         hir: &Hir,
         placeholders: &[ExprId],
-        demanded: &[LetId],
     ) -> Result<TwinProgram, Internal> {
         let mut marks = Marks {
             exprs: vec![false; hir.exprs.len()],
@@ -85,6 +84,7 @@ impl Kept {
             ..Hir::default()
         };
         for (index, expr) in hir.exprs.iter().enumerate() {
+            CountedWalk::NameTwinsScan.step();
             if marks.exprs.get(index).copied().unwrap_or(false) {
                 CountedWalk::NameTwinsCompacted.step();
                 twin.exprs.push(Expr {
@@ -109,16 +109,19 @@ impl Kept {
             });
         }
         for (index, placement) in hir.placements.iter().enumerate() {
+            CountedWalk::NameTwinsScan.step();
             if marks.placements.get(index).copied().unwrap_or(false) {
                 twin.placements.push(remap.placement(placement)?);
             }
         }
         for (index, wire) in hir.wires.iter().enumerate() {
+            CountedWalk::NameTwinsScan.step();
             if marks.wires.get(index).copied().unwrap_or(false) {
                 twin.wires.push(remap.wire(wire)?);
             }
         }
         for (index, input) in hir.inputs.iter().enumerate() {
+            CountedWalk::NameTwinsScan.step();
             if marks.inputs.get(index).copied().unwrap_or(false) {
                 twin.inputs.push(Input {
                     value: remap.expr(input.value)?,
@@ -127,21 +130,25 @@ impl Kept {
             }
         }
         for (index, decl) in hir.lets.iter().enumerate() {
+            CountedWalk::NameTwinsScan.step();
             if marks.lets.get(index).copied().unwrap_or(false) {
                 twin.lets.push(remap.let_decl(decl)?);
             }
         }
         for (index, state) in hir.states.iter().enumerate() {
+            CountedWalk::NameTwinsScan.step();
             if marks.states.get(index).copied().unwrap_or(false) {
                 twin.states.push(remap.state(state)?);
             }
         }
         for (index, decl) in hir.fns.iter().enumerate() {
+            CountedWalk::NameTwinsScan.step();
             if marks.fns.get(index).copied().unwrap_or(false) {
                 twin.fns.push(remap.fn_decl(decl)?);
             }
         }
         for (index, decl) in hir.patterns.iter().enumerate() {
+            CountedWalk::NameTwinsScan.step();
             if marks.patterns.get(index).copied().unwrap_or(false) {
                 twin.patterns.push(remap.pattern(decl)?);
             }
@@ -156,10 +163,6 @@ impl Kept {
             placeholders: placeholders
                 .iter()
                 .map(|id| remap.expr(*id))
-                .collect::<Result<_, _>>()?,
-            demanded: demanded
-                .iter()
-                .map(|id| look(&remap.lets, id.index()).map(LetId))
                 .collect::<Result<_, _>>()?,
         })
     }

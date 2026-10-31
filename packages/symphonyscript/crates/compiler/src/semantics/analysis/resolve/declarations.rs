@@ -52,27 +52,12 @@ impl Engine<'_> {
             let id = LetId(u32::try_from(position).map_err(|_| Internal::missed("let"))?);
             if !self.hir.is_prelude_let(id)
                 && !self.memo.lets.contains_key(&(global, LetRef::Top(id)))
-                && (self.demanded_lets.contains(&id) || !self.let_reads_cell(id)?.is_value())
+                && !self.let_reads_cell(id)?.is_value()
             {
                 self.demand(Query::Let(global, LetRef::Top(id)))?;
             }
         }
         Ok(())
-    }
-
-    pub(crate) fn computed_lets(&self) -> Vec<LetId> {
-        let global = self.source_global;
-        let mut computed: Vec<LetId> = self
-            .memo
-            .lets
-            .keys()
-            .filter_map(|(scope, local)| match local {
-                LetRef::Top(id) if *scope == global => Some(*id),
-                LetRef::Top(_) | LetRef::Local(_) => None,
-            })
-            .collect();
-        computed.sort_unstable();
-        computed
     }
 
     pub(in crate::semantics::analysis) fn unexpanded_names(
