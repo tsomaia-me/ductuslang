@@ -841,3 +841,124 @@ fn exhaustive_a_recursive_call_in_an_untaken_arm_at_top_level_is_checked_against
  {
     assert_none_fail(top_call_rows(&Rows::Every), 20);
 }
+
+const ARM_POSITIONS: [(&str, &str, &str, Code); 8] = [
+    ("direct", "", "[1, 2][i]", Code::IndexOutOfRange),
+    ("path", "", "i32(xs[i].gain)", Code::IndexOutOfRange),
+    (
+        "recursive argument",
+        "",
+        "i32(gs(xs[i], 2))",
+        Code::IndexOutOfRange,
+    ),
+    (
+        "inlined argument",
+        "",
+        "i32(nr(xs[i]))",
+        Code::IndexOutOfRange,
+    ),
+    (
+        "local let path",
+        "    let e = (xs[i]).gain\n",
+        "i32(e)",
+        Code::IndexOutOfRange,
+    ),
+    (
+        "local let index",
+        "    let e = [1, 2][i]\n",
+        "e",
+        Code::IndexOutOfRange,
+    ),
+    ("fit", "", "[1, 2][u8(i + 300) - 300]", Code::DoesNotFit),
+    (
+        "local let fit",
+        "    let e = [1, 2][u8(i + 300) - 300]\n",
+        "e",
+        Code::DoesNotFit,
+    ),
+];
+
+fn arm_program(recursive: bool, (lets, arm): (&str, &str), guard: &str, reversed: bool) -> String {
+    let (function, reader) = if recursive {
+        (
+            format!(
+                "fn h(xs, i, n):\n{lets}    if n < 1 then (if {guard} then {arm} else 0) else h(xs, i, n - 1)\n"
+            ),
+            "Clip k:\n    Note/([60][h([verse, other], 5, 2)])\n",
+        )
+    } else {
+        (
+            format!("fn h(xs, i):\n{lets}    if {guard} then {arm} else 0\n"),
+            "Clip k:\n    Note/([60][h([verse, other], 5)])\n",
+        )
+    };
+    ordered(
+        vec![
+            INSTANCES.to_string(),
+            "fn gs(c, n): if n < 1 then c.gain else gs(c, n - 1)\nfn nr(c): c.gain\n".to_string(),
+            function,
+            reader.to_string(),
+        ],
+        reversed,
+    )
+}
+
+fn arm_position_rows(rows: &Rows) -> (Vec<String>, usize) {
+    let compiler = Compiler::new(&vocabulary()).expect("the vocabulary compiles");
+    let mut failures = Vec::new();
+    let mut programs = 0;
+    for (p, (name, lets, arm, code)) in ARM_POSITIONS.iter().enumerate() {
+        for (r, recursive) in [true, false].into_iter().enumerate() {
+            for (o, reversed) in [false, true].into_iter().enumerate() {
+                if !rows.take(&[p, r, o]) {
+                    continue;
+                }
+                programs += 1;
+                let text = arm_program(recursive, (lets, arm), "false", reversed);
+                let twin = arm_program(recursive, (lets, arm), "true", reversed);
+                let found = codes(&compiler, &text);
+                let twin_found = codes(&compiler, &twin);
+                if !found.is_empty() || twin_found != BTreeSet::from([*code]) {
+                    failures.push(format!(
+                        "346 {name}: {text}\n  draws {found:?}, its taken twin {twin_found:?}\n"
+                    ));
+                }
+            }
+        }
+    }
+    (failures, programs)
+}
+
+#[test]
+fn an_untaken_arm_of_a_compile_time_choice_draws_no_index_range_or_fit_fault_at_any_position_in_a_body_or_its_twin()
+ {
+    assert_none_fail(covered(arm_position_rows), 16);
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_an_untaken_arm_of_a_compile_time_choice_draws_no_index_range_or_fit_fault_at_any_position_in_a_body_or_its_twin()
+ {
+    assert_none_fail(arm_position_rows(&Rows::Every), 32);
+}
+
+#[test]
+fn a_local_let_read_in_a_taken_arm_and_an_untaken_one_draws_its_fault_once_in_either_order() {
+    let compiler = Compiler::new(&vocabulary()).expect("the vocabulary compiles");
+    for recursive in [true, false] {
+        for reversed in [false, true] {
+            let text = arm_program(
+                recursive,
+                ("    let e = (xs[i]).gain\n", "i32(e) + i32(e)"),
+                "false",
+                reversed,
+            )
+            .replace("else 0", "else i32(e)");
+            let found: Vec<Code> = error_texts(&compiler, &text)
+                .into_iter()
+                .map(|(code, _)| code)
+                .collect();
+            assert_eq!(found, vec![Code::IndexOutOfRange], "346: {text}");
+        }
+    }
+}

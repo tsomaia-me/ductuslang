@@ -1189,13 +1189,8 @@ impl Engine<'_> {
         let deferred = recursive_body && self.reaches_recursion(index_node)?;
         if evaluated && typed_index && !deferred {
             let query = Query::Eval(index_node, EvalTy::Exact);
-            let value = if recursive_body {
-                some!(self.untaken_cval(query, need))
-            } else {
-                some!(self.cval(query, need))
-            };
-            let faulty =
-                recursive_body && self.holds_faults(&Reachable::Eval(index_node, EvalTy::Exact));
+            let value = some!(self.untaken_cval(query, need));
+            let faulty = self.holds_faults(&Reachable::Eval(index_node, EvalTy::Exact));
             let position = match value {
                 _ if faulty => None,
                 CVal::Int(position) => Some(position),

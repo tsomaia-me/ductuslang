@@ -19,6 +19,7 @@ use crate::semantics::analysis::let_ref::LetRef;
 use crate::semantics::analysis::locals_owner::LocalsOwner;
 use crate::semantics::analysis::query::Query;
 use crate::semantics::analysis::reachable::Reachable;
+use crate::semantics::analysis::resolve::Found;
 use crate::semantics::analysis::scope_kind::ScopeKind;
 use crate::semantics::analysis::some::some;
 use crate::semantics::analysis::val::Val;
@@ -306,6 +307,26 @@ impl Engine<'_> {
                         origin.clone(),
                         (group, rank.or(Some(loc)), landing),
                         picked,
+                        quiet,
+                    ));
+                }
+            }
+            if let ExprKind::Name(name) = &kind
+                && let Found::Query(Query::Let(owner, local @ LetRef::Local(_))) =
+                    self.find(name, scope)?
+                && let Some(decl) = self.let_decl(owner, local)?
+            {
+                let within = self.let_scope(owner, local);
+                let value = decl.value;
+                if matches!(self.memo.exprs.get(&(value, within)), Some(Val::Error)) {
+                    stack.push((
+                        value,
+                        within,
+                        (None, false),
+                        passed_over,
+                        None,
+                        ((value, within), None, None),
+                        None,
                         quiet,
                     ));
                 }
