@@ -70,6 +70,13 @@ fn unclosed_brackets(root: &NodeView<'_>) -> Vec<Range<u32>> {
 }
 
 fn unclosed(node: &NodeView<'_>) -> Option<Range<u32>> {
+    if node.kind() == SyntaxKind::Lambda
+        && !node
+            .children_with_tokens()
+            .any(|element| element.kind() == SyntaxKind::Colon)
+    {
+        return Some(node.range());
+    }
     if node.kind() == SyntaxKind::MapType {
         let closed = node
             .children_with_tokens()
@@ -82,7 +89,8 @@ fn unclosed(node: &NodeView<'_>) -> Option<Range<u32>> {
         | SyntaxKind::Conversion
         | SyntaxKind::DefaultArg
         | SyntaxKind::ParenType
-        | SyntaxKind::FnType => SyntaxKind::RParen,
+        | SyntaxKind::FnType
+        | SyntaxKind::Lambda => SyntaxKind::RParen,
         SyntaxKind::ArrayLit
         | SyntaxKind::IndexExpr
         | SyntaxKind::JsonArray
@@ -90,7 +98,9 @@ fn unclosed(node: &NodeView<'_>) -> Option<Range<u32>> {
         | SyntaxKind::StrType
         | SyntaxKind::JsonType
         | SyntaxKind::GenericParams => SyntaxKind::RBracket,
-        SyntaxKind::JsonObject | SyntaxKind::RecordLit | SyntaxKind::Count => SyntaxKind::RBrace,
+        SyntaxKind::JsonObject | SyntaxKind::RecordLit | SyntaxKind::MapLit | SyntaxKind::Count => {
+            SyntaxKind::RBrace
+        }
         _ => return None,
     };
     let opener = match closer {

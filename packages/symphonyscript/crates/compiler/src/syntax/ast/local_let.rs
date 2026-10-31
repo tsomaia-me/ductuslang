@@ -1,5 +1,6 @@
 use super::ast_node::AstNode;
 use super::expr::Expr;
+use super::lambda::Lambda;
 use super::match_block::MatchBlock;
 use super::name::Name;
 use super::support::{child, name_at};
@@ -29,6 +30,10 @@ impl<'p> LocalLet<'p> {
     }
 
     pub fn value(&self) -> Option<Expr<'p>> {
+        child(&self.0)
+    }
+
+    pub fn lambda(&self) -> Option<Lambda<'p>> {
         child(&self.0)
     }
 

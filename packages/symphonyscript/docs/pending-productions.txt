@@ -1,8 +1,0 @@
-MapLit
-Entry
-AltType
-Fallback
-Arg
-Lambda
-LambdaParams
-LambdaParam

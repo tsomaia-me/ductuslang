@@ -274,15 +274,23 @@ impl Parser<'_> {
         if after_else {
             self.error(Code::MatchSyntax, "`else:` is the last arm of a match");
         }
-        let (arms, after_else) = if self.at(SyntaxKind::ElseKw) {
+        if self.at(SyntaxKind::ElseKw) {
             self.start(SyntaxKind::ElseArm);
             self.bump();
-            (arms, true)
+            self.match_arm_colon(arms, true);
         } else {
             self.start(SyntaxKind::MatchArm);
-            self.match_label();
-            (arms + 1, after_else)
-        };
+            self.then([
+                Task::MatchLabel,
+                Task::MatchArmColon {
+                    arms: arms + 1,
+                    after_else,
+                },
+            ]);
+        }
+    }
+
+    pub(super) fn match_arm_colon(&mut self, arms: usize, after_else: bool) {
         self.expect(
             SyntaxKind::Colon,
             Code::MatchSyntax,
@@ -297,8 +305,23 @@ impl Parser<'_> {
         self.then([Task::MatchArms { arms, after_else }]);
     }
 
-    fn match_label(&mut self) {
+    pub(super) fn match_label(&mut self) {
         match self.peek() {
+            Some(SyntaxKind::StringStart) => self.then([Task::StringLit]),
+            Some(SyntaxKind::Ident)
+                if matches!(self.nth(1), Some(SyntaxKind::Colon2 | SyntaxKind::LBracket)) =>
+            {
+                self.start(SyntaxKind::AltType);
+                self.then([Task::Base, Task::Finish]);
+            }
+            Some(SyntaxKind::NoneKw) => {
+                self.start(SyntaxKind::AltType);
+                self.then([Task::Base, Task::Finish]);
+            }
+            Some(_) if self.at_alt_type() => {
+                self.start(SyntaxKind::AltType);
+                self.then([Task::Base, Task::Finish]);
+            }
             Some(SyntaxKind::Ident) => {
                 self.start(SyntaxKind::NameRef);
                 self.bump();

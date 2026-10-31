@@ -445,7 +445,19 @@ impl<'p> HirBuilder<'_> {
             let Some(name) = self.ident(entry.name()) else {
                 continue;
             };
-            let value = if entry.is_negated() {
+            let binds = entry
+                .syntax()
+                .children_with_tokens()
+                .any(|element| element.kind() == SyntaxKind::FatArrow);
+            let value = if binds {
+                if entry.value().is_some() {
+                    self.draw_unbuilt(
+                        entry.syntax().range(),
+                        "the binding `=>` of an attribute (SPEC §7.6)",
+                    );
+                }
+                AttrValue::Expr(self.push(ExprKind::Error, loc))
+            } else if entry.is_negated() {
                 AttrValue::Set(false)
             } else {
                 match entry.value() {

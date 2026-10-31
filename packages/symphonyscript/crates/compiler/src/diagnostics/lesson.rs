@@ -36,6 +36,8 @@ pub(super) fn lesson(code: Code) -> &'static str {
         Code::PatternSyntax => include_str!("../../lessons/pattern-syntax.md"),
         Code::CellSyntax => include_str!("../../lessons/cell-syntax.md"),
         Code::JsonSyntax => include_str!("../../lessons/json-syntax.md"),
+        Code::LambdaSyntax => include_str!("../../lessons/lambda-syntax.md"),
+        Code::MapSyntax => include_str!("../../lessons/map-syntax.md"),
         Code::PackageSyntax => include_str!("../../lessons/package-syntax.md"),
         Code::GenericSyntax => include_str!("../../lessons/generic-syntax.md"),
         Code::RecordSyntax => include_str!("../../lessons/record-syntax.md"),

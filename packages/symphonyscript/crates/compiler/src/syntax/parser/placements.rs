@@ -429,6 +429,10 @@ impl Parser<'_> {
             self.expect_member_name(Code::AttributeSyntax, "an attribute");
             if self.eat(SyntaxKind::Eq) {
                 self.then([Task::Expr, Task::Finish, Task::AttrsLoop { first: false }]);
+            } else if self.eat(SyntaxKind::FatArrow) {
+                self.binding_path();
+                self.finish();
+                self.then([Task::AttrsLoop { first: false }]);
             } else {
                 self.finish();
                 self.then([Task::AttrsLoop { first: false }]);
@@ -515,3 +519,35 @@ impl Parser<'_> {
         self.then([Task::Iterable, Task::BundleForAfterIterable { members }]);
     }
 }
+
+impl Parser<'_> {
+    fn binding_path(&mut self) {
+        let code = Code::AttributeSyntax;
+        if !self.at(SyntaxKind::Ident) {
+            let found = self.describe();
+            let reported = self.diagnostics.len();
+            self.error(
+                code,
+                format!("expected the host-fed cell after `=>`, found {found}"),
+            );
+            self.help_since(reported, code, BINDING);
+            return;
+        }
+        let checkpoint = self.checkpoint();
+        if self.nth(1) == Some(SyntaxKind::Colon2) {
+            self.qualified_name(code);
+        } else {
+            self.start(SyntaxKind::NameRef);
+            self.bump();
+            self.finish();
+        }
+        while self.at_dot_member() {
+            self.start_at(checkpoint, SyntaxKind::FieldExpr);
+            self.bump();
+            self.expect_member_name(code, "a name after `.`");
+            self.finish();
+        }
+    }
+}
+
+const BINDING: &str = "name the cell the attribute binds, as in `hit => kick_hit`";

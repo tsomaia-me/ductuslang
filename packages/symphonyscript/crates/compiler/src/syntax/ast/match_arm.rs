@@ -1,3 +1,4 @@
+use super::alt_type::AltType;
 use super::ast_node::AstNode;
 use super::expr::Expr;
 use super::support::{expr_after, expr_before};
@@ -19,6 +20,10 @@ impl<'p> AstNode<'p> for MatchArm<'p> {
 impl<'p> MatchArm<'p> {
     pub fn label(&self) -> Option<Expr<'p>> {
         expr_before(&self.0, |kind| kind == SyntaxKind::Colon)
+    }
+
+    pub fn alt_type(&self) -> Option<AltType<'p>> {
+        super::support::child(&self.0)
     }
 
     pub fn value(&self) -> Option<Expr<'p>> {

@@ -9,9 +9,11 @@ use super::if_expr::IfExpr;
 use super::index_expr::IndexExpr;
 use super::json_lit::JsonLit;
 use super::literal::Literal;
+use super::map_lit::MapLit;
 use super::name_ref::NameRef;
 use super::paren_expr::ParenExpr;
 use super::prefix_expr::PrefixExpr;
+use super::record_lit::RecordLit;
 use super::string_lit::StringLit;
 use super::to_expr::ToExpr;
 use super::variant_ref::VariantRef;
@@ -35,6 +37,8 @@ pub enum Expr<'p> {
     Index(IndexExpr<'p>),
     Call(CallExpr<'p>),
     Json(JsonLit<'p>),
+    Record(RecordLit<'p>),
+    Map(MapLit<'p>),
 }
 
 impl<'p> AstNode<'p> for Expr<'p> {
@@ -56,6 +60,8 @@ impl<'p> AstNode<'p> for Expr<'p> {
             SyntaxKind::IndexExpr => IndexExpr::cast(node).map(Expr::Index),
             SyntaxKind::CallExpr => CallExpr::cast(node).map(Expr::Call),
             SyntaxKind::JsonLit => JsonLit::cast(node).map(Expr::Json),
+            SyntaxKind::RecordLit => RecordLit::cast(node).map(Expr::Record),
+            SyntaxKind::MapLit => MapLit::cast(node).map(Expr::Map),
             _ => None,
         }
     }
@@ -78,6 +84,8 @@ impl<'p> AstNode<'p> for Expr<'p> {
             Expr::Index(node) => node.syntax(),
             Expr::Call(node) => node.syntax(),
             Expr::Json(node) => node.syntax(),
+            Expr::Record(node) => node.syntax(),
+            Expr::Map(node) => node.syntax(),
         }
     }
 }

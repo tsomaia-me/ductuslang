@@ -35,6 +35,9 @@ impl HirBuilder<'_> {
             parts.push((result.syntax().range(), "a result annotation (SPEC §6.3)"));
         }
         for local in node.body().into_iter().flat_map(|body| body.lets()) {
+            if let Some(lambda) = local.lambda() {
+                parts.push((lambda.syntax().range(), "a lambda (SPEC §6.7)"));
+            }
             if let Some(ty) = local.ty() {
                 parts.push((ty.syntax().range(), LOCAL_ANNOTATION));
             }
@@ -77,6 +80,9 @@ impl HirBuilder<'_> {
                 ));
             }
             for local in body.lets() {
+                if let Some(lambda) = local.lambda() {
+                    parts.push((lambda.syntax().range(), "a lambda (SPEC §6.7)"));
+                }
                 if let Some(ty) = local.ty() {
                     parts.push((ty.syntax().range(), LOCAL_ANNOTATION));
                 }

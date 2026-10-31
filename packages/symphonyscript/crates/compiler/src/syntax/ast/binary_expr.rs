@@ -1,3 +1,4 @@
+use super::alt_type::AltType;
 use super::ast_node::AstNode;
 use super::expr::Expr;
 use super::support::{expr_after, expr_before, token};
@@ -30,6 +31,10 @@ impl<'p> BinaryExpr<'p> {
             .children_with_tokens()
             .filter_map(|element| element.into_token())
             .find(|token| !token.kind().is_trivia())
+    }
+
+    pub fn alt_type(&self) -> Option<AltType<'p>> {
+        super::support::child(&self.0)
     }
 
     pub fn is_not(&self) -> bool {

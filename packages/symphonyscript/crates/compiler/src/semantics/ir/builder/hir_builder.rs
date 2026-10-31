@@ -46,6 +46,12 @@ fn skipped_params(regions: &[NodeView<'_>]) -> UnknownNames {
 impl HirBuilder<'_> {
     pub(super) fn item(&mut self, item: Item<'_>) -> Result<Option<PlacementId>, Internal> {
         match item {
+            Item::Let(node) if node.lambda().is_some() => {
+                if let Some(lambda) = node.lambda() {
+                    self.draw_unbuilt(lambda.syntax().range(), LAMBDA);
+                }
+                self.placeholder(node.name());
+            }
             Item::Let(node) => {
                 let loc = self.loc(node.syntax().range());
                 let value = match node.match_block() {
@@ -366,3 +372,4 @@ fn unbuilt_part(node: &ast::TypeRef<'_>) -> Option<(Range<u32>, &'static str)> {
     }
     None
 }
+const LAMBDA: &str = "a lambda (SPEC §6.7)";

@@ -636,6 +636,46 @@ const CASES: &[(&str, &str, &str)] = &[
         "publish major, Drum as Kick, scales::minor as Minor\n",
         "File[Publish[publish PublishName[major] , PublishName[Drum as Kick] , PublishName[QualifiedName[scales :: minor] as Minor] NL]]",
     ),
+    (
+        "Fallback",
+        "let a = port ?? 80\nlet c = x ?? y ?? z\nlet b = x ?? base + 1\nlet d = port ?? 80 > 1024\n",
+        "File[LetDecl[let a = BinaryExpr[NameRef[port] ?? Literal[80]] NL] LetDecl[let c = BinaryExpr[NameRef[x] ?? BinaryExpr[NameRef[y] ?? NameRef[z]]] NL] LetDecl[let b = BinaryExpr[NameRef[x] ?? BinaryExpr[NameRef[base] + Literal[1]]] NL] LetDecl[let d = BinaryExpr[BinaryExpr[NameRef[port] ?? Literal[80]] > Literal[1024]] NL]]",
+    ),
+    (
+        "AltType",
+        "let y = a is not i32[2]\nlet w = a is str\nlet m = match s:\n    none: 2\n    i32: 3\n    lib::T: 6\n    Box[i32]: 7\n    else: 8\n",
+        "File[LetDecl[let y = BinaryExpr[NameRef[a] is not AltType[TypeRef[i32 [ 2 ]]]] NL] LetDecl[let w = BinaryExpr[NameRef[a] is AltType[TypeRef[StrType[str]]]] NL] LetDecl[let m = MatchBlock[match NameRef[s] : NL > MatchArm[AltType[TypeRef[none]] : Literal[2] NL] MatchArm[AltType[TypeRef[i32]] : Literal[3] NL] MatchArm[AltType[TypeRef[QualifiedName[lib :: T]]] : Literal[6] NL] MatchArm[AltType[TypeRef[Box TypeArgs[[ TypeRef[i32] ]]]] : Literal[7] NL] ElseArm[else : Literal[8] NL] <]]]",
+    ),
+    (
+        "Arg",
+        "let a = count(held, p: p > 60) + f(x) + g(k=(a, b): a + b)\n",
+        "File[LetDecl[let a = BinaryExpr[BinaryExpr[CallExpr[NameRef[count] ArgList[( NameRef[held] , Lambda[p : BinaryExpr[NameRef[p] > Literal[60]]] )]] + CallExpr[NameRef[f] ArgList[( NameRef[x] )]]] + CallExpr[NameRef[g] ArgList[( NamedArg[k = Lambda[( LambdaParams[LambdaParam[a] , LambdaParam[b]] ) : BinaryExpr[NameRef[a] + NameRef[b]]]] )]]] NL]]",
+    ),
+    (
+        "Lambda",
+        "let inc = x: x + 1\nlet a = count(held, (p: i32) -> bool: p < 48)\nlet z = f((): 1)\n",
+        "File[LetDecl[let inc = Lambda[x : BinaryExpr[NameRef[x] + Literal[1]]] NL] LetDecl[let a = CallExpr[NameRef[count] ArgList[( NameRef[held] , Lambda[( LambdaParams[LambdaParam[p : TypeRef[i32]]] ) FnResult[-> TypeRef[bool]] : BinaryExpr[NameRef[p] < Literal[48]]] )]] NL] LetDecl[let z = CallExpr[NameRef[f] ArgList[( Lambda[( ) : Literal[1]] )]] NL]]",
+    ),
+    (
+        "LambdaParams",
+        "let add = (a, b): a + b\n",
+        "File[LetDecl[let add = Lambda[( LambdaParams[LambdaParam[a] , LambdaParam[b]] ) : BinaryExpr[NameRef[a] + NameRef[b]]] NL]]",
+    ),
+    (
+        "LambdaParam",
+        "let add = (a: i32, b): a + b\n",
+        "File[LetDecl[let add = Lambda[( LambdaParams[LambdaParam[a : TypeRef[i32]] , LambdaParam[b]] ) : BinaryExpr[NameRef[a] + NameRef[b]]] NL]]",
+    ),
+    (
+        "MapLit",
+        "let m = {}\nlet n = {\"a\": 1, \"b\": 2,}\n",
+        "File[LetDecl[let m = MapLit[{ }] NL] LetDecl[let n = MapLit[{ MapEntry[StringLit[\" a \"] : Literal[1]] , MapEntry[StringLit[\" b \"] : Literal[2]] , }] NL]]",
+    ),
+    (
+        "Entry",
+        "let m = {\"k\": v, k2: v + 1, Saw: 2, 3: x}\n",
+        "File[LetDecl[let m = MapLit[{ MapEntry[StringLit[\" k \"] : NameRef[v]] , MapEntry[NameRef[k2] : BinaryExpr[NameRef[v] + Literal[1]]] , MapEntry[NameRef[Saw] : Literal[2]] , MapEntry[Literal[3] : NameRef[x]] }] NL]]",
+    ),
 ];
 
 #[test]

@@ -87,7 +87,11 @@ impl Parser<'_> {
         if !self.eat(SyntaxKind::Eq) {
             self.match_after_fault(SyntaxKind::Eq, code, "`=` and the value");
         }
-        self.rule(code);
+        if self.at_lambda() {
+            self.then([Task::Lambda, Task::FinishLineFinish(code)]);
+        } else {
+            self.rule(code);
+        }
     }
 
     fn rule(&mut self, code: Code) {

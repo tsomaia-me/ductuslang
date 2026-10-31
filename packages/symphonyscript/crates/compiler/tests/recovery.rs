@@ -639,8 +639,8 @@ const BROKEN: &[(&str, Expected, &str)] = &[
     ),
     (
         "Clip c:\n    [Note\n    Note/(a: b)]\n",
-        &[(Code::DefaultArgSyntax, 29, 30)],
-        "File[Placement[Clip c Body[: Block[NL > Line[Bundle[[ Placement[Note] Placement[Note DefaultArg[/ ParenExpr[( NameRef[a]]]]] ErrorNode[: b ) ]] NL] <]]]]",
+        &[(Code::ExpressionSyntax, 28, 29)],
+        "File[Placement[Clip c Body[: Block[NL > Line[Bundle[[ Placement[Note] Placement[Note DefaultArg[/ ParenExpr[( Lambda[a : NameRef[b]] )]]] ]] NL] <]]]]",
     ),
     (
         "let a = (1 2\n    (3))\nlet b = )\n",

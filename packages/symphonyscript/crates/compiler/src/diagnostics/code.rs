@@ -50,6 +50,8 @@ codes!(
     PatternSyntax,
     CellSyntax,
     JsonSyntax,
+    LambdaSyntax,
+    MapSyntax,
     PackageSyntax,
     GenericSyntax,
     RecordSyntax,
@@ -199,6 +201,8 @@ impl Code {
             Code::PatternSyntax => "pattern-syntax",
             Code::CellSyntax => "cell-syntax",
             Code::JsonSyntax => "json-syntax",
+            Code::LambdaSyntax => "lambda-syntax",
+            Code::MapSyntax => "map-syntax",
             Code::PackageSyntax => "package-syntax",
             Code::GenericSyntax => "generic-syntax",
             Code::RecordSyntax => "record-syntax",
@@ -436,6 +440,8 @@ impl Code {
             Code::MisplacedCaret => "2.5",
             Code::CellSyntax => "6.1",
             Code::JsonSyntax => "3.11",
+            Code::LambdaSyntax => "6.7",
+            Code::MapSyntax => "3.10",
             Code::PackageSyntax => "15.2",
             Code::GenericSyntax => "6.8",
             Code::RecordSyntax => "3.8",
@@ -594,6 +600,8 @@ impl Code {
             | Code::MisplacedCaret
             | Code::CellSyntax
             | Code::JsonSyntax
+            | Code::LambdaSyntax
+            | Code::MapSyntax
             | Code::PackageSyntax
             | Code::GenericSyntax
             | Code::RecordSyntax

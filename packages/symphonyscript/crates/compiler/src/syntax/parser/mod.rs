@@ -6,6 +6,7 @@ mod decls;
 mod expressions;
 mod items;
 mod json;
+mod lambdas;
 mod loop_header;
 mod loops;
 mod placements;
@@ -280,6 +281,20 @@ impl<'a> Parser<'a> {
             Task::JsonEntry => self.json_entry(),
             Task::JsonObjectLoop => self.json_object_loop(),
             Task::JsonArrayLoop => self.json_array_loop(),
+            Task::Fallback => self.fallback(),
+            Task::FallbackTail(checkpoint) => self.fallback_tail(checkpoint),
+            Task::AltType => self.alt_type(),
+            Task::Lambda => self.lambda(),
+            Task::LambdaParam => self.lambda_param(),
+            Task::LambdaParamLoop => self.lambda_param_loop(),
+            Task::LambdaClose => self.lambda_close(),
+            Task::LambdaBody => self.lambda_body(),
+            Task::MapLit => self.map_lit(),
+            Task::MapEntry => self.map_entry(),
+            Task::MapEntryValue => self.map_entry_value(),
+            Task::MapEntryLoop => self.map_entry_loop(),
+            Task::MatchLabel => self.match_label(),
+            Task::MatchArmColon { arms, after_else } => self.match_arm_colon(arms, after_else),
             Task::Type => self.type_start(),
             Task::FnParam => self.fn_param(),
             Task::FnParamLoop => self.fn_param_loop(),

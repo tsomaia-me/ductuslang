@@ -88,6 +88,22 @@ impl HirBuilder<'_> {
             .map(|arm| arm.syntax().range().end)
             .or_else(|| block.arms().last().map(|arm| arm.syntax().range().end));
         let loc = self.loc(range.start..last_arm.unwrap_or(range.end));
+        let mut unbuilt = false;
+        for arm in block.arms() {
+            if let Some(label) = arm.alt_type() {
+                self.draw_unbuilt(
+                    label.syntax().range(),
+                    "a type as a `match` label (SPEC §5.4)",
+                );
+                unbuilt = true;
+            } else if let Some(ast::Expr::String(label)) = arm.label() {
+                self.draw_unbuilt(label.syntax().range(), "a string `match` label (SPEC §5.4)");
+                unbuilt = true;
+            }
+        }
+        if unbuilt {
+            return self.push(ExprKind::Error, loc);
+        }
         let scrutinee = self.expr(block.scrutinee(), loc);
         let arms = block
             .arms()
@@ -125,6 +141,26 @@ impl HirBuilder<'_> {
                 }
                 self.for_shape(node)
             }
+            ast::Expr::Binary(node) if node.alt_type().is_some() => {
+                let range = node
+                    .alt_type()
+                    .map_or(node.syntax().range(), |ty| ty.syntax().range());
+                self.unbuilt(range, "a type after `is` (SPEC §5.3)")
+            }
+            ast::Expr::Binary(node)
+                if node
+                    .op()
+                    .is_some_and(|op| op.kind() == SyntaxKind::Question2) =>
+            {
+                self.unbuilt(node.syntax().range(), "the fallback `??` (SPEC §5.3)")
+            }
+            ast::Expr::Binary(node)
+                if node
+                    .op()
+                    .is_some_and(|op| op.kind() == SyntaxKind::WithoutKw) =>
+            {
+                self.unbuilt(node.syntax().range(), "the operator `without` (SPEC §3.10)")
+            }
             ast::Expr::Binary(node) => match node
                 .op()
                 .filter(|op| !self.faults.touch(op.range()))
@@ -148,6 +184,13 @@ impl HirBuilder<'_> {
                 }
             }
             ast::Expr::Paren(node) => (Shape::Paren, vec![node.inner()]),
+            ast::Expr::Literal(node)
+                if node
+                    .token()
+                    .is_some_and(|token| token.kind() == SyntaxKind::NoneKw) =>
+            {
+                self.unbuilt(node.syntax().range(), "the value `none` (SPEC §3.9)")
+            }
             ast::Expr::Literal(node) => (Shape::Leaf(self.literal(node)), Vec::new()),
             ast::Expr::String(node) => self.string(node),
             ast::Expr::NameRef(node) => {
@@ -225,6 +268,13 @@ impl HirBuilder<'_> {
                 let Some(args) = node.args() else {
                     return (Shape::Leaf(ExprKind::Error), Vec::new());
                 };
+                let lambdas: Vec<_> = args.lambdas().collect();
+                if !lambdas.is_empty() {
+                    for lambda in lambdas {
+                        self.draw_unbuilt(lambda.syntax().range(), "a lambda (SPEC §6.7)");
+                    }
+                    return (Shape::Leaf(ExprKind::Error), Vec::new());
+                }
                 let positional: Vec<_> = args.positional().map(Some).collect();
                 let named: Vec<_> = args.named().collect();
                 if !positional.is_empty() && !named.is_empty() {
@@ -247,6 +297,12 @@ impl HirBuilder<'_> {
                 (Shape::Named(names), children)
             }
             ast::Expr::Json(node) => self.unbuilt(node.syntax().range(), DOCUMENT_LITERAL),
+            ast::Expr::Record(node) => {
+                self.unbuilt(node.syntax().range(), "a record literal (SPEC §3.8)")
+            }
+            ast::Expr::Map(node) => {
+                self.unbuilt(node.syntax().range(), "a map literal (SPEC §3.10)")
+            }
         }
     }
 
@@ -449,6 +505,9 @@ impl HirBuilder<'_> {
     }
 
     fn for_shape<'p>(&mut self, node: &ast::ForExpr<'p>) -> (Shape, Vec<Option<ast::Expr<'p>>>) {
+        if let Some(lambda) = node.lets().find_map(|local| local.lambda()) {
+            return self.unbuilt(lambda.syntax().range(), "a lambda (SPEC §6.7)");
+        }
         if let Some(ty) = node.lets().find_map(|local| local.ty()) {
             return self.unbuilt(
                 ty.syntax().range(),

@@ -142,6 +142,12 @@ pub(super) fn help(code: Code) -> Option<&'static str> {
         Code::PackageSyntax => {
             "write `require` and a source in quotes, `use` and a library's name, or `publish` and the names, as in `use scales: major`"
         }
+        Code::MapSyntax => {
+            "write the entries in braces, each a key, `:` and a value, separated by commas, as in `{\"host\": 1}`"
+        }
+        Code::LambdaSyntax => {
+            "write the lambda as a name, `:` and its body, or its parameters in parentheses, `:` and its body, as in `(a, b): a + b`"
+        }
         Code::JsonSyntax => {
             "write the document as JSON text after `json`, as in `json {\"count\": 16}`"
         }
