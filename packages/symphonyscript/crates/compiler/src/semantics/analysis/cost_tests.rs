@@ -1806,3 +1806,62 @@ fn stress_a_compile_time_recursive_calls_work_is_the_same_for_every_distinct_cal
     let failures = distinct_call_failures([250_000, 500_000, 1_000_000]);
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
+
+fn ring_program(size: usize, reversed: bool) -> String {
+    let mut items: Vec<String> = (1..=size)
+        .map(|index| {
+            let next = |step: usize| (index - 1 + step) % size + 1;
+            format!("let a{index} = a{} + a{}\n", next(1), next(2))
+        })
+        .collect();
+    items.push("Clip c:\n    Note/(a1)\n".to_string());
+    if reversed {
+        items.reverse();
+    }
+    items.concat()
+}
+
+fn ring_failures(sizes: [usize; 3]) -> Vec<String> {
+    let compiler = Compiler::new(&vocabulary()).expect("the vocabulary compiles");
+    let mut failures = Vec::new();
+    for reversed in [false, true] {
+        let runs = sizes.map(|size| measured(&compiler, &ring_program(size, reversed)));
+        for (index, (counter, _)) in runs[0].counts.iter().enumerate() {
+            let points = [0, 1, 2].map(|run| {
+                (
+                    u64::try_from(sizes[run]).unwrap_or(u64::MAX),
+                    runs[run].counts.get(index).map_or(0, |(_, count)| *count),
+                )
+            });
+            if !linear(points) {
+                failures.push(format!(
+                    "351 {reversed} {counter} {:?}",
+                    points.map(|(_, count)| count)
+                ));
+            }
+        }
+        for counter in ["cycle_work", "EngineDemand"] {
+            if !runs[0]
+                .counts
+                .iter()
+                .any(|(name, count)| name == counter && *count > 0)
+            {
+                failures.push(format!("351 {reversed} {counter} is not counted"));
+            }
+        }
+    }
+    failures
+}
+
+#[test]
+fn a_ring_of_declarations_is_grouped_and_named_in_work_linear_in_its_reads_351() {
+    let failures = ring_failures([100, 200, 400]);
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+#[test]
+#[ignore = "stress"]
+fn stress_a_ring_of_declarations_is_grouped_and_named_in_work_linear_in_its_reads_351() {
+    let failures = ring_failures([2_000, 4_000, 8_000]);
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}

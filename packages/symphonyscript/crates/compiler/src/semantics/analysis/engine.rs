@@ -130,6 +130,8 @@ pub(crate) struct Engine<'a> {
     pub(super) open_candidates: FastMap<(ExprId, ItemRef, String), Rc<[Query]>>,
     drawn_candidate_cycles: FastSet<(ItemRef, String)>,
     pub(super) found_cycles: Vec<Vec<(Loc, String)>>,
+    pub(super) declaration_reads: std::cell::RefCell<FastSet<(Query, Query)>>,
+    reader: Option<Query>,
     pub(super) current: Option<Query>,
 }
 
@@ -209,6 +211,8 @@ impl<'a> Engine<'a> {
             open_candidates: FastMap::default(),
             drawn_candidate_cycles: FastSet::default(),
             found_cycles: Vec::new(),
+            declaration_reads: std::cell::RefCell::default(),
+            reader: None,
             current: None,
         };
         engine.source_global = engine.push_scope(
@@ -300,12 +304,14 @@ impl<'a> Engine<'a> {
 
     pub fn demand(&mut self, query: Query) -> Result<(), Internal> {
         let mut stack: Vec<(Query, Option<usize>)> = vec![(query, None)];
+        let mut nearest: Vec<Option<Query>> = vec![self.is_declaration(query)?.then_some(query)];
         let mut stalled = 0;
         while let Some((top, _)) = stack.last().copied() {
             crate::semantics::counted_walk::CountedWalk::EngineDemand.step();
             let position = stack.len() - 1;
             if self.is_done(top) {
                 stack.pop();
+                nearest.pop();
                 self.waiting.remove(&top);
                 self.settle_cycle_member(top);
                 stalled = 0;
@@ -313,23 +319,35 @@ impl<'a> Engine<'a> {
             }
             let mut need = Vec::new();
             self.current = Some(top);
-            let done = self.dispatch(top, &mut need)?;
+            let dispatched =
+                self.dispatch_reader(&stack, position, nearest.get(position).copied().flatten())?;
+            let enclosing_reader = std::mem::replace(&mut self.reader, dispatched);
+            let done = self.dispatch(top, &mut need);
+            self.reader = enclosing_reader;
+            let done = done?;
             self.current = None;
             if done {
                 stack.pop();
+                nearest.pop();
                 self.waiting.remove(&top);
                 self.settle_cycle_member(top);
                 stalled = 0;
                 continue;
             }
             self.waiting.insert(top);
+            let reader = nearest.get(position).copied().flatten();
             let mut progressed = false;
             for dep in need {
+                let declares = self.is_declaration(dep)?;
+                if declares && !matches!(top, Query::Eval(..)) {
+                    self.note_read(reader, dep);
+                }
                 if self.waiting.contains(&dep) {
                     if let Some(cut) = self.candidate_cut(&stack, position, dep)? {
                         for (query, _) in stack.drain(cut + 1..) {
                             self.waiting.remove(&query);
                         }
+                        nearest.truncate(cut + 1);
                         progressed = true;
                         break;
                     }
@@ -339,6 +357,12 @@ impl<'a> Engine<'a> {
                     }
                 } else if !self.is_done(dep) {
                     stack.push((dep, Some(position)));
+                    let pushed = if declares {
+                        Some(dep)
+                    } else {
+                        self.pushed_reader(dep, &stack, position, reader)?
+                    };
+                    nearest.push(pushed);
                     progressed = true;
                 }
             }
@@ -352,6 +376,190 @@ impl<'a> Engine<'a> {
             }
         }
         Ok(())
+    }
+
+    fn note_read(&self, reader: Option<Query>, dep: Query) {
+        if matches!(self.current, Some(Query::Eval(..))) {
+            return;
+        }
+        let reader = match dep {
+            Query::Param(scope, _) => self.function_of_scope(scope).ok().flatten(),
+            Query::Expr(..)
+            | Query::Let(..)
+            | Query::Input(_)
+            | Query::State(_)
+            | Query::Attr(..)
+            | Query::Destination(_)
+            | Query::Sig(_)
+            | Query::Eval(..) => reader,
+        };
+        if let Some(reader) = reader
+            && reader != dep
+        {
+            self.declaration_reads.borrow_mut().insert((reader, dep));
+        }
+    }
+
+    fn function_of_scope(&self, scope: ScopeId) -> Result<Option<Query>, Internal> {
+        let mut current = Some(scope);
+        while let Some(at) = current {
+            let record = self.scope_of(at)?;
+            if let ScopeKind::Locals(locals) = &record.kind
+                && let super::locals_owner::LocalsOwner::Fn(function) = locals.owner
+            {
+                return Ok(Some(Query::Expr(self.hir.fn_decl(function)?.value, at)));
+            }
+            current = match &record.kind {
+                ScopeKind::ParamPrefix { locals, .. } => Some(*locals),
+                ScopeKind::Global { .. }
+                | ScopeKind::Locals(_)
+                | ScopeKind::Body { .. }
+                | ScopeKind::ForVar { .. }
+                | ScopeKind::WireClause { .. }
+                | ScopeKind::WrittenClause { .. } => record.parent,
+            };
+        }
+        Ok(None)
+    }
+
+    fn pushed_reader(
+        &self,
+        dep: Query,
+        stack: &[(Query, Option<usize>)],
+        position: usize,
+        reader: Option<Query>,
+    ) -> Result<Option<Query>, Internal> {
+        let (scope, loc, expression) = match dep {
+            Query::Expr(expr, scope) => (scope, self.hir.expr(expr)?.loc, true),
+            Query::Sig(node) | Query::Eval(node, _) => {
+                let Some(record) = self.nodes.get(node.index()) else {
+                    return Ok(reader);
+                };
+                (record.scope, record.loc, false)
+            }
+            Query::Let(..)
+            | Query::Param(..)
+            | Query::Input(_)
+            | Query::State(_)
+            | Query::Attr(..)
+            | Query::Destination(_) => return Ok(reader),
+        };
+        if let Some(function) = self.function_of_scope(scope)? {
+            let Query::Expr(_, locals) = function else {
+                return Ok(reader);
+            };
+            if let ScopeKind::Locals(record) = &self.scope_of(locals)?.kind
+                && let super::locals_owner::LocalsOwner::Fn(id) = record.owner
+            {
+                for (index, param) in self.hir.fn_decl(id)?.params.iter().enumerate() {
+                    let Some(default) = param.default else {
+                        continue;
+                    };
+                    let within = self.hir.expr(default)?.loc;
+                    if within.file == loc.file && within.start <= loc.start && loc.end <= within.end
+                    {
+                        let index =
+                            u32::try_from(index).map_err(|_| Internal::missed("parameter"))?;
+                        return Ok(Some(Query::Param(locals, index)));
+                    }
+                }
+            }
+            let inside = match reader {
+                Some(Query::Expr(_, at) | Query::Param(at, _) | Query::Let(at, _)) => {
+                    self.function_of_scope(at)? == Some(function)
+                }
+                Some(
+                    Query::Input(_)
+                    | Query::State(_)
+                    | Query::Attr(..)
+                    | Query::Destination(_)
+                    | Query::Sig(_)
+                    | Query::Eval(..),
+                )
+                | None => false,
+            };
+            return Ok(if inside { reader } else { Some(function) });
+        }
+        let (true, Some(&(Query::Param(..), _))) = (expression, stack.get(position)) else {
+            return Ok(reader);
+        };
+        self.outer_reader(stack, position)
+    }
+
+    fn outer_reader(
+        &self,
+        stack: &[(Query, Option<usize>)],
+        position: usize,
+    ) -> Result<Option<Query>, Internal> {
+        let mut current = Some(position);
+        while let Some(at) = current {
+            let &(query, parent) = stack
+                .get(at)
+                .ok_or(Internal::missed("demand stack entry"))?;
+            if matches!(
+                query,
+                Query::Let(..) | Query::Input(_) | Query::State(_) | Query::Attr(..)
+            ) {
+                return Ok(Some(query));
+            }
+            current = parent;
+        }
+        Ok(None)
+    }
+
+    fn dispatch_reader(
+        &self,
+        stack: &[(Query, Option<usize>)],
+        position: usize,
+        reader: Option<Query>,
+    ) -> Result<Option<Query>, Internal> {
+        let Some(&(Query::Param(locals, index), _)) = stack.get(position) else {
+            return Ok(reader);
+        };
+        let ScopeKind::Locals(record) = &self.scope_of(locals)?.kind else {
+            return Ok(reader);
+        };
+        let slot = usize::try_from(index).map_err(|_| Internal::missed("parameter"))?;
+        match record.params.get(slot) {
+            Some(super::param_source::ParamSource::Arg { scope, .. }) => {
+                match self.function_of_scope(*scope)? {
+                    Some(function) => Ok(Some(function)),
+                    None => self.outer_reader(stack, position),
+                }
+            }
+            Some(
+                super::param_source::ParamSource::Default
+                | super::param_source::ParamSource::Missing
+                | super::param_source::ParamSource::Bound(_),
+            )
+            | None => Ok(reader),
+        }
+    }
+
+    fn is_declaration(&self, query: Query) -> Result<bool, Internal> {
+        Ok(match query {
+            Query::Let(..)
+            | Query::Param(..)
+            | Query::Input(_)
+            | Query::State(_)
+            | Query::Attr(..) => true,
+            Query::Expr(expr, scope) => match &self.scope_of(scope)?.kind {
+                ScopeKind::Locals(locals) => match locals.owner {
+                    super::locals_owner::LocalsOwner::Fn(function) => {
+                        self.hir.fn_decl(function)?.value == expr
+                    }
+                    super::locals_owner::LocalsOwner::Pattern(_)
+                    | super::locals_owner::LocalsOwner::For(_) => false,
+                },
+                ScopeKind::Global { .. }
+                | ScopeKind::ParamPrefix { .. }
+                | ScopeKind::Body { .. }
+                | ScopeKind::ForVar { .. }
+                | ScopeKind::WireClause { .. }
+                | ScopeKind::WrittenClause { .. } => false,
+            },
+            Query::Destination(_) | Query::Sig(_) | Query::Eval(..) => false,
+        })
     }
 
     pub fn in_progress(&self, query: Query) -> bool {
@@ -452,6 +660,7 @@ impl<'a> Engine<'a> {
     }
 
     pub fn bound(&self, query: Query, need: &mut Vec<Query>) -> Option<BoundVal> {
+        self.note_read(self.reader, query);
         if self.poisoned(query) || self.cycle_members.contains(&query) {
             return Some(BoundVal::Error);
         }

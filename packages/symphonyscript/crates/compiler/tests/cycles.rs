@@ -527,3 +527,114 @@ fn a_declaration_cycle_drawn_before_the_recursive_call_limit_stops_the_compilati
         ]
     );
 }
+
+fn declaration_cycles(text: &str) -> Vec<(String, String)> {
+    support::checked(text)
+        .into_iter()
+        .filter(|diagnostic| diagnostic.code == Code::DeclarationCycle)
+        .map(|diagnostic| {
+            let range = diagnostic.span.range;
+            let at = text
+                .get(range.start as usize..range.end as usize)
+                .unwrap_or("?")
+                .to_string();
+            (at, diagnostic.summary.clone())
+        })
+        .collect()
+}
+
+fn ring(size: usize, reversed: bool) -> String {
+    let mut items: Vec<String> = (1..=size)
+        .map(|index| {
+            let next = |step: usize| (index - 1 + step) % size + 1;
+            format!("let a{index} = a{} + a{}\n", next(1), next(2))
+        })
+        .collect();
+    items.push("Clip c:\n    Note/(a1)\n".to_string());
+    if reversed {
+        items.reverse();
+    }
+    items.concat()
+}
+
+#[test]
+fn a_component_of_the_declaration_graph_draws_one_cycle_the_shortest_through_its_first_member_351()
+{
+    let mut failures = Vec::new();
+    for size in (3..=8).chain([100, 200]) {
+        for reversed in [false, true] {
+            let text = ring(size, reversed);
+            let first = if reversed { size } else { 1 };
+            let steps = size.div_ceil(2);
+            let drawn = declaration_cycles(&text);
+            let shortest = drawn.first().is_some_and(|(at, summary)| {
+                *at == format!("a{first}")
+                    && summary.matches(" → ").count() == steps
+                    && summary.contains(&format!(": a{first} → "))
+            });
+            if drawn.len() != 1 || !shortest {
+                failures.push(format!("351 ring {size} {reversed}\n  drawn {drawn:?}"));
+            }
+        }
+    }
+    let rows: [(&[&str], &str, &str); 4] = [
+        (
+            &[
+                "let a = b + d\n",
+                "let b = a\n",
+                "let d = e\n",
+                "let e = d + a\n",
+                "Clip c:\n    Note/(a)\n",
+            ],
+            "a → b → a",
+            "e → d → e",
+        ),
+        (
+            &[
+                "let a = b + cc\n",
+                "let b = a\n",
+                "let cc = d\n",
+                "let d = a\n",
+                "Clip c:\n    Note/(a)\n",
+            ],
+            "a → b → a",
+            "d → a → cc → d",
+        ),
+        (
+            &[
+                "let p = q.gain\n",
+                "Clip q | gain=p + r:\n    Note\n",
+                "let r = q.gain\n",
+            ],
+            "p → q.gain → p",
+            "r → q.gain → r",
+        ),
+        (
+            &[
+                "fn f(x): x + a\n",
+                "let a = f(1) + b\n",
+                "let b = a\n",
+                "Clip c:\n    Note/(a)\n",
+            ],
+            "f → a → f",
+            "b → a → b",
+        ),
+    ];
+    for (items, forward, backward) in rows {
+        for reversed in [false, true] {
+            let mut ordered: Vec<&str> = items.to_vec();
+            if reversed {
+                ordered.reverse();
+            }
+            let text = ordered.concat();
+            let named = if reversed { backward } else { forward };
+            let drawn = declaration_cycles(&text);
+            if drawn.len() != 1 || !drawn[0].1.ends_with(named) {
+                failures.push(format!(
+                    "351 {reversed}\n{text}\n  drawn {drawn:?}\n  names {named}"
+                ));
+            }
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
