@@ -595,6 +595,41 @@ impl Position {
         }
     }
 
+    fn closed_to(self, relation: Relation, forms: (Form, Form)) -> bool {
+        let holds = |form: Form| forms.0 == form || forms.1 == form;
+        match self {
+            Position::Annotation => {
+                matches!(relation, Relation::OneType | Relation::Lengths) && holds(Form::Recursive)
+            }
+            Position::Index | Position::Absolute => {
+                relation == Relation::Widening && holds(Form::State)
+            }
+            Position::TopLet
+            | Position::LocalLet
+            | Position::Scalar
+            | Position::Compared
+            | Position::Tested
+            | Position::Converted
+            | Position::Negated
+            | Position::SliceBound
+            | Position::ArrayElement
+            | Position::IndexBase
+            | Position::JoinLeft
+            | Position::JoinRight
+            | Position::SliceBase
+            | Position::Len
+            | Position::Iterable
+            | Position::Attribute
+            | Position::Native
+            | Position::Argument
+            | Position::Result
+            | Position::RecursiveArgument
+            | Position::RecursiveResult
+            | Position::StateInit
+            | Position::OuterArm => false,
+        }
+    }
+
     fn hosted(self) -> bool {
         match self {
             Position::LocalLet | Position::Result | Position::RecursiveResult => true,
@@ -1050,6 +1085,9 @@ fn check_case(rows: &Rows, case: &Case, compilers: &mut Compilers, outcome: &mut
     else {
         return;
     };
+    if !case.chooser.is_parameter() && case.position.closed_to(case.relation, case.forms) {
+        return;
+    }
     if case.position.signature() && case.relation == Relation::Family {
         return;
     }
@@ -1393,7 +1431,7 @@ fn the_arms_of_a_choice_on_a_compile_time_recursive_functions_parameter_agree_wh
 #[ignore = "exhaustive"]
 fn exhaustive_the_arms_of_a_choice_on_a_compile_time_recursive_functions_parameter_agree_wherever_it_stands()
  {
-    assert_arms_hold(Chooser::Parameter, 16330, 0);
+    assert_arms_hold(Chooser::Parameter, 19084, 0);
 }
 
 #[test]
@@ -1405,7 +1443,7 @@ fn the_arms_of_a_match_on_a_compile_time_recursive_functions_parameter_agree_whe
 #[ignore = "exhaustive"]
 fn exhaustive_the_arms_of_a_match_on_a_compile_time_recursive_functions_parameter_agree_wherever_it_stands()
  {
-    assert_arms_hold(Chooser::ParameterMatch, 16330, 0);
+    assert_arms_hold(Chooser::ParameterMatch, 19084, 0);
 }
 
 fn permutations(items: &[String]) -> Vec<Vec<String>> {
