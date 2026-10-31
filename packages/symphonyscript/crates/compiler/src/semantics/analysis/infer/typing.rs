@@ -29,6 +29,7 @@ pub(crate) struct Typing {
     pub open_reads: FastSet<NodeId>,
     pub deferred_layouts: FastSet<BindingId>,
     pub shape_faulted: FastSet<BindingId>,
+    pub shape_refused: FastSet<NodeId>,
     #[cfg(test)]
     pub gate_positions: usize,
     #[cfg(test)]

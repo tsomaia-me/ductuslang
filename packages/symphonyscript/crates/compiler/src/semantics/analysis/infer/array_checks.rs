@@ -508,7 +508,7 @@ impl Engine<'_> {
         &mut self,
         native: symphonyscript_core::NativeId,
         args: &[crate::semantics::analysis::ids::NodeId],
-    ) -> Result<(), Internal> {
+    ) -> Result<Vec<crate::semantics::analysis::ids::NodeId>, Internal> {
         use symphonyscript_core::{NativeType, Scalar};
         let params = self
             .vocabulary
@@ -517,6 +517,7 @@ impl Engine<'_> {
             .signature
             .params
             .clone();
+        let mut refused = Vec::new();
         for (arg, param) in args.iter().zip(params) {
             let (ty, open) = match param {
                 NativeType::Value(ty) => (ty, false),
@@ -547,6 +548,7 @@ impl Engine<'_> {
                     scope,
                     "the argument's rows differ from the parameter's type",
                 )?;
+                refused.push(*arg);
                 continue;
             }
             if let Some(length) = length {
@@ -561,6 +563,7 @@ impl Engine<'_> {
                         ),
                         help,
                     )?;
+                    refused.push(*arg);
                 } else if let Some(held) = layout.outer()
                     && held != length
                 {
@@ -572,6 +575,7 @@ impl Engine<'_> {
                             "this argument holds {held} elements, and the parameter takes {length}"
                         ),
                     )?;
+                    refused.push(*arg);
                 }
                 continue;
             }
@@ -579,7 +583,7 @@ impl Engine<'_> {
                 self.memo.native_capacities.push((*arg, capacity));
             }
         }
-        Ok(())
+        Ok(refused)
     }
 
     pub(super) fn native_capacity_checks(&mut self) -> Result<(), Internal> {

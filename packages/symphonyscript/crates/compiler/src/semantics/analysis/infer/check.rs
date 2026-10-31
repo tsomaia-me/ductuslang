@@ -386,15 +386,20 @@ impl Engine<'_> {
                     }
                 }
                 Op::Native { native, args } => {
-                    self.native_arg_checks(native, &args)?;
+                    let refused = self.native_arg_checks(native, &args)?;
                     let params = self.native_params(native)?;
                     let arg_selection = match selection {
                         Selection::Evaluated => Selection::Chosen,
                         Selection::Chosen | Selection::PassedOver => selection,
                     };
                     for (arg, param) in args.into_iter().zip(params) {
+                        let (param, flows) = if refused.contains(&arg) {
+                            (None, false)
+                        } else {
+                            (param, true)
+                        };
                         for leaf in self.native_argument(arg, param)?.unwrap_or_default() {
-                            stack.push((leaf, param, arg_selection, true));
+                            stack.push((leaf, param, arg_selection, flows));
                         }
                     }
                 }

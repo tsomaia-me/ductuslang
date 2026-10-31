@@ -53,6 +53,7 @@ impl Engine<'_> {
             match self.array_position(&position)? {
                 ArrayPosition::Usual => {}
                 ArrayPosition::Faulty => {
+                    self.typing.shape_refused.extend(position.val.nodes());
                     self.memo.own_typed.extend(position.val.nodes());
                     continue;
                 }
@@ -202,7 +203,12 @@ impl Engine<'_> {
         for index in 0..self.bindings.len() {
             crate::semantics::counted_walk::CountedWalk::ModInfer.step();
             let binding = BindingId(u32::try_from(index).unwrap_or(u32::MAX));
-            if let Some(own) = self.typing.own.get(&binding).copied() {
+            if let Some(own) = self.typing.own.get(&binding).copied()
+                && !self
+                    .typing
+                    .shape_refused
+                    .contains(&self.binding(binding)?.init)
+            {
                 let init = self.binding(binding)?.init;
                 let flows = !self.typing.default_widths.contains(&binding);
                 self.check(init, (Some(own), flows), false, &mut roots)?;

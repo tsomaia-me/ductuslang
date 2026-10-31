@@ -2,6 +2,8 @@ mod support;
 
 use std::collections::BTreeMap;
 
+use symphonyscript_fixtures::{Rows, covered};
+
 use symphonyscript::{Code, Compiler, Source};
 use symphonyscript_fixtures::native_vocabulary;
 
@@ -59,6 +61,10 @@ enum Position {
     VariableAttribute,
     InlinedArgument,
     NativeArgument,
+    RowsAttribute,
+    OpenArgument,
+    FixedArgument,
+    DeepIndex,
 }
 
 const POSITIONS: [Position; 12] = [
@@ -94,7 +100,11 @@ impl Position {
             | Position::Len
             | Position::FixedAttribute
             | Position::VariableAttribute
-            | Position::NativeArgument => false,
+            | Position::NativeArgument
+            | Position::RowsAttribute
+            | Position::OpenArgument
+            | Position::FixedArgument
+            | Position::DeepIndex => false,
         }
     }
 
@@ -111,7 +121,11 @@ impl Position {
             | Position::FixedAttribute
             | Position::VariableAttribute
             | Position::InlinedArgument
-            | Position::NativeArgument => "t".into(),
+            | Position::NativeArgument
+            | Position::RowsAttribute
+            | Position::OpenArgument
+            | Position::FixedArgument => "t".into(),
+            Position::DeepIndex => format!("t[^1][^1]{}", "[0]".repeat(dimensions - 1)),
         }
     }
 
@@ -146,6 +160,10 @@ impl Position {
                 format!("Note/(pick({value}))"),
             ),
             Position::NativeArgument => pitch(format!("first_of({value})")),
+            Position::RowsAttribute => (Vec::new(), format!(" | rows={value}"), "Note".into()),
+            Position::OpenArgument => pitch(format!("checksum({value})")),
+            Position::FixedArgument => pitch(format!("pair_sum({value})")),
+            Position::DeepIndex => pitch(format!("{value}[^1][^1]{rest}")),
         }
     }
 }
@@ -234,4 +252,75 @@ fn a_native_call_that_runs_at_runtime_has_its_signatures_result_layout_wherever_
         failures.iter().take(12).cloned().collect::<String>()
     );
     assert_eq!(programs, 360);
+}
+
+const SHAPE_POSITIONS: [Position; 4] = [
+    Position::RowsAttribute,
+    Position::OpenArgument,
+    Position::FixedArgument,
+    Position::DeepIndex,
+];
+
+fn shape_position_rows(rows: &Rows) -> Vec<String> {
+    let compiler = Compiler::new(&native_vocabulary()).expect("the native vocabulary compiles");
+    let mut failures = Vec::new();
+    for (index, result) in RESULTS.iter().enumerate() {
+        for (place, position) in SHAPE_POSITIONS.into_iter().enumerate() {
+            for (form, (declared, argument)) in ARGUMENTS.into_iter().enumerate() {
+                for reversed in [false, true] {
+                    let open_integers = position == Position::OpenArgument
+                        && result.dimensions == 1
+                        && result.ty.starts_with("i32");
+                    if open_integers || !rows.take(&[index, place, form, usize::from(reversed)]) {
+                        continue;
+                    }
+                    let call = format!("{}({argument})", result.native);
+                    let declarations = vec![declared.to_string()];
+                    let text = program(position, &declarations, &call, result.dimensions, reversed);
+                    let mut twin_declarations = declarations.clone();
+                    twin_declarations.push(format!("state t({}): {}\n", result.zero, result.ty));
+                    let twin = program(
+                        position,
+                        &twin_declarations,
+                        "t",
+                        result.dimensions,
+                        reversed,
+                    );
+                    let mut expected = Found::new();
+                    let read = position.operation_read(result.dimensions);
+                    for ((code, at), count) in found(&compiler, &twin, "t") {
+                        let (code, at) =
+                            if code == Code::FloatToInteger && !position.reads_through_a_cell() {
+                                let at = if at == "t" { read.clone() } else { at };
+                                (Code::TypeMismatch, at)
+                            } else {
+                                (code, at)
+                            };
+                        *expected.entry((code, at)).or_default() += count;
+                    }
+                    let found = found(&compiler, &text, &call);
+                    if found != expected {
+                        failures.push(format!(
+                            "310: {text}\n  found {found:?}\n  twin {expected:?}\n"
+                        ));
+                    }
+                }
+            }
+        }
+    }
+    failures
+}
+
+#[test]
+fn a_runtime_native_value_draws_at_an_array_position_the_one_diagnostic_its_input_twin_draws() {
+    let failures = covered(shape_position_rows);
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_a_runtime_native_value_draws_at_an_array_position_the_one_diagnostic_its_input_twin_draws()
+ {
+    let failures = shape_position_rows(&Rows::Every);
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
