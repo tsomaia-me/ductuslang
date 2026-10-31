@@ -836,3 +836,66 @@ fn history_fallbacks_help_names_a_fallback_and_an_init_of_the_cells_type_that_co
     }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
+
+#[test]
+fn an_element_of_a_float_derived_state_read_as_an_integer_draws_float_to_integer_once_as_its_input_twin_386()
+ {
+    let held = "state t([1.5, 2.5, 3.5]): f32[3]\n";
+    let rows: &[support::Row] = &[
+        (
+            &[held, "state s = t\n", "Clip c | trio=s:\n    Note\n"],
+            &[(Code::FloatToInteger, "s")],
+        ),
+        (
+            &[held, "Clip c | trio=t:\n    Note\n"],
+            &[(Code::FloatToInteger, "t")],
+        ),
+        (
+            &[
+                held,
+                "state s = t\n",
+                "state u = s\n",
+                "Clip c | trio=u:\n    Note\n",
+            ],
+            &[(Code::FloatToInteger, "u")],
+        ),
+        (
+            &[held, "state s = t\n", "Clip c:\n    Note/(s[0])\n"],
+            &[(Code::FloatToInteger, "s[0]")],
+        ),
+        (
+            &[held, "state s = t\n", "Clip c:\n    Note/(s[^1])\n"],
+            &[(Code::FloatToInteger, "s[^1]")],
+        ),
+        (
+            &[held, "state s = t + [1.5]\n", "Clip c:\n    Note/(s[0])\n"],
+            &[(Code::FloatToInteger, "s[0]")],
+        ),
+        (
+            &[held, "Clip c:\n    Note/(t[0])\n"],
+            &[(Code::FloatToInteger, "t")],
+        ),
+        (
+            &[
+                held,
+                "state i(0)\n",
+                "state s = t\n",
+                "Clip c:\n    Note/(s[i])\n",
+            ],
+            &[(Code::TypeMismatch, "s[i]")],
+        ),
+        (
+            &[held, "state i(0)\n", "Clip c:\n    Note/(t[i])\n"],
+            &[(Code::TypeMismatch, "t[i]")],
+        ),
+        (
+            &[
+                "state t([1, 2, 3]): i32[3]\n",
+                "state s = t\n",
+                "Clip c | trio=s:\n    Note/(s[0])\n",
+            ],
+            &[],
+        ),
+    ];
+    support::assert_rows_in_every_order(&symphonyscript_fixtures::native_vocabulary(), rows);
+}

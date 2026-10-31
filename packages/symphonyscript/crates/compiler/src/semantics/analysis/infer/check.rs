@@ -755,11 +755,17 @@ impl Engine<'_> {
         expected: Scalar,
         condition: bool,
     ) -> Result<Option<(Code, String)>, Internal> {
-        let is_cell = matches!(
-            self.node(self.through_uses(node)?)?.op,
-            Op::Read(_) | Op::History { .. }
-        ) || matches!(sig.width, Width::Adaptive)
-            && matches!(self.node(node)?.op, Op::ToRead { .. });
+        let mut read = self.through_uses(node)?;
+        if let Op::Element { base, index } = self.node(read)?.op
+            && !self.known_sig(index)?.reactive
+            && (!self.memo.projected_indexes.contains(&index)
+                || self.memo.attribute_projections.contains(&base))
+        {
+            read = self.through_uses(base)?;
+        }
+        let is_cell = matches!(self.node(read)?.op, Op::Read(_) | Op::History { .. })
+            || matches!(sig.width, Width::Adaptive)
+                && matches!(self.node(node)?.op, Op::ToRead { .. });
         let fits_kind = match (self.carried_kind(node, sig.kind)?, expected) {
             (Kind::Str, Scalar::Str) if sig.reactive => {
                 return Ok(Some((
