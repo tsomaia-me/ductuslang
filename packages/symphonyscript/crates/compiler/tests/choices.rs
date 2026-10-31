@@ -595,37 +595,6 @@ impl Position {
         }
     }
 
-    fn disagreeing_only(self) -> bool {
-        match self {
-            Position::Annotation
-            | Position::Compared
-            | Position::Tested
-            | Position::Converted
-            | Position::Index
-            | Position::Negated
-            | Position::Absolute
-            | Position::SliceBound
-            | Position::ArrayElement => true,
-            Position::TopLet
-            | Position::LocalLet
-            | Position::Scalar
-            | Position::IndexBase
-            | Position::JoinLeft
-            | Position::JoinRight
-            | Position::SliceBase
-            | Position::Len
-            | Position::Iterable
-            | Position::Attribute
-            | Position::Native
-            | Position::Argument
-            | Position::Result
-            | Position::RecursiveArgument
-            | Position::RecursiveResult
-            | Position::StateInit
-            | Position::OuterArm => false,
-        }
-    }
-
     fn hosted(self) -> bool {
         match self {
             Position::LocalLet | Position::Result | Position::RecursiveResult => true,
@@ -1081,9 +1050,6 @@ fn check_case(rows: &Rows, case: &Case, compilers: &mut Compilers, outcome: &mut
     else {
         return;
     };
-    if case.position.disagreeing_only() && case.relation.agrees() {
-        return;
-    }
     if case.position.signature() && case.relation == Relation::Family {
         return;
     }
@@ -1354,7 +1320,7 @@ fn assert_covered_arms_hold(chooser: Chooser, programs: usize, landing_apart: us
 }
 #[test]
 fn the_arms_of_a_compile_time_true_choice_agree_wherever_it_stands() {
-    assert_covered_arms_hold(Chooser::True, 515, 0);
+    assert_covered_arms_hold(Chooser::True, 528, 0);
 }
 
 #[test]
@@ -1365,7 +1331,7 @@ fn exhaustive_the_arms_of_a_compile_time_true_choice_agree_wherever_it_stands() 
 
 #[test]
 fn the_arms_of_a_compile_time_false_choice_agree_wherever_it_stands() {
-    assert_covered_arms_hold(Chooser::False, 515, 0);
+    assert_covered_arms_hold(Chooser::False, 528, 0);
 }
 
 #[test]
@@ -1376,7 +1342,7 @@ fn exhaustive_the_arms_of_a_compile_time_false_choice_agree_wherever_it_stands()
 
 #[test]
 fn the_arms_of_a_runtime_choice_agree_wherever_it_stands() {
-    assert_covered_arms_hold(Chooser::Flag, 515, 0);
+    assert_covered_arms_hold(Chooser::Flag, 528, 0);
 }
 
 #[test]
@@ -1387,7 +1353,7 @@ fn exhaustive_the_arms_of_a_runtime_choice_agree_wherever_it_stands() {
 
 #[test]
 fn the_arms_of_a_compile_time_enum_match_agree_wherever_it_stands() {
-    assert_covered_arms_hold(Chooser::Enum, 515, 0);
+    assert_covered_arms_hold(Chooser::Enum, 528, 0);
 }
 
 #[test]
@@ -1398,7 +1364,7 @@ fn exhaustive_the_arms_of_a_compile_time_enum_match_agree_wherever_it_stands() {
 
 #[test]
 fn the_arms_of_a_match_on_an_enum_input_agree_wherever_it_stands() {
-    assert_covered_arms_hold(Chooser::EnumInput, 515, 0);
+    assert_covered_arms_hold(Chooser::EnumInput, 528, 0);
 }
 
 #[test]
@@ -1409,7 +1375,7 @@ fn exhaustive_the_arms_of_a_match_on_an_enum_input_agree_wherever_it_stands() {
 
 #[test]
 fn the_arms_of_a_match_on_an_integer_input_agree_wherever_it_stands() {
-    assert_covered_arms_hold(Chooser::Integer, 515, 0);
+    assert_covered_arms_hold(Chooser::Integer, 528, 0);
 }
 
 #[test]
@@ -1420,7 +1386,7 @@ fn exhaustive_the_arms_of_a_match_on_an_integer_input_agree_wherever_it_stands()
 
 #[test]
 fn the_arms_of_a_choice_on_a_compile_time_recursive_functions_parameter_agree_wherever_it_stands() {
-    assert_covered_arms_hold(Chooser::Parameter, 432, 0);
+    assert_covered_arms_hold(Chooser::Parameter, 441, 0);
 }
 
 #[test]
@@ -1432,7 +1398,7 @@ fn exhaustive_the_arms_of_a_choice_on_a_compile_time_recursive_functions_paramet
 
 #[test]
 fn the_arms_of_a_match_on_a_compile_time_recursive_functions_parameter_agree_wherever_it_stands() {
-    assert_covered_arms_hold(Chooser::ParameterMatch, 432, 0);
+    assert_covered_arms_hold(Chooser::ParameterMatch, 441, 0);
 }
 
 #[test]
@@ -1440,4 +1406,138 @@ fn the_arms_of_a_match_on_a_compile_time_recursive_functions_parameter_agree_whe
 fn exhaustive_the_arms_of_a_match_on_a_compile_time_recursive_functions_parameter_agree_wherever_it_stands()
  {
     assert_arms_hold(Chooser::ParameterMatch, 16330, 0);
+}
+
+fn permutations(items: &[String]) -> Vec<Vec<String>> {
+    let mut orders = vec![Vec::new()];
+    for item in items {
+        let mut grown = Vec::new();
+        for order in &orders {
+            for at in 0..=order.len() {
+                let mut placed: Vec<String> = order.clone();
+                placed.insert(at, item.clone());
+                grown.push(placed);
+            }
+        }
+        orders = grown;
+    }
+    orders
+}
+
+fn drawn_texts(compiler: &Compiler, text: &str) -> BTreeSet<(Code, String)> {
+    spans(compiler, text)
+        .into_iter()
+        .map(|(code, start, end)| (code, text.get(start..end).unwrap_or_default().to_string()))
+        .collect()
+}
+
+type HolderRow = (Vec<String>, Vec<String>, (Code, &'static str));
+
+fn holder_refusal_failures(session_first: bool) -> (usize, Vec<String>) {
+    let compiler =
+        Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("the vocabulary compiles");
+    let hosted = |read: &str, recursive: bool| {
+        let other = if recursive {
+            "fn r1(n): if n > 0 then r1(n - 1) else [1]\n"
+        } else {
+            "fn r1(n): [1]\n"
+        };
+        vec![
+            "Session main\n".to_string(),
+            "fn i0(z): [1.5]\n".to_string(),
+            other.to_string(),
+            format!(
+                "fn rc(m):\n    let ch = if m is 0 then i0(0) else r1(1)\n    if m > 0 then rc(m - 1) else {read}\n"
+            ),
+            "Clip c:\n    Note/(rc(0))\n".to_string(),
+        ]
+    };
+    let element = |recursive: bool| {
+        let first = if recursive {
+            "fn r0(n): if n > 0 then r0(n - 1) else [1]\n"
+        } else {
+            "fn r0(n): [1]\n"
+        };
+        vec![
+            "Session main\n".to_string(),
+            "state flag(false)\n".to_string(),
+            first.to_string(),
+            "let l1 = [1.5]\n".to_string(),
+            "Clip c:\n    Note/([(if flag then r0(1) else l1), 1][0])\n".to_string(),
+        ]
+    };
+    let rows: [HolderRow; 5] = [
+        (
+            hosted("[(ch), 1][0]", true),
+            hosted("[(ch), 1][0]", false),
+            (Code::RaggedArray, "[(ch), 1]"),
+        ),
+        (
+            hosted("-(ch)", true),
+            hosted("-(ch)", false),
+            (Code::ArrayOperand, "-(ch)"),
+        ),
+        (
+            hosted("[1, 2][ch]", true),
+            hosted("[1, 2][ch]", false),
+            (Code::IndexType, "[1, 2][ch]"),
+        ),
+        (
+            hosted("abs(ch)", true),
+            hosted("abs(ch)", false),
+            (Code::ArrayOperand, "abs(ch)"),
+        ),
+        (
+            element(true),
+            element(false),
+            (Code::RaggedArray, "[(if flag then r0(1) else l1), 1]"),
+        ),
+    ];
+    let mut failures = Vec::new();
+    let mut programs = 0;
+    for (items, twin_items, (code, holder)) in &rows {
+        let expected: BTreeSet<(Code, String)> = [(*code, holder.to_string())].into();
+        let (fixed, items, twin_items) = if session_first {
+            (items.get(..1), items.get(1..), twin_items.get(1..))
+        } else {
+            (Some(&[][..]), Some(&items[..]), Some(&twin_items[..]))
+        };
+        let (Some(fixed), Some(items), Some(twin_items)) = (fixed, items, twin_items) else {
+            failures.push("a row without its session".to_string());
+            continue;
+        };
+        for (order, twin_order) in permutations(items)
+            .into_iter()
+            .zip(permutations(twin_items))
+        {
+            programs += 1;
+            let text = format!("{}{}", fixed.concat(), order.concat());
+            let twin = format!("{}{}", fixed.concat(), twin_order.concat());
+            let found = drawn_texts(&compiler, &text);
+            let twin_found = drawn_texts(&compiler, &twin);
+            if found != expected || twin_found != expected {
+                failures.push(format!(
+                    "{text}\n  found {found:?}\n  twin {twin_found:?}\n  expected {expected:?}"
+                ));
+            }
+        }
+    }
+    (programs, failures)
+}
+
+#[test]
+fn a_recursive_results_widening_choice_refused_by_its_holder_draws_the_holders_one_diagnostic_and_nothing_at_the_call_in_every_order_of_its_declarations_403()
+ {
+    let (programs, failures) = holder_refusal_failures(true);
+    assert_eq!(programs, 120);
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_a_recursive_results_widening_choice_refused_by_its_holder_draws_the_holders_one_diagnostic_and_nothing_at_the_call_in_every_order_403()
+ {
+    let (programs, failures) = holder_refusal_failures(false);
+    assert_eq!(programs, 600);
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
 }

@@ -125,7 +125,42 @@ impl Engine<'_> {
             sig.frame = true;
             sig.reactive = false;
         }
+        if !sig.is_error() && self.refused_settled_shape(node)? {
+            sig = Sig::ERROR;
+        }
         self.memo.sigs.insert(node, sig);
+        Ok(true)
+    }
+
+    fn refused_settled_shape(&mut self, node: NodeId) -> Result<bool, Internal> {
+        let Some(need) = self.memo.shapes.get(&node) else {
+            return Ok(false);
+        };
+        let wanted = need.lengths.clone();
+        if !self.rests_on_recursion(node)? {
+            return Ok(false);
+        }
+        let Some(settled) = self.known_lengths(node)? else {
+            return Ok(false);
+        };
+        let refused = settled.len() != wanted.len()
+            || settled
+                .iter()
+                .zip(&wanted)
+                .any(|(length, wanted)| length.is_some_and(|length| length != *wanted));
+        if !refused {
+            return Ok(false);
+        }
+        let need = self
+            .memo
+            .shapes
+            .get(&node)
+            .cloned()
+            .ok_or(Internal::missed("shape need"))?;
+        match need.at {
+            Some((loc, scope)) => self.error(need.code, loc, scope, need.message)?,
+            None => self.error_at_node(need.code, node, need.message)?,
+        }
         Ok(true)
     }
 

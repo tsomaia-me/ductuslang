@@ -915,6 +915,12 @@ impl Engine<'_> {
                 Val::Scalar(node) if self.arrays.contains(node) => {
                     let projected =
                         self.projected(*node, &inner, (Code::RaggedArray, RAGGED), loc, scope)?;
+                    if let Some(need) = self.memo.shapes.get_mut(node)
+                        && need.code == Code::RaggedArray
+                        && need.at.is_none()
+                    {
+                        need.at = Some((loc, scope));
+                    }
                     elements.extend(projected);
                 }
                 other if other.shape() != inner => {
