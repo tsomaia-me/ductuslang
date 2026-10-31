@@ -1433,6 +1433,8 @@ fn drawn_texts(compiler: &Compiler, text: &str) -> BTreeSet<(Code, String)> {
 
 type HolderRow = (Vec<String>, Vec<String>, (Code, &'static str));
 
+type LiteralRow = (Vec<String>, Option<(Code, &'static str)>);
+
 fn holder_refusal_failures(session_first: bool) -> (usize, Vec<String>) {
     let compiler =
         Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("the vocabulary compiles");
@@ -1540,4 +1542,48 @@ fn exhaustive_a_recursive_results_widening_choice_refused_by_its_holder_draws_th
     let (programs, failures) = holder_refusal_failures(false);
     assert_eq!(programs, 600);
     assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+#[test]
+fn a_definite_array_beside_a_placeholder_or_a_variable_array_draws_what_the_literal_drew_before_recursion_in_every_order_403()
+ {
+    let compiler =
+        Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("the vocabulary compiles");
+    let session = "Session s:\n    Clip as a | seq=(nothing + [1.5, 2.5])\n    Clip as b | seq=(x + [1.5, 2.5])\n    Clip as c:\n        Note/([nothing, 1.5][i])\n        Note/([x, 1.5][i])\n        Note/([nothing, [1, 2][5]][0])\n        Note/([x, [1, 2][5]][0])\n        Note/([[1.5, 2.5], nothing][1][0])\n        Note/([[1.5, 2.5], [x, x]][1][0])\n";
+    let rows: [LiteralRow; 2] = [
+        (
+            vec![
+                "state i(0)\n".to_string(),
+                "state x(1)\n".to_string(),
+                session.to_string(),
+            ],
+            None,
+        ),
+        (
+            vec![
+                "state s([]): i32[..4]\n".to_string(),
+                "Clip c:\n    Note/([[1.5, 2.5], s][1][0])\n".to_string(),
+            ],
+            Some((Code::RaggedArray, "s")),
+        ),
+    ];
+    let mut failures = Vec::new();
+    let mut programs = 0;
+    for (items, ragged) in rows {
+        for order in permutations(&items) {
+            let text = order.concat();
+            programs += 1;
+            let drawn = drawn_texts(&compiler, &text);
+            let raggeds: Vec<(Code, &str)> = drawn
+                .iter()
+                .filter(|(code, _)| *code == Code::RaggedArray)
+                .map(|(code, at)| (*code, at.as_str()))
+                .collect();
+            if raggeds != ragged.into_iter().collect::<Vec<_>>() {
+                failures.push(format!("{text}\n  found {drawn:?}\n"));
+            }
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.concat());
+    assert_eq!(programs, 8);
 }

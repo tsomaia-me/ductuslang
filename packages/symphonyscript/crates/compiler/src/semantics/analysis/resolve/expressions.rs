@@ -915,9 +915,13 @@ impl Engine<'_> {
                 Val::Scalar(node) if self.arrays.contains(node) => {
                     let projected =
                         self.projected(*node, &inner, (Code::RaggedArray, RAGGED), loc, scope)?;
-                    if let Some(need) = self.memo.shapes.get_mut(node)
-                        && need.code == Code::RaggedArray
-                        && need.at.is_none()
+                    if self
+                        .memo
+                        .shapes
+                        .get(node)
+                        .is_some_and(|need| need.code == Code::RaggedArray && need.at.is_none())
+                        && self.rests_on_recursion(*node)?
+                        && let Some(need) = self.memo.shapes.get_mut(node)
                     {
                         need.at = Some((loc, scope));
                     }
