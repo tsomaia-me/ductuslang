@@ -136,13 +136,16 @@ pub(crate) enum CountedWalk {
 }
 
 #[cfg(test)]
+const WALKS: usize = 133;
+
+#[cfg(test)]
 thread_local! {
-    static STEPS: [std::cell::Cell<u64>; 131] = const { [const { std::cell::Cell::new(0) }; 131] };
+    static STEPS: [std::cell::Cell<u64>; WALKS] = const { [const { std::cell::Cell::new(0) }; WALKS] };
 }
 
 impl CountedWalk {
     #[cfg(test)]
-    pub(crate) const ALL: [CountedWalk; 133] = [
+    pub(crate) const ALL: [CountedWalk; WALKS] = [
         CountedWalk::InlineCountsOf,
         CountedWalk::InlineCountsCallSites,
         CountedWalk::RecursiveFunctionsRecursiveFunctions,
