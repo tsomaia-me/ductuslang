@@ -145,9 +145,7 @@ pub(super) fn help(code: Code) -> Option<&'static str> {
         Code::FlagSyntax => "end the flags before the next name, as in `Note'`",
         Code::AttributeSyntax => "write each entry as `name=value`, `name` or `!name`",
         Code::BundleSyntax => "close the bundle with `]`, as in `[Note Note]`",
-        Code::ForSyntax => {
-            "write `for`, a variable, `in`, the iterable and `:`, as in `for i in 0..2:`"
-        }
+        Code::ForSyntax => "write `for <name> in <iterable>:` with one name or two",
         Code::WireSyntax => "end the wire with `:` and its destination, as in `Plays: c`",
         Code::MisplacedWire => "place the wire on its own line, outside the bundle",
         Code::WhenSyntax => "end the condition with `:` and indent the block under it",

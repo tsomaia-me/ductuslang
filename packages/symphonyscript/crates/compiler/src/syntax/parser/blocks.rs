@@ -114,6 +114,7 @@ impl Parser<'_> {
     pub(super) fn for_block(&mut self) {
         self.start(SyntaxKind::ForBlock);
         self.loop_head(Code::ForSyntax);
+        self.head_value("the iterable", None);
         self.then([Task::Iterable, Task::ForAfterIterable]);
     }
 

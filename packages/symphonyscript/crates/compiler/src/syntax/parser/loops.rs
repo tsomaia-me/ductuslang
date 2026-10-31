@@ -21,6 +21,34 @@ impl Parser<'_> {
         }
     }
 
+    pub(super) fn head_value(&mut self, what: &str, help: Option<&str>) {
+        let missing = self.at_end()
+            || self.at_any(&[
+                SyntaxKind::Colon,
+                SyntaxKind::IntoKw,
+                SyntaxKind::FromKw,
+                SyntaxKind::Newline,
+                SyntaxKind::Indent,
+                SyntaxKind::Dedent,
+            ]);
+        if !missing {
+            return;
+        }
+        let reported = self.diagnostics.len();
+        let found = self.describe();
+        self.error(Code::ForSyntax, format!("expected {what}, found {found}"));
+        if let Some(help) = help {
+            self.help_since(reported, Code::ForSyntax, help);
+        }
+    }
+
+    fn for_expr_expect(&mut self, kind: SyntaxKind, what: &str) -> bool {
+        let reported = self.diagnostics.len();
+        let found = self.expect(kind, Code::ForSyntax, what);
+        self.help_since(reported, Code::ForSyntax, FOR_EXPR_HEAD);
+        found
+    }
+
     pub(super) fn whole_expr(&mut self, own_line: bool) {
         if self.at(SyntaxKind::ForKw) {
             self.then([Task::ForExpr { own_line }]);
@@ -47,7 +75,10 @@ impl Parser<'_> {
     pub(super) fn for_expr(&mut self, own_line: bool) {
         let checkpoint = self.checkpoint();
         self.start(SyntaxKind::ForExprHead);
-        self.loop_head(Code::ExpressionSyntax);
+        let reported = self.diagnostics.len();
+        self.loop_head(Code::ForSyntax);
+        self.help_since(reported, Code::ForSyntax, FOR_EXPR_HEAD);
+        self.head_value("the iterable", Some(FOR_EXPR_HEAD));
         self.then([
             Task::Iterable,
             Task::ForExprInto {
@@ -58,16 +89,13 @@ impl Parser<'_> {
     }
 
     pub(super) fn for_expr_into(&mut self, checkpoint: Checkpoint, own_line: bool) {
-        self.expect(SyntaxKind::IntoKw, Code::ExpressionSyntax, "`into`");
-        self.expect_name(Code::ExpressionSyntax, "the accumulator's name");
+        self.for_expr_expect(SyntaxKind::IntoKw, "`into`");
+        self.for_expr_expect(SyntaxKind::Ident, "the accumulator's name");
         if self.eat(SyntaxKind::Colon) {
             self.type_ref();
         }
-        self.expect(
-            SyntaxKind::FromKw,
-            Code::ExpressionSyntax,
-            "`from` and the start",
-        );
+        self.for_expr_expect(SyntaxKind::FromKw, "`from` and the start");
+        self.head_value("the start", Some(FOR_EXPR_HEAD));
         self.then([
             Task::Expr,
             Task::ForExprColon {
@@ -78,11 +106,7 @@ impl Parser<'_> {
     }
 
     pub(super) fn for_expr_colon(&mut self, checkpoint: Checkpoint, own_line: bool) {
-        self.expect(
-            SyntaxKind::Colon,
-            Code::ExpressionSyntax,
-            "`:` and the body",
-        );
+        self.for_expr_expect(SyntaxKind::Colon, "`:` and the body");
         self.finish();
         if !self.at(SyntaxKind::Newline) {
             self.start_at(checkpoint, SyntaxKind::ForExpr);
@@ -136,6 +160,8 @@ impl Parser<'_> {
         self.block_ended = true;
     }
 }
+
+const FOR_EXPR_HEAD: &str = "write `for <name> in <iterable> into <name> from <start>:`";
 
 const FOR_BLOCK_BODY: &str =
     "write the `for` expression on the line after the function's `:`, indented under it";

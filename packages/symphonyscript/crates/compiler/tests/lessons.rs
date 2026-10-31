@@ -91,9 +91,10 @@ fn every_code_has_a_lesson_that_names_its_code_and_its_section() {
             assert!(examples.is_empty(), "{code}");
             continue;
         }
+        let heads = if *code == Code::ForSyntax { 2 } else { 1 };
         assert_eq!(
             examples.iter().filter(|example| example.error).count(),
-            1,
+            heads,
             "{code}"
         );
         assert!(examples.iter().any(|example| !example.error), "{code}");

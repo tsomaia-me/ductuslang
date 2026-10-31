@@ -245,3 +245,77 @@ fn a_block_form_that_stands_as_an_operand_or_an_argument_draws_unparenthesized_f
     }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
+
+const EXPRESSION_HEAD: &str = "write `for <name> in <iterable> into <name> from <start>:`";
+
+const PLACEMENT_HEAD: &str = "write `for <name> in <iterable>:` with one name or two";
+
+const FAULTED_HEADS: [(&str, &str, &str); 8] = [
+    ("for ", "in", " held into s from 0: s"),
+    ("for x ", "held", " into s from 0: s + x"),
+    ("for x in ", "into", " s from 0: s"),
+    ("for x in held ", "s", " from 0: s"),
+    ("for x in held into ", "from", " 0: x"),
+    ("for x in held into s ", "0", ": s"),
+    ("for x in held into s from ", ":", " s"),
+    ("for x in held into s from 0 ", "s", ""),
+];
+
+const HEAD_POSITIONS: [(&str, &str); 3] = [
+    ("let v = ", ""),
+    ("state v = ", ""),
+    ("state v = 1 + (", ")"),
+];
+
+const FAULTED_PLACEMENTS: [(&str, &str, &str); 4] = [
+    ("Clip c:\n    for ", "in", " 0..2:\n        Note\n"),
+    ("Clip c:\n    for i ", "0", "..2:\n        Note\n"),
+    ("Clip c:\n    for i in ", ":", "\n        Note\n"),
+    ("Clip c:\n    for i in 0..2 ", "x", ":\n        Note\n"),
+];
+
+fn one_for_syntax(
+    compiler: &Compiler,
+    text: &str,
+    at: usize,
+    token: &str,
+    help: &str,
+) -> Result<(), String> {
+    let expected = |found: &[Diagnostic]| match found {
+        [diagnostic] => {
+            diagnostic.code == Code::ForSyntax
+                && diagnostic.span.range == (at as u32..(at + token.len()) as u32)
+                && diagnostic.help.as_deref() == Some(help)
+        }
+        _ => false,
+    };
+    let parsed = support::parsed(text).diagnostics.clone();
+    let errors = support::errors(compiler.check(&[support::source(text)]));
+    if expected(&parsed) && expected(&errors) {
+        return Ok(());
+    }
+    Err(format!(
+        "{text}\n  parses to {parsed:?}\n  checks to {errors:?}\n  expected one for-syntax at {token:?}\n"
+    ))
+}
+
+#[test]
+fn a_fault_in_either_loop_head_draws_for_syntax_with_the_help_naming_the_form_of_its_head() {
+    let compiler = Compiler::new(&vocabulary()).expect("the vocabulary compiles");
+    let mut failures = Vec::new();
+    for (before, token, after) in FAULTED_HEADS {
+        for (opening, closing) in HEAD_POSITIONS {
+            let prefix = format!("{HELD}{opening}{before}");
+            let text = format!("{prefix}{token}{after}{closing}\n");
+            failures.extend(
+                one_for_syntax(&compiler, &text, prefix.len(), token, EXPRESSION_HEAD).err(),
+            );
+        }
+    }
+    for (before, token, after) in FAULTED_PLACEMENTS {
+        let text = format!("{before}{token}{after}");
+        failures
+            .extend(one_for_syntax(&compiler, &text, before.len(), token, PLACEMENT_HEAD).err());
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
