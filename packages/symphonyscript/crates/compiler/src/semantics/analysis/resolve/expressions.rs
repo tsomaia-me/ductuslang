@@ -68,19 +68,21 @@ impl Engine<'_> {
             } => self.history((target, *offset, *fallback), loc, scope, need)?,
             ExprKind::Stepped(target) => self.stepped(target, loc, scope)?,
             ExprKind::Call(callee, args) => self.call(*callee, args, expr, loc, scope, need)?,
-            ExprKind::Unary(op, operand) => match {
+            ExprKind::Unary(op, operand) => {
                 let operand_val = self.val(Query::Expr(*operand, scope), need);
-                self.unless_faulty_literal(*operand, operand_val, scope, need)?
-            } {
-                Some(operand) => match self.placeholder_array(&operand, need)? {
-                    Some(true) => Some(Val::Error),
-                    Some(false) => Some(
-                        self.unary_val(operand, loc, scope, |operand| Op::Unary(*op, operand))?,
-                    ),
+                match self.unless_faulty_literal(*operand, operand_val, scope, need)? {
+                    Some(operand) => match self.placeholder_array(&operand, need)? {
+                        Some(true) => Some(Val::Error),
+                        Some(false) => {
+                            Some(self.unary_val(operand, loc, scope, |operand| {
+                                Op::Unary(*op, operand)
+                            })?)
+                        }
+                        None => None,
+                    },
                     None => None,
-                },
-                None => None,
-            },
+                }
+            }
             ExprKind::Binary(op, lhs_expr, rhs_expr) => {
                 let (lhs, rhs) = self.siblings(*lhs_expr, *rhs_expr, scope, need)?;
                 let lhs = self.unless_faulty_literal(*lhs_expr, lhs, scope, need)?;
