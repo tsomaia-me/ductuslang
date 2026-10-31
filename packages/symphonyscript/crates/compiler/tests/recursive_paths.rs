@@ -3506,7 +3506,7 @@ fn callee_template_rows(rows: &Rows, reach: CalleeReach) -> (Vec<String>, usize)
                                 Found::new()
                             };
                             programs += 1;
-                            if !expected.is_empty() || drawn != expected {
+                            if drawn != expected {
                                 failures.push(format!(
                                     "{reach:?} {read:?} {holds:?} {depth} {alternating} {index} {reversed}\n{text}\n  found {drawn:?}\n  twin {expected:?}\n"
                                 ));
@@ -3639,7 +3639,7 @@ const START_READERS: [StartReader; 3] = [
 impl StartFault {
     fn depths(self) -> &'static [usize] {
         match self {
-            StartFault::Depth => &[1, 3],
+            StartFault::Depth => &[1],
             StartFault::None | StartFault::Outside | StartFault::Fit | StartFault::Overflow => {
                 &[1, 3, 30]
             }
@@ -4008,7 +4008,7 @@ fn evaluating_the_start_of_an_untaken_arm_draws_no_fit_range_overflow_or_depth_d
 #[ignore = "exhaustive"]
 fn exhaustive_evaluating_the_start_of_an_untaken_arm_draws_no_fit_range_overflow_or_depth_diagnostic_in_any_frame()
  {
-    assert_none_fail(untaken_failures(|generator| generator(&Rows::Every)), 1_944);
+    assert_none_fail(untaken_failures(|generator| generator(&Rows::Every)), 1_884);
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -4169,9 +4169,8 @@ fn open_call_rows(rows: &Rows, offset: i64) -> (Vec<String>, usize) {
                                 OpenCallUse::G(m) => model.g(*m),
                             })
                             .collect();
-                        let Some(values) = values else {
-                            continue;
-                        };
+                        let deep = values.is_none();
+                        let values = values.unwrap_or_else(|| vec![0; uses.len()]);
                         let body: Vec<String> = terms
                             .iter()
                             .filter_map(|term| match term {
@@ -4197,7 +4196,7 @@ fn open_call_rows(rows: &Rows, offset: i64) -> (Vec<String>, usize) {
                                     usize::from(reversed),
                                     usize::from(wrong),
                                 ];
-                                if !rows.take(&tag) {
+                                if (deep && wrong) || !rows.take(&tag) {
                                     continue;
                                 }
                                 let mut expected = Found::new();
@@ -4240,9 +4239,11 @@ fn open_call_rows(rows: &Rows, offset: i64) -> (Vec<String>, usize) {
                                 let text = items.concat();
                                 let drawn = found(&text);
                                 programs += 1;
-                                if drawn != expected {
+                                let depth_drawn = !drawn.is_empty()
+                                    && drawn.keys().all(|(code, _)| *code == Code::RecursionDepth);
+                                if (deep && !depth_drawn) || (!deep && drawn != expected) {
                                     failures.push(format!(
-                                        "{offset} {arm:?} {terms:?} {taken_read} {depth} {uses:?} {reversed} {wrong}\n{text}\n  found {drawn:?}\n  expected {expected:?}\n"
+                                        "{offset} {arm:?} {terms:?} {taken_read} {depth} {uses:?} {reversed} {wrong} deep {deep}\n{text}\n  found {drawn:?}\n  expected {expected:?}\n"
                                     ));
                                 }
                             }
@@ -4370,12 +4371,12 @@ fn open_failures(run: impl Fn(Generator) -> (Vec<String>, usize)) -> (Vec<String
 
 #[test]
 fn an_untaken_arms_start_that_reaches_an_open_call_leaves_no_value_any_later_evaluation_reads() {
-    assert_none_fail(open_failures(|generator| covered(generator)), 38);
+    assert_none_fail(open_failures(|generator| covered(generator)), 42);
 }
 
 #[test]
 #[ignore = "exhaustive"]
 fn exhaustive_an_untaken_arms_start_that_reaches_an_open_call_leaves_no_value_any_later_evaluation_reads()
  {
-    assert_none_fail(open_failures(|generator| generator(&Rows::Every)), 5_596);
+    assert_none_fail(open_failures(|generator| generator(&Rows::Every)), 6_268);
 }

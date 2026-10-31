@@ -1285,3 +1285,167 @@ const HEAD_CHECKS: [CountedWalk; 3] = [
     CountedWalk::RecursiveBeginChecks,
     CountedWalk::RecursiveCheckedHeads,
 ];
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum UntakenWork {
+    OpenKey,
+    Descending,
+    Starts,
+    Candidates,
+}
+
+const UNTAKEN_WORK: [UntakenWork; 4] = [
+    UntakenWork::OpenKey,
+    UntakenWork::Descending,
+    UntakenWork::Starts,
+    UntakenWork::Candidates,
+];
+
+impl UntakenWork {
+    fn sizes(self) -> [usize; 3] {
+        match self {
+            UntakenWork::OpenKey | UntakenWork::Descending => [100, 200, 400],
+            UntakenWork::Starts => [25, 50, 100],
+            UntakenWork::Candidates => [10, 20, 40],
+        }
+    }
+
+    fn program(self, size: usize, reversed: bool) -> String {
+        let reader = |levels: usize, total: usize| {
+            format!("Clip k:\n    Note/([60][h([verse, other], {levels}) - {total}])\n")
+        };
+        let mut items = vec![
+            "Clip verse | gain=2:\n    Note\n".to_string(),
+            "Clip other | gain=3:\n    Note\n".to_string(),
+        ];
+        match self {
+            UntakenWork::OpenKey => items.extend([
+                format!(
+                    "fn g(xs, m): if m < 1 then (if h(xs, {size}) > 0 then xs[0] else xs[1]) else g(xs, m - 1)\n"
+                ),
+                "fn h(xs, n): if n < 1 then 0 else i32(xs[0].gain) + h(xs, n - 1) + (if false then i32(g(xs, n).gain) else 0)\n".to_string(),
+                reader(size, 2 * size),
+            ]),
+            UntakenWork::Descending => items.extend([
+                "fn g(xs, m): if m < 1 then xs[0] else g(xs, m + 1)\n".to_string(),
+                "fn h(xs, n): if n < 1 then 0 else i32(xs[0].gain) + h(xs, n - 1) + (if false then i32(g(xs, n).gain) else 0)\n".to_string(),
+                reader(size, 2 * size),
+            ]),
+            UntakenWork::Starts => {
+                let starts: String = (0..size)
+                    .map(|offset| format!(" + (if false then i32(g(xs, n + {}).gain) else 0)", 100 + offset))
+                    .collect();
+                items.extend([
+                    "fn g(xs, m): if m < 1 then (if h(xs, 100) > 0 then xs[0] else xs[1]) else g(xs, m - 1)\n".to_string(),
+                    format!("fn h(xs, n): if n < 1 then 0 else i32(xs[0].gain) + h(xs, n - 1){starts}\n"),
+                    reader(100, 200),
+                ]);
+            }
+            UntakenWork::Candidates => {
+                let references = (0..size)
+                    .map(|index| format!("r{index}"))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                items.extend((0..size).map(|index| format!("Clip r{index} | gain=2:\n    Note\n")));
+                items.extend([
+                    "fn h(xs, n): if n < 1 then 0 else 2 + h(xs, n - 1) + (if false then i32(xs[n % xs.size].gain) else 0)\n".to_string(),
+                    format!("Clip k:\n    Note/([60][h([{references}], 20) - 40])\n"),
+                ]);
+            }
+        }
+        if reversed {
+            items.reverse();
+        }
+        format!("Session main\n{}", items.concat())
+    }
+}
+
+fn untaken_measured(compiler: &Compiler, text: &str) -> Measured {
+    let walks_before: Vec<u64> = CountedWalk::ALL.iter().map(|walk| walk.steps()).collect();
+    let source = Source {
+        path: "cost.sym".into(),
+        text: text.into(),
+    };
+    let (diagnostics, found) = compiler.analyzed(&[source], |engine: &Engine<'_>| {
+        vec![
+            ("calls", engine.call_count),
+            ("evaluation_work", engine.memo.evaluation_work),
+            ("query_runs", engine.memo.query_runs),
+            (
+                "nodes",
+                u64::try_from(engine.nodes.len()).unwrap_or(u64::MAX),
+            ),
+        ]
+    });
+    let mut counts: Vec<(String, u64)> = found
+        .unwrap_or_default()
+        .into_iter()
+        .map(|(name, count)| (name.to_string(), count))
+        .collect();
+    for (walk, before) in CountedWalk::ALL.iter().zip(walks_before) {
+        counts.push((format!("{walk:?}"), walk.steps() - before));
+    }
+    let errors = diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.severity() == Severity::Error)
+        .map(|diagnostic| format!("{:?} {:?}", diagnostic.code, diagnostic.summary))
+        .collect();
+    Measured { errors, counts }
+}
+
+fn untaken_work_failures(divisor: usize) -> Vec<String> {
+    let compiler = Compiler::new(&vocabulary()).expect("the vocabulary compiles");
+    let mut failures = Vec::new();
+    let mut rows = 0;
+    for work in UNTAKEN_WORK {
+        for reversed in [false, true] {
+            rows += 1;
+            let sizes = work.sizes().map(|size| size / divisor);
+            let name = format!("{work:?} reversed {reversed}");
+            let texts = sizes.map(|size| work.program(size, reversed));
+            let runs = texts
+                .each_ref()
+                .map(|text| untaken_measured(&compiler, text));
+            for (run, size) in runs.iter().zip(sizes) {
+                if let Some(first) = run.errors.first() {
+                    failures.push(format!("{name} {size}: {first}"));
+                }
+            }
+            for (index, (counter, _)) in runs[0].counts.iter().enumerate() {
+                let against = |measure: [usize; 3]| {
+                    [0, 1, 2].map(|run| {
+                        (
+                            u64::try_from(measure[run]).unwrap_or(u64::MAX),
+                            runs[run].counts.get(index).map_or(0, |(_, count)| *count),
+                        )
+                    })
+                };
+                let by_size = against(sizes);
+                let by_text = against(texts.each_ref().map(String::len));
+                let grows = by_size[2].1 > by_size[0].1 + 2;
+                if grows && !linear(by_size) && !linear(by_text) {
+                    failures.push(format!(
+                        "{name}: {counter} {:?}",
+                        by_size.map(|(_, count)| count)
+                    ));
+                }
+            }
+        }
+    }
+    assert_eq!(rows, 8);
+    failures
+}
+
+#[test]
+fn an_untaken_starts_evaluation_costs_work_linear_in_the_distinct_calls_plus_the_frames_starts() {
+    let failures = untaken_work_failures(5);
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+#[test]
+#[ignore = "stress"]
+fn stress_an_untaken_starts_evaluation_costs_work_linear_in_the_distinct_calls_plus_the_frames_starts_in_either_order()
+ {
+    let failures = untaken_work_failures(1);
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
