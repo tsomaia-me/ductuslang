@@ -125,6 +125,12 @@ impl Engine<'_> {
     }
 
     fn expected_own(&self, node: NodeId, sig: &Sig, ty: EvalTy) -> Result<EvalTy, Internal> {
+        if let Op::Recursive { .. } = self.node(node)?.op
+            && sig.kind == Kind::Int
+            && expected_scalar(ty).is_some_and(is_integer)
+        {
+            return Ok(ty);
+        }
         let (Width::Fixed(scalar), Some(expected)) = (sig.width, expected_scalar(ty)) else {
             return Ok(own_type(sig, ty));
         };
@@ -787,8 +793,8 @@ impl Engine<'_> {
                 })
             }
             BinaryOp::Div => {
-                let a = self.float_operand(lhs, &[rhs], (own, partner), ctx, need)?;
-                let b = self.float_operand(rhs, &[lhs], (own, partner), ctx, need)?;
+                let a = self.float_operand(lhs, (own, partner), ctx, need)?;
+                let b = self.float_operand(rhs, (own, partner), ctx, need)?;
                 Some(match (some!(a), some!(b)) {
                     (CVal::F32(a), CVal::F32(b)) => CVal::F32(a / b),
                     (CVal::F64(a), CVal::F64(b)) => CVal::F64(a / b),
@@ -860,7 +866,7 @@ impl Engine<'_> {
         }
         let values: Vec<Option<CVal>> = if is_float_builtin(builtin) {
             args.iter()
-                .map(|arg| self.float_operand(*arg, args, (own, partner), ctx, need))
+                .map(|arg| self.float_operand(*arg, (own, partner), ctx, need))
                 .collect::<Result<_, _>>()?
         } else {
             args.iter()
@@ -1099,7 +1105,6 @@ impl Engine<'_> {
     fn float_operand(
         &mut self,
         operand: NodeId,
-        partners: &[NodeId],
         (own, expectation): (EvalTy, Option<EvalTy>),
         ctx: Ctx,
         need: &mut Vec<Query>,
@@ -1109,30 +1114,14 @@ impl Engine<'_> {
             return self.typed_child(operand, (own, expectation), ctx, need);
         }
         let flexible = sig.width == Width::Flexible;
-        let mut partner = None;
-        for other in partners.iter().filter(|partner| **partner != operand) {
-            match self.known_sig(*other)?.width {
-                Width::Fixed(scalar) if is_integer(scalar) => {
-                    partner = Some(scalar);
-                    break;
-                }
-                Width::Fixed(_) | Width::Flexible | Width::Widened(_) | Width::Adaptive => {}
-            }
-        }
         let widens_into_own = match (sig.width, expected_scalar(own)) {
             (Width::Fixed(scalar), Some(target)) => widens(scalar, target),
             _ => false,
         };
-        let ty = match partner {
-            Some(scalar) if flexible => of_scalar(scalar),
-            _ if flexible && !is_chosen_float(own) => {
-                return self.child(operand, own, ctx, need);
-            }
-            _ if expectation.is_some() && widens_into_own => {
-                return self.child(operand, own, ctx, need);
-            }
-            _ => own_type(&sig, EvalTy::Exact),
-        };
+        if flexible && !is_chosen_float(own) || expectation.is_some() && widens_into_own {
+            return self.child(operand, own, ctx, need);
+        }
+        let ty = own_type(&sig, EvalTy::Exact);
         let value = some!(self.child(operand, ty, ctx, need)?);
         if flexible && int_range(ty).is_some() {
             let value = self.fit(operand, value, ty)?;

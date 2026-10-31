@@ -427,13 +427,6 @@ fn compile_time_values_follow_the_types_that_flow_into_them() {
     let rows: Vec<(&Vocabulary, String, &str, EvalTy, CVal)> = vec![
         (
             &example,
-            "Clip c | gain=(16777217 / 2i32)\n".into(),
-            "gain",
-            EvalTy::F32,
-            CVal::F32(8388608.0),
-        ),
-        (
-            &example,
             "Clip c | gain=(16777217i32 / 2)\n".into(),
             "gain",
             EvalTy::F32,

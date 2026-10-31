@@ -3488,7 +3488,7 @@ fn bytes_of_a_single_value_is_an_error() {
 }
 
 #[test]
-fn a_fixed_u8_argument_keeps_u8_through_a_recursive_body() {
+fn a_fixed_u8_argument_takes_the_calls_type_through_a_recursive_body() {
     let call = "Clip c:\n    Note/(r(u8(3), 1))\n";
     let rows: &[support::Row] = &[
         (
@@ -3496,7 +3496,7 @@ fn a_fixed_u8_argument_keeps_u8_through_a_recursive_body() {
                 "fn r(x, n): if n < 1 then x - u8(5) else r(x, n - 1)\n",
                 call,
             ],
-            &[(Code::ConstantOverflow, "x - u8(5)")],
+            &[],
         ),
         (
             &["fn g(x): x - u8(5)\n", "Clip c:\n    Note/(g(u8(3)))\n"],
@@ -3504,7 +3504,7 @@ fn a_fixed_u8_argument_keeps_u8_through_a_recursive_body() {
         ),
         (
             &["fn r(x, n): if n < 1 then x + 300 else r(x, n - 1)\n", call],
-            &[(Code::DoesNotFit, "300")],
+            &[],
         ),
         (
             &[
@@ -3628,10 +3628,7 @@ fn a_fixed_type_operand_widens_into_the_expected_type_before_the_operation() {
         (&["Osc o | freq=(3.4028235e38f32 * 2)\n"], &[]),
         (&["Osc o | freq=(u8(250) * 2 / 2)\n"], &[]),
         (&["Osc o | freq=(sqrt(u8(250) * 2))\n"], &[]),
-        (
-            &["Osc o | freq=(u8(250) / 300)\n"],
-            &[(Code::DoesNotFit, "300")],
-        ),
+        (&["Osc o | freq=(u8(250) / 300)\n"], &[]),
         (
             &[
                 "fn r(x, n): if n < 1 then x else r(x, n - 1)\n",
@@ -6176,6 +6173,119 @@ fn beside_a_placeholder_that_is_not_a_names_the_valid_rows_hold() {
         (
             &["Clip c:\n    Note/(nothing + true)\n"],
             &[(Code::UnknownName, "nothing")],
+        ),
+    ];
+    support::assert_rows_in_every_order(&symphonyscript_fixtures::vocabulary(), rows);
+}
+
+const FLOAT_FLOWS: [&str; 10] = [
+    "u8(2) / 300",
+    "300 / u8(2)",
+    "i32(5) / 3000000000",
+    "\"a\".bytes[0] / 256",
+    "u8(250) / 400 + 0.5",
+    "lerp(u8(2), 300, 0.5)",
+    "u8(2) / 300 * 2",
+    "sin(u8(2) * 300)",
+    "2 ** (u8(7) / 1200)",
+    "floor(u8(2) / 300)",
+];
+
+const FLOAT_STANDS: [&str; 3] = [
+    "Clip c:\n    Note | velocity=({x})\n",
+    "Clip c:\n    Note | length=({x})\n",
+    "Clip c | gain=({x}):\n    Note\n",
+];
+
+const CALL_RESULTS: [[&str; 2]; 3] = [
+    [
+        "fn r(n): if n > 0 then r(n - 1) else u8(250) + 300\n",
+        "Clip c:\n    Note/(r({n}))\n",
+    ],
+    [
+        "fn r(a, n): if n > 0 then r(a, n - 1) else a + 300\n",
+        "Clip c:\n    Note/(r(u8(250), {n}))\n",
+    ],
+    [
+        "fn r(a, n): if n > 0 then r(a, n - 1) else a - u8(5)\n",
+        "Clip c:\n    Note/(r(u8(3), {n}))\n",
+    ],
+];
+
+fn flowing_float_rows(rows: &Rows) -> Vec<String> {
+    let compiler =
+        Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("the vocabulary compiles");
+    let mut failures = Vec::new();
+    for (form, expression) in FLOAT_FLOWS.iter().enumerate() {
+        for (stand, place) in FLOAT_STANDS.iter().enumerate() {
+            if !rows.take(&[0, form, stand, 0]) {
+                continue;
+            }
+            let text = place.replace("{x}", expression);
+            let found = support::error_texts(&compiler, &text);
+            if !found.is_empty() {
+                failures.push(format!("292: {text}\n  draws {found:?}"));
+            }
+        }
+    }
+    for (form, [function, call]) in CALL_RESULTS.iter().enumerate() {
+        for (depth, n) in ["0", "1", "3"].into_iter().enumerate() {
+            for reversed in [false, true] {
+                if !rows.take(&[1, form, depth, usize::from(reversed)]) {
+                    continue;
+                }
+                let read = call.replace("{n}", n);
+                let text = if reversed {
+                    format!("{read}{function}")
+                } else {
+                    format!("{function}{read}")
+                };
+                let found = support::error_texts(&compiler, &text);
+                if !found.is_empty() {
+                    failures.push(format!("292: {text}\n  draws {found:?}"));
+                }
+            }
+        }
+    }
+    failures
+}
+
+#[test]
+fn a_literal_beside_a_fixed_type_operand_takes_the_flowing_float_type_and_a_recursive_result_the_calls_type()
+ {
+    let failures = covered(flowing_float_rows);
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_a_literal_beside_a_fixed_type_operand_takes_the_flowing_float_type_and_a_recursive_result_the_calls_type()
+ {
+    let failures = flowing_float_rows(&Rows::Every);
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+#[test]
+fn where_the_flow_stops_a_literal_beside_a_fixed_type_operand_takes_the_operands_type() {
+    let rows: &[support::Row] = &[
+        (
+            &["Clip c:\n    Note when u8(250) < 400\n"],
+            &[(Code::DoesNotFit, "400")],
+        ),
+        (
+            &["Clip c:\n    Note/([1, 2, 3][u8(2) + 300])\n"],
+            &[(Code::DoesNotFit, "300")],
+        ),
+        (
+            &[
+                "fn r(n): if n > 0 then r(n - 1) else u8(250) + 300\n",
+                "Clip c:\n    Note/([60][r(1) - 300])\n",
+            ],
+            &[(Code::DoesNotFit, "300")],
+        ),
+        (
+            &["Clip c | gain=(16777217 / 2i32):\n    Note\n"],
+            &[(Code::DoesNotFit, "16777217")],
         ),
     ];
     support::assert_rows_in_every_order(&symphonyscript_fixtures::vocabulary(), rows);
