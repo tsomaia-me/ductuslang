@@ -53,12 +53,14 @@ const NAME_CODES: [Code; 11] = [
     Code::MisplacedTo,
 ];
 
-const QUIET_CODES: [Code; 5] = [
+const VALUE_CODES: [Code; 7] = [
     Code::IndexOutOfRange,
     Code::DoesNotFit,
     Code::IntegerOverflow,
     Code::ConstantOverflow,
     Code::LengthLimit,
+    Code::RaggedArray,
+    Code::RecursionDepth,
 ];
 
 pub(crate) struct Engine<'a> {
@@ -107,6 +109,7 @@ pub(crate) struct Engine<'a> {
     pub frame_need: Vec<(NodeId, super::eval_ty::EvalTy)>,
     pub frame_pushed: bool,
     pub fault_frame: Option<usize>,
+    pub sink: super::sink::Sink,
     pub fault_count: u32,
     pub call_count: u64,
     pub inlined: u64,
@@ -185,6 +188,7 @@ impl<'a> Engine<'a> {
             frame_need: Vec::new(),
             frame_pushed: false,
             fault_frame: None,
+            sink: super::sink::Sink::Reached,
             fault_count: 0,
             call_count: 0,
             inlined: 0,
@@ -396,6 +400,26 @@ impl<'a> Engine<'a> {
 
     fn run(&mut self, query: Query, need: &mut Vec<Query>) -> Result<bool, Internal> {
         self.memo.query_runs += 1;
+        let sink = match query {
+            Query::Eval(node, ty) => {
+                super::sink::Sink::Into(super::reachable::Reachable::Eval(node, ty))
+            }
+            Query::Expr(..)
+            | Query::Let(..)
+            | Query::Param(..)
+            | Query::Input(_)
+            | Query::State(_)
+            | Query::Attr(..)
+            | Query::Destination(_)
+            | Query::Sig(_) => super::sink::Sink::Reached,
+        };
+        let enclosing = std::mem::replace(&mut self.sink, sink);
+        let ran = self.ran(query, need);
+        self.sink = enclosing;
+        ran
+    }
+
+    fn ran(&mut self, query: Query, need: &mut Vec<Query>) -> Result<bool, Internal> {
         match query {
             Query::Expr(expr, scope) => self.run_expr(expr, scope, need),
             Query::Let(scope, local) => self.run_let(scope, local, need),
@@ -483,7 +507,15 @@ impl<'a> Engine<'a> {
             .ok_or(Internal::missed("signature"))
     }
 
-    pub fn cval(&self, query: Query, need: &mut Vec<Query>) -> Option<CVal> {
+    pub fn cval(&mut self, query: Query, need: &mut Vec<Query>) -> Option<CVal> {
+        if let Query::Eval(node, ty) = query {
+            let sink = self.sink;
+            self.link(&sink, super::reachable::Reachable::Eval(node, ty));
+        }
+        self.untaken_cval(query, need)
+    }
+
+    pub fn untaken_cval(&self, query: Query, need: &mut Vec<Query>) -> Option<CVal> {
         if self.poisoned(query) {
             return Some(CVal::Error);
         }
@@ -518,6 +550,8 @@ impl<'a> Engine<'a> {
         node: NodeId,
         ty: super::eval_ty::EvalTy,
     ) -> Result<CVal, Internal> {
+        let sink = self.sink;
+        self.link(&sink, super::reachable::Reachable::Eval(node, ty));
         self.demand(Query::Eval(node, ty))?;
         self.memo
             .evals
@@ -697,11 +731,7 @@ impl<'a> Engine<'a> {
         if self.suppressed(code, scope)? {
             return Ok(());
         }
-        self.error_with_chain(code, loc, Vec::new(), scope, message)?;
-        if let Some(deferred) = self.deferred.last_mut() {
-            deferred.help = Some(help);
-        }
-        Ok(())
+        self.chained(code, loc, Vec::new(), scope, (message, Some(help)))
     }
 
     pub(super) fn in_probe(&self, scope: ScopeId) -> Result<bool, Internal> {
@@ -729,9 +759,6 @@ impl<'a> Engine<'a> {
     }
 
     fn suppressed(&self, code: Code, scope: ScopeId) -> Result<bool, Internal> {
-        if QUIET_CODES.contains(&code) && self.quiet() {
-            return Ok(true);
-        }
         if self.in_name_probe(scope)? && !self.in_trial(scope)? {
             return Ok(!NAME_CODES.contains(&code));
         }
@@ -749,14 +776,155 @@ impl<'a> Engine<'a> {
         if self.suppressed(code, scope)? {
             return Ok(());
         }
+        self.chained(code, loc, before, scope, (message.into(), None))
+    }
+
+    fn chained(
+        &mut self,
+        code: Code,
+        loc: Loc,
+        before: Vec<(Loc, String)>,
+        scope: ScopeId,
+        (message, help): (String, Option<String>),
+    ) -> Result<(), Internal> {
         let chain = self.chain(scope)?;
-        self.defer(code, loc, before, chain, message);
         let (fault, template) = self.origin(scope)?;
-        if let Some(deferred) = self.deferred.last_mut() {
-            deferred.fault = fault;
-            deferred.template = template;
+        let deferred = super::deferred::Deferred {
+            code,
+            loc,
+            before,
+            chain,
+            message,
+            help,
+            unless_untyped: Vec::new(),
+            unless_values: Vec::new(),
+            fault,
+            template,
+            signing: self.signing(),
+            node: None,
+        };
+        self.place(deferred, VALUE_CODES.contains(&code))
+    }
+
+    pub(in crate::semantics::analysis) fn place(
+        &mut self,
+        deferred: super::deferred::Deferred,
+        value: bool,
+    ) -> Result<(), Internal> {
+        if !value {
+            self.deferred.push(deferred);
+            return Ok(());
+        }
+        match self.sink {
+            super::sink::Sink::Reached => self.deferred.push(deferred),
+            super::sink::Sink::Discard => {}
+            super::sink::Sink::Into(target) => {
+                let state = self.memo.recorded.entry(target).or_insert_with(|| {
+                    super::fault_state::FaultState::Recorded {
+                        faults: Vec::new(),
+                        edges: Vec::new(),
+                    }
+                });
+                match state {
+                    super::fault_state::FaultState::Recorded { faults, .. } => {
+                        faults.push(deferred);
+                    }
+                    super::fault_state::FaultState::Drawn => self.deferred.push(deferred),
+                }
+            }
         }
         Ok(())
+    }
+
+    pub(in crate::semantics::analysis) fn link(
+        &mut self,
+        from: &super::sink::Sink,
+        to: super::reachable::Reachable,
+    ) {
+        let settled = match self.memo.recorded.get(&to) {
+            Some(super::fault_state::FaultState::Drawn) => true,
+            Some(super::fault_state::FaultState::Recorded { .. }) => false,
+            None => self.complete(&to),
+        };
+        if settled {
+            return;
+        }
+        let target = match from {
+            super::sink::Sink::Reached => {
+                self.draw_reached(to);
+                return;
+            }
+            super::sink::Sink::Discard => return,
+            super::sink::Sink::Into(target) => *target,
+        };
+        if target == to {
+            return;
+        }
+        let state = self.memo.recorded.entry(target).or_insert_with(|| {
+            super::fault_state::FaultState::Recorded {
+                faults: Vec::new(),
+                edges: Vec::new(),
+            }
+        });
+        match state {
+            super::fault_state::FaultState::Recorded { edges, .. } => edges.push(to),
+            super::fault_state::FaultState::Drawn => self.draw_reached(to),
+        }
+    }
+
+    fn complete(&self, reachable: &super::reachable::Reachable) -> bool {
+        match reachable {
+            super::reachable::Reachable::Eval(node, ty) => {
+                self.memo.evals.contains_key(&(*node, *ty))
+            }
+            super::reachable::Reachable::Call(id) => self.memo.calls.contains_key(id),
+            super::reachable::Reachable::Loop(..) => false,
+        }
+    }
+
+    pub(in crate::semantics::analysis) fn draw_reached(
+        &mut self,
+        first: super::reachable::Reachable,
+    ) {
+        let mut pending = vec![first];
+        while let Some(current) = pending.pop() {
+            crate::semantics::counted_walk::CountedWalk::EngineDrawReached.step();
+            match self
+                .memo
+                .recorded
+                .insert(current, super::fault_state::FaultState::Drawn)
+            {
+                Some(super::fault_state::FaultState::Recorded { faults, edges }) => {
+                    self.deferred.extend(faults);
+                    pending.extend(edges);
+                }
+                Some(super::fault_state::FaultState::Drawn) | None => {}
+            }
+        }
+    }
+
+    pub(in crate::semantics::analysis) fn holds_faults(
+        &self,
+        first: &super::reachable::Reachable,
+    ) -> bool {
+        let mut seen: FastSet<&super::reachable::Reachable> = FastSet::default();
+        let mut pending = vec![first];
+        while let Some(current) = pending.pop() {
+            crate::semantics::counted_walk::CountedWalk::EngineHoldsFaults.step();
+            if !seen.insert(current) {
+                continue;
+            }
+            match self.memo.recorded.get(current) {
+                Some(super::fault_state::FaultState::Recorded { faults, edges }) => {
+                    if !faults.is_empty() {
+                        return true;
+                    }
+                    pending.extend(edges.iter());
+                }
+                Some(super::fault_state::FaultState::Drawn) | None => {}
+            }
+        }
+        false
     }
 
     fn origin(&mut self, scope: ScopeId) -> Result<(Option<u32>, Option<ScopeId>), Internal> {
@@ -866,7 +1034,26 @@ impl<'a> Engine<'a> {
         sites
     }
 
+    pub(in crate::semantics::analysis) fn reach_eager_starts(&mut self) {
+        let mut starts: Vec<((ExprId, ScopeId), NodeId)> = self
+            .memo
+            .eager_starts
+            .iter()
+            .filter(|(_, (_, passed))| !passed)
+            .map(|(at, (start, _))| (*at, *start))
+            .collect();
+        starts.sort_by_key(|(_, start)| start.index());
+        for (at, start) in starts {
+            self.memo.eager_starts.remove(&at);
+            self.draw_reached(super::reachable::Reachable::Eval(
+                start,
+                super::eval_ty::EvalTy::Node,
+            ));
+        }
+    }
+
     pub fn flush_diagnostics(&mut self) {
+        self.reach_eager_starts();
         let stop = self.stop.take();
         if let Some(stop) = &stop {
             self.report.diagnostics.truncate(stop.reported);
@@ -960,32 +1147,8 @@ impl<'a> Engine<'a> {
         node: NodeId,
         message: impl Into<String>,
     ) -> Result<(), Internal> {
-        let (loc, scope) = {
-            let record = self.node(node)?;
-            (record.loc, record.scope)
-        };
-        if self.suppressed(code, scope)? {
-            return Ok(());
-        }
-        let unless_untyped = self.untypable_reads(node)?;
-        let unless_values = self.untypable_values(node)?;
-        let chain = self.chain(scope)?;
-        let (fault, template) = self.origin(scope)?;
-        self.deferred.push(super::deferred::Deferred {
-            code,
-            loc,
-            before: Vec::new(),
-            chain,
-            message: message.into(),
-            help: None,
-            unless_untyped,
-            unless_values,
-            fault,
-            template,
-            signing: self.signing(),
-            node: Some(node),
-        });
-        Ok(())
+        let value = VALUE_CODES.contains(&code);
+        self.placed_at_node(code, node, Vec::new(), (message.into(), None), value)
     }
 
     pub(in crate::semantics::analysis) fn index_outside(
@@ -1011,6 +1174,18 @@ impl<'a> Engine<'a> {
         message: String,
         help: String,
     ) -> Result<(), Internal> {
+        let value = VALUE_CODES.contains(&code);
+        self.placed_at_node(code, node, before, (message, Some(help)), value)
+    }
+
+    pub(in crate::semantics::analysis) fn placed_at_node(
+        &mut self,
+        code: Code,
+        node: NodeId,
+        before: Vec<(Loc, String)>,
+        (message, help): (String, Option<String>),
+        value: bool,
+    ) -> Result<(), Internal> {
         let (loc, scope) = {
             let record = self.node(node)?;
             (record.loc, record.scope)
@@ -1022,21 +1197,21 @@ impl<'a> Engine<'a> {
         let unless_values = self.untypable_values(node)?;
         let chain = self.chain(scope)?;
         let (fault, template) = self.origin(scope)?;
-        self.deferred.push(super::deferred::Deferred {
+        let deferred = super::deferred::Deferred {
             code,
             loc,
             before,
             chain,
             message,
-            help: Some(help),
+            help,
             unless_untyped,
             unless_values,
             fault,
             template,
             signing: self.signing(),
             node: Some(node),
-        });
-        Ok(())
+        };
+        self.place(deferred, value)
     }
 
     pub fn error_unless_values(
@@ -1053,7 +1228,7 @@ impl<'a> Engine<'a> {
         }
         let chain = self.chain(scope)?;
         let (fault, template) = self.origin(scope)?;
-        self.deferred.push(super::deferred::Deferred {
+        let deferred = super::deferred::Deferred {
             code,
             loc,
             before: Vec::new(),
@@ -1066,8 +1241,8 @@ impl<'a> Engine<'a> {
             template,
             signing: self.signing(),
             node: None,
-        });
-        Ok(())
+        };
+        self.place(deferred, VALUE_CODES.contains(&code))
     }
 
     pub fn read(&mut self, bound: &BoundVal, loc: Loc, scope: ScopeId) -> Result<Val, Internal> {
@@ -1219,7 +1394,7 @@ impl<'a> Engine<'a> {
         if !self.cycle_evaluating(path)? {
             return Ok(false);
         }
-        if !self.quiet() && self.drawn_candidate_cycles.insert((item, name.to_string())) {
+        if !self.untaken()? && self.drawn_candidate_cycles.insert((item, name.to_string())) {
             self.draw_candidate_cycle(path)?;
         }
         Ok(true)

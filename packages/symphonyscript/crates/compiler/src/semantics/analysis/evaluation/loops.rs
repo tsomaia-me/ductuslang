@@ -5,6 +5,7 @@ use super::loop_items::LoopItems;
 use super::loop_run::LoopRun;
 use super::machine::Machine;
 use super::machine_key::MachineKey;
+use super::mode::Mode;
 use super::own_type::own_type;
 use crate::semantics::Internal;
 use crate::semantics::analysis::c_val::CVal;
@@ -17,6 +18,8 @@ use crate::semantics::analysis::for_node::ForNode;
 use crate::semantics::analysis::ids::{NodeId, ScopeId};
 use crate::semantics::analysis::kind::Kind;
 use crate::semantics::analysis::query::Query;
+use crate::semantics::analysis::reachable::Reachable;
+use crate::semantics::analysis::sink::Sink;
 use crate::semantics::analysis::some::some;
 use crate::semantics::analysis::width::Width;
 
@@ -37,6 +40,8 @@ impl Engine<'_> {
                 }
             }
             Ctx::Global => {
+                let request = self.sink;
+                self.link(&request, Reachable::Loop(node, own));
                 if let Some(machine) = self.machines.remove(&key) {
                     self.active = Some(machine);
                     return self.drive(key, node, need);
@@ -95,7 +100,7 @@ impl Engine<'_> {
         if !self.counted_iteration(node)? {
             return Ok(Some(CVal::Error));
         }
-        let (args, function, feeds, depth, quiet) = match ctx {
+        let (args, function, feeds, depth, mode, sink) = match ctx {
             Ctx::Frame(frame) => {
                 let parent = self.frame(frame)?;
                 (
@@ -103,7 +108,8 @@ impl Engine<'_> {
                     parent.function,
                     parent.feeds.clone(),
                     parent.depth,
-                    parent.checks.quiet(),
+                    self.mode_of(frame)?,
+                    self.frame_sink(frame)?,
                 )
             }
             Ctx::Global => (
@@ -111,7 +117,8 @@ impl Engine<'_> {
                 None,
                 self.memo.call_feeds.get(&node).cloned().unwrap_or_default(),
                 0,
-                false,
+                Mode::Taken,
+                Sink::Into(Reachable::Loop(node, own)),
             ),
         };
         let first = items.item(0);
@@ -137,8 +144,13 @@ impl Engine<'_> {
             depth,
             faults: FastSet::default(),
             templates: FastSet::default(),
-            checks: if quiet { Checks::Quiet } else { Checks::Done },
-            tainted: false,
+            checks: Checks::Done,
+            mode,
+            sink,
+            id: None,
+            opened: FastSet::default(),
+            deep: false,
+            callees: Vec::new(),
         };
         match ctx {
             Ctx::Frame(_) => {
@@ -154,9 +166,9 @@ impl Engine<'_> {
                     frames: vec![record],
                     work: vec![(0, for_node.body, own)],
                     open_keys: FastSet::default(),
+                    rerun: FastSet::default(),
                     too_deep: false,
                     deep_warned: false,
-                    tainted_calls: FastMap::default(),
                 });
                 self.drive(key, node, need)
             }
@@ -205,7 +217,8 @@ impl Engine<'_> {
         if let Some(parent) = machine.frames.last_mut() {
             parent.faults.extend(done.faults.iter().copied());
             parent.templates.extend(done.templates.iter().copied());
-            parent.tainted |= done.tainted;
+            parent.opened.extend(done.opened.iter().copied());
+            parent.deep |= done.deep;
             parent.loops.insert((done.call, done.ty), value);
             return Ok(None);
         }

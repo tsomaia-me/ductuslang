@@ -17,8 +17,6 @@ use super::sig::Sig;
 use super::val::Val;
 use crate::semantics::ir::{ExprId, InputId};
 
-type Reached = (Vec<u32>, Vec<ScopeId>);
-
 #[derive(Default)]
 pub(crate) struct Memo {
     pub exprs: FastMap<(ExprId, ScopeId), Val>,
@@ -110,7 +108,11 @@ pub(crate) struct Memo {
     pub pattern_bodies: FastMap<ScopeId, ScopeId>,
     pub takes_family: FastMap<NodeId, FamilyId>,
     pub default_scales: FastMap<NodeId, f64>,
-    pub calls: FastMap<CallKey, CVal>,
+    pub call_ids: FastMap<CallKey, super::ids::CallId>,
+    pub calls: FastMap<super::ids::CallId, super::call_done::CallDone>,
+    pub counted: super::fast_hash::FastSet<super::ids::CallId>,
+    pub recorded: FastMap<super::reachable::Reachable, super::fault_state::FaultState>,
+    pub eager_starts: FastMap<(ExprId, ScopeId), (NodeId, bool)>,
     pub arg_sigs: FastMap<NodeId, Sig>,
     pub arg_instances: FastMap<NodeId, std::rc::Rc<[super::item_ref::ItemRef]>>,
     pub call_families: FastMap<NodeId, super::family_key::FamilyKey>,
@@ -132,7 +134,6 @@ pub(crate) struct Memo {
     pub family_shapes: FastMap<super::family_key::FamilyKey, Vec<super::arg_shape::ArgShape>>,
     pub deep_families: super::fast_hash::FastSet<super::family_key::FamilyKey>,
     pub key_reach: FastMap<CallKey, (Vec<u32>, Vec<ScopeId>)>,
-    pub quiet_calls: FastMap<CallKey, (CVal, Reached)>,
     pub fault_sites: FastMap<u32, Vec<NodeId>>,
     pub template_sites: FastMap<ScopeId, Vec<NodeId>>,
     pub named_bodies: super::fast_hash::FastSet<crate::semantics::ir::FnId>,

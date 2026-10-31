@@ -216,6 +216,7 @@ impl Engine<'_> {
         }
         self.values(&roots)?;
         self.retract_unread_evaluations()?;
+        self.reach_eager_starts();
         self.capacities()?;
         self.capacity_checks(&variable_positions)?;
         self.native_capacity_checks()?;

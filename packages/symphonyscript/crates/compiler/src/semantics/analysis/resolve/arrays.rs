@@ -517,7 +517,7 @@ impl Engine<'_> {
             return Ok(Some(None));
         }
         Ok(Some(
-            match some!(self.cval(Query::Eval(node, EvalTy::Exact), need)) {
+            match some!(self.untaken_cval(Query::Eval(node, EvalTy::Exact), need)) {
                 CVal::Int(value) if i64::try_from(value).is_ok() => Some(Some(if from_end {
                     i128::from(length) - value
                 } else {

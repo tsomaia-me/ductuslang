@@ -18,6 +18,7 @@ mod loop_run;
 mod loops;
 mod machine;
 mod machine_key;
+mod mode;
 mod native;
 mod of_scalar;
 mod own_type;
@@ -34,6 +35,7 @@ mod with_point;
 
 pub(crate) use machine::Machine;
 pub(crate) use machine_key::MachineKey;
+pub(crate) use mode::Mode;
 #[cfg(test)]
 pub(crate) use native::native_slots;
 pub(crate) use native::native_ty;

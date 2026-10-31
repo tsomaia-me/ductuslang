@@ -961,7 +961,7 @@ impl Engine<'_> {
                     let operand = *args.first().ok_or(Internal::missed("bytes operand"))?;
                     let sig = some!(self.sig(operand, need));
                     if sig.kind == Kind::Str && !sig.reactive {
-                        match some!(self.cval(Query::Eval(operand, EvalTy::Str), need)) {
+                        match some!(self.untaken_cval(Query::Eval(operand, EvalTy::Str), need)) {
                             CVal::Str(text) => Ok(Some(Layout::fixed(vec![
                                 u32::try_from(text.len()).unwrap_or(u32::MAX),
                             ]))),
@@ -1098,7 +1098,7 @@ impl Engine<'_> {
                     return Ok(Some(None));
                 }
                 Ok(Some(
-                    match some!(self.cval(Query::Eval(*condition, EvalTy::Bool), need)) {
+                    match some!(self.untaken_cval(Query::Eval(*condition, EvalTy::Bool), need)) {
                         CVal::Bool(true) => Some(0),
                         CVal::Bool(false) => Some(1),
                         _ => None,
@@ -1118,12 +1118,12 @@ impl Engine<'_> {
                 let Some(label_ty) = self.choice_ty(*scrutinee, &sig, &labels)? else {
                     return Ok(Some(None));
                 };
-                let value = some!(self.cval(Query::Eval(*scrutinee, label_ty), need));
+                let value = some!(self.untaken_cval(Query::Eval(*scrutinee, label_ty), need));
                 if value.is_error() {
                     return Ok(Some(None));
                 }
                 for (position, (label, _)) in arms.iter().enumerate() {
-                    let label_value = some!(self.cval(Query::Eval(*label, label_ty), need));
+                    let label_value = some!(self.untaken_cval(Query::Eval(*label, label_ty), need));
                     if label_value.is_error() {
                         return Ok(Some(None));
                     }

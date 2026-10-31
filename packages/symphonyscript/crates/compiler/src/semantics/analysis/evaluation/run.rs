@@ -232,7 +232,7 @@ impl Engine<'_> {
         let Ctx::Frame(frame) = ctx else {
             return Ok(self.cval(Query::Eval(node, ty), need));
         };
-        if !self.known_sig(node)?.frame && !self.quiet_unevaluated(frame, node, ty)? {
+        if !self.known_sig(node)?.frame && !self.untaken_unevaluated(frame, node, ty)? {
             return Ok(self.cval(Query::Eval(node, ty), need));
         }
         if let Some(value) = self.frame_value(frame, node, ty)? {

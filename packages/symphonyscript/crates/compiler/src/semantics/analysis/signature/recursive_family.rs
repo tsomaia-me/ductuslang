@@ -318,7 +318,7 @@ impl Engine<'_> {
             }));
         }
         Ok(Some(
-            match some!(self.cval(Query::Eval(node, EvalTy::Node), need)) {
+            match some!(self.untaken_cval(Query::Eval(node, EvalTy::Node), need)) {
                 CVal::Node(item) => ArgReference::Instance(item),
                 CVal::Int(_)
                 | CVal::F32(_)

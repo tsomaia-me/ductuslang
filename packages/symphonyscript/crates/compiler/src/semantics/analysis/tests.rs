@@ -673,7 +673,7 @@ fn placeholders(engine: &Engine<'_>) -> Vec<String> {
         }
     }
     for (call, value) in &memo.calls {
-        if value.is_error() {
+        if value.value.is_error() {
             found.push(format!("result of {call:?}"));
         }
     }

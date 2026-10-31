@@ -20,6 +20,7 @@ use crate::semantics::analysis::kind::Kind;
 use crate::semantics::analysis::op::Op;
 use crate::semantics::analysis::param_source::ParamSource;
 use crate::semantics::analysis::query::Query;
+use crate::semantics::analysis::reachable::Reachable;
 use crate::semantics::analysis::rec_family::RecFamily;
 use crate::semantics::analysis::scope_kind::ScopeKind;
 use crate::semantics::analysis::shape::Shape;
@@ -169,7 +170,34 @@ impl Engine<'_> {
                 if sig.frame {
                     return self.frame_path(node, name, loc, scope, need);
                 }
-                match some!(self.cval(Query::Eval(node, EvalTy::Node), need)) {
+                let recursive_body = self.template_of(scope)?.is_some();
+                if recursive_body
+                    && self.reaches_recursion(node)?
+                    && let Some(read) = self.read_in_frames(node, name, loc, scope, need)?
+                {
+                    return Ok(read);
+                }
+                let start = some!(self.untaken_cval(Query::Eval(node, EvalTy::Node), need));
+                let faulty =
+                    start.is_error() || self.holds_faults(&Reachable::Eval(node, EvalTy::Node));
+                if faulty
+                    && recursive_body
+                    && let Some(read) = self.read_in_frames(node, name, loc, scope, need)?
+                {
+                    return Ok(read);
+                }
+                match (faulty, self.current) {
+                    (true, Some(Query::Expr(expr, at))) if !recursive_body => {
+                        self.memo
+                            .eager_starts
+                            .entry((expr, at))
+                            .or_insert((node, false));
+                    }
+                    (true, _) | (false, _) => {
+                        self.draw_reached(Reachable::Eval(node, EvalTy::Node));
+                    }
+                }
+                match start {
                     CVal::Node(item) => item,
                     CVal::Int(_)
                     | CVal::F32(_)
@@ -213,6 +241,23 @@ impl Engine<'_> {
             stack.extend(self.node(node)?.op.operands().into_iter().rev());
         }
         Err(Internal::missed("open value"))
+    }
+
+    fn read_in_frames(
+        &mut self,
+        start: NodeId,
+        name: &Ident,
+        loc: Loc,
+        scope: ScopeId,
+        need: &mut Vec<Query>,
+    ) -> Result<Option<Option<Val>>, Internal> {
+        match self.reference_instances(start, need) {
+            Ok(Some(instances)) if !instances.is_empty() => {
+                Ok(Some(self.frame_path(start, name, loc, scope, need)?))
+            }
+            Ok(None) => Ok(Some(None)),
+            Ok(Some(_)) | Err(_) => Ok(None),
+        }
     }
 
     fn frame_path(
@@ -1140,8 +1185,19 @@ impl Engine<'_> {
         let sig = some!(self.sig(index_node, need));
         let evaluated = !sig.reactive && !sig.frame && !sig.is_error();
         let typed_index = matches!(sig.kind, Kind::Int | Kind::Any);
-        if evaluated && typed_index {
-            let position = match some!(self.cval(Query::Eval(index_node, EvalTy::Exact), need)) {
+        let recursive_body = self.template_of(scope)?.is_some();
+        let deferred = recursive_body && self.reaches_recursion(index_node)?;
+        if evaluated && typed_index && !deferred {
+            let query = Query::Eval(index_node, EvalTy::Exact);
+            let value = if recursive_body {
+                some!(self.untaken_cval(query, need))
+            } else {
+                some!(self.cval(query, need))
+            };
+            let faulty =
+                recursive_body && self.holds_faults(&Reachable::Eval(index_node, EvalTy::Exact));
+            let position = match value {
+                _ if faulty => None,
                 CVal::Int(position) => Some(position),
                 CVal::F32(_)
                 | CVal::F64(_)
@@ -1395,7 +1451,7 @@ impl Engine<'_> {
             && !sig.frame
             && sig.kind == Kind::Int
         {
-            self.cval(Query::Eval(node, EvalTy::Exact), need);
+            self.untaken_cval(Query::Eval(node, EvalTy::Exact), need);
         }
     }
 
@@ -1418,9 +1474,22 @@ impl Engine<'_> {
         if sig.is_error() || sig.reactive || sig.frame || sig.kind != Kind::Int {
             return Ok(Shortcut::Declined);
         }
-        let Some(value) = self.cval(Query::Eval(node, EvalTy::Exact), need) else {
+        let query = Query::Eval(node, EvalTy::Exact);
+        let recursive_body = self.template_of(scope)?.is_some();
+        if recursive_body && self.reaches_recursion(node)? {
+            return Ok(Shortcut::Declined);
+        }
+        let found = if recursive_body {
+            self.untaken_cval(query, need)
+        } else {
+            self.cval(query, need)
+        };
+        let Some(value) = found else {
             return Ok(Shortcut::Pending);
         };
+        if recursive_body && self.holds_faults(&Reachable::Eval(node, EvalTy::Exact)) {
+            return Ok(Shortcut::Declined);
+        }
         let CVal::Int(element) = value else {
             return Ok(Shortcut::Declined);
         };

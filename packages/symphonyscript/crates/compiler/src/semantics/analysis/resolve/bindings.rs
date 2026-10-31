@@ -872,7 +872,8 @@ impl Engine<'_> {
                 continue;
             }
             if !sig.reactive {
-                let Some(value) = self.cval(Query::Eval(node, EvalTy::Default), need) else {
+                let Some(value) = self.untaken_cval(Query::Eval(node, EvalTy::Default), need)
+                else {
                     missing = true;
                     continue;
                 };

@@ -18,6 +18,7 @@ use crate::semantics::analysis::kind::Kind;
 use crate::semantics::analysis::let_ref::LetRef;
 use crate::semantics::analysis::locals_owner::LocalsOwner;
 use crate::semantics::analysis::query::Query;
+use crate::semantics::analysis::reachable::Reachable;
 use crate::semantics::analysis::scope_kind::ScopeKind;
 use crate::semantics::analysis::some::some;
 use crate::semantics::analysis::val::Val;
@@ -271,6 +272,14 @@ impl Engine<'_> {
         while let Some((expr, scope, typed, passed_over, origin, flow, picked, quiet)) = stack.pop()
         {
             crate::semantics::counted_walk::CountedWalk::PositionsDetachedRoots.step();
+            if let Some((start, _)) = self.memo.eager_starts.get(&(expr, scope)).copied() {
+                if passed_over {
+                    self.memo.eager_starts.insert((expr, scope), (start, true));
+                } else {
+                    self.memo.eager_starts.remove(&(expr, scope));
+                    self.draw_reached(Reachable::Eval(start, EvalTy::Node));
+                }
+            }
             if !self.typing.detached_walks.insert((expr, scope)) {
                 continue;
             }

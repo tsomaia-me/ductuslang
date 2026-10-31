@@ -17,6 +17,8 @@ pub(crate) enum CountedWalk {
     ChainDrop,
     EngineDemand,
     EngineTemplateSites,
+    EngineDrawReached,
+    EngineHoldsFaults,
     EngineCycle,
     MapLeavesMapLeaves,
     ScrutineeTyChoiceTy,
@@ -109,6 +111,7 @@ pub(crate) enum CountedWalk {
     RecursiveFrameHeads,
     RecursiveBeginChecks,
     RecursiveCheckedHeads,
+    RecursiveThroughOpen,
     RecursiveFamilyFamilyShape,
     RunFit,
     CountsCheckProgram,
@@ -136,7 +139,7 @@ pub(crate) enum CountedWalk {
 }
 
 #[cfg(test)]
-const WALKS: usize = 133;
+const WALKS: usize = 136;
 
 #[cfg(test)]
 thread_local! {
@@ -163,6 +166,8 @@ impl CountedWalk {
         CountedWalk::ChainDrop,
         CountedWalk::EngineDemand,
         CountedWalk::EngineTemplateSites,
+        CountedWalk::EngineDrawReached,
+        CountedWalk::EngineHoldsFaults,
         CountedWalk::EngineCycle,
         CountedWalk::MapLeavesMapLeaves,
         CountedWalk::ScrutineeTyChoiceTy,
@@ -255,6 +260,7 @@ impl CountedWalk {
         CountedWalk::RecursiveFrameHeads,
         CountedWalk::RecursiveBeginChecks,
         CountedWalk::RecursiveCheckedHeads,
+        CountedWalk::RecursiveThroughOpen,
         CountedWalk::RecursiveFamilyFamilyShape,
         CountedWalk::RunFit,
         CountedWalk::CountsCheckProgram,
