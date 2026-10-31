@@ -83,8 +83,20 @@ fn unclosed(node: &NodeView<'_>) -> Option<Range<u32>> {
             .any(|element| element.kind() == SyntaxKind::RBracket);
         return (!closed).then(|| node.range());
     }
+    if node.kind() == SyntaxKind::TypeRef {
+        let depth = node
+            .children_with_tokens()
+            .fold(0i32, |depth, element| match element.kind() {
+                SyntaxKind::LBracket => depth + 1,
+                SyntaxKind::RBracket => depth - 1,
+                _ => depth,
+            });
+        return (depth != 0)
+            .then(|| node.range().start..node.range().end.max(node.range().start + 1));
+    }
     let closer = match node.kind() {
         SyntaxKind::ParenExpr
+        | SyntaxKind::Init
         | SyntaxKind::ArgList
         | SyntaxKind::Conversion
         | SyntaxKind::DefaultArg

@@ -261,3 +261,56 @@ fn a_binding_in_an_attribute_clause_parses_its_path_and_draws_one_unbuilt_constr
         vec![Code::AttributeSyntax]
     );
 }
+
+#[test]
+fn a_new_expression_form_holding_or_held_by_a_syntax_fault_draws_the_syntax_fault_alone_389() {
+    let faulty: [(&str, Code); 14] = [
+        ("state v((none)\n", Code::CellSyntax),
+        ("state v(none\n", Code::CellSyntax),
+        ("state v({\"a\": 1}\n", Code::CellSyntax),
+        ("state v(q ?? 1\n", Code::CellSyntax),
+        ("state v(xq\n", Code::CellSyntax),
+        ("let v = q is i32[,]\n", Code::TypeSyntax),
+        ("let v = q is i32[2\n", Code::TypeSyntax),
+        ("let v = q is not i32[2][\n", Code::TypeSyntax),
+        (
+            "Clip c:\n    Note | velocity=q is i32[,]\n",
+            Code::TypeSyntax,
+        ),
+        ("Clip c:\n    Note when q is i32[,]\n", Code::TypeSyntax),
+        ("state v(q is i32[,])\n", Code::TypeSyntax),
+        ("state v = q is i32[,]\n", Code::TypeSyntax),
+        ("let v = \"a{q is i32[,]}\"\n", Code::TypeSyntax),
+        ("let v = f(q is i32[,])\n", Code::TypeSyntax),
+    ];
+    let built: [(&str, &str); 4] = [
+        ("state v(none)\n", "none"),
+        ("let v = q is i32[2]\n", "i32[2]"),
+        ("state v(q is not i32[2][3])\n", "i32[2][3]"),
+        ("Clip c:\n    Note when q is i32[2]\n", "i32[2]"),
+    ];
+    let mut failures = Vec::new();
+    for (item, code) in faulty {
+        for text in [format!("{PRELUDE}{item}"), format!("{item}{PRELUDE}")] {
+            let codes: Vec<Code> = support::check_codes(&text)
+                .iter()
+                .map(|(code, ..)| *code)
+                .collect();
+            if codes != vec![code] {
+                failures.push(format!("{text:?} draws {codes:?}, expected [{code:?}]"));
+            }
+        }
+    }
+    for (item, form) in built {
+        for text in [format!("{PRELUDE}{item}"), format!("{item}{PRELUDE}")] {
+            let (start, end) = support::at(&text, form, 0);
+            let found = support::check_codes(&text);
+            if found != vec![(Code::UnbuiltConstruct, start, end)] {
+                failures.push(format!(
+                    "{text:?} draws {found:?}, expected one unbuilt-construct at `{form}`"
+                ));
+            }
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
