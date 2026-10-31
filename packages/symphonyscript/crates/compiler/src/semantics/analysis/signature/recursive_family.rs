@@ -491,7 +491,9 @@ impl Engine<'_> {
         if sig.kind != Kind::Node || sig.reactive {
             return Ok(Some(ArgReference::Unknown));
         }
-        if sig.frame {
+        let evaluates_recursion =
+            self.template_of(self.node(node)?.scope)?.is_some() && self.reaches_recursion(node)?;
+        if sig.frame || evaluates_recursion {
             let instances = some!(self.reference_instances(node, need)?);
             return Ok(Some(match instances.as_slice() {
                 [instance] => ArgReference::Instance(*instance),

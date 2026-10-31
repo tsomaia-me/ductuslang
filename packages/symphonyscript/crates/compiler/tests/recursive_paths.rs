@@ -4801,12 +4801,6 @@ const SELF_WRAPS: [&str; 5] = [
 
 const SELF_READS: [(&str, &str); 2] = [(".gain", "2"), (".tone.velocity", "0.6")];
 
-fn waits_on_g1(row: &SelfRead, outer: Own) -> bool {
-    let taken = row.depth == 0 && row.wrap < 3;
-    let swapped_fault = row.fault && row.second == 1 && outer == Own::Other;
-    matches!(row.first, 3 | 4 | 6) && (taken || swapped_fault)
-}
-
 fn inner_level(depth: usize, level: i64) -> i64 {
     match depth {
         0 => 0,
@@ -4940,9 +4934,6 @@ fn self_read_rows(rows: &Rows) -> (Vec<String>, usize) {
                     read,
                     fault,
                 };
-                if waits_on_g1(&row, c) {
-                    continue;
-                }
                 for (q, m) in [1, 3].into_iter().enumerate() {
                     for (o, reversed) in [false, true].into_iter().enumerate() {
                         let inner = (first * 2 + second) * SELF_WRAPS.len() + wrap;
@@ -4962,14 +4953,14 @@ fn self_read_rows(rows: &Rows) -> (Vec<String>, usize) {
 #[test]
 fn a_body_that_reads_its_own_recursive_result_through_a_path_at_any_argument_values_types_as_its_twin_343_350()
  {
-    assert_none_fail(covered(self_read_rows), 273);
+    assert_none_fail(covered(self_read_rows), 282);
 }
 
 #[test]
 #[ignore = "exhaustive"]
 fn exhaustive_a_body_that_reads_its_own_recursive_result_through_a_path_at_any_argument_values_types_as_its_twin_343_350()
  {
-    assert_none_fail(self_read_rows(&Rows::Every), 5_856);
+    assert_none_fail(self_read_rows(&Rows::Every), 6_720);
 }
 
 const CONSTANT_SELF_READS: [(&str, &str); 4] = [
