@@ -3,7 +3,7 @@ mod support;
 use std::collections::BTreeSet;
 
 use symphonyscript::{Code, Compiler, Source};
-use symphonyscript_fixtures::native_vocabulary;
+use symphonyscript_fixtures::{Rows, covered, native_vocabulary};
 
 #[derive(Clone)]
 struct Base {
@@ -214,19 +214,27 @@ fn found(compiler: &Compiler, built: &Built) -> Found {
     .collect()
 }
 
-#[test]
-fn a_compile_time_index_bound_or_offset_outside_i64_draws_at_the_bound_whatever_the_base() {
+fn outside_i64_failures(rows: &Rows) -> (Vec<String>, usize) {
     let compiler = Compiler::new(&native_vocabulary()).expect("the native vocabulary compiles");
     let bases = bases();
     let mut failures = Vec::new();
     let mut programs = 0;
-    for position in POSITIONS {
-        for (outside, value) in OUTSIDE
+    for (position_at, position) in POSITIONS.into_iter().enumerate() {
+        for (value_at, (outside, value)) in OUTSIDE
             .iter()
             .map(|value| (true, *value))
             .chain(INSIDE.iter().map(|value| (false, *value)))
+            .enumerate()
         {
             for reversed in [false, true] {
+                let taken: Vec<usize> = (0..bases.len())
+                    .filter(|base_at| {
+                        rows.take(&[position_at, value_at, usize::from(reversed), *base_at])
+                    })
+                    .collect();
+                if taken.is_empty() {
+                    continue;
+                }
                 let twin = build(
                     LITERAL.value,
                     LITERAL.declarations,
@@ -249,7 +257,8 @@ fn a_compile_time_index_bound_or_offset_outside_i64_draws_at_the_bound_whatever_
                         failures.push(format!("{}\n  twin draws {twin_found:?}\n", twin.text));
                     }
                 }
-                for (base, written) in &bases {
+                for base_at in taken {
+                    let (base, written) = &bases[base_at];
                     let built = build(
                         written,
                         base.declarations,
@@ -286,13 +295,31 @@ fn a_compile_time_index_bound_or_offset_outside_i64_draws_at_the_bound_whatever_
             }
         }
     }
+    (failures, programs)
+}
+
+fn assert_outside_i64(failures: &[String], programs: usize, expected: usize) {
     assert!(
         failures.is_empty(),
         "{} of {programs} programs fail:\n{}",
         failures.len(),
         failures.iter().take(12).cloned().collect::<String>()
     );
-    assert_eq!(programs, 2_496);
+    assert_eq!(programs, expected);
+}
+
+#[test]
+fn a_compile_time_index_bound_or_offset_outside_i64_draws_at_the_bound_whatever_the_base() {
+    let (failures, programs) = covered(outside_i64_failures);
+    assert_outside_i64(&failures, programs, 208);
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_a_compile_time_index_bound_or_offset_outside_i64_draws_at_the_bound_whatever_the_base_400()
+ {
+    let (failures, programs) = outside_i64_failures(&Rows::Every);
+    assert_outside_i64(&failures, programs, 2_496);
 }
 
 const FAULTY_BOUNDS: [(&str, Code, &str); 6] = [
