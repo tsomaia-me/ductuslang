@@ -588,3 +588,69 @@ fn exhaustive_an_element_read_of_an_empty_compile_time_array_has_its_element_typ
     let failures = empty_element_rows(&Rows::Every);
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
+
+#[test]
+fn a_dot_call_whose_receiver_reads_the_cell_being_declared_resolves_its_member_first_379() {
+    let note = "state note(60)\n";
+    let read = "Clip c:\n    Note/(recent[0])\n";
+    let rows: &[support::Row] = &[
+        (
+            &[
+                note,
+                "state recent = (recent.xpast(1, []) + [note])[^8..]\n",
+                read,
+            ],
+            &[
+                (Code::DeclarationCycle, "recent"),
+                (Code::NotCallable, "recent.xpast"),
+            ],
+        ),
+        (
+            &[
+                note,
+                "state recent([]) = (recent.xpast(1, []) + [note])[^8..]\n",
+                read,
+            ],
+            &[
+                (Code::DeclarationCycle, "recent"),
+                (Code::NotCallable, "recent.xpast"),
+            ],
+        ),
+        (
+            &[
+                note,
+                "state recent = (recent.past(1, []) + [note])[^8..]\n",
+                read,
+            ],
+            &[],
+        ),
+        (
+            &["let a = a.xpast(1)\n", "Clip c:\n    Note/(a)\n"],
+            &[
+                (Code::DeclarationCycle, "a"),
+                (Code::NotCallable, "a.xpast"),
+            ],
+        ),
+        (
+            &[
+                "fn twice(x): x * 2\n",
+                "let a = a.twice()\n",
+                "Clip c:\n    Note/(a)\n",
+            ],
+            &[(Code::DeclarationCycle, "a")],
+        ),
+        (
+            &[
+                note,
+                "state recent([]) = (note.xpast(1, []) + [note])[^8..]\n",
+                read,
+            ],
+            &[(Code::NotCallable, "note.xpast")],
+        ),
+    ];
+    support::assert_rows_in_orders(
+        support::Orders::ForwardAndReversed,
+        &symphonyscript_fixtures::vocabulary(),
+        rows,
+    );
+}

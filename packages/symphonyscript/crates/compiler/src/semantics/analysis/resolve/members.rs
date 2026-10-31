@@ -131,7 +131,7 @@ impl Engine<'_> {
         let node = match &val {
             Val::Array(_) => None,
             Val::Scalar(node) => Some(*node),
-            Val::Error => return Ok(Member::Read(Val::Error)),
+            Val::Error => return Ok(Member::Declined),
         };
         let array = node.is_none_or(|node| self.arrays.contains(&node));
         if array && name == "map" {
