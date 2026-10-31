@@ -4779,12 +4779,14 @@ impl Own {
     }
 }
 
-const SELF_FIRSTS: [&str; 5] = [
+const SELF_FIRSTS: [&str; 7] = [
     "c",
     "d",
     "(if m > 5 then c else a(c, d, 0))",
     "a(c, d, 0)",
     "[a(c, d, 0)][0]",
+    "(if true then c else a(c, d, 0))",
+    "(if false then c else a(c, d, 0))",
 ];
 
 const SELF_DEPTHS: [&str; 3] = ["0", "m - 1", "m - 2"];
@@ -4802,7 +4804,7 @@ const SELF_READS: [(&str, &str); 2] = [(".gain", "2"), (".tone.velocity", "0.6")
 fn waits_on_g1(row: &SelfRead, outer: Own) -> bool {
     let taken = row.depth == 0 && row.wrap < 3;
     let swapped_fault = row.fault && row.second == 1 && outer == Own::Other;
-    matches!(row.first, 3 | 4) && (taken || swapped_fault)
+    matches!(row.first, 3 | 4 | 6) && (taken || swapped_fault)
 }
 
 fn inner_level(depth: usize, level: i64) -> i64 {
@@ -4960,14 +4962,58 @@ fn self_read_rows(rows: &Rows) -> (Vec<String>, usize) {
 #[test]
 fn a_body_that_reads_its_own_recursive_result_through_a_path_at_any_argument_values_types_as_its_twin_343_350()
  {
-    assert_none_fail(covered(self_read_rows), 196);
+    assert_none_fail(covered(self_read_rows), 273);
 }
 
 #[test]
 #[ignore = "exhaustive"]
 fn exhaustive_a_body_that_reads_its_own_recursive_result_through_a_path_at_any_argument_values_types_as_its_twin_343_350()
  {
-    assert_none_fail(self_read_rows(&Rows::Every), 4_224);
+    assert_none_fail(self_read_rows(&Rows::Every), 5_856);
+}
+
+const CONSTANT_SELF_READS: [(&str, &str); 4] = [
+    (
+        "fn h(xs, ys, n): if n < 1 then 0 else i32(ys[h([other, other], ys, 0) % 2].gain) + h(xs, ys, n - 1)\n",
+        "Clip k:\n    Note/([60][h([verse, other], [verse, other], 2) - 4])\n",
+    ),
+    (
+        "fn b(ys, n):\n    let kk = b(ys, 0)\n    if n < 1 then ys[0] else (if kk.gain > 2 then ys[1] else ys[0])\n",
+        "Clip k:\n    Note/([60][i32(b([verse, other], 2).gain) - 2])\n",
+    ),
+    (
+        "fn b(ys, n): if n < 1 then ys[0] else (if b(ys, 0).gain > 2 then ys[1] else ys[0])\n",
+        "Clip k:\n    Note/([60][i32(b([verse, other], 2).gain) - 2])\n",
+    ),
+    (
+        "fn b(ys, n): if n < 1 then ys[0] else (if b([ys[1], ys[0]], 0).gain > 2 then ys[1] else ys[0])\n",
+        "Clip k:\n    Note/([60][i32(b([verse, other], 2).gain) - 3])\n",
+    ),
+];
+
+#[test]
+fn a_body_that_reads_its_own_result_at_a_constant_argument_through_an_index_or_a_local_let_draws_nothing_in_either_order_343()
+ {
+    let mut failures = Vec::new();
+    for (function, reader) in CONSTANT_SELF_READS {
+        for reversed in [false, true] {
+            let mut items = vec![
+                "Clip verse | gain=2:\n    Note\n",
+                "Clip other | gain=3:\n    Note\n",
+                function,
+                reader,
+            ];
+            if reversed {
+                items.reverse();
+            }
+            let text = format!("Session main\n{}", items.concat());
+            let drawn = found(&text);
+            if !drawn.is_empty() {
+                failures.push(format!("343: {text}\n  draws {drawn:?}\n"));
+            }
+        }
+    }
+    assert_none_fail((failures, 8), 8);
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
