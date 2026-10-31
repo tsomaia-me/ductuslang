@@ -215,6 +215,7 @@ impl Engine<'_> {
             }
         }
         self.values(&roots)?;
+        self.untaken_calls()?;
         self.retract_unread_evaluations()?;
         self.reach_eager_starts();
         self.capacities()?;

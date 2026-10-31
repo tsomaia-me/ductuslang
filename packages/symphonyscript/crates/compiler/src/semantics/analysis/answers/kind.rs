@@ -718,7 +718,7 @@ impl Engine<'_> {
                     "this call of `{}` reads a cell",
                     self.function_name(*function)?
                 );
-                self.reactive_recursion(node, *function, reading)?;
+                self.reactive_recursion(node, *function, (reading, false))?;
                 Sig::ERROR
             }
             Op::ToRead { attrs, .. } => self.destination_read_sig(node, attrs, extra)?,

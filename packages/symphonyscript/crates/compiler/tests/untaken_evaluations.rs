@@ -711,3 +711,133 @@ fn the_ledger_programs_draw_what_their_rules_give_in_either_order_and_their_take
     assert!(failures.is_empty(), "{}", failures.join("\n"));
     assert_eq!(programs, 14);
 }
+
+const VALUE_DERIVED: [Code; 7] = [
+    Code::IndexOutOfRange,
+    Code::DoesNotFit,
+    Code::IntegerOverflow,
+    Code::ConstantOverflow,
+    Code::LengthLimit,
+    Code::RaggedArray,
+    Code::ReactiveRecursion,
+];
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum TopCall {
+    LackingAtPitch,
+    LackingAtAttribute,
+    Cycle,
+    LackingBesideValueFault,
+    ChosenCell,
+}
+
+const TOP_CALLS: [TopCall; 5] = [
+    TopCall::LackingAtPitch,
+    TopCall::LackingAtAttribute,
+    TopCall::Cycle,
+    TopCall::LackingBesideValueFault,
+    TopCall::ChosenCell,
+];
+
+impl TopCall {
+    fn items(self, guard: &str) -> Vec<String> {
+        let plain = "fn h(xs, i, n): if n < 1 then i32(xs[i].gain) else h(xs, i, n - 1)\n";
+        let faulty =
+            "fn h(xs, i, n): if n < 1 then i32(xs[i].gain) + [1][i] else h(xs, i, n - 1)\n";
+        let (function, reader) = match self {
+            TopCall::LackingAtPitch => (
+                plain,
+                format!(
+                    "Clip k:\n    Note/((if {guard} then h([verse, verse.tone], 1, 1) else 60))\n"
+                ),
+            ),
+            TopCall::LackingAtAttribute => (
+                plain,
+                format!(
+                    "Clip k | gain=(if {guard} then h([verse, verse.tone], 1, 2) else 1):\n    Note\n"
+                ),
+            ),
+            TopCall::Cycle => (
+                plain,
+                format!("Clip k | gain=(if {guard} then h([verse, k], 1, 1) else 1):\n    Note\n"),
+            ),
+            TopCall::LackingBesideValueFault => (
+                faulty,
+                format!(
+                    "Clip k:\n    Note/((if {guard} then h([verse, verse.tone], 1, 1) else 60))\n"
+                ),
+            ),
+            TopCall::ChosenCell => (
+                plain,
+                format!("Clip k:\n    Note/((if {guard} then h([verse, o2], 1, 1) else 60))\n"),
+            ),
+        };
+        let mut items = vec![INSTANCES.to_string(), function.to_string(), reader];
+        if self == TopCall::ChosenCell {
+            items.push("state gv(0.5)\nClip o2 | gain=gv:\n    Note\n".to_string());
+        }
+        items
+    }
+
+    fn drawn(self) -> Code {
+        match self {
+            TopCall::LackingAtPitch
+            | TopCall::LackingAtAttribute
+            | TopCall::LackingBesideValueFault => Code::UnknownAttribute,
+            TopCall::Cycle => Code::DeclarationCycle,
+            TopCall::ChosenCell => Code::ReactiveRecursion,
+        }
+    }
+}
+
+fn top_call_rows(rows: &Rows) -> (Vec<String>, usize) {
+    let compiler = Compiler::new(&vocabulary()).expect("the vocabulary compiles");
+    let mut failures = Vec::new();
+    let mut programs = 0;
+    for (c, call) in TOP_CALLS.iter().enumerate() {
+        for (g, guard) in ["false", "1 > 2"].into_iter().enumerate() {
+            for (o, reversed) in [false, true].into_iter().enumerate() {
+                if !rows.take(&[c, g, o]) {
+                    continue;
+                }
+                programs += 1;
+                let text = ordered(call.items(guard), reversed);
+                let twin = ordered(call.items("true"), reversed);
+                let found: Vec<(Code, String)> = error_texts(&compiler, &text)
+                    .into_iter()
+                    .map(|(code, spanned)| (code, spanned.replace(guard, "true")))
+                    .collect();
+                let twin_found = error_texts(&compiler, &twin);
+                let expected: Vec<(Code, String)> = twin_found
+                    .iter()
+                    .filter(|(code, _)| !VALUE_DERIVED.contains(code))
+                    .cloned()
+                    .collect();
+                let twin_draws = twin_found.iter().any(|(code, _)| *code == call.drawn())
+                    && (*call != TopCall::LackingBesideValueFault
+                        || twin_found
+                            .iter()
+                            .any(|(code, _)| *code == Code::IndexOutOfRange));
+                if found != expected || !twin_draws {
+                    failures.push(format!(
+                        "352: {text}\n  draws {found:?}, its taken twin {twin_found:?}\n"
+                    ));
+                }
+            }
+        }
+    }
+    (failures, programs)
+}
+
+#[test]
+fn a_recursive_call_in_an_untaken_arm_at_top_level_is_checked_against_its_chosen_references_and_draws_no_value_fault()
+ {
+    assert_none_fail(covered(top_call_rows), 10);
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_a_recursive_call_in_an_untaken_arm_at_top_level_is_checked_against_its_chosen_references_and_draws_no_value_fault()
+ {
+    assert_none_fail(top_call_rows(&Rows::Every), 20);
+}

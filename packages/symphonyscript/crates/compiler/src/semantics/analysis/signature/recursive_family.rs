@@ -36,7 +36,7 @@ impl Engine<'_> {
                     "the body of the recursive function `{}` reads a cell",
                     self.function_name(function)?
                 );
-                self.reactive_recursion(node, function, reading)?;
+                self.reactive_recursion(node, function, (reading, false))?;
             }
             return Ok(Some(Sig::ERROR));
         }

@@ -102,6 +102,7 @@ pub(crate) enum CountedWalk {
     UnitsCarriedIn,
     UnitsTemplateNodes,
     ValuesRetractUnreadEvaluations,
+    ValuesUntakenCalls,
     ValuesInputFits,
     ValuesConsistency,
     ValuesConsistentShapes,
@@ -139,7 +140,7 @@ pub(crate) enum CountedWalk {
 }
 
 #[cfg(test)]
-const WALKS: usize = 136;
+const WALKS: usize = 137;
 
 #[cfg(test)]
 thread_local! {
@@ -251,6 +252,7 @@ impl CountedWalk {
         CountedWalk::UnitsCarriedIn,
         CountedWalk::UnitsTemplateNodes,
         CountedWalk::ValuesRetractUnreadEvaluations,
+        CountedWalk::ValuesUntakenCalls,
         CountedWalk::ValuesInputFits,
         CountedWalk::ValuesConsistency,
         CountedWalk::ValuesConsistentShapes,

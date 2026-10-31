@@ -15,6 +15,7 @@ use crate::semantics::analysis::is_float::is_float;
 use crate::semantics::analysis::is_integer::is_integer;
 use crate::semantics::analysis::lengths_of::lengths_of;
 use crate::semantics::analysis::op::Op;
+use crate::semantics::analysis::query::Query;
 use crate::semantics::analysis::width::Width;
 use crate::semantics::ir::{InputId, Loc};
 
@@ -26,6 +27,30 @@ impl Engine<'_> {
             if !value.is_error() && self.known_sig(*node)?.width == Width::Flexible {
                 self.fit(*node, value, ty)?;
             }
+        }
+        Ok(())
+    }
+
+    pub(super) fn untaken_calls(&mut self) -> Result<(), Internal> {
+        let mut calls: Vec<(NodeId, EvalTy)> = Vec::new();
+        for (node, scalar, _) in &self.typing.passed_over {
+            crate::semantics::counted_walk::CountedWalk::ValuesUntakenCalls.step();
+            if let Op::Recursive { .. } = self.node(*node)?.op {
+                calls.push((*node, eval_ty_of(*scalar)));
+            }
+        }
+        calls.sort_by_key(|(node, ty)| (node.index(), format!("{ty:?}")));
+        calls.dedup();
+        for (node, ty) in calls {
+            let scope = self.node(node)?.scope;
+            if self.template_of(scope)?.is_some() || self.in_probe(scope)? {
+                continue;
+            }
+            let sig = self.known_sig(node)?;
+            if sig.reactive || sig.is_error() {
+                continue;
+            }
+            self.demand(Query::Eval(node, ty))?;
         }
         Ok(())
     }

@@ -780,7 +780,7 @@ impl Engine<'_> {
             "the body of the recursive function `{}` reads a cell",
             self.function_name(function)?
         );
-        self.reactive_recursion(call, function, reading)
+        self.reactive_recursion(call, function, (reading, true))
     }
 
     fn result_fits(
@@ -1519,7 +1519,7 @@ impl Engine<'_> {
         &mut self,
         node: NodeId,
         function: FnId,
-        reading: String,
+        (reading, value): (String, bool),
     ) -> Result<(), Internal> {
         let help = Code::ReactiveRecursion
             .help()
@@ -1528,12 +1528,12 @@ impl Engine<'_> {
         let mut chain = vec![format!("`{}`", self.function_name(function)?)];
         let mut related = Vec::new();
         let Some(cycle) = self.call_cycle(function)? else {
-            return self.error_at_node_helped(
+            return self.placed_at_node(
                 Code::ReactiveRecursion,
                 node,
                 related,
-                reading,
-                help,
+                (reading, Some(help)),
+                value,
             );
         };
         for (step, (caller, call)) in cycle.iter().enumerate() {
@@ -1550,7 +1550,13 @@ impl Engine<'_> {
             "{reading}, and the cycle of calls {} is evaluated by the compiler, so no argument or body on it may read a cell",
             chain.join(" → ")
         );
-        self.error_at_node_helped(Code::ReactiveRecursion, node, related, summary, help)
+        self.placed_at_node(
+            Code::ReactiveRecursion,
+            node,
+            related,
+            (summary, Some(help)),
+            value,
+        )
     }
 
     fn call_cycle(&self, function: FnId) -> Result<Option<Vec<(FnId, ExprId)>>, Internal> {
