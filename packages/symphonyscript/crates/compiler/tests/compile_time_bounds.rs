@@ -294,3 +294,86 @@ fn a_compile_time_index_bound_or_offset_outside_i64_draws_at_the_bound_whatever_
     );
     assert_eq!(programs, 2_496);
 }
+
+const FAULTY_BOUNDS: [(&str, Code, &str); 6] = [
+    ("(1 + true)", Code::OperandType, "1 + true"),
+    ("nothing", Code::UnknownName, "nothing"),
+    ("1.5", Code::IndexType, "1.5"),
+    ("[1, 2][5]", Code::IndexOutOfRange, "5"),
+    ("i32(true)", Code::ConversionType, "i32(true)"),
+    ("2 ** 63", Code::IndexOutOfRange, "2 ** 63"),
+];
+
+const SLICE_SIDES: [(&str, &str); 3] =
+    [("xs[{b}..]", "3"), ("xs[..{b}]", "0"), ("xs[^{b}..]", "0")];
+
+const SLICE_READS: [&str; 2] = ["[0]", ".size"];
+
+const SLICE_PLACES: [[&str; 2]; 3] = [
+    ["let xs = [1, 2, 3]\n", "Clip c:\n    Note/({read})\n"],
+    ["fn f(xs): {read}\n", "Clip c:\n    Note/(f([1, 2, 3]))\n"],
+    [
+        "fn r(xs, n): if n > 0 then r(xs, n - 1) else {read}\n",
+        "Clip c:\n    Note/(r([1, 2, 3], 2))\n",
+    ],
+];
+
+fn slice_bound_rows(rows: &symphonyscript_fixtures::Rows) -> Vec<String> {
+    let compiler =
+        Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("the vocabulary compiles");
+    let mut failures = Vec::new();
+    let mut check = |items: &[String], expected: Vec<(Code, String)>| {
+        for order in [false, true] {
+            let mut ordered = items.to_vec();
+            if order {
+                ordered.reverse();
+            }
+            let text = ordered.concat();
+            let found = support::error_texts(&compiler, &text);
+            if found != expected {
+                failures.push(format!(
+                    "356: {text}\n  draws {found:?}\n  expected {expected:?}"
+                ));
+            }
+        }
+    };
+    for (fault, (bound, code, spanned)) in FAULTY_BOUNDS.iter().enumerate() {
+        for (side, (form, twin)) in SLICE_SIDES.iter().enumerate() {
+            for (read, suffix) in SLICE_READS.iter().enumerate() {
+                for (place, items) in SLICE_PLACES.iter().enumerate() {
+                    if !rows.take(&[fault, side, read, place]) {
+                        continue;
+                    }
+                    let built = |value: &str| -> Vec<String> {
+                        let read = format!("{}{suffix}", form.replace("{b}", value));
+                        items
+                            .iter()
+                            .map(|item| item.replace("{read}", &read))
+                            .collect()
+                    };
+                    check(&built(bound), vec![(*code, (*spanned).to_string())]);
+                    let drawn = if read == 0 {
+                        vec![(Code::IndexOutOfRange, "0".to_string())]
+                    } else {
+                        Vec::new()
+                    };
+                    check(&built(twin), drawn);
+                }
+            }
+        }
+    }
+    failures
+}
+
+#[test]
+fn a_slice_whose_bound_is_in_error_reads_no_value_so_only_the_bound_draws() {
+    let failures = symphonyscript_fixtures::covered(slice_bound_rows);
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_a_slice_whose_bound_is_in_error_reads_no_value_so_only_the_bound_draws() {
+    let failures = slice_bound_rows(&symphonyscript_fixtures::Rows::Every);
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
