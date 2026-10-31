@@ -190,7 +190,9 @@ impl Engine<'_> {
                     | BinaryOp::Rem
                     | BinaryOp::Pow => {
                         stack.push((lhs, ty, selection, flows));
-                        if self.outside_offset(node, rhs, selection)? {
+                        if self.outside_offset(node, rhs, selection)?
+                            || self.memo.from_end_indexes.contains(&node)
+                        {
                             let offset_ty = self.synth(rhs)?;
                             stack.push((rhs, offset_ty, selection, false));
                         } else {

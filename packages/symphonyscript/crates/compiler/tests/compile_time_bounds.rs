@@ -270,7 +270,7 @@ fn a_compile_time_index_bound_or_offset_outside_i64_draws_at_the_bound_whatever_
                     } else if base.length_known {
                         twin_found.clone()
                     } else {
-                        found
+                        twin_found
                             .iter()
                             .filter(|(code, ..)| *code != Code::IndexOutOfRange)
                             .copied()
@@ -581,4 +581,29 @@ fn a_runtime_index_reads_every_element_and_draws_its_fault() {
         vec![(Code::IndexOutOfRange, "5".to_string())],
         "290: {text}"
     );
+}
+
+#[test]
+fn an_offset_from_the_end_of_a_runtime_base_is_read_in_its_own_type_as_its_literal_twin_reads_it_318()
+ {
+    let held = "state xs([1, 2, 3]): i32[..5]\n";
+    let rows: &[support::Row] = &[
+        (&[held, "Clip c:\n    Note/(xs[^2 ** 63 - 1])\n"], &[]),
+        (&[held, "Clip c:\n    Note/(xs[^-(2 ** 63)])\n"], &[]),
+        (&[held, "Clip c:\n    Note/(xs[^300000000000])\n"], &[]),
+        (&[held, "Clip c:\n    Note/(xs[^2 ** 63 - 1..][0])\n"], &[]),
+        (
+            &["Clip c:\n    Note/([1, 2, 3][^2 ** 63 - 1])\n"],
+            &[(Code::IndexOutOfRange, "[1, 2, 3][^2 ** 63 - 1]")],
+        ),
+        (
+            &[held, "Clip c:\n    Note/(xs[^2 ** 63])\n"],
+            &[(Code::IndexOutOfRange, "2 ** 63")],
+        ),
+        (
+            &[held, "Clip c:\n    Note/(xs[^1.5])\n"],
+            &[(Code::IndexType, "xs[^1.5]")],
+        ),
+    ];
+    support::assert_rows_in_every_order(&symphonyscript_fixtures::vocabulary(), rows);
 }
