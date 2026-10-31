@@ -4704,3 +4704,135 @@ fn exhaustive_a_deepening_or_inner_row_growing_recursive_argument_finishes_at_it
     );
     assert_eq!(programs, 24);
 }
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Own {
+    Verse,
+    Other,
+}
+
+impl Own {
+    fn name(self) -> &'static str {
+        match self {
+            Own::Verse => "verse",
+            Own::Other => "other",
+        }
+    }
+
+    fn gain(self) -> i32 {
+        match self {
+            Own::Verse => 2,
+            Own::Other => 3,
+        }
+    }
+
+    fn above(self) -> bool {
+        match self {
+            Own::Verse => false,
+            Own::Other => true,
+        }
+    }
+}
+
+const SELF_FIRSTS: [&str; 2] = ["c", "d"];
+
+fn own_value(first: usize, second: usize, depth: usize, (c, d, m): (Own, Own, i64)) -> Own {
+    if m < 1 {
+        return c;
+    }
+    let x = match first {
+        1 => d,
+        _ => c,
+    };
+    let y = if second == 0 { c } else { d };
+    let inner_m = if depth == 0 { m - 1 } else { m - 2 };
+    let inner = own_value(first, second, depth, (x, y, inner_m));
+    if inner.above() { d } else { c }
+}
+
+fn self_read_rows(rows: &Rows) -> (Vec<String>, usize) {
+    let compiler =
+        Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("the vocabulary compiles");
+    let mut failures = Vec::new();
+    let mut programs = 0;
+    let depths = ["m - 1", "m - 2"];
+    let wraps = ["{x}", "[{x}][0]", "[{x}, c][0]"];
+    let reads = [(".gain", "2"), (".tone.velocity", "0.6")];
+    let outers = [(Own::Verse, Own::Other), (Own::Other, Own::Verse)];
+    for (f, first) in SELF_FIRSTS.iter().enumerate() {
+        for (s, second) in ["c", "d"].into_iter().enumerate() {
+            for (k, depth) in depths.iter().enumerate() {
+                for (w, wrap) in wraps.iter().enumerate() {
+                    for (r, (read, threshold)) in reads.iter().enumerate() {
+                        for (u, (c, d)) in outers.iter().enumerate() {
+                            for (q, m) in [1, 3].into_iter().enumerate() {
+                                for (o, reversed) in [false, true].into_iter().enumerate() {
+                                    if !rows.take(&[f, s, k, w, r, u, q, o]) {
+                                        continue;
+                                    }
+                                    programs += 1;
+                                    let inner = wrap
+                                        .replace("{x}", &format!("a({first}, {second}, {depth})"));
+                                    let value = own_value(f, s, k, (*c, *d, m));
+                                    let mut items = [
+                                        "Session main\n".to_string(),
+                                        "Clip verse | gain=2:\n    Note as tone | velocity=0.5\n"
+                                            .to_string(),
+                                        "Clip other | gain=3:\n    Note as tone | velocity=0.7\n"
+                                            .to_string(),
+                                        format!(
+                                            "fn a(c, d, m): if m < 1 then c else if {inner}{read} > {threshold} then d else c\n"
+                                        ),
+                                        format!(
+                                            "Clip k:\n    Note/([60][i32(a({}, {}, {m}).gain) - {}])\n",
+                                            c.name(),
+                                            d.name(),
+                                            value.gain()
+                                        ),
+                                    ];
+                                    if reversed {
+                                        items[1..].reverse();
+                                    }
+                                    let text = items.concat();
+                                    let found = support::error_texts(&compiler, &text);
+                                    if !found.is_empty() {
+                                        failures
+                                            .push(format!("343/350: {text}\n  draws {found:?}\n"));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    (failures, programs)
+}
+
+#[test]
+fn a_body_that_reads_its_own_recursive_result_through_a_path_at_any_argument_values_types_as_its_evaluation()
+ {
+    let (failures, programs) = covered(self_read_rows);
+    assert!(
+        failures.is_empty(),
+        "{} of {programs} fail:\n{}",
+        failures.len(),
+        failures.concat()
+    );
+    assert_eq!(programs, 9);
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_a_body_that_reads_its_own_recursive_result_through_a_path_at_any_argument_values_types_as_its_evaluation()
+ {
+    let (failures, programs) = self_read_rows(&Rows::Every);
+    assert!(
+        failures.is_empty(),
+        "{} of {programs} fail:\n{}",
+        failures.len(),
+        failures.concat()
+    );
+    assert_eq!(programs, 384);
+}
