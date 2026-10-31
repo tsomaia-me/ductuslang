@@ -2361,7 +2361,7 @@ fn every_diagnostic_carries_a_help_that_states_its_fix() {
                 "Clip c:\n    Note/(recent[0])\n",
             ],
             Code::UnboundedState,
-            "slice the initializer, as in `(s.past(1, []) + [x])[^8..]`, to keep its newest elements",
+            "slice the rule's value, as in `(s.past(1, []) + [x])[^8..]`, to keep its newest elements",
         ),
         (
             vocabulary,
@@ -2406,7 +2406,7 @@ fn every_diagnostic_carries_a_help_that_states_its_fix() {
             support::signature_vocabulary,
             &["state h([]): u8[..3]\n", "Clip c | fixed=h:\n    Note\n"],
             Code::VariableArray,
-            "pass a fixed `u8[3]` here, such as an input annotated `u8[3]`",
+            "pass a fixed `u8[3]` here, such as a cell annotated `u8[3]`",
         ),
         (
             support::signature_vocabulary,
@@ -2415,7 +2415,7 @@ fn every_diagnostic_carries_a_help_that_states_its_fix() {
                 "Clip c:\n    Note/(fixed3(xs))\n",
             ],
             Code::VariableArray,
-            "pass a fixed `u8[3]` here, such as an input annotated `u8[3]`",
+            "pass a fixed `u8[3]` here, such as a cell annotated `u8[3]`",
         ),
         (
             support::signature_vocabulary,
@@ -2429,8 +2429,8 @@ fn every_diagnostic_carries_a_help_that_states_its_fix() {
                 "fn f(x):\n    state s = 1\n    x\n",
                 "Clip c:\n    Note/(f(1))\n",
             ],
-            Code::StateSyntax,
-            "declare the state at top level as `state`, a name, `=` and its initializer, as in `state count = 1`",
+            Code::CellSyntax,
+            "declare the cell at top level as `state`, `stream` or `channel`, a name, an init in parentheses, a rule after `=` or both, as in `state level(0)` or `state count = level + 1`",
         ),
         (
             vocabulary,
@@ -2564,7 +2564,7 @@ fn every_diagnostic_carries_a_help_that_states_its_fix() {
                 "state s = a.past(1, 0 ) )\n",
                 "Clip c:\n    Note/(s)\n",
             ],
-            Code::StateSyntax,
+            Code::CellSyntax,
             "remove the `)`, or match it with an opening `(`",
         ),
         (
@@ -2653,7 +2653,7 @@ fn every_diagnostic_carries_a_help_that_states_its_fix() {
                 "state[x] t = a.past(1)\n",
                 "Clip c:\n    Note/(t)\n",
             ],
-            Code::StateSyntax,
+            Code::CellSyntax,
             "write the capacity in digits, as in `stream[16] notes(0)`",
         ),
     ];

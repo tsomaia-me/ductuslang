@@ -48,7 +48,7 @@ codes!(
     LetSyntax,
     FnSyntax,
     PatternSyntax,
-    StateSyntax,
+    CellSyntax,
     HistoryTarget,
     HistoryFallback,
     HistoryOffset,
@@ -145,7 +145,7 @@ codes!(
     ConflictingUnits,
     InconsistentUses,
     InconsistentShapes,
-    IntegerInput,
+    IntegerCell,
     NotTopLevel,
     CountExceeded,
     CountBelowMinimum,
@@ -193,7 +193,7 @@ impl Code {
             Code::LetSyntax => "let-syntax",
             Code::FnSyntax => "fn-syntax",
             Code::PatternSyntax => "pattern-syntax",
-            Code::StateSyntax => "state-syntax",
+            Code::CellSyntax => "cell-syntax",
             Code::HistoryTarget => "history-target",
             Code::HistoryFallback => "history-fallback",
             Code::HistoryOffset => "history-offset",
@@ -290,7 +290,7 @@ impl Code {
             Code::ConflictingUnits => "conflicting-units",
             Code::InconsistentUses => "inconsistent-uses",
             Code::InconsistentShapes => "inconsistent-shapes",
-            Code::IntegerInput => "integer-input",
+            Code::IntegerCell => "integer-cell",
             Code::NotTopLevel => "not-top-level",
             Code::CountExceeded => "count-exceeded",
             Code::CountBelowMinimum => "count-below-minimum",
@@ -416,7 +416,7 @@ impl Code {
             Code::ConflictingUnits => "3.6",
             Code::InconsistentUses => "4.1",
             Code::InconsistentShapes => "4.6",
-            Code::IntegerInput => "4.4",
+            Code::IntegerCell => "4.4",
             Code::NotTopLevel => "10.2",
             Code::CountExceeded => "10.2",
             Code::CountBelowMinimum => "10.2",
@@ -426,14 +426,14 @@ impl Code {
             Code::UnreachableInstance => "10.2",
             Code::NoEntryInstance => "10.2",
             Code::MisplacedCaret => "2.5",
-            Code::StateSyntax => "6.6",
+            Code::CellSyntax => "6.1",
             Code::LengthLimit => "3.2",
             Code::VariableArray => "3.7",
             Code::HistoryTarget => "6.6",
             Code::HistoryFallback => "6.6",
             Code::HistoryOffset => "6.6",
             Code::CellCapacity => "6.1",
-            Code::StateValue => "6.6",
+            Code::StateValue => "6.1",
             Code::UnboundedState => "6.6",
             Code::CapacityExceeded => "3.7",
             Code::CompileTimeNative => "10.1",
@@ -453,7 +453,7 @@ impl Code {
 
     pub fn severity(self) -> Severity {
         match self {
-            Code::IntegerInput
+            Code::IntegerCell
             | Code::UnreachableInstance
             | Code::NoEntryInstance
             | Code::LimitWarning => Severity::Warning,
@@ -580,7 +580,7 @@ impl Code {
             | Code::WireEndpoint
             | Code::WireCycle
             | Code::MisplacedCaret
-            | Code::StateSyntax
+            | Code::CellSyntax
             | Code::LengthLimit
             | Code::VariableArray
             | Code::HistoryTarget

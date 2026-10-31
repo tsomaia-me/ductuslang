@@ -16,7 +16,9 @@ impl HirBuilder<'_> {
             Some(SyntaxKind::ChannelKw) => CellWord::Channel,
             Some(_) | None => CellWord::State,
         };
-        if let Some(clock) = node.clock() {
+        if let Some(clock) = node.clock()
+            && rule
+        {
             self.draw(
                 Code::UnbuiltConstruct,
                 clock.syntax().range(),

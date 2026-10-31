@@ -1,8 +1,8 @@
 # history-offset
 
-A history read's offset is a positive integer known at compile time. (SPEC §6.6)
+`x.past(k)` reads a value from the history of the cell `x`, and `k` is a positive integer known at compile time. (SPEC §6.6)
 
-The runtime keeps a fixed number of past values.
+A cell's history is as deep as the deepest `past` read of it, which the compiler finds from the offsets.
 
 ```sym-error
 state a(1)

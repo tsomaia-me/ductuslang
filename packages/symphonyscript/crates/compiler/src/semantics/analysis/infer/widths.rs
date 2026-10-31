@@ -60,7 +60,7 @@ impl Engine<'_> {
                     Code::ReactiveNodeReference,
                     record.loc,
                     self.node(record.init)?.scope,
-                    "a value holding node references reads no input; write the choice in the destination",
+                    "a value holding node references reads no cell; write the choice in the destination",
                 )?;
                 None
             }

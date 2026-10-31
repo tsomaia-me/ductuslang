@@ -1,8 +1,8 @@
 # history-target
 
-A history read names an input, a state or a reactive `let`. (SPEC §6.6)
+A history read names a cell: a `state`, a `stream` or a `channel`, host-fed or derived. (SPEC §6.6)
 
-Only a cell has a past.
+Only a cell has a past and a step; a compile-time value never steps.
 
 ```sym-error
 let a = 1

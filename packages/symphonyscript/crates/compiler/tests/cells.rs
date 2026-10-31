@@ -137,7 +137,7 @@ fn cell_rows(rows: &Rows) -> (Vec<String>, usize) {
                                             .as_ref()
                                             .is_some_and(|help| help.contains(&format!("`{word} ")))
                                 });
-                                if drawn != [(Code::StateSyntax, end, end + 1)] || !named {
+                                if drawn != [(Code::CellSyntax, end, end + 1)] || !named {
                                     failures
                                         .push(format!("{text:?} draws {:?}", parsed.diagnostics));
                                 }

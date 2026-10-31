@@ -42,7 +42,7 @@ fn every_code_names_a_section_of_the_spec() {
 #[test]
 fn the_warnings_are_the_four_the_spec_names_and_every_other_code_is_an_error() {
     let warnings = [
-        "integer-input",
+        "integer-cell",
         "unreachable-instance",
         "no-entry-instance",
         "limit-warning",

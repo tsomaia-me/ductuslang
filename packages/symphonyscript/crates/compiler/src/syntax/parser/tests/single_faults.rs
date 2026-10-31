@@ -41,7 +41,7 @@ const LEXER_AND_PARSER_CODES: &[Code] = &[
     Code::MixedArguments,
     Code::ConversionSyntax,
     Code::LetSyntax,
-    Code::StateSyntax,
+    Code::CellSyntax,
     Code::FnSyntax,
     Code::PatternSyntax,
     Code::PlacementSyntax,

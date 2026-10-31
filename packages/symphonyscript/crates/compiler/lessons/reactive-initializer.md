@@ -1,15 +1,15 @@
 # reactive-initializer
 
-An input's initializer is a compile-time value. (SPEC §6.1)
+A cell's init is a compile-time value. (SPEC §6.1)
 
-It gives the input its value before the host writes one.
+At load a host-fed cell holds its init and a derived cell with an init starts from it, before any cell steps; a start taken from another cell is written in the rule.
 
 ```sym-error
 state a(1)
 state b(a)
 ```
 
-`b`'s initializer reads the input `a`.
+`b`'s init reads the cell `a`.
 
 ```sym
 let start = 1

@@ -134,7 +134,7 @@ impl Engine<'_> {
                     target.loc,
                     scope,
                     format!(
-                        "`{}` is not an input, a state or a reactive `let`, so it has no {what}",
+                        "`{}` is not a cell, so it has no {what}; a history read names a `state`, a `stream` or a `channel`",
                         target.text
                     ),
                 )?;

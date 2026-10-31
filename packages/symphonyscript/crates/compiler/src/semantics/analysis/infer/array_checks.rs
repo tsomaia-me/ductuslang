@@ -149,7 +149,7 @@ impl Engine<'_> {
             form.push_str(&format!("[{length}]"));
         }
         Ok(format!(
-            "pass a fixed `{form}` here, such as an input annotated `{form}`"
+            "pass a fixed `{form}` here, such as a cell annotated `{form}`"
         ))
     }
 
@@ -181,7 +181,7 @@ impl Engine<'_> {
             ),
             (Role::Attribute | Role::Initializer, None) => (
                 Code::TypeMismatch,
-                format!("this input holds one `{held}`, and this value is {value}"),
+                format!("this cell holds one `{held}`, and this value is {value}"),
             ),
         })
     }
@@ -328,7 +328,7 @@ impl Engine<'_> {
                     self.error_at_node(
                         Code::HistoryTarget,
                         node,
-                        "this `let` is a compile-time value, which has no history; a history read names an input, a state or a reactive `let`",
+                        "this `let` is a compile-time value, which has no history; a history read names a `state`, a `stream` or a `channel`",
                     )?;
                     continue;
                 }

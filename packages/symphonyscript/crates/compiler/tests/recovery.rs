@@ -9,7 +9,7 @@ type Expected = &'static [(Code, u32, u32)];
 const BROKEN: &[(&str, Expected, &str)] = &[
     (
         "state = 5\nlet b = 2\n",
-        &[(Code::StateSyntax, 6, 7)],
+        &[(Code::CellSyntax, 6, 7)],
         "File[CellDecl[state = Literal[5] NL] LetDecl[let b = Literal[2] NL]]",
     ),
     (
@@ -267,7 +267,7 @@ const BROKEN: &[(&str, Expected, &str)] = &[
     (
         "state a 1_\nlet b = 2\n",
         &[
-            (Code::StateSyntax, 8, 10),
+            (Code::CellSyntax, 8, 10),
             (Code::MisplacedUnderscore, 9, 10),
         ],
         "File[CellDecl[state a ErrorNode[1_] NL] LetDecl[let b = Literal[2] NL]]",
@@ -1126,15 +1126,15 @@ fn a_state_header_cut_by_a_fault_declares_its_name_as_a_placeholder() {
     let rows: &[support::Row] = &[
         (
             &[input, "state[1 t = t.past(1, 0) + a\n", read],
-            &[(Code::StateSyntax, "t")],
+            &[(Code::CellSyntax, "t")],
         ),
         (
             &[input, "state[ t = t.past(1, 0) + a\n", read],
-            &[(Code::StateSyntax, "t")],
+            &[(Code::CellSyntax, "t")],
         ),
         (
             &[input, "state[x] t = t.past(1, 0) + a\n", read],
-            &[(Code::StateSyntax, "x")],
+            &[(Code::CellSyntax, "x")],
         ),
         (
             &[
@@ -1142,7 +1142,7 @@ fn a_state_header_cut_by_a_fault_declares_its_name_as_a_placeholder() {
                 "state[1 t = t.past(1, 0) + a\n",
                 "Clip c:\n    Note when t > 0\n",
             ],
-            &[(Code::StateSyntax, "t")],
+            &[(Code::CellSyntax, "t")],
         ),
         (
             &[
@@ -1151,7 +1151,7 @@ fn a_state_header_cut_by_a_fault_declares_its_name_as_a_placeholder() {
                 "state u = t + 1\n",
                 "Clip c:\n    Note/(60 + u)\n",
             ],
-            &[(Code::StateSyntax, "t")],
+            &[(Code::CellSyntax, "t")],
         ),
         (
             &[input, "state[1] t = t.past(1, 0) + a\n", read],
@@ -1170,7 +1170,7 @@ fn every_top_level_header_cut_by_a_fault_declares_its_names_as_placeholders() {
     let call_f = "Clip c:\n    Note/(60 + f(1))\n";
     let place_p = "Clip c:\n    P\n";
     let rows: &[support::Row] = &[
-        (&["state (a(0)\n", read_a], &[(Code::StateSyntax, "(")]),
+        (&["state (a(0)\n", read_a], &[(Code::CellSyntax, "(")]),
         (&["let [x = 5\n", read_x], &[(Code::LetSyntax, "[")]),
         (&["let (x = 5\n", read_x], &[(Code::LetSyntax, "(")]),
         (&["fn (f(a): a\n", call_f], &[(Code::FnSyntax, "(")]),
@@ -1184,7 +1184,7 @@ fn every_top_level_header_cut_by_a_fault_declares_its_names_as_placeholders() {
         ),
         (&["state a(0): i32[]\n", read_a], &[(Code::TypeSyntax, "]")]),
         (&["let x: i32[ = 5\n", read_x], &[(Code::TypeSyntax, "=")]),
-        (&["state a 0\n", read_a], &[(Code::StateSyntax, "0")]),
+        (&["state a 0\n", read_a], &[(Code::CellSyntax, "0")]),
         (&["state a =\n", read_a], &[(Code::ExpressionSyntax, "\n")]),
         (&["let x 5\n", read_x], &[(Code::LetSyntax, "5")]),
         (&["fn f(a b): a\n", call_f], &[(Code::FnSyntax, "b")]),

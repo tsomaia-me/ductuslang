@@ -70,13 +70,15 @@ pub(super) fn help(code: Code) -> Option<&'static str> {
         Code::MatchPosition => "make the `match` the whole value of a `let`",
         Code::MixedArguments => "pass every argument by position or every one by name",
         Code::ConversionSyntax => "parenthesize the converted value, as in `i32(x)`",
-        Code::HistoryTarget => "read the history of an input, a state or a reactive `let`",
-        Code::HistoryFallback => "state the fallback, as in `x.past(1, 0)`",
+        Code::HistoryTarget => "read the history of a `state`, a `stream` or a `channel`",
+        Code::HistoryFallback => {
+            "give the cell an init, as in `state s(0) = s.past(1) + 1`, or the read a fallback, as in `s.past(1, 0)`"
+        }
         Code::HistoryOffset => {
             "write the offset as a positive integer known at compile time, as in `x.past(1, 0)`"
         }
         Code::UnboundedState => {
-            "slice the initializer, as in `(s.past(1, []) + [x])[^8..]`, to keep its newest elements"
+            "slice the rule's value, as in `(s.past(1, []) + [x])[^8..]`, to keep its newest elements"
         }
         Code::TopLevelWire => "place the wire inside its source's body",
         Code::DefaultArgSyntax => "parenthesize the value, as in `Note/(base + 7)`",
@@ -128,14 +130,14 @@ pub(super) fn help(code: Code) -> Option<&'static str> {
         Code::PatternSyntax => {
             "write `pattern`, a name, its parameters, `:` and an indented body, as in `pattern Hit(x):`"
         }
-        Code::StateSyntax => {
-            "declare the state at top level as `state`, a name, `=` and its initializer, as in `state count = 1`"
+        Code::CellSyntax => {
+            "declare the cell at top level as `state`, `stream` or `channel`, a name, an init in parentheses, a rule after `=` or both, as in `state level(0)` or `state count = level + 1`"
         }
         Code::CellCapacity => {
             "remove `[N]`, which states the pending capacity of a host-fed `stream` or `channel` alone"
         }
         Code::StateValue => {
-            "hold a number, a `bool`, an enum value or an array of them in the state"
+            "hold a number, a `bool`, an enum value or an array of them in the cell"
         }
         Code::PlacementSyntax => {
             "write the kind, then `as` and a name, a `/` value, a `when` gate and `|` attributes, in that order, as in `Note as n /60 | velocity=0.9`"
@@ -181,7 +183,7 @@ pub(super) fn help(code: Code) -> Option<&'static str> {
         Code::UnknownParameter => "set a parameter the pattern declares",
         Code::MissingArgument => "supply the parameter, as in `P | root=60`",
         Code::ReactiveInitializer => {
-            "initialize the input with a compile-time value, such as a `let`"
+            "give the cell an init that is a compile-time value, such as a `let`"
         }
         Code::UnknownAttribute => "use an attribute the kind declares, or correct its spelling",
         Code::RuntimePath => {
@@ -240,7 +242,7 @@ pub(super) fn help(code: Code) -> Option<&'static str> {
             "use a value equal as an integer and as a float, or split it into two `let`s"
         }
         Code::InconsistentShapes => "make the call yield one shape in every type",
-        Code::IntegerInput => "write the initial value as a float, as in `4.0`",
+        Code::IntegerCell => "write the init as a float, as in `4.0`",
         Code::NotTopLevel => "place the instance inside a parent that accepts it",
         Code::CountExceeded => "remove the instances past the count",
         Code::CountBelowMinimum => "add the instances the count requires",

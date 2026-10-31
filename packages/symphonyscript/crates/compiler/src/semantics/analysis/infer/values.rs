@@ -339,10 +339,10 @@ impl Engine<'_> {
                     .map_or(String::new(), |name| name.text.clone());
                 self.report.error(
                     self.hir,
-                    Code::IntegerInput,
+                    Code::IntegerCell,
                     loc,
                     format!(
-                        "`{name}` is an integer input whose every use expects a float, so its host cannot write a fraction; a float initializer such as `1.0` makes it a float input"
+                        "`{name}` is an integer host-fed cell whose every use expects a float, so its host cannot write a fraction; a float init such as `1.0` makes it a float cell"
                     ),
                 );
             }

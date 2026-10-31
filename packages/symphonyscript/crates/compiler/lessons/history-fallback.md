@@ -1,15 +1,15 @@
 # history-fallback
 
-A history read states its fallback, of the cell's type, except for an input, whose fallback is its initial value. (SPEC §6.6)
+A derived cell whose rule reads its own past, directly or through other cells' pasts, has a value at load when it or a cell on that cycle has an init, or a read on the cycle a fallback; with neither the cycle is an error. (SPEC §6.6)
 
-Before a state has taken k steps there is no past value to read.
+At load the history holds no value yet, and the init or the fallback is the value the read takes then.
 
 ```sym-error
 state s = s.past(1) + 1
 ```
 
-The read of `s` states no fallback.
+`s` reads its own past, and neither `s` has an init nor the read a fallback.
 
 ```sym
-state s = s.past(1, 0) + 1
+state s(0) = s.past(1) + 1
 ```

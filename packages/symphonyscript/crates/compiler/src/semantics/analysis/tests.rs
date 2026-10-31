@@ -2488,7 +2488,7 @@ fn reaching_an_id_space_draws_a_limit_diagnostic_and_no_internal_error() {
     let unreached = Code::UnreachableInstance;
     for (calls, expected) in [
         (4, vec![Code::RecursionLimit]),
-        (5, vec![Code::IntegerInput, unreached, unreached]),
+        (5, vec![Code::IntegerCell, unreached, unreached]),
     ] {
         let limits = Limits {
             recursive_calls: calls,
@@ -3203,7 +3203,7 @@ fn an_array_input_has_one_kind_for_all_its_elements() {
             [&["state gains([1, 2])"][..], &gains_read].concat(),
             vec![2],
             integer(&[1, 2]),
-            vec![Code::IntegerInput],
+            vec![Code::IntegerCell],
         ),
     ];
     let mut failures = Vec::new();

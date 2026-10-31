@@ -88,7 +88,7 @@ impl Parser<'_> {
     }
 
     pub(super) fn cell_decl(&mut self) {
-        let code = Code::StateSyntax;
+        let code = Code::CellSyntax;
         let word = match self.peek() {
             Some(SyntaxKind::StreamKw) => "stream",
             Some(SyntaxKind::ChannelKw) => "channel",
@@ -153,14 +153,14 @@ impl Parser<'_> {
         } else {
             self.then([Task::Close {
                 kind: SyntaxKind::RParen,
-                code: Code::StateSyntax,
+                code: Code::CellSyntax,
                 what: "`,` or `)`",
             }]);
         }
     }
 
     pub(super) fn cell_after_clock(&mut self, head: CellHead) {
-        let code = Code::StateSyntax;
+        let code = Code::CellSyntax;
         if self.eat(SyntaxKind::Eq) {
             self.rule(code);
             return;
@@ -214,7 +214,7 @@ impl Parser<'_> {
     pub(super) fn misplaced_cell(&mut self) {
         let word = self.current_text();
         self.error(
-            Code::StateSyntax,
+            Code::CellSyntax,
             format!("a `{word}` is declared at top level"),
         );
     }

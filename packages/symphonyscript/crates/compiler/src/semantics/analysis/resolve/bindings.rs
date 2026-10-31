@@ -443,7 +443,7 @@ impl Engine<'_> {
                 Code::TypeMismatch,
                 loc,
                 global,
-                "the initializer's shape differs from the input's type",
+                "the init's shape differs from the cell's type",
             )?;
             self.memo.inputs.insert(input, BoundVal::Error);
             return Ok(true);
@@ -506,7 +506,7 @@ impl Engine<'_> {
                     Code::TypeMismatch,
                     loc,
                     global,
-                    "a variable-array input's initializer is an array",
+                    "a variable-array cell's init is an array",
                 )?;
                 self.memo.inputs.insert(input, BoundVal::Error);
                 return Ok(true);
@@ -521,7 +521,7 @@ impl Engine<'_> {
                 Code::TypeMismatch,
                 loc,
                 global,
-                "the initializer's rows differ from the input's type",
+                "the init's rows differ from the cell's type",
             )?;
             self.memo.inputs.insert(input, BoundVal::Error);
             return Ok(true);
@@ -790,7 +790,7 @@ impl Engine<'_> {
             &shape,
             (
                 Code::TypeMismatch,
-                "the initializer's shape differs from the input's type",
+                "the init's shape differs from the cell's type",
             ),
             loc,
             scope,

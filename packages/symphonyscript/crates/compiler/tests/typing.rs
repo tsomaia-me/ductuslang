@@ -304,7 +304,7 @@ fn a_comparison_that_reads_an_integer_input_as_a_float_is_a_float_use() {
     let integer_inputs = |text: &str| {
         support::checked_all(text)
             .iter()
-            .filter(|diagnostic| diagnostic.code == Code::IntegerInput)
+            .filter(|diagnostic| diagnostic.code == Code::IntegerCell)
             .count()
     };
     assert_eq!(
@@ -1274,7 +1274,7 @@ fn a_compile_time_choice_type_checks_what_it_does_not_select() {
     let warned: Vec<Code> = support::checked_all(passed_over)
         .iter()
         .map(|diagnostic| diagnostic.code)
-        .filter(|code| *code == Code::IntegerInput)
+        .filter(|code| *code == Code::IntegerCell)
         .collect();
     if !warned.is_empty() {
         failures.push(format!("{passed_over}warned {warned:?}"));
@@ -4069,21 +4069,21 @@ fn one_fault_draws_one_diagnostic_at_the_fault() {
                     "fn f(x):\n    state s = 1\n    x\n",
                     "Clip c:\n    Note/(f(1))\n",
                 ],
-                &[(Code::StateSyntax, "state")],
+                &[(Code::CellSyntax, "state")],
             ),
             (
                 &[
                     "fn f(x):\n    let y = 1\n    state s = 1\n    x + y\n",
                     "Clip c:\n    Note/(f(1))\n",
                 ],
-                &[(Code::StateSyntax, "state")],
+                &[(Code::CellSyntax, "state")],
             ),
             (
                 &[
                     "pattern P():\n    state s = 1\n    Note\n",
                     "Clip c:\n    P\n",
                 ],
-                &[(Code::StateSyntax, "state")],
+                &[(Code::CellSyntax, "state")],
             ),
             (
                 &[
@@ -4100,7 +4100,7 @@ fn one_fault_draws_one_diagnostic_at_the_fault() {
     assert!(
         support::checked_all(text)
             .iter()
-            .all(|diagnostic| diagnostic.code != Code::IntegerInput),
+            .all(|diagnostic| diagnostic.code != Code::IntegerCell),
         "{text}"
     );
 }

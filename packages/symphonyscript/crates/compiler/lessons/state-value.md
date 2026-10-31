@@ -1,8 +1,8 @@
 # state-value
 
-A state holds no node reference. (SPEC §6.6)
+A cell may hold an array, a string, a record, a sum, a map or a document, never a node reference or a function. (SPEC §6.1)
 
-A state changes at runtime, and node references exist only at compile time.
+A cell's value changes at runtime, and node references and functions exist only at compile time.
 
 ```sym-error
 Clip c:
@@ -10,7 +10,7 @@ Clip c:
 state s = c
 ```
 
-The state holds a node reference.
+The cell holds a node reference.
 
 ```sym
 state s = 1

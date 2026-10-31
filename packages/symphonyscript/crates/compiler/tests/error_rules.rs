@@ -210,7 +210,7 @@ const RULES: &[Rule] = &[
     ),
     rule(
         "4.4",
-        "integer-input",
+        "integer-cell",
         "state n(4)\nClip c:\n    Note | velocity=n\n",
     ),
     rule(
@@ -420,7 +420,17 @@ const RULES: &[Rule] = &[
         "interpolation-type",
         "Kit k:\n    Sampler | file=\"{k}\"\n",
     ),
+    rule("6.1", "cell-syntax", "state = 1\n"),
+    rule("6.1", "cell-syntax", "state level\n"),
+    rule("6.1", "cell-syntax", "state a(1)\nstream b on a\n"),
+    rule("6.1", "cell-syntax", "Clip c:\n    state x = 1\n    Note\n"),
     rule("6.1", "reactive-initializer", "state a(1)\nstate b(a)\n"),
+    rule(
+        "6.1",
+        "reactive-initializer",
+        "state a(1)\nstate b(a) = 2\n",
+    ),
+    rule("6.1", "state-value", "Clip c:\n    Note\nstate s(c)\n"),
     rule("6.1", "cell-capacity", "state[4] level(0)\n"),
     rule("6.1", "cell-capacity", "channel[4] s = 1\n"),
     rule("6.2", "let-syntax", "let = 1\n"),
@@ -626,18 +636,12 @@ const RULES: &[Rule] = &[
         "child-name-clash",
         "pattern P():\n    let k = 1\n    Note as k\n    Note\nClip c:\n    P\n",
     ),
-    rule("6.6", "state-syntax", "state = 1\n"),
     rule(
         "6.6",
         "expression-syntax",
         "state a(1)\nstate s = a.past(1, )\n",
     ),
     rule("6.6", "declaration-cycle", "state s = s + 1\n"),
-    rule(
-        "6.6",
-        "state-syntax",
-        "Clip c:\n    state x = 1\n    Note\n",
-    ),
     rule("6.6", "history-offset", "state a(1)\nstate s = a.past(0)\n"),
     rule("6.6", "history-offset", "state a(1)\nstate s = a.past(a)\n"),
     rule(
@@ -646,6 +650,11 @@ const RULES: &[Rule] = &[
         "let a = 1\nstate s = a.past(1, 0)\n",
     ),
     rule("6.6", "history-fallback", "state s = s.past(1) + 1\n"),
+    rule(
+        "6.6",
+        "history-fallback",
+        "state a = b.past(1) + 1\nstate b = a.past(1) + 1\n",
+    ),
     rule(
         "6.6",
         "type-mismatch",
