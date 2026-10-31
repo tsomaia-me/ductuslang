@@ -119,9 +119,18 @@ enum Position {
     RecursiveResult,
     StateInit,
     OuterArm,
+    Annotation,
+    Compared,
+    Tested,
+    Converted,
+    Index,
+    Negated,
+    Absolute,
+    SliceBound,
+    ArrayElement,
 }
 
-const POSITIONS: [Position; 17] = [
+const POSITIONS: [Position; 26] = [
     Position::TopLet,
     Position::LocalLet,
     Position::Scalar,
@@ -139,6 +148,15 @@ const POSITIONS: [Position; 17] = [
     Position::RecursiveResult,
     Position::StateInit,
     Position::OuterArm,
+    Position::Annotation,
+    Position::Compared,
+    Position::Tested,
+    Position::Converted,
+    Position::Index,
+    Position::Negated,
+    Position::Absolute,
+    Position::SliceBound,
+    Position::ArrayElement,
 ];
 
 const fn fixed(element: Element, length: usize) -> Content {
@@ -533,7 +551,16 @@ impl Position {
             | Position::RecursiveArgument
             | Position::RecursiveResult
             | Position::StateInit
-            | Position::OuterArm => false,
+            | Position::OuterArm
+            | Position::Annotation
+            | Position::Compared
+            | Position::Tested
+            | Position::Converted
+            | Position::Index
+            | Position::Negated
+            | Position::Absolute
+            | Position::SliceBound
+            | Position::ArrayElement => false,
         }
     }
 
@@ -547,12 +574,52 @@ impl Position {
             | Position::Len
             | Position::Native
             | Position::Argument
-            | Position::RecursiveArgument => true,
+            | Position::RecursiveArgument
+            | Position::Compared
+            | Position::Tested
+            | Position::Converted
+            | Position::Index
+            | Position::Negated
+            | Position::Absolute
+            | Position::SliceBound
+            | Position::ArrayElement => true,
             Position::TopLet
             | Position::LocalLet
             | Position::Iterable
             | Position::Attribute
             | Position::Result
+            | Position::RecursiveResult
+            | Position::StateInit
+            | Position::OuterArm
+            | Position::Annotation => false,
+        }
+    }
+
+    fn disagreeing_only(self) -> bool {
+        match self {
+            Position::Annotation
+            | Position::Compared
+            | Position::Tested
+            | Position::Converted
+            | Position::Index
+            | Position::Negated
+            | Position::Absolute
+            | Position::SliceBound
+            | Position::ArrayElement => true,
+            Position::TopLet
+            | Position::LocalLet
+            | Position::Scalar
+            | Position::IndexBase
+            | Position::JoinLeft
+            | Position::JoinRight
+            | Position::SliceBase
+            | Position::Len
+            | Position::Iterable
+            | Position::Attribute
+            | Position::Native
+            | Position::Argument
+            | Position::Result
+            | Position::RecursiveArgument
             | Position::RecursiveResult
             | Position::StateInit
             | Position::OuterArm => false,
@@ -575,7 +642,16 @@ impl Position {
             | Position::Argument
             | Position::RecursiveArgument
             | Position::StateInit
-            | Position::OuterArm => false,
+            | Position::OuterArm
+            | Position::Annotation
+            | Position::Compared
+            | Position::Tested
+            | Position::Converted
+            | Position::Index
+            | Position::Negated
+            | Position::Absolute
+            | Position::SliceBound
+            | Position::ArrayElement => false,
         }
     }
 
@@ -681,6 +757,31 @@ impl Position {
                 None,
                 false,
             ),
+            Position::Annotation => (
+                vec![format!("let x: i32 = {SLOT}\n"), read("x", 0)],
+                Some(""),
+                false,
+            ),
+            Position::Compared => (
+                vec![read(&format!("if ({SLOT}) > 0 then 1 else 2"), 0)],
+                None,
+                false,
+            ),
+            Position::Tested => (
+                vec![read(&format!("if ({SLOT}) is 1 then 1 else 2"), 0)],
+                None,
+                false,
+            ),
+            Position::Converted => (vec![read(&format!("i32({SLOT})"), 0)], None, false),
+            Position::Index => (vec![read(&format!("[1, 2][{SLOT}]"), 0)], None, false),
+            Position::Negated => (vec![read(&format!("-({SLOT})"), 0)], None, false),
+            Position::Absolute => (vec![read(&format!("abs({SLOT})"), 0)], None, false),
+            Position::SliceBound => (
+                vec![read(&format!("[1, 2][({SLOT})..][0]"), 0)],
+                None,
+                false,
+            ),
+            Position::ArrayElement => (vec![read(&format!("[({SLOT}), 1][0]"), 0)], None, false),
         };
         Layout {
             items,
@@ -978,6 +1079,9 @@ fn check_case(rows: &Rows, case: &Case, compilers: &mut Compilers, outcome: &mut
     else {
         return;
     };
+    if case.position.disagreeing_only() && case.relation.agrees() {
+        return;
+    }
     if case.position.signature() && case.relation == Relation::Family {
         return;
     }
@@ -1159,7 +1263,16 @@ fn landing(case: &Case, dimensions: usize, built: &Built) -> (usize, usize) {
             | Position::RecursiveArgument
             | Position::RecursiveResult
             | Position::StateInit
-            | Position::OuterArm,
+            | Position::OuterArm
+            | Position::Annotation
+            | Position::Compared
+            | Position::Tested
+            | Position::Converted
+            | Position::Index
+            | Position::Negated
+            | Position::Absolute
+            | Position::SliceBound
+            | Position::ArrayElement,
             _,
         ) => (built.start, built.end),
     }
@@ -1239,90 +1352,90 @@ fn assert_covered_arms_hold(chooser: Chooser, programs: usize, landing_apart: us
 }
 #[test]
 fn the_arms_of_a_compile_time_true_choice_agree_wherever_it_stands() {
-    assert_covered_arms_hold(Chooser::True, 344, 0);
+    assert_covered_arms_hold(Chooser::True, 515, 1);
 }
 
 #[test]
 #[ignore = "exhaustive"]
 fn exhaustive_the_arms_of_a_compile_time_true_choice_agree_wherever_it_stands() {
-    assert_arms_hold(Chooser::True, 32080, 72);
+    assert_arms_hold(Chooser::True, 40612, 72);
 }
 
 #[test]
 fn the_arms_of_a_compile_time_false_choice_agree_wherever_it_stands() {
-    assert_covered_arms_hold(Chooser::False, 344, 1);
+    assert_covered_arms_hold(Chooser::False, 515, 0);
 }
 
 #[test]
 #[ignore = "exhaustive"]
 fn exhaustive_the_arms_of_a_compile_time_false_choice_agree_wherever_it_stands() {
-    assert_arms_hold(Chooser::False, 32080, 72);
+    assert_arms_hold(Chooser::False, 40612, 72);
 }
 
 #[test]
 fn the_arms_of_a_runtime_choice_agree_wherever_it_stands() {
-    assert_covered_arms_hold(Chooser::Flag, 344, 0);
+    assert_covered_arms_hold(Chooser::Flag, 515, 0);
 }
 
 #[test]
 #[ignore = "exhaustive"]
 fn exhaustive_the_arms_of_a_runtime_choice_agree_wherever_it_stands() {
-    assert_arms_hold(Chooser::Flag, 32080, 0);
+    assert_arms_hold(Chooser::Flag, 40612, 0);
 }
 
 #[test]
 fn the_arms_of_a_compile_time_enum_match_agree_wherever_it_stands() {
-    assert_covered_arms_hold(Chooser::Enum, 344, 0);
+    assert_covered_arms_hold(Chooser::Enum, 515, 1);
 }
 
 #[test]
 #[ignore = "exhaustive"]
 fn exhaustive_the_arms_of_a_compile_time_enum_match_agree_wherever_it_stands() {
-    assert_arms_hold(Chooser::Enum, 32080, 48);
+    assert_arms_hold(Chooser::Enum, 40612, 48);
 }
 
 #[test]
 fn the_arms_of_a_match_on_an_enum_input_agree_wherever_it_stands() {
-    assert_covered_arms_hold(Chooser::EnumInput, 344, 0);
+    assert_covered_arms_hold(Chooser::EnumInput, 515, 0);
 }
 
 #[test]
 #[ignore = "exhaustive"]
 fn exhaustive_the_arms_of_a_match_on_an_enum_input_agree_wherever_it_stands() {
-    assert_arms_hold(Chooser::EnumInput, 32080, 0);
+    assert_arms_hold(Chooser::EnumInput, 40612, 0);
 }
 
 #[test]
 fn the_arms_of_a_match_on_an_integer_input_agree_wherever_it_stands() {
-    assert_covered_arms_hold(Chooser::Integer, 344, 0);
+    assert_covered_arms_hold(Chooser::Integer, 515, 0);
 }
 
 #[test]
 #[ignore = "exhaustive"]
 fn exhaustive_the_arms_of_a_match_on_an_integer_input_agree_wherever_it_stands() {
-    assert_arms_hold(Chooser::Integer, 32080, 0);
+    assert_arms_hold(Chooser::Integer, 40612, 0);
 }
 
 #[test]
 fn the_arms_of_a_choice_on_a_compile_time_recursive_functions_parameter_agree_wherever_it_stands() {
-    assert_covered_arms_hold(Chooser::Parameter, 292, 0);
+    assert_covered_arms_hold(Chooser::Parameter, 432, 0);
 }
 
 #[test]
 #[ignore = "exhaustive"]
 fn exhaustive_the_arms_of_a_choice_on_a_compile_time_recursive_functions_parameter_agree_wherever_it_stands()
  {
-    assert_arms_hold(Chooser::Parameter, 12406, 0);
+    assert_arms_hold(Chooser::Parameter, 16330, 0);
 }
 
 #[test]
 fn the_arms_of_a_match_on_a_compile_time_recursive_functions_parameter_agree_wherever_it_stands() {
-    assert_covered_arms_hold(Chooser::ParameterMatch, 292, 0);
+    assert_covered_arms_hold(Chooser::ParameterMatch, 432, 0);
 }
 
 #[test]
 #[ignore = "exhaustive"]
 fn exhaustive_the_arms_of_a_match_on_a_compile_time_recursive_functions_parameter_agree_wherever_it_stands()
  {
-    assert_arms_hold(Chooser::ParameterMatch, 12406, 0);
+    assert_arms_hold(Chooser::ParameterMatch, 16330, 0);
 }

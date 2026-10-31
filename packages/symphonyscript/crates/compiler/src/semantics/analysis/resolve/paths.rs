@@ -1090,6 +1090,9 @@ impl Engine<'_> {
         );
         let index_node = match index_val {
             Val::Scalar(node) => node,
+            Val::Array(_) if some!(self.placeholder_array(&index_val, need)?) => {
+                return Ok(Some(Val::Error));
+            }
             Val::Array(_) => {
                 self.error(
                     Code::IndexType,
@@ -1122,6 +1125,9 @@ impl Engine<'_> {
         );
         let offset_node = match offset_val {
             Val::Scalar(node) => node,
+            Val::Array(_) if some!(self.placeholder_array(&offset_val, need)?) => {
+                return Ok(Some(Val::Error));
+            }
             Val::Array(_) => {
                 self.error(
                     Code::IndexType,

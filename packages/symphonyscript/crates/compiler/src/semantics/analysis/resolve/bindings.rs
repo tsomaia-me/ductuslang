@@ -1187,6 +1187,9 @@ impl Engine<'_> {
             && !matches!(val, Val::Error)
             && !self.holds_array(val)
         {
+            if sigs.iter().any(Sig::is_error) {
+                return Ok(BoundVal::Error);
+            }
             self.error(
                 Code::TypeMismatch,
                 loc,

@@ -404,6 +404,9 @@ impl Engine<'_> {
             self.single_operand(&val, Code::IndexType, BOUND_TYPE);
             match val {
                 Val::Scalar(node) => nodes.push(Some((node, bound.from_end))),
+                Val::Array(_) if some!(self.placeholder_array(&val, need)?) => {
+                    return Ok(Some(Val::Error));
+                }
                 Val::Array(_) => {
                     self.error(Code::IndexType, loc, scope, BOUND_TYPE)?;
                     return Ok(Some(Val::Error));

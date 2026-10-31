@@ -20,6 +20,7 @@ use crate::semantics::analysis::op::Op;
 use crate::semantics::analysis::param_source::ParamSource;
 use crate::semantics::analysis::query::Query;
 use crate::semantics::analysis::scope_kind::ScopeKind;
+use crate::semantics::analysis::some::some;
 use crate::semantics::analysis::val::Val;
 use crate::semantics::collection::{BuiltinName, Decl};
 use crate::semantics::ir::{Args, ExprId, ExprKind, FnDecl, FnId, Loc};
@@ -170,12 +171,14 @@ impl Engine<'_> {
             match val {
                 Val::Scalar(node) => operands.push(node),
                 Val::Array(_) => {
-                    self.error(
-                        Code::ArrayOperand,
-                        loc,
-                        scope,
-                        "built-ins apply to single values, not arrays",
-                    )?;
+                    if !some!(self.placeholder_array(&val, need)?) {
+                        self.error(
+                            Code::ArrayOperand,
+                            loc,
+                            scope,
+                            "built-ins apply to single values, not arrays",
+                        )?;
+                    }
                     return Ok(Some(Val::Error));
                 }
                 Val::Error => return Ok(Some(Val::Error)),

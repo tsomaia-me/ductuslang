@@ -41,11 +41,13 @@ impl Engine<'_> {
             } => Some(self.variant(enumeration, variant, loc, scope)?),
             ExprKind::Convert(target, operand) => {
                 match self.val(Query::Expr(*operand, scope), need) {
-                    Some(operand) => {
-                        Some(self.unary_val(operand, loc, scope, |operand| {
+                    Some(operand) => match self.placeholder_array(&operand, need)? {
+                        Some(true) => Some(Val::Error),
+                        Some(false) => Some(self.unary_val(operand, loc, scope, |operand| {
                             Op::Convert(*target, operand)
-                        })?)
-                    }
+                        })?),
+                        None => None,
+                    },
                     None => None,
                 }
             }
@@ -66,9 +68,13 @@ impl Engine<'_> {
             ExprKind::Stepped(target) => self.stepped(target, loc, scope)?,
             ExprKind::Call(callee, args) => self.call(*callee, args, expr, loc, scope, need)?,
             ExprKind::Unary(op, operand) => match self.val(Query::Expr(*operand, scope), need) {
-                Some(operand) => {
-                    Some(self.unary_val(operand, loc, scope, |operand| Op::Unary(*op, operand))?)
-                }
+                Some(operand) => match self.placeholder_array(&operand, need)? {
+                    Some(true) => Some(Val::Error),
+                    Some(false) => Some(
+                        self.unary_val(operand, loc, scope, |operand| Op::Unary(*op, operand))?,
+                    ),
+                    None => None,
+                },
                 None => None,
             },
             ExprKind::Binary(op, lhs_expr, rhs_expr) => {
@@ -278,6 +284,10 @@ impl Engine<'_> {
         let arrays = (self.is_array_val(&lhs)?, self.is_array_val(&rhs)?);
         if arrays.0 || arrays.1 {
             if op != symphonyscript_core::BinaryOp::Add {
+                let left = some!(self.placeholder_array(&lhs, need)?);
+                if left || some!(self.placeholder_array(&rhs, need)?) {
+                    return Ok(Some(Val::Error));
+                }
                 self.error(
                     Code::ArrayOperand,
                     loc,
@@ -666,6 +676,15 @@ impl Engine<'_> {
         if vals.iter().any(|val| matches!(val, Val::Error)) {
             return Ok(Some(Val::Error));
         }
+        let inner = vals.first().map(Val::shape).unwrap_or_default();
+        let ragged = vals.iter().any(|val| val.shape() != inner);
+        if ragged {
+            for val in &vals {
+                if some!(self.placeholder_array(val, need)?) {
+                    return Ok(Some(Val::Error));
+                }
+            }
+        }
         if vals.iter().any(|val| self.holds_array(val)) {
             let val = self.opaque_array(vals.clone(), loc, scope)?;
             if matches!(val, Val::Array(_)) {
@@ -674,8 +693,7 @@ impl Engine<'_> {
             }
             return Ok(Some(val));
         }
-        let inner = vals.first().map(Val::shape).unwrap_or_default();
-        if vals.iter().any(|val| val.shape() != inner) {
+        if ragged {
             self.error(Code::RaggedArray, loc, scope, RAGGED)?;
             return Ok(Some(Val::Error));
         }
@@ -708,6 +726,26 @@ impl Engine<'_> {
             }
         }
         Ok(Some(self.group_reads(group, val)?))
+    }
+
+    pub(in crate::semantics::analysis) fn placeholder_array(
+        &mut self,
+        val: &Val,
+        need: &mut Vec<Query>,
+    ) -> Result<Option<bool>, Internal> {
+        let array = match val {
+            Val::Array(_) => true,
+            Val::Scalar(node) => self.definite_array(*node)?,
+            Val::Error => false,
+        };
+        if !array {
+            return Ok(Some(false));
+        }
+        let mut held = false;
+        for node in val.nodes() {
+            held |= some!(self.sig(node, need)).is_error();
+        }
+        Ok(Some(held))
     }
 
     fn unless_faulty_literal(
