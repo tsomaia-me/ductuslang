@@ -734,3 +734,65 @@ fn a_dot_call_on_a_history_read_whose_fallback_is_a_node_reference_draws_the_ref
     ];
     support::assert_rows_in_every_order(&symphonyscript_fixtures::vocabulary(), rows);
 }
+
+#[test]
+fn a_refused_dot_calls_receiver_is_checked_in_its_own_type_as_a_refused_operators_operand_397() {
+    let clip = "Clip c:\n    Note/(a)\n";
+    let rows: &[support::Row] = &[
+        (
+            &["let a = [1, 2][5].twice()\n", clip],
+            &[
+                (Code::NotCallable, "[1, 2][5].twice"),
+                (Code::IndexOutOfRange, "5"),
+            ],
+        ),
+        (
+            &["let a = [1, 2][^5].twice(1)\n", clip],
+            &[
+                (Code::NotCallable, "[1, 2][^5].twice"),
+                (Code::IndexOutOfRange, "[1, 2][^5]"),
+            ],
+        ),
+        (
+            &["let a = [1, 2][1.5..2].twice()\n", clip],
+            &[
+                (Code::NotCallable, "[1, 2][1.5..2].twice"),
+                (Code::IndexType, "1.5"),
+            ],
+        ),
+        (
+            &["let a = [1, 2][0..99999999999999999999].twice()\n", clip],
+            &[
+                (Code::NotCallable, "[1, 2][0..99999999999999999999].twice"),
+                (Code::IndexOutOfRange, "99999999999999999999"),
+            ],
+        ),
+        (
+            &["let a = (1 + true).twice()\n", clip],
+            &[
+                (Code::NotCallable, "(1 + true).twice"),
+                (Code::OperandType, "1 + true"),
+            ],
+        ),
+        (
+            &["let b = [1, 2]\n", "Clip c:\n    Note/(b[5].twice())\n"],
+            &[
+                (Code::NotCallable, "b[5].twice"),
+                (Code::IndexOutOfRange, "5"),
+            ],
+        ),
+        (
+            &["let a = -[1, 2][5]\n", clip],
+            &[(Code::IndexOutOfRange, "5")],
+        ),
+        (
+            &["let a = [1, 2][5].twice()\n", "Clip c:\n    Note/(1)\n"],
+            &[(Code::NotCallable, "[1, 2][5].twice")],
+        ),
+        (
+            &["let a = [1, 2][1].twice()\n", clip],
+            &[(Code::NotCallable, "[1, 2][1].twice")],
+        ),
+    ];
+    support::assert_rows_in_every_order(&symphonyscript_fixtures::vocabulary(), rows);
+}
