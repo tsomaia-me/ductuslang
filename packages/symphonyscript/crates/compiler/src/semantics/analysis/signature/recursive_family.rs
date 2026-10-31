@@ -18,6 +18,7 @@ use crate::semantics::analysis::some::some;
 use crate::semantics::analysis::unify_kinds::unify_kinds;
 use crate::semantics::analysis::val::Val;
 use crate::semantics::analysis::width::Width;
+use crate::semantics::counted_walk::CountedWalk;
 use crate::semantics::ir::FnId;
 
 impl Engine<'_> {
@@ -133,6 +134,7 @@ impl Engine<'_> {
                         continue;
                     }
                     self.memo.family_shapes.insert(key.clone(), shapes.to_vec());
+                    self.memo.family_nodes.entry(key.clone()).or_insert(node);
                     let scope = self.instantiate(function, shapes, node)?;
                     self.memo.probes.insert(scope);
                     self.memo.family_probes.insert(key.clone(), scope);
@@ -143,7 +145,7 @@ impl Engine<'_> {
                 }
                 Some(RecFamily::Probing(scope)) => {
                     if self.body_in_progress(function, scope)? {
-                        return Ok(Some(Sig::open(false)));
+                        return self.read_open(node, key);
                     }
                     let Some(root) = some!(self.template_root(function, scope, need)?) else {
                         self.memo.probing_families.remove(key);
@@ -153,7 +155,11 @@ impl Engine<'_> {
                         continue;
                     };
                     let Some(sig) = self.memo.sigs.get(&root).copied() else {
-                        return Ok(self.pending(root, Sig::open(false), need));
+                        let pending = self.pending(root, Sig::open(false), need);
+                        if pending.is_some() {
+                            return self.read_open(node, key);
+                        }
+                        return Ok(None);
                     };
                     self.memo.probing_families.remove(key);
                     if sig.open
@@ -162,11 +168,12 @@ impl Engine<'_> {
                         && self.in_probe(self.node(node)?.scope)?
                     {
                         self.memo.rec_families.remove(key);
-                        return Ok(Some(Sig::open(false)));
+                        return self.read_open(node, key);
                     }
                     let family = if sig.open { None } else { sig.family };
                     let kind = if sig.is_error() { Kind::Any } else { sig.kind };
                     let settled = self.instantiate(function, &self.family_args(key)?, node)?;
+                    self.memo.template_families.insert(settled, key.clone());
                     self.memo
                         .family_scopes
                         .entry(key.clone())
@@ -203,6 +210,7 @@ impl Engine<'_> {
                         RecFamily::Failed
                     } else if rises(kind, sig.kind) && (sig.open || sig.family == family) {
                         let settled = self.instantiate(function, &self.family_args(key)?, node)?;
+                        self.memo.template_families.insert(settled, key.clone());
                         self.memo
                             .family_scopes
                             .entry(key.clone())
@@ -226,13 +234,136 @@ impl Engine<'_> {
                     self.memo.rec_families.insert(key.clone(), state);
                 }
                 Some(RecFamily::Known(kind, family)) => {
+                    some!(self.settle_waiters(key, need)?);
                     return Ok(Some(Sig::of(kind, Width::Flexible, false, family)));
                 }
                 Some(RecFamily::Failed) => {
+                    some!(self.settle_waiters(key, need)?);
                     return Ok(Some(Sig::ERROR));
                 }
             }
         }
+    }
+
+    fn read_open(&mut self, node: NodeId, open: &FamilyKey) -> Result<Option<Sig>, Internal> {
+        let open_sig = Some(Sig::open(false));
+        let Some(template) = self.template_of(self.node(node)?.scope)? else {
+            return Ok(open_sig);
+        };
+        if self.memo.probes.contains(&template) {
+            return Ok(open_sig);
+        }
+        let Some(reader) = self.memo.template_families.get(&template).cloned() else {
+            return Ok(open_sig);
+        };
+        if reader == *open {
+            return Ok(open_sig);
+        }
+        self.memo.probes.insert(template);
+        if self.memo.open_reads.insert((reader.clone(), open.clone())) {
+            self.memo
+                .family_waiters
+                .entry(open.clone())
+                .or_default()
+                .push(reader);
+        }
+        Ok(open_sig)
+    }
+
+    fn settle_waiters(
+        &mut self,
+        settled: &FamilyKey,
+        need: &mut Vec<Query>,
+    ) -> Result<Option<()>, Internal> {
+        for reader in self.memo.family_waiters.remove(settled).unwrap_or_default() {
+            CountedWalk::RecursiveFamilyWaiters.step();
+            if self.memo.reprobed.insert((reader.clone(), settled.clone())) {
+                self.memo.pending_reprobes.push(reader);
+            }
+        }
+        if self.memo.driving_reprobes || self.memo.pending_reprobes.is_empty() {
+            return Ok(Some(()));
+        }
+        self.memo.driving_reprobes = true;
+        let driven = self.drive_reprobes(need);
+        self.memo.driving_reprobes = false;
+        driven
+    }
+
+    fn drive_reprobes(&mut self, need: &mut Vec<Query>) -> Result<Option<()>, Internal> {
+        let mut index = 0;
+        while let Some(reader) = self.memo.pending_reprobes.get(index).cloned() {
+            CountedWalk::RecursiveFamilyReprobes.step();
+            match self.memo.rec_families.get(&reader) {
+                Some(RecFamily::Known(..) | RecFamily::Failed) => {}
+                Some(RecFamily::Probing(_) | RecFamily::Settling { .. }) | None => {
+                    index += 1;
+                    continue;
+                }
+            }
+            let fresh = match self.memo.reprobe_scopes.get(&reader) {
+                Some(fresh) => *fresh,
+                None => {
+                    let Some(&last) = self
+                        .memo
+                        .family_scopes
+                        .get(&reader)
+                        .and_then(|scopes| scopes.last())
+                    else {
+                        self.memo.pending_reprobes.swap_remove(index);
+                        continue;
+                    };
+                    if !self.memo.probes.contains(&last) {
+                        self.memo.pending_reprobes.swap_remove(index);
+                        continue;
+                    }
+                    self.reprobe_scope(&reader, last)?
+                }
+            };
+            let function = reader.function;
+            if self.body_in_progress(function, fresh)? {
+                index += 1;
+                continue;
+            }
+            if let Some(root) = some!(self.template_root(function, fresh, need)?)
+                && !self.memo.sigs.contains_key(&root)
+            {
+                let query = Query::Sig(root);
+                if self.in_progress(query) {
+                    index += 1;
+                    continue;
+                }
+                need.push(query);
+                return Ok(None);
+            }
+            self.memo.reprobe_scopes.remove(&reader);
+            self.memo.pending_reprobes.swap_remove(index);
+        }
+        Ok(Some(()))
+    }
+
+    fn reprobe_scope(&mut self, reader: &FamilyKey, last: ScopeId) -> Result<ScopeId, Internal> {
+        let origin = *self
+            .memo
+            .family_nodes
+            .get(reader)
+            .ok_or(Internal::missed("family call"))?;
+        let fresh = self.instantiate(reader.function, &self.family_args(reader)?, origin)?;
+        CountedWalk::RecursiveFamilyReprobeScopes.step();
+        self.memo.template_families.insert(fresh, reader.clone());
+        if let Some(parents) = self.memo.template_parents.get(&last).cloned() {
+            self.memo.template_parents.insert(fresh, parents);
+        }
+        if let Some(sites) = self.memo.template_sites.get(&last).cloned() {
+            self.memo.template_sites.insert(fresh, sites);
+        }
+        self.memo
+            .family_scopes
+            .entry(reader.clone())
+            .or_default()
+            .push(fresh);
+        self.memo.reprobe_scopes.insert(reader.clone(), fresh);
+        Ok(fresh)
     }
 
     fn pending(&self, root: NodeId, provisional: Sig, need: &mut Vec<Query>) -> Option<Sig> {
@@ -326,7 +457,7 @@ impl Engine<'_> {
         let mut sigs = Vec::new();
         let mut missing = false;
         for node in arg.nodes() {
-            crate::semantics::counted_walk::CountedWalk::RecursiveFamilyFamilyShape.step();
+            CountedWalk::RecursiveFamilyFamilyShape.step();
             let sig = self.known_sig(node)?;
             let reference = match self.arg_reference(node, &sig, need)? {
                 Some(reference) => reference,

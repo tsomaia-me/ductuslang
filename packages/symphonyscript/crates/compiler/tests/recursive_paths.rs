@@ -4779,107 +4779,195 @@ impl Own {
     }
 }
 
-const SELF_FIRSTS: [&str; 2] = ["c", "d"];
+const SELF_FIRSTS: [&str; 5] = [
+    "c",
+    "d",
+    "(if m > 5 then c else a(c, d, 0))",
+    "a(c, d, 0)",
+    "[a(c, d, 0)][0]",
+];
 
-fn own_value(first: usize, second: usize, depth: usize, (c, d, m): (Own, Own, i64)) -> Own {
-    if m < 1 {
-        return c;
+const SELF_DEPTHS: [&str; 3] = ["0", "m - 1", "m - 2"];
+
+const SELF_WRAPS: [&str; 5] = [
+    "{x}",
+    "[{x}][0]",
+    "[{x}, c][0]",
+    "(if m > 99 then {x} else c)",
+    "(if false then {x} else c)",
+];
+
+const SELF_READS: [(&str, &str); 2] = [(".gain", "2"), (".tone.velocity", "0.6")];
+
+fn waits_on_g1(row: &SelfRead, outer: Own) -> bool {
+    let taken = row.depth == 0 && row.wrap < 3;
+    let swapped_fault = row.fault && row.second == 1 && outer == Own::Other;
+    matches!(row.first, 3 | 4) && (taken || swapped_fault)
+}
+
+fn inner_level(depth: usize, level: i64) -> i64 {
+    match depth {
+        0 => 0,
+        1 => level - 1,
+        _ => level - 2,
     }
-    let x = match first {
-        1 => d,
-        _ => c,
-    };
-    let y = if second == 0 { c } else { d };
-    let inner_m = if depth == 0 { m - 1 } else { m - 2 };
-    let inner = own_value(first, second, depth, (x, y, inner_m));
-    if inner.above() { d } else { c }
+}
+
+struct SelfRead {
+    first: usize,
+    second: usize,
+    depth: usize,
+    wrap: usize,
+    read: usize,
+    fault: bool,
+}
+
+impl SelfRead {
+    fn value(&self, (c, d, m): (Own, Own, i64)) -> Own {
+        if m < 1 {
+            return c;
+        }
+        let inner = if self.wrap >= 3 {
+            c
+        } else {
+            let x = if self.first == 1 { d } else { c };
+            let y = if self.second == 0 { c } else { d };
+            self.value((x, y, inner_level(self.depth, m)))
+        };
+        if inner.above() { d } else { c }
+    }
+
+    fn function(&self, name: &str, callee: &str, nested: &str) -> String {
+        let first = SELF_FIRSTS[self.first].replace("a(c, d, 0)", &format!("{nested}(c, d, 0)"));
+        let call = format!(
+            "{callee}({first}, {}, {})",
+            ["c", "d"][self.second],
+            SELF_DEPTHS[self.depth]
+        );
+        let inner = SELF_WRAPS[self.wrap].replace("{x}", &call);
+        let (read, threshold) = SELF_READS[self.read];
+        let local = if self.fault {
+            "    let z = c.hook.velocity\n"
+        } else {
+            ""
+        };
+        format!(
+            "fn {name}(c, d, m):\n{local}    if m < 1 then c else if {inner}{read} > {threshold} then d else c\n"
+        )
+    }
+
+    fn program(&self, (c, d, m): (Own, Own, i64), reversed: bool, recursive: bool) -> String {
+        let value = self.value((c, d, m));
+        let mut items = vec![
+            "Session main\n".to_string(),
+            "Clip verse | gain=2:\n    Note as tone | velocity=0.5\n".to_string(),
+            "Clip other | gain=3:\n    Note as tone | velocity=0.7\n    Note as hook | velocity=0.1\n"
+                .to_string(),
+        ];
+        let outer = if recursive {
+            items.push(self.function("a", "a", "a"));
+            "a".to_string()
+        } else {
+            items.push("fn astop(c, d, m): c\n".to_string());
+            for level in 0..=m {
+                let (callee, nested) = if level == 0 {
+                    ("astop".to_string(), "astop")
+                } else {
+                    (format!("a{}", inner_level(self.depth, level).max(0)), "a0")
+                };
+                items.push(self.function(&format!("a{level}"), &callee, nested));
+            }
+            format!("a{m}")
+        };
+        items.push(format!(
+            "Clip k:\n    Note/([60][i32({outer}({}, {}, {m}).gain) - {}])\n",
+            c.name(),
+            d.name(),
+            value.gain()
+        ));
+        if reversed {
+            items[1..].reverse();
+        }
+        items.concat()
+    }
+}
+
+fn drawn_set(text: &str) -> (BTreeSet<(Code, String)>, usize) {
+    let found = found(text);
+    let most = found.values().copied().max().unwrap_or_default();
+    (found.into_keys().collect(), most)
+}
+
+fn self_read_failure(row: &SelfRead, outer: (Own, Own, i64), reversed: bool) -> Option<String> {
+    let text = row.program(outer, reversed, true);
+    let twin = row.program(outer, reversed, false);
+    let (drawn, most) = drawn_set(&text);
+    let (expected, _) = drawn_set(&twin);
+    let wrong_twin = expected
+        .iter()
+        .any(|(code, _)| *code != Code::UnknownAttribute)
+        || !row.fault && !expected.is_empty();
+    (drawn != expected || most > 1 || wrong_twin)
+        .then(|| format!("343/350: {text}\n  draws {drawn:?}\n  twin {expected:?}\n{twin}\n"))
 }
 
 fn self_read_rows(rows: &Rows) -> (Vec<String>, usize) {
-    let compiler =
-        Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("the vocabulary compiles");
-    let mut failures = Vec::new();
-    let mut programs = 0;
-    let depths = ["m - 1", "m - 2"];
-    let wraps = ["{x}", "[{x}][0]", "[{x}, c][0]"];
-    let reads = [(".gain", "2"), (".tone.velocity", "0.6")];
-    let outers = [(Own::Verse, Own::Other), (Own::Other, Own::Verse)];
-    for (f, first) in SELF_FIRSTS.iter().enumerate() {
-        for (s, second) in ["c", "d"].into_iter().enumerate() {
-            for (k, depth) in depths.iter().enumerate() {
-                for (w, wrap) in wraps.iter().enumerate() {
-                    for (r, (read, threshold)) in reads.iter().enumerate() {
-                        for (u, (c, d)) in outers.iter().enumerate() {
-                            for (q, m) in [1, 3].into_iter().enumerate() {
-                                for (o, reversed) in [false, true].into_iter().enumerate() {
-                                    if !rows.take(&[f, s, k, w, r, u, q, o]) {
-                                        continue;
-                                    }
-                                    programs += 1;
-                                    let inner = wrap
-                                        .replace("{x}", &format!("a({first}, {second}, {depth})"));
-                                    let value = own_value(f, s, k, (*c, *d, m));
-                                    let mut items = [
-                                        "Session main\n".to_string(),
-                                        "Clip verse | gain=2:\n    Note as tone | velocity=0.5\n"
-                                            .to_string(),
-                                        "Clip other | gain=3:\n    Note as tone | velocity=0.7\n"
-                                            .to_string(),
-                                        format!(
-                                            "fn a(c, d, m): if m < 1 then c else if {inner}{read} > {threshold} then d else c\n"
-                                        ),
-                                        format!(
-                                            "Clip k:\n    Note/([60][i32(a({}, {}, {m}).gain) - {}])\n",
-                                            c.name(),
-                                            d.name(),
-                                            value.gain()
-                                        ),
-                                    ];
-                                    if reversed {
-                                        items[1..].reverse();
-                                    }
-                                    let text = items.concat();
-                                    let found = support::error_texts(&compiler, &text);
-                                    if !found.is_empty() {
-                                        failures
-                                            .push(format!("343/350: {text}\n  draws {found:?}\n"));
-                                    }
-                                }
-                            }
+    let firsts: Vec<usize> = (0..SELF_FIRSTS.len()).collect();
+    in_parallel(&firsts, |first| {
+        let mut failures = Vec::new();
+        let mut programs = 0;
+        let outers = [(Own::Verse, Own::Other), (Own::Other, Own::Verse)];
+        for (second, depth, wrap, read) in (0..2).flat_map(|second| {
+            (0..SELF_DEPTHS.len()).flat_map(move |depth| {
+                (0..SELF_WRAPS.len()).flat_map(move |wrap| {
+                    (0..SELF_READS.len()).map(move |read| (second, depth, wrap, read))
+                })
+            })
+        }) {
+            for ((u, (c, d)), (f, fault)) in outers.into_iter().enumerate().flat_map(|outer| {
+                [false, true]
+                    .into_iter()
+                    .enumerate()
+                    .map(move |fault| (outer, fault))
+            }) {
+                let row = SelfRead {
+                    first,
+                    second,
+                    depth,
+                    wrap,
+                    read,
+                    fault,
+                };
+                if waits_on_g1(&row, c) {
+                    continue;
+                }
+                for (q, m) in [1, 3].into_iter().enumerate() {
+                    for (o, reversed) in [false, true].into_iter().enumerate() {
+                        let inner = (first * 2 + second) * SELF_WRAPS.len() + wrap;
+                        if !rows.take(&[inner, depth, read, u * 2 + f, q, o]) {
+                            continue;
                         }
+                        programs += 1;
+                        failures.extend(self_read_failure(&row, (c, d, m), reversed));
                     }
                 }
             }
         }
-    }
-    (failures, programs)
+        (failures, programs)
+    })
 }
 
 #[test]
-fn a_body_that_reads_its_own_recursive_result_through_a_path_at_any_argument_values_types_as_its_evaluation()
+fn a_body_that_reads_its_own_recursive_result_through_a_path_at_any_argument_values_types_as_its_twin_343_350()
  {
-    let (failures, programs) = covered(self_read_rows);
-    assert!(
-        failures.is_empty(),
-        "{} of {programs} fail:\n{}",
-        failures.len(),
-        failures.concat()
-    );
-    assert_eq!(programs, 9);
+    assert_none_fail(covered(self_read_rows), 196);
 }
 
 #[test]
 #[ignore = "exhaustive"]
-fn exhaustive_a_body_that_reads_its_own_recursive_result_through_a_path_at_any_argument_values_types_as_its_evaluation()
+fn exhaustive_a_body_that_reads_its_own_recursive_result_through_a_path_at_any_argument_values_types_as_its_twin_343_350()
  {
-    let (failures, programs) = self_read_rows(&Rows::Every);
-    assert!(
-        failures.is_empty(),
-        "{} of {programs} fail:\n{}",
-        failures.len(),
-        failures.concat()
-    );
-    assert_eq!(programs, 384);
+    assert_none_fail(self_read_rows(&Rows::Every), 4_224);
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]

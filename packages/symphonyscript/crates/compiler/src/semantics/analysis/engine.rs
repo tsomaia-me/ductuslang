@@ -1283,9 +1283,12 @@ impl<'a> Engine<'a> {
         let mut chosen: Vec<Chosen> = Vec::new();
         for deferred in std::mem::take(&mut self.deferred) {
             if deferred
-                .unless_untyped
-                .iter()
-                .any(|binding| self.typing.untyped.contains(binding))
+                .template
+                .is_some_and(|template| self.memo.probes.contains(&template))
+                || deferred
+                    .unless_untyped
+                    .iter()
+                    .any(|binding| self.typing.untyped.contains(binding))
                 || deferred
                     .unless_values
                     .iter()

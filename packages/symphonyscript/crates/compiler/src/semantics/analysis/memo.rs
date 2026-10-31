@@ -134,6 +134,16 @@ pub(crate) struct Memo {
     pub template_parents: FastMap<ScopeId, Vec<ScopeId>>,
     pub family_scopes: FastMap<super::family_key::FamilyKey, Vec<ScopeId>>,
     pub family_probes: FastMap<super::family_key::FamilyKey, ScopeId>,
+    pub template_families: FastMap<ScopeId, super::family_key::FamilyKey>,
+    pub family_nodes: FastMap<super::family_key::FamilyKey, NodeId>,
+    pub family_waiters: FastMap<super::family_key::FamilyKey, Vec<super::family_key::FamilyKey>>,
+    pub open_reads:
+        super::fast_hash::FastSet<(super::family_key::FamilyKey, super::family_key::FamilyKey)>,
+    pub reprobed:
+        super::fast_hash::FastSet<(super::family_key::FamilyKey, super::family_key::FamilyKey)>,
+    pub reprobe_scopes: FastMap<super::family_key::FamilyKey, ScopeId>,
+    pub pending_reprobes: Vec<super::family_key::FamilyKey>,
+    pub driving_reprobes: bool,
     pub open_joins: super::fast_hash::FastSet<NodeId>,
     pub open_arms: FastMap<(NodeId, usize, super::item_ref::ItemRef), Option<NodeId>>,
     pub family_shapes: FastMap<super::family_key::FamilyKey, Vec<super::arg_shape::ArgShape>>,
