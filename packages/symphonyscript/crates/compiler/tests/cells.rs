@@ -490,6 +490,65 @@ fn a_derived_cells_init_counts_for_its_own_past_and_fits_the_type_its_rule_gives
             ],
             &[],
         ),
+        (
+            &[
+                "state t([1, 2]) = r.past(1)\n",
+                "state r = [t[1], t[0]]\n",
+                "Clip c:\n    Note/(t[0] + r[1])\n",
+            ],
+            &[],
+        ),
+        (
+            &[
+                "state t([1, 2, 3]) = r.past(1)\n",
+                "state r = [t[1], t[0]]\n",
+                "Clip c:\n    Note/(t[0] + r[1])\n",
+            ],
+            &[(Code::TypeMismatch, "[1, 2, 3]")],
+        ),
+        (
+            &[
+                "state t([1, 2]) = r.past(1)\n",
+                "state r = [t[1], t]\n",
+                "Clip c:\n    Note\n",
+            ],
+            &[(Code::RaggedArray, "[t[1], t]")],
+        ),
+        (
+            &[
+                "state t(0.5) = r.past(1)\n",
+                "state r = t\n",
+                "Clip c:\n    Note/(t)\n",
+            ],
+            &[(Code::FloatToInteger, "t")],
+        ),
+        (
+            &[
+                "state t([]) = r.past(1)\n",
+                "state r = (t + [1])[^4..]\n",
+                "Clip c:\n    Note\n",
+            ],
+            &[],
+        ),
+        (
+            &[
+                "state t([1, 2]) = r.past(1)\n",
+                "state s(0) = q.past(1)\n",
+                "state q = s + t[0]\n",
+                "state r = [t[1], q]\n",
+                "Clip c:\n    Note/(r[0] + s)\n",
+            ],
+            &[],
+        ),
+        (
+            &[
+                "state a([1, 2]) = c.past(1)\n",
+                "state b = [a[1], a[0]]\n",
+                "state c = b\n",
+                "Clip n:\n    Note/(c[0])\n",
+            ],
+            &[],
+        ),
     ];
     support::assert_rows_in_every_order(&symphonyscript_fixtures::vocabulary(), rows);
     let compiler = symphonyscript::Compiler::new(&symphonyscript_fixtures::vocabulary())

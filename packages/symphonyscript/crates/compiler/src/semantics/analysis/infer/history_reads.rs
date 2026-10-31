@@ -319,7 +319,13 @@ impl Engine<'_> {
                     continue;
                 };
                 let init = self.known_sig(self.binding(*binding)?.init)?;
-                let cell = self.read_sig(*binding, init)?;
+                let mut cell = self.read_sig(*binding, init)?;
+                if cell.kind == Kind::Any
+                    && fallback.is_none()
+                    && let Some(start) = self.open_start(*read)?
+                {
+                    cell = Sig::of(start.kind, Width::Adaptive, true, start.family);
+                }
                 let before = match (sig, fallback) {
                     (Some(sig), _) => sig.kind,
                     (None, Some(fallback)) => self.known_sig(*fallback)?.kind,
@@ -384,6 +390,39 @@ impl Engine<'_> {
             }
         }
         Ok(true)
+    }
+
+    fn open_start(&mut self, read: NodeId) -> Result<Option<Sig>, Internal> {
+        if !self.typing.open_reads.contains(&read) {
+            return Ok(None);
+        }
+        let Op::History {
+            cell: HistoryCell::State(target),
+            ..
+        } = self.node(read)?.op
+        else {
+            return Ok(None);
+        };
+        let mut states = self.collected.cell_groups.group_of(target).0.to_vec();
+        states.sort_unstable();
+        let mut earliest = None;
+        for state in states {
+            let Some(binding) = self.state_binding(state) else {
+                continue;
+            };
+            let Some(start) = self.init_node(binding)? else {
+                continue;
+            };
+            let holds = self
+                .history_reads(self.binding(binding)?.init)?
+                .iter()
+                .any(|(node, _)| *node == read);
+            if holds {
+                return Ok(self.memo.sigs.get(&start).copied());
+            }
+            earliest = earliest.or(Some(start));
+        }
+        Ok(earliest.and_then(|start| self.memo.sigs.get(&start).copied()))
     }
 
     fn run_members(

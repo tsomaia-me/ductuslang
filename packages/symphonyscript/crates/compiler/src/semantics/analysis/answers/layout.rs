@@ -48,6 +48,12 @@ impl Engine<'_> {
                         }
                         node = self.binding(*binding)?.init;
                     }
+                    Op::History { .. } if self.typing.open_reads.contains(&node) => {
+                        if self.open_read_holds_array(node)? {
+                            break;
+                        }
+                        return Ok(false);
+                    }
                     Op::Join(..)
                     | Op::Slice { .. }
                     | Op::Array(_)
@@ -1048,6 +1054,22 @@ impl Engine<'_> {
             Some(BoundVal::Scalar(Bound::Value(_)) | BoundVal::Array(_) | BoundVal::Error)
             | None => None,
         }
+    }
+
+    pub(in crate::semantics::analysis) fn open_read_holds_array(
+        &self,
+        node: NodeId,
+    ) -> Result<bool, Internal> {
+        let Op::History {
+            cell: HistoryCell::State(state),
+            ..
+        } = self.node(node)?.op
+        else {
+            return Ok(false);
+        };
+        Ok(self.state_binding(state).is_some_and(|binding| {
+            self.memo.settled.contains(&binding) && self.memo.binding_layouts.contains_key(&binding)
+        }))
     }
 
     fn settled_read(&self, binding: BindingId) -> Result<bool, Internal> {

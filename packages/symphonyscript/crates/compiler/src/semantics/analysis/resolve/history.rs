@@ -94,7 +94,9 @@ impl Engine<'_> {
                 None => return Ok(None),
             },
         };
-        Ok(Some(self.scalar(
+        let open = fallback.is_none()
+            && matches!(cell, HistoryCell::State(state) if !self.memo.states.contains_key(&state));
+        let val = self.scalar(
             Op::History {
                 cell,
                 offset,
@@ -102,7 +104,11 @@ impl Engine<'_> {
             },
             loc,
             scope,
-        )?))
+        )?;
+        if open && let Val::Scalar(node) = val {
+            self.typing.open_reads.insert(node);
+        }
+        Ok(Some(val))
     }
 
     pub(in crate::semantics::analysis) fn stepped(
@@ -172,6 +178,51 @@ impl Engine<'_> {
             return Ok(None);
         }
         Ok(Some(Unwritten::Cell))
+    }
+
+    fn reaches_open(&self, root: NodeId) -> Result<bool, Internal> {
+        let mut seen = FastSet::default();
+        let mut stack = vec![root];
+        while let Some(node) = stack.pop() {
+            crate::semantics::counted_walk::CountedWalk::HistoryHistoryReads.step();
+            if !seen.insert(node) {
+                continue;
+            }
+            match self.cell_read(node)? {
+                CellRead::History { cell, fallback } => {
+                    if self.typing.open_reads.contains(&node)
+                        && let HistoryCell::State(state) = cell
+                    {
+                        let open = match self.state_binding(state) {
+                            Some(binding) => self.deferred(binding),
+                            None => !self.memo.states.contains_key(&state),
+                        };
+                        if open {
+                            return Ok(true);
+                        }
+                    }
+                    stack.extend(fallback);
+                }
+                CellRead::Binding(binding) => {
+                    if self.deferred(binding) {
+                        return Ok(true);
+                    }
+                    match self.binding(binding)?.kind {
+                        BindingKind::State { .. } | BindingKind::Input { .. } => {}
+                        BindingKind::Let | BindingKind::Param | BindingKind::Attr { .. } => {
+                            stack.push(self.binding(binding)?.init);
+                        }
+                    }
+                }
+                CellRead::Named(inner) => stack.push(inner),
+                CellRead::Operands(operands) => stack.extend(operands),
+            }
+        }
+        Ok(false)
+    }
+
+    pub(in crate::semantics::analysis) fn deferred(&self, binding: BindingId) -> bool {
+        self.typing.deferred_layouts.contains(&binding) && !self.memo.settled.contains(&binding)
     }
 
     fn group_in_progress(&self, state: StateId) -> bool {
@@ -261,21 +312,27 @@ impl Engine<'_> {
             self.memo.states.insert(state, BoundVal::Error);
             return Ok(true);
         }
-        let Some(found) = self.layout_of(init, need)? else {
-            return Ok(false);
-        };
-        let layout = match found.shaped {
-            Ok(layout) => layout,
-            Err(fault) => {
-                if let Some(fault) = fault {
-                    self.error_at_node(fault.code, fault.node, fault.message)?;
+        let deferred = self.reaches_open(init)?;
+        let (layout, certain) = if deferred {
+            (None, false)
+        } else {
+            let Some(found) = self.layout_of(init, need)? else {
+                return Ok(false);
+            };
+            match found.shaped {
+                Ok(layout) => (layout, found.certain),
+                Err(fault) => {
+                    if let Some(fault) = fault {
+                        self.error_at_node(fault.code, fault.node, fault.message)?;
+                    }
+                    self.memo.states.insert(state, BoundVal::Error);
+                    return Ok(true);
                 }
-                self.memo.states.insert(state, BoundVal::Error);
-                return Ok(true);
             }
         };
         if let Some(annotation) = annotation.as_ref()
             && annotation.capacity.is_some()
+            && !deferred
         {
             match self.annotated_rows(init, annotation, need)? {
                 None => return Ok(false),
@@ -294,11 +351,12 @@ impl Engine<'_> {
         if let Some(annotation) = annotation.as_ref()
             && annotation.capacity.is_none()
             && let Some((length, rows)) = annotation.lengths.split_last()
+            && !deferred
         {
             let differs = match &layout {
                 Some(held) => {
                     held.inner() != rows
-                        || (found.certain && !held.variable && held.outer() != Some(*length))
+                        || (certain && !held.variable && held.outer() != Some(*length))
                 }
                 None => true,
             };
@@ -329,6 +387,9 @@ impl Engine<'_> {
             name,
             loc: decl.loc,
         })?;
+        if deferred {
+            self.typing.deferred_layouts.insert(binding);
+        }
         if let Some(layout) = layout {
             self.memo.binding_layouts.insert(binding, layout);
         }

@@ -220,3 +220,123 @@ fn a_history_read_with_neither_fallback_nor_init_takes_its_cells_type_once_the_g
         assert_eq!(held, Some(Layout::fixed(vec![2])), "{text}");
     }
 }
+
+fn forward_and_reversed(items: &[&str], rest: &str) -> [String; 2] {
+    let forward: String = items.concat();
+    let reversed: String = items.iter().rev().copied().collect();
+    [format!("{forward}{rest}"), format!("{reversed}{rest}")]
+}
+
+#[test]
+fn an_open_kind_or_shape_in_a_group_takes_its_cells_init_and_the_reads_of_it_take_that() {
+    let layout = |engine: &Engine<'_>, name: &str| {
+        binding_named(engine, name)
+            .and_then(|binding| engine.memo.binding_layouts.get(&binding).cloned())
+    };
+    let capacity = |engine: &Engine<'_>, name: &str| {
+        binding_named(engine, name)
+            .and_then(|binding| engine.memo.binding_capacities.get(&binding).copied())
+    };
+    let fixed = Some(Layout::fixed(vec![2]));
+    for text in forward_and_reversed(
+        &["state t([1, 2]) = r.past(1)\n", "state r = [t[1], t[0]]\n"],
+        "Clip c:\n    Note/(t[0] + r[1])\n",
+    ) {
+        let (errors, held) = analyzed(&text, |engine| {
+            (
+                (own(engine, "t"), own(engine, "r")),
+                (layout(engine, "t"), layout(engine, "r")),
+                (capacity(engine, "t"), capacity(engine, "r")),
+            )
+        });
+        assert_eq!(errors, vec![], "{text}");
+        assert_eq!(
+            held,
+            (
+                (Some(Scalar::I32), Some(Scalar::I32)),
+                (fixed.clone(), fixed.clone()),
+                (None, None)
+            ),
+            "{text}"
+        );
+    }
+    for text in forward_and_reversed(
+        &["state t(0.5) = r.past(1)\n", "state r = t\n"],
+        "Clip c:\n    Note/(t)\n",
+    ) {
+        let (errors, cells) = analyzed(&text, |engine| (own(engine, "t"), own(engine, "r")));
+        assert_eq!(
+            errors,
+            vec![(Code::FloatToInteger, "t".to_string())],
+            "{text}"
+        );
+        assert_eq!(cells, (Some(Scalar::F32), Some(Scalar::F32)), "{text}");
+    }
+    for text in forward_and_reversed(
+        &["state t([]) = r.past(1)\n", "state r = (t + [1])[^4..]\n"],
+        "Clip c:\n    Note\n",
+    ) {
+        let (errors, held) = analyzed(&text, |engine| {
+            (
+                (layout(engine, "t"), layout(engine, "r")),
+                (capacity(engine, "t"), capacity(engine, "r")),
+            )
+        });
+        assert_eq!(errors, vec![], "{text}");
+        let variable = Some(Layout::variable(Vec::new()));
+        assert_eq!(
+            held,
+            ((variable.clone(), variable), (Some(4), Some(4))),
+            "{text}"
+        );
+    }
+    for text in forward_and_reversed(
+        &[
+            "state t([1, 2]) = r.past(1)\n",
+            "state s(0) = q.past(1)\n",
+            "state q = s + t[0]\n",
+            "state r = [t[1], q]\n",
+        ],
+        "Clip c:\n    Note/(r[0] + s)\n",
+    ) {
+        let (errors, held) = analyzed(&text, |engine| {
+            (
+                (layout(engine, "t"), layout(engine, "r")),
+                (layout(engine, "s"), layout(engine, "q")),
+                (own(engine, "s"), own(engine, "q")),
+            )
+        });
+        assert_eq!(errors, vec![], "{text}");
+        assert_eq!(
+            held,
+            (
+                (fixed.clone(), fixed.clone()),
+                (None, None),
+                (Some(Scalar::I32), Some(Scalar::I32))
+            ),
+            "{text}"
+        );
+    }
+    for text in forward_and_reversed(
+        &[
+            "state a([1, 2]) = c.past(1)\n",
+            "state b = [a[1], a[0]]\n",
+            "state c = b\n",
+        ],
+        "Clip n:\n    Note/(c[0])\n",
+    ) {
+        let (errors, held) = analyzed(&text, |engine| {
+            [
+                layout(engine, "a"),
+                layout(engine, "b"),
+                layout(engine, "c"),
+            ]
+        });
+        assert_eq!(errors, vec![], "{text}");
+        assert_eq!(
+            held,
+            [fixed.clone(), fixed.clone(), fixed.clone()],
+            "{text}"
+        );
+    }
+}

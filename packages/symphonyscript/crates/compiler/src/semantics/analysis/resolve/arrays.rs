@@ -574,8 +574,10 @@ impl Engine<'_> {
                     self.memo.binding_layouts.contains_key(binding)
                         || self.arrays.contains(&self.binding(*binding)?.init)
                 }
-                Some(BoundVal::Scalar(Bound::Value(_)) | BoundVal::Array(_) | BoundVal::Error)
-                | None => false,
+                None => true,
+                Some(BoundVal::Scalar(Bound::Value(_)) | BoundVal::Array(_) | BoundVal::Error) => {
+                    false
+                }
             },
             HistoryCell::Let(id) => match self.let_bound(id) {
                 Some(BoundVal::Array(_)) => true,

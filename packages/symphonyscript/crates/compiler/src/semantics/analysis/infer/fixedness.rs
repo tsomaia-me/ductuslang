@@ -68,7 +68,7 @@ impl Engine<'_> {
             if self.memo.settled.contains(&binding) {
                 continue;
             }
-            if !self.memo.binding_layouts.contains_key(&binding) {
+            if !self.memo.binding_layouts.contains_key(&binding) && !self.deferred(binding) {
                 self.memo.settled.insert(binding);
                 continue;
             }
@@ -268,6 +268,9 @@ impl Engine<'_> {
         readers: &[Vec<usize>],
         need: &mut Vec<Query>,
     ) -> Result<bool, Internal> {
+        if group.iter().any(|binding| self.deferred(*binding)) {
+            return self.settle_open_group(group, need);
+        }
         let Some(fallbacks) = self.group_fallbacks(group, need)? else {
             return Ok(false);
         };
@@ -321,6 +324,114 @@ impl Engine<'_> {
                 self.memo.binding_layouts.insert(*binding, settled);
             }
             self.memo.settled.insert(*binding);
+        }
+        self.memo.settle_epoch += 1;
+        Ok(true)
+    }
+
+    fn settle_open_group(
+        &mut self,
+        group: &[BindingId],
+        need: &mut Vec<Query>,
+    ) -> Result<bool, Internal> {
+        let Some(fallbacks) = self.group_fallbacks(group, need)? else {
+            return Ok(false);
+        };
+        let mut known: Vec<Option<Option<Layout>>> = vec![None; group.len()];
+        for (position, binding) in group.iter().enumerate() {
+            if !self.deferred(*binding) {
+                if let Some(slot) = known.get_mut(position) {
+                    *slot = Some(self.memo.binding_layouts.get(binding).cloned());
+                }
+                continue;
+            }
+            let Some(start) = self.init_node(*binding)? else {
+                continue;
+            };
+            let Some(found) = self.layout_in(start, Some(&Assumed::default()), need)? else {
+                return Ok(false);
+            };
+            if let Ok(Some(layout)) = found.shaped {
+                self.memo
+                    .binding_layouts
+                    .insert(*binding, Layout::variable(layout.inner().to_vec()));
+            }
+        }
+        let mut assumed = Assumed::default();
+        let mut faults: Vec<Option<Option<crate::semantics::analysis::shape_fault::ShapeFault>>> =
+            vec![None; group.len()];
+        for _ in 0..4 * group.len() + 4 {
+            crate::semantics::counted_walk::CountedWalk::FixednessSettleGroup.step();
+            let mut changed = false;
+            for (position, binding) in group.iter().enumerate() {
+                if assumed.members.get(binding) == Some(&true)
+                    || faults.get(position).is_some_and(Option::is_some)
+                {
+                    continue;
+                }
+                let init = self.binding(*binding)?.init;
+                let Some(found) = self.layout_in(init, Some(&assumed), need)? else {
+                    return Ok(false);
+                };
+                let layout = match found.shaped {
+                    Ok(layout) => layout,
+                    Err(fault) => {
+                        if let Some(slot) = faults.get_mut(position) {
+                            *slot = Some(fault);
+                        }
+                        changed = true;
+                        continue;
+                    }
+                };
+                let before = known.get(position).cloned().flatten();
+                let own = fallbacks
+                    .get(binding)
+                    .map(Vec::as_slice)
+                    .unwrap_or_default();
+                let stable = before.as_ref().is_none_or(|before| *before == layout);
+                let fixed = stable
+                    && layout.as_ref().is_none_or(|layout| {
+                        !layout.variable
+                            && own.iter().all(|fallback| fallback.as_ref() == Some(layout))
+                    });
+                if fixed {
+                    if before.is_none() {
+                        changed = true;
+                    }
+                    if let Some(slot) = known.get_mut(position) {
+                        *slot = Some(layout.clone());
+                    }
+                    match layout {
+                        Some(layout) => {
+                            self.memo.binding_layouts.insert(*binding, layout);
+                        }
+                        None => {
+                            changed |= self.memo.binding_layouts.remove(binding).is_some();
+                        }
+                    }
+                } else {
+                    changed = true;
+                    assumed.members.insert(*binding, true);
+                    if let Some(layout) = layout.or(before.flatten()) {
+                        self.memo
+                            .binding_layouts
+                            .insert(*binding, Layout::variable(layout.inner().to_vec()));
+                    }
+                }
+            }
+            if !changed {
+                break;
+            }
+        }
+        let mut drawn = FastSet::default();
+        for (position, binding) in group.iter().enumerate() {
+            self.memo.settled.insert(*binding);
+            if self.typing.deferred_layouts.contains(binding)
+                && let Some(Some(Some(fault))) = faults.get(position)
+                && drawn.insert((fault.node, fault.code))
+            {
+                self.error_at_node(fault.code, fault.node, fault.message)?;
+            }
         }
         self.memo.settle_epoch += 1;
         Ok(true)
