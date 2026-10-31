@@ -6096,3 +6096,87 @@ fn every_seed_row_of_the_placeholder_rule_draws_what_its_rule_gives() {
     ];
     support::assert_rows_in_every_order(&symphonyscript_fixtures::vocabulary(), rows);
 }
+
+const NON_NAME_PLACEHOLDERS: [(&str, Code, &str); 7] = [
+    ("(1 +)", Code::ExpressionSyntax, ")"),
+    ("(true +)", Code::ExpressionSyntax, ")"),
+    ("(1.5 +)", Code::ExpressionSyntax, ")"),
+    ("5[0]", Code::NotAnArray, "5"),
+    ("true[0]", Code::NotAnArray, "true"),
+    ("5.size", Code::UnknownAttribute, "5.size"),
+    ("5[1..][0]", Code::NotAnArray, "5"),
+];
+
+const PLACEHOLDER_PARTNERS: [&str; 5] = ["true", "1.5", "300000000000", "\"a\"", "Wave::Saw"];
+
+const PARTNER_POSITIONS: [&str; 4] = [
+    "Clip c:\n    Note/({x})\n",
+    "Clip c:\n    Note | velocity=({x})\n",
+    "Clip c:\n    Note when {x}\n",
+    "Clip c:\n    Note | length=({x})\n",
+];
+
+fn partner_rows(rows: &Rows) -> Vec<String> {
+    let compiler =
+        Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("the vocabulary compiles");
+    let mut failures = Vec::new();
+    for (fault, (placeholder, code, spanned)) in NON_NAME_PLACEHOLDERS.iter().enumerate() {
+        for (partner, value) in PLACEHOLDER_PARTNERS.iter().enumerate() {
+            for (side, operator) in ["+", "*"].into_iter().enumerate() {
+                for left in [false, true] {
+                    for (position, place) in PARTNER_POSITIONS.iter().enumerate() {
+                        if !rows.take(&[fault, partner, side, usize::from(left), position]) {
+                            continue;
+                        }
+                        let expression = if left {
+                            format!("{value} {operator} {placeholder}")
+                        } else {
+                            format!("{placeholder} {operator} {value}")
+                        };
+                        let text = place.replace("{x}", &expression);
+                        let found = support::error_texts(&compiler, &text);
+                        let expected = vec![(*code, (*spanned).to_string())];
+                        if found != expected {
+                            failures.push(format!(
+                                "287: {text}\n  draws {found:?}\n  expected {expected:?}"
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+    }
+    failures
+}
+
+#[test]
+fn beside_a_placeholder_that_is_not_a_names_the_partner_is_checked_in_its_own_type() {
+    let failures = covered(partner_rows);
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_beside_a_placeholder_that_is_not_a_names_the_partner_is_checked_in_its_own_type() {
+    let failures = partner_rows(&Rows::Every);
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+#[test]
+fn beside_a_placeholder_that_is_not_a_names_the_valid_rows_hold() {
+    let rows: &[support::Row] = &[
+        (
+            &["Clip c:\n    Note/((if false then [1, 2][5] else 3) + 60)\n"],
+            &[],
+        ),
+        (
+            &["Clip c:\n    Note/(1.5 + [1, 2][1])\n"],
+            &[(Code::TypeMismatch, "1.5 + [1, 2][1]")],
+        ),
+        (
+            &["Clip c:\n    Note/(nothing + true)\n"],
+            &[(Code::UnknownName, "nothing")],
+        ),
+    ];
+    support::assert_rows_in_every_order(&symphonyscript_fixtures::vocabulary(), rows);
+}

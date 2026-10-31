@@ -335,6 +335,15 @@ impl Engine<'_> {
             let refused = !children
                 .iter()
                 .any(|child| matches!(self.memo.exprs.get(&(*child, scope)), Some(Val::Error)));
+            let mut beside_fault = false;
+            if let ExprKind::Binary(..) = kind {
+                for child in &children {
+                    let placeholder =
+                        matches!(self.memo.exprs.get(&(*child, scope)), Some(Val::Error));
+                    let name = matches!(self.hir.expr(*child)?.kind, ExprKind::Name(_));
+                    beside_fault |= placeholder && !name;
+                }
+            }
             let gapped = self.holds_a_syntax_gap(&kind)?;
             let chosen = self.chosen_child(&kind, scope)?;
             let read = match kind {
@@ -348,7 +357,7 @@ impl Engine<'_> {
                 };
                 let unread = read.is_some_and(|read| read != position);
                 let (child_typed, through) = match child_flow(&kind, position, typed) {
-                    _ if unread || refused => ((None, false), false),
+                    _ if unread || refused || beside_fault => ((None, false), false),
                     flow => flow,
                 };
                 let origin = origin.clone().filter(|_| through);
