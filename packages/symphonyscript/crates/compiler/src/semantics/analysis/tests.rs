@@ -665,7 +665,7 @@ fn placeholders(engine: &Engine<'_>) -> Vec<String> {
             ));
         }
     }
-    for (call, value) in &memo.calls {
+    for (call, value) in memo.calls.iter() {
         if value.value.is_error() {
             found.push(format!("result of {call:?}"));
         }
@@ -2948,7 +2948,10 @@ fn a_recursive_argument_reads_a_settled_enum() {
                         .unwrap_or(ty),
                     _ => ty,
                 };
-                (attr_value(engine, attr, ty), engine.memo.calls.len())
+                (
+                    attr_value(engine, attr, ty),
+                    engine.memo.calls.iter().count(),
+                )
             })
         };
         let (diagnostics, (value, calls)) = probe("x");
@@ -2969,7 +2972,7 @@ fn a_recursive_argument_reads_a_settled_enum() {
                 .replace("s3", "s4")
                 .replace("c:", "d:")
         );
-        let (diagnostics, shared) = analyzed(&text, |engine| engine.memo.calls.len());
+        let (diagnostics, shared) = analyzed(&text, |engine| engine.memo.calls.iter().count());
         if error_codes(&diagnostics) != Vec::<Code>::new() || shared != qualified_calls {
             failures.push(format!(
                 "{function}: shared {shared} against {qualified_calls}"

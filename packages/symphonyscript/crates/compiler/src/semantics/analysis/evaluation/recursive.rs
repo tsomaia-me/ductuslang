@@ -30,7 +30,7 @@ use crate::semantics::analysis::eval_ty::EvalTy;
 use crate::semantics::analysis::fast_hash::{FastMap, FastSet};
 use crate::semantics::analysis::feed::Feed;
 use crate::semantics::analysis::frame_read::FrameRead;
-use crate::semantics::analysis::ids::{CallId, NodeId, ScopeId};
+use crate::semantics::analysis::ids::{CallId, NodeId, ScopeId, TemplateId};
 use crate::semantics::analysis::item_ref::ItemRef;
 use crate::semantics::analysis::kind::Kind;
 use crate::semantics::analysis::limit::Limit;
@@ -44,7 +44,7 @@ use crate::semantics::analysis::sig::Sig;
 use crate::semantics::analysis::sink::Sink;
 use crate::semantics::analysis::slot_owner::SlotOwner;
 use crate::semantics::analysis::some::some;
-use crate::semantics::analysis::template_key::TemplateKey;
+use crate::semantics::analysis::template_parts::TemplateParts;
 use crate::semantics::analysis::val::Val;
 use crate::semantics::analysis::width::Width;
 use crate::semantics::counted_walk::CountedWalk;
@@ -64,15 +64,15 @@ enum Reuse {
 }
 
 enum Reached {
-    Call(CallId),
+    Call(CallId, TemplateId),
     Value(Option<CVal>),
 }
 
 struct Call {
     id: CallId,
+    template: TemplateId,
     function: FnId,
     values: Vec<CVal>,
-    shapes: Vec<ArgShape>,
     feeds: Vec<Feed>,
 }
 
@@ -92,10 +92,10 @@ impl Engine<'_> {
             },
             Ctx::Global => None,
         };
-        let id = match held {
-            Some(id) => id,
+        let (id, reached) = match held {
+            Some(id) => (id, None),
             None => match self.reached_call(node, function, &args, own, ctx, need)? {
-                Reached::Call(id) => id,
+                Reached::Call(id, template) => (id, Some(template)),
                 Reached::Value(value) => return Ok(value),
             },
         };
@@ -143,21 +143,22 @@ impl Engine<'_> {
             }
             Reuse::Evaluate => {}
         }
-        if held.is_some() {
-            match self.reached_call(node, function, &args, own, ctx, need)? {
-                Reached::Call(_) => {}
+        let template = match reached {
+            Some(template) => template,
+            None => match self.reached_call(node, function, &args, own, ctx, need)? {
+                Reached::Call(_, template) => template,
                 Reached::Value(value) => return Ok(value),
-            }
-        }
+            },
+        };
         let feeds = match ctx {
             Ctx::Global => self.memo.call_feeds.get(&node).cloned().unwrap_or_default(),
             Ctx::Frame(frame) => self.frame(frame)?.feeds.clone(),
         };
         let call = Call {
             id,
+            template,
             function,
             values: std::mem::take(&mut self.call_scratch.values),
-            shapes: std::mem::take(&mut self.call_scratch.shapes),
             feeds,
         };
         match ctx {
@@ -188,14 +189,17 @@ impl Engine<'_> {
                     Ctx::Frame(frame) => Some(&self.frame(frame)?.feeds),
                 };
                 unit_set_into(feeds.map_or(&[], Vec::as_slice), &mut scratch.units);
-                let id = self.memo.call_keys.intern(CallParts {
+                let template = TemplateId(self.memo.template_keys.intern(TemplateParts {
                     function,
-                    args: &scratch.keys,
-                    shapes: &scratch.shapes,
-                    expected: own,
+                    args: &scratch.shapes,
                     units: &scratch.units,
-                });
-                Ok(Reached::Call(id))
+                }));
+                let id = CallId(self.memo.call_keys.intern(CallParts {
+                    template,
+                    args: &scratch.keys,
+                    expected: own,
+                }));
+                Ok(Reached::Call(id, template))
             }
             Ok(None) => Ok(Reached::Value(None)),
             Err(error) => Err(error),
@@ -383,8 +387,7 @@ impl Engine<'_> {
             .unwrap_or_default()
             .iter()
             .filter_map(|frame| frame.id)
-            .filter_map(|id| self.memo.call_keys.key(id))
-            .map(|key| key.function)
+            .filter_map(|id| self.call_function(id))
             .collect();
         for function in functions.into_iter().chain([last]) {
             let name = self.function_name(function)?;
@@ -435,6 +438,16 @@ impl Engine<'_> {
             self.memo.calls.insert(id, done);
         }
         Ok(())
+    }
+
+    fn call_function(&self, id: CallId) -> Option<FnId> {
+        let template = self.memo.call_keys.key(id.0)?.template;
+        Some(self.memo.template_keys.key(template.0)?.function)
+    }
+
+    fn template_scope(&self, template: TemplateId) -> Option<ScopeId> {
+        let position = usize::try_from(template.0).ok()?;
+        self.memo.template_scopes.get(position).copied().flatten()
     }
 
     fn frame_mut(&mut self, frame: usize) -> Result<&mut Frame, Internal> {
@@ -552,23 +565,31 @@ impl Engine<'_> {
 
     fn template(
         &mut self,
-        function: FnId,
-        shapes: &[ArgShape],
-        feeds: &[Feed],
-        call: NodeId,
+        call: &Call,
+        node: NodeId,
         need: &mut Vec<Query>,
     ) -> Result<Option<Template>, Internal> {
-        let key = TemplateKey {
-            function,
-            args: shapes.to_vec(),
-            units: unit_set(feeds),
-        };
-        let scope = match self.memo.templates.get(&key) {
-            Some(scope) => *scope,
+        let function = call.function;
+        let scope = match self.template_scope(call.template) {
+            Some(scope) => scope,
             None => {
-                let scope = self.instantiate(function, shapes, call)?;
-                self.memo.template_feeds.insert(scope, feeds.to_vec());
-                self.memo.templates.insert(key, scope);
+                let shapes = self
+                    .memo
+                    .template_keys
+                    .key(call.template.0)
+                    .map(|key| key.args.clone())
+                    .ok_or(Internal::missed("template"))?;
+                let scope = self.instantiate(function, &shapes, node)?;
+                self.memo.template_feeds.insert(scope, call.feeds.clone());
+                let position = usize::try_from(call.template.0).unwrap_or(usize::MAX);
+                if self.memo.template_scopes.len() <= position {
+                    self.memo
+                        .template_scopes
+                        .resize(position.saturating_add(1), None);
+                }
+                if let Some(slot) = self.memo.template_scopes.get_mut(position) {
+                    *slot = Some(scope);
+                }
                 scope
             }
         };
@@ -585,7 +606,7 @@ impl Engine<'_> {
             return Ok(Some(Template::Failed));
         }
         if sig.reactive {
-            self.reactive_body(call, function)?;
+            self.reactive_body(node, function)?;
             return Ok(Some(Template::Failed));
         }
         self.template_units(scope, root)?;
@@ -1048,13 +1069,7 @@ impl Engine<'_> {
         let machine = match self.machines.remove(&root_key) {
             Some(machine) => machine,
             None => {
-                let root = match some!(self.template(
-                    call.function,
-                    &call.shapes,
-                    &call.feeds,
-                    node,
-                    need
-                )?) {
+                let root = match some!(self.template(&call, node, need)?) {
                     Template::Root(root) if self.result_fits(root, own, node, call.function)? => {
                         root
                     }
@@ -1408,14 +1423,13 @@ impl Engine<'_> {
                 true,
             )?;
         }
-        let root =
-            match some!(self.template(call.function, &call.shapes, &call.feeds, node, need)?) {
-                Template::Root(root) if self.result_fits(root, own, node, call.function)? => root,
-                Template::Reentered => return Ok(Some(CVal::Error)),
-                Template::Root(_) | Template::Failed => {
-                    return self.failed_call(&call, node, Ctx::Frame(caller));
-                }
-            };
+        let root = match some!(self.template(&call, node, need)?) {
+            Template::Root(root) if self.result_fits(root, own, node, call.function)? => root,
+            Template::Reentered => return Ok(Some(CVal::Error)),
+            Template::Root(_) | Template::Failed => {
+                return self.failed_call(&call, node, Ctx::Frame(caller));
+            }
+        };
         let defaults = some!(self.default_work(&call, need)?);
         if !self.within_call_limit(node, call.function, call.id)? {
             return Ok(Some(CVal::Error));
@@ -1496,12 +1510,7 @@ impl Engine<'_> {
         node: NodeId,
         ctx: Ctx,
     ) -> Result<Option<CVal>, Internal> {
-        let key = TemplateKey {
-            function: call.function,
-            args: call.shapes.clone(),
-            units: unit_set(&call.feeds),
-        };
-        let templates: Vec<ScopeId> = self.memo.templates.get(&key).copied().into_iter().collect();
+        let templates: Vec<ScopeId> = self.template_scope(call.template).into_iter().collect();
         let done = CallDone {
             value: CVal::Error,
             mode: Mode::Taken,
@@ -1585,29 +1594,26 @@ impl Engine<'_> {
         call: &Call,
         need: &mut Vec<Query>,
     ) -> Result<Option<Vec<(NodeId, EvalTy)>>, Internal> {
-        if !call
-            .shapes
+        let defaulted: Vec<usize> = self
+            .memo
+            .template_keys
+            .key(call.template.0)
+            .ok_or(Internal::missed("template"))?
+            .args
             .iter()
-            .any(|shape| matches!(shape, ArgShape::Default))
-        {
+            .enumerate()
+            .filter(|(_, shape)| matches!(shape, ArgShape::Default))
+            .map(|(index, _)| index)
+            .collect();
+        if defaulted.is_empty() {
             return Ok(Some(Vec::new()));
         }
-        let key = TemplateKey {
-            function: call.function,
-            args: call.shapes.clone(),
-            units: unit_set(&call.feeds),
-        };
-        let scope = *self
-            .memo
-            .templates
-            .get(&key)
+        let scope = self
+            .template_scope(call.template)
             .ok_or(Internal::missed("template"))?;
         let mut work = Vec::new();
         let mut pending = false;
-        for (index, shape) in call.shapes.iter().enumerate() {
-            if !matches!(shape, ArgShape::Default) {
-                continue;
-            }
+        for index in defaulted {
             let param = Query::Param(
                 scope,
                 u32::try_from(index).map_err(|_| Internal::missed("parameter"))?,
@@ -1666,8 +1672,7 @@ impl Engine<'_> {
             .frames
             .iter()
             .filter_map(|frame| frame.id)
-            .filter_map(|id| self.memo.call_keys.key(id))
-            .map(|key| key.function)
+            .filter_map(|id| self.call_function(id))
             .collect();
         for function in functions.into_iter().chain([last]) {
             let name = self.function_name(function)?;
@@ -1684,7 +1689,7 @@ impl Engine<'_> {
         function: FnId,
         id: CallId,
     ) -> Result<bool, Internal> {
-        if !self.memo.counted.insert(id) {
+        if self.memo.counted.insert(id, ()).is_some() {
             return Ok(true);
         }
         self.call_count += 1;
@@ -1905,12 +1910,6 @@ impl Engine<'_> {
         }
         Ok(None)
     }
-}
-
-fn unit_set(feeds: &[Feed]) -> Vec<(FamilyId, usize)> {
-    let mut units = Vec::new();
-    unit_set_into(feeds, &mut units);
-    units
 }
 
 fn unit_set_into(feeds: &[Feed], units: &mut Vec<(FamilyId, usize)>) {

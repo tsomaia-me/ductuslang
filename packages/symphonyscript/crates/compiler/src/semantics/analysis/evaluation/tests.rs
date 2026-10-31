@@ -5,9 +5,11 @@ use super::machine_key::MachineKey;
 use crate::semantics::Internal;
 use crate::semantics::analysis::call_key::CallKey;
 use crate::semantics::analysis::eval_ty::EvalTy;
+use crate::semantics::analysis::ids::{CallId, TemplateId};
 use crate::semantics::analysis::kind::Kind;
 use crate::semantics::analysis::op::Op;
 use crate::semantics::analysis::sig::Sig;
+use crate::semantics::analysis::template_parts::TemplateParts;
 use crate::semantics::analysis::tests::with_engine;
 use crate::semantics::analysis::width::Width;
 use crate::semantics::ir::{FnId, Loc};
@@ -27,14 +29,17 @@ fn a_miss_in_the_recursive_evaluators_own_state_is_an_internal_error() {
                 scope,
             )
             .expect("the call is pushed");
-        let key = CallKey {
+        let template = engine.memo.template_keys.intern(TemplateParts {
             function,
+            args: &[],
+            units: &[],
+        });
+        let key = CallKey {
+            template: TemplateId(template),
             args: Vec::new(),
-            shapes: Vec::new(),
             expected: EvalTy::Exact,
-            units: Vec::new(),
         };
-        let id = engine.memo.call_keys.intern(key.parts());
+        let id = CallId(engine.memo.call_keys.intern(key.parts()));
         let mut need = Vec::new();
         let mut evaluated = |engine: &mut crate::semantics::analysis::Engine<'_>, ctx| {
             engine.recursive(

@@ -146,8 +146,8 @@ pub(crate) enum CountedWalk {
     RecursiveFamilyWaiters,
     RecursiveFamilyReprobes,
     RecursiveFamilyReprobeScopes,
-    CallKeysIntern,
-    CallKeysProbe,
+    InternerIntern,
+    InternerProbe,
 }
 
 #[cfg(test)]
@@ -307,8 +307,8 @@ impl CountedWalk {
         CountedWalk::RecursiveFamilyWaiters,
         CountedWalk::RecursiveFamilyReprobes,
         CountedWalk::RecursiveFamilyReprobeScopes,
-        CountedWalk::CallKeysIntern,
-        CountedWalk::CallKeysProbe,
+        CountedWalk::InternerIntern,
+        CountedWalk::InternerProbe,
     ];
 
     pub(crate) fn step(self) {
