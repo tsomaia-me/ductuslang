@@ -615,7 +615,7 @@ impl Position {
                 false,
             ),
             Position::Len => (
-                vec![format!("Clip c:\n    Note/(len({SLOT}))\n")],
+                vec![format!("Clip c:\n    Note/(({SLOT}).size)\n")],
                 None,
                 false,
             ),

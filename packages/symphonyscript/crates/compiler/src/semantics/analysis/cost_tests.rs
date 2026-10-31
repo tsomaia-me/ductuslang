@@ -14,6 +14,7 @@ enum Construct {
     Let,
     State,
     Inlined,
+    DotCall,
     Recursive,
     If,
     Match,
@@ -66,6 +67,7 @@ fn step(construct: Construct, value: &str) -> Option<String> {
         Construct::ArrayLiteral => format!("[[{value}]][0][0]"),
         Construct::ForExpression => format!("(for x in [{value}] into s from 0: s + x)"),
         Construct::Inlined => format!("g({value})"),
+        Construct::DotCall => format!("({value}).g()"),
         Construct::Recursive => format!("r({value})"),
         Construct::Let
         | Construct::State
@@ -82,6 +84,7 @@ fn base(construct: Construct) -> &'static str {
         Construct::Let
         | Construct::State
         | Construct::Inlined
+        | Construct::DotCall
         | Construct::If
         | Construct::Match
         | Construct::Join
@@ -106,27 +109,30 @@ fn growing(construct: Construct) -> Option<String> {
     let call = "if m > 0 then f";
     Some(match construct {
         Construct::Join | Construct::Recursive => {
-            format!("fn f(xs, m): {call}(xs + [1], m - 1) else len(xs)\n")
+            format!("fn f(xs, m): {call}(xs + [1], m - 1) else xs.size\n")
         }
         Construct::Slice => {
-            format!("fn f(xs, m): {call}((xs + [1, 2])[1..], m - 1) else len(xs)\n")
+            format!("fn f(xs, m): {call}((xs + [1, 2])[1..], m - 1) else xs.size\n")
         }
-        Construct::Index => format!("fn f(xs, m): {call}(xs + [xs[0]], m - 1) else len(xs)\n"),
-        Construct::ArrayLiteral => format!("fn f(xs, m): {call}(xs + [m], m - 1) else len(xs)\n"),
+        Construct::Index => format!("fn f(xs, m): {call}(xs + [xs[0]], m - 1) else xs.size\n"),
+        Construct::ArrayLiteral => format!("fn f(xs, m): {call}(xs + [m], m - 1) else xs.size\n"),
         Construct::ForExpression => format!(
-            "fn f(xs, m): {call}((for x in xs into a from [1]: a + [x]), m - 1) else len(xs)\n"
+            "fn f(xs, m): {call}((for x in xs into a from [1]: a + [x]), m - 1) else xs.size\n"
         ),
         Construct::If => {
-            format!("fn f(xs, m): {call}(if m > 0 then xs + [1] else xs, m - 1) else len(xs)\n")
+            format!("fn f(xs, m): {call}(if m > 0 then xs + [1] else xs, m - 1) else xs.size\n")
         }
         Construct::Inlined => {
-            format!("fn grow(v): v + [1]\nfn f(xs, m): {call}(grow(xs), m - 1) else len(xs)\n")
+            format!("fn grow(v): v + [1]\nfn f(xs, m): {call}(grow(xs), m - 1) else xs.size\n")
+        }
+        Construct::DotCall => {
+            format!("fn grow(v): v + [1]\nfn f(xs, m): {call}(xs.grow(), m - 1) else xs.size\n")
         }
         Construct::Let => {
-            format!("fn f(xs, m):\n    let ys = xs + [1]\n    {call}(ys, m - 1) else len(ys)\n")
+            format!("fn f(xs, m):\n    let ys = xs + [1]\n    {call}(ys, m - 1) else ys.size\n")
         }
         Construct::Match => {
-            "fn f(xs, m):\n    match m:\n        0: len(xs)\n        else: f(xs + [1], m - 1)\n"
+            "fn f(xs, m):\n    match m:\n        0: xs.size\n        else: f(xs + [1], m - 1)\n"
                 .to_string()
         }
         Construct::State | Construct::History | Construct::Past | Construct::ForPlacement => {
@@ -146,6 +152,7 @@ fn nested_function(construct: Construct) -> Option<Vec<String>> {
         Construct::Recursive => Vec::new(),
         Construct::History | Construct::Past | Construct::ForPlacement => return None,
         Construct::Inlined
+        | Construct::DotCall
         | Construct::If
         | Construct::Join
         | Construct::Slice
@@ -283,6 +290,7 @@ fn items(construct: Construct, shape: Shape, n: usize) -> Option<Vec<String>> {
             | Construct::State
             | Construct::Match
             | Construct::Inlined
+            | Construct::DotCall
             | Construct::Recursive
             | Construct::Past,
         ) => return None,
@@ -657,6 +665,13 @@ fn stress_every_walk_of_check_over_an_inlined_function_costs_work_linear_in_the_
 
 #[test]
 #[ignore = "stress"]
+fn stress_every_walk_of_check_over_a_dot_call_costs_work_linear_in_the_program_in_every_shape_and_order()
+ {
+    assert_costs_linear(Construct::DotCall, 12);
+}
+
+#[test]
+#[ignore = "stress"]
 fn stress_every_walk_of_check_over_a_compile_time_recursive_function_costs_work_linear_in_the_program_in_every_shape_and_order()
  {
     assert_costs_linear(Construct::Recursive, 10);
@@ -944,7 +959,7 @@ fn chain_read(read: ChainRead, last: &str) -> String {
     match read {
         ChainRead::Pitch => last.to_string(),
         ChainRead::Index => format!("{last}[3]"),
-        ChainRead::Len => format!("len({last})"),
+        ChainRead::Len => format!("({last}).size"),
     }
 }
 
@@ -1095,7 +1110,7 @@ fn reference_array_program(body: ReferenceBody, size: usize, call_first: bool) -
         .collect::<Vec<_>>()
         .join(", ");
     let reads = vec!["c[i].gain"; m].join(" + ");
-    let elements = format!("len(q([{}], 1))", vec!["c[i]"; m].join(", "));
+    let elements = format!("q([{}], 1).size", vec!["c[i]"; m].join(", "));
     let untaken = format!("(if false then {reads} else 0)");
     let (read, reader) = match body {
         ReferenceBody::ReadsGrowing | ReferenceBody::CandidatesGrowingUnderReads => (
@@ -1111,7 +1126,7 @@ fn reference_array_program(body: ReferenceBody, size: usize, call_first: bool) -
             format!("Clip k | gain=g([{references}], 0, 3):\n    Note\n"),
         ),
         ReferenceBody::Length => (
-            "len(c)",
+            "c.size",
             format!("Clip k:\n    Note/(g([{references}], 0, 3))\n"),
         ),
         ReferenceBody::FirstGain => (

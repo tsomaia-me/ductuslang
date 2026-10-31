@@ -49,7 +49,7 @@ fn each_row_of_the_capacity_table_gives_its_capacity() {
         ("", "a[..min(i, 4)]", 4),
         ("", "a[..min(i, 7)]", 5),
         ("", "a[max(i, 2)..]", 3),
-        ("", "a[..len(a) - 1]", 4),
+        ("", "a[..a.size - 1]", 4),
         ("", "a[^min(i, 3)..]", 3),
         ("", "a[^max(i, 2)..]", 5),
         ("", "a[max(i, 3)..min(i, 4)]", 1),
@@ -240,7 +240,7 @@ fn a_states_fixed_array_is_settled_over_its_group_in(orders: support::Orders) {
                 NOTE,
                 ring,
                 echo,
-                "Clip c:\n    Note/(echo[len(echo) div 2])\n",
+                "Clip c:\n    Note/(echo[echo.size div 2])\n",
             ],
             &[],
         );
@@ -754,7 +754,7 @@ fn a_history_read_of_a_let_whose_initializer_drew_an_error_draws_nothing_of_its_
                 "state note(60)\n",
                 "let t = zzz\n",
                 "state s = (t.past(1, []) + [note])[^8..]\n",
-                "Clip c:\n    Note/(len(s))\n",
+                "Clip c:\n    Note/(s.size)\n",
             ],
             &[(Code::UnknownName, "zzz")],
         ),
@@ -763,7 +763,7 @@ fn a_history_read_of_a_let_whose_initializer_drew_an_error_draws_nothing_of_its_
                 "state note(60)\n",
                 "let t = note + true\n",
                 "state s = (t.past(1, []) + [note])[^8..]\n",
-                "Clip c:\n    Note/(len(s))\n",
+                "Clip c:\n    Note/(s.size)\n",
             ],
             &[(Code::OperandType, "note + true")],
         ),
@@ -772,7 +772,7 @@ fn a_history_read_of_a_let_whose_initializer_drew_an_error_draws_nothing_of_its_
                 "state note(60)\n",
                 "let t = zzz + [note]\n",
                 "state s = (t.past(1, []) + [note])[^8..]\n",
-                "Clip c:\n    Note/(len(s))\n",
+                "Clip c:\n    Note/(s.size)\n",
             ],
             &[(Code::UnknownName, "zzz")],
         ),
@@ -942,7 +942,7 @@ fn a_chain_of_slices_keeps_its_capacity_and_its_length() {
                 NOTE,
                 "state s = [note, note, note]\n",
                 "let t = s[1..]\n",
-                "Clip c:\n    Note/(t[1] + len(t))\n",
+                "Clip c:\n    Note/(t[1] + t.size)\n",
             ],
             &[],
         ),
@@ -1253,9 +1253,9 @@ fn the_arms_of_a_choice_are_type_checked_against_one_another_whatever_chooses_in
         (
             &[
                 held,
-                "Clip c:\n    Note/((if false then bytes(held) else [[1]])[0][0])\n",
+                "Clip c:\n    Note/((if false then held.bytes else [[1]])[0][0])\n",
             ],
-            &[(Code::TypeMismatch, "if false then bytes(held) else [[1]]")],
+            &[(Code::TypeMismatch, "if false then held.bytes else [[1]]")],
         ),
         (
             &[
@@ -1301,7 +1301,7 @@ fn the_arms_of_a_choice_are_type_checked_against_one_another_whatever_chooses_in
         (
             &[
                 held,
-                "let b = bytes(held)\n",
+                "let b = held.bytes\n",
                 "Clip c:\n    Note/((if false then b else [[1]])[0][0])\n",
             ],
             &[(Code::TypeMismatch, "if false then b else [[1]]")],
@@ -1309,10 +1309,10 @@ fn the_arms_of_a_choice_are_type_checked_against_one_another_whatever_chooses_in
         (
             &[
                 held,
-                "fn g(i): if i > 5 then bytes(held) else 5\n",
+                "fn g(i): if i > 5 then held.bytes else 5\n",
                 "Clip c:\n    Note/(g(0))\n",
             ],
-            &[(Code::TypeMismatch, "if i > 5 then bytes(held) else 5")],
+            &[(Code::TypeMismatch, "if i > 5 then held.bytes else 5")],
         ),
         (
             &[
@@ -1725,7 +1725,7 @@ fn a_state_settled_as_a_fixed_array_is_used_as_a_fixed_array_in(orders: support:
             &[
                 NOTE,
                 fixed,
-                "Clip c:\n    for i in 0..len(s):\n        Note/(s[i])\n",
+                "Clip c:\n    for i in 0..s.size:\n        Note/(s[i])\n",
             ],
             &[],
         ),
@@ -1760,14 +1760,14 @@ fn a_state_settled_as_a_fixed_array_is_used_as_a_fixed_array_in(orders: support:
             ],
             &[],
         ),
-        (&[NOTE, variable, "Clip c:\n    Note/(len(r))\n"], &[]),
+        (&[NOTE, variable, "Clip c:\n    Note/(r.size)\n"], &[]),
         (
             &[
                 NOTE,
                 variable,
-                "Clip c:\n    for i in 0..len(r):\n        Note/(r[i])\n",
+                "Clip c:\n    for i in 0..r.size:\n        Note/(r[i])\n",
             ],
-            &[(Code::ReactiveIterable, "len(r)", 0)],
+            &[(Code::ReactiveIterable, "r.size", 0)],
         ),
     ];
     for (items, expected) in rows {
@@ -2008,7 +2008,7 @@ fn a_capacity_reaching_two_to_the_thirty_one_draws_length_limit_where_it_arises(
                 NOTE,
                 big,
                 "let x = big + big\n",
-                "Clip c:\n    Note/(len(x))\n",
+                "Clip c:\n    Note/(x.size)\n",
             ],
             &[(Code::LengthLimit, "big + big", 0)],
         ),
@@ -2017,7 +2017,7 @@ fn a_capacity_reaching_two_to_the_thirty_one_draws_length_limit_where_it_arises(
                 NOTE,
                 big,
                 "state s = big + big\n",
-                "Clip c:\n    Note/(len(s))\n",
+                "Clip c:\n    Note/(s.size)\n",
             ],
             &[(Code::LengthLimit, "big + big", 0)],
         ),
@@ -2026,7 +2026,7 @@ fn a_capacity_reaching_two_to_the_thirty_one_draws_length_limit_where_it_arises(
                 NOTE,
                 big,
                 "state s = big[^2000000000..] + big\n",
-                "Clip c:\n    Note/(len(s))\n",
+                "Clip c:\n    Note/(s.size)\n",
             ],
             &[(Code::LengthLimit, "big[^2000000000..] + big", 0)],
         ),
@@ -2035,7 +2035,7 @@ fn a_capacity_reaching_two_to_the_thirty_one_draws_length_limit_where_it_arises(
                 NOTE,
                 big,
                 "state r = (r.past(1, []) + [note])[^2147483648..]\n",
-                "Clip c:\n    Note/(len(r))\n",
+                "Clip c:\n    Note/(r.size)\n",
             ],
             &[(
                 Code::LengthLimit,
@@ -2048,7 +2048,7 @@ fn a_capacity_reaching_two_to_the_thirty_one_draws_length_limit_where_it_arises(
                 NOTE,
                 big,
                 "state r = (r.past(1, []) + [note])[^2147483647..]\n",
-                "Clip c:\n    Note/(len(r))\n",
+                "Clip c:\n    Note/(r.size)\n",
             ],
             &[(Code::LengthLimit, "r.past(1, []) + [note]", 0)],
         ),
@@ -2057,7 +2057,7 @@ fn a_capacity_reaching_two_to_the_thirty_one_draws_length_limit_where_it_arises(
                 NOTE,
                 big,
                 "let probe: i32[..5] = big + big\n",
-                "Clip c:\n    Note/(len(probe))\n",
+                "Clip c:\n    Note/(probe.size)\n",
             ],
             &[(Code::LengthLimit, "big + big", 0)],
         ),
@@ -2065,7 +2065,7 @@ fn a_capacity_reaching_two_to_the_thirty_one_draws_length_limit_where_it_arises(
             &[
                 NOTE,
                 "state r = (r.past(1, []) + [note])[^4611686018427387905..]\n",
-                "Clip c:\n    Note/(len(r))\n",
+                "Clip c:\n    Note/(r.size)\n",
             ],
             &[(
                 Code::LengthLimit,
@@ -2077,7 +2077,7 @@ fn a_capacity_reaching_two_to_the_thirty_one_draws_length_limit_where_it_arises(
             &[
                 NOTE,
                 "state r = (r.past(1, []) + [note])[^9223372036854775807..]\n",
-                "Clip c:\n    Note/(len(r))\n",
+                "Clip c:\n    Note/(r.size)\n",
             ],
             &[(
                 Code::LengthLimit,
@@ -2089,7 +2089,7 @@ fn a_capacity_reaching_two_to_the_thirty_one_draws_length_limit_where_it_arises(
             &[
                 NOTE,
                 "state r = (r.past(1, []) + [note])[..9223372036854775807]\n",
-                "Clip c:\n    Note/(len(r))\n",
+                "Clip c:\n    Note/(r.size)\n",
             ],
             &[(
                 Code::LengthLimit,
@@ -2101,7 +2101,7 @@ fn a_capacity_reaching_two_to_the_thirty_one_draws_length_limit_where_it_arises(
             &[
                 NOTE,
                 "state r = (r.past(1, []) + [note])[^9223372036854775808..]\n",
-                "Clip c:\n    Note/(len(r))\n",
+                "Clip c:\n    Note/(r.size)\n",
             ],
             &[(Code::IndexOutOfRange, "9223372036854775808", 0)],
         ),
@@ -2109,7 +2109,7 @@ fn a_capacity_reaching_two_to_the_thirty_one_draws_length_limit_where_it_arises(
             &[
                 NOTE,
                 "state r = (r.past(1, []) + [note])[^8..]\n",
-                "Clip c:\n    Note/(len(r))\n",
+                "Clip c:\n    Note/(r.size)\n",
             ],
             &[],
         ),
@@ -2124,7 +2124,7 @@ fn a_capacity_reaching_two_to_the_thirty_one_draws_length_limit_where_it_arises(
             NOTE,
             "state a = b.past(1, []) + [note]\n",
             "state b = a[^2147483648..]\n",
-            "Clip c:\n    Note/(len(a))\n",
+            "Clip c:\n    Note/(a.size)\n",
         ],
         &[Code::LengthLimit],
     );
@@ -2134,7 +2134,7 @@ fn a_capacity_reaching_two_to_the_thirty_one_draws_length_limit_where_it_arises(
         ("[..9223372036854775807]", "9223372036854775807"),
     ] {
         let text = format!(
-            "{NOTE}state r = (r.past(1, []) + [note]){bound}\nClip c:\n    Note/(len(r))\n"
+            "{NOTE}state r = (r.past(1, []) + [note]){bound}\nClip c:\n    Note/(r.size)\n"
         );
         let found = support::checked(&text);
         assert!(
@@ -2147,7 +2147,7 @@ fn a_capacity_reaching_two_to_the_thirty_one_draws_length_limit_where_it_arises(
             NOTE,
             big,
             "state r = r.past(1, []) + [note]\n",
-            "Clip c:\n    Note/(len(r))\n",
+            "Clip c:\n    Note/(r.size)\n",
         ],
         &[Code::UnboundedState],
     );
@@ -2202,7 +2202,7 @@ fn a_runtime_choice_between_a_variable_and_a_fixed_array_is_one_variable_array_w
             ],
             &[],
         ),
-        (&[held, gate, chosen, "Clip c:\n    Note/(len(s))\n"], &[]),
+        (&[held, gate, chosen, "Clip c:\n    Note/(s.size)\n"], &[]),
         (
             &[held, gate, chosen, "Clip c:\n    Note/(s[1..][0])\n"],
             &[],
@@ -2699,7 +2699,7 @@ fn every_diagnostic_carries_a_help_that_states_its_fix() {
         (
             "Clip a:\n    Note/(b.sequence[0])\n",
             "the index 0 is outside the array of length 0",
-            "the array is empty: give it elements, or read the element only where `len(…)` is above 0",
+            "the array is empty: give it elements, or read the element only where its `size` is above 0",
         ),
         (
             "Clip a:\n    Note/(b.seq[7])\n",
@@ -2906,7 +2906,7 @@ fn an_iterable_that_reads_a_cell_draws_reactive_iterable_whatever_its_layout() {
             &[
                 n,
                 "state s = [n, n]\n",
-                "Clip c:\n    for i in 0..len(s):\n        Note/i\n",
+                "Clip c:\n    for i in 0..s.size:\n        Note/i\n",
             ],
             &[],
         ),

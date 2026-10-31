@@ -80,7 +80,7 @@ fn no_mutant_of_an_example_or_fixture_draws_an_internal_error_or_panics() {
     let (failures, checked) =
         covered(|rows| covered_mutants_draw_no_internal_error(rows, &corpora));
     assert_eq!(failures, Vec::<String>::new());
-    assert_eq!(checked, 1_286);
+    assert_eq!(checked, 1_309);
 }
 
 #[test]
@@ -150,7 +150,7 @@ fn the_absences_that_are_normal_draw_no_internal_error() {
 }
 
 const RECURSIVE_READERS: [&str; 2] = [
-    "state held([]): i32[..10]\nfn lowest(i):\n    let a = held[i]\n    if i >= len(held) then 127 else min(a, lowest(i + 1))\nClip c:\n    Note/(lowest(0))\n",
+    "state held([]): i32[..10]\nfn lowest(i):\n    let a = held[i]\n    if i >= held.size then 127 else min(a, lowest(i + 1))\nClip c:\n    Note/(lowest(0))\n",
     "state held([1, 2, 3])\nfn lowest(i):\n    let a = held[i]\n    if i >= 3 then 127 else min(a, lowest(i + 1))\nClip c:\n    Note/(lowest(0))\n",
 ];
 
@@ -160,14 +160,14 @@ fn no_mutant_of_a_recursive_function_reading_a_cell_through_a_let_draws_an_inter
     let (failures, checked) =
         covered(|rows| covered_mutants_draw_no_internal_error(rows, &corpora));
     assert_eq!(failures, Vec::<String>::new());
-    assert_eq!(checked, 550);
+    assert_eq!(checked, 573);
 }
 
 const LOOP_EXAMPLES: [&str; 5] = [
     "state held([]): i32[..10]\nstate high = for x in held into kept from []:\n    let keep = x > 60\n    if keep then kept + [x] else kept\nstate total = 1 + (for i, x in held into sum from 0: sum + i * x)\nstate lowest = for x in held into low from 127: min(low, x)\nClip c:\n    Note/lowest\n",
-    "state held([]): i32[..10]\nstate total = 1 + for x in held into sum from 0: sum + x\nfn count(xs): len(xs)\nstate high = count(for x in held into kept from []: if x > 60 then kept + [x] else kept)\n",
+    "state held([]): i32[..10]\nstate total = 1 + for x in held into sum from 0: sum + x\nfn count(xs): xs.size\nstate high = count(for x in held into kept from []: if x > 60 then kept + [x] else kept)\n",
     "state steps([true, false, false, true, false, false, true, false])\nstate pitches([36, 36, 43, 36, 41, 36, 43, 48])\nClip seq:\n    for i in 0..8:\n        Note/(pitches[i]) when steps[i]\nlet chord = [60, 64, 67]\nClip strum:\n    for i, p in chord:\n        Note/p | velocity=1.0 - i * 0.2\n",
-    "state held([]): i32[..10]\nstate rises = for i in 1..len(held) into n from 0: if held[i] > held[i - 1] then n + 1 else n\nstate n(4)\nstate total = for i in 0..n into sum from 0: sum + i\nClip c:\n    for i, k in 0..4:\n        Note/(60 + k)\n    Note/total\n",
+    "state held([]): i32[..10]\nstate rises = for i in 1..held.size into n from 0: if held[i] > held[i - 1] then n + 1 else n\nstate n(4)\nstate total = for i in 0..n into sum from 0: sum + i\nClip c:\n    for i, k in 0..4:\n        Note/(60 + k)\n    Note/total\n",
     "Clip pad:\n    [Note/60 Note/64 Note/67]\n    [for i in 0..3: Note/(62 + i * 4)]\n    [for i, p in [60, 64, 67]: (Note/p | velocity=1.0 - i * 0.2)]\n",
 ];
 
@@ -177,7 +177,7 @@ fn no_mutant_of_a_for_expression_or_loop_head_example_draws_an_internal_error() 
     let (failures, checked) =
         covered(|rows| covered_mutants_draw_no_internal_error(rows, &corpora));
     assert_eq!(failures, Vec::<String>::new());
-    assert_eq!(checked, 780);
+    assert_eq!(checked, 803);
 }
 
 #[test]

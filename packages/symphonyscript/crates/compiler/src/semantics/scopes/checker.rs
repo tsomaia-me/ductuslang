@@ -511,12 +511,23 @@ impl<'a> Checker<'a> {
                         && self.variants.owner(name).is_none()
                         && !self.may_declare(frame, name)?
                     {
-                        self.report.error(
-                            self.hir,
-                            Code::UnknownName,
-                            expr.loc,
-                            format!("`{name}` names nothing in scope"),
-                        );
+                        let summary = format!("`{name}` names nothing in scope");
+                        match (operand, name.as_str()) {
+                            (Operand::Callee, "len" | "bytes") => {
+                                let member = if name == "len" { "size" } else { "bytes" };
+                                self.report.hinted(
+                                    self.hir,
+                                    Code::UnknownName,
+                                    expr.loc,
+                                    &[],
+                                    summary,
+                                    format!("write `x.{member}`"),
+                                );
+                            }
+                            _ => self
+                                .report
+                                .error(self.hir, Code::UnknownName, expr.loc, summary),
+                        }
                         if operand == Operand::Value && !self.in_destination {
                             self.placeholders.push(id);
                         }
@@ -541,7 +552,9 @@ impl<'a> Checker<'a> {
                 }
                 ExprKind::Field(base, _) => stack.push((*base, Operand::FieldBase, frame)),
                 ExprKind::Call(callee, args) => {
-                    stack.push((*callee, Operand::Callee, frame));
+                    if args.receiver().is_none() {
+                        stack.push((*callee, Operand::Callee, frame));
+                    }
                     stack.extend(
                         args.values()
                             .into_iter()

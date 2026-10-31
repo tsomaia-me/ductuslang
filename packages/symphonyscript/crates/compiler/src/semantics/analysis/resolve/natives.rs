@@ -1,4 +1,5 @@
-use symphonyscript_core::{Builtin, NativeId, Scalar};
+use crate::semantics::builtin::Builtin;
+use symphonyscript_core::{NativeId, Scalar};
 
 use crate::diagnostics::Code;
 use crate::semantics::Internal;
@@ -25,7 +26,7 @@ impl Engine<'_> {
             .vocabulary
             .native(native)
             .ok_or(Internal::missed("native function"))?;
-        let Args::Positional(values) = args else {
+        let Some(values) = args.positional() else {
             self.error(
                 Code::NamedBuiltinArguments,
                 loc,
@@ -64,7 +65,7 @@ impl Engine<'_> {
             .into_iter()
             .flatten()
             .zip(&decl.signature.params)
-            .zip(values)
+            .zip(&values)
         {
             let arg_loc = self.hir.expr(*value)?.loc;
             let ty = native_ty(param);

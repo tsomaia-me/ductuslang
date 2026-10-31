@@ -1,4 +1,5 @@
-use symphonyscript_core::{BinaryOp, Builtin, FamilyId, Scalar, UnaryOp, Value};
+use crate::semantics::builtin::Builtin;
+use symphonyscript_core::{BinaryOp, FamilyId, Scalar, UnaryOp, Value};
 
 use crate::diagnostics::Code;
 use crate::semantics::Internal;
@@ -204,7 +205,7 @@ impl Engine<'_> {
                 | Builtin::Exp
                 | Builtin::Log
                 | Builtin::Lerp => self.combine(args)?.map(float_for),
-                Builtin::Len => Some(Scalar::I32),
+                Builtin::Len | Builtin::Capacity => Some(Scalar::I32),
                 Builtin::Bytes => Some(Scalar::U8),
             },
             Op::Join(lhs, rhs) => self.combine(&[*lhs, *rhs])?,
@@ -1024,11 +1025,11 @@ impl Engine<'_> {
     ) -> Result<Sig, Internal> {
         let reactive = sigs.iter().any(|sig| sig.reactive);
         match builtin {
-            Builtin::Len => {
+            Builtin::Len | Builtin::Capacity => {
                 return Ok(Sig::of(
                     Kind::Int,
                     Width::Fixed(Scalar::I32),
-                    reactive,
+                    reactive && builtin == Builtin::Len,
                     None,
                 ));
             }
@@ -1129,7 +1130,9 @@ impl Engine<'_> {
                 }
                 Sig::of(Kind::Float, Width::Fixed(Scalar::F32), reactive, None)
             }
-            Builtin::Len | Builtin::Bytes => return Err(Internal::missed("array built-in")),
+            Builtin::Len | Builtin::Capacity | Builtin::Bytes => {
+                return Err(Internal::missed("array built-in"));
+            }
             Builtin::Sqrt
             | Builtin::Sin
             | Builtin::Cos

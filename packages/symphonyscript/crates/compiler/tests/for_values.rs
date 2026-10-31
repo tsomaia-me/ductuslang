@@ -128,10 +128,10 @@ fn holds(compiler: &Compiler, text: &str, folded: &Folded) -> Result<(), String>
         Folded::Value(values) => {
             let length = i128::try_from(values.len()).unwrap_or(0);
             let mut indexes = vec![length + 1];
-            let mut reader = "Clip k:\n    Note/([0][len(v) + 1])\n".to_string();
+            let mut reader = "Clip k:\n    Note/([0][v.size + 1])\n".to_string();
             if let Some(last) = values.last() {
                 indexes.push(last + 1);
-                reader.push_str("    Note/([0][v[len(v) - 1] + 1])\n");
+                reader.push_str("    Note/([0][v[v.size - 1] + 1])\n");
             }
             (
                 reader,
@@ -245,7 +245,7 @@ fn the_for_expressions_of_the_spec_hold_the_values_and_capacities_the_spec_gives
     let compiler = Compiler::new(&vocabulary()).expect("the vocabulary compiles");
     let held = "state held([]): i32[..10]\n";
     let high = "state high = for x in held into kept from []:\n    let keep = x > 60\n    if keep then kept + [x] else kept\n";
-    let rises = "state rises = for i in 1..len(held) into n from 0: if held[i] > held[i - 1] then n + 1 else n\n";
+    let rises = "state rises = for i in 1..held.size into n from 0: if held[i] > held[i - 1] then n + 1 else n\n";
     let lowest = "state lowest = for x in held into low from 127: min(low, x)\n";
     for (text, expected) in [
         (
@@ -275,11 +275,11 @@ fn the_for_expressions_of_the_spec_hold_the_values_and_capacities_the_spec_gives
     }
     let counted = |ty: &str| {
         format!(
-            "{held}state r = for i in 1..len(held) into n: {ty} from 0: n + 1\nClip c:\n    Note/(r)\n"
+            "{held}state r = for i in 1..held.size into n: {ty} from 0: n + 1\nClip c:\n    Note/(r)\n"
         )
     };
     let reached = format!(
-        "{held}state rises = for i in 1..len(held) into n from []: n + [i]\nstate probe: i32[..8] = rises\nClip c:\n    Note/(probe[0])\n"
+        "{held}state rises = for i in 1..held.size into n from []: n + [i]\nstate probe: i32[..8] = rises\nClip c:\n    Note/(probe[0])\n"
     );
     let found: Vec<Code> = errors(&compiler, &reached)
         .iter()

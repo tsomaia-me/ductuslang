@@ -500,19 +500,19 @@ fn enums_strings_and_bools_take_their_own_types() {
 fn a_bare_variant_where_no_enum_is_expected_draws_unknown_name_wherever_it_stands() {
     let saw = (Code::UnknownName, "Saw");
     let rows: &[support::Row] = &[
-        (&["Clip c:\n    Note/(60 + len([Saw]))\n"], &[saw]),
+        (&["Clip c:\n    Note/(60 + [Saw].size)\n"], &[saw]),
         (
-            &["Clip c:\n    Note/(60 + len([Saw, Square]))\n"],
+            &["Clip c:\n    Note/(60 + [Saw, Square].size)\n"],
             &[saw, (Code::UnknownName, "Square")],
         ),
         (
-            &["let a = [Saw]\n", "Clip c:\n    Note/(60 + len(a))\n"],
+            &["let a = [Saw]\n", "Clip c:\n    Note/(60 + a.size)\n"],
             &[(Code::TypeMismatch, "[Saw]")],
         ),
         (
             &[
                 "state w(Wave::Saw)\n",
-                "Clip c:\n    Note/(60 + len([w]))\n",
+                "Clip c:\n    Note/(60 + [w].size)\n",
             ],
             &[],
         ),
@@ -525,7 +525,7 @@ fn a_bare_variant_where_no_enum_is_expected_draws_unknown_name_wherever_it_stand
     support::assert_rows_in_every_order(&symphonyscript_fixtures::vocabulary(), rows);
     let compiler =
         Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("the vocabulary compiles");
-    let text = "Clip c:\n    Note/(60 + len([Saw]))\n";
+    let text = "Clip c:\n    Note/(60 + [Saw].size)\n";
     let found = support::errors(compiler.check(&[support::source(text)]));
     let helps: Vec<Option<&str>> = found
         .iter()
@@ -3368,13 +3368,13 @@ fn exhaustive_inconsistent_uses_name_each_use_with_its_calls() {
 fn bytes_of_an_integer_array_keeps_its_shape_and_reads_as_a_u8_array() {
     let rows: &[support::Row] = &[
         (
-            &["state xs([1, 2])\n", "Clip c:\n    Note/(bytes(xs)[0])\n"],
+            &["state xs([1, 2])\n", "Clip c:\n    Note/(xs.bytes[0])\n"],
             &[],
         ),
         (
             &[
                 "state i(300)\n",
-                "let b = bytes([i, 2])\n",
+                "let b = [i, 2].bytes\n",
                 "Clip c:\n    Note/(b[0])\n",
             ],
             &[],
@@ -3382,7 +3382,7 @@ fn bytes_of_an_integer_array_keeps_its_shape_and_reads_as_a_u8_array() {
         (
             &[
                 "state xs([1, 2, 3]): u8[3]\n",
-                "let b = bytes(xs)\n",
+                "let b = xs.bytes\n",
                 "Clip c:\n    Note/(b[2])\n",
             ],
             &[],
@@ -3390,7 +3390,7 @@ fn bytes_of_an_integer_array_keeps_its_shape_and_reads_as_a_u8_array() {
         (
             &[
                 "state notes([60, 64, 67]): i32[3]\n",
-                "let a = bytes(notes)\n",
+                "let a = notes.bytes\n",
                 "Clip c:\n    Note/(a[0])\n",
             ],
             &[],
@@ -3399,14 +3399,14 @@ fn bytes_of_an_integer_array_keeps_its_shape_and_reads_as_a_u8_array() {
             &[
                 "state i(1)\n",
                 "let lit = [i, 2, 3]\n",
-                "Clip c:\n    Note/(bytes(lit)[1])\n",
+                "Clip c:\n    Note/(lit.bytes[1])\n",
             ],
             &[],
         ),
         (
             &[
                 "state held([]): i32[..6]\n",
-                "let raw = bytes(held)\n",
+                "let raw = held.bytes\n",
                 "let second = raw[1]\n",
                 "Clip c:\n    Note/second\n",
             ],
@@ -3417,26 +3417,26 @@ fn bytes_of_an_integer_array_keeps_its_shape_and_reads_as_a_u8_array() {
                 "state packet([]): u8[..6]\n",
                 "state offset(0)\n",
                 "pattern P(default v):\n    Note/v\n",
-                "Clip c:\n    P/(bytes(packet)[offset])\n",
+                "Clip c:\n    P/(packet.bytes[offset])\n",
             ],
             &[],
         ),
         (
             &[
                 "state h([]): i32[..4]\n",
-                "Clip c:\n    Note/(bytes(\"GET\")[0] + bytes([1, 2])[1] + len(bytes(h)))\n",
+                "Clip c:\n    Note/(\"GET\".bytes[0] + [1, 2].bytes[1] + h.bytes.size)\n",
             ],
             &[],
         ),
         (
             &[
-                "let packed = bytes([300, -5, 70000, 12])\n",
+                "let packed = [300, -5, 70000, 12].bytes\n",
                 "Clip c:\n    Note/(packed[0])\n    Note/(packed[1])\n",
             ],
             &[],
         ),
         (
-            &["state xs([1, 2])\n", "Clip c:\n    Note/(bytes(xs)[2])\n"],
+            &["state xs([1, 2])\n", "Clip c:\n    Note/(xs.bytes[2])\n"],
             &[(Code::IndexOutOfRange, "2")],
         ),
     ];
@@ -3445,16 +3445,16 @@ fn bytes_of_an_integer_array_keeps_its_shape_and_reads_as_a_u8_array() {
         (
             &[
                 "state xs([1, 2, 3])\n",
-                "Clip c | fixed=(bytes(xs)):\n    Note\n",
+                "Clip c | fixed=(xs.bytes):\n    Note\n",
             ],
             &[],
         ),
         (
             &[
                 "state xs([1, 2, 3, 4])\n",
-                "Clip c | fixed=(bytes(xs)):\n    Note\n",
+                "Clip c | fixed=(xs.bytes):\n    Note\n",
             ],
-            &[(Code::TypeMismatch, "bytes(xs)")],
+            &[(Code::TypeMismatch, "xs.bytes")],
         ),
     ];
     support::assert_rows_in_every_order(&support::signature_vocabulary(), attribute);
@@ -3464,23 +3464,23 @@ fn bytes_of_an_integer_array_keeps_its_shape_and_reads_as_a_u8_array() {
 fn bytes_of_a_single_value_is_an_error() {
     let rows: &[support::Row] = &[
         (
-            &["Clip c:\n    Note/(bytes(65)[0])\n"],
-            &[(Code::OperandType, "bytes(65)")],
+            &["Clip c:\n    Note/((65).bytes[0])\n"],
+            &[(Code::UnknownAttribute, "(65).bytes")],
         ),
         (
-            &["let b = bytes(65)\n", "Clip c:\n    Note/b\n"],
-            &[(Code::OperandType, "bytes(65)")],
+            &["let b = (65).bytes\n", "Clip c:\n    Note/b\n"],
+            &[(Code::UnknownAttribute, "(65).bytes")],
         ),
         (
-            &["Clip c | data=(bytes(65)):\n    Note\n"],
-            &[(Code::OperandType, "bytes(65)")],
+            &["Clip c | data=((65).bytes):\n    Note\n"],
+            &[(Code::UnknownAttribute, "(65).bytes")],
         ),
         (
-            &["state i(1)\n", "Clip c | data=(bytes(i)):\n    Note\n"],
-            &[(Code::OperandType, "bytes(i)")],
+            &["state i(1)\n", "Clip c | data=(i.bytes):\n    Note\n"],
+            &[(Code::UnknownAttribute, "i.bytes")],
         ),
         (
-            &["Clip c | data=(bytes(\"GET\") + bytes([1, 2])):\n    Note\n"],
+            &["Clip c | data=(\"GET\".bytes + [1, 2].bytes):\n    Note\n"],
             &[],
         ),
     ];
@@ -3570,8 +3570,8 @@ fn a_fixed_type_operand_widens_into_the_expected_type_before_the_operation() {
         ),
         (
             &[
-                "let packed = bytes([300, -5, 70000, 12])\n",
-                "Clip c:\n    Note/(packed[0] + len(packed))\n",
+                "let packed = [300, -5, 70000, 12].bytes\n",
+                "Clip c:\n    Note/(packed[0] + packed.size)\n",
             ],
             &[],
         ),
@@ -3885,7 +3885,7 @@ fn an_integer_inputs_initial_value_fits_every_use_u8_uses_included() {
         (
             &[
                 "state i(300)\n",
-                "let b = bytes([i, 2])\n",
+                "let b = [i, 2].bytes\n",
                 "Clip c:\n    Note/(b[0])\n",
             ],
             &[],
@@ -4174,17 +4174,17 @@ fn a_choice_holding_an_operand_a_syntax_fault_leaves_missing_draws_its_syntax_di
 
 #[test]
 fn a_bytes_result_of_another_shape_than_a_fixed_attributes_draws_the_shape_diagnostic_alone() {
-    let binding = "Clip c | fixed=(bytes(xs)):\n    Note\n";
+    let binding = "Clip c | fixed=(xs.bytes):\n    Note\n";
     support::assert_rows_in_every_order(
         &support::signature_vocabulary(),
         &[
             (
                 &["state xs([1, 2]): u8[2]\n", binding],
-                &[(Code::TypeMismatch, "bytes(xs)")],
+                &[(Code::TypeMismatch, "xs.bytes")],
             ),
             (
                 &["state xs([1, 2])\n", binding],
-                &[(Code::TypeMismatch, "bytes(xs)")],
+                &[(Code::TypeMismatch, "xs.bytes")],
             ),
             (&["state xs([1, 2, 3])\n", binding], &[]),
         ],
@@ -4307,7 +4307,7 @@ fn a_to_path_reads_an_array_attribute_as_its_binding() {
         "Clip b:\n    Note\n",
         "Clip c:\n    Note\n",
     ];
-    let reads = "Clip a:\n    Plays | gain=to.steps[0]: b\n    Plays | gain=to.steps[1]: [b, c][sec]\n    Plays | gain=len(to.seq): b\n    Plays | gain=len(to.steps): [b, c][sec]\n";
+    let reads = "Clip a:\n    Plays | gain=to.steps[0]: b\n    Plays | gain=to.steps[1]: [b, c][sec]\n    Plays | gain=to.seq.size: b\n    Plays | gain=to.steps.size: [b, c][sec]\n";
     let lane = "Lane l\n";
     let rows: &[support::Row] = &[
         (&[declared[0], declared[1], declared[2], reads], &[]),
@@ -4346,7 +4346,7 @@ fn a_to_path_reads_an_array_attribute_as_its_binding() {
                 declared[0],
                 declared[1],
                 declared[2],
-                "Clip a:\n    Plays | gain=to.seq[1] + len(to.seq) + to.steps[1..][0]: [b, c][sec]\n",
+                "Clip a:\n    Plays | gain=to.seq[1] + to.seq.size + to.steps[1..][0]: [b, c][sec]\n",
             ],
             &[],
         ),
@@ -4355,7 +4355,7 @@ fn a_to_path_reads_an_array_attribute_as_its_binding() {
                 declared[0],
                 declared[1],
                 declared[2],
-                "Clip a:\n    Plays | trio=to.steps: [b, c][sec]\n    Plays | picks=to.seq[..2]: [b, c][sec]\n    Plays | gain=f32(len(to.seq + to.seq)): [b, c][sec]\n",
+                "Clip a:\n    Plays | trio=to.steps: [b, c][sec]\n    Plays | picks=to.seq[..2]: [b, c][sec]\n    Plays | gain=f32((to.seq + to.seq).size): [b, c][sec]\n",
             ],
             &[],
         ),
@@ -4680,23 +4680,23 @@ fn a_runtime_choice_between_strings_where_a_u8_array_is_expected_is_a_variable_a
 fn where_a_u8_array_is_expected_each_string_leaf_of_a_choice_is_its_bytes_whatever_the_other_leaves_are()
  {
     let f = "state f(false)\n";
-    let mixed = "if f then \"GET\" else bytes(\"AB\")";
+    let mixed = "if f then \"GET\" else \"AB\".bytes";
     let rows: &[support::Row] = &[
         (
-            &["Clip as g | data=(if true then \"GET\" else bytes(\"AB\"))\n"],
+            &["Clip as g | data=(if true then \"GET\" else \"AB\".bytes)\n"],
             &[],
         ),
         (
             &[
                 f,
-                "Clip as g | data=(if f then \"GET\" else bytes(\"AB\"))\n",
+                "Clip as g | data=(if f then \"GET\" else \"AB\".bytes)\n",
             ],
             &[],
         ),
         (
             &[
                 f,
-                "Clip as g | data=(if f then bytes(\"AB\") else \"GET\")\n",
+                "Clip as g | data=(if f then \"AB\".bytes else \"GET\")\n",
             ],
             &[],
         ),
@@ -4707,7 +4707,7 @@ fn where_a_u8_array_is_expected_each_string_leaf_of_a_choice_is_its_bytes_whatev
         (
             &[
                 f,
-                "fn m(x):\n    match x:\n        true: \"GET\"\n        else: bytes(\"AB\")\n",
+                "fn m(x):\n    match x:\n        true: \"GET\"\n        else: \"AB\".bytes\n",
                 "Clip as g | data=m(f)\n",
             ],
             &[],
@@ -4715,7 +4715,7 @@ fn where_a_u8_array_is_expected_each_string_leaf_of_a_choice_is_its_bytes_whatev
         (
             &[
                 f,
-                "let d: u8[..3] = if f then \"GET\" else bytes(\"AB\")\n",
+                "let d: u8[..3] = if f then \"GET\" else \"AB\".bytes\n",
                 "Clip as g | data=d\n",
             ],
             &[],
@@ -4723,23 +4723,23 @@ fn where_a_u8_array_is_expected_each_string_leaf_of_a_choice_is_its_bytes_whatev
         (
             &[
                 f,
-                "let d: u8[..2] = if f then \"GET\" else bytes(\"AB\")\n",
+                "let d: u8[..2] = if f then \"GET\" else \"AB\".bytes\n",
                 "Clip as g | data=d\n",
             ],
             &[(
                 Code::CapacityExceeded,
-                "let d: u8[..2] = if f then \"GET\" else bytes(\"AB\")\n",
+                "let d: u8[..2] = if f then \"GET\" else \"AB\".bytes\n",
             )],
         ),
         (
             &[
                 f,
-                "Clip as g | fixed=(if f then \"GET\" else bytes(\"AB\"))\n",
+                "Clip as g | fixed=(if f then \"GET\" else \"AB\".bytes)\n",
             ],
             &[(Code::VariableArray, mixed)],
         ),
         (
-            &["Clip as g | fixed=(if true then \"GET\" else bytes(\"AB\"))\n"],
+            &["Clip as g | fixed=(if true then \"GET\" else \"AB\".bytes)\n"],
             &[],
         ),
         (
@@ -4749,7 +4749,7 @@ fn where_a_u8_array_is_expected_each_string_leaf_of_a_choice_is_its_bytes_whatev
         (
             &[
                 f,
-                "let p = if f then \"GET\" else bytes(\"AB\")\n",
+                "let p = if f then \"GET\" else \"AB\".bytes\n",
                 "Clip as g | data=p\n",
             ],
             &[(Code::TypeMismatch, mixed)],
@@ -4757,7 +4757,7 @@ fn where_a_u8_array_is_expected_each_string_leaf_of_a_choice_is_its_bytes_whatev
         (
             &[
                 f,
-                "Clip as g | data=(if f then bytes(\"GET\") else bytes(\"AB\"))\n",
+                "Clip as g | data=(if f then \"GET\".bytes else \"AB\".bytes)\n",
             ],
             &[],
         ),
@@ -4766,7 +4766,7 @@ fn where_a_u8_array_is_expected_each_string_leaf_of_a_choice_is_its_bytes_whatev
     let rows: &[support::Row] = &[(
         &[
             f,
-            "Song s:\n    Clip as c:\n        Note/(checksum(if f then \"a\" else bytes(\"bc\")))\n",
+            "Song s:\n    Clip as c:\n        Note/(checksum(if f then \"a\" else \"bc\".bytes))\n",
         ],
         &[],
     )];
@@ -5335,6 +5335,12 @@ impl Generated {
                 match UNARY[*op] {
                     "-" => out.push('-'),
                     "not" => out.push_str("not "),
+                    member @ ("len" | "bytes") => {
+                        out.push('(');
+                        operand.print(out, read, sites);
+                        out.push_str(if member == "len" { ").size" } else { ").bytes" });
+                        return;
+                    }
                     name => {
                         out.push_str(name);
                         out.push('(');
@@ -5952,10 +5958,7 @@ fn every_seed_row_of_the_placeholder_rule_draws_what_its_rule_gives() {
             &["state fill_on(false+)\n"],
             &[(Code::ExpressionSyntax, ")")],
         ),
-        (
-            &["let b = bytes-(\"GET\")\n"],
-            &[(Code::NotAValue, "bytes")],
-        ),
+        (&["let b = abs-(\"GET\")\n"], &[(Code::NotAValue, "abs")]),
         (
             &["Clip c:\n    Note/([1, 2, 3][1.5 + [1, 2][5]])\n"],
             &[

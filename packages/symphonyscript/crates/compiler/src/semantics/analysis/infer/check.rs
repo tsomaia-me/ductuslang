@@ -1,4 +1,5 @@
-use symphonyscript_core::{BinaryOp, Builtin, Scalar, UnaryOp};
+use crate::semantics::builtin::Builtin;
+use symphonyscript_core::{BinaryOp, Scalar, UnaryOp};
 
 use crate::diagnostics::Code;
 use crate::semantics::Internal;
@@ -351,7 +352,7 @@ impl Engine<'_> {
                         | Builtin::Exp
                         | Builtin::Log
                         | Builtin::Lerp => ty,
-                        Builtin::Len | Builtin::Bytes => {
+                        Builtin::Len | Builtin::Capacity | Builtin::Bytes => {
                             for arg in args {
                                 let arg_ty = self.synth(arg)?;
                                 stack.push((arg, arg_ty, selection, false));

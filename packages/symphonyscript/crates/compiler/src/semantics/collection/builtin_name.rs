@@ -1,4 +1,4 @@
-use symphonyscript_core::Builtin;
+use crate::semantics::builtin::Builtin;
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub(crate) enum BuiltinName {
@@ -6,7 +6,7 @@ pub(crate) enum BuiltinName {
     Pi,
 }
 
-const FUNCTIONS: [Builtin; 17] = [
+const FUNCTIONS: [Builtin; 15] = [
     Builtin::Abs,
     Builtin::Min,
     Builtin::Max,
@@ -22,8 +22,6 @@ const FUNCTIONS: [Builtin; 17] = [
     Builtin::Log,
     Builtin::Lerp,
     Builtin::Rand,
-    Builtin::Len,
-    Builtin::Bytes,
 ];
 
 impl BuiltinName {

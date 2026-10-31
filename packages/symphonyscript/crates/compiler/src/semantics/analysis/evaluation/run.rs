@@ -1,6 +1,7 @@
 use std::rc::Rc;
 
-use symphonyscript_core::{BinaryOp, Builtin, Scalar, SpecFloat, UnaryOp, Value};
+use crate::semantics::builtin::Builtin;
+use symphonyscript_core::{BinaryOp, Scalar, SpecFloat, UnaryOp, Value};
 
 use super::convert::convert;
 use super::convert_to::convert_to;
@@ -268,6 +269,13 @@ impl Engine<'_> {
             Op::Builtin(Builtin::Bytes, args) => {
                 let operand = *args.first().ok_or(Internal::missed("bytes operand"))?;
                 return self.bytes(operand, ctx, need);
+            }
+            Op::Builtin(Builtin::Capacity, args) => {
+                let operand = *args.first().ok_or(Internal::missed("capacity operand"))?;
+                match self.extent(operand)? {
+                    Some(capacity) => CVal::Int(i128::from(capacity)),
+                    None => return self.length(operand, ctx, need),
+                }
             }
             Op::Pick { index, items } => {
                 let index_sig = some!(self.sig(index, need));
@@ -900,7 +908,10 @@ impl Engine<'_> {
             .collect();
         if let Some(floats) = floats32 {
             return Ok(Some(CVal::F32(
-                f32::spec_builtin(builtin, &floats).ok_or(Internal::missed("built-in"))?,
+                builtin
+                    .core()
+                    .and_then(|core| f32::spec_builtin(core, &floats))
+                    .ok_or(Internal::missed("built-in"))?,
             )));
         }
         let floats64: Option<Vec<f64>> = values
@@ -918,9 +929,12 @@ impl Engine<'_> {
             })
             .collect();
         Ok(Some(match floats64 {
-            Some(floats) => {
-                CVal::F64(f64::spec_builtin(builtin, &floats).ok_or(Internal::missed("built-in"))?)
-            }
+            Some(floats) => CVal::F64(
+                builtin
+                    .core()
+                    .and_then(|core| f64::spec_builtin(core, &floats))
+                    .ok_or(Internal::missed("built-in"))?,
+            ),
             None => CVal::Error,
         }))
     }
@@ -1404,9 +1418,10 @@ fn takes_expected(op: &Op) -> bool {
                 | BinaryOp::Rem
                 | BinaryOp::Pow
         ),
-        Op::Builtin(builtin, _) => {
-            !matches!(builtin, Builtin::Rand | Builtin::Len | Builtin::Bytes)
-        }
+        Op::Builtin(builtin, _) => !matches!(
+            builtin,
+            Builtin::Rand | Builtin::Len | Builtin::Capacity | Builtin::Bytes
+        ),
         Op::Number(..)
         | Op::Const(_)
         | Op::Bool(_)

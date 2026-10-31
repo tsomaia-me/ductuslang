@@ -1,6 +1,7 @@
 use std::collections::VecDeque;
 
-use symphonyscript_core::{Builtin, NativeType};
+use crate::semantics::builtin::Builtin;
+use symphonyscript_core::NativeType;
 
 use crate::diagnostics::Code;
 use crate::semantics::Internal;

@@ -308,7 +308,7 @@ fn a_capacity_of_result_holds_at_most_its_parameters_capacity_in_rows() {
         &native_vocabulary(),
         &[
             (
-                &["Clip c:\n    Note/(mirror([5, 6, 7])[2] + len(mirror([5, 6, 7])))\n"],
+                &["Clip c:\n    Note/(mirror([5, 6, 7])[2] + mirror([5, 6, 7]).size)\n"],
                 &[],
             ),
             (
@@ -458,7 +458,7 @@ fn an_unset_variable_array_attribute_reads_as_the_fixed_array_of_its_default() {
     let sequence = "Clip b | sequence=[]:\n    Note\n";
     let joined = "Clip a | seq=b.seq + [1, 2, 3]:\n    Note\n";
     let rows: &[Row] = &[
-        (&["Clip c:\n    Note/(len(b.sequence))\n", unset], &[]),
+        (&["Clip c:\n    Note/(b.sequence.size)\n", unset], &[]),
         (&["Clip c | sequence=b.sequence:\n    Note\n", unset], &[]),
         (
             &["Clip c:\n    Note/(d.sequence[0])\n", "Clip d:\n    Note\n"],
@@ -471,7 +471,7 @@ fn an_unset_variable_array_attribute_reads_as_the_fixed_array_of_its_default() {
             ],
             &[(Code::IndexOutOfRange, "0")],
         ),
-        (&["Clip a | gain=len(b.seq):\n    Note\n", unset], &[]),
+        (&["Clip a | gain=b.seq.size:\n    Note\n", unset], &[]),
         (&["Clip a | seq=b.seq:\n    Note\n", unset], &[]),
         (&["Clip a:\n    Note/(b.seq[1])\n", unset], &[]),
         (
@@ -492,7 +492,7 @@ fn an_unset_variable_array_attribute_reads_as_the_fixed_array_of_its_default() {
         ),
         (
             &[
-                "Clip a | seq=b.seq:\n    Note/(len(b.rows) + b.rows[1][0])\n",
+                "Clip a | seq=b.seq:\n    Note/(b.rows.size + b.rows[1][0])\n",
                 unset,
             ],
             &[],
@@ -508,7 +508,7 @@ fn an_unset_variable_array_attribute_reads_as_the_fixed_array_of_its_default() {
             &[(Code::CapacityExceeded, "b.seq + [1, 2, 3]")],
         ),
         (
-            &["Clip c | sequence=[1, 2]:\n    Note/(len(c.sequence))\n"],
+            &["Clip c | sequence=[1, 2]:\n    Note/(c.sequence.size)\n"],
             &[],
         ),
     ];

@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::rc::Rc;
 
-use symphonyscript_core::{BinaryOp, Builtin};
+use symphonyscript_core::BinaryOp;
 
 use super::answer::Answer;
 use super::owner_reads::OwnerReads;
@@ -18,7 +18,7 @@ use crate::semantics::analysis::ids::ScopeId;
 use crate::semantics::analysis::let_ref::LetRef;
 use crate::semantics::analysis::query::Query;
 use crate::semantics::analysis::resolve::Found;
-use crate::semantics::collection::{BuiltinName, Decl, Namespace, strongly_connected};
+use crate::semantics::collection::{Decl, Namespace, strongly_connected};
 use crate::semantics::ir::{
     Args, AttrValue, BodyItem, ExprId, ExprKind, FnId, LetId, PlacementId, StateId, TypeRef,
 };
@@ -165,20 +165,25 @@ impl Engine<'_> {
                 };
                 Step::Known(Answer::of(reads, Variable::Fixed))
             }
-            ExprKind::Field(base, _) => match self.path_start(expr, position)? {
-                Some(PathStart::Instance(placement)) => Step::Known(Answer::of(
-                    self.attribute_reads(expr, placement, position)?,
-                    Variable::Unknown,
-                )),
-                Some(PathStart::Chosen) | None => match joined(done, &[*base]) {
-                    Step::Known(answer) => Step::Known(Answer::of(
-                        answer.reads.join(Reads::Chosen),
+            ExprKind::Field(base, name) => {
+                if let Some(step) = self.member_step(*base, &name.text, done, position)? {
+                    return Ok(step);
+                }
+                match self.path_start(expr, position)? {
+                    Some(PathStart::Instance(placement)) => Step::Known(Answer::of(
+                        self.attribute_reads(expr, placement, position)?,
                         Variable::Unknown,
                     )),
-                    missing @ Step::Missing(_) => missing,
-                },
-            },
-            ExprKind::Call(callee, args) => self.call_step(*callee, args, done, position)?,
+                    Some(PathStart::Chosen) | None => match joined(done, &[*base]) {
+                        Step::Known(answer) => Step::Known(Answer::of(
+                            answer.reads.join(Reads::Chosen),
+                            Variable::Unknown,
+                        )),
+                        missing @ Step::Missing(_) => missing,
+                    },
+                }
+            }
+            ExprKind::Call(callee, args) => self.call_step(*callee, args, done),
             ExprKind::If(condition, then, otherwise) => {
                 let taken = match self.hir.expr(*condition)?.kind {
                     ExprKind::Bool(true) => Some(*then),
@@ -296,26 +301,47 @@ impl Engine<'_> {
         Ok(lengths.iter().any(|length| Some(length) != lengths.first()))
     }
 
-    fn call_step(
+    fn call_step(&self, callee: ExprId, args: &Args, done: &Done) -> Step {
+        let mut parts = vec![callee];
+        parts.extend(args.values());
+        with_variable(joined(done, &parts), Variable::Unknown)
+    }
+
+    fn member_step(
         &mut self,
-        callee: ExprId,
-        args: &Args,
+        base: ExprId,
+        name: &str,
         done: &Done,
-        position: &mut Position<'_>,
-    ) -> Result<Step, Internal> {
-        let values = args.values();
-        if !self.measures_length(callee, position)? {
-            let mut parts = vec![callee];
-            parts.extend(values);
-            return Ok(with_variable(joined(done, &parts), Variable::Unknown));
+        position: &Position<'_>,
+    ) -> Result<Option<Step>, Internal> {
+        if !matches!(name, "size" | "capacity" | "bytes") {
+            return Ok(None);
         }
-        let answer = match joined(done, &values) {
+        let receiver = &self.hir.expr(base)?.kind;
+        if matches!(receiver, ExprKind::To)
+            || (matches!(receiver, ExprKind::Name(_))
+                && matches!(
+                    self.path_start(base, position)?,
+                    Some(PathStart::Instance(_))
+                ))
+        {
+            return Ok(None);
+        }
+        if name == "capacity" {
+            return Ok(Some(Step::Known(Answer::of(Reads::Value, Variable::Fixed))));
+        }
+        if name == "bytes" {
+            return Ok(Some(with_variable(
+                joined(done, &[base]),
+                Variable::Unknown,
+            )));
+        }
+        let answer = match joined(done, &[base]) {
             Step::Known(answer) => answer,
-            missing @ Step::Missing(_) => return Ok(missing),
+            missing @ Step::Missing(_) => return Ok(Some(missing)),
         };
-        let measured = values
-            .first()
-            .and_then(|value| done.get(value))
+        let measured = done
+            .get(&base)
             .map_or(Variable::Fixed, |measured| measured.variable);
         let reads = if answer.reads.is_value() {
             Reads::Value
@@ -326,30 +352,7 @@ impl Engine<'_> {
                 Variable::Unknown => Reads::Chosen,
             }
         };
-        Ok(Step::Known(Answer::of(reads, Variable::Fixed)))
-    }
-
-    fn measures_length(
-        &mut self,
-        callee: ExprId,
-        position: &Position<'_>,
-    ) -> Result<bool, Internal> {
-        let ExprKind::Name(name) = &self.hir.expr(callee)?.kind else {
-            return Ok(false);
-        };
-        let decl = match position {
-            Position::Declared(declared) => {
-                if declared.locals.contains_key(name.as_str()) {
-                    return Ok(false);
-                }
-                declared.namespace.get(name)
-            }
-            Position::Scope(scope) => found_decl(self.find(name, *scope)?),
-        };
-        Ok(matches!(
-            decl,
-            Some(Decl::Builtin(BuiltinName::Function(Builtin::Len)))
-        ))
+        Ok(Some(Step::Known(Answer::of(reads, Variable::Fixed))))
     }
 
     fn name_step(

@@ -83,13 +83,13 @@ const BASES: [Base; 13] = [
     },
     Base {
         declarations: &[],
-        value: "bytes(\"abc\")",
+        value: "\"abc\".bytes",
         history: false,
         length_known: true,
     },
     Base {
         declarations: &["state xf([1, 2, 3])\n"],
-        value: "bytes(xf)",
+        value: "xf.bytes",
         history: false,
         length_known: true,
     },
@@ -171,7 +171,7 @@ fn build(
     let read = if position.reads_one_element() {
         indexed
     } else {
-        format!("len({indexed})")
+        format!("({indexed}).size")
     };
     let mut items: Vec<String> = declarations.iter().map(|item| item.to_string()).collect();
     let (state, pitch) = if history {

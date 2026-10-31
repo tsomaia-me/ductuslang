@@ -973,7 +973,7 @@ impl ArrayAttribute {
         let leaf = if self.nested() { "[1]" } else { "" };
         let joined = if self.nested() { "[[9, 9]]" } else { "[9]" };
         match read {
-            ArrayRead::Length => format!("len({value})"),
+            ArrayRead::Length => format!("({value}).size"),
             ArrayRead::First => format!("{value}[0]{leaf}"),
             ArrayRead::Last => format!("{value}[^1]{leaf}"),
             ArrayRead::SliceThenFirst => format!("{value}[0..][0]{leaf}"),
@@ -1526,7 +1526,7 @@ impl CallUse {
                 "Clip k:\n    Note/([60][i32(a(verse, {depth}).gain) - 2])\n"
             )],
             CallUse::Length => vec![format!(
-                "Clip k:\n    Note/([60][len([a(verse, {depth})]) - 1])\n"
+                "Clip k:\n    Note/([60][[a(verse, {depth})].size - 1])\n"
             )],
             CallUse::TopLet => vec![
                 format!("let t = a(verse, {depth})\n"),
@@ -3648,7 +3648,7 @@ impl StartFault {
 
     fn index(self) -> &'static str {
         match self {
-            StartFault::None | StartFault::Depth => "i % len(xs)",
+            StartFault::None | StartFault::Depth => "i % xs.size",
             StartFault::Outside => "i",
             StartFault::Fit => "u8(i + 300) - 300",
             StartFault::Overflow => "i + 2 ** 126 * 4",
@@ -3732,15 +3732,15 @@ impl Guard {
     fn body(self, read: &str) -> String {
         let next = "h(xs, i + 1)";
         match self {
-            Guard::AtEnd => format!("if i >= len(xs) then 0 else {read} + {next}"),
-            Guard::BeforeEnd => format!("if i < len(xs) then {read} + {next} else 0"),
+            Guard::AtEnd => format!("if i >= xs.size then 0 else {read} + {next}"),
+            Guard::BeforeEnd => format!("if i < xs.size then {read} + {next} else 0"),
             Guard::IfFalse => {
-                format!("if i >= len(xs) then 0 else (if false then {read} else 0) + {next}")
+                format!("if i >= xs.size then 0 else (if false then {read} else 0) + {next}")
             }
             Guard::IfDeep => {
-                format!("if i >= len(xs) then 0 else (if i > 100 then {read} else 0) + {next}")
+                format!("if i >= xs.size then 0 else (if i > 100 then {read} else 0) + {next}")
             }
-            Guard::Taken => format!("if i >= len(xs) then {read} else {read} + {next}"),
+            Guard::Taken => format!("if i >= xs.size then {read} else {read} + {next}"),
         }
     }
 }

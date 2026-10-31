@@ -1,7 +1,8 @@
 use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
 
-use symphonyscript_core::{BinaryOp, Builtin, FamilyId, UnaryOp};
+use crate::semantics::builtin::Builtin;
+use symphonyscript_core::{BinaryOp, FamilyId, UnaryOp};
 
 use super::position::Position;
 use super::role::Role;
@@ -176,7 +177,8 @@ impl Engine<'_> {
             Op::Read(binding) => vec![self.binding(*binding)?.init],
             Op::Pick { items, .. } => items.clone(),
             Op::Element { base, .. } | Op::Slice { base, .. } => vec![*base],
-            Op::Native { .. } | Op::Builtin(Builtin::Len | Builtin::Bytes, _) => Vec::new(),
+            Op::Native { .. }
+            | Op::Builtin(Builtin::Len | Builtin::Capacity | Builtin::Bytes, _) => Vec::new(),
             op => op.operands(),
         })
     }
@@ -434,6 +436,7 @@ impl Engine<'_> {
                             | Builtin::Lerp
                             | Builtin::Rand
                             | Builtin::Len
+                            | Builtin::Capacity
                             | Builtin::Bytes,
                             _,
                         )

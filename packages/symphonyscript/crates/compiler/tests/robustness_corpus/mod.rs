@@ -37,10 +37,10 @@ const ADDITION_PROGRAMS: &[&str] = &[
     "state note(60)\nstate recent = (recent.past(1, []) + [note])[^8..]\nClip c:\n    Note/(recent[^1])\n",
     "state gate(false)\nstate edge = gate and not gate.past(2)\nClip c:\n    when edge:\n        Note\n",
     "state level(0.0)\nlet l = level * 2\nstate held = if l > 1 then l else held.past(1, 0.0)\nClip c | gain=held:\n    Note\n",
-    "let held = [3, 1, 2]\nfn lowest(i): if i >= len(held) then 127 else min(held[i], lowest(i + 1))\nClip c:\n    Note/(lowest(0))\n",
+    "let held = [3, 1, 2]\nfn lowest(i): if i >= held.size then 127 else min(held[i], lowest(i + 1))\nClip c:\n    Note/(lowest(0))\n",
     "fn count(i): if i > 3 then 0 else count(i + 1) + 1\nClip c:\n    Note/(count(0))\n",
-    "state i(1)\nlet xs = [10, 20, 30, 40]\nlet s = xs[i..^1] + xs[..1]\nClip c:\n    Note/(s[0] + len(s))\n",
-    "let b = bytes(\"GET\")\nlet u: u8[3] = b\nClip c:\n    Note/(i32(u[0]) + u8(3))\n",
+    "state i(1)\nlet xs = [10, 20, 30, 40]\nlet s = xs[i..^1] + xs[..1]\nClip c:\n    Note/(s[0] + s.size)\n",
+    "let b = \"GET\".bytes\nlet u: u8[3] = b\nClip c:\n    Note/(i32(u[0]) + u8(3))\n",
     "Clip a:\n    Note as hook\nClip c:\n    Plays | gain=to.hook.velocity: a\n",
     "state k([1, 2]): i32[..4]\nlet e = []\nlet j = if k[0] > 1 then k else e + [3]\nClip c:\n    Note/(j[^1])\n",
 ];
@@ -49,7 +49,7 @@ const NATIVE_PROGRAMS: &[&str] = &[
     "let a = checksum(\"GET\")\nClip c:\n    Note/a\n",
     "state i(0)\nClip c | sequence=(mirror([1, 2, i])):\n    Note/(text_length(\"abc\"))\n",
     "state held([]): i32[..4]\nClip c | sequence=(mirror(held) + [1]):\n    Note/(checksum([u8(1), u8(2)]))\n",
-    "Clip c | seq=d.seq gain=len(d.sequence):\n    Note/(d.rows[1][0] + d.seq[^1] + len(d.rows))\nClip d:\n    Note/(d.sequence[0])\n",
+    "Clip c | seq=d.seq gain=d.sequence.size:\n    Note/(d.rows[1][0] + d.seq[^1] + d.rows.size)\nClip d:\n    Note/(d.sequence[0])\n",
 ];
 
 pub fn corpora() -> Vec<(Vocabulary, Vec<String>)> {

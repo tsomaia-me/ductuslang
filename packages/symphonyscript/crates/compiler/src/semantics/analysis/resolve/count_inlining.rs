@@ -121,6 +121,10 @@ impl Engine<'_> {
             Found::Decl(Decl::Builtin(BuiltinName::Function(_)) | Decl::Native(_)) => match args {
                 Args::Positional(_) => Called::Evaluated,
                 Args::Named(_) => Called::Unresolved,
+                Args::Received(_, rest) => match rest.as_ref() {
+                    Args::Positional(_) => Called::Evaluated,
+                    Args::Named(_) | Args::Received(..) => Called::Unresolved,
+                },
             },
             Found::Decl(Decl::Fn(function)) => {
                 let params = &self.hir.fn_decl(function)?.params;

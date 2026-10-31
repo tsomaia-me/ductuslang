@@ -1,4 +1,5 @@
-use symphonyscript_core::{BinaryOp, Builtin, Scalar, UnaryOp};
+use crate::semantics::builtin::Builtin;
+use symphonyscript_core::{BinaryOp, Scalar, UnaryOp};
 
 use crate::semantics::Internal;
 use crate::semantics::analysis::binding_kind::BindingKind;
@@ -176,7 +177,7 @@ impl Engine<'_> {
                         | Builtin::Exp
                         | Builtin::Log
                         | Builtin::Lerp => float,
-                        Builtin::Len | Builtin::Bytes => None,
+                        Builtin::Len | Builtin::Capacity | Builtin::Bytes => None,
                     };
                     stack.extend(args.into_iter().map(|arg| (arg, operands)));
                 }

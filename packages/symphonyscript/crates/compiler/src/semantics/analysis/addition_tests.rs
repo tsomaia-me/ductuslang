@@ -314,7 +314,7 @@ fn a_state_settled_as_a_fixed_array_expands_a_loop_over_its_length() {
     let items = [
         "state note(60)\n",
         "state s = (s.past(1, [0, 0]) + [note])[1..]\n",
-        "Clip c:\n    for i in 0..len(s):\n        Note/(s[i])\n",
+        "Clip c:\n    for i in 0..s.size:\n        Note/(s[i])\n",
     ];
     for order in [
         [0, 1, 2],
@@ -452,7 +452,7 @@ fn a_native_function_is_called_at_compile_time_with_compile_time_arguments() {
         ("pair_sum([1, 2])", 3),
         ("first_of([1, 2, 3, 4])", 1),
         ("mirror([5, 6, 7])[0]", 7),
-        ("len(mirror([5, 6, 7]))", 3),
+        ("mirror([5, 6, 7]).size", 3),
     ];
     for (call, expected) in cases {
         let text = format!("Clip c:\n    Note/({call})\n");
@@ -470,11 +470,10 @@ fn bytes_converts_each_integer_as_u8_converts() {
         ("packed[0]", 255),
         ("packed[1]", 0),
         ("packed[2]", 255),
-        ("packed[3] + len(packed)", 16),
+        ("packed[3] + packed.size", 16),
     ];
     for (read, expected) in cases {
-        let text =
-            format!("let packed = bytes([300, -5, 70000, 12])\nClip c:\n    Note/({read})\n");
+        let text = format!("let packed = [300, -5, 70000, 12].bytes\nClip c:\n    Note/({read})\n");
         let (diagnostics, value) = analyzed(&vocabulary(), &text, |engine| {
             attr_value(engine, "pitch", EvalTy::I32)
         });
@@ -653,7 +652,7 @@ pub(super) fn assert_linear(points: [(u64, u64); 3]) {
     assert!(linear(points), "{points:?}");
 }
 
-const WITH_LET: &str = "    let a = held[i]\n    if i >= len(held) then a else a + walk(i + 1)\n";
+const WITH_LET: &str = "    let a = held[i]\n    if i >= held.size then a else a + walk(i + 1)\n";
 
 fn walk_points(body: &str) -> [(u64, u64); 3] {
     [800, 1_600, 3_200].map(|levels| {
@@ -673,7 +672,7 @@ fn stress_ordering_the_bindings_of_an_expanded_program_is_linear_in_it() {
 #[test]
 #[ignore = "stress"]
 fn stress_ordering_the_bindings_of_an_expanded_program_walks_a_let_at_most_four_times_its_reads() {
-    let without_let = "    if i >= len(held) then held[i] else held[i] + walk(i + 1)\n";
+    let without_let = "    if i >= held.size then held[i] else held[i] + walk(i + 1)\n";
     let plain = read_walk(&walk_program(1_600, without_let));
     let held = read_walk(&walk_program(1_600, WITH_LET));
     assert!(held <= 4 * plain, "{plain} {held}");
@@ -682,7 +681,7 @@ fn stress_ordering_the_bindings_of_an_expanded_program_walks_a_let_at_most_four_
 #[test]
 #[ignore = "stress"]
 fn stress_ordering_the_bindings_of_an_expanded_program_whose_let_a_choice_reads_is_linear_in_it() {
-    let unexpected = "    let a = held[i]\n    if i >= len(held) then 0 else (if a > 0 then 1 else 0) + walk(i + 1)\n";
+    let unexpected = "    let a = held[i]\n    if i >= held.size then 0 else (if a > 0 then 1 else 0) + walk(i + 1)\n";
     assert_linear(walk_points(unexpected));
 }
 
@@ -720,7 +719,7 @@ fn a_compile_time_match_on_a_bare_variant_computes_its_chosen_arm() {
         "let w = Sine\n",
         "Osc o | wave=w\n",
         "let m = match w:\n    Saw: [1, 2]\n    Sine: [1, 2, 3]\n    else: [1]\n",
-        "Clip c:\n    Note/(len(m) + m[2])\n",
+        "Clip c:\n    Note/(m.size + m[2])\n",
     ];
     for text in in_every_order(&items) {
         let (diagnostics, value) = analyzed(&vocabulary(), &text, |engine| {
@@ -780,7 +779,7 @@ fn a_compile_time_choice_computes_the_arm_it_takes_beside_a_faulty_arm_it_does_n
 fn a_qualified_variant_in_an_array_that_only_len_reads_computes_its_length() {
     for text in in_every_order(&[
         "state w(Wave::Saw)\n",
-        "Clip c:\n    Note/(60 + len([w]))\n",
+        "Clip c:\n    Note/(60 + [w].size)\n",
     ]) {
         let (diagnostics, value) = analyzed(&vocabulary(), &text, |engine| {
             attr_value(engine, "pitch", EvalTy::I32)
@@ -800,7 +799,7 @@ fn a_call_beside_the_inline_limit_computes_its_value() {
         (
             &[
                 "let fixed = [1, 2]\n",
-                "fn r(i): if i >= len(fixed) then 0 else r(i + 1) + 1\n",
+                "fn r(i): if i >= fixed.size then 0 else r(i + 1) + 1\n",
                 "Clip c:\n    Note/(60 + r(0))\n",
             ],
             four,
@@ -810,7 +809,7 @@ fn a_call_beside_the_inline_limit_computes_its_value() {
             &[
                 "state note(60)\n",
                 "let cells = [note, note, note]\n",
-                "fn r(i): if i >= len(cells) then 0 else r(i + 1) + 1\n",
+                "fn r(i): if i >= cells.size then 0 else r(i + 1) + 1\n",
                 "Clip c:\n    Note/(60 + r(0))\n",
             ],
             four,
@@ -819,8 +818,8 @@ fn a_call_beside_the_inline_limit_computes_its_value() {
         (
             &[
                 "state held([]): i32[..4]\n",
-                "let cells = [len(held), 1]\n",
-                "fn r(i): if i >= len(cells) then 0 else r(i + 1) + 1\n",
+                "let cells = [held.size, 1]\n",
+                "fn r(i): if i >= cells.size then 0 else r(i + 1) + 1\n",
                 "Clip c:\n    Note/(60 + r(0))\n",
             ],
             four,
@@ -842,7 +841,7 @@ fn a_call_beside_the_inline_limit_computes_its_value() {
         (
             &[
                 "state fixed([1, 2]): i32[2]\n",
-                "fn r(i): if i >= len(fixed) then 0 else r(i + 1) + 1\n",
+                "fn r(i): if i >= fixed.size then 0 else r(i + 1) + 1\n",
                 "Clip c:\n    Note/(60 + r(0))\n",
             ],
             four,
@@ -852,7 +851,7 @@ fn a_call_beside_the_inline_limit_computes_its_value() {
             &[
                 "state fixed([1, 2]): i32[2]\n",
                 "fn h(x): x + 1\n",
-                "fn r(i): if i >= len(fixed) then 0 else r(i + 1) + h(h(h(i)))\n",
+                "fn r(i): if i >= fixed.size then 0 else r(i + 1) + h(h(h(i)))\n",
                 "Clip c:\n    Note/(60 + r(0))\n",
             ],
             four,
@@ -876,8 +875,8 @@ fn a_fixed_type_operand_widens_into_the_expected_type_before_the_operation() {
         (&["Clip c:\n    Note/(u8(255) + 4)\n"], 259),
         (
             &[
-                "let packed = bytes([300, -5, 70000, 12])\n",
-                "Clip c:\n    Note/(packed[0] + len(packed))\n",
+                "let packed = [300, -5, 70000, 12].bytes\n",
+                "Clip c:\n    Note/(packed[0] + packed.size)\n",
             ],
             259,
         ),
@@ -1017,17 +1016,17 @@ fn an_operator_over_recursive_calls_computes_with_the_shapes_their_results_settl
     let growing = "fn g(n): if n is 0 then [1] else g(n - 1) + [n]\n";
     let rising = "fn f(n): if n is 3 then [1] else f(n + 1) + f(n + 1)\n";
     let pitches: &[(&[&str], i128)] = &[
-        (&[doubling, "Clip c:\n    Note/(60 + len(f(3)))\n"], 68),
+        (&[doubling, "Clip c:\n    Note/(60 + f(3).size)\n"], 68),
         (&[growing, "Clip c:\n    Note/(60 + g(3)[3])\n"], 63),
         (
             &[
                 "fn f(n): if n is 0 then [1] else f(n - 1) + g(n)\n",
                 "fn g(n): if n is 0 then [2] else f(n - 1)\n",
-                "Clip c:\n    Note/(60 + len(f(2)))\n",
+                "Clip c:\n    Note/(60 + f(2).size)\n",
             ],
             64,
         ),
-        (&[rising, "Clip c:\n    Note/(60 + len(f(0)))\n"], 68),
+        (&[rising, "Clip c:\n    Note/(60 + f(0).size)\n"], 68),
         (
             &[
                 "fn s(n): if n is 0 then 1 else s(n - 1) + s(n - 1)\n",
@@ -1037,7 +1036,7 @@ fn an_operator_over_recursive_calls_computes_with_the_shapes_their_results_settl
         ),
         (
             &[
-                "fn f(n): if n is 0 then [1] else f(n - 1) + [len(f(n - 1))]\n",
+                "fn f(n): if n is 0 then [1] else f(n - 1) + [f(n - 1).size]\n",
                 "Clip c:\n    Note/(60 + f(3)[3])\n",
             ],
             63,
@@ -1052,26 +1051,26 @@ fn an_operator_over_recursive_calls_computes_with_the_shapes_their_results_settl
         (
             &[
                 "fn f(n): if n is 0 then [1, 2] else (f(n - 1) + f(n - 1))[1..]\n",
-                "Clip c:\n    Note/(60 + len(f(2)))\n",
+                "Clip c:\n    Note/(60 + f(2).size)\n",
             ],
             65,
         ),
         (
             &[
-                "fn f(n): if n is 0 then [1] else f(n - 1) + [len(bytes(f(n - 1)) + [n])]\n",
+                "fn f(n): if n is 0 then [1] else f(n - 1) + [(f(n - 1).bytes + [n]).size]\n",
                 "Clip c:\n    Note/(60 + f(2)[2])\n",
             ],
             63,
         ),
         (
             &[
-                "fn f(n): if n is 0 then [300] else bytes(f(n - 1)) + [n]\n",
-                "Clip c:\n    Note/(60 + len(f(2)))\n",
+                "fn f(n): if n is 0 then [300] else f(n - 1).bytes + [n]\n",
+                "Clip c:\n    Note/(60 + f(2).size)\n",
             ],
             63,
         ),
         (
-            &[growing, "Clip c:\n    Note/(60 + len(g(2) + g(1)))\n"],
+            &[growing, "Clip c:\n    Note/(60 + (g(2) + g(1)).size)\n"],
             65,
         ),
         (
@@ -1092,7 +1091,7 @@ fn an_operator_over_recursive_calls_computes_with_the_shapes_their_results_settl
         (
             &[
                 "fn f(n): if n is 0 then [[1, 2]] else [f(n - 1)[0] + f(n - 1)[0]]\n",
-                "Clip c:\n    Note/(60 + len(f(2)[0]))\n",
+                "Clip c:\n    Note/(60 + f(2)[0].size)\n",
             ],
             68,
         ),
@@ -1132,20 +1131,20 @@ fn doubling_work(read: &str, depth: u32) -> (Option<CVal>, u64, u64, u64) {
 
 #[test]
 fn a_join_holds_its_operands_and_builds_its_elements_only_where_a_value_needs_them() {
-    for read in ["60 + len(f(k))", "60 + f(k)[5]"] {
+    for read in ["60 + f(k).size", "60 + f(k)[5]"] {
         let first = doubling_work(read, 10).1;
         for depth in [20, 30] {
             assert_eq!(doubling_work(read, depth).1, first, "{read} at {depth}");
         }
     }
-    let (length, _, _, _) = doubling_work("60 + len(f(k))", 30);
+    let (length, _, _, _) = doubling_work("60 + f(k).size", 30);
     assert_eq!(length, Some(CVal::Int(1_073_741_884)));
     let (element, _, _, _) = doubling_work("60 + f(k)[5]", 30);
     assert_eq!(element, Some(CVal::Int(61)));
     let work: Vec<(u64, u64)> = [10, 20, 30]
         .into_iter()
         .map(|depth| {
-            let (_, _, visited, evaluation) = doubling_work("60 + len(f(k))", depth);
+            let (_, _, visited, evaluation) = doubling_work("60 + f(k).size", depth);
             (visited, evaluation)
         })
         .collect();
@@ -1158,7 +1157,7 @@ fn a_join_holds_its_operands_and_builds_its_elements_only_where_a_value_needs_th
         .into_iter()
         .map(|bound| {
             let text = format!(
-                "fn f(n): if n is {bound} then [[1, 2]] else f(n + 1) + [[3]]\nClip c:\n    Note/(60 + len(f(0)))\n"
+                "fn f(n): if n is {bound} then [[1, 2]] else f(n + 1) + [[3]]\nClip c:\n    Note/(60 + f(0).size)\n"
             );
             let (built_before, _) = CArray::work();
             let (diagnostics, ()) = analyzed(&vocabulary(), &text, |_| ());
@@ -1184,11 +1183,11 @@ fn a_join_holds_its_operands_and_builds_its_elements_only_where_a_value_needs_th
 
 #[test]
 fn a_compile_time_slice_holds_its_base_and_its_bounds() {
-    let (_, reference, _, _) = doubling_work("60 + len(f(k))", 30);
+    let (_, reference, _, _) = doubling_work("60 + f(k).size", 30);
     for (read, expected) in [
-        ("60 + len(f(k)[5..])", 1_073_741_879),
-        ("60 + len(f(k)[5..^9])", 1_073_741_870),
-        ("60 + len(f(k)[5..9])", 64),
+        ("60 + f(k)[5..].size", 1_073_741_879),
+        ("60 + f(k)[5..^9].size", 1_073_741_870),
+        ("60 + f(k)[5..9].size", 64),
     ] {
         let (value, built, _, _) = doubling_work(read, 30);
         assert_eq!(value, Some(CVal::Int(expected)), "{read}");
@@ -1237,20 +1236,20 @@ fn an_unset_variable_array_attribute_reads_as_the_fixed_array_of_its_default() {
     let seq = "Clip b | seq=[7, 8]:\n    Note\n";
     let rows: [(&[&str], &str, EvalTy, CVal); 9] = [
         (
-            &["Clip a:\n    Note/(60 + len(b.seq))\n", unset],
+            &["Clip a:\n    Note/(60 + b.seq.size)\n", unset],
             "pitch",
             EvalTy::I32,
             CVal::Int(62),
         ),
         (
-            &["Clip a:\n    Note/(60 + len(b.seq))\n", seq],
+            &["Clip a:\n    Note/(60 + b.seq.size)\n", seq],
             "pitch",
             EvalTy::I32,
             CVal::Int(62),
         ),
         (
             &[
-                "Clip c:\n    Note/(len(d.sequence))\n",
+                "Clip c:\n    Note/(d.sequence.size)\n",
                 "Clip d:\n    Note\n",
             ],
             "pitch",
@@ -1258,7 +1257,7 @@ fn an_unset_variable_array_attribute_reads_as_the_fixed_array_of_its_default() {
             CVal::Int(0),
         ),
         (
-            &["Clip a | gain=len(b.seq):\n    Note\n", unset],
+            &["Clip a | gain=b.seq.size:\n    Note\n", unset],
             "gain",
             EvalTy::F32,
             CVal::F32(2.0),
@@ -1276,7 +1275,7 @@ fn an_unset_variable_array_attribute_reads_as_the_fixed_array_of_its_default() {
             CVal::Int(8),
         ),
         (
-            &["Clip a:\n    Note/(len(b.rows))\n", unset],
+            &["Clip a:\n    Note/(b.rows.size)\n", unset],
             "pitch",
             EvalTy::I32,
             CVal::Int(2),
@@ -1288,7 +1287,7 @@ fn an_unset_variable_array_attribute_reads_as_the_fixed_array_of_its_default() {
             CVal::Int(3),
         ),
         (
-            &["Clip c | sequence=[1, 2]:\n    Note/(len(c.sequence))\n"],
+            &["Clip c | sequence=[1, 2]:\n    Note/(c.sequence.size)\n"],
             "pitch",
             EvalTy::I32,
             CVal::Int(2),
@@ -1324,13 +1323,13 @@ fn stress_a_layout_walk_over_a_chain_of_slices_costs_work_linear_in_the_chain() 
         },
         |n| {
             format!(
-                "state note(60)\nstate s = [note, note, note]\nlet t = s{}\nClip c:\n    Note/(len(t) + note)\n",
+                "state note(60)\nstate s = [note, note, note]\nlet t = s{}\nClip c:\n    Note/(t.size + note)\n",
                 "[1..]".repeat(n)
             )
         },
         |n| {
             format!(
-                "state held([1, 2, 3])\nstate s = held.past(1){}\nClip c:\n    Note/(len(s))\n",
+                "state held([1, 2, 3])\nstate s = held.past(1){}\nClip c:\n    Note/(s.size)\n",
                 "[1..]".repeat(n)
             )
         },
@@ -1684,7 +1683,7 @@ fn stress_variant_lookups_cost_constant_work_per_name() {
 
 fn grown(bound: u32, read: &str) -> (Option<CVal>, usize) {
     let text = format!(
-        "fn f(xs): if len(xs) > {bound} then xs else f(xs + [1])\nClip c:\n    Note/({read})\n"
+        "fn f(xs): if xs.size > {bound} then xs else f(xs + [1])\nClip c:\n    Note/({read})\n"
     );
     let (diagnostics, found) = analyzed(&vocabulary(), &text, |engine| {
         (
@@ -1709,7 +1708,7 @@ fn stress_a_recursive_call_whose_array_argument_grows_instantiates_families_inde
     for bound in [3u32, 30, 300] {
         let (first, counted) = grown(bound, "f([1])[0]");
         assert_eq!(first, Some(CVal::Int(1)), "{bound}");
-        let (length, _) = grown(bound, "60 + len(f([1]))");
+        let (length, _) = grown(bound, "60 + f([1]).size");
         assert_eq!(
             length,
             Some(CVal::Int(60 + i128::from(bound) + 1)),
@@ -1727,7 +1726,7 @@ fn stress_a_recursive_call_whose_array_argument_grows_instantiates_families_inde
 fn a_recursive_call_over_a_growing_or_shrinking_array_computes_its_element() {
     for text in [
         "fn f(xs, n): if n > 3 then xs else f(xs + [n], n + 1)\nClip c:\n    Note/(f([], 0)[3])\n",
-        "fn f(xs): if len(xs) > 1 then f(xs[1..]) else xs\nClip c:\n    Note/(f([1, 2, 3])[0])\n",
+        "fn f(xs): if xs.size > 1 then f(xs[1..]) else xs\nClip c:\n    Note/(f([1, 2, 3])[0])\n",
     ] {
         let (diagnostics, value) = analyzed(&vocabulary(), text, |engine| {
             attr_value(engine, "pitch", EvalTy::I32)
@@ -1789,7 +1788,7 @@ fn a_recursive_call_over_a_fixed_choice_computes_its_count() {
         "let pick = if gate then [1, 2] else [3, 4]\n",
     ] {
         let text = format!(
-            "state held([1, 2]): i32[..4]\nstate gate(false)\n{pick}fn r(i): if i >= len(pick) then 0 else r(i + 1) + 1\nClip c:\n    Note/(60 + r(0))\n"
+            "state held([1, 2]): i32[..4]\nstate gate(false)\n{pick}fn r(i): if i >= pick.size then 0 else r(i + 1) + 1\nClip c:\n    Note/(60 + r(0))\n"
         );
         let (diagnostics, value) = analyzed(&vocabulary(), &text, |engine| {
             attr_value(engine, "pitch", EvalTy::I32)

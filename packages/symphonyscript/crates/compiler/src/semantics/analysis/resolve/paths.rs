@@ -1,6 +1,7 @@
 use symphonyscript_core::{AttrDecl, AttrId, NodeKind, WireKind};
 
 use super::found::Found;
+use super::members::Member;
 use crate::diagnostics::Code;
 use crate::semantics::Internal;
 use crate::semantics::analysis::attr_source::AttrSource;
@@ -51,6 +52,11 @@ impl Engine<'_> {
         scope: ScopeId,
         need: &mut Vec<Query>,
     ) -> Result<Option<Val>, Internal> {
+        match self.member(base, name, loc, scope, need)? {
+            Member::Pending => return Ok(None),
+            Member::Read(val) => return Ok(Some(val)),
+            Member::Declined => {}
+        }
         if let Some(mut segments) = self.to_path(base)? {
             segments.push(name.clone());
             return self.destination_read(&segments, loc, scope, need);

@@ -125,7 +125,7 @@ impl Position {
             Position::SliceThenIndex => pitch(format!("{value}[1..][0]{rest}")),
             Position::JoinLeft => pitch(format!("({value} + {literal})[0]{rest}")),
             Position::JoinRight => pitch(format!("({literal} + {value})[0]{rest}")),
-            Position::Len => pitch(format!("len({value})")),
+            Position::Len => pitch(format!("({value}).size")),
             Position::TopLet => (
                 vec![format!("let held = {value}\n")],
                 String::new(),

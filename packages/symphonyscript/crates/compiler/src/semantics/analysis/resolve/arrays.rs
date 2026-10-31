@@ -1,4 +1,5 @@
-use symphonyscript_core::{BinaryOp, Builtin, Scalar};
+use crate::semantics::builtin::Builtin;
+use symphonyscript_core::{BinaryOp, Scalar};
 
 use super::annotation::Annotation;
 use super::layout_found::LayoutFound;
@@ -615,6 +616,6 @@ const LENGTH: &str = "an array's length and capacity are below 2³¹";
 
 const JOIN_ROWS: &str = "the rows of the joined arrays have different shapes";
 
-const NOT_AN_ARRAY: &str = "`len` takes an array";
+pub(crate) const NOT_AN_ARRAY: &str = "`.size` reads the length of an array";
 
 const BOUND_TYPE: &str = "a slice bound is an integer, not an array";

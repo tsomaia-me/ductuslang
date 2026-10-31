@@ -1,4 +1,5 @@
-use symphonyscript_core::{BinaryOp, Builtin};
+use crate::semantics::builtin::Builtin;
+use symphonyscript_core::BinaryOp;
 
 use super::bound_range::BoundRange;
 use crate::semantics::Internal;

@@ -1,4 +1,4 @@
-use symphonyscript_core::Builtin;
+use crate::semantics::builtin::Builtin;
 
 pub(super) fn is_float_builtin(builtin: Builtin) -> bool {
     !matches!(

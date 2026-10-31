@@ -1,4 +1,5 @@
-use symphonyscript_core::{AttrId, BinaryOp, Builtin, EnumId, NativeId, Scalar, UnaryOp, Value};
+use crate::semantics::builtin::Builtin;
+use symphonyscript_core::{AttrId, BinaryOp, EnumId, NativeId, Scalar, UnaryOp, Value};
 
 use super::for_node::ForNode;
 use super::history_cell::HistoryCell;

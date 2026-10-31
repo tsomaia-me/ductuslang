@@ -48,7 +48,7 @@ impl Engine<'_> {
                 Dimensions::Known(known) if known > 0 => Dimensions::Known(known),
                 Dimensions::Known(_) | Dimensions::Unknown => Dimensions::Unknown,
             },
-            Op::Builtin(symphonyscript_core::Builtin::Bytes, _) => Dimensions::Known(1),
+            Op::Builtin(crate::semantics::builtin::Builtin::Bytes, _) => Dimensions::Known(1),
             Op::History { fallback, cell, .. } => match fallback {
                 Some(fallback) => self.dimensions(*fallback),
                 None if self.history_holds_array(*cell)? => Dimensions::Unknown,

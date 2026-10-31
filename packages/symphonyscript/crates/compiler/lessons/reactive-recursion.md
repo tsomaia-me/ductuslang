@@ -6,7 +6,7 @@ The compiler evaluates a recursive call to a value, and a call that reads a cell
 
 ```sym-error
 state held([]): i32[..10]
-fn lowest(xs, i): if i >= len(xs) then 127 else min(xs[i], lowest(xs, i + 1))
+fn lowest(xs, i): if i >= xs.size then 127 else min(xs[i], lowest(xs, i + 1))
 Clip c:
     Note/(lowest(held, 0))
 ```

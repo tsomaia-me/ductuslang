@@ -16,11 +16,11 @@ Clip c:
     Note/([1, 2, 3][2])
 ```
 
-An empty array holds no element to read: give it elements, or read the element only where `len(…)` is above 0.
+An empty array holds no element to read: give it elements, or read the element only where its `size` is above 0.
 
 ```sym natives
 Clip a:
-    Note/(if len(b.sequence) > 0 then b.sequence[0] else 60)
+    Note/(if b.sequence.size > 0 then b.sequence[0] else 60)
 Clip b:
     Note
 ```

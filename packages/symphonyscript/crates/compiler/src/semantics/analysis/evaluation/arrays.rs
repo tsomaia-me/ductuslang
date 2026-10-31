@@ -11,6 +11,7 @@ use crate::semantics::analysis::ids::NodeId;
 use crate::semantics::analysis::kind::Kind;
 use crate::semantics::analysis::map_leaves::map_leaves;
 use crate::semantics::analysis::query::Query;
+use crate::semantics::analysis::resolve::NOT_AN_ARRAY;
 use crate::semantics::analysis::some::some;
 
 type SliceBounds = (Option<(NodeId, bool)>, Option<(NodeId, bool)>);
@@ -173,7 +174,7 @@ impl Engine<'_> {
                 | CVal::Enum(..)
                 | CVal::Str(_)
                 | CVal::Node(_) => {
-                    self.error_at_node(Code::NotAnArray, operand, "`len` takes an array")?;
+                    self.error_at_node(Code::NotAnArray, operand, NOT_AN_ARRAY)?;
                     CVal::Error
                 }
             },

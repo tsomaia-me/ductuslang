@@ -1,4 +1,5 @@
-use symphonyscript_core::{BinaryOp, Builtin, UnaryOp};
+use crate::semantics::builtin::Builtin;
+use symphonyscript_core::{BinaryOp, UnaryOp};
 
 use super::extra::Extra;
 use crate::semantics::Internal;

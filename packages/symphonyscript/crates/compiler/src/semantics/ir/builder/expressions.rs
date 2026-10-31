@@ -32,6 +32,7 @@ pub(super) enum Shape {
     },
     Positional(usize),
     Named(Vec<Ident>),
+    Dot(Ident, Loc, Box<Shape>),
     Str(Vec<Option<String>>),
     For(Box<ForShape>),
 }
@@ -280,21 +281,35 @@ impl HirBuilder<'_> {
                 if !positional.is_empty() && !named.is_empty() {
                     return (Shape::Leaf(ExprKind::Error), Vec::new());
                 }
-                if named.is_empty() {
-                    let mut children = vec![node.callee()];
+                let (head, dot) = match node.callee() {
+                    Some(ast::Expr::Field(callee)) => match self.ident(callee.field()) {
+                        Some(name) => {
+                            let loc = self.loc(callee.syntax().range());
+                            (callee.receiver(), Some((name, loc)))
+                        }
+                        None => (node.callee(), None),
+                    },
+                    callee => (callee, None),
+                };
+                let mut children = vec![head];
+                let shape = if named.is_empty() {
                     children.extend(positional);
-                    return (Shape::Positional(children.len() - 1), children);
+                    Shape::Positional(children.len() - 1)
+                } else {
+                    let mut names = Vec::new();
+                    for arg in named {
+                        let Some(name) = self.ident(arg.name()) else {
+                            return (Shape::Leaf(ExprKind::Error), Vec::new());
+                        };
+                        names.push(name);
+                        children.push(arg.value());
+                    }
+                    Shape::Named(names)
+                };
+                match dot {
+                    Some((callee, loc)) => (Shape::Dot(callee, loc, Box::new(shape)), children),
+                    None => (shape, children),
                 }
-                let mut names = Vec::new();
-                let mut children = vec![node.callee()];
-                for arg in named {
-                    let Some(name) = self.ident(arg.name()) else {
-                        return (Shape::Leaf(ExprKind::Error), Vec::new());
-                    };
-                    names.push(name);
-                    children.push(arg.value());
-                }
-                (Shape::Named(names), children)
             }
             ast::Expr::Json(node) => self.unbuilt(node.syntax().range(), DOCUMENT_LITERAL),
             ast::Expr::Record(node) => {
@@ -403,6 +418,23 @@ impl HirBuilder<'_> {
                 let callee = next(self);
                 let args = names.into_iter().map(|name| (name, next(self))).collect();
                 self.push(ExprKind::Call(callee, Args::Named(args)), loc)
+            }
+            Shape::Dot(callee, callee_loc, rest) => {
+                let receiver = next(self);
+                let callee = self.push(ExprKind::Name(callee.text), callee_loc);
+                let rest = match *rest {
+                    Shape::Named(names) => {
+                        Args::Named(names.into_iter().map(|name| (name, next(self))).collect())
+                    }
+                    Shape::Positional(count) => {
+                        Args::Positional((0..count).map(|_| next(self)).collect())
+                    }
+                    _ => Args::Positional(Vec::new()),
+                };
+                self.push(
+                    ExprKind::Call(callee, Args::Received(receiver, Box::new(rest))),
+                    loc,
+                )
             }
             Shape::Str(parts) => {
                 let parts = parts

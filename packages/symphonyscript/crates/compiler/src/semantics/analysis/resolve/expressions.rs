@@ -1,5 +1,6 @@
 use symphonyscript_core::{BinaryOp, Value};
 
+use super::members::QUALIFIED_NAME;
 use crate::diagnostics::Code;
 use crate::semantics::Internal;
 use crate::semantics::analysis::engine::Engine;
@@ -12,7 +13,9 @@ use crate::semantics::analysis::shape::Shape;
 use crate::semantics::analysis::shape_need::ShapeNeed;
 use crate::semantics::analysis::some::some;
 use crate::semantics::analysis::val::Val;
+use crate::semantics::collection::BuiltinName;
 use crate::semantics::ir::{ExprId, ExprKind, Loc, StrPart};
+use crate::semantics::math_package::MATH;
 
 impl Engine<'_> {
     pub(in crate::semantics::analysis) fn run_expr(
@@ -178,13 +181,36 @@ impl Engine<'_> {
         loc: Loc,
         scope: ScopeId,
     ) -> Result<Val, Internal> {
+        if enumeration.text == MATH {
+            return Ok(
+                match BuiltinName::all().find(|name| name.name() == variant.text) {
+                    Some(BuiltinName::Pi) => self.scalar(Op::Pi, loc, scope)?,
+                    Some(BuiltinName::Function(_)) => {
+                        self.error(
+                            Code::NotAValue,
+                            loc,
+                            scope,
+                            format!(
+                                "`{MATH}::{}` is a function, which is only called",
+                                variant.text
+                            ),
+                        )?;
+                        Val::Error
+                    }
+                    None => {
+                        self.error(
+                            Code::UnknownName,
+                            variant.loc,
+                            scope,
+                            format!("`{MATH}` has no name `{}`", variant.text),
+                        )?;
+                        Val::Error
+                    }
+                },
+            );
+        }
         let Some(id) = self.vocabulary.enum_named(&enumeration.text) else {
-            self.error(
-                Code::UnknownVariant,
-                enumeration.loc,
-                scope,
-                format!("`{}` is not an enum of the vocabulary", enumeration.text),
-            )?;
+            self.unbuilt_member(loc, scope, QUALIFIED_NAME)?;
             return Ok(Val::Error);
         };
         Ok(match self.variants.position(id, &variant.text)? {

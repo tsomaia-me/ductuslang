@@ -245,17 +245,23 @@ fn call_sites(
 }
 
 fn defaulted(callee: &FnDecl, args: &Args) -> Vec<usize> {
+    let (skipped, args) = match args {
+        Args::Received(_, rest) => (1, rest.as_ref()),
+        Args::Positional(_) | Args::Named(_) => (0, args),
+    };
     callee
         .params
         .iter()
         .enumerate()
         .filter(|(position, param)| {
             param.default.is_some()
+                && *position >= skipped
                 && match args {
-                    Args::Positional(values) => *position >= values.len(),
+                    Args::Positional(values) => *position >= skipped + values.len(),
                     Args::Named(values) => !values.iter().any(|(name, _)| {
                         param.name.as_ref().is_some_and(|own| own.text == name.text)
                     }),
+                    Args::Received(..) => false,
                 }
         })
         .map(|(position, _)| position)

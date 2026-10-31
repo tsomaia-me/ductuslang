@@ -49,14 +49,14 @@ const ROW_READS: [&str; 4] = [
     "Note/(pair_sum(B[0]))",
     "Note/(B[0] + 1)",
     "Note/(B[0][0])",
-    "Note/(len(B[0]))",
+    "Note/(B[0].size)",
 ];
 
 const GRID_READS: [&str; 6] = [
     "Note/((B[0] + B[2])[3])",
     "Note/(pair_sum(B[1]))",
     "Note/(B[1][0])",
-    "Note/(len(B[0] + B[1]))",
+    "Note/((B[0] + B[1]).size)",
     "Note/(B[0] + 1)",
     "Note/(B[0][0][0])",
 ];
@@ -132,7 +132,7 @@ fn a_choice_whose_condition_an_error_leaves_without_a_value_is_laid_out_as_a_run
         "i32(true) > 0",
     ] {
         for (then, otherwise) in [("k", "[3]"), ("[3]", "k"), ("k", "[3, 4, 5]")] {
-            for read in ["(C)[0]", "len(C)"] {
+            for read in ["(C)[0]", "C.size"] {
                 let choice = format!("if {condition} then {then} else {otherwise}");
                 let twin = format!("if {condition} then k else k");
                 let clip =
@@ -169,7 +169,7 @@ fn a_compile_time_choice_of_arrays_of_one_dimension_takes_the_arm_it_chooses() {
         ("true", "x[0][0]", &[]),
         ("false", "x[0][1]", &[]),
         ("1 > 2", "x[0][1]", &[]),
-        ("true", "len(x[0])", &[]),
+        ("true", "x[0].size", &[]),
         ("true", "x[0]", &[Code::TypeMismatch]),
         ("false", "x[1][0]", &[Code::IndexOutOfRange]),
     ];

@@ -408,7 +408,7 @@ fn a_function_written_with_a_bound_draws_one_fn_syntax_at_the_bound_whose_help_n
         (
             &[
                 "state held([]): i32[..10]\n",
-                "fn lowest(i) bounded 10 else 127:\n    let a = held[i]\n    if i >= len(held) then 127 else min(a, lowest(i + 1))\n",
+                "fn lowest(i) bounded 10 else 127:\n    let a = held[i]\n    if i >= held.size then 127 else min(a, lowest(i + 1))\n",
                 "Clip c:\n    Note/(lowest(0))\n",
             ],
             "bounded",
@@ -478,7 +478,7 @@ fn a_recursive_call_whose_body_reads_a_cell_through_a_local_let_draws_reactive_r
         (
             &[
                 "state held([]): i32[..10]\n",
-                "fn lowest(i):\n    let a = held[i]\n    if i >= len(held) then 127 else min(a, lowest(i + 1))\n",
+                "fn lowest(i):\n    let a = held[i]\n    if i >= held.size then 127 else min(a, lowest(i + 1))\n",
                 call,
             ],
             &[(Code::ReactiveRecursion, "lowest(0)")],
@@ -657,9 +657,9 @@ fn an_operator_over_recursive_calls_takes_the_shapes_their_results_settle_to() {
     let doubling = "fn f(n): if n is 0 then [1] else f(n - 1) + f(n - 1)\n";
     let growing = "fn g(n): if n is 0 then [1] else g(n - 1) + [n]\n";
     let rising = "fn f(n): if n is 3 then [1] else f(n + 1) + f(n + 1)\n";
-    let read_one = "Clip c:\n    Note/(60 + len(f(1)))\n";
+    let read_one = "Clip c:\n    Note/(60 + f(1).size)\n";
     let rows: &[support::Row] = &[
-        (&[doubling, "Clip c:\n    Note/(60 + len(f(3)))\n"], &[]),
+        (&[doubling, "Clip c:\n    Note/(60 + f(3).size)\n"], &[]),
         (
             &[
                 "fn f(n): if n is 0 then [1] else f(n - 1) - f(n - 1)\n",
@@ -686,7 +686,7 @@ fn an_operator_over_recursive_calls_takes_the_shapes_their_results_settle_to() {
             &[(Code::ArrayOperand, "f(n - 1) - 1")],
         ),
         (
-            &["Clip c:\n    Note/(60 + len([1] - [1]))\n"],
+            &["Clip c:\n    Note/(60 + ([1] - [1]).size)\n"],
             &[(Code::ArrayOperand, "[1] - [1]")],
         ),
         (
@@ -699,7 +699,7 @@ fn an_operator_over_recursive_calls_takes_the_shapes_their_results_settle_to() {
         (
             &[
                 "fn f(n): if n is 0 then [1] else f(n - 1) + f(n - 1)\n",
-                "Clip c:\n    Note when len(f(2)) > len(f(1))\n",
+                "Clip c:\n    Note when f(2).size > f(1).size\n",
             ],
             &[],
         ),
@@ -708,11 +708,11 @@ fn an_operator_over_recursive_calls_takes_the_shapes_their_results_settle_to() {
             &[
                 "fn f(n): if n is 0 then [1] else f(n - 1) + g(n)\n",
                 "fn g(n): if n is 0 then [2] else f(n - 1)\n",
-                "Clip c:\n    Note/(60 + len(f(2)))\n",
+                "Clip c:\n    Note/(60 + f(2).size)\n",
             ],
             &[],
         ),
-        (&[rising, "Clip c:\n    Note/(60 + len(f(0)))\n"], &[]),
+        (&[rising, "Clip c:\n    Note/(60 + f(0).size)\n"], &[]),
         (
             &[
                 "fn s(n): if n is 0 then 1 else s(n - 1) + s(n - 1)\n",
@@ -723,14 +723,14 @@ fn an_operator_over_recursive_calls_takes_the_shapes_their_results_settle_to() {
         (
             &[
                 "fn f(n): if n is 0 then [1] else f(n - 1) + 1\n",
-                "Clip c:\n    Note/(len(f(2)))\n",
+                "Clip c:\n    Note/(f(2).size)\n",
             ],
             &[(Code::ArrayOperand, "f(n - 1)")],
         ),
         (
             &[
                 "fn f(n): if n is 0 then [1] else [2] + f(n - 1) + f(n - 1)\n",
-                "Clip c:\n    Note/(60 + len(f(3)))\n",
+                "Clip c:\n    Note/(60 + f(3).size)\n",
             ],
             &[],
         ),
@@ -738,13 +738,13 @@ fn an_operator_over_recursive_calls_takes_the_shapes_their_results_settle_to() {
             &[
                 "fn h(n): [n, n]\n",
                 "fn f(n): if n is 0 then [1] else f(n - 1) + h(n)\n",
-                "Clip c:\n    Note/(60 + len(f(3)))\n",
+                "Clip c:\n    Note/(60 + f(3).size)\n",
             ],
             &[],
         ),
         (
             &[
-                "fn f(n): if n is 0 then [1] else f(n - 1) + [len(f(n - 1))]\n",
+                "fn f(n): if n is 0 then [1] else f(n - 1) + [f(n - 1).size]\n",
                 "Clip c:\n    Note/(60 + f(3)[3])\n",
             ],
             &[],
@@ -759,26 +759,26 @@ fn an_operator_over_recursive_calls_takes_the_shapes_their_results_settle_to() {
         (
             &[
                 "fn f(n): if n is 0 then [1, 2] else (f(n - 1) + f(n - 1))[1..]\n",
-                "Clip c:\n    Note/(60 + len(f(2)))\n",
+                "Clip c:\n    Note/(60 + f(2).size)\n",
             ],
             &[],
         ),
         (
             &[
-                "fn f(n): if n is 0 then [1] else f(n - 1) + [len(bytes(f(n - 1)) + [n])]\n",
+                "fn f(n): if n is 0 then [1] else f(n - 1) + [(f(n - 1).bytes + [n]).size]\n",
                 "Clip c:\n    Note/(60 + f(2)[2])\n",
             ],
             &[],
         ),
         (
             &[
-                "fn f(n): if n is 0 then [300] else bytes(f(n - 1)) + [n]\n",
-                "Clip c:\n    Note/(60 + len(f(2)))\n",
+                "fn f(n): if n is 0 then [300] else f(n - 1).bytes + [n]\n",
+                "Clip c:\n    Note/(60 + f(2).size)\n",
             ],
             &[],
         ),
         (
-            &[growing, "Clip c:\n    Note/(60 + len(g(2) + g(1)))\n"],
+            &[growing, "Clip c:\n    Note/(60 + (g(2) + g(1)).size)\n"],
             &[],
         ),
         (
@@ -799,7 +799,7 @@ fn an_operator_over_recursive_calls_takes_the_shapes_their_results_settle_to() {
         (
             &[
                 "fn f(n): if n is 0 then [[1, 2]] else [f(n - 1)[0] + f(n - 1)[0]]\n",
-                "Clip c:\n    Note/(60 + len(f(2)[0]))\n",
+                "Clip c:\n    Note/(60 + f(2)[0].size)\n",
             ],
             &[],
         ),
@@ -821,14 +821,14 @@ fn an_operator_over_recursive_calls_takes_the_shapes_their_results_settle_to() {
             &[
                 "fn f(n): if n is 0 then [1] else f(n - 1) + g(n)\n",
                 "fn g(n): if n is 0 then 2 else g(n - 1)\n",
-                "Clip c:\n    Note/(60 + len(f(2)))\n",
+                "Clip c:\n    Note/(60 + f(2).size)\n",
             ],
             &[(Code::ArrayOperand, "f(n - 1) + g(n)")],
         ),
         (
             &[
                 "fn f(n): if n is 0 then 1 else f(n - 1) + [n]\n",
-                "Clip c:\n    Note/(60 + len(f(2)))\n",
+                "Clip c:\n    Note/(60 + f(2).size)\n",
             ],
             &[(Code::ArrayOperand, "f(n - 1) + [n]")],
         ),
@@ -838,21 +838,21 @@ fn an_operator_over_recursive_calls_takes_the_shapes_their_results_settle_to() {
         ),
         (
             &[
-                "fn f(n): if n is 0 then 1 else len(f(n - 1))\n",
+                "fn f(n): if n is 0 then 1 else f(n - 1).size\n",
                 "Clip c:\n    Note/(f(2))\n",
             ],
             &[(Code::NotAnArray, "f(n - 1)")],
         ),
         (
             &[
-                "fn f(n): if n is 0 then 1 else len(f(n - 1)[1..])\n",
+                "fn f(n): if n is 0 then 1 else f(n - 1)[1..].size\n",
                 "Clip c:\n    Note/(f(2))\n",
             ],
             &[(Code::NotAnArray, "f(n - 1)")],
         ),
         (
             &[
-                "fn f(n): if n is 0 then 1 else len(bytes(f(n - 1)))\n",
+                "fn f(n): if n is 0 then 1 else f(n - 1).bytes.size\n",
                 "Clip c:\n    Note/(f(2))\n",
             ],
             &[(Code::OperandType, "f(n - 1)")],
@@ -860,7 +860,7 @@ fn an_operator_over_recursive_calls_takes_the_shapes_their_results_settle_to() {
         (
             &[
                 "fn f(n): if n is 0 then 1 else f(n - 1)\n",
-                "Clip c:\n    Note/(len(f(2)[1..]))\n",
+                "Clip c:\n    Note/(f(2)[1..].size)\n",
             ],
             &[(Code::NotAnArray, "f(2)")],
         ),
@@ -876,16 +876,16 @@ fn every_join_the_evaluation_performs_compares_the_shapes_of_its_rows() {
         (
             &[
                 "fn f(n): if n is 0 then [[1, 2]] else [[3]] + f(n - 1)\n",
-                "Clip c:\n    Note/(60 + len(f(2)))\n",
+                "Clip c:\n    Note/(60 + f(2).size)\n",
             ],
             &[(Code::RaggedArray, "[[3]] + f(n - 1)")],
         ),
-        (&[appending, "Clip c:\n    Note/(60 + len(f(2)))\n"], ragged),
-        (&[appending, "Clip c:\n    Note/(60 + len(f(3)))\n"], ragged),
+        (&[appending, "Clip c:\n    Note/(60 + f(2).size)\n"], ragged),
+        (&[appending, "Clip c:\n    Note/(60 + f(3).size)\n"], ragged),
         (
             &[
                 "fn f(n): if n is 0 then [[[1, 2]]] else f(n - 1) + [[[3]]]\n",
-                "Clip c:\n    Note/(60 + len(f(2)))\n",
+                "Clip c:\n    Note/(60 + f(2).size)\n",
             ],
             &[(Code::RaggedArray, "f(n - 1) + [[[3]]]")],
         ),
@@ -893,7 +893,7 @@ fn every_join_the_evaluation_performs_compares_the_shapes_of_its_rows() {
             &[
                 "fn f(n): if n is 0 then [[1, 2]] else f(n - 1) + g(n)\n",
                 "fn g(n): if n is 0 then [[3]] else g(n - 1) + g(n - 1)\n",
-                "Clip c:\n    Note/(60 + len(f(1)))\n",
+                "Clip c:\n    Note/(60 + f(1).size)\n",
             ],
             &[(Code::RaggedArray, "f(n - 1) + g(n)")],
         ),
@@ -901,7 +901,7 @@ fn every_join_the_evaluation_performs_compares_the_shapes_of_its_rows() {
             &[
                 "fn f(n): if n is 0 then [[1, 2]] else f(n - 1) + g(n)\n",
                 "fn g(n): if n is 0 then [[1, 2, 3]] else g(n - 1)\n",
-                "Clip c:\n    Note/(60 + len(f(1)))\n",
+                "Clip c:\n    Note/(60 + f(1).size)\n",
             ],
             &[(Code::RaggedArray, "f(n - 1) + g(n)")],
         ),
@@ -916,7 +916,7 @@ fn every_join_the_evaluation_performs_compares_the_shapes_of_its_rows() {
         (
             &[
                 "fn f(n): if n is 0 then [[1, 2]] else f(n - 1) + [[3, 4]]\n",
-                "Clip c:\n    Note/(60 + len(f(2)))\n",
+                "Clip c:\n    Note/(60 + f(2).size)\n",
             ],
             &[],
         ),
@@ -937,11 +937,11 @@ fn a_join_whose_length_would_reach_two_to_the_thirty_one_draws_length_limit_befo
     let limited = &[(Code::LengthLimit, "f(n - 1) + f(n - 1)")];
     let rows: &[support::Row] = &[
         (
-            &[doubling, "Clip c:\n    Note/(60 + len(f(31)))\n"],
+            &[doubling, "Clip c:\n    Note/(60 + f(31).size)\n"],
             limited,
         ),
         (
-            &[doubling, "Clip c:\n    Note/(60 + len(f(40)))\n"],
+            &[doubling, "Clip c:\n    Note/(60 + f(40).size)\n"],
             limited,
         ),
     ];
@@ -952,7 +952,7 @@ fn a_join_whose_length_would_reach_two_to_the_thirty_one_draws_length_limit_befo
 fn a_join_whose_length_stays_below_two_to_the_thirty_one_draws_no_length_limit() {
     let doubling = "fn f(n): if n is 0 then [1] else f(n - 1) + f(n - 1)\n";
     let rows: &[support::Row] = &[
-        (&[doubling, "Clip c:\n    Note/(60 + len(f(30)))\n"], &[]),
+        (&[doubling, "Clip c:\n    Note/(60 + f(30).size)\n"], &[]),
         (&[doubling, "Clip c:\n    Note/(60 + f(30)[5])\n"], &[]),
         (
             &[
@@ -1043,7 +1043,7 @@ fn a_call_rejected_as_reactive_recursion_adds_nothing_to_the_inline_count_in(
         (
             &[
                 "state held([1, 2, 3])\n",
-                "fn r(i): if i is 0 then len(held) else r(i - 1)\n",
+                "fn r(i): if i is 0 then held.size else r(i - 1)\n",
                 "Clip c:\n    Note/(r(2))\n",
             ],
             &[],
@@ -1057,7 +1057,7 @@ fn a_call_rejected_as_reactive_recursion_adds_nothing_to_the_inline_count_in(
             &[
                 "state held([]): i32[..4]\n",
                 h,
-                "fn r(i): if i >= len(held) then 0 else r(i + 1) + h(h(h(h(h(i)))))\n",
+                "fn r(i): if i >= held.size then 0 else r(i + 1) + h(h(h(h(h(i)))))\n",
                 "Clip c:\n    Note/(60 + r(0))\n",
             ],
             &[(Code::ReactiveRecursion, "r(0)")],
@@ -1066,7 +1066,7 @@ fn a_call_rejected_as_reactive_recursion_adds_nothing_to_the_inline_count_in(
             &[
                 "state held: i32[..4] = []\n",
                 h,
-                "fn r(i): if i >= len(held) then 0 else r(i + 1) + h(h(h(h(h(i)))))\n",
+                "fn r(i): if i >= held.size then 0 else r(i + 1) + h(h(h(h(h(i)))))\n",
                 "Clip c:\n    Note/(60 + r(0))\n",
             ],
             &[(Code::ReactiveRecursion, "r(0)")],
@@ -1076,7 +1076,7 @@ fn a_call_rejected_as_reactive_recursion_adds_nothing_to_the_inline_count_in(
                 "state note(60)\n",
                 "state held = (held.past(1, []) + [note])[^4..]\n",
                 h,
-                "fn r(i): if i >= len(held) then 0 else r(i + 1) + h(h(h(h(h(i)))))\n",
+                "fn r(i): if i >= held.size then 0 else r(i + 1) + h(h(h(h(h(i)))))\n",
                 "Clip c:\n    Note/(60 + r(0))\n",
             ],
             &[(Code::ReactiveRecursion, "r(0)")],
@@ -1084,7 +1084,7 @@ fn a_call_rejected_as_reactive_recursion_adds_nothing_to_the_inline_count_in(
         (
             &[
                 "state held([]): i32[..4]\n",
-                "fn r(i): if i >= len(held) then 0 else r(i + 1) + 1\n",
+                "fn r(i): if i >= held.size then 0 else r(i + 1) + 1\n",
                 "Clip c:\n    Note/(60 + r(0))\n",
             ],
             &[(Code::ReactiveRecursion, "r(0)")],
@@ -1092,7 +1092,7 @@ fn a_call_rejected_as_reactive_recursion_adds_nothing_to_the_inline_count_in(
         (
             &[
                 "state fixed([1, 2]): i32[2]\n",
-                "fn r(i): if i >= len(fixed) then 0 else r(i + 1) + 1\n",
+                "fn r(i): if i >= fixed.size then 0 else r(i + 1) + 1\n",
                 "Clip c:\n    Note/(60 + r(0))\n",
             ],
             &[],
@@ -1101,7 +1101,7 @@ fn a_call_rejected_as_reactive_recursion_adds_nothing_to_the_inline_count_in(
             &[
                 "state fixed([1, 2]): i32[2]\n",
                 h,
-                "fn r(i): if i >= len(fixed) then 0 else r(i + 1) + h(h(h(i)))\n",
+                "fn r(i): if i >= fixed.size then 0 else r(i + 1) + h(h(h(i)))\n",
                 "Clip c:\n    Note/(60 + r(0))\n",
             ],
             &[],
@@ -1111,7 +1111,7 @@ fn a_call_rejected_as_reactive_recursion_adds_nothing_to_the_inline_count_in(
                 "state note(60)\n",
                 "state held = [note, note]\n",
                 h,
-                "fn r(i): if i >= len(held) then 0 else r(i + 1) + h(h(h(i)))\n",
+                "fn r(i): if i >= held.size then 0 else r(i + 1) + h(h(h(i)))\n",
                 "Clip c:\n    Note/(60 + r(0))\n",
             ],
             &[],
@@ -1122,7 +1122,7 @@ fn a_call_rejected_as_reactive_recursion_adds_nothing_to_the_inline_count_in(
                 "state note(60)\n",
                 "let grown = held + [note]\n",
                 h,
-                "fn r(i): if i >= len(grown) then 0 else r(i + 1) + h(h(h(h(h(i)))))\n",
+                "fn r(i): if i >= grown.size then 0 else r(i + 1) + h(h(h(h(h(i)))))\n",
                 "Clip c:\n    Note/(60 + r(0))\n",
             ],
             &[(Code::ReactiveRecursion, "r(0)")],
@@ -1133,7 +1133,7 @@ fn a_call_rejected_as_reactive_recursion_adds_nothing_to_the_inline_count_in(
                 "state note(60)\n",
                 "let grown: i32[..5] = held + [note]\n",
                 h,
-                "fn r(i): if i >= len(grown) then 0 else r(i + 1) + h(h(h(h(h(i)))))\n",
+                "fn r(i): if i >= grown.size then 0 else r(i + 1) + h(h(h(h(h(i)))))\n",
                 "Clip c:\n    Note/(60 + r(0))\n",
             ],
             &[(Code::ReactiveRecursion, "r(0)")],
@@ -1144,7 +1144,7 @@ fn a_call_rejected_as_reactive_recursion_adds_nothing_to_the_inline_count_in(
                 "state note(60)\n",
                 "let grown = held + [note]\n",
                 h,
-                "fn r(i, held = 0): if i >= len(grown) then held else r(i + 1, held) + h(h(h(h(h(i)))))\n",
+                "fn r(i, held = 0): if i >= grown.size then held else r(i + 1, held) + h(h(h(h(h(i)))))\n",
                 "Clip c:\n    Note/(60 + r(0))\n",
             ],
             &[(Code::ReactiveRecursion, "r(0)")],
@@ -1154,7 +1154,7 @@ fn a_call_rejected_as_reactive_recursion_adds_nothing_to_the_inline_count_in(
                 "state note(60)\n",
                 "let one: i32[..5] = [note]\n",
                 h,
-                "fn r(i): if i >= len(one) then 0 else r(i + 1) + h(h(h(h(h(i)))))\n",
+                "fn r(i): if i >= one.size then 0 else r(i + 1) + h(h(h(h(h(i)))))\n",
                 "Clip c:\n    Note/(60 + r(0))\n",
             ],
             &[(Code::ReactiveRecursion, "r(0)")],
@@ -1164,7 +1164,7 @@ fn a_call_rejected_as_reactive_recursion_adds_nothing_to_the_inline_count_in(
                 "state held([]): i32[..4]\n",
                 "let tail = held[1..]\n",
                 h,
-                "fn r(i): if i >= len(tail) then 0 else r(i + 1) + h(h(h(h(h(i)))))\n",
+                "fn r(i): if i >= tail.size then 0 else r(i + 1) + h(h(h(h(h(i)))))\n",
                 "Clip c:\n    Note/(60 + r(0))\n",
             ],
             &[(Code::ReactiveRecursion, "r(0)")],
@@ -1175,7 +1175,7 @@ fn a_call_rejected_as_reactive_recursion_adds_nothing_to_the_inline_count_in(
                 "let same = held\n",
                 "let tail = same[1..]\n",
                 h,
-                "fn r(i): if i >= len(tail) then 0 else r(i + 1) + h(h(h(h(h(i)))))\n",
+                "fn r(i): if i >= tail.size then 0 else r(i + 1) + h(h(h(h(h(i)))))\n",
                 "Clip c:\n    Note/(60 + r(0))\n",
             ],
             &[(Code::ReactiveRecursion, "r(0)")],
@@ -1183,7 +1183,7 @@ fn a_call_rejected_as_reactive_recursion_adds_nothing_to_the_inline_count_in(
         (
             &[
                 "let fixed = [1, 2]\n",
-                "fn r(i): if i >= len(fixed) then 0 else r(i + 1) + 1\n",
+                "fn r(i): if i >= fixed.size then 0 else r(i + 1) + 1\n",
                 "Clip c:\n    Note/(60 + r(0))\n",
             ],
             &[],
@@ -1192,7 +1192,7 @@ fn a_call_rejected_as_reactive_recursion_adds_nothing_to_the_inline_count_in(
             &[
                 "state note(60)\n",
                 "let cells = [note, note, note]\n",
-                "fn r(i): if i >= len(cells) then 0 else r(i + 1) + 1\n",
+                "fn r(i): if i >= cells.size then 0 else r(i + 1) + 1\n",
                 "Clip c:\n    Note/(60 + r(0))\n",
             ],
             &[],
@@ -1200,8 +1200,8 @@ fn a_call_rejected_as_reactive_recursion_adds_nothing_to_the_inline_count_in(
         (
             &[
                 "state held([]): i32[..4]\n",
-                "let cells = [len(held), 1]\n",
-                "fn r(i): if i >= len(cells) then 0 else r(i + 1) + 1\n",
+                "let cells = [held.size, 1]\n",
+                "fn r(i): if i >= cells.size then 0 else r(i + 1) + 1\n",
                 "Clip c:\n    Note/(60 + r(0))\n",
             ],
             &[],
@@ -1213,7 +1213,7 @@ fn a_call_rejected_as_reactive_recursion_adds_nothing_to_the_inline_count_in(
                 "state gate(false)\n",
                 "let pick = if gate then held else []\n",
                 h,
-                "fn r(i): if i >= len(pick) then 0 else r(i + 1) + h(h(h(h(h(i)))))\n",
+                "fn r(i): if i >= pick.size then 0 else r(i + 1) + h(h(h(h(h(i)))))\n",
                 "Clip c:\n    Note/(60 + r(0))\n",
             ],
             &[(Code::ReactiveRecursion, "r(0)")],
@@ -1225,7 +1225,7 @@ fn a_call_rejected_as_reactive_recursion_adds_nothing_to_the_inline_count_in(
                 "state gate(false)\n",
                 "let pick = if gate then held else held[1..]\n",
                 h,
-                "fn r(i): if i >= len(pick) then 0 else r(i + 1) + h(h(h(h(h(i)))))\n",
+                "fn r(i): if i >= pick.size then 0 else r(i + 1) + h(h(h(h(h(i)))))\n",
                 "Clip c:\n    Note/(60 + r(0))\n",
             ],
             &[(Code::ReactiveRecursion, "r(0)")],
@@ -1237,7 +1237,7 @@ fn a_call_rejected_as_reactive_recursion_adds_nothing_to_the_inline_count_in(
                 "state gate(false)\n",
                 "let pick = match note:\n    60: held\n    else: []\n",
                 h,
-                "fn r(i): if i >= len(pick) then 0 else r(i + 1) + h(h(h(h(h(i)))))\n",
+                "fn r(i): if i >= pick.size then 0 else r(i + 1) + h(h(h(h(h(i)))))\n",
                 "Clip c:\n    Note/(60 + r(0))\n",
             ],
             &[(Code::ReactiveRecursion, "r(0)")],
@@ -1249,7 +1249,7 @@ fn a_call_rejected_as_reactive_recursion_adds_nothing_to_the_inline_count_in(
                 "state gate(false)\n",
                 "let pick = if false then held else held + [note]\n",
                 h,
-                "fn r(i): if i >= len(pick) then 0 else r(i + 1) + h(h(h(h(h(i)))))\n",
+                "fn r(i): if i >= pick.size then 0 else r(i + 1) + h(h(h(h(h(i)))))\n",
                 "Clip c:\n    Note/(60 + r(0))\n",
             ],
             &[(Code::ReactiveRecursion, "r(0)")],
@@ -1261,7 +1261,7 @@ fn a_call_rejected_as_reactive_recursion_adds_nothing_to_the_inline_count_in(
                 "state gate(false)\n",
                 "let pick = if gate then [1] else [1, 2]\n",
                 h,
-                "fn r(i): if i >= len(pick) then 0 else r(i + 1) + h(h(h(h(h(i)))))\n",
+                "fn r(i): if i >= pick.size then 0 else r(i + 1) + h(h(h(h(h(i)))))\n",
                 "Clip c:\n    Note/(60 + r(0))\n",
             ],
             &[(Code::ReactiveRecursion, "r(0)")],
@@ -1272,7 +1272,7 @@ fn a_call_rejected_as_reactive_recursion_adds_nothing_to_the_inline_count_in(
                 "state gate(false)\n",
                 "let pick = if false then held else [1, 2]\n",
                 h,
-                "fn r(i): if i >= len(pick) then 0 else r(i + 1) + h(h(h(h(h(i)))))\n",
+                "fn r(i): if i >= pick.size then 0 else r(i + 1) + h(h(h(h(h(i)))))\n",
                 "Clip c:\n    Note/(60 + r(0))\n",
             ],
             &[(Code::InlineLimit, "r(0)")],
@@ -1282,7 +1282,7 @@ fn a_call_rejected_as_reactive_recursion_adds_nothing_to_the_inline_count_in(
                 "state held([1, 2]): i32[..4]\n",
                 "state gate(false)\n",
                 "let pick = if false then held else [1, 2]\n",
-                "fn r(i): if i >= len(pick) then 0 else r(i + 1) + 1\n",
+                "fn r(i): if i >= pick.size then 0 else r(i + 1) + 1\n",
                 "Clip c:\n    Note/(60 + r(0))\n",
             ],
             &[],
@@ -1293,7 +1293,7 @@ fn a_call_rejected_as_reactive_recursion_adds_nothing_to_the_inline_count_in(
                 "state gate(false)\n",
                 "let pick = if gate then [1, 2] else [3, 4]\n",
                 h,
-                "fn r(i): if i >= len(pick) then 0 else r(i + 1) + h(h(h(h(h(i)))))\n",
+                "fn r(i): if i >= pick.size then 0 else r(i + 1) + h(h(h(h(h(i)))))\n",
                 "Clip c:\n    Note/(60 + r(0))\n",
             ],
             &[(Code::InlineLimit, "r(0)")],
@@ -1303,7 +1303,7 @@ fn a_call_rejected_as_reactive_recursion_adds_nothing_to_the_inline_count_in(
                 "state held([1, 2]): i32[..4]\n",
                 "state gate(false)\n",
                 "let pick = if gate then [1, 2] else [3, 4]\n",
-                "fn r(i): if i >= len(pick) then 0 else r(i + 1) + 1\n",
+                "fn r(i): if i >= pick.size then 0 else r(i + 1) + 1\n",
                 "Clip c:\n    Note/(60 + r(0))\n",
             ],
             &[],
@@ -1410,9 +1410,9 @@ fn stress_a_recursive_call_whose_array_argument_grows_to_three_hundred_elements_
 fn array_arguments_finish_within_the_limits(bounds: &[usize], finishing_rows: bool) {
     let mut rows: Vec<[String; 2]> = Vec::new();
     for bound in bounds {
-        let grows = format!("fn f(xs): if len(xs) > {bound} then xs else f(xs + [1])\n");
+        let grows = format!("fn f(xs): if xs.size > {bound} then xs else f(xs + [1])\n");
         rows.push([grows.clone(), "Clip c:\n    Note/(f([1])[0])\n".into()]);
-        rows.push([grows, "Clip c:\n    Note/(60 + len(f([1])))\n".into()]);
+        rows.push([grows, "Clip c:\n    Note/(60 + f([1]).size)\n".into()]);
     }
     let finishing = [
         (
@@ -1428,7 +1428,7 @@ fn array_arguments_finish_within_the_limits(bounds: &[usize], finishing_rows: bo
             "Clip c:\n    Note/(f([[1]], 0)[0][0])\n",
         ),
         (
-            "fn f(xs): if len(xs) > 0 then xs else f(xs + [1])\n",
+            "fn f(xs): if xs.size > 0 then xs else f(xs + [1])\n",
             "Clip c:\n    Note/(f([1])[0])\n",
         ),
         (
@@ -1436,7 +1436,7 @@ fn array_arguments_finish_within_the_limits(bounds: &[usize], finishing_rows: bo
             "Clip c:\n    Note/(f([], 0)[3])\n",
         ),
         (
-            "fn f(xs): if len(xs) > 1 then f(xs[1..]) else xs\n",
+            "fn f(xs): if xs.size > 1 then f(xs[1..]) else xs\n",
             "Clip c:\n    Note/(f([1, 2, 3])[0])\n",
         ),
     ];

@@ -1,12 +1,13 @@
 use std::collections::BTreeMap;
 use std::rc::Rc;
 
-use symphonyscript_core::Builtin;
+use crate::semantics::builtin::Builtin;
 
 use super::bind_fault::BindFault;
 use super::bound_sources::bound_sources;
 use super::defaulted::defaulted;
 use super::found::Found;
+use super::members::{Member, QUALIFIED_NAME};
 use crate::diagnostics::Code;
 use crate::semantics::Internal;
 use crate::semantics::analysis::engine::Engine;
@@ -22,6 +23,7 @@ use crate::semantics::analysis::scope_kind::ScopeKind;
 use crate::semantics::analysis::val::Val;
 use crate::semantics::collection::{BuiltinName, Decl};
 use crate::semantics::ir::{Args, ExprId, ExprKind, FnDecl, FnId, Loc};
+use crate::semantics::math_package::MATH;
 use crate::semantics::reporting::grouped;
 
 impl Engine<'_> {
@@ -35,6 +37,33 @@ impl Engine<'_> {
         need: &mut Vec<Query>,
     ) -> Result<Option<Val>, Internal> {
         let callee_expr = self.hir.expr(callee)?;
+        if let ExprKind::Variant {
+            enumeration,
+            variant,
+        } = &callee_expr.kind
+            && enumeration.text == MATH
+        {
+            return match BuiltinName::all().find(|builtin| builtin.name() == variant.text) {
+                Some(BuiltinName::Function(builtin)) => {
+                    self.builtin_call(builtin, args, loc, scope, need)
+                }
+                Some(BuiltinName::Pi) | None => {
+                    self.error(
+                        Code::NotCallable,
+                        callee_expr.loc,
+                        scope,
+                        format!("`{MATH}::{}` is not a function of `{MATH}`", variant.text),
+                    )?;
+                    Ok(Some(Val::Error))
+                }
+            };
+        }
+        if let ExprKind::Variant { enumeration, .. } = &callee_expr.kind
+            && self.vocabulary.enum_named(&enumeration.text).is_none()
+        {
+            self.unbuilt_member(callee_expr.loc, scope, QUALIFIED_NAME)?;
+            return Ok(Some(Val::Error));
+        }
         let ExprKind::Name(name) = &callee_expr.kind else {
             if !matches!(callee_expr.kind, ExprKind::Error) {
                 self.error(
@@ -46,6 +75,14 @@ impl Engine<'_> {
             }
             return Ok(Some(Val::Error));
         };
+        let received = args.receiver();
+        if let Some(receiver) = received {
+            match self.dot_member(receiver, name, (callee_expr.loc, loc), scope, need)? {
+                Member::Pending => return Ok(None),
+                Member::Read(val) => return Ok(Some(val)),
+                Member::Declined => {}
+            }
+        }
         Ok(match self.find(name, scope)? {
             Found::Decl(Decl::Builtin(BuiltinName::Function(builtin))) => {
                 self.builtin_call(builtin, args, loc, scope, need)?
@@ -56,13 +93,19 @@ impl Engine<'_> {
             Found::Decl(Decl::Native(native)) => {
                 self.native_call(native, args, loc, scope, need)?
             }
+            Found::Placeholder => Some(Val::Error),
+            Found::Nothing | Found::Val(_) | Found::Query(_) | Found::Item(_) | Found::Decl(_)
+                if received.is_some() =>
+            {
+                self.uncallable(callee_expr.loc, scope)?;
+                Some(Val::Error)
+            }
             Found::Nothing => {
                 if self.variants.owner(name).is_some() {
                     self.unplaced_variant_at(Some(name), callee_expr.loc, scope)?;
                 }
                 Some(Val::Error)
             }
-            Found::Placeholder => Some(Val::Error),
             Found::Val(_) | Found::Query(_) | Found::Item(_) | Found::Decl(_) => {
                 self.error(
                     Code::NotCallable,
@@ -83,7 +126,7 @@ impl Engine<'_> {
         scope: ScopeId,
         need: &mut Vec<Query>,
     ) -> Result<Option<Val>, Internal> {
-        let Args::Positional(values) = args else {
+        let Some(values) = args.positional() else {
             self.error(
                 Code::NamedBuiltinArguments,
                 loc,
@@ -103,34 +146,6 @@ impl Engine<'_> {
             return Ok(None);
         }
         let arity = builtin_arity(builtin);
-        if vals.len() == arity
-            && matches!(builtin, Builtin::Len | Builtin::Bytes)
-            && let Some(val) = vals.into_iter().flatten().next()
-        {
-            return match builtin {
-                Builtin::Len => self.length_val(val, loc, scope, need),
-                Builtin::Abs
-                | Builtin::Min
-                | Builtin::Max
-                | Builtin::Clamp
-                | Builtin::Floor
-                | Builtin::Ceil
-                | Builtin::Round
-                | Builtin::Sqrt
-                | Builtin::Sin
-                | Builtin::Cos
-                | Builtin::Tan
-                | Builtin::Exp
-                | Builtin::Log
-                | Builtin::Lerp
-                | Builtin::Rand
-                | Builtin::Bytes => Ok(Some(self.bytes_val(val, loc, scope)?)),
-            };
-        }
-        let vals: Vec<Option<Val>> = values
-            .iter()
-            .map(|value| self.val(Query::Expr(*value, scope), need))
-            .collect();
         if vals.len() != arity {
             self.error(
                 Code::ArgumentCount,
@@ -316,28 +331,8 @@ impl Engine<'_> {
         else {
             return Ok(false);
         };
-        let pairs: Vec<(ExprId, ExprId)> = match (args, other_args) {
-            (Args::Positional(values), Args::Positional(others))
-                if values.len() == others.len() =>
-            {
-                values.iter().copied().zip(others.iter().copied()).collect()
-            }
-            (Args::Named(values), Args::Named(others))
-                if values.len() == others.len()
-                    && values
-                        .iter()
-                        .zip(others)
-                        .all(|((name, _), (other_name, _))| name.text == other_name.text) =>
-            {
-                values
-                    .iter()
-                    .zip(others)
-                    .map(|((_, value), (_, other))| (*value, *other))
-                    .collect()
-            }
-            (Args::Positional(_) | Args::Named(_), Args::Positional(_) | Args::Named(_)) => {
-                return Ok(false);
-            }
+        let Some(pairs) = paired(args, other_args) else {
+            return Ok(false);
         };
         let mut same_args = true;
         for (value, other) in pairs {
@@ -788,6 +783,7 @@ fn builtin_arity(builtin: Builtin) -> usize {
         | Builtin::Exp
         | Builtin::Log
         | Builtin::Len
+        | Builtin::Capacity
         | Builtin::Bytes => 1,
         Builtin::Min | Builtin::Max | Builtin::Rand => 2,
         Builtin::Clamp | Builtin::Lerp => 3,
@@ -796,4 +792,36 @@ fn builtin_arity(builtin: Builtin) -> usize {
 
 fn index_of(position: usize) -> u32 {
     u32::try_from(position).unwrap_or(u32::MAX)
+}
+
+fn paired(args: &Args, other: &Args) -> Option<Vec<(ExprId, ExprId)>> {
+    match (args, other) {
+        (Args::Positional(values), Args::Positional(others)) if values.len() == others.len() => {
+            Some(values.iter().copied().zip(others.iter().copied()).collect())
+        }
+        (Args::Named(values), Args::Named(others))
+            if values.len() == others.len()
+                && values
+                    .iter()
+                    .zip(others)
+                    .all(|((name, _), (other_name, _))| name.text == other_name.text) =>
+        {
+            Some(
+                values
+                    .iter()
+                    .zip(others)
+                    .map(|((_, value), (_, other))| (*value, *other))
+                    .collect(),
+            )
+        }
+        (Args::Received(receiver, rest), Args::Received(other_receiver, other_rest)) => {
+            let mut pairs = vec![(*receiver, *other_receiver)];
+            pairs.extend(paired(rest, other_rest)?);
+            Some(pairs)
+        }
+        (
+            Args::Positional(_) | Args::Named(_) | Args::Received(..),
+            Args::Positional(_) | Args::Named(_) | Args::Received(..),
+        ) => None,
+    }
 }

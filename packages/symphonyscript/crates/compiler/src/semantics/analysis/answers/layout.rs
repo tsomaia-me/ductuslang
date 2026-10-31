@@ -1,4 +1,4 @@
-use symphonyscript_core::Builtin;
+use crate::semantics::builtin::Builtin;
 
 use crate::diagnostics::Code;
 use crate::semantics::Internal;
