@@ -5141,7 +5141,7 @@ fn masked_program(
     } else {
         format!("fn h(xs, i, n): {value}\n")
     };
-    let mut items = vec![
+    let mut items = [
         "Session main\n".to_string(),
         "state gv(1.0)\n".to_string(),
         "Clip verse | gain=2:\n    Note as tone\n".to_string(),
