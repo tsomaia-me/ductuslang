@@ -2943,3 +2943,114 @@ fn an_iterable_that_reads_a_cell_draws_reactive_iterable_whatever_its_layout() {
         bounded_rows,
     );
 }
+
+const LOST_ELEMENTS: [&str; 4] = ["[note:]", "[1, note:]", "[note:, 2]", "[[note:], [1]]"];
+
+const BRACKET_READS: [&[&str]; 11] = [
+    &["Clip c:\n    Note/({v}[0])\n"],
+    &["Clip c:\n    Note/({v}[5])\n"],
+    &["Clip c:\n    Note/({v}.size)\n"],
+    &["Clip c:\n    Note/(({v} + [1])[0])\n"],
+    &["Clip c:\n    Note when {v}[0] > 1\n"],
+    &["Clip c:\n    for i in 0..{v}:\n        Note/i\n"],
+    &[
+        "let x = match {v}:\n    1: 1\n    else: 2\n",
+        "Clip c:\n    Note/x\n",
+    ],
+    &["fn f(x): x[0]\n", "Clip c:\n    Note/(f({v}))\n"],
+    &["let k = {v}\n", "Clip c:\n    Note/(k[0])\n"],
+    &[
+        "let k: i32[..4] = {v}\n",
+        "let e = []\n",
+        "let j = if k[0] > 1 then k else e + [3]\n",
+        "Clip c:\n    Note/(j[0])\n",
+    ],
+    &[
+        "state k({v}): i32[..4]\n",
+        "let e = []\n",
+        "state j = if k[0] > 1 then k else e + [3]\n",
+        "Clip c:\n    Note/(j[0])\n",
+    ],
+];
+
+fn bracket_rows(rows: &symphonyscript_fixtures::Rows) -> Vec<String> {
+    let compiler = Compiler::new(&vocabulary()).expect("the vocabulary compiles");
+    let mut failures = Vec::new();
+    for (form, value) in LOST_ELEMENTS.iter().enumerate() {
+        for (read, items) in BRACKET_READS.iter().enumerate() {
+            let items: Vec<String> = items
+                .iter()
+                .map(|item| item.replace("{v}", value))
+                .collect();
+            let refs: Vec<&str> = items.iter().map(String::as_str).collect();
+            for (order, ordered) in support::Orders::ForwardAndReversed
+                .of(&refs)
+                .into_iter()
+                .enumerate()
+            {
+                if !rows.take(&[form, read, order]) {
+                    continue;
+                }
+                let text = ordered.concat();
+                let found = support::error_texts(&compiler, &text);
+                if found != [(Code::ExpressionSyntax, "note".to_string())] {
+                    failures.push(format!("377: {text}\n  draws {found:?}"));
+                }
+            }
+        }
+    }
+    failures
+}
+
+#[test]
+fn an_array_bracket_that_lost_an_element_to_a_fault_is_a_placeholder_with_no_length() {
+    let failures = symphonyscript_fixtures::covered(bracket_rows);
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_an_array_bracket_that_lost_an_element_to_a_fault_is_a_placeholder_with_no_length() {
+    let failures = bracket_rows(&symphonyscript_fixtures::Rows::Every);
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+#[test]
+fn an_array_bracket_whose_elements_all_stand_keeps_its_length_and_its_faults() {
+    let compiler = Compiler::new(&vocabulary()).expect("the vocabulary compiles");
+    for (text, expected) in [
+        (
+            "Clip c:\n    Note/([1][5])\n",
+            vec![(Code::IndexOutOfRange, "5")],
+        ),
+        (
+            "Clip c:\n    Note/([2 + true, note:][0])\n",
+            vec![
+                (Code::ExpressionSyntax, "note"),
+                (Code::OperandType, "2 + true"),
+            ],
+        ),
+        (
+            "Clip c:\n    Note/([1 +, 2 + true][0])\n",
+            vec![
+                (Code::ExpressionSyntax, ","),
+                (Code::OperandType, "2 + true"),
+            ],
+        ),
+        (
+            "Clip c:\n    for i in 0..[1]:\n        Note/i\n",
+            vec![(Code::RangeBound, "[1]")],
+        ),
+    ] {
+        let mut expected: Vec<(Code, String)> = expected
+            .into_iter()
+            .map(|(code, spanned)| (code, spanned.to_string()))
+            .collect();
+        expected.sort();
+        assert_eq!(
+            support::error_texts(&compiler, text),
+            expected,
+            "377: {text}"
+        );
+    }
+}

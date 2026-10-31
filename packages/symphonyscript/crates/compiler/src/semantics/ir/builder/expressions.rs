@@ -219,7 +219,7 @@ impl HirBuilder<'_> {
                 }
             }
             ast::Expr::Array(node) => {
-                let elements: Vec<_> = node.elements().map(Some).collect();
+                let elements: Vec<_> = node.syntax().children().map(ast::Expr::cast).collect();
                 (Shape::Array(elements.len()), elements)
             }
             ast::Expr::Field(node) => match self.ident(node.field()) {
