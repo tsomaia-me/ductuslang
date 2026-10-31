@@ -401,6 +401,7 @@ impl Engine<'_> {
                 nodes.push(None);
                 continue;
             };
+            let val = some!(self.unless_faulty_literal(bound.value, Some(val), scope, need)?);
             self.single_operand(&val, Code::IndexType, BOUND_TYPE);
             match val {
                 Val::Scalar(node) => nodes.push(Some((node, bound.from_end))),

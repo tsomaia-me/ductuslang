@@ -139,10 +139,11 @@ impl Engine<'_> {
             )?;
             return Ok(Some(Val::Error));
         };
-        let vals: Vec<Option<Val>> = values
-            .iter()
-            .map(|value| self.val(Query::Expr(*value, scope), need))
-            .collect();
+        let mut vals: Vec<Option<Val>> = Vec::with_capacity(values.len());
+        for value in values.iter() {
+            let val = self.val(Query::Expr(*value, scope), need);
+            vals.push(self.unless_faulty_literal(*value, val, scope, need)?);
+        }
         if vals.iter().any(Option::is_none) {
             return Ok(None);
         }

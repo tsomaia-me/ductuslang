@@ -1082,6 +1082,7 @@ impl Engine<'_> {
         }
         let base_val = self.val(Query::Expr(base, scope), need);
         let index_val = self.val(Query::Expr(index, scope), need);
+        let index_val = self.unless_faulty_literal(index, index_val, scope, need)?;
         let (base_val, index_val) = (some!(base_val), some!(index_val));
         self.single_operand(
             &index_val,
@@ -1117,6 +1118,7 @@ impl Engine<'_> {
     ) -> Result<Option<Val>, Internal> {
         let base_val = self.val(Query::Expr(base, scope), need);
         let offset_val = self.val(Query::Expr(offset, scope), need);
+        let offset_val = self.unless_faulty_literal(offset, offset_val, scope, need)?;
         let (base_val, offset_val) = (some!(base_val), some!(offset_val));
         self.single_operand(
             &offset_val,

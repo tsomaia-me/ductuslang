@@ -50,12 +50,17 @@ impl Engine<'_> {
         local: LetRef,
         need: &mut Vec<Query>,
     ) -> Result<bool, Internal> {
-        let Some(decl) = self.let_decl(scope, local)? else {
+        let Some(decl) = self.let_decl(scope, local)?.cloned() else {
             self.memo.lets.insert((scope, local), BoundVal::Error);
             return Ok(true);
         };
         let within = self.let_scope(scope, local);
-        let Some(val) = self.val(Query::Expr(decl.value, within), need) else {
+        let value = self.val(Query::Expr(decl.value, within), need);
+        let value = match decl.ty {
+            Some(_) => self.unless_faulty_literal(decl.value, value, within, need)?,
+            None => value,
+        };
+        let Some(val) = value else {
             return Ok(false);
         };
         let annotation = decl.ty.as_ref().and_then(|ty| self.annotation(ty));

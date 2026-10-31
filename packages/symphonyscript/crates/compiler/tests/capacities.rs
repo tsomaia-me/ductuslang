@@ -3097,3 +3097,60 @@ fn a_match_choices_span_ends_at_its_last_token_as_an_ifs_does_304() {
     ];
     support::assert_rows_in_every_order(&symphonyscript_fixtures::vocabulary(), rows);
 }
+
+#[test]
+fn a_disagreeing_literal_is_a_placeholder_at_every_holder_and_draws_its_own_diagnostic_alone_384() {
+    let literals: [(&str, Code); 3] = [
+        ("[1, true]", Code::TypeMismatch),
+        ("[1, \"a\"]", Code::TypeMismatch),
+        ("[[1], 2]", Code::RaggedArray),
+    ];
+    let holders: [(&str, &str); 13] = [
+        ("Clip c:\n    Note/(-{})\n", ""),
+        ("Clip c:\n    Note when not {}\n", ""),
+        ("Clip c:\n    Note/(i32({}))\n", ""),
+        ("Clip c:\n    Note/(abs({}))\n", ""),
+        ("Clip c:\n    Note/([1, 2][{}])\n", ""),
+        ("Clip c:\n    Note/([1, 2][^{}])\n", ""),
+        ("Clip c:\n    Note/([1, 2][{}..][0])\n", ""),
+        ("Clip c:\n    Note/([1, 2][..{}][0])\n", ""),
+        ("Clip c:\n    Note/([{}, 1][0])\n", ""),
+        ("Clip c:\n    Note/([[1, 2], {}][0][0])\n", ""),
+        ("let a: i32 = {}\n", "Clip c:\n    Note/(a)\n"),
+        ("let a: i32[2] = {}\n", "Clip c:\n    Note/(a[0])\n"),
+        ("Clip c:\n    Note/({} + 1)\n", ""),
+    ];
+    let texts: Vec<(String, String, Code, &str)> = holders
+        .iter()
+        .flat_map(|(holder, reader)| {
+            literals.iter().map(move |(literal, code)| {
+                (
+                    holder.replacen("{}", literal, 1),
+                    (*reader).to_string(),
+                    *code,
+                    *literal,
+                )
+            })
+        })
+        .collect();
+    let items: Vec<Vec<&str>> = texts
+        .iter()
+        .map(|(holder, reader, ..)| {
+            if reader.is_empty() {
+                vec![holder.as_str()]
+            } else {
+                vec![holder.as_str(), reader.as_str()]
+            }
+        })
+        .collect();
+    let expected: Vec<[(Code, &str); 1]> = texts
+        .iter()
+        .map(|(_, _, code, literal)| [(*code, *literal)])
+        .collect();
+    let rows: Vec<support::Row> = items
+        .iter()
+        .zip(&expected)
+        .map(|(items, expected)| (items.as_slice(), expected.as_slice()))
+        .collect();
+    support::assert_rows_in_every_order(&symphonyscript_fixtures::vocabulary(), &rows);
+}

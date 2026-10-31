@@ -40,7 +40,8 @@ impl Engine<'_> {
                 variant,
             } => Some(self.variant(enumeration, variant, loc, scope)?),
             ExprKind::Convert(target, operand) => {
-                match self.val(Query::Expr(*operand, scope), need) {
+                let operand_val = self.val(Query::Expr(*operand, scope), need);
+                match self.unless_faulty_literal(*operand, operand_val, scope, need)? {
                     Some(operand) => match self.placeholder_array(&operand, need)? {
                         Some(true) => Some(Val::Error),
                         Some(false) => Some(self.unary_val(operand, loc, scope, |operand| {
@@ -67,7 +68,10 @@ impl Engine<'_> {
             } => self.history((target, *offset, *fallback), loc, scope, need)?,
             ExprKind::Stepped(target) => self.stepped(target, loc, scope)?,
             ExprKind::Call(callee, args) => self.call(*callee, args, expr, loc, scope, need)?,
-            ExprKind::Unary(op, operand) => match self.val(Query::Expr(*operand, scope), need) {
+            ExprKind::Unary(op, operand) => match {
+                let operand_val = self.val(Query::Expr(*operand, scope), need);
+                self.unless_faulty_literal(*operand, operand_val, scope, need)?
+            } {
                 Some(operand) => match self.placeholder_array(&operand, need)? {
                     Some(true) => Some(Val::Error),
                     Some(false) => Some(
@@ -679,8 +683,12 @@ impl Engine<'_> {
         let inner = vals.first().map(Val::shape).unwrap_or_default();
         let ragged = vals.iter().any(|val| val.shape() != inner);
         if ragged {
-            for val in &vals {
+            for (element, val) in elements.iter().zip(&vals) {
                 if some!(self.placeholder_array(val, need)?) {
+                    return Ok(Some(Val::Error));
+                }
+                let held = self.unless_faulty_literal(*element, Some(val.clone()), scope, need)?;
+                if matches!(some!(held), Val::Error) {
                     return Ok(Some(Val::Error));
                 }
             }
@@ -748,7 +756,7 @@ impl Engine<'_> {
         Ok(Some(held))
     }
 
-    fn unless_faulty_literal(
+    pub(in crate::semantics::analysis) fn unless_faulty_literal(
         &mut self,
         expr: ExprId,
         val: Option<Val>,
