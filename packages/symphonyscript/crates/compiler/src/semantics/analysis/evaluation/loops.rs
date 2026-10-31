@@ -28,7 +28,7 @@ impl Engine<'_> {
         &mut self,
         node: NodeId,
         for_node: &ForNode,
-        (own, partner): (EvalTy, Option<EvalTy>),
+        (own, flows): (EvalTy, bool),
         ctx: Ctx,
         need: &mut Vec<Query>,
     ) -> Result<Option<CVal>, Internal> {
@@ -93,7 +93,7 @@ impl Engine<'_> {
                 }
             }
         };
-        let start = some!(self.typed_child(for_node.start, (own, partner), ctx, need)?);
+        let start = some!(self.typed_child(for_node.start, (own, flows), ctx, need)?);
         if start.is_error() || items.count() == 0 {
             return Ok(Some(start));
         }

@@ -53,7 +53,7 @@ impl Engine<'_> {
         &mut self,
         node: NodeId,
         (lhs, rhs): (NodeId, NodeId),
-        typed: (EvalTy, Option<EvalTy>),
+        typed: (EvalTy, bool),
         ctx: Ctx,
         need: &mut Vec<Query>,
     ) -> Result<Option<CVal>, Internal> {
@@ -78,7 +78,7 @@ impl Engine<'_> {
         &mut self,
         base: NodeId,
         (lower, upper): SliceBounds,
-        typed: (EvalTy, Option<EvalTy>),
+        typed: (EvalTy, bool),
         ctx: Ctx,
         need: &mut Vec<Query>,
     ) -> Result<Option<CVal>, Internal> {

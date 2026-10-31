@@ -456,7 +456,7 @@ impl Engine<'_> {
         } else {
             own_type(&sig, own)
         };
-        let value = some!(self.typed_child(arg, (ty, None), ctx, need)?);
+        let value = some!(self.typed_child(arg, (ty, false), ctx, need)?);
         let (lengths, values) = match &value {
             CVal::Array(array) => (array.lengths(), array.leaves()),
             leaf => (Vec::new(), vec![leaf.clone()]),
@@ -558,7 +558,7 @@ impl Engine<'_> {
         &mut self,
         read: &FrameRead,
         frame: usize,
-        (own, partner): (EvalTy, Option<EvalTy>),
+        (own, flows): (EvalTy, bool),
         need: &mut Vec<Query>,
     ) -> Result<Option<CVal>, Internal> {
         let ctx = Ctx::Frame(frame);
@@ -611,7 +611,7 @@ impl Engine<'_> {
             self.memo.reactive_faults.insert(fault);
             return Ok(Some(CVal::Error));
         }
-        self.typed_child(arm, (own, partner), ctx, need)
+        self.typed_child(arm, (own, flows), ctx, need)
     }
 
     fn holds_name(&mut self, item: ItemRef, name: &str) -> Result<bool, Internal> {
