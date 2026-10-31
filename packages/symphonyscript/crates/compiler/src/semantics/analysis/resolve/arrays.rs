@@ -460,7 +460,7 @@ impl Engine<'_> {
                 return Ok(Some(Val::array(array.shape.inner().wrap(count), reads)));
             }
         }
-        let Some(whole) = self.boxed(&base_val, loc, scope)? else {
+        let Some(whole) = self.boxed(&base_val, self.hir.expr(base)?.loc, scope)? else {
             return Ok(Some(Val::Error));
         };
         let sliced = self.scalar(

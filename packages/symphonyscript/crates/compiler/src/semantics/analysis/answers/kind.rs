@@ -439,7 +439,8 @@ impl Engine<'_> {
                 reactive,
                 None,
             )),
-            Op::Pick { items, .. } => {
+            Op::Pick { index, items } => {
+                self.index_fault(*index, sigs.first())?;
                 let item_sigs = sigs.get(1..).unwrap_or_default();
                 if item_sigs.iter().any(Sig::is_error)
                     || group.is_some_and(|group| group.is_error())
@@ -449,12 +450,19 @@ impl Engine<'_> {
                 self.elements_sig(node, items, item_sigs)?
                     .map(|(kind, width, family)| Sig::of(kind, width, reactive, family))
             }
-            Op::Element { .. } => match sigs.first() {
+            Op::Element { index, .. } => match sigs.first() {
                 Some(base) if !base.is_error() => {
                     Some(Sig::of(base.kind, base.width, reactive, base.family))
                 }
-                Some(_) | None => None,
+                Some(_) | None => {
+                    self.index_fault(*index, sigs.get(1))?;
+                    None
+                }
             },
+            Op::Slice { lower, upper, .. } => {
+                self.bound_faults(lower.iter().chain(upper.iter()))?;
+                None
+            }
             Op::Binary(..)
             | Op::Unary(..)
             | Op::Number(..)
@@ -480,7 +488,6 @@ impl Engine<'_> {
             | Op::For(_)
             | Op::ToRead { .. }
             | Op::Join(..)
-            | Op::Slice { .. }
             | Op::History { .. }
             | Op::Stepped(_)
             | Op::Native { .. } => None,
@@ -554,20 +561,8 @@ impl Engine<'_> {
                 Sig::of(kind, width, reactive, family)
             }
             Op::Slice { lower, upper, .. } => {
-                for (bound, _) in lower.iter().chain(upper.iter()) {
-                    let bound_sig = self.known_sig(*bound)?;
-                    if !matches!(bound_sig.kind, Kind::Int | Kind::Any) {
-                        self.error_at_node(Code::IndexType, *bound, "a slice bound is an integer")?;
-                        return Ok(Sig::ERROR);
-                    }
-                    if bound_sig.family.is_some() {
-                        self.error_at_node(
-                            Code::UnitOperation,
-                            *bound,
-                            "a slice bound is a plain number",
-                        )?;
-                        return Ok(Sig::ERROR);
-                    }
+                if self.bound_faults(lower.iter().chain(upper.iter()))? {
+                    return Ok(Sig::ERROR);
                 }
                 let base = at(0)?;
                 Sig::of(base.kind, base.width, reactive, base.family)
@@ -723,6 +718,41 @@ impl Engine<'_> {
             }
             Op::ToRead { attrs, .. } => self.destination_read_sig(node, attrs, extra)?,
         })
+    }
+
+    fn bound_faults<'b>(
+        &mut self,
+        bounds: impl Iterator<Item = &'b (NodeId, bool)>,
+    ) -> Result<bool, Internal> {
+        for (bound, _) in bounds {
+            let bound_sig = self.known_sig(*bound)?;
+            if bound_sig.is_error() {
+                continue;
+            }
+            if !matches!(bound_sig.kind, Kind::Int | Kind::Any) {
+                self.error_at_node(Code::IndexType, *bound, "a slice bound is an integer")?;
+                return Ok(true);
+            }
+            if bound_sig.family.is_some() {
+                self.error_at_node(
+                    Code::UnitOperation,
+                    *bound,
+                    "a slice bound is a plain number",
+                )?;
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
+    fn index_fault(&mut self, index: NodeId, index_sig: Option<&Sig>) -> Result<(), Internal> {
+        if let Some(index_sig) = index_sig
+            && !index_sig.is_error()
+            && !matches!(index_sig.kind, Kind::Int | Kind::Any)
+        {
+            self.error_at_node(Code::IndexType, index, "an index is an integer")?;
+        }
+        Ok(())
     }
 
     pub(in crate::semantics::analysis) fn elements_sig(

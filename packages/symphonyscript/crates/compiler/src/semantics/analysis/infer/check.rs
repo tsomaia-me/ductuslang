@@ -373,18 +373,8 @@ impl Engine<'_> {
                     for (bound, _) in lower.iter().chain(upper.iter()) {
                         let bound_ty = self.synth(*bound)?;
                         stack.push((*bound, bound_ty, selection, false));
-                        if selection != Selection::Chosen {
-                            continue;
-                        }
-                        let position_ty = own_type(&self.known_sig(*bound)?, EvalTy::Exact);
-                        if let Some(CVal::Int(value)) = self.chosen(*bound, position_ty)?
-                            && i64::try_from(value).is_err()
-                        {
-                            self.error_at_node(
-                                Code::IndexOutOfRange,
-                                *bound,
-                                outside_i64(I64Position::SliceBound, value),
-                            )?;
+                        if selection == Selection::Chosen {
+                            self.bound_outside_i64(*bound)?;
                         }
                     }
                     stack.push((base, ty, selection, flows));
@@ -484,6 +474,15 @@ impl Engine<'_> {
                     Taken::Runtime => operands.extend(items.iter().map(|item| (*item, selection))),
                 }
             }
+            Op::Slice { base, lower, upper } => {
+                operands.push((base, selection));
+                for (bound, _) in lower.iter().chain(upper.iter()) {
+                    operands.push((*bound, selection));
+                    if selection == Selection::Chosen {
+                        self.bound_outside_i64(*bound)?;
+                    }
+                }
+            }
             other => operands.extend(
                 other
                     .operands()
@@ -502,6 +501,20 @@ impl Engine<'_> {
                 continue;
             }
             stack.push((operand, None, selection, false));
+        }
+        Ok(())
+    }
+
+    fn bound_outside_i64(&mut self, bound: NodeId) -> Result<(), Internal> {
+        let position_ty = own_type(&self.known_sig(bound)?, EvalTy::Exact);
+        if let Some(CVal::Int(value)) = self.chosen(bound, position_ty)?
+            && i64::try_from(value).is_err()
+        {
+            self.error_at_node(
+                Code::IndexOutOfRange,
+                bound,
+                outside_i64(I64Position::SliceBound, value),
+            )?;
         }
         Ok(())
     }

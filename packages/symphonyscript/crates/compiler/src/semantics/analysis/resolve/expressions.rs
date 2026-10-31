@@ -71,8 +71,10 @@ impl Engine<'_> {
                 }
                 None => None,
             },
-            ExprKind::Binary(op, lhs, rhs) => {
-                let (lhs, rhs) = self.siblings(*lhs, *rhs, scope, need)?;
+            ExprKind::Binary(op, lhs_expr, rhs_expr) => {
+                let (lhs, rhs) = self.siblings(*lhs_expr, *rhs_expr, scope, need)?;
+                let lhs = self.unless_faulty_literal(*lhs_expr, lhs, scope, need)?;
+                let rhs = self.unless_faulty_literal(*rhs_expr, rhs, scope, need)?;
                 match (lhs, rhs) {
                     (Some(lhs), Some(rhs)) => {
                         self.binary_val(expr, *op, (lhs, rhs), (loc, scope), need)?
@@ -706,6 +708,29 @@ impl Engine<'_> {
             }
         }
         Ok(Some(self.group_reads(group, val)?))
+    }
+
+    fn unless_faulty_literal(
+        &mut self,
+        expr: ExprId,
+        val: Option<Val>,
+        scope: ScopeId,
+        need: &mut Vec<Query>,
+    ) -> Result<Option<Val>, Internal> {
+        let Some(val) = val else {
+            return Ok(None);
+        };
+        let Some(group) = self.memo.literal_groups.get(&(expr, scope)).copied() else {
+            return Ok(Some(val));
+        };
+        if self.template_of(scope)?.is_some() {
+            return Ok(Some(val));
+        }
+        Ok(match self.sig(group, need) {
+            None => None,
+            Some(sig) if sig.is_error() => Some(Val::Error),
+            Some(_) => Some(val),
+        })
     }
 
     pub(in crate::semantics::analysis) fn held_reads(

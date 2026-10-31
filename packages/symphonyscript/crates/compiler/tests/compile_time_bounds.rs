@@ -377,3 +377,98 @@ fn exhaustive_a_slice_whose_bound_is_in_error_reads_no_value_so_only_the_bound_d
     let failures = slice_bound_rows(&symphonyscript_fixtures::Rows::Every);
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
+
+const PLACEHOLDER_BASES: [(&[&str], &str, &str); 4] = [
+    (&[], "[1, true]", "[1, true]"),
+    (
+        &[],
+        "(if 1 > 0 then [1] else [true])",
+        "if 1 > 0 then [1] else [true]",
+    ),
+    (&["let a = [1, true]\n"], "a", "[1, true]"),
+    (&[], "([1, true] + [2])", "[1, true]"),
+];
+
+const BOUND_FAULTS: [(&str, Option<(Code, &str)>); 5] = [
+    ("2 ** 63", Some((Code::IndexOutOfRange, "2 ** 63"))),
+    ("1.5", Some((Code::IndexType, "1.5"))),
+    ("true", Some((Code::IndexType, "true"))),
+    ("(1 + true)", Some((Code::OperandType, "1 + true"))),
+    ("0", None),
+];
+
+const BOUND_FORMS: [&str; 4] = [
+    "{base}[{b}..]",
+    "{base}[..{b}]",
+    "{base}[^{b}..]",
+    "{base}[{b}]",
+];
+
+fn placeholder_base_rows(rows: &symphonyscript_fixtures::Rows) -> Vec<String> {
+    let compiler =
+        Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("the vocabulary compiles");
+    let mut failures = Vec::new();
+    for (base, (declarations, value, faulty)) in PLACEHOLDER_BASES.iter().enumerate() {
+        for (fault, (bound, drawn)) in BOUND_FAULTS.iter().enumerate() {
+            for (form, shape) in BOUND_FORMS.iter().enumerate() {
+                for (read, suffix) in ["", ".size"].iter().enumerate() {
+                    if form == 3 && read == 1
+                        || drawn.is_none() && form < 3 && read == 0
+                        || base == 3 && drawn.is_some()
+                    {
+                        continue;
+                    }
+                    let suffix = if form == 3 || read == 1 {
+                        *suffix
+                    } else {
+                        "[0]"
+                    };
+                    let read_text = format!(
+                        "{}{suffix}",
+                        shape.replace("{base}", value).replace("{b}", bound)
+                    );
+                    let mut items: Vec<String> = declarations
+                        .iter()
+                        .map(|item| (*item).to_string())
+                        .collect();
+                    items.push(format!("Clip c:\n    Note/({read_text})\n"));
+                    let mut expected = vec![(Code::TypeMismatch, (*faulty).to_string())];
+                    if let Some((code, spanned)) = drawn {
+                        expected.push((*code, (*spanned).to_string()));
+                    }
+                    expected.sort();
+                    for (order, reversed) in [false, true].into_iter().enumerate() {
+                        if !rows.take(&[base, fault, form, read, order]) {
+                            continue;
+                        }
+                        let mut ordered = items.clone();
+                        if reversed {
+                            ordered.reverse();
+                        }
+                        let text = ordered.concat();
+                        let found = support::error_texts(&compiler, &text);
+                        if found != expected {
+                            failures.push(format!(
+                                "311: {text}\n  draws {found:?}\n  expected {expected:?}"
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+    }
+    failures
+}
+
+#[test]
+fn a_bound_beside_a_placeholder_base_draws_its_own_fault_and_the_base_draws_once() {
+    let failures = symphonyscript_fixtures::covered(placeholder_base_rows);
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_a_bound_beside_a_placeholder_base_draws_its_own_fault_and_the_base_draws_once() {
+    let failures = placeholder_base_rows(&symphonyscript_fixtures::Rows::Every);
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
