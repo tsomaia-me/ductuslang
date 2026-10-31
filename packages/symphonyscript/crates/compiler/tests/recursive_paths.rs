@@ -5239,3 +5239,72 @@ fn every_faulty_slice_bound_in_a_recursive_body_draws_its_own_index_type_whateve
     }
     assert_none_fail((failures, programs), 16);
 }
+
+const CALLED_BINDINGS: [(&str, &str); 4] = [
+    ("q(1)", "fn q(n): if n < 1 then k.gain else q(n - 1)\n"),
+    ("q(2) + 1", "fn q(n): if n < 1 then k.gain else q(n - 1)\n"),
+    ("q(1)", "fn q(n): k.gain\n"),
+    (
+        "q(other2, 1)",
+        "fn q(c, n): if n < 1 then c.gain else q(c, n - 1)\n",
+    ),
+];
+
+fn called_binding_program(
+    (value, function): (&str, &str),
+    index: usize,
+    rotation: usize,
+    recursive: bool,
+) -> String {
+    let body = if recursive {
+        "fn h(c, d, xs, i, n):\n    if n < 1 then 0 else g(xs[i], 2) + h(c, d, xs, 1 - i, n - 1)\n"
+            .to_string()
+    } else {
+        "fn h(c, d, xs, i, n):\n    if n < 1 then 0 else g(xs[i], 2) + h1(c, d, xs, 1 - i, n - 1)\nfn h1(c, d, xs, i, n):\n    if n < 1 then 0 else g(xs[i], 2) + 0\n"
+            .to_string()
+    };
+    let mut items = vec![
+        "Session main\n".to_string(),
+        "Clip verse | gain=2:\n    Note\n".to_string(),
+        format!("Clip other | gain={value}:\n    Note\n"),
+        "Clip other2 | gain=k.gain:\n    Note\n".to_string(),
+        function.to_string(),
+        "fn g(c, n): if n < 1 then c.gain else g(c, n - 1)\n".to_string(),
+        body,
+        format!("Clip k | gain=h(verse, other, [verse, other], {index}, 1):\n    Note\n"),
+    ];
+    if rotation % 2 == 1 {
+        items.reverse();
+    }
+    let turn = (rotation / 2) * 3 % items.len();
+    items.rotate_left(turn);
+    items.concat()
+}
+
+#[test]
+fn a_cycle_through_a_recursive_call_inside_the_binding_an_untaken_arm_chooses_draws_as_its_twins_407()
+ {
+    let mut failures = Vec::new();
+    let mut programs = 0;
+    for binding in CALLED_BINDINGS {
+        for index in [0, 1] {
+            for rotation in 0..4 {
+                let text = called_binding_program(binding, index, rotation, true);
+                let twin = called_binding_program(binding, index, rotation, false);
+                let drawn = found(&text);
+                let expected = found(&twin);
+                let cycles = expected
+                    .keys()
+                    .filter(|(code, _)| *code == Code::DeclarationCycle)
+                    .count();
+                programs += 1;
+                if drawn != expected || cycles != 1 {
+                    failures.push(format!(
+                        "407 {binding:?} {index} {rotation}\n{text}\n  found {drawn:?}\n  twin {expected:?}\n"
+                    ));
+                }
+            }
+        }
+    }
+    assert_none_fail((failures, programs), 32);
+}
