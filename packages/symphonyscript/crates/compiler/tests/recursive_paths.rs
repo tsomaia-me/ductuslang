@@ -5263,7 +5263,7 @@ fn called_binding_program(
         "fn h(c, d, xs, i, n):\n    if n < 1 then 0 else g(xs[i], 2) + h1(c, d, xs, 1 - i, n - 1)\nfn h1(c, d, xs, i, n):\n    if n < 1 then 0 else g(xs[i], 2) + 0\n"
             .to_string()
     };
-    let mut items = vec![
+    let mut items = [
         "Session main\n".to_string(),
         "Clip verse | gain=2:\n    Note\n".to_string(),
         format!("Clip other | gain={value}:\n    Note\n"),
