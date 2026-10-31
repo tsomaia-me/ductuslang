@@ -5086,3 +5086,113 @@ fn an_untaken_recursive_arguments_start_whose_own_chain_passes_the_depth_draws_r
         8,
     );
 }
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum MaskedFault {
+    Outside,
+    Lacking,
+    Cell,
+    Cycle,
+    Number,
+}
+
+const MASKED_FAULTS: [MaskedFault; 5] = [
+    MaskedFault::Outside,
+    MaskedFault::Lacking,
+    MaskedFault::Cell,
+    MaskedFault::Cycle,
+    MaskedFault::Number,
+];
+
+fn masked_program(
+    (fault, chooser): (MaskedFault, &str),
+    (reversed, recursive): (bool, bool),
+) -> String {
+    let (other, array, index, read) = match fault {
+        MaskedFault::Outside => (
+            "Clip other | gain=3:\n    Note\n",
+            "[verse, other]",
+            3,
+            ".gain",
+        ),
+        MaskedFault::Lacking => (
+            "Clip other | gain=3:\n    Note\n",
+            "[verse, verse.tone]",
+            1,
+            ".gain",
+        ),
+        MaskedFault::Cell => (
+            "Clip other | gain=gv:\n    Note\n",
+            "[verse, other]",
+            1,
+            ".gain",
+        ),
+        MaskedFault::Cycle => (
+            "Clip other | gain=k.gain:\n    Note\n",
+            "[verse, other]",
+            1,
+            ".gain",
+        ),
+        MaskedFault::Number => ("Clip other | gain=3:\n    Note\n", "[1, 2]", 3, ""),
+    };
+    let value = format!("{chooser}{read} + (1 + true)");
+    let body = if recursive {
+        format!("fn h(xs, i, n): if n < 1 then {value} else h(xs, i, n - 1)\n")
+    } else {
+        format!("fn h(xs, i, n): {value}\n")
+    };
+    let mut items = vec![
+        "Session main\n".to_string(),
+        "state gv(1.0)\n".to_string(),
+        "Clip verse | gain=2:\n    Note as tone\n".to_string(),
+        other.to_string(),
+        body,
+        format!("Clip k | gain=h({array}, {index}, 2):\n    Note\n"),
+    ];
+    if reversed {
+        items.reverse();
+    }
+    items.concat()
+}
+
+#[test]
+fn a_recursive_body_holding_a_type_fault_is_a_placeholder_and_its_frame_values_faults_draw_nothing_339()
+ {
+    let mut failures = Vec::new();
+    let mut programs = 0;
+    for fault in MASKED_FAULTS {
+        for chooser in ["xs[i]", "[xs[0], xs[1]][i]"] {
+            for reversed in [false, true] {
+                let text = masked_program((fault, chooser), (reversed, true));
+                let drawn = found(&text);
+                let expected: Found = [((Code::OperandType, "1 + true".to_string()), 1)].into();
+                programs += 1;
+                if drawn != expected {
+                    failures.push(format!(
+                        "339 {fault:?} {chooser} {reversed}\n{text}\n  found {drawn:?}\n  expected {expected:?}\n"
+                    ));
+                }
+            }
+        }
+    }
+    assert_none_fail((failures, programs), 20);
+}
+
+#[test]
+fn the_unrolled_twin_of_a_type_faulty_recursive_body_draws_its_static_index_fault_beside_the_type_fault_339()
+ {
+    let mut failures = Vec::new();
+    for reversed in [false, true] {
+        let text = masked_program((MaskedFault::Outside, "xs[i]"), (reversed, false));
+        let drawn = found(&text);
+        let expected: Found = [
+            ((Code::OperandType, "1 + true".to_string()), 1),
+            ((Code::IndexOutOfRange, "i".to_string()), 1),
+        ]
+        .into();
+        if drawn != expected {
+            failures.push(format!("339 twin {reversed}\n{text}\n  found {drawn:?}\n"));
+        }
+    }
+    assert_none_fail((failures, 2), 2);
+}
