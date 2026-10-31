@@ -3,7 +3,7 @@ use std::ops::Range;
 use super::hir_builder::{HirBuilder, digits_value};
 use super::index::index;
 use crate::diagnostics::Code;
-use crate::semantics::ir::{CellWord, ExprKind, Input, InputId, StateDecl, StateId, Top};
+use crate::semantics::ir::{CellWord, ExprKind, Input, InputId, StateDecl, StateId, Top, TypeBase};
 use crate::syntax::SyntaxKind;
 use crate::syntax::ast::{self, AstNode};
 
@@ -40,7 +40,18 @@ impl HirBuilder<'_> {
             self.draw(Code::CellCapacity, range, summary);
         }
         let name = self.ident(node.name());
-        let ty = node.ty().map(|ty| self.type_ref(&ty));
+        let ty = node.ty().map(|ty| {
+            let mut built = self.type_ref(&ty);
+            let after = ty.syntax().range().end;
+            if self
+                .faults
+                .first_in(after..annotation_end(node).max(after))
+                .is_some()
+            {
+                built.base = TypeBase::Error;
+            }
+            built
+        });
         if !rule && let Some(init) = node.init() {
             let value = self.expr(init.value(), loc);
             let input = Input {
@@ -105,4 +116,15 @@ fn brackets(node: &ast::CellDecl<'_>) -> Option<Range<u32>> {
     let open = tokens.find(|token| token.kind() == SyntaxKind::LBracket)?;
     let close = tokens.find(|token| token.kind() == SyntaxKind::RBracket)?;
     Some(open.range().start..close.range().end)
+}
+
+fn annotation_end(node: &ast::CellDecl<'_>) -> u32 {
+    let eq = node
+        .syntax()
+        .children_with_tokens()
+        .filter_map(|element| element.into_token())
+        .find(|token| token.kind() == SyntaxKind::Eq)
+        .map(|token| token.range().start);
+    let clock = node.clock().map(|clock| clock.syntax().range().start);
+    clock.or(eq).unwrap_or(node.syntax().range().end)
 }

@@ -1683,6 +1683,36 @@ fn a_type_whose_length_or_capacity_is_missing_or_malformed_is_a_placeholder() {
             ),
             (&["state g([1, 2]): i32[..1_0]\n", read], &[]),
             (&["state g([1]): i32[..2147483647]\n", read], &[]),
+            (
+                &["state g([1, 2]): i32^[2]\n", read],
+                &[(Code::MisplacedCaret, "^")],
+            ),
+            (
+                &["state g([1, 2]): i32[2]^\n", read],
+                &[(Code::MisplacedCaret, "^")],
+            ),
+            (
+                &["state x(1)\n", "state g: i32^[2] = [x, x]\n", read],
+                &[(Code::MisplacedCaret, "^")],
+            ),
+            (
+                &["let g: i32^[2] = [1, 2]\n", read],
+                &[(Code::MisplacedCaret, "^")],
+            ),
+        ],
+    );
+    let sequence = "Clip c | sequence=(mirror(held) + [1]):\n    Note\n";
+    support::assert_rows_in_every_order(
+        &symphonyscript_fixtures::native_vocabulary(),
+        &[
+            (
+                &["state held([]): i32^[..4]\n", sequence],
+                &[(Code::MisplacedCaret, "^")],
+            ),
+            (
+                &["let held: i32^[..4] = []\n", sequence],
+                &[(Code::MisplacedCaret, "^")],
+            ),
         ],
     );
 }
