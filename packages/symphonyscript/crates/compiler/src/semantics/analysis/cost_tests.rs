@@ -2076,3 +2076,37 @@ fn stress_families_that_read_one_anothers_open_results_are_typed_again_in_work_l
     let failures = open_read_failures([128, 256, 512]);
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
+
+#[test]
+fn a_recursive_argument_that_grows_a_dimension_per_level_holds_a_node_per_template_node_and_a_frame_per_call()
+ {
+    let compiler = Compiler::new(&vocabulary()).expect("the vocabulary compiles");
+    let run = measured(
+        &compiler,
+        "fn f(xs, n): if n > 3 then 0 else f([xs], n + 1)\nClip c:\n    Note/(f([1], 0))\n",
+    );
+    let calls = walk_count(&run, "calls");
+    let bounds = [
+        ("nodes", 28_748),
+        ("CallKeyOwned", calls),
+        ("TemplateKeyOwned", calls),
+        ("MachineFreshFrame", calls),
+        ("FrameForeignSlot", 0),
+    ];
+    let mut failures: Vec<String> = run.errors.clone();
+    for (counter, bound) in bounds {
+        let count = walk_count(&run, counter);
+        if count > bound {
+            failures.push(format!("{counter} {count} > {bound}"));
+        }
+    }
+    let node_bytes = std::mem::size_of::<super::node::Node>();
+    if node_bytes > 112 {
+        failures.push(format!("a node holds {node_bytes} bytes"));
+    }
+    assert!(
+        calls > 0 && failures.is_empty(),
+        "{calls} calls: {}",
+        failures.join("\n")
+    );
+}
