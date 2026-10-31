@@ -634,3 +634,49 @@ fn an_offset_from_the_end_of_a_runtime_base_is_read_in_its_own_type_as_its_liter
     ];
     support::assert_rows_in_every_order(&symphonyscript_fixtures::vocabulary(), rows);
 }
+
+#[test]
+fn an_index_an_offset_from_the_end_or_a_slice_of_a_single_value_draws_not_an_array_once_399() {
+    let n = "let n = 5\n";
+    let s = "state s0 = 5\n";
+    let rows: &[support::Row] = &[
+        (
+            &[n, "Clip c:\n    Note/(n[^1.5])\n"],
+            &[(Code::NotAnArray, "n")],
+        ),
+        (
+            &[n, "Clip c:\n    Note/(n[^1])\n"],
+            &[(Code::NotAnArray, "n")],
+        ),
+        (
+            &[s, "Clip c:\n    Note/(s0[^1])\n"],
+            &[(Code::NotAnArray, "s0")],
+        ),
+        (
+            &[n, "Clip c:\n    Note/(n[0])\n"],
+            &[(Code::NotAnArray, "n")],
+        ),
+        (
+            &[s, "Clip c:\n    Note/(s0[0])\n"],
+            &[(Code::NotAnArray, "s0")],
+        ),
+        (
+            &[n, "Clip c:\n    Note/(n[0..1][0])\n"],
+            &[(Code::NotAnArray, "n")],
+        ),
+        (
+            &[n, "Clip c:\n    Note/(n[^1..][0])\n"],
+            &[(Code::NotAnArray, "n")],
+        ),
+        (
+            &[n, "Clip c:\n    Note/(n[^[1, 2][5]])\n"],
+            &[(Code::NotAnArray, "n"), (Code::IndexOutOfRange, "5")],
+        ),
+        (
+            &[n, "Clip c:\n    Note/(\"abc\"[^n])\n"],
+            &[(Code::NotAnArray, "\"abc\"")],
+        ),
+        (&[n, "Clip c:\n    Note/([1, 2][^n - 3])\n"], &[]),
+    ];
+    support::assert_rows_in_every_order(&symphonyscript_fixtures::vocabulary(), rows);
+}

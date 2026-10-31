@@ -361,6 +361,9 @@ impl Engine<'_> {
         scope: ScopeId,
         need: &mut Vec<Query>,
     ) -> Result<Option<NodeId>, Internal> {
+        if !matches!(base, Val::Array(_)) && !self.holds_array(base) {
+            return Ok(Some(offset));
+        }
         let length = match self.length_val(base.clone(), loc, scope, need)? {
             Some(Val::Scalar(length)) => length,
             Some(Val::Array(_) | Val::Error) => return Ok(Some(offset)),
