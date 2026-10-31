@@ -6290,3 +6290,60 @@ fn where_the_flow_stops_a_literal_beside_a_fixed_type_operand_takes_the_operands
     ];
     support::assert_rows_in_every_order(&symphonyscript_fixtures::vocabulary(), rows);
 }
+
+#[test]
+fn an_annotated_value_holding_a_faulty_choice_draws_the_faults_inside_it_and_no_shape_mismatch_392()
+{
+    let read = "Clip c:\n    Note/(a)\n";
+    let rows: &[support::Row] = &[
+        (
+            &["let a: i32 = if [1, 2][5] then [1, 2] else [1, 2]\n", read],
+            &[
+                (Code::ConditionType, "[1, 2][5]"),
+                (Code::IndexOutOfRange, "5"),
+            ],
+        ),
+        (
+            &[
+                "let a: i32[3] = if [1, 2][5] then [1, 2] else [1, 2]\n",
+                "Clip c:\n    Note/(a[0])\n",
+            ],
+            &[
+                (Code::ConditionType, "[1, 2][5]"),
+                (Code::IndexOutOfRange, "5"),
+            ],
+        ),
+        (
+            &[
+                "let a: i32 = if 1 + [1, 2][5] then [1, 2] else [1, 2]\n",
+                read,
+            ],
+            &[
+                (Code::ConditionType, "1 + [1, 2][5]"),
+                (Code::IndexOutOfRange, "5"),
+            ],
+        ),
+        (
+            &["let a: i32 = if 1 then [1, 2] else [1, 2]\n", read],
+            &[(Code::ConditionType, "1")],
+        ),
+        (
+            &["let a: i32 = if [1, 2][5] then 1 else 2\n", read],
+            &[
+                (Code::ConditionType, "[1, 2][5]"),
+                (Code::IndexOutOfRange, "5"),
+            ],
+        ),
+        (
+            &[
+                "let a: i32 = if [1, 2][1] > 1 then [1, 2] else [1, 2]\n",
+                read,
+            ],
+            &[(
+                Code::TypeMismatch,
+                "let a: i32 = if [1, 2][1] > 1 then [1, 2] else [1, 2]\n",
+            )],
+        ),
+    ];
+    support::assert_rows_in_every_order(&symphonyscript_fixtures::vocabulary(), rows);
+}

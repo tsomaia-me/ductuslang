@@ -1187,15 +1187,14 @@ impl Engine<'_> {
             && !matches!(val, Val::Error)
             && !self.holds_array(val)
         {
-            if sigs.iter().any(Sig::is_error) {
-                return Ok(BoundVal::Error);
+            if !sigs.iter().any(Sig::is_error) {
+                self.error(
+                    Code::TypeMismatch,
+                    loc,
+                    scope,
+                    "the value's shape differs from its annotated type",
+                )?;
             }
-            self.error(
-                Code::TypeMismatch,
-                loc,
-                scope,
-                "the value's shape differs from its annotated type",
-            )?;
             self.memo.own_typed.extend(val.nodes());
             return Ok(BoundVal::Error);
         }
