@@ -5,7 +5,7 @@ use super::init::Init;
 use super::match_block::MatchBlock;
 use super::name::Name;
 use super::support::{child, name_at, token};
-use super::type_ref::TypeRef;
+use super::r#type::Type;
 use crate::syntax::{NodeView, SyntaxKind, TokenView};
 
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
@@ -47,7 +47,7 @@ impl<'p> CellDecl<'p> {
         child(&self.0)
     }
 
-    pub fn ty(&self) -> Option<TypeRef<'p>> {
+    pub fn ty(&self) -> Option<Type<'p>> {
         child(&self.0)
     }
 

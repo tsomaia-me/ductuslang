@@ -204,7 +204,7 @@ impl Engine<'_> {
                 Top::Input(input) => roots.push((hir.input(input)?.value, global)),
                 Top::Let(id) => roots.push((hir.let_decl(id)?.value, global)),
                 Top::State(id) => roots.push((hir.state(id)?.value, global)),
-                Top::Fn(_) | Top::Pattern(_) | Top::Placement(_) => {}
+                Top::Fn(_) | Top::Pattern(_) | Top::Placement(_) | Top::Placeholder(_) => {}
             }
         }
         for index in 0..self.instances.len() {

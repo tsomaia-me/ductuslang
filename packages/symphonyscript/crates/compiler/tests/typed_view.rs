@@ -1,7 +1,7 @@
 mod support;
 
 use symphonyscript::syntax::ast::{
-    AstNode, BodyItem, Expr, Item, Iterable, LoopHead, Member, Name, StringPart,
+    AstNode, BodyItem, Expr, Item, Iterable, LoopHead, Member, Name, StringPart, Type,
 };
 use symphonyscript::syntax::{Parsed, SyntaxKind};
 
@@ -37,7 +37,9 @@ fn declarations_expose_their_parts() {
         panic!("a cell");
     };
     assert_eq!(text(input.name()), "fine");
-    let ty = input.ty().expect("a type");
+    let Some(Type::Ref(ty)) = input.ty() else {
+        panic!("a scalar type");
+    };
     assert_eq!(ty.base().map(|token| token.kind()), Some(SyntaxKind::F32Kw));
     assert!(ty.enum_name().is_none());
     assert_eq!(

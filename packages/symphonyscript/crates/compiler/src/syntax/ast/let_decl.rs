@@ -3,7 +3,7 @@ use super::expr::Expr;
 use super::match_block::MatchBlock;
 use super::name::Name;
 use super::support::{child, name_at};
-use super::type_ref::TypeRef;
+use super::r#type::Type;
 use crate::syntax::{NodeView, SyntaxKind};
 
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
@@ -24,7 +24,7 @@ impl<'p> LetDecl<'p> {
         name_at(&self.0, 0)
     }
 
-    pub fn ty(&self) -> Option<TypeRef<'p>> {
+    pub fn ty(&self) -> Option<Type<'p>> {
         child(&self.0)
     }
 

@@ -8,4 +8,5 @@ pub(crate) enum Top {
     Fn(FnId),
     Pattern(PatternId),
     Placement(PlacementId),
+    Placeholder(u32),
 }

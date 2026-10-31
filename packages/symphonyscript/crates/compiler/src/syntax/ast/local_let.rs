@@ -3,6 +3,7 @@ use super::expr::Expr;
 use super::match_block::MatchBlock;
 use super::name::Name;
 use super::support::{child, name_at};
+use super::r#type::Type;
 use crate::syntax::{NodeView, SyntaxKind};
 
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
@@ -21,6 +22,10 @@ impl<'p> AstNode<'p> for LocalLet<'p> {
 impl<'p> LocalLet<'p> {
     pub fn name(&self) -> Option<Name<'p>> {
         name_at(&self.0, 0)
+    }
+
+    pub fn ty(&self) -> Option<Type<'p>> {
+        child(&self.0)
     }
 
     pub fn value(&self) -> Option<Expr<'p>> {

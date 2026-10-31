@@ -119,7 +119,7 @@ pub(super) fn help(code: Code) -> Option<&'static str> {
         Code::TopLevelSyntax => "declare the value, as in `let five = 5`",
         Code::PreludePath => "give the source file a path that no prelude file holds",
         Code::TypeSyntax => {
-            "write the lengths and the capacity in digits, as in `i32[3]` or `i32[..10]`"
+            "write a size in each bracket of the type, as in `i32[3]` or `i32[..10]`"
         }
         Code::ExpressionSyntax => "give every operator its operands and close every bracket",
         Code::MatchSyntax => "end the `match` line with `:` and indent its arms under it",
@@ -132,6 +132,15 @@ pub(super) fn help(code: Code) -> Option<&'static str> {
         }
         Code::CellSyntax => {
             "declare the cell at top level as `state`, `stream` or `channel`, a name, an init in parentheses, a rule after `=` or both, as in `state level(0)` or `state count = level + 1`"
+        }
+        Code::RecordSyntax => {
+            "write `type`, a name and `:` with a field per line, or `=` and a type, as in `type Id = i64`; a record literal names its type and its fields in braces, as in `Chord {root: 60}`"
+        }
+        Code::GenericSyntax => {
+            "write the bracket parameters after the name, each a name or `const` and a name, as in `fn first[T, const N](xs: T[N])`"
+        }
+        Code::PackageSyntax => {
+            "write `require` and a source in quotes, `use` and a library's name, or `publish` and the names, as in `use scales: major`"
         }
         Code::JsonSyntax => {
             "write the document as JSON text after `json`, as in `json {\"count\": 16}`"

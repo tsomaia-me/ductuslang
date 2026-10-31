@@ -84,8 +84,8 @@ const BROKEN: &[(&str, Expected, &str)] = &[
     ),
     (
         "fn f(x:\n    x\nlet y = 1\n",
-        &[(Code::FnSyntax, 6, 7)],
-        "File[FnDecl[fn f ParamList[( Param[x]] : FnBody[NameRef[x] NL]] LetDecl[let y = Literal[1] NL]]",
+        &[(Code::FnSyntax, 14, 17)],
+        "File[FnDecl[fn f ParamList[( Param[x : TypeRef[x]]] NL] LetDecl[let y = Literal[1] NL]]",
     ),
     (
         "pattern P():\n    let a = 1\nClip c\n",
@@ -153,9 +153,9 @@ const BROKEN: &[(&str, Expected, &str)] = &[
         "File[Placement[Clip c Body[: Block[NL > Placement[Note Attrs[| AttrEntry[! velocity]] ErrorNode[= 1] NL] <]]]]",
     ),
     (
-        "state a(0): i32[x]\n",
+        "state a(0): i32[,]\n",
         &[(Code::TypeSyntax, 16, 17)],
-        "File[CellDecl[state a Init[( Literal[0] )] : TypeRef[i32 [] ErrorNode[x ]] NL]]",
+        "File[CellDecl[state a Init[( Literal[0] )] : TypeRef[i32 [] ErrorNode[, ]] NL]]",
     ),
     (
         "let a = i32 x\n",

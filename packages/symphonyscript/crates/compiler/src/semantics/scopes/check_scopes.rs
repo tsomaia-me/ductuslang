@@ -47,6 +47,7 @@ pub(crate) fn check_scopes(
                 checker.pattern(id, stand_in.map(StandIn::placement))?
             }
             Top::Placement(id) => checker.top_placement(id)?,
+            Top::Placeholder(_) => {}
         }
         placeholders.extend(checker.into_placeholders());
     }

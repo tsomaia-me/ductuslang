@@ -3,7 +3,7 @@ use super::expr::Expr;
 use super::loop_head::LoopHead;
 use super::name::Name;
 use super::support::expr_after;
-use super::type_ref::TypeRef;
+use super::r#type::Type;
 use crate::syntax::{ElementView, NodeView, SyntaxKind};
 
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
@@ -31,11 +31,11 @@ impl<'p> ForExprHead<'p> {
             .map(Name::new)
     }
 
-    pub fn accumulator_type(&self) -> Option<TypeRef<'p>> {
+    pub fn accumulator_type(&self) -> Option<Type<'p>> {
         self.after_into()
             .take_while(|element| element.kind() != SyntaxKind::FromKw)
             .filter_map(ElementView::into_node)
-            .find_map(TypeRef::cast)
+            .find_map(Type::cast)
     }
 
     pub fn start(&self) -> Option<Expr<'p>> {

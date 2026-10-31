@@ -51,9 +51,9 @@ pub(crate) fn collect(
                     );
                     continue;
                 }
-                (hir.input(id)?.name.clone(), Decl::Input(id))
+                (hir.input(id)?.name.clone(), Some(Decl::Input(id)))
             }
-            Top::Let(id) => (hir.let_decl(id)?.name.clone(), Decl::Let(id)),
+            Top::Let(id) => (hir.let_decl(id)?.name.clone(), Some(Decl::Let(id))),
             Top::State(id) => {
                 if in_prelude {
                     let loc = hir.state(id)?.loc;
@@ -65,10 +65,11 @@ pub(crate) fn collect(
                     );
                     continue;
                 }
-                (hir.state(id)?.name.clone(), Decl::State(id))
+                (hir.state(id)?.name.clone(), Some(Decl::State(id)))
             }
-            Top::Fn(id) => (hir.fn_decl(id)?.name.clone(), Decl::Fn(id)),
-            Top::Pattern(id) => (hir.pattern(id)?.name.clone(), Decl::Pattern(id)),
+            Top::Fn(id) => (hir.fn_decl(id)?.name.clone(), Some(Decl::Fn(id))),
+            Top::Pattern(id) => (hir.pattern(id)?.name.clone(), Some(Decl::Pattern(id))),
+            Top::Placeholder(index) => (hir.placeholders.get(index as usize).cloned(), None),
             Top::Placement(id) => {
                 if in_prelude {
                     let loc = hir.placement(id)?.loc;
@@ -80,7 +81,7 @@ pub(crate) fn collect(
                     );
                     continue;
                 }
-                (hir.placement(id)?.name.clone(), Decl::Instance(id))
+                (hir.placement(id)?.name.clone(), Some(Decl::Instance(id)))
             }
         };
         let Some(name) = name else {
@@ -114,7 +115,12 @@ pub(crate) fn collect(
                 decl,
                 report,
             ) {
-                source.insert(name.text.clone(), decl);
+                match decl {
+                    Some(decl) => {
+                        source.insert(name.text.clone(), decl);
+                    }
+                    None => source.duplicate(&name.text),
+                }
             }
         } else {
             declare(hir, &base, &mut source, &mut first, &name, decl, report);
@@ -167,7 +173,7 @@ fn declare(
     namespace: &mut Namespace,
     first: &mut BTreeMap<String, Loc>,
     name: &Ident,
-    decl: Decl,
+    decl: Option<Decl>,
     report: &mut Report,
 ) -> bool {
     if let Some(existing) = base.get(&name.text) {
@@ -205,7 +211,12 @@ fn declare(
         return false;
     }
     first.insert(name.text.clone(), name.loc);
-    namespace.insert(name.text.clone(), decl);
+    match decl {
+        Some(decl) => {
+            namespace.insert(name.text.clone(), decl);
+        }
+        None => namespace.duplicate(&name.text),
+    }
     true
 }
 

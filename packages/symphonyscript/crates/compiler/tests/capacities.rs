@@ -1630,7 +1630,7 @@ fn a_type_whose_length_or_capacity_is_missing_or_malformed_is_a_placeholder() {
             ),
             (
                 &["state g([1, 2]): i32[..x]\n", read],
-                &[(Code::TypeSyntax, "x")],
+                &[(Code::UnbuiltConstruct, "x")],
             ),
             (
                 &["state x(1)\n", "state g: i32[..] = [x, x]\n", read],
@@ -1643,35 +1643,35 @@ fn a_type_whose_length_or_capacity_is_missing_or_malformed_is_a_placeholder() {
             ),
             (
                 &["state g([1, 2]): i32[..0x10]\n", read],
-                &[(Code::TypeSyntax, "0x10")],
+                &[(Code::UnbuiltConstruct, "0x10")],
             ),
             (
                 &["state g([1, 2, 3]): i32[0b11]\n", read],
-                &[(Code::TypeSyntax, "0b11")],
+                &[(Code::UnbuiltConstruct, "0b11")],
             ),
             (
                 &["state g([1, 2, 3]): i32[3i32]\n", read],
-                &[(Code::TypeSyntax, "3i32")],
+                &[(Code::UnbuiltConstruct, "3i32")],
             ),
             (
                 &["state g([1]): i32[..1.5]\n", read],
-                &[(Code::TypeSyntax, "1.5")],
+                &[(Code::UnbuiltConstruct, "1.5")],
             ),
             (
                 &["let g: i32[..0x10] = [1, 2]\n", read],
-                &[(Code::TypeSyntax, "0x10")],
+                &[(Code::UnbuiltConstruct, "0x10")],
             ),
             (
                 &["let g: i32[0b11] = [1, 2, 3]\n", read],
-                &[(Code::TypeSyntax, "0b11")],
+                &[(Code::UnbuiltConstruct, "0b11")],
             ),
             (
                 &["let g: i32[3i32] = [1, 2, 3]\n", read],
-                &[(Code::TypeSyntax, "3i32")],
+                &[(Code::UnbuiltConstruct, "3i32")],
             ),
             (
                 &["let g: i32[..1.5] = [1]\n", read],
-                &[(Code::TypeSyntax, "1.5")],
+                &[(Code::UnbuiltConstruct, "1.5")],
             ),
             (
                 &["state g([1]): i32[..99999999999999999999]\n", read],
@@ -2666,15 +2666,6 @@ fn every_diagnostic_carries_a_help_that_states_its_fix() {
             &["state x([1, 2]): i32[..1]\n", "Clip c:\n    Note/(x[0])\n"],
             Code::CapacityExceeded,
             "slice the value to its newest element with `[^1..]`",
-        ),
-        (
-            vocabulary,
-            &[
-                "state b([]): i32[..10][3]\n",
-                "Clip c:\n    Note/(b[0][0])\n",
-            ],
-            Code::TypeSyntax,
-            "write the capacity as the last, outermost length, as in `i32[3][..10]`",
         ),
         (
             vocabulary,

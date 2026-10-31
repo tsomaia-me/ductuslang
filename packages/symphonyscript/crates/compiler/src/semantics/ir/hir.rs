@@ -30,6 +30,7 @@ pub(crate) struct Hir {
     pub top: Vec<Top>,
     pub skipped_top: UnknownNames,
     pub drawn: Vec<(crate::diagnostics::Code, Loc, String)>,
+    pub placeholders: Vec<super::ident::Ident>,
     pub prelude: PreludeEnd,
 }
 

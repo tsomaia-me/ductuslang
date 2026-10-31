@@ -70,15 +70,27 @@ fn unclosed_brackets(root: &NodeView<'_>) -> Vec<Range<u32>> {
 }
 
 fn unclosed(node: &NodeView<'_>) -> Option<Range<u32>> {
+    if node.kind() == SyntaxKind::MapType {
+        let closed = node
+            .children_with_tokens()
+            .any(|element| element.kind() == SyntaxKind::RBracket);
+        return (!closed).then(|| node.range());
+    }
     let closer = match node.kind() {
         SyntaxKind::ParenExpr
         | SyntaxKind::ArgList
         | SyntaxKind::Conversion
-        | SyntaxKind::DefaultArg => SyntaxKind::RParen,
-        SyntaxKind::ArrayLit | SyntaxKind::IndexExpr | SyntaxKind::JsonArray => {
-            SyntaxKind::RBracket
-        }
-        SyntaxKind::JsonObject => SyntaxKind::RBrace,
+        | SyntaxKind::DefaultArg
+        | SyntaxKind::ParenType
+        | SyntaxKind::FnType => SyntaxKind::RParen,
+        SyntaxKind::ArrayLit
+        | SyntaxKind::IndexExpr
+        | SyntaxKind::JsonArray
+        | SyntaxKind::TypeArgs
+        | SyntaxKind::StrType
+        | SyntaxKind::JsonType
+        | SyntaxKind::GenericParams => SyntaxKind::RBracket,
+        SyntaxKind::JsonObject | SyntaxKind::RecordLit | SyntaxKind::Count => SyntaxKind::RBrace,
         _ => return None,
     };
     let opener = match closer {

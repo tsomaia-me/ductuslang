@@ -3,6 +3,7 @@ mod build_file;
 mod cells;
 mod expressions;
 mod faults;
+mod heads;
 mod hir_builder;
 mod index;
 mod number_literal;

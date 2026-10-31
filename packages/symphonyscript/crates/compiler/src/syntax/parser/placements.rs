@@ -458,8 +458,7 @@ impl Parser<'_> {
             ]);
         } else if self.at(SyntaxKind::ForKw) {
             self.start(SyntaxKind::BundleFor);
-            self.loop_head(Code::BundleSyntax);
-            self.then([Task::Iterable, Task::BundleForAfterIterable { members }]);
+            self.loop_head(Code::BundleSyntax, Task::BundleForIterable { members });
         } else {
             self.then([Task::BundleEnd { members }]);
         }
@@ -510,3 +509,9 @@ const PAREN_CLOSE: Task = Task::Close {
     code: Code::PlacementSyntax,
     what: "`)`",
 };
+
+impl Parser<'_> {
+    pub(super) fn bundle_for_iterable(&mut self, members: usize) {
+        self.then([Task::Iterable, Task::BundleForAfterIterable { members }]);
+    }
+}

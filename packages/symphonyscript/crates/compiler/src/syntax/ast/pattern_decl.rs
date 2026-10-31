@@ -1,8 +1,10 @@
 use super::ast_node::AstNode;
 use super::block::Block;
+use super::generic_params::GenericParams;
 use super::name::Name;
 use super::pattern_param::PatternParam;
 use super::pattern_param_list::PatternParamList;
+use super::placement_type::PlacementType;
 use super::support::{child, children, name_at};
 use crate::syntax::{NodeView, SyntaxKind};
 
@@ -28,6 +30,14 @@ impl<'p> PatternDecl<'p> {
         child::<PatternParamList>(&self.0)
             .into_iter()
             .flat_map(|list| children::<PatternParam>(list.syntax()))
+    }
+
+    pub fn generic_params(&self) -> Option<GenericParams<'p>> {
+        child(&self.0)
+    }
+
+    pub fn placement_type(&self) -> Option<PlacementType<'p>> {
+        child(&self.0)
     }
 
     pub fn body(&self) -> Option<Block<'p>> {

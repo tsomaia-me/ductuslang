@@ -63,6 +63,7 @@ impl HirBuilder<'_> {
                 self.hir.top.push(Top::Let(id));
             }
             Item::Cell(node) => self.cell(&node),
+            Item::Fn(node) if self.unbuilt_fn(&node) => self.placeholder(node.name()),
             Item::Fn(node) => {
                 let loc = self.loc(node.syntax().range());
                 let params = node
@@ -101,6 +102,7 @@ impl HirBuilder<'_> {
                 self.hir.fns.push(decl);
                 self.hir.top.push(Top::Fn(id));
             }
+            Item::Pattern(node) if self.unbuilt_pattern(&node) => self.placeholder(node.name()),
             Item::Pattern(node) => {
                 let loc = self.loc(node.syntax().range());
                 let regions = param_regions(node.syntax(), SyntaxKind::PatternParamList);
@@ -141,6 +143,23 @@ impl HirBuilder<'_> {
                 return Ok(Some(id));
             }
             Item::Wire(_) => {}
+            Item::Type(node) => {
+                if node.alias().is_some() || node.fields().next().is_some() {
+                    self.draw_item(node.syntax(), "a `type` declaration (SPEC §3.8)");
+                }
+                self.placeholder(node.name());
+            }
+            Item::Package(node) => self.draw_item(
+                node.syntax(),
+                "the `Package` item of a package file (SPEC §15.2)",
+            ),
+            Item::Require(node) => {
+                self.draw_item(node.syntax(), "a `require` item (SPEC §15.3)");
+            }
+            Item::Use(node) => self.draw_item(node.syntax(), "a `use` item (SPEC §15.4)"),
+            Item::Publish(node) => {
+                self.draw_item(node.syntax(), "a `publish` item (SPEC §15.5)");
+            }
         }
         Ok(None)
     }
@@ -159,8 +178,31 @@ impl HirBuilder<'_> {
         }
     }
 
-    pub(super) fn type_ref(&mut self, node: &ast::TypeRef<'_>) -> TypeRef {
+    pub(super) fn type_ref(&mut self, ty: &ast::Type<'_>) -> TypeRef {
+        if missing_type(ty.syntax()) {
+            return TypeRef {
+                base: TypeBase::Error,
+                lengths: Vec::new(),
+                capacity: None,
+                loc: self.loc(ty.syntax().range()),
+            };
+        }
+        let node = match ty {
+            ast::Type::Ref(node) => node,
+            ast::Type::Sum(node) => {
+                return self.unbuilt_type(node.syntax().range(), "a sum type (SPEC §3.9)");
+            }
+            ast::Type::Fn(node) => {
+                return self.unbuilt_type(node.syntax().range(), "a function type (SPEC §6.7)");
+            }
+        };
         let loc = self.loc(node.syntax().range());
+        if !self.faults.touch(node.syntax().range())
+            && !unclosed(node)
+            && let Some((range, construct)) = unbuilt_part(node)
+        {
+            return self.unbuilt_type(range, construct);
+        }
         let base = match node.base() {
             _ if self.faults.touch(node.syntax().range()) || unclosed(node) => TypeBase::Error,
             Some(token) => match scalar_type(&token) {
@@ -183,6 +225,17 @@ impl HirBuilder<'_> {
             base,
             lengths,
             capacity,
+            loc,
+        }
+    }
+
+    fn unbuilt_type(&mut self, range: Range<u32>, construct: &str) -> TypeRef {
+        let loc = self.loc(range.clone());
+        self.draw_unbuilt(range, construct);
+        TypeRef {
+            base: TypeBase::Error,
+            lengths: Vec::new(),
+            capacity: None,
             loc,
         }
     }
@@ -253,4 +306,63 @@ fn unclosed(node: &ast::TypeRef<'_>) -> bool {
             _ => depth,
         });
     depth != 0
+}
+
+fn missing_type(node: &NodeView<'_>) -> bool {
+    node.preorder().any(|event| {
+        matches!(
+            event,
+            Walk::Enter(ElementView::Node(child))
+                if child.kind() == SyntaxKind::TypeRef && child.range().is_empty()
+        )
+    })
+}
+
+fn unbuilt_part(node: &ast::TypeRef<'_>) -> Option<(Range<u32>, &'static str)> {
+    let whole = node.syntax().range();
+    let mut brackets = 0usize;
+    let mut capacity_at = None;
+    for element in node.syntax().children_with_tokens() {
+        let found = match &element {
+            ElementView::Node(child) => match child.kind() {
+                SyntaxKind::StrType => Some("the string type `str` (SPEC §3.3)"),
+                SyntaxKind::MapType => Some("a map type (SPEC §3.10)"),
+                SyntaxKind::JsonType => Some("the document type `json` (SPEC §3.11)"),
+                SyntaxKind::ParenType => Some("a parenthesized type (SPEC §3.2)"),
+                SyntaxKind::QualifiedName => Some("a qualified name (SPEC §15.3)"),
+                SyntaxKind::TypeArgs => Some("a list of bracket arguments of a type (SPEC §6.8)"),
+                SyntaxKind::Size => Some("a size written as an expression (SPEC §3.2)"),
+                _ => None,
+            },
+            ElementView::Token(token) => match token.kind() {
+                SyntaxKind::NoneKw => Some("the type `none` (SPEC §3.9)"),
+                SyntaxKind::LBracket => {
+                    brackets += 1;
+                    None
+                }
+                SyntaxKind::Dot2 => {
+                    capacity_at = capacity_at.or(Some(brackets));
+                    None
+                }
+                _ => None,
+            },
+        };
+        if let Some(construct) = found {
+            return Some((element.range(), construct));
+        }
+    }
+    if capacity_at.is_some_and(|at| at < brackets) {
+        return Some((
+            whole,
+            "a capacity at an inner level of an array type (SPEC §3.2)",
+        ));
+    }
+    if node
+        .syntax()
+        .children_with_tokens()
+        .any(|element| element.kind() == SyntaxKind::Question)
+    {
+        return Some((whole, "an optional type `T?` (SPEC §3.9)"));
+    }
+    None
 }

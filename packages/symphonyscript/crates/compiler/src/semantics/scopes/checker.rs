@@ -268,6 +268,7 @@ impl<'a> Checker<'a> {
     pub fn type_ref(&mut self, ty: &TypeRef) {
         if let TypeBase::Enum(name) = &ty.base
             && self.vocabulary.enum_named(&name.text).is_none()
+            && !self.namespace.is_duplicated(&name.text)
         {
             self.report.error(
                 self.hir,

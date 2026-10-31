@@ -449,6 +449,12 @@ impl HirBuilder<'_> {
     }
 
     fn for_shape<'p>(&mut self, node: &ast::ForExpr<'p>) -> (Shape, Vec<Option<ast::Expr<'p>>>) {
+        if let Some(ty) = node.lets().find_map(|local| local.ty()) {
+            return self.unbuilt(
+                ty.syntax().range(),
+                "an annotation on a local `let` (SPEC §6.3)",
+            );
+        }
         let Some(head) = node.head() else {
             return (Shape::Leaf(ExprKind::Error), Vec::new());
         };

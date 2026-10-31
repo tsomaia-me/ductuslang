@@ -5,20 +5,31 @@ use crate::diagnostics::{Code, Diagnostic};
 use crate::syntax::syntax_kind::SyntaxKind;
 
 impl Parser<'_> {
-    pub(super) fn loop_head(&mut self, code: Code) {
+    pub(super) fn loop_head(&mut self, code: Code, after: Task) {
         self.bump();
-        self.loop_name(code);
-        if self.eat(SyntaxKind::Comma) {
-            self.loop_name(code);
-        }
-        self.expect(SyntaxKind::InKw, code, "`in`");
+        self.then([
+            Task::LoopName(code),
+            Task::LoopNameRest(code),
+            Task::LoopIn(code),
+            after,
+        ]);
     }
 
-    fn loop_name(&mut self, code: Code) {
+    pub(super) fn loop_name(&mut self, code: Code) {
         self.expect_name(code, "the loop variable");
         if self.eat(SyntaxKind::Colon) {
-            self.type_ref();
+            self.then([Task::Type]);
         }
+    }
+
+    pub(super) fn loop_name_rest(&mut self, code: Code) {
+        if self.eat(SyntaxKind::Comma) {
+            self.then([Task::LoopName(code)]);
+        }
+    }
+
+    pub(super) fn loop_in(&mut self, code: Code) {
+        self.expect(SyntaxKind::InKw, code, "`in`");
     }
 
     pub(super) fn head_value(&mut self, what: &str, help: Option<&str>) {
@@ -76,7 +87,22 @@ impl Parser<'_> {
         let checkpoint = self.checkpoint();
         self.start(SyntaxKind::ForExprHead);
         let reported = self.diagnostics.len();
-        self.loop_head(Code::ForSyntax);
+        self.loop_head(
+            Code::ForSyntax,
+            Task::ForExprIterable {
+                checkpoint,
+                own_line,
+                reported,
+            },
+        );
+    }
+
+    pub(super) fn for_expr_iterable(
+        &mut self,
+        checkpoint: Checkpoint,
+        own_line: bool,
+        reported: usize,
+    ) {
         self.help_since(reported, Code::ForSyntax, FOR_EXPR_HEAD);
         self.head_value("the iterable", Some(FOR_EXPR_HEAD));
         self.then([
@@ -91,9 +117,18 @@ impl Parser<'_> {
     pub(super) fn for_expr_into(&mut self, checkpoint: Checkpoint, own_line: bool) {
         self.for_expr_expect(SyntaxKind::IntoKw, "`into`");
         self.for_expr_expect(SyntaxKind::Ident, "the accumulator's name");
+        let from = Task::ForExprFrom {
+            checkpoint,
+            own_line,
+        };
         if self.eat(SyntaxKind::Colon) {
-            self.type_ref();
+            self.then([Task::Type, from]);
+        } else {
+            self.for_expr_from(checkpoint, own_line);
         }
+    }
+
+    pub(super) fn for_expr_from(&mut self, checkpoint: Checkpoint, own_line: bool) {
         self.for_expr_expect(SyntaxKind::FromKw, "`from` and the start");
         self.head_value("the start", Some(FOR_EXPR_HEAD));
         self.then([

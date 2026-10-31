@@ -1,5 +1,6 @@
 use super::ast_node::AstNode;
 use super::body_item::BodyItem;
+use super::cell_decl::CellDecl;
 use super::local_let::LocalLet;
 use super::members::Members;
 use super::support::{child, children};
@@ -20,6 +21,10 @@ impl<'p> AstNode<'p> for Block<'p> {
 
 impl<'p> Block<'p> {
     pub fn lets(&self) -> impl Iterator<Item = LocalLet<'p>> + use<'p> {
+        children(&self.0)
+    }
+
+    pub fn cells(&self) -> impl Iterator<Item = CellDecl<'p>> + use<'p> {
         children(&self.0)
     }
 

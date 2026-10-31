@@ -2,6 +2,7 @@ mod blocks;
 mod bracket;
 mod checkpoint;
 mod cost;
+mod decls;
 mod expressions;
 mod items;
 mod json;
@@ -13,6 +14,7 @@ mod task;
 #[cfg(test)]
 mod tests;
 mod tree_builder;
+mod types;
 
 use std::ops::Range;
 
@@ -46,6 +48,7 @@ pub(crate) struct Parser<'a> {
     block_ended: bool,
     previous_line_error: bool,
     tasks: Vec<Task>,
+    groups: std::collections::HashMap<usize, Option<(usize, bool)>>,
 }
 
 impl<'a> Parser<'a> {
@@ -64,6 +67,7 @@ impl<'a> Parser<'a> {
             block_ended: false,
             previous_line_error: false,
             tasks: Vec::new(),
+            groups: std::collections::HashMap::new(),
         }
     }
 
@@ -152,6 +156,9 @@ impl<'a> Parser<'a> {
                     );
                 }
                 self.finish();
+            }
+            Task::Expect { kind, code, what } => {
+                self.expect(kind, code, what);
             }
             Task::File => self.file_step(),
             Task::TopItem => self.top_item(),
@@ -273,6 +280,51 @@ impl<'a> Parser<'a> {
             Task::JsonEntry => self.json_entry(),
             Task::JsonObjectLoop => self.json_object_loop(),
             Task::JsonArrayLoop => self.json_array_loop(),
+            Task::Type => self.type_start(),
+            Task::FnParam => self.fn_param(),
+            Task::FnParamLoop => self.fn_param_loop(),
+            Task::FnTypeResult => self.fn_type_result(),
+            Task::SumLoop { checkpoint, open } => self.sum_loop(checkpoint, open),
+            Task::Base => self.base(),
+            Task::BaseTail => self.base_tail(),
+            Task::MapTypeColon => self.map_type_colon(),
+            Task::MapTypeCapacity => self.map_type_capacity(),
+            Task::Size => self.size(),
+            Task::TypeArgsOptional => self.type_args_optional(),
+            Task::TypeArgs => self.type_args(),
+            Task::TypeArg => self.type_arg(),
+            Task::TypeArgLoop => self.type_arg_loop(),
+            Task::LetValue => self.let_value(),
+            Task::CellAfterType(head) => self.cell_after_type(head),
+            Task::FnParams => self.fn_params(),
+            Task::PatternParams => self.pattern_params(),
+            Task::ParamDefault { pattern } => self.param_default(pattern),
+            Task::FnResult => self.fn_result(),
+            Task::PatternType => self.pattern_type(),
+            Task::GenericParam => self.generic_param(),
+            Task::GenericParamLoop => self.generic_param_loop(),
+            Task::TypeDecl => self.type_decl(),
+            Task::TypeDeclBody => self.type_decl_body(),
+            Task::FieldDecls { fields } => self.field_decls(fields),
+            Task::RecordLit => self.record_lit(),
+            Task::RecordFields => self.record_fields(),
+            Task::RecordField => self.record_field(),
+            Task::RecordFieldLoop => self.record_field_loop(),
+            Task::RequireAfter => self.require_after(),
+            Task::LoopName(code) => self.loop_name(code),
+            Task::LoopNameRest(code) => self.loop_name_rest(code),
+            Task::LoopIn(code) => self.loop_in(code),
+            Task::ForBlockIterable => self.for_block_iterable(),
+            Task::BundleForIterable { members } => self.bundle_for_iterable(members),
+            Task::ForExprIterable {
+                checkpoint,
+                own_line,
+                reported,
+            } => self.for_expr_iterable(checkpoint, own_line, reported),
+            Task::ForExprFrom {
+                checkpoint,
+                own_line,
+            } => self.for_expr_from(checkpoint, own_line),
         }
     }
 
@@ -321,6 +373,7 @@ impl<'a> Parser<'a> {
         };
         if ends {
             self.lexer.resynchronize(line, self.pos);
+            self.groups.clear();
         }
         ends
     }
@@ -651,6 +704,7 @@ impl<'a> Parser<'a> {
         let starts = |line: &LineStart<'_>| starts_line(line, text, vocabulary);
         if let Some(line) = self.lexer.resync_line(current, starts) {
             self.lexer.resynchronize(line, self.pos);
+            self.groups.clear();
         }
     }
 
@@ -915,4 +969,60 @@ fn holds_stray_colon(line: &LineStart<'_>, depth: u32, mut header: LoopHeader) -
         header = header.after(token.kind);
     }
     false
+}
+
+impl Parser<'_> {
+    fn group(&mut self, open: usize) -> Option<(usize, bool)> {
+        if let Some(found) = self.groups.get(&open) {
+            return *found;
+        }
+        let mut stack: Vec<(usize, bool)> = vec![(open, false)];
+        let mut index = open + 1;
+        while let Some(kind) = self.kind_at(index) {
+            match kind {
+                SyntaxKind::LParen | SyntaxKind::LBracket | SyntaxKind::LBrace => {
+                    stack.push((index, false));
+                }
+                SyntaxKind::RParen | SyntaxKind::RBracket | SyntaxKind::RBrace => {
+                    let (opened, comma) = stack.pop()?;
+                    self.groups.insert(opened, Some((index, comma)));
+                    if stack.is_empty() {
+                        return Some((index, comma));
+                    }
+                }
+                SyntaxKind::Comma => {
+                    if let Some(top) = stack.last_mut() {
+                        top.1 = true;
+                    }
+                }
+                SyntaxKind::Newline | SyntaxKind::Indent | SyntaxKind::Dedent => break,
+                _ => {}
+            }
+            index += 1;
+        }
+        for (opened, _) in stack {
+            self.groups.insert(opened, None);
+        }
+        None
+    }
+
+    fn after_group(&mut self) -> Option<SyntaxKind> {
+        let open = self.significant(0)?;
+        let (close, _) = self.group(open)?;
+        let mut index = close + 1;
+        while let Some(kind) = self.kind_at(index) {
+            if !kind.is_trivia() {
+                return Some(kind);
+            }
+            index += 1;
+        }
+        None
+    }
+
+    fn group_has_comma(&mut self) -> bool {
+        let Some(open) = self.significant(0) else {
+            return false;
+        };
+        self.group(open).is_some_and(|(_, comma)| comma)
+    }
 }

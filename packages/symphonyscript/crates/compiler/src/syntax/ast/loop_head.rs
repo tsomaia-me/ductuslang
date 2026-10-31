@@ -5,7 +5,7 @@ use super::iterable::Iterable;
 use super::loop_name::LoopName;
 use super::name::Name;
 use super::support::child;
-use super::type_ref::TypeRef;
+use super::r#type::Type;
 use crate::syntax::{ElementView, NodeView, SyntaxKind};
 
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
@@ -29,7 +29,7 @@ impl<'p> LoopHead<'p> {
                 }
                 ElementView::Token(_) => {}
                 ElementView::Node(node) => {
-                    if let (Some(ty), Some(last)) = (TypeRef::cast(node), names.last_mut()) {
+                    if let (Some(ty), Some(last)) = (Type::cast(node), names.last_mut()) {
                         last.ty = Some(ty);
                     }
                 }

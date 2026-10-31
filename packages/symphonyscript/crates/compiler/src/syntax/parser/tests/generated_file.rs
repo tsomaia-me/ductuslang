@@ -137,7 +137,9 @@ impl Candidate {
             label,
             text: text.to_string(),
             body,
-            in_pattern: !text.trim_start().starts_with("let "),
+            in_pattern: !["let ", "state ", "stream ", "channel "]
+                .iter()
+                .any(|word| text.trim_start().starts_with(word)),
             shape: LineShape::of(text, vocabulary),
             faults,
             open,

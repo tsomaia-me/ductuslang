@@ -481,6 +481,161 @@ const CASES: &[(&str, &str, &str)] = &[
         "let a = json [0, 7, 120, -3, 0.5, 1e3, 2E-2, 6.02e+23]\n",
         "File[LetDecl[let a = JsonLit[json JsonArray[[ JsonAtom[0] , JsonAtom[7] , JsonAtom[120] , JsonAtom[- 3] , JsonAtom[0.5] , JsonAtom[1e3] , JsonAtom[2E-2] , JsonAtom[6.02e+23] ]]] NL]]",
     ),
+    (
+        "FnType",
+        "fn apply(f: (i32, x: f64) -> bool, g: () -> i32): 1\n",
+        "File[FnDecl[fn apply ParamList[( Param[f : FnType[( FnParam[TypeRef[i32]] , FnParam[x : TypeRef[f64]] ) -> TypeRef[bool]]] , Param[g : FnType[( ) -> TypeRef[i32]]] )] : FnBody[Literal[1] NL]]]",
+    ),
+    (
+        "FnParam",
+        "fn apply(f: (x: f64) -> f64, g: (i32) -> i32): 1\n",
+        "File[FnDecl[fn apply ParamList[( Param[f : FnType[( FnParam[x : TypeRef[f64]] ) -> TypeRef[f64]]] , Param[g : FnType[( FnParam[TypeRef[i32]] ) -> TypeRef[i32]]] )] : FnBody[Literal[1] NL]]]",
+    ),
+    (
+        "Base",
+        "let a: (i32?)[..4] = []\nlet b: i32[..4]? = []\nlet c: Wave = Wave::Saw\nlet d: none = 1\n",
+        "File[LetDecl[let a : TypeRef[ParenType[( TypeRef[i32 ?] )] [ .. 4 ]] = ArrayLit[[ ]] NL] LetDecl[let b : TypeRef[i32 [ .. 4 ] ?] = ArrayLit[[ ]] NL] LetDecl[let c : TypeRef[Wave] = VariantRef[Wave :: Saw] NL] LetDecl[let d : TypeRef[none] = Literal[1] NL]]",
+    ),
+    (
+        "Dims",
+        "let a: i32[3][..10] = []\nlet b: i32[..4][..10] = []\n",
+        "File[LetDecl[let a : TypeRef[i32 [ 3 ] [ .. 10 ]] = ArrayLit[[ ]] NL] LetDecl[let b : TypeRef[i32 [ .. 4 ] [ .. 10 ]] = ArrayLit[[ ]] NL]]",
+    ),
+    (
+        "Size",
+        "let a: T[..N + 1] = []\nlet b: T[N * 2] = []\n",
+        "File[LetDecl[let a : TypeRef[T [ .. Size[BinaryExpr[NameRef[N] + Literal[1]]] ]] = ArrayLit[[ ]] NL] LetDecl[let b : TypeRef[T [ Size[BinaryExpr[NameRef[N] * Literal[2]]] ]] = ArrayLit[[ ]] NL]]",
+    ),
+    (
+        "StrType",
+        "let c: str[..32][4] = []\nlet d: str = 1\n",
+        "File[LetDecl[let c : TypeRef[StrType[str [ .. 32 ]] [ 4 ]] = ArrayLit[[ ]] NL] LetDecl[let d : TypeRef[StrType[str]] = Literal[1] NL]]",
+    ),
+    (
+        "MapType",
+        "let m: {str[..32]: i32}[..64] = 1\n",
+        "File[LetDecl[let m : TypeRef[MapType[{ TypeRef[StrType[str [ .. 32 ]]] : TypeRef[i32] } [ .. 64 ]]] = Literal[1] NL]]",
+    ),
+    (
+        "JsonType",
+        "let j: json[..4096] = 1\nlet k: json = 1\n",
+        "File[LetDecl[let j : TypeRef[JsonType[json [ .. 4096 ]]] = Literal[1] NL] LetDecl[let k : TypeRef[JsonType[json]] = Literal[1] NL]]",
+    ),
+    (
+        "TypeDecl",
+        "type Chord:\n    root: i32\n    spread: i32\ntype Shape = Circle | Square\ntype Id = i64\n",
+        "File[TypeDecl[type Chord : NL > FieldDecl[root : TypeRef[i32] NL] FieldDecl[spread : TypeRef[i32] NL] <] TypeDecl[type Shape = SumType[TypeRef[Circle] | TypeRef[Square]] NL] TypeDecl[type Id = TypeRef[i64] NL]]",
+    ),
+    (
+        "FieldDecl",
+        "type Stack[T, const N]:\n    items: T[..N]\n    type: i32\n",
+        "File[TypeDecl[type Stack GenericParams[[ GenericParam[T] , GenericParam[const N] ]] : NL > FieldDecl[items : TypeRef[T [ .. Size[NameRef[N]] ]] NL] FieldDecl[type : TypeRef[i32] NL] <]]",
+    ),
+    (
+        "RecordLit",
+        "Package {name: \"a\", version: \"1.0.0\"}\n",
+        "File[PackageDecl[RecordLit[Package { Field[name : StringLit[\" a \"]] , Field[version : StringLit[\" 1.0.0 \"]] }] NL]]",
+    ),
+    (
+        "Fields",
+        "Package {}\nPackage {name: \"a\",}\n",
+        "File[PackageDecl[RecordLit[Package { }] NL] PackageDecl[RecordLit[Package { Field[name : StringLit[\" a \"]] , }] NL]]",
+    ),
+    (
+        "Result",
+        "fn rise(cell x) -> bool: x.past(1) < x\n",
+        "File[FnDecl[fn rise ParamList[( Param[cell x] )] FnResult[-> TypeRef[bool]] : FnBody[BinaryExpr[CallExpr[FieldExpr[NameRef[x] . past] ArgList[( Literal[1] )]] < NameRef[x]] NL]]]",
+    ),
+    (
+        "Marker",
+        "pattern P(const a, cell b, state c, stream d, channel e, out f, out state g, out stream h, out channel i):\n    Note\n",
+        "File[PatternDecl[pattern P PatternParamList[( PatternParam[const a] , PatternParam[cell b] , PatternParam[state c] , PatternParam[stream d] , PatternParam[channel e] , PatternParam[out f] , PatternParam[out state g] , PatternParam[out stream h] , PatternParam[out channel i] )] : Block[NL > Placement[Note NL] <]]]",
+    ),
+    (
+        "PatternItem",
+        "pattern Voice(default root):\n    state gain(1.0)\n    let k = 2\n    stream s(0)\n    Note\n",
+        "File[PatternDecl[pattern Voice PatternParamList[( PatternParam[default root] )] : Block[NL > CellDecl[state gain Init[( Literal[1.0] )] NL] LocalLet[let k = Literal[2] NL] CellDecl[stream s Init[( Literal[0] )] NL] Placement[Note NL] <]]]",
+    ),
+    (
+        "PlacementType",
+        "pattern Section(children notes: Note*, children links: Plays*) -> Clip:\n    Clip\n",
+        "File[PatternDecl[pattern Section PatternParamList[( PatternParam[children notes : PlacementType[PlacementEntry[Note *]]] , PatternParam[children links : PlacementType[PlacementEntry[Plays *]]] )] -> PlacementType[PlacementEntry[Clip]] : Block[NL > Placement[Clip NL] <]]]",
+    ),
+    (
+        "PlacementEntry",
+        "pattern Stab(children chords: [Note+]*) -> (Note, [Note{2+}], node{..4}, wire{2..4}, lib::Kit+):\n    Note\n",
+        "File[PatternDecl[pattern Stab PatternParamList[( PatternParam[children chords : PlacementType[PlacementEntry[[ PlacementEntry[Note +] ] *]]] )] -> PlacementType[( PlacementEntry[Note] , PlacementEntry[[ PlacementEntry[Note Count[{ 2 + }]] ]] , PlacementEntry[node Count[{ .. 4 }]] , PlacementEntry[wire Count[{ 2 .. 4 }]] , PlacementEntry[QualifiedName[lib :: Kit] +] )] : Block[NL > Placement[Note NL] <]]]",
+    ),
+    (
+        "Count",
+        "pattern P() -> (Note+, Note*, Note{3}, Note{2+}, Note{..4}, Note{2..4}):\n    Note\n",
+        "File[PatternDecl[pattern P PatternParamList[( )] -> PlacementType[( PlacementEntry[Note +] , PlacementEntry[Note *] , PlacementEntry[Note Count[{ 3 }]] , PlacementEntry[Note Count[{ 2 + }]] , PlacementEntry[Note Count[{ .. 4 }]] , PlacementEntry[Note Count[{ 2 .. 4 }]] )] : Block[NL > Placement[Note NL] <]]]",
+    ),
+    (
+        "GenericParams",
+        "fn push[T, const N: i32](s: Stack[T, N], x: T) -> Stack[T, N]: s\n",
+        "File[FnDecl[fn push GenericParams[[ GenericParam[T] , GenericParam[const N : TypeRef[i32]] ]] ParamList[( Param[s : TypeRef[Stack TypeArgs[[ TypeRef[T] , TypeRef[N] ]]]] , Param[x : TypeRef[T]] )] FnResult[-> TypeRef[Stack TypeArgs[[ TypeRef[T] , TypeRef[N] ]]]] : FnBody[NameRef[s] NL]]]",
+    ),
+    (
+        "GenericParam",
+        "type Pair[A, B: i32 | f32, const N, const M: i64] = A\n",
+        "File[TypeDecl[type Pair GenericParams[[ GenericParam[A] , GenericParam[B : SumType[TypeRef[i32] | TypeRef[f32]]] , GenericParam[const N] , GenericParam[const M : TypeRef[i64]] ]] = TypeRef[A] NL]]",
+    ),
+    (
+        "TypeArgs",
+        "let a: Stack[i32, 8][4] = 1\nlet c: Box[str[..4]] = 1\n",
+        "File[LetDecl[let a : TypeRef[Stack TypeArgs[[ TypeRef[i32] , Literal[8] ]] [ 4 ]] = Literal[1] NL] LetDecl[let c : TypeRef[Box TypeArgs[[ TypeRef[StrType[str [ .. 4 ]]] ]]] = Literal[1] NL]]",
+    ),
+    (
+        "TypeArg",
+        "let d: Stack[i32, 4 * 2] = 1\nlet e: Map[{i32: i32}[..2], N] = 1\n",
+        "File[LetDecl[let d : TypeRef[Stack TypeArgs[[ TypeRef[i32] , BinaryExpr[Literal[4] * Literal[2]] ]]] = Literal[1] NL] LetDecl[let e : TypeRef[Map TypeArgs[[ TypeRef[MapType[{ TypeRef[i32] : TypeRef[i32] } [ .. 2 ]]] , TypeRef[N] ]]] = Literal[1] NL]]",
+    ),
+    (
+        "PackageFile",
+        "Package {\n    name: \"scales\",\n    version: \"2.4.1\",\n    license: \"MIT\",\n    authors: [\"Ada Lovelace <ada@example.com>\"],\n}\n\nrequire \"github.com/acme/util@1.2.0\"\nuse util as u\n\npublish major, minor\n",
+        "File[PackageDecl[RecordLit[Package { Field[name : StringLit[\" scales \"]] , Field[version : StringLit[\" 2.4.1 \"]] , Field[license : StringLit[\" MIT \"]] , Field[authors : ArrayLit[[ StringLit[\" Ada Lovelace <ada@example.com> \"] ]]] , }] NL] Require[require StringLit[\" github.com/acme/util@1.2.0 \"] NL] Use[use util as u NL] Publish[publish PublishName[major] , PublishName[minor] NL]]",
+    ),
+    (
+        "PackageItem",
+        "Package {name: \"a\"}\nrequire \"../util\"\nuse util\npublish a\n",
+        "File[PackageDecl[RecordLit[Package { Field[name : StringLit[\" a \"]] }] NL] Require[require StringLit[\" ../util \"] NL] Use[use util NL] Publish[publish PublishName[a] NL]]",
+    ),
+    (
+        "PackageDecl",
+        "Package {\n    name: \"scales\",\n    version: \"2.4.1\",\n}\n",
+        "File[PackageDecl[RecordLit[Package { Field[name : StringLit[\" scales \"]] , Field[version : StringLit[\" 2.4.1 \"]] , }] NL]]",
+    ),
+    (
+        "Require",
+        "require \"../util\" as u\nrequire \"github.com/acme/util@1.2.0\"\n",
+        "File[Require[require StringLit[\" ../util \"] as u NL] Require[require StringLit[\" github.com/acme/util@1.2.0 \"] NL]]",
+    ),
+    (
+        "QualifiedName",
+        "let b: lib::Chord = 1\npublish scales::minor as Minor\n",
+        "File[LetDecl[let b : TypeRef[QualifiedName[lib :: Chord]] = Literal[1] NL] Publish[publish PublishName[QualifiedName[scales :: minor] as Minor] NL]]",
+    ),
+    (
+        "Use",
+        "use drums\nuse drums: Kit, Snare\nuse drums as d\n",
+        "File[Use[use drums NL] Use[use drums : UseName[Kit] , UseName[Snare] NL] Use[use drums as d NL]]",
+    ),
+    (
+        "UseName",
+        "use drums: Kit as Set, Snare\n",
+        "File[Use[use drums : UseName[Kit as Set] , UseName[Snare] NL]]",
+    ),
+    (
+        "Publish",
+        "publish Drum as Kick, Kit, Hit\npublish major\n",
+        "File[Publish[publish PublishName[Drum as Kick] , PublishName[Kit] , PublishName[Hit] NL] Publish[publish PublishName[major] NL]]",
+    ),
+    (
+        "PublishName",
+        "publish major, Drum as Kick, scales::minor as Minor\n",
+        "File[Publish[publish PublishName[major] , PublishName[Drum as Kick] , PublishName[QualifiedName[scales :: minor] as Minor] NL]]",
+    ),
 ];
 
 #[test]

@@ -40,6 +40,8 @@ impl Parser<'_> {
     pub(super) fn pattern_lets(&mut self) {
         if self.at(SyntaxKind::LetKw) {
             self.then([Task::LetDecl(SyntaxKind::LocalLet), Task::PatternLets]);
+        } else if self.at_cell_word() {
+            self.then([Task::CellDecl, Task::PatternLets]);
         }
     }
 
@@ -110,7 +112,10 @@ impl Parser<'_> {
 
     pub(super) fn for_block(&mut self) {
         self.start(SyntaxKind::ForBlock);
-        self.loop_head(Code::ForSyntax);
+        self.loop_head(Code::ForSyntax, Task::ForBlockIterable);
+    }
+
+    pub(super) fn for_block_iterable(&mut self) {
         self.head_value("the iterable", None);
         self.then([Task::Iterable, Task::ForAfterIterable]);
     }

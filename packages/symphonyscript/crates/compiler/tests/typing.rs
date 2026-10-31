@@ -4083,7 +4083,7 @@ fn one_fault_draws_one_diagnostic_at_the_fault() {
                     "pattern P():\n    state s = 1\n    Note\n",
                     "Clip c:\n    P\n",
                 ],
-                &[(Code::CellSyntax, "state")],
+                &[(Code::UnbuiltConstruct, "state s = 1")],
             ),
             (
                 &[

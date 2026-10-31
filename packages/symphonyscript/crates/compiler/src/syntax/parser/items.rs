@@ -27,6 +27,14 @@ impl Parser<'_> {
             }
             Some(SyntaxKind::FnKw) => self.then([Task::FnDecl]),
             Some(SyntaxKind::PatternKw) => self.then([Task::PatternDecl]),
+            Some(SyntaxKind::TypeKw) => self.then([Task::TypeDecl]),
+            Some(SyntaxKind::RequireKw) => self.require(),
+            Some(SyntaxKind::UseKw) => self.use_item(),
+            Some(SyntaxKind::PublishKw) => self.publish(),
+            Some(SyntaxKind::Ident) if self.at_record_literal() => {
+                self.start(SyntaxKind::PackageDecl);
+                self.then([Task::RecordLit, Task::FinishLineFinish(Code::PackageSyntax)]);
+            }
             Some(SyntaxKind::Ident)
                 if self.current_text() == "input" && self.nth(1) == Some(SyntaxKind::Ident) =>
             {
@@ -67,9 +75,15 @@ impl Parser<'_> {
         self.start(kind);
         self.bump();
         self.expect_name(code, "the let's name");
-        if kind != SyntaxKind::LocalLet && self.eat(SyntaxKind::Colon) {
-            self.type_ref();
+        if self.eat(SyntaxKind::Colon) {
+            self.then([Task::Type, Task::LetValue]);
+        } else {
+            self.let_value();
         }
+    }
+
+    pub(super) fn let_value(&mut self) {
+        let code = Code::LetSyntax;
         if !self.eat(SyntaxKind::Eq) {
             self.match_after_fault(SyntaxKind::Eq, code, "`=` and the value");
         }
@@ -128,8 +142,13 @@ impl Parser<'_> {
 
     pub(super) fn cell_after_init(&mut self, head: CellHead) {
         if self.eat(SyntaxKind::Colon) {
-            self.type_ref();
+            self.then([Task::Type, Task::CellAfterType(head)]);
+        } else {
+            self.cell_after_type(head);
         }
+    }
+
+    pub(super) fn cell_after_type(&mut self, head: CellHead) {
         if !self.at(SyntaxKind::OnKw) {
             self.then([Task::CellAfterClock(head)]);
             return;
@@ -219,7 +238,7 @@ impl Parser<'_> {
         );
     }
 
-    fn digits(&mut self, code: Code, what: &str) -> bool {
+    pub(super) fn digits(&mut self, code: Code, what: &str) -> bool {
         let plain = self.at(SyntaxKind::Number)
             && self
                 .current_text()
@@ -241,18 +260,26 @@ impl Parser<'_> {
         self.start(SyntaxKind::FnDecl);
         self.bump();
         self.expect_name(Code::FnSyntax, "the function's name");
-        self.param_list(SyntaxKind::ParamList, Code::FnSyntax, false, Task::FnColon);
+        self.generic_params_then(Task::FnParams);
+    }
+
+    pub(super) fn fn_params(&mut self) {
+        self.param_list(SyntaxKind::ParamList, Code::FnSyntax, false, Task::FnResult);
     }
 
     pub(super) fn pattern_decl(&mut self) {
         self.start(SyntaxKind::PatternDecl);
         self.bump();
         self.expect_name(Code::PatternSyntax, "the pattern's name");
+        self.generic_params_then(Task::PatternParams);
+    }
+
+    pub(super) fn pattern_params(&mut self) {
         self.param_list(
             SyntaxKind::PatternParamList,
             Code::PatternSyntax,
             true,
-            Task::PatternAfterParams,
+            Task::PatternType,
         );
     }
 
@@ -282,10 +309,59 @@ impl Parser<'_> {
             (SyntaxKind::Param, Code::FnSyntax)
         };
         self.start(kind);
+        if pattern && self.eat(SyntaxKind::ChildrenKw) {
+            self.expect_name(code, "the `children` parameter's name");
+            if self.expect(
+                SyntaxKind::Colon,
+                code,
+                "`:` and the placement type of the `children` parameter",
+            ) {
+                self.placement_type(code);
+            }
+            self.then([Task::ParamAfter { pattern }]);
+            return;
+        }
         if pattern {
             self.eat(SyntaxKind::DefaultKw);
+            self.marker();
+        } else if self.at_any(MARKERS)
+            && self.nth(1) == Some(SyntaxKind::Ident)
+            && !self.eat(SyntaxKind::CellKw)
+        {
+            let word = self.current_text();
+            let reported = self.diagnostics.len();
+            self.error(
+                code,
+                format!("a function parameter takes the marker `cell` alone, not `{word}`"),
+            );
+            self.help_since(reported, code, FN_MARKER);
         }
-        self.expect_name(code, "a parameter name");
+        let named = self.expect_name(code, "a parameter name");
+        if named && self.eat(SyntaxKind::Colon) {
+            self.then([Task::Type, Task::ParamDefault { pattern }]);
+        } else {
+            self.then([Task::ParamDefault { pattern }]);
+        }
+    }
+
+    fn marker(&mut self) {
+        if !self.at_any(MARKERS) {
+            return;
+        }
+        if self.eat(SyntaxKind::OutKw) {
+            if self.at_any(&[
+                SyntaxKind::StateKw,
+                SyntaxKind::StreamKw,
+                SyntaxKind::ChannelKw,
+            ]) {
+                self.bump();
+            }
+        } else {
+            self.bump();
+        }
+    }
+
+    pub(super) fn param_default(&mut self, pattern: bool) {
         if self.eat(SyntaxKind::Eq) {
             self.then([Task::Expr, Task::ParamAfter { pattern }]);
         } else {
@@ -297,6 +373,16 @@ impl Parser<'_> {
         self.finish();
         if self.eat(SyntaxKind::Comma) {
             self.then([Task::Param { pattern }]);
+        }
+    }
+
+    pub(super) fn fn_result(&mut self) {
+        if self.at(SyntaxKind::Arrow) {
+            self.start(SyntaxKind::FnResult);
+            self.bump();
+            self.then([Task::Type, Task::Finish, Task::FnColon]);
+        } else {
+            self.fn_colon();
         }
     }
 
@@ -319,6 +405,13 @@ impl Parser<'_> {
         } else {
             self.finish();
         }
+    }
+
+    pub(super) fn pattern_type(&mut self) {
+        if self.eat(SyntaxKind::Arrow) {
+            self.placement_type(Code::PatternSyntax);
+        }
+        self.then([Task::PatternAfterParams]);
     }
 
     pub(super) fn fn_body(&mut self) {
@@ -395,58 +488,24 @@ impl Parser<'_> {
         }
         self.eat(SyntaxKind::Dedent);
     }
-
-    pub(super) fn type_ref(&mut self) {
-        self.start(SyntaxKind::TypeRef);
-        if self.at_any(&[
-            SyntaxKind::U8Kw,
-            SyntaxKind::I32Kw,
-            SyntaxKind::I64Kw,
-            SyntaxKind::F32Kw,
-            SyntaxKind::F64Kw,
-            SyntaxKind::BoolKw,
-            SyntaxKind::Ident,
-        ]) {
-            self.bump();
-        } else {
-            let found = self.describe();
-            self.error(Code::TypeSyntax, format!("expected a type, found {found}"));
-        }
-        while self.at(SyntaxKind::LBracket) {
-            if self.nth(1) == Some(SyntaxKind::Dot2) {
-                self.bump();
-                self.bump();
-                self.digits(Code::TypeSyntax, "a capacity in digits");
-                self.expect(SyntaxKind::RBracket, Code::TypeSyntax, "`]`");
-                if self.at(SyntaxKind::LBracket) {
-                    let reported = self.diagnostics.len();
-                    self.error(
-                        Code::TypeSyntax,
-                        "only the last, outermost length of a type may be a capacity",
-                    );
-                    self.help_since(reported, Code::TypeSyntax, CAPACITY_LAST);
-                    while self.eat(SyntaxKind::LBracket) {
-                        self.eat(SyntaxKind::Number);
-                        self.eat(SyntaxKind::RBracket);
-                    }
-                }
-                break;
-            }
-            self.bump();
-            self.digits(Code::TypeSyntax, "an array length in digits");
-            self.expect(SyntaxKind::RBracket, Code::TypeSyntax, "`]`");
-        }
-        self.finish();
-    }
 }
 
 const CELL_CAPACITY: &str = "write the capacity in digits, as in `stream[16] notes(0)`";
-
-const CAPACITY_LAST: &str =
-    "write the capacity as the last, outermost length, as in `i32[3][..10]`";
 
 const FN_COLON: &str = "write `:` before a function's body, as in `fn double(x): x * 2`";
 
 const FN_BOUND: &str = "remove the bound and write the loop as a `for` expression, as in `for x in held into low from 127: min(low, x)`";
 
 const INPUT_FORM: &str = "write `state <name>(<init>)`";
+
+const MARKERS: &[SyntaxKind] = &[
+    SyntaxKind::ConstKw,
+    SyntaxKind::CellKw,
+    SyntaxKind::StateKw,
+    SyntaxKind::StreamKw,
+    SyntaxKind::ChannelKw,
+    SyntaxKind::OutKw,
+];
+
+const FN_MARKER: &str =
+    "mark the parameter `cell`, as in `fn rise(cell x): x.past(1)`, or write no marker";

@@ -50,6 +50,9 @@ codes!(
     PatternSyntax,
     CellSyntax,
     JsonSyntax,
+    PackageSyntax,
+    GenericSyntax,
+    RecordSyntax,
     HistoryTarget,
     HistoryFallback,
     HistoryOffset,
@@ -196,6 +199,9 @@ impl Code {
             Code::PatternSyntax => "pattern-syntax",
             Code::CellSyntax => "cell-syntax",
             Code::JsonSyntax => "json-syntax",
+            Code::PackageSyntax => "package-syntax",
+            Code::GenericSyntax => "generic-syntax",
+            Code::RecordSyntax => "record-syntax",
             Code::HistoryTarget => "history-target",
             Code::HistoryFallback => "history-fallback",
             Code::HistoryOffset => "history-offset",
@@ -430,6 +436,9 @@ impl Code {
             Code::MisplacedCaret => "2.5",
             Code::CellSyntax => "6.1",
             Code::JsonSyntax => "3.11",
+            Code::PackageSyntax => "15.2",
+            Code::GenericSyntax => "6.8",
+            Code::RecordSyntax => "3.8",
             Code::LengthLimit => "3.2",
             Code::VariableArray => "3.7",
             Code::HistoryTarget => "6.6",
@@ -585,6 +594,9 @@ impl Code {
             | Code::MisplacedCaret
             | Code::CellSyntax
             | Code::JsonSyntax
+            | Code::PackageSyntax
+            | Code::GenericSyntax
+            | Code::RecordSyntax
             | Code::LengthLimit
             | Code::VariableArray
             | Code::HistoryTarget

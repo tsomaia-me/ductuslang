@@ -220,7 +220,12 @@ impl Parser<'_> {
     pub(super) fn primary(&mut self, checkpoint: Checkpoint) {
         let rest = Task::PostfixLoop(checkpoint);
         match self.peek() {
-            Some(SyntaxKind::Number | SyntaxKind::TrueKw | SyntaxKind::FalseKw) => {
+            Some(
+                SyntaxKind::Number
+                | SyntaxKind::JsonNumber
+                | SyntaxKind::TrueKw
+                | SyntaxKind::FalseKw,
+            ) => {
                 self.start(SyntaxKind::Literal);
                 self.bump();
                 self.finish();

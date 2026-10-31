@@ -40,7 +40,7 @@ impl Engine<'_> {
                 }
                 Top::Let(id) => self.name_let(id)?,
                 Top::State(id) => self.demand(Query::State(id))?,
-                Top::Fn(_) | Top::Pattern(_) | Top::Placement(_) => {}
+                Top::Fn(_) | Top::Pattern(_) | Top::Placement(_) | Top::Placeholder(_) => {}
             }
         }
         Ok(positions)
