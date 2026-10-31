@@ -92,11 +92,11 @@ fn declarations_expose_their_parts() {
 fn placements_expose_their_parts() {
     let parsed = clean(
         "Clip as verse | gain=0.8:\n\
-         \x20   Note'* as hook /65 when on | velocity=0.9 accent !accent\n\
+         \x20   Note'* as hook /65 when live | velocity=0.9 accent !accent\n\
          \x20   Plays as back /0.5 | transpose=-2: [verse, verse][0]\n\
-         \x20   Note Note/1 (Note when on) [Note for i in 0..2: Note/i]\n\
+         \x20   Note Note/1 (Note when live) [Note for i in 0..2: Note/i]\n\
          \x20   for s in list: Note\n\
-         \x20   when on:\n        Note\n    else: Note\n\
+         \x20   when live:\n        Note\n    else: Note\n\
          \x20   when:\n        a: Note\n        else: Note\n",
     );
     let items = items(&parsed);
@@ -118,7 +118,10 @@ fn placements_expose_their_parts() {
     assert_eq!(hook.flags().expect("flags").chars(), ['\'', '*']);
     assert_eq!(text(hook.name()), "hook");
     assert_eq!(source(hook.default_arg().and_then(|arg| arg.value())), "65");
-    assert_eq!(source(hook.gate().and_then(|gate| gate.condition())), "on");
+    assert_eq!(
+        source(hook.gate().and_then(|gate| gate.condition())),
+        "live"
+    );
     let entries: Vec<_> = hook.attrs().expect("attrs").entries().collect();
     assert_eq!(entries.len(), 3);
     assert_eq!(source(entries[0].value()), "0.9");
@@ -183,7 +186,7 @@ fn placements_expose_their_parts() {
     let BodyItem::When(gated) = &body[4] else {
         panic!("a when block");
     };
-    assert_eq!(source(gated.condition()), "on");
+    assert_eq!(source(gated.condition()), "live");
     assert_eq!(gated.block().map(|block| block.items().count()), Some(1));
     assert!(
         gated

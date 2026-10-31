@@ -21,6 +21,9 @@ pub(crate) fn collect(
     variants: &Variants,
     report: &mut Report,
 ) -> Result<Collected, Internal> {
+    for (loc, summary) in &hir.unbuilt {
+        report.error(hir, Code::UnbuiltConstruct, *loc, summary.clone());
+    }
     let base = base_namespace(vocabulary)?;
     let mut prelude = base.clone();
     let mut source = base.clone();

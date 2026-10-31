@@ -14,7 +14,7 @@ const CASES: &[(&str, &str, &str)] = &[
     (
         "TopItem",
         "input a = 1\nlet b = 2\nstate s = 3\nfn f(x): x\npattern P():\n    Note\nClip c\n",
-        "File[InputDecl[input a = Literal[1] NL] LetDecl[let b = Literal[2] NL] StateDecl[state s = Literal[3] NL] FnDecl[fn f ParamList[( Param[x] )] : FnBody[NameRef[x] NL]] PatternDecl[pattern P PatternParamList[( )] : Block[NL > Placement[Note NL] <]] Placement[Clip c NL]]",
+        "File[InputDecl[input a = Literal[1] NL] LetDecl[let b = Literal[2] NL] CellDecl[state s = Literal[3] NL] FnDecl[fn f ParamList[( Param[x] )] : FnBody[NameRef[x] NL]] PatternDecl[pattern P PatternParamList[( )] : Block[NL > Placement[Note NL] <]] Placement[Clip c NL]]",
     ),
     (
         "NumberLit",
@@ -134,7 +134,7 @@ const CASES: &[(&str, &str, &str)] = &[
     (
         "ForExprBlock",
         "state h = for x in xs into k from []:\n    let keep = x > 60\n    if keep then k + [x] else k\nfn f(xs):\n    for x in xs into n from 0:\n        n + x\n",
-        "File[StateDecl[state h = ForExprBlock[ForExprHead[for x in NameRef[xs] into k from ArrayLit[[ ]] :] NL > LocalLet[let keep = BinaryExpr[NameRef[x] > Literal[60]] NL] IfExpr[if NameRef[keep] then BinaryExpr[NameRef[k] + ArrayLit[[ NameRef[x] ]]] else NameRef[k]] NL <]] FnDecl[fn f ParamList[( Param[xs] )] : FnBody[NL > ForExprBlock[ForExprHead[for x in NameRef[xs] into n from Literal[0] :] NL > BinaryExpr[NameRef[n] + NameRef[x]] NL <] <]]]",
+        "File[CellDecl[state h = ForExprBlock[ForExprHead[for x in NameRef[xs] into k from ArrayLit[[ ]] :] NL > LocalLet[let keep = BinaryExpr[NameRef[x] > Literal[60]] NL] IfExpr[if NameRef[keep] then BinaryExpr[NameRef[k] + ArrayLit[[ NameRef[x] ]]] else NameRef[k]] NL <]] FnDecl[fn f ParamList[( Param[xs] )] : FnBody[NL > ForExprBlock[ForExprHead[for x in NameRef[xs] into n from Literal[0] :] NL > BinaryExpr[NameRef[n] + NameRef[x]] NL <] <]]]",
     ),
     (
         "ForExprHead",
@@ -262,14 +262,29 @@ const CASES: &[(&str, &str, &str)] = &[
         "File[FnDecl[fn f ParamList[( )] : FnBody[Literal[1] NL]] FnDecl[fn g ParamList[( Param[x] )] : FnBody[NL > NameRef[x] NL <]] FnDecl[fn h ParamList[( Param[bounded] )] : FnBody[NameRef[bounded] NL]]]",
     ),
     (
-        "StateDecl",
-        "state[2] s: f32 = s{2, 0.0}\nstate m = match k:\n    0: 1\n    else: 2\n",
-        "File[StateDecl[state [ 2 ] s : TypeRef[f32] = History[s { Literal[2] , Literal[0.0] }] NL] StateDecl[state m = MatchBlock[match NameRef[k] : NL > MatchArm[Literal[0] : Literal[1] NL] ElseArm[else : Literal[2] NL] <]]]",
+        "CellDecl",
+        "state cutoff(0.5)\nstream[16] mic(0.0): f32\nstate b = a + 0.5\nstate c2 on b = a + b\nstate held(0.0) on gate = if gate then level else held.past(1)\nstate m = match k:\n    0: 1\n    else: 2\nstate h = for x in xs into k from []:\n    k + [x]\n",
+        "File[CellDecl[state cutoff Init[( Literal[0.5] )] NL] CellDecl[stream [ 16 ] mic Init[( Literal[0.0] )] : TypeRef[f32] NL] CellDecl[state b = BinaryExpr[NameRef[a] + Literal[0.5]] NL] CellDecl[state c2 Clock[on NameRef[b]] = BinaryExpr[NameRef[a] + NameRef[b]] NL] CellDecl[state held Init[( Literal[0.0] )] Clock[on NameRef[gate]] = IfExpr[if NameRef[gate] then NameRef[level] else CallExpr[FieldExpr[NameRef[held] . past] ArgList[( Literal[1] )]]] NL] CellDecl[state m = MatchBlock[match NameRef[k] : NL > MatchArm[Literal[0] : Literal[1] NL] ElseArm[else : Literal[2] NL] <]] CellDecl[state h = ForExprBlock[ForExprHead[for x in NameRef[xs] into k from ArrayLit[[ ]] :] NL > BinaryExpr[NameRef[k] + ArrayLit[[ NameRef[x] ]]] NL <]]]",
+    ),
+    (
+        "CellWord",
+        "state a(1)\nstream b(2)\nchannel[16] c(3)\n",
+        "File[CellDecl[state a Init[( Literal[1] )] NL] CellDecl[stream b Init[( Literal[2] )] NL] CellDecl[channel [ 16 ] c Init[( Literal[3] )] NL]]",
+    ),
+    (
+        "Init",
+        "state steps([true, false])\nstate fine(0): f32\nstate recent([]) = (recent.past(1) + [note])[^8..]\n",
+        "File[CellDecl[state steps Init[( ArrayLit[[ Literal[true] , Literal[false] ]] )] NL] CellDecl[state fine Init[( Literal[0] )] : TypeRef[f32] NL] CellDecl[state recent Init[( ArrayLit[[ ]] )] = IndexExpr[ParenExpr[( BinaryExpr[CallExpr[FieldExpr[NameRef[recent] . past] ArgList[( Literal[1] )]] + ArrayLit[[ NameRef[note] ]]] )] [ Bound[^ Literal[8]] .. ]] NL]]",
+    ),
+    (
+        "Clock",
+        "state c3 on a = a + b\nstate c4 on (a, b) = a + b\nstate c5 on (a + 1) = b\nstate hits(0) on (hit, bar) = if bar.stepped then 0 else hits.past(1) + 1\n",
+        "File[CellDecl[state c3 Clock[on NameRef[a]] = BinaryExpr[NameRef[a] + NameRef[b]] NL] CellDecl[state c4 Clock[on ( NameRef[a] , NameRef[b] )] = BinaryExpr[NameRef[a] + NameRef[b]] NL] CellDecl[state c5 Clock[on ( BinaryExpr[NameRef[a] + Literal[1]] )] = NameRef[b] NL] CellDecl[state hits Init[( Literal[0] )] Clock[on ( NameRef[hit] , NameRef[bar] )] = IfExpr[if FieldExpr[NameRef[bar] . stepped] then Literal[0] else BinaryExpr[CallExpr[FieldExpr[NameRef[hits] . past] ArgList[( Literal[1] )]] + Literal[1]]] NL]]",
     ),
     (
         "History",
         "state s = s{1, 0} + t{2}\n",
-        "File[StateDecl[state s = BinaryExpr[History[s { Literal[1] , Literal[0] }] + History[t { Literal[2] }]] NL]]",
+        "File[CellDecl[state s = BinaryExpr[History[s { Literal[1] , Literal[0] }] + History[t { Literal[2] }]] NL]]",
     ),
     (
         "FnBody",
@@ -526,7 +541,7 @@ fn every_case_names_a_production_of_the_spec() {
     );
 }
 
-const RETIRING_PRODUCTIONS: [&str; 3] = ["InputDecl", "StateDecl", "History"];
+const RETIRING_PRODUCTIONS: [&str; 2] = ["InputDecl", "History"];
 
 #[test]
 fn every_retiring_production_has_left_the_spec_and_keeps_its_case() {

@@ -9,7 +9,7 @@ use super::scalar_type::scalar_type;
 use crate::semantics::Internal;
 use crate::semantics::ir::{
     Expr, ExprId, ExprKind, FnDecl, FnId, Hir, Ident, Input, InputId, LetDecl, LetId, Loc, Param,
-    PatternDecl, PatternId, PlacementId, StateDecl, StateId, Top, TypeBase, TypeRef, UnknownNames,
+    PatternDecl, PatternId, PlacementId, Top, TypeBase, TypeRef, UnknownNames,
 };
 use crate::syntax::ast::{self, AstNode, Item, Name};
 use crate::syntax::{ElementView, NodeView, SyntaxKind, Walk};
@@ -74,31 +74,7 @@ impl HirBuilder<'_> {
                 self.hir.lets.push(decl);
                 self.hir.top.push(Top::Let(id));
             }
-            Item::State(node) => {
-                let loc = self.loc(node.syntax().range());
-                let value = match node.match_block() {
-                    Some(block) => self.match_block(&block),
-                    None => self.expr(node.value(), loc),
-                };
-                let depth = node.depth().map(|token| {
-                    let value = if self.faults.touch(token.range()) {
-                        None
-                    } else {
-                        digits_value(token.text())
-                    };
-                    (value, self.loc(token.range()))
-                });
-                let decl = StateDecl {
-                    name: self.ident(node.name()),
-                    depth,
-                    ty: node.ty().map(|ty| self.type_ref(&ty)),
-                    value,
-                    loc,
-                };
-                let id = StateId(index(self.hir.states.len()));
-                self.hir.states.push(decl);
-                self.hir.top.push(Top::State(id));
-            }
+            Item::Cell(node) => self.cell(&node),
             Item::Fn(node) => {
                 let loc = self.loc(node.syntax().range());
                 let params = node
@@ -266,7 +242,7 @@ impl HirBuilder<'_> {
     }
 }
 
-fn digits_value(text: &str) -> Option<u64> {
+pub(super) fn digits_value(text: &str) -> Option<u64> {
     let digits: String = text.chars().filter(|c| *c != '_').collect();
     if digits.is_empty() || !digits.bytes().all(|byte| byte.is_ascii_digit()) {
         return None;

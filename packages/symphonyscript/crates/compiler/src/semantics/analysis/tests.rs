@@ -3736,7 +3736,7 @@ fn no_mutant_of_an_example_or_fixture_that_draws_no_error_holds_a_placeholder() 
         (failures, clean)
     });
     assert!(failures.is_empty(), "{}", failures.join("\n"));
-    assert_eq!(clean, 50);
+    assert_eq!(clean, 37);
 }
 
 const MUTANT_SHARDS: usize = 4;

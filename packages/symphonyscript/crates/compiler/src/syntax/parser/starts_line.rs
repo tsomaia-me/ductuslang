@@ -11,6 +11,8 @@ pub(super) fn starts_line(line: &LineStart<'_>, text: &str, vocabulary: &Vocabul
         SyntaxKind::InputKw
         | SyntaxKind::LetKw
         | SyntaxKind::StateKw
+        | SyntaxKind::StreamKw
+        | SyntaxKind::ChannelKw
         | SyntaxKind::FnKw
         | SyntaxKind::PatternKw
         | SyntaxKind::LParen

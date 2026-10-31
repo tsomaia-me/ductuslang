@@ -68,7 +68,7 @@ pub(crate) fn validate(builder: VocabularyBuilder) -> Result<Vocabulary, Invalid
         check.name(&decl.name);
         let mut variants = BTreeSet::new();
         for variant in &decl.variants {
-            check.word(variant);
+            check.word(variant, false);
             if !variants.insert(variant.as_str()) {
                 check.errors.push(VocabularyError::DuplicateVariant {
                     enumeration: decl.name.clone(),
@@ -207,12 +207,12 @@ struct Checker<'a> {
 }
 
 impl Checker<'_> {
-    fn word(&mut self, name: &str) -> bool {
+    fn word(&mut self, name: &str, member: bool) -> bool {
         let error = if !is_ascii_identifier(name) {
             VocabularyError::NotAsciiIdentifier {
                 name: String::from(name),
             }
-        } else if KEYWORDS.contains(&name) || RESERVED_WORDS.contains(&name) {
+        } else if (!member && KEYWORDS.contains(&name)) || RESERVED_WORDS.contains(&name) {
             VocabularyError::ReservedName {
                 name: String::from(name),
             }
@@ -228,7 +228,11 @@ impl Checker<'_> {
     }
 
     fn name(&mut self, name: &str) {
-        if self.word(name) && self.variants.contains(name) {
+        self.named(name, false);
+    }
+
+    fn named(&mut self, name: &str, member: bool) {
+        if self.word(name, member) && self.variants.contains(name) {
             self.errors.push(VocabularyError::VariantName {
                 name: String::from(name),
             });
@@ -292,7 +296,7 @@ impl Checker<'_> {
         let mut names = BTreeSet::new();
         let mut flags = BTreeSet::new();
         for attr in attrs {
-            self.name(&attr.name);
+            self.named(&attr.name, true);
             if !names.insert(attr.name.as_str()) {
                 self.errors.push(VocabularyError::DuplicateAttribute {
                     owner: String::from(owner),

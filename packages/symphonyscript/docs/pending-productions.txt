@@ -23,16 +23,12 @@ JsonNumber
 AltType
 Fallback
 Arg
-CellDecl
-CellWord
-Init
 Result
 Marker
 PatternItem
 PlacementType
 PlacementEntry
 Count
-Clock
 Lambda
 LambdaParams
 LambdaParam

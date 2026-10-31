@@ -12,7 +12,7 @@ Synth lead:
         Feeds: mix
         Feeds when bright: master
     Mixer as mix
-    Output as out
+    Output as speaker
 
 Osc sub /55 | wave=Square:
     Feeds: lead.low

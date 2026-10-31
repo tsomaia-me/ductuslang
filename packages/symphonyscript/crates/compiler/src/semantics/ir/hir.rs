@@ -5,6 +5,7 @@ use super::fn_decl::FnDecl;
 use super::ids::{BlockId, ExprId, FnId, InputId, LetId, PatternId, PlacementId, StateId, WireId};
 use super::input::Input;
 use super::let_decl::LetDecl;
+use super::loc::Loc;
 use super::pattern_decl::PatternDecl;
 use super::placement::Placement;
 use super::prelude_end::PreludeEnd;
@@ -28,6 +29,7 @@ pub(crate) struct Hir {
     pub patterns: Vec<PatternDecl>,
     pub top: Vec<Top>,
     pub skipped_top: UnknownNames,
+    pub unbuilt: Vec<(Loc, String)>,
     pub prelude: PreludeEnd,
 }
 

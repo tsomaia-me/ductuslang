@@ -219,9 +219,9 @@ fn identifiers_take_xid_characters_and_hash() {
 fn keywords_are_their_own_tokens() {
     assert_eq!(
         clean(
-            "input let fn pattern default if then else match when for in into from as is not and or div to true false i32 i64 f32 f64 bool"
+            "input let state stream channel cell out fn pattern default if then else match when for in into from as on is not and or div to true false i32 i64 f32 f64 bool"
         ),
-        "InputKw _ LetKw _ FnKw _ PatternKw _ DefaultKw _ IfKw _ ThenKw _ ElseKw _ MatchKw _ WhenKw _ ForKw _ InKw _ IntoKw _ FromKw _ AsKw _ IsKw _ NotKw _ AndKw _ OrKw _ DivKw _ ToKw _ TrueKw _ FalseKw _ I32Kw _ I64Kw _ F32Kw _ F64Kw _ BoolKw NL"
+        "InputKw _ LetKw _ StateKw _ StreamKw _ ChannelKw _ CellKw _ OutKw _ FnKw _ PatternKw _ DefaultKw _ IfKw _ ThenKw _ ElseKw _ MatchKw _ WhenKw _ ForKw _ InKw _ IntoKw _ FromKw _ AsKw _ OnKw _ IsKw _ NotKw _ AndKw _ OrKw _ DivKw _ ToKw _ TrueKw _ FalseKw _ I32Kw _ I64Kw _ F32Kw _ F64Kw _ BoolKw NL"
     );
 }
 
@@ -498,6 +498,13 @@ fn keyword_and_word_lists_agree_with_core() {
         .filter(|kind| format!("{kind:?}").ends_with("Kw"))
         .count();
     assert_eq!(keyword_kinds, symphonyscript_core::KEYWORDS.len());
+    for kind in SyntaxKind::ALL {
+        assert_eq!(
+            kind.is_keyword(),
+            format!("{kind:?}").ends_with("Kw"),
+            "{kind:?}"
+        );
+    }
     for (raw, kind) in SyntaxKind::ALL.iter().enumerate() {
         assert_eq!(*kind as u16 as usize, raw);
         assert_eq!(SyntaxKind::from_raw(raw as u16), Some(*kind));

@@ -17,6 +17,10 @@ pub enum SyntaxKind {
     InputKw,
     LetKw,
     StateKw,
+    StreamKw,
+    ChannelKw,
+    CellKw,
+    OutKw,
     FnKw,
     PatternKw,
     DefaultKw,
@@ -28,6 +32,7 @@ pub enum SyntaxKind {
     ForKw,
     InKw,
     AsKw,
+    OnKw,
     IsKw,
     NotKw,
     AndKw,
@@ -77,7 +82,9 @@ pub enum SyntaxKind {
     File,
     InputDecl,
     LetDecl,
-    StateDecl,
+    CellDecl,
+    Init,
+    Clock,
     FnDecl,
     ParamList,
     Param,
@@ -153,6 +160,10 @@ impl SyntaxKind {
         SyntaxKind::InputKw,
         SyntaxKind::LetKw,
         SyntaxKind::StateKw,
+        SyntaxKind::StreamKw,
+        SyntaxKind::ChannelKw,
+        SyntaxKind::CellKw,
+        SyntaxKind::OutKw,
         SyntaxKind::FnKw,
         SyntaxKind::PatternKw,
         SyntaxKind::DefaultKw,
@@ -164,6 +175,7 @@ impl SyntaxKind {
         SyntaxKind::ForKw,
         SyntaxKind::InKw,
         SyntaxKind::AsKw,
+        SyntaxKind::OnKw,
         SyntaxKind::IsKw,
         SyntaxKind::NotKw,
         SyntaxKind::AndKw,
@@ -213,7 +225,9 @@ impl SyntaxKind {
         SyntaxKind::File,
         SyntaxKind::InputDecl,
         SyntaxKind::LetDecl,
-        SyntaxKind::StateDecl,
+        SyntaxKind::CellDecl,
+        SyntaxKind::Init,
+        SyntaxKind::Clock,
         SyntaxKind::FnDecl,
         SyntaxKind::ParamList,
         SyntaxKind::Param,
@@ -283,11 +297,19 @@ impl SyntaxKind {
         self >= SyntaxKind::File
     }
 
+    pub fn is_keyword(self) -> bool {
+        (SyntaxKind::InputKw..=SyntaxKind::FromKw).contains(&self)
+    }
+
     pub fn keyword(text: &str) -> Option<SyntaxKind> {
         Some(match text {
             "input" => SyntaxKind::InputKw,
             "let" => SyntaxKind::LetKw,
             "state" => SyntaxKind::StateKw,
+            "stream" => SyntaxKind::StreamKw,
+            "channel" => SyntaxKind::ChannelKw,
+            "cell" => SyntaxKind::CellKw,
+            "out" => SyntaxKind::OutKw,
             "fn" => SyntaxKind::FnKw,
             "pattern" => SyntaxKind::PatternKw,
             "default" => SyntaxKind::DefaultKw,
@@ -299,6 +321,7 @@ impl SyntaxKind {
             "for" => SyntaxKind::ForKw,
             "in" => SyntaxKind::InKw,
             "as" => SyntaxKind::AsKw,
+            "on" => SyntaxKind::OnKw,
             "is" => SyntaxKind::IsKw,
             "not" => SyntaxKind::NotKw,
             "and" => SyntaxKind::AndKw,

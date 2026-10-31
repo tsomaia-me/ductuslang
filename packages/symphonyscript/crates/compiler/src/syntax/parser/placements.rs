@@ -348,10 +348,10 @@ impl Parser<'_> {
                 self.start(SyntaxKind::NameRef);
                 self.bump();
                 self.finish();
-                while self.at(SyntaxKind::Dot) && self.nth(1) == Some(SyntaxKind::Ident) {
+                while self.at_dot_member() {
                     self.start_at(checkpoint, SyntaxKind::FieldExpr);
                     self.bump();
-                    self.bump();
+                    self.expect_member_name(Code::DefaultArgSyntax, "a name after `.`");
                     self.finish();
                 }
             }
@@ -367,13 +367,13 @@ impl Parser<'_> {
                     Code::DefaultArgSyntax,
                     "`.` and a name after `to`",
                 );
-                self.expect_name(Code::DefaultArgSyntax, "the name after `to.`");
+                self.expect_member_name(Code::DefaultArgSyntax, "the name after `to.`");
                 self.help_since(reported, Code::DefaultArgSyntax, TO_PATH);
                 self.finish();
-                while self.at(SyntaxKind::Dot) && self.nth(1) == Some(SyntaxKind::Ident) {
+                while self.at_dot_member() {
                     self.start_at(checkpoint, SyntaxKind::FieldExpr);
                     self.bump();
-                    self.bump();
+                    self.expect_member_name(Code::DefaultArgSyntax, "a name after `.`");
                     self.finish();
                 }
             }
@@ -398,24 +398,24 @@ impl Parser<'_> {
     pub(super) fn attrs(&mut self) {
         self.start(SyntaxKind::Attrs);
         self.bump();
-        if !self.at_any(&[SyntaxKind::Ident, SyntaxKind::Bang]) {
+        if !self.at_attr_entry(true) {
             let found = self.describe();
             self.error(
                 Code::AttributeSyntax,
                 format!("expected an attribute after `|`, found {found}"),
             );
         }
-        self.then([Task::AttrsLoop]);
+        self.then([Task::AttrsLoop { first: true }]);
     }
 
-    pub(super) fn attrs_loop(&mut self) {
-        if !self.at_any(&[SyntaxKind::Ident, SyntaxKind::Bang]) {
+    pub(super) fn attrs_loop(&mut self, first: bool) {
+        if !self.at_attr_entry(first) {
             self.finish();
             return;
         }
         self.start(SyntaxKind::AttrEntry);
         if self.eat(SyntaxKind::Bang) {
-            self.expect_name(Code::AttributeSyntax, "the attribute after `!`");
+            self.expect_member_name(Code::AttributeSyntax, "the attribute after `!`");
             if self.at(SyntaxKind::Eq) {
                 self.error(
                     Code::AttributeSyntax,
@@ -423,14 +423,14 @@ impl Parser<'_> {
                 );
             }
             self.finish();
-            self.then([Task::AttrsLoop]);
+            self.then([Task::AttrsLoop { first: false }]);
         } else {
-            self.bump();
+            self.expect_member_name(Code::AttributeSyntax, "an attribute");
             if self.eat(SyntaxKind::Eq) {
-                self.then([Task::Expr, Task::Finish, Task::AttrsLoop]);
+                self.then([Task::Expr, Task::Finish, Task::AttrsLoop { first: false }]);
             } else {
                 self.finish();
-                self.then([Task::AttrsLoop]);
+                self.then([Task::AttrsLoop { first: false }]);
             }
         }
     }

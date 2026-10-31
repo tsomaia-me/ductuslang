@@ -155,6 +155,10 @@ impl<'a> Parser<'a> {
             Task::File => self.file_step(),
             Task::TopItem => self.top_item(),
             Task::InputDecl => self.input_decl(),
+            Task::CellDecl => self.cell_decl(),
+            Task::CellAfterInit(head) => self.cell_after_init(head),
+            Task::ClockList => self.clock_list(),
+            Task::CellAfterClock(head) => self.cell_after_clock(head),
             Task::LetDecl(kind) => self.let_decl(kind),
             Task::FnDecl => self.fn_decl(),
             Task::Param { pattern } => self.param(pattern),
@@ -209,7 +213,7 @@ impl<'a> Parser<'a> {
             Task::Atom => self.atom(),
             Task::Gate => self.gate(),
             Task::Attrs => self.attrs(),
-            Task::AttrsLoop => self.attrs_loop(),
+            Task::AttrsLoop { first } => self.attrs_loop(first),
             Task::Bundle => self.bundle(),
             Task::BundleLoop { members } => self.bundle_loop(members),
             Task::BundleForAfterIterable { members } => self.bundle_for_after_iterable(members),
@@ -429,6 +433,7 @@ impl<'a> Parser<'a> {
                         | SyntaxKind::IndexExpr
                         | SyntaxKind::Conversion
                         | SyntaxKind::History
+                        | SyntaxKind::Init
                         | SyntaxKind::Interpolation,
                     ) => Bracket::Expression,
                     Some(SyntaxKind::Bundle) => Bracket::Bundle {
@@ -698,6 +703,33 @@ impl<'a> Parser<'a> {
 
     fn expect_name(&mut self, code: Code, what: &str) -> bool {
         self.expect(SyntaxKind::Ident, code, what)
+    }
+
+    fn at_dot_member(&mut self) -> bool {
+        self.at(SyntaxKind::Dot)
+            && self
+                .nth(1)
+                .is_some_and(|kind| kind == SyntaxKind::Ident || kind.is_keyword())
+    }
+
+    fn at_attr_entry(&mut self, first: bool) -> bool {
+        match self.peek() {
+            Some(SyntaxKind::Ident | SyntaxKind::Bang) => true,
+            Some(kind) if kind.is_keyword() => first || self.nth(1) == Some(SyntaxKind::Eq),
+            Some(_) | None => false,
+        }
+    }
+
+    fn expect_member_name(&mut self, code: Code, what: &str) -> bool {
+        if !self.peek().is_some_and(SyntaxKind::is_keyword) {
+            return self.expect_name(code, what);
+        }
+        self.block_ended = false;
+        self.flush_trivia();
+        let text = self.text_of(self.pos);
+        self.builder.token(SyntaxKind::Ident, text);
+        self.pos += 1;
+        true
     }
 
     fn skip_line(&mut self) {

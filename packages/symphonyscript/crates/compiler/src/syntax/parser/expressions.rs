@@ -192,7 +192,7 @@ impl Parser<'_> {
             Some(SyntaxKind::Dot) => {
                 self.start_at(checkpoint, SyntaxKind::FieldExpr);
                 self.bump();
-                self.expect_name(Code::ExpressionSyntax, "an attribute name after `.`");
+                self.expect_member_name(Code::ExpressionSyntax, "an attribute name after `.`");
                 self.finish();
                 self.then([Task::PostfixLoop(checkpoint)]);
             }

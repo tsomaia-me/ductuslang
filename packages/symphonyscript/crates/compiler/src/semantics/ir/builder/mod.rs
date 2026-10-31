@@ -1,5 +1,6 @@
 mod bodies;
 mod build_file;
+mod cells;
 mod expressions;
 mod faults;
 mod hir_builder;

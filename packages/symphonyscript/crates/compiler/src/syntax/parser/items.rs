@@ -1,5 +1,5 @@
 use super::Parser;
-use super::task::Task;
+use super::task::{CellHead, Task};
 use crate::diagnostics::Code;
 use crate::syntax::syntax_kind::SyntaxKind;
 
@@ -23,7 +23,9 @@ impl Parser<'_> {
         match self.peek() {
             Some(SyntaxKind::InputKw) => self.then([Task::InputDecl]),
             Some(SyntaxKind::LetKw) => self.then([Task::LetDecl(SyntaxKind::LetDecl)]),
-            Some(SyntaxKind::StateKw) => self.then([Task::LetDecl(SyntaxKind::StateDecl)]),
+            Some(SyntaxKind::StateKw | SyntaxKind::StreamKw | SyntaxKind::ChannelKw) => {
+                self.then([Task::CellDecl]);
+            }
             Some(SyntaxKind::FnKw) => self.then([Task::FnDecl]),
             Some(SyntaxKind::PatternKw) => self.then([Task::PatternDecl]),
             Some(SyntaxKind::Ident) if self.at_wire_kind() => {
@@ -65,32 +67,20 @@ impl Parser<'_> {
     }
 
     pub(super) fn let_decl(&mut self, kind: SyntaxKind) {
-        let state = kind == SyntaxKind::StateDecl;
-        let code = if state {
-            Code::StateSyntax
-        } else {
-            Code::LetSyntax
-        };
+        let code = Code::LetSyntax;
         self.start(kind);
         self.bump();
-        if state && self.eat(SyntaxKind::LBracket) {
-            let reported = self.diagnostics.len();
-            if !self.digits(code, "the deepest offset in digits") {
-                self.help_since(reported, code, STATE_DEPTH);
-            }
-            self.expect(SyntaxKind::RBracket, code, "`]`");
-        }
-        if state {
-            self.expect_name(code, "the state's name");
-        } else {
-            self.expect_name(code, "the let's name");
-        }
+        self.expect_name(code, "the let's name");
         if kind != SyntaxKind::LocalLet && self.eat(SyntaxKind::Colon) {
             self.type_ref();
         }
         if !self.eat(SyntaxKind::Eq) {
             self.match_after_fault(SyntaxKind::Eq, code, "`=` and the value");
         }
+        self.rule(code);
+    }
+
+    fn rule(&mut self, code: Code) {
         if self.at(SyntaxKind::MatchKw) {
             self.then([Task::MatchBlock, Task::Finish]);
         } else {
@@ -99,6 +89,135 @@ impl Parser<'_> {
                 Task::FinishLineFinish(code),
             ]);
         }
+    }
+
+    pub(super) fn cell_decl(&mut self) {
+        let code = Code::StateSyntax;
+        let word = match self.peek() {
+            Some(SyntaxKind::StreamKw) => "stream",
+            Some(SyntaxKind::ChannelKw) => "channel",
+            Some(_) | None => "state",
+        };
+        self.start(SyntaxKind::CellDecl);
+        self.bump();
+        if self.eat(SyntaxKind::LBracket) {
+            let reported = self.diagnostics.len();
+            if !self.digits(code, "a capacity in digits") {
+                self.help_since(reported, code, CELL_CAPACITY);
+            }
+            self.expect(SyntaxKind::RBracket, code, "`]`");
+        }
+        self.expect_name(code, "the cell's name");
+        let head = CellHead {
+            word,
+            init: self.at(SyntaxKind::LParen),
+            clock: false,
+        };
+        if head.init {
+            self.start(SyntaxKind::Init);
+            self.bump();
+            self.then([
+                Task::Expr,
+                Task::Close {
+                    kind: SyntaxKind::RParen,
+                    code,
+                    what: "`)`",
+                },
+                Task::CellAfterInit(head),
+            ]);
+        } else {
+            self.then([Task::CellAfterInit(head)]);
+        }
+    }
+
+    pub(super) fn cell_after_init(&mut self, head: CellHead) {
+        if self.eat(SyntaxKind::Colon) {
+            self.type_ref();
+        }
+        if !self.at(SyntaxKind::OnKw) {
+            self.then([Task::CellAfterClock(head)]);
+            return;
+        }
+        let head = CellHead {
+            clock: true,
+            ..head
+        };
+        self.start(SyntaxKind::Clock);
+        self.bump();
+        if self.eat(SyntaxKind::LParen) {
+            self.then([Task::Expr, Task::ClockList, Task::CellAfterClock(head)]);
+        } else {
+            self.then([Task::Atom, Task::Finish, Task::CellAfterClock(head)]);
+        }
+    }
+
+    pub(super) fn clock_list(&mut self) {
+        if self.eat(SyntaxKind::Comma) {
+            self.then([Task::Expr, Task::ClockList]);
+        } else {
+            self.then([Task::Close {
+                kind: SyntaxKind::RParen,
+                code: Code::StateSyntax,
+                what: "`,` or `)`",
+            }]);
+        }
+    }
+
+    pub(super) fn cell_after_clock(&mut self, head: CellHead) {
+        let code = Code::StateSyntax;
+        if self.eat(SyntaxKind::Eq) {
+            self.rule(code);
+            return;
+        }
+        let ends = self.at_end() || self.at_any(&[SyntaxKind::Newline, SyntaxKind::Dedent]);
+        if !ends {
+            let what = if head.init {
+                "`=` and the rule, or the end of the line"
+            } else {
+                "`(` and the init, or `=` and the rule"
+            };
+            self.match_after_fault(SyntaxKind::Eq, code, what);
+            self.rule(code);
+            return;
+        }
+        let word = head.word;
+        let reported = self.diagnostics.len();
+        if head.clock {
+            self.error(
+                code,
+                "a clock stands on a derived cell, before `=` and its rule",
+            );
+            let help = format!(
+                "write the rule after the clock, as in `{word} held(0) on gate = level`, or remove the clock"
+            );
+            self.help_since(reported, code, &help);
+        } else if !head.init {
+            self.error(
+                code,
+                "a cell has an init in parentheses, a rule after `=`, or both",
+            );
+            let help = format!(
+                "write `{word} <name>(<init>)` for a cell the host writes, or `{word} <name> = <rule>` for a cell the program computes"
+            );
+            self.help_since(reported, code, &help);
+        }
+        self.then([Task::FinishLineFinish(code)]);
+    }
+
+    pub(super) fn at_cell_word(&mut self) -> bool {
+        self.at_any(&[
+            SyntaxKind::StateKw,
+            SyntaxKind::StreamKw,
+            SyntaxKind::ChannelKw,
+        ])
+    }
+
+    pub(super) fn misplaced_cell(&mut self) {
+        let word = self.current_text();
+        self.error(
+            Code::StateSyntax,
+            format!("a `{word}` is declared at top level"),
+        );
     }
 
     fn digits(&mut self, code: Code, what: &str) -> bool {
@@ -223,9 +342,9 @@ impl Parser<'_> {
     pub(super) fn fn_lets(&mut self) {
         if self.at(SyntaxKind::LetKw) {
             self.then([Task::LetDecl(SyntaxKind::LocalLet), Task::FnLets]);
-        } else if self.at(SyntaxKind::StateKw) {
-            self.error(Code::StateSyntax, "a state is declared at top level");
-            self.then([Task::LetDecl(SyntaxKind::StateDecl), Task::FnLets]);
+        } else if self.at_cell_word() {
+            self.misplaced_cell();
+            self.then([Task::CellDecl, Task::FnLets]);
         } else if self.at(SyntaxKind::MatchKw) {
             self.then([Task::MatchBlock, Task::FnBodyBlockEnd]);
         } else {
@@ -322,7 +441,7 @@ impl Parser<'_> {
     }
 }
 
-const STATE_DEPTH: &str = "write the depth in digits, as in `state[N] name = …` with N the deepest offset the state reads";
+const CELL_CAPACITY: &str = "write the capacity in digits, as in `stream[16] notes(0)`";
 
 const CAPACITY_LAST: &str =
     "write the capacity as the last, outermost length, as in `i32[3][..10]`";

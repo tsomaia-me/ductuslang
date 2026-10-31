@@ -1057,6 +1057,8 @@ impl<'a> Lexer<'a> {
                 SyntaxKind::InputKw
                     | SyntaxKind::LetKw
                     | SyntaxKind::StateKw
+                    | SyntaxKind::StreamKw
+                    | SyntaxKind::ChannelKw
                     | SyntaxKind::FnKw
                     | SyntaxKind::PatternKw
             )

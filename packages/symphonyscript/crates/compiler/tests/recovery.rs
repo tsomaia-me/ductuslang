@@ -991,7 +991,7 @@ fn recovery_resynchronizes_at_state_lines_and_treats_a_history_read_as_an_expres
             "input x = 1\nlet a = (1 +\nstate s = x{1}\nClip c:\n    Note/s\n",
             Code::ExpressionSyntax,
             "state",
-            "StateDecl[state s",
+            "CellDecl[state s",
         ),
         (
             "input x = 1\nstate s = x{1, 0\nlet y = 2\nClip c:\n    Note/y\n",
@@ -1009,7 +1009,7 @@ fn recovery_resynchronizes_at_state_lines_and_treats_a_history_read_as_an_expres
             "Clip c:\n    Note | velocity=(1\n  state s = 1\nClip d:\n    Note/s\n",
             Code::DedentMismatch,
             "s",
-            "StateDecl[state s",
+            "CellDecl[state s",
         ),
     ];
     for (text, code, at, item) in rows {

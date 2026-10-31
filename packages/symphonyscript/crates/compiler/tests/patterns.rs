@@ -118,7 +118,7 @@ fn a_bundle_a_pattern_supplies_inside_a_bundle_is_no_member() {
             vec![],
         ),
         (
-            "input on = true\npattern P():\n    when on:\n        Note/60\n    else:\n        Note/62\nClip c:\n    [P]\n",
+            "input lit = true\npattern P():\n    when lit:\n        Note/60\n    else:\n        Note/62\nClip c:\n    [P]\n",
             vec![],
         ),
     ] {

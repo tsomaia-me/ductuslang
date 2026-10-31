@@ -2645,7 +2645,7 @@ fn every_diagnostic_carries_a_help_that_states_its_fix() {
                 "Clip c:\n    Note/(t)\n",
             ],
             Code::StateSyntax,
-            "write the depth in digits, as in `state[N] name = …` with N the deepest offset the state reads",
+            "write the capacity in digits, as in `stream[16] notes(0)`",
         ),
     ];
     for (vocabulary, items, code, help) in rows {

@@ -41,9 +41,10 @@ fn names_must_be_ascii_identifiers() {
 }
 
 #[test]
-fn names_must_not_be_keywords_or_reserved_words() {
+fn names_must_not_be_keywords_or_reserved_words_but_an_attribute_may_be_a_keyword() {
     for name in [
-        "input",
+        "state",
+        "channel",
         "match",
         "bool",
         "into",
@@ -52,9 +53,20 @@ fn names_must_not_be_keywords_or_reserved_words() {
         "string",
     ] {
         let mut v = Vocabulary::builder("v");
+        v.node(name);
+        single(v, VocabularyError::ReservedName { name: s(name) });
+    }
+    for name in ["recurrent", "string"] {
+        let mut v = Vocabulary::builder("v");
         let note = v.node("Note");
         v.kind(note).attr::<i32>(name);
         single(v, VocabularyError::ReservedName { name: s(name) });
+    }
+    for name in ["channel", "out", "on", "match", "state"] {
+        let mut v = Vocabulary::builder("v");
+        let note = v.node("Note");
+        v.kind(note).attr::<i32>(name);
+        assert_eq!(errors(v), vec![], "{name}");
     }
 }
 

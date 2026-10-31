@@ -3,6 +3,13 @@ use crate::diagnostics::Code;
 use crate::syntax::syntax_kind::SyntaxKind;
 
 #[derive(Clone, Copy)]
+pub(super) struct CellHead {
+    pub(super) word: &'static str,
+    pub(super) init: bool,
+    pub(super) clock: bool,
+}
+
+#[derive(Clone, Copy)]
 pub(super) enum Task {
     Finish,
     FinishLine(Code),
@@ -15,6 +22,10 @@ pub(super) enum Task {
     File,
     TopItem,
     InputDecl,
+    CellDecl,
+    CellAfterInit(CellHead),
+    ClockList,
+    CellAfterClock(CellHead),
     LetDecl(SyntaxKind),
     FnDecl,
     Param {
@@ -94,7 +105,9 @@ pub(super) enum Task {
     Atom,
     Gate,
     Attrs,
-    AttrsLoop,
+    AttrsLoop {
+        first: bool,
+    },
     Bundle,
     BundleLoop {
         members: usize,

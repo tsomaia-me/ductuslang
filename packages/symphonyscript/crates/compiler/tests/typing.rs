@@ -3743,7 +3743,7 @@ fn a_comparisons_operand_computes_in_its_own_types_before_it_takes_its_partners(
         (
             &[
                 big,
-                "pattern Gated(default on):\n    Note when on\n",
+                "pattern Gated(default active):\n    Note when active\n",
                 "Clip c:\n    Gated/(big > u8(255) + 4)\n",
             ],
             u8_sum,

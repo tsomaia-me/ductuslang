@@ -139,9 +139,9 @@ impl Parser<'_> {
     pub(super) fn for_expr_lets(&mut self) {
         if self.at(SyntaxKind::LetKw) {
             self.then([Task::LetDecl(SyntaxKind::LocalLet), Task::ForExprLets]);
-        } else if self.at(SyntaxKind::StateKw) {
-            self.error(Code::StateSyntax, "a state is declared at top level");
-            self.then([Task::LetDecl(SyntaxKind::StateDecl), Task::ForExprLets]);
+        } else if self.at_cell_word() {
+            self.misplaced_cell();
+            self.then([Task::CellDecl, Task::ForExprLets]);
         } else {
             self.then([
                 Task::Expr,
