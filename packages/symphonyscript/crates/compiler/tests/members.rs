@@ -670,16 +670,25 @@ fn a_dot_call_whose_receiver_is_a_faults_placeholder_draws_the_fault_alone_395()
             texts.push(format!("let a = {receiver}.{member}\n"));
         }
     }
-    let mut rows: Vec<(Vec<&str>, Vec<(Code, &str)>)> = Vec::new();
-    for (index, text) in texts.iter().enumerate() {
-        let (_, code, at) = receivers[index / members.len()];
-        rows.push((
-            vec!["fn twice(x): x * 2\n", text, "Clip c:\n    Note/(a)\n"],
-            vec![(code, at)],
-        ));
-    }
-    let rows: Vec<support::Row> = rows
+    let items: Vec<[&str; 3]> = texts
         .iter()
+        .map(|text| {
+            [
+                "fn twice(x): x * 2\n",
+                text.as_str(),
+                "Clip c:\n    Note/(a)\n",
+            ]
+        })
+        .collect();
+    let expected: Vec<[(Code, &str); 1]> = (0..texts.len())
+        .map(|index| {
+            let (_, code, at) = receivers[index / members.len()];
+            [(code, at)]
+        })
+        .collect();
+    let rows: Vec<support::Row> = items
+        .iter()
+        .zip(&expected)
         .map(|(items, expected)| (items.as_slice(), expected.as_slice()))
         .collect();
     support::assert_rows_in_every_order(&symphonyscript_fixtures::vocabulary(), &rows);
