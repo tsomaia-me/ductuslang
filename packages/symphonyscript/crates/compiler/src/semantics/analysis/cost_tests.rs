@@ -1656,3 +1656,38 @@ fn stress_distinct_unknown_names_cost_work_linear_in_the_names_and_the_sources_2
     let failures = unknown_names_failures([8_000, 16_000, 32_000]);
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
+
+#[test]
+fn the_cost_counters_hold_the_signature_walk_and_it_is_linear_in_a_recursive_calls_references_320()
+{
+    let compiler = Compiler::new(&vocabulary()).expect("the vocabulary compiles");
+    let mut failures = Vec::new();
+    for body in [ReferenceBody::Length, ReferenceBody::ChosenGain] {
+        for call_first in [true, false] {
+            let sizes = [25, 50, 100];
+            let texts = sizes.map(|size| reference_array_program(body, size, call_first));
+            let runs = texts.each_ref().map(|text| measured(&compiler, text));
+            let counted = |run: &Measured| {
+                run.counts
+                    .iter()
+                    .find(|(counter, _)| counter == "SignatureRunSig")
+                    .map(|(_, count)| *count)
+            };
+            let points = [0, 1, 2].map(|run| {
+                (
+                    u64::try_from(texts[run].len()).unwrap_or(u64::MAX),
+                    counted(&runs[run]).unwrap_or(0),
+                )
+            });
+            if points.iter().any(|(_, count)| *count == 0) || !linear(points) {
+                failures.push(format!("{body:?} call first {call_first}: {points:?}"));
+            }
+            for (run, size) in runs.iter().zip(sizes) {
+                if let Some(first) = run.errors.first() {
+                    failures.push(format!("{body:?} {size}: {first}"));
+                }
+            }
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}

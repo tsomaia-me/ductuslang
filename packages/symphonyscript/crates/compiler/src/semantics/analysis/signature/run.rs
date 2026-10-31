@@ -25,7 +25,10 @@ impl Engine<'_> {
         let operands = op.operands();
         let sigs: Vec<Option<Sig>> = operands
             .iter()
-            .map(|operand| self.sig(*operand, need))
+            .map(|operand| {
+                crate::semantics::counted_walk::CountedWalk::SignatureRunSig.step();
+                self.sig(*operand, need)
+            })
             .collect();
         let group = match self.memo.groups.get(&node) {
             Some(group) => match self.sig(*group, need) {
