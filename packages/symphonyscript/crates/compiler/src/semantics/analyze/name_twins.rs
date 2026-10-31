@@ -5,6 +5,7 @@ use symphonyscript_core::{Limits, Vocabulary};
 use super::program::program;
 use crate::diagnostics::{Code, Diagnostic};
 use crate::semantics::collection::Variants;
+use crate::semantics::counted_walk::CountedWalk;
 use crate::semantics::ir::{ExprId, ExprKind, Hir, Top, build_file};
 use crate::semantics::reporting::{Report, span};
 use crate::source::Source;
@@ -26,6 +27,8 @@ pub(crate) fn name_twins(
     diagnostics: Vec<Diagnostic>,
 ) -> Vec<Diagnostic> {
     let hir = analysis.hir;
+    let taken = marked_counters(&analysis.texts);
+    let mut originals: BTreeMap<String, String> = BTreeMap::new();
     let mut fresh: BTreeMap<String, String> = BTreeMap::new();
     let mut counter = 0;
     let mut held: BTreeSet<Key> = BTreeSet::new();
@@ -39,8 +42,9 @@ pub(crate) fn name_twins(
         let at = span(hir, expr.loc);
         held.insert((Code::UnknownName, at.file, at.range.start, at.range.end));
         if !fresh.contains_key(name) {
-            let twin = unused_name(analysis, &mut counter, name);
-            fresh.insert(name.clone(), twin);
+            let marked = unused_counter(&taken, &mut counter);
+            fresh.insert(name.clone(), format!("{MARK}{marked}{name}"));
+            originals.insert(marked, name.clone());
         }
     }
     let path = twin_path(hir);
@@ -64,23 +68,19 @@ pub(crate) fn name_twins(
         .into_iter()
         .filter(|diagnostic| common.contains(&key(diagnostic)) || held.contains(&key(diagnostic)))
         .collect();
-    let renamed: Vec<(String, String)> = fresh
-        .iter()
-        .map(|(name, twin)| (twin.clone(), name.clone()))
-        .collect();
     kept.extend(
         first
             .iter()
             .filter(|diagnostic| {
                 common.contains(&key(diagnostic)) && !original.contains(&key(diagnostic))
             })
-            .map(|diagnostic| restored(diagnostic, &renamed, &path)),
+            .map(|diagnostic| restored(diagnostic, &originals, &path)),
     );
     kept.extend(
         runs.iter()
             .flatten()
             .filter(|diagnostic| diagnostic.code == Code::InternalError)
-            .map(|diagnostic| restored(diagnostic, &renamed, &path)),
+            .map(|diagnostic| restored(diagnostic, &originals, &path)),
     );
     kept
 }
@@ -182,18 +182,53 @@ fn declarations(vocabulary: &Vocabulary, hir: &Hir) -> Vec<(&'static str, String
     found
 }
 
-fn unused_name(analysis: &Analysis<'_>, counter: &mut usize, name: &str) -> String {
+fn marked_counters(texts: &[&str]) -> BTreeSet<String> {
+    let mut taken = BTreeSet::new();
+    for text in texts {
+        for (at, _) in text.match_indices(MARK) {
+            CountedWalk::NameTwinsUnusedName.step();
+            let rest = text.get(at + MARK.len_utf8()..).unwrap_or_default();
+            let digits = rest.len() - rest.trim_start_matches(|c: char| c.is_ascii_digit()).len();
+            taken.insert(rest.get(..digits).unwrap_or_default().to_string());
+        }
+    }
+    taken
+}
+
+fn unused_counter(taken: &BTreeSet<String>, counter: &mut usize) -> String {
     loop {
-        let candidate = format!("{MARK}{counter}{name}");
+        CountedWalk::NameTwinsUnusedName.step();
+        let candidate = counter.to_string();
         *counter += 1;
-        if !analysis
-            .texts
-            .iter()
-            .any(|text| text.contains(candidate.as_str()))
-        {
+        if !taken.contains(&candidate) {
             return candidate;
         }
     }
+}
+
+fn renamed(text: &str, originals: &BTreeMap<String, String>) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(at) = rest.find(MARK) {
+        CountedWalk::NameTwinsRestored.step();
+        out.push_str(rest.get(..at).unwrap_or_default());
+        let after = rest.get(at + MARK.len_utf8()..).unwrap_or_default();
+        let digits = after.len() - after.trim_start_matches(|c: char| c.is_ascii_digit()).len();
+        let counter = after.get(..digits).unwrap_or_default();
+        let named = after.get(digits..).unwrap_or_default();
+        match originals.get(counter) {
+            Some(name) if named.starts_with(name.as_str()) => {
+                out.push_str(name);
+                rest = named.get(name.len()..).unwrap_or_default();
+            }
+            Some(_) | None => {
+                out.push(MARK);
+                rest = after;
+            }
+        }
+    }
+    out.push_str(rest);
+    out
 }
 
 fn twin_path(hir: &Hir) -> String {
@@ -204,18 +239,20 @@ fn twin_path(hir: &Hir) -> String {
     path
 }
 
-fn restored(diagnostic: &Diagnostic, renamed: &[(String, String)], path: &str) -> Diagnostic {
-    let rename = |text: &str| {
-        renamed.iter().fold(text.to_string(), |text, (twin, name)| {
-            text.replace(twin, name)
-        })
-    };
+fn restored(
+    diagnostic: &Diagnostic,
+    originals: &BTreeMap<String, String>,
+    path: &str,
+) -> Diagnostic {
     let mut restored = diagnostic.clone();
-    restored.summary = rename(&restored.summary);
-    restored.help = restored.help.as_deref().map(rename);
+    restored.summary = renamed(&restored.summary, originals);
+    restored.help = restored
+        .help
+        .as_deref()
+        .map(|help| renamed(help, originals));
     restored.related.retain(|related| related.span.file != path);
     for related in &mut restored.related {
-        related.label = rename(&related.label);
+        related.label = renamed(&related.label, originals);
     }
     restored
 }

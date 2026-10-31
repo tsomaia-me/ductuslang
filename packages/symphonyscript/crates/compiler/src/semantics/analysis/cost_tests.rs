@@ -1460,3 +1460,115 @@ fn stress_an_untaken_starts_evaluation_costs_work_linear_in_the_distinct_calls_p
     let failures = untaken_work_failures(1, None);
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum UnknownNames {
+    OneBody,
+    Lets,
+    Repeated,
+    Restored,
+    Valid,
+}
+
+const UNKNOWN_NAMES: [UnknownNames; 5] = [
+    UnknownNames::OneBody,
+    UnknownNames::Lets,
+    UnknownNames::Repeated,
+    UnknownNames::Restored,
+    UnknownNames::Valid,
+];
+
+impl UnknownNames {
+    fn items(self, n: usize) -> Vec<String> {
+        let mut items = vec!["state note(60)\n".to_string()];
+        let line = |i: usize| match self {
+            UnknownNames::OneBody | UnknownNames::Lets => format!("    Note/(q{i})\n"),
+            UnknownNames::Repeated => format!("    Note/(q{})\n", i % 10),
+            UnknownNames::Restored => format!("    Note when q{i} or 1 or 2\n"),
+            UnknownNames::Valid => "    Note/(note)\n".to_string(),
+        };
+        if self == UnknownNames::Lets {
+            for i in 0..n {
+                items.push(format!("let v{i} = q{i} + 1\n"));
+            }
+            let reads = (0..n)
+                .map(|i| format!("    Note/(v{i})\n"))
+                .collect::<String>();
+            items.push(format!("Clip c:\n{reads}"));
+        } else {
+            items.push(format!("Clip c:\n{}", (0..n).map(line).collect::<String>()));
+        }
+        items
+    }
+
+    fn expected(self, n: usize) -> (usize, usize) {
+        match self {
+            UnknownNames::OneBody | UnknownNames::Lets | UnknownNames::Repeated => (n, n),
+            UnknownNames::Restored => (n, 2 * n),
+            UnknownNames::Valid => (0, 0),
+        }
+    }
+}
+
+fn unknown_names_failures(sizes: [usize; 3]) -> Vec<String> {
+    let compiler = Compiler::new(&vocabulary()).expect("the vocabulary compiles");
+    let mut failures = Vec::new();
+    let mut rows = 0;
+    for names in UNKNOWN_NAMES {
+        for reversed in [false, true] {
+            rows += 1;
+            let name = format!("298 {names:?} reversed {reversed}");
+            let texts = sizes.map(|n| {
+                let mut items = names.items(n);
+                if reversed {
+                    items.reverse();
+                }
+                items.concat()
+            });
+            let runs = texts.each_ref().map(|text| measured(&compiler, text));
+            for (run, n) in runs.iter().zip(sizes) {
+                let unknown = run
+                    .errors
+                    .iter()
+                    .filter(|error| error.starts_with("UnknownName"))
+                    .count();
+                if (unknown, run.errors.len()) != names.expected(n) {
+                    failures.push(format!(
+                        "{name} {n}: {} errors, {unknown} unknown-name, the first {:?}",
+                        run.errors.len(),
+                        run.errors.first()
+                    ));
+                }
+            }
+            for (index, (counter, _)) in runs[0].counts.iter().enumerate() {
+                let points = [0, 1, 2].map(|run| {
+                    (
+                        u64::try_from(texts[run].len()).unwrap_or(u64::MAX),
+                        runs[run].counts.get(index).map_or(0, |(_, count)| *count),
+                    )
+                });
+                if !linear(points) {
+                    failures.push(format!(
+                        "{name}: {counter} {:?}",
+                        points.map(|(_, count)| count)
+                    ));
+                }
+            }
+        }
+    }
+    assert_eq!(rows, 10);
+    failures
+}
+
+#[test]
+fn distinct_unknown_names_cost_work_linear_in_the_names_and_the_sources_298() {
+    let failures = unknown_names_failures([20, 40, 80]);
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+#[test]
+#[ignore = "stress"]
+fn stress_distinct_unknown_names_cost_work_linear_in_the_names_and_the_sources_298() {
+    let failures = unknown_names_failures([8_000, 16_000, 32_000]);
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
