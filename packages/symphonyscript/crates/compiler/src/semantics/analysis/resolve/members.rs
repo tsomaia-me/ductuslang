@@ -131,7 +131,8 @@ impl Engine<'_> {
         let node = match &val {
             Val::Array(_) => None,
             Val::Scalar(node) => Some(*node),
-            Val::Error => return Ok(Member::Declined),
+            Val::Error if self.declaring_receiver(receiver, scope)? => return Ok(Member::Declined),
+            Val::Error => return Ok(Member::Read(Val::Error)),
         };
         let array = node.is_none_or(|node| self.arrays.contains(&node));
         if array && name == "map" {
@@ -165,6 +166,20 @@ impl Engine<'_> {
             }
         }
         Ok(Member::Declined)
+    }
+
+    fn declaring_receiver(&mut self, receiver: ExprId, scope: ScopeId) -> Result<bool, Internal> {
+        let ExprKind::Name(name) = &self.hir.expr(receiver)?.kind else {
+            return Ok(false);
+        };
+        Ok(match self.find(name, scope)? {
+            Found::Query(query) => self.in_progress(query),
+            Found::Val(_)
+            | Found::Item(_)
+            | Found::Decl(_)
+            | Found::Placeholder
+            | Found::Nothing => false,
+        })
     }
 
     pub(super) fn uncallable(&mut self, loc: Loc, scope: ScopeId) -> Result<Member, Internal> {

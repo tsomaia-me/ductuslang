@@ -654,3 +654,47 @@ fn a_dot_call_whose_receiver_reads_the_cell_being_declared_resolves_its_member_f
         rows,
     );
 }
+
+#[test]
+fn a_dot_call_whose_receiver_is_a_faults_placeholder_draws_the_fault_alone_395() {
+    let receivers: [(&str, Code, &str); 4] = [
+        ("to", Code::MisplacedTo, "to"),
+        ("(1 +)", Code::ExpressionSyntax, ")"),
+        ("5[0]", Code::NotAnArray, "5"),
+        ("true[0]", Code::NotAnArray, "true"),
+    ];
+    let members = ["twice()", "xpast(1)", "size()", "i64(3)"];
+    let mut texts = Vec::new();
+    for (receiver, ..) in receivers {
+        for member in members {
+            texts.push(format!("let a = {receiver}.{member}\n"));
+        }
+    }
+    let mut rows: Vec<(Vec<&str>, Vec<(Code, &str)>)> = Vec::new();
+    for (index, text) in texts.iter().enumerate() {
+        let (_, code, at) = receivers[index / members.len()];
+        rows.push((
+            vec!["fn twice(x): x * 2\n", text, "Clip c:\n    Note/(a)\n"],
+            vec![(code, at)],
+        ));
+    }
+    let rows: Vec<support::Row> = rows
+        .iter()
+        .map(|(items, expected)| (items.as_slice(), expected.as_slice()))
+        .collect();
+    support::assert_rows_in_every_order(&symphonyscript_fixtures::vocabulary(), &rows);
+    support::assert_rows_in_every_order(
+        &symphonyscript_fixtures::envelope_vocabulary(),
+        &[(
+            &["Env e | attack=to.i64(3)\n"],
+            &[(Code::MisplacedTo, "to")],
+        )],
+    );
+    support::assert_rows_in_every_order(
+        &symphonyscript_fixtures::native_vocabulary(),
+        &[(
+            &["let a =to. checksum(\"GET\")\n"],
+            &[(Code::MisplacedTo, "to")],
+        )],
+    );
+}
