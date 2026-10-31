@@ -146,8 +146,23 @@ impl Engine<'_> {
             Some(_) | None => None,
         };
         let member = matches!(name, "size" | "capacity" | "bytes");
-        if (member && (array || kind == Some(Kind::Str))) || kind == Some(Kind::Node) {
+        if member && (array || kind == Some(Kind::Str)) {
             return self.uncallable(loc, scope);
+        }
+        if kind == Some(Kind::Node)
+            && let Some(node) = node
+        {
+            let Some(instances) = self.reference_instances(node, need)? else {
+                return Ok(Member::Pending);
+            };
+            for item in instances {
+                if self.child_named(item, name)?.is_some()
+                    || self.attr_named(item, name)?.is_some()
+                    || self.may_name(item, name)?
+                {
+                    return self.uncallable(loc, scope);
+                }
+            }
         }
         Ok(Member::Declined)
     }

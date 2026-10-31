@@ -1,7 +1,10 @@
 mod support;
 
 use symphonyscript::{Code, Compiler};
-use symphonyscript_fixtures::{Rows, covered, native_vocabulary};
+use symphonyscript_core::{
+    Bounded, Count, NativeArg, NativeOut, NativeSignature, NativeType, Ty, Value, Vocabulary,
+};
+use symphonyscript_fixtures::{Rows, covered};
 
 const ARRAYS: [(&str, &str, Option<u32>, u32); 6] = [
     ("", "[1, 2, 3]", Some(3), 3),
@@ -108,29 +111,105 @@ fn exhaustive_an_arrays_size_and_capacity_are_known_at_compile_time_where_the_sp
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
 
-const RECEIVERS: [(&str, bool); 5] = [
-    ("[5, 6]", true),
-    ("xs", true),
-    ("q", false),
-    ("b.gain", false),
-    ("b.seq[..2]", true),
+#[derive(Clone, Copy, PartialEq)]
+enum Takes {
+    Array,
+    Scalar,
+    Reference,
+    Wire,
+}
+
+const RECEIVERS: [(&str, Takes); 7] = [
+    ("[5, 6]", Takes::Array),
+    ("xs", Takes::Array),
+    ("q", Takes::Scalar),
+    ("b.gain", Takes::Scalar),
+    ("b.seq[..2]", Takes::Array),
+    ("b.hook", Takes::Reference),
+    ("c.back", Takes::Wire),
 ];
 
-const FUNCTIONS: [(&str, &str, bool, &str, bool); 5] = [
-    ("at", "k", true, "1", true),
-    ("pair_sum", "", true, "", true),
-    ("shift", "by", false, "1", true),
-    ("max", "", false, "3", false),
-    ("clamp", "", false, "0, 9", false),
+type Function = (
+    &'static str,
+    &'static str,
+    &'static str,
+    Option<Takes>,
+    &'static str,
+    bool,
+);
+
+const FUNCTIONS: [Function; 8] = [
+    ("at", "xs", "k", Some(Takes::Array), "1", true),
+    ("pair_sum", "", "", Some(Takes::Array), "", true),
+    ("double", "", "", Some(Takes::Scalar), "", true),
+    ("shift", "x", "by", Some(Takes::Scalar), "1", true),
+    ("max", "", "", Some(Takes::Scalar), "3", false),
+    ("clamp", "", "", Some(Takes::Scalar), "0, 9", false),
+    ("pick", "w", "k", None, "1", true),
+    ("transpose", "w", "k", None, "1", true),
 ];
 
 const RESTS: [&str; 3] = ["none", "positional", "named"];
 
-const DECLARATIONS: &str =
-    "state xs([5, 6])\nstate q(2)\nfn at(xs, k = 0): xs[k]\nfn shift(x, by = 1): x + by\n";
+const DECLARATIONS: &str = "state xs([5, 6])\nstate q(2)\nfn at(xs, k = 0): xs[k]\nfn shift(x, by = 1): x + by\nfn pick(w, k = 0): k\nfn transpose(w, k = 0): k\n";
 
 fn program(call: &str) -> String {
-    format!("{DECLARATIONS}Clip a:\n    Note/(i32({call}))\nClip b:\n    Note\n")
+    format!(
+        "{DECLARATIONS}Clip a:\n    Note/(i32({call}))\nClip b:\n    Note as hook\nClip c:\n    Plays as back: b\n"
+    )
+}
+
+fn double(args: &[NativeArg<'_>], out: &mut NativeOut<'_>) {
+    let value = match args.first() {
+        Some(NativeArg::Value(Value::I32(value))) => *value,
+        Some(NativeArg::Value(_) | NativeArg::Elements(_) | NativeArg::Text(_)) | None => 0,
+    };
+    out.set(Value::I32(value.saturating_mul(2)));
+}
+
+fn pair_sum(args: &[NativeArg<'_>], out: &mut NativeOut<'_>) {
+    let mut sum = 0i32;
+    if let Some(NativeArg::Elements(values)) = args.first() {
+        for value in *values {
+            if let Value::I32(value) = value {
+                sum = sum.saturating_add(*value);
+            }
+        }
+    }
+    out.set(Value::I32(sum));
+}
+
+fn dot_vocabulary() -> Vocabulary {
+    let mut v = Vocabulary::builder("dots");
+    let clip = v.node("Clip");
+    let note = v.node("Note");
+    let plays = v.wire("Plays");
+    v.kind(clip)
+        .top_level(Count::Any)
+        .children(note, Count::Any)
+        .attr::<f32>("gain")
+        .default(1.0)
+        .attr::<Bounded<i32, 4>>("seq")
+        .default(Bounded::from_items([7, 8]).unwrap_or_default());
+    v.kind(note).attr::<i32>("pitch").default(60).default_attr();
+    v.wire_kind(plays)
+        .connects(clip, clip)
+        .attr::<i32>("transpose")
+        .default(3);
+    v.native(
+        "pair_sum",
+        NativeSignature::new(
+            [NativeType::Value(Ty::I32.array(2))],
+            NativeType::Value(Ty::I32),
+        ),
+        pair_sum,
+    );
+    v.native(
+        "double",
+        NativeSignature::new([NativeType::Value(Ty::I32)], NativeType::Value(Ty::I32)),
+        double,
+    );
+    v.build().expect("the dot vocabulary builds")
 }
 
 fn call_pair(receiver: &str, function: &str, listed: &str) -> (String, String) {
@@ -148,7 +227,7 @@ fn call_pair(receiver: &str, function: &str, listed: &str) -> (String, String) {
 }
 
 fn dot_rows(rows: &Rows) -> Vec<String> {
-    let compiler = Compiler::new(&native_vocabulary()).expect("the native vocabulary compiles");
+    let compiler = Compiler::new(&dot_vocabulary()).expect("the dot vocabulary compiles");
     let codes = |call: &str| -> Vec<Code> {
         support::error_texts(&compiler, &program(call))
             .into_iter()
@@ -156,8 +235,8 @@ fn dot_rows(rows: &Rows) -> Vec<String> {
             .collect()
     };
     let mut failures = Vec::new();
-    for (receiver_at, (receiver, array)) in RECEIVERS.iter().enumerate() {
-        for (function_at, (function, name, takes_array, listed, bare)) in
+    for (receiver_at, (receiver, receives)) in RECEIVERS.iter().enumerate() {
+        for (function_at, (function, first, name, takes, listed, bare)) in
             FUNCTIONS.iter().enumerate()
         {
             for (rest_at, rest) in RESTS.iter().enumerate() {
@@ -171,23 +250,27 @@ fn dot_rows(rows: &Rows) -> Vec<String> {
                         format!("{receiver}.{function}(a=1)"),
                         format!("{function}(x={receiver}, a=1)"),
                     ),
-                    _ => {
-                        let first = if *takes_array { "xs" } else { "x" };
-                        (
-                            format!("{receiver}.{function}({name}=1)"),
-                            format!("{function}({first}={receiver}, {name}=1)"),
-                        )
-                    }
+                    _ => (
+                        format!("{receiver}.{function}({name}=1)"),
+                        format!("{function}({first}={receiver}, {name}=1)"),
+                    ),
                 };
                 let found = codes(&dot);
+                if *function == "transpose" && *receives == Takes::Wire {
+                    if found != vec![Code::NotCallable] {
+                        failures.push(format!("{dot:?} draws {found:?}, expected [NotCallable]"));
+                    }
+                    continue;
+                }
                 let twin = codes(&direct);
                 if found != twin {
                     failures.push(format!(
                         "{dot:?} draws {found:?}, and {direct:?} draws {twin:?}"
                     ));
                 }
-                let fits = array == takes_array
+                let fits = takes.is_none_or(|takes| takes == *receives)
                     && !(*function == "pair_sum" && *receiver == "b.seq[..2]")
+                    && !(*function == "double" && *receiver == "b.gain")
                     && match *rest {
                         "none" => *bare,
                         "positional" => !listed.is_empty(),
@@ -328,5 +411,62 @@ fn the_examples_the_spec_writes_with_size_pass_check() {
         "state steps([true, false, false, true, false, false, true, false])\nstate pitches([36, 36, 43, 36, 41, 36, 43, 48])\nClip seq:\n    for i in 0..8:\n        Note/(pitches[i]) when steps[i]\n",
     ] {
         assert_eq!(support::check_codes(text), vec![], "{text}");
+    }
+}
+
+#[test]
+fn a_dot_call_on_a_reference_whose_kind_has_no_such_attribute_passes_the_reference_first() {
+    let compiler =
+        Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("the vocabulary compiles");
+    let index_one = "the index 1 is outside the array of length 1".to_string();
+    for (text, expected) in [
+        (
+            "Osc as o\nfn first(w, k): k\nClip c:\n    Note/(o.first(60))\n",
+            vec![],
+        ),
+        (
+            "Osc as o\nfn first(w, k): k\nClip c:\n    Note/([0][o.first(1)])\n",
+            vec![(Code::IndexOutOfRange, index_one.clone())],
+        ),
+        (
+            "Osc as o\nfn first(w, k): k\nClip c:\n    Note/([0][o.first(k=1)])\n",
+            vec![(Code::IndexOutOfRange, index_one.clone())],
+        ),
+        (
+            "Osc as o /330\nfn freq_of(w): w.freq\nClip c:\n    Note/([0][i32(o.freq_of()) - 329])\n",
+            vec![(Code::IndexOutOfRange, index_one.clone())],
+        ),
+        (
+            "Clip verse:\n    Note as hook /65\nfn pitch_of(x): x.pitch\nClip c:\n    Note/([0][verse.hook.pitch_of() - 64])\n",
+            vec![(Code::IndexOutOfRange, index_one.clone())],
+        ),
+        (
+            "Clip verse:\n    Note\nClip chorus:\n    Plays as back | transpose=3: verse\nfn transpose_of(x): x.transpose\nClip c:\n    Note/([0][chorus.back.transpose_of() - 2])\n",
+            vec![(Code::IndexOutOfRange, index_one.clone())],
+        ),
+        (
+            "Osc as o\nClip c:\n    Note/([0][i32(o.abs())])\n",
+            vec![(Code::OperandType, "`abs` takes numbers".to_string())],
+        ),
+        (
+            "Osc as o\nfn freq(w, k): k\nClip c:\n    Note/(o.freq(1))\n",
+            vec![(
+                Code::NotCallable,
+                "only a function or a built-in is called".to_string(),
+            )],
+        ),
+        (
+            "Clip verse:\n    Note\nClip chorus:\n    Plays as back: verse\nfn transpose(w, k): k\nClip c:\n    Note/(chorus.back.transpose(1))\n",
+            vec![(
+                Code::NotCallable,
+                "only a function or a built-in is called".to_string(),
+            )],
+        ),
+    ] {
+        let found: Vec<(Code, String)> = support::errors(compiler.check(&[support::source(text)]))
+            .into_iter()
+            .map(|diagnostic| (diagnostic.code, diagnostic.summary))
+            .collect();
+        assert_eq!(found, expected, "{text}");
     }
 }
