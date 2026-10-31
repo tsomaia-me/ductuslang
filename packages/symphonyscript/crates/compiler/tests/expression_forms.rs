@@ -5,16 +5,16 @@ use symphonyscript_fixtures::{Rows, covered};
 
 const PRELUDE: &str = "state q(1)\nlet xs = [1, 2]\nfn f(a): a\n";
 
-const POSITIONS: [&str; 9] = [
-    "let v = {}\n",
-    "let v = 1 + ({}) * 2\n",
-    "let v = f({})\n",
-    "Clip c:\n    Note | velocity={}\n",
-    "Clip c:\n    Note when {}\n",
-    "state v({})\n",
-    "state v = {}\n",
-    "let v = xs[{}]\n",
-    "let v = \"a{{}}\"\n",
+const POSITIONS: [(&str, Code); 9] = [
+    ("let v = {}\n", Code::ExpressionSyntax),
+    ("let v = 1 + ({}) * 2\n", Code::ExpressionSyntax),
+    ("let v = f({})\n", Code::ExpressionSyntax),
+    ("Clip c:\n    Note | velocity={}\n", Code::ExpressionSyntax),
+    ("Clip c:\n    Note when {}\n", Code::ExpressionSyntax),
+    ("state v({})\n", Code::CellSyntax),
+    ("state v = {}\n", Code::ExpressionSyntax),
+    ("let v = xs[{}]\n", Code::ExpressionSyntax),
+    ("let v = \"a{{}}\"\n", Code::ExpressionSyntax),
 ];
 
 const FORMS: [(&str, Code, &str); 11] = [
@@ -34,7 +34,7 @@ const FORMS: [(&str, Code, &str); 11] = [
 fn form_rows(rows: &Rows) -> Vec<String> {
     let mut failures = Vec::new();
     for (form_at, (form, code, faulty)) in FORMS.iter().enumerate() {
-        for (position_at, position) in POSITIONS.iter().enumerate() {
+        for (position_at, (position, closer_code)) in POSITIONS.iter().enumerate() {
             for fault in [false, true] {
                 if !rows.take(&[form_at, position_at, usize::from(fault)]) {
                     continue;
@@ -43,10 +43,14 @@ fn form_rows(rows: &Rows) -> Vec<String> {
                 let text = format!("{PRELUDE}{}", position.replacen("{}", value, 1));
                 let found = support::check_codes(&text);
                 let codes: Vec<Code> = found.iter().map(|(code, ..)| *code).collect();
-                let expected = if fault {
-                    vec![*code]
-                } else {
-                    vec![Code::UnbuiltConstruct]
+                let opens = faulty.matches('(').count() > faulty.matches(')').count();
+                let closes_on_position = position
+                    .split_once("{}")
+                    .is_some_and(|(_, after)| after.starts_with(')'));
+                let expected = match (fault, opens && closes_on_position) {
+                    (true, true) => vec![*closer_code],
+                    (true, false) => vec![*code],
+                    (false, _) => vec![Code::UnbuiltConstruct],
                 };
                 if codes != expected {
                     failures.push(format!("{text:?} draws {found:?}, expected {expected:?}"));
