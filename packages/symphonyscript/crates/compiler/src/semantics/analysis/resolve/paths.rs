@@ -1272,14 +1272,61 @@ impl Engine<'_> {
         scope: ScopeId,
         need: &mut Vec<Query>,
     ) -> Result<Option<Option<NodeId>>, Internal> {
-        let ExprKind::Slice { base: sliced, .. } = self.hir.expr(base)?.kind else {
-            return Ok(Some(None));
-        };
-        let val = some!(self.val(Query::Expr(sliced, scope), need));
-        if val.nodes().is_empty() {
-            return Ok(Some(None));
+        let (mut base, mut scope) = (base, scope);
+        loop {
+            let (next, within) = match &self.hir.expr(base)?.kind {
+                ExprKind::Slice { base: sliced, .. } => (*sliced, scope),
+                ExprKind::Name(name) => match self.find(name, scope)? {
+                    Found::Query(query @ (Query::Let(..) | Query::Param(..))) => {
+                        match self.bound_value(query)? {
+                            Some(value) => value,
+                            None => return Ok(Some(None)),
+                        }
+                    }
+                    Found::Query(
+                        Query::Input(_)
+                        | Query::State(_)
+                        | Query::Expr(..)
+                        | Query::Attr(..)
+                        | Query::Destination(_)
+                        | Query::Sig(_)
+                        | Query::Eval(..),
+                    )
+                    | Found::Val(_)
+                    | Found::Item(_)
+                    | Found::Decl(_)
+                    | Found::Placeholder
+                    | Found::Nothing => return Ok(Some(None)),
+                },
+                ExprKind::Error
+                | ExprKind::Number(..)
+                | ExprKind::Bool(_)
+                | ExprKind::Str(_)
+                | ExprKind::Variant { .. }
+                | ExprKind::To
+                | ExprKind::Convert(..)
+                | ExprKind::Array(_)
+                | ExprKind::Field(..)
+                | ExprKind::Index(..)
+                | ExprKind::IndexFromEnd(..)
+                | ExprKind::History { .. }
+                | ExprKind::Stepped(_)
+                | ExprKind::Call(..)
+                | ExprKind::Unary(..)
+                | ExprKind::Binary(..)
+                | ExprKind::If(..)
+                | ExprKind::Match { .. }
+                | ExprKind::For(_) => return Ok(Some(None)),
+            };
+            let val = some!(self.val(Query::Expr(next, within), need));
+            if !val.nodes().is_empty() {
+                return Ok(Some(Some(self.value_group(next, &val, within)?)));
+            }
+            let Val::Array(_) = val else {
+                return Ok(Some(None));
+            };
+            (base, scope) = (next, within);
         }
-        Ok(Some(Some(self.value_group(sliced, &val, scope)?)))
     }
 
     fn bound_element(

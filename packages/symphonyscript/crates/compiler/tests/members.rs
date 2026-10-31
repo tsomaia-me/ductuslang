@@ -470,3 +470,121 @@ fn a_dot_call_on_a_reference_whose_kind_has_no_such_attribute_passes_the_referen
         assert_eq!(found, expected, "{text}");
     }
 }
+
+struct EmptyReach {
+    items: &'static [&'static str],
+    value: &'static str,
+    indexed: &'static str,
+}
+
+const EMPTY_REACHES: [EmptyReach; 8] = [
+    EmptyReach {
+        items: &[],
+        value: "[verse][{lo}..]{i}.gain",
+        indexed: "[verse][{lo}..]{i}",
+    },
+    EmptyReach {
+        items: &["let s = [verse][{lo}..]\n"],
+        value: "s{i}.gain",
+        indexed: "s{i}",
+    },
+    EmptyReach {
+        items: &["let t = [verse][{lo}..]\n", "let s = t\n"],
+        value: "s{i}.gain",
+        indexed: "s{i}",
+    },
+    EmptyReach {
+        items: &["let t = [verse]\n", "let s = t[{lo}..]\n"],
+        value: "s{i}.gain",
+        indexed: "s{i}",
+    },
+    EmptyReach {
+        items: &[],
+        value: "[verse][{lo}..][0..]{i}.gain",
+        indexed: "[verse][{lo}..][0..]{i}",
+    },
+    EmptyReach {
+        items: &["fn f(c):\n    let s = [c][{lo}..]\n    s{i}.gain\n"],
+        value: "f(verse)",
+        indexed: "s{i}",
+    },
+    EmptyReach {
+        items: &["fn g(s): s{i}.gain\n"],
+        value: "g([verse][{lo}..])",
+        indexed: "s{i}",
+    },
+    EmptyReach {
+        items: &[
+            "Clip other | gain=3:\n    Note\n",
+            "fn h(xs, i, n):\n    let s = xs[i..]\n    if n < 1 then s{i}.gain else h(xs, i, n - 1)\n",
+        ],
+        value: "h([verse, other], {lo}, 1)",
+        indexed: "s{i}",
+    },
+];
+
+const EMPTY_INDEXES: [(&str, bool); 2] = [("[0]", false), ("[^1]", true)];
+
+const EMPTY_STANDS: [&str; 2] = [
+    "Clip k | gain={v}:\n    Note\n",
+    "Clip k:\n    Note/(i32({v}))\n",
+];
+
+fn empty_element_rows(rows: &Rows) -> Vec<String> {
+    let compiler = Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("vocabulary");
+    let mut failures = Vec::new();
+    for (reach, form) in EMPTY_REACHES.iter().enumerate() {
+        for (index, (read, whole)) in EMPTY_INDEXES.iter().enumerate() {
+            for (stand, place) in EMPTY_STANDS.iter().enumerate() {
+                for (start, empty) in [("3", true), ("0", false)] {
+                    let fill = |text: &str| text.replace("{lo}", start).replace("{i}", read);
+                    let mut items = vec!["Clip verse | gain=2:\n    Note\n".to_string()];
+                    items.extend(form.items.iter().map(|item| fill(item)));
+                    items.push(place.replace("{v}", &fill(form.value)));
+                    let expected = if empty {
+                        let spanned = if *whole {
+                            fill(form.indexed)
+                        } else {
+                            "0".to_string()
+                        };
+                        vec![(Code::IndexOutOfRange, spanned)]
+                    } else {
+                        Vec::new()
+                    };
+                    for (order, reversed) in [false, true].into_iter().enumerate() {
+                        if !rows.take(&[reach, index, stand, usize::from(empty), order]) {
+                            continue;
+                        }
+                        let mut ordered = items.clone();
+                        if reversed {
+                            ordered.reverse();
+                        }
+                        let text = ordered.concat();
+                        let found = support::error_texts(&compiler, &text);
+                        if found != expected {
+                            failures.push(format!(
+                                "338: {text}\n  draws {found:?}\n  expected {expected:?}"
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+    }
+    failures
+}
+
+#[test]
+fn an_element_read_of_an_empty_compile_time_array_has_its_element_type_however_the_array_reaches_it()
+ {
+    let failures = covered(empty_element_rows);
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_an_element_read_of_an_empty_compile_time_array_has_its_element_type_however_the_array_reaches_it()
+ {
+    let failures = empty_element_rows(&Rows::Every);
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
