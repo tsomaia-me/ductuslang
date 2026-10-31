@@ -1865,3 +1865,159 @@ fn stress_a_ring_of_declarations_is_grouped_and_named_in_work_linear_in_its_read
     let failures = ring_failures([2_000, 4_000, 8_000]);
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum OpenReads {
+    Fan,
+    Hubs,
+    Pairs,
+    Ring,
+}
+
+const OPEN_READS: [OpenReads; 4] = [
+    OpenReads::Fan,
+    OpenReads::Hubs,
+    OpenReads::Pairs,
+    OpenReads::Ring,
+];
+
+const HUB_SPOKES: usize = 4;
+
+fn open_read_program(shape: OpenReads, size: usize, reversed: bool) -> String {
+    let clips = |index: usize| {
+        format!("Clip verse{index} | gain=2:\n    Note\nClip other{index} | gain=3:\n    Note\n")
+    };
+    let mut items = Vec::new();
+    match shape {
+        OpenReads::Fan => {
+            items.push(clips(0));
+            let spokes: Vec<String> = (1..=size)
+                .map(|index| format!("s{index}(c, d, 0).gain"))
+                .collect();
+            items.push(format!(
+                "fn h(c, d, m): if m < 1 then c else if {} > 99999 then d else c\n",
+                spokes.join(" + ")
+            ));
+            for index in 1..=size {
+                items.push(format!(
+                    "fn s{index}(c, d, m): if m < 1 then c else if h(c, d, 0).gain > 2 then d else c\n"
+                ));
+            }
+            items.push("Clip k:\n    Note/([60][i32(h(verse0, other0, 1).gain) - 2])\n".into());
+        }
+        OpenReads::Hubs => {
+            items.push(clips(0));
+            let sum = |name: &str, count: usize| {
+                (1..=count)
+                    .map(|index| format!("{name}{index}(c, d, 0).gain"))
+                    .collect::<Vec<String>>()
+                    .join(" + ")
+            };
+            for index in 1..=size {
+                let next = if index < size {
+                    format!(" + h{}(c, d, 0).gain", index + 1)
+                } else {
+                    String::new()
+                };
+                items.push(format!(
+                    "fn h{index}(c, d, m): if m < 1 then c else if {}{next} > 99999 then d else c\n",
+                    sum("s", HUB_SPOKES)
+                ));
+            }
+            for index in 1..=HUB_SPOKES {
+                items.push(format!(
+                    "fn s{index}(c, d, m): if m < 1 then c else if {} > 99999 then d else c\n",
+                    sum("h", size)
+                ));
+            }
+            items.push("Clip k:\n    Note/([60][i32(h1(verse0, other0, 1).gain) - 2])\n".into());
+        }
+        OpenReads::Pairs => {
+            items.push(
+                "fn a(c, d, m): if m < 1 then c else if a(d, c, 0).gain > 2 then d else c\n".into(),
+            );
+            for index in 1..=size {
+                items.push(clips(index));
+                items.push(format!(
+                    "Clip k{index}:\n    Note/([60][i32(a(verse{index}, other{index}, 1).gain) - 3])\n"
+                ));
+            }
+        }
+        OpenReads::Ring => {
+            items.push(clips(0));
+            for index in 1..=size {
+                let next = index % size + 1;
+                items.push(format!(
+                    "fn a{index}(c, d, m): if m < 1 then c else if a{next}(d, c, 0).gain > 2 then d else c\n"
+                ));
+            }
+            items.push("Clip k:\n    Note/([60][i32(a1(verse0, other0, 1).gain) - 3])\n".into());
+        }
+    }
+    if reversed {
+        items.reverse();
+    }
+    format!("Session main\n{}", items.concat())
+}
+
+fn open_read_work(shape: OpenReads, size: usize) -> usize {
+    match shape {
+        OpenReads::Hubs => (size + HUB_SPOKES) * size,
+        OpenReads::Fan | OpenReads::Pairs | OpenReads::Ring => size,
+    }
+}
+
+fn open_read_failures(sizes: [usize; 3]) -> Vec<String> {
+    let compiler = Compiler::new(&vocabulary()).expect("the vocabulary compiles");
+    let mut failures = Vec::new();
+    for shape in OPEN_READS {
+        for reversed in [false, true] {
+            let runs =
+                sizes.map(|size| measured(&compiler, &open_read_program(shape, size, reversed)));
+            for (run, size) in runs.iter().zip(sizes) {
+                if !run.errors.is_empty() {
+                    failures.push(format!("343 {shape:?} {reversed} {size}: {:?}", run.errors));
+                }
+            }
+            for (index, (counter, _)) in runs[0].counts.iter().enumerate() {
+                let points = [0, 1, 2].map(|run| {
+                    (
+                        u64::try_from(open_read_work(shape, sizes[run])).unwrap_or(u64::MAX),
+                        runs[run].counts.get(index).map_or(0, |(_, count)| *count),
+                    )
+                });
+                if !linear(points) {
+                    failures.push(format!(
+                        "343 {shape:?} {reversed} {counter} {:?}",
+                        points.map(|(_, count)| count)
+                    ));
+                }
+            }
+            for counter in ["RecursiveFamilyWaiters", "RecursiveFamilyReprobeScopes"] {
+                if !runs[0]
+                    .counts
+                    .iter()
+                    .any(|(name, count)| name == counter && *count > 0)
+                {
+                    failures.push(format!("343 {shape:?} {reversed} {counter} is not counted"));
+                }
+            }
+        }
+    }
+    failures
+}
+
+#[test]
+fn families_that_read_one_anothers_open_results_are_typed_again_in_work_linear_in_the_families_and_their_reads_343()
+ {
+    let failures = open_read_failures([6, 12, 24]);
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+#[test]
+#[ignore = "stress"]
+fn stress_families_that_read_one_anothers_open_results_are_typed_again_in_work_linear_in_the_families_and_their_reads_343()
+ {
+    let failures = open_read_failures([128, 256, 512]);
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}

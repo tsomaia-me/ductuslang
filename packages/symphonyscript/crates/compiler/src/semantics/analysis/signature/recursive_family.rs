@@ -278,7 +278,7 @@ impl Engine<'_> {
         for reader in self.memo.family_waiters.remove(settled).unwrap_or_default() {
             CountedWalk::RecursiveFamilyWaiters.step();
             if self.memo.reprobed.insert((reader.clone(), settled.clone())) {
-                self.memo.pending_reprobes.push(reader);
+                self.memo.pending_reprobes.push_back(reader);
             }
         }
         if self.memo.driving_reprobes || self.memo.pending_reprobes.is_empty() {
@@ -291,53 +291,49 @@ impl Engine<'_> {
     }
 
     fn drive_reprobes(&mut self, need: &mut Vec<Query>) -> Result<Option<()>, Internal> {
-        let mut index = 0;
-        while let Some(reader) = self.memo.pending_reprobes.get(index).cloned() {
+        while let Some(reader) = self.memo.pending_reprobes.front().cloned() {
             CountedWalk::RecursiveFamilyReprobes.step();
             match self.memo.rec_families.get(&reader) {
                 Some(RecFamily::Known(..) | RecFamily::Failed) => {}
-                Some(RecFamily::Probing(_) | RecFamily::Settling { .. }) | None => {
-                    index += 1;
+                Some(RecFamily::Probing(_) | RecFamily::Settling { .. }) => return Ok(Some(())),
+                None => {
+                    self.memo.pending_reprobes.pop_front();
                     continue;
                 }
             }
             let fresh = match self.memo.reprobe_scopes.get(&reader) {
                 Some(fresh) => *fresh,
                 None => {
-                    let Some(&last) = self
+                    let last = self
                         .memo
                         .family_scopes
                         .get(&reader)
                         .and_then(|scopes| scopes.last())
-                    else {
-                        self.memo.pending_reprobes.swap_remove(index);
+                        .copied()
+                        .filter(|last| self.memo.probes.contains(last));
+                    let Some(last) = last else {
+                        self.memo.pending_reprobes.pop_front();
                         continue;
                     };
-                    if !self.memo.probes.contains(&last) {
-                        self.memo.pending_reprobes.swap_remove(index);
-                        continue;
-                    }
                     self.reprobe_scope(&reader, last)?
                 }
             };
             let function = reader.function;
             if self.body_in_progress(function, fresh)? {
-                index += 1;
-                continue;
+                return Ok(Some(()));
             }
             if let Some(root) = some!(self.template_root(function, fresh, need)?)
                 && !self.memo.sigs.contains_key(&root)
             {
                 let query = Query::Sig(root);
                 if self.in_progress(query) {
-                    index += 1;
-                    continue;
+                    return Ok(Some(()));
                 }
                 need.push(query);
                 return Ok(None);
             }
             self.memo.reprobe_scopes.remove(&reader);
-            self.memo.pending_reprobes.swap_remove(index);
+            self.memo.pending_reprobes.pop_front();
         }
         Ok(Some(()))
     }

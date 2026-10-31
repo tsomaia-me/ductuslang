@@ -142,7 +142,7 @@ pub(crate) struct Memo {
     pub reprobed:
         super::fast_hash::FastSet<(super::family_key::FamilyKey, super::family_key::FamilyKey)>,
     pub reprobe_scopes: FastMap<super::family_key::FamilyKey, ScopeId>,
-    pub pending_reprobes: Vec<super::family_key::FamilyKey>,
+    pub pending_reprobes: std::collections::VecDeque<super::family_key::FamilyKey>,
     pub driving_reprobes: bool,
     pub open_joins: super::fast_hash::FastSet<NodeId>,
     pub open_arms: FastMap<(NodeId, usize, super::item_ref::ItemRef), Option<NodeId>>,
