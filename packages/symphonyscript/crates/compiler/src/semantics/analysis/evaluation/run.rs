@@ -147,12 +147,13 @@ impl Engine<'_> {
     }
 
     fn shape_checked(&mut self, node: NodeId, value: CVal) -> Result<CVal, Internal> {
-        let Some(need) = self.memo.shapes.get(&node).cloned() else {
+        let Some(need) = self.memo.shapes.get(&node) else {
             return Ok(value);
         };
         if value.is_error() || lengths_of(&value) == need.lengths {
             return Ok(value);
         }
+        let need = need.clone();
         match need.at {
             Some((loc, scope)) => self.error(need.code, loc, scope, need.message)?,
             None => self.error_at_node(need.code, node, need.message)?,
@@ -1006,6 +1007,18 @@ impl Engine<'_> {
         value: CVal,
         ty: EvalTy,
     ) -> Result<CVal, Internal> {
+        if !matches!(value, CVal::Array(_)) {
+            crate::semantics::counted_walk::CountedWalk::RunFit.step();
+            if fits_in(&value, ty) {
+                return Ok(value);
+            }
+            self.error_at_node(
+                Code::DoesNotFit,
+                node,
+                format!("this value does not fit `{}`", ty_name(ty)),
+            )?;
+            return Ok(CVal::Error);
+        }
         let mut unfit = Vec::new();
         let mut parts = vec![(node, value.clone())];
         while let Some((at, part)) = parts.pop() {

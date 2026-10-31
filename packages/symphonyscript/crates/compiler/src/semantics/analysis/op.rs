@@ -46,7 +46,7 @@ pub(crate) enum Op {
     Builtin(Builtin, Vec<NodeId>),
     Recursive {
         function: FnId,
-        args: Vec<Option<Val>>,
+        args: std::rc::Rc<[Option<Val>]>,
     },
     ToRead {
         wire: WireId,

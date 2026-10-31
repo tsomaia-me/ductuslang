@@ -5,7 +5,6 @@ use super::machine_key::MachineKey;
 use crate::semantics::Internal;
 use crate::semantics::analysis::call_key::CallKey;
 use crate::semantics::analysis::eval_ty::EvalTy;
-use crate::semantics::analysis::fast_hash::FastMap;
 use crate::semantics::analysis::kind::Kind;
 use crate::semantics::analysis::op::Op;
 use crate::semantics::analysis::sig::Sig;
@@ -22,7 +21,7 @@ fn a_miss_in_the_recursive_evaluators_own_state_is_an_internal_error() {
             .push_node(
                 Op::Recursive {
                     function,
-                    args: Vec::new(),
+                    args: Vec::new().into(),
                 },
                 Loc::default(),
                 scope,
@@ -38,7 +37,13 @@ fn a_miss_in_the_recursive_evaluators_own_state_is_an_internal_error() {
         let id = engine.memo.call_keys.intern(key.parts());
         let mut need = Vec::new();
         let mut evaluated = |engine: &mut crate::semantics::analysis::Engine<'_>, ctx| {
-            engine.recursive(call, (function, Vec::new()), EvalTy::Exact, ctx, &mut need)
+            engine.recursive(
+                call,
+                (function, Vec::new().into()),
+                EvalTy::Exact,
+                ctx,
+                &mut need,
+            )
         };
 
         engine
@@ -59,6 +64,7 @@ fn a_miss_in_the_recursive_evaluators_own_state_is_an_internal_error() {
                 deep_warned: false,
                 walked: Default::default(),
                 rerun: Default::default(),
+                spares: Vec::new(),
             },
         );
         assert_eq!(
@@ -78,7 +84,9 @@ fn a_miss_in_the_recursive_evaluators_own_state_is_an_internal_error() {
         engine.active = Some(Machine {
             frames: vec![Frame {
                 run: None,
-                loops: FastMap::default(),
+                owner: crate::semantics::analysis::slot_owner::SlotOwner::Root(call),
+                values: Default::default(),
+                loops: Default::default(),
                 held: None,
                 args: Vec::new(),
                 call,
@@ -86,7 +94,6 @@ fn a_miss_in_the_recursive_evaluators_own_state_is_an_internal_error() {
                 ty: EvalTy::Exact,
                 expected: EvalTy::Exact,
                 feeds: Vec::new(),
-                memo: FastMap::default(),
                 depth: 1,
                 faults: Default::default(),
                 templates: Default::default(),
@@ -107,6 +114,7 @@ fn a_miss_in_the_recursive_evaluators_own_state_is_an_internal_error() {
             deep_warned: false,
             walked: Default::default(),
             rerun: Default::default(),
+            spares: Vec::new(),
         });
         assert_eq!(engine.frame_arg(0, 0), Err(Internal::missed("argument")));
         assert_eq!(

@@ -91,6 +91,7 @@ mod signature;
 mod sink;
 mod site;
 mod slot;
+mod slot_owner;
 mod some;
 mod stop;
 mod template_key;

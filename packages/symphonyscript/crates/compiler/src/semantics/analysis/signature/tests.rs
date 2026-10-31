@@ -84,7 +84,7 @@ fn a_missing_operand_signature_is_an_internal_error() {
             engine,
             Op::Recursive {
                 function: FnId(0),
-                args: vec![Some(Val::Scalar(unsigned))],
+                args: vec![Some(Val::Scalar(unsigned))].into(),
             },
         );
         let mut need = Vec::new();

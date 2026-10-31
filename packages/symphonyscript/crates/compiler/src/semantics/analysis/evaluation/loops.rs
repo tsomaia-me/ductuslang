@@ -1,6 +1,7 @@
 use super::checks::Checks;
 use super::ctx::Ctx;
 use super::frame::Frame;
+use super::frame_spare::FrameSpare;
 use super::loop_items::LoopItems;
 use super::loop_run::LoopRun;
 use super::machine::Machine;
@@ -12,7 +13,7 @@ use crate::semantics::analysis::c_val::CVal;
 use crate::semantics::analysis::engine::Engine;
 use crate::semantics::analysis::eval_ty::EvalTy;
 use crate::semantics::analysis::eval_ty_of::eval_ty_of;
-use crate::semantics::analysis::fast_hash::{FastMap, FastSet};
+use crate::semantics::analysis::fast_hash::FastSet;
 use crate::semantics::analysis::for_iterable::ForIterable;
 use crate::semantics::analysis::for_node::ForNode;
 use crate::semantics::analysis::ids::{NodeId, ScopeId};
@@ -20,6 +21,7 @@ use crate::semantics::analysis::kind::Kind;
 use crate::semantics::analysis::query::Query;
 use crate::semantics::analysis::reachable::Reachable;
 use crate::semantics::analysis::sink::Sink;
+use crate::semantics::analysis::slot_owner::SlotOwner;
 use crate::semantics::analysis::some::some;
 use crate::semantics::analysis::width::Width;
 
@@ -35,7 +37,10 @@ impl Engine<'_> {
         let key = MachineKey::Loop(node, own);
         match ctx {
             Ctx::Frame(frame) => {
-                if let Some(value) = self.frame(frame)?.loops.get(&(node, own)) {
+                let record = self.frame(frame)?;
+                if let Some(slot) = self.frame_slot(record.owner, node)?
+                    && let Some(value) = record.loops.get(slot, own)
+                {
                     return Ok(Some(value.clone()));
                 }
             }
@@ -100,7 +105,7 @@ impl Engine<'_> {
         if !self.counted_iteration(node)? {
             return Ok(Some(CVal::Error));
         }
-        let (args, feeds, depth, mode, sink, untaken) = match ctx {
+        let (args, feeds, depth, mode, sink, untaken, owner) = match ctx {
             Ctx::Frame(frame) => {
                 let parent = self.frame(frame)?;
                 (
@@ -110,6 +115,7 @@ impl Engine<'_> {
                     self.mode_of(frame)?,
                     self.frame_sink(frame)?,
                     (parent.untaken_depth, parent.untaken_start),
+                    parent.owner,
                 )
             }
             Ctx::Global => (
@@ -119,7 +125,12 @@ impl Engine<'_> {
                 Mode::Taken,
                 Sink::Into(Reachable::Loop(node, own)),
                 (0, 0),
+                SlotOwner::Root(node),
             ),
+        };
+        let spare = match ctx {
+            Ctx::Frame(_) => self.machine_mut()?.spares.pop().unwrap_or_default(),
+            Ctx::Global => FrameSpare::default(),
         };
         let first = items.item(0);
         let record = Frame {
@@ -137,17 +148,18 @@ impl Engine<'_> {
             ty: own,
             expected: own,
             feeds,
-            memo: FastMap::default(),
-            loops: FastMap::default(),
+            owner,
+            values: spare.values,
+            loops: spare.loops,
             held: None,
             depth,
-            faults: FastSet::default(),
-            templates: FastSet::default(),
+            faults: spare.faults,
+            templates: spare.templates,
             checks: Checks::Done,
             mode,
             sink,
             id: None,
-            opened: FastSet::default(),
+            opened: spare.opened,
             untaken_depth: untaken.0,
             untaken_start: untaken.1,
             height: 1,
@@ -172,6 +184,7 @@ impl Engine<'_> {
                     passed: None,
                     deep_warned: false,
                     walked: FastSet::default(),
+                    spares: Vec::new(),
                 });
                 self.drive(key, node, need)
             }
@@ -206,7 +219,7 @@ impl Engine<'_> {
             let position = i128::try_from(next).map_err(|_| Internal::missed("loop position"))?;
             let element = run.items.item(next);
             run.values = [CVal::Int(position), element, value];
-            record.memo.clear();
+            record.values.clear();
             record.loops.clear();
             record.held = None;
             let (root, ty) = (record.root, record.ty);
@@ -223,7 +236,16 @@ impl Engine<'_> {
             parent.templates.extend(done.templates.iter().copied());
             parent.opened.extend(done.opened.iter().copied());
             parent.height = parent.height.max(done.height);
-            parent.loops.insert((done.call, done.ty), value);
+            let owner = parent.owner;
+            let (call, ty) = (done.call, done.ty);
+            machine.spares.push(FrameSpare::kept(done));
+            let slot = self.numbered_slot(owner, call)?;
+            self.machine_mut()?
+                .frames
+                .last_mut()
+                .ok_or(Internal::missed("evaluation frame"))?
+                .loops
+                .insert(slot, ty, value);
             return Ok(None);
         }
         self.active = None;

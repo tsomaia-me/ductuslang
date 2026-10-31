@@ -880,7 +880,25 @@ impl<'a> Engine<'a> {
                 self.arrays.insert(id);
             }
         }
-        self.nodes.push(Node { op, loc, scope });
+        let order = match self.template_of(scope)? {
+            Some(template) => {
+                let count = self
+                    .memo
+                    .slot_counts
+                    .entry(super::slot_owner::SlotOwner::Template(template))
+                    .or_insert(0);
+                let slot = *count;
+                *count = count.saturating_add(1);
+                Some((template, slot))
+            }
+            None => None,
+        };
+        self.nodes.push(Node {
+            op,
+            loc,
+            scope,
+            order,
+        });
         Ok(id)
     }
 

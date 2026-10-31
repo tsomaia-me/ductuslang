@@ -7,6 +7,8 @@ mod exact_binary;
 mod float32_text;
 mod float_text;
 mod frame;
+mod frame_spare;
+mod frame_values;
 mod int_range;
 mod is_chosen_float;
 mod is_f32;

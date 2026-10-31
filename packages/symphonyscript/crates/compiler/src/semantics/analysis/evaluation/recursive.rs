@@ -6,6 +6,8 @@ use symphonyscript_core::FamilyId;
 use super::checks::Checks;
 use super::ctx::Ctx;
 use super::frame::Frame;
+use super::frame_spare::FrameSpare;
+use super::frame_values::FrameValues;
 use super::is_float_ty::is_float_ty;
 use super::machine::Machine;
 use super::machine_key::MachineKey;
@@ -40,6 +42,7 @@ use crate::semantics::analysis::query::Query;
 use crate::semantics::analysis::reachable::Reachable;
 use crate::semantics::analysis::sig::Sig;
 use crate::semantics::analysis::sink::Sink;
+use crate::semantics::analysis::slot_owner::SlotOwner;
 use crate::semantics::analysis::some::some;
 use crate::semantics::analysis::template_key::TemplateKey;
 use crate::semantics::analysis::val::Val;
@@ -77,7 +80,7 @@ impl Engine<'_> {
     pub(super) fn recursive(
         &mut self,
         node: NodeId,
-        (function, args): (FnId, Vec<Option<Val>>),
+        (function, args): (FnId, Rc<[Option<Val>]>),
         own: EvalTy,
         ctx: Ctx,
         need: &mut Vec<Query>,
@@ -672,20 +675,24 @@ impl Engine<'_> {
         )
     }
 
-    fn frame_heads(&self, frame: usize) -> Result<Vec<NodeId>, Internal> {
+    fn frame_template(&self, frame: usize) -> Result<Option<ScopeId>, Internal> {
         let root = self.frame(frame)?.root;
-        let Some(template) = self.template_of(self.node(root)?.scope)? else {
-            return Ok(Vec::new());
-        };
-        Ok(self
-            .memo
+        self.template_of(self.node(root)?.scope)
+    }
+
+    fn template_heads(&self, template: Option<ScopeId>) -> usize {
+        template
+            .and_then(|template| self.memo.template_heads.get(&template))
+            .map_or(0, Vec::len)
+    }
+
+    fn template_head(&self, template: Option<ScopeId>, position: usize) -> Option<NodeId> {
+        CountedWalk::RecursiveFrameHeads.step();
+        self.memo
             .template_heads
-            .get(&template)
-            .into_iter()
-            .flatten()
-            .inspect(|_| CountedWalk::RecursiveFrameHeads.step())
+            .get(&template?)?
+            .get(position)
             .copied()
-            .collect())
     }
 
     fn begin_checks(&mut self, frame: usize, root: NodeId, ty: EvalTy) -> Result<bool, Internal> {
@@ -693,8 +700,12 @@ impl Engine<'_> {
         if record.mode == Mode::Untaken || !matches!(record.checks, Checks::Unchecked) {
             return Ok(false);
         }
+        let template = self.frame_template(frame)?;
         let mut pending = Vec::new();
-        for head in self.frame_heads(frame)? {
+        for position in 0..self.template_heads(template) {
+            let head = self
+                .template_head(template, position)
+                .ok_or(Internal::missed("frame head"))?;
             CountedWalk::RecursiveBeginChecks.step();
             let read = self
                 .memo
@@ -703,8 +714,11 @@ impl Engine<'_> {
                 .ok_or(Internal::missed("frame read"))?;
             pending.push(read.start);
         }
-        for call in self.frame_calls(frame)? {
-            pending.extend(self.reference_args(call)?);
+        for position in 0..self.template_calls(template) {
+            let call = self
+                .template_call(template, position)
+                .ok_or(Internal::missed("frame call"))?;
+            self.reference_args(call, &mut pending)?;
         }
         let Some(start) = pending.pop() else {
             return Ok(false);
@@ -764,27 +778,25 @@ impl Engine<'_> {
         checked.map(|()| true)
     }
 
-    fn frame_calls(&self, frame: usize) -> Result<Vec<NodeId>, Internal> {
-        let root = self.frame(frame)?.root;
-        let Some(template) = self.template_of(self.node(root)?.scope)? else {
-            return Ok(Vec::new());
-        };
-        Ok(self
-            .memo
-            .template_calls
-            .get(&template)
-            .into_iter()
-            .flatten()
-            .inspect(|_| CountedWalk::RecursiveCallHeads.step())
-            .copied()
-            .collect())
+    fn template_calls(&self, template: Option<ScopeId>) -> usize {
+        template
+            .and_then(|template| self.memo.template_calls.get(&template))
+            .map_or(0, Vec::len)
     }
 
-    fn reference_args(&self, call: NodeId) -> Result<Vec<NodeId>, Internal> {
+    fn template_call(&self, template: Option<ScopeId>, position: usize) -> Option<NodeId> {
+        CountedWalk::RecursiveCallHeads.step();
+        self.memo
+            .template_calls
+            .get(&template?)?
+            .get(position)
+            .copied()
+    }
+
+    fn reference_args(&self, call: NodeId, references: &mut Vec<NodeId>) -> Result<(), Internal> {
         let Op::Recursive { args, .. } = &self.node(call)?.op else {
-            return Ok(Vec::new());
+            return Ok(());
         };
-        let mut references = Vec::new();
         for arg in args.iter().flatten() {
             if let Val::Scalar(node) = arg
                 && self.chosen_reference(*node)?
@@ -792,7 +804,7 @@ impl Engine<'_> {
                 references.push(*node);
             }
         }
-        Ok(references)
+        Ok(())
     }
 
     fn chosen_reference(&self, node: NodeId) -> Result<bool, Internal> {
@@ -804,15 +816,24 @@ impl Engine<'_> {
 
     fn checked_calls(&mut self, frame: usize, need: &mut Vec<Query>) -> Result<bool, Internal> {
         let mut complete = true;
-        for call in self.frame_calls(frame)? {
+        let template = self.frame_template(frame)?;
+        for position in 0..self.template_calls(template) {
+            let call = self
+                .template_call(template, position)
+                .ok_or(Internal::missed("frame call"))?;
             let Op::Recursive { function, args } = self.node(call)?.op.clone() else {
                 continue;
             };
+            let mut references = Vec::new();
+            self.reference_args(call, &mut references)?;
+            if references.is_empty() {
+                continue;
+            }
             let mut shapes = Vec::with_capacity(args.len());
             let mut chosen = Vec::new();
             let mut unchosen = false;
             let mut missing = false;
-            for arg in &args {
+            for arg in args.iter() {
                 if let Some(Val::Scalar(node)) = arg
                     && self.chosen_reference(*node)?
                 {
@@ -893,7 +914,11 @@ impl Engine<'_> {
     }
 
     fn checked_heads(&mut self, frame: usize) -> Result<(), Internal> {
-        for head in self.frame_heads(frame)? {
+        let template = self.frame_template(frame)?;
+        for position in 0..self.template_heads(template) {
+            let head = self
+                .template_head(template, position)
+                .ok_or(Internal::missed("frame head"))?;
             CountedWalk::RecursiveCheckedHeads.step();
             let read = self
                 .memo
@@ -1043,10 +1068,9 @@ impl Engine<'_> {
                     return Ok(Some(CVal::Error));
                 }
                 let ty = own;
-                let templates = self
-                    .template_of(self.node(root)?.scope)?
-                    .into_iter()
-                    .collect();
+                let template = self.template_of(self.node(root)?.scope)?;
+                let templates = template.into_iter().collect();
+                let owner = template.map_or(SlotOwner::Root(root), SlotOwner::Template);
                 let mut work = vec![(0, root, ty)];
                 work.extend(defaults.into_iter().map(|(node, ty)| (0, node, ty)));
                 let rerun: FastSet<CallId> = self
@@ -1065,8 +1089,9 @@ impl Engine<'_> {
                         ty,
                         expected: own,
                         feeds: call.feeds,
-                        memo: FastMap::default(),
-                        loops: FastMap::default(),
+                        owner,
+                        values: FrameValues::default(),
+                        loops: FrameValues::default(),
                         held: None,
                         depth: 1,
                         faults: FastSet::default(),
@@ -1088,6 +1113,7 @@ impl Engine<'_> {
                     passed: None,
                     deep_warned: false,
                     walked: FastSet::default(),
+                    spares: Vec::new(),
                 }
             }
         };
@@ -1196,13 +1222,9 @@ impl Engine<'_> {
             }
             match evaluated {
                 Some(value) => {
-                    let machine = self.machine_mut()?;
-                    machine.work.pop();
-                    let record = machine
-                        .frames
-                        .get_mut(frame)
-                        .ok_or(Internal::missed("evaluation frame"))?;
-                    record.memo.insert((current, ty), value.clone());
+                    self.machine_mut()?.work.pop();
+                    self.store_value(frame, (current, ty), value.clone())?;
+                    let record = self.frame(frame)?;
                     let completes = record.root == current && record.ty == ty;
                     self.next_start(frame, current, ty)?;
                     if completes && self.begin_checks(frame, current, ty)? {
@@ -1253,29 +1275,43 @@ impl Engine<'_> {
                         self.fault_frame = enclosing;
                         let value = value?;
                         let reach: (Vec<u32>, Vec<ScopeId>) = (
-                            done.faults.into_iter().collect(),
-                            done.templates.into_iter().collect(),
+                            done.faults.iter().copied().collect(),
+                            done.templates.iter().copied().collect(),
                         );
+                        let mut opened: Vec<CallId> = done.opened.iter().copied().collect();
+                        opened.sort_unstable_by_key(|id| id.0);
                         let entry = CallDone {
                             value: value.clone(),
                             mode: done.mode,
-                            opened: done.opened.into_iter().collect(),
+                            opened,
                             height: done.height,
-                            callees: done.callees,
+                            callees: std::mem::take(&mut done.callees),
                         };
+                        self.machine_mut()?.spares.push(FrameSpare::kept(done));
                         let kept = self.memo.calls.get(&id).is_some_and(|old| {
                             old.mode == Mode::Taken && entry.mode == Mode::Untaken
                         });
+                        let reach = if frame == 0 {
+                            Some(reach)
+                        } else {
+                            if !kept {
+                                self.memo.key_reach.insert(id, reach);
+                            }
+                            None
+                        };
                         if !kept {
                             self.memo.calls.insert(id, entry);
-                            self.memo.key_reach.insert(id, reach.clone());
                         }
-                        self.link(&sink, Reachable::Call(id));
-                        if frame == 0 {
+                        if let Some(reach) = reach {
+                            if !kept {
+                                self.memo.key_reach.insert(id, reach.clone());
+                            }
+                            self.link(&sink, Reachable::Call(id));
                             self.active = None;
                             self.reach(reach, node, Ctx::Global)?;
                             return Ok(Some(value));
                         }
+                        self.link(&sink, Reachable::Call(id));
                     }
                 }
                 None => {
@@ -1283,10 +1319,15 @@ impl Engine<'_> {
                         continue;
                     }
                     if !self.frame_need.is_empty() {
-                        let pending: Vec<(NodeId, EvalTy)> = std::mem::take(&mut self.frame_need);
-                        self.machine_mut()?
-                            .work
-                            .extend(pending.into_iter().map(|(node, ty)| (frame, node, ty)));
+                        let machine = self
+                            .active
+                            .as_mut()
+                            .ok_or(Internal::missed("evaluation machine"))?;
+                        machine.work.extend(
+                            self.frame_need
+                                .drain(..)
+                                .map(|(node, ty)| (frame, node, ty)),
+                        );
                         continue;
                     }
                     need.extend(outer);
@@ -1380,10 +1421,8 @@ impl Engine<'_> {
             return Ok(Some(CVal::Error));
         }
         let ty = own;
-        let templates = self
-            .template_of(self.node(root)?.scope)?
-            .into_iter()
-            .collect();
+        let template = self.template_of(self.node(root)?.scope)?;
+        let owner = template.map_or(SlotOwner::Root(root), SlotOwner::Template);
         let rerun = self.memo.calls.contains_key(&call.id);
         let sink = match mode {
             Mode::Taken => Sink::Into(Reachable::Call(call.id)),
@@ -1391,6 +1430,17 @@ impl Engine<'_> {
         };
         let caller_start = self.frame(caller)?.untaken_start;
         let machine = self.machine_mut()?;
+        let FrameSpare {
+            values,
+            loops,
+            faults,
+            mut templates,
+            opened,
+            args,
+            mut feeds,
+        } = machine.spares.pop().unwrap_or_default();
+        templates.extend(template);
+        feeds.extend_from_slice(&call.feeds);
         let index = machine.frames.len();
         let (untaken_depth, untaken_start) = match mode {
             Mode::Taken => (0, 0),
@@ -1412,17 +1462,18 @@ impl Engine<'_> {
             root,
             ty,
             expected: own,
-            feeds: call.feeds,
-            memo: FastMap::default(),
-            loops: FastMap::default(),
+            feeds,
+            owner,
+            values,
+            loops,
             held: None,
             depth: depth.saturating_add(1),
-            faults: FastSet::default(),
+            faults,
             templates,
             checks: Checks::Unchecked,
             mode,
             sink,
-            opened: FastSet::default(),
+            opened,
             untaken_depth,
             untaken_start,
             height: 1,
@@ -1432,6 +1483,9 @@ impl Engine<'_> {
         machine
             .work
             .extend(defaults.into_iter().map(|(node, ty)| (index, node, ty)));
+        if self.call_scratch.values.capacity() == 0 {
+            self.call_scratch.values = args;
+        }
         self.frame_pushed = true;
         Ok(None)
     }
@@ -1693,7 +1747,52 @@ impl Engine<'_> {
         node: NodeId,
         ty: EvalTy,
     ) -> Result<Option<CVal>, Internal> {
-        Ok(self.frame(frame)?.memo.get(&(node, ty)).cloned())
+        let record = self.frame(frame)?;
+        Ok(match self.frame_slot(record.owner, node)? {
+            Some(slot) => record.values.get(slot, ty).cloned(),
+            None => None,
+        })
+    }
+
+    pub(super) fn frame_slot(
+        &self,
+        owner: SlotOwner,
+        node: NodeId,
+    ) -> Result<Option<u32>, Internal> {
+        if let (Some((template, slot)), SlotOwner::Template(owned)) =
+            (self.node(node)?.order, owner)
+            && template == owned
+        {
+            return Ok(Some(slot));
+        }
+        Ok(self.memo.foreign_slots.get(&(owner, node)).copied())
+    }
+
+    pub(super) fn numbered_slot(
+        &mut self,
+        owner: SlotOwner,
+        node: NodeId,
+    ) -> Result<u32, Internal> {
+        if let Some(slot) = self.frame_slot(owner, node)? {
+            return Ok(slot);
+        }
+        let count = self.memo.slot_counts.entry(owner).or_insert(0);
+        let slot = *count;
+        *count = count.saturating_add(1);
+        self.memo.foreign_slots.insert((owner, node), slot);
+        Ok(slot)
+    }
+
+    fn store_value(
+        &mut self,
+        frame: usize,
+        (node, ty): (NodeId, EvalTy),
+        value: CVal,
+    ) -> Result<(), Internal> {
+        let owner = self.frame(frame)?.owner;
+        let slot = self.numbered_slot(owner, node)?;
+        self.frame_mut(frame)?.values.insert(slot, ty, value);
+        Ok(())
     }
 
     pub(super) fn frame_arg(&self, frame: usize, slot: u32) -> Result<CVal, Internal> {

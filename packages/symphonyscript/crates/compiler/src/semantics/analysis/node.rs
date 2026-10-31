@@ -7,4 +7,5 @@ pub(crate) struct Node {
     pub op: Op,
     pub loc: Loc,
     pub scope: ScopeId,
+    pub order: Option<(ScopeId, u32)>,
 }
