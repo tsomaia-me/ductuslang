@@ -692,3 +692,64 @@ fn a_line_written_as_an_input_draws_the_top_level_diagnostic_whose_help_names_th
     let text = "state input(1)\nClip c:\n    Note/(input + input.past(1))\n";
     assert_eq!(support::check_codes(text), vec![], "{text}");
 }
+
+const SHAPED_STATES: [&[&str]; 5] = [
+    &["state t([1.5, 2.5]): f32[2]\n", "state s = t\n"],
+    &["state s([1.5, 2.5])\n"],
+    &["state n(1)\n", "state s = [1.5, 2.5 + n]\n"],
+    &[
+        "state t([1.5, 2.5]): f32[2]\n",
+        "state s = t\n",
+        "state r = s\n",
+    ],
+    &["state t([1, 2]): i32[2]\n", "state s = t\n"],
+];
+
+const SHAPED_ATTRIBUTES: [(&str, &str); 3] = [
+    ("Clip c | trio={v}:\n    Note\n", "{v}"),
+    ("Song g:\n    Clip | trio={v}:\n        Note\n", "{v}"),
+    ("Clip c | rows={v}:\n    Note\n", "{v}"),
+];
+
+fn shaped_state_rows(rows: &Rows) -> Vec<String> {
+    let compiler = symphonyscript::Compiler::new(&symphonyscript_fixtures::native_vocabulary())
+        .expect("the native vocabulary compiles");
+    let mut failures = Vec::new();
+    for (form, items) in SHAPED_STATES.iter().enumerate() {
+        let read = if form == 3 { "r" } else { "s" };
+        for (place, (attribute, _)) in SHAPED_ATTRIBUTES.iter().enumerate() {
+            for reversed in [false, true] {
+                if !rows.take(&[form, place, usize::from(reversed)]) {
+                    continue;
+                }
+                let mut ordered: Vec<String> =
+                    items.iter().map(|item| (*item).to_string()).collect();
+                ordered.push(attribute.replace("{v}", read));
+                if reversed {
+                    ordered.reverse();
+                }
+                let text = ordered.concat();
+                let found = support::error_texts(&compiler, &text);
+                if found.len() != 1 || found[0] != (Code::TypeMismatch, read.to_string()) {
+                    failures.push(format!("307: {text}\n  draws {found:?}"));
+                }
+            }
+        }
+    }
+    failures
+}
+
+#[test]
+fn a_state_holding_an_array_of_another_shape_at_a_fixed_array_attribute_draws_the_shape_mismatch_alone()
+ {
+    let failures = covered(shaped_state_rows);
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_a_state_holding_an_array_of_another_shape_at_a_fixed_array_attribute_draws_the_shape_mismatch_alone()
+ {
+    let failures = shaped_state_rows(&Rows::Every);
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}

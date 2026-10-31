@@ -1,5 +1,6 @@
 use symphonyscript_core::Scalar;
 
+use crate::diagnostics::Code;
 use crate::semantics::Internal;
 use crate::semantics::analysis::answers::combined_shape;
 use crate::semantics::analysis::answers::layout_shaped;
@@ -46,6 +47,11 @@ impl Engine<'_> {
                     .shape_at(node, ty)?
                     .is_some_and(|lengths| lengths != need.lengths)
                 {
+                    let loc = self.node(node)?.loc;
+                    self.deferred.retain(|deferred| {
+                        deferred.loc != loc
+                            || !matches!(deferred.code, Code::TypeMismatch | Code::FloatToInteger)
+                    });
                     self.error_at_node(need.code, node, need.message)?;
                     break;
                 }
