@@ -56,6 +56,7 @@ fn a_miss_in_the_recursive_evaluators_own_state_is_an_internal_error() {
                 too_deep: false,
                 passed: None,
                 deep_warned: false,
+                walked: Default::default(),
                 rerun: Default::default(),
             },
         );
@@ -104,6 +105,7 @@ fn a_miss_in_the_recursive_evaluators_own_state_is_an_internal_error() {
             too_deep: false,
             passed: None,
             deep_warned: false,
+            walked: Default::default(),
             rerun: Default::default(),
         });
         assert_eq!(engine.frame_arg(0, 0), Err(Internal::missed("argument")));

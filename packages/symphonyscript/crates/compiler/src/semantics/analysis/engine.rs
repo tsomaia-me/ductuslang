@@ -1406,6 +1406,111 @@ impl<'a> Engine<'a> {
         Ok(true)
     }
 
+    pub(in crate::semantics::analysis) fn note_value_binding(
+        &mut self,
+        query: Query,
+        bound: &BoundVal,
+    ) {
+        let nodes: Vec<NodeId> = match bound {
+            BoundVal::Scalar(Bound::Value(node)) => vec![*node],
+            BoundVal::Array(array) => array
+                .1
+                .iter()
+                .filter_map(|item| match item {
+                    Bound::Value(node) => Some(*node),
+                    Bound::Cell(_) => None,
+                })
+                .collect(),
+            BoundVal::Scalar(Bound::Cell(_)) | BoundVal::Error => Vec::new(),
+        };
+        for node in nodes {
+            self.memo.value_bindings.entry(node).or_insert(query);
+        }
+    }
+
+    pub(in crate::semantics::analysis) fn evaluating_path(
+        &self,
+        start: NodeId,
+    ) -> Result<Option<Vec<NodeId>>, Internal> {
+        let evaluating: FastSet<NodeId> = self
+            .current
+            .iter()
+            .chain(self.waiting.iter())
+            .filter_map(|query| match query {
+                Query::Eval(node, _) => Some(*node),
+                Query::Expr(..)
+                | Query::Let(..)
+                | Query::Param(..)
+                | Query::Input(_)
+                | Query::State(_)
+                | Query::Attr(..)
+                | Query::Destination(_)
+                | Query::Sig(_) => None,
+            })
+            .collect();
+        if evaluating.is_empty() {
+            return Ok(None);
+        }
+        let mut parents: FastMap<NodeId, NodeId> = FastMap::default();
+        let mut seen: FastSet<NodeId> = FastSet::default();
+        seen.insert(start);
+        let mut stack = vec![start];
+        while let Some(node) = stack.pop() {
+            crate::semantics::counted_walk::CountedWalk::EngineEvaluatingPath.step();
+            if evaluating.contains(&node) {
+                let mut path = vec![node];
+                let mut current = node;
+                while let Some(parent) = parents.get(&current) {
+                    path.push(*parent);
+                    current = *parent;
+                }
+                path.reverse();
+                return Ok(Some(path));
+            }
+            for operand in self.node(node)?.op.operands() {
+                if seen.insert(operand) {
+                    parents.insert(operand, node);
+                    stack.push(operand);
+                }
+            }
+        }
+        Ok(None)
+    }
+
+    pub(in crate::semantics::analysis) fn draw_evaluation_cycle(
+        &mut self,
+        (item, attr): (ItemRef, symphonyscript_core::AttrId),
+        steps: Vec<Query>,
+    ) -> Result<bool, Internal> {
+        let mut queries: Vec<Query> = Vec::with_capacity(steps.len());
+        for query in steps {
+            if queries.last() != Some(&query) {
+                queries.push(query);
+            }
+        }
+        while queries.len() > 1 && queries.first() == queries.last() {
+            queries.pop();
+        }
+        let mut names = Vec::new();
+        let mut locs = Vec::new();
+        for query in &queries {
+            if let Some((name, loc)) = self.declaration(*query)? {
+                names.push(name);
+                locs.push(loc);
+            }
+        }
+        if names.is_empty() {
+            return Ok(false);
+        }
+        let attribute = self
+            .attr_decl(item, attr)?
+            .map_or(String::new(), |decl| decl.name.clone());
+        if self.drawn_candidate_cycles.insert((item, attribute)) {
+            self.declaration_cycle(&queries, names, &locs)?;
+        }
+        Ok(true)
+    }
+
     fn cycle_evaluating(&self, path: &[Query]) -> Result<bool, Internal> {
         let mut values = Vec::new();
         for query in path {

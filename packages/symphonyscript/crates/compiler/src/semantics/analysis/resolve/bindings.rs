@@ -144,6 +144,7 @@ impl Engine<'_> {
             layout.and_then(|(_, capacity)| capacity),
         );
         self.note_defaulted(defaulted, &bound);
+        self.note_value_binding(Query::Let(scope, local), &bound);
         self.memo.lets.insert((scope, local), bound);
         Ok(true)
     }
@@ -608,6 +609,7 @@ impl Engine<'_> {
                     else {
                         return Ok(false);
                     };
+                    self.note_value_binding(Query::Attr(item, attr), &bound);
                     self.memo.attrs.insert((item, attr), bound);
                     return Ok(true);
                 }
@@ -671,6 +673,7 @@ impl Engine<'_> {
                 None => BoundVal::Error,
             },
         };
+        self.note_value_binding(Query::Attr(item, attr), &bound);
         self.memo.attrs.insert((item, attr), bound);
         Ok(true)
     }

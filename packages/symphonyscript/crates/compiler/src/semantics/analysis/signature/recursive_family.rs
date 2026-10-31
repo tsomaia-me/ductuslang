@@ -45,6 +45,48 @@ impl Engine<'_> {
         Ok(sig)
     }
 
+    pub(in crate::semantics::analysis) fn chosen_family(
+        &mut self,
+        call: NodeId,
+        function: FnId,
+        shapes: &[ArgShape],
+        need: &mut Vec<Query>,
+    ) -> Result<Option<Option<ScopeId>>, Internal> {
+        let key = FamilyKey {
+            function,
+            args: shapes.iter().map(family_arg).collect(),
+        };
+        some!(self.family_sig(call, (&key, shapes), need)?);
+        let settled = match self.memo.rec_families.get(&key) {
+            Some(RecFamily::Known(..) | RecFamily::Failed) => true,
+            Some(RecFamily::Probing(_) | RecFamily::Settling { .. }) | None => false,
+        };
+        if !settled {
+            return Ok(Some(None));
+        }
+        let scope = match self
+            .memo
+            .family_scopes
+            .get(&key)
+            .and_then(|scopes| scopes.last())
+        {
+            Some(scope) => *scope,
+            None => {
+                let scope = self.instantiate(function, shapes, call)?;
+                self.memo
+                    .family_scopes
+                    .entry(key.clone())
+                    .or_default()
+                    .push(scope);
+                scope
+            }
+        };
+        self.link_family(call, &key)?;
+        let body = self.hir.fn_decl(function)?.value;
+        some!(self.val(Query::Expr(body, scope), need));
+        Ok(Some(Some(scope)))
+    }
+
     fn link_family(&mut self, node: NodeId, key: &FamilyKey) -> Result<(), Internal> {
         let Some(scopes) = self.memo.family_scopes.get(key).cloned() else {
             return Ok(());
@@ -250,7 +292,7 @@ impl Engine<'_> {
             .ok_or(Internal::missed("family shapes"))
     }
 
-    fn family_shape(
+    pub(in crate::semantics::analysis) fn family_shape(
         &self,
         arg: Option<&Val>,
         need: &mut Vec<Query>,

@@ -250,11 +250,15 @@ impl Engine<'_> {
                     ParamSource::Default | ParamSource::Missing | ParamSource::Bound(_) => None,
                 })
                 .collect();
-            return Ok(Some(self.scalar(
-                Op::Recursive { function, args },
-                loc,
-                scope,
-            )?));
+            let call = self.scalar(Op::Recursive { function, args }, loc, scope)?;
+            if let (Some(template), Val::Scalar(node)) = (self.template_of(scope)?, &call) {
+                self.memo
+                    .template_calls
+                    .entry(template)
+                    .or_default()
+                    .push(*node);
+            }
+            return Ok(Some(call));
         }
         let call_scope = match self.memo.call_scopes.get(&(expr, scope)) {
             Some(existing) => *existing,

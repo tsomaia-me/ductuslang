@@ -2802,6 +2802,15 @@ impl StepCase {
     }
 
     fn expected(&self) -> (BTreeSet<(Code, String, String)>, i32) {
+        self.drawn(true)
+    }
+
+    fn twin_expected(&self) -> BTreeSet<(Code, String, String)> {
+        self.drawn(self.consumer != StepConsumer::RecursiveArgument)
+            .0
+    }
+
+    fn drawn(&self, untaken_arguments: bool) -> (BTreeSet<(Code, String, String)>, i32) {
         let mut drawn = BTreeSet::new();
         let mut value = 0;
         let mut faulty = false;
@@ -2825,8 +2834,7 @@ impl StepCase {
                 continue;
             };
             let lacks = !holds;
-            let checked = taken || self.consumer != StepConsumer::RecursiveArgument;
-            if lacks && checked {
+            if lacks && (taken || untaken_arguments) {
                 drawn.insert((
                     Code::UnknownAttribute,
                     self.path.first().to_string(),
@@ -2993,14 +3001,16 @@ fn lacking_step_rows(rows: &Rows, path: StepPath, chooser: StepChooser) -> (Vec<
                                     reversed,
                                 };
                                 let (expected, _) = case.expected();
+                                let twin_expected = case.twin_expected();
                                 let text = case.program(true);
                                 let twin = case.program(false);
                                 let drawn = found_summaries(&text);
                                 let twin_drawn = found_summaries(&twin);
                                 programs += 1;
-                                if drawn != expected || !twin_ranges && twin_drawn != expected {
+                                if drawn != expected || !twin_ranges && twin_drawn != twin_expected
+                                {
                                     failures.push(format!(
-                                        "{path:?} {chooser:?} {holds:?} {consumer:?} {arm:?} {frame:?} {depth} {reversed}\n{text}\n  found {drawn:?}\n  twin {twin_drawn:?}\n  expected {expected:?}\n"
+                                        "347 {path:?} {chooser:?} {holds:?} {consumer:?} {arm:?} {frame:?} {depth} {reversed}\n{text}\n  found {drawn:?}\n  twin {twin_drawn:?}\n  expected {expected:?}\n  twin expected {twin_expected:?}\n"
                                     ));
                                 }
                             }
@@ -3072,12 +3082,6 @@ fn candidate_fault_rows(rows: &Rows) -> (Vec<String>, usize) {
                             Levels::Alternating(..) => index,
                         };
                         let checked = reading || unread == 1;
-                        if fault == CandidateFault::ClosesCycle
-                            && consumer == Consumer::RecursiveArgument
-                            && !chosen.contains(&unread)
-                        {
-                            continue;
-                        }
                         let (text, twin) = (program(true), program(false));
                         let mut expected = codes_at(&twin, levels);
                         if fault == CandidateFault::ReadsCell
@@ -3096,11 +3100,6 @@ fn candidate_fault_rows(rows: &Rows) -> (Vec<String>, usize) {
                         let twin_faults = second == Some(true)
                             || fault == CandidateFault::EveryCandidateClosesCycle
                             || match fault {
-                                CandidateFault::LacksAttribute
-                                    if consumer == Consumer::RecursiveArgument =>
-                                {
-                                    reading
-                                }
                                 CandidateFault::LacksAttribute => checked,
                                 CandidateFault::ClosesCycle => checked,
                                 CandidateFault::ReadsCell => {
@@ -3110,7 +3109,7 @@ fn candidate_fault_rows(rows: &Rows) -> (Vec<String>, usize) {
                             };
                         if drawn != expected || faulty_twin != twin_faults {
                             failures.push(format!(
-                                    "{fault:?} {chooser} {consumer:?} {index} {levels:?} {reversed} {second:?}\n{text}\n  found {drawn:?}\n  expected {expected:?}\n  twin faults {faulty_twin}\n"
+                                    "347 {fault:?} {chooser} {consumer:?} {index} {levels:?} {reversed} {second:?}\n{text}\n  found {drawn:?}\n  expected {expected:?}\n  twin faults {faulty_twin}\n"
                                 ));
                         }
                     }
@@ -3144,6 +3143,48 @@ fn candidate_failures(run: impl Fn(Generator) -> (Vec<String>, usize)) -> (Vec<S
 }
 
 #[test]
+fn an_untaken_arms_recursive_call_keys_its_callee_for_the_chosen_reference_and_draws_its_cycle_or_lacking_attribute_347()
+ {
+    let mut failures = Vec::new();
+    let mut programs = 0;
+    for fault in [CandidateFault::ClosesCycle, CandidateFault::LacksAttribute] {
+        for chooser in FAULT_CHOOSERS {
+            for index in [0, 1] {
+                for reversed in [false, true] {
+                    let levels = Levels::Alternating(1, 1);
+                    let program = |recursive| {
+                        candidate_fault_program(
+                            (fault, chooser, Consumer::RecursiveArgument),
+                            (index, levels, reversed, recursive),
+                            None,
+                        )
+                    };
+                    let (text, twin) = (program(true), program(false));
+                    let drawn = codes_at(&text, levels);
+                    let expected = codes_at(&twin, levels);
+                    let code = match fault {
+                        CandidateFault::ClosesCycle => Code::DeclarationCycle,
+                        CandidateFault::LacksAttribute
+                        | CandidateFault::ReadsCell
+                        | CandidateFault::EveryCandidateClosesCycle => Code::UnknownAttribute,
+                    };
+                    programs += 1;
+                    let drawn_once = drawn
+                        .iter()
+                        .any(|((at, _), count)| *at == code && *count == 1);
+                    if drawn != expected || !drawn_once {
+                        failures.push(format!(
+                            "347 {fault:?} {chooser} {index} {reversed}\n{text}\n  found {drawn:?}\n  twin {expected:?}\n"
+                        ));
+                    }
+                }
+            }
+        }
+    }
+    assert_none_fail((failures, programs), 32);
+}
+
+#[test]
 fn a_fault_of_a_candidate_binding_draws_only_when_the_evaluation_chooses_that_candidate() {
     assert_none_fail(candidate_failures(|generator| covered(generator)), 127);
 }
@@ -3154,7 +3195,7 @@ fn exhaustive_a_fault_of_a_candidate_binding_draws_only_when_the_evaluation_choo
 {
     assert_none_fail(
         candidate_failures(|generator| generator(&Rows::Every)),
-        43_976,
+        43_992,
     );
 }
 

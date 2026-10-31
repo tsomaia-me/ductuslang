@@ -573,7 +573,19 @@ impl Engine<'_> {
         Ok(match self.attr_named(item, &name.text)? {
             Some(attr) => {
                 let bound = some!(self.bound(Query::Attr(item, attr), need));
-                Some(self.read(&bound, loc, scope)?)
+                let val = self.read(&bound, loc, scope)?;
+                if let Some(template) = self.template_of(scope)? {
+                    let reads = val.nodes();
+                    for read in &reads {
+                        self.memo.attr_reads.insert(*read, (item, attr));
+                    }
+                    self.memo
+                        .template_steps
+                        .entry(template)
+                        .or_default()
+                        .extend(reads);
+                }
+                Some(val)
             }
             None if self.may_name(item, &name.text)? => Some(Val::Error),
             None => {

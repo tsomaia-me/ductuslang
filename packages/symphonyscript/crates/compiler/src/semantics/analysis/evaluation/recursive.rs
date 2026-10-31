@@ -668,6 +668,9 @@ impl Engine<'_> {
                 .ok_or(Internal::missed("frame read"))?;
             pending.push(read.start);
         }
+        for call in self.frame_calls(frame)? {
+            pending.extend(self.reference_args(call)?);
+        }
         let Some(start) = pending.pop() else {
             return Ok(false);
         };
@@ -708,7 +711,13 @@ impl Engine<'_> {
             && record.ty == ty)
     }
 
-    fn check_heads(&mut self, frame: usize) -> Result<(), Internal> {
+    fn check_heads(&mut self, frame: usize, need: &mut Vec<Query>) -> Result<bool, Internal> {
+        let enclosing = self.fault_frame.replace(frame);
+        let called = self.checked_calls(frame, need);
+        self.fault_frame = enclosing;
+        if !called? {
+            return Ok(false);
+        }
         self.machine_mut()?
             .frames
             .get_mut(frame)
@@ -717,7 +726,135 @@ impl Engine<'_> {
         let enclosing = self.fault_frame.replace(frame);
         let checked = self.checked_heads(frame);
         self.fault_frame = enclosing;
-        checked
+        checked.map(|()| true)
+    }
+
+    fn frame_calls(&self, frame: usize) -> Result<Vec<NodeId>, Internal> {
+        let root = self.frame(frame)?.root;
+        let Some(template) = self.template_of(self.node(root)?.scope)? else {
+            return Ok(Vec::new());
+        };
+        Ok(self
+            .memo
+            .template_calls
+            .get(&template)
+            .into_iter()
+            .flatten()
+            .inspect(|_| CountedWalk::RecursiveCallHeads.step())
+            .copied()
+            .collect())
+    }
+
+    fn reference_args(&self, call: NodeId) -> Result<Vec<NodeId>, Internal> {
+        let Op::Recursive { args, .. } = &self.node(call)?.op else {
+            return Ok(Vec::new());
+        };
+        let mut references = Vec::new();
+        for arg in args.iter().flatten() {
+            if let Val::Scalar(node) = arg
+                && self.chosen_reference(*node)?
+            {
+                references.push(*node);
+            }
+        }
+        Ok(references)
+    }
+
+    fn chosen_reference(&self, node: NodeId) -> Result<bool, Internal> {
+        let Some(sig) = self.memo.sigs.get(&node) else {
+            return Ok(false);
+        };
+        Ok(sig.kind == Kind::Node && sig.frame && !sig.reactive && !sig.is_error())
+    }
+
+    fn checked_calls(&mut self, frame: usize, need: &mut Vec<Query>) -> Result<bool, Internal> {
+        let mut complete = true;
+        for call in self.frame_calls(frame)? {
+            let Op::Recursive { function, args } = self.node(call)?.op.clone() else {
+                continue;
+            };
+            let mut shapes = Vec::with_capacity(args.len());
+            let mut chosen = Vec::new();
+            let mut unchosen = false;
+            let mut missing = false;
+            for arg in &args {
+                if let Some(Val::Scalar(node)) = arg
+                    && self.chosen_reference(*node)?
+                {
+                    match self.frame_value(frame, *node, EvalTy::Node)? {
+                        Some(CVal::Node(item)) => {
+                            chosen.push(item);
+                            shapes.push(ArgShape::Scalar(ArgSig {
+                                kind: Kind::Node,
+                                width: Width::Flexible,
+                                family: self.known_sig(*node)?.family,
+                                node: ArgReference::Instance(item),
+                            }));
+                        }
+                        Some(
+                            CVal::Int(_)
+                            | CVal::F32(_)
+                            | CVal::F64(_)
+                            | CVal::Bool(_)
+                            | CVal::Enum(..)
+                            | CVal::Str(_)
+                            | CVal::Array(_)
+                            | CVal::Error,
+                        )
+                        | None => unchosen = true,
+                    }
+                    continue;
+                }
+                match self.family_shape(arg.as_ref(), need)? {
+                    Some(shape) => shapes.push(shape),
+                    None => missing = true,
+                }
+            }
+            if chosen.is_empty() || unchosen {
+                continue;
+            }
+            if missing {
+                complete = false;
+                continue;
+            }
+            let Some(settled) = self.chosen_family(call, function, &shapes, need)? else {
+                complete = false;
+                continue;
+            };
+            let Some(settled) = settled else {
+                continue;
+            };
+            let body = Query::Expr(self.hir.fn_decl(function)?.value, settled);
+            let reads: Vec<NodeId> = self
+                .memo
+                .template_steps
+                .get(&settled)
+                .cloned()
+                .unwrap_or_default();
+            for read in reads {
+                let Some(&(item, attr)) = self.memo.attr_reads.get(&read) else {
+                    continue;
+                };
+                if !chosen.contains(&item) || self.machine_mut()?.walked.contains(&read) {
+                    continue;
+                }
+                match self.evaluating_path(read)? {
+                    Some(path) => {
+                        let mut steps = vec![Query::Attr(item, attr)];
+                        steps.extend(
+                            path.iter()
+                                .filter_map(|node| self.memo.value_bindings.get(node).copied()),
+                        );
+                        steps.push(body);
+                        self.draw_evaluation_cycle((item, attr), steps)?;
+                    }
+                    None => {
+                        self.machine_mut()?.walked.insert(read);
+                    }
+                }
+            }
+        }
+        Ok(complete)
     }
 
     fn checked_heads(&mut self, frame: usize) -> Result<(), Internal> {
@@ -916,6 +1053,7 @@ impl Engine<'_> {
                     too_deep: false,
                     passed: None,
                     deep_warned: false,
+                    walked: FastSet::default(),
                 }
             }
         };
@@ -996,7 +1134,15 @@ impl Engine<'_> {
             let mut outer = Vec::new();
             let evaluated = match memoized {
                 Some(value) => {
-                    self.check_heads(frame)?;
+                    if !self.check_heads(frame, &mut outer)? {
+                        need.extend(outer);
+                        let machine = self
+                            .active
+                            .take()
+                            .ok_or(Internal::missed("evaluation machine"))?;
+                        self.machines.insert(root_key, machine);
+                        return Ok(None);
+                    }
                     Some(value)
                 }
                 None => {

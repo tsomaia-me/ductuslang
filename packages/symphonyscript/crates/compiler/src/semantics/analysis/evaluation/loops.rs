@@ -174,6 +174,7 @@ impl Engine<'_> {
                     too_deep: false,
                     passed: None,
                     deep_warned: false,
+                    walked: FastSet::default(),
                 });
                 self.drive(key, node, need)
             }

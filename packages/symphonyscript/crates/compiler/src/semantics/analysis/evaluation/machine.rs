@@ -12,4 +12,5 @@ pub(crate) struct Machine {
     pub too_deep: bool,
     pub passed: Option<usize>,
     pub deep_warned: bool,
+    pub walked: FastSet<NodeId>,
 }

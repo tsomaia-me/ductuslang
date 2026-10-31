@@ -140,10 +140,12 @@ pub(crate) enum CountedWalk {
     NameTwinsUnusedName,
     NameTwinsRestored,
     SignatureRunSig,
+    EngineEvaluatingPath,
+    RecursiveCallHeads,
 }
 
 #[cfg(test)]
-const WALKS: usize = 140;
+const WALKS: usize = 142;
 
 #[cfg(test)]
 thread_local! {
@@ -293,6 +295,8 @@ impl CountedWalk {
         CountedWalk::NameTwinsUnusedName,
         CountedWalk::NameTwinsRestored,
         CountedWalk::SignatureRunSig,
+        CountedWalk::EngineEvaluatingPath,
+        CountedWalk::RecursiveCallHeads,
     ];
 
     pub(crate) fn step(self) {
