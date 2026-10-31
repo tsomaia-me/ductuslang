@@ -1750,3 +1750,59 @@ fn an_empty_arrays_let_chain_is_walked_once_per_let_whatever_reads_it_388() {
     }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
+
+const DISTINCT_CALLS: &str = "fn f(a, b, c): if a < 1 then 0 else f(a - 1, b + 1, c) + f(a - 1, b, c + 1) + f(a - 1, b, c)\nClip k:\n    Note/(f(200, 0, 0))\n";
+
+fn distinct_call_failures(calls: [u64; 3]) -> Vec<String> {
+    let mut runs = Vec::new();
+    for limit in calls {
+        let limits = LimitOverrides {
+            recursive_calls: Some(limit),
+            recursive_calls_warning: Some(limit),
+            ..LimitOverrides::default()
+        };
+        let compiler =
+            Compiler::with_limits(&vocabulary(), limits).expect("the vocabulary compiles");
+        runs.push(measured(&compiler, DISTINCT_CALLS));
+    }
+    let mut failures = Vec::new();
+    for (run, limit) in runs.iter().zip(calls) {
+        let limited = run.errors.len() == 1
+            && run
+                .errors
+                .first()
+                .is_some_and(|error| error.starts_with("RecursionLimit"));
+        if !limited {
+            failures.push(format!("300 at {limit} calls: {:?}", run.errors));
+        }
+    }
+    for (index, (counter, _)) in runs[0].counts.iter().enumerate() {
+        let points = [0, 1, 2].map(|run| {
+            (
+                calls[run],
+                runs[run].counts.get(index).map_or(0, |(_, count)| *count),
+            )
+        });
+        if !linear(points) {
+            failures.push(format!(
+                "300 {counter} {:?} at {calls:?} calls",
+                points.map(|(_, count)| count)
+            ));
+        }
+    }
+    failures
+}
+
+#[test]
+fn a_compile_time_recursive_calls_work_is_the_same_for_every_distinct_call_300() {
+    let failures = distinct_call_failures([2_000, 4_000, 8_000]);
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+#[test]
+#[ignore]
+fn stress_a_compile_time_recursive_calls_work_is_the_same_for_every_distinct_call_up_to_the_limit_300()
+ {
+    let failures = distinct_call_failures([250_000, 500_000, 1_000_000]);
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}

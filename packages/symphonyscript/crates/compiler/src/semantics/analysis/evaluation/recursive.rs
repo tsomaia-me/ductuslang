@@ -1482,6 +1482,9 @@ impl Engine<'_> {
         call: &Call,
         need: &mut Vec<Query>,
     ) -> Result<Option<Vec<(NodeId, EvalTy)>>, Internal> {
+        if !call.shapes.iter().any(|shape| matches!(shape, ArgShape::Default)) {
+            return Ok(Some(Vec::new()));
+        }
         let key = TemplateKey {
             function: call.function,
             args: call.shapes.clone(),
