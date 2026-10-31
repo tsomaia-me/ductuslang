@@ -1466,11 +1466,7 @@ fn stress_a_recursive_call_whose_array_argument_deepens_finishes_on_a_small_stac
                 "Clip c:\n    Note/(f([1], 0))\nfn f(xs, n): if n > 3 then 0 else f([xs], n + 1)\n",
             ] {
                 let errors = support::errors(compiler.check(&[support::source(text)]));
-                assert!(errors.len() <= 1, "{text}{errors:?}");
-                for error in &errors {
-                    assert_eq!(error.code, Code::RecursionDepth, "{text}{errors:?}");
-                    assert!(error.summary.ends_with(": f"), "{text}{errors:?}");
-                }
+                assert!(errors.is_empty(), "291: {text}{errors:?}");
             }
         })
         .expect("the thread starts")

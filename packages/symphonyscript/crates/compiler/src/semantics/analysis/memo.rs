@@ -132,7 +132,6 @@ pub(crate) struct Memo {
     pub open_joins: super::fast_hash::FastSet<NodeId>,
     pub open_arms: FastMap<(NodeId, usize, super::item_ref::ItemRef), Option<NodeId>>,
     pub family_shapes: FastMap<super::family_key::FamilyKey, Vec<super::arg_shape::ArgShape>>,
-    pub deep_families: super::fast_hash::FastSet<super::family_key::FamilyKey>,
     pub key_reach: FastMap<CallKey, (Vec<u32>, Vec<ScopeId>)>,
     pub fault_sites: FastMap<u32, Vec<NodeId>>,
     pub reactive_faults: super::fast_hash::FastSet<u32>,

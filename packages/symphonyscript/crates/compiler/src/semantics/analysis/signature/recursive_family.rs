@@ -19,7 +19,6 @@ use crate::semantics::analysis::unify_kinds::unify_kinds;
 use crate::semantics::analysis::val::Val;
 use crate::semantics::analysis::width::Width;
 use crate::semantics::ir::FnId;
-use crate::semantics::reporting::grouped;
 
 impl Engine<'_> {
     pub(super) fn recursive_sig(
@@ -86,10 +85,9 @@ impl Engine<'_> {
             match self.memo.rec_families.get(key).copied() {
                 None => {
                     if self.memo.probing_families.len() as u64 >= self.limits.nesting_depth {
-                        self.memo.deep_families.insert(key.clone());
                         self.memo
                             .rec_families
-                            .insert(key.clone(), RecFamily::Failed);
+                            .insert(key.clone(), RecFamily::Known(Kind::Any, None));
                         continue;
                     }
                     self.memo.family_shapes.insert(key.clone(), shapes.to_vec());
@@ -189,16 +187,6 @@ impl Engine<'_> {
                     return Ok(Some(Sig::of(kind, Width::Flexible, false, family)));
                 }
                 Some(RecFamily::Failed) => {
-                    if self.memo.deep_families.contains(key)
-                        && !self.in_probe(self.node(node)?.scope)?
-                    {
-                        let message = format!(
-                            "the evaluation goes deeper than {} nested calls: {}",
-                            grouped(self.limits.nesting_depth),
-                            self.function_name(function)?
-                        );
-                        self.error_at_node(Code::RecursionDepth, node, message)?;
-                    }
                     return Ok(Some(Sig::ERROR));
                 }
             }

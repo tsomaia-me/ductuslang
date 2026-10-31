@@ -4627,3 +4627,80 @@ fn exhaustive_a_frame_bounded_slice_of_references_passed_to_a_recursive_call_key
     );
     assert_eq!(programs, 24);
 }
+
+fn deepening_rows(rows: &Rows, nesting: Option<u64>) -> (Vec<String>, usize) {
+    let compiler = Compiler::with_limits(
+        &symphonyscript_fixtures::vocabulary(),
+        symphonyscript_core::LimitOverrides {
+            nesting_depth: nesting,
+            nesting_depth_warning: nesting,
+            ..symphonyscript_core::LimitOverrides::default()
+        },
+    )
+    .expect("the vocabulary compiles");
+    let limit = nesting.unwrap_or(1_024);
+    let mut failures = Vec::new();
+    let mut programs = 0;
+    let forms = [
+        "fn f(xs, n): if n > 0 then f([xs], n - 1) else 7\n",
+        "fn f(xs, n): if n < 1 then 7 else f(if n is 2 then [xs] else [xs], n - 1)\n",
+        "fn f(xs, n): if n > 0 then f([xs[0] + [n]], n - 1) else 7\n",
+    ];
+    let starts = ["[1]", "[1]", "[[1]]"];
+    for (f, function) in forms.iter().enumerate() {
+        for (d, depth) in [1, 4, 16, limit + 10].into_iter().enumerate() {
+            for (o, reversed) in [false, true].into_iter().enumerate() {
+                if !rows.take(&[f, d, o]) {
+                    continue;
+                }
+                programs += 1;
+                let reader = format!("Clip k:\n    Note/([60][f({}, {depth}) - 7])\n", starts[f]);
+                let mut items = [function.to_string(), reader];
+                if reversed {
+                    items.reverse();
+                }
+                let text = format!("Session main\n{}", items.concat());
+                let found: BTreeSet<Code> = support::error_texts(&compiler, &text)
+                    .into_iter()
+                    .map(|(code, _)| code)
+                    .collect();
+                let expected = if depth > limit {
+                    BTreeSet::from([Code::RecursionDepth])
+                } else {
+                    BTreeSet::new()
+                };
+                if found != expected {
+                    failures.push(format!("291: {text}\n  draws {found:?}\n"));
+                }
+            }
+        }
+    }
+    (failures, programs)
+}
+
+#[test]
+fn a_deepening_or_inner_row_growing_recursive_argument_finishes_at_its_value_and_draws_recursion_depth_only_past_the_depth()
+ {
+    let (failures, programs) = covered(|rows| deepening_rows(rows, Some(64)));
+    assert!(
+        failures.is_empty(),
+        "{} of {programs} fail:\n{}",
+        failures.len(),
+        failures.concat()
+    );
+    assert_eq!(programs, 12);
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_a_deepening_or_inner_row_growing_recursive_argument_finishes_at_its_value_and_draws_recursion_depth_only_past_the_depth()
+ {
+    let (failures, programs) = deepening_rows(&Rows::Every, None);
+    assert!(
+        failures.is_empty(),
+        "{} of {programs} fail:\n{}",
+        failures.len(),
+        failures.concat()
+    );
+    assert_eq!(programs, 24);
+}
