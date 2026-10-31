@@ -8,13 +8,13 @@ use symphonyscript_fixtures::{PENDING_PRODUCTIONS, pending_lines, spec_productio
 const CASES: &[(&str, &str, &str)] = &[
     (
         "File",
-        "input a = 1\nClip c\n",
-        "File[InputDecl[input a = Literal[1] NL] Placement[Clip c NL]]",
+        "state a(1)\nClip c\n",
+        "File[CellDecl[state a Init[( Literal[1] )] NL] Placement[Clip c NL]]",
     ),
     (
         "TopItem",
-        "input a = 1\nlet b = 2\nstate s = 3\nfn f(x): x\npattern P():\n    Note\nClip c\n",
-        "File[InputDecl[input a = Literal[1] NL] LetDecl[let b = Literal[2] NL] CellDecl[state s = Literal[3] NL] FnDecl[fn f ParamList[( Param[x] )] : FnBody[NameRef[x] NL]] PatternDecl[pattern P PatternParamList[( )] : Block[NL > Placement[Note NL] <]] Placement[Clip c NL]]",
+        "state a(1)\nlet b = 2\nstate s = 3\nfn f(x): x\npattern P():\n    Note\nClip c\n",
+        "File[CellDecl[state a Init[( Literal[1] )] NL] LetDecl[let b = Literal[2] NL] CellDecl[state s = Literal[3] NL] FnDecl[fn f ParamList[( Param[x] )] : FnBody[NameRef[x] NL]] PatternDecl[pattern P PatternParamList[( )] : Block[NL > Placement[Note NL] <]] Placement[Clip c NL]]",
     ),
     (
         "NumberLit",
@@ -113,13 +113,13 @@ const CASES: &[(&str, &str, &str)] = &[
     ),
     (
         "Type",
-        "input a: f32[2][3] = 0\ninput w: Wave = Wave::Saw\ninput h: u8[2][..4] = []\n",
-        "File[InputDecl[input a : TypeRef[f32 [ 2 ] [ 3 ]] = Literal[0] NL] InputDecl[input w : TypeRef[Wave] = VariantRef[Wave :: Saw] NL] InputDecl[input h : TypeRef[u8 [ 2 ] [ .. 4 ]] = ArrayLit[[ ]] NL]]",
+        "state a(0): f32[2][3]\nstate w(Wave::Saw): Wave\nstate h([]): u8[2][..4]\n",
+        "File[CellDecl[state a Init[( Literal[0] )] : TypeRef[f32 [ 2 ] [ 3 ]] NL] CellDecl[state w Init[( VariantRef[Wave :: Saw] )] : TypeRef[Wave] NL] CellDecl[state h Init[( ArrayLit[[ ]] )] : TypeRef[u8 [ 2 ] [ .. 4 ]] NL]]",
     ),
     (
         "ScalarType",
-        "input z: u8 = 0\ninput a: i32 = 0\ninput b: i64 = 0\ninput c: f32 = 0\ninput d: f64 = 0\ninput e: bool = true\n",
-        "File[InputDecl[input z : TypeRef[u8] = Literal[0] NL] InputDecl[input a : TypeRef[i32] = Literal[0] NL] InputDecl[input b : TypeRef[i64] = Literal[0] NL] InputDecl[input c : TypeRef[f32] = Literal[0] NL] InputDecl[input d : TypeRef[f64] = Literal[0] NL] InputDecl[input e : TypeRef[bool] = Literal[true] NL]]",
+        "state z(0): u8\nstate a(0): i32\nstate b(0): i64\nstate c(0): f32\nstate d(0): f64\nstate e(true): bool\n",
+        "File[CellDecl[state z Init[( Literal[0] )] : TypeRef[u8] NL] CellDecl[state a Init[( Literal[0] )] : TypeRef[i32] NL] CellDecl[state b Init[( Literal[0] )] : TypeRef[i64] NL] CellDecl[state c Init[( Literal[0] )] : TypeRef[f32] NL] CellDecl[state d Init[( Literal[0] )] : TypeRef[f64] NL] CellDecl[state e Init[( Literal[true] )] : TypeRef[bool] NL]]",
     ),
     (
         "Expr",
@@ -247,11 +247,6 @@ const CASES: &[(&str, &str, &str)] = &[
         "File[LetDecl[let a = BinaryExpr[BinaryExpr[BinaryExpr[BinaryExpr[Conversion[u8 ( NameRef[x] )] + Conversion[i32 ( NameRef[x] )]] + Conversion[i64 ( NameRef[x] )]] + Conversion[f32 ( NameRef[x] )]] + Conversion[f64 ( NameRef[x] )]] NL]]",
     ),
     (
-        "InputDecl",
-        "input cutoff = 0.5\ninput fine: f32 = 0\n",
-        "File[InputDecl[input cutoff = Literal[0.5] NL] InputDecl[input fine : TypeRef[f32] = Literal[0] NL]]",
-    ),
-    (
         "LetDecl",
         "let a: i32 = 1\nlet b = match a:\n    0: 1\n    else: 2\n",
         "File[LetDecl[let a : TypeRef[i32] = Literal[1] NL] LetDecl[let b = MatchBlock[match NameRef[a] : NL > MatchArm[Literal[0] : Literal[1] NL] ElseArm[else : Literal[2] NL] <]]]",
@@ -280,11 +275,6 @@ const CASES: &[(&str, &str, &str)] = &[
         "Clock",
         "state c3 on a = a + b\nstate c4 on (a, b) = a + b\nstate c5 on (a + 1) = b\nstate hits(0) on (hit, bar) = if bar.stepped then 0 else hits.past(1) + 1\n",
         "File[CellDecl[state c3 Clock[on NameRef[a]] = BinaryExpr[NameRef[a] + NameRef[b]] NL] CellDecl[state c4 Clock[on ( NameRef[a] , NameRef[b] )] = BinaryExpr[NameRef[a] + NameRef[b]] NL] CellDecl[state c5 Clock[on ( BinaryExpr[NameRef[a] + Literal[1]] )] = NameRef[b] NL] CellDecl[state hits Init[( Literal[0] )] Clock[on ( NameRef[hit] , NameRef[bar] )] = IfExpr[if FieldExpr[NameRef[bar] . stepped] then Literal[0] else BinaryExpr[CallExpr[FieldExpr[NameRef[hits] . past] ArgList[( Literal[1] )]] + Literal[1]]] NL]]",
-    ),
-    (
-        "History",
-        "state s = s{1, 0} + t{2}\n",
-        "File[CellDecl[state s = BinaryExpr[History[s { Literal[1] , Literal[0] }] + History[t { Literal[2] }]] NL]]",
     ),
     (
         "FnBody",
@@ -533,29 +523,11 @@ fn every_case_names_a_production_of_the_spec() {
         .iter()
         .map(|(production, _, _)| *production)
         .filter(|name| !productions.iter().any(|production| production == name))
-        .filter(|name| !RETIRING_PRODUCTIONS.contains(name))
         .collect();
     assert!(
         unknown.is_empty(),
         "cases naming no production: {unknown:?}"
     );
-}
-
-const RETIRING_PRODUCTIONS: [&str; 2] = ["InputDecl", "History"];
-
-#[test]
-fn every_retiring_production_has_left_the_spec_and_keeps_its_case() {
-    let productions = spec_productions();
-    for name in RETIRING_PRODUCTIONS {
-        assert!(
-            !productions.iter().any(|production| production == name),
-            "{name} is still a production of the spec"
-        );
-        assert!(
-            CASES.iter().any(|(production, _, _)| *production == name),
-            "{name} has no case"
-        );
-    }
 }
 
 const SMALL_PRODUCTIONS: [&str; 3] = ["Song", "Verse", "Chorus"];

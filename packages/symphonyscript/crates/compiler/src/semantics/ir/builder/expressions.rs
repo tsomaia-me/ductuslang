@@ -5,8 +5,8 @@ use super::number_literal::number_literal;
 use super::scalar_type::scalar_type;
 use crate::diagnostics::Code;
 use crate::semantics::ir::{
-    Args, ExprId, ExprKind, ForExpr, HistoryForm, Ident, Iterable, LetDecl, Loc, LoopVar, MatchArm,
-    SliceBound, StrPart, TypeRef,
+    Args, ExprId, ExprKind, ForExpr, Ident, Iterable, LetDecl, Loc, LoopVar, MatchArm, SliceBound,
+    StrPart, TypeRef,
 };
 use crate::syntax::ast::{self, AstNode, StringPart};
 use crate::syntax::{SyntaxKind, TokenView};
@@ -29,7 +29,6 @@ enum Shape {
     History {
         target: Ident,
         fallback: bool,
-        form: HistoryForm,
     },
     Positional(usize),
     Named(Vec<Ident>),
@@ -217,24 +216,6 @@ impl HirBuilder<'_> {
                     children,
                 )
             }
-            ast::Expr::History(node) => match self.ident(node.name()) {
-                Some(target) => {
-                    let fallback = node.fallback();
-                    let mut children = vec![node.offset()];
-                    if fallback.is_some() {
-                        children.push(fallback);
-                    }
-                    (
-                        Shape::History {
-                            target,
-                            fallback: children.len() > 1,
-                            form: HistoryForm::Braced,
-                        },
-                        children,
-                    )
-                }
-                None => (Shape::Leaf(ExprKind::Error), Vec::new()),
-            },
             ast::Expr::Call(node) => {
                 if let Some(ast::Expr::Field(callee)) = node.callee()
                     && callee.field().is_some_and(|field| field.text() == "past")
@@ -327,11 +308,7 @@ impl HirBuilder<'_> {
                 });
                 self.push(ExprKind::Slice { base, lower, upper }, loc)
             }
-            Shape::History {
-                target,
-                fallback,
-                form,
-            } => {
+            Shape::History { target, fallback } => {
                 let offset = next(self);
                 let fallback = fallback.then(|| next(self));
                 self.push(
@@ -339,7 +316,6 @@ impl HirBuilder<'_> {
                         target,
                         offset,
                         fallback,
-                        form,
                     },
                     loc,
                 )
@@ -450,7 +426,6 @@ impl HirBuilder<'_> {
         let shape = Shape::History {
             target,
             fallback: positional.len() == 2,
-            form: HistoryForm::Past,
         };
         (shape, positional)
     }

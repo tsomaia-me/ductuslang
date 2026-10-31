@@ -2,7 +2,6 @@ use symphonyscript_core::{BinaryOp, Scalar, UnaryOp};
 
 use super::args::Args;
 use super::for_expr::ForExpr;
-use super::history_form::HistoryForm;
 use super::ident::Ident;
 use super::ids::ExprId;
 use super::match_arm::MatchArm;
@@ -37,7 +36,6 @@ pub(crate) enum ExprKind {
         target: Ident,
         offset: ExprId,
         fallback: Option<ExprId>,
-        form: HistoryForm,
     },
     Stepped(Ident),
     Call(ExprId, Args),

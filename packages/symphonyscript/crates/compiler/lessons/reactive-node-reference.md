@@ -5,7 +5,7 @@ A `let` holding node references that reads an input is an error. (SPEC §6.2)
 Node references are fixed when the program compiles; a destination chosen at runtime is written in the wire itself.
 
 ```sym-error
-input i = 0
+state i(0)
 let t = [verse, chorus][i]
 Clip verse:
     Note
@@ -16,7 +16,7 @@ Clip chorus:
 `t` chooses an instance by the input `i`.
 
 ```sym
-input i = 0
+state i(0)
 Clip verse:
     Note
     Plays: [verse, chorus][i]

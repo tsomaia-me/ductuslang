@@ -4,8 +4,7 @@ use symphonyscript::{Code, Compiler, Diagnostic, Severity, Source};
 use symphonyscript_core::LimitOverrides;
 use symphonyscript_fixtures::{Rows, covered, vocabulary};
 
-const CELLS: &str =
-    "input held: i32[..10] = []\ninput a = 3\ninput b = 5\ninput c = 7\ninput n = 2\n";
+const CELLS: &str = "state held([]): i32[..10]\nstate a(3)\nstate b(5)\nstate c(7)\nstate n(2)\n";
 
 type Check = Box<dyn Fn(&[Diagnostic]) -> bool>;
 
@@ -244,7 +243,7 @@ fn exhaustive_a_for_expression_folds_its_iterable_into_the_value_or_the_capacity
 #[test]
 fn the_for_expressions_of_the_spec_hold_the_values_and_capacities_the_spec_gives() {
     let compiler = Compiler::new(&vocabulary()).expect("the vocabulary compiles");
-    let held = "input held: i32[..10] = []\n";
+    let held = "state held([]): i32[..10]\n";
     let high = "state high = for x in held into kept from []:\n    let keep = x > 60\n    if keep then kept + [x] else kept\n";
     let rises = "state rises = for i in 1..len(held) into n from 0: if held[i] > held[i - 1] then n + 1 else n\n";
     let lowest = "state lowest = for x in held into low from 127: min(low, x)\n";

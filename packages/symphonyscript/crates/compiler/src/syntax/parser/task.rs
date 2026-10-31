@@ -21,7 +21,6 @@ pub(super) enum Task {
     },
     File,
     TopItem,
-    InputDecl,
     CellDecl,
     CellAfterInit(CellHead),
     ClockList,
@@ -168,7 +167,6 @@ pub(super) enum Task {
     IndexAfterBound,
     SliceUpper,
     Bound,
-    HistoryAfterOffset,
     ArgList,
     ArgItem {
         named_call: Option<bool>,

@@ -27,14 +27,14 @@ fn source(expr: Option<Expr<'_>>) -> String {
 #[test]
 fn declarations_expose_their_parts() {
     let parsed = clean(
-        "input fine: f32[2] = 0\n\
+        "state fine(0): f32[2]\n\
          let level = match wave:\n    Sine: 1.0\n    -1: 0.5\n    else: 0.6\n\
          fn scale(degree, root = 60):\n    let octave = degree div 7\n    root + octave\n\
          pattern Arp(default root, steps = 4):\n    let k = steps\n    Note/root\n",
     );
     let items = items(&parsed);
-    let Item::Input(input) = &items[0] else {
-        panic!("an input");
+    let Item::Cell(input) = &items[0] else {
+        panic!("a cell");
     };
     assert_eq!(text(input.name()), "fine");
     let ty = input.ty().expect("a type");
@@ -46,7 +46,7 @@ fn declarations_expose_their_parts() {
             .collect::<Vec<_>>(),
         ["2"]
     );
-    assert_eq!(source(input.value()), "0");
+    assert_eq!(source(input.init().and_then(|init| init.value())), "0");
 
     let Item::Let(level) = &items[1] else {
         panic!("a let");

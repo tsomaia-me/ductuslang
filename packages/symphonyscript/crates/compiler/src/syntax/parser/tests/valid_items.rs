@@ -21,10 +21,10 @@ const BODY_ITEMS: &[SyntaxKind] = &[
 
 const ADDITION_ITEMS: &[&str] = &[
     "let u = u8(3) + 2u8\n",
-    "input k: u8[..4] = []\n",
+    "state k([]): u8[..4]\n",
     "fn f(bounded): bounded + 1\n",
     "let s = [1, 2, 3][^2..][..1]\n",
-    "state[2] s = s{2, 0} + 1\n",
+    "state s = s.past(2, 0) + 1\n",
     "stream[4] mic(0.0): f32\n",
     "channel c on (mic, k) = mic.past(2, 0.0) + k\n",
     "state hits(0) on hit = if bar.stepped then 0 else hits.past(1) + 1\n",

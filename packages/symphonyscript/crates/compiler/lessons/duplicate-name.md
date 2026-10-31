@@ -5,13 +5,13 @@ Top-level names share one namespace across the project, and a duplicate is an er
 A reference must name one declaration.
 
 ```sym-error
-input a = 1
+state a(1)
 let a = 2
 ```
 
 `a` is declared twice.
 
 ```sym
-input a = 1
+state a(1)
 let b = 2
 ```

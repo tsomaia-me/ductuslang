@@ -144,23 +144,23 @@ fn twin_run(
 
 fn declarations(vocabulary: &Vocabulary, hir: &Hir) -> Vec<(&'static str, String)> {
     let mut found = vec![
-        ("input", ": i32 = 0".to_string()),
+        ("state", "(0): i32".to_string()),
         ("let", " = 1".to_string()),
-        ("input", ": f64 = 0.5".to_string()),
+        ("state", "(0.5): f64".to_string()),
         ("let", " = 0.5".to_string()),
-        ("input", " = false".to_string()),
+        ("state", "(false)".to_string()),
         ("let", " = false".to_string()),
         ("let", " = \"a\"".to_string()),
-        ("input", ": i32[..4] = []".to_string()),
+        ("state", "([]): i32[..4]".to_string()),
         ("let", " = [1]".to_string()),
     ];
     if let Some(variant) = vocabulary.enums().first().and_then(|decl| {
         decl.variants
             .first()
-            .map(|variant| format!(" = {}::{variant}", decl.name))
+            .map(|variant| format!("{}::{variant}", decl.name))
     }) {
-        found.push(("input", variant.clone()));
-        found.push(("let", variant));
+        found.push(("state", format!("({variant})")));
+        found.push(("let", format!(" = {variant}")));
     }
     let mut kinds = BTreeSet::new();
     for (position, top) in hir.top.iter().enumerate() {

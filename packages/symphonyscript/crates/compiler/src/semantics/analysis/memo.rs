@@ -50,7 +50,6 @@ pub(crate) struct Memo {
     pub params: FastMap<(ScopeId, u32), BoundVal>,
     pub inputs: FastMap<InputId, BoundVal>,
     pub states: FastMap<crate::semantics::ir::StateId, BoundVal>,
-    pub state_exprs: Option<super::fast_hash::FastSet<ExprId>>,
     pub own_history: super::fast_hash::FastSet<NodeId>,
     pub owner_reads: Option<std::rc::Rc<super::answers::OwnerReads>>,
     pub dimensions: FastMap<NodeId, usize>,

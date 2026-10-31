@@ -12,7 +12,6 @@ mod float_lit;
 mod fn_decl;
 mod for_expr;
 mod hir;
-mod history_form;
 mod ident;
 mod ids;
 mod input;
@@ -51,7 +50,6 @@ pub(crate) use float_lit::FloatLit;
 pub(crate) use fn_decl::FnDecl;
 pub(crate) use for_expr::ForExpr;
 pub(crate) use hir::Hir;
-pub(crate) use history_form::HistoryForm;
 pub(crate) use ident::Ident;
 pub(crate) use ids::{
     BlockId, ExprId, FnId, InputId, LetId, PatternId, PlacementId, StateId, WireId, index_type,

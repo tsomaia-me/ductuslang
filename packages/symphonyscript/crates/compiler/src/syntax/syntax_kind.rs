@@ -14,7 +14,6 @@ pub enum SyntaxKind {
     InterpStart,
     InterpEnd,
     Error,
-    InputKw,
     LetKw,
     StateKw,
     StreamKw,
@@ -80,7 +79,6 @@ pub enum SyntaxKind {
     Dollar,
     Caret,
     File,
-    InputDecl,
     LetDecl,
     CellDecl,
     Init,
@@ -129,7 +127,6 @@ pub enum SyntaxKind {
     Interpolation,
     NameRef,
     VariantRef,
-    History,
     ToExpr,
     Conversion,
     ArrayLit,
@@ -157,7 +154,6 @@ impl SyntaxKind {
         SyntaxKind::InterpStart,
         SyntaxKind::InterpEnd,
         SyntaxKind::Error,
-        SyntaxKind::InputKw,
         SyntaxKind::LetKw,
         SyntaxKind::StateKw,
         SyntaxKind::StreamKw,
@@ -223,7 +219,6 @@ impl SyntaxKind {
         SyntaxKind::Dollar,
         SyntaxKind::Caret,
         SyntaxKind::File,
-        SyntaxKind::InputDecl,
         SyntaxKind::LetDecl,
         SyntaxKind::CellDecl,
         SyntaxKind::Init,
@@ -272,7 +267,6 @@ impl SyntaxKind {
         SyntaxKind::Interpolation,
         SyntaxKind::NameRef,
         SyntaxKind::VariantRef,
-        SyntaxKind::History,
         SyntaxKind::ToExpr,
         SyntaxKind::Conversion,
         SyntaxKind::ArrayLit,
@@ -298,12 +292,11 @@ impl SyntaxKind {
     }
 
     pub fn is_keyword(self) -> bool {
-        (SyntaxKind::InputKw..=SyntaxKind::FromKw).contains(&self)
+        (SyntaxKind::LetKw..=SyntaxKind::FromKw).contains(&self)
     }
 
     pub fn keyword(text: &str) -> Option<SyntaxKind> {
         Some(match text {
-            "input" => SyntaxKind::InputKw,
             "let" => SyntaxKind::LetKw,
             "state" => SyntaxKind::StateKw,
             "stream" => SyntaxKind::StreamKw,

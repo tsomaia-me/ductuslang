@@ -21,13 +21,24 @@ impl Parser<'_> {
 
     pub(super) fn top_item(&mut self) {
         match self.peek() {
-            Some(SyntaxKind::InputKw) => self.then([Task::InputDecl]),
             Some(SyntaxKind::LetKw) => self.then([Task::LetDecl(SyntaxKind::LetDecl)]),
             Some(SyntaxKind::StateKw | SyntaxKind::StreamKw | SyntaxKind::ChannelKw) => {
                 self.then([Task::CellDecl]);
             }
             Some(SyntaxKind::FnKw) => self.then([Task::FnDecl]),
             Some(SyntaxKind::PatternKw) => self.then([Task::PatternDecl]),
+            Some(SyntaxKind::Ident)
+                if self.current_text() == "input" && self.nth(1) == Some(SyntaxKind::Ident) =>
+            {
+                let reported = self.diagnostics.len();
+                self.error(
+                    Code::TopLevelSyntax,
+                    "expected a declaration or a placement, found `input`",
+                );
+                self.help_since(reported, Code::TopLevelSyntax, INPUT_FORM);
+                self.skip_line();
+                self.eat(SyntaxKind::Newline);
+            }
             Some(SyntaxKind::Ident) if self.at_wire_kind() => {
                 let name = self.current_text();
                 self.error(
@@ -49,21 +60,6 @@ impl Parser<'_> {
                 self.eat(SyntaxKind::Newline);
             }
         }
-    }
-
-    pub(super) fn input_decl(&mut self) {
-        self.start(SyntaxKind::InputDecl);
-        self.bump();
-        self.expect_name(Code::InputSyntax, "the input's name");
-        if self.eat(SyntaxKind::Colon) {
-            self.type_ref();
-        }
-        self.expect(
-            SyntaxKind::Eq,
-            Code::InputSyntax,
-            "`=` and the initial value",
-        );
-        self.then([Task::Expr, Task::FinishLineFinish(Code::InputSyntax)]);
     }
 
     pub(super) fn let_decl(&mut self, kind: SyntaxKind) {
@@ -176,8 +172,11 @@ impl Parser<'_> {
             } else {
                 "`(` and the init, or `=` and the rule"
             };
-            self.match_after_fault(SyntaxKind::Eq, code, what);
-            self.rule(code);
+            if self.match_after_fault(SyntaxKind::Eq, code, what) {
+                self.rule(code);
+            } else {
+                self.then([Task::FinishLineFinish(code)]);
+            }
             return;
         }
         let word = head.word;
@@ -449,3 +448,5 @@ const CAPACITY_LAST: &str =
 const FN_COLON: &str = "write `:` before a function's body, as in `fn double(x): x * 2`";
 
 const FN_BOUND: &str = "remove the bound and write the loop as a `for` expression, as in `for x in held into low from 127: min(low, x)`";
+
+const INPUT_FORM: &str = "write `state <name>(<init>)`";

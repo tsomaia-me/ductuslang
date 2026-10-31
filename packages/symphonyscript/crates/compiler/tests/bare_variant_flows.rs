@@ -175,7 +175,7 @@ const POSITIONS: &[Position] = &[
     },
     Position {
         name: "an input initializer",
-        items: &["input k{n} = {x}"],
+        items: &["state k{n}({x})"],
         reactive: Effect::Inert(Code::ReactiveInitializer, "{x}"),
         compile_time: Effect::Needs,
         foreign: None,
@@ -278,7 +278,7 @@ impl Flow {
                 vec!["let z = if f then Saw else Square", "Osc oz when x is z"]
             }
             (Route::Compared, false) => vec!["let z = Saw", "Osc oz when x is z"],
-            (Route::Typed, _) => vec!["input t = Wave::Saw", "let z = if f then x else t"],
+            (Route::Typed, _) => vec!["state t(Wave::Saw)", "let z = if f then x else t"],
             (Route::Cycle, true) => vec!["let c = if f then x else c"],
             (Route::Cycle, false) => vec!["let c = [x, c][0]"],
         }
@@ -457,13 +457,13 @@ fn program(flow: &Flow, vocab: &Vocab, uses: &[&Position]) -> Vec<String> {
     let written = |needle: &str| items.iter().any(|item| item.contains(needle));
     let mut inputs = Vec::new();
     if written(" f ") || written("if f") || written("match f") {
-        inputs.push("input f = true".to_string());
+        inputs.push("state f(true)".to_string());
     }
     if written(" is w") {
-        inputs.push("input w = Wave::Saw".to_string());
+        inputs.push("state w(Wave::Saw)".to_string());
     }
     if written("[i]") {
-        inputs.push("input i = 0".to_string());
+        inputs.push("state i(0)".to_string());
     }
     inputs.extend(items);
     inputs
@@ -876,7 +876,7 @@ fn an_untyped_compile_time_flow_draws_one_diagnostic_at_its_value_in_every_order
         (&["Osc q when w"], conflict.clone()),
         (
             &[
-                "input f = true",
+                "state f(true)",
                 "let v = if f then w else w",
                 "Osc o | mode=v",
                 "Osc p | wave=w",
@@ -884,7 +884,7 @@ fn an_untyped_compile_time_flow_draws_one_diagnostic_at_its_value_in_every_order
             conflict.clone(),
         ),
         (
-            &["Osc o | wave=w", "Osc p | mode=w", "input k = w"],
+            &["Osc o | wave=w", "Osc p | mode=w", "state k(w)"],
             conflict.clone(),
         ),
         (

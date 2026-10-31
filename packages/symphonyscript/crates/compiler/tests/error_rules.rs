@@ -89,7 +89,7 @@ const RULES: &[Rule] = &[
         "Clip 音楽 | gain=1\n            level=2\n",
     ),
     rule("2.2", "semicolon", "let a = 1;\n"),
-    rule("2.2", "unexpected-indent", "input a = 1\n    input b = 2\n"),
+    rule("2.2", "unexpected-indent", "state a(1)\n    state b(2)\n"),
     rule("2.4", "invalid-identifier", "let _ = 1\n"),
     rule("2.5", "reserved-word", "let recurrent = 1\n"),
     rule("2.5", "reserved-token", "let a = 1 == 2\n"),
@@ -106,25 +106,24 @@ const RULES: &[Rule] = &[
     ),
     rule("2.6", "unterminated-string", "let s = \"abc\n"),
     rule("2.6", "invalid-escape", "let s = \"a\\q\"\n"),
-    rule("3.2", "type-syntax", "input a: i32[x] = [1]\n"),
-    rule("3.2", "unknown-type", "input a: Shape = 1\n"),
-    rule("3.2", "zero-length", "input a: i32[0] = [1]\n"),
+    rule("3.2", "type-syntax", "state a([1]): i32[x]\n"),
+    rule("3.2", "unknown-type", "state a(1): Shape\n"),
+    rule("3.2", "zero-length", "state a([1]): i32[0]\n"),
     rule(
         "3.2",
         "ragged-array",
         "let a = [1, [2]]\nClip c:\n    Note/a\n",
     ),
-    rule("3.2", "length-limit", "input a: i32[..2147483648] = []\n"),
-    rule("3.2", "length-limit", "input a: i32[2147483648] = 0\n"),
-    rule("3.2", "zero-length", "input a: i32[..0] = []\n"),
-    rule("3.2", "type-syntax", "input a: i32[..2][3] = []\n"),
-    rule("3.3", "input-value", "input s = \"text\"\n"),
+    rule("3.2", "length-limit", "state a([]): i32[..2147483648]\n"),
+    rule("3.2", "length-limit", "state a(0): i32[2147483648]\n"),
+    rule("3.2", "zero-length", "state a([]): i32[..0]\n"),
+    rule("3.2", "type-syntax", "state a([]): i32[..2][3]\n"),
     rule(
         "3.3",
         "reactive-string",
-        "input x = 0.5\nKit k:\n    Sampler | file=\"{x}\"\n",
+        "state x(0.5)\nKit k:\n    Sampler | file=\"{x}\"\n",
     ),
-    rule("3.5", "input-value", "input n = c\nClip c:\n    Note\n"),
+    rule("3.5", "state-value", "state n(c)\nClip c:\n    Note\n"),
     rule("3.5", "type-mismatch", "Clip c:\n    Note | velocity=c\n"),
     rule("3.6", "unit-mismatch", "Clip c:\n    Note | length=2s\n"),
     rule(
@@ -140,7 +139,7 @@ const RULES: &[Rule] = &[
     rule(
         "3.6",
         "plain-in-family",
-        "input d = 5ms\nClip c:\n    Note when d > 1\n",
+        "state d(5ms)\nClip c:\n    Note when d > 1\n",
     ),
     rule(
         "3.6",
@@ -175,7 +174,7 @@ const RULES: &[Rule] = &[
     bounded(
         "3.6",
         "conflicting-units",
-        "input p = 1.0\nA one | long=p\nB two | short=p\nRoot r:\n    Item\n    Link: r\n",
+        "state p(1.0)\nA one | long=p\nB two | short=p\nRoot r:\n    Item\n    Link: r\n",
     ),
     rule(
         "4.1",
@@ -197,27 +196,27 @@ const RULES: &[Rule] = &[
     rule(
         "4.3",
         "type-mismatch",
-        "input b = true\nlet x = if b then 1 else false\n",
+        "state b(true)\nlet x = if b then 1 else false\n",
     ),
     rule(
         "4.4",
         "float-to-integer",
-        "input cutoff = 0.5\nClip c:\n    Note/cutoff\n",
+        "state cutoff(0.5)\nClip c:\n    Note/cutoff\n",
     ),
     rule(
         "4.4",
         "does-not-fit",
-        "input big = 3000000000\nClip c:\n    Note/big\n",
+        "state big(3000000000)\nClip c:\n    Note/big\n",
     ),
     rule(
         "4.4",
         "integer-input",
-        "input n = 4\nClip c:\n    Note | velocity=n\n",
+        "state n(4)\nClip c:\n    Note | velocity=n\n",
     ),
     rule(
         "4.4",
         "float-to-integer",
-        "input f = 0.5\nlet g = f * 2\nClip c:\n    Note/g\n",
+        "state f(0.5)\nlet g = f * 2\nClip c:\n    Note/g\n",
     ),
     rule(
         "4.6",
@@ -238,7 +237,7 @@ const RULES: &[Rule] = &[
     rule(
         "4.6",
         "inconsistent-shapes",
-        "fn r(x, n): if n < 1 then (if x + 0.2 is 0.3 then [x] else [x, x]) else r(x, n - 1)\ninput f = true\nlet w = if f then r(0.1, 3) else r(0.1, 3)\nOsc o | freq=(w[0])\n",
+        "fn r(x, n): if n < 1 then (if x + 0.2 is 0.3 then [x] else [x, x]) else r(x, n - 1)\nstate f(true)\nlet w = if f then r(0.1, 3) else r(0.1, 3)\nOsc o | freq=(w[0])\n",
     ),
     rule(
         "4.6",
@@ -295,7 +294,7 @@ const RULES: &[Rule] = &[
     rule(
         "5.10",
         "unparenthesized-for",
-        "input held: i32[..10] = []\nstate total = 1 + for x in held into sum from 0: sum + x\n",
+        "state held([]): i32[..10]\nstate total = 1 + for x in held into sum from 0: sum + x\n",
     ),
     rule(
         "5.2",
@@ -312,7 +311,7 @@ const RULES: &[Rule] = &[
         "condition-type",
         "let a = if 1 then 2 else 3\nClip c:\n    Note/a\n",
     ),
-    rule("5.4", "match-syntax", "input b = 1\nlet a = match b\n"),
+    rule("5.4", "match-syntax", "state b(1)\nlet a = match b\n"),
     rule(
         "5.4",
         "match-scrutinee",
@@ -321,37 +320,37 @@ const RULES: &[Rule] = &[
     rule(
         "5.4",
         "match-label",
-        "input w = Wave::Saw\nlet l = match w:\n    Purple: 1\n    else: 2\n",
+        "state w(Wave::Saw)\nlet l = match w:\n    Purple: 1\n    else: 2\n",
     ),
     rule(
         "5.4",
         "match-label",
-        "input n = 1\nlet l = match n:\n    1.5: 1\n    else: 2\n",
+        "state n(1)\nlet l = match n:\n    1.5: 1\n    else: 2\n",
     ),
     rule(
         "5.4",
         "match-label",
-        "input n = 1\nlet l = match n:\n    2bars: 1\n    else: 2\n",
+        "state n(1)\nlet l = match n:\n    2bars: 1\n    else: 2\n",
     ),
     rule(
         "5.4",
         "duplicate-arm",
-        "input w = Wave::Saw\nlet l = match w:\n    Sine: 1\n    Sine: 2\n    else: 3\n",
+        "state w(Wave::Saw)\nlet l = match w:\n    Sine: 1\n    Sine: 2\n    else: 3\n",
     ),
     rule(
         "5.4",
         "match-incomplete",
-        "input w = Wave::Saw\nlet l = match w:\n    Sine: 1\n",
+        "state w(Wave::Saw)\nlet l = match w:\n    Sine: 1\n",
     ),
     rule(
         "5.4",
         "redundant-else",
-        "input b = true\nlet l = match b:\n    true: 1\n    false: 2\n    else: 3\n",
+        "state b(true)\nlet l = match b:\n    true: 1\n    false: 2\n    else: 3\n",
     ),
     rule(
         "5.4",
         "match-incomplete",
-        "input n = 1\nlet l = match n:\n    1: 2\n",
+        "state n(1)\nlet l = match n:\n    1: 2\n",
     ),
     rule(
         "5.4",
@@ -377,7 +376,7 @@ const RULES: &[Rule] = &[
     rule(
         "5.6",
         "runtime-path",
-        "input i = 0\nlet s = [verse, chorus]\nClip verse | gain=s[i].gain:\n    Note\nClip chorus:\n    Note\n",
+        "state i(0)\nlet s = [verse, chorus]\nClip verse | gain=s[i].gain:\n    Note\nClip chorus:\n    Note\n",
     ),
     rule(
         "5.6",
@@ -421,14 +420,13 @@ const RULES: &[Rule] = &[
         "interpolation-type",
         "Kit k:\n    Sampler | file=\"{k}\"\n",
     ),
-    rule("6.1", "input-syntax", "input = 1\n"),
-    rule("6.1", "reactive-initializer", "input a = 1\ninput b = a\n"),
+    rule("6.1", "reactive-initializer", "state a(1)\nstate b(a)\n"),
     rule("6.1", "cell-capacity", "state[4] level(0)\n"),
     rule("6.1", "cell-capacity", "channel[4] s = 1\n"),
     rule("6.2", "let-syntax", "let = 1\n"),
     rule("6.2", "declaration-cycle", "let a = b + 1\nlet b = a + 1\n"),
     rule("6.2", "declaration-cycle", "fn f(): a\nlet a = f()\n"),
-    rule("6.2", "declaration-cycle", "input a = b\nlet b = a + 1\n"),
+    rule("6.2", "declaration-cycle", "state a(b)\nlet b = a + 1\n"),
     rule(
         "6.2",
         "declaration-cycle",
@@ -437,7 +435,7 @@ const RULES: &[Rule] = &[
     rule(
         "6.2",
         "reactive-node-reference",
-        "input i = 0\nlet t = [verse, chorus][i]\nClip verse:\n    Note\nClip chorus:\n    Note\n",
+        "state i(0)\nlet t = [verse, chorus][i]\nClip verse:\n    Note\nClip chorus:\n    Note\n",
     ),
     rule("6.3", "fn-syntax", "fn (x): x\n"),
     rule("6.3", "duplicate-local", "fn f(a, a): a\n"),
@@ -472,17 +470,17 @@ const RULES: &[Rule] = &[
     rule(
         "6.3",
         "reactive-recursion",
-        "input i = 1\nfn f(n): if n < 1 then 0 else f(n - 1)\nClip c:\n    Note/(f(i))\n",
+        "state i(1)\nfn f(n): if n < 1 then 0 else f(n - 1)\nClip c:\n    Note/(f(i))\n",
     ),
     rule(
         "6.3",
         "reactive-recursion",
-        "input n = 1\nfn a(x): b(x)\nfn b(x): if x > 0 then a(x - 1) else 0\nClip c:\n    Note/(a(n))\n",
+        "state n(1)\nfn a(x): b(x)\nfn b(x): if x > 0 then a(x - 1) else 0\nClip c:\n    Note/(a(n))\n",
     ),
     rule(
         "6.3",
         "reactive-recursion",
-        "input i = 1\nfn f(n): if n < 1 then i else f(n - 1)\nClip c:\n    Note/(f(3))\n",
+        "state i(1)\nfn f(n): if n < 1 then i else f(n - 1)\nClip c:\n    Note/(f(3))\n",
     ),
     rule(
         "6.3",
@@ -546,7 +544,7 @@ const RULES: &[Rule] = &[
         "top-level-pattern",
         "pattern P():\n    Note\n    Note\nP top\n",
     ),
-    rule("6.5", "duplicate-name", "input a = 1\nlet a = 2\n"),
+    rule("6.5", "duplicate-name", "state a(1)\nlet a = 2\n"),
     rule("6.5", "variant-name", "let Saw = 1\n"),
     rule(
         "6.5",
@@ -567,7 +565,7 @@ const RULES: &[Rule] = &[
     rule(
         "6.5",
         "child-name-clash",
-        "input b = true\nClip c:\n    when b:\n        Note as dup\n    else:\n        Note as dup\n",
+        "state b(true)\nClip c:\n    when b:\n        Note as dup\n    else:\n        Note as dup\n",
     ),
     rule(
         "6.5",
@@ -584,12 +582,12 @@ const RULES: &[Rule] = &[
     rule(
         "3.7",
         "variable-array",
-        "input a: i32[..4] = []\nlet b: i32[2] = a\n",
+        "state a([]): i32[..4]\nlet b: i32[2] = a\n",
     ),
     natives(
         "3.7",
         "capacity-exceeded",
-        "input held: i32[..10] = []\nClip c | sequence=held:\n    Note\n",
+        "state held([]): i32[..10]\nClip c | sequence=held:\n    Note\n",
     ),
     natives(
         "3.7",
@@ -599,13 +597,9 @@ const RULES: &[Rule] = &[
     rule(
         "3.7",
         "capacity-exceeded",
-        "input a: i32[..4] = []\nlet b: i32[..2] = a\n",
+        "state a([]): i32[..4]\nlet b: i32[..2] = a\n",
     ),
-    rule(
-        "3.7",
-        "capacity-exceeded",
-        "input a: i32[..2] = [1, 2, 3]\n",
-    ),
+    rule("3.7", "capacity-exceeded", "state a([1, 2, 3]): i32[..2]\n"),
     rule(
         "4.6",
         "index-out-of-range",
@@ -633,34 +627,35 @@ const RULES: &[Rule] = &[
         "pattern P():\n    let k = 1\n    Note as k\n    Note\nClip c:\n    P\n",
     ),
     rule("6.6", "state-syntax", "state = 1\n"),
-    rule("6.6", "expression-syntax", "input a = 1\nstate s = a{}\n"),
+    rule(
+        "6.6",
+        "expression-syntax",
+        "state a(1)\nstate s = a.past(1, )\n",
+    ),
     rule("6.6", "declaration-cycle", "state s = s + 1\n"),
     rule(
         "6.6",
         "state-syntax",
         "Clip c:\n    state x = 1\n    Note\n",
     ),
-    rule("6.6", "misplaced-history", "input a = 1\nlet b = a{1}\n"),
+    rule("6.6", "history-offset", "state a(1)\nstate s = a.past(0)\n"),
+    rule("6.6", "history-offset", "state a(1)\nstate s = a.past(a)\n"),
     rule(
         "6.6",
-        "misplaced-history",
-        "input a = 1\nfn f(x): a{1} + x\nlet b = f(1)\n",
+        "history-target",
+        "let a = 1\nstate s = a.past(1, 0)\n",
     ),
-    rule("6.6", "history-offset", "input a = 1\nstate s = a{0}\n"),
-    rule("6.6", "history-offset", "input a = 1\nstate s = a{a}\n"),
-    rule("6.6", "history-target", "let a = 1\nstate s = a{1, 0}\n"),
-    rule("6.6", "history-fallback", "state s = s{1} + 1\n"),
+    rule("6.6", "history-fallback", "state s = s.past(1) + 1\n"),
     rule(
         "6.6",
         "type-mismatch",
-        "input a = 1\nstate s = a{1, true}\n",
+        "state a(1)\nstate s = a.past(1, true)\n",
     ),
-    rule("6.6", "history-depth", "input a = 1\nstate[1] s = a{2}\n"),
     rule("6.6", "state-value", "Clip c:\n    Note\nstate s = c\n"),
     rule(
         "6.6",
         "unbounded-state",
-        "input note = 60\nstate recent = recent{1, []} + [note]\n",
+        "state note(60)\nstate recent = recent.past(1, []) + [note]\n",
     ),
     rule("7.1", "placement-syntax", "Clip\n"),
     rule("7.1", "top-level-wire", "Plays p: c\n"),
@@ -721,7 +716,7 @@ const RULES: &[Rule] = &[
     rule(
         "7.9",
         "reactive-iterable",
-        "input x = 1\nClip c:\n    for i in [x, x]:\n        Note\n",
+        "state x(1)\nClip c:\n    for i in [x, x]:\n        Note\n",
     ),
     rule(
         "7.9",
@@ -736,12 +731,12 @@ const RULES: &[Rule] = &[
     rule(
         "5.10",
         "capacity-exceeded",
-        "input held: i32[..10] = []\nstate t = for x in held into a: i32[..3] from []: a + [x]\nClip c:\n    Note/(t[0])\n",
+        "state held([]): i32[..10]\nstate t = for x in held into a: i32[..3] from []: a + [x]\nClip c:\n    Note/(t[0])\n",
     ),
     rule(
         "5.10",
         "length-limit",
-        "input n = 1\nClip c:\n    Note/((for i in 0..100 into a from [n]: a + a)[0])\n",
+        "state n(1)\nClip c:\n    Note/((for i in 0..100 into a from [n]: a + a)[0])\n",
     ),
     rule(
         "6.5",
@@ -761,7 +756,7 @@ const RULES: &[Rule] = &[
     rule(
         "7.9",
         "range-bound",
-        "input n = 4\nstate total = for i in 0..n into sum from 0: sum + i\nClip c:\n    Note/total\n",
+        "state n(4)\nstate total = for i in 0..n into sum from 0: sum + i\nClip c:\n    Note/total\n",
     ),
     rule(
         "7.9",
@@ -793,7 +788,7 @@ const RULES: &[Rule] = &[
     bounded(
         "8.3",
         "to-candidates",
-        "input i = 0\nA one\nB two\nRoot r:\n    Item\n    Link: r\n    Pick | level=to.x: [one, two][i]\n",
+        "state i(0)\nA one\nB two\nRoot r:\n    Item\n    Link: r\n    Pick | level=to.x: [one, two][i]\n",
     ),
     rule("8.3", "misplaced-to", "let a = to.gain\n"),
     rule(
@@ -814,12 +809,12 @@ const RULES: &[Rule] = &[
     ),
     rule("9.1", "condition-type", "Clip c:\n    Note when 1\n"),
     rule("9.2", "when-syntax", "Clip c:\n    when x\n        Note\n"),
-    prelude("10.1", "prelude-item", "input a = 1\n"),
+    prelude("10.1", "prelude-item", "state a(1)\n"),
     prelude("10.1", "unknown-name", "let a = b\n"),
     natives(
         "10.1",
         "compile-time-native",
-        "input n = 0\nClip c:\n    Note/(tag(\"abc\", n))\n",
+        "state n(0)\nClip c:\n    Note/(tag(\"abc\", n))\n",
     ),
     rule("10.2", "unknown-kind", "Clip c:\n    Foo\n"),
     rule("10.2", "unknown-variant", "let l = Wave::Purple\n"),

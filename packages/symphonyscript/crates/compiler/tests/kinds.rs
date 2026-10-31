@@ -6,16 +6,16 @@ use symphonyscript_fixtures::{Orders, Rows, covered, vocabulary};
 const BASES: [(&str, &str, &str, &str); 4] = [
     ("", "[1.5, 2.5]", "", "0"),
     (
-        "input f = [1.5, 2.5]\n",
+        "state f([1.5, 2.5])\n",
         "f",
-        "input f = [1.5, 2.5]\ninput n = 0\n",
+        "state f([1.5, 2.5])\nstate n(0)\n",
         "n",
     ),
     ("", "[1, 2]", "", "0"),
     (
-        "input g = [1, 2]\n",
+        "state g([1, 2])\n",
         "g",
-        "input g = [1, 2]\ninput n = 0\n",
+        "state g([1, 2])\nstate n(0)\n",
         "n",
     ),
 ];

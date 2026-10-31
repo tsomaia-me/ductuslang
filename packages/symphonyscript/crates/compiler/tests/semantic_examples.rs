@@ -247,7 +247,7 @@ fn the_pending_list_names_exactly_the_spec_examples_that_fail_the_rule() {
     assert!(problems.is_empty(), "{}", problems.join("\n"));
 }
 
-const SMALL_DOCUMENT: &str = "## 1. Small\n\n```sym\ninput x = 1\n```\n\n```sym-error\ninput y = 2\n```\n\n### 1.1 Smaller\n\n```text\nnot an example\n```\n\n```sym\nClip melody:\n    Note/300000000000\n```\n\n### 1.2 Unbuilt\n\n```sym\ninput = 1\n```\n";
+const SMALL_DOCUMENT: &str = "## 1. Small\n\n```sym\nstate x(1)\n```\n\n```sym-error\nstate y(2)\n```\n\n### 1.1 Smaller\n\n```text\nnot an example\n```\n\n```sym\nClip melody:\n    Note/300000000000\n```\n\n### 1.2 Unbuilt\n\n```sym\ninput = 1\n```\n";
 
 fn small_document_problems(list: &Path, write: bool) -> Vec<String> {
     let compiler = Compiler::new(&vocabulary()).expect("the example vocabulary compiles");

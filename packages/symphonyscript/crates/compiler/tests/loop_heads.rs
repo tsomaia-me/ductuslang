@@ -222,7 +222,7 @@ struct Elements {
     reader: &'static str,
 }
 
-const CELLS: &str = "input c = 3\ninput f = 3.0\ninput b = true\ninput w = Wave::Saw\nClip verse:\n    Note as hook /3\n    Note as lead /5\n";
+const CELLS: &str = "state c(3)\nstate f(3.0)\nstate b(true)\nstate w(Wave::Saw)\nClip verse:\n    Note as hook /3\n    Note as lead /5\n";
 
 const ARRAYS: [Elements; 9] = [
     Elements {

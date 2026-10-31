@@ -120,7 +120,7 @@ fn sizes_totalling(total: u64) -> Vec<u32> {
 }
 
 fn inlining(total: u64) -> String {
-    let mut text = String::from("input i = 1\nfn f0(x): x\n");
+    let mut text = String::from("state i(1)\nfn f0(x): x\n");
     for level in 1..20 {
         let below = level - 1;
         text.push_str(&format!("fn f{level}(x): f{below}(x) + f{below}(x)\n"));
@@ -651,7 +651,7 @@ fn counted_sites() -> [Counted; 9] {
 }
 
 fn inlining_into_a_let(total: u64) -> String {
-    let mut text = String::from("input i = 1\nfn f0(x): x\n");
+    let mut text = String::from("state i(1)\nfn f0(x): x\n");
     for level in 1..20 {
         let below = level - 1;
         text.push_str(&format!("fn f{level}(x): f{below}(x) + f{below}(x)\n"));
@@ -715,7 +715,7 @@ fn checked_within(overrides: LimitOverrides, text: &str) -> Vec<Diagnostic> {
         .check(&[support::source(text)])
 }
 
-const UNFITTING_INPUT: &str = "input wide: u8 = 300\n";
+const UNFITTING_INPUT: &str = "state wide(300): u8\n";
 
 fn a_count_past_its_warning_value_draws_the_warning_where_the_limit_would_draw_its_error_in(
     rows: &Rows,

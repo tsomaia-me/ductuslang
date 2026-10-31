@@ -3,7 +3,7 @@ mod support;
 use symphonyscript::{Code, Compiler, Diagnostic};
 use symphonyscript_fixtures::{Rows, covered, vocabulary};
 
-const CELLS: &str = "input a: i32[..5] = []\ninput i = 1\nlet k = 4\n";
+const CELLS: &str = "state a([]): i32[..5]\nstate i(1)\nlet k = 4\n";
 
 const FORMS: [&str; 16] = [
     "4",
@@ -196,7 +196,7 @@ fn exhaustive_every_bound_form_gives_a_slice_and_a_range_the_minimum_and_maximum
 #[test]
 fn the_bounds_of_the_spec_give_their_capacities_and_a_range_bound_without_a_maximum_is_rejected() {
     let compiler = Compiler::new(&vocabulary()).expect("the vocabulary compiles");
-    let held = "input xs: i32[..10] = []\ninput n = 3\n";
+    let held = "state xs([]): i32[..10]\nstate n(3)\n";
     for (value, capacity) in [("xs[^8..]", 8), ("xs[1..]", 9), ("xs[..min(n, 4)]", 4)] {
         let declared = format!("{held}state v = {value}\n");
         assert_eq!(
@@ -205,7 +205,7 @@ fn the_bounds_of_the_spec_give_their_capacities_and_a_range_bound_without_a_maxi
             "{value}"
         );
     }
-    let text = "input n = 4\nstate total = for i in 0..n into sum from 0: sum + i\nClip c:\n    Note/total\n";
+    let text = "state n(4)\nstate total = for i in 0..n into sum from 0: sum + i\nClip c:\n    Note/total\n";
     let found = errors(&compiler, text);
     assert!(
         matches!(found.as_slice(), [diagnostic]

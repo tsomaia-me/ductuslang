@@ -174,7 +174,7 @@ fn exhaustive_a_for_expressions_names_are_new_and_distinct_names_whatever_they_b
 #[test]
 fn the_names_of_the_spec_bind_and_their_repeats_are_rejected() {
     let compiler = Compiler::new(&vocabulary()).expect("the vocabulary compiles");
-    let held = "input held: i32[..10] = []\n";
+    let held = "state held([]): i32[..10]\n";
     for (text, expected) in [
         (
             format!(

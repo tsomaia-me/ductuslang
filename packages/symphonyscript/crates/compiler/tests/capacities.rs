@@ -4,7 +4,7 @@ use symphonyscript::{Code, Compiler};
 use symphonyscript_core::Vocabulary;
 use symphonyscript_fixtures::vocabulary;
 
-const CELLS: &str = "input a: i32[..5] = []\ninput i = 1\ninput flag = false\ninput note = 60\n";
+const CELLS: &str = "state a([]): i32[..5]\nstate i(1)\nstate flag(false)\nstate note(60)\n";
 
 fn codes(text: &str) -> Vec<Code> {
     support::checked(text)
@@ -71,10 +71,10 @@ fn each_row_of_the_capacity_table_gives_its_capacity() {
             "m",
             6,
         ),
-        ("state r = (r{1, []} + [note])[^8..]\n", "r", 8),
-        ("state r = (r{1, []} + [note])[..8]\n", "r", 8),
-        ("state r = (r{1, []} + a)[^4..]\n", "r", 4),
-        ("state r = (r{1, [1, 2, 3]} + [note])[^2..]\n", "r", 2),
+        ("state r = (r.past(1, []) + [note])[^8..]\n", "r", 8),
+        ("state r = (r.past(1, []) + [note])[..8]\n", "r", 8),
+        ("state r = (r.past(1, []) + a)[^4..]\n", "r", 4),
+        ("state r = (r.past(1, [1, 2, 3]) + [note])[^2..]\n", "r", 2),
     ];
     for (prefix, value, capacity) in rows {
         assert_capacity(prefix, value, *capacity);
@@ -83,7 +83,7 @@ fn each_row_of_the_capacity_table_gives_its_capacity() {
 
 #[test]
 fn a_state_holds_a_fixed_array_when_its_initializer_keeps_its_fallbacks_length() {
-    let fixed = "state s = (s{1, [0, 0]} + [note])[1..]\n";
+    let fixed = "state s = (s.past(1, [0, 0]) + [note])[1..]\n";
     assert_eq!(
         codes(&format!("{CELLS}{fixed}Clip c:\n    Note/(s[1])\n")),
         vec![]
@@ -92,7 +92,7 @@ fn a_state_holds_a_fixed_array_when_its_initializer_keeps_its_fallbacks_length()
         codes(&format!("{CELLS}{fixed}Clip c:\n    Note/(s[2])\n")),
         vec![Code::IndexOutOfRange]
     );
-    let variable = "state s = (s{1, [0]} + [note])[^2..]\n";
+    let variable = "state s = (s.past(1, [0]) + [note])[^2..]\n";
     assert_eq!(
         codes(&format!("{CELLS}{variable}Clip c:\n    Note/(s[5])\n")),
         vec![]
@@ -102,10 +102,10 @@ fn a_state_holds_a_fixed_array_when_its_initializer_keeps_its_fallbacks_length()
 #[test]
 fn a_state_with_no_capacity_is_an_error() {
     for state in [
-        "state s = s{1, [0, 0]} + [note]\n",
-        "state s = s{1, []} + a\n",
-        "state s = (s{1, []} + a)[1..]\n",
-        "state p = q{1, []} + [note]\nstate q = p{1, []} + [note]\n",
+        "state s = s.past(1, [0, 0]) + [note]\n",
+        "state s = s.past(1, []) + a\n",
+        "state s = (s.past(1, []) + a)[1..]\n",
+        "state p = q.past(1, []) + [note]\nstate q = p.past(1, []) + [note]\n",
     ] {
         let found = codes(&format!("{CELLS}{state}Clip c:\n    Note\n"));
         assert!(
@@ -155,7 +155,7 @@ fn assert_ordered_codes_in(orders: support::Orders, items: &[&str], expected: &[
     }
 }
 
-const NOTE: &str = "input note = 60\n";
+const NOTE: &str = "state note(60)\n";
 
 fn the_state_rules_see_the_history_reads_an_inlined_call_reaches_in(orders: support::Orders) {
     assert_ordered_codes_in(
@@ -163,7 +163,7 @@ fn the_state_rules_see_the_history_reads_an_inlined_call_reaches_in(orders: supp
         &[
             NOTE,
             "fn f(x): x + [note]\n",
-            "state s = f(s{1, []})\n",
+            "state s = f(s.past(1, []))\n",
             "Clip c:\n    Note/(s[0])\n",
         ],
         &[Code::UnboundedState],
@@ -171,29 +171,19 @@ fn the_state_rules_see_the_history_reads_an_inlined_call_reaches_in(orders: supp
     let push = [
         NOTE,
         "fn push(xs, x): (xs + [x])[^8..]\n",
-        "state recent = push(recent{1, []}, note)\n",
+        "state recent = push(recent.past(1, []), note)\n",
     ];
     assert_ordered_capacity_in(orders, &push, "recent", 8);
     let keep = [
         NOTE,
         "fn keep(xs): xs[^8..]\n",
-        "state s = keep(s{1, []} + [note])\n",
+        "state s = keep(s.past(1, []) + [note])\n",
     ];
     assert_ordered_capacity_in(orders, &keep, "s", 8);
-    assert_ordered_codes_in(
-        orders,
-        &[
-            NOTE,
-            "fn id(x): x\n",
-            "state[1] s = id(s{2, 0}) + note\n",
-            "Clip c:\n    Note/(s)\n",
-        ],
-        &[Code::HistoryDepth],
-    );
     let step = [
         NOTE,
         "fn step(prev, x): prev * 0.5 + x\n",
-        "state s = step(s{1, 0.0}, note)\n",
+        "state s = step(s.past(1, 0.0), note)\n",
     ];
     let mut gain = step.to_vec();
     gain.push("Clip c | gain=s:\n    Note\n");
@@ -217,15 +207,15 @@ fn exhaustive_the_state_rules_see_the_history_reads_an_inlined_call_reaches() {
 }
 
 fn a_states_fixed_array_is_settled_over_its_group_in(orders: support::Orders) {
-    let recent = "state recent = (recent{1, []} + [note])[^8..]\n";
-    let last = [NOTE, recent, "state last = recent{1, []}[^1..]\n"];
+    let recent = "state recent = (recent.past(1, []) + [note])[^8..]\n";
+    let last = [NOTE, recent, "state last = recent.past(1, [])[^1..]\n"];
     let mut read = last.to_vec();
     read.push("Clip c:\n    Note/(last[0])\n");
     assert_ordered_codes_in(orders, &read, &[]);
     assert_ordered_capacity_in(orders, &last, "last", 1);
     assert_ordered_capacity_in(
         orders,
-        &[NOTE, recent, "state older = recent{2, []}[..4]\n"],
+        &[NOTE, recent, "state older = recent.past(2, [])[..4]\n"],
         "older",
         4,
     );
@@ -233,16 +223,16 @@ fn a_states_fixed_array_is_settled_over_its_group_in(orders: support::Orders) {
         orders,
         &[
             NOTE,
-            "state p = (q{1, []} + [note])[^1000000000..]\n",
-            "state q = p{1, []}\n",
+            "state p = (q.past(1, []) + [note])[^1000000000..]\n",
+            "state q = p.past(1, [])\n",
         ],
         "q",
         1_000_000_000,
     );
-    let ring = "state ring = (ring{1, []} + [note])[^6..]\n";
+    let ring = "state ring = (ring.past(1, []) + [note])[^6..]\n";
     for echo in [
-        "state[3] echo = ring{3, []}[^5..]\n",
-        "state[3] echo = ring{3, [0]}[^5..]\n",
+        "state echo = ring.past(3, [])[^5..]\n",
+        "state echo = ring.past(3, [0])[^5..]\n",
     ] {
         assert_ordered_codes_in(
             orders,
@@ -260,7 +250,7 @@ fn a_states_fixed_array_is_settled_over_its_group_in(orders: support::Orders) {
         orders,
         &[
             NOTE,
-            "state recent = recent{1, []} + [note]\n",
+            "state recent = recent.past(1, []) + [note]\n",
             "Clip c:\n    Note/(recent[0])\n",
         ],
         &[Code::UnboundedState],
@@ -269,8 +259,8 @@ fn a_states_fixed_array_is_settled_over_its_group_in(orders: support::Orders) {
         orders,
         &[
             NOTE,
-            "state p = q{1, []} + [note]\n",
-            "state q = p{1, []}\n",
+            "state p = q.past(1, []) + [note]\n",
+            "state q = p.past(1, [])\n",
             "Clip c:\n    Note/(p[0])\n    Note/(q[0])\n",
         ],
         &[Code::UnboundedState],
@@ -290,15 +280,15 @@ fn exhaustive_a_states_fixed_array_is_settled_over_its_group() {
 
 #[test]
 fn a_compile_time_index_outside_a_fixed_history_read_is_an_error() {
-    let fixed = "state s = (s{1, [0, 0]} + [note])[1..]\n";
-    let text = format!("{NOTE}{fixed}state t = s{{1, [0, 0]}}[5] + 1\nClip c:\n    Note/(t)\n");
+    let fixed = "state s = (s.past(1, [0, 0]) + [note])[1..]\n";
+    let text = format!("{NOTE}{fixed}state t = s.past(1, [0, 0])[5] + 1\nClip c:\n    Note/(t)\n");
     support::expect_codes(&text, &[(Code::IndexOutOfRange, "5", 0)]);
     for index in ["1", "^1"] {
         assert_ordered_codes(
             &[
                 NOTE,
                 fixed,
-                &format!("state t = s{{1, [0, 0]}}[{index}] + 1\n"),
+                &format!("state t = s.past(1, [0, 0])[{index}] + 1\n"),
                 "Clip c:\n    Note/(t)\n",
             ],
             &[],
@@ -308,7 +298,7 @@ fn a_compile_time_index_outside_a_fixed_history_read_is_an_error() {
         &[
             NOTE,
             fixed,
-            "state t = s{1, [0, 0]}[5] + 1\n",
+            "state t = s.past(1, [0, 0])[5] + 1\n",
             "Clip c:\n    Note/(t)\n",
         ],
         &[Code::IndexOutOfRange],
@@ -325,13 +315,13 @@ fn a_state_annotation_states_its_array() {
     );
     assert_eq!(
         codes(&format!(
-            "{CELLS}state s: i32[..3] = (s{{1, []}} + [note])[^8..]\nClip c:\n    Note/(s[0])\n"
+            "{CELLS}state s: i32[..3] = (s.past(1, []) + [note])[^8..]\nClip c:\n    Note/(s[0])\n"
         )),
         vec![Code::CapacityExceeded]
     );
     assert_eq!(
         codes(&format!(
-            "{CELLS}state s: i32[..8] = (s{{1, []}} + [note])[^8..]\nClip c:\n    Note/(s[0])\n"
+            "{CELLS}state s: i32[..8] = (s.past(1, []) + [note])[^8..]\nClip c:\n    Note/(s[0])\n"
         )),
         vec![]
     );
@@ -341,7 +331,7 @@ fn a_state_annotation_states_its_array() {
 fn history_reads_form_no_cycle_and_a_present_read_of_itself_does() {
     assert_eq!(
         codes(&format!(
-            "{CELLS}state p = q{{1, 0}} + note\nstate q = p{{1, 0}} + 1\nClip c:\n    Note/(p + q)\n"
+            "{CELLS}state p = q.past(1, 0) + note\nstate q = p.past(1, 0) + 1\nClip c:\n    Note/(p + q)\n"
         )),
         vec![]
     );
@@ -355,13 +345,13 @@ fn history_reads_form_no_cycle_and_a_present_read_of_itself_does() {
 fn a_state_s_own_history_reads_count_as_their_fallbacks_for_its_kind() {
     assert_eq!(
         codes(&format!(
-            "{CELLS}state s = s{{1, 0.5}} + 1\nClip c | gain=s:\n    Note\n"
+            "{CELLS}state s = s.past(1, 0.5) + 1\nClip c | gain=s:\n    Note\n"
         )),
         vec![]
     );
     assert_eq!(
         codes(&format!(
-            "{CELLS}state s = s{{1, true}} or flag\nClip c:\n    when s:\n        Note\n"
+            "{CELLS}state s = s.past(1, true) or flag\nClip c:\n    when s:\n        Note\n"
         )),
         vec![]
     );
@@ -371,7 +361,7 @@ fn a_state_s_own_history_reads_count_as_their_fallbacks_for_its_kind() {
 fn a_history_read_of_an_input_takes_its_initial_value_as_its_fallback() {
     assert_eq!(
         codes(&format!(
-            "{CELLS}state rising = flag and not flag{{1}}\nClip c:\n    when rising:\n        Note\n"
+            "{CELLS}state rising = flag and not flag.past(1)\nClip c:\n    when rising:\n        Note\n"
         )),
         vec![]
     );
@@ -396,43 +386,43 @@ fn a_history_reads_fallback_takes_the_cells_type() {
     let rows: &[OrderedRow] = &[
         (
             &[
-                "input w = Wave::Saw\n",
-                "state s = w{1, Sine}\n",
+                "state w(Wave::Saw)\n",
+                "state s = w.past(1, Sine)\n",
                 "Clip c:\n    Note when s is Saw\n",
             ],
             &[],
         ),
         (
             &[
-                "input w = Wave::Saw\n",
+                "state w(Wave::Saw)\n",
                 "let k = w\n",
-                "state s2 = k{1, Sine}\n",
+                "state s2 = k.past(1, Sine)\n",
                 "Clip c:\n    Note when s2 is Saw\n",
             ],
             &[],
         ),
         (
             &[
-                "input x = 1\n",
-                "state s = x{1, 0.5}\n",
+                "state x(1)\n",
+                "state s = x.past(1, 0.5)\n",
                 "Clip c:\n    Note/(s)\n",
             ],
             &[(Code::TypeMismatch, "0.5", 0)],
         ),
         (
             &[
-                "input w = Wave::Saw\n",
-                "state s = w{1}\n",
+                "state w(Wave::Saw)\n",
+                "state s = w.past(1)\n",
                 "Osc o | wave=s\n",
             ],
             &[],
         ),
         (
             &[
-                "input x = 1\n",
-                "input y = 3000000000\n",
+                "state x(1)\n",
+                "state y(3000000000)\n",
                 "let l = y + 0\n",
-                "state s = x{1, l}\n",
+                "state s = x.past(1, l)\n",
                 "Clip c:\n    Note/(s)\n",
             ],
             &[],
@@ -449,121 +439,121 @@ fn a_history_read_has_its_cells_kind_for_an_input_a_let_and_a_state_in(orders: s
     let rows: &[support::Row] = &[
         (
             &[
-                "input x = 1.5\n",
+                "state x(1.5)\n",
                 "let y = x * 2\n",
-                "state s = y{1, 0}\n",
+                "state s = y.past(1, 0)\n",
                 "Clip c:\n    Note/(s)\n",
             ],
             &[(Code::FloatToInteger, "s")],
         ),
         (
             &[
-                "input x = 1.5\n",
+                "state x(1.5)\n",
                 "let y = x * 2\n",
-                "state s = y{1, 0}\n",
+                "state s = y.past(1, 0)\n",
                 "Clip k | gain=s:\n    Note/(i32(s))\n",
             ],
             &[],
         ),
         (
             &[
-                "input x = 1.5\n",
+                "state x(1.5)\n",
                 "state f = x + 1\n",
-                "state s = f{1, 0}\n",
+                "state s = f.past(1, 0)\n",
                 "Clip c:\n    Note/(s)\n",
             ],
             &[(Code::FloatToInteger, "s")],
         ),
         (
             &[
-                "input x = 1.5\n",
+                "state x(1.5)\n",
                 "state f = x + 1\n",
-                "state s = f{1, 0}\n",
+                "state s = f.past(1, 0)\n",
                 "Clip k | gain=s:\n    Note/(i32(s))\n",
             ],
             &[],
         ),
         (
             &[
-                "input x = 1.5\n",
-                "state p = q{1, 0} + 1.5\n",
-                "state q = p{1, 0}\n",
+                "state x(1.5)\n",
+                "state p = q.past(1, 0) + 1.5\n",
+                "state q = p.past(1, 0)\n",
                 "Clip c:\n    Note/(q)\n",
             ],
             &[(Code::FloatToInteger, "q")],
         ),
         (
             &[
-                "input x = 1.5\n",
-                "state p = q{1, 0} + 1.5\n",
-                "state q = p{1, 0}\n",
+                "state x(1.5)\n",
+                "state p = q.past(1, 0) + 1.5\n",
+                "state q = p.past(1, 0)\n",
                 "Clip k | gain=q:\n    Note/(i32(q))\n",
             ],
             &[],
         ),
         (
             &[
-                "state p = q{1, 0}\n",
-                "state q = p{1, 0.5}\n",
+                "state p = q.past(1, 0)\n",
+                "state q = p.past(1, 0.5)\n",
                 "Clip c:\n    Note/(p)\n",
             ],
             &[(Code::FloatToInteger, "p")],
         ),
         (
             &[
-                "state p = q{1, 0}\n",
-                "state q = p{1, 0.5}\n",
+                "state p = q.past(1, 0)\n",
+                "state q = p.past(1, 0.5)\n",
                 "Clip k | gain=p:\n    Note/(i32(p))\n",
             ],
             &[],
         ),
         (
             &[
-                "input x = 1.5\n",
+                "state x(1.5)\n",
                 "let t = s * x\n",
-                "state s = t{1, 0}\n",
+                "state s = t.past(1, 0)\n",
                 "Clip c:\n    Note/(s)\n",
             ],
             &[(Code::FloatToInteger, "s")],
         ),
         (
             &[
-                "input x = 1.5\n",
+                "state x(1.5)\n",
                 "let t = s * x\n",
-                "state s = t{1, 0}\n",
+                "state s = t.past(1, 0)\n",
                 "Clip k | gain=s:\n    Note/(i32(s))\n",
             ],
             &[],
         ),
         (
             &[
-                "input x = 1.5\n",
-                "state s = x{1, 0}\n",
+                "state x(1.5)\n",
+                "state s = x.past(1, 0)\n",
                 "Clip c:\n    Note/(s)\n",
             ],
             &[(Code::FloatToInteger, "s")],
         ),
         (
             &[
-                "input x = 1.5\n",
-                "state s = x{1, 0}\n",
+                "state x(1.5)\n",
+                "state s = x.past(1, 0)\n",
                 "Clip k | gain=s:\n    Note/(i32(s))\n",
             ],
             &[],
         ),
         (
             &[
-                "state p = q{1, 0}\n",
-                "state q = p{1, 0.5}\n",
+                "state p = q.past(1, 0)\n",
+                "state q = p.past(1, 0.5)\n",
                 "Clip c:\n    Note/(p)\n    Note/(q)\n",
             ],
             &[(Code::FloatToInteger, "p"), (Code::FloatToInteger, "q")],
         ),
         (
             &[
-                "input x = 1.5\n",
-                "state p = q{1, 0} + 1.5\n",
-                "state q = p{1, 0}\n",
+                "state x(1.5)\n",
+                "state p = q.past(1, 0) + 1.5\n",
+                "state q = p.past(1, 0)\n",
                 "let m = match q:\n    1: 2\n    else: 3\n",
                 "Clip c:\n    Note/(m)\n",
             ],
@@ -571,28 +561,28 @@ fn a_history_read_has_its_cells_kind_for_an_input_a_let_and_a_state_in(orders: s
         ),
         (
             &[
-                "input x = 1.5\n",
-                "state p = q{1, 0} + 1.5\n",
-                "state q = p{1, 0}\n",
+                "state x(1.5)\n",
+                "state p = q.past(1, 0) + 1.5\n",
+                "state q = p.past(1, 0)\n",
                 "Clip c:\n    Note/([1, 2, 3][q])\n",
             ],
             &[(Code::IndexType, "q")],
         ),
         (
             &[
-                "input x = 1.5\n",
-                "state p = q{1, 0} + 1.5\n",
-                "state q = p{1, 0}\n",
-                "state r = q{1, 0} + 1\n",
+                "state x(1.5)\n",
+                "state p = q.past(1, 0) + 1.5\n",
+                "state q = p.past(1, 0)\n",
+                "state r = q.past(1, 0) + 1\n",
                 "Clip c:\n    Note/(r)\n",
             ],
             &[(Code::FloatToInteger, "r")],
         ),
         (
             &[
-                "input x = 1.5\n",
+                "state x(1.5)\n",
                 "let t = s * x\n",
-                "state s = t{1, 0}\n",
+                "state s = t.past(1, 0)\n",
                 "let u = s + 1\n",
                 "Clip c:\n    Note/(u)\n",
             ],
@@ -600,53 +590,53 @@ fn a_history_read_has_its_cells_kind_for_an_input_a_let_and_a_state_in(orders: s
         ),
         (
             &[
-                "input x = 1\n",
+                "state x(1)\n",
                 "let y = x + 1\n",
-                "state s = y{1, 0.5}\n",
+                "state s = y.past(1, 0.5)\n",
                 "Clip c:\n    Note/(s)\n",
             ],
             &[(Code::TypeMismatch, "0.5")],
         ),
         (
             &[
-                "input gate = false\n",
+                "state gate(false)\n",
                 "let h = not gate\n",
-                "state s = h{1, 0}\n",
+                "state s = h.past(1, 0)\n",
                 "Clip c:\n    Note when s\n",
             ],
             &[(Code::TypeMismatch, "0")],
         ),
         (
             &[
-                "state p = q{1, 0}\n",
-                "state q = p{1, 0.5}\n",
+                "state p = q.past(1, 0)\n",
+                "state q = p.past(1, 0.5)\n",
                 "Clip c:\n    Note | brightness=p\n",
             ],
             &[],
         ),
         (
             &[
-                "state p = q{1, 0}\n",
-                "state q = p{1, 0}\n",
+                "state p = q.past(1, 0)\n",
+                "state q = p.past(1, 0)\n",
                 "Clip c:\n    Note/(p)\n",
             ],
             &[],
         ),
         (
             &[
-                "state s = s{1, 0.5}\n",
+                "state s = s.past(1, 0.5)\n",
                 "Clip c:\n    Note | brightness=s\n",
             ],
             &[],
         ),
         (
             &[
-                "input gate = false\n",
-                "input level = 0.0\n",
-                "input note = 60\n",
-                "state rising = gate and not gate{1}\n",
-                "state held = if rising then level else held{1, 0.0}\n",
-                "state recent = (recent{1, []} + [note])[^8..]\n",
+                "state gate(false)\n",
+                "state level(0.0)\n",
+                "state note(60)\n",
+                "state rising = gate and not gate.past(1)\n",
+                "state held = if rising then level else held.past(1, 0.0)\n",
+                "state recent = (recent.past(1, []) + [note])[^8..]\n",
                 "Clip c:\n    Note/(recent[0]) | brightness=held\n    when rising:\n        Note\n",
             ],
             &[],
@@ -669,9 +659,9 @@ fn exhaustive_a_history_read_has_its_cells_kind_for_an_input_a_let_and_a_state()
 }
 
 fn a_history_reads_provisional_kind_leaves_no_diagnostic_behind_in(orders: support::Orders) {
-    let x = "input x = 1\n";
-    let gate = "input gate = false\n";
-    let held = "input held: i32[..10] = []\n";
+    let x = "state x(1)\n";
+    let gate = "state gate(false)\n";
+    let held = "state held([]): i32[..10]\n";
     let probe = "let probe = held[s..]\n";
     let read = "Clip c:\n    Note/(probe[0])\n";
     let rows: &[support::Row] = &[
@@ -680,7 +670,7 @@ fn a_history_reads_provisional_kind_leaves_no_diagnostic_behind_in(orders: suppo
                 x,
                 held,
                 "let y = x + 1\n",
-                "state s = y{1, 0.5}\n",
+                "state s = y.past(1, 0.5)\n",
                 probe,
                 read,
             ],
@@ -690,7 +680,7 @@ fn a_history_reads_provisional_kind_leaves_no_diagnostic_behind_in(orders: suppo
             &[
                 gate,
                 "let y = not gate\n",
-                "state s = y{1, 0}\n",
+                "state s = y.past(1, 0)\n",
                 "let b = not s\n",
                 "Clip c:\n    Note when b\n",
             ],
@@ -700,7 +690,7 @@ fn a_history_reads_provisional_kind_leaves_no_diagnostic_behind_in(orders: suppo
             &[
                 x,
                 "let y = x + 1\n",
-                "state s = y{1, 0.5}\n",
+                "state s = y.past(1, 0.5)\n",
                 "let m = match s:\n    0: 1\n    else: 2\n",
                 "Clip c:\n    Note/(m)\n",
             ],
@@ -710,7 +700,7 @@ fn a_history_reads_provisional_kind_leaves_no_diagnostic_behind_in(orders: suppo
             &[
                 x,
                 held,
-                "state p = q{1, 0.5}\n",
+                "state p = q.past(1, 0.5)\n",
                 "state q = x + 1\n",
                 "let probe = held[p..]\n",
                 read,
@@ -721,7 +711,7 @@ fn a_history_reads_provisional_kind_leaves_no_diagnostic_behind_in(orders: suppo
             &[
                 x,
                 held,
-                "state s = y{1, 0}\n",
+                "state s = y.past(1, 0)\n",
                 "let y = x + 1\n",
                 probe,
                 read,
@@ -733,7 +723,7 @@ fn a_history_reads_provisional_kind_leaves_no_diagnostic_behind_in(orders: suppo
                 x,
                 held,
                 "let y = x * 0.5\n",
-                "state s = y{1, 0.0}\n",
+                "state s = y.past(1, 0.0)\n",
                 probe,
                 read,
             ],
@@ -761,27 +751,27 @@ fn a_history_read_of_a_let_whose_initializer_drew_an_error_draws_nothing_of_its_
     let rows: &[support::Row] = &[
         (
             &[
-                "input note = 60\n",
+                "state note(60)\n",
                 "let t = zzz\n",
-                "state s = (t{1, []} + [note])[^8..]\n",
+                "state s = (t.past(1, []) + [note])[^8..]\n",
                 "Clip c:\n    Note/(len(s))\n",
             ],
             &[(Code::UnknownName, "zzz")],
         ),
         (
             &[
-                "input note = 60\n",
+                "state note(60)\n",
                 "let t = note + true\n",
-                "state s = (t{1, []} + [note])[^8..]\n",
+                "state s = (t.past(1, []) + [note])[^8..]\n",
                 "Clip c:\n    Note/(len(s))\n",
             ],
             &[(Code::OperandType, "note + true")],
         ),
         (
             &[
-                "input note = 60\n",
+                "state note(60)\n",
                 "let t = zzz + [note]\n",
-                "state s = (t{1, []} + [note])[^8..]\n",
+                "state s = (t.past(1, []) + [note])[^8..]\n",
                 "Clip c:\n    Note/(len(s))\n",
             ],
             &[(Code::UnknownName, "zzz")],
@@ -789,29 +779,34 @@ fn a_history_read_of_a_let_whose_initializer_drew_an_error_draws_nothing_of_its_
         (
             &[
                 "let t = 3\n",
-                "state s = t{1, 0}\n",
+                "state s = t.past(1, 0)\n",
                 "Clip c:\n    Note/(s)\n",
             ],
-            &[(Code::HistoryTarget, "t{1, 0}")],
+            &[(Code::HistoryTarget, "t.past(1, 0)")],
         ),
         (
             &[
                 "let t = 3\n",
-                "state s = t{1, 0}\n",
+                "state s = t.past(1, 0)\n",
                 "Clip c:\n    Note/(60 + s)\n",
             ],
-            &[(Code::HistoryTarget, "t{1, 0}")],
+            &[(Code::HistoryTarget, "t.past(1, 0)")],
         ),
     ];
     support::assert_rows_in_every_order(&vocabulary(), rows);
 }
 
 fn a_history_read_of_a_reactive_let_has_the_lets_layout_in(orders: support::Orders) {
-    let held = "input held: i32[..10] = []\n";
+    let held = "state held([]): i32[..10]\n";
     let played = "let played = held + [note]\n";
     assert_ordered_capacity_in(
         orders,
-        &[held, NOTE, played, "state s = (played{1, []})[^20..]\n"],
+        &[
+            held,
+            NOTE,
+            played,
+            "state s = (played.past(1, []))[^20..]\n",
+        ],
         "s",
         11,
     );
@@ -822,21 +817,21 @@ fn a_history_read_of_a_reactive_let_has_the_lets_layout_in(orders: support::Orde
             NOTE,
             played,
             "let t = s[1..]\n",
-            "state s = (t{1, []} + [note, note])[^8..]\n",
+            "state s = (t.past(1, []) + [note, note])[^8..]\n",
         ],
         "s",
         8,
     );
     assert_ordered_capacity_in(
         orders,
-        &[NOTE, "state recent = (recent{1, []} + [note])[^8..]\n"],
+        &[NOTE, "state recent = (recent.past(1, []) + [note])[^8..]\n"],
         "recent",
         8,
     );
     let first = "Clip c:\n    Note/(s[0])\n";
     let rows: &[support::Row] = &[
         (
-            &[held, NOTE, played, "state s = played{1, []}\n", first],
+            &[held, NOTE, played, "state s = played.past(1, [])\n", first],
             &[],
         ),
         (
@@ -845,7 +840,7 @@ fn a_history_read_of_a_reactive_let_has_the_lets_layout_in(orders: support::Orde
                 NOTE,
                 played,
                 "fn keep(xs): xs[^8..]\n",
-                "state s = keep(played{1, []})\n",
+                "state s = keep(played.past(1, []))\n",
                 first,
             ],
             &[],
@@ -855,7 +850,7 @@ fn a_history_read_of_a_reactive_let_has_the_lets_layout_in(orders: support::Orde
                 held,
                 NOTE,
                 played,
-                "state s = played{1, [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]}\n",
+                "state s = played.past(1, [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])\n",
                 first,
             ],
             &[(
@@ -865,20 +860,26 @@ fn a_history_read_of_a_reactive_let_has_the_lets_layout_in(orders: support::Orde
         ),
         (
             &[
-                "input held: i32[..10] = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]\n",
+                "state held([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]): i32[..10]\n",
                 "Clip c:\n    Note/(held[0])\n",
             ],
             &[(Code::CapacityExceeded, "[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]")],
         ),
         (
-            &[held, NOTE, played, "state s = played{1, [[1, 2]]}\n", first],
-            &[(Code::TypeMismatch, "played{1, [[1, 2]]}")],
+            &[
+                held,
+                NOTE,
+                played,
+                "state s = played.past(1, [[1, 2]])\n",
+                first,
+            ],
+            &[(Code::TypeMismatch, "played.past(1, [[1, 2]])")],
         ),
         (
             &[
                 NOTE,
                 "let pair = [note, note]\n",
-                "state s = pair{1, [0, 0]}[1..]\n",
+                "state s = pair.past(1, [0, 0])[1..]\n",
                 "Clip c:\n    Note/(s[1])\n",
             ],
             &[(Code::IndexOutOfRange, "1")],
@@ -887,10 +888,10 @@ fn a_history_read_of_a_reactive_let_has_the_lets_layout_in(orders: support::Orde
             &[
                 NOTE,
                 "let pair = [note, note]\n",
-                "state s = pair{1, [0]}\n",
+                "state s = pair.past(1, [0])\n",
                 first,
             ],
-            &[(Code::TypeMismatch, "pair{1, [0]}")],
+            &[(Code::TypeMismatch, "pair.past(1, [0])")],
         ),
     ];
     support::assert_rows_in_orders(orders, &vocabulary(), rows);
@@ -910,7 +911,10 @@ fn exhaustive_a_history_read_of_a_reactive_let_has_the_lets_layout() {
 #[test]
 fn a_chain_of_slices_keeps_its_capacity_and_its_length() {
     assert_ordered_capacity(
-        &[NOTE, "state s = (s{1, []} + [note])[^8..][^8..][^8..]\n"],
+        &[
+            NOTE,
+            "state s = (s.past(1, []) + [note])[^8..][^8..][^8..]\n",
+        ],
         "s",
         8,
     );
@@ -951,81 +955,81 @@ fn a_history_read_counts_as_an_operand_of_its_cells_integer_width_in(orders: sup
     let rows: &[support::Row] = &[
         (
             &[
-                "input x = 3000000000\n",
-                "state s = x{1, 0}\n",
+                "state x(3000000000)\n",
+                "state s = x.past(1, 0)\n",
                 "Clip c:\n    Note when s > 0\n",
             ],
             &[],
         ),
-        (&["input x = 1\n", "state s = x{1, 0}\n", wide], &[]),
+        (&["state x(1)\n", "state s = x.past(1, 0)\n", wide], &[]),
         (
             &[
-                "input x = 1\n",
-                "state total = total{1, 0} + x{1}\n",
+                "state x(1)\n",
+                "state total = total.past(1, 0) + x.past(1)\n",
                 "Clip c:\n    Note when total > 3000000000\n",
             ],
             &[],
         ),
         (
             &[
-                "input x = 1\n",
-                "state a = x{1, 0}\n",
-                "state b = a{1, 0}\n",
+                "state x(1)\n",
+                "state a = x.past(1, 0)\n",
+                "state b = a.past(1, 0)\n",
                 "Clip c:\n    Note when b > 3000000000\n",
             ],
             &[],
         ),
         (
             &[
-                "input x = 1\n",
+                "state x(1)\n",
                 "let l = x + 1\n",
-                "state s = l{1, 0}\n",
+                "state s = l.past(1, 0)\n",
                 wide,
             ],
             &[],
         ),
         (
             &[
-                "input x = 1\n",
-                "state a = b{1, 0} + x{1}\n",
-                "state b = a{1, 0}\n",
+                "state x(1)\n",
+                "state a = b.past(1, 0) + x.past(1)\n",
+                "state b = a.past(1, 0)\n",
                 "Clip c:\n    Note when b > 3000000000\n",
             ],
             &[],
         ),
-        (&["state s = s{1, 0i64} + 1\n", wide], &[]),
+        (&["state s = s.past(1, 0i64) + 1\n", wide], &[]),
         (
-            &["state s = s{1, 0} + 1\n", wide],
+            &["state s = s.past(1, 0) + 1\n", wide],
             &[(Code::DoesNotFit, "3000000000")],
         ),
         (
-            &["input x: i32 = 1\n", "state s = x{1, 0}\n", wide],
+            &["state x(1): i32\n", "state s = x.past(1, 0)\n", wide],
             &[(Code::DoesNotFit, "3000000000")],
         ),
         (
             &[
-                "input x: u8 = 1\n",
-                "state s = x{1, 0}\n",
+                "state x(1): u8\n",
+                "state s = x.past(1, 0)\n",
                 "Clip c:\n    Note when s > 300\n",
             ],
             &[(Code::DoesNotFit, "300")],
         ),
         (
             &[
-                "input x = 1\n",
-                "state s = x{1, 0} + x\n",
+                "state x(1)\n",
+                "state s = x.past(1, 0) + x\n",
                 "Clip c:\n    Note when s > 0\n",
             ],
             &[],
         ),
         (
             &[
-                "input gate = false\n",
-                "input level = 0.0\n",
-                "input note = 60\n",
-                "state rising = gate and not gate{1}\n",
-                "state held = if rising then level else held{1, 0.0}\n",
-                "state recent = (recent{1, []} + [note])[^8..]\n",
+                "state gate(false)\n",
+                "state level(0.0)\n",
+                "state note(60)\n",
+                "state rising = gate and not gate.past(1)\n",
+                "state held = if rising then level else held.past(1, 0.0)\n",
+                "state recent = (recent.past(1, []) + [note])[^8..]\n",
             ],
             &[],
         ),
@@ -1049,8 +1053,8 @@ fn exhaustive_a_history_read_counts_as_an_operand_of_its_cells_integer_width() {
 fn the_arms_of_a_choice_are_type_checked_against_one_another_whatever_chooses_in(
     orders: support::Orders,
 ) {
-    let a = "input a: i32[..5] = []\n";
-    let flag = "input flag = false\n";
+    let a = "state a([]): i32[..5]\n";
+    let flag = "state flag(false)\n";
     let rows: &[support::Row] = &[
         (
             &[
@@ -1083,7 +1087,7 @@ fn the_arms_of_a_choice_are_type_checked_against_one_another_whatever_chooses_in
         ),
         (
             &[
-                "input note = 60\n",
+                "state note(60)\n",
                 "let x = if true then [note, note] else 5\n",
                 "Clip c:\n    Note/(x)\n",
             ],
@@ -1091,8 +1095,8 @@ fn the_arms_of_a_choice_are_type_checked_against_one_another_whatever_chooses_in
         ),
     ];
     support::assert_rows_in_orders(orders, &symphonyscript_fixtures::vocabulary(), rows);
-    let held = "input held: i32[..4] = [1, 2]\n";
-    let note = "input note = 60\n";
+    let held = "state held([1, 2]): i32[..4]\n";
+    let note = "state note(60)\n";
     let direct = |value: &'static str| -> [&'static str; 3] { [held, note, value] };
     let rows: &[support::Row] = &[
         (
@@ -1156,8 +1160,8 @@ fn the_arms_of_a_choice_are_type_checked_against_one_another_whatever_chooses_in
         ),
     ];
     support::assert_rows_in_orders(orders, &symphonyscript_fixtures::vocabulary(), rows);
-    let flag = "input flag = true\n";
-    let grid = "input rows: i32[3][..10] = [[1, 2, 3]]\n";
+    let flag = "state flag(true)\n";
+    let grid = "state rows([[1, 2, 3]]): i32[3][..10]\n";
     let first = "Clip c:\n    Note/(g(0)[0])\n";
     let read_a = "Clip c:\n    Note/(a[0])\n";
     let rows: &[support::Row] = &[
@@ -1313,24 +1317,24 @@ fn the_arms_of_a_choice_are_type_checked_against_one_another_whatever_chooses_in
         (
             &[
                 held,
-                "state s = (if false then held{1} else [[1]])[0][0]\n",
+                "state s = (if false then held.past(1) else [[1]])[0][0]\n",
                 "Clip c:\n    Note/(s)\n",
             ],
-            &[(Code::TypeMismatch, "if false then held{1} else [[1]]")],
+            &[(Code::TypeMismatch, "if false then held.past(1) else [[1]]")],
         ),
         (
             &[
                 held,
                 "state t = held\n",
-                "state s = (if false then t{1, []} else [[1]])[0][0]\n",
+                "state s = (if false then t.past(1, []) else [[1]])[0][0]\n",
                 "Clip c:\n    Note/(s)\n",
             ],
-            &[(Code::TypeMismatch, "if false then t{1, []} else [[1]]")],
+            &[(Code::TypeMismatch, "if false then t.past(1, []) else [[1]]")],
         ),
         (
             &[
                 held,
-                "state s = (if false then held{1} else [1])[0]\n",
+                "state s = (if false then held.past(1) else [1])[0]\n",
                 "Clip c:\n    Note/(s)\n",
             ],
             &[],
@@ -1497,7 +1501,7 @@ fn the_arms_of_a_choice_are_type_checked_against_one_another_whatever_chooses_in
         ),
     ];
     support::assert_rows_in_orders(orders, &symphonyscript_fixtures::native_vocabulary(), rows);
-    let sec = "input sec = 0\n";
+    let sec = "state sec(0)\n";
     let rows: &[support::Row] = &[
         (
             &[
@@ -1538,9 +1542,9 @@ fn exhaustive_the_arms_of_a_choice_are_type_checked_against_one_another_whatever
 
 fn an_annotation_holds_only_an_initializer_of_its_rows_in(orders: support::Orders) {
     let cells = [
-        "input a: i32[..5] = []\n",
-        "input g: i32[3][..10] = []\n",
-        "input note = 60\n",
+        "state a([]): i32[..5]\n",
+        "state g([]): i32[3][..10]\n",
+        "state note(60)\n",
     ];
     let rows: &[(&str, &str, &[Code])] = &[
         (
@@ -1575,7 +1579,7 @@ fn an_annotation_holds_only_an_initializer_of_its_rows_in(orders: support::Order
             &[],
         ),
         (
-            "state s: i32[..8] = (s{1, []} + [note])[^8..]\n",
+            "state s: i32[..8] = (s.past(1, []) + [note])[^8..]\n",
             "Clip c:\n    Note/(s[0])\n",
             &[],
         ),
@@ -1613,7 +1617,7 @@ fn a_type_whose_length_or_capacity_is_missing_or_malformed_is_a_placeholder() {
         &vocabulary(),
         &[
             (
-                &["input g: i32[..] = [1, 2]\n", read],
+                &["state g([1, 2]): i32[..]\n", read],
                 &[(Code::TypeSyntax, "]")],
             ),
             (
@@ -1621,36 +1625,36 @@ fn a_type_whose_length_or_capacity_is_missing_or_malformed_is_a_placeholder() {
                 &[(Code::TypeSyntax, "]")],
             ),
             (
-                &["input g: i32[] = [1, 2]\n", read],
+                &["state g([1, 2]): i32[]\n", read],
                 &[(Code::TypeSyntax, "]")],
             ),
             (
-                &["input g: i32[..x] = [1, 2]\n", read],
+                &["state g([1, 2]): i32[..x]\n", read],
                 &[(Code::TypeSyntax, "x")],
             ),
             (
-                &["input x = 1\n", "state g: i32[..] = [x, x]\n", read],
+                &["state x(1)\n", "state g: i32[..] = [x, x]\n", read],
                 &[(Code::TypeSyntax, "]")],
             ),
-            (&["input g: i32[..2] = [1, 2]\n", read], &[]),
+            (&["state g([1, 2]): i32[..2]\n", read], &[]),
             (
-                &["input g: i32[..1] = [1, 2]\n", read],
+                &["state g([1, 2]): i32[..1]\n", read],
                 &[(Code::CapacityExceeded, "[1, 2]")],
             ),
             (
-                &["input g: i32[..0x10] = [1, 2]\n", read],
+                &["state g([1, 2]): i32[..0x10]\n", read],
                 &[(Code::TypeSyntax, "0x10")],
             ),
             (
-                &["input g: i32[0b11] = [1, 2, 3]\n", read],
+                &["state g([1, 2, 3]): i32[0b11]\n", read],
                 &[(Code::TypeSyntax, "0b11")],
             ),
             (
-                &["input g: i32[3i32] = [1, 2, 3]\n", read],
+                &["state g([1, 2, 3]): i32[3i32]\n", read],
                 &[(Code::TypeSyntax, "3i32")],
             ),
             (
-                &["input g: i32[..1.5] = [1]\n", read],
+                &["state g([1]): i32[..1.5]\n", read],
                 &[(Code::TypeSyntax, "1.5")],
             ),
             (
@@ -1670,22 +1674,22 @@ fn a_type_whose_length_or_capacity_is_missing_or_malformed_is_a_placeholder() {
                 &[(Code::TypeSyntax, "1.5")],
             ),
             (
-                &["input g: i32[..99999999999999999999] = [1]\n", read],
+                &["state g([1]): i32[..99999999999999999999]\n", read],
                 &[(Code::LengthLimit, "99999999999999999999")],
             ),
             (
-                &["input g: i32[..2147483648] = [1]\n", read],
+                &["state g([1]): i32[..2147483648]\n", read],
                 &[(Code::LengthLimit, "2147483648")],
             ),
-            (&["input g: i32[..1_0] = [1, 2]\n", read], &[]),
-            (&["input g: i32[..2147483647] = [1]\n", read], &[]),
+            (&["state g([1, 2]): i32[..1_0]\n", read], &[]),
+            (&["state g([1]): i32[..2147483647]\n", read], &[]),
         ],
     );
 }
 
 fn a_state_settled_as_a_fixed_array_is_used_as_a_fixed_array_in(orders: support::Orders) {
-    let fixed = "state s = (s{1, [0, 0]} + [note])[1..]\n";
-    let variable = "state r = (r{1, []} + [note])[^8..]\n";
+    let fixed = "state s = (s.past(1, [0, 0]) + [note])[1..]\n";
+    let variable = "state r = (r.past(1, []) + [note])[^8..]\n";
     let rows: &[OrderedRow] = &[
         (
             &[
@@ -1720,7 +1724,7 @@ fn a_state_settled_as_a_fixed_array_is_used_as_a_fixed_array_in(orders: support:
                 NOTE,
                 "let p = s\n",
                 "let probe: i32[2] = p\n",
-                "state s = (z{1, [0, 0]} + [note])[1..]\n",
+                "state s = (z.past(1, [0, 0]) + [note])[1..]\n",
                 "state z = p\n",
                 "Clip c:\n    Note/(probe[1])\n",
             ],
@@ -1758,10 +1762,10 @@ fn exhaustive_a_state_settled_as_a_fixed_array_is_used_as_a_fixed_array() {
 
 fn compile_time_condition_rows(orders: support::Orders, part: usize, parts: usize) {
     let cells = [
-        "input note = 60\n",
-        "input a: i32[..5] = []\n",
-        "input held: i32[..10] = []\n",
-        "input flag = false\n",
+        "state note(60)\n",
+        "state a([]): i32[..5]\n",
+        "state held([]): i32[..10]\n",
+        "state flag(false)\n",
     ];
     let rows: &[OrderedRow] = &[
         (
@@ -1868,7 +1872,7 @@ fn exhaustive_a_compile_time_condition_chooses_its_arm_before_layout_and_capacit
 fn a_compile_time_match_on_a_bare_variant_chooses_its_arm_before_layout_and_capacity_in(
     orders: support::Orders,
 ) {
-    let cell = "input a: i32[..5] = []\n";
+    let cell = "state a([]): i32[..5]\n";
     let probe = "let probe: i32[..5] = m\n";
     let clip = "Clip c:\n    Note/(probe[0])\n";
     let rows: &[OrderedRow] = &[
@@ -1914,7 +1918,7 @@ fn a_compile_time_match_on_a_bare_variant_chooses_its_arm_before_layout_and_capa
     }
     assert_ordered_capacity_in(
         orders,
-        &[cell, "input v = Wave::Saw\n"],
+        &[cell, "state v(Wave::Saw)\n"],
         "match v:\n    Saw: a\n    else: [1, 2, 3, 4, 5, 6, 7]",
         7,
     );
@@ -1938,16 +1942,16 @@ fn exhaustive_a_compile_time_match_on_a_bare_variant_chooses_its_arm_before_layo
 fn a_group_of_states_takes_its_least_capacities_together_in(orders: support::Orders) {
     let pair = [
         NOTE,
-        "state p = (q{1, []} + [note])[^5..]\n",
-        "state q = (p{1, []} + [note, note])[^7..]\n",
+        "state p = (q.past(1, []) + [note])[^5..]\n",
+        "state q = (p.past(1, []) + [note, note])[^7..]\n",
     ];
     assert_ordered_capacity_in(orders, &pair, "p", 5);
     assert_ordered_capacity_in(orders, &pair, "q", 7);
     let ring = [
         NOTE,
-        "state s0 = (s2{1, []} + [note])[^8..]\n",
-        "state s1 = (s0{1, []} + [note])[^8..]\n",
-        "state s2 = (s1{1, []} + [note])[^8..]\n",
+        "state s0 = (s2.past(1, []) + [note])[^8..]\n",
+        "state s1 = (s0.past(1, []) + [note])[^8..]\n",
+        "state s2 = (s1.past(1, []) + [note])[^8..]\n",
     ];
     for state in ["s0", "s1", "s2"] {
         assert_ordered_capacity_in(orders, &ring, state, 8);
@@ -1967,7 +1971,7 @@ fn exhaustive_a_group_of_states_takes_its_least_capacities_together() {
 
 #[test]
 fn a_capacity_reaching_two_to_the_thirty_one_draws_length_limit_where_it_arises() {
-    let big = "input big: i32[..2000000000] = []\n";
+    let big = "state big([]): i32[..2000000000]\n";
     let rows: &[OrderedRow] = &[
         (
             &[
@@ -2000,19 +2004,23 @@ fn a_capacity_reaching_two_to_the_thirty_one_draws_length_limit_where_it_arises(
             &[
                 NOTE,
                 big,
-                "state r = (r{1, []} + [note])[^2147483648..]\n",
+                "state r = (r.past(1, []) + [note])[^2147483648..]\n",
                 "Clip c:\n    Note/(len(r))\n",
             ],
-            &[(Code::LengthLimit, "(r{1, []} + [note])[^2147483648..]", 0)],
+            &[(
+                Code::LengthLimit,
+                "(r.past(1, []) + [note])[^2147483648..]",
+                0,
+            )],
         ),
         (
             &[
                 NOTE,
                 big,
-                "state r = (r{1, []} + [note])[^2147483647..]\n",
+                "state r = (r.past(1, []) + [note])[^2147483647..]\n",
                 "Clip c:\n    Note/(len(r))\n",
             ],
-            &[(Code::LengthLimit, "r{1, []} + [note]", 0)],
+            &[(Code::LengthLimit, "r.past(1, []) + [note]", 0)],
         ),
         (
             &[
@@ -2026,43 +2034,43 @@ fn a_capacity_reaching_two_to_the_thirty_one_draws_length_limit_where_it_arises(
         (
             &[
                 NOTE,
-                "state r = (r{1, []} + [note])[^4611686018427387905..]\n",
+                "state r = (r.past(1, []) + [note])[^4611686018427387905..]\n",
                 "Clip c:\n    Note/(len(r))\n",
             ],
             &[(
                 Code::LengthLimit,
-                "(r{1, []} + [note])[^4611686018427387905..]",
+                "(r.past(1, []) + [note])[^4611686018427387905..]",
                 0,
             )],
         ),
         (
             &[
                 NOTE,
-                "state r = (r{1, []} + [note])[^9223372036854775807..]\n",
+                "state r = (r.past(1, []) + [note])[^9223372036854775807..]\n",
                 "Clip c:\n    Note/(len(r))\n",
             ],
             &[(
                 Code::LengthLimit,
-                "(r{1, []} + [note])[^9223372036854775807..]",
+                "(r.past(1, []) + [note])[^9223372036854775807..]",
                 0,
             )],
         ),
         (
             &[
                 NOTE,
-                "state r = (r{1, []} + [note])[..9223372036854775807]\n",
+                "state r = (r.past(1, []) + [note])[..9223372036854775807]\n",
                 "Clip c:\n    Note/(len(r))\n",
             ],
             &[(
                 Code::LengthLimit,
-                "(r{1, []} + [note])[..9223372036854775807]",
+                "(r.past(1, []) + [note])[..9223372036854775807]",
                 0,
             )],
         ),
         (
             &[
                 NOTE,
-                "state r = (r{1, []} + [note])[^9223372036854775808..]\n",
+                "state r = (r.past(1, []) + [note])[^9223372036854775808..]\n",
                 "Clip c:\n    Note/(len(r))\n",
             ],
             &[(Code::IndexOutOfRange, "9223372036854775808", 0)],
@@ -2070,7 +2078,7 @@ fn a_capacity_reaching_two_to_the_thirty_one_draws_length_limit_where_it_arises(
         (
             &[
                 NOTE,
-                "state r = (r{1, []} + [note])[^8..]\n",
+                "state r = (r.past(1, []) + [note])[^8..]\n",
                 "Clip c:\n    Note/(len(r))\n",
             ],
             &[],
@@ -2084,7 +2092,7 @@ fn a_capacity_reaching_two_to_the_thirty_one_draws_length_limit_where_it_arises(
     assert_ordered_codes(
         &[
             NOTE,
-            "state a = b{1, []} + [note]\n",
+            "state a = b.past(1, []) + [note]\n",
             "state b = a[^2147483648..]\n",
             "Clip c:\n    Note/(len(a))\n",
         ],
@@ -2095,8 +2103,9 @@ fn a_capacity_reaching_two_to_the_thirty_one_draws_length_limit_where_it_arises(
         ("[^9223372036854775807..]", "9223372036854775807"),
         ("[..9223372036854775807]", "9223372036854775807"),
     ] {
-        let text =
-            format!("{NOTE}state r = (r{{1, []}} + [note]){bound}\nClip c:\n    Note/(len(r))\n");
+        let text = format!(
+            "{NOTE}state r = (r.past(1, []) + [note]){bound}\nClip c:\n    Note/(len(r))\n"
+        );
         let found = support::checked(&text);
         assert!(
             found.len() == 1 && found[0].summary.contains(capacity),
@@ -2107,14 +2116,14 @@ fn a_capacity_reaching_two_to_the_thirty_one_draws_length_limit_where_it_arises(
         &[
             NOTE,
             big,
-            "state r = r{1, []} + [note]\n",
+            "state r = r.past(1, []) + [note]\n",
             "Clip c:\n    Note/(len(r))\n",
         ],
         &[Code::UnboundedState],
     );
     assert_ordered_capacity(&[NOTE, big], "big + [1]", 2_000_000_001);
     assert_ordered_capacity(
-        &[NOTE, "state r = (r{1, []} + [note])[^2147483646..]\n"],
+        &[NOTE, "state r = (r.past(1, []) + [note])[^2147483646..]\n"],
         "r",
         2_147_483_646,
     );
@@ -2123,9 +2132,9 @@ fn a_capacity_reaching_two_to_the_thirty_one_draws_length_limit_where_it_arises(
 fn a_runtime_choice_between_a_variable_and_a_fixed_array_is_one_variable_array_wherever_read_in(
     orders: support::Orders,
 ) {
-    let held = "input held: i32[..10] = []\n";
-    let gate = "input gate = false\n";
-    let step = "input step = 0\n";
+    let held = "state held([]): i32[..10]\n";
+    let gate = "state gate(false)\n";
+    let step = "state step(0)\n";
     let chosen = "let s = if gate then held else [0]\n";
     let top = "Clip c:\n    Note/(top)\n";
     let rows: &[support::Row] = &[
@@ -2136,7 +2145,7 @@ fn a_runtime_choice_between_a_variable_and_a_fixed_array_is_one_variable_array_w
             &[
                 held,
                 gate,
-                "state s = if gate then held else s{1, [0]}\n",
+                "state s = if gate then held else s.past(1, [0])\n",
                 "let top = s[^1]\n",
                 top,
             ],
@@ -2156,7 +2165,7 @@ fn a_runtime_choice_between_a_variable_and_a_fixed_array_is_one_variable_array_w
         (
             &[
                 held,
-                "input mode = 0\n",
+                "state mode(0)\n",
                 "let s = match mode:\n    0: held\n    else: [0]\n",
                 "let top = s[0]\n",
                 top,
@@ -2202,7 +2211,7 @@ fn a_runtime_choice_between_a_variable_and_a_fixed_array_is_one_variable_array_w
                 held,
                 gate,
                 chosen,
-                "state t = s[0] + t{1, 0}\n",
+                "state t = s[0] + t.past(1, 0)\n",
                 "Clip c:\n    Note/(t)\n",
             ],
             &[],
@@ -2218,19 +2227,19 @@ fn a_runtime_choice_between_a_variable_and_a_fixed_array_is_one_variable_array_w
         ),
     ];
     support::assert_rows_in_orders(orders, &symphonyscript_fixtures::vocabulary(), rows);
-    let state = "state s = if gate then held else s{1, [0]}\n";
+    let state = "state s = if gate then held else s.past(1, [0])\n";
     for (value, capacity) in [
         ("if gate then held else [0]", 10),
         ("if gate then held else [0, 1, 2]", 10),
     ] {
         assert_capacity(
-            &format!("input held: i32[..10] = []\ninput gate = false\nlet s = {value}\n"),
+            &format!("state held([]): i32[..10]\nstate gate(false)\nlet s = {value}\n"),
             "s",
             capacity,
         );
     }
     assert_capacity(
-        &format!("input held: i32[..10] = []\ninput gate = false\n{state}"),
+        &format!("state held([]): i32[..10]\nstate gate(false)\n{state}"),
         "s",
         10,
     );
@@ -2254,7 +2263,7 @@ fn exhaustive_a_runtime_choice_between_a_variable_and_a_fixed_array_is_one_varia
 
 #[test]
 fn an_array_where_a_single_value_is_expected_is_refused_in_the_positions_own_words() {
-    let held = "input a: i32[..5] = []\n";
+    let held = "state a([]): i32[..5]\n";
     let rows: &[(&[&str], Code, &str, &[&str])] = &[
         (
             &[held, "Clip c:\n    Note/(a)\n"],
@@ -2317,7 +2326,7 @@ fn an_array_where_a_single_value_is_expected_is_refused_in_the_positions_own_wor
         &symphonyscript_fixtures::vocabulary(),
         &[(&[held, "Clip c:\n    Note/(a[0])\n"], &[])],
     );
-    let bytes = "input h: u8[..3] = []\n";
+    let bytes = "state h([]): u8[..3]\n";
     support::assert_rows_in_every_order(
         &support::signature_vocabulary(),
         &[(&[bytes, "Clip c | data=h:\n    Note\n"], &[])],
@@ -2347,17 +2356,17 @@ fn every_diagnostic_carries_a_help_that_states_its_fix() {
         (
             vocabulary,
             &[
-                "input note = 60\n",
-                "state recent = recent{1, []} + [note]\n",
+                "state note(60)\n",
+                "state recent = recent.past(1, []) + [note]\n",
                 "Clip c:\n    Note/(recent[0])\n",
             ],
             Code::UnboundedState,
-            "slice the initializer, as in `(s{1, []} + [x])[^8..]`, to keep its newest elements",
+            "slice the initializer, as in `(s.past(1, []) + [x])[^8..]`, to keep its newest elements",
         ),
         (
             vocabulary,
             &[
-                "input n = 5\n",
+                "state n(5)\n",
                 "fn fib(k): if k < 2 then k else fib(k - 1) + fib(k - 2)\n",
                 "Clip c:\n    Note/(fib(n))\n",
             ],
@@ -2367,17 +2376,17 @@ fn every_diagnostic_carries_a_help_that_states_its_fix() {
         (
             vocabulary,
             &[
-                "input x = 1\n",
-                "state[2] s = x + s{3, 0}\n",
+                "state x(1)\n",
+                "state[2] s = x + s.past(3, 0)\n",
                 "Clip c:\n    Note when s > 0\n",
             ],
-            Code::HistoryDepth,
-            "declare the state as `state[3] s`, which covers every read of it",
+            Code::CellCapacity,
+            "remove `[N]`, which states the pending capacity of a host-fed `stream` or `channel` alone",
         ),
         (
             vocabulary,
             &[
-                "input x = 1\n",
+                "state x(1)\n",
                 "state s: i32[..2] = [x, x, x]\n",
                 "Clip c:\n    Note when s[0] > 0\n",
             ],
@@ -2387,7 +2396,7 @@ fn every_diagnostic_carries_a_help_that_states_its_fix() {
         (
             support::signature_vocabulary,
             &[
-                "input x = 1\n",
+                "state x(1)\n",
                 "Clip c | data=[x, x, x, x, x, x, x, x, x]:\n    Note\n",
             ],
             Code::CapacityExceeded,
@@ -2395,14 +2404,14 @@ fn every_diagnostic_carries_a_help_that_states_its_fix() {
         ),
         (
             support::signature_vocabulary,
-            &["input h: u8[..3] = []\n", "Clip c | fixed=h:\n    Note\n"],
+            &["state h([]): u8[..3]\n", "Clip c | fixed=h:\n    Note\n"],
             Code::VariableArray,
             "pass a fixed `u8[3]` here, such as an input annotated `u8[3]`",
         ),
         (
             support::signature_vocabulary,
             &[
-                "input xs: u8[..3] = []\n",
+                "state xs([]): u8[..3]\n",
                 "Clip c:\n    Note/(fixed3(xs))\n",
             ],
             Code::VariableArray,
@@ -2410,7 +2419,7 @@ fn every_diagnostic_carries_a_help_that_states_its_fix() {
         ),
         (
             support::signature_vocabulary,
-            &["input f = 1.5\n", "Clip c | three=[f, 2]:\n    Note\n"],
+            &["state f(1.5)\n", "Clip c | three=[f, 2]:\n    Note\n"],
             Code::FloatToInteger,
             "convert explicitly, as in `i32(x)`",
         ),
@@ -2426,8 +2435,8 @@ fn every_diagnostic_carries_a_help_that_states_its_fix() {
         (
             vocabulary,
             &[
-                "input x = 1\n",
-                "state s = x{1, 0.5}\n",
+                "state x(1)\n",
+                "state s = x.past(1, 0.5)\n",
                 "Clip c:\n    Note when s > 0\n",
             ],
             Code::TypeMismatch,
@@ -2541,8 +2550,8 @@ fn every_diagnostic_carries_a_help_that_states_its_fix() {
         (
             vocabulary,
             &[
-                "input a = 0\n",
-                "state s = a{1, 0 } }\n",
+                "state a(0)\n",
+                "state s = a.past(1, 0 ) }\n",
                 "Clip c:\n    Note/(s)\n",
             ],
             Code::UnexpectedCharacter,
@@ -2551,8 +2560,8 @@ fn every_diagnostic_carries_a_help_that_states_its_fix() {
         (
             vocabulary,
             &[
-                "input a = 0\n",
-                "state s = a{1, 0 } )\n",
+                "state a(0)\n",
+                "state s = a.past(1, 0 ) )\n",
                 "Clip c:\n    Note/(s)\n",
             ],
             Code::StateSyntax,
@@ -2578,7 +2587,7 @@ fn every_diagnostic_carries_a_help_that_states_its_fix() {
         ),
         (
             vocabulary,
-            &["input x: u8[..2] = \"GET\"\n", "Clip c:\n    Note/(x[0])\n"],
+            &["state x(\"GET\"): u8[..2]\n", "Clip c:\n    Note/(x[0])\n"],
             Code::CapacityExceeded,
             "write a string of at most 2 bytes, or annotate a capacity of at least 3, as in `u8[..3]`",
         ),
@@ -2597,7 +2606,7 @@ fn every_diagnostic_carries_a_help_that_states_its_fix() {
         (
             support::signature_vocabulary,
             &[
-                "input f = false\n",
+                "state f(false)\n",
                 "Clip c | data=(if f then \"GET\" else \"ABCDEFGHI\"):\n    Note\n",
             ],
             Code::CapacityExceeded,
@@ -2606,7 +2615,7 @@ fn every_diagnostic_carries_a_help_that_states_its_fix() {
         (
             support::signature_vocabulary,
             &[
-                "input f = false\n",
+                "state f(false)\n",
                 "let r: u8[..2] = if f then \"GET\" else \"AB\"\n",
                 "Clip c | data=r:\n    Note\n",
             ],
@@ -2616,7 +2625,7 @@ fn every_diagnostic_carries_a_help_that_states_its_fix() {
         (
             support::signature_vocabulary,
             &[
-                "input held: i32[..9] = []\n",
+                "state held([]): i32[..9]\n",
                 "Clip c | data=held:\n    Note\n",
             ],
             Code::CapacityExceeded,
@@ -2624,14 +2633,14 @@ fn every_diagnostic_carries_a_help_that_states_its_fix() {
         ),
         (
             vocabulary,
-            &["input x: i32[..1] = [1, 2]\n", "Clip c:\n    Note/(x[0])\n"],
+            &["state x([1, 2]): i32[..1]\n", "Clip c:\n    Note/(x[0])\n"],
             Code::CapacityExceeded,
             "slice the value to its newest element with `[^1..]`",
         ),
         (
             vocabulary,
             &[
-                "input b: i32[..10][3] = []\n",
+                "state b([]): i32[..10][3]\n",
                 "Clip c:\n    Note/(b[0][0])\n",
             ],
             Code::TypeSyntax,
@@ -2640,8 +2649,8 @@ fn every_diagnostic_carries_a_help_that_states_its_fix() {
         (
             vocabulary,
             &[
-                "input a = 0\n",
-                "state[x] t = a{1}\n",
+                "state a(0)\n",
+                "state[x] t = a.past(1)\n",
                 "Clip c:\n    Note/(t)\n",
             ],
             Code::StateSyntax,
@@ -2728,32 +2737,32 @@ fn every_diagnostic_carries_a_help_that_states_its_fix() {
         &[
             (
                 &[
-                    "input a = 0\n",
-                    "state s = a{1, 0 }\n",
+                    "state a(0)\n",
+                    "state s = a.past(1, 0 )\n",
                     "Clip c:\n    Note/(s)\n",
                 ],
                 &[],
             ),
             (&["Clip c:\n    Note/(1\n        + 2)\n"], &[]),
             (
-                &["input x: u8[..3] = \"GET\"\n", "Clip c:\n    Note/(x[0])\n"],
+                &["state x(\"GET\"): u8[..3]\n", "Clip c:\n    Note/(x[0])\n"],
                 &[],
             ),
             (
-                &["input x: u8[..2] = \"GE\"\n", "Clip c:\n    Note/(x[0])\n"],
+                &["state x(\"GE\"): u8[..2]\n", "Clip c:\n    Note/(x[0])\n"],
                 &[],
             ),
             (
                 &[
-                    "input b: i32[3][..10] = []\n",
+                    "state b([]): i32[3][..10]\n",
                     "Clip c:\n    Note/(b[0][0])\n",
                 ],
                 &[],
             ),
             (
                 &[
-                    "input a = 0\n",
-                    "state[1] t = a{1}\n",
+                    "state a(0)\n",
+                    "state t = a.past(1)\n",
                     "Clip c:\n    Note/(t)\n",
                 ],
                 &[],
@@ -2765,14 +2774,14 @@ fn every_diagnostic_carries_a_help_that_states_its_fix() {
         &[
             (
                 &[
-                    "input f = false\n",
+                    "state f(false)\n",
                     "Clip c | data=(if f then \"GET\" else \"ABCDEFGH\"):\n    Note\n",
                 ],
                 &[],
             ),
             (
                 &[
-                    "input f = false\n",
+                    "state f(false)\n",
                     "let r: u8[..3] = if f then \"GET\" else \"AB\"\n",
                     "Clip c | data=r:\n    Note\n",
                 ],
@@ -2781,8 +2790,8 @@ fn every_diagnostic_carries_a_help_that_states_its_fix() {
         ],
     );
     let depth = [
-        "input a = 0\n",
-        "state[0] t = a{1}\n",
+        "state a(0)\n",
+        "state[0] t = a.past(1)\n",
         "Clip c:\n    Note/(t)\n",
     ];
     for order in support::permutations(&depth) {
@@ -2795,8 +2804,8 @@ fn every_diagnostic_carries_a_help_that_states_its_fix() {
         assert_eq!(
             summaries,
             [(
-                Code::HistoryDepth,
-                "this history read reaches 1 step back, deeper than `[0]`; `[1]` covers every read of this state"
+                Code::CellCapacity,
+                "`[N]` states the capacity of a host-fed `stream` or `channel`, and this cell is derived"
             )],
             "{text}"
         );
@@ -2824,8 +2833,8 @@ fn every_diagnostic_carries_a_help_that_states_its_fix() {
 
 #[test]
 fn an_iterable_that_reads_a_cell_draws_reactive_iterable_whatever_its_layout() {
-    let held = "input held: i32[..4] = [1, 2]\n";
-    let n = "input n = 1\n";
+    let held = "state held([1, 2]): i32[..4]\n";
+    let n = "state n(1)\n";
     let looping = |iterable: &str| format!("Clip c:\n    for w in {iterable}:\n        Note/w\n");
     let (whole, sliced, joined, stated, cut) = (
         looping("held"),
@@ -2839,7 +2848,7 @@ fn an_iterable_that_reads_a_cell_draws_reactive_iterable_whatever_its_layout() {
         (&[held, &sliced], &[(Code::ReactiveIterable, "held[..1]")]),
         (&[held, &joined], &[(Code::ReactiveIterable, "held + [1]")]),
         (
-            &[n, "state s = (s{1, []} + [n])[^2..]\n", &stated],
+            &[n, "state s = (s.past(1, []) + [n])[^2..]\n", &stated],
             &[(Code::ReactiveIterable, "s")],
         ),
         (
@@ -2860,7 +2869,7 @@ fn an_iterable_that_reads_a_cell_draws_reactive_iterable_whatever_its_layout() {
         ),
         (
             &[
-                "input n = [1, 2]\n",
+                "state n([1, 2])\n",
                 "Clip c:\n    for w in n:\n        Note/w\n",
             ],
             &[(Code::ReactiveIterable, "n")],
@@ -2900,7 +2909,7 @@ fn an_iterable_that_reads_a_cell_draws_reactive_iterable_whatever_its_layout() {
     support::assert_rows_in_every_order(&symphonyscript_fixtures::native_vocabulary(), native_rows);
     let placing = |values: &str| {
         format!(
-            "input held: i32[..4] = [{values}]\nRoot r:\n    Link: r\n    for w in held:\n        Item\n"
+            "state held([{values}]): i32[..4]\nRoot r:\n    Link: r\n    for w in held:\n        Item\n"
         )
     };
     let (two, three) = (placing("1, 2"), placing("1, 2, 3"));

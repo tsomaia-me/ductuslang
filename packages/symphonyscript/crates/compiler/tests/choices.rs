@@ -294,7 +294,7 @@ struct Arm {
 
 fn variable_input(name: &str, element: Element) -> Option<String> {
     Some(format!(
-        "input {name}: {}[..4] = []\n",
+        "state {name}([]): {}[..4]\n",
         element_type(element)?
     ))
 }
@@ -359,7 +359,7 @@ fn arm(form: Form, content: Content, index: usize, hosted: bool) -> Option<Arm> 
             let literal = element_literal(element);
             Some(Arm {
                 items: vec![format!(
-                    "state {name} = ({name}{{1, []}} + [{literal}])[^4..]\n"
+                    "state {name} = ({name}.past(1, []) + [{literal}])[^4..]\n"
                 )],
                 text: name,
                 locals: Vec::new(),
@@ -408,7 +408,7 @@ fn arm(form: Form, content: Content, index: usize, hosted: bool) -> Option<Arm> 
         (Form::Choice, _) => {
             let gate = format!("n{index}");
             let (value, mut items) = held(content)?;
-            items.push(format!("input {gate} = false\n"));
+            items.push(format!("state {gate}(false)\n"));
             Some(Arm {
                 text: format!("(if {gate} then {value} else {value})"),
                 items,
@@ -441,10 +441,10 @@ impl Chooser {
             Chooser::True | Chooser::False | Chooser::Parameter | Chooser::ParameterMatch => {
                 return Vec::new();
             }
-            Chooser::Flag => "input flag = false\n",
+            Chooser::Flag => "state flag(false)\n",
             Chooser::Enum => "let w = Wave::Saw\n",
-            Chooser::EnumInput => "input w = Wave::Saw\n",
-            Chooser::Integer => "input k = 1\n",
+            Chooser::EnumInput => "state w(Wave::Saw)\n",
+            Chooser::Integer => "state k(1)\n",
         };
         vec![item.to_string()]
     }
@@ -675,7 +675,7 @@ impl Position {
             ),
             Position::OuterArm => (
                 vec![
-                    "input gate = false\n".to_string(),
+                    "state gate(false)\n".to_string(),
                     read(&format!("if gate then ({SLOT}) else ({other})"), dimensions),
                 ],
                 None,
@@ -833,7 +833,7 @@ fn value_twin(relation: Relation, contents: (Content, Content)) -> Arm {
     let (first, second) = (unified(relation, contents.0), unified(relation, contents.1));
     let element = first.element();
     let ty = element_type(element).expect("the arms of an agreeing pair hold numbers");
-    let scalar = format!("input tw: {ty} = {}\n", element_zero(element));
+    let scalar = format!("state tw({}): {ty}\n", element_zero(element));
     let (text, declared) = match (first, second) {
         (Content::Scalar(_), _) => ("(tw * 1)".to_string(), scalar),
         (
@@ -855,7 +855,7 @@ fn value_twin(relation: Relation, contents: (Content, Content)) -> Arm {
         (Content::Fixed { .. } | Content::Variable(_), _) => (
             "(tw + [])".to_string(),
             format!(
-                "input tw: {ty}[..{}] = []\n",
+                "state tw([]): {ty}[..{}]\n",
                 capacity(first).max(capacity(second))
             ),
         ),

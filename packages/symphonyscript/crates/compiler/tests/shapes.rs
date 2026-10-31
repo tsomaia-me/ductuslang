@@ -11,36 +11,36 @@ struct Base {
 
 const ROWS: [Base; 3] = [
     Base {
-        declaration: "input v: i32[..5] = [1, 2, 3]\n",
-        twin: "input v = [1, 2, 3]\n",
+        declaration: "state v([1, 2, 3]): i32[..5]\n",
+        twin: "state v([1, 2, 3])\n",
         value: "v",
     },
     Base {
-        declaration: "input v: i32[..5] = [1, 2, 3]\n",
-        twin: "input v = [1, 2, 3]\n",
+        declaration: "state v([1, 2, 3]): i32[..5]\n",
+        twin: "state v([1, 2, 3])\n",
         value: "v[0..]",
     },
     Base {
-        declaration: "input v: i32[..5] = [1, 2, 3]\ninput k = false\n",
-        twin: "input v = [1, 2, 3]\ninput k = false\n",
+        declaration: "state v([1, 2, 3]): i32[..5]\nstate k(false)\n",
+        twin: "state v([1, 2, 3])\nstate k(false)\n",
         value: "(if k then v else v)",
     },
 ];
 
 const GRIDS: [Base; 3] = [
     Base {
-        declaration: "input w: i32[2][..5] = [[1, 2], [3, 4], [5, 6]]\n",
-        twin: "input w = [[1, 2], [3, 4], [5, 6]]\n",
+        declaration: "state w([[1, 2], [3, 4], [5, 6]]): i32[2][..5]\n",
+        twin: "state w([[1, 2], [3, 4], [5, 6]])\n",
         value: "w",
     },
     Base {
-        declaration: "input w: i32[2][..5] = [[1, 2], [3, 4], [5, 6]]\n",
-        twin: "input w = [[1, 2], [3, 4], [5, 6]]\n",
+        declaration: "state w([[1, 2], [3, 4], [5, 6]]): i32[2][..5]\n",
+        twin: "state w([[1, 2], [3, 4], [5, 6]])\n",
         value: "w[0..]",
     },
     Base {
-        declaration: "input w: i32[2][..5] = [[1, 2], [3, 4], [5, 6]]\ninput k = false\n",
-        twin: "input w = [[1, 2], [3, 4], [5, 6]]\ninput k = false\n",
+        declaration: "state w([[1, 2], [3, 4], [5, 6]]): i32[2][..5]\nstate k(false)\n",
+        twin: "state w([[1, 2], [3, 4], [5, 6]])\nstate k(false)\n",
         value: "(if k then w else w)",
     },
 ];
@@ -123,7 +123,7 @@ fn exhaustive_an_element_read_has_its_elements_shape_whatever_array_it_reads() {
 #[test]
 fn a_choice_whose_condition_an_error_leaves_without_a_value_is_laid_out_as_a_runtime_choice() {
     let compiler = Compiler::new(&vocabulary()).expect("the vocabulary compiles");
-    let declarations = ["input k: i32[..4] = [1]\n", "input note = 60\n"];
+    let declarations = ["state k([1]): i32[..4]\n", "state note(60)\n"];
     for condition in [
         "[0] > 1",
         "[note] > 1",

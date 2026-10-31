@@ -40,7 +40,6 @@ const LEXER_AND_PARSER_CODES: &[Code] = &[
     Code::MatchPosition,
     Code::MixedArguments,
     Code::ConversionSyntax,
-    Code::InputSyntax,
     Code::LetSyntax,
     Code::StateSyntax,
     Code::FnSyntax,

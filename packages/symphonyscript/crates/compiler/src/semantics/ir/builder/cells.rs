@@ -28,7 +28,7 @@ impl HirBuilder<'_> {
                 .then(|| digits_value(token.text()))
                 .flatten()
         });
-        let misplaced_capacity = node.has_capacity() && (rule != (word == CellWord::State));
+        let misplaced_capacity = node.has_capacity() && (rule || word == CellWord::State);
         if misplaced_capacity && let Some(range) = brackets(node) {
             let summary = if rule {
                 "`[N]` states the capacity of a host-fed `stream` or `channel`, and this cell is derived"
@@ -43,7 +43,7 @@ impl HirBuilder<'_> {
             let value = self.expr(init.value(), loc);
             let input = Input {
                 name,
-                word: Some(word),
+                word,
                 capacity: capacity
                     .filter(|_| word != CellWord::State)
                     .map(|value| u32::try_from(value).unwrap_or(u32::MAX)),
@@ -56,10 +56,6 @@ impl HirBuilder<'_> {
             self.hir.top.push(Top::Input(id));
             return;
         }
-        let depth = node
-            .capacity()
-            .filter(|_| rule && word == CellWord::State)
-            .map(|token| (capacity, self.loc(token.range())));
         let init = node
             .init()
             .map(|init| self.expr(init.value(), self.loc(init.syntax().range())));
@@ -80,7 +76,6 @@ impl HirBuilder<'_> {
         let decl = StateDecl {
             name,
             word,
-            depth,
             init,
             clock,
             ty,

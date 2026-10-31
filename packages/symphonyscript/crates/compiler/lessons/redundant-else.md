@@ -5,7 +5,7 @@ An `else:` after arms that cover every value is an error. (SPEC §5.4)
 It could never be chosen.
 
 ```sym-error
-input b = true
+state b(true)
 let l = match b:
     true: 1
     false: 2
@@ -15,7 +15,7 @@ let l = match b:
 `true` and `false` cover every `bool`.
 
 ```sym
-input b = true
+state b(true)
 let l = match b:
     true: 1
     false: 2

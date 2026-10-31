@@ -56,7 +56,7 @@ fn state_capacity(engine: &Engine<'_>, state: u32) -> Option<u32> {
 
 fn recent(bound: u64) -> String {
     format!(
-        "input note = 60\nstate recent = (recent{{1, []}} + [note])[^{bound}..]\nClip c:\n    Note/(recent[^1])\n"
+        "state note(60)\nstate recent = (recent.past(1, []) + [note])[^{bound}..]\nClip c:\n    Note/(recent[^1])\n"
     )
 }
 
@@ -75,11 +75,11 @@ fn a_state_bounded_by_a_slice_finds_its_capacity_in_work_that_does_not_depend_on
 }
 
 fn ring_rounds(states: u32) -> u64 {
-    let mut text = String::from("input note = 60\n");
+    let mut text = String::from("state note(60)\n");
     for state in 0..states {
         let previous = (state + states - 1) % states;
         text.push_str(&format!(
-            "state s{state} = (s{previous}{{1, []}} + [note])[^8..]\n"
+            "state s{state} = (s{previous}.past(1, []) + [note])[^8..]\n"
         ));
     }
     text.push_str("Clip c:\n    Note/(s0[0])\n");
@@ -108,14 +108,14 @@ fn settlement_visits(states: u32, reversed: bool, read: impl Fn(u32) -> u32) -> 
     let mut lines: Vec<String> = (0..states)
         .map(|state| {
             let target = read(state);
-            format!("state s{state} = (s{target}{{1, []}} + [note])[^8..]\n")
+            format!("state s{state} = (s{target}.past(1, []) + [note])[^8..]\n")
         })
         .collect();
     if reversed {
         lines.reverse();
     }
     let text = format!(
-        "input note = 60\n{}Clip c:\n    Note/(s0[0])\n",
+        "state note(60)\n{}Clip c:\n    Note/(s0[0])\n",
         lines.concat()
     );
     let (diagnostics, visits) =
@@ -165,21 +165,21 @@ fn kind_walk_program(shape: &str, states: u32) -> String {
             let next = (state + 1) % states;
             match shape {
                 "forward ring" | "reversed ring" => {
-                    format!("state s{state} = (s{previous}{{1, []}} + [note])[^8..]\n")
+                    format!("state s{state} = (s{previous}.past(1, []) + [note])[^8..]\n")
                 }
-                "integer chain" if state == 0 => String::from("state p0 = y{1, 0}\n"),
-                "integer chain" => format!("state p{state} = p{previous}{{1, 0}}\n"),
-                "float chain" if state == 0 => String::from("state p0 = y{1, 0.0}\n"),
-                "float chain" => format!("state p{state} = p{previous}{{1, 0.0}}\n"),
+                "integer chain" if state == 0 => String::from("state p0 = y.past(1, 0)\n"),
+                "integer chain" => format!("state p{state} = p{previous}.past(1, 0)\n"),
+                "float chain" if state == 0 => String::from("state p0 = y.past(1, 0.0)\n"),
+                "float chain" => format!("state p{state} = p{previous}.past(1, 0.0)\n"),
                 "float at the end" if state == last => {
-                    format!("state p{state} = p0{{1, 0.5}}\n")
+                    format!("state p{state} = p0.past(1, 0.5)\n")
                 }
-                "float at the end" => format!("state p{state} = p{next}{{1, 0}}\n"),
+                "float at the end" => format!("state p{state} = p{next}.past(1, 0)\n"),
                 "float at the start" if state == 0 => {
-                    format!("state p0 = p{last}{{1, 0.5}}\n")
+                    format!("state p0 = p{last}.past(1, 0.5)\n")
                 }
-                "float at the start" => format!("state p{state} = p{previous}{{1, 0}}\n"),
-                _ => format!("state p{state} = y{{1, 0}}\n"),
+                "float at the start" => format!("state p{state} = p{previous}.past(1, 0)\n"),
+                _ => format!("state p{state} = y.past(1, 0)\n"),
             }
         })
         .collect();
@@ -190,22 +190,22 @@ fn kind_walk_program(shape: &str, states: u32) -> String {
     };
     let (head, read) = match shape {
         "forward ring" | "reversed ring" => (
-            "input note = 60\n",
+            "state note(60)\n",
             format!("Clip c:\n    Note/(s{last}[0])\n"),
         ),
         "integer chain" => (
-            "input x = 1\nlet y = x * 2\n",
+            "state x(1)\nlet y = x * 2\n",
             format!("Clip c:\n    Note/(p{last})\n"),
         ),
         "float chain" => (
-            "input x = 1\nlet y = x * 0.5\n",
+            "state x(1)\nlet y = x * 0.5\n",
             format!("Clip c:\n    Note/(p{last})\n"),
         ),
         "float at the end" | "float at the start" => {
             ("", String::from("Clip c:\n    Note | brightness=p0\n"))
         }
         _ => (
-            "input x = 1.5\nlet y = x * 2\n",
+            "state x(1.5)\nlet y = x * 2\n",
             format!("Clip c:\n    Note | brightness=p{last}\n"),
         ),
     };
@@ -301,7 +301,7 @@ fn wire_cycles_are_found_in_work_linear_in_the_instances_and_wires() {
 
 #[test]
 fn states_whose_history_reads_reach_one_another_take_their_least_capacities_together() {
-    let text = "input note = 60\nstate p = (q{1, []} + [note])[^3..]\nstate q = p{1, []} + [1]\nClip c:\n    Note/(p[0] + q[0])\n";
+    let text = "state note(60)\nstate p = (q.past(1, []) + [note])[^3..]\nstate q = p.past(1, []) + [1]\nClip c:\n    Note/(p[0] + q[0])\n";
     let (diagnostics, capacities) = analyzed(&vocabulary(), text, |engine| {
         (state_capacity(engine, 0), state_capacity(engine, 1))
     });
@@ -312,8 +312,8 @@ fn states_whose_history_reads_reach_one_another_take_their_least_capacities_toge
 #[test]
 fn a_state_settled_as_a_fixed_array_expands_a_loop_over_its_length() {
     let items = [
-        "input note = 60\n",
-        "state s = (s{1, [0, 0]} + [note])[1..]\n",
+        "state note(60)\n",
+        "state s = (s.past(1, [0, 0]) + [note])[1..]\n",
         "Clip c:\n    for i in 0..len(s):\n        Note/(s[i])\n",
     ];
     for order in [
@@ -612,7 +612,7 @@ fn read_walk(text: &str) -> u64 {
 }
 
 fn walk_program(levels: usize, body: &str) -> String {
-    let mut text = String::from("input held: i32[..4] = []\n");
+    let mut text = String::from("state held([]): i32[..4]\n");
     for level in 0..levels {
         let next = format!("walk{}(", level + 1);
         text.push_str(&format!(
@@ -627,7 +627,7 @@ fn walk_program(levels: usize, body: &str) -> String {
 }
 
 fn chain_program(functions: usize) -> String {
-    let mut text = String::from("input held: i32[..4] = []\n");
+    let mut text = String::from("state held([]): i32[..4]\n");
     for function in 0..functions {
         let rest = if function + 1 < functions {
             format!("a + chain{}(i + 1)", function + 1)
@@ -733,7 +733,7 @@ fn a_compile_time_match_on_a_bare_variant_computes_its_chosen_arm() {
 
 #[test]
 fn a_choice_whose_arms_agree_in_shape_computes_its_chosen_arm() {
-    let held = "input held: i32[..4] = [1, 2]\n";
+    let held = "state held([1, 2]): i32[..4]\n";
     let f = "fn f(n): if n > 3 then [1] else [1] + f(n + 1)\n";
     let rows: [(&[&str], i128); 3] = [
         (&[held, "Clip c:\n    Note/(if false then 7 else 5)\n"], 5),
@@ -779,7 +779,7 @@ fn a_compile_time_choice_computes_the_arm_it_takes_beside_a_faulty_arm_it_does_n
 #[test]
 fn a_qualified_variant_in_an_array_that_only_len_reads_computes_its_length() {
     for text in in_every_order(&[
-        "input w = Wave::Saw\n",
+        "state w(Wave::Saw)\n",
         "Clip c:\n    Note/(60 + len([w]))\n",
     ]) {
         let (diagnostics, value) = analyzed(&vocabulary(), &text, |engine| {
@@ -808,7 +808,7 @@ fn a_call_beside_the_inline_limit_computes_its_value() {
         ),
         (
             &[
-                "input note = 60\n",
+                "state note(60)\n",
                 "let cells = [note, note, note]\n",
                 "fn r(i): if i >= len(cells) then 0 else r(i + 1) + 1\n",
                 "Clip c:\n    Note/(60 + r(0))\n",
@@ -818,7 +818,7 @@ fn a_call_beside_the_inline_limit_computes_its_value() {
         ),
         (
             &[
-                "input held: i32[..4] = []\n",
+                "state held([]): i32[..4]\n",
                 "let cells = [len(held), 1]\n",
                 "fn r(i): if i >= len(cells) then 0 else r(i + 1) + 1\n",
                 "Clip c:\n    Note/(60 + r(0))\n",
@@ -841,7 +841,7 @@ fn a_call_beside_the_inline_limit_computes_its_value() {
         ),
         (
             &[
-                "input fixed: i32[2] = [1, 2]\n",
+                "state fixed([1, 2]): i32[2]\n",
                 "fn r(i): if i >= len(fixed) then 0 else r(i + 1) + 1\n",
                 "Clip c:\n    Note/(60 + r(0))\n",
             ],
@@ -850,7 +850,7 @@ fn a_call_beside_the_inline_limit_computes_its_value() {
         ),
         (
             &[
-                "input fixed: i32[2] = [1, 2]\n",
+                "state fixed([1, 2]): i32[2]\n",
                 "fn h(x): x + 1\n",
                 "fn r(i): if i >= len(fixed) then 0 else r(i + 1) + h(h(h(i)))\n",
                 "Clip c:\n    Note/(60 + r(0))\n",
@@ -983,7 +983,7 @@ fn product_types(text: &str) -> (Option<Scalar>, Vec<Option<Scalar>>, Option<Sca
 
 #[test]
 fn a_flexible_float_meeting_a_fixed_u8_operand_computes_in_f32() {
-    let input = "input b: u8 = 3\n";
+    let input = "state b(3): u8\n";
     let rows: &[(&[&str], Scalar)] = &[
         (
             &[input, "Clip c:\n    Note when b * 0.5 > 1\n"],
@@ -991,7 +991,7 @@ fn a_flexible_float_meeting_a_fixed_u8_operand_computes_in_f32() {
         ),
         (&["Clip c:\n    Note when u8(3) * 0.5 > 1\n"], Scalar::F32),
         (
-            &["input n = 4\n", "Clip c:\n    Note when n * 0.5 > 1\n"],
+            &["state n(4)\n", "Clip c:\n    Note when n * 0.5 > 1\n"],
             Scalar::F64,
         ),
     ];
@@ -1318,19 +1318,19 @@ fn stress_a_layout_walk_over_a_chain_of_slices_costs_work_linear_in_the_chain() 
     let chains: [Chain; 3] = [
         |n| {
             format!(
-                "input note = 60\nstate s = (s{{1, []}} + [note]){}\nClip c:\n    Note/(s[0])\n",
+                "state note(60)\nstate s = (s.past(1, []) + [note]){}\nClip c:\n    Note/(s[0])\n",
                 "[^8..]".repeat(n)
             )
         },
         |n| {
             format!(
-                "input note = 60\nstate s = [note, note, note]\nlet t = s{}\nClip c:\n    Note/(len(t) + note)\n",
+                "state note(60)\nstate s = [note, note, note]\nlet t = s{}\nClip c:\n    Note/(len(t) + note)\n",
                 "[1..]".repeat(n)
             )
         },
         |n| {
             format!(
-                "input held = [1, 2, 3]\nstate s = held{{1}}{}\nClip c:\n    Note/(len(s))\n",
+                "state held([1, 2, 3])\nstate s = held.past(1){}\nClip c:\n    Note/(len(s))\n",
                 "[1..]".repeat(n)
             )
         },
@@ -1351,15 +1351,14 @@ fn stress_a_layout_walk_over_a_chain_of_slices_costs_work_linear_in_the_chain() 
 fn nested_choices(depth: usize, runtime: bool) -> String {
     let condition = if runtime { "flag" } else { "false" };
     format!(
-        "input held: i32[..4] = [1, 2]\ninput flag = true\nClip c:\n    Note/((if false then {}held{} else [[1]])[0][0])\n",
+        "state held([1, 2]): i32[..4]\nstate flag(true)\nClip c:\n    Note/((if false then {}held{} else [[1]])[0][0])\n",
         format!("(if {condition} then ").repeat(depth),
         " else [1, 2])".repeat(depth)
     )
 }
 
 fn let_choices(depth: usize, _: bool) -> String {
-    let mut text =
-        String::from("input held: i32[..4] = [1, 2]\ninput flag = true\nlet c0 = held\n");
+    let mut text = String::from("state held([1, 2]): i32[..4]\nstate flag(true)\nlet c0 = held\n");
     for level in 1..=depth {
         text.push_str(&format!(
             "let c{level} = if flag then c{} else c{}\n",
@@ -1375,7 +1374,7 @@ fn let_choices(depth: usize, _: bool) -> String {
 
 fn nested_joins(depth: usize, _: bool) -> String {
     format!(
-        "input held: i32[..4] = [1, 2]\nClip c:\n    Note/((if false then held{} else [[1]])[0][0])\n",
+        "state held([1, 2]): i32[..4]\nClip c:\n    Note/((if false then held{} else [[1]])[0][0])\n",
         " + [1]".repeat(depth)
     )
 }
@@ -1528,7 +1527,7 @@ fn three_vocabulary() -> symphonyscript_core::Vocabulary {
 
 fn joined_let(name: &str, joins: u32) -> String {
     format!(
-        "input held: i32[..1] = []\nlet {name} = held{}\n",
+        "state held([]): i32[..1]\nlet {name} = held{}\n",
         " + [1]".repeat(usize::try_from(joins).unwrap_or(0))
     )
 }
@@ -1553,7 +1552,7 @@ fn attribute_walk(positions: u32, joins: u32) -> u64 {
 
 fn state_walk(states: u32, joins: u32, history: bool) -> u64 {
     let mut text = joined_let("t", joins);
-    let read = if history { "t{1, []}" } else { "t" };
+    let read = if history { "t.past(1, [])" } else { "t" };
     for state in 0..states {
         text.push_str(&format!("state s{state} = {read}[^2..]\n"));
     }
@@ -1790,7 +1789,7 @@ fn a_recursive_call_over_a_fixed_choice_computes_its_count() {
         "let pick = if gate then [1, 2] else [3, 4]\n",
     ] {
         let text = format!(
-            "input held: i32[..4] = [1, 2]\ninput gate = false\n{pick}fn r(i): if i >= len(pick) then 0 else r(i + 1) + 1\nClip c:\n    Note/(60 + r(0))\n"
+            "state held([1, 2]): i32[..4]\nstate gate(false)\n{pick}fn r(i): if i >= len(pick) then 0 else r(i + 1) + 1\nClip c:\n    Note/(60 + r(0))\n"
         );
         let (diagnostics, value) = analyzed(&vocabulary(), &text, |engine| {
             attr_value(engine, "pitch", EvalTy::I32)

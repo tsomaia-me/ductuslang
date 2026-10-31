@@ -8,8 +8,7 @@ use crate::syntax::token::Token;
 
 pub(super) fn starts_line(line: &LineStart<'_>, text: &str, vocabulary: &Vocabulary) -> bool {
     match line.first.kind {
-        SyntaxKind::InputKw
-        | SyntaxKind::LetKw
+        SyntaxKind::LetKw
         | SyntaxKind::StateKw
         | SyntaxKind::StreamKw
         | SyntaxKind::ChannelKw

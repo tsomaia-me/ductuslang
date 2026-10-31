@@ -77,9 +77,9 @@ const POSITIONS: [Position; 12] = [
 ];
 
 const ARGUMENTS: [(&str, &str); 3] = [
-    ("input n = 1\n", "n"),
-    ("input n = 1\nlet r = n + 1\n", "r"),
-    ("input n = 1\nstate q = n\n", "q"),
+    ("state n(1)\n", "n"),
+    ("state n(1)\nlet r = n + 1\n", "r"),
+    ("state n(1)\nstate q = n\n", "q"),
 ];
 
 impl Position {
@@ -198,7 +198,7 @@ fn a_native_call_that_runs_at_runtime_has_its_signatures_result_layout_wherever_
                     let declarations = vec![declared.to_string()];
                     let text = program(position, &declarations, &call, result.dimensions, reversed);
                     let mut twin_declarations = declarations.clone();
-                    twin_declarations.push(format!("input t: {} = {}\n", result.ty, result.zero));
+                    twin_declarations.push(format!("state t({}): {}\n", result.zero, result.ty));
                     let twin = program(
                         position,
                         &twin_declarations,

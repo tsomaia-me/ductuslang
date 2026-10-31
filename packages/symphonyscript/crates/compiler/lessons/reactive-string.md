@@ -5,7 +5,7 @@ A string expression that reads a cell is an error. (SPEC §3.3)
 Strings exist only at compile time, and a cell changes at runtime.
 
 ```sym-error
-input x = 0.5
+state x(0.5)
 Kit k:
     Sampler | file="{x}"
 ```

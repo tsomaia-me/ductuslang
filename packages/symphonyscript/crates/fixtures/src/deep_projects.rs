@@ -20,7 +20,7 @@ fn project(name: &str, text: String) -> Project {
 
 pub fn deep_projects() -> Vec<Project> {
     let expressions = format!(
-        "input x = true\nfn f(v): v\nlet a = {}\nlet b = {}\nlet c = {}\nlet d = {}x\nlet e = {}\nlet g = {}1\nClip top:\n    Note/{} when d\n    Note/(f(a) + c + g + b{})\n",
+        "state x(true)\nfn f(v): v\nlet a = {}\nlet b = {}\nlet c = {}\nlet d = {}x\nlet e = {}\nlet g = {}1\nClip top:\n    Note/{} when d\n    Note/(f(a) + c + g + b{})\n",
         nested("(", "1", ")"),
         nested("[", "1", "]"),
         nested("f(", "1", ")"),
@@ -31,7 +31,7 @@ pub fn deep_projects() -> Vec<Project> {
         "[0]".repeat(DEPTH),
     );
     let cycle = ["for v{level} in 0..1:", "when x:", "when:"];
-    let mut bodies = String::from("input x = true\nClip top:\n");
+    let mut bodies = String::from("state x(true)\nClip top:\n");
     let mut indent = 1;
     for level in 0..BODY_DEPTH {
         let pad = " ".repeat(indent);
@@ -46,9 +46,9 @@ pub fn deep_projects() -> Vec<Project> {
     }
     bodies.push_str(&format!("{}Note\n", " ".repeat(indent)));
     let array_type = format!(
-        "input k: i32{} = {}\nClip c:\n    Note/(k{})\n",
-        "[1]".repeat(DEPTH),
+        "state k({}): i32{}\nClip c:\n    Note/(k{})\n",
         nested("[", "1", "]"),
+        "[1]".repeat(DEPTH),
         "[0]".repeat(DEPTH),
     );
     let mut calls = String::new();
@@ -56,7 +56,7 @@ pub fn deep_projects() -> Vec<Project> {
         calls.push_str(&format!("fn step{index}(x): step{}(x)\n", index + 1));
     }
     calls.push_str(
-        "fn step10000(x): x\ninput i = 1\nClip c:\n    Note/(step0(i))\n    Note/(step0(64))\n",
+        "fn step10000(x): x\nstate i(1)\nClip c:\n    Note/(step0(i))\n    Note/(step0(64))\n",
     );
     vec![
         project("deep expressions", expressions),

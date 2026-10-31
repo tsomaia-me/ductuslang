@@ -5,7 +5,6 @@ use super::call_expr::CallExpr;
 use super::conversion::Conversion;
 use super::field_expr::FieldExpr;
 use super::for_expr::ForExpr;
-use super::history::History;
 use super::if_expr::IfExpr;
 use super::index_expr::IndexExpr;
 use super::literal::Literal;
@@ -28,7 +27,6 @@ pub enum Expr<'p> {
     String(StringLit<'p>),
     NameRef(NameRef<'p>),
     VariantRef(VariantRef<'p>),
-    History(History<'p>),
     To(ToExpr<'p>),
     Conversion(Conversion<'p>),
     Array(ArrayLit<'p>),
@@ -49,7 +47,6 @@ impl<'p> AstNode<'p> for Expr<'p> {
             SyntaxKind::StringLit => StringLit::cast(node).map(Expr::String),
             SyntaxKind::NameRef => NameRef::cast(node).map(Expr::NameRef),
             SyntaxKind::VariantRef => VariantRef::cast(node).map(Expr::VariantRef),
-            SyntaxKind::History => History::cast(node).map(Expr::History),
             SyntaxKind::ToExpr => ToExpr::cast(node).map(Expr::To),
             SyntaxKind::Conversion => Conversion::cast(node).map(Expr::Conversion),
             SyntaxKind::ArrayLit => ArrayLit::cast(node).map(Expr::Array),
@@ -71,7 +68,6 @@ impl<'p> AstNode<'p> for Expr<'p> {
             Expr::String(node) => node.syntax(),
             Expr::NameRef(node) => node.syntax(),
             Expr::VariantRef(node) => node.syntax(),
-            Expr::History(node) => node.syntax(),
             Expr::To(node) => node.syntax(),
             Expr::Conversion(node) => node.syntax(),
             Expr::Array(node) => node.syntax(),

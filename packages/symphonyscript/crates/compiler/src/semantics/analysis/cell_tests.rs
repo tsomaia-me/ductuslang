@@ -95,7 +95,7 @@ fn the_cells_of_the_spec_take_the_types_and_capacities_the_spec_gives_them() {
 fn a_cell_carries_its_word_its_capacity_and_the_depth_of_its_deepest_past_read() {
     let text = "channel[16] notes(0)\nstream mic(0)\nstate level(1)\nstream d = level + 1\nchannel e = d.past(3, 0)\nClip c:\n    Note/(level.past(5) + notes + d.past(1) + e + mic.past(2))\n";
     let (errors, (inputs, states, depths)) = analyzed(text, |engine| {
-        let inputs: Vec<(Option<CellWord>, Option<u32>)> = engine
+        let inputs: Vec<(CellWord, Option<u32>)> = engine
             .hir
             .inputs
             .iter()
@@ -116,11 +116,18 @@ fn a_cell_carries_its_word_its_capacity_and_the_depth_of_its_deepest_past_read()
     assert_eq!(
         inputs,
         vec![
-            (Some(CellWord::Channel), Some(16)),
-            (Some(CellWord::Stream), None),
-            (Some(CellWord::State), None),
+            (CellWord::Channel, Some(16)),
+            (CellWord::Stream, None),
+            (CellWord::State, None),
         ]
     );
     assert_eq!(states, vec![CellWord::Stream, CellWord::Channel]);
     assert_eq!(depths, [0, 2, 5, 3, 0]);
+    let inlined =
+        "state note(1)\nfn id(x): x\nstate s = id(s.past(2, 0)) + note\nClip c:\n    Note/(s)\n";
+    let (errors, depth) = analyzed(inlined, |engine| {
+        engine.history_depth(HistoryCell::State(StateId(0)))
+    });
+    assert_eq!(errors, vec![]);
+    assert_eq!(depth, 2);
 }

@@ -24,11 +24,11 @@ const ACCESSES: [(&str, &str); 8] = [
 ];
 
 const REFUSALS: [(&str, Code); 4] = [
-    ("input s = R\nClip c:\n    Note\n", Code::InputValue),
+    ("state s(R)\nClip c:\n    Note\n", Code::StateValue),
     ("state s = R\nClip c:\n    Note\n", Code::StateValue),
     ("Clip c:\n    Note | velocity=R\n", Code::TypeMismatch),
     (
-        "input flag = false\nlet r = if flag then R else R\nClip c:\n    Note/(r.A)\n",
+        "state flag(false)\nlet r = if flag then R else R\nClip c:\n    Note/(r.A)\n",
         Code::ReactiveNodeReference,
     ),
 ];

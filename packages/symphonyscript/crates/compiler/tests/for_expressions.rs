@@ -3,7 +3,7 @@ mod support;
 use symphonyscript::{Code, Compiler, Diagnostic};
 use symphonyscript_fixtures::{Rows, covered, spec_examples, vocabulary};
 
-const HELD: &str = "input held: i32[..10] = []\n";
+const HELD: &str = "state held([]): i32[..10]\n";
 
 const HEADS: [(&str, &str); 6] = [
     ("x", "s + x"),

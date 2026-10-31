@@ -1,6 +1,6 @@
-input section = 0
-input fill_on = false
-input cutoff = 0.5
+state section(0)
+state fill_on(false)
+state cutoff(0.5)
 
 let wobble = cutoff * 0.8
 let sections = [verse, chorus]

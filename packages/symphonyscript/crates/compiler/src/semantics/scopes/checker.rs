@@ -8,9 +8,8 @@ use crate::diagnostics::Code;
 use crate::semantics::Internal;
 use crate::semantics::collection::{Decl, Namespace, Variants};
 use crate::semantics::ir::{
-    AttrValue, BlockId, BodyItem, ExprId, ExprKind, FnId, ForExpr, Hir, HistoryForm, Ident,
-    Iterable, LetDecl, Loc, LoopVar, PatternId, PlacementId, StateId, TypeBase, TypeRef,
-    UnknownNames,
+    AttrValue, BlockId, BodyItem, ExprId, ExprKind, FnId, ForExpr, Hir, Ident, Iterable, LetDecl,
+    Loc, LoopVar, PatternId, PlacementId, StateId, TypeBase, TypeRef, UnknownNames,
 };
 use crate::semantics::reporting::Report;
 
@@ -45,7 +44,6 @@ pub(super) struct Checker<'a> {
     frames: Vec<Frame>,
     framed: BTreeSet<String>,
     unknown_bodies: BTreeSet<BlockId>,
-    in_state: bool,
     in_destination: bool,
     placeholders: Vec<ExprId>,
     report: &'a mut Report,
@@ -67,7 +65,6 @@ impl<'a> Checker<'a> {
             frames: Vec::new(),
             framed: BTreeSet::new(),
             unknown_bodies: BTreeSet::new(),
-            in_state: false,
             in_destination: false,
             placeholders: Vec::new(),
             report,
@@ -86,10 +83,7 @@ impl<'a> Checker<'a> {
         if let Some(init) = decl.init {
             self.expr(init, None, false)?;
         }
-        self.in_state = true;
-        let checked = self.expr(decl.value, None, false);
-        self.in_state = false;
-        checked
+        self.expr(decl.value, None, false)
     }
 
     pub fn function(&mut self, id: FnId) -> Result<(), Internal> {
@@ -569,16 +563,8 @@ impl<'a> Checker<'a> {
                     target,
                     offset,
                     fallback,
-                    form,
                 } => {
-                    if *form == HistoryForm::Braced && !self.in_state {
-                        self.report.error(
-                            self.hir,
-                            Code::MisplacedHistory,
-                            expr.loc,
-                            "a history read stands only in a state's initializer",
-                        );
-                    } else if !self.visible(frame, &target.text)?
+                    if !self.visible(frame, &target.text)?
                         && !self.may_declare(frame, &target.text)?
                     {
                         self.report.error(

@@ -22,20 +22,16 @@ use crate::semantics::analysis::sig::Sig;
 use crate::semantics::analysis::some::some;
 use crate::semantics::analysis::unwritten::Unwritten;
 use crate::semantics::analysis::val::Val;
-use crate::semantics::ir::{CellWord, ExprId, HistoryForm, Ident, Loc, StateId};
+use crate::semantics::ir::{CellWord, ExprId, Ident, Loc, StateId};
 
 impl Engine<'_> {
     pub(in crate::semantics::analysis) fn history(
         &mut self,
-        expr: ExprId,
-        (target, offset, fallback, form): (&Ident, ExprId, Option<ExprId>, HistoryForm),
+        (target, offset, fallback): (&Ident, ExprId, Option<ExprId>),
         loc: Loc,
         scope: ScopeId,
         need: &mut Vec<Query>,
     ) -> Result<Option<Val>, Internal> {
-        if form == HistoryForm::Braced && !self.in_state_initializer(expr)? {
-            return Ok(Some(Val::Error));
-        }
         let offset_val = self.val(Query::Expr(offset, scope), need);
         let fallback_val = fallback.map(|fallback| self.val(Query::Expr(fallback, scope), need));
         let Some(cell) = self.history_target(target, scope, "history")? else {
@@ -46,21 +42,6 @@ impl Engine<'_> {
             Some(found) => Some(some!(found)),
             None => None,
         };
-        if fallback.is_none()
-            && form == HistoryForm::Braced
-            && !matches!(cell, HistoryCell::Input(_))
-        {
-            self.error(
-                Code::HistoryFallback,
-                loc,
-                scope,
-                format!(
-                    "a history read of a state or a `let` states its fallback, as in `{}{{1, 0}}`",
-                    target.text
-                ),
-            )?;
-            return Ok(Some(Val::Error));
-        }
         let offset_loc = self.hir.expr(offset)?.loc;
         let offset_node = match offset_val {
             Val::Scalar(node) => node,
@@ -231,27 +212,6 @@ impl Engine<'_> {
             return Ok(Some(Some(Unwritten::Fault)));
         }
         Ok(Some(Some(Unwritten::Init(node))))
-    }
-
-    fn in_state_initializer(&mut self, expr: ExprId) -> Result<bool, Internal> {
-        if self.memo.state_exprs.is_none() {
-            let mut found = FastSet::default();
-            for decl in &self.hir.states {
-                let mut stack = vec![decl.value];
-                while let Some(current) = stack.pop() {
-                    crate::semantics::counted_walk::CountedWalk::HistoryInStateInitializer.step();
-                    if found.insert(current) {
-                        stack.extend(self.hir.expr(current)?.kind.children());
-                    }
-                }
-            }
-            self.memo.state_exprs = Some(found);
-        }
-        Ok(self
-            .memo
-            .state_exprs
-            .as_ref()
-            .is_some_and(|found| found.contains(&expr)))
     }
 
     pub(in crate::semantics::analysis) fn run_state(

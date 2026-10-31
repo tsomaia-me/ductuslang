@@ -149,7 +149,7 @@ fn stress_deeply_nested_kinds_pass_check_on_a_small_stack() {
             .default(0)
             .default_attr();
         let vocabulary = v.build().expect("the vocabulary builds");
-        let mut text = String::from("input x = true\nGroup top:\n");
+        let mut text = String::from("state x(true)\nGroup top:\n");
         let mut indent = 1;
         for level in 0..BODY_DEPTH {
             let pad = " ".repeat(indent);
@@ -174,7 +174,7 @@ fn stress_deeply_nested_kinds_pass_check_on_a_small_stack() {
 #[ignore = "stress"]
 fn stress_a_call_chain_and_a_recursion_100000_levels_deep_pass_check_on_a_small_stack() {
     on_small_stack(|| {
-        let mut expanded = String::from("input held: i32[..4] = []\n");
+        let mut expanded = String::from("state held([]): i32[..4]\n");
         for level in 0..DEPTH {
             expanded.push_str(&format!(
                 "fn walk{level}(i): if i >= len(held) then 0 else held[i] + walk{}(i + 1)\n",
@@ -207,18 +207,18 @@ fn stress_a_call_chain_and_a_recursion_100000_levels_deep_pass_check_on_a_small_
 fn stress_a_chain_of_100000_slices_passes_check_on_a_small_stack() {
     on_small_stack(|| {
         let chained = format!(
-            "input held: i32[..4] = []\nlet s = held{}\nClip c:\n    Note/(s[0])\n",
+            "state held([]): i32[..4]\nlet s = held{}\nClip c:\n    Note/(s[0])\n",
             "[1..]".repeat(DEPTH)
         );
         assert_eq!(code_counts(&chained), BTreeMap::new());
-        let mut lets = String::from("input held: i32[..4] = []\nlet s0 = held\n");
+        let mut lets = String::from("state held([]): i32[..4]\nlet s0 = held\n");
         for level in 1..=DEPTH {
             lets.push_str(&format!("let s{level} = s{}[1..]\n", level - 1));
         }
         lets.push_str(&format!("Clip c:\n    Note/(s{DEPTH}[0])\n"));
         assert_eq!(code_counts(&lets), BTreeMap::new());
         let fixed = format!(
-            "input note = 60\nstate s = [note, note, note]\nlet t = s{}\nClip c:\n    Note/(len(t) + note)\n",
+            "state note(60)\nstate s = [note, note, note]\nlet t = s{}\nClip c:\n    Note/(len(t) + note)\n",
             "[1..]".repeat(DEPTH)
         );
         assert_eq!(code_counts(&fixed), BTreeMap::new());

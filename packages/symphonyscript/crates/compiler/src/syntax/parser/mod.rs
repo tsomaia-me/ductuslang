@@ -154,7 +154,6 @@ impl<'a> Parser<'a> {
             }
             Task::File => self.file_step(),
             Task::TopItem => self.top_item(),
-            Task::InputDecl => self.input_decl(),
             Task::CellDecl => self.cell_decl(),
             Task::CellAfterInit(head) => self.cell_after_init(head),
             Task::ClockList => self.clock_list(),
@@ -262,7 +261,6 @@ impl<'a> Parser<'a> {
             Task::IndexAfterBound => self.index_after_bound(),
             Task::SliceUpper => self.slice_upper(),
             Task::Bound => self.bound(),
-            Task::HistoryAfterOffset => self.history_after_offset(),
             Task::ArgList => self.arg_list(),
             Task::ArgItem { named_call } => self.arg_item(named_call),
             Task::ArgAfter { named_call } => self.arg_after(named_call),
@@ -432,7 +430,6 @@ impl<'a> Parser<'a> {
                         | SyntaxKind::ArgList
                         | SyntaxKind::IndexExpr
                         | SyntaxKind::Conversion
-                        | SyntaxKind::History
                         | SyntaxKind::Init
                         | SyntaxKind::Interpolation,
                     ) => Bracket::Expression,

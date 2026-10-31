@@ -32,7 +32,10 @@ impl Random {
 }
 
 const FRAGMENTS: &[&str] = &[
-    "input",
+    "state",
+    "stream",
+    "channel",
+    "on",
     "let",
     "fn",
     "pattern",

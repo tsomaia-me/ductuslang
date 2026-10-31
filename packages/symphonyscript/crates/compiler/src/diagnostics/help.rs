@@ -70,14 +70,13 @@ pub(super) fn help(code: Code) -> Option<&'static str> {
         Code::MatchPosition => "make the `match` the whole value of a `let`",
         Code::MixedArguments => "pass every argument by position or every one by name",
         Code::ConversionSyntax => "parenthesize the converted value, as in `i32(x)`",
-        Code::MisplacedHistory => "read the history in a state's initializer",
         Code::HistoryTarget => "read the history of an input, a state or a reactive `let`",
-        Code::HistoryFallback => "state the fallback, as in `x{1, 0}`",
+        Code::HistoryFallback => "state the fallback, as in `x.past(1, 0)`",
         Code::HistoryOffset => {
-            "write the offset as a positive integer known at compile time, as in `x{1, 0}`"
+            "write the offset as a positive integer known at compile time, as in `x.past(1, 0)`"
         }
         Code::UnboundedState => {
-            "slice the initializer, as in `(s{1, []} + [x])[^8..]`, to keep its newest elements"
+            "slice the initializer, as in `(s.past(1, []) + [x])[^8..]`, to keep its newest elements"
         }
         Code::TopLevelWire => "place the wire inside its source's body",
         Code::DefaultArgSyntax => "parenthesize the value, as in `Note/(base + 7)`",
@@ -122,9 +121,6 @@ pub(super) fn help(code: Code) -> Option<&'static str> {
         }
         Code::ExpressionSyntax => "give every operator its operands and close every bracket",
         Code::MatchSyntax => "end the `match` line with `:` and indent its arms under it",
-        Code::InputSyntax => {
-            "write `input`, a name, `=` and the initial value, as in `input level = 1`"
-        }
         Code::LetSyntax => "write `let`, a name, `=` and the value, as in `let one = 1`",
         Code::FnSyntax => {
             "write `fn`, a name, its parameters, `:` and the body, as in `fn double(x): x * 2`"
@@ -135,7 +131,6 @@ pub(super) fn help(code: Code) -> Option<&'static str> {
         Code::StateSyntax => {
             "declare the state at top level as `state`, a name, `=` and its initializer, as in `state count = 1`"
         }
-        Code::HistoryDepth => "write `[N]` with N the deepest offset the state reads",
         Code::CellCapacity => {
             "remove `[N]`, which states the pending capacity of a host-fed `stream` or `channel` alone"
         }
@@ -188,7 +183,6 @@ pub(super) fn help(code: Code) -> Option<&'static str> {
         Code::ReactiveInitializer => {
             "initialize the input with a compile-time value, such as a `let`"
         }
-        Code::InputValue => "hold the string in a `let`",
         Code::UnknownAttribute => "use an attribute the kind declares, or correct its spelling",
         Code::RuntimePath => {
             "start the path at an instance known at compile time, as in `s[1].gain`"

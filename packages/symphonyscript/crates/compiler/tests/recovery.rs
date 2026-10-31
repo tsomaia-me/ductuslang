@@ -8,9 +8,9 @@ type Expected = &'static [(Code, u32, u32)];
 
 const BROKEN: &[(&str, Expected, &str)] = &[
     (
-        "input = 5\nlet b = 2\n",
-        &[(Code::InputSyntax, 6, 7)],
-        "File[InputDecl[input = Literal[5] NL] LetDecl[let b = Literal[2] NL]]",
+        "state = 5\nlet b = 2\n",
+        &[(Code::StateSyntax, 6, 7)],
+        "File[CellDecl[state = Literal[5] NL] LetDecl[let b = Literal[2] NL]]",
     ),
     (
         "Clip c:\n    Note |\n    Note/62\n",
@@ -98,14 +98,14 @@ const BROKEN: &[(&str, Expected, &str)] = &[
         "File[Placement[Clip c Body[: Block[NL > Placement[Note NL] <]]] Placement[Note NL]]",
     ),
     (
-        "input a = 1;\n",
-        &[(Code::Semicolon, 11, 12)],
-        "File[InputDecl[input a = Literal[1] ErrorNode[;] NL]]",
+        "state a(1);\n",
+        &[(Code::Semicolon, 10, 11)],
+        "File[CellDecl[state a Init[( Literal[1] )] ErrorNode[;] NL]]",
     ),
     (
-        "input a = 1\n    input b = 2\nlet c = 3\n",
-        &[(Code::UnexpectedIndent, 16, 21)],
-        "File[InputDecl[input a = Literal[1] NL] ErrorNode[> input b = 2 NL <] LetDecl[let c = Literal[3] NL]]",
+        "state a(1)\n    state b(2)\nlet c = 3\n",
+        &[(Code::UnexpectedIndent, 15, 20)],
+        "File[CellDecl[state a Init[( Literal[1] )] NL] ErrorNode[> state b ( 2 ) NL <] LetDecl[let c = Literal[3] NL]]",
     ),
     (
         "Clip c | :\n    Note\n",
@@ -153,9 +153,9 @@ const BROKEN: &[(&str, Expected, &str)] = &[
         "File[Placement[Clip c Body[: Block[NL > Placement[Note Attrs[| AttrEntry[! velocity]] ErrorNode[= 1] NL] <]]]]",
     ),
     (
-        "input a: i32[x] = 0\n",
-        &[(Code::TypeSyntax, 13, 14)],
-        "File[InputDecl[input a : TypeRef[i32 [] NameRef[x] ErrorNode[] = 0] NL]]",
+        "state a(0): i32[x]\n",
+        &[(Code::TypeSyntax, 16, 17)],
+        "File[CellDecl[state a Init[( Literal[0] )] : TypeRef[i32 [] ErrorNode[x ]] NL]]",
     ),
     (
         "let a = i32 x\n",
@@ -265,12 +265,12 @@ const BROKEN: &[(&str, Expected, &str)] = &[
         "File[Placement[Clip c Body[: Block[NL > Line[Placement[Note DefaultArg[/ NameRef[f]]] ParenPlacement[(] ErrorNode[1 )] NL] <]]]]",
     ),
     (
-        "input a 1_\nlet b = 2\n",
+        "state a 1_\nlet b = 2\n",
         &[
-            (Code::InputSyntax, 8, 10),
+            (Code::StateSyntax, 8, 10),
             (Code::MisplacedUnderscore, 9, 10),
         ],
-        "File[InputDecl[input a Literal[1_] NL] LetDecl[let b = Literal[2] NL]]",
+        "File[CellDecl[state a ErrorNode[1_] NL] LetDecl[let b = Literal[2] NL]]",
     ),
     (
         "let a = [1 @\n2, 3]\nlet b = 4\n",
@@ -988,19 +988,19 @@ fn a_missing_closer_names_the_token_it_underlines() {
 fn recovery_resynchronizes_at_state_lines_and_treats_a_history_read_as_an_expression_bracket() {
     let rows: &[(&str, Code, &str, &str)] = &[
         (
-            "input x = 1\nlet a = (1 +\nstate s = x{1}\nClip c:\n    Note/s\n",
+            "let a = (1 +\nstate s = x.past(1)\nstate x(1)\nClip c:\n    Note/s\n",
             Code::ExpressionSyntax,
             "state",
             "CellDecl[state s",
         ),
         (
-            "input x = 1\nstate s = x{1, 0\nlet y = 2\nClip c:\n    Note/y\n",
+            "state x(1)\nstate s = x.past(1, 0\nlet y = 2\nClip c:\n    Note/y\n",
             Code::ExpressionSyntax,
             "let",
             "LetDecl[let y",
         ),
         (
-            "input x = 1\nstate s = x{1, 0\nClip c:\n    Note/s\n",
+            "state x(1)\nstate s = x.past(1, 0\nClip c:\n    Note/s\n",
             Code::ExpressionSyntax,
             "Clip",
             "Placement[Clip c",
@@ -1030,14 +1030,14 @@ fn the_text_after_a_faulty_bracket_lexes_as_it_would_after_a_correct_one() {
         .map(|n| format!("Clip c{n}:\n    Note/62 | velocity=0.7\n              brightness=0.5\n"))
         .collect();
     let rows: &[(&str, &str, &str, &str)] = &[
-        ("input x = 1\nstate s = ", "x{1]", "x{1}", "]"),
-        ("input x = 1\nstate s = ", "x{1)", "x{1}", ")"),
-        ("input x = 1\nstate s = ", "x{(1}", "x{(1)}", "}"),
-        ("input x = 1\nstate s = ", "(x{1}]", "(x{1})", "]"),
-        ("input x = 1\nstate s = ", "[x{1})", "[x{1}]", ")"),
-        ("input x = 1\nlet z = ", "x{1]", "x{1}", "]"),
-        ("input x = 1\nlet z = ", "x{(1}", "x{(1)}", "}"),
-        ("input x = 1\nlet z = ", "(1}", "(1)", "}"),
+        ("state x(1)\nstate s = ", "x.past(1]", "x.past(1)", "]"),
+        ("state x(1)\nstate s = ", "x.past(1}", "x.past(1)", "}"),
+        ("state x(1)\nstate s = ", "x.past((1)]", "x.past((1))", "]"),
+        ("state x(1)\nstate s = ", "(x.past(1)]", "(x.past(1))", "]"),
+        ("state x(1)\nstate s = ", "[x.past(1))", "[x.past(1)]", ")"),
+        ("state x(1)\nlet z = ", "x.past(1]", "x.past(1)", "]"),
+        ("state x(1)\nlet z = ", "x.past((1)}", "x.past((1))", "}"),
+        ("state x(1)\nlet z = ", "(1}", "(1)", "}"),
     ];
     for (before, faulty, correct, closer) in rows {
         for (head, tail) in [
@@ -1071,8 +1071,8 @@ fn the_text_after_a_faulty_bracket_lexes_as_it_would_after_a_correct_one() {
             assert_eq!(parsed[0].1 as usize, start, "{text}{parsed:?}");
         }
     }
-    for faulty in ["x{1]", "x{1)", "x{(1}"] {
-        let text = format!("input x = 1\nstate s = {faulty}\nlet y = 2\n{clips}");
+    for faulty in ["x.past(1]", "x.past(1}", "x.past((1)]"] {
+        let text = format!("state x(1)\nstate s = {faulty}\nlet y = 2\n{clips}");
         let found: Vec<Code> = support::checked(&text)
             .iter()
             .map(|diagnostic| diagnostic.code)
@@ -1121,25 +1121,25 @@ fn a_name_inside_a_faulty_part_of_a_kept_item_is_a_placeholder_wherever_it_is_us
 
 #[test]
 fn a_state_header_cut_by_a_fault_declares_its_name_as_a_placeholder() {
-    let input = "input a = 0\n";
+    let input = "state a(0)\n";
     let read = "Clip c:\n    Note/(60 + t)\n";
     let rows: &[support::Row] = &[
         (
-            &[input, "state[1 t = t{1, 0} + a\n", read],
+            &[input, "state[1 t = t.past(1, 0) + a\n", read],
             &[(Code::StateSyntax, "t")],
         ),
         (
-            &[input, "state[ t = t{1, 0} + a\n", read],
+            &[input, "state[ t = t.past(1, 0) + a\n", read],
             &[(Code::StateSyntax, "t")],
         ),
         (
-            &[input, "state[x] t = t{1, 0} + a\n", read],
+            &[input, "state[x] t = t.past(1, 0) + a\n", read],
             &[(Code::StateSyntax, "x")],
         ),
         (
             &[
                 input,
-                "state[1 t = t{1, 0} + a\n",
+                "state[1 t = t.past(1, 0) + a\n",
                 "Clip c:\n    Note when t > 0\n",
             ],
             &[(Code::StateSyntax, "t")],
@@ -1147,14 +1147,18 @@ fn a_state_header_cut_by_a_fault_declares_its_name_as_a_placeholder() {
         (
             &[
                 input,
-                "state[1 t = t{1, 0} + a\n",
+                "state[1 t = t.past(1, 0) + a\n",
                 "state u = t + 1\n",
                 "Clip c:\n    Note/(60 + u)\n",
             ],
             &[(Code::StateSyntax, "t")],
         ),
-        (&[input, "state[1] t = t{1, 0} + a\n", read], &[]),
-        (&[input, "state t = a{1, 0}\n", read], &[]),
+        (
+            &[input, "state[1] t = t.past(1, 0) + a\n", read],
+            &[(Code::CellCapacity, "[1]")],
+        ),
+        (&[input, "state t = t.past(1, 0) + a\n", read], &[]),
+        (&[input, "state t = a.past(1, 0)\n", read], &[]),
     ];
     support::assert_rows_in_every_order(&vocabulary(), rows);
 }
@@ -1166,7 +1170,7 @@ fn every_top_level_header_cut_by_a_fault_declares_its_names_as_placeholders() {
     let call_f = "Clip c:\n    Note/(60 + f(1))\n";
     let place_p = "Clip c:\n    P\n";
     let rows: &[support::Row] = &[
-        (&["input [a = 0\n", read_a], &[(Code::InputSyntax, "[")]),
+        (&["state (a(0)\n", read_a], &[(Code::StateSyntax, "(")]),
         (&["let [x = 5\n", read_x], &[(Code::LetSyntax, "[")]),
         (&["let (x = 5\n", read_x], &[(Code::LetSyntax, "(")]),
         (&["fn (f(a): a\n", call_f], &[(Code::FnSyntax, "(")]),
@@ -1178,10 +1182,10 @@ fn every_top_level_header_cut_by_a_fault_declares_its_names_as_placeholders() {
             &["fn f(n) [3 else 0: f(n - 1)\n", call_f],
             &[(Code::FnSyntax, "[")],
         ),
-        (&["input a: i32[ = 0\n", read_a], &[(Code::TypeSyntax, "=")]),
+        (&["state a(0): i32[]\n", read_a], &[(Code::TypeSyntax, "]")]),
         (&["let x: i32[ = 5\n", read_x], &[(Code::TypeSyntax, "=")]),
-        (&["input a 0\n", read_a], &[(Code::InputSyntax, "0")]),
-        (&["input a =\n", read_a], &[(Code::ExpressionSyntax, "\n")]),
+        (&["state a 0\n", read_a], &[(Code::StateSyntax, "0")]),
+        (&["state a =\n", read_a], &[(Code::ExpressionSyntax, "\n")]),
         (&["let x 5\n", read_x], &[(Code::LetSyntax, "5")]),
         (&["fn f(a b): a\n", call_f], &[(Code::FnSyntax, "b")]),
         (

@@ -219,7 +219,7 @@ fn program(case: &Case, recursive: bool) -> String {
     let call = call(case);
     let mut items = vec![
         "Session main\n".to_string(),
-        "input gv = 1.0\n".to_string(),
+        "state gv(1.0)\n".to_string(),
         "let rl = gv * 1\n".to_string(),
         "let refs = [verse, other]\n".to_string(),
     ];
@@ -2470,7 +2470,7 @@ fn candidate_fault_program(
     };
     let mut items = vec![
         "Session main\n".to_string(),
-        "input gv = 1.0\n".to_string(),
+        "state gv(1.0)\n".to_string(),
         verse.to_string(),
         other.to_string(),
         "fn f(c): c.gain\n".to_string(),
@@ -3957,7 +3957,7 @@ fn quiet_callee_read_rows(rows: &Rows) -> (Vec<String>, usize) {
                     };
                     let mut items = [
                         "Session main\n".to_string(),
-                        "input gv = 1.0\n".to_string(),
+                        "state gv(1.0)\n".to_string(),
                         "Clip verse | gain=2:\n    Note as tone\n".to_string(),
                         other.to_string(),
                         "fn sel(xs, i, n): if n < 1 then (if i32(xs[i].gain) > 0 then xs[0] else xs[0]) else sel(xs, i, n - 1)\n".to_string(),

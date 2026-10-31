@@ -5,13 +5,13 @@ A `for` expression that is not the whole value of a `let`, a local `let`, a deri
 A `for` expression runs to the end of its body, so without parentheses it is unclear where it stops.
 
 ```sym-error
-input held: i32[..10] = []
+state held([]): i32[..10]
 state total = 1 + for x in held into sum from 0: sum + x
 ```
 
 The `for` expression is the right operand of `+`; in parentheses it is one value.
 
 ```sym
-input held: i32[..10] = []
+state held([]): i32[..10]
 state total = 1 + (for x in held into sum from 0: sum + x)
 ```

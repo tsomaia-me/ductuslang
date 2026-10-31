@@ -6,7 +6,7 @@ use symphonyscript_fixtures::{
     vocabulary,
 };
 
-const DECLARATIONS: &str = "input root = 60\nlet step = 4\nlet span = step * 3\nlet lift = span + 1\nfn up(x): x + step\nfn twice(x): up(up(x))\nfn shifted(x, by): x + by\nlet top = twice(span)\nClip c:\n    Note/(twice(root) + shifted(lift, top))\n";
+const DECLARATIONS: &str = "state root(60)\nlet step = 4\nlet span = step * 3\nlet lift = span + 1\nfn up(x): x + step\nfn twice(x): up(up(x))\nfn shifted(x, by): x + by\nlet top = twice(span)\nClip c:\n    Note/(twice(root) + shifted(lift, top))\n";
 
 fn projects() -> Vec<Project> {
     let mut projects = vec![
@@ -98,7 +98,7 @@ fn a_second_declaration_of_a_name_is_exactly_one_duplicate_error() {
         for source in sources(&project) {
             let parts = items(&source.text);
             for (position, part) in parts.iter().enumerate() {
-                let declaration = ["input ", "let ", "fn ", "pattern "]
+                let declaration = ["state ", "let ", "fn ", "pattern "]
                     .iter()
                     .any(|keyword| part.starts_with(keyword));
                 if !declaration {

@@ -5,11 +5,11 @@ A type is a scalar type or an enum, followed by lengths in `[N]` and at most one
 A type's lengths are fixed when the program compiles, so they are digits.
 
 ```sym-error
-input a: i32[x] = [1]
+state a([1]): i32[x]
 ```
 
 `x` is no length.
 
 ```sym
-input a: i32[1] = [1]
+state a([1]): i32[1]
 ```

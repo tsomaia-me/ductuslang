@@ -19,7 +19,7 @@ fn with_prelude(prelude: &str) -> Vocabulary {
 #[test]
 fn a_top_level_name_declared_twice_is_an_error_naming_both() {
     let cases: &[(&str, u32, u32)] = &[
-        ("input a = 1\nlet a = 2\n", 6, 16),
+        ("state a(1)\nlet a = 2\n", 6, 15),
         ("let f = 1\nfn f(x): x\n", 4, 13),
         ("pattern P():\n    Note\nlet P = 1\n", 8, 26),
         ("Clip a:\n    Note\nlet a = 1\n", 5, 21),
@@ -102,7 +102,7 @@ fn a_name_that_clashes_with_a_vocabulary_or_built_in_name_is_a_placeholder_at_ev
         ),
         (
             &[
-                "input Saw = 1\n",
+                "state Saw(1)\n",
                 "Synth s:\n    Osc | wave=Saw\n",
                 "Clip c:\n    Note/Saw\n",
             ],
@@ -141,7 +141,7 @@ fn a_prelude_that_declares_a_name_twice_or_holds_other_items_fails_the_compiler(
     let cases: &[(&str, Code, &str)] = &[
         ("let a = 1\nlet a = 2\n", Code::DuplicateName, "a = 2"),
         ("let sin = 1\n", Code::DuplicateName, "sin"),
-        ("input a = 1\n", Code::PreludeItem, "input a = 1\n"),
+        ("state a(1)\n", Code::PreludeItem, "state a(1)\n"),
         (
             "Clip c:\n    Note\n",
             Code::PreludeItem,

@@ -1054,8 +1054,7 @@ impl<'a> Lexer<'a> {
         matches!(
             SyntaxKind::keyword(word(rest)),
             Some(
-                SyntaxKind::InputKw
-                    | SyntaxKind::LetKw
+                SyntaxKind::LetKw
                     | SyntaxKind::StateKw
                     | SyntaxKind::StreamKw
                     | SyntaxKind::ChannelKw

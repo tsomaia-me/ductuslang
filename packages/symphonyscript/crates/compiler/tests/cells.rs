@@ -529,3 +529,38 @@ fn a_cells_capacity_clock_string_and_history_target_draw_the_codes_their_rules_n
     ];
     support::assert_rows_in_every_order(&symphonyscript_fixtures::vocabulary(), rows);
 }
+
+#[test]
+fn a_line_written_as_an_input_draws_the_top_level_diagnostic_whose_help_names_the_cell_form() {
+    for text in [
+        "input level = 1\nClip c:\n    Note\n",
+        "input fine: f32 = 0\nClip c:\n    Note\n",
+    ] {
+        let parsed = support::parsed(text);
+        let (start, end) = support::at(text, "input", 0);
+        let found: Vec<(Code, u32, u32, Option<&str>)> = parsed
+            .diagnostics
+            .iter()
+            .map(|diagnostic| {
+                (
+                    diagnostic.code,
+                    diagnostic.span.range.start,
+                    diagnostic.span.range.end,
+                    diagnostic.help.as_deref(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            found,
+            vec![(
+                Code::TopLevelSyntax,
+                start,
+                end,
+                Some("write `state <name>(<init>)`")
+            )],
+            "{text}"
+        );
+    }
+    let text = "state input(1)\nClip c:\n    Note/(input + input.past(1))\n";
+    assert_eq!(support::check_codes(text), vec![], "{text}");
+}

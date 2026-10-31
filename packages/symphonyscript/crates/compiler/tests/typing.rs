@@ -64,10 +64,10 @@ fn the_fit_check_applies_at_each_use_and_where_an_integer_converts_to_a_float() 
         ("Clip c | gain=(16777217 / 2)\n", &[Code::DoesNotFit]),
         ("Clip c | gain=(16777217i32 / 2)\n", &[]),
         (
-            "input n = 1.0\nClip c | gain=(n / 16777217)\n",
+            "state n(1.0)\nClip c | gain=(n / 16777217)\n",
             &[Code::DoesNotFit],
         ),
-        ("input n = 1.0\nOsc o | freq=(n / 16777217)\n", &[]),
+        ("state n(1.0)\nOsc o | freq=(n / 16777217)\n", &[]),
         ("Clip c | gain=(sqrt(16777217))\n", &[Code::DoesNotFit]),
         ("Osc o | freq=(sqrt(16777216 + 1))\n", &[]),
         ("Clip c | gain=(33554434 div 2)\n", &[Code::DoesNotFit]),
@@ -83,7 +83,7 @@ fn the_fit_check_applies_at_each_use_and_where_an_integer_converts_to_a_float() 
 fn a_float_type_that_flows_in_makes_a_flexible_value_a_float_from_its_literals_up() {
     expect(&[
         ("Clip c | gain=((16777216 + 1) / 2)\n", &[]),
-        ("input n = 1.0\nClip c | gain=(n / (16777216 + 1))\n", &[]),
+        ("state n(1.0)\nClip c | gain=(n / (16777216 + 1))\n", &[]),
         ("Clip c | gain=(sqrt(16777216 + 1))\n", &[]),
         (
             "let c = (16777216 + 1) / 2 > 1\nClip k:\n    Note when c\n",
@@ -150,7 +150,7 @@ fn every_guard_and_use_gate_is_checked_whether_or_not_it_gates_an_item() {
             &[Code::ConditionType],
         ),
         (
-            "input fill_on = false\ninput section = 0\nClip verse:\n    Note/60\n    when fill_on:\n        Note/62 Note/64\n    else:\n        Note/62\n    when:\n        section is 0: Note/67\n        section is 1: Note/69\n        else: Note/71\n",
+            "state fill_on(false)\nstate section(0)\nClip verse:\n    Note/60\n    when fill_on:\n        Note/62 Note/64\n    else:\n        Note/62\n    when:\n        section is 0: Note/67\n        section is 1: Note/69\n        else: Note/71\n",
             &[],
         ),
     ]);
@@ -308,15 +308,15 @@ fn a_comparison_that_reads_an_integer_input_as_a_float_is_a_float_use() {
             .count()
     };
     assert_eq!(
-        integer_inputs("input n = 4\nClip c:\n    Note when n > 0.5\n"),
+        integer_inputs("state n(4)\nClip c:\n    Note when n > 0.5\n"),
         1
     );
     assert_eq!(
-        integer_inputs("input n = 4\nClip c:\n    Note when n > 1\n"),
+        integer_inputs("state n(4)\nClip c:\n    Note when n > 1\n"),
         0
     );
     assert_eq!(
-        integer_inputs("input n = 4\nClip c:\n    Note when n + 1 > 0.5\n"),
+        integer_inputs("state n(4)\nClip c:\n    Note when n + 1 > 0.5\n"),
         1
     );
 }
@@ -366,12 +366,12 @@ fn an_unused_compile_time_let_is_never_computed() {
 fn an_expected_type_flows_into_operands_and_fixed_types_only_widen() {
     expect(&[
         (
-            "input cutoff = 0.5\nClip m:\n    Note | brightness=cutoff * 0.8\n",
+            "state cutoff(0.5)\nClip m:\n    Note | brightness=cutoff * 0.8\n",
             &[],
         ),
-        ("input n = 4\nClip c:\n    Note/(n div 2)\n", &[]),
+        ("state n(4)\nClip c:\n    Note/(n div 2)\n", &[]),
         (
-            "input n = 4\nClip c:\n    Note/(n / 2)\n",
+            "state n(4)\nClip c:\n    Note/(n / 2)\n",
             &[Code::TypeMismatch],
         ),
         ("Synth s:\n    Osc | freq=1.0f32\n", &[]),
@@ -397,25 +397,25 @@ fn an_expected_type_flows_into_operands_and_fixed_types_only_widen() {
 #[test]
 fn a_cell_is_read_in_each_use_type_and_its_initial_value_fits_every_use() {
     expect(&[
-        ("input a = 3000000000\nSynth s:\n    Osc | freq=a\n", &[]),
+        ("state a(3000000000)\nSynth s:\n    Osc | freq=a\n", &[]),
         (
-            "input a = 3000000000\nClip c:\n    Note/a\n",
+            "state a(3000000000)\nClip c:\n    Note/a\n",
             &[Code::DoesNotFit],
         ),
         (
-            "input fine: f32 = 0\nClip c:\n    Note | velocity=fine\n",
+            "state fine(0): f32\nClip c:\n    Note | velocity=fine\n",
             &[],
         ),
-        ("input a: i32 = 0.5\n", &[Code::TypeMismatch]),
+        ("state a(0.5): i32\n", &[Code::TypeMismatch]),
         (
-            "input a = 1\nlet b = a + 0.5\nClip c:\n    Note when b > 1\n",
+            "state a(1)\nlet b = a + 0.5\nClip c:\n    Note when b > 1\n",
             &[],
         ),
         (
-            "input f = 0.5\nlet g = f * 2\nClip c:\n    Note/g\n",
+            "state f(0.5)\nlet g = f * 2\nClip c:\n    Note/g\n",
             &[Code::FloatToInteger],
         ),
-        ("input f = 0.5\nClip c:\n    Note/(i32(f))\n", &[]),
+        ("state f(0.5)\nClip c:\n    Note/(i32(f))\n", &[]),
     ]);
 }
 
@@ -423,7 +423,7 @@ fn a_cell_is_read_in_each_use_type_and_its_initial_value_fits_every_use() {
 fn a_reactive_let_read_by_another_keeps_the_width_of_the_input_it_reads() {
     for links in 1..=50 {
         for (annotation, misfits) in [("", 0), (": i32", links)] {
-            let mut text = format!("input a{annotation} = 1\nlet l1 = a + 1\n");
+            let mut text = format!("state a(1){annotation}\nlet l1 = a + 1\n");
             for link in 2..=links {
                 text.push_str(&format!("let l{link} = l{} * 2\n", link - 1));
             }
@@ -473,10 +473,10 @@ fn only_the_chosen_branch_of_a_compile_time_choice_is_checked_for_fit_and_index_
             &[Code::DoesNotFit],
         ),
         (
-            "input b = true\nClip c:\n    Note/(if b then 1 else 3000000000)\n",
+            "state b(true)\nClip c:\n    Note/(if b then 1 else 3000000000)\n",
             &[Code::DoesNotFit],
         ),
-        ("input i = 0\nClip c:\n    Note/([1, 2][i + 5])\n", &[]),
+        ("state i(0)\nClip c:\n    Note/([1, 2][i + 5])\n", &[]),
     ]);
 }
 
@@ -484,7 +484,7 @@ fn only_the_chosen_branch_of_a_compile_time_choice_is_checked_for_fit_and_index_
 fn enums_strings_and_bools_take_their_own_types() {
     expect(&[
         ("Synth s:\n    Osc | wave=Saw\n", &[]),
-        ("input w = Wave::Saw\nSynth s:\n    Osc | wave=w\n", &[]),
+        ("state w(Wave::Saw)\nSynth s:\n    Osc | wave=w\n", &[]),
         ("Synth s:\n    Osc | wave=1\n", &[Code::TypeMismatch]),
         ("let w = Saw\nSynth s:\n    Osc | wave=w\n", &[]),
         (
@@ -492,7 +492,7 @@ fn enums_strings_and_bools_take_their_own_types() {
             &[],
         ),
         ("Kit k:\n    Sampler | file=1\n", &[Code::TypeMismatch]),
-        ("input c = 0.5\nClip m:\n    Note | accent=(c > 0.5)\n", &[]),
+        ("state c(0.5)\nClip m:\n    Note | accent=(c > 0.5)\n", &[]),
     ]);
 }
 
@@ -511,7 +511,7 @@ fn a_bare_variant_where_no_enum_is_expected_draws_unknown_name_wherever_it_stand
         ),
         (
             &[
-                "input w = Wave::Saw\n",
+                "state w(Wave::Saw)\n",
                 "Clip c:\n    Note/(60 + len([w]))\n",
             ],
             &[],
@@ -546,7 +546,7 @@ fn a_bare_variant_stands_only_where_an_enum_is_expected() {
         ("Clip c | gain=Saw(1)\n", &[Code::UnknownName]),
         ("let z = Saw.gain\nClip c | gain=z\n", &[Code::UnknownName]),
         (
-            "input w = Saw\nSynth s:\n    Osc | wave=w\n",
+            "state w(Saw)\nSynth s:\n    Osc | wave=w\n",
             &[Code::UnknownName],
         ),
         (
@@ -558,12 +558,9 @@ fn a_bare_variant_stands_only_where_an_enum_is_expected() {
             &[Code::UnknownName],
         ),
         ("Synth s:\n    Osc | wave=Saw\n", &[]),
+        ("state w(Wave::Saw)\nSynth s:\n    Osc when w is Saw\n", &[]),
         (
-            "input w = Wave::Saw\nSynth s:\n    Osc when w is Saw\n",
-            &[],
-        ),
-        (
-            "input w = Wave::Saw\nlet level = match w:\n    Sine: 1.0\n    Saw: 0.8\n    else: 0.6\nClip c | gain=level\n",
+            "state w(Wave::Saw)\nlet level = match w:\n    Sine: 1.0\n    Saw: 0.8\n    else: 0.6\nClip c | gain=level\n",
             &[],
         ),
         ("let w = Saw\nSynth s:\n    Osc | wave=w\n", &[]),
@@ -576,12 +573,12 @@ fn a_bare_variant_stands_only_where_an_enum_is_expected() {
 
 #[test]
 fn the_operands_of_is_give_a_reactive_let_its_enum() {
-    let held = "Session s\ninput f = true\nlet x = if f then Sine else Saw\n";
+    let held = "Session s\nstate f(true)\nlet x = if f then Sine else Saw\n";
     let rows = [
         format!("{held}Clip c:\n    Note when x is Wave::Saw\n"),
         format!("{held}Clip c:\n    Note when x is not Wave::Saw\n"),
         format!("{held}Clip c:\n    Note when Wave::Saw is x\n"),
-        format!("{held}input w = Wave::Saw\nClip c:\n    Note when x is w\n"),
+        format!("{held}state w(Wave::Saw)\nClip c:\n    Note when x is w\n"),
         format!("{held}let g = x is Wave::Saw\nClip c:\n    Note when g\n"),
         format!(
             "{held}let y = if f then Saw else Sine\nOsc o | wave=x\nClip c:\n    Note when x is y\n"
@@ -596,7 +593,7 @@ fn the_operands_of_is_give_a_reactive_let_its_enum() {
 
 #[test]
 fn a_let_an_error_leaves_untyped_reads_as_a_placeholder_at_its_uses() {
-    let held = "Session s\ninput f = true\nlet x = if f then Sine else Saw\n";
+    let held = "Session s\nstate f(true)\nlet x = if f then Sine else Saw\n";
     let the_value = "if f then Sine else Saw";
     for uses in [
         "Clip c:\n    Note when x is x\n",
@@ -610,7 +607,7 @@ fn a_let_an_error_leaves_untyped_reads_as_a_placeholder_at_its_uses() {
         );
     }
     support::expect_codes(
-        "input f = true\nlet x = if f then \"a\" else \"b\"\nClip c:\n    Note when x is \"a\"\n",
+        "state f(true)\nlet x = if f then \"a\" else \"b\"\nClip c:\n    Note when x is \"a\"\n",
         &[(
             Code::ReactiveString,
             "let x = if f then \"a\" else \"b\"\n",
@@ -643,9 +640,9 @@ fn a_let_an_error_leaves_untyped_reads_as_a_placeholder_at_its_uses() {
 
 #[test]
 fn a_bare_variant_lets_diagnostic_stands_where_its_variants_are_written() {
-    let held = "Session s\ninput f = true\ninput g = true\nlet x = if f then Sine else Saw\n";
+    let held = "Session s\nstate f(true)\nstate g(true)\nlet x = if f then Sine else Saw\n";
     let other = "let w = if f then Saw else Square\n";
-    let bare = "Session s\ninput f = true\ninput g = true\n";
+    let bare = "Session s\nstate f(true)\nstate g(true)\n";
     let the_value = "if f then Sine else Saw";
     let other_value = "if f then Saw else Square";
     let failures: Vec<String> = [
@@ -750,10 +747,10 @@ fn a_bare_variant_lets_diagnostic_stands_where_its_variants_are_written() {
 
 #[test]
 fn a_let_that_reads_a_typed_enum_takes_its_type() {
-    let held = "Session s\ninput f = true\nlet x = if f then Sine else Saw\n";
+    let held = "Session s\nstate f(true)\nlet x = if f then Sine else Saw\n";
     let typed = "Synth s2:\n    Osc | wave=x\n";
     support::expect_codes(
-        "Session s\ninput w = Wave::Saw\nlet y = w\nClip c:\n    Note when y\n",
+        "Session s\nstate w(Wave::Saw)\nlet y = w\nClip c:\n    Note when y\n",
         &[(Code::ConditionType, "y", 1)],
     );
     support::expect_codes(
@@ -770,10 +767,10 @@ fn a_let_that_reads_a_typed_enum_takes_its_type() {
     );
     for (lets, held) in [
         ("let y = if f then x else Square\n", held),
-        ("input i = 0\nlet y = [x, Square][i]\n", held),
+        ("state i(0)\nlet y = [x, Square][i]\n", held),
         (
             "let y = if f then w else Square\n",
-            "Session s\ninput f = true\ninput w = Wave::Saw\nlet x = if f then Sine else Saw\n",
+            "Session s\nstate f(true)\nstate w(Wave::Saw)\nlet x = if f then Sine else Saw\n",
         ),
     ] {
         support::expect_codes(
@@ -832,12 +829,12 @@ fn a_carried_enum_meets_every_use_in_every_order_in(orders: support::Orders) {
         found
     };
     let carried = [
-        "input f = true",
+        "state f(true)",
         "let w = if f then Saw else Sine",
         "let v = if f then w else w",
     ];
     let held = [
-        "input f = true",
+        "state f(true)",
         "let a = if f then Sine else Saw",
         "let b = a",
     ];
@@ -864,7 +861,7 @@ fn a_carried_enum_meets_every_use_in_every_order_in(orders: support::Orders) {
         with(&held, &["let c = b", "K k1 | wave=a color=c"]),
     ];
     let joined = [
-        "input f = true",
+        "state f(true)",
         "let a = if f then Sine else Saw",
         "let b = if f then Red else Green",
         "let y = if f then a else b",
@@ -874,7 +871,7 @@ fn a_carried_enum_meets_every_use_in_every_order_in(orders: support::Orders) {
     let accepted = [
         vec!["let a = Red", colored, "K k1 | color=a", "K k2 | color=b"],
         vec![
-            "input f = true",
+            "state f(true)",
             "let a = if f then Red else Blue",
             colored,
             "K k1 | color=a",
@@ -893,7 +890,7 @@ fn a_carried_enum_meets_every_use_in_every_order_in(orders: support::Orders) {
         rejected.into_iter().map(|items| (items, None)).collect();
     cases.push((
         vec![
-            "input f = true",
+            "state f(true)",
             "let a = if f then Sine else Saw",
             "let b = if f then a else b",
             "K k1 | wave=b",
@@ -945,7 +942,7 @@ fn unit_values_keep_their_family() {
             &[Code::PlainInFamily],
         ),
         (
-            "input d = 5ms\nlet e = d * 2\nClip c:\n    Note | length=e\n",
+            "state d(5ms)\nlet e = d * 2\nClip c:\n    Note | length=e\n",
             &[Code::UnitMismatch],
         ),
         ("Clip c:\n    Note | length=(2bars / 1bars)\n", &[]),
@@ -959,14 +956,14 @@ fn a_match_waits_for_its_scrutinees_enum() {
     let used = "Synth y:\n    Osc | wave=a rate=l\n";
     for held in [
         "Session s\nlet a = Sine\n",
-        "Session s\ninput a = Wave::Saw\n",
-        "Session s\ninput f = true\nlet a = if f then Sine else Saw\n",
+        "Session s\nstate a(Wave::Saw)\n",
+        "Session s\nstate f(true)\nlet a = if f then Sine else Saw\n",
     ] {
         support::expect_codes(&format!("{held}{arms}{used}"), &[]);
     }
     let unused = "Synth y:\n    Osc | rate=l\n";
     support::expect_codes(
-        &format!("Session s\ninput f = true\nlet a = if f then Sine else Saw\n{arms}{unused}"),
+        &format!("Session s\nstate f(true)\nlet a = if f then Sine else Saw\n{arms}{unused}"),
         &[(Code::TypeMismatch, "if f then Sine else Saw", 0)],
     );
     support::expect_codes(
@@ -1005,19 +1002,19 @@ fn fixture_errors(text: &str) -> Errors {
 fn a_compile_time_bare_let_typed_by_its_uses_is_a_typed_value_for_every_consumer() {
     let typed = "Synth s:\n    Osc | wave=x";
     let consumers: [&[&'static str]; 8] = [
-        &["input k = x"],
+        &["state k(x)"],
         &["Clip c:\n    for e in [x]:\n        Note/60"],
-        &["let y = x", "input k = y"],
+        &["let y = x", "state k(y)"],
         &["Track t | label=\"{x}\""],
         &["Osc p when x is Saw"],
         &["let y = Saw", "Osc p when x is y"],
         &[
-            "input f = true",
+            "state f(true)",
             "let v = if f then x else Saw",
             "Osc p when v is Saw",
         ],
         &[
-            "input f = true",
+            "state f(true)",
             "let v = if f then x else x",
             "Osc p when v is Saw",
         ],
@@ -1040,7 +1037,7 @@ fn a_compile_time_bare_let_typed_by_its_uses_is_a_typed_value_for_every_consumer
         }
     }
     let untyped: [&[&'static str]; 4] = [
-        &["input k = x"],
+        &["state k(x)"],
         &["Clip c:\n    for e in [x]:\n        Note/60"],
         &["Track t | label=\"{x}\""],
         &["Clip c:\n    Note when x"],
@@ -1099,7 +1096,7 @@ fn an_array_literals_expected_type_reaches_every_element() {
         (
             "let x = if f then Sine else Saw",
             vec![
-                "input f = true",
+                "state f(true)",
                 "Synth y:\n    Osc | wave=([x, Wave::Square][1])",
             ],
         ),
@@ -1178,8 +1175,8 @@ fn a_compile_time_choice_type_checks_what_it_does_not_select() {
         (&["Clip c:\n    Note | pitch=([1, 2][0])"], &[]),
         (
             &[
-                "input a = 1",
-                "input b = 3000000000",
+                "state a(1)",
+                "state b(3000000000)",
                 "let c = [a, b]",
                 "Clip m:\n    Note/(c[0])",
             ],
@@ -1221,7 +1218,7 @@ fn a_compile_time_choice_type_checks_what_it_does_not_select() {
         ),
         (
             &[
-                "input w = Wave::Saw",
+                "state w(Wave::Saw)",
                 "Osc o | wave=(if true then w else Red)",
             ],
             &[(Code::UnknownName, "Red")],
@@ -1273,7 +1270,7 @@ fn a_compile_time_choice_type_checks_what_it_does_not_select() {
         }
     }
     let passed_over =
-        "Session s\ninput a = 1.5\ninput b = 2\nlet c = [a, b]\nSynth y:\n    Osc | freq=(c[0])\n";
+        "Session s\nstate a(1.5)\nstate b(2)\nlet c = [a, b]\nSynth y:\n    Osc | freq=(c[0])\n";
     let warned: Vec<Code> = support::checked_all(passed_over)
         .iter()
         .map(|diagnostic| diagnostic.code)
@@ -1361,7 +1358,7 @@ fn every_array_literal_holds_one_element_type_and_one_family_wherever_it_stands(
             &[(Code::TypeMismatch, "[1, \"s\"]")],
         ),
         (
-            &["input k = [1, Wave::Saw]"],
+            &["state k([1, Wave::Saw])"],
             &[(Code::TypeMismatch, "[1, Wave::Saw]")],
         ),
         (
@@ -1369,7 +1366,7 @@ fn every_array_literal_holds_one_element_type_and_one_family_wherever_it_stands(
             &[(Code::TypeMismatch, "[1, \"s\"]")],
         ),
         (
-            &["input f = true", "let q = if f then [1, \"s\"] else [1, 2]"],
+            &["state f(true)", "let q = if f then [1, \"s\"] else [1, 2]"],
             &[(Code::TypeMismatch, "[1, \"s\"]")],
         ),
         (
@@ -1431,14 +1428,14 @@ fn every_array_literal_holds_one_element_type_and_one_family_wherever_it_stands(
 #[test]
 fn an_empty_array_has_length_zero_and_a_compile_time_index_into_it_is_outside() {
     let rows: [Row; 14] = [
-        (&["input k: i32[2] = []"], &[(Code::TypeMismatch, "[]")]),
+        (&["state k([]): i32[2]"], &[(Code::TypeMismatch, "[]")]),
         (
-            &["input k: i32[2][2] = [[], []]"],
+            &["state k([[], []]): i32[2][2]"],
             &[(Code::TypeMismatch, "[[], []]")],
         ),
-        (&["input k: i32[2] = [1, 2]"], &[]),
+        (&["state k([1, 2]): i32[2]"], &[]),
         (
-            &["input k: i32[3] = [1, 2]"],
+            &["state k([1, 2]): i32[3]"],
             &[(Code::TypeMismatch, "[1, 2]")],
         ),
         (
@@ -1458,11 +1455,11 @@ fn an_empty_array_has_length_zero_and_a_compile_time_index_into_it_is_outside() 
             &[(Code::IndexOutOfRange, "0")],
         ),
         (
-            &["input i = 0", "let v = [[]]", "Clip c:\n    Note/(v[0][i])"],
+            &["state i(0)", "let v = [[]]", "Clip c:\n    Note/(v[0][i])"],
             &[],
         ),
         (
-            &["input k: i32[0] = 1", "Clip c:\n    Note/(k[0])"],
+            &["state k(1): i32[0]", "Clip c:\n    Note/(k[0])"],
             &[(Code::ZeroLength, "0")],
         ),
         (
@@ -1638,10 +1635,10 @@ fn a_literal_whose_elements_disagree_draws_one_diagnostic_wherever_its_value_goe
     let rows: [LocatedRow; 45] = [
         (&[H, "Clip c:\n    Note/(h()[0])"], at_literal_of_h),
         (
-            &[H, "input f = true", "let q = if f then h() else [1, 2, 3]"],
+            &[H, "state f(true)", "let q = if f then h() else [1, 2, 3]"],
             at_literal_of_h,
         ),
-        (&[H, "input k = h()"], at_literal_of_h),
+        (&[H, "state k(h())"], at_literal_of_h),
         (
             &[
                 H,
@@ -1696,7 +1693,7 @@ fn a_literal_whose_elements_disagree_draws_one_diagnostic_wherever_its_value_goe
         ),
         (&[H, "Clip c:\n    Note/(h())"], at_literal_of_h),
         (
-            &[H, "input i = 0", "Clip c:\n    Note/(h()[i])"],
+            &[H, "state i(0)", "Clip c:\n    Note/(h()[i])"],
             at_literal_of_h,
         ),
         (
@@ -1714,7 +1711,7 @@ fn a_literal_whose_elements_disagree_draws_one_diagnostic_wherever_its_value_goe
         (
             &[
                 H,
-                "input f = true",
+                "state f(true)",
                 "let q = if f then h() else [1, 2]",
                 "Clip c:\n    Note/(q[0])",
             ],
@@ -1905,7 +1902,7 @@ fn a_plain_element_of_a_unit_literal_in_an_arm_is_read_in_the_unit_its_family_va
         (&[Q, AT_LENGTH], &[]),
         (
             &[
-                "input c = true",
+                "state c(true)",
                 "let q = if c then [1bars, 2] else [3bars, 4]",
                 AT_LENGTH,
             ],
@@ -1923,10 +1920,7 @@ fn a_plain_element_of_a_unit_literal_in_an_arm_is_read_in_the_unit_its_family_va
             &[],
         ),
         (&[Q, "let r = q", "Clip k:\n    Note | length=(r[1])"], &[]),
-        (
-            &[Q, "input i = 0", "Clip k:\n    Note | length=(q[i])"],
-            &[],
-        ),
+        (&[Q, "state i(0)", "Clip k:\n    Note | length=(q[i])"], &[]),
         (
             &[
                 "let q = if true then 2 else 3bars",
@@ -2266,10 +2260,7 @@ fn a_literals_family_value_reaches_every_attribute_a_read_of_it_reaches() {
             &[A, "Clip k:\n    for e in a:\n        Note | length=(e)"],
             &[],
         ),
-        (
-            &[A, "input i = 0", "Clip k:\n    Note | length=(a[i])"],
-            &[],
-        ),
+        (&[A, "state i(0)", "Clip k:\n    Note | length=(a[i])"], &[]),
         (
             &["fn f(x): x[0]", A, "Clip k:\n    Note | length=(f(a))"],
             &[],
@@ -2595,24 +2586,21 @@ fn a_use_of_a_name_a_skipped_region_may_declare_draws_nothing_more() {
 #[test]
 fn every_reference_to_a_top_level_name_declared_twice_is_a_placeholder() {
     let rows: [Row; 14] = [
-        (
-            &["input i = 0", "input i = i"],
-            &[(Code::DuplicateName, "i")],
-        ),
+        (&["state i(0)", "state i(i)"], &[(Code::DuplicateName, "i")]),
         (
             &["fn f(): 1", "fn f(x): x", "Clip c:\n    Note/(f(1))"],
             &[(Code::DuplicateName, "f")],
         ),
         (
             &[
-                "input w = Wave::Saw",
-                "input w = Wave::Sine",
+                "state w(Wave::Saw)",
+                "state w(Wave::Sine)",
                 "Synth y:\n    Osc | wave=w",
             ],
             &[(Code::DuplicateName, "w")],
         ),
         (
-            &["input a = 2", "let c = a", "input a = c"],
+            &["state a(2)", "let c = a", "state a(c)"],
             &[(Code::DuplicateName, "a")],
         ),
         (
@@ -2630,7 +2618,7 @@ fn every_reference_to_a_top_level_name_declared_twice_is_a_placeholder() {
         ),
         (
             &[
-                "input swing = 0.1",
+                "state swing(0.1)",
                 "let groove = swing",
                 "Clip groove:\n    Plays: groove",
             ],
@@ -2652,9 +2640,9 @@ fn every_reference_to_a_top_level_name_declared_twice_is_a_placeholder() {
         ),
         (
             &[
-                "input a = 1",
+                "state a(1)",
                 "Clip c:\n    Note | velocity=a",
-                "input a = 0.8",
+                "state a(0.8)",
             ],
             &[(Code::DuplicateName, "a")],
         ),
@@ -2675,13 +2663,13 @@ fn every_reference_to_a_top_level_name_declared_twice_is_a_placeholder() {
             ],
             &[(Code::DuplicateName, "Q")],
         ),
-        (&["input i = i"], &[(Code::DeclarationCycle, "i")]),
+        (&["state i(i)"], &[(Code::DeclarationCycle, "i")]),
         (
-            &["input i = 0", "input j = i"],
+            &["state i(0)", "state j(i)"],
             &[(Code::ReactiveInitializer, "i")],
         ),
         (
-            &["input i = 0", "input i = 1", "input j = j"],
+            &["state i(0)", "state i(1)", "state j(j)"],
             &[(Code::DeclarationCycle, "j"), (Code::DuplicateName, "i")],
         ),
     ];
@@ -2778,7 +2766,7 @@ const FAULTY_LINES: [&str; 51] = [
     "fn f(x = ): 1",
     "Clip d !",
     "Clip d '",
-    "input x: Wave = Sine",
+    "state x(Sine): Wave",
     "let a = Wave::",
     "let a = x.",
     "Clip d as",
@@ -2925,8 +2913,8 @@ fn a_line_after_a_missing_block_reports_its_own_faults() {
 }
 
 fn a_cell_read_through_a_literals_group_keeps_its_own_kind_in(orders: support::Orders) {
-    const X: &str = "input x = 1";
-    const C: &str = "input c = true";
+    const X: &str = "state x(1)";
+    const C: &str = "state c(true)";
     const Q: &str = "let q = if c then [x, 2.5] else [3, 4]";
     let rows: [Row; 13] = [
         (&[X, C, Q], &[]),
@@ -2967,7 +2955,7 @@ fn a_cell_read_through_a_literals_group_keeps_its_own_kind_in(orders: support::O
             &[
                 X,
                 C,
-                "input y = 2.5",
+                "state y(2.5)",
                 "let q = if c then [x, y] else [3, 4]",
                 "Osc o | freq=(q[0])",
             ],
@@ -3021,8 +3009,8 @@ fn as_given(items: &[&'static str]) -> Vec<&'static str> {
 
 #[test]
 fn a_family_feed_stays_out_of_an_index_and_a_plain_cell_conflicts_once() {
-    const I: &str = "input i = 0";
-    const X: &str = "input x = 2";
+    const I: &str = "state i(0)";
+    const X: &str = "state x(2)";
     const XA: &str = "let a = [1bars, x]";
     let rows: [LocatedRow; 10] = [
         (
@@ -3380,12 +3368,12 @@ fn exhaustive_inconsistent_uses_name_each_use_with_its_calls() {
 fn bytes_of_an_integer_array_keeps_its_shape_and_reads_as_a_u8_array() {
     let rows: &[support::Row] = &[
         (
-            &["input xs = [1, 2]\n", "Clip c:\n    Note/(bytes(xs)[0])\n"],
+            &["state xs([1, 2])\n", "Clip c:\n    Note/(bytes(xs)[0])\n"],
             &[],
         ),
         (
             &[
-                "input i = 300\n",
+                "state i(300)\n",
                 "let b = bytes([i, 2])\n",
                 "Clip c:\n    Note/(b[0])\n",
             ],
@@ -3393,7 +3381,7 @@ fn bytes_of_an_integer_array_keeps_its_shape_and_reads_as_a_u8_array() {
         ),
         (
             &[
-                "input xs: u8[3] = [1, 2, 3]\n",
+                "state xs([1, 2, 3]): u8[3]\n",
                 "let b = bytes(xs)\n",
                 "Clip c:\n    Note/(b[2])\n",
             ],
@@ -3401,7 +3389,7 @@ fn bytes_of_an_integer_array_keeps_its_shape_and_reads_as_a_u8_array() {
         ),
         (
             &[
-                "input notes: i32[3] = [60, 64, 67]\n",
+                "state notes([60, 64, 67]): i32[3]\n",
                 "let a = bytes(notes)\n",
                 "Clip c:\n    Note/(a[0])\n",
             ],
@@ -3409,7 +3397,7 @@ fn bytes_of_an_integer_array_keeps_its_shape_and_reads_as_a_u8_array() {
         ),
         (
             &[
-                "input i = 1\n",
+                "state i(1)\n",
                 "let lit = [i, 2, 3]\n",
                 "Clip c:\n    Note/(bytes(lit)[1])\n",
             ],
@@ -3417,7 +3405,7 @@ fn bytes_of_an_integer_array_keeps_its_shape_and_reads_as_a_u8_array() {
         ),
         (
             &[
-                "input held: i32[..6] = []\n",
+                "state held([]): i32[..6]\n",
                 "let raw = bytes(held)\n",
                 "let second = raw[1]\n",
                 "Clip c:\n    Note/second\n",
@@ -3426,8 +3414,8 @@ fn bytes_of_an_integer_array_keeps_its_shape_and_reads_as_a_u8_array() {
         ),
         (
             &[
-                "input packet: u8[..6] = []\n",
-                "input offset = 0\n",
+                "state packet([]): u8[..6]\n",
+                "state offset(0)\n",
                 "pattern P(default v):\n    Note/v\n",
                 "Clip c:\n    P/(bytes(packet)[offset])\n",
             ],
@@ -3435,7 +3423,7 @@ fn bytes_of_an_integer_array_keeps_its_shape_and_reads_as_a_u8_array() {
         ),
         (
             &[
-                "input h: i32[..4] = []\n",
+                "state h([]): i32[..4]\n",
                 "Clip c:\n    Note/(bytes(\"GET\")[0] + bytes([1, 2])[1] + len(bytes(h)))\n",
             ],
             &[],
@@ -3448,7 +3436,7 @@ fn bytes_of_an_integer_array_keeps_its_shape_and_reads_as_a_u8_array() {
             &[],
         ),
         (
-            &["input xs = [1, 2]\n", "Clip c:\n    Note/(bytes(xs)[2])\n"],
+            &["state xs([1, 2])\n", "Clip c:\n    Note/(bytes(xs)[2])\n"],
             &[(Code::IndexOutOfRange, "2")],
         ),
     ];
@@ -3456,14 +3444,14 @@ fn bytes_of_an_integer_array_keeps_its_shape_and_reads_as_a_u8_array() {
     let attribute: &[support::Row] = &[
         (
             &[
-                "input xs = [1, 2, 3]\n",
+                "state xs([1, 2, 3])\n",
                 "Clip c | fixed=(bytes(xs)):\n    Note\n",
             ],
             &[],
         ),
         (
             &[
-                "input xs = [1, 2, 3, 4]\n",
+                "state xs([1, 2, 3, 4])\n",
                 "Clip c | fixed=(bytes(xs)):\n    Note\n",
             ],
             &[(Code::TypeMismatch, "bytes(xs)")],
@@ -3488,7 +3476,7 @@ fn bytes_of_a_single_value_is_an_error() {
             &[(Code::OperandType, "bytes(65)")],
         ),
         (
-            &["input i = 1\n", "Clip c | data=(bytes(i)):\n    Note\n"],
+            &["state i(1)\n", "Clip c | data=(bytes(i)):\n    Note\n"],
             &[(Code::OperandType, "bytes(i)")],
         ),
         (
@@ -3668,8 +3656,8 @@ fn a_fixed_type_operand_widens_into_the_expected_type_before_the_operation() {
 
 #[test]
 fn a_comparisons_operand_computes_in_its_own_types_before_it_takes_its_partners() {
-    let big = "input big = 1\n";
-    let flag = "input flag = false\n";
+    let big = "state big(1)\n";
+    let flag = "state flag(false)\n";
     let u8_sum: &[(Code, &str)] = &[(Code::ConstantOverflow, "u8(255) + 4")];
     let i32_sum: &[(Code, &str)] = &[(Code::ConstantOverflow, "2147483647i32 + 1")];
     let i32_product: &[(Code, &str)] = &[(Code::ConstantOverflow, "2147483647i32 * 2")];
@@ -3682,14 +3670,14 @@ fn a_comparisons_operand_computes_in_its_own_types_before_it_takes_its_partners(
         (&[big, "Clip c:\n    Note when u8(255) + 4 < big\n"], u8_sum),
         (
             &[
-                "input k = 1\n",
+                "state k(1)\n",
                 "Clip c:\n    Note when k < 2147483647i32 * 2\n",
             ],
             i32_product,
         ),
         (
             &[
-                "input k = 1\n",
+                "state k(1)\n",
                 "let r = k > u8(255) + 4\n",
                 "Clip c:\n    Note when r\n",
             ],
@@ -3762,7 +3750,7 @@ fn a_comparisons_operand_computes_in_its_own_types_before_it_takes_its_partners(
         ),
         (&["Clip c:\n    Note when u8(255) + 4 > 1i32\n"], u8_sum),
         (
-            &["input k = 1\n", "Clip c:\n    Note/(k + (u8(255) + 4))\n"],
+            &["state k(1)\n", "Clip c:\n    Note/(k + (u8(255) + 4))\n"],
             &[],
         ),
         (&[big, "Clip c:\n    Note when big > u8(250) + 4\n"], &[]),
@@ -3781,8 +3769,8 @@ fn a_comparisons_operand_computes_in_its_own_types_before_it_takes_its_partners(
 
 #[test]
 fn where_the_flow_stops_an_operand_computes_in_its_own_types_whatever_its_partner() {
-    let k = "input k = 1\n";
-    let flag = "input flag = false\n";
+    let k = "state k(1)\n";
+    let flag = "state flag(false)\n";
     let u8_sum: &[(Code, &str)] = &[(Code::ConstantOverflow, "u8(255) + 4")];
     let i32_sum: &[(Code, &str)] = &[(Code::ConstantOverflow, "2147483647i32 + 1")];
     let summed = "let r = k + (u8(255) + 4)\n";
@@ -3811,7 +3799,7 @@ fn where_the_flow_stops_an_operand_computes_in_its_own_types_whatever_its_partne
         (
             &[
                 k,
-                "input held: i32[..4] = []\n",
+                "state held([]): i32[..4]\n",
                 "Clip c:\n    Note/(held[k + (u8(255) + 4)])\n",
             ],
             u8_sum,
@@ -3860,39 +3848,35 @@ fn where_the_flow_stops_an_operand_computes_in_its_own_types_whatever_its_partne
 fn an_integer_inputs_initial_value_fits_every_use_u8_uses_included() {
     let rows: &[support::Row] = &[
         (
-            &["input i = 300\n", "Clip c | fixed=[i, 2, 3]:\n    Note\n"],
+            &["state i(300)\n", "Clip c | fixed=[i, 2, 3]:\n    Note\n"],
+            &[(Code::DoesNotFit, "i")],
+        ),
+        (
+            &["state i(300)\n", "let x: u8 = i\n", "Clip c:\n    Note/x\n"],
+            &[(Code::DoesNotFit, "i")],
+        ),
+        (
+            &["state i(300)\n", "Clip c:\n    Note/(fixed3([i, 1, 2]))\n"],
             &[(Code::DoesNotFit, "i")],
         ),
         (
             &[
-                "input i = 300\n",
-                "let x: u8 = i\n",
-                "Clip c:\n    Note/x\n",
-            ],
-            &[(Code::DoesNotFit, "i")],
-        ),
-        (
-            &["input i = 300\n", "Clip c:\n    Note/(fixed3([i, 1, 2]))\n"],
-            &[(Code::DoesNotFit, "i")],
-        ),
-        (
-            &[
-                "input xs: i64[..4] = [300]\n",
+                "state xs([300]): i64[..4]\n",
                 "Clip c | data=xs:\n    Note\n",
             ],
             &[(Code::DoesNotFit, "xs")],
         ),
         (
             &[
-                "input xs: i64[..4] = [3000000000]\n",
+                "state xs([3000000000]): i64[..4]\n",
                 "Clip c:\n    Note/(xs[0])\n",
             ],
             &[(Code::DoesNotFit, "xs")],
         ),
         (
             &[
-                "input i = 255\n",
-                "input xs: i64[..4] = [255]\n",
+                "state i(255)\n",
+                "state xs([255]): i64[..4]\n",
                 "let x: u8 = i\n",
                 "Clip c | fixed=[i, 2, 3] data=xs:\n    Note/x\n    Note/(fixed3([i, 1, 2]))\n",
             ],
@@ -3900,7 +3884,7 @@ fn an_integer_inputs_initial_value_fits_every_use_u8_uses_included() {
         ),
         (
             &[
-                "input i = 300\n",
+                "state i(300)\n",
                 "let b = bytes([i, 2])\n",
                 "Clip c:\n    Note/(b[0])\n",
             ],
@@ -3916,7 +3900,7 @@ fn a_match_label_with_the_scrutinees_type_suffix_is_accepted() {
     let rows: &[support::Row] = &[
         (
             &[
-                "input b: u8 = 3\n",
+                "state b(3): u8\n",
                 "let v = match b:\n    3u8: 1\n    else: 2\n",
                 read,
             ],
@@ -3924,7 +3908,7 @@ fn a_match_label_with_the_scrutinees_type_suffix_is_accepted() {
         ),
         (
             &[
-                "input b: u8 = 3\n",
+                "state b(3): u8\n",
                 "let v = match b:\n    3: 1\n    else: 2\n",
                 read,
             ],
@@ -3932,7 +3916,7 @@ fn a_match_label_with_the_scrutinees_type_suffix_is_accepted() {
         ),
         (
             &[
-                "input b: u8 = 3\n",
+                "state b(3): u8\n",
                 "let v = match b:\n    3i32: 1\n    else: 2\n",
                 read,
             ],
@@ -3940,7 +3924,7 @@ fn a_match_label_with_the_scrutinees_type_suffix_is_accepted() {
         ),
         (
             &[
-                "input b = 3\n",
+                "state b(3)\n",
                 "let v = match b:\n    3i64: 1\n    else: 2\n",
                 read,
             ],
@@ -3950,7 +3934,7 @@ fn a_match_label_with_the_scrutinees_type_suffix_is_accepted() {
     support::assert_rows_in_every_order(&symphonyscript_fixtures::vocabulary(), rows);
     let compiler =
         symphonyscript::Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("compiles");
-    let text = "input b: u8 = 3\nlet v = match b:\n    3i32: 1\n    else: 2\nClip c:\n    Note/v\n";
+    let text = "state b(3): u8\nlet v = match b:\n    3i32: 1\n    else: 2\nClip c:\n    Note/v\n";
     let diagnostics = compiler.check(&[support::source(text)]);
     assert!(
         diagnostics
@@ -3963,9 +3947,9 @@ fn a_match_label_with_the_scrutinees_type_suffix_is_accepted() {
 
 #[test]
 fn a_match_label_is_fit_checked_in_the_scrutinees_type_and_in_its_suffixs() {
-    let byte = "input b: u8 = 3\n";
-    let int = "input b: i32 = 3\n";
-    let wide = "input b = 3\n";
+    let byte = "state b(3): u8\n";
+    let int = "state b(3): i32\n";
+    let wide = "state b(3)\n";
     let read = "Clip c:\n    Note/(v)\n";
     let labelled = |scrutinee: &str, label: &str| {
         format!("let v = match {scrutinee}:\n    {label}: 1\n    else: 2\n")
@@ -4031,7 +4015,7 @@ fn a_match_label_is_fit_checked_in_the_scrutinees_type_and_in_its_suffixs() {
         (&[byte, &other, read], &[(Code::MatchLabel, "3i32")]),
         (
             &[
-                "input wave = Wave::Saw\n",
+                "state wave(Wave::Saw)\n",
                 "let level = match wave:\n    Sine: 1.0\n    Saw: 0.8\n    else: 0.6\n",
                 "Clip c | gain=level:\n    Note\n",
             ],
@@ -4044,14 +4028,14 @@ fn a_match_label_is_fit_checked_in_the_scrutinees_type_and_in_its_suffixs() {
 #[test]
 fn an_annotation_is_its_initializers_expected_type() {
     let rows: &[support::Row] = &[
-        (&["input w: Wave = Saw\n", "Osc o | wave=w\n"], &[]),
+        (&["state w(Saw): Wave\n", "Osc o | wave=w\n"], &[]),
         (&["let x: Wave = Saw\n", "Osc o | wave=x\n"], &[]),
         (&["state s: Wave = Saw\n"], &[]),
         (
-            &["input w: Wave[2] = [Saw, Sine]\n", "Osc o | wave=(w[1])\n"],
+            &["state w([Saw, Sine]): Wave[2]\n", "Osc o | wave=(w[1])\n"],
             &[],
         ),
-        (&["input w = Saw\n"], &[(Code::UnknownName, "Saw")]),
+        (&["state w(Saw)\n"], &[(Code::UnknownName, "Saw")]),
     ];
     support::assert_rows_in_every_order(&symphonyscript_fixtures::vocabulary(), rows);
 }
@@ -4063,20 +4047,20 @@ fn one_fault_draws_one_diagnostic_at_the_fault() {
         &support::signature_vocabulary(),
         &[
             (
-                &["input f = 1.5\n", "Clip c | three=[f, 2]:\n    Note\n"],
+                &["state f(1.5)\n", "Clip c | three=[f, 2]:\n    Note\n"],
                 &[(Code::FloatToInteger, "f")],
             ),
             (
-                &["input f = 1.5\n", "Clip c | three=[1.5, 2]:\n    Note\n"],
+                &["state f(1.5)\n", "Clip c | three=[1.5, 2]:\n    Note\n"],
                 &[(Code::TypeMismatch, "1.5")],
             ),
             (
-                &["input h: u8[..3] = []\n", "Clip c | fixed=h:\n    Note\n"],
+                &["state h([]): u8[..3]\n", "Clip c | fixed=h:\n    Note\n"],
                 &[(Code::VariableArray, "h")],
             ),
         ],
     );
-    let state = "input x = 1\n";
+    let state = "state x(1)\n";
     support::assert_rows_in_every_order(
         &symphonyscript_fixtures::vocabulary(),
         &[
@@ -4104,15 +4088,15 @@ fn one_fault_draws_one_diagnostic_at_the_fault() {
             (
                 &[
                     state,
-                    "state s = x{1, 0.5}\n",
+                    "state s = x.past(1, 0.5)\n",
                     "Clip c:\n    Note when s > 0\n",
                 ],
                 &[(Code::TypeMismatch, "0.5")],
             ),
-            (&["input f = 1.5\n", "Osc o | freq=f\n", note], &[]),
+            (&["state f(1.5)\n", "Osc o | freq=f\n", note], &[]),
         ],
     );
-    let text = "input x = 1\nstate s = x{1, 0.5}\nClip c:\n    Note when s > 0\n";
+    let text = "state x(1)\nstate s = x.past(1, 0.5)\nClip c:\n    Note when s > 0\n";
     assert!(
         support::checked_all(text)
             .iter()
@@ -4123,7 +4107,7 @@ fn one_fault_draws_one_diagnostic_at_the_fault() {
 
 #[test]
 fn a_choice_holding_an_operand_a_syntax_fault_leaves_missing_draws_its_syntax_diagnostic_alone() {
-    let inputs = "input l = 1\ninput k: i32[..4] = [1, 2]\n";
+    let inputs = "state l(1)\nstate k([1, 2]): i32[..4]\n";
     let positions: [(&str, &str); 3] = [
         ("let j = ", "\nClip c:\n    Note/(j)\n"),
         ("state j = ", "\nClip c:\n    Note/(j)\n"),
@@ -4195,14 +4179,14 @@ fn a_bytes_result_of_another_shape_than_a_fixed_attributes_draws_the_shape_diagn
         &support::signature_vocabulary(),
         &[
             (
-                &["input xs: u8[2] = [1, 2]\n", binding],
+                &["state xs([1, 2]): u8[2]\n", binding],
                 &[(Code::TypeMismatch, "bytes(xs)")],
             ),
             (
-                &["input xs = [1, 2]\n", binding],
+                &["state xs([1, 2])\n", binding],
                 &[(Code::TypeMismatch, "bytes(xs)")],
             ),
-            (&["input xs = [1, 2, 3]\n", binding], &[]),
+            (&["state xs([1, 2, 3])\n", binding], &[]),
         ],
     );
 }
@@ -4214,31 +4198,31 @@ fn an_input_whose_initializer_does_not_fit_its_annotation_draws_one_does_not_fit
         &[
             (
                 &[
-                    "input xs: u8[..3] = [300]\n",
+                    "state xs([300]): u8[..3]\n",
                     "Clip c | data=xs:\n    Note\n",
                 ],
                 &[(Code::DoesNotFit, "300")],
             ),
             (
                 &[
-                    "input xs: i32[..3] = [3000000000]\n",
+                    "state xs([3000000000]): i32[..3]\n",
                     "Clip c:\n    Note/(xs[0])\n",
                 ],
                 &[(Code::DoesNotFit, "3000000000")],
             ),
             (
-                &["input x: i32 = 2147483647 + 1\n", "Clip c:\n    Note/x\n"],
+                &["state x(2147483647 + 1): i32\n", "Clip c:\n    Note/x\n"],
                 &[(Code::DoesNotFit, "2147483647 + 1")],
             ),
             (
                 &[
-                    "input xs: u8[3] = [300, 1, 2]\n",
+                    "state xs([300, 1, 2]): u8[3]\n",
                     "Clip c | fixed=xs:\n    Note\n",
                 ],
                 &[(Code::DoesNotFit, "300")],
             ),
             (
-                &["input i = 300\n", "Clip c | fixed=[i, 2, 3]:\n    Note\n"],
+                &["state i(300)\n", "Clip c | fixed=[i, 2, 3]:\n    Note\n"],
                 &[(Code::DoesNotFit, "i")],
             ),
         ],
@@ -4319,7 +4303,7 @@ fn a_range_bound_or_index_reading_a_diagnosed_let_takes_its_placeholder() {
 #[test]
 fn a_to_path_reads_an_array_attribute_as_its_binding() {
     let declared = [
-        "input sec = 0\n",
+        "state sec(0)\n",
         "Clip b:\n    Note\n",
         "Clip c:\n    Note\n",
     ];
@@ -4489,10 +4473,7 @@ fn an_independent_fault_beside_a_placeholder_draws_its_own_diagnostic() {
             &[(Code::UnknownName, "nothing")],
         ),
         (
-            &[
-                "input x = 1\n",
-                "Clip c:\n    Note/([x, 300000000000][0])\n",
-            ],
+            &["state x(1)\n", "Clip c:\n    Note/([x, 300000000000][0])\n"],
             &[],
         ),
         (&["Clip c:\n    Note/([1, 300000000000][0])\n"], &[]),
@@ -4531,7 +4512,7 @@ fn an_independent_fault_beside_a_placeholder_draws_its_own_diagnostic() {
         ),
         (
             &[
-                "input note = 60\n",
+                "state note(60)\n",
                 "state s = nothing + (1 + true)\n",
                 "Clip c:\n    Note/(s + note)\n",
             ],
@@ -4566,7 +4547,7 @@ fn an_independent_fault_beside_a_placeholder_draws_its_own_diagnostic() {
 #[test]
 fn a_runtime_choice_between_strings_where_a_u8_array_is_expected_is_a_variable_array_of_their_bytes()
  {
-    let f = "input f = false\n";
+    let f = "state f(false)\n";
     let rows: &[support::Row] = &[
         (
             &[f, "Clip as g | data=(if f then \"GET\" else \"AB\")\n"],
@@ -4648,7 +4629,7 @@ fn a_runtime_choice_between_strings_where_a_u8_array_is_expected_is_a_variable_a
         (
             &[
                 f,
-                "input n = 1\n",
+                "state n(1)\n",
                 "Clip as g | data=(if f then \"GET\" else \"A{n}\")\n",
             ],
             &[(Code::ReactiveString, "n")],
@@ -4657,7 +4638,7 @@ fn a_runtime_choice_between_strings_where_a_u8_array_is_expected_is_a_variable_a
     support::assert_rows_in_every_order(&support::signature_vocabulary(), rows);
     let compiler =
         symphonyscript::Compiler::new(&support::signature_vocabulary()).expect("it compiles");
-    let text = "input f = false\nClip as g | data=(if f then \"GET\" else \"ABCDEFGHI\")\n";
+    let text = "state f(false)\nClip as g | data=(if f then \"GET\" else \"ABCDEFGHI\")\n";
     let summaries: Vec<String> = support::errors(compiler.check(&[support::source(text)]))
         .into_iter()
         .map(|diagnostic| diagnostic.summary)
@@ -4698,7 +4679,7 @@ fn a_runtime_choice_between_strings_where_a_u8_array_is_expected_is_a_variable_a
 #[test]
 fn where_a_u8_array_is_expected_each_string_leaf_of_a_choice_is_its_bytes_whatever_the_other_leaves_are()
  {
-    let f = "input f = false\n";
+    let f = "state f(false)\n";
     let mixed = "if f then \"GET\" else bytes(\"AB\")";
     let rows: &[support::Row] = &[
         (
@@ -4794,8 +4775,8 @@ fn where_a_u8_array_is_expected_each_string_leaf_of_a_choice_is_its_bytes_whatev
 
 #[test]
 fn a_let_whose_initializer_drew_an_error_is_a_placeholder_at_an_array_attribute() {
-    let f = "input f = false\n";
-    let note = "input note = 60\n";
+    let f = "state f(false)\n";
+    let note = "state note(60)\n";
     let choice = "match f:\n    true: \"GET\"\n    else: \"AB\"\n";
     let reactive = format!("let m = {choice}");
     let annotated = format!("let m: u8[..8] = {choice}");
@@ -4843,8 +4824,8 @@ fn a_let_whose_initializer_drew_an_error_is_a_placeholder_at_an_array_attribute(
 
 #[test]
 fn beside_a_placeholder_an_operand_draws_only_what_its_expression_draws_for_every_value() {
-    let x = "input x = 1\n";
-    let flag = "input flag = true\n";
+    let x = "state x(1)\n";
+    let flag = "state flag(true)\n";
     let rows: &[support::Row] = &[
         (
             &[x, "Clip c:\n    Note/(x + 1.5 + 2.5 + 3.5 + 4.5)\n"],
@@ -4947,7 +4928,7 @@ fn beside_a_placeholder_an_operand_draws_only_what_its_expression_draws_for_ever
         ),
         (
             &[
-                "input note = 60\n",
+                "state note(60)\n",
                 "state s = note + 1.5 + 2.5\n",
                 "Clip c:\n    Note/(s + note)\n",
             ],
@@ -4955,7 +4936,7 @@ fn beside_a_placeholder_an_operand_draws_only_what_its_expression_draws_for_ever
         ),
         (
             &[
-                "input note = 60\n",
+                "state note(60)\n",
                 "state s = nothing + 1.5 + 2.5\n",
                 "Clip c:\n    Note/(s + note)\n",
             ],
@@ -5011,7 +4992,7 @@ fn beside_a_placeholder_an_operand_draws_only_what_its_expression_draws_for_ever
 
 #[test]
 fn the_operand_that_keeps_a_flow_beside_a_placeholder_is_chosen_in_the_expressions_order() {
-    let x = "input x = 1\n";
+    let x = "state x(1)\n";
     let f = "fn f(v): v * 2\n";
     let g = "fn g(v): v\n";
     let rows: &[support::Row] = &[
@@ -5049,7 +5030,7 @@ fn the_operand_that_keeps_a_flow_beside_a_placeholder_is_chosen_in_the_expressio
 
 #[test]
 fn beside_a_placeholder_an_operand_draws_only_where_its_twin_draws_with_its_twins_code() {
-    let x = "input x = 1\n";
+    let x = "state x(1)\n";
     let rows: &[support::Row] = &[
         (
             &["Clip c:\n    Note/(nothing + 1.5 + (2 + true))\n"],
@@ -5125,7 +5106,7 @@ fn beside_a_placeholder_an_operand_draws_only_where_its_twin_draws_with_its_twin
     ];
     support::assert_rows_in_every_order(&support::signature_vocabulary(), rows);
     let compiler = symphonyscript::Compiler::new(&envelope).expect("it compiles");
-    let text = "input x = 1\nEnv e | attack=(x * 2ms + true)\n";
+    let text = "state x(1)\nEnv e | attack=(x * 2ms + true)\n";
     let summaries: Vec<String> = support::errors(compiler.check(&[support::source(text)]))
         .into_iter()
         .filter(|diagnostic| diagnostic.code == Code::OperandType)
@@ -5140,7 +5121,7 @@ fn beside_a_placeholder_an_operand_draws_only_where_its_twin_draws_with_its_twin
 
 #[test]
 fn an_own_typed_fault_inside_a_position_draws_whether_or_not_the_position_draws_a_type_mismatch() {
-    let x = "input x = 1\n";
+    let x = "state x(1)\n";
     let rows: &[support::Row] = &[
         (
             &["Clip c:\n    Note/(1.5 + [1, 2][5])\n"],
@@ -5186,10 +5167,7 @@ fn an_own_typed_fault_inside_a_position_draws_whether_or_not_the_position_draws_
             &[(Code::ConversionType, "i32(true)")],
         ),
         (
-            &[
-                "input flag = true\n",
-                "Synth s:\n    Osc | freq=f64(flag)\n",
-            ],
+            &["state flag(true)\n", "Synth s:\n    Osc | freq=f64(flag)\n"],
             &[(Code::ConversionType, "f64(flag)")],
         ),
         (
@@ -5776,16 +5754,16 @@ fn spanned_errors(compiler: &Compiler, sources: &[Source]) -> Spans {
 
 fn common_to_twins(compiler: &Compiler, program: &str) -> Spans {
     let twins = [
-        "input q: i32 = 0\n",
+        "state q(0): i32\n",
         "let q = 1\n",
-        "input q: f64 = 0.5\n",
+        "state q(0.5): f64\n",
         "let q = 0.5\n",
-        "input q = false\n",
+        "state q(false)\n",
         "let q = false\n",
-        "input q = Wave::Sine\n",
+        "state q(Wave::Sine)\n",
         "let q = Wave::Sine\n",
         "let q = \"a\"\n",
-        "input q: i32[..4] = []\n",
+        "state q([]): i32[..4]\n",
         "let q = [1]\n",
         "let q = c\n",
     ];
@@ -5971,8 +5949,8 @@ fn every_seed_row_of_the_placeholder_rule_draws_what_its_rule_gives() {
             &[(Code::ExpressionSyntax, "\n")],
         ),
         (
-            &["input fill_on = false+\n"],
-            &[(Code::ExpressionSyntax, "\n")],
+            &["state fill_on(false+)\n"],
+            &[(Code::ExpressionSyntax, ")")],
         ),
         (
             &["let b = bytes-(\"GET\")\n"],
@@ -6064,7 +6042,7 @@ fn every_seed_row_of_the_placeholder_rule_draws_what_its_rule_gives() {
             &[(Code::UnknownName, "q"), (Code::OperandType, "(q > 0) * 2")],
         ),
         (
-            &["input b = true\n", "Clip c:\n    Note/(b + [1, 2][5])\n"],
+            &["state b(true)\n", "Clip c:\n    Note/(b + [1, 2][5])\n"],
             &[
                 (Code::OperandType, "b + [1, 2][5]"),
                 (Code::IndexOutOfRange, "5"),
@@ -6080,7 +6058,7 @@ fn every_seed_row_of_the_placeholder_rule_draws_what_its_rule_gives() {
         ),
         (
             &[
-                "input section = 0\n",
+                "state section(0)\n",
                 "let sections = [verse, chorus]\n",
                 "Clip intro:\n    for s in sections:\n        Starts: s\n",
                 "Clip outro:\n    Plays: sections[section]\n",
@@ -6089,8 +6067,8 @@ fn every_seed_row_of_the_placeholder_rule_draws_what_its_rule_gives() {
         ),
         (
             &[
-                "input gate = false\n",
-                "state rising = gate and not gate{q}\n",
+                "state gate(false)\n",
+                "state rising = gate and not gate.past(q)\n",
                 "Clip c:\n    Note when rising\n",
             ],
             &[(Code::UnknownName, "q")],

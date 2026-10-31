@@ -231,12 +231,6 @@ impl Parser<'_> {
                 self.variant_ref();
                 self.then([rest]);
             }
-            Some(SyntaxKind::Ident) if self.nth(1) == Some(SyntaxKind::LBrace) => {
-                self.start(SyntaxKind::History);
-                self.bump();
-                self.bump();
-                self.then([Task::Expr, Task::HistoryAfterOffset, rest]);
-            }
             Some(SyntaxKind::Ident) => {
                 self.start(SyntaxKind::NameRef);
                 self.bump();
@@ -368,19 +362,6 @@ impl Parser<'_> {
         self.start(SyntaxKind::Bound);
         self.eat(SyntaxKind::Caret);
         self.then([Task::Expr, Task::Finish]);
-    }
-
-    pub(super) fn history_after_offset(&mut self) {
-        let close = |what| Task::Close {
-            kind: SyntaxKind::RBrace,
-            code: Code::ExpressionSyntax,
-            what,
-        };
-        if self.eat(SyntaxKind::Comma) {
-            self.then([Task::Expr, close("`}`")]);
-        } else {
-            self.then([close("`,` or `}`")]);
-        }
     }
 
     pub(super) fn array_loop(&mut self) {

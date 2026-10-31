@@ -285,7 +285,7 @@ fn labelled(text: &str, diagnostic: &Diagnostic) -> Vec<(String, String)> {
 
 fn a_fault_inside_inlined_calls_names_each_call_innermost_first_in(orders: support::Orders) {
     let items = [
-        "input n = 1\n",
+        "state n(1)\n",
         "fn h(x): x div 0.5\n",
         "fn w(x): h(x) + 1\n",
         "Clip c:\n    Note/(w(n))\n",
@@ -320,7 +320,7 @@ fn exhaustive_a_fault_inside_inlined_calls_names_each_call_innermost_first() {
 
 #[test]
 fn reactive_recursion_names_its_chain_of_calls_and_its_help_names_the_for_expression() {
-    let input = "input n = 1\n";
+    let input = "state n(1)\n";
     let help = "write the recursion over the cell as a `for` expression, as in `for x in held into low from 127: min(low, x)`";
     let rows: &[Recursion] = &[
         (
@@ -407,7 +407,7 @@ fn a_function_written_with_a_bound_draws_one_fn_syntax_at_the_bound_whose_help_n
         ),
         (
             &[
-                "input held: i32[..10] = []\n",
+                "state held([]): i32[..10]\n",
                 "fn lowest(i) bounded 10 else 127:\n    let a = held[i]\n    if i >= len(held) then 127 else min(a, lowest(i + 1))\n",
                 "Clip c:\n    Note/(lowest(0))\n",
             ],
@@ -469,7 +469,7 @@ fn a_recursive_call_whose_body_reads_a_cell_through_a_local_let_draws_reactive_r
     let rows: &[support::Row] = &[
         (
             &[
-                "input held = [1, 2, 3]\n",
+                "state held([1, 2, 3])\n",
                 "fn lowest(i):\n    let a = held[i]\n    if i >= 3 then 127 else min(a, lowest(i + 1))\n",
                 call,
             ],
@@ -477,7 +477,7 @@ fn a_recursive_call_whose_body_reads_a_cell_through_a_local_let_draws_reactive_r
         ),
         (
             &[
-                "input held: i32[..10] = []\n",
+                "state held([]): i32[..10]\n",
                 "fn lowest(i):\n    let a = held[i]\n    if i >= len(held) then 127 else min(a, lowest(i + 1))\n",
                 call,
             ],
@@ -485,7 +485,7 @@ fn a_recursive_call_whose_body_reads_a_cell_through_a_local_let_draws_reactive_r
         ),
         (
             &[
-                "input held = [1, 2, 3]\n",
+                "state held([1, 2, 3])\n",
                 "fn lowest(i)  10 else 127:\n    let a = held[i]\n    if i >= 3 then 127 else min(a, lowest(i + 1))\n",
                 call,
             ],
@@ -968,7 +968,7 @@ fn a_join_whose_length_stays_below_two_to_the_thirty_one_draws_no_length_limit()
 
 #[test]
 fn a_choice_in_a_called_body_is_type_checked_in_both_arms() {
-    let held = "input held: i32[..4] = [1, 2]\n";
+    let held = "state held([1, 2]): i32[..4]\n";
     let rows: &[support::Row] = &[
         (
             &[
@@ -1014,7 +1014,7 @@ fn a_call_rejected_as_reactive_recursion_adds_nothing_to_the_inline_count_in(
     let rows: &[support::Row] = &[
         (
             &[
-                "input n = 0\n",
+                "state n(0)\n",
                 h,
                 "fn r(i): if i is 0 then 0 else r(i - 1) + h(h(h(h(h(i)))))\n",
                 "Clip c:\n    Note/(r(n))\n",
@@ -1023,7 +1023,7 @@ fn a_call_rejected_as_reactive_recursion_adds_nothing_to_the_inline_count_in(
         ),
         (
             &[
-                "input x = 1\n",
+                "state x(1)\n",
                 "let n = x + 2\n",
                 h,
                 "fn r(i): if i is 0 then 0 else r(i - 1) + h(h(h(h(h(i)))))\n",
@@ -1033,7 +1033,7 @@ fn a_call_rejected_as_reactive_recursion_adds_nothing_to_the_inline_count_in(
         ),
         (
             &[
-                "input x = 1\n",
+                "state x(1)\n",
                 h,
                 "fn r(i): if i < 1 then x else r(i - 1) + h(h(h(h(h(i)))))\n",
                 "Clip c:\n    Note/(r(3))\n",
@@ -1042,7 +1042,7 @@ fn a_call_rejected_as_reactive_recursion_adds_nothing_to_the_inline_count_in(
         ),
         (
             &[
-                "input held = [1, 2, 3]\n",
+                "state held([1, 2, 3])\n",
                 "fn r(i): if i is 0 then len(held) else r(i - 1)\n",
                 "Clip c:\n    Note/(r(2))\n",
             ],
@@ -1055,7 +1055,7 @@ fn a_call_rejected_as_reactive_recursion_adds_nothing_to_the_inline_count_in(
         (&[h, "Clip c:\n    Note/(h(h(h(60))))\n"], &[]),
         (
             &[
-                "input held: i32[..4] = []\n",
+                "state held([]): i32[..4]\n",
                 h,
                 "fn r(i): if i >= len(held) then 0 else r(i + 1) + h(h(h(h(h(i)))))\n",
                 "Clip c:\n    Note/(60 + r(0))\n",
@@ -1073,8 +1073,8 @@ fn a_call_rejected_as_reactive_recursion_adds_nothing_to_the_inline_count_in(
         ),
         (
             &[
-                "input note = 60\n",
-                "state held = (held{1, []} + [note])[^4..]\n",
+                "state note(60)\n",
+                "state held = (held.past(1, []) + [note])[^4..]\n",
                 h,
                 "fn r(i): if i >= len(held) then 0 else r(i + 1) + h(h(h(h(h(i)))))\n",
                 "Clip c:\n    Note/(60 + r(0))\n",
@@ -1083,7 +1083,7 @@ fn a_call_rejected_as_reactive_recursion_adds_nothing_to_the_inline_count_in(
         ),
         (
             &[
-                "input held: i32[..4] = []\n",
+                "state held([]): i32[..4]\n",
                 "fn r(i): if i >= len(held) then 0 else r(i + 1) + 1\n",
                 "Clip c:\n    Note/(60 + r(0))\n",
             ],
@@ -1091,7 +1091,7 @@ fn a_call_rejected_as_reactive_recursion_adds_nothing_to_the_inline_count_in(
         ),
         (
             &[
-                "input fixed: i32[2] = [1, 2]\n",
+                "state fixed([1, 2]): i32[2]\n",
                 "fn r(i): if i >= len(fixed) then 0 else r(i + 1) + 1\n",
                 "Clip c:\n    Note/(60 + r(0))\n",
             ],
@@ -1099,7 +1099,7 @@ fn a_call_rejected_as_reactive_recursion_adds_nothing_to_the_inline_count_in(
         ),
         (
             &[
-                "input fixed: i32[2] = [1, 2]\n",
+                "state fixed([1, 2]): i32[2]\n",
                 h,
                 "fn r(i): if i >= len(fixed) then 0 else r(i + 1) + h(h(h(i)))\n",
                 "Clip c:\n    Note/(60 + r(0))\n",
@@ -1108,7 +1108,7 @@ fn a_call_rejected_as_reactive_recursion_adds_nothing_to_the_inline_count_in(
         ),
         (
             &[
-                "input note = 60\n",
+                "state note(60)\n",
                 "state held = [note, note]\n",
                 h,
                 "fn r(i): if i >= len(held) then 0 else r(i + 1) + h(h(h(i)))\n",
@@ -1118,8 +1118,8 @@ fn a_call_rejected_as_reactive_recursion_adds_nothing_to_the_inline_count_in(
         ),
         (
             &[
-                "input held: i32[..4] = []\n",
-                "input note = 60\n",
+                "state held([]): i32[..4]\n",
+                "state note(60)\n",
                 "let grown = held + [note]\n",
                 h,
                 "fn r(i): if i >= len(grown) then 0 else r(i + 1) + h(h(h(h(h(i)))))\n",
@@ -1129,8 +1129,8 @@ fn a_call_rejected_as_reactive_recursion_adds_nothing_to_the_inline_count_in(
         ),
         (
             &[
-                "input held: i32[..4] = []\n",
-                "input note = 60\n",
+                "state held([]): i32[..4]\n",
+                "state note(60)\n",
                 "let grown: i32[..5] = held + [note]\n",
                 h,
                 "fn r(i): if i >= len(grown) then 0 else r(i + 1) + h(h(h(h(h(i)))))\n",
@@ -1140,8 +1140,8 @@ fn a_call_rejected_as_reactive_recursion_adds_nothing_to_the_inline_count_in(
         ),
         (
             &[
-                "input held: i32[..4] = []\n",
-                "input note = 60\n",
+                "state held([]): i32[..4]\n",
+                "state note(60)\n",
                 "let grown = held + [note]\n",
                 h,
                 "fn r(i, held = 0): if i >= len(grown) then held else r(i + 1, held) + h(h(h(h(h(i)))))\n",
@@ -1151,7 +1151,7 @@ fn a_call_rejected_as_reactive_recursion_adds_nothing_to_the_inline_count_in(
         ),
         (
             &[
-                "input note = 60\n",
+                "state note(60)\n",
                 "let one: i32[..5] = [note]\n",
                 h,
                 "fn r(i): if i >= len(one) then 0 else r(i + 1) + h(h(h(h(h(i)))))\n",
@@ -1161,7 +1161,7 @@ fn a_call_rejected_as_reactive_recursion_adds_nothing_to_the_inline_count_in(
         ),
         (
             &[
-                "input held: i32[..4] = []\n",
+                "state held([]): i32[..4]\n",
                 "let tail = held[1..]\n",
                 h,
                 "fn r(i): if i >= len(tail) then 0 else r(i + 1) + h(h(h(h(h(i)))))\n",
@@ -1171,7 +1171,7 @@ fn a_call_rejected_as_reactive_recursion_adds_nothing_to_the_inline_count_in(
         ),
         (
             &[
-                "input held: i32[..4] = []\n",
+                "state held([]): i32[..4]\n",
                 "let same = held\n",
                 "let tail = same[1..]\n",
                 h,
@@ -1190,7 +1190,7 @@ fn a_call_rejected_as_reactive_recursion_adds_nothing_to_the_inline_count_in(
         ),
         (
             &[
-                "input note = 60\n",
+                "state note(60)\n",
                 "let cells = [note, note, note]\n",
                 "fn r(i): if i >= len(cells) then 0 else r(i + 1) + 1\n",
                 "Clip c:\n    Note/(60 + r(0))\n",
@@ -1199,7 +1199,7 @@ fn a_call_rejected_as_reactive_recursion_adds_nothing_to_the_inline_count_in(
         ),
         (
             &[
-                "input held: i32[..4] = []\n",
+                "state held([]): i32[..4]\n",
                 "let cells = [len(held), 1]\n",
                 "fn r(i): if i >= len(cells) then 0 else r(i + 1) + 1\n",
                 "Clip c:\n    Note/(60 + r(0))\n",
@@ -1208,9 +1208,9 @@ fn a_call_rejected_as_reactive_recursion_adds_nothing_to_the_inline_count_in(
         ),
         (
             &[
-                "input held: i32[..4] = [1, 2]\n",
-                "input note = 60\n",
-                "input gate = false\n",
+                "state held([1, 2]): i32[..4]\n",
+                "state note(60)\n",
+                "state gate(false)\n",
                 "let pick = if gate then held else []\n",
                 h,
                 "fn r(i): if i >= len(pick) then 0 else r(i + 1) + h(h(h(h(h(i)))))\n",
@@ -1220,9 +1220,9 @@ fn a_call_rejected_as_reactive_recursion_adds_nothing_to_the_inline_count_in(
         ),
         (
             &[
-                "input held: i32[..4] = [1, 2]\n",
-                "input note = 60\n",
-                "input gate = false\n",
+                "state held([1, 2]): i32[..4]\n",
+                "state note(60)\n",
+                "state gate(false)\n",
                 "let pick = if gate then held else held[1..]\n",
                 h,
                 "fn r(i): if i >= len(pick) then 0 else r(i + 1) + h(h(h(h(h(i)))))\n",
@@ -1232,9 +1232,9 @@ fn a_call_rejected_as_reactive_recursion_adds_nothing_to_the_inline_count_in(
         ),
         (
             &[
-                "input held: i32[..4] = [1, 2]\n",
-                "input note = 60\n",
-                "input gate = false\n",
+                "state held([1, 2]): i32[..4]\n",
+                "state note(60)\n",
+                "state gate(false)\n",
                 "let pick = match note:\n    60: held\n    else: []\n",
                 h,
                 "fn r(i): if i >= len(pick) then 0 else r(i + 1) + h(h(h(h(h(i)))))\n",
@@ -1244,9 +1244,9 @@ fn a_call_rejected_as_reactive_recursion_adds_nothing_to_the_inline_count_in(
         ),
         (
             &[
-                "input held: i32[..4] = [1, 2]\n",
-                "input note = 60\n",
-                "input gate = false\n",
+                "state held([1, 2]): i32[..4]\n",
+                "state note(60)\n",
+                "state gate(false)\n",
                 "let pick = if false then held else held + [note]\n",
                 h,
                 "fn r(i): if i >= len(pick) then 0 else r(i + 1) + h(h(h(h(h(i)))))\n",
@@ -1256,9 +1256,9 @@ fn a_call_rejected_as_reactive_recursion_adds_nothing_to_the_inline_count_in(
         ),
         (
             &[
-                "input held: i32[..4] = [1, 2]\n",
-                "input note = 60\n",
-                "input gate = false\n",
+                "state held([1, 2]): i32[..4]\n",
+                "state note(60)\n",
+                "state gate(false)\n",
                 "let pick = if gate then [1] else [1, 2]\n",
                 h,
                 "fn r(i): if i >= len(pick) then 0 else r(i + 1) + h(h(h(h(h(i)))))\n",
@@ -1268,8 +1268,8 @@ fn a_call_rejected_as_reactive_recursion_adds_nothing_to_the_inline_count_in(
         ),
         (
             &[
-                "input held: i32[..4] = [1, 2]\n",
-                "input gate = false\n",
+                "state held([1, 2]): i32[..4]\n",
+                "state gate(false)\n",
                 "let pick = if false then held else [1, 2]\n",
                 h,
                 "fn r(i): if i >= len(pick) then 0 else r(i + 1) + h(h(h(h(h(i)))))\n",
@@ -1279,8 +1279,8 @@ fn a_call_rejected_as_reactive_recursion_adds_nothing_to_the_inline_count_in(
         ),
         (
             &[
-                "input held: i32[..4] = [1, 2]\n",
-                "input gate = false\n",
+                "state held([1, 2]): i32[..4]\n",
+                "state gate(false)\n",
                 "let pick = if false then held else [1, 2]\n",
                 "fn r(i): if i >= len(pick) then 0 else r(i + 1) + 1\n",
                 "Clip c:\n    Note/(60 + r(0))\n",
@@ -1289,8 +1289,8 @@ fn a_call_rejected_as_reactive_recursion_adds_nothing_to_the_inline_count_in(
         ),
         (
             &[
-                "input held: i32[..4] = [1, 2]\n",
-                "input gate = false\n",
+                "state held([1, 2]): i32[..4]\n",
+                "state gate(false)\n",
                 "let pick = if gate then [1, 2] else [3, 4]\n",
                 h,
                 "fn r(i): if i >= len(pick) then 0 else r(i + 1) + h(h(h(h(h(i)))))\n",
@@ -1300,8 +1300,8 @@ fn a_call_rejected_as_reactive_recursion_adds_nothing_to_the_inline_count_in(
         ),
         (
             &[
-                "input held: i32[..4] = [1, 2]\n",
-                "input gate = false\n",
+                "state held([1, 2]): i32[..4]\n",
+                "state gate(false)\n",
                 "let pick = if gate then [1, 2] else [3, 4]\n",
                 "fn r(i): if i >= len(pick) then 0 else r(i + 1) + 1\n",
                 "Clip c:\n    Note/(60 + r(0))\n",

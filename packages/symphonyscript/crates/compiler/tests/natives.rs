@@ -54,7 +54,7 @@ fn an_array_parameter_of_a_fixed_length_or_a_capacity_bounds_its_argument() {
             &[Code::TypeMismatch],
         ),
         (
-            "input held: i32[..2] = []\nClip c:\n    Note/(pair_sum(held))\n",
+            "state held([]): i32[..2]\nClip c:\n    Note/(pair_sum(held))\n",
             &[Code::VariableArray],
         ),
         (
@@ -67,11 +67,11 @@ fn an_array_parameter_of_a_fixed_length_or_a_capacity_bounds_its_argument() {
             &[Code::CapacityExceeded],
         ),
         (
-            "input held: i32[..4] = []\nClip c:\n    Note/(first_of(held))\n",
+            "state held([]): i32[..4]\nClip c:\n    Note/(first_of(held))\n",
             &[],
         ),
         (
-            "input held: i32[..5] = []\nClip c:\n    Note/(first_of(held))\n",
+            "state held([]): i32[..5]\nClip c:\n    Note/(first_of(held))\n",
             &[Code::CapacityExceeded],
         ),
     ];
@@ -84,20 +84,20 @@ fn an_array_parameter_of_a_fixed_length_or_a_capacity_bounds_its_argument() {
 fn a_native_call_with_a_cell_runs_at_runtime_unless_it_takes_a_string() {
     let rows: &[(&str, &[Code])] = &[
         (
-            "input i = 1\nClip c:\n    Note/(checksum([u8(i), u8(2)]))\n",
+            "state i(1)\nClip c:\n    Note/(checksum([u8(i), u8(2)]))\n",
             &[],
         ),
         (
-            "input held: i32[..4] = []\nClip c | sequence=(mirror(held)):\n    Note\n",
+            "state held([]): i32[..4]\nClip c | sequence=(mirror(held)):\n    Note\n",
             &[],
         ),
         (
-            "input n = 0\nClip c:\n    Note/(tag(\"abc\", n))\n",
+            "state n(0)\nClip c:\n    Note/(tag(\"abc\", n))\n",
             &[Code::CompileTimeNative],
         ),
         ("Clip c:\n    Note/(tag(\"abc\", 2))\n", &[]),
         (
-            "input i = 1\nClip c:\n    Note/(text_length(\"a{i}\"))\n",
+            "state i(1)\nClip c:\n    Note/(text_length(\"a{i}\"))\n",
             &[Code::ReactiveString],
         ),
     ];
@@ -106,13 +106,13 @@ fn a_native_call_with_a_cell_runs_at_runtime_unless_it_takes_a_string() {
     }
     let clauses: &[Row] = &[
         (
-            &["input n = 0\n", "Clip c:\n    Note/(tag(\"abc\", n))\n"],
+            &["state n(0)\n", "Clip c:\n    Note/(tag(\"abc\", n))\n"],
             &[(Code::CompileTimeNative, "tag(\"abc\", n)")],
         ),
         (&["Clip c:\n    Note/(tag(\"abc\", 2))\n"], &[]),
         (
             &[
-                "input n = 0\n",
+                "state n(0)\n",
                 "Clip c:\n    Note/(text_length(label(n)))\n",
             ],
             &[(Code::CompileTimeNative, "label(n)")],
@@ -135,23 +135,23 @@ fn a_variable_array_attribute_accepts_a_value_up_to_its_capacity_and_refuses_a_l
         ),
         ("Clip c | sequence=[]:\n    Note\n", &[]),
         (
-            "input held: i32[..8] = []\nClip c | sequence=held:\n    Note\n",
+            "state held([]): i32[..8]\nClip c | sequence=held:\n    Note\n",
             &[],
         ),
         (
-            "input held: i32[..9] = []\nClip c | sequence=held:\n    Note\n",
+            "state held([]): i32[..9]\nClip c | sequence=held:\n    Note\n",
             &[Code::CapacityExceeded],
         ),
         (
-            "input held: i32[..4] = []\nClip c | sequence=(held + held):\n    Note\n",
+            "state held([]): i32[..4]\nClip c | sequence=(held + held):\n    Note\n",
             &[],
         ),
         (
-            "input held: i32[..4] = []\nClip c | sequence=(held + held + [1]):\n    Note\n",
+            "state held([]): i32[..4]\nClip c | sequence=(held + held + [1]):\n    Note\n",
             &[Code::CapacityExceeded],
         ),
         (
-            "input held: i32[..20] = []\nClip c | sequence=(held[^8..]):\n    Note\n",
+            "state held([]): i32[..20]\nClip c | sequence=(held[^8..]):\n    Note\n",
             &[],
         ),
         ("Clip c | sequence=1:\n    Note\n", &[Code::TypeMismatch]),
@@ -210,7 +210,7 @@ fn a_native_calls_compile_time_arguments_are_typed_and_fit_by_its_signature() {
             &[(Code::DoesNotFit, "300")],
         ),
         (
-            &["input f = 1.5\n", "Clip c:\n    Note/(pair_sum([f, 2]))\n"],
+            &["state f(1.5)\n", "Clip c:\n    Note/(pair_sum([f, 2]))\n"],
             &[(Code::FloatToInteger, "f")],
         ),
     ];
@@ -249,7 +249,7 @@ fn a_native_argument_in_a_unit_family_is_an_error_at_the_argument() {
             &[(Code::UnitOperation, "[1bars, 2]")],
         ),
         (
-            &["input d = 2bars\n", "Clip c:\n    Note/(plain(d))\n"],
+            &["state d(2bars)\n", "Clip c:\n    Note/(plain(d))\n"],
             &[(Code::UnitOperation, "d")],
         ),
         (
@@ -297,7 +297,7 @@ fn a_capacity_of_result_holds_at_most_its_parameters_capacity_in_rows() {
         ),
         (
             &[
-                "input xs: i32[..2] = []\n",
+                "state xs([]): i32[..2]\n",
                 "Clip c | three=(squeeze(xs)):\n    Note\n",
             ],
             &[(Code::CapacityExceeded, "squeeze(xs)")],
@@ -330,16 +330,16 @@ fn a_capacity_of_result_over_a_fixed_array_has_its_length_as_its_capacity_whethe
             "[[1, 2, 3], [4, 5, 6], [7, 8, 9]]",
         ),
         (
-            &["input x = 1\n"],
+            &["state x(1)\n"],
             "[[x, 2, 3], [4, 5, 6]]",
             "[[x, 2, 3], [4, 5, 6], [7, 8, 9]]",
         ),
-        (&["input r: i32[3][..2] = []\n"], "r", "r"),
+        (&["state r([]): i32[3][..2]\n"], "r", "r"),
     ];
     let vocabulary = signature_vocabulary();
     for (cells, two, three) in arguments {
         let wide = if three == "r" {
-            "input r: i32[3][..3] = []\n".to_string()
+            "state r([]): i32[3][..3]\n".to_string()
         } else {
             cells.concat()
         };
@@ -416,7 +416,7 @@ fn a_capacity_of_result_over_a_fixed_array_has_its_length_as_its_capacity_whethe
             }
         }
     }
-    let text = "input x = 1\nlet probe: i32[2][..1] = shrink([[x, 2, 3], [4, 5, 6]])\nClip c:\n    Note/(probe[0][0])\n";
+    let text = "state x(1)\nlet probe: i32[2][..1] = shrink([[x, 2, 3], [4, 5, 6]])\nClip c:\n    Note/(probe[0][0])\n";
     let found = support::checked_with(&vocabulary, text);
     assert!(
         found
@@ -428,7 +428,7 @@ fn a_capacity_of_result_over_a_fixed_array_has_its_length_as_its_capacity_whethe
 
 #[test]
 fn a_cell_reading_string_at_a_u8_array_parameter_draws_one_reactive_string() {
-    let input = "input n = 1\n";
+    let input = "state n(1)\n";
     support::assert_rows_in_every_order(
         &native_vocabulary(),
         &[

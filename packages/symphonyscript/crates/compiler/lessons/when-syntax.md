@@ -13,7 +13,7 @@ Clip c:
 The condition has no `:`.
 
 ```sym
-input x = true
+state x(true)
 Clip c:
     when x:
         Note

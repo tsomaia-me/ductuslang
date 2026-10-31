@@ -61,10 +61,10 @@ impl Form {
         match self {
             Form::Literal => &[],
             Form::ConstantAttribute | Form::DefaultAttribute => &["Clip v | gain=3\n"],
-            Form::CellAttribute => &["input g = 2.0\n", "Clip w | gain=g\n"],
-            Form::Cell | Form::ChoiceTakingAValue => &["input g = 2.0\n"],
-            Form::LetTakingAValue => &["input g = 2.0\n", "let x = if false then g else 3.0\n"],
-            Form::LetTakingACell => &["input g = 2.0\n", "let y = if true then g else 3.0\n"],
+            Form::CellAttribute => &["state g(2.0)\n", "Clip w | gain=g\n"],
+            Form::Cell | Form::ChoiceTakingAValue => &["state g(2.0)\n"],
+            Form::LetTakingAValue => &["state g(2.0)\n", "let x = if false then g else 3.0\n"],
+            Form::LetTakingACell => &["state g(2.0)\n", "let y = if true then g else 3.0\n"],
         }
     }
 
@@ -188,7 +188,7 @@ fn a_recursive_call_counts_toward_the_inline_limit_unless_it_reads_a_cell() {
     let rows: Vec<InlineRow> = vec![
         (
             vec![
-                "input g = 2.0\n".into(),
+                "state g(2.0)\n".into(),
                 "let x = if false then g else 3.0\n".into(),
                 h.into(),
                 body("x"),
@@ -207,7 +207,7 @@ fn a_recursive_call_counts_toward_the_inline_limit_unless_it_reads_a_cell() {
         ),
         (
             vec![
-                "input g = 2.0\n".into(),
+                "state g(2.0)\n".into(),
                 "Clip w | gain=g\n".into(),
                 h.into(),
                 body("w.gain"),

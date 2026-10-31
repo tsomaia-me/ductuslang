@@ -181,7 +181,7 @@ fn a_cycle_in_the_demand_engine_draws_its_one_rules_diagnostic() {
         ),
         (
             vec![
-                "input q = 0",
+                "state q(0)",
                 "Clip c:\n    Plays as w | gain=to.gain: [w, c][q]",
             ],
             vec![named(Code::DestinationType, &[])],
@@ -226,7 +226,7 @@ const LINKS: [(&[&str], &str); 8] = [
     ),
     (
         &[
-            "input q{k} = 0",
+            "state q{k}(0)",
             "Clip o{k} | gain=({next}):\n    Plays as w{k} | gain=to.gain: [o{k}, o{k}][q{k}]",
         ],
         "o{k}.w{k}.gain",
@@ -455,7 +455,7 @@ fn wire_cycles_draw_one_diagnostic_per_component_naming_its_shortest_cycle_and_w
         ),
         (
             &[
-                "input i = 0\n",
+                "state i(0)\n",
                 "Synth s:\n    Filter as a:\n        Feeds: [b, c][i]\n    Filter as b\n    Filter as c:\n        Feeds: a\n",
             ],
             &[("a → c → a", "2 wires")],

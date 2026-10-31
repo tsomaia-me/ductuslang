@@ -278,39 +278,6 @@ impl Engine<'_> {
                 continue;
             };
             let init = self.binding(binding)?.init;
-            let reads = self.history_reads(init)?;
-            let mut deepest = 0u64;
-            for (node, _) in &reads {
-                if let Op::History { offset, .. } = self.node(*node)?.op {
-                    deepest = deepest.max(offset);
-                }
-            }
-            let depth = self.hir.state(state)?.depth;
-            for (node, _) in reads {
-                let Op::History { offset, .. } = self.node(node)?.op else {
-                    continue;
-                };
-                if let Some((Some(limit), _)) = depth
-                    && offset > limit
-                {
-                    let name = self
-                        .hir
-                        .state(state)?
-                        .name
-                        .as_ref()
-                        .map_or(String::new(), |name| name.text.clone());
-                    self.error_at_node_helped(
-                        Code::HistoryDepth,
-                        node,
-                        Vec::new(),
-                        format!(
-                            "this history read reaches {offset} {}, deeper than `[{limit}]`; `[{deepest}]` covers every read of this state",
-                            if offset == 1 { "step back" } else { "steps back" }
-                        ),
-                        format!("declare the state as `state[{deepest}] {name}`, which covers every read of it"),
-                    )?;
-                }
-            }
             if let Some(start) = self.init_node(binding)? {
                 self.held_check(start, HistoryCell::State(state), start, Held::Init)?;
             }

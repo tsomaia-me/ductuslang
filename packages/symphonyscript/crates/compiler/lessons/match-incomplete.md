@@ -5,7 +5,7 @@ A `match` on an enum or a `bool` covers every value or ends with `else:`, and a 
 Every value of the scrutinee needs an arm to yield.
 
 ```sym-error
-input w = Wave::Saw
+state w(Wave::Saw)
 let l = match w:
     Sine: 1
 ```
@@ -13,7 +13,7 @@ let l = match w:
 `Saw` and `Square` have no arm.
 
 ```sym
-input w = Wave::Saw
+state w(Wave::Saw)
 let l = match w:
     Sine: 1
     else: 2

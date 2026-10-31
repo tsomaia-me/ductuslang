@@ -8,7 +8,6 @@ use super::type_ref::TypeRef;
 pub(crate) struct StateDecl {
     pub name: Option<Ident>,
     pub word: CellWord,
-    pub depth: Option<(Option<u64>, Loc)>,
     pub init: Option<ExprId>,
     pub clock: Vec<ExprId>,
     pub ty: Option<TypeRef>,

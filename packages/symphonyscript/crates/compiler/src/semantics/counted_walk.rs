@@ -46,7 +46,6 @@ pub(crate) enum CountedWalk {
     DeclarationsUntakenDefaults,
     DeclarationsNameProbeOf,
     DeclarationsNamesOf,
-    HistoryInStateInitializer,
     HistoryHistoryReads,
     NamesFind,
     PathsWrittenBase,
@@ -142,7 +141,7 @@ thread_local! {
 
 impl CountedWalk {
     #[cfg(test)]
-    pub(crate) const ALL: [CountedWalk; 133] = [
+    pub(crate) const ALL: [CountedWalk; 132] = [
         CountedWalk::InlineCountsOf,
         CountedWalk::InlineCountsCallSites,
         CountedWalk::RecursiveFunctionsRecursiveFunctions,
@@ -189,7 +188,6 @@ impl CountedWalk {
         CountedWalk::DeclarationsUntakenDefaults,
         CountedWalk::DeclarationsNameProbeOf,
         CountedWalk::DeclarationsNamesOf,
-        CountedWalk::HistoryInStateInitializer,
         CountedWalk::HistoryHistoryReads,
         CountedWalk::NamesFind,
         CountedWalk::PathsWrittenBase,

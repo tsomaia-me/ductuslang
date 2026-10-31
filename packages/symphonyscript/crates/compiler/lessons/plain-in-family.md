@@ -5,7 +5,7 @@ A plain number that meets a family value is read in that family's default unit, 
 Without an attribute of the family the plain number has no unit to be read in.
 
 ```sym-error
-input d = 5ms
+state d(5ms)
 Clip c:
     Note when d > 1
 ```
@@ -13,7 +13,7 @@ Clip c:
 `1` meets the time `d`, and the comparison reaches no time attribute.
 
 ```sym
-input d = 5ms
+state d(5ms)
 Clip c:
     Note when d > 1ms
 ```

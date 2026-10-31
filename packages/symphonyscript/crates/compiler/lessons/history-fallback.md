@@ -5,11 +5,11 @@ A history read states its fallback, of the cell's type, except for an input, who
 Before a state has taken k steps there is no past value to read.
 
 ```sym-error
-state s = s{1} + 1
+state s = s.past(1) + 1
 ```
 
 The read of `s` states no fallback.
 
 ```sym
-state s = s{1, 0} + 1
+state s = s.past(1, 0) + 1
 ```

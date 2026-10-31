@@ -20,7 +20,7 @@ const ENVELOPE_PROGRAMS: &[&str] = &[
     "Env e | attack=(3i32 * 2.5)\n",
     "let p = 3\nEnv e | attack=(p + 1s) pitch=p\n",
     "let p = 3i32\nlet c = p > 1\nEnv e | attack=p pitch=p\nEnv f | attack=(if c then 1s else 2s)\n",
-    "input d = 5ms\nlet e = d * 2\nEnv a | attack=e release=(d + 1)\n",
+    "state d(5ms)\nlet e = d * 2\nEnv a | attack=e release=(d + 1)\n",
 ];
 
 const BAR_PROGRAMS: &[&str] = &[
@@ -30,25 +30,25 @@ const BAR_PROGRAMS: &[&str] = &[
     "let p = 3i64\nBar b | bar_len=p beat_len=p plain=p\n",
     "fn g(): 1bars + 1\nlet x = g()\nBar b | bar_len=(g()) beat_len=x\n",
     "fn r(n): if n < 1 then 2bars + 1 else r(n - 1)\nBar b | bar_len=(r(2)) beat_len=(r(0) + 1)\n",
-    "input n = 2\nBar b | bar_len=(n + 1bars) beat_len=n\n",
+    "state n(2)\nBar b | bar_len=(n + 1bars) beat_len=n\n",
 ];
 
 const ADDITION_PROGRAMS: &[&str] = &[
-    "input note = 60\nstate recent = (recent{1, []} + [note])[^8..]\nClip c:\n    Note/(recent[^1])\n",
-    "input gate = false\nstate[2] edge = gate and not gate{2}\nClip c:\n    when edge:\n        Note\n",
-    "input level = 0.0\nlet l = level * 2\nstate held = if l > 1 then l else held{1, 0.0}\nClip c | gain=held:\n    Note\n",
+    "state note(60)\nstate recent = (recent.past(1, []) + [note])[^8..]\nClip c:\n    Note/(recent[^1])\n",
+    "state gate(false)\nstate edge = gate and not gate.past(2)\nClip c:\n    when edge:\n        Note\n",
+    "state level(0.0)\nlet l = level * 2\nstate held = if l > 1 then l else held.past(1, 0.0)\nClip c | gain=held:\n    Note\n",
     "let held = [3, 1, 2]\nfn lowest(i): if i >= len(held) then 127 else min(held[i], lowest(i + 1))\nClip c:\n    Note/(lowest(0))\n",
     "fn count(i): if i > 3 then 0 else count(i + 1) + 1\nClip c:\n    Note/(count(0))\n",
-    "input i = 1\nlet xs = [10, 20, 30, 40]\nlet s = xs[i..^1] + xs[..1]\nClip c:\n    Note/(s[0] + len(s))\n",
+    "state i(1)\nlet xs = [10, 20, 30, 40]\nlet s = xs[i..^1] + xs[..1]\nClip c:\n    Note/(s[0] + len(s))\n",
     "let b = bytes(\"GET\")\nlet u: u8[3] = b\nClip c:\n    Note/(i32(u[0]) + u8(3))\n",
     "Clip a:\n    Note as hook\nClip c:\n    Plays | gain=to.hook.velocity: a\n",
-    "input k: i32[..4] = [1, 2]\nlet e = []\nlet j = if k[0] > 1 then k else e + [3]\nClip c:\n    Note/(j[^1])\n",
+    "state k([1, 2]): i32[..4]\nlet e = []\nlet j = if k[0] > 1 then k else e + [3]\nClip c:\n    Note/(j[^1])\n",
 ];
 
 const NATIVE_PROGRAMS: &[&str] = &[
     "let a = checksum(\"GET\")\nClip c:\n    Note/a\n",
-    "input i = 0\nClip c | sequence=(mirror([1, 2, i])):\n    Note/(text_length(\"abc\"))\n",
-    "input held: i32[..4] = []\nClip c | sequence=(mirror(held) + [1]):\n    Note/(checksum([u8(1), u8(2)]))\n",
+    "state i(0)\nClip c | sequence=(mirror([1, 2, i])):\n    Note/(text_length(\"abc\"))\n",
+    "state held([]): i32[..4]\nClip c | sequence=(mirror(held) + [1]):\n    Note/(checksum([u8(1), u8(2)]))\n",
     "Clip c | seq=d.seq gain=len(d.sequence):\n    Note/(d.rows[1][0] + d.seq[^1] + len(d.rows))\nClip d:\n    Note/(d.sequence[0])\n",
 ];
 

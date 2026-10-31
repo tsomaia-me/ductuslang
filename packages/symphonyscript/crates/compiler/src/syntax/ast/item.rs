@@ -1,7 +1,6 @@
 use super::ast_node::AstNode;
 use super::cell_decl::CellDecl;
 use super::fn_decl::FnDecl;
-use super::input_decl::InputDecl;
 use super::let_decl::LetDecl;
 use super::pattern_decl::PatternDecl;
 use super::placement::Placement;
@@ -10,7 +9,6 @@ use crate::syntax::{NodeView, SyntaxKind};
 
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub enum Item<'p> {
-    Input(InputDecl<'p>),
     Let(LetDecl<'p>),
     Cell(CellDecl<'p>),
     Fn(FnDecl<'p>),
@@ -22,7 +20,6 @@ pub enum Item<'p> {
 impl<'p> AstNode<'p> for Item<'p> {
     fn cast(node: NodeView<'p>) -> Option<Self> {
         match node.kind() {
-            SyntaxKind::InputDecl => InputDecl::cast(node).map(Item::Input),
             SyntaxKind::LetDecl => LetDecl::cast(node).map(Item::Let),
             SyntaxKind::CellDecl => CellDecl::cast(node).map(Item::Cell),
             SyntaxKind::FnDecl => FnDecl::cast(node).map(Item::Fn),
@@ -35,7 +32,6 @@ impl<'p> AstNode<'p> for Item<'p> {
 
     fn syntax(&self) -> &NodeView<'p> {
         match self {
-            Item::Input(node) => node.syntax(),
             Item::Let(node) => node.syntax(),
             Item::Cell(node) => node.syntax(),
             Item::Fn(node) => node.syntax(),

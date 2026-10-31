@@ -6,12 +6,12 @@ Only a cell has a past.
 
 ```sym-error
 let a = 1
-state s = a{1, 0}
+state s = a.past(1, 0)
 ```
 
 `a` is a compile-time value.
 
 ```sym
-input a = 1
-state s = a{1, 0}
+state a(1)
+state s = a.past(1, 0)
 ```

@@ -59,8 +59,7 @@ impl Engine<'_> {
                 target,
                 offset,
                 fallback,
-                form,
-            } => self.history(expr, (target, *offset, *fallback, *form), loc, scope, need)?,
+            } => self.history((target, *offset, *fallback), loc, scope, need)?,
             ExprKind::Stepped(target) => self.stepped(target, loc, scope)?,
             ExprKind::Call(callee, args) => self.call(*callee, args, expr, loc, scope, need)?,
             ExprKind::Unary(op, operand) => match self.val(Query::Expr(*operand, scope), need) {

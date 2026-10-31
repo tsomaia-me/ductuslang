@@ -5,7 +5,7 @@ With a destination chosen at runtime, every candidate has the `to` path, ending 
 `to` reads whichever candidate the wire chooses, so every candidate gives one type.
 
 ```sym-error bounded
-input i = 0
+state i(0)
 A one
 B two
 Root r:
@@ -17,7 +17,7 @@ Root r:
 `x` is an `i32` on `A` and an `f32` on `B`.
 
 ```sym bounded
-input i = 0
+state i(0)
 A one
 A two
 Root r:

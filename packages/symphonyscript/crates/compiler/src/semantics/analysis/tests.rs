@@ -34,7 +34,7 @@ use crate::syntax::parse;
 
 fn graph_size(calls: usize) -> (usize, usize) {
     let text = format!(
-        "input i = 1\nfn twice(x): x + x\nClip c:\n    Note/({}i{})\n",
+        "state i(1)\nfn twice(x): x + x\nClip c:\n    Note/({}i{})\n",
         "twice(".repeat(calls),
         ")".repeat(calls)
     );
@@ -739,13 +739,13 @@ fn a_run_that_draws_no_error_holds_no_placeholder() {
         format!("{R_FN}Clip c | gain=(r(0.1, 3)[0])\nOsc o | freq=(r(0.1, 3)[0])\n"),
         format!("{CHORD_FN}Clip c:\n    for p in chord(3):\n        Note/p\n"),
         format!("{CHORD_FN}let v: i32[3] = chord(1)\nlet x = [chord(1), chord(2)]\nClip c:\n    Note/(v[2] + x[1][2])\n"),
-        format!("{CHORD_FN}input f = true\ninput a = 1\ninput i = 0\nClip c:\n    Note/((if f then chord(1) else [1, 2, 3])[0])\n    Note/([a, chord(3)[0]][1])\n    Note/(chord(3)[i])\n"),
+        format!("{CHORD_FN}state f(true)\nstate a(1)\nstate i(0)\nClip c:\n    Note/((if f then chord(1) else [1, 2, 3])[0])\n    Note/([a, chord(3)[0]][1])\n    Note/(chord(3)[i])\n"),
         "fn g(k): if k < 1 then [[1, 2, 3], [4, 5, 6]] else g(k - 1)\nfn rev(a, k): if k < 1 then a else rev([a[1], a[0]], k - 1)\nfn grow(k): if k < 1 then [0] else [grow(k - 1)[0] + 1, 0]\nClip c:\n    Note/(g(2)[1][2] + rev([1, 2], 3)[0] + grow(3)[0])\n".into(),
     ];
-    let held = "Session s\ninput f = true\nlet x = if f then Sine else Saw\n";
+    let held = "Session s\nstate f(true)\nlet x = if f then Sine else Saw\n";
     let enum_lets = [
         format!("{held}Clip c:\n    Note when x is Wave::Saw\n    Note when Wave::Saw is x\n"),
-        format!("{held}input w = Wave::Saw\nlet g = x is not w\nClip c:\n    Note when g\n"),
+        format!("{held}state w(Wave::Saw)\nlet g = x is not w\nClip c:\n    Note when g\n"),
         format!(
             "{held}let y = if f then Saw else Sine\nOsc o | wave=x\nClip c:\n    Note when x is y\n    Note when x is Saw\n"
         ),
@@ -863,7 +863,7 @@ fn note_pitches_and_gates(engine: &Engine<'_>) -> Vec<(String, Option<String>)> 
 
 #[test]
 fn an_index_known_at_compile_time_reads_the_elements_own_binding() {
-    let text = "input a = 1\ninput b = 2\ninput j = 0\nlet c = [a, b, a + b]\nlet k = 1\nClip m:\n    Note/(c[1])\n    Note/(c[k])\n    for i in 1..2:\n        Note/(c[i])\n    Note/(c[2])\n    Note/(c[j])\n";
+    let text = "state a(1)\nstate b(2)\nstate j(0)\nlet c = [a, b, a + b]\nlet k = 1\nClip m:\n    Note/(c[1])\n    Note/(c[k])\n    for i in 1..2:\n        Note/(c[i])\n    Note/(c[2])\n    Note/(c[j])\n";
     let (diagnostics, notes) = analyzed(text, note_pitches_and_gates);
     assert_eq!(errors_of(&diagnostics), Vec::<&Diagnostic>::new());
     let pitches: Vec<String> = notes.into_iter().map(|(pitch, _)| pitch).collect();
@@ -877,7 +877,7 @@ fn an_index_known_at_compile_time_reads_the_elements_own_binding() {
             "runtime pick"
         ]
     );
-    let text = "input steps = [true, false, false, true, false, false, true, false]\ninput pitches = [36, 36, 43, 36, 41, 36, 43, 48]\n\nClip seq:\n    for i in 0..8:\n        Note/(pitches[i]) when steps[i]\n";
+    let text = "state steps([true, false, false, true, false, false, true, false])\nstate pitches([36, 36, 43, 36, 41, 36, 43, 48])\n\nClip seq:\n    for i in 0..8:\n        Note/(pitches[i]) when steps[i]\n";
     let (diagnostics, notes) = analyzed(text, note_pitches_and_gates);
     assert_eq!(errors_of(&diagnostics), Vec::<&Diagnostic>::new());
     let expected: Vec<(String, Option<String>)> = (0..8)
@@ -925,7 +925,7 @@ fn note_conditions(engine: &Engine<'_>, text: &str) -> Vec<Vec<(String, bool)>> 
 
 #[test]
 fn an_arm_is_active_when_its_guard_holds_and_no_earlier_guard_does() {
-    let text = "input fill_on = false\ninput section = 0\nClip verse:\n    Note/60\n    when fill_on:\n        Note/62 Note/64\n    else:\n        Note/62\n    when:\n        section is 0: Note/67\n        section is 1: Note/69\n        else: Note/71\n";
+    let text = "state fill_on(false)\nstate section(0)\nClip verse:\n    Note/60\n    when fill_on:\n        Note/62 Note/64\n    else:\n        Note/62\n    when:\n        section is 0: Note/67\n        section is 1: Note/69\n        else: Note/71\n";
     let (diagnostics, found) = analyzed(text, |engine| note_conditions(engine, text));
     assert_eq!(errors_of(&diagnostics), Vec::<&Diagnostic>::new());
     let held = |guard: &str, holds: bool| (guard.to_string(), holds);
@@ -980,7 +980,7 @@ fn stress_an_arm_of_the_deep_bodies_project_is_active_when_every_guard_above_it_
 #[ignore = "stress"]
 fn stress_guard_arms_cost_linear_time_and_memory() {
     let size = |arms: usize| {
-        let mut text = String::from("input x = 0\nClip c:\n    when:\n");
+        let mut text = String::from("state x(0)\nClip c:\n    when:\n");
         for arm in 0..arms {
             text.push_str(&format!("        x is {arm}: Note/{arm}\n"));
         }
@@ -1008,7 +1008,7 @@ fn stress_guard_arms_cost_linear_time_and_memory() {
 #[test]
 fn equal_sibling_calls_share_one_inlined_body() {
     let work = |levels: usize| {
-        let mut text = String::from("input i = 1\nfn f0(x): x\n");
+        let mut text = String::from("state i(1)\nfn f0(x): x\n");
         for level in 1..=levels {
             let below = level - 1;
             text.push_str(&format!("fn f{level}(x): f{below}(x) + f{below}(x)\n"));
@@ -1242,7 +1242,7 @@ fn a_recursive_array_result_takes_the_shape_it_yields_in_the_type_its_use_expect
             vec![],
         ),
         (
-            format!("{CHORD_FN}input a = 1\nClip c:\n    Note/(a + chord(1))\n"),
+            format!("{CHORD_FN}state a(1)\nClip c:\n    Note/(a + chord(1))\n"),
             vec![Code::ArrayOperand],
             vec![],
         ),
@@ -1300,22 +1300,22 @@ fn a_recursive_array_result_takes_the_shape_it_yields_in_the_type_its_use_expect
             vec![67],
         ),
         (
-            format!("{CHORD_FN}input f = true\nClip c:\n    Note/((if f then chord(1) else [1, 2, 3])[0])\n"),
+            format!("{CHORD_FN}state f(true)\nClip c:\n    Note/((if f then chord(1) else [1, 2, 3])[0])\n"),
             vec![],
             vec![],
         ),
         (
-            format!("{CHORD_FN}input f = true\nClip c:\n    Note/((if f then chord(1) else [1, 2])[0])\n"),
+            format!("{CHORD_FN}state f(true)\nClip c:\n    Note/((if f then chord(1) else [1, 2])[0])\n"),
             vec![],
             vec![],
         ),
         (
-            format!("{CHORD_FN}input a = 1\nClip c:\n    Note/([a, chord(3)[0]][1])\n"),
+            format!("{CHORD_FN}state a(1)\nClip c:\n    Note/([a, chord(3)[0]][1])\n"),
             vec![],
             vec![62],
         ),
         (
-            format!("{CHORD_FN}input i = 0\nClip c:\n    Note/(chord(3)[i])\n"),
+            format!("{CHORD_FN}state i(0)\nClip c:\n    Note/(chord(3)[i])\n"),
             vec![],
             vec![],
         ),
@@ -1394,14 +1394,14 @@ fn a_recursive_array_result_fills_an_array_attribute_or_input_of_its_shape() {
         ),
         (
             format!(
-                "{CHORD_FN}input f = true\nChord a | notes=(if f then chord(1) else chord(2))\n"
+                "{CHORD_FN}state f(true)\nChord a | notes=(if f then chord(1) else chord(2))\n"
             ),
             "notes",
             vec![],
             None,
         ),
         (
-            format!("{CHORD_FN}input f = true\nChord a | notes=(if f then chord(1) else [1, 2])\n"),
+            format!("{CHORD_FN}state f(true)\nChord a | notes=(if f then chord(1) else [1, 2])\n"),
             "notes",
             vec![Code::VariableArray],
             None,
@@ -1423,26 +1423,26 @@ fn a_recursive_array_result_fills_an_array_attribute_or_input_of_its_shape() {
         ),
         (
             format!(
-                "{CHORD_FN}input f = true\nChord a | notes=(if f then chord(1) else chord(2)[0])\n"
+                "{CHORD_FN}state f(true)\nChord a | notes=(if f then chord(1) else chord(2)[0])\n"
             ),
             "notes",
             vec![Code::TypeMismatch],
             None,
         ),
         (
-            format!("{grid}input i = 0\nChord a | notes=(g(1)[i])\n"),
+            format!("{grid}state i(0)\nChord a | notes=(g(1)[i])\n"),
             "notes",
             vec![],
             None,
         ),
         (
-            format!("{grid}input i = 0\nChord a | notes=(g(1)[i][0])\n"),
+            format!("{grid}state i(0)\nChord a | notes=(g(1)[i][0])\n"),
             "notes",
             vec![Code::TypeMismatch],
             None,
         ),
         (
-            format!("{grid}input f = true\nChord a | grid=(if f then g(1) else g(2))\n"),
+            format!("{grid}state f(true)\nChord a | grid=(if f then g(1) else g(2))\n"),
             "grid",
             vec![],
             None,
@@ -1462,7 +1462,7 @@ fn a_recursive_array_result_fills_an_array_attribute_or_input_of_its_shape() {
             ));
         }
     }
-    let annotated = format!("{CHORD_FN}input v: i32[3] = chord(1)\nClip c:\n    Note/(v[2])\n");
+    let annotated = format!("{CHORD_FN}state v(chord(1)): i32[3]\nClip c:\n    Note/(v[2])\n");
     let (diagnostics, holes) = analyzed(&annotated, placeholders);
     if !errors_of(&diagnostics).is_empty() || !holes.is_empty() {
         failures.push(format!(
@@ -1470,12 +1470,12 @@ fn a_recursive_array_result_fills_an_array_attribute_or_input_of_its_shape() {
             error_codes(&diagnostics)
         ));
     }
-    let wrong = format!("{CHORD_FN}input v: i32[2] = chord(1)\nClip c:\n    Note/(v[1])\n");
+    let wrong = format!("{CHORD_FN}state v(chord(1)): i32[2]\nClip c:\n    Note/(v[1])\n");
     let (diagnostics, ()) = analyzed(&wrong, |_| ());
     if error_codes(&diagnostics) != [Code::TypeMismatch] {
         failures.push(format!("{wrong:?}: {:?}", error_codes(&diagnostics)));
     }
-    let input = format!("{CHORD_FN}input v = chord(1)\nClip c:\n    Note/(v[2])\n");
+    let input = format!("{CHORD_FN}state v(chord(1))\nClip c:\n    Note/(v[2])\n");
     let (_, slots) = analyzed(&input, |engine| {
         engine
             .memo
@@ -1632,26 +1632,26 @@ fn a_recursive_result_has_the_kind_its_body_gives_it() {
     }
     let cells: Vec<(String, &str, Scalar, Option<CVal>)> = vec![
         (
-            format!("{FIB_FN}input n = fib(3)\nClip c:\n    Note/n\n"),
+            format!("{FIB_FN}state n(fib(3))\nClip c:\n    Note/n\n"),
             "n",
             Scalar::I64,
             Some(CVal::Int(2)),
         ),
         (
-            "fn h(n): if n < 1 then 0.5 else h(n - 1)\ninput m = h(2)\nClip c | gain=m\n".into(),
+            "fn h(n): if n < 1 then 0.5 else h(n - 1)\nstate m(h(2))\nClip c | gain=m\n".into(),
             "m",
             Scalar::F64,
             Some(CVal::F64(0.5)),
         ),
         (
-            "fn d(n): if n < 1 then 1 else d(n - 1) / 2\ninput q = d(2)\nClip c | gain=q\n".into(),
+            "fn d(n): if n < 1 then 1 else d(n - 1) / 2\nstate q(d(2))\nClip c | gain=q\n".into(),
             "q",
             Scalar::F64,
             Some(CVal::F64(0.25)),
         ),
         (
             format!(
-                "{FIB_FN}input f = true\nlet x = if f then fib(3) else fib(4)\nClip c:\n    Note/x\n"
+                "{FIB_FN}state f(true)\nlet x = if f then fib(3) else fib(4)\nClip c:\n    Note/x\n"
             ),
             "x",
             Scalar::I32,
@@ -1733,7 +1733,7 @@ fn a_reactive_value_shaped_by_a_recursive_result_alone_takes_its_default_shape()
     let accepted: Vec<DefaultShapeRow<'_>> = vec![
         (
             format!(
-                "{CHORD_FN}input f = true\nlet x = if f then chord(1) else chord(2)\nClip c:\n    Note/(x[0])\n"
+                "{CHORD_FN}state f(true)\nlet x = if f then chord(1) else chord(2)\nClip c:\n    Note/(x[0])\n"
             ),
             "x",
             3,
@@ -1744,7 +1744,7 @@ fn a_reactive_value_shaped_by_a_recursive_result_alone_takes_its_default_shape()
         ),
         (
             format!(
-                "{CHORD_FN}fn first(a): a[0]\ninput f = true\nClip c:\n    Note/(first(if f then chord(1) else chord(2)))\n"
+                "{CHORD_FN}fn first(a): a[0]\nstate f(true)\nClip c:\n    Note/(first(if f then chord(1) else chord(2)))\n"
             ),
             "a",
             3,
@@ -1754,7 +1754,7 @@ fn a_reactive_value_shaped_by_a_recursive_result_alone_takes_its_default_shape()
             ],
         ),
         (
-            format!("{GRID_FN}input i = 0\nlet row = grid(2)[i]\nClip c:\n    Note/(row[1])\n"),
+            format!("{GRID_FN}state i(0)\nlet row = grid(2)[i]\nClip c:\n    Note/(row[1])\n"),
             "row",
             2,
             vec![(
@@ -1764,7 +1764,7 @@ fn a_reactive_value_shaped_by_a_recursive_result_alone_takes_its_default_shape()
         ),
         (
             format!(
-                "{R_FN}input f = true\nlet w = if f then r(0.1, 3) else r(0.1, 3)\nClip c | gain=(w[0])\n"
+                "{R_FN}state f(true)\nlet w = if f then r(0.1, 3) else r(0.1, 3)\nClip c | gain=(w[0])\n"
             ),
             "w",
             1,
@@ -1801,7 +1801,7 @@ fn a_reactive_value_shaped_by_a_recursive_result_alone_takes_its_default_shape()
         }
     }
     let annotated = format!(
-        "{CHORD_FN}input f = true\nlet x: i32[3] = if f then chord(1) else chord(2)\nClip c:\n    Note/(x[2])\n"
+        "{CHORD_FN}state f(true)\nlet x: i32[3] = if f then chord(1) else chord(2)\nClip c:\n    Note/(x[2])\n"
     );
     let (diagnostics, (types, holes)) = analyzed(&annotated, |engine| {
         (element_types(engine, "x"), placeholders(engine))
@@ -1813,7 +1813,7 @@ fn a_reactive_value_shaped_by_a_recursive_result_alone_takes_its_default_shape()
         ));
     }
     let mismatched = format!(
-        "{CHORD_FN}input f = true\nlet x: i32[2] = if f then chord(1) else chord(2)\nClip c:\n    Note/(x[1])\n"
+        "{CHORD_FN}state f(true)\nlet x: i32[2] = if f then chord(1) else chord(2)\nClip c:\n    Note/(x[1])\n"
     );
     let (diagnostics, ()) = analyzed(&mismatched, |_| ());
     if error_codes(&diagnostics) != [Code::TypeMismatch] {
@@ -1821,14 +1821,14 @@ fn a_reactive_value_shaped_by_a_recursive_result_alone_takes_its_default_shape()
     }
     let other = "fn other(k): if k < 1 then [1, 2] else other(k - 1)\n";
     let variable = format!(
-        "{CHORD_FN}{other}input f = true\nlet x = if f then chord(1) else other(1)\nClip c:\n    Note/(x[1])\n"
+        "{CHORD_FN}{other}state f(true)\nlet x = if f then chord(1) else other(1)\nClip c:\n    Note/(x[1])\n"
     );
     let (diagnostics, ()) = analyzed(&variable, |_| ());
     if !errors_of(&diagnostics).is_empty() {
         failures.push(format!("{variable:?}: {:?}", error_codes(&diagnostics)));
     }
     let rejected = format!(
-        "{R_FN}input f = true\nlet w = if f then r(0.1, 3) else r(0.1, 3)\nOsc o | freq=(w[0])\n"
+        "{R_FN}state f(true)\nlet w = if f then r(0.1, 3) else r(0.1, 3)\nOsc o | freq=(w[0])\n"
     );
     let (diagnostics, ()) = analyzed(&rejected, |_| ());
     let used = rejected.find("w[0]").unwrap_or(0);
@@ -1841,7 +1841,7 @@ fn a_reactive_value_shaped_by_a_recursive_result_alone_takes_its_default_shape()
 }
 
 fn doubling(name: &str, levels: usize, left: &str, right: &str) -> String {
-    let mut text = format!("input i = 1\nfn {name}0(x): x\n");
+    let mut text = format!("state i(1)\nfn {name}0(x): x\n");
     for level in 1..=levels {
         let below = level - 1;
         text.push_str(&format!(
@@ -1892,7 +1892,7 @@ fn a_compilation_inlines_at_most_a_million_calls() {
             "{sizes} against {accepted_work}: {text}"
         );
     }
-    let mut sites = String::from("input i = 1\nfn g0(x): x\n");
+    let mut sites = String::from("state i(1)\nfn g0(x): x\n");
     for level in 1..=10 {
         let below = level - 1;
         sites.push_str(&format!(
@@ -1911,7 +1911,7 @@ fn a_compilation_inlines_at_most_a_million_calls() {
 
 #[test]
 fn the_count_before_inlining_is_the_count_of_every_construct() {
-    let mut text = String::from("input i = 1\nfn f0(x): x\n");
+    let mut text = String::from("state i(1)\nfn f0(x): x\n");
     for level in 1..=18 {
         let below = level - 1;
         text.push_str(&format!("fn f{level}(x): f{below}(x) + f{below}(x)\n"));
@@ -1947,7 +1947,7 @@ fn the_count_before_inlining_is_the_count_of_every_construct() {
 }
 
 fn million_inlinings(f0_notes: usize, declarations: &str, values: &[&str]) -> String {
-    let mut text = String::from("input i = 1\nfn f0(x): x\n");
+    let mut text = String::from("state i(1)\nfn f0(x): x\n");
     for level in 1..=18 {
         let below = level - 1;
         text.push_str(&format!("fn f{level}(x): f{below}(x) + f{below}(x)\n"));
@@ -2019,7 +2019,7 @@ fn a_call_in_a_recursive_body_counts_once() {
 }
 
 fn chains(f_levels: usize, g_levels: usize, declarations: &str, notes: &[&str]) -> String {
-    let mut text = String::from("input i = 1\nfn f0(x): x\nfn g0(x): x\n");
+    let mut text = String::from("state i(1)\nfn f0(x): x\nfn g0(x): x\n");
     for level in 1..=f_levels {
         let below = level - 1;
         text.push_str(&format!("fn f{level}(x): f{below}(x) + f{below}(x)\n"));
@@ -2143,7 +2143,7 @@ fn stress_expansion_stops_after_a_million_iterations_and_uses_whatever_the_loop_
 }
 
 fn doubled_calls(levels: usize, body: &str) -> String {
-    let mut text = format!("input i = 1\nfn g0(x): {body}\n");
+    let mut text = format!("state i(1)\nfn g0(x): {body}\n");
     for level in 1..=levels {
         let below = level - 1;
         text.push_str(&format!("fn g{level}(x): g{below}(x) + g{below}(x)\n"));
@@ -2210,7 +2210,7 @@ fn a_lookup_that_misses_is_an_internal_error() {
     let variants = Variants::of(&vocabulary).expect("the vocabulary's variants index");
     let other = built(
         &vocabulary,
-        "input a = 1\ninput b = 2\ninput c = 3\nSession s\n",
+        "state a(1)\nstate b(2)\nstate c(3)\nSession s\n",
     );
     let Some(&Top::Input(foreign_input)) = other.top.get(2) else {
         panic!("the other program declares three inputs");
@@ -2235,7 +2235,7 @@ fn a_lookup_that_misses_is_an_internal_error() {
     assert_eq!(codes, vec![Code::InternalError]);
 
     let (_, larger) = analyzed(
-        "input i = 1\nClip c:\n    Note/(i + i + i)\n    Note/(i * 2)\n",
+        "state i(1)\nClip c:\n    Note/(i + i + i)\n    Note/(i * 2)\n",
         |engine| engine.nodes.len(),
     );
     let hir = built(&vocabulary, "Session s\n");
@@ -2357,7 +2357,7 @@ fn reaching_an_id_space_draws_a_limit_diagnostic_and_no_internal_error() {
             .collect()
     };
     let program =
-        "input i = 1\nfn f(x): x + x\nClip c:\n    for j in 0..100:\n        Note/(f(i + j))\n";
+        "state i(1)\nfn f(x): x + x\nClip c:\n    for j in 0..100:\n        Note/(f(i + j))\n";
     with_engine_within(program, unbounded, |engine| {
         assert_eq!(engine.analyze(), Ok(()));
         assert_eq!(error_codes(&engine.report.diagnostics), Vec::<Code>::new());
@@ -2376,7 +2376,7 @@ fn reaching_an_id_space_draws_a_limit_diagnostic_and_no_internal_error() {
         );
     });
 
-    let mut gated = String::from("input a = true\npattern P():\n");
+    let mut gated = String::from("state a(true)\npattern P():\n");
     for level in 1..=20 {
         gated.push_str(&format!("{}when a:\n", "    ".repeat(level)));
     }
@@ -2401,7 +2401,7 @@ fn reaching_an_id_space_draws_a_limit_diagnostic_and_no_internal_error() {
         );
     });
 
-    let faulty = "input i = 1\nfn f(x): x + x\npattern P(n):\n    for k in 0..(10 / n):\n        Note\nClip c:\n    P(0)\n    for j in 0..100:\n        Note/(f(i + j))\n";
+    let faulty = "state i(1)\nfn f(x): x + x\npattern P(n):\n    for k in 0..(10 / n):\n        Note\nClip c:\n    P(0)\n    for j in 0..100:\n        Note/(f(i + j))\n";
     let codes_and_bound = |engine: &Engine<'_>| -> (Vec<Code>, bool) {
         let mut codes = error_codes(&engine.report.diagnostics);
         codes.sort_by_key(|code| code.as_str());
@@ -2426,7 +2426,7 @@ fn reaching_an_id_space_draws_a_limit_diagnostic_and_no_internal_error() {
         assert_eq!(codes_and_bound(engine).0, expected);
     });
 
-    let cut_flow = "Session s\nlet c = Square\nSynth y:\n    Osc | wave=c ** 2bars\ninput i = 1\nfn f(x): x + x\nClip k:\n    for j in 0..100:\n        Note/(f(i + j))\n";
+    let cut_flow = "Session s\nlet c = Square\nSynth y:\n    Osc | wave=c ** 2bars\nstate i(1)\nfn f(x): x + x\nClip k:\n    for j in 0..100:\n        Note/(f(i + j))\n";
     with_engine_within(cut_flow, unbounded, |engine| {
         assert_eq!(engine.analyze(), Ok(()));
         assert_eq!(
@@ -2484,7 +2484,7 @@ fn reaching_an_id_space_draws_a_limit_diagnostic_and_no_internal_error() {
         );
     });
 
-    let warned = "Session s\nfn r(n): if n < 1 then 0 else r(n - 1)\nClip c:\n    Note/(r(4))\ninput n = 1\nSynth y:\n    Osc | freq=n\n";
+    let warned = "Session s\nfn r(n): if n < 1 then 0 else r(n - 1)\nClip c:\n    Note/(r(4))\nstate n(1)\nSynth y:\n    Osc | freq=n\n";
     let unreached = Code::UnreachableInstance;
     for (calls, expected) in [
         (4, vec![Code::RecursionLimit]),
@@ -2625,7 +2625,7 @@ fn reaching_an_id_space_draws_a_limit_diagnostic_and_no_internal_error() {
 
 #[test]
 fn a_type_check_that_meets_a_node_with_no_signature_is_an_internal_error() {
-    with_engine("input i = 1\nClip c:\n    Note/(i + 1)\n", |engine| {
+    with_engine("state i(1)\nClip c:\n    Note/(i + 1)\n", |engine| {
         assert_eq!(engine.analyze(), Ok(()));
         let operand = engine
             .nodes
@@ -3154,44 +3154,44 @@ fn an_array_input_has_one_kind_for_all_its_elements() {
     let gains_read = ["Clip c | gain=(gains[0])", "Clip d | gain=(gains[1])"];
     let rows: Vec<InputRow<'_>> = vec![
         (
-            [&["input gains = [1, 0.5]"][..], &gains_read].concat(),
+            [&["state gains([1, 0.5])"][..], &gains_read].concat(),
             vec![2],
             float(&[1.0, 0.5]),
             vec![],
         ),
         (
-            [&["input gains = [0.5, 1]"][..], &gains_read].concat(),
+            [&["state gains([0.5, 1])"][..], &gains_read].concat(),
             vec![2],
             float(&[0.5, 1.0]),
             vec![],
         ),
         (
-            vec!["input gains = [1, 0.5]", "Clip c:\n    Note/(gains[0])"],
+            vec!["state gains([1, 0.5])", "Clip c:\n    Note/(gains[0])"],
             vec![2],
             float(&[1.0, 0.5]),
             vec![Code::FloatToInteger],
         ),
         (
-            vec!["input m = [[1, 2], [3, 0.5]]"],
+            vec!["state m([[1, 2], [3, 0.5]])"],
             vec![2, 2],
             float(&[1.0, 2.0, 3.0, 0.5]),
             vec![],
         ),
         (
-            vec!["input k = [1, Wave::Saw]"],
+            vec!["state k([1, Wave::Saw])"],
             vec![],
             vec![],
             vec![Code::TypeMismatch],
         ),
         (
-            vec!["input k: f64[2] = [1, 2]"],
+            vec!["state k([1, 2]): f64[2]"],
             vec![2],
             float(&[1.0, 2.0]),
             vec![],
         ),
         (
             vec![
-                "input pitches = [60, 62]",
+                "state pitches([60, 62])",
                 "Clip c:\n    Note/(pitches[0])",
                 "Osc o | freq=(pitches[1])",
             ],
@@ -3200,7 +3200,7 @@ fn an_array_input_has_one_kind_for_all_its_elements() {
             vec![],
         ),
         (
-            [&["input gains = [1, 2]"][..], &gains_read].concat(),
+            [&["state gains([1, 2])"][..], &gains_read].concat(),
             vec![2],
             integer(&[1, 2]),
             vec![Code::IntegerInput],
@@ -3209,8 +3209,8 @@ fn an_array_input_has_one_kind_for_all_its_elements() {
     let mut failures = Vec::new();
     for (items, lengths, cells, codes) in rows {
         let name = items[0]
-            .trim_start_matches("input ")
-            .split([' ', ':'])
+            .trim_start_matches("state ")
+            .split([' ', ':', '('])
             .next()
             .unwrap_or_default()
             .to_string();
@@ -3296,7 +3296,7 @@ fn a_value_of_fixed_or_widened_type_keeps_its_ieee_value_where_it_is_used() {
     let rejected: [&[&str]; 4] = [
         &["Osc o | freq=(0.0 / 0.0)"],
         &["Osc o | freq=(1e300 * 1e300)"],
-        &["input x = 1e300", "Clip c | gain=x"],
+        &["state x(1e300)", "Clip c | gain=x"],
         &["let x: f64 = 1e300 * 1e300", "Osc o | freq=x"],
     ];
     for items in rejected {
@@ -3397,7 +3397,7 @@ fn a_recursive_call_with_a_placeholder_argument_is_a_placeholder_in(orders: Orde
         (&[], "Clip c:\n    for i in [X]:\n        Note"),
         (&[], "Clip c:\n    [for i in 0..X: Note]"),
         (&[pattern], "Clip c:\n    P | n=X"),
-        (&[], "input zz = [1, 2, 3][X]"),
+        (&[], "state zz([1, 2, 3][X])"),
     ];
     let placeholders_alone = [
         ("q(nope)", Code::UnknownName, "nope"),
@@ -3736,7 +3736,7 @@ fn no_mutant_of_an_example_or_fixture_that_draws_no_error_holds_a_placeholder() 
         (failures, clean)
     });
     assert!(failures.is_empty(), "{}", failures.join("\n"));
-    assert_eq!(clean, 37);
+    assert_eq!(clean, 34);
 }
 
 const MUTANT_SHARDS: usize = 4;

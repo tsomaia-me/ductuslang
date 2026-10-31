@@ -7,7 +7,8 @@ use crate::source::Source;
 use crate::syntax::{SyntaxKind, Token, lex};
 
 const ITEM_KEYWORDS: &[SyntaxKind] = &[
-    SyntaxKind::InputKw,
+    SyntaxKind::StreamKw,
+    SyntaxKind::ChannelKw,
     SyntaxKind::LetKw,
     SyntaxKind::StateKw,
     SyntaxKind::FnKw,

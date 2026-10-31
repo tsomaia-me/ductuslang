@@ -76,7 +76,6 @@ fn unclosed(node: &NodeView<'_>) -> Option<Range<u32>> {
         | SyntaxKind::Conversion
         | SyntaxKind::DefaultArg => SyntaxKind::RParen,
         SyntaxKind::ArrayLit | SyntaxKind::IndexExpr => SyntaxKind::RBracket,
-        SyntaxKind::History => SyntaxKind::RBrace,
         _ => return None,
     };
     let opener = match closer {

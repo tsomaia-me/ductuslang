@@ -5,7 +5,7 @@ use symphonyscript_core::Vocabulary;
 use crate::program::ProgramSource;
 
 const DECLARATIONS: &[SyntaxKind] = &[
-    SyntaxKind::InputDecl,
+    SyntaxKind::CellDecl,
     SyntaxKind::LetDecl,
     SyntaxKind::FnDecl,
     SyntaxKind::PatternDecl,

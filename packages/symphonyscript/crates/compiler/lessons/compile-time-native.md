@@ -5,7 +5,7 @@ A native function with a string parameter or result runs only at compile time, a
 Strings exist only at compile time.
 
 ```sym-error natives
-input n = 0
+state n(0)
 Clip c:
     Note/(tag("abc", n))
 ```

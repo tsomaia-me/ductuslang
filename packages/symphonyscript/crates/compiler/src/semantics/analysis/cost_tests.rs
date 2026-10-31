@@ -49,9 +49,9 @@ const SHAPES: [Shape; 7] = [
 ];
 
 const HEADER: [&str; 4] = [
-    "input note = 60\n",
-    "input flag = false\n",
-    "input k = 1\n",
+    "state note(60)\n",
+    "state flag(false)\n",
+    "state k(1)\n",
     "fn g(v): v + 1\n",
 ];
 
@@ -186,9 +186,9 @@ fn items(construct: Construct, shape: Shape, n: usize) -> Option<Vec<String>> {
             items.push(reader(&format!("v{last}")));
         }
         (Shape::Chain, Construct::History) => {
-            items.push(format!("state v0 = {start}{{1, 0}}\n"));
+            items.push(format!("state v0 = {start}.past(1, 0)\n"));
             for i in 1..n {
-                items.push(format!("state v{i} = v{}{{1, 0}} + 1\n", i - 1));
+                items.push(format!("state v{i} = v{}.past(1, 0) + 1\n", i - 1));
             }
             items.push(reader(&format!("v{last}")));
         }
@@ -247,14 +247,14 @@ fn items(construct: Construct, shape: Shape, n: usize) -> Option<Vec<String>> {
             for i in 0..n {
                 let previous = (i + last) % n;
                 items.push(format!("let l{i} = s{i} + 1\n"));
-                items.push(format!("state s{i} = l{previous}{{1, 0}}\n"));
+                items.push(format!("state s{i} = l{previous}.past(1, 0)\n"));
             }
             items.push(reader("s0"));
         }
         (Shape::Ring, Construct::State | Construct::History) => {
             for i in 0..n {
                 let previous = (i + last) % n;
-                items.push(format!("state s{i} = s{previous}{{1, 0}} + 1\n"));
+                items.push(format!("state s{i} = s{previous}.past(1, 0) + 1\n"));
             }
             items.push(reader("s0"));
         }
@@ -262,7 +262,7 @@ fn items(construct: Construct, shape: Shape, n: usize) -> Option<Vec<String>> {
             for i in 0..n {
                 let previous = (i + last) % n;
                 items.push(format!(
-                    "state s{i} = match k:\n    1: s{previous}{{1, 0}}\n    else: 0\n"
+                    "state s{i} = match k:\n    1: s{previous}.past(1, 0)\n    else: 0\n"
                 ));
             }
             items.push(reader("s0"));
@@ -272,7 +272,7 @@ fn items(construct: Construct, shape: Shape, n: usize) -> Option<Vec<String>> {
                 let previous = (i + last) % n;
                 items.push(format!(
                     "state s{i} = {}\n",
-                    step(construct, &format!("s{previous}{{1, 0}}"))?
+                    step(construct, &format!("s{previous}.past(1, 0)"))?
                 ));
             }
             items.push(reader("s0"));
@@ -287,7 +287,7 @@ fn items(construct: Construct, shape: Shape, n: usize) -> Option<Vec<String>> {
             | Construct::Past,
         ) => return None,
         (Shape::Nesting, Construct::History) => {
-            let fallback = format!("{}0{}", "note{1, ".repeat(n), "}".repeat(n));
+            let fallback = format!("{}0{}", "note.past(1, ".repeat(n), ")".repeat(n));
             items.push(format!("state s = {fallback}\n"));
             items.push(reader("s"));
         }
@@ -322,7 +322,7 @@ fn items(construct: Construct, shape: Shape, n: usize) -> Option<Vec<String>> {
         (Shape::Sharing, Construct::History) => {
             items.push(format!("state s = {start} + 1\n"));
             for i in 0..n {
-                items.push(format!("state t{i} = s{{1, 0}}\n"));
+                items.push(format!("state t{i} = s.past(1, 0)\n"));
             }
             items.push(reader(&sum((0..n).map(|i| format!("t{i}")))));
         }
@@ -734,7 +734,7 @@ fn stress_every_walk_of_check_over_a_for_expression_costs_work_linear_in_the_pro
 
 fn capacity_program(capacity: usize) -> String {
     format!(
-        "input held: i32[..{capacity}] = []\nstate high = for x in held into kept from []: if x > 60 then kept + [x] else kept\nstate probe: i32[..{capacity}] = high\nClip c:\n    Note/(probe[0])\n"
+        "state held([]): i32[..{capacity}]\nstate high = for x in held into kept from []: if x > 60 then kept + [x] else kept\nstate probe: i32[..{capacity}] = high\nClip c:\n    Note/(probe[0])\n"
     )
 }
 
@@ -951,8 +951,8 @@ fn chain_read(read: ChainRead, last: &str) -> String {
 fn chain_items(chain: Chain, read: ChainRead, n: usize, checked: bool) -> Vec<String> {
     let (first, step) = chain.first_and_step();
     let mut items = vec![
-        "input note = 60\n".to_string(),
-        "input held: i32[..4] = [1, 2, 3, 4]\n".to_string(),
+        "state note(60)\n".to_string(),
+        "state held([1, 2, 3, 4]): i32[..4]\n".to_string(),
         "fn id(x): x\n".to_string(),
         format!("let v0 = {first}\n"),
     ];

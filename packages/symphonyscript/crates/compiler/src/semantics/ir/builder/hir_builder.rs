@@ -8,8 +8,8 @@ use super::index::index;
 use super::scalar_type::scalar_type;
 use crate::semantics::Internal;
 use crate::semantics::ir::{
-    Expr, ExprId, ExprKind, FnDecl, FnId, Hir, Ident, Input, InputId, LetDecl, LetId, Loc, Param,
-    PatternDecl, PatternId, PlacementId, Top, TypeBase, TypeRef, UnknownNames,
+    Expr, ExprId, ExprKind, FnDecl, FnId, Hir, Ident, LetDecl, LetId, Loc, Param, PatternDecl,
+    PatternId, PlacementId, Top, TypeBase, TypeRef, UnknownNames,
 };
 use crate::syntax::ast::{self, AstNode, Item, Name};
 use crate::syntax::{ElementView, NodeView, SyntaxKind, Walk};
@@ -46,20 +46,6 @@ fn skipped_params(regions: &[NodeView<'_>]) -> UnknownNames {
 impl HirBuilder<'_> {
     pub(super) fn item(&mut self, item: Item<'_>) -> Result<Option<PlacementId>, Internal> {
         match item {
-            Item::Input(node) => {
-                let loc = self.loc(node.syntax().range());
-                let input = Input {
-                    name: self.ident(node.name()),
-                    word: None,
-                    capacity: None,
-                    ty: node.ty().map(|ty| self.type_ref(&ty)),
-                    value: self.expr(node.value(), loc),
-                    loc,
-                };
-                let id = InputId(index(self.hir.inputs.len()));
-                self.hir.inputs.push(input);
-                self.hir.top.push(Top::Input(id));
-            }
             Item::Let(node) => {
                 let loc = self.loc(node.syntax().range());
                 let value = match node.match_block() {
@@ -176,7 +162,7 @@ impl HirBuilder<'_> {
     pub(super) fn type_ref(&mut self, node: &ast::TypeRef<'_>) -> TypeRef {
         let loc = self.loc(node.syntax().range());
         let base = match node.base() {
-            _ if self.faults.touch(node.syntax().range()) => TypeBase::Error,
+            _ if self.faults.touch(node.syntax().range()) || unclosed(node) => TypeBase::Error,
             Some(token) => match scalar_type(&token) {
                 Some(scalar) => TypeBase::Scalar(scalar),
                 None => match self.ident(node.enum_name()) {
@@ -254,4 +240,17 @@ pub(super) fn digits_value(text: &str) -> Option<u64> {
 
 fn length_value(text: &str) -> Option<u32> {
     digits_value(text).map(|value| u32::try_from(value).unwrap_or(u32::MAX))
+}
+
+fn unclosed(node: &ast::TypeRef<'_>) -> bool {
+    let depth = node
+        .syntax()
+        .children_with_tokens()
+        .filter_map(|element| element.into_token())
+        .fold(0i32, |depth, token| match token.kind() {
+            SyntaxKind::LBracket => depth + 1,
+            SyntaxKind::RBracket => depth - 1,
+            _ => depth,
+        });
+    depth != 0
 }

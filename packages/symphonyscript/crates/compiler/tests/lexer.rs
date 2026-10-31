@@ -219,9 +219,9 @@ fn identifiers_take_xid_characters_and_hash() {
 fn keywords_are_their_own_tokens() {
     assert_eq!(
         clean(
-            "input let state stream channel cell out fn pattern default if then else match when for in into from as on is not and or div to true false i32 i64 f32 f64 bool"
+            "let state stream channel cell out fn pattern default if then else match when for in into from as on is not and or div to true false i32 i64 f32 f64 bool"
         ),
-        "InputKw _ LetKw _ StateKw _ StreamKw _ ChannelKw _ CellKw _ OutKw _ FnKw _ PatternKw _ DefaultKw _ IfKw _ ThenKw _ ElseKw _ MatchKw _ WhenKw _ ForKw _ InKw _ IntoKw _ FromKw _ AsKw _ OnKw _ IsKw _ NotKw _ AndKw _ OrKw _ DivKw _ ToKw _ TrueKw _ FalseKw _ I32Kw _ I64Kw _ F32Kw _ F64Kw _ BoolKw NL"
+        "LetKw _ StateKw _ StreamKw _ ChannelKw _ CellKw _ OutKw _ FnKw _ PatternKw _ DefaultKw _ IfKw _ ThenKw _ ElseKw _ MatchKw _ WhenKw _ ForKw _ InKw _ IntoKw _ FromKw _ AsKw _ OnKw _ IsKw _ NotKw _ AndKw _ OrKw _ DivKw _ ToKw _ TrueKw _ FalseKw _ I32Kw _ I64Kw _ F32Kw _ F64Kw _ BoolKw NL"
     );
 }
 
@@ -458,7 +458,7 @@ fn every_sym_example_lexes_without_errors() {
 #[test]
 fn every_sym_example_lexes_alike_after_a_history_read() {
     let pending = pending_spec_examples();
-    let prefix = "input x = 1\nstate s = x{1, 0}\n";
+    let prefix = "state x(1)\nstate s = x.past(1, 0)\n";
     for example in spec_examples() {
         if (example.tag == "sym" || example.tag == "sym-error")
             && !pending.contains(&example.name())

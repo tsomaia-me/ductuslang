@@ -382,11 +382,7 @@ impl Engine<'_> {
                 Code::ReactiveInitializer,
                 loc,
                 global,
-                if decl.word.is_some() {
-                    "a cell's init is a compile-time value and reads no cell"
-                } else {
-                    "an input's initializer is a compile-time value and reads no input"
-                },
+                "a cell's init is a compile-time value and reads no cell",
             )?;
             self.memo.inputs.insert(input, BoundVal::Error);
             return Ok(true);
@@ -414,14 +410,10 @@ impl Engine<'_> {
             .iter()
             .find(|sig| matches!(sig.kind, Kind::Str | Kind::Node))
         {
-            let (code, message) = match (decl.word, bad.kind) {
-                (Some(_), Kind::Str) => (Code::UnbuiltConstruct, super::history::STRING_CELL),
-                (Some(_), _) => (Code::StateValue, "a cell never holds a node reference"),
-                (None, Kind::Str) => (
-                    Code::InputValue,
-                    "an input never holds a string, which exists only at compile time",
-                ),
-                (None, _) => (Code::InputValue, "an input never holds a node reference"),
+            let (code, message) = if bad.kind == Kind::Str {
+                (Code::UnbuiltConstruct, super::history::STRING_CELL)
+            } else {
+                (Code::StateValue, "a cell never holds a node reference")
             };
             self.error(code, loc, global, message)?;
             self.memo.inputs.insert(input, BoundVal::Error);

@@ -5,13 +5,13 @@ A state that holds a variable array has the least capacity that holds its initia
 The runtime allocates every state's buffer before it runs.
 
 ```sym-error
-input note = 60
-state recent = recent{1, []} + [note]
+state note(60)
+state recent = recent.past(1, []) + [note]
 ```
 
 `recent` grows by one element at every step.
 
 ```sym
-input note = 60
-state recent = (recent{1, []} + [note])[^8..]
+state note(60)
+state recent = (recent.past(1, []) + [note])[^8..]
 ```

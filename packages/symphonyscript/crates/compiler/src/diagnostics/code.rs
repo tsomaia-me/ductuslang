@@ -45,16 +45,13 @@ codes!(
     MatchPosition,
     MixedArguments,
     ConversionSyntax,
-    InputSyntax,
     LetSyntax,
     FnSyntax,
     PatternSyntax,
     StateSyntax,
-    MisplacedHistory,
     HistoryTarget,
     HistoryFallback,
     HistoryOffset,
-    HistoryDepth,
     CellCapacity,
     StateValue,
     UnboundedState,
@@ -104,7 +101,6 @@ codes!(
     DuplicateArgument,
     MissingArgument,
     ReactiveInitializer,
-    InputValue,
     UnknownAttribute,
     RuntimePath,
     IndexType,
@@ -194,16 +190,13 @@ impl Code {
             Code::MatchPosition => "match-position",
             Code::MixedArguments => "mixed-arguments",
             Code::ConversionSyntax => "conversion-syntax",
-            Code::InputSyntax => "input-syntax",
             Code::LetSyntax => "let-syntax",
             Code::FnSyntax => "fn-syntax",
             Code::PatternSyntax => "pattern-syntax",
             Code::StateSyntax => "state-syntax",
-            Code::MisplacedHistory => "misplaced-history",
             Code::HistoryTarget => "history-target",
             Code::HistoryFallback => "history-fallback",
             Code::HistoryOffset => "history-offset",
-            Code::HistoryDepth => "history-depth",
             Code::CellCapacity => "cell-capacity",
             Code::StateValue => "state-value",
             Code::UnboundedState => "unbounded-state",
@@ -253,7 +246,6 @@ impl Code {
             Code::DuplicateArgument => "duplicate-argument",
             Code::MissingArgument => "missing-argument",
             Code::ReactiveInitializer => "reactive-initializer",
-            Code::InputValue => "input-value",
             Code::UnknownAttribute => "unknown-attribute",
             Code::RuntimePath => "runtime-path",
             Code::IndexType => "index-type",
@@ -336,7 +328,6 @@ impl Code {
             Code::MatchSyntax | Code::MatchPosition => "5.4",
             Code::MixedArguments => "5.7",
             Code::ConversionSyntax => "5.8",
-            Code::InputSyntax => "6.1",
             Code::LetSyntax => "6.2",
             Code::FnSyntax => "6.3",
             Code::PatternSyntax => "6.4",
@@ -381,7 +372,6 @@ impl Code {
             Code::DuplicateArgument => "6.4",
             Code::MissingArgument => "6.4",
             Code::ReactiveInitializer => "6.1",
-            Code::InputValue => "3.3",
             Code::UnknownAttribute => "7.6",
             Code::RuntimePath => "5.6",
             Code::IndexType => "5.5",
@@ -438,12 +428,10 @@ impl Code {
             Code::MisplacedCaret => "2.5",
             Code::StateSyntax => "6.6",
             Code::LengthLimit => "3.2",
-            Code::MisplacedHistory => "6.6",
             Code::VariableArray => "3.7",
             Code::HistoryTarget => "6.6",
             Code::HistoryFallback => "6.6",
             Code::HistoryOffset => "6.6",
-            Code::HistoryDepth => "6.6",
             Code::CellCapacity => "6.1",
             Code::StateValue => "6.6",
             Code::UnboundedState => "6.6",
@@ -497,7 +485,6 @@ impl Code {
             | Code::MatchPosition
             | Code::MixedArguments
             | Code::ConversionSyntax
-            | Code::InputSyntax
             | Code::LetSyntax
             | Code::FnSyntax
             | Code::PatternSyntax
@@ -543,7 +530,6 @@ impl Code {
             | Code::DuplicateArgument
             | Code::MissingArgument
             | Code::ReactiveInitializer
-            | Code::InputValue
             | Code::UnknownAttribute
             | Code::RuntimePath
             | Code::IndexType
@@ -596,12 +582,10 @@ impl Code {
             | Code::MisplacedCaret
             | Code::StateSyntax
             | Code::LengthLimit
-            | Code::MisplacedHistory
             | Code::VariableArray
             | Code::HistoryTarget
             | Code::HistoryFallback
             | Code::HistoryOffset
-            | Code::HistoryDepth
             | Code::CellCapacity
             | Code::StateValue
             | Code::UnboundedState

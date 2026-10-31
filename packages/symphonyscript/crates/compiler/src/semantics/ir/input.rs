@@ -7,7 +7,7 @@ use super::type_ref::TypeRef;
 #[derive(Clone, PartialEq, Debug)]
 pub(crate) struct Input {
     pub name: Option<Ident>,
-    pub word: Option<CellWord>,
+    pub word: CellWord,
     pub capacity: Option<u32>,
     pub ty: Option<TypeRef>,
     pub value: ExprId,

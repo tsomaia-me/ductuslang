@@ -10,7 +10,7 @@ use symphonyscript_fixtures::{
 
 const BRACKETS: [SyntaxKind; 8] = [
     SyntaxKind::Bundle,
-    SyntaxKind::History,
+    SyntaxKind::Init,
     SyntaxKind::Conversion,
     SyntaxKind::ParenPlacement,
     SyntaxKind::ArrayLit,
@@ -19,9 +19,9 @@ const BRACKETS: [SyntaxKind; 8] = [
     SyntaxKind::ParenExpr,
 ];
 
-const LOOP_FORMS: &str = "input held: i32[..10] = []\nstate total = 1 + (for i: i32, x in held into sum: i32 from 0: sum + i * x)\nClip c:\n    [Note/60 for i, p: i32 in [60, 64]: Note/p]\n    Note/(for x in [1, 2] into s from 0: s + x)\n";
+const LOOP_FORMS: &str = "state held([]): i32[..10]\nstate total = 1 + (for i: i32, x in held into sum: i32 from 0: sum + i * x)\nClip c:\n    [Note/60 for i, p: i32 in [60, 64]: Note/p]\n    Note/(for x in [1, 2] into s from 0: s + x)\n";
 
-const HISTORY_READ: &str = "input note = 60\nstate recent = (recent{1, []} + [note])[^8..]\nClip c:\n    Note/(recent[^1])\n";
+const HISTORY_READ: &str = "state note(60)\nstate recent = (recent.past(1, []) + [note])[^8..]\nClip c:\n    Note/(recent[^1])\n";
 
 fn valid_sources() -> Vec<String> {
     let pending = pending_spec_examples();

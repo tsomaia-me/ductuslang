@@ -59,7 +59,7 @@ fn a_child_or_wire_name_repeated_in_its_body_or_an_enclosing_one_is_an_error() {
             &[(Code::ChildNameClash, "dup", 1)],
         ),
         (
-            "input x = true\nClip c:\n    when x:\n        Note as dup\n    else:\n        Note as dup\n",
+            "state x(true)\nClip c:\n    when x:\n        Note as dup\n    else:\n        Note as dup\n",
             &[(Code::ChildNameClash, "dup", 1)],
         ),
         (
@@ -211,7 +211,7 @@ fn placements_in_a_for_body_are_anonymous() {
             &[(Code::NamedInFor, "nn", 0)],
         ),
         (
-            "input x = true\nClip c:\n    for i in 0..2:\n        when x:\n            Note as nn\n",
+            "state x(true)\nClip c:\n    for i in 0..2:\n        when x:\n            Note as nn\n",
             &[(Code::NamedInFor, "nn", 0)],
         ),
     ];
@@ -257,8 +257,8 @@ fn to_stands_only_in_a_wire_clause_and_ends_at_an_attribute() {
 
 #[test]
 fn a_type_names_a_vocabulary_enum_and_lengths_of_at_least_one() {
-    support::expect_codes("input a: Shape = 1\n", &[(Code::UnknownType, "Shape", 0)]);
-    support::expect_codes("input a: i32[0] = [1]\n", &[(Code::ZeroLength, "0", 0)]);
+    support::expect_codes("state a(1): Shape\n", &[(Code::UnknownType, "Shape", 0)]);
+    support::expect_codes("state a([1]): i32[0]\n", &[(Code::ZeroLength, "0", 0)]);
 }
 
 #[test]
@@ -445,18 +445,18 @@ fn a_summary_reads_as_a_sentence_in_the_programs_names() {
         (
             vocabulary,
             &[
-                "input x = 1\n",
-                "state s = x{1, 0, 2}\n",
+                "state x(1)\n",
+                "state s = x.past(1, 0, 2)\n",
                 "Clip c:\n    Note when s > 0\n",
             ],
-            Code::ExpressionSyntax,
-            ",",
-            "expected `}`, found `,`",
+            Code::ArgumentCount,
+            "x.past(1, 0, 2)",
+            "`past` takes the offset and an optional fallback, 1 or 2 arguments, not 3",
         ),
         (
             bounded_vocabulary,
             &[
-                "input i = 0\n",
+                "state i(0)\n",
                 "A one\n",
                 "B two\n",
                 "Root r:\n    Item\n    Link: r\n    Pick | level=to.x: [one, two][i]\n",
@@ -468,7 +468,7 @@ fn a_summary_reads_as_a_sentence_in_the_programs_names() {
         (
             support::to_array_vocabulary,
             &[
-                "input sec = 0\n",
+                "state sec(0)\n",
                 "Clip b:\n    Note\n",
                 "Lane l\n",
                 "Clip a:\n    Cues | gain=to.seq[0]: [b, l][sec]\n",
@@ -480,7 +480,7 @@ fn a_summary_reads_as_a_sentence_in_the_programs_names() {
         (
             support::signature_vocabulary,
             &[
-                "input f = false\n",
+                "state f(false)\n",
                 "Clip as g | data=(if f then \"GET\" else \"AB\") + \"C\"\n",
             ],
             Code::ReactiveString,
@@ -490,7 +490,7 @@ fn a_summary_reads_as_a_sentence_in_the_programs_names() {
         (
             vocabulary,
             &[
-                "input f = false\n",
+                "state f(false)\n",
                 "Track t | label=(\"x\" + (if f then \"a\" else \"b\"))\n",
             ],
             Code::ReactiveString,
@@ -500,7 +500,7 @@ fn a_summary_reads_as_a_sentence_in_the_programs_names() {
         (
             vocabulary,
             &[
-                "input f = false\n",
+                "state f(false)\n",
                 "Clip c:\n    Note when (if f then \"a\" else \"b\") is \"a\"\n",
             ],
             Code::ReactiveString,
@@ -510,7 +510,7 @@ fn a_summary_reads_as_a_sentence_in_the_programs_names() {
         (
             vocabulary,
             &[
-                "input f = false\n",
+                "state f(false)\n",
                 "Track t | label=(if f then \"x\" else \"y\")\n",
             ],
             Code::ReactiveString,
@@ -519,7 +519,7 @@ fn a_summary_reads_as_a_sentence_in_the_programs_names() {
         ),
         (
             vocabulary,
-            &["input n = 1\n", "Track t | label=\"x{n}\"\n"],
+            &["state n(1)\n", "Track t | label=\"x{n}\"\n"],
             Code::ReactiveString,
             "n",
             "a string exists only at compile time, and this interpolation reads a cell",
@@ -1101,7 +1101,7 @@ fn code_that_nothing_expands_or_computes_draws_only_its_name_resolution_errors()
         ),
     ];
     support::assert_rows_in_every_order(&vocabulary(), rows);
-    let input = "input k = 1\n";
+    let input = "state k(1)\n";
     let loud = (Code::UnknownAttribute, "loud");
     let variant = (Code::UnknownVariant, "Nope");
     let destination = (Code::DestinationType, "k");
@@ -1126,7 +1126,7 @@ fn code_that_nothing_expands_or_computes_draws_only_its_name_resolution_errors()
     let range_index = (Code::IndexOutOfRange, "5");
     let chosen = |range: &str| {
         format!(
-            "input x = true\nClip c:\n    for i in {range}:\n        when x:\n            Note | loud=1\n        else:\n            Note/(sin)\n"
+            "state x(true)\nClip c:\n    for i in {range}:\n        when x:\n            Note | loud=1\n        else:\n            Note/(sin)\n"
         )
     };
     let chord = |range: &str| format!("Clip c:\n    [Note for i in {range}: (Note | loud=1)]\n");
