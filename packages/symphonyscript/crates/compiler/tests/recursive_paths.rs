@@ -3978,7 +3978,7 @@ fn untaken_start_rows(
                         if drawn != expected || twin.as_ref().is_some_and(|twin| *twin != expected)
                         {
                             failures.push(format!(
-                                "{start:?} {fault:?} {guard:?} {reader:?} {depth} {later} {reversed}\n{text}\n  found {drawn:?}\n  twin {twin:?}\n  expected {expected:?}\n"
+                                "391 {start:?} {fault:?} {guard:?} {reader:?} {depth} {later} {reversed}\n{text}\n  found {drawn:?}\n  twin {twin:?}\n  expected {expected:?}\n"
                             ));
                         }
                     }
@@ -4225,15 +4225,19 @@ fn open_call_rows(rows: &Rows, offset: i64) -> (Vec<String>, usize) {
                             memo: BTreeMap::new(),
                             open: BTreeSet::new(),
                         };
-                        let values: Option<Vec<i64>> = uses
-                            .iter()
-                            .map(|used| match used {
+                        let mut values = Vec::with_capacity(uses.len());
+                        let mut deep = false;
+                        for used in &uses {
+                            let value = match used {
                                 OpenCallUse::H(n) => model.h(*n),
                                 OpenCallUse::G(m) => model.g(*m),
-                            })
-                            .collect();
-                        let deep = values.is_none();
-                        let values = values.unwrap_or_else(|| vec![0; uses.len()]);
+                            };
+                            if value.is_none() {
+                                deep = true;
+                                model.open.clear();
+                            }
+                            values.push(value.unwrap_or(0));
+                        }
                         let body: Vec<String> = terms
                             .iter()
                             .filter_map(|term| match term {
@@ -4306,7 +4310,7 @@ fn open_call_rows(rows: &Rows, offset: i64) -> (Vec<String>, usize) {
                                     && drawn.keys().all(|(code, _)| *code == Code::RecursionDepth);
                                 if (deep && !depth_drawn) || (!deep && drawn != expected) {
                                     failures.push(format!(
-                                        "{offset} {arm:?} {terms:?} {taken_read} {depth} {uses:?} {reversed} {wrong} deep {deep}\n{text}\n  found {drawn:?}\n  expected {expected:?}\n"
+                                        "390 {offset} {arm:?} {terms:?} {taken_read} {depth} {uses:?} {reversed} {wrong} deep {deep}\n{text}\n  found {drawn:?}\n  expected {expected:?}\n"
                                     ));
                                 }
                             }
@@ -5031,4 +5035,54 @@ fn a_cycle_through_a_chosen_candidate_draws_the_twins_declaration_cycle_whicheve
 fn exhaustive_a_cycle_through_a_chosen_candidate_draws_the_twins_declaration_cycle_whichever_call_site_typed_it_first_342()
  {
     assert_none_fail(chosen_cycle_rows(&Rows::Every), 480);
+}
+
+#[test]
+fn the_deep_rows_of_the_open_call_class_draw_recursion_depth_beside_the_values_their_other_reads_compute_390()
+ {
+    let mut chosen = BTreeSet::new();
+    for order in 0..6 {
+        for taken_read in [0, 1] {
+            for reversed in [0, 1] {
+                chosen.insert(vec![
+                    1,
+                    OpenCallArm::AboveOne as usize,
+                    order,
+                    taken_read,
+                    1,
+                    2,
+                    reversed,
+                    0,
+                ]);
+            }
+        }
+    }
+    let rows = Rows::Chosen(std::sync::Mutex::new(chosen));
+    assert_none_fail(open_call_rows(&rows, 1), 24);
+}
+
+#[test]
+fn an_untaken_recursive_arguments_start_whose_own_chain_passes_the_depth_draws_recursion_depth_391()
+{
+    let mut chosen = BTreeSet::new();
+    for guard in [Guard::IfFalse, Guard::IfDeep] {
+        for later in [0, 1] {
+            for reversed in [0, 1] {
+                chosen.insert(vec![
+                    UntakenStart::Recursive as usize,
+                    StartFault::Depth as usize,
+                    guard as usize,
+                    StartReader::RecursiveArgument as usize,
+                    1,
+                    later,
+                    reversed,
+                ]);
+            }
+        }
+    }
+    let rows = Rows::Chosen(std::sync::Mutex::new(chosen));
+    assert_none_fail(
+        untaken_start_rows(&rows, (UntakenStart::Recursive, StartFault::Depth)),
+        8,
+    );
 }
