@@ -13,7 +13,7 @@ fn inlining(notes: usize) -> String {
         .collect();
     let note = format!("    Note/({})\n", calls.join(" + "));
     format!(
-        "input i = 1\nfn f(x, k): x + k\nClip c:\n{}",
+        "state i(1)\nfn f(x, k): x + k\nClip c:\n{}",
         note.repeat(notes)
     )
 }

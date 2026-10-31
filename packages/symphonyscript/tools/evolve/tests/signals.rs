@@ -5,7 +5,7 @@ use symphonyscript_evolve::{
     dedup_key, differing_codes, guarded, over_memory_bound, scaled, shrunk, superlinear,
 };
 
-const CLEAN: &str = "input cutoff = 0.5
+const CLEAN: &str = "state cutoff(0.5)
 let wobble = cutoff * 0.8
 Session main:
     Includes: lead
@@ -39,7 +39,7 @@ const OPEN_CLIP: &str = "Clip intro | gain=0.9:
     Plays: chorus
 ";
 
-const OPEN_CLIP_PADDED: &str = "input cutoff = 0.5
+const OPEN_CLIP_PADDED: &str = "state cutoff(0.5)
 let wobble = cutoff * 0.8
 Clip intro | gain=0.9:
     Plays: chorus
@@ -60,7 +60,7 @@ Track rhythm | label=\"rhythm\":
 let spare = wobble + 3
 ";
 
-const LINEAR: &str = "input swell = 0.5
+const LINEAR: &str = "state swell(0.5)
 let wobble = swell * 0.8
 fn db(x): 10 ** (x / 20)
 let base = 48
