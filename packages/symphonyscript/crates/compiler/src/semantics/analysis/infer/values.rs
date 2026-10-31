@@ -68,6 +68,7 @@ impl Engine<'_> {
                     | Op::Recursive { .. }
                     | Op::For(_)
                     | Op::History { .. }
+                    | Op::Stepped(_)
                     | Op::ToRead { .. }
                     | Op::Arg(_)
                     | Op::Slot(_) => {}

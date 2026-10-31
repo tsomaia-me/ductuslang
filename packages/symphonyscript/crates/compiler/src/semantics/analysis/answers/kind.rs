@@ -109,6 +109,7 @@ impl Engine<'_> {
             | Op::For(_)
             | Op::Join(..)
             | Op::Slice { .. }
+            | Op::Stepped(_)
             | Op::Native { .. } => Some(Extra::None),
         })
     }
@@ -242,6 +243,7 @@ impl Engine<'_> {
             | Op::Arg(_)
             | Op::Slot(_)
             | Op::Recursive { .. } => None,
+            Op::Stepped(_) => Some(Scalar::Bool),
             Op::For(for_node) => self.combine(&[for_node.start, for_node.body])?,
         })
     }
@@ -298,6 +300,7 @@ impl Engine<'_> {
                 | Op::Join(..)
                 | Op::Slice { .. }
                 | Op::History { .. }
+                | Op::Stepped(_)
                 | Op::Native { .. } => return Ok(false),
             }
         }
@@ -324,6 +327,7 @@ impl Engine<'_> {
                 Op::Number(..)
                 | Op::Const(_)
                 | Op::Bool(_)
+                | Op::Stepped(_)
                 | Op::Str(_)
                 | Op::Concat(_)
                 | Op::Variant(..)
@@ -395,6 +399,7 @@ impl Engine<'_> {
                 | Op::Join(..)
                 | Op::Slice { .. }
                 | Op::History { .. }
+                | Op::Stepped(_)
                 | Op::Native { .. } => return Ok(false),
             };
         }
@@ -475,6 +480,7 @@ impl Engine<'_> {
             | Op::Join(..)
             | Op::Slice { .. }
             | Op::History { .. }
+            | Op::Stepped(_)
             | Op::Native { .. } => None,
         })
     }
@@ -505,6 +511,7 @@ impl Engine<'_> {
                 Sig::of(kind_of(scalar), Width::Fixed(scalar), false, None)
             }
             Op::Bool(_) => Sig::of(Kind::Bool, Width::Fixed(Scalar::Bool), false, None),
+            Op::Stepped(_) => Sig::of(Kind::Bool, Width::Fixed(Scalar::Bool), true, None),
             Op::Str(_) => Sig::of(Kind::Str, Width::Fixed(Scalar::Str), false, None),
             Op::Concat(_) => self.concat_sig(operands, sigs)?,
             Op::Variant(id, _) => Sig::of(
@@ -532,7 +539,8 @@ impl Engine<'_> {
                     let fallback = at(0)?;
                     Sig::of(fallback.kind, Width::Adaptive, true, fallback.family)
                 }
-                (None, Extra::None | Extra::Read(_) | Extra::ToRead { .. } | Extra::Arms(_)) => {
+                (None, Extra::None) => Sig::of(Kind::Any, Width::Adaptive, true, None),
+                (None, Extra::Read(_) | Extra::ToRead { .. } | Extra::Arms(_)) => {
                     return Err(Internal::missed("history signature"));
                 }
             },
@@ -1312,6 +1320,7 @@ pub(crate) fn joins(op: &Op) -> bool {
         | Op::Join(..)
         | Op::Slice { .. }
         | Op::History { .. }
+        | Op::Stepped(_)
         | Op::Native { .. } => false,
     }
 }

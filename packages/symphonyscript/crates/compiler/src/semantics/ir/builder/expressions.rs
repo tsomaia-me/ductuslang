@@ -3,9 +3,10 @@ use symphonyscript_core::{BinaryOp, Scalar, UnaryOp};
 use super::hir_builder::HirBuilder;
 use super::number_literal::number_literal;
 use super::scalar_type::scalar_type;
+use crate::diagnostics::Code;
 use crate::semantics::ir::{
-    Args, ExprId, ExprKind, ForExpr, Ident, Iterable, LetDecl, Loc, LoopVar, MatchArm, SliceBound,
-    StrPart, TypeRef,
+    Args, ExprId, ExprKind, ForExpr, HistoryForm, Ident, Iterable, LetDecl, Loc, LoopVar, MatchArm,
+    SliceBound, StrPart, TypeRef,
 };
 use crate::syntax::ast::{self, AstNode, StringPart};
 use crate::syntax::{SyntaxKind, TokenView};
@@ -28,6 +29,7 @@ enum Shape {
     History {
         target: Ident,
         fallback: bool,
+        form: HistoryForm,
     },
     Positional(usize),
     Named(Vec<Ident>),
@@ -178,6 +180,13 @@ impl HirBuilder<'_> {
                 (Shape::Array(elements.len()), elements)
             }
             ast::Expr::Field(node) => match self.ident(node.field()) {
+                Some(field) if field.text == "stepped" => match node.receiver() {
+                    Some(ast::Expr::NameRef(receiver)) => match self.ident(receiver.name()) {
+                        Some(target) => (Shape::Leaf(ExprKind::Stepped(target)), Vec::new()),
+                        None => (Shape::Leaf(ExprKind::Error), Vec::new()),
+                    },
+                    receiver => (Shape::Field(field), vec![receiver]),
+                },
                 Some(field) => (Shape::Field(field), vec![node.receiver()]),
                 None => (Shape::Leaf(ExprKind::Error), Vec::new()),
             },
@@ -219,6 +228,7 @@ impl HirBuilder<'_> {
                         Shape::History {
                             target,
                             fallback: children.len() > 1,
+                            form: HistoryForm::Braced,
                         },
                         children,
                     )
@@ -226,6 +236,11 @@ impl HirBuilder<'_> {
                 None => (Shape::Leaf(ExprKind::Error), Vec::new()),
             },
             ast::Expr::Call(node) => {
+                if let Some(ast::Expr::Field(callee)) = node.callee()
+                    && callee.field().is_some_and(|field| field.text() == "past")
+                {
+                    return self.past_shape(node, &callee);
+                }
                 let Some(args) = node.args() else {
                     return (Shape::Leaf(ExprKind::Error), Vec::new());
                 };
@@ -312,7 +327,11 @@ impl HirBuilder<'_> {
                 });
                 self.push(ExprKind::Slice { base, lower, upper }, loc)
             }
-            Shape::History { target, fallback } => {
+            Shape::History {
+                target,
+                fallback,
+                form,
+            } => {
                 let offset = next(self);
                 let fallback = fallback.then(|| next(self));
                 self.push(
@@ -320,6 +339,7 @@ impl HirBuilder<'_> {
                         target,
                         offset,
                         fallback,
+                        form,
                     },
                     loc,
                 )
@@ -383,6 +403,56 @@ impl HirBuilder<'_> {
                 )
             }
         }
+    }
+
+    fn past_shape<'p>(
+        &mut self,
+        node: &ast::CallExpr<'p>,
+        callee: &ast::FieldExpr<'p>,
+    ) -> (Shape, Vec<Option<ast::Expr<'p>>>) {
+        let error = (Shape::Leaf(ExprKind::Error), Vec::new());
+        let target = match callee.receiver() {
+            Some(ast::Expr::NameRef(receiver)) => self.ident(receiver.name()),
+            Some(receiver) => {
+                self.draw(
+                    Code::HistoryTarget,
+                    receiver.syntax().range(),
+                    "only a cell has a history, and `.past` reads the history of the cell it follows by name",
+                );
+                None
+            }
+            None => None,
+        };
+        let (Some(target), Some(args)) = (target, node.args()) else {
+            return error;
+        };
+        let range = node.syntax().range();
+        if args.named().next().is_some() {
+            self.draw(
+                Code::NamedBuiltinArguments,
+                range,
+                "`past` takes positional arguments only",
+            );
+            return error;
+        }
+        let positional: Vec<_> = args.positional().map(Some).collect();
+        if !matches!(positional.len(), 1 | 2) {
+            self.draw(
+                Code::ArgumentCount,
+                range,
+                &format!(
+                    "`past` takes the offset and an optional fallback, 1 or 2 arguments, not {}",
+                    positional.len()
+                ),
+            );
+            return error;
+        }
+        let shape = Shape::History {
+            target,
+            fallback: positional.len() == 2,
+            form: HistoryForm::Past,
+        };
+        (shape, positional)
     }
 
     fn for_shape<'p>(&mut self, node: &ast::ForExpr<'p>) -> (Shape, Vec<Option<ast::Expr<'p>>>) {
@@ -462,6 +532,7 @@ impl HirBuilder<'_> {
             | ExprKind::IndexFromEnd(..)
             | ExprKind::Slice { .. }
             | ExprKind::History { .. }
+            | ExprKind::Stepped(_)
             | ExprKind::Call(..)
             | ExprKind::Unary(..)
             | ExprKind::Binary(..)

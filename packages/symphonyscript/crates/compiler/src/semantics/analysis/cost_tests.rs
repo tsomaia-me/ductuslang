@@ -21,6 +21,7 @@ enum Construct {
     Slice,
     Index,
     History,
+    Past,
     ForPlacement,
     ArrayLiteral,
     ForExpression,
@@ -70,6 +71,7 @@ fn step(construct: Construct, value: &str) -> Option<String> {
         | Construct::State
         | Construct::Match
         | Construct::History
+        | Construct::Past
         | Construct::ForPlacement => return None,
     })
 }
@@ -86,6 +88,7 @@ fn base(construct: Construct) -> &'static str {
         | Construct::Slice
         | Construct::Index
         | Construct::History
+        | Construct::Past
         | Construct::ArrayLiteral
         | Construct::ForExpression => "note",
     }
@@ -126,7 +129,9 @@ fn growing(construct: Construct) -> Option<String> {
             "fn f(xs, m):\n    match m:\n        0: len(xs)\n        else: f(xs + [1], m - 1)\n"
                 .to_string()
         }
-        Construct::State | Construct::History | Construct::ForPlacement => return None,
+        Construct::State | Construct::History | Construct::Past | Construct::ForPlacement => {
+            return None;
+        }
     })
 }
 
@@ -139,7 +144,7 @@ fn nested_function(construct: Construct) -> Option<Vec<String>> {
             vec!["fn h(v):\n    match k:\n        1: v\n        else: 0\n".to_string()]
         }
         Construct::Recursive => Vec::new(),
-        Construct::History | Construct::ForPlacement => return None,
+        Construct::History | Construct::Past | Construct::ForPlacement => return None,
         Construct::Inlined
         | Construct::If
         | Construct::Join
@@ -186,6 +191,37 @@ fn items(construct: Construct, shape: Shape, n: usize) -> Option<Vec<String>> {
                 items.push(format!("state v{i} = v{}{{1, 0}} + 1\n", i - 1));
             }
             items.push(reader(&format!("v{last}")));
+        }
+        (Shape::Chain, Construct::Past) => {
+            items.push(format!("state v0(0) = {start}.past(1)\n"));
+            for i in 1..n {
+                items.push(format!("state v{i}(0) = v{}.past(1) + 1\n", i - 1));
+            }
+            items.push(reader(&format!("v{last}")));
+        }
+        (Shape::Ring, Construct::Past) => {
+            for i in 0..n {
+                let previous = (i + last) % n;
+                items.push(format!("state s{i}(0) = s{previous}.past(1) + 1\n"));
+            }
+            items.push(reader("s0"));
+        }
+        (Shape::Sharing, Construct::Past) => {
+            items.push(format!("state s(0) = {start} + 1\n"));
+            for i in 0..n {
+                items.push(format!("state t{i} = s.past(1)\n"));
+            }
+            items.push(reader(&sum((0..n).map(|i| format!("t{i}")))));
+        }
+        (Shape::FanIn, Construct::Past) => {
+            for i in 0..n {
+                items.push(format!("state v{i}(0) = {start} + {i}\n"));
+            }
+            items.push(format!(
+                "state t = {}\n",
+                sum((0..n).map(|i| format!("v{i}.past(1)")))
+            ));
+            items.push(reader("t"));
         }
         (Shape::Chain, Construct::ForPlacement) => {
             items.push("let v0 = 1\n".to_string());
@@ -247,7 +283,8 @@ fn items(construct: Construct, shape: Shape, n: usize) -> Option<Vec<String>> {
             | Construct::State
             | Construct::Match
             | Construct::Inlined
-            | Construct::Recursive,
+            | Construct::Recursive
+            | Construct::Past,
         ) => return None,
         (Shape::Nesting, Construct::History) => {
             let fallback = format!("{}0{}", "note{1, ".repeat(n), "}".repeat(n));
@@ -665,6 +702,13 @@ fn stress_every_walk_of_check_over_an_index_costs_work_linear_in_the_program_in_
 fn stress_every_walk_of_check_over_a_history_read_costs_work_linear_in_the_program_in_every_shape_and_order()
  {
     assert_costs_linear(Construct::History, 10);
+}
+
+#[test]
+#[ignore = "stress"]
+fn stress_every_walk_of_check_over_a_history_read_without_a_fallback_costs_work_linear_in_the_program_in_every_shape_and_order()
+ {
+    assert_costs_linear(Construct::Past, 8);
 }
 
 #[test]

@@ -70,6 +70,7 @@ impl Engine<'_> {
             | ExprKind::IndexFromEnd(..)
             | ExprKind::Slice { .. }
             | ExprKind::History { .. }
+            | ExprKind::Stepped(_)
             | ExprKind::Call(..)
             | ExprKind::Unary(..)
             | ExprKind::Binary(..)
@@ -129,6 +130,7 @@ impl Engine<'_> {
             | Op::Join(..)
             | Op::Slice { .. }
             | Op::History { .. }
+            | Op::Stepped(_)
             | Op::Native { .. } => {
                 let sig = some!(self.sig(node, need));
                 if sig.is_error() {
@@ -452,6 +454,7 @@ impl Engine<'_> {
                 | Op::Builtin(..)
                 | Op::ToRead { .. }
                 | Op::History { .. }
+                | Op::Stepped(_)
                 | Op::Native { .. } => return Err(Internal::missed("path start")),
             }
         }
@@ -993,6 +996,7 @@ impl Engine<'_> {
                 | Op::Join(..)
                 | Op::Slice { .. }
                 | Op::History { .. }
+                | Op::Stepped(_)
                 | Op::Native { .. } => return Ok(Some(Vec::new())),
             }
         }
@@ -1300,6 +1304,7 @@ impl Engine<'_> {
                 | ExprKind::IndexFromEnd(..)
                 | ExprKind::Slice { .. }
                 | ExprKind::History { .. }
+                | ExprKind::Stepped(_)
                 | ExprKind::Call(..)
                 | ExprKind::Unary(..)
                 | ExprKind::Binary(..)
@@ -1698,6 +1703,7 @@ impl Engine<'_> {
                 | Op::Join(..)
                 | Op::Slice { .. }
                 | Op::History { .. }
+                | Op::Stepped(_)
                 | Op::Native { .. } => {}
             }
         }

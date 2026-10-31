@@ -44,6 +44,7 @@ impl Engine<'_> {
             | Op::ToRead { .. }
             | Op::Join(..)
             | Op::Slice { .. }
+            | Op::Stepped(_)
             | Op::Native { .. } => CellRead::Operands(op.operands()),
         })
     }

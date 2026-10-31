@@ -569,7 +569,22 @@ impl Engine<'_> {
                 }
                 Some(BoundVal::Scalar(Bound::Value(_)) | BoundVal::Error) | None => false,
             },
-            HistoryCell::Let(_) | HistoryCell::State(_) => false,
+            HistoryCell::State(state) => match self.memo.states.get(&state) {
+                Some(BoundVal::Scalar(Bound::Cell(binding))) => {
+                    self.memo.binding_layouts.contains_key(binding)
+                        || self.arrays.contains(&self.binding(*binding)?.init)
+                }
+                Some(BoundVal::Scalar(Bound::Value(_)) | BoundVal::Array(_) | BoundVal::Error)
+                | None => false,
+            },
+            HistoryCell::Let(id) => match self.let_bound(id) {
+                Some(BoundVal::Array(_)) => true,
+                Some(BoundVal::Scalar(Bound::Cell(binding))) => {
+                    self.memo.binding_layouts.contains_key(binding)
+                        || self.arrays.contains(&self.binding(*binding)?.init)
+                }
+                Some(BoundVal::Scalar(Bound::Value(_)) | BoundVal::Error) | None => false,
+            },
         })
     }
 

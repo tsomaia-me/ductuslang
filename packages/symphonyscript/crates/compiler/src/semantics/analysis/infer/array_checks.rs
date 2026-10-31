@@ -286,11 +286,8 @@ impl Engine<'_> {
                 }
             }
             let depth = self.hir.state(state)?.depth;
-            for (node, cell) in reads {
-                let Op::History {
-                    offset, fallback, ..
-                } = self.node(node)?.op
-                else {
+            for (node, _) in reads {
+                let Op::History { offset, .. } = self.node(node)?.op else {
                     continue;
                 };
                 if let Some((Some(limit), _)) = depth
@@ -313,35 +310,9 @@ impl Engine<'_> {
                         format!("declare the state as `state[{deepest}] {name}`, which covers every read of it"),
                     )?;
                 }
-                if let HistoryCell::Let(id) = cell {
-                    let global = self.global_of_let(id);
-                    let bound = self
-                        .memo
-                        .lets
-                        .get(&(global, crate::semantics::analysis::let_ref::LetRef::Top(id)))
-                        .cloned();
-                    let items = match &bound {
-                        Some(BoundVal::Scalar(item)) => vec![*item],
-                        Some(BoundVal::Array(array)) => array.1.clone(),
-                        Some(BoundVal::Error) => continue,
-                        None => Vec::new(),
-                    };
-                    if self.bound_drew_error(&items)? {
-                        continue;
-                    }
-                    let reactive = items.iter().any(|item| matches!(item, Bound::Cell(_)));
-                    if !reactive {
-                        self.error_at_node(
-                            Code::HistoryTarget,
-                            node,
-                            "this `let` is a compile-time value, which has no history; a history read names an input, a state or a reactive `let`",
-                        )?;
-                        continue;
-                    }
-                }
-                if let Some(fallback) = fallback {
-                    self.fallback_check(node, cell, fallback)?;
-                }
+            }
+            if let Some(start) = self.init_node(binding)? {
+                self.held_check(start, HistoryCell::State(state), start, Held::Init)?;
             }
             if let Some(layout) = self.memo.binding_layouts.get(&binding).cloned()
                 && !layout.variable
@@ -362,14 +333,61 @@ impl Engine<'_> {
                 )?;
             }
         }
+        for index in 0..self.nodes.len() {
+            crate::semantics::counted_walk::CountedWalk::ArrayChecksStateChecks.step();
+            let node =
+                crate::semantics::analysis::ids::NodeId(u32::try_from(index).unwrap_or(u32::MAX));
+            let Op::History { cell, fallback, .. } = self.node(node)?.op else {
+                continue;
+            };
+            if let HistoryCell::Let(id) = cell {
+                let global = self.global_of_let(id);
+                let bound = self
+                    .memo
+                    .lets
+                    .get(&(global, crate::semantics::analysis::let_ref::LetRef::Top(id)))
+                    .cloned();
+                let items = match &bound {
+                    Some(BoundVal::Scalar(item)) => vec![*item],
+                    Some(BoundVal::Array(array)) => array.1.clone(),
+                    Some(BoundVal::Error) => continue,
+                    None => Vec::new(),
+                };
+                if self.bound_drew_error(&items)? {
+                    continue;
+                }
+                let reactive = items.iter().any(|item| matches!(item, Bound::Cell(_)));
+                if !reactive {
+                    self.error_at_node(
+                        Code::HistoryTarget,
+                        node,
+                        "this `let` is a compile-time value, which has no history; a history read names an input, a state or a reactive `let`",
+                    )?;
+                    continue;
+                }
+            }
+            let init = match cell {
+                HistoryCell::State(state) => match self.state_binding(state) {
+                    Some(binding) => self.init_node(binding)?,
+                    None => None,
+                },
+                HistoryCell::Input(_) | HistoryCell::Let(_) => None,
+            };
+            if let Some(fallback) = fallback
+                && Some(fallback) != init
+            {
+                self.held_check(node, cell, fallback, Held::Fallback)?;
+            }
+        }
         Ok(())
     }
 
-    fn fallback_check(
+    fn held_check(
         &mut self,
         node: crate::semantics::analysis::ids::NodeId,
         cell: crate::semantics::analysis::history_cell::HistoryCell,
         fallback: crate::semantics::analysis::ids::NodeId,
+        role: Held,
     ) -> Result<(), Internal> {
         use crate::semantics::analysis::bound_val::BoundVal;
         use crate::semantics::analysis::history_cell::HistoryCell;
@@ -431,7 +449,8 @@ impl Engine<'_> {
                     Code::CapacityExceeded,
                     fallback,
                     format!(
-                        "the fallback holds {length} elements, more than the capacity {capacity} of `{name}`"
+                        "the {} holds {length} elements, more than the capacity {capacity} of `{name}`",
+                        role.noun()
                     ),
                 )?;
                 return Ok(());
@@ -447,11 +466,7 @@ impl Engine<'_> {
             (None, Some(_)) | (Some(_), None) => false,
         };
         if !agrees {
-            self.error_at_node(
-                Code::TypeMismatch,
-                node,
-                "a history read's fallback has the cell's type, and this one's shape differs",
-            )?;
+            self.error_at_node(Code::TypeMismatch, node, role.mismatch())?;
         }
         Ok(())
     }
@@ -623,5 +638,29 @@ impl Engine<'_> {
             }
         }
         Ok(())
+    }
+}
+
+#[derive(Clone, Copy)]
+enum Held {
+    Fallback,
+    Init,
+}
+
+impl Held {
+    fn noun(self) -> &'static str {
+        match self {
+            Held::Fallback => "fallback",
+            Held::Init => "init",
+        }
+    }
+
+    fn mismatch(self) -> &'static str {
+        match self {
+            Held::Fallback => {
+                "a history read's fallback has the cell's type, and this one's shape differs"
+            }
+            Held::Init => "a cell's init has the cell's type, and this one's shape differs",
+        }
     }
 }

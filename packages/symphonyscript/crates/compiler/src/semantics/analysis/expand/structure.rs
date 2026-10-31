@@ -239,6 +239,7 @@ impl Engine<'_> {
             | ExprKind::IndexFromEnd(..)
             | ExprKind::Slice { .. }
             | ExprKind::History { .. }
+            | ExprKind::Stepped(_)
             | ExprKind::Call(..)
             | ExprKind::Unary(..)
             | ExprKind::Binary(..)

@@ -357,7 +357,7 @@ impl Engine<'_> {
                             continue;
                         }
                     },
-                    _ => None,
+                    _ => continue,
                 };
                 fallbacks.entry(target).or_default().push(layout);
             }

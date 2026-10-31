@@ -2,6 +2,7 @@ use symphonyscript_core::{BinaryOp, Scalar, UnaryOp};
 
 use super::args::Args;
 use super::for_expr::ForExpr;
+use super::history_form::HistoryForm;
 use super::ident::Ident;
 use super::ids::ExprId;
 use super::match_arm::MatchArm;
@@ -36,7 +37,9 @@ pub(crate) enum ExprKind {
         target: Ident,
         offset: ExprId,
         fallback: Option<ExprId>,
+        form: HistoryForm,
     },
+    Stepped(Ident),
     Call(ExprId, Args),
     Unary(UnaryOp, ExprId),
     Binary(BinaryOp, ExprId, ExprId),
@@ -57,7 +60,8 @@ impl ExprKind {
             | ExprKind::Bool(_)
             | ExprKind::Name(_)
             | ExprKind::Variant { .. }
-            | ExprKind::To => Vec::new(),
+            | ExprKind::To
+            | ExprKind::Stepped(_) => Vec::new(),
             ExprKind::Str(parts) => parts
                 .iter()
                 .filter_map(|part| match part {

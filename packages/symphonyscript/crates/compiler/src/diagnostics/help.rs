@@ -136,6 +136,9 @@ pub(super) fn help(code: Code) -> Option<&'static str> {
             "declare the state at top level as `state`, a name, `=` and its initializer, as in `state count = 1`"
         }
         Code::HistoryDepth => "write `[N]` with N the deepest offset the state reads",
+        Code::CellCapacity => {
+            "remove `[N]`, which states the pending capacity of a host-fed `stream` or `channel` alone"
+        }
         Code::StateValue => {
             "hold a number, a `bool`, an enum value or an array of them in the state"
         }

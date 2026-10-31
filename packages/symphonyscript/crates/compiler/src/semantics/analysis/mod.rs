@@ -90,6 +90,7 @@ mod template_key;
 mod unify_kinds;
 mod untypable_reads;
 mod untypable_values;
+mod unwritten;
 mod val;
 mod widens;
 mod width;
@@ -99,6 +100,8 @@ pub(crate) use engine::Engine;
 
 #[cfg(test)]
 mod addition_tests;
+#[cfg(test)]
+mod cell_tests;
 #[cfg(test)]
 mod cost_tests;
 #[cfg(test)]

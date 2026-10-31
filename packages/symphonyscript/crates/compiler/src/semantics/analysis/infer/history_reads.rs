@@ -43,6 +43,25 @@ impl Engine<'_> {
         Ok(())
     }
 
+    #[cfg(test)]
+    pub(in crate::semantics::analysis) fn history_depth(&self, cell: HistoryCell) -> u64 {
+        self.nodes
+            .iter()
+            .filter_map(|node| {
+                if let Op::History {
+                    cell: read, offset, ..
+                } = node.op
+                    && read == cell
+                {
+                    Some(offset)
+                } else {
+                    None
+                }
+            })
+            .max()
+            .unwrap_or(0)
+    }
+
     pub(in crate::semantics::analysis) fn history_cell_query(&self, cell: HistoryCell) -> Query {
         match cell {
             HistoryCell::Input(input) => Query::Input(input),

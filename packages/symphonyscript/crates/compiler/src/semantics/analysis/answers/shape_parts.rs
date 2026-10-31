@@ -25,6 +25,7 @@ pub(crate) fn shape_parts(engine: &Engine<'_>, op: &Op) -> Result<Vec<NodeId>, I
         Op::Number(..)
         | Op::Const(_)
         | Op::Bool(_)
+        | Op::Stepped(_)
         | Op::Str(_)
         | Op::Concat(_)
         | Op::Variant(..)

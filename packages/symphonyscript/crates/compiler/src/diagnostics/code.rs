@@ -55,6 +55,7 @@ codes!(
     HistoryFallback,
     HistoryOffset,
     HistoryDepth,
+    CellCapacity,
     StateValue,
     UnboundedState,
     PlacementSyntax,
@@ -203,6 +204,7 @@ impl Code {
             Code::HistoryFallback => "history-fallback",
             Code::HistoryOffset => "history-offset",
             Code::HistoryDepth => "history-depth",
+            Code::CellCapacity => "cell-capacity",
             Code::StateValue => "state-value",
             Code::UnboundedState => "unbounded-state",
             Code::PlacementSyntax => "placement-syntax",
@@ -442,6 +444,7 @@ impl Code {
             Code::HistoryFallback => "6.6",
             Code::HistoryOffset => "6.6",
             Code::HistoryDepth => "6.6",
+            Code::CellCapacity => "6.1",
             Code::StateValue => "6.6",
             Code::UnboundedState => "6.6",
             Code::CapacityExceeded => "3.7",
@@ -599,6 +602,7 @@ impl Code {
             | Code::HistoryFallback
             | Code::HistoryOffset
             | Code::HistoryDepth
+            | Code::CellCapacity
             | Code::StateValue
             | Code::UnboundedState
             | Code::CapacityExceeded

@@ -29,7 +29,7 @@ pub(crate) struct Hir {
     pub patterns: Vec<PatternDecl>,
     pub top: Vec<Top>,
     pub skipped_top: UnknownNames,
-    pub unbuilt: Vec<(Loc, String)>,
+    pub drawn: Vec<(crate::diagnostics::Code, Loc, String)>,
     pub prelude: PreludeEnd,
 }
 

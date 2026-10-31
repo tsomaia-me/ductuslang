@@ -63,6 +63,7 @@ pub(crate) enum Op {
         offset: u64,
         fallback: Option<NodeId>,
     },
+    Stepped(HistoryCell),
     For(Box<ForNode>),
     Slot(SlotId),
     Native {
@@ -108,6 +109,7 @@ impl Op {
             | Op::Join(..)
             | Op::Slice { .. }
             | Op::History { .. }
+            | Op::Stepped(_)
             | Op::Native { .. }
             | Op::For(_)
             | Op::Slot(_) => Vec::new(),
@@ -127,6 +129,7 @@ impl Op {
             | Op::Read(_)
             | Op::Arg(_)
             | Op::ToRead { .. }
+            | Op::Stepped(_)
             | Op::Slot(_) => Vec::new(),
             Op::For(for_node) => for_node.operands(),
             Op::Join(lhs, rhs) => vec![*lhs, *rhs],

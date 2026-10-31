@@ -69,6 +69,7 @@ pub(crate) fn combined_shape(
         | Op::Number(..)
         | Op::Const(_)
         | Op::Bool(_)
+        | Op::Stepped(_)
         | Op::Str(_)
         | Op::Concat(_)
         | Op::Variant(..)

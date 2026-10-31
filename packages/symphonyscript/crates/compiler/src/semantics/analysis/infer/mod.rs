@@ -157,6 +157,9 @@ impl Engine<'_> {
                 self.typing.own.insert(binding, own);
                 let init = self.binding(binding)?.init;
                 self.expect(init, Some(own))?;
+                if let Some(start) = self.init_node(binding)? {
+                    self.expect(start, Some(own))?;
+                }
             }
         }
         self.enum_bindings(&valid)?;
@@ -199,6 +202,9 @@ impl Engine<'_> {
                 let init = self.binding(binding)?.init;
                 let flows = !self.typing.default_widths.contains(&binding);
                 self.check(init, (Some(own), flows), false, &mut roots)?;
+                if let Some(start) = self.init_node(binding)? {
+                    self.check(start, (Some(own), true), false, &mut roots)?;
+                }
             }
         }
         for index in 0..self.wires.len() {

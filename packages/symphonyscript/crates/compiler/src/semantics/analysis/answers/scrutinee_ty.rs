@@ -76,6 +76,7 @@ impl Engine<'_> {
                 | Op::For(_)
                 | Op::ToRead { .. }
                 | Op::History { .. }
+                | Op::Stepped(_)
                 | Op::Native { .. } => return Ok(None),
             }
         }

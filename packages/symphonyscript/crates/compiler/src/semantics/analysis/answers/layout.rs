@@ -52,6 +52,7 @@ impl Engine<'_> {
                     | Op::Slice { .. }
                     | Op::Array(_)
                     | Op::History { .. }
+                    | Op::Stepped(_)
                     | Op::Native { .. }
                     | Op::Builtin(Builtin::Bytes, _) => break,
                     Op::If(..) | Op::Match { .. }
@@ -163,6 +164,7 @@ impl Engine<'_> {
                 | Op::Join(..)
                 | Op::Slice { .. }
                 | Op::History { .. }
+                | Op::Stepped(_)
                 | Op::Native { .. } => stack.extend(op.operands()),
             }
         }
@@ -231,6 +233,7 @@ impl Engine<'_> {
                 | Op::Builtin(..)
                 | Op::ToRead { .. }
                 | Op::History { .. }
+                | Op::Stepped(_)
                 | Op::Native { .. } => {}
             }
         }
@@ -380,6 +383,7 @@ impl Engine<'_> {
                     Op::Number(..)
                     | Op::Const(_)
                     | Op::Bool(_)
+                    | Op::Stepped(_)
                     | Op::Str(_)
                     | Op::Concat(_)
                     | Op::Variant(..)
@@ -510,6 +514,7 @@ impl Engine<'_> {
             | Op::Number(..)
             | Op::Const(_)
             | Op::Bool(_)
+            | Op::Stepped(_)
             | Op::Str(_)
             | Op::Concat(_)
             | Op::Variant(..)
@@ -698,12 +703,23 @@ impl Engine<'_> {
                 {
                     parts.push(self.binding(*binding)?.init);
                 }
+                if let (HistoryCell::State(state), None) = (cell, fallback)
+                    && let Some(binding) = self.state_binding(*state)
+                {
+                    let member = assumed.and_then(|assumed| assumed.members.get(&binding));
+                    let known = member == Some(&true)
+                        || (member.is_none() && self.memo.binding_layouts.contains_key(&binding));
+                    if !known {
+                        parts.push(self.binding(binding)?.init);
+                    }
+                }
                 parts
             }
             Op::Builtin(Builtin::Bytes, args) => args.clone(),
             Op::Number(..)
             | Op::Const(_)
             | Op::Bool(_)
+            | Op::Stepped(_)
             | Op::Str(_)
             | Op::Concat(_)
             | Op::Variant(..)
@@ -893,7 +909,6 @@ impl Engine<'_> {
             }
             Op::History {
                 cell: HistoryCell::Let(id),
-                fallback: Some(_),
                 ..
             } => match self.let_bound(*id) {
                 Some(BoundVal::Scalar(Bound::Cell(binding))) => {
@@ -907,15 +922,25 @@ impl Engine<'_> {
                     Ok(layouts.first().cloned().flatten())
                 }
             },
-            Op::History { cell, fallback, .. } => match cell {
+            Op::History { cell, .. } => match cell {
                 HistoryCell::Input(input) => {
                     let bound = some!(self.bound(Query::Input(*input), need));
                     Ok(self.bound_layout(&bound)?)
                 }
-                HistoryCell::Let(_) | HistoryCell::State(_) => match fallback {
-                    Some(_) => Ok(layouts.first().cloned().flatten()),
-                    None => Err(None),
+                HistoryCell::State(state) => match self.state_binding(*state) {
+                    Some(binding) => {
+                        match assumed.and_then(|assumed| assumed.members.get(&binding)) {
+                            Some(true) => Ok(self.variable_layout(binding)),
+                            Some(false) => Ok(layouts.first().cloned().flatten()),
+                            None => match self.memo.binding_layouts.get(&binding) {
+                                Some(layout) => Ok(Some(layout.clone())),
+                                None => Ok(layouts.first().cloned().flatten()),
+                            },
+                        }
+                    }
+                    None => Ok(layouts.first().cloned().flatten()),
                 },
+                HistoryCell::Let(_) => Ok(layouts.first().cloned().flatten()),
             },
             Op::Native { native, .. } => {
                 let decl = self
@@ -948,6 +973,7 @@ impl Engine<'_> {
             Op::Number(..)
             | Op::Const(_)
             | Op::Bool(_)
+            | Op::Stepped(_)
             | Op::Str(_)
             | Op::Concat(_)
             | Op::Variant(..)
@@ -982,6 +1008,7 @@ impl Engine<'_> {
                 | Op::Number(..)
                 | Op::Const(_)
                 | Op::Bool(_)
+                | Op::Stepped(_)
                 | Op::Str(_)
                 | Op::Concat(_)
                 | Op::Variant(..)
@@ -1112,6 +1139,7 @@ impl Engine<'_> {
             | Op::Join(..)
             | Op::Slice { .. }
             | Op::History { .. }
+            | Op::Stepped(_)
             | Op::Native { .. } => Ok(Some(None)),
         }
     }

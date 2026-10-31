@@ -83,6 +83,7 @@ impl Engine<'_> {
             Op::Number(..)
             | Op::Const(_)
             | Op::Bool(_)
+            | Op::Stepped(_)
             | Op::Str(_)
             | Op::Concat(_)
             | Op::Variant(..)

@@ -18,48 +18,38 @@ use crate::semantics::analysis::layout::Layout;
 use crate::semantics::analysis::let_ref::LetRef;
 use crate::semantics::analysis::op::Op;
 use crate::semantics::analysis::query::Query;
+use crate::semantics::analysis::sig::Sig;
 use crate::semantics::analysis::some::some;
+use crate::semantics::analysis::unwritten::Unwritten;
 use crate::semantics::analysis::val::Val;
-use crate::semantics::ir::{ExprId, Ident, Loc, StateId};
+use crate::semantics::ir::{CellWord, ExprId, HistoryForm, Ident, Loc, StateId};
 
 impl Engine<'_> {
     pub(in crate::semantics::analysis) fn history(
         &mut self,
         expr: ExprId,
-        (target, offset, fallback): (&Ident, ExprId, Option<ExprId>),
+        (target, offset, fallback, form): (&Ident, ExprId, Option<ExprId>, HistoryForm),
         loc: Loc,
         scope: ScopeId,
         need: &mut Vec<Query>,
     ) -> Result<Option<Val>, Internal> {
-        if !self.in_state_initializer(expr)? {
+        if form == HistoryForm::Braced && !self.in_state_initializer(expr)? {
             return Ok(Some(Val::Error));
         }
         let offset_val = self.val(Query::Expr(offset, scope), need);
         let fallback_val = fallback.map(|fallback| self.val(Query::Expr(fallback, scope), need));
-        let cell = match self.find(&target.text, scope)? {
-            Found::Query(Query::Input(id)) => HistoryCell::Input(id),
-            Found::Query(Query::State(id)) => HistoryCell::State(id),
-            Found::Query(Query::Let(_, LetRef::Top(id))) => HistoryCell::Let(id),
-            Found::Nothing | Found::Placeholder => return Ok(Some(Val::Error)),
-            Found::Val(_) | Found::Query(_) | Found::Item(_) | Found::Decl(_) => {
-                self.error(
-                    Code::HistoryTarget,
-                    target.loc,
-                    scope,
-                    format!(
-                        "`{}` is not an input, a state or a reactive `let`, so it has no history",
-                        target.text
-                    ),
-                )?;
-                return Ok(Some(Val::Error));
-            }
+        let Some(cell) = self.history_target(target, scope, "history")? else {
+            return Ok(Some(Val::Error));
         };
         let offset_val = some!(offset_val);
         let fallback_val = match fallback_val {
             Some(found) => Some(some!(found)),
             None => None,
         };
-        if fallback.is_none() && !matches!(cell, HistoryCell::Input(_)) {
+        if fallback.is_none()
+            && form == HistoryForm::Braced
+            && !matches!(cell, HistoryCell::Input(_))
+        {
             self.error(
                 Code::HistoryFallback,
                 loc,
@@ -116,7 +106,12 @@ impl Engine<'_> {
                 Some(node) => Some(node),
                 None => return Ok(Some(Val::Error)),
             },
-            None => None,
+            None => match self.unwritten_fallback(cell, target, loc, scope, need)? {
+                Some(Unwritten::Init(node)) => Some(node),
+                Some(Unwritten::Cell) => None,
+                Some(Unwritten::Fault) => return Ok(Some(Val::Error)),
+                None => return Ok(None),
+            },
         };
         Ok(Some(self.scalar(
             Op::History {
@@ -127,6 +122,115 @@ impl Engine<'_> {
             loc,
             scope,
         )?))
+    }
+
+    pub(in crate::semantics::analysis) fn stepped(
+        &mut self,
+        target: &Ident,
+        loc: Loc,
+        scope: ScopeId,
+    ) -> Result<Option<Val>, Internal> {
+        let Some(cell) = self.history_target(target, scope, "step")? else {
+            return Ok(Some(Val::Error));
+        };
+        Ok(Some(self.scalar(Op::Stepped(cell), loc, scope)?))
+    }
+
+    fn history_target(
+        &mut self,
+        target: &Ident,
+        scope: ScopeId,
+        what: &str,
+    ) -> Result<Option<HistoryCell>, Internal> {
+        Ok(Some(match self.find(&target.text, scope)? {
+            Found::Query(Query::Input(id)) => HistoryCell::Input(id),
+            Found::Query(Query::State(id)) => HistoryCell::State(id),
+            Found::Query(Query::Let(_, LetRef::Top(id))) => HistoryCell::Let(id),
+            Found::Nothing | Found::Placeholder => return Ok(None),
+            Found::Val(_) | Found::Query(_) | Found::Item(_) | Found::Decl(_) => {
+                self.error(
+                    Code::HistoryTarget,
+                    target.loc,
+                    scope,
+                    format!(
+                        "`{}` is not an input, a state or a reactive `let`, so it has no {what}",
+                        target.text
+                    ),
+                )?;
+                return Ok(None);
+            }
+        }))
+    }
+
+    fn unwritten_fallback(
+        &mut self,
+        cell: HistoryCell,
+        target: &Ident,
+        loc: Loc,
+        scope: ScopeId,
+        need: &mut Vec<Query>,
+    ) -> Result<Option<Unwritten>, Internal> {
+        let query = match cell {
+            HistoryCell::Input(_) => return Ok(Some(Unwritten::Cell)),
+            HistoryCell::State(state) => match self.cell_init(state, need)? {
+                Some(Some(found)) => return Ok(Some(found)),
+                Some(None) => Query::State(state),
+                None => return Ok(None),
+            },
+            HistoryCell::Let(id) => Query::Let(self.global_of_let(id), LetRef::Top(id)),
+        };
+        if self.in_progress(query) {
+            let name = &target.text;
+            let word = match cell {
+                HistoryCell::State(state) => match self.hir.state(state)?.word {
+                    CellWord::State => "state",
+                    CellWord::Stream => "stream",
+                    CellWord::Channel => "channel",
+                },
+                HistoryCell::Input(_) | HistoryCell::Let(_) => "state",
+            };
+            self.error_helped(
+                Code::HistoryFallback,
+                loc,
+                scope,
+                format!(
+                    "this read of `{name}` lies on a cycle of history reads with its reader, and `{name}` has no init and the read no fallback, so it has no value at load"
+                ),
+                format!(
+                    "give `{name}` an init, as in `{word} {name}(0) = …`, or this read a fallback, as in `{name}.past(1, 0)`"
+                ),
+            )?;
+            return Ok(Some(Unwritten::Fault));
+        }
+        if self.bound(query, need).is_none() {
+            return Ok(None);
+        }
+        Ok(Some(Unwritten::Cell))
+    }
+
+    pub(in crate::semantics::analysis) fn cell_init(
+        &mut self,
+        state: StateId,
+        need: &mut Vec<Query>,
+    ) -> Result<Option<Option<Unwritten>>, Internal> {
+        let Some(init) = self.hir.state(state)?.init else {
+            return Ok(Some(None));
+        };
+        let global = self.source_global;
+        let Some(val) = self.val(Query::Expr(init, global), need) else {
+            return Ok(None);
+        };
+        let loc = self.hir.expr(init)?.loc;
+        let Some(node) = self.boxed(&val, loc, global)? else {
+            return Ok(Some(Some(Unwritten::Fault)));
+        };
+        let Some(sig) = self.sig(node, need) else {
+            return Ok(None);
+        };
+        if sig.is_error() || sig.reactive || matches!(sig.kind, Kind::Str | Kind::Node) {
+            return Ok(Some(Some(Unwritten::Fault)));
+        }
+        Ok(Some(Some(Unwritten::Init(node))))
     }
 
     fn in_state_initializer(&mut self, expr: ExprId) -> Result<bool, Internal> {
@@ -157,6 +261,11 @@ impl Engine<'_> {
     ) -> Result<bool, Internal> {
         let decl = self.hir.state(state)?;
         let global = self.source_global;
+        if let Some(init) = decl.init
+            && !self.init_checked(init, need)?
+        {
+            return Ok(false);
+        }
         let Some(val) = self.val(Query::Expr(decl.value, global), need) else {
             return Ok(false);
         };
@@ -181,12 +290,16 @@ impl Engine<'_> {
             return Ok(true);
         }
         if matches!(sig.kind, Kind::Str | Kind::Node) {
-            let message = if sig.kind == Kind::Str {
-                "a state never holds a string, which exists only at compile time"
+            if sig.kind == Kind::Str {
+                self.error(Code::UnbuiltConstruct, loc, global, STRING_CELL)?;
             } else {
-                "a state never holds a node reference"
-            };
-            self.error(Code::StateValue, loc, global, message)?;
+                self.error(
+                    Code::StateValue,
+                    loc,
+                    global,
+                    "a state never holds a node reference",
+                )?;
+            }
             self.memo.states.insert(state, BoundVal::Error);
             return Ok(true);
         }
@@ -278,6 +391,66 @@ impl Engine<'_> {
         Ok(true)
     }
 
+    pub(in crate::semantics::analysis) fn init_node(
+        &mut self,
+        binding: BindingId,
+    ) -> Result<Option<NodeId>, Internal> {
+        let BindingKind::State { state } = self.binding(binding)?.kind else {
+            return Ok(None);
+        };
+        let Some(init) = self.hir.state(state)?.init else {
+            return Ok(None);
+        };
+        let global = self.source_global;
+        let Some(val) = self.memo.exprs.get(&(init, global)).cloned() else {
+            return Ok(None);
+        };
+        let loc = self.hir.expr(init)?.loc;
+        let Some(node) = self.boxed(&val, loc, global)? else {
+            return Ok(None);
+        };
+        let sig = self.demand_sig(node)?;
+        let usable =
+            !sig.is_error() && !sig.reactive && !matches!(sig.kind, Kind::Str | Kind::Node);
+        Ok(usable.then_some(node))
+    }
+
+    fn init_checked(&mut self, init: ExprId, need: &mut Vec<Query>) -> Result<bool, Internal> {
+        let global = self.source_global;
+        let Some(val) = self.val(Query::Expr(init, global), need) else {
+            return Ok(false);
+        };
+        let Some(sigs) = self.element_sigs(&val, need) else {
+            return Ok(false);
+        };
+        let loc = self.hir.expr(init)?.loc;
+        if sigs.iter().any(Sig::is_error) {
+            return Ok(true);
+        }
+        if sigs.iter().any(|sig| sig.reactive) {
+            for node in val.nodes() {
+                let reads = self.untypable_reads(node)?;
+                self.typing.read_by_faults.extend(reads);
+            }
+            self.error(
+                Code::ReactiveInitializer,
+                loc,
+                global,
+                "a cell's init is a compile-time value and reads no cell",
+            )?;
+        } else if sigs.iter().any(|sig| sig.kind == Kind::Str) {
+            self.error(Code::UnbuiltConstruct, loc, global, STRING_CELL)?;
+        } else if sigs.iter().any(|sig| sig.kind == Kind::Node) {
+            self.error(
+                Code::StateValue,
+                loc,
+                global,
+                "a cell never holds a node reference",
+            )?;
+        }
+        Ok(true)
+    }
+
     pub(in crate::semantics::analysis) fn history_reads(
         &self,
         init: NodeId,
@@ -321,3 +494,6 @@ impl Engine<'_> {
 }
 
 const OFFSET: &str = "the offset of a history read is a positive integer known at compile time";
+
+pub(in crate::semantics::analysis) const STRING_CELL: &str =
+    "a cell holding a string (SPEC §3.3) is a construct this compiler does not build";

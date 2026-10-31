@@ -41,6 +41,7 @@ pub(super) fn lesson(code: Code) -> &'static str {
         Code::HistoryFallback => include_str!("../../lessons/history-fallback.md"),
         Code::HistoryOffset => include_str!("../../lessons/history-offset.md"),
         Code::HistoryDepth => include_str!("../../lessons/history-depth.md"),
+        Code::CellCapacity => include_str!("../../lessons/cell-capacity.md"),
         Code::StateValue => include_str!("../../lessons/state-value.md"),
         Code::UnboundedState => include_str!("../../lessons/unbounded-state.md"),
         Code::PlacementSyntax => include_str!("../../lessons/placement-syntax.md"),

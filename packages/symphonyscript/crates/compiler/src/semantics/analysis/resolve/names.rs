@@ -142,6 +142,7 @@ impl Engine<'_> {
             | Op::Join(..)
             | Op::Slice { .. }
             | Op::History { .. }
+            | Op::Stepped(_)
             | Op::Native { .. } => None,
         };
         let (message, help) = self.unplaced_message(name.as_deref())?;

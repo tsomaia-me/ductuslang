@@ -158,6 +158,13 @@ impl Engine<'_> {
                 }
                 missing @ Step::Missing(_) => missing,
             },
+            ExprKind::Stepped(target) => {
+                let reads = match self.name_step(&target.text, done, position)? {
+                    Step::Known(target) => target.reads,
+                    Step::Missing(_) => Reads::Cell,
+                };
+                Step::Known(Answer::of(reads, Variable::Fixed))
+            }
             ExprKind::Field(base, _) => match self.path_start(expr, position)? {
                 Some(PathStart::Instance(placement)) => Step::Known(Answer::of(
                     self.attribute_reads(expr, placement, position)?,
@@ -189,6 +196,7 @@ impl Engine<'_> {
                     | ExprKind::IndexFromEnd(..)
                     | ExprKind::Slice { .. }
                     | ExprKind::History { .. }
+                    | ExprKind::Stepped(_)
                     | ExprKind::Call(..)
                     | ExprKind::Unary(..)
                     | ExprKind::Binary(..)
@@ -533,6 +541,7 @@ impl Engine<'_> {
                 | ExprKind::IndexFromEnd(..)
                 | ExprKind::Slice { .. }
                 | ExprKind::History { .. }
+                | ExprKind::Stepped(_)
                 | ExprKind::Call(..)
                 | ExprKind::Unary(..)
                 | ExprKind::Binary(..)

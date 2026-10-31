@@ -423,6 +423,8 @@ const RULES: &[Rule] = &[
     ),
     rule("6.1", "input-syntax", "input = 1\n"),
     rule("6.1", "reactive-initializer", "input a = 1\ninput b = a\n"),
+    rule("6.1", "cell-capacity", "state[4] level(0)\n"),
+    rule("6.1", "cell-capacity", "channel[4] s = 1\n"),
     rule("6.2", "let-syntax", "let = 1\n"),
     rule("6.2", "declaration-cycle", "let a = b + 1\nlet b = a + 1\n"),
     rule("6.2", "declaration-cycle", "fn f(): a\nlet a = f()\n"),
@@ -654,7 +656,6 @@ const RULES: &[Rule] = &[
         "input a = 1\nstate s = a{1, true}\n",
     ),
     rule("6.6", "history-depth", "input a = 1\nstate[1] s = a{2}\n"),
-    rule("6.6", "state-value", "state s = \"x\"\n"),
     rule("6.6", "state-value", "Clip c:\n    Note\nstate s = c\n"),
     rule(
         "6.6",

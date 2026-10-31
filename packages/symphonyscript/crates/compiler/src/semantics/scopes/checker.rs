@@ -8,8 +8,9 @@ use crate::diagnostics::Code;
 use crate::semantics::Internal;
 use crate::semantics::collection::{Decl, Namespace, Variants};
 use crate::semantics::ir::{
-    AttrValue, BlockId, BodyItem, ExprId, ExprKind, FnId, ForExpr, Hir, Ident, Iterable, LetDecl,
-    Loc, LoopVar, PatternId, PlacementId, StateId, TypeBase, TypeRef, UnknownNames,
+    AttrValue, BlockId, BodyItem, ExprId, ExprKind, FnId, ForExpr, Hir, HistoryForm, Ident,
+    Iterable, LetDecl, Loc, LoopVar, PatternId, PlacementId, StateId, TypeBase, TypeRef,
+    UnknownNames,
 };
 use crate::semantics::reporting::Report;
 
@@ -81,6 +82,9 @@ impl<'a> Checker<'a> {
         let decl = self.hir.state(id)?;
         if let Some(ty) = &decl.ty {
             self.type_ref(ty);
+        }
+        if let Some(init) = decl.init {
+            self.expr(init, None, false)?;
         }
         self.in_state = true;
         let checked = self.expr(decl.value, None, false);
@@ -549,12 +553,25 @@ impl<'a> Checker<'a> {
                             .map(|value| (value, Operand::Value, frame)),
                     );
                 }
+                ExprKind::Stepped(target) => {
+                    if !self.visible(frame, &target.text)?
+                        && !self.may_declare(frame, &target.text)?
+                    {
+                        self.report.error(
+                            self.hir,
+                            Code::UnknownName,
+                            target.loc,
+                            format!("`{}` names nothing in scope", target.text),
+                        );
+                    }
+                }
                 ExprKind::History {
                     target,
                     offset,
                     fallback,
+                    form,
                 } => {
-                    if !self.in_state {
+                    if *form == HistoryForm::Braced && !self.in_state {
                         self.report.error(
                             self.hir,
                             Code::MisplacedHistory,

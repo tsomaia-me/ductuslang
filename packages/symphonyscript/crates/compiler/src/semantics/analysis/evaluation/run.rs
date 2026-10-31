@@ -216,6 +216,7 @@ impl Engine<'_> {
             | Op::Join(..)
             | Op::Slice { .. }
             | Op::History { .. }
+            | Op::Stepped(_)
             | Op::Native { .. } => false,
         })
     }
@@ -254,7 +255,7 @@ impl Engine<'_> {
         }
         let op = self.node(node)?.op.clone();
         Ok(Some(match op {
-            Op::Read(_) | Op::History { .. } => CVal::Error,
+            Op::Read(_) | Op::History { .. } | Op::Stepped(_) => CVal::Error,
             Op::Join(lhs, rhs) => return self.join(node, (lhs, rhs), (own, partner), ctx, need),
             Op::Slice { base, lower, upper } => {
                 return self.sliced(base, (lower, upper), (own, partner), ctx, need);
@@ -1425,6 +1426,7 @@ fn takes_expected(op: &Op) -> bool {
         | Op::For(_)
         | Op::ToRead { .. }
         | Op::History { .. }
+        | Op::Stepped(_)
         | Op::Native { .. } => false,
     }
 }

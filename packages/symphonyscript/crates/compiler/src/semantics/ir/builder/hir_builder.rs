@@ -50,6 +50,8 @@ impl HirBuilder<'_> {
                 let loc = self.loc(node.syntax().range());
                 let input = Input {
                     name: self.ident(node.name()),
+                    word: None,
+                    capacity: None,
                     ty: node.ty().map(|ty| self.type_ref(&ty)),
                     value: self.expr(node.value(), loc),
                     loc,

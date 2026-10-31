@@ -16,6 +16,7 @@ pub(crate) fn layout_shaped(op: &Op) -> bool {
         | Op::Number(..)
         | Op::Const(_)
         | Op::Bool(_)
+        | Op::Stepped(_)
         | Op::Str(_)
         | Op::Concat(_)
         | Op::Variant(..)

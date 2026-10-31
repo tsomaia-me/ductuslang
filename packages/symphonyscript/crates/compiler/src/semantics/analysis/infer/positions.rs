@@ -530,6 +530,7 @@ impl Engine<'_> {
             | ExprKind::IndexFromEnd(..)
             | ExprKind::Slice { .. }
             | ExprKind::History { .. }
+            | ExprKind::Stepped(_)
             | ExprKind::Call(..)
             | ExprKind::Unary(..)
             | ExprKind::Binary(..)
@@ -576,6 +577,7 @@ impl Engine<'_> {
             | ExprKind::IndexFromEnd(..)
             | ExprKind::Slice { .. }
             | ExprKind::History { .. }
+            | ExprKind::Stepped(_)
             | ExprKind::Call(..)
             | ExprKind::Unary(..)
             | ExprKind::Binary(..)
@@ -654,6 +656,7 @@ fn arm_position(kind: &ExprKind, position: usize) -> bool {
         | ExprKind::IndexFromEnd(..)
         | ExprKind::Slice { .. }
         | ExprKind::History { .. }
+        | ExprKind::Stepped(_)
         | ExprKind::Call(..)
         | ExprKind::Unary(..)
         | ExprKind::Binary(..)
@@ -706,6 +709,7 @@ fn child_flow(
         | ExprKind::IndexFromEnd(..)
         | ExprKind::Slice { .. }
         | ExprKind::History { .. }
+        | ExprKind::Stepped(_)
         | ExprKind::Call(..)
         | ExprKind::Match { .. }
         | ExprKind::For(_) => own,

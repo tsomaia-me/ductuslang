@@ -286,3 +286,246 @@ fn a_keyword_stands_as_a_member_name_after_a_dot_and_after_the_bar_of_an_attribu
         );
     }
 }
+
+const HELPERS: &str = "state n(2)\nstate h([]): i32[..4]\n";
+
+fn cell_line(word: &str, derived: bool, shape: usize) -> String {
+    let (init, rule) = match shape {
+        0 => ("(3)", "n + 1"),
+        1 => ("([1, 2])", "(if n > 1 then [1, 2] else [3, 4])"),
+        _ => ("([]): i32[..4]", "h[^2..]"),
+    };
+    if derived {
+        format!("{word} x = {rule}\n")
+    } else {
+        format!("{word} x{init}\n")
+    }
+}
+
+fn read_text(read: usize, shape: usize) -> String {
+    let fallback = ["0", "[0, 0]", "[]"][shape];
+    match read {
+        0 => "x".to_string(),
+        1 => "x.past(1)".to_string(),
+        2 => format!("x.past(2, {fallback})"),
+        _ => "x.stepped".to_string(),
+    }
+}
+
+fn use_site(position: usize, value: &str) -> String {
+    match position {
+        0 => format!("state r = {value}\nClip c:\n    Note/(r)\n"),
+        1 => format!("Clip c:\n    Note/({value})\n"),
+        _ => format!("Clip c:\n    Note when {value}\n"),
+    }
+}
+
+fn read_rows(rows: &Rows) -> (Vec<String>, usize) {
+    let compiler = symphonyscript::Compiler::new(&symphonyscript_fixtures::vocabulary())
+        .expect("the vocabulary compiles");
+    let mut failures = Vec::new();
+    let mut programs = 0;
+    for (w, (word, _)) in WORDS.iter().enumerate() {
+        for derived in [false, true] {
+            for shape in 0..3 {
+                for read in 0..4 {
+                    for position in 0..3 {
+                        if !rows.take(&[w, usize::from(derived), shape, read, position]) {
+                            continue;
+                        }
+                        programs += 1;
+                        let read_text = read_text(read, shape);
+                        let stepped = read == 3;
+                        let value = if stepped || shape == 0 {
+                            read_text.clone()
+                        } else {
+                            format!("(for e in {read_text} into s from 0: s + e)")
+                        };
+                        let site = use_site(position, &value);
+                        let text = format!("{HELPERS}{}{site}", cell_line(word, derived, shape));
+                        let inner = value
+                            .strip_prefix('(')
+                            .and_then(|value| value.strip_suffix(')'))
+                            .unwrap_or(&value)
+                            .to_string();
+                        let expected: Vec<(Code, String)> = match (position, stepped) {
+                            (0, true) => vec![(Code::TypeMismatch, "r".to_string())],
+                            (1, true) => vec![(Code::TypeMismatch, inner)],
+                            (2, false) => vec![(Code::ConditionType, inner)],
+                            _ => Vec::new(),
+                        };
+                        let found = support::error_texts(&compiler, &text);
+                        let found: Vec<(Code, String)> = found
+                            .into_iter()
+                            .filter(|(code, _)| *code != Code::NoEntryInstance)
+                            .collect();
+                        if found != expected {
+                            failures
+                                .push(format!("{text}\n  draws {found:?}, expected {expected:?}"));
+                        }
+                    }
+                }
+            }
+        }
+    }
+    (failures, programs)
+}
+
+#[test]
+fn a_cell_of_every_word_and_form_is_read_in_the_present_in_its_past_and_by_stepped_wherever_a_cell_is_read()
+ {
+    assert_none_fail(covered(read_rows), 15);
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_a_cell_of_every_word_and_form_is_read_in_the_present_in_its_past_and_by_stepped_wherever_a_cell_is_read()
+ {
+    assert_none_fail(read_rows(&Rows::Every), 216);
+}
+
+#[test]
+fn a_derived_cells_init_counts_for_its_own_past_and_fits_the_type_its_rule_gives() {
+    let reader = "Clip c:\n    Note/(s)\n";
+    let rows: &[support::Row] = &[
+        (&["state s(0) = s.past(1) + 1\n", reader], &[]),
+        (&["state s(0) = s.past(1, 5) + 1\n", reader], &[]),
+        (&["state s = s.past(1, 0) + 1\n", reader], &[]),
+        (
+            &["state s(0.5) = s.past(1) + 1\n", reader],
+            &[(Code::FloatToInteger, "s")],
+        ),
+        (
+            &["state s = s.past(1) + 1\n", reader],
+            &[(Code::HistoryFallback, "s.past(1)")],
+        ),
+        (
+            &["state n(2)\n", "state s(true) = n + 1\n", reader],
+            &[(Code::TypeMismatch, "true")],
+        ),
+        (
+            &["state n(2)\n", "state s(300): u8 = n\n", reader],
+            &[(Code::DoesNotFit, "300")],
+        ),
+        (
+            &[
+                "state n(2)\n",
+                "state s([1, 2]) = (if n > 1 then [1, 2, 3] else [4, 5, 6])\n",
+                "Clip c:\n    Note/(s[0])\n",
+            ],
+            &[(Code::TypeMismatch, "[1, 2]")],
+        ),
+        (
+            &["state n(2)\n", "state s(n) = n + 1\n", reader],
+            &[(Code::ReactiveInitializer, "n")],
+        ),
+        (
+            &["Clip c:\n    Note\n", "state s(c) = 1\n"],
+            &[(Code::StateValue, "c")],
+        ),
+        (
+            &[
+                "state a(0) = b.past(1) + 1\n",
+                "state b = a.past(1) + 1\n",
+                "Clip c:\n    Note/(a + b)\n",
+            ],
+            &[],
+        ),
+        (
+            &[
+                "state a = b.past(1) + 1\n",
+                "state b(0) = a.past(1) + 1\n",
+                "Clip c:\n    Note/(a + b)\n",
+            ],
+            &[],
+        ),
+    ];
+    support::assert_rows_in_every_order(&symphonyscript_fixtures::vocabulary(), rows);
+    let compiler = symphonyscript::Compiler::new(&symphonyscript_fixtures::vocabulary())
+        .expect("the vocabulary compiles");
+    let items = [
+        "state a = b.past(1) + 1\n",
+        "state b = a.past(1) + 1\n",
+        "Clip c:\n    Note/(a + b)\n",
+    ];
+    for order in support::permutations(&items) {
+        let text = order.concat();
+        let found = support::error_texts(&compiler, &text);
+        let one_cycle = matches!(
+            found.as_slice(),
+            [(Code::HistoryFallback, read)] if read == "a.past(1)" || read == "b.past(1)"
+        );
+        assert!(one_cycle, "{text}\n{found:?}");
+    }
+}
+
+#[test]
+fn a_cells_capacity_clock_string_and_history_target_draw_the_codes_their_rules_name() {
+    let rows: &[support::Row] = &[
+        (&["state[4] x(0)\n"], &[(Code::CellCapacity, "[4]")]),
+        (&["stream[4] x(0)\n"], &[]),
+        (&["channel[16] x(0)\n"], &[]),
+        (
+            &["state n(1)\n", "stream[4] x = n\n"],
+            &[(Code::CellCapacity, "[4]")],
+        ),
+        (
+            &["state n(1)\n", "channel[4] x = n\n"],
+            &[(Code::CellCapacity, "[4]")],
+        ),
+        (
+            &[
+                "state a(1)\n",
+                "stream b(2)\n",
+                "state c2 on b = a + b\n",
+                "Clip c:\n    Note/(c2)\n",
+            ],
+            &[(Code::UnbuiltConstruct, "on b")],
+        ),
+        (
+            &[
+                "state a(1)\n",
+                "stream b(2)\n",
+                "state c4 on (a, b) = a + b\n",
+                "Clip c:\n    Note/(c4)\n",
+            ],
+            &[(Code::UnbuiltConstruct, "on (a, b)")],
+        ),
+        (&["state s(\"a\")\n"], &[(Code::UnbuiltConstruct, "\"a\"")]),
+        (
+            &["state n(2)\n", "state s(\"a\") = n\n"],
+            &[(Code::UnbuiltConstruct, "\"a\"")],
+        ),
+        (&["state s = \"a\"\n"], &[(Code::UnbuiltConstruct, "\"a\"")]),
+        (
+            &["fn f(p): p.past(1)\n", "Clip c:\n    Note/(f(1))\n"],
+            &[(Code::HistoryTarget, "p")],
+        ),
+        (
+            &["fn f(p): p.stepped\n", "Clip c:\n    Note when f(1)\n"],
+            &[(Code::HistoryTarget, "p")],
+        ),
+        (
+            &["let a = 1\n", "Clip c:\n    Note/(a.past(1))\n"],
+            &[(Code::HistoryTarget, "a.past(1)")],
+        ),
+        (
+            &["state n(1)\n", "Clip c:\n    Note/((n + 1).past(1))\n"],
+            &[(Code::HistoryTarget, "(n + 1)")],
+        ),
+        (
+            &["state n(1)\n", "Clip c:\n    Note/(n.past(1, 2, 3))\n"],
+            &[(Code::ArgumentCount, "n.past(1, 2, 3)")],
+        ),
+        (
+            &[
+                "state n(1)\n",
+                "fn f(): n.past(2, 0)\n",
+                "let a = n.past(1)\n",
+                "Clip c:\n    Note/(f() + a)\n",
+            ],
+            &[],
+        ),
+    ];
+    support::assert_rows_in_every_order(&symphonyscript_fixtures::vocabulary(), rows);
+}
