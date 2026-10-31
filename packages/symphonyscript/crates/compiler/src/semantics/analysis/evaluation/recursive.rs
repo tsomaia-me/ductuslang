@@ -1007,7 +1007,7 @@ impl Engine<'_> {
                 if !self.within_call_limit(node, call.function, call.id)? {
                     return Ok(Some(CVal::Error));
                 }
-                let ty = self.body_type(root, own)?;
+                let ty = own;
                 let templates = self
                     .template_of(self.node(root)?.scope)?
                     .into_iter()
@@ -1347,7 +1347,7 @@ impl Engine<'_> {
         if !self.within_call_limit(node, call.function, call.id)? {
             return Ok(Some(CVal::Error));
         }
-        let ty = self.body_type(root, own)?;
+        let ty = own;
         let templates = self
             .template_of(self.node(root)?.scope)?
             .into_iter()
@@ -1529,15 +1529,6 @@ impl Engine<'_> {
             }
         }
         Ok((!pending).then_some(work))
-    }
-
-    fn body_type(&self, root: NodeId, expected: EvalTy) -> Result<EvalTy, Internal> {
-        let integer = self.known_sig(root)?.kind == Kind::Int;
-        Ok(if integer && is_float_ty(expected) {
-            EvalTy::Exact
-        } else {
-            expected
-        })
     }
 
     fn call_result(

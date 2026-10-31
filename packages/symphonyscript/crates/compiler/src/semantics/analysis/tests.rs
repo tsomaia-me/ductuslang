@@ -575,7 +575,7 @@ fn compile_time_values_follow_the_types_that_flow_into_them() {
 }
 
 #[test]
-fn a_recursive_call_repeats_an_earlier_one_only_with_an_equal_expected_type() {
+fn a_recursive_call_repeats_an_earlier_one_only_with_an_equal_expected_type_292() {
     let fib = "fn fib(n): if n < 2 then n else fib(n - 1) + fib(n - 2)\n";
     let (diagnostics, one) = analyzed(&format!("{fib}Clip c:\n    Note/(fib(3))\n"), |engine| {
         engine.call_count
@@ -586,7 +586,7 @@ fn a_recursive_call_repeats_an_earlier_one_only_with_an_equal_expected_type() {
         |engine| engine.call_count,
     );
     assert_eq!(error_codes(&diagnostics), Vec::<Code>::new());
-    assert_eq!((one, both), (4, 5));
+    assert_eq!((one, both), (4, 8));
 }
 
 #[test]

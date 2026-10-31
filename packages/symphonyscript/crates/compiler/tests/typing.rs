@@ -114,13 +114,11 @@ fn a_float_type_that_flows_in_makes_a_flexible_value_a_float_from_its_literals_u
 }
 
 #[test]
-fn a_recursive_call_computes_flexible_integer_arguments_exactly() {
+fn a_recursive_call_computes_flexible_integer_arguments_exactly_and_its_body_in_the_float_type_it_meets_292()
+ {
     let fact = "fn fact(n): if n < 1 then 1 else n * fact(n - 1)\n";
     for k in 0u32..=30 {
-        let value: u128 = (1..=u128::from(k)).product();
-        let exact = value as f64 as u128 == value;
-        let expected: &[Code] = if exact { &[] } else { &[Code::DoesNotFit] };
-        expect(&[(&format!("{fact}Osc o | freq=(fact({k}))\n"), expected)]);
+        expect(&[(&format!("{fact}Osc o | freq=(fact({k}))\n"), &[])]);
     }
     expect(&[
         (
@@ -6352,4 +6350,61 @@ fn an_annotated_value_holding_a_faulty_choice_draws_the_faults_inside_it_and_no_
         ),
     ];
     support::assert_rows_in_every_order(&symphonyscript_fixtures::vocabulary(), rows);
+}
+
+const FLOAT_BODIES: [&str; 4] = [
+    "u8(250) + 300",
+    "16777216 + 1",
+    "2 ** -1 + i32(3)",
+    "(u8(200) + 100) * 3",
+];
+
+fn float_body_rows(rows: &Rows) -> Vec<String> {
+    let compiler =
+        Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("the vocabulary compiles");
+    let mut failures = Vec::new();
+    for (form, body) in FLOAT_BODIES.iter().enumerate() {
+        for (stand, place) in FLOAT_STANDS.iter().enumerate() {
+            for (depth, n) in ["0", "1", "3"].into_iter().enumerate() {
+                for reversed in [false, true] {
+                    if !rows.take(&[form, stand, depth, usize::from(reversed)]) {
+                        continue;
+                    }
+                    let read = place.replace("{x}", &format!("r({n})"));
+                    let program = |function: String| {
+                        if reversed {
+                            format!("{read}{function}")
+                        } else {
+                            format!("{function}{read}")
+                        }
+                    };
+                    let text = program(format!("fn r(n): if n > 0 then r(n - 1) else {body}\n"));
+                    let twin = program(format!("fn r(n): {body}\n"));
+                    let found = support::error_texts(&compiler, &text);
+                    let expected = support::error_texts(&compiler, &twin);
+                    if found != expected || !expected.is_empty() {
+                        failures.push(format!(
+                            "292: {text}\n  draws {found:?}\n  twin {expected:?}"
+                        ));
+                    }
+                }
+            }
+        }
+    }
+    failures
+}
+
+#[test]
+fn an_integer_looking_recursive_body_under_a_float_expected_type_computes_in_that_type_from_its_literals_up_292()
+ {
+    let failures = covered(float_body_rows);
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_an_integer_looking_recursive_body_under_a_float_expected_type_computes_in_that_type_from_its_literals_up_292()
+ {
+    let failures = float_body_rows(&Rows::Every);
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
