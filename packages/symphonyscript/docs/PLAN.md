@@ -174,6 +174,7 @@ Steps:
 9. The family re-probe (ARCHITECTURE §7 stage 6): a probe that read another family's result while that family was open is run again once that family settles, so a body that reads its own recursive result at swapped arguments or a constant depth is typed.
 10. The twin pass over placeholders (ARCHITECTURE §7): the values a placeholder for a name could hold are tried by analysing the expressions that hold the placeholder and what they demand, never the whole program again, in work linear in those expressions.
 11. The placeholder's neighbours (ARCHITECTURE §7): a bound or an index beside a placeholder base draws its own fault, and an index read of a disagreeing literal's slice draws nothing beside the literal's diagnostic.
+12. The evaluation machine for compile-time calls (ARCHITECTURE §7 stage 6, SPEC §4.6): call keys interned rather than rebuilt and cloned per call, a frame's node values in a vector indexed by the template's node order, templates reached by id, so a compile-time recursive call costs what this milestone's exit line asks; with it a recursive result refused by its holder's shape draws the holder's one diagnostic and nothing at the call.
 
 Exit:
 - M2b's exit criteria hold over the SPEC as it now reads: every rule that names an error has its test and its row, every `sym` example that declares its names passes Check, and every `sym-error` example is rejected.
