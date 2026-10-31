@@ -1368,7 +1368,7 @@ fn the_arms_of_a_compile_time_true_choice_agree_wherever_it_stands() {
 #[test]
 #[ignore = "exhaustive"]
 fn exhaustive_the_arms_of_a_compile_time_true_choice_agree_wherever_it_stands() {
-    assert_arms_hold(Chooser::True, 40612, 24);
+    assert_arms_hold(Chooser::True, 48066, 24);
 }
 
 #[test]
@@ -1379,7 +1379,7 @@ fn the_arms_of_a_compile_time_false_choice_agree_wherever_it_stands() {
 #[test]
 #[ignore = "exhaustive"]
 fn exhaustive_the_arms_of_a_compile_time_false_choice_agree_wherever_it_stands() {
-    assert_arms_hold(Chooser::False, 40612, 72);
+    assert_arms_hold(Chooser::False, 48066, 24);
 }
 
 #[test]
@@ -1390,7 +1390,7 @@ fn the_arms_of_a_runtime_choice_agree_wherever_it_stands() {
 #[test]
 #[ignore = "exhaustive"]
 fn exhaustive_the_arms_of_a_runtime_choice_agree_wherever_it_stands() {
-    assert_arms_hold(Chooser::Flag, 40612, 0);
+    assert_arms_hold(Chooser::Flag, 48066, 0);
 }
 
 #[test]
@@ -1401,7 +1401,7 @@ fn the_arms_of_a_compile_time_enum_match_agree_wherever_it_stands() {
 #[test]
 #[ignore = "exhaustive"]
 fn exhaustive_the_arms_of_a_compile_time_enum_match_agree_wherever_it_stands() {
-    assert_arms_hold(Chooser::Enum, 40612, 0);
+    assert_arms_hold(Chooser::Enum, 48066, 0);
 }
 
 #[test]
@@ -1412,7 +1412,7 @@ fn the_arms_of_a_match_on_an_enum_input_agree_wherever_it_stands() {
 #[test]
 #[ignore = "exhaustive"]
 fn exhaustive_the_arms_of_a_match_on_an_enum_input_agree_wherever_it_stands() {
-    assert_arms_hold(Chooser::EnumInput, 40612, 0);
+    assert_arms_hold(Chooser::EnumInput, 48066, 0);
 }
 
 #[test]
@@ -1423,7 +1423,7 @@ fn the_arms_of_a_match_on_an_integer_input_agree_wherever_it_stands() {
 #[test]
 #[ignore = "exhaustive"]
 fn exhaustive_the_arms_of_a_match_on_an_integer_input_agree_wherever_it_stands() {
-    assert_arms_hold(Chooser::Integer, 40612, 0);
+    assert_arms_hold(Chooser::Integer, 48066, 0);
 }
 
 #[test]
