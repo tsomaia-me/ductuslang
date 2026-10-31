@@ -153,7 +153,7 @@ Exit:
 - M2's exit criteria hold over the SPEC as it now reads: every rule that names an error has its test and its row, every `sym` example that declares its names passes Check, and every `sym-error` example is rejected.
 - Each row of SPEC §3.7's capacity table and each state rule of §6.6 has tests whose capacities are derived by hand, and a state bounded by `[^1000000000..]` finds its capacity in work that does not depend on the bound.
 - A bounded call expands in work linear in its levels times its body; a bounded function expanded 100,000 levels deep and a chain of 100,000 slices pass every stage through Check on a thread with a 1 MiB stack.
-- Every code has a lesson, every lesson's `sym` examples pass Check and its `sym-error` examples draw its code, and every diagnostic the error-rule table's programs draw has a summary of one to three lines.
+- Every code has a lesson, every lesson's `sym` examples pass Check or draw only `unbuilt-construct` and its `sym-error` examples draw its code, and every diagnostic the error-rule table's programs draw has a summary of one to three lines.
 - The robustness corpus gains mutants of the new examples, and none draws internal-error or panics.
 - A fixture vocabulary's native functions, one taking a string, are typed by their signatures, called at compile time with compile-time arguments, and refused with an argument that reads a cell where they take a string; a variable-array attribute accepts a value up to its capacity and refuses a larger one.
 - Closed at `3f94098` on 2026-10-29 after warm check 14 kept nothing Blocking, with 65 ledger entries open, every one carried to M2e, the frame-chosen reference construct's to step 3.
@@ -181,10 +181,10 @@ Exit:
 - A function and a pattern given a reference to a node instance and to a wire instance read its attributes as a path does, and a reference in an input, a state, a reactive `let`, a record or an attribute is refused.
 - Whether a value reads a cell, its shape and its kind are each decided in one place: step 1's test names no other `match` over `ExprKind` or `Op` that decides one of them, and the pipeline's diff from the milestone's start shows no moved verdict outside the rules M2e changes.
 - A fault in a branch that a compile-time recursion passes over is reported in work linear in the recursion's depth, counted by the test, the property the removal of bounded expansion keeps.
-- Every code has a lesson, every lesson's `sym` examples pass Check and its `sym-error` examples draw its code, and every diagnostic the error-rule table's programs draw has a summary of one to three lines.
+- Every code has a lesson, every lesson's `sym` examples pass Check or draw only `unbuilt-construct` and its `sym-error` examples draw its code, and every diagnostic the error-rule table's programs draw has a summary of one to three lines.
 - The robustness corpus gains mutants of the new examples, and none draws internal-error or panics.
 - Compile-time calls are fast: Check over a program that makes 1,000,000 distinct compile-time recursive calls takes under 2 s in the `dev` profile the tests run, with no other build on the machine, recorded in the progress file with the time per call before and after; the recursion-limit lesson's example is that program.
-- Every `sym` example of SPEC.md parses, and `docs/pending-examples.txt` and `docs/pending-productions.txt` name only what a later milestone's semantics build, no parser work among them.
+- Every `sym` example of SPEC.md parses, and `docs/pending-examples.txt` and `docs/pending-productions.txt` name only what a later milestone's semantics build, no parser work among them but the classification of patterns before bodies (M2d step 1), which the examples of wire stand-ins wait on.
 - No test program, lesson or fixture holds `input`, `.previous` or `x{k, f}`.
 
 ## M2c: Strings, records and capacities
@@ -204,7 +204,7 @@ Exit:
 - M2e's exit criteria hold over the SPEC as it now reads: every rule that names an error has its test and its row, every `sym` example that declares its names passes Check, and every `sym-error` example is rejected.
 - Each row of SPEC §3.3's capacity table and each inner-level case of §3.7 has tests whose values are derived by hand.
 - A fixture vocabulary with an attribute that takes a host-fed cell bound with `=>`, one that takes a constant, a record attribute of a prelude type, one taking any record and a runtime string attribute accepts what SPEC §10.2 allows, refuses the rest, and yields a Program whose bindings a host follows to the inputs it writes.
-- Every code has a lesson, every lesson's `sym` examples pass Check and its `sym-error` examples draw its code, and every diagnostic the error-rule table's programs draw has a summary of one to three lines.
+- Every code has a lesson, every lesson's `sym` examples pass Check or draw only `unbuilt-construct` and its `sym-error` examples draw its code, and every diagnostic the error-rule table's programs draw has a summary of one to three lines.
 - The robustness corpus gains mutants of the new examples, and none draws internal-error or panics.
 - A record type of 1,000 fields and an array with capacities at 8 levels pass every stage through Check on a thread with a 1 MiB stack.
 
@@ -227,7 +227,7 @@ Exit:
 - Every rule of SPEC §3.9 has its test: widening in and no narrowing, `match` coverage and narrowing per arm, `??`, `is`, a record literal choosing its alternative, and a `T?` refused at an attribute.
 - Every operation of SPEC §3.10 and every rule of §3.11 has its test, `is` between documents and between a document and each value that widens into one among them; core's `document` module accepts every valid document and refuses every invalid one of a conformance corpus with the byte position, refuses a document past its budget naming it, and parses 64 KiB in time linear in its length.
 - A fixture vocabulary with a map attribute and a document attribute accepts what SPEC §10.2 allows and refuses the rest.
-- Every code has a lesson, every lesson's `sym` examples pass Check and its `sym-error` examples draw its code, and every diagnostic the error-rule table's programs draw has a summary of one to three lines.
+- Every code has a lesson, every lesson's `sym` examples pass Check or draw only `unbuilt-construct` and its `sym-error` examples draw its code, and every diagnostic the error-rule table's programs draw has a summary of one to three lines.
 - The robustness corpus gains mutants of the new examples, and none draws internal-error or panics.
 - A sum of 100 alternatives and a document literal of 10,000 entries pass every stage through Check on a thread with a 1 MiB stack.
 
@@ -247,7 +247,7 @@ Exit:
 - Every rule of SPEC §6.7 and §6.8 has its test: a lambda's arity, annotations and scope, a function type refused outside a parameter and a compile-time `let`, a function type's named parameters called by name, a lambda passed on, a function and a built-in passed with and without a function type, a compile-time `let` holding a lambda or a function, called and passed, its use reactive when the lambda's body reads a cell, a function reference refused outside its positions, a lambda's body reading the scope it is written in, a `let` reaching itself through its lambda, bracket parameters bound and unified from arguments, a bracket parameter bare in no parameter type, a size expression checked at its call, a size out of range or a float, a value parameter in every position SPEC §6.8 lists, a type argument as an expression, constraints, the defaults of a flexible argument, a record literal binding a generic type's parameters, and a generic type named without its arguments.
 - A fixture vocabulary's native function that takes a lambda is evaluated at compile time with compile-time arguments, running the lambda's body at each of its calls, and a generic native function binds its bracket parameters from its arguments.
 - A function reference is refused in a record field and in a cell (SPEC §6.7, §14).
-- Every code has a lesson, every lesson's `sym` examples pass Check and its `sym-error` examples draw its code, and every diagnostic the error-rule table's programs draw has a summary of one to three lines.
+- Every code has a lesson, every lesson's `sym` examples pass Check or draw only `unbuilt-construct` and its `sym-error` examples draw its code, and every diagnostic the error-rule table's programs draw has a summary of one to three lines.
 - The robustness corpus gains mutants of the new examples, and none draws internal-error or panics.
 
 ## M2d: Language additions 3
@@ -266,7 +266,7 @@ Exit:
 - Two uses of a pattern that declares a host-fed and a derived cell yield two of each, named by the uses' paths, listed at the uses' positions.
 - A `stream` or `channel` marker refuses a `state` and an expression over an event cell with the help of SPEC §6.4, `out` refuses a constant and a derived cell, and a derived `channel` with a `stream` upstream is refused naming it.
 - A pattern whose type parameter binds to a node kind expands per use, and each use's expansion is checked by SPEC §10.2 against the kind it binds; a pattern's value parameter binds from its arguments as a function's does.
-- Every code has a lesson, every lesson's `sym` examples pass Check and its `sym-error` examples draw its code, and every diagnostic the error-rule table's programs draw has a summary of one to three lines.
+- Every code has a lesson, every lesson's `sym` examples pass Check or draw only `unbuilt-construct` and its `sym-error` examples draw its code, and every diagnostic the error-rule table's programs draw has a summary of one to three lines.
 - The robustness corpus gains mutants of the new examples, and none draws internal-error or panics.
 - A pattern with `children` used 10,000 times, each with a body, passes every stage through Check on a thread with a 1 MiB stack.
 
