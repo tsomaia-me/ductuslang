@@ -197,7 +197,7 @@ const DECIDING_NONE: &[(&str, &str)] = &[
         "the instances a path or a wire destination names, SPEC §5.6 and §8.2",
     ),
     (
-        "analysis/resolve/paths.rs sliced_group",
+        "analysis/resolve/paths.rs sliced_walk",
         "the instances a path or a wire destination names, SPEC §5.6 and §8.2",
     ),
     (

@@ -142,10 +142,11 @@ pub(crate) enum CountedWalk {
     SignatureRunSig,
     EngineEvaluatingPath,
     RecursiveCallHeads,
+    PathsSlicedGroup,
 }
 
 #[cfg(test)]
-const WALKS: usize = 142;
+const WALKS: usize = 143;
 
 #[cfg(test)]
 thread_local! {
@@ -297,6 +298,7 @@ impl CountedWalk {
         CountedWalk::SignatureRunSig,
         CountedWalk::EngineEvaluatingPath,
         CountedWalk::RecursiveCallHeads,
+        CountedWalk::PathsSlicedGroup,
     ];
 
     pub(crate) fn step(self) {

@@ -1691,3 +1691,62 @@ fn the_cost_counters_hold_the_signature_walk_and_it_is_linear_in_a_recursive_cal
     }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
+
+fn empty_chain_program(lets: usize, reads: usize) -> String {
+    let mut text = String::from("state n(0)\nlet a0 = [1, 2][2..]\n");
+    for level in 1..=lets {
+        text.push_str(&format!("let a{level} = a{}[0..]\n", level - 1));
+    }
+    text.push_str("Clip c:\n");
+    for _ in 0..reads {
+        text.push_str(&format!(
+            "    Note/(60 + a{lets}.size)\n    Note | velocity=(a{lets}[n] + 0.5)\n"
+        ));
+    }
+    text
+}
+
+fn empty_chain_walks(sizes: [(usize, usize); 3]) -> (Vec<String>, [u64; 3]) {
+    let compiler = Compiler::new(&vocabulary()).expect("the vocabulary compiles");
+    let runs = sizes.map(|(lets, reads)| measured(&compiler, &empty_chain_program(lets, reads)));
+    let mut failures = Vec::new();
+    let steps = runs.each_ref().map(|run| {
+        run.counts
+            .iter()
+            .find(|(name, _)| name == "PathsSlicedGroup")
+            .map_or(0, |(_, count)| *count)
+    });
+    for (run, size) in runs.iter().zip(sizes) {
+        if let Some(first) = run.errors.first() {
+            failures.push(format!("388 {size:?}: {first}"));
+        }
+    }
+    (failures, steps)
+}
+
+#[test]
+fn an_empty_arrays_let_chain_is_walked_once_per_let_whatever_reads_it_388() {
+    let mut failures = Vec::new();
+    for (sizes, measure) in [
+        ([(25, 4), (50, 4), (100, 4)], 0),
+        ([(4, 25), (4, 50), (4, 100)], 1),
+        ([(25, 25), (50, 50), (100, 100)], 0),
+    ] {
+        let (found, steps) = empty_chain_walks(sizes);
+        failures.extend(found);
+        let points = [0, 1, 2].map(|run| {
+            let (lets, reads) = sizes[run];
+            (
+                u64::try_from(if measure == 0 { lets } else { reads }).unwrap_or(u64::MAX),
+                steps[run],
+            )
+        });
+        if !linear(points) {
+            failures.push(format!("388 {sizes:?}: PathsSlicedGroup {steps:?}"));
+        }
+        if steps[0] == 0 {
+            failures.push(format!("388 {sizes:?}: the chain is never walked"));
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}

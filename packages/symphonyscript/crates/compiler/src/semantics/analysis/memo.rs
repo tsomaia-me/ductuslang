@@ -122,6 +122,7 @@ pub(crate) struct Memo {
     pub template_calls: FastMap<ScopeId, Vec<NodeId>>,
     pub template_steps: FastMap<ScopeId, Vec<NodeId>>,
     pub attr_reads: FastMap<NodeId, (ItemRef, AttrId)>,
+    pub sliced_groups: FastMap<(ExprId, ScopeId), Option<NodeId>>,
     pub value_bindings: FastMap<NodeId, Query>,
     pub templates: FastMap<super::template_key::TemplateKey, ScopeId>,
     pub template_feeds: FastMap<ScopeId, Vec<super::feed::Feed>>,

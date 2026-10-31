@@ -1292,8 +1292,29 @@ impl Engine<'_> {
         scope: ScopeId,
         need: &mut Vec<Query>,
     ) -> Result<Option<Option<NodeId>>, Internal> {
+        let mut visited = Vec::new();
+        let found = self.sliced_walk((base, scope), &mut visited, need)?;
+        if let Some(answer) = found {
+            for at in visited {
+                self.memo.sliced_groups.insert(at, answer);
+            }
+        }
+        Ok(found)
+    }
+
+    fn sliced_walk(
+        &mut self,
+        (base, scope): (ExprId, ScopeId),
+        visited: &mut Vec<(ExprId, ScopeId)>,
+        need: &mut Vec<Query>,
+    ) -> Result<Option<Option<NodeId>>, Internal> {
         let (mut base, mut scope) = (base, scope);
         loop {
+            crate::semantics::counted_walk::CountedWalk::PathsSlicedGroup.step();
+            if let Some(known) = self.memo.sliced_groups.get(&(base, scope)) {
+                return Ok(Some(*known));
+            }
+            visited.push((base, scope));
             let (next, within) = match &self.hir.expr(base)?.kind {
                 ExprKind::Slice { base: sliced, .. } => (*sliced, scope),
                 ExprKind::Name(name) => match self.find(name, scope)? {
