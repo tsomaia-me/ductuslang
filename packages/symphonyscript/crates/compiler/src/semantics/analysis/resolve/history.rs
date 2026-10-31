@@ -170,7 +170,7 @@ impl Engine<'_> {
             HistoryCell::Let(id) => Query::Let(self.global_of_let(id), LetRef::Top(id)),
         };
         if self.in_progress(query) {
-            let (message, help) = unstarted(&target.text, "state");
+            let (message, help) = unstarted(&target.text, "state", "0");
             self.error_helped(Code::HistoryFallback, loc, scope, message, help)?;
             return Ok(Some(Unwritten::Fault));
         }
@@ -636,9 +636,8 @@ impl Engine<'_> {
         let mut found: Vec<(Loc, usize)> = earliest.into_values().collect();
         found.sort_unstable();
         for (loc, target) in found {
-            let decl = self.hir.state(StateId(
-                u32::try_from(target).map_err(|_| Internal::missed("state"))?,
-            ))?;
+            let state = StateId(u32::try_from(target).map_err(|_| Internal::missed("state"))?);
+            let decl = self.hir.state(state)?;
             let name = decl
                 .name
                 .as_ref()
@@ -648,7 +647,8 @@ impl Engine<'_> {
                 CellWord::Stream => "stream",
                 CellWord::Channel => "channel",
             };
-            let (message, help) = unstarted(&name, word);
+            let fallback = self.fallback_of(state)?;
+            let (message, help) = unstarted(&name, word, &fallback);
             self.error_helped(
                 Code::HistoryFallback,
                 loc,
@@ -661,18 +661,47 @@ impl Engine<'_> {
     }
 }
 
+impl Engine<'_> {
+    fn fallback_of(&mut self, state: StateId) -> Result<String, Internal> {
+        let Some(binding) = self.state_binding(state) else {
+            return Ok(String::from("0"));
+        };
+        let init = self.binding(binding)?.init;
+        if self.memo.binding_layouts.contains_key(&binding) || self.arrays.contains(&init) {
+            return Ok(String::from("[]"));
+        }
+        Ok(match self.known_sig(init)?.kind {
+            Kind::Bool => String::from("false"),
+            Kind::Enum(id) => {
+                let decl = self.enum_decl(id)?;
+                match decl.variants.first() {
+                    Some(variant) => format!("{}::{variant}", decl.name),
+                    None => String::from("0"),
+                }
+            }
+            Kind::Int
+            | Kind::Float
+            | Kind::Str
+            | Kind::Node
+            | Kind::Bare
+            | Kind::Any
+            | Kind::Error => String::from("0"),
+        })
+    }
+}
+
 const OFFSET: &str = "the offset of a history read is a positive integer known at compile time";
 
 pub(in crate::semantics::analysis) const STRING_CELL: &str =
     "a cell holding a string (SPEC §3.3) is a construct this compiler does not build";
 
-fn unstarted(name: &str, word: &str) -> (String, String) {
+fn unstarted(name: &str, word: &str, fallback: &str) -> (String, String) {
     (
         format!(
             "this read of `{name}` lies on a cycle of history reads with its reader, and `{name}` has no init and the read no fallback, so it has no value at load"
         ),
         format!(
-            "give `{name}` an init, as in `{word} {name}(0) = …`, or this read a fallback, as in `{name}.past(1, 0)`"
+            "give `{name}` an init, as in `{word} {name}({fallback}) = …`, or this read a fallback, as in `{name}.past(1, {fallback})`"
         ),
     )
 }

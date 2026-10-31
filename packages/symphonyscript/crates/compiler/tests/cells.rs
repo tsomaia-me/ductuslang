@@ -753,3 +753,86 @@ fn exhaustive_a_state_holding_an_array_of_another_shape_at_a_fixed_array_attribu
     let failures = shaped_state_rows(&Rows::Every);
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
+
+const UNSTARTED: [&[&str]; 6] = [
+    &[
+        "state note(60)\n",
+        "state r = (r.past(1) + [note])[^8..]\n",
+        "Clip c:\n    Note/(r[0])\n",
+    ],
+    &[
+        "state flag(false)\n",
+        "state g = not g.past(1) or flag\n",
+        "Clip c:\n    Note when g\n",
+    ],
+    &[
+        "state w(Wave::Saw)\n",
+        "state v = if v.past(1) is Wave::Sine then w else Wave::Sine\n",
+        "Osc o | wave=v\n",
+    ],
+    &[
+        "state note(60)\n",
+        "state s = s.past(1) + note\n",
+        "Clip c:\n    Note/(s)\n",
+    ],
+    &[
+        "state x(0.5)\n",
+        "state f = f.past(1) * x\n",
+        "Clip c | gain=f:\n    Note\n",
+    ],
+    &[
+        "state note(60)\n",
+        "state a = b.past(1) + note\n",
+        "state b = a.past(1) + 1\n",
+        "Clip c:\n    Note/(a)\n",
+    ],
+];
+
+fn quoted<'h>(help: &'h str, after: &str) -> &'h str {
+    let start = help.find(after).expect("the help names the edit") + after.len();
+    let end = help[start..].find('`').expect("the edit is quoted") + start;
+    &help[start..end]
+}
+
+#[test]
+fn history_fallbacks_help_names_a_fallback_and_an_init_of_the_cells_type_that_compile_when_applied()
+{
+    let compiler = symphonyscript::Compiler::new(&symphonyscript_fixtures::vocabulary())
+        .expect("the vocabulary compiles");
+    let mut failures = Vec::new();
+    for items in UNSTARTED {
+        for reversed in [false, true] {
+            let mut ordered: Vec<&str> = items.to_vec();
+            if reversed {
+                ordered.reverse();
+            }
+            let text = ordered.concat();
+            let diagnostics = support::errors(compiler.check(&[support::source(&text)]));
+            let Some(drawn) = diagnostics
+                .iter()
+                .find(|diagnostic| diagnostic.code == Code::HistoryFallback)
+            else {
+                failures.push(format!("286: {text}\n  draws no history-fallback"));
+                continue;
+            };
+            let help = drawn.help.clone().unwrap_or_default();
+            let range = drawn.span.range.start as usize..drawn.span.range.end as usize;
+            let read = &text[range.clone()];
+            let fallback = quoted(&help, "this read a fallback, as in `");
+            let with_fallback = format!("{}{fallback}{}", &text[..range.start], &text[range.end..]);
+            let init = quoted(&help, "an init, as in `");
+            let declared = init.trim_end_matches(" = …");
+            let name = read.split('.').next().unwrap_or_default();
+            let with_init =
+                text.replacen(&format!("state {name} = "), &format!("{declared} = "), 1);
+            for edited in [with_fallback, with_init] {
+                let left = support::errors(compiler.check(&[support::source(&edited)]));
+                if !left.is_empty() {
+                    let codes: Vec<Code> = left.iter().map(|diagnostic| diagnostic.code).collect();
+                    failures.push(format!("286: {help}\n{edited}\n  draws {codes:?}"));
+                }
+            }
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
