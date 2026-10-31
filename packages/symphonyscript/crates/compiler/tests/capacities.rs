@@ -3270,3 +3270,54 @@ fn a_cell_array_under_a_scalar_annotation_draws_the_shape_mismatch_at_the_let_as
     ];
     support::assert_rows_in_every_order(&symphonyscript_fixtures::vocabulary(), rows);
 }
+
+#[test]
+fn an_array_holder_beside_a_single_value_draws_ragged_array_at_the_literal_as_its_fixed_twin_402() {
+    let host = "state s0([1, 2]): i32[..4]\n";
+    let rows: &[support::Row] = &[
+        (
+            &[host, "Clip c:\n    Note/([(s0), 1][0])\n"],
+            &[(Code::RaggedArray, "[(s0), 1]")],
+        ),
+        (
+            &[host, "Clip c:\n    Note/([1, (s0)][0])\n"],
+            &[(Code::RaggedArray, "[1, (s0)]")],
+        ),
+        (
+            &["state s0 = [1]\n", "Clip c:\n    Note/([(s0), 1][0])\n"],
+            &[(Code::RaggedArray, "[(s0), 1]")],
+        ),
+        (
+            &[
+                host,
+                "state flag(false)\n",
+                "Clip c:\n    Note/([(if flag then s0 else s0), 1][0])\n",
+            ],
+            &[(Code::RaggedArray, "[(if flag then s0 else s0), 1]")],
+        ),
+        (
+            &[host, "let x = [(s0), 1]\n", "Clip c:\n    Note/(x[1])\n"],
+            &[(Code::RaggedArray, "[(s0), 1]")],
+        ),
+        (
+            &[host, "Clip c:\n    Note/([[(s0), 1], [1, 2]][0][0])\n"],
+            &[(Code::RaggedArray, "[(s0), 1]")],
+        ),
+        (
+            &["Clip c:\n    Note/([[1], 1][0])\n"],
+            &[(Code::RaggedArray, "[[1], 1]")],
+        ),
+        (
+            &["state s0 = 1\n", "Clip c:\n    Note/([(s0), 1][0])\n"],
+            &[],
+        ),
+        (
+            &[
+                "state s0 = [1]\n",
+                "Clip c:\n    Note/([(s0), [2]][0][0])\n",
+            ],
+            &[],
+        ),
+    ];
+    support::assert_rows_in_every_order(&symphonyscript_fixtures::vocabulary(), rows);
+}

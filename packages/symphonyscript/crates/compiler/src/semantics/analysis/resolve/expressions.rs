@@ -698,7 +698,22 @@ impl Engine<'_> {
             return Ok(Some(Val::Error));
         }
         let inner = vals.first().map(Val::shape).unwrap_or_default();
-        let ragged = vals.iter().any(|val| val.shape() != inner);
+        let mut beside_single = false;
+        if vals
+            .iter()
+            .any(|val| matches!(val, Val::Scalar(_)) && !self.holds_array(val))
+        {
+            for val in &vals {
+                if let Val::Scalar(node) = val
+                    && self.holds_array(val)
+                    && self.definite_array(*node)?
+                {
+                    beside_single = true;
+                    break;
+                }
+            }
+        }
+        let ragged = beside_single || vals.iter().any(|val| val.shape() != inner);
         if ragged {
             for (element, val) in elements.iter().zip(&vals) {
                 if some!(self.placeholder_array(val, need)?) {
@@ -709,6 +724,10 @@ impl Engine<'_> {
                     return Ok(Some(Val::Error));
                 }
             }
+        }
+        if beside_single {
+            self.error(Code::RaggedArray, loc, scope, RAGGED)?;
+            return Ok(Some(Val::Error));
         }
         if vals.iter().any(|val| self.holds_array(val)) {
             let val = self.opaque_array(vals.clone(), loc, scope)?;
