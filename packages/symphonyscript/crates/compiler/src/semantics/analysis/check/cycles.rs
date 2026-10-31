@@ -174,13 +174,18 @@ impl Engine<'_> {
                     .push(position(to)?);
             }
         }
+        let mut reads_only: Vec<Vec<usize>> = vec![Vec::new(); members.len()];
         for ((from, _), (to, _)) in &read_edges {
+            reads_only
+                .get_mut(position(from)?)
+                .ok_or(Internal::missed("cycle declaration"))?
+                .push(position(to)?);
             edges
                 .get_mut(position(from)?)
                 .ok_or(Internal::missed("cycle declaration"))?
                 .push(position(to)?);
         }
-        for targets in &mut edges {
+        for targets in edges.iter_mut().chain(reads_only.iter_mut()) {
             targets.sort_unstable();
             targets.dedup();
         }
@@ -210,9 +215,13 @@ impl Engine<'_> {
                 .iter()
                 .min()
                 .ok_or(Internal::missed("cycle declaration"))?;
-            let Some(path) =
-                self.declaration_path(&edges, (&component_of, home), first, &function)?
-            else {
+            let read_path =
+                self.declaration_path(&reads_only, (&component_of, home), first, &function)?;
+            let path = match read_path {
+                Some(path) => Some(path),
+                None => self.declaration_path(&edges, (&component_of, home), first, &function)?,
+            };
+            let Some(path) = path else {
                 continue;
             };
             let mut names = Vec::new();

@@ -5308,3 +5308,70 @@ fn a_cycle_through_a_recursive_call_inside_the_binding_an_untaken_arm_chooses_dr
     }
     assert_none_fail((failures, programs), 32);
 }
+
+fn cycle_summaries(text: &str) -> Vec<(String, String)> {
+    support::checked(text)
+        .into_iter()
+        .filter(|diagnostic| diagnostic.code == Code::DeclarationCycle)
+        .map(|diagnostic| {
+            let range = diagnostic.span.range;
+            let at = text
+                .get(range.start as usize..range.end as usize)
+                .unwrap_or("?")
+                .to_string();
+            (at, diagnostic.summary)
+        })
+        .collect()
+}
+
+#[test]
+fn a_chosen_references_cycle_names_the_components_shortest_cycle_through_its_first_member_as_its_twin_does_406()
+ {
+    let mut failures = Vec::new();
+    let mut programs = 0;
+    for chooser in FAULT_CHOOSERS {
+        for (index, levels) in [
+            (0, Levels::Alternating(1, 1)),
+            (1, Levels::Alternating(1, 1)),
+            (1, Levels::Base(1)),
+            (1, Levels::Base(3)),
+        ] {
+            for reversed in [false, true] {
+                let program = |recursive| {
+                    candidate_fault_program(
+                        (
+                            CandidateFault::ClosesCycle,
+                            chooser,
+                            Consumer::RecursiveArgument,
+                        ),
+                        (index, levels, reversed, recursive),
+                        None,
+                    )
+                };
+                let (text, twin) = (program(true), program(false));
+                let drawn = cycle_summaries(&text);
+                let expected = cycle_summaries(&twin);
+                let once = drawn.first().is_some_and(|(_, summary)| {
+                    let names: Vec<&str> = summary
+                        .rsplit(": ")
+                        .next()
+                        .unwrap_or_default()
+                        .split(" → ")
+                        .collect();
+                    let inner = names
+                        .get(..names.len().saturating_sub(1))
+                        .unwrap_or_default();
+                    let distinct: BTreeSet<&&str> = inner.iter().collect();
+                    distinct.len() == inner.len()
+                });
+                programs += 1;
+                if drawn != expected || drawn.len() != 1 || !once {
+                    failures.push(format!(
+                        "406 {chooser} {index} {levels:?} {reversed}\n{text}\n  found {drawn:?}\n  twin {expected:?}\n"
+                    ));
+                }
+            }
+        }
+    }
+    assert_none_fail((failures, programs), 32);
+}
