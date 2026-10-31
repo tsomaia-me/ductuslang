@@ -520,6 +520,7 @@ impl Engine<'_> {
             code,
             message: message.into(),
             at: None,
+            by_taken_arm: false,
         });
     }
 
@@ -537,6 +538,7 @@ impl Engine<'_> {
                 code,
                 message: message.to_string(),
                 at: Some(at),
+                by_taken_arm: false,
             });
         }
     }

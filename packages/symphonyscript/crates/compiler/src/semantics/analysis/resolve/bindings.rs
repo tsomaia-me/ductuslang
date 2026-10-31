@@ -34,6 +34,7 @@ use crate::semantics::analysis::query::Query;
 use crate::semantics::analysis::scope_kind::ScopeKind;
 use crate::semantics::analysis::shape::Shape;
 use crate::semantics::analysis::shape_fault::ShapeFault;
+use crate::semantics::analysis::shape_need::ShapeNeed;
 use crate::semantics::analysis::sig::Sig;
 use crate::semantics::analysis::some::some;
 use crate::semantics::analysis::val::Val;
@@ -116,12 +117,32 @@ impl Engine<'_> {
                 (val, defaulted, None)
             }
         };
+        self.annotation_need(&val, annotation.as_ref(), loc, within)?;
         let Some(sigs) = self.element_sigs(&val, need) else {
             return Ok(false);
         };
         if unusable {
             self.memo.lets.insert((scope, local), BoundVal::Error);
             return Ok(true);
+        }
+        if let Val::Scalar(node) = &val
+            && self
+                .memo
+                .shapes
+                .get(node)
+                .is_some_and(|shape| shape.by_taken_arm)
+            && !sigs.iter().any(Sig::is_error)
+        {
+            let op = self.node(*node)?.op.clone();
+            match self.refused_settled_shape(*node, &op, need)? {
+                None => return Ok(false),
+                Some(true) => {
+                    self.memo.own_typed.extend(val.nodes());
+                    self.memo.lets.insert((scope, local), BoundVal::Error);
+                    return Ok(true);
+                }
+                Some(false) => {}
+            }
         }
         let spec = BindSpec {
             kind: BindingKind::Let,
@@ -1164,6 +1185,32 @@ impl Engine<'_> {
             }
             Val::Error => BoundVal::Error,
         })
+    }
+
+    fn annotation_need(
+        &mut self,
+        val: &Val,
+        annotation: Option<&Annotation>,
+        loc: Loc,
+        scope: ScopeId,
+    ) -> Result<(), Internal> {
+        if let Some(annotation) = annotation
+            && annotation.lengths.is_empty()
+            && annotation.capacity.is_none()
+            && let Val::Scalar(node) = val
+            && matches!(self.node(*node)?.op, Op::If(..) | Op::Match { .. })
+            && !self.definite_array(*node)?
+            && self.rests_on_recursion(*node)?
+        {
+            self.memo.shapes.entry(*node).or_insert_with(|| ShapeNeed {
+                lengths: Vec::new(),
+                code: Code::TypeMismatch,
+                message: ANNOTATED_SHAPE.to_string(),
+                at: Some((loc, scope)),
+                by_taken_arm: true,
+            });
+        }
+        Ok(())
     }
 
     pub(in crate::semantics::analysis) fn element_sigs(

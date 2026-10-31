@@ -125,43 +125,56 @@ impl Engine<'_> {
             sig.frame = true;
             sig.reactive = false;
         }
-        if !sig.is_error() && self.refused_settled_shape(node)? {
-            sig = Sig::ERROR;
+        if !sig.is_error() {
+            match self.refused_settled_shape(node, &op, need)? {
+                Some(true) => sig = Sig::ERROR,
+                Some(false) => {}
+                None => return Ok(false),
+            }
         }
         self.memo.sigs.insert(node, sig);
         Ok(true)
     }
 
-    fn refused_settled_shape(&mut self, node: NodeId) -> Result<bool, Internal> {
-        let Some(need) = self.memo.shapes.get(&node) else {
-            return Ok(false);
+    pub(in crate::semantics::analysis) fn refused_settled_shape(
+        &mut self,
+        node: NodeId,
+        op: &Op,
+        need: &mut Vec<Query>,
+    ) -> Result<Option<bool>, Internal> {
+        let Some(shape) = self.memo.shapes.get(&node).cloned() else {
+            return Ok(Some(false));
         };
-        let wanted = need.lengths.clone();
         if !self.rests_on_recursion(node)? {
-            return Ok(false);
+            return Ok(Some(false));
         }
         let Some(settled) = self.known_lengths(node)? else {
-            return Ok(false);
+            return Ok(Some(false));
         };
-        let refused = settled.len() != wanted.len()
+        let refused = settled.len() != shape.lengths.len()
             || settled
                 .iter()
-                .zip(&wanted)
+                .zip(&shape.lengths)
                 .any(|(length, wanted)| length.is_some_and(|length| length != *wanted));
         if !refused {
-            return Ok(false);
+            return Ok(Some(false));
         }
-        let need = self
-            .memo
-            .shapes
-            .get(&node)
-            .cloned()
-            .ok_or(Internal::missed("shape need"))?;
-        match need.at {
-            Some((loc, scope)) => self.error(need.code, loc, scope, need.message)?,
-            None => self.error_at_node(need.code, node, need.message)?,
+        if shape.by_taken_arm {
+            let Some(chosen) = self.chosen_arm(op, need)? else {
+                return Ok(None);
+            };
+            let taken = chosen.and_then(|position| op.choice_arms().get(position).copied());
+            if let Some(taken) = taken
+                && self.rests_on_recursion(taken)?
+            {
+                return Ok(Some(false));
+            }
         }
-        Ok(true)
+        match shape.at {
+            Some((loc, scope)) => self.error(shape.code, loc, scope, shape.message)?,
+            None => self.error_at_node(shape.code, node, shape.message)?,
+        }
+        Ok(Some(true))
     }
 
     pub(in crate::semantics::analysis) fn arm_forms(

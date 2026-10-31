@@ -150,7 +150,7 @@ impl Engine<'_> {
         let Some(need) = self.memo.shapes.get(&node) else {
             return Ok(value);
         };
-        if value.is_error() || lengths_of(&value) == need.lengths {
+        if need.by_taken_arm || value.is_error() || lengths_of(&value) == need.lengths {
             return Ok(value);
         }
         let need = need.clone();

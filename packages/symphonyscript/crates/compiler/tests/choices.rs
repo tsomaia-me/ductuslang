@@ -598,13 +598,11 @@ impl Position {
     fn closed_to(self, relation: Relation, forms: (Form, Form)) -> bool {
         let holds = |form: Form| forms.0 == form || forms.1 == form;
         match self {
-            Position::Annotation => {
-                matches!(relation, Relation::OneType | Relation::Lengths) && holds(Form::Recursive)
-            }
             Position::Index | Position::Absolute => {
                 relation == Relation::Widening && holds(Form::State)
             }
-            Position::TopLet
+            Position::Annotation
+            | Position::TopLet
             | Position::LocalLet
             | Position::Scalar
             | Position::Compared
@@ -1025,6 +1023,10 @@ struct Compilers {
 }
 
 fn arms_hold(rows: &Rows, chooser: Chooser) -> Outcome {
+    cases_hold(rows, chooser, |_| true)
+}
+
+fn cases_hold(rows: &Rows, chooser: Chooser, taken: impl Fn(&Case) -> bool) -> Outcome {
     let mut compilers = Compilers {
         fixture: Compiler::new(&symphonyscript_fixtures::vocabulary())
             .expect("the vocabulary compiles"),
@@ -1058,7 +1060,9 @@ fn arms_hold(rows: &Rows, chooser: Chooser) -> Outcome {
                                 position,
                                 reversed,
                             };
-                            check_case(rows, &case, &mut compilers, &mut outcome);
+                            if taken(&case) {
+                                check_case(rows, &case, &mut compilers, &mut outcome);
+                            }
                         }
                     }
                 }
@@ -1624,4 +1628,36 @@ fn a_definite_array_beside_a_placeholder_or_a_variable_array_draws_what_the_lite
     }
     assert!(failures.is_empty(), "{}", failures.concat());
     assert_eq!(programs, 8);
+}
+
+const CHOOSERS: [Chooser; 8] = [
+    Chooser::True,
+    Chooser::False,
+    Chooser::Flag,
+    Chooser::Enum,
+    Chooser::EnumInput,
+    Chooser::Integer,
+    Chooser::Parameter,
+    Chooser::ParameterMatch,
+];
+
+fn recursive_annotation_outcome(rows: &Rows) -> Outcome {
+    let mut outcome = Outcome::default();
+    for chooser in CHOOSERS {
+        let held = cases_hold(rows, chooser, |case| {
+            case.position == Position::Annotation
+                && matches!(case.relation, Relation::OneType | Relation::Lengths)
+                && (case.forms.0 == Form::Recursive || case.forms.1 == Form::Recursive)
+        });
+        outcome.programs += held.programs;
+        outcome.landing_apart += held.landing_apart;
+        outcome.failures.extend(held.failures);
+    }
+    outcome
+}
+
+#[test]
+fn a_scalar_annotation_refusing_a_choice_with_a_recursive_arm_draws_where_its_fixed_twin_draws_in_either_order_403()
+ {
+    assert_outcome(&covered(recursive_annotation_outcome), (108, 0));
 }

@@ -20,7 +20,9 @@ impl Engine<'_> {
             .memo
             .shapes
             .iter()
-            .filter(|(node, _)| self.memo.sigs.get(node).is_some_and(|sig| sig.reactive))
+            .filter(|(node, need)| {
+                !need.by_taken_arm && self.memo.sigs.get(node).is_some_and(|sig| sig.reactive)
+            })
             .map(|(node, need)| (*node, need.clone()))
             .collect();
         if needs.is_empty() {

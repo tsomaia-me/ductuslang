@@ -8,4 +8,5 @@ pub(crate) struct ShapeNeed {
     pub code: Code,
     pub message: String,
     pub at: Option<(Loc, ScopeId)>,
+    pub by_taken_arm: bool,
 }
