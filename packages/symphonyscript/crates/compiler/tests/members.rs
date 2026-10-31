@@ -21,7 +21,7 @@ enum Needs {
     Flexible,
 }
 
-const POSITIONS: [(&str, Needs); 7] = [
+const POSITIONS: [(&str, Needs); 8] = [
     (
         "Clip c:\n    Note/([60, 61, 62, 63, 64, 65, 66, 67, 68][{}])\n",
         Needs::Anything,
@@ -38,6 +38,10 @@ const POSITIONS: [(&str, Needs); 7] = [
     ("Clip c:\n    Note when {} > 1\n", Needs::Anything),
     ("let v = {}\nClip c:\n    Note/v\n", Needs::Anything),
     ("let v: u8 = {}\nClip c:\n    Note/v\n", Needs::Flexible),
+    (
+        "let v: f32 = {}\nClip c:\n    Note | velocity=v\n",
+        Needs::Anything,
+    ),
 ];
 
 fn member_rows(rows: &Rows) -> Vec<String> {
@@ -55,7 +59,7 @@ fn member_rows(rows: &Rows) -> Vec<String> {
                 } else {
                     Some(*capacity)
                 };
-                let flexible = known.is_some() && size.is_some();
+                let flexible = known.is_some();
                 let expected = match needs {
                     Needs::CompileTime if known.is_none() => vec![Code::ReactiveIterable],
                     Needs::Flexible if !flexible => vec![Code::TypeMismatch],
@@ -225,6 +229,10 @@ fn the_rows_of_the_brief_hold() {
         ),
         (
             "state xs([]): i32[..8]\nlet b: i32 = xs.size\nClip c:\n    Note/b\n",
+            vec![],
+        ),
+        (
+            "state xs([]): i32[..8]\nlet b: u8 = xs.capacity\nlet d: f32 = xs.capacity\nClip c:\n    Note/b | velocity=d\n",
             vec![],
         ),
         (

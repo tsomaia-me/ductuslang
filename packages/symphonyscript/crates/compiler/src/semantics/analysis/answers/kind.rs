@@ -205,7 +205,8 @@ impl Engine<'_> {
                 | Builtin::Exp
                 | Builtin::Log
                 | Builtin::Lerp => self.combine(args)?.map(float_for),
-                Builtin::Len | Builtin::Capacity => Some(Scalar::I32),
+                Builtin::Len => Some(Scalar::I32),
+                Builtin::Capacity => None,
                 Builtin::Bytes => Some(Scalar::U8),
             },
             Op::Join(lhs, rhs) => self.combine(&[*lhs, *rhs])?,
@@ -1025,11 +1026,14 @@ impl Engine<'_> {
     ) -> Result<Sig, Internal> {
         let reactive = sigs.iter().any(|sig| sig.reactive);
         match builtin {
-            Builtin::Len | Builtin::Capacity => {
+            Builtin::Capacity => {
+                return Ok(Sig::of(Kind::Int, Width::Flexible, false, None));
+            }
+            Builtin::Len => {
                 return Ok(Sig::of(
                     Kind::Int,
                     Width::Fixed(Scalar::I32),
-                    reactive && builtin == Builtin::Len,
+                    reactive,
                     None,
                 ));
             }
