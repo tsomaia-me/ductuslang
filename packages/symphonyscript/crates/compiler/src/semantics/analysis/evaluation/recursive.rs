@@ -605,11 +605,10 @@ impl Engine<'_> {
             if self.mode_of(frame)? == Mode::Untaken {
                 return Ok(Some(CVal::Error));
             }
-            let record = self.frame(0)?;
-            let (call, function) = (record.call, record.function);
-            if let Some(function) = function {
-                self.reactive_body(call, function)?;
-            }
+            let fault = self.fault_count;
+            self.fault_count += 1;
+            self.frame_mut(frame)?.faults.insert(fault);
+            self.memo.reactive_faults.insert(fault);
             return Ok(Some(CVal::Error));
         }
         self.typed_child(arm, (own, partner), ctx, need)
@@ -1310,6 +1309,12 @@ impl Engine<'_> {
             Ctx::Global => {
                 if self.in_probe(self.node(node)?.scope)? {
                     return Ok(());
+                }
+                let reactive = faults
+                    .iter()
+                    .any(|fault| self.memo.reactive_faults.contains(fault));
+                if reactive && let Op::Recursive { function, .. } = self.node(node)?.op {
+                    self.reactive_body(node, function)?;
                 }
                 for fault in faults {
                     self.memo.fault_sites.entry(fault).or_default().push(node);

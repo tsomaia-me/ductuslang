@@ -135,6 +135,7 @@ pub(crate) struct Memo {
     pub deep_families: super::fast_hash::FastSet<super::family_key::FamilyKey>,
     pub key_reach: FastMap<CallKey, (Vec<u32>, Vec<ScopeId>)>,
     pub fault_sites: FastMap<u32, Vec<NodeId>>,
+    pub reactive_faults: super::fast_hash::FastSet<u32>,
     pub template_sites: FastMap<ScopeId, Vec<NodeId>>,
     pub named_bodies: super::fast_hash::FastSet<crate::semantics::ir::FnId>,
     pub named_scopes: FastMap<crate::semantics::ir::FnId, ScopeId>,

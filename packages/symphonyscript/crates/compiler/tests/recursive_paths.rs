@@ -4454,3 +4454,93 @@ fn a_callee_frame_that_chooses_its_callers_lacking_or_faulty_slot_draws_its_faul
 fn found_of_twin(case: &CalleeCase) -> Found {
     found(&case.program(true))
 }
+
+fn chosen_cell_program(
+    chooser: &str,
+    (first, second): (u32, u32),
+    pitch: bool,
+    reversed: bool,
+) -> (String, Vec<(Code, String)>) {
+    let call = |depth: u32| format!("h(verse, o2, [verse, o2], 1, {depth})");
+    let stand = |name: &str, depth: u32| {
+        if pitch {
+            format!("Clip {name}:\n    Note/(i32({}))\n", call(depth))
+        } else {
+            format!("Clip {name} | gain={}:\n    Note\n", call(depth))
+        }
+    };
+    let mut items = [
+        "Session main\n".to_string(),
+        "state gv(0.5)\n".to_string(),
+        "Clip verse | gain=2:\n    Note\n".to_string(),
+        "Clip o2 | gain=gv:\n    Note\n".to_string(),
+        format!("fn h(c, d, xs, i, n): if n < 1 then {chooser}.gain else h(c, d, xs, i, n - 1)\n"),
+        stand("k1", first),
+        stand("k2", second),
+    ];
+    if reversed {
+        items[1..].reverse();
+    }
+    let mut expected = vec![
+        (Code::ReactiveRecursion, call(first)),
+        (Code::ReactiveRecursion, call(second)),
+    ];
+    expected.sort();
+    (items.concat(), expected)
+}
+
+fn chosen_cell_rows(rows: &Rows) -> (Vec<String>, usize) {
+    let compiler =
+        Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("the vocabulary compiles");
+    let mut failures = Vec::new();
+    let mut programs = 0;
+    let choosers = ["xs[i]", "[c, d][i]", "(if i > 0 then d else c)"];
+    let depths = [(3, 2), (2, 3), (1, 5), (3, 3)];
+    for (c, chooser) in choosers.iter().enumerate() {
+        for (d, pair) in depths.iter().enumerate() {
+            for (s, pitch) in [false, true].into_iter().enumerate() {
+                for (o, reversed) in [false, true].into_iter().enumerate() {
+                    if !rows.take(&[c, d, s, o]) {
+                        continue;
+                    }
+                    programs += 1;
+                    let (text, expected) = chosen_cell_program(chooser, *pair, pitch, reversed);
+                    let found = support::error_texts(&compiler, &text);
+                    if found != expected {
+                        failures.push(format!(
+                            "337: {text}\n  draws {found:?}\n  expected {expected:?}\n"
+                        ));
+                    }
+                }
+            }
+        }
+    }
+    (failures, programs)
+}
+
+#[test]
+fn every_outermost_call_whose_evaluation_reaches_a_chosen_cell_draws_one_reactive_recursion_at_its_own_span()
+ {
+    let (failures, programs) = covered(chosen_cell_rows);
+    assert!(
+        failures.is_empty(),
+        "{} of {programs} fail:\n{}",
+        failures.len(),
+        failures.concat()
+    );
+    assert_eq!(programs, 12);
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_every_outermost_call_whose_evaluation_reaches_a_chosen_cell_draws_one_reactive_recursion_at_its_own_span()
+ {
+    let (failures, programs) = chosen_cell_rows(&Rows::Every);
+    assert!(
+        failures.is_empty(),
+        "{} of {programs} fail:\n{}",
+        failures.len(),
+        failures.concat()
+    );
+    assert_eq!(programs, 48);
+}
