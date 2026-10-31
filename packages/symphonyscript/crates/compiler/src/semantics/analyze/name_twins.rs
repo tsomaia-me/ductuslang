@@ -53,6 +53,15 @@ pub(crate) fn name_twins(
     twins.kept(analysis, &twin, (diagnostics, &null), &declarations)
 }
 
+#[cfg(test)]
+pub(crate) fn whole_program_twins(
+    analysis: &Analysis<'_>,
+    placeholders: &[ExprId],
+    diagnostics: &[Diagnostic],
+) -> Result<Vec<Diagnostic>, Internal> {
+    whole_program(analysis, placeholders, diagnostics)
+}
+
 fn whole_program(
     analysis: &Analysis<'_>,
     placeholders: &[ExprId],

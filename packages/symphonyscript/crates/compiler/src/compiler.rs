@@ -12,10 +12,11 @@ use symphonyscript_core::{LimitOverrides, Limits, Span, Vocabulary};
 
 use crate::diagnostics::{Code, Diagnostic, Severity};
 use crate::failed::Failed;
+use crate::semantics::Internal;
 use crate::semantics::analysis::Engine;
 use crate::semantics::analyze;
 use crate::semantics::collection::Variants;
-use crate::semantics::ir::{Hir, build_file};
+use crate::semantics::ir::{ExprId, Hir, build_file};
 use crate::semantics::reporting::Report;
 use crate::source::Source;
 use crate::syntax::parse;
@@ -97,6 +98,25 @@ impl Compiler {
         sources: &[Source],
         inspect: impl FnOnce(&Engine<'_>) -> R,
     ) -> (Vec<Diagnostic>, Option<R>) {
+        self.analyzed_by(sources, inspect, analyze::name_twins)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn checked_by_whole_program(&self, sources: &[Source]) -> Vec<Diagnostic> {
+        self.analyzed_by(sources, |_| (), analyze::whole_program_twins)
+            .0
+    }
+
+    fn analyzed_by<R>(
+        &self,
+        sources: &[Source],
+        inspect: impl FnOnce(&Engine<'_>) -> R,
+        twins: impl FnOnce(
+            &analyze::Analysis<'_>,
+            &[ExprId],
+            &[Diagnostic],
+        ) -> Result<Vec<Diagnostic>, Internal>,
+    ) -> (Vec<Diagnostic>, Option<R>) {
         let mut hir = self.prelude.clone();
         let mut report = Report::default();
         let mut ordered: Vec<&Source> = sources.iter().collect();
@@ -159,7 +179,7 @@ impl Compiler {
             let found = report.diagnostics.split_off(front);
             #[cfg(test)]
             BEFORE_TWINS.with(|hook| hook.get()());
-            match analyze::name_twins(&analysis, &placeholders, &found) {
+            match twins(&analysis, &placeholders, &found) {
                 Ok(kept) => report.diagnostics.extend(kept),
                 Err(internal) => {
                     report.diagnostics.extend(found);
