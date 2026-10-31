@@ -1075,7 +1075,7 @@ impl Engine<'_> {
         scope: ScopeId,
         need: &mut Vec<Query>,
     ) -> Result<Option<Val>, Internal> {
-        match self.bound_element(base, index, scope, need)? {
+        match self.bound_element(base, index, (loc, scope), need)? {
             Shortcut::Pending => return Ok(None),
             Shortcut::Read(val) => return Ok(Some(val)),
             Shortcut::Declined => {}
@@ -1341,7 +1341,7 @@ impl Engine<'_> {
         &mut self,
         base: ExprId,
         index: ExprId,
-        scope: ScopeId,
+        (loc, scope): (Loc, ScopeId),
         need: &mut Vec<Query>,
     ) -> Result<Shortcut<Val>, Internal> {
         let slice = match self.bound_slice(base, index, scope, need)? {
@@ -1369,7 +1369,7 @@ impl Engine<'_> {
         };
         let mut reads = Vec::with_capacity(items.len());
         for item in items {
-            let read = self.read_one(item, slice.loc, scope)?;
+            let read = self.read_one(item, loc, scope)?;
             if let Some(group) = group {
                 self.memo.groups.insert(read, group);
             }

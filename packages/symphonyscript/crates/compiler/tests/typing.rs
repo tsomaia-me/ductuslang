@@ -1162,7 +1162,7 @@ fn a_compile_time_choice_type_checks_what_it_does_not_select() {
         ),
         (
             &["let a = [1, 2.5]", "Clip c:\n    Note/(a[0])"],
-            &[(Code::TypeMismatch, "a")],
+            &[(Code::TypeMismatch, "a[0]")],
         ),
         (
             &["Clip c:\n    Note/([1, 2.5][0] + 1)"],
@@ -1933,7 +1933,7 @@ fn a_plain_element_of_a_unit_literal_in_an_arm_is_read_in_the_unit_its_family_va
             &[
                 (Code::PlainInFamily, "2"),
                 (Code::PlainInFamily, "4"),
-                (Code::UnitMismatch, "q"),
+                (Code::UnitMismatch, "q[1]"),
             ],
         ),
         (
@@ -1966,7 +1966,7 @@ fn a_for_elements_uses_are_the_uses_of_one_flexible_value() {
                 "let a = [2 ** -1, 1]",
                 "Clip c:\n    for k in 0..2:\n        Note/(a[k]) | brightness=(a[k])",
             ],
-            &[(Code::InconsistentUses, "a", &["a"])],
+            &[(Code::InconsistentUses, "a[k]", &["a[k]"])],
         ),
         (
             &["Clip c:\n    for e in [2 ** -1, 1]:\n        Note/(e) | brightness=(e)"],
@@ -2072,7 +2072,7 @@ fn a_diagnostic_about_one_iterations_value_points_where_the_body_reads_it() {
                 "let a = [60, 2.5]",
                 "Clip c:\n    for k in 0..2:\n        Note/(a[k])",
             ],
-            &[(FLOAT_AT_PITCH, "a", &[])],
+            &[(FLOAT_AT_PITCH, "a[k]", &[])],
         ),
         (
             &["Clip c:\n    for e in [60, 64]:\n        Note/(e) | velocity=e"],
@@ -2972,7 +2972,7 @@ fn a_cell_read_through_a_literals_group_keeps_its_own_kind_in(orders: support::O
         ),
         (
             &[X, C, Q, "Clip k:\n    Note/(q[1])"],
-            &[(Code::FloatToInteger, "q")],
+            &[(Code::FloatToInteger, "q[1]")],
         ),
         (&[X, C, "let a = [x, 2.5]", "Osc o | freq=(a[0])"], &[]),
         (
@@ -3225,7 +3225,7 @@ fn inconsistent_uses_name_each_use_with_its_calls_in(orders: support::Orders) {
                 "fn f(x): x[0]",
                 "Clip c:\n    Note/(f(a)) | brightness=(f(a))",
             ],
-            &[(IU, "x", &["f(a)", "f(a)"])],
+            &[(IU, "x[0]", &["f(a)", "f(a)"])],
         ),
         (
             &[
@@ -3242,7 +3242,7 @@ fn inconsistent_uses_name_each_use_with_its_calls_in(orders: support::Orders) {
                 "Clip c:\n    Note/(f(a))",
                 "Clip d:\n    Note | brightness=(f(a))",
             ],
-            &[(IU, "x", &["f(a)", "f(a)"])],
+            &[(IU, "x[0]", &["f(a)", "f(a)"])],
         ),
         (
             &[
@@ -3251,7 +3251,7 @@ fn inconsistent_uses_name_each_use_with_its_calls_in(orders: support::Orders) {
                 "fn f(x): g(x)",
                 "Clip c:\n    Note/(f(a)) | brightness=(f(a))",
             ],
-            &[(IU, "y", &["g(x)", "f(a)", "g(x)", "f(a)"])],
+            &[(IU, "y[0]", &["g(x)", "f(a)", "g(x)", "f(a)"])],
         ),
         (
             &[
@@ -3260,7 +3260,7 @@ fn inconsistent_uses_name_each_use_with_its_calls_in(orders: support::Orders) {
                 "Clip c:\n    Note/(f(a))\n    Note/(f(a))",
                 "Clip d:\n    Note | brightness=(f(a))",
             ],
-            &[(IU, "x", &["f(a)", "f(a)"])],
+            &[(IU, "x[0]", &["f(a)", "f(a)"])],
         ),
         (
             &[
@@ -3268,14 +3268,14 @@ fn inconsistent_uses_name_each_use_with_its_calls_in(orders: support::Orders) {
                 "fn f(): a[0]",
                 "Clip c:\n    Note/(f()) | brightness=(f())",
             ],
-            &[(IU, "a", &["f()", "f()"])],
+            &[(IU, "a[0]", &["f()", "f()"])],
         ),
         (
             &[
                 "let a = [2 ** -1]",
                 "Clip c:\n    Note/(a[0]) | brightness=(a[0])",
             ],
-            &[(IU, "a", &["a"])],
+            &[(IU, "a[0]", &["a[0]"])],
         ),
         (
             &["let q = 2 ** -1", "Clip c:\n    Note/(q) | brightness=q"],
@@ -3295,7 +3295,7 @@ fn inconsistent_uses_name_each_use_with_its_calls_in(orders: support::Orders) {
                 "pattern P(x):\n    Note/(x[0]) | brightness=(x[0])",
                 "Clip c:\n    P | x=a",
             ],
-            &[(IU, "x", &["x", "P | x=a"])],
+            &[(IU, "x[0]", &["x[0]", "P | x=a"])],
         ),
         (
             &[

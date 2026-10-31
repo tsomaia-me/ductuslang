@@ -873,7 +873,7 @@ fn an_element_of_a_float_derived_state_read_as_an_integer_draws_float_to_integer
         ),
         (
             &[held, "Clip c:\n    Note/(t[0])\n"],
-            &[(Code::FloatToInteger, "t")],
+            &[(Code::FloatToInteger, "t[0]")],
         ),
         (
             &[

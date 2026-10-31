@@ -1354,7 +1354,7 @@ fn assert_covered_arms_hold(chooser: Chooser, programs: usize, landing_apart: us
 }
 #[test]
 fn the_arms_of_a_compile_time_true_choice_agree_wherever_it_stands() {
-    assert_covered_arms_hold(Chooser::True, 515, 1);
+    assert_covered_arms_hold(Chooser::True, 515, 0);
 }
 
 #[test]
@@ -1387,7 +1387,7 @@ fn exhaustive_the_arms_of_a_runtime_choice_agree_wherever_it_stands() {
 
 #[test]
 fn the_arms_of_a_compile_time_enum_match_agree_wherever_it_stands() {
-    assert_covered_arms_hold(Chooser::Enum, 515, 1);
+    assert_covered_arms_hold(Chooser::Enum, 515, 0);
 }
 
 #[test]

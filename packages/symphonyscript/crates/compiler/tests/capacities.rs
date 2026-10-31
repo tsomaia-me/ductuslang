@@ -3321,3 +3321,38 @@ fn an_array_holder_beside_a_single_value_draws_ragged_array_at_the_literal_as_it
     ];
     support::assert_rows_in_every_order(&symphonyscript_fixtures::vocabulary(), rows);
 }
+
+#[test]
+fn an_element_read_through_a_let_draws_its_fit_fault_at_the_read_as_its_literal_twin_383() {
+    let a = "let a = [1, 300000000000]\n";
+    let b = "let b = a\n";
+    let id = "fn id(x): x\n";
+    let rows: &[support::Row] = &[
+        (
+            &[a, b, id, "Clip c:\n    Note/(a[1])\n"],
+            &[(Code::DoesNotFit, "a[1]")],
+        ),
+        (
+            &[a, b, id, "Clip c:\n    Note/(a[^1])\n"],
+            &[(Code::DoesNotFit, "a[^1]")],
+        ),
+        (
+            &[a, b, id, "Clip c:\n    Note/(a[1..][0])\n"],
+            &[(Code::DoesNotFit, "a[1..][0]")],
+        ),
+        (
+            &[a, b, id, "Clip c:\n    Note/(b[1])\n"],
+            &[(Code::DoesNotFit, "b[1]")],
+        ),
+        (
+            &[a, b, id, "Clip c:\n    Note/(id(a)[1])\n"],
+            &[(Code::DoesNotFit, "id(a)[1]")],
+        ),
+        (
+            &[a, "Clip c:\n    Note/([1, 300000000000][1])\n"],
+            &[(Code::DoesNotFit, "[1, 300000000000][1]")],
+        ),
+        (&[a, b, id, "Clip c:\n    Note/(a[0])\n"], &[]),
+    ];
+    support::assert_rows_in_every_order(&symphonyscript_fixtures::vocabulary(), rows);
+}
