@@ -291,6 +291,15 @@ impl Engine<'_> {
         need: &mut Vec<Query>,
     ) -> Result<Option<Val>, Internal> {
         if matches!(lhs, Val::Error) || matches!(rhs, Val::Error) {
+            if self.template_of(scope)?.is_some() {
+                let mut pending = false;
+                for operand in lhs.nodes().into_iter().chain(rhs.nodes()) {
+                    pending |= self.sig(operand, need).is_none();
+                }
+                if pending {
+                    return Ok(None);
+                }
+            }
             return Ok(Some(Val::Error));
         }
         let arrays = (self.is_array_val(&lhs)?, self.is_array_val(&rhs)?);

@@ -5196,3 +5196,46 @@ fn the_unrolled_twin_of_a_type_faulty_recursive_body_draws_its_static_index_faul
     }
     assert_none_fail((failures, 2), 2);
 }
+
+#[test]
+fn every_faulty_slice_bound_in_a_recursive_body_draws_its_own_index_type_whatever_reads_the_slice_380()
+ {
+    let mut failures = Vec::new();
+    let mut programs = 0;
+    for first in ["[0]", ".size"] {
+        for second in ["[0]", ".size"] {
+            for recursive in [true, false] {
+                for reversed in [false, true] {
+                    let value = format!("xs[1.5..]{first} + xs[2.5..]{second}");
+                    let function = if recursive {
+                        format!("fn r(xs, n): if n > 0 then r(xs, n - 1) else {value}\n")
+                    } else {
+                        format!("fn r(xs, n): {value}\n")
+                    };
+                    let mut items = [
+                        "Session main\n".to_string(),
+                        function,
+                        "Clip c:\n    Note/(r([1, 2, 3], 2))\n".to_string(),
+                    ];
+                    if reversed {
+                        items.reverse();
+                    }
+                    let text = items.concat();
+                    let drawn = found(&text);
+                    let expected: Found = [
+                        ((Code::IndexType, "1.5".to_string()), 1),
+                        ((Code::IndexType, "2.5".to_string()), 1),
+                    ]
+                    .into();
+                    programs += 1;
+                    if drawn != expected {
+                        failures.push(format!(
+                            "380 {first} {second} {recursive} {reversed}\n{text}\n  found {drawn:?}\n"
+                        ));
+                    }
+                }
+            }
+        }
+    }
+    assert_none_fail((failures, programs), 16);
+}
