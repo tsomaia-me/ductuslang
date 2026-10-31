@@ -3229,3 +3229,44 @@ fn a_variable_array_where_a_single_value_stands_draws_at_its_holder_once_385() {
     ];
     support::assert_rows_in_every_order(&symphonyscript_fixtures::vocabulary(), rows);
 }
+
+#[test]
+fn a_cell_array_under_a_scalar_annotation_draws_the_shape_mismatch_at_the_let_as_its_fixed_twin_401()
+ {
+    let read = "Clip c:\n    Note/(x)\n";
+    let rows: &[support::Row] = &[
+        (
+            &["state s0 = [1]\n", "let x: i32 = s0\n", read],
+            &[(Code::TypeMismatch, "let x: i32 = s0\n")],
+        ),
+        (
+            &["state s0([1, 2]): i32[..4]\n", "let x: i32 = s0\n", read],
+            &[(Code::TypeMismatch, "let x: i32 = s0\n")],
+        ),
+        (
+            &[
+                "state s0 = [1]\n",
+                "state s1 = [1]\n",
+                "state flag(false)\n",
+                "let x: i32 = if flag then s0 else s1\n",
+                read,
+            ],
+            &[(Code::TypeMismatch, "let x: i32 = if flag then s0 else s1\n")],
+        ),
+        (
+            &["let x: i32 = [1]\n", read],
+            &[(Code::TypeMismatch, "let x: i32 = [1]\n")],
+        ),
+        (
+            &[
+                "state s0 = [1]\n",
+                "let x: i32[1] = s0\n",
+                "Clip c:\n    Note/(x[0])\n",
+            ],
+            &[],
+        ),
+        (&["state s0 = 1\n", "let x: i32 = s0\n", read], &[]),
+        (&["state s0 = [1]\n", "let x: i32 = s0[0]\n", read], &[]),
+    ];
+    support::assert_rows_in_every_order(&symphonyscript_fixtures::vocabulary(), rows);
+}

@@ -1188,6 +1188,23 @@ impl Engine<'_> {
             return Ok(BoundVal::Error);
         }
         if let Some(annotation) = annotation
+            && annotation.lengths.is_empty()
+            && annotation.capacity.is_none()
+            && let Val::Scalar(node) = val
+            && self.definite_array(*node)?
+        {
+            if !sigs.iter().any(Sig::is_error) {
+                self.error(
+                    Code::TypeMismatch,
+                    loc,
+                    scope,
+                    "the value's shape differs from its annotated type",
+                )?;
+            }
+            self.memo.own_typed.extend(val.nodes());
+            return Ok(BoundVal::Error);
+        }
+        if let Some(annotation) = annotation
             && annotation.lengths != val.shape().lengths()
             && !matches!(val, Val::Error)
             && !self.holds_array(val)
