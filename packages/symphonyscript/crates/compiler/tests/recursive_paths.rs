@@ -4997,7 +4997,7 @@ fn a_body_that_reads_its_own_result_at_a_constant_argument_through_an_index_or_a
     let mut failures = Vec::new();
     for (function, reader) in CONSTANT_SELF_READS {
         for reversed in [false, true] {
-            let mut items = vec![
+            let mut items = [
                 "Clip verse | gain=2:\n    Note\n",
                 "Clip other | gain=3:\n    Note\n",
                 function,
