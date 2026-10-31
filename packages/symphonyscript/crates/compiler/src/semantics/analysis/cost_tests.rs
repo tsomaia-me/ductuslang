@@ -1393,8 +1393,13 @@ fn untaken_measured(compiler: &Compiler, text: &str) -> Measured {
     Measured { errors, counts }
 }
 
-fn untaken_work_failures(divisor: usize) -> Vec<String> {
-    let compiler = Compiler::new(&vocabulary()).expect("the vocabulary compiles");
+fn untaken_work_failures(divisor: usize, depth: Option<u64>) -> Vec<String> {
+    let limits = LimitOverrides {
+        nesting_depth: depth,
+        nesting_depth_warning: depth,
+        ..LimitOverrides::default()
+    };
+    let compiler = Compiler::with_limits(&vocabulary(), limits).expect("the vocabulary compiles");
     let mut failures = Vec::new();
     let mut rows = 0;
     for work in UNTAKEN_WORK {
@@ -1407,8 +1412,14 @@ fn untaken_work_failures(divisor: usize) -> Vec<String> {
                 .each_ref()
                 .map(|text| untaken_measured(&compiler, text));
             for (run, size) in runs.iter().zip(sizes) {
-                if let Some(first) = run.errors.first() {
-                    failures.push(format!("{name} {size}: {first}"));
+                let deep = run
+                    .errors
+                    .iter()
+                    .filter(|error| error.starts_with("RecursionDepth"))
+                    .count();
+                let passes = work == UntakenWork::Descending;
+                if deep != run.errors.len() || (deep > 0) != passes {
+                    failures.push(format!("{name} {size}: {:?}", run.errors));
                 }
             }
             for (index, (counter, _)) in runs[0].counts.iter().enumerate() {
@@ -1438,7 +1449,7 @@ fn untaken_work_failures(divisor: usize) -> Vec<String> {
 
 #[test]
 fn an_untaken_starts_evaluation_costs_work_linear_in_the_distinct_calls_plus_the_frames_starts() {
-    let failures = untaken_work_failures(5);
+    let failures = untaken_work_failures(5, Some(128));
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
 
@@ -1446,6 +1457,6 @@ fn an_untaken_starts_evaluation_costs_work_linear_in_the_distinct_calls_plus_the
 #[ignore = "stress"]
 fn stress_an_untaken_starts_evaluation_costs_work_linear_in_the_distinct_calls_plus_the_frames_starts_in_either_order()
  {
-    let failures = untaken_work_failures(1);
+    let failures = untaken_work_failures(1, None);
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }

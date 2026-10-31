@@ -30,6 +30,8 @@ pub(crate) struct Frame {
     pub sink: Sink,
     pub id: Option<CallId>,
     pub opened: FastSet<CallId>,
-    pub deep: bool,
+    pub untaken_depth: u64,
+    pub untaken_start: usize,
+    pub height: u64,
     pub callees: Vec<CallId>,
 }

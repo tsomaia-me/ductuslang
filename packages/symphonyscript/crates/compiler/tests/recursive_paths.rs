@@ -3772,9 +3772,10 @@ impl UntakenCase {
         let taken: Vec<usize> = (0..=self.depth)
             .filter(|level| self.guard.reads_taken(*level, self.depth))
             .collect();
-        let fires = taken
-            .iter()
-            .any(|level| self.fault.at_every_level() || *level == self.depth);
+        let fires = self.fault == StartFault::Depth
+            || taken
+                .iter()
+                .any(|level| self.fault.at_every_level() || *level == self.depth);
         let total = taken
             .iter()
             .map(|level| {

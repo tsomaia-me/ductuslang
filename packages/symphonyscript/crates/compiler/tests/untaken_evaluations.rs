@@ -150,7 +150,13 @@ fn untaken_start_rows(rows: &Rows) -> (Vec<String>, usize) {
                         let twin = untaken_program(*site, "true", &start, reversed);
                         let found = codes(&compiler, &text);
                         let twin_found = codes(&compiler, &twin);
-                        if !found.is_empty() || !twin_found.contains(&fault.code()) {
+                        let limited: BTreeSet<Code> = match fault {
+                            Fault::Depth => BTreeSet::from([Code::RecursionDepth]),
+                            Fault::Outside | Fault::Fit | Fault::Overflow | Fault::Ragged => {
+                                BTreeSet::new()
+                            }
+                        };
+                        if found != limited || !twin_found.contains(&fault.code()) {
                             failures.push(format!(
                                 "{text}\n  draws {found:?}, its taken twin {twin_found:?}\n"
                             ));
@@ -276,6 +282,78 @@ fn each_distinct_call_counts_once_whichever_evaluation_reaches_it_and_the_limit_
 fn exhaustive_each_distinct_call_counts_once_whichever_evaluation_reaches_it_and_the_limit_draws_in_every_order()
  {
     assert_none_fail(counted_rows(&Rows::Every), 16);
+}
+
+fn shallow() -> Compiler {
+    Compiler::with_limits(
+        &vocabulary(),
+        LimitOverrides {
+            nesting_depth: Some(40),
+            nesting_depth_warning: Some(40),
+            ..LimitOverrides::default()
+        },
+    )
+    .expect("the vocabulary compiles")
+}
+
+fn chain_program(levels: usize, chain: usize, guard: &str, reversed: bool) -> String {
+    ordered(
+        vec![
+            INSTANCES.to_string(),
+            "fn pk(xs, p, m): if m < 1 then xs[p] else pk(xs, p, m - 1)\n".to_string(),
+            format!(
+                "fn h(xs, n): if n < 1 then 0 else 1 + (if {guard} then i32(pk(xs, 0, {chain} + n % 1).gain) else 0) + h(xs, n - 1)\n"
+            ),
+            format!("Clip k:\n    Note/([60][h([verse, other], {levels}) - {levels}])\n"),
+        ],
+        reversed,
+    )
+}
+
+fn chain_rows(rows: &Rows) -> (Vec<String>, usize) {
+    let compiler = shallow();
+    let mut failures = Vec::new();
+    let mut programs = 0;
+    let cases = [(5, 60, true, true), (38, 3, false, true)];
+    for (c, (levels, chain, passes, twin_passes)) in cases.into_iter().enumerate() {
+        for (g, guard) in ["false", "n > 100"].into_iter().enumerate() {
+            for (o, reversed) in [false, true].into_iter().enumerate() {
+                if !rows.take(&[c, g, o]) {
+                    continue;
+                }
+                programs += 1;
+                let text = chain_program(levels, chain, guard, reversed);
+                let found = codes(&compiler, &text);
+                let expected: BTreeSet<Code> = if passes {
+                    BTreeSet::from([Code::RecursionDepth])
+                } else {
+                    BTreeSet::new()
+                };
+                let twin = chain_program(levels, chain, "true", reversed);
+                let twin_found = codes(&compiler, &twin);
+                let twin_draws = twin_passes == twin_found.contains(&Code::RecursionDepth);
+                if found != expected || !twin_draws {
+                    failures.push(format!(
+                        "{text}\n  draws {found:?}, its taken twin {twin_found:?}\n"
+                    ));
+                }
+            }
+        }
+    }
+    (failures, programs)
+}
+
+#[test]
+fn an_untaken_evaluation_counts_its_depth_from_its_own_start_and_draws_recursion_depth_when_its_chain_passes()
+ {
+    assert_none_fail(covered(chain_rows), 5);
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_an_untaken_evaluation_counts_its_depth_from_its_own_start_and_draws_recursion_depth_when_its_chain_passes()
+ {
+    assert_none_fail(chain_rows(&Rows::Every), 8);
 }
 
 fn open_key_program(intermediaries: usize, guard: &str, order: usize) -> String {
@@ -519,6 +597,7 @@ struct Ledger {
     entry: u32,
     text: String,
     twin: Option<(String, Code)>,
+    drawn: BTreeSet<Code>,
 }
 
 fn ledger() -> Vec<Ledger> {
@@ -547,36 +626,43 @@ fn ledger() -> Vec<Ledger> {
             entry: 357,
             text: body("false"),
             twin: Some((body("true"), Code::RecursionDepth)),
+            drawn: BTreeSet::from([Code::RecursionDepth]),
         },
         Ledger {
             entry: 357,
             text: guarded("2"),
             twin: Some((guarded("1"), Code::IndexOutOfRange)),
+            drawn: BTreeSet::new(),
         },
         Ledger {
             entry: 361,
             text: ragged("false"),
             twin: Some((ragged("true"), Code::RaggedArray)),
+            drawn: BTreeSet::new(),
         },
         Ledger {
             entry: 362,
             text: top("false"),
             twin: Some((top("true"), Code::IndexOutOfRange)),
+            drawn: BTreeSet::new(),
         },
         Ledger {
             entry: 364,
             text: "fn g(xs, m): if m < 1 then xs[0] else g(xs, m - 1)\nfn h(xs, n): if n < 1 then 0 else i32(g(xs, n).gain) + h(xs, n - 1)\nClip k | gain=h([verse, other], 3):\n    Note\nClip k2 | gain=h([other, verse], 3):\n    Note\n".to_string(),
             twin: None,
+            drawn: BTreeSet::new(),
         },
         Ledger {
             entry: 366,
             text: open_key_program(1, "false", 0).replacen("Session main\n", "", 1).replacen(INSTANCES, "", 1),
             twin: None,
+            drawn: BTreeSet::new(),
         },
         Ledger {
             entry: 368,
             text: "fn h(xs, ys, i): if i >= xs.size then 0 else i32(xs[i].gain) + (if false then i32((ys[h(xs + [other], ys, 9) % 2]).gain) else 0) + h(xs, ys, i + 1)\nClip k:\n    Note/([60][h([verse, other], [verse, other], 0) - 5])\n".to_string(),
             twin: None,
+            drawn: BTreeSet::new(),
         },
     ]
 }
@@ -596,7 +682,8 @@ fn items(text: &str) -> Vec<String> {
 }
 
 #[test]
-fn the_ledger_programs_draw_nothing_in_either_order_and_their_taken_twins_draw_their_fault() {
+fn the_ledger_programs_draw_what_their_rules_give_in_either_order_and_their_taken_twins_draw_their_fault()
+ {
     let compiler = Compiler::new(&vocabulary()).expect("the vocabulary compiles");
     let mut failures = Vec::new();
     let mut programs = 0;
@@ -607,7 +694,7 @@ fn the_ledger_programs_draw_nothing_in_either_order_and_their_taken_twins_draw_t
             all.extend(items(&row.text));
             let text = ordered(all, reversed);
             let found = codes(&compiler, &text);
-            if !found.is_empty() {
+            if found != row.drawn {
                 failures.push(format!("{}: {text}\n  draws {found:?}\n", row.entry));
             }
             if let Some((twin, code)) = &row.twin {

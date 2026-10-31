@@ -6,6 +6,6 @@ pub(crate) struct CallDone {
     pub value: CVal,
     pub mode: Mode,
     pub opened: Vec<CallId>,
-    pub deep: bool,
+    pub height: u64,
     pub callees: Vec<CallId>,
 }

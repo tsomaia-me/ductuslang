@@ -76,7 +76,7 @@ enum Template {
 
 enum Reuse {
     Serve(CVal),
-    Unreferenced(Option<CallId>),
+    Unreferenced(CallId),
     Evaluate,
 }
 
@@ -191,11 +191,22 @@ impl Engine<'_> {
             && mode == Mode::Untaken
             && self.machine_mut()?.open_keys.contains(&id)
         {
-            self.taint(caller, Some(id))?;
+            self.taint(caller, id)?;
             return Ok(Some(CVal::Error));
         }
         match self.call_reuse(id, mode)? {
             Reuse::Serve(value) => {
+                if let Ctx::Frame(caller) = ctx {
+                    let height = self.memo.calls.get(&id).map_or(1, |done| done.height);
+                    let depth = self.untaken_depth(caller)?;
+                    if mode == Mode::Untaken && depth + height > self.limits.nesting_depth {
+                        if depth > 0 {
+                            self.pass_depth(caller, node, function)?;
+                        }
+                        return Ok(Some(CVal::Error));
+                    }
+                    self.raise_height(caller, height)?;
+                }
                 let request = self.sink;
                 self.link(&request, Reachable::Call(id));
                 self.reach_key(&key, node, ctx)?;
@@ -242,20 +253,18 @@ impl Engine<'_> {
                 }
             }
             (Mode::Taken, Mode::Untaken) => match self.through_open(done)? {
-                Some(open) => Reuse::Unreferenced(Some(open)),
+                Some(open) => Reuse::Unreferenced(open),
                 None => Reuse::Serve(done.value.clone()),
             },
             (Mode::Untaken, Mode::Taken) => Reuse::Evaluate,
             (Mode::Untaken, Mode::Untaken) => {
                 if let Some(open) = still_open {
-                    Reuse::Unreferenced(Some(open))
+                    Reuse::Unreferenced(open)
                 } else if !done.opened.is_empty() {
                     Reuse::Evaluate
-                } else if done.deep {
-                    Reuse::Unreferenced(None)
                 } else {
                     match self.through_open(done)? {
-                        Some(open) => Reuse::Unreferenced(Some(open)),
+                        Some(open) => Reuse::Unreferenced(open),
                         None => Reuse::Serve(done.value.clone()),
                     }
                 }
@@ -287,13 +296,89 @@ impl Engine<'_> {
         Ok(None)
     }
 
-    fn taint(&mut self, frame: usize, opened: Option<CallId>) -> Result<(), Internal> {
+    fn taint(&mut self, frame: usize, opened: CallId) -> Result<(), Internal> {
+        self.frame_mut(frame)?.opened.insert(opened);
+        Ok(())
+    }
+
+    fn untaken_depth(&self, frame: usize) -> Result<u64, Internal> {
+        let record = self.frame(frame)?;
+        Ok(match record.mode {
+            Mode::Taken => 0,
+            Mode::Untaken => record.untaken_depth,
+        })
+    }
+
+    fn raise_height(&mut self, frame: usize, callee: u64) -> Result<(), Internal> {
+        let cap = self.limits.nesting_depth.saturating_add(1);
         let record = self.frame_mut(frame)?;
-        match opened {
-            Some(key) => {
-                record.opened.insert(key);
+        match record.checks {
+            Checks::Unchecked | Checks::Done => {
+                record.height = record.height.max(callee.saturating_add(1)).min(cap);
             }
-            None => record.deep = true,
+            Checks::Checking { .. } => {}
+        }
+        Ok(())
+    }
+
+    fn pass_depth(&mut self, caller: usize, node: NodeId, last: FnId) -> Result<(), Internal> {
+        let start = self.frame(caller)?.untaken_start;
+        let mut names: Vec<String> = Vec::new();
+        let functions: Vec<FnId> = self
+            .machine_mut()?
+            .frames
+            .get(start..=caller)
+            .unwrap_or_default()
+            .iter()
+            .filter_map(|frame| frame.function)
+            .collect();
+        for function in functions.into_iter().chain([last]) {
+            let name = self.function_name(function)?;
+            if !names.contains(&name) {
+                names.push(name);
+            }
+        }
+        self.error_at_node(
+            Code::RecursionDepth,
+            node,
+            format!(
+                "the evaluation goes deeper than {} nested calls: {}",
+                grouped(self.limits.nesting_depth),
+                names.join(" → ")
+            ),
+        )?;
+        self.machine_mut()?.passed = Some(start);
+        Ok(())
+    }
+
+    fn drop_passed(&mut self, start: usize) -> Result<(), Internal> {
+        let cap = self.limits.nesting_depth.saturating_add(1);
+        let machine = self.machine_mut()?;
+        let dropped = machine.frames.split_off(start);
+        machine.work.retain(|(frame, ..)| *frame < start);
+        for frame in &dropped {
+            if let Some(id) = frame.id {
+                machine.open_keys.remove(&id);
+                machine.rerun.remove(&id);
+            }
+        }
+        let Some(id) = dropped.first().and_then(|frame| frame.id) else {
+            return Err(Internal::missed("untaken start"));
+        };
+        let kept = self
+            .memo
+            .calls
+            .get(&id)
+            .is_some_and(|old| old.mode == Mode::Taken);
+        if !kept {
+            let done = CallDone {
+                value: CVal::Error,
+                mode: Mode::Untaken,
+                opened: Vec::new(),
+                height: cap,
+                callees: Vec::new(),
+            };
+            self.memo.calls.insert(id, done);
         }
         Ok(())
     }
@@ -821,13 +906,16 @@ impl Engine<'_> {
                         sink: Sink::Into(Reachable::Call(call.id)),
                         id: Some(call.id),
                         opened: FastSet::default(),
-                        deep: false,
+                        untaken_depth: 0,
+                        untaken_start: 0,
+                        height: 1,
                         callees: Vec::new(),
                     }],
                     work,
                     open_keys: [call.id].into_iter().collect(),
                     rerun,
                     too_deep: false,
+                    passed: None,
                     deep_warned: false,
                 }
             }
@@ -844,6 +932,10 @@ impl Engine<'_> {
     ) -> Result<Option<CVal>, Internal> {
         loop {
             self.memo.evaluation_work += 1;
+            if let Some(start) = self.machine_mut()?.passed.take() {
+                self.drop_passed(start)?;
+                continue;
+            }
             if self.machine_mut()?.too_deep {
                 let machine = self
                     .active
@@ -882,7 +974,7 @@ impl Engine<'_> {
                         value: CVal::Error,
                         mode: frame.mode,
                         opened: Vec::new(),
-                        deep: false,
+                        height: 1,
                         callees: frame.callees,
                     };
                     self.memo.calls.insert(id, done);
@@ -920,6 +1012,9 @@ impl Engine<'_> {
                     evaluated?
                 }
             };
+            if self.machine_mut()?.passed.is_some() {
+                continue;
+            }
             match evaluated {
                 Some(value) => {
                     let machine = self.machine_mut()?;
@@ -934,6 +1029,7 @@ impl Engine<'_> {
                     if completes && self.begin_checks(frame, current, ty)? {
                         continue;
                     }
+                    let cap = self.limits.nesting_depth.saturating_add(1);
                     let machine = self.machine_mut()?;
                     let record = machine
                         .frames
@@ -959,7 +1055,10 @@ impl Engine<'_> {
                             parent.faults.extend(done.faults.iter().copied());
                             parent.templates.extend(done.templates.iter().copied());
                             parent.opened.extend(done.opened.iter().copied());
-                            parent.deep |= done.deep;
+                            if let Checks::Unchecked | Checks::Done = parent.checks {
+                                parent.height =
+                                    parent.height.max(done.height.saturating_add(1)).min(cap);
+                            }
                         }
                         machine.open_keys.remove(&id);
                         machine.rerun.remove(&id);
@@ -984,7 +1083,7 @@ impl Engine<'_> {
                             value: value.clone(),
                             mode: done.mode,
                             opened: done.opened.into_iter().collect(),
-                            deep: done.deep,
+                            height: done.height,
                             callees: done.callees,
                         };
                         let kept = self.memo.calls.get(&id).is_some_and(|old| {
@@ -1040,10 +1139,18 @@ impl Engine<'_> {
         let repeats = self.machine_mut()?.open_keys.contains(&call.id);
         let caller = self.machine_mut()?.frames.len().saturating_sub(1);
         let mode = self.mode_of(caller)?;
-        let too_deep = repeats || depth >= self.limits.nesting_depth;
+        let chained = self.untaken_depth(caller)?;
+        let too_deep = match mode {
+            Mode::Taken => repeats || depth >= self.limits.nesting_depth,
+            Mode::Untaken => repeats || chained >= self.limits.nesting_depth,
+        };
         match (too_deep, mode) {
+            (true, Mode::Untaken) if repeats => {
+                self.taint(caller, call.id)?;
+                return Ok(Some(CVal::Error));
+            }
             (true, Mode::Untaken) => {
-                self.taint(caller, repeats.then_some(call.id))?;
+                self.pass_depth(caller, node, call.function)?;
                 return Ok(Some(CVal::Error));
             }
             (true, Mode::Taken) => {
@@ -1105,8 +1212,14 @@ impl Engine<'_> {
             Mode::Taken => Sink::Into(Reachable::Call(call.id)),
             Mode::Untaken => Sink::Discard,
         };
+        let caller_start = self.frame(caller)?.untaken_start;
         let machine = self.machine_mut()?;
         let index = machine.frames.len();
+        let (untaken_depth, untaken_start) = match mode {
+            Mode::Taken => (0, 0),
+            Mode::Untaken if chained == 0 => (1, index),
+            Mode::Untaken => (chained + 1, caller_start),
+        };
         machine.open_keys.insert(call.id);
         if rerun {
             machine.rerun.insert(call.id);
@@ -1131,7 +1244,9 @@ impl Engine<'_> {
             mode,
             sink,
             opened: FastSet::default(),
-            deep: false,
+            untaken_depth,
+            untaken_start,
+            height: 1,
             callees: Vec::new(),
         });
         machine.work.push((index, root, ty));
@@ -1158,7 +1273,7 @@ impl Engine<'_> {
             value: CVal::Error,
             mode: Mode::Taken,
             opened: Vec::new(),
-            deep: false,
+            height: 1,
             callees: Vec::new(),
         };
         self.memo.calls.insert(call.id, done);

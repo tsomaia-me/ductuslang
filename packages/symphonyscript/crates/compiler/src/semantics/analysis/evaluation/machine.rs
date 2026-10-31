@@ -10,5 +10,6 @@ pub(crate) struct Machine {
     pub open_keys: FastSet<CallId>,
     pub rerun: FastSet<CallId>,
     pub too_deep: bool,
+    pub passed: Option<usize>,
     pub deep_warned: bool,
 }

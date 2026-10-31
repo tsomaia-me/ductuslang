@@ -53,14 +53,13 @@ const NAME_CODES: [Code; 11] = [
     Code::MisplacedTo,
 ];
 
-const VALUE_CODES: [Code; 7] = [
+const VALUE_CODES: [Code; 6] = [
     Code::IndexOutOfRange,
     Code::DoesNotFit,
     Code::IntegerOverflow,
     Code::ConstantOverflow,
     Code::LengthLimit,
     Code::RaggedArray,
-    Code::RecursionDepth,
 ];
 
 pub(crate) struct Engine<'a> {

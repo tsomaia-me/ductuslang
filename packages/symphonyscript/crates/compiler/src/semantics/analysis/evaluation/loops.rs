@@ -100,7 +100,7 @@ impl Engine<'_> {
         if !self.counted_iteration(node)? {
             return Ok(Some(CVal::Error));
         }
-        let (args, function, feeds, depth, mode, sink) = match ctx {
+        let (args, function, feeds, depth, mode, sink, untaken) = match ctx {
             Ctx::Frame(frame) => {
                 let parent = self.frame(frame)?;
                 (
@@ -110,6 +110,7 @@ impl Engine<'_> {
                     parent.depth,
                     self.mode_of(frame)?,
                     self.frame_sink(frame)?,
+                    (parent.untaken_depth, parent.untaken_start),
                 )
             }
             Ctx::Global => (
@@ -119,6 +120,7 @@ impl Engine<'_> {
                 0,
                 Mode::Taken,
                 Sink::Into(Reachable::Loop(node, own)),
+                (0, 0),
             ),
         };
         let first = items.item(0);
@@ -149,7 +151,9 @@ impl Engine<'_> {
             sink,
             id: None,
             opened: FastSet::default(),
-            deep: false,
+            untaken_depth: untaken.0,
+            untaken_start: untaken.1,
+            height: 1,
             callees: Vec::new(),
         };
         match ctx {
@@ -168,6 +172,7 @@ impl Engine<'_> {
                     open_keys: FastSet::default(),
                     rerun: FastSet::default(),
                     too_deep: false,
+                    passed: None,
                     deep_warned: false,
                 });
                 self.drive(key, node, need)
@@ -218,7 +223,7 @@ impl Engine<'_> {
             parent.faults.extend(done.faults.iter().copied());
             parent.templates.extend(done.templates.iter().copied());
             parent.opened.extend(done.opened.iter().copied());
-            parent.deep |= done.deep;
+            parent.height = parent.height.max(done.height);
             parent.loops.insert((done.call, done.ty), value);
             return Ok(None);
         }
