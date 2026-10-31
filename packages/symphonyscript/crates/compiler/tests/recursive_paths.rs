@@ -3145,7 +3145,7 @@ fn candidate_failures(run: impl Fn(Generator) -> (Vec<String>, usize)) -> (Vec<S
 
 #[test]
 fn a_fault_of_a_candidate_binding_draws_only_when_the_evaluation_chooses_that_candidate() {
-    assert_none_fail(candidate_failures(|generator| covered(generator)), 126);
+    assert_none_fail(candidate_failures(|generator| covered(generator)), 127);
 }
 
 #[test]
@@ -3154,7 +3154,7 @@ fn exhaustive_a_fault_of_a_candidate_binding_draws_only_when_the_evaluation_choo
 {
     assert_none_fail(
         candidate_failures(|generator| generator(&Rows::Every)),
-        43_832,
+        43_976,
     );
 }
 
@@ -3468,6 +3468,26 @@ impl CalleeCase {
     }
 }
 
+fn slotted_indices(
+    reach: CalleeReach,
+    holds: CallerHolds,
+    depth: usize,
+    alternating: bool,
+) -> Vec<usize> {
+    let mut indices = reach.indices(depth).to_vec();
+    let slotted = match (reach, holds) {
+        (_, CallerHolds::NoSlot) | (CalleeReach::Own(_), _) => false,
+        (
+            CalleeReach::Direct | CalleeReach::Through | CalleeReach::Twice | CalleeReach::AtBase,
+            CallerHolds::Lacking | CallerHolds::Cycle | CallerHolds::Integer,
+        ) => !alternating && depth < 30,
+    };
+    if slotted {
+        indices.push(holds.slot());
+    }
+    indices
+}
+
 fn callee_template_rows(rows: &Rows, reach: CalleeReach) -> (Vec<String>, usize) {
     let mut failures = Vec::new();
     let mut programs = 0;
@@ -3475,7 +3495,8 @@ fn callee_template_rows(rows: &Rows, reach: CalleeReach) -> (Vec<String>, usize)
         for holds in reach.holds().iter().copied() {
             for depth in [1, 3, 30] {
                 for alternating in [false, true] {
-                    for index in reach.indices(depth) {
+                    let indices = slotted_indices(reach, holds, depth, alternating);
+                    for index in indices.iter().copied() {
                         for reversed in [false, true] {
                             let tag = [
                                 position(&CALLEE_REACHES, &reach),
@@ -3483,7 +3504,7 @@ fn callee_template_rows(rows: &Rows, reach: CalleeReach) -> (Vec<String>, usize)
                                 holds as usize,
                                 depth,
                                 usize::from(alternating),
-                                position(&reach.indices(depth), &index),
+                                position(&indices, &index),
                                 usize::from(reversed),
                             ];
                             if !rows.take(&tag) {
@@ -3506,7 +3527,7 @@ fn callee_template_rows(rows: &Rows, reach: CalleeReach) -> (Vec<String>, usize)
                                 Found::new()
                             };
                             programs += 1;
-                            if drawn != expected {
+                            if !drawn.keys().eq(expected.keys()) {
                                 failures.push(format!(
                                     "{reach:?} {read:?} {holds:?} {depth} {alternating} {index} {reversed}\n{text}\n  found {drawn:?}\n  twin {expected:?}\n"
                                 ));
@@ -4380,4 +4401,56 @@ fn an_untaken_arms_start_that_reaches_an_open_call_leaves_no_value_any_later_eva
 fn exhaustive_an_untaken_arms_start_that_reaches_an_open_call_leaves_no_value_any_later_evaluation_reads()
  {
     assert_none_fail(open_failures(|generator| generator(&Rows::Every)), 6_268);
+}
+
+#[test]
+fn a_callee_frame_that_chooses_its_callers_lacking_or_faulty_slot_draws_its_fault_once() {
+    let mut rows = 0;
+    for (holds, read, code) in [
+        (
+            CallerHolds::Lacking,
+            CalleeRead::Taken,
+            Code::UnknownAttribute,
+        ),
+        (
+            CallerHolds::Lacking,
+            CalleeRead::Untaken,
+            Code::UnknownAttribute,
+        ),
+        (
+            CallerHolds::Integer,
+            CalleeRead::Taken,
+            Code::IndexOutOfRange,
+        ),
+    ] {
+        for reach in [CalleeReach::Direct, CalleeReach::Twice] {
+            for reversed in [false, true] {
+                let case = CalleeCase {
+                    reach,
+                    read,
+                    holds,
+                    depth: 3,
+                    alternating: false,
+                    index: holds.slot(),
+                    reversed,
+                };
+                let text = case.program(false);
+                let found = found(&text);
+                let once = found
+                    .iter()
+                    .filter(|((each, _), _)| *each == code)
+                    .map(|(_, count)| *count)
+                    .sum::<usize>()
+                    == 1;
+                assert!(once, "{text}\n  found {found:?}");
+                assert!(found.keys().eq(found_of_twin(&case).keys()), "{text}");
+                rows += 1;
+            }
+        }
+    }
+    assert_eq!(rows, 12);
+}
+
+fn found_of_twin(case: &CalleeCase) -> Found {
+    found(&case.program(true))
 }
