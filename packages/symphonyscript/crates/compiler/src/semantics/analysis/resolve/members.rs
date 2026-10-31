@@ -17,7 +17,7 @@ pub(super) enum Member {
     Read(Val),
 }
 
-pub(super) const QUALIFIED_NAME: &str = "a qualified name of a package (SPEC §15.3)";
+pub(super) const QUALIFIED_NAME: &str = "a qualified name (SPEC §15.3)";
 
 pub(super) const ARRAY_MEMBERS: [&str; 4] = ["size", "capacity", "bytes", "map"];
 

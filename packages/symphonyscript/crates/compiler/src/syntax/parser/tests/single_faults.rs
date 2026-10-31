@@ -55,6 +55,12 @@ const LEXER_AND_PARSER_CODES: &[Code] = &[
     Code::WireSyntax,
     Code::MisplacedWire,
     Code::WhenSyntax,
+    Code::RecordSyntax,
+    Code::MapSyntax,
+    Code::JsonSyntax,
+    Code::LambdaSyntax,
+    Code::GenericSyntax,
+    Code::PackageSyntax,
 ];
 
 const SEEDS: u64 = 24;
