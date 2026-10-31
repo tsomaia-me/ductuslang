@@ -13,6 +13,7 @@ mod positions;
 mod role;
 mod shapes;
 mod synth;
+mod taken;
 mod typing;
 mod units;
 mod values;

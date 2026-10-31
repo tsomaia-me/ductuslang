@@ -89,7 +89,7 @@ const POSITIONS: &[Position] = &[
         compile_time: Effect::Gives("Mode"),
         foreign: Some((
             Code::TypeMismatch,
-            "match f:\n    true: {x}\n    false: Mode::{m}\n",
+            "match f:\n    true: {x}\n    false: Mode::{m}",
         )),
     },
     Position {

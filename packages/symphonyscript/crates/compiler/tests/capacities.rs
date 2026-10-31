@@ -1063,7 +1063,7 @@ fn the_arms_of_a_choice_are_type_checked_against_one_another_whatever_chooses_in
                 "let m = match k:\n    1: a\n    else: 5\n",
                 "Clip c:\n    Note/(m[0])\n",
             ],
-            &[(Code::TypeMismatch, "match k:\n    1: a\n    else: 5\n")],
+            &[(Code::TypeMismatch, "match k:\n    1: a\n    else: 5")],
         ),
         (
             &[
@@ -1071,10 +1071,7 @@ fn the_arms_of_a_choice_are_type_checked_against_one_another_whatever_chooses_in
                 "let m = match true:\n    true: 5\n    false: a\n",
                 "Clip c:\n    Note/(m)\n",
             ],
-            &[(
-                Code::TypeMismatch,
-                "match true:\n    true: 5\n    false: a\n",
-            )],
+            &[(Code::TypeMismatch, "match true:\n    true: 5\n    false: a")],
         ),
         (
             &[
@@ -1134,7 +1131,7 @@ fn the_arms_of_a_choice_are_type_checked_against_one_another_whatever_chooses_in
             ],
             &[(
                 Code::TypeMismatch,
-                "match i:\n        7: held\n        else: note\n",
+                "match i:\n        7: held\n        else: note",
             )],
         ),
         (
@@ -1146,7 +1143,7 @@ fn the_arms_of_a_choice_are_type_checked_against_one_another_whatever_chooses_in
             ],
             &[(
                 Code::TypeMismatch,
-                "match i:\n        7: [1, 2]\n        else: held[i] + 1\n",
+                "match i:\n        7: [1, 2]\n        else: held[i] + 1",
             )],
         ),
         (
@@ -1247,7 +1244,7 @@ fn the_arms_of_a_choice_are_type_checked_against_one_another_whatever_chooses_in
             ],
             &[(
                 Code::TypeMismatch,
-                "match i:\n        7: [[1]]\n        else: [1, 2]\n",
+                "match i:\n        7: [[1]]\n        else: [1, 2]",
             )],
         ),
         (
@@ -3053,4 +3050,50 @@ fn an_array_bracket_whose_elements_all_stand_keeps_its_length_and_its_faults() {
             "377: {text}"
         );
     }
+}
+
+#[test]
+fn a_match_choices_span_ends_at_its_last_token_as_an_ifs_does_304() {
+    let flag = "state flag(false)\n";
+    let read = "Clip c:\n    Note/(m[0][0])\n";
+    let rows: &[support::Row] = &[
+        (
+            &[
+                flag,
+                "let m = match flag:\n    true: [1]\n    else: [[1]]\n",
+                read,
+            ],
+            &[(
+                Code::TypeMismatch,
+                "match flag:\n    true: [1]\n    else: [[1]]",
+            )],
+        ),
+        (
+            &[
+                flag,
+                "let m = match flag:\n    true: [1]\n    false: [[1]]\n",
+                read,
+            ],
+            &[(
+                Code::TypeMismatch,
+                "match flag:\n    true: [1]\n    false: [[1]]",
+            )],
+        ),
+        (
+            &[
+                flag,
+                "fn f(x):\n    match flag:\n        true: [x]\n        else: [[x]]\n",
+                "Clip c:\n    Note/(f(1)[0][0])\n",
+            ],
+            &[(
+                Code::TypeMismatch,
+                "match flag:\n        true: [x]\n        else: [[x]]",
+            )],
+        ),
+        (
+            &[flag, "let m = if flag then [1] else [[1]]\n", read],
+            &[(Code::TypeMismatch, "if flag then [1] else [[1]]")],
+        ),
+    ];
+    support::assert_rows_in_every_order(&symphonyscript_fixtures::vocabulary(), rows);
 }

@@ -4,6 +4,7 @@ use symphonyscript_core::{AttrUnit, BinaryOp, Scalar, Ty, UnaryOp};
 
 use super::position::Position;
 use super::role::Role;
+use super::taken::Taken;
 use crate::semantics::Internal;
 use crate::semantics::analysis::attr_value_source::AttrValueSource;
 use crate::semantics::analysis::bound_val::BoundVal;
@@ -381,9 +382,11 @@ impl Engine<'_> {
                 let quiet = quiet || gapped;
                 let passed_over = passed_over
                     || unread
-                    || chosen.is_some_and(|chosen| {
-                        chosen != Some(position) && arm_position(&kind, position)
-                    });
+                    || match chosen {
+                        Taken::Known(chosen) => chosen != position && arm_position(&kind, position),
+                        Taken::Faulty => arm_position(&kind, position),
+                        Taken::Runtime => false,
+                    };
                 match val {
                     Val::Error => stack.push((
                         *child,
@@ -594,11 +597,7 @@ impl Engine<'_> {
         }
     }
 
-    fn chosen_child(
-        &mut self,
-        kind: &ExprKind,
-        scope: ScopeId,
-    ) -> Result<Option<Option<usize>>, Internal> {
+    fn chosen_child(&mut self, kind: &ExprKind, scope: ScopeId) -> Result<Taken<usize>, Internal> {
         let (selector, condition) = match kind {
             ExprKind::If(selector, ..) => (*selector, true),
             ExprKind::Match { scrutinee, .. } => (*scrutinee, false),
@@ -620,29 +619,29 @@ impl Engine<'_> {
             | ExprKind::Call(..)
             | ExprKind::Unary(..)
             | ExprKind::Binary(..)
-            | ExprKind::For(_) => return Ok(None),
+            | ExprKind::For(_) => return Ok(Taken::Runtime),
         };
         let Some(Val::Scalar(node)) = self.memo.exprs.get(&(selector, scope)).cloned() else {
-            return Ok(Some(None));
+            return Ok(Taken::Faulty);
         };
         let sig = self.demand_sig(node)?;
         if sig.is_error() {
-            return Ok(Some(None));
+            return Ok(Taken::Faulty);
         }
         if sig.reactive || sig.frame {
-            return Ok(None);
+            return Ok(Taken::Runtime);
         }
         if !condition {
-            return Ok(Some(Some(0)));
+            return Ok(Taken::Known(0));
         }
         if !matches!(sig.kind, Kind::Bool | Kind::Any) {
-            return Ok(Some(None));
+            return Ok(Taken::Faulty);
         }
-        Ok(Some(match self.demand_cval(node, EvalTy::Bool)? {
-            CVal::Bool(true) => Some(1),
-            CVal::Bool(false) => Some(2),
-            _ => None,
-        }))
+        Ok(match self.demand_cval(node, EvalTy::Bool)? {
+            CVal::Bool(true) => Taken::Known(1),
+            CVal::Bool(false) => Taken::Known(2),
+            _ => Taken::Faulty,
+        })
     }
 
     fn as_converted(&self, val: Val) -> Val {

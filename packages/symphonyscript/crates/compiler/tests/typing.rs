@@ -978,7 +978,7 @@ fn a_match_waits_for_its_scrutinees_enum() {
         &format!("Session s\nlet a = Sine\nlet l = match a:\n    Sine: 1.0\n    Saw: 0.5\n{used}"),
         &[(
             Code::MatchIncomplete,
-            "match a:\n    Sine: 1.0\n    Saw: 0.5\n",
+            "match a:\n    Sine: 1.0\n    Saw: 0.5",
             0,
         )],
     );

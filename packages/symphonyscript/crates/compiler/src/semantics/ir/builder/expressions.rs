@@ -86,8 +86,16 @@ impl HirBuilder<'_> {
         let range = block.syntax().range();
         let last_arm = block
             .else_arm()
-            .map(|arm| arm.syntax().range().end)
-            .or_else(|| block.arms().last().map(|arm| arm.syntax().range().end));
+            .map(|arm| {
+                arm.value()
+                    .map_or(arm.syntax().range().end, |value| value.syntax().range().end)
+            })
+            .or_else(|| {
+                block.arms().last().map(|arm| {
+                    arm.value()
+                        .map_or(arm.syntax().range().end, |value| value.syntax().range().end)
+                })
+            });
         let loc = self.loc(range.start..last_arm.unwrap_or(range.end));
         let mut unbuilt = false;
         for arm in block.arms() {

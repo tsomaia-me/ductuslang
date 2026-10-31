@@ -3778,3 +3778,38 @@ fn the_evaluation_of_expanded_code_reports_what_a_kind_probe_meets() {
         );
     }
 }
+
+#[test]
+fn the_name_twins_draw_an_internal_error_for_a_placeholder_that_is_no_name_304() {
+    let vocabulary = vocabulary();
+    let source = Source {
+        path: "main.sym".into(),
+        text: "Clip c:\n    Note/(q + 1)\n".into(),
+    };
+    let mut hir = Hir::default();
+    hir.seal_prelude();
+    let parsed = parse(&source, &vocabulary);
+    build_file(&mut hir, &source.path, &parsed, &vocabulary).expect("the program builds");
+    let variants = Variants::of(&vocabulary).expect("the vocabulary's variants index");
+    let analysis = analyze::Analysis {
+        hir: &hir,
+        vocabulary: &vocabulary,
+        variants: &variants,
+        limits: Limits::default(),
+        texts: vec![source.text.as_str()],
+    };
+    let mut names = Vec::new();
+    let mut others = Vec::new();
+    for index in 0..hir.exprs.len() {
+        let id = ExprId(u32::try_from(index).expect("the ids fit"));
+        match hir.expr(id).expect("the expression exists").kind {
+            crate::semantics::ir::ExprKind::Name(_) => names.push(id),
+            _ => others.push(id),
+        }
+    }
+    assert_eq!(
+        analyze::name_twins(&analysis, &others[..1], &[]).err(),
+        Some(Internal::missed("name placeholder"))
+    );
+    assert!(analyze::name_twins(&analysis, &names, &[]).is_ok());
+}

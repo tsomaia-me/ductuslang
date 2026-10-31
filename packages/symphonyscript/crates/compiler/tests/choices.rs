@@ -866,7 +866,9 @@ fn assemble(
     }
     let joined = items.concat();
     let start = joined.find(EDGE).unwrap_or(0);
-    let end = joined.rfind(EDGE).unwrap_or(0) - EDGE.len_utf8();
+    let end = joined.rfind(EDGE).unwrap_or(0)
+        - EDGE.len_utf8()
+        - (value.len() - value.trim_end_matches('\n').len());
     Built {
         text: joined.replace(EDGE, ""),
         start,

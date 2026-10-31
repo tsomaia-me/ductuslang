@@ -152,8 +152,13 @@ impl Compiler {
                     .collect(),
             };
             let found = report.diagnostics.split_off(front);
-            let kept = analyze::name_twins(&analysis, &placeholders, found);
-            report.diagnostics.extend(kept);
+            match analyze::name_twins(&analysis, &placeholders, &found) {
+                Ok(kept) => report.diagnostics.extend(kept),
+                Err(internal) => {
+                    report.diagnostics.extend(found);
+                    analyze::internal_error(&hir, &mut report, internal);
+                }
+            }
         }
         (report.finish(&hir.files), inspected)
     }

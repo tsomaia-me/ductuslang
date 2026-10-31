@@ -1,3 +1,4 @@
+use super::taken::Taken;
 use crate::semantics::builtin::Builtin;
 use symphonyscript_core::{BinaryOp, Scalar, UnaryOp};
 
@@ -549,7 +550,7 @@ impl Engine<'_> {
         selector: NodeId,
         ty: EvalTy,
         selection: Selection,
-    ) -> Result<Taken, Internal> {
+    ) -> Result<Taken<CVal>, Internal> {
         let sig = self.known_sig(selector)?;
         if sig.is_error() {
             return Ok(Taken::Faulty);
@@ -899,12 +900,6 @@ fn compared(own: Option<Scalar>, pair: Option<Scalar>) -> Option<Scalar> {
         (Some(own), Some(pair)) if numeric(own) && numeric(pair) => Some(own),
         _ => pair,
     }
-}
-
-enum Taken {
-    Known(CVal),
-    Faulty,
-    Runtime,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
