@@ -1057,3 +1057,26 @@ fn a_derived_cell_or_an_unclocked_cycle_that_reads_no_cell_outside_itself_draws_
         }
     }
 }
+
+#[test]
+fn a_history_read_or_stepped_of_an_unmarked_parameter_draws_history_target_with_a_help_naming_cell_c1_8()
+ {
+    let compiler = symphonyscript::Compiler::new(&symphonyscript_fixtures::vocabulary())
+        .expect("the vocabulary compiles");
+    for body in ["x.past(1)", "x.past(1, 0)", "(if x.stepped then 1 else 2)"] {
+        for text in [
+            format!("state n(1)\nfn f(x): {body}\nClip c:\n    Note/(f(n))\n"),
+            format!("state n(1)\npattern P(x):\n    Note/({body})\nClip c:\n    P | x=n\n"),
+        ] {
+            let found = support::errors(compiler.check(&[support::source(&text)]));
+            let named = found.iter().all(|diagnostic| {
+                diagnostic.code == Code::HistoryTarget
+                    && diagnostic
+                        .help
+                        .as_deref()
+                        .is_some_and(|help| help.contains("`cell`"))
+            });
+            assert!(found.len() == 1 && named, "{text}{found:?}");
+        }
+    }
+}

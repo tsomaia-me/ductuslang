@@ -134,6 +134,22 @@ impl Engine<'_> {
             Found::Query(Query::State(id)) => HistoryCell::State(id),
             Found::Query(Query::Let(_, LetRef::Top(id))) => HistoryCell::Let(id),
             Found::Nothing | Found::Placeholder => return Ok(None),
+            Found::Query(Query::Param(..)) => {
+                self.error_helped(
+                    Code::HistoryTarget,
+                    target.loc,
+                    scope,
+                    format!(
+                        "`{}` is a parameter without a marker, so it has no {what}; its argument is bound as a value",
+                        target.text
+                    ),
+                    format!(
+                        "mark the parameter `cell` in its parameter list, as in `(cell {})`",
+                        target.text
+                    ),
+                )?;
+                return Ok(None);
+            }
             Found::Val(_) | Found::Query(_) | Found::Item(_) | Found::Decl(_) => {
                 self.error(
                     Code::HistoryTarget,

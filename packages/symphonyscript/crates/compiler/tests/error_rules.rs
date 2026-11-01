@@ -474,6 +474,16 @@ const RULES: &[Rule] = &[
     rule("6.3", "parameter-order", "fn f(a = 1, b): a + b\n"),
     rule(
         "6.3",
+        "history-target",
+        "state n(1)\nfn f(x): x.past(1)\nClip c:\n    Note/(f(n))\n",
+    ),
+    rule(
+        "6.4",
+        "history-target",
+        "state n(1)\npattern P(x):\n    Note when x.stepped\nClip c:\n    P | x=n\n",
+    ),
+    rule(
+        "6.3",
         "missing-argument",
         "fn f(a, b): a\nlet x = f(1)\nClip c:\n    Note/x\n",
     ),
