@@ -296,9 +296,7 @@ impl Engine<'_> {
                     Code::VariableArray,
                     self.hir.expr(decl.value)?.loc,
                     self.source_global,
-                    format!(
-                        "`{name}` holds a fixed array, and its rule yields a variable array"
-                    ),
+                    format!("`{name}` holds a fixed array, and its rule yields a variable array"),
                 )?;
             }
         }

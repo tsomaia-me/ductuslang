@@ -593,7 +593,9 @@ fn a_for_bodys_type_fault_draws_whatever_holds_the_expression_as_its_derived_cel
             for program in [text.clone(), reversed] {
                 let found = support::error_texts(&compiler, &program);
                 if found != expected {
-                    failures.push(format!("{program}\n  draws {found:?}\n  twin {expected:?}\n"));
+                    failures.push(format!(
+                        "{program}\n  draws {found:?}\n  twin {expected:?}\n"
+                    ));
                 }
             }
         }

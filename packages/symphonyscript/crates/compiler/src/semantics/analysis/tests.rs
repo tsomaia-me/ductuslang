@@ -1941,7 +1941,9 @@ fn the_count_before_inlining_is_the_count_of_every_construct() {
         "    when f2(i) > 0:\n",
         "        Note\n",
     ));
-    let measure = |text: &str| analyzed_inlining_a_million(text, |engine| (inlined_bodies(engine), engine.inlined));
+    let measure = |text: &str| {
+        analyzed_inlining_a_million(text, |engine| (inlined_bodies(engine), engine.inlined))
+    };
     let (diagnostics, (_, counted)) = measure(&text);
     assert_eq!(error_codes(&diagnostics), Vec::<Code>::new());
     assert_eq!(counted, 1_000_000);
@@ -1978,7 +1980,9 @@ fn million_inlinings(f0_notes: usize, declarations: &str, values: &[&str]) -> St
 
 #[test]
 fn a_crossing_of_the_inline_limit_is_reported_at_the_call_that_crosses_it() {
-    let measure = |text: &str| analyzed_inlining_a_million(text, |engine| (inlined_bodies(engine), engine.inlined));
+    let measure = |text: &str| {
+        analyzed_inlining_a_million(text, |engine| (inlined_bodies(engine), engine.inlined))
+    };
     let (diagnostics, (_, counted)) = measure(&million_inlinings(7, "", &[]));
     assert_eq!(error_codes(&diagnostics), Vec::<Code>::new());
     assert_eq!(counted, 1_000_000);
@@ -2014,7 +2018,9 @@ fn a_crossing_of_the_inline_limit_is_reported_at_the_call_that_crosses_it() {
 fn a_call_in_a_recursive_body_counts_once() {
     let recursive = "fn r(n): if n < 1 then f0(n) else r(n - 1)\n";
     let accepted = million_inlinings(6, recursive, &["r(0)", "r(3)"]);
-    let measure = |text: &str| analyzed_inlining_a_million(text, |engine| (inlined_bodies(engine), engine.inlined));
+    let measure = |text: &str| {
+        analyzed_inlining_a_million(text, |engine| (inlined_bodies(engine), engine.inlined))
+    };
     let (diagnostics, (_, counted)) = measure(&accepted);
     assert_eq!(error_codes(&diagnostics), Vec::<Code>::new());
     assert_eq!(counted, 1_000_000);
@@ -2050,7 +2056,9 @@ fn chains(f_levels: usize, g_levels: usize, declarations: &str, notes: &[&str]) 
 
 #[test]
 fn the_count_before_inlining_follows_the_defaults_each_call_leaves_open() {
-    let measure = |text: &str| analyzed_inlining_a_million(text, |engine| (inlined_bodies(engine), engine.inlined));
+    let measure = |text: &str| {
+        analyzed_inlining_a_million(text, |engine| (inlined_bodies(engine), engine.inlined))
+    };
     let failures = std::cell::RefCell::new(Vec::new());
     let rejected_at = |text: &str, call: &str| {
         let (diagnostics, (bodies, _)) = measure(text);
