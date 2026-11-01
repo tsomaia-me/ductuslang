@@ -125,7 +125,9 @@ impl Engine<'_> {
         patterns: &FastSet<PatternId>,
     ) -> Result<(), Internal> {
         let hir = self.hir;
-        let mut taken = FastSet::default();
+        let mut taken: crate::semantics::analysis::dense_set::DenseSet<
+            crate::semantics::ir::ExprId,
+        > = crate::semantics::analysis::dense_set::DenseSet::default();
         for (expr, scope) in self.memo.exprs.keys() {
             crate::semantics::counted_walk::CountedWalk::DeclarationsUntakenDefaults.step();
             if !self.in_probe(*scope)? {

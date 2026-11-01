@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use crate::semantics::Internal;
 use crate::semantics::analysis::answers::CellRead;
 use crate::semantics::analysis::engine::Engine;
-use crate::semantics::analysis::fast_hash::{FastMap, FastSet};
+use crate::semantics::analysis::fast_hash::FastSet;
 use crate::semantics::analysis::ids::{BindingId, NodeId};
 use crate::semantics::analysis::op::Op;
 
@@ -38,18 +38,24 @@ impl Engine<'_> {
 
     pub(super) fn mark_reaching_reads(&mut self) -> Result<(), Internal> {
         let marked = self.memo.reaching_reads.len();
-        let mut known: FastMap<NodeId, bool> = FastMap::default();
+        let mut known: Vec<Option<bool>> = vec![None; self.nodes.len().saturating_sub(marked)];
+        let slot = |node: NodeId| node.index().checked_sub(marked);
         for index in marked..self.nodes.len() {
             let root = NodeId(u32::try_from(index).map_err(|_| Internal::missed("node"))?);
             let mut stack = vec![(root, false)];
             while let Some((node, ready)) = stack.pop() {
                 crate::semantics::counted_walk::CountedWalk::OrderMarkReachingReads.step();
-                if node.index() < marked || known.contains_key(&node) {
+                let Some(at) = slot(node) else {
+                    continue;
+                };
+                if known.get(at).copied().flatten().is_some() {
                     continue;
                 }
                 let op = &self.node(node)?.op;
                 if matches!(op, Op::Read(_) | Op::History { .. }) {
-                    known.insert(node, true);
+                    if let Some(held) = known.get_mut(at) {
+                        *held = Some(true);
+                    }
                     continue;
                 }
                 let operands = op.operands();
@@ -63,15 +69,19 @@ impl Engine<'_> {
                         .reaching_reads
                         .get(operand.index())
                         .copied()
-                        .or_else(|| known.get(operand).copied())
+                        .or_else(|| slot(*operand).and_then(|at| known.get(at).copied().flatten()))
                         .unwrap_or(false)
                 });
-                known.insert(node, reaches);
+                if let Some(held) = known.get_mut(at) {
+                    *held = Some(reaches);
+                }
             }
         }
         for index in marked..self.nodes.len() {
             let node = NodeId(u32::try_from(index).map_err(|_| Internal::missed("node"))?);
-            let reaches = known.get(&node).copied().ok_or(Internal::missed("node"))?;
+            let reaches = slot(node)
+                .and_then(|at| known.get(at).copied().flatten())
+                .ok_or(Internal::missed("node"))?;
             self.memo.reaching_reads.push(reaches);
         }
         Ok(())

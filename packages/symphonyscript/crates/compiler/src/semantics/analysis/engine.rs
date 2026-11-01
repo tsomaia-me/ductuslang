@@ -76,7 +76,7 @@ pub(crate) struct Engine<'a> {
     pub scopes: Vec<Scope>,
     pub nodes: Vec<Node>,
     pub slots: Vec<super::slot::Slot>,
-    pub arrays: FastSet<NodeId>,
+    pub arrays: super::dense_set::DenseSet<NodeId>,
     pub bindings: Vec<Binding>,
     pub instances: Vec<Instance>,
     pub wires: Vec<Wire>,
@@ -135,7 +135,8 @@ pub(crate) struct Engine<'a> {
     drawn_candidate_cycles: FastSet<(ItemRef, String)>,
     pub(super) found_cycles: Vec<Vec<(Loc, String)>>,
     pub(super) declaration_reads: std::cell::RefCell<FastSet<(Query, Query)>>,
-    scope_functions: std::cell::RefCell<FastMap<ScopeId, Option<(ScopeId, FnId)>>>,
+    scope_functions:
+        std::cell::RefCell<super::dense_map::DenseMap<ScopeId, Option<(ScopeId, FnId)>>>,
     reader: Option<Query>,
     pub(super) current: Option<Query>,
 }
@@ -162,7 +163,7 @@ impl<'a> Engine<'a> {
             scopes: Vec::new(),
             nodes: Vec::new(),
             slots: Vec::new(),
-            arrays: FastSet::default(),
+            arrays: super::dense_set::DenseSet::default(),
             bindings: Vec::new(),
             instances: Vec::new(),
             wires: Vec::new(),
@@ -717,7 +718,7 @@ impl<'a> Engine<'a> {
 
     pub(super) fn poisoned(&self, dep: Query) -> bool {
         self.current
-            .is_some_and(|current| self.cyclic.contains(&(current, dep)))
+            .is_some_and(|current| !self.cyclic.is_empty() && self.cyclic.contains(&(current, dep)))
     }
 
     pub fn val(&self, query: Query, need: &mut Vec<Query>) -> Option<Val> {
@@ -736,7 +737,9 @@ impl<'a> Engine<'a> {
 
     pub fn bound(&self, query: Query, need: &mut Vec<Query>) -> Option<BoundVal> {
         self.note_read(self.reader, query);
-        if self.poisoned(query) || self.cycle_members.contains(&query) {
+        if self.poisoned(query)
+            || (!self.cycle_members.is_empty() && self.cycle_members.contains(&query))
+        {
             return Some(BoundVal::Error);
         }
         let memo = &self.memo;

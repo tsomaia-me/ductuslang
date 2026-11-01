@@ -2440,3 +2440,41 @@ fn the_demand_loops_bookkeeping_is_constant_per_query_on_the_figure_programs_431
     let failures = demand_failures([1_000, 2_000, 4_000]);
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
+
+fn hashing_failures(sizes: [usize; 3]) -> Vec<String> {
+    let compiler = Compiler::new(&vocabulary()).expect("the vocabulary compiles");
+    let mut failures = Vec::new();
+    for (figure, most, per) in [
+        (Figure::Inlined, 7, 1),
+        (Figure::Call, 10, 1),
+        (Figure::Array, 6, 1),
+    ] {
+        let points = sizes.map(|n| {
+            let counts = figure_counts(&compiler, figure, n, &["HashFinish"]);
+            (
+                counts.first().copied().unwrap_or(0),
+                counts.get(1).copied().unwrap_or(0),
+            )
+        });
+        if !linear(points) {
+            failures.push(format!(
+                "431 {figure:?} hashes {points:?} are not linear in the queries"
+            ));
+        }
+        if points
+            .iter()
+            .any(|(queries, hashes)| *hashes == 0 || hashes * per > queries * most)
+        {
+            failures.push(format!(
+                "431 {figure:?} hashes {points:?} pass {most}/{per} a query"
+            ));
+        }
+    }
+    failures
+}
+
+#[test]
+fn the_per_query_tables_are_read_by_id_without_hashing_on_the_figure_programs_431() {
+    let failures = hashing_failures([1_000, 2_000, 4_000]);
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
