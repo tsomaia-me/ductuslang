@@ -1,4 +1,6 @@
+import contextlib
 import gzip
+import io
 import json
 import stat
 import tempfile
@@ -34,9 +36,9 @@ with open(taken, "w") as out:
             out.flush()
             os.abort()
         slow = "slow" in text and "alone" not in sys.argv[0]
-        out.write(json.dumps({"id": program["id"], "diagnostics": [{"code": c, "message": ""} for c in text.split()
-                  if c != "slow" and not c.isdigit()], "signals": ["slow"] if slow else [], "findings": [],
-                  "elapsed_ms": None if slow else 1.0}) + "\\n")
+        out.write(json.dumps({"id": program["id"], "diagnostics": [{"code": c, "file": "main.sym", "span": [0, 0],
+                  "message": "", "help": None, "related": []} for c in text.split() if c != "slow" and not c.isdigit()],
+                  "signals": ["slow"] if slow else [], "findings": [], "elapsed_ms": None if slow else 1.0}) + "\\n")
 """
 VOCABULARY_CHECK = """#!/usr/bin/env python3
 import json, sys
@@ -45,19 +47,25 @@ vocabulary = sys.argv[sys.argv.index("--vocabulary") + 1]
 with open(taken, "w") as out:
     for line in open(given):
         program = json.loads(line)
-        out.write(json.dumps({"id": program["id"], "diagnostics": [{"code": vocabulary, "message": ""}],
+        out.write(json.dumps({"id": program["id"], "diagnostics": [{"code": vocabulary, "file": "main.sym",
+                              "span": [0, 0], "message": "", "help": None, "related": []}],
                               "signals": [], "findings": [], "elapsed_ms": 1.0}) + "\\n")
 """
 FAKE_TIME = """#!/usr/bin/env python3
 import json, sys
 from pathlib import Path
 given, taken = sys.argv[-2], sys.argv[-1]
-ids = [json.loads(line)["id"] for line in open(given) if line.strip()]
+programs = [json.loads(line) for line in open(given) if line.strip()]
 with open(Path(sys.argv[0]).parent / "calls.log", "a") as log:
-    log.write(" ".join([sys.argv[sys.argv.index("--budget") + 1], *ids]) + "\\n")
+    log.write(" ".join([sys.argv[sys.argv.index("--budget") + 1], *[each["id"] for each in programs]]) + "\\n")
 with open(taken, "w") as out:
-    for program_id in ids:
-        out.write(json.dumps({"id": program_id, "elapsed_ms": 2.0, "diagnostics": 0, "codes": []}) + "\\n")
+    for each in programs:
+        words = each["sources"][0]["text"].split()
+        if "panic" in words:
+            out.write(json.dumps({"id": each["id"], "elapsed_ms": None, "panic": "boom"}) + "\\n")
+            continue
+        codes = sorted({word[5:] for word in words if word.startswith("code:")})
+        out.write(json.dumps({"id": each["id"], "elapsed_ms": 2.0, "diagnostics": len(codes), "codes": codes}) + "\\n")
 """
 TAGS = "example main\nnative native\nbounded bounded\nenvelope envelope\nbar bar\nsignature signature\nto to\n"
 FAKE_PROBE = f"#!/bin/sh\n[ \"$1\" = --tags ] || exit 2\ncat <<'END'\n{TAGS}END\n"
@@ -68,8 +76,23 @@ def verdict(outcome, errors=(), warnings=(), signals=(), program_set="mutants"):
             "set": program_set}
 
 
+def drawn(code, start=0, end=0, summary="", help=None, related=()):
+    return {"code": code, "file": "main.sym", "span": [start, end], "message": summary, "help": help,
+            "related": [{"file": "main.sym", "span": [low, high], "label": label} for low, high, label in related]}
+
+
+def kept(code, start=0, end=0, summary="", help=None, related=()):
+    raw = drawn(code, start, end, summary, help, related)
+    return {**{name: raw[name] for name in ("code", "file", "span", "help", "related")}, "summary": raw["message"]}
+
+
+def whole(outcome, errors=(), warnings=(), diagnostics=()):
+    return {**verdict(outcome, errors, warnings), "diagnostics": list(diagnostics)}
+
+
 def checked(outcome, *errors):
-    return {"outcome": outcome, "errors": list(errors), "warnings": [], "signals": []}, None
+    return ({"outcome": outcome, "errors": list(errors), "warnings": [], "signals": [],
+             "diagnostics": [kept(code) for code in errors]}, None)
 
 
 def program(text, program_set="mutants", **fields):
@@ -107,14 +130,129 @@ class Review(unittest.TestCase):
     def test_a_raw_verdict_compacts_to_its_outcome(self):
         rows = [({"panic": "boom", "elapsed_ms": None, "diagnostics": []}, "panic"),
                 ({"elapsed_ms": None, "diagnostics": []}, "slow"),
-                ({"elapsed_ms": 1.0, "diagnostics": [{"code": "no-entry-instance"}]}, "accept"),
-                ({"elapsed_ms": 1.0, "diagnostics": [{"code": "no-entry-instance"}, {"code": "type-mismatch"}]},
+                ({"elapsed_ms": 1.0, "diagnostics": [drawn("no-entry-instance")]}, "accept"),
+                ({"elapsed_ms": 1.0, "diagnostics": [drawn("no-entry-instance"), drawn("type-mismatch")]},
                  "reject")]
         for raw, outcome in rows:
             compacted = verdicts.compact({"signals": [], "findings": [], **raw}, WARNINGS)
             self.assertEqual(compacted["outcome"], outcome, raw)
         self.assertEqual(compacted["warnings"], ["no-entry-instance"])
         self.assertEqual(compacted["errors"], ["type-mismatch"])
+
+    def test_a_compacted_verdict_keeps_every_diagnostic_whole_in_the_compilers_order(self):
+        raw = {"elapsed_ms": 1.0, "signals": ["order"], "findings": [], "parses": True,
+               "diagnostics": [drawn("type-mismatch", 9, 12, "`a` is no i32", "convert it", [(0, 3, "declared here")]),
+                               drawn("no-entry-instance", 0, 0, "no entry"),
+                               drawn("type-mismatch", 4, 6, "`b` is no i32", None,
+                                     [(1, 2, "in this call"), (7, 8, "in this call")])]}
+        compacted = verdicts.compact(raw, WARNINGS)
+        self.assertEqual(compacted["diagnostics"], [
+            {"code": "type-mismatch", "file": "main.sym", "span": [9, 12], "summary": "`a` is no i32",
+             "help": "convert it", "related": [{"file": "main.sym", "span": [0, 3], "label": "declared here"}]},
+            {"code": "no-entry-instance", "file": "main.sym", "span": [0, 0], "summary": "no entry", "help": None,
+             "related": []},
+            {"code": "type-mismatch", "file": "main.sym", "span": [4, 6], "summary": "`b` is no i32", "help": None,
+             "related": [{"file": "main.sym", "span": [1, 2], "label": "in this call"},
+                         {"file": "main.sym", "span": [7, 8], "label": "in this call"}]}])
+        self.assertEqual((compacted["errors"], compacted["warnings"], compacted["signals"]),
+                         (["type-mismatch"], ["no-entry-instance"], ["order"]))
+        self.assertEqual(verdicts.aborted(-6)[0]["diagnostics"], [])
+        self.assertEqual(verdicts.unknown_tag("weird")[0]["diagnostics"], [])
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "verdicts.jsonl.gz"
+            write_jsonl_gz(path, [{"key": "k", "set": "mutants", **compacted}])
+            self.assertEqual(read_jsonl(path), [{"key": "k", "set": "mutants", **compacted}])
+            with gzip.open(path, "rt", encoding="utf-8") as lines:
+                self.assertEqual(len(lines.read().splitlines()), 1)
+
+    def test_equal_codes_with_a_moved_place_text_or_order_are_each_a_kind_of_their_own(self):
+        tm, ot = "type-mismatch", "operand-type"
+        first, second = kept(tm, 0, 3, "s", "h"), kept(tm, 10, 13, "s", "h")
+        operand = kept(ot, 4, 7, "o", "h")
+        pairs = {
+            "span": ([first], [kept(tm, 10, 13, "s", "h")]),
+            "summary": ([first], [kept(tm, 0, 3, "t", "h")]),
+            "help": ([first], [kept(tm, 0, 3, "s", None)]),
+            "related": ([kept(tm, 0, 3, "s", "h", [(4, 7, "first")])], [kept(tm, 0, 3, "s", "h", [(10, 13, "first")])]),
+            "order": ([first, operand], [operand, first]),
+            "swap": ([first, second], [second, first]),
+            "count": ([first], [first, second]),
+            "both": ([first, kept(ot, 8, 9, "o", "h")], [kept(ot, 8, 9, "o", "h"), kept(tm, 10, 13, "s", "h")]),
+            "same": ([first, operand], [first, operand]),
+        }
+        expected = {"span": {"spans": (tm,)}, "summary": {"summaries": (tm,)}, "help": {"helps": (tm,)},
+                    "related": {"related": (tm,)}, "order": {"order": (ot, tm)}, "swap": {"order": (tm,)},
+                    "count": {"counts": ("+" + tm,)}, "both": {"spans": (tm,), "order": (ot, tm)}, "same": {}}
+        self.assertEqual(verdicts.whole_change(whole("reject", [tm]), whole("reject", [tm])), {})
+        for name, (old, new) in pairs.items():
+            self.assertEqual(verdicts.whole_change({"diagnostics": old}, {"diagnostics": new}), expected[name], name)
+        text = "let a = 1\nlet a = 2\n"
+        programs = {name: program(text + name + "\n") for name in pairs}
+        programs.update({"codes-only": program("x\n"), "recoded": program("y\n")})
+        previous = {name: whole("reject", sorted({each["code"] for each in old}), (), old)
+                    for name, (old, _) in pairs.items()}
+        current = {name: whole("reject", sorted({each["code"] for each in new}), (), new)
+                   for name, (_, new) in pairs.items()}
+        previous.update({"codes-only": verdict("reject", [tm]), "recoded": whole("reject", [tm], (), [first])})
+        current.update({"codes-only": whole("reject", [tm], (), [second]),
+                        "recoded": whole("reject", [ot], (), [kept(ot, 10, 13)])})
+        found = verdicts.whole_moved(previous, current)
+        self.assertEqual({kind: [(codes, keys) for codes, keys in classes] for kind, classes in found.items()},
+                         {"spans": [((tm,), ["both", "span"])], "summaries": [((tm,), ["summary"])],
+                          "helps": [((tm,), ["help"])], "related": [((tm,), ["related"])],
+                          "order": [((ot, tm), ["both", "order"]), ((tm,), ["swap"])],
+                          "counts": [(("+" + tm,), ["count"])]})
+        self.assertEqual(verdicts.moved(previous, current), [(("+operand-type", "-type-mismatch"), ["recoded"])])
+        note = ("Diagnostics compared whole, by place, summary, help, related spans and order, only where both "
+                "records hold them: 9 of the 10 programs held on both sides with equal codes; compared by their codes "
+                "alone, the records carrying codes only: 1, the baseline's for 1 and this run's for 0.")
+        report = verdicts.summary("Verdicts at b against a", programs, current, previous, {}, TABLE, [],
+                                  "diff-full.md").splitlines()
+        self.assertIn(note, report)
+        self.assertEqual([line for line in report if line.startswith("## Same codes")],
+                         ["## Same codes, moved spans: 2 programs in 1 classes",
+                          "## Same codes, changed summaries: 1 programs in 1 classes",
+                          "## Same codes, changed helps: 1 programs in 1 classes",
+                          "## Same codes, changed related spans: 1 programs in 1 classes",
+                          "## Same codes, changed order: 3 programs in 2 classes",
+                          "## Same codes, a code drawn a different number of times: 1 programs in 1 classes"])
+        for line in ["| 1 | 2 | type-mismatch | §3.2 | `both`, 25 characters |",
+                     "| 1 | 2 | operand-type type-mismatch | §3.2, §5.2 | `both`, 25 characters |",
+                     "| 1 | 1 | +type-mismatch | §3.2 | `count`, 26 characters |",
+                     "### 1. moved spans: type-mismatch: 2 · §3.2, the 2 shortest shown",
+                     "#### `span` · mutants", "- Before:", "- After:",
+                     "  1. `type-mismatch` main.sym 1:1-1:4 s; help: h",
+                     "  1. `type-mismatch` main.sym 2:1-2:4 s; help: h",
+                     "  1. `type-mismatch` main.sym 1:1-1:4 s; help: h; related main.sym 1:5-1:8 first",
+                     "  2. `type-mismatch` main.sym 1:1-1:4 s; help: h"]:
+            self.assertIn(line, report)
+        self.assertNotIn("- Programs: `both`, `span`", report)
+        full = verdicts.render("Verdicts at b against a", programs, current, previous, {}, TABLE, []).splitlines()
+        self.assertIn(note, full)
+        self.assertIn("- Programs: `both`, `span`", full)
+        self.assertEqual(sum(line.startswith("## Same codes") for line in full), 6)
+        self.assertEqual(verdicts.position("é1\nb", 2), "1:2")
+        self.assertEqual(verdicts.position("é1\nb", 4), "2:1")
+        self.assertEqual(verdicts.located(program("a"), "other.sym", [3, 5]), "other.sym 3-5")
+        self.assertEqual(verdicts.drawn_lines("Before", program("a"), []), ["- Before: nothing"])
+
+    def test_a_baseline_is_recorded_only_from_a_run_that_keeps_every_diagnostic_whole(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "runs" / "abc1234").mkdir(parents=True)
+            source = root / "runs" / "abc1234" / "verdicts.jsonl.gz"
+            arguments = mock.Mock(revision="HEAD", baselines=root / "baselines")
+            write_jsonl_gz(source, [{"key": "a", **whole("accept")}, {"key": "b", **verdict("accept")}])
+            with mock.patch.object(run, "RUNS", root / "runs"), \
+                    mock.patch.object(run, "short_sha", return_value="abc1234"):
+                with self.assertRaises(SystemExit) as refused:
+                    run.record(arguments)
+                self.assertFalse((root / "baselines" / "abc1234.jsonl.gz").exists())
+                write_jsonl_gz(source, [{"key": "a", **whole("accept")}, {"key": "b", **whole("reject", ["x"])}])
+                run.record(arguments)
+            recorded = read_jsonl(root / "baselines" / "abc1234.jsonl.gz")
+        self.assertIn("1 records carry codes only", str(refused.exception.code))
+        self.assertEqual([each.get("diagnostics") for each in recorded], [[], []])
 
     def test_the_diff_groups_moves_by_code_delta_and_lists_crashes_signals_and_stated_disagreements(self):
         programs = {
@@ -176,7 +314,10 @@ class Review(unittest.TestCase):
         report = verdicts.summary("Verdicts at b against a", programs, current, previous, {}, TABLE, [],
                                   "diff-full.md").splitlines()
         headings = [line for line in report if line.startswith("## ")]
-        self.assertEqual(headings, ["## Moved: 5 programs in 4 classes", "## New signals: 6 programs in 2 classes",
+        self.assertEqual(headings, ["## Moved: 5 programs in 4 classes",
+                                    *[f"## Same codes, {label}: 0 programs in 0 classes"
+                                      for _, label in verdicts.KINDS],
+                                    "## New signals: 6 programs in 2 classes",
                                     "## Internal errors, panics and aborts: 1, the 1 shortest shown",
                                     "## Stated verdicts: 2 programs whose compiler verdict differs, 1 new"])
         for line in ["Every program of every section is in `diff-full.md` beside this file.",
@@ -217,7 +358,8 @@ class Review(unittest.TestCase):
                     {"key": "p1", "set": "probes", "elapsed_ms": 1.0}]
             with gzip.open(root / "times.json.gz", "wt", encoding="utf-8") as out:
                 json.dump({"profile": "dev", "jobs": 4, "budget_s": 5, "load": 9.0, "programs": rows}, out)
-            measured = [(figures.INLINED, "inlined", "inlined text", 4), (figures.NESTING, "not", "not text", 2)]
+            measured = [(figures.INLINED, "inlined", "inlined text", 4, ()),
+                        (figures.NESTING, "not", "not text", 2, ())]
             loads = iter([3.1, 3.2, 3.3])
             with mock.patch.object(figures, "measured_programs", return_value=measured):
                 figures.measure(root, root / "times.json.gz", root / "breakers.jsonl.gz", root / "figures.json", 4.0,
@@ -251,7 +393,7 @@ class Review(unittest.TestCase):
 
     def test_the_measured_programs_hold_a_million_calls_and_the_fixtures_depth_per_construct(self):
         self.assertEqual(sum((1 << (level + 1)) - 1 for level in figures.sizes_totalling(1_000_000)), 1_000_000)
-        inlined = dict((label, text) for _, label, text, _ in figures.measured_programs())["inlined"]
+        inlined = dict((label, text) for _, label, text, _, _ in figures.measured_programs())["inlined"]
         self.assertEqual(inlined.count("f(i, "), 1_000_000)
         self.assertEqual({line.count("f(i, ") for line in inlined.splitlines()[3:]}, {100})
         self.assertEqual(figures.inlining(200).splitlines()[:4],
@@ -265,6 +407,133 @@ class Review(unittest.TestCase):
                                       '    Note/(f(a) + c + g + b[0][0][0])\n')
         self.assertIn("let a = (1)\n", figures.deep_expressions({"call": 3}))
         self.assertEqual(len(figures.measured_programs()), 2 + len(figures.CONSTRUCTS) + 1)
+
+    def test_every_figure_program_states_the_codes_it_must_draw_at_each_size(self):
+        full, quick = figures.measured_programs(figures.FULL), figures.measured_programs(figures.QUICK)
+        self.assertEqual([(label, units, expected) for _, label, _, units, expected in full],
+                         [("recursive", 1_000_000, ("limit-warning", "no-entry-instance")),
+                          ("inlined", 1_000_000, ("limit-warning", "no-entry-instance")),
+                          *[(construct, 100_000, ("no-entry-instance",)) for construct in figures.CONSTRUCTS],
+                          ("every construct", 700_000, ("no-entry-instance",))])
+        self.assertEqual([(label, units, expected) for _, label, _, units, expected in quick],
+                         [("recursive", 100_000, ("no-entry-instance",)), ("inlined", 100_000, ("no-entry-instance",)),
+                          *[(construct, 10_000, ("no-entry-instance",)) for construct in figures.CONSTRUCTS],
+                          ("every construct", 70_000, ("no-entry-instance",))])
+        texts = {label: text for _, label, text, _, _ in quick}
+        self.assertEqual(texts["inlined"].count("f(i, "), 100_000)
+        self.assertEqual(texts["recursive"], figures.recursing(100_000))
+        self.assertEqual(sum((1 << (level + 1)) - 1 for level in figures.sizes_totalling(100_000)), 100_000)
+        self.assertIn("let a = " + "(" * 10_000 + "1" + ")" * 10_000 + "\n", texts["parentheses"])
+        self.assertIn("let d = " + "not " * 10_000 + "x\n", texts["not"])
+        self.assertEqual([figure for figure, *_ in quick][:3],
+                         [("A compile-time recursive call", "a program making 100,000 distinct calls"),
+                          ("An inlined call", "a program inlining 100,000 calls"),
+                          ("A level of nesting", "the deep-expressions fixture at depth 10,000, each construct")])
+        self.assertEqual(full[0][0], ("A compile-time recursive call", "a program making 1,000,000 distinct calls"))
+
+    def test_a_figure_whose_program_draws_another_code_or_misses_one_is_void_and_printed_so(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            fake = root / "evolve-time"
+            fake.write_text(FAKE_TIME)
+            fake.chmod(fake.stat().st_mode | stat.S_IEXEC)
+            breaker = program("breaker", "breakers")
+            write_jsonl_gz(root / "breakers.jsonl.gz", [{"key": key(breaker), **breaker}])
+            with gzip.open(root / "times.json.gz", "wt", encoding="utf-8") as out:
+                json.dump({"profile": "dev", "jobs": 4, "budget_s": 5, "load": 1.0,
+                           "programs": [{"key": key(breaker), "set": "breakers", "elapsed_ms": 1.0}]}, out)
+            both, entry = ("limit-warning", "no-entry-instance"), ("no-entry-instance",)
+            measured = [(figures.INLINED, "inlined", "code:limit-warning code:no-entry-instance", 4, both),
+                        (figures.NESTING, "not", "code:no-entry-instance code:type-mismatch", 2, entry),
+                        (figures.NESTING, "call", "code:limit-warning", 2, both),
+                        (figures.NESTING, "negation", "panic", 2, entry)]
+            printed = io.StringIO()
+            with mock.patch.object(figures, "measured_programs", return_value=measured), \
+                    contextlib.redirect_stdout(printed):
+                void = figures.measure(root, root / "times.json.gz", root / "breakers.jsonl.gz", root / "figures.json",
+                                       4.0, lambda: 1.0)
+            taken = json.loads((root / "figures.json").read_text())
+        voided = ["not", "call", "negation"]
+        self.assertEqual((void, taken["void"], taken["scale"]), (voided, voided, "full"))
+        self.assertNotIn("void", taken["figures"][0])
+        self.assertEqual([(each["program"], each["void"], each["codes"], each["expected_codes"])
+                          for each in taken["figures"][1:]],
+                         [("inlined", False, list(both), list(both)),
+                          ("not", True, ["no-entry-instance", "type-mismatch"], ["no-entry-instance"]),
+                          ("call", True, ["limit-warning"], list(both)),
+                          ("negation", True, [], ["no-entry-instance"])])
+        lines = printed.getvalue().splitlines()
+        for line in ["An inlined call, inlined: 500.000 us per unit, load 1.0",
+                     "A level of nesting, not: 1000.000 us per unit, load 1.0; VOID: drew no-entry-instance, "
+                     "type-mismatch, must draw no-entry-instance",
+                     "A level of nesting, call: 1000.000 us per unit, load 1.0; VOID: drew limit-warning, must draw "
+                     "limit-warning, no-entry-instance",
+                     "A level of nesting, negation: past the budget per unit, load 1.0; VOID: drew nothing, panicked: "
+                     "boom, must draw no-entry-instance",
+                     "void figures: 3 (not, call, negation); exit 3"]:
+            self.assertIn(line, lines)
+
+    def test_the_quick_figures_take_the_slowest_breakers_three_times_each_into_their_own_file(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            fake = root / "evolve-time"
+            fake.write_text(FAKE_TIME)
+            fake.chmod(fake.stat().st_mode | stat.S_IEXEC)
+            breakers = [program(f"breaker {index}", "breakers") for index in range(4)]
+            write_jsonl_gz(root / "breakers.jsonl.gz", [{"key": key(each), **each} for each in breakers])
+            rows = [{"key": key(each), "set": "breakers", "elapsed_ms": ms}
+                    for each, ms in zip(breakers, (9.0, None, 7.0, 3.0))]
+            rows.append({"key": "p1", "set": "probes", "elapsed_ms": 50.0})
+            with gzip.open(root / "times.json.gz", "wt", encoding="utf-8") as out:
+                json.dump({"profile": "dev", "jobs": 4, "budget_s": 5, "load": 1.0, "programs": rows}, out)
+            scale = {**figures.QUICK, "breakers": 2}
+            measured = [(figures.stated(figures.NESTING, scale), "not", "code:no-entry-instance", 10_000,
+                         ("no-entry-instance",))]
+            with mock.patch.object(figures, "measured_programs", return_value=measured), \
+                    contextlib.redirect_stdout(io.StringIO()):
+                void = figures.measure(root, root / "times.json.gz", root / "breakers.jsonl.gz",
+                                       root / figures.QUICK_NAME, float("inf"), lambda: 2.0, scale)
+            taken = json.loads((root / figures.QUICK_NAME).read_text())
+            calls = (root / "calls.log").read_text().splitlines()
+        first, third = key(breakers[0]), key(breakers[2])
+        self.assertEqual(void, [])
+        self.assertEqual(calls, [f"5 {first}#0 {first}#1 {first}#2 {third}#0 {third}#1 {third}#2",
+                                 "600 not#0 not#1 not#2"])
+        self.assertEqual((taken["scale"], taken["load_below"], taken["void"]), ("quick", None, []))
+        breaker_figure = taken["figures"][0]
+        self.assertEqual({name: breaker_figure[name]
+                          for name in ("measured_by", "programs", "past_budget", "median_ms")},
+                         {"measured_by": "Check over the 2 slowest programs, median and 99th percentile of each one's "
+                                         "median", "programs": 2, "past_budget": 0, "median_ms": 2.0})
+        self.assertIn("3 runs each in one process, one job", breaker_figure["method"])
+        self.assertEqual((taken["figures"][1]["measured_by"], taken["figures"][1]["per_unit_us"]),
+                         ("the deep-expressions fixture at depth 10,000, each construct", 0.2))
+        self.assertEqual(figures.slowest_breakers({"programs": rows}, 3), [rows[0], rows[2], rows[3]])
+
+    def test_the_figures_command_writes_the_quick_figures_beside_the_full_ones_and_exits_three_on_a_void_figure(self):
+        arguments = mock.Mock(binaries=Path("/b"), times=Path("/r/check-times.json.gz"), out=Path("/r/figures.json"),
+                              load_below=4.0, quick=True)
+        with mock.patch.object(figures, "measure", return_value=["not"]) as measure, \
+                contextlib.redirect_stdout(io.StringIO()):
+            with self.assertRaises(SystemExit) as stopped:
+                run.measured(arguments)
+            self.assertEqual(stopped.exception.code, 3)
+            self.assertEqual((measure.call_args.args[3], measure.call_args.args[6]),
+                             (Path("/r/figures-quick.json"), figures.QUICK))
+            arguments.quick = False
+            measure.return_value = []
+            run.measured(arguments)
+            self.assertEqual((measure.call_args.args[3], measure.call_args.args[6]),
+                             (Path("/r/figures.json"), figures.FULL))
+        figures_record = {"name": "figures", "exit": 0}
+        rows = [([{"name": "build", "exit": 0}, figures_record], 0),
+                ([{"name": "build", "exit": 0}, {"name": "figures", "exit": 3}], 2),
+                ([{"name": "build", "exit": 101}, {"name": "figures", "exit": 3}], 3),
+                ([{"name": "build", "exit": 0}, {"name": "figures", "exit": 1}], 1),
+                ([{"name": "verdicts", "exit": 3}, figures_record], 1)]
+        for records, code in rows:
+            self.assertEqual(run.shared_exit(records), code, records)
+        self.assertTrue(run.voided({"name": "figures", "exit": 3}))
 
 
 class Running(unittest.TestCase):

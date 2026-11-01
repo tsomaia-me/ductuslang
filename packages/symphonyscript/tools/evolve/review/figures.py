@@ -4,6 +4,7 @@ import math
 import statistics
 import subprocess
 import tempfile
+from collections import defaultdict
 from pathlib import Path
 
 from programs import key, read_jsonl
@@ -20,10 +21,20 @@ BUDGET_SECONDS = 600
 TARGET_US = 2
 BREAKER_TARGETS_MS = {"median": 0.5, "p99": 2}
 CONSTRUCTS = ("parentheses", "array and index", "call", "not", "interpolation", "negation", "pitch parentheses")
-RECURSIVE = ("A compile-time recursive call", "a program making 1,000,000 distinct calls")
-INLINED = ("An inlined call", "a program inlining 1,000,000 calls")
-NESTING = ("A level of nesting", "the deep-expressions fixture at depth 100,000, each construct")
+RECURSIVE = ("A compile-time recursive call", "a program making {calls:,} distinct calls")
+INLINED = ("An inlined call", "a program inlining {calls:,} calls")
+NESTING = ("A level of nesting", "the deep-expressions fixture at depth {depth:,}, each construct")
 BREAKERS = ("A program of the breaker corpus", "Check over every program, median and 99th percentile")
+QUICK_BREAKERS = ("A program of the breaker corpus",
+                  "Check over the {breakers} slowest programs, median and 99th percentile of each one's median")
+LIMIT_WARNING = "limit-warning"
+NO_ENTRY = "no-entry-instance"
+FULL = {"name": "full", "calls": CALLS, "depth": DEPTH, "breakers": None,
+        "called": (LIMIT_WARNING, NO_ENTRY), "nested": (NO_ENTRY,)}
+QUICK = {"name": "quick", "calls": CALLS // 10, "depth": DEPTH // 10, "breakers": 200,
+         "called": (NO_ENTRY,), "nested": (NO_ENTRY,)}
+QUICK_NAME = "figures-quick.json"
+VOID_EXIT = 3
 
 
 def sizes_totalling(total):
@@ -66,12 +77,18 @@ def deep_expressions(depths):
             f"    Note/(f(a) + c + g + b{'[0]' * depth['array and index']})\n")
 
 
-def measured_programs():
-    programs = [(RECURSIVE, "recursive", recursing(CALLS), CALLS),
-                (INLINED, "inlined", inlining(CALLS), CALLS)]
-    programs += [(NESTING, construct, deep_expressions({construct: DEPTH}), DEPTH) for construct in CONSTRUCTS]
-    programs.append((NESTING, "every construct", deep_expressions(dict.fromkeys(CONSTRUCTS, DEPTH)),
-                     DEPTH * len(CONSTRUCTS)))
+def stated(figure, scale):
+    return figure[0], figure[1].format(**scale)
+
+
+def measured_programs(scale=FULL):
+    calls, depth, called, nested = scale["calls"], scale["depth"], scale["called"], scale["nested"]
+    programs = [(stated(RECURSIVE, scale), "recursive", recursing(calls), calls, called),
+                (stated(INLINED, scale), "inlined", inlining(calls), calls, called)]
+    programs += [(stated(NESTING, scale), construct, deep_expressions({construct: depth}), depth, nested)
+                 for construct in CONSTRUCTS]
+    programs.append((stated(NESTING, scale), "every construct", deep_expressions(dict.fromkeys(CONSTRUCTS, depth)),
+                     depth * len(CONSTRUCTS), nested))
     return programs
 
 
@@ -86,18 +103,27 @@ def waited(below):
     return f"once the 1-minute load is below {below} or the figures have waited {WAIT_SECONDS // 60} minutes"
 
 
-def breaker_figure(times, elapsed, load, below):
+def breaker_figure(times, elapsed, load, below, scale=FULL):
     finished = sorted(ms for ms in elapsed.values() if ms is not None)
-    return {"work": BREAKERS[0], "measured_by": BREAKERS[1], "targets_ms": BREAKER_TARGETS_MS,
+    if scale["breakers"] is None:
+        figure = BREAKERS
+        method = (f"each {BREAKER_SET} program once in one process, one job, {times['profile']} profile, after every "
+                  f"other command of the step and {waited(below)}; a program the verdict check found past its "
+                  f"{times['budget_s']} s budget is not run again, and it and a program past the budget here rank "
+                  f"above every timed one and read as null; nearest-rank percentiles over all {len(elapsed)} programs")
+    else:
+        figure = stated(QUICK_BREAKERS, scale)
+        method = (f"the {scale['breakers']} {BREAKER_SET} programs slowest in the verdict check's times among those "
+                  f"it timed within its {times['budget_s']} s budget, {RUNS} runs each in one process, one job, "
+                  f"{times['profile']} profile, {waited(below)}; each program's median, a program past the budget "
+                  f"in any run ranking above every timed one and reading as null; nearest-rank percentiles over the "
+                  f"{len(elapsed)} programs")
+    return {"work": figure[0], "measured_by": figure[1], "targets_ms": BREAKER_TARGETS_MS,
             "programs": len(elapsed), "past_budget": len(elapsed) - len(finished),
             "median_ms": ranked(finished, len(elapsed), 0.5), "p99_ms": ranked(finished, len(elapsed), 0.99),
             "max_timed_ms": finished[-1] if finished else None, "load": round(load, 2),
             "method": f"Compiler::check as evolve-time times it on evolve-check's compile thread, counting "
-                      f"allocations, each {BREAKER_SET} program once in one process, one job, {times['profile']} "
-                      f"profile, after every other command of the step and {waited(below)}; a program the verdict "
-                      f"check found past its {times['budget_s']} s budget is not run again, and it and a program "
-                      f"past the budget here rank above every timed one and read as null; nearest-rank percentiles "
-                      f"over all {len(elapsed)} programs"}
+                      f"allocations, {method}"}
 
 
 def timed(binaries, programs, work, budget):
@@ -117,40 +143,76 @@ def breaker_elapsed(binaries, work, times, corpus):
     return {row["key"]: taken.get(row["key"]) for row in rows}
 
 
-def program_figure(binaries, work, figure, label, text, units, load, below):
+def slowest_breakers(times, count):
+    rows = [row for row in times["programs"] if row["set"] == BREAKER_SET and row["elapsed_ms"] is not None]
+    return sorted(rows, key=lambda row: (-row["elapsed_ms"], row["key"]))[:count]
+
+
+def quick_breaker_elapsed(binaries, work, times, corpus, count):
+    sources = {key(record): record["sources"] for record in read_jsonl(corpus)}
+    rows = slowest_breakers(times, count)
+    runs = [{"id": f"{row['key']}#{number}", "sources": sources[row["key"]]} for row in rows for number in range(RUNS)]
+    taken = defaultdict(list)
+    for run in timed(binaries, runs, work, times["budget_s"]):
+        taken[run["id"].rsplit("#", 1)[0]].append(run["elapsed_ms"])
+    return {row["key"]: statistics.median(taken[row["key"]])
+            if len(taken[row["key"]]) == RUNS and None not in taken[row["key"]] else None for row in rows}
+
+
+def program_figure(binaries, work, figure, label, text, units, expected, load, below):
     runs = timed(binaries, [{"id": f"{label}#{number}", "sources": [{"path": "main.sym", "text": text}]}
                             for number in range(RUNS)], work, BUDGET_SECONDS)
     elapsed = [run["elapsed_ms"] for run in runs]
     median = statistics.median(elapsed) if None not in elapsed else None
+    panics = [run["panic"] for run in runs if run.get("panic") is not None]
+    drawn = sorted({code for run in runs for code in run.get("codes") or ()})
+    void = bool(panics) or any("codes" in run and sorted(run["codes"]) != sorted(expected) for run in runs)
     return {"work": figure[0], "measured_by": figure[1], "program": label, "target_us": TARGET_US,
             "units": units, "characters": len(text), "load": round(load, 2), "runs_ms": elapsed,
             "median_ms": median, "per_unit_us": median * 1000 / units if median is not None else None,
-            "diagnostics": runs[0].get("diagnostics"), "codes": runs[0].get("codes"), "panic": runs[0].get("panic"),
+            "diagnostics": runs[0].get("diagnostics"), "codes": drawn, "expected_codes": sorted(expected),
+            "void": void, "panic": panics[0] if panics else None,
             "method": f"Compiler::check as evolve-time times it on evolve-check's compile thread, counting "
                       f"allocations, {RUNS} runs in one process, one job, after every other command of the step "
                       f"and {waited(below)}, the median divided by the {units} units; "
-                      f"the program's other text is counted in its time"}
+                      f"the program's other text is counted in its time; void when a run panics or draws a code set "
+                      f"other than {listed(sorted(expected))}"}
+
+
+def listed(codes):
+    return ", ".join(codes) or "nothing"
 
 
 def shown(figure):
     if "per_unit_us" in figure:
         per_unit = "past the budget" if figure["per_unit_us"] is None else f"{figure['per_unit_us']:.3f} us"
-        return f"{figure['work']}, {figure['program']}: {per_unit} per unit, load {figure['load']}"
+        line = f"{figure['work']}, {figure['program']}: {per_unit} per unit, load {figure['load']}"
+        if figure["void"]:
+            panic = f", panicked: {figure['panic']}" if figure["panic"] is not None else ""
+            line += f"; VOID: drew {listed(figure['codes'])}{panic}, must draw {listed(figure['expected_codes'])}"
+        return line
     return (f"{figure['work']}: median {figure['median_ms']} ms, p99 {figure['p99_ms']} ms over "
             f"{figure['programs']} programs, {figure['past_budget']} past the budget, load {figure['load']:.2f}")
 
 
-def measure(binaries, times_path, corpus, out_path, below, settle):
+def measure(binaries, times_path, corpus, out_path, below, settle, scale=FULL):
     with gzip.open(times_path, "rt", encoding="utf-8") as raw:
         times = json.load(raw)
     with tempfile.TemporaryDirectory() as directory:
         work = Path(directory)
         load = settle()
-        figures = [breaker_figure(times, breaker_elapsed(binaries, work, times, corpus), load, below)]
+        elapsed = (breaker_elapsed(binaries, work, times, corpus) if scale["breakers"] is None
+                   else quick_breaker_elapsed(binaries, work, times, corpus, scale["breakers"]))
+        figures = [breaker_figure(times, elapsed, load, below, scale)]
         print(shown(figures[0]), flush=True)
-        for figure, label, text, units in measured_programs():
+        for figure, label, text, units, expected in measured_programs(scale):
             load = settle()
-            figures.append(program_figure(binaries, work, figure, label, text, units, load, below))
+            figures.append(program_figure(binaries, work, figure, label, text, units, expected, load, below))
             print(shown(figures[-1]), flush=True)
-    out_path.write_text(json.dumps({"profile": times["profile"], "load_below": below if math.isfinite(below) else None,
+    void = [figure["program"] for figure in figures if figure.get("void")]
+    if void:
+        print(f"void figures: {len(void)} ({', '.join(void)}); exit {VOID_EXIT}", flush=True)
+    out_path.write_text(json.dumps({"profile": times["profile"], "scale": scale["name"],
+                                    "load_below": below if math.isfinite(below) else None, "void": void,
                                     "figures": figures}, indent=2) + "\n")
+    return void

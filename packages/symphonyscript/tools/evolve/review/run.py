@@ -39,6 +39,9 @@ TIMED_TESTS = ("nextest", "nextest-exhaustive")
 TEST_LINE = re.compile(r"\s*(?P<status>[A-Z][A-Z-]*) \[\s*(?P<seconds>[0-9.]+s)?\s*\]\s+(?:\(\s*\d+/\d+\)\s+)?"
                        r"(?P<test>\S+ \S+)\s*")
 SUMMARY_LINE = re.compile(r"\s*Summary \[")
+FAILED_EXIT = 1
+VOID_FIGURE_EXIT = 2
+VOIDED = " (a figure is void)"
 
 
 def git(repository, *arguments, check=True):
@@ -223,9 +226,14 @@ def check(arguments):
 
 def record(arguments):
     sha = short_sha(HERE, arguments.revision)
+    source = RUNS / sha / "verdicts.jsonl.gz"
+    lacking = sum(verdicts.WHOLE not in verdict for verdict in read_jsonl(source))
+    if lacking:
+        sys.exit(f"{source}: {lacking} records carry codes only; `run.py check {sha}` with this tool records every "
+                 f"diagnostic whole, and the baseline is recorded from that run")
     arguments.baselines.mkdir(parents=True, exist_ok=True)
     target = arguments.baselines / f"{sha}.jsonl.gz"
-    shutil.copy2(RUNS / sha / "verdicts.jsonl.gz", target)
+    shutil.copy2(source, target)
     print(target)
 
 
@@ -364,18 +372,32 @@ def shared(arguments):
     for planned in shared_steps(sha, top, into, run, arguments.jobs, arguments.baselines, arguments.against,
                                 arguments.quiet_below, arguments.stress, arguments.exhaustive):
         records.append(performed(planned, run))
-        print(f"{planned['name']}: exit {records[-1]['exit']}, {records[-1]['seconds']} s, "
-              f"load {records[-1]['load']}", flush=True)
+        print(f"{planned['name']}: exit {records[-1]['exit']}{VOIDED if voided(records[-1]) else ''}, "
+              f"{records[-1]['seconds']} s, load {records[-1]['load']}", flush=True)
         shape = manifest(tip, into, run, records, started, arguments.jobs, arguments.quiet_below, arguments.stress,
                          arguments.exhaustive)
         (run / "manifest.json").write_text(json.dumps(shape, indent=2) + "\n")
     print(run / "manifest.json")
-    sys.exit(0 if all(record["exit"] == 0 for record in records) else 1)
+    sys.exit(shared_exit(records))
+
+
+def voided(record):
+    return record["name"] == "figures" and record["exit"] == figures.VOID_EXIT
+
+
+def shared_exit(records):
+    failed = any(record["exit"] != 0 and not voided(record) for record in records)
+    return (FAILED_EXIT if failed else 0) | (VOID_FIGURE_EXIT if any(map(voided, records)) else 0)
 
 
 def measured(arguments):
-    figures.measure(arguments.binaries, arguments.times, CORPORA / f"{figures.BREAKER_SET}.jsonl.gz", arguments.out,
-                    arguments.load_below, settling(arguments.load_below, figures.WAIT_SECONDS))
+    scale = figures.QUICK if arguments.quick else figures.FULL
+    out = arguments.out.with_name(figures.QUICK_NAME) if arguments.quick else arguments.out
+    void = figures.measure(arguments.binaries, arguments.times, CORPORA / f"{figures.BREAKER_SET}.jsonl.gz", out,
+                           arguments.load_below, settling(arguments.load_below, figures.WAIT_SECONDS), scale)
+    print(out, flush=True)
+    if void:
+        sys.exit(figures.VOID_EXIT)
 
 
 def main():
@@ -416,7 +438,8 @@ def main():
                               f"records the load each began at")
     for command in (checking, sharing):
         command.add_argument("--jobs", type=int, default=max(1, (os.cpu_count() or 2) // 2))
-    recording = commands.add_parser("record", help="record review-runs/<sha>/verdicts.jsonl.gz as the baseline")
+    recording = commands.add_parser("record", help="record review-runs/<sha>/verdicts.jsonl.gz as the baseline, "
+                                                   "refusing a run whose records carry codes only")
     recording.add_argument("revision", nargs="?", default="HEAD")
     for command in (checking, sharing, recording):
         command.add_argument("--baselines", type=Path, default=None)
@@ -428,6 +451,10 @@ def main():
     measuring.add_argument("--load-below", type=float, default=figures.LOAD_BELOW,
                            help=f"the 1-minute load each figure waits to fall below, waiting at most "
                                 f"{figures.WAIT_SECONDS // 60} minutes across the figures; inf takes them at any load")
+    measuring.add_argument("--quick", action="store_true",
+                           help=f"take every figure at a tenth of its size and the breaker figure over the "
+                                f"{figures.QUICK['breakers']} slowest breakers, three runs each, into "
+                                f"{figures.QUICK_NAME} beside out")
     arguments = parser.parse_args()
     if arguments.command != "figures":
         arguments.baselines = arguments.baselines or default_baselines()
