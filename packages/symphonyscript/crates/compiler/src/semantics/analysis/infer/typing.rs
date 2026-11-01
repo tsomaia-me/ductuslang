@@ -27,6 +27,7 @@ pub(crate) struct Typing {
     pub shapes: FastMap<(NodeId, Option<Scalar>), Option<Vec<u32>>>,
     pub detached_walks: FastSet<(ExprId, ScopeId)>,
     pub placeholder_bounds: Vec<(NodeId, I64Position, Option<Loc>, bool)>,
+    pub disagreeing_groups: FastMap<NodeId, bool>,
     pub measured_elements: Vec<NodeId>,
     pub open_reads: FastSet<NodeId>,
     pub deferred_layouts: FastSet<BindingId>,

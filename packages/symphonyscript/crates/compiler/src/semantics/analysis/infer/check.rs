@@ -294,7 +294,10 @@ impl Engine<'_> {
                                 Some(item) => stack.push((*item, ty, selection, flows)),
                                 None => {
                                     self.shared_selectors(&items, &mut stack)?;
-                                    if selection != Selection::Evaluated {
+                                    if selection != Selection::Evaluated
+                                        && (i64::try_from(position).is_err()
+                                            || !self.reads_a_disagreeing_literal(node, &items)?)
+                                    {
                                         self.index_outside(index, position, length_of(&items))?;
                                     }
                                 }
@@ -464,7 +467,11 @@ impl Engine<'_> {
                             .filter(|position| *position < items.len());
                         if picked.is_none() {
                             self.shared_selectors(&items, stack)?;
-                            self.index_outside(index, position, length_of(&items))?;
+                            if i64::try_from(position).is_err()
+                                || !self.reads_a_disagreeing_literal(node, &items)?
+                            {
+                                self.index_outside(index, position, length_of(&items))?;
+                            }
                         }
                         for (row, item) in items.iter().enumerate() {
                             let read = if Some(row) == picked {
@@ -511,6 +518,45 @@ impl Engine<'_> {
             stack.push((operand, None, selection, false));
         }
         Ok(())
+    }
+
+    fn reads_a_disagreeing_literal(
+        &mut self,
+        pick: NodeId,
+        items: &[NodeId],
+    ) -> Result<bool, Internal> {
+        let group = match self.memo.groups.get(&pick) {
+            Some(group) => Some(*group),
+            None => items
+                .iter()
+                .find_map(|item| self.memo.groups.get(item).copied()),
+        };
+        let Some(group) = group else {
+            return Ok(false);
+        };
+        if let Some(known) = self.typing.disagreeing_groups.get(&group) {
+            return Ok(*known);
+        }
+        let mut disagrees = self.demand_sig(group)?.is_error();
+        let mut stack = vec![group];
+        while disagrees && let Some(node) = stack.pop() {
+            let Op::Array(members) = self.node(node)?.op.clone() else {
+                disagrees = false;
+                break;
+            };
+            for member in members {
+                if !self.demand_sig(member)?.is_error() {
+                    continue;
+                }
+                if !matches!(self.node(member)?.op, Op::Array(_)) {
+                    disagrees = false;
+                    break;
+                }
+                stack.push(member);
+            }
+        }
+        self.typing.disagreeing_groups.insert(group, disagrees);
+        Ok(disagrees)
     }
 
     pub(super) fn bounds_beside_placeholders(&mut self) -> Result<(), Internal> {

@@ -3356,3 +3356,113 @@ fn an_element_read_through_a_let_draws_its_fit_fault_at_the_read_as_its_literal_
     ];
     support::assert_rows_in_every_order(&symphonyscript_fixtures::vocabulary(), rows);
 }
+
+const READ_LITERALS: [(&str, Option<Code>); 4] = [
+    ("[1, true]", Some(Code::TypeMismatch)),
+    ("[1, \"a\"]", Some(Code::TypeMismatch)),
+    ("[true, 1.5]", Some(Code::TypeMismatch)),
+    ("[1, 2]", None),
+];
+
+const LITERAL_HOLDERS: [(&[&str], &str); 3] =
+    [(&[], "{l}"), (&["let xs = {l}\n"], "xs"), (&[], "[{l}][0]")];
+
+enum Outside {
+    Inside,
+    AtIndex(&'static str),
+    AtRead,
+    OutsideI64(&'static str),
+}
+
+const LITERAL_READS: [(&str, Outside); 11] = [
+    ("[5]", Outside::AtIndex("5")),
+    ("[^5]", Outside::AtRead),
+    ("[..0][0]", Outside::AtIndex("0")),
+    ("[0..][5]", Outside::AtIndex("5")),
+    ("[2..][0]", Outside::AtIndex("0")),
+    ("[..0][^1]", Outside::AtRead),
+    ("[0..1][5]", Outside::AtIndex("5")),
+    ("[..0][..0][0]", Outside::AtIndex("0")),
+    ("[1..][0]", Outside::Inside),
+    ("[..0].size", Outside::Inside),
+    ("[2 ** 63]", Outside::OutsideI64("2 ** 63")),
+];
+
+const LITERAL_PLACES: [(&[&str], bool); 4] = [
+    (&["Clip c:\n    Note/({read})\n"], true),
+    (&["let r = {read}\n", "Clip c:\n    Note/(r)\n"], true),
+    (
+        &["fn f(n): n + {read}\n", "Clip c:\n    Note/(f(1))\n"],
+        true,
+    ),
+    (
+        &["Clip c:\n    Note/(if 1 > 2 then {read} else 0)\n"],
+        false,
+    ),
+];
+
+fn disagreeing_literal_read_rows(rows: &symphonyscript_fixtures::Rows) -> Vec<String> {
+    let compiler = Compiler::new(&vocabulary()).expect("the vocabulary compiles");
+    let mut failures = Vec::new();
+    for (literal, (value, code)) in READ_LITERALS.iter().enumerate() {
+        for (holder, (declarations, base)) in LITERAL_HOLDERS.iter().enumerate() {
+            for (read, (suffix, outside)) in LITERAL_READS.iter().enumerate() {
+                for (place, (items, taken)) in LITERAL_PLACES.iter().enumerate() {
+                    let base = base.replace("{l}", value);
+                    let read_text = format!("{base}{suffix}");
+                    let mut program: Vec<String> = declarations
+                        .iter()
+                        .map(|item| item.replace("{l}", value))
+                        .collect();
+                    program.extend(items.iter().map(|item| item.replace("{read}", &read_text)));
+                    let mut expected = match (code, outside) {
+                        (Some(code), Outside::OutsideI64(index)) if *taken => vec![
+                            (*code, (*value).to_string()),
+                            (Code::IndexOutOfRange, (*index).to_string()),
+                        ],
+                        (Some(code), _) => vec![(*code, (*value).to_string())],
+                        (None, _) if !*taken => Vec::new(),
+                        (None, Outside::Inside) => Vec::new(),
+                        (None, Outside::AtIndex(index) | Outside::OutsideI64(index)) => {
+                            vec![(Code::IndexOutOfRange, (*index).to_string())]
+                        }
+                        (None, Outside::AtRead) => vec![(Code::IndexOutOfRange, read_text.clone())],
+                    };
+                    expected.sort();
+                    for (order, reversed) in [false, true].into_iter().enumerate() {
+                        if !rows.take(&[literal, holder, read, place, order]) {
+                            continue;
+                        }
+                        let mut ordered = program.clone();
+                        if reversed {
+                            ordered.reverse();
+                        }
+                        let text = ordered.concat();
+                        let found = support::error_texts(&compiler, &text);
+                        if found != expected {
+                            failures.push(format!(
+                                "382: {text}\n  draws {found:?}\n  expected {expected:?}"
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+    }
+    failures
+}
+
+#[test]
+fn an_index_read_of_a_disagreeing_literal_its_slice_or_a_let_holding_it_draws_the_literals_diagnostic_alone_382()
+ {
+    let failures = symphonyscript_fixtures::covered(disagreeing_literal_read_rows);
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_an_index_read_of_a_disagreeing_literal_its_slice_or_a_let_holding_it_draws_the_literals_diagnostic_alone_382()
+ {
+    let failures = disagreeing_literal_read_rows(&symphonyscript_fixtures::Rows::Every);
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
