@@ -1672,11 +1672,9 @@ impl<'a> Engine<'a> {
                 self.cycle_spans.push(span);
             }
         }
-        for query in &path {
-            if let Some((name, loc)) = self.declaration(*query)? {
-                names.push(name);
-                locs.push(loc);
-            }
+        for (name, loc) in self.cycle_names(&path)? {
+            names.push(name);
+            locs.push(loc);
         }
         if names.is_empty() && self.evaluated_cycle(&path)? {
             return Ok(());
@@ -1813,11 +1811,9 @@ impl<'a> Engine<'a> {
         }
         let mut names = Vec::new();
         let mut locs = Vec::new();
-        for query in &queries {
-            if let Some((name, loc)) = self.declaration(*query)? {
-                names.push(name);
-                locs.push(loc);
-            }
+        for (name, loc) in self.cycle_names(&queries)? {
+            names.push(name);
+            locs.push(loc);
         }
         if names.is_empty() {
             return Ok(false);
@@ -1914,16 +1910,53 @@ impl<'a> Engine<'a> {
     fn draw_candidate_cycle(&mut self, path: &[Query]) -> Result<(), Internal> {
         let mut names = Vec::new();
         let mut locs = Vec::new();
-        for query in path {
-            if let Some((name, loc)) = self.declaration(*query)? {
-                names.push(name);
-                locs.push(loc);
-            }
+        for (name, loc) in self.cycle_names(path)? {
+            names.push(name);
+            locs.push(loc);
         }
         if names.is_empty() {
             return Ok(());
         }
         self.declaration_cycle(path, names, &locs)
+    }
+
+    fn cycle_names(&self, path: &[Query]) -> Result<Vec<(String, Loc)>, Internal> {
+        let mut kept: Vec<(Query, String, Loc)> = Vec::new();
+        let mut unopened: Option<ScopeId> = None;
+        for query in path {
+            if let Query::Param(scope, index) = *query
+                && self.bound_to_argument(scope, index)?
+            {
+                match kept
+                    .iter()
+                    .rposition(|(held, ..)| matches!(held, Query::Expr(_, body) if *body == scope))
+                {
+                    Some(at) => kept.truncate(at),
+                    None => unopened = Some(scope),
+                }
+                continue;
+            }
+            if let (Some(scope), Query::Expr(_, body)) = (unopened, *query)
+                && body == scope
+            {
+                break;
+            }
+            if let Some((name, loc)) = self.declaration(*query)? {
+                kept.push((*query, name, loc));
+            }
+        }
+        Ok(kept.into_iter().map(|(_, name, loc)| (name, loc)).collect())
+    }
+
+    pub(super) fn bound_to_argument(&self, scope: ScopeId, index: u32) -> Result<bool, Internal> {
+        let ScopeKind::Locals(locals) = &self.scope_of(scope)?.kind else {
+            return Ok(false);
+        };
+        let at = usize::try_from(index).map_err(|_| Internal::missed("parameter"))?;
+        Ok(matches!(
+            locals.params.get(at),
+            Some(super::param_source::ParamSource::Arg { .. })
+        ))
     }
 
     fn declaration_cycle(

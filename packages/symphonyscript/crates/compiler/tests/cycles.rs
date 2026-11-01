@@ -658,3 +658,34 @@ fn a_component_of_the_declaration_graph_draws_one_cycle_the_shortest_through_its
     }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
+
+#[test]
+fn a_cycle_through_an_argument_names_the_caller_and_no_parameter_c1_9() {
+    let bodies = ["fn g(x): x", "fn g(x): 1", "fn g(x): h(x)\nfn h(y): y + 0"];
+    let holders = [
+        vec!["let a = g(a)", "Clip c:\n    Note/a"],
+        vec!["let a = g(a + 1)", "Clip c:\n    Note/a"],
+        vec![
+            "pattern P():\n    let a = g(a)\n    Note/a",
+            "Clip c:\n    P",
+        ],
+    ];
+    let mut failures = Vec::new();
+    for body in bodies {
+        for holder in &holders {
+            let mut items = vec![body];
+            items.extend(holder.iter().copied());
+            for order in support::permutations(&items) {
+                let text = format!("{}\n", order.join("\n"));
+                let found: Vec<String> = declaration_cycles(&text)
+                    .into_iter()
+                    .map(|(at, summary)| format!("{at}: {summary}"))
+                    .collect();
+                if found != ["a: these declarations reach themselves: a → a"] {
+                    failures.push(format!("{text}found {found:?}\n"));
+                }
+            }
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}

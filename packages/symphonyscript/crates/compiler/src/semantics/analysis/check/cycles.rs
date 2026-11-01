@@ -256,6 +256,12 @@ impl Engine<'_> {
         if let Some(known) = identities.get(&query) {
             return Ok(known.clone());
         }
+        if let Query::Param(scope, index) = query
+            && self.bound_to_argument(scope, index)?
+        {
+            identities.insert(query, None);
+            return Ok(None);
+        }
         let found = self
             .declaration(query)?
             .map(|(name, loc)| ((loc, name), matches!(query, Query::Expr(..))));
