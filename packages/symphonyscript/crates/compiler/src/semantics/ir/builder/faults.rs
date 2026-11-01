@@ -1,7 +1,7 @@
 use std::ops::Range;
 
 use crate::diagnostics::Diagnostic;
-use crate::syntax::{ElementView, NodeView, SyntaxKind, Walk};
+use crate::syntax::{ElementView, NodeView, SyntaxKind};
 
 pub(super) struct Faults {
     marks: Vec<(u32, u32)>,
@@ -40,6 +40,7 @@ impl Faults {
     }
 
     pub fn first_in(&self, range: Range<u32>) -> Option<u32> {
+        crate::semantics::counted_walk::CountedWalk::HirBuilderCall.step();
         let from = self
             .marks
             .partition_point(|(start, _)| *start < range.start);
@@ -50,6 +51,7 @@ impl Faults {
     }
 
     pub fn touch(&self, range: Range<u32>) -> bool {
+        crate::semantics::counted_walk::CountedWalk::HirBuilderCall.step();
         let end = range.end.max(range.start + 1);
         let before = self.marks.partition_point(|(start, _)| *start < end);
         self.marks
@@ -61,11 +63,8 @@ impl Faults {
 }
 
 fn unclosed_brackets(root: &NodeView<'_>) -> Vec<Range<u32>> {
-    root.preorder()
-        .filter_map(|event| match event {
-            Walk::Enter(ElementView::Node(node)) => unclosed(&node),
-            Walk::Enter(ElementView::Token(_)) | Walk::Leave(_) => None,
-        })
+    root.descendants()
+        .filter_map(|node| unclosed(&node))
         .collect()
 }
 
@@ -78,12 +77,14 @@ fn unclosed(node: &NodeView<'_>) -> Option<Range<u32>> {
         return Some(node.range());
     }
     if node.kind() == SyntaxKind::MapType {
+        crate::semantics::counted_walk::CountedWalk::FaultsUnclosed.step();
         let closed = node
             .children_with_tokens()
             .any(|element| element.kind() == SyntaxKind::RBracket);
         return (!closed).then(|| node.range());
     }
     if node.kind() == SyntaxKind::TypeRef {
+        crate::semantics::counted_walk::CountedWalk::FaultsUnclosed.step();
         let depth = node
             .children_with_tokens()
             .fold(0i32, |depth, element| match element.kind() {
@@ -115,6 +116,7 @@ fn unclosed(node: &NodeView<'_>) -> Option<Range<u32>> {
         }
         _ => return None,
     };
+    crate::semantics::counted_walk::CountedWalk::FaultsUnclosed.step();
     let opener = match closer {
         SyntaxKind::RParen => SyntaxKind::LParen,
         SyntaxKind::RBracket => SyntaxKind::LBracket,

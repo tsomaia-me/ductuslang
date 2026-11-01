@@ -50,6 +50,7 @@ pub(crate) struct Parser<'a> {
     previous_line_error: bool,
     tasks: Vec<Task>,
     groups: std::collections::HashMap<usize, Option<(usize, bool)>>,
+    peeked: Option<(usize, Option<(usize, SyntaxKind)>)>,
 }
 
 impl<'a> Parser<'a> {
@@ -69,6 +70,7 @@ impl<'a> Parser<'a> {
             previous_line_error: false,
             tasks: Vec::new(),
             groups: std::collections::HashMap::new(),
+            peeked: None,
         }
     }
 
@@ -98,6 +100,7 @@ impl<'a> Parser<'a> {
         let cost = Cost {
             work: self.lexer.work(),
             peak_stored_entries: self.lexer.peak_stored_entries(),
+            tokens: self.lexer.settled(),
         };
         let mut diagnostics = self.lexer.into_diagnostics();
         diagnostics.extend(self.diagnostics);
@@ -115,6 +118,7 @@ impl<'a> Parser<'a> {
     }
 
     fn kind_at(&mut self, index: usize) -> Option<SyntaxKind> {
+        crate::semantics::counted_walk::CountedWalk::ParserKindAt.step();
         if !self.fill(index) {
             return None;
         }
@@ -344,18 +348,38 @@ impl<'a> Parser<'a> {
     }
 
     fn significant(&mut self, n: usize) -> Option<usize> {
+        let (first, _) = self.first()?;
         let mut seen = 0;
+        let mut index = first;
+        while seen < n {
+            index += 1;
+            if !self.kind_at(index)?.is_trivia() {
+                seen += 1;
+            }
+        }
+        Some(index)
+    }
+
+    fn first(&mut self) -> Option<(usize, SyntaxKind)> {
+        if let Some((pos, first)) = self.peeked
+            && pos == self.pos
+        {
+            return first;
+        }
+        let first = self.first_significant();
+        self.peeked = Some((self.pos, first));
+        first
+    }
+
+    fn first_significant(&mut self) -> Option<(usize, SyntaxKind)> {
         let mut index = self.pos;
         while let Some(kind) = self.kind_at(index) {
             if !kind.is_trivia() {
-                if seen == 0 && self.end_region_before(index) {
+                if self.end_region_before(index) {
                     index = self.pos;
                     continue;
                 }
-                if seen == n {
-                    return Some(index);
-                }
-                seen += 1;
+                return Some((index, kind));
             }
             index += 1;
         }
@@ -394,12 +418,15 @@ impl<'a> Parser<'a> {
     }
 
     fn nth(&mut self, n: usize) -> Option<SyntaxKind> {
+        if n == 0 {
+            return self.peek();
+        }
         let index = self.significant(n)?;
         self.kind_at(index)
     }
 
     fn peek(&mut self) -> Option<SyntaxKind> {
-        self.nth(0)
+        self.first().map(|(_, kind)| kind)
     }
 
     fn at(&mut self, kind: SyntaxKind) -> bool {
@@ -492,6 +519,10 @@ impl<'a> Parser<'a> {
         let Some(kind) = self.kind_at(self.pos) else {
             return;
         };
+        self.raw_bump_kind(kind);
+    }
+
+    fn raw_bump_kind(&mut self, kind: SyntaxKind) {
         match kind {
             SyntaxKind::LParen
             | SyntaxKind::LBracket
@@ -543,18 +574,45 @@ impl<'a> Parser<'a> {
     }
 
     fn flush_trivia(&mut self) {
+        if let Some((pos, first)) = self.peeked
+            && pos == self.pos
+        {
+            let Some((index, kind)) = first else {
+                self.flush_trivia_scanning();
+                return;
+            };
+            while self.pos < index {
+                self.raw_bump();
+            }
+            self.peeked = Some((index, Some((index, kind))));
+            return;
+        }
+        self.flush_trivia_scanning();
+    }
+
+    fn flush_trivia_scanning(&mut self) {
         while self.kind_at(self.pos).is_some_and(SyntaxKind::is_trivia) {
             self.raw_bump();
         }
     }
 
+    fn current_kind(&mut self) -> Option<SyntaxKind> {
+        if let Some((pos, Some((index, kind)))) = self.peeked
+            && pos == self.pos
+            && index == pos
+        {
+            return Some(kind);
+        }
+        self.kind_at(self.pos)
+    }
+
     fn bump(&mut self) {
         self.block_ended = false;
         self.flush_trivia();
-        let Some(kind) = self.kind_at(self.pos) else {
+        let Some(kind) = self.current_kind() else {
             return;
         };
-        self.raw_bump();
+        self.raw_bump_kind(kind);
         if kind == SyntaxKind::Newline {
             self.previous_line_error = self.line_error;
             self.line_error = false;
@@ -720,6 +778,7 @@ impl<'a> Parser<'a> {
         if let Some(line) = self.lexer.resync_line(current, starts) {
             self.lexer.resynchronize(line, self.pos);
             self.groups.clear();
+            self.peeked = None;
         }
     }
 

@@ -48,17 +48,33 @@ impl<'p> NodeView<'p> {
     }
 
     pub fn children(&self) -> impl Iterator<Item = NodeView<'p>> + use<'p> {
-        self.raw.children().map(NodeView::new)
+        self.raw.children().map(|child| {
+            crate::semantics::counted_walk::CountedWalk::SyntaxViewElement.step();
+            NodeView::new(child)
+        })
     }
 
     pub fn children_with_tokens(&self) -> impl Iterator<Item = ElementView<'p>> + use<'p> {
-        self.raw.children_with_tokens().map(ElementView::new)
+        self.raw.children_with_tokens().map(|child| {
+            crate::semantics::counted_walk::CountedWalk::SyntaxViewElement.step();
+            ElementView::new(child)
+        })
+    }
+
+    pub(crate) fn descendants(&self) -> impl Iterator<Item = NodeView<'p>> + use<'p> {
+        self.raw.descendants().map(|node| {
+            crate::semantics::counted_walk::CountedWalk::SyntaxViewElement.step();
+            NodeView::new(node)
+        })
     }
 
     pub fn preorder(&self) -> impl Iterator<Item = Walk<'p>> + use<'p> {
-        self.raw.preorder_with_tokens().map(|event| match event {
-            rowan::WalkEvent::Enter(element) => Walk::Enter(ElementView::new(element)),
-            rowan::WalkEvent::Leave(element) => Walk::Leave(ElementView::new(element)),
+        self.raw.preorder_with_tokens().map(|event| {
+            crate::semantics::counted_walk::CountedWalk::SyntaxViewElement.step();
+            match event {
+                rowan::WalkEvent::Enter(element) => Walk::Enter(ElementView::new(element)),
+                rowan::WalkEvent::Leave(element) => Walk::Leave(ElementView::new(element)),
+            }
         })
     }
 

@@ -45,6 +45,7 @@ fn skipped_params(regions: &[NodeView<'_>]) -> UnknownNames {
 
 impl HirBuilder<'_> {
     pub(super) fn item(&mut self, item: Item<'_>) -> Result<Option<PlacementId>, Internal> {
+        crate::semantics::counted_walk::CountedWalk::HirBuilderCall.step();
         match item {
             Item::Let(node) if node.lambda().is_some() => {
                 if let Some(lambda) = node.lambda() {
@@ -171,6 +172,7 @@ impl HirBuilder<'_> {
     }
 
     pub(super) fn local_let(&mut self, node: &ast::LocalLet<'_>) -> LetDecl {
+        crate::semantics::counted_walk::CountedWalk::HirBuilderCall.step();
         let loc = self.loc(node.syntax().range());
         let value = match node.match_block() {
             Some(block) => self.match_block(&block),
@@ -185,6 +187,7 @@ impl HirBuilder<'_> {
     }
 
     pub(super) fn type_ref(&mut self, ty: &ast::Type<'_>) -> TypeRef {
+        crate::semantics::counted_walk::CountedWalk::HirBuilderCall.step();
         if missing_type(ty.syntax()) {
             return TypeRef {
                 base: TypeBase::Error,
@@ -247,6 +250,7 @@ impl HirBuilder<'_> {
     }
 
     pub(super) fn header_names(&self, item: &NodeView<'_>) -> Vec<String> {
+        crate::semantics::counted_walk::CountedWalk::HirBuilderCall.step();
         let mut names = Vec::new();
         let Some(fault) = self.faults.first_in(item.range()) else {
             return names;
@@ -268,6 +272,7 @@ impl HirBuilder<'_> {
     }
 
     pub(super) fn ident(&self, name: Option<Name<'_>>) -> Option<Ident> {
+        crate::semantics::counted_walk::CountedWalk::HirBuilderCall.step();
         let name = name?;
         if self.faults.touch(name.range()) {
             return None;
@@ -279,10 +284,12 @@ impl HirBuilder<'_> {
     }
 
     pub(super) fn loc(&self, range: Range<u32>) -> Loc {
+        crate::semantics::counted_walk::CountedWalk::HirBuilderCall.step();
         Loc::new(self.file, range)
     }
 
     pub(super) fn push(&mut self, kind: ExprKind, loc: Loc) -> ExprId {
+        crate::semantics::counted_walk::CountedWalk::HirBuilderCall.step();
         let id = ExprId(index(self.hir.exprs.len()));
         self.hir.exprs.push(Expr { kind, loc });
         id

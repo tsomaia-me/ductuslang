@@ -83,6 +83,7 @@ impl HirBuilder<'_> {
     }
 
     pub(super) fn match_block(&mut self, block: &ast::MatchBlock<'_>) -> ExprId {
+        crate::semantics::counted_walk::CountedWalk::HirBuilderCall.step();
         let range = block.syntax().range();
         let last_arm = block
             .else_arm()
@@ -139,6 +140,7 @@ impl HirBuilder<'_> {
     }
 
     fn shape<'p>(&mut self, expr: &ast::Expr<'p>) -> (Shape, Vec<Option<ast::Expr<'p>>>) {
+        crate::semantics::counted_walk::CountedWalk::HirBuilderCall.step();
         match expr {
             ast::Expr::If(node) => (
                 Shape::If,
@@ -156,28 +158,27 @@ impl HirBuilder<'_> {
                     .map_or(node.syntax().range(), |ty| ty.syntax().range());
                 self.unbuilt(range, "a type after `is` (SPEC §5.3)")
             }
-            ast::Expr::Binary(node)
-                if node
-                    .op()
-                    .is_some_and(|op| op.kind() == SyntaxKind::Question2) =>
-            {
-                self.unbuilt(node.syntax().range(), "the fallback `??` (SPEC §5.3)")
+            ast::Expr::Binary(node) => {
+                let op = node.op();
+                match op.as_ref().map(TokenView::kind) {
+                    Some(SyntaxKind::Question2) => {
+                        return self
+                            .unbuilt(node.syntax().range(), "the fallback `??` (SPEC §5.3)");
+                    }
+                    Some(SyntaxKind::WithoutKw) => {
+                        return self
+                            .unbuilt(node.syntax().range(), "the operator `without` (SPEC §3.10)");
+                    }
+                    Some(_) | None => {}
+                }
+                match op
+                    .filter(|op| !self.faults.touch(op.range()))
+                    .and_then(|op| binary_op(&op, node))
+                {
+                    Some(op) => (Shape::Binary(op), vec![node.lhs(), node.rhs()]),
+                    None => (Shape::Leaf(ExprKind::Error), Vec::new()),
+                }
             }
-            ast::Expr::Binary(node)
-                if node
-                    .op()
-                    .is_some_and(|op| op.kind() == SyntaxKind::WithoutKw) =>
-            {
-                self.unbuilt(node.syntax().range(), "the operator `without` (SPEC §3.10)")
-            }
-            ast::Expr::Binary(node) => match node
-                .op()
-                .filter(|op| !self.faults.touch(op.range()))
-                .and_then(|op| binary_op(&op, node))
-            {
-                Some(op) => (Shape::Binary(op), vec![node.lhs(), node.rhs()]),
-                None => (Shape::Leaf(ExprKind::Error), Vec::new()),
-            },
             ast::Expr::Prefix(node) => {
                 let op = node
                     .op()
@@ -269,34 +270,49 @@ impl HirBuilder<'_> {
                 )
             }
             ast::Expr::Call(node) => {
-                if let Some(ast::Expr::Field(callee)) = node.callee()
-                    && callee.field().is_some_and(|field| field.text() == "past")
+                let callee = node.callee();
+                if let Some(ast::Expr::Field(field_callee)) = &callee
+                    && field_callee
+                        .field()
+                        .is_some_and(|field| field.text() == "past")
                 {
-                    return self.past_shape(node, &callee);
+                    return self.past_shape(node, field_callee);
                 }
                 let Some(args) = node.args() else {
                     return (Shape::Leaf(ExprKind::Error), Vec::new());
                 };
-                let lambdas: Vec<_> = args.lambdas().collect();
+                let mut lambdas = Vec::new();
+                let mut positional = Vec::new();
+                let mut named = Vec::new();
+                for child in args.syntax().children() {
+                    if child.kind() == SyntaxKind::NamedArg {
+                        lambdas.extend(child.children().find_map(ast::Lambda::cast));
+                        named.extend(ast::NamedArg::cast(child));
+                    } else if let Some(lambda) = ast::Lambda::cast(child.clone()) {
+                        lambdas.push(lambda);
+                    } else {
+                        positional.extend(ast::Expr::cast(child).map(Some));
+                    }
+                }
                 if !lambdas.is_empty() {
                     for lambda in lambdas {
                         self.draw_unbuilt(lambda.syntax().range(), "a lambda (SPEC §6.7)");
                     }
                     return (Shape::Leaf(ExprKind::Error), Vec::new());
                 }
-                let positional: Vec<_> = args.positional().map(Some).collect();
-                let named: Vec<_> = args.named().collect();
                 if !positional.is_empty() && !named.is_empty() {
                     return (Shape::Leaf(ExprKind::Error), Vec::new());
                 }
-                let (head, dot) = match node.callee() {
-                    Some(ast::Expr::Field(callee)) => match self.ident(callee.field()) {
-                        Some(name) => {
-                            let loc = self.loc(callee.syntax().range());
-                            (callee.receiver(), Some((name, loc)))
+                let (head, dot) = match callee {
+                    Some(ast::Expr::Field(field_callee)) => {
+                        match self.ident(field_callee.field()) {
+                            Some(name) => {
+                                let loc = self.loc(field_callee.syntax().range());
+                                (field_callee.receiver(), Some((name, loc)))
+                            }
+                            None => (Some(ast::Expr::Field(field_callee)), None),
                         }
-                        None => (node.callee(), None),
-                    },
+                    }
                     callee => (callee, None),
                 };
                 let mut children = vec![head];
@@ -334,11 +350,13 @@ impl HirBuilder<'_> {
         range: std::ops::Range<u32>,
         construct: &str,
     ) -> (Shape, Vec<Option<ast::Expr<'p>>>) {
+        crate::semantics::counted_walk::CountedWalk::HirBuilderCall.step();
         self.draw_unbuilt(range, construct);
         (Shape::Leaf(ExprKind::Error), Vec::new())
     }
 
     pub(super) fn draw_unbuilt(&mut self, range: std::ops::Range<u32>, construct: &str) {
+        crate::semantics::counted_walk::CountedWalk::HirBuilderCall.step();
         self.draw(
             Code::UnbuiltConstruct,
             range,
@@ -347,6 +365,7 @@ impl HirBuilder<'_> {
     }
 
     fn finish(&mut self, shape: Shape, loc: Loc, children: Vec<ExprId>) -> ExprId {
+        crate::semantics::counted_walk::CountedWalk::HirBuilderCall.step();
         let mut operands = children.into_iter();
         let mut next = |builder: &mut Self| {
             operands
@@ -500,6 +519,7 @@ impl HirBuilder<'_> {
         node: &ast::CallExpr<'p>,
         callee: &ast::FieldExpr<'p>,
     ) -> (Shape, Vec<Option<ast::Expr<'p>>>) {
+        crate::semantics::counted_walk::CountedWalk::HirBuilderCall.step();
         let error = (Shape::Leaf(ExprKind::Error), Vec::new());
         let target = match callee.receiver() {
             Some(ast::Expr::NameRef(receiver)) => self.ident(receiver.name()),
@@ -545,6 +565,7 @@ impl HirBuilder<'_> {
     }
 
     fn for_shape<'p>(&mut self, node: &ast::ForExpr<'p>) -> (Shape, Vec<Option<ast::Expr<'p>>>) {
+        crate::semantics::counted_walk::CountedWalk::HirBuilderCall.step();
         if let Some(lambda) = node.lets().find_map(|local| local.lambda()) {
             return self.unbuilt(lambda.syntax().range(), "a lambda (SPEC §6.7)");
         }
@@ -606,6 +627,7 @@ impl HirBuilder<'_> {
     }
 
     fn negation<'p>(&self, operand: Option<ast::Expr<'p>>) -> (Shape, Vec<Option<ast::Expr<'p>>>) {
+        crate::semantics::counted_walk::CountedWalk::HirBuilderCall.step();
         let Some(ast::Expr::Literal(literal)) = &operand else {
             return (Shape::Unary(UnaryOp::Neg), vec![operand]);
         };
@@ -641,6 +663,7 @@ impl HirBuilder<'_> {
     }
 
     fn literal(&self, node: &ast::Literal<'_>) -> ExprKind {
+        crate::semantics::counted_walk::CountedWalk::HirBuilderCall.step();
         let Some(token) = node.token() else {
             return ExprKind::Error;
         };
@@ -661,6 +684,7 @@ impl HirBuilder<'_> {
     }
 
     fn string<'p>(&self, node: &ast::StringLit<'p>) -> (Shape, Vec<Option<ast::Expr<'p>>>) {
+        crate::semantics::counted_walk::CountedWalk::HirBuilderCall.step();
         let error = (Shape::Leaf(ExprKind::Error), Vec::new());
         if !node.is_terminated() {
             return error;
