@@ -1,4 +1,4 @@
-use symphonyscript_core::{Count, Limits, Scalar, Vocabulary};
+use symphonyscript_core::{Count, LimitOverrides, Limits, Scalar, Vocabulary};
 use symphonyscript_fixtures::{
     Orders, Project, ProjectFile, bar_vocabulary, covered, deep_projects, dsp_project,
     envelope_vocabulary, music_project, pending_spec_examples, spec_examples, spec_projects,
@@ -72,6 +72,24 @@ fn nested_calls_that_use_their_parameter_twice_grow_the_graph_linearly() {
 
 fn analyzed<R>(text: &str, inspect: impl FnOnce(&Engine<'_>) -> R) -> (Vec<Diagnostic>, R) {
     analyzed_with(&vocabulary(), text, inspect)
+}
+
+fn analyzed_inlining_a_million<R>(
+    text: &str,
+    inspect: impl FnOnce(&Engine<'_>) -> R,
+) -> (Vec<Diagnostic>, R) {
+    let limits = LimitOverrides {
+        inlined_calls: Some(1_000_000),
+        inlined_calls_warning: Some(500_000),
+        ..LimitOverrides::default()
+    };
+    let compiler = Compiler::with_limits(&vocabulary(), limits).expect("the vocabulary compiles");
+    let source = Source {
+        path: "test.sym".into(),
+        text: text.into(),
+    };
+    let (diagnostics, found) = compiler.analyzed(&[source], inspect);
+    (diagnostics, found.expect("the run meets no internal error"))
 }
 
 fn analyzed_with<R>(
@@ -1007,7 +1025,7 @@ fn equal_sibling_calls_share_one_inlined_body() {
             text.push_str(&format!("fn f{level}(x): f{below}(x) + f{below}(x)\n"));
         }
         text.push_str(&format!("Clip c:\n    Note/(f{levels}(i))\n"));
-        let (diagnostics, work) = analyzed(&text, |engine| {
+        let (diagnostics, work) = analyzed_inlining_a_million(&text, |engine| {
             (engine.nodes.len(), engine.scopes.len(), engine.inlined)
         });
         assert_eq!(errors_of(&diagnostics), Vec::<&Diagnostic>::new());
@@ -1860,7 +1878,7 @@ fn inlined_bodies(engine: &Engine<'_>) -> usize {
 #[test]
 fn a_compilation_inlines_at_most_a_million_calls() {
     let work = |text: &str| {
-        let (diagnostics, sizes) = analyzed(text, |engine| {
+        let (diagnostics, sizes) = analyzed_inlining_a_million(text, |engine| {
             (
                 engine.nodes.len() + engine.scopes.len() + engine.bindings.len(),
                 inlined_bodies(engine),
@@ -1923,7 +1941,7 @@ fn the_count_before_inlining_is_the_count_of_every_construct() {
         "    when f2(i) > 0:\n",
         "        Note\n",
     ));
-    let measure = |text: &str| analyzed(text, |engine| (inlined_bodies(engine), engine.inlined));
+    let measure = |text: &str| analyzed_inlining_a_million(text, |engine| (inlined_bodies(engine), engine.inlined));
     let (diagnostics, (_, counted)) = measure(&text);
     assert_eq!(error_codes(&diagnostics), Vec::<Code>::new());
     assert_eq!(counted, 1_000_000);
@@ -1960,7 +1978,7 @@ fn million_inlinings(f0_notes: usize, declarations: &str, values: &[&str]) -> St
 
 #[test]
 fn a_crossing_of_the_inline_limit_is_reported_at_the_call_that_crosses_it() {
-    let measure = |text: &str| analyzed(text, |engine| (inlined_bodies(engine), engine.inlined));
+    let measure = |text: &str| analyzed_inlining_a_million(text, |engine| (inlined_bodies(engine), engine.inlined));
     let (diagnostics, (_, counted)) = measure(&million_inlinings(7, "", &[]));
     assert_eq!(error_codes(&diagnostics), Vec::<Code>::new());
     assert_eq!(counted, 1_000_000);
@@ -1996,7 +2014,7 @@ fn a_crossing_of_the_inline_limit_is_reported_at_the_call_that_crosses_it() {
 fn a_call_in_a_recursive_body_counts_once() {
     let recursive = "fn r(n): if n < 1 then f0(n) else r(n - 1)\n";
     let accepted = million_inlinings(6, recursive, &["r(0)", "r(3)"]);
-    let measure = |text: &str| analyzed(text, |engine| (inlined_bodies(engine), engine.inlined));
+    let measure = |text: &str| analyzed_inlining_a_million(text, |engine| (inlined_bodies(engine), engine.inlined));
     let (diagnostics, (_, counted)) = measure(&accepted);
     assert_eq!(error_codes(&diagnostics), Vec::<Code>::new());
     assert_eq!(counted, 1_000_000);
@@ -2032,7 +2050,7 @@ fn chains(f_levels: usize, g_levels: usize, declarations: &str, notes: &[&str]) 
 
 #[test]
 fn the_count_before_inlining_follows_the_defaults_each_call_leaves_open() {
-    let measure = |text: &str| analyzed(text, |engine| (inlined_bodies(engine), engine.inlined));
+    let measure = |text: &str| analyzed_inlining_a_million(text, |engine| (inlined_bodies(engine), engine.inlined));
     let failures = std::cell::RefCell::new(Vec::new());
     let rejected_at = |text: &str, call: &str| {
         let (diagnostics, (bodies, _)) = measure(text);
@@ -2147,7 +2165,7 @@ fn doubled_calls(levels: usize, body: &str) -> String {
 #[test]
 fn a_fault_in_shared_bodies_costs_what_the_clean_program_costs() {
     let measure = |text: &str| {
-        analyzed(text, |engine| {
+        analyzed_inlining_a_million(text, |engine| {
             (
                 engine.nodes.len(),
                 engine.scopes.len(),

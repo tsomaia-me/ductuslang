@@ -746,7 +746,7 @@ fn assert_costs_linear(construct: Construct, expected_rows: usize) {
 #[ignore = "stress"]
 fn stress_every_walk_of_check_over_a_let_costs_work_linear_in_the_program_in_every_shape_and_order()
 {
-    assert_costs_linear(Construct::Let, 24);
+    assert_costs_linear(Construct::Let, 20);
 }
 
 #[test]

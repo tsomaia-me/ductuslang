@@ -196,7 +196,7 @@ fn the_inline_limit_follows_the_compilations_limits() {
             (thousand, inlining(1_000), None),
             (thousand, inlining(1_001), refusal("1,000")),
             (thousand, inlining(2_047), refusal("1,000")),
-            (default, inlining(1_000_001), refusal("1,000,000")),
+            (default, inlining(100_001), refusal("100,000")),
             (two_million, inlining(2_000_001), refusal("2,000,000")),
         ],
     );
@@ -864,8 +864,8 @@ fn stress_each_limit_draws_its_warning_past_half_its_default() {
             "the evaluation goes deeper than 512 nested calls, the warning value of the limit of 1,024: r",
         ),
         (
-            inlining(500_001),
-            "makes the compilation inline more than 500,000 calls, the warning value of the limit of 1,000,000",
+            inlining(50_001),
+            "makes the compilation inline more than 50,000 calls, the warning value of the limit of 100,000",
         ),
         (
             empty_iterations(500_001),

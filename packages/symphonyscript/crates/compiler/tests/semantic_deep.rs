@@ -230,13 +230,19 @@ fn stress_a_call_chain_and_a_recursion_100000_levels_deep_pass_check_on_a_small_
         expanded.push_str(&format!(
             "fn walk{DEPTH}(i): 0\nClip c:\n    Note/(walk0(0))\n"
         ));
-        assert_eq!(code_counts(&expanded), BTreeMap::new());
         let deep = LimitOverrides {
             nesting_depth: Some(u64::try_from(2 * DEPTH).unwrap_or(u64::MAX)),
+            inlined_calls: Some(u64::try_from(2 * DEPTH).unwrap_or(u64::MAX)),
+            inlined_calls_warning: Some(u64::try_from(2 * DEPTH).unwrap_or(u64::MAX)),
             ..LimitOverrides::default()
         };
         let compiler = Compiler::with_limits(&symphonyscript_fixtures::vocabulary(), deep)
             .expect("the vocabulary compiles");
+        let diagnostics = compiler.check(&[Source {
+            path: "expanded.sym".into(),
+            text: expanded,
+        }]);
+        assert_eq!(support::errors(diagnostics), vec![]);
         let evaluated = format!(
             "fn count(i): if i >= {DEPTH} then 0 else count(i + 1) + 1\nClip c:\n    Note/(count(0) - {DEPTH})\n"
         );
