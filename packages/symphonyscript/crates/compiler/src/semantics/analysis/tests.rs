@@ -735,12 +735,12 @@ fn a_run_that_draws_no_error_holds_no_placeholder() {
         format!("{CHORD_FN}state f(true)\nstate a(1)\nstate i(0)\nClip c:\n    Note/((if f then chord(1) else [1, 2, 3])[0])\n    Note/([a, chord(3)[0]][1])\n    Note/(chord(3)[i])\n"),
         "fn g(k): if k < 1 then [[1, 2, 3], [4, 5, 6]] else g(k - 1)\nfn rev(a, k): if k < 1 then a else rev([a[1], a[0]], k - 1)\nfn grow(k): if k < 1 then [0] else [grow(k - 1)[0] + 1, 0]\nClip c:\n    Note/(g(2)[1][2] + rev([1, 2], 3)[0] + grow(3)[0])\n".into(),
     ];
-    let held = "Session s\nstate f(true)\nlet x = if f then Sine else Saw\n";
+    let held = "Session s\nstate f(true)\nstate x = if f then Sine else Saw\n";
     let enum_lets = [
         format!("{held}Clip c:\n    Note when x is Wave::Saw\n    Note when Wave::Saw is x\n"),
-        format!("{held}state w(Wave::Saw)\nlet g = x is not w\nClip c:\n    Note when g\n"),
+        format!("{held}state w(Wave::Saw)\nstate g = x is not w\nClip c:\n    Note when g\n"),
         format!(
-            "{held}let y = if f then Saw else Sine\nOsc o | wave=x\nClip c:\n    Note when x is y\n    Note when x is Saw\n"
+            "{held}state y = if f then Saw else Sine\nOsc o | wave=x\nClip c:\n    Note when x is y\n    Note when x is Saw\n"
         ),
     ];
     for text in recursive_arrays.iter().chain(&enum_lets) {
@@ -856,7 +856,7 @@ fn note_pitches_and_gates(engine: &Engine<'_>) -> Vec<(String, Option<String>)> 
 
 #[test]
 fn an_index_known_at_compile_time_reads_the_elements_own_binding() {
-    let text = "state a(1)\nstate b(2)\nstate j(0)\nlet c = [a, b, a + b]\nlet k = 1\nClip m:\n    Note/(c[1])\n    Note/(c[k])\n    for i in 1..2:\n        Note/(c[i])\n    Note/(c[2])\n    Note/(c[j])\n";
+    let text = "state a(1)\nstate b(2)\nstate j(0)\npattern P(c):\n    let k = 1\n    Note/(c[1])\n    Note/(c[k])\n    for i in 1..2:\n        Note/(c[i])\n    Note/(c[2])\n    Note/(c[j])\nClip m:\n    P | c=[a, b, a + b]\n";
     let (diagnostics, notes) = analyzed(text, note_pitches_and_gates);
     assert_eq!(errors_of(&diagnostics), Vec::<&Diagnostic>::new());
     let pitches: Vec<String> = notes.into_iter().map(|(pitch, _)| pitch).collect();
@@ -1644,7 +1644,7 @@ fn a_recursive_result_has_the_kind_its_body_gives_it() {
         ),
         (
             format!(
-                "{FIB_FN}state f(true)\nlet x = if f then fib(3) else fib(4)\nClip c:\n    Note/x\n"
+                "{FIB_FN}state f(true)\nstate x = if f then fib(3) else fib(4)\nClip c:\n    Note/x\n"
             ),
             "x",
             Scalar::I32,
@@ -1726,10 +1726,10 @@ fn a_reactive_value_shaped_by_a_recursive_result_alone_takes_its_default_shape()
     let accepted: Vec<DefaultShapeRow<'_>> = vec![
         (
             format!(
-                "{CHORD_FN}state f(true)\nlet x = if f then chord(1) else chord(2)\nClip c:\n    Note/(x[0])\n"
+                "{CHORD_FN}state f(true)\nstate x = if f then chord(1) else chord(2)\nClip c:\n    Note/(x[0])\n"
             ),
             "x",
-            3,
+            1,
             vec![
                 (EvalTy::I32, row(&[62, 65, 69])),
                 (EvalTy::I32, row(&[60, 64, 67])),
@@ -1747,9 +1747,9 @@ fn a_reactive_value_shaped_by_a_recursive_result_alone_takes_its_default_shape()
             ],
         ),
         (
-            format!("{GRID_FN}state i(0)\nlet row = grid(2)[i]\nClip c:\n    Note/(row[1])\n"),
+            format!("{GRID_FN}state i(0)\nstate row = grid(2)[i]\nClip c:\n    Note/(row[1])\n"),
             "row",
-            2,
+            1,
             vec![(
                 EvalTy::I32,
                 CVal::Array(CArray::new(vec![row(&[1, 2]), row(&[3, 4])])),
@@ -1757,7 +1757,7 @@ fn a_reactive_value_shaped_by_a_recursive_result_alone_takes_its_default_shape()
         ),
         (
             format!(
-                "{R_FN}state f(true)\nlet w = if f then r(0.1, 3) else r(0.1, 3)\nClip c | gain=(w[0])\n"
+                "{R_FN}state f(true)\nstate w = if f then r(0.1, 3) else r(0.1, 3)\nClip c | gain=(w[0])\n"
             ),
             "w",
             1,
@@ -1794,19 +1794,19 @@ fn a_reactive_value_shaped_by_a_recursive_result_alone_takes_its_default_shape()
         }
     }
     let annotated = format!(
-        "{CHORD_FN}state f(true)\nlet x: i32[3] = if f then chord(1) else chord(2)\nClip c:\n    Note/(x[2])\n"
+        "{CHORD_FN}state f(true)\nstate x: i32[3] = if f then chord(1) else chord(2)\nClip c:\n    Note/(x[2])\n"
     );
     let (diagnostics, (types, holes)) = analyzed(&annotated, |engine| {
         (element_types(engine, "x"), placeholders(engine))
     });
-    if !errors_of(&diagnostics).is_empty() || types != [Some(Scalar::I32); 3] || !holes.is_empty() {
+    if !errors_of(&diagnostics).is_empty() || types != [Some(Scalar::I32)] || !holes.is_empty() {
         failures.push(format!(
             "{annotated:?}: {types:?} {holes:?} with {:?}",
             error_codes(&diagnostics)
         ));
     }
     let mismatched = format!(
-        "{CHORD_FN}state f(true)\nlet x: i32[2] = if f then chord(1) else chord(2)\nClip c:\n    Note/(x[1])\n"
+        "{CHORD_FN}state f(true)\nstate x: i32[2] = if f then chord(1) else chord(2)\nClip c:\n    Note/(x[1])\n"
     );
     let (diagnostics, ()) = analyzed(&mismatched, |_| ());
     if error_codes(&diagnostics) != [Code::TypeMismatch] {
@@ -1814,18 +1814,18 @@ fn a_reactive_value_shaped_by_a_recursive_result_alone_takes_its_default_shape()
     }
     let other = "fn other(k): if k < 1 then [1, 2] else other(k - 1)\n";
     let variable = format!(
-        "{CHORD_FN}{other}state f(true)\nlet x = if f then chord(1) else other(1)\nClip c:\n    Note/(x[1])\n"
+        "{CHORD_FN}{other}state f(true)\nstate x = if f then chord(1) else other(1)\nClip c:\n    Note/(x[1])\n"
     );
     let (diagnostics, ()) = analyzed(&variable, |_| ());
     if !errors_of(&diagnostics).is_empty() {
         failures.push(format!("{variable:?}: {:?}", error_codes(&diagnostics)));
     }
     let rejected = format!(
-        "{R_FN}state f(true)\nlet w = if f then r(0.1, 3) else r(0.1, 3)\nOsc o | freq=(w[0])\n"
+        "{R_FN}state f(true)\nfn g(w): w[0]\nOsc o | freq=(g(if f then r(0.1, 3) else r(0.1, 3)))\n"
     );
     let (diagnostics, ()) = analyzed(&rejected, |_| ());
     let used = rejected.find("w[0]").unwrap_or(0);
-    let declared = rejected.find("let w").unwrap_or(0);
+    let declared = rejected.find("if f then r(0.1, 3)").unwrap_or(0);
     let found = located(&rejected, &diagnostics);
     if found != [(Code::InconsistentShapes, used, vec![declared])] {
         failures.push(format!("{rejected:?}: found {found:?}"));
@@ -1910,10 +1910,9 @@ fn the_count_before_inlining_is_the_count_of_every_construct() {
         text.push_str(&format!("fn f{level}(x): f{below}(x) + f{below}(x)\n"));
     }
     text.push_str(concat!(
-        "let a = f18(i)\n",
+        "state a = f18(i)\n",
         "pattern P(default root, extra = f15(i)):\n",
-        "    let b = f16(i)\n",
-        "    Note/(root + b + extra)\n",
+        "    Note/(root + f16(i) + extra)\n",
         "Clip c:\n",
         "    P/(f17(i))\n",
         "    Note/a when f13(i) > 0\n",
@@ -1930,7 +1929,7 @@ fn the_count_before_inlining_is_the_count_of_every_construct() {
     assert_eq!(counted, 1_000_000);
     let past = format!("{text}        Note/(f0(i))\n");
     let (diagnostics, (bodies, _)) = measure(&past);
-    let crossing = past.find("f16(i)").unwrap_or(usize::MAX);
+    let crossing = past.find("f15(i)").unwrap_or(usize::MAX);
     let used = past.find("P/(f17(i))").unwrap_or(usize::MAX);
     assert_eq!(
         located(&past, &diagnostics),

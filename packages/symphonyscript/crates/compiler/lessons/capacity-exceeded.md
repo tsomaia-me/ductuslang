@@ -22,7 +22,7 @@ A string where a `u8` array is expected holds its bytes, and a choice of strings
 
 ```sym natives
 state loud(false)
-let word: u8[..3] = if loud then "GET" else "AB"
+state word: u8[..3] = if loud then "GET" else "AB"
 
 Clip c:
     Note/(checksum(word))

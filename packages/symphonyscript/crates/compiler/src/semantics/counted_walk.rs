@@ -138,6 +138,7 @@ pub(crate) enum CountedWalk {
     CheckerAnonymousNames,
     CheckerBodyNames,
     CellGroupsOf,
+    UnrunCells,
     NameTwinsUnusedName,
     NameTwinsRestored,
     NameTwinsScan,
@@ -176,7 +177,7 @@ pub(crate) enum CountedWalk {
 }
 
 #[cfg(test)]
-const WALKS: usize = 173;
+const WALKS: usize = 174;
 
 #[cfg(test)]
 thread_local! {
@@ -324,6 +325,7 @@ impl CountedWalk {
         CountedWalk::CheckerAnonymousNames,
         CountedWalk::CheckerBodyNames,
         CountedWalk::CellGroupsOf,
+        CountedWalk::UnrunCells,
         CountedWalk::NameTwinsUnusedName,
         CountedWalk::NameTwinsRestored,
         CountedWalk::NameTwinsScan,

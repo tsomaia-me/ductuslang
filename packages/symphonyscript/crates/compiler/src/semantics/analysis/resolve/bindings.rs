@@ -28,6 +28,7 @@ use crate::semantics::analysis::kind_of::kind_of;
 use crate::semantics::analysis::layout::Layout;
 use crate::semantics::analysis::lengths_of::lengths_of;
 use crate::semantics::analysis::let_ref::LetRef;
+use crate::semantics::analysis::locals_owner::LocalsOwner;
 use crate::semantics::analysis::op::Op;
 use crate::semantics::analysis::param_source::ParamSource;
 use crate::semantics::analysis::query::Query;
@@ -64,6 +65,14 @@ impl Engine<'_> {
         let Some(val) = value else {
             return Ok(false);
         };
+        if self.compile_time_let(scope, local)? {
+            let Some(sigs) = self.element_sigs(&val, need) else {
+                return Ok(false);
+            };
+            if sigs.iter().any(|sig| sig.reactive) {
+                return self.reactive_let(scope, local, &decl, &val, within);
+            }
+        }
         let annotation = decl.ty.as_ref().and_then(|ty| self.annotation(ty));
         let unusable = decl.ty.is_some() && annotation.is_none();
         let loc = decl.loc;
@@ -167,6 +176,48 @@ impl Engine<'_> {
         self.note_defaulted(defaulted, &bound);
         self.note_value_binding(Query::Let(scope, local), &bound);
         self.memo.lets.insert((scope, local), bound);
+        Ok(true)
+    }
+
+    fn compile_time_let(&self, scope: ScopeId, local: LetRef) -> Result<bool, Internal> {
+        Ok(match local {
+            LetRef::Top(_) => true,
+            LetRef::Local(_) => match &self.scope_of(scope)?.kind {
+                ScopeKind::Locals(locals) => matches!(locals.owner, LocalsOwner::Pattern(_)),
+                ScopeKind::Global { .. }
+                | ScopeKind::ParamPrefix { .. }
+                | ScopeKind::Body { .. }
+                | ScopeKind::ForVar { .. }
+                | ScopeKind::WireClause { .. }
+                | ScopeKind::WrittenClause { .. } => false,
+            },
+        })
+    }
+
+    fn reactive_let(
+        &mut self,
+        scope: ScopeId,
+        local: LetRef,
+        decl: &LetDecl,
+        val: &Val,
+        within: ScopeId,
+    ) -> Result<bool, Internal> {
+        for node in val.nodes() {
+            let reads = self.untypable_reads(node)?;
+            self.typing.read_by_faults.extend(reads);
+            self.typing.refused_lets.push(node);
+        }
+        let (name, loc) = match decl.name.as_ref() {
+            Some(name) => (name.text.as_str(), name.loc),
+            None => ("", decl.loc),
+        };
+        self.error(
+            Code::ReactiveLet,
+            loc,
+            within,
+            format!("`{name}` is a `let`, a compile-time value, and its value reads a cell"),
+        )?;
+        self.memo.lets.insert((scope, local), BoundVal::Error);
         Ok(true)
     }
 

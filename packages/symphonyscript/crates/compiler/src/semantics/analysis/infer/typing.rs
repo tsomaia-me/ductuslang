@@ -13,6 +13,7 @@ pub(crate) struct Typing {
     pub default_widths: FastSet<BindingId>,
     pub untyped: FastSet<BindingId>,
     pub read_by_faults: FastSet<BindingId>,
+    pub refused_lets: Vec<NodeId>,
     pub untyped_values: FastSet<NodeId>,
     pub awaiting_enum: Vec<BindingId>,
     pub enum_expected: Vec<BindingId>,

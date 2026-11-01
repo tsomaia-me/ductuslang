@@ -6,7 +6,7 @@ The first matching arm wins, so a repeated arm never runs.
 
 ```sym-error
 state w(Wave::Saw)
-let l = match w:
+state l = match w:
     Sine: 1
     Sine: 2
     else: 3
@@ -16,7 +16,7 @@ let l = match w:
 
 ```sym
 state w(Wave::Saw)
-let l = match w:
+state l = match w:
     Sine: 1
     Saw: 2
     else: 3

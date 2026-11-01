@@ -13,6 +13,7 @@ use crate::semantics::ir::Loc;
 
 impl Engine<'_> {
     pub(crate) fn check_program(&mut self) -> Result<(), Internal> {
+        self.unrun_cells()?;
         for index in 0..self.wires.len() {
             crate::semantics::counted_walk::CountedWalk::CountsCheckProgram.step();
             let wire = WireId(u32::try_from(index).unwrap_or(u32::MAX));

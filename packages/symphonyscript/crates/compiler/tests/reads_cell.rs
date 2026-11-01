@@ -64,7 +64,7 @@ impl Form {
             Form::CellAttribute => &["state g(2.0)\n", "Clip w | gain=g\n"],
             Form::Cell | Form::ChoiceTakingAValue => &["state g(2.0)\n"],
             Form::LetTakingAValue => &["state g(2.0)\n", "let x = if false then g else 3.0\n"],
-            Form::LetTakingACell => &["state g(2.0)\n", "let y = if true then g else 3.0\n"],
+            Form::LetTakingACell => &["state g(2.0)\n", "state y = if true then g else 3.0\n"],
         }
     }
 
@@ -105,7 +105,7 @@ impl Asker {
         match self {
             Asker::RecursiveBody => (Code::ReactiveRecursion, "r(3)".to_string()),
             Asker::RecursiveArgument => (Code::ReactiveRecursion, format!("r(i32({read}))")),
-            Asker::LetBound => (Code::ReactiveIterable, "k".to_string()),
+            Asker::LetBound => (Code::ReactiveLet, "k".to_string()),
             Asker::DirectBound => (Code::ReactiveIterable, format!("i32({read})")),
         }
     }

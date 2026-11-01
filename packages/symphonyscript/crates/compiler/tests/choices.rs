@@ -376,14 +376,17 @@ fn arm(form: Form, content: Content, index: usize, hosted: bool) -> Option<Arm> 
             let name = format!("s{index}");
             let literal = element_literal(element);
             Some(Arm {
-                items: vec![format!(
-                    "state {name} = ({name}.past(1, []) + [{literal}])[^4..]\n"
-                )],
+                items: vec![
+                    format!("state go{index}(0)\n"),
+                    format!(
+                        "state {name} = (if go{index}.stepped then {name}.past(1, []) + [{literal}] else {name}.past(1, []) + [{literal}])[^4..]\n"
+                    ),
+                ],
                 text: name,
                 locals: Vec::new(),
             })
         }
-        (Form::TopLet, _) if is_array => {
+        (Form::TopLet, Content::Scalar(_) | Content::Fixed { .. }) if is_array => {
             let name = format!("l{index}");
             let (value, mut items) = held(content)?;
             items.push(format!("let {name} = {value}\n"));
@@ -1362,7 +1365,7 @@ fn assert_covered_arms_hold(chooser: Chooser, programs: usize, landing_apart: us
 }
 #[test]
 fn the_arms_of_a_compile_time_true_choice_agree_wherever_it_stands() {
-    assert_covered_arms_hold(Chooser::True, 528, 0);
+    assert_covered_arms_hold(Chooser::True, 527, 0);
 }
 
 #[test]
@@ -1373,7 +1376,7 @@ fn exhaustive_the_arms_of_a_compile_time_true_choice_agree_wherever_it_stands() 
 
 #[test]
 fn the_arms_of_a_compile_time_false_choice_agree_wherever_it_stands() {
-    assert_covered_arms_hold(Chooser::False, 528, 0);
+    assert_covered_arms_hold(Chooser::False, 527, 0);
 }
 
 #[test]
@@ -1384,7 +1387,7 @@ fn exhaustive_the_arms_of_a_compile_time_false_choice_agree_wherever_it_stands()
 
 #[test]
 fn the_arms_of_a_runtime_choice_agree_wherever_it_stands() {
-    assert_covered_arms_hold(Chooser::Flag, 528, 0);
+    assert_covered_arms_hold(Chooser::Flag, 527, 0);
 }
 
 #[test]
@@ -1395,7 +1398,7 @@ fn exhaustive_the_arms_of_a_runtime_choice_agree_wherever_it_stands() {
 
 #[test]
 fn the_arms_of_a_compile_time_enum_match_agree_wherever_it_stands() {
-    assert_covered_arms_hold(Chooser::Enum, 528, 0);
+    assert_covered_arms_hold(Chooser::Enum, 527, 0);
 }
 
 #[test]
@@ -1406,7 +1409,7 @@ fn exhaustive_the_arms_of_a_compile_time_enum_match_agree_wherever_it_stands() {
 
 #[test]
 fn the_arms_of_a_match_on_an_enum_input_agree_wherever_it_stands() {
-    assert_covered_arms_hold(Chooser::EnumInput, 528, 0);
+    assert_covered_arms_hold(Chooser::EnumInput, 527, 0);
 }
 
 #[test]
@@ -1417,7 +1420,7 @@ fn exhaustive_the_arms_of_a_match_on_an_enum_input_agree_wherever_it_stands() {
 
 #[test]
 fn the_arms_of_a_match_on_an_integer_input_agree_wherever_it_stands() {
-    assert_covered_arms_hold(Chooser::Integer, 528, 0);
+    assert_covered_arms_hold(Chooser::Integer, 527, 0);
 }
 
 #[test]
@@ -1659,5 +1662,5 @@ fn recursive_annotation_outcome(rows: &Rows) -> Outcome {
 #[test]
 fn a_scalar_annotation_refusing_a_choice_with_a_recursive_arm_draws_where_its_fixed_twin_draws_in_either_order_403()
  {
-    assert_outcome(&covered(recursive_annotation_outcome), (108, 0));
+    assert_outcome(&covered(recursive_annotation_outcome), (109, 0));
 }

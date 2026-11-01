@@ -6,14 +6,14 @@ The arms are what the `match` chooses among.
 
 ```sym-error
 state b(1)
-let a = match b
+state a = match b
 ```
 
 The `match` has no `:` and no arms.
 
 ```sym
 state b(1)
-let a = match b:
+state a = match b:
     0: 10
     else: 20
 ```

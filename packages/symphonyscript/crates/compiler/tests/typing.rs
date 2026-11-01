@@ -406,11 +406,11 @@ fn a_cell_is_read_in_each_use_type_and_its_initial_value_fits_every_use() {
         ),
         ("state a(0.5): i32\n", &[Code::TypeMismatch]),
         (
-            "state a(1)\nlet b = a + 0.5\nClip c:\n    Note when b > 1\n",
+            "state a(1)\nstate b = a + 0.5\nClip c:\n    Note when b > 1\n",
             &[],
         ),
         (
-            "state f(0.5)\nlet g = f * 2\nClip c:\n    Note/g\n",
+            "state f(0.5)\nstate g = f * 2\nClip c:\n    Note/g\n",
             &[Code::FloatToInteger],
         ),
         ("state f(0.5)\nClip c:\n    Note/(i32(f))\n", &[]),
@@ -418,12 +418,12 @@ fn a_cell_is_read_in_each_use_type_and_its_initial_value_fits_every_use() {
 }
 
 #[test]
-fn a_reactive_let_read_by_another_keeps_the_width_of_the_input_it_reads() {
+fn a_derived_state_read_by_another_keeps_the_width_of_the_cell_it_reads_433() {
     for links in 1..=50 {
         for (annotation, misfits) in [("", 0), (": i32", links)] {
-            let mut text = format!("state a(1){annotation}\nlet l1 = a + 1\n");
+            let mut text = format!("state a(1){annotation}\nstate l1 = a + 1\n");
             for link in 2..=links {
-                text.push_str(&format!("let l{link} = l{} * 2\n", link - 1));
+                text.push_str(&format!("state l{link} = l{} * 2\n", link - 1));
             }
             text.push_str("Clip k:\n");
             for link in 1..=links {
@@ -558,7 +558,7 @@ fn a_bare_variant_stands_only_where_an_enum_is_expected() {
         ("Synth s:\n    Osc | wave=Saw\n", &[]),
         ("state w(Wave::Saw)\nSynth s:\n    Osc when w is Saw\n", &[]),
         (
-            "state w(Wave::Saw)\nlet level = match w:\n    Sine: 1.0\n    Saw: 0.8\n    else: 0.6\nClip c | gain=level\n",
+            "state w(Wave::Saw)\nstate level = match w:\n    Sine: 1.0\n    Saw: 0.8\n    else: 0.6\nClip c | gain=level\n",
             &[],
         ),
         ("let w = Saw\nSynth s:\n    Osc | wave=w\n", &[]),
@@ -571,15 +571,15 @@ fn a_bare_variant_stands_only_where_an_enum_is_expected() {
 
 #[test]
 fn the_operands_of_is_give_a_reactive_let_its_enum() {
-    let held = "Session s\nstate f(true)\nlet x = if f then Sine else Saw\n";
+    let held = "Session s\nstate f(true)\nstate x = if f then Sine else Saw\n";
     let rows = [
         format!("{held}Clip c:\n    Note when x is Wave::Saw\n"),
         format!("{held}Clip c:\n    Note when x is not Wave::Saw\n"),
         format!("{held}Clip c:\n    Note when Wave::Saw is x\n"),
         format!("{held}state w(Wave::Saw)\nClip c:\n    Note when x is w\n"),
-        format!("{held}let g = x is Wave::Saw\nClip c:\n    Note when g\n"),
+        format!("{held}state g = x is Wave::Saw\nClip c:\n    Note when g\n"),
         format!(
-            "{held}let y = if f then Saw else Sine\nOsc o | wave=x\nClip c:\n    Note when x is y\n"
+            "{held}state y = if f then Saw else Sine\nOsc o | wave=x\nClip c:\n    Note when x is y\n"
         ),
         format!("{held}Osc o | wave=x\nClip c:\n    Note when x is Saw\n"),
         format!("{held}Osc o | wave=x\n"),
@@ -590,8 +590,8 @@ fn the_operands_of_is_give_a_reactive_let_its_enum() {
 }
 
 #[test]
-fn a_let_an_error_leaves_untyped_reads_as_a_placeholder_at_its_uses() {
-    let held = "Session s\nstate f(true)\nlet x = if f then Sine else Saw\n";
+fn a_let_an_error_leaves_untyped_reads_as_a_placeholder_at_its_uses_433() {
+    let held = "Session s\nstate f(true)\nstate x = if f then Sine else Saw\n";
     let the_value = "if f then Sine else Saw";
     for uses in [
         "Clip c:\n    Note when x is x\n",
@@ -606,20 +606,16 @@ fn a_let_an_error_leaves_untyped_reads_as_a_placeholder_at_its_uses() {
     }
     support::expect_codes(
         "state f(true)\nlet x = if f then \"a\" else \"b\"\nClip c:\n    Note when x is \"a\"\n",
-        &[(
-            Code::ReactiveString,
-            "let x = if f then \"a\" else \"b\"\n",
-            0,
-        )],
+        &[(Code::ReactiveLet, "x", 0)],
     );
     support::expect_codes(
-        &format!("{held}let y = x\nClip c:\n    Note when y is 1\n"),
+        &format!("{held}state y = x\nClip c:\n    Note when y is 1\n"),
         &[(Code::TypeMismatch, the_value, 0)],
     );
-    let named = "let t = if x is Wave::Saw then \"a\" else \"b\"\n";
+    let named = "let tone = if x is Wave::Saw then \"a\" else \"b\"\n";
     support::expect_codes(
-        &format!("{held}{named}Kit k:\n    Sampler | file=t\n"),
-        &[(Code::ReactiveString, named, 0)],
+        &format!("{held}{named}Kit k:\n    Sampler | file=tone\n"),
+        &[(Code::ReactiveLet, "tone", 0)],
     );
     let typed = format!("{held}Osc o | wave=x\n");
     support::expect_codes(
@@ -638,57 +634,57 @@ fn a_let_an_error_leaves_untyped_reads_as_a_placeholder_at_its_uses() {
 
 #[test]
 fn a_bare_variant_lets_diagnostic_stands_where_its_variants_are_written() {
-    let held = "Session s\nstate f(true)\nstate g(true)\nlet x = if f then Sine else Saw\n";
-    let other = "let w = if f then Saw else Square\n";
+    let held = "Session s\nstate f(true)\nstate g(true)\nstate x = if f then Sine else Saw\n";
+    let other = "state w = if f then Saw else Square\n";
     let bare = "Session s\nstate f(true)\nstate g(true)\n";
     let the_value = "if f then Sine else Saw";
     let other_value = "if f then Saw else Square";
     let failures: Vec<String> = [
         (
             held,
-            "let y = x\n",
+            "state y = x\n",
             "    Note when y + true\n",
-            vec![(the_value, vec!["let y"])],
+            vec![(the_value, vec!["state y"])],
         ),
         (
             held,
-            "let y = x\nlet z = y\n",
+            "state y = x\nstate z = y\n",
             "    Note when z + true\n",
-            vec![(the_value, vec!["let y", "let z"])],
+            vec![(the_value, vec!["state y", "state z"])],
         ),
         (
             held,
-            "let y = x\n",
+            "state y = x\n",
             "    Note when x + true\n    Note when y + true\n",
-            vec![(the_value, vec!["let y"])],
+            vec![(the_value, vec!["state y"])],
         ),
         (
             held,
-            "let y = x\nlet z = x\n",
+            "state y = x\nstate z = x\n",
             "    Note when y + true\n    Note when z + true\n",
-            vec![(the_value, vec!["let y", "let z"])],
+            vec![(the_value, vec!["state y", "state z"])],
         ),
         (
             held,
-            "let w = if f then Saw else Square\nlet y = if g then x else w\n",
+            "state w = if f then Saw else Square\nstate y = if g then x else w\n",
             "    Note when y + true\n",
-            vec![(the_value, vec![other, "let y"])],
+            vec![(the_value, vec![other, "state y"])],
         ),
         (
             held,
-            "let y = if f then x else Square\n",
+            "state y = if f then x else Square\n",
             "    Note when y + true\n",
-            vec![(the_value, vec!["let y"])],
+            vec![(the_value, vec!["state y"])],
         ),
         (
             held,
-            "let w = if f then Saw else Square\n",
+            "state w = if f then Saw else Square\n",
             "    Note when x is w\n",
             vec![(the_value, vec![other])],
         ),
         (
             held,
-            "let w = if f then Saw else Square\n",
+            "state w = if f then Saw else Square\n",
             "    Note when x + true\n    Note when w + true\n",
             vec![(the_value, vec![]), (other_value, vec![])],
         ),
@@ -700,15 +696,15 @@ fn a_bare_variant_lets_diagnostic_stands_where_its_variants_are_written() {
         ),
         (
             bare,
-            "let v = w\nlet w = if f then Saw else Sine\n",
+            "state v = w\nstate w = if f then Saw else Sine\n",
             "    Note/60\n",
-            vec![("if f then Saw else Sine", vec!["let v"])],
+            vec![("if f then Saw else Sine", vec!["state v"])],
         ),
         (
             bare,
-            "let u = if f then v else v\nlet v = w\nlet w = if f then Saw else Sine\n",
+            "state u = if f then v else v\nstate v = w\nstate w = if f then Saw else Sine\n",
             "    Note/60\n",
-            vec![("if f then Saw else Sine", vec!["let u", "let v"])],
+            vec![("if f then Saw else Sine", vec!["state u", "state v"])],
         ),
     ]
     .into_iter()
@@ -745,30 +741,32 @@ fn a_bare_variant_lets_diagnostic_stands_where_its_variants_are_written() {
 
 #[test]
 fn a_let_that_reads_a_typed_enum_takes_its_type() {
-    let held = "Session s\nstate f(true)\nlet x = if f then Sine else Saw\n";
+    let held = "Session s\nstate f(true)\nstate x = if f then Sine else Saw\n";
     let typed = "Synth s2:\n    Osc | wave=x\n";
     support::expect_codes(
-        "Session s\nstate w(Wave::Saw)\nlet y = w\nClip c:\n    Note when y\n",
+        "Session s\nstate w(Wave::Saw)\nstate y = w\nClip c:\n    Note when y\n",
         &[(Code::ConditionType, "y", 1)],
     );
     support::expect_codes(
-        &format!("{held}let y = x\nClip c:\n    Note when y\n{typed}"),
+        &format!("{held}state y = x\nClip c:\n    Note when y\n{typed}"),
         &[(Code::ConditionType, "y", 1)],
     );
     support::expect_codes(
-        &format!("{held}let y = x\nlet z = if f then y else x\nClip c:\n    Note when z\n{typed}"),
+        &format!(
+            "{held}state y = x\nstate z = if f then y else x\nClip c:\n    Note when z\n{typed}"
+        ),
         &[(Code::ConditionType, "z", 1)],
     );
     support::expect_codes(
-        &format!("{held}let y = x\nClip c:\n    Note when y is Saw\n{typed}"),
+        &format!("{held}state y = x\nClip c:\n    Note when y is Saw\n{typed}"),
         &[],
     );
     for (lets, held) in [
-        ("let y = if f then x else Square\n", held),
-        ("state i(0)\nlet y = [x, Square][i]\n", held),
+        ("state y = if f then x else Square\n", held),
+        ("state i(0)\nstate y = [x, Square][i]\n", held),
         (
-            "let y = if f then w else Square\n",
-            "Session s\nstate f(true)\nstate w(Wave::Saw)\nlet x = if f then Sine else Saw\n",
+            "state y = if f then w else Square\n",
+            "Session s\nstate f(true)\nstate w(Wave::Saw)\nstate x = if f then Sine else Saw\n",
         ),
     ] {
         support::expect_codes(
@@ -777,7 +775,7 @@ fn a_let_that_reads_a_typed_enum_takes_its_type() {
         );
     }
     support::expect_codes(
-        &format!("{held}let y = x\nClip c:\n    Note when y + true\n"),
+        &format!("{held}state y = x\nClip c:\n    Note when y + true\n"),
         &[(Code::TypeMismatch, "if f then Sine else Saw", 0)],
     );
 }
@@ -828,13 +826,13 @@ fn a_carried_enum_meets_every_use_in_every_order_in(orders: support::Orders) {
     };
     let carried = [
         "state f(true)",
-        "let w = if f then Saw else Sine",
-        "let v = if f then w else w",
+        "state w = if f then Saw else Sine",
+        "state v = if f then w else w",
     ];
     let held = [
         "state f(true)",
-        "let a = if f then Sine else Saw",
-        "let b = a",
+        "state a = if f then Sine else Saw",
+        "state b = a",
     ];
     let with = |base: &[&'static str], items: &[&'static str]| -> Vec<&'static str> {
         base.iter().chain(items).copied().collect()
@@ -845,7 +843,7 @@ fn a_carried_enum_meets_every_use_in_every_order_in(orders: support::Orders) {
         with(
             &carried,
             &[
-                "let u = if f then v else v",
+                "state u = if f then v else v",
                 "Osc o | wave=w",
                 "Filt g | mode=u",
             ],
@@ -856,21 +854,21 @@ fn a_carried_enum_meets_every_use_in_every_order_in(orders: support::Orders) {
         ),
         with(&held, &["K k1 | wave=a color=b"]),
         with(&held, &["K k1 | wave=a", "K k2 | color=b", "K k3 | wave=b"]),
-        with(&held, &["let c = b", "K k1 | wave=a color=c"]),
+        with(&held, &["state c = b", "K k1 | wave=a color=c"]),
     ];
     let joined = [
         "state f(true)",
-        "let a = if f then Sine else Saw",
-        "let b = if f then Red else Green",
-        "let y = if f then a else b",
+        "state a = if f then Sine else Saw",
+        "state b = if f then Red else Green",
+        "state y = if f then a else b",
         "K k1 | wave=a color=b",
     ];
-    let colored = "let b = match a:\n    Red: Blue\n    Blue: Red\n    else: Green";
+    let colored = "state b = match a:\n    Red: Blue\n    Blue: Red\n    else: Green";
     let accepted = [
         vec!["let a = Red", colored, "K k1 | color=a", "K k2 | color=b"],
         vec![
             "state f(true)",
-            "let a = if f then Red else Blue",
+            "state a = if f then Red else Blue",
             colored,
             "K k1 | color=a",
             "K k2 | color=b",
@@ -889,7 +887,7 @@ fn a_carried_enum_meets_every_use_in_every_order_in(orders: support::Orders) {
     cases.push((
         vec![
             "state f(true)",
-            "let a = if f then Sine else Saw",
+            "state a = if f then Sine else Saw",
             "let b = if f then a else b",
             "K k1 | wave=b",
         ],
@@ -940,7 +938,7 @@ fn unit_values_keep_their_family() {
             &[Code::PlainInFamily],
         ),
         (
-            "state d(5ms)\nlet e = d * 2\nClip c:\n    Note | length=e\n",
+            "state d(5ms)\nstate e = d * 2\nClip c:\n    Note | length=e\n",
             &[Code::UnitMismatch],
         ),
         ("Clip c:\n    Note | length=(2bars / 1bars)\n", &[]),
@@ -950,18 +948,18 @@ fn unit_values_keep_their_family() {
 
 #[test]
 fn a_match_waits_for_its_scrutinees_enum() {
-    let arms = "let l = match a:\n    Sine: 1.0\n    else: 0.5\n";
+    let arms = "state l = match a:\n    Sine: 1.0\n    else: 0.5\n";
     let used = "Synth y:\n    Osc | wave=a rate=l\n";
     for held in [
         "Session s\nlet a = Sine\n",
         "Session s\nstate a(Wave::Saw)\n",
-        "Session s\nstate f(true)\nlet a = if f then Sine else Saw\n",
+        "Session s\nstate f(true)\nstate a = if f then Sine else Saw\n",
     ] {
         support::expect_codes(&format!("{held}{arms}{used}"), &[]);
     }
     let unused = "Synth y:\n    Osc | rate=l\n";
     support::expect_codes(
-        &format!("Session s\nstate f(true)\nlet a = if f then Sine else Saw\n{arms}{unused}"),
+        &format!("Session s\nstate f(true)\nstate a = if f then Sine else Saw\n{arms}{unused}"),
         &[(Code::TypeMismatch, "if f then Sine else Saw", 0)],
     );
     support::expect_codes(
@@ -969,11 +967,15 @@ fn a_match_waits_for_its_scrutinees_enum() {
         &[(Code::TypeMismatch, "Sine", 0)],
     );
     support::expect_codes(
-        &format!("Session s\nlet a = Sine\nlet l = match a:\n    Low: 1.0\n    else: 0.5\n{used}"),
+        &format!(
+            "Session s\nlet a = Sine\nstate l = match a:\n    Low: 1.0\n    else: 0.5\n{used}"
+        ),
         &[(Code::MatchLabel, "Low", 0)],
     );
     support::expect_codes(
-        &format!("Session s\nlet a = Sine\nlet l = match a:\n    Sine: 1.0\n    Saw: 0.5\n{used}"),
+        &format!(
+            "Session s\nlet a = Sine\nstate l = match a:\n    Sine: 1.0\n    Saw: 0.5\n{used}"
+        ),
         &[(
             Code::MatchIncomplete,
             "match a:\n    Sine: 1.0\n    Saw: 0.5",
@@ -1008,12 +1010,12 @@ fn a_compile_time_bare_let_typed_by_its_uses_is_a_typed_value_for_every_consumer
         &["let y = Saw", "Osc p when x is y"],
         &[
             "state f(true)",
-            "let v = if f then x else Saw",
+            "state v = if f then x else Saw",
             "Osc p when v is Saw",
         ],
         &[
             "state f(true)",
-            "let v = if f then x else x",
+            "state v = if f then x else x",
             "Osc p when v is Saw",
         ],
     ];
@@ -1092,7 +1094,7 @@ fn an_array_literals_expected_type_reaches_every_element() {
             vec!["Synth y:\n    Osc | wave=([x, Wave::Square][0])"],
         ),
         (
-            "let x = if f then Sine else Saw",
+            "state x = if f then Sine else Saw",
             vec![
                 "state f(true)",
                 "Synth y:\n    Osc | wave=([x, Wave::Square][1])",
@@ -1178,7 +1180,7 @@ fn a_compile_time_choice_type_checks_what_it_does_not_select() {
                 "let c = [a, b]",
                 "Clip m:\n    Note/(c[0])",
             ],
-            &[],
+            &[(Code::ReactiveLet, "c")],
         ),
         (
             &["let a = [1, 3000000000]", "Clip c:\n    Note/(a[0])"],
@@ -1364,7 +1366,10 @@ fn every_array_literal_holds_one_element_type_and_one_family_wherever_it_stands(
             &[(Code::TypeMismatch, "[1, \"s\"]")],
         ),
         (
-            &["state f(true)", "let q = if f then [1, \"s\"] else [1, 2]"],
+            &[
+                "state f(true)",
+                "state q = if f then [1, \"s\"] else [1, 2]",
+            ],
             &[(Code::TypeMismatch, "[1, \"s\"]")],
         ),
         (
@@ -1633,7 +1638,7 @@ fn a_literal_whose_elements_disagree_draws_one_diagnostic_wherever_its_value_goe
     let rows: [LocatedRow; 45] = [
         (&[H, "Clip c:\n    Note/(h()[0])"], at_literal_of_h),
         (
-            &[H, "state f(true)", "let q = if f then h() else [1, 2, 3]"],
+            &[H, "state f(true)", "state q = if f then h() else [1, 2, 3]"],
             at_literal_of_h,
         ),
         (&[H, "state k(h())"], at_literal_of_h),
@@ -1710,7 +1715,7 @@ fn a_literal_whose_elements_disagree_draws_one_diagnostic_wherever_its_value_goe
             &[
                 H,
                 "state f(true)",
-                "let q = if f then h() else [1, 2]",
+                "state q = if f then h() else [1, 2]",
                 "Clip c:\n    Note/(q[0])",
             ],
             at_literal_of_h,
@@ -1901,7 +1906,7 @@ fn a_plain_element_of_a_unit_literal_in_an_arm_is_read_in_the_unit_its_family_va
         (
             &[
                 "state c(true)",
-                "let q = if c then [1bars, 2] else [3bars, 4]",
+                "state q = if c then [1bars, 2] else [3bars, 4]",
                 AT_LENGTH,
             ],
             &[],
@@ -2617,7 +2622,7 @@ fn every_reference_to_a_top_level_name_declared_twice_is_a_placeholder() {
         (
             &[
                 "state swing(0.1)",
-                "let groove = swing",
+                "state groove = swing",
                 "Clip groove:\n    Plays: groove",
             ],
             &[(Code::DuplicateName, "groove")],
@@ -2913,10 +2918,13 @@ fn a_line_after_a_missing_block_reports_its_own_faults() {
 fn a_cell_read_through_a_literals_group_keeps_its_own_kind_in(orders: support::Orders) {
     const X: &str = "state x(1)";
     const C: &str = "state c(true)";
-    const Q: &str = "let q = if c then [x, 2.5] else [3, 4]";
+    const Q: &str = "state q = if c then [x, 2.5] else [3, 4]";
     let rows: [Row; 13] = [
         (&[X, C, Q], &[]),
-        (&[X, "let a = [x, 2.5]", "Clip k:\n    Note/(a[0])"], &[]),
+        (
+            &[X, "let a = [x, 2.5]", "Clip k:\n    Note/(a[0])"],
+            &[(Code::ReactiveLet, "a")],
+        ),
         (&[X, C, Q, "Osc o | freq=(q[0])"], &[]),
         (
             &[X, C, Q, "Osc o | freq=(q[0])", "Osc p | freq=(q[1])"],
@@ -2926,7 +2934,7 @@ fn a_cell_read_through_a_literals_group_keeps_its_own_kind_in(orders: support::O
             &[
                 X,
                 C,
-                "let q = match c:\n    true: [x, 2.5]\n    false: [3, 4]",
+                "state q = match c:\n    true: [x, 2.5]\n    false: [3, 4]",
                 "Osc o | freq=(q[0])",
             ],
             &[],
@@ -2935,7 +2943,7 @@ fn a_cell_read_through_a_literals_group_keeps_its_own_kind_in(orders: support::O
             &[
                 X,
                 C,
-                "let q = if c then [[x, 2.5], [1, 2]] else [[3, 4], [5, 6]]",
+                "state q = if c then [[x, 2.5], [1, 2]] else [[3, 4], [5, 6]]",
                 "Osc o | freq=(q[0][0])",
             ],
             &[],
@@ -2954,7 +2962,7 @@ fn a_cell_read_through_a_literals_group_keeps_its_own_kind_in(orders: support::O
                 X,
                 C,
                 "state y(2.5)",
-                "let q = if c then [x, y] else [3, 4]",
+                "state q = if c then [x, y] else [3, 4]",
                 "Osc o | freq=(q[0])",
             ],
             &[],
@@ -2966,24 +2974,24 @@ fn a_cell_read_through_a_literals_group_keeps_its_own_kind_in(orders: support::O
                 "let q = if true then [x, 2.5] else [3, 4]",
                 "Osc o | freq=(q[0])",
             ],
-            &[],
+            &[(Code::ReactiveLet, "q")],
         ),
         (
             &[X, C, Q, "Clip k:\n    Note/(q[1])"],
             &[(Code::FloatToInteger, "q[1]")],
         ),
-        (&[X, C, "let a = [x, 2.5]", "Osc o | freq=(a[0])"], &[]),
+        (&[X, C, "state a = [x, 2.5]", "Osc o | freq=(a[0])"], &[]),
         (
             &[
                 X,
                 C,
-                "let q = if c then [x, 2] else [3, 4]",
+                "state q = if c then [x, 2] else [3, 4]",
                 "Osc o | freq=(q[0])",
             ],
             &[],
         ),
         (
-            &[X, C, "let q = if c then [x, \"s\"] else [3, 4]"],
+            &[X, C, "state q = if c then [x, \"s\"] else [3, 4]"],
             &[(Code::TypeMismatch, "[x, \"s\"]")],
         ),
     ];
@@ -2991,7 +2999,7 @@ fn a_cell_read_through_a_literals_group_keeps_its_own_kind_in(orders: support::O
 }
 
 #[test]
-fn a_cell_read_through_a_literals_group_keeps_its_own_kind() {
+fn a_cell_read_through_a_literals_group_keeps_its_own_kind_433() {
     a_cell_read_through_a_literals_group_keeps_its_own_kind_in(support::Orders::ForwardAndReversed);
 }
 
@@ -3009,7 +3017,7 @@ fn as_given(items: &[&'static str]) -> Vec<&'static str> {
 fn a_family_feed_stays_out_of_an_index_and_a_plain_cell_conflicts_once() {
     const I: &str = "state i(0)";
     const X: &str = "state x(2)";
-    const XA: &str = "let a = [1bars, x]";
+    const XA: &str = "state a = [1bars, x]";
     let rows: [LocatedRow; 10] = [
         (
             &[
@@ -3372,7 +3380,7 @@ fn bytes_of_an_integer_array_keeps_its_shape_and_reads_as_a_u8_array() {
         (
             &[
                 "state i(300)\n",
-                "let b = [i, 2].bytes\n",
+                "state b = [i, 2].bytes\n",
                 "Clip c:\n    Note/(b[0])\n",
             ],
             &[],
@@ -3380,7 +3388,7 @@ fn bytes_of_an_integer_array_keeps_its_shape_and_reads_as_a_u8_array() {
         (
             &[
                 "state xs([1, 2, 3]): u8[3]\n",
-                "let b = xs.bytes\n",
+                "state b = xs.bytes\n",
                 "Clip c:\n    Note/(b[2])\n",
             ],
             &[],
@@ -3388,7 +3396,7 @@ fn bytes_of_an_integer_array_keeps_its_shape_and_reads_as_a_u8_array() {
         (
             &[
                 "state notes([60, 64, 67]): i32[3]\n",
-                "let a = notes.bytes\n",
+                "state a = notes.bytes\n",
                 "Clip c:\n    Note/(a[0])\n",
             ],
             &[],
@@ -3396,7 +3404,7 @@ fn bytes_of_an_integer_array_keeps_its_shape_and_reads_as_a_u8_array() {
         (
             &[
                 "state i(1)\n",
-                "let lit = [i, 2, 3]\n",
+                "state lit = [i, 2, 3]\n",
                 "Clip c:\n    Note/(lit.bytes[1])\n",
             ],
             &[],
@@ -3404,8 +3412,8 @@ fn bytes_of_an_integer_array_keeps_its_shape_and_reads_as_a_u8_array() {
         (
             &[
                 "state held([]): i32[..6]\n",
-                "let raw = held.bytes\n",
-                "let second = raw[1]\n",
+                "state raw = held.bytes\n",
+                "state second = raw[1]\n",
                 "Clip c:\n    Note/second\n",
             ],
             &[],
@@ -3673,7 +3681,7 @@ fn a_comparisons_operand_computes_in_its_own_types_before_it_takes_its_partners(
         (
             &[
                 "state k(1)\n",
-                "let r = k > u8(255) + 4\n",
+                "state r = k > u8(255) + 4\n",
                 "Clip c:\n    Note when r\n",
             ],
             u8_sum,
@@ -3768,7 +3776,7 @@ fn where_the_flow_stops_an_operand_computes_in_its_own_types_whatever_its_partne
     let flag = "state flag(false)\n";
     let u8_sum: &[(Code, &str)] = &[(Code::ConstantOverflow, "u8(255) + 4")];
     let i32_sum: &[(Code, &str)] = &[(Code::ConstantOverflow, "2147483647i32 + 1")];
-    let summed = "let r = k + (u8(255) + 4)\n";
+    let summed = "state r = k + (u8(255) + 4)\n";
     let rows: &[support::Row] = &[
         (
             &[k, "Clip c:\n    Note when k + (u8(255) + 4) > 0\n"],
@@ -3847,7 +3855,11 @@ fn an_integer_inputs_initial_value_fits_every_use_u8_uses_included() {
             &[(Code::DoesNotFit, "i")],
         ),
         (
-            &["state i(300)\n", "let x: u8 = i\n", "Clip c:\n    Note/x\n"],
+            &[
+                "state i(300)\n",
+                "state x: u8 = i\n",
+                "Clip c:\n    Note/x\n",
+            ],
             &[(Code::DoesNotFit, "i")],
         ),
         (
@@ -3872,7 +3884,7 @@ fn an_integer_inputs_initial_value_fits_every_use_u8_uses_included() {
             &[
                 "state i(255)\n",
                 "state xs([255]): i64[..4]\n",
-                "let x: u8 = i\n",
+                "state x: u8 = i\n",
                 "Clip c | fixed=[i, 2, 3] data=xs:\n    Note/x\n    Note/(fixed3([i, 1, 2]))\n",
             ],
             &[],
@@ -3880,7 +3892,7 @@ fn an_integer_inputs_initial_value_fits_every_use_u8_uses_included() {
         (
             &[
                 "state i(300)\n",
-                "let b = [i, 2].bytes\n",
+                "state b = [i, 2].bytes\n",
                 "Clip c:\n    Note/(b[0])\n",
             ],
             &[],
@@ -3896,7 +3908,7 @@ fn a_match_label_with_the_scrutinees_type_suffix_is_accepted() {
         (
             &[
                 "state b(3): u8\n",
-                "let v = match b:\n    3u8: 1\n    else: 2\n",
+                "state v = match b:\n    3u8: 1\n    else: 2\n",
                 read,
             ],
             &[],
@@ -3904,7 +3916,7 @@ fn a_match_label_with_the_scrutinees_type_suffix_is_accepted() {
         (
             &[
                 "state b(3): u8\n",
-                "let v = match b:\n    3: 1\n    else: 2\n",
+                "state v = match b:\n    3: 1\n    else: 2\n",
                 read,
             ],
             &[],
@@ -3912,7 +3924,7 @@ fn a_match_label_with_the_scrutinees_type_suffix_is_accepted() {
         (
             &[
                 "state b(3): u8\n",
-                "let v = match b:\n    3i32: 1\n    else: 2\n",
+                "state v = match b:\n    3i32: 1\n    else: 2\n",
                 read,
             ],
             &[(Code::MatchLabel, "3i32")],
@@ -3920,7 +3932,7 @@ fn a_match_label_with_the_scrutinees_type_suffix_is_accepted() {
         (
             &[
                 "state b(3)\n",
-                "let v = match b:\n    3i64: 1\n    else: 2\n",
+                "state v = match b:\n    3i64: 1\n    else: 2\n",
                 read,
             ],
             &[],
@@ -3929,7 +3941,8 @@ fn a_match_label_with_the_scrutinees_type_suffix_is_accepted() {
     support::assert_rows_in_every_order(&symphonyscript_fixtures::vocabulary(), rows);
     let compiler =
         symphonyscript::Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("compiles");
-    let text = "state b(3): u8\nlet v = match b:\n    3i32: 1\n    else: 2\nClip c:\n    Note/v\n";
+    let text =
+        "state b(3): u8\nstate v = match b:\n    3i32: 1\n    else: 2\nClip c:\n    Note/v\n";
     let diagnostics = compiler.check(&[support::source(text)]);
     assert!(
         diagnostics
@@ -3947,7 +3960,7 @@ fn a_match_label_is_fit_checked_in_the_scrutinees_type_and_in_its_suffixs() {
     let wide = "state b(3)\n";
     let read = "Clip c:\n    Note/(v)\n";
     let labelled = |scrutinee: &str, label: &str| {
-        format!("let v = match {scrutinee}:\n    {label}: 1\n    else: 2\n")
+        format!("state v = match {scrutinee}:\n    {label}: 1\n    else: 2\n")
     };
     let suffixed = labelled("b", "300u8");
     let past = labelled("b", "300");
@@ -3978,7 +3991,7 @@ fn a_match_label_is_fit_checked_in_the_scrutinees_type_and_in_its_suffixs() {
             &[(Code::DoesNotFit, "300")],
         ),
         (
-            &[byte, "let s = b\n", &through_let, read],
+            &[byte, "state s = b\n", &through_let, read],
             &[(Code::DoesNotFit, "300")],
         ),
         (
@@ -4011,7 +4024,7 @@ fn a_match_label_is_fit_checked_in_the_scrutinees_type_and_in_its_suffixs() {
         (
             &[
                 "state wave(Wave::Saw)\n",
-                "let level = match wave:\n    Sine: 1.0\n    Saw: 0.8\n    else: 0.6\n",
+                "state level = match wave:\n    Sine: 1.0\n    Saw: 0.8\n    else: 0.6\n",
                 "Clip c | gain=level:\n    Note\n",
             ],
             &[],
@@ -4589,7 +4602,7 @@ fn a_runtime_choice_between_strings_where_a_u8_array_is_expected_is_a_variable_a
         (
             &[
                 f,
-                "let d: u8[..8] = if f then \"GET\" else \"AB\"\n",
+                "state d: u8[..8] = if f then \"GET\" else \"AB\"\n",
                 "Clip as g | data=d\n",
             ],
             &[],
@@ -4597,12 +4610,12 @@ fn a_runtime_choice_between_strings_where_a_u8_array_is_expected_is_a_variable_a
         (
             &[
                 f,
-                "let d: u8[..2] = if f then \"GET\" else \"AB\"\n",
+                "state d: u8[..2] = if f then \"GET\" else \"AB\"\n",
                 "Clip as g | data=d\n",
             ],
             &[(
                 Code::CapacityExceeded,
-                "let d: u8[..2] = if f then \"GET\" else \"AB\"\n",
+                "state d: u8[..2] = if f then \"GET\" else \"AB\"\n",
             )],
         ),
         (
@@ -4710,7 +4723,7 @@ fn where_a_u8_array_is_expected_each_string_leaf_of_a_choice_is_its_bytes_whatev
         (
             &[
                 f,
-                "let d: u8[..3] = if f then \"GET\" else \"AB\".bytes\n",
+                "state d: u8[..3] = if f then \"GET\" else \"AB\".bytes\n",
                 "Clip as g | data=d\n",
             ],
             &[],
@@ -4718,12 +4731,12 @@ fn where_a_u8_array_is_expected_each_string_leaf_of_a_choice_is_its_bytes_whatev
         (
             &[
                 f,
-                "let d: u8[..2] = if f then \"GET\" else \"AB\".bytes\n",
+                "state d: u8[..2] = if f then \"GET\" else \"AB\".bytes\n",
                 "Clip as g | data=d\n",
             ],
             &[(
                 Code::CapacityExceeded,
-                "let d: u8[..2] = if f then \"GET\" else \"AB\".bytes\n",
+                "state d: u8[..2] = if f then \"GET\" else \"AB\".bytes\n",
             )],
         ),
         (
@@ -4744,7 +4757,7 @@ fn where_a_u8_array_is_expected_each_string_leaf_of_a_choice_is_its_bytes_whatev
         (
             &[
                 f,
-                "let p = if f then \"GET\" else \"AB\".bytes\n",
+                "state p = if f then \"GET\" else \"AB\".bytes\n",
                 "Clip as g | data=p\n",
             ],
             &[(Code::TypeMismatch, mixed)],
@@ -4769,7 +4782,7 @@ fn where_a_u8_array_is_expected_each_string_leaf_of_a_choice_is_its_bytes_whatev
 }
 
 #[test]
-fn a_let_whose_initializer_drew_an_error_is_a_placeholder_at_an_array_attribute() {
+fn a_let_whose_initializer_drew_an_error_is_a_placeholder_at_an_array_attribute_433() {
     let f = "state f(false)\n";
     let note = "state note(60)\n";
     let choice = "match f:\n    true: \"GET\"\n    else: \"AB\"\n";
@@ -4778,7 +4791,7 @@ fn a_let_whose_initializer_drew_an_error_is_a_placeholder_at_an_array_attribute(
     let rows: &[support::Row] = &[
         (
             &[f, &reactive, "Clip as g | data=m\n"],
-            &[(Code::ReactiveString, reactive.as_str())],
+            &[(Code::ReactiveLet, "m")],
         ),
         (
             &[
@@ -4802,9 +4815,12 @@ fn a_let_whose_initializer_drew_an_error_is_a_placeholder_at_an_array_attribute(
                 "let m = if f then \"G\" else \"A\"\n",
                 "Clip as g:\n    Note | level=m\n",
             ],
-            &[(Code::ReactiveString, "let m = if f then \"G\" else \"A\"\n")],
+            &[(Code::ReactiveLet, "m")],
         ),
-        (&[f, &annotated, "Clip as g | data=m\n"], &[]),
+        (
+            &[f, &annotated, "Clip as g | data=m\n"],
+            &[(Code::ReactiveLet, "m")],
+        ),
         (&["let m = \"GET\"\n", "Clip as g | data=m\n"], &[]),
         (
             &["Clip as g | fixed=((1 + true) + [1, 2][5])\n"],

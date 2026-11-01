@@ -198,7 +198,7 @@ const RULES: &[Rule] = &[
     rule(
         "4.3",
         "type-mismatch",
-        "state b(true)\nlet x = if b then 1 else false\n",
+        "state b(true)\nstate x = if b then 1 else false\n",
     ),
     rule(
         "4.4",
@@ -218,7 +218,7 @@ const RULES: &[Rule] = &[
     rule(
         "4.4",
         "float-to-integer",
-        "state f(0.5)\nlet g = f * 2\nClip c:\n    Note/g\n",
+        "state f(0.5)\nstate g = f * 2\nClip c:\n    Note/g\n",
     ),
     rule(
         "4.6",
@@ -239,7 +239,7 @@ const RULES: &[Rule] = &[
     rule(
         "4.6",
         "inconsistent-shapes",
-        "fn r(x, n): if n < 1 then (if x + 0.2 is 0.3 then [x] else [x, x]) else r(x, n - 1)\nstate f(true)\nlet w = if f then r(0.1, 3) else r(0.1, 3)\nOsc o | freq=(w[0])\n",
+        "fn r(x, n): if n < 1 then (if x + 0.2 is 0.3 then [x] else [x, x]) else r(x, n - 1)\nstate f(true)\nfn g(w): w[0]\nOsc o | freq=(g(if f then r(0.1, 3) else r(0.1, 3)))\n",
     ),
     rule(
         "4.6",
@@ -313,7 +313,7 @@ const RULES: &[Rule] = &[
         "condition-type",
         "let a = if 1 then 2 else 3\nClip c:\n    Note/a\n",
     ),
-    rule("5.4", "match-syntax", "state b(1)\nlet a = match b\n"),
+    rule("5.4", "match-syntax", "state b(1)\nstate a = match b\n"),
     rule(
         "5.4",
         "match-scrutinee",
@@ -322,37 +322,37 @@ const RULES: &[Rule] = &[
     rule(
         "5.4",
         "match-label",
-        "state w(Wave::Saw)\nlet l = match w:\n    Purple: 1\n    else: 2\n",
+        "state w(Wave::Saw)\nstate l = match w:\n    Purple: 1\n    else: 2\n",
     ),
     rule(
         "5.4",
         "match-label",
-        "state n(1)\nlet l = match n:\n    1.5: 1\n    else: 2\n",
+        "state n(1)\nstate l = match n:\n    1.5: 1\n    else: 2\n",
     ),
     rule(
         "5.4",
         "match-label",
-        "state n(1)\nlet l = match n:\n    2bars: 1\n    else: 2\n",
+        "state n(1)\nstate l = match n:\n    2bars: 1\n    else: 2\n",
     ),
     rule(
         "5.4",
         "duplicate-arm",
-        "state w(Wave::Saw)\nlet l = match w:\n    Sine: 1\n    Sine: 2\n    else: 3\n",
+        "state w(Wave::Saw)\nstate l = match w:\n    Sine: 1\n    Sine: 2\n    else: 3\n",
     ),
     rule(
         "5.4",
         "match-incomplete",
-        "state w(Wave::Saw)\nlet l = match w:\n    Sine: 1\n",
+        "state w(Wave::Saw)\nstate l = match w:\n    Sine: 1\n",
     ),
     rule(
         "5.4",
         "redundant-else",
-        "state b(true)\nlet l = match b:\n    true: 1\n    false: 2\n    else: 3\n",
+        "state b(true)\nstate l = match b:\n    true: 1\n    false: 2\n    else: 3\n",
     ),
     rule(
         "5.4",
         "match-incomplete",
-        "state n(1)\nlet l = match n:\n    1: 2\n",
+        "state n(1)\nstate l = match n:\n    1: 2\n",
     ),
     rule(
         "5.4",
@@ -438,7 +438,21 @@ const RULES: &[Rule] = &[
     rule("6.2", "let-syntax", "let = 1\n"),
     rule("6.2", "declaration-cycle", "let a = b + 1\nlet b = a + 1\n"),
     rule("6.2", "declaration-cycle", "fn f(): a\nlet a = f()\n"),
-    rule("6.2", "declaration-cycle", "state a(b)\nlet b = a + 1\n"),
+    rule(
+        "6.2",
+        "declaration-cycle",
+        "state a([b])\nlet b = a.capacity\n",
+    ),
+    rule(
+        "6.2",
+        "reactive-let",
+        "state note(60)\nlet louder = note + 12\n",
+    ),
+    rule(
+        "6.2",
+        "reactive-let",
+        "state note(60)\npattern P():\n    let louder = note + 12\n    Note/louder\nClip c:\n    P\n",
+    ),
     rule(
         "6.2",
         "declaration-cycle",
@@ -447,7 +461,7 @@ const RULES: &[Rule] = &[
     rule(
         "6.2",
         "reactive-node-reference",
-        "state i(0)\nlet t = [verse, chorus][i]\nClip verse:\n    Note\nClip chorus:\n    Note\n",
+        "state i(0)\nfn pick(k):\n    let t = [verse, chorus][k]\n    k\nClip verse:\n    Note\nClip chorus:\n    Note\nClip c:\n    Note/(pick(i))\n",
     ),
     rule("6.3", "fn-syntax", "fn (x): x\n"),
     rule("6.3", "duplicate-local", "fn f(a, a): a\n"),
@@ -594,7 +608,7 @@ const RULES: &[Rule] = &[
     rule(
         "3.7",
         "variable-array",
-        "state a([]): i32[..4]\nlet b: i32[2] = a\n",
+        "state a([]): i32[..4]\nstate b: i32[2] = a\n",
     ),
     natives(
         "3.7",
@@ -609,7 +623,7 @@ const RULES: &[Rule] = &[
     rule(
         "3.7",
         "capacity-exceeded",
-        "state a([]): i32[..4]\nlet b: i32[..2] = a\n",
+        "state a([]): i32[..4]\nstate b: i32[..2] = a\n",
     ),
     rule("3.7", "capacity-exceeded", "state a([1, 2, 3]): i32[..2]\n"),
     rule("3.8", "record-syntax", "type Chord:\n    root i32\n"),
@@ -665,11 +679,21 @@ const RULES: &[Rule] = &[
         "history-target",
         "let a = 1\nstate s = a.past(1, 0)\n",
     ),
-    rule("6.6", "history-fallback", "state s = s.past(1) + 1\n"),
     rule(
         "6.6",
         "history-fallback",
-        "state a = b.past(1) + 1\nstate b = a.past(1) + 1\n",
+        "state note(60)\nstate s = s.past(1) + note\n",
+    ),
+    rule(
+        "6.6",
+        "history-fallback",
+        "state note(60)\nstate a = b.past(1) + note\nstate b = a.past(1) + 1\n",
+    ),
+    rule("6.6", "unrun-cell", "state s(0) = s.past(1) + 1\n"),
+    rule(
+        "6.6",
+        "unrun-cell",
+        "state a(0) = b.past(1)\nstate b(0) = a.past(1)\n",
     ),
     rule(
         "6.6",

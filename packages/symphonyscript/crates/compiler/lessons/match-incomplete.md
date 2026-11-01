@@ -6,7 +6,7 @@ Every value of the scrutinee needs an arm to yield.
 
 ```sym-error
 state w(Wave::Saw)
-let l = match w:
+state l = match w:
     Sine: 1
 ```
 
@@ -14,7 +14,7 @@ let l = match w:
 
 ```sym
 state w(Wave::Saw)
-let l = match w:
+state l = match w:
     Sine: 1
     else: 2
 ```

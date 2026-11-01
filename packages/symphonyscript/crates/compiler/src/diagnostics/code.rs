@@ -57,6 +57,7 @@ codes!(
     RecordSyntax,
     HistoryTarget,
     HistoryFallback,
+    UnrunCell,
     HistoryOffset,
     CellCapacity,
     StateValue,
@@ -107,6 +108,7 @@ codes!(
     DuplicateArgument,
     MissingArgument,
     ReactiveInitializer,
+    ReactiveLet,
     UnknownAttribute,
     RuntimePath,
     IndexType,
@@ -208,6 +210,7 @@ impl Code {
             Code::RecordSyntax => "record-syntax",
             Code::HistoryTarget => "history-target",
             Code::HistoryFallback => "history-fallback",
+            Code::UnrunCell => "unrun-cell",
             Code::HistoryOffset => "history-offset",
             Code::CellCapacity => "cell-capacity",
             Code::StateValue => "state-value",
@@ -258,6 +261,7 @@ impl Code {
             Code::DuplicateArgument => "duplicate-argument",
             Code::MissingArgument => "missing-argument",
             Code::ReactiveInitializer => "reactive-initializer",
+            Code::ReactiveLet => "reactive-let",
             Code::UnknownAttribute => "unknown-attribute",
             Code::RuntimePath => "runtime-path",
             Code::IndexType => "index-type",
@@ -384,6 +388,7 @@ impl Code {
             Code::DuplicateArgument => "6.4",
             Code::MissingArgument => "6.4",
             Code::ReactiveInitializer => "6.1",
+            Code::ReactiveLet => "6.2",
             Code::UnknownAttribute => "7.6",
             Code::RuntimePath => "5.6",
             Code::IndexType => "5.5",
@@ -449,6 +454,7 @@ impl Code {
             Code::VariableArray => "3.7",
             Code::HistoryTarget => "6.6",
             Code::HistoryFallback => "6.6",
+            Code::UnrunCell => "6.6",
             Code::HistoryOffset => "6.6",
             Code::CellCapacity => "6.1",
             Code::StateValue => "6.1",
@@ -548,6 +554,7 @@ impl Code {
             | Code::DuplicateArgument
             | Code::MissingArgument
             | Code::ReactiveInitializer
+            | Code::ReactiveLet
             | Code::UnknownAttribute
             | Code::RuntimePath
             | Code::IndexType
@@ -609,6 +616,7 @@ impl Code {
             | Code::VariableArray
             | Code::HistoryTarget
             | Code::HistoryFallback
+            | Code::UnrunCell
             | Code::HistoryOffset
             | Code::CellCapacity
             | Code::StateValue

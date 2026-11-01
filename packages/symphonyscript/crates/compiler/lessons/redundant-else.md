@@ -6,7 +6,7 @@ It could never be chosen.
 
 ```sym-error
 state b(true)
-let l = match b:
+state l = match b:
     true: 1
     false: 2
     else: 3
@@ -16,7 +16,7 @@ let l = match b:
 
 ```sym
 state b(true)
-let l = match b:
+state l = match b:
     true: 1
     false: 2
 ```

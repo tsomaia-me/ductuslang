@@ -338,6 +338,7 @@ fn a_capacity_of_result_over_a_fixed_array_has_its_length_as_its_capacity_whethe
     ];
     let vocabulary = signature_vocabulary();
     for (cells, two, three) in arguments {
+        let holder = if cells.is_empty() { "let" } else { "state" };
         let wide = if three == "r" {
             "state r([]): i32[3][..3]\n".to_string()
         } else {
@@ -346,12 +347,12 @@ fn a_capacity_of_result_over_a_fixed_array_has_its_length_as_its_capacity_whethe
         let cases = [
             (
                 cells.concat(),
-                format!("let probe: i32[2][..1] = shrink({two})\n"),
+                format!("{holder} probe: i32[2][..1] = shrink({two})\n"),
                 true,
             ),
             (
                 cells.concat(),
-                format!("let probe: i32[2][..2] = shrink({two})\n"),
+                format!("{holder} probe: i32[2][..2] = shrink({two})\n"),
                 false,
             ),
             (
@@ -376,22 +377,22 @@ fn a_capacity_of_result_over_a_fixed_array_has_its_length_as_its_capacity_whethe
             ),
             (
                 cells.concat(),
-                format!("let probe: i32[2][..3] = shrink({two}) + shrink({two})\n"),
+                format!("{holder} probe: i32[2][..3] = shrink({two}) + shrink({two})\n"),
                 true,
             ),
             (
                 cells.concat(),
-                format!("let probe: i32[2][..4] = shrink({two}) + shrink({two})\n"),
+                format!("{holder} probe: i32[2][..4] = shrink({two}) + shrink({two})\n"),
                 false,
             ),
             (
                 cells.concat(),
-                format!("let probe: i32[2][..1] = shrink({two})[..2]\n"),
+                format!("{holder} probe: i32[2][..1] = shrink({two})[..2]\n"),
                 true,
             ),
             (
                 cells.concat(),
-                format!("let probe: i32[2][..1] = shrink({two})[..1]\n"),
+                format!("{holder} probe: i32[2][..1] = shrink({two})[..1]\n"),
                 false,
             ),
         ];
@@ -416,7 +417,7 @@ fn a_capacity_of_result_over_a_fixed_array_has_its_length_as_its_capacity_whethe
             }
         }
     }
-    let text = "state x(1)\nlet probe: i32[2][..1] = shrink([[x, 2, 3], [4, 5, 6]])\nClip c:\n    Note/(probe[0][0])\n";
+    let text = "state x(1)\nstate probe: i32[2][..1] = shrink([[x, 2, 3], [4, 5, 6]])\nClip c:\n    Note/(probe[0][0])\n";
     let found = support::checked_with(&vocabulary, text);
     assert!(
         found

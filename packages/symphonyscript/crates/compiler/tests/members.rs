@@ -30,7 +30,7 @@ const POSITIONS: [(&str, Needs); 8] = [
         Needs::Anything,
     ),
     (
-        "let s = [60, 61, 62, 63, 64, 65, 66, 67, 68][..{}]\nClip c:\n    Note/(s.size * 0)\n",
+        "state s = [60, 61, 62, 63, 64, 65, 66, 67, 68][..{}]\nClip c:\n    Note/(s.size * 0)\n",
         Needs::Anything,
     ),
     (
@@ -39,10 +39,10 @@ const POSITIONS: [(&str, Needs); 8] = [
     ),
     ("Clip c:\n    Note/({})\n", Needs::Anything),
     ("Clip c:\n    Note when {} > 1\n", Needs::Anything),
-    ("let v = {}\nClip c:\n    Note/v\n", Needs::Anything),
-    ("let v: u8 = {}\nClip c:\n    Note/v\n", Needs::Flexible),
+    ("state v = {}\nClip c:\n    Note/v\n", Needs::Anything),
+    ("state v: u8 = {}\nClip c:\n    Note/v\n", Needs::Flexible),
     (
-        "let v: f32 = {}\nClip c:\n    Note | velocity=v\n",
+        "state v: f32 = {}\nClip c:\n    Note | velocity=v\n",
         Needs::Anything,
     ),
 ];
@@ -307,11 +307,11 @@ fn the_rows_of_the_brief_hold() {
             vec![(Code::IndexOutOfRange, "[1, 2, 3].size")],
         ),
         (
-            "state xs([]): i32[..8]\nlet b: u8 = xs.size\nClip c:\n    Note/b\n",
+            "state xs([]): i32[..8]\nstate b: u8 = xs.size\nClip c:\n    Note/b\n",
             vec![(Code::TypeMismatch, "xs.size")],
         ),
         (
-            "state xs([]): i32[..8]\nlet b: i32 = xs.size\nClip c:\n    Note/b\n",
+            "state xs([]): i32[..8]\nstate b: i32 = xs.size\nClip c:\n    Note/b\n",
             vec![],
         ),
         (
@@ -730,7 +730,15 @@ fn a_dot_call_on_a_history_read_whose_fallback_is_a_node_reference_draws_the_ref
             &[g, "state s0 = s0.past(1, q).g()\n", clip],
             &[(Code::UnknownName, "q")],
         ),
-        (&[g, "state s0 = s0.past(1, 0).g()\n", clip], &[]),
+        (
+            &[
+                g,
+                "state k(1)\n",
+                "state s0 = s0.past(1, 0).g() + k\n",
+                clip,
+            ],
+            &[],
+        ),
     ];
     support::assert_rows_in_every_order(&symphonyscript_fixtures::vocabulary(), rows);
 }

@@ -310,7 +310,7 @@ fn iterable_rows(rows: &Rows) -> (Vec<String>, usize) {
                 let text = iterating(site, iterable, reader);
                 let found = errors(&compiler, &text);
                 let holds = match (ARRAYS.get(kind), runtime, site) {
-                    (Some(_), true, _) => found.is_empty(),
+                    (Some(_), true, _) => one_at(&found, &text, Code::ReactiveLet, "v"),
                     (Some(_), false, 0) => only_outside(&found, &[35]),
                     (Some(_), false, _) => only_outside(&found, &[3, 5]),
                     (None, _, _) => one_at(&found, &text, Code::IterableType, iterable),

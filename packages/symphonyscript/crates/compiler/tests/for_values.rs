@@ -396,10 +396,17 @@ fn cell_rows(rows: &Rows) -> (Vec<String>, usize) {
                 let outcome = match expected {
                     Folded::Cell => {
                         let found = errors(&compiler, &read);
-                        if found.is_empty() {
-                            Ok(())
-                        } else {
-                            Err(format!("{read}\n  draws {found:?}, not a cell's nothing\n"))
+                        let at = read.find("let v").map(|at| at + "let ".len());
+                        match found.as_slice() {
+                            [diagnostic]
+                                if diagnostic.code == Code::ReactiveLet
+                                    && usize::try_from(diagnostic.span.range.start).ok() == at =>
+                            {
+                                Ok(())
+                            }
+                            _ => Err(format!(
+                                "{read}\n  draws {found:?}, not reactive-let at `v` (433)\n"
+                            )),
                         }
                     }
                     Folded::Sum(_) | Folded::Value(_) | Folded::Capacity(_) => {

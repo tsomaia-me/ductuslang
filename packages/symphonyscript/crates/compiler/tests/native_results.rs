@@ -84,7 +84,7 @@ const POSITIONS: [Position; 12] = [
 
 const ARGUMENTS: [(&str, &str); 3] = [
     ("state n(1)\n", "n"),
-    ("state n(1)\nlet r = n + 1\n", "r"),
+    ("state n(1)\nstate r = n + 1\n", "r"),
     ("state n(1)\nstate q = n\n", "q"),
 ];
 

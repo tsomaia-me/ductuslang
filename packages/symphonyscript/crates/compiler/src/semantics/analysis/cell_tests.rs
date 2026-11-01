@@ -143,16 +143,16 @@ fn in_both_orders(items: [&str; 2], rest: &str) -> [String; 2] {
 #[test]
 fn a_history_read_with_neither_fallback_nor_init_takes_its_cells_type_once_the_group_settles() {
     for text in in_both_orders(
-        ["state t(0) = r.past(1)\n", "state r = t + 1\n"],
-        "Clip c:\n    Note when t > 1\n",
+        ["state t(0) = r.past(1)\n", "state r = t + go\n"],
+        "state go(0): i32\nClip c:\n    Note when t > 1\n",
     ) {
         let (errors, cells) = analyzed(&text, |engine| (own(engine, "t"), own(engine, "r")));
         assert_eq!(errors, vec![], "{text}");
         assert_eq!(cells, (Some(Scalar::I32), Some(Scalar::I32)), "{text}");
     }
     for text in in_both_orders(
-        ["state t(0) = r.past(1)\n", "state r(0.5) = t + 1\n"],
-        "Clip c:\n    Note | brightness=r\n",
+        ["state t(0) = r.past(1)\n", "state r(0.5) = t + go\n"],
+        "state go(0): i32\nClip c:\n    Note | brightness=r\n",
     ) {
         let (errors, cells) = analyzed(&text, |engine| (own(engine, "t"), own(engine, "r")));
         assert_eq!(errors, vec![], "{text}");
@@ -239,8 +239,11 @@ fn an_open_kind_or_shape_in_a_group_takes_its_cells_init_and_the_reads_of_it_tak
     };
     let fixed = Some(Layout::fixed(vec![2]));
     for text in forward_and_reversed(
-        &["state t([1, 2]) = r.past(1)\n", "state r = [t[1], t[0]]\n"],
-        "Clip c:\n    Note/(t[0] + r[1])\n",
+        &[
+            "state t([1, 2]) = r.past(1)\n",
+            "state r = [t[1], t[0] + go]\n",
+        ],
+        "state go(0): i32\nClip c:\n    Note/(t[0] + r[1])\n",
     ) {
         let (errors, held) = analyzed(&text, |engine| {
             (
@@ -261,8 +264,8 @@ fn an_open_kind_or_shape_in_a_group_takes_its_cells_init_and_the_reads_of_it_tak
         );
     }
     for text in forward_and_reversed(
-        &["state t(0.5) = r.past(1)\n", "state r = t\n"],
-        "Clip c:\n    Note/(t)\n",
+        &["state t(0.5) = r.past(1)\n", "state r = t + go\n"],
+        "state go(0.0): f32\nClip c:\n    Note/(t)\n",
     ) {
         let (errors, cells) = analyzed(&text, |engine| (own(engine, "t"), own(engine, "r")));
         assert_eq!(
@@ -273,8 +276,8 @@ fn an_open_kind_or_shape_in_a_group_takes_its_cells_init_and_the_reads_of_it_tak
         assert_eq!(cells, (Some(Scalar::F32), Some(Scalar::F32)), "{text}");
     }
     for text in forward_and_reversed(
-        &["state t([]) = r.past(1)\n", "state r = (t + [1])[^4..]\n"],
-        "Clip c:\n    Note\n",
+        &["state t([]) = r.past(1)\n", "state r = (t + [go])[^4..]\n"],
+        "state go(0): i32\nClip c:\n    Note\n",
     ) {
         let (errors, held) = analyzed(&text, |engine| {
             (
@@ -294,10 +297,10 @@ fn an_open_kind_or_shape_in_a_group_takes_its_cells_init_and_the_reads_of_it_tak
         &[
             "state t([1, 2]) = r.past(1)\n",
             "state s(0) = q.past(1)\n",
-            "state q = s + t[0]\n",
+            "state q = s + t[0] + go\n",
             "state r = [t[1], q]\n",
         ],
-        "Clip c:\n    Note/(r[0] + s)\n",
+        "state go(0): i32\nClip c:\n    Note/(r[0] + s)\n",
     ) {
         let (errors, held) = analyzed(&text, |engine| {
             (
@@ -320,10 +323,10 @@ fn an_open_kind_or_shape_in_a_group_takes_its_cells_init_and_the_reads_of_it_tak
     for text in forward_and_reversed(
         &[
             "state a([1, 2]) = c.past(1)\n",
-            "state b = [a[1], a[0]]\n",
+            "state b = [a[1], a[0] + go]\n",
             "state c = b\n",
         ],
-        "Clip n:\n    Note/(c[0])\n",
+        "state go(0): i32\nClip n:\n    Note/(c[0])\n",
     ) {
         let (errors, held) = analyzed(&text, |engine| {
             [
@@ -345,9 +348,9 @@ type AnnotatedRow<'a> = (&'a [&'a str; 2], &'a str, &'a [(Code, &'a str)]);
 
 #[test]
 fn an_annotation_on_a_cell_of_an_open_group_is_checked_against_its_rule_once_the_group_settles() {
-    let fixed_reader = "Clip c:\n    Note/(t[0] + r[1])\n";
-    let fixed = "state r = [t[1], t[0]]\n";
-    let variable = "state r = (t + [1])[^4..]\n";
+    let fixed_reader = "state go(0): i32\nClip c:\n    Note/(t[0] + r[1])\n";
+    let fixed = "state r = [t[1], t[0] + go]\n";
+    let variable = "state r = (t + [go])[^4..]\n";
     let rows: &[AnnotatedRow] = &[
         (
             &["state t([1, 2]): i32[2] = r.past(1)\n", fixed],
@@ -361,13 +364,13 @@ fn an_annotation_on_a_cell_of_an_open_group_is_checked_against_its_rule_once_the
         ),
         (
             &["state t([]): i32[..4] = r.past(1)\n", variable],
-            "Clip c:\n    Note\n",
+            "state go(0): i32\nClip c:\n    Note\n",
             &[],
         ),
         (
             &[
                 "state t([1, 2]) = r.past(1)\n",
-                "state r: i32[2] = [t[1], t[0]]\n",
+                "state r: i32[2] = [t[1], t[0] + go]\n",
             ],
             fixed_reader,
             &[],
@@ -375,17 +378,17 @@ fn an_annotation_on_a_cell_of_an_open_group_is_checked_against_its_rule_once_the
         (
             &[
                 "state t([1, 2]) = r.past(1)\n",
-                "state r: i32[3] = [t[1], t[0]]\n",
+                "state r: i32[3] = [t[1], t[0] + go]\n",
             ],
             fixed_reader,
-            &[(Code::TypeMismatch, "[t[1], t[0]]")],
+            &[(Code::TypeMismatch, "[t[1], t[0] + go]")],
         ),
         (
             &[
                 "state t([]) = r.past(1)\n",
-                "state r: i32[..4] = (t + [1])[^4..]\n",
+                "state r: i32[..4] = (t + [go])[^4..]\n",
             ],
-            "Clip c:\n    Note\n",
+            "state go(0): i32\nClip c:\n    Note\n",
             &[],
         ),
     ];

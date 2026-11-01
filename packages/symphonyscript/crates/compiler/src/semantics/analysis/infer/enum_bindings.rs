@@ -774,6 +774,9 @@ impl Engine<'_> {
             read_by_untyped.extend(self.reads_of(self.binding(*binding)?.init)?);
         }
         read_by_untyped.extend(self.typing.read_by_faults.iter().copied());
+        for root in self.typing.refused_lets.clone() {
+            read_by_untyped.extend(self.reads_of(root)?);
+        }
         if !self.cycle_spans.is_empty() {
             for node in &self.nodes {
                 self.flow_step();

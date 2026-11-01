@@ -808,7 +808,7 @@ fn a_call_beside_the_inline_limit_computes_its_value() {
         (
             &[
                 "state note(60)\n",
-                "let cells = [note, note, note]\n",
+                "state cells = [note, note, note]\n",
                 "fn r(i): if i >= cells.size then 0 else r(i + 1) + 1\n",
                 "Clip c:\n    Note/(60 + r(0))\n",
             ],
@@ -818,7 +818,7 @@ fn a_call_beside_the_inline_limit_computes_its_value() {
         (
             &[
                 "state held([]): i32[..4]\n",
-                "let cells = [held.size, 1]\n",
+                "state cells = [held.size, 1]\n",
                 "fn r(i): if i >= cells.size then 0 else r(i + 1) + 1\n",
                 "Clip c:\n    Note/(60 + r(0))\n",
             ],
@@ -1000,7 +1000,11 @@ fn a_flexible_float_meeting_a_fixed_u8_operand_computes_in_f32() {
             assert_eq!(synth, Some(*product), "{text}");
         }
     }
-    for text in orders(&[input, "let m = b * 0.5\n", "Clip c:\n    Note when m > 1\n"]) {
+    for text in orders(&[
+        input,
+        "state m = b * 0.5\n",
+        "Clip c:\n    Note when m > 1\n",
+    ]) {
         let (_, _, own) = product_types(&text);
         assert_eq!(own, Some(Scalar::F32), "{text}");
     }
@@ -1807,7 +1811,7 @@ fn a_fixed_type_operand_widens_and_the_literals_beside_it_take_the_flowing_type(
 fn a_recursive_call_over_a_fixed_choice_computes_its_count() {
     for pick in [
         "let pick = if false then held else [1, 2]\n",
-        "let pick = if gate then [1, 2] else [3, 4]\n",
+        "state pick = if gate then [1, 2] else [3, 4]\n",
     ] {
         let text = format!(
             "state held([1, 2]): i32[..4]\nstate gate(false)\n{pick}fn r(i): if i >= pick.size then 0 else r(i + 1) + 1\nClip c:\n    Note/(60 + r(0))\n"

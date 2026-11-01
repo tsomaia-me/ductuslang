@@ -19,7 +19,7 @@ enum Binding {
     Constant,
     Default,
     Input,
-    ReactiveLet,
+    DerivedState,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -56,7 +56,7 @@ const BINDINGS: [Binding; 4] = [
     Binding::Constant,
     Binding::Default,
     Binding::Input,
-    Binding::ReactiveLet,
+    Binding::DerivedState,
 ];
 
 const PASSINGS: [Passing; 3] = [
@@ -114,18 +114,18 @@ impl Binding {
             Binding::Constant => Some("2"),
             Binding::Default => None,
             Binding::Input => Some("gv"),
-            Binding::ReactiveLet => Some("rl"),
+            Binding::DerivedState => Some("rl"),
         }
     }
 
     fn reads_cell(self) -> bool {
-        matches!(self, Binding::Input | Binding::ReactiveLet)
+        matches!(self, Binding::Input | Binding::DerivedState)
     }
 
     fn expected(self) -> i32 {
         match self {
             Binding::Constant => 2,
-            Binding::Default | Binding::Input | Binding::ReactiveLet => 1,
+            Binding::Default | Binding::Input | Binding::DerivedState => 1,
         }
     }
 }
@@ -220,7 +220,7 @@ fn program(case: &Case, recursive: bool) -> String {
     let mut items = vec![
         "Session main\n".to_string(),
         "state gv(1.0)\n".to_string(),
-        "let rl = gv * 1\n".to_string(),
+        "state rl = gv * 1\n".to_string(),
         "let refs = [verse, other]\n".to_string(),
     ];
     items.extend(instances(case));
@@ -321,7 +321,9 @@ fn node_reference_rows(rows: &Rows) -> (Vec<String>, usize) {
                                 let twin = program(&case, false);
                                 let mut expected = found(&twin);
                                 if binding.reads_cell() {
-                                    expected.retain(|(code, _), _| *code != Code::IndexOutOfRange);
+                                    expected.retain(|(code, _), _| {
+                                        !matches!(code, Code::IndexOutOfRange | Code::ReactiveLet)
+                                    });
                                     *expected
                                         .entry((Code::ReactiveRecursion, call(&case)))
                                         .or_default() += 1;
@@ -623,14 +625,14 @@ const CHOSEN_BINDINGS: [Binding; 2] = [Binding::Constant, Binding::Default];
 fn chosen_clause(binding: Binding, attribute: &str) -> String {
     match binding {
         Binding::Constant => format!(" | {attribute}=3"),
-        Binding::Default | Binding::Input | Binding::ReactiveLet => String::new(),
+        Binding::Default | Binding::Input | Binding::DerivedState => String::new(),
     }
 }
 
 fn chosen_value(binding: Binding) -> i32 {
     match binding {
         Binding::Constant => 3,
-        Binding::Default | Binding::Input | Binding::ReactiveLet => 1,
+        Binding::Default | Binding::Input | Binding::DerivedState => 1,
     }
 }
 

@@ -23,12 +23,16 @@ const ACCESSES: [(&str, &str); 8] = [
     ("pattern", ""),
 ];
 
-const REFUSALS: [(&str, Code); 4] = [
+const REFUSALS: [(&str, Code); 5] = [
     ("state s(R)\nClip c:\n    Note\n", Code::StateValue),
     ("state s = R\nClip c:\n    Note\n", Code::StateValue),
     ("Clip c:\n    Note | velocity=R\n", Code::TypeMismatch),
     (
         "state flag(false)\nlet r = if flag then R else R\nClip c:\n    Note/(r.A)\n",
+        Code::ReactiveLet,
+    ),
+    (
+        "state flag(false)\nfn p(f):\n    let r = if f then R else R\n    1\nClip c:\n    Note/(p(flag))\n",
         Code::ReactiveNodeReference,
     ),
 ];

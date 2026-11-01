@@ -242,6 +242,21 @@ const LINKS: [(&[&str], &str); 8] = [
 
 const FUNCTION_LINKS: [usize; 2] = [1, 2];
 
+const LET_LINK: usize = 0;
+
+const RUNTIME_DESTINATION_LINK: usize = 6;
+
+fn let_reads_a_runtime_destination(links: &[usize]) -> bool {
+    links.iter().enumerate().any(|(position, link)| {
+        *link == LET_LINK
+            && links
+                .iter()
+                .skip(position + 1)
+                .take_while(|later| !FUNCTION_LINKS.contains(later))
+                .any(|later| *later == RUNTIME_DESTINATION_LINK)
+    })
+}
+
 fn cycle_items(links: &[usize], closing: Option<&str>) -> Vec<String> {
     let mut items = Vec::new();
     for (position, link) in links.iter().enumerate() {
@@ -297,8 +312,13 @@ fn every_cycle_of_declarations_draws_one_declaration_cycle_in_every_order_in(
                 threads.spawn(move || {
                     let mut failures = Vec::new();
                     for cycle in chunk {
+                        let acyclic = if let_reads_a_runtime_destination(cycle) {
+                            vec![Code::ReactiveLet]
+                        } else {
+                            vec![]
+                        };
                         for (closing, wanted) in
-                            [(None, vec![Code::DeclarationCycle]), (Some("1"), vec![])]
+                            [(None, vec![Code::DeclarationCycle]), (Some("1"), acyclic)]
                         {
                             let items = cycle_items(cycle, closing);
                             let lines: Vec<&str> = items.iter().map(String::as_str).collect();

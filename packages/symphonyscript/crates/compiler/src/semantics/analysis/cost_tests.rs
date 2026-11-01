@@ -80,9 +80,8 @@ fn step(construct: Construct, value: &str) -> Option<String> {
 
 fn base(construct: Construct) -> &'static str {
     match construct {
-        Construct::Recursive | Construct::ForPlacement => "1",
-        Construct::Let
-        | Construct::State
+        Construct::Let | Construct::Recursive | Construct::ForPlacement => "1",
+        Construct::State
         | Construct::Inlined
         | Construct::DotCall
         | Construct::If
@@ -251,14 +250,8 @@ fn items(construct: Construct, shape: Shape, n: usize, faulty: bool) -> Option<V
             }
             items.push(reader(&format!("v{last}")));
         }
-        (Shape::Ring, Construct::Recursive | Construct::ForPlacement) => return None,
-        (Shape::Ring, Construct::Let) => {
-            for i in 0..n {
-                let previous = (i + last) % n;
-                items.push(format!("let l{i} = s{i} + 1\n"));
-                items.push(format!("state s{i} = l{previous}.past(1, {zero})\n"));
-            }
-            items.push(reader("s0"));
+        (Shape::Ring, Construct::Let | Construct::Recursive | Construct::ForPlacement) => {
+            return None;
         }
         (Shape::Ring, Construct::State | Construct::History) => {
             for i in 0..n {
@@ -436,6 +429,21 @@ fn items(construct: Construct, shape: Shape, n: usize, faulty: bool) -> Option<V
             items.push(reader(&value));
         }
     }
+    if shape == Shape::Ring {
+        for item in &mut items {
+            if item.starts_with("state s0") {
+                item.truncate(item.len() - 1);
+                item.push_str(" + note * 0\n");
+            }
+        }
+    }
+    if base(construct) != "1" {
+        for item in &mut items {
+            if let Some(rest) = item.strip_prefix("let ") {
+                *item = format!("state {rest}");
+            }
+        }
+    }
     Some(items)
 }
 
@@ -568,7 +576,7 @@ fn every_cost_row_draws_nothing_and_its_erroneous_twin_draws_only_its_unknown_na
         }
     }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
-    assert_eq!(rows, 178);
+    assert_eq!(rows, 176);
 }
 
 const FLOOR: u64 = 1_600;

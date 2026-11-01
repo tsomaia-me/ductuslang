@@ -388,15 +388,24 @@ fn exhaustive_a_cell_of_every_word_and_form_is_read_in_the_present_in_its_past_a
 fn a_derived_cells_init_counts_for_its_own_past_and_fits_the_type_its_rule_gives() {
     let reader = "Clip c:\n    Note/(s)\n";
     let rows: &[support::Row] = &[
-        (&["state s(0) = s.past(1) + 1\n", reader], &[]),
-        (&["state s(0) = s.past(1, 5) + 1\n", reader], &[]),
-        (&["state s = s.past(1, 0) + 1\n", reader], &[]),
         (
-            &["state s(0.5) = s.past(1) + 1\n", reader],
+            &["state n(2)\n", "state s(0) = s.past(1) + n\n", reader],
+            &[],
+        ),
+        (
+            &["state n(2)\n", "state s(0) = s.past(1, 5) + n\n", reader],
+            &[],
+        ),
+        (
+            &["state n(2)\n", "state s = s.past(1, 0) + n\n", reader],
+            &[],
+        ),
+        (
+            &["state n(2)\n", "state s(0.5) = s.past(1) + n\n", reader],
             &[(Code::FloatToInteger, "s")],
         ),
         (
-            &["state s = s.past(1) + 1\n", reader],
+            &["state n(2)\n", "state s = s.past(1) + n\n", reader],
             &[(Code::HistoryFallback, "s.past(1)")],
         ),
         (
@@ -425,32 +434,36 @@ fn a_derived_cells_init_counts_for_its_own_past_and_fits_the_type_its_rule_gives
         ),
         (
             &[
+                "state n(2)\n",
                 "state a(0) = b.past(1) + 1\n",
-                "state b = a.past(1) + 1\n",
+                "state b = a.past(1) + n\n",
                 "Clip c:\n    Note/(a + b)\n",
             ],
             &[],
         ),
         (
             &[
+                "state n(2)\n",
                 "state a = b.past(1) + 1\n",
-                "state b(0) = a.past(1) + 1\n",
+                "state b(0) = a.past(1) + n\n",
                 "Clip c:\n    Note/(a + b)\n",
             ],
             &[],
         ),
         (
             &[
+                "state n(2)\n",
                 "state t(0) = r.past(1)\n",
-                "state r = t + 1\n",
+                "state r = t + n\n",
                 "Clip c:\n    Note/(t)\n",
             ],
             &[],
         ),
         (
             &[
+                "state n(2)\n",
                 "state t(0.5) = r.past(1)\n",
-                "state r = t + 1\n",
+                "state r = t + n\n",
                 "Clip c:\n    Note/(r)\n",
             ],
             &[(Code::TypeMismatch, "0.5")],
@@ -458,7 +471,7 @@ fn a_derived_cells_init_counts_for_its_own_past_and_fits_the_type_its_rule_gives
         (
             &[
                 "state t(0) = r.past(1)\n",
-                "state r(0.5) = t + 1\n",
+                "state r(0.5) = t + go\nstate go(0.0): f32\n",
                 "Clip c:\n    Note | brightness=r\n",
             ],
             &[],
@@ -493,7 +506,7 @@ fn a_derived_cells_init_counts_for_its_own_past_and_fits_the_type_its_rule_gives
         (
             &[
                 "state t([1, 2]) = r.past(1)\n",
-                "state r = [t[1], t[0]]\n",
+                "state r = [t[1], t[0] + go]\nstate go(0): i32\n",
                 "Clip c:\n    Note/(t[0] + r[1])\n",
             ],
             &[],
@@ -501,15 +514,15 @@ fn a_derived_cells_init_counts_for_its_own_past_and_fits_the_type_its_rule_gives
         (
             &[
                 "state t([1, 2, 3]) = r.past(1)\n",
-                "state r = [t[1], t[0]]\n",
+                "state r = [t[1], t[0] + go]\nstate go(0): i32\n",
                 "Clip c:\n    Note/(t[0] + r[1])\n",
             ],
             &[(Code::TypeMismatch, "[1, 2, 3]")],
         ),
         (
             &[
-                "state t([1, 2]) = r.past(1)\n",
-                "state r = [t[1], t]\n",
+                "state t([1, 2]) = r.past(1, [go, go])\n",
+                "state r = [t[1], t]\nstate go(0): i32\n",
                 "Clip c:\n    Note\n",
             ],
             &[(Code::RaggedArray, "[t[1], t]")],
@@ -517,7 +530,7 @@ fn a_derived_cells_init_counts_for_its_own_past_and_fits_the_type_its_rule_gives
         (
             &[
                 "state t(0.5) = r.past(1)\n",
-                "state r = t\n",
+                "state r = t + go\nstate go(0.0): f32\n",
                 "Clip c:\n    Note/(t)\n",
             ],
             &[(Code::FloatToInteger, "t")],
@@ -525,7 +538,7 @@ fn a_derived_cells_init_counts_for_its_own_past_and_fits_the_type_its_rule_gives
         (
             &[
                 "state t([]) = r.past(1)\n",
-                "state r = (t + [1])[^4..]\n",
+                "state r = (t + [go])[^4..]\nstate go(0): i32\n",
                 "Clip c:\n    Note\n",
             ],
             &[],
@@ -534,7 +547,7 @@ fn a_derived_cells_init_counts_for_its_own_past_and_fits_the_type_its_rule_gives
             &[
                 "state t([1, 2]) = r.past(1)\n",
                 "state s(0) = q.past(1)\n",
-                "state q = s + t[0]\n",
+                "state q = s + t[0] + go\nstate go(0): i32\n",
                 "state r = [t[1], q]\n",
                 "Clip c:\n    Note/(r[0] + s)\n",
             ],
@@ -543,7 +556,7 @@ fn a_derived_cells_init_counts_for_its_own_past_and_fits_the_type_its_rule_gives
         (
             &[
                 "state a([1, 2]) = c.past(1)\n",
-                "state b = [a[1], a[0]]\n",
+                "state b = [a[1], a[0] + go]\nstate go(0): i32\n",
                 "state c = b\n",
                 "Clip n:\n    Note/(c[0])\n",
             ],
@@ -556,21 +569,22 @@ fn a_derived_cells_init_counts_for_its_own_past_and_fits_the_type_its_rule_gives
     let cycles: &[&[(&str, &str)]] = &[
         &[
             ("state a = b.past(1) + 1\n", "b.past(1)"),
-            ("state b = a.past(1) + 1\n", "a.past(1)"),
+            ("state b = a.past(1) + n\n", "a.past(1)"),
         ],
         &[
-            ("state a = b + 1\n", ""),
+            ("state a = b + n\n", ""),
             ("state b = a.past(1)\n", "a.past(1)"),
         ],
         &[
             ("state d = a.past(1) + 1\n", "a.past(1)"),
-            ("state a = b + 1\n", ""),
+            ("state a = b + n\n", ""),
             ("state b = d.past(1)\n", "d.past(1)"),
         ],
     ];
     for cycle in cycles {
         let mut items: Vec<(&str, &str)> = cycle.to_vec();
         items.push(("Clip c:\n    Note/(a + b)\n", ""));
+        items.push(("state n(2)\n", ""));
         for order in support::permutations(&items) {
             let text: String = order.iter().map(|(item, _)| *item).collect();
             let earliest = order
@@ -652,7 +666,7 @@ fn a_cells_capacity_clock_string_and_history_target_draw_the_codes_their_rules_n
                 "let a = n.past(1)\n",
                 "Clip c:\n    Note/(f() + a)\n",
             ],
-            &[],
+            &[(Code::ReactiveLet, "a")],
         ),
     ];
     support::assert_rows_in_every_order(&symphonyscript_fixtures::vocabulary(), rows);
@@ -898,4 +912,148 @@ fn an_element_of_a_float_derived_state_read_as_an_integer_draws_float_to_integer
         ),
     ];
     support::assert_rows_in_every_order(&symphonyscript_fixtures::native_vocabulary(), rows);
+}
+
+#[test]
+fn a_derived_cell_or_an_unclocked_cycle_that_reads_no_cell_outside_itself_draws_unrun_cell_c1_2_c2_5()
+ {
+    let reader = "Clip c:\n    Note/(s)\n";
+    let rows: &[support::Row] = &[
+        (
+            &["state s(0) = s.past(1) + 1\n", reader],
+            &[(Code::UnrunCell, "s")],
+        ),
+        (
+            &["state s = s.past(1, 0) + 1\n", reader],
+            &[(Code::UnrunCell, "s")],
+        ),
+        (
+            &["fn f(x): x + 1\n", "state s(0) = f(s.past(1))\n", reader],
+            &[(Code::UnrunCell, "s")],
+        ),
+        (
+            &[
+                "state s(0) = if s.past(1) > 3 then 0 else s.past(1) + 1\n",
+                reader,
+            ],
+            &[(Code::UnrunCell, "s")],
+        ),
+        (
+            &[
+                "state note(60)\n",
+                "state s(0) = s.past(1) + note\n",
+                reader,
+            ],
+            &[],
+        ),
+        (
+            &[
+                "state note(60)\n",
+                "fn f(x): x + note\n",
+                "state s(0) = f(s.past(1))\n",
+                reader,
+            ],
+            &[],
+        ),
+        (
+            &[
+                "state g(1.0)\n",
+                "Clip w | gain=g:\n    Note\n",
+                "state s(0.0) = s.past(1) + w.gain\n",
+                "Clip c | gain=s:\n    Note\n",
+            ],
+            &[],
+        ),
+        (
+            &[
+                "state note(60)\n",
+                "state s(0) = if note.stepped then s.past(1) + 1 else s.past(1)\n",
+                reader,
+            ],
+            &[],
+        ),
+        (
+            &[
+                "state note(60)\n",
+                "state previous = note.past(1, -1)\n",
+                "Clip c:\n    Note/(previous)\n",
+            ],
+            &[],
+        ),
+        (
+            &[
+                "state note(60)\n",
+                "state recent([]) = (recent.past(1) + [note])[^8..]\n",
+                "Clip c:\n    Note/(recent[0])\n",
+            ],
+            &[],
+        ),
+        (
+            &[
+                "stream tick(0)\n",
+                "state s(0) on tick = s.past(1) + 1\n",
+                reader,
+            ],
+            &[(Code::UnbuiltConstruct, "on tick")],
+        ),
+        (
+            &[
+                "state note(60)\n",
+                "state a(0) = b.past(1) + note\n",
+                "state b(0) = a.past(1)\n",
+                "Clip c:\n    Note/(a + b)\n",
+            ],
+            &[],
+        ),
+    ];
+    support::assert_rows_in_every_order(&symphonyscript_fixtures::vocabulary(), rows);
+    let compiler = symphonyscript::Compiler::new(&symphonyscript_fixtures::vocabulary())
+        .expect("the vocabulary compiles");
+    let cycles: [(&[&str], &[Code]); 4] = [
+        (
+            &["state a(0) = b.past(1)\n", "state b(0) = a.past(1)\n"],
+            &[Code::UnrunCell],
+        ),
+        (
+            &["state a = b.past(1) + 1\n", "state b = a.past(1) + 1\n"],
+            &[Code::HistoryFallback, Code::UnrunCell],
+        ),
+        (
+            &["state t(0) = r.past(1)\n", "state r = t + 1\n"],
+            &[Code::UnrunCell],
+        ),
+        (
+            &[
+                "state a(0) = d.past(1)\n",
+                "state b = a + 1\n",
+                "state d = b.past(1, 0)\n",
+            ],
+            &[Code::UnrunCell],
+        ),
+    ];
+    for (cycle, codes) in cycles {
+        let mut items: Vec<&str> = cycle.to_vec();
+        items.push("Clip c:\n    Note\n");
+        for order in support::permutations(&items) {
+            let text: String = order.concat();
+            let found = support::error_texts(&compiler, &text);
+            let first = order
+                .iter()
+                .find_map(|item| item.strip_prefix("state "))
+                .and_then(|rest| rest.split(['(', ' ']).next())
+                .unwrap_or_default()
+                .to_string();
+            let unrun: Vec<&(Code, String)> = found
+                .iter()
+                .filter(|(code, _)| *code == Code::UnrunCell)
+                .collect();
+            let drawn: Vec<Code> = found.iter().map(|(code, _)| *code).collect();
+            let mut wanted = codes.to_vec();
+            wanted.sort();
+            let mut sorted = drawn.clone();
+            sorted.sort();
+            assert_eq!(sorted, wanted, "{text}");
+            assert_eq!(unrun, [&(Code::UnrunCell, first)], "{text}");
+        }
+    }
 }

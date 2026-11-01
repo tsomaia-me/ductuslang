@@ -661,7 +661,7 @@ fn inlining_into_a_let(total: u64) -> String {
         .map(|level| format!("f{level}(i)"))
         .collect();
     text.push_str(&format!(
-        "let v = {}\nClip c:\n    Note/(v)\n",
+        "state v = {}\nClip c:\n    Note/(v)\n",
         calls.join(" + ")
     ));
     text

@@ -74,6 +74,9 @@ pub(super) fn help(code: Code) -> Option<&'static str> {
         Code::HistoryFallback => {
             "give the cell an init, as in `state s(0) = s.past(1) + 1`, or the read a fallback, as in `s.past(1, 0)`"
         }
+        Code::UnrunCell => {
+            "give the cell a clock, as in `state s(0) on tick = s.past(1) + 1`, or read a cell that steps"
+        }
         Code::HistoryOffset => {
             "write the offset as a positive integer known at compile time, as in `x.past(1, 0)`"
         }
@@ -202,6 +205,9 @@ pub(super) fn help(code: Code) -> Option<&'static str> {
         Code::MissingArgument => "supply the parameter, as in `P | root=60`",
         Code::ReactiveInitializer => {
             "give the cell an init that is a compile-time value, such as a `let`"
+        }
+        Code::ReactiveLet => {
+            "declare a value that reads a cell as a `state`, as in `state louder = note + 12`"
         }
         Code::UnknownAttribute => "use an attribute the kind declares, or correct its spelling",
         Code::RuntimePath => {

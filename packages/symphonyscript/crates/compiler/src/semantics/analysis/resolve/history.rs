@@ -170,7 +170,7 @@ impl Engine<'_> {
             HistoryCell::Let(id) => Query::Let(self.global_of_let(id), LetRef::Top(id)),
         };
         if self.in_progress(query) {
-            let (message, help) = unstarted(&target.text, "state", "0");
+            let (message, help) = unstarted(&target.text, "state", "0", false);
             self.error_helped(Code::HistoryFallback, loc, scope, message, help)?;
             return Ok(Some(Unwritten::Fault));
         }
@@ -648,7 +648,9 @@ impl Engine<'_> {
                 CellWord::Channel => "channel",
             };
             let fallback = self.fallback_of(state)?;
-            let (message, help) = unstarted(&name, word, &fallback);
+            let members = self.collected.cell_groups.group_of(state).0.to_vec();
+            let unrun = self.group_unrun(&members)?;
+            let (message, help) = unstarted(&name, word, &fallback, unrun);
             self.error_helped(
                 Code::HistoryFallback,
                 loc,
@@ -695,13 +697,18 @@ const OFFSET: &str = "the offset of a history read is a positive integer known a
 pub(in crate::semantics::analysis) const STRING_CELL: &str =
     "a cell holding a string (SPEC §3.3) is a construct this compiler does not build";
 
-fn unstarted(name: &str, word: &str, fallback: &str) -> (String, String) {
+fn unstarted(name: &str, word: &str, fallback: &str, unrun: bool) -> (String, String) {
+    let start = format!(
+        "give `{name}` an init, as in `{word} {name}({fallback}) = …`, or this read a fallback, as in `{name}.past(1, {fallback})`"
+    );
     (
         format!(
             "this read of `{name}` lies on a cycle of history reads with its reader, and `{name}` has no init and the read no fallback, so it has no value at load"
         ),
-        format!(
-            "give `{name}` an init, as in `{word} {name}({fallback}) = …`, or this read a fallback, as in `{name}.past(1, {fallback})`"
-        ),
+        if unrun {
+            format!("read a cell outside the cycle, and {start}")
+        } else {
+            start
+        },
     )
 }

@@ -82,7 +82,7 @@ const POSITIONS: &[Position] = &[
     Position {
         name: "a `match` arm",
         items: &[
-            "let q{n} = match f:\n    true: {x}\n    false: Mode::{m}",
+            "state q{n} = match f:\n    true: {x}\n    false: Mode::{m}",
             "Osc o{n} | mode=q{n}",
         ],
         reactive: Effect::Gives("Mode"),
@@ -236,7 +236,7 @@ struct Flow {
 impl Flow {
     fn writer(&self) -> &'static str {
         if self.reactive {
-            "let x = if f then Sine else Saw"
+            "state x = if f then Sine else Saw"
         } else {
             "let x = Sine"
         }
@@ -265,21 +265,22 @@ impl Flow {
     fn route_items(&self) -> Vec<&'static str> {
         match (self.route, self.reactive) {
             (Route::Direct, _) => Vec::new(),
-            (Route::Alias, _) => vec!["let y = x"],
-            (Route::Carrier, _) => vec!["let y = if f then x else x"],
-            (Route::Writing, _) => vec!["let z = if f then x else Square"],
+            (Route::Alias, true) => vec!["state y = x"],
+            (Route::Alias, false) => vec!["let y = x"],
+            (Route::Carrier, _) => vec!["state y = if f then x else x"],
+            (Route::Writing, _) => vec!["state z = if f then x else Square"],
             (Route::WritingCompiled, _) => vec!["let z = [x, Square][1]"],
             (Route::Partnered, true) => vec![
-                "let z = if f then Saw else Square",
+                "state z = if f then Saw else Square",
                 "Osc oz when x is z | wave=z",
             ],
             (Route::Partnered, false) => vec!["let z = Saw", "Osc oz when x is z | wave=z"],
             (Route::Compared, true) => {
-                vec!["let z = if f then Saw else Square", "Osc oz when x is z"]
+                vec!["state z = if f then Saw else Square", "Osc oz when x is z"]
             }
             (Route::Compared, false) => vec!["let z = Saw", "Osc oz when x is z"],
-            (Route::Typed, _) => vec!["state t(Wave::Saw)", "let z = if f then x else t"],
-            (Route::Cycle, true) => vec!["let c = if f then x else c"],
+            (Route::Typed, _) => vec!["state t(Wave::Saw)", "state z = if f then x else t"],
+            (Route::Cycle, true) => vec!["state c = if f then x else c"],
             (Route::Cycle, false) => vec!["let c = [x, c][0]"],
         }
     }
@@ -293,7 +294,7 @@ impl Flow {
             writers.extend(
                 self.route_items()
                     .into_iter()
-                    .filter(|item| item.starts_with("let z"))
+                    .filter(|item| item.starts_with("let z") || item.starts_with("state z"))
                     .map(str::to_string),
             );
         }
@@ -449,6 +450,10 @@ fn program(flow: &Flow, vocab: &Vocab, uses: &[&Position]) -> Vec<String> {
     for (index, position) in uses.iter().enumerate() {
         let n = (index + 1).to_string();
         items.extend(position.items.iter().map(|item| {
+            let item = match item.strip_prefix("let ") {
+                Some(rest) if flow.reads_a_cell() => format!("state {rest}"),
+                Some(_) | None => item.to_string(),
+            };
             item.replace("{x}", flow.read())
                 .replace("{n}", &n)
                 .replace("{m}", vocab.mode_variant)
@@ -572,7 +577,9 @@ fn flows_meet_their_uses(
         let routes: Vec<_> = routes
             .iter()
             .copied()
-            .filter(|route| !(reactive && *route == Route::Carrier))
+            .filter(|route| {
+                !(reactive && matches!(*route, Route::Carrier | Route::WritingCompiled))
+            })
             .map(|route| threads.spawn(move || route_meets_its_uses(rows, reactive, shared, route)))
             .collect();
         let mut failures = Vec::new();
@@ -877,7 +884,7 @@ fn an_untyped_compile_time_flow_draws_one_diagnostic_at_its_value_in_every_order
         (
             &[
                 "state f(true)",
-                "let v = if f then w else w",
+                "state v = if f then w else w",
                 "Osc o | mode=v",
                 "Osc p | wave=w",
             ],

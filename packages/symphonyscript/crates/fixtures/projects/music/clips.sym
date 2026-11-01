@@ -2,7 +2,7 @@ state section(0)
 state fill_on(false)
 state cutoff(0.5)
 
-let wobble = cutoff * 0.8
+state wobble = cutoff * 0.8
 let sections = [verse, chorus]
 
 pattern Arp(default root, steps = 4, gap = 4):

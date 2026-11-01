@@ -6,7 +6,7 @@ A label of another type could never match.
 
 ```sym-error
 state w(Wave::Saw)
-let l = match w:
+state l = match w:
     Purple: 1
     else: 2
 ```
@@ -15,7 +15,7 @@ let l = match w:
 
 ```sym
 state w(Wave::Saw)
-let l = match w:
+state l = match w:
     Saw: 1
     else: 2
 ```

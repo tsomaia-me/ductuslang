@@ -15,7 +15,7 @@ fn codes(text: &str) -> Vec<Code> {
 
 fn exceeds(prefix: &str, value: &str, capacity: u32) -> bool {
     let text = format!(
-        "{CELLS}{prefix}let probe: i32[..{capacity}] = {value}\nClip c:\n    Note/(probe[0])\n"
+        "{CELLS}{prefix}state probe: i32[..{capacity}] = {value}\nClip c:\n    Note/(probe[0])\n"
     );
     let found = codes(&text);
     assert!(
@@ -41,7 +41,7 @@ fn each_row_of_the_capacity_table_gives_its_capacity() {
     let rows: &[(&str, &str, u32)] = &[
         ("", "[1, 2, 3]", 3),
         ("", "a", 5),
-        ("let b: i32[..6] = a\n", "b", 6),
+        ("state b: i32[..6] = a\n", "b", 6),
         ("", "a + [1, 2]", 7),
         ("", "a + a", 10),
         ("", "a[^3..]", 3),
@@ -67,7 +67,7 @@ fn each_row_of_the_capacity_table_gives_its_capacity() {
         ("", "if flag then a else [1, 2, 3, 4, 5, 6, 7]", 7),
         ("", "if flag then [1] else a + a", 10),
         (
-            "let m = match i:\n    0: a\n    1: [1, 2, 3, 4, 5, 6]\n    else: [1]\n",
+            "state m = match i:\n    0: a\n    1: [1, 2, 3, 4, 5, 6]\n    else: [1]\n",
             "m",
             6,
         ),
@@ -135,7 +135,7 @@ fn assert_ordered_capacity_in(orders: support::Orders, items: &[&str], value: &s
         probes.push((capacity - 1, vec![Code::CapacityExceeded]));
     }
     for (held, expected) in probes {
-        let probe = format!("let probe: i32[..{held}] = {value}\n");
+        let probe = format!("state probe: i32[..{held}] = {value}\n");
         let mut all: Vec<&str> = items.to_vec();
         all.push(&probe);
         all.push("Clip c:\n    Note/(probe[0])\n");
@@ -345,7 +345,7 @@ fn history_reads_form_no_cycle_and_a_present_read_of_itself_does() {
 fn a_state_s_own_history_reads_count_as_their_fallbacks_for_its_kind() {
     assert_eq!(
         codes(&format!(
-            "{CELLS}state s = s.past(1, 0.5) + 1\nClip c | gain=s:\n    Note\n"
+            "{CELLS}state s = s.past(1, 0.5) + note\nClip c | gain=s:\n    Note\n"
         )),
         vec![]
     );
@@ -395,7 +395,7 @@ fn a_history_reads_fallback_takes_the_cells_type() {
         (
             &[
                 "state w(Wave::Saw)\n",
-                "let k = w\n",
+                "state k = w\n",
                 "state s2 = k.past(1, Sine)\n",
                 "Clip c:\n    Note when s2 is Saw\n",
             ],
@@ -421,7 +421,7 @@ fn a_history_reads_fallback_takes_the_cells_type() {
             &[
                 "state x(1)\n",
                 "state y(3000000000)\n",
-                "let l = y + 0\n",
+                "state l = y + 0\n",
                 "state s = x.past(1, l)\n",
                 "Clip c:\n    Note/(s)\n",
             ],
@@ -440,7 +440,7 @@ fn a_history_read_has_its_cells_kind_for_an_input_a_let_and_a_state_in(orders: s
         (
             &[
                 "state x(1.5)\n",
-                "let y = x * 2\n",
+                "state y = x * 2\n",
                 "state s = y.past(1, 0)\n",
                 "Clip c:\n    Note/(s)\n",
             ],
@@ -449,7 +449,7 @@ fn a_history_read_has_its_cells_kind_for_an_input_a_let_and_a_state_in(orders: s
         (
             &[
                 "state x(1.5)\n",
-                "let y = x * 2\n",
+                "state y = x * 2\n",
                 "state s = y.past(1, 0)\n",
                 "Clip k | gain=s:\n    Note/(i32(s))\n",
             ],
@@ -476,7 +476,7 @@ fn a_history_read_has_its_cells_kind_for_an_input_a_let_and_a_state_in(orders: s
         (
             &[
                 "state x(1.5)\n",
-                "state p = q.past(1, 0) + 1.5\n",
+                "state p = q.past(1, 0) + x\n",
                 "state q = p.past(1, 0)\n",
                 "Clip c:\n    Note/(q)\n",
             ],
@@ -485,7 +485,7 @@ fn a_history_read_has_its_cells_kind_for_an_input_a_let_and_a_state_in(orders: s
         (
             &[
                 "state x(1.5)\n",
-                "state p = q.past(1, 0) + 1.5\n",
+                "state p = q.past(1, 0) + x\n",
                 "state q = p.past(1, 0)\n",
                 "Clip k | gain=q:\n    Note/(i32(q))\n",
             ],
@@ -493,16 +493,18 @@ fn a_history_read_has_its_cells_kind_for_an_input_a_let_and_a_state_in(orders: s
         ),
         (
             &[
+                "state x(1.5)\n",
                 "state p = q.past(1, 0)\n",
-                "state q = p.past(1, 0.5)\n",
+                "state q = p.past(1, 0.5) + x\n",
                 "Clip c:\n    Note/(p)\n",
             ],
             &[(Code::FloatToInteger, "p")],
         ),
         (
             &[
+                "state x(1.5)\n",
                 "state p = q.past(1, 0)\n",
-                "state q = p.past(1, 0.5)\n",
+                "state q = p.past(1, 0.5) + x\n",
                 "Clip k | gain=p:\n    Note/(i32(p))\n",
             ],
             &[],
@@ -510,7 +512,7 @@ fn a_history_read_has_its_cells_kind_for_an_input_a_let_and_a_state_in(orders: s
         (
             &[
                 "state x(1.5)\n",
-                "let t = s * x\n",
+                "state t = s * x\n",
                 "state s = t.past(1, 0)\n",
                 "Clip c:\n    Note/(s)\n",
             ],
@@ -519,7 +521,7 @@ fn a_history_read_has_its_cells_kind_for_an_input_a_let_and_a_state_in(orders: s
         (
             &[
                 "state x(1.5)\n",
-                "let t = s * x\n",
+                "state t = s * x\n",
                 "state s = t.past(1, 0)\n",
                 "Clip k | gain=s:\n    Note/(i32(s))\n",
             ],
@@ -543,8 +545,9 @@ fn a_history_read_has_its_cells_kind_for_an_input_a_let_and_a_state_in(orders: s
         ),
         (
             &[
+                "state x(1.5)\n",
                 "state p = q.past(1, 0)\n",
-                "state q = p.past(1, 0.5)\n",
+                "state q = p.past(1, 0.5) + x\n",
                 "Clip c:\n    Note/(p)\n    Note/(q)\n",
             ],
             &[(Code::FloatToInteger, "p"), (Code::FloatToInteger, "q")],
@@ -552,9 +555,9 @@ fn a_history_read_has_its_cells_kind_for_an_input_a_let_and_a_state_in(orders: s
         (
             &[
                 "state x(1.5)\n",
-                "state p = q.past(1, 0) + 1.5\n",
+                "state p = q.past(1, 0) + x\n",
                 "state q = p.past(1, 0)\n",
-                "let m = match q:\n    1: 2\n    else: 3\n",
+                "state m = match q:\n    1: 2\n    else: 3\n",
                 "Clip c:\n    Note/(m)\n",
             ],
             &[(Code::MatchScrutinee, "q")],
@@ -562,7 +565,7 @@ fn a_history_read_has_its_cells_kind_for_an_input_a_let_and_a_state_in(orders: s
         (
             &[
                 "state x(1.5)\n",
-                "state p = q.past(1, 0) + 1.5\n",
+                "state p = q.past(1, 0) + x\n",
                 "state q = p.past(1, 0)\n",
                 "Clip c:\n    Note/([1, 2, 3][q])\n",
             ],
@@ -571,7 +574,7 @@ fn a_history_read_has_its_cells_kind_for_an_input_a_let_and_a_state_in(orders: s
         (
             &[
                 "state x(1.5)\n",
-                "state p = q.past(1, 0) + 1.5\n",
+                "state p = q.past(1, 0) + x\n",
                 "state q = p.past(1, 0)\n",
                 "state r = q.past(1, 0) + 1\n",
                 "Clip c:\n    Note/(r)\n",
@@ -581,9 +584,9 @@ fn a_history_read_has_its_cells_kind_for_an_input_a_let_and_a_state_in(orders: s
         (
             &[
                 "state x(1.5)\n",
-                "let t = s * x\n",
+                "state t = s * x\n",
                 "state s = t.past(1, 0)\n",
-                "let u = s + 1\n",
+                "state u = s + 1\n",
                 "Clip c:\n    Note/(u)\n",
             ],
             &[(Code::FloatToInteger, "u")],
@@ -591,7 +594,7 @@ fn a_history_read_has_its_cells_kind_for_an_input_a_let_and_a_state_in(orders: s
         (
             &[
                 "state x(1)\n",
-                "let y = x + 1\n",
+                "state y = x + 1\n",
                 "state s = y.past(1, 0.5)\n",
                 "Clip c:\n    Note/(s)\n",
             ],
@@ -600,7 +603,7 @@ fn a_history_read_has_its_cells_kind_for_an_input_a_let_and_a_state_in(orders: s
         (
             &[
                 "state gate(false)\n",
-                "let h = not gate\n",
+                "state h = not gate\n",
                 "state s = h.past(1, 0)\n",
                 "Clip c:\n    Note when s\n",
             ],
@@ -608,23 +611,26 @@ fn a_history_read_has_its_cells_kind_for_an_input_a_let_and_a_state_in(orders: s
         ),
         (
             &[
+                "state x(1.5)\n",
                 "state p = q.past(1, 0)\n",
-                "state q = p.past(1, 0.5)\n",
+                "state q = p.past(1, 0.5) + x\n",
                 "Clip c:\n    Note | brightness=p\n",
             ],
             &[],
         ),
         (
             &[
+                "state k(1)\n",
                 "state p = q.past(1, 0)\n",
-                "state q = p.past(1, 0)\n",
+                "state q = p.past(1, 0) + k\n",
                 "Clip c:\n    Note/(p)\n",
             ],
             &[],
         ),
         (
             &[
-                "state s = s.past(1, 0.5)\n",
+                "state x(1.5)\n",
+                "state s = s.past(1, 0.5) + x\n",
                 "Clip c:\n    Note | brightness=s\n",
             ],
             &[],
@@ -662,14 +668,14 @@ fn a_history_reads_provisional_kind_leaves_no_diagnostic_behind_in(orders: suppo
     let x = "state x(1)\n";
     let gate = "state gate(false)\n";
     let held = "state held([]): i32[..10]\n";
-    let probe = "let probe = held[s..]\n";
+    let probe = "state probe = held[s..]\n";
     let read = "Clip c:\n    Note/(probe[0])\n";
     let rows: &[support::Row] = &[
         (
             &[
                 x,
                 held,
-                "let y = x + 1\n",
+                "state y = x + 1\n",
                 "state s = y.past(1, 0.5)\n",
                 probe,
                 read,
@@ -679,9 +685,9 @@ fn a_history_reads_provisional_kind_leaves_no_diagnostic_behind_in(orders: suppo
         (
             &[
                 gate,
-                "let y = not gate\n",
+                "state y = not gate\n",
                 "state s = y.past(1, 0)\n",
-                "let b = not s\n",
+                "state b = not s\n",
                 "Clip c:\n    Note when b\n",
             ],
             &[(Code::TypeMismatch, "0")],
@@ -689,9 +695,9 @@ fn a_history_reads_provisional_kind_leaves_no_diagnostic_behind_in(orders: suppo
         (
             &[
                 x,
-                "let y = x + 1\n",
+                "state y = x + 1\n",
                 "state s = y.past(1, 0.5)\n",
-                "let m = match s:\n    0: 1\n    else: 2\n",
+                "state m = match s:\n    0: 1\n    else: 2\n",
                 "Clip c:\n    Note/(m)\n",
             ],
             &[(Code::TypeMismatch, "0.5")],
@@ -702,7 +708,7 @@ fn a_history_reads_provisional_kind_leaves_no_diagnostic_behind_in(orders: suppo
                 held,
                 "state p = q.past(1, 0.5)\n",
                 "state q = x + 1\n",
-                "let probe = held[p..]\n",
+                "state probe = held[p..]\n",
                 read,
             ],
             &[(Code::TypeMismatch, "0.5")],
@@ -712,7 +718,7 @@ fn a_history_reads_provisional_kind_leaves_no_diagnostic_behind_in(orders: suppo
                 x,
                 held,
                 "state s = y.past(1, 0)\n",
-                "let y = x + 1\n",
+                "state y = x + 1\n",
                 probe,
                 read,
             ],
@@ -722,7 +728,7 @@ fn a_history_reads_provisional_kind_leaves_no_diagnostic_behind_in(orders: suppo
             &[
                 x,
                 held,
-                "let y = x * 0.5\n",
+                "state y = x * 0.5\n",
                 "state s = y.past(1, 0.0)\n",
                 probe,
                 read,
@@ -796,9 +802,9 @@ fn a_history_read_of_a_let_whose_initializer_drew_an_error_draws_nothing_of_its_
     support::assert_rows_in_every_order(&vocabulary(), rows);
 }
 
-fn a_history_read_of_a_reactive_let_has_the_lets_layout_in(orders: support::Orders) {
+fn a_history_read_of_a_derived_state_has_its_layout_433_in(orders: support::Orders) {
     let held = "state held([]): i32[..10]\n";
-    let played = "let played = held + [note]\n";
+    let played = "state played = held + [note]\n";
     assert_ordered_capacity_in(
         orders,
         &[
@@ -816,7 +822,7 @@ fn a_history_read_of_a_reactive_let_has_the_lets_layout_in(orders: support::Orde
             held,
             NOTE,
             played,
-            "let t = s[1..]\n",
+            "state t = s[1..]\n",
             "state s = (t.past(1, []) + [note, note])[^8..]\n",
         ],
         "s",
@@ -853,10 +859,7 @@ fn a_history_read_of_a_reactive_let_has_the_lets_layout_in(orders: support::Orde
                 "state s = played.past(1, [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])\n",
                 first,
             ],
-            &[(
-                Code::CapacityExceeded,
-                "[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]",
-            )],
+            &[],
         ),
         (
             &[
@@ -878,7 +881,7 @@ fn a_history_read_of_a_reactive_let_has_the_lets_layout_in(orders: support::Orde
         (
             &[
                 NOTE,
-                "let pair = [note, note]\n",
+                "state pair = [note, note]\n",
                 "state s = pair.past(1, [0, 0])[1..]\n",
                 "Clip c:\n    Note/(s[1])\n",
             ],
@@ -887,7 +890,7 @@ fn a_history_read_of_a_reactive_let_has_the_lets_layout_in(orders: support::Orde
         (
             &[
                 NOTE,
-                "let pair = [note, note]\n",
+                "state pair = [note, note]\n",
                 "state s = pair.past(1, [0])\n",
                 first,
             ],
@@ -898,14 +901,14 @@ fn a_history_read_of_a_reactive_let_has_the_lets_layout_in(orders: support::Orde
 }
 
 #[test]
-fn a_history_read_of_a_reactive_let_has_the_lets_layout() {
-    a_history_read_of_a_reactive_let_has_the_lets_layout_in(support::Orders::ForwardAndReversed);
+fn a_history_read_of_a_derived_state_has_its_layout_433() {
+    a_history_read_of_a_derived_state_has_its_layout_433_in(support::Orders::ForwardAndReversed);
 }
 
 #[test]
 #[ignore = "exhaustive"]
-fn exhaustive_a_history_read_of_a_reactive_let_has_the_lets_layout() {
-    a_history_read_of_a_reactive_let_has_the_lets_layout_in(support::Orders::Every);
+fn exhaustive_a_history_read_of_a_derived_state_has_its_layout_433() {
+    a_history_read_of_a_derived_state_has_its_layout_433_in(support::Orders::Every);
 }
 
 #[test]
@@ -923,7 +926,7 @@ fn a_chain_of_slices_keeps_its_capacity_and_its_length() {
             &[
                 NOTE,
                 "state s = [note, note, note]\n",
-                "let t = s[1..][1..][1..]\n",
+                "state t = s[1..][1..][1..]\n",
                 "Clip c:\n    Note/(t[0])\n",
             ],
             &[(Code::IndexOutOfRange, "0")],
@@ -932,7 +935,7 @@ fn a_chain_of_slices_keeps_its_capacity_and_its_length() {
             &[
                 NOTE,
                 "state s = [note, note, note]\n",
-                "let t = s[1..]\n",
+                "state t = s[1..]\n",
                 "Clip c:\n    Note/(t[2])\n",
             ],
             &[(Code::IndexOutOfRange, "2")],
@@ -941,7 +944,7 @@ fn a_chain_of_slices_keeps_its_capacity_and_its_length() {
             &[
                 NOTE,
                 "state s = [note, note, note]\n",
-                "let t = s[1..]\n",
+                "state t = s[1..]\n",
                 "Clip c:\n    Note/(t[1] + t.size)\n",
             ],
             &[],
@@ -982,7 +985,7 @@ fn a_history_read_counts_as_an_operand_of_its_cells_integer_width_in(orders: sup
         (
             &[
                 "state x(1)\n",
-                "let l = x + 1\n",
+                "state l = x + 1\n",
                 "state s = l.past(1, 0)\n",
                 wide,
             ],
@@ -997,9 +1000,16 @@ fn a_history_read_counts_as_an_operand_of_its_cells_integer_width_in(orders: sup
             ],
             &[],
         ),
-        (&["state s = s.past(1, 0i64) + 1\n", wide], &[]),
         (
-            &["state s = s.past(1, 0) + 1\n", wide],
+            &[
+                "state go(1): i32\n",
+                "state s = s.past(1, 0i64) + go\n",
+                wide,
+            ],
+            &[],
+        ),
+        (
+            &["state go(1): i32\n", "state s = s.past(1, 0) + go\n", wide],
             &[(Code::DoesNotFit, "3000000000")],
         ),
         (
@@ -1060,7 +1070,7 @@ fn the_arms_of_a_choice_are_type_checked_against_one_another_whatever_chooses_in
             &[
                 a,
                 "let k = 1\n",
-                "let m = match k:\n    1: a\n    else: 5\n",
+                "state m = match k:\n    1: a\n    else: 5\n",
                 "Clip c:\n    Note/(m[0])\n",
             ],
             &[(Code::TypeMismatch, "match k:\n    1: a\n    else: 5")],
@@ -1077,7 +1087,7 @@ fn the_arms_of_a_choice_are_type_checked_against_one_another_whatever_chooses_in
             &[
                 a,
                 flag,
-                "let x = if true then (if flag then a else 5) else a\n",
+                "state x = if true then (if flag then a else 5) else a\n",
                 "Clip c:\n    Note/(x[0])\n",
             ],
             &[(Code::TypeMismatch, "if flag then a else 5")],
@@ -1085,7 +1095,7 @@ fn the_arms_of_a_choice_are_type_checked_against_one_another_whatever_chooses_in
         (
             &[
                 "state note(60)\n",
-                "let x = if true then [note, note] else 5\n",
+                "state x = if true then [note, note] else 5\n",
                 "Clip c:\n    Note/(x)\n",
             ],
             &[(Code::TypeMismatch, "if true then [note, note] else 5")],
@@ -1290,7 +1300,7 @@ fn the_arms_of_a_choice_are_type_checked_against_one_another_whatever_chooses_in
             &[
                 held,
                 flag,
-                "let inner = if flag then held else held\n",
+                "state inner = if flag then held else held\n",
                 "Clip c:\n    Note/((if false then inner else [[1]])[0][0])\n",
             ],
             &[(Code::TypeMismatch, "if false then inner else [[1]]")],
@@ -1298,7 +1308,7 @@ fn the_arms_of_a_choice_are_type_checked_against_one_another_whatever_chooses_in
         (
             &[
                 held,
-                "let b = held.bytes\n",
+                "state b = held.bytes\n",
                 "Clip c:\n    Note/((if false then b else [[1]])[0][0])\n",
             ],
             &[(Code::TypeMismatch, "if false then b else [[1]]")],
@@ -1545,17 +1555,17 @@ fn an_annotation_holds_only_an_initializer_of_its_rows_in(orders: support::Order
     ];
     let rows: &[(&str, &str, &[Code])] = &[
         (
-            "let probe: i32[2][..5] = a\n",
+            "state probe: i32[2][..5] = a\n",
             "Clip c:\n    Note/(probe[0][0])\n",
             &[Code::TypeMismatch],
         ),
         (
-            "let probe: i32[..10] = g\n",
+            "state probe: i32[..10] = g\n",
             "Clip c:\n    Note/(probe[0])\n",
             &[Code::TypeMismatch],
         ),
         (
-            "let probe: i32[2][..10] = g\n",
+            "state probe: i32[2][..10] = g\n",
             "Clip c:\n    Note/(probe[0][2])\n",
             &[Code::TypeMismatch],
         ),
@@ -1569,9 +1579,9 @@ fn an_annotation_holds_only_an_initializer_of_its_rows_in(orders: support::Order
             "Clip c:\n    Note/(s[0])\n",
             &[Code::TypeMismatch],
         ),
-        ("let b: i32[..6] = a\n", "Clip c:\n    Note/(b[0])\n", &[]),
+        ("state b: i32[..6] = a\n", "Clip c:\n    Note/(b[0])\n", &[]),
         (
-            "let probe: i32[3][..11] = g + [[1, 2, 3]]\n",
+            "state probe: i32[3][..11] = g + [[1, 2, 3]]\n",
             "Clip c:\n    Note/(probe[0][2])\n",
             &[],
         ),
@@ -1581,7 +1591,7 @@ fn an_annotation_holds_only_an_initializer_of_its_rows_in(orders: support::Order
             &[],
         ),
         (
-            "let probe: f32[..5] = a\n",
+            "state probe: f32[..5] = a\n",
             "Clip c | gain=(probe[0]):\n    Note\n",
             &[],
         ),
@@ -1730,8 +1740,8 @@ fn a_state_settled_as_a_fixed_array_is_used_as_a_fixed_array_in(orders: support:
             &[
                 NOTE,
                 fixed,
-                "let p = s\n",
-                "let probe: i32[2] = p\n",
+                "state p = s\n",
+                "state probe: i32[2] = p\n",
                 "Clip c:\n    Note/(probe[1])\n",
             ],
             &[],
@@ -1740,8 +1750,8 @@ fn a_state_settled_as_a_fixed_array_is_used_as_a_fixed_array_in(orders: support:
             &[
                 NOTE,
                 fixed,
-                "let p = s + [note]\n",
-                "let probe: i32[3] = p\n",
+                "state p = s + [note]\n",
+                "state probe: i32[3] = p\n",
                 "Clip c:\n    Note/(probe[2])\n",
             ],
             &[],
@@ -1749,8 +1759,8 @@ fn a_state_settled_as_a_fixed_array_is_used_as_a_fixed_array_in(orders: support:
         (
             &[
                 NOTE,
-                "let p = s\n",
-                "let probe: i32[2] = p\n",
+                "state p = s\n",
+                "state probe: i32[2] = p\n",
                 "state s = (z.past(1, [0, 0]) + [note])[1..]\n",
                 "state z = p\n",
                 "Clip c:\n    Note/(probe[1])\n",
@@ -1797,23 +1807,23 @@ fn compile_time_condition_rows(orders: support::Orders, part: usize, parts: usiz
     let rows: &[OrderedRow] = &[
         (
             &[
-                "let x = if true then a else [1, 2, 3, 4, 5, 6, 7]\n",
-                "let probe: i32[..5] = x\n",
+                "state x = if true then a else [1, 2, 3, 4, 5, 6, 7]\n",
+                "state probe: i32[..5] = x\n",
                 "Clip c:\n    Note/(probe[0])\n",
             ],
             &[],
         ),
         (
             &[
-                "let x = if false then a else [note, note]\n",
-                "let probe: i32[2] = x\n",
+                "state x = if false then a else [note, note]\n",
+                "state probe: i32[2] = x\n",
                 "Clip c:\n    Note/(probe[1])\n",
             ],
             &[],
         ),
         (
             &[
-                "let probe: i32[..5] = if true then a else held\n",
+                "state probe: i32[..5] = if true then a else held\n",
                 "Clip c:\n    Note/(probe[0])\n",
             ],
             &[],
@@ -1821,8 +1831,8 @@ fn compile_time_condition_rows(orders: support::Orders, part: usize, parts: usiz
         (
             &[
                 "let k = 1\n",
-                "let m = match k:\n    0: a\n    1: [1, 2, 3]\n    else: [1]\n",
-                "let probe: i32[3] = m\n",
+                "state m = match k:\n    0: a\n    1: [1, 2, 3]\n    else: [1]\n",
+                "state probe: i32[3] = m\n",
                 "Clip c:\n    Note/(probe[2])\n",
             ],
             &[],
@@ -1830,32 +1840,32 @@ fn compile_time_condition_rows(orders: support::Orders, part: usize, parts: usiz
         (
             &[
                 "state s = if true then a else [1, 2, 3, 4, 5, 6, 7]\n",
-                "let probe: i32[..5] = s\n",
+                "state probe: i32[..5] = s\n",
                 "Clip c:\n    Note/(probe[0])\n",
             ],
             &[],
         ),
         (
             &[
-                "let probe: i32[3] = if flag then [note, note] else [note, note, note]\n",
+                "state probe: i32[3] = if flag then [note, note] else [note, note, note]\n",
                 "Clip c:\n    Note/(probe[0])\n",
             ],
             &[(
                 Code::VariableArray,
-                "let probe: i32[3] = if flag then [note, note] else [note, note, note]\n",
+                "if flag then [note, note] else [note, note, note]",
                 0,
             )],
         ),
         (
             &[
-                "let probe: i32[..5] = if true then a else [1.5, true]\n",
+                "state probe: i32[..5] = if true then a else [1.5, true]\n",
                 "Clip c:\n    Note/(probe[0])\n",
             ],
             &[(Code::TypeMismatch, "[1.5, true]", 0)],
         ),
         (
             &[
-                "let probe: i32[..5] = if true then a else [[1], 2]\n",
+                "state probe: i32[..5] = if true then a else [[1], 2]\n",
                 "Clip c:\n    Note/(probe[0])\n",
             ],
             &[(Code::RaggedArray, "[[1], 2]", 0)],
@@ -1900,14 +1910,14 @@ fn a_compile_time_match_on_a_bare_variant_chooses_its_arm_before_layout_and_capa
     orders: support::Orders,
 ) {
     let cell = "state a([]): i32[..5]\n";
-    let probe = "let probe: i32[..5] = m\n";
+    let probe = "state probe: i32[..5] = m\n";
     let clip = "Clip c:\n    Note/(probe[0])\n";
     let rows: &[OrderedRow] = &[
         (
             &[
                 "let w = Saw\n",
                 "Osc o | wave=w\n",
-                "let m = match w:\n    Saw: a\n    else: [1, 2, 3, 4, 5, 6, 7]\n",
+                "state m = match w:\n    Saw: a\n    else: [1, 2, 3, 4, 5, 6, 7]\n",
             ],
             &[],
         ),
@@ -1915,7 +1925,7 @@ fn a_compile_time_match_on_a_bare_variant_chooses_its_arm_before_layout_and_capa
             &[
                 "let w = Square\n",
                 "Osc o | wave=w\n",
-                "let m = match w:\n    Saw: [1, 2, 3, 4, 5, 6, 7]\n    else: a\n",
+                "state m = match w:\n    Saw: [1, 2, 3, 4, 5, 6, 7]\n    else: a\n",
             ],
             &[],
         ),
@@ -1923,7 +1933,7 @@ fn a_compile_time_match_on_a_bare_variant_chooses_its_arm_before_layout_and_capa
             &[
                 "let w = if true then Square else Saw\n",
                 "Osc o | wave=w\n",
-                "let m = match w:\n    Square: a\n    else: [1, 2, 3, 4, 5, 6, 7]\n",
+                "state m = match w:\n    Square: a\n    else: [1, 2, 3, 4, 5, 6, 7]\n",
             ],
             &[],
         ),
@@ -1931,9 +1941,9 @@ fn a_compile_time_match_on_a_bare_variant_chooses_its_arm_before_layout_and_capa
             &[
                 "let w = Square\n",
                 "Osc o | wave=w\n",
-                "let m = match w:\n    Saw: a\n    else: [1, 2, 3, 4, 5, 6, 7]\n",
+                "state m = match w:\n    Saw: a\n    else: [1, 2, 3, 4, 5, 6, 7]\n",
             ],
-            &[(Code::CapacityExceeded, "let probe: i32[..5] = m\n", 0)],
+            &[(Code::CapacityExceeded, "state probe: i32[..5] = m\n", 0)],
         ),
     ];
     for (declarations, expected) in rows {
@@ -2004,7 +2014,7 @@ fn a_capacity_reaching_two_to_the_thirty_one_draws_length_limit_where_it_arises(
             &[
                 NOTE,
                 big,
-                "let x = big + big\n",
+                "state x = big + big\n",
                 "Clip c:\n    Note/(x.size)\n",
             ],
             &[(Code::LengthLimit, "big + big", 0)],
@@ -2053,7 +2063,7 @@ fn a_capacity_reaching_two_to_the_thirty_one_draws_length_limit_where_it_arises(
             &[
                 NOTE,
                 big,
-                "let probe: i32[..5] = big + big\n",
+                "state probe: i32[..5] = big + big\n",
                 "Clip c:\n    Note/(probe.size)\n",
             ],
             &[(Code::LengthLimit, "big + big", 0)],
@@ -2162,18 +2172,21 @@ fn a_runtime_choice_between_a_variable_and_a_fixed_array_is_one_variable_array_w
     let held = "state held([]): i32[..10]\n";
     let gate = "state gate(false)\n";
     let step = "state step(0)\n";
-    let chosen = "let s = if gate then held else [0]\n";
+    let chosen = "state s = if gate then held else [0]\n";
     let top = "Clip c:\n    Note/(top)\n";
     let rows: &[support::Row] = &[
-        (&[held, gate, chosen, "let top = s[0]\n", top], &[]),
-        (&[held, gate, step, chosen, "let top = s[step]\n", top], &[]),
-        (&[held, gate, chosen, "let top = s[^1]\n", top], &[]),
+        (&[held, gate, chosen, "state top = s[0]\n", top], &[]),
+        (
+            &[held, gate, step, chosen, "state top = s[step]\n", top],
+            &[],
+        ),
+        (&[held, gate, chosen, "state top = s[^1]\n", top], &[]),
         (
             &[
                 held,
                 gate,
                 "state s = if gate then held else s.past(1, [0])\n",
-                "let top = s[^1]\n",
+                "state top = s[^1]\n",
                 top,
             ],
             &[],
@@ -2184,7 +2197,7 @@ fn a_runtime_choice_between_a_variable_and_a_fixed_array_is_one_variable_array_w
                 gate,
                 "let fb = [0]\n",
                 "state s = if gate then held else fb\n",
-                "let top = s[0]\n",
+                "state top = s[0]\n",
                 top,
             ],
             &[],
@@ -2193,8 +2206,8 @@ fn a_runtime_choice_between_a_variable_and_a_fixed_array_is_one_variable_array_w
             &[
                 held,
                 "state mode(0)\n",
-                "let s = match mode:\n    0: held\n    else: [0]\n",
-                "let top = s[0]\n",
+                "state s = match mode:\n    0: held\n    else: [0]\n",
+                "state top = s[0]\n",
                 top,
             ],
             &[],
@@ -2208,7 +2221,7 @@ fn a_runtime_choice_between_a_variable_and_a_fixed_array_is_one_variable_array_w
             &[
                 held,
                 gate,
-                "let top = (if gate then [0] else held)[0]\n",
+                "state top = (if gate then [0] else held)[0]\n",
                 top,
             ],
             &[],
@@ -2246,8 +2259,8 @@ fn a_runtime_choice_between_a_variable_and_a_fixed_array_is_one_variable_array_w
         (
             &[
                 gate,
-                "let v = if gate then [60, 64] else [62, 65]\n",
-                "let x = v[1]\n",
+                "state v = if gate then [60, 64] else [62, 65]\n",
+                "state x = v[1]\n",
                 "Clip c:\n    Note/(x)\n",
             ],
             &[],
@@ -2260,7 +2273,7 @@ fn a_runtime_choice_between_a_variable_and_a_fixed_array_is_one_variable_array_w
         ("if gate then held else [0, 1, 2]", 10),
     ] {
         assert_capacity(
-            &format!("state held([]): i32[..10]\nstate gate(false)\nlet s = {value}\n"),
+            &format!("state held([]): i32[..10]\nstate gate(false)\nstate s = {value}\n"),
             "s",
             capacity,
         );
@@ -2317,7 +2330,7 @@ fn an_array_where_a_single_value_is_expected_is_refused_in_the_positions_own_wor
             &["one `bool`", "an array"],
         ),
         (
-            &[held, "let b = a\n", "Clip c:\n    Note | velocity=b\n"],
+            &[held, "state b = a\n", "Clip c:\n    Note | velocity=b\n"],
             Code::TypeMismatch,
             "b",
             &["`velocity`", "one `f32`", "variable array"],
@@ -2643,7 +2656,7 @@ fn every_diagnostic_carries_a_help_that_states_its_fix() {
             support::signature_vocabulary,
             &[
                 "state f(false)\n",
-                "let r: u8[..2] = if f then \"GET\" else \"AB\"\n",
+                "state r: u8[..2] = if f then \"GET\" else \"AB\"\n",
                 "Clip c | data=r:\n    Note\n",
             ],
             Code::CapacityExceeded,
@@ -2800,7 +2813,7 @@ fn every_diagnostic_carries_a_help_that_states_its_fix() {
             (
                 &[
                     "state f(false)\n",
-                    "let r: u8[..3] = if f then \"GET\" else \"AB\"\n",
+                    "state r: u8[..3] = if f then \"GET\" else \"AB\"\n",
                     "Clip c | data=r:\n    Note\n",
                 ],
                 &[],
@@ -3060,7 +3073,7 @@ fn a_match_choices_span_ends_at_its_last_token_as_an_ifs_does_304() {
         (
             &[
                 flag,
-                "let m = match flag:\n    true: [1]\n    else: [[1]]\n",
+                "state m = match flag:\n    true: [1]\n    else: [[1]]\n",
                 read,
             ],
             &[(
@@ -3071,7 +3084,7 @@ fn a_match_choices_span_ends_at_its_last_token_as_an_ifs_does_304() {
         (
             &[
                 flag,
-                "let m = match flag:\n    true: [1]\n    false: [[1]]\n",
+                "state m = match flag:\n    true: [1]\n    false: [[1]]\n",
                 read,
             ],
             &[(
@@ -3091,7 +3104,7 @@ fn a_match_choices_span_ends_at_its_last_token_as_an_ifs_does_304() {
             )],
         ),
         (
-            &[flag, "let m = if flag then [1] else [[1]]\n", read],
+            &[flag, "state m = if flag then [1] else [[1]]\n", read],
             &[(Code::TypeMismatch, "if flag then [1] else [[1]]")],
         ),
     ];
@@ -3159,7 +3172,7 @@ fn a_disagreeing_literal_is_a_placeholder_at_every_holder_and_draws_its_own_diag
 fn a_variable_array_where_a_single_value_stands_draws_at_its_holder_once_385() {
     let held = "state s0([1, 1]): i32[..2]\n";
     let deep = "fn r1(n): if n > 0 then r1(n - 1) else [1, 1]\n";
-    let l1 = "let l1 = s0\n";
+    let l1 = "state l1 = s0\n";
     let rows: &[support::Row] = &[
         (
             &[
@@ -3236,22 +3249,22 @@ fn a_cell_array_under_a_scalar_annotation_draws_the_shape_mismatch_at_the_let_as
     let read = "Clip c:\n    Note/(x)\n";
     let rows: &[support::Row] = &[
         (
-            &["state s0 = [1]\n", "let x: i32 = s0\n", read],
-            &[(Code::TypeMismatch, "let x: i32 = s0\n")],
+            &["state s0 = [1]\n", "state x: i32 = s0\n", read],
+            &[(Code::TypeMismatch, "x")],
         ),
         (
-            &["state s0([1, 2]): i32[..4]\n", "let x: i32 = s0\n", read],
-            &[(Code::TypeMismatch, "let x: i32 = s0\n")],
+            &["state s0([1, 2]): i32[..4]\n", "state x: i32 = s0\n", read],
+            &[(Code::TypeMismatch, "x")],
         ),
         (
             &[
                 "state s0 = [1]\n",
                 "state s1 = [1]\n",
                 "state flag(false)\n",
-                "let x: i32 = if flag then s0 else s1\n",
+                "state x: i32 = if flag then s0 else s1\n",
                 read,
             ],
-            &[(Code::TypeMismatch, "let x: i32 = if flag then s0 else s1\n")],
+            &[(Code::TypeMismatch, "x")],
         ),
         (
             &["let x: i32 = [1]\n", read],
@@ -3260,13 +3273,13 @@ fn a_cell_array_under_a_scalar_annotation_draws_the_shape_mismatch_at_the_let_as
         (
             &[
                 "state s0 = [1]\n",
-                "let x: i32[1] = s0\n",
+                "state x: i32[1] = s0\n",
                 "Clip c:\n    Note/(x[0])\n",
             ],
             &[],
         ),
-        (&["state s0 = 1\n", "let x: i32 = s0\n", read], &[]),
-        (&["state s0 = [1]\n", "let x: i32 = s0[0]\n", read], &[]),
+        (&["state s0 = 1\n", "state x: i32 = s0\n", read], &[]),
+        (&["state s0 = [1]\n", "state x: i32 = s0[0]\n", read], &[]),
     ];
     support::assert_rows_in_every_order(&symphonyscript_fixtures::vocabulary(), rows);
 }
