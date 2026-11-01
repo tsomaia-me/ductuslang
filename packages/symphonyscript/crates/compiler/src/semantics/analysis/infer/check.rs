@@ -294,11 +294,8 @@ impl Engine<'_> {
                                 Some(item) => stack.push((*item, ty, selection, flows)),
                                 None => {
                                     self.shared_selectors(&items, &mut stack)?;
-                                    if selection != Selection::Evaluated
-                                        && (i64::try_from(position).is_err()
-                                            || !self.reads_a_disagreeing_literal(node, &items)?)
-                                    {
-                                        self.index_outside(index, position, length_of(&items))?;
+                                    if selection != Selection::Evaluated {
+                                        self.pick_outside(node, index, position, &items)?;
                                     }
                                 }
                             }
@@ -467,11 +464,7 @@ impl Engine<'_> {
                             .filter(|position| *position < items.len());
                         if picked.is_none() {
                             self.shared_selectors(&items, stack)?;
-                            if i64::try_from(position).is_err()
-                                || !self.reads_a_disagreeing_literal(node, &items)?
-                            {
-                                self.index_outside(index, position, length_of(&items))?;
-                            }
+                            self.pick_outside(node, index, position, &items)?;
                         }
                         for (row, item) in items.iter().enumerate() {
                             let read = if Some(row) == picked {
@@ -516,6 +509,23 @@ impl Engine<'_> {
                 continue;
             }
             stack.push((operand, None, selection, false));
+        }
+        Ok(())
+    }
+
+    fn pick_outside(
+        &mut self,
+        pick: NodeId,
+        index: NodeId,
+        position: i128,
+        items: &[NodeId],
+    ) -> Result<(), Internal> {
+        if !self.reads_a_disagreeing_literal(pick, items)? {
+            return self.index_outside(index, position, length_of(items));
+        }
+        if i64::try_from(position).is_err() {
+            let message = outside_i64(I64Position::Index, position);
+            self.error_at_node(Code::IndexOutOfRange, index, message)?;
         }
         Ok(())
     }

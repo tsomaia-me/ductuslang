@@ -833,3 +833,31 @@ fn an_offset_from_the_end_is_checked_as_an_index_at_its_own_span_c1_11_c2_8_415(
     ];
     support::assert_rows_in_every_order(&symphonyscript_fixtures::vocabulary(), rows);
 }
+
+#[test]
+fn an_index_outside_i64_beside_a_disagreeing_literal_draws_the_i64_message_416() {
+    let compiler =
+        Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("the vocabulary compiles");
+    for (literal, fault) in [
+        ("[1, true]", Code::TypeMismatch),
+        ("[1, [2]]", Code::RaggedArray),
+        ("[1, \"a\"]", Code::TypeMismatch),
+    ] {
+        for index in ["2 ** 70", "99999999999999999999", "-99999999999999999999"] {
+            let text = format!("Clip c:\n    Note/({literal}[{index}])\n");
+            let found: Vec<(Code, String)> =
+                support::errors(compiler.check(&[support::source(&text)]))
+                    .into_iter()
+                    .map(|diagnostic| (diagnostic.code, diagnostic.summary))
+                    .collect();
+            let i64_message = found.iter().any(|(code, summary)| {
+                *code == Code::IndexOutOfRange && summary.contains("is outside `i64`")
+            });
+            let codes: Vec<Code> = found.iter().map(|(code, _)| *code).collect();
+            assert!(
+                i64_message && codes.len() == 2 && codes.contains(&fault),
+                "{text}{found:?}"
+            );
+        }
+    }
+}
