@@ -9,6 +9,21 @@ FIELDS = (("errors", ""), ("warnings", "warning "), ("signals", "signal "))
 SHOWN_TEXT = 6000
 EXAMPLES = 3
 HELD = {True: "added since the baseline", False: "held at the baseline"}
+WHOLE = "diagnostics"
+CODES = ("outcome", "errors", "warnings")
+KINDS = (("spans", "moved spans"), ("summaries", "changed summaries"), ("helps", "changed helps"),
+         ("related", "changed related spans"), ("order", "changed order"),
+         ("counts", "a code drawn a different number of times"))
+
+
+def related_record(related):
+    return {"file": related["file"], "span": list(related["span"]), "label": related["label"]}
+
+
+def diagnostic_record(diagnostic):
+    return {"code": diagnostic["code"], "file": diagnostic["file"], "span": list(diagnostic["span"]),
+            "summary": diagnostic["message"], "help": diagnostic["help"],
+            "related": [related_record(related) for related in diagnostic["related"]]}
 
 
 def compact(raw, warnings):
@@ -23,7 +38,7 @@ def compact(raw, warnings):
     else:
         outcome = "accept"
     return {"outcome": outcome, "errors": errors, "warnings": sorted(codes & warnings),
-            "signals": sorted(raw["signals"])}
+            "signals": sorted(raw["signals"]), WHOLE: [diagnostic_record(each) for each in raw["diagnostics"]]}
 
 
 def detail(raw):
@@ -34,11 +49,11 @@ def detail(raw):
 
 
 def aborted(exit_code):
-    return {"outcome": "abort", "errors": [], "warnings": [], "signals": []}, {"exit": exit_code}
+    return {"outcome": "abort", "errors": [], "warnings": [], "signals": [], WHOLE: []}, {"exit": exit_code}
 
 
 def unknown_tag(tag):
-    return {"outcome": "unknown-tag", "errors": [], "warnings": [], "signals": []}, {"tag": tag}
+    return {"outcome": "unknown-tag", "errors": [], "warnings": [], "signals": [], WHOLE: []}, {"tag": tag}
 
 
 def change(before, after):
@@ -57,6 +72,98 @@ def moved(previous, current):
         if delta:
             classes[delta].append(program_key)
     return sorted(classes.items(), key=lambda item: (-len(item[1]), item[0]))
+
+
+def equal_codes(before, after):
+    return all(before[field] == after[field] for field in CODES)
+
+
+def held_whole(before, after):
+    return WHOLE in before and WHOLE in after
+
+
+def place(diagnostic):
+    return diagnostic["file"], tuple(diagnostic["span"])
+
+
+def related_spans(diagnostic):
+    return tuple((related["file"], tuple(related["span"]), related["label"]) for related in diagnostic["related"])
+
+
+def frozen(diagnostic):
+    helped = diagnostic["help"]
+    return (diagnostic["code"], place(diagnostic), diagnostic["summary"], helped is None, helped or "",
+            related_spans(diagnostic))
+
+
+def by_code(diagnostics):
+    grouped = defaultdict(list)
+    for diagnostic in diagnostics:
+        grouped[code_of(diagnostic)].append(diagnostic)
+    return grouped
+
+
+def unmatched(diagnostics, others):
+    left, kept = Counter(map(frozen, others)), []
+    for diagnostic in diagnostics:
+        if left[frozen(diagnostic)]:
+            left[frozen(diagnostic)] -= 1
+        else:
+            kept.append(diagnostic)
+    return kept
+
+
+def differing(old, new, read):
+    return {each["code"] for was, now in zip(old, new) if read(was) != read(now) for each in (was, now)}
+
+
+def code_of(diagnostic):
+    return diagnostic["code"]
+
+
+def whole_change(before, after):
+    old, new = before[WHOLE], after[WHOLE]
+    kinds = defaultdict(set)
+    old_counts, new_counts = Counter(map(code_of, old)), Counter(map(code_of, new))
+    for code in sorted(old_counts.keys() | new_counts.keys()):
+        if new_counts[code] != old_counts[code]:
+            kinds["counts"].add(("+" if new_counts[code] > old_counts[code] else "-") + code)
+    if sorted(map(frozen, old)) == sorted(map(frozen, new)):
+        kinds["order"] = differing(old, new, frozen)
+    else:
+        old_by_code, new_by_code = by_code(old), by_code(new)
+        for code in sorted(old_by_code.keys() & new_by_code.keys()):
+            for was, now in zip(unmatched(old_by_code[code], new_by_code[code]),
+                                unmatched(new_by_code[code], old_by_code[code])):
+                for kind, read in (("spans", place), ("summaries", lambda each: each["summary"]),
+                                   ("helps", lambda each: each["help"]), ("related", related_spans)):
+                    if read(was) != read(now):
+                        kinds[kind].add(code)
+        if old_counts == new_counts:
+            kinds["order"] = differing(old, new, code_of)
+    return {kind: tuple(sorted(codes)) for kind, codes in kinds.items() if codes}
+
+
+def whole_moved(previous, current):
+    classes = {kind: defaultdict(list) for kind, _ in KINDS}
+    for program_key in sorted(current.keys() & previous.keys()):
+        before, after = previous[program_key], current[program_key]
+        if equal_codes(before, after) and held_whole(before, after):
+            for kind, codes in whole_change(before, after).items():
+                classes[kind][codes].append(program_key)
+    return {kind: sorted(found.items(), key=lambda item: (-len(item[1]), item[0])) for kind, found in classes.items()}
+
+
+def whole_note(previous, current):
+    equal = [program_key for program_key in current.keys() & previous.keys()
+             if equal_codes(previous[program_key], current[program_key])]
+    whole = sum(held_whole(previous[program_key], current[program_key]) for program_key in equal)
+    old = sum(WHOLE not in previous[program_key] for program_key in equal)
+    new = sum(WHOLE not in current[program_key] for program_key in equal)
+    return (f"Diagnostics compared whole, by place, summary, help, related spans and order, only where both records "
+            f"hold them: {whole} of the {len(equal)} programs held on both sides with equal codes; compared by their "
+            f"codes alone, the records carrying codes only: {len(equal) - whole}, the baseline's for {old} and this "
+            f"run's for {new}.")
 
 
 def sections(codes, table):
@@ -114,7 +221,8 @@ def header(heading, current, previous, notes):
     added = Counter(current[program_key]["set"] for program_key in current.keys() - previous.keys())
     removed = Counter(previous[program_key]["set"] for program_key in previous.keys() - current.keys())
     return [f"# {heading}", "", f"Programs: {len(current)} ({counted(Counter(v['set'] for v in current.values()))}).",
-            f"Added since the baseline: {counted(added)}. Removed: {counted(removed)}.", *notes]
+            f"Added since the baseline: {counted(added)}. Removed: {counted(removed)}.", whole_note(previous, current),
+            *notes]
 
 
 def shortest(programs, keys, count):
@@ -163,6 +271,70 @@ def moved_lines(programs, current, previous, details, table):
     return lines + rows
 
 
+def position(text, offset):
+    before = text.encode()[:offset].decode(errors="replace")
+    return f"{before.count(chr(10)) + 1}:{len(before) - before.rfind(chr(10))}"
+
+
+def located(program, file, span):
+    texts = {source["path"]: source["text"] for source in program["sources"]}
+    if file not in texts:
+        return f"{file} {span[0]}-{span[1]}"
+    return f"{file} {position(texts[file], span[0])}-{position(texts[file], span[1])}"
+
+
+def one_line(text):
+    return " ".join(text.splitlines())
+
+
+def diagnostic_line(program, diagnostic):
+    parts = [f"`{diagnostic['code']}` {located(program, diagnostic['file'], diagnostic['span'])} "
+             f"{one_line(diagnostic['summary'])}"]
+    parts += [f"help: {one_line(diagnostic['help'])}"] if diagnostic["help"] is not None else []
+    parts += [f"related {located(program, related['file'], related['span'])} {one_line(related['label'])}"
+              for related in diagnostic["related"]]
+    return "; ".join(parts)
+
+
+def drawn_lines(label, program, diagnostics):
+    if not diagnostics:
+        return [f"- {label}: nothing"]
+    return [f"- {label}:", *[f"  {number}. {diagnostic_line(program, diagnostic)}"
+                             for number, diagnostic in enumerate(diagnostics, 1)]]
+
+
+def whole_block(program_key, program, before, after):
+    return ["", f"#### {title(program_key, program)}", "", *drawn_lines("Before", program, before[WHOLE]),
+            *drawn_lines("After", program, after[WHOLE]), *program_lines(program, None)]
+
+
+def unsigned(code):
+    return code[1:] if code[:1] in ("+", "-") else code
+
+
+def whole_lines(programs, current, previous, table, full):
+    found, lines = whole_moved(previous, current), []
+    for kind, label in KINDS:
+        classes = found[kind]
+        lines += ["", f"## Same codes, {label}: {sum(len(keys) for _, keys in classes)} programs in "
+                      f"{len(classes)} classes"]
+        if classes:
+            lines += ["", "| Class | Programs | Codes | SPEC | Shortest |", "|---|---|---|---|---|"]
+        rows = []
+        for number, (codes, keys) in enumerate(classes, 1):
+            examples = shortest(programs, keys, EXAMPLES)
+            tag = sections({unsigned(code) for code in codes}, table)
+            lines.append(f"| {number} | {len(keys)} | {' '.join(codes)} | {tag} | "
+                         f"`{examples[0]}`, {size(programs[examples[0]])} characters |")
+            rows += ["", f"### {number}. {label}: {' '.join(codes)}: {len(keys)} · {tag}, "
+                         f"the {len(examples)} shortest shown"]
+            rows += ["", "- Programs: " + ", ".join(f"`{program_key}`" for program_key in keys)] if full else []
+            for program_key in examples:
+                rows += whole_block(program_key, programs[program_key], previous[program_key], current[program_key])
+        lines += rows
+    return lines
+
+
 def stated(programs, current, previous):
     disagreeing = [program_key for program_key, program in programs.items()
                    if "stated" in program and current[program_key]["outcome"] != program["stated"]]
@@ -193,6 +365,7 @@ def render(heading, programs, current, previous, details, table, notes):
     for program_key in fresh_keys:
         lines += program_block(program_key, programs[program_key], current[program_key], details.get(program_key))
     lines += moved_lines(programs, current, previous, details, table)
+    lines += whole_lines(programs, current, previous, table, True)
     disagreeing, new = stated(programs, current, previous)
     lines += stated_lines(programs, current, disagreeing, new, len(disagreeing))
     return "\n".join(lines) + "\n"
@@ -202,6 +375,7 @@ def summary(heading, programs, current, previous, details, table, notes, full_na
     lines = header(heading, current, previous, notes)
     lines.append(f"Every program of every section is in `{full_name}` beside this file.")
     lines += moved_lines(programs, current, previous, details, table)
+    lines += whole_lines(programs, current, previous, table, False)
     classes = signal_classes(current, previous)
     fresh_keys = fresh(current, previous)
     lines += ["", f"## New signals: {len(fresh_keys)} programs in {len(classes)} classes", "",

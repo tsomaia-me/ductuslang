@@ -1,8 +1,10 @@
 use std::time::Duration;
 
+use symphonyscript::Compiler;
 use symphonyscript_evolve::{
-    Checker, DEFAULT_BUDGET, Finding, Guarded, Measured, Program, ProgramSource, Signal, Work,
-    dedup_key, differing_codes, guarded, over_memory_bound, scaled, shrunk, superlinear,
+    Checker, DEFAULT_BUDGET, DiagnosticRecord, Finding, Guarded, Measured, Program, ProgramSource,
+    Signal, Work, dedup_key, differing_codes, guarded, over_memory_bound, scaled, shrunk,
+    superlinear,
 };
 
 const CLEAN: &str = "state cutoff(0.5)
@@ -562,4 +564,97 @@ fn peak_bytes_past_the_bound_per_source_byte_and_the_floor_draw_the_memory_bound
     }
     let workload = measured_work(|| vec![1u8; 80 * 1024 * 1024].len());
     assert!(over_memory_bound(workload.peak_bytes, 1, 50_000));
+}
+
+type Whole = (String, [u32; 2], Option<String>, Vec<([u32; 2], String)>);
+
+#[test]
+fn a_verdict_keeps_every_diagnostic_whole_in_the_compilers_order() {
+    let checker = checker(DEFAULT_BUDGET);
+    let text =
+        "fn f(v): v + true\nClip c:\n    Note/(f(1))\n    Note/(f(2))\nlet x = 1\nlet x = 2.5\n";
+    let program = program(&[("main.sym", text)]);
+    let compiler = match Compiler::new(&symphonyscript_fixtures::vocabulary()) {
+        Ok(compiler) => compiler,
+        Err(failed) => panic!("the fixture vocabulary does not compile: {failed:?}"),
+    };
+    let drawn = compiler.check(&program.compiler_sources());
+    let recorded = checker.verdict(&program).diagnostics;
+    assert_eq!(
+        recorded,
+        drawn.iter().map(DiagnosticRecord::from).collect::<Vec<_>>()
+    );
+    let whole: Vec<Whole> = recorded
+        .iter()
+        .map(|record| {
+            (
+                record.code.clone(),
+                record.span,
+                record.help.clone(),
+                record
+                    .related
+                    .iter()
+                    .map(|related| (related.span, related.label.clone()))
+                    .collect(),
+            )
+        })
+        .collect();
+    let expected: Vec<Whole> = drawn
+        .iter()
+        .map(|diagnostic| {
+            (
+                diagnostic.code.as_str().to_string(),
+                [diagnostic.span.range.start, diagnostic.span.range.end],
+                diagnostic.help.clone(),
+                diagnostic
+                    .related
+                    .iter()
+                    .map(|related| {
+                        (
+                            [related.span.range.start, related.span.range.end],
+                            related.label.clone(),
+                        )
+                    })
+                    .collect(),
+            )
+        })
+        .collect();
+    assert_eq!(whole, expected);
+    assert_eq!(
+        recorded
+            .iter()
+            .map(|record| record.code.as_str())
+            .collect::<Vec<_>>(),
+        [
+            "no-entry-instance",
+            "operand-type",
+            "operand-type",
+            "duplicate-name"
+        ]
+    );
+    assert!(recorded.iter().all(|record| record.help.is_some()));
+    assert_eq!(
+        recorded
+            .iter()
+            .map(|record| record.related.len())
+            .collect::<Vec<_>>(),
+        [0, 1, 1, 1]
+    );
+    assert_ne!(recorded[1].related, recorded[2].related);
+    let encoded = serde_json::to_value(&recorded[3]).unwrap_or_default();
+    assert_eq!(
+        encoded,
+        serde_json::json!({
+            "code": "duplicate-name",
+            "file": "main.sym",
+            "span": [recorded[3].span[0], recorded[3].span[1]],
+            "message": recorded[3].message,
+            "help": recorded[3].help,
+            "related": [{
+                "file": "main.sym",
+                "span": [recorded[3].related[0].span[0], recorded[3].related[0].span[1]],
+                "label": "first declared here",
+            }],
+        })
+    );
 }
