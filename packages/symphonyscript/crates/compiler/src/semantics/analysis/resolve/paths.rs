@@ -1179,9 +1179,7 @@ impl Engine<'_> {
                 return Ok(Some(Val::Error));
             }
             if !matches!(offset_sig.kind, Kind::Int | Kind::Any) || offset_sig.family.is_some() {
-                let offset_loc = self.hir.expr(offset)?.loc;
-                self.error(Code::IndexType, offset_loc, scope, "an index is an integer")?;
-                return Ok(Some(Val::Error));
+                return self.index_val(base, base_val, offset_node, loc, scope, need);
             }
         }
         let index_node = match self.memo.from_ends.get(&(offset, scope)) {

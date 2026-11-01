@@ -828,6 +828,17 @@ fn an_offset_from_the_end_is_checked_as_an_index_at_its_own_span_c1_11_c2_8_415(
             &["fn f(k): [1, 2][^k]\n", "Clip c:\n    Note/(f(true))\n"],
             &[(Code::IndexType, "k")],
         ),
+        (
+            &[
+                "fn r(n): if n < 1 then [1, true][^1ms] else r(n - 1)\n",
+                "Clip c:\n    Note/(r(2))\n",
+            ],
+            &[(Code::TypeMismatch, "[1, true]"), (Code::IndexType, "1ms")],
+        ),
+        (
+            &["Clip c:\n    Note/([1, true][^true])\n"],
+            &[(Code::TypeMismatch, "[1, true]"), (Code::IndexType, "true")],
+        ),
         (&["Clip c:\n    Note/([1, 2][^1])\n"], &[]),
         (&[held, "Clip c:\n    Note/(xs[^1])\n"], &[]),
     ];
