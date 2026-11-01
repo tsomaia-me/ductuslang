@@ -560,25 +560,18 @@ impl Engine<'_> {
     }
 
     pub(super) fn bounds_beside_placeholders(&mut self) -> Result<(), Internal> {
-        for (node, position, site, passed_over) in
-            std::mem::take(&mut self.typing.placeholder_bounds)
-        {
+        for (node, position, passed_over) in std::mem::take(&mut self.typing.placeholder_bounds) {
             let sig = self.demand_sig(node)?;
             if sig.is_error() {
                 continue;
             }
-            if !matches!(sig.kind, Kind::Int | Kind::Any) {
+            let unit_offset = position == I64Position::Offset && sig.family.is_some();
+            if !matches!(sig.kind, Kind::Int | Kind::Any) || unit_offset {
                 let message = match position {
                     I64Position::SliceBound => "a slice bound is an integer",
                     I64Position::Index | I64Position::Offset => "an index is an integer",
                 };
-                match site {
-                    Some(loc) => {
-                        let scope = self.node(node)?.scope;
-                        self.error(Code::IndexType, loc, scope, message)?;
-                    }
-                    None => self.error_at_node(Code::IndexType, node, message)?,
-                }
+                self.error_at_node(Code::IndexType, node, message)?;
                 continue;
             }
             if position == I64Position::SliceBound && sig.family.is_some() {

@@ -628,8 +628,9 @@ fn an_offset_from_the_end_of_a_runtime_base_is_read_in_its_own_type_as_its_liter
             &[(Code::IndexOutOfRange, "2 ** 63")],
         ),
         (
+            // C1-11 (C2-8, 415): drawn at the offset, inverted from the whole read.
             &[held, "Clip c:\n    Note/(xs[^1.5])\n"],
-            &[(Code::IndexType, "xs[^1.5]")],
+            &[(Code::IndexType, "1.5")],
         ),
     ];
     support::assert_rows_in_every_order(&symphonyscript_fixtures::vocabulary(), rows);
@@ -704,7 +705,8 @@ const HELD_FORMS: [(&str, bool); 5] = [
     ("{base}[..{b}]", false),
     ("{base}[^{b}..]", false),
     ("{base}[{b}]", false),
-    ("{base}[^{b}]", true),
+    // C1-11 (C2-8, 415): an offset's type fault draws at the offset, inverted from the whole read.
+    ("{base}[^{b}]", false),
 ];
 
 const HELD_PLACES: [(&[&str], bool); 4] = [
@@ -788,4 +790,46 @@ fn exhaustive_a_bound_or_an_index_beside_a_base_resolve_made_a_placeholder_draws
 {
     let failures = resolved_placeholder_base_rows(&Rows::Every);
     assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+#[test]
+fn an_offset_from_the_end_is_checked_as_an_index_at_its_own_span_c1_11_c2_8_415() {
+    let held = "state xs([1, 2, 3]): i32[..5]\n";
+    let rows: &[support::Row] = &[
+        (
+            &["Clip c:\n    Note/([1, 2][^true])\n"],
+            &[(Code::IndexType, "true")],
+        ),
+        (
+            &["Clip c:\n    Note/([1, 2][^1ms])\n"],
+            &[(Code::IndexType, "1ms")],
+        ),
+        (
+            &["Clip c:\n    Note/([1, 2][^1.5])\n"],
+            &[(Code::IndexType, "1.5")],
+        ),
+        (
+            &["Clip c:\n    Note/([1, 2][^\"a\"])\n"],
+            &[(Code::IndexType, "\"a\"")],
+        ),
+        (
+            &[held, "Clip c:\n    Note/(xs[^true])\n"],
+            &[(Code::IndexType, "true")],
+        ),
+        (
+            &[held, "Clip c:\n    Note/(xs[^1ms])\n"],
+            &[(Code::IndexType, "1ms")],
+        ),
+        (
+            &["state n(1)\n", "Clip c:\n    Note/([1, 2][^(n > 0)])\n"],
+            &[(Code::IndexType, "n > 0")],
+        ),
+        (
+            &["fn f(k): [1, 2][^k]\n", "Clip c:\n    Note/(f(true))\n"],
+            &[(Code::IndexType, "k")],
+        ),
+        (&["Clip c:\n    Note/([1, 2][^1])\n"], &[]),
+        (&[held, "Clip c:\n    Note/(xs[^1])\n"], &[]),
+    ];
+    support::assert_rows_in_every_order(&symphonyscript_fixtures::vocabulary(), rows);
 }

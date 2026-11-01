@@ -288,7 +288,7 @@ impl Engine<'_> {
             }
             let kind = self.hir.expr(expr)?.kind.clone();
             let loc = self.hir.expr(expr)?.loc;
-            self.beside_placeholder_base(&kind, (loc, scope), passed_over)?;
+            self.beside_placeholder_base(&kind, scope, passed_over)?;
             let (group, rank, landing) = match (flow, &kind) {
                 ((group, rank, None), kind) if !matches!(kind, ExprKind::Call(..)) => {
                     (group, rank, Some((expr, scope)))
@@ -569,20 +569,18 @@ impl Engine<'_> {
     fn beside_placeholder_base(
         &mut self,
         kind: &ExprKind,
-        (loc, scope): (Loc, ScopeId),
+        scope: ScopeId,
         passed_over: bool,
     ) -> Result<(), Internal> {
-        let (base, held): (ExprId, Vec<(ExprId, I64Position, Option<Loc>)>) = match kind {
-            ExprKind::Index(base, index) => (*base, vec![(*index, I64Position::Index, None)]),
-            ExprKind::IndexFromEnd(base, offset) => {
-                (*base, vec![(*offset, I64Position::Offset, Some(loc))])
-            }
+        let (base, held): (ExprId, Vec<(ExprId, I64Position)>) = match kind {
+            ExprKind::Index(base, index) => (*base, vec![(*index, I64Position::Index)]),
+            ExprKind::IndexFromEnd(base, offset) => (*base, vec![(*offset, I64Position::Offset)]),
             ExprKind::Slice { base, lower, upper } => (
                 *base,
                 lower
                     .iter()
                     .chain(upper.iter())
-                    .map(|bound| (bound.value, I64Position::SliceBound, None))
+                    .map(|bound| (bound.value, I64Position::SliceBound))
                     .collect(),
             ),
             ExprKind::Error
@@ -614,13 +612,13 @@ impl Engine<'_> {
         if !placeholder {
             return Ok(());
         }
-        for (expr, position, site) in held {
+        for (expr, position) in held {
             if let Some(Val::Scalar(node)) = self.memo.exprs.get(&(expr, scope))
                 && !self.arrays.contains(node)
             {
                 self.typing
                     .placeholder_bounds
-                    .push((*node, position, site, passed_over));
+                    .push((*node, position, passed_over));
             }
         }
         Ok(())
