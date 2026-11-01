@@ -5,7 +5,9 @@ use crate::diagnostics::Code;
 use crate::semantics::Internal;
 use crate::semantics::analysis::bound::Bound;
 use crate::semantics::analysis::bound_val::BoundVal;
+use crate::semantics::analysis::c_val::CVal;
 use crate::semantics::analysis::engine::Engine;
+use crate::semantics::analysis::eval_ty::EvalTy;
 use crate::semantics::analysis::for_iterable::ForIterable;
 use crate::semantics::analysis::for_node::ForNode;
 use crate::semantics::analysis::ids::{NodeId, ScopeId, SlotId};
@@ -258,6 +260,9 @@ impl Engine<'_> {
                             node,
                             "a unit value is not a range bound",
                         )?;
+                        return Ok(Some(None));
+                    }
+                    if !some!(self.bound_fits_i64(node, &sig, scope, need)?) {
                         return Ok(Some(None));
                     }
                 }
@@ -583,4 +588,35 @@ fn settled(next: &LoopTypes, assumed: &LoopTypes) -> bool {
     (next_sig.kind == sig.kind || sig.kind == Kind::Any)
         && next_sig.family == sig.family
         && next_layout == layout
+}
+
+impl Engine<'_> {
+    fn bound_fits_i64(
+        &mut self,
+        node: NodeId,
+        sig: &Sig,
+        scope: ScopeId,
+        need: &mut Vec<Query>,
+    ) -> Result<Option<bool>, Internal> {
+        if sig.reactive || sig.frame {
+            return Ok(Some(true));
+        }
+        if self.template_of(scope)?.is_some() && self.reaches_recursion(node)? {
+            return Ok(Some(true));
+        }
+        let Some(value) = self.cval(Query::Eval(node, EvalTy::Exact), need) else {
+            return Ok(None);
+        };
+        if let CVal::Int(value) = value
+            && i64::try_from(value).is_err()
+        {
+            self.error_at_node(
+                Code::RangeBound,
+                node,
+                format!("the range bound {value} does not fit `i64`"),
+            )?;
+            return Ok(Some(false));
+        }
+        Ok(Some(true))
+    }
 }

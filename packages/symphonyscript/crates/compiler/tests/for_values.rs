@@ -617,3 +617,57 @@ fn a_for_bodys_type_fault_draws_whatever_holds_the_expression_as_its_derived_cel
     }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
+
+#[test]
+fn every_range_bound_of_a_for_expression_is_checked_against_i64_before_any_iteration_c1_6_cs_10() {
+    let raised = LimitOverrides {
+        expansion_steps: Some(1 << 40),
+        expansion_steps_warning: Some(1 << 39),
+        ..LimitOverrides::default()
+    };
+    let compilers = [
+        Compiler::new(&vocabulary()).expect("the vocabulary compiles"),
+        Compiler::with_limits(&vocabulary(), raised).expect("the vocabulary compiles"),
+    ];
+    let bounds = [
+        ("0..2 ** 70", "2 ** 70"),
+        ("0..99999999999999999999", "99999999999999999999"),
+        ("-(2 ** 70)..0", "-(2 ** 70)"),
+        ("0..2 ** 63", "2 ** 63"),
+        ("(-(2 ** 63) - 1)..0", "-(2 ** 63) - 1"),
+    ];
+    let holders = [
+        (
+            "let v = for i in {b} into s from 0: s\n",
+            "Clip c:\n    Note/v\n",
+        ),
+        (
+            "state v = for i in {b} into s from 0: s + n\n",
+            "Clip c:\n    Note/v\n",
+        ),
+        (
+            "fn f(k): for i in {b} into s from k: s\n",
+            "Clip c:\n    Note/(f(1))\n",
+        ),
+    ];
+    let mut failures = Vec::new();
+    for compiler in &compilers {
+        for (range, at) in bounds {
+            for (holder, clip) in holders {
+                for reversed in [false, true] {
+                    let mut items = vec!["state n(1)\n".to_string(), holder.replace("{b}", range)];
+                    items.push(clip.to_string());
+                    if reversed {
+                        items.reverse();
+                    }
+                    let text = items.concat();
+                    let found = support::error_texts(compiler, &text);
+                    if found != [(Code::RangeBound, at.to_string())] {
+                        failures.push(format!("{text}found {found:?}\n"));
+                    }
+                }
+            }
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
