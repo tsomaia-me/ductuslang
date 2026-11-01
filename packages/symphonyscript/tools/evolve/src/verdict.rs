@@ -1,5 +1,6 @@
 use serde::Serialize;
-use symphonyscript::Diagnostic;
+use symphonyscript::{Diagnostic, Related};
+use symphonyscript_core::Span;
 
 use crate::finding::Finding;
 use crate::signal::Signal;
@@ -24,6 +25,15 @@ pub struct DiagnosticRecord {
     pub file: String,
     pub span: [u32; 2],
     pub message: String,
+    pub help: Option<String>,
+    pub related: Vec<RelatedRecord>,
+}
+
+#[derive(Clone, PartialEq, Eq, Debug, Serialize)]
+pub struct RelatedRecord {
+    pub file: String,
+    pub span: [u32; 2],
+    pub label: String,
 }
 
 impl From<&Diagnostic> for DiagnosticRecord {
@@ -31,8 +41,24 @@ impl From<&Diagnostic> for DiagnosticRecord {
         DiagnosticRecord {
             code: diagnostic.code.as_str().to_string(),
             file: diagnostic.span.file.clone(),
-            span: [diagnostic.span.range.start, diagnostic.span.range.end],
+            span: offsets(&diagnostic.span),
             message: diagnostic.summary.clone(),
+            help: diagnostic.help.clone(),
+            related: diagnostic.related.iter().map(RelatedRecord::from).collect(),
         }
     }
+}
+
+impl From<&Related> for RelatedRecord {
+    fn from(related: &Related) -> RelatedRecord {
+        RelatedRecord {
+            file: related.span.file.clone(),
+            span: offsets(&related.span),
+            label: related.label.clone(),
+        }
+    }
+}
+
+fn offsets(span: &Span) -> [u32; 2] {
+    [span.range.start, span.range.end]
 }

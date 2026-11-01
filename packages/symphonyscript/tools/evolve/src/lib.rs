@@ -48,5 +48,5 @@ pub use scaled::scaled;
 pub use shrunk::shrunk;
 pub use signal::{Signal, UnknownSignal};
 pub use superlinear::superlinear;
-pub use verdict::{DiagnosticRecord, Verdict};
+pub use verdict::{DiagnosticRecord, RelatedRecord, Verdict};
 pub use work::Work;
