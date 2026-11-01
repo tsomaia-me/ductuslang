@@ -140,10 +140,10 @@ impl Index {
             Top::Placeholder(_) => (None, Shape::Whole, Vec::new(), Vec::new(), None),
         };
         let declared: Vec<String> = declares.into_iter().map(|name| name.text).collect();
-        self.enter(
+        let nested = self.enter(
             hir,
             item,
-            (None, position, shape),
+            (None, shape),
             (
                 exprs,
                 nested,
@@ -151,17 +151,18 @@ impl Index {
                 kind.into_iter().map(|kind| kind.text).collect(),
             ),
             wanted,
-        )
+        )?;
+        self.blocks(hir, nested, item, wanted)
     }
 
     fn enter(
         &mut self,
         hir: &Hir,
         item: Item,
-        (parent, top, shape): (Option<Item>, usize, Shape),
+        (parent, shape): (Option<Item>, Shape),
         (exprs, nested, declared, kinds): (Vec<ExprId>, Vec<BlockId>, Vec<String>, Vec<String>),
         wanted: &BTreeSet<ExprId>,
-    ) -> Result<(), Internal> {
+    ) -> Result<Vec<BlockId>, Internal> {
         let mut refs: BTreeSet<String> = kinds.into_iter().collect();
         let mut stack = exprs;
         while let Some(id) = stack.pop() {
@@ -217,101 +218,37 @@ impl Index {
                 refs,
             },
         );
-        for block in nested {
-            self.block(hir, block, item, top, wanted)?;
-        }
-        Ok(())
+        Ok(nested)
     }
 
-    fn block(
+    fn blocks(
         &mut self,
         hir: &Hir,
-        block: BlockId,
+        nested: Vec<BlockId>,
         parent: Item,
-        top: usize,
         wanted: &BTreeSet<ExprId>,
     ) -> Result<(), Internal> {
-        for (position, body_item) in hir.block(block)?.items.iter().enumerate() {
-            let item = Item::Body(block, position);
-            let (shape, exprs, nested, declared, kinds) = match body_item {
-                BodyItem::Placement(id) => {
-                    let placement = hir.placement(*id)?;
-                    (
-                        Shape::Container,
-                        head(placement),
-                        placement.body.iter().copied().collect(),
-                        placement
-                            .name
-                            .iter()
-                            .map(|name| name.text.clone())
-                            .collect(),
-                        placement
-                            .kind
-                            .iter()
-                            .map(|kind| kind.text.clone())
-                            .collect(),
-                    )
-                }
-                BodyItem::Wire(id) => {
-                    let wire = hir.wire(*id)?;
-                    let mut exprs: Vec<ExprId> = wire.default.iter().copied().collect();
-                    exprs.extend(wire.gate.iter().copied());
-                    exprs.extend(attr_exprs(&wire.attrs));
-                    exprs.push(wire.destination);
-                    (
-                        Shape::Whole,
-                        exprs,
-                        Vec::new(),
-                        wire.name.iter().map(|name| name.text.clone()).collect(),
-                        vec![wire.kind.text.clone()],
-                    )
-                }
-                BodyItem::Bundle { members, each, .. } => {
-                    let mut placements = members.clone();
-                    let mut exprs = Vec::new();
-                    if let Some(each) = each {
-                        placements.extend(each.members.iter().copied());
-                        exprs.extend(iterable_exprs(each.iterable));
-                    }
-                    let mut nested = Vec::new();
-                    let mut declared = Vec::new();
-                    let mut kinds = Vec::new();
-                    for id in placements {
-                        let placement = hir.placement(id)?;
-                        exprs.extend(head(placement));
-                        nested.extend(placement.body.iter().copied());
-                        declared.extend(placement.name.iter().map(|name| name.text.clone()));
-                        kinds.extend(placement.kind.iter().map(|kind| kind.text.clone()));
-                    }
-                    (Shape::Whole, exprs, nested, declared, kinds)
-                }
-                BodyItem::For { iterable, body, .. } => (
-                    Shape::Container,
-                    iterable_exprs(*iterable),
-                    vec![*body],
-                    Vec::new(),
-                    Vec::new(),
-                ),
-                BodyItem::When {
-                    arms, otherwise, ..
-                } => (
-                    Shape::Container,
-                    arms.iter().map(|arm| arm.guard).collect(),
-                    arms.iter()
-                        .map(|arm| arm.body)
-                        .chain(otherwise.iter().copied())
-                        .collect(),
-                    Vec::new(),
-                    Vec::new(),
-                ),
+        let mut pending: Vec<(BlockId, usize, Item)> = nested
+            .into_iter()
+            .rev()
+            .map(|block| (block, 0, parent))
+            .collect();
+        while let Some((block, position, parent)) = pending.pop() {
+            CountedWalk::NameTwinsIndexedBlocks.step();
+            let Some(body_item) = hir.block(block)?.items.get(position) else {
+                continue;
             };
-            self.enter(
+            pending.push((block, position + 1, parent));
+            let item = Item::Body(block, position);
+            let (shape, exprs, nested, declared, kinds) = described(hir, body_item)?;
+            let inner = self.enter(
                 hir,
                 item,
-                (Some(parent), top, shape),
+                (Some(parent), shape),
                 (exprs, nested, declared, kinds),
                 wanted,
             )?;
+            pending.extend(inner.into_iter().rev().map(|block| (block, 0, item)));
         }
         Ok(())
     }
@@ -430,4 +367,81 @@ fn raise(kept: &mut Kept, item: Item, whole: bool) -> bool {
         }
     }
     true
+}
+
+type Described = (Shape, Vec<ExprId>, Vec<BlockId>, Vec<String>, Vec<String>);
+
+fn described(hir: &Hir, body_item: &BodyItem) -> Result<Described, Internal> {
+    Ok(match body_item {
+        BodyItem::Placement(id) => {
+            let placement = hir.placement(*id)?;
+            (
+                Shape::Container,
+                head(placement),
+                placement.body.iter().copied().collect(),
+                placement
+                    .name
+                    .iter()
+                    .map(|name| name.text.clone())
+                    .collect(),
+                placement
+                    .kind
+                    .iter()
+                    .map(|kind| kind.text.clone())
+                    .collect(),
+            )
+        }
+        BodyItem::Wire(id) => {
+            let wire = hir.wire(*id)?;
+            let mut exprs: Vec<ExprId> = wire.default.iter().copied().collect();
+            exprs.extend(wire.gate.iter().copied());
+            exprs.extend(attr_exprs(&wire.attrs));
+            exprs.push(wire.destination);
+            (
+                Shape::Whole,
+                exprs,
+                Vec::new(),
+                wire.name.iter().map(|name| name.text.clone()).collect(),
+                vec![wire.kind.text.clone()],
+            )
+        }
+        BodyItem::Bundle { members, each, .. } => {
+            let mut placements = members.clone();
+            let mut exprs = Vec::new();
+            if let Some(each) = each {
+                placements.extend(each.members.iter().copied());
+                exprs.extend(iterable_exprs(each.iterable));
+            }
+            let mut nested = Vec::new();
+            let mut declared = Vec::new();
+            let mut kinds = Vec::new();
+            for id in placements {
+                let placement = hir.placement(id)?;
+                exprs.extend(head(placement));
+                nested.extend(placement.body.iter().copied());
+                declared.extend(placement.name.iter().map(|name| name.text.clone()));
+                kinds.extend(placement.kind.iter().map(|kind| kind.text.clone()));
+            }
+            (Shape::Whole, exprs, nested, declared, kinds)
+        }
+        BodyItem::For { iterable, body, .. } => (
+            Shape::Container,
+            iterable_exprs(*iterable),
+            vec![*body],
+            Vec::new(),
+            Vec::new(),
+        ),
+        BodyItem::When {
+            arms, otherwise, ..
+        } => (
+            Shape::Container,
+            arms.iter().map(|arm| arm.guard).collect(),
+            arms.iter()
+                .map(|arm| arm.body)
+                .chain(otherwise.iter().copied())
+                .collect(),
+            Vec::new(),
+            Vec::new(),
+        ),
+    })
 }

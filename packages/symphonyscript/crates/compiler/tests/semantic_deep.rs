@@ -19,7 +19,11 @@ fn on_small_stack(work: impl FnOnce() + Send + 'static) {
 }
 
 fn nested(open: &str, middle: &str, close: &str) -> String {
-    format!("{}{middle}{}", open.repeat(DEPTH), close.repeat(DEPTH))
+    nested_to(open, middle, close, DEPTH)
+}
+
+fn nested_to(open: &str, middle: &str, close: &str, depth: usize) -> String {
+    format!("{}{middle}{}", open.repeat(depth), close.repeat(depth))
 }
 
 fn code_counts(text: &str) -> BTreeMap<Code, usize> {
@@ -31,9 +35,13 @@ fn code_counts(text: &str) -> BTreeMap<Code, usize> {
 }
 
 fn bodies(head: &str, cycle: &[&str]) -> String {
+    bodies_to(head, cycle, BODY_DEPTH)
+}
+
+fn bodies_to(head: &str, cycle: &[&str], depth: usize) -> String {
     let mut text = String::from(head);
     let mut indent = 1;
-    for level in 0..BODY_DEPTH {
+    for level in 0..depth {
         let pad = " ".repeat(indent);
         let line = cycle[level % cycle.len()].replace("{level}", &level.to_string());
         if line == "when:" {
@@ -110,6 +118,44 @@ fn stress_m1_deep_placements_and_bodies_pass_every_stage_on_a_small_stack() {
             ])
         );
     });
+}
+
+fn deep_bodies_with_unknown_names_on_a_small_stack(depth: usize) {
+    on_small_stack(move || {
+        let text = format!("Clip c:\n    {}\n", nested_to("[", "Note", "]", depth));
+        assert_eq!(
+            code_counts(&text),
+            BTreeMap::from([(Code::BundleSyntax, 1)])
+        );
+        let text = format!("Clip c:\n    {}\n", nested_to("(", "Note", ")", depth));
+        assert!(!code_counts(&text).is_empty());
+        let text = bodies_to(
+            "Clip top:\n",
+            &["Note:", "for i in 0..1:", "when x:", "when:"],
+            depth,
+        );
+        assert_eq!(
+            code_counts(&text),
+            BTreeMap::from([
+                (Code::UnknownName, depth / 2),
+                (Code::ForVariableClash, depth / 4 - 1),
+                (Code::ChildNotAccepted, depth / 4),
+            ])
+        );
+    });
+}
+
+#[test]
+fn deep_placements_and_bodies_with_unknown_names_pass_every_stage_and_the_twin_pass_on_a_small_stack_423()
+ {
+    deep_bodies_with_unknown_names_on_a_small_stack(2_000);
+}
+
+#[test]
+#[ignore = "stress"]
+fn stress_deep_placements_and_bodies_with_unknown_names_pass_every_stage_and_the_twin_pass_on_a_small_stack_423()
+ {
+    deep_bodies_with_unknown_names_on_a_small_stack(12_000);
 }
 
 #[test]

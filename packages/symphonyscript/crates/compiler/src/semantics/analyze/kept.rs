@@ -209,6 +209,7 @@ fn set(marks: &mut [bool], index: usize) -> Result<(), Internal> {
 
 impl Marks {
     fn top(&mut self, hir: &Hir, top: Top, whole: bool, kept: &Kept) -> Result<(), Internal> {
+        let mut pending = Vec::new();
         match top {
             Top::Input(id) => {
                 set(&mut self.inputs, id.index())?;
@@ -235,12 +236,12 @@ impl Marks {
                 set(&mut self.patterns, id.index())?;
                 let decl = hir.pattern(id)?;
                 self.params(&decl.params, &decl.lets);
-                self.block(hir, decl.body, true, kept)?;
+                pending.push((decl.body, true));
             }
-            Top::Placement(id) => self.placement(hir, id, whole, kept)?,
+            Top::Placement(id) => self.placement(hir, id, whole, &mut pending)?,
             Top::Placeholder(_) => {}
         }
-        Ok(())
+        self.blocks(hir, pending, kept)
     }
 
     fn params(&mut self, params: &[Param], lets: &[LetDecl]) {
@@ -269,40 +270,40 @@ impl Marks {
         hir: &Hir,
         id: PlacementId,
         whole: bool,
-        kept: &Kept,
+        pending: &mut Vec<(BlockId, bool)>,
     ) -> Result<(), Internal> {
         set(&mut self.placements, id.index())?;
         let placement = hir.placement(id)?;
         self.roots.extend(placement.default.iter().copied());
         self.roots.extend(placement.gate.iter().copied());
         self.attrs(&placement.attrs);
-        if let Some(body) = placement.body {
-            self.block(hir, body, whole, kept)?;
-        }
+        pending.extend(placement.body.map(|body| (body, whole)));
         Ok(())
     }
 
-    fn block(
+    fn blocks(
         &mut self,
         hir: &Hir,
-        block: BlockId,
-        whole: bool,
+        mut pending: Vec<(BlockId, bool)>,
         kept: &Kept,
     ) -> Result<(), Internal> {
-        let mut items = Vec::new();
-        for (position, item) in hir.block(block)?.items.iter().enumerate() {
-            let mode = if whole {
-                Some(true)
-            } else {
-                kept.bodies.get(&(block, position)).copied()
-            };
-            let Some(whole) = mode else {
-                continue;
-            };
-            items.push(position);
-            self.body_item(hir, item, whole, kept)?;
+        while let Some((block, whole)) = pending.pop() {
+            CountedWalk::NameTwinsMarkedBlocks.step();
+            let mut items = Vec::new();
+            for (position, item) in hir.block(block)?.items.iter().enumerate() {
+                let mode = if whole {
+                    Some(true)
+                } else {
+                    kept.bodies.get(&(block, position)).copied()
+                };
+                let Some(whole) = mode else {
+                    continue;
+                };
+                items.push(position);
+                self.body_item(hir, item, whole, &mut pending)?;
+            }
+            self.blocks.insert(block, items);
         }
-        self.blocks.insert(block, items);
         Ok(())
     }
 
@@ -311,10 +312,10 @@ impl Marks {
         hir: &Hir,
         item: &BodyItem,
         whole: bool,
-        kept: &Kept,
+        pending: &mut Vec<(BlockId, bool)>,
     ) -> Result<(), Internal> {
         match item {
-            BodyItem::Placement(id) => self.placement(hir, *id, whole, kept),
+            BodyItem::Placement(id) => self.placement(hir, *id, whole, pending),
             BodyItem::Wire(id) => {
                 set(&mut self.wires, id.index())?;
                 let wire = hir.wire(*id)?;
@@ -326,30 +327,29 @@ impl Marks {
             }
             BodyItem::Bundle { members, each, .. } => {
                 for member in members {
-                    self.placement(hir, *member, true, kept)?;
+                    self.placement(hir, *member, true, pending)?;
                 }
                 if let Some(each) = each {
                     self.iterable(each.iterable);
                     for member in &each.members {
-                        self.placement(hir, *member, true, kept)?;
+                        self.placement(hir, *member, true, pending)?;
                     }
                 }
                 Ok(())
             }
             BodyItem::For { iterable, body, .. } => {
                 self.iterable(*iterable);
-                self.block(hir, *body, whole, kept)
+                pending.push((*body, whole));
+                Ok(())
             }
             BodyItem::When {
                 arms, otherwise, ..
             } => {
                 for arm in arms {
                     self.roots.push(arm.guard);
-                    self.block(hir, arm.body, whole, kept)?;
+                    pending.push((arm.body, whole));
                 }
-                if let Some(otherwise) = otherwise {
-                    self.block(hir, *otherwise, whole, kept)?;
-                }
+                pending.extend(otherwise.map(|otherwise| (otherwise, whole)));
                 Ok(())
             }
         }
