@@ -95,7 +95,25 @@ impl Engine<'_> {
                 self.native_call(native, args, loc, scope, need)?
             }
             Found::Placeholder => Some(Val::Error),
-            Found::Nothing | Found::Val(_) | Found::Query(_) | Found::Item(_) | Found::Decl(_)
+            Found::Nothing if received.is_some() => {
+                let length = u32::try_from(name.len()).unwrap_or(u32::MAX);
+                let start = callee_expr
+                    .loc
+                    .end
+                    .saturating_sub(length)
+                    .max(callee_expr.loc.start);
+                self.error(
+                    Code::UnknownName,
+                    Loc {
+                        start,
+                        ..callee_expr.loc
+                    },
+                    scope,
+                    format!("`{name}` names nothing in scope"),
+                )?;
+                Some(Val::Error)
+            }
+            Found::Val(_) | Found::Query(_) | Found::Item(_) | Found::Decl(_)
                 if received.is_some() =>
             {
                 self.uncallable(callee_expr.loc, scope)?;

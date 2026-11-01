@@ -347,7 +347,8 @@ fn the_rows_of_the_brief_hold() {
         ),
         (
             "state q(1)\nClip c:\n    Note/(q.nothing(1))\n",
-            vec![(Code::NotCallable, "q.nothing")],
+            // C1-10: unknown-name at the member, inverted from not-callable.
+            vec![(Code::UnknownName, "nothing")],
         ),
         (
             "state xs([1, 2])\nClip c:\n    Note/(xs.size(1))\n",
@@ -602,7 +603,8 @@ fn a_dot_call_whose_receiver_reads_the_cell_being_declared_resolves_its_member_f
             ],
             &[
                 (Code::DeclarationCycle, "recent"),
-                (Code::NotCallable, "recent.xpast"),
+                // C1-10: unknown-name at the member, inverted from not-callable.
+                (Code::UnknownName, "xpast"),
             ],
         ),
         (
@@ -613,7 +615,8 @@ fn a_dot_call_whose_receiver_reads_the_cell_being_declared_resolves_its_member_f
             ],
             &[
                 (Code::DeclarationCycle, "recent"),
-                (Code::NotCallable, "recent.xpast"),
+                // C1-10: unknown-name at the member, inverted from not-callable.
+                (Code::UnknownName, "xpast"),
             ],
         ),
         (
@@ -628,7 +631,8 @@ fn a_dot_call_whose_receiver_reads_the_cell_being_declared_resolves_its_member_f
             &["let a = a.xpast(1)\n", "Clip c:\n    Note/(a)\n"],
             &[
                 (Code::DeclarationCycle, "a"),
-                (Code::NotCallable, "a.xpast"),
+                // C1-10: unknown-name at the member, inverted from not-callable.
+                (Code::UnknownName, "xpast"),
             ],
         ),
         (
@@ -645,7 +649,8 @@ fn a_dot_call_whose_receiver_reads_the_cell_being_declared_resolves_its_member_f
                 "state recent([]) = (note.xpast(1, []) + [note])[^8..]\n",
                 read,
             ],
-            &[(Code::NotCallable, "note.xpast")],
+            // C1-10: unknown-name at the member, inverted from not-callable.
+            &[(Code::UnknownName, "xpast")],
         ),
     ];
     support::assert_rows_in_orders(
@@ -750,42 +755,48 @@ fn a_refused_dot_calls_receiver_is_checked_in_its_own_type_as_a_refused_operator
         (
             &["let a = [1, 2][5].twice()\n", clip],
             &[
-                (Code::NotCallable, "[1, 2][5].twice"),
+                // C1-10: unknown-name at the member, inverted from not-callable.
+                (Code::UnknownName, "twice"),
                 (Code::IndexOutOfRange, "5"),
             ],
         ),
         (
             &["let a = [1, 2][^5].twice(1)\n", clip],
             &[
-                (Code::NotCallable, "[1, 2][^5].twice"),
+                // C1-10: unknown-name at the member, inverted from not-callable.
+                (Code::UnknownName, "twice"),
                 (Code::IndexOutOfRange, "[1, 2][^5]"),
             ],
         ),
         (
             &["let a = [1, 2][1.5..2].twice()\n", clip],
             &[
-                (Code::NotCallable, "[1, 2][1.5..2].twice"),
+                // C1-10: unknown-name at the member, inverted from not-callable.
+                (Code::UnknownName, "twice"),
                 (Code::IndexType, "1.5"),
             ],
         ),
         (
             &["let a = [1, 2][0..99999999999999999999].twice()\n", clip],
             &[
-                (Code::NotCallable, "[1, 2][0..99999999999999999999].twice"),
+                // C1-10: unknown-name at the member, inverted from not-callable.
+                (Code::UnknownName, "twice"),
                 (Code::IndexOutOfRange, "99999999999999999999"),
             ],
         ),
         (
             &["let a = (1 + true).twice()\n", clip],
             &[
-                (Code::NotCallable, "(1 + true).twice"),
+                // C1-10: unknown-name at the member, inverted from not-callable.
+                (Code::UnknownName, "twice"),
                 (Code::OperandType, "1 + true"),
             ],
         ),
         (
             &["let b = [1, 2]\n", "Clip c:\n    Note/(b[5].twice())\n"],
             &[
-                (Code::NotCallable, "b[5].twice"),
+                // C1-10: unknown-name at the member, inverted from not-callable.
+                (Code::UnknownName, "twice"),
                 (Code::IndexOutOfRange, "5"),
             ],
         ),
@@ -795,11 +806,13 @@ fn a_refused_dot_calls_receiver_is_checked_in_its_own_type_as_a_refused_operator
         ),
         (
             &["let a = [1, 2][5].twice()\n", "Clip c:\n    Note/(1)\n"],
-            &[(Code::NotCallable, "[1, 2][5].twice")],
+            // C1-10: unknown-name at the member, inverted from not-callable.
+            &[(Code::UnknownName, "twice")],
         ),
         (
             &["let a = [1, 2][1].twice()\n", clip],
-            &[(Code::NotCallable, "[1, 2][1].twice")],
+            // C1-10: unknown-name at the member, inverted from not-callable.
+            &[(Code::UnknownName, "twice")],
         ),
     ];
     support::assert_rows_in_every_order(&symphonyscript_fixtures::vocabulary(), rows);
@@ -842,4 +855,50 @@ fn a_function_named_as_a_member_without_parentheses_draws_not_a_value_naming_the
         let codes: Vec<Code> = found.iter().map(|diagnostic| diagnostic.code).collect();
         assert_eq!(codes, [code], "{text}");
     }
+}
+
+#[test]
+fn a_member_read_beside_a_cells_cycle_and_an_unknown_dot_call_member_draw_their_own_faults_c1_10() {
+    let clip = "Clip c:\n    Note/(recent)\n";
+    let rows: &[support::Row] = &[
+        (
+            &["state recent = recent.nope\n", clip],
+            &[
+                (Code::DeclarationCycle, "recent"),
+                (Code::UnknownAttribute, "recent.nope"),
+            ],
+        ),
+        (
+            &["state recent(0) = recent.nope + 1\n", clip],
+            &[
+                (Code::DeclarationCycle, "recent"),
+                (Code::UnknownAttribute, "recent.nope"),
+            ],
+        ),
+        (
+            &["state a(1)\n", "state recent = a.nope\n", clip],
+            &[(Code::UnknownAttribute, "a.nope")],
+        ),
+        (
+            &["state recent = recent.size\n", clip],
+            &[(Code::DeclarationCycle, "recent")],
+        ),
+        (
+            &["Clip c:\n    Note/([1].xpast(1))\n"],
+            &[(Code::UnknownName, "xpast")],
+        ),
+        (
+            &["Clip c:\n    Note/(5.xpast(1))\n"],
+            &[(Code::UnknownName, "xpast")],
+        ),
+        (
+            &["state a(1)\n", "Clip c:\n    Note/(a.xpast(1))\n"],
+            &[(Code::UnknownName, "xpast")],
+        ),
+        (
+            &["Clip c:\n    Note/(xpast(1))\n"],
+            &[(Code::UnknownName, "xpast")],
+        ),
+    ];
+    support::assert_rows_in_every_order(&symphonyscript_fixtures::vocabulary(), rows);
 }

@@ -168,7 +168,11 @@ impl Engine<'_> {
         Ok(Member::Declined)
     }
 
-    fn declaring_receiver(&mut self, receiver: ExprId, scope: ScopeId) -> Result<bool, Internal> {
+    pub(super) fn declaring_receiver(
+        &mut self,
+        receiver: ExprId,
+        scope: ScopeId,
+    ) -> Result<bool, Internal> {
         let ExprKind::Name(name) = &self.hir.expr(receiver)?.kind else {
             return Ok(false);
         };

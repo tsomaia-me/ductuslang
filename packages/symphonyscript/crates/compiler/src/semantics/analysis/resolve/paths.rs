@@ -1,7 +1,7 @@
 use symphonyscript_core::{AttrDecl, AttrId, NodeKind, WireKind};
 
 use super::found::Found;
-use super::members::Member;
+use super::members::{ARRAY_MEMBERS, Member};
 use crate::diagnostics::Code;
 use crate::semantics::Internal;
 use crate::semantics::analysis::attr_source::AttrSource;
@@ -100,6 +100,16 @@ impl Engine<'_> {
                 return Ok(Some(Val::Error));
             }
             Val::Error => {
+                if self.declaring_cell(base, scope)? && !ARRAY_MEMBERS.contains(&name.text.as_str())
+                {
+                    self.error(
+                        Code::UnknownAttribute,
+                        loc,
+                        scope,
+                        format!("`.{}` reads an attribute of an instance or a wire, and this is a value", name.text),
+                    )?;
+                    return Ok(Some(Val::Error));
+                }
                 self.written_field(base, name, loc, scope)?;
                 return Ok(Some(Val::Error));
             }
@@ -1999,5 +2009,18 @@ impl Engine<'_> {
             format!("call the function, as in `x.{}()`", name.text),
         )?;
         Ok(true)
+    }
+}
+
+impl Engine<'_> {
+    fn declaring_cell(&mut self, base: ExprId, scope: ScopeId) -> Result<bool, Internal> {
+        let ExprKind::Name(name) = &self.hir.expr(base)?.kind else {
+            return Ok(false);
+        };
+        let cell = matches!(
+            self.find(name, scope)?,
+            Found::Query(Query::State(_) | Query::Input(_))
+        );
+        Ok(cell && self.declaring_receiver(base, scope)?)
     }
 }
