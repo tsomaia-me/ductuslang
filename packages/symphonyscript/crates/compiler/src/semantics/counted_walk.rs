@@ -165,10 +165,13 @@ pub(crate) enum CountedWalk {
     ProgramCode,
     SignatureRead,
     FrameValueRead,
+    EngineIsDone,
+    EngineScopeOf,
+    EngineFunctionOfScope,
 }
 
 #[cfg(test)]
-const WALKS: usize = 165;
+const WALKS: usize = 168;
 
 #[cfg(test)]
 thread_local! {
@@ -343,6 +346,9 @@ impl CountedWalk {
         CountedWalk::ProgramCode,
         CountedWalk::SignatureRead,
         CountedWalk::FrameValueRead,
+        CountedWalk::EngineIsDone,
+        CountedWalk::EngineScopeOf,
+        CountedWalk::EngineFunctionOfScope,
     ];
 
     pub(crate) fn step(self) {

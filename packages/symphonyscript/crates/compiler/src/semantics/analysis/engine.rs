@@ -314,45 +314,54 @@ impl<'a> Engine<'a> {
 
     pub fn demand(&mut self, query: Query) -> Result<(), Internal> {
         let mut stack: Vec<(Query, Option<usize>)> = vec![(query, None)];
-        let mut nearest: Vec<Option<Query>> = vec![self.is_declaration(query)?.then_some(query)];
-        let mut outer: Vec<Option<Query>> = vec![Self::outer_declaration(query)];
+        let mut held: Vec<Held> = vec![Held {
+            nearest: self.is_declaration(query)?.then_some(query),
+            outer: Self::outer_declaration(query),
+            dispatched: None,
+            reader_function: None,
+            fresh: false,
+        }];
         let mut stalled = 0;
         while let Some((top, _)) = stack.last().copied() {
             crate::semantics::counted_walk::CountedWalk::EngineDemand.step();
             let position = stack.len() - 1;
-            if self.is_done(top) {
-                stack.pop();
-                nearest.pop();
-                outer.pop();
-                self.waiting.remove(&top);
-                self.settle_cycle_member(top);
+            let entry = held
+                .get_mut(position)
+                .ok_or(Internal::missed("demand stack entry"))?;
+            let fresh = std::mem::replace(&mut entry.fresh, false);
+            let entry = *entry;
+            if !fresh && self.is_done(top) {
+                self.leave(top, &mut stack, &mut held);
                 stalled = 0;
                 continue;
             }
+            let dispatched = match entry.dispatched {
+                Some(dispatched) => dispatched,
+                None => {
+                    let dispatched = self.dispatch_reader(top, entry.outer, entry.nearest)?;
+                    if let Some(record) = held.get_mut(position) {
+                        record.dispatched = Some(dispatched);
+                    }
+                    dispatched
+                }
+            };
             let mut need = Vec::new();
             self.current = Some(top);
-            let dispatched = self.dispatch_reader(
-                top,
-                outer.get(position).copied().flatten(),
-                nearest.get(position).copied().flatten(),
-            )?;
             let enclosing_reader = std::mem::replace(&mut self.reader, dispatched);
             let done = self.dispatch(top, &mut need);
             self.reader = enclosing_reader;
             let done = done?;
             self.current = None;
             if done {
-                stack.pop();
-                nearest.pop();
-                outer.pop();
-                self.waiting.remove(&top);
-                self.settle_cycle_member(top);
+                self.leave(top, &mut stack, &mut held);
                 stalled = 0;
                 continue;
             }
             self.waiting.insert(top);
-            let reader = nearest.get(position).copied().flatten();
+            let reader = entry.nearest;
+            let mut reader_function = entry.reader_function;
             let mut progressed = false;
+            let mut pushed_last = false;
             for dep in need {
                 let declares = self.is_declaration(dep)?;
                 if declares && !matches!(top, Query::Eval(..)) {
@@ -363,32 +372,41 @@ impl<'a> Engine<'a> {
                         for (query, _) in stack.drain(cut + 1..) {
                             self.waiting.remove(&query);
                         }
-                        nearest.truncate(cut + 1);
-                        outer.truncate(cut + 1);
+                        held.truncate(cut + 1);
                         progressed = true;
+                        pushed_last = false;
                         break;
                     }
                     if self.cyclic.insert((top, dep)) {
                         self.cycle(&stack, position, dep)?;
                         progressed = true;
                     }
+                    pushed_last = false;
                 } else if !self.is_done(dep) {
-                    stack.push((dep, Some(position)));
-                    let pushed = if declares {
-                        Some(dep)
+                    let (nearest, function) = if declares {
+                        (Some(dep), None)
                     } else {
-                        self.pushed_reader(
-                            dep,
-                            (top, outer.get(position).copied().flatten()),
-                            reader,
-                        )?
+                        self.pushed_reader(dep, (top, entry.outer), (reader, &mut reader_function))?
                     };
-                    nearest.push(pushed);
-                    outer.push(
-                        Self::outer_declaration(dep).or(outer.get(position).copied().flatten()),
-                    );
+                    stack.push((dep, Some(position)));
+                    held.push(Held {
+                        nearest,
+                        outer: Self::outer_declaration(dep).or(entry.outer),
+                        dispatched: None,
+                        reader_function: function,
+                        fresh: false,
+                    });
                     progressed = true;
+                    pushed_last = true;
+                } else {
+                    pushed_last = false;
                 }
+            }
+            if let Some(record) = held.get_mut(position) {
+                record.reader_function = reader_function;
+            }
+            if pushed_last && let Some(record) = held.last_mut() {
+                record.fresh = true;
             }
             if progressed {
                 stalled = 0;
@@ -400,6 +418,15 @@ impl<'a> Engine<'a> {
             }
         }
         Ok(())
+    }
+
+    fn leave(&mut self, top: Query, stack: &mut Vec<(Query, Option<usize>)>, held: &mut Vec<Held>) {
+        stack.pop();
+        held.pop();
+        if !self.waiting.is_empty() {
+            self.waiting.remove(&top);
+        }
+        self.settle_cycle_member(top);
     }
 
     fn note_read(&self, reader: Option<Query>, dep: Query) {
@@ -426,6 +453,14 @@ impl<'a> Engine<'a> {
     }
 
     fn function_of_scope(&self, scope: ScopeId) -> Result<Option<Query>, Internal> {
+        match self.scope_function(scope)? {
+            Some((at, function)) => Ok(Some(Query::Expr(self.hir.fn_decl(function)?.value, at))),
+            None => Ok(None),
+        }
+    }
+
+    fn scope_function(&self, scope: ScopeId) -> Result<Option<(ScopeId, FnId)>, Internal> {
+        crate::semantics::counted_walk::CountedWalk::EngineFunctionOfScope.step();
         let mut visited = Vec::new();
         let mut current = Some(scope);
         let mut found = None;
@@ -457,23 +492,21 @@ impl<'a> Engine<'a> {
         for at in visited {
             known.insert(at, found);
         }
-        match found {
-            Some((at, function)) => Ok(Some(Query::Expr(self.hir.fn_decl(function)?.value, at))),
-            None => Ok(None),
-        }
+        Ok(found)
     }
 
     fn pushed_reader(
         &self,
         dep: Query,
         (top, outer): (Query, Option<Query>),
-        reader: Option<Query>,
-    ) -> Result<Option<Query>, Internal> {
+        (reader, reader_function): (Option<Query>, &mut Option<Option<Query>>),
+    ) -> Result<(Option<Query>, Option<Option<Query>>), Internal> {
+        let inherited = (reader, *reader_function);
         let (scope, loc, expression) = match dep {
             Query::Expr(expr, scope) => (scope, self.hir.expr(expr)?.loc, true),
             Query::Sig(node) | Query::Eval(node, _) => {
                 let Some(record) = self.nodes.get(node.index()) else {
-                    return Ok(reader);
+                    return Ok(inherited);
                 };
                 (record.scope, record.loc, false)
             }
@@ -482,48 +515,52 @@ impl<'a> Engine<'a> {
             | Query::Input(_)
             | Query::State(_)
             | Query::Attr(..)
-            | Query::Destination(_) => return Ok(reader),
+            | Query::Destination(_) => return Ok(inherited),
         };
-        if let Some(function) = self.function_of_scope(scope)? {
-            let Query::Expr(_, locals) = function else {
-                return Ok(reader);
-            };
-            if let ScopeKind::Locals(record) = &self.scope_of(locals)?.kind
-                && let super::locals_owner::LocalsOwner::Fn(id) = record.owner
-            {
-                for (index, param) in self.hir.fn_decl(id)?.params.iter().enumerate() {
-                    let Some(default) = param.default else {
-                        continue;
-                    };
-                    let within = self.hir.expr(default)?.loc;
-                    if within.file == loc.file && within.start <= loc.start && loc.end <= within.end
-                    {
-                        let index =
-                            u32::try_from(index).map_err(|_| Internal::missed("parameter"))?;
-                        return Ok(Some(Query::Param(locals, index)));
-                    }
+        if let Some((locals, id)) = self.scope_function(scope)? {
+            let decl = self.hir.fn_decl(id)?;
+            let function = Query::Expr(decl.value, locals);
+            for (index, param) in decl.params.iter().enumerate() {
+                let Some(default) = param.default else {
+                    continue;
+                };
+                let within = self.hir.expr(default)?.loc;
+                if within.file == loc.file && within.start <= loc.start && loc.end <= within.end {
+                    let index = u32::try_from(index).map_err(|_| Internal::missed("parameter"))?;
+                    return Ok((Some(Query::Param(locals, index)), Some(Some(function))));
                 }
             }
-            let inside = match reader {
-                Some(Query::Expr(_, at) | Query::Param(at, _) | Query::Let(at, _)) => {
-                    self.function_of_scope(at)? == Some(function)
+            let readers = match *reader_function {
+                Some(known) => known,
+                None => {
+                    let found = match reader {
+                        Some(Query::Expr(_, at) | Query::Param(at, _) | Query::Let(at, _)) => {
+                            self.function_of_scope(at)?
+                        }
+                        Some(
+                            Query::Input(_)
+                            | Query::State(_)
+                            | Query::Attr(..)
+                            | Query::Destination(_)
+                            | Query::Sig(_)
+                            | Query::Eval(..),
+                        )
+                        | None => None,
+                    };
+                    *reader_function = Some(found);
+                    found
                 }
-                Some(
-                    Query::Input(_)
-                    | Query::State(_)
-                    | Query::Attr(..)
-                    | Query::Destination(_)
-                    | Query::Sig(_)
-                    | Query::Eval(..),
-                )
-                | None => false,
             };
-            return Ok(if inside { reader } else { Some(function) });
+            let inside = readers == Some(function);
+            return Ok((
+                if inside { reader } else { Some(function) },
+                Some(Some(function)),
+            ));
         }
         let (true, Query::Param(..)) = (expression, top) else {
-            return Ok(reader);
+            return Ok((reader, *reader_function));
         };
-        Ok(outer)
+        Ok((outer, None))
     }
 
     fn outer_declaration(query: Query) -> Option<Query> {
@@ -608,6 +645,7 @@ impl<'a> Engine<'a> {
     }
 
     fn is_done(&self, query: Query) -> bool {
+        crate::semantics::counted_walk::CountedWalk::EngineIsDone.step();
         let memo = &self.memo;
         match query {
             Query::Expr(expr, scope) => memo.exprs.contains_key(&(expr, scope)),
@@ -854,6 +892,7 @@ impl<'a> Engine<'a> {
     }
 
     pub fn scope_of(&self, id: ScopeId) -> Result<&Scope, Internal> {
+        crate::semantics::counted_walk::CountedWalk::EngineScopeOf.step();
         self.scopes.get(id.index()).ok_or(Internal::missed("scope"))
     }
 
@@ -1953,7 +1992,7 @@ impl<'a> Engine<'a> {
     }
 
     fn settle_cycle_member(&mut self, query: Query) {
-        if !self.cycle_members.remove(&query) {
+        if self.cycle_members.is_empty() || !self.cycle_members.remove(&query) {
             return;
         }
         let memo = &mut self.memo;
@@ -1998,4 +2037,13 @@ struct Merged {
     before: Vec<(Loc, String)>,
     message: String,
     outermost: Option<Loc>,
+}
+
+#[derive(Clone, Copy)]
+struct Held {
+    nearest: Option<Query>,
+    outer: Option<Query>,
+    dispatched: Option<Option<Query>>,
+    reader_function: Option<Option<Query>>,
+    fresh: bool,
 }

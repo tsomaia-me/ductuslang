@@ -2355,3 +2355,88 @@ fn stress_a_placeholder_beside_a_recursion_or_a_join_chain_costs_the_twin_pass_t
     );
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Figure {
+    Inlined,
+    Call,
+    Array,
+}
+
+const FIGURES: [Figure; 3] = [Figure::Inlined, Figure::Call, Figure::Array];
+
+fn figure_program(figure: Figure, n: usize) -> String {
+    let deep = |call: usize, array: usize| {
+        format!(
+            "state x(true)\nfn f(v): v\nlet a = (1)\nlet b = {}1{}\nlet c = {}1{}\nlet d = not x\nlet e = \"{{1}}\"\nlet g = -1\nClip top:\n    Note/(60) when d\n    Note/(f(a) + c + g + b{})\n",
+            "[".repeat(array),
+            "]".repeat(array),
+            "f(".repeat(call),
+            ")".repeat(call),
+            "[0]".repeat(array)
+        )
+    };
+    match figure {
+        Figure::Inlined => {
+            let calls: Vec<String> = (0..100).map(|index| format!("f(i, {index})")).collect();
+            let note = format!("    Note/({})\n", calls.join(" + "));
+            format!(
+                "state i(1)\nfn f(x, k): x + k\nClip c:\n{}",
+                note.repeat(n / 100)
+            )
+        }
+        Figure::Call => deep(n, 1),
+        Figure::Array => deep(1, n),
+    }
+}
+
+fn figure_counts(compiler: &Compiler, figure: Figure, n: usize, walks: &[&str]) -> Vec<u64> {
+    let run = measured(compiler, &figure_program(figure, n));
+    let mut counts = vec![walk_count(&run, "query_runs")];
+    counts.extend(walks.iter().map(|walk| walk_count(&run, walk)));
+    counts
+}
+
+const DEMAND_BOUNDS: [(&str, u64, u64); 4] = [
+    ("EngineDemand", 5, 4),
+    ("EngineIsDone", 3, 2),
+    ("EngineScopeOf", 4, 1),
+    ("EngineFunctionOfScope", 1, 1),
+];
+
+fn demand_failures(sizes: [usize; 3]) -> Vec<String> {
+    let compiler = Compiler::new(&vocabulary()).expect("the vocabulary compiles");
+    let walks = DEMAND_BOUNDS.map(|(walk, _, _)| walk);
+    let mut failures = Vec::new();
+    for figure in FIGURES {
+        let runs = sizes.map(|n| figure_counts(&compiler, figure, n, &walks));
+        for (index, (walk, most, per)) in DEMAND_BOUNDS.iter().enumerate() {
+            let points = [0, 1, 2].map(|run| {
+                (
+                    runs[run].first().copied().unwrap_or(0),
+                    runs[run].get(index + 1).copied().unwrap_or(0),
+                )
+            });
+            if !linear(points) {
+                failures.push(format!(
+                    "431 {figure:?} {walk} {points:?} is not linear in the queries"
+                ));
+            }
+            if points
+                .iter()
+                .any(|(queries, count)| *count == 0 || count * per > queries * most)
+            {
+                failures.push(format!(
+                    "431 {figure:?} {walk} {points:?} passes {most}/{per} a query"
+                ));
+            }
+        }
+    }
+    failures
+}
+
+#[test]
+fn the_demand_loops_bookkeeping_is_constant_per_query_on_the_figure_programs_431() {
+    let failures = demand_failures([1_000, 2_000, 4_000]);
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
