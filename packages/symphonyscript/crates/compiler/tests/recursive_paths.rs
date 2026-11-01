@@ -2807,9 +2807,10 @@ impl StepCase {
         self.drawn(true)
     }
 
+    // C1-3: the twin's untaken recursive argument is checked in every position, an index
+    // included, inverted from `self.consumer != StepConsumer::RecursiveArgument`.
     fn twin_expected(&self) -> BTreeSet<(Code, String, String)> {
-        self.drawn(self.consumer != StepConsumer::RecursiveArgument)
-            .0
+        self.drawn(true).0
     }
 
     fn drawn(&self, untaken_arguments: bool) -> (BTreeSet<(Code, String, String)>, i32) {
@@ -5501,4 +5502,57 @@ fn a_chosen_references_cycle_names_the_components_shortest_cycle_through_its_fir
         }
     }
     assert_none_fail((failures, programs), 32);
+}
+
+#[test]
+fn an_untaken_recursive_calls_reads_are_checked_against_the_chosen_reference_in_every_position_c1_3()
+ {
+    let compiler = Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("compiles");
+    let declarations = [
+        "Session main\n",
+        "Clip verse | gain=2:\n    Note as tone0\n",
+        "Clip third | gain=5:\n    Note as tone2\n",
+        "fn gs(c, n): if n < 1 then c.gain else gs(c, n - 1)\n",
+        "fn h1(xs, n):\n    if n < 1 then 0 else i32(gs(xs[0], 2))\n",
+    ];
+    let call = "h1([verse.tone0, third], 0)";
+    let positions = [
+        "Note/({c})",
+        "Note/([60][{c}])",
+        "Note/([60][0 + {c}])",
+        "Note/([60][i32({c})])",
+        "Note/([60][if true then {c} else 0])",
+        "Note/([60, 61][{c}..][0])",
+        "Note/([60, 61][..{c} + 1][0])",
+        "Note/([60, 61][^({c} + 1)])",
+    ];
+    let mut failures = Vec::new();
+    for position in positions {
+        for (valid, chosen) in [(false, call), (true, "h1([third, third], 0)")] {
+            for reversed in [false, true] {
+                let mut items: Vec<String> = declarations
+                    .iter()
+                    .map(|item| (*item).to_string())
+                    .collect();
+                items.push(format!(
+                    "Clip k:\n    {}\n",
+                    position.replace("{c}", chosen)
+                ));
+                if reversed {
+                    items.reverse();
+                }
+                let text = items.concat();
+                let found = support::error_texts(&compiler, &text);
+                let expected = if valid {
+                    vec![]
+                } else {
+                    vec![(Code::UnknownAttribute, "gain".to_string())]
+                };
+                if found != expected {
+                    failures.push(format!("{text}found {found:?}\n"));
+                }
+            }
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
 }

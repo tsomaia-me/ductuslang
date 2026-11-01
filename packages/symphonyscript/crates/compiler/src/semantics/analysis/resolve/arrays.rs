@@ -449,6 +449,11 @@ impl Engine<'_> {
                 });
             }
             if let [Some(start), Some(end)] = known.as_slice() {
+                if !self.in_probe(scope)? {
+                    self.memo
+                        .own_typed
+                        .extend([lower, upper].into_iter().flatten().map(|(node, _)| node));
+                }
                 let start = start.unwrap_or(0).clamp(0, length);
                 let end = end.unwrap_or(length).clamp(0, length);
                 let end = end.max(start);

@@ -1257,6 +1257,9 @@ impl Engine<'_> {
                 }
                 CVal::Error => None,
             };
+            if !self.in_probe(scope)? {
+                self.memo.own_typed.push(index_node);
+            }
             if let Some(position) = position
                 && (0..i128::from(outer)).contains(&position)
             {
