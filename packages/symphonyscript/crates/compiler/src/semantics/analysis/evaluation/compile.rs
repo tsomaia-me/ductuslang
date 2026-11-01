@@ -4,6 +4,7 @@ use std::rc::Rc;
 use symphonyscript_core::{BinaryOp, UnaryOp, Value};
 
 use super::arg_fact::ArgFact;
+use super::call_instr::CallInstr;
 use super::concat_part::ConcatPart;
 use super::fetch_entry::FetchEntry;
 use super::fetched::Fetched;
@@ -107,12 +108,12 @@ impl Build {
             Instr::Array(node, count, lay) => Instr::Array(node, count, self.lay(lay)),
             Instr::Logic(op, lay) => Instr::Logic(op, self.lay(lay)),
             Instr::Arith(op, node, own, lay) => Instr::Arith(op, node, own, self.lay(lay)),
-            Instr::Compare(op, a, b, lay) => Instr::Compare(op, a, b, self.lay(lay)),
+            Instr::Compare(op, ty, a, b, lay) => Instr::Compare(op, ty, a, b, self.lay(lay)),
             Instr::StrAdd(lay) => Instr::StrAdd(self.lay(lay)),
             Instr::IntDivFloat(node, own, flexible, lay) => {
                 Instr::IntDivFloat(node, own, flexible, self.lay(lay))
             }
-            Instr::Div(a, b, lay) => Instr::Div(a, b, self.lay(lay)),
+            Instr::Div(posts, lay) => Instr::Div(posts, self.lay(lay)),
             Instr::DeferredCheck(node, end, lay, keep) => {
                 Instr::DeferredCheck(node, end, self.lay(lay), keep)
             }
@@ -129,8 +130,9 @@ impl Build {
             }
             Instr::Concat(parts, lay) => Instr::Concat(parts, self.lay(lay)),
             Instr::Native(native, count, lay) => Instr::Native(native, count, self.lay(lay)),
-            Instr::CallWith(node, own, function, facts, count, lay, seen) => {
-                Instr::CallWith(node, own, function, facts, count, self.lay(lay), seen)
+            Instr::CallWith(mut call) => {
+                call.lay = self.lay(call.lay);
+                Instr::CallWith(call)
             }
             Instr::ForCheck(range, lay, end) => Instr::ForCheck(range, self.lay(lay), end),
             Instr::ForRun(node, for_node, own, lay) => {
@@ -234,6 +236,14 @@ impl Engine<'_> {
         }
         CountedWalk::ProgramCompile.step();
         let compiled = self.compile(root, ty, cached)?;
+        if let Ok(program) = &compiled {
+            if self.memo.sigs.get(&root).is_some_and(|sig| sig.frame) {
+                CountedWalk::ProgramFrameCompile.step();
+            }
+            for _ in &program.code {
+                CountedWalk::ProgramCode.step();
+            }
+        }
         if let (true, Ok(program)) = (cached, &compiled) {
             self.memo.programs.insert((root, ty), program.clone());
         }
@@ -412,7 +422,7 @@ impl Engine<'_> {
                     *slot = u32::try_from(at).unwrap_or(u32::MAX);
                 }
             }
-            Lay::At(Rc::from(positions))
+            Lay::At(Rc::new(positions))
         };
         if let Some(slot) = build.layouts.get_mut(id as usize) {
             *slot = lay;
@@ -1035,8 +1045,9 @@ impl Engine<'_> {
                         ));
                         list.push(Task::Emit(Instr::Compare(
                             op,
-                            operand_fit(lhs, &a_sig, ty),
-                            operand_fit(rhs, &b_sig, ty),
+                            fit_ty(ty),
+                            operand_fit(lhs, &a_sig),
+                            operand_fit(rhs, &b_sig),
                             Lay::Set(set),
                         )));
                     }
@@ -1064,8 +1075,9 @@ impl Engine<'_> {
                             ));
                             list.push(Task::Emit(Instr::Compare(
                                 op,
-                                operand_fit(lhs, &a_sig, ty),
-                                operand_fit(rhs, &b_sig, ty),
+                                fit_ty(ty),
+                                operand_fit(lhs, &a_sig),
+                                operand_fit(rhs, &b_sig),
                                 Lay::Set(set),
                             )));
                             list.push(Task::Emit(Instr::Jump(end)));
@@ -1111,7 +1123,10 @@ impl Engine<'_> {
                     ));
                 };
                 list.push(Task::Set(vec![a, b], set));
-                list.push(Task::Emit(Instr::Div(a_post, b_post, Lay::Set(set))));
+                list.push(Task::Emit(Instr::Div(
+                    Rc::new((a_post, b_post)),
+                    Lay::Set(set),
+                )));
             }
             BinaryOp::Add
             | BinaryOp::Sub
@@ -1207,7 +1222,7 @@ impl Engine<'_> {
             node,
             builtin,
             own,
-            Rc::from(posts),
+            Rc::new(posts),
             Lay::Set(set),
         )));
         Ok(Planned::Tasks(list))
@@ -1288,15 +1303,15 @@ impl Engine<'_> {
         let set = build.set();
         Ok(Planned::Tasks(vec![
             Task::Set(reqs, set),
-            Task::Emit(Instr::CallWith(
+            Task::Emit(Instr::CallWith(Box::new(CallInstr {
                 node,
                 own,
                 function,
-                Rc::from(facts),
+                facts: Rc::from(facts),
                 count,
-                Lay::Set(set),
-                std::cell::RefCell::new(None),
-            )),
+                lay: Lay::Set(set),
+                seen: std::cell::RefCell::new(None),
+            }))),
         ]))
     }
 
@@ -1494,12 +1509,13 @@ fn pure(list: &[Task]) -> bool {
     }
 }
 
-fn operand_fit(node: NodeId, sig: &Sig, ty: EvalTy) -> Option<(NodeId, EvalTy)> {
-    if sig.width != Width::Flexible || !sig.is_numeric() {
-        return None;
-    }
-    Some(match ty {
-        EvalTy::Exact => (node, EvalTy::I64),
+fn operand_fit(node: NodeId, sig: &Sig) -> Option<NodeId> {
+    (sig.width == Width::Flexible && sig.is_numeric()).then_some(node)
+}
+
+fn fit_ty(ty: EvalTy) -> EvalTy {
+    match ty {
+        EvalTy::Exact => EvalTy::I64,
         EvalTy::Default
         | EvalTy::U8
         | EvalTy::I32
@@ -1511,8 +1527,8 @@ fn operand_fit(node: NodeId, sig: &Sig, ty: EvalTy) -> Option<(NodeId, EvalTy)> 
         | EvalTy::Bool
         | EvalTy::Enum(_)
         | EvalTy::Str
-        | EvalTy::Node => (node, ty),
-    })
+        | EvalTy::Node => ty,
+    }
 }
 
 fn converts(kind: Kind, ty: EvalTy) -> bool {

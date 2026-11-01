@@ -733,6 +733,7 @@ impl<'a> Engine<'a> {
     }
 
     pub fn sig(&self, node: NodeId, need: &mut Vec<Query>) -> Option<Sig> {
+        crate::semantics::counted_walk::CountedWalk::SignatureRead.step();
         let query = Query::Sig(node);
         if self.poisoned(query) {
             return Some(Sig::ERROR);
@@ -745,6 +746,7 @@ impl<'a> Engine<'a> {
     }
 
     pub fn known_sig(&self, node: NodeId) -> Result<Sig, Internal> {
+        crate::semantics::counted_walk::CountedWalk::SignatureRead.step();
         self.memo
             .sigs
             .get(&node)

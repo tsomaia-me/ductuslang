@@ -477,6 +477,13 @@ fn measured(compiler: &Compiler, text: &str) -> Measured {
                 u64::try_from(engine.nodes.len()).unwrap_or(u64::MAX),
             ),
             ("variants_examined", engine.variants.examined() - examined),
+            (
+                "program_bytes",
+                memo.programs
+                    .values()
+                    .map(|program| u64::try_from(program.bytes()).unwrap_or(u64::MAX))
+                    .sum(),
+            ),
         ]
     });
     let (built_after, visited_after) = CArray::work();
@@ -1335,6 +1342,21 @@ fn template_walk_failures(sizes: [usize; 3], growth: bool) -> Vec<String> {
                 if clones > 0 {
                     failures.push(format!("{name} {size}: {clones} frame reads cloned"));
                 }
+                let (programs, templates) = (
+                    walk_count(run, "ProgramFrameCompile"),
+                    walk_count(run, "TemplateKeyOwned"),
+                );
+                if templates == 0 || programs > 3 * templates {
+                    failures.push(format!(
+                        "{name} {size}: {programs} frame programs for {templates} templates"
+                    ));
+                }
+                let (bytes, nodes) = (walk_count(run, "program_bytes"), walk_count(run, "nodes"));
+                if bytes > 32 * nodes {
+                    failures.push(format!(
+                        "{name} {size}: {bytes} program bytes for {nodes} nodes"
+                    ));
+                }
             }
             for (index, (counter, _)) in runs[0].counts.iter().enumerate() {
                 let checks = HEAD_CHECKS
@@ -1377,6 +1399,44 @@ fn a_recursive_body_with_a_template_per_level_clones_no_frame_read_and_checks_ea
 fn stress_a_recursive_body_with_a_template_per_level_checks_each_frames_heads_in_work_linear_in_its_levels()
  {
     let failures = template_walk_failures([100, 200, 400], true);
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+fn many_reads_program(reads: usize) -> String {
+    let sum = vec!["x"; reads].join(" + ");
+    format!(
+        "fn f(n):\n    let x = n * 2 + 1\n    if n < 1 then {sum} else f(n - 1) + x\nClip k:\n    Note/(f(5))\n"
+    )
+}
+
+#[test]
+fn a_let_read_many_times_in_a_recursive_body_compiles_once_and_its_reads_to_instructions_linear_in_them_300()
+ {
+    let compiler = Compiler::new(&vocabulary()).expect("the vocabulary compiles");
+    let sizes: [usize; 3] = [10, 20, 40];
+    let runs = sizes.map(|reads| measured(&compiler, &many_reads_program(reads)));
+    let mut failures = Vec::new();
+    for (run, reads) in runs.iter().zip(sizes) {
+        if let Some(first) = run.errors.first() {
+            failures.push(format!("{reads} reads: {first}"));
+        }
+    }
+    let code = [0, 1, 2].map(|run| {
+        (
+            u64::try_from(sizes[run]).unwrap_or(u64::MAX),
+            walk_count(&runs[run], "ProgramCode"),
+        )
+    });
+    let per_read = (code[2].1.saturating_sub(code[0].1)) / 30;
+    if !linear(code) || per_read > 4 {
+        failures.push(format!("ProgramCode {code:?}, {per_read} a read"));
+    }
+    let programs = runs
+        .each_ref()
+        .map(|run| walk_count(run, "ProgramFrameCompile"));
+    if programs[0] == 0 || programs.iter().any(|count| *count != programs[0]) {
+        failures.push(format!("ProgramFrameCompile {programs:?}"));
+    }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
 
@@ -1824,13 +1884,20 @@ fn walk_count(run: &Measured, walk: &str) -> u64 {
 fn machine_failures(run: &Measured, limit: u64) -> Vec<String> {
     let deepest_nesting = 201;
     let distinct = walk_count(run, "calls");
+    let reaches = 3 * distinct;
     let mut failures = Vec::new();
     for (walk, most) in [
         ("CallKeyOwned", distinct),
-        ("InternerIntern", 6 * limit),
+        ("InternerIntern", 2 * reaches),
         ("TemplateKeyOwned", 1),
         ("MachineFreshFrame", deepest_nesting),
         ("FrameForeignSlot", 0),
+        ("evaluation_work", 2 * distinct),
+        ("ProgramStep", 30 * distinct),
+        ("ProgramFrameCompile", 2),
+        ("SignatureRead", 3 * distinct),
+        ("FrameValueRead", 2 * distinct),
+        ("program_bytes", 4_096),
     ] {
         let count = walk_count(run, walk);
         if count > most {
@@ -2092,6 +2159,8 @@ fn a_recursive_argument_that_grows_a_dimension_per_level_holds_a_node_per_templa
         ("TemplateKeyOwned", calls),
         ("MachineFreshFrame", calls),
         ("FrameForeignSlot", 0),
+        ("ProgramFrameCompile", 2 * calls),
+        ("program_bytes", 4_096),
     ];
     let mut failures: Vec<String> = run.errors.clone();
     for (counter, bound) in bounds {

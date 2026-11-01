@@ -1873,6 +1873,7 @@ impl Engine<'_> {
         node: NodeId,
         ty: EvalTy,
     ) -> Result<Option<CVal>, Internal> {
+        CountedWalk::FrameValueRead.step();
         let record = self.frame(frame)?;
         Ok(match self.frame_slot(record.owner, node)? {
             Some(slot) => record.values.get(slot, ty).cloned(),

@@ -1,5 +1,6 @@
 mod arg_fact;
 mod arrays;
+mod call_instr;
 mod checks;
 mod compile;
 mod concat_part;

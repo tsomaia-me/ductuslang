@@ -2,7 +2,6 @@ use std::rc::Rc;
 
 use symphonyscript_core::{AttrId, BinaryOp, NativeId};
 
-use super::arg_fact::ArgFact;
 use super::concat_part::ConcatPart;
 use super::fetch_entry::FetchEntry;
 use super::lay::Lay;
@@ -16,7 +15,6 @@ use crate::semantics::analysis::ids::{NodeId, SlotId, WireId};
 use crate::semantics::analysis::item_ref::ItemRef;
 use crate::semantics::analysis::shape_need::ShapeNeed;
 use crate::semantics::builtin::Builtin;
-use crate::semantics::ir::FnId;
 
 #[derive(Debug)]
 pub(crate) enum Instr {
@@ -48,16 +46,11 @@ pub(crate) enum Instr {
     Neg(NodeId, EvalTy),
     Logic(BinaryOp, Lay),
     Arith(BinaryOp, NodeId, EvalTy, Lay),
-    Compare(
-        BinaryOp,
-        Option<(NodeId, EvalTy)>,
-        Option<(NodeId, EvalTy)>,
-        Lay,
-    ),
+    Compare(BinaryOp, EvalTy, Option<NodeId>, Option<NodeId>, Lay),
     FlexPair(u32),
     StrAdd(Lay),
     IntDivFloat(NodeId, EvalTy, bool, Lay),
-    Div(OperandPost, OperandPost, Lay),
+    Div(Rc<(OperandPost, OperandPost)>, Lay),
     FromEnd(NodeId, u32),
     DeferredCheck(NodeId, u32, Lay, bool),
     DeferredSum(NodeId, u32, Lay, bool),
@@ -68,20 +61,12 @@ pub(crate) enum Instr {
     Bytes(NodeId),
     Capacity(NodeId, u32),
     Rand(Rc<[NodeId]>, Lay),
-    Builtin(NodeId, Builtin, EvalTy, Rc<[OperandPost]>, Lay),
+    Builtin(NodeId, Builtin, EvalTy, Rc<Vec<OperandPost>>, Lay),
     Concat(Rc<[ConcatPart]>, Lay),
     FitAnd(NodeId, EvalTy),
     Gate(u32),
     Native(NativeId, u32, Lay),
-    CallWith(
-        NodeId,
-        EvalTy,
-        FnId,
-        Rc<[ArgFact]>,
-        u32,
-        Lay,
-        std::cell::RefCell<Option<super::template_seen::TemplateSeen>>,
-    ),
+    CallWith(Box<super::call_instr::CallInstr>),
     LoopStart(NodeId, EvalTy, u32),
     ForCheck(bool, Lay, u32),
     ForRun(NodeId, Rc<ForNode>, EvalTy, Lay),

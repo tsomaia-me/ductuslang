@@ -273,14 +273,14 @@ impl Engine<'_> {
                     };
                     stack.push(value);
                 }
-                Instr::Compare(op, a_fit, b_fit, lay) => {
+                Instr::Compare(op, ty, a_fit, b_fit, lay) => {
                     let (a, b) = pair(stack, lay)?;
                     let a = match a_fit {
-                        Some((node, ty)) => self.fit(*node, a, *ty)?,
+                        Some(node) => self.fit(*node, a, *ty)?,
                         None => a,
                     };
                     let b = match b_fit {
-                        Some((node, ty)) => self.fit(*node, b, *ty)?,
+                        Some(node) => self.fit(*node, b, *ty)?,
                         None => b,
                     };
                     stack.push(if a.is_error() || b.is_error() {
@@ -319,10 +319,10 @@ impl Engine<'_> {
                     };
                     stack.push(value);
                 }
-                Instr::Div(a_post, b_post, lay) => {
+                Instr::Div(posts, lay) => {
                     let (a, b) = pair(stack, lay)?;
-                    let a = self.operand_post(*a_post, a)?;
-                    let b = self.operand_post(*b_post, b)?;
+                    let a = self.operand_post(posts.0, a)?;
+                    let b = self.operand_post(posts.1, b)?;
                     stack.push(match (a, b) {
                         (CVal::F32(a), CVal::F32(b)) => CVal::F32(a / b),
                         (CVal::F64(a), CVal::F64(b)) => CVal::F64(a / b),
@@ -485,16 +485,16 @@ impl Engine<'_> {
                     let values = operands(stack, *count as usize, lay)?;
                     stack.push(self.native_value(*native, values)?);
                 }
-                Instr::CallWith(node, own, function, facts, count, lay, seen) => {
-                    let count = *count as usize;
+                Instr::CallWith(call) => {
+                    let count = call.count as usize;
                     let mut given = std::mem::take(&mut self.call_args);
-                    peeked_into(stack, count, lay, &mut given)?;
+                    peeked_into(stack, count, &call.lay, &mut given)?;
                     let called = self.call_with(
-                        *node,
-                        *function,
-                        *own,
+                        call.node,
+                        call.function,
+                        call.own,
                         ctx,
-                        (facts, &given, Some(seen)),
+                        (&call.facts, &given, Some(&call.seen)),
                         need,
                     );
                     self.call_args = given;
