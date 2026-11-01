@@ -883,6 +883,12 @@ fn a_member_read_beside_a_cells_cycle_and_an_unknown_dot_call_member_draw_their_
             &["state recent = recent.size\n", clip],
             &[(Code::DeclarationCycle, "recent")],
         ),
+        // C1-10 (G4, the head's decision): after the cycle `recent` is a placeholder, so `.nope`
+        // draws only what every value it could hold draws.
+        (
+            &["let recent = recent.nope\n", clip],
+            &[(Code::DeclarationCycle, "recent")],
+        ),
         (
             &["Clip c:\n    Note/([1].xpast(1))\n"],
             &[(Code::UnknownName, "xpast")],
