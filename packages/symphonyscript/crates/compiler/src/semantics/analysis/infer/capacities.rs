@@ -348,7 +348,7 @@ impl Engine<'_> {
             loc,
             scope,
             format!(
-                "`{name}` grows at every step, so no capacity holds it; a slice such as `[^8..]` around its initializer keeps the newest eight elements"
+                "`{name}` grows at every step, so no capacity holds it; a slice such as `[^8..]` around its rule keeps the newest eight elements"
             ),
         )
     }

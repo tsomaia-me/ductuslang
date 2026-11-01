@@ -297,7 +297,7 @@ impl Engine<'_> {
                     self.hir.expr(decl.value)?.loc,
                     self.source_global,
                     format!(
-                        "`{name}` holds a fixed array, and its initializer yields a variable array"
+                        "`{name}` holds a fixed array, and its rule yields a variable array"
                     ),
                 )?;
             }

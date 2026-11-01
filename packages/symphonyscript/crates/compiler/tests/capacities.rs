@@ -3479,3 +3479,29 @@ fn exhaustive_an_index_read_of_a_disagreeing_literal_its_slice_or_a_let_holding_
     let failures = disagreeing_literal_read_rows(&symphonyscript_fixtures::Rows::Every);
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
+
+#[test]
+fn the_summaries_of_a_derived_cells_capacity_faults_call_the_expression_after_the_equals_its_rule_c1_13()
+ {
+    for (text, code) in [
+        (
+            "state note(60)\nstate recent = recent.past(1, []) + [note]\n",
+            Code::UnboundedState,
+        ),
+        (
+            "state held([]): i32[..4]\nstate t: i32[3] = held\n",
+            Code::VariableArray,
+        ),
+    ] {
+        let found = support::checked(text);
+        let summary = found
+            .iter()
+            .find(|diagnostic| diagnostic.code == code)
+            .map(|diagnostic| diagnostic.summary.clone())
+            .unwrap_or_default();
+        assert!(
+            summary.contains("its rule") && !summary.contains("initializer"),
+            "{text}{summary}"
+        );
+    }
+}
