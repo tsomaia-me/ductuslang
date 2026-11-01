@@ -44,7 +44,7 @@ def recursing(total):
 
 def inlining(total):
     note = "    Note/(" + " + ".join(f"f(i, {index})" for index in range(CALLS_PER_NOTE)) + ")\n"
-    return "input i = 1\nfn f(x, k): x + k\nClip c:\n" + note * (total // CALLS_PER_NOTE)
+    return "state i(1)\nfn f(x, k): x + k\nClip c:\n" + note * (total // CALLS_PER_NOTE)
 
 
 def nested(opening, middle, closing, depth):
@@ -54,7 +54,7 @@ def nested(opening, middle, closing, depth):
 def deep_expressions(depths):
     depth = {construct: depths.get(construct, 1) for construct in CONSTRUCTS}
     interpolated = nested('"{', "1", '}"', depth["interpolation"])
-    return (f"input x = true\nfn f(v): v\n"
+    return (f"state x(true)\nfn f(v): v\n"
             f"let a = {nested('(', '1', ')', depth['parentheses'])}\n"
             f"let b = {nested('[', '1', ']', depth['array and index'])}\n"
             f"let c = {nested('f(', '1', ')', depth['call'])}\n"

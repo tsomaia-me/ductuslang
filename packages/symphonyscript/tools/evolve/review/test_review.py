@@ -255,11 +255,11 @@ class Review(unittest.TestCase):
         self.assertEqual(inlined.count("f(i, "), 1_000_000)
         self.assertEqual({line.count("f(i, ") for line in inlined.splitlines()[3:]}, {100})
         self.assertEqual(figures.inlining(200).splitlines()[:4],
-                         ["input i = 1", "fn f(x, k): x + k", "Clip c:",
+                         ["state i(1)", "fn f(x, k): x + k", "Clip c:",
                           "    Note/(" + " + ".join(f"f(i, {index})" for index in range(100)) + ")"])
         self.assertEqual(len(figures.inlining(200).splitlines()), 5)
         expressions = figures.deep_expressions(dict.fromkeys(figures.CONSTRUCTS, 3))
-        self.assertEqual(expressions, 'input x = true\nfn f(v): v\nlet a = (((1)))\nlet b = [[[1]]]\n'
+        self.assertEqual(expressions, 'state x(true)\nfn f(v): v\nlet a = (((1)))\nlet b = [[[1]]]\n'
                                       'let c = f(f(f(1)))\nlet d = not not not x\nlet e = "{"{"{1}"}"}"\n'
                                       'let g = ---1\nClip top:\n    Note/(((60))) when d\n'
                                       '    Note/(f(a) + c + g + b[0][0][0])\n')
