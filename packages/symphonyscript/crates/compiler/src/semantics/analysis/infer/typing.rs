@@ -1,6 +1,7 @@
 use symphonyscript_core::Scalar;
 
 use crate::semantics::analysis::fast_hash::{FastMap, FastSet};
+use crate::semantics::analysis::i64_position::I64Position;
 use crate::semantics::analysis::ids::{BindingId, NodeId, ScopeId};
 use crate::semantics::ir::{ExprId, Loc};
 
@@ -25,6 +26,7 @@ pub(crate) struct Typing {
     pub natural: FastMap<BindingId, Option<Scalar>>,
     pub shapes: FastMap<(NodeId, Option<Scalar>), Option<Vec<u32>>>,
     pub detached_walks: FastSet<(ExprId, ScopeId)>,
+    pub placeholder_bounds: Vec<(NodeId, I64Position, Option<Loc>, bool)>,
     pub measured_elements: Vec<NodeId>,
     pub open_reads: FastSet<NodeId>,
     pub deferred_layouts: FastSet<BindingId>,

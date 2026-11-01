@@ -680,3 +680,112 @@ fn an_index_an_offset_from_the_end_or_a_slice_of_a_single_value_draws_not_an_arr
     ];
     support::assert_rows_in_every_order(&symphonyscript_fixtures::vocabulary(), rows);
 }
+
+const RESOLVED_PLACEHOLDER_BASES: [(&[&str], &str, (Code, &str)); 4] = [
+    (&[], "([1, true] + [1])", (Code::TypeMismatch, "[1, true]")),
+    (&[], "(1 +)", (Code::ExpressionSyntax, ")")),
+    (
+        &["let a = 1 + true\n"],
+        "a",
+        (Code::OperandType, "1 + true"),
+    ),
+    (&[], "[[1], 2]", (Code::RaggedArray, "[[1], 2]")),
+];
+
+const HELD_FAULTS: [(&str, Option<(Code, bool)>); 4] = [
+    ("1.5", Some((Code::IndexType, true))),
+    ("2 ** 63", Some((Code::IndexOutOfRange, false))),
+    ("true", Some((Code::IndexType, true))),
+    ("1", None),
+];
+
+const HELD_FORMS: [(&str, bool); 5] = [
+    ("{base}[{b}..]", false),
+    ("{base}[..{b}]", false),
+    ("{base}[^{b}..]", false),
+    ("{base}[{b}]", false),
+    ("{base}[^{b}]", true),
+];
+
+const HELD_PLACES: [(&[&str], bool); 4] = [
+    (&["Clip c:\n    Note/({read})\n"], true),
+    (&["let r = {read}\n", "Clip c:\n    Note/(r)\n"], true),
+    (
+        &["fn f(n): n + {read}\n", "Clip c:\n    Note/(f(1))\n"],
+        true,
+    ),
+    (
+        &["Clip c:\n    Note/(if 1 > 2 then {read} else 0)\n"],
+        false,
+    ),
+];
+
+fn resolved_placeholder_base_rows(rows: &Rows) -> Vec<String> {
+    let compiler =
+        Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("the vocabulary compiles");
+    let mut failures = Vec::new();
+    for (base, (declarations, value, (base_code, base_span))) in
+        RESOLVED_PLACEHOLDER_BASES.iter().enumerate()
+    {
+        for (fault, (bound, drawn)) in HELD_FAULTS.iter().enumerate() {
+            for (form, (shape, at_read)) in HELD_FORMS.iter().enumerate() {
+                let suffixes: &[&str] = if form < 3 { &["[0]", ".size"] } else { &[""] };
+                for (read, suffix) in suffixes.iter().enumerate() {
+                    for (place, (items, taken)) in HELD_PLACES.iter().enumerate() {
+                        let held = shape.replace("{base}", value).replace("{b}", bound);
+                        let read_text = format!("{held}{suffix}");
+                        let mut program: Vec<String> = declarations
+                            .iter()
+                            .map(|item| (*item).to_string())
+                            .collect();
+                        program.extend(items.iter().map(|item| item.replace("{read}", &read_text)));
+                        let mut expected = vec![(*base_code, (*base_span).to_string())];
+                        match drawn {
+                            Some((code, kind)) if *kind || *taken => {
+                                let spanned = if *kind && *at_read {
+                                    held.clone()
+                                } else {
+                                    (*bound).to_string()
+                                };
+                                expected.push((*code, spanned));
+                            }
+                            Some(_) | None => {}
+                        }
+                        expected.sort();
+                        for (order, reversed) in [false, true].into_iter().enumerate() {
+                            if !rows.take(&[base, fault, form, read, place, order]) {
+                                continue;
+                            }
+                            let mut ordered = program.clone();
+                            if reversed {
+                                ordered.reverse();
+                            }
+                            let text = ordered.concat();
+                            let found = support::error_texts(&compiler, &text);
+                            if found != expected {
+                                failures.push(format!(
+                                    "381: {text}\n  draws {found:?}\n  expected {expected:?}"
+                                ));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    failures
+}
+
+#[test]
+fn a_bound_or_an_index_beside_a_base_resolve_made_a_placeholder_draws_its_own_fault_381() {
+    let failures = covered(resolved_placeholder_base_rows);
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_a_bound_or_an_index_beside_a_base_resolve_made_a_placeholder_draws_its_own_fault_381()
+{
+    let failures = resolved_placeholder_base_rows(&Rows::Every);
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}

@@ -105,6 +105,10 @@ const DECIDING_NONE: &[(&str, &str)] = &[
         "where a diagnostic stands beside a fault, ARCHITECTURE §7's placeholder rule",
     ),
     (
+        "analysis/infer/positions.rs beside_placeholder_base",
+        "a bound or an index beside a placeholder base draws its own fault, ARCHITECTURE §7's placeholder rule",
+    ),
+    (
         "analysis/infer/positions.rs child_flow",
         "the expected type that flows into an operand, SPEC §4.2",
     ),

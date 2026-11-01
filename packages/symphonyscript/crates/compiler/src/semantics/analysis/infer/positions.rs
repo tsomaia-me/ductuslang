@@ -12,6 +12,7 @@ use crate::semantics::analysis::c_val::CVal;
 use crate::semantics::analysis::engine::Engine;
 use crate::semantics::analysis::eval_ty::EvalTy;
 use crate::semantics::analysis::evaluation::own_type;
+use crate::semantics::analysis::i64_position::I64Position;
 use crate::semantics::analysis::ids::{InstanceId, NodeId, ScopeId, WireId};
 use crate::semantics::analysis::is_float::is_float;
 use crate::semantics::analysis::item_ref::ItemRef;
@@ -287,6 +288,7 @@ impl Engine<'_> {
             }
             let kind = self.hir.expr(expr)?.kind.clone();
             let loc = self.hir.expr(expr)?.loc;
+            self.beside_placeholder_base(&kind, (loc, scope), passed_over)?;
             let (group, rank, landing) = match (flow, &kind) {
                 ((group, rank, None), kind) if !matches!(kind, ExprKind::Call(..)) => {
                     (group, rank, Some((expr, scope)))
@@ -562,6 +564,66 @@ impl Engine<'_> {
         Ok(position
             .and_then(|position| usize::try_from(position).ok())
             .filter(|position| *position < length))
+    }
+
+    fn beside_placeholder_base(
+        &mut self,
+        kind: &ExprKind,
+        (loc, scope): (Loc, ScopeId),
+        passed_over: bool,
+    ) -> Result<(), Internal> {
+        let (base, held): (ExprId, Vec<(ExprId, I64Position, Option<Loc>)>) = match kind {
+            ExprKind::Index(base, index) => (*base, vec![(*index, I64Position::Index, None)]),
+            ExprKind::IndexFromEnd(base, offset) => {
+                (*base, vec![(*offset, I64Position::Offset, Some(loc))])
+            }
+            ExprKind::Slice { base, lower, upper } => (
+                *base,
+                lower
+                    .iter()
+                    .chain(upper.iter())
+                    .map(|bound| (bound.value, I64Position::SliceBound, None))
+                    .collect(),
+            ),
+            ExprKind::Error
+            | ExprKind::Number(..)
+            | ExprKind::Bool(_)
+            | ExprKind::Str(_)
+            | ExprKind::Name(_)
+            | ExprKind::Variant { .. }
+            | ExprKind::To
+            | ExprKind::Convert(..)
+            | ExprKind::Array(_)
+            | ExprKind::Field(..)
+            | ExprKind::History { .. }
+            | ExprKind::Stepped(_)
+            | ExprKind::Call(..)
+            | ExprKind::Unary(..)
+            | ExprKind::Binary(..)
+            | ExprKind::If(..)
+            | ExprKind::Match { .. }
+            | ExprKind::For(_) => return Ok(()),
+        };
+        let placeholder = match self.memo.exprs.get(&(base, scope)).cloned() {
+            Some(Val::Error) => true,
+            Some(Val::Scalar(node)) if !self.arrays.contains(&node) => {
+                self.demand_sig(node)?.is_error()
+            }
+            Some(Val::Scalar(_) | Val::Array(_)) | None => false,
+        };
+        if !placeholder {
+            return Ok(());
+        }
+        for (expr, position, site) in held {
+            if let Some(Val::Scalar(node)) = self.memo.exprs.get(&(expr, scope))
+                && !self.arrays.contains(node)
+            {
+                self.typing
+                    .placeholder_bounds
+                    .push((*node, position, site, passed_over));
+            }
+        }
+        Ok(())
     }
 
     fn holds_a_syntax_gap(&self, kind: &ExprKind) -> Result<bool, Internal> {

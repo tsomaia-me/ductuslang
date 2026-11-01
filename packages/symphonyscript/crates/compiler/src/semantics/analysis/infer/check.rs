@@ -513,6 +513,44 @@ impl Engine<'_> {
         Ok(())
     }
 
+    pub(super) fn bounds_beside_placeholders(&mut self) -> Result<(), Internal> {
+        for (node, position, site, passed_over) in
+            std::mem::take(&mut self.typing.placeholder_bounds)
+        {
+            let sig = self.demand_sig(node)?;
+            if sig.is_error() {
+                continue;
+            }
+            if !matches!(sig.kind, Kind::Int | Kind::Any) {
+                let message = match position {
+                    I64Position::SliceBound => "a slice bound is an integer",
+                    I64Position::Index | I64Position::Offset => "an index is an integer",
+                };
+                match site {
+                    Some(loc) => {
+                        let scope = self.node(node)?.scope;
+                        self.error(Code::IndexType, loc, scope, message)?;
+                    }
+                    None => self.error_at_node(Code::IndexType, node, message)?,
+                }
+                continue;
+            }
+            if position == I64Position::SliceBound && sig.family.is_some() {
+                self.error_at_node(Code::UnitOperation, node, "a slice bound is a plain number")?;
+                continue;
+            }
+            if passed_over || sig.reactive || sig.frame {
+                continue;
+            }
+            if let CVal::Int(value) = self.demand_cval(node, own_type(&sig, EvalTy::Exact))?
+                && i64::try_from(value).is_err()
+            {
+                self.error_at_node(Code::IndexOutOfRange, node, outside_i64(position, value))?;
+            }
+        }
+        Ok(())
+    }
+
     fn bound_outside_i64(&mut self, bound: NodeId) -> Result<(), Internal> {
         let position_ty = own_type(&self.known_sig(bound)?, EvalTy::Exact);
         if let Some(CVal::Int(value)) = self.chosen(bound, position_ty)?

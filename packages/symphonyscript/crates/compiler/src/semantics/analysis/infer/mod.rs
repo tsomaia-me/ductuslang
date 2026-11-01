@@ -193,6 +193,7 @@ impl Engine<'_> {
             };
             self.check_detached(node, typed, passed_over, &mut roots)?;
         }
+        self.bounds_beside_placeholders()?;
         for node in self.typing.measured_elements.clone() {
             self.demand_sig(node)?;
             self.check_detached(node, (None, false), true, &mut roots)?;
