@@ -349,6 +349,7 @@ impl Engine<'_> {
                 if joins {
                     self.arrays.insert(settled);
                 }
+                self.fact_settled(settled);
                 self.memo.deferred_sums.insert(settled);
                 return Ok(Some(Val::Scalar(settled)));
             }
@@ -515,6 +516,7 @@ impl Engine<'_> {
         code: Code,
         message: impl Into<String>,
     ) {
+        self.fact_settled(node);
         self.memo.shapes.entry(node).or_insert_with(|| ShapeNeed {
             lengths,
             code,
@@ -533,6 +535,7 @@ impl Engine<'_> {
         if let Val::Scalar(node) = val
             && self.arrays.contains(node)
         {
+            self.fact_settled(*node);
             self.memo.shapes.entry(*node).or_insert_with(|| ShapeNeed {
                 lengths: Vec::new(),
                 code,
@@ -926,6 +929,7 @@ impl Engine<'_> {
                         && let Some(need) = self.memo.shapes.get_mut(node)
                     {
                         need.at = Some((loc, scope));
+                        self.fact_settled(*node);
                     }
                     elements.extend(projected);
                 }

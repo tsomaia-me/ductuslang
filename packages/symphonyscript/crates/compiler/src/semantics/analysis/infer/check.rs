@@ -832,7 +832,7 @@ impl Engine<'_> {
         Ok(false)
     }
 
-    pub(super) fn incompatibility(
+    pub(in crate::semantics::analysis) fn incompatibility(
         &mut self,
         node: NodeId,
         sig: &Sig,

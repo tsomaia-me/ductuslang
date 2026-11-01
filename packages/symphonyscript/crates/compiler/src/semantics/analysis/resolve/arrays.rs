@@ -370,6 +370,7 @@ impl Engine<'_> {
             None => return Ok(None),
         };
         let index = self.push_node(Op::Binary(BinaryOp::Sub, length, offset), loc, scope)?;
+        self.fact_settled(index);
         self.memo.from_end_indexes.insert(index);
         Ok(Some(index))
     }

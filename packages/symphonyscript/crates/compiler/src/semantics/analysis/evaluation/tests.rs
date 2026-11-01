@@ -42,13 +42,7 @@ fn a_miss_in_the_recursive_evaluators_own_state_is_an_internal_error() {
         let id = CallId(engine.memo.call_keys.intern(key.parts()));
         let mut need = Vec::new();
         let mut evaluated = |engine: &mut crate::semantics::analysis::Engine<'_>, ctx| {
-            engine.recursive(
-                call,
-                (function, Vec::new().into()),
-                EvalTy::Exact,
-                ctx,
-                &mut need,
-            )
+            engine.call_with(call, function, EvalTy::Exact, ctx, (&[], &[]), &mut need)
         };
 
         engine
@@ -70,6 +64,8 @@ fn a_miss_in_the_recursive_evaluators_own_state_is_an_internal_error() {
                 walked: Default::default(),
                 rerun: Default::default(),
                 spares: Vec::new(),
+                stack: Vec::new(),
+                resumes: Vec::new(),
             },
         );
         assert_eq!(
@@ -120,6 +116,8 @@ fn a_miss_in_the_recursive_evaluators_own_state_is_an_internal_error() {
             walked: Default::default(),
             rerun: Default::default(),
             spares: Vec::new(),
+            stack: Vec::new(),
+            resumes: Vec::new(),
         });
         assert_eq!(engine.frame_arg(0, 0), Err(Internal::missed("argument")));
         assert_eq!(
@@ -142,7 +140,7 @@ fn a_miss_in_the_recursive_evaluators_own_state_is_an_internal_error() {
         arg_sig.frame = true;
         engine.memo.sigs.insert(arg, arg_sig);
         assert_eq!(
-            engine.evaluate(arg, EvalTy::Exact, Ctx::Global, &mut need),
+            engine.run_eval(arg, EvalTy::Exact, &mut need).map(|_| ()),
             Err(Internal::missed("evaluation frame"))
         );
     });

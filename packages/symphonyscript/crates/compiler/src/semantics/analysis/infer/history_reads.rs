@@ -364,6 +364,7 @@ impl Engine<'_> {
             affected.sort_by_key(|position| rank.get(*position).copied().unwrap_or(0));
             for position in &affected {
                 if let Some(node) = members.get(*position) {
+                    self.fact_settled(*node);
                     self.memo.sigs.remove(node);
                 }
             }
@@ -383,6 +384,7 @@ impl Engine<'_> {
         if moved {
             self.restore(&saved);
             for node in &members {
+                self.fact_settled(*node);
                 self.memo.sigs.remove(node);
             }
             if !self.run_members(&members, &order, need)? {
@@ -463,6 +465,7 @@ impl Engine<'_> {
     ) -> Result<bool, Internal> {
         self.restore(&saved);
         for node in members {
+            self.fact_settled(*node);
             self.memo.sigs.remove(node);
         }
         for (read, ..) in reads {
@@ -523,6 +526,7 @@ impl Engine<'_> {
                     };
                     let sig = self.read_sig(binding, init)?;
                     self.memo.history_kinds.insert(read, Some(sig));
+                    self.fact_settled(read);
                     self.memo.sigs.remove(&read);
                     self.forget_drawn(&[read]);
                     self.demand_sig(read)?;
@@ -576,6 +580,7 @@ impl Engine<'_> {
             crate::semantics::counted_walk::CountedWalk::HistoryReadsInvalidateReaders.step();
             for reader in readers.get(&node).into_iter().flatten() {
                 if seen.insert(*reader) {
+                    self.fact_settled(*reader);
                     self.memo.sigs.remove(reader);
                     self.memo.history_kinds.remove(reader);
                     removed.push(*reader);

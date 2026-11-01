@@ -496,6 +496,7 @@ impl Engine<'_> {
                     return Err(Internal::missed("enum"));
                 };
                 for bare in self.value_bares(node)? {
+                    self.fact_settled(bare);
                     self.memo.bare_enums.insert(bare, id);
                     let Op::Bare(name) = &self.node(bare)?.op else {
                         continue;

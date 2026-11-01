@@ -159,10 +159,12 @@ pub(crate) enum CountedWalk {
     MachineFreshFrame,
     FrameForeignSlot,
     FrameReadClone,
+    ProgramCompile,
+    ProgramStep,
 }
 
 #[cfg(test)]
-const WALKS: usize = 159;
+const WALKS: usize = 161;
 
 #[cfg(test)]
 thread_local! {
@@ -331,6 +333,8 @@ impl CountedWalk {
         CountedWalk::MachineFreshFrame,
         CountedWalk::FrameForeignSlot,
         CountedWalk::FrameReadClone,
+        CountedWalk::ProgramCompile,
+        CountedWalk::ProgramStep,
     ];
 
     pub(crate) fn step(self) {

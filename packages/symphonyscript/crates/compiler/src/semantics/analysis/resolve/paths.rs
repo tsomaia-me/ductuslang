@@ -398,6 +398,7 @@ impl Engine<'_> {
                 .push(head);
         }
         self.memo.frame_joins.insert(head);
+        self.memo.frame_starts.insert(read.start);
         self.memo.frame_reads.insert(head, std::rc::Rc::new(read));
         Ok(())
     }

@@ -1,5 +1,7 @@
 use super::frame::Frame;
 use super::frame_spare::FrameSpare;
+use super::resume::Resume;
+use crate::semantics::analysis::c_val::CVal;
 use crate::semantics::analysis::eval_ty::EvalTy;
 use crate::semantics::analysis::fast_hash::FastSet;
 use crate::semantics::analysis::ids::{CallId, NodeId};
@@ -15,4 +17,6 @@ pub(crate) struct Machine {
     pub deep_warned: bool,
     pub walked: FastSet<NodeId>,
     pub spares: Vec<FrameSpare>,
+    pub stack: Vec<CVal>,
+    pub resumes: Vec<Resume>,
 }

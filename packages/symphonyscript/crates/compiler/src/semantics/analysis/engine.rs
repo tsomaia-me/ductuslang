@@ -108,6 +108,9 @@ pub(crate) struct Engine<'a> {
     pub frame_need: Vec<(NodeId, super::eval_ty::EvalTy)>,
     pub frame_pushed: bool,
     pub call_scratch: super::call_scratch::CallScratch,
+    pub call_args: Vec<super::c_val::CVal>,
+    pub eval_stack: Vec<super::c_val::CVal>,
+    pub parents: Vec<u8>,
     pub fault_frame: Option<usize>,
     pub sink: super::sink::Sink,
     pub fault_count: u32,
@@ -191,6 +194,9 @@ impl<'a> Engine<'a> {
             frame_need: Vec::new(),
             frame_pushed: false,
             call_scratch: Default::default(),
+            call_args: Vec::new(),
+            eval_stack: Vec::new(),
+            parents: Vec::new(),
             fault_frame: None,
             sink: super::sink::Sink::Reached,
             fault_count: 0,
@@ -661,6 +667,16 @@ impl<'a> Engine<'a> {
         }
     }
 
+    pub(in crate::semantics::analysis) fn fact_settled(&mut self, node: NodeId) {
+        if self.memo.sigs.contains_key(&node) {
+            self.memo.fact_epoch = self.memo.fact_epoch.wrapping_add(1);
+        }
+    }
+
+    pub(super) fn cycles_known(&self) -> bool {
+        !self.cyclic.is_empty()
+    }
+
     pub(super) fn poisoned(&self, dep: Query) -> bool {
         self.current
             .is_some_and(|current| self.cyclic.contains(&(current, dep)))
@@ -912,6 +928,12 @@ impl<'a> Engine<'a> {
             }
             None => None,
         };
+        for operand in op.operands() {
+            if let Some(parents) = self.parents.get_mut(operand.index()) {
+                *parents = parents.saturating_add(1).min(2);
+            }
+        }
+        self.parents.push(0);
         self.nodes.push(Node {
             op,
             loc,

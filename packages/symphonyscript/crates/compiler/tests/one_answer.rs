@@ -9,8 +9,8 @@ const DECIDING_NONE: &[(&str, &str)] = &[
         "the enum a bare variant takes from its expected type, SPEC §4.2's enum flow",
     ),
     (
-        "analysis/evaluation/run.rs compute",
-        "the compile-time value of a node, evaluated by SPEC §4.6",
+        "analysis/evaluation/compile.rs plan_op",
+        "the compile-time value of a node, evaluated by SPEC §4.6: the one place that states what each operator computes",
     ),
     (
         "analysis/evaluation/run.rs fit",

@@ -2,103 +2,76 @@ use super::checks::Checks;
 use super::ctx::Ctx;
 use super::frame::Frame;
 use super::frame_spare::FrameSpare;
+use super::loop_found::LoopFound;
 use super::loop_items::LoopItems;
 use super::loop_run::LoopRun;
 use super::machine::Machine;
 use super::machine_key::MachineKey;
 use super::mode::Mode;
-use super::own_type::own_type;
 use crate::semantics::Internal;
 use crate::semantics::analysis::c_val::CVal;
 use crate::semantics::analysis::engine::Engine;
 use crate::semantics::analysis::eval_ty::EvalTy;
-use crate::semantics::analysis::eval_ty_of::eval_ty_of;
 use crate::semantics::analysis::fast_hash::FastSet;
-use crate::semantics::analysis::for_iterable::ForIterable;
 use crate::semantics::analysis::for_node::ForNode;
 use crate::semantics::analysis::ids::{NodeId, ScopeId};
-use crate::semantics::analysis::kind::Kind;
 use crate::semantics::analysis::query::Query;
 use crate::semantics::analysis::reachable::Reachable;
 use crate::semantics::analysis::sink::Sink;
 use crate::semantics::analysis::slot_owner::SlotOwner;
-use crate::semantics::analysis::some::some;
-use crate::semantics::analysis::width::Width;
 
 impl Engine<'_> {
-    pub(super) fn for_value(
+    pub(super) fn loop_value(
+        &self,
+        node: NodeId,
+        own: EvalTy,
+        ctx: Ctx,
+    ) -> Result<LoopFound, Internal> {
+        let Ctx::Frame(frame) = ctx else {
+            return Ok(LoopFound::Missing);
+        };
+        let record = self.frame(frame)?;
+        if let Some(slot) = self.frame_slot(record.owner, node)?
+            && let Some(value) = record.loops.get(slot, own)
+        {
+            return Ok(LoopFound::Value(value.clone()));
+        }
+        Ok(LoopFound::Missing)
+    }
+
+    pub(super) fn loop_start(
+        &mut self,
+        node: NodeId,
+        own: EvalTy,
+        ctx: Ctx,
+        need: &mut Vec<Query>,
+    ) -> Result<LoopFound, Internal> {
+        if let Ctx::Frame(_) = ctx {
+            return self.loop_value(node, own, ctx);
+        }
+        let request = self.sink;
+        self.link(&request, Reachable::Loop(node, own));
+        let key = MachineKey::Loop(node, own);
+        let Some(machine) = self.machines.remove(&key) else {
+            return Ok(LoopFound::Missing);
+        };
+        self.active = Some(machine);
+        Ok(match self.drive(key, node, need)? {
+            Some(value) => LoopFound::Value(value),
+            None => LoopFound::Pending,
+        })
+    }
+
+    pub(super) fn for_run(
         &mut self,
         node: NodeId,
         for_node: &ForNode,
-        (own, flows): (EvalTy, bool),
+        own: EvalTy,
+        (items, start): (LoopItems, CVal),
         ctx: Ctx,
         need: &mut Vec<Query>,
     ) -> Result<Option<CVal>, Internal> {
         let key = MachineKey::Loop(node, own);
-        match ctx {
-            Ctx::Frame(frame) => {
-                let record = self.frame(frame)?;
-                if let Some(slot) = self.frame_slot(record.owner, node)?
-                    && let Some(value) = record.loops.get(slot, own)
-                {
-                    return Ok(Some(value.clone()));
-                }
-            }
-            Ctx::Global => {
-                let request = self.sink;
-                self.link(&request, Reachable::Loop(node, own));
-                if let Some(machine) = self.machines.remove(&key) {
-                    self.active = Some(machine);
-                    return self.drive(key, node, need);
-                }
-            }
-        }
-        let items = match for_node.iterable {
-            ForIterable::Range(start, end) => {
-                let start = self.child(start, EvalTy::Exact, ctx, need)?;
-                let end = self.child(end, EvalTy::Exact, ctx, need)?;
-                match (some!(start), some!(end)) {
-                    (CVal::Int(start), CVal::Int(end)) => LoopItems::Range {
-                        start,
-                        count: usize::try_from(end.saturating_sub(start).max(0))
-                            .unwrap_or(usize::MAX),
-                    },
-                    _ => return Ok(Some(CVal::Error)),
-                }
-            }
-            ForIterable::Values(values) => {
-                let sig = some!(self.sig(values, need));
-                let element = for_node.element.map(|slot| self.slot(slot)).transpose()?;
-                let annotated = element.and_then(|slot| match (slot.annotated, slot.sig.width) {
-                    (true, Width::Fixed(scalar)) => Some(eval_ty_of(Some(scalar))),
-                    _ => None,
-                });
-                let ty = if let Some(annotated) = annotated {
-                    annotated
-                } else if sig.kind == Kind::Int && sig.width == Width::Flexible {
-                    EvalTy::Exact
-                } else {
-                    own_type(&sig, EvalTy::Default)
-                };
-                let value = some!(self.child(values, ty, ctx, need)?);
-                let value = match annotated {
-                    Some(annotated) => self.fit(values, value, annotated)?,
-                    None => value,
-                };
-                match value {
-                    CVal::Array(array) => LoopItems::Array(array),
-                    CVal::Int(_)
-                    | CVal::F32(_)
-                    | CVal::F64(_)
-                    | CVal::Bool(_)
-                    | CVal::Enum(..)
-                    | CVal::Str(_)
-                    | CVal::Node(_)
-                    | CVal::Error => return Ok(Some(CVal::Error)),
-                }
-            }
-        };
-        let start = some!(self.typed_child(for_node.start, (own, flows), ctx, need)?);
         if start.is_error() || items.count() == 0 {
             return Ok(Some(start));
         }
@@ -185,6 +158,8 @@ impl Engine<'_> {
                     deep_warned: false,
                     walked: FastSet::default(),
                     spares: Vec::new(),
+                    stack: Vec::new(),
+                    resumes: Vec::new(),
                 });
                 self.drive(key, node, need)
             }

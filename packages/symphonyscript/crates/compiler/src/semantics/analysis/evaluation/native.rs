@@ -2,18 +2,10 @@ use std::rc::Rc;
 
 use symphonyscript_core::{NativeArg, NativeId, NativeOut, NativeType, Scalar, Ty, Value};
 
-use super::ctx::Ctx;
-use super::is_int_ty::is_int_ty;
-use super::of_scalar::of_scalar;
 use crate::semantics::Internal;
 use crate::semantics::analysis::c_array::CArray;
 use crate::semantics::analysis::c_val::CVal;
 use crate::semantics::analysis::engine::Engine;
-use crate::semantics::analysis::ids::NodeId;
-use crate::semantics::analysis::kind::Kind;
-use crate::semantics::analysis::query::Query;
-use crate::semantics::analysis::some::some;
-use crate::semantics::analysis::width::Width;
 
 enum Argument {
     Value(Value),
@@ -22,35 +14,19 @@ enum Argument {
 }
 
 impl Engine<'_> {
-    pub(super) fn native(
+    pub(super) fn native_value(
         &mut self,
         native: NativeId,
-        args: &[NodeId],
-        ctx: Ctx,
-        need: &mut Vec<Query>,
-    ) -> Result<Option<CVal>, Internal> {
+        values: Vec<CVal>,
+    ) -> Result<CVal, Internal> {
         let decl = self
             .vocabulary
             .native(native)
             .ok_or(Internal::missed("native function"))?;
         let signature = &decl.signature;
-        if !some!(self.native_arguments_fit(args, &signature.params, ctx, need)?) {
-            return Ok(Some(CVal::Error));
-        }
-        let mut values = Vec::with_capacity(args.len());
-        let mut missing = false;
-        for (arg, param) in args.iter().zip(&signature.params) {
-            let ty = native_ty(param);
-            let value = self.child(*arg, of_scalar(ty.scalar), ctx, need)?;
-            missing |= value.is_none();
-            values.push(value);
-        }
-        if missing {
-            return Ok(None);
-        }
         let mut arguments = Vec::with_capacity(values.len());
         let mut rows_held = Vec::with_capacity(values.len());
-        for (value, param) in values.into_iter().flatten().zip(&signature.params) {
+        for (value, param) in values.into_iter().zip(&signature.params) {
             rows_held.push(match &value {
                 CVal::Array(array) => array.len(),
                 _ => 0,
@@ -64,16 +40,16 @@ impl Engine<'_> {
                     for leaf in array.leaves() {
                         match value_of(&leaf, ty.scalar) {
                             Some(value) => elements.push(value),
-                            None => return Ok(Some(CVal::Error)),
+                            None => return Ok(CVal::Error),
                         }
                     }
                     Argument::Elements(elements)
                 }
                 leaf if !array_param => match value_of(&leaf, ty.scalar) {
                     Some(value) => Argument::Value(value),
-                    None => return Ok(Some(CVal::Error)),
+                    None => return Ok(CVal::Error),
                 },
-                _ => return Ok(Some(CVal::Error)),
+                _ => return Ok(CVal::Error),
             };
             arguments.push(argument);
         }
@@ -135,10 +111,10 @@ impl Engine<'_> {
         #[cfg(test)]
         SLOTS.with(|held| held.set(held.get() + buffer.capacity() as u64));
         if result.scalar == Scalar::Str {
-            return Ok(Some(CVal::Str(Rc::from(text.as_str()))));
+            return Ok(CVal::Str(Rc::from(text.as_str())));
         }
         if result.is_scalar() && !variable {
-            return Ok(Some(buffer.first().map_or(CVal::Error, cval_of)));
+            return Ok(buffer.first().map_or(CVal::Error, cval_of));
         }
         let live = if variable {
             written - written % row.max(1)
@@ -148,50 +124,14 @@ impl Engine<'_> {
         let mut level: Vec<CVal> = buffer.iter().take(live).map(cval_of).collect();
         for width in inner {
             if width == 0 {
-                return Ok(Some(CVal::Error));
+                return Ok(CVal::Error);
             }
             level = level
                 .chunks(width)
                 .map(|chunk| CVal::Array(CArray::new(chunk.to_vec())))
                 .collect();
         }
-        Ok(Some(CVal::Array(CArray::new(level))))
-    }
-}
-
-impl Engine<'_> {
-    fn native_arguments_fit(
-        &mut self,
-        args: &[NodeId],
-        params: &[NativeType],
-        ctx: Ctx,
-        need: &mut Vec<Query>,
-    ) -> Result<Option<bool>, Internal> {
-        let mut fits = true;
-        for (arg, param) in args.iter().zip(params) {
-            let scalar = native_ty(param).scalar;
-            let Some(leaves) = self.native_argument(*arg, Some(scalar))? else {
-                fits = false;
-                continue;
-            };
-            for leaf in leaves {
-                let sig = some!(self.sig(leaf, need));
-                if sig.is_error() {
-                    fits = false;
-                    continue;
-                }
-                if !self.compatible(leaf, &sig, scalar, false)? {
-                    fits = false;
-                    continue;
-                }
-                let ty = of_scalar(scalar);
-                if sig.kind == Kind::Int && sig.width == Width::Flexible && is_int_ty(ty) {
-                    let value = some!(self.child(leaf, ty, ctx, need)?);
-                    fits &= !self.fit(leaf, value, ty)?.is_error();
-                }
-            }
-        }
-        Ok(Some(fits))
+        Ok(CVal::Array(CArray::new(level)))
     }
 }
 

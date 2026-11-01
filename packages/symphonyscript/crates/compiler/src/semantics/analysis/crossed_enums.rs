@@ -11,6 +11,18 @@ impl Engine<'_> {
         lhs: NodeId,
         rhs: NodeId,
     ) -> Result<bool, Internal> {
+        if !self.enums_cross(lhs, rhs)? {
+            return Ok(false);
+        }
+        self.error_at_node(
+            Code::OperandType,
+            node,
+            "`is` compares two numbers, `bool`s, values of one enum or strings",
+        )?;
+        Ok(true)
+    }
+
+    pub(super) fn enums_cross(&self, lhs: NodeId, rhs: NodeId) -> Result<bool, Internal> {
         let (left, right) = (self.known_sig(lhs)?.kind, self.known_sig(rhs)?.kind);
         if left != Kind::Bare && right != Kind::Bare {
             return Ok(false);
@@ -30,14 +42,6 @@ impl Engine<'_> {
         else {
             return Ok(false);
         };
-        if left == right {
-            return Ok(false);
-        }
-        self.error_at_node(
-            Code::OperandType,
-            node,
-            "`is` compares two numbers, `bool`s, values of one enum or strings",
-        )?;
-        Ok(true)
+        Ok(left != right)
     }
 }

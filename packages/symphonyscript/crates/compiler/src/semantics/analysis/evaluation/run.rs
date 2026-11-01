@@ -1,45 +1,37 @@
 use std::rc::Rc;
 
 use crate::semantics::builtin::Builtin;
-use symphonyscript_core::{BinaryOp, Scalar, SpecFloat, UnaryOp, Value};
+use symphonyscript_core::{BinaryOp, Scalar, SpecFloat, UnaryOp};
 
+use super::concat_part::ConcatPart;
 use super::convert::convert;
 use super::convert_to::convert_to;
 use super::ctx::Ctx;
-use super::exact_binary::exact_binary;
 use super::int_range::int_range;
-use super::is_chosen_float::is_chosen_float;
 use super::is_f32::is_f32;
-use super::is_float_builtin::is_float_builtin;
 use super::is_float_ty::is_float_ty;
 use super::is_int_ty::is_int_ty;
-use super::of_scalar::of_scalar;
+use super::operand_post::OperandPost;
 use super::own_type::own_type;
-use super::pair::Pair;
-use super::pair_type::pair_type;
+use super::ran::Ran;
 use super::represents::represents;
 use super::text::text;
 use super::ty_name::ty_name;
 use crate::diagnostics::Code;
 use crate::semantics::Internal;
-use crate::semantics::analysis::bound::Bound;
-use crate::semantics::analysis::bound_val::BoundVal;
 use crate::semantics::analysis::c_array::CArray;
 use crate::semantics::analysis::c_val::CVal;
-use crate::semantics::analysis::destination::Destination;
 use crate::semantics::analysis::engine::Engine;
 use crate::semantics::analysis::eval_ty::EvalTy;
 use crate::semantics::analysis::fast_hash::FastMap;
-use crate::semantics::analysis::i64_position::I64Position;
 use crate::semantics::analysis::ids::NodeId;
 use crate::semantics::analysis::is_integer::is_integer;
 use crate::semantics::analysis::kind::Kind;
 use crate::semantics::analysis::lengths_of::lengths_of;
 use crate::semantics::analysis::map_leaves::map_leaves;
 use crate::semantics::analysis::op::Op;
-use crate::semantics::analysis::outside_i64::outside_i64;
-use crate::semantics::analysis::piece::Piece;
 use crate::semantics::analysis::query::Query;
+use crate::semantics::analysis::shape_need::ShapeNeed;
 use crate::semantics::analysis::sig::Sig;
 use crate::semantics::analysis::some::some;
 use crate::semantics::analysis::widens::widens;
@@ -53,78 +45,29 @@ impl Engine<'_> {
         ty: EvalTy,
         need: &mut Vec<Query>,
     ) -> Result<bool, Internal> {
-        Ok(match self.evaluate(node, ty, Ctx::Global, need)? {
-            Some(value) => {
+        let program = match self.program_for(node, ty)? {
+            Ok(program) => program,
+            Err(needs) => {
+                need.extend(needs);
+                return Ok(false);
+            }
+        };
+        Ok(match self.run_program(Ctx::Global, &program, 0, need)? {
+            Ran::Value(value) => {
                 self.memo.evals.insert((node, ty), value);
+                self.memo.programs.remove(&(node, ty));
                 true
             }
-            None => false,
+            Ran::Suspended(_) | Ran::Abandoned => false,
         })
     }
 
-    pub(super) fn evaluate(
-        &mut self,
+    pub(super) fn expected_own(
+        &self,
         node: NodeId,
+        sig: &Sig,
         ty: EvalTy,
-        ctx: Ctx,
-        need: &mut Vec<Query>,
-    ) -> Result<Option<CVal>, Internal> {
-        let sig = some!(self.sig(node, need));
-        if sig.is_error() || sig.reactive || self.memo.kept_types.contains(&node) {
-            return Ok(Some(CVal::Error));
-        }
-        let own = self.expected_own(node, &sig, ty)?;
-        let flows = own == ty && expected_scalar(ty).is_some();
-        if let Width::Widened(integer) = sig.width
-            && let Some(scale) = self.memo.default_scales.get(&node).copied()
-        {
-            let value = some!(self.compute(node, (of_scalar(integer), false), ctx, need)?);
-            let value = map_leaves(value, &mut FastMap::default(), |leaf| {
-                Ok(convert_to(scaled_into(leaf, scale, own)?, ty))
-            })?;
-            return Ok(Some(self.shape_checked(node, value)?));
-        }
-        let value = if own == EvalTy::Default && sig.kind == Kind::Float {
-            let wide = some!(self.child(node, EvalTy::DefaultF64, ctx, need)?);
-            let within_f32 = |leaf: &CVal| match leaf {
-                CVal::F64(value) => value.is_nan() || (*value as f32).is_finite(),
-                _ => false,
-            };
-            let fits_f32 = match &wide {
-                CVal::Array(array) => array.all_leaves(within_f32),
-                leaf => within_f32(leaf),
-            };
-            if fits_f32 {
-                some!(self.child(node, EvalTy::DefaultF32, ctx, need)?)
-            } else {
-                wide
-            }
-        } else {
-            let value = some!(self.compute(node, (own, flows), ctx, need)?);
-            if matches!(self.node(node)?.op, Op::Use(_))
-                && self.memo.default_scales.contains_key(&node)
-            {
-                self.memo
-                    .before_unit_reading
-                    .insert((node, ty), value.clone());
-            }
-            let target = if is_float_ty(ty) { ty } else { own };
-            self.scaled(node, value, target)?
-        };
-        if sig.kind == Kind::Int
-            && sig.width == Width::Flexible
-            && int_range(ty).is_some()
-            && self.takes_a_type(node)?
-        {
-            let value = self.shape_checked(node, value)?;
-            return Ok(Some(self.fit(node, value, ty)?));
-        }
-        let conversions = self.memo.conversions.entry(ty).or_default();
-        let value = map_leaves(value, conversions, |leaf| Ok(convert_to(leaf, ty)))?;
-        Ok(Some(self.shape_checked(node, value)?))
-    }
-
-    fn expected_own(&self, node: NodeId, sig: &Sig, ty: EvalTy) -> Result<EvalTy, Internal> {
+    ) -> Result<EvalTy, Internal> {
         if let Op::Recursive { .. } = self.node(node)?.op
             && sig.kind == Kind::Int
             && expected_scalar(ty).is_some_and(is_integer)
@@ -146,22 +89,23 @@ impl Engine<'_> {
         )
     }
 
-    fn shape_checked(&mut self, node: NodeId, value: CVal) -> Result<CVal, Internal> {
-        let Some(need) = self.memo.shapes.get(&node) else {
-            return Ok(value);
-        };
+    pub(super) fn shape_held(
+        &mut self,
+        node: NodeId,
+        value: CVal,
+        need: &ShapeNeed,
+    ) -> Result<CVal, Internal> {
         if need.by_taken_arm || value.is_error() || lengths_of(&value) == need.lengths {
             return Ok(value);
         }
-        let need = need.clone();
         match need.at {
-            Some((loc, scope)) => self.error(need.code, loc, scope, need.message)?,
-            None => self.error_at_node(need.code, node, need.message)?,
+            Some((loc, scope)) => self.error(need.code, loc, scope, need.message.clone())?,
+            None => self.error_at_node(need.code, node, need.message.clone())?,
         }
         Ok(CVal::Error)
     }
 
-    fn element(
+    pub(super) fn element(
         &mut self,
         base: NodeId,
         index: NodeId,
@@ -195,7 +139,30 @@ impl Engine<'_> {
         })
     }
 
-    fn takes_a_type(&self, node: NodeId) -> Result<bool, Internal> {
+    pub(super) fn array_value(
+        &mut self,
+        node: NodeId,
+        values: Vec<CVal>,
+    ) -> Result<CVal, Internal> {
+        if values.iter().any(CVal::is_error) {
+            return Ok(CVal::Error);
+        }
+        let Some(first) = values.first() else {
+            return Ok(CVal::Array(CArray::new(Vec::new())));
+        };
+        let inner = lengths_of(first);
+        if values.iter().any(|value| lengths_of(value) != inner) {
+            self.error_at_node(
+                Code::RaggedArray,
+                node,
+                "the elements of an array are arrays of one length, or all single values",
+            )?;
+            return Ok(CVal::Error);
+        }
+        Ok(CVal::Array(CArray::new(values)))
+    }
+
+    pub(super) fn takes_a_type(&self, node: NodeId) -> Result<bool, Internal> {
         Ok(match self.node(node)?.op {
             Op::Number(..) | Op::Use(_) => true,
             Op::Unary(UnaryOp::Neg, operand) => matches!(self.node(operand)?.op, Op::Number(..)),
@@ -252,292 +219,13 @@ impl Engine<'_> {
         Ok(None)
     }
 
-    fn compute(
-        &mut self,
-        node: NodeId,
-        (own, flows): (EvalTy, bool),
-        ctx: Ctx,
-        need: &mut Vec<Query>,
-    ) -> Result<Option<CVal>, Internal> {
-        if let Ctx::Frame(frame) = ctx
-            && let Some(read) = self.memo.frame_reads.get(&node).cloned()
-        {
-            return self.frame_read(&read, frame, (own, flows), need);
-        }
-        let op = self.node(node)?.op.clone();
-        Ok(Some(match op {
-            Op::Read(_) | Op::History { .. } | Op::Stepped(_) => CVal::Error,
-            Op::Join(lhs, rhs) => return self.join(node, (lhs, rhs), (own, flows), ctx, need),
-            Op::Slice { base, lower, upper } => {
-                return self.sliced(base, (lower, upper), (own, flows), ctx, need);
-            }
-            Op::Native { native, args } => return self.native(native, &args, ctx, need),
-            Op::Builtin(Builtin::Len, args) => {
-                let operand = *args.first().ok_or(Internal::missed("len operand"))?;
-                return self.length(operand, ctx, need);
-            }
-            Op::Builtin(Builtin::Bytes, args) => {
-                let operand = *args.first().ok_or(Internal::missed("bytes operand"))?;
-                return self.bytes(operand, ctx, need);
-            }
-            Op::Builtin(Builtin::Capacity, args) => {
-                let operand = *args.first().ok_or(Internal::missed("capacity operand"))?;
-                match self.extent(operand)? {
-                    Some(capacity) => CVal::Int(i128::from(capacity)),
-                    None => return self.length(operand, ctx, need),
-                }
-            }
-            Op::Pick { index, items } => {
-                let index_sig = some!(self.sig(index, need));
-                let index_ty = own_type(&index_sig, EvalTy::Exact);
-                let position = some!(self.child(index, index_ty, ctx, need)?);
-                let Some(position) = int_position(position) else {
-                    return Ok(Some(CVal::Error));
-                };
-                let item = usize::try_from(position)
-                    .ok()
-                    .and_then(|position| items.get(position).copied());
-                match item {
-                    Some(item) => some!(self.typed_child(item, (own, flows), ctx, need)?),
-                    None => {
-                        let length = u64::try_from(items.len()).unwrap_or(u64::MAX);
-                        self.index_outside(index, position, length)?;
-                        CVal::Error
-                    }
-                }
-            }
-            Op::Element { base, index } => {
-                let value = self.typed_child(base, (own, flows), ctx, need)?;
-                let index_sig = some!(self.sig(index, need));
-                let index_ty = own_type(&index_sig, EvalTy::Exact);
-                let position = self.child(index, index_ty, ctx, need)?;
-                let (value, position) = (some!(value), some!(position));
-                let Some(position) = int_position(position) else {
-                    return Ok(Some(CVal::Error));
-                };
-                self.element(base, index, value, position)?
-            }
-            Op::Array(elements) => {
-                let values: Vec<Option<CVal>> = elements
-                    .iter()
-                    .map(|element| self.typed_child(*element, (own, flows), ctx, need))
-                    .collect::<Result<_, _>>()?;
-                let values: Vec<CVal> = some!(values.into_iter().collect::<Option<_>>());
-                if values.iter().any(CVal::is_error) {
-                    return Ok(Some(CVal::Error));
-                }
-                let Some(first) = values.first() else {
-                    return Ok(Some(CVal::Array(CArray::new(Vec::new()))));
-                };
-                let inner = lengths_of(first);
-                if values.iter().any(|value| lengths_of(value) != inner) {
-                    self.error_at_node(
-                        Code::RaggedArray,
-                        node,
-                        "the elements of an array are arrays of one length, or all single values",
-                    )?;
-                    return Ok(Some(CVal::Error));
-                }
-                CVal::Array(CArray::new(values))
-            }
-            Op::Arg(slot) => match ctx {
-                Ctx::Frame(frame) => self.frame_arg(frame, slot)?,
-                Ctx::Global => return Err(Internal::missed("evaluation frame")),
-            },
-            Op::Slot(slot) => match ctx {
-                Ctx::Frame(frame) => self.slot_value(frame, slot)?,
-                Ctx::Global => return Err(Internal::missed("evaluation frame")),
-            },
-            Op::For(for_node) => return self.for_value(node, &for_node, (own, flows), ctx, need),
-            Op::Number(number, suffix) => self.literal(node, &number, suffix, own)?,
-            Op::Const(value) => match value {
-                Value::U8(value) => CVal::Int(i128::from(value)),
-                Value::I32(value) => CVal::Int(i128::from(value)),
-                Value::I64(value) => CVal::Int(i128::from(value)),
-                Value::F32(value) => CVal::F32(value),
-                Value::F64(value) => CVal::F64(value),
-                Value::Bool(value) => CVal::Bool(value),
-                Value::Enum(id, index) => CVal::Enum(id, index),
-                Value::Str(_) => CVal::Error,
-            },
-            Op::Use(target) | Op::Chosen(target) => {
-                some!(self.typed_child(target, (own, flows), ctx, need)?)
-            }
-            Op::Bool(value) => CVal::Bool(value),
-            Op::Str(text) => CVal::Str(Rc::from(text.as_str())),
-            Op::Variant(id, index) => CVal::Enum(id, index),
-            Op::NodeRef(item) => CVal::Node(item),
-            Op::Pi => {
-                if is_f32(own) {
-                    CVal::F32(std::f32::consts::PI)
-                } else {
-                    CVal::F64(std::f64::consts::PI)
-                }
-            }
-            Op::Bare(name) => match own {
-                EvalTy::Enum(id) => match self.variants.position(id, &name)? {
-                    Some(index) => CVal::Enum(id, index),
-                    None if self.in_name_probe(self.node(node)?.scope)? => CVal::Error,
-                    None => {
-                        let enum_name = self.enum_decl(id)?.name.clone();
-                        self.error_at_node(
-                            Code::UnknownName,
-                            node,
-                            format!("`{name}` is not a variant of `{enum_name}`"),
-                        )?;
-                        CVal::Error
-                    }
-                },
-                EvalTy::Exact
-                | EvalTy::Default
-                | EvalTy::U8
-                | EvalTy::I32
-                | EvalTy::I64
-                | EvalTy::F32
-                | EvalTy::F64
-                | EvalTy::DefaultF32
-                | EvalTy::DefaultF64
-                | EvalTy::Bool
-                | EvalTy::Str
-                | EvalTy::Node => match self.memo.bare_enums.get(&node) {
-                    Some(id) => match self.variants.position(*id, &name)? {
-                        Some(index) => CVal::Enum(*id, index),
-                        None => CVal::Error,
-                    },
-                    None => CVal::Error,
-                },
-            },
-            Op::Concat(pieces) => return self.concat(&pieces, ctx, need),
-            Op::Unary(UnaryOp::Not, operand) => {
-                match some!(self.child(operand, EvalTy::Bool, ctx, need)?) {
-                    CVal::Bool(value) => CVal::Bool(!value),
-                    CVal::Int(_)
-                    | CVal::F32(_)
-                    | CVal::F64(_)
-                    | CVal::Enum(..)
-                    | CVal::Str(_)
-                    | CVal::Node(_)
-                    | CVal::Array(_)
-                    | CVal::Error => CVal::Error,
-                }
-            }
-            Op::Unary(UnaryOp::Neg, operand) => {
-                let value = some!(self.child(operand, own, ctx, need)?);
-                match value {
-                    CVal::Int(value) => self.integer(node, own, value.checked_neg())?,
-                    CVal::F32(value) => CVal::F32(-value),
-                    CVal::F64(value) => CVal::F64(-value),
-                    CVal::Bool(_)
-                    | CVal::Enum(..)
-                    | CVal::Str(_)
-                    | CVal::Node(_)
-                    | CVal::Array(_)
-                    | CVal::Error => CVal::Error,
-                }
-            }
-            Op::Binary(op, lhs, rhs) => {
-                return self.binary(node, (op, lhs, rhs), (own, flows), ctx, need);
-            }
-            Op::If(condition, then, otherwise) => {
-                let chosen = match some!(self.child(condition, EvalTy::Bool, ctx, need)?) {
-                    CVal::Bool(true) => then,
-                    CVal::Bool(false) => otherwise,
-                    CVal::Int(_)
-                    | CVal::F32(_)
-                    | CVal::F64(_)
-                    | CVal::Enum(..)
-                    | CVal::Str(_)
-                    | CVal::Node(_)
-                    | CVal::Array(_)
-                    | CVal::Error => return Ok(Some(CVal::Error)),
-                };
-                some!(self.typed_child(chosen, (own, flows), ctx, need)?)
-            }
-            Op::Match {
-                scrutinee,
-                arms,
-                otherwise,
-            } => {
-                let scrutinee_sig = some!(self.sig(scrutinee, need));
-                let labels: Vec<NodeId> = arms.iter().map(|(label, _)| *label).collect();
-                let Some(scrutinee_ty) = self.choice_ty(scrutinee, &scrutinee_sig, &labels)? else {
-                    return Ok(Some(CVal::Error));
-                };
-                let value = some!(self.child(scrutinee, scrutinee_ty, ctx, need)?);
-                let value = self.default_fit(scrutinee, value)?;
-                if value.is_error() {
-                    return Ok(Some(CVal::Error));
-                }
-                let mut chosen = otherwise;
-                for (label, arm) in &arms {
-                    let label_value = some!(self.child(*label, scrutinee_ty, ctx, need)?);
-                    let label_value = self.default_fit(*label, label_value)?;
-                    if label_value == value {
-                        chosen = Some(*arm);
-                        break;
-                    }
-                }
-                match chosen {
-                    Some(arm) => some!(self.typed_child(arm, (own, flows), ctx, need)?),
-                    None => CVal::Error,
-                }
-            }
-            Op::Convert(_, operand) => {
-                if !some!(self.sig(operand, need)).is_numeric() {
-                    return Ok(Some(CVal::Error));
-                }
-                let operand_ty = if is_float_ty(own) {
-                    own
-                } else {
-                    EvalTy::Default
-                };
-                let value = some!(self.child(operand, operand_ty, ctx, need)?);
-                let value = if is_int_ty(own) {
-                    self.default_fit(operand, value)?
-                } else {
-                    value
-                };
-                convert(value, own)
-            }
-            Op::Annotate(_, operand) => {
-                let value = some!(self.child(operand, own, ctx, need)?);
-                if some!(self.sig(operand, need)).width == Width::Flexible {
-                    self.fit(node, value, own)?
-                } else {
-                    value
-                }
-            }
-            Op::Builtin(builtin, args) => {
-                return self.builtin(node, builtin, &args, (own, flows), ctx, need);
-            }
-            Op::Recursive { function, args } => {
-                return self.recursive(node, (function, args), own, ctx, need);
-            }
-            Op::ToRead { wire, attrs, .. } => {
-                let destination = some!(self.destination(Query::Destination(wire), need));
-                let Destination::Fixed(_) = destination else {
-                    return Ok(Some(CVal::Error));
-                };
-                let (item, attr) = attrs.first().ok_or(Internal::missed("attribute"))?;
-                match some!(self.bound(Query::Attr(*item, *attr), need)) {
-                    BoundVal::Scalar(Bound::Value(value)) => {
-                        some!(self.child(value, own, ctx, need)?)
-                    }
-                    BoundVal::Scalar(Bound::Cell(_)) | BoundVal::Array(_) | BoundVal::Error => {
-                        CVal::Error
-                    }
-                }
-            }
-        }))
-    }
-
-    fn literal(
-        &mut self,
+    pub(super) fn literal_value(
+        &self,
         node: NodeId,
         number: &Number,
         suffix: Suffix,
         own: EvalTy,
-    ) -> Result<CVal, Internal> {
+    ) -> Result<Result<CVal, (Code, String)>, Internal> {
         let scale = match suffix {
             Suffix::Unit { family, unit } => Some(self.unit_decl(family, unit)?.scale),
             Suffix::None | Suffix::Type(_) => self
@@ -549,34 +237,30 @@ impl Engine<'_> {
         };
         if is_int_ty(own) {
             let Number::Int(value) = number else {
-                return Ok(CVal::Error);
+                return Ok(Ok(CVal::Error));
             };
             let value = match scale {
                 Some(scale) if scale.fract() == 0.0 && scale.abs() < 1e38 => {
                     value.checked_mul(scale as i128)
                 }
-                Some(_) => return Ok(CVal::Error),
+                Some(_) => return Ok(Ok(CVal::Error)),
                 None => Some(*value),
             };
             let Some(value) = value.filter(|value| *value != i128::MIN) else {
-                self.error_at_node(
+                return Ok(Err((
                     Code::IntegerOverflow,
-                    node,
-                    "this value's magnitude reaches 2¹²⁷",
-                )?;
-                return Ok(CVal::Error);
+                    "this value's magnitude reaches 2¹²⁷".to_string(),
+                )));
             };
             if let Some(range) = int_range(own)
                 && !range.contains(&value)
             {
-                self.error_at_node(
+                return Ok(Err((
                     Code::DoesNotFit,
-                    node,
                     format!("the value {value} does not fit `{}`", ty_name(own)),
-                )?;
-                return Ok(CVal::Error);
+                )));
             }
-            return Ok(CVal::Int(value));
+            return Ok(Ok(CVal::Int(value)));
         }
         if is_float_ty(own) {
             let exact = match number {
@@ -607,19 +291,17 @@ impl Engine<'_> {
             };
             let exactly = !is_integer || exact_integer(&value, number, scale);
             if !finite || !exactly {
-                self.error_at_node(
+                return Ok(Err((
                     Code::DoesNotFit,
-                    node,
                     format!("this value does not fit `{}`", ty_name(own)),
-                )?;
-                return Ok(CVal::Error);
+                )));
             }
-            return Ok(value);
+            return Ok(Ok(value));
         }
-        Ok(CVal::Error)
+        Ok(Ok(CVal::Error))
     }
 
-    fn integer(
+    pub(super) fn integer(
         &mut self,
         node: NodeId,
         own: EvalTy,
@@ -646,238 +328,43 @@ impl Engine<'_> {
         Ok(CVal::Int(value))
     }
 
-    fn binary(
+    pub(super) fn rand_value(
         &mut self,
-        node: NodeId,
-        (op, lhs, rhs): (BinaryOp, NodeId, NodeId),
-        (own, flows): (EvalTy, bool),
-        ctx: Ctx,
-        need: &mut Vec<Query>,
-    ) -> Result<Option<CVal>, Internal> {
-        if self.memo.from_end_indexes.contains(&node) {
-            let offset_ty = own_type(&some!(self.sig(rhs, need)), EvalTy::Exact);
-            if let CVal::Int(value) = some!(self.child(rhs, offset_ty, ctx, need)?)
-                && i64::try_from(value).is_err()
-            {
-                self.error_at_node(
-                    Code::IndexOutOfRange,
-                    rhs,
-                    outside_i64(I64Position::Offset, value),
-                )?;
-                return Ok(Some(CVal::Error));
-            }
-        }
-        if self.memo.deferred_sums.contains(&node) && op != BinaryOp::Add {
-            let a = self.typed_child(lhs, (own, flows), ctx, need)?;
-            let b = self.typed_child(rhs, (own, flows), ctx, need)?;
-            match (some!(a), some!(b)) {
-                (CVal::Error, _) | (_, CVal::Error) => return Ok(Some(CVal::Error)),
-                (CVal::Array(_), _) | (_, CVal::Array(_)) => {
-                    self.error_at_node(Code::ArrayOperand, node, SINGLE_OPERANDS)?;
-                    return Ok(Some(CVal::Error));
-                }
-                (
-                    CVal::Int(_)
-                    | CVal::F32(_)
-                    | CVal::F64(_)
-                    | CVal::Bool(_)
-                    | CVal::Enum(..)
-                    | CVal::Str(_)
-                    | CVal::Node(_),
-                    _,
-                ) => {}
-            }
-        } else if self.memo.deferred_sums.contains(&node) {
-            let a = self.typed_child(lhs, (own, flows), ctx, need)?;
-            let b = self.typed_child(rhs, (own, flows), ctx, need)?;
-            match (some!(a), some!(b)) {
-                (CVal::Error, _) | (_, CVal::Error) => return Ok(Some(CVal::Error)),
-                (CVal::Array(a), CVal::Array(b)) => return Ok(Some(self.joined(node, &a, &b)?)),
-                (CVal::Array(_), _) | (_, CVal::Array(_)) => {
-                    self.error_at_node(Code::ArrayOperand, node, JOIN_SINGLE)?;
-                    return Ok(Some(CVal::Error));
-                }
-                (CVal::Bool(_) | CVal::Enum(..) | CVal::Node(_), _)
-                | (_, CVal::Bool(_) | CVal::Enum(..) | CVal::Node(_)) => {
-                    self.error_at_node(
-                        Code::OperandType,
-                        node,
-                        "`+` takes two numbers or two strings",
-                    )?;
-                    return Ok(Some(CVal::Error));
-                }
-                (CVal::Int(_) | CVal::F32(_) | CVal::F64(_) | CVal::Str(_), _) => {}
-            }
-        }
-        Ok(match op {
-            BinaryOp::And | BinaryOp::Or => {
-                let a = self.child(lhs, EvalTy::Bool, ctx, need)?;
-                let b = self.child(rhs, EvalTy::Bool, ctx, need)?;
-                Some(match (some!(a), some!(b)) {
-                    (CVal::Bool(a), CVal::Bool(b)) => {
-                        CVal::Bool(if op == BinaryOp::And { a && b } else { a || b })
-                    }
-                    _ => CVal::Error,
-                })
-            }
-            BinaryOp::Lt
-            | BinaryOp::Le
-            | BinaryOp::Gt
-            | BinaryOp::Ge
-            | BinaryOp::Is
-            | BinaryOp::IsNot => {
-                let a_sig = self.sig(lhs, need);
-                let b_sig = self.sig(rhs, need);
-                let (a_sig, b_sig) = (some!(a_sig), some!(b_sig));
-                if matches!(op, BinaryOp::Is | BinaryOp::IsNot)
-                    && self.crossed_enums(node, lhs, rhs)?
-                {
-                    return Ok(Some(CVal::Error));
-                }
-                let carried = match (a_sig.kind, b_sig.kind) {
-                    (Kind::Bare, Kind::Bare) => {
-                        self.carried_enum_of(lhs)?.or(self.carried_enum_of(rhs)?)
-                    }
-                    _ => None,
-                };
-                let ty = match carried.map_or_else(
-                    || pair_type(&a_sig, &b_sig),
-                    |id| Pair::Ty(EvalTy::Enum(id)),
-                ) {
-                    Pair::Ty(ty) => ty,
-                    Pair::FlexibleFloat => {
-                        let a = self.child(lhs, EvalTy::DefaultF64, ctx, need)?;
-                        let b = self.child(rhs, EvalTy::DefaultF64, ctx, need)?;
-                        let fits_f32 = |value: &CVal| match value {
-                            CVal::F64(value) => value.is_nan() || (*value as f32).is_finite(),
-                            CVal::Int(_)
-                            | CVal::F32(_)
-                            | CVal::Bool(_)
-                            | CVal::Enum(..)
-                            | CVal::Str(_)
-                            | CVal::Node(_)
-                            | CVal::Array(_)
-                            | CVal::Error => true,
-                        };
-                        let (a, b) = (some!(a), some!(b));
-                        if fits_f32(&a) && fits_f32(&b) {
-                            EvalTy::DefaultF32
-                        } else {
-                            EvalTy::DefaultF64
-                        }
-                    }
-                };
-                let a = self.typed_child(lhs, (ty, false), ctx, need)?;
-                let b = self.typed_child(rhs, (ty, false), ctx, need)?;
-                let (a, b) = (some!(a), some!(b));
-                let a = self.operand_fit(lhs, &a_sig, a, ty)?;
-                let b = self.operand_fit(rhs, &b_sig, b, ty)?;
-                if a.is_error() || b.is_error() {
-                    return Ok(Some(CVal::Error));
-                }
-                Some(compare(op, &a, &b))
-            }
-            BinaryOp::Add if own == EvalTy::Str => {
-                let a = self.child(lhs, EvalTy::Str, ctx, need)?;
-                let b = self.child(rhs, EvalTy::Str, ctx, need)?;
-                Some(match (some!(a), some!(b)) {
-                    (CVal::Str(a), CVal::Str(b)) => CVal::Str(Rc::from(format!("{a}{b}").as_str())),
-                    _ => CVal::Error,
-                })
-            }
-            BinaryOp::IntDiv if is_float_ty(own) => {
-                let a = self.child(lhs, EvalTy::Default, ctx, need)?;
-                let b = self.child(rhs, EvalTy::Default, ctx, need)?;
-                Some(match (some!(a), some!(b)) {
-                    (CVal::Int(a), CVal::Int(b)) => {
-                        let value = self.integer(node, EvalTy::Exact, exact_binary(op, a, b))?;
-                        self.integer_to_float(node, value, own)?
-                    }
-                    _ => CVal::Error,
-                })
-            }
-            BinaryOp::Div => {
-                let a = self.float_operand(lhs, (own, flows), ctx, need)?;
-                let b = self.float_operand(rhs, (own, flows), ctx, need)?;
-                Some(match (some!(a), some!(b)) {
-                    (CVal::F32(a), CVal::F32(b)) => CVal::F32(a / b),
-                    (CVal::F64(a), CVal::F64(b)) => CVal::F64(a / b),
-                    _ => CVal::Error,
-                })
-            }
-            BinaryOp::Add
-            | BinaryOp::Sub
-            | BinaryOp::Mul
-            | BinaryOp::IntDiv
-            | BinaryOp::Rem
-            | BinaryOp::Pow => {
-                let a = self.typed_child(lhs, (own, flows), ctx, need)?;
-                let b = self.typed_child(rhs, (own, flows), ctx, need)?;
-                Some(match (some!(a), some!(b)) {
-                    (CVal::Int(a), CVal::Int(b)) => {
-                        self.integer(node, own, exact_binary(op, a, b))?
-                    }
-                    (CVal::F32(a), CVal::F32(b)) => {
-                        CVal::F32(float_binary(op, a, b).ok_or(Internal::missed("float operator"))?)
-                    }
-                    (CVal::F64(a), CVal::F64(b)) => {
-                        CVal::F64(float_binary(op, a, b).ok_or(Internal::missed("float operator"))?)
-                    }
-                    _ => CVal::Error,
-                })
-            }
+        args: &[NodeId],
+        values: Vec<CVal>,
+    ) -> Result<CVal, Internal> {
+        let values: Vec<CVal> = args
+            .iter()
+            .zip(values)
+            .map(|(arg, value)| self.fit(*arg, value, EvalTy::I64))
+            .collect::<Result<_, _>>()?;
+        let ints: Vec<i64> = values
+            .iter()
+            .filter_map(|value| match value {
+                CVal::Int(value) => i64::try_from(*value).ok(),
+                CVal::F32(_)
+                | CVal::F64(_)
+                | CVal::Bool(_)
+                | CVal::Enum(..)
+                | CVal::Str(_)
+                | CVal::Node(_)
+                | CVal::Array(_)
+                | CVal::Error => None,
+            })
+            .collect();
+        Ok(match ints.as_slice() {
+            [seed, n] => CVal::F32(symphonyscript_core::rand(*seed, *n)),
+            _ => CVal::Error,
         })
     }
 
-    fn builtin(
+    pub(super) fn builtin_value(
         &mut self,
         node: NodeId,
         builtin: Builtin,
-        args: &[NodeId],
-        (own, flows): (EvalTy, bool),
-        ctx: Ctx,
-        need: &mut Vec<Query>,
+        own: EvalTy,
+        values: Vec<CVal>,
     ) -> Result<Option<CVal>, Internal> {
-        if builtin == Builtin::Rand {
-            let values: Vec<Option<CVal>> = args
-                .iter()
-                .map(|arg| self.child(*arg, EvalTy::I64, ctx, need))
-                .collect::<Result<_, _>>()?;
-            let values: Vec<CVal> = some!(values.into_iter().collect::<Option<_>>());
-            let values: Vec<CVal> = args
-                .iter()
-                .zip(values)
-                .map(|(arg, value)| self.fit(*arg, value, EvalTy::I64))
-                .collect::<Result<_, _>>()?;
-            let ints: Vec<i64> = values
-                .iter()
-                .filter_map(|value| match value {
-                    CVal::Int(value) => i64::try_from(*value).ok(),
-                    CVal::F32(_)
-                    | CVal::F64(_)
-                    | CVal::Bool(_)
-                    | CVal::Enum(..)
-                    | CVal::Str(_)
-                    | CVal::Node(_)
-                    | CVal::Array(_)
-                    | CVal::Error => None,
-                })
-                .collect();
-            return Ok(Some(match ints.as_slice() {
-                [seed, n] => CVal::F32(symphonyscript_core::rand(*seed, *n)),
-                _ => CVal::Error,
-            }));
-        }
-        let values: Vec<Option<CVal>> = if is_float_builtin(builtin) {
-            args.iter()
-                .map(|arg| self.float_operand(*arg, (own, flows), ctx, need))
-                .collect::<Result<_, _>>()?
-        } else {
-            args.iter()
-                .map(|arg| self.typed_child(*arg, (own, flows), ctx, need))
-                .collect::<Result<_, _>>()?
-        };
-        let values: Vec<CVal> = some!(values.into_iter().collect::<Option<_>>());
         if let Some(ints) = values
             .iter()
             .map(|value| match value {
@@ -949,40 +436,29 @@ impl Engine<'_> {
         }))
     }
 
-    fn concat(
+    pub(super) fn concat_value(
         &mut self,
-        pieces: &[Piece],
-        ctx: Ctx,
-        need: &mut Vec<Query>,
-    ) -> Result<Option<CVal>, Internal> {
-        let mut values = Vec::new();
-        for piece in pieces {
-            if let Piece::Value(node) = piece {
-                let sig = self.sig(*node, need);
-                let ty = sig.map(|sig| own_type(&sig, EvalTy::Default));
-                values.push(match ty {
-                    Some(ty) => self.child(*node, ty, ctx, need)?,
-                    None => None,
+        parts: &[ConcatPart],
+        values: Vec<CVal>,
+    ) -> Result<CVal, Internal> {
+        let mut fitted = Vec::with_capacity(values.len());
+        let mut given = values.into_iter();
+        for part in parts {
+            if let ConcatPart::Value(node, fits) = part {
+                let value = given.next().ok_or(Internal::missed("interpolation"))?;
+                fitted.push(if *fits {
+                    self.fit(*node, value, EvalTy::I64)?
+                } else {
+                    value
                 });
             }
         }
-        if values.iter().any(Option::is_none) {
-            return Ok(None);
-        }
-        let nodes = pieces.iter().filter_map(|piece| match piece {
-            Piece::Value(node) => Some(*node),
-            Piece::Text(_) => None,
-        });
-        let fitted: Vec<CVal> = nodes
-            .zip(values.into_iter().flatten())
-            .map(|(node, value)| self.default_fit(node, value))
-            .collect::<Result<_, _>>()?;
         let mut values = fitted.into_iter();
         let mut out = String::new();
-        for piece in pieces {
-            match piece {
-                Piece::Text(text) => out.push_str(text),
-                Piece::Value(_) => {
+        for part in parts {
+            match part {
+                ConcatPart::Text(text) => out.push_str(text),
+                ConcatPart::Value(..) => {
                     let value = values.next().ok_or(Internal::missed("interpolation"))?;
                     let variant = |id, index: u16| {
                         self.enum_decl(id)?
@@ -993,12 +469,29 @@ impl Engine<'_> {
                     };
                     match text(&value, variant)? {
                         Some(piece) => out.push_str(&piece),
-                        None => return Ok(Some(CVal::Error)),
+                        None => return Ok(CVal::Error),
                     }
                 }
             }
         }
-        Ok(Some(CVal::Str(Rc::from(out.as_str()))))
+        Ok(CVal::Str(Rc::from(out.as_str())))
+    }
+
+    pub(super) fn operand_post(
+        &mut self,
+        post: OperandPost,
+        value: CVal,
+    ) -> Result<CVal, Internal> {
+        match post {
+            OperandPost::Keep => Ok(value),
+            OperandPost::FitThenFloat(operand, ty, own) => {
+                let value = self.fit(operand, value, ty)?;
+                self.convert_integer(operand, false, value, own)
+            }
+            OperandPost::Float(operand, unfixed, own) => {
+                self.convert_integer(operand, unfixed, value, own)
+            }
+        }
     }
 
     pub(in crate::semantics::analysis) fn fit(
@@ -1076,85 +569,6 @@ impl Engine<'_> {
         })?))
     }
 
-    fn operand_fit(
-        &mut self,
-        node: NodeId,
-        sig: &Sig,
-        value: CVal,
-        ty: EvalTy,
-    ) -> Result<CVal, Internal> {
-        if sig.width != Width::Flexible || !sig.is_numeric() {
-            return Ok(value);
-        }
-        match ty {
-            EvalTy::Exact => self.fit(node, value, EvalTy::I64),
-            EvalTy::Default
-            | EvalTy::U8
-            | EvalTy::I32
-            | EvalTy::I64
-            | EvalTy::F32
-            | EvalTy::F64
-            | EvalTy::DefaultF32
-            | EvalTy::DefaultF64
-            | EvalTy::Bool
-            | EvalTy::Enum(_)
-            | EvalTy::Str
-            | EvalTy::Node => self.fit(node, value, ty),
-        }
-    }
-
-    pub(in crate::semantics::analysis) fn default_fit(
-        &mut self,
-        node: NodeId,
-        value: CVal,
-    ) -> Result<CVal, Internal> {
-        let sig = self.known_sig(node)?;
-        let flexible_integer = sig.kind == Kind::Int && sig.width == Width::Flexible;
-        if flexible_integer {
-            self.fit(node, value, EvalTy::I64)
-        } else {
-            Ok(value)
-        }
-    }
-
-    fn float_operand(
-        &mut self,
-        operand: NodeId,
-        (own, flows): (EvalTy, bool),
-        ctx: Ctx,
-        need: &mut Vec<Query>,
-    ) -> Result<Option<CVal>, Internal> {
-        let sig = some!(self.sig(operand, need));
-        if sig.kind != Kind::Int || !is_float_ty(own) {
-            return self.typed_child(operand, (own, flows), ctx, need);
-        }
-        let flexible = sig.width == Width::Flexible;
-        let widens_into_own = match (sig.width, expected_scalar(own)) {
-            (Width::Fixed(scalar), Some(target)) => widens(scalar, target),
-            _ => false,
-        };
-        if flexible && !is_chosen_float(own) || flows && widens_into_own {
-            return self.child(operand, own, ctx, need);
-        }
-        let ty = own_type(&sig, EvalTy::Exact);
-        let value = some!(self.child(operand, ty, ctx, need)?);
-        if flexible && int_range(ty).is_some() {
-            let value = self.fit(operand, value, ty)?;
-            return Ok(Some(self.convert_integer(operand, false, value, own)?));
-        }
-        Ok(Some(self.integer_to_float(operand, value, own)?))
-    }
-
-    pub(in crate::semantics::analysis) fn integer_to_float(
-        &mut self,
-        node: NodeId,
-        value: CVal,
-        ty: EvalTy,
-    ) -> Result<CVal, Internal> {
-        let flexible = !matches!(self.known_sig(node)?.width, Width::Fixed(_));
-        self.convert_integer(node, flexible, value, ty)
-    }
-
     pub(super) fn convert_integer(
         &mut self,
         node: NodeId,
@@ -1191,19 +605,7 @@ impl Engine<'_> {
         Ok(converted)
     }
 
-    fn scaled(&mut self, node: NodeId, value: CVal, target: EvalTy) -> Result<CVal, Internal> {
-        if matches!(self.node(node)?.op, Op::Number(..)) {
-            return Ok(value);
-        }
-        let Some(scale) = self.memo.default_scales.get(&node).copied() else {
-            return Ok(value);
-        };
-        map_leaves(value, &mut FastMap::default(), |leaf| {
-            self.scaled_leaf(node, scale, leaf, target)
-        })
-    }
-
-    fn scaled_leaf(
+    pub(super) fn scaled_leaf(
         &mut self,
         node: NodeId,
         scale: f64,
@@ -1227,9 +629,9 @@ impl Engine<'_> {
     }
 }
 
-const JOIN_SINGLE: &str = "`+` joins two arrays, and one of these is a single value";
+pub(super) const JOIN_SINGLE: &str = "`+` joins two arrays, and one of these is a single value";
 
-fn int_position(value: CVal) -> Option<i128> {
+pub(super) fn int_position(value: CVal) -> Option<i128> {
     match value {
         CVal::Int(position) => Some(position),
         CVal::F32(_)
@@ -1254,7 +656,7 @@ fn fits_in(value: &CVal, ty: EvalTy) -> bool {
     }
 }
 
-fn scaled_into(value: CVal, scale: f64, ty: EvalTy) -> Result<CVal, Internal> {
+pub(super) fn scaled_into(value: CVal, scale: f64, ty: EvalTy) -> Result<CVal, Internal> {
     let CVal::Int(integer) = value else {
         return Ok(CVal::Error);
     };
@@ -1316,7 +718,7 @@ fn exact_integer(value: &CVal, number: &Number, scale: Option<f64>) -> bool {
     }
 }
 
-fn float_binary<
+pub(super) fn float_binary<
     F: SpecFloat
         + std::ops::Add<Output = F>
         + std::ops::Sub<Output = F>
@@ -1346,7 +748,7 @@ fn float_binary<
     })
 }
 
-fn compare(op: BinaryOp, a: &CVal, b: &CVal) -> CVal {
+pub(super) fn compare(op: BinaryOp, a: &CVal, b: &CVal) -> CVal {
     let ordering = match (a, b) {
         (CVal::Int(a), CVal::Int(b)) => a.partial_cmp(b),
         (CVal::F32(a), CVal::F32(b)) => a.partial_cmp(b),
@@ -1382,7 +784,7 @@ fn compare(op: BinaryOp, a: &CVal, b: &CVal) -> CVal {
     CVal::Bool(result)
 }
 
-fn expected_scalar(ty: EvalTy) -> Option<Scalar> {
+pub(super) fn expected_scalar(ty: EvalTy) -> Option<Scalar> {
     match ty {
         EvalTy::U8 => Some(Scalar::U8),
         EvalTy::I32 => Some(Scalar::I32),
@@ -1450,5 +852,43 @@ fn takes_expected(op: &Op) -> bool {
     }
 }
 
-const SINGLE_OPERANDS: &str =
+pub(super) const SINGLE_OPERANDS: &str =
     "only `+` takes arrays, which it joins; every other operator takes single values";
+
+pub(super) fn narrowed(value: CVal, own: EvalTy) -> Result<CVal, Internal> {
+    map_leaves(value, &mut FastMap::default(), |leaf| {
+        Ok::<CVal, Internal>(convert_to(leaf, own))
+    })
+}
+
+pub(super) fn fits_f32(value: &CVal) -> bool {
+    match value {
+        CVal::F64(value) => value.is_nan() || (*value as f32).is_finite(),
+        CVal::Int(_)
+        | CVal::F32(_)
+        | CVal::Bool(_)
+        | CVal::Enum(..)
+        | CVal::Str(_)
+        | CVal::Node(_)
+        | CVal::Array(_)
+        | CVal::Error => true,
+    }
+}
+
+pub(super) fn wide_fits_f32(value: &CVal) -> bool {
+    let within = |leaf: &CVal| match leaf {
+        CVal::F64(value) => value.is_nan() || (*value as f32).is_finite(),
+        CVal::Int(_)
+        | CVal::F32(_)
+        | CVal::Bool(_)
+        | CVal::Enum(..)
+        | CVal::Str(_)
+        | CVal::Node(_)
+        | CVal::Array(_)
+        | CVal::Error => false,
+    };
+    match value {
+        CVal::Array(array) => array.all_leaves(within),
+        leaf => within(leaf),
+    }
+}

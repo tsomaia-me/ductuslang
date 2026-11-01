@@ -50,6 +50,7 @@ impl Engine<'_> {
                     (None, Some(unit)) => {
                         let scale = self.unit_decl(unit.family, unit.default_unit)?.scale;
                         if scale != 1.0 {
+                            self.fact_settled(node);
                             self.memo.default_scales.insert(node, scale);
                         }
                     }
@@ -206,6 +207,7 @@ impl Engine<'_> {
                 if scale == 1.0 {
                     false
                 } else {
+                    self.fact_settled(node);
                     self.memo.default_scales.insert(node, scale);
                     scale.fract() != 0.0
                 }
@@ -371,6 +373,7 @@ impl Engine<'_> {
                                     node,
                                     "`div` takes integers",
                                 )?;
+                                self.fact_settled(node);
                                 self.memo.sigs.insert(node, Sig::ERROR);
                                 changed = true;
                             }
@@ -451,6 +454,7 @@ impl Engine<'_> {
                         Width::Fixed(scalar) if is_integer(scalar) => Width::Widened(scalar),
                         other => other,
                     };
+                    self.fact_settled(node);
                     self.memo.sigs.insert(
                         node,
                         Sig {

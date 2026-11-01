@@ -47,6 +47,7 @@ impl Engine<'_> {
             let mut sig = self.known_sig(scrutinee)?;
             sig.kind = Kind::Enum(id);
             if self.match_labels(node, &arms, otherwise, &sig)? {
+                self.fact_settled(scrutinee);
                 self.memo.bare_scrutinees.insert(scrutinee, id);
             }
         }
