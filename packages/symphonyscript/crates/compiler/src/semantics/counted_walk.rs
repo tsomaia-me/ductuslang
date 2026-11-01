@@ -20,6 +20,7 @@ pub(crate) enum CountedWalk {
     EngineDrawReached,
     EngineHoldsFaults,
     EngineCycle,
+    EngineDeclarationReads,
     MapLeavesMapLeaves,
     ScrutineeTyChoiceTy,
     ShapeLengths,
@@ -159,7 +160,7 @@ pub(crate) enum CountedWalk {
 }
 
 #[cfg(test)]
-const WALKS: usize = 156;
+const WALKS: usize = 157;
 
 #[cfg(test)]
 thread_local! {
@@ -189,6 +190,7 @@ impl CountedWalk {
         CountedWalk::EngineDrawReached,
         CountedWalk::EngineHoldsFaults,
         CountedWalk::EngineCycle,
+        CountedWalk::EngineDeclarationReads,
         CountedWalk::MapLeavesMapLeaves,
         CountedWalk::ScrutineeTyChoiceTy,
         CountedWalk::ShapeLengths,

@@ -133,6 +133,7 @@ impl Engine<'_> {
         reads.sort_by_key(|(from, to)| (format!("{from:?}"), format!("{to:?}")));
         for (from, to) in reads {
             self.memo.cycle_work += 1;
+            crate::semantics::counted_walk::CountedWalk::EngineDeclarationReads.step();
             let (Some((from, from_function)), Some((to, to_function))) = (
                 self.identity(&mut identities, from)?,
                 self.identity(&mut identities, to)?,
@@ -276,8 +277,10 @@ impl Engine<'_> {
         let mut end = None;
         while let Some((node, seen)) = queue.pop_front() {
             self.memo.cycle_work += 1;
+            crate::semantics::counted_walk::CountedWalk::EngineDeclarationReads.step();
             for next in edges.get(node).ok_or(Internal::missed("instance"))? {
                 self.memo.cycle_work += 1;
+                crate::semantics::counted_walk::CountedWalk::EngineDeclarationReads.step();
                 if component_of.get(*next) != Some(&home) {
                     continue;
                 }

@@ -1736,12 +1736,14 @@ fn a_recursive_call_over_a_growing_or_shrinking_array_computes_its_element() {
     }
 }
 
-fn nested_call_steps(depth: usize) -> u64 {
+fn nested_call_steps(depth: usize) -> (u64, u64) {
     let text = format!(
         "fn f(v): v\nlet c = {}1{}\nClip m:\n    Note/(c)\n",
         "f(".repeat(depth),
         ")".repeat(depth)
     );
+    let reads = crate::semantics::counted_walk::CountedWalk::EngineDeclarationReads;
+    let before = reads.steps();
     let (diagnostics, (value, steps)) = analyzed(&vocabulary(), &text, |engine| {
         (
             attr_value(engine, "pitch", EvalTy::I32),
@@ -1750,19 +1752,39 @@ fn nested_call_steps(depth: usize) -> u64 {
     });
     assert!(errors(&diagnostics).is_empty(), "{diagnostics:?}");
     assert_eq!(value, Some(CVal::Int(1)));
-    steps
+    (steps, reads.steps() - before)
+}
+
+fn nested_call_failures(depths: [usize; 3]) -> Vec<String> {
+    let counted = depths.map(nested_call_steps);
+    let mut failures = Vec::new();
+    for pair in counted.windows(2) {
+        if pair[1].0 > 2 * pair[0].0 {
+            failures.push(format!("use_steps {counted:?}"));
+        }
+        if pair[1].1 > 2 * pair[0].1 {
+            failures.push(format!("422 declaration reads {counted:?}"));
+        }
+    }
+    if counted.iter().any(|(_, reads)| *reads == 0) {
+        failures.push(format!(
+            "422 the declaration reads are not counted {counted:?}"
+        ));
+    }
+    failures
+}
+
+#[test]
+fn a_chain_of_nested_calls_records_its_declaration_reads_in_work_linear_in_its_depth_422() {
+    let failures = nested_call_failures([2_500, 5_000, 10_000]);
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
 
 #[test]
 #[ignore = "stress"]
 fn stress_a_chain_of_nested_calls_costs_work_linear_in_its_depth() {
-    let steps: Vec<u64> = [25_000, 50_000, 100_000]
-        .into_iter()
-        .map(nested_call_steps)
-        .collect();
-    for pair in steps.windows(2) {
-        assert!(pair[1] <= 2 * pair[0], "{steps:?}");
-    }
+    let failures = nested_call_failures([25_000, 50_000, 100_000]);
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
 
 #[test]

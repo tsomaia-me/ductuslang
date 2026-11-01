@@ -132,6 +132,7 @@ pub(crate) struct Engine<'a> {
     drawn_candidate_cycles: FastSet<(ItemRef, String)>,
     pub(super) found_cycles: Vec<Vec<(Loc, String)>>,
     pub(super) declaration_reads: std::cell::RefCell<FastSet<(Query, Query)>>,
+    scope_functions: std::cell::RefCell<FastMap<ScopeId, Option<(ScopeId, FnId)>>>,
     reader: Option<Query>,
     pub(super) current: Option<Query>,
 }
@@ -214,6 +215,7 @@ impl<'a> Engine<'a> {
             drawn_candidate_cycles: FastSet::default(),
             found_cycles: Vec::new(),
             declaration_reads: std::cell::RefCell::default(),
+            scope_functions: std::cell::RefCell::default(),
             reader: None,
             current: None,
         };
@@ -307,6 +309,7 @@ impl<'a> Engine<'a> {
     pub fn demand(&mut self, query: Query) -> Result<(), Internal> {
         let mut stack: Vec<(Query, Option<usize>)> = vec![(query, None)];
         let mut nearest: Vec<Option<Query>> = vec![self.is_declaration(query)?.then_some(query)];
+        let mut outer: Vec<Option<Query>> = vec![Self::outer_declaration(query)];
         let mut stalled = 0;
         while let Some((top, _)) = stack.last().copied() {
             crate::semantics::counted_walk::CountedWalk::EngineDemand.step();
@@ -314,6 +317,7 @@ impl<'a> Engine<'a> {
             if self.is_done(top) {
                 stack.pop();
                 nearest.pop();
+                outer.pop();
                 self.waiting.remove(&top);
                 self.settle_cycle_member(top);
                 stalled = 0;
@@ -321,8 +325,11 @@ impl<'a> Engine<'a> {
             }
             let mut need = Vec::new();
             self.current = Some(top);
-            let dispatched =
-                self.dispatch_reader(&stack, position, nearest.get(position).copied().flatten())?;
+            let dispatched = self.dispatch_reader(
+                top,
+                outer.get(position).copied().flatten(),
+                nearest.get(position).copied().flatten(),
+            )?;
             let enclosing_reader = std::mem::replace(&mut self.reader, dispatched);
             let done = self.dispatch(top, &mut need);
             self.reader = enclosing_reader;
@@ -331,6 +338,7 @@ impl<'a> Engine<'a> {
             if done {
                 stack.pop();
                 nearest.pop();
+                outer.pop();
                 self.waiting.remove(&top);
                 self.settle_cycle_member(top);
                 stalled = 0;
@@ -350,6 +358,7 @@ impl<'a> Engine<'a> {
                             self.waiting.remove(&query);
                         }
                         nearest.truncate(cut + 1);
+                        outer.truncate(cut + 1);
                         progressed = true;
                         break;
                     }
@@ -362,9 +371,16 @@ impl<'a> Engine<'a> {
                     let pushed = if declares {
                         Some(dep)
                     } else {
-                        self.pushed_reader(dep, &stack, position, reader)?
+                        self.pushed_reader(
+                            dep,
+                            (top, outer.get(position).copied().flatten()),
+                            reader,
+                        )?
                     };
                     nearest.push(pushed);
+                    outer.push(
+                        Self::outer_declaration(dep).or(outer.get(position).copied().flatten()),
+                    );
                     progressed = true;
                 }
             }
@@ -395,6 +411,7 @@ impl<'a> Engine<'a> {
             | Query::Sig(_)
             | Query::Eval(..) => reader,
         };
+        crate::semantics::counted_walk::CountedWalk::EngineDeclarationReads.step();
         if let Some(reader) = reader
             && reader != dep
         {
@@ -403,13 +420,22 @@ impl<'a> Engine<'a> {
     }
 
     fn function_of_scope(&self, scope: ScopeId) -> Result<Option<Query>, Internal> {
+        let mut visited = Vec::new();
         let mut current = Some(scope);
+        let mut found = None;
         while let Some(at) = current {
+            crate::semantics::counted_walk::CountedWalk::EngineDeclarationReads.step();
+            if let Some(known) = self.scope_functions.borrow().get(&at).copied() {
+                found = known;
+                break;
+            }
+            visited.push(at);
             let record = self.scope_of(at)?;
             if let ScopeKind::Locals(locals) = &record.kind
                 && let super::locals_owner::LocalsOwner::Fn(function) = locals.owner
             {
-                return Ok(Some(Query::Expr(self.hir.fn_decl(function)?.value, at)));
+                found = Some((at, function));
+                break;
             }
             current = match &record.kind {
                 ScopeKind::ParamPrefix { locals, .. } => Some(*locals),
@@ -421,14 +447,20 @@ impl<'a> Engine<'a> {
                 | ScopeKind::WrittenClause { .. } => record.parent,
             };
         }
-        Ok(None)
+        let mut known = self.scope_functions.borrow_mut();
+        for at in visited {
+            known.insert(at, found);
+        }
+        match found {
+            Some((at, function)) => Ok(Some(Query::Expr(self.hir.fn_decl(function)?.value, at))),
+            None => Ok(None),
+        }
     }
 
     fn pushed_reader(
         &self,
         dep: Query,
-        stack: &[(Query, Option<usize>)],
-        position: usize,
+        (top, outer): (Query, Option<Query>),
         reader: Option<Query>,
     ) -> Result<Option<Query>, Internal> {
         let (scope, loc, expression) = match dep {
@@ -482,40 +514,27 @@ impl<'a> Engine<'a> {
             };
             return Ok(if inside { reader } else { Some(function) });
         }
-        let (true, Some(&(Query::Param(..), _))) = (expression, stack.get(position)) else {
+        let (true, Query::Param(..)) = (expression, top) else {
             return Ok(reader);
         };
-        self.outer_reader(stack, position)
+        Ok(outer)
     }
 
-    fn outer_reader(
-        &self,
-        stack: &[(Query, Option<usize>)],
-        position: usize,
-    ) -> Result<Option<Query>, Internal> {
-        let mut current = Some(position);
-        while let Some(at) = current {
-            let &(query, parent) = stack
-                .get(at)
-                .ok_or(Internal::missed("demand stack entry"))?;
-            if matches!(
-                query,
-                Query::Let(..) | Query::Input(_) | Query::State(_) | Query::Attr(..)
-            ) {
-                return Ok(Some(query));
-            }
-            current = parent;
-        }
-        Ok(None)
+    fn outer_declaration(query: Query) -> Option<Query> {
+        matches!(
+            query,
+            Query::Let(..) | Query::Input(_) | Query::State(_) | Query::Attr(..)
+        )
+        .then_some(query)
     }
 
     fn dispatch_reader(
         &self,
-        stack: &[(Query, Option<usize>)],
-        position: usize,
+        top: Query,
+        outer: Option<Query>,
         reader: Option<Query>,
     ) -> Result<Option<Query>, Internal> {
-        let Some(&(Query::Param(locals, index), _)) = stack.get(position) else {
+        let Query::Param(locals, index) = top else {
             return Ok(reader);
         };
         let ScopeKind::Locals(record) = &self.scope_of(locals)?.kind else {
@@ -526,7 +545,7 @@ impl<'a> Engine<'a> {
             Some(super::param_source::ParamSource::Arg { scope, .. }) => {
                 match self.function_of_scope(*scope)? {
                     Some(function) => Ok(Some(function)),
-                    None => self.outer_reader(stack, position),
+                    None => Ok(outer),
                 }
             }
             Some(
