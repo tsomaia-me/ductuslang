@@ -304,7 +304,12 @@ impl Engine<'_> {
             crate::semantics::counted_walk::CountedWalk::ArrayChecksStateChecks.step();
             let node =
                 crate::semantics::analysis::ids::NodeId(u32::try_from(index).unwrap_or(u32::MAX));
-            let Op::History { cell, fallback, .. } = self.node(node)?.op else {
+            let op = &self.node(node)?.op;
+            let (cell, fallback, what) = if let Op::History { cell, fallback, .. } = *op {
+                (cell, fallback, "history")
+            } else if let Op::Stepped(cell) = *op {
+                (cell, None, "step")
+            } else {
                 continue;
             };
             if let HistoryCell::Let(id) = cell {
@@ -328,7 +333,9 @@ impl Engine<'_> {
                     self.error_at_node(
                         Code::HistoryTarget,
                         node,
-                        "this `let` is a compile-time value, which has no history; a history read names a `state`, a `stream` or a `channel`",
+                        format!(
+                            "this `let` is a compile-time value, which has no {what}; a history read names a `state`, a `stream` or a `channel`"
+                        ),
                     )?;
                     continue;
                 }

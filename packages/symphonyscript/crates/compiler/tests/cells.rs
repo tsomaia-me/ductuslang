@@ -1080,3 +1080,39 @@ fn a_history_read_or_stepped_of_an_unmarked_parameter_draws_history_target_with_
         }
     }
 }
+
+#[test]
+fn a_stepped_or_history_read_of_a_compile_time_let_draws_history_target_lens_2_g_a_d4() {
+    let compiler = symphonyscript::Compiler::new(&symphonyscript_fixtures::vocabulary())
+        .expect("the vocabulary compiles");
+    for value in ["3", "[1, 2]"] {
+        for read in ["(if q.stepped then 1 else 2)", "(i32(q.past(1, 0) * 0))"] {
+            let holders = [
+                vec![format!("Clip c:\n    Note/{read}")],
+                vec!["Clip c:\n    Note when q.stepped".to_string()],
+                vec![
+                    format!("state s = {read}"),
+                    "Clip c:\n    Note/s".to_string(),
+                ],
+                vec![
+                    format!("fn f(): {read}"),
+                    "Clip c:\n    Note/(f())".to_string(),
+                ],
+            ];
+            for holder in &holders {
+                let mut items = vec![format!("let q = {value}")];
+                items.extend(holder.iter().cloned());
+                for reversed in [false, true] {
+                    let mut ordered = items.clone();
+                    if reversed {
+                        ordered.reverse();
+                    }
+                    let text = format!("{}\n", ordered.join("\n"));
+                    let found = support::errors(compiler.check(&[support::source(&text)]));
+                    let codes: Vec<Code> = found.iter().map(|diagnostic| diagnostic.code).collect();
+                    assert_eq!(codes, [Code::HistoryTarget], "{text}{found:?}");
+                }
+            }
+        }
+    }
+}
