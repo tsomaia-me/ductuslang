@@ -43,6 +43,7 @@ mod recursive;
 mod represents;
 mod resume;
 mod run;
+mod template_seen;
 #[cfg(test)]
 mod tests;
 mod text;

@@ -129,8 +129,8 @@ impl Build {
             }
             Instr::Concat(parts, lay) => Instr::Concat(parts, self.lay(lay)),
             Instr::Native(native, count, lay) => Instr::Native(native, count, self.lay(lay)),
-            Instr::CallWith(node, own, function, facts, count, lay) => {
-                Instr::CallWith(node, own, function, facts, count, self.lay(lay))
+            Instr::CallWith(node, own, function, facts, count, lay, seen) => {
+                Instr::CallWith(node, own, function, facts, count, self.lay(lay), seen)
             }
             Instr::ForCheck(range, lay, end) => Instr::ForCheck(range, self.lay(lay), end),
             Instr::ForRun(node, for_node, own, lay) => {
@@ -1295,6 +1295,7 @@ impl Engine<'_> {
                 Rc::from(facts),
                 count,
                 Lay::Set(set),
+                std::cell::RefCell::new(None),
             )),
         ]))
     }

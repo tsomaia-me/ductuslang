@@ -485,11 +485,18 @@ impl Engine<'_> {
                     let values = operands(stack, *count as usize, lay)?;
                     stack.push(self.native_value(*native, values)?);
                 }
-                Instr::CallWith(node, own, function, facts, count, lay) => {
+                Instr::CallWith(node, own, function, facts, count, lay, seen) => {
                     let count = *count as usize;
                     let mut given = std::mem::take(&mut self.call_args);
                     peeked_into(stack, count, lay, &mut given)?;
-                    let called = self.call_with(*node, *function, *own, ctx, (facts, &given), need);
+                    let called = self.call_with(
+                        *node,
+                        *function,
+                        *own,
+                        ctx,
+                        (facts, &given, Some(seen)),
+                        need,
+                    );
                     self.call_args = given;
                     let called = called?;
                     if let Ctx::Frame(_) = ctx {

@@ -163,6 +163,7 @@ pub(crate) struct Memo {
     pub kept_types: super::fast_hash::FastSet<NodeId>,
     pub programs: FastMap<(NodeId, EvalTy), std::rc::Rc<super::evaluation::Program>>,
     pub fact_epoch: u32,
+    pub quiet_templates: FastMap<ScopeId, u32>,
     pub frame_starts: super::fast_hash::FastSet<NodeId>,
     pub default_nodes: super::fast_hash::FastSet<NodeId>,
     pub kept_operands: FastMap<NodeId, Vec<NodeId>>,

@@ -42,7 +42,14 @@ fn a_miss_in_the_recursive_evaluators_own_state_is_an_internal_error() {
         let id = CallId(engine.memo.call_keys.intern(key.parts()));
         let mut need = Vec::new();
         let mut evaluated = |engine: &mut crate::semantics::analysis::Engine<'_>, ctx| {
-            engine.call_with(call, function, EvalTy::Exact, ctx, (&[], &[]), &mut need)
+            engine.call_with(
+                call,
+                function,
+                EvalTy::Exact,
+                ctx,
+                (&[], &[], None),
+                &mut need,
+            )
         };
 
         engine

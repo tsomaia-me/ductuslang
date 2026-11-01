@@ -17,6 +17,7 @@ use super::mode::Mode;
 use super::own_type::own_type;
 use super::ran::Ran;
 use super::resume::Resume;
+use super::template_seen::TemplateSeen;
 use crate::diagnostics::Code;
 use crate::semantics::Internal;
 use crate::semantics::analysis::arg_key::ArgKey;
@@ -70,6 +71,12 @@ enum Reuse {
     Evaluate,
 }
 
+type CallArgs<'a> = (
+    &'a [ArgFact],
+    &'a [CVal],
+    Option<&'a std::cell::RefCell<Option<TemplateSeen>>>,
+);
+
 enum Reached {
     Call(CallId, TemplateId),
     Value(Option<CVal>),
@@ -90,7 +97,7 @@ impl Engine<'_> {
         function: FnId,
         own: EvalTy,
         ctx: Ctx,
-        (facts, values): (&[ArgFact], &[CVal]),
+        (facts, values, seen): CallArgs<'_>,
         need: &mut Vec<Query>,
     ) -> Result<Option<CVal>, Internal> {
         let held = match ctx {
@@ -102,7 +109,7 @@ impl Engine<'_> {
         };
         let (id, reached) = match held {
             Some(id) => (id, None),
-            None => match self.reached_values(node, function, own, ctx, (facts, values))? {
+            None => match self.reached_values(node, function, own, ctx, (facts, values, seen))? {
                 Reached::Call(id, template) => (id, Some(template)),
                 Reached::Value(value) => return Ok(value),
             },
@@ -153,7 +160,7 @@ impl Engine<'_> {
         }
         let template = match reached {
             Some(template) => template,
-            None => match self.reached_values(node, function, own, ctx, (facts, values))? {
+            None => match self.reached_values(node, function, own, ctx, (facts, values, seen))? {
                 Reached::Call(_, template) => template,
                 Reached::Value(value) => return Ok(value),
             },
@@ -181,7 +188,7 @@ impl Engine<'_> {
         function: FnId,
         own: EvalTy,
         ctx: Ctx,
-        (facts, values): (&[ArgFact], &[CVal]),
+        (facts, values, seen): CallArgs<'_>,
     ) -> Result<Reached, Internal> {
         let mut scratch = std::mem::take(&mut self.call_scratch);
         scratch.clear();
@@ -196,11 +203,32 @@ impl Engine<'_> {
                     Ctx::Frame(frame) => Some(&self.frame(frame)?.feeds),
                 };
                 unit_set_into(feeds.map_or(&[], Vec::as_slice), &mut scratch.units);
-                let template = TemplateId(self.memo.template_keys.intern(TemplateParts {
-                    function,
-                    args: &scratch.shapes,
-                    units: &scratch.units,
-                }));
+                let known = seen.and_then(|seen| {
+                    seen.borrow()
+                        .as_ref()
+                        .filter(|known| {
+                            known.shapes == scratch.shapes && known.units == scratch.units
+                        })
+                        .map(|known| known.template)
+                });
+                let template = match known {
+                    Some(template) => template,
+                    None => {
+                        let template = TemplateId(self.memo.template_keys.intern(TemplateParts {
+                            function,
+                            args: &scratch.shapes,
+                            units: &scratch.units,
+                        }));
+                        if let Some(seen) = seen {
+                            *seen.borrow_mut() = Some(TemplateSeen {
+                                shapes: scratch.shapes.clone(),
+                                units: scratch.units.clone(),
+                                template,
+                            });
+                        }
+                        template
+                    }
+                };
                 let id = CallId(self.memo.call_keys.intern(CallParts {
                     template,
                     args: &scratch.keys,
@@ -740,6 +768,12 @@ impl Engine<'_> {
             return Ok(false);
         }
         let template = self.frame_template(frame)?;
+        let epoch = self.memo.fact_epoch;
+        if let Some(template) = template
+            && self.memo.quiet_templates.get(&template) == Some(&epoch)
+        {
+            return Ok(false);
+        }
         let mut pending = Vec::new();
         for position in 0..self.template_heads(template) {
             let head = self
@@ -760,6 +794,9 @@ impl Engine<'_> {
             self.reference_args(call, &mut pending)?;
         }
         let Some(start) = pending.pop() else {
+            if let Some(template) = template {
+                self.memo.quiet_templates.insert(template, epoch);
+            }
             return Ok(false);
         };
         let machine = self.machine_mut()?;
