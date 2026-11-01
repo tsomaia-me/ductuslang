@@ -27,7 +27,7 @@ use crate::semantics::analysis::shape::Shape;
 use crate::semantics::analysis::site::Site;
 use crate::semantics::analysis::some::some;
 use crate::semantics::analysis::val::Val;
-use crate::semantics::collection::Decl;
+use crate::semantics::collection::{BuiltinName, Decl};
 use crate::semantics::ir::{
     ExprId, ExprKind, FnId, Ident, Loc, PatternId, PlacementId, WireId as HirWireId,
 };
@@ -89,12 +89,14 @@ impl Engine<'_> {
         let node = match base_val {
             Val::Scalar(node) => node,
             Val::Array(_) => {
-                self.error(
-                    Code::UnknownAttribute,
-                    loc,
-                    scope,
-                    "an array has no attributes; index it first",
-                )?;
+                if !self.function_member(name, loc, scope)? {
+                    self.error(
+                        Code::UnknownAttribute,
+                        loc,
+                        scope,
+                        "an array has no attributes; index it first",
+                    )?;
+                }
                 return Ok(Some(Val::Error));
             }
             Val::Error => {
@@ -150,12 +152,14 @@ impl Engine<'_> {
                     return self.frame_path(node, name, loc, scope, need);
                 }
                 if sig.kind != Kind::Node {
-                    self.error(
-                        Code::UnknownAttribute,
-                        loc,
-                        scope,
-                        format!("`.{}` reads an attribute of an instance or a wire, and this is a value", name.text),
-                    )?;
+                    if !self.function_member(name, loc, scope)? {
+                        self.error(
+                            Code::UnknownAttribute,
+                            loc,
+                            scope,
+                            format!("`.{}` reads an attribute of an instance or a wire, and this is a value", name.text),
+                        )?;
+                    }
                     return Ok(Some(Val::Error));
                 }
                 if sig.reactive {
@@ -1950,3 +1954,37 @@ impl Engine<'_> {
 
 const CHOSEN_PATHS: &str =
     "the references this path chooses among hold attributes of different shapes";
+
+impl Engine<'_> {
+    fn function_member(
+        &mut self,
+        name: &Ident,
+        loc: Loc,
+        scope: ScopeId,
+    ) -> Result<bool, Internal> {
+        let function = match self.find(&name.text, scope)? {
+            Found::Decl(Decl::Fn(_) | Decl::Native(_)) => true,
+            Found::Decl(Decl::Builtin(builtin)) => builtin != BuiltinName::Pi,
+            Found::Decl(_)
+            | Found::Query(_)
+            | Found::Val(_)
+            | Found::Item(_)
+            | Found::Placeholder
+            | Found::Nothing => false,
+        };
+        if !function {
+            return Ok(false);
+        }
+        self.error_helped(
+            Code::NotAValue,
+            loc,
+            scope,
+            format!(
+                "`.{0}` names the function `{0}`, and a function is not a value",
+                name.text
+            ),
+            format!("call the function, as in `x.{}()`", name.text),
+        )?;
+        Ok(true)
+    }
+}

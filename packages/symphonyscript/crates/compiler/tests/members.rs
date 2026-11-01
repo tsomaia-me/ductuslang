@@ -804,3 +804,42 @@ fn a_refused_dot_calls_receiver_is_checked_in_its_own_type_as_a_refused_operator
     ];
     support::assert_rows_in_every_order(&symphonyscript_fixtures::vocabulary(), rows);
 }
+
+#[test]
+fn a_function_named_as_a_member_without_parentheses_draws_not_a_value_naming_the_call_lens_1_gap_1_d3()
+ {
+    let compiler = Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("compiles");
+    let rows = [
+        ("", "(i32(2.0.sqrt))", "sqrt"),
+        ("", "(i32(2.0.abs))", "abs"),
+        ("fn f(x): 1", "([1, 2].f)", "f"),
+        ("fn f(x): 1", "(3.f)", "f"),
+        ("fn f(x): 1\nlet q = [1, 2]", "(q.f)", "f"),
+    ];
+    for (extra, value, name) in rows {
+        for reversed in [false, true] {
+            let mut items = vec![extra.to_string(), format!("Clip c:\n    Note/{value}")];
+            if reversed {
+                items.reverse();
+            }
+            let text = format!("{}\n", items.join("\n"));
+            let found = support::errors(compiler.check(&[support::source(&text)]));
+            let named = found.len() == 1
+                && found[0].code == Code::NotAValue
+                && found[0]
+                    .help
+                    .as_deref()
+                    .is_some_and(|help| help.contains(&format!("`x.{name}()`")));
+            assert!(named, "{text}{found:?}");
+        }
+    }
+    for (value, code) in [
+        ("(i32(2.0.nope))", Code::UnknownAttribute),
+        ("(i32(2.0.pi))", Code::UnknownAttribute),
+    ] {
+        let text = format!("Clip c:\n    Note/{value}\n");
+        let found = support::errors(compiler.check(&[support::source(&text)]));
+        let codes: Vec<Code> = found.iter().map(|diagnostic| diagnostic.code).collect();
+        assert_eq!(codes, [code], "{text}");
+    }
+}
