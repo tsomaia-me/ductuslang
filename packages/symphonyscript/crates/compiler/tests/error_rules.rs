@@ -14,6 +14,8 @@ enum Setup {
     Natives,
     AtPreludePath,
     LowLimits,
+    // 421: a program sized for the lowered limits alone, left out of the default-limit stress row.
+    LoweredTwin,
 }
 
 struct Rule {
@@ -64,6 +66,15 @@ const fn low_limits(section: &'static str, code: &'static str, program: &'static
         section,
         code,
         setup: Setup::LowLimits,
+        program,
+    }
+}
+
+const fn lowered_twin(section: &'static str, code: &'static str, program: &'static str) -> Rule {
+    Rule {
+        section,
+        code,
+        setup: Setup::LoweredTwin,
         program,
     }
 }
@@ -833,10 +844,16 @@ const RULES: &[Rule] = &[
         "inline-limit",
         "fn h0(x): x\nfn h1(x): h0(x) + h0(x) + h0(x) + h0(x) + h0(x) + h0(x) + h0(x) + h0(x) + h0(x) + h0(x)\nfn h2(x): h1(x) + h1(x) + h1(x) + h1(x) + h1(x) + h1(x) + h1(x) + h1(x) + h1(x) + h1(x)\nfn h3(x): h2(x) + h2(x) + h2(x) + h2(x) + h2(x) + h2(x) + h2(x) + h2(x) + h2(x) + h2(x)\nfn h4(x): h3(x) + h3(x) + h3(x) + h3(x) + h3(x) + h3(x) + h3(x) + h3(x) + h3(x) + h3(x)\nfn h5(x): h4(x) + h4(x) + h4(x) + h4(x) + h4(x) + h4(x) + h4(x) + h4(x) + h4(x) + h4(x)\nfn h6(x): h5(x) + h5(x) + h5(x) + h5(x) + h5(x) + h5(x) + h5(x) + h5(x) + h5(x) + h5(x)\nlet v = for i in 0..2 into s from 0: s + h6(i)\nClip k:\n    Note/(v)\n",
     ),
-    low_limits(
+    lowered_twin(
         "4.6",
         "expansion-limit",
         "let v = for i in 0..2000 into s from 0: s + i\nClip c:\n    Note/v\n",
+    ),
+    // 421: a program reaching the default limit, so the default-limit stress row draws the code; the twin above keeps its 2,000.
+    low_limits(
+        "4.6",
+        "expansion-limit",
+        "let v = for i in 0..1000001 into s from 0: i\nClip c:\n    Note/v\n",
     ),
     rule("8.1", "wire-syntax", "Clip c:\n    Plays\n"),
     rule("8.2", "destination-type", "Clip c:\n    Plays: 1\n"),
@@ -955,7 +972,7 @@ fn diagnostics(compilers: &Compilers, rule: &Rule) -> Vec<Diagnostic> {
         Setup::Example => compilers.example.check(&[source]),
         Setup::Bounded => compilers.bounded.check(&[source]),
         Setup::Natives => compilers.natives.check(&[source]),
-        Setup::LowLimits => compilers.low_limits.check(&[source]),
+        Setup::LowLimits | Setup::LoweredTwin => compilers.low_limits.check(&[source]),
         Setup::AtPreludePath => compilers.at_prelude_path.check(&[Source {
             path: "prelude.sym".into(),
             text: rule.program.into(),
