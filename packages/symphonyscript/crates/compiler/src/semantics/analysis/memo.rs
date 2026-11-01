@@ -20,7 +20,7 @@ use crate::semantics::ir::{ExprId, InputId};
 pub(crate) struct Memo {
     pub exprs: super::dense_pairs::DensePairs<ExprId, ScopeId, Val>,
     pub loop_params: FastMap<ExprId, Vec<crate::semantics::ir::Param>>,
-    pub loop_guesses: FastMap<ExprId, super::loop_types::LoopTypes>,
+    pub loop_guesses: FastMap<(ExprId, bool), super::loop_types::LoopTypes>,
     pub slot_extents: FastMap<super::ids::SlotId, super::capacity::Piecewise>,
     pub loop_capacities: FastMap<super::ids::SlotId, i128>,
     pub loop_reports: super::fast_hash::FastSet<NodeId>,

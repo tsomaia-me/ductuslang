@@ -555,3 +555,63 @@ fn a_capacity_past_an_annotated_accumulator_names_both_and_the_fix_its_help_name
         assert_eq!(errors(&compiler, &fixed), vec![], "{fixed}");
     }
 }
+
+const BODY_FAULTS: [&str; 7] = [
+    "for x in [1, 2] into s from 0: s + true",
+    "for x in [1, 2] into s from 0: s + \"a\"",
+    "for x in [1, 2] into s from 0: (s + true) * 0",
+    "for x in [1, 2] into s from 0: if s then 1 else 2",
+    "for x in [1, 2] into s from true: s + 1",
+    "for x in [true] into s from 0: s + x",
+    "for x in [] into s from 0: s + true",
+];
+
+const HOLDERS: [&str; 6] = [
+    "let v = V\nClip c:\n    Note/(v)\n",
+    "let v: i32 = V\nClip c:\n    Note | velocity=(v * 0.0)\n",
+    "pattern P():\n    let v = V\n    Note/(v)\nClip c:\n    P\n",
+    "Clip c:\n    Note/([(V)][0])\n",
+    "fn r(n): if n < 1 then (V) else r(n - 1)\nClip c:\n    Note/(r(2))\n",
+    "fn f():\n    let v = V\n    v\nClip c:\n    Note/(f())\n",
+];
+
+#[test]
+fn a_for_bodys_type_fault_draws_whatever_holds_the_expression_as_its_derived_cell_twin_draws_c1_1_c2_1()
+ {
+    let compiler = Compiler::new(&vocabulary()).expect("the vocabulary compiles");
+    let mut failures = Vec::new();
+    for value in BODY_FAULTS {
+        let twin = format!("state v = {value}\nClip c:\n    Note/(v)\n");
+        let expected = support::error_texts(&compiler, &twin);
+        if expected.is_empty() {
+            failures.push(format!("{twin}\n  the twin draws nothing\n"));
+        }
+        for holder in HOLDERS {
+            let text = holder.replace('V', value);
+            let at = text.find("Clip c:").unwrap_or(0);
+            let reversed = format!("{}{}", &text[at..], &text[..at]);
+            for program in [text.clone(), reversed] {
+                let found = support::error_texts(&compiler, &program);
+                if found != expected {
+                    failures.push(format!("{program}\n  draws {found:?}\n  twin {expected:?}\n"));
+                }
+            }
+        }
+    }
+    for (text, wanted) in [
+        (
+            "let v = for x in [5, 6] into s from 0: s + x\nClip c:\n    Note/([0][v])\n",
+            vec![(Code::IndexOutOfRange, "v".to_string())],
+        ),
+        (
+            "let v = for x in [1] into s from 0.5: s + x\nSynth y:\n    Osc | freq=(v)\n",
+            vec![],
+        ),
+    ] {
+        let found = support::error_texts(&compiler, text);
+        if found != wanted {
+            failures.push(format!("{text}\n  draws {found:?}\n"));
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}

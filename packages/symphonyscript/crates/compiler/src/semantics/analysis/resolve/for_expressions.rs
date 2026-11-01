@@ -90,7 +90,8 @@ impl Engine<'_> {
                     round,
                 }) => (template, types, round),
                 None => {
-                    let types = match (&annotated, self.memo.loop_guesses.get(&expr)) {
+                    let probe = self.in_probe(scope)?;
+                    let types = match (&annotated, self.memo.loop_guesses.get(&(expr, probe))) {
                         (Some(fixed), _) => LoopTypes {
                             accumulator: fixed.clone(),
                         },
@@ -178,7 +179,8 @@ impl Engine<'_> {
                 }
             };
             let state = if settled(&next, &types) || round + 1 >= ROUNDS {
-                self.memo.loop_guesses.insert(expr, types);
+                let probe = self.in_probe(scope)?;
+                self.memo.loop_guesses.insert((expr, probe), types);
                 LoopTemplate::Final(Some(self.loop_node(&head, body, template, (loc, scope))?))
             } else {
                 let template = self.loop_body(expr, for_expr, &head, &next, scope)?;
