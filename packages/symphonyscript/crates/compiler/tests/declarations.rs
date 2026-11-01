@@ -267,3 +267,47 @@ fn the_examples_of_the_brief_parse_to_trees_that_carry_each_part() {
         assert!(parsed.contains(tree), "{text:?}\n{parsed}");
     }
 }
+
+#[test]
+fn a_reference_to_a_name_declared_twice_draws_what_its_unknown_name_twin_draws_c1_7() {
+    let compiler =
+        symphonyscript::Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("compiles");
+    let uses = [
+        "Note/(a + true)",
+        "Note/(a[1.5])",
+        "Note/(if a then 1 else 2.5)",
+        "Note/(a * 2.5)",
+        "Note when a or 1 or 2",
+        "Note | velocity=a and true",
+    ];
+    let mut failures = Vec::new();
+    for declared in [
+        "let a = 1\nlet a = 2\n",
+        "state a(1)\nfn a(x): x\n",
+        "let a = [1]\nlet a = true\n",
+    ] {
+        for used in uses {
+            for reversed in [false, true] {
+                let clip = format!("Clip c:\n    {used}\n");
+                let ordered = if reversed {
+                    format!("{clip}{declared}")
+                } else {
+                    format!("{declared}{clip}")
+                };
+                let twin = format!("let q = 1\n{clip}");
+                let found: Vec<_> = support::error_texts(&compiler, &ordered)
+                    .into_iter()
+                    .filter(|(code, _)| *code != symphonyscript::Code::DuplicateName)
+                    .collect();
+                let expected: Vec<_> = support::error_texts(&compiler, &twin)
+                    .into_iter()
+                    .filter(|(code, _)| *code != symphonyscript::Code::UnknownName)
+                    .collect();
+                if found != expected {
+                    failures.push(format!("{ordered}found {found:?}\ntwin {expected:?}\n"));
+                }
+            }
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}

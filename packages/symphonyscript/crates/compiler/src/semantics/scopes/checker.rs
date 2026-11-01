@@ -398,6 +398,16 @@ impl<'a> Checker<'a> {
         Ok(self.hir.skipped_top.holds(name))
     }
 
+    fn held_by_a_placeholder(&self, frame: Option<usize>, name: &str) -> Result<bool, Internal> {
+        if self.visible_at(frame, name)?.is_some_and(|at| at.is_some()) {
+            return Ok(false);
+        }
+        if self.namespace.get(name).is_some() {
+            return Ok(false);
+        }
+        Ok(self.namespace.is_duplicated(name) || self.may_declare(frame, name)?)
+    }
+
     fn visible(&self, frame: Option<usize>, name: &str) -> Result<bool, Internal> {
         let mut current = frame.filter(|_| self.framed.contains(name));
         while let Some(index) = current {
@@ -531,6 +541,11 @@ impl<'a> Checker<'a> {
                         if operand == Operand::Value && !self.in_destination {
                             self.placeholders.push(id);
                         }
+                    } else if operand == Operand::Value
+                        && !self.in_destination
+                        && self.held_by_a_placeholder(frame, name)?
+                    {
+                        self.placeholders.push(id);
                     }
                 }
                 ExprKind::To => {
