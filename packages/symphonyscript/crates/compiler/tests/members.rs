@@ -818,7 +818,7 @@ fn a_function_named_as_a_member_without_parentheses_draws_not_a_value_naming_the
     ];
     for (extra, value, name) in rows {
         for reversed in [false, true] {
-            let mut items = vec![extra.to_string(), format!("Clip c:\n    Note/{value}")];
+            let mut items = [extra.to_string(), format!("Clip c:\n    Note/{value}")];
             if reversed {
                 items.reverse();
             }
