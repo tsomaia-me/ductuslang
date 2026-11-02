@@ -948,3 +948,65 @@ fn one_depth_fault_draws_one_recursion_depth_naming_the_longest_chain_c2_13() {
     }
 }
 
+/// SPEC §4.6's warning sentence and ARCHITECTURE §7 stage 6: an evaluation,
+/// taken or not, "that passes a limit draws the limit's error as a taken
+/// evaluation does". An untaken call or an untaken start's chain past half the
+/// nesting depth draws the limit's warning, and past the depth its error, as
+/// its taken twin does (C2-14).
+#[test]
+fn an_untaken_evaluations_depth_draws_the_warning_and_the_error_as_its_taken_twin_does_c2_14() {
+    let depths = |text: &str| -> Vec<Code> {
+        let mut found: Vec<Code> = support::checked_all(text)
+            .into_iter()
+            .map(|diagnostic| diagnostic.code)
+            .filter(|code| matches!(code, Code::LimitWarning | Code::RecursionDepth))
+            .collect();
+        found.sort();
+        found
+    };
+    let dp = "fn dp(x, m): if m < 1 then x else dp(x, m - 1)\n";
+    let instances = "Clip verse | gain=2:\n    Note\nClip other | gain=3:\n    Note\n";
+    for (depth, expected) in [
+        ("600", vec![Code::LimitWarning]),
+        ("2000", vec![Code::RecursionDepth, Code::LimitWarning]),
+    ] {
+        let mut expected = expected;
+        expected.sort();
+        let forms = [
+            (
+                format!("Clip k:\n    Note/(if false then dp(0, {depth}) else 60)\n"),
+                format!("Clip k:\n    Note/(if true then dp(0, {depth}) else 60)\n"),
+            ),
+            (
+                format!(
+                    "Clip k:\n    Note/(if false then i32(([verse, k][dp(0, {depth})]).gain) else 60)\n"
+                ),
+                format!(
+                    "Clip k:\n    Note/(if true then i32(([verse, k][dp(0, {depth})]).gain) else 60)\n"
+                ),
+            ),
+            (
+                format!(
+                    "fn h(xs, i): if i >= xs.size then 0 else (if false then i32((xs[dp(i % 1, {depth})]).gain) else 0) + i32(xs[i].gain) + h(xs, i + 1)\nClip k:\n    Note/([60][h([verse, other], 0) - 5])\n"
+                ),
+                format!(
+                    "fn h(xs, i): if i >= xs.size then 0 else (if true then i32((xs[dp(i % 1, {depth})]).gain) else 0) + i32(xs[i].gain) + h(xs, i + 1)\nClip k:\n    Note/([60][h([verse, other], 0) - 5])\n"
+                ),
+            ),
+        ];
+        for (untaken, taken) in forms {
+            for reversed in [false, true] {
+                let program = |reader: &str| {
+                    let mut items = vec![dp.to_string(), instances.to_string(), reader.to_string()];
+                    if reversed {
+                        items.reverse();
+                    }
+                    format!("Session main\n{}", items.concat())
+                };
+                let (text, twin) = (program(&untaken), program(&taken));
+                assert_eq!(depths(&text), expected, "{text}");
+                assert_eq!(depths(&twin), expected, "{twin}");
+            }
+        }
+    }
+}

@@ -1601,10 +1601,11 @@ impl Engine<'_> {
             }
             (false, Mode::Untaken | Mode::Taken) => {}
         }
-        if mode == Mode::Taken
-            && depth >= self.limits.nesting_depth_warning
-            && !self.machine_mut()?.deep_warned
-        {
+        let nested = match mode {
+            Mode::Taken => depth,
+            Mode::Untaken => chained,
+        };
+        if nested >= self.limits.nesting_depth_warning && !self.machine_mut()?.deep_warned {
             self.machine_mut()?.deep_warned = true;
             let names = self.nested_names(call.function)?;
             let counted = format!(
@@ -1620,7 +1621,7 @@ impl Engine<'_> {
                     format!("{}: {names}", warned(&counted, self.limits.nesting_depth)),
                     Some(help),
                 ),
-                true,
+                mode == Mode::Taken,
             )?;
         }
         let root = match some!(self.template(&call, node, need)?) {

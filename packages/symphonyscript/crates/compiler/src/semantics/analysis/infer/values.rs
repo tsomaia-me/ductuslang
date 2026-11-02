@@ -16,6 +16,7 @@ use crate::semantics::analysis::is_integer::is_integer;
 use crate::semantics::analysis::lengths_of::lengths_of;
 use crate::semantics::analysis::op::Op;
 use crate::semantics::analysis::query::Query;
+use crate::semantics::analysis::reachable::Reachable;
 use crate::semantics::analysis::width::Width;
 use crate::semantics::ir::{InputId, Loc};
 
@@ -51,6 +52,7 @@ impl Engine<'_> {
                 continue;
             }
             self.demand(Query::Eval(node, ty))?;
+            self.draw_reached_limits(Reachable::Eval(node, ty));
         }
         Ok(())
     }

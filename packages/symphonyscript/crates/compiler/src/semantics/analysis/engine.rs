@@ -1223,6 +1223,34 @@ impl<'a> Engine<'a> {
         }
     }
 
+    /// Draws the limit warnings an evaluation recorded and leaves its other
+    /// faults recorded: an untaken evaluation's counts draw the warning as a
+    /// taken evaluation's do (SPEC §4.6; ARCHITECTURE §7 stage 6), while the
+    /// faults it derives from its values are drawn by no untaken evaluation.
+    pub(in crate::semantics::analysis) fn draw_reached_limits(
+        &mut self,
+        first: super::reachable::Reachable,
+    ) {
+        let mut seen: FastSet<super::reachable::Reachable> = FastSet::default();
+        let mut pending = vec![first];
+        while let Some(current) = pending.pop() {
+            crate::semantics::counted_walk::CountedWalk::EngineDrawReached.step();
+            if !seen.insert(current) {
+                continue;
+            }
+            if let Some(super::fault_state::FaultState::Recorded { faults, edges }) =
+                self.memo.recorded.get_mut(&current)
+            {
+                let (warnings, kept): (Vec<_>, Vec<_>) = std::mem::take(faults)
+                    .into_iter()
+                    .partition(|fault| fault.code == Code::LimitWarning);
+                *faults = kept;
+                self.deferred.extend(warnings);
+                pending.extend(edges.iter().copied());
+            }
+        }
+    }
+
     pub(in crate::semantics::analysis) fn holds_faults(
         &self,
         first: &super::reachable::Reachable,
