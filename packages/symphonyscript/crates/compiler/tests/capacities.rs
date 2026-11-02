@@ -876,7 +876,7 @@ fn a_history_read_of_a_derived_state_has_its_layout_433_in(orders: support::Orde
                 "state s = played.past(1, [[1, 2]])\n",
                 first,
             ],
-            &[(Code::TypeMismatch, "played.past(1, [[1, 2]])")],
+            &[(Code::TypeMismatch, "[[1, 2]]")],
         ),
         (
             &[
@@ -894,7 +894,7 @@ fn a_history_read_of_a_derived_state_has_its_layout_433_in(orders: support::Orde
                 "state s = pair.past(1, [0])\n",
                 first,
             ],
-            &[(Code::TypeMismatch, "pair.past(1, [0])")],
+            &[(Code::TypeMismatch, "[0]")],
         ),
     ];
     support::assert_rows_in_orders(orders, &vocabulary(), rows);
@@ -3537,4 +3537,80 @@ fn a_groups_history_read_of_a_member_with_no_init_or_fallback_starts_at_its_own_
         "recent",
         8,
     );
+}
+
+/// SPEC §6.6 and §5.7: a history read has its cell's type; ARCHITECTURE §7: "A
+/// value whose type an error leaves known keeps that type". A fallback whose
+/// shape differs from its cell's draws its one mismatch, at the fallback, and
+/// the read draws in every position what its twin with no fallback draws (C2-6).
+#[test]
+fn a_history_read_has_its_cells_shape_whatever_its_fallback_c2_6() {
+    let drawn = |text: &str| -> Vec<(Code, String)> {
+        let mut found: Vec<(Code, String)> = support::checked(text)
+            .into_iter()
+            .map(|diagnostic| {
+                let range = diagnostic.span.range;
+                let at = text
+                    .get(range.start as usize..range.end as usize)
+                    .unwrap_or("?")
+                    .to_string();
+                (diagnostic.code, at)
+            })
+            .collect();
+        found.sort();
+        found
+    };
+    let mut programs = 0;
+    for (cells, array) in [
+        ("state n(1)\n", false),
+        ("state n([1, 2])\n", true),
+        ("state m(1)\nstate n = m + 1\n", false),
+        ("stream n(1)\n", false),
+    ] {
+        for fallback in ["[1]", "3", "[[1]]", "[1, 2]"] {
+            let differs = match fallback {
+                "3" => array,
+                "[1, 2]" => !array,
+                _ => true,
+            };
+            for position in [
+                "Note/(R)",
+                "Note | velocity=R",
+                "Note when R > 0",
+                "Note/(abs(R))",
+                "Note/(R[0])",
+            ] {
+                for reversed in [false, true] {
+                    let program = |read: &str| {
+                        let mut items = [
+                            cells.to_string(),
+                            format!("Clip c:\n    {}\n", position.replace('R', read)),
+                        ];
+                        if reversed {
+                            items.reverse();
+                        }
+                        items.concat()
+                    };
+                    let text = program(&format!("n.past(1, {fallback})"));
+                    let twin = program("n.past(1)");
+                    let mut expected: Vec<(Code, String)> = drawn(&twin)
+                        .into_iter()
+                        .map(|(code, at)| {
+                            (
+                                code,
+                                at.replace("n.past(1)", &format!("n.past(1, {fallback})")),
+                            )
+                        })
+                        .collect();
+                    if differs {
+                        expected.push((Code::TypeMismatch, fallback.to_string()));
+                    }
+                    expected.sort();
+                    programs += 1;
+                    assert_eq!(drawn(&text), expected, "{text}");
+                }
+            }
+        }
+    }
+    assert_eq!(programs, 160);
 }

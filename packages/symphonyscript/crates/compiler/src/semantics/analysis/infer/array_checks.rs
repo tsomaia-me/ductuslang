@@ -6,6 +6,7 @@ use crate::semantics::analysis::answers::layout_shaped;
 use crate::semantics::analysis::binding_kind::BindingKind;
 use crate::semantics::analysis::bound::Bound;
 use crate::semantics::analysis::engine::Engine;
+use crate::semantics::analysis::held_agrees::{FALLBACK_SHAPE, held_agrees};
 use crate::semantics::analysis::ids::NodeId;
 use crate::semantics::analysis::kind::Kind;
 use crate::semantics::analysis::op::Op;
@@ -281,7 +282,7 @@ impl Engine<'_> {
             if !self.typing.shape_faulted.contains(&binding)
                 && let Some(start) = self.init_node(binding)?
             {
-                self.held_check(start, HistoryCell::State(state), start, Held::Init)?;
+                self.held_check(HistoryCell::State(state), start, Held::Init)?;
             }
             if let Some(layout) = self.memo.binding_layouts.get(&binding).cloned()
                 && !layout.variable
@@ -350,7 +351,7 @@ impl Engine<'_> {
             if let Some(fallback) = fallback
                 && Some(fallback) != init
             {
-                self.held_check(node, cell, fallback, Held::Fallback)?;
+                self.held_check(cell, fallback, Held::Fallback)?;
             }
         }
         Ok(())
@@ -358,7 +359,6 @@ impl Engine<'_> {
 
     fn held_check(
         &mut self,
-        node: crate::semantics::analysis::ids::NodeId,
         cell: crate::semantics::analysis::history_cell::HistoryCell,
         fallback: crate::semantics::analysis::ids::NodeId,
         role: Held,
@@ -430,17 +430,8 @@ impl Engine<'_> {
                 return Ok(());
             }
         }
-        let agrees = match (&cell_layout, &fallback_layout) {
-            (None, None) => true,
-            (Some(cell), Some(fallback)) if cell.variable => {
-                fallback.inner() == cell.inner()
-                    || (fallback.outer() == Some(0) && fallback.inner().is_empty())
-            }
-            (Some(cell), Some(fallback)) => cell == fallback && !fallback.variable,
-            (None, Some(_)) | (Some(_), None) => false,
-        };
-        if !agrees {
-            self.error_at_node(Code::TypeMismatch, node, role.mismatch())?;
+        if !held_agrees(cell_layout.as_ref(), fallback_layout.as_ref()) {
+            self.error_at_node(Code::TypeMismatch, fallback, role.mismatch())?;
         }
         Ok(())
     }
@@ -635,9 +626,7 @@ impl Held {
 
     fn mismatch(self) -> &'static str {
         match self {
-            Held::Fallback => {
-                "a history read's fallback has the cell's type, and this one's shape differs"
-            }
+            Held::Fallback => FALLBACK_SHAPE,
             Held::Init => "a cell's init has the cell's type, and this one's shape differs",
         }
     }

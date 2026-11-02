@@ -11,6 +11,7 @@ use crate::semantics::analysis::c_val::CVal;
 use crate::semantics::analysis::engine::Engine;
 use crate::semantics::analysis::eval_ty::EvalTy;
 use crate::semantics::analysis::fast_hash::FastSet;
+use crate::semantics::analysis::held_agrees::FALLBACK_SHAPE;
 use crate::semantics::analysis::history_cell::HistoryCell;
 use crate::semantics::analysis::ids::{BindingId, NodeId, ScopeId};
 use crate::semantics::analysis::kind::Kind;
@@ -80,6 +81,13 @@ impl Engine<'_> {
         let fallback_loc = match fallback {
             Some(expr) => self.hir.expr(expr)?.loc,
             None => loc,
+        };
+        let fallback_val = match fallback_val {
+            Some(val) if self.fallback_shape_differs(cell, &val)? == Some(true) => {
+                self.error(Code::TypeMismatch, fallback_loc, scope, FALLBACK_SHAPE)?;
+                None
+            }
+            written => written,
         };
         let fallback = match fallback_val {
             Some(Val::Error) => return Ok(Some(Val::Error)),
@@ -733,4 +741,51 @@ fn unstarted(name: &str, word: &str, fallback: &str, unrun: bool) -> (String, St
             start
         },
     )
+}
+
+impl Engine<'_> {
+    /// Whether a history read's written fallback has another rank than its cell,
+    /// a single value against an array or arrays of other dimensions, where both
+    /// are known when the read is resolved (a group member's lengths settle only
+    /// later, so lengths are left to `held_check`): the read then has
+    /// its cell's type (SPEC §6.6, §5.7; ARCHITECTURE §7, "A value whose type an
+    /// error leaves known keeps that type") and the fallback draws its one
+    /// mismatch. `None` where either shape is not yet known, which
+    /// `infer/array_checks.rs` `held_check` checks once the cell settles.
+    fn fallback_shape_differs(
+        &mut self,
+        cell: HistoryCell,
+        fallback: &Val,
+    ) -> Result<Option<bool>, Internal> {
+        let bound = match cell {
+            HistoryCell::Input(input) => self.memo.inputs.get(&input).cloned(),
+            HistoryCell::State(state) => self.memo.states.get(&state).cloned(),
+            HistoryCell::Let(_) => return Ok(None),
+        };
+        let cell_layout = match &bound {
+            Some(BoundVal::Array(array)) => Some(Layout::fixed(array.0.lengths())),
+            Some(BoundVal::Scalar(Bound::Cell(binding))) => {
+                match self.memo.binding_layouts.get(binding) {
+                    Some(layout) => Some(layout.clone()),
+                    None if self.deferred(*binding)
+                        || self.arrays.contains(&self.binding(*binding)?.init) =>
+                    {
+                        return Ok(None);
+                    }
+                    None => None,
+                }
+            }
+            Some(BoundVal::Scalar(Bound::Value(_)) | BoundVal::Error) | None => return Ok(None),
+        };
+        let fallback_layout = match fallback {
+            Val::Array(array) => Some(Layout::fixed(array.shape.lengths())),
+            Val::Scalar(node) if self.arrays.contains(node) => return Ok(None),
+            Val::Scalar(_) => None,
+            Val::Error => return Ok(None),
+        };
+        let rank = |layout: Option<&Layout>| layout.map_or(0, |layout| layout.inner().len() + 1);
+        Ok(Some(
+            rank(cell_layout.as_ref()) != rank(fallback_layout.as_ref()),
+        ))
+    }
 }
