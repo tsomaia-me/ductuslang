@@ -164,6 +164,9 @@ pub(crate) struct Memo {
     pub programs: FastMap<(NodeId, EvalTy), std::rc::Rc<super::evaluation::Program>>,
     pub fact_epoch: u32,
     pub quiet_templates: FastMap<ScopeId, u32>,
+    /// The template calls whose reference arguments every frame of the template
+    /// holds alike, keyed and checked once (ARCHITECTURE §7 stage 6).
+    pub constant_reference_calls: super::fast_hash::FastSet<NodeId>,
     pub frame_starts: super::fast_hash::FastSet<NodeId>,
     pub default_nodes: super::fast_hash::FastSet<NodeId>,
     pub kept_operands: FastMap<NodeId, Vec<NodeId>>,

@@ -885,9 +885,10 @@ impl Engine<'_> {
         let Op::Recursive { args, .. } = &self.node(call)?.op else {
             return Ok(());
         };
+        let frame_only = self.memo.constant_reference_calls.contains(&call);
         for arg in args.iter().flatten() {
             if let Val::Scalar(node) = arg
-                && self.chosen_reference(*node)?
+                && self.chosen_reference(*node, frame_only)?
             {
                 references.push(*node);
             }
@@ -895,11 +896,19 @@ impl Engine<'_> {
         Ok(())
     }
 
-    fn chosen_reference(&self, node: NodeId) -> Result<bool, Internal> {
+    /// Whether a call's argument is a reference the evaluation chooses: one a
+    /// frame value chooses, or, until the template's first check of the call,
+    /// one every frame of the template holds alike (ARCHITECTURE §7 stage 6).
+    fn chosen_reference(&self, node: NodeId, frame_only: bool) -> Result<bool, Internal> {
         let Some(sig) = self.memo.sigs.get(&node) else {
             return Ok(false);
         };
-        Ok(sig.kind == Kind::Node && sig.frame && !sig.reactive && !sig.is_error())
+        Ok(
+            sig.kind == Kind::Node
+                && (sig.frame || !frame_only)
+                && !sig.reactive
+                && !sig.is_error(),
+        )
     }
 
     fn checked_calls(&mut self, frame: usize, need: &mut Vec<Query>) -> Result<bool, Internal> {
@@ -917,13 +926,18 @@ impl Engine<'_> {
             if references.is_empty() {
                 continue;
             }
+            let frame_only = self.memo.constant_reference_calls.contains(&call);
+            let mut framed = false;
+            for reference in &references {
+                framed |= self.known_sig(*reference)?.frame;
+            }
             let mut shapes = Vec::with_capacity(args.len());
             let mut chosen = Vec::new();
             let mut unchosen = false;
             let mut missing = false;
             for arg in args.iter() {
                 if let Some(Val::Scalar(node)) = arg
-                    && self.chosen_reference(*node)?
+                    && self.chosen_reference(*node, frame_only)?
                 {
                     match self.frame_value(frame, *node, EvalTy::Node)? {
                         Some(CVal::Node(item)) => {
@@ -965,6 +979,10 @@ impl Engine<'_> {
                 complete = false;
                 continue;
             };
+            if !framed {
+                self.memo.constant_reference_calls.insert(call);
+                continue;
+            }
             let Some(settled) = settled else {
                 continue;
             };

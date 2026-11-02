@@ -5587,3 +5587,53 @@ fn an_untaken_recursive_calls_reads_are_checked_against_the_chosen_reference_in_
     }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
+
+/// ARCHITECTURE §7 stage 6: "a call in that arm whose argument is a reference
+/// the arm chooses keys the callee's family for that reference … and the
+/// callee's reads through that parameter are checked against the reference for
+/// a lacking attribute and for a cycle with no evaluation". The reference is a
+/// frame parameter, an element of a literal of it, or an element a frame value
+/// picks; each keys the callee's family and its lacking attribute is drawn once
+/// per instance (C2-4).
+#[test]
+fn every_reference_an_untaken_arm_passes_to_a_recursive_callee_keys_its_family_c2_4() {
+    let mut programs = 0;
+    for (arg, instances) in [
+        ("c", vec!["verse"]),
+        ("[c][0]", vec!["verse"]),
+        ("[c, d][n % 2]", vec!["verse", "other"]),
+    ] {
+        for guard in ["false", "n > 50"] {
+            for (read, lacking) in [("x.nope", true), ("x.gain", false)] {
+                for reversed in [false, true] {
+                    let mut items = [
+                        "Session main\n".to_string(),
+                        format!(
+                            "fn h(c, d, n): if n < 1 then 1.0 else (if {guard} then k({arg}, n) else h(c, d, n - 1))\n"
+                        ),
+                        format!("fn k(x, n): if n < 1 then {read} else k(x, n - 1)\n"),
+                        "Clip verse | gain=0.5:\n    Note\n".to_string(),
+                        "Clip other | gain=0.5:\n    Note\n".to_string(),
+                        "Clip q | gain=h(verse, other, 2):\n    Note\n".to_string(),
+                    ];
+                    if reversed {
+                        items.reverse();
+                    }
+                    let text = items.concat();
+                    let expected: Found = if lacking {
+                        [(
+                            (Code::UnknownAttribute, "nope".to_string()),
+                            instances.len(),
+                        )]
+                        .into()
+                    } else {
+                        Found::new()
+                    };
+                    programs += 1;
+                    assert_eq!(found(&text), expected, "{text}");
+                }
+            }
+        }
+    }
+    assert_eq!(programs, 24);
+}
