@@ -67,7 +67,7 @@ The implementation runs in five milestones. The owner approves this plan once; t
 | A level of nesting | the deep-expressions fixture at depth 100,000, each construct, about 3 syntax nodes a level | 2 µs a level `dev`, 1.5 µs release |
 | A program of the breaker corpus | Check over every program, median and 99th percentile | 0.5 ms and 2 ms `dev`, 0.38 ms and 1.5 ms release |
 | A whole-project recompile (from M2r) | the 10,000-line fixture project, about 57,000 syntax nodes, its expanded items counted | 1 µs a syntax node plus 1 µs an expanded item release (0.7 µs an item, the analysis's share, until M3 builds the Program), 1.3 times that `dev` |
-| An expanded item (from M2r) | `Clip c:` / `for i in 0..n:` / `Note/(60 + i % 12) \| velocity=0.5` at 50,000, 100,000 and 200,000, 20 syntax nodes | 1 µs an item release (0.7 µs until M3), 1.3 times that `dev` |
+| An expanded item (from M2r) | `Rig r:` / `for i in 0..n:` / `Lamp/(1 + i % 12) \| hue=0.5` at 50,000, 100,000 and 200,000, 20 syntax nodes | 1 µs an item release (0.7 µs until M3), 1.3 times that `dev` |
 | Peak memory (from M2r) | the fixture project and the expansion program under a counting allocator, the compile's own allocations | 256 B a syntax node plus 512 B an expanded item (112 B, the analysis's share, until M3), plus 64 B a substituted node from M3 |
 | An evaluated `Expr` node, a commit step (from M3) | the fixture projects' commit traces | 20 ns a node and 1 µs of fixed cost a step, release |
 | A reload (from M3) | `prepare` and `install` of the 10,000-line fixture | 50 ms release |
@@ -109,7 +109,7 @@ Steps:
 2. Core types: `Value`, `Ty`, ids and handles, `Span`, `Path`.
 3. The vocabulary builder, `build()` with every check of SPEC §10.1 except the prelude's, and the stamp (ARCHITECTURE §2).
 4. The Program types (ARCHITECTURE §3) and a `dump` printer with a fixed text format.
-5. `symphonyscript-fixtures`: the example vocabulary of SPEC §1.3; the fixture projects, each `sym` example of the SPEC that declares every name it uses, and a music project and a DSP project that together use every kind and wire kind of the fixture vocabulary.
+5. `symphonyscript-fixtures`: the example vocabulary of SPEC §1.3; the fixture projects, each `sym` example of the SPEC that declares every name it uses, and fixture projects for each domain of the example vocabulary, two for music, one for lighting and one for process control, which together use every kind and wire kind of the fixture vocabulary.
 6. The lexer (SPEC §2): layout, literals, unit suffixes from the vocabulary, interpolation, NFC comparison, trivia.
 7. The lossless syntax tree on `rowan`, with its typed view.
 8. The parser for every production, with error recovery (ARCHITECTURE §7.1). It takes the fixture vocabulary to tell wire placements from node placements.
@@ -349,7 +349,7 @@ Exit:
 - Golden values for float built-ins, saturation, division by zero, float `%`, the canonical NaN, clamped indexing and `rand` (SPEC §5.2, §5.5, §5.7, §12.5) match bit for bit.
 - Change reports name the attribute, one per step of its binding, in the order of SPEC §12.3, the consumer run after every step.
 - A test for each rule of SPEC §13.
-- Inserting one anonymous note into a playing clip reports exactly one addition.
+- Inserting one anonymous child into an instance of a running Program reports exactly one addition.
 - M2's deep sources lower, load, commit, reload, compare, clone, dump and drop on a thread with a 1 MiB stack.
 - Compiling a fixture project repeatedly, with its sources in any order, gives equal Programs and equal dumps.
 - A generated test mutates fixture Programs (ids out of range, cells out of order, mismatched operand types, picks with no candidates), and each mutant is refused by `Runtime::new` or commits and reloads without a panic.
@@ -379,8 +379,8 @@ Steps:
 Exit:
 - End-to-end tests for `new` and `check`, and for single-file mode.
 - Language server tests for diagnostics, completion, hover, definition, references and rename on the fixture projects; hover on a pattern and on each of its uses shows the pattern's type (SPEC §6.4).
-- The extension starts the language server for a sample project.
-- The JetBrains plugin starts the language server for a sample project in IntelliJ IDEA, highlights its sources and shows its diagnostics.
+- The extension starts the language server for a fixture project.
+- The JetBrains plugin starts the language server for a fixture project in IntelliJ IDEA, highlights its sources and shows its diagnostics.
 - `check` prints each diagnostic as ARCHITECTURE §9 renders it, the lesson under `── why ──` and the spans under `── where ──`, and `--brief` leaves out the lesson.
 - The language server handles M2's deep sources on a thread with a 1 MiB stack.
 - The `package` record's `options` and `--limit` reach the compiler and the language server, a flag overriding the record.
