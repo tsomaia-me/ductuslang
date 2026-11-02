@@ -114,6 +114,7 @@ mod width;
 mod wire;
 
 pub(crate) use engine::Engine;
+pub(crate) use resolve::LENGTH_LIMIT;
 
 #[cfg(test)]
 mod addition_tests;

@@ -6,14 +6,13 @@ use super::frame::Frame;
 use super::frame_kind::FrameKind;
 use crate::diagnostics::Code;
 use crate::semantics::Internal;
+use crate::semantics::analysis::LENGTH_LIMIT;
 use crate::semantics::collection::{Decl, Namespace, Variants};
 use crate::semantics::ir::{
     AttrValue, BlockId, BodyItem, ExprId, ExprKind, FnId, ForExpr, Hir, Ident, Iterable, LetDecl,
     Loc, LoopVar, PatternId, PlacementId, StateId, TypeBase, TypeRef, UnknownNames,
 };
 use crate::semantics::reporting::Report;
-
-const LENGTH_LIMIT: u32 = 1 << 31;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Visit {

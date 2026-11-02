@@ -3,6 +3,7 @@ use std::ops::Range;
 use super::hir_builder::{HirBuilder, digits_value};
 use super::index::index;
 use crate::diagnostics::Code;
+use crate::semantics::analysis::LENGTH_LIMIT;
 use crate::semantics::ir::{CellWord, ExprKind, Input, InputId, StateDecl, StateId, Top, TypeBase};
 use crate::syntax::SyntaxKind;
 use crate::syntax::ast::{self, AstNode};
@@ -39,6 +40,7 @@ impl HirBuilder<'_> {
             };
             self.draw(Code::CellCapacity, range, summary);
         }
+        let capacity = capacity.and_then(|value| self.sized(node, misplaced_capacity, value));
         let name = self.ident(node.name());
         let ty = node.ty().map(|ty| {
             let mut built = self.type_ref(&ty);
@@ -57,9 +59,7 @@ impl HirBuilder<'_> {
             let input = Input {
                 name,
                 word,
-                capacity: capacity
-                    .filter(|_| word != CellWord::State)
-                    .map(|value| u32::try_from(value).unwrap_or(u32::MAX)),
+                capacity: capacity.filter(|_| word != CellWord::State),
                 ty,
                 value,
                 loc,
@@ -98,6 +98,30 @@ impl HirBuilder<'_> {
         let id = StateId(index(self.hir.states.len()));
         self.hir.states.push(decl);
         self.hir.top.push(Top::State(id));
+    }
+
+    fn sized(&mut self, node: &ast::CellDecl<'_>, misplaced: bool, value: u64) -> Option<u32> {
+        let size = u32::try_from(value)
+            .ok()
+            .filter(|size| (1..LENGTH_LIMIT).contains(size));
+        if size.is_none()
+            && !misplaced
+            && let Some(range) = brackets(node)
+        {
+            let (code, summary) = if value == 0 {
+                (
+                    Code::ZeroLength,
+                    "the capacity of a host-fed `stream` or `channel` is at least 1",
+                )
+            } else {
+                (
+                    Code::LengthLimit,
+                    "the capacity of a host-fed `stream` or `channel` is below 2³¹",
+                )
+            };
+            self.draw(code, range, summary);
+        }
+        size
     }
 
     pub(super) fn draw(&mut self, code: Code, range: Range<u32>, summary: &str) {

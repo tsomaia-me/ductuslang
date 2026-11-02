@@ -44,7 +44,7 @@ impl Engine<'_> {
     }
 
     #[cfg(test)]
-    pub(in crate::semantics::analysis) fn history_depth(&self, cell: HistoryCell) -> u64 {
+    pub(in crate::semantics::analysis) fn history_depth(&self, cell: HistoryCell) -> u32 {
         self.nodes
             .iter()
             .filter_map(|node| {

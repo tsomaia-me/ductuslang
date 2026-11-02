@@ -674,6 +674,58 @@ fn a_cells_capacity_clock_string_and_history_target_draw_the_codes_their_rules_n
 }
 
 #[test]
+fn a_stream_or_channel_capacity_and_a_history_offset_are_sizes_between_1_and_2_31_minus_1() {
+    let rows: &[support::Row] = &[
+        (&["stream[0] x(0)\n"], &[(Code::ZeroLength, "[0]")]),
+        (&["channel[0] x(0)\n"], &[(Code::ZeroLength, "[0]")]),
+        (
+            &["stream[2147483648] x(0)\n"],
+            &[(Code::LengthLimit, "[2147483648]")],
+        ),
+        (
+            &["channel[2147483648] x(0)\n"],
+            &[(Code::LengthLimit, "[2147483648]")],
+        ),
+        (
+            &["channel[99999999999999999999999] x(0)\n"],
+            &[(Code::LengthLimit, "[99999999999999999999999]")],
+        ),
+        (&["stream[2147483647] x(0)\n"], &[]),
+        (&["channel[2147483647] x(0)\n"], &[]),
+        (&["stream[1] x(0)\n"], &[]),
+        (
+            &["state a(1)\n", "state s = a.past(2147483648)\n"],
+            &[(Code::HistoryOffset, "2147483648")],
+        ),
+        (
+            &["state a(1)\n", "state s = a.past(2147483647 + 1)\n"],
+            &[(Code::HistoryOffset, "2147483647 + 1")],
+        ),
+        (
+            &[
+                "state a(1)\n",
+                "state s = a.past(170141183460469231731687303715884105727)\n",
+            ],
+            &[(
+                Code::HistoryOffset,
+                "170141183460469231731687303715884105727",
+            )],
+        ),
+        (
+            &["state a(1)\n", "state s = a.past((2 ** 126 - 1) * 2 + 1)\n"],
+            &[(Code::HistoryOffset, "(2 ** 126 - 1) * 2 + 1")],
+        ),
+        (
+            &["state a(1)\n", "state s = a.past(2 ** 127 - 1)\n"],
+            &[(Code::IntegerOverflow, "2 ** 127")],
+        ),
+        (&["state a(1)\n", "state s = a.past(2147483647)\n"], &[]),
+        (&["state a(1)\n", "state s = a.past(1)\n"], &[]),
+    ];
+    support::assert_rows_in_every_order(&symphonyscript_fixtures::vocabulary(), rows);
+}
+
+#[test]
 fn a_line_written_as_an_input_draws_the_top_level_diagnostic_whose_help_names_the_cell_form() {
     for text in [
         "input level = 1\nClip c:\n    Note\n",

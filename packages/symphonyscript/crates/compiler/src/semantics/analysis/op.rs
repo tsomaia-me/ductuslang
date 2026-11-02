@@ -61,7 +61,7 @@ pub(crate) enum Op {
     },
     History {
         cell: HistoryCell,
-        offset: u64,
+        offset: u32,
         fallback: Option<NodeId>,
     },
     Stepped(HistoryCell),

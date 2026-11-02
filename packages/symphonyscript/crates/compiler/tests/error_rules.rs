@@ -463,6 +463,10 @@ const RULES: &[Rule] = &[
     rule("6.1", "state-value", "Clip c:\n    Note\nstate s(c)\n"),
     rule("6.1", "cell-capacity", "state[4] level(0)\n"),
     rule("6.1", "cell-capacity", "channel[4] s = 1\n"),
+    rule("6.1", "zero-length", "stream[0] s(0)\n"),
+    rule("6.1", "zero-length", "channel[0] s(0)\n"),
+    rule("6.1", "length-limit", "stream[2147483648] s(0)\n"),
+    rule("6.1", "length-limit", "channel[2147483648] s(0)\n"),
     rule("6.2", "let-syntax", "let = 1\n"),
     rule("6.2", "declaration-cycle", "let a = b + 1\nlet b = a + 1\n"),
     rule("6.2", "declaration-cycle", "fn f(): a\nlet a = f()\n"),
@@ -712,6 +716,11 @@ const RULES: &[Rule] = &[
     rule("6.6", "declaration-cycle", "state s = s + 1\n"),
     rule("6.6", "history-offset", "state a(1)\nstate s = a.past(0)\n"),
     rule("6.6", "history-offset", "state a(1)\nstate s = a.past(a)\n"),
+    rule(
+        "6.6",
+        "history-offset",
+        "state a(1)\nstate s = a.past(2147483648)\n",
+    ),
     rule(
         "6.6",
         "history-target",

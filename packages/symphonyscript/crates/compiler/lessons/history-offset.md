@@ -1,6 +1,6 @@
 # history-offset
 
-`x.past(k)` reads a value from the history of the cell `x`, and `k` is a positive integer known at compile time. (SPEC §6.6)
+`x.past(k)` reads a value from the history of the cell `x`, and `k` is a positive integer known at compile time, between 1 and 2³¹ − 1. (SPEC §6.6)
 
 A cell's history is as deep as the deepest `past` read of it, which the compiler finds from the offsets.
 

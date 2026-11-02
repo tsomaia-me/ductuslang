@@ -1,5 +1,6 @@
 use super::bindings::{ANNOTATED_ROWS, ANNOTATED_SHAPE, Rows};
 use super::found::Found;
+use super::length_limit::LENGTH_LIMIT;
 use crate::diagnostics::Code;
 use crate::semantics::Internal;
 use crate::semantics::analysis::answers::CellRead;
@@ -61,11 +62,17 @@ impl Engine<'_> {
             return Ok(Some(Val::Error));
         }
         let offset = match some!(self.cval(Query::Eval(offset_node, EvalTy::Exact), need)) {
-            CVal::Int(value) if value >= 1 => u64::try_from(value).unwrap_or(u64::MAX),
-            CVal::Int(_) => {
+            CVal::Int(value) if value < 1 => {
                 self.error(Code::HistoryOffset, offset_loc, scope, OFFSET)?;
                 return Ok(Some(Val::Error));
             }
+            CVal::Int(value) => match u32::try_from(value) {
+                Ok(offset) if offset < LENGTH_LIMIT => offset,
+                Ok(_) | Err(_) => {
+                    self.error(Code::HistoryOffset, offset_loc, scope, OFFSET_RANGE)?;
+                    return Ok(Some(Val::Error));
+                }
+            },
             CVal::F32(_)
             | CVal::F64(_)
             | CVal::Bool(_)
@@ -723,6 +730,8 @@ impl Engine<'_> {
 }
 
 const OFFSET: &str = "the offset of a history read is a positive integer known at compile time";
+
+const OFFSET_RANGE: &str = "the offset of a history read is between 1 and 2³¹ − 1";
 
 pub(in crate::semantics::analysis) const STRING_CELL: &str =
     "a cell holding a string (SPEC §3.3) is a construct this compiler does not build";
