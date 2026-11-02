@@ -58,7 +58,7 @@ impl Engine<'_> {
                 self.memo.programs.remove(&(node, ty));
                 true
             }
-            Ran::Suspended(_) | Ran::Abandoned => false,
+            Ran::Suspended(_) | Ran::Abandoned | Ran::Ended => false,
         })
     }
 

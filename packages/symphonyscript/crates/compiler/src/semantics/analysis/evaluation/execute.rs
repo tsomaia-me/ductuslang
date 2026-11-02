@@ -71,6 +71,11 @@ impl Engine<'_> {
         let cycles = self.cycles_known();
         let mut pc = start;
         while let Some(instr) = program.code.get(pc) {
+            if let Ctx::Frame(frame) = ctx
+                && self.ends_untaken(frame)?
+            {
+                return Ok(Ran::Ended);
+            }
             CountedWalk::ProgramStep.step();
             let at = u32::try_from(pc).map_err(|_| Internal::missed("program"))?;
             pc += 1;
@@ -603,6 +608,11 @@ impl Engine<'_> {
                     }
                 }
             }
+        }
+        if let Ctx::Frame(frame) = ctx
+            && self.ends_untaken(frame)?
+        {
+            return Ok(Ran::Ended);
         }
         Ok(Ran::Value(pop(stack)?))
     }

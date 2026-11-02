@@ -5189,6 +5189,37 @@ fn the_deep_rows_of_the_open_call_class_draw_recursion_depth_beside_the_values_t
     assert_none_fail(open_call_rows(&rows, 1), 24);
 }
 
+/// ARCHITECTURE §7 stage 6: an untaken start is evaluated "never through a call
+/// whose key, SPEC §4.6's memo key, is open at or below the frame", and "an
+/// evaluation that passes a limit or reaches such a call yields no reference".
+/// In `h([verse, other], 1)` the untaken `g(xs, n + 2)` opens `h(xs, 2)`, whose
+/// `g(xs, n)` and `h(xs, n - 1)` reach the open `h(xs, 1)`: the frame ends there,
+/// evaluates no later operand, and the chain through `g(xs, n + 2)` draws no
+/// depth. The rows are 418's whose frame meets a reaching operand before the
+/// descending one; the others are gap G6 of the progress file.
+#[test]
+fn an_untaken_frame_that_reaches_a_call_whose_key_is_open_ends_there_and_draws_no_depth_418() {
+    let mut chosen = BTreeSet::new();
+    for (order, taken_read) in [(1, 1), (3, 1), (4, 1), (5, 1), (1, 0), (4, 0), (5, 0)] {
+        for reversed in [0, 1] {
+            for wrong in [0, 1] {
+                chosen.insert(vec![
+                    2,
+                    OpenCallArm::AboveOne as usize,
+                    order,
+                    taken_read,
+                    1,
+                    0,
+                    reversed,
+                    wrong,
+                ]);
+            }
+        }
+    }
+    let rows = Rows::Chosen(std::sync::Mutex::new(chosen));
+    assert_none_fail(open_call_rows(&rows, 2), 28);
+}
+
 #[test]
 fn an_untaken_recursive_arguments_start_whose_own_chain_passes_the_depth_draws_recursion_depth_391()
 {

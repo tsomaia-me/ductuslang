@@ -71,6 +71,18 @@ enum Reuse {
     Evaluate,
 }
 
+/// What running one work item of a frame left.
+enum Worked {
+    /// The program was abandoned, so the machine goes on from its work stack.
+    Abandoned,
+    /// The program waits on work it pushed or on queries outside the machine.
+    Waiting,
+    Value(CVal),
+    /// The untaken frame ended at a call whose key is open at or below it, so
+    /// its root completes with no value.
+    Ended(NodeId, EvalTy),
+}
+
 type CallArgs<'a> = (
     &'a [ArgFact],
     &'a [CVal],
@@ -1268,6 +1280,7 @@ impl Engine<'_> {
                 continue;
             }
             let mut outer = Vec::new();
+            let mut completed = (current, ty);
             let evaluated = match memoized {
                 Some(value) => {
                     if !self.check_heads(frame, &mut outer)? {
@@ -1291,11 +1304,17 @@ impl Engine<'_> {
                     self.sink = enclosing_sink;
                     self.fault_frame = enclosing;
                     match evaluated? {
-                        Some(evaluated) => evaluated,
-                        None => continue,
+                        Worked::Abandoned => continue,
+                        Worked::Waiting => None,
+                        Worked::Value(value) => Some(value),
+                        Worked::Ended(root, root_ty) => {
+                            completed = (root, root_ty);
+                            Some(CVal::Error)
+                        }
                     }
                 }
             };
+            let (current, ty) = completed;
             if self.machine_mut()?.passed.is_some() {
                 continue;
             }
@@ -1438,7 +1457,7 @@ impl Engine<'_> {
         index: usize,
         (frame, node, ty): (usize, NodeId, EvalTy),
         outer: &mut Vec<Query>,
-    ) -> Result<Option<Option<CVal>>, Internal> {
+    ) -> Result<Worked, Internal> {
         let (program, pc, base) = match self.resume_of(index, (frame, node, ty))? {
             Some(resume) => (resume.program, resume.pc, resume.base),
             None => {
@@ -1448,13 +1467,13 @@ impl Engine<'_> {
                     Ok(program) => (program, 0, base),
                     Err(needs) => {
                         outer.extend(needs);
-                        return Ok(Some(None));
+                        return Ok(Worked::Waiting);
                     }
                 }
             }
         };
         match self.run_program(Ctx::Frame(frame), &program, pc, outer)? {
-            Ran::Value(value) => Ok(Some(Some(value))),
+            Ran::Value(value) => Ok(Worked::Value(value)),
             Ran::Suspended(pc) => {
                 self.machine_mut()?.resumes.push(Resume {
                     index,
@@ -1465,13 +1484,59 @@ impl Engine<'_> {
                     pc,
                     base,
                 });
-                Ok(Some(None))
+                Ok(Worked::Waiting)
             }
             Ran::Abandoned => {
                 self.machine_mut()?.stack.truncate(base as usize);
-                Ok(None)
+                Ok(Worked::Abandoned)
+            }
+            Ran::Ended => {
+                self.machine_mut()?.stack.truncate(base as usize);
+                let (root, root_ty) = self.end_frame(frame)?;
+                Ok(Worked::Ended(root, root_ty))
             }
         }
+    }
+
+    /// Whether an untaken frame has reached a call whose key is open at or
+    /// below it: such a frame evaluates no later operand and yields no
+    /// reference (ARCHITECTURE §7 stage 6). A taken frame checking its heads
+    /// runs its starts untaken but is itself taken, and goes on.
+    pub(super) fn ends_untaken(&self, frame: usize) -> Result<bool, Internal> {
+        let record = self.frame(frame)?;
+        Ok(record.mode == Mode::Untaken && !record.opened.is_empty())
+    }
+
+    /// Drops the work and the suspended programs of the top frame, which an
+    /// untaken evaluation ended, and leaves its root to complete with no value.
+    /// The frame's items lie above every lower frame's, so the drop is the
+    /// frame's own work.
+    fn end_frame(&mut self, frame: usize) -> Result<(NodeId, EvalTy), Internal> {
+        let machine = self.machine_mut()?;
+        if machine.frames.len() != frame.saturating_add(1) {
+            return Err(Internal::missed("ended frame"));
+        }
+        while machine
+            .work
+            .last()
+            .is_some_and(|(owner, ..)| *owner >= frame)
+        {
+            machine.work.pop();
+        }
+        while let Some(resume) = machine.resumes.last()
+            && resume.frame >= frame
+        {
+            let base = resume.base as usize;
+            machine.resumes.pop();
+            machine.stack.truncate(base);
+        }
+        let record = machine
+            .frames
+            .get(frame)
+            .ok_or(Internal::missed("evaluation frame"))?;
+        let (root, ty) = (record.root, record.ty);
+        machine.work.push((frame, root, ty));
+        Ok((root, ty))
     }
 
     fn push_frame(
