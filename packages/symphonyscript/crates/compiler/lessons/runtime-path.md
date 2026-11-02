@@ -6,19 +6,19 @@ A path is resolved when the program compiles.
 
 ```sym-error
 state i(0)
-let s = [verse, chorus]
-Clip verse | gain=s[i].gain:
-    Note
-Clip chorus:
-    Note
+let s = [dusk, night]
+Scene dusk | hold=s[i].hold:
+    Cue
+Scene night:
+    Cue
 ```
 
 `s[i]` is chosen by the input `i`.
 
 ```sym
-let s = [verse, chorus]
-Clip verse | gain=s[1].gain:
-    Note
-Clip chorus:
-    Note
+let s = [dusk, night]
+Scene dusk | hold=s[1].hold:
+    Cue
+Scene night:
+    Cue
 ```

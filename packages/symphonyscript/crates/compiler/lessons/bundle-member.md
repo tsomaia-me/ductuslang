@@ -6,8 +6,8 @@ A bundle groups single placements.
 
 ```sym-error
 pattern P():
-    Plays: c
-Clip c:
+    Triggers: s
+Scene s:
     [P]
 ```
 
@@ -15,7 +15,7 @@ The pattern's body is a wire.
 
 ```sym
 pattern P():
-    Note
-Clip c:
+    Cue
+Scene s:
     [P]
 ```

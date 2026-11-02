@@ -5,13 +5,13 @@ A `type` declaration is `type`, a name, optional bracket parameters, and either 
 A record is a value with named fields, so each field states its name and its type where the record is declared.
 
 ```sym-error
-type Chord:
-    root i32
+type Band:
+    low f32
 ```
 
-`root` has no `:` before its type.
+`low` has no `:` before its type.
 
 ```sym unbuilt
-type Chord:
-    root: i32
+type Band:
+    low: f32
 ```

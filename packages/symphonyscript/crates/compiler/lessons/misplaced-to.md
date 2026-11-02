@@ -5,15 +5,14 @@
 `to` reads an attribute of a wire's destination.
 
 ```sym-error
-let a = to.gain
+let a = to.open
 ```
 
 `to` stands outside a wire placement.
 
 ```sym
-Clip a:
-    Note
-Clip c:
-    Note
-    Plays | gain=to.gain: a
+Plant p:
+    Valve as v
+    Controller:
+        Drives | limit=to.open: v
 ```

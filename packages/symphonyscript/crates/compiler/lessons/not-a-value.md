@@ -6,17 +6,17 @@ A wire connects instances that exist elsewhere.
 
 ```sym-error
 pattern V():
-    Note
-Clip c:
-    Plays: V
+    Cue
+Scene s:
+    Triggers: V
 ```
 
 `V` is a pattern.
 
 ```sym
-Clip v:
-    Note
-Clip c:
-    Note
-    Plays: v
+Scene v:
+    Cue
+Scene s:
+    Cue
+    Triggers: v
 ```

@@ -2,7 +2,7 @@
 
 A top-level instance that no entry-kind instance reaches, through children and wires, draws a warning. (SPEC §10.2)
 
-Nothing plays an instance that the entry never reaches.
+Nothing runs an instance that the entry never reaches.
 
 ```sym-error
 Session s:

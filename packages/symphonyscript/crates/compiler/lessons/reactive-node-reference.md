@@ -7,23 +7,23 @@ Node references are fixed when the program compiles; a destination chosen at run
 ```sym-error
 state i(0)
 fn pick(k):
-    let t = [verse, chorus][k]
+    let t = [dusk, night][k]
     k
-Clip verse:
-    Note
-Clip chorus:
-    Note
-Clip c:
-    Note/(pick(i))
+Scene dusk:
+    Cue
+Scene night:
+    Cue
+Scene s | hold=(pick(i)):
+    Cue
 ```
 
 `t` chooses an instance by the parameter `k`, which reads the cell `i`.
 
 ```sym
 state i(0)
-Clip verse:
-    Note
-    Plays: [verse, chorus][i]
-Clip chorus:
-    Note
+Scene dusk:
+    Cue
+    Triggers: [dusk, night][i]
+Scene night:
+    Cue
 ```

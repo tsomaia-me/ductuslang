@@ -5,15 +5,15 @@ The iterable of a placement `for` and of a `for` expression is an array, element
 A single value has no elements to iterate over, and a range has no positions apart from its values. `for i, k in 0..4` is an error too: write `for i in 0..4`.
 
 ```sym-error
-Clip c:
+Rig r:
     for i in 5:
-        Note
+        Lamp
 ```
 
 `5` is a single value.
 
 ```sym
-Clip c:
+Rig r:
     for i in 0..5:
-        Note
+        Lamp
 ```

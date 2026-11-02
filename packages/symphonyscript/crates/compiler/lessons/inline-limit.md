@@ -12,8 +12,8 @@ fn h3(x): h2(x) + h2(x) + h2(x) + h2(x) + h2(x) + h2(x) + h2(x) + h2(x) + h2(x) 
 fn h4(x): h3(x) + h3(x) + h3(x) + h3(x) + h3(x) + h3(x) + h3(x) + h3(x) + h3(x) + h3(x)
 fn h5(x): h4(x) + h4(x) + h4(x) + h4(x) + h4(x) + h4(x) + h4(x) + h4(x) + h4(x) + h4(x)
 fn h6(x): h5(x) + h5(x) + h5(x) + h5(x) + h5(x) + h5(x) + h5(x) + h5(x) + h5(x) + h5(x)
-Clip k:
-    Note/(h6(1))
+Rig r:
+    Lamp/(h6(1))
 ```
 
 `h6(1)` inlines ten million calls.
@@ -21,6 +21,6 @@ Clip k:
 ```sym
 fn h0(x): x
 fn h1(x): h0(x) * 10
-Clip k:
-    Note/(h1(1))
+Rig r:
+    Lamp/(h1(1))
 ```

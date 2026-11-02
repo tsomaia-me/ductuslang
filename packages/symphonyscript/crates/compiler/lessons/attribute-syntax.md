@@ -5,13 +5,13 @@ An attribute entry is `name=value`, `name` or `!name`. (SPEC §7.6)
 Each entry sets the attribute it names.
 
 ```sym-error
-Clip c:
-    Note | =1
+Rig r:
+    Lamp | =1
 ```
 
 The entry names no attribute.
 
 ```sym
-Clip c:
-    Note | velocity=1
+Rig r:
+    Lamp | level=1
 ```

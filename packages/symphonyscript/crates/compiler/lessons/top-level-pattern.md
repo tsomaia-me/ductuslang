@@ -6,8 +6,8 @@ A top-level use names one instance.
 
 ```sym-error
 pattern P():
-    Note
-    Note
+    Lamp
+    Lamp
 P top
 ```
 
@@ -15,8 +15,8 @@ P top
 
 ```sym
 pattern P():
-    Clip:
-        Note
-        Note
+    Rig:
+        Lamp
+        Lamp
 P top
 ```

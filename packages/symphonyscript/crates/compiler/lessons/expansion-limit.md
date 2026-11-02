@@ -5,15 +5,15 @@ A compilation runs at most 1,000,000 `for` iterations and pattern uses, the iter
 The limit keeps a mistaken bound from building an endless program.
 
 ```sym-error
-Clip c:
+Rig r:
     for i in 0..100001:
-        Note Note Note Note Note Note Note Note Note Note
+        Lamp Lamp Lamp Lamp Lamp Lamp Lamp Lamp Lamp Lamp
 ```
 
-The loop yields over a million notes.
+The loop yields over a million lamps.
 
 ```sym
-Clip c:
+Rig r:
     for i in 0..16:
-        Note
+        Lamp
 ```

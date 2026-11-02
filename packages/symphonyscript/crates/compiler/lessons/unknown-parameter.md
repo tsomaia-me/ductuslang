@@ -5,17 +5,17 @@ A use's attribute clause supplies the pattern's parameters, and a name that is n
 The clause binds parameters by their names.
 
 ```sym-error
-pattern P(root = 1):
-    Note/root
-Clip c:
-    P | octave=1
+pattern P(level = 1):
+    Lamp/level
+Rig r:
+    P | brightness=1
 ```
 
-`P` has no parameter `octave`.
+`P` has no parameter `brightness`.
 
 ```sym
-pattern P(root = 1):
-    Note/root
-Clip c:
-    P | root=2
+pattern P(level = 1):
+    Lamp/level
+Rig r:
+    P | level=0.5
 ```

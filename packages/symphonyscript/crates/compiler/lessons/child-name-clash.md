@@ -5,15 +5,15 @@ A child or wire name equal to a name of its own or an enclosing body, to an attr
 The name would hide the other one inside the body.
 
 ```sym-error
-Clip c:
-    Note as dup
-    Note as dup
+Plant p:
+    Valve as dup
+    Valve as dup
 ```
 
 `dup` names two children.
 
 ```sym
-Clip c:
-    Note as first
-    Note as second
+Plant p:
+    Valve as feed
+    Valve as vent
 ```

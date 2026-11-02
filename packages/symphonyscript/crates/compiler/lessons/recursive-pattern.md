@@ -6,7 +6,7 @@ Its expansion would never end.
 
 ```sym-error
 pattern A():
-    Clip:
+    Plant:
         A
 ```
 
@@ -14,6 +14,6 @@ pattern A():
 
 ```sym
 pattern A():
-    Clip:
-        Note
+    Plant:
+        Valve
 ```

@@ -6,8 +6,8 @@ A single value has no elements.
 
 ```sym-error
 let a = 1[0]
-Clip c:
-    Note/a
+Plant p:
+    Valve/a
 ```
 
 `1` is a single value.

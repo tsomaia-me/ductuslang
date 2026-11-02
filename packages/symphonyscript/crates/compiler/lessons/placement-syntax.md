@@ -5,11 +5,11 @@ A top-level placement is a kind and a name, then optional flags, a default value
 A top-level instance is reached by its name.
 
 ```sym-error
-Clip
+Plant
 ```
 
-The top-level `Clip` has no name.
+The top-level `Plant` has no name.
 
 ```sym
-Clip intro
+Plant boiler
 ```

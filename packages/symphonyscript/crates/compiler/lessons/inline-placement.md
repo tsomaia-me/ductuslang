@@ -5,13 +5,13 @@ A placement with a gate or an attribute clause is parenthesized or written on it
 The clause would otherwise run on into the placements after it.
 
 ```sym-error
-Clip c:
-    Note/60 Note | velocity=1
+Rig r:
+    Lamp/0.5 Lamp | hue=1
 ```
 
 The second placement's clause shares the line unparenthesized.
 
 ```sym
-Clip c:
-    Note/60 (Note | velocity=1)
+Rig r:
+    Lamp/0.5 (Lamp | hue=1)
 ```

@@ -6,8 +6,8 @@ An operator on whole arrays would leave unclear which elements it combines.
 
 ```sym-error
 let a = [1, 2] + 3
-Clip c:
-    Note/a
+Plant p:
+    Valve/a
 ```
 
 `+` meets an array and a single value.

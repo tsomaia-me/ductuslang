@@ -5,13 +5,13 @@ A flag is a character the vocabulary assigns to an attribute of the kind. (SPEC 
 A flag sets its attribute, so an unassigned flag sets nothing.
 
 ```sym-error
-Clip c:
-    Note!
+Rig r:
+    Lamp!
 ```
 
-`Note` assigns no attribute to `!`.
+`Lamp` assigns no attribute to `!`.
 
 ```sym
-Clip c:
-    Note'
+Rig r:
+    Lamp*
 ```

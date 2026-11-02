@@ -5,13 +5,13 @@ A top-level `let` or a pattern's `let` that reads a cell, directly or through ot
 A `let` names a compile-time value, computed once when the program compiles; a value that changes while the graph runs is a cell, and a derived `state` computes it.
 
 ```sym-error
-state note(60)
-let louder = note + 12
+state level(0.5)
+let brighter = level + 0.2
 ```
 
-`louder` reads the cell `note`.
+`brighter` reads the cell `level`.
 
 ```sym
-state note(60)
-state louder = note + 12
+state level(0.5)
+state brighter = level + 0.2
 ```

@@ -5,13 +5,13 @@ Dividing a plain number by a unit value, multiplying two unit values, `**` on a 
 These operations would yield units the language has no family for.
 
 ```sym-error
-Clip c:
-    Note | length=2bars * 2bars
+Scene s:
+    Cue | fade=2s * 2s
 ```
 
-Bars times bars is no length.
+Seconds times seconds is no duration.
 
 ```sym
-Clip c:
-    Note | length=2bars * 2
+Scene s:
+    Cue | fade=2s * 2
 ```
