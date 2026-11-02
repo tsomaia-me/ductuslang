@@ -1,5 +1,6 @@
 use symphonyscript_core::{BinaryOp, Value};
 
+use super::found::Found;
 use super::members::QUALIFIED_NAME;
 use crate::diagnostics::Code;
 use crate::semantics::Internal;
@@ -13,7 +14,7 @@ use crate::semantics::analysis::shape::Shape;
 use crate::semantics::analysis::shape_need::ShapeNeed;
 use crate::semantics::analysis::some::some;
 use crate::semantics::analysis::val::Val;
-use crate::semantics::collection::BuiltinName;
+use crate::semantics::collection::{BuiltinName, Decl};
 use crate::semantics::ir::{ExprId, ExprKind, Loc, StrPart};
 use crate::semantics::math_package::MATH;
 
@@ -82,6 +83,17 @@ impl Engine<'_> {
                     },
                     None => None,
                 }
+            }
+            ExprKind::Binary(BinaryOp::Is | BinaryOp::IsNot, _, rhs_expr)
+                if self.names_a_type(*rhs_expr, scope)? =>
+            {
+                self.error(
+                    Code::UnbuiltConstruct,
+                    self.hir.expr(*rhs_expr)?.loc,
+                    scope,
+                    "a type after `is` (SPEC §5.3) is a construct this compiler does not build",
+                )?;
+                Some(Val::Error)
             }
             ExprKind::Binary(op, lhs_expr, rhs_expr) => {
                 let (lhs, rhs) = self.siblings(*lhs_expr, *rhs_expr, scope, need)?;
@@ -1091,4 +1103,43 @@ const BRANCHES: &str = "the branches hold arrays of different shapes";
 enum Branches {
     Whole(Vec<NodeId>),
     Each(Vec<Val>),
+}
+
+impl Engine<'_> {
+    /// Whether the right operand of `is` names a type, which makes it SPEC
+    /// §5.3's alternative test: an enum, a node kind or a wire kind, with or
+    /// without dimensions (`Wave`, `Wave[2]`).
+    fn names_a_type(&mut self, expr: ExprId, scope: ScopeId) -> Result<bool, Internal> {
+        let mut current = expr;
+        loop {
+            match self.hir.expr(current)?.kind.clone() {
+                ExprKind::Index(base, _) => current = base,
+                ExprKind::Name(name) => {
+                    return Ok(matches!(
+                        self.find(&name, scope)?,
+                        Found::Decl(Decl::Enum(_) | Decl::Node(_) | Decl::Wire(_))
+                    ));
+                }
+                ExprKind::Error
+                | ExprKind::Number(..)
+                | ExprKind::Bool(_)
+                | ExprKind::Str(_)
+                | ExprKind::Variant { .. }
+                | ExprKind::To
+                | ExprKind::Convert(..)
+                | ExprKind::Array(_)
+                | ExprKind::Field(..)
+                | ExprKind::IndexFromEnd(..)
+                | ExprKind::Slice { .. }
+                | ExprKind::History { .. }
+                | ExprKind::Stepped(..)
+                | ExprKind::Call(..)
+                | ExprKind::Unary(..)
+                | ExprKind::Binary(..)
+                | ExprKind::If(..)
+                | ExprKind::Match { .. }
+                | ExprKind::For(_) => return Ok(false),
+            }
+        }
+    }
 }

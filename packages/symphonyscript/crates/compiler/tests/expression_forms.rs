@@ -318,3 +318,58 @@ fn a_new_expression_form_holding_or_held_by_a_syntax_fault_draws_the_syntax_faul
     }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
+
+/// SPEC §5.3: "a name is this test when it names a type (§6.5)"; ARCHITECTURE
+/// §7 `unbuilt-construct`. A type name after `is`, an enum or a node kind, with
+/// `not` or dimensions, is the alternative test and draws `unbuilt-construct`
+/// at the type, as `p is i32` does (C2-16).
+#[test]
+fn a_type_name_after_is_is_the_alternative_test_and_draws_unbuilt_construct_c2_16() {
+    let drawn = |text: &str| -> Vec<(Code, String)> {
+        support::checked(text)
+            .into_iter()
+            .map(|diagnostic| {
+                let range = diagnostic.span.range;
+                let at = text
+                    .get(range.start as usize..range.end as usize)
+                    .unwrap_or("?")
+                    .to_string();
+                (diagnostic.code, at)
+            })
+            .collect()
+    };
+    for subject in ["state p(1)\n", "let p = 1\n"] {
+        for ty in ["Wave", "Note"] {
+            for (form, written) in [
+                ("p is {}", ty.to_string()),
+                ("p is not {}", ty.to_string()),
+                ("p is {}[2]", format!("{ty}[2]")),
+            ] {
+                for reversed in [false, true] {
+                    let program = |name: &str| {
+                        let test = form.replace("{}", name);
+                        let mut items = [
+                            subject.to_string(),
+                            format!("Clip c:\n    Note when {test}\n"),
+                        ];
+                        if reversed {
+                            items.reverse();
+                        }
+                        items.concat()
+                    };
+                    let text = program(ty);
+                    let twin_written = written.replace(ty, "i32");
+                    assert_eq!(
+                        drawn(&text),
+                        vec![(Code::UnbuiltConstruct, written.clone())],
+                        "{text}"
+                    );
+                    assert_eq!(
+                        drawn(&program("i32")),
+                        vec![(Code::UnbuiltConstruct, twin_written)],
+                    );
+                }
+            }
+        }
+    }
+}

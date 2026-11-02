@@ -173,6 +173,10 @@ const DECIDING_NONE: &[(&str, &str)] = &[
         "the node the resolver builds for each expression form",
     ),
     (
+        "analysis/resolve/expressions.rs names_a_type",
+        "whether the operand after `is` names a type, SPEC §5.3",
+    ),
+    (
         "analysis/resolve/names.rs unplaced_placeholder",
         "the name a bare-variant placeholder prints in its diagnostic",
     ),
