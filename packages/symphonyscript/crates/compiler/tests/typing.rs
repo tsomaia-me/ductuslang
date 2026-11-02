@@ -6424,3 +6424,51 @@ fn exhaustive_an_integer_looking_recursive_body_under_a_float_expected_type_comp
     let failures = float_body_rows(&Rows::Every);
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
+
+/// ARCHITECTURE §7: "an operand that a refused operator, index, bound, condition,
+/// conversion or annotation holds is checked in its own type"; "Every other
+/// fault draws its own diagnostic at its span, whatever fault stands beside it".
+/// A top-level `let` that reads a cell is refused (`reactive-let`, SPEC §6.2), and
+/// its value's other faults still draw, as its placeholder twin's do (the head's
+/// exhaustive run on `d31c0a5`).
+#[test]
+fn a_reactive_lets_value_draws_its_other_faults_as_its_placeholder_twin_does() {
+    let codes = |text: &str| -> Vec<Code> {
+        let mut found: Vec<Code> = support::checked(text)
+            .into_iter()
+            .map(|diagnostic| diagnostic.code)
+            .collect();
+        found.sort();
+        found
+    };
+    for (value, faults) in [
+        (
+            "((q).size) is (true + [1, 2][5])",
+            vec![Code::OperandType, Code::IndexOutOfRange],
+        ),
+        ("q.size + [1, 2][5]", vec![Code::IndexOutOfRange]),
+    ] {
+        for (cell, refusal) in [
+            (Some("state q([]): i32[..4]\n"), Code::ReactiveLet),
+            (None, Code::UnknownName),
+        ] {
+            for reversed in [false, true] {
+                let mut items = vec![
+                    format!("let a: i32 = {value}\n"),
+                    "Clip c:\n    Note/(a)\n".to_string(),
+                ];
+                if reversed {
+                    items.reverse();
+                }
+                if let Some(cell) = cell {
+                    items.insert(0, cell.to_string());
+                }
+                let text = items.concat();
+                let mut expected = faults.clone();
+                expected.push(refusal);
+                expected.sort();
+                assert_eq!(codes(&text), expected, "{text}");
+            }
+        }
+    }
+}

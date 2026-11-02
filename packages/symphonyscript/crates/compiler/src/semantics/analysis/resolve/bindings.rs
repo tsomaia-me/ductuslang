@@ -206,6 +206,11 @@ impl Engine<'_> {
             let reads = self.untypable_reads(node)?;
             self.typing.read_by_faults.extend(reads);
             self.typing.refused_lets.push(node);
+            // The refused value is still checked in its own types, so every other
+            // fault in it draws at its span (ARCHITECTURE §7).
+            if !self.in_probe(within)? {
+                self.memo.own_typed.push(node);
+            }
         }
         let (name, loc) = match decl.name.as_ref() {
             Some(name) => (name.text.as_str(), name.loc),
