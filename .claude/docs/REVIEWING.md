@@ -7,11 +7,11 @@ This file lists the defects a code reviewer in this repository looks for, each s
 **Stringly typed kinds.** A misspelt string compiles and falls into the default arm.\
 **Bad**
 ```rust
-match node.kind.as_str() { "osc" => osc(node), "gain" => gain(node), _ => {} }
+match node.kind.as_str() { "lamp" => lamp(node), "valve" => valve(node), _ => {} }
 ```
 **Good**
 ```rust
-match node.kind { Kind::Osc => osc(node), Kind::Gain => gain(node) }
+match node.kind { Kind::Lamp => lamp(node), Kind::Valve => valve(node) }
 ```
 **Wildcard arm on an enum we own.** A new variant compiles and takes the default path unseen.\
 **Bad**
@@ -22,14 +22,14 @@ match op { Op::Add => add(a, b), _ => Value::ZERO }
 ```rust
 match op { Op::Add => add(a, b), Op::Sub => sub(a, b), Op::Mul => mul(a, b) }
 ```
-**Bare numbers that carry units.** Seconds, samples and beats in one `f64` add without complaint.\
+**Bare numbers that carry units.** Seconds, steps and ticks in one `f64` add without complaint.\
 **Bad**
 ```rust
 fn schedule(at: f64, length: f64) -> Event;
 ```
 **Good**
 ```rust
-fn schedule(at: Beats, length: Frames) -> Event;
+fn schedule(at: Ticks, length: Steps) -> Event;
 ```
 
 ## Subtle, deep patterns
@@ -97,11 +97,11 @@ let line = line_starts.partition_point(|&start| start <= span.start);
 **Expected value from the code.** An expectation computed by the formula under test proves only that the code equals itself.\
 **Bad**
 ```rust
-assert_eq!(beats_to_frames(b, bpm, rate), (b * 60.0 / bpm * rate) as u64);
+assert_eq!(ticks_to_steps(t, ticks_per_sec, steps_per_sec), (t / ticks_per_sec * steps_per_sec) as u64);
 ```
 **Good**
 ```rust
-assert_eq!(beats_to_frames(1.0, 120.0, 48_000.0), 24_000);
+assert_eq!(ticks_to_steps(8.0, 4.0, 1000.0), 2000);
 ```
 **Golden blessed unread.** An accepted golden pins today's bug as the specification; the reviewer reads every changed golden line against the spec.\
 **Bad**
@@ -111,7 +111,7 @@ assert_eq!(out, fs::read_to_string(&golden)?);
 ```
 **Good**
 ```rust
-assert_eq!(emit(&graph), "osc 440 -> gain 0.5 -> out\n");
+assert_eq!(emit(&graph), "sensor -> controller 0.5 -> valve\n");
 ```
 **Case that cannot fail.** An assertion behind a match or a guard passes when the code breaks.\
 **Bad**
@@ -129,7 +129,7 @@ assert_eq!(eval("1 + 2"), Ok(3));
 ```
 **Good**
 ```rust
-#[test] fn reload_keeps_state() { let mut p = start(SRC); p.set(GAIN, 0.5); assert_eq!(p.reload(SRC_V2).unwrap().get(GAIN), 0.5); }
+#[test] fn reload_keeps_state() { let mut p = start(SRC); p.set(LEVEL, 0.5); assert_eq!(p.reload(SRC_V2).unwrap().get(LEVEL), 0.5); }
 ```
 **One behaviour from many angles.** Ten tests of the trivial path stand in for the one rule that is real logic.\
 **Bad**
@@ -194,7 +194,7 @@ Minor: `[]` should take `i32` as its element type when nothing fixes it, instead
 ```
 **Good**
 ```text
-No finding: SPEC §3.2 decides it ("each use gives it its element type"), and `Note/([][0])` draws index-out-of-range as §5.5 says.
+No finding: SPEC §3.2 decides it ("each use gives it its element type"), and `Lamp/([][0])` draws index-out-of-range as §5.5 says.
 ```
 **Blocking by the path, not by the finding's size.** PLAN § Reviews rates by the path a program takes: Blocking on a path an ordinary program takes, Major on an unusual one or an exit criterion not met, Minor everything else; one generated row and a hundred rate the same, and a defect in new code rates as one in old.\
 **Bad**
@@ -203,7 +203,7 @@ Blocking: a cycle through the reference an untaken arm hands to a second recursi
 ```
 **Good**
 ```text
-Major: a wrong program accepted on an unusual path, a nested helper called on a frame-chosen slice inside an untaken arm. Blocking is the ordinary path: a bounds-guarded recursion over clips with a helper, refused 108 of 108.
+Major: a wrong program accepted on an unusual path, a nested helper called on a frame-chosen slice inside an untaken arm. Blocking is the ordinary path: a bounds-guarded recursion over an array of instances with a helper, refused 108 of 108.
 ```
 **A feature reported as a fix.** A fix repairs a mechanism the code already has. A finding whose property needs a mechanism the code lacks (a new walk, key, reader, template or check), a rule no document sentence decides, or a construct the milestone's steps do not name is a feature proposal: rated as the defect it answers, with what it needs named, for the head to take to the owner, never a fix for the round, because a feature built in a fix round is designed one gap at a time under reviews scoped to a diff.\
 **Bad**
@@ -212,7 +212,7 @@ Blocking. Fix: resolve a path whose start the frame chooses per evaluation, thro
 ```
 **Good**
 ```text
-Blocking; feature, not fix. `fn h(c, d, i, n): if n < 1 then [c, d][i].gain else h(c, d, i, n - 1)` reads both candidates' bindings, so `h(verse, other, 1, 3)` is refused for `verse`'s live input. No SPEC sentence says which binding a frame-chosen read is, and the code reads no path per evaluation: needs the rule in §6.3 and that mechanism, planned as a step.
+Blocking; feature, not fix. `fn h(c, d, i, n): if n < 1 then [c, d][i].level else h(c, d, i, n - 1)` reads both candidates' bindings, so `h(left, right, 1, 3)` is refused for `left`'s live input. No SPEC sentence says which binding a frame-chosen read is, and the code reads no path per evaluation: needs the rule in §6.3 and that mechanism, planned as a step.
 ```
 
 ### Rust
@@ -295,11 +295,11 @@ struct Node { parent: Option<Weak<RefCell<Node>>>, children: Vec<Rc<RefCell<Node
 **`#[allow]` over a real lint.** The attribute silences the lint for the whole item and every later line, and the defect it named stays.\
 **Bad**
 ```rust
-#[allow(clippy::cast_possible_truncation)] fn frames(len: u64) -> u32 { len as u32 }
+#[allow(clippy::cast_possible_truncation)] fn steps(len: u64) -> u32 { len as u32 }
 ```
 **Good**
 ```rust
-fn frames(len: u64) -> Result<u32, Error> { u32::try_from(len).map_err(|_| Error::TooLong(len)) }
+fn steps(len: u64) -> Result<u32, Error> { u32::try_from(len).map_err(|_| Error::TooLong(len)) }
 ```
 
 ### Compilers
@@ -371,9 +371,9 @@ fn latency(&self, n: NodeId) -> u32 { self.inputs(n).map(|i| self.latency(i)).ma
 for &n in &self.topo_order { latency[n] = self.inputs(n).map(|i| latency[i]).max().unwrap_or(0) + self.delay(n); }
 ```
 
-### Real-time audio and music DSLs
+### Real-time reactive DSLs
 
-**Hidden allocation or lock on the commit path.** `push` past capacity, `collect`, `format!`, `Box::new` and `lock` allocate or block for an unbounded time, and one stall is an audible dropout.\
+**Hidden allocation or lock on the commit path.** `push` past capacity, `collect`, `format!`, `Box::new` and `lock` allocate or block for an unbounded time, and one stall makes a step miss its period.\
 **Bad**
 ```rust
 self.pending.push(change);
@@ -384,7 +384,7 @@ let table = self.table.lock();
 self.pending.try_push(change).map_err(|_| CommitError::Full)?;
 let table = self.tables.read_current();
 ```
-**Deallocation on that path.** Dropping a `Box`, a `Vec` or the last `Arc` frees on the audio thread, and a reload is exactly when the old program drops.\
+**Deallocation on that path.** Dropping a `Box`, a `Vec` or the last `Arc` frees on the real-time thread, and a reload is exactly when the old program drops.\
 **Bad**
 ```rust
 self.program = next;
@@ -405,11 +405,11 @@ self.y = flush_subnormal(x + self.feedback * self.y);
 **Float results that differ across targets.** `std` transcendentals call the platform libm, and `mul_add` rounds once where `a * b + c` rounds twice and falls back to a platform routine.\
 **Bad**
 ```rust
-let y = phase.sin().mul_add(depth, offset);
+let y = angle.sin().mul_add(scale, offset);
 ```
 **Good**
 ```rust
-let y = libm::sin(phase) * depth + offset;
+let y = libm::sin(angle) * scale + offset;
 ```
 **NaN poisoning state.** One NaN or infinity in a feedback state never decays, and `clamp`, `min` and `max` pass or hide it.\
 **Bad**
@@ -424,11 +424,11 @@ self.state = if next.is_finite() { next } else { 0.0 };
 **Torn 64-bit reads.** Two 32-bit halves read apart see a carry between them and the position jumps by 2^32; a target without 64-bit atomics takes an emulated or sequence-locked read.\
 **Bad**
 ```rust
-let frame = (u64::from(self.hi.load(Acquire)) << 32) | u64::from(self.lo.load(Acquire));
+let tick = (u64::from(self.hi.load(Acquire)) << 32) | u64::from(self.lo.load(Acquire));
 ```
 **Good**
 ```rust
-let frame = self.frame.load(Acquire);
+let tick = self.tick.load(Acquire);
 ```
 **Ordering too weak for a publish.** A `Relaxed` flag lets the reader see the flag before the data; x86 hides it and ARM shows it.\
 **Bad**
@@ -441,24 +441,24 @@ if self.ready.load(Relaxed) { run(self.slot.read()); }
 self.slot.write(program); self.ready.store(true, Release);
 if self.ready.load(Acquire) { run(self.slot.read()); }
 ```
-**Time accumulated in floats.** Adding a float step per sample drifts by a rounding each step, and the beat lands late after minutes.\
+**Time accumulated in floats.** Adding a float increment per step drifts by a rounding each step, and the event lands late after minutes.\
 **Bad**
 ```rust
 self.seconds += 1.0 / self.rate;
 ```
 **Good**
 ```rust
-self.frame += 1;
-let due = self.frame >= self.tempo.frame_of_beat(self.next_beat);
+self.step += 1;
+let due = self.step >= self.schedule.step_of(self.next_event);
 ```
 **Wall clock or unseeded randomness in deterministic code.** Output that reads the clock or the OS entropy differs on every run; a generator seeded from the program and the node does not.\
 **Bad**
 ```rust
-let noise = rand::random::<f32>();
+let jitter = rand::random::<f32>();
 ```
 **Good**
 ```rust
-let noise = self.rng.next_f32();
+let jitter = self.rng.next_f32();
 ```
 
 ## Sources
