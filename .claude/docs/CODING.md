@@ -98,13 +98,13 @@ match event { Event::Start(job) => tasks.start(job), _ => {} }
 
 **Good**
 ```rust
-fn total_duration(steps: &[Step]) -> Ticks
-let duration = total_duration(&schedule.steps);
+fn total_duration(intervals: &[Interval]) -> Ticks
+let duration = total_duration(&schedule.intervals);
 ```
 **Bad**
 ```rust
-fn total_duration(steps: Vec<Step>) -> Ticks
-let duration = total_duration(schedule.steps.clone());
+fn total_duration(intervals: Vec<Interval>) -> Ticks
+let duration = total_duration(schedule.intervals.clone());
 ```
 
 **Ids into an arena, not shared pointers.** Nodes held in a `Vec` and linked by id borrow one field at a time, so the borrow checker agrees without `RefCell`, and they copy, compare and hash as integers.
@@ -190,13 +190,13 @@ if let Some(node) = graph.node(id) {
 
 **Good**
 ```rust
-const WEIGHTS: [u8; 7] = [1, 2, 4, 8, 16, 32, 64];
+const WEIGHTS: [u8; 7] = [3, 5, 11, 17, 23, 29, 41];
 let weight = WEIGHTS.get(slot).ok_or(TableError::Slot(slot))?;
 ```
 **Bad**
 ```rust
-let weight = if slot == 0 { 1 } else if slot == 1 { 2 } else if slot == 2 { 4 }
-    else if slot == 3 { 8 } else if slot == 4 { 16 } else if slot == 5 { 32 } else { 64 };
+let weight = if slot == 0 { 3 } else if slot == 1 { 5 } else if slot == 2 { 11 }
+    else if slot == 3 { 17 } else if slot == 4 { 23 } else if slot == 5 { 29 } else { 41 };
 ```
 
 ### Determinism

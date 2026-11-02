@@ -405,11 +405,11 @@ self.y = flush_subnormal(x + self.feedback * self.y);
 **Float results that differ across targets.** `std` transcendentals call the platform libm, and `mul_add` rounds once where `a * b + c` rounds twice and falls back to a platform routine.\
 **Bad**
 ```rust
-let y = angle.sin().mul_add(gain, offset);
+let y = angle.sin().mul_add(scale, offset);
 ```
 **Good**
 ```rust
-let y = libm::sin(angle) * gain + offset;
+let y = libm::sin(angle) * scale + offset;
 ```
 **NaN poisoning state.** One NaN or infinity in a feedback state never decays, and `clamp`, `min` and `max` pass or hide it.\
 **Bad**
