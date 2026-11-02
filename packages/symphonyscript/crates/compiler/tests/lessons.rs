@@ -111,7 +111,7 @@ fn every_lesson_draws_its_code_in_its_sym_error_example_and_passes_check_in_its_
     );
 }
 
-const LIMIT_LESSONS: [Code; 2] = [Code::RecursionLimit, Code::ExpansionLimit];
+const LIMIT_LESSONS: [Code; 3] = [Code::RecursionLimit, Code::ExpansionLimit, Code::ValueLimit];
 
 #[test]
 fn the_limit_lessons_draw_their_codes_at_lowered_limits_in_their_error_examples_and_pass_in_their_fixes()
@@ -122,6 +122,7 @@ fn the_limit_lessons_draw_their_codes_at_lowered_limits_in_their_error_examples_
             recursive_calls: Some(1_000),
             expansion_steps: Some(1_000),
             expanded_items: Some(1_000),
+            value_elements: Some(1_000),
             ..LimitOverrides::default()
         },
     );

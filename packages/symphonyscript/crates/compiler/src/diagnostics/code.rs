@@ -143,6 +143,7 @@ codes!(
     ReactiveRecursion,
     RecursionDepth,
     RecursionLimit,
+    ValueLimit,
     LimitWarning,
     ReactiveNodeReference,
     DoesNotFit,
@@ -296,6 +297,7 @@ impl Code {
             Code::ReactiveRecursion => "reactive-recursion",
             Code::RecursionDepth => "recursion-depth",
             Code::RecursionLimit => "recursion-limit",
+            Code::ValueLimit => "value-limit",
             Code::LimitWarning => "limit-warning",
             Code::ReactiveNodeReference => "reactive-node-reference",
             Code::DoesNotFit => "does-not-fit",
@@ -423,6 +425,7 @@ impl Code {
             Code::ReactiveRecursion => "6.3",
             Code::RecursionDepth => "6.3",
             Code::RecursionLimit => "4.6",
+            Code::ValueLimit => "4.6",
             Code::LimitWarning => "4.6",
             Code::ReactiveNodeReference => "6.2",
             Code::DoesNotFit => "4.1",
@@ -589,6 +592,7 @@ impl Code {
             | Code::ReactiveRecursion
             | Code::RecursionDepth
             | Code::RecursionLimit
+            | Code::ValueLimit
             | Code::ReactiveNodeReference
             | Code::DoesNotFit
             | Code::IntegerOverflow

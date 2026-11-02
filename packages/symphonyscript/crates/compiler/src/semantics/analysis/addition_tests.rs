@@ -1117,12 +1117,20 @@ fn doubling_work(read: &str, depth: u32) -> (Option<CVal>, u64, u64, u64) {
         read.replace('k', &depth.to_string())
     );
     let (built_before, visited_before) = CArray::work();
-    let (diagnostics, (value, evaluation)) = analyzed(&vocabulary(), &text, |engine| {
-        (
-            attr_value(engine, "pitch", EvalTy::I32),
-            engine.memo.evaluation_work,
-        )
-    });
+    let (diagnostics, (value, evaluation)) = analyzed_within(
+        &vocabulary(),
+        LimitOverrides {
+            value_elements: Some(1 << 31),
+            ..LimitOverrides::default()
+        },
+        &text,
+        |engine| {
+            (
+                attr_value(engine, "pitch", EvalTy::I32),
+                engine.memo.evaluation_work,
+            )
+        },
+    );
     let (built_after, visited_after) = CArray::work();
     assert!(errors(&diagnostics).is_empty(), "{text}{diagnostics:?}");
     (
@@ -1205,7 +1213,11 @@ fn a_compile_time_slice_holds_its_base_and_its_bounds() {
         "Clip c:\n    Note/(p[0..])\n",
     ]) {
         let (built_before, _) = CArray::work();
-        let (diagnostics, ()) = analyzed(&vocabulary(), &text, |_| ());
+        let raised = LimitOverrides {
+            value_elements: Some(1 << 31),
+            ..LimitOverrides::default()
+        };
+        let (diagnostics, ()) = analyzed_within(&vocabulary(), raised, &text, |_| ());
         let (built_after, _) = CArray::work();
         let found: Vec<crate::diagnostics::Code> = errors(&diagnostics)
             .iter()

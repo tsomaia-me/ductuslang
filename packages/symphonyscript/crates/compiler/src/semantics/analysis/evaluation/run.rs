@@ -159,7 +159,7 @@ impl Engine<'_> {
             )?;
             return Ok(CVal::Error);
         }
-        Ok(CVal::Array(CArray::new(values)))
+        self.within_value_limit(node, CVal::Array(CArray::new(values)), "this array")
     }
 
     pub(super) fn takes_a_type(&self, node: NodeId) -> Result<bool, Internal> {

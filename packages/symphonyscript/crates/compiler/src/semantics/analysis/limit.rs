@@ -5,6 +5,7 @@ pub(crate) enum Limit {
     InlinedCalls,
     ExpansionSteps,
     ExpandedItems,
+    ValueElements,
 }
 
 impl Limit {
@@ -15,6 +16,7 @@ impl Limit {
             Limit::InlinedCalls => "inlined_calls",
             Limit::ExpansionSteps => "expansion_steps",
             Limit::ExpandedItems => "expanded_items",
+            Limit::ValueElements => "value_elements",
         }
     }
 

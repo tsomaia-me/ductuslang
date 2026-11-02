@@ -246,6 +246,9 @@ pub(super) fn help(code: Code) -> Option<&'static str> {
         Code::ToCandidates => "give every candidate the attribute with one type and unit family",
         Code::RecursionDepth => "let the recursion reach its base case within the limit",
         Code::RecursionLimit => "reduce the distinct arguments the recursion computes",
+        Code::ValueLimit => {
+            "build a smaller value, or raise `value_elements` in the package's `options` or with `--limit value_elements=<value>`"
+        }
         Code::LimitWarning => {
             "reduce the work the limit counts, or raise its warning value in the package's `options`"
         }

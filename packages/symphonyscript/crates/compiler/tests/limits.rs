@@ -418,6 +418,13 @@ fn a_stopped_compilation_reports_its_one_limit_and_the_work_it_finished() {
         recursive_calls: Some(value),
         ..LimitOverrides::default()
     };
+    let elements = |value| LimitOverrides {
+        value_elements: Some(value),
+        ..LimitOverrides::default()
+    };
+    let doubling = "fn f(n): if n is 0 then [1] else f(n - 1) + f(n - 1)\nClip k:\n    Note/(f(26).size div 100000)\n";
+    let counted =
+        "fn h(t, n): if n < 1 then 1 else h(t + t, n - 1)\nClip k:\n    Note/(h(\"a\", 26))\n";
     let rows = [
         (
             items(4),
@@ -454,6 +461,31 @@ fn a_stopped_compilation_reports_its_one_limit_and_the_work_it_finished() {
             recursive(4),
             format!("{unfitting}{recursion}"),
             vec![Code::DoesNotFit, Code::RecursionLimit],
+        ),
+        (
+            elements(1_000),
+            format!("{doubling}{unfitting}"),
+            vec![Code::ValueLimit],
+        ),
+        (
+            elements(1_000),
+            format!("{unfitting}{doubling}"),
+            vec![Code::ValueLimit],
+        ),
+        (
+            elements(1_000),
+            format!("{counted}{unfitting}"),
+            vec![Code::ValueLimit],
+        ),
+        (
+            elements(1_000),
+            format!("{unfitting}{counted}"),
+            vec![Code::DoesNotFit, Code::ValueLimit],
+        ),
+        (
+            elements(1 << 27),
+            format!("{unfitting}{doubling}"),
+            vec![Code::DoesNotFit],
         ),
         (
             items(4),
@@ -581,7 +613,7 @@ struct Counted {
     counted: fn(u64) -> String,
 }
 
-fn counted_sites() -> [Counted; 9] {
+fn counted_sites() -> [Counted; 10] {
     [
         Counted {
             key: "recursive_calls",
@@ -647,6 +679,12 @@ fn counted_sites() -> [Counted; 9] {
                 format!("the expansion yields more than {warning} instances and wires")
             },
         },
+        Counted {
+            key: "value_elements",
+            program: growing,
+            error: Code::ValueLimit,
+            counted: |warning| format!("this join holds more than {warning} elements"),
+        },
     ]
 }
 
@@ -701,6 +739,10 @@ fn limit_and_warning(key: &str, limit: Option<u64>, warning: Option<u64>) -> Lim
         "expanded_items" => (
             &mut overrides.expanded_items,
             &mut overrides.expanded_items_warning,
+        ),
+        "value_elements" => (
+            &mut overrides.value_elements,
+            &mut overrides.value_elements_warning,
         ),
         other => panic!("no limit {other}"),
     };
@@ -834,7 +876,7 @@ fn a_count_past_its_warning_value_draws_the_warning_where_the_limit_would_draw_i
         a_count_past_its_warning_value_draws_the_warning_where_the_limit_would_draw_its_error_in(
             &Rows::Chosen(std::sync::Mutex::new(each_site.collect())),
         );
-    assert_eq!(taken, 36);
+    assert_eq!(taken, 40);
     failures.extend(each_failures);
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
@@ -847,7 +889,7 @@ fn exhaustive_a_count_past_its_warning_value_draws_the_warning_where_the_limit_w
         a_count_past_its_warning_value_draws_the_warning_where_the_limit_would_draw_its_error_in(
             &Rows::Every,
         );
-    assert_eq!(taken, 135);
+    assert_eq!(taken, 150);
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
 
@@ -874,6 +916,10 @@ fn stress_each_limit_draws_its_warning_past_half_its_default() {
         (
             iterations(500_000),
             "the expansion yields more than 500,000 instances and wires, the warning value of the limit of 1,000,000",
+        ),
+        (
+            doubled_string(22),
+            "this join holds more than 2,097,152 characters, the warning value of the limit of 4,194,304",
         ),
     ];
     let compiler = Compiler::new(&vocabulary()).expect("the vocabulary compiles");
@@ -1009,4 +1055,157 @@ fn an_untaken_evaluations_depth_draws_the_warning_and_the_error_as_its_taken_twi
             }
         }
     }
+}
+
+fn literal(count: u64) -> String {
+    let elements = vec!["0"; count as usize].join(", ");
+    format!("let x = [{elements}]\nClip c:\n    Note/(x[0])\n")
+}
+
+fn doubled_array(levels: u64) -> String {
+    format!(
+        "fn f(a, n): if n < 1 then a else f(a + a, n - 1)\nlet x = f([1], {levels})\nClip c:\n    Note/(x.size div 1000)\n"
+    )
+}
+
+fn doubled_string(levels: u64) -> String {
+    format!(
+        "fn twice(t, n): if n < 1 then t else twice(t + t, n - 1)\nlet name = twice(\"a\", {levels})\nTrack t | label=name:\n    Piano\n"
+    )
+}
+
+fn folded(count: u64) -> String {
+    format!(
+        "let t = for i in 0..{count} into a from [0]: a + [i]\nClip c:\n    Note/(t.size div 100)\n"
+    )
+}
+
+fn value_refusal(bound: &str) -> Option<String> {
+    refused(&format!("more than the {bound} a compile-time value holds"))
+}
+
+#[test]
+fn the_value_limit_follows_the_compilations_limits() {
+    let elements = |limit| LimitOverrides {
+        value_elements: Some(limit),
+        ..LimitOverrides::default()
+    };
+    let default = LimitOverrides::default();
+    follows(
+        Code::ValueLimit,
+        &[
+            (elements(10), literal(10), None),
+            (elements(10), literal(11), value_refusal("10")),
+            (default, literal(11), None),
+            (elements(1_024), doubled_array(10), None),
+            (elements(1_024), doubled_array(11), value_refusal("1,024")),
+            (elements(1_024), doubled_array(40), value_refusal("1,024")),
+            (default, doubled_array(11), None),
+            (default, doubled_string(22), None),
+            (default, doubled_string(23), value_refusal("4,194,304")),
+            (default, doubled_string(40), value_refusal("4,194,304")),
+            (elements(8_388_608), doubled_string(23), None),
+            (default, joined_results(22), None),
+            (default, joined_results(23), value_refusal("4,194,304")),
+            (default, joined_results(40), value_refusal("4,194,304")),
+            (default, folded(3_000), None),
+            (
+                default,
+                "let t = for i in 0..4096 into a from []: a + [i % 128]\nClip c:\n    Note/(t[4095])\n"
+                    .to_string(),
+                None,
+            ),
+        ],
+    );
+}
+
+#[test]
+#[ignore = "stress"]
+fn stress_the_value_limit_refuses_the_value_past_its_default() {
+    follows(
+        Code::ValueLimit,
+        &[
+            (
+                LimitOverrides::default(),
+                doubled_array(26),
+                value_refusal("4,194,304"),
+            ),
+            (
+                LimitOverrides::default(),
+                doubled_array(40),
+                value_refusal("4,194,304"),
+            ),
+        ],
+    );
+}
+
+#[test]
+fn the_value_limit_and_its_warning_name_the_expression_that_built_the_value() {
+    let overrides = limit_and_warning("value_elements", Some(10), Some(5));
+    let rows: [(&str, &[(Code, &str)]); 8] = [
+        (
+            "let s = \"abcdefghijkl\"\nTrack t | label=s:\n    Piano\n",
+            &[(Code::ValueLimit, "\"abcdefghijkl\"")],
+        ),
+        (
+            "let x = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]\nClip c:\n    Note/(x[0])\n",
+            &[(Code::ValueLimit, "[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]")],
+        ),
+        (
+            "let a = [1, 2, 3, 4, 5, 6]\nlet b = a + a\nClip c:\n    Note/(b[0])\n",
+            &[
+                (Code::LimitWarning, "[1, 2, 3, 4, 5, 6]"),
+                (Code::ValueLimit, "a + a"),
+            ],
+        ),
+        (
+            "let x = [[1, 2, 3, 4], [1, 2, 3, 4], [1, 2, 3, 4]]\nClip c:\n    Note/(x[0][0])\n",
+            &[(
+                Code::ValueLimit,
+                "[[1, 2, 3, 4], [1, 2, 3, 4], [1, 2, 3, 4]]",
+            )],
+        ),
+        (
+            "let s = \"abcdefghij{1}{2}\"\nTrack t | label=s:\n    Piano\n",
+            &[(Code::ValueLimit, "\"abcdefghij{1}{2}\"")],
+        ),
+        (
+            "let x = [0, 1, 2, 3, 4, 5, 6, 7]\nClip c:\n    Note/(x[0])\n",
+            &[(Code::LimitWarning, "[0, 1, 2, 3, 4, 5, 6, 7]")],
+        ),
+        (
+            "let a = [1, 2, 3]\nlet b = a + a\nClip c:\n    Note/(b[0])\n",
+            &[(Code::LimitWarning, "a + a")],
+        ),
+        ("let x = [0, 1, 2, 3]\nClip c:\n    Note/(x[0])\n", &[]),
+    ];
+    for (text, expected) in rows {
+        let found: Vec<(Code, String)> = checked_within(overrides, text)
+            .into_iter()
+            .filter(|diagnostic| diagnostic.code != Code::NoEntryInstance)
+            .map(|diagnostic| {
+                let range =
+                    diagnostic.span.range.start as usize..diagnostic.span.range.end as usize;
+                (
+                    diagnostic.code,
+                    text.get(range).unwrap_or_default().to_string(),
+                )
+            })
+            .collect();
+        let expected: Vec<(Code, String)> = expected
+            .iter()
+            .map(|(code, spanned)| (*code, (*spanned).to_string()))
+            .collect();
+        assert_eq!(found, expected, "{text}");
+    }
+}
+
+fn growing(count: u64) -> String {
+    format!("let x = for i in 0..{count} into a from []: a + [0]\nClip c:\n    Note/(x.size)\n")
+}
+
+fn joined_results(levels: u64) -> String {
+    format!(
+        "fn f(n): if n is 0 then [1] else f(n - 1) + f(n - 1)\nClip c:\n    Note/(f({levels}).size div 100000)\n"
+    )
 }

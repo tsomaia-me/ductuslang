@@ -15,6 +15,8 @@ fn the_default_limits_are_the_specs_and_each_warning_is_half_its_limit() {
             expansion_steps_warning: 500_000,
             expanded_items: 1_000_000,
             expanded_items_warning: 500_000,
+            value_elements: 4_194_304,
+            value_elements_warning: 2_097_152,
             memory_bytes: 1_073_741_824,
             memory_bytes_warning: 536_870_912,
             reload_edit_distance: 1_000,
@@ -126,6 +128,26 @@ fn an_override_sets_its_one_field_and_leaves_every_other_at_its_default() {
             },
             Limits {
                 expanded_items_warning: 7,
+                ..default
+            },
+        ),
+        (
+            LimitOverrides {
+                value_elements: Some(7),
+                ..unset
+            },
+            Limits {
+                value_elements: 7,
+                ..default
+            },
+        ),
+        (
+            LimitOverrides {
+                value_elements_warning: Some(7),
+                ..unset
+            },
+            Limits {
+                value_elements_warning: 7,
                 ..default
             },
         ),

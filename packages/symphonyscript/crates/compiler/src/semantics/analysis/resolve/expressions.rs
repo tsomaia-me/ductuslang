@@ -643,7 +643,9 @@ impl Engine<'_> {
                     .get(start..start.saturating_add(width))
                     .ok_or(Internal::missed("array element"))?
                     .to_vec();
-                next.push(self.push_node(Op::Array(chunk), loc, scope)?);
+                let boxed = self.push_node(Op::Array(chunk), loc, scope)?;
+                self.value_boxes.insert(boxed);
+                next.push(boxed);
             }
             level = next;
         }
@@ -767,9 +769,16 @@ impl Engine<'_> {
             self.error(Code::RaggedArray, loc, scope, RAGGED)?;
             return Ok(Some(Val::Error));
         }
+        let shape = inner.wrap(crate::semantics::analysis::index::index(vals.len()));
+        if !self.resolved_within_value_limit(
+            expr,
+            (shape.elements(), "this array"),
+            (loc, scope),
+        )? {
+            return Ok(Some(Val::Error));
+        }
         let members = self.members(elements, &vals, scope)?;
         self.literal_group(expr, members, loc, scope)?;
-        let shape = inner.wrap(crate::semantics::analysis::index::index(vals.len()));
         let elements = vals.iter().flat_map(Val::nodes).collect();
         Ok(Some(Val::array(shape, elements)))
     }

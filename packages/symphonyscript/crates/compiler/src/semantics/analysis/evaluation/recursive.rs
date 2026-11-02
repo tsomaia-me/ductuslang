@@ -209,6 +209,9 @@ impl Engine<'_> {
             Ok(()) if scratch.keys.contains(&ArgKey::Error) => {
                 Ok(Reached::Value(Some(CVal::Error)))
             }
+            Ok(()) if !self.arguments_within_value_limit(node, function, &scratch.shapes)? => {
+                Ok(Reached::Value(Some(CVal::Error)))
+            }
             Ok(()) => {
                 let feeds = match ctx {
                     Ctx::Global => self.memo.call_feeds.get(&node),

@@ -218,6 +218,17 @@ impl CArray {
         }
     }
 
+    pub fn elements(&self) -> u64 {
+        let length = u64::try_from(self.len()).unwrap_or(u64::MAX);
+        let mut within = 0u64;
+        let mut product = 1u64;
+        for level in self.row().unwrap_or_default().iter().rev() {
+            product = product.saturating_mul(u64::from(*level));
+            within = within.saturating_add(product);
+        }
+        length.saturating_mul(within.saturating_add(1))
+    }
+
     pub fn lengths(&self) -> Vec<u32> {
         let mut lengths = self.row().unwrap_or_default();
         lengths.push(u32::try_from(self.len()).unwrap_or(u32::MAX));

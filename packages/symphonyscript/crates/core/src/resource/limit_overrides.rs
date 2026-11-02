@@ -12,6 +12,8 @@ pub struct LimitOverrides {
     pub expansion_steps_warning: Option<u64>,
     pub expanded_items: Option<u64>,
     pub expanded_items_warning: Option<u64>,
+    pub value_elements: Option<u64>,
+    pub value_elements_warning: Option<u64>,
     pub memory_bytes: Option<u64>,
     pub memory_bytes_warning: Option<u64>,
     pub reload_edit_distance: Option<u64>,
@@ -41,6 +43,10 @@ impl LimitOverrides {
             expanded_items_warning: self
                 .expanded_items_warning
                 .unwrap_or(limits.expanded_items_warning),
+            value_elements: self.value_elements.unwrap_or(limits.value_elements),
+            value_elements_warning: self
+                .value_elements_warning
+                .unwrap_or(limits.value_elements_warning),
             memory_bytes: self.memory_bytes.unwrap_or(limits.memory_bytes),
             memory_bytes_warning: self
                 .memory_bytes_warning

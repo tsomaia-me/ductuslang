@@ -181,6 +181,10 @@ pub fn assert_rows_in_every_order(vocabulary: &Vocabulary, rows: &[Row]) {
 
 pub fn assert_rows_in_orders(orders: Orders, vocabulary: &Vocabulary, rows: &[Row]) {
     let compiler = Compiler::new(vocabulary).expect("the vocabulary compiles");
+    assert_rows_by(orders, &compiler, rows);
+}
+
+pub fn assert_rows_by(orders: Orders, compiler: &Compiler, rows: &[Row]) {
     for (items, expected) in rows {
         let mut expected: Vec<(Code, String)> = expected
             .iter()
@@ -189,7 +193,7 @@ pub fn assert_rows_in_orders(orders: Orders, vocabulary: &Vocabulary, rows: &[Ro
         expected.sort();
         for order in orders.of(items) {
             let text = order.concat();
-            assert_eq!(error_texts(&compiler, &text), expected, "{text}");
+            assert_eq!(error_texts(compiler, &text), expected, "{text}");
         }
     }
 }

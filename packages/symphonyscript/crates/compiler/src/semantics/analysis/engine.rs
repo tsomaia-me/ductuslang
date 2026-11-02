@@ -123,6 +123,8 @@ pub(crate) struct Engine<'a> {
     pub cycle_spans: Vec<Loc>,
     pub call_limit_reported: bool,
     pub call_warning_reported: bool,
+    pub value_warnings: FastSet<Loc>,
+    pub value_boxes: FastSet<NodeId>,
     pub typing: super::infer::Typing,
     pub deferred: Vec<super::deferred::Deferred>,
     #[cfg(test)]
@@ -210,6 +212,8 @@ impl<'a> Engine<'a> {
             cycle_spans: Vec::new(),
             call_limit_reported: false,
             call_warning_reported: false,
+            value_warnings: FastSet::default(),
+            value_boxes: FastSet::default(),
             typing: super::infer::Typing::default(),
             deferred: Vec::new(),
             #[cfg(test)]

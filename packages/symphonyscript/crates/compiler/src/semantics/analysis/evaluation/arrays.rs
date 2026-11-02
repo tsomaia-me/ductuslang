@@ -18,7 +18,7 @@ impl Engine<'_> {
         right: &CArray,
     ) -> Result<CVal, Internal> {
         match CArray::join(left, right) {
-            Ok(array) => Ok(CVal::Array(array)),
+            Ok(array) => self.within_value_limit(node, CVal::Array(array), "this join"),
             Err(Code::LengthLimit) => {
                 let total = u128::try_from(left.len())
                     .unwrap_or(u128::MAX)

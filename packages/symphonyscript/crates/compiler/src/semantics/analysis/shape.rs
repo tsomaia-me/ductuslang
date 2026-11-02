@@ -64,6 +64,19 @@ impl Shape {
         depth
     }
 
+    pub fn elements(&self) -> u64 {
+        let mut elements = 0u64;
+        let mut product = 1u64;
+        let mut current = self.0.as_ref();
+        while let Some(dimension) = current {
+            crate::semantics::counted_walk::CountedWalk::ShapeCount.step();
+            product = product.saturating_mul(u64::from(dimension.length));
+            elements = elements.saturating_add(product);
+            current = dimension.inner.0.as_ref();
+        }
+        elements
+    }
+
     pub fn count(&self) -> usize {
         let mut count: usize = 1;
         let mut current = self.0.as_ref();

@@ -81,6 +81,10 @@ impl Engine<'_> {
             pc += 1;
             match instr {
                 Instr::Push(value) => stack.push(value.clone()),
+                Instr::Held(node) => {
+                    let value = pop(stack)?;
+                    stack.push(self.within_value_limit(*node, value, "this string")?);
+                }
                 Instr::Arg(slot) => {
                     let Ctx::Frame(frame) = ctx else {
                         return Err(Internal::missed("evaluation frame"));
@@ -301,14 +305,14 @@ impl Engine<'_> {
                         pc = *narrow as usize;
                     }
                 }
-                Instr::StrAdd(lay) => {
+                Instr::StrAdd(node, lay) => {
                     let value = match pair(stack, lay)? {
                         (CVal::Str(a), CVal::Str(b)) => {
                             CVal::Str(Rc::from(format!("{a}{b}").as_str()))
                         }
                         _ => CVal::Error,
                     };
-                    stack.push(value);
+                    stack.push(self.within_value_limit(*node, value, "this join")?);
                 }
                 Instr::IntDivFloat(node, own, flexible, lay) => {
                     let value = match pair(stack, lay)? {
@@ -441,9 +445,10 @@ impl Engine<'_> {
                     let value = pop(stack)?;
                     stack.push(self.length_of(*operand, value)?);
                 }
-                Instr::Bytes(operand) => {
+                Instr::Bytes(node, operand) => {
                     let value = pop(stack)?;
-                    stack.push(self.bytes_of(*operand, value)?);
+                    let value = self.bytes_of(*operand, value)?;
+                    stack.push(self.within_value_limit(*node, value, "this `bytes`")?);
                 }
                 Instr::Capacity(operand, end) => {
                     if let Some(capacity) = self.extent(*operand)? {
@@ -466,13 +471,14 @@ impl Engine<'_> {
                         .unwrap_or(CVal::Error);
                     stack.push(value);
                 }
-                Instr::Concat(parts, lay) => {
+                Instr::Concat(node, parts, lay) => {
                     let count = parts
                         .iter()
                         .filter(|part| matches!(part, super::concat_part::ConcatPart::Value(..)))
                         .count();
                     let values = operands(stack, count, lay)?;
-                    stack.push(self.concat_value(parts, values)?);
+                    let value = self.concat_value(parts, values)?;
+                    stack.push(self.within_value_limit(*node, value, "this string")?);
                 }
                 Instr::FitAnd(leaf, ty) => {
                     let value = pop(stack)?;
@@ -486,9 +492,10 @@ impl Engine<'_> {
                         pc = *end as usize;
                     }
                 }
-                Instr::Native(native, count, lay) => {
+                Instr::Native(node, native, count, lay) => {
                     let values = operands(stack, *count as usize, lay)?;
-                    stack.push(self.native_value(*native, values)?);
+                    let value = self.native_value(*native, values)?;
+                    stack.push(self.within_value_limit(*node, value, "this call")?);
                 }
                 Instr::CallWith(call) => {
                     let count = call.count as usize;

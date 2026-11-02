@@ -56,6 +56,10 @@ impl Engine<'_> {
                 self.error(Code::LengthLimit, loc, scope, LENGTH)?;
                 return Ok(Val::Error);
             }
+            let held = left.shape.elements().saturating_add(right.shape.elements());
+            if !self.resolved_within_value_limit(expr, (held, "this join"), (loc, scope))? {
+                return Ok(Val::Error);
+            }
             let mut elements = left.elements.clone();
             elements.extend(right.elements.iter().copied());
             let group = self.push_node(Op::Array(elements.clone()), loc, scope)?;

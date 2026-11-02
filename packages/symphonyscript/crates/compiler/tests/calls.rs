@@ -945,7 +945,18 @@ fn a_join_whose_length_would_reach_two_to_the_thirty_one_draws_length_limit_befo
             limited,
         ),
     ];
-    support::assert_rows_in_every_order(&vocabulary(), rows);
+    support::assert_rows_by(support::Orders::Every, &raised_value_limit(), rows);
+}
+
+fn raised_value_limit() -> Compiler {
+    Compiler::with_limits(
+        &vocabulary(),
+        LimitOverrides {
+            value_elements: Some(1 << 32),
+            ..LimitOverrides::default()
+        },
+    )
+    .expect("the vocabulary compiles")
 }
 
 #[test]
@@ -963,7 +974,7 @@ fn a_join_whose_length_stays_below_two_to_the_thirty_one_draws_no_length_limit()
             &[],
         ),
     ];
-    support::assert_rows_in_every_order(&vocabulary(), rows);
+    support::assert_rows_by(support::Orders::Every, &raised_value_limit(), rows);
 }
 
 #[test]

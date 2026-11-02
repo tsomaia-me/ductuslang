@@ -108,6 +108,7 @@ mod untypable_reads;
 mod untypable_values;
 mod unwritten;
 mod val;
+mod value_limit;
 mod widens;
 mod width;
 mod wire;

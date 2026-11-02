@@ -109,7 +109,7 @@ impl Build {
             Instr::Logic(op, lay) => Instr::Logic(op, self.lay(lay)),
             Instr::Arith(op, node, own, lay) => Instr::Arith(op, node, own, self.lay(lay)),
             Instr::Compare(op, ty, a, b, lay) => Instr::Compare(op, ty, a, b, self.lay(lay)),
-            Instr::StrAdd(lay) => Instr::StrAdd(self.lay(lay)),
+            Instr::StrAdd(node, lay) => Instr::StrAdd(node, self.lay(lay)),
             Instr::IntDivFloat(node, own, flexible, lay) => {
                 Instr::IntDivFloat(node, own, flexible, self.lay(lay))
             }
@@ -128,8 +128,10 @@ impl Build {
             Instr::Builtin(node, builtin, own, posts, lay) => {
                 Instr::Builtin(node, builtin, own, posts, self.lay(lay))
             }
-            Instr::Concat(parts, lay) => Instr::Concat(parts, self.lay(lay)),
-            Instr::Native(native, count, lay) => Instr::Native(native, count, self.lay(lay)),
+            Instr::Concat(node, parts, lay) => Instr::Concat(node, parts, self.lay(lay)),
+            Instr::Native(node, native, count, lay) => {
+                Instr::Native(node, native, count, self.lay(lay))
+            }
             Instr::CallWith(mut call) => {
                 call.lay = self.lay(call.lay);
                 Instr::CallWith(call)
@@ -173,6 +175,7 @@ impl Build {
                     *end = self.labels.get(*end as usize).copied().unwrap_or(0);
                 }
                 Instr::Push(_)
+                | Instr::Held(_)
                 | Instr::Arg(_)
                 | Instr::Slot(_)
                 | Instr::Child(..)
@@ -194,14 +197,14 @@ impl Build {
                 | Instr::Logic(..)
                 | Instr::Arith(..)
                 | Instr::Compare(..)
-                | Instr::StrAdd(_)
+                | Instr::StrAdd(..)
                 | Instr::IntDivFloat(..)
                 | Instr::Div(..)
                 | Instr::ConvertTo(_)
                 | Instr::Join(..)
                 | Instr::Slice(..)
                 | Instr::Length(_)
-                | Instr::Bytes(_)
+                | Instr::Bytes(..)
                 | Instr::Rand(..)
                 | Instr::Builtin(..)
                 | Instr::Concat(..)
@@ -595,7 +598,7 @@ impl Engine<'_> {
                 list.push(Task::Set(reqs, set));
                 list.push(Task::Emit(Instr::Slice(base, lower, upper, Lay::Set(set))));
             }
-            Op::Native { native, args } => return self.plan_native(native, &args, build),
+            Op::Native { native, args } => return self.plan_native(node, native, &args, build),
             Op::Builtin(Builtin::Len, args) => {
                 let operand = *args.first().ok_or(Internal::missed("len operand"))?;
                 let set = build.set();
@@ -615,7 +618,7 @@ impl Engine<'_> {
                 };
                 let set = build.set();
                 list.push(Task::Set(vec![Req::Raw(operand, ty)], set));
-                list.push(Task::Emit(Instr::Bytes(operand)));
+                list.push(Task::Emit(Instr::Bytes(node, operand)));
             }
             Op::Builtin(Builtin::Capacity, args) => {
                 let operand = *args.first().ok_or(Internal::missed("capacity operand"))?;
@@ -702,6 +705,15 @@ impl Engine<'_> {
             Op::Bool(value) => list.push(Task::Emit(Instr::Push(CVal::Bool(value)))),
             Op::Str(text) => {
                 list.push(Task::Emit(Instr::Push(CVal::Str(Rc::from(text.as_str())))));
+                let held = u64::try_from(text.chars().count()).unwrap_or(u64::MAX);
+                if held
+                    > self
+                        .limits
+                        .value_elements_warning
+                        .min(self.limits.value_elements)
+                {
+                    list.push(Task::Emit(Instr::Held(node)));
+                }
             }
             Op::Variant(id, index) => list.push(Task::Emit(Instr::Push(CVal::Enum(id, index)))),
             Op::NodeRef(item) => list.push(Task::Emit(Instr::Push(CVal::Node(item)))),
@@ -748,7 +760,11 @@ impl Engine<'_> {
                 }
                 let set = build.set();
                 list.push(Task::Set(reqs, set));
-                list.push(Task::Emit(Instr::Concat(Rc::from(parts), Lay::Set(set))));
+                list.push(Task::Emit(Instr::Concat(
+                    node,
+                    Rc::from(parts),
+                    Lay::Set(set),
+                )));
             }
             Op::Unary(UnaryOp::Not, operand) => {
                 let set = build.set();
@@ -1092,7 +1108,7 @@ impl Engine<'_> {
                     vec![raw(lhs, EvalTy::Str), raw(rhs, EvalTy::Str)],
                     set,
                 ));
-                list.push(Task::Emit(Instr::StrAdd(Lay::Set(set))));
+                list.push(Task::Emit(Instr::StrAdd(node, Lay::Set(set))));
             }
             BinaryOp::IntDiv if is_float_ty(own) => {
                 list.push(Task::Set(
@@ -1379,6 +1395,7 @@ impl Engine<'_> {
 
     fn plan_native(
         &mut self,
+        node: NodeId,
         native: symphonyscript_core::NativeId,
         args: &[NodeId],
         build: &mut Build,
@@ -1445,7 +1462,12 @@ impl Engine<'_> {
             .collect();
         let count = u32::try_from(reqs.len()).map_err(|_| Internal::missed("native argument"))?;
         list.push(Task::Set(reqs, set));
-        list.push(Task::Emit(Instr::Native(native, count, Lay::Set(set))));
+        list.push(Task::Emit(Instr::Native(
+            node,
+            native,
+            count,
+            Lay::Set(set),
+        )));
         list.push(Task::Mark(end));
         Ok(Planned::Tasks(list))
     }
@@ -1455,7 +1477,8 @@ fn pure(list: &[Task]) -> bool {
     match list {
         [Task::Emit(instr)] => match instr {
             Instr::Arg(_) | Instr::Slot(_) | Instr::Push(_) => true,
-            Instr::Child(..)
+            Instr::Held(_)
+            | Instr::Child(..)
             | Instr::Fetch(_)
             | Instr::Narrow(_)
             | Instr::Fault(..)
@@ -1482,7 +1505,7 @@ fn pure(list: &[Task]) -> bool {
             | Instr::Arith(..)
             | Instr::Compare(..)
             | Instr::FlexPair(_)
-            | Instr::StrAdd(_)
+            | Instr::StrAdd(..)
             | Instr::IntDivFloat(..)
             | Instr::Div(..)
             | Instr::FromEnd(..)
@@ -1492,7 +1515,7 @@ fn pure(list: &[Task]) -> bool {
             | Instr::Join(..)
             | Instr::Slice(..)
             | Instr::Length(_)
-            | Instr::Bytes(_)
+            | Instr::Bytes(..)
             | Instr::Capacity(..)
             | Instr::Rand(..)
             | Instr::Builtin(..)

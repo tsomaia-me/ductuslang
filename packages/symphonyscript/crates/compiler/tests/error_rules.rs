@@ -297,6 +297,21 @@ const RULES: &[Rule] = &[
         "limit-warning",
         "fn r(n): if n < 1 then 0 else r(n - 1)\nClip c:\n    Note/(r(512))\n",
     ),
+    low_limits(
+        "4.6",
+        "value-limit",
+        "fn twice(t, n): if n < 1 then t else twice(t + t, n - 1)\nlet name = twice(\"a\", 26)\nTrack t | label=name:\n    Piano\n",
+    ),
+    lowered_twin(
+        "4.6",
+        "value-limit",
+        "fn f(a, n): if n < 1 then a else f(a + a, n - 1)\nlet x = f([1], 26)\nClip c:\n    Note/(x.size div 1000)\n",
+    ),
+    lowered_twin(
+        "4.6",
+        "limit-warning",
+        "fn twice(t, n): if n < 1 then t else twice(t + t, n - 1)\nlet name = twice(\"a\", 9)\nTrack t | label=name:\n    Piano\n",
+    ),
     rule("5.1", "expression-syntax", "let a = (1 +)\n"),
     rule("5.1", "chained-comparison", "let a = 1 < 2 < 3\n"),
     rule(
@@ -953,6 +968,8 @@ impl Compilers {
                     recursive_calls: Some(1_000),
                     expansion_steps: Some(1_000),
                     expanded_items: Some(1_000),
+                    value_elements: Some(1_000),
+                    value_elements_warning: Some(500),
                     ..LimitOverrides::default()
                 },
             )

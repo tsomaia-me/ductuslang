@@ -1,6 +1,6 @@
 # limit-warning
 
-Every limit that draws an error has a warning value beside it, half the limit by default, and a count that passes the warning value draws a warning naming the call or the expansion; the warning stops nothing. (SPEC §4.6)
+Every limit that draws an error has a warning value beside it, half the limit by default, and a count that passes the warning value draws a warning naming the call, the expansion or the expression that built the value; the warning stops nothing. (SPEC §4.6)
 
 The warning tells you a program is halfway to a limit while it still compiles, so you can shrink the work or raise the limit before the error stops a build.
 

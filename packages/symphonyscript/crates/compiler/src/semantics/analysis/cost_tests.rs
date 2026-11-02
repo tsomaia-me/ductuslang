@@ -2486,3 +2486,78 @@ fn the_per_query_tables_are_read_by_id_without_hashing_on_the_figure_programs_43
     let failures = hashing_failures([1_000, 2_000, 4_000]);
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
+
+fn doubling_failures(limit: u64) -> Vec<String> {
+    let compiler = Compiler::with_limits(
+        &vocabulary(),
+        LimitOverrides {
+            value_elements: Some(limit),
+            value_elements_warning: Some(limit / 2),
+            ..LimitOverrides::default()
+        },
+    )
+    .expect("the vocabulary compiles");
+    let mut failures = Vec::new();
+    let mut held = Vec::new();
+    for levels in [26, 40] {
+        let text = format!(
+            "fn f(a, n): if n < 1 then a else f(a + a, n - 1)\nlet x = f([1], {levels})\nClip c:\n    Note/(x.size div 1000)\n"
+        );
+        let run = measured(&compiler, &text);
+        let (diagnostics, _) = compiler.analyzed(
+            &[Source {
+                path: "cost.sym".into(),
+                text: text.clone(),
+            }],
+            |_| (),
+        );
+        let drawn: Vec<String> = diagnostics
+            .iter()
+            .filter(|diagnostic| diagnostic.code != crate::diagnostics::Code::NoEntryInstance)
+            .map(|diagnostic| diagnostic.summary.clone())
+            .collect();
+        let expected = vec![
+            format!(
+                "this call of `f` passes an array that holds {} elements, more than the {} a compile-time value holds",
+                crate::semantics::reporting::grouped(2 * limit),
+                crate::semantics::reporting::grouped(limit)
+            ),
+            format!(
+                "this call of `f` passes an array that holds more than {} elements, the warning value of the limit of {}",
+                crate::semantics::reporting::grouped(limit / 2),
+                crate::semantics::reporting::grouped(limit)
+            ),
+        ];
+        if drawn != expected {
+            failures.push(format!("{levels} levels draw {drawn:?}"));
+        }
+        let leaves = walk_count(&run, "CArrayLeaves")
+            + walk_count(&run, "CArrayAllLeaves")
+            + walk_count(&run, "CArrayEq");
+        let nodes = walk_count(&run, "nodes");
+        if leaves > 4 * limit || nodes > 16 * limit {
+            failures.push(format!(
+                "{levels} levels walk {leaves} array leaves and build {nodes} nodes against the limit of {limit}"
+            ));
+        }
+        held.push((leaves, nodes));
+    }
+    if held.first() != held.last() {
+        failures.push(format!("the work differs at 26 and 40 levels: {held:?}"));
+    }
+    failures
+}
+
+#[test]
+fn a_doubling_recursion_warns_and_stops_at_the_value_limit_having_walked_no_value_past_it() {
+    let failures = doubling_failures(1_024);
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+#[test]
+#[ignore = "stress"]
+fn stress_a_doubling_recursion_warns_and_stops_at_the_default_value_limit_having_walked_no_value_past_it()
+ {
+    let failures = doubling_failures(4_194_304);
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
