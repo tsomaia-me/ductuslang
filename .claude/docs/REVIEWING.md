@@ -203,7 +203,7 @@ Blocking: a cycle through the reference an untaken arm hands to a second recursi
 ```
 **Good**
 ```text
-Major: a wrong program accepted on an unusual path, a nested helper called on a frame-chosen slice inside an untaken arm. Blocking is the ordinary path: a bounds-guarded recursion over scenes with a helper, refused 108 of 108.
+Major: a wrong program accepted on an unusual path, a nested helper called on a frame-chosen slice inside an untaken arm. Blocking is the ordinary path: a bounds-guarded recursion over an array of instances with a helper, refused 108 of 108.
 ```
 **A feature reported as a fix.** A fix repairs a mechanism the code already has. A finding whose property needs a mechanism the code lacks (a new walk, key, reader, template or check), a rule no document sentence decides, or a construct the milestone's steps do not name is a feature proposal: rated as the defect it answers, with what it needs named, for the head to take to the owner, never a fix for the round, because a feature built in a fix round is designed one gap at a time under reviews scoped to a diff.\
 **Bad**
@@ -405,11 +405,11 @@ self.y = flush_subnormal(x + self.feedback * self.y);
 **Float results that differ across targets.** `std` transcendentals call the platform libm, and `mul_add` rounds once where `a * b + c` rounds twice and falls back to a platform routine.\
 **Bad**
 ```rust
-let y = angle.sin().mul_add(depth, offset);
+let y = angle.sin().mul_add(gain, offset);
 ```
 **Good**
 ```rust
-let y = libm::sin(angle) * depth + offset;
+let y = libm::sin(angle) * gain + offset;
 ```
 **NaN poisoning state.** One NaN or infinity in a feedback state never decays, and `clamp`, `min` and `max` pass or hide it.\
 **Bad**

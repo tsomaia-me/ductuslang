@@ -98,13 +98,13 @@ match event { Event::Start(job) => tasks.start(job), _ => {} }
 
 **Good**
 ```rust
-fn total_length(events: &[Event]) -> Ticks
-let length = total_length(&schedule.events);
+fn total_duration(steps: &[Step]) -> Ticks
+let duration = total_duration(&schedule.steps);
 ```
 **Bad**
 ```rust
-fn total_length(events: Vec<Event>) -> Ticks
-let length = total_length(schedule.events.clone());
+fn total_duration(steps: Vec<Step>) -> Ticks
+let duration = total_duration(schedule.steps.clone());
 ```
 
 **Ids into an arena, not shared pointers.** Nodes held in a `Vec` and linked by id borrow one field at a time, so the borrow checker agrees without `RefCell`, and they copy, compare and hash as integers.
@@ -190,13 +190,13 @@ if let Some(node) = graph.node(id) {
 
 **Good**
 ```rust
-const OFFSETS: [u8; 7] = [0, 2, 4, 5, 7, 9, 11];
-let offset = OFFSETS.get(slot).ok_or(TableError::Slot(slot))?;
+const WEIGHTS: [u8; 7] = [1, 2, 4, 8, 16, 32, 64];
+let weight = WEIGHTS.get(slot).ok_or(TableError::Slot(slot))?;
 ```
 **Bad**
 ```rust
-let offset = if slot == 0 { 0 } else if slot == 1 { 2 } else if slot == 2 { 4 }
-    else if slot == 3 { 5 } else if slot == 4 { 7 } else if slot == 5 { 9 } else { 11 };
+let weight = if slot == 0 { 1 } else if slot == 1 { 2 } else if slot == 2 { 4 }
+    else if slot == 3 { 8 } else if slot == 4 { 16 } else if slot == 5 { 32 } else { 64 };
 ```
 
 ### Determinism
@@ -224,7 +224,7 @@ let value = libm::sin(angle);
 let value = angle.sin();
 ```
 
-**Integer time.** Time counts ticks and steps as integers and becomes seconds only at the edge, because a float accumulator drifts with every addition.
+**Integer time.** Time counts ticks and steps as integers and becomes seconds only at the edge, because a float accumulator drifts with the number of steps each commit advances.
 
 **Good**
 ```rust
@@ -333,9 +333,9 @@ assert_eq!(lexer::scan_number(&mut Cursor::new("0")), Some(0));
 
 **Good**
 ```rust
-let stopping_tasks = tasks.iter().filter(|task| task.is_stopping());
+let cancelled_tasks = tasks.iter().filter(|task| task.is_cancelled());
 fn rate_at(&self, tick: Tick) -> Rate
-#[test] fn stop_releases_only_the_matching_task()
+#[test] fn cancel_removes_only_the_matching_task()
 ```
 **Bad**
 ```rust
