@@ -35,19 +35,28 @@ Only `symphonyscript-core` runs on devices. Everything in it builds without `std
 A framework author builds a vocabulary in Rust; `Vocabulary::builder` takes its name and its version (SPEC §15.8). `v.node(name)` and `v.wire(name)` return a kind's typed handle at once, and `v.kind(handle)` and `v.wire_kind(handle)` configure it, so a kind can accept itself or a kind declared after it. The framework's consumer keeps the handles and matches them against the Program. A handle compares, hashes and looks up by its kind's index alone, so two builds of one vocabulary give equal handles; the vocabulary stamp tells vocabularies apart, and only `build()` rejects a handle from another builder (SPEC §10.1). A part of the SPEC §1.3 vocabulary:
 
 ```rust
-let mut v = Vocabulary::builder("music", "2.1.0");
+let mut v = Vocabulary::builder("example", "2.1.0");
 
 let beats = v.unit_family("beats").base("beats").unit("bars", 4.0);
-let wave = v.enumeration("Wave", ["Sine", "Saw", "Square"]);
+let time = v.unit_family("time").base("s").unit("ms", 0.001);
+let mode = v.enumeration("Mode", ["Auto", "Manual", "Off"]);
 
 let note = v.node("Note");
 let clip = v.node("Clip");
 let track = v.node("Track");
-let osc = v.node("Osc");
 let session = v.node("Session");
 let pad = v.node("Pad");
+let rig = v.node("Rig");
+let lamp = v.node("Lamp");
+let scene = v.node("Scene");
+let cue = v.node("Cue");
+let plant = v.node("Plant");
+let valve = v.node("Valve");
+let controller = v.node("Controller");
+let sensor = v.node("Sensor");
 let plays = v.wire("Plays");
 let starts = v.wire("Starts");
+let drives = v.wire("Drives");
 
 v.kind(note).doc("A single pitched event inside a clip.");
 let pitch: Attr<i32> = v.kind(note).attr::<i32>("pitch").default(60).default_attr().handle();
@@ -68,12 +77,6 @@ v.kind(track)
     .attr::<&'static str>("label").default("")
     .attr_str("title", 64).default("");
 
-v.kind(osc)
-    .top_level(Count::Any)
-    .attr::<f64>("freq").default(440.0).default_attr()
-    .attr_enum("wave", wave, "Sine")
-    .attr::<f32>("rate").default(1.0);
-
 v.kind(session)
     .top_level(Count::AtMost(1))
     .entry()
@@ -83,6 +86,42 @@ v.kind(session)
 v.kind(pad)
     .top_level(Count::Any)
     .attr_record("hit", "Hit").takes(Takes::Out(CellKind::Channel { capacity: 16 })).default_attr()
+    .attr::<f32>("gain").default(1.0);
+
+v.kind(rig)
+    .top_level(Count::Any)
+    .children(lamp, Count::Any)
+    .children(scene, Count::Any);
+
+let level: Attr<f32> = v.kind(lamp).attr::<f32>("level").default(0.0).default_attr().handle();
+v.kind(lamp)
+    .attr::<f32>("hue").default(0.0)
+    .attr::<bool>("strobe").default(false).flag('*');
+
+v.kind(scene)
+    .top_level(Count::Any)
+    .children(cue, Count::Any)
+    .attr::<f64>("hold").default(4.0).family(time, "s").default_attr();
+
+v.kind(cue)
+    .attr::<f64>("at").default(0.0).family(time, "s").default_attr()
+    .attr::<f64>("fade").default(1.0).family(time, "s");
+
+v.kind(plant)
+    .top_level(Count::Any)
+    .children(valve, Count::Any)
+    .children(controller, Count::Any)
+    .children(sensor, Count::Any)
+    .attr_enum("mode", mode, "Auto");
+
+v.kind(sensor)
+    .attr::<f32>("reading").takes(Takes::Out(CellKind::State)).default_attr();
+
+v.kind(valve)
+    .attr::<f32>("open").default(0.0).default_attr();
+
+v.kind(controller)
+    .attr::<f32>("target").default(0.0).default_attr()
     .attr::<f32>("gain").default(1.0);
 
 v.wire_kind(plays)
@@ -96,7 +135,11 @@ v.wire_kind(starts)
     .connects(track, clip)
     .cyclic();
 
-v.prelude("music.sym", include_str!("music.sym"));
+v.wire_kind(drives)
+    .connects(controller, valve)
+    .attr::<f32>("limit").default(1.0).default_attr();
+
+v.prelude("example.sym", include_str!("example.sym"));
 
 let vocab = v.build()?;
 ```
@@ -206,7 +249,7 @@ pub enum CellWord {
 - An `Input` is a host-fed cell and a `Cell` a derived one (SPEC §6.1); `word` is the cell's word, `history` its inferred history depth (SPEC §6.6), and `capacity` a host-fed stream's or channel's pending capacity, 1 on a `state`. The language server shows a cell's word and origin (§9).
 - `instances[i]` has `InstanceId(i)`; the same holds for wires, cells and input slots. Instances, wires and host-fed cells are in the order of SPEC §11.
 - An array host-fed cell occupies one slot per element, numbered row by row, and a record one one slot per leaf field, numbered in declaration order depth first (SPEC §12.1), so element and field writes address single slots; a string host-fed cell and a runtime string cell are each one slot or cell. An array attribute binds `Binding::Array`, and a record attribute `Binding::Record`, in field order. `program.input_of(slot)` returns the host-fed cell a slot belongs to, so a host that declared an attribute with `Takes::Out` follows its `Binding::Input` to the cell it writes (SPEC §7.6); two attributes bound to one cell carry the same `Binding::Input`, which a framework that writes per instance sees and decides on (SPEC §10.2).
-- `Input.name` is the cell's path (SPEC §11.1): `cutoff` for a top-level cell and `verse.low.gain` for a pattern's.
+- `Input.name` is the cell's path (SPEC §11.1): `setpoint` for a top-level cell and `verse.low.gain` for a pattern's.
 - `cells` is in dependency order: a cell reads only host-fed cells and cells with lower indices, a history read counting as a read except where it would close a cycle, which SPEC §6.6 reads as the step began.
 - An `AttrId` indexes its kind's attribute list.
 - `gate` combines the item's own `when` with the `when` arm conditions around it in one binding (SPEC §11).
@@ -224,19 +267,19 @@ pub enum CellWord {
 
 ```rust
 let mut rt = Runtime::new(program, &vocab)?;
-let cutoff = rt.cell("cutoff").unwrap();
+let setpoint = rt.cell("setpoint").unwrap();
 let steps = rt.cell("steps").unwrap();
-let hits = rt.producer(rt.cell("hits").unwrap())?;
+let alarm = rt.producer(rt.cell("alarm").unwrap())?;
 
-rt.write(cutoff, Value::F32(0.7))?;
+rt.write(setpoint, Value::F32(0.7))?;
 rt.write_at(steps, Part::Element(3), Value::Bool(true))?;
-hits.write(Value::Record(vec![Value::I32(60), Value::F32(0.9)]))?;
+alarm.write(Value::I32(1))?;
 
 for step in rt.commit_steps() {
     for change in step.changes() {
         match change {
             Change::Attr { instance, attr } => {
-                if attr == pitch { let p: i32 = step.attr(instance, pitch); }
+                if attr == level { let l: f32 = step.attr(instance, level); }
                 let v = step.attr_value(instance, attr);
             }
             Change::WireAttr { wire, attr } => { let v = step.wire_attr_value(wire, attr); }
@@ -251,7 +294,7 @@ for step in rt.commit_steps() {
 - `Runtime::new` takes the vocabulary the Program was compiled against, refuses a Program whose stamp differs from the vocabulary's (SPEC §13.1), and takes its native functions from it, which native call nodes invoke at runtime (SPEC §10.1).
 - `step.attr(instance, handle)` reads an attribute through its `Attr<T>` handle (§2) in its Rust type, and `step.attr_element(instance, handle, k)` one element of an array attribute; `step.wire_attr` and `step.wire_attr_element` read a wire's the same way. `step.attr_value(instance, attr)` and `step.wire_attr_value(wire, attr)` read any attribute whole by its `AttrId` as a `Value`, for a consumer that walks every kind. A `Step` borrows the runtime and reads the values as of that step; the same reads on `rt` between commits give the last step's.
 - `Runtime::new` validates the Program (ids in range, cells in dependency order, operand types consistent) and returns an error for one that fails. A Program that passes it evaluates, commits and reloads without a panic. It then evaluates every cell, computes every activation and target, and allocates every buffer the runtime ever uses: for each cell one ring of its history depth plus, for a host-fed stream or channel, its pending capacity (SPEC §6.1, §12.6), the pending writes being the ring's next entries.
-- `commit` never allocates. A written `state` is compared with its value once, the live length first for a variable array, so the check costs no more than the write did, and a stream's or channel's writes are compared with nothing. It takes the `state` writes as one step, then each pending write of every stream and channel as one step in arrival order (SPEC §12.2); at each step it walks the cells in index order, evaluating only cells marked dirty, marks readers dirty when a `state` changed, compared as SPEC §12.2 compares values, or a `stream` or `channel` ran, an unclocked cell on a cycle of reads being marked with every unclocked member of its cycle (SPEC §6.6), and recomputes activation and targets at each step. At the end of each step it fills the change buffer, whose capacity is the number of reportable items, with that step's records in the order of SPEC §12.3, and hands the step out before the next begins: `rt.commit(&mut consumer)` calls the consumer's `apply` with each `Step` (§6), and `rt.commit_steps()` returns an iterator yielding each `Step` in turn for a host without a consumer; a `Step` borrows the runtime, so no `write`, `commit` or `reload` runs while one is out, and a step the iterator's holder drops without reading is still taken. There is no other entry: a host that steps per sample commits per sample.
+- `commit` never allocates. A written `state` is compared with its value once, the live length first for a variable array, so the check costs no more than the write did, and a stream's or channel's writes are compared with nothing. It takes the `state` writes as one step, then each pending write of every stream and channel as one step in arrival order (SPEC §12.2); at each step it walks the cells in index order, evaluating only cells marked dirty, marks readers dirty when a `state` changed, compared as SPEC §12.2 compares values, or a `stream` or `channel` ran, an unclocked cell on a cycle of reads being marked with every unclocked member of its cycle (SPEC §6.6), and recomputes activation and targets at each step. At the end of each step it fills the change buffer, whose capacity is the number of reportable items, with that step's records in the order of SPEC §12.3, and hands the step out before the next begins: `rt.commit(&mut consumer)` calls the consumer's `apply` with each `Step` (§6), and `rt.commit_steps()` returns an iterator yielding each `Step` in turn for a host without a consumer; a `Step` borrows the runtime, so no `write`, `commit` or `reload` runs while one is out, and a step the iterator's holder drops without reading is still taken. There is no other entry: a host commits at each tick of its own clock, and each commit does at most the work SPEC §12.6 reports, which a host committing at a fixed rate holds within its period.
 - The runtime has two engines over one seam: the node-by-node evaluator of this section, which serves script mode, and the generated Rust of §8, which a shipped program runs. Both compute every cell from the same Program, bit for bit, and the differential test of §8 holds them equal over every fixture. Lower marks each value that nothing else reads (§7, stage 8), and both engines change such a value in place instead of copying it.
 - Each host-fed cell, derived cell and gate has a precomputed list of the attributes, gates and targets that read it, so changes are reported without searching.
 - Effective activation is computed parents first, so a gate change reaches every descendant in one pass.
@@ -305,7 +348,7 @@ pub trait Consumer {
 }
 ```
 
-A consumer turns a Program into something: a synaptic-kernel graph, a MIDI file, a test trace, a printed dump. It reads the Program through `runtime.program()`, and `commit` calls `apply` once per step, inside the commit, with the step's changes in `step.changes()` and the step's values behind `step`'s reads (§4, SPEC §12.2), so a value a later step overwrites reaches the consumer first. The tool's watch loop drives any consumer through this trait. `load` refuses a Program the consumer cannot take, such as one whose vocabulary stamp differs from the vocabulary the consumer was built for. `reload` reads the new Program and the report from the pending reload and either applies all of it or changes nothing and returns an error. The watch loop installs a pending reload only after the consumer's `reload` succeeds, so a refusal leaves the runtime and the consumer on the old Program, and the loop reports the error.
+A consumer turns a Program into something: a synaptic-kernel graph, a file of encoded events, a test trace, a printed dump. It reads the Program through `runtime.program()`, and `commit` calls `apply` once per step, inside the commit, with the step's changes in `step.changes()` and the step's values behind `step`'s reads (§4, SPEC §12.2), so a value a later step overwrites reaches the consumer first. The tool's watch loop drives any consumer through this trait. `load` refuses a Program the consumer cannot take, such as one whose vocabulary stamp differs from the vocabulary the consumer was built for. `reload` reads the new Program and the report from the pending reload and either applies all of it or changes nothing and returns an error. The watch loop installs a pending reload only after the consumer's `reload` succeeds, so a refusal leaves the runtime and the consumer on the old Program, and the loop reports the error.
 
 ## 7. The compiler
 
@@ -354,7 +397,7 @@ pub struct Diagnostic {
 pub struct Related { pub span: Span, pub label: String }
 ```
 
-The tests keep a table mapping each error rule of the SPEC, by section, to its code; a section that names several errors has one row for each error it names, and a test checks that every code appears in the table, every code in the table exists and every section it cites exists. A lookup that misses inside the compiler is a compiler defect: it returns an error, and the run draws one `internal-error` diagnostic, the one code no SPEC rule names and the table leaves out, and fails. A construct the parser reads whose semantics a later milestone builds, one that `docs/pending-examples.txt` names (SPEC §1.2), draws one `unbuilt-construct` diagnostic at the construct where the IR is built, its summary naming the construct and the SPEC section that defines it, and takes an error placeholder; it is the second code no SPEC rule names and the table leaves out, its lesson shows no program, as `internal-error`'s shows none, and every `sym` example that draws it stands in the pending list. The compiler collects every diagnostic of a run instead of stopping at the first. Diagnostics that differ only in the calls or pattern uses between their fault and the outermost call or use merge into one, which names the longest such chain found, the first of that length by its related spans in order, each by file in top-level order, start and end, so a fault draws one diagnostic per outermost call or use however its bodies are shared. A literal whose elements disagree draws that diagnostic at the innermost faulty literal, and every value that holds it whole takes a placeholder. A choice whose arms disagree in family, element type or dimension draws one diagnostic at the choice, mixed-families when their families disagree (SPEC §3.6) and type-mismatch otherwise, whatever chooses, whichever arm a compile-time choice takes and whatever the arms are, and every value that holds it whole takes a placeholder. A choice whose arms agree has their unified type whichever arm a compile-time choice takes (SPEC §5.4), and a position that refuses that type refuses the choice as one value, at the expression that reads it. A value that is no cell, a runtime choice, a runtime native call's result and an operation over cells among them, read where its type does not fit draws type-mismatch at the read, where a cell draws float-to-integer (SPEC §4.4). An untyped bare-variant flow, `let`s or cells whose variants meet and that no use gives one enum, draws its one diagnostic at its first writer, the first `let` that writes a variant, and its uses draw nothing more; every other `let` the flow passes through, an alias such as `let b = a` included, appears once among its related spans. A related span never repeats its diagnostic's primary span. It returns them in source order: by file in top-level order, then by span start, span end, code, summary, help and related spans in order, each by file in top-level order, start, end and label, and two diagnostics equal in every part are one. A name, type or unit family that an error leaves unknown takes an error placeholder that every later stage accepts without a diagnostic, so one fault draws one diagnostic; a placeholder arises only where a diagnostic is reported, so a program that draws no error holds none. A value whose type an error leaves known keeps that type and only its value is unknown: a refused conversion has its target type, an element read whose compile-time index is in error has its elements' type, and an operator whose result type does not depend on its operands (`and`, `or`, `not`, a comparison, `is`) has that type; a syntax fault leaves no type known, so an operator missing an operand is a placeholder of no type. Beside a placeholder for a name, the expression draws a diagnostic only where it draws that diagnostic, with the same code at the same span, for every value the name could hold: a value of each type a name can hold (SPEC §3, §6.7), `i32`, `f64`, `bool`, an enum, a string, an array, a record, a node reference and a function reference among them, each a compile-time value where only a compile-time value may stand; so `Note when q or 1 or 2` draws its unknown-name and one type-mismatch at `2`, which every such value draws; those values are tried by analysing the expressions that hold the placeholder and what they demand, never the whole program again, in work linear in those expressions. A placeholder for an operand that a syntax fault leaves missing holds no value at all, and the operator that holds it draws nothing, so `Plays: verse+` draws its syntax diagnostic alone. Every other fault draws its own diagnostic at its span, whatever fault stands beside it: an operand that a refused operator, index, bound, condition, conversion or annotation holds is checked in its own type, so `Note/([1, 2, 3][1.5 + [1, 2][5]])` draws an index-type and an index-out-of-range; an arm a compile-time choice does not take and an element a compile-time index does not read are checked in their own types only, with no index range or fit check. A trial evaluation that settles a recursive call's kind (stage 6) is no part of the program: what it meets in code that nothing expands draws nothing (SPEC §6.5), and the evaluation of code that is expanded reports it. A top-level name declared twice is such a placeholder at every reference beside its one duplicate diagnostic, and so is a name that a region skipped by a fault (§7.1) holds, and a name declared on a line that holds a syntax fault, wherever it is used. A limit's warning stops nothing. The nesting depth (SPEC §6.3) stops no compilation: it is an error of the call that passes it. A compilation that a limit stops reports that limit's one diagnostic and the diagnostics found before the stop, and no stage after the one it stops in runs: a stop during Expand reports no diagnostic of Infer or Check, and a diagnostic that depends on work the limit cut off, such as a flow's type whose uses lie past the cut, is not reported.
+The tests keep a table mapping each error rule of the SPEC, by section, to its code; a section that names several errors has one row for each error it names, and a test checks that every code appears in the table, every code in the table exists and every section it cites exists. A lookup that misses inside the compiler is a compiler defect: it returns an error, and the run draws one `internal-error` diagnostic, the one code no SPEC rule names and the table leaves out, and fails. A construct the parser reads whose semantics a later milestone builds, one that `docs/pending-examples.txt` names (SPEC §1.2), draws one `unbuilt-construct` diagnostic at the construct where the IR is built, its summary naming the construct and the SPEC section that defines it, and takes an error placeholder; it is the second code no SPEC rule names and the table leaves out, its lesson shows no program, as `internal-error`'s shows none, and every `sym` example that draws it stands in the pending list. The compiler collects every diagnostic of a run instead of stopping at the first. Diagnostics that differ only in the calls or pattern uses between their fault and the outermost call or use merge into one, which names the longest such chain found, the first of that length by its related spans in order, each by file in top-level order, start and end, so a fault draws one diagnostic per outermost call or use however its bodies are shared. A literal whose elements disagree draws that diagnostic at the innermost faulty literal, and every value that holds it whole takes a placeholder. A choice whose arms disagree in family, element type or dimension draws one diagnostic at the choice, mixed-families when their families disagree (SPEC §3.6) and type-mismatch otherwise, whatever chooses, whichever arm a compile-time choice takes and whatever the arms are, and every value that holds it whole takes a placeholder. A choice whose arms agree has their unified type whichever arm a compile-time choice takes (SPEC §5.4), and a position that refuses that type refuses the choice as one value, at the expression that reads it. A value that is no cell, a runtime choice, a runtime native call's result and an operation over cells among them, read where its type does not fit draws type-mismatch at the read, where a cell draws float-to-integer (SPEC §4.4). An untyped bare-variant flow, `let`s or cells whose variants meet and that no use gives one enum, draws its one diagnostic at its first writer, the first `let` that writes a variant, and its uses draw nothing more; every other `let` the flow passes through, an alias such as `let b = a` included, appears once among its related spans. A related span never repeats its diagnostic's primary span. It returns them in source order: by file in top-level order, then by span start, span end, code, summary, help and related spans in order, each by file in top-level order, start, end and label, and two diagnostics equal in every part are one. A name, type or unit family that an error leaves unknown takes an error placeholder that every later stage accepts without a diagnostic, so one fault draws one diagnostic; a placeholder arises only where a diagnostic is reported, so a program that draws no error holds none. A value whose type an error leaves known keeps that type and only its value is unknown: a refused conversion has its target type, an element read whose compile-time index is in error has its elements' type, and an operator whose result type does not depend on its operands (`and`, `or`, `not`, a comparison, `is`) has that type; a syntax fault leaves no type known, so an operator missing an operand is a placeholder of no type. Beside a placeholder for a name, the expression draws a diagnostic only where it draws that diagnostic, with the same code at the same span, for every value the name could hold: a value of each type a name can hold (SPEC §3, §6.7), `i32`, `f64`, `bool`, an enum, a string, an array, a record, a node reference and a function reference among them, each a compile-time value where only a compile-time value may stand; so `Valve when q or 1 or 2` draws its unknown-name and one type-mismatch at `2`, which every such value draws; those values are tried by analysing the expressions that hold the placeholder and what they demand, never the whole program again, in work linear in those expressions. A placeholder for an operand that a syntax fault leaves missing holds no value at all, and the operator that holds it draws nothing, so `Triggers: dusk+` draws its syntax diagnostic alone. Every other fault draws its own diagnostic at its span, whatever fault stands beside it: an operand that a refused operator, index, bound, condition, conversion or annotation holds is checked in its own type, so `Note/([1, 2, 3][1.5 + [1, 2][5]])` draws an index-type and an index-out-of-range; an arm a compile-time choice does not take and an element a compile-time index does not read are checked in their own types only, with no index range or fit check. A trial evaluation that settles a recursive call's kind (stage 6) is no part of the program: what it meets in code that nothing expands draws nothing (SPEC §6.5), and the evaluation of code that is expanded reports it. A top-level name declared twice is such a placeholder at every reference beside its one duplicate diagnostic, and so is a name that a region skipped by a fault (§7.1) holds, and a name declared on a line that holds a syntax fault, wherever it is used. A limit's warning stops nothing. The nesting depth (SPEC §6.3) stops no compilation: it is an error of the call that passes it. A compilation that a limit stops reports that limit's one diagnostic and the diagnostics found before the stop, and no stage after the one it stops in runs: a stop during Expand reports no diagnostic of Infer or Check, and a diagnostic that depends on work the limit cut off, such as a flow's type whose uses lie past the cut, is not reported.
 
 Each change recompiles the whole project.
 
@@ -409,14 +452,14 @@ A framework ships one binary, named after its vocabulary and built from it:
 
 ```rust
 fn main() {
-    symphonyscript_tool::Tool::new(music::vocabulary())
-        .command("play", music::play)
-        .command("export-midi", music::export_midi)
+    symphonyscript_tool::Tool::new(lighting::vocabulary())
+        .command("run", lighting::run)
+        .command("export-cues", lighting::export_cues)
         .run()
 }
 
-fn play(project: &Project, args: &[String]) -> Result<(), ToolError> {
-    symphonyscript_tool::watch(project, &music::vocabulary(), &mut music::Engine::new())
+fn run(project: &Project, args: &[String]) -> Result<(), ToolError> {
+    symphonyscript_tool::watch(project, &lighting::vocabulary(), &mut lighting::Engine::new())
 }
 ```
 
@@ -430,14 +473,14 @@ fn play(project: &Project, args: &[String]) -> Result<(), ToolError> {
 | `remove <name>` | `sym` | removes a library from the project's package file |
 | `update` | `sym` | raises the build's libraries to newer releases |
 | `calibrate` | `sym` | writes the limits its libraries raise into the project's `options` |
-| any other | framework | playing, rendering, exporting |
+| any other | framework | running, rendering, exporting |
 
 - **Commands.** A framework command is `fn(&Project, &[String]) -> Result<(), ToolError>`, receiving the project and the command's arguments.
 - **`sym`.** Users run one command, `sym`, under every framework. It runs `add`, `remove` and `update` itself, and runs every other command, `check`, `dump` and `lsp` among them, as the framework binary named after the vocabulary its project's package file states (SPEC §15.8), with the same arguments.
 - **`math`.** The `math` package is built into the tool and the compiler: its names are SPEC §5.7's, reachable as `math::<name>` in every build and unqualified under `use math`, which `new` writes into `package.sym`; it is fetched from nowhere and has no lock line.
 - **Packages.** `add <source>` writes `require "<source>@<version>"` into the project's package file, the newest release when the source names no version, then fetches the library and writes its lock lines. `remove <name>` removes the library's `require` and `use` items and the lock lines no other library needs. `update` raises every library, or the one it names, to its newest patch release, and with `--minor` to its newest minor release; `update --major <name>` moves that library to its next major after checking that every library of the build that requires it has a release on that major, and otherwise names each that has none.
 - **Fetching.** Before a compile, the tool chooses the build's versions (SPEC §15.7), fetches each release and commit over https into a cache that every project on the machine shares, keyed by identity and by version or commit, reads local libraries in place, and passes every library's sources to the compiler (§7).
-- **Lock file.** `package.lock`, beside the project's `package.sym`, holds one line per fetched release of the build: its source with its version and the SHA-256 hash of its files, as `github.com/acme/scales@2.1.4 sha256-…`. The tool writes it, and nobody edits it. A fetched release whose hash differs from its line stops the build, naming the library; a commit needs no line, since a commit's name is its hash.
+- **Lock file.** `package.lock`, beside the project's `package.sym`, holds one line per fetched release of the build: its source with its version and the SHA-256 hash of its files, as `github.com/acme/gradients@2.1.4 sha256-…`. The tool writes it, and nobody edits it. A fetched release whose hash differs from its line stops the build, naming the library; a commit needs no line, since a commit's name is its hash.
 - **Projects.** A `Project` holds its root, the folder holding its `package.sym`, and its sources: every `.sym` file under the root, found recursively, each with its path relative to the root, and the sources of every library of its build under its identity (SPEC §15.1). Those paths fix the top-level order (SPEC §2.1).
 - **Dump.** `dump` prints every field of the Program in the Program's order, deterministically, and two floats with distinct bits print distinctly.
 - **Single files.** `check`, `dump` and the framework's subcommands accept a lone `.sym` file in place of a project; it is a project of one source whose path is the file's name.
@@ -448,8 +491,8 @@ fn play(project: &Project, args: &[String]) -> Result<(), ToolError> {
 - **Diagnostics.** `check` and the framework's commands print each diagnostic as its summary and help, then its lesson under `── why ──`, then its spans under `── where ──`, primary first, each with its label; `--brief` leaves out the lesson. The language server sends the summary and the help, and the lesson on request.
 
 ```text
-error[reactive-recursion]: `lowest` calls itself, so it runs while the program compiles, but its argument `step` is a cell that changes while the music plays.
-help: write the loop as a `for` expression, which runs while the music plays
+error[reactive-recursion]: `lowest` calls itself, so it runs while the program compiles, but its argument `step` is a cell that changes while the program runs.
+help: write the loop as a `for` expression, which runs while the program runs
 
 ── why ──
 A recursive function runs to its end once, while the program compiles, and
@@ -486,7 +529,7 @@ The engine enters at the sentinel on every cycle, walks the top-level chain, and
 
 Each node and synapse holds the adapter's own cells, followed by attribute cells:
 
-- **Adapter cells**, always in meta: a node's active flag and a serial number unique to the instance's or wire's lifetime, and a candidate synapse's chosen flag. The engine keys its per-instance state (playheads, sounding notes, phases) by serial, because a freed slot is reused by another instance.
+- **Adapter cells**, always in meta: a node's active flag and a serial number unique to the instance's or wire's lifetime, and a candidate synapse's chosen flag. The engine keys whatever it keeps per instance, such as a position, a running value or a phase, by serial, because a freed slot is reused by another instance.
 - **Attribute cells**, placed by type:
 
 ```rust
