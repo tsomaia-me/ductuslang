@@ -18,7 +18,7 @@ What the owner expects of every line of code. Builders write to it, reviewers fa
 
 The owner's bar: "I don't need trivial behaviors tested, like 'does useState work in this component, even though it works in 1000 others just like it?' ... I don't object testing real behavior, real logic. I object testing stupid stuff. I object testing stupid stuff from thousand angles even more. they are not pro-quality tests. they actually have diminishing returns, leaving less and less space for real, genuine tests. test that tickets the box 'I did add tests' for builder and nothing else - is a wrong test. test that tests genuine thing, behavior, logic whatever - is a good test. 10 tests that test the same thing - are wrong tests, 9 out of those 10, at least."
 
-- A test proves real logic or behaviour that a player, a system would notice breaking, once. No test for what the framework or a library guarantees (state, rendering, routing working in one more component), for trivial wiring, for what another test already proves, and no test whose only job is that tests were added, because each costs every later run and every later reader and proves nothing a real test does not.
+- A test proves real logic or behaviour that a user, a system would notice breaking, once. No test for what the framework or a library guarantees (state, rendering, routing working in one more component), for trivial wiring, for what another test already proves, and no test whose only job is that tests were added, because each costs every later run and every later reader and proves nothing a real test does not.
 - Test behaviour through the public surface (the route, a component's props and what it renders, the engine's API), never private functions, class names, style objects, mock call counts or the wording of config and workflow files. Make every assertion and check tell apart exactly what it claims (a match on a value no generated id, timestamp or seed can contain, a removed key asserted with `toStrictEqual`, changed-or-current decided by a hash or a change time, never a count), because a fragment of a fixed id matches a random one on some seed, `toEqual` passes a key that should be gone and a same-size replace passes a count.
 - State is tested through the API that owns it; a component's state through that component.
 - One behaviour, one test, at the cheapest layer that proves it. The cases of one behaviour are one table holding only its boundaries and its distinct outcomes, because a row between two boundaries fails only when they do. A test that only repeats what another layer proves, or a second test of a behaviour already proven, is removed, and the PR or the hand-back names the test where the behaviour stays proven.
@@ -40,14 +40,14 @@ How good code looks in a `no_std` core with bit-identical results on every targe
 
 **Good**
 ```rust
-enum Voice { Idle, Playing { note: Note, started: Tick } }
+enum Task { Idle, Running { job: Job, started: Tick } }
 ```
 **Bad**
 ```rust
-struct Voice { playing: bool, note: Option<Note>, started: Option<Tick> }
+struct Task { running: bool, job: Option<Job>, started: Option<Tick> }
 ```
 
-**Newtypes for ids and units.** The compiler refuses a node id passed as an edge id and ticks passed as frames.
+**Newtypes for ids and units.** The compiler refuses a node id passed as an edge id and ticks passed as steps.
 
 **Good**
 ```rust
@@ -63,18 +63,18 @@ pub fn connect(from: u32, to: u32, delay: u64) -> Result<u32, GraphError>
 
 **Good**
 ```rust
-pub struct Velocity(u8);
-impl Velocity {
+pub struct Level(u8);
+impl Level {
     pub fn new(raw: u8) -> Result<Self, OutOfRange> {
-        (raw <= 127).then_some(Velocity(raw)).ok_or(OutOfRange { raw })
+        (raw <= 100).then_some(Level(raw)).ok_or(OutOfRange { raw })
     }
 }
-pub fn note_on(pitch: Pitch, velocity: Velocity) -> Event
+pub fn set_level(slot: Slot, level: Level) -> Event
 ```
 **Bad**
 ```rust
-pub fn is_valid_velocity(raw: u8) -> bool { raw <= 127 }
-pub fn note_on(pitch: u8, velocity: u8) -> Event
+pub fn is_valid_level(raw: u8) -> bool { raw <= 100 }
+pub fn set_level(slot: u32, level: u8) -> Event
 ```
 
 **Exhaustive matches on our own enums.** A new variant fails to compile at every site that must decide what it means.
@@ -82,14 +82,14 @@ pub fn note_on(pitch: u8, velocity: u8) -> Event
 **Good**
 ```rust
 match event {
-    Event::NoteOn(note) => voices.start(note),
-    Event::NoteOff(note) => voices.release(note),
-    Event::Tempo(tempo) => clock.set_tempo(tempo),
+    Event::Start(job) => tasks.start(job),
+    Event::Stop(job) => tasks.stop(job),
+    Event::Rate(rate) => clock.set_rate(rate),
 }
 ```
 **Bad**
 ```rust
-match event { Event::NoteOn(note) => voices.start(note), _ => {} }
+match event { Event::Start(job) => tasks.start(job), _ => {} }
 ```
 
 ### Ownership
@@ -98,13 +98,13 @@ match event { Event::NoteOn(note) => voices.start(note), _ => {} }
 
 **Good**
 ```rust
-fn total_length(notes: &[Note]) -> Ticks
-let length = total_length(&score.notes);
+fn total_length(events: &[Event]) -> Ticks
+let length = total_length(&schedule.events);
 ```
 **Bad**
 ```rust
-fn total_length(notes: Vec<Note>) -> Ticks
-let length = total_length(score.notes.clone());
+fn total_length(events: Vec<Event>) -> Ticks
+let length = total_length(schedule.events.clone());
 ```
 
 **Ids into an arena, not shared pointers.** Nodes held in a `Vec` and linked by id borrow one field at a time, so the borrow checker agrees without `RefCell`, and they copy, compare and hash as integers.
@@ -136,12 +136,12 @@ return Err(String::from("parse error"));
 
 **Good**
 ```rust
-let voice = self.voices.get_mut(id.index()).ok_or(KernelError::UnknownVoice(id))?;
+let task = self.tasks.get_mut(id.index()).ok_or(KernelError::UnknownTask(id))?;
 ```
 **Bad**
 ```rust
-let voice = &mut self.voices[id.index()];
-let tempo = self.tempo_map.at(tick).unwrap();
+let task = &mut self.tasks[id.index()];
+let rate = self.rate_map.at(tick).unwrap();
 ```
 
 **Checked conversions and arithmetic.** `as` truncates silently and `+` overflows differently in debug and release; `try_from` and `checked_*` turn the overflow into an error.
@@ -163,11 +163,11 @@ let end = start + length;
 
 **Good**
 ```rust
-fn ticks_to_frames(ticks: Ticks, tempo: Tempo, rate: SampleRate) -> Result<Frames, TimeError>
+fn ticks_to_steps(ticks: Ticks, tick_rate: TickRate, step_rate: StepRate) -> Result<Steps, TimeError>
 ```
 **Bad**
 ```rust
-fn advance(&mut self) { self.frames = self.convert(); self.dirty = true; }
+fn advance(&mut self) { self.steps = self.convert(); self.dirty = true; }
 ```
 
 **Early returns.** The refusals come first and the main path stays unindented.
@@ -190,13 +190,13 @@ if let Some(node) = graph.node(id) {
 
 **Good**
 ```rust
-const MAJOR_STEPS: [u8; 7] = [0, 2, 4, 5, 7, 9, 11];
-let step = MAJOR_STEPS.get(degree).ok_or(ScaleError::Degree(degree))?;
+const OFFSETS: [u8; 7] = [0, 2, 4, 5, 7, 9, 11];
+let offset = OFFSETS.get(slot).ok_or(TableError::Slot(slot))?;
 ```
 **Bad**
 ```rust
-let step = if degree == 0 { 0 } else if degree == 1 { 2 } else if degree == 2 { 4 }
-    else if degree == 3 { 5 } else if degree == 4 { 7 } else if degree == 5 { 9 } else { 11 };
+let offset = if slot == 0 { 0 } else if slot == 1 { 2 } else if slot == 2 { 4 }
+    else if slot == 3 { 5 } else if slot == 4 { 7 } else if slot == 5 { 9 } else { 11 };
 ```
 
 ### Determinism
@@ -217,18 +217,18 @@ let ports: HashMap<PortName, NodeId> = collect_ports(&graph);
 
 **Good**
 ```rust
-let value = libm::sin(phase);
+let value = libm::sin(angle);
 ```
 **Bad**
 ```rust
-let value = phase.sin();
+let value = angle.sin();
 ```
 
-**Integer time.** Time counts ticks and frames as integers and becomes seconds only at the edge, because a float accumulator drifts with the block size.
+**Integer time.** Time counts ticks and steps as integers and becomes seconds only at the edge, because a float accumulator drifts with every addition.
 
 **Good**
 ```rust
-struct Clock { now: Frame, rate: SampleRate }
+struct Clock { now: Step, rate: StepRate }
 fn seconds(&self) -> Seconds { self.rate.seconds_at(self.now) }
 ```
 **Bad**
@@ -243,26 +243,26 @@ fn tick(&mut self) { self.seconds += self.step; }
 
 **Good**
 ```rust
-fn new(limits: &Limits) -> Self { Self { events: Vec::with_capacity(limits.events_per_block) } }
-pub fn commit(&mut self, out: &mut [Sample]) -> Result<(), KernelError>
+fn new(limits: &Limits) -> Self { Self { events: Vec::with_capacity(limits.events_per_commit) } }
+pub fn commit(&mut self, out: &mut [Reading]) -> Result<(), KernelError>
 ```
 **Bad**
 ```rust
-pub fn commit(&mut self) -> Vec<Sample>
+pub fn commit(&mut self) -> Vec<Reading>
 let events: Vec<Event> = self.pending().collect();
 ```
 
-**Lock-free handoff between threads.** The audio thread never waits on a lock: commands cross through a preallocated bounded queue that refuses when full instead of growing, and an atomic publishes with `Release` and reads with `Acquire`, so what the writer wrote before the store is visible after the load.
+**Lock-free handoff between threads.** The real-time thread never waits on a lock: commands cross through a preallocated bounded queue that refuses when full instead of growing, and an atomic publishes with `Release` and reads with `Acquire`, so what the writer wrote before the store is visible after the load.
 
 **Good**
 ```rust
-producer.try_push(Command::SetGain(node, gain)).map_err(|_| ControlError::QueueFull)?;
+producer.try_push(Command::SetLevel(node, level)).map_err(|_| ControlError::QueueFull)?;
 self.ready.store(index, Ordering::Release);
 let index = self.ready.load(Ordering::Acquire);
 ```
 **Bad**
 ```rust
-self.commands.lock().unwrap().push(Command::SetGain(node, gain));
+self.commands.lock().unwrap().push(Command::SetLevel(node, level));
 self.ready.store(index, Ordering::Relaxed);
 let index = self.ready.load(Ordering::Relaxed);
 ```
@@ -293,34 +293,34 @@ fn walk(tree: &Tree, id: NodeId) {
 
 **Good**
 ```rust
-assert_eq!(pitch_to_hz(Pitch::A4), 440.0);
-assert_eq!(pitch_to_hz(Pitch::A5), 880.0);
+assert_eq!(to_fahrenheit(Celsius(0.0)), 32.0);
+assert_eq!(to_fahrenheit(Celsius(100.0)), 212.0);
 ```
 **Bad**
 ```rust
-assert_eq!(pitch_to_hz(Pitch::A4), 440.0 * libm::pow(2.0, (69.0 - 69.0) / 12.0));
+assert_eq!(to_fahrenheit(Celsius(100.0)), 100.0 * 9.0 / 5.0 + 32.0);
 ```
 
 **One table per behaviour, holding its boundaries.** Each row is a boundary or a distinct outcome, so the table fails exactly where the rule changes.
 
 **Good**
 ```rust
-for (raw, expected) in [(0, Ok(0)), (127, Ok(127)), (128, Err(OutOfRange { raw: 128 }))] {
-    assert_eq!(Velocity::new(raw).map(Velocity::get), expected, "raw {raw}");
+for (raw, expected) in [(0, Ok(0)), (100, Ok(100)), (101, Err(OutOfRange { raw: 101 }))] {
+    assert_eq!(Level::new(raw).map(Level::get), expected, "raw {raw}");
 }
 ```
 **Bad**
 ```rust
-#[test] fn velocity_0() { assert!(Velocity::new(0).is_ok()); }
-#[test] fn velocity_64() { assert!(Velocity::new(64).is_ok()); }
-#[test] fn velocity_100() { assert!(Velocity::new(100).is_ok()); }
+#[test] fn level_0() { assert!(Level::new(0).is_ok()); }
+#[test] fn level_50() { assert!(Level::new(50).is_ok()); }
+#[test] fn level_90() { assert!(Level::new(90).is_ok()); }
 ```
 
 **Tests through the public surface.** A test calls what a caller calls, so a refactor that keeps the behaviour keeps the test green.
 
 **Good**
 ```rust
-assert_eq!(compile("tempo 0"), Err(CompileError::TempoOutOfRange { at: Span::new(6, 7) }));
+assert_eq!(compile("rate 0"), Err(CompileError::RateOutOfRange { at: Span::new(5, 6) }));
 ```
 **Bad**
 ```rust
@@ -333,15 +333,15 @@ assert_eq!(lexer::scan_number(&mut Cursor::new("0")), Some(0));
 
 **Good**
 ```rust
-let releasing_voices = voices.iter().filter(|voice| voice.is_releasing());
-fn tempo_at(&self, tick: Tick) -> Tempo
-#[test] fn note_off_releases_only_the_matching_voice()
+let stopping_tasks = tasks.iter().filter(|task| task.is_stopping());
+fn rate_at(&self, tick: Tick) -> Rate
+#[test] fn stop_releases_only_the_matching_task()
 ```
 **Bad**
 ```rust
-let tmp = voices.iter().filter(|v| v.flag2);
+let tmp = tasks.iter().filter(|t| t.flag2);
 fn process(&self, t: u64) -> u32
-#[test] fn test_voices_2()
+#[test] fn test_tasks_2()
 ```
 
 ## When this file is wrong

@@ -1,6 +1,6 @@
 # SymphonyScript
 
-SymphonyScript is a language for describing graphs: music graphs (sessions, tracks, clips, notes) and audio graphs (oscillators, filters, mixers). A program places instances of node kinds, sets their attributes, connects them with wires, and binds attributes to inputs the host changes at runtime. Every kind comes from a vocabulary that a framework author writes in Rust; source code declares none.
+SymphonyScript is a language for describing graphs that run: nodes placed inside other nodes, wires between nodes, and values that change while the graph runs. A program places instances of node kinds, sets their attributes, connects them with wires, and binds attributes to cells, values the host or the program changes at runtime. What the graph describes, a lighting rig, a control loop or an arrangement of clips, is the vocabulary's business: every kind comes from a vocabulary that a framework author writes in Rust, and source code declares none.
 
 The compiler is written in Rust. It compiles a project against one vocabulary into a Program: plain Rust data that any consumer interprets. A runtime evaluates the Program's reactive values, and synaptic-kernel is one consumer.
 
@@ -34,6 +34,7 @@ Everything this project needs is inside `packages/symphonyscript`. The kernel ad
 
 - Present tense and definitive: "A wire's destination is a named instance." No history, no plans inside reference documents, no "will", "for now", "later", "note that", and no hedges.
 - The documents describe SymphonyScript alone. They compare it to no other language.
+- The documents name no domain as the language's own: a domain's words appear only in examples, and the examples come from several domains, so no reader takes SymphonyScript for a language of one domain.
 - Each fact appears in one place; other places refer to it by section number. Sections are numbered; individual rules are not, except the steps of an ordered procedure, such as a commit or reload matching.
 - A rule comes first, then an example. A reason appears only where the rule would otherwise look arbitrary, in one clause.
 - Each construct's grammar sits in its own SPEC section, and each production appears once.
