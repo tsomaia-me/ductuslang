@@ -41,7 +41,7 @@ impl HirBuilder<'_> {
             self.draw(Code::CellCapacity, range, summary);
         }
         let capacity = capacity.and_then(|value| self.sized(node, misplaced_capacity, value));
-        let name = self.ident(node.name());
+        let name = self.declared(node.syntax(), node.name());
         let ty = node.ty().map(|ty| {
             let mut built = self.type_ref(&ty);
             let after = ty.syntax().range().end;

@@ -723,15 +723,17 @@ const HELD_FORMS: [(&str, bool); 5] = [
     ("{base}[^{b}]", false),
 ];
 
-const HELD_PLACES: [(&[&str], bool); 4] = [
-    (&["Clip c:\n    Note/({read})\n"], true),
-    (&["let r = {read}\n", "Clip c:\n    Note/(r)\n"], true),
+const HELD_PLACES: [(&[&str], bool, bool); 4] = [
+    (&["Clip c:\n    Note/({read})\n"], true, false),
+    (&["let r = {read}\n", "Clip c:\n    Note/(r)\n"], true, true),
     (
         &["fn f(n): n + {read}\n", "Clip c:\n    Note/(f(1))\n"],
+        true,
         true,
     ),
     (
         &["Clip c:\n    Note/(if 1 > 2 then {read} else 0)\n"],
+        false,
         false,
     ),
 ];
@@ -747,7 +749,7 @@ fn resolved_placeholder_base_rows(rows: &Rows) -> Vec<String> {
             for (form, (shape, at_read)) in HELD_FORMS.iter().enumerate() {
                 let suffixes: &[&str] = if form < 3 { &["[0]", ".size"] } else { &[""] };
                 for (read, suffix) in suffixes.iter().enumerate() {
-                    for (place, (items, taken)) in HELD_PLACES.iter().enumerate() {
+                    for (place, (items, taken, declared)) in HELD_PLACES.iter().enumerate() {
                         let held = shape.replace("{base}", value).replace("{b}", bound);
                         let read_text = format!("{held}{suffix}");
                         let mut program: Vec<String> = declarations
@@ -756,8 +758,9 @@ fn resolved_placeholder_base_rows(rows: &Rows) -> Vec<String> {
                             .collect();
                         program.extend(items.iter().map(|item| item.replace("{read}", &read_text)));
                         let mut expected = vec![(*base_code, (*base_span).to_string())];
+                        let placeholder = *declared && *base_code == Code::ExpressionSyntax;
                         match drawn {
-                            Some((code, kind)) if *kind || *taken => {
+                            Some((code, kind)) if !placeholder && (*kind || *taken) => {
                                 let spanned = if *kind && *at_read {
                                     held.clone()
                                 } else {

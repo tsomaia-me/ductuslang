@@ -60,7 +60,7 @@ impl HirBuilder<'_> {
                     None => self.expr(node.value(), loc),
                 };
                 let decl = LetDecl {
-                    name: self.ident(node.name()),
+                    name: self.declared(node.syntax(), node.name()),
                     ty: node.ty().map(|ty| self.type_ref(&ty)),
                     value,
                     loc,
@@ -97,7 +97,7 @@ impl HirBuilder<'_> {
                 };
                 let regions = param_regions(node.syntax(), SyntaxKind::ParamList);
                 let decl = FnDecl {
-                    name: self.ident(node.name()),
+                    name: self.declared(node.syntax(), node.name()),
                     params,
                     skipped_params: skipped_params(&regions),
                     faulty_head: !regions.is_empty(),
@@ -136,7 +136,7 @@ impl HirBuilder<'_> {
                     None => (Vec::new(), Vec::new(), self.absent_block()),
                 };
                 let decl = PatternDecl {
-                    name: self.ident(node.name()),
+                    name: self.declared(node.syntax(), node.name()),
                     params,
                     skipped_params: skipped_params(&regions),
                     skipped_default: regions.iter().any(holds_default),

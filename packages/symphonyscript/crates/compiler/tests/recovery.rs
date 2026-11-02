@@ -1214,6 +1214,103 @@ fn every_top_level_header_cut_by_a_fault_declares_its_names_as_placeholders() {
 }
 
 #[test]
+fn a_declaration_on_a_line_that_holds_a_syntax_fault_is_a_placeholder_at_every_reference_455() {
+    let note_at = |read: &str| format!("Clip c:\n    Note/({read})\n");
+    let held_index = note_at("held[7]");
+    let held = note_at("held");
+    let call = note_at("f(true)");
+    let a = note_at("a");
+    let past = note_at("s");
+    let voice = "Clip c:\n    Voice/60\n";
+    let rows: &[support::Row] = &[
+        (
+            &["state held([1, 2]) i32[..10]\n", &held_index],
+            &[(Code::CellSyntax, "i32")],
+        ),
+        (
+            &["state held([1, 2])\n", &held_index],
+            &[(Code::IndexOutOfRange, "7")],
+        ),
+        (
+            &["state held(1.5) i32\n", &held],
+            &[(Code::CellSyntax, "i32")],
+        ),
+        (
+            &["state held(1.5)\n", &held],
+            &[(Code::FloatToInteger, "held")],
+        ),
+        (
+            &[
+                "state held(1.5) i32\n",
+                "state s = held.past(1) + 1\n",
+                &past,
+            ],
+            &[(Code::CellSyntax, "i32")],
+        ),
+        (
+            &["state held(1.5)\n", "state s = held.past(1) + 1\n", &past],
+            &[(Code::FloatToInteger, "s")],
+        ),
+        (
+            &["fn f(x): if x then 1 else [1] 2\n", &call],
+            &[(Code::FnSyntax, "2")],
+        ),
+        (
+            &["fn f(x): if x then 1 else [1]\n", &call],
+            &[(Code::TypeMismatch, "if x then 1 else [1]")],
+        ),
+        (
+            &["let a = if 2 > 1 then 1 else [1] 2\n", &a],
+            &[(Code::LetSyntax, "2")],
+        ),
+        (
+            &["let a = if 2 > 1 then 1 else [1]\n", &a],
+            &[(Code::TypeMismatch, "if 2 > 1 then 1 else [1]")],
+        ),
+        (
+            &[
+                "pattern Voice(default root) 2:\n    Note/(if root > 1 then 1 else [1])\n",
+                voice,
+            ],
+            &[(Code::PatternSyntax, "2")],
+        ),
+        (
+            &[
+                "pattern Voice(default root):\n    Note/(if root > 1 then 1 else [1])\n",
+                voice,
+            ],
+            &[(Code::TypeMismatch, "if root > 1 then 1 else [1]")],
+        ),
+        (
+            &[
+                "pattern Voice(default root):\n    Note/(root + true) )\n",
+                voice,
+            ],
+            &[
+                (Code::OperandType, "root + true"),
+                (Code::PlacementSyntax, ")"),
+            ],
+        ),
+        (
+            &[
+                "fn f(x):\n    let y = 1 2\n    y + true\n",
+                "Clip c:\n    Note/(f(1))\n",
+            ],
+            &[(Code::LetSyntax, "2"), (Code::OperandType, "y + true")],
+        ),
+        (
+            &["fn f(x): y + x 2\n", "Clip c:\n    Note/(f(1))\n"],
+            &[(Code::UnknownName, "y"), (Code::FnSyntax, "2")],
+        ),
+        (
+            &["state h([1][1.5]) i32\n", "Clip c:\n    Note/(h)\n"],
+            &[(Code::IndexType, "1.5"), (Code::CellSyntax, "i32")],
+        ),
+    ];
+    support::assert_rows_in_every_order(&vocabulary(), rows);
+}
+
+#[test]
 fn a_missing_closer_marks_the_expression_it_closes_and_not_the_next_item() {
     let compiler = symphonyscript::Compiler::new(&vocabulary()).expect("the vocabulary compiles");
     type Row<'a> = (&'a [&'a str], &'a [Code], &'a [(Code, &'a str)]);
@@ -1273,30 +1370,50 @@ fn a_missing_closer_marks_the_expression_it_closes_and_not_the_next_item() {
 fn the_faults_before_a_brackets_region_draw_whatever_the_bracket_and_the_order_c2_17() {
     let vocabulary = symphonyscript_fixtures::bar_vocabulary();
     let mut programs = 0;
+    let mut failures = Vec::new();
     for (opener, syntax) in [
         ("{", Code::MapSyntax),
         ("(", Code::ExpressionSyntax),
         ("[", Code::ExpressionSyntax),
     ] {
-        for reversed in [false, true] {
-            let mut items = [
-                format!("let k = (2bars + 1) div{opener} 1bars\n"),
-                "Bar b | bar_len=k\n".to_string(),
-            ];
+        for (reversed, declared) in [(false, true), (true, true), (false, false), (true, false)] {
+            let mut items = if declared {
+                [
+                    format!("let k = (2bars + 1) div{opener} 1bars\n"),
+                    "Bar b | bar_len=k\n".to_string(),
+                ]
+            } else {
+                [
+                    "let k = 1bars\n".to_string(),
+                    format!("Bar b | bar_len=(2bars + 1) div{opener} k\n"),
+                ]
+            };
             if reversed {
                 items.reverse();
             }
             let text = items.concat();
-            let mut found: Vec<Code> = support::checked_with(&vocabulary, &text)
-                .into_iter()
+            let diagnostics = support::checked_with(&vocabulary, &text);
+            let mut found: Vec<Code> = diagnostics
+                .iter()
                 .map(|diagnostic| diagnostic.code)
                 .collect();
             found.sort();
-            let mut expected = vec![Code::PlainInFamily, syntax];
+            let mut expected = if declared {
+                vec![syntax]
+            } else {
+                vec![Code::PlainInFamily, syntax]
+            };
             expected.sort();
             programs += 1;
-            assert_eq!(found, expected, "{text}");
+            if found != expected {
+                failures.push(support::failed(
+                    &text,
+                    &diagnostics,
+                    format!("{text}\n  draws {found:?}\n  expected {expected:?}"),
+                ));
+            }
         }
     }
-    assert_eq!(programs, 6);
+    support::assert_no_failure(&failures);
+    assert_eq!(programs, 12);
 }

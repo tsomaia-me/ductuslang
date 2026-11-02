@@ -2,7 +2,7 @@ use std::ops::Range;
 
 use super::hir_builder::HirBuilder;
 use super::index::index;
-use crate::semantics::ir::Top;
+use crate::semantics::ir::{Ident, Top};
 use crate::syntax::ast::{self, AstNode, Name};
 use crate::syntax::{NodeView, SyntaxKind};
 
@@ -13,6 +13,35 @@ impl HirBuilder<'_> {
             self.hir.placeholders.push(name);
             self.hir.top.push(Top::Placeholder(id));
         }
+    }
+
+    pub(super) fn declared(
+        &mut self,
+        item: &NodeView<'_>,
+        name: Option<Name<'_>>,
+    ) -> Option<Ident> {
+        if self.faulty_line(item) {
+            self.placeholder(name);
+            return None;
+        }
+        self.ident(name)
+    }
+
+    fn faulty_line(&self, item: &NodeView<'_>) -> bool {
+        let range = item.range();
+        let mut end = range.end;
+        let mut token = item.first_token();
+        while let Some(current) = token {
+            crate::semantics::counted_walk::CountedWalk::HirBuilderHeaderNames.step();
+            if matches!(current.kind(), SyntaxKind::Newline | SyntaxKind::Indent)
+                || current.range().start >= range.end
+            {
+                end = end.min(current.range().start);
+                break;
+            }
+            token = current.next_token();
+        }
+        self.faults.first_in(range.start..end).is_some()
     }
 
     pub(super) fn unbuilt_fn(&mut self, node: &ast::FnDecl<'_>) -> bool {
