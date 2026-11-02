@@ -1353,6 +1353,16 @@ fn assert_outcome(outcome: &Outcome, expected: (usize, usize)) {
     assert_eq!((outcome.programs, outcome.landing_apart), expected);
 }
 
+/// The programs `arms_hold` builds for a chooser that is no parameter: 48,066
+/// before step 15, less the 4,500 whose arm is a top-level `let` holding a variable
+/// array, which reads a cell and is `reactive-let` since step 15 (SPEC §6.2), so
+/// `arm` builds no such arm: 81 form pairs with that arm in every position in both
+/// orders (26 × 2 = 52), 16 whose other arm is a local `let`, standing only in the
+/// three hosted positions (3 × 2 = 6), and 4 whose other arm is a variable-array
+/// `state` under widening, closed in two positions (24 × 2 = 48), over the 14
+/// relation and content pairs with a variable-array arm: 81 × 52 + 16 × 6 + 4 × 48.
+const ALL_FORMS_PROGRAMS: usize = 48_066 - (81 * 52 + 16 * 6 + 4 * 48);
+
 fn assert_arms_hold(chooser: Chooser, programs: usize, landing_apart: usize) {
     assert_outcome(&arms_hold(&Rows::Every, chooser), (programs, landing_apart));
 }
@@ -1371,7 +1381,7 @@ fn the_arms_of_a_compile_time_true_choice_agree_wherever_it_stands() {
 #[test]
 #[ignore = "exhaustive"]
 fn exhaustive_the_arms_of_a_compile_time_true_choice_agree_wherever_it_stands() {
-    assert_arms_hold(Chooser::True, 48066, 24);
+    assert_arms_hold(Chooser::True, ALL_FORMS_PROGRAMS, 24);
 }
 
 #[test]
@@ -1382,7 +1392,7 @@ fn the_arms_of_a_compile_time_false_choice_agree_wherever_it_stands() {
 #[test]
 #[ignore = "exhaustive"]
 fn exhaustive_the_arms_of_a_compile_time_false_choice_agree_wherever_it_stands() {
-    assert_arms_hold(Chooser::False, 48066, 24);
+    assert_arms_hold(Chooser::False, ALL_FORMS_PROGRAMS, 24);
 }
 
 #[test]
@@ -1393,7 +1403,7 @@ fn the_arms_of_a_runtime_choice_agree_wherever_it_stands() {
 #[test]
 #[ignore = "exhaustive"]
 fn exhaustive_the_arms_of_a_runtime_choice_agree_wherever_it_stands() {
-    assert_arms_hold(Chooser::Flag, 48066, 0);
+    assert_arms_hold(Chooser::Flag, ALL_FORMS_PROGRAMS, 0);
 }
 
 #[test]
@@ -1404,7 +1414,7 @@ fn the_arms_of_a_compile_time_enum_match_agree_wherever_it_stands() {
 #[test]
 #[ignore = "exhaustive"]
 fn exhaustive_the_arms_of_a_compile_time_enum_match_agree_wherever_it_stands() {
-    assert_arms_hold(Chooser::Enum, 48066, 0);
+    assert_arms_hold(Chooser::Enum, ALL_FORMS_PROGRAMS, 0);
 }
 
 #[test]
@@ -1415,7 +1425,7 @@ fn the_arms_of_a_match_on_an_enum_input_agree_wherever_it_stands() {
 #[test]
 #[ignore = "exhaustive"]
 fn exhaustive_the_arms_of_a_match_on_an_enum_input_agree_wherever_it_stands() {
-    assert_arms_hold(Chooser::EnumInput, 48066, 0);
+    assert_arms_hold(Chooser::EnumInput, ALL_FORMS_PROGRAMS, 0);
 }
 
 #[test]
@@ -1426,7 +1436,7 @@ fn the_arms_of_a_match_on_an_integer_input_agree_wherever_it_stands() {
 #[test]
 #[ignore = "exhaustive"]
 fn exhaustive_the_arms_of_a_match_on_an_integer_input_agree_wherever_it_stands() {
-    assert_arms_hold(Chooser::Integer, 48066, 0);
+    assert_arms_hold(Chooser::Integer, ALL_FORMS_PROGRAMS, 0);
 }
 
 #[test]
