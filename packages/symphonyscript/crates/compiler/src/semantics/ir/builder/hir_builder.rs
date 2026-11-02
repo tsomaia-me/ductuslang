@@ -124,12 +124,16 @@ impl HirBuilder<'_> {
                         loc: self.loc(param.syntax().range()),
                     })
                     .collect();
-                let (lets, body) = match node.body() {
+                let (lets, cells, body) = match node.body() {
                     Some(block) => {
                         let lets = block.lets().map(|local| self.local_let(&local)).collect();
-                        (lets, self.block(block)?)
+                        let cells = block
+                            .cells()
+                            .map(|cell| self.loc(cell.syntax().range()))
+                            .collect();
+                        (lets, cells, self.block(block)?)
                     }
-                    None => (Vec::new(), self.absent_block()),
+                    None => (Vec::new(), Vec::new(), self.absent_block()),
                 };
                 let decl = PatternDecl {
                     name: self.ident(node.name()),
@@ -137,6 +141,7 @@ impl HirBuilder<'_> {
                     skipped_params: skipped_params(&regions),
                     skipped_default: regions.iter().any(holds_default),
                     lets,
+                    cells,
                     body,
                     loc,
                 };

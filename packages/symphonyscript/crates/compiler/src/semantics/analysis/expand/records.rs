@@ -269,6 +269,11 @@ impl<'a> Engine<'a> {
             return Ok(None);
         }
         let locals = self.use_locals(pattern, placement, caller)?;
+        for cell in self.hir.pattern(pattern)?.cells.clone() {
+            if !self.count_item(cell, locals)? {
+                return Ok(None);
+            }
+        }
         self.claim_id(self.uses.len(), "pattern uses", loc)?;
         let id = UseId(index(self.uses.len()));
         self.uses

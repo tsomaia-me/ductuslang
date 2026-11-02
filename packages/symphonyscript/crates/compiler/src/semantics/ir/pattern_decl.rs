@@ -12,6 +12,7 @@ pub(crate) struct PatternDecl {
     pub skipped_params: UnknownNames,
     pub skipped_default: bool,
     pub lets: Vec<LetDecl>,
+    pub cells: Vec<Loc>,
     pub body: BlockId,
     pub loc: Loc,
 }

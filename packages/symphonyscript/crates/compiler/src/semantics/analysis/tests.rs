@@ -3848,3 +3848,27 @@ fn the_name_twins_draw_an_internal_error_for_a_placeholder_that_is_no_name_304()
     );
     assert!(analyze::name_twins(&analysis, &names, &[]).is_ok());
 }
+
+#[test]
+fn a_fixture_projects_expanded_items_are_its_instances_and_wires_and_no_cell_of_a_pattern_use() {
+    let compiler = Compiler::new(&vocabulary()).expect("the vocabulary compiles");
+    for project in [music_project(), lighting_project(), control_project()] {
+        let sources: Vec<Source> = project
+            .files
+            .iter()
+            .map(|file| Source {
+                path: file.path.clone(),
+                text: file.text.clone(),
+            })
+            .collect();
+        let (_, counted) = compiler.analyzed(&sources, |engine| {
+            (
+                engine.expanded,
+                u64::try_from(engine.instances.len() + engine.wires.len()).unwrap_or(u64::MAX),
+            )
+        });
+        let (expanded, items) = counted.expect("the run meets no internal error");
+        assert!(items > 0, "{}", project.name);
+        assert_eq!(expanded, items, "{}", project.name);
+    }
+}
