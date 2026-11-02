@@ -962,3 +962,80 @@ fn a_local_let_read_in_a_taken_arm_and_an_untaken_one_draws_its_fault_once_in_ei
         }
     }
 }
+
+/// SPEC §5.4: "at compile time only the chosen branch is checked for fit and
+/// index range"; ARCHITECTURE §7 stage 6: an untaken arm's start "is evaluated
+/// only to find the reference it chooses, drawing no diagnostic, fit, index
+/// range, overflow or depth". The start's index reaches its value through an
+/// inlined call's argument as when written directly, and draws nothing in an
+/// arm a compile-time choice does not take; its taken twin draws the fault once
+/// (C2-3).
+fn untaken_inlined_start_rows(rows: &Rows) -> (Vec<String>, usize) {
+    let compiler = Compiler::new(&vocabulary()).expect("the vocabulary compiles");
+    let arguments = [
+        ("u8(0 + 300) - 300", Code::DoesNotFit),
+        ("0 + 2 ** 126 * 4", Code::IntegerOverflow),
+        ("u8(255) + 1", Code::ConstantOverflow),
+    ];
+    let bodies = [
+        Some("xs[p]"),
+        Some("if p > 0 then xs[p] else xs[0]"),
+        Some("[xs[0], xs[1]][p]"),
+        None,
+    ];
+    let mut failures = Vec::new();
+    let mut programs = 0;
+    for (a, (argument, code)) in arguments.iter().enumerate() {
+        for (b, body) in bodies.iter().enumerate() {
+            let start = match body {
+                Some(_) => format!("pick([verse, k], {argument})"),
+                None => format!("[verse, k][{argument}]"),
+            };
+            let read = format!("i32(({start}).gain)");
+            for (c, (untaken, taken)) in [
+                (
+                    format!("if false then {read} else 60"),
+                    format!("if true then {read} else 60"),
+                ),
+                (
+                    format!("if true then 60 else {read}"),
+                    format!("if false then 60 else {read}"),
+                ),
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                for (o, reversed) in [false, true].into_iter().enumerate() {
+                    if !rows.take(&[a, b, c, o]) {
+                        continue;
+                    }
+                    let program = |value: &str| {
+                        let mut items = vec![
+                            "Clip verse:\n    Note\n".to_string(),
+                            format!("Clip k:\n    Note/({value})\n"),
+                        ];
+                        if let Some(body) = body {
+                            items.insert(0, format!("fn pick(xs, p): {body}\n"));
+                        }
+                        ordered(items, reversed)
+                    };
+                    let (text, twin) = (program(&untaken), program(&taken));
+                    programs += 1;
+                    let found = codes(&compiler, &text);
+                    let twin_found = codes(&compiler, &twin);
+                    if !found.is_empty() || twin_found != BTreeSet::from([*code]) {
+                        failures.push(format!(
+                            "{text}\n  draws {found:?}, its taken twin {twin_found:?}\n"
+                        ));
+                    }
+                }
+            }
+        }
+    }
+    (failures, programs)
+}
+
+#[test]
+fn an_untaken_starts_index_reached_through_an_inlined_call_draws_no_fit_or_overflow_c2_3() {
+    assert_none_fail(untaken_inlined_start_rows(&Rows::Every), 48);
+}

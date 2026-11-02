@@ -66,6 +66,20 @@ impl Engine<'_> {
             .chain(self.typing.evaluated.iter())
             .map(|(node, ..)| *node)
             .collect();
+        let roots: FastSet<NodeId> = self
+            .memo
+            .eager_reads
+            .iter()
+            .map(|(root, _)| *root)
+            .collect();
+        let mut taken_arguments: FastSet<NodeId> = FastSet::default();
+        for node in &read {
+            if !roots.contains(node)
+                && let Op::Use(operand) = self.node(*node)?.op
+            {
+                taken_arguments.insert(operand);
+            }
+        }
         let passed_over: FastSet<NodeId> = self
             .typing
             .passed_over
@@ -87,8 +101,12 @@ impl Engine<'_> {
                 }
                 let op = &self.node(node)?.op;
                 match op {
-                    Op::Use(_)
-                    | Op::Chosen(_)
+                    Op::Use(operand) => {
+                        if !taken_arguments.contains(operand) {
+                            stack.push(*operand);
+                        }
+                    }
+                    Op::Chosen(_)
                     | Op::Read(_)
                     | Op::Recursive { .. }
                     | Op::For(_)
@@ -123,8 +141,13 @@ impl Engine<'_> {
             }
         }
         self.deferred.retain(|deferred| {
-            !(matches!(deferred.code, Code::IndexOutOfRange | Code::DoesNotFit)
-                && deferred.node.is_some_and(|node| unread.contains(&node)))
+            !(matches!(
+                deferred.code,
+                Code::IndexOutOfRange
+                    | Code::DoesNotFit
+                    | Code::IntegerOverflow
+                    | Code::ConstantOverflow
+            ) && deferred.node.is_some_and(|node| unread.contains(&node)))
         });
         Ok(())
     }
