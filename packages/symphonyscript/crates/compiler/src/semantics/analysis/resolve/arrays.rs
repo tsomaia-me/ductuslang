@@ -13,6 +13,7 @@ use crate::semantics::analysis::engine::Engine;
 use crate::semantics::analysis::eval_ty::EvalTy;
 use crate::semantics::analysis::fast_hash::{FastMap, FastSet};
 use crate::semantics::analysis::history_cell::HistoryCell;
+use crate::semantics::analysis::i64_position::I64Position;
 use crate::semantics::analysis::ids::{NodeId, ScopeId};
 use crate::semantics::analysis::kind::Kind;
 use crate::semantics::analysis::layout::Layout;
@@ -423,6 +424,15 @@ impl Engine<'_> {
             nodes.first().copied().flatten(),
             nodes.get(1).copied().flatten(),
         );
+        for (node, _) in [lower, upper].into_iter().flatten() {
+            some!(self.bound_beside_template_placeholder(
+                &base_val,
+                node,
+                I64Position::SliceBound,
+                scope,
+                need
+            )?);
+        }
         match &base_val {
             Val::Error => return Ok(Some(Val::Error)),
             Val::Scalar(node) if !self.arrays.contains(node) => {

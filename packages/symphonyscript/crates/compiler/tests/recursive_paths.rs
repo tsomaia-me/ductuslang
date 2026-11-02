@@ -5727,3 +5727,50 @@ fn every_reference_an_untaken_arm_passes_to_a_recursive_callee_keys_its_family_c
     }
     assert_eq!(programs, 24);
 }
+
+/// ARCHITECTURE §7: "an operand that a refused operator, index, bound, condition,
+/// conversion or annotation holds is checked in its own type"; stage 6: a
+/// template's type diagnostics are drawn as for a taken call. Beside a ragged
+/// literal base in a recursive body, taken arm or not, an index's, an offset's
+/// or a slice bound's own type fault is drawn as at the top level (C2-7).
+#[test]
+fn a_bound_beside_a_ragged_base_in_a_recursive_body_draws_its_own_type_fault_c2_7() {
+    let codes = |text: &str| -> Vec<Code> {
+        let mut found: Vec<Code> = support::checked(text)
+            .into_iter()
+            .map(|diagnostic| diagnostic.code)
+            .collect();
+        found.sort();
+        found
+    };
+    let mut expected = vec![Code::RaggedArray, Code::IndexType];
+    expected.sort();
+    let mut programs = 0;
+    for base in ["[1, [2]]", "[[1], [2, 3]]"] {
+        for bound in ["[1.5]", "[true]", "[1ms..]", "[^1ms]", "[^true]", "[1.5..]"] {
+            let read = format!("({base}{bound})[0]");
+            for items in [
+                vec![format!("Clip c:\n    Note/({read})\n")],
+                vec![
+                    format!("fn r(n): if n < 1 then {read} else r(n - 1)\n"),
+                    "Clip c:\n    Note/(r(2))\n".to_string(),
+                ],
+                vec![
+                    format!("fn r(n): if n < 1 then 1 else (if n > 5 then {read} else r(n - 1))\n"),
+                    "Clip c:\n    Note/(r(2))\n".to_string(),
+                ],
+            ] {
+                for reversed in [false, true] {
+                    let mut items = items.clone();
+                    if reversed {
+                        items.reverse();
+                    }
+                    let text = items.concat();
+                    programs += 1;
+                    assert_eq!(codes(&text), expected, "{text}");
+                }
+            }
+        }
+    }
+    assert_eq!(programs, 72);
+}

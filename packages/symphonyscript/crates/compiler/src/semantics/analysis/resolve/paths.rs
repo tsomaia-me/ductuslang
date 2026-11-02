@@ -14,6 +14,7 @@ use crate::semantics::analysis::engine::Engine;
 use crate::semantics::analysis::eval_ty::EvalTy;
 use crate::semantics::analysis::fast_hash::FastSet;
 use crate::semantics::analysis::frame_read::FrameRead;
+use crate::semantics::analysis::i64_position::I64Position;
 use crate::semantics::analysis::ids::{NodeId, ScopeId, WireId};
 use crate::semantics::analysis::item_ref::ItemRef;
 use crate::semantics::analysis::kind::Kind;
@@ -1132,6 +1133,13 @@ impl Engine<'_> {
             }
             Val::Error => return Ok(Some(Val::Error)),
         };
+        some!(self.bound_beside_template_placeholder(
+            &base_val,
+            index_node,
+            I64Position::Index,
+            scope,
+            need
+        )?);
         self.index_val(base, base_val, index_node, loc, scope, need)
     }
 
@@ -1168,6 +1176,13 @@ impl Engine<'_> {
             }
             Val::Error => return Ok(Some(Val::Error)),
         };
+        some!(self.bound_beside_template_placeholder(
+            &base_val,
+            offset_node,
+            I64Position::Offset,
+            scope,
+            need
+        )?);
         let indexable = match &base_val {
             Val::Array(_) => true,
             Val::Scalar(node) => self.arrays.contains(node),
@@ -2023,5 +2038,53 @@ impl Engine<'_> {
             Found::Query(Query::State(_) | Query::Input(_))
         );
         Ok(cell && self.declaring_receiver(base, scope)?)
+    }
+}
+
+impl Engine<'_> {
+    /// Beside a placeholder base in a recursive body, an index's, an offset's or
+    /// a slice bound's own type fault is drawn as it is outside one (ARCHITECTURE
+    /// §7: "an operand that a refused operator, index, bound … holds is checked
+    /// in its own type"; stage 6: "a template's type diagnostics are drawn as for
+    /// a taken call"), as `infer/check.rs` `bounds_beside_placeholders` checks
+    /// it outside a template; only the type, never the range. `None` while the
+    /// bound's signature is pending.
+    pub(in crate::semantics::analysis) fn bound_beside_template_placeholder(
+        &mut self,
+        base: &Val,
+        bound: NodeId,
+        position: I64Position,
+        scope: ScopeId,
+        need: &mut Vec<Query>,
+    ) -> Result<Option<()>, Internal> {
+        let placeholder = match base {
+            Val::Error => true,
+            Val::Scalar(node) if !self.arrays.contains(node) => {
+                some!(self.sig(*node, need)).is_error()
+            }
+            Val::Scalar(_) | Val::Array(_) => false,
+        };
+        if !placeholder || self.template_of(scope)?.is_none() || self.in_probe(scope)? {
+            return Ok(Some(()));
+        }
+        let sig = some!(self.sig(bound, need));
+        if sig.is_error() {
+            return Ok(Some(()));
+        }
+        let unit_offset = position == I64Position::Offset && sig.family.is_some();
+        if !matches!(sig.kind, Kind::Int | Kind::Any) || unit_offset {
+            let message = match position {
+                I64Position::SliceBound => "a slice bound is an integer",
+                I64Position::Index | I64Position::Offset => "an index is an integer",
+            };
+            self.error_at_node(Code::IndexType, bound, message)?;
+        } else if position == I64Position::SliceBound && sig.family.is_some() {
+            self.error_at_node(
+                Code::UnitOperation,
+                bound,
+                "a slice bound is a plain number",
+            )?;
+        }
+        Ok(Some(()))
     }
 }
