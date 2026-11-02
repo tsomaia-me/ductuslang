@@ -36,6 +36,10 @@ name = "evolve-time"
 path = "src/bin/evolve_time.rs"
 
 [[bin]]
+name = "evolve-count"
+path = "src/bin/evolve_count.rs"
+
+[[bin]]
 name = "evolve-probe"
 path = "src/bin/evolve_probe.rs"
 

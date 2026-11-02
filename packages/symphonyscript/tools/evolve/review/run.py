@@ -4,7 +4,6 @@ import json
 import math
 import os
 import platform
-import re
 import shutil
 import subprocess
 import sys
@@ -16,7 +15,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import figures
+import pinned
 import verdicts
+from pinned import SUMMARY_LINE, TEST_LINE
 from programs import MAIN, PROBES, key, probe_records, probe_vocabularies, read_jsonl, write_jsonl_gz
 
 HERE = Path(__file__).resolve().parent
@@ -36,9 +37,7 @@ THUMB = "thumbv7em-none-eabihf"
 EXHAUSTIVE = "test(/(^|::)exhaustive_/)"
 STRESS = "test(/(^|::)stress_/)"
 TIMED_TESTS = ("nextest", "nextest-exhaustive")
-TEST_LINE = re.compile(r"\s*(?P<status>[A-Z][A-Z-]*) \[\s*(?P<seconds>[0-9.]+s)?\s*\]\s+(?:\(\s*\d+/\d+\)\s+)?"
-                       r"(?P<test>\S+ \S+)\s*")
-SUMMARY_LINE = re.compile(r"\s*Summary \[")
+PINNED_STEPS = {"nextest-exhaustive": "exhaustive", "nextest-stress": "stress"}
 FAILED_EXIT = 1
 VOID_FIGURE_EXIT = 2
 VOIDED = " (a figure is void)"
@@ -295,8 +294,8 @@ def performed(planned, results, settle=settled):
 
 
 def ignored_tests(name, expression, package, cargo, below):
-    return step(name, ["cargo", "nextest", "run", "--workspace", "--run-ignored", "all", "-E", expression], package,
-                cargo, below)
+    return step(name, ["cargo", "nextest", "run", "--workspace", "--run-ignored", "all", "--no-fail-fast", "-E",
+                       expression], package, cargo, below)
 
 
 def shared_steps(sha, top, into, run, jobs, baselines, against, quiet=None, stress=False, exhaustive=False):
@@ -322,8 +321,12 @@ def shared_steps(sha, top, into, run, jobs, baselines, against, quiet=None, stre
             step("thumbv7em", ["cargo", "build", "-p", "symphonyscript-core", "--target", THUMB], package, cargo,
                  BUSY_LOAD),
             step("verdicts", verdict_diff, HERE, None, BUSY_LOAD),
+            step("build-release", ["cargo", "build", "--release", "--bins"],
+                 into / "check" / "export" / "tools" / "evolve",
+                 {"CARGO_TARGET_DIR": str(into / "check" / "target"), "CARGO_BUILD_JOBS": str(jobs)}, BUSY_LOAD),
             step("figures", [sys.executable, HERE / "run.py", "figures", into / "check" / "target" / PROFILES["dev"],
-                             run / "check-times.json.gz", run / "figures.json", "--load-below", limits["figures"]],
+                             run / "check-times.json.gz", run / "figures.json", "--release",
+                             into / "check" / "target" / PROFILES["release"], "--load-below", limits["figures"]],
                  HERE)]
 
 
@@ -344,7 +347,9 @@ def manifest(tip, into, run, records, started, jobs, quiet=None, stress=False, e
     pipeline = git(HERE, "rev-parse", "HEAD").stdout.strip()
     edited = git(HERE, "status", "--porcelain", "--", str(EVOLVE)).stdout.strip()
     return {"tip": tip, "export": str(into / "export" / PACKAGE), "target": str(into / "target"),
-            "evolve_binaries": str(into / "check" / "target" / PROFILES["dev"]), "profile": "dev", "jobs": jobs,
+            "evolve_binaries": str(into / "check" / "target" / PROFILES["dev"]),
+            "evolve_release_binaries": str(into / "check" / "target" / PROFILES["release"]), "profile": "dev",
+            "jobs": jobs,
             "ignored_tests": {"exhaustive": exhaustive, "stress": stress},
             "load_limits": {name: limit(below) for name, below in load_limits(quiet).items()},
             "pipeline": {"commit": pipeline, "uncommitted_changes": bool(edited)},
@@ -371,14 +376,48 @@ def shared(arguments):
     started, records = now(), []
     for planned in shared_steps(sha, top, into, run, arguments.jobs, arguments.baselines, arguments.against,
                                 arguments.quiet_below, arguments.stress, arguments.exhaustive):
-        records.append(performed(planned, run))
+        records.append(judged_pins(performed(planned, run), run, arguments.pins))
         print(f"{planned['name']}: exit {records[-1]['exit']}{VOIDED if voided(records[-1]) else ''}, "
               f"{records[-1]['seconds']} s, load {records[-1]['load']}", flush=True)
+        for line in records[-1].get("pinned", {}).get("lines", []):
+            print(f"  {line}", flush=True)
         shape = manifest(tip, into, run, records, started, arguments.jobs, arguments.quiet_below, arguments.stress,
                          arguments.exhaustive)
         (run / "manifest.json").write_text(json.dumps(shape, indent=2) + "\n")
     print(run / "manifest.json")
     sys.exit(shared_exit(records))
+
+
+def judged_pins(record, results, pins):
+    if record["name"] not in PINNED_STEPS:
+        return record
+    log = results / record["log"]
+    found = pinned.judged(log.read_text(errors="replace"), pinned.read_record(pins), PINNED_STEPS[record["name"]],
+                          record["exit"])
+    with open(log, "a") as out:
+        out.write(f"\npinned sets ({pins}):\n" + "".join(f"{line}\n" for line in found["lines"]))
+    return {**record, "exit": found["exit"], "pinned": {"record": str(pins), **found}}
+
+
+def pin(arguments):
+    if arguments.log:
+        log = arguments.log.read_text(errors="replace")
+    else:
+        log = subprocess.run(pin_command(arguments.tests), cwd=arguments.package, stdout=subprocess.PIPE,
+                             stderr=subprocess.STDOUT, text=True, errors="replace").stdout
+    try:
+        record, lines = pinned.pinning(pinned.read_record(arguments.pins), pinned.outcomes(log), arguments.tests)
+    except ValueError as refused:
+        sys.exit(str(refused))
+    pinned.write_record(arguments.pins, record)
+    for line in lines:
+        print(line)
+    print(arguments.pins)
+
+
+def pin_command(tests):
+    chosen = " | ".join(f"(binary_id(={test.split(' ', 1)[0]}) & test(={test.split(' ', 1)[-1]}))" for test in tests)
+    return ["cargo", "nextest", "run", "--workspace", "--run-ignored", "all", "--no-fail-fast", "-E", chosen]
 
 
 def voided(record):
@@ -390,10 +429,19 @@ def shared_exit(records):
     return (FAILED_EXIT if failed else 0) | (VOID_FIGURE_EXIT if any(map(voided, records)) else 0)
 
 
+def release_binaries(dev, given=None, build=subprocess.run):
+    release = given or dev.parent / PROFILES["release"]
+    if given is None:
+        build(["cargo", "build", "--release", "--bins"], cwd=dev.parent.parent / "export" / "tools" / "evolve",
+              env={**os.environ, "CARGO_TARGET_DIR": str(dev.parent)}, check=True)
+    return release
+
+
 def measured(arguments):
     scale = figures.QUICK if arguments.quick else figures.FULL
     out = arguments.out.with_name(figures.QUICK_NAME) if arguments.quick else arguments.out
-    void = figures.measure(arguments.binaries, arguments.times, CORPORA / f"{figures.BREAKER_SET}.jsonl.gz", out,
+    binaries = {"dev": arguments.binaries, "release": release_binaries(arguments.binaries, arguments.release)}
+    void = figures.measure(binaries, arguments.times, CORPORA / f"{figures.BREAKER_SET}.jsonl.gz", out,
                            arguments.load_below, settling(arguments.load_below, figures.WAIT_SECONDS), scale)
     print(out, flush=True)
     if void:
@@ -448,6 +496,10 @@ def main():
     measuring.add_argument("binaries", type=Path)
     measuring.add_argument("times", type=Path)
     measuring.add_argument("out", type=Path)
+    measuring.add_argument("--release", type=Path, default=None,
+                           help="the release binaries built from the same export as the dev binaries; by default "
+                                "`cargo build --release --bins` in the export beside the dev binaries, the one "
+                                "`check --build <dir>` keeps, into the release folder beside them")
     measuring.add_argument("--load-below", type=float, default=figures.LOAD_BELOW,
                            help=f"the 1-minute load each figure waits to fall below, waiting at most "
                                 f"{figures.WAIT_SECONDS // 60} minutes across the figures; inf takes them at any load")
@@ -455,10 +507,24 @@ def main():
                            help=f"take every figure at a tenth of its size and the breaker figure over the "
                                 f"{figures.QUICK['breakers']} slowest breakers, three runs each, into "
                                 f"{figures.QUICK_NAME} beside out")
+    pinning = commands.add_parser("pin", help="record each named test's current failing programs, their count and "
+                                              "their whole diagnostics as its pinned set, or unpin a test that "
+                                              "passes; the shared step's exhaustive and stress results are judged "
+                                              "against the pinned sets")
+    pinning.add_argument("tests", nargs="+", help="each test by its nextest name, `<binary id> <test name>`")
+    pinning.add_argument("--log", type=Path, default=None,
+                         help="read the failing sets from this nextest log, a shared step's nextest-exhaustive.log "
+                              "or nextest-stress.log among them, instead of running the tests")
+    pinning.add_argument("--package", type=Path, default=EVOLVE.parent.parent,
+                         help="the package whose tests run when no log is given, by default this checkout's")
+    for command in (sharing, pinning):
+        command.add_argument("--pins", type=Path, default=pinned.RECORD,
+                             help="the pinned-set record, by default review/pinned.json")
     arguments = parser.parse_args()
-    if arguments.command != "figures":
+    if arguments.command not in ("figures", "pin"):
         arguments.baselines = arguments.baselines or default_baselines()
-    {"check": check, "record": record, "shared": shared, "figures": measured}[arguments.command](arguments)
+    {"check": check, "record": record, "shared": shared, "figures": measured,
+     "pin": pin}[arguments.command](arguments)
 
 
 if __name__ == "__main__":

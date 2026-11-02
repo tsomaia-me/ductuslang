@@ -1,0 +1,139 @@
+use crate::project::Project;
+use crate::project_file::ProjectFile;
+
+const FILES: [(&str, &str); 31] = [
+    (
+        "control_01.sym",
+        include_str!("../projects/large/control_01.sym"),
+    ),
+    (
+        "control_02.sym",
+        include_str!("../projects/large/control_02.sym"),
+    ),
+    (
+        "control_03.sym",
+        include_str!("../projects/large/control_03.sym"),
+    ),
+    (
+        "control_04.sym",
+        include_str!("../projects/large/control_04.sym"),
+    ),
+    (
+        "control_05.sym",
+        include_str!("../projects/large/control_05.sym"),
+    ),
+    (
+        "control_06.sym",
+        include_str!("../projects/large/control_06.sym"),
+    ),
+    (
+        "control_07.sym",
+        include_str!("../projects/large/control_07.sym"),
+    ),
+    (
+        "control_08.sym",
+        include_str!("../projects/large/control_08.sym"),
+    ),
+    (
+        "control_09.sym",
+        include_str!("../projects/large/control_09.sym"),
+    ),
+    (
+        "lighting_01.sym",
+        include_str!("../projects/large/lighting_01.sym"),
+    ),
+    (
+        "lighting_02.sym",
+        include_str!("../projects/large/lighting_02.sym"),
+    ),
+    (
+        "lighting_03.sym",
+        include_str!("../projects/large/lighting_03.sym"),
+    ),
+    (
+        "lighting_04.sym",
+        include_str!("../projects/large/lighting_04.sym"),
+    ),
+    (
+        "lighting_05.sym",
+        include_str!("../projects/large/lighting_05.sym"),
+    ),
+    (
+        "lighting_06.sym",
+        include_str!("../projects/large/lighting_06.sym"),
+    ),
+    (
+        "lighting_07.sym",
+        include_str!("../projects/large/lighting_07.sym"),
+    ),
+    (
+        "lighting_08.sym",
+        include_str!("../projects/large/lighting_08.sym"),
+    ),
+    (
+        "lighting_09.sym",
+        include_str!("../projects/large/lighting_09.sym"),
+    ),
+    ("main.sym", include_str!("../projects/large/main.sym")),
+    (
+        "music_01.sym",
+        include_str!("../projects/large/music_01.sym"),
+    ),
+    (
+        "music_02.sym",
+        include_str!("../projects/large/music_02.sym"),
+    ),
+    (
+        "music_03.sym",
+        include_str!("../projects/large/music_03.sym"),
+    ),
+    (
+        "music_04.sym",
+        include_str!("../projects/large/music_04.sym"),
+    ),
+    (
+        "music_05.sym",
+        include_str!("../projects/large/music_05.sym"),
+    ),
+    (
+        "music_06.sym",
+        include_str!("../projects/large/music_06.sym"),
+    ),
+    (
+        "music_07.sym",
+        include_str!("../projects/large/music_07.sym"),
+    ),
+    (
+        "music_08.sym",
+        include_str!("../projects/large/music_08.sym"),
+    ),
+    (
+        "music_09.sym",
+        include_str!("../projects/large/music_09.sym"),
+    ),
+    (
+        "music_10.sym",
+        include_str!("../projects/large/music_10.sym"),
+    ),
+    (
+        "music_11.sym",
+        include_str!("../projects/large/music_11.sym"),
+    ),
+    (
+        "music_12.sym",
+        include_str!("../projects/large/music_12.sym"),
+    ),
+];
+
+pub fn large_project() -> Project {
+    Project {
+        name: String::from("large"),
+        files: FILES
+            .iter()
+            .map(|(path, text)| ProjectFile {
+                path: String::from(*path),
+                text: String::from(*text),
+            })
+            .collect(),
+    }
+}

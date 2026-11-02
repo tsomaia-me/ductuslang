@@ -1,0 +1,3 @@
+state master(1.0)
+let tuning = 440.0
+fn db(x): 10 ** (x / 20)

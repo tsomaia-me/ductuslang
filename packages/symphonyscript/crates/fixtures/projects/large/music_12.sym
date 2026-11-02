@@ -1,0 +1,410 @@
+state section_34(0)
+state fill_34(false)
+state cutoff_34(0.5)
+state drive_34(0.25)
+state held_34([]): i32[..12]
+stream pulse_34(0)
+channel[8] hits_34(0)
+state swing_34 = cutoff_34 * 0.8
+state bright_34 = if fill_34 then swing_34 else cutoff_34.past(1, 0.5)
+stream beat_34 = pulse_34 + hits_34
+state last_34 = section_34.past(1, -1)
+state recent_34([]) = (recent_34.past(1) + [section_34])[^8..]
+state peak_34 = for x in recent_34 into top from 0: max(top, x)
+state played_34 = held_34 + [last_34]
+state rising_34 = for i in 1..held_34.size into n from 0: if held_34[i] > held_34[i - 1] then n + 1 else n
+state mood_34 = match section_34 % 4:
+    0: 0.25
+    1: 0.5
+    2: 0.75
+    else: 1.0
+state wave_34 = match fill_34:
+    true: Wave::Saw
+    false: Wave::Sine
+
+let scale_34 = [0, 2, 4, 5, 7, 9, 11]
+let chords_34 = [[0, 4, 7], [5, 9, 12], [7, 11, 14], [9, 12, 16]]
+let root_34 = 36 + 34 % 12
+let span_34 = scale_34 + [12, 14, 16]
+let upper_34 = span_34[3..8]
+let lower_34 = span_34[..3]
+let label_34 = "part 34"
+let title_34 = "{label_34} in {root_34}"
+let lengths_34 = [1bars, 2, 0.5bars]
+
+fn degree_34(i): root_34 + scale_34[i % 7] + 12 * (i div 7)
+fn fib_34(n): if n < 2 then n else fib_34(n - 1) + fib_34(n - 2)
+fn level_34(x, k = 0.1): min(1.0, x * 0.5 + k)
+fn chord_34(i, shift = 0):
+    let base = chords_34[i % 4]
+    [base[0] + shift, base[1] + shift, base[2] + shift]
+fn gap_34(i):
+    match i % 3:
+        0: 4
+        1: 3
+        else: 5
+
+let steps_34 = [fib_34(3), fib_34(4), fib_34(5), fib_34(6)]
+let total_34 = for s in steps_34 into sum from 0: sum + s
+let ladder_34 = for i in 0..6 into kept from []: kept + [degree_34(i)]
+let voiced_34 = chord_34(34, 12)
+
+pattern Arp_34(default root, steps = 4, gap = 4):
+    for i in 0..steps:
+        Note/(root + i * gap)
+
+pattern Voice_34(default root, steps = 3, gain = 0.8):
+    for i in 0..steps:
+        Note/(root + i) | velocity=gain
+    Starts: intro_34
+
+pattern Stab_34(default pitch, loud = false):
+    [Note/pitch Note/(pitch + 4) Note/(pitch + 7)]
+    Note'/(pitch + 12) when loud
+
+Clip intro_34 | gain=0.9:
+    Note/(root_34) Note/(root_34 + 4) Note/(root_34 + 7)
+    [Note/60 Note/64 Note/67]
+    [Note/(degree_34(1)) Note as top /(degree_34(3)) Note'/(degree_34(5))]
+    Note/50 (Note/53 | velocity=0.5 accent brightness=swing_34)
+    (Note' as mark /61 when fill_34 | velocity=0.5)
+    Note/(section_34 + 1)
+    Note'/62 | velocity=level_34(drive_34) brightness=bright_34
+               length=2bars
+    Note/(peak_34 + root_34) | length=lengths_34[0]
+    Arp_34/(root_34) | steps=3
+    Arp_34/(root_34 + 12) | gap=gap_34(34)
+    Plays | transpose=5: verse_34
+    Starts: [verse_34, chorus_34][section_34]
+
+Clip verse_34:
+    Note as hook /65 | velocity=0.9
+    Note/67 when fill_34
+    for i in 0..8:
+        Note/(degree_34(i)) | velocity=0.4 + i * 0.05
+    for i, p in upper_34:
+        Note/(root_34 + p) | brightness=0.1 * i
+    Voice_34 as low /(root_34)
+    Voice_34/(root_34 + 7) | steps=2
+    Stab_34/(voiced_34[0]) | loud
+    Plays: chorus_34
+
+Clip chorus_34 | gain=verse_34.gain * 1.2:
+    Note/72 | velocity=verse_34.hook.velocity
+    for c in chords_34:
+        [Note/(root_34 + c[0]) Note/(root_34 + c[1]) Note/(root_34 + c[2])]
+    when fill_34:
+        Note/74 Note/76
+    else:
+        Note/73
+    when:
+        section_34 is 0: Note/77
+        section_34 is 1: Note/79
+        else: Note/81
+    [for i in 0..3: Note/(ladder_34[i])]
+    Plays as back | transpose=-2: verse_34
+    Plays: bridge_34
+    Plays | gain=to.hook.velocity: verse_34
+
+Clip bridge_34 | level=mood_34:
+    for i in 0..total_34:
+        Note/(root_34 + i % 12) | velocity=0.5 length=lengths_34[1]
+    Note/(played_34[0]) | velocity=level_34(cutoff_34, 0.2)
+    Note/(rising_34 + 40)
+    Plays when fill_34: intro_34
+
+Synth rack_34:
+    Osc as lead /(220.0 + 34) | wave=Saw rate=0.5:
+        Feeds: lp
+        Modulates | depth=0.3: lp
+    Osc as sub /110.0 | wave=wave_34
+    Filter as lp /(1000.0 + 34 * 10.0):
+        Feeds: mix
+        Feeds when fill_34: sink
+    Osc as tuned /(tuning * 0.5) | rate=master
+    Mixer as mix
+    Output as sink
+
+Track lane_34 | label=title_34:
+    Piano
+    Synth:
+        Osc/440.0 | wave=Square
+    Starts: intro_34
+
+Kit kit_34:
+    for i in 0..4:
+        Sampler | file="kit/34/{i}.wav"
+
+state section_35(0)
+state fill_35(false)
+state cutoff_35(0.5)
+state drive_35(0.25)
+state held_35([]): i32[..12]
+stream pulse_35(0)
+channel[8] hits_35(0)
+state swing_35 = cutoff_35 * 0.8
+state bright_35 = if fill_35 then swing_35 else cutoff_35.past(1, 0.5)
+stream beat_35 = pulse_35 + hits_35
+state last_35 = section_35.past(1, -1)
+state recent_35([]) = (recent_35.past(1) + [section_35])[^8..]
+state peak_35 = for x in recent_35 into top from 0: max(top, x)
+state played_35 = held_35 + [last_35]
+state rising_35 = for i in 1..held_35.size into n from 0: if held_35[i] > held_35[i - 1] then n + 1 else n
+state mood_35 = match section_35 % 4:
+    0: 0.25
+    1: 0.5
+    2: 0.75
+    else: 1.0
+state wave_35 = match fill_35:
+    true: Wave::Saw
+    false: Wave::Sine
+
+let scale_35 = [0, 2, 4, 5, 7, 9, 11]
+let chords_35 = [[0, 4, 7], [5, 9, 12], [7, 11, 14], [9, 12, 16]]
+let root_35 = 36 + 35 % 12
+let span_35 = scale_35 + [12, 14, 16]
+let upper_35 = span_35[3..8]
+let lower_35 = span_35[..3]
+let label_35 = "part 35"
+let title_35 = "{label_35} in {root_35}"
+let lengths_35 = [1bars, 2, 0.5bars]
+
+fn degree_35(i): root_35 + scale_35[i % 7] + 12 * (i div 7)
+fn fib_35(n): if n < 2 then n else fib_35(n - 1) + fib_35(n - 2)
+fn level_35(x, k = 0.1): min(1.0, x * 0.5 + k)
+fn chord_35(i, shift = 0):
+    let base = chords_35[i % 4]
+    [base[0] + shift, base[1] + shift, base[2] + shift]
+fn gap_35(i):
+    match i % 3:
+        0: 4
+        1: 3
+        else: 5
+
+let steps_35 = [fib_35(3), fib_35(4), fib_35(5), fib_35(6)]
+let total_35 = for s in steps_35 into sum from 0: sum + s
+let ladder_35 = for i in 0..6 into kept from []: kept + [degree_35(i)]
+let voiced_35 = chord_35(35, 12)
+
+pattern Arp_35(default root, steps = 4, gap = 4):
+    for i in 0..steps:
+        Note/(root + i * gap)
+
+pattern Voice_35(default root, steps = 3, gain = 0.8):
+    for i in 0..steps:
+        Note/(root + i) | velocity=gain
+    Starts: intro_35
+
+pattern Stab_35(default pitch, loud = false):
+    [Note/pitch Note/(pitch + 4) Note/(pitch + 7)]
+    Note'/(pitch + 12) when loud
+
+Clip intro_35 | gain=0.9:
+    Note/(root_35) Note/(root_35 + 4) Note/(root_35 + 7)
+    [Note/60 Note/64 Note/67]
+    [Note/(degree_35(1)) Note as top /(degree_35(3)) Note'/(degree_35(5))]
+    Note/50 (Note/53 | velocity=0.5 accent brightness=swing_35)
+    (Note' as mark /61 when fill_35 | velocity=0.5)
+    Note/(section_35 + 1)
+    Note'/62 | velocity=level_35(drive_35) brightness=bright_35
+               length=2bars
+    Note/(peak_35 + root_35) | length=lengths_35[0]
+    Arp_35/(root_35) | steps=3
+    Arp_35/(root_35 + 12) | gap=gap_35(35)
+    Plays | transpose=5: verse_35
+    Starts: [verse_35, chorus_35][section_35]
+
+Clip verse_35:
+    Note as hook /65 | velocity=0.9
+    Note/67 when fill_35
+    for i in 0..8:
+        Note/(degree_35(i)) | velocity=0.4 + i * 0.05
+    for i, p in upper_35:
+        Note/(root_35 + p) | brightness=0.1 * i
+    Voice_35 as low /(root_35)
+    Voice_35/(root_35 + 7) | steps=2
+    Stab_35/(voiced_35[0]) | loud
+    Plays: chorus_35
+
+Clip chorus_35 | gain=verse_35.gain * 1.2:
+    Note/72 | velocity=verse_35.hook.velocity
+    for c in chords_35:
+        [Note/(root_35 + c[0]) Note/(root_35 + c[1]) Note/(root_35 + c[2])]
+    when fill_35:
+        Note/74 Note/76
+    else:
+        Note/73
+    when:
+        section_35 is 0: Note/77
+        section_35 is 1: Note/79
+        else: Note/81
+    [for i in 0..3: Note/(ladder_35[i])]
+    Plays as back | transpose=-2: verse_35
+    Plays: bridge_35
+    Plays | gain=to.hook.velocity: verse_35
+
+Clip bridge_35 | level=mood_35:
+    for i in 0..total_35:
+        Note/(root_35 + i % 12) | velocity=0.5 length=lengths_35[1]
+    Note/(played_35[0]) | velocity=level_35(cutoff_35, 0.2)
+    Note/(rising_35 + 40)
+    Plays when fill_35: intro_35
+
+Synth rack_35:
+    Osc as lead /(220.0 + 35) | wave=Saw rate=0.5:
+        Feeds: lp
+        Modulates | depth=0.3: lp
+    Osc as sub /110.0 | wave=wave_35
+    Filter as lp /(1000.0 + 35 * 10.0):
+        Feeds: mix
+        Feeds when fill_35: sink
+    Osc as tuned /(tuning * 0.5) | rate=master
+    Mixer as mix
+    Output as sink
+
+Track lane_35 | label=title_35:
+    Piano
+    Synth:
+        Osc/440.0 | wave=Square
+    Starts: intro_35
+
+Kit kit_35:
+    for i in 0..4:
+        Sampler | file="kit/35/{i}.wav"
+
+state section_36(0)
+state fill_36(false)
+state cutoff_36(0.5)
+state drive_36(0.25)
+state held_36([]): i32[..12]
+stream pulse_36(0)
+channel[8] hits_36(0)
+state swing_36 = cutoff_36 * 0.8
+state bright_36 = if fill_36 then swing_36 else cutoff_36.past(1, 0.5)
+stream beat_36 = pulse_36 + hits_36
+state last_36 = section_36.past(1, -1)
+state recent_36([]) = (recent_36.past(1) + [section_36])[^8..]
+state peak_36 = for x in recent_36 into top from 0: max(top, x)
+state played_36 = held_36 + [last_36]
+state rising_36 = for i in 1..held_36.size into n from 0: if held_36[i] > held_36[i - 1] then n + 1 else n
+state mood_36 = match section_36 % 4:
+    0: 0.25
+    1: 0.5
+    2: 0.75
+    else: 1.0
+state wave_36 = match fill_36:
+    true: Wave::Saw
+    false: Wave::Sine
+
+let scale_36 = [0, 2, 4, 5, 7, 9, 11]
+let chords_36 = [[0, 4, 7], [5, 9, 12], [7, 11, 14], [9, 12, 16]]
+let root_36 = 36 + 36 % 12
+let span_36 = scale_36 + [12, 14, 16]
+let upper_36 = span_36[3..8]
+let lower_36 = span_36[..3]
+let label_36 = "part 36"
+let title_36 = "{label_36} in {root_36}"
+let lengths_36 = [1bars, 2, 0.5bars]
+
+fn degree_36(i): root_36 + scale_36[i % 7] + 12 * (i div 7)
+fn fib_36(n): if n < 2 then n else fib_36(n - 1) + fib_36(n - 2)
+fn level_36(x, k = 0.1): min(1.0, x * 0.5 + k)
+fn chord_36(i, shift = 0):
+    let base = chords_36[i % 4]
+    [base[0] + shift, base[1] + shift, base[2] + shift]
+fn gap_36(i):
+    match i % 3:
+        0: 4
+        1: 3
+        else: 5
+
+let steps_36 = [fib_36(3), fib_36(4), fib_36(5), fib_36(6)]
+let total_36 = for s in steps_36 into sum from 0: sum + s
+let ladder_36 = for i in 0..6 into kept from []: kept + [degree_36(i)]
+let voiced_36 = chord_36(36, 12)
+
+pattern Arp_36(default root, steps = 4, gap = 4):
+    for i in 0..steps:
+        Note/(root + i * gap)
+
+pattern Voice_36(default root, steps = 3, gain = 0.8):
+    for i in 0..steps:
+        Note/(root + i) | velocity=gain
+    Starts: intro_36
+
+pattern Stab_36(default pitch, loud = false):
+    [Note/pitch Note/(pitch + 4) Note/(pitch + 7)]
+    Note'/(pitch + 12) when loud
+
+Clip intro_36 | gain=0.9:
+    Note/(root_36) Note/(root_36 + 4) Note/(root_36 + 7)
+    [Note/60 Note/64 Note/67]
+    [Note/(degree_36(1)) Note as top /(degree_36(3)) Note'/(degree_36(5))]
+    Note/50 (Note/53 | velocity=0.5 accent brightness=swing_36)
+    (Note' as mark /61 when fill_36 | velocity=0.5)
+    Note/(section_36 + 1)
+    Note'/62 | velocity=level_36(drive_36) brightness=bright_36
+               length=2bars
+    Note/(peak_36 + root_36) | length=lengths_36[0]
+    Arp_36/(root_36) | steps=3
+    Arp_36/(root_36 + 12) | gap=gap_36(36)
+    Plays | transpose=5: verse_36
+    Starts: [verse_36, chorus_36][section_36]
+
+Clip verse_36:
+    Note as hook /65 | velocity=0.9
+    Note/67 when fill_36
+    for i in 0..8:
+        Note/(degree_36(i)) | velocity=0.4 + i * 0.05
+    for i, p in upper_36:
+        Note/(root_36 + p) | brightness=0.1 * i
+    Voice_36 as low /(root_36)
+    Voice_36/(root_36 + 7) | steps=2
+    Stab_36/(voiced_36[0]) | loud
+    Plays: chorus_36
+
+Clip chorus_36 | gain=verse_36.gain * 1.2:
+    Note/72 | velocity=verse_36.hook.velocity
+    for c in chords_36:
+        [Note/(root_36 + c[0]) Note/(root_36 + c[1]) Note/(root_36 + c[2])]
+    when fill_36:
+        Note/74 Note/76
+    else:
+        Note/73
+    when:
+        section_36 is 0: Note/77
+        section_36 is 1: Note/79
+        else: Note/81
+    [for i in 0..3: Note/(ladder_36[i])]
+    Plays as back | transpose=-2: verse_36
+    Plays: bridge_36
+    Plays | gain=to.hook.velocity: verse_36
+
+Clip bridge_36 | level=mood_36:
+    for i in 0..total_36:
+        Note/(root_36 + i % 12) | velocity=0.5 length=lengths_36[1]
+    Note/(played_36[0]) | velocity=level_36(cutoff_36, 0.2)
+    Note/(rising_36 + 40)
+    Plays when fill_36: intro_36
+
+Synth rack_36:
+    Osc as lead /(220.0 + 36) | wave=Saw rate=0.5:
+        Feeds: lp
+        Modulates | depth=0.3: lp
+    Osc as sub /110.0 | wave=wave_36
+    Filter as lp /(1000.0 + 36 * 10.0):
+        Feeds: mix
+        Feeds when fill_36: sink
+    Osc as tuned /(tuning * 0.5) | rate=master
+    Mixer as mix
+    Output as sink
+
+Track lane_36 | label=title_36:
+    Piano
+    Synth:
+        Osc/440.0 | wave=Square
+    Starts: intro_36
+
+Kit kit_36:
+    for i in 0..4:
+        Sampler | file="kit/36/{i}.wav"
