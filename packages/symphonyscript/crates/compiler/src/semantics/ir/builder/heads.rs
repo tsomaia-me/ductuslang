@@ -20,11 +20,14 @@ impl HirBuilder<'_> {
         item: &NodeView<'_>,
         name: Option<Name<'_>>,
     ) -> Option<Ident> {
+        let ident = self.ident(name)?;
         if self.faulty_line(item) {
-            self.placeholder(name);
-            return None;
+            let id = index(self.hir.placeholders.len());
+            self.hir.faulty_names.insert(ident.loc);
+            self.hir.placeholders.push(ident.clone());
+            self.hir.top.push(Top::Placeholder(id));
         }
-        self.ident(name)
+        Some(ident)
     }
 
     fn faulty_line(&self, item: &NodeView<'_>) -> bool {
@@ -41,7 +44,7 @@ impl HirBuilder<'_> {
             }
             token = current.next_token();
         }
-        self.faults.first_in(range.start..end).is_some()
+        self.faults.first_in(range.start + 1..end).is_some()
     }
 
     pub(super) fn unbuilt_fn(&mut self, node: &ast::FnDecl<'_>) -> bool {

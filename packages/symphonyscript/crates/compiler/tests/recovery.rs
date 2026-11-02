@@ -1306,8 +1306,76 @@ fn a_declaration_on_a_line_that_holds_a_syntax_fault_is_a_placeholder_at_every_r
             &["state h([1][1.5]) i32\n", "Clip c:\n    Note/(h)\n"],
             &[(Code::IndexType, "1.5"), (Code::CellSyntax, "i32")],
         ),
+        (
+            &[
+                "state d(5ms)\n",
+                "let e = d  2\n",
+                "Clip c:\n    Note/(e)\n",
+            ],
+            &[(Code::ReactiveLet, "e"), (Code::LetSyntax, "2")],
+        ),
     ];
     support::assert_rows_in_every_order(&vocabulary(), rows);
+}
+
+#[test]
+fn a_missing_closer_reported_at_a_declarations_line_leaves_the_declaration_built_in_every_order_455()
+ {
+    let envelope = symphonyscript_fixtures::envelope_vocabulary();
+    let example = vocabulary();
+    let rows: [(&symphonyscript_core::Vocabulary, &[&str], &[Code]); 4] = [
+        (
+            &envelope,
+            &["let p = 3\n", "Env e | attack=(p + 1s) pitch=p(\n"],
+            &[Code::ExpressionSyntax, Code::NotCallable],
+        ),
+        (
+            &example,
+            &[
+                "state a(1)\n",
+                "state b = a + 0.5\n",
+                "Plant boiler:\n    Valve when b > 1[\n",
+            ],
+            &[Code::ExpressionSyntax, Code::IntegerCell],
+        ),
+        (
+            &example,
+            &["let x = (1 +\n", "Clip c:\n    Note/(x + true)\n"],
+            &[Code::ExpressionSyntax],
+        ),
+        (
+            &example,
+            &["Clip c:\n    Note/(x + true)\n", "let x = (1 +\n"],
+            &[Code::ExpressionSyntax],
+        ),
+    ];
+    let mut failures = Vec::new();
+    for (vocabulary, items, expected) in rows {
+        let compiler = symphonyscript::Compiler::new(vocabulary).expect("the vocabulary compiles");
+        for order in support::permutations(items) {
+            let text = order.concat();
+            let diagnostics: Vec<symphonyscript::Diagnostic> = compiler
+                .check(&[support::source(&text)])
+                .into_iter()
+                .filter(|diagnostic| diagnostic.code != Code::NoEntryInstance)
+                .collect();
+            let mut codes: Vec<Code> = diagnostics
+                .iter()
+                .map(|diagnostic| diagnostic.code)
+                .collect();
+            codes.sort();
+            let mut wanted = expected.to_vec();
+            wanted.sort();
+            if codes != wanted {
+                failures.push(support::failed(
+                    &text,
+                    &diagnostics,
+                    format!("{text}\n  draws {codes:?}\n  expected {wanted:?}"),
+                ));
+            }
+        }
+    }
+    support::assert_no_failure(&failures);
 }
 
 #[test]

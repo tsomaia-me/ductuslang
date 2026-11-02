@@ -31,6 +31,7 @@ pub(crate) struct Hir {
     pub skipped_top: UnknownNames,
     pub drawn: Vec<(crate::diagnostics::Code, Loc, String)>,
     pub placeholders: Vec<super::ident::Ident>,
+    pub faulty_names: std::collections::BTreeSet<Loc>,
     pub prelude: PreludeEnd,
 }
 

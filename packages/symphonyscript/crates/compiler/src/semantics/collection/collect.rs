@@ -87,6 +87,9 @@ pub(crate) fn collect(
         let Some(name) = name else {
             continue;
         };
+        if decl.is_some() && hir.faulty_names.contains(&name.loc) {
+            continue;
+        }
         if variant_name(hir, vocabulary, variants, &name, report)? {
             let namespace = if in_prelude {
                 &mut prelude
