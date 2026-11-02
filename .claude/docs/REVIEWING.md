@@ -373,7 +373,7 @@ for &n in &self.topo_order { latency[n] = self.inputs(n).map(|i| latency[i]).max
 
 ### Real-time reactive DSLs
 
-**Hidden allocation or lock on the commit path.** `push` past capacity, `collect`, `format!`, `Box::new` and `lock` allocate or block for an unbounded time, and one stall is a missed deadline.\
+**Hidden allocation or lock on the commit path.** `push` past capacity, `collect`, `format!`, `Box::new` and `lock` allocate or block for an unbounded time, and one stall makes a step miss its period.\
 **Bad**
 ```rust
 self.pending.push(change);
