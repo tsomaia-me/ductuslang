@@ -319,3 +319,51 @@ fn a_fault_in_either_loop_head_draws_for_syntax_with_the_help_naming_the_form_of
     }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
+
+/// ARCHITECTURE §7.1: "A logical line draws at most one parser diagnostic";
+/// SPEC §2.2 suspends layout inside brackets and §5.10 never makes the block
+/// form an operand. A `for` head cut inside a bracket draws one diagnostic, its
+/// head's fault, and the bracket's missing closer and the block's missing body
+/// belong to it; inside a call or an index the unparenthesized `for` is that
+/// one fault (C2-9).
+#[test]
+fn a_for_head_cut_inside_a_bracket_draws_one_diagnostic_c2_9() {
+    let head = [
+        "for", "i", ",", "x", "in", "held", "into", "sum", ":", "i32", "from", "0", ":", "sum +",
+    ];
+    let mut programs = 0;
+    for (context, unparenthesized) in [("1 + (", false), ("f(", true), ("[1][", true), ("[", true)]
+    {
+        for cut in 1..=head.len() {
+            let written = head
+                .get(..cut)
+                .unwrap_or_default()
+                .join(" ")
+                .replace(" ,", ",")
+                .replace(" :", ":");
+            for reversed in [false, true] {
+                let mut items = [
+                    "state held([]): i32[..10]\n".to_string(),
+                    "fn f(x): x\n".to_string(),
+                    format!("state t = {context}{written}\n"),
+                    "Clip c:\n    Note/1\n".to_string(),
+                ];
+                if reversed {
+                    items.swap(0, 1);
+                }
+                let text = items.concat();
+                let found = support::checked(&text);
+                programs += 1;
+                assert_eq!(found.len(), 1, "{text}{found:?}");
+                if unparenthesized {
+                    assert_eq!(
+                        found.first().map(|found| found.code),
+                        Some(Code::UnparenthesizedFor),
+                        "{text}"
+                    );
+                }
+            }
+        }
+    }
+    assert_eq!(programs, 112);
+}

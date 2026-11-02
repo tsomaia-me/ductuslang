@@ -148,6 +148,18 @@ impl Parser<'_> {
             self.then([Task::Expr, Task::Finish]);
             return;
         }
+        if !self.brackets.is_empty() {
+            // Inside a bracket layout is suspended (SPEC §2.2) and the block form is
+            // never an operand (§5.10): the line ends the `for` with its body
+            // missing, one fault with the head's and the bracket's closer.
+            self.error(
+                Code::ExpressionSyntax,
+                "expected the `for` expression's body after `:`",
+            );
+            self.start_at(checkpoint, SyntaxKind::ForExpr);
+            self.finish();
+            return;
+        }
         if !own_line {
             let diagnostic = Diagnostic::new(
                 Code::FnSyntax,
