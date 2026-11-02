@@ -5,13 +5,13 @@ The condition of an `if`, a gate and a guard is a `bool`. (SPEC §5.4)
 A condition chooses between two ways, so it is true or false.
 
 ```sym-error
-let a = if 1 then 2 else 3
-Clip c:
-    Note/a
+let a = if 1 then 0.2 else 0.3
+Plant p:
+    Valve/a
 ```
 
 The condition is a number.
 
 ```sym
-let a = if 1 > 0 then 2 else 3
+let a = if 1 > 0 then 0.2 else 0.3
 ```

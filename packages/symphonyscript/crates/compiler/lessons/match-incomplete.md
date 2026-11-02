@@ -5,16 +5,16 @@ A `match` on an enum or a `bool` covers every value or ends with `else:`, and a 
 Every value of the scrutinee needs an arm to yield.
 
 ```sym-error
-state w(Wave::Saw)
-state l = match w:
-    Sine: 1
+state m(Mode::Manual)
+state l = match m:
+    Auto: 1
 ```
 
-`Saw` and `Square` have no arm.
+`Manual` and `Off` have no arm.
 
 ```sym
-state w(Wave::Saw)
-state l = match w:
-    Sine: 1
+state m(Mode::Manual)
+state l = match m:
+    Auto: 1
     else: 2
 ```

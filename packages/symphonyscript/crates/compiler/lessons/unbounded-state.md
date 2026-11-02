@@ -5,13 +5,13 @@ A derived cell that holds a variable array has the least capacity for which its 
 The runtime allocates every cell's buffer before it runs.
 
 ```sym-error
-state note(60)
-state recent = recent.past(1, []) + [note]
+state reading(60)
+state recent = recent.past(1, []) + [reading]
 ```
 
 `recent` grows by one element at every step.
 
 ```sym
-state note(60)
-state recent = (recent.past(1, []) + [note])[^8..]
+state reading(60)
+state recent = (recent.past(1, []) + [reading])[^8..]
 ```

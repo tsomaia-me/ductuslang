@@ -9,8 +9,8 @@ state n(4)
 
 state total = for i in 0..n into sum from 0: sum + i
 
-Clip c:
-    Note/total
+Plant p:
+    Valve/total
 ```
 
 The bound `n` reads a cell, and its form gives it no maximum.
@@ -20,8 +20,8 @@ state n(4)
 
 state total = for i in 0..min(n, 16) into sum from 0: sum + i
 
-Clip c:
-    Note/total
+Plant p:
+    Valve/total
 ```
 
 `0..min(n, 16)` runs at most 16 times.

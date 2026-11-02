@@ -156,4 +156,4 @@ const MAP_CLOSE: Task = Task::Close {
     what: "`,` or `}`",
 };
 
-const LAMBDA_PLACE: &str = "pass the lambda as an argument, as in `count(held, p: p > 60)`, or name it with a `let`, as in `let keep = p: p > 60`";
+const LAMBDA_PLACE: &str = "pass the lambda as an argument, as in `count(readings, p: p > 60)`, or name it with a `let`, as in `let keep = p: p > 60`";

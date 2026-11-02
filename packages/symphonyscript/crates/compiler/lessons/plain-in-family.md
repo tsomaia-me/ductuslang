@@ -6,14 +6,14 @@ Without an attribute of the family the plain number has no unit to be read in.
 
 ```sym-error
 state d(5ms)
-Clip c:
-    Note when d > 1
+Plant p:
+    Valve when d > 1
 ```
 
 `1` meets the time `d`, and the comparison reaches no time attribute.
 
 ```sym
 state d(5ms)
-Clip c:
-    Note when d > 1ms
+Plant p:
+    Valve when d > 1ms
 ```

@@ -5,12 +5,12 @@ Every top-level instance's kind may stand at top level. (SPEC §10.2)
 The vocabulary states which kinds stand alone.
 
 ```sym-error
-Note n
+Valve v
 ```
 
-`Note` stands only inside a clip.
+`Valve` stands only inside a plant.
 
 ```sym
-Clip c:
-    Note
+Plant p:
+    Valve
 ```

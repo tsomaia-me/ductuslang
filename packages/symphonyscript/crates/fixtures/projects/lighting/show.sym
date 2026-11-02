@@ -1,0 +1,11 @@
+Scene opening | hold=500ms:
+    Cue/0 | fade=glow
+    [Cue/1 Cue/1]
+    Cue/2 | fade=intensity * 4
+    Dims as soften | depth=0.4: stage.key
+    Triggers when hold_on: opening
+    Triggers: [stage.dusk, finale][look]
+
+Scene finale | hold=opening.hold * 2:
+    Cue as last /0 | fade=opening.soften.depth * 10
+    Triggers: opening

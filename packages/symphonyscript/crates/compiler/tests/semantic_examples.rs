@@ -6,9 +6,9 @@ use std::path::{Path, PathBuf};
 use symphonyscript::syntax::lex;
 use symphonyscript::{Code, Compiler, Severity, Source};
 use symphonyscript_fixtures::{
-    PENDING_EXAMPLES, SPEC_SYM_EXAMPLES, SpecExample, document_examples, dsp_project,
-    music_project, pending_key, pending_lines, pending_spec_examples, spec_examples, spec_projects,
-    vocabulary,
+    PENDING_EXAMPLES, SPEC_SYM_EXAMPLES, SpecExample, control_project, document_examples,
+    dsp_project, lighting_project, music_project, pending_key, pending_lines,
+    pending_spec_examples, spec_examples, spec_projects, vocabulary,
 };
 
 fn failure(
@@ -143,7 +143,14 @@ fn pending_list_problems(
 fn every_sym_example_that_declares_its_names_and_every_fixture_project_passes_check() {
     let compiler = Compiler::new(&vocabulary()).expect("the example vocabulary compiles");
     let pending = pending_spec_examples();
-    let projects = [music_project(), dsp_project()].into_iter().chain(
+    let projects = [
+        music_project(),
+        dsp_project(),
+        lighting_project(),
+        control_project(),
+    ]
+    .into_iter()
+    .chain(
         spec_projects()
             .into_iter()
             .filter(|project| !pending.contains(&project.name)),

@@ -6,12 +6,12 @@ A pattern is used by its name, and its body is what a use expands to.
 
 ```sym-error
 pattern (x):
-    Note
+    Lamp
 ```
 
 The pattern has no name.
 
 ```sym
-pattern Hit(x):
-    Note/x
+pattern Wash(x):
+    Lamp/x
 ```

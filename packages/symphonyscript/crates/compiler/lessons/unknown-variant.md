@@ -5,11 +5,11 @@ Every enum variant exists in its enum. (SPEC §10.2)
 The vocabulary states each enum's variants.
 
 ```sym-error
-let l = Wave::Purple
+let l = Mode::Purple
 ```
 
-`Wave` has no variant `Purple`.
+`Mode` has no variant `Purple`.
 
 ```sym
-let l = Wave::Saw
+let l = Mode::Auto
 ```

@@ -5,15 +5,15 @@ A `for` variable equal to a visible name is an error, and so is a `for` expressi
 The name would hide the visible one in the loop's body.
 
 ```sym-error
-Clip c:
+Rig r:
     for sin in 0..2:
-        Note
+        Lamp
 ```
 
 `sin` is a built-in.
 
 ```sym
-Clip c:
+Rig r:
     for step in 0..2:
-        Note
+        Lamp
 ```

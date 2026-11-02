@@ -494,11 +494,11 @@ impl Parser<'_> {
     }
 }
 
-const CELL_CAPACITY: &str = "write the capacity in digits, as in `stream[16] notes(0)`";
+const CELL_CAPACITY: &str = "write the capacity in digits, as in `stream[16] readings(0)`";
 
 const FN_COLON: &str = "write `:` before a function's body, as in `fn double(x): x * 2`";
 
-const FN_BOUND: &str = "remove the bound and write the loop as a `for` expression, as in `for x in held into low from 127: min(low, x)`";
+const FN_BOUND: &str = "remove the bound and write the loop as a `for` expression, as in `for x in readings into low from 100: min(low, x)`";
 
 const INPUT_FORM: &str = "write `state <name>(<init>)`";
 

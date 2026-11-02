@@ -5,13 +5,13 @@ Setting an attribute twice, by any combination of entries, flags and `/expr`, is
 An attribute holds one value.
 
 ```sym-error
-Clip c:
-    Note/60 | pitch=61
+Plant p:
+    Valve/0.5 | open=0.6
 ```
 
-`/60` and `pitch=61` both set the pitch.
+`/0.5` and `open=0.6` both set the opening.
 
 ```sym
-Clip c:
-    Note/61
+Plant p:
+    Valve/0.6
 ```

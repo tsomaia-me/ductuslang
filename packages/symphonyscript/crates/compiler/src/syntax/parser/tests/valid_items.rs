@@ -2,7 +2,10 @@ use std::collections::BTreeSet;
 use std::ops::Range;
 
 use symphonyscript_core::Vocabulary;
-use symphonyscript_fixtures::{dsp_project, music_project, pending_spec_examples, spec_examples};
+use symphonyscript_fixtures::{
+    control_project, dsp_project, lighting_project, music_project, pending_spec_examples,
+    spec_examples,
+};
 
 use crate::source::Source;
 use crate::syntax::{NodeView, SyntaxKind, parse};
@@ -46,10 +49,15 @@ pub(super) fn valid_items(vocabulary: &Vocabulary) -> ValidItems {
         .into_iter()
         .filter(|example| example.tag == "sym" && !pending.contains(&example.name()))
         .map(|example| example.text);
-    let files = [music_project(), dsp_project()]
-        .into_iter()
-        .flat_map(|project| project.files)
-        .map(|file| file.text);
+    let files = [
+        music_project(),
+        dsp_project(),
+        lighting_project(),
+        control_project(),
+    ]
+    .into_iter()
+    .flat_map(|project| project.files)
+    .map(|file| file.text);
     let mut top = BTreeSet::new();
     let mut body = BTreeSet::new();
     let additions = ADDITION_ITEMS.iter().map(|item| item.to_string());

@@ -5,17 +5,17 @@ A placement `for`'s iterable is a compile-time value, and an iterable there that
 A placement `for` expands when the program compiles, so its iterations cannot wait on a cell; a `for` expression folds a cell's elements instead.
 
 ```sym-error
-state x(1)
-Clip c:
+state x(0.5)
+Plant p:
     for i in [x, x]:
-        Note
+        Valve
 ```
 
 The array reads the input `x`.
 
 ```sym
-state x(1)
-Clip c:
-    for i in [1, 2]:
-        Note/(60 + i + x)
+state x(0.5)
+Plant p:
+    for i in [0.1, 0.2]:
+        Valve/(i + x)
 ```

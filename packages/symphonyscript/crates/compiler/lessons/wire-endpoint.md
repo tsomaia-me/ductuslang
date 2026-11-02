@@ -5,15 +5,17 @@ Every wire's source and every candidate destination are kinds its wire kind conn
 The vocabulary states what each wire kind connects.
 
 ```sym-error
-Track t:
-    Starts: t
+Plant p:
+    Controller as c
+    Controller:
+        Drives: c
 ```
 
-`Starts` connects to a clip, and `t` is a track.
+`Drives` connects to a valve, and `c` is a controller.
 
 ```sym
-Clip c:
-    Note
-Track t:
-    Starts: c
+Plant p:
+    Valve as v
+    Controller:
+        Drives: v
 ```

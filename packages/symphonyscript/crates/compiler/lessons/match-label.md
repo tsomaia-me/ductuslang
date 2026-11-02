@@ -5,17 +5,17 @@ An arm's label is a variant of the scrutinee's enum, or a literal of its type an
 A label of another type could never match.
 
 ```sym-error
-state w(Wave::Saw)
-state l = match w:
+state m(Mode::Manual)
+state l = match m:
     Purple: 1
     else: 2
 ```
 
-`Wave` has no variant `Purple`.
+`Mode` has no variant `Purple`.
 
 ```sym
-state w(Wave::Saw)
-state l = match w:
-    Saw: 1
+state m(Mode::Manual)
+state l = match m:
+    Manual: 1
     else: 2
 ```

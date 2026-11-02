@@ -5,17 +5,17 @@ A loop head is `for`, one name or two separated by `,`, each with an optional an
 The names are the loop's variables its body reads, and the head says what the body runs over.
 
 ```sym-error
-Clip c:
+Plant p:
     for in 0..2:
-        Note
+        Valve
 ```
 
 The placement `for` has no name: write `for <name> in <iterable>:`.
 
 ```sym
-Clip c:
+Plant p:
     for i in 0..2:
-        Note
+        Valve
 ```
 
 ```sym-error

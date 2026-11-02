@@ -6,8 +6,8 @@ A missing argument leaves its parameter without a value, and an extra one binds 
 
 ```sym-error
 let a = lerp(1, 2)
-Clip c:
-    Note/a
+Plant p:
+    Valve/a
 ```
 
 `lerp` takes three arguments.

@@ -6,16 +6,16 @@ Flags belong to a kind's attributes, and the pattern's body is the use's body.
 
 ```sym-error
 pattern P():
-    Note
-Clip c:
-    P'
+    Lamp
+Rig r:
+    P*
 ```
 
 The use carries a flag.
 
 ```sym
 pattern P():
-    Note'
-Clip c:
+    Lamp*
+Rig r:
     P
 ```

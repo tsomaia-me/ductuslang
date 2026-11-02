@@ -5,13 +5,13 @@ Every value has the type its position expects: a number where a number is expect
 Each attribute, annotation and operand states one type, and a value of another type has no meaning there.
 
 ```sym-error
-Clip c:
-    Note | velocity=c
+Plant p:
+    Valve | open=p
 ```
 
-`velocity` is a number, and `c` is a node reference.
+`open` is a number, and `p` is a node reference.
 
 ```sym
-Clip c:
-    Note | velocity=0.8
+Plant p:
+    Valve | open=0.8
 ```

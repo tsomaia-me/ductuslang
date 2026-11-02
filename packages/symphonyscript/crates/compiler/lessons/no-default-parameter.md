@@ -5,17 +5,17 @@
 `/expr` supplies the `default` parameter, and there is none.
 
 ```sym-error
-pattern P(root):
-    Note/root
-Clip c:
-    P/1 | root=2
+pattern P(level):
+    Lamp/level
+Rig r:
+    P/1 | level=0.5
 ```
 
 `P` marks no parameter `default`.
 
 ```sym
-pattern P(default root):
-    Note/root
-Clip c:
+pattern P(default level):
+    Lamp/level
+Rig r:
     P/1
 ```

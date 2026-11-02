@@ -5,13 +5,12 @@
 `/expr` sets the default attribute, and the kind has none.
 
 ```sym-error
-Synth s:
-    Mixer/1
+Plant p /1
 ```
 
-`Mixer` has no default attribute.
+`Plant` has no default attribute.
 
 ```sym
-Synth s:
-    Osc/440
+Plant p:
+    Valve/1
 ```

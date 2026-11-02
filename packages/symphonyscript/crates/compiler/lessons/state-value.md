@@ -5,9 +5,9 @@ A cell may hold an array, a string, a record, a sum, a map or a document, never 
 A cell's value changes at runtime, and node references and functions exist only at compile time.
 
 ```sym-error
-Clip c:
-    Note
-state s = c
+Rig r:
+    Lamp
+state s = r
 ```
 
 The cell holds a node reference.

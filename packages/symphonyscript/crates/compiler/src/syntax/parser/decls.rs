@@ -324,7 +324,7 @@ const RECORD_CLOSE: Task = Task::Close {
     what: "`,` or `}`",
 };
 
-const FIELDS: &str = "write each field on its own line under the `type` line, as in `root: i32`";
+const FIELDS: &str = "write each field on its own line under the `type` line, as in `low: f32`";
 
 const REQUIRE: &str =
     "write the source as a string, as in `require \"github.com/acme/util@1.2.0\"`";

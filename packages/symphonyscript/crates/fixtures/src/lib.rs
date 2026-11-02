@@ -2,11 +2,13 @@
 
 mod bar_vocabulary;
 mod bounded_vocabulary;
+mod control_project;
 mod covering;
 mod deep_projects;
 mod document_examples;
 mod dsp_project;
 mod envelope_vocabulary;
+mod lighting_project;
 mod music_project;
 mod native_vocabulary;
 mod orders;
@@ -28,11 +30,13 @@ mod vocabulary_documented;
 
 pub use bar_vocabulary::bar_vocabulary;
 pub use bounded_vocabulary::bounded_vocabulary;
+pub use control_project::control_project;
 pub use covering::{Rows, covered, covering};
 pub use deep_projects::deep_projects;
 pub use document_examples::document_examples;
 pub use dsp_project::dsp_project;
 pub use envelope_vocabulary::envelope_vocabulary;
+pub use lighting_project::lighting_project;
 pub use music_project::music_project;
 pub use native_vocabulary::native_vocabulary;
 pub use orders::Orders;

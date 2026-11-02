@@ -5,16 +5,16 @@ A `when` block is `when`, its condition, `:` and an indented block, with an opti
 The condition gates the block's placements.
 
 ```sym-error
-Clip c:
+Rig r:
     when x
-        Note
+        Lamp
 ```
 
 The condition has no `:`.
 
 ```sym
 state x(true)
-Clip c:
+Rig r:
     when x:
-        Note
+        Lamp
 ```

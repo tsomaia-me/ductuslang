@@ -2,8 +2,8 @@ mod support;
 
 use symphonyscript::{Code, Compiler, Diagnostic, Source};
 use symphonyscript_fixtures::{
-    Project, ProjectFile, dsp_project, music_project, pending_spec_examples, spec_projects,
-    vocabulary,
+    Project, ProjectFile, control_project, dsp_project, lighting_project, music_project,
+    pending_spec_examples, spec_projects, vocabulary,
 };
 
 const DECLARATIONS: &str = "state root(60)\nlet step = 4\nlet span = step * 3\nlet lift = span + 1\nfn up(x): x + step\nfn twice(x): up(up(x))\nfn shifted(x, by): x + by\nlet top = twice(span)\nClip c:\n    Note/(twice(root) + shifted(lift, top))\n";
@@ -12,6 +12,8 @@ fn projects() -> Vec<Project> {
     let mut projects = vec![
         music_project(),
         dsp_project(),
+        lighting_project(),
+        control_project(),
         Project {
             name: "declarations".to_string(),
             files: vec![ProjectFile {

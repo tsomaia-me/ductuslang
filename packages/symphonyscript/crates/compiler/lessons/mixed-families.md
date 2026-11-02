@@ -5,13 +5,11 @@
 Adding seconds to bars has no meaning.
 
 ```sym-error
-Synth s:
-    Osc | freq=2s + 1bars
+Scene s | hold=2s + 1bars
 ```
 
-The sum adds time to musical time.
+The sum adds a time to a count of beats.
 
 ```sym
-Clip c:
-    Note | length=2bars + 1bars
+Scene s | hold=2s + 500ms
 ```

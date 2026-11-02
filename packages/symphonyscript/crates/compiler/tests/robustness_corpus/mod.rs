@@ -1,7 +1,7 @@
 use symphonyscript_core::Vocabulary;
 use symphonyscript_fixtures::{
-    bar_vocabulary, dsp_project, envelope_vocabulary, music_project, native_vocabulary,
-    pending_spec_examples, spec_examples, vocabulary,
+    bar_vocabulary, control_project, dsp_project, envelope_vocabulary, lighting_project,
+    music_project, native_vocabulary, pending_spec_examples, spec_examples, vocabulary,
 };
 
 const INSERTED: &[&str] = &[
@@ -59,7 +59,12 @@ pub fn corpora() -> Vec<(Vocabulary, Vec<String>)> {
         .filter(|example| example.tag == "sym" && !pending.contains(&example.name()))
         .map(|example| example.text)
         .collect();
-    for project in [music_project(), dsp_project()] {
+    for project in [
+        music_project(),
+        dsp_project(),
+        lighting_project(),
+        control_project(),
+    ] {
         texts.extend(project.files.into_iter().map(|file| file.text));
     }
     let owned = |programs: &[&str]| programs.iter().map(|text| text.to_string()).collect();

@@ -5,13 +5,13 @@ Every child's kind is accepted by its parent. (SPEC §10.2)
 The vocabulary states which children each kind holds.
 
 ```sym-error
-Clip c:
-    Osc
+Rig r:
+    Valve
 ```
 
-A `Clip` holds no `Osc`.
+A `Rig` holds no `Valve`.
 
 ```sym
-Synth s:
-    Osc
+Plant p:
+    Valve
 ```
