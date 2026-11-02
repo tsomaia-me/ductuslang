@@ -172,11 +172,11 @@ fn kind_walk_program(shape: &str, states: u32) -> String {
                 "float chain" if state == 0 => String::from("state p0 = y.past(1, 0.0)\n"),
                 "float chain" => format!("state p{state} = p{previous}.past(1, 0.0)\n"),
                 "float at the end" if state == last => {
-                    format!("state p{state} = p0.past(1, 0.5)\n")
+                    format!("state p{state} = p0.past(1, x)\n")
                 }
                 "float at the end" => format!("state p{state} = p{next}.past(1, 0)\n"),
                 "float at the start" if state == 0 => {
-                    format!("state p0 = p{last}.past(1, 0.5)\n")
+                    format!("state p0 = p{last}.past(1, x)\n")
                 }
                 "float at the start" => format!("state p{state} = p{previous}.past(1, 0)\n"),
                 _ => format!("state p{state} = y.past(1, 0)\n"),
@@ -194,18 +194,19 @@ fn kind_walk_program(shape: &str, states: u32) -> String {
             format!("Clip c:\n    Note/(s{last}[0])\n"),
         ),
         "integer chain" => (
-            "state x(1)\nlet y = x * 2\n",
+            "state x(1)\nstate y = x * 2\n",
             format!("Clip c:\n    Note/(p{last})\n"),
         ),
         "float chain" => (
-            "state x(1)\nlet y = x * 0.5\n",
+            "state x(1)\nstate y = x * 0.5\n",
             format!("Clip c:\n    Note/(p{last})\n"),
         ),
-        "float at the end" | "float at the start" => {
-            ("", String::from("Clip c:\n    Note | brightness=p0\n"))
-        }
+        "float at the end" | "float at the start" => (
+            "state x(0.5)\n",
+            String::from("Clip c:\n    Note | brightness=p0\n"),
+        ),
         _ => (
-            "state x(1.5)\nlet y = x * 2\n",
+            "state x(1.5)\nstate y = x * 2\n",
             format!("Clip c:\n    Note | brightness=p{last}\n"),
         ),
     };
@@ -1339,7 +1340,7 @@ fn stress_a_layout_walk_over_a_chain_of_slices_costs_work_linear_in_the_chain() 
         },
         |n| {
             format!(
-                "state note(60)\nstate s = [note, note, note]\nlet t = s{}\nClip c:\n    Note/(t.size + note)\n",
+                "state note(60)\nstate s = [note, note, note]\nstate t = s{}\nClip c:\n    Note/(t.size + note)\n",
                 "[1..]".repeat(n)
             )
         },
@@ -1373,10 +1374,11 @@ fn nested_choices(depth: usize, runtime: bool) -> String {
 }
 
 fn let_choices(depth: usize, _: bool) -> String {
-    let mut text = String::from("state held([1, 2]): i32[..4]\nstate flag(true)\nlet c0 = held\n");
+    let mut text =
+        String::from("state held([1, 2]): i32[..4]\nstate flag(true)\nstate c0 = held\n");
     for level in 1..=depth {
         text.push_str(&format!(
-            "let c{level} = if flag then c{} else c{}\n",
+            "state c{level} = if flag then c{} else c{}\n",
             level - 1,
             level - 1
         ));
@@ -1542,7 +1544,7 @@ fn three_vocabulary() -> symphonyscript_core::Vocabulary {
 
 fn joined_let(name: &str, joins: u32) -> String {
     format!(
-        "state held([]): i32[..1]\nlet {name} = held{}\n",
+        "state held([]): i32[..1]\nstate {name} = held{}\n",
         " + [1]".repeat(usize::try_from(joins).unwrap_or(0))
     )
 }
@@ -1573,7 +1575,7 @@ fn state_walk(states: u32, joins: u32, history: bool) -> u64 {
     }
     text.push_str("Clip c:\n    Note/(s0[0])\n");
     let (diagnostics, (visits, capacities)) = analyzed(&vocabulary(), &text, |engine| {
-        let capacities: Vec<Option<u32>> = (0..states)
+        let capacities: Vec<Option<u32>> = (1..=states)
             .map(|state| state_capacity(engine, state))
             .collect();
         (

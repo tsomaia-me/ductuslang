@@ -83,6 +83,14 @@ fn analyzed_inlining_a_million<R>(
         inlined_calls_warning: Some(500_000),
         ..LimitOverrides::default()
     };
+    analyzed_under(limits, text, inspect)
+}
+
+fn analyzed_under<R>(
+    limits: LimitOverrides,
+    text: &str,
+    inspect: impl FnOnce(&Engine<'_>) -> R,
+) -> (Vec<Diagnostic>, R) {
     let compiler = Compiler::with_limits(&vocabulary(), limits).expect("the vocabulary compiles");
     let source = Source {
         path: "test.sym".into(),
@@ -749,7 +757,7 @@ fn a_run_that_draws_no_error_holds_no_placeholder() {
     ]
     .into_iter()
     .chain(examples);
-    let clean = clean_runs_holding_no_placeholder(projects);
+    let clean = clean_runs_holding_no_placeholder(projects, LimitOverrides::default());
     assert!(
         clean
             >= 4 + spec_projects()
@@ -788,8 +796,12 @@ fn a_run_that_draws_no_error_holds_no_placeholder() {
     }
 }
 
-fn clean_runs_holding_no_placeholder(projects: impl Iterator<Item = Project> + Send) -> usize {
-    let compiler = Compiler::new(&vocabulary()).expect("the example vocabulary compiles");
+fn clean_runs_holding_no_placeholder(
+    projects: impl Iterator<Item = Project> + Send,
+    limits: LimitOverrides,
+) -> usize {
+    let compiler =
+        Compiler::with_limits(&vocabulary(), limits).expect("the example vocabulary compiles");
     std::thread::scope(|threads| {
         let runs: Vec<_> = projects
             .map(|project| {
@@ -826,7 +838,14 @@ fn clean_runs_holding_no_placeholder(projects: impl Iterator<Item = Project> + S
 #[ignore = "stress"]
 fn stress_a_run_over_a_deep_project_draws_no_error_and_holds_no_placeholder() {
     assert_eq!(
-        clean_runs_holding_no_placeholder(deep_projects().into_iter()),
+        clean_runs_holding_no_placeholder(
+            deep_projects().into_iter(),
+            LimitOverrides {
+                inlined_calls: Some(1_000_000),
+                inlined_calls_warning: Some(500_000),
+                ..LimitOverrides::default()
+            }
+        ),
         4
     );
 }
@@ -1548,9 +1567,13 @@ fn a_recursive_array_result_fills_an_array_attribute_or_input_of_its_shape() {
     crate::pinned_row::assert_no_failure(&failures);
 }
 
-fn a_placement_for_over_a_doubled_array_stops_at_the_expansion_limit(depth: usize) {
+fn a_placement_for_over_a_doubled_array_stops_at_the_expansion_limit(
+    depth: usize,
+    limits: LimitOverrides,
+) {
     let text = format!("{DOUBLING}Clip c:\n    for x in f({depth}):\n        Note/x\n");
-    let (diagnostics, built) = analyzed(&text, |engine| engine.memo.iterated_elements);
+    let (diagnostics, built) =
+        analyzed_under(limits, &text, |engine| engine.memo.iterated_elements);
     assert_eq!(error_codes(&diagnostics), [Code::ExpansionLimit], "{text}");
     assert!(built <= 1_000_001, "{text}: {built}");
 }
@@ -1561,14 +1584,31 @@ const DOUBLING: &str = "fn f(n): if n is 0 then [1] else f(n - 1) + f(n - 1)\n";
 #[ignore = "stress"]
 fn stress_a_placement_for_over_two_to_the_thirty_elements_builds_no_more_than_the_expansion_limit()
 {
-    a_placement_for_over_a_doubled_array_stops_at_the_expansion_limit(30);
+    a_placement_for_over_a_doubled_array_stops_at_the_expansion_limit(
+        30,
+        LimitOverrides {
+            value_elements: Some(1 << 31),
+            value_elements_warning: Some(1 << 30),
+            ..LimitOverrides::default()
+        },
+    );
+}
+
+#[test]
+fn a_placement_for_over_two_to_the_thirty_elements_draws_value_limit_alone_at_the_default_limit() {
+    let text = format!("{DOUBLING}Clip c:\n    for x in f(30):\n        Note/x\n");
+    let (diagnostics, ()) = analyzed(&text, |_| ());
+    assert_eq!(error_codes(&diagnostics), [Code::ValueLimit], "{text}");
 }
 
 #[test]
 #[ignore = "stress"]
 fn stress_a_placement_for_over_two_to_the_twenty_two_elements_builds_no_more_than_the_expansion_limit()
  {
-    a_placement_for_over_a_doubled_array_stops_at_the_expansion_limit(22);
+    a_placement_for_over_a_doubled_array_stops_at_the_expansion_limit(
+        22,
+        LimitOverrides::default(),
+    );
 }
 
 #[test]

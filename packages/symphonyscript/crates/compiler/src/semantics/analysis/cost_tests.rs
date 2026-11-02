@@ -1037,6 +1037,16 @@ impl Chain {
         matches!(self, Chain::JoinFromLiteral | Chain::JoinFromNote)
     }
 
+    fn reads_cell(self) -> bool {
+        matches!(
+            self,
+            Chain::JoinFromNote
+                | Chain::ReactiveAlias
+                | Chain::ReactiveArrayAlias
+                | Chain::VariableGrowth
+        )
+    }
+
     fn first_and_step(self) -> (&'static str, &'static str) {
         match self {
             Chain::ScalarAlias => ("1", "{}"),
@@ -1107,15 +1117,16 @@ fn chain_read(read: ChainRead, last: &str) -> String {
 
 fn chain_items(chain: Chain, read: ChainRead, n: usize, checked: bool) -> Vec<String> {
     let (first, step) = chain.first_and_step();
+    let word = if chain.reads_cell() { "state" } else { "let" };
     let mut items = vec![
         "state note(60)\n".to_string(),
         "state held([1, 2, 3, 4]): i32[..4]\n".to_string(),
         "fn id(x): x\n".to_string(),
-        format!("let v0 = {first}\n"),
+        format!("{word} v0 = {first}\n"),
     ];
     for i in 1..n {
         items.push(format!(
-            "let v{i} = {}\n",
+            "{word} v{i} = {}\n",
             step.replace("{}", &format!("v{}", i - 1))
         ));
     }

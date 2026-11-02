@@ -34,6 +34,21 @@ fn code_counts(text: &str) -> BTreeMap<Code, usize> {
     counts
 }
 
+fn code_counts_inlining_a_million(text: &str) -> BTreeMap<Code, usize> {
+    let raised = LimitOverrides {
+        inlined_calls: Some(1_000_000),
+        inlined_calls_warning: Some(500_000),
+        ..LimitOverrides::default()
+    };
+    let compiler = Compiler::with_limits(&symphonyscript_fixtures::vocabulary(), raised)
+        .expect("the vocabulary compiles");
+    let mut counts = BTreeMap::new();
+    for diagnostic in support::errors(compiler.check(&[support::source(text)])) {
+        *counts.entry(diagnostic.code).or_insert(0) += 1;
+    }
+    counts
+}
+
 fn bodies(head: &str, cycle: &[&str]) -> String {
     bodies_to(head, cycle, BODY_DEPTH)
 }
@@ -187,7 +202,12 @@ fn stress_deep_valid_programs_a_deep_array_type_and_a_long_call_chain_pass_check
                 .stack_size(1 << 20)
                 .spawn(move || {
                     for file in &project.files {
-                        assert_eq!(code_counts(&file.text), BTreeMap::new(), "{}", project.name);
+                        assert_eq!(
+                            code_counts_inlining_a_million(&file.text),
+                            BTreeMap::new(),
+                            "{}",
+                            project.name
+                        );
                     }
                 })
                 .expect("the thread starts")
@@ -277,18 +297,18 @@ fn stress_a_call_chain_and_a_recursion_100000_levels_deep_pass_check_on_a_small_
 fn stress_a_chain_of_100000_slices_passes_check_on_a_small_stack() {
     on_small_stack(|| {
         let chained = format!(
-            "state held([]): i32[..4]\nlet s = held{}\nClip c:\n    Note/(s[0])\n",
+            "state held([]): i32[..4]\nstate s = held{}\nClip c:\n    Note/(s[0])\n",
             "[1..]".repeat(DEPTH)
         );
         assert_eq!(code_counts(&chained), BTreeMap::new());
-        let mut lets = String::from("state held([]): i32[..4]\nlet s0 = held\n");
+        let mut lets = String::from("state held([]): i32[..4]\nstate s0 = held\n");
         for level in 1..=DEPTH {
-            lets.push_str(&format!("let s{level} = s{}[1..]\n", level - 1));
+            lets.push_str(&format!("state s{level} = s{}[1..]\n", level - 1));
         }
         lets.push_str(&format!("Clip c:\n    Note/(s{DEPTH}[0])\n"));
         assert_eq!(code_counts(&lets), BTreeMap::new());
         let fixed = format!(
-            "state note(60)\nstate s = [note, note, note]\nlet t = s{}\nClip c:\n    Note/(t.size + note)\n",
+            "state note(60)\nstate s = [note, note, note]\nstate t = s{}\nClip c:\n    Note/(t.size + note)\n",
             "[1..]".repeat(DEPTH)
         );
         assert_eq!(code_counts(&fixed), BTreeMap::new());
