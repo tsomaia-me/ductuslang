@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use symphonyscript::syntax::parse;
 use symphonyscript::{Code, Compiler, Diagnostic, Failed};
-use symphonyscript_core::Vocabulary;
+use symphonyscript_core::{LimitOverrides, Vocabulary};
 
 use crate::differing_codes::differing_codes;
 use crate::finding::Finding;
@@ -37,7 +37,15 @@ impl Checker {
     }
 
     pub fn with_vocabulary(budget: Duration, vocabulary: Vocabulary) -> Result<Checker, Failed> {
-        let compiler = Compiler::new(&vocabulary)?;
+        Checker::with_limits(budget, vocabulary, LimitOverrides::default())
+    }
+
+    pub fn with_limits(
+        budget: Duration,
+        vocabulary: Vocabulary,
+        limits: LimitOverrides,
+    ) -> Result<Checker, Failed> {
+        let compiler = Compiler::with_limits(&vocabulary, limits)?;
         Ok(Checker {
             compiler: Arc::new(compiler),
             vocabulary,

@@ -56,8 +56,9 @@ import json, sys
 from pathlib import Path
 given, taken = sys.argv[-2], sys.argv[-1]
 programs = [json.loads(line) for line in open(given) if line.strip()]
+limits = [sys.argv[index + 1] for index, word in enumerate(sys.argv) if word == "--limit"]
 with open(Path(sys.argv[0]).parent / "calls.log", "a") as log:
-    log.write(" ".join([sys.argv[sys.argv.index("--budget") + 1], *[each["id"] for each in programs]]) + "\\n")
+    log.write(" ".join([sys.argv[sys.argv.index("--budget") + 1], *limits, *[each["id"] for each in programs]]) + "\\n")
 with open(taken, "w") as out:
     for each in programs:
         words = each["sources"][0]["text"].split()
@@ -366,8 +367,13 @@ class Review(unittest.TestCase):
                                 lambda: next(loads))
             taken = json.loads((root / "figures.json").read_text())
             calls = (root / "calls.log").read_text().splitlines()
-        self.assertEqual(calls, [f"5 {key(breakers[0])} {key(breakers[2])}", "600 inlined#0 inlined#1 inlined#2",
-                                 "600 not#0 not#1 not#2"])
+        raised = "inlined_calls=1000000 inlined_calls_warning=500000"
+        self.assertEqual(calls, [f"5 {key(breakers[0])} {key(breakers[2])}",
+                                 f"600 {raised} inlined#0 inlined#1 inlined#2", f"600 {raised} not#0 not#1 not#2"])
+        self.assertEqual([each.get("limits") for each in taken["figures"]],
+                         [None, *[{"inlined_calls": 1_000_000, "inlined_calls_warning": 500_000}] * 2])
+        self.assertTrue(all("with inlined_calls at 1,000,000 and inlined_calls_warning at 500,000, 3 runs"
+                            in each["method"] for each in taken["figures"][1:]))
         self.assertEqual(taken["load_below"], 4.0)
         self.assertEqual([(each["load"], each.get("per_unit_us")) for each in taken["figures"]],
                          [(3.1, None), (3.2, 500.0), (3.3, 1000.0)])
@@ -402,7 +408,7 @@ class Review(unittest.TestCase):
         self.assertEqual(len(figures.inlining(200).splitlines()), 5)
         expressions = figures.deep_expressions(dict.fromkeys(figures.CONSTRUCTS, 3))
         self.assertEqual(expressions, 'state x(true)\nfn f(v): v\nlet a = (((1)))\nlet b = [[[1]]]\n'
-                                      'let c = f(f(f(1)))\nlet d = not not not x\nlet e = "{"{"{1}"}"}"\n'
+                                      'let c = f(f(f(1)))\nstate d = not not not x\nlet e = "{"{"{1}"}"}"\n'
                                       'let g = ---1\nClip top:\n    Note/(((60))) when d\n'
                                       '    Note/(f(a) + c + g + b[0][0][0])\n')
         self.assertIn("let a = (1)\n", figures.deep_expressions({"call": 3}))
@@ -424,7 +430,7 @@ class Review(unittest.TestCase):
         self.assertEqual(texts["recursive"], figures.recursing(100_000))
         self.assertEqual(sum((1 << (level + 1)) - 1 for level in figures.sizes_totalling(100_000)), 100_000)
         self.assertIn("let a = " + "(" * 10_000 + "1" + ")" * 10_000 + "\n", texts["parentheses"])
-        self.assertIn("let d = " + "not " * 10_000 + "x\n", texts["not"])
+        self.assertIn("state d = " + "not " * 10_000 + "x\n", texts["not"])
         self.assertEqual([figure for figure, *_ in quick][:3],
                          [("A compile-time recursive call", "a program making 100,000 distinct calls"),
                           ("An inlined call", "a program inlining 100,000 calls"),
@@ -498,7 +504,7 @@ class Review(unittest.TestCase):
         first, third = key(breakers[0]), key(breakers[2])
         self.assertEqual(void, [])
         self.assertEqual(calls, [f"5 {first}#0 {first}#1 {first}#2 {third}#0 {third}#1 {third}#2",
-                                 "600 not#0 not#1 not#2"])
+                                 "600 inlined_calls=1000000 inlined_calls_warning=500000 not#0 not#1 not#2"])
         self.assertEqual((taken["scale"], taken["load_below"], taken["void"]), ("quick", None, []))
         breaker_figure = taken["figures"][0]
         self.assertEqual({name: breaker_figure[name]

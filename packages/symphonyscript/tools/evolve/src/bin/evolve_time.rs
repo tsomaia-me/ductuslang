@@ -10,8 +10,7 @@ use symphonyscript_evolve::{
     running_compiles,
 };
 
-const USAGE: &str =
-    "usage: evolve-time [--budget <seconds>] [--vocabulary <name>] <programs.jsonl> <times.jsonl>";
+const USAGE: &str = "usage: evolve-time [--budget <seconds>] [--vocabulary <name>] [--limit <name>=<value>]... <programs.jsonl> <times.jsonl>";
 
 fn main() -> ExitCode {
     std::panic::set_hook(Box::new(|_| {}));
@@ -30,12 +29,13 @@ fn run() -> Result<(), String> {
         return Err(USAGE.to_string());
     };
     let vocabulary = named_vocabulary(&arguments.vocabulary)?;
-    let checker = Checker::with_vocabulary(arguments.budget, vocabulary).map_err(|failed| {
-        format!(
-            "the vocabulary `{}` does not compile: {failed:?}",
-            arguments.vocabulary
-        )
-    })?;
+    let checker =
+        Checker::with_limits(arguments.budget, vocabulary, arguments.limits).map_err(|failed| {
+            format!(
+                "the vocabulary `{}` does not compile: {failed:?}",
+                arguments.vocabulary
+            )
+        })?;
     let reader = BufReader::new(File::open(input).map_err(|error| format!("{input}: {error}"))?);
     let mut writer = BufWriter::new(
         resumed_output(output, arguments.resume_at)
