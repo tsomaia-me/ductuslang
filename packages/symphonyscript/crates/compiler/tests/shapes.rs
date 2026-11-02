@@ -198,3 +198,55 @@ fn a_compile_time_choice_of_arrays_of_one_dimension_takes_the_arm_it_chooses() {
         "{mixed}"
     );
 }
+
+/// ARCHITECTURE §7: a choice refused as one value draws one diagnostic, at the
+/// expression that reads it. A widening choice with a derived `state` arm as an
+/// index or a `^` offset draws the index's one `index-type`, as its host-fed
+/// twin does, and no second one at the choice (411, the index and offset
+/// positions; the built-in and slice-bound positions are recorded in the
+/// progress file).
+#[test]
+fn a_widening_choice_with_a_derived_state_arm_as_an_index_draws_one_diagnostic_411() {
+    let drawn = |text: &str| -> Vec<(Code, String)> {
+        support::checked(text)
+            .into_iter()
+            .map(|diagnostic| {
+                let range = diagnostic.span.range;
+                let at = text
+                    .get(range.start as usize..range.end as usize)
+                    .unwrap_or("?")
+                    .to_string();
+                (diagnostic.code, at)
+            })
+            .collect()
+    };
+    let mut programs = 0;
+    for arm in ["state s1 = [1.5]\n", "state k(1.5)\nstate s1 = [k]\n"] {
+        for choice in [
+            "if true then [1] else s1",
+            "if false then [1] else s1",
+            "if true then s1 else [1]",
+            "if q then [1] else s1",
+        ] {
+            for read in [format!("[1, 2][{choice}]"), format!("[1, 2][^({choice})]")] {
+                for reversed in [false, true] {
+                    let mut items = [
+                        format!("{arm}state q(true)\n"),
+                        format!("Clip c:\n    Note/({read})\n"),
+                    ];
+                    if reversed {
+                        items.reverse();
+                    }
+                    let text = items.concat();
+                    programs += 1;
+                    assert_eq!(
+                        drawn(&text),
+                        vec![(Code::IndexType, read.clone())],
+                        "{text}"
+                    );
+                }
+            }
+        }
+    }
+    assert_eq!(programs, 32);
+}

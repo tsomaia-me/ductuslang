@@ -630,7 +630,7 @@ impl Engine<'_> {
             }
             Op::Pick { index, items } => {
                 let first = at(0)?;
-                if !matches!(first.kind, Kind::Int | Kind::Any) {
+                if !matches!(first.kind, Kind::Int | Kind::Any) && !self.arrays.contains(index) {
                     self.error_at_node(Code::IndexType, *index, "an index is an integer")?;
                 }
                 let item_sigs = sigs.get(1..).ok_or(Internal::missed("operand signature"))?;
@@ -651,7 +651,9 @@ impl Engine<'_> {
             Op::Element { index, .. } => {
                 let (first, second) = (at(0)?, at(1)?);
                 if !matches!(second.kind, Kind::Int | Kind::Any) {
-                    self.error_at_node(Code::IndexType, *index, "an index is an integer")?;
+                    if !self.arrays.contains(index) {
+                        self.error_at_node(Code::IndexType, *index, "an index is an integer")?;
+                    }
                     if first.is_error() {
                         return Ok(Sig::ERROR);
                     }
@@ -749,6 +751,7 @@ impl Engine<'_> {
         if let Some(index_sig) = index_sig
             && !index_sig.is_error()
             && !matches!(index_sig.kind, Kind::Int | Kind::Any)
+            && !self.arrays.contains(&index)
         {
             self.error_at_node(Code::IndexType, index, "an index is an integer")?;
         }
