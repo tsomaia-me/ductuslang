@@ -73,7 +73,10 @@ fn member_rows(rows: &Rows) -> Vec<String> {
                     .map(|(code, ..)| *code)
                     .collect();
                 if found != expected {
-                    failures.push(format!("{text:?} draws {found:?}, expected {expected:?}"));
+                    failures.push(support::failed_row(
+                        &text,
+                        format!("{text:?} draws {found:?}, expected {expected:?}"),
+                    ));
                 }
                 let Some(known) = known.filter(|known| *known > 0) else {
                     continue;
@@ -88,7 +91,10 @@ fn member_rows(rows: &Rows) -> Vec<String> {
                     .map(|diagnostic| (diagnostic.code, diagnostic.summary))
                     .collect();
                 if drawn != vec![(Code::IndexOutOfRange, summary.clone())] {
-                    failures.push(format!("{probe:?} draws {drawn:?}, expected {summary:?}"));
+                    failures.push(support::failed_row(
+                        &probe,
+                        format!("{probe:?} draws {drawn:?}, expected {summary:?}"),
+                    ));
                 }
             }
         }
@@ -100,7 +106,7 @@ fn member_rows(rows: &Rows) -> Vec<String> {
 fn an_arrays_size_and_capacity_are_known_at_compile_time_where_the_spec_says_and_typed_as_it_says_in_every_position()
  {
     let failures = covered(member_rows);
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    support::assert_no_failure(&failures);
 }
 
 #[test]
@@ -108,7 +114,7 @@ fn an_arrays_size_and_capacity_are_known_at_compile_time_where_the_spec_says_and
 fn exhaustive_an_arrays_size_and_capacity_are_known_at_compile_time_where_the_spec_says_and_typed_as_it_says_in_every_position()
  {
     let failures = member_rows(&Rows::Every);
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    support::assert_no_failure(&failures);
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -258,14 +264,20 @@ fn dot_rows(rows: &Rows) -> Vec<String> {
                 let found = codes(&dot);
                 if *function == "transpose" && *receives == Takes::Wire {
                     if found != vec![Code::NotCallable] {
-                        failures.push(format!("{dot:?} draws {found:?}, expected [NotCallable]"));
+                        failures.push(support::failed_row_with(
+                            &compiler,
+                            &program(&dot),
+                            format!("{dot:?} draws {found:?}, expected [NotCallable]"),
+                        ));
                     }
                     continue;
                 }
                 let twin = codes(&direct);
                 if found != twin {
-                    failures.push(format!(
-                        "{dot:?} draws {found:?}, and {direct:?} draws {twin:?}"
+                    failures.push(support::failed_row_with(
+                        &compiler,
+                        &program(&dot),
+                        format!("{dot:?} draws {found:?}, and {direct:?} draws {twin:?}"),
                     ));
                 }
                 let fits = takes.is_none_or(|takes| takes == *receives)
@@ -277,7 +289,11 @@ fn dot_rows(rows: &Rows) -> Vec<String> {
                         _ => !name.is_empty(),
                     };
                 if fits && !found.is_empty() {
-                    failures.push(format!("{dot:?} draws {found:?}"));
+                    failures.push(support::failed_row_with(
+                        &compiler,
+                        &program(&dot),
+                        format!("{dot:?} draws {found:?}"),
+                    ));
                 }
             }
         }
@@ -288,7 +304,7 @@ fn dot_rows(rows: &Rows) -> Vec<String> {
 #[test]
 fn a_dot_call_is_the_call_with_the_receiver_first_for_a_source_a_native_and_a_math_function() {
     let failures = covered(dot_rows);
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    support::assert_no_failure(&failures);
 }
 
 #[test]
@@ -296,7 +312,7 @@ fn a_dot_call_is_the_call_with_the_receiver_first_for_a_source_a_native_and_a_ma
 fn exhaustive_a_dot_call_is_the_call_with_the_receiver_first_for_a_source_a_native_and_a_math_function()
  {
     let failures = dot_rows(&Rows::Every);
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    support::assert_no_failure(&failures);
 }
 
 #[test]
@@ -563,8 +579,10 @@ fn empty_element_rows(rows: &Rows) -> Vec<String> {
                         let text = ordered.concat();
                         let found = support::error_texts(&compiler, &text);
                         if found != expected {
-                            failures.push(format!(
-                                "338: {text}\n  draws {found:?}\n  expected {expected:?}"
+                            failures.push(support::failed_row_with(
+                                &compiler,
+                                &text,
+                                format!("338: {text}\n  draws {found:?}\n  expected {expected:?}"),
                             ));
                         }
                     }
@@ -579,7 +597,7 @@ fn empty_element_rows(rows: &Rows) -> Vec<String> {
 fn an_element_read_of_an_empty_compile_time_array_has_its_element_type_however_the_array_reaches_it()
  {
     let failures = covered(empty_element_rows);
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    support::assert_no_failure(&failures);
 }
 
 #[test]
@@ -587,7 +605,7 @@ fn an_element_read_of_an_empty_compile_time_array_has_its_element_type_however_t
 fn exhaustive_an_element_read_of_an_empty_compile_time_array_has_its_element_type_however_the_array_reaches_it()
  {
     let failures = empty_element_rows(&Rows::Every);
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    support::assert_no_failure(&failures);
 }
 
 #[test]

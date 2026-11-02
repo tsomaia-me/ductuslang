@@ -137,8 +137,10 @@ fn reads_cell_rows(rows: &Rows, orders: Orders) -> (Vec<String>, usize) {
                 let text = order.concat();
                 let found = support::error_texts(&compiler, &text);
                 if found != expected {
-                    failures.push(format!(
-                        "{text}\n  found {found:?}\n  expected {expected:?}\n"
+                    failures.push(support::failed_row_with(
+                        &compiler,
+                        &text,
+                        format!("{text}\n  found {found:?}\n  expected {expected:?}\n"),
                     ));
                 }
             }
@@ -147,19 +149,9 @@ fn reads_cell_rows(rows: &Rows, orders: Orders) -> (Vec<String>, usize) {
     (failures, programs)
 }
 
-fn assert_none_fail((failures, programs): (Vec<String>, usize), expected: usize) {
-    assert!(
-        failures.is_empty(),
-        "{} of {programs} programs fail:\n{}",
-        failures.len(),
-        failures.iter().take(8).cloned().collect::<String>()
-    );
-    assert_eq!(programs, expected);
-}
-
 #[test]
 fn a_value_reads_a_cell_by_the_bindings_it_reaches_at_every_position_that_asks() {
-    assert_none_fail(
+    support::assert_none_fail(
         covered(|rows| reads_cell_rows(rows, Orders::ForwardAndReversed)),
         32,
     );
@@ -168,7 +160,7 @@ fn a_value_reads_a_cell_by_the_bindings_it_reaches_at_every_position_that_asks()
 #[test]
 #[ignore = "exhaustive"]
 fn exhaustive_a_value_reads_a_cell_by_the_bindings_it_reaches_at_every_position_that_asks() {
-    assert_none_fail(reads_cell_rows(&Rows::Every, Orders::Every), 321);
+    support::assert_none_fail(reads_cell_rows(&Rows::Every, Orders::Every), 321);
 }
 
 #[test]

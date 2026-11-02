@@ -581,14 +581,16 @@ fn every_cost_row_draws_nothing_and_its_erroneous_twin_draws_only_its_unknown_na
                     errors.is_empty()
                 };
                 if !drawn {
-                    failures.push(format!(
-                        "{construct:?} {shape:?} faulty {faulty}: {errors:?}\n{text}"
+                    failures.push(crate::pinned_row::failed_with(
+                        &compiler,
+                        &text,
+                        format!("{construct:?} {shape:?} faulty {faulty}: {errors:?}\n{text}"),
                     ));
                 }
             }
         }
     }
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    crate::pinned_row::assert_no_failure(&failures);
     assert_eq!(rows, 176);
 }
 
@@ -658,22 +660,27 @@ fn measured_row(compiler: &Compiler, row: &Row) -> Report {
         if faulty { " beside a fault (303)" } else { "" }
     );
     let mut failures = Vec::new();
-    for (run, n) in runs.iter().zip(sizes) {
+    for ((run, n), text) in runs.iter().zip(sizes).zip(&texts) {
         if faulty {
             let unknown = run
                 .errors
                 .iter()
                 .all(|error| error.starts_with("UnknownName"));
             if run.errors.is_empty() || !unknown {
-                failures.push(format!(
-                    "{name} {n}: draws {:?}, where its one fault is `q`",
-                    run.errors
+                failures.push(crate::pinned_row::failed_with(
+                    compiler,
+                    text,
+                    format!(
+                        "{name} {n}: draws {:?}, where its one fault is `q`",
+                        run.errors
+                    ),
                 ));
             }
         } else if let Some(first) = run.errors.first() {
-            failures.push(format!(
-                "{name} {n}: {} errors, the first {first}",
-                run.errors.len()
+            failures.push(crate::pinned_row::failed_with(
+                compiler,
+                text,
+                format!("{name} {n}: {} errors, the first {first}", run.errors.len()),
             ));
         }
     }
@@ -689,9 +696,11 @@ fn measured_row(compiler: &Compiler, row: &Row) -> Report {
             least = (points[0].1, counter.as_str());
         }
         if !linear(points) {
-            failures.push(format!(
-                "{name}: {counter} {:?}",
-                points.map(|(_, count)| count)
+            let counts = points.map(|(_, count)| count);
+            failures.push(crate::pinned_row::failed_counts(
+                &texts[0],
+                &[(counter.clone(), counts.to_vec())],
+                format!("{name}: {counter} {counts:?}"),
             ));
         }
     }
@@ -699,9 +708,13 @@ fn measured_row(compiler: &Compiler, row: &Row) -> Report {
         && !builds_per_level(construct, shape)
         && !indents_per_level(construct, shape)
     {
-        failures.push(format!(
-            "{name}: the smallest count, {} {}, is below {FLOOR}",
-            least.1, least.0
+        failures.push(crate::pinned_row::failed_counts(
+            &texts[0],
+            &[(least.1.to_string(), vec![least.0])],
+            format!(
+                "{name}: the smallest count, {} {}, is below {FLOOR}",
+                least.1, least.0
+            ),
         ));
     }
     let work = runs
@@ -751,7 +764,7 @@ fn assert_costs_linear(construct: Construct, expected_rows: usize) {
         println!("{}", report.line);
         failures.extend(report.failures);
     }
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    crate::pinned_row::assert_no_failure(&failures);
     assert_eq!(rows.len(), expected_rows);
 }
 
@@ -872,7 +885,11 @@ fn capacity_failures(sizes: [usize; 3]) -> Vec<String> {
     let mut failures = Vec::new();
     for (run, capacity) in runs.iter().zip(sizes) {
         if let Some(first) = run.errors.first() {
-            failures.push(format!("capacity {capacity}: {first}"));
+            failures.push(crate::pinned_row::failed_with(
+                &compiler,
+                &capacity_program(capacity),
+                format!("capacity {capacity}: {first}"),
+            ));
         }
     }
     for (index, (counter, _)) in runs[0].counts.iter().enumerate() {
@@ -883,12 +900,19 @@ fn capacity_failures(sizes: [usize; 3]) -> Vec<String> {
             )
         });
         if !linear(points) {
-            failures.push(format!("{counter} {:?}", points.map(|(_, count)| count)));
+            failures.push(counted_failure(
+                &capacity_program(sizes[0]),
+                "capacity",
+                counter,
+                points,
+            ));
         }
         if counter == "nodes" && points[0].1 != points[2].1 {
-            failures.push(format!(
-                "the body is built once, and the nodes number {:?}",
-                points.map(|(_, count)| count)
+            failures.push(counted_failure(
+                &capacity_program(sizes[0]),
+                "the body is built once",
+                "nodes",
+                points,
             ));
         }
     }
@@ -898,14 +922,14 @@ fn capacity_failures(sizes: [usize; 3]) -> Vec<String> {
 #[test]
 fn a_for_expression_over_a_variable_array_builds_its_body_once_whatever_its_capacity() {
     let failures = capacity_failures([100, 200, 400]);
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    crate::pinned_row::assert_no_failure(&failures);
 }
 
 #[test]
 #[ignore = "stress"]
 fn stress_a_for_expression_over_a_variable_array_costs_check_work_linear_in_its_capacity() {
     let failures = capacity_failures([2_500, 5_000, 10_000]);
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    crate::pinned_row::assert_no_failure(&failures);
 }
 
 fn nested_bodies(depth: usize, start: &str) -> String {
@@ -931,7 +955,7 @@ fn nesting_failures(sizes: [usize; 3]) -> Vec<String> {
             )
         });
         if !linear(points) {
-            failures.push(format!("{counter} {:?}", points.map(|(_, count)| count)));
+            failures.push(counted_failure(&texts[0], "nesting", counter, points));
         }
     }
     failures
@@ -940,14 +964,14 @@ fn nesting_failures(sizes: [usize; 3]) -> Vec<String> {
 #[test]
 fn for_expressions_nested_in_their_bodies_resolve_each_body_once() {
     let failures = nesting_failures([50, 100, 200]);
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    crate::pinned_row::assert_no_failure(&failures);
 }
 
 #[test]
 #[ignore = "stress"]
 fn stress_for_expressions_nested_in_their_bodies_cost_work_linear_in_their_depth() {
     let failures = nesting_failures([1_000, 2_000, 4_000]);
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    crate::pinned_row::assert_no_failure(&failures);
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -1143,13 +1167,20 @@ fn stress_every_walk_that_follows_a_chain_of_lets_costs_work_linear_in_the_chain
                 let checked = chain_program(chain, read, smallest, reversed, true);
                 let errors = measured(&compiler, &checked).errors;
                 if !errors.is_empty() {
-                    failures.push(format!("{name}: its value check draws {errors:?}"));
+                    failures.push(row_failure(
+                        &checked,
+                        format!("{name}: its value check draws {errors:?}"),
+                    ));
                 }
                 let texts = sizes.map(|n| chain_program(chain, read, n, reversed, false));
                 let runs = texts.each_ref().map(|text| measured(&compiler, text));
-                for (run, n) in runs.iter().zip(sizes) {
+                for ((run, n), text) in runs.iter().zip(sizes).zip(&texts) {
                     if let Some(first) = run.errors.first() {
-                        failures.push(format!("{name} {n}: {first}"));
+                        failures.push(crate::pinned_row::failed_with(
+                            &compiler,
+                            text,
+                            format!("{name} {n}: {first}"),
+                        ));
                     }
                 }
                 let size = |run: usize| {
@@ -1168,16 +1199,13 @@ fn stress_every_walk_that_follows_a_chain_of_lets_costs_work_linear_in_the_chain
                         )
                     });
                     if !linear(points) {
-                        failures.push(format!(
-                            "{name}: {counter} {:?}",
-                            points.map(|(_, count)| count)
-                        ));
+                        failures.push(counted_failure(&texts[0], &name, counter, points));
                     }
                 }
             }
         }
     }
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    crate::pinned_row::assert_no_failure(&failures);
     assert_eq!(rows, 42);
 }
 
@@ -1285,9 +1313,13 @@ fn stress_a_recursive_call_over_an_array_of_references_costs_work_linear_in_its_
             );
             let texts = sizes.map(|size| reference_array_program(body, size, call_first));
             let runs = texts.each_ref().map(|text| measured(&compiler, text));
-            for (run, k) in runs.iter().zip(sizes) {
+            for ((run, k), text) in runs.iter().zip(sizes).zip(&texts) {
                 if let Some(first) = run.errors.first() {
-                    failures.push(format!("{name} {k}: {first}"));
+                    failures.push(crate::pinned_row::failed_with(
+                        &compiler,
+                        text,
+                        format!("{name} {k}: {first}"),
+                    ));
                 }
             }
             for (index, (counter, _)) in runs[0].counts.iter().enumerate() {
@@ -1298,15 +1330,12 @@ fn stress_a_recursive_call_over_an_array_of_references_costs_work_linear_in_its_
                     )
                 });
                 if !linear(points) {
-                    failures.push(format!(
-                        "{name}: {counter} {:?}",
-                        points.map(|(_, count)| count)
-                    ));
+                    failures.push(counted_failure(&texts[0], &name, counter, points));
                 }
             }
         }
     }
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    crate::pinned_row::assert_no_failure(&failures);
     assert_eq!(rows, 18);
 }
 
@@ -1355,27 +1384,38 @@ fn template_walk_failures(sizes: [usize; 3], growth: bool) -> Vec<String> {
             let name = format!("{walk:?} call first {call_first}");
             let texts = sizes.map(|size| template_walk_program(walk, size, call_first));
             let runs = texts.each_ref().map(|text| measured(&compiler, text));
-            for (run, size) in runs.iter().zip(sizes) {
+            for ((run, size), text) in runs.iter().zip(sizes).zip(&texts) {
                 if let Some(first) = run.errors.first() {
-                    failures.push(format!("{name} {size}: {first}"));
+                    failures.push(crate::pinned_row::failed_with(
+                        &compiler,
+                        text,
+                        format!("{name} {size}: {first}"),
+                    ));
                 }
                 let clones = walk_count(run, "FrameReadClone");
                 if clones > 0 {
-                    failures.push(format!("{name} {size}: {clones} frame reads cloned"));
+                    failures.push(row_failure(
+                        text,
+                        format!("{name} {size}: {clones} frame reads cloned"),
+                    ));
                 }
                 let (programs, templates) = (
                     walk_count(run, "ProgramFrameCompile"),
                     walk_count(run, "TemplateKeyOwned"),
                 );
                 if templates == 0 || programs > 3 * templates {
-                    failures.push(format!(
-                        "{name} {size}: {programs} frame programs for {templates} templates"
+                    failures.push(row_failure(
+                        text,
+                        format!(
+                            "{name} {size}: {programs} frame programs for {templates} templates"
+                        ),
                     ));
                 }
                 let (bytes, nodes) = (walk_count(run, "program_bytes"), walk_count(run, "nodes"));
                 if bytes > 32 * nodes {
-                    failures.push(format!(
-                        "{name} {size}: {bytes} program bytes for {nodes} nodes"
+                    failures.push(row_failure(
+                        text,
+                        format!("{name} {size}: {bytes} program bytes for {nodes} nodes"),
                     ));
                 }
             }
@@ -1396,10 +1436,7 @@ fn template_walk_failures(sizes: [usize; 3], growth: bool) -> Vec<String> {
                     )
                 });
                 if growth && !linear(points) {
-                    failures.push(format!(
-                        "{name}: {counter} {:?}",
-                        points.map(|(_, count)| count)
-                    ));
+                    failures.push(counted_failure(&texts[0], &name, counter, points));
                 }
             }
         }
@@ -1412,7 +1449,7 @@ fn template_walk_failures(sizes: [usize; 3], growth: bool) -> Vec<String> {
 fn a_recursive_body_with_a_template_per_level_clones_no_frame_read_and_checks_each_frames_heads_in_work_linear_in_its_levels_345()
  {
     let failures = template_walk_failures([10, 20, 40], false);
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    crate::pinned_row::assert_no_failure(&failures);
 }
 
 #[test]
@@ -1420,7 +1457,7 @@ fn a_recursive_body_with_a_template_per_level_clones_no_frame_read_and_checks_ea
 fn stress_a_recursive_body_with_a_template_per_level_checks_each_frames_heads_in_work_linear_in_its_levels()
  {
     let failures = template_walk_failures([100, 200, 400], true);
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    crate::pinned_row::assert_no_failure(&failures);
 }
 
 fn many_reads_program(reads: usize) -> String {
@@ -1435,11 +1472,16 @@ fn a_let_read_many_times_in_a_recursive_body_compiles_once_and_its_reads_to_inst
  {
     let compiler = Compiler::new(&vocabulary()).expect("the vocabulary compiles");
     let sizes: [usize; 3] = [10, 20, 40];
-    let runs = sizes.map(|reads| measured(&compiler, &many_reads_program(reads)));
+    let texts = sizes.map(many_reads_program);
+    let runs = texts.each_ref().map(|text| measured(&compiler, text));
     let mut failures = Vec::new();
-    for (run, reads) in runs.iter().zip(sizes) {
+    for ((run, reads), text) in runs.iter().zip(sizes).zip(&texts) {
         if let Some(first) = run.errors.first() {
-            failures.push(format!("{reads} reads: {first}"));
+            failures.push(crate::pinned_row::failed_with(
+                &compiler,
+                text,
+                format!("{reads} reads: {first}"),
+            ));
         }
     }
     let code = [0, 1, 2].map(|run| {
@@ -1450,15 +1492,21 @@ fn a_let_read_many_times_in_a_recursive_body_compiles_once_and_its_reads_to_inst
     });
     let per_read = (code[2].1.saturating_sub(code[0].1)) / 30;
     if !linear(code) || per_read > 4 {
-        failures.push(format!("ProgramCode {code:?}, {per_read} a read"));
+        failures.push(row_failure(
+            &texts[0],
+            format!("ProgramCode {code:?}, {per_read} a read"),
+        ));
     }
     let programs = runs
         .each_ref()
         .map(|run| walk_count(run, "ProgramFrameCompile"));
     if programs[0] == 0 || programs.iter().any(|count| *count != programs[0]) {
-        failures.push(format!("ProgramFrameCompile {programs:?}"));
+        failures.push(row_failure(
+            &texts[0],
+            format!("ProgramFrameCompile {programs:?}"),
+        ));
     }
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    crate::pinned_row::assert_no_failure(&failures);
 }
 
 const HEAD_CHECKS: [CountedWalk; 3] = [
@@ -1599,7 +1647,7 @@ fn untaken_work_failures(divisor: usize, depth: Option<u64>) -> Vec<String> {
             let runs = texts
                 .each_ref()
                 .map(|text| untaken_measured(&compiler, text));
-            for (run, size) in runs.iter().zip(sizes) {
+            for ((run, size), text) in runs.iter().zip(sizes).zip(&texts) {
                 let deep = run
                     .errors
                     .iter()
@@ -1607,11 +1655,17 @@ fn untaken_work_failures(divisor: usize, depth: Option<u64>) -> Vec<String> {
                     .count();
                 let passes = work == UntakenWork::Descending;
                 if deep != run.errors.len() || (deep > 0) != passes {
-                    failures.push(format!("{name} {size}: {:?}", run.errors));
+                    failures.push(row_failure(
+                        text,
+                        format!("{name} {size}: {:?}", run.errors),
+                    ));
                 }
                 let clones = walk_count(run, "FrameReadClone");
                 if clones > 0 {
-                    failures.push(format!("{name} {size}: {clones} frame reads cloned"));
+                    failures.push(row_failure(
+                        text,
+                        format!("{name} {size}: {clones} frame reads cloned"),
+                    ));
                 }
             }
             for (index, (counter, _)) in runs[0].counts.iter().enumerate() {
@@ -1627,9 +1681,9 @@ fn untaken_work_failures(divisor: usize, depth: Option<u64>) -> Vec<String> {
                 let by_text = against(texts.each_ref().map(String::len));
                 let grows = by_size[2].1 > by_size[0].1 + 2;
                 if grows && !linear(by_size) && !linear(by_text) {
-                    failures.push(format!(
-                        "{name}: {counter} {:?}",
-                        by_size.map(|(_, count)| count)
+                    failures.push(row_failure(
+                        &texts[0],
+                        format!("{name}: {counter} {:?}", by_size.map(|(_, count)| count)),
                     ));
                 }
             }
@@ -1642,7 +1696,7 @@ fn untaken_work_failures(divisor: usize, depth: Option<u64>) -> Vec<String> {
 #[test]
 fn an_untaken_starts_evaluation_costs_work_linear_in_the_distinct_calls_plus_the_frames_starts() {
     let failures = untaken_work_failures(5, Some(128));
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    crate::pinned_row::assert_no_failure(&failures);
 }
 
 #[test]
@@ -1650,7 +1704,7 @@ fn an_untaken_starts_evaluation_costs_work_linear_in_the_distinct_calls_plus_the
 fn stress_an_untaken_starts_evaluation_costs_work_linear_in_the_distinct_calls_plus_the_frames_starts_in_either_order()
  {
     let failures = untaken_work_failures(1, None);
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    crate::pinned_row::assert_no_failure(&failures);
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -1718,17 +1772,20 @@ fn unknown_names_failures(sizes: [usize; 3]) -> Vec<String> {
                 items.concat()
             });
             let runs = texts.each_ref().map(|text| measured(&compiler, text));
-            for (run, n) in runs.iter().zip(sizes) {
+            for ((run, n), text) in runs.iter().zip(sizes).zip(&texts) {
                 let unknown = run
                     .errors
                     .iter()
                     .filter(|error| error.starts_with("UnknownName"))
                     .count();
                 if (unknown, run.errors.len()) != names.expected(n) {
-                    failures.push(format!(
-                        "{name} {n}: {} errors, {unknown} unknown-name, the first {:?}",
-                        run.errors.len(),
-                        run.errors.first()
+                    failures.push(row_failure(
+                        text,
+                        format!(
+                            "{name} {n}: {} errors, {unknown} unknown-name, the first {:?}",
+                            run.errors.len(),
+                            run.errors.first()
+                        ),
                     ));
                 }
             }
@@ -1740,10 +1797,7 @@ fn unknown_names_failures(sizes: [usize; 3]) -> Vec<String> {
                     )
                 });
                 if !linear(points) {
-                    failures.push(format!(
-                        "{name}: {counter} {:?}",
-                        points.map(|(_, count)| count)
-                    ));
+                    failures.push(counted_failure(&texts[0], &name, counter, points));
                 }
             }
         }
@@ -1755,14 +1809,14 @@ fn unknown_names_failures(sizes: [usize; 3]) -> Vec<String> {
 #[test]
 fn distinct_unknown_names_cost_work_linear_in_the_names_and_the_sources_298() {
     let failures = unknown_names_failures([20, 40, 80]);
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    crate::pinned_row::assert_no_failure(&failures);
 }
 
 #[test]
 #[ignore = "stress"]
 fn stress_distinct_unknown_names_cost_work_linear_in_the_names_and_the_sources_298() {
     let failures = unknown_names_failures([8_000, 16_000, 32_000]);
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    crate::pinned_row::assert_no_failure(&failures);
 }
 
 #[test]
@@ -1788,16 +1842,23 @@ fn the_cost_counters_hold_the_signature_walk_and_it_is_linear_in_a_recursive_cal
                 )
             });
             if points.iter().any(|(_, count)| *count == 0) || !linear(points) {
-                failures.push(format!("{body:?} call first {call_first}: {points:?}"));
+                failures.push(row_failure(
+                    &texts[0],
+                    format!("{body:?} call first {call_first}: {points:?}"),
+                ));
             }
-            for (run, size) in runs.iter().zip(sizes) {
+            for ((run, size), text) in runs.iter().zip(sizes).zip(&texts) {
                 if let Some(first) = run.errors.first() {
-                    failures.push(format!("{body:?} {size}: {first}"));
+                    failures.push(crate::pinned_row::failed_with(
+                        &compiler,
+                        text,
+                        format!("{body:?} {size}: {first}"),
+                    ));
                 }
             }
         }
     }
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    crate::pinned_row::assert_no_failure(&failures);
 }
 
 fn empty_chain_program(lets: usize, reads: usize) -> String {
@@ -1814,9 +1875,10 @@ fn empty_chain_program(lets: usize, reads: usize) -> String {
     text
 }
 
-fn empty_chain_walks(sizes: [(usize, usize); 3]) -> (Vec<String>, [u64; 3]) {
+fn empty_chain_walks(sizes: [(usize, usize); 3]) -> (Vec<String>, [u64; 3], String) {
     let compiler = Compiler::new(&vocabulary()).expect("the vocabulary compiles");
-    let runs = sizes.map(|(lets, reads)| measured(&compiler, &empty_chain_program(lets, reads)));
+    let texts = sizes.map(|(lets, reads)| empty_chain_program(lets, reads));
+    let runs = texts.each_ref().map(|text| measured(&compiler, text));
     let mut failures = Vec::new();
     let steps = runs.each_ref().map(|run| {
         run.counts
@@ -1824,12 +1886,17 @@ fn empty_chain_walks(sizes: [(usize, usize); 3]) -> (Vec<String>, [u64; 3]) {
             .find(|(name, _)| name == "PathsSlicedGroup")
             .map_or(0, |(_, count)| *count)
     });
-    for (run, size) in runs.iter().zip(sizes) {
+    for ((run, size), text) in runs.iter().zip(sizes).zip(&texts) {
         if let Some(first) = run.errors.first() {
-            failures.push(format!("388 {size:?}: {first}"));
+            failures.push(crate::pinned_row::failed_with(
+                &compiler,
+                text,
+                format!("388 {size:?}: {first}"),
+            ));
         }
     }
-    (failures, steps)
+    let [smallest, ..] = texts;
+    (failures, steps, smallest)
 }
 
 #[test]
@@ -1840,7 +1907,7 @@ fn an_empty_arrays_let_chain_is_walked_once_per_let_whatever_reads_it_388() {
         ([(4, 25), (4, 50), (4, 100)], 1),
         ([(25, 25), (50, 50), (100, 100)], 0),
     ] {
-        let (found, steps) = empty_chain_walks(sizes);
+        let (found, steps, smallest) = empty_chain_walks(sizes);
         failures.extend(found);
         let points = [0, 1, 2].map(|run| {
             let (lets, reads) = sizes[run];
@@ -1850,13 +1917,19 @@ fn an_empty_arrays_let_chain_is_walked_once_per_let_whatever_reads_it_388() {
             )
         });
         if !linear(points) {
-            failures.push(format!("388 {sizes:?}: PathsSlicedGroup {steps:?}"));
+            failures.push(row_failure(
+                &smallest,
+                format!("388 {sizes:?}: PathsSlicedGroup {steps:?}"),
+            ));
         }
         if steps[0] == 0 {
-            failures.push(format!("388 {sizes:?}: the chain is never walked"));
+            failures.push(row_failure(
+                &smallest,
+                format!("388 {sizes:?}: the chain is never walked"),
+            ));
         }
     }
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    crate::pinned_row::assert_no_failure(&failures);
 }
 
 const DISTINCT_CALLS: &str = "fn f(a, b, c): if a < 1 then 0 else f(a - 1, b + 1, c) + f(a - 1, b, c + 1) + f(a - 1, b, c)\nClip k:\n    Note/(f(200, 0, 0))\n";
@@ -1881,7 +1954,10 @@ fn distinct_call_failures(calls: [u64; 3]) -> Vec<String> {
                 .first()
                 .is_some_and(|error| error.starts_with("RecursionLimit"));
         if !limited {
-            failures.push(format!("300 at {limit} calls: {:?}", run.errors));
+            failures.push(row_failure(
+                DISTINCT_CALLS,
+                format!("300 at {limit} calls: {:?}", run.errors),
+            ));
         }
         failures.extend(machine_failures(run, limit));
     }
@@ -1893,9 +1969,12 @@ fn distinct_call_failures(calls: [u64; 3]) -> Vec<String> {
             )
         });
         if !linear(points) {
-            failures.push(format!(
-                "300 {counter} {:?} at {calls:?} calls",
-                points.map(|(_, count)| count)
+            failures.push(row_failure(
+                DISTINCT_CALLS,
+                format!(
+                    "300 {counter} {:?} at {calls:?} calls",
+                    points.map(|(_, count)| count)
+                ),
             ));
         }
     }
@@ -1929,15 +2008,19 @@ fn machine_failures(run: &Measured, limit: u64) -> Vec<String> {
     ] {
         let count = walk_count(run, walk);
         if count > most {
-            failures.push(format!(
-                "300 at {limit} calls: {walk} {count}, more than {most}"
+            failures.push(row_failure(
+                DISTINCT_CALLS,
+                format!("300 at {limit} calls: {walk} {count}, more than {most}"),
             ));
         }
     }
     if distinct <= limit || walk_count(run, "CallKeyOwned") < distinct {
-        failures.push(format!(
-            "300 at {limit} calls: {} call keys for {distinct} distinct calls",
-            walk_count(run, "CallKeyOwned")
+        failures.push(row_failure(
+            DISTINCT_CALLS,
+            format!(
+                "300 at {limit} calls: {} call keys for {distinct} distinct calls",
+                walk_count(run, "CallKeyOwned")
+            ),
         ));
     }
     failures
@@ -1946,7 +2029,7 @@ fn machine_failures(run: &Measured, limit: u64) -> Vec<String> {
 #[test]
 fn a_compile_time_recursive_calls_work_is_the_same_for_every_distinct_call_300() {
     let failures = distinct_call_failures([2_000, 4_000, 8_000]);
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    crate::pinned_row::assert_no_failure(&failures);
 }
 
 #[test]
@@ -1954,7 +2037,7 @@ fn a_compile_time_recursive_calls_work_is_the_same_for_every_distinct_call_300()
 fn stress_a_compile_time_recursive_calls_work_is_the_same_for_every_distinct_call_up_to_the_limit_300()
  {
     let failures = distinct_call_failures([250_000, 500_000, 1_000_000]);
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    crate::pinned_row::assert_no_failure(&failures);
 }
 
 fn ring_program(size: usize, reversed: bool) -> String {
@@ -1984,9 +2067,12 @@ fn ring_failures(sizes: [usize; 3]) -> Vec<String> {
                 )
             });
             if !linear(points) {
-                failures.push(format!(
-                    "351 {reversed} {counter} {:?}",
-                    points.map(|(_, count)| count)
+                failures.push(row_failure(
+                    &ring_program(sizes[0], reversed),
+                    format!(
+                        "351 {reversed} {counter} {:?}",
+                        points.map(|(_, count)| count)
+                    ),
                 ));
             }
         }
@@ -1996,7 +2082,10 @@ fn ring_failures(sizes: [usize; 3]) -> Vec<String> {
                 .iter()
                 .any(|(name, count)| name == counter && *count > 0)
             {
-                failures.push(format!("351 {reversed} {counter} is not counted"));
+                failures.push(row_failure(
+                    &ring_program(sizes[0], reversed),
+                    format!("351 {reversed} {counter} is not counted"),
+                ));
             }
         }
     }
@@ -2006,14 +2095,14 @@ fn ring_failures(sizes: [usize; 3]) -> Vec<String> {
 #[test]
 fn a_ring_of_declarations_is_grouped_and_named_in_work_linear_in_its_reads_351() {
     let failures = ring_failures([100, 200, 400]);
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    crate::pinned_row::assert_no_failure(&failures);
 }
 
 #[test]
 #[ignore = "stress"]
 fn stress_a_ring_of_declarations_is_grouped_and_named_in_work_linear_in_its_reads_351() {
     let failures = ring_failures([2_000, 4_000, 8_000]);
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    crate::pinned_row::assert_no_failure(&failures);
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -2122,11 +2211,14 @@ fn open_read_failures(sizes: [usize; 3]) -> Vec<String> {
     let mut failures = Vec::new();
     for shape in OPEN_READS {
         for reversed in [false, true] {
-            let runs =
-                sizes.map(|size| measured(&compiler, &open_read_program(shape, size, reversed)));
-            for (run, size) in runs.iter().zip(sizes) {
+            let texts = sizes.map(|size| open_read_program(shape, size, reversed));
+            let runs = texts.each_ref().map(|text| measured(&compiler, text));
+            for ((run, size), text) in runs.iter().zip(sizes).zip(&texts) {
                 if !run.errors.is_empty() {
-                    failures.push(format!("343 {shape:?} {reversed} {size}: {:?}", run.errors));
+                    failures.push(row_failure(
+                        text,
+                        format!("343 {shape:?} {reversed} {size}: {:?}", run.errors),
+                    ));
                 }
             }
             for (index, (counter, _)) in runs[0].counts.iter().enumerate() {
@@ -2137,9 +2229,12 @@ fn open_read_failures(sizes: [usize; 3]) -> Vec<String> {
                     )
                 });
                 if !linear(points) {
-                    failures.push(format!(
-                        "343 {shape:?} {reversed} {counter} {:?}",
-                        points.map(|(_, count)| count)
+                    failures.push(row_failure(
+                        &texts[0],
+                        format!(
+                            "343 {shape:?} {reversed} {counter} {:?}",
+                            points.map(|(_, count)| count)
+                        ),
                     ));
                 }
             }
@@ -2149,7 +2244,10 @@ fn open_read_failures(sizes: [usize; 3]) -> Vec<String> {
                     .iter()
                     .any(|(name, count)| name == counter && *count > 0)
                 {
-                    failures.push(format!("343 {shape:?} {reversed} {counter} is not counted"));
+                    failures.push(row_failure(
+                        &texts[0],
+                        format!("343 {shape:?} {reversed} {counter} is not counted"),
+                    ));
                 }
             }
         }
@@ -2161,7 +2259,7 @@ fn open_read_failures(sizes: [usize; 3]) -> Vec<String> {
 fn families_that_read_one_anothers_open_results_are_typed_again_in_work_linear_in_the_families_and_their_reads_343()
  {
     let failures = open_read_failures([6, 12, 24]);
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    crate::pinned_row::assert_no_failure(&failures);
 }
 
 #[test]
@@ -2169,17 +2267,15 @@ fn families_that_read_one_anothers_open_results_are_typed_again_in_work_linear_i
 fn stress_families_that_read_one_anothers_open_results_are_typed_again_in_work_linear_in_the_families_and_their_reads_343()
  {
     let failures = open_read_failures([128, 256, 512]);
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    crate::pinned_row::assert_no_failure(&failures);
 }
 
 #[test]
 fn a_recursive_argument_that_grows_a_dimension_per_level_holds_a_node_per_template_node_and_a_frame_per_call()
  {
     let compiler = Compiler::new(&vocabulary()).expect("the vocabulary compiles");
-    let run = measured(
-        &compiler,
-        "fn f(xs, n): if n > 3 then 0 else f([xs], n + 1)\nClip c:\n    Note/(f([1], 0))\n",
-    );
+    let text = "fn f(xs, n): if n > 3 then 0 else f([xs], n + 1)\nClip c:\n    Note/(f([1], 0))\n";
+    let run = measured(&compiler, text);
     let calls = walk_count(&run, "calls");
     let bounds = [
         ("nodes", 28_748),
@@ -2190,22 +2286,32 @@ fn a_recursive_argument_that_grows_a_dimension_per_level_holds_a_node_per_templa
         ("ProgramFrameCompile", 2 * calls),
         ("program_bytes", 4_096),
     ];
-    let mut failures: Vec<String> = run.errors.clone();
+    let mut failures: Vec<String> = run
+        .errors
+        .iter()
+        .map(|error| crate::pinned_row::failed_with(&compiler, text, error))
+        .collect();
     for (counter, bound) in bounds {
         let count = walk_count(&run, counter);
         if count > bound {
-            failures.push(format!("{counter} {count} > {bound}"));
+            failures.push(crate::pinned_row::failed_counts(
+                text,
+                &[(counter.to_string(), vec![count])],
+                format!("{counter} {count} > {bound}"),
+            ));
         }
     }
     let node_bytes = std::mem::size_of::<super::node::Node>();
     if node_bytes > 112 {
-        failures.push(format!("a node holds {node_bytes} bytes"));
+        failures.push(row_failure(
+            text,
+            format!("a node holds {node_bytes} bytes"),
+        ));
     }
-    assert!(
-        calls > 0 && failures.is_empty(),
-        "{calls} calls: {}",
-        failures.join("\n")
-    );
+    if calls == 0 {
+        failures.push(row_failure(text, "no call is counted".to_string()));
+    }
+    crate::pinned_row::assert_no_failure(&failures);
 }
 
 fn work_now() -> Vec<u64> {
@@ -2315,7 +2421,10 @@ fn beside_twins_failures(
                 .filter(|error| error.starts_with("UnknownName"))
                 .count();
             if (unknown, errors.len()) != (count, count) {
-                failures.push(format!("299 {shape:?} at {size} with {count}: {errors:?}"));
+                failures.push(row_failure(
+                    &text,
+                    format!("299 {shape:?} at {size} with {count}: {errors:?}"),
+                ));
             }
             lengths.push(u64::try_from(text.len()).unwrap_or(u64::MAX));
             runs.push(work);
@@ -2329,9 +2438,12 @@ fn beside_twins_failures(
             let scanned =
                 Some(index) == scan && linear([0, 1, 2].map(|run| (lengths[run], by_size[run])));
             if !flat && !scanned {
-                failures.push(format!(
-                    "299 {shape:?}: the twin pass's {} {by_size:?} at sizes {sizes:?}",
-                    work_name(index)
+                failures.push(row_failure(
+                    &shape.program(sizes[0], 1),
+                    format!(
+                        "299 {shape:?}: the twin pass's {} {by_size:?} at sizes {sizes:?}",
+                        work_name(index)
+                    ),
                 ));
             }
             let by_count = [3, 4, 5].map(|run| {
@@ -2343,15 +2455,21 @@ fn beside_twins_failures(
             let by_length = [3, 4, 5].map(|run| (lengths[run], by_count[run - 3].1));
             let grows_with_count = linear(by_count) || (Some(index) == scan && linear(by_length));
             if !grows_with_count {
-                failures.push(format!(
-                    "299 {shape:?}: the twin pass's {} {:?} at {placeholders:?} placeholders",
-                    work_name(index),
-                    by_count.map(|(_, work)| work)
+                failures.push(row_failure(
+                    &shape.program(sizes[0], 1),
+                    format!(
+                        "299 {shape:?}: the twin pass's {} {:?} at {placeholders:?} placeholders",
+                        work_name(index),
+                        by_count.map(|(_, work)| work)
+                    ),
                 ));
             }
         }
         if runs.iter().any(|work| work.iter().all(|done| *done == 0)) {
-            failures.push(format!("299 {shape:?}: a run held no twin pass"));
+            failures.push(row_failure(
+                &shape.program(sizes[0], 1),
+                format!("299 {shape:?}: a run held no twin pass"),
+            ));
         }
     }
     failures
@@ -2367,7 +2485,7 @@ fn a_placeholder_beside_a_recursion_or_a_join_chain_costs_the_twin_pass_the_same
         ],
         [1, 2, 4],
     );
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    crate::pinned_row::assert_no_failure(&failures);
 }
 
 #[test]
@@ -2381,7 +2499,7 @@ fn stress_a_placeholder_beside_a_recursion_or_a_join_chain_costs_the_twin_pass_t
         ],
         [1, 2, 4],
     );
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    crate::pinned_row::assert_no_failure(&failures);
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -2446,16 +2564,18 @@ fn demand_failures(sizes: [usize; 3]) -> Vec<String> {
                 )
             });
             if !linear(points) {
-                failures.push(format!(
-                    "431 {figure:?} {walk} {points:?} is not linear in the queries"
+                failures.push(row_failure(
+                    &figure_program(figure, sizes[0]),
+                    format!("431 {figure:?} {walk} {points:?} is not linear in the queries"),
                 ));
             }
             if points
                 .iter()
                 .any(|(queries, count)| *count == 0 || count * per > queries * most)
             {
-                failures.push(format!(
-                    "431 {figure:?} {walk} {points:?} passes {most}/{per} a query"
+                failures.push(row_failure(
+                    &figure_program(figure, sizes[0]),
+                    format!("431 {figure:?} {walk} {points:?} passes {most}/{per} a query"),
                 ));
             }
         }
@@ -2466,7 +2586,7 @@ fn demand_failures(sizes: [usize; 3]) -> Vec<String> {
 #[test]
 fn the_demand_loops_bookkeeping_is_constant_per_query_on_the_figure_programs_431() {
     let failures = demand_failures([1_000, 2_000, 4_000]);
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    crate::pinned_row::assert_no_failure(&failures);
 }
 
 fn hashing_failures(sizes: [usize; 3]) -> Vec<String> {
@@ -2485,16 +2605,18 @@ fn hashing_failures(sizes: [usize; 3]) -> Vec<String> {
             )
         });
         if !linear(points) {
-            failures.push(format!(
-                "431 {figure:?} hashes {points:?} are not linear in the queries"
+            failures.push(row_failure(
+                &figure_program(figure, sizes[0]),
+                format!("431 {figure:?} hashes {points:?} are not linear in the queries"),
             ));
         }
         if points
             .iter()
             .any(|(queries, hashes)| *hashes == 0 || hashes * per > queries * most)
         {
-            failures.push(format!(
-                "431 {figure:?} hashes {points:?} pass {most}/{per} a query"
+            failures.push(row_failure(
+                &figure_program(figure, sizes[0]),
+                format!("431 {figure:?} hashes {points:?} pass {most}/{per} a query"),
             ));
         }
     }
@@ -2504,7 +2626,7 @@ fn hashing_failures(sizes: [usize; 3]) -> Vec<String> {
 #[test]
 fn the_per_query_tables_are_read_by_id_without_hashing_on_the_figure_programs_431() {
     let failures = hashing_failures([1_000, 2_000, 4_000]);
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    crate::pinned_row::assert_no_failure(&failures);
 }
 
 fn doubling_failures(limit: u64) -> Vec<String> {
@@ -2520,9 +2642,7 @@ fn doubling_failures(limit: u64) -> Vec<String> {
     let mut failures = Vec::new();
     let mut held = Vec::new();
     for levels in [26, 40] {
-        let text = format!(
-            "fn f(a, n): if n < 1 then a else f(a + a, n - 1)\nlet x = f([1], {levels})\nClip c:\n    Note/(x.size div 1000)\n"
-        );
+        let text = doubling_program(levels);
         let run = measured(&compiler, &text);
         let (diagnostics, _) = compiler.analyzed(
             &[Source {
@@ -2549,21 +2669,27 @@ fn doubling_failures(limit: u64) -> Vec<String> {
             ),
         ];
         if drawn != expected {
-            failures.push(format!("{levels} levels draw {drawn:?}"));
+            failures.push(row_failure(
+                &text,
+                format!("{levels} levels draw {drawn:?}"),
+            ));
         }
         let leaves = walk_count(&run, "CArrayLeaves")
             + walk_count(&run, "CArrayAllLeaves")
             + walk_count(&run, "CArrayEq");
         let nodes = walk_count(&run, "nodes");
         if leaves > 4 * limit || nodes > 16 * limit {
-            failures.push(format!(
+            failures.push(row_failure(&text, format!(
                 "{levels} levels walk {leaves} array leaves and build {nodes} nodes against the limit of {limit}"
-            ));
+            )));
         }
         held.push((leaves, nodes));
     }
     if held.first() != held.last() {
-        failures.push(format!("the work differs at 26 and 40 levels: {held:?}"));
+        failures.push(row_failure(
+            &doubling_program(26),
+            format!("the work differs at 26 and 40 levels: {held:?}"),
+        ));
     }
     failures
 }
@@ -2571,7 +2697,7 @@ fn doubling_failures(limit: u64) -> Vec<String> {
 #[test]
 fn a_doubling_recursion_warns_and_stops_at_the_value_limit_having_walked_no_value_past_it() {
     let failures = doubling_failures(1_024);
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    crate::pinned_row::assert_no_failure(&failures);
 }
 
 #[test]
@@ -2579,7 +2705,7 @@ fn a_doubling_recursion_warns_and_stops_at_the_value_limit_having_walked_no_valu
 fn stress_a_doubling_recursion_warns_and_stops_at_the_default_value_limit_having_walked_no_value_past_it()
  {
     let failures = doubling_failures(4_194_304);
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    crate::pinned_row::assert_no_failure(&failures);
 }
 
 fn syntax_nodes(sources: &[Source]) -> u64 {
@@ -2667,7 +2793,10 @@ fn layout_failures(layout: Layout, sizes: [usize; 3]) -> Vec<String> {
         let nodes = syntax_nodes(&sources);
         let run = measured_files(&compiler, &sources);
         if !run.errors.is_empty() {
-            failures.push(format!("{layout:?} at {n} draws {:?}", run.errors));
+            failures.push(row_failure(
+                &program_text(&sources),
+                format!("{layout:?} at {n} draws {:?}", run.errors),
+            ));
         }
         let items = walk_count(&run, "ExpandRow");
         let counts = layout_counts(&format!("{layout:?} at {n}"), nodes, &run);
@@ -2676,13 +2805,17 @@ fn layout_failures(layout: Layout, sizes: [usize; 3]) -> Vec<String> {
     if let Some((_, smallest)) = points.first()
         && smallest.iter().all(|(_, count)| *count == 0)
     {
-        failures.push(format!("{layout:?}: no count above zero at {}", sizes[0]));
+        failures.push(row_failure(
+            &program_text(&layout_program(layout, sizes[0])),
+            format!("{layout:?}: no count above zero at {}", sizes[0]),
+        ));
     }
     for (index, (counter, _)) in points[0].1.iter().enumerate() {
         let measured = [0, 1, 2].map(|run| (points[run].0, points[run].1[index].1));
         if !linear(measured) {
-            failures.push(format!(
-                "{layout:?}: {counter} {measured:?} grows past linear"
+            failures.push(row_failure(
+                &program_text(&layout_program(layout, sizes[0])),
+                format!("{layout:?}: {counter} {measured:?} grows past linear"),
             ));
         }
     }
@@ -2699,7 +2832,7 @@ fn the_figure_programs_hash_allocate_and_peak_in_work_linear_in_their_nodes_and_
     ] {
         failures.extend(layout_failures(layout, sizes));
     }
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    crate::pinned_row::assert_no_failure(&failures);
 }
 
 #[test]
@@ -2713,7 +2846,7 @@ fn stress_the_figure_programs_hash_allocate_and_peak_in_work_linear_in_their_nod
     ] {
         failures.extend(layout_failures(layout, sizes));
     }
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    crate::pinned_row::assert_no_failure(&failures);
 }
 
 fn project_failures(project: &symphonyscript_fixtures::Project) -> Vec<String> {
@@ -2741,13 +2874,19 @@ fn project_failures(project: &symphonyscript_fixtures::Project) -> Vec<String> {
     );
     let mut failures = Vec::new();
     if !run.errors.is_empty() {
-        failures.push(format!("{} draws {:?}", project.name, run.errors));
+        failures.push(row_failure(
+            &program_text(&sources),
+            format!("{} draws {:?}", project.name, run.errors),
+        ));
     }
     if nodes == 0
         || walk_count(&run, "ExpandRow") == 0
         || counts.iter().any(|(_, count)| *count == 0)
     {
-        failures.push(format!("{}: a count is zero: {counts:?}", project.name));
+        failures.push(row_failure(
+            &program_text(&sources),
+            format!("{}: a count is zero: {counts:?}", project.name),
+        ));
     }
     failures
 }
@@ -2755,12 +2894,39 @@ fn project_failures(project: &symphonyscript_fixtures::Project) -> Vec<String> {
 #[test]
 fn a_fixture_project_prints_its_nodes_items_peak_bytes_and_allocations() {
     let failures = project_failures(&symphonyscript_fixtures::music_project());
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    crate::pinned_row::assert_no_failure(&failures);
 }
 
 #[test]
 #[ignore = "stress"]
 fn stress_the_ten_thousand_line_fixture_prints_its_nodes_items_peak_bytes_and_allocations() {
     let failures = project_failures(&symphonyscript_fixtures::large_project());
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    crate::pinned_row::assert_no_failure(&failures);
+}
+
+fn counted_failure(program: &str, name: &str, counter: &str, points: [(u64, u64); 3]) -> String {
+    let counts = points.map(|(_, count)| count);
+    crate::pinned_row::failed_counts(
+        program,
+        &[(counter.to_string(), counts.to_vec())],
+        format!("{name}: {counter} {counts:?}"),
+    )
+}
+
+fn row_failure(program: &str, message: String) -> String {
+    crate::pinned_row::failed_counts(program, &[], message)
+}
+
+fn program_text(sources: &[Source]) -> String {
+    sources
+        .iter()
+        .map(|source| source.text.as_str())
+        .collect::<Vec<_>>()
+        .concat()
+}
+
+fn doubling_program(levels: u64) -> String {
+    format!(
+        "fn f(a, n): if n < 1 then a else f(a + a, n - 1)\nlet x = f([1], {levels})\nClip c:\n    Note/(x.size div 1000)\n"
+    )
 }

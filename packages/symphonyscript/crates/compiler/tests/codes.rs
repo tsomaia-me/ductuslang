@@ -1,3 +1,5 @@
+mod support;
+
 use symphonyscript::{Code, Severity};
 use symphonyscript_fixtures::SPEC;
 
@@ -67,4 +69,13 @@ fn every_code_carries_a_one_line_help() {
             "{code}: {help:?}"
         );
     }
+}
+
+#[test]
+fn a_failing_row_prints_as_one_line_holding_its_program_and_its_whole_diagnostics() {
+    let program = "fn f(x): x + true\nSession s | tempo=f(1)\n";
+    assert_eq!(
+        support::pinned_row(program, &support::checked_all(program)),
+        r#"pinned-row {"program": "fn f(x): x + true\nSession s | tempo=f(1)\n", "diagnostics": [{"code": "operand-type", "file": "test.sym", "span": [9, 17], "summary": "`+` takes two numbers or two strings", "help": "give the operator operands of the types it takes, or convert them, as in `i32(x)`", "related": [{"file": "test.sym", "span": [36, 40], "label": "in this call"}]}]}"#
+    );
 }

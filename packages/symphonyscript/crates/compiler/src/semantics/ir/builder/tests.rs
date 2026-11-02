@@ -143,13 +143,21 @@ fn the_hir_build_does_constant_work_per_syntax_node_430() {
             let points = counted.map(|counts| (counts[0], counts[index + 1]));
             for pair in points.windows(2) {
                 if pair[1].1 > 2 * pair[0].1 + 64 {
-                    failures.push(format!("{nest:?} {walk}: grows past the nodes {points:?}"));
+                    failures.push(crate::pinned_row::failed_counts(
+                        &nest_program(nest, 2_000),
+                        &[],
+                        format!("{nest:?} {walk}: grows past the nodes {points:?}"),
+                    ));
                 }
             }
             if points.iter().any(|(nodes, count)| count > &(most * nodes)) {
-                failures.push(format!("{nest:?} {walk}: past {most} a node {points:?}"));
+                failures.push(crate::pinned_row::failed_counts(
+                    &nest_program(nest, 2_000),
+                    &[],
+                    format!("{nest:?} {walk}: past {most} a node {points:?}"),
+                ));
             }
         }
     }
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    crate::pinned_row::assert_no_failure(&failures);
 }

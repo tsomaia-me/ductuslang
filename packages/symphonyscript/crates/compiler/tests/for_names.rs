@@ -139,9 +139,9 @@ fn name_rows(rows: &Rows) -> (Vec<String>, usize) {
                         })
                         && matches!(found.as_slice(), [diagnostic] if diagnostic.code == code);
                     if !holds {
-                        failures.push(format!(
+                        failures.push(support::failed_row_with(&compiler, &text, format!(
                             "{text}\n  draws {found:?}\n  its twin {twin}\n  draws {twin_found:?}\n"
-                        ));
+                        )));
                     }
                 }
             }
@@ -150,25 +150,15 @@ fn name_rows(rows: &Rows) -> (Vec<String>, usize) {
     (failures, programs)
 }
 
-fn assert_none_fail((failures, programs): (Vec<String>, usize), expected: usize) {
-    assert!(
-        failures.is_empty(),
-        "{} of {programs} programs fail:\n{}",
-        failures.len(),
-        failures.iter().take(6).cloned().collect::<String>()
-    );
-    assert_eq!(programs, expected);
-}
-
 #[test]
 fn a_for_expressions_names_are_new_and_distinct_names_whatever_they_bind() {
-    assert_none_fail(covered(name_rows), 15);
+    support::assert_none_fail(covered(name_rows), 15);
 }
 
 #[test]
 #[ignore = "exhaustive"]
 fn exhaustive_a_for_expressions_names_are_new_and_distinct_names_whatever_they_bind() {
-    assert_none_fail(name_rows(&Rows::Every), 42);
+    support::assert_none_fail(name_rows(&Rows::Every), 42);
 }
 
 #[test]

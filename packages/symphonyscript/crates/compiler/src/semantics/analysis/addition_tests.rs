@@ -1776,15 +1776,25 @@ fn nested_call_failures(depths: [usize; 3]) -> Vec<String> {
     let mut failures = Vec::new();
     for pair in counted.windows(2) {
         if pair[1].0 > 2 * pair[0].0 {
-            failures.push(format!("use_steps {counted:?}"));
+            failures.push(crate::pinned_row::failed_counts(
+                &format!("nested calls at {depths:?}"),
+                &[],
+                format!("use_steps {counted:?}"),
+            ));
         }
         if pair[1].1 > 2 * pair[0].1 {
-            failures.push(format!("422 declaration reads {counted:?}"));
+            failures.push(crate::pinned_row::failed_counts(
+                &format!("nested calls at {depths:?}"),
+                &[],
+                format!("422 declaration reads {counted:?}"),
+            ));
         }
     }
     if counted.iter().any(|(_, reads)| *reads == 0) {
-        failures.push(format!(
-            "422 the declaration reads are not counted {counted:?}"
+        failures.push(crate::pinned_row::failed_counts(
+            &format!("nested calls at {depths:?}"),
+            &[],
+            format!("422 the declaration reads are not counted {counted:?}"),
         ));
     }
     failures
@@ -1793,14 +1803,14 @@ fn nested_call_failures(depths: [usize; 3]) -> Vec<String> {
 #[test]
 fn a_chain_of_nested_calls_records_its_declaration_reads_in_work_linear_in_its_depth_422() {
     let failures = nested_call_failures([2_500, 5_000, 10_000]);
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    crate::pinned_row::assert_no_failure(&failures);
 }
 
 #[test]
 #[ignore = "stress"]
 fn stress_a_chain_of_nested_calls_costs_work_linear_in_its_depth() {
     let failures = nested_call_failures([25_000, 50_000, 100_000]);
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    crate::pinned_row::assert_no_failure(&failures);
 }
 
 #[test]

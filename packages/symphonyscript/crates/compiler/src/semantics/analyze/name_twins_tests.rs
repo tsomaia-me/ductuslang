@@ -240,9 +240,13 @@ fn differs(compiler: &Compiler, items: &[String], orders: &[bool]) -> Option<Str
         let twin_program = drawn(&compiler.check(&sources));
         let whole_program = drawn(&compiler.checked_by_whole_program(&sources));
         if twin_program != whole_program {
-            failures.push(format!(
-                "{}\n  twin program  {twin_program:?}\n  whole program {whole_program:?}",
-                ordered.concat()
+            failures.push(crate::pinned_row::failed(
+                &ordered.concat(),
+                &compiler.check(&sources),
+                format!(
+                    "{}\n  twin program  {twin_program:?}\n  whole program {whole_program:?}",
+                    ordered.concat()
+                ),
             ));
         }
     }
@@ -317,7 +321,7 @@ fn the_twin_program_draws_what_the_whole_program_twins_draw_for_the_readers_call
             differs(&compilers[*vocabulary], &items, &[false, true])
         })
         .collect();
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    crate::pinned_row::assert_no_failure(&failures);
 }
 
 #[test]
@@ -325,7 +329,7 @@ fn the_twin_program_draws_what_the_whole_program_twins_draw_for_every_expression
  {
     let (failures, programs) = covered(class_failures);
     assert!(programs > 0, "the covering design took no row");
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    crate::pinned_row::assert_no_failure(&failures);
 }
 
 #[test]
@@ -334,5 +338,5 @@ fn exhaustive_the_twin_program_draws_what_the_whole_program_twins_draw_for_every
  {
     let (failures, programs) = class_failures(&Rows::Every);
     assert_eq!(programs, 2 * POSITIONS.len() * expressions().len());
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    crate::pinned_row::assert_no_failure(&failures);
 }

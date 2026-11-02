@@ -63,8 +63,10 @@ fn head_rows(rows: &Rows) -> (Vec<String>, usize) {
                     twin_found.is_empty() && found.is_empty()
                 };
                 if !holds {
-                    failures.push(format!(
-                        "{text}\n  draws {found:?}\n  its twin draws {twin_found:?}\n"
+                    failures.push(support::failed_row_with(
+                        &compiler,
+                        &text,
+                        format!("{text}\n  draws {found:?}\n  its twin draws {twin_found:?}\n"),
                     ));
                 }
             }
@@ -73,25 +75,15 @@ fn head_rows(rows: &Rows) -> (Vec<String>, usize) {
     (failures, programs)
 }
 
-fn assert_none_fail((failures, programs): (Vec<String>, usize), expected: usize) {
-    assert!(
-        failures.is_empty(),
-        "{} of {programs} programs fail:\n{}",
-        failures.len(),
-        failures.iter().take(6).cloned().collect::<String>()
-    );
-    assert_eq!(programs, expected);
-}
-
 #[test]
 fn a_loop_head_binds_one_or_two_annotated_names_at_every_site_and_a_range_binds_one() {
-    assert_none_fail(covered(head_rows), 18);
+    support::assert_none_fail(covered(head_rows), 18);
 }
 
 #[test]
 #[ignore = "exhaustive"]
 fn exhaustive_a_loop_head_binds_one_or_two_annotated_names_at_every_site_and_a_range_binds_one() {
-    assert_none_fail(head_rows(&Rows::Every), 36);
+    support::assert_none_fail(head_rows(&Rows::Every), 36);
 }
 
 #[test]
@@ -316,7 +308,11 @@ fn iterable_rows(rows: &Rows) -> (Vec<String>, usize) {
                     (None, _, _) => one_at(&found, &text, Code::IterableType, iterable),
                 };
                 if !holds {
-                    failures.push(format!("{text}\n  draws {found:?}\n"));
+                    failures.push(support::failed_row_with(
+                        &compiler,
+                        &text,
+                        format!("{text}\n  draws {found:?}\n"),
+                    ));
                 }
             }
         }
@@ -327,12 +323,12 @@ fn iterable_rows(rows: &Rows) -> (Vec<String>, usize) {
 #[test]
 fn every_array_iterates_element_by_element_at_every_site_and_any_other_iterable_draws_iterable_type()
  {
-    assert_none_fail(covered(iterable_rows), 44);
+    support::assert_none_fail(covered(iterable_rows), 44);
 }
 
 #[test]
 #[ignore = "exhaustive"]
 fn exhaustive_every_array_iterates_element_by_element_at_every_site_and_any_other_iterable_draws_iterable_type()
  {
-    assert_none_fail(iterable_rows(&Rows::Every), 46);
+    support::assert_none_fail(iterable_rows(&Rows::Every), 46);
 }

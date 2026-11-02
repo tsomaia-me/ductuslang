@@ -69,8 +69,10 @@ fn index_rows(rows: &Rows, orders: Orders) -> (Vec<String>, usize) {
                     expected.push(Code::IndexType);
                     expected.sort();
                     if found != expected {
-                        failures.push(format!(
-                            "{text}\n  found {found:?}\n  expected {expected:?}\n"
+                        failures.push(support::failed_row_with(
+                            &compiler,
+                            &text,
+                            format!("{text}\n  found {found:?}\n  expected {expected:?}\n"),
                         ));
                     }
                 }
@@ -80,19 +82,9 @@ fn index_rows(rows: &Rows, orders: Orders) -> (Vec<String>, usize) {
     (failures, programs)
 }
 
-fn assert_none_fail((failures, programs): (Vec<String>, usize), expected: usize) {
-    assert!(
-        failures.is_empty(),
-        "{} of {programs} programs fail:\n{}",
-        failures.len(),
-        failures.iter().take(8).cloned().collect::<String>()
-    );
-    assert_eq!(programs, expected);
-}
-
 #[test]
 fn an_element_read_whose_compile_time_index_is_in_error_has_its_elements_type() {
-    assert_none_fail(
+    support::assert_none_fail(
         covered(|rows| index_rows(rows, Orders::ForwardAndReversed)),
         17,
     );
@@ -101,5 +93,5 @@ fn an_element_read_whose_compile_time_index_is_in_error_has_its_elements_type() 
 #[test]
 #[ignore = "exhaustive"]
 fn exhaustive_an_element_read_whose_compile_time_index_is_in_error_has_its_elements_type() {
-    assert_none_fail(index_rows(&Rows::Every, Orders::Every), 72);
+    support::assert_none_fail(index_rows(&Rows::Every, Orders::Every), 72);
 }

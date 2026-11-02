@@ -61,7 +61,11 @@ fn a_top_level_or_pattern_let_that_reads_a_cell_draws_reactive_let_at_its_first_
             for (value, extra) in READS {
                 let (text, found) = draws(&compiler, &holder(pattern, value, extra), reversed);
                 if found != [(Code::ReactiveLet, "a".to_string())] {
-                    failures.push(format!("{text}found {found:?}\n"));
+                    failures.push(support::failed_row_with(
+                        &compiler,
+                        &text,
+                        format!("{text}found {found:?}\n"),
+                    ));
                 }
                 let mut chained = extra
                     .iter()
@@ -71,7 +75,11 @@ fn a_top_level_or_pattern_let_that_reads_a_cell_draws_reactive_let_at_its_first_
                 chained.extend(holder(pattern, "b + 0", &[]));
                 let (text, found) = draws(&compiler, &chained, reversed);
                 if found != [(Code::ReactiveLet, "b".to_string())] {
-                    failures.push(format!("{text}found {found:?}\n"));
+                    failures.push(support::failed_row_with(
+                        &compiler,
+                        &text,
+                        format!("{text}found {found:?}\n"),
+                    ));
                 }
                 let mut state = extra
                     .iter()
@@ -81,18 +89,26 @@ fn a_top_level_or_pattern_let_that_reads_a_cell_draws_reactive_let_at_its_first_
                 state.extend(holder(false, "b", &[]));
                 let (text, found) = draws(&compiler, &state, reversed);
                 if found != [(Code::ReactiveLet, "a".to_string())] {
-                    failures.push(format!("{text}found {found:?}\n"));
+                    failures.push(support::failed_row_with(
+                        &compiler,
+                        &text,
+                        format!("{text}found {found:?}\n"),
+                    ));
                 }
             }
             for (value, extra) in VALUES {
                 let (text, found) = draws(&compiler, &holder(pattern, value, extra), reversed);
                 if !found.is_empty() {
-                    failures.push(format!("{text}found {found:?}\n"));
+                    failures.push(support::failed_row_with(
+                        &compiler,
+                        &text,
+                        format!("{text}found {found:?}\n"),
+                    ));
                 }
             }
         }
     }
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    support::assert_no_failure(&failures);
 }
 
 #[test]

@@ -127,7 +127,11 @@ fn position_rows(rows: &Rows) -> (Vec<String>, usize) {
                     let line_end = if lets.is_some() { "" } else { "\n" };
                     let text = format!("{HELD}{prefix}{construct}{line_end}{rest}");
                     let twin = format!("{HELD}{prefix}{value}\n{rest}");
-                    failures.extend(as_its_twin(&compiler, &text, &twin, faulty).err());
+                    failures.extend(
+                        as_its_twin(&compiler, &text, &twin, faulty)
+                            .err()
+                            .map(|failure| support::failed_row_with(&compiler, &text, failure)),
+                    );
                 }
             }
             for (at, (template, _)) in ELSEWHERE.iter().enumerate() {
@@ -151,7 +155,11 @@ fn position_rows(rows: &Rows) -> (Vec<String>, usize) {
                     } else {
                         unparenthesized_at(&compiler, &text, start)
                     };
-                    failures.extend(outcome.err());
+                    failures.extend(
+                        outcome
+                            .err()
+                            .map(|failure| support::failed_row_with(&compiler, &text, failure)),
+                    );
                 }
             }
         }
@@ -159,26 +167,16 @@ fn position_rows(rows: &Rows) -> (Vec<String>, usize) {
     (failures, programs)
 }
 
-fn assert_none_fail((failures, programs): (Vec<String>, usize), expected: usize) {
-    assert!(
-        failures.is_empty(),
-        "{} of {programs} programs fail:\n{}",
-        failures.len(),
-        failures.iter().take(6).cloned().collect::<String>()
-    );
-    assert_eq!(programs, expected);
-}
-
 #[test]
 fn a_for_expression_stands_bare_only_as_a_whole_value_and_draws_what_a_value_of_its_type_draws() {
-    assert_none_fail(covered(position_rows), 79);
+    support::assert_none_fail(covered(position_rows), 79);
 }
 
 #[test]
 #[ignore = "exhaustive"]
 fn exhaustive_a_for_expression_stands_bare_only_as_a_whole_value_and_draws_what_a_value_of_its_type_draws()
  {
-    assert_none_fail(position_rows(&Rows::Every), 408);
+    support::assert_none_fail(position_rows(&Rows::Every), 408);
 }
 
 const READINGS: &str = "state readings([]): i32[..10]\n";
@@ -243,9 +241,13 @@ fn a_block_form_that_stands_as_an_operand_or_an_argument_draws_unparenthesized_f
     for template in ["state v = 1 + F\n", "fn g(a): a\nstate v = g(F)\n"] {
         let text = format!("{HELD}{}", template.replace('F', block));
         let at = HELD.len() + template.find('F').unwrap_or(0);
-        failures.extend(unparenthesized_at(&compiler, &text, at).err());
+        failures.extend(
+            unparenthesized_at(&compiler, &text, at)
+                .err()
+                .map(|failure| support::failed_row_with(&compiler, &text, failure)),
+        );
     }
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    support::assert_no_failure(&failures);
 }
 
 const EXPRESSION_HEAD: &str = "write `for <name> in <iterable> into <name> from <start>:`";
@@ -310,7 +312,9 @@ fn a_fault_in_either_loop_head_draws_for_syntax_with_the_help_naming_the_form_of
             let prefix = format!("{HELD}{opening}{before}");
             let text = format!("{prefix}{token}{after}{closing}\n");
             failures.extend(
-                one_for_syntax(&compiler, &text, prefix.len(), token, EXPRESSION_HEAD).err(),
+                one_for_syntax(&compiler, &text, prefix.len(), token, EXPRESSION_HEAD)
+                    .err()
+                    .map(|failure| support::failed_row_with(&compiler, &text, failure)),
             );
         }
     }
@@ -319,7 +323,7 @@ fn a_fault_in_either_loop_head_draws_for_syntax_with_the_help_naming_the_form_of
         failures
             .extend(one_for_syntax(&compiler, &text, before.len(), token, PLACEMENT_HEAD).err());
     }
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    support::assert_no_failure(&failures);
 }
 
 /// ARCHITECTURE §7.1: "A logical line draws at most one parser diagnostic";

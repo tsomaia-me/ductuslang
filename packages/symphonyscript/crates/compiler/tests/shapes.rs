@@ -87,7 +87,11 @@ fn element_rows(rows: &Rows, orders: Orders) -> (Vec<String>, usize) {
                     let found = support::error_texts(&compiler, &text);
                     let expected = support::error_texts(&compiler, &twin);
                     if found != expected {
-                        failures.push(format!("{text}\n  found {found:?}\n  twin {expected:?}\n"));
+                        failures.push(support::failed_row_with(
+                            &compiler,
+                            &text,
+                            format!("{text}\n  found {found:?}\n  twin {expected:?}\n"),
+                        ));
                     }
                 }
             }
@@ -96,19 +100,9 @@ fn element_rows(rows: &Rows, orders: Orders) -> (Vec<String>, usize) {
     (failures, programs)
 }
 
-fn assert_none_fail((failures, programs): (Vec<String>, usize), expected: usize) {
-    assert!(
-        failures.is_empty(),
-        "{} of {programs} programs fail:\n{}",
-        failures.len(),
-        failures.iter().take(8).cloned().collect::<String>()
-    );
-    assert_eq!(programs, expected);
-}
-
 #[test]
 fn an_element_read_has_its_elements_shape_whatever_array_it_reads() {
-    assert_none_fail(
+    support::assert_none_fail(
         covered(|rows| element_rows(rows, Orders::ForwardAndReversed)),
         30,
     );
@@ -117,7 +111,7 @@ fn an_element_read_has_its_elements_shape_whatever_array_it_reads() {
 #[test]
 #[ignore = "exhaustive"]
 fn exhaustive_an_element_read_has_its_elements_shape_whatever_array_it_reads() {
-    assert_none_fail(element_rows(&Rows::Every, Orders::Every), 60);
+    support::assert_none_fail(element_rows(&Rows::Every, Orders::Every), 60);
 }
 
 #[test]

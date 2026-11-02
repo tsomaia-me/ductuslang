@@ -20,7 +20,7 @@ fn expect(cases: &[(&str, &[Code])]) {
                 .then(|| format!("{text:?}: expected {expected:?}, found {found:?}"))
         })
         .collect();
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    support::assert_no_failure(&failures);
 }
 
 #[test]
@@ -736,7 +736,7 @@ fn a_bare_variant_lets_diagnostic_stands_where_its_variants_are_written() {
         (found != expected).then(|| format!("{text}expected {expected:?}, found {found:?}"))
     })
     .collect();
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    support::assert_no_failure(&failures);
 }
 
 #[test]
@@ -908,13 +908,17 @@ fn a_carried_enum_meets_every_use_in_every_order_in(orders: support::Orders) {
                 None => found.is_empty() || first.as_ref().is_some_and(|first| *first != found),
             };
             if wrong {
-                failures.push(format!("{text}found {found:?}"));
+                failures.push(support::failed_row_with(
+                    &compiler,
+                    &text,
+                    format!("{text}found {found:?}"),
+                ));
                 break;
             }
             first.get_or_insert(found);
         }
     }
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    support::assert_no_failure(&failures);
 }
 
 #[test]
@@ -1030,7 +1034,7 @@ fn a_compile_time_bare_let_typed_by_its_uses_is_a_typed_value_for_every_consumer
                 let text = format!("{}\n", order.join("\n"));
                 let found = fixture_errors(&text);
                 if !found.is_empty() {
-                    failures.push(format!("{text}found {found:?}"));
+                    failures.push(support::failed_row(&text, format!("{text}found {found:?}")));
                     break;
                 }
             }
@@ -1050,7 +1054,7 @@ fn a_compile_time_bare_let_typed_by_its_uses_is_a_typed_value_for_every_consumer
             let text = format!("{}\n", order.join("\n"));
             let found = fixture_errors(&text);
             if found != [(Code::TypeMismatch, "Sine".to_string())] {
-                failures.push(format!("{text}found {found:?}"));
+                failures.push(support::failed_row(&text, format!("{text}found {found:?}")));
                 break;
             }
         }
@@ -1066,11 +1070,11 @@ fn a_compile_time_bare_let_typed_by_its_uses_is_a_typed_value_for_every_consumer
             .unwrap_or_default();
         let found = fixture_errors(&text);
         if found != [(Code::TypeMismatch, first)] {
-            failures.push(format!("{text}found {found:?}"));
+            failures.push(support::failed_row(&text, format!("{text}found {found:?}")));
             break;
         }
     }
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    support::assert_no_failure(&failures);
 }
 
 #[test]
@@ -1106,12 +1110,12 @@ fn an_array_literals_expected_type_reaches_every_element() {
             let text = format!("{}\n", order.join("\n"));
             let found = fixture_errors(&text);
             if !found.is_empty() {
-                failures.push(format!("{text}found {found:?}"));
+                failures.push(support::failed_row(&text, format!("{text}found {found:?}")));
                 break;
             }
         }
     }
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    support::assert_no_failure(&failures);
 }
 
 type Row = (&'static [&'static str], &'static [(Code, &'static str)]);
@@ -1263,7 +1267,10 @@ fn a_compile_time_choice_type_checks_what_it_does_not_select() {
                     enum_errors(&text)
                 };
                 if found != wanted {
-                    failures.push(format!("{text}expected {wanted:?}\nfound {found:?}"));
+                    failures.push(support::failed_row(
+                        &text,
+                        format!("{text}expected {wanted:?}\nfound {found:?}"),
+                    ));
                     break;
                 }
             }
@@ -1277,9 +1284,12 @@ fn a_compile_time_choice_type_checks_what_it_does_not_select() {
         .filter(|code| *code == Code::IntegerCell)
         .collect();
     if !warned.is_empty() {
-        failures.push(format!("{passed_over}warned {warned:?}"));
+        failures.push(support::failed_row(
+            passed_over,
+            format!("{passed_over}warned {warned:?}"),
+        ));
     }
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    support::assert_no_failure(&failures);
 }
 
 #[test]
@@ -1398,8 +1408,10 @@ fn every_array_literal_holds_one_element_type_and_one_family_wherever_it_stands(
             let text = format!("{}\n", order.join("\n"));
             let found = fixture_errors(&text);
             if found != wanted {
-                failures.push(format!("{text}expected {wanted:?}\nfound {found:?}"));
-                break;
+                failures.push(support::failed_row(
+                    &text,
+                    format!("{text}expected {wanted:?}\nfound {found:?}"),
+                ));
             }
         }
     }
@@ -1420,12 +1432,13 @@ fn every_array_literal_holds_one_element_type_and_one_family_wherever_it_stands(
         if by_element != [(Code::TypeMismatch, read.to_string())]
             || by_index != [Code::TypeMismatch]
         {
-            failures.push(format!(
-                "{iterated}drew {by_element:?}\n{indexed}drew {by_index:?}"
+            failures.push(support::failed_row(
+                iterated,
+                format!("{iterated}drew {by_element:?}\n{indexed}drew {by_index:?}"),
             ));
         }
     }
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    support::assert_no_failure(&failures);
 }
 
 #[test]
@@ -1501,12 +1514,15 @@ fn an_empty_array_has_length_zero_and_a_compile_time_index_into_it_is_outside() 
             let text = format!("{}\n", order.join("\n"));
             let found = fixture_errors(&text);
             if found != wanted {
-                failures.push(format!("{text}expected {wanted:?}\nfound {found:?}"));
+                failures.push(support::failed_row(
+                    &text,
+                    format!("{text}expected {wanted:?}\nfound {found:?}"),
+                ));
                 break;
             }
         }
     }
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    support::assert_no_failure(&failures);
 }
 
 type Located = Vec<(Code, String, Vec<String>)>;
@@ -1580,7 +1596,7 @@ fn expect_in_orders(orders: support::Orders, rows: &[Row]) {
             first_order_failing_in(orders, &with_session(items), &wanted, fixture_errors)
         })
         .collect();
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    support::assert_no_failure(&failures);
 }
 
 fn expect_located_in_every_order(rows: &[LocatedRow]) {
@@ -1622,7 +1638,7 @@ fn expect_located_with_in(
             first_order_failing_in(orders, &items_of(items), &wanted, found)
         })
         .collect();
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    support::assert_no_failure(&failures);
 }
 
 fn a_literal_whose_elements_disagree_draws_one_diagnostic_wherever_its_value_goes_in(
@@ -2350,7 +2366,7 @@ fn a_construct_missing_its_block_draws_the_same_diagnostics_in_every_order() {
         ),
     ];
     let failures = codes_in_every_order(&rows, support::checked_all);
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    support::assert_no_failure(&failures);
 }
 
 type CodeRow = (&'static [&'static str], &'static [Code]);
@@ -2368,7 +2384,10 @@ fn codes_in_every_order(rows: &[CodeRow], check: fn(&str) -> Vec<Diagnostic>) ->
                 .collect();
             found.sort();
             if found != wanted {
-                failures.push(format!("{text}expected {wanted:?}\nfound {found:?}"));
+                failures.push(support::failed_row(
+                    &text,
+                    format!("{text}expected {wanted:?}\nfound {found:?}"),
+                ));
                 break;
             }
         }
@@ -2458,7 +2477,7 @@ fn a_pattern_whose_block_a_fault_leaves_missing_is_a_placeholder_for_its_uses() 
         &unknown_children,
         support::checked_all,
     ));
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    support::assert_no_failure(&failures);
 }
 
 #[test]
@@ -2908,11 +2927,16 @@ fn a_line_after_a_missing_block_reports_its_own_faults() {
                 wanted.push((Code::PlacementSyntax, first.to_string()));
                 wanted.sort();
                 let found = fixture_errors(&missing);
-                (found != wanted).then(|| format!("{missing}expected {wanted:?}\nfound {found:?}"))
+                (found != wanted).then(|| {
+                    support::failed_row(
+                        &missing,
+                        format!("{missing}expected {wanted:?}\nfound {found:?}"),
+                    )
+                })
             });
         failures.extend(failure);
     }
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    support::assert_no_failure(&failures);
 }
 
 fn a_cell_read_through_a_literals_group_keeps_its_own_kind_in(orders: support::Orders) {
@@ -3339,7 +3363,7 @@ fn inconsistent_uses_name_each_use_with_its_calls_in(orders: support::Orders) {
             )
         })
         .collect();
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    support::assert_no_failure(&failures);
     let text = "Session s\nlet a = [2 ** -1]\nfn f(x): x[0]\nClip c:\n    Note/(f(a)) | brightness=(f(a))\n";
     let calls: Vec<Vec<(u32, u32)>> = support::checked(text)
         .iter()
@@ -4150,14 +4174,18 @@ fn a_choice_holding_an_operand_a_syntax_fault_leaves_missing_draws_its_syntax_di
             let text = format!("{inputs}{before}{faulty}{after}");
             let found = codes(&text);
             if found.is_empty() || found.iter().any(|code| *code != Code::ExpressionSyntax) {
-                failures.push(format!(
-                    "{text:?}: expected the syntax diagnostic alone, found {found:?}"
+                failures.push(support::failed_row(
+                    &text,
+                    format!("{text:?}: expected the syntax diagnostic alone, found {found:?}"),
                 ));
             }
             let text = format!("{inputs}{before}{twin}{after}");
             let found = codes(&text);
             if found != [*drawn] {
-                failures.push(format!("{text:?}: expected {drawn:?}, found {found:?}"));
+                failures.push(support::failed_row(
+                    &text,
+                    format!("{text:?}: expected {drawn:?}, found {found:?}"),
+                ));
             }
         }
     }
@@ -4174,10 +4202,13 @@ fn a_choice_holding_an_operand_a_syntax_fault_leaves_missing_draws_its_syntax_di
             .map(|diagnostic| diagnostic.code)
             .collect();
         if found != [drawn] {
-            failures.push(format!("{text:?}: expected {drawn:?}, found {found:?}"));
+            failures.push(support::failed_row(
+                &text,
+                format!("{text:?}: expected {drawn:?}, found {found:?}"),
+            ));
         }
     }
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    support::assert_no_failure(&failures);
 }
 
 #[test]
@@ -5921,8 +5952,10 @@ fn placeholder_rule_failures(rows: &Rows, part: usize, parts: usize) -> (Vec<Str
                         ));
                     }
                     if found != expected {
-                        failures.push(format!(
-                            "{program}\n  found {found:?}\n  twins {expected:?}"
+                        failures.push(support::failed_row_with(
+                            compiler,
+                            &text,
+                            format!("{program}\n  found {found:?}\n  twins {expected:?}"),
                         ));
                     }
                     continue;
@@ -5935,11 +5968,19 @@ fn placeholder_rule_failures(rows: &Rows, part: usize, parts: usize) -> (Vec<Str
                         continue;
                     };
                     if required && !found.contains(&key) {
-                        failures.push(format!("{program}\n  misses {key:?}\n  found {found:?}"));
+                        failures.push(support::failed_row_with(
+                            compiler,
+                            &text,
+                            format!("{program}\n  misses {key:?}\n  found {found:?}"),
+                        ));
                     }
                     let unread = site.read == Reach::Unread && site.leaf != CONVERTED_BOOL;
                     if unread && found.contains(&key) {
-                        failures.push(format!("{program}\n  draws {key:?} in an unread part"));
+                        failures.push(support::failed_row_with(
+                            compiler,
+                            &text,
+                            format!("{program}\n  draws {key:?} in an unread part"),
+                        ));
                     }
                 }
             }
@@ -5949,18 +5990,7 @@ fn placeholder_rule_failures(rows: &Rows, part: usize, parts: usize) -> (Vec<Str
 }
 
 fn assert_placeholder_rule(failures: &[String], programs: usize, expected_programs: usize) {
-    assert!(
-        failures.is_empty(),
-        "{} failures:\n{}",
-        failures.len(),
-        failures
-            .iter()
-            .take(40)
-            .cloned()
-            .collect::<Vec<_>>()
-            .join("\n")
-    );
-    assert_eq!(programs, expected_programs);
+    support::assert_none_fail((failures.to_vec(), programs), expected_programs);
 }
 
 #[test]
@@ -6154,8 +6184,10 @@ fn partner_rows(rows: &Rows) -> Vec<String> {
                         let found = support::error_texts(&compiler, &text);
                         let expected = vec![(*code, (*spanned).to_string())];
                         if found != expected {
-                            failures.push(format!(
-                                "287: {text}\n  draws {found:?}\n  expected {expected:?}"
+                            failures.push(support::failed_row_with(
+                                &compiler,
+                                &text,
+                                format!("287: {text}\n  draws {found:?}\n  expected {expected:?}"),
                             ));
                         }
                     }
@@ -6169,14 +6201,14 @@ fn partner_rows(rows: &Rows) -> Vec<String> {
 #[test]
 fn beside_a_placeholder_that_is_not_a_names_the_partner_is_checked_in_its_own_type() {
     let failures = covered(partner_rows);
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    support::assert_no_failure(&failures);
 }
 
 #[test]
 #[ignore = "exhaustive"]
 fn exhaustive_beside_a_placeholder_that_is_not_a_names_the_partner_is_checked_in_its_own_type() {
     let failures = partner_rows(&Rows::Every);
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    support::assert_no_failure(&failures);
 }
 
 #[test]
@@ -6244,7 +6276,11 @@ fn flowing_float_rows(rows: &Rows) -> Vec<String> {
             let text = place.replace("{x}", expression);
             let found = support::error_texts(&compiler, &text);
             if !found.is_empty() {
-                failures.push(format!("292: {text}\n  draws {found:?}"));
+                failures.push(support::failed_row_with(
+                    &compiler,
+                    &text,
+                    format!("292: {text}\n  draws {found:?}"),
+                ));
             }
         }
     }
@@ -6262,7 +6298,11 @@ fn flowing_float_rows(rows: &Rows) -> Vec<String> {
                 };
                 let found = support::error_texts(&compiler, &text);
                 if !found.is_empty() {
-                    failures.push(format!("292: {text}\n  draws {found:?}"));
+                    failures.push(support::failed_row_with(
+                        &compiler,
+                        &text,
+                        format!("292: {text}\n  draws {found:?}"),
+                    ));
                 }
             }
         }
@@ -6274,7 +6314,7 @@ fn flowing_float_rows(rows: &Rows) -> Vec<String> {
 fn a_literal_beside_a_fixed_type_operand_takes_the_flowing_float_type_and_a_recursive_result_the_calls_type()
  {
     let failures = covered(flowing_float_rows);
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    support::assert_no_failure(&failures);
 }
 
 #[test]
@@ -6282,7 +6322,7 @@ fn a_literal_beside_a_fixed_type_operand_takes_the_flowing_float_type_and_a_recu
 fn exhaustive_a_literal_beside_a_fixed_type_operand_takes_the_flowing_float_type_and_a_recursive_result_the_calls_type()
  {
     let failures = flowing_float_rows(&Rows::Every);
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    support::assert_no_failure(&failures);
 }
 
 #[test]
@@ -6399,8 +6439,10 @@ fn float_body_rows(rows: &Rows) -> Vec<String> {
                     let found = support::error_texts(&compiler, &text);
                     let expected = support::error_texts(&compiler, &twin);
                     if found != expected || !expected.is_empty() {
-                        failures.push(format!(
-                            "292: {text}\n  draws {found:?}\n  twin {expected:?}"
+                        failures.push(support::failed_row_with(
+                            &compiler,
+                            &text,
+                            format!("292: {text}\n  draws {found:?}\n  twin {expected:?}"),
                         ));
                     }
                 }
@@ -6414,7 +6456,7 @@ fn float_body_rows(rows: &Rows) -> Vec<String> {
 fn an_integer_looking_recursive_body_under_a_float_expected_type_computes_in_that_type_from_its_literals_up_292()
  {
     let failures = covered(float_body_rows);
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    support::assert_no_failure(&failures);
 }
 
 #[test]
@@ -6422,7 +6464,7 @@ fn an_integer_looking_recursive_body_under_a_float_expected_type_computes_in_tha
 fn exhaustive_an_integer_looking_recursive_body_under_a_float_expected_type_computes_in_that_type_from_its_literals_up_292()
  {
     let failures = float_body_rows(&Rows::Every);
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    support::assert_no_failure(&failures);
 }
 
 /// ARCHITECTURE §7: "an operand that a refused operator, index, bound, condition,

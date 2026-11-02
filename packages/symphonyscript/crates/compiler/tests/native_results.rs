@@ -239,19 +239,17 @@ fn a_native_call_that_runs_at_runtime_has_its_signatures_result_layout_wherever_
                     let found = found(&compiler, &text, &call);
                     programs += 1;
                     if found != expected {
-                        failures.push(format!("{text}\n  found {found:?}\n  twin {expected:?}\n"));
+                        failures.push(support::failed_row_with(
+                            &compiler,
+                            &text,
+                            format!("{text}\n  found {found:?}\n  twin {expected:?}\n"),
+                        ));
                     }
                 }
             }
         }
     }
-    assert!(
-        failures.is_empty(),
-        "{} of {programs} programs fail:\n{}",
-        failures.len(),
-        failures.iter().take(12).cloned().collect::<String>()
-    );
-    assert_eq!(programs, 360);
+    support::assert_none_fail((failures, programs), 360);
 }
 
 const SHAPE_POSITIONS: [Position; 4] = [
@@ -300,8 +298,10 @@ fn shape_position_rows(rows: &Rows) -> Vec<String> {
                     }
                     let found = found(&compiler, &text, &call);
                     if found != expected {
-                        failures.push(format!(
-                            "310: {text}\n  found {found:?}\n  twin {expected:?}\n"
+                        failures.push(support::failed_row_with(
+                            &compiler,
+                            &text,
+                            format!("310: {text}\n  found {found:?}\n  twin {expected:?}\n"),
                         ));
                     }
                 }
@@ -314,7 +314,7 @@ fn shape_position_rows(rows: &Rows) -> Vec<String> {
 #[test]
 fn a_runtime_native_value_draws_at_an_array_position_the_one_diagnostic_its_input_twin_draws() {
     let failures = covered(shape_position_rows);
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    support::assert_no_failure(&failures);
 }
 
 #[test]
@@ -322,5 +322,5 @@ fn a_runtime_native_value_draws_at_an_array_position_the_one_diagnostic_its_inpu
 fn exhaustive_a_runtime_native_value_draws_at_an_array_position_the_one_diagnostic_its_input_twin_draws()
  {
     let failures = shape_position_rows(&Rows::Every);
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    support::assert_no_failure(&failures);
 }

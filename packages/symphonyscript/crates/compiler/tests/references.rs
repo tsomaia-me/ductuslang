@@ -90,8 +90,10 @@ fn reference_rows(rows: &Rows) -> (Vec<String>, usize) {
                 let found = errors(&compiler, &text);
                 let twin_found = errors(&compiler, &twin);
                 if !(reads_one(&found) && reads_one(&twin_found)) {
-                    failures.push(format!(
-                        "{text}\n  draws {found:?}\n  its twin draws {twin_found:?}\n"
+                    failures.push(support::failed_row_with(
+                        &compiler,
+                        &text,
+                        format!("{text}\n  draws {found:?}\n  its twin draws {twin_found:?}\n"),
                     ));
                 }
             }
@@ -100,25 +102,15 @@ fn reference_rows(rows: &Rows) -> (Vec<String>, usize) {
     (failures, programs)
 }
 
-fn assert_none_fail((failures, programs): (Vec<String>, usize), expected: usize) {
-    assert!(
-        failures.is_empty(),
-        "{} of {programs} programs fail:\n{}",
-        failures.len(),
-        failures.iter().take(6).cloned().collect::<String>()
-    );
-    assert_eq!(programs, expected);
-}
-
 #[test]
 fn a_reference_to_a_node_or_a_wire_reads_its_attribute_in_every_position_it_stands_in() {
-    assert_none_fail(covered(reference_rows), 16);
+    support::assert_none_fail(covered(reference_rows), 16);
 }
 
 #[test]
 #[ignore = "exhaustive"]
 fn exhaustive_a_reference_to_a_node_or_a_wire_reads_its_attribute_in_every_position_it_stands_in() {
-    assert_none_fail(reference_rows(&Rows::Every), 32);
+    support::assert_none_fail(reference_rows(&Rows::Every), 32);
 }
 
 #[test]
@@ -136,11 +128,15 @@ fn a_reference_to_a_node_or_a_wire_is_refused_in_a_cell_and_an_attribute() {
                 .map(|diagnostic| diagnostic.code)
                 .collect();
             if found.first() != Some(&code) {
-                failures.push(format!("{text}\n  draws {found:?}, not {code:?} first\n"));
+                failures.push(support::failed_row_with(
+                    &compiler,
+                    &text,
+                    format!("{text}\n  draws {found:?}, not {code:?} first\n"),
+                ));
             }
         }
     }
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    support::assert_no_failure(&failures);
 }
 
 #[test]

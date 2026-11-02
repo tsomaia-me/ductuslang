@@ -1,3 +1,5 @@
+mod support;
+
 use symphonyscript::{Code, Compiler, Severity, Source};
 use symphonyscript_core::{Count, Vocabulary};
 use symphonyscript_fixtures::{Rows, covered};
@@ -597,12 +599,7 @@ fn flows_meet_their_uses(
 
 fn every_flow_meets_its_uses(reactive: bool, shared: bool, routes: &[Route]) {
     let (failures, _) = flows_meet_their_uses(&Rows::Every, reactive, shared, routes);
-    assert!(
-        failures.is_empty(),
-        "{} failures:\n{}",
-        failures.len(),
-        failures.join("\n")
-    );
+    support::assert_no_failure(&failures);
 }
 
 fn orders_taken(rows: &Rows, count: usize) -> Vec<(usize, Vec<usize>)> {
@@ -656,10 +653,11 @@ fn route_meets_its_uses(
             let found = errors_of(&compiler, &text);
             if found != wanted {
                 let names: Vec<&str> = uses.iter().map(|position| position.name).collect();
-                failures.push(format!(
-                    "{route:?} {names:?}:\n{text}expected {wanted:?}\nfound {found:?}"
+                failures.push(support::failed_row_with(
+                    &compiler,
+                    &text,
+                    format!("{route:?} {names:?}:\n{text}expected {wanted:?}\nfound {found:?}"),
                 ));
-                break;
             }
         }
     }
@@ -681,13 +679,7 @@ fn a_reactive_or_compile_time_flow_meets_its_uses_and_enums_of_different_variant
         }
         (failures, programs)
     });
-    assert!(
-        failures.is_empty(),
-        "{} failures:\n{}",
-        failures.len(),
-        failures.join("\n")
-    );
-    assert_eq!(programs, 412);
+    support::assert_none_fail((failures, programs), 412);
 }
 
 #[test]
@@ -832,12 +824,16 @@ fn a_comparison_across_two_enums_and_a_compile_time_flows_lets_are_located_in_ev
                 .collect();
             let found = located_of(&compiler, &text);
             if found != wanted {
-                failures.push(format!("{text}found {found:?}"));
+                failures.push(support::failed_row_with(
+                    &compiler,
+                    &text,
+                    format!("{text}found {found:?}"),
+                ));
                 break;
             }
         }
     }
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    support::assert_no_failure(&failures);
 }
 
 #[test]
@@ -856,12 +852,16 @@ fn two_enums_draw_one_type_mismatch_whatever_their_variants() {
                 .collect();
             let found = errors_of(&compiler, &text);
             if found != conflict {
-                failures.push(format!("{text}found {found:?}"));
+                failures.push(support::failed_row_with(
+                    &compiler,
+                    &text,
+                    format!("{text}found {found:?}"),
+                ));
                 break;
             }
         }
     }
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    support::assert_no_failure(&failures);
 }
 
 #[test]
@@ -916,12 +916,16 @@ fn an_untyped_compile_time_flow_draws_one_diagnostic_at_its_value_in_every_order
                 .collect();
             let found = errors_of(&compiler, &text);
             if found != wanted {
-                failures.push(format!("{text}expected {wanted:?}\nfound {found:?}"));
+                failures.push(support::failed_row_with(
+                    &compiler,
+                    &text,
+                    format!("{text}expected {wanted:?}\nfound {found:?}"),
+                ));
                 break;
             }
         }
     }
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    support::assert_no_failure(&failures);
 }
 
 #[test]
@@ -961,10 +965,14 @@ fn a_flows_secondary_spans_never_repeat_its_primary_and_name_each_let_once() {
             )];
             let found = located_of(&compiler, &text);
             if found != wanted {
-                failures.push(format!("{text}expected {wanted:?}\nfound {found:?}"));
+                failures.push(support::failed_row_with(
+                    &compiler,
+                    &text,
+                    format!("{text}expected {wanted:?}\nfound {found:?}"),
+                ));
                 break;
             }
         }
     }
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    support::assert_no_failure(&failures);
 }

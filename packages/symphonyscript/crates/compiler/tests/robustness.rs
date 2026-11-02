@@ -43,8 +43,8 @@ fn drawn_failure(compiler: &Compiler, mutant: &str) -> Option<String> {
         Ok(diagnostics) => diagnostics
             .iter()
             .any(|diagnostic| diagnostic.code == Code::InternalError)
-            .then(|| format!("internal-error: {mutant:?}")),
-        Err(_) => Some(format!("panic: {mutant:?}")),
+            .then(|| support::failed(mutant, &diagnostics, format!("internal-error: {mutant:?}"))),
+        Err(_) => Some(support::failed(mutant, &[], format!("panic: {mutant:?}"))),
     }
 }
 

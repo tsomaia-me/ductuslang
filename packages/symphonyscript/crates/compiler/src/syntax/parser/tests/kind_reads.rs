@@ -88,8 +88,10 @@ fn the_parser_reads_each_tokens_kind_a_constant_number_of_times_429() {
         let counted = [2_000, 4_000, 8_000].map(|n| kind_reads(&nest_program(nest, n)));
         for pair in counted.windows(2) {
             if pair[1].1 > 2 * pair[0].1 + 64 {
-                failures.push(format!(
-                    "{nest:?}: the kind reads grow past the tokens {counted:?}"
+                failures.push(crate::pinned_row::failed_counts(
+                    &nest_program(nest, 2_000),
+                    &[],
+                    format!("{nest:?}: the kind reads grow past the tokens {counted:?}"),
                 ));
             }
         }
@@ -97,8 +99,12 @@ fn the_parser_reads_each_tokens_kind_a_constant_number_of_times_429() {
             .iter()
             .any(|(tokens, reads)| *reads == 0 || *reads > 5 * tokens)
         {
-            failures.push(format!("{nest:?}: past 5 kind reads a token {counted:?}"));
+            failures.push(crate::pinned_row::failed_counts(
+                &nest_program(nest, 2_000),
+                &[],
+                format!("{nest:?}: past 5 kind reads a token {counted:?}"),
+            ));
         }
     }
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    crate::pinned_row::assert_no_failure(&failures);
 }

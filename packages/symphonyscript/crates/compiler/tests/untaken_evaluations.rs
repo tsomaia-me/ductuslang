@@ -157,8 +157,12 @@ fn untaken_start_rows(rows: &Rows) -> (Vec<String>, usize) {
                             }
                         };
                         if found != limited || !twin_found.contains(&fault.code()) {
-                            failures.push(format!(
-                                "{text}\n  draws {found:?}, its taken twin {twin_found:?}\n"
+                            failures.push(support::failed_row_with(
+                                &compiler,
+                                &text,
+                                format!(
+                                    "{text}\n  draws {found:?}, its taken twin {twin_found:?}\n"
+                                ),
                             ));
                         }
                     }
@@ -169,27 +173,17 @@ fn untaken_start_rows(rows: &Rows) -> (Vec<String>, usize) {
     (failures, programs)
 }
 
-fn assert_none_fail((failures, programs): (Vec<String>, usize), expected: usize) {
-    assert!(
-        failures.is_empty(),
-        "{} of {programs} programs fail:\n{}",
-        failures.len(),
-        failures.iter().take(6).cloned().collect::<String>()
-    );
-    assert_eq!(programs, expected);
-}
-
 #[test]
 fn an_untaken_starts_evaluation_draws_no_value_fault_in_any_frame_it_opens_and_its_taken_twin_draws_it()
  {
-    assert_none_fail(covered(untaken_start_rows), 12);
+    support::assert_none_fail(covered(untaken_start_rows), 12);
 }
 
 #[test]
 #[ignore = "exhaustive"]
 fn exhaustive_an_untaken_starts_evaluation_draws_no_value_fault_in_any_frame_it_opens_and_its_taken_twin_draws_it()
  {
-    assert_none_fail(untaken_start_rows(&Rows::Every), 56);
+    support::assert_none_fail(untaken_start_rows(&Rows::Every), 56);
 }
 
 fn limited(calls: u64) -> Compiler {
@@ -261,9 +255,9 @@ fn counted_rows(rows: &Rows) -> (Vec<String>, usize) {
                 if found.contains(&Code::RecursionLimit) != draws
                     || found.iter().any(|code| *code != Code::RecursionLimit)
                 {
-                    failures.push(format!(
+                    failures.push(support::failed_row_with(&compiler, &text, format!(
                         "{text}\n  with {calls} calls draws {found:?}, recursion-limit expected {draws}\n"
-                    ));
+                    )));
                 }
             }
         }
@@ -274,14 +268,14 @@ fn counted_rows(rows: &Rows) -> (Vec<String>, usize) {
 #[test]
 fn each_distinct_call_counts_once_whichever_evaluation_reaches_it_and_the_limit_draws_in_every_order()
  {
-    assert_none_fail(covered(counted_rows), 8);
+    support::assert_none_fail(covered(counted_rows), 8);
 }
 
 #[test]
 #[ignore = "exhaustive"]
 fn exhaustive_each_distinct_call_counts_once_whichever_evaluation_reaches_it_and_the_limit_draws_in_every_order()
  {
-    assert_none_fail(counted_rows(&Rows::Every), 16);
+    support::assert_none_fail(counted_rows(&Rows::Every), 16);
 }
 
 fn shallow() -> Compiler {
@@ -336,8 +330,10 @@ fn chain_rows(rows: &Rows) -> (Vec<String>, usize) {
                 let twin_found = codes(&compiler, &twin);
                 let twin_draws = twin_passes == twin_found.contains(&Code::RecursionDepth);
                 if found != expected || !twin_draws {
-                    failures.push(format!(
-                        "{text}\n  draws {found:?}, its taken twin {twin_found:?}\n"
+                    failures.push(support::failed_row_with(
+                        &compiler,
+                        &text,
+                        format!("{text}\n  draws {found:?}, its taken twin {twin_found:?}\n"),
                     ));
                 }
             }
@@ -349,14 +345,14 @@ fn chain_rows(rows: &Rows) -> (Vec<String>, usize) {
 #[test]
 fn an_untaken_evaluation_counts_its_depth_from_its_own_start_and_draws_recursion_depth_when_its_chain_passes()
  {
-    assert_none_fail(covered(chain_rows), 5);
+    support::assert_none_fail(covered(chain_rows), 5);
 }
 
 #[test]
 #[ignore = "exhaustive"]
 fn exhaustive_an_untaken_evaluation_counts_its_depth_from_its_own_start_and_draws_recursion_depth_when_its_chain_passes()
  {
-    assert_none_fail(chain_rows(&Rows::Every), 8);
+    support::assert_none_fail(chain_rows(&Rows::Every), 8);
 }
 
 fn open_key_program(intermediaries: usize, guard: &str, order: usize) -> String {
@@ -411,7 +407,11 @@ fn open_key_rows(rows: &Rows) -> (Vec<String>, usize) {
                 let text = open_key_program(intermediaries, guard, order);
                 let found = codes(&compiler, &text);
                 if !found.is_empty() {
-                    failures.push(format!("{text}\n  draws {found:?}\n"));
+                    failures.push(support::failed_row_with(
+                        &compiler,
+                        &text,
+                        format!("{text}\n  draws {found:?}\n"),
+                    ));
                 }
             }
         }
@@ -421,14 +421,14 @@ fn open_key_rows(rows: &Rows) -> (Vec<String>, usize) {
 
 #[test]
 fn a_value_computed_through_a_key_open_at_the_frame_is_never_reused_there_in_any_order() {
-    assert_none_fail(covered(open_key_rows), 12);
+    support::assert_none_fail(covered(open_key_rows), 12);
 }
 
 #[test]
 #[ignore = "exhaustive"]
 fn exhaustive_a_value_computed_through_a_key_open_at_the_frame_is_never_reused_there_in_any_order()
 {
-    assert_none_fail(open_key_rows(&Rows::Every), 24);
+    support::assert_none_fail(open_key_rows(&Rows::Every), 24);
 }
 
 const SITE_PAIRS: [([&str; 2], [&str; 2]); 4] = [
@@ -486,7 +486,11 @@ fn candidate_rows(rows: &Rows) -> (Vec<String>, usize) {
                         .map(|(code, _)| code)
                         .collect();
                     if found != [Code::IndexOutOfRange; 2] {
-                        failures.push(format!("{text}\n  draws {found:?}\n"));
+                        failures.push(support::failed_row_with(
+                            &compiler,
+                            &text,
+                            format!("{text}\n  draws {found:?}\n"),
+                        ));
                     }
                 }
             }
@@ -498,14 +502,14 @@ fn candidate_rows(rows: &Rows) -> (Vec<String>, usize) {
 #[test]
 fn a_read_whose_evaluation_chooses_a_candidate_no_arm_holds_instantiates_its_arm_and_draws_nothing()
 {
-    assert_none_fail(covered(candidate_rows), 9);
+    support::assert_none_fail(covered(candidate_rows), 9);
 }
 
 #[test]
 #[ignore = "exhaustive"]
 fn exhaustive_a_read_whose_evaluation_chooses_a_candidate_no_arm_holds_instantiates_its_arm_and_draws_nothing()
  {
-    assert_none_fail(candidate_rows(&Rows::Every), 32);
+    support::assert_none_fail(candidate_rows(&Rows::Every), 32);
 }
 
 fn growing_rows(rows: &Rows) -> (Vec<String>, usize) {
@@ -547,7 +551,11 @@ fn growing_rows(rows: &Rows) -> (Vec<String>, usize) {
                 if found != BTreeSet::from([Code::IndexOutOfRange])
                     || elapsed > std::time::Duration::from_secs(5)
                 {
-                    failures.push(format!("{text}\n  draws {found:?} in {elapsed:?}\n"));
+                    failures.push(support::failed_row_with(
+                        &compiler,
+                        &text,
+                        format!("{text}\n  draws {found:?} in {elapsed:?}\n"),
+                    ));
                 }
             }
         }
@@ -557,14 +565,14 @@ fn growing_rows(rows: &Rows) -> (Vec<String>, usize) {
 
 #[test]
 fn a_self_read_path_start_whose_array_argument_grows_finishes_within_the_limits_at_its_value() {
-    assert_none_fail(covered(growing_rows), 5);
+    support::assert_none_fail(covered(growing_rows), 5);
 }
 
 #[test]
 #[ignore = "exhaustive"]
 fn exhaustive_a_self_read_path_start_whose_array_argument_grows_finishes_within_the_limits_at_its_value()
  {
-    assert_none_fail(growing_rows(&Rows::Every), 8);
+    support::assert_none_fail(growing_rows(&Rows::Every), 8);
 }
 
 #[test]
@@ -698,7 +706,11 @@ fn the_ledger_programs_draw_what_their_rules_give_in_either_order_and_their_take
             let text = ordered(all, reversed);
             let found = codes(&compiler, &text);
             if found != row.drawn {
-                failures.push(format!("{}: {text}\n  draws {found:?}\n", row.entry));
+                failures.push(support::failed_row_with(
+                    &compiler,
+                    &text,
+                    format!("{}: {text}\n  draws {found:?}\n", row.entry),
+                ));
             }
             if let Some((twin, code)) = &row.twin {
                 let mut all = items(INSTANCES);
@@ -706,12 +718,16 @@ fn the_ledger_programs_draw_what_their_rules_give_in_either_order_and_their_take
                 let twin = ordered(all, reversed);
                 let twin_found = codes(&compiler, &twin);
                 if !twin_found.contains(code) {
-                    failures.push(format!("{}: {twin}\n  draws {twin_found:?}\n", row.entry));
+                    failures.push(support::failed_row_with(
+                        &compiler,
+                        &text,
+                        format!("{}: {twin}\n  draws {twin_found:?}\n", row.entry),
+                    ));
                 }
             }
         }
     }
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    support::assert_no_failure(&failures);
     assert_eq!(programs, 14);
 }
 
@@ -822,8 +838,10 @@ fn top_call_rows(rows: &Rows) -> (Vec<String>, usize) {
                             .iter()
                             .any(|(code, _)| *code == Code::IndexOutOfRange));
                 if found != expected || !twin_draws {
-                    failures.push(format!(
-                        "352: {text}\n  draws {found:?}, its taken twin {twin_found:?}\n"
+                    failures.push(support::failed_row_with(
+                        &compiler,
+                        &text,
+                        format!("352: {text}\n  draws {found:?}, its taken twin {twin_found:?}\n"),
                     ));
                 }
             }
@@ -835,14 +853,14 @@ fn top_call_rows(rows: &Rows) -> (Vec<String>, usize) {
 #[test]
 fn a_recursive_call_in_an_untaken_arm_at_top_level_is_checked_against_its_chosen_references_and_draws_no_value_fault()
  {
-    assert_none_fail(covered(top_call_rows), 10);
+    support::assert_none_fail(covered(top_call_rows), 10);
 }
 
 #[test]
 #[ignore = "exhaustive"]
 fn exhaustive_a_recursive_call_in_an_untaken_arm_at_top_level_is_checked_against_its_chosen_references_and_draws_no_value_fault()
  {
-    assert_none_fail(top_call_rows(&Rows::Every), 20);
+    support::assert_none_fail(top_call_rows(&Rows::Every), 20);
 }
 
 const ARM_POSITIONS: [(&str, &str, &str, Code); 8] = [
@@ -922,8 +940,12 @@ fn arm_position_rows(rows: &Rows) -> (Vec<String>, usize) {
                 let found = codes(&compiler, &text);
                 let twin_found = codes(&compiler, &twin);
                 if !found.is_empty() || twin_found != BTreeSet::from([*code]) {
-                    failures.push(format!(
-                        "346 {name}: {text}\n  draws {found:?}, its taken twin {twin_found:?}\n"
+                    failures.push(support::failed_row_with(
+                        &compiler,
+                        &text,
+                        format!(
+                            "346 {name}: {text}\n  draws {found:?}, its taken twin {twin_found:?}\n"
+                        ),
                     ));
                 }
             }
@@ -935,14 +957,14 @@ fn arm_position_rows(rows: &Rows) -> (Vec<String>, usize) {
 #[test]
 fn an_untaken_arm_of_a_compile_time_choice_draws_no_index_range_or_fit_fault_at_any_position_in_a_body_or_its_twin()
  {
-    assert_none_fail(covered(arm_position_rows), 16);
+    support::assert_none_fail(covered(arm_position_rows), 16);
 }
 
 #[test]
 #[ignore = "exhaustive"]
 fn exhaustive_an_untaken_arm_of_a_compile_time_choice_draws_no_index_range_or_fit_fault_at_any_position_in_a_body_or_its_twin()
  {
-    assert_none_fail(arm_position_rows(&Rows::Every), 32);
+    support::assert_none_fail(arm_position_rows(&Rows::Every), 32);
 }
 
 #[test]
@@ -1027,8 +1049,10 @@ fn untaken_inlined_start_rows(rows: &Rows) -> (Vec<String>, usize) {
                     let found = codes(&compiler, &text);
                     let twin_found = codes(&compiler, &twin);
                     if !found.is_empty() || twin_found != BTreeSet::from([*code]) {
-                        failures.push(format!(
-                            "{text}\n  draws {found:?}, its taken twin {twin_found:?}\n"
+                        failures.push(support::failed_row_with(
+                            &compiler,
+                            &text,
+                            format!("{text}\n  draws {found:?}, its taken twin {twin_found:?}\n"),
                         ));
                     }
                 }
@@ -1040,5 +1064,5 @@ fn untaken_inlined_start_rows(rows: &Rows) -> (Vec<String>, usize) {
 
 #[test]
 fn an_untaken_starts_index_reached_through_an_inlined_call_draws_no_fit_or_overflow_c2_3() {
-    assert_none_fail(untaken_inlined_start_rows(&Rows::Every), 48);
+    support::assert_none_fail(untaken_inlined_start_rows(&Rows::Every), 48);
 }

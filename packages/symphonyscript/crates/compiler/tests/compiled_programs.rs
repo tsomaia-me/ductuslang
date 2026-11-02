@@ -163,12 +163,16 @@ fn every_instruction_that_draws_a_diagnostic_draws_it_at_the_span_and_in_the_ord
             for text in in_both_orders(&items) {
                 let found = drawn(&compiler, &text);
                 if found != expected(rows) {
-                    failures.push(format!("{name}:\n{text}  found {found:?}"));
+                    failures.push(support::failed_row_with(
+                        &compiler,
+                        &text,
+                        format!("{name}:\n{text}  found {found:?}"),
+                    ));
                 }
             }
         }
     }
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    support::assert_no_failure(&failures);
 }
 
 const SUMS: [&str; 2] = [
@@ -204,12 +208,16 @@ fn the_call_that_passes_the_recursive_call_limit_is_the_call_the_evaluator_reach
             for text in in_both_orders(&items) {
                 let found = drawn(&compiler, &text);
                 if found != [(Code::RecursionLimit, site.to_string())] {
-                    failures.push(format!("{limit}: {text}  found {found:?}"));
+                    failures.push(support::failed_row_with(
+                        &compiler,
+                        &text,
+                        format!("{limit}: {text}  found {found:?}"),
+                    ));
                 }
             }
         }
     }
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    support::assert_no_failure(&failures);
 }
 
 const CHOSEN: &str = "fn i0(z): [1.5]\nfn r1(n): if n > 0 then r1(n - 1) else [1]\nfn rc(m):\n    let ch = if m is 0 then r1(1) else i0(0)\n";
@@ -235,11 +243,15 @@ fn an_array_through_a_conversion_is_converted_leaf_by_leaf_and_a_refused_one_dra
         for text in in_both_orders(&items) {
             let found = drawn(&compiler, &text);
             if found != expected(rows) {
-                failures.push(format!("{text}  found {found:?}"));
+                failures.push(support::failed_row_with(
+                    &compiler,
+                    &text,
+                    format!("{text}  found {found:?}"),
+                ));
             }
         }
     }
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    support::assert_no_failure(&failures);
 }
 
 fn at_zero(expression: &str) -> String {

@@ -107,7 +107,10 @@ fn cell_rows(rows: &Rows) -> (Vec<String>, usize) {
                             let text = cell_text(word, (capacity, init, typed), clock, rule);
                             let parsed = support::parsed(&text);
                             if parsed.root().to_string() != text {
-                                failures.push(format!("{text:?} does not round-trip"));
+                                failures.push(support::failed_row(
+                                    &text,
+                                    format!("{text:?} does not round-trip"),
+                                ));
                                 continue;
                             }
                             let end = text.find('\n').unwrap_or(text.len()) as u32;
@@ -144,18 +147,26 @@ fn cell_rows(rows: &Rows) -> (Vec<String>, usize) {
                                 continue;
                             }
                             if !drawn.is_empty() {
-                                failures.push(format!("{text:?} draws {drawn:?}"));
+                                failures.push(support::failed_row(
+                                    &text,
+                                    format!("{text:?} draws {drawn:?}"),
+                                ));
                                 continue;
                             }
                             let file = parsed.file().expect("the root is a file");
                             let items: Vec<Item<'_>> = file.items().collect();
                             let [Item::Cell(cell)] = items.as_slice() else {
-                                failures.push(format!("{text:?} is not one cell declaration"));
+                                failures.push(support::failed_row(
+                                    &text,
+                                    format!("{text:?} is not one cell declaration"),
+                                ));
                                 continue;
                             };
                             failures.extend(
                                 parts_problem(cell, (*kind, capacity, init, typed), c, *rule_kind)
-                                    .map(|problem| format!("{text:?}: {problem}")),
+                                    .map(|problem| {
+                                        support::failed_row(&text, format!("{text:?}: {problem}"))
+                                    }),
                             );
                         }
                     }
@@ -166,27 +177,17 @@ fn cell_rows(rows: &Rows) -> (Vec<String>, usize) {
     (failures, programs)
 }
 
-fn assert_none_fail((failures, programs): (Vec<String>, usize), expected: usize) {
-    assert!(
-        failures.is_empty(),
-        "{} of {programs} programs fail:\n{}",
-        failures.len(),
-        failures.join("\n")
-    );
-    assert_eq!(programs, expected);
-}
-
 #[test]
 fn a_cell_declaration_parses_every_combination_of_its_parts_and_one_with_neither_init_nor_rule_names_both()
  {
-    assert_none_fail(covered(cell_rows), 14);
+    support::assert_none_fail(covered(cell_rows), 14);
 }
 
 #[test]
 #[ignore = "exhaustive"]
 fn exhaustive_a_cell_declaration_parses_every_combination_of_its_parts_and_one_with_neither_init_nor_rule_names_both()
  {
-    assert_none_fail(cell_rows(&Rows::Every), 288);
+    support::assert_none_fail(cell_rows(&Rows::Every), 288);
 }
 
 #[test]
@@ -374,14 +375,14 @@ fn read_rows(rows: &Rows) -> (Vec<String>, usize) {
 #[test]
 fn a_cell_of_every_word_and_form_is_read_in_the_present_in_its_past_and_by_stepped_wherever_a_cell_is_read()
  {
-    assert_none_fail(covered(read_rows), 15);
+    support::assert_none_fail(covered(read_rows), 15);
 }
 
 #[test]
 #[ignore = "exhaustive"]
 fn exhaustive_a_cell_of_every_word_and_form_is_read_in_the_present_in_its_past_and_by_stepped_wherever_a_cell_is_read()
  {
-    assert_none_fail(read_rows(&Rows::Every), 216);
+    support::assert_none_fail(read_rows(&Rows::Every), 216);
 }
 
 #[test]
@@ -745,7 +746,11 @@ fn shaped_state_rows(rows: &Rows) -> Vec<String> {
                 let text = ordered.concat();
                 let found = support::error_texts(&compiler, &text);
                 if found.len() != 1 || found[0] != (Code::TypeMismatch, read.to_string()) {
-                    failures.push(format!("307: {text}\n  draws {found:?}"));
+                    failures.push(support::failed_row_with(
+                        &compiler,
+                        &text,
+                        format!("307: {text}\n  draws {found:?}"),
+                    ));
                 }
             }
         }
@@ -757,7 +762,7 @@ fn shaped_state_rows(rows: &Rows) -> Vec<String> {
 fn a_state_holding_an_array_of_another_shape_at_a_fixed_array_attribute_draws_the_shape_mismatch_alone()
  {
     let failures = covered(shaped_state_rows);
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    support::assert_no_failure(&failures);
 }
 
 #[test]
@@ -765,7 +770,7 @@ fn a_state_holding_an_array_of_another_shape_at_a_fixed_array_attribute_draws_th
 fn exhaustive_a_state_holding_an_array_of_another_shape_at_a_fixed_array_attribute_draws_the_shape_mismatch_alone()
  {
     let failures = shaped_state_rows(&Rows::Every);
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    support::assert_no_failure(&failures);
 }
 
 const UNSTARTED: [&[&str]; 6] = [
@@ -826,7 +831,11 @@ fn history_fallbacks_help_names_a_fallback_and_an_init_of_the_cells_type_that_co
                 .iter()
                 .find(|diagnostic| diagnostic.code == Code::HistoryFallback)
             else {
-                failures.push(format!("286: {text}\n  draws no history-fallback"));
+                failures.push(support::failed_row_with(
+                    &compiler,
+                    &text,
+                    format!("286: {text}\n  draws no history-fallback"),
+                ));
                 continue;
             };
             let help = drawn.help.clone().unwrap_or_default();
@@ -843,12 +852,16 @@ fn history_fallbacks_help_names_a_fallback_and_an_init_of_the_cells_type_that_co
                 let left = support::errors(compiler.check(&[support::source(&edited)]));
                 if !left.is_empty() {
                     let codes: Vec<Code> = left.iter().map(|diagnostic| diagnostic.code).collect();
-                    failures.push(format!("286: {help}\n{edited}\n  draws {codes:?}"));
+                    failures.push(support::failed_row_with(
+                        &compiler,
+                        &text,
+                        format!("286: {help}\n{edited}\n  draws {codes:?}"),
+                    ));
                 }
             }
         }
     }
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    support::assert_no_failure(&failures);
 }
 
 #[test]

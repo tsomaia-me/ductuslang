@@ -123,12 +123,12 @@ fn bound_rows(rows: &Rows) -> (Vec<String>, usize) {
                     continue;
                 }
                 programs += 1;
-                let outcome = if context == 4 {
+                let (program, outcome) = if context == 4 {
                     let text = format!(
                         "{CELLS}{}Clip c:\n    for x in 0..{written}:\n        Note\n",
                         template.replace('E', "0")
                     );
-                    match expected(form, context) {
+                    let outcome = match expected(form, context) {
                         Expected::Codes(expected) if codes(&compiler, &text) == expected => Ok(()),
                         Expected::Codes(expected) => Err(format!(
                             "{text}\n  draws {:?}, not {expected:?}\n",
@@ -137,12 +137,16 @@ fn bound_rows(rows: &Rows) -> (Vec<String>, usize) {
                         Expected::Capacity(_) | Expected::BoundError => {
                             Err("a placement row expects codes".to_string())
                         }
-                    }
+                    };
+                    (text, outcome)
                 } else {
                     let value = shape.replace('F', written);
                     let declared = format!("{CELLS}{}", template.replace('E', &value));
                     match expected(form, context) {
-                        Expected::Capacity(capacity) => held_within(&compiler, &declared, capacity),
+                        Expected::Capacity(capacity) => {
+                            let outcome = held_within(&compiler, &declared, capacity);
+                            (declared, outcome)
+                        }
                         Expected::BoundError => {
                             let text = format!("{declared}Clip c:\n    Note/(v[0])\n");
                             let found = errors(&compiler, &text);
@@ -152,7 +156,7 @@ fn bound_rows(rows: &Rows) -> (Vec<String>, usize) {
                                     .unwrap_or_default()
                                     .to_string()
                             };
-                            match found.as_slice() {
+                            let outcome = match found.as_slice() {
                                 [diagnostic]
                                     if diagnostic.code == Code::RangeBound
                                         && at(diagnostic) == *written =>
@@ -160,37 +164,34 @@ fn bound_rows(rows: &Rows) -> (Vec<String>, usize) {
                                     Ok(())
                                 }
                                 _ => Err(format!("{text}\n  draws {found:?}, not range-bound\n")),
-                            }
+                            };
+                            (text, outcome)
                         }
-                        Expected::Codes(_) => Err("a value row expects a capacity".to_string()),
+                        Expected::Codes(_) => {
+                            (declared, Err("a value row expects a capacity".to_string()))
+                        }
                     }
                 };
-                failures.extend(outcome.err());
+                failures.extend(
+                    outcome
+                        .err()
+                        .map(|failure| support::failed_row_with(&compiler, &program, failure)),
+                );
             }
         }
     }
     (failures, programs)
 }
 
-fn assert_none_fail((failures, programs): (Vec<String>, usize), expected: usize) {
-    assert!(
-        failures.is_empty(),
-        "{} of {programs} programs fail:\n{}",
-        failures.len(),
-        failures.iter().take(6).cloned().collect::<String>()
-    );
-    assert_eq!(programs, expected);
-}
-
 #[test]
 fn every_bound_form_gives_a_slice_and_a_range_the_minimum_and_maximum_its_form_reads() {
-    assert_none_fail(covered(bound_rows), 80);
+    support::assert_none_fail(covered(bound_rows), 80);
 }
 
 #[test]
 #[ignore = "exhaustive"]
 fn exhaustive_every_bound_form_gives_a_slice_and_a_range_the_minimum_and_maximum_its_form_reads() {
-    assert_none_fail(bound_rows(&Rows::Every), 160);
+    support::assert_none_fail(bound_rows(&Rows::Every), 160);
 }
 
 #[test]

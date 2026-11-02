@@ -1227,15 +1227,19 @@ fn check_case(rows: &Rows, case: &Case, compilers: &mut Compilers, outcome: &mut
         }
     }
     {
-        outcome.failures.push(format!(
-            "{:?} {:?} {:?} {:?}\n{}  found {}\n  expected {}",
-            case.relation,
-            case.forms,
-            case.position,
-            case.reversed,
-            built.text,
-            shown(&found, &built.text),
-            shown(&expected, &built.text)
+        outcome.failures.push(support::failed_row_with(
+            compiler,
+            &built.text,
+            format!(
+                "{:?} {:?} {:?} {:?}\n{}  found {}\n  expected {}",
+                case.relation,
+                case.forms,
+                case.position,
+                case.reversed,
+                built.text,
+                shown(&found, &built.text),
+                shown(&expected, &built.text)
+            ),
         ));
     }
 }
@@ -1337,20 +1341,8 @@ fn shown(found: &Spans, text: &str) -> String {
 }
 
 fn assert_outcome(outcome: &Outcome, expected: (usize, usize)) {
-    assert!(
-        outcome.failures.is_empty(),
-        "{} of {} programs fail:\n{}",
-        outcome.failures.len(),
-        outcome.programs,
-        outcome
-            .failures
-            .iter()
-            .take(40)
-            .cloned()
-            .collect::<Vec<_>>()
-            .join("\n")
-    );
-    assert_eq!((outcome.programs, outcome.landing_apart), expected);
+    support::assert_none_fail((outcome.failures.clone(), outcome.programs), expected.0);
+    assert_eq!(outcome.landing_apart, expected.1);
 }
 
 /// The programs `arms_hold` builds for a chooser that is no parameter: 48,066
@@ -1573,8 +1565,12 @@ fn holder_refusal_failures(session_first: bool) -> (usize, Vec<String>) {
             let found = drawn_texts(&compiler, &text);
             let twin_found = drawn_texts(&compiler, &twin);
             if found != expected || twin_found != expected {
-                failures.push(format!(
-                    "{text}\n  found {found:?}\n  twin {twin_found:?}\n  expected {expected:?}"
+                failures.push(support::failed_row_with(
+                    &compiler,
+                    &text,
+                    format!(
+                        "{text}\n  found {found:?}\n  twin {twin_found:?}\n  expected {expected:?}"
+                    ),
                 ));
             }
         }
@@ -1587,7 +1583,7 @@ fn a_recursive_results_widening_choice_refused_by_its_holder_draws_the_holders_o
  {
     let (programs, failures) = holder_refusal_failures(true);
     assert_eq!(programs, 120);
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    support::assert_no_failure(&failures);
 }
 
 #[test]
@@ -1596,7 +1592,7 @@ fn exhaustive_a_recursive_results_widening_choice_refused_by_its_holder_draws_th
  {
     let (programs, failures) = holder_refusal_failures(false);
     assert_eq!(programs, 600);
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    support::assert_no_failure(&failures);
 }
 
 #[test]
@@ -1635,11 +1631,15 @@ fn a_definite_array_beside_a_placeholder_or_a_variable_array_draws_what_the_lite
                 .map(|(code, at)| (*code, at.as_str()))
                 .collect();
             if raggeds != ragged.into_iter().collect::<Vec<_>>() {
-                failures.push(format!("{text}\n  found {drawn:?}\n"));
+                failures.push(support::failed_row_with(
+                    &compiler,
+                    &text,
+                    format!("{text}\n  found {drawn:?}\n"),
+                ));
             }
         }
     }
-    assert!(failures.is_empty(), "{}", failures.concat());
+    support::assert_no_failure(&failures);
     assert_eq!(programs, 8);
 }
 

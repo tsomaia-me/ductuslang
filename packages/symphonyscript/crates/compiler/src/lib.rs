@@ -6,6 +6,10 @@ mod compiler;
 mod counting_allocator;
 mod diagnostics;
 mod failed;
+#[cfg(test)]
+mod pinned_row;
+#[cfg(test)]
+mod pinned_row_tests;
 mod semantics;
 mod source;
 pub mod syntax;

@@ -3019,7 +3019,11 @@ fn bracket_rows(rows: &symphonyscript_fixtures::Rows) -> Vec<String> {
                 let text = ordered.concat();
                 let found = support::error_texts(&compiler, &text);
                 if found != [(Code::ExpressionSyntax, "note".to_string())] {
-                    failures.push(format!("377: {text}\n  draws {found:?}"));
+                    failures.push(support::failed_row_with(
+                        &compiler,
+                        &text,
+                        format!("377: {text}\n  draws {found:?}"),
+                    ));
                 }
             }
         }
@@ -3030,14 +3034,14 @@ fn bracket_rows(rows: &symphonyscript_fixtures::Rows) -> Vec<String> {
 #[test]
 fn an_array_bracket_that_lost_an_element_to_a_fault_is_a_placeholder_with_no_length() {
     let failures = symphonyscript_fixtures::covered(bracket_rows);
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    support::assert_no_failure(&failures);
 }
 
 #[test]
 #[ignore = "exhaustive"]
 fn exhaustive_an_array_bracket_that_lost_an_element_to_a_fault_is_a_placeholder_with_no_length() {
     let failures = bracket_rows(&symphonyscript_fixtures::Rows::Every);
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    support::assert_no_failure(&failures);
 }
 
 #[test]
@@ -3468,8 +3472,10 @@ fn disagreeing_literal_read_rows(rows: &symphonyscript_fixtures::Rows) -> Vec<St
                         let text = ordered.concat();
                         let found = support::error_texts(&compiler, &text);
                         if found != expected {
-                            failures.push(format!(
-                                "382: {text}\n  draws {found:?}\n  expected {expected:?}"
+                            failures.push(support::failed_row_with(
+                                &compiler,
+                                &text,
+                                format!("382: {text}\n  draws {found:?}\n  expected {expected:?}"),
                             ));
                         }
                     }
@@ -3484,7 +3490,7 @@ fn disagreeing_literal_read_rows(rows: &symphonyscript_fixtures::Rows) -> Vec<St
 fn an_index_read_of_a_disagreeing_literal_its_slice_or_a_let_holding_it_draws_the_literals_diagnostic_alone_382()
  {
     let failures = symphonyscript_fixtures::covered(disagreeing_literal_read_rows);
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    support::assert_no_failure(&failures);
 }
 
 #[test]
@@ -3492,7 +3498,7 @@ fn an_index_read_of_a_disagreeing_literal_its_slice_or_a_let_holding_it_draws_th
 fn exhaustive_an_index_read_of_a_disagreeing_literal_its_slice_or_a_let_holding_it_draws_the_literals_diagnostic_alone_382()
  {
     let failures = disagreeing_literal_read_rows(&symphonyscript_fixtures::Rows::Every);
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    support::assert_no_failure(&failures);
 }
 
 #[test]

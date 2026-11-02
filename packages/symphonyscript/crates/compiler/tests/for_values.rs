@@ -212,32 +212,26 @@ fn fold_rows(rows: &Rows) -> (Vec<String>, usize) {
                 let outcome = holds(&compiler, &twin, &expected)
                     .map_err(|failure| format!("the twin fails: {failure}"))
                     .and_then(|()| holds(&compiler, &text, &expected));
-                failures.extend(outcome.err());
+                failures.extend(
+                    outcome
+                        .err()
+                        .map(|failure| support::failed_row_with(&compiler, &text, failure)),
+                );
             }
         }
     }
     (failures, programs)
 }
 
-fn assert_none_fail((failures, programs): (Vec<String>, usize), expected: usize) {
-    assert!(
-        failures.is_empty(),
-        "{} of {programs} programs fail:\n{}",
-        failures.len(),
-        failures.iter().take(6).cloned().collect::<String>()
-    );
-    assert_eq!(programs, expected);
-}
-
 #[test]
 fn a_for_expression_folds_its_iterable_into_the_value_or_the_capacity_its_rules_give() {
-    assert_none_fail(covered(fold_rows), 25);
+    support::assert_none_fail(covered(fold_rows), 25);
 }
 
 #[test]
 #[ignore = "exhaustive"]
 fn exhaustive_a_for_expression_folds_its_iterable_into_the_value_or_the_capacity_its_rules_give() {
-    assert_none_fail(fold_rows(&Rows::Every), 75);
+    support::assert_none_fail(fold_rows(&Rows::Every), 75);
 }
 
 #[test]
@@ -356,9 +350,13 @@ fn a_for_expression_starts_from_its_start_and_yields_the_start_over_an_empty_ite
         ),
     ] {
         let text = format!("{CELLS}let v = {value}\n");
-        failures.extend(holds(&compiler, &text, &folded).err());
+        failures.extend(
+            holds(&compiler, &text, &folded)
+                .err()
+                .map(|failure| support::failed_row_with(&compiler, &text, failure)),
+        );
     }
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    support::assert_no_failure(&failures);
 }
 
 const READERS: [(&str, &str, &str, &str, &str); 4] = [
@@ -413,7 +411,11 @@ fn cell_rows(rows: &Rows) -> (Vec<String>, usize) {
                         holds(&compiler, &text, &expected)
                     }
                 };
-                failures.extend(outcome.err());
+                failures.extend(
+                    outcome
+                        .err()
+                        .map(|failure| support::failed_row_with(&compiler, &text, failure)),
+                );
             }
         }
     }
@@ -422,14 +424,14 @@ fn cell_rows(rows: &Rows) -> (Vec<String>, usize) {
 
 #[test]
 fn a_for_expression_is_a_compile_time_value_only_when_its_iterable_start_and_body_read_no_cell() {
-    assert_none_fail(covered(cell_rows), 12);
+    support::assert_none_fail(covered(cell_rows), 12);
 }
 
 #[test]
 #[ignore = "exhaustive"]
 fn exhaustive_a_for_expression_is_a_compile_time_value_only_when_its_iterable_start_and_body_read_no_cell()
  {
-    assert_none_fail(cell_rows(&Rows::Every), 24);
+    support::assert_none_fail(cell_rows(&Rows::Every), 24);
 }
 
 #[test]
@@ -584,7 +586,11 @@ fn a_for_bodys_type_fault_draws_whatever_holds_the_expression_as_its_derived_cel
         let twin = format!("state v = {value}\nClip c:\n    Note/(v)\n");
         let expected = support::error_texts(&compiler, &twin);
         if expected.is_empty() {
-            failures.push(format!("{twin}\n  the twin draws nothing\n"));
+            failures.push(support::failed_row_with(
+                &compiler,
+                &twin,
+                format!("{twin}\n  the twin draws nothing\n"),
+            ));
         }
         for holder in HOLDERS {
             let text = holder.replace('V', value);
@@ -593,8 +599,10 @@ fn a_for_bodys_type_fault_draws_whatever_holds_the_expression_as_its_derived_cel
             for program in [text.clone(), reversed] {
                 let found = support::error_texts(&compiler, &program);
                 if found != expected {
-                    failures.push(format!(
-                        "{program}\n  draws {found:?}\n  twin {expected:?}\n"
+                    failures.push(support::failed_row_with(
+                        &compiler,
+                        &text,
+                        format!("{program}\n  draws {found:?}\n  twin {expected:?}\n"),
                     ));
                 }
             }
@@ -612,10 +620,14 @@ fn a_for_bodys_type_fault_draws_whatever_holds_the_expression_as_its_derived_cel
     ] {
         let found = support::error_texts(&compiler, text);
         if found != wanted {
-            failures.push(format!("{text}\n  draws {found:?}\n"));
+            failures.push(support::failed_row_with(
+                &compiler,
+                text,
+                format!("{text}\n  draws {found:?}\n"),
+            ));
         }
     }
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    support::assert_no_failure(&failures);
 }
 
 #[test]
@@ -663,11 +675,15 @@ fn every_range_bound_of_a_for_expression_is_checked_against_i64_before_any_itera
                     let text = items.concat();
                     let found = support::error_texts(compiler, &text);
                     if found != [(Code::RangeBound, at.to_string())] {
-                        failures.push(format!("{text}found {found:?}\n"));
+                        failures.push(support::failed_row_with(
+                            compiler,
+                            &text,
+                            format!("{text}found {found:?}\n"),
+                        ));
                     }
                 }
             }
         }
     }
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    support::assert_no_failure(&failures);
 }

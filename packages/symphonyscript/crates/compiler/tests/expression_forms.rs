@@ -53,13 +53,19 @@ fn form_rows(rows: &Rows) -> Vec<String> {
                     (false, _) => vec![Code::UnbuiltConstruct],
                 };
                 if codes != expected {
-                    failures.push(format!("{text:?} draws {found:?}, expected {expected:?}"));
+                    failures.push(support::failed_row(
+                        &text,
+                        format!("{text:?} draws {found:?}, expected {expected:?}"),
+                    ));
                     continue;
                 }
                 if !fault {
                     let (start, end) = support::at(&text, form, 0);
                     if found.iter().any(|(_, from, to)| *from < start || *to > end) {
-                        failures.push(format!("{text:?} draws {found:?} outside `{form}`"));
+                        failures.push(support::failed_row(
+                            &text,
+                            format!("{text:?} draws {found:?} outside `{form}`"),
+                        ));
                     }
                 }
             }
@@ -72,7 +78,7 @@ fn form_rows(rows: &Rows) -> Vec<String> {
 fn every_new_expression_form_parses_in_every_position_and_draws_one_unbuilt_construct_or_its_fault()
 {
     let failures = covered(form_rows);
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    support::assert_no_failure(&failures);
 }
 
 #[test]
@@ -80,7 +86,7 @@ fn every_new_expression_form_parses_in_every_position_and_draws_one_unbuilt_cons
 fn exhaustive_every_new_expression_form_parses_in_every_position_and_draws_one_unbuilt_construct_or_its_fault()
  {
     let failures = form_rows(&Rows::Every);
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    support::assert_no_failure(&failures);
 }
 
 #[test]
@@ -301,7 +307,10 @@ fn a_new_expression_form_holding_or_held_by_a_syntax_fault_draws_the_syntax_faul
                 .map(|(code, ..)| *code)
                 .collect();
             if codes != vec![code] {
-                failures.push(format!("{text:?} draws {codes:?}, expected [{code:?}]"));
+                failures.push(support::failed_row(
+                    &text,
+                    format!("{text:?} draws {codes:?}, expected [{code:?}]"),
+                ));
             }
         }
     }
@@ -310,13 +319,14 @@ fn a_new_expression_form_holding_or_held_by_a_syntax_fault_draws_the_syntax_faul
             let (start, end) = support::at(&text, form, 0);
             let found = support::check_codes(&text);
             if found != vec![(Code::UnbuiltConstruct, start, end)] {
-                failures.push(format!(
-                    "{text:?} draws {found:?}, expected one unbuilt-construct at `{form}`"
+                failures.push(support::failed_row(
+                    &text,
+                    format!("{text:?} draws {found:?}, expected one unbuilt-construct at `{form}`"),
                 ));
             }
         }
     }
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    support::assert_no_failure(&failures);
 }
 
 /// SPEC §5.3: "a name is this test when it names a type (§6.5)"; ARCHITECTURE

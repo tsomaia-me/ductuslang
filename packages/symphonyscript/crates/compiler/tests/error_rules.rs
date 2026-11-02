@@ -1,3 +1,5 @@
+mod support;
+
 use std::collections::BTreeSet;
 
 use symphonyscript::{Code, Compiler, Diagnostic, Severity, Source};
@@ -1049,10 +1051,14 @@ fn a_count_an_unknown_placement_or_destination_could_change_draws_no_diagnostic(
             .map(|diagnostic| diagnostic.code.as_str())
             .collect();
         if found != [rule.code] {
-            failures.push(format!("{:?} gives {found:?}", rule.program));
+            failures.push(support::failed(
+                rule.program,
+                &diagnostics(&compilers, rule),
+                format!("{:?} gives {found:?}", rule.program),
+            ));
         }
     }
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    support::assert_no_failure(&failures);
 }
 
 #[test]
@@ -1120,7 +1126,11 @@ fn every_rule_program_holds_one_fault_and_draws_one_diagnostic_for_it_with_a_sum
                 .iter()
                 .all(|related| !related.label.trim().is_empty());
             if !(1..=3).contains(&lines) || blank || help_lines != 1 || !labelled {
-                failures.push(format!("{:?}: {diagnostic:?}", rule.program));
+                failures.push(support::failed(
+                    rule.program,
+                    &found,
+                    format!("{:?}: {diagnostic:?}", rule.program),
+                ));
             }
         }
         let errors: Vec<&str> = found
@@ -1141,19 +1151,23 @@ fn every_rule_program_holds_one_fault_and_draws_one_diagnostic_for_it_with_a_sum
             errors == [rule.code]
         };
         if !expected {
-            failures.push(format!(
-                "§{} {:?}: {:?} gives {:?}",
-                rule.section,
-                rule.code,
+            failures.push(support::failed(
                 rule.program,
-                found
-                    .iter()
-                    .map(|diagnostic| diagnostic.code.as_str())
-                    .collect::<Vec<_>>()
+                &found,
+                format!(
+                    "§{} {:?}: {:?} gives {:?}",
+                    rule.section,
+                    rule.code,
+                    rule.program,
+                    found
+                        .iter()
+                        .map(|diagnostic| diagnostic.code.as_str())
+                        .collect::<Vec<_>>()
+                ),
             ));
         }
     }
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    support::assert_no_failure(&failures);
 }
 
 #[test]
@@ -1167,10 +1181,14 @@ fn stress_every_limit_rule_program_draws_its_code_at_the_default_limits() {
     {
         let found: Vec<&str> = error_codes(&compiler, rule);
         if found != [rule.code] {
-            failures.push(format!("{:?} gives {found:?}", rule.program));
+            failures.push(support::failed_row_with(
+                &compiler,
+                rule.program,
+                format!("{:?} gives {found:?}", rule.program),
+            ));
         }
     }
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    support::assert_no_failure(&failures);
 }
 
 fn error_codes(compiler: &Compiler, rule: &Rule) -> Vec<&'static str> {

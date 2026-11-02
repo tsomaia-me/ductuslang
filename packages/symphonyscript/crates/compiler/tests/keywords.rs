@@ -36,7 +36,10 @@ fn a_new_keyword_stands_as_a_member_name_and_draws_its_positions_syntax_code_as_
             let found = support::codes(&text);
             let parsed = support::tree(&text);
             if !found.is_empty() || !parsed.contains(&tree) {
-                failures.push(format!("{text:?}: {found:?}\n{parsed}"));
+                failures.push(support::failed_row(
+                    &text,
+                    format!("{text:?}: {found:?}\n{parsed}"),
+                ));
             }
         }
         for (text, code) in [
@@ -56,11 +59,14 @@ fn a_new_keyword_stands_as_a_member_name_and_draws_its_positions_syntax_code_as_
             let (start, end) = support::at(&text, word, 0);
             let found = support::codes(&text);
             if found != [(code, start, end)] {
-                failures.push(format!("{text:?}: {found:?}, expected {code:?}"));
+                failures.push(support::failed_row(
+                    &text,
+                    format!("{text:?}: {found:?}, expected {code:?}"),
+                ));
             }
         }
     }
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    support::assert_no_failure(&failures);
 }
 
 #[test]

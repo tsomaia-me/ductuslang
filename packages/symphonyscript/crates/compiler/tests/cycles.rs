@@ -41,12 +41,21 @@ fn named(code: Code, names: &[&str]) -> Named {
     (code, names.iter().map(|name| (*name).to_string()).collect())
 }
 
-fn first_order_failing(compiler: &Compiler, items: &[&str], wanted: &[Named]) -> Option<String> {
-    support::permutations(items).into_iter().find_map(|order| {
-        let text = format!("{}\n", order.join("\n"));
-        let found = named_errors(compiler, &text);
-        (found != wanted).then(|| format!("{text}expected {wanted:?}\nfound {found:?}"))
-    })
+fn first_order_failing(compiler: &Compiler, items: &[&str], wanted: &[Named]) -> Vec<String> {
+    support::permutations(items)
+        .into_iter()
+        .filter_map(|order| {
+            let text = format!("{}\n", order.join("\n"));
+            let found = named_errors(compiler, &text);
+            (found != wanted).then(|| {
+                support::failed_row_with(
+                    compiler,
+                    &text,
+                    format!("{text}expected {wanted:?}\nfound {found:?}"),
+                )
+            })
+        })
+        .collect()
 }
 
 #[test]
@@ -190,7 +199,7 @@ fn a_cycle_in_the_demand_engine_draws_its_one_rules_diagnostic() {
     let compiler = Compiler::new(&vocabulary()).expect("the example vocabulary compiles");
     let mut failures: Vec<String> = rows
         .iter()
-        .filter_map(|(items, wanted)| first_order_failing(&compiler, items, wanted))
+        .flat_map(|(items, wanted)| first_order_failing(&compiler, items, wanted))
         .collect();
     let shallow = LimitOverrides {
         nesting_depth: Some(6),
@@ -202,7 +211,7 @@ fn a_cycle_in_the_demand_engine_draws_its_one_rules_diagnostic() {
         &mutual,
         &[named(Code::RecursionDepth, &["a", "b"])],
     ));
-    assert!(failures.is_empty(), "{}", failures.join("\n\n"));
+    support::assert_no_failure(&failures);
 }
 
 const LINKS: [(&[&str], &str); 8] = [
@@ -328,7 +337,13 @@ fn every_cycle_of_declarations_draws_one_declaration_cycle_in_every_order_in(
                                     .into_iter()
                                     .map(|(code, _)| code)
                                     .collect();
-                                (found != wanted).then(|| format!("{text}found {found:?}"))
+                                (found != wanted).then(|| {
+                                    support::failed_row_with(
+                                        compiler,
+                                        &text,
+                                        format!("{text}found {found:?}"),
+                                    )
+                                })
                             });
                             failures.extend(failure);
                         }
@@ -342,7 +357,7 @@ fn every_cycle_of_declarations_draws_one_declaration_cycle_in_every_order_in(
             .collect()
     });
     assert_eq!(cycles.len(), 211);
-    assert!(failures.is_empty(), "{}", failures.join("\n\n"));
+    support::assert_no_failure(&failures);
 }
 
 #[test]
@@ -441,12 +456,16 @@ fn an_evaluation_that_goes_too_deep_names_the_outermost_call_it_ends() {
                 .collect();
             let found = secondary_spans(&compiler, &text);
             if found != wanted {
-                failures.push(format!("{text}expected {wanted:?}\nfound {found:?}"));
+                failures.push(support::failed_row_with(
+                    &compiler,
+                    &text,
+                    format!("{text}expected {wanted:?}\nfound {found:?}"),
+                ));
                 break;
             }
         }
     }
-    assert!(failures.is_empty(), "{}", failures.join("\n\n"));
+    support::assert_no_failure(&failures);
 }
 
 #[test]
@@ -593,7 +612,10 @@ fn a_component_of_the_declaration_graph_draws_one_cycle_the_shortest_through_its
                     && summary.contains(&format!(": a{first} → "))
             });
             if drawn.len() != 1 || !shortest {
-                failures.push(format!("351 ring {size} {reversed}\n  drawn {drawn:?}"));
+                failures.push(support::failed_row(
+                    &text,
+                    format!("351 ring {size} {reversed}\n  drawn {drawn:?}"),
+                ));
             }
         }
     }
@@ -650,13 +672,14 @@ fn a_component_of_the_declaration_graph_draws_one_cycle_the_shortest_through_its
             let named = if reversed { backward } else { forward };
             let drawn = declaration_cycles(&text);
             if drawn.len() != 1 || !drawn[0].1.ends_with(named) {
-                failures.push(format!(
-                    "351 {reversed}\n{text}\n  drawn {drawn:?}\n  names {named}"
+                failures.push(support::failed_row(
+                    &text,
+                    format!("351 {reversed}\n{text}\n  drawn {drawn:?}\n  names {named}"),
                 ));
             }
         }
     }
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    support::assert_no_failure(&failures);
 }
 
 #[test]
@@ -682,10 +705,13 @@ fn a_cycle_through_an_argument_names_the_caller_and_no_parameter_c1_9() {
                     .map(|(at, summary)| format!("{at}: {summary}"))
                     .collect();
                 if found != ["a: these declarations reach themselves: a → a"] {
-                    failures.push(format!("{text}found {found:?}\n"));
+                    failures.push(support::failed_row(
+                        &text,
+                        format!("{text}found {found:?}\n"),
+                    ));
                 }
             }
         }
     }
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    support::assert_no_failure(&failures);
 }

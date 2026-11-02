@@ -355,7 +355,10 @@ fn a_plain_value_reads_in_the_unit_its_family_value_reaches() {
             })
             .collect();
         if found != [(Code::PlainInFamily, start)] {
-            failures.push(format!("{text:?}: found {found:?}"));
+            failures.push(crate::pinned_row::failed_example(
+                text,
+                format!("{text:?}: found {found:?}"),
+            ));
         }
     }
     let envelope = envelope_vocabulary();
@@ -383,7 +386,10 @@ fn a_plain_value_reads_in_the_unit_its_family_value_reaches() {
             .collect();
         let start = text.find(plain).and_then(|at| u32::try_from(at).ok());
         if found != [(Code::PlainInFamily, start)] {
-            failures.push(format!("{text:?}: found {found:?}"));
+            failures.push(crate::pinned_row::failed_example(
+                text,
+                format!("{text:?}: found {found:?}"),
+            ));
         }
     }
     let mut accepted: Vec<(String, Vec<f64>)> = vec![
@@ -419,13 +425,16 @@ fn a_plain_value_reads_in_the_unit_its_family_value_reaches() {
             analyzed(text, |engine| attr_values(engine, "length", EvalTy::F64));
         let expected: Vec<CVal> = expected.iter().map(|value| CVal::F64(*value)).collect();
         if !errors_of(&diagnostics).is_empty() || found != expected {
-            failures.push(format!(
-                "{text:?}: expected {expected:?}, found {found:?} with {:?}",
-                error_codes(&diagnostics)
+            failures.push(crate::pinned_row::failed_example(
+                text,
+                format!(
+                    "{text:?}: expected {expected:?}, found {found:?} with {:?}",
+                    error_codes(&diagnostics)
+                ),
             ));
         }
     }
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    crate::pinned_row::assert_no_failure(&failures);
 }
 
 fn error_codes(diagnostics: &[Diagnostic]) -> Vec<Code> {
@@ -584,12 +593,13 @@ fn compile_time_values_follow_the_types_that_flow_into_them() {
             analyzed_with(vocabulary, &text, |engine| attr_value(engine, attr, ty));
         let errors = error_codes(&diagnostics);
         if !errors.is_empty() || found.as_ref() != Some(&expected) {
-            failures.push(format!(
-                "{text:?} {attr}: expected {expected:?}, found {found:?} with {errors:?}"
+            failures.push(crate::pinned_row::failed_example(
+                &text,
+                format!("{text:?} {attr}: expected {expected:?}, found {found:?} with {errors:?}"),
             ));
         }
     }
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    crate::pinned_row::assert_no_failure(&failures);
 }
 
 #[test]
@@ -648,10 +658,13 @@ fn unit_rules_cover_recursive_results_and_bodies() {
         let (diagnostics, ()) = analyzed_with(&bars, &text, |_| ());
         let found = error_codes(&diagnostics);
         if found != expected {
-            failures.push(format!("{text:?}: expected {expected:?}, found {found:?}"));
+            failures.push(crate::pinned_row::failed_example(
+                &text,
+                format!("{text:?}: expected {expected:?}, found {found:?}"),
+            ));
         }
     }
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    crate::pinned_row::assert_no_failure(&failures);
 }
 
 fn placeholders(engine: &Engine<'_>) -> Vec<String> {
@@ -1131,7 +1144,10 @@ fn a_recursive_array_result_takes_the_shape_it_yields_in_the_type_its_use_expect
     let second = shared.rfind("v[0]").unwrap_or(0);
     let found = located(&shared, &diagnostics);
     if found != [(Code::InconsistentShapes, first, vec![second])] {
-        failures.push(format!("{shared:?}: found {found:?}"));
+        failures.push(crate::pinned_row::failed_example(
+            &shared,
+            format!("{shared:?}: found {found:?}"),
+        ));
     }
     let uses = [
         ("Clip a | gain=({})\n", true),
@@ -1157,7 +1173,10 @@ fn a_recursive_array_result_takes_the_shape_it_yields_in_the_type_its_use_expect
             };
             let (diagnostics, ()) = analyzed(&held, |_| ());
             if error_codes(&diagnostics) != expected {
-                failures.push(format!("{held:?}: found {:?}", error_codes(&diagnostics)));
+                failures.push(crate::pinned_row::failed_example(
+                    &held,
+                    format!("{held:?}: found {:?}", error_codes(&diagnostics)),
+                ));
             }
             let separate = format!(
                 "{R_FN}{}{}",
@@ -1166,9 +1185,9 @@ fn a_recursive_array_result_takes_the_shape_it_yields_in_the_type_its_use_expect
             );
             let (diagnostics, ()) = analyzed(&separate, |_| ());
             if !errors_of(&diagnostics).is_empty() {
-                failures.push(format!(
-                    "{separate:?}: found {:?}",
-                    error_codes(&diagnostics)
+                failures.push(crate::pinned_row::failed_example(
+                    &separate,
+                    format!("{separate:?}: found {:?}", error_codes(&diagnostics)),
                 ));
             }
         }
@@ -1194,9 +1213,12 @@ fn a_recursive_array_result_takes_the_shape_it_yields_in_the_type_its_use_expect
         || gain != [CVal::F32(0.1)]
         || freq != [CVal::F64(tenth)]
     {
-        failures.push(format!(
-            "{separate:?}: {results:?}, {gain:?}, {freq:?} with {:?}",
-            error_codes(&diagnostics)
+        failures.push(crate::pinned_row::failed_example(
+            &separate,
+            format!(
+                "{separate:?}: {results:?}, {gain:?}, {freq:?} with {:?}",
+                error_codes(&diagnostics)
+            ),
         ));
     }
     let chords = [[60, 64, 67], [62, 65, 69]];
@@ -1213,9 +1235,9 @@ fn a_recursive_array_result_takes_the_shape_it_yields_in_the_type_its_use_expect
             .map(|chord| chord.iter().map(|pitch| CVal::Int(*pitch)).collect())
             .unwrap_or_default();
         if !errors_of(&diagnostics).is_empty() || pitches != expected {
-            failures.push(format!(
-                "{text:?}: {pitches:?} with {:?}",
-                error_codes(&diagnostics)
+            failures.push(crate::pinned_row::failed_example(
+                &text,
+                format!("{text:?}: {pitches:?} with {:?}", error_codes(&diagnostics)),
             ));
         }
         let past = format!("{CHORD_FN}Clip c:\n    Note/(chord({depth})[3])\n");
@@ -1223,7 +1245,10 @@ fn a_recursive_array_result_takes_the_shape_it_yields_in_the_type_its_use_expect
         let index = past.rfind("[3]").map_or(0, |at| at + 1);
         let found = located(&past, &diagnostics);
         if found != [(Code::IndexOutOfRange, index, Vec::new())] {
-            failures.push(format!("{past:?}: found {found:?}"));
+            failures.push(crate::pinned_row::failed_example(
+                &past,
+                format!("{past:?}: found {found:?}"),
+            ));
         }
     }
     let grid = "fn g(k): if k < 1 then [[1, 2, 3], [4, 5, 6]] else g(k - 1)\n";
@@ -1234,7 +1259,10 @@ fn a_recursive_array_result_takes_the_shape_it_yields_in_the_type_its_use_expect
                 analyzed(&text, |engine| attr_values(engine, "pitch", EvalTy::I32));
             let expected = [CVal::Int(1 + 3 * row + column)];
             if !errors_of(&diagnostics).is_empty() || pitches != expected {
-                failures.push(format!("{text:?}: {pitches:?}"));
+                failures.push(crate::pinned_row::failed_example(
+                    &text,
+                    format!("{text:?}: {pitches:?}"),
+                ));
             }
         }
     }
@@ -1367,13 +1395,13 @@ fn a_recursive_array_result_takes_the_shape_it_yields_in_the_type_its_use_expect
             })
             .collect();
         if error_codes(&diagnostics) != codes || (codes.is_empty() && found != pitches) {
-            failures.push(format!(
-                "{text:?}: {found:?} with {:?}",
-                error_codes(&diagnostics)
+            failures.push(crate::pinned_row::failed_example(
+                &text,
+                format!("{text:?}: {found:?} with {:?}", error_codes(&diagnostics)),
             ));
         }
     }
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    crate::pinned_row::assert_no_failure(&failures);
 }
 
 fn chord_vocabulary() -> Vocabulary {
@@ -1474,24 +1502,30 @@ fn a_recursive_array_result_fills_an_array_attribute_or_input_of_its_shape() {
         let found = found.into_iter().next();
         let clean = !codes.is_empty() || holes.is_empty();
         if error_codes(&diagnostics) != codes || (value.is_some() && found != value) || !clean {
-            failures.push(format!(
-                "{text:?}: {found:?} with {:?}",
-                error_codes(&diagnostics)
+            failures.push(crate::pinned_row::failed_example(
+                &text,
+                format!("{text:?}: {found:?} with {:?}", error_codes(&diagnostics)),
             ));
         }
     }
     let annotated = format!("{CHORD_FN}state v(chord(1)): i32[3]\nClip c:\n    Note/(v[2])\n");
     let (diagnostics, holes) = analyzed(&annotated, placeholders);
     if !errors_of(&diagnostics).is_empty() || !holes.is_empty() {
-        failures.push(format!(
-            "{annotated:?}: {holes:?} with {:?}",
-            error_codes(&diagnostics)
+        failures.push(crate::pinned_row::failed_example(
+            &annotated,
+            format!(
+                "{annotated:?}: {holes:?} with {:?}",
+                error_codes(&diagnostics)
+            ),
         ));
     }
     let wrong = format!("{CHORD_FN}state v(chord(1)): i32[2]\nClip c:\n    Note/(v[1])\n");
     let (diagnostics, ()) = analyzed(&wrong, |_| ());
     if error_codes(&diagnostics) != [Code::TypeMismatch] {
-        failures.push(format!("{wrong:?}: {:?}", error_codes(&diagnostics)));
+        failures.push(crate::pinned_row::failed_example(
+            &wrong,
+            format!("{wrong:?}: {:?}", error_codes(&diagnostics)),
+        ));
     }
     let input = format!("{CHORD_FN}state v(chord(1))\nClip c:\n    Note/(v[2])\n");
     let (_, slots) = analyzed(&input, |engine| {
@@ -1506,9 +1540,12 @@ fn a_recursive_array_result_fills_an_array_attribute_or_input_of_its_shape() {
             .collect::<Vec<usize>>()
     });
     if slots != [3] {
-        failures.push(format!("{input:?}: input slots {slots:?}"));
+        failures.push(crate::pinned_row::failed_example(
+            &input,
+            format!("{input:?}: input slots {slots:?}"),
+        ));
     }
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    crate::pinned_row::assert_no_failure(&failures);
 }
 
 fn a_placement_for_over_a_doubled_array_stops_at_the_expansion_limit(depth: usize) {
@@ -1642,9 +1679,12 @@ fn a_recursive_result_has_the_kind_its_body_gives_it() {
             (notes_and_pitches(engine), placeholders(engine))
         });
         if !errors_of(&diagnostics).is_empty() || found != (count, expected) || !holes.is_empty() {
-            failures.push(format!(
-                "{text:?}: {found:?} {holes:?} with {:?}",
-                error_codes(&diagnostics)
+            failures.push(crate::pinned_row::failed_example(
+                &text,
+                format!(
+                    "{text:?}: {found:?} {holes:?} with {:?}",
+                    error_codes(&diagnostics)
+                ),
             ));
         }
     }
@@ -1698,9 +1738,12 @@ fn a_recursive_result_has_the_kind_its_body_gives_it() {
             || !value_holds
             || !holes.is_empty()
         {
-            failures.push(format!(
-                "{text:?}: {typed:?} {holes:?} with {:?}",
-                error_codes(&diagnostics)
+            failures.push(crate::pinned_row::failed_example(
+                &text,
+                format!(
+                    "{text:?}: {typed:?} {holes:?} with {:?}",
+                    error_codes(&diagnostics)
+                ),
             ));
         }
     }
@@ -1717,10 +1760,13 @@ fn a_recursive_result_has_the_kind_its_body_gives_it() {
     for (text, code) in rejected {
         let (diagnostics, ()) = analyzed(&text, |_| ());
         if error_codes(&diagnostics) != [code] {
-            failures.push(format!("{text:?}: {:?}", error_codes(&diagnostics)));
+            failures.push(crate::pinned_row::failed_example(
+                &text,
+                format!("{text:?}: {:?}", error_codes(&diagnostics)),
+            ));
         }
     }
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    crate::pinned_row::assert_no_failure(&failures);
 }
 
 const GRID_FN: &str = "fn grid(k): if k < 1 then [[1, 2], [3, 4]] else grid(k - 1)\n";
@@ -1812,9 +1858,12 @@ fn a_reactive_value_shaped_by_a_recursive_result_alone_takes_its_default_shape()
             || !computed
             || !holes.is_empty()
         {
-            failures.push(format!(
-                "{text:?}: {types:?} {found:?} {holes:?} with {:?}",
-                error_codes(&diagnostics)
+            failures.push(crate::pinned_row::failed_example(
+                &text,
+                format!(
+                    "{text:?}: {types:?} {found:?} {holes:?} with {:?}",
+                    error_codes(&diagnostics)
+                ),
             ));
         }
     }
@@ -1825,9 +1874,12 @@ fn a_reactive_value_shaped_by_a_recursive_result_alone_takes_its_default_shape()
         (element_types(engine, "x"), placeholders(engine))
     });
     if !errors_of(&diagnostics).is_empty() || types != [Some(Scalar::I32)] || !holes.is_empty() {
-        failures.push(format!(
-            "{annotated:?}: {types:?} {holes:?} with {:?}",
-            error_codes(&diagnostics)
+        failures.push(crate::pinned_row::failed_example(
+            &annotated,
+            format!(
+                "{annotated:?}: {types:?} {holes:?} with {:?}",
+                error_codes(&diagnostics)
+            ),
         ));
     }
     let mismatched = format!(
@@ -1835,7 +1887,10 @@ fn a_reactive_value_shaped_by_a_recursive_result_alone_takes_its_default_shape()
     );
     let (diagnostics, ()) = analyzed(&mismatched, |_| ());
     if error_codes(&diagnostics) != [Code::TypeMismatch] {
-        failures.push(format!("{mismatched:?}: {:?}", error_codes(&diagnostics)));
+        failures.push(crate::pinned_row::failed_example(
+            &mismatched,
+            format!("{mismatched:?}: {:?}", error_codes(&diagnostics)),
+        ));
     }
     let other = "fn other(k): if k < 1 then [1, 2] else other(k - 1)\n";
     let variable = format!(
@@ -1843,7 +1898,10 @@ fn a_reactive_value_shaped_by_a_recursive_result_alone_takes_its_default_shape()
     );
     let (diagnostics, ()) = analyzed(&variable, |_| ());
     if !errors_of(&diagnostics).is_empty() {
-        failures.push(format!("{variable:?}: {:?}", error_codes(&diagnostics)));
+        failures.push(crate::pinned_row::failed_example(
+            &variable,
+            format!("{variable:?}: {:?}", error_codes(&diagnostics)),
+        ));
     }
     let rejected = format!(
         "{R_FN}state f(true)\nfn g(w): w[0]\nOsc o | freq=(g(if f then r(0.1, 3) else r(0.1, 3)))\n"
@@ -1853,9 +1911,12 @@ fn a_reactive_value_shaped_by_a_recursive_result_alone_takes_its_default_shape()
     let declared = rejected.find("if f then r(0.1, 3)").unwrap_or(0);
     let found = located(&rejected, &diagnostics);
     if found != [(Code::InconsistentShapes, used, vec![declared])] {
-        failures.push(format!("{rejected:?}: found {found:?}"));
+        failures.push(crate::pinned_row::failed_example(
+            &rejected,
+            format!("{rejected:?}: found {found:?}"),
+        ));
     }
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    crate::pinned_row::assert_no_failure(&failures);
 }
 
 fn doubling(name: &str, levels: usize, left: &str, right: &str) -> String {
@@ -2135,7 +2196,7 @@ fn the_count_before_inlining_follows_the_defaults_each_call_leaves_open() {
         1 << 19,
     );
     let failures = failures.into_inner();
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    crate::pinned_row::assert_no_failure(&failures);
 }
 
 #[test]
@@ -2995,7 +3056,10 @@ fn a_recursive_argument_reads_a_settled_enum() {
             qualified_calls,
         );
         if found != wanted || qualified.is_none() {
-            failures.push(format!("{function}: found {found:?}, wanted {wanted:?}"));
+            failures.push(crate::pinned_row::failed_example(
+                function,
+                format!("{function}: found {found:?}, wanted {wanted:?}"),
+            ));
         }
         let text = format!(
             "{typed}{function}{}{}",
@@ -3006,8 +3070,9 @@ fn a_recursive_argument_reads_a_settled_enum() {
         );
         let (diagnostics, shared) = analyzed(&text, |engine| engine.memo.calls.iter().count());
         if error_codes(&diagnostics) != Vec::<Code>::new() || shared != qualified_calls {
-            failures.push(format!(
-                "{function}: shared {shared} against {qualified_calls}"
+            failures.push(crate::pinned_row::failed_example(
+                function,
+                format!("{function}: shared {shared} against {qualified_calls}"),
             ));
         }
     }
@@ -3022,9 +3087,13 @@ fn a_recursive_argument_reads_a_settled_enum() {
             vec![],
         )]
     {
-        failures.push(format!("untyped: {:?}", error_codes(&diagnostics)));
+        failures.push(crate::pinned_row::failed(
+            &untyped,
+            &diagnostics,
+            format!("untyped: {:?}", error_codes(&diagnostics)),
+        ));
     }
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    crate::pinned_row::assert_no_failure(&failures);
 }
 
 #[test]
@@ -3246,12 +3315,15 @@ fn an_array_input_has_one_kind_for_all_its_elements() {
             let (diagnostics, found) = analyzed(&text, |engine| input_cells(engine, &name));
             let found_codes = codes_beside_the_entry_warning(&diagnostics);
             if found_codes != codes || found != (lengths.clone(), cells.clone()) {
-                failures.push(format!("{text:?}: {found:?} with {found_codes:?}"));
+                failures.push(crate::pinned_row::failed_example(
+                    &text,
+                    format!("{text:?}: {found:?} with {found_codes:?}"),
+                ));
                 break;
             }
         }
     }
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    crate::pinned_row::assert_no_failure(&failures);
 }
 
 #[test]
@@ -3316,7 +3388,10 @@ fn a_value_of_fixed_or_widened_type_keeps_its_ieee_value_where_it_is_used() {
                 None => false,
             };
             if !errors.is_empty() || !holds {
-                failures.push(format!("{text:?}: {found:?} with {errors:?}"));
+                failures.push(crate::pinned_row::failed_example(
+                    &text,
+                    format!("{text:?}: {found:?} with {errors:?}"),
+                ));
                 break;
             }
         }
@@ -3331,12 +3406,15 @@ fn a_value_of_fixed_or_widened_type_keeps_its_ieee_value_where_it_is_used() {
         for text in in_every_order(items) {
             let (diagnostics, ()) = analyzed(&text, |_| ());
             if error_codes(&diagnostics) != [Code::DoesNotFit] {
-                failures.push(format!("{text:?}: {:?}", error_codes(&diagnostics)));
+                failures.push(crate::pinned_row::failed_example(
+                    &text,
+                    format!("{text:?}: {:?}", error_codes(&diagnostics)),
+                ));
                 break;
             }
         }
     }
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    crate::pinned_row::assert_no_failure(&failures);
 }
 
 fn a_recursive_call_reuses_only_a_finished_calls_value_in(orders: Orders) {
@@ -3391,15 +3469,18 @@ fn a_recursive_call_reuses_only_a_finished_calls_value_in(orders: Orders) {
                 )
             });
             if !errors_of(&diagnostics).is_empty() || found != expected || !holes.is_empty() {
-                failures.push(format!(
-                    "{text:?}: {found:?} {holes:?} with {:?}",
-                    error_codes(&diagnostics)
+                failures.push(crate::pinned_row::failed_example(
+                    &text,
+                    format!(
+                        "{text:?}: {found:?} {holes:?} with {:?}",
+                        error_codes(&diagnostics)
+                    ),
                 ));
                 break;
             }
         }
     }
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    crate::pinned_row::assert_no_failure(&failures);
 }
 
 #[test]
@@ -3488,13 +3569,16 @@ fn a_recursive_call_with_a_placeholder_argument_is_a_placeholder_in(orders: Orde
                     (None, None) => false,
                 };
                 if !holds {
-                    failures.push(format!("{text:?}: {errors:?}, {notes} notes, {cells:?}"));
+                    failures.push(crate::pinned_row::failed_example(
+                        &text,
+                        format!("{text:?}: {errors:?}, {notes} notes, {cells:?}"),
+                    ));
                     break;
                 }
             }
         }
     }
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    crate::pinned_row::assert_no_failure(&failures);
 }
 
 #[test]
@@ -3539,7 +3623,10 @@ fn named_rows_in_every_order(rows: Vec<NamedRow<'_>>) -> Vec<String> {
             let errors = errors_at(&text, &diagnostics);
             let clean_holds = !wanted.is_empty() || (holes.is_empty() && found == velocities);
             if errors != wanted || !clean_holds {
-                failures.push(format!("{text:?}: {errors:?} {found:?} {holes:?}"));
+                failures.push(crate::pinned_row::failed_example(
+                    &text,
+                    format!("{text:?}: {errors:?} {found:?} {holes:?}"),
+                ));
                 break;
             }
         }
@@ -3603,7 +3690,7 @@ fn a_stand_in_placements_own_name_names_nothing_in_its_pattern() {
         ),
     ];
     let failures = named_rows_in_every_order(rows);
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    crate::pinned_row::assert_no_failure(&failures);
 }
 
 #[test]
@@ -3667,9 +3754,12 @@ fn a_patterns_lets_see_the_names_of_its_body() {
         })
         .collect();
     if names != ["a", "n.velocity", "a"] {
-        failures.push(format!("{cycle:?} names {names:?}"));
+        failures.push(crate::pinned_row::failed_example(
+            cycle,
+            format!("{cycle:?} names {names:?}"),
+        ));
     }
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    crate::pinned_row::assert_no_failure(&failures);
 }
 
 #[path = "../../../tests/robustness_corpus/mod.rs"]
@@ -3732,7 +3822,7 @@ fn mutants_draw_no_placeholder(shard: usize) {
         clean > 1_000 / MUTANT_SHARDS,
         "{clean} mutants drew no error"
     );
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    crate::pinned_row::assert_no_failure(&failures);
 }
 
 #[test]
@@ -3763,7 +3853,7 @@ fn no_mutant_of_an_example_or_fixture_that_draws_no_error_holds_a_placeholder() 
         }
         (failures, clean)
     });
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    crate::pinned_row::assert_no_failure(&failures);
     assert_eq!(clean, 40);
 }
 

@@ -1,3 +1,5 @@
+mod support;
+
 use symphonyscript::{Code, Compiler, Diagnostic, Severity, Source};
 use symphonyscript_core::LimitOverrides;
 use symphonyscript_fixtures::{
@@ -156,9 +158,13 @@ fn lessons_hold<'a>(codes: impl Iterator<Item = &'a Code>, limits: LimitOverride
                 errors == 0 && !codes.contains(code)
             };
             if !holds {
-                failures.push(format!("{code}: {:?} draws {codes:?}", example.text));
+                failures.push(support::failed(
+                    &example.text,
+                    &found,
+                    format!("{code}: {:?} draws {codes:?}", example.text),
+                ));
             }
         }
     }
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    support::assert_no_failure(&failures);
 }

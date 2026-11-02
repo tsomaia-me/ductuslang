@@ -803,7 +803,11 @@ fn a_count_past_its_warning_value_draws_the_warning_where_the_limit_would_draw_i
                     codes.sort();
                     let row = format!("{} at limit {limit}, warning {warning}:\n{text}", site.key);
                     if codes != expected {
-                        failures.push(format!("{row}\n  draws {codes:?}, expected {expected:?}"));
+                        failures.push(support::failed(
+                            &text,
+                            &found,
+                            format!("{row}\n  draws {codes:?}, expected {expected:?}"),
+                        ));
                         continue;
                     }
                     if !warns {
@@ -846,7 +850,11 @@ fn a_count_past_its_warning_value_draws_the_warning_where_the_limit_would_draw_i
                         || drawn.help.as_deref() != Some(help.as_str())
                         || !placed
                     {
-                        failures.push(format!("{row}\n  draws {drawn:?}\n  twin {error:?}"));
+                        failures.push(support::failed(
+                            &text,
+                            &found,
+                            format!("{row}\n  draws {drawn:?}\n  twin {error:?}"),
+                        ));
                     }
                 }
             }
@@ -878,7 +886,7 @@ fn a_count_past_its_warning_value_draws_the_warning_where_the_limit_would_draw_i
         );
     assert_eq!(taken, 40);
     failures.extend(each_failures);
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    support::assert_no_failure(&failures);
 }
 
 #[test]
@@ -890,7 +898,7 @@ fn exhaustive_a_count_past_its_warning_value_draws_the_warning_where_the_limit_w
             &Rows::Every,
         );
     assert_eq!(taken, 150);
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    support::assert_no_failure(&failures);
 }
 
 #[test]

@@ -254,7 +254,11 @@ fn outside_i64_failures(rows: &Rows) -> (Vec<String>, usize) {
                         &at_bound
                     };
                     if twin_found != *expected {
-                        failures.push(format!("{}\n  twin draws {twin_found:?}\n", twin.text));
+                        failures.push(support::failed_row_with(
+                            &compiler,
+                            &twin.text,
+                            format!("{}\n  twin draws {twin_found:?}\n", twin.text),
+                        ));
                     }
                 }
                 for base_at in taken {
@@ -286,9 +290,13 @@ fn outside_i64_failures(rows: &Rows) -> (Vec<String>, usize) {
                             .collect()
                     };
                     if found != expected {
-                        failures.push(format!(
-                            "{}\n  found {found:?}\n  expected {expected:?}\n",
-                            built.text
+                        failures.push(support::failed_row_with(
+                            &compiler,
+                            &built.text,
+                            format!(
+                                "{}\n  found {found:?}\n  expected {expected:?}\n",
+                                built.text
+                            ),
                         ));
                     }
                 }
@@ -299,13 +307,7 @@ fn outside_i64_failures(rows: &Rows) -> (Vec<String>, usize) {
 }
 
 fn assert_outside_i64(failures: &[String], programs: usize, expected: usize) {
-    assert!(
-        failures.is_empty(),
-        "{} of {programs} programs fail:\n{}",
-        failures.len(),
-        failures.iter().take(12).cloned().collect::<String>()
-    );
-    assert_eq!(programs, expected);
+    support::assert_none_fail((failures.to_vec(), programs), expected);
 }
 
 #[test]
@@ -358,8 +360,10 @@ fn slice_bound_rows(rows: &symphonyscript_fixtures::Rows) -> Vec<String> {
             let text = ordered.concat();
             let found = support::error_texts(&compiler, &text);
             if found != expected {
-                failures.push(format!(
-                    "356: {text}\n  draws {found:?}\n  expected {expected:?}"
+                failures.push(support::failed_row_with(
+                    &compiler,
+                    &text,
+                    format!("356: {text}\n  draws {found:?}\n  expected {expected:?}"),
                 ));
             }
         }
@@ -395,14 +399,14 @@ fn slice_bound_rows(rows: &symphonyscript_fixtures::Rows) -> Vec<String> {
 #[test]
 fn a_slice_whose_bound_is_in_error_reads_no_value_so_only_the_bound_draws() {
     let failures = symphonyscript_fixtures::covered(slice_bound_rows);
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    support::assert_no_failure(&failures);
 }
 
 #[test]
 #[ignore = "exhaustive"]
 fn exhaustive_a_slice_whose_bound_is_in_error_reads_no_value_so_only_the_bound_draws() {
     let failures = slice_bound_rows(&symphonyscript_fixtures::Rows::Every);
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    support::assert_no_failure(&failures);
 }
 
 const PLACEHOLDER_BASES: [(&[&str], &str, &str); 4] = [
@@ -475,8 +479,10 @@ fn placeholder_base_rows(rows: &symphonyscript_fixtures::Rows) -> Vec<String> {
                         let text = ordered.concat();
                         let found = support::error_texts(&compiler, &text);
                         if found != expected {
-                            failures.push(format!(
-                                "311: {text}\n  draws {found:?}\n  expected {expected:?}"
+                            failures.push(support::failed_row_with(
+                                &compiler,
+                                &text,
+                                format!("311: {text}\n  draws {found:?}\n  expected {expected:?}"),
                             ));
                         }
                     }
@@ -490,14 +496,14 @@ fn placeholder_base_rows(rows: &symphonyscript_fixtures::Rows) -> Vec<String> {
 #[test]
 fn a_bound_beside_a_placeholder_base_draws_its_own_fault_and_the_base_draws_once() {
     let failures = symphonyscript_fixtures::covered(placeholder_base_rows);
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    support::assert_no_failure(&failures);
 }
 
 #[test]
 #[ignore = "exhaustive"]
 fn exhaustive_a_bound_beside_a_placeholder_base_draws_its_own_fault_and_the_base_draws_once() {
     let failures = placeholder_base_rows(&symphonyscript_fixtures::Rows::Every);
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    support::assert_no_failure(&failures);
 }
 
 const UNREAD_FAULTS: [(&str, Code, bool); 2] = [
@@ -560,8 +566,12 @@ fn unread_element_rows(rows: &symphonyscript_fixtures::Rows) -> Vec<String> {
                             let text = ordered.concat();
                             let found = support::error_texts(&compiler, &text);
                             if found != expected {
-                                failures.push(format!(
-                                    "290: {text}\n  draws {found:?}\n  expected {expected:?}"
+                                failures.push(support::failed_row_with(
+                                    &compiler,
+                                    &text,
+                                    format!(
+                                        "290: {text}\n  draws {found:?}\n  expected {expected:?}"
+                                    ),
                                 ));
                             }
                         }
@@ -577,7 +587,11 @@ fn unread_element_rows(rows: &symphonyscript_fixtures::Rows) -> Vec<String> {
                 );
                 let found = support::error_texts(&compiler, &text);
                 if !found.is_empty() {
-                    failures.push(format!("290: {text}\n  draws {found:?}"));
+                    failures.push(support::failed_row_with(
+                        &compiler,
+                        &text,
+                        format!("290: {text}\n  draws {found:?}"),
+                    ));
                 }
             }
         }
@@ -588,14 +602,14 @@ fn unread_element_rows(rows: &symphonyscript_fixtures::Rows) -> Vec<String> {
 #[test]
 fn every_compile_time_index_form_reads_only_the_element_it_selects() {
     let failures = symphonyscript_fixtures::covered(unread_element_rows);
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    support::assert_no_failure(&failures);
 }
 
 #[test]
 #[ignore = "exhaustive"]
 fn exhaustive_every_compile_time_index_form_reads_only_the_element_it_selects() {
     let failures = unread_element_rows(&symphonyscript_fixtures::Rows::Every);
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    support::assert_no_failure(&failures);
 }
 
 #[test]
@@ -765,8 +779,12 @@ fn resolved_placeholder_base_rows(rows: &Rows) -> Vec<String> {
                             let text = ordered.concat();
                             let found = support::error_texts(&compiler, &text);
                             if found != expected {
-                                failures.push(format!(
-                                    "381: {text}\n  draws {found:?}\n  expected {expected:?}"
+                                failures.push(support::failed_row_with(
+                                    &compiler,
+                                    &text,
+                                    format!(
+                                        "381: {text}\n  draws {found:?}\n  expected {expected:?}"
+                                    ),
                                 ));
                             }
                         }
@@ -781,7 +799,7 @@ fn resolved_placeholder_base_rows(rows: &Rows) -> Vec<String> {
 #[test]
 fn a_bound_or_an_index_beside_a_base_resolve_made_a_placeholder_draws_its_own_fault_381() {
     let failures = covered(resolved_placeholder_base_rows);
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    support::assert_no_failure(&failures);
 }
 
 #[test]
@@ -789,7 +807,7 @@ fn a_bound_or_an_index_beside_a_base_resolve_made_a_placeholder_draws_its_own_fa
 fn exhaustive_a_bound_or_an_index_beside_a_base_resolve_made_a_placeholder_draws_its_own_fault_381()
 {
     let failures = resolved_placeholder_base_rows(&Rows::Every);
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    support::assert_no_failure(&failures);
 }
 
 #[test]

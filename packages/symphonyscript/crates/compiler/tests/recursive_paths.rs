@@ -331,9 +331,9 @@ fn node_reference_rows(rows: &Rows) -> (Vec<String>, usize) {
                                 let found = found(&text);
                                 programs += 1;
                                 if found != expected {
-                                    failures.push(format!(
+                                    failures.push(support::failed_row(&text, format!(
                                         "{path:?} {binding:?} {passing:?} {argument:?} {stand:?} {depth} {reversed}\n{text}\n  found {found:?}\n  twin {expected:?}\n"
-                                    ));
+                                    )));
                                 }
                             }
                         }
@@ -356,26 +356,16 @@ fn position<T: PartialEq>(items: &[T], item: &T) -> usize {
         .unwrap_or(items.len())
 }
 
-fn assert_none_fail((failures, programs): (Vec<String>, usize), expected: usize) {
-    assert!(
-        failures.is_empty(),
-        "{} of {programs} programs fail:\n{}",
-        failures.len(),
-        failures.iter().take(8).cloned().collect::<String>()
-    );
-    assert_eq!(programs, expected);
-}
-
 #[test]
 fn a_path_through_a_node_reference_parameter_of_a_recursive_function_reads_as_at_top_level() {
-    assert_none_fail(covered(node_reference_rows), 23);
+    support::assert_none_fail(covered(node_reference_rows), 23);
 }
 
 #[test]
 #[ignore = "exhaustive"]
 fn exhaustive_a_path_through_a_node_reference_parameter_of_a_recursive_function_reads_as_at_top_level()
  {
-    assert_none_fail(node_reference_rows(&Rows::Every), 4_320);
+    support::assert_none_fail(node_reference_rows(&Rows::Every), 4_320);
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -852,9 +842,9 @@ fn frame_chosen_rows(rows: &Rows) -> (Vec<String>, usize) {
                             let twin = chosen_program(case, frame, (levels, reversed, false));
                             programs += 1;
                             if let Some(failure) = twin_failure(&text, &twin, levels) {
-                                failures.push(format!(
+                                failures.push(support::failed_row(&text, format!(
                                     "{chooser:?} {consumer:?} {binding:?} {scale} {index} {levels:?} {reversed}\n{failure}"
-                                ));
+                                )));
                             }
                         }
                     }
@@ -868,14 +858,14 @@ fn frame_chosen_rows(rows: &Rows) -> (Vec<String>, usize) {
 #[test]
 fn a_reference_a_recursive_body_chooses_by_a_frame_value_reads_the_chosen_reference_at_every_consumer()
  {
-    assert_none_fail(covered(frame_chosen_rows), 167);
+    support::assert_none_fail(covered(frame_chosen_rows), 167);
 }
 
 #[test]
 #[ignore = "exhaustive"]
 fn exhaustive_a_reference_a_recursive_body_chooses_by_a_frame_value_reads_the_chosen_reference_at_every_consumer()
  {
-    assert_none_fail(frame_chosen_rows(&Rows::Every), 14_056);
+    support::assert_none_fail(frame_chosen_rows(&Rows::Every), 14_056);
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -1119,9 +1109,9 @@ fn array_attribute_rows(rows: &Rows) -> (Vec<String>, usize) {
                                 .any(|(code, _)| *code == Code::IndexOutOfRange)
                                 || drawn != twin_drawn
                             {
-                                failures.push(format!(
+                                failures.push(support::failed_row_with(&compiler, &text, format!(
                                     "{chooser:?} {consumer:?} {attribute:?} {read:?} {index} {levels:?} {reversed}\n{text}\n  found {drawn:?}\n  twin {twin_drawn:?}\n"
-                                ));
+                                )));
                             }
                         }
                     }
@@ -1135,14 +1125,14 @@ fn array_attribute_rows(rows: &Rows) -> (Vec<String>, usize) {
 #[test]
 fn an_array_attribute_read_through_a_reference_a_recursive_body_chooses_has_the_attributes_type_and_layout()
  {
-    assert_none_fail(covered(array_attribute_rows), 176);
+    support::assert_none_fail(covered(array_attribute_rows), 176);
 }
 
 #[test]
 #[ignore = "exhaustive"]
 fn exhaustive_an_array_attribute_read_through_a_reference_a_recursive_body_chooses_has_the_attributes_type_and_layout()
  {
-    assert_none_fail(array_attribute_rows(&Rows::Every), 37_504);
+    support::assert_none_fail(array_attribute_rows(&Rows::Every), 37_504);
 }
 
 #[test]
@@ -1176,11 +1166,14 @@ fn a_reference_argument_an_error_leaves_unknown_draws_what_its_twin_draws() {
             let (text, twin) = (program(true), program(false));
             let (drawn, expected) = (found(&text), found(&twin));
             if drawn != expected || expected.is_empty() {
-                failures.push(format!("{text}\n  found {drawn:?}\n  twin {expected:?}\n"));
+                failures.push(support::failed_row(
+                    &text,
+                    format!("{text}\n  found {drawn:?}\n  twin {expected:?}\n"),
+                ));
             }
         }
     }
-    assert!(failures.is_empty(), "{}", failures.concat());
+    support::assert_no_failure(&failures);
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -1435,9 +1428,9 @@ fn frame_chosen_start_rows(rows: &Rows) -> (Vec<String>, usize) {
                                 None => codes.is_empty(),
                             };
                             if !twin_holds_the_fault || drawn != expected {
-                                failures.push(format!(
+                                failures.push(support::failed_row(&text, format!(
                                 "{start:?} {fault:?} {candidates} {consumer:?} {levels:?} {reversed}\n{text}\n  found {drawn:?}\n  twin {expected:?}\n"
-                            ));
+                            )));
                             }
                         }
                     }
@@ -1451,14 +1444,14 @@ fn frame_chosen_start_rows(rows: &Rows) -> (Vec<String>, usize) {
 #[test]
 fn a_path_through_a_frame_chosen_start_evaluates_the_start_in_the_frame_however_many_instances_it_names()
  {
-    assert_none_fail(covered(frame_chosen_start_rows), 46);
+    support::assert_none_fail(covered(frame_chosen_start_rows), 46);
 }
 
 #[test]
 #[ignore = "exhaustive"]
 fn exhaustive_a_path_through_a_frame_chosen_start_evaluates_the_start_in_the_frame_however_many_instances_it_names()
  {
-    assert_none_fail(frame_chosen_start_rows(&Rows::Every), 1_384);
+    support::assert_none_fail(frame_chosen_start_rows(&Rows::Every), 1_384);
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -1596,9 +1589,9 @@ fn keyed_rows(rows: &Rows) -> (Vec<String>, usize) {
                             let (drawn, expected) = (found(&text), found(&twin));
                             programs += 1;
                             if !expected.is_empty() || drawn != expected {
-                                failures.push(format!(
+                                failures.push(support::failed_row(&text, format!(
                                     "{inner:?} {wrapping:?} {outer:?} {used:?} {depth} {reversed}\n{text}\n  found {drawn:?}\n  twin {expected:?}\n"
-                                ));
+                                )));
                             }
                         }
                     }
@@ -1612,14 +1605,14 @@ fn keyed_rows(rows: &Rows) -> (Vec<String>, usize) {
 #[test]
 fn keying_a_recursive_calls_reference_argument_that_is_a_call_on_the_callers_cycle_draws_what_its_twin_draws()
  {
-    assert_none_fail(covered(keyed_rows), 15);
+    support::assert_none_fail(covered(keyed_rows), 15);
 }
 
 #[test]
 #[ignore = "exhaustive"]
 fn exhaustive_keying_a_recursive_calls_reference_argument_that_is_a_call_on_the_callers_cycle_draws_what_its_twin_draws()
  {
-    assert_none_fail(keyed_rows(&Rows::Every), 648);
+    support::assert_none_fail(keyed_rows(&Rows::Every), 648);
 }
 
 const TRIO: [(&str, i32); 3] = [("verse", 2), ("other", 3), ("tail", 4)];
@@ -1917,9 +1910,9 @@ fn call_start_rows(rows: &Rows) -> (Vec<String>, usize) {
                                 if let Some(failure) =
                                     model_failure(&text, twin.as_deref(), &expected)
                                 {
-                                    failures.push(format!(
+                                    failures.push(support::failed_row(&text, format!(
                                         "{start:?} {helper:?} {consumer:?} {sites:?} {index} {levels:?} {wrong} {reversed}\n{failure}"
-                                    ));
+                                    )));
                                 }
                             }
                         }
@@ -1933,14 +1926,14 @@ fn call_start_rows(rows: &Rows) -> (Vec<String>, usize) {
 
 #[test]
 fn a_path_start_chosen_by_a_recursive_call_names_the_instances_that_calls_own_evaluation_returns() {
-    assert_none_fail(covered(call_start_rows), 54);
+    support::assert_none_fail(covered(call_start_rows), 54);
 }
 
 #[test]
 #[ignore = "exhaustive"]
 fn exhaustive_a_path_start_chosen_by_a_recursive_call_names_the_instances_that_calls_own_evaluation_returns()
  {
-    assert_none_fail(call_start_rows(&Rows::Every), 14_112);
+    support::assert_none_fail(call_start_rows(&Rows::Every), 14_112);
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -2012,22 +2005,16 @@ fn a_probe_reading_another_familys_open_result_through_a_path_reads_the_chosen_i
                         };
                         programs += 1;
                         if drawn != expected {
-                            failures.push(format!(
+                            failures.push(support::failed_row(&text, format!(
                                 "{reader:?} {gains:?} {depth} {wrong} {reversed}\n{text}\n  found {drawn:?}\n  expected {expected:?}\n"
-                            ));
+                            )));
                         }
                     }
                 }
             }
         }
     }
-    assert!(
-        failures.is_empty(),
-        "{} of {programs} programs fail:\n{}",
-        failures.len(),
-        failures.iter().take(8).cloned().collect::<String>()
-    );
-    assert_eq!(programs, 96);
+    support::assert_none_fail((failures, programs), 96);
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -2207,9 +2194,9 @@ fn open_choice_rows(rows: &Rows) -> (Vec<String>, usize) {
                             programs += 1;
                             if let Some(failure) = model_failure(&text, Some(&twin), &Found::new())
                             {
-                                failures.push(format!(
+                                failures.push(support::failed_row(&text, format!(
                                     "{chooser:?} {open:?} {known} {consumer:?} {frame:?} {reversed}\n{failure}"
-                                ));
+                                )));
                             }
                         }
                     }
@@ -2222,14 +2209,14 @@ fn open_choice_rows(rows: &Rows) -> (Vec<String>, usize) {
 
 #[test]
 fn a_family_probes_path_through_an_open_recursive_call_settles_no_family_from_the_starts_kind() {
-    assert_none_fail(covered(open_choice_rows), 32);
+    support::assert_none_fail(covered(open_choice_rows), 32);
 }
 
 #[test]
 #[ignore = "exhaustive"]
 fn exhaustive_a_family_probes_path_through_an_open_recursive_call_settles_no_family_from_the_starts_kind()
  {
-    assert_none_fail(open_choice_rows(&Rows::Every), 3_584);
+    support::assert_none_fail(open_choice_rows(&Rows::Every), 3_584);
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -2403,9 +2390,9 @@ fn held_rows(rows: &Rows) -> (Vec<String>, usize) {
                         let (text, twin) = (program(true), program(false));
                         programs += 1;
                         if let Some(failure) = model_failure(&text, Some(&twin), &Found::new()) {
-                            failures.push(format!(
+                            failures.push(support::failed_row(&text, format!(
                                 "{held:?} {consumer:?} {frame:?} {top_level} {reversed}\n{failure}"
-                            ));
+                            )));
                         }
                     }
                 }
@@ -2418,14 +2405,14 @@ fn held_rows(rows: &Rows) -> (Vec<String>, usize) {
 #[test]
 fn a_top_level_let_holding_a_recursive_calls_reference_reads_through_a_path_in_a_recursive_body_as_at_top_level()
  {
-    assert_none_fail(covered(held_rows), 31);
+    support::assert_none_fail(covered(held_rows), 31);
 }
 
 #[test]
 #[ignore = "exhaustive"]
 fn exhaustive_a_top_level_let_holding_a_recursive_calls_reference_reads_through_a_path_in_a_recursive_body_as_at_top_level()
  {
-    assert_none_fail(held_rows(&Rows::Every), 960);
+    support::assert_none_fail(held_rows(&Rows::Every), 960);
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -3012,9 +2999,9 @@ fn lacking_step_rows(rows: &Rows, path: StepPath, chooser: StepChooser) -> (Vec<
                                 programs += 1;
                                 if drawn != expected || !twin_ranges && twin_drawn != twin_expected
                                 {
-                                    failures.push(format!(
+                                    failures.push(support::failed_row(&text, format!(
                                         "347 {path:?} {chooser:?} {holds:?} {consumer:?} {arm:?} {frame:?} {depth} {reversed}\n{text}\n  found {drawn:?}\n  twin {twin_drawn:?}\n  expected {expected:?}\n  twin expected {twin_expected:?}\n"
-                                    ));
+                                    )));
                                 }
                             }
                         }
@@ -3111,9 +3098,9 @@ fn candidate_fault_rows(rows: &Rows) -> (Vec<String>, usize) {
                                 CandidateFault::EveryCandidateClosesCycle => true,
                             };
                         if drawn != expected || faulty_twin != twin_faults {
-                            failures.push(format!(
+                            failures.push(support::failed_row(&text, format!(
                                     "347 {fault:?} {chooser} {consumer:?} {index} {levels:?} {reversed} {second:?}\n{text}\n  found {drawn:?}\n  expected {expected:?}\n  twin faults {faulty_twin}\n"
-                                ));
+                                )));
                         }
                     }
                 }
@@ -3176,27 +3163,27 @@ fn an_untaken_arms_recursive_call_keys_its_callee_for_the_chosen_reference_and_d
                         .iter()
                         .any(|((at, _), count)| *at == code && *count == 1);
                     if drawn != expected || !drawn_once {
-                        failures.push(format!(
+                        failures.push(support::failed_row(&text, format!(
                             "347 {fault:?} {chooser} {index} {reversed}\n{text}\n  found {drawn:?}\n  twin {expected:?}\n"
-                        ));
+                        )));
                     }
                 }
             }
         }
     }
-    assert_none_fail((failures, programs), 32);
+    support::assert_none_fail((failures, programs), 32);
 }
 
 #[test]
 fn a_fault_of_a_candidate_binding_draws_only_when_the_evaluation_chooses_that_candidate() {
-    assert_none_fail(candidate_failures(|generator| covered(generator)), 127);
+    support::assert_none_fail(candidate_failures(|generator| covered(generator)), 127);
 }
 
 #[test]
 #[ignore = "exhaustive"]
 fn exhaustive_a_fault_of_a_candidate_binding_draws_only_when_the_evaluation_chooses_that_candidate()
 {
-    assert_none_fail(
+    support::assert_none_fail(
         candidate_failures(|generator| generator(&Rows::Every)),
         43_992,
     );
@@ -3572,9 +3559,9 @@ fn callee_template_rows(rows: &Rows, reach: CalleeReach) -> (Vec<String>, usize)
                             };
                             programs += 1;
                             if !drawn.keys().eq(expected.keys()) {
-                                failures.push(format!(
+                                failures.push(support::failed_row(&text, format!(
                                     "{reach:?} {read:?} {holds:?} {depth} {alternating} {index} {reversed}\n{text}\n  found {drawn:?}\n  twin {expected:?}\n"
-                                ));
+                                )));
                             }
                         }
                     }
@@ -3624,19 +3611,13 @@ fn two_outermost_calls_choosing_two_cycles_through_one_declaration_draw_one_decl
                 .sum();
             programs += 1;
             if drawn != expected || cycles != 1 {
-                failures.push(format!(
+                failures.push(support::failed_row(&text, format!(
                     "{index} {levels:?} {reversed}\n{text}\n  found {drawn:?}\n  twin {expected:?}\n"
-                ));
+                )));
             }
         }
     }
-    assert!(
-        failures.is_empty(),
-        "{} of {programs} programs fail:\n{}",
-        failures.len(),
-        failures.iter().take(8).cloned().collect::<String>()
-    );
-    assert_eq!(programs, 24);
+    support::assert_none_fail((failures, programs), 24);
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -3980,9 +3961,9 @@ fn untaken_start_rows(
                         programs += 1;
                         if drawn != expected || twin.as_ref().is_some_and(|twin| *twin != expected)
                         {
-                            failures.push(format!(
+                            failures.push(support::failed_row(&text, format!(
                                 "391 {start:?} {fault:?} {guard:?} {reader:?} {depth} {later} {reversed}\n{text}\n  found {drawn:?}\n  twin {twin:?}\n  expected {expected:?}\n"
-                            ));
+                            )));
                         }
                     }
                 }
@@ -4037,9 +4018,9 @@ fn quiet_callee_read_rows(rows: &Rows) -> (Vec<String>, usize) {
                     let drawn = found(&text);
                     programs += 1;
                     if !drawn.is_empty() {
-                        failures.push(format!(
+                        failures.push(support::failed_row(&text, format!(
                             "{fault:?} {condition} {depth} {reversed}\n{text}\n  found {drawn:?}\n"
-                        ));
+                        )));
                     }
                 }
             }
@@ -4067,14 +4048,14 @@ fn untaken_failures(run: impl Fn(Generator) -> (Vec<String>, usize)) -> (Vec<Str
 #[test]
 fn evaluating_the_start_of_an_untaken_arm_draws_no_fit_range_overflow_or_depth_diagnostic_in_any_frame()
  {
-    assert_none_fail(untaken_failures(|generator| covered(generator)), 35);
+    support::assert_none_fail(untaken_failures(|generator| covered(generator)), 35);
 }
 
 #[test]
 #[ignore = "exhaustive"]
 fn exhaustive_evaluating_the_start_of_an_untaken_arm_draws_no_fit_range_overflow_or_depth_diagnostic_in_any_frame()
  {
-    assert_none_fail(untaken_failures(|generator| generator(&Rows::Every)), 1_884);
+    support::assert_none_fail(untaken_failures(|generator| generator(&Rows::Every)), 1_884);
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -4392,9 +4373,9 @@ fn open_call_rows(rows: &Rows, offset: i64) -> (Vec<String>, usize) {
                                 let depth_drawn = !drawn.is_empty()
                                     && drawn.keys().all(|(code, _)| *code == Code::RecursionDepth);
                                 if (deep && !depth_drawn) || (!deep && drawn != expected) {
-                                    failures.push(format!(
+                                    failures.push(support::failed_row(&text, format!(
                                         "390 {offset} {arm:?} {terms:?} {taken_read} {depth} {uses:?} {reversed} {wrong} deep {deep}\n{text}\n  found {drawn:?}\n  expected {expected:?}\n"
-                                    ));
+                                    )));
                                 }
                             }
                         }
@@ -4445,9 +4426,9 @@ fn open_function_rows(rows: &Rows) -> (Vec<String>, usize) {
                     let drawn = found(&text);
                     programs += 1;
                     if drawn != expected {
-                        failures.push(format!(
+                        failures.push(support::failed_row(&text, format!(
                             "{lacking} {condition} {depth} {reversed}\n{text}\n  found {drawn:?}\n  expected {expected:?}\n"
-                        ));
+                        )));
                     }
                 }
             }
@@ -4493,9 +4474,9 @@ fn tainted_start_rows(rows: &Rows) -> (Vec<String>, usize) {
                 let expected: Found = [((Code::UnknownAttribute, "gain".to_string()), 1)].into();
                 programs += 1;
                 if drawn != expected {
-                    failures.push(format!(
+                    failures.push(support::failed_row(&text, format!(
                         "{condition} {depth} {reversed}\n{text}\n  found {drawn:?}\n  expected {expected:?}\n"
-                    ));
+                    )));
                 }
             }
         }
@@ -4526,14 +4507,14 @@ fn open_failures(run: impl Fn(Generator) -> (Vec<String>, usize)) -> (Vec<String
 #[test]
 fn an_untaken_arms_start_that_reaches_an_open_call_leaves_no_value_any_later_evaluation_reads_and_draws_only_an_earlier_operands_depth()
  {
-    assert_none_fail(open_failures(|generator| covered(generator)), 42);
+    support::assert_none_fail(open_failures(|generator| covered(generator)), 42);
 }
 
 #[test]
 #[ignore = "exhaustive"]
 fn exhaustive_an_untaken_arms_start_that_reaches_an_open_call_leaves_no_value_any_later_evaluation_reads_and_draws_only_an_earlier_operands_depth()
  {
-    assert_none_fail(open_failures(|generator| generator(&Rows::Every)), 6_268);
+    support::assert_none_fail(open_failures(|generator| generator(&Rows::Every)), 6_268);
 }
 
 #[test]
@@ -4640,8 +4621,10 @@ fn chosen_cell_rows(rows: &Rows) -> (Vec<String>, usize) {
                     let (text, expected) = chosen_cell_program(chooser, *pair, pitch, reversed);
                     let found = support::error_texts(&compiler, &text);
                     if found != expected {
-                        failures.push(format!(
-                            "337: {text}\n  draws {found:?}\n  expected {expected:?}\n"
+                        failures.push(support::failed_row_with(
+                            &compiler,
+                            &text,
+                            format!("337: {text}\n  draws {found:?}\n  expected {expected:?}\n"),
                         ));
                     }
                 }
@@ -4655,13 +4638,7 @@ fn chosen_cell_rows(rows: &Rows) -> (Vec<String>, usize) {
 fn every_outermost_call_whose_evaluation_reaches_a_chosen_cell_draws_one_reactive_recursion_at_its_own_span()
  {
     let (failures, programs) = covered(chosen_cell_rows);
-    assert!(
-        failures.is_empty(),
-        "{} of {programs} fail:\n{}",
-        failures.len(),
-        failures.concat()
-    );
-    assert_eq!(programs, 12);
+    support::assert_none_fail((failures, programs), 12);
 }
 
 #[test]
@@ -4669,13 +4646,7 @@ fn every_outermost_call_whose_evaluation_reaches_a_chosen_cell_draws_one_reactiv
 fn exhaustive_every_outermost_call_whose_evaluation_reaches_a_chosen_cell_draws_one_reactive_recursion_at_its_own_span()
  {
     let (failures, programs) = chosen_cell_rows(&Rows::Every);
-    assert!(
-        failures.is_empty(),
-        "{} of {programs} fail:\n{}",
-        failures.len(),
-        failures.concat()
-    );
-    assert_eq!(programs, 48);
+    support::assert_none_fail((failures, programs), 48);
 }
 
 fn sliced_argument_program(
@@ -4725,7 +4696,11 @@ fn sliced_argument_rows(rows: &Rows) -> (Vec<String>, usize) {
                     let text = sliced_argument_program(slice, *i, *value, recursive, reversed);
                     let found = support::error_texts(&compiler, &text);
                     if !found.is_empty() {
-                        failures.push(format!("355: {text}\n  draws {found:?}\n"));
+                        failures.push(support::failed_row_with(
+                            &compiler,
+                            &text,
+                            format!("355: {text}\n  draws {found:?}\n"),
+                        ));
                     }
                 }
             }
@@ -4738,13 +4713,7 @@ fn sliced_argument_rows(rows: &Rows) -> (Vec<String>, usize) {
 fn a_frame_bounded_slice_of_references_passed_to_a_recursive_call_keys_its_family_as_its_elements_do()
  {
     let (failures, programs) = covered(sliced_argument_rows);
-    assert!(
-        failures.is_empty(),
-        "{} of {programs} fail:\n{}",
-        failures.len(),
-        failures.concat()
-    );
-    assert_eq!(programs, 7);
+    support::assert_none_fail((failures, programs), 7);
 }
 
 #[test]
@@ -4752,13 +4721,7 @@ fn a_frame_bounded_slice_of_references_passed_to_a_recursive_call_keys_its_famil
 fn exhaustive_a_frame_bounded_slice_of_references_passed_to_a_recursive_call_keys_its_family_as_its_elements_do()
  {
     let (failures, programs) = sliced_argument_rows(&Rows::Every);
-    assert!(
-        failures.is_empty(),
-        "{} of {programs} fail:\n{}",
-        failures.len(),
-        failures.concat()
-    );
-    assert_eq!(programs, 24);
+    support::assert_none_fail((failures, programs), 24);
 }
 
 fn deepening_rows(rows: &Rows, nesting: Option<u64>) -> (Vec<String>, usize) {
@@ -4803,7 +4766,11 @@ fn deepening_rows(rows: &Rows, nesting: Option<u64>) -> (Vec<String>, usize) {
                     BTreeSet::new()
                 };
                 if found != expected {
-                    failures.push(format!("291: {text}\n  draws {found:?}\n"));
+                    failures.push(support::failed_row_with(
+                        &compiler,
+                        &text,
+                        format!("291: {text}\n  draws {found:?}\n"),
+                    ));
                 }
             }
         }
@@ -4815,13 +4782,7 @@ fn deepening_rows(rows: &Rows, nesting: Option<u64>) -> (Vec<String>, usize) {
 fn a_deepening_or_inner_row_growing_recursive_argument_finishes_at_its_value_and_draws_recursion_depth_only_past_the_depth()
  {
     let (failures, programs) = covered(|rows| deepening_rows(rows, Some(64)));
-    assert!(
-        failures.is_empty(),
-        "{} of {programs} fail:\n{}",
-        failures.len(),
-        failures.concat()
-    );
-    assert_eq!(programs, 12);
+    support::assert_none_fail((failures, programs), 12);
 }
 
 #[test]
@@ -4829,13 +4790,7 @@ fn a_deepening_or_inner_row_growing_recursive_argument_finishes_at_its_value_and
 fn exhaustive_a_deepening_or_inner_row_growing_recursive_argument_finishes_at_its_value_and_draws_recursion_depth_only_past_the_depth()
  {
     let (failures, programs) = deepening_rows(&Rows::Every, None);
-    assert!(
-        failures.is_empty(),
-        "{} of {programs} fail:\n{}",
-        failures.len(),
-        failures.concat()
-    );
-    assert_eq!(programs, 24);
+    support::assert_none_fail((failures, programs), 24);
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -4991,8 +4946,12 @@ fn self_read_failure(row: &SelfRead, outer: (Own, Own, i64), reversed: bool) -> 
         .iter()
         .any(|(code, _)| *code != Code::UnknownAttribute)
         || !row.fault && !expected.is_empty();
-    (drawn != expected || most > 1 || wrong_twin)
-        .then(|| format!("343/350: {text}\n  draws {drawn:?}\n  twin {expected:?}\n{twin}\n"))
+    (drawn != expected || most > 1 || wrong_twin).then(|| {
+        support::failed_row(
+            &text,
+            format!("343/350: {text}\n  draws {drawn:?}\n  twin {expected:?}\n{twin}\n"),
+        )
+    })
 }
 
 fn self_read_rows(rows: &Rows) -> (Vec<String>, usize) {
@@ -5041,14 +5000,14 @@ fn self_read_rows(rows: &Rows) -> (Vec<String>, usize) {
 #[test]
 fn a_body_that_reads_its_own_recursive_result_through_a_path_at_any_argument_values_types_as_its_twin_343_350()
  {
-    assert_none_fail(covered(self_read_rows), 282);
+    support::assert_none_fail(covered(self_read_rows), 282);
 }
 
 #[test]
 #[ignore = "exhaustive"]
 fn exhaustive_a_body_that_reads_its_own_recursive_result_through_a_path_at_any_argument_values_types_as_its_twin_343_350()
  {
-    assert_none_fail(self_read_rows(&Rows::Every), 6_720);
+    support::assert_none_fail(self_read_rows(&Rows::Every), 6_720);
 }
 
 const CONSTANT_SELF_READS: [(&str, &str); 4] = [
@@ -5088,11 +5047,14 @@ fn a_body_that_reads_its_own_result_at_a_constant_argument_through_an_index_or_a
             let text = format!("Session main\n{}", items.concat());
             let drawn = found(&text);
             if !drawn.is_empty() {
-                failures.push(format!("343: {text}\n  draws {drawn:?}\n"));
+                failures.push(support::failed_row(
+                    &text,
+                    format!("343: {text}\n  draws {drawn:?}\n"),
+                ));
             }
         }
     }
-    assert_none_fail((failures, 8), 8);
+    support::assert_none_fail((failures, 8), 8);
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -5225,9 +5187,9 @@ fn chosen_cycle_rows(rows: &Rows) -> (Vec<String>, usize) {
                         let depth = drawn.keys().any(|(code, _)| *code == Code::RecursionDepth);
                         programs += 1;
                         if drawn != expected || depth || !cycles(&expected) {
-                            failures.push(format!(
+                            failures.push(support::failed_row(&text, format!(
                                 "342 {chooser:?} {attribute:?} {literal} {readers:?} {reversed}\n{text}\n  found {drawn:?}\n  twin {expected:?}\n"
-                            ));
+                            )));
                         }
                     }
                 }
@@ -5240,14 +5202,14 @@ fn chosen_cycle_rows(rows: &Rows) -> (Vec<String>, usize) {
 #[test]
 fn a_cycle_through_a_chosen_candidate_draws_the_twins_declaration_cycle_whichever_call_site_typed_it_first_342()
  {
-    assert_none_fail(covered(chosen_cycle_rows), 32);
+    support::assert_none_fail(covered(chosen_cycle_rows), 32);
 }
 
 #[test]
 #[ignore = "exhaustive"]
 fn exhaustive_a_cycle_through_a_chosen_candidate_draws_the_twins_declaration_cycle_whichever_call_site_typed_it_first_342()
  {
-    assert_none_fail(chosen_cycle_rows(&Rows::Every), 480);
+    support::assert_none_fail(chosen_cycle_rows(&Rows::Every), 480);
 }
 
 #[test]
@@ -5271,7 +5233,7 @@ fn the_deep_rows_of_the_open_call_class_draw_recursion_depth_beside_the_values_t
         }
     }
     let rows = Rows::Chosen(std::sync::Mutex::new(chosen));
-    assert_none_fail(open_call_rows(&rows, 1), 24);
+    support::assert_none_fail(open_call_rows(&rows, 1), 24);
 }
 
 /// ARCHITECTURE §7 stage 6: "a frame evaluates an operator's operands in source
@@ -5307,7 +5269,7 @@ fn an_untaken_frame_ends_at_the_first_operand_in_source_order_that_reaches_an_op
         }
     }
     let rows = Rows::Chosen(std::sync::Mutex::new(chosen));
-    assert_none_fail(open_call_rows(&rows, 2), 48);
+    support::assert_none_fail(open_call_rows(&rows, 2), 48);
 }
 
 #[test]
@@ -5330,7 +5292,7 @@ fn an_untaken_recursive_arguments_start_whose_own_chain_passes_the_depth_draws_r
         }
     }
     let rows = Rows::Chosen(std::sync::Mutex::new(chosen));
-    assert_none_fail(
+    support::assert_none_fail(
         untaken_start_rows(&rows, (UntakenStart::Recursive, StartFault::Depth)),
         8,
     );
@@ -5417,14 +5379,14 @@ fn a_recursive_body_holding_a_type_fault_is_a_placeholder_and_its_frame_values_f
                 let expected: Found = [((Code::OperandType, "1 + true".to_string()), 1)].into();
                 programs += 1;
                 if drawn != expected {
-                    failures.push(format!(
+                    failures.push(support::failed_row(&text, format!(
                         "339 {fault:?} {chooser} {reversed}\n{text}\n  found {drawn:?}\n  expected {expected:?}\n"
-                    ));
+                    )));
                 }
             }
         }
     }
-    assert_none_fail((failures, programs), 20);
+    support::assert_none_fail((failures, programs), 20);
 }
 
 #[test]
@@ -5440,10 +5402,13 @@ fn the_unrolled_twin_of_a_type_faulty_recursive_body_draws_its_static_index_faul
         ]
         .into();
         if drawn != expected {
-            failures.push(format!("339 twin {reversed}\n{text}\n  found {drawn:?}\n"));
+            failures.push(support::failed_row(
+                &text,
+                format!("339 twin {reversed}\n{text}\n  found {drawn:?}\n"),
+            ));
         }
     }
-    assert_none_fail((failures, 2), 2);
+    support::assert_none_fail((failures, 2), 2);
 }
 
 #[test]
@@ -5478,15 +5443,15 @@ fn every_faulty_slice_bound_in_a_recursive_body_draws_its_own_index_type_whateve
                     .into();
                     programs += 1;
                     if drawn != expected {
-                        failures.push(format!(
+                        failures.push(support::failed_row(&text, format!(
                             "380 {first} {second} {recursive} {reversed}\n{text}\n  found {drawn:?}\n"
-                        ));
+                        )));
                     }
                 }
             }
         }
     }
-    assert_none_fail((failures, programs), 16);
+    support::assert_none_fail((failures, programs), 16);
 }
 
 const CALLED_BINDINGS: [(&str, &str); 4] = [
@@ -5548,14 +5513,14 @@ fn a_cycle_through_a_recursive_call_inside_the_binding_an_untaken_arm_chooses_dr
                     .count();
                 programs += 1;
                 if drawn != expected || cycles != 1 {
-                    failures.push(format!(
+                    failures.push(support::failed_row(&text, format!(
                         "407 {binding:?} {index} {rotation}\n{text}\n  found {drawn:?}\n  twin {expected:?}\n"
-                    ));
+                    )));
                 }
             }
         }
     }
-    assert_none_fail((failures, programs), 32);
+    support::assert_none_fail((failures, programs), 32);
 }
 
 fn cycle_summaries(text: &str) -> Vec<(String, String)> {
@@ -5615,14 +5580,14 @@ fn a_chosen_references_cycle_names_the_components_shortest_cycle_through_its_fir
                 });
                 programs += 1;
                 if drawn != expected || drawn.len() != 1 || !once {
-                    failures.push(format!(
+                    failures.push(support::failed_row(&text, format!(
                         "406 {chooser} {index} {levels:?} {reversed}\n{text}\n  found {drawn:?}\n  twin {expected:?}\n"
-                    ));
+                    )));
                 }
             }
         }
     }
-    assert_none_fail((failures, programs), 32);
+    support::assert_none_fail((failures, programs), 32);
 }
 
 #[test]
@@ -5670,12 +5635,16 @@ fn an_untaken_recursive_calls_reads_are_checked_against_the_chosen_reference_in_
                     vec![(Code::UnknownAttribute, "gain".to_string())]
                 };
                 if found != expected {
-                    failures.push(format!("{text}found {found:?}\n"));
+                    failures.push(support::failed_row_with(
+                        &compiler,
+                        &text,
+                        format!("{text}found {found:?}\n"),
+                    ));
                 }
             }
         }
     }
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    support::assert_no_failure(&failures);
 }
 
 /// ARCHITECTURE §7 stage 6: "a call in that arm whose argument is a reference

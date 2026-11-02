@@ -197,3 +197,106 @@ pub fn assert_rows_by(orders: Orders, compiler: &Compiler, rows: &[Row]) {
         }
     }
 }
+
+fn quoted(text: &str) -> String {
+    let mut out = String::with_capacity(text.len() + 2);
+    out.push('"');
+    for character in text.chars() {
+        match character {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            control if u32::from(control) < 0x20 => {
+                out.push_str(&format!("\\u{:04x}", u32::from(control)));
+            }
+            other => out.push(other),
+        }
+    }
+    out.push('"');
+    out
+}
+
+fn spanned(file: &str, range: &std::ops::Range<u32>) -> String {
+    format!(
+        "\"file\": {}, \"span\": [{}, {}]",
+        quoted(file),
+        range.start,
+        range.end
+    )
+}
+
+pub fn pinned_row(program: &str, diagnostics: &[Diagnostic]) -> String {
+    let drawn: Vec<String> = diagnostics
+        .iter()
+        .map(|diagnostic| {
+            let related: Vec<String> = diagnostic
+                .related
+                .iter()
+                .map(|related| {
+                    format!(
+                        "{{{}, \"label\": {}}}",
+                        spanned(&related.span.file, &related.span.range),
+                        quoted(&related.label)
+                    )
+                })
+                .collect();
+            format!(
+                "{{\"code\": {}, {}, \"summary\": {}, \"help\": {}, \"related\": [{}]}}",
+                quoted(diagnostic.code.as_str()),
+                spanned(&diagnostic.span.file, &diagnostic.span.range),
+                quoted(&diagnostic.summary),
+                diagnostic
+                    .help
+                    .as_deref()
+                    .map_or("null".to_string(), quoted),
+                related.join(", ")
+            )
+        })
+        .collect();
+    format!(
+        "pinned-row {{\"program\": {}, \"diagnostics\": [{}]}}",
+        quoted(program),
+        drawn.join(", ")
+    )
+}
+
+pub fn failed(
+    program: &str,
+    diagnostics: &[Diagnostic],
+    message: impl std::fmt::Display,
+) -> String {
+    format!("{}\n{message}", pinned_row(program, diagnostics))
+}
+
+pub fn failed_row_with(
+    compiler: &Compiler,
+    program: &str,
+    message: impl std::fmt::Display,
+) -> String {
+    failed(program, &compiler.check(&[source(program)]), message)
+}
+
+pub fn failed_row(program: &str, message: impl std::fmt::Display) -> String {
+    EXAMPLE.with(|compiler| failed_row_with(compiler, program, message))
+}
+
+pub fn assert_no_failure(failures: &[String]) {
+    for failure in failures {
+        println!("{failure}");
+    }
+    assert!(failures.is_empty(), "{} rows fail", failures.len());
+}
+
+pub fn assert_none_fail((failures, programs): (Vec<String>, usize), expected: usize) {
+    for failure in &failures {
+        println!("{failure}");
+    }
+    assert!(
+        failures.is_empty(),
+        "{} of {programs} programs fail",
+        failures.len()
+    );
+    assert_eq!(programs, expected);
+}

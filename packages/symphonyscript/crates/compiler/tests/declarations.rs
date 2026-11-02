@@ -59,7 +59,10 @@ fn type_rows(rows: &Rows) -> Vec<String> {
                         let text = position.replace("{}", &ty);
                         let syntax = support::codes(&text);
                         if !syntax.is_empty() {
-                            failures.push(format!("{text:?} parses with {syntax:?}"));
+                            failures.push(support::failed_row(
+                                &text,
+                                format!("{text:?} parses with {syntax:?}"),
+                            ));
                             continue;
                         }
                         let built = *base_built && *dims_built && *optional_built && *sum_built;
@@ -81,7 +84,10 @@ fn type_rows(rows: &Rows) -> Vec<String> {
                                     .all(|(_, from, to)| *from >= start && *to <= end)
                         };
                         if !holds {
-                            failures.push(format!("{text:?} draws {found:?}"));
+                            failures.push(support::failed_row(
+                                &text,
+                                format!("{text:?} draws {found:?}"),
+                            ));
                         }
                     }
                 }
@@ -95,7 +101,7 @@ fn type_rows(rows: &Rows) -> Vec<String> {
 fn every_type_form_parses_in_every_annotation_and_draws_one_unbuilt_construct_where_it_is_not_built()
  {
     let failures = covered(type_rows);
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    support::assert_no_failure(&failures);
 }
 
 #[test]
@@ -103,7 +109,7 @@ fn every_type_form_parses_in_every_annotation_and_draws_one_unbuilt_construct_wh
 fn exhaustive_every_type_form_parses_in_every_annotation_and_draws_one_unbuilt_construct_where_it_is_not_built()
  {
     let failures = type_rows(&Rows::Every);
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    support::assert_no_failure(&failures);
 }
 
 #[test]
@@ -304,10 +310,14 @@ fn a_reference_to_a_name_declared_twice_draws_what_its_unknown_name_twin_draws_c
                     .filter(|(code, _)| *code != symphonyscript::Code::UnknownName)
                     .collect();
                 if found != expected {
-                    failures.push(format!("{ordered}found {found:?}\ntwin {expected:?}\n"));
+                    failures.push(support::failed_row_with(
+                        &compiler,
+                        &ordered,
+                        format!("{ordered}found {found:?}\ntwin {expected:?}\n"),
+                    ));
                 }
             }
         }
     }
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    support::assert_no_failure(&failures);
 }
