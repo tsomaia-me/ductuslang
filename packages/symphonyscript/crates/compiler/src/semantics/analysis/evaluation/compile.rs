@@ -381,7 +381,9 @@ impl Engine<'_> {
         }
         let mut forward = Vec::new();
         let mut emitted = Vec::with_capacity(reqs.len());
-        for &(index, node, ty, narrow, stored) in frames.iter().rev() {
+        // A frame evaluates an operator's operands in source order (ARCHITECTURE §7
+        // stage 6): an untaken frame ends at the first that reaches an open key.
+        for &(index, node, ty, narrow, stored) in &frames {
             if stored {
                 forward.push(Task::Emit(Instr::Child(node, ty)));
             } else {

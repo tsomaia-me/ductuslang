@@ -296,13 +296,16 @@ fn shallow() -> Compiler {
     .expect("the vocabulary compiles")
 }
 
+/// The recursion is the sum's first operand, so a frame evaluates it first (source
+/// order, ARCHITECTURE §7 stage 6) and the taken twin first calls `pk` at the
+/// deepest level, where its chain passes the depth.
 fn chain_program(levels: usize, chain: usize, guard: &str, reversed: bool) -> String {
     ordered(
         vec![
             INSTANCES.to_string(),
             "fn pk(xs, p, m): if m < 1 then xs[p] else pk(xs, p, m - 1)\n".to_string(),
             format!(
-                "fn h(xs, n): if n < 1 then 0 else 1 + (if {guard} then i32(pk(xs, 0, {chain} + n % 1).gain) else 0) + h(xs, n - 1)\n"
+                "fn h(xs, n): if n < 1 then 0 else h(xs, n - 1) + 1 + (if {guard} then i32(pk(xs, 0, {chain} + n % 1).gain) else 0)\n"
             ),
             format!("Clip k:\n    Note/([60][h([verse, other], {levels}) - {levels}])\n"),
         ],

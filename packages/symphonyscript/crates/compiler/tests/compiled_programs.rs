@@ -176,14 +176,17 @@ const SUMS: [&str; 2] = [
     "fn f(a, b, c): if a < 1 then 0 else f(a - 1, b, c) + f(a - 1, b, c + 1) + f(a - 1, b + 1, c)\n",
 ];
 
+/// A frame evaluates an operator's operands in source order (ARCHITECTURE §7
+/// stage 6), so the sum's first call is the first one each frame opens and the
+/// two sums, each the other's mirror, reach the limit at mirrored calls.
 #[test]
 fn the_call_that_passes_the_recursive_call_limit_is_the_call_the_evaluator_reached_in_either_order_of_the_operands_and_the_items_300()
  {
     let mut failures = Vec::new();
     for (limit, sites) in [
-        (10, ["f(a - 1, b, c)", "f(a - 1, b + 1, c)"]),
-        (50, ["f(a - 1, b + 1, c)", "f(a - 1, b, c)"]),
-        (1_000, ["f(a - 1, b + 1, c)", "f(a - 1, b, c)"]),
+        (10, ["f(a - 1, b + 1, c)", "f(a - 1, b, c)"]),
+        (50, ["f(a - 1, b, c)", "f(a - 1, b + 1, c)"]),
+        (1_000, ["f(a - 1, b, c)", "f(a - 1, b + 1, c)"]),
     ] {
         let limits = LimitOverrides {
             recursive_calls: Some(limit),

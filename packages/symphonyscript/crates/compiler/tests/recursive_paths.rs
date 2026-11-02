@@ -4128,6 +4128,17 @@ struct OpenCallModel<'a> {
     taken_read: bool,
     memo: BTreeMap<(bool, i64), i64>,
     open: BTreeSet<(bool, i64)>,
+    untaken_deep: bool,
+}
+
+/// What an untaken evaluation of a start yields (ARCHITECTURE §7 stage 6): a
+/// value, an end at a call whose key is open at or below the frame, or a chain
+/// past the depth.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Untaken {
+    Value(i64),
+    Ended,
+    Deep,
 }
 
 impl OpenCallModel<'_> {
@@ -4162,13 +4173,75 @@ impl OpenCallModel<'_> {
                     OpenCallTerm::TakenRead => 0,
                     OpenCallTerm::Recursion => self.h(n - 1)?,
                     OpenCallTerm::UntakenRead if self.arm.takes(n) => self.g(n + self.offset)?,
-                    OpenCallTerm::UntakenRead => 0,
+                    OpenCallTerm::UntakenRead => {
+                        if self.untaken_g(n + self.offset) == Untaken::Deep {
+                            self.untaken_deep = true;
+                        }
+                        0
+                    }
                 };
             }
         }
         self.open.remove(&(true, n));
         self.memo.insert((true, n), value);
         Some(value)
+    }
+
+    /// A frame evaluates an operator's operands in source order, and an untaken
+    /// frame that reaches a call whose key is open ends there, evaluating no
+    /// later operand.
+    fn untaken_g(&mut self, m: i64) -> Untaken {
+        if let Some(value) = self.memo.get(&(false, m)) {
+            return Untaken::Value(*value);
+        }
+        if !self.open.insert((false, m)) {
+            return Untaken::Ended;
+        }
+        let read = if m >= 1 {
+            self.untaken_h(m - 1)
+        } else {
+            Untaken::Value(0)
+        };
+        self.open.remove(&(false, m));
+        match read {
+            Untaken::Value(value) => Untaken::Value(if m >= 1 && value > 2 { 3 } else { 2 }),
+            Untaken::Ended | Untaken::Deep => read,
+        }
+    }
+
+    fn untaken_h(&mut self, n: i64) -> Untaken {
+        if let Some(value) = self.memo.get(&(true, n)) {
+            return Untaken::Value(*value);
+        }
+        if n > 200 {
+            return Untaken::Deep;
+        }
+        if !self.open.insert((true, n)) {
+            return Untaken::Ended;
+        }
+        let mut value = if n < 1 { 1 } else { 0 };
+        if n >= 1 {
+            for term in self.terms {
+                let part = match term {
+                    OpenCallTerm::TakenRead if self.taken_read => self.untaken_g(n),
+                    OpenCallTerm::TakenRead => Untaken::Value(0),
+                    OpenCallTerm::Recursion => self.untaken_h(n - 1),
+                    OpenCallTerm::UntakenRead if self.arm.takes(n) => {
+                        self.untaken_g(n + self.offset)
+                    }
+                    OpenCallTerm::UntakenRead => Untaken::Value(0),
+                };
+                match part {
+                    Untaken::Value(part) => value += part,
+                    Untaken::Ended | Untaken::Deep => {
+                        self.open.remove(&(true, n));
+                        return part;
+                    }
+                }
+            }
+        }
+        self.open.remove(&(true, n));
+        Untaken::Value(value)
     }
 }
 
@@ -4227,6 +4300,7 @@ fn open_call_rows(rows: &Rows, offset: i64) -> (Vec<String>, usize) {
                             taken_read,
                             memo: BTreeMap::new(),
                             open: BTreeSet::new(),
+                            untaken_deep: false,
                         };
                         let mut values = Vec::with_capacity(uses.len());
                         let mut deep = false;
@@ -4305,6 +4379,12 @@ fn open_call_rows(rows: &Rows, offset: i64) -> (Vec<String>, usize) {
                                 ];
                                 if reversed {
                                     items.reverse();
+                                }
+                                if model.untaken_deep {
+                                    expected.insert(
+                                        (Code::RecursionDepth, format!("g(xs, n + {offset})")),
+                                        1,
+                                    );
                                 }
                                 let text = items.concat();
                                 let drawn = found(&text);
@@ -4439,14 +4519,19 @@ fn open_failures(run: impl Fn(Generator) -> (Vec<String>, usize)) -> (Vec<String
     (failures, programs)
 }
 
+/// ARCHITECTURE §7 stage 6: a frame evaluates an operator's operands in source
+/// order, and an untaken frame that reaches a call whose key is open ends there;
+/// the model gives each untaken start's outcome, and a chain that an earlier
+/// operand passes draws `recursion-depth` at the untaken read.
 #[test]
-fn an_untaken_arms_start_that_reaches_an_open_call_leaves_no_value_any_later_evaluation_reads() {
+fn an_untaken_arms_start_that_reaches_an_open_call_leaves_no_value_any_later_evaluation_reads_and_draws_only_an_earlier_operands_depth()
+ {
     assert_none_fail(open_failures(|generator| covered(generator)), 42);
 }
 
 #[test]
 #[ignore = "exhaustive"]
-fn exhaustive_an_untaken_arms_start_that_reaches_an_open_call_leaves_no_value_any_later_evaluation_reads()
+fn exhaustive_an_untaken_arms_start_that_reaches_an_open_call_leaves_no_value_any_later_evaluation_reads_and_draws_only_an_earlier_operands_depth()
  {
     assert_none_fail(open_failures(|generator| generator(&Rows::Every)), 6_268);
 }
@@ -5189,35 +5274,40 @@ fn the_deep_rows_of_the_open_call_class_draw_recursion_depth_beside_the_values_t
     assert_none_fail(open_call_rows(&rows, 1), 24);
 }
 
-/// ARCHITECTURE §7 stage 6: an untaken start is evaluated "never through a call
-/// whose key, SPEC §4.6's memo key, is open at or below the frame", and "an
-/// evaluation that passes a limit or reaches such a call yields no reference".
-/// In `h([verse, other], 1)` the untaken `g(xs, n + 2)` opens `h(xs, 2)`, whose
-/// `g(xs, n)` and `h(xs, n - 1)` reach the open `h(xs, 1)`: the frame ends there,
-/// evaluates no later operand, and the chain through `g(xs, n + 2)` draws no
-/// depth. The rows are 418's whose frame meets a reaching operand before the
-/// descending one; the others are gap G6 of the progress file.
+/// ARCHITECTURE §7 stage 6: "a frame evaluates an operator's operands in source
+/// order, and an untaken frame that reaches such a call ends there, evaluating no
+/// later operand, so a limit that a later operand's chain would pass is never
+/// reached and draws nothing, while one that an earlier operand's chain passes
+/// is drawn as in any evaluation". In `h([verse, other], 1)` the untaken
+/// `g(xs, n + 2)` opens `h(xs, 2)`, whose `g(xs, n)` and `h(xs, n - 1)` reach the
+/// open `h(xs, 1)` and whose `g(xs, n + 2)`, taken at 2, opens a fresh key at
+/// each level: where a reaching operand comes first the frame ends and nothing is
+/// drawn, and where `g(xs, n + 2)` comes first its chain draws `recursion-depth`.
+/// All 48 rows of 418, each operand order with and without the taken read.
 #[test]
-fn an_untaken_frame_that_reaches_a_call_whose_key_is_open_ends_there_and_draws_no_depth_418() {
+fn an_untaken_frame_ends_at_the_first_operand_in_source_order_that_reaches_an_open_key_and_draws_an_earlier_operands_depth_418()
+ {
     let mut chosen = BTreeSet::new();
-    for (order, taken_read) in [(1, 1), (3, 1), (4, 1), (5, 1), (1, 0), (4, 0), (5, 0)] {
-        for reversed in [0, 1] {
-            for wrong in [0, 1] {
-                chosen.insert(vec![
-                    2,
-                    OpenCallArm::AboveOne as usize,
-                    order,
-                    taken_read,
-                    1,
-                    0,
-                    reversed,
-                    wrong,
-                ]);
+    for order in 0..6 {
+        for taken_read in 0..2 {
+            for reversed in [0, 1] {
+                for wrong in [0, 1] {
+                    chosen.insert(vec![
+                        2,
+                        OpenCallArm::AboveOne as usize,
+                        order,
+                        taken_read,
+                        1,
+                        0,
+                        reversed,
+                        wrong,
+                    ]);
+                }
             }
         }
     }
     let rows = Rows::Chosen(std::sync::Mutex::new(chosen));
-    assert_none_fail(open_call_rows(&rows, 2), 28);
+    assert_none_fail(open_call_rows(&rows, 2), 48);
 }
 
 #[test]
