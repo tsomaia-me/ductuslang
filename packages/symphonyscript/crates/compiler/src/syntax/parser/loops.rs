@@ -152,10 +152,12 @@ impl Parser<'_> {
             // Inside a bracket layout is suspended (SPEC §2.2) and the block form is
             // never an operand (§5.10): the line ends the `for` with its body
             // missing, one fault with the head's and the bracket's closer.
+            let reported = self.diagnostics.len();
             self.error(
                 Code::ExpressionSyntax,
                 "expected the `for` expression's body after `:`",
             );
+            self.help_since(reported, Code::ExpressionSyntax, FOR_BODY_INLINE);
             self.start_at(checkpoint, SyntaxKind::ForExpr);
             self.finish();
             return;
@@ -174,10 +176,12 @@ impl Parser<'_> {
         if self.eat(SyntaxKind::Indent) {
             self.then([Task::ForExprLets]);
         } else {
+            let reported = self.diagnostics.len();
             self.missing_block(
                 Code::ExpressionSyntax,
                 "expected the `for` expression's body, indented",
             );
+            self.help_since(reported, Code::ExpressionSyntax, FOR_BODY);
             self.finish();
             self.block_ended = true;
         }
@@ -212,3 +216,8 @@ const FOR_EXPR_HEAD: &str = "write `for <name> in <iterable> into <name> from <s
 
 const FOR_BLOCK_BODY: &str =
     "write the `for` expression on the line after the function's `:`, indented under it";
+
+const FOR_BODY: &str = "write the body after `:`, as in `for x in xs into sum from 0: sum + x`, or on the lines below, indented";
+
+const FOR_BODY_INLINE: &str =
+    "write the body after `:` on the same line, as in `(for x in xs into sum from 0: sum + x)`";

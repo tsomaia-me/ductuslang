@@ -321,7 +321,7 @@ fn exhaustive_a_fault_inside_inlined_calls_names_each_call_innermost_first() {
 #[test]
 fn reactive_recursion_names_its_chain_of_calls_and_its_help_names_the_for_expression() {
     let input = "state n(1)\n";
-    let help = "write the recursion over the cell as a `for` expression, as in `for x in held into low from 127: min(low, x)`";
+    let help = "write the recursion over the cell as a `for` expression, as in `for x in readings into low from 100: min(low, x)`";
     let rows: &[Recursion] = &[
         (
             &[
@@ -396,7 +396,7 @@ fn reactive_recursion_names_its_chain_of_calls_and_its_help_names_the_for_expres
 #[test]
 fn a_function_written_with_a_bound_draws_one_fn_syntax_at_the_bound_whose_help_names_the_for_expression()
  {
-    let help = "remove the bound and write the loop as a `for` expression, as in `for x in held into low from 127: min(low, x)`";
+    let help = "remove the bound and write the loop as a `for` expression, as in `for x in readings into low from 100: min(low, x)`";
     let rows: &[(&[&str], &str)] = &[
         (
             &[

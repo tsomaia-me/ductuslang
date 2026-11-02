@@ -2411,7 +2411,7 @@ fn every_diagnostic_carries_a_help_that_states_its_fix() {
                 "Clip c:\n    Note/(fib(n))\n",
             ],
             Code::ReactiveRecursion,
-            "write the recursion over the cell as a `for` expression, as in `for x in held into low from 127: min(low, x)`",
+            "write the recursion over the cell as a `for` expression, as in `for x in readings into low from 100: min(low, x)`",
         ),
         (
             vocabulary,
@@ -2525,7 +2525,7 @@ fn every_diagnostic_carries_a_help_that_states_its_fix() {
             vocabulary,
             &["Clip c:\n    Note/60 as n\n"],
             Code::PlacementSyntax,
-            "write `as` and the name right after the kind, as in `Note as n /60`",
+            "write `as` and the name right after the kind, as in `Lamp as key /0.7`",
         ),
         (
             vocabulary,
@@ -2543,13 +2543,13 @@ fn every_diagnostic_carries_a_help_that_states_its_fix() {
             vocabulary,
             &["Clip\n"],
             Code::PlacementSyntax,
-            "name the top-level instance, as in `Clip intro`",
+            "name the top-level instance, as in `Plant boiler`",
         ),
         (
             vocabulary,
             &["Clip c:\n    60\n"],
             Code::PlacementSyntax,
-            "write the kind, then `as` and a name, a `/` value, a `when` gate and `|` attributes, in that order, as in `Note as n /60 | velocity=0.9`",
+            "write the kind, then `as` and a name, a `/` value, a `when` gate and `|` attributes, in that order, as in `Lamp as key /0.7 | hue=0.3`",
         ),
         (
             vocabulary,
@@ -2685,7 +2685,22 @@ fn every_diagnostic_carries_a_help_that_states_its_fix() {
                 "Clip c:\n    Note/(t)\n",
             ],
             Code::CellSyntax,
-            "write the capacity in digits, as in `stream[16] notes(0)`",
+            "write the capacity in digits, as in `stream[16] readings(0)`",
+        ),
+        (
+            vocabulary,
+            &[
+                "let v = for i in [1] into s from 0:\n",
+                "Plant p:\n    Valve/0.5\n",
+            ],
+            Code::ExpressionSyntax,
+            "write the body after `:`, as in `for x in xs into sum from 0: sum + x`, or on the lines below, indented",
+        ),
+        (
+            vocabulary,
+            &["let v = (for i in [1] into s from 0:\n", "let w = 1\n"],
+            Code::ExpressionSyntax,
+            "write the body after `:` on the same line, as in `(for x in xs into sum from 0: sum + x)`",
         ),
     ];
     for (vocabulary, items, code, help) in rows {

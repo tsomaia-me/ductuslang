@@ -65,7 +65,7 @@ pub(super) fn help(code: Code) -> Option<&'static str> {
         Code::ChainedComparison => "join the comparisons with `and`, as in `a < b and b < c`",
         Code::UnparenthesizedIf => "parenthesize the `if`",
         Code::UnparenthesizedFor => {
-            "parenthesize the `for` expression, as in `1 + (for x in held into sum from 0: sum + x)`"
+            "parenthesize the `for` expression, as in `1 + (for x in xs into sum from 0: sum + x)`"
         }
         Code::MatchPosition => "make the `match` the whole value of a `let`",
         Code::MixedArguments => "pass every argument by position or every one by name",
@@ -84,7 +84,7 @@ pub(super) fn help(code: Code) -> Option<&'static str> {
             "slice the rule's value, as in `(s.past(1, []) + [x])[^8..]`, to keep its newest elements"
         }
         Code::TopLevelWire => "place the wire inside its source's body",
-        Code::DefaultArgSyntax => "parenthesize the value, as in `Note/(base + 7)`",
+        Code::DefaultArgSyntax => "parenthesize the value, as in `Lamp/(base * 0.5)`",
         Code::InlinePlacement => "parenthesize the placement or write it on its own line",
         Code::DuplicateName => "rename one of the two declarations",
         Code::CompileTimeNative => "pass arguments known at compile time",
@@ -104,7 +104,7 @@ pub(super) fn help(code: Code) -> Option<&'static str> {
         Code::RedundantElse => "remove the `else:` arm",
         Code::FloatToInteger => "convert explicitly, as in `i32(x)`",
         Code::ReactiveRecursion => {
-            "write the recursion over the cell as a `for` expression, as in `for x in held into low from 127: min(low, x)`"
+            "write the recursion over the cell as a `for` expression, as in `for x in readings into low from 100: min(low, x)`"
         }
         Code::UnexpectedCharacter => {
             "remove the character, or write the word the language uses, as in `and`"
@@ -113,7 +113,7 @@ pub(super) fn help(code: Code) -> Option<&'static str> {
             "start the continued line at the column of the clause's first entry, counting each character as one"
         }
         Code::InvalidIdentifier => "give the name a letter or a digit, as in `unused`",
-        Code::UnknownSuffix => "write a type suffix or a unit of the vocabulary, as in `2bars`",
+        Code::UnknownSuffix => "write a type suffix or a unit of the vocabulary, as in `500ms`",
         Code::PrefixedSuffix => {
             "write only digits of the prefix's base and no suffix, as in `0b10`"
         }
@@ -161,13 +161,13 @@ pub(super) fn help(code: Code) -> Option<&'static str> {
             "hold a number, a `bool`, an enum value or an array of them in the cell"
         }
         Code::PlacementSyntax => {
-            "write the kind, then `as` and a name, a `/` value, a `when` gate and `|` attributes, in that order, as in `Note as n /60 | velocity=0.9`"
+            "write the kind, then `as` and a name, a `/` value, a `when` gate and `|` attributes, in that order, as in `Lamp as key /0.7 | hue=0.3`"
         }
-        Code::FlagSyntax => "end the flags before the next name, as in `Note'`",
+        Code::FlagSyntax => "end the flags before the next name, as in `Lamp*`",
         Code::AttributeSyntax => "write each entry as `name=value`, `name` or `!name`",
-        Code::BundleSyntax => "close the bundle with `]`, as in `[Note Note]`",
+        Code::BundleSyntax => "close the bundle with `]`, as in `[Valve Valve]`",
         Code::ForSyntax => "write `for <name> in <iterable>:` with one name or two",
-        Code::WireSyntax => "end the wire with `:` and its destination, as in `Plays: c`",
+        Code::WireSyntax => "end the wire with `:` and its destination, as in `Triggers: night`",
         Code::MisplacedWire => "place the wire on its own line, outside the bundle",
         Code::WhenSyntax => "end the condition with `:` and indent the block under it",
         Code::VariantName => "choose a name that is no variant of a vocabulary enum",
@@ -176,18 +176,18 @@ pub(super) fn help(code: Code) -> Option<&'static str> {
         Code::UnknownName => "declare the name, or correct its spelling",
         Code::UnknownKind => "use a kind of the vocabulary, or correct its spelling",
         Code::MisplacedTo => {
-            "read `to` with an attribute path inside a wire placement, as in `Plays | gain=to.gain: a`"
+            "read `to` with an attribute path inside a wire placement, as in `Drives | limit=to.open: feed`"
         }
         Code::UnknownType => "use a scalar type or an enum of the vocabulary",
         Code::LengthLimit => "keep the length or capacity below 2³¹, as in `i32[..2147483647]`",
         Code::VariableArray => {
             "annotate the value as a variable array, as in `i32[..4]`, or bind it to an attribute that takes one"
         }
-        Code::CapacityExceeded => "slice the value to the capacity, as in `held[^8..]`",
+        Code::CapacityExceeded => "slice the value to the capacity, as in `xs[^8..]`",
         Code::InterpolationType => {
             "interpolate a number, a `bool`, an enum variant, a string or a unit value"
         }
-        Code::UnknownVariant => "use a variant the enum declares, as in `Wave::Saw`",
+        Code::UnknownVariant => "use a variant the enum declares, as in `Mode::Auto`",
         Code::ArrayOperand => {
             "join two arrays with `+`, as in `[1, 2] + [3]`, or apply the operator to their elements"
         }
@@ -207,11 +207,11 @@ pub(super) fn help(code: Code) -> Option<&'static str> {
             "give the cell an init that is a compile-time value, such as a `let`"
         }
         Code::ReactiveLet => {
-            "declare a value that reads a cell as a `state`, as in `state louder = note + 12`"
+            "declare a value that reads a cell as a `state`, as in `state brighter = level + 0.2`"
         }
         Code::UnknownAttribute => "use an attribute the kind declares, or correct its spelling",
         Code::RuntimePath => {
-            "start the path at an instance known at compile time, as in `s[1].gain`"
+            "start the path at an instance known at compile time, as in `s[1].hold`"
         }
         Code::IndexType => "index with an integer",
         Code::NotAnArray => "index, slice or measure an array, not a single value",
@@ -223,7 +223,7 @@ pub(super) fn help(code: Code) -> Option<&'static str> {
         }
         Code::UseForm => "move the flags and the body into the pattern",
         Code::NoDefaultParameter => "mark a parameter `default`, or set the parameter by name",
-        Code::UnknownFlag => "use a flag the kind assigns, as in `Note'`",
+        Code::UnknownFlag => "use a flag the kind assigns, as in `Lamp*`",
         Code::NoDefaultAttribute => "set the attribute by name in the clause",
         Code::TopLevelPattern => "wrap the pattern's placements in one placement",
         Code::EmptyBundle => "give the bundle at least one member",
@@ -233,15 +233,13 @@ pub(super) fn help(code: Code) -> Option<&'static str> {
             "iterate over compile-time values and read the cell inside the body"
         }
         Code::RangeBound => "bound the range with integers, as in `0..4`",
-        Code::UnitOperation => {
-            "multiply or divide a unit value by a plain number, as in `2bars * 2`"
-        }
+        Code::UnitOperation => "multiply or divide a unit value by a plain number, as in `2s * 2`",
         Code::OperandType => {
             "give the operator operands of the types it takes, or convert them, as in `i32(x)`"
         }
         Code::ConversionType => "convert a number, or choose one with `if`",
         Code::ReactiveString => "build the string from compile-time values, such as a `let`",
-        Code::MixedFamilies => "combine values of one family, as in `2bars + 1bars`",
+        Code::MixedFamilies => "combine values of one family, as in `2s + 500ms`",
         Code::MatchLabel => {
             "label the arm with a variant of the scrutinee's enum or a literal of its type"
         }
@@ -252,16 +250,16 @@ pub(super) fn help(code: Code) -> Option<&'static str> {
             "reduce the work the limit counts, or raise its warning value in the package's `options`"
         }
         Code::ReactiveNodeReference => {
-            "choose the destination in the wire itself, as in `Plays: [verse, chorus][i]`"
+            "choose the destination in the wire itself, as in `Triggers: [dusk, night][i]`"
         }
         Code::DoesNotFit => "use a value that fits the type, or convert it explicitly",
         Code::IntegerOverflow => "keep the integer's magnitude below 2¹²⁷",
         Code::ConstantOverflow => {
             "keep the operation inside its type's range, or widen its operands"
         }
-        Code::UnitMismatch => "use a unit of the attribute's family, as in `2bars`",
+        Code::UnitMismatch => "use a unit of the attribute's family, as in `2s`",
         Code::PlainInFamily => "give the plain number a unit of the family, as in `1ms`",
-        Code::ConflictingUnits => "give the plain number a unit, as in `1bars`",
+        Code::ConflictingUnits => "give the plain number a unit, as in `1s`",
         Code::InconsistentUses => {
             "use a value equal as an integer and as a float, or split it into two `let`s"
         }
@@ -276,7 +274,7 @@ pub(super) fn help(code: Code) -> Option<&'static str> {
         Code::UnreachableInstance => {
             "reach the instance from an entry-kind instance, through a child or a wire"
         }
-        Code::NoEntryInstance => "place an instance of an entry kind, as in `Session s`",
+        Code::NoEntryInstance => "place an instance of one of the vocabulary's entry kinds",
         Code::InternalError => "report the compiler defect with the program that drew it",
         Code::UnbuiltConstruct => "write the program without the construct the summary names",
     })

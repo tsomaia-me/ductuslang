@@ -32,7 +32,7 @@ impl Parser<'_> {
             self.help_since(
                 reported,
                 Code::PlacementSyntax,
-                "name the top-level instance, as in `Clip intro`",
+                "name the top-level instance, as in `Plant boiler`",
             );
         }
         self.then([Task::DefaultArg { kind }, Task::PlacementTail, Task::Finish]);
@@ -506,7 +506,7 @@ impl Parser<'_> {
 
 const TO_PATH: &str = "follow `to` with `.` and an attribute name, as in `to.gain`";
 
-const NAMED_LATE: &str = "write `as` and the name right after the kind, as in `Note as n /60`";
+const NAMED_LATE: &str = "write `as` and the name right after the kind, as in `Lamp as key /0.7`";
 
 const PAREN_CLOSE: Task = Task::Close {
     kind: SyntaxKind::RParen,
@@ -550,4 +550,4 @@ impl Parser<'_> {
     }
 }
 
-const BINDING: &str = "name the cell the attribute binds, as in `hit => kick_hit`";
+const BINDING: &str = "name the cell the attribute binds, as in `reading => level`";
