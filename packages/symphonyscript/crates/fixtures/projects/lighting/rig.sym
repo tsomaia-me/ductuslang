@@ -1,0 +1,24 @@
+state intensity(0.5)
+state look(0)
+state hold_on(false)
+stream flicker(0.0)
+channel[16] strobe_hits(0)
+
+state glow = intensity * 0.8
+let washes = [0.2, 0.5, 0.8]
+
+pattern Wash(default level, tint = 0.0):
+    Lamp/level | hue=tint
+
+Rig stage:
+    Lamp as key /0.7 | hue=glow
+    Lamp* as flash /(flicker)
+    [Lamp/0.2 Lamp/0.5 Lamp/0.8]
+    [for i, p in washes: (Lamp/p | hue=1.0 - i * 0.2)]
+    for i in 0..4:
+        Lamp/(0.2 * i) when strobe_hits > i
+    Wash/0.3 | tint=0.6
+    Scene as dusk | hold=8:
+        Cue/0 Cue/2
+        Dims | depth=0.5: key
+        Dims: flash

@@ -1,6 +1,8 @@
 mod support;
 
-use symphonyscript_fixtures::{dsp_project, music_project, spec_examples};
+use symphonyscript_fixtures::{
+    control_project, dsp_project, lighting_project, music_project, spec_examples,
+};
 
 fn round_trips(text: &str) {
     let parsed = support::parsed(text);
@@ -143,7 +145,12 @@ fn spec_examples_and_fixture_projects_round_trip() {
     for example in spec_examples() {
         round_trips(&example.text);
     }
-    for project in [music_project(), dsp_project()] {
+    for project in [
+        music_project(),
+        dsp_project(),
+        lighting_project(),
+        control_project(),
+    ] {
         for file in project.files {
             round_trips(&file.text);
         }

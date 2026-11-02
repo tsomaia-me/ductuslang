@@ -181,10 +181,12 @@ fn exhaustive_a_for_expression_stands_bare_only_as_a_whole_value_and_draws_what_
     assert_none_fail(position_rows(&Rows::Every), 408);
 }
 
+const READINGS: &str = "state readings([]): i32[..10]\n";
+
 const SPEC_FOR_EXPRESSIONS: [&str; 4] = [
-    "state high = for x in held into kept from []:\n    let keep = x > 60\n    if keep then kept + [x] else kept\n",
-    "state total = 1 + (for i, x in held into sum from 0: sum + i * x)\n",
-    "state lowest = for x in held into low from 127: min(low, x)\n",
+    "state high = for x in readings into kept from []:\n    let keep = x > 60\n    if keep then kept + [x] else kept\n",
+    "state total = 1 + (for i, x in readings into sum from 0: sum + i * x)\n",
+    "state lowest = for x in readings into low from 100: min(low, x)\n",
     "fn mean(xs): (for x in xs into total from 0.0: total + x) / 3\n",
 ];
 
@@ -192,7 +194,7 @@ const SPEC_FOR_EXPRESSIONS: [&str; 4] = [
 fn the_for_expressions_of_the_spec_pass_check_and_its_rejected_ones_draw_unparenthesized_for() {
     let compiler = Compiler::new(&vocabulary()).expect("the vocabulary compiles");
     for declaration in SPEC_FOR_EXPRESSIONS {
-        let text = format!("{HELD}{declaration}");
+        let text = format!("{READINGS}{declaration}");
         assert_eq!(support::parsed(&text).diagnostics, vec![], "{text}");
         assert_eq!(codes_of(&compiler, &text), vec![], "{text}");
     }
@@ -207,7 +209,7 @@ fn the_for_expressions_of_the_spec_pass_check_and_its_rejected_ones_draw_unparen
             .expect("the SPEC holds the example");
         let at = example
             .text
-            .find("for x in held")
+            .find("for x in readings")
             .expect("the example holds a `for`") as u32;
         let found: Vec<(Code, u32, u32)> = support::codes(&example.text)
             .into_iter()

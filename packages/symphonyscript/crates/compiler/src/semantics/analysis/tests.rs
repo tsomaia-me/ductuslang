@@ -1,8 +1,8 @@
 use symphonyscript_core::{Count, LimitOverrides, Limits, Scalar, Vocabulary};
 use symphonyscript_fixtures::{
-    Orders, Project, ProjectFile, bar_vocabulary, covered, deep_projects, dsp_project,
-    envelope_vocabulary, music_project, pending_spec_examples, spec_examples, spec_projects,
-    vocabulary,
+    Orders, Project, ProjectFile, bar_vocabulary, control_project, covered, deep_projects,
+    dsp_project, envelope_vocabulary, lighting_project, music_project, pending_spec_examples,
+    spec_examples, spec_projects, vocabulary,
 };
 
 use super::Engine;
@@ -728,11 +728,18 @@ fn a_run_that_draws_no_error_holds_no_placeholder() {
                 text: example.text,
             }],
         });
-    let projects = [music_project(), dsp_project()].into_iter().chain(examples);
+    let projects = [
+        music_project(),
+        dsp_project(),
+        lighting_project(),
+        control_project(),
+    ]
+    .into_iter()
+    .chain(examples);
     let clean = clean_runs_holding_no_placeholder(projects);
     assert!(
         clean
-            >= 2 + spec_projects()
+            >= 4 + spec_projects()
                 .iter()
                 .filter(|project| !pending.contains(&project.name))
                 .count(),
@@ -3757,7 +3764,7 @@ fn no_mutant_of_an_example_or_fixture_that_draws_no_error_holds_a_placeholder() 
         (failures, clean)
     });
     assert!(failures.is_empty(), "{}", failures.join("\n"));
-    assert_eq!(clean, 36);
+    assert_eq!(clean, 40);
 }
 
 const MUTANT_SHARDS: usize = 4;

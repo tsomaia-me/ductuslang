@@ -1,0 +1,9 @@
+Plant fill: Valve/0 Valve/0.5 (Controller/0.4 | gain=0.5)
+
+Plant cooling | mode=override:
+    [Valve/0.2 Valve/0.4]
+    for i, s in stages:
+        Valve/s when i < 2
+    Loop as trim /0.3 | response=boiler.hold.gain * 2
+    Sensor as probe /(level * 0.5):
+        Reads: boiler.hold

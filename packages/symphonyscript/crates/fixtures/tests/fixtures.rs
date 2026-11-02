@@ -3,9 +3,9 @@ use symphonyscript_core::{
     Wire, dump,
 };
 use symphonyscript_fixtures::{
-    Rows, SPEC_SYM_EXAMPLES, covered, covering, dsp_project, music_project, native_vocabulary,
-    signature_vocabulary, spec_examples, spec_productions, spec_projects, to_array_vocabulary,
-    vocabulary, vocabulary_documented,
+    Rows, SPEC_SYM_EXAMPLES, control_project, covered, covering, dsp_project, lighting_project,
+    music_project, native_vocabulary, signature_vocabulary, spec_examples, spec_productions,
+    spec_projects, to_array_vocabulary, vocabulary, vocabulary_documented,
 };
 
 #[test]
@@ -19,8 +19,26 @@ fn the_vocabulary_builds_with_the_kinds_of_spec_1_3() {
     assert_eq!(
         kinds,
         [
-            "Session", "Track", "Clip", "Note", "Kit", "Sampler", "Piano", "Synth", "Osc",
-            "Filter", "Mixer", "Output"
+            "Session",
+            "Track",
+            "Clip",
+            "Note",
+            "Kit",
+            "Sampler",
+            "Piano",
+            "Synth",
+            "Osc",
+            "Filter",
+            "Mixer",
+            "Output",
+            "Rig",
+            "Lamp",
+            "Scene",
+            "Cue",
+            "Plant",
+            "Sensor",
+            "Valve",
+            "Controller"
         ]
     );
     let wires: Vec<&str> = vocab
@@ -28,7 +46,20 @@ fn the_vocabulary_builds_with_the_kinds_of_spec_1_3() {
         .iter()
         .map(|kind| kind.name.as_str())
         .collect();
-    assert_eq!(wires, ["Plays", "Starts", "Includes", "Feeds", "Modulates"]);
+    assert_eq!(
+        wires,
+        [
+            "Plays",
+            "Starts",
+            "Includes",
+            "Feeds",
+            "Modulates",
+            "Triggers",
+            "Dims",
+            "Reads",
+            "Drives"
+        ]
+    );
     assert!(vocab.prelude().is_empty());
 }
 
@@ -36,7 +67,7 @@ fn the_vocabulary_builds_with_the_kinds_of_spec_1_3() {
 fn the_vocabulary_stamp_is_pinned() {
     assert_eq!(vocabulary().stamp(), vocabulary().stamp());
     assert_eq!(vocabulary().stamp().name, "example");
-    assert_eq!(vocabulary().stamp().hash, 0xb24e_d010_8497_1fb2);
+    assert_eq!(vocabulary().stamp().hash, 0xe099_d664_bd30_1d43);
 }
 
 #[test]
@@ -117,7 +148,7 @@ fn the_spec_has_sym_and_sym_error_examples() {
         [
             (
                 "3.9",
-                "state port(none): i32?\n\nSynth s:\n    Osc | freq=port\n"
+                "state demand(none): f32?\n\nPlant boiler:\n    Valve as feed | open=demand\n"
             ),
             (
                 "3.11",
@@ -126,37 +157,40 @@ fn the_spec_has_sym_and_sym_error_examples() {
             ("4.1", "Clip melody:\n    Note/300000000000\n"),
             (
                 "5.10",
-                "state held([]): i32[..10]\n\nstate total = 1 + for x in held into sum from 0: sum + x\n"
+                "state readings([]): i32[..10]\n\nstate total = 1 + for x in readings into sum from 0: sum + x\n"
             ),
             (
                 "5.10",
-                "fn count(xs): xs.size\n\nstate held([]): i32[..10]\n\nstate high = count(for x in held into kept from []: if x > 60 then kept + [x] else kept)\n"
+                "fn count(xs): xs.size\n\nstate readings([]): i32[..10]\n\nstate high = count(for x in readings into kept from []: if x > 60 then kept + [x] else kept)\n"
             ),
             (
                 "6.3",
-                "state n(5)\n\nfn fib(k): if k < 2 then k else fib(k - 1) + fib(k - 2)\n\nClip c:\n    Note/(fib(n))\n"
+                "state n(5)\n\nfn fib(k): if k < 2 then k else fib(k - 1) + fib(k - 2)\n\nRig stage:\n    Lamp/(fib(n))\n"
             ),
             (
                 "6.6",
-                "state note(60)\n\nstate recent = recent.past(1, []) + [note]\n"
+                "state reading(60)\n\nstate recent = recent.past(1, []) + [reading]\n"
             ),
             ("6.7", "state g(x: x + 1)\n"),
             (
                 "6.7",
-                "fn bar(n): n + 1\n\nlet baz = bar\nlet same = baz is bar\n\nClip c:\n    Note when same\n"
+                "fn bar(n): n + 1\n\nlet baz = bar\nlet same = baz is bar\n\nPlant boiler:\n    Valve when same\n"
             ),
-            ("6.7", "let f = x: f(x)\n\nClip c:\n    Note/(f(60))\n"),
             (
                 "6.7",
-                "fn apply(f: (i32) -> i32, x: i32) -> i32: f(x)\n\nClip c:\n    Note/(apply((a, b): a + b, 60))\n"
+                "let f = x: f(x)\n\nPlant boiler:\n    Valve/(f(1))\n"
+            ),
+            (
+                "6.7",
+                "fn apply(f: (i32) -> i32, x: i32) -> i32: f(x)\n\nRig stage:\n    Lamp/(apply((a, b): a + b, 60))\n"
             ),
             (
                 "6.8",
-                "fn shorter[const N](xs: i32[N]) -> i32[N - 1]: xs[1..]\n\nClip c:\n    Note/(shorter([60]).size)\n"
+                "fn shorter[const N](xs: i32[N]) -> i32[N - 1]: xs[1..]\n\nRig stage:\n    Lamp/(shorter([60]).size)\n"
             ),
             (
                 "6.8",
-                "fn half[const N](xs: i32[N]) -> i32[N / 2]: xs[..N div 2]\n\nClip c:\n    Note/(half([60, 64, 67, 72])[0])\n"
+                "fn half[const N](xs: i32[N]) -> i32[N / 2]: xs[..N div 2]\n\nPlant boiler:\n    Valve/(half([1, 2, 3, 4])[0])\n"
             ),
             (
                 "6.8",
@@ -168,17 +202,17 @@ fn the_spec_has_sym_and_sym_error_examples() {
             ),
             (
                 "6.8",
-                "type Pair[A, B]:\n    left: A\n    right: B\n\nlet p = Pair {left: 1i32}\n\nClip c:\n    Note/(p.left)\n"
+                "type Pair[A, B]:\n    left: A\n    right: B\n\nlet p = Pair {left: 1i32}\n\nRig stage:\n    Lamp/(p.left)\n"
             ),
             (
                 "7.9",
-                "Clip c:\n    for i, k in 0..4:\n        Note/(60 + k)\n"
+                "Plant boiler:\n    for i, k in 0..4:\n        Valve/(0.1 + k)\n"
             ),
             (
                 "7.9",
-                "state n(4)\n\nstate total = for i in 0..n into sum from 0: sum + i\n\nClip c:\n    Note/total\n"
+                "state n(4)\n\nstate total = for i in 0..n into sum from 0: sum + i\n\nRig stage:\n    Lamp/total\n"
             ),
-            ("10.2", "Pad kick | hit=Hit {}\n")
+            ("10.2", "Pad kick | hit=Hit {}\n"),
         ]
     );
 }
@@ -193,7 +227,11 @@ fn spec_projects_are_the_self_contained_examples() {
     assert_eq!(projects.len(), expected);
     assert_eq!(projects[0].name, "spec-1.1-sym-1");
     assert_eq!(projects[0].files[0].path, "spec-1.1-sym-1.sym");
-    assert!(projects[0].files[0].text.starts_with("state cutoff(0.5)\n"));
+    assert!(
+        projects[0].files[0]
+            .text
+            .starts_with("state intensity(0.5)\n")
+    );
 }
 
 #[test]
@@ -216,12 +254,17 @@ fn the_spec_productions_are_extracted() {
 }
 
 #[test]
-fn the_music_and_dsp_projects_use_every_kind_and_wire_kind() {
+fn the_fixture_projects_use_every_kind_and_wire_kind() {
     let vocab = vocabulary();
-    let text: String = [music_project(), dsp_project()]
-        .iter()
-        .flat_map(|project| project.files.iter().map(|file| file.text.clone()))
-        .collect();
+    let text: String = [
+        music_project(),
+        dsp_project(),
+        lighting_project(),
+        control_project(),
+    ]
+    .iter()
+    .flat_map(|project| project.files.iter().map(|file| file.text.clone()))
+    .collect();
     let names = vocab
         .node_kinds()
         .iter()
