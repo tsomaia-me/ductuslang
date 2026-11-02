@@ -23,6 +23,9 @@ pub(crate) struct Memo {
     pub loop_guesses: FastMap<(ExprId, bool), super::loop_types::LoopTypes>,
     pub slot_extents: FastMap<super::ids::SlotId, super::capacity::Piecewise>,
     pub loop_capacities: FastMap<super::ids::SlotId, i128>,
+    /// The capacity a `for` body's accumulator holds as its last iteration
+    /// starts (SPEC §5.10).
+    pub loop_entries: FastMap<super::ids::SlotId, i128>,
     pub loop_reports: super::fast_hash::FastSet<NodeId>,
     pub loop_templates: FastMap<(ExprId, ScopeId), super::loop_template::LoopTemplate>,
     pub loop_slots: FastMap<

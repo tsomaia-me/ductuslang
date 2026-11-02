@@ -3614,3 +3614,49 @@ fn a_history_read_has_its_cells_shape_whatever_its_fallback_c2_6() {
     }
     assert_eq!(programs, 160);
 }
+
+/// SPEC §5.10: a `for` expression's capacity is found by applying the body's
+/// rule to the start's once per iteration; §3.2: an array's length and capacity
+/// are below 2³¹. A join in the body is bounded by what the accumulator holds
+/// before its last iteration, so a `for` whose last iteration reaches 2³¹ − 1
+/// is valid and one that passes it draws `length-limit` once (C2-12).
+#[test]
+fn a_join_in_a_for_body_is_bounded_by_the_accumulator_before_its_last_iteration_c2_12() {
+    const LIMIT: i128 = 2_147_483_647;
+    let mut programs = 0;
+    for (start, held) in [("[]", 0), ("[1]", 1)] {
+        for (joined, per) in [("[i]", 1), ("[i, i]", 2)] {
+            let edge = (LIMIT - held) / per;
+            for count in [edge - 1, edge, edge + 1] {
+                let expected = if held + per * count > LIMIT {
+                    vec![Code::LengthLimit]
+                } else {
+                    vec![]
+                };
+                for reversed in [false, true] {
+                    let mut items = [
+                        "state n(4)\n".to_string(),
+                        format!(
+                            "state v = for i in 0..min(n, {count}) into s from {start}: s + {joined}\n"
+                        ),
+                        "Clip c:\n    Note/(v[0])\n".to_string(),
+                    ];
+                    if reversed {
+                        items.reverse();
+                    }
+                    let text = items.concat();
+                    programs += 1;
+                    assert_eq!(codes(&text), expected, "{text}");
+                }
+            }
+        }
+    }
+    for (capacity, expected) in [("2147483646", vec![]), ("2147483647", vec![])] {
+        let text = format!(
+            "state held([]): i32[..{capacity}]\nstate v = for x in held into s from []: s + [x]\nClip c:\n    Note/(v[0])\n"
+        );
+        programs += 1;
+        assert_eq!(codes(&text), expected, "{text}");
+    }
+    assert_eq!(programs, 26);
+}

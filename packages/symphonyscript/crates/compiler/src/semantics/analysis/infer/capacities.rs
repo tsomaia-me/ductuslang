@@ -964,7 +964,7 @@ impl Engine<'_> {
                 Extent::Fixed(i128::from(layout.outer().unwrap_or(0)))
             }
             Some(_) => {
-                let capacity = match (record.capacity, self.memo.loop_capacities.get(&slot)) {
+                let capacity = match (record.capacity, self.memo.loop_entries.get(&slot)) {
                     (Some(annotated), _) => i128::from(annotated),
                     (None, Some(found)) => *found,
                     (None, None) => 0,
@@ -1024,29 +1024,37 @@ impl Engine<'_> {
         let function = self.capacity_with(for_node.body, env);
         self.memo.slot_extents.remove(&for_node.accumulator);
         let function = function?;
-        let mut current = start;
-        let mut most = start;
-        let mut left = count;
-        while left > 0 && current < LIMIT {
-            let at = Ratio::int(current);
-            let next = function.at(at).floor();
-            if next <= current {
-                break;
+        let grown = |count: i128| {
+            let mut current = start;
+            let mut most = start;
+            let mut left = count;
+            while left > 0 && current < LIMIT {
+                let at = Ratio::int(current);
+                let next = function.at(at).floor();
+                if next <= current {
+                    break;
+                }
+                let growth = next - current;
+                let steps = match function.segment_at(at) {
+                    (slope, Some(end)) if slope == Ratio::int(1) => (end - at)
+                        .div(Ratio::int(growth))
+                        .map_or(1, |steps| steps.floor().max(1)),
+                    (slope, None) if slope == Ratio::int(1) => left,
+                    (_, _) => 1,
+                }
+                .min(left);
+                current = current.saturating_add(growth.saturating_mul(steps));
+                most = most.max(current);
+                left -= steps;
             }
-            let growth = next - current;
-            let steps = match function.segment_at(at) {
-                (slope, Some(end)) if slope == Ratio::int(1) => (end - at)
-                    .div(Ratio::int(growth))
-                    .map_or(1, |steps| steps.floor().max(1)),
-                (slope, None) if slope == Ratio::int(1) => left,
-                (_, _) => 1,
-            }
-            .min(left);
-            current = current.saturating_add(growth.saturating_mul(steps));
-            most = most.max(current);
-            left -= steps;
-        }
+            most
+        };
+        let most = grown(count);
+        // The accumulator the body reads holds what the iterations before the last
+        // built (SPEC §5.10), so a join in the body is bounded by that capacity.
+        let entered = grown(count.saturating_sub(1).max(0));
         self.memo.loop_capacities.insert(for_node.accumulator, most);
+        self.memo.loop_entries.insert(for_node.accumulator, entered);
         let Some(annotated) = accumulator.capacity else {
             return Ok(Extent::Variable(Piecewise::constant(most)));
         };
