@@ -94,6 +94,8 @@ fn overridden(limits: LimitOverrides, setting: &str) -> Result<LimitOverrides, S
         "expansion_steps_warning" => &mut limits.expansion_steps_warning,
         "expanded_items" => &mut limits.expanded_items,
         "expanded_items_warning" => &mut limits.expanded_items_warning,
+        "value_elements" => &mut limits.value_elements,
+        "value_elements_warning" => &mut limits.value_elements_warning,
         "memory_bytes" => &mut limits.memory_bytes,
         "memory_bytes_warning" => &mut limits.memory_bytes_warning,
         "reload_edit_distance" => &mut limits.reload_edit_distance,
