@@ -1404,21 +1404,26 @@ impl<'a> Engine<'a> {
             for chain in self.attributed_chains(&deferred) {
                 let depth = chain.depth();
                 for path in chain.outermost_paths() {
+                    let (message, names) = named_chain(deferred.code, &deferred.message);
                     let key = Merged {
                         code: deferred.code,
                         loc: deferred.loc,
                         before: deferred.before.clone(),
-                        message: deferred.message.clone(),
+                        message: message.to_string(),
                         outermost: path.last().map(|(loc, _)| *loc),
                     };
                     let mut related = deferred.before.clone();
                     related.extend(path);
                     match merged.get(&key).and_then(|index| chosen.get_mut(*index)) {
-                        Some(earlier) if earlier.4 < depth => {
-                            earlier.2 = related;
-                            earlier.4 = depth;
+                        Some(earlier) => {
+                            if earlier.4 < depth {
+                                earlier.2 = related;
+                                earlier.4 = depth;
+                            }
+                            if named_chain(earlier.0, &earlier.3.0).1 < names {
+                                earlier.3 = (deferred.message.clone(), deferred.help.clone());
+                            }
                         }
-                        Some(_) => {}
                         None => {
                             merged.insert(key, chosen.len());
                             chosen.push((
@@ -2082,4 +2087,16 @@ struct Held {
     dispatched: Option<Option<Query>>,
     reader_function: Option<Option<Query>>,
     fresh: bool,
+}
+
+/// A depth diagnostic's summary without the functions it names, and how many
+/// it names: diagnostics that differ only in the calls between their fault and
+/// the outermost call merge into one naming the longest chain (ARCHITECTURE §7).
+fn named_chain(code: Code, message: &str) -> (&str, usize) {
+    let named = matches!(code, Code::RecursionDepth | Code::LimitWarning)
+        && message.starts_with("the evaluation goes deeper than");
+    match message.rsplit_once(": ") {
+        Some((summary, names)) if named => (summary, names.split(" → ").count()),
+        Some(_) | None => (message, 0),
+    }
 }

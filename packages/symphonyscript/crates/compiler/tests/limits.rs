@@ -907,3 +907,44 @@ fn a_call_whose_inlining_passes_the_warning_value_and_the_limit_at_once_draws_th
         assert_eq!(codes, expected, "{text}");
     }
 }
+
+/// ARCHITECTURE §7: "Diagnostics that differ only in the calls or pattern uses
+/// between their fault and the outermost call or use merge into one, which names
+/// the longest such chain found". A depth fault reached through `h` and through
+/// `dp` alone draws one `recursion-depth`, naming `h → dp` (C2-13).
+#[test]
+fn one_depth_fault_draws_one_recursion_depth_naming_the_longest_chain_c2_13() {
+    for start in ["xs[dp(i % 1, 2000)]", "[xs[0], xs[1]][dp(i % 1, 2000)]"] {
+        for read in [
+            format!("(if true then i32(({start}).gain) else 0)"),
+            format!("i32(({start}).gain)"),
+        ] {
+            for reversed in [false, true] {
+                let mut items = [
+                    "Session main\n".to_string(),
+                    "Clip verse | gain=2:\n    Note\n".to_string(),
+                    "Clip other | gain=3:\n    Note\n".to_string(),
+                    "fn dp(x, m): if m < 1 then x else dp(x, m - 1)\n".to_string(),
+                    format!(
+                        "fn h(xs, i): if i >= xs.size then 0 else {read} + i32(xs[i].gain) + h(xs, i + 1)\n"
+                    ),
+                    "Clip k:\n    Note/([60][h([verse, other], 0) - 5])\n".to_string(),
+                ];
+                if reversed {
+                    items.reverse();
+                }
+                let text = items.concat();
+                let depths: Vec<String> = support::checked(&text)
+                    .into_iter()
+                    .filter(|diagnostic| diagnostic.code == Code::RecursionDepth)
+                    .map(|diagnostic| diagnostic.summary)
+                    .collect();
+                assert!(
+                    depths.len() == 1 && depths.iter().all(|summary| summary.ends_with(": h → dp")),
+                    "{text}{depths:?}"
+                );
+            }
+        }
+    }
+}
+
