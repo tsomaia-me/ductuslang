@@ -594,7 +594,9 @@ fn every_cost_row_draws_nothing_and_its_erroneous_twin_draws_only_its_unknown_na
     assert_eq!(rows, 176);
 }
 
-const FLOOR: u64 = 1_600;
+fn floor(construct: Construct, shape: Shape) -> u64 {
+    u64::try_from(smallest_size(construct, shape)).unwrap_or(u64::MAX) * 64 / 65
+}
 
 fn builds_per_level(construct: Construct, shape: Shape) -> bool {
     shape == Shape::GrowingArgument || (shape == Shape::FanIn && construct == Construct::Join)
@@ -704,7 +706,8 @@ fn measured_row(compiler: &Compiler, row: &Row) -> Report {
             ));
         }
     }
-    if least.0 < FLOOR
+    let floor = floor(construct, shape);
+    if least.0 < floor
         && !builds_per_level(construct, shape)
         && !indents_per_level(construct, shape)
     {
@@ -712,7 +715,7 @@ fn measured_row(compiler: &Compiler, row: &Row) -> Report {
             &texts[0],
             &[(least.1.to_string(), vec![least.0])],
             format!(
-                "{name}: the smallest count, {} {}, is below {FLOOR}",
+                "{name}: the smallest count, {} {}, is below {floor}",
                 least.1, least.0
             ),
         ));
@@ -1954,10 +1957,7 @@ fn distinct_call_failures(calls: [u64; 3]) -> Vec<String> {
                 .first()
                 .is_some_and(|error| error.starts_with("RecursionLimit"));
         if !limited {
-            failures.push(row_failure(
-                DISTINCT_CALLS,
-                format!("300 at {limit} calls: {:?}", run.errors),
-            ));
+            failures.push(format!("300 at {limit} calls: {:?}", run.errors));
         }
         failures.extend(machine_failures(run, limit));
     }
@@ -1969,16 +1969,27 @@ fn distinct_call_failures(calls: [u64; 3]) -> Vec<String> {
             )
         });
         if !linear(points) {
-            failures.push(row_failure(
-                DISTINCT_CALLS,
-                format!(
-                    "300 {counter} {:?} at {calls:?} calls",
-                    points.map(|(_, count)| count)
-                ),
+            failures.push(format!(
+                "300 {counter} {:?} at {calls:?} calls",
+                points.map(|(_, count)| count)
             ));
         }
     }
-    failures
+    if failures.is_empty() {
+        return failures;
+    }
+    let mut counts = vec![("recursive_calls".to_string(), calls.to_vec())];
+    for walk in MACHINE_WALKS {
+        counts.push((
+            walk.to_string(),
+            runs.iter().map(|run| walk_count(run, walk)).collect(),
+        ));
+    }
+    vec![crate::pinned_row::failed_counts(
+        DISTINCT_CALLS,
+        &counts,
+        failures.join("\n"),
+    )]
 }
 
 fn walk_count(run: &Measured, walk: &str) -> u64 {
@@ -1987,6 +1998,23 @@ fn walk_count(run: &Measured, walk: &str) -> u64 {
         .find(|(name, _)| name == walk)
         .map_or(0, |(_, count)| *count)
 }
+
+const INSTRUCTIONS_A_CALL: u64 = 31;
+
+const MACHINE_WALKS: [&str; 12] = [
+    "calls",
+    "CallKeyOwned",
+    "InternerIntern",
+    "TemplateKeyOwned",
+    "MachineFreshFrame",
+    "FrameForeignSlot",
+    "evaluation_work",
+    "ProgramStep",
+    "ProgramFrameCompile",
+    "SignatureRead",
+    "FrameValueRead",
+    "program_bytes",
+];
 
 fn machine_failures(run: &Measured, limit: u64) -> Vec<String> {
     let deepest_nesting = 201;
@@ -2000,7 +2028,7 @@ fn machine_failures(run: &Measured, limit: u64) -> Vec<String> {
         ("MachineFreshFrame", deepest_nesting),
         ("FrameForeignSlot", 0),
         ("evaluation_work", 2 * distinct),
-        ("ProgramStep", 30 * distinct),
+        ("ProgramStep", INSTRUCTIONS_A_CALL * distinct),
         ("ProgramFrameCompile", 2),
         ("SignatureRead", 3 * distinct),
         ("FrameValueRead", 2 * distinct),
@@ -2008,19 +2036,15 @@ fn machine_failures(run: &Measured, limit: u64) -> Vec<String> {
     ] {
         let count = walk_count(run, walk);
         if count > most {
-            failures.push(row_failure(
-                DISTINCT_CALLS,
-                format!("300 at {limit} calls: {walk} {count}, more than {most}"),
+            failures.push(format!(
+                "300 at {limit} calls: {walk} {count}, more than {most}"
             ));
         }
     }
     if distinct <= limit || walk_count(run, "CallKeyOwned") < distinct {
-        failures.push(row_failure(
-            DISTINCT_CALLS,
-            format!(
-                "300 at {limit} calls: {} call keys for {distinct} distinct calls",
-                walk_count(run, "CallKeyOwned")
-            ),
+        failures.push(format!(
+            "300 at {limit} calls: {} call keys for {distinct} distinct calls",
+            walk_count(run, "CallKeyOwned")
         ));
     }
     failures
