@@ -1,0 +1,283 @@
+state setpoint_33(0.5)
+state phase_33(0)
+state alarm_33(false)
+state manual_33(false)
+state pressures_33([]): f32[..10]
+stream reading_33(0.0)
+channel[16] fault_33(0)
+state demand_33 = setpoint_33 * 0.9
+state error_33 = reading_33 - setpoint_33
+state lowest_33 = for x in pressures_33 into low from 100.0: min(low, x)
+state trend_33 = reading_33.past(1, 0.0) - reading_33.past(2, 0.0)
+state mode_33 = if manual_33 then Mode::Manual else Mode::Auto
+state gainset_33 = match mode_33:
+    Auto: 1.0
+    Manual: 0.8
+    else: 0.6
+state history_33([]) = (history_33.past(1) + [phase_33])[^4..]
+stream faults_33 = fault_33 + 1
+
+let ratios_33 = [0.1, 0.25, 0.5, 0.75]
+let limits_33 = ratios_33 + [1.0]
+let tail_33 = limits_33[2..]
+let tag_33 = "plant 33: {tail_33.size}"
+let rated_33 = [2kpa, 500pa]
+let heavy_33 = if rated_33[0] > 1kpa then 0.5 else 0.25
+
+fn tier_33(rank, base = 100): base + [0, 5, 15, 40][rank % 4] + 50 * (rank div 4)
+fn ratio_33(x): 10 ** (x / 20)
+fn depth_33(n): if n < 1 then 0 else 1 + depth_33(n - 1)
+fn bounded_33(x): clamp(x, 0.0, 1.0)
+
+pattern Bank_33(default base):
+    Plant:
+        Valve/base Valve/(base + 0.25) Valve/(base + 0.5)
+
+pattern Loop_33(default target, gain = 1.0):
+    Controller/target | gain=gain
+
+Plant boiler_33 | mode=Manual:
+    Valve as feed /0.2
+    Valve as bleed /(lowest_33 * 0.01)
+    Controller as loop /(demand_33) | gain=gainset_33:
+        Drives | limit=to.open: feed
+        Drives as choke | limit=0.3: bleed
+    Controller/(bounded_33(error_33 + trend_33)) | gain=ratio_33(-6)
+    for i in 0..4:
+        Valve/(ratios_33[i])
+    for i, r in tail_33:
+        Valve/(r * 0.5) when alarm_33
+    Loop_33/(setpoint_33) | gain=heavy_33
+    when alarm_33:
+        Valve/0.9
+    else:
+        Valve/(faults_33 * 0.01)
+    when:
+        phase_33 is 0: Valve/0.6
+        phase_33 is 1: Valve/0.7
+        else: Valve/(history_33[0] * 0.1)
+
+Plant trim_33:
+    Valve/(master * 0.5)
+    Controller/(db(-12)) | gain=master
+
+Plant topup_33: Valve/0 Valve/0.5 (Controller/0.4 | gain=0.5)
+
+Bank_33 manifold_33 /0
+Bank_33 header_33 /(tier_33(33) * 0.001)
+
+Plant spare_33 | mode=Off:
+    Valve/(depth_33(3) * 0.1)
+
+state setpoint_34(0.5)
+state phase_34(0)
+state alarm_34(false)
+state manual_34(false)
+state pressures_34([]): f32[..10]
+stream reading_34(0.0)
+channel[16] fault_34(0)
+state demand_34 = setpoint_34 * 0.9
+state error_34 = reading_34 - setpoint_34
+state lowest_34 = for x in pressures_34 into low from 100.0: min(low, x)
+state trend_34 = reading_34.past(1, 0.0) - reading_34.past(2, 0.0)
+state mode_34 = if manual_34 then Mode::Manual else Mode::Auto
+state gainset_34 = match mode_34:
+    Auto: 1.0
+    Manual: 0.8
+    else: 0.6
+state history_34([]) = (history_34.past(1) + [phase_34])[^4..]
+stream faults_34 = fault_34 + 1
+
+let ratios_34 = [0.1, 0.25, 0.5, 0.75]
+let limits_34 = ratios_34 + [1.0]
+let tail_34 = limits_34[2..]
+let tag_34 = "plant 34: {tail_34.size}"
+let rated_34 = [2kpa, 500pa]
+let heavy_34 = if rated_34[0] > 1kpa then 0.5 else 0.25
+
+fn tier_34(rank, base = 100): base + [0, 5, 15, 40][rank % 4] + 50 * (rank div 4)
+fn ratio_34(x): 10 ** (x / 20)
+fn depth_34(n): if n < 1 then 0 else 1 + depth_34(n - 1)
+fn bounded_34(x): clamp(x, 0.0, 1.0)
+
+pattern Bank_34(default base):
+    Plant:
+        Valve/base Valve/(base + 0.25) Valve/(base + 0.5)
+
+pattern Loop_34(default target, gain = 1.0):
+    Controller/target | gain=gain
+
+Plant boiler_34 | mode=Manual:
+    Valve as feed /0.2
+    Valve as bleed /(lowest_34 * 0.01)
+    Controller as loop /(demand_34) | gain=gainset_34:
+        Drives | limit=to.open: feed
+        Drives as choke | limit=0.3: bleed
+    Controller/(bounded_34(error_34 + trend_34)) | gain=ratio_34(-6)
+    for i in 0..4:
+        Valve/(ratios_34[i])
+    for i, r in tail_34:
+        Valve/(r * 0.5) when alarm_34
+    Loop_34/(setpoint_34) | gain=heavy_34
+    when alarm_34:
+        Valve/0.9
+    else:
+        Valve/(faults_34 * 0.01)
+    when:
+        phase_34 is 0: Valve/0.6
+        phase_34 is 1: Valve/0.7
+        else: Valve/(history_34[0] * 0.1)
+
+Plant trim_34:
+    Valve/(master * 0.5)
+    Controller/(db(-12)) | gain=master
+
+Plant topup_34: Valve/0 Valve/0.5 (Controller/0.4 | gain=0.5)
+
+Bank_34 manifold_34 /0
+Bank_34 header_34 /(tier_34(34) * 0.001)
+
+Plant spare_34 | mode=Off:
+    Valve/(depth_34(3) * 0.1)
+
+state setpoint_35(0.5)
+state phase_35(0)
+state alarm_35(false)
+state manual_35(false)
+state pressures_35([]): f32[..10]
+stream reading_35(0.0)
+channel[16] fault_35(0)
+state demand_35 = setpoint_35 * 0.9
+state error_35 = reading_35 - setpoint_35
+state lowest_35 = for x in pressures_35 into low from 100.0: min(low, x)
+state trend_35 = reading_35.past(1, 0.0) - reading_35.past(2, 0.0)
+state mode_35 = if manual_35 then Mode::Manual else Mode::Auto
+state gainset_35 = match mode_35:
+    Auto: 1.0
+    Manual: 0.8
+    else: 0.6
+state history_35([]) = (history_35.past(1) + [phase_35])[^4..]
+stream faults_35 = fault_35 + 1
+
+let ratios_35 = [0.1, 0.25, 0.5, 0.75]
+let limits_35 = ratios_35 + [1.0]
+let tail_35 = limits_35[2..]
+let tag_35 = "plant 35: {tail_35.size}"
+let rated_35 = [2kpa, 500pa]
+let heavy_35 = if rated_35[0] > 1kpa then 0.5 else 0.25
+
+fn tier_35(rank, base = 100): base + [0, 5, 15, 40][rank % 4] + 50 * (rank div 4)
+fn ratio_35(x): 10 ** (x / 20)
+fn depth_35(n): if n < 1 then 0 else 1 + depth_35(n - 1)
+fn bounded_35(x): clamp(x, 0.0, 1.0)
+
+pattern Bank_35(default base):
+    Plant:
+        Valve/base Valve/(base + 0.25) Valve/(base + 0.5)
+
+pattern Loop_35(default target, gain = 1.0):
+    Controller/target | gain=gain
+
+Plant boiler_35 | mode=Manual:
+    Valve as feed /0.2
+    Valve as bleed /(lowest_35 * 0.01)
+    Controller as loop /(demand_35) | gain=gainset_35:
+        Drives | limit=to.open: feed
+        Drives as choke | limit=0.3: bleed
+    Controller/(bounded_35(error_35 + trend_35)) | gain=ratio_35(-6)
+    for i in 0..4:
+        Valve/(ratios_35[i])
+    for i, r in tail_35:
+        Valve/(r * 0.5) when alarm_35
+    Loop_35/(setpoint_35) | gain=heavy_35
+    when alarm_35:
+        Valve/0.9
+    else:
+        Valve/(faults_35 * 0.01)
+    when:
+        phase_35 is 0: Valve/0.6
+        phase_35 is 1: Valve/0.7
+        else: Valve/(history_35[0] * 0.1)
+
+Plant trim_35:
+    Valve/(master * 0.5)
+    Controller/(db(-12)) | gain=master
+
+Plant topup_35: Valve/0 Valve/0.5 (Controller/0.4 | gain=0.5)
+
+Bank_35 manifold_35 /0
+Bank_35 header_35 /(tier_35(35) * 0.001)
+
+Plant spare_35 | mode=Off:
+    Valve/(depth_35(3) * 0.1)
+
+state setpoint_36(0.5)
+state phase_36(0)
+state alarm_36(false)
+state manual_36(false)
+state pressures_36([]): f32[..10]
+stream reading_36(0.0)
+channel[16] fault_36(0)
+state demand_36 = setpoint_36 * 0.9
+state error_36 = reading_36 - setpoint_36
+state lowest_36 = for x in pressures_36 into low from 100.0: min(low, x)
+state trend_36 = reading_36.past(1, 0.0) - reading_36.past(2, 0.0)
+state mode_36 = if manual_36 then Mode::Manual else Mode::Auto
+state gainset_36 = match mode_36:
+    Auto: 1.0
+    Manual: 0.8
+    else: 0.6
+state history_36([]) = (history_36.past(1) + [phase_36])[^4..]
+stream faults_36 = fault_36 + 1
+
+let ratios_36 = [0.1, 0.25, 0.5, 0.75]
+let limits_36 = ratios_36 + [1.0]
+let tail_36 = limits_36[2..]
+let tag_36 = "plant 36: {tail_36.size}"
+let rated_36 = [2kpa, 500pa]
+let heavy_36 = if rated_36[0] > 1kpa then 0.5 else 0.25
+
+fn tier_36(rank, base = 100): base + [0, 5, 15, 40][rank % 4] + 50 * (rank div 4)
+fn ratio_36(x): 10 ** (x / 20)
+fn depth_36(n): if n < 1 then 0 else 1 + depth_36(n - 1)
+fn bounded_36(x): clamp(x, 0.0, 1.0)
+
+pattern Bank_36(default base):
+    Plant:
+        Valve/base Valve/(base + 0.25) Valve/(base + 0.5)
+
+pattern Loop_36(default target, gain = 1.0):
+    Controller/target | gain=gain
+
+Plant boiler_36 | mode=Manual:
+    Valve as feed /0.2
+    Valve as bleed /(lowest_36 * 0.01)
+    Controller as loop /(demand_36) | gain=gainset_36:
+        Drives | limit=to.open: feed
+        Drives as choke | limit=0.3: bleed
+    Controller/(bounded_36(error_36 + trend_36)) | gain=ratio_36(-6)
+    for i in 0..4:
+        Valve/(ratios_36[i])
+    for i, r in tail_36:
+        Valve/(r * 0.5) when alarm_36
+    Loop_36/(setpoint_36) | gain=heavy_36
+    when alarm_36:
+        Valve/0.9
+    else:
+        Valve/(faults_36 * 0.01)
+    when:
+        phase_36 is 0: Valve/0.6
+        phase_36 is 1: Valve/0.7
+        else: Valve/(history_36[0] * 0.1)
+
+Plant trim_36:
+    Valve/(master * 0.5)
+    Controller/(db(-12)) | gain=master
+
+Plant topup_36: Valve/0 Valve/0.5 (Controller/0.4 | gain=0.5)
+
+Bank_36 manifold_36 /0
+Bank_36 header_36 /(tier_36(36) * 0.001)
+
+Plant spare_36 | mode=Off:
+    Valve/(depth_36(3) * 0.1)

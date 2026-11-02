@@ -50,7 +50,11 @@ fn run() -> Result<(), String> {
             .map_err(|error| format!("{input}:{}: {error}", index + 1))?;
         let running = running_compiles();
         let timed = match checker.compile(&program) {
-            Guarded::Finished { value, elapsed, .. } => {
+            Guarded::Finished {
+                value,
+                elapsed,
+                work,
+            } => {
                 let mut codes: Vec<&str> = value
                     .iter()
                     .map(|diagnostic| diagnostic.code.as_str())
@@ -62,6 +66,8 @@ fn run() -> Result<(), String> {
                     "elapsed_ms": elapsed.as_secs_f64() * 1000.0,
                     "diagnostics": value.len(),
                     "codes": codes,
+                    "peak_bytes": work.peak_bytes,
+                    "allocations": work.allocations,
                     "running_compiles": running,
                 })
             }

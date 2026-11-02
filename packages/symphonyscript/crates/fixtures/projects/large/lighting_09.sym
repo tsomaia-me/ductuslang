@@ -1,0 +1,327 @@
+state intensity_33(0.5)
+state look_33(0)
+state flash_33(false)
+state chase_33([true, false, false, true, false, false, true, false])
+state levels_33([0.2, 0.2, 0.8, 0.2, 0.5, 0.2, 0.8, 1.0])
+stream tick_33(0)
+channel[4] go_33(0)
+state glow_33 = intensity_33 * 0.8
+state fade_in_33 = intensity_33.past(2, 0.0)
+state pace_33 = if flash_33 then 200ms else 1.5s
+state dimmed_33 = for x in levels_33 into sum from 0.0: sum + x * intensity_33
+stream count_33 = tick_33 + go_33
+channel bursts_33 = go_33 * 2
+state moved_33 = intensity_33.stepped
+state step_33 = (look_33 + 1) % 8
+
+let ramp_33 = [0.2, 0.5, 0.8]
+let hues_33 = for i in 0..6 into kept from []: kept + [i * 0.15]
+let warm_33 = hues_33[..3]
+let cool_33 = hues_33[^3..]
+let palette_33 = warm_33 + cool_33
+let name_33 = "rig 33"
+let holds_33 = [2s, 500ms, 4]
+
+fn bounce_33(n): if n < 1 then 0.0 else 0.1 + bounce_33(n - 1)
+fn spread_33(i, width = 0.25): (i % 4) * width
+fn tint_33(i):
+    let base = palette_33[i % 6]
+    min(1.0, base + 0.05)
+
+pattern Chase_33(default start, again):
+    Scene:
+        Cue/start Cue/(start + 1)
+        Triggers: again
+
+pattern Wash_33(default level, count = 3):
+    for i in 0..count:
+        Lamp/level | hue=tint_33(i)
+
+pattern Flash_33(default start):
+    [Lamp/start Lamp/(start + 0.3) Lamp*/(start + 0.6)]
+
+Rig stage_33:
+    Scene as dusk | hold=8:
+        Cue/0 Cue/2 (Cue | at=500ms fade=pace_33)
+        Dims: wash
+        Dims | depth=to.level: spot
+        Triggers: night_33
+    Lamp as wash /0.7 | hue=glow_33 strobe
+    Lamp as spot /(bounce_33(4)) | hue=fade_in_33
+    Lamp*/0.3 when flash_33
+    Lamp/(bursts_33 * 0.1) when moved_33
+    Lamp/(db(-6)) | hue=master * 0.5
+    [Lamp/0.2 Lamp/0.5 Lamp/0.8]
+    [for i in 0..3: Lamp/(0.2 + i * 0.3)]
+    [for i, p in ramp_33: (Lamp/p | hue=1.0 - i * 0.2)]
+    for i in 0..8:
+        Lamp/(levels_33[i]) when chase_33[i]
+    for i, p in ramp_33:
+        Lamp/p | hue=spread_33(i)
+    Wash_33/(intensity_33) | count=4
+    Flash_33/0.1
+    when flash_33:
+        Lamp/1.0 Lamp/0.9
+    else:
+        Lamp/0.4
+    when:
+        look_33 is 0: Lamp/0.25
+        look_33 is 1: Lamp/0.5
+        else: Lamp/(dimmed_33 * 0.1)
+
+Scene night_33 | hold=holds_33[0]:
+    Cue/0
+    Cue | at=step_33 fade=1s
+    Triggers: [stage_33.dusk, dawn_33][look_33]
+
+Scene dawn_33:
+    Cue/(2s) Cue/(3000ms)
+    Triggers: if flash_33 then night_33 else stage_33.dusk
+
+Chase_33 loop_33 /0 | again=loop_33
+
+state intensity_34(0.5)
+state look_34(0)
+state flash_34(false)
+state chase_34([true, false, false, true, false, false, true, false])
+state levels_34([0.2, 0.2, 0.8, 0.2, 0.5, 0.2, 0.8, 1.0])
+stream tick_34(0)
+channel[4] go_34(0)
+state glow_34 = intensity_34 * 0.8
+state fade_in_34 = intensity_34.past(2, 0.0)
+state pace_34 = if flash_34 then 200ms else 1.5s
+state dimmed_34 = for x in levels_34 into sum from 0.0: sum + x * intensity_34
+stream count_34 = tick_34 + go_34
+channel bursts_34 = go_34 * 2
+state moved_34 = intensity_34.stepped
+state step_34 = (look_34 + 1) % 8
+
+let ramp_34 = [0.2, 0.5, 0.8]
+let hues_34 = for i in 0..6 into kept from []: kept + [i * 0.15]
+let warm_34 = hues_34[..3]
+let cool_34 = hues_34[^3..]
+let palette_34 = warm_34 + cool_34
+let name_34 = "rig 34"
+let holds_34 = [2s, 500ms, 4]
+
+fn bounce_34(n): if n < 1 then 0.0 else 0.1 + bounce_34(n - 1)
+fn spread_34(i, width = 0.25): (i % 4) * width
+fn tint_34(i):
+    let base = palette_34[i % 6]
+    min(1.0, base + 0.05)
+
+pattern Chase_34(default start, again):
+    Scene:
+        Cue/start Cue/(start + 1)
+        Triggers: again
+
+pattern Wash_34(default level, count = 3):
+    for i in 0..count:
+        Lamp/level | hue=tint_34(i)
+
+pattern Flash_34(default start):
+    [Lamp/start Lamp/(start + 0.3) Lamp*/(start + 0.6)]
+
+Rig stage_34:
+    Scene as dusk | hold=8:
+        Cue/0 Cue/2 (Cue | at=500ms fade=pace_34)
+        Dims: wash
+        Dims | depth=to.level: spot
+        Triggers: night_34
+    Lamp as wash /0.7 | hue=glow_34 strobe
+    Lamp as spot /(bounce_34(4)) | hue=fade_in_34
+    Lamp*/0.3 when flash_34
+    Lamp/(bursts_34 * 0.1) when moved_34
+    Lamp/(db(-6)) | hue=master * 0.5
+    [Lamp/0.2 Lamp/0.5 Lamp/0.8]
+    [for i in 0..3: Lamp/(0.2 + i * 0.3)]
+    [for i, p in ramp_34: (Lamp/p | hue=1.0 - i * 0.2)]
+    for i in 0..8:
+        Lamp/(levels_34[i]) when chase_34[i]
+    for i, p in ramp_34:
+        Lamp/p | hue=spread_34(i)
+    Wash_34/(intensity_34) | count=4
+    Flash_34/0.1
+    when flash_34:
+        Lamp/1.0 Lamp/0.9
+    else:
+        Lamp/0.4
+    when:
+        look_34 is 0: Lamp/0.25
+        look_34 is 1: Lamp/0.5
+        else: Lamp/(dimmed_34 * 0.1)
+
+Scene night_34 | hold=holds_34[0]:
+    Cue/0
+    Cue | at=step_34 fade=1s
+    Triggers: [stage_34.dusk, dawn_34][look_34]
+
+Scene dawn_34:
+    Cue/(2s) Cue/(3000ms)
+    Triggers: if flash_34 then night_34 else stage_34.dusk
+
+Chase_34 loop_34 /0 | again=loop_34
+
+state intensity_35(0.5)
+state look_35(0)
+state flash_35(false)
+state chase_35([true, false, false, true, false, false, true, false])
+state levels_35([0.2, 0.2, 0.8, 0.2, 0.5, 0.2, 0.8, 1.0])
+stream tick_35(0)
+channel[4] go_35(0)
+state glow_35 = intensity_35 * 0.8
+state fade_in_35 = intensity_35.past(2, 0.0)
+state pace_35 = if flash_35 then 200ms else 1.5s
+state dimmed_35 = for x in levels_35 into sum from 0.0: sum + x * intensity_35
+stream count_35 = tick_35 + go_35
+channel bursts_35 = go_35 * 2
+state moved_35 = intensity_35.stepped
+state step_35 = (look_35 + 1) % 8
+
+let ramp_35 = [0.2, 0.5, 0.8]
+let hues_35 = for i in 0..6 into kept from []: kept + [i * 0.15]
+let warm_35 = hues_35[..3]
+let cool_35 = hues_35[^3..]
+let palette_35 = warm_35 + cool_35
+let name_35 = "rig 35"
+let holds_35 = [2s, 500ms, 4]
+
+fn bounce_35(n): if n < 1 then 0.0 else 0.1 + bounce_35(n - 1)
+fn spread_35(i, width = 0.25): (i % 4) * width
+fn tint_35(i):
+    let base = palette_35[i % 6]
+    min(1.0, base + 0.05)
+
+pattern Chase_35(default start, again):
+    Scene:
+        Cue/start Cue/(start + 1)
+        Triggers: again
+
+pattern Wash_35(default level, count = 3):
+    for i in 0..count:
+        Lamp/level | hue=tint_35(i)
+
+pattern Flash_35(default start):
+    [Lamp/start Lamp/(start + 0.3) Lamp*/(start + 0.6)]
+
+Rig stage_35:
+    Scene as dusk | hold=8:
+        Cue/0 Cue/2 (Cue | at=500ms fade=pace_35)
+        Dims: wash
+        Dims | depth=to.level: spot
+        Triggers: night_35
+    Lamp as wash /0.7 | hue=glow_35 strobe
+    Lamp as spot /(bounce_35(4)) | hue=fade_in_35
+    Lamp*/0.3 when flash_35
+    Lamp/(bursts_35 * 0.1) when moved_35
+    Lamp/(db(-6)) | hue=master * 0.5
+    [Lamp/0.2 Lamp/0.5 Lamp/0.8]
+    [for i in 0..3: Lamp/(0.2 + i * 0.3)]
+    [for i, p in ramp_35: (Lamp/p | hue=1.0 - i * 0.2)]
+    for i in 0..8:
+        Lamp/(levels_35[i]) when chase_35[i]
+    for i, p in ramp_35:
+        Lamp/p | hue=spread_35(i)
+    Wash_35/(intensity_35) | count=4
+    Flash_35/0.1
+    when flash_35:
+        Lamp/1.0 Lamp/0.9
+    else:
+        Lamp/0.4
+    when:
+        look_35 is 0: Lamp/0.25
+        look_35 is 1: Lamp/0.5
+        else: Lamp/(dimmed_35 * 0.1)
+
+Scene night_35 | hold=holds_35[0]:
+    Cue/0
+    Cue | at=step_35 fade=1s
+    Triggers: [stage_35.dusk, dawn_35][look_35]
+
+Scene dawn_35:
+    Cue/(2s) Cue/(3000ms)
+    Triggers: if flash_35 then night_35 else stage_35.dusk
+
+Chase_35 loop_35 /0 | again=loop_35
+
+state intensity_36(0.5)
+state look_36(0)
+state flash_36(false)
+state chase_36([true, false, false, true, false, false, true, false])
+state levels_36([0.2, 0.2, 0.8, 0.2, 0.5, 0.2, 0.8, 1.0])
+stream tick_36(0)
+channel[4] go_36(0)
+state glow_36 = intensity_36 * 0.8
+state fade_in_36 = intensity_36.past(2, 0.0)
+state pace_36 = if flash_36 then 200ms else 1.5s
+state dimmed_36 = for x in levels_36 into sum from 0.0: sum + x * intensity_36
+stream count_36 = tick_36 + go_36
+channel bursts_36 = go_36 * 2
+state moved_36 = intensity_36.stepped
+state step_36 = (look_36 + 1) % 8
+
+let ramp_36 = [0.2, 0.5, 0.8]
+let hues_36 = for i in 0..6 into kept from []: kept + [i * 0.15]
+let warm_36 = hues_36[..3]
+let cool_36 = hues_36[^3..]
+let palette_36 = warm_36 + cool_36
+let name_36 = "rig 36"
+let holds_36 = [2s, 500ms, 4]
+
+fn bounce_36(n): if n < 1 then 0.0 else 0.1 + bounce_36(n - 1)
+fn spread_36(i, width = 0.25): (i % 4) * width
+fn tint_36(i):
+    let base = palette_36[i % 6]
+    min(1.0, base + 0.05)
+
+pattern Chase_36(default start, again):
+    Scene:
+        Cue/start Cue/(start + 1)
+        Triggers: again
+
+pattern Wash_36(default level, count = 3):
+    for i in 0..count:
+        Lamp/level | hue=tint_36(i)
+
+pattern Flash_36(default start):
+    [Lamp/start Lamp/(start + 0.3) Lamp*/(start + 0.6)]
+
+Rig stage_36:
+    Scene as dusk | hold=8:
+        Cue/0 Cue/2 (Cue | at=500ms fade=pace_36)
+        Dims: wash
+        Dims | depth=to.level: spot
+        Triggers: night_36
+    Lamp as wash /0.7 | hue=glow_36 strobe
+    Lamp as spot /(bounce_36(4)) | hue=fade_in_36
+    Lamp*/0.3 when flash_36
+    Lamp/(bursts_36 * 0.1) when moved_36
+    Lamp/(db(-6)) | hue=master * 0.5
+    [Lamp/0.2 Lamp/0.5 Lamp/0.8]
+    [for i in 0..3: Lamp/(0.2 + i * 0.3)]
+    [for i, p in ramp_36: (Lamp/p | hue=1.0 - i * 0.2)]
+    for i in 0..8:
+        Lamp/(levels_36[i]) when chase_36[i]
+    for i, p in ramp_36:
+        Lamp/p | hue=spread_36(i)
+    Wash_36/(intensity_36) | count=4
+    Flash_36/0.1
+    when flash_36:
+        Lamp/1.0 Lamp/0.9
+    else:
+        Lamp/0.4
+    when:
+        look_36 is 0: Lamp/0.25
+        look_36 is 1: Lamp/0.5
+        else: Lamp/(dimmed_36 * 0.1)
+
+Scene night_36 | hold=holds_36[0]:
+    Cue/0
+    Cue | at=step_36 fade=1s
+    Triggers: [stage_36.dusk, dawn_36][look_36]
+
+Scene dawn_36:
+    Cue/(2s) Cue/(3000ms)
+    Triggers: if flash_36 then night_36 else stage_36.dusk
+
+Chase_36 loop_36 /0 | again=loop_36

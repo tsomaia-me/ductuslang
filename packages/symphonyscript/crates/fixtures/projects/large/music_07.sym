@@ -1,0 +1,410 @@
+state section_19(0)
+state fill_19(false)
+state cutoff_19(0.5)
+state drive_19(0.25)
+state held_19([]): i32[..12]
+stream pulse_19(0)
+channel[8] hits_19(0)
+state swing_19 = cutoff_19 * 0.8
+state bright_19 = if fill_19 then swing_19 else cutoff_19.past(1, 0.5)
+stream beat_19 = pulse_19 + hits_19
+state last_19 = section_19.past(1, -1)
+state recent_19([]) = (recent_19.past(1) + [section_19])[^8..]
+state peak_19 = for x in recent_19 into top from 0: max(top, x)
+state played_19 = held_19 + [last_19]
+state rising_19 = for i in 1..held_19.size into n from 0: if held_19[i] > held_19[i - 1] then n + 1 else n
+state mood_19 = match section_19 % 4:
+    0: 0.25
+    1: 0.5
+    2: 0.75
+    else: 1.0
+state wave_19 = match fill_19:
+    true: Wave::Saw
+    false: Wave::Sine
+
+let scale_19 = [0, 2, 4, 5, 7, 9, 11]
+let chords_19 = [[0, 4, 7], [5, 9, 12], [7, 11, 14], [9, 12, 16]]
+let root_19 = 36 + 19 % 12
+let span_19 = scale_19 + [12, 14, 16]
+let upper_19 = span_19[3..8]
+let lower_19 = span_19[..3]
+let label_19 = "part 19"
+let title_19 = "{label_19} in {root_19}"
+let lengths_19 = [1bars, 2, 0.5bars]
+
+fn degree_19(i): root_19 + scale_19[i % 7] + 12 * (i div 7)
+fn fib_19(n): if n < 2 then n else fib_19(n - 1) + fib_19(n - 2)
+fn level_19(x, k = 0.1): min(1.0, x * 0.5 + k)
+fn chord_19(i, shift = 0):
+    let base = chords_19[i % 4]
+    [base[0] + shift, base[1] + shift, base[2] + shift]
+fn gap_19(i):
+    match i % 3:
+        0: 4
+        1: 3
+        else: 5
+
+let steps_19 = [fib_19(3), fib_19(4), fib_19(5), fib_19(6)]
+let total_19 = for s in steps_19 into sum from 0: sum + s
+let ladder_19 = for i in 0..6 into kept from []: kept + [degree_19(i)]
+let voiced_19 = chord_19(19, 12)
+
+pattern Arp_19(default root, steps = 4, gap = 4):
+    for i in 0..steps:
+        Note/(root + i * gap)
+
+pattern Voice_19(default root, steps = 3, gain = 0.8):
+    for i in 0..steps:
+        Note/(root + i) | velocity=gain
+    Starts: intro_19
+
+pattern Stab_19(default pitch, loud = false):
+    [Note/pitch Note/(pitch + 4) Note/(pitch + 7)]
+    Note'/(pitch + 12) when loud
+
+Clip intro_19 | gain=0.9:
+    Note/(root_19) Note/(root_19 + 4) Note/(root_19 + 7)
+    [Note/60 Note/64 Note/67]
+    [Note/(degree_19(1)) Note as top /(degree_19(3)) Note'/(degree_19(5))]
+    Note/50 (Note/53 | velocity=0.5 accent brightness=swing_19)
+    (Note' as mark /61 when fill_19 | velocity=0.5)
+    Note/(section_19 + 1)
+    Note'/62 | velocity=level_19(drive_19) brightness=bright_19
+               length=2bars
+    Note/(peak_19 + root_19) | length=lengths_19[0]
+    Arp_19/(root_19) | steps=3
+    Arp_19/(root_19 + 12) | gap=gap_19(19)
+    Plays | transpose=5: verse_19
+    Starts: [verse_19, chorus_19][section_19]
+
+Clip verse_19:
+    Note as hook /65 | velocity=0.9
+    Note/67 when fill_19
+    for i in 0..8:
+        Note/(degree_19(i)) | velocity=0.4 + i * 0.05
+    for i, p in upper_19:
+        Note/(root_19 + p) | brightness=0.1 * i
+    Voice_19 as low /(root_19)
+    Voice_19/(root_19 + 7) | steps=2
+    Stab_19/(voiced_19[0]) | loud
+    Plays: chorus_19
+
+Clip chorus_19 | gain=verse_19.gain * 1.2:
+    Note/72 | velocity=verse_19.hook.velocity
+    for c in chords_19:
+        [Note/(root_19 + c[0]) Note/(root_19 + c[1]) Note/(root_19 + c[2])]
+    when fill_19:
+        Note/74 Note/76
+    else:
+        Note/73
+    when:
+        section_19 is 0: Note/77
+        section_19 is 1: Note/79
+        else: Note/81
+    [for i in 0..3: Note/(ladder_19[i])]
+    Plays as back | transpose=-2: verse_19
+    Plays: bridge_19
+    Plays | gain=to.hook.velocity: verse_19
+
+Clip bridge_19 | level=mood_19:
+    for i in 0..total_19:
+        Note/(root_19 + i % 12) | velocity=0.5 length=lengths_19[1]
+    Note/(played_19[0]) | velocity=level_19(cutoff_19, 0.2)
+    Note/(rising_19 + 40)
+    Plays when fill_19: intro_19
+
+Synth rack_19:
+    Osc as lead /(220.0 + 19) | wave=Saw rate=0.5:
+        Feeds: lp
+        Modulates | depth=0.3: lp
+    Osc as sub /110.0 | wave=wave_19
+    Filter as lp /(1000.0 + 19 * 10.0):
+        Feeds: mix
+        Feeds when fill_19: sink
+    Osc as tuned /(tuning * 0.5) | rate=master
+    Mixer as mix
+    Output as sink
+
+Track lane_19 | label=title_19:
+    Piano
+    Synth:
+        Osc/440.0 | wave=Square
+    Starts: intro_19
+
+Kit kit_19:
+    for i in 0..4:
+        Sampler | file="kit/19/{i}.wav"
+
+state section_20(0)
+state fill_20(false)
+state cutoff_20(0.5)
+state drive_20(0.25)
+state held_20([]): i32[..12]
+stream pulse_20(0)
+channel[8] hits_20(0)
+state swing_20 = cutoff_20 * 0.8
+state bright_20 = if fill_20 then swing_20 else cutoff_20.past(1, 0.5)
+stream beat_20 = pulse_20 + hits_20
+state last_20 = section_20.past(1, -1)
+state recent_20([]) = (recent_20.past(1) + [section_20])[^8..]
+state peak_20 = for x in recent_20 into top from 0: max(top, x)
+state played_20 = held_20 + [last_20]
+state rising_20 = for i in 1..held_20.size into n from 0: if held_20[i] > held_20[i - 1] then n + 1 else n
+state mood_20 = match section_20 % 4:
+    0: 0.25
+    1: 0.5
+    2: 0.75
+    else: 1.0
+state wave_20 = match fill_20:
+    true: Wave::Saw
+    false: Wave::Sine
+
+let scale_20 = [0, 2, 4, 5, 7, 9, 11]
+let chords_20 = [[0, 4, 7], [5, 9, 12], [7, 11, 14], [9, 12, 16]]
+let root_20 = 36 + 20 % 12
+let span_20 = scale_20 + [12, 14, 16]
+let upper_20 = span_20[3..8]
+let lower_20 = span_20[..3]
+let label_20 = "part 20"
+let title_20 = "{label_20} in {root_20}"
+let lengths_20 = [1bars, 2, 0.5bars]
+
+fn degree_20(i): root_20 + scale_20[i % 7] + 12 * (i div 7)
+fn fib_20(n): if n < 2 then n else fib_20(n - 1) + fib_20(n - 2)
+fn level_20(x, k = 0.1): min(1.0, x * 0.5 + k)
+fn chord_20(i, shift = 0):
+    let base = chords_20[i % 4]
+    [base[0] + shift, base[1] + shift, base[2] + shift]
+fn gap_20(i):
+    match i % 3:
+        0: 4
+        1: 3
+        else: 5
+
+let steps_20 = [fib_20(3), fib_20(4), fib_20(5), fib_20(6)]
+let total_20 = for s in steps_20 into sum from 0: sum + s
+let ladder_20 = for i in 0..6 into kept from []: kept + [degree_20(i)]
+let voiced_20 = chord_20(20, 12)
+
+pattern Arp_20(default root, steps = 4, gap = 4):
+    for i in 0..steps:
+        Note/(root + i * gap)
+
+pattern Voice_20(default root, steps = 3, gain = 0.8):
+    for i in 0..steps:
+        Note/(root + i) | velocity=gain
+    Starts: intro_20
+
+pattern Stab_20(default pitch, loud = false):
+    [Note/pitch Note/(pitch + 4) Note/(pitch + 7)]
+    Note'/(pitch + 12) when loud
+
+Clip intro_20 | gain=0.9:
+    Note/(root_20) Note/(root_20 + 4) Note/(root_20 + 7)
+    [Note/60 Note/64 Note/67]
+    [Note/(degree_20(1)) Note as top /(degree_20(3)) Note'/(degree_20(5))]
+    Note/50 (Note/53 | velocity=0.5 accent brightness=swing_20)
+    (Note' as mark /61 when fill_20 | velocity=0.5)
+    Note/(section_20 + 1)
+    Note'/62 | velocity=level_20(drive_20) brightness=bright_20
+               length=2bars
+    Note/(peak_20 + root_20) | length=lengths_20[0]
+    Arp_20/(root_20) | steps=3
+    Arp_20/(root_20 + 12) | gap=gap_20(20)
+    Plays | transpose=5: verse_20
+    Starts: [verse_20, chorus_20][section_20]
+
+Clip verse_20:
+    Note as hook /65 | velocity=0.9
+    Note/67 when fill_20
+    for i in 0..8:
+        Note/(degree_20(i)) | velocity=0.4 + i * 0.05
+    for i, p in upper_20:
+        Note/(root_20 + p) | brightness=0.1 * i
+    Voice_20 as low /(root_20)
+    Voice_20/(root_20 + 7) | steps=2
+    Stab_20/(voiced_20[0]) | loud
+    Plays: chorus_20
+
+Clip chorus_20 | gain=verse_20.gain * 1.2:
+    Note/72 | velocity=verse_20.hook.velocity
+    for c in chords_20:
+        [Note/(root_20 + c[0]) Note/(root_20 + c[1]) Note/(root_20 + c[2])]
+    when fill_20:
+        Note/74 Note/76
+    else:
+        Note/73
+    when:
+        section_20 is 0: Note/77
+        section_20 is 1: Note/79
+        else: Note/81
+    [for i in 0..3: Note/(ladder_20[i])]
+    Plays as back | transpose=-2: verse_20
+    Plays: bridge_20
+    Plays | gain=to.hook.velocity: verse_20
+
+Clip bridge_20 | level=mood_20:
+    for i in 0..total_20:
+        Note/(root_20 + i % 12) | velocity=0.5 length=lengths_20[1]
+    Note/(played_20[0]) | velocity=level_20(cutoff_20, 0.2)
+    Note/(rising_20 + 40)
+    Plays when fill_20: intro_20
+
+Synth rack_20:
+    Osc as lead /(220.0 + 20) | wave=Saw rate=0.5:
+        Feeds: lp
+        Modulates | depth=0.3: lp
+    Osc as sub /110.0 | wave=wave_20
+    Filter as lp /(1000.0 + 20 * 10.0):
+        Feeds: mix
+        Feeds when fill_20: sink
+    Osc as tuned /(tuning * 0.5) | rate=master
+    Mixer as mix
+    Output as sink
+
+Track lane_20 | label=title_20:
+    Piano
+    Synth:
+        Osc/440.0 | wave=Square
+    Starts: intro_20
+
+Kit kit_20:
+    for i in 0..4:
+        Sampler | file="kit/20/{i}.wav"
+
+state section_21(0)
+state fill_21(false)
+state cutoff_21(0.5)
+state drive_21(0.25)
+state held_21([]): i32[..12]
+stream pulse_21(0)
+channel[8] hits_21(0)
+state swing_21 = cutoff_21 * 0.8
+state bright_21 = if fill_21 then swing_21 else cutoff_21.past(1, 0.5)
+stream beat_21 = pulse_21 + hits_21
+state last_21 = section_21.past(1, -1)
+state recent_21([]) = (recent_21.past(1) + [section_21])[^8..]
+state peak_21 = for x in recent_21 into top from 0: max(top, x)
+state played_21 = held_21 + [last_21]
+state rising_21 = for i in 1..held_21.size into n from 0: if held_21[i] > held_21[i - 1] then n + 1 else n
+state mood_21 = match section_21 % 4:
+    0: 0.25
+    1: 0.5
+    2: 0.75
+    else: 1.0
+state wave_21 = match fill_21:
+    true: Wave::Saw
+    false: Wave::Sine
+
+let scale_21 = [0, 2, 4, 5, 7, 9, 11]
+let chords_21 = [[0, 4, 7], [5, 9, 12], [7, 11, 14], [9, 12, 16]]
+let root_21 = 36 + 21 % 12
+let span_21 = scale_21 + [12, 14, 16]
+let upper_21 = span_21[3..8]
+let lower_21 = span_21[..3]
+let label_21 = "part 21"
+let title_21 = "{label_21} in {root_21}"
+let lengths_21 = [1bars, 2, 0.5bars]
+
+fn degree_21(i): root_21 + scale_21[i % 7] + 12 * (i div 7)
+fn fib_21(n): if n < 2 then n else fib_21(n - 1) + fib_21(n - 2)
+fn level_21(x, k = 0.1): min(1.0, x * 0.5 + k)
+fn chord_21(i, shift = 0):
+    let base = chords_21[i % 4]
+    [base[0] + shift, base[1] + shift, base[2] + shift]
+fn gap_21(i):
+    match i % 3:
+        0: 4
+        1: 3
+        else: 5
+
+let steps_21 = [fib_21(3), fib_21(4), fib_21(5), fib_21(6)]
+let total_21 = for s in steps_21 into sum from 0: sum + s
+let ladder_21 = for i in 0..6 into kept from []: kept + [degree_21(i)]
+let voiced_21 = chord_21(21, 12)
+
+pattern Arp_21(default root, steps = 4, gap = 4):
+    for i in 0..steps:
+        Note/(root + i * gap)
+
+pattern Voice_21(default root, steps = 3, gain = 0.8):
+    for i in 0..steps:
+        Note/(root + i) | velocity=gain
+    Starts: intro_21
+
+pattern Stab_21(default pitch, loud = false):
+    [Note/pitch Note/(pitch + 4) Note/(pitch + 7)]
+    Note'/(pitch + 12) when loud
+
+Clip intro_21 | gain=0.9:
+    Note/(root_21) Note/(root_21 + 4) Note/(root_21 + 7)
+    [Note/60 Note/64 Note/67]
+    [Note/(degree_21(1)) Note as top /(degree_21(3)) Note'/(degree_21(5))]
+    Note/50 (Note/53 | velocity=0.5 accent brightness=swing_21)
+    (Note' as mark /61 when fill_21 | velocity=0.5)
+    Note/(section_21 + 1)
+    Note'/62 | velocity=level_21(drive_21) brightness=bright_21
+               length=2bars
+    Note/(peak_21 + root_21) | length=lengths_21[0]
+    Arp_21/(root_21) | steps=3
+    Arp_21/(root_21 + 12) | gap=gap_21(21)
+    Plays | transpose=5: verse_21
+    Starts: [verse_21, chorus_21][section_21]
+
+Clip verse_21:
+    Note as hook /65 | velocity=0.9
+    Note/67 when fill_21
+    for i in 0..8:
+        Note/(degree_21(i)) | velocity=0.4 + i * 0.05
+    for i, p in upper_21:
+        Note/(root_21 + p) | brightness=0.1 * i
+    Voice_21 as low /(root_21)
+    Voice_21/(root_21 + 7) | steps=2
+    Stab_21/(voiced_21[0]) | loud
+    Plays: chorus_21
+
+Clip chorus_21 | gain=verse_21.gain * 1.2:
+    Note/72 | velocity=verse_21.hook.velocity
+    for c in chords_21:
+        [Note/(root_21 + c[0]) Note/(root_21 + c[1]) Note/(root_21 + c[2])]
+    when fill_21:
+        Note/74 Note/76
+    else:
+        Note/73
+    when:
+        section_21 is 0: Note/77
+        section_21 is 1: Note/79
+        else: Note/81
+    [for i in 0..3: Note/(ladder_21[i])]
+    Plays as back | transpose=-2: verse_21
+    Plays: bridge_21
+    Plays | gain=to.hook.velocity: verse_21
+
+Clip bridge_21 | level=mood_21:
+    for i in 0..total_21:
+        Note/(root_21 + i % 12) | velocity=0.5 length=lengths_21[1]
+    Note/(played_21[0]) | velocity=level_21(cutoff_21, 0.2)
+    Note/(rising_21 + 40)
+    Plays when fill_21: intro_21
+
+Synth rack_21:
+    Osc as lead /(220.0 + 21) | wave=Saw rate=0.5:
+        Feeds: lp
+        Modulates | depth=0.3: lp
+    Osc as sub /110.0 | wave=wave_21
+    Filter as lp /(1000.0 + 21 * 10.0):
+        Feeds: mix
+        Feeds when fill_21: sink
+    Osc as tuned /(tuning * 0.5) | rate=master
+    Mixer as mix
+    Output as sink
+
+Track lane_21 | label=title_21:
+    Piano
+    Synth:
+        Osc/440.0 | wave=Square
+    Starts: intro_21
+
+Kit kit_21:
+    for i in 0..4:
+        Sampler | file="kit/21/{i}.wav"

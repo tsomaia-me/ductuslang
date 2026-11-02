@@ -97,7 +97,19 @@ fn a_compile_within_the_budget_is_unaffected() {
         assert!(time["elapsed_ms"].is_number(), "{time}");
         assert_eq!(time["running_compiles"], json!(0), "{time}");
         assert_eq!(time["codes"], json!(["no-entry-instance"]), "{time}");
+        assert!(
+            time["peak_bytes"].as_u64().is_some_and(|bytes| bytes > 0),
+            "{time}"
+        );
+        assert!(
+            time["allocations"].as_u64().is_some_and(|count| count > 0),
+            "{time}"
+        );
     }
+    assert!(
+        times[0]["peak_bytes"].as_u64() > times[1]["peak_bytes"].as_u64(),
+        "{times:?}"
+    );
 }
 
 #[test]
