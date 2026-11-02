@@ -997,7 +997,7 @@ fn an_untaken_evaluations_depth_draws_the_warning_and_the_error_as_its_taken_twi
         for (untaken, taken) in forms {
             for reversed in [false, true] {
                 let program = |reader: &str| {
-                    let mut items = vec![dp.to_string(), instances.to_string(), reader.to_string()];
+                    let mut items = [dp.to_string(), instances.to_string(), reader.to_string()];
                     if reversed {
                         items.reverse();
                     }
