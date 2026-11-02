@@ -61,17 +61,35 @@ fn bodies_to(head: &str, cycle: &[&str], depth: usize) -> String {
 fn stress_m1_deep_brackets_and_indexes_pass_every_stage_on_a_small_stack() {
     on_small_stack(|| {
         let text = format!(
-            "let a = {}\nlet b = {}\nlet c = {}\nlet d = {}\n",
+            "let a = {}\nlet b = {}\nlet d = {}\n",
             nested("(", "1", ")"),
             nested("[", "1", "]"),
-            nested("x[", "0", "]"),
             nested("([", "1", "])"),
         );
+        assert_eq!(code_counts(&text), BTreeMap::new());
+    });
+}
+
+fn index_chain_over_an_undeclared_name_on_a_small_stack(depth: usize) {
+    on_small_stack(move || {
+        let text = format!("let c = {}\n", nested_to("x[", "0", "]", depth));
         assert_eq!(
             code_counts(&text),
-            BTreeMap::from([(Code::UnknownName, DEPTH)])
+            BTreeMap::from([(Code::UnknownName, depth)])
         );
     });
+}
+
+#[test]
+fn an_index_chain_over_an_undeclared_name_draws_one_unknown_name_a_level_on_a_small_stack_424() {
+    index_chain_over_an_undeclared_name_on_a_small_stack(200);
+}
+
+#[test]
+#[ignore = "stress"]
+fn stress_an_index_chain_over_an_undeclared_name_draws_one_unknown_name_a_level_on_a_small_stack_424()
+ {
+    index_chain_over_an_undeclared_name_on_a_small_stack(10_000);
 }
 
 #[test]
