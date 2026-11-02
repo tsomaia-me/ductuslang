@@ -1116,3 +1116,49 @@ fn a_stepped_or_history_read_of_a_compile_time_let_draws_history_target_lens_2_g
         }
     }
 }
+
+/// ARCHITECTURE §7: "Every other fault draws its own diagnostic at its span,
+/// whatever fault stands beside it". A derived cell's rule whose history read
+/// is refused draws that refusal and every other fault of the rule, as the same
+/// expression at an attribute does (C2-15).
+#[test]
+fn a_refused_history_target_leaves_the_rules_other_faults_drawn_c2_15() {
+    let codes = |text: &str| -> Vec<Code> {
+        let mut found: Vec<Code> = support::checked(text)
+            .into_iter()
+            .map(|diagnostic| diagnostic.code)
+            .collect();
+        found.sort();
+        found
+    };
+    for read in ["ni.past(1)", "ni.past(1, 0)"] {
+        for (other, code) in [
+            ("[1, 2][5]", Code::IndexOutOfRange),
+            ("(1 + true)", Code::OperandType),
+        ] {
+            for rule in [format!("{read} + {other}"), format!("{other} + {read}")] {
+                let mut expected = vec![Code::HistoryTarget, code];
+                expected.sort();
+                for reversed in [false, true] {
+                    let program = |items: [String; 2]| {
+                        let mut items = items.to_vec();
+                        if reversed {
+                            items.reverse();
+                        }
+                        format!("let ni = 1\n{}", items.concat())
+                    };
+                    let text = program([
+                        format!("state s = {rule}\n"),
+                        "Clip c:\n    Note/s\n".to_string(),
+                    ]);
+                    let twin = program([
+                        "state n(1)\n".to_string(),
+                        format!("Clip c:\n    Note/({rule})\n"),
+                    ]);
+                    assert_eq!(codes(&text), expected, "{text}");
+                    assert_eq!(codes(&twin), expected, "{twin}");
+                }
+            }
+        }
+    }
+}

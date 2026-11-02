@@ -360,6 +360,12 @@ impl Engine<'_> {
             return Ok(false);
         };
         if sig.is_error() {
+            // The rule an error leaves a placeholder still checks its other
+            // operands in their own types, each drawing its own fault
+            // (ARCHITECTURE §7).
+            if !self.in_probe(global)? {
+                self.memo.own_typed.push(init);
+            }
             self.memo.states.insert(state, BoundVal::Error);
             return Ok(true);
         }
