@@ -1,5 +1,7 @@
 use std::time::Duration;
 
+use symphonyscript_core::LimitOverrides;
+
 use crate::checker::DEFAULT_BUDGET;
 use crate::named_vocabulary::VOCABULARY_NAMES;
 use crate::over_memory_bound::DEFAULT_MEMORY_BOUND;
@@ -11,6 +13,7 @@ pub struct Arguments {
     pub memory_bound: u64,
     pub vocabulary: String,
     pub resume_at: usize,
+    pub limits: LimitOverrides,
     pub positional: Vec<String>,
 }
 
@@ -19,6 +22,7 @@ pub fn arguments(raw: impl IntoIterator<Item = String>) -> Result<Arguments, Str
     let mut memory_bound = DEFAULT_MEMORY_BOUND;
     let mut vocabulary = VOCABULARY_NAMES[0].to_string();
     let mut resume_at = 0;
+    let mut limits = LimitOverrides::default();
     let mut positional = Vec::new();
     let mut raw = raw.into_iter();
     while let Some(argument) = raw.next() {
@@ -55,6 +59,12 @@ pub fn arguments(raw: impl IntoIterator<Item = String>) -> Result<Arguments, Str
                     .parse()
                     .map_err(|_| format!("{RESUME_AT} takes a line index, not `{value}`"))?;
             }
+            "--limit" => {
+                let value = raw
+                    .next()
+                    .ok_or_else(|| "--limit takes <name>=<value>".to_string())?;
+                limits = overridden(limits, &value)?;
+            }
             _ => positional.push(argument),
         }
     }
@@ -63,6 +73,33 @@ pub fn arguments(raw: impl IntoIterator<Item = String>) -> Result<Arguments, Str
         memory_bound,
         vocabulary,
         resume_at,
+        limits,
         positional,
     })
+}
+
+fn overridden(limits: LimitOverrides, setting: &str) -> Result<LimitOverrides, String> {
+    let refused = || format!("--limit takes <name>=<value>, not `{setting}`");
+    let (name, value) = setting.split_once('=').ok_or_else(refused)?;
+    let value = Some(value.parse::<u64>().map_err(|_| refused())?);
+    let mut limits = limits;
+    let field = match name {
+        "recursive_calls" => &mut limits.recursive_calls,
+        "recursive_calls_warning" => &mut limits.recursive_calls_warning,
+        "nesting_depth" => &mut limits.nesting_depth,
+        "nesting_depth_warning" => &mut limits.nesting_depth_warning,
+        "inlined_calls" => &mut limits.inlined_calls,
+        "inlined_calls_warning" => &mut limits.inlined_calls_warning,
+        "expansion_steps" => &mut limits.expansion_steps,
+        "expansion_steps_warning" => &mut limits.expansion_steps_warning,
+        "expanded_items" => &mut limits.expanded_items,
+        "expanded_items_warning" => &mut limits.expanded_items_warning,
+        "memory_bytes" => &mut limits.memory_bytes,
+        "memory_bytes_warning" => &mut limits.memory_bytes_warning,
+        "reload_edit_distance" => &mut limits.reload_edit_distance,
+        "shared_body_threshold" => &mut limits.shared_body_threshold,
+        _ => return Err(format!("--limit names no limit `{name}`")),
+    };
+    *field = value;
+    Ok(limits)
 }

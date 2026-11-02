@@ -33,6 +33,7 @@ FULL = {"name": "full", "calls": CALLS, "depth": DEPTH, "breakers": None,
         "called": (LIMIT_WARNING, NO_ENTRY), "nested": (NO_ENTRY,)}
 QUICK = {"name": "quick", "calls": CALLS // 10, "depth": DEPTH // 10, "breakers": 200,
          "called": (NO_ENTRY,), "nested": (NO_ENTRY,)}
+RAISED_LIMITS = {"inlined_calls": CALLS, "inlined_calls_warning": CALLS // 2}
 QUICK_NAME = "figures-quick.json"
 VOID_EXIT = 3
 
@@ -69,7 +70,7 @@ def deep_expressions(depths):
             f"let a = {nested('(', '1', ')', depth['parentheses'])}\n"
             f"let b = {nested('[', '1', ']', depth['array and index'])}\n"
             f"let c = {nested('f(', '1', ')', depth['call'])}\n"
-            f"let d = {'not ' * depth['not']}x\n"
+            f"state d = {'not ' * depth['not']}x\n"
             f"let e = {interpolated}\n"
             f"let g = {'-' * depth['negation']}1\n"
             f"Clip top:\n"
@@ -126,12 +127,13 @@ def breaker_figure(times, elapsed, load, below, scale=FULL):
                       f"allocations, {method}"}
 
 
-def timed(binaries, programs, work, budget):
+def timed(binaries, programs, work, budget, limits=None):
     given, taken = work / "given.jsonl", work / "taken.jsonl"
     with open(given, "w", encoding="utf-8") as out:
         for program in programs:
             out.write(json.dumps(program) + "\n")
-    subprocess.run([binaries / "evolve-time", "--budget", str(budget), given, taken], check=True)
+    flags = [word for name, value in (limits or {}).items() for word in ("--limit", f"{name}={value}")]
+    subprocess.run([binaries / "evolve-time", "--budget", str(budget), *flags, given, taken], check=True)
     return [json.loads(line) for line in taken.read_text(encoding="utf-8").splitlines() if line.strip()]
 
 
@@ -159,9 +161,13 @@ def quick_breaker_elapsed(binaries, work, times, corpus, count):
             if len(taken[row["key"]]) == RUNS and None not in taken[row["key"]] else None for row in rows}
 
 
+def raised(limits):
+    return "with " + " and ".join(f"{name} at {value:,}" for name, value in limits.items()) + ", "
+
+
 def program_figure(binaries, work, figure, label, text, units, expected, load, below):
     runs = timed(binaries, [{"id": f"{label}#{number}", "sources": [{"path": "main.sym", "text": text}]}
-                            for number in range(RUNS)], work, BUDGET_SECONDS)
+                            for number in range(RUNS)], work, BUDGET_SECONDS, RAISED_LIMITS)
     elapsed = [run["elapsed_ms"] for run in runs]
     median = statistics.median(elapsed) if None not in elapsed else None
     panics = [run["panic"] for run in runs if run.get("panic") is not None]
@@ -171,9 +177,10 @@ def program_figure(binaries, work, figure, label, text, units, expected, load, b
             "units": units, "characters": len(text), "load": round(load, 2), "runs_ms": elapsed,
             "median_ms": median, "per_unit_us": median * 1000 / units if median is not None else None,
             "diagnostics": runs[0].get("diagnostics"), "codes": drawn, "expected_codes": sorted(expected),
-            "void": void, "panic": panics[0] if panics else None,
+            "void": void, "panic": panics[0] if panics else None, "limits": RAISED_LIMITS,
             "method": f"Compiler::check as evolve-time times it on evolve-check's compile thread, counting "
-                      f"allocations, {RUNS} runs in one process, one job, after every other command of the step "
+                      f"allocations, {raised(RAISED_LIMITS)}{RUNS} runs in one process, one job, "
+                      f"after every other command of the step "
                       f"and {waited(below)}, the median divided by the {units} units; "
                       f"the program's other text is counted in its time; void when a run panics or draws a code set "
                       f"other than {listed(sorted(expected))}"}
