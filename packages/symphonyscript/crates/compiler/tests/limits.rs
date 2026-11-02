@@ -1127,24 +1127,57 @@ fn the_value_limit_follows_the_compilations_limits() {
     );
 }
 
+fn lowered_value_failures() -> Vec<String> {
+    let limits = limit_and_warning("value_elements", Some(65_536), Some(32_768));
+    let compiler = Compiler::with_limits(&vocabulary(), limits).expect("the vocabulary compiles");
+    let warned = "the warning value of the limit of 65,536";
+    let refused = "more than the 65,536 a compile-time value holds";
+    let rows: [(u64, &[(Code, &str)]); 3] = [
+        (16, &[(Code::LimitWarning, warned)]),
+        (
+            17,
+            &[(Code::ValueLimit, refused), (Code::LimitWarning, warned)],
+        ),
+        (
+            40,
+            &[(Code::ValueLimit, refused), (Code::LimitWarning, warned)],
+        ),
+    ];
+    let mut failures = Vec::new();
+    for (levels, expected) in rows {
+        let text = doubled_array(levels);
+        let diagnostics: Vec<Diagnostic> = compiler
+            .check(&[support::source(&text)])
+            .into_iter()
+            .filter(|diagnostic| diagnostic.code != Code::NoEntryInstance)
+            .collect();
+        let held = diagnostics.len() == expected.len()
+            && diagnostics
+                .iter()
+                .zip(expected)
+                .all(|(diagnostic, (code, fragment))| {
+                    diagnostic.code == *code && diagnostic.summary.contains(fragment)
+                });
+        if !held {
+            let drawn: Vec<(Code, &str)> = diagnostics
+                .iter()
+                .map(|diagnostic| (diagnostic.code, diagnostic.summary.as_str()))
+                .collect();
+            failures.push(support::failed(
+                &text,
+                &diagnostics,
+                format!("{levels} doublings under a value limit of 65,536 draw {drawn:?}"),
+            ));
+        }
+    }
+    failures
+}
+
 #[test]
 #[ignore = "stress"]
-fn stress_the_value_limit_refuses_the_value_past_its_default() {
-    follows(
-        Code::ValueLimit,
-        &[
-            (
-                LimitOverrides::default(),
-                doubled_array(26),
-                value_refusal("4,194,304"),
-            ),
-            (
-                LimitOverrides::default(),
-                doubled_array(40),
-                value_refusal("4,194,304"),
-            ),
-        ],
-    );
+fn stress_the_value_limit_lowered_to_65_536_warns_at_16_doublings_and_refuses_the_value_past_it_at_17_and_40()
+ {
+    support::assert_no_failure(&lowered_value_failures());
 }
 
 #[test]

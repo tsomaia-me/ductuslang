@@ -449,6 +449,7 @@ fn items(construct: Construct, shape: Shape, n: usize, faulty: bool) -> Option<V
 
 struct Measured {
     errors: Vec<String>,
+    drawn: Vec<String>,
     counts: Vec<(String, u64)>,
     allocations: u64,
     peak_bytes: u64,
@@ -520,6 +521,7 @@ fn measured_files(compiler: &Compiler, sources: &[Source]) -> Measured {
         .collect();
     Measured {
         errors,
+        drawn: summaries(&diagnostics),
         counts,
         allocations,
         peak_bytes,
@@ -1626,10 +1628,19 @@ fn untaken_measured(compiler: &Compiler, text: &str) -> Measured {
         .collect();
     Measured {
         errors,
+        drawn: summaries(&diagnostics),
         counts,
         allocations,
         peak_bytes,
     }
+}
+
+fn summaries(diagnostics: &[crate::diagnostics::Diagnostic]) -> Vec<String> {
+    diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.code != crate::diagnostics::Code::NoEntryInstance)
+        .map(|diagnostic| diagnostic.summary.clone())
+        .collect()
 }
 
 fn untaken_work_failures(divisor: usize, depth: Option<u64>) -> Vec<String> {
@@ -2663,39 +2674,31 @@ fn doubling_failures(limit: u64) -> Vec<String> {
         },
     )
     .expect("the vocabulary compiles");
+    let refused = format!(
+        "this call of `f` passes an array that holds {} elements, more than the {} a compile-time value holds",
+        crate::semantics::reporting::grouped(2 * limit),
+        crate::semantics::reporting::grouped(limit)
+    );
+    let warned = format!(
+        "this call of `f` passes an array that holds more than {} elements, the warning value of the limit of {}",
+        crate::semantics::reporting::grouped(limit / 2),
+        crate::semantics::reporting::grouped(limit)
+    );
+    let reached = u64::from(limit.ilog2());
     let mut failures = Vec::new();
     let mut held = Vec::new();
-    for levels in [26, 40] {
+    for levels in [reached, reached + 1, 40] {
         let text = doubling_program(levels);
         let run = measured(&compiler, &text);
-        let (diagnostics, _) = compiler.analyzed(
-            &[Source {
-                path: "cost.sym".into(),
-                text: text.clone(),
-            }],
-            |_| (),
-        );
-        let drawn: Vec<String> = diagnostics
-            .iter()
-            .filter(|diagnostic| diagnostic.code != crate::diagnostics::Code::NoEntryInstance)
-            .map(|diagnostic| diagnostic.summary.clone())
-            .collect();
-        let expected = vec![
-            format!(
-                "this call of `f` passes an array that holds {} elements, more than the {} a compile-time value holds",
-                crate::semantics::reporting::grouped(2 * limit),
-                crate::semantics::reporting::grouped(limit)
-            ),
-            format!(
-                "this call of `f` passes an array that holds more than {} elements, the warning value of the limit of {}",
-                crate::semantics::reporting::grouped(limit / 2),
-                crate::semantics::reporting::grouped(limit)
-            ),
-        ];
-        if drawn != expected {
+        let expected = if levels > reached {
+            vec![refused.clone(), warned.clone()]
+        } else {
+            vec![warned.clone()]
+        };
+        if run.drawn != expected {
             failures.push(row_failure(
                 &text,
-                format!("{levels} levels draw {drawn:?}"),
+                format!("{levels} levels draw {:?}", run.drawn),
             ));
         }
         let leaves = walk_count(&run, "CArrayLeaves")
@@ -2707,12 +2710,17 @@ fn doubling_failures(limit: u64) -> Vec<String> {
                 "{levels} levels walk {leaves} array leaves and build {nodes} nodes against the limit of {limit}"
             )));
         }
-        held.push((leaves, nodes));
+        if levels > reached {
+            held.push((leaves, nodes));
+        }
     }
     if held.first() != held.last() {
         failures.push(row_failure(
-            &doubling_program(26),
-            format!("the work differs at 26 and 40 levels: {held:?}"),
+            &doubling_program(reached + 1),
+            format!(
+                "the work differs at {} and 40 levels: {held:?}",
+                reached + 1
+            ),
         ));
     }
     failures
@@ -2726,9 +2734,9 @@ fn a_doubling_recursion_warns_and_stops_at_the_value_limit_having_walked_no_valu
 
 #[test]
 #[ignore = "stress"]
-fn stress_a_doubling_recursion_warns_and_stops_at_the_default_value_limit_having_walked_no_value_past_it()
+fn stress_a_doubling_recursion_warns_and_stops_at_a_value_limit_of_65_536_having_walked_no_value_past_it()
  {
-    let failures = doubling_failures(4_194_304);
+    let failures = doubling_failures(65_536);
     crate::pinned_row::assert_no_failure(&failures);
 }
 
