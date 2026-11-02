@@ -536,7 +536,9 @@ impl<'a> Parser<'a> {
                         | SyntaxKind::IndexExpr
                         | SyntaxKind::Conversion
                         | SyntaxKind::Init
-                        | SyntaxKind::Interpolation,
+                        | SyntaxKind::Interpolation
+                        | SyntaxKind::MapLit
+                        | SyntaxKind::RecordLit,
                     ) => Bracket::Expression,
                     Some(SyntaxKind::Bundle) => Bracket::Bundle {
                         depth: self.lexer.depth_at(self.pos).unwrap_or(0) + 1,
@@ -807,11 +809,14 @@ impl<'a> Parser<'a> {
             return true;
         }
         let found = self.describe();
-        let ended_by_line = matches!(
+        // A closer, or any expectation inside a bracket, that the line's end cuts is
+        // the line's fault, never the next line's (ARCHITECTURE §7.1).
+        let ended_by_line = (matches!(
             kind,
             SyntaxKind::RParen | SyntaxKind::RBracket | SyntaxKind::RBrace
-        ) && (self.at_end()
-            || self.at_any(&[SyntaxKind::Newline, SyntaxKind::Indent, SyntaxKind::Dedent]));
+        ) || !self.brackets.is_empty())
+            && (self.at_end()
+                || self.at_any(&[SyntaxKind::Newline, SyntaxKind::Indent, SyntaxKind::Dedent]));
         let mismatched = match (self.peek().and_then(closer_char), closer_char(kind)) {
             (Some(found), Some(expected)) => mismatched_closer_help(found, expected),
             _ => None,

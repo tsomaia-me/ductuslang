@@ -1263,3 +1263,40 @@ fn a_missing_closer_marks_the_expression_it_closes_and_not_the_next_item() {
         }
     }
 }
+
+/// ARCHITECTURE §7.1: "Every fault outside the region of an earlier fault is
+/// reported exactly once, at its span". The `plain-in-family` at `1`, before an
+/// unclosed bracket's region, is drawn whatever the bracket, `{`, `(` or `[`,
+/// and whatever the order of the items: the bracket's fault is its own line's,
+/// so the placement on the next line keeps its use of `k` (C2-17, 265).
+#[test]
+fn the_faults_before_a_brackets_region_draw_whatever_the_bracket_and_the_order_c2_17() {
+    let vocabulary = symphonyscript_fixtures::bar_vocabulary();
+    let mut programs = 0;
+    for (opener, syntax) in [
+        ("{", Code::MapSyntax),
+        ("(", Code::ExpressionSyntax),
+        ("[", Code::ExpressionSyntax),
+    ] {
+        for reversed in [false, true] {
+            let mut items = [
+                format!("let k = (2bars + 1) div{opener} 1bars\n"),
+                "Bar b | bar_len=k\n".to_string(),
+            ];
+            if reversed {
+                items.reverse();
+            }
+            let text = items.concat();
+            let mut found: Vec<Code> = support::checked_with(&vocabulary, &text)
+                .into_iter()
+                .map(|diagnostic| diagnostic.code)
+                .collect();
+            found.sort();
+            let mut expected = vec![Code::PlainInFamily, syntax];
+            expected.sort();
+            programs += 1;
+            assert_eq!(found, expected, "{text}");
+        }
+    }
+    assert_eq!(programs, 6);
+}
