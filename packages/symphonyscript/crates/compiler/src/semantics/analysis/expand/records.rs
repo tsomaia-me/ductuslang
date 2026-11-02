@@ -112,6 +112,7 @@ impl<'a> Engine<'a> {
         if self.limit_reached {
             return Ok(false);
         }
+        crate::semantics::counted_walk::CountedWalk::ExpandRow.step();
         self.expanded += 1;
         let bound = self.limits.expanded_items.min(self.id_space);
         if self.expanded > bound {

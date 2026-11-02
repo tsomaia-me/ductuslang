@@ -41,7 +41,7 @@ mod evaluation;
 mod expand;
 mod family_arg;
 mod family_key;
-mod fast_hash;
+pub(crate) mod fast_hash;
 mod fault_state;
 mod feed;
 mod float_for;

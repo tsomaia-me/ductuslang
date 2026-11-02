@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use crate::semantics::analysis::fast_hash::{FastMap, FastSet};
 
 use crate::diagnostics::Code;
 use crate::semantics::Internal;
@@ -41,7 +41,7 @@ impl Engine<'_> {
         if self.unknown_wires || !self.unknown_destinations.is_empty() {
             return Ok(());
         }
-        let mut reached: HashSet<InstanceId> = HashSet::new();
+        let mut reached: FastSet<InstanceId> = FastSet::default();
         let mut stack = entries;
         while let Some(instance) = stack.pop() {
             self.memo.reach_work += 1;
@@ -64,7 +64,7 @@ impl Engine<'_> {
                 }
             }
         }
-        let mut sites: HashMap<InstanceId, PlacementId> = HashMap::new();
+        let mut sites: FastMap<InstanceId, PlacementId> = FastMap::default();
         for (placement, instance) in &self.top_instances {
             self.memo.reach_reports += 1;
             sites.insert(*instance, *placement);

@@ -1,5 +1,5 @@
+use crate::semantics::analysis::fast_hash::{FastMap, FastSet};
 use std::collections::hash_map::Entry;
-use std::collections::{HashMap, HashSet};
 
 use crate::semantics::builtin::Builtin;
 use symphonyscript_core::{BinaryOp, FamilyId, UnaryOp};
@@ -20,9 +20,9 @@ use crate::semantics::ir::Loc;
 
 impl Engine<'_> {
     pub(super) fn units(&mut self, positions: &[Position]) -> Result<(), Internal> {
-        let mut feeds: HashMap<NodeId, Vec<Feed>> = HashMap::new();
-        let mut binding_feeds: HashMap<BindingId, Vec<Feed>> = HashMap::new();
-        let mut seen: HashSet<(NodeId, FamilyId, usize)> = HashSet::new();
+        let mut feeds: FastMap<NodeId, Vec<Feed>> = FastMap::default();
+        let mut binding_feeds: FastMap<BindingId, Vec<Feed>> = FastMap::default();
+        let mut seen: FastSet<(NodeId, FamilyId, usize)> = FastSet::default();
         for position in positions
             .iter()
             .filter(|position| position.role == Role::Attribute)
@@ -93,7 +93,7 @@ impl Engine<'_> {
             .collect();
         takers.sort();
         let placeholders = self.under_placeholders()?;
-        let mut conflicted: HashSet<BindingId> = HashSet::new();
+        let mut conflicted: FastSet<BindingId> = FastSet::default();
         for (node, family) in takers {
             if self.template_of(self.node(node)?.scope)?.is_some() {
                 continue;
@@ -119,7 +119,7 @@ impl Engine<'_> {
             if !plain {
                 continue;
             }
-            let mut by_family: HashMap<FamilyId, Vec<(usize, Loc)>> = HashMap::new();
+            let mut by_family: FastMap<FamilyId, Vec<(usize, Loc)>> = FastMap::default();
             for (family, unit, loc) in feeds {
                 by_family.entry(family).or_default().push((unit, loc));
             }
@@ -147,8 +147,8 @@ impl Engine<'_> {
         Ok(())
     }
 
-    fn under_placeholders(&self) -> Result<HashSet<NodeId>, Internal> {
-        let mut reached = HashSet::new();
+    fn under_placeholders(&self) -> Result<FastSet<NodeId>, Internal> {
+        let mut reached = FastSet::default();
         let mut stack: Vec<NodeId> = self
             .memo
             .sigs
@@ -258,7 +258,7 @@ impl Engine<'_> {
         takers.sort();
         takers.dedup();
         let mut fractional = false;
-        let mut carried: HashMap<FamilyId, HashSet<NodeId>> = HashMap::new();
+        let mut carried: FastMap<FamilyId, FastSet<NodeId>> = FastMap::default();
         for (node, family) in takers {
             if let Entry::Vacant(entry) = carried.entry(family) {
                 entry.insert(self.carried_in(template, root, family)?);
@@ -286,8 +286,8 @@ impl Engine<'_> {
         template: ScopeId,
         root: NodeId,
         family: FamilyId,
-    ) -> Result<HashSet<NodeId>, Internal> {
-        let mut reached = HashSet::new();
+    ) -> Result<FastSet<NodeId>, Internal> {
+        let mut reached = FastSet::default();
         let mut stack = vec![root];
         while let Some(node) = stack.pop() {
             crate::semantics::counted_walk::CountedWalk::UnitsCarriedIn.step();
@@ -305,7 +305,7 @@ impl Engine<'_> {
 
     fn template_nodes(&self, template: ScopeId, root: NodeId) -> Result<Vec<NodeId>, Internal> {
         let mut found = Vec::new();
-        let mut seen: HashSet<NodeId> = HashSet::new();
+        let mut seen: FastSet<NodeId> = FastSet::default();
         let mut stack = vec![root];
         while let Some(node) = stack.pop() {
             crate::semantics::counted_walk::CountedWalk::UnitsTemplateNodes.step();
@@ -327,7 +327,7 @@ impl Engine<'_> {
     }
 
     fn read_in_units_of(&mut self, nodes: &[NodeId]) -> Result<(), Internal> {
-        let fractional: HashSet<NodeId> = nodes
+        let fractional: FastSet<NodeId> = nodes
             .iter()
             .copied()
             .filter(|node| {
@@ -340,7 +340,7 @@ impl Engine<'_> {
         if fractional.is_empty() {
             return Ok(());
         }
-        let mut floats: HashSet<NodeId> = HashSet::new();
+        let mut floats: FastSet<NodeId> = FastSet::default();
         let mut changed = true;
         while changed {
             changed = false;

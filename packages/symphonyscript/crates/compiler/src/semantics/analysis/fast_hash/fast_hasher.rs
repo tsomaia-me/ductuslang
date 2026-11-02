@@ -15,7 +15,7 @@ impl FastHasher {
 
 impl Hasher for FastHasher {
     fn finish(&self) -> u64 {
-        crate::semantics::counted_walk::CountedWalk::HashFinish.step();
+        crate::semantics::counted_walk::CountedWalk::HashProbe.step();
         self.hash
     }
 

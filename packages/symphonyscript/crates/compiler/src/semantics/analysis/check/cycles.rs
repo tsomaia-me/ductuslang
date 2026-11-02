@@ -1,4 +1,4 @@
-use std::collections::{HashMap, VecDeque};
+use std::collections::VecDeque;
 
 use crate::diagnostics::Code;
 use crate::semantics::Internal;
@@ -278,7 +278,7 @@ impl Engine<'_> {
     ) -> Result<Option<Vec<usize>>, Internal> {
         let declares = |node: usize| !function.get(node).copied().unwrap_or(false);
         let start = (source, declares(source));
-        let mut previous: HashMap<(usize, bool), (usize, bool)> = HashMap::new();
+        let mut previous: FastMap<(usize, bool), (usize, bool)> = FastMap::default();
         let mut queue = VecDeque::from([start]);
         let mut end = None;
         while let Some((node, seen)) = queue.pop_front() {
@@ -329,7 +329,7 @@ impl Engine<'_> {
         source: usize,
         targets: &[usize],
     ) -> Result<Vec<usize>, Internal> {
-        let mut previous: HashMap<usize, usize> = HashMap::new();
+        let mut previous: FastMap<usize, usize> = FastMap::default();
         let mut queue = VecDeque::new();
         for target in targets {
             if previous.insert(*target, source).is_none() {

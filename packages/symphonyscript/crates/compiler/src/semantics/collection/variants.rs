@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use crate::semantics::analysis::fast_hash::FastMap;
 
 use symphonyscript_core::{EnumId, Vocabulary};
 
@@ -6,8 +6,8 @@ use crate::semantics::Internal;
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct Variants {
-    owners: HashMap<String, EnumId>,
-    positions: Vec<HashMap<String, u16>>,
+    owners: FastMap<String, EnumId>,
+    positions: Vec<FastMap<String, u16>>,
     #[cfg(test)]
     examined: std::sync::Arc<std::sync::atomic::AtomicU64>,
 }
@@ -17,7 +17,8 @@ impl Variants {
         let mut variants = Variants::default();
         for (index, decl) in vocabulary.enums().iter().enumerate() {
             let id = vocabulary.enum_at(index).ok_or(Internal::missed("enum"))?;
-            let mut positions = HashMap::with_capacity(decl.variants.len());
+            let mut positions =
+                FastMap::with_capacity_and_hasher(decl.variants.len(), Default::default());
             for (position, name) in decl.variants.iter().enumerate() {
                 let position =
                     u16::try_from(position).map_err(|_| Internal::missed("enum variant"))?;

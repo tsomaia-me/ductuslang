@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use crate::semantics::analysis::fast_hash::FastMap;
 
 use crate::semantics::Internal;
 use crate::semantics::analysis::answers::CellRead;
@@ -90,7 +90,7 @@ impl Engine<'_> {
     pub(super) fn binding_order(&mut self) -> Result<Vec<BindingId>, Internal> {
         let count = self.bindings.len();
         let mut reads: Vec<Vec<BindingId>> = Vec::with_capacity(count);
-        let mut readers: HashMap<BindingId, usize> = HashMap::new();
+        let mut readers: FastMap<BindingId, usize> = FastMap::default();
         for index in 0..count {
             let binding = BindingId(u32::try_from(index).unwrap_or(u32::MAX));
             let mut targets = self.reads_of(self.binding(binding)?.init)?;

@@ -173,11 +173,12 @@ pub(crate) enum CountedWalk {
     HirBuilderCall,
     FaultsUnclosed,
     SyntaxViewElement,
-    HashFinish,
+    HashProbe,
+    ExpandRow,
 }
 
 #[cfg(test)]
-const WALKS: usize = 174;
+const WALKS: usize = 175;
 
 #[cfg(test)]
 thread_local! {
@@ -360,7 +361,8 @@ impl CountedWalk {
         CountedWalk::HirBuilderCall,
         CountedWalk::FaultsUnclosed,
         CountedWalk::SyntaxViewElement,
-        CountedWalk::HashFinish,
+        CountedWalk::HashProbe,
+        CountedWalk::ExpandRow,
     ];
 
     pub(crate) fn step(self) {

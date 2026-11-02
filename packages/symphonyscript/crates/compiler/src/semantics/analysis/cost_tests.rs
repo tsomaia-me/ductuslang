@@ -450,18 +450,25 @@ fn items(construct: Construct, shape: Shape, n: usize, faulty: bool) -> Option<V
 struct Measured {
     errors: Vec<String>,
     counts: Vec<(String, u64)>,
+    allocations: u64,
+    peak_bytes: u64,
 }
 
 fn measured(compiler: &Compiler, text: &str) -> Measured {
-    let walks_before: Vec<u64> = CountedWalk::ALL.iter().map(|walk| walk.steps()).collect();
-    let (built_before, visited_before) = CArray::work();
     let source = Source {
         path: "cost.sym".into(),
         text: text.into(),
     };
+    measured_files(compiler, &[source])
+}
+
+fn measured_files(compiler: &Compiler, sources: &[Source]) -> Measured {
+    let walks_before: Vec<u64> = CountedWalk::ALL.iter().map(|walk| walk.steps()).collect();
+    let (built_before, visited_before) = CArray::work();
     let (_, examined) = compiler.analyzed(&[], |engine: &Engine<'_>| engine.variants.examined());
     let examined = examined.unwrap_or(0);
-    let (diagnostics, found) = compiler.analyzed(&[source], |engine: &Engine<'_>| {
+    let allocated = crate::counting_allocator::CountingAllocator::begin();
+    let (diagnostics, found) = compiler.analyzed(sources, |engine: &Engine<'_>| {
         let memo = &engine.memo;
         vec![
             ("calls", engine.call_count),
@@ -494,6 +501,7 @@ fn measured(compiler: &Compiler, text: &str) -> Measured {
             ),
         ]
     });
+    let (allocations, peak_bytes) = crate::counting_allocator::CountingAllocator::since(allocated);
     let (built_after, visited_after) = CArray::work();
     let mut counts: Vec<(String, u64)> = found
         .unwrap_or_default()
@@ -510,7 +518,12 @@ fn measured(compiler: &Compiler, text: &str) -> Measured {
         .filter(|diagnostic| diagnostic.severity() == Severity::Error)
         .map(|diagnostic| format!("{:?} {:?}", diagnostic.code, diagnostic.summary))
         .collect();
-    Measured { errors, counts }
+    Measured {
+        errors,
+        counts,
+        allocations,
+        peak_bytes,
+    }
 }
 
 fn program(
@@ -1534,6 +1547,7 @@ fn untaken_measured(compiler: &Compiler, text: &str) -> Measured {
         path: "cost.sym".into(),
         text: text.into(),
     };
+    let allocated = crate::counting_allocator::CountingAllocator::begin();
     let (diagnostics, found) = compiler.analyzed(&[source], |engine: &Engine<'_>| {
         vec![
             ("calls", engine.call_count),
@@ -1545,6 +1559,7 @@ fn untaken_measured(compiler: &Compiler, text: &str) -> Measured {
             ),
         ]
     });
+    let (allocations, peak_bytes) = crate::counting_allocator::CountingAllocator::since(allocated);
     let mut counts: Vec<(String, u64)> = found
         .unwrap_or_default()
         .into_iter()
@@ -1558,7 +1573,12 @@ fn untaken_measured(compiler: &Compiler, text: &str) -> Measured {
         .filter(|diagnostic| diagnostic.severity() == Severity::Error)
         .map(|diagnostic| format!("{:?} {:?}", diagnostic.code, diagnostic.summary))
         .collect();
-    Measured { errors, counts }
+    Measured {
+        errors,
+        counts,
+        allocations,
+        peak_bytes,
+    }
 }
 
 fn untaken_work_failures(divisor: usize, depth: Option<u64>) -> Vec<String> {
@@ -2458,7 +2478,7 @@ fn hashing_failures(sizes: [usize; 3]) -> Vec<String> {
         (Figure::Array, 6, 1),
     ] {
         let points = sizes.map(|n| {
-            let counts = figure_counts(&compiler, figure, n, &["HashFinish"]);
+            let counts = figure_counts(&compiler, figure, n, &["HashProbe"]);
             (
                 counts.first().copied().unwrap_or(0),
                 counts.get(1).copied().unwrap_or(0),
@@ -2559,5 +2579,188 @@ fn a_doubling_recursion_warns_and_stops_at_the_value_limit_having_walked_no_valu
 fn stress_a_doubling_recursion_warns_and_stops_at_the_default_value_limit_having_walked_no_value_past_it()
  {
     let failures = doubling_failures(4_194_304);
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+fn syntax_nodes(sources: &[Source]) -> u64 {
+    sources
+        .iter()
+        .map(|source| {
+            let parsed = crate::syntax::parse(source, &vocabulary());
+            let nodes = parsed
+                .root()
+                .preorder()
+                .filter(|event| {
+                    matches!(
+                        event,
+                        crate::syntax::Walk::Enter(crate::syntax::ElementView::Node(_))
+                    )
+                })
+                .count();
+            u64::try_from(nodes).unwrap_or(u64::MAX)
+        })
+        .sum()
+}
+
+#[derive(Clone, Copy, Debug)]
+enum Layout {
+    Inlined,
+    Expansion,
+    NonAscii,
+}
+
+fn layout_program(layout: Layout, n: usize) -> Vec<Source> {
+    let text = match layout {
+        Layout::Inlined => figure_program(Figure::Inlined, n),
+        Layout::Expansion => {
+            format!("Rig r:\n    for i in 0..{n}:\n        Lamp/(1 + i % 12) | hue=0.5\n")
+        }
+        Layout::NonAscii => {
+            let mut text: String = (0..n / 5).map(|i| format!("let 値{i} = {i}\n")).collect();
+            text.push_str("Clip c:\n    Note/(値0)\n");
+            text
+        }
+    };
+    vec![Source {
+        path: "cost.sym".into(),
+        text,
+    }]
+}
+
+fn per(count: u64, unit: u64) -> String {
+    if unit == 0 {
+        return "-".to_string();
+    }
+    format!("{:.2}", count as f64 / unit as f64)
+}
+
+fn layout_counts(name: &str, nodes: u64, run: &Measured) -> [(&'static str, u64); 3] {
+    let items = walk_count(run, "ExpandRow");
+    let counts = [
+        ("HashProbe", walk_count(run, "HashProbe")),
+        ("Allocations", run.allocations),
+        ("PeakBytes", run.peak_bytes),
+    ];
+    let shown: Vec<String> = counts
+        .iter()
+        .map(|(counter, count)| {
+            format!(
+                "{counter} {count} ({} a node, {} an item)",
+                per(*count, nodes),
+                per(*count, items)
+            )
+        })
+        .collect();
+    println!(
+        "{name}: {nodes} syntax nodes, {items} expanded items; {}",
+        shown.join("; ")
+    );
+    counts
+}
+
+fn layout_failures(layout: Layout, sizes: [usize; 3]) -> Vec<String> {
+    let compiler = Compiler::new(&vocabulary()).expect("the vocabulary compiles");
+    let mut failures = Vec::new();
+    let mut points = Vec::new();
+    for n in sizes {
+        let sources = layout_program(layout, n);
+        let nodes = syntax_nodes(&sources);
+        let run = measured_files(&compiler, &sources);
+        if !run.errors.is_empty() {
+            failures.push(format!("{layout:?} at {n} draws {:?}", run.errors));
+        }
+        let items = walk_count(&run, "ExpandRow");
+        let counts = layout_counts(&format!("{layout:?} at {n}"), nodes, &run);
+        points.push((nodes + items, counts));
+    }
+    if let Some((_, smallest)) = points.first()
+        && smallest.iter().all(|(_, count)| *count == 0)
+    {
+        failures.push(format!("{layout:?}: no count above zero at {}", sizes[0]));
+    }
+    for (index, (counter, _)) in points[0].1.iter().enumerate() {
+        let measured = [0, 1, 2].map(|run| (points[run].0, points[run].1[index].1));
+        if !linear(measured) {
+            failures.push(format!(
+                "{layout:?}: {counter} {measured:?} grows past linear"
+            ));
+        }
+    }
+    failures
+}
+
+#[test]
+fn the_figure_programs_hash_allocate_and_peak_in_work_linear_in_their_nodes_and_items() {
+    let mut failures = Vec::new();
+    for (layout, sizes) in [
+        (Layout::Inlined, [500, 1_000, 2_000]),
+        (Layout::Expansion, [250, 500, 1_000]),
+        (Layout::NonAscii, [500, 1_000, 2_000]),
+    ] {
+        failures.extend(layout_failures(layout, sizes));
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+#[test]
+#[ignore = "stress"]
+fn stress_the_figure_programs_hash_allocate_and_peak_in_work_linear_in_their_nodes_and_items() {
+    let mut failures = Vec::new();
+    for (layout, sizes) in [
+        (Layout::Inlined, [25_000, 50_000, 100_000]),
+        (Layout::Expansion, [50_000, 100_000, 200_000]),
+        (Layout::NonAscii, [25_000, 50_000, 100_000]),
+    ] {
+        failures.extend(layout_failures(layout, sizes));
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+fn project_failures(project: &symphonyscript_fixtures::Project) -> Vec<String> {
+    let compiler = Compiler::new(&vocabulary()).expect("the vocabulary compiles");
+    let sources: Vec<Source> = project
+        .files
+        .iter()
+        .map(|file| Source {
+            path: file.path.clone(),
+            text: file.text.clone(),
+        })
+        .collect();
+    let nodes = syntax_nodes(&sources);
+    let run = measured_files(&compiler, &sources);
+    let counts = layout_counts(&project.name, nodes, &run);
+    let (_, held) = compiler.analyzed(&sources, |engine| {
+        (engine.instances.len(), engine.wires.len())
+    });
+    let (instances, wires) = held.unwrap_or_default();
+    let cells = walk_count(&run, "ExpandRow")
+        .saturating_sub(u64::try_from(instances + wires).unwrap_or(u64::MAX));
+    println!(
+        "{}: {instances} instances, {wires} wires, {cells} cells of pattern uses; peak {} bytes, {} allocations",
+        project.name, run.peak_bytes, run.allocations
+    );
+    let mut failures = Vec::new();
+    if !run.errors.is_empty() {
+        failures.push(format!("{} draws {:?}", project.name, run.errors));
+    }
+    if nodes == 0
+        || walk_count(&run, "ExpandRow") == 0
+        || counts.iter().any(|(_, count)| *count == 0)
+    {
+        failures.push(format!("{}: a count is zero: {counts:?}", project.name));
+    }
+    failures
+}
+
+#[test]
+fn a_fixture_project_prints_its_nodes_items_peak_bytes_and_allocations() {
+    let failures = project_failures(&symphonyscript_fixtures::music_project());
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+#[test]
+#[ignore = "stress"]
+fn stress_the_ten_thousand_line_fixture_prints_its_nodes_items_peak_bytes_and_allocations() {
+    let failures = project_failures(&symphonyscript_fixtures::large_project());
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }

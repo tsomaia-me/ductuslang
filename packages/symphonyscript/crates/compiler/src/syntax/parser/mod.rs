@@ -49,7 +49,7 @@ pub(crate) struct Parser<'a> {
     block_ended: bool,
     previous_line_error: bool,
     tasks: Vec<Task>,
-    groups: std::collections::HashMap<usize, Option<(usize, bool)>>,
+    groups: crate::semantics::analysis::fast_hash::FastMap<usize, Option<(usize, bool)>>,
     peeked: Option<(usize, Option<(usize, SyntaxKind)>)>,
 }
 
@@ -69,7 +69,7 @@ impl<'a> Parser<'a> {
             block_ended: false,
             previous_line_error: false,
             tasks: Vec::new(),
-            groups: std::collections::HashMap::new(),
+            groups: crate::semantics::analysis::fast_hash::FastMap::default(),
             peeked: None,
         }
     }
