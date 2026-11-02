@@ -1943,11 +1943,11 @@ PublishName ::= (Name | QualifiedName) ('as' Name)?
 A library publishes the names its `publish` items list, and only those; every other declaration of it is visible only inside it. A published name names a top-level declaration of the library, a name a `use` item brings, or a qualified name of a library it requires, and the last two republish that library's declaration. `as` publishes it under another name. A name published twice, a published name that names nothing, and a `publish` item in a project are errors.
 
 ```sym-package
-use scales: major
+use gradients: warm
 
-publish Drum as Kick, Kit, Hit
-publish major
-publish scales::minor as Minor
+publish Chase as Sweep, Bank, Band
+publish warm
+publish gradients::cool as Cool
 ```
 
 ### 15.6 The prelude
