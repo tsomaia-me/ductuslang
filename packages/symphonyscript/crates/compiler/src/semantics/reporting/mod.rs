@@ -5,5 +5,5 @@ mod span;
 mod tests;
 
 pub(crate) use grouped::grouped;
-pub(crate) use report::Report;
+pub(crate) use report::{Report, order};
 pub(crate) use span::span;

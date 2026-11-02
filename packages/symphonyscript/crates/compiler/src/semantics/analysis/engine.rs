@@ -1448,7 +1448,9 @@ impl<'a> Engine<'a> {
                     related.extend(path);
                     match merged.get(&key).and_then(|index| chosen.get_mut(*index)) {
                         Some(earlier) => {
-                            if earlier.4 < depth {
+                            if earlier.4 < depth
+                                || (earlier.4 == depth && spans_of(&related) < spans_of(&earlier.2))
+                            {
                                 earlier.2 = related;
                                 earlier.4 = depth;
                             }
@@ -2131,4 +2133,11 @@ fn named_chain(code: Code, message: &str) -> (&str, usize) {
         Some((summary, names)) if named => (summary, names.split(" → ").count()),
         Some(_) | None => (message, 0),
     }
+}
+
+fn spans_of(related: &[(Loc, String)]) -> Vec<(u32, u32, u32)> {
+    related
+        .iter()
+        .map(|(loc, _)| (loc.file, loc.start, loc.end))
+        .collect()
 }

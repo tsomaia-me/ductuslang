@@ -104,7 +104,8 @@ impl<'a> Parser<'a> {
         };
         let mut diagnostics = self.lexer.into_diagnostics();
         diagnostics.extend(self.diagnostics);
-        diagnostics.sort_by_key(|diagnostic| diagnostic.span.range.start);
+        diagnostics
+            .sort_by_cached_key(|diagnostic| crate::semantics::reporting::order(&[], diagnostic));
         (green, diagnostics, cost, self.detached)
     }
 

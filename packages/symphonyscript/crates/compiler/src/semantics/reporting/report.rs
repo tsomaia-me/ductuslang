@@ -65,26 +65,31 @@ type OrderKey = (
     u32,
     Code,
     String,
-    Vec<(String, u32, u32, String)>,
+    Option<String>,
+    Vec<(usize, u32, u32, String)>,
 );
 
-fn order(files: &[String], diagnostic: &Diagnostic) -> OrderKey {
-    let file = files
+fn file_order(files: &[String], file: &str) -> usize {
+    files
         .iter()
-        .position(|file| *file == diagnostic.span.file)
-        .unwrap_or(files.len());
+        .position(|known| known == file)
+        .unwrap_or(files.len())
+}
+
+pub(crate) fn order(files: &[String], diagnostic: &Diagnostic) -> OrderKey {
     (
-        file,
+        file_order(files, &diagnostic.span.file),
         diagnostic.span.range.start,
         diagnostic.span.range.end,
         diagnostic.code,
         diagnostic.summary.clone(),
+        diagnostic.help.clone(),
         diagnostic
             .related
             .iter()
             .map(|related| {
                 (
-                    related.span.file.clone(),
+                    file_order(files, &related.span.file),
                     related.span.range.start,
                     related.span.range.end,
                     related.label.clone(),

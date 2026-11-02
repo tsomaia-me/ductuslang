@@ -1484,3 +1484,67 @@ fn stress_a_recursive_call_whose_array_argument_deepens_finishes_on_a_small_stac
         .join()
         .expect("the check finishes without overflowing");
 }
+
+#[test]
+fn a_fault_reached_through_two_chains_of_one_depth_names_the_chain_through_the_body_declared_first()
+{
+    let d = "fn d(x): x + true\n";
+    let reader = "Clip k:\n    Note/(a(1))\n";
+    for (first, second) in [("b", "c"), ("c", "b")] {
+        for (left, right) in [("b", "c"), ("c", "b")] {
+            let text = format!(
+                "{d}fn {first}(x): d(x)\nfn {second}(x): d(x)\nfn a(x): {left}(x) + {right}(x)\n{reader}"
+            );
+            let drawn: Vec<(String, Vec<(String, String)>)> = support::checked(&text)
+                .into_iter()
+                .map(|diagnostic| {
+                    let spanned = |range: &std::ops::Range<u32>| {
+                        text.get(range.start as usize..range.end as usize)
+                            .unwrap_or_default()
+                            .to_string()
+                    };
+                    (
+                        spanned(&diagnostic.span.range),
+                        diagnostic
+                            .related
+                            .iter()
+                            .map(|related| (spanned(&related.span.range), related.label.clone()))
+                            .collect(),
+                    )
+                })
+                .collect();
+            let body = text.find(&format!("fn {first}(x): d(x)")).unwrap_or(0) + "fn b(x): ".len();
+            let call = text.find("fn a(x): ").unwrap_or(0)
+                + "fn a(x): ".len()
+                + if left == first { 0 } else { "b(x) + ".len() };
+            let related_starts: Vec<usize> = support::checked(&text)
+                .first()
+                .map(|diagnostic| {
+                    diagnostic
+                        .related
+                        .iter()
+                        .map(|related| related.span.range.start as usize)
+                        .collect()
+                })
+                .unwrap_or_default();
+            let in_call = "in this call".to_string();
+            assert_eq!(
+                drawn,
+                vec![(
+                    "x + true".to_string(),
+                    vec![
+                        ("d(x)".to_string(), in_call.clone()),
+                        (format!("{first}(x)"), in_call.clone()),
+                        ("a(1)".to_string(), in_call),
+                    ]
+                )],
+                "{text}"
+            );
+            assert_eq!(
+                related_starts.get(..2),
+                Some([body, call].as_slice()),
+                "{text}"
+            );
+        }
+    }
+}
