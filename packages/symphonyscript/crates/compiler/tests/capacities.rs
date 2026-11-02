@@ -3505,3 +3505,36 @@ fn the_summaries_of_a_derived_cells_capacity_faults_call_the_expression_after_th
         );
     }
 }
+
+/// SPEC §6.6: "Every cell of the group is first taken to hold a fixed array,
+/// each history read of it yielding a fixed array of that read's fallback's or
+/// the cell's init's length, or of the cell's own length when it has neither".
+/// A group whose history read targets a member with neither starts from that
+/// member's own length, which the init of the member it reads gives, so the
+/// group holds fixed arrays of the init's length (C1-4).
+#[test]
+fn a_groups_history_read_of_a_member_with_no_init_or_fallback_starts_at_its_own_length_c1_4() {
+    let flag = "state flag(true)\n";
+    for read in ["b.past(1)", "(b.past(1) + [1])[1..]"] {
+        let r = format!("state r([0, 0]) = {read}\n");
+        for b in [
+            "state b = if flag then r else r\n",
+            "state b = if flag then r else [5, 6]\n",
+            "state b([0, 0]) = if flag then r else r\n",
+        ] {
+            for (uses, expected) in [
+                ("state t: i32[2] = r\nClip c:\n    Note/(t[0])\n", vec![]),
+                ("Clip c:\n    Note/(r[1])\n", vec![]),
+                ("Clip c:\n    Note/(r[5])\n", vec![Code::IndexOutOfRange]),
+                ("Clip c:\n    Note/(b[5])\n", vec![Code::IndexOutOfRange]),
+            ] {
+                assert_ordered_codes(&[flag, &r, b, uses], &expected);
+            }
+        }
+    }
+    assert_ordered_capacity(
+        &[NOTE, "state recent([]) = (recent.past(1) + [note])[^8..]\n"],
+        "recent",
+        8,
+    );
+}

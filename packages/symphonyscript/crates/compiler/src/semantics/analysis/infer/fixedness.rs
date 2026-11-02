@@ -352,10 +352,11 @@ impl Engine<'_> {
             let Some(found) = self.layout_in(start, Some(&Assumed::default()), need)? else {
                 return Ok(false);
             };
+            // Every cell of the group is first taken to hold a fixed array, a cell
+            // with an init of the init's length (SPEC §6.6), so a read of a member
+            // with neither init nor fallback meets that length through the cycle.
             if let Ok(Some(layout)) = found.shaped {
-                self.memo
-                    .binding_layouts
-                    .insert(*binding, Layout::variable(layout.inner().to_vec()));
+                self.memo.binding_layouts.insert(*binding, layout);
             }
         }
         let mut assumed = Assumed::default();
