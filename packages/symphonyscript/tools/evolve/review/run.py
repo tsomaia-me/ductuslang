@@ -298,7 +298,8 @@ def ignored_tests(name, expression, package, cargo, below):
                        expression], package, cargo, below)
 
 
-def shared_steps(sha, top, into, run, jobs, baselines, against, quiet=None, stress=False, exhaustive=False):
+def shared_steps(sha, top, into, run, jobs, baselines, against, quiet=None, stress=False, exhaustive=False,
+                 quick=False):
     export, package = into / "export", into / "export" / PACKAGE
     limits = load_limits(quiet)
     cargo = {"CARGO_TARGET_DIR": str(into / "target"), "CARGO_BUILD_JOBS": str(jobs),
@@ -326,7 +327,7 @@ def shared_steps(sha, top, into, run, jobs, baselines, against, quiet=None, stre
                  {"CARGO_TARGET_DIR": str(into / "check" / "target"), "CARGO_BUILD_JOBS": str(jobs)}, BUSY_LOAD),
             step("figures", [sys.executable, HERE / "run.py", "figures", into / "check" / "target" / PROFILES["dev"],
                              run / "check-times.json.gz", run / "figures.json", "--release",
-                             into / "check" / "target" / PROFILES["release"], "--load-below", limits["figures"]],
+                             into / "check" / "target" / PROFILES["release"], "--load-below", limits["figures"], *(["--quick"] if quick else [])],
                  HERE)]
 
 
@@ -375,7 +376,8 @@ def shared(arguments):
     run.mkdir(parents=True)
     started, records = now(), []
     for planned in shared_steps(sha, top, into, run, arguments.jobs, arguments.baselines, arguments.against,
-                                arguments.quiet_below, arguments.stress, arguments.exhaustive):
+                                arguments.quiet_below, arguments.stress, arguments.exhaustive,
+                                arguments.quick_figures):
         records.append(judged_pins(performed(planned, run), run, arguments.pins))
         print(f"{planned['name']}: exit {records[-1]['exit']}{VOIDED if voided(records[-1]) else ''}, "
               f"{records[-1]['seconds']} s, load {records[-1]['load']}", flush=True)
@@ -478,6 +480,8 @@ def main():
     sharing.add_argument("--stress", action="store_true",
                          help="also run the stress tests after the unit and exhaustive tests, once the load is below "
                               "--quiet-below")
+    sharing.add_argument("--quick-figures", action="store_true",
+                         help="take the figures in the quick mode, figures-quick.json, as at a hand-back")
     sharing.add_argument("--quiet-below", type=float, default=None,
                          help=f"the 1-minute load the stress tests, the verdict check and the figures wait to fall "
                               f"below, by default {QUIET_LOAD:g} for the stress tests and the verdict check and "
