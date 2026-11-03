@@ -5,12 +5,41 @@ use symphonyscript_fixtures::vocabulary;
 use crate::compiler::Compiler;
 use crate::counting_allocator::CountingAllocator;
 use crate::diagnostics::Diagnostic;
+use crate::semantics::counted_walk::CountedWalk;
 use crate::source::Source;
 
 struct Run {
     diagnostics: Vec<Diagnostic>,
     time: Duration,
     peak: u64,
+    walks: u64,
+}
+
+const CORE_WALKS: [CountedWalk; 9] = [
+    CountedWalk::BindLookup,
+    CountedWalk::CoreExpandRow,
+    CountedWalk::SigNode,
+    CountedWalk::ValueRun,
+    CountedWalk::CheckRow,
+    CountedWalk::JoinNode,
+    CountedWalk::CursorStep,
+    CountedWalk::DenseLayout,
+    CountedWalk::CoreUse,
+];
+
+fn walked() -> u64 {
+    CORE_WALKS
+        .iter()
+        .fold(0u64, |total, walk| total.saturating_add(walk.steps()))
+}
+
+fn best_run(compiler: &Compiler, text: &str) -> Option<Run> {
+    let mut best = run(compiler, text)?;
+    for _ in 1..3 {
+        let again = run(compiler, text)?;
+        best.time = best.time.min(again.time);
+    }
+    Some(best)
 }
 
 fn run(compiler: &Compiler, text: &str) -> Option<Run> {
@@ -18,14 +47,17 @@ fn run(compiler: &Compiler, text: &str) -> Option<Run> {
         path: "ledger.sym".into(),
         text: text.into(),
     }];
+    let before = walked();
     let started = Instant::now();
     let allocated = CountingAllocator::begin();
     let diagnostics = compiler.checked_by_new_core(&sources)?;
     let (_, peak) = CountingAllocator::since(allocated);
+    let time = started.elapsed();
     Some(Run {
         diagnostics,
-        time: started.elapsed(),
+        time,
         peak,
+        walks: walked().saturating_sub(before),
     })
 }
 
@@ -119,9 +151,10 @@ fn ledger_failures_on(
     let mut failures = Vec::new();
     let mut times = [0u64; 3];
     let mut peaks = [0u64; 3];
+    let mut walks = [0u64; 3];
     for (at, size) in sizes.into_iter().enumerate() {
         let text = program(size);
-        let Some(found) = run(compiler, &text) else {
+        let Some(found) = best_run(compiler, &text) else {
             failures.push(format!("{name} at {size}: the new core declined it"));
             continue;
         };
@@ -133,7 +166,13 @@ fn ledger_failures_on(
             ));
         }
         let micros = u64::try_from(found.time.as_micros()).unwrap_or(u64::MAX);
-        println!("{name} at {size}: {} µs, PeakBytes {}", micros, found.peak);
+        println!(
+            "{name} at {size}: {} µs best of three, PeakBytes {}, counted walks {}",
+            micros, found.peak, found.walks
+        );
+        if let Some(slot) = walks.get_mut(at) {
+            *slot = found.walks;
+        }
         if let Some(slot) = times.get_mut(at) {
             *slot = micros;
         }
@@ -141,8 +180,14 @@ fn ledger_failures_on(
             *slot = found.peak;
         }
     }
-    if !doubles_at_most(times, 20_000) {
+    if times.first().copied().unwrap_or(0) >= 100_000 && !doubles_at_most(times, 0) {
         failures.push(format!("{name}: time {times:?} µs is not linear"));
+    }
+    if !doubles_at_most(walks, 64) {
+        failures.push(format!("{name}: counted walks {walks:?} are not linear"));
+    }
+    if walks.first().copied().unwrap_or(0) == 0 {
+        failures.push(format!("{name}: no counted walk at its smallest size"));
     }
     if !doubles_at_most(peaks, 1 << 20) {
         failures.push(format!("{name}: PeakBytes {peaks:?} is not linear"));
