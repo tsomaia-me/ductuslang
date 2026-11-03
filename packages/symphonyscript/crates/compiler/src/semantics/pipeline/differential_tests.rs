@@ -718,3 +718,26 @@ fn a_let_reading_a_cell_draws_reactive_let_beside_its_annotations_fault_464() {
         assert_eq!(spanned(text, &found), wanted, "{text}");
     }
 }
+
+const UNTAKEN_UNDER_A_KEPT_CONDITION: [&str; 4] = [
+    "let a = i32(if i32(true) then [1, 2][5] else [1, 2][5])\nClip c:\n    Note/(a)\n",
+    "let a = i32(if i32(true) then [1, 2][5] else [1, 2][5])\nClip c:\n    Note | velocity=(a)\n",
+    "let a = u8(if i32(true) then [1, 2][5] else 2)\nClip c:\n    Note/(a)\n",
+    "let a: i32 = i32(if i32(true) then [1, 2][5] else [1, 2][5])\nClip c:\n    Note/(a)\n",
+];
+
+#[test]
+fn a_choice_whose_condition_keeps_a_type_other_than_bool_takes_no_arm_when_its_let_is_read() {
+    let old = Compiler::new(&symphonyscript_fixtures::vocabulary())
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
+    let new =
+        Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("the vocabulary compiles");
+    for text in UNTAKEN_UNDER_A_KEPT_CONDITION {
+        let sources = [source(text)];
+        let found = new
+            .checked_by_new_core(&sources)
+            .expect("the new core takes the program");
+        assert_eq!(found, old.check(&sources), "{text}");
+    }
+}

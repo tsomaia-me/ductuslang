@@ -474,6 +474,12 @@ impl Core<'_> {
                 Step::Choose(choice, arm_ty) => {
                     let (_, condition, then, otherwise) = self.ir.node(choice)?;
                     let test = frame.values.pop().ok_or(Internal::missed("value stack"))?;
+                    let held = self.fact(condition)?;
+                    let test = if held.leaf == Leaf::Bool && held.dims.is_empty() {
+                        test
+                    } else {
+                        Value::Error
+                    };
                     match test {
                         Value::Bool(true) => frame.steps.push(Step::Visit(then, arm_ty)),
                         Value::Bool(false) => frame.steps.push(Step::Visit(otherwise, arm_ty)),
