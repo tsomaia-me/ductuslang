@@ -32,7 +32,7 @@ pub(crate) fn class(ty: EvalTy) -> usize {
     }
 }
 
-fn evaluated_in(ty: EvalTy) -> EvalTy {
+pub(crate) fn evaluated_in(ty: EvalTy) -> EvalTy {
     match class(ty) {
         1 => EvalTy::F32,
         2 => EvalTy::F64,
@@ -733,6 +733,15 @@ impl Core<'_> {
             Op::Bool => Value::Bool(a == 1),
             Op::Name => match self.bound(node)? {
                 DeclRef::Let(at) => self.memo(at, ty).unwrap_or(Value::Error),
+                DeclRef::Cell(at) if self.repairing => {
+                    match self.ir.cells.get(at as usize).copied() {
+                        Some(rec) if rec.rule == NONE => match self.evaluate(rec.init, ty)? {
+                            Ok(init) => init,
+                            Err(declined) => return Ok(Err(declined)),
+                        },
+                        Some(_) | None => Value::Error,
+                    }
+                }
                 DeclRef::Cell(at) => {
                     if let Some(rec) = self.ir.cells.get(at as usize).copied()
                         && rec.rule != NONE
@@ -1222,6 +1231,9 @@ impl Core<'_> {
                         && !*owned
                     {
                         *owned = true;
+                        if let Err(declined) = self.reactive_fit(at)? {
+                            return Ok(Err(declined));
+                        }
                         stack.push((self.let_root(at)?, false));
                     }
                 }

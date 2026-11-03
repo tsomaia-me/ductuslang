@@ -5870,16 +5870,28 @@ fn own_fault(site: &LeafSite, base: u32, whole: bool) -> Option<((Code, String, 
 }
 
 #[test]
-fn every_fault_beside_another_fault_draws_by_the_placeholder_rule() {
-    let (failures, programs) = covered(|rows| placeholder_rule_failures(rows, 0, 1));
-    assert_placeholder_rule(&failures, programs, 457);
+fn every_fault_beside_another_fault_draws_by_the_placeholder_rule_in_the_first_third() {
+    let (failures, programs) = covered(|rows| placeholder_rule_failures(rows, (0, 1), (0, 3)));
+    assert_placeholder_rule(&failures, programs, 153);
+}
+
+#[test]
+fn every_fault_beside_another_fault_draws_by_the_placeholder_rule_in_the_second_third() {
+    let (failures, programs) = covered(|rows| placeholder_rule_failures(rows, (0, 1), (1, 3)));
+    assert_placeholder_rule(&failures, programs, 152);
+}
+
+#[test]
+fn every_fault_beside_another_fault_draws_by_the_placeholder_rule_in_the_last_third() {
+    let (failures, programs) = covered(|rows| placeholder_rule_failures(rows, (0, 1), (2, 3)));
+    assert_placeholder_rule(&failures, programs, 152);
 }
 
 #[test]
 #[ignore = "exhaustive"]
 fn exhaustive_every_fault_beside_another_fault_draws_by_the_placeholder_rule_in_the_odd_expressions()
  {
-    let (failures, programs) = placeholder_rule_failures(&Rows::Every, 0, 2);
+    let (failures, programs) = placeholder_rule_failures(&Rows::Every, (0, 2), (0, 1));
     assert_placeholder_rule(&failures, programs, 15_810);
 }
 
@@ -5887,30 +5899,40 @@ fn exhaustive_every_fault_beside_another_fault_draws_by_the_placeholder_rule_in_
 #[ignore = "exhaustive"]
 fn exhaustive_every_fault_beside_another_fault_draws_by_the_placeholder_rule_in_the_even_expressions()
  {
-    let (failures, programs) = placeholder_rule_failures(&Rows::Every, 1, 2);
+    let (failures, programs) = placeholder_rule_failures(&Rows::Every, (1, 2), (0, 1));
     assert_placeholder_rule(&failures, programs, 15_810);
 }
 
-fn placeholder_rule_failures(rows: &Rows, part: usize, parts: usize) -> (Vec<String>, usize) {
+fn placeholder_rule_failures(
+    rows: &Rows,
+    (part, parts): (usize, usize),
+    (chosen_part, chosen_parts): (usize, usize),
+) -> (Vec<String>, usize) {
     let pool = generated(2);
     let mut expressions: Vec<Generated> = pool.clone();
     expressions.extend(sampled_depth_three(&pool, 3000));
-    let compilers = [
-        Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("the vocabulary compiles"),
-        Compiler::new(&support::signature_vocabulary()).expect("the vocabulary compiles"),
-    ];
-    let olds = [
-        symphonyscript_fixtures::vocabulary(),
-        support::signature_vocabulary(),
-    ]
-    .map(|vocabulary| {
-        let mut old = Compiler::new(&vocabulary).expect("the vocabulary compiles");
-        old.select(Selector::OldEngine);
-        old
+    let compilers = std::cell::LazyCell::new(|| {
+        [
+            symphonyscript_fixtures::vocabulary(),
+            support::signature_vocabulary(),
+        ]
+        .map(|vocabulary| Compiler::new(&vocabulary).expect("the vocabulary compiles"))
+    });
+    let olds = std::cell::LazyCell::new(|| {
+        [
+            symphonyscript_fixtures::vocabulary(),
+            support::signature_vocabulary(),
+        ]
+        .map(|vocabulary| {
+            let mut old = Compiler::new(&vocabulary).expect("the vocabulary compiles");
+            old.select(Selector::OldEngine);
+            old
+        })
     });
     let mut moves = std::collections::BTreeMap::new();
     let mut failures = Vec::new();
     let mut programs = 0;
+    let mut taken = 0usize;
     for expression in expressions.iter().skip(part).step_by(parts) {
         let mut text = String::new();
         let mut sites = Vec::new();
@@ -5932,6 +5954,10 @@ fn placeholder_rule_failures(rows: &Rows, part: usize, parts: usize) -> (Vec<Str
                     direction,
                 ];
                 if !rows.take(&tag) {
+                    continue;
+                }
+                taken += 1;
+                if (taken - 1) % chosen_parts != chosen_part {
                     continue;
                 }
                 let before: usize = order
@@ -5981,7 +6007,15 @@ fn placeholder_rule_failures(rows: &Rows, part: usize, parts: usize) -> (Vec<Str
                                 text: program.clone(),
                             }],
                         ));
-                        match reviewed::moved(&program, &old, &drawn(&found)) {
+                        let moved = match reviewed::moved(&program, &old, &drawn(&found)) {
+                            Ok(classes) if classes.is_empty() => reviewed::missed_by_the_twin_pass(
+                                &program,
+                                &drawn(&expected),
+                                &drawn(&found),
+                            ),
+                            moved => moved,
+                        };
+                        match moved {
                             Ok(classes) if !classes.is_empty() => {
                                 for class in classes {
                                     *moves.entry(class.named()).or_insert(0usize) += 1;

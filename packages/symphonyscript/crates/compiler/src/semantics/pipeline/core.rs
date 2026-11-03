@@ -42,6 +42,7 @@ pub(crate) struct Core<'a> {
     pub cell_uses: Vec<[bool; 2]>,
     pub owning: bool,
     pub unchecked: bool,
+    pub repairing: bool,
     pub driving: bool,
     pub need: Option<Need>,
 
@@ -101,6 +102,7 @@ impl<'a> Core<'a> {
             cell_uses: vec![[false, false]; ir.cells.len()],
             owning: false,
             unchecked: false,
+            repairing: false,
             driving: false,
             need: None,
 

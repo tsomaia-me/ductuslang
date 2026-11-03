@@ -187,7 +187,7 @@ fn reactive_let(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
         return top_level_let_name(seen, at);
     }
     let line = seen.line(at.1);
-    at.0 == "type-mismatch"
+    matches!(at.0.as_str(), "type-mismatch" | "does-not-fit")
         && seen.line(at.2.saturating_sub(1).max(at.1)) == line
         && seen.new.iter().any(|drawn| {
             drawn.0 == "reactive-let"
@@ -313,7 +313,7 @@ impl Class {
 pub const CLASSES: &[Class] = &[
     Class {
         ledger: "464",
-        rule: "a top-level let reading a cell, directly or through another let, draws reactive-let beside any fault in its value, and its value's own type-mismatch beside it",
+        rule: "a top-level let reading a cell, directly or through another let, draws reactive-let beside any fault in its value or its annotation, and its value's own type-mismatch or its annotation's does-not-fit beside it",
         explains: reactive_let,
     },
     Class {
@@ -348,6 +348,47 @@ pub const CLASSES: &[Class] = &[
     },
 ];
 
+fn annotated_let_value(seen: &Seen<'_>, at: &Drawn) -> bool {
+    let line = seen.before(at).rsplit('\n').next().unwrap_or_default();
+    let Some((head, rest)) = line
+        .strip_prefix("let ")
+        .and_then(|tail| tail.split_once(": "))
+    else {
+        return false;
+    };
+    let named = !head.is_empty()
+        && head
+            .chars()
+            .all(|character| character.is_alphanumeric() || character == '_');
+    let scalar = rest
+        .strip_suffix(" = ")
+        .is_some_and(|ty| ["u8", "i32", "i64", "f32", "f64", "bool"].contains(&ty));
+    named && scalar && seen.after(at).starts_with('\n')
+}
+
+fn annotation_beside_the_twin_pass(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
+    change == Change::Removed
+        && at.0 == "type-mismatch"
+        && !reads_a_cell_somewhere(seen.program)
+        && annotated_let_value(seen, at)
+        && seen.new.iter().any(|drawn| drawn.0 == "unknown-name")
+}
+
+pub const TWIN_PASS_CLASSES: &[Class] = &[Class {
+    ledger: "476, the twin pass's (R4b)",
+    rule: "a type-mismatch at an annotated let's value that every value of its placeholder draws, which the twin pass misses because its `state q(false)` twin runs on the old engine and draws reactive-let alone there",
+    explains: annotation_beside_the_twin_pass,
+}];
+
+pub fn missed_by_the_twin_pass(program: &str, twins: &[Drawn], found: &[Drawn]) -> Explained {
+    let seen = Seen {
+        program,
+        old: twins,
+        new: found,
+    };
+    explained(TWIN_PASS_CLASSES, &seen)
+}
+
 pub fn changes(old: &[Drawn], new: &[Drawn]) -> Vec<(Change, Drawn)> {
     let mut left: Vec<Drawn> = old.to_vec();
     let mut changes = Vec::new();
@@ -363,18 +404,15 @@ pub fn changes(old: &[Drawn], new: &[Drawn]) -> Vec<(Change, Drawn)> {
     changes
 }
 
-pub fn moved(
-    program: &str,
-    old: &[Drawn],
-    new: &[Drawn],
-) -> Result<Vec<&'static Class>, Vec<(Change, Drawn)>> {
-    let seen = Seen { program, old, new };
+pub type Explained = Result<Vec<&'static Class>, Vec<(Change, Drawn)>>;
+
+fn explained(classes: &'static [Class], seen: &Seen<'_>) -> Explained {
     let mut used: Vec<&'static Class> = Vec::new();
     let mut unexplained = Vec::new();
-    for (change, at) in changes(old, new) {
-        match CLASSES
+    for (change, at) in changes(seen.old, seen.new) {
+        match classes
             .iter()
-            .find(|class| (class.explains)(&seen, change, &at))
+            .find(|class| (class.explains)(seen, change, &at))
         {
             Some(class) => {
                 if !used.iter().any(|seen| std::ptr::eq(*seen, class)) {
@@ -389,4 +427,8 @@ pub fn moved(
     } else {
         Err(unexplained)
     }
+}
+
+pub fn moved(program: &str, old: &[Drawn], new: &[Drawn]) -> Explained {
+    explained(CLASSES, &Seen { program, old, new })
 }

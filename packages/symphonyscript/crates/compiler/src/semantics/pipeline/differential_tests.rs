@@ -680,7 +680,7 @@ fn a_scalar_annotation_on_a_top_level_let_draws_as_the_old_engine_draws() {
     }
 }
 
-const REACTIVE_ANNOTATIONS: [(&str, &[(&str, &str)]); 4] = [
+const REACTIVE_ANNOTATIONS: [(&str, &[(&str, &str)]); 9] = [
     (
         "state s0 = [1]\nlet x: i32 = s0\nClip c:\n    Note/(x)\n",
         &[
@@ -700,10 +700,33 @@ const REACTIVE_ANNOTATIONS: [(&str, &[(&str, &str)]); 4] = [
         "state s0(1)\nlet x: i32 = s0\nClip c:\n    Note/(x)\n",
         &[("reactive-let", "x")],
     ),
+    (
+        "state s0(1)\nlet x: u8 = s0 + 300\nClip c:\n    Note/(x)\n",
+        &[
+            ("does-not-fit", "let x: u8 = s0 + 300\n"),
+            ("reactive-let", "x"),
+        ],
+    ),
+    (
+        "state s0(1)\nlet x: u8 = s0 + 300\n",
+        &[("reactive-let", "x")],
+    ),
+    (
+        "state s0(300)\nlet x: u8 = s0\nClip c:\n    Note/(x)\n",
+        &[("does-not-fit", "s0"), ("reactive-let", "x")],
+    ),
+    (
+        "state s0(-100)\nlet x: u8 = s0 + 300\nClip c:\n    Note/(x)\n",
+        &[("reactive-let", "x")],
+    ),
+    (
+        "state s0(1)\nlet x: u8 = s0 + 254\nClip c:\n    Note/(x)\n",
+        &[("reactive-let", "x")],
+    ),
 ];
 
 #[test]
-fn a_let_reading_a_cell_draws_reactive_let_beside_its_annotations_fault_464() {
+fn a_let_reading_a_cell_draws_reactive_let_beside_its_annotations_fault_and_fit_464() {
     let new =
         Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("the vocabulary compiles");
     for (text, expected) in REACTIVE_ANNOTATIONS {
@@ -739,5 +762,89 @@ fn a_choice_whose_condition_keeps_a_type_other_than_bool_takes_no_arm_when_its_l
             .checked_by_new_core(&sources)
             .expect("the new core takes the program");
         assert_eq!(found, old.check(&sources), "{text}");
+    }
+}
+
+const TWIN_PASS_TWINS: [&str; 12] = [
+    "state q(0): i32\n",
+    "let q = 1\n",
+    "state q(0.5): f64\n",
+    "let q = 0.5\n",
+    "state q(false)\n",
+    "let q = false\n",
+    "let q = \"a\"\n",
+    "state q([]): i32[..4]\n",
+    "let q = [1]\n",
+    "state q(Wave::Sine)\n",
+    "let q = Wave::Sine\n",
+    "let q = c\n",
+];
+
+fn main_file(found: &[crate::diagnostics::Diagnostic]) -> Vec<reviewed::Drawn> {
+    let main: Vec<crate::diagnostics::Diagnostic> = found
+        .iter()
+        .filter(|diagnostic| diagnostic.span.file == "main.sym")
+        .cloned()
+        .collect();
+    drawn(&main)
+}
+
+#[test]
+fn every_twin_of_the_twin_pass_draws_an_annotated_lets_type_mismatch_the_twin_pass_misses_476() {
+    let old = Compiler::new(&symphonyscript_fixtures::vocabulary())
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
+    let new =
+        Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("the vocabulary compiles");
+    for text in [
+        "let a: i32 = if true then q else true\nClip c:\n    Note/(a)\n",
+        "Clip c:\n    Note/(a)\nlet a: i32 = if true then q else true\n",
+    ] {
+        let choice = text.find("if true").expect("the choice");
+        let at = (
+            "type-mismatch".to_string(),
+            choice,
+            choice + "if true then q else true".len(),
+        );
+        let mut common: Option<Vec<reviewed::Drawn>> = None;
+        for twin in TWIN_PASS_TWINS {
+            let sources = [
+                source(text),
+                crate::source::Source {
+                    path: "twin.sym".into(),
+                    text: twin.to_string(),
+                },
+            ];
+            let on_new = main_file(&new.check(&sources));
+            assert!(on_new.contains(&at), "{twin}{text}{on_new:?}");
+            let on_old = main_file(&old.check(&sources));
+            assert_eq!(
+                on_old.contains(&at),
+                twin != "state q(false)\n",
+                "{twin}{text}{on_old:?}"
+            );
+            common = Some(match common {
+                None => on_new,
+                Some(common) => common
+                    .into_iter()
+                    .filter(|kept| on_new.contains(kept))
+                    .collect(),
+            });
+        }
+        let found = drawn(
+            &new.checked_by_new_core(&[source(text)])
+                .expect("the new core takes the program"),
+        );
+        assert_eq!(found, drawn(&old.check(&[source(text)])), "{text}");
+        let mut twins = common.unwrap_or_default();
+        twins.extend(
+            found
+                .iter()
+                .filter(|drawn| drawn.0 == "unknown-name")
+                .cloned(),
+        );
+        let classes = reviewed::missed_by_the_twin_pass(text, &twins, &found)
+            .unwrap_or_else(|unexplained| panic!("{text}{unexplained:?}"));
+        assert_eq!(classes.len(), 1, "{text}");
     }
 }
