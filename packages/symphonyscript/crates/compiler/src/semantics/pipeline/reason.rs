@@ -6,7 +6,6 @@ pub(crate) enum Reason {
     NameOfVocabulary,
     BareVariant,
     PatternOrWirePlacement,
-    UnknownKind,
     ChildName,
     UnitAttribute,
     EnumAttribute,

@@ -77,7 +77,9 @@ pub(crate) fn analyze(inputs: &Inputs<'_>) -> Result<Option<Run>, Internal> {
     }
     core.check_integer_cells()?;
     core.check_counts()?;
-    core.check_reachability()?;
+    if !core.unknown_kind {
+        core.check_reachability()?;
+    }
     core.consistency()?;
     stages.mark("infer and check");
     Ok(Some(finished(core)))

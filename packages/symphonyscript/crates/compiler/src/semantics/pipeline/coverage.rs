@@ -149,7 +149,8 @@ fn item_landed(ir: &FlatIr, item: &ItemRec) -> bool {
 
 pub(crate) fn reason_slice(reason: Reason) -> Slice {
     match reason {
-        Reason::FrontEndFault | Reason::ChildName | Reason::UnknownKind => Slice::Pending,
+        Reason::FrontEndFault => Slice::Pending,
+        Reason::ChildName => Slice::DefaultFlip,
         Reason::ArrayAttribute => Slice::Pending,
         Reason::PreludeItems | Reason::NameOfInstance | Reason::NameOfVocabulary => {
             Slice::DefaultFlip

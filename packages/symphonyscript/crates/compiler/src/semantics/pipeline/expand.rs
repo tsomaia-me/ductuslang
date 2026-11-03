@@ -26,7 +26,19 @@ impl Core<'_> {
             return Ok(Err(Declined(Reason::FrontEndFault)));
         };
         let Some(kind) = self.vocabulary.node_kind_named(kind_name) else {
-            return Ok(Err(Declined(self.placement_kind_reason(kind_name))));
+            let reason = self.placement_kind_reason(kind_name);
+            if let Some(reason) = reason {
+                return Ok(Err(Declined(reason)));
+            }
+            let text = kind_name.to_string();
+            self.unknown_kind = true;
+            let span = self.name_span(file, placement.kind)?;
+            self.draw(
+                crate::diagnostics::Code::UnknownKind,
+                span,
+                format!("`{text}` is not a node kind or a pattern"),
+            );
+            return Ok(Ok(NONE));
         };
         if parent != NONE && placement.as_name != NONE {
             return Ok(Err(Declined(Reason::ChildName)));
@@ -56,6 +68,9 @@ impl Core<'_> {
                         Ok(row) => row,
                         Err(declined) => return Ok(Err(declined)),
                     };
+                    if row == NONE {
+                        continue;
+                    }
                     self.top_instances.push(row);
                     pending.push(row);
                 }
@@ -88,7 +103,9 @@ impl Core<'_> {
                     Ok(row) => row,
                     Err(declined) => return Ok(Err(declined)),
                 };
-                pending.push(row);
+                if row != NONE {
+                    pending.push(row);
+                }
             }
             let end = u32::try_from(self.instances.len()).unwrap_or(u32::MAX);
             if let Some(row) = self.instances.get_mut(parent as usize) {
@@ -100,11 +117,11 @@ impl Core<'_> {
 }
 
 impl Core<'_> {
-    fn placement_kind_reason(&self, kind: &str) -> Reason {
+    fn placement_kind_reason(&self, kind: &str) -> Option<Reason> {
         if self.vocabulary.wire_kind_named(kind).is_some() {
-            Reason::PatternOrWirePlacement
+            Some(Reason::PatternOrWirePlacement)
         } else {
-            Reason::UnknownKind
+            None
         }
     }
 }
