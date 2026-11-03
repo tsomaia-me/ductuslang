@@ -107,10 +107,18 @@ impl Core<'_> {
         if !self.ir.named(name) {
             return Ok(None);
         }
-        if self.faulty_line(top) {
+        if self.faulty_line(top) || self.faulty_cell(top)? {
             return Ok(Some((name, DeclRef::Duplicate)));
         }
         Ok(Some((name, decl)))
+    }
+
+    fn faulty_cell(&self, top: TopRec) -> Result<bool, Internal> {
+        let TopRec::Cell(at) = top else {
+            return Ok(false);
+        };
+        let root = self.cell_root(at)?;
+        Ok(root != NONE && self.ir.node(root)?.0 == Op::Bad)
     }
 
     pub fn name_span(&self, file: u32, name: u32) -> Result<Span, Internal> {

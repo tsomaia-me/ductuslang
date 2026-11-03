@@ -202,7 +202,15 @@ fn a_program_whose_front_end_drew_a_fault_compiles_through_the_new_core_by_the_p
     }
 }
 
-const SHARED_STEP: [(&str, &[(&str, &str)]); 8] = [
+const SHARED_STEP: [(&str, &[(&str, &str)]); 10] = [
+    (
+        "Clip c:\n    Note/(j[^1])\nlet j = if k[0] > 1 then k else e + [3]\nlet e = []\n([1, 2]): i32[..4]\nstate k\n",
+        &[("cell-syntax", "\n"), ("top-level-syntax", "(")],
+    ),
+    (
+        "Clip c:\n    Note/(j[^1])\nlet j = if k[0] > 1 then k else e + [3]\nlet e = []\nstate k([1, 2])\n",
+        &[("reactive-let", "j")],
+    ),
     (
         "fn chord(big): if big then [60, 64, 67] else [60, 64]\n\nlet tones = chord(false)\n\nClip c:\n    Note/(tones[1])\n    Note/(chord(false)[2])\n",
         &[("index-out-of-range", "2")],
