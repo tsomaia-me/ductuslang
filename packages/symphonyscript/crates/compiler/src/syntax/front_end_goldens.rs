@@ -15,11 +15,11 @@ use crate::source::Source;
 #[allow(dead_code, clippy::duplicate_mod)]
 mod robustness_corpus;
 
-struct Corpus {
-    name: &'static str,
-    vocabulary: Vocabulary,
-    texts: Vec<String>,
-    bases: Vec<(u64, usize)>,
+pub(crate) struct Corpus {
+    pub name: &'static str,
+    pub vocabulary: Vocabulary,
+    pub texts: Vec<String>,
+    pub bases: Vec<(u64, usize)>,
 }
 
 impl Corpus {
@@ -102,14 +102,14 @@ fn robustness(keep: impl Fn(usize, usize, usize) -> bool, name: &'static str) ->
         .collect()
 }
 
-fn covered_mutants(rows: &Rows) -> Vec<Corpus> {
+pub(crate) fn covered_mutants(rows: &Rows) -> Vec<Corpus> {
     robustness(
         |corpus, kind, mutation| rows.take(&[corpus, kind, mutation]),
         "robustness-covered",
     )
 }
 
-fn source(text: &str) -> Source {
+pub(crate) fn source(text: &str) -> Source {
     Source {
         path: "main.sym".into(),
         text: text.into(),
@@ -234,7 +234,7 @@ fn checked(corpora: &[Corpus]) -> usize {
     checked
 }
 
-fn spec_and_lesson_corpora() -> [Corpus; 2] {
+pub(crate) fn spec_and_lesson_corpora() -> [Corpus; 2] {
     let examples = spec_examples()
         .into_iter()
         .map(|example| example.text)
@@ -245,7 +245,7 @@ fn spec_and_lesson_corpora() -> [Corpus; 2] {
     ]
 }
 
-fn fixture_corpus() -> Corpus {
+pub(crate) fn fixture_corpus() -> Corpus {
     let texts = project_texts([
         music_project(),
         dsp_project(),
@@ -255,25 +255,25 @@ fn fixture_corpus() -> Corpus {
     Corpus::new("fixtures", texts)
 }
 
-fn parser_test_corpus() -> Corpus {
+pub(crate) fn parser_test_corpus() -> Corpus {
     Corpus::new(
         "parser-tests",
         super::parser::tests::item_programs(&vocabulary()),
     )
 }
 
-fn generated_corpus() -> Corpus {
+pub(crate) fn generated_corpus() -> Corpus {
     Corpus::new(
         "parser-generated",
         super::parser::tests::generated_programs(&vocabulary()),
     )
 }
 
-fn large_corpus() -> Corpus {
+pub(crate) fn large_corpus() -> Corpus {
     Corpus::new("large-project", project_texts([large_project()]))
 }
 
-fn deep_corpus(project: usize) -> Corpus {
+pub(crate) fn deep_corpus(project: usize) -> Corpus {
     let texts = project_texts(deep_projects().into_iter().skip(project).take(1));
     Corpus::new(DEEP_NAMES[project], texts)
 }
@@ -285,7 +285,7 @@ const DEEP_NAMES: [&str; 4] = [
     "deep-project-4",
 ];
 
-fn nest_corpus() -> Corpus {
+pub(crate) fn nest_corpus() -> Corpus {
     Corpus::new("parser-nests", super::parser::tests::nest_programs(2_000))
 }
 
@@ -296,7 +296,7 @@ const QUARTERS: [&str; 4] = [
     "robustness-fourth",
 ];
 
-fn robustness_quarter(quarter: usize) -> Vec<Corpus> {
+pub(crate) fn robustness_quarter(quarter: usize) -> Vec<Corpus> {
     let name = QUARTERS[quarter];
     robustness(|_, _, _| true, name)
         .into_iter()

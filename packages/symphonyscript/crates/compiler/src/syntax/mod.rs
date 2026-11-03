@@ -6,7 +6,7 @@ mod cost_tests;
 mod descendants;
 mod element_view;
 #[cfg(test)]
-mod front_end_goldens;
+pub(crate) mod front_end_goldens;
 mod lex;
 mod lexed;
 mod lexer;

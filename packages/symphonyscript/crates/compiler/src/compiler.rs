@@ -16,7 +16,7 @@ use crate::semantics::Internal;
 use crate::semantics::analysis::Engine;
 use crate::semantics::analyze;
 use crate::semantics::collection::Variants;
-use crate::semantics::ir::{ExprId, Hir, build_file};
+use crate::semantics::ir::{ExprId, FlatIr, Hir, adapt_file, build_flat_file};
 use crate::semantics::reporting::Report;
 use crate::source::Source;
 use crate::syntax::parse;
@@ -30,6 +30,7 @@ pub struct Compiler {
     vocabulary: Vocabulary,
     variants: Variants,
     prelude: Hir,
+    prelude_ir: FlatIr,
     limits: Limits,
 }
 
@@ -41,6 +42,7 @@ impl Compiler {
     pub fn with_limits(vocab: &Vocabulary, overrides: LimitOverrides) -> Result<Compiler, Failed> {
         let limits = overrides.applied_to(Limits::default());
         let mut hir = Hir::default();
+        let mut ir = FlatIr::default();
         let mut report = Report::default();
         let mut files: Vec<Source> = vocab
             .prelude()
@@ -56,7 +58,7 @@ impl Compiler {
             report
                 .diagnostics
                 .extend(parsed.diagnostics.iter().cloned());
-            if let Err(internal) = build_file(&mut hir, &file.path, &parsed, vocab) {
+            if let Err(internal) = lowered(&mut ir, &mut hir, &file.path, &parsed, vocab) {
                 analyze::internal_error(&hir, &mut report, internal);
                 return Err(Failed {
                     diagnostics: report.finish(&hir.files),
@@ -64,6 +66,7 @@ impl Compiler {
             }
         }
         hir.seal_prelude();
+        ir.freeze();
         let variants = match Variants::of(vocab) {
             Ok(variants) => variants,
             Err(internal) => {
@@ -85,6 +88,7 @@ impl Compiler {
             vocabulary: vocab.clone(),
             variants,
             prelude: hir,
+            prelude_ir: ir,
             limits,
         })
     }
@@ -118,6 +122,7 @@ impl Compiler {
         ) -> Result<Vec<Diagnostic>, Internal>,
     ) -> (Vec<Diagnostic>, Option<R>) {
         let mut hir = self.prelude.clone();
+        let mut ir = FlatIr::after(&self.prelude_ir);
         let mut report = Report::default();
         let mut ordered: Vec<&Source> = sources.iter().collect();
         ordered.sort_by(|a, b| a.path.as_bytes().cmp(b.path.as_bytes()));
@@ -145,7 +150,9 @@ impl Compiler {
             report
                 .diagnostics
                 .extend(parsed.diagnostics.iter().cloned());
-            if let Err(internal) = build_file(&mut hir, &source.path, &parsed, &self.vocabulary) {
+            if let Err(internal) =
+                lowered(&mut ir, &mut hir, &source.path, &parsed, &self.vocabulary)
+            {
                 analyze::internal_error(&hir, &mut report, internal);
                 return (report.finish(&hir.files), None);
             }
@@ -189,4 +196,16 @@ impl Compiler {
         }
         (report.finish(&hir.files), inspected)
     }
+}
+
+fn lowered(
+    ir: &mut FlatIr,
+    hir: &mut Hir,
+    path: &str,
+    parsed: &crate::syntax::Parsed,
+    vocabulary: &Vocabulary,
+) -> Result<(), Internal> {
+    let file = ir.files.len();
+    build_flat_file(ir, path, parsed, vocabulary)?;
+    adapt_file(hir, ir, file)
 }

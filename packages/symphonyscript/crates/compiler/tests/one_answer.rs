@@ -5,6 +5,14 @@ const MODULE: &str = "analysis/answers/";
 
 const DECIDING_NONE: &[(&str, &str)] = &[
     (
+        "ir/flat/adapter/exprs.rs enter",
+        "the children of an IR node in the order the old HIR builder numbered them, the adapter's translation table",
+    ),
+    (
+        "ir/flat/adapter/exprs.rs exit",
+        "the HIR expression an IR node translates to, the adapter's translation table",
+    ),
+    (
         "analysis/carried_enum_of.rs carried_enum_of",
         "the enum a bare variant takes from its expected type, SPEC §4.2's enum flow",
     ),

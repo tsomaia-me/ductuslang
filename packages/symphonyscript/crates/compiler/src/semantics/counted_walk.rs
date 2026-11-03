@@ -120,11 +120,17 @@ pub(crate) enum CountedWalk {
     CountsWireCounts,
     HirBodyUnknown,
     HirNestedPlacements,
+    #[cfg(test)]
     BodiesErrorNames,
+    #[cfg(test)]
     BodiesHead,
+    #[cfg(test)]
     BodiesFill,
+    #[cfg(test)]
     ExpressionsExpr,
+    #[cfg(test)]
     ExpressionsUnescape,
+    #[cfg(test)]
     HirBuilderHeaderNames,
     NumberLiteralNumberLiteral,
     CheckerLetCycles,
@@ -178,10 +184,12 @@ pub(crate) enum CountedWalk {
     SyntaxViewElement,
     HashProbe,
     ExpandRow,
+    IrBuilderStep,
+    IrNode,
 }
 
 #[cfg(test)]
-const WALKS: usize = 178;
+const WALKS: usize = 180;
 
 #[cfg(test)]
 thread_local! {
@@ -369,6 +377,8 @@ impl CountedWalk {
         CountedWalk::SyntaxViewElement,
         CountedWalk::HashProbe,
         CountedWalk::ExpandRow,
+        CountedWalk::IrBuilderStep,
+        CountedWalk::IrNode,
     ];
 
     pub(crate) fn step(self) {

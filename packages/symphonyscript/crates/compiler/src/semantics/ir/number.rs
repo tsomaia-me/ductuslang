@@ -7,6 +7,7 @@ pub(crate) enum Number {
 }
 
 impl Number {
+    #[cfg(test)]
     pub fn negated(&self) -> Option<Number> {
         match self {
             Number::Int(value) => value.checked_neg().map(Number::Int),

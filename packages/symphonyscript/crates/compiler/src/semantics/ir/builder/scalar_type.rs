@@ -11,7 +11,7 @@ const SCALAR_KEYWORDS: [(SyntaxKind, Scalar); 6] = [
     (SyntaxKind::BoolKw, Scalar::Bool),
 ];
 
-pub(super) fn scalar_type(token: &TokenView<'_>) -> Option<Scalar> {
+pub(crate) fn scalar_type(token: &TokenView<'_>) -> Option<Scalar> {
     let kind = token.kind();
     SCALAR_KEYWORDS
         .iter()
