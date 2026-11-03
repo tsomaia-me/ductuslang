@@ -7,7 +7,9 @@ use crate::semantics::Internal;
 use crate::semantics::counted_walk::CountedWalk;
 use crate::semantics::operators::Value;
 
-const INTEGER: usize = 0;
+fn integer(class: usize) -> bool {
+    matches!(class, 0 | 4..=6)
+}
 
 type Reads = Vec<(u32, usize, CoreValue)>;
 
@@ -16,7 +18,7 @@ impl Core<'_> {
         let mut by_target: BTreeMap<(bool, u32), Reads> = BTreeMap::new();
         for ((read, class), (target, value)) in &self.uses {
             CountedWalk::CoreUse.step();
-            if *class <= 2 {
+            if *class != 3 {
                 by_target
                     .entry(*target)
                     .or_default()
@@ -25,13 +27,13 @@ impl Core<'_> {
         }
         for (_, uses) in by_target {
             let Some((int_read, _, int_value)) =
-                uses.iter().find(|(_, class, _)| *class == INTEGER).cloned()
+                uses.iter().find(|(_, class, _)| integer(*class)).cloned()
             else {
                 continue;
             };
             let mut float_read = None;
             for (read, class, value) in &uses {
-                if *class != INTEGER && *read != int_read && !self.same_number(&int_value, value) {
+                if !integer(*class) && *read != int_read && !self.same_number(&int_value, value) {
                     float_read = Some(*read);
                     break;
                 }

@@ -4,6 +4,7 @@ use super::declined::Declined;
 use super::fact::Fact;
 use super::leaf::Leaf;
 use super::reason::Reason;
+use super::width::{combined, is_fixed_float, target_ty};
 use crate::diagnostics::Code;
 use crate::semantics::Internal;
 use crate::semantics::counted_walk::CountedWalk;
@@ -25,7 +26,7 @@ impl Core<'_> {
     pub fn operands(&self, node: u32) -> Result<Vec<u32>, Internal> {
         let (op, a, b, c) = self.ir.node(node)?;
         Ok(match op {
-            Op::Neg | Op::Not => vec![a],
+            Op::Neg | Op::Not | Op::Convert => vec![a],
             Op::Add
             | Op::Sub
             | Op::Mul
@@ -64,7 +65,6 @@ impl Core<'_> {
             | Op::Str
             | Op::Variant
             | Op::To
-            | Op::Convert
             | Op::Field
             | Op::Call
             | Op::NamedCall
@@ -233,6 +233,7 @@ impl Core<'_> {
             },
             Op::Array => self.array_fact(node, a, b)?,
             Op::Index | Op::IndexFromEnd => self.index_fact(node, a, b)?,
+            Op::Convert => self.convert_fact(node, a, b)?,
             Op::Slice => match self.slice_fact(node, a, b, c)? {
                 Ok(fact) => fact,
                 Err(declined) => return Ok(Err(declined)),
@@ -240,7 +241,6 @@ impl Core<'_> {
             Op::Str
             | Op::Variant
             | Op::To
-            | Op::Convert
             | Op::Field
             | Op::Call
             | Op::NamedCall
@@ -293,8 +293,9 @@ impl Core<'_> {
                 self.draw_at(Code::OperandType, node, "unary `-` takes a number")?;
                 Ok(Fact::ERROR)
             }
-            (Op::Neg, Leaf::Empty | Leaf::Int) => Ok(Fact::scalar(Leaf::Int)),
-            (Op::Neg, Leaf::Float) => Ok(Fact::scalar(Leaf::Float)),
+            (Op::Neg, Leaf::Empty | Leaf::Int | Leaf::Float) => {
+                Ok(Fact::fixed(leaf_of(operand.leaf), operand.fixed))
+            }
             (Op::Neg, Leaf::Placeholder | Leaf::Error) => Ok(Fact::ERROR),
             (
                 Op::Int
@@ -341,6 +342,40 @@ impl Core<'_> {
                 | Op::Bad,
                 _,
             ) => Err(Internal::missed("a unary operator")),
+        }
+    }
+
+    fn convert_fact(&mut self, node: u32, a: u32, code: u32) -> Result<Fact, Internal> {
+        let target = target_ty(code).ok_or(Internal::missed("a conversion target"))?;
+        let leaf = if is_fixed_float(target) {
+            Leaf::Float
+        } else if target == EvalTy::Bool {
+            Leaf::Bool
+        } else {
+            Leaf::Int
+        };
+        let converted = Fact::fixed(leaf, Some(target));
+        let operand = self.fact(a)?;
+        if operand.leaf == Leaf::Placeholder {
+            return Ok(Fact::PLACEHOLDER);
+        }
+        if !operand.dims.is_empty() {
+            if operand.leaf != Leaf::Error {
+                self.draw_at(Code::ArrayOperand, node, OPERAND)?;
+            }
+            return Ok(Fact::PLACEHOLDER);
+        }
+        match operand.leaf {
+            Leaf::Error => self.keep(node, converted),
+            Leaf::Bool => {
+                self.draw_at(
+                    Code::ConversionType,
+                    node,
+                    "a `bool` or an enum value is not converted",
+                )?;
+                self.keep(node, converted)
+            }
+            Leaf::Placeholder | Leaf::Empty | Leaf::Int | Leaf::Float => Ok(converted),
         }
     }
 
@@ -396,14 +431,15 @@ impl Core<'_> {
                     self.operand_type(node, op)?;
                     return Ok(Fact::ERROR);
                 }
-                Fact::scalar(numeric_leaf(x, y))
+                let leaf = numeric_leaf(x, y);
+                Fact::fixed(leaf, combined(left.fixed, right.fixed, leaf == Leaf::Float))
             }
             Op::Div => {
                 if !(numeric(x) && numeric(y)) {
                     self.operand_type(node, op)?;
                     return Ok(Fact::ERROR);
                 }
-                Fact::scalar(Leaf::Float)
+                Fact::fixed(Leaf::Float, combined(left.fixed, right.fixed, true))
             }
             Op::IntDiv => {
                 let integer = |leaf: Leaf| matches!(leaf, Leaf::Int | Leaf::Empty);
@@ -411,7 +447,7 @@ impl Core<'_> {
                     self.operand_type(node, op)?;
                     return Ok(Fact::ERROR);
                 }
-                Fact::scalar(Leaf::Int)
+                Fact::fixed(Leaf::Int, combined(left.fixed, right.fixed, false))
             }
             Op::Lt | Op::Le | Op::Gt | Op::Ge => {
                 if !(numeric(x) && numeric(y)) {
@@ -506,7 +542,8 @@ impl Core<'_> {
                 Leaf::Error
             }
         };
-        Ok(Fact { leaf, dims })
+        let fixed = combined(left.fixed, right.fixed, leaf == Leaf::Float);
+        Ok(Fact { leaf, dims, fixed })
     }
 
     fn choice_fact(&mut self, node: u32, condition: u32, then: u32, otherwise: u32) -> Stage<Fact> {
@@ -547,10 +584,12 @@ impl Core<'_> {
             )?;
             return Ok(Ok(Fact::ERROR));
         };
+        let fixed = combined(first.fixed, second.fixed, leaf == Leaf::Float);
         if first.dims == second.dims {
             return Ok(Ok(Fact {
                 leaf,
                 dims: first.dims,
+                fixed,
             }));
         }
         let taken = match self.evaluate(condition, EvalTy::Bool)? {
@@ -568,7 +607,11 @@ impl Core<'_> {
             ) => return Ok(Ok(Fact::ERROR)),
             Err(declined) => return Ok(Err(declined)),
         };
-        Ok(Ok(Fact { leaf, dims: taken }))
+        Ok(Ok(Fact {
+            leaf,
+            dims: taken,
+            fixed,
+        }))
     }
 
     fn slice_fact(&mut self, node: u32, a: u32, start: u32, flags: u32) -> Stage<Fact> {
@@ -652,6 +695,7 @@ impl Core<'_> {
         Ok(Ok(Fact {
             leaf: base.leaf,
             dims,
+            fixed: base.fixed,
         }))
     }
 
@@ -692,6 +736,7 @@ impl Core<'_> {
         let element = Fact {
             leaf: base.leaf,
             dims: base.dims.get(1..).unwrap_or_default().to_vec(),
+            fixed: base.fixed,
         };
         if index.leaf == Leaf::Placeholder {
             return Ok(Fact::PLACEHOLDER);
@@ -707,6 +752,7 @@ impl Core<'_> {
             return Ok(Fact {
                 leaf: Leaf::Empty,
                 dims: vec![0],
+                fixed: None,
             });
         }
         let mut facts = Vec::new();
@@ -738,11 +784,16 @@ impl Core<'_> {
                 return Ok(Fact {
                     leaf: Leaf::Error,
                     dims,
+                    fixed: None,
                 });
             };
             leaf = unified;
         }
-        Ok(Fact { leaf, dims })
+        let mut fixed = None;
+        for fact in &facts {
+            fixed = combined(fixed, fact.fixed, leaf == Leaf::Float);
+        }
+        Ok(Fact { leaf, dims, fixed })
     }
 }
 

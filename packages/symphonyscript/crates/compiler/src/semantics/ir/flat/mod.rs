@@ -43,7 +43,7 @@ mod wire_rec;
 
 pub(crate) use adapter::{adapt_file, adapt_file_mapped};
 pub(crate) use attr_form::AttrForm;
-pub(crate) use builder::build_flat_file;
+pub(crate) use builder::{SCALARS, build_flat_file};
 pub(crate) use flat_ir::FlatIr;
 pub(crate) use item_rec::ItemRec;
 pub(crate) use op::Op;

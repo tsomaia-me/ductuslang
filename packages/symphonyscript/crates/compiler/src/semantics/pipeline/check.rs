@@ -7,6 +7,8 @@ use super::declined::Declined;
 use super::fact::Fact;
 use super::leaf::Leaf;
 use super::reason::Reason;
+use super::values::flexible;
+use super::width::widens;
 use crate::diagnostics::Code;
 use crate::semantics::Internal;
 use crate::semantics::counted_walk::CountedWalk;
@@ -197,17 +199,36 @@ impl Core<'_> {
             }
             Leaf::Bool | Leaf::Empty | Leaf::Int | Leaf::Float => {}
         }
+        if let Some(own) = fact.fixed
+            && !widens(own, ty)
+        {
+            self.draw_at(
+                Code::TypeMismatch,
+                root,
+                format!(
+                    "a `{}` value does not widen into `{}`",
+                    ty_name(own),
+                    ty_name(ty)
+                ),
+            )?;
+            return self.evaluate_own(root);
+        }
+        let evaluated = match fact.fixed {
+            Some(own) if int_range(own).is_some() && int_range(ty).is_some() => ty,
+            Some(own) => own,
+            None => flexible(ty),
+        };
         if self.is_kept(root)? {
             return self.evaluate_own(root);
         }
-        let value = match self.evaluate(root, ty)? {
+        let value = match self.evaluate(root, evaluated)? {
             Ok(value) => value,
             Err(declined) => return Ok(Err(declined)),
         };
         let fits = match (&value, int_range(ty)) {
             (Value::Int(value), Some(range)) => range.contains(value),
-            (Value::F32(value), _) => value.is_finite(),
-            (Value::F64(value), _) => value.is_finite(),
+            (Value::F32(value), _) => value.is_finite() || fact.fixed.is_some(),
+            (Value::F64(value), _) => value.is_finite() || fact.fixed.is_some(),
             _ => true,
         };
         if !fits {

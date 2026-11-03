@@ -12,4 +12,4 @@ mod types;
 mod value;
 
 pub(crate) use ir_builder::build_flat_file;
-pub(in crate::semantics::ir::flat) use types::SCALARS;
+pub(crate) use types::SCALARS;

@@ -23,6 +23,7 @@ mod step;
 mod store;
 mod typing;
 mod values;
+mod width;
 
 pub(crate) use analyze::{Inputs, analyze};
 #[cfg(test)]

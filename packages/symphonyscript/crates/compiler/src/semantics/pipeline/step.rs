@@ -7,4 +7,5 @@ pub(crate) enum Step {
     Choose(u32, u32, EvalTy),
     Pick(u32, EvalTy),
     Record(u32, bool, u32, EvalTy),
+    Fit(u32, EvalTy),
 }

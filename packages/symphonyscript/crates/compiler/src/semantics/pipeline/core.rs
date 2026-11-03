@@ -34,7 +34,7 @@ pub(crate) struct Core<'a> {
     pub top_instances: Vec<u32>,
     pub store: Store,
     pub declined: bool,
-    pub let_values: Vec<[Option<CoreValue>; 4]>,
+    pub let_values: Vec<[Option<CoreValue>; 7]>,
     pub uses: BTreeMap<(u32, usize), ((bool, u32), CoreValue)>,
 }
 
@@ -65,7 +65,7 @@ impl<'a> Core<'a> {
             top_instances: Vec::new(),
             store: Store::default(),
             declined: false,
-            let_values: vec![[None, None, None, None]; ir.lets.len()],
+            let_values: vec![[None, None, None, None, None, None, None]; ir.lets.len()],
             uses: BTreeMap::new(),
         }
     }

@@ -6,29 +6,27 @@ use super::frame::Frame;
 use super::leaf::Leaf;
 use super::reason::Reason;
 use super::step::Step;
+use super::width::{combined, target_ty, widens};
 use crate::diagnostics::Code;
 use crate::semantics::Internal;
 use crate::semantics::counted_walk::CountedWalk;
 use crate::semantics::ir::FloatLit;
 use crate::semantics::ir::flat::{NONE, Op, binary_of};
 use crate::semantics::operators::{
-    EvalTy, I64Position, Operands, Operator, Value, outside_i64, plan_op, represents, ty_name,
+    EvalTy, I64Position, Operands, Operator, Value, int_range, outside_i64, plan_op, represents,
+    ty_name,
 };
 use symphonyscript_core::BinaryOp;
 
-fn class(ty: EvalTy) -> usize {
+pub(crate) fn class(ty: EvalTy) -> usize {
     match ty {
         EvalTy::F32 | EvalTy::DefaultF32 => 1,
         EvalTy::F64 | EvalTy::DefaultF64 => 2,
         EvalTy::Bool => 3,
-        EvalTy::Exact
-        | EvalTy::Default
-        | EvalTy::U8
-        | EvalTy::I32
-        | EvalTy::I64
-        | EvalTy::Enum(_)
-        | EvalTy::Str
-        | EvalTy::Node => 0,
+        EvalTy::U8 => 4,
+        EvalTy::I32 => 5,
+        EvalTy::I64 => 6,
+        EvalTy::Exact | EvalTy::Default | EvalTy::Enum(_) | EvalTy::Str | EvalTy::Node => 0,
     }
 }
 
@@ -37,7 +35,17 @@ fn evaluated_in(ty: EvalTy) -> EvalTy {
         1 => EvalTy::F32,
         2 => EvalTy::F64,
         3 => EvalTy::Bool,
+        4 => EvalTy::U8,
+        5 => EvalTy::I32,
+        6 => EvalTy::I64,
         _ => EvalTy::Exact,
+    }
+}
+
+pub(crate) fn flexible(ty: EvalTy) -> EvalTy {
+    match class(ty) {
+        4..=6 => EvalTy::Exact,
+        _ => evaluated_in(ty),
     }
 }
 
@@ -50,8 +58,20 @@ impl Core<'_> {
             .flatten()
     }
 
+    fn integral(&self, node: u32) -> Result<EvalTy, Internal> {
+        Ok(match self.fact(node)?.fixed {
+            Some(fixed) if int_range(fixed).is_some() => fixed,
+            Some(_) | None => EvalTy::Exact,
+        })
+    }
+
     fn pair_ty(&self, a: u32, b: u32) -> Result<EvalTy, Internal> {
-        let (x, y) = (self.fact(a)?.leaf, self.fact(b)?.leaf);
+        let (left, right) = (self.fact(a)?, self.fact(b)?);
+        let float = left.leaf == Leaf::Float || right.leaf == Leaf::Float;
+        if let Some(fixed) = combined(left.fixed, right.fixed, float) {
+            return Ok(fixed);
+        }
+        let (x, y) = (left.leaf, right.leaf);
         Ok(match (x, y) {
             (Leaf::Bool, _) | (_, Leaf::Bool) => EvalTy::Bool,
             (Leaf::Float, _) | (_, Leaf::Float) => EvalTy::F64,
@@ -73,13 +93,26 @@ impl Core<'_> {
                 let div = if float { ty } else { EvalTy::F32 };
                 vec![(a, div), (b, div)]
             }
-            Op::IntDiv => vec![(a, EvalTy::Exact), (b, EvalTy::Exact)],
+            Op::IntDiv => {
+                let mut own = self.integral(node)?;
+                if int_range(own).is_some() && int_range(ty).is_some() && widens(own, ty) {
+                    own = ty;
+                }
+                vec![(a, own), (b, own)]
+            }
             Op::Lt | Op::Le | Op::Gt | Op::Ge | Op::Is | Op::IsNot => {
                 let pair = self.pair_ty(a, b)?;
                 vec![(a, pair), (b, pair)]
             }
             Op::And | Op::Or => vec![(a, EvalTy::Bool), (b, EvalTy::Bool)],
             Op::Not => vec![(a, EvalTy::Bool)],
+            Op::Convert => {
+                let own = self.own_ty(a)?.unwrap_or(EvalTy::Exact);
+                if own == EvalTy::Exact && self.fact(a)?.fixed.is_none() {
+                    steps.push(Step::Fit(a, EvalTy::I64));
+                }
+                vec![(a, own)]
+            }
             Op::If => {
                 steps.pop();
                 steps.push(Step::Choose(b, c, ty));
@@ -94,15 +127,18 @@ impl Core<'_> {
                 Some(operands) => {
                     steps.pop();
                     steps.push(Step::Pick(node, ty));
-                    operands.into_iter().map(|at| (at, EvalTy::Exact)).collect()
+                    operands
+                        .into_iter()
+                        .map(|at| Ok((at, self.integral(at)?)))
+                        .collect::<Result<_, Internal>>()?
                 }
-                None => vec![(a, ty), (b, EvalTy::Exact)],
+                None => vec![(a, ty), (b, self.integral(b)?)],
             },
             Op::Slice => {
                 let mut operands = vec![(a, ty)];
                 for bound in self.bounds(node)? {
                     if bound != NONE {
-                        operands.push((bound, EvalTy::Exact));
+                        operands.push((bound, self.integral(bound)?));
                     }
                 }
                 operands
@@ -114,7 +150,6 @@ impl Core<'_> {
             | Op::Str
             | Op::Variant
             | Op::To
-            | Op::Convert
             | Op::Field
             | Op::Call
             | Op::NamedCall
@@ -178,6 +213,10 @@ impl Core<'_> {
                         && !self.cyclic.get(at as usize).copied().unwrap_or(false)
                     {
                         frame.steps.push(Step::Record(node, false, at, node_ty));
+                        let flexible_let = self.fact(self.let_root(at)?)?.fixed.is_none();
+                        if flexible_let && (4..=6).contains(&class(node_ty)) {
+                            frame.steps.push(Step::Fit(node, node_ty));
+                        }
                         if let Some(value) = self.memo(at, node_ty) {
                             frame.values.push(value);
                             continue;
@@ -187,7 +226,11 @@ impl Core<'_> {
                                 "an open declaration outside every cycle",
                             ));
                         }
-                        let let_ty = evaluated_in(node_ty);
+                        let let_ty = if self.fact(self.let_root(at)?)?.fixed.is_some() {
+                            evaluated_in(node_ty)
+                        } else {
+                            flexible(node_ty)
+                        };
                         let root = self.let_root(at)?;
                         frames.push(Frame {
                             owner: Some(at),
@@ -236,6 +279,20 @@ impl Core<'_> {
                             frame.steps.push(Step::Visit(element, element_ty));
                         }
                         None => frame.values.push(Value::Error),
+                    }
+                }
+                Step::Fit(read, read_ty) => {
+                    if let Some(Value::Int(value)) = frame.values.last()
+                        && let Some(range) = int_range(read_ty)
+                        && !range.contains(value)
+                    {
+                        frame.values.pop();
+                        frame.values.push(Value::Error);
+                        self.draw_at(
+                            Code::DoesNotFit,
+                            read,
+                            format!("this value does not fit `{}`", ty_name(read_ty)),
+                        )?;
                     }
                 }
                 Step::Record(read, element, target, read_ty) => {
@@ -300,6 +357,11 @@ impl Core<'_> {
             Op::Neg => {
                 let operand = pop(stack)?;
                 plan_op(self, Operator::Neg(node, ty), Operands::One(operand))?
+            }
+            Op::Convert => {
+                let operand = pop(stack)?;
+                let target = target_ty(b).ok_or(Internal::missed("a conversion target"))?;
+                plan_op(self, Operator::ConvertTo(target), Operands::One(operand))?
             }
             Op::Not => {
                 let operand = pop(stack)?;
@@ -387,7 +449,6 @@ impl Core<'_> {
             | Op::Str
             | Op::Variant
             | Op::To
-            | Op::Convert
             | Op::Field
             | Op::Call
             | Op::NamedCall
@@ -464,6 +525,11 @@ impl Core<'_> {
 
     fn own_ty(&self, node: u32) -> Result<Option<EvalTy>, Internal> {
         let fact = self.fact(node)?;
+        if let Some(fixed) = fact.fixed
+            && !matches!(fact.leaf, Leaf::Placeholder | Leaf::Error)
+        {
+            return Ok(Some(fixed));
+        }
         Ok(match fact.leaf {
             Leaf::Empty | Leaf::Int => Some(EvalTy::Exact),
             Leaf::Float => Some(self.own_float(node)?),
@@ -719,6 +785,16 @@ impl Core<'_> {
                         Code::IntegerOverflow,
                         node,
                         "this value's magnitude reaches 2¹²⁷",
+                    )?;
+                    return Ok(Value::Error);
+                }
+                if let Some(range) = int_range(ty)
+                    && !range.contains(&value)
+                {
+                    self.draw_at(
+                        Code::DoesNotFit,
+                        node,
+                        format!("this value does not fit `{}`", ty_name(ty)),
                     )?;
                     return Ok(Value::Error);
                 }

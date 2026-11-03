@@ -14,7 +14,7 @@ use crate::semantics::ir::scalar_type;
 use crate::syntax::ast::{self, AstNode};
 use crate::syntax::{ElementView, NodeView, SyntaxKind};
 
-pub(in crate::semantics::ir::flat) const SCALARS: [Scalar; 6] = [
+pub(crate) const SCALARS: [Scalar; 6] = [
     Scalar::U8,
     Scalar::I32,
     Scalar::I64,
