@@ -997,6 +997,16 @@ class Running(unittest.TestCase):
                                          True)):
             self.assertNotIn("nextest-exhaustive", [each["name"] for each in default])
 
+    def test_the_shared_step_takes_the_quick_figures_only_when_asked(self):
+        into, results = Path("/into"), Path("/results")
+        quick = run.shared_steps("abc1234", Path("/top"), into, results, 4, Path("/baselines"), None, None, False,
+                                 False, True)
+        full = run.shared_steps("abc1234", Path("/top"), into, results, 4, Path("/baselines"), None)
+        figures_of = lambda planned: next(each["command"] for each in planned if each["name"] == "figures")
+        self.assertEqual(figures_of(quick)[-1], "--quick")
+        self.assertEqual(figures_of(quick)[:-1], figures_of(full))
+        self.assertNotIn("--quick", figures_of(full))
+
     def test_the_shared_step_runs_the_stress_tests_after_the_exhaustive_ones_on_a_quiet_host_when_asked(self):
         into, results = Path("/into"), Path("/results")
         planned = run.shared_steps("abc1234", Path("/top"), into, results, 4, Path("/baselines"), None, 5.0, True,
