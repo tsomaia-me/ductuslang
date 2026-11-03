@@ -629,6 +629,9 @@ impl Core<'_> {
             return Ok(Ok(Fact::PLACEHOLDER));
         }
         let wrong_test = !matches!(test.leaf, Leaf::Bool | Leaf::Placeholder | Leaf::Error);
+        if wrong_test {
+            self.draw_at(Code::ConditionType, condition, "the condition is a `bool`")?;
+        }
         if leaves.contains(&Leaf::Placeholder) {
             return Ok(Ok(Fact::PLACEHOLDER));
         }
@@ -644,7 +647,6 @@ impl Core<'_> {
             return Ok(Ok(Fact::PLACEHOLDER));
         }
         if wrong_test {
-            self.draw_at(Code::ConditionType, condition, "the condition is a `bool`")?;
             return Ok(Ok(Fact::ERROR));
         }
         if leaves.contains(&Leaf::Error) {

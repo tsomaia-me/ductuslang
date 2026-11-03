@@ -14,8 +14,8 @@ use crate::semantics::counted_walk::CountedWalk;
 use crate::semantics::ir::FloatLit;
 use crate::semantics::ir::flat::{NONE, Op, binary_of};
 use crate::semantics::operators::{
-    EvalTy, I64Position, Operands, Operator, Value, convert, index_outside, int_range, outside_i64,
-    plan_op, represents, ty_name,
+    EvalTy, I64Position, Operands, Operator, Value, convert, converted_integer, index_outside,
+    int_range, outside_i64, plan_op, represents, ty_name,
 };
 use symphonyscript_core::BinaryOp;
 
@@ -90,10 +90,23 @@ impl Core<'_> {
                 .into_iter()
                 .map(|at| (at, ty))
                 .collect(),
-            Op::Div => {
-                let div = if float { ty } else { EvalTy::F32 };
-                vec![(a, div), (b, div)]
+            Op::Div if !float => {
+                let defaulted = self.fact(a)?.fixed.is_none() && self.fact(b)?.fixed.is_none();
+                for operand in [b, a] {
+                    let fact = self.fact(operand)?;
+                    if defaulted && fact.dims.is_empty() && fact.leaf == Leaf::Int {
+                        steps.push(Step::Float(operand, EvalTy::F32));
+                        steps.push(Step::Visit(operand, EvalTy::Exact));
+                    } else if let Some(own) = self.own_width(operand, EvalTy::F32)? {
+                        steps.push(Step::Widen(EvalTy::F32));
+                        steps.push(Step::Visit(operand, own));
+                    } else {
+                        steps.push(Step::Visit(operand, EvalTy::F32));
+                    }
+                }
+                return Ok(());
             }
+            Op::Div => vec![(a, ty), (b, ty)],
             Op::IntDiv => {
                 let mut own = self.integral(node)?;
                 if int_range(own).is_some() && int_range(ty).is_some() && widens(own, ty) {
@@ -599,6 +612,13 @@ impl Core<'_> {
                 Step::Widen(target) => {
                     if let Some(value) = frame.values.pop() {
                         frame.values.push(convert(value, target));
+                    }
+                }
+                Step::Float(operand, target) => {
+                    if let Some(value) = frame.values.pop() {
+                        frame
+                            .values
+                            .push(converted_integer(self, operand, true, value, target)?);
                     }
                 }
                 Step::Fit(read, read_ty) => {

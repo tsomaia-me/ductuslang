@@ -82,7 +82,12 @@ impl Core<'_> {
                 (ty, true)
             }
         } else if op == Op::If && position == 0 {
-            if self.faulty(a)? || self.fact(node)?.leaf != Leaf::Error {
+            let condition = self.fact(a)?;
+            let wrong_test = condition.dims.is_empty()
+                && !matches!(condition.leaf, Leaf::Bool | Leaf::Placeholder | Leaf::Error);
+            if wrong_test {
+                (None, false)
+            } else if self.faulty(a)? || self.fact(node)?.leaf != Leaf::Error {
                 (Some(EvalTy::Bool), false)
             } else {
                 (None, false)

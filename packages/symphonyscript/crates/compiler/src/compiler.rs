@@ -148,6 +148,20 @@ impl Compiler {
             .map(|(diagnostics, _)| diagnostics)
     }
 
+    #[cfg(test)]
+    pub(crate) fn checked_by_new_core_without_twins(
+        &self,
+        sources: &[Source],
+    ) -> Option<Vec<Diagnostic>> {
+        self.analyzed_by(
+            sources,
+            |_| (),
+            |_, _, found| Ok(found.to_vec()),
+            Route::NewCoreOnly,
+        )
+        .map(|(diagnostics, _)| diagnostics)
+    }
+
     fn analyzed_by<R>(
         &self,
         sources: &[Source],

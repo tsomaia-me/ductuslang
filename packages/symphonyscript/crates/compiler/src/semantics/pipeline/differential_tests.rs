@@ -39,6 +39,34 @@ fn the_reviewed_moves_draw_their_expected_sets_on_the_new_core_464_476() {
     }
 }
 
+#[test]
+fn the_twin_pass_alone_adds_the_type_mismatches_marked_in_the_reviewed_sets_476() {
+    let new =
+        Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("the vocabulary compiles");
+    let mut marked = 0;
+    let mut wrong = Vec::new();
+    for (ledger, text, _) in REVIEWED.iter().copied() {
+        let alone = new
+            .checked_by_new_core_without_twins(&[source(text)])
+            .expect("the new core takes the program");
+        let alone = spanned(text, &alone);
+        let expected = reviewed(text)
+            .map(|(_, expected)| expected)
+            .unwrap_or_default();
+        let added: Vec<&(String, String)> = expected
+            .iter()
+            .filter(|wanted| wanted.0 == "type-mismatch" && !alone.contains(wanted))
+            .collect();
+        let twin_pass = ledger.contains("the twin pass's");
+        marked += usize::from(twin_pass);
+        if added.is_empty() == twin_pass {
+            wrong.push(format!("{ledger}: {text}\n  the twin pass adds {added:?}"));
+        }
+    }
+    assert!(wrong.is_empty(), "{}", wrong.join("\n"));
+    assert_eq!(marked, 10);
+}
+
 fn assert_equal(corpora: &[Corpus]) -> u64 {
     let mut taken = 0;
     let mut differing = Vec::new();
@@ -268,7 +296,7 @@ fn the_shared_steps_programs_draw_the_old_engines_sets_on_the_new_core_beside_th
     }
 }
 
-const EXHAUSTIVE_CLASSES: [(&str, &[(&str, &str)]); 10] = [
+const EXHAUSTIVE_CLASSES: [(&str, &[(&str, &str)]); 13] = [
     (
         "state f([1.5, 2.5])\nstate n(0)\nClip c:\n    Note/(f[n])\n",
         &[("type-mismatch", "f[n]")],
@@ -332,6 +360,27 @@ const EXHAUSTIVE_CLASSES: [(&str, &[(&str, &str)]); 10] = [
             ("conversion-type", "i32(true)"),
             ("conversion-type", "i32(true)"),
             ("conversion-type", "i32(true)"),
+            ("does-not-fit", "300000000000"),
+        ],
+    ),
+    (
+        "Clip c:\n    Note/([1, 2][(1 - 300000000000) / 2])\n",
+        &[
+            ("index-type", "(1 - 300000000000) / 2"),
+            ("does-not-fit", "1 - 300000000000"),
+        ],
+    ),
+    (
+        "Clip c:\n    Note/([1, 2][300000000000 / 2])\n",
+        &[
+            ("index-type", "300000000000 / 2"),
+            ("does-not-fit", "300000000000"),
+        ],
+    ),
+    (
+        "Clip c:\n    Note/([1, 2][i32(1) / 300000000000])\n",
+        &[
+            ("index-type", "i32(1) / 300000000000"),
             ("does-not-fit", "300000000000"),
         ],
     ),

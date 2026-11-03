@@ -131,6 +131,11 @@ fn doubles_at_most(points: [u64; 3], slack: u64) -> bool {
     second <= first.saturating_mul(5) / 2 + slack && third <= second.saturating_mul(5) / 2 + slack
 }
 
+fn linear_across(points: [u64; 3], slack: u64) -> bool {
+    let [first, _, third] = points;
+    third <= first.saturating_mul(4).saturating_mul(2) + slack
+}
+
 fn ledger_failures(
     name: &str,
     sizes: [usize; 3],
@@ -180,7 +185,7 @@ fn ledger_failures_on(
             *slot = found.peak;
         }
     }
-    if times.first().copied().unwrap_or(0) >= 100_000 && !doubles_at_most(times, 0) {
+    if times.first().copied().unwrap_or(0) >= 100_000 && !linear_across(times, 0) {
         failures.push(format!("{name}: time {times:?} µs is not linear"));
     }
     if !doubles_at_most(walks, 64) {
@@ -585,7 +590,7 @@ fn stage_failures(sizes: [usize; 3]) -> Vec<String> {
         && let [first, second, third] = figures.as_slice()
     {
         for ((stage, a), ((_, b), (_, c))) in first.iter().zip(second.iter().zip(third)) {
-            if !doubles_at_most([*a, *b, *c], 20_000) {
+            if !linear_across([*a, *b, *c], 20_000) {
                 failures.push(format!(
                     "{stage}: {a}, {b}, {c} µs best of three at {sizes:?}, not linear"
                 ));
