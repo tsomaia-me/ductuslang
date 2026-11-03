@@ -5,6 +5,73 @@ use crate::syntax::front_end_goldens::{
     spec_and_lesson_corpora,
 };
 
+type Reviewed = (
+    &'static str,
+    &'static str,
+    &'static [(&'static str, &'static str)],
+);
+
+const REVIEWED: [Reviewed; 2] = [
+    (
+        "476",
+        "let q = 1\nClip k:\n    Note/((true is q)[if true then [1, 2][5] else [1, 2]])\n",
+        &[
+            ("not-an-array", "true is q"),
+            ("operand-type", "true is q"),
+            ("type-mismatch", "if true then [1, 2][5] else [1, 2]"),
+            ("index-out-of-range", "5"),
+        ],
+    ),
+    (
+        "476",
+        "Clip k:\n    Note/([1, 2][true..])\n",
+        &[("type-mismatch", "[1, 2][true..]"), ("index-type", "true")],
+    ),
+];
+
+fn spanned(text: &str, found: &[crate::diagnostics::Diagnostic]) -> Vec<(String, String)> {
+    let mut spans: Vec<(String, String)> = found
+        .iter()
+        .filter(|diagnostic| diagnostic.code != crate::diagnostics::Code::NoEntryInstance)
+        .map(|diagnostic| {
+            let range = diagnostic.span.range.start as usize..diagnostic.span.range.end as usize;
+            (
+                diagnostic.code.to_string(),
+                text.get(range).unwrap_or_default().to_string(),
+            )
+        })
+        .collect();
+    spans.sort();
+    spans
+}
+
+fn reviewed(text: &str) -> Option<(&'static str, Vec<(String, String)>)> {
+    REVIEWED
+        .iter()
+        .find(|(_, program, _)| *program == text)
+        .map(|(ledger, _, expected)| {
+            let mut expected: Vec<(String, String)> = expected
+                .iter()
+                .map(|(code, span)| ((*code).to_string(), (*span).to_string()))
+                .collect();
+            expected.sort();
+            (*ledger, expected)
+        })
+}
+
+#[test]
+fn the_reviewed_moves_draw_their_expected_sets_on_the_new_core_476() {
+    let new =
+        Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("the vocabulary compiles");
+    for (ledger, text, _) in REVIEWED {
+        let found = new
+            .checked_by_new_core(&[source(text)])
+            .expect("the new core takes the program");
+        let expected = reviewed(text).map(|(_, expected)| expected);
+        assert_eq!(Some(spanned(text, &found)), expected, "{ledger}: {text}");
+    }
+}
+
 fn assert_equal(corpora: &[Corpus]) -> u64 {
     let mut taken = 0;
     let mut differing = Vec::new();
@@ -25,8 +92,19 @@ fn assert_equal(corpora: &[Corpus]) -> u64 {
                 .filter(|diagnostic| diagnostic.code != crate::diagnostics::Code::ReactiveLet)
                 .cloned()
                 .collect();
+            if let Some((ledger, wanted)) = reviewed(text) {
+                if spanned(text, &found) == wanted {
+                    moved.push(format!("{ledger} {}:\n{text}", corpus.name));
+                } else {
+                    differing.push(format!(
+                        "{ledger} {}:\n{text}\n  new core {found:#?}",
+                        corpus.name
+                    ));
+                }
+                continue;
+            }
             if found != expected && without_reactive_lets == expected {
-                moved.push(format!("{}:\n{text}", corpus.name));
+                moved.push(format!("464 {}:\n{text}", corpus.name));
                 continue;
             }
             if found != expected {
@@ -39,7 +117,7 @@ fn assert_equal(corpora: &[Corpus]) -> u64 {
     }
     eprintln!("the new core took {taken} programs");
     eprintln!(
-        "{} of them draw `reactive-let` beside another fault (G3, ledger 464):\n{}",
+        "{} of them move by a reviewed ledger rule (464, 476):\n{}",
         moved.len(),
         moved.join("\n")
     );
