@@ -1234,9 +1234,18 @@ fn check_case(rows: &Rows, case: &Case, compilers: &mut Compilers, outcome: &mut
         return;
     }
     let let_at = built.text.find("let x");
+    let value_at = let_at.and_then(|at| {
+        built
+            .text
+            .get(at..)
+            .and_then(|rest| rest.find(" = "))
+            .map(|equals| at + equals + " = ".len())
+    });
     let old_engine_without_the_annotations_fault: Spans = expected
         .iter()
-        .filter(|(code, start, _)| *code != Code::TypeMismatch || Some(*start) != let_at)
+        .filter(|(code, start, _)| {
+            *code != Code::TypeMismatch || (Some(*start) != let_at && Some(*start) != value_at)
+        })
         .cloned()
         .collect();
     if !by_new_core

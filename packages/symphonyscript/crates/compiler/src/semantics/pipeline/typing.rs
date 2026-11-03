@@ -1,3 +1,4 @@
+use super::annotation::annotated_fact;
 use super::core::{Core, Stage};
 use super::decl_ref::DeclRef;
 use super::declined::Declined;
@@ -276,14 +277,17 @@ impl Core<'_> {
                         return self.pending(Need::Local(at, root, self.inst));
                     }
                     if self.cyclic.get(at as usize).copied().unwrap_or(false)
-                        || self.let_reads_cell(at)?
+                        || (!local && self.let_reads_cell(at)?)
                     {
                         Fact::PLACEHOLDER
                     } else {
                         self.let_fact(at)?
                     }
                 }
-                DeclRef::Cell(at) => self.fact(self.cell_root(at)?)?,
+                DeclRef::Cell(at) => match self.cell_annotation_ty(at)? {
+                    Some(ty) => annotated_fact(ty),
+                    None => self.fact(self.cell_root(at)?)?,
+                },
                 DeclRef::Param(position) => self.param_fact(position)?.0,
                 DeclRef::Fn(_) => return Ok(Err(Declined(Reason::FunctionValue))),
                 DeclRef::Duplicate | DeclRef::None => Fact::PLACEHOLDER,

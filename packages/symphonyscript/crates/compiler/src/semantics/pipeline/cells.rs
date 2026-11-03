@@ -137,6 +137,12 @@ impl Core<'_> {
     pub fn check_cells(&mut self) -> Stage<()> {
         for at in 0..u32::try_from(self.ir.cells.len()).unwrap_or(0) {
             let root = self.cell_root(at)?;
+            if let Some(ty) = self.cell_annotation_ty(at)? {
+                if let Err(declined) = self.check_cell_annotation(at, ty)? {
+                    return Ok(Err(declined));
+                }
+                continue;
+            }
             let checked = match self.own_ty(root)? {
                 Some(own) if self.derived(at) && !self.is_kept(root)? => {
                     self.evaluate(root, flexible(own))?.map(|_| ())
@@ -225,10 +231,43 @@ impl Core<'_> {
 }
 
 impl Core<'_> {
-    pub fn reads_float_cell(&self, root: u32) -> Result<bool, Internal> {
+    pub fn reads_float_cell(&mut self, root: u32) -> Result<bool, Internal> {
+        let outer = self.inst;
+        let found = self.reads_float_cell_in(root);
+        self.inst = outer;
+        found
+    }
+
+    fn local_or_param(&self, node: u32) -> Result<bool, Internal> {
+        Ok(match self.bound(node)? {
+            DeclRef::Param(_) => true,
+            DeclRef::Let(at) => self
+                .ir
+                .lets
+                .get(at as usize)
+                .is_some_and(|rec| rec.owner != NONE),
+            DeclRef::None
+            | DeclRef::Cell(_)
+            | DeclRef::Instance(_)
+            | DeclRef::Duplicate
+            | DeclRef::Fn(_) => false,
+        })
+    }
+
+    fn reads_float_cell_in(&mut self, root: u32) -> Result<bool, Internal> {
         let mut node = root;
         loop {
             let (op, a, b, _) = self.ir.node(node)?;
+            if matches!(op, Op::Call | Op::NamedCall)
+                && let Some(body) = self.body_of_call(node)
+            {
+                self.inst = body;
+                node = self.body_value(body)?;
+                continue;
+            }
+            if op == Op::Name && self.local_or_param(node)? {
+                return self.is_reactive(node);
+            }
             if matches!(op, Op::Index | Op::IndexFromEnd) {
                 let index = self.fact(b)?;
                 if index.leaf != Leaf::Int || !index.dims.is_empty() || self.is_reactive(b)? {

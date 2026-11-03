@@ -757,6 +757,7 @@ impl Core<'_> {
                         }
                     }
                     if !self.owning
+                        && self.cell_annotation_ty(at)?.is_none()
                         && let Some(range) = int_range(ty)
                         && let Some(rec) = self.ir.cells.get(at as usize).copied()
                         && rec.rule == NONE

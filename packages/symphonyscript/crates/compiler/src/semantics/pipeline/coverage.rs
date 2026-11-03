@@ -179,7 +179,7 @@ fn plain_cell(ir: &FlatIr, rec: &CellRec) -> bool {
     (host_fed || derived)
         && rec.clock.0 == rec.clock.1
         && rec.capacity.is_none()
-        && !annotated(ir, rec.binder)
+        && (!annotated(ir, rec.binder) || (host_fed && scalar_annotation(ir, rec.binder)))
 }
 
 fn plain_function(ir: &FlatIr, rec: &FnRec) -> bool {

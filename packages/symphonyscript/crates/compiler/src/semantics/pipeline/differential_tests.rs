@@ -848,3 +848,71 @@ fn every_twin_of_the_twin_pass_draws_an_annotated_lets_type_mismatch_the_twin_pa
         assert_eq!(classes.len(), 1, "{text}");
     }
 }
+
+const CELL_ANNOTATIONS: [&str; 21] = [
+    "state q(0): i32\nClip c:\n    Note/(q)\n",
+    "state q(1.5): i32\nClip c:\n    Note/(q)\n",
+    "state q([1]): i32\nClip c:\n    Note/(q)\n",
+    "state q(true): i32\nClip c:\n    Note/(q)\n",
+    "state q(300): u8\nClip c:\n    Note/(q)\n",
+    "state q(1): f32\nClip c:\n    Note/(q)\n",
+    "state q(0.5): f64\nClip c:\n    Note/(q)\n",
+    "state q(1): bool\nClip c:\n    Note/(q)\n",
+    "state q(false): bool\nClip c:\n    Note/(q)\n",
+    "state q(300000000000): i32\nClip c:\n    Note/(q)\n",
+    "state q(i64(1)): i32\nClip c:\n    Note/(q)\n",
+    "state q(u8(1)): i32\nClip c:\n    Note/(q)\n",
+    "state q(-1): u8\nClip c:\n    Note/(q)\n",
+    "state q(x): i32\nClip c:\n    Note/(q)\n",
+    "state q(1 + true): i32\nClip c:\n    Note/(q)\n",
+    "state q([1, 2][5]): i32\nClip c:\n    Note/(q)\n",
+    "state q(300): u8\n",
+    "state q(0): u8\nClip c:\n    Note/([1, 2][q])\n",
+    "state q(0): u8\nlet a = q + 1\nClip c:\n    Note/(a)\n",
+    "state q(0): i32\nClip c:\n    Note | velocity=(q)\n",
+    "state q(0): u8\nClip c:\n    Note/(q + 300)\n",
+];
+
+#[test]
+fn a_cells_scalar_annotation_types_its_reads_and_checks_its_init_as_the_old_engine_does() {
+    let old = Compiler::new(&symphonyscript_fixtures::vocabulary())
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
+    let new =
+        Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("the vocabulary compiles");
+    for text in CELL_ANNOTATIONS {
+        let sources = [source(text)];
+        let found = new
+            .checked_by_new_core(&sources)
+            .unwrap_or_else(|| panic!("the new core takes {text}"));
+        assert_eq!(found, old.check(&sources), "{text}");
+    }
+}
+
+const FLOAT_CELLS_THROUGH_A_CALL: [&str; 8] = [
+    "state tw(0.5): f64\nfn h(z):\n    let x = tw\n    x\nClip c:\n    Note/(h(0))\n",
+    "state tw(0.5)\nfn h(z):\n    let x = tw\n    x\nClip c:\n    Note/(h(0))\n",
+    "state tw(0.5)\nfn h(z): tw\nClip c:\n    Note/(h(0))\n",
+    "state tw(0.5)\nfn h(z):\n    let x = tw + 1\n    x\nClip c:\n    Note/(h(0))\n",
+    "state s1 = [1.5]\nstate tw(0.5): f64\nfn pass(v): v\nClip c:\n    Note/((pass(s1))[0])\n",
+    "state s1(1.5)\nfn pass(v): v\nClip c:\n    Note/(pass(s1))\n",
+    "state s1(1.5)\nfn pass(v, w): w\nClip c:\n    Note/(pass(1, pass(2, s1)))\n",
+    "state n1(false)\nfn pass(v): v\nClip c:\n    Note/((pass(if n1 then [1.5] else [1.5]))[0])\n",
+];
+
+#[test]
+fn a_float_cell_read_through_a_call_or_a_local_let_where_an_integer_is_expected_draws_float_to_integer()
+ {
+    let old = Compiler::new(&symphonyscript_fixtures::vocabulary())
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
+    let new =
+        Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("the vocabulary compiles");
+    for text in FLOAT_CELLS_THROUGH_A_CALL {
+        let sources = [source(text)];
+        let found = new
+            .checked_by_new_core(&sources)
+            .unwrap_or_else(|| panic!("the new core takes {text}"));
+        assert_eq!(found, old.check(&sources), "{text}");
+    }
+}

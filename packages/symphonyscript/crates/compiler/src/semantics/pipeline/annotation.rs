@@ -42,7 +42,48 @@ impl Core<'_> {
             .lets
             .get(at as usize)
             .ok_or(Internal::missed("IR let"))?;
-        let annotation = self.ir.binder(rec.binder)?.annotation;
+        self.binder_ty(rec.binder)
+    }
+
+    pub fn cell_annotation_ty(&self, at: u32) -> Result<Option<EvalTy>, Internal> {
+        let rec = self
+            .ir
+            .cells
+            .get(at as usize)
+            .ok_or(Internal::missed("IR cell"))?;
+        self.binder_ty(rec.binder)
+    }
+
+    pub fn check_cell_annotation(&mut self, at: u32, ty: EvalTy) -> Stage<()> {
+        let root = self.cell_root(at)?;
+        let fact = match self.ensure_typed(root)? {
+            Ok(fact) => fact,
+            Err(declined) => return Ok(Err(declined)),
+        };
+        if fact.dims.is_empty() || matches!(fact.leaf, Leaf::Placeholder | Leaf::Error) {
+            let name = self.ir.binder(self.cell_binder(at)?)?.name;
+            let entry = self.ir.name(name).ok_or(Internal::missed("IR name"))?;
+            let text = self.ir.symbols.text(entry.sym).to_string();
+            return self.bind_value(root, &text, ty);
+        }
+        self.draw_at(
+            Code::TypeMismatch,
+            root,
+            "the init's shape differs from the cell's type",
+        )?;
+        self.own_check(root)
+    }
+
+    fn cell_binder(&self, at: u32) -> Result<u32, Internal> {
+        self.ir
+            .cells
+            .get(at as usize)
+            .map(|rec| rec.binder)
+            .ok_or(Internal::missed("IR cell"))
+    }
+
+    fn binder_ty(&self, binder: u32) -> Result<Option<EvalTy>, Internal> {
+        let annotation = self.ir.binder(binder)?.annotation;
         if annotation == NONE {
             return Ok(None);
         }
