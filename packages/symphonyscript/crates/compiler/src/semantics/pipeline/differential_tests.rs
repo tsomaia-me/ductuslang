@@ -510,3 +510,65 @@ fn faulty_line_let(text: &str, vocabulary: &symphonyscript_core::Vocabulary) -> 
                 .any(|diagnostic| range.contains(&(diagnostic.span.range.start as usize)))
     })
 }
+
+const LOCAL_CLASHES: [(&str, &[(&str, &str)]); 10] = [
+    (
+        "fn f(Saw): Saw + 1\nClip c:\n    Note/(f(1))\n",
+        &[("variant-name", "Saw")],
+    ),
+    (
+        "fn f(Saw): Saw + true\nClip c:\n    Note/(f(1))\n",
+        &[("operand-type", "Saw + true"), ("variant-name", "Saw")],
+    ),
+    (
+        "fn f(x):\n    let Sine = x\n    Sine + 1\nClip c:\n    Note/(f(1))\n",
+        &[("variant-name", "Sine")],
+    ),
+    (
+        "let s = for Saw in 0..3 into a from 0: a + Saw\nClip c:\n    Note/(s)\n",
+        &[("variant-name", "Saw")],
+    ),
+    (
+        "let s = for i in 0..3 into a from 0:\n    let Saw = i\n    a + Saw\nClip c:\n    Note/(s)\n",
+        &[("variant-name", "Saw")],
+    ),
+    (
+        "let s = for Note in 0..3 into a from 0: a + Note\nClip c:\n    Note/(s)\n",
+        &[("for-variable-clash", "Note")],
+    ),
+    (
+        "let s = for abs in 0..3 into a from 0: a + abs\nClip c:\n    Note/(s)\n",
+        &[("for-variable-clash", "abs")],
+    ),
+    (
+        "let s = for i in 0..3 into a from 0:\n    let Note = i\n    a + Note\nClip c:\n    Note/(s)\n",
+        &[("for-variable-clash", "Note")],
+    ),
+    (
+        "let k = 1\nlet s = for i in 0..3 into a from 0:\n    let k = i\n    a + k\nClip c:\n    Note/(s)\n",
+        &[("for-variable-clash", "k")],
+    ),
+    ("fn f(Note): Note + 1\nClip c:\n    Note/(f(1))\n", &[]),
+];
+
+#[test]
+fn a_local_name_equal_to_a_variant_or_a_vocabulary_name_draws_as_the_old_engine_draws() {
+    let old = Compiler::new(&symphonyscript_fixtures::vocabulary())
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
+    let new =
+        Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("the vocabulary compiles");
+    for (text, expected) in LOCAL_CLASHES {
+        let sources = [source(text)];
+        let found = new
+            .checked_by_new_core(&sources)
+            .expect("the new core takes the program");
+        let mut wanted: Vec<(String, String)> = expected
+            .iter()
+            .map(|(code, span)| ((*code).to_string(), (*span).to_string()))
+            .collect();
+        wanted.sort();
+        assert_eq!(spanned(text, &found), wanted, "{text}");
+        assert_eq!(found, old.check(&sources), "{text}");
+    }
+}

@@ -154,8 +154,21 @@ impl Core<'_> {
             let bound = self.bound_names(owner)?;
             for (position, name) in bound.iter().enumerate() {
                 let text = self.ir.symbols.text(Sym(name.sym)).to_string();
-                if self.variants.owner(&text).is_some() {
-                    return Ok(Some(Reason::LocalClash));
+                if let Some(owner_enum) = self.variants.owner(&text) {
+                    let owner_enum = self
+                        .vocabulary
+                        .enum_decl(owner_enum)
+                        .ok_or(Internal::missed("enum"))?
+                        .name
+                        .clone();
+                    self.draw(
+                        Code::VariantName,
+                        name.span.clone(),
+                        format!(
+                            "`{text}` is a variant of the enum `{owner_enum}` and is never a declared name"
+                        ),
+                    );
+                    continue;
                 }
                 let first = bound
                     .get(..position)
@@ -200,8 +213,14 @@ impl Core<'_> {
                 if !(enclosing || top || vocabulary) {
                     continue;
                 }
-                if matches!(name.decl, DeclRef::Let(_)) || vocabulary {
-                    return Ok(Some(Reason::LocalClash));
+                let summary =
+                    format!("`{text}` equals a visible name, and a `for` binds only new names");
+                if vocabulary && !(enclosing || top) {
+                    let diagnostic =
+                        Diagnostic::new(Code::ForVariableClash, name.span.clone(), summary)
+                            .with_help("rename the name the `for` binds");
+                    self.diagnostics.push(diagnostic);
+                    continue;
                 }
                 let Some(visible) = self.visible_span(owner, name.sym)? else {
                     return Ok(Some(Reason::LocalClash));
@@ -209,7 +228,7 @@ impl Core<'_> {
                 self.draw_local(
                     Code::ForVariableClash,
                     name.span.clone(),
-                    format!("`{text}` equals a visible name, and a `for` binds only new names"),
+                    summary,
                     "rename the name the `for` binds",
                     (visible, "the visible name it equals"),
                 );
