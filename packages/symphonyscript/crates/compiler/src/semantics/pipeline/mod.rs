@@ -24,6 +24,7 @@ mod pick;
 mod reason;
 mod run;
 mod slice;
+mod stages;
 mod step;
 mod store;
 mod typing;

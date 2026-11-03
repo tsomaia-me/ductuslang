@@ -1,7 +1,7 @@
 use super::leaf::Leaf;
 use crate::semantics::operators::EvalTy;
 
-#[derive(Clone, PartialEq, Eq, Debug)]
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub(crate) struct Fact {
     pub leaf: Leaf,
     pub dims: Vec<u32>,

@@ -103,6 +103,16 @@ impl Core<'_> {
             }
             Op::Lt | Op::Le | Op::Gt | Op::Ge | Op::Is | Op::IsNot => {
                 let pair = self.pair_ty(a, b)?;
+                if pair == EvalTy::Exact {
+                    for operand in [b, a] {
+                        let fact = self.fact(operand)?;
+                        if fact.fixed.is_none() && fact.dims.is_empty() && fact.leaf == Leaf::Int {
+                            steps.push(Step::Fit(operand, EvalTy::I64));
+                        }
+                        steps.push(Step::Visit(operand, pair));
+                    }
+                    return Ok(());
+                }
                 vec![(a, pair), (b, pair)]
             }
             Op::And | Op::Or => vec![(a, EvalTy::Bool), (b, EvalTy::Bool)],

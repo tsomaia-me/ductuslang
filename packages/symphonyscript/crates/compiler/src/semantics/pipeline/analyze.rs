@@ -5,6 +5,7 @@ use super::coverage::{covers, declines};
 use super::declined::Declined;
 use super::reason::Reason;
 use super::run::Run;
+use super::stages::Stages;
 use crate::semantics::Internal;
 use crate::semantics::collection::Variants;
 use crate::semantics::ir::flat::FlatIr;
@@ -47,17 +48,24 @@ pub(crate) fn analyze(inputs: &Inputs<'_>) -> Result<Option<Run>, Internal> {
     if faulty {
         return declined(Reason::FrontEndFault);
     }
+    let mut stages = Stages::begin(ir.op.len());
     let mut core = Core::new(ir, inputs.vocabulary, inputs.variants, inputs.limits);
     if let Err(reason) = stage(core.collect())? {
         return declined(reason);
     }
+    stages.mark("collect");
+    if core.stop.is_some() {
+        return Ok(Some(finished(core)));
+    }
     if let Err(reason) = stage(core.expand())? {
         return declined(reason);
     }
+    stages.mark("expand");
     core.declaration_cycles()?;
     if let Err(reason) = stage(core.type_cells())? {
         return declined(reason);
     }
+    stages.mark("resolve");
     if let Err(reason) = stage(core.check_attributes())? {
         return declined(reason);
     }
@@ -71,6 +79,11 @@ pub(crate) fn analyze(inputs: &Inputs<'_>) -> Result<Option<Run>, Internal> {
     core.check_counts()?;
     core.check_reachability()?;
     core.consistency()?;
+    stages.mark("infer and check");
+    Ok(Some(finished(core)))
+}
+
+fn finished(mut core: Core<'_>) -> Run {
     if let Some((at, diagnostic)) = core.stop.take() {
         core.diagnostics.truncate(at);
         core.diagnostics.push(diagnostic);
@@ -78,8 +91,8 @@ pub(crate) fn analyze(inputs: &Inputs<'_>) -> Result<Option<Run>, Internal> {
     let mut seen = std::collections::HashSet::new();
     core.diagnostics
         .retain(|diagnostic| seen.insert(format!("{diagnostic:?}")));
-    Ok(Some(Run {
+    Run {
         diagnostics: core.diagnostics,
         placeholders: core.placeholders,
-    }))
+    }
 }

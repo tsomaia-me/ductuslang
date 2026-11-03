@@ -218,7 +218,24 @@ impl Core<'_> {
             }
         }
         let mut state = vec![NEW; count];
-        for start in 0..count {
+        let mut starts: Vec<usize> = Vec::new();
+        for (at, rec) in self.ir.lets.iter().enumerate() {
+            if rec.owner == NONE {
+                starts.push(functions as usize + at);
+            }
+        }
+        for local in 0..self.ir.op.len() {
+            if self.ir.op.get(local) != Some(&Op::Call) {
+                continue;
+            }
+            let node = self.ir.base + u32::try_from(local).unwrap_or(0);
+            if self.function_owner(node)? == NONE
+                && let Some(callee) = self.callee(node)?
+            {
+                starts.push(callee as usize);
+            }
+        }
+        for start in starts {
             if state.get(start) != Some(&NEW) {
                 continue;
             }
@@ -262,7 +279,7 @@ impl Core<'_> {
         Ok(false)
     }
 
-    fn function_name(&self, function: u32) -> Result<String, Internal> {
+    pub fn function_name(&self, function: u32) -> Result<String, Internal> {
         let rec = self
             .ir
             .fns
@@ -330,11 +347,10 @@ impl Core<'_> {
             facts.push(self.fact(*arg)?);
             reactive.push(self.is_reactive(*arg)?);
         }
-        let found = self.bodies.iter().position(|body| {
-            body.function == function && body.args == facts && body.reactive_args == reactive
-        });
+        let key = (function, facts.clone(), reactive.clone());
+        let found = self.body_index.get(&key).copied();
         let body = match found {
-            Some(body) => u32::try_from(body).unwrap_or(NONE),
+            Some(body) => body,
             None => {
                 self.bodies.push(BodyInstance {
                     function,
@@ -343,6 +359,7 @@ impl Core<'_> {
                     diagnostics: Vec::new(),
                 });
                 let body = u32::try_from(self.bodies.len() - 1).unwrap_or(NONE);
+                self.body_index.insert(key, body);
                 if let Err(declined) = self.type_body(body)? {
                     return Ok(Err(declined));
                 }
@@ -566,7 +583,7 @@ impl Core<'_> {
         Ok(None)
     }
 
-    pub fn inline_count(&self) -> Result<u64, Internal> {
+    pub fn inline_charges(&self) -> Result<Vec<(u32, u32, u64)>, Internal> {
         let count = self.ir.fns.len();
         let mut inner: Vec<Option<u64>> = vec![None; count];
         let mut calls_of: Vec<Vec<u32>> = vec![Vec::new(); count];
@@ -583,6 +600,7 @@ impl Core<'_> {
                 out.push(callee);
             }
         }
+        let mut opened = vec![false; count];
         for start in 0..count {
             let mut stack = vec![u32::try_from(start).unwrap_or(0)];
             while let Some(function) = stack.last().copied() {
@@ -590,11 +608,17 @@ impl Core<'_> {
                     stack.pop();
                     continue;
                 }
+                if let Some(slot) = opened.get_mut(function as usize) {
+                    *slot = true;
+                }
                 let callees = calls_of.get(function as usize).cloned().unwrap_or_default();
                 let pending: Vec<u32> = callees
                     .iter()
                     .copied()
-                    .filter(|callee| inner.get(*callee as usize).is_some_and(Option::is_none))
+                    .filter(|callee| {
+                        inner.get(*callee as usize).is_some_and(Option::is_none)
+                            && !opened.get(*callee as usize).copied().unwrap_or(true)
+                    })
                     .collect();
                 if pending.is_empty() {
                     let mut total = 0u64;
@@ -611,7 +635,7 @@ impl Core<'_> {
                 }
             }
         }
-        let mut total = 0u64;
+        let mut charges = Vec::new();
         for local in 0..self.ir.op.len() {
             if self.ir.op.get(local) != Some(&Op::Call) {
                 continue;
@@ -622,10 +646,15 @@ impl Core<'_> {
             }
             if let Some(callee) = self.callee(node)? {
                 let below = inner.get(callee as usize).copied().flatten().unwrap_or(0);
-                total = total.saturating_add(1).saturating_add(below);
+                let (lo, _) = self.ir.span(node)?;
+                charges.push((
+                    (self.file_of(node), lo),
+                    (node, callee, below.saturating_add(1)),
+                ));
             }
         }
-        Ok(total)
+        charges.sort_by_key(|(order, _)| *order);
+        Ok(charges.into_iter().map(|(_, charge)| charge).collect())
     }
 }
 

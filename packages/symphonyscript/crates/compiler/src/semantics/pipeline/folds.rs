@@ -216,14 +216,11 @@ impl Core<'_> {
     }
 
     fn fold_instance(&mut self, owner: u32, args: Vec<Fact>) -> Stage<u32> {
-        let found = self
-            .bodies
-            .iter()
-            .position(|instance| instance.function == owner && instance.args == args);
-        if let Some(at) = found {
-            return Ok(Ok(u32::try_from(at).unwrap_or(NONE)));
-        }
         let reactive_args = vec![false; args.len()];
+        let key = (owner, args.clone(), reactive_args.clone());
+        if let Some(at) = self.body_index.get(&key).copied() {
+            return Ok(Ok(at));
+        }
         self.bodies.push(BodyInstance {
             function: owner,
             args,
@@ -231,6 +228,7 @@ impl Core<'_> {
             diagnostics: Vec::new(),
         });
         let at = u32::try_from(self.bodies.len() - 1).unwrap_or(NONE);
+        self.body_index.insert(key, at);
         if let Err(declined) = self.type_body(at)? {
             return Ok(Err(declined));
         }

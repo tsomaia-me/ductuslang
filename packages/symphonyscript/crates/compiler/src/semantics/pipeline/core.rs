@@ -18,6 +18,8 @@ pub(crate) type Stage<T> = Result<Result<T, Declined>, Internal>;
 
 pub(crate) type UseKey = (u32, usize, Vec<u32>);
 
+pub(crate) type BodyKey = (u32, Vec<Fact>, Vec<bool>);
+
 pub(crate) type UseValue = ((bool, u32), CoreValue);
 
 pub(crate) struct Core<'a> {
@@ -59,6 +61,7 @@ pub(crate) struct Core<'a> {
     pub stop: Option<(usize, Diagnostic)>,
     pub fold_nodes: Vec<u32>,
     pub warned: HashSet<u32>,
+    pub body_index: HashMap<BodyKey, u32>,
 }
 
 impl<'a> Core<'a> {
@@ -108,6 +111,7 @@ impl<'a> Core<'a> {
             stop: None,
             fold_nodes: vec![NONE; ir.fors.len()],
             warned: HashSet::new(),
+            body_index: HashMap::new(),
         }
     }
 

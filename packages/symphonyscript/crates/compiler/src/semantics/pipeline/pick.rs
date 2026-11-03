@@ -1,6 +1,7 @@
 use super::core::{Core, Stage};
 use super::core_value::CoreValue;
 use super::decl_ref::DeclRef;
+use super::folds::ANY_LENGTH;
 use crate::semantics::Internal;
 use crate::semantics::ir::flat::{NONE, Op};
 use crate::semantics::operators::{I64Position, Value, index_outside, outside_i64};
@@ -121,11 +122,13 @@ impl Core<'_> {
         let Some((array, slices)) = self.view(a)? else {
             return Err(Internal::missed("a literal array"));
         };
-        let held = self
-            .fact(array)?
-            .dims
-            .iter()
-            .fold(1u64, |held, length| held.saturating_mul(u64::from(*length)));
+        let dims = self.fact(array)?.dims;
+        let held = if dims.contains(&ANY_LENGTH) {
+            0
+        } else {
+            dims.iter()
+                .fold(1u64, |held, length| held.saturating_mul(u64::from(*length)))
+        };
         if held > self.limits.value_elements {
             let message = format!(
                 "this array holds {} elements, more than the {} a compile-time value holds",

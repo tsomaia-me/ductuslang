@@ -106,12 +106,22 @@ fn ledger_failures(
     expected: &dyn Fn(usize) -> Vec<String>,
 ) -> Vec<String> {
     let compiler = Compiler::new(&vocabulary()).expect("the vocabulary compiles");
+    ledger_failures_on(&compiler, name, sizes, program, expected)
+}
+
+fn ledger_failures_on(
+    compiler: &Compiler,
+    name: &str,
+    sizes: [usize; 3],
+    program: impl Fn(usize) -> String,
+    expected: &dyn Fn(usize) -> Vec<String>,
+) -> Vec<String> {
     let mut failures = Vec::new();
     let mut times = [0u64; 3];
     let mut peaks = [0u64; 3];
     for (at, size) in sizes.into_iter().enumerate() {
         let text = program(size);
-        let Some(found) = run(&compiler, &text) else {
+        let Some(found) = run(compiler, &text) else {
             failures.push(format!("{name} at {size}: the new core declined it"));
             continue;
         };
@@ -397,4 +407,114 @@ fn a_choice_refused_as_one_value_draws_one_diagnostic_where_it_is_read_411() {
         let found = run(&compiler, &text).expect("the new core takes the program");
         assert_eq!(codes(&found.diagnostics), [code], "{text}");
     }
+}
+
+fn calls_of_one_big_let(sites: usize) -> String {
+    let elements: Vec<String> = (0..10_000).map(|at| at.to_string()).collect();
+    let mut text = format!(
+        "let big = [{}]\nfn f(x): x[9999] - x[0]\nClip c:\n",
+        elements.join(", ")
+    );
+    for _ in 0..sites {
+        text.push_str("    Note/(f(big) div 10000)\n");
+    }
+    text
+}
+
+fn memo_failures(sizes: [usize; 3]) -> Vec<String> {
+    let overrides = symphonyscript_core::LimitOverrides {
+        inlined_calls: Some(1_000_000),
+        inlined_calls_warning: Some(1_000_000),
+        ..symphonyscript_core::LimitOverrides::default()
+    };
+    let compiler =
+        Compiler::with_limits(&vocabulary(), overrides).expect("the vocabulary compiles");
+    ledger_failures_on(
+        &compiler,
+        "the value memo",
+        sizes,
+        calls_of_one_big_let,
+        &none,
+    )
+}
+
+#[test]
+fn a_function_called_with_one_big_let_at_many_sites_draws_nothing_425() {
+    assert_none(&memo_failures([250, 500, 1_000]));
+}
+
+#[test]
+#[ignore = "stress"]
+fn stress_a_function_called_with_one_big_let_costs_time_and_memory_linear_in_the_sites_425() {
+    assert_none(&memo_failures([25_000, 50_000, 100_000]));
+}
+
+fn figure(n: usize) -> String {
+    let mut text = String::from("state x(1)\nClip c:\n");
+    for at in 0..n {
+        text.push_str(&format!("    Note/(t{at} + a{at}[1] + s{at})\n"));
+    }
+    for at in 0..n {
+        text.push_str(&format!(
+            "let a{at} = [{at}, {at} + 1] + [2]\nfn h{at}(v): v + a{at}[0]\nstate s{at} = h{at}(1) + x\nlet t{at} = for j in 0..3 into acc from 0: acc + j * 2\n"
+        ));
+    }
+    text
+}
+
+const BUDGETS: [(&str, f64); 4] = [
+    ("collect", 0.05),
+    ("expand", 0.05),
+    ("resolve", 0.25),
+    ("infer and check", 0.4),
+];
+
+fn stage_failures(sizes: [usize; 3]) -> Vec<String> {
+    let compiler = Compiler::new(&vocabulary()).expect("the vocabulary compiles");
+    let mut failures = Vec::new();
+    let mut figures: Vec<Vec<(&str, f64)>> = Vec::new();
+    for n in sizes {
+        let text = figure(n);
+        let Some(found) = run(&compiler, &text) else {
+            failures.push(format!("the figure at {n}: the new core declined it"));
+            continue;
+        };
+        let drawn = codes(&found.diagnostics);
+        if !drawn.is_empty() {
+            failures.push(format!("the figure at {n}: draws {drawn:?}"));
+        }
+        let nodes = super::stages::nodes().max(1);
+        let mut shown = Vec::new();
+        let mut figure = Vec::new();
+        for (stage, spent) in super::stages::last() {
+            let per_node = spent.as_secs_f64() * 1e6 / nodes as f64;
+            let budget = BUDGETS
+                .iter()
+                .find(|(name, _)| *name == stage)
+                .map_or(0.0, |(_, budget)| *budget);
+            shown.push(format!(
+                "{stage} {per_node:.3} µs a node (its release budget {budget})"
+            ));
+            figure.push((stage, per_node));
+        }
+        println!("the figure at {n}, {nodes} nodes: {}", shown.join(", "));
+        figures.push(figure);
+    }
+    if let (Some(first), Some(last)) = (figures.first(), figures.last()) {
+        for ((stage, small), (_, large)) in first.iter().zip(last) {
+            if *large > small * 1.5 + 0.02 {
+                failures.push(format!(
+                    "{stage}: {small:.3} µs a node at {} and {large:.3} at {}, not linear",
+                    sizes[0], sizes[2]
+                ));
+            }
+        }
+    }
+    failures
+}
+
+#[test]
+#[ignore = "stress"]
+fn stress_the_new_cores_stages_cost_time_linear_in_the_nodes_of_a_non_recursive_figure() {
+    assert_none(&stage_failures([2_000, 4_000, 8_000]));
 }

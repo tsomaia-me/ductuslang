@@ -9,6 +9,7 @@ use crate::semantics::Internal;
 use crate::semantics::collection::BuiltinName;
 use crate::semantics::counted_walk::CountedWalk;
 use crate::semantics::ir::flat::{ItemRec, NONE, Op, TopRec};
+use crate::semantics::reporting::grouped;
 
 impl Core<'_> {
     pub fn vocabulary_clash(&self, text: &str) -> Option<&'static str> {
@@ -158,12 +159,27 @@ impl Core<'_> {
         if let Some(reason) = self.local_faults()? {
             return Ok(Err(Declined(reason)));
         }
-        let inline_limit = self
-            .limits
-            .inlined_calls_warning
-            .min(self.limits.inlined_calls);
-        if self.inline_count()? > inline_limit {
-            return Ok(Err(Declined(Reason::InlineLimit)));
+        let mut inlined = 0u64;
+        let mut warned = false;
+        for (call, callee, count) in self.inline_charges()? {
+            inlined = inlined.saturating_add(count);
+            let name = self.function_name(callee)?;
+            if inlined > self.limits.inlined_calls {
+                let message = format!(
+                    "this call of `{name}` makes the compilation inline more than {} calls",
+                    grouped(self.limits.inlined_calls)
+                );
+                self.stop_at(Code::InlineLimit, call, message)?;
+                break;
+            }
+            if !warned && inlined > self.limits.inlined_calls_warning {
+                warned = true;
+                let counted = format!(
+                    "this call of `{name}` makes the compilation inline more than {} calls",
+                    grouped(self.limits.inlined_calls_warning)
+                );
+                self.warn_at(call, "inlined_calls", counted, self.limits.inlined_calls)?;
+            }
         }
         Ok(Ok(()))
     }

@@ -158,7 +158,7 @@ pub(crate) fn reason_slice(reason: Reason) -> Slice {
         Reason::PatternOrWirePlacement => Slice::Three,
         Reason::CellGroup => Slice::Four,
         Reason::FunctionValue | Reason::Recursion => Slice::DefaultFlip,
-        Reason::LocalCycle | Reason::LocalClash | Reason::InlineLimit => Slice::Pending,
+        Reason::LocalCycle | Reason::LocalClash => Slice::Pending,
         Reason::NestedScope => Slice::Pending,
         Reason::ReactiveFor => Slice::Three,
         Reason::BareVariant | Reason::UnitAttribute | Reason::EnumAttribute => Slice::Five,
