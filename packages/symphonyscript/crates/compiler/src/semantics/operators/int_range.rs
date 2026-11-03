@@ -1,8 +1,8 @@
 use std::ops::RangeInclusive;
 
-use crate::semantics::analysis::eval_ty::EvalTy;
+use super::eval_ty::EvalTy;
 
-pub(super) fn int_range(ty: EvalTy) -> Option<RangeInclusive<i128>> {
+pub(crate) fn int_range(ty: EvalTy) -> Option<RangeInclusive<i128>> {
     match ty {
         EvalTy::U8 => Some(0..=i128::from(u8::MAX)),
         EvalTy::I32 => Some(i128::from(i32::MIN)..=i128::from(i32::MAX)),

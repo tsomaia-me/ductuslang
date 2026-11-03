@@ -17,8 +17,8 @@ const DECIDING_NONE: &[(&str, &str)] = &[
         "the enum a bare variant takes from its expected type, SPEC §4.2's enum flow",
     ),
     (
-        "analysis/evaluation/compile.rs plan_op",
-        "the compile-time value of a node, evaluated by SPEC §4.6: the one place that states what each operator computes",
+        "analysis/evaluation/compile.rs plan_instructions",
+        "the old engine's instructions for a node, each operator's value computed by `operators/plan_op.rs`",
     ),
     (
         "analysis/evaluation/run.rs fit",
@@ -245,6 +245,10 @@ const DECIDING_NONE: &[(&str, &str)] = &[
         "the operands of a node, the structure every walk follows",
     ),
     (
+        "operators/plan_op.rs plan_op",
+        "the compile-time value of an operator over its operand values, evaluated by SPEC §4.6: the one place that states what each operator computes, for both engines",
+    ),
+    (
         "scopes/checker.rs expr",
         "which names an expression uses, for scope checks",
     ),
@@ -337,7 +341,7 @@ fn names_enum(pattern: &str) -> bool {
             at == 0 || !(bytes[at - 1].is_ascii_alphanumeric() || bytes[at - 1] == b'_')
         })
     };
-    starts("ExprKind::") || starts("Op::")
+    starts("ExprKind::") || starts("Op::") || starts("Operator::")
 }
 
 fn catches_all(pattern: &str) -> bool {

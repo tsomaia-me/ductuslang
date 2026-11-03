@@ -10,7 +10,6 @@ use super::fetch_entry::FetchEntry;
 use super::fetched::Fetched;
 use super::instr::Instr;
 use super::is_float_builtin::is_float_builtin;
-use super::is_float_ty::is_float_ty;
 use super::is_int_ty::is_int_ty;
 use super::lay::Lay;
 use super::leaf_fact::LeafFact;
@@ -40,6 +39,7 @@ use crate::semantics::analysis::val::Val;
 use crate::semantics::analysis::width::Width;
 use crate::semantics::builtin::Builtin;
 use crate::semantics::counted_walk::CountedWalk;
+use crate::semantics::operators::is_float_ty;
 
 type LeafPlan = Result<(LeafFact, Option<Req>), Vec<Query>>;
 
@@ -521,7 +521,7 @@ impl Engine<'_> {
         }
         if sig.kind == Kind::Int
             && sig.width == Width::Flexible
-            && super::int_range::int_range(ty).is_some()
+            && crate::semantics::operators::int_range(ty).is_some()
             && self.takes_a_type(node)?
         {
             if let Some(shape) = shape {
@@ -546,12 +546,12 @@ impl Engine<'_> {
         build: &mut Build,
     ) -> Result<Planned, Internal> {
         let Some(read) = self.memo.frame_reads.get(&node).cloned() else {
-            return self.plan_op(node, (own, flows), build);
+            return self.plan_instructions(node, (own, flows), build);
         };
         let global = build.label();
         let end = build.label();
         let start = build.set();
-        let op = match self.plan_op(node, (own, flows), build)? {
+        let op = match self.plan_instructions(node, (own, flows), build)? {
             Planned::Needs(needs) => return Ok(Planned::Needs(needs)),
             Planned::Tasks(op) => op,
         };
@@ -567,7 +567,7 @@ impl Engine<'_> {
         Ok(Planned::Tasks(list))
     }
 
-    fn plan_op(
+    fn plan_instructions(
         &mut self,
         node: NodeId,
         (own, flows): (EvalTy, bool),
@@ -1196,7 +1196,7 @@ impl Engine<'_> {
             return Some((raw(own), OperandPost::Keep));
         }
         let ty = own_type(&sig, EvalTy::Exact);
-        if flexible && super::int_range::int_range(ty).is_some() {
+        if flexible && crate::semantics::operators::int_range(ty).is_some() {
             return Some((raw(ty), OperandPost::FitThenFloat(operand, ty, own)));
         }
         let unfixed = !matches!(sig.width, Width::Fixed(_));

@@ -1,6 +1,6 @@
-use crate::semantics::analysis::eval_ty::EvalTy;
+use super::eval_ty::EvalTy;
 
-pub(super) fn ty_name(ty: EvalTy) -> &'static str {
+pub(crate) fn ty_name(ty: EvalTy) -> &'static str {
     match ty {
         EvalTy::U8 => "u8",
         EvalTy::I32 => "i32",

@@ -1,6 +1,6 @@
 use symphonyscript_core::BinaryOp;
 
-pub(super) fn exact_binary(op: BinaryOp, a: i128, b: i128) -> Option<i128> {
+pub(crate) fn exact_binary(op: BinaryOp, a: i128, b: i128) -> Option<i128> {
     let value = match op {
         BinaryOp::Add => a.checked_add(b)?,
         BinaryOp::Sub => a.checked_sub(b)?,
