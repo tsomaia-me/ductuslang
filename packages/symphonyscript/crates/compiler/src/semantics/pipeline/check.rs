@@ -151,14 +151,14 @@ impl Core<'_> {
         Ok(Ok(()))
     }
 
-    fn bind_value(&mut self, root: u32, name: &str, ty: EvalTy) -> Stage<()> {
+    pub fn bind_value(&mut self, root: u32, name: &str, ty: EvalTy) -> Stage<()> {
         let fact: Fact = match self.ensure_typed(root)? {
             Ok(fact) => fact,
             Err(declined) => return Ok(Err(declined)),
         };
         let integer = int_range(ty).is_some();
         match fact.leaf {
-            Leaf::Placeholder | Leaf::Error => return self.evaluate_own(root),
+            Leaf::Placeholder | Leaf::Error => return self.detached(root, name, ty),
             _ if !fact.dims.is_empty() => {
                 self.draw_at(
                     Code::TypeMismatch,

@@ -541,7 +541,15 @@ impl Core<'_> {
                             frame
                                 .steps
                                 .push(Step::Record(read, true, element, element_ty));
-                            frame.steps.push(Step::Visit(element, element_ty));
+                            let (_, base, _, _) = self.ir.node(read)?;
+                            let runtime = self.is_reactive(base)? && !self.is_reactive(element)?;
+                            match self.own_ty(read)?.filter(|_| runtime) {
+                                Some(own) => {
+                                    frame.steps.push(Step::Fit(read, element_ty));
+                                    frame.steps.push(Step::Visit(element, own));
+                                }
+                                None => frame.steps.push(Step::Visit(element, element_ty)),
+                            }
                         }
                         None => {
                             let (_, base, index, _) = self.ir.node(read)?;
@@ -1015,7 +1023,15 @@ impl Core<'_> {
                             self.diagnostics.truncate(mark);
                         }
                         if let Some(element) = picked {
-                            stack.push((element, false));
+                            let runtime = self.is_reactive(a)? && !self.is_reactive(element)?;
+                            match self.own_ty(node)?.filter(|_| runtime) {
+                                Some(own) => {
+                                    if let Err(declined) = self.evaluate(element, own)? {
+                                        return Ok(Err(declined));
+                                    }
+                                }
+                                None => stack.push((element, false)),
+                            }
                         }
                     }
                     None => {

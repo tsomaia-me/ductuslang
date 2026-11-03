@@ -12,6 +12,7 @@ mod coverage;
 mod cycles;
 mod decl_ref;
 mod declined;
+mod detached;
 mod expand;
 mod fact;
 mod fold_run;

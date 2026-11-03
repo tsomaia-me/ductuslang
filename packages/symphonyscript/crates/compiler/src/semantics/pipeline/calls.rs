@@ -690,12 +690,21 @@ impl Core<'_> {
 
 impl Core<'_> {
     pub fn calls_a_non_function(&self) -> Result<bool, Internal> {
+        let mut callees = std::collections::HashSet::new();
         for local in 0..self.ir.op.len() {
-            if !matches!(self.ir.op.get(local), Some(Op::Call | Op::NamedCall)) {
+            let reached = self.reached.get(local).copied().unwrap_or(false);
+            if !reached || !matches!(self.ir.op.get(local), Some(Op::Call | Op::NamedCall)) {
                 continue;
             }
             let node = self.ir.base + u32::try_from(local).unwrap_or(0);
             if self.callee(node)?.is_none() {
+                return Ok(true);
+            }
+            callees.insert(self.ir.node(node)?.1);
+        }
+        for local in 0..self.ir.op.len() {
+            let node = self.ir.base + u32::try_from(local).unwrap_or(0);
+            if matches!(self.bind.get(local), Some(DeclRef::Fn(_))) && !callees.contains(&node) {
                 return Ok(true);
             }
         }

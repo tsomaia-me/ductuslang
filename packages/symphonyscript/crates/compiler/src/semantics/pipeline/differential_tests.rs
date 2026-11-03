@@ -11,7 +11,12 @@ type Reviewed = (
     &'static [(&'static str, &'static str)],
 );
 
-const REVIEWED: [Reviewed; 2] = [
+const REVIEWED: [Reviewed; 3] = [
+    (
+        "464",
+        "\nstate a(1)\nstate b(2)\nstate i(0)\n\nlet s = a + b\nlet c = [a, b, s]\n",
+        &[("reactive-let", "c"), ("reactive-let", "s")],
+    ),
     (
         "476",
         "let q = 1\nClip k:\n    Note/((true is q)[if true then [1, 2][5] else [1, 2]])\n",
@@ -60,7 +65,7 @@ fn reviewed(text: &str) -> Option<(&'static str, Vec<(String, String)>)> {
 }
 
 #[test]
-fn the_reviewed_moves_draw_their_expected_sets_on_the_new_core_476() {
+fn the_reviewed_moves_draw_their_expected_sets_on_the_new_core_464_476() {
     let new =
         Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("the vocabulary compiles");
     for (ledger, text, _) in REVIEWED {
@@ -183,6 +188,82 @@ fn a_program_whose_front_end_drew_a_fault_compiles_through_the_new_core_by_the_p
     let new =
         Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("the vocabulary compiles");
     for (text, expected) in FRONT_END_FAULTS {
+        let sources = [source(text)];
+        let found = new
+            .checked_by_new_core(&sources)
+            .expect("the new core takes the program");
+        let mut wanted: Vec<(String, String)> = expected
+            .iter()
+            .map(|(code, span)| ((*code).to_string(), (*span).to_string()))
+            .collect();
+        wanted.sort();
+        assert_eq!(spanned(text, &found), wanted, "{text}");
+        assert_eq!(found, old.check(&sources), "{text}");
+    }
+}
+
+const SHARED_STEP: [(&str, &[(&str, &str)]); 8] = [
+    (
+        "fn chord(big): if big then [60, 64, 67] else [60, 64]\n\nlet tones = chord(false)\n\nClip c:\n    Note/(tones[1])\n    Note/(chord(false)[2])\n",
+        &[("index-out-of-range", "2")],
+    ),
+    (
+        "fn chord(big): if big then [60, 64, 67] else [60, 64]\n\nlet tones = chord(true)\n\nClip c:\n    Note/(tones[1])\n    Note/(chord(true)[2])\n",
+        &[],
+    ),
+    (
+        "state x(1)\nfn f(v): v * 2\nClip c:\n    Note/([x, 1.5, 300000000000][2])\n",
+        &[
+            ("does-not-fit", "300000000000"),
+            ("type-mismatch", "[x, 1.5, 300000000000][2]"),
+        ],
+    ),
+    (
+        "state x(1)\nfn f(v): v * 2\nClip c:\n    Note/([x, 1, 3000][2])\n",
+        &[],
+    ),
+    (
+        "state x(1)\nClip c:\n    Note/([x, 1.5, 300000000000][2])\n    Note/([1.5, 300000000000][1])\n    Note/([1.5, 2][1])\n    Note/([x, 1.5, 2][2])\n    Note/(1.5 + 300000000000)\n    Note/([x, 300000000000][1])\n    Note/([x, 1.5][0])\n",
+        &[
+            ("does-not-fit", "300000000000"),
+            ("does-not-fit", "300000000000"),
+            ("does-not-fit", "300000000000"),
+            ("does-not-fit", "[x, 300000000000][1]"),
+            ("type-mismatch", "1.5 + 300000000000"),
+            ("type-mismatch", "[1.5, 2][1]"),
+            ("type-mismatch", "[1.5, 300000000000][1]"),
+            ("type-mismatch", "[x, 1.5, 2][2]"),
+            ("type-mismatch", "[x, 1.5, 300000000000][2]"),
+        ],
+    ),
+    (
+        "state x(1)\nClip c:\n    Note/([x, 3, 2][2])\n    Note/([x, 30000][1])\n    Note/([x, 1][0])\n",
+        &[],
+    ),
+    (
+        "state x(1)\nClip c:\n    Note/([nothing, 300000000000][0])\n    Note/([x, 300000000000][0])\n    Note/([1, 300000000000][0])\n    Note/([nothing, 300000000000][1])\n    Note/([x, 300000000000][1])\n    Note/([nothing, 1.5, 2.5][^1])\n    Note/([x, 1.5, 2.5][^1])\n",
+        &[
+            ("does-not-fit", "[x, 300000000000][1]"),
+            ("type-mismatch", "[x, 1.5, 2.5][^1]"),
+            ("unknown-name", "nothing"),
+            ("unknown-name", "nothing"),
+            ("unknown-name", "nothing"),
+        ],
+    ),
+    (
+        "state x(1)\nClip c:\n    Note/([1, 300000000000][0])\n    Note/([x, 3][1])\n    Note/([x, 1, 2][^1])\n",
+        &[],
+    ),
+];
+
+#[test]
+fn the_shared_steps_programs_draw_the_old_engines_sets_on_the_new_core_beside_their_valid_twins() {
+    let old = Compiler::new(&symphonyscript_fixtures::vocabulary())
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
+    let new =
+        Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("the vocabulary compiles");
+    for (text, expected) in SHARED_STEP {
         let sources = [source(text)];
         let found = new
             .checked_by_new_core(&sources)

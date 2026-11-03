@@ -606,6 +606,12 @@ impl Core<'_> {
         let taken = match self.evaluate(condition, EvalTy::Bool)? {
             Ok(Value::Bool(true)) => first.dims,
             Ok(Value::Bool(false)) => second.dims,
+            Ok(Value::Error) if self.inst != NONE && !self.is_reactive(condition)? => first
+                .dims
+                .iter()
+                .zip(&second.dims)
+                .map(|(a, b)| if a == b { *a } else { ANY_LENGTH })
+                .collect(),
             Ok(
                 Value::Int(_)
                 | Value::F32(_)
@@ -793,6 +799,7 @@ impl Core<'_> {
             };
             if let Ok(position) = u32::try_from(position)
                 && position < count
+                && self.is_reactive(self.kid(start + position)?)?
             {
                 return self.fact(self.kid(start + position)?);
             }
