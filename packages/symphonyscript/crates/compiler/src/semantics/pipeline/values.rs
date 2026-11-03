@@ -329,8 +329,13 @@ impl Core<'_> {
                                     .is_some_and(|rec| rec.owner != NONE) =>
                             {
                                 let root = self.let_root(at)?;
+                                let cyclic = self.cyclic.get(at as usize).copied().unwrap_or(false);
                                 if let Some(frame) = frames.last_mut() {
-                                    frame.steps.push(Step::Visit(root, node_ty));
+                                    if cyclic {
+                                        frame.values.push(Value::Error);
+                                    } else {
+                                        frame.steps.push(Step::Visit(root, node_ty));
+                                    }
                                 }
                                 continue;
                             }

@@ -20,6 +20,9 @@ mod frame;
 mod host;
 mod instance_row;
 mod leaf;
+#[cfg(test)]
+mod ledger_tests;
+mod locals;
 mod pick;
 mod reason;
 mod run;
@@ -34,5 +37,3 @@ mod width;
 pub(crate) use analyze::{Inputs, analyze};
 #[cfg(test)]
 mod differential_tests;
-#[cfg(test)]
-mod ledger_tests;

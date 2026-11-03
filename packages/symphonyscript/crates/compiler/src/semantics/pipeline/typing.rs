@@ -198,7 +198,8 @@ impl Core<'_> {
                         .lets
                         .get(at as usize)
                         .is_some_and(|rec| rec.owner != NONE);
-                    if local && !self.has_fact(root)? {
+                    let cyclic = self.cyclic.get(at as usize).copied().unwrap_or(false);
+                    if local && !cyclic && !self.has_fact(root)? {
                         if !self.typing_locals.insert((self.inst, at)) {
                             return Ok(Err(Declined(Reason::LocalCycle)));
                         }

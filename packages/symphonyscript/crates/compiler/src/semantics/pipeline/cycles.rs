@@ -58,7 +58,7 @@ impl Core<'_> {
         Ok(())
     }
 
-    fn draw_cycle(&mut self, cycle: &[u32]) -> Result<(), Internal> {
+    pub(super) fn draw_cycle(&mut self, cycle: &[u32]) -> Result<(), Internal> {
         let mut names = Vec::new();
         for at in cycle {
             let rec = self
@@ -71,7 +71,11 @@ impl Core<'_> {
                 .ir
                 .name(binder.name)
                 .ok_or(Internal::missed("IR name"))?;
-            let file = self.let_file.get(*at as usize).copied().unwrap_or(0);
+            let file = if rec.owner == crate::semantics::ir::flat::NONE {
+                self.let_file.get(*at as usize).copied().unwrap_or(0)
+            } else {
+                self.file_of(rec.value)
+            };
             names.push((
                 self.ir.symbols.text(entry.sym).to_string(),
                 self.span(file, entry.lo, entry.hi),
@@ -93,7 +97,7 @@ impl Core<'_> {
     }
 }
 
-fn shortest_cycle(edges: &[Vec<u32>], component: &[u32], first: u32) -> Vec<u32> {
+pub(super) fn shortest_cycle(edges: &[Vec<u32>], component: &[u32], first: u32) -> Vec<u32> {
     let inside = |node: u32| component.contains(&node);
     let mut parent: Vec<Option<u32>> = vec![None; edges.len()];
     let mut queue = std::collections::VecDeque::new();
@@ -132,7 +136,7 @@ fn shortest_cycle(edges: &[Vec<u32>], component: &[u32], first: u32) -> Vec<u32>
     vec![first]
 }
 
-fn strongly_connected(edges: &[Vec<u32>]) -> Vec<Vec<u32>> {
+pub(super) fn strongly_connected(edges: &[Vec<u32>]) -> Vec<Vec<u32>> {
     let count = edges.len();
     let mut index = vec![u32::MAX; count];
     let mut low = vec![0u32; count];
