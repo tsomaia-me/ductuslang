@@ -20,7 +20,7 @@ pub(crate) fn op_slice(op: Op) -> Slice {
         Op::For => Slice::One,
         Op::Call => Slice::One,
         Op::NamedCall => Slice::One,
-        Op::TyScalar => Slice::Pending,
+        Op::TyScalar => Slice::One,
         Op::TyName | Op::TyArray | Op::TyVar => Slice::Pending,
         Op::To => Slice::Two,
         Op::Past | Op::Stepped => Slice::Four,

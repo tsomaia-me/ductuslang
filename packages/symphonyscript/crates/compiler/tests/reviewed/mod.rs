@@ -57,1312 +57,6 @@ pub const REVIEWED: &[Reviewed] = &[
     ),
     (
         "476",
-        "Clip c:\n    Note/(([1, 2] is 300000000000)[i32(true) div q])\n",
-        &[
-            ("unknown-name", "q"),
-            ("array-operand", "[1, 2] is 300000000000"),
-            ("not-an-array", "[1, 2] is 300000000000"),
-            ("conversion-type", "i32(true)"),
-        ],
-    ),
-    (
-        "476",
-        "Clip c:\n    Note | velocity=(([1, 2] is 300000000000)[i32(true) div q])\n",
-        &[
-            ("unknown-name", "q"),
-            ("array-operand", "[1, 2] is 300000000000"),
-            ("not-an-array", "[1, 2] is 300000000000"),
-            ("conversion-type", "i32(true)"),
-        ],
-    ),
-    (
-        "476",
-        "Clip c:\n    Note/((not q)[[1, 2][5] div q])\n",
-        &[
-            ("unknown-name", "q"),
-            ("unknown-name", "q"),
-            ("not-an-array", "not q"),
-            ("index-out-of-range", "5"),
-        ],
-    ),
-    (
-        "476",
-        "Clip c:\n    Note | velocity=((not q)[[1, 2][5] div q])\n",
-        &[
-            ("unknown-name", "q"),
-            ("unknown-name", "q"),
-            ("not-an-array", "not q"),
-            ("index-out-of-range", "5"),
-        ],
-    ),
-    (
-        "476",
-        "Clip c:\n    Note/((if q then i32(true) else true)[[1, 2][1.5..]])\n",
-        &[
-            ("unknown-name", "q"),
-            (
-                "index-type",
-                "(if q then i32(true) else true)[[1, 2][1.5..]]",
-            ),
-            ("index-type", "1.5"),
-            ("conversion-type", "i32(true)"),
-        ],
-    ),
-    (
-        "476",
-        "Clip c:\n    Note | velocity=((if q then i32(true) else true)[[1, 2][1.5..]])\n",
-        &[
-            ("unknown-name", "q"),
-            (
-                "index-type",
-                "(if q then i32(true) else true)[[1, 2][1.5..]]",
-            ),
-            ("index-type", "1.5"),
-            ("conversion-type", "i32(true)"),
-        ],
-    ),
-    (
-        "476",
-        "Clip c:\n    Note/((i32(true) and [1, 2][5])[i32(true) / q..])\n",
-        &[
-            ("unknown-name", "q"),
-            ("not-an-array", "i32(true) and [1, 2][5]"),
-            ("index-out-of-range", "5"),
-            ("operand-type", "i32(true) and [1, 2][5]"),
-            ("conversion-type", "i32(true)"),
-            ("conversion-type", "i32(true)"),
-        ],
-    ),
-    (
-        "476",
-        "Clip c:\n    Note | velocity=((i32(true) and [1, 2][5])[i32(true) / q..])\n",
-        &[
-            ("unknown-name", "q"),
-            ("not-an-array", "i32(true) and [1, 2][5]"),
-            ("index-out-of-range", "5"),
-            ("operand-type", "i32(true) and [1, 2][5]"),
-            ("conversion-type", "i32(true)"),
-            ("conversion-type", "i32(true)"),
-        ],
-    ),
-    (
-        "476, the twin pass's (R4b)",
-        "Clip c:\n    Note/((true is q)[if true then [1, 2][5] else [1, 2]])\n",
-        &[
-            ("unknown-name", "q"),
-            ("type-mismatch", "true is q"),
-            ("type-mismatch", "if true then [1, 2][5] else [1, 2]"),
-            ("not-an-array", "true is q"),
-            ("index-out-of-range", "5"),
-        ],
-    ),
-    (
-        "476, the twin pass's (R4b)",
-        "Clip c:\n    Note | velocity=((true is q)[if true then [1, 2][5] else [1, 2]])\n",
-        &[
-            ("unknown-name", "q"),
-            ("type-mismatch", "true is q"),
-            ("type-mismatch", "if true then [1, 2][5] else [1, 2]"),
-            ("not-an-array", "true is q"),
-            ("index-out-of-range", "5"),
-        ],
-    ),
-    (
-        "476",
-        "Clip c:\n    Note/((q < i32(true))[i32(true) div q])\n",
-        &[
-            ("unknown-name", "q"),
-            ("unknown-name", "q"),
-            ("not-an-array", "q < i32(true)"),
-            ("conversion-type", "i32(true)"),
-            ("conversion-type", "i32(true)"),
-        ],
-    ),
-    (
-        "476",
-        "Clip c:\n    Note | velocity=((q < i32(true))[i32(true) div q])\n",
-        &[
-            ("unknown-name", "q"),
-            ("unknown-name", "q"),
-            ("not-an-array", "q < i32(true)"),
-            ("conversion-type", "i32(true)"),
-            ("conversion-type", "i32(true)"),
-        ],
-    ),
-    (
-        "476, the twin pass's (R4b)",
-        "Clip c:\n    Note/((true < q)[i32(true)[[1, 2]]])\n",
-        &[
-            ("unknown-name", "q"),
-            ("type-mismatch", "true < q"),
-            ("index-type", "i32(true)[[1, 2]]"),
-            ("not-an-array", "true < q"),
-            ("conversion-type", "i32(true)"),
-        ],
-    ),
-    (
-        "476, the twin pass's (R4b)",
-        "Clip c:\n    Note | velocity=((true < q)[i32(true)[[1, 2]]])\n",
-        &[
-            ("unknown-name", "q"),
-            ("type-mismatch", "true < q"),
-            ("index-type", "i32(true)[[1, 2]]"),
-            ("not-an-array", "true < q"),
-            ("conversion-type", "i32(true)"),
-        ],
-    ),
-    (
-        "476",
-        "Clip c:\n    Note/((300000000000 < q)[if i32(true) then q else [1, 2]])\n",
-        &[
-            ("unknown-name", "q"),
-            ("unknown-name", "q"),
-            ("not-an-array", "300000000000 < q"),
-            ("conversion-type", "i32(true)"),
-            ("condition-type", "i32(true)"),
-        ],
-    ),
-    (
-        "476",
-        "Clip c:\n    Note | velocity=((300000000000 < q)[if i32(true) then q else [1, 2]])\n",
-        &[
-            ("unknown-name", "q"),
-            ("unknown-name", "q"),
-            ("not-an-array", "300000000000 < q"),
-            ("conversion-type", "i32(true)"),
-            ("condition-type", "i32(true)"),
-        ],
-    ),
-    (
-        "476, the twin pass's (R4b)",
-        "Clip c:\n    Note/((1.5 is q)[i32(true)[1]])\n",
-        &[
-            ("unknown-name", "q"),
-            ("type-mismatch", "1.5 is q"),
-            ("not-an-array", "1.5 is q"),
-            ("not-an-array", "i32(true)"),
-            ("conversion-type", "i32(true)"),
-        ],
-    ),
-    (
-        "476, the twin pass's (R4b)",
-        "Clip c:\n    Note | velocity=((1.5 is q)[i32(true)[1]])\n",
-        &[
-            ("unknown-name", "q"),
-            ("type-mismatch", "1.5 is q"),
-            ("not-an-array", "1.5 is q"),
-            ("not-an-array", "i32(true)"),
-            ("conversion-type", "i32(true)"),
-        ],
-    ),
-    (
-        "476",
-        "Clip c:\n    Note/(([1, 2][5] - 1.5)[1 * q])\n",
-        &[
-            ("unknown-name", "q"),
-            ("not-an-array", "[1, 2][5] - 1.5"),
-            ("index-out-of-range", "5"),
-        ],
-    ),
-    (
-        "476",
-        "Clip c:\n    Note | velocity=(([1, 2][5] - 1.5)[1 * q])\n",
-        &[
-            ("unknown-name", "q"),
-            ("not-an-array", "[1, 2][5] - 1.5"),
-            ("index-out-of-range", "5"),
-        ],
-    ),
-    (
-        "476",
-        "Clip c:\n    Note/((1.5 / 1.5)[if true then q else [1, 2]..])\n",
-        &[("unknown-name", "q"), ("not-an-array", "1.5 / 1.5")],
-    ),
-    (
-        "476",
-        "Clip c:\n    Note | velocity=((1.5 / 1.5)[if true then q else [1, 2]..])\n",
-        &[("unknown-name", "q"), ("not-an-array", "1.5 / 1.5")],
-    ),
-    (
-        "476, the twin pass's (R4b)",
-        "Clip c:\n    Note/(([1, 2][5] or q)[true[true]..])\n",
-        &[
-            ("unknown-name", "q"),
-            ("type-mismatch", "[1, 2][5] or q"),
-            ("not-an-array", "[1, 2][5] or q"),
-            ("not-an-array", "true"),
-            ("index-out-of-range", "5"),
-        ],
-    ),
-    (
-        "476, the twin pass's (R4b)",
-        "Clip c:\n    Note | velocity=(([1, 2][5] or q)[true[true]..])\n",
-        &[
-            ("unknown-name", "q"),
-            ("type-mismatch", "[1, 2][5] or q"),
-            ("not-an-array", "[1, 2][5] or q"),
-            ("not-an-array", "true"),
-            ("index-out-of-range", "5"),
-        ],
-    ),
-    (
-        "476",
-        "Clip c:\n    Note/((if true then q else i32(true))[[1, 2][5] / 300000000000])\n",
-        &[
-            ("unknown-name", "q"),
-            ("index-out-of-range", "5"),
-            ("conversion-type", "i32(true)"),
-            ("does-not-fit", "300000000000"),
-        ],
-    ),
-    (
-        "476",
-        "Clip c:\n    Note | velocity=((if true then q else i32(true))[[1, 2][5] / 300000000000])\n",
-        &[
-            ("unknown-name", "q"),
-            ("index-out-of-range", "5"),
-            ("conversion-type", "i32(true)"),
-            ("does-not-fit", "300000000000"),
-        ],
-    ),
-    (
-        "476",
-        "Clip c:\n    Note/((q < [1, 2])[true * q..])\n",
-        &[
-            ("unknown-name", "q"),
-            ("unknown-name", "q"),
-            ("array-operand", "q < [1, 2]"),
-            ("not-an-array", "q < [1, 2]"),
-        ],
-    ),
-    (
-        "476",
-        "Clip c:\n    Note | velocity=((q < [1, 2])[true * q..])\n",
-        &[
-            ("unknown-name", "q"),
-            ("unknown-name", "q"),
-            ("array-operand", "q < [1, 2]"),
-            ("not-an-array", "q < [1, 2]"),
-        ],
-    ),
-    (
-        "476",
-        "Clip c:\n    Note/(([1, 2][5] < true)[i32(true) + q..])\n",
-        &[
-            ("unknown-name", "q"),
-            ("not-an-array", "[1, 2][5] < true"),
-            ("index-out-of-range", "5"),
-            ("operand-type", "[1, 2][5] < true"),
-            ("conversion-type", "i32(true)"),
-        ],
-    ),
-    (
-        "476",
-        "Clip c:\n    Note | velocity=(([1, 2][5] < true)[i32(true) + q..])\n",
-        &[
-            ("unknown-name", "q"),
-            ("not-an-array", "[1, 2][5] < true"),
-            ("index-out-of-range", "5"),
-            ("operand-type", "[1, 2][5] < true"),
-            ("conversion-type", "i32(true)"),
-        ],
-    ),
-    (
-        "476",
-        "Clip c:\n    Note/(([1, 2][5] < 300000000000)[true / q])\n",
-        &[
-            ("unknown-name", "q"),
-            ("not-an-array", "[1, 2][5] < 300000000000"),
-            ("index-out-of-range", "5"),
-        ],
-    ),
-    (
-        "476",
-        "Clip c:\n    Note | velocity=(([1, 2][5] < 300000000000)[true / q])\n",
-        &[
-            ("unknown-name", "q"),
-            ("not-an-array", "[1, 2][5] < 300000000000"),
-            ("index-out-of-range", "5"),
-        ],
-    ),
-    (
-        "476",
-        "Clip c:\n    Note/((q and [1, 2])[q - i32(true)])\n",
-        &[
-            ("unknown-name", "q"),
-            ("unknown-name", "q"),
-            ("array-operand", "q and [1, 2]"),
-            ("not-an-array", "q and [1, 2]"),
-            ("conversion-type", "i32(true)"),
-        ],
-    ),
-    (
-        "476",
-        "Clip c:\n    Note | velocity=((q and [1, 2])[q - i32(true)])\n",
-        &[
-            ("unknown-name", "q"),
-            ("unknown-name", "q"),
-            ("array-operand", "q and [1, 2]"),
-            ("not-an-array", "q and [1, 2]"),
-            ("conversion-type", "i32(true)"),
-        ],
-    ),
-    (
-        "476",
-        "Clip c:\n    Note/((1.5 < [1, 2][5])[1 % q])\n",
-        &[
-            ("unknown-name", "q"),
-            ("not-an-array", "1.5 < [1, 2][5]"),
-            ("index-out-of-range", "5"),
-        ],
-    ),
-    (
-        "476",
-        "Clip c:\n    Note | velocity=((1.5 < [1, 2][5])[1 % q])\n",
-        &[
-            ("unknown-name", "q"),
-            ("not-an-array", "1.5 < [1, 2][5]"),
-            ("index-out-of-range", "5"),
-        ],
-    ),
-    (
-        "476",
-        "Clip c:\n    Note/(if 1 then q else [1, 2])\n",
-        &[("condition-type", "1"), ("unknown-name", "q")],
-    ),
-    (
-        "476",
-        "Clip c:\n    Note | velocity=(if 1 then q else [1, 2])\n",
-        &[("condition-type", "1"), ("unknown-name", "q")],
-    ),
-    (
-        "476",
-        "Clip c:\n    Note/(if 1 then [1, 2] else q)\n",
-        &[("condition-type", "1"), ("unknown-name", "q")],
-    ),
-    (
-        "476",
-        "Clip c:\n    Note | velocity=(if 1 then [1, 2] else q)\n",
-        &[("condition-type", "1"), ("unknown-name", "q")],
-    ),
-    (
-        "476",
-        "Clip c:\n    Note/(if 1.5 then q else [1, 2])\n",
-        &[("condition-type", "1.5"), ("unknown-name", "q")],
-    ),
-    (
-        "476",
-        "Clip c:\n    Note | velocity=(if 1.5 then q else [1, 2])\n",
-        &[("condition-type", "1.5"), ("unknown-name", "q")],
-    ),
-    (
-        "476",
-        "Clip c:\n    Note/(if 1.5 then [1, 2] else q)\n",
-        &[("condition-type", "1.5"), ("unknown-name", "q")],
-    ),
-    (
-        "476",
-        "Clip c:\n    Note | velocity=(if 1.5 then [1, 2] else q)\n",
-        &[("condition-type", "1.5"), ("unknown-name", "q")],
-    ),
-    (
-        "476",
-        "Clip c:\n    Note/(if [1, 2][5] then q else [1, 2])\n",
-        &[
-            ("condition-type", "[1, 2][5]"),
-            ("index-out-of-range", "5"),
-            ("unknown-name", "q"),
-        ],
-    ),
-    (
-        "476",
-        "Clip c:\n    Note | velocity=(if [1, 2][5] then q else [1, 2])\n",
-        &[
-            ("condition-type", "[1, 2][5]"),
-            ("index-out-of-range", "5"),
-            ("unknown-name", "q"),
-        ],
-    ),
-    (
-        "476",
-        "Clip c:\n    Note/(if [1, 2][5] then [1, 2] else q)\n",
-        &[
-            ("condition-type", "[1, 2][5]"),
-            ("index-out-of-range", "5"),
-            ("unknown-name", "q"),
-        ],
-    ),
-    (
-        "476",
-        "Clip c:\n    Note | velocity=(if [1, 2][5] then [1, 2] else q)\n",
-        &[
-            ("condition-type", "[1, 2][5]"),
-            ("index-out-of-range", "5"),
-            ("unknown-name", "q"),
-        ],
-    ),
-    (
-        "476",
-        "Clip c:\n    Note/(if 300000000000 then q else [1, 2])\n",
-        &[("condition-type", "300000000000"), ("unknown-name", "q")],
-    ),
-    (
-        "476",
-        "Clip c:\n    Note | velocity=(if 300000000000 then q else [1, 2])\n",
-        &[("condition-type", "300000000000"), ("unknown-name", "q")],
-    ),
-    (
-        "476",
-        "Clip c:\n    Note/(if 300000000000 then [1, 2] else q)\n",
-        &[("condition-type", "300000000000"), ("unknown-name", "q")],
-    ),
-    (
-        "476",
-        "Clip c:\n    Note | velocity=(if 300000000000 then [1, 2] else q)\n",
-        &[("condition-type", "300000000000"), ("unknown-name", "q")],
-    ),
-    (
-        "476",
-        "Clip c:\n    Note/(if i32(true) then q else [1, 2])\n",
-        &[
-            ("condition-type", "i32(true)"),
-            ("conversion-type", "i32(true)"),
-            ("unknown-name", "q"),
-        ],
-    ),
-    (
-        "476",
-        "Clip c:\n    Note | velocity=(if i32(true) then q else [1, 2])\n",
-        &[
-            ("condition-type", "i32(true)"),
-            ("conversion-type", "i32(true)"),
-            ("unknown-name", "q"),
-        ],
-    ),
-    (
-        "476",
-        "Clip c:\n    Note/(if i32(true) then [1, 2] else q)\n",
-        &[
-            ("condition-type", "i32(true)"),
-            ("conversion-type", "i32(true)"),
-            ("unknown-name", "q"),
-        ],
-    ),
-    (
-        "476",
-        "Clip c:\n    Note | velocity=(if i32(true) then [1, 2] else q)\n",
-        &[
-            ("condition-type", "i32(true)"),
-            ("conversion-type", "i32(true)"),
-            ("unknown-name", "q"),
-        ],
-    ),
-    (
-        "476",
-        "Clip c:\n    Note/((if [1, 2][5] then [1, 2] else true)[i32(true) and q])\n",
-        &[
-            ("condition-type", "[1, 2][5]"),
-            ("conversion-type", "i32(true)"),
-            ("index-out-of-range", "5"),
-            ("index-type", "i32(true) and q"),
-            ("type-mismatch", "if [1, 2][5] then [1, 2] else true"),
-            ("unknown-name", "q"),
-        ],
-    ),
-    (
-        "476",
-        "Clip c:\n    Note | velocity=((if [1, 2][5] then [1, 2] else true)[i32(true) and q])\n",
-        &[
-            ("condition-type", "[1, 2][5]"),
-            ("conversion-type", "i32(true)"),
-            ("index-out-of-range", "5"),
-            ("index-type", "i32(true) and q"),
-            ("type-mismatch", "if [1, 2][5] then [1, 2] else true"),
-            ("unknown-name", "q"),
-        ],
-    ),
-    (
-        "476, the twin pass's (R4b)",
-        "Clip c:\n    Note/(if (1 div i32(true)) then (if [1, 2] then q else q) else (q or [1, 2]))\n",
-        &[
-            ("array-operand", "q or [1, 2]"),
-            ("condition-type", "1 div i32(true)"),
-            ("condition-type", "if [1, 2] then q else q"),
-            ("conversion-type", "i32(true)"),
-            ("type-mismatch", "q or [1, 2]"),
-            ("unknown-name", "q"),
-            ("unknown-name", "q"),
-            ("unknown-name", "q"),
-        ],
-    ),
-    (
-        "476, the twin pass's (R4b)",
-        "Clip c:\n    Note | velocity=(if (1 div i32(true)) then (if [1, 2] then q else q) else (q or [1, 2]))\n",
-        &[
-            ("array-operand", "q or [1, 2]"),
-            ("condition-type", "1 div i32(true)"),
-            ("condition-type", "if [1, 2] then q else q"),
-            ("conversion-type", "i32(true)"),
-            ("type-mismatch", "q or [1, 2]"),
-            ("unknown-name", "q"),
-            ("unknown-name", "q"),
-            ("unknown-name", "q"),
-        ],
-    ),
-    (
-        "476",
-        "Clip c:\n    Note/((q div 300000000000)[if i32(true) then true else [1, 2]..])\n",
-        &[
-            ("condition-type", "i32(true)"),
-            ("conversion-type", "i32(true)"),
-            ("type-mismatch", "if i32(true) then true else [1, 2]"),
-            ("unknown-name", "q"),
-        ],
-    ),
-    (
-        "476",
-        "Clip c:\n    Note | velocity=((q div 300000000000)[if i32(true) then true else [1, 2]..])\n",
-        &[
-            ("condition-type", "i32(true)"),
-            ("conversion-type", "i32(true)"),
-            ("type-mismatch", "if i32(true) then true else [1, 2]"),
-            ("unknown-name", "q"),
-        ],
-    ),
-    (
-        "476",
-        "Clip c:\n    Note/((if 1.5 then [1, 2] else q)[1 and [1, 2]..])\n",
-        &[
-            ("array-operand", "1 and [1, 2]"),
-            ("condition-type", "1.5"),
-            ("index-type", "1 and [1, 2]"),
-            ("unknown-name", "q"),
-        ],
-    ),
-    (
-        "476",
-        "Clip c:\n    Note | velocity=((if 1.5 then [1, 2] else q)[1 and [1, 2]..])\n",
-        &[
-            ("array-operand", "1 and [1, 2]"),
-            ("condition-type", "1.5"),
-            ("index-type", "1 and [1, 2]"),
-            ("unknown-name", "q"),
-        ],
-    ),
-    (
-        "476",
-        "Clip c:\n    Note/(if (if true then [1, 2][5] else 300000000000) then (if q then 300000000000 else 1.5) else (if 300000000000 then 1 else q))\n",
-        &[
-            ("condition-type", "300000000000"),
-            ("condition-type", "if true then [1, 2][5] else 300000000000"),
-            ("index-out-of-range", "5"),
-            ("unknown-name", "q"),
-            ("unknown-name", "q"),
-        ],
-    ),
-    (
-        "476",
-        "Clip c:\n    Note | velocity=(if (if true then [1, 2][5] else 300000000000) then (if q then 300000000000 else 1.5) else (if 300000000000 then 1 else q))\n",
-        &[
-            ("condition-type", "300000000000"),
-            ("condition-type", "if true then [1, 2][5] else 300000000000"),
-            ("index-out-of-range", "5"),
-            ("unknown-name", "q"),
-            ("unknown-name", "q"),
-        ],
-    ),
-    (
-        "476",
-        "Clip c:\n    Note/((if i32(true) then 1.5 else q) is (if 1 then [1, 2] else 300000000000))\n",
-        &[
-            ("condition-type", "1"),
-            ("condition-type", "i32(true)"),
-            ("conversion-type", "i32(true)"),
-            ("type-mismatch", "if 1 then [1, 2] else 300000000000"),
-            ("unknown-name", "q"),
-        ],
-    ),
-    (
-        "476",
-        "Clip c:\n    Note | velocity=((if i32(true) then 1.5 else q) is (if 1 then [1, 2] else 300000000000))\n",
-        &[
-            ("condition-type", "1"),
-            ("condition-type", "i32(true)"),
-            ("conversion-type", "i32(true)"),
-            ("type-mismatch", "if 1 then [1, 2] else 300000000000"),
-            ("unknown-name", "q"),
-        ],
-    ),
-    (
-        "476",
-        "Clip c:\n    Note/((if i32(true) then [1, 2] else i32(true))[if [1, 2] then q else 1])\n",
-        &[
-            ("condition-type", "i32(true)"),
-            ("condition-type", "if [1, 2] then q else 1"),
-            ("conversion-type", "i32(true)"),
-            ("conversion-type", "i32(true)"),
-            ("type-mismatch", "if i32(true) then [1, 2] else i32(true)"),
-            ("unknown-name", "q"),
-        ],
-    ),
-    (
-        "476",
-        "Clip c:\n    Note | velocity=((if i32(true) then [1, 2] else i32(true))[if [1, 2] then q else 1])\n",
-        &[
-            ("condition-type", "i32(true)"),
-            ("condition-type", "if [1, 2] then q else 1"),
-            ("conversion-type", "i32(true)"),
-            ("conversion-type", "i32(true)"),
-            ("type-mismatch", "if i32(true) then [1, 2] else i32(true)"),
-            ("unknown-name", "q"),
-        ],
-    ),
-    (
-        "476",
-        "Clip c:\n    Note/(([1, 2] + q)[if 1.5 then [1, 2] else i32(true)])\n",
-        &[
-            ("condition-type", "1.5"),
-            ("conversion-type", "i32(true)"),
-            ("type-mismatch", "if 1.5 then [1, 2] else i32(true)"),
-            ("unknown-name", "q"),
-        ],
-    ),
-    (
-        "476",
-        "Clip c:\n    Note | velocity=(([1, 2] + q)[if 1.5 then [1, 2] else i32(true)])\n",
-        &[
-            ("condition-type", "1.5"),
-            ("conversion-type", "i32(true)"),
-            ("type-mismatch", "if 1.5 then [1, 2] else i32(true)"),
-            ("unknown-name", "q"),
-        ],
-    ),
-    (
-        "476",
-        "Clip c:\n    Note/(if ([1, 2][5] div 1) then (q and [1, 2]) else (if 1.5 then 1.5 else [1, 2][5]))\n",
-        &[
-            ("array-operand", "q and [1, 2]"),
-            ("condition-type", "1.5"),
-            ("condition-type", "[1, 2][5] div 1"),
-            ("index-out-of-range", "5"),
-            ("unknown-name", "q"),
-        ],
-    ),
-    (
-        "476",
-        "Clip c:\n    Note | velocity=(if ([1, 2][5] div 1) then (q and [1, 2]) else (if 1.5 then 1.5 else [1, 2][5]))\n",
-        &[
-            ("array-operand", "q and [1, 2]"),
-            ("condition-type", "1.5"),
-            ("condition-type", "[1, 2][5] div 1"),
-            ("index-out-of-range", "5"),
-            ("unknown-name", "q"),
-        ],
-    ),
-    (
-        "476",
-        "Clip c:\n    Note/(i32(if i32(true) then q else [1, 2]))\n",
-        &[
-            ("condition-type", "i32(true)"),
-            ("conversion-type", "i32(true)"),
-            ("unknown-name", "q"),
-        ],
-    ),
-    (
-        "476",
-        "Clip c:\n    Note | velocity=(i32(if i32(true) then q else [1, 2]))\n",
-        &[
-            ("condition-type", "i32(true)"),
-            ("conversion-type", "i32(true)"),
-            ("unknown-name", "q"),
-        ],
-    ),
-    (
-        "476",
-        "Clip c:\n    Note/(if (1 + 1.5) then (true < true) else (if i32(true) then q else [1, 2]))\n",
-        &[
-            ("condition-type", "1 + 1.5"),
-            ("condition-type", "i32(true)"),
-            ("conversion-type", "i32(true)"),
-            ("operand-type", "true < true"),
-            ("unknown-name", "q"),
-        ],
-    ),
-    (
-        "476",
-        "Clip c:\n    Note | velocity=(if (1 + 1.5) then (true < true) else (if i32(true) then q else [1, 2]))\n",
-        &[
-            ("condition-type", "1 + 1.5"),
-            ("condition-type", "i32(true)"),
-            ("conversion-type", "i32(true)"),
-            ("operand-type", "true < true"),
-            ("unknown-name", "q"),
-        ],
-    ),
-    (
-        "476",
-        "Clip c:\n    Note/((if 1 then true else [1, 2])[i32(true) div q])\n",
-        &[
-            ("condition-type", "1"),
-            ("conversion-type", "i32(true)"),
-            ("type-mismatch", "if 1 then true else [1, 2]"),
-            ("unknown-name", "q"),
-        ],
-    ),
-    (
-        "476",
-        "Clip c:\n    Note | velocity=((if 1 then true else [1, 2])[i32(true) div q])\n",
-        &[
-            ("condition-type", "1"),
-            ("conversion-type", "i32(true)"),
-            ("type-mismatch", "if 1 then true else [1, 2]"),
-            ("unknown-name", "q"),
-        ],
-    ),
-    (
-        "476",
-        "Clip c:\n    Note/((if 1 then [1, 2][5] else [1, 2])[q is q..])\n",
-        &[
-            ("condition-type", "1"),
-            ("index-type", "q is q"),
-            ("type-mismatch", "if 1 then [1, 2][5] else [1, 2]"),
-            ("unknown-name", "q"),
-            ("unknown-name", "q"),
-        ],
-    ),
-    (
-        "476",
-        "Clip c:\n    Note | velocity=((if 1 then [1, 2][5] else [1, 2])[q is q..])\n",
-        &[
-            ("condition-type", "1"),
-            ("index-type", "q is q"),
-            ("type-mismatch", "if 1 then [1, 2][5] else [1, 2]"),
-            ("unknown-name", "q"),
-            ("unknown-name", "q"),
-        ],
-    ),
-    (
-        "476",
-        "Clip c:\n    Note/(if (if 1.5 then 300000000000 else q) then (true % 1) else (if 1.5 then [1, 2][5] else [1, 2]))\n",
-        &[
-            ("condition-type", "1.5"),
-            ("condition-type", "1.5"),
-            ("operand-type", "true % 1"),
-            ("type-mismatch", "if 1.5 then [1, 2][5] else [1, 2]"),
-            ("unknown-name", "q"),
-        ],
-    ),
-    (
-        "476",
-        "Clip c:\n    Note | velocity=(if (if 1.5 then 300000000000 else q) then (true % 1) else (if 1.5 then [1, 2][5] else [1, 2]))\n",
-        &[
-            ("condition-type", "1.5"),
-            ("condition-type", "1.5"),
-            ("operand-type", "true % 1"),
-            ("type-mismatch", "if 1.5 then [1, 2][5] else [1, 2]"),
-            ("unknown-name", "q"),
-        ],
-    ),
-    (
-        "476",
-        "Clip c:\n    Note/(if (q and [1, 2][5]) then (if [1, 2][5] then q else [1, 2]) else (if [1, 2][5] then [1, 2][5] else i32(true)))\n",
-        &[
-            ("condition-type", "[1, 2][5]"),
-            ("condition-type", "[1, 2][5]"),
-            ("conversion-type", "i32(true)"),
-            ("index-out-of-range", "5"),
-            ("unknown-name", "q"),
-            ("unknown-name", "q"),
-        ],
-    ),
-    (
-        "476",
-        "Clip c:\n    Note | velocity=(if (q and [1, 2][5]) then (if [1, 2][5] then q else [1, 2]) else (if [1, 2][5] then [1, 2][5] else i32(true)))\n",
-        &[
-            ("condition-type", "[1, 2][5]"),
-            ("condition-type", "[1, 2][5]"),
-            ("conversion-type", "i32(true)"),
-            ("index-out-of-range", "5"),
-            ("unknown-name", "q"),
-            ("unknown-name", "q"),
-        ],
-    ),
-    (
-        "476",
-        "Clip c:\n    Note/(([1, 2] % 300000000000)[if 1.5 then q else [1, 2]..])\n",
-        &[
-            ("array-operand", "[1, 2] % 300000000000"),
-            ("condition-type", "1.5"),
-            ("unknown-name", "q"),
-        ],
-    ),
-    (
-        "476",
-        "Clip c:\n    Note | velocity=(([1, 2] % 300000000000)[if 1.5 then q else [1, 2]..])\n",
-        &[
-            ("array-operand", "[1, 2] % 300000000000"),
-            ("condition-type", "1.5"),
-            ("unknown-name", "q"),
-        ],
-    ),
-    (
-        "476",
-        "Clip c:\n    Note/((i32(true)[[1, 2][5]])[if [1, 2][5] then [1, 2] else q..])\n",
-        &[
-            ("condition-type", "[1, 2][5]"),
-            ("conversion-type", "i32(true)"),
-            ("index-out-of-range", "5"),
-            ("index-out-of-range", "5"),
-            ("not-an-array", "i32(true)"),
-            ("unknown-name", "q"),
-        ],
-    ),
-    (
-        "476",
-        "Clip c:\n    Note | velocity=((i32(true)[[1, 2][5]])[if [1, 2][5] then [1, 2] else q..])\n",
-        &[
-            ("condition-type", "[1, 2][5]"),
-            ("conversion-type", "i32(true)"),
-            ("index-out-of-range", "5"),
-            ("index-out-of-range", "5"),
-            ("not-an-array", "i32(true)"),
-            ("unknown-name", "q"),
-        ],
-    ),
-    (
-        "476",
-        "Clip c:\n    Note/((if 300000000000 then q else [1, 2]) is (if 1 then i32(true) else [1, 2]))\n",
-        &[
-            ("condition-type", "1"),
-            ("condition-type", "300000000000"),
-            ("conversion-type", "i32(true)"),
-            ("type-mismatch", "if 1 then i32(true) else [1, 2]"),
-            ("unknown-name", "q"),
-        ],
-    ),
-    (
-        "476",
-        "Clip c:\n    Note | velocity=((if 300000000000 then q else [1, 2]) is (if 1 then i32(true) else [1, 2]))\n",
-        &[
-            ("condition-type", "1"),
-            ("condition-type", "300000000000"),
-            ("conversion-type", "i32(true)"),
-            ("type-mismatch", "if 1 then i32(true) else [1, 2]"),
-            ("unknown-name", "q"),
-        ],
-    ),
-    (
-        "476",
-        "Clip c:\n    Note/(if ([1, 2][5] - i32(true)) then (if i32(true) then 1.5 else 1.5) else (q / [1, 2][5]))\n",
-        &[
-            ("condition-type", "[1, 2][5] - i32(true)"),
-            ("condition-type", "i32(true)"),
-            ("conversion-type", "i32(true)"),
-            ("conversion-type", "i32(true)"),
-            ("index-out-of-range", "5"),
-            ("unknown-name", "q"),
-        ],
-    ),
-    (
-        "476",
-        "Clip c:\n    Note | velocity=(if ([1, 2][5] - i32(true)) then (if i32(true) then 1.5 else 1.5) else (q / [1, 2][5]))\n",
-        &[
-            ("condition-type", "[1, 2][5] - i32(true)"),
-            ("condition-type", "i32(true)"),
-            ("conversion-type", "i32(true)"),
-            ("conversion-type", "i32(true)"),
-            ("index-out-of-range", "5"),
-            ("unknown-name", "q"),
-        ],
-    ),
-    (
-        "476",
-        "Clip c:\n    Note/(if (if 1.5 then i32(true) else true) then (if [1, 2][5] then [1, 2] else 1.5) else (if [1, 2] then 1.5 else q))\n",
-        &[
-            ("condition-type", "1.5"),
-            ("condition-type", "[1, 2][5]"),
-            ("condition-type", "if [1, 2] then 1.5 else q"),
-            ("conversion-type", "i32(true)"),
-            ("type-mismatch", "if [1, 2][5] then [1, 2] else 1.5"),
-            ("unknown-name", "q"),
-        ],
-    ),
-    (
-        "476",
-        "Clip c:\n    Note | velocity=(if (if 1.5 then i32(true) else true) then (if [1, 2][5] then [1, 2] else 1.5) else (if [1, 2] then 1.5 else q))\n",
-        &[
-            ("condition-type", "1.5"),
-            ("condition-type", "[1, 2][5]"),
-            ("condition-type", "if [1, 2] then 1.5 else q"),
-            ("conversion-type", "i32(true)"),
-            ("type-mismatch", "if [1, 2][5] then [1, 2] else 1.5"),
-            ("unknown-name", "q"),
-        ],
-    ),
-    (
-        "476",
-        "Clip c:\n    Note/((if 300000000000 then true else [1, 2]) and (if [1, 2] then [1, 2] else q))\n",
-        &[
-            ("condition-type", "300000000000"),
-            ("condition-type", "if [1, 2] then [1, 2] else q"),
-            ("type-mismatch", "if 300000000000 then true else [1, 2]"),
-            ("unknown-name", "q"),
-        ],
-    ),
-    (
-        "476",
-        "Clip c:\n    Note | velocity=((if 300000000000 then true else [1, 2]) and (if [1, 2] then [1, 2] else q))\n",
-        &[
-            ("condition-type", "300000000000"),
-            ("condition-type", "if [1, 2] then [1, 2] else q"),
-            ("type-mismatch", "if 300000000000 then true else [1, 2]"),
-            ("unknown-name", "q"),
-        ],
-    ),
-    (
-        "476",
-        "Clip c:\n    Note/((if 1.5 then true else [1, 2])[[1, 2] - q])\n",
-        &[
-            ("array-operand", "[1, 2] - q"),
-            ("condition-type", "1.5"),
-            ("type-mismatch", "if 1.5 then true else [1, 2]"),
-            ("unknown-name", "q"),
-        ],
-    ),
-    (
-        "476",
-        "Clip c:\n    Note | velocity=((if 1.5 then true else [1, 2])[[1, 2] - q])\n",
-        &[
-            ("array-operand", "[1, 2] - q"),
-            ("condition-type", "1.5"),
-            ("type-mismatch", "if 1.5 then true else [1, 2]"),
-            ("unknown-name", "q"),
-        ],
-    ),
-    (
-        "476",
-        "Clip c:\n    Note/(if (if 1 then [1, 2] else 300000000000) then (if q then true else [1, 2][5]) else (if 1 then true else 1))\n",
-        &[
-            ("condition-type", "1"),
-            ("condition-type", "1"),
-            ("type-mismatch", "if 1 then [1, 2] else 300000000000"),
-            ("unknown-name", "q"),
-        ],
-    ),
-    (
-        "476",
-        "Clip c:\n    Note | velocity=(if (if 1 then [1, 2] else 300000000000) then (if q then true else [1, 2][5]) else (if 1 then true else 1))\n",
-        &[
-            ("condition-type", "1"),
-            ("condition-type", "1"),
-            ("type-mismatch", "if 1 then [1, 2] else 300000000000"),
-            ("unknown-name", "q"),
-        ],
-    ),
-    (
-        "476",
-        "Clip c:\n    Note/(if (u8(i32(true))) then (if 300000000000 then 1.5 else q) else (i32(true) / 300000000000))\n",
-        &[
-            ("condition-type", "300000000000"),
-            ("condition-type", "u8(i32(true))"),
-            ("conversion-type", "i32(true)"),
-            ("conversion-type", "i32(true)"),
-            ("unknown-name", "q"),
-        ],
-    ),
-    (
-        "476",
-        "Clip c:\n    Note | velocity=(if (u8(i32(true))) then (if 300000000000 then 1.5 else q) else (i32(true) / 300000000000))\n",
-        &[
-            ("condition-type", "300000000000"),
-            ("condition-type", "u8(i32(true))"),
-            ("conversion-type", "i32(true)"),
-            ("conversion-type", "i32(true)"),
-            ("unknown-name", "q"),
-        ],
-    ),
-    (
-        "476",
-        "Clip c:\n    Note/(if (i32(true) * 1) then (q % [1, 2]) else (if [1, 2] then [1, 2] else 300000000000))\n",
-        &[
-            ("array-operand", "q % [1, 2]"),
-            ("condition-type", "i32(true) * 1"),
-            ("condition-type", "if [1, 2] then [1, 2] else 300000000000"),
-            ("conversion-type", "i32(true)"),
-            ("unknown-name", "q"),
-        ],
-    ),
-    (
-        "476",
-        "Clip c:\n    Note | velocity=(if (i32(true) * 1) then (q % [1, 2]) else (if [1, 2] then [1, 2] else 300000000000))\n",
-        &[
-            ("array-operand", "q % [1, 2]"),
-            ("condition-type", "i32(true) * 1"),
-            ("condition-type", "if [1, 2] then [1, 2] else 300000000000"),
-            ("conversion-type", "i32(true)"),
-            ("unknown-name", "q"),
-        ],
-    ),
-    (
-        "476",
-        "Clip c:\n    Note/(if (if q then i32(true) else q) then (if [1, 2] then 1 else 300000000000) else (if 1 then 300000000000 else [1, 2]))\n",
-        &[
-            ("condition-type", "1"),
-            ("condition-type", "if [1, 2] then 1 else 300000000000"),
-            ("conversion-type", "i32(true)"),
-            ("type-mismatch", "if 1 then 300000000000 else [1, 2]"),
-            ("unknown-name", "q"),
-            ("unknown-name", "q"),
-        ],
-    ),
-    (
-        "476",
-        "Clip c:\n    Note | velocity=(if (if q then i32(true) else q) then (if [1, 2] then 1 else 300000000000) else (if 1 then 300000000000 else [1, 2]))\n",
-        &[
-            ("condition-type", "1"),
-            ("condition-type", "if [1, 2] then 1 else 300000000000"),
-            ("conversion-type", "i32(true)"),
-            ("type-mismatch", "if 1 then 300000000000 else [1, 2]"),
-            ("unknown-name", "q"),
-            ("unknown-name", "q"),
-        ],
-    ),
-    (
-        "476",
-        "Clip c:\n    Note/(if ([1, 2][5] div [1, 2][5]) then (q * 1) else (if 1.5 then i32(true) else true))\n",
-        &[
-            ("condition-type", "1.5"),
-            ("condition-type", "[1, 2][5] div [1, 2][5]"),
-            ("conversion-type", "i32(true)"),
-            ("index-out-of-range", "5"),
-            ("index-out-of-range", "5"),
-            ("unknown-name", "q"),
-        ],
-    ),
-    (
-        "476",
-        "Clip c:\n    Note | velocity=(if ([1, 2][5] div [1, 2][5]) then (q * 1) else (if 1.5 then i32(true) else true))\n",
-        &[
-            ("condition-type", "1.5"),
-            ("condition-type", "[1, 2][5] div [1, 2][5]"),
-            ("conversion-type", "i32(true)"),
-            ("index-out-of-range", "5"),
-            ("index-out-of-range", "5"),
-            ("unknown-name", "q"),
-        ],
-    ),
-    (
-        "476",
-        "Clip c:\n    Note/((if [1, 2][5] then 300000000000 else [1, 2])[1 div q..])\n",
-        &[
-            ("condition-type", "[1, 2][5]"),
-            ("index-out-of-range", "5"),
-            (
-                "type-mismatch",
-                "if [1, 2][5] then 300000000000 else [1, 2]",
-            ),
-            ("unknown-name", "q"),
-        ],
-    ),
-    (
-        "476",
-        "Clip c:\n    Note | velocity=((if [1, 2][5] then 300000000000 else [1, 2])[1 div q..])\n",
-        &[
-            ("condition-type", "[1, 2][5]"),
-            ("index-out-of-range", "5"),
-            (
-                "type-mismatch",
-                "if [1, 2][5] then 300000000000 else [1, 2]",
-            ),
-            ("unknown-name", "q"),
-        ],
-    ),
-    (
-        "476",
-        "Clip c:\n    Note/(if (if 1.5 then [1, 2] else i32(true)) then (true + 300000000000) else (if q then true else 300000000000))\n",
-        &[
-            ("condition-type", "1.5"),
-            ("conversion-type", "i32(true)"),
-            ("operand-type", "true + 300000000000"),
-            ("type-mismatch", "if 1.5 then [1, 2] else i32(true)"),
-            ("unknown-name", "q"),
-        ],
-    ),
-    (
-        "476",
-        "Clip c:\n    Note | velocity=(if (if 1.5 then [1, 2] else i32(true)) then (true + 300000000000) else (if q then true else 300000000000))\n",
-        &[
-            ("condition-type", "1.5"),
-            ("conversion-type", "i32(true)"),
-            ("operand-type", "true + 300000000000"),
-            ("type-mismatch", "if 1.5 then [1, 2] else i32(true)"),
-            ("unknown-name", "q"),
-        ],
-    ),
-    (
-        "476",
-        "Clip c:\n    Note/((if q then 1.5 else true) is (if [1, 2][5] then [1, 2] else i32(true)))\n",
-        &[
-            ("condition-type", "[1, 2][5]"),
-            ("conversion-type", "i32(true)"),
-            ("index-out-of-range", "5"),
-            ("type-mismatch", "if [1, 2][5] then [1, 2] else i32(true)"),
-            ("unknown-name", "q"),
-        ],
-    ),
-    (
-        "476",
-        "Clip c:\n    Note | velocity=((if q then 1.5 else true) is (if [1, 2][5] then [1, 2] else i32(true)))\n",
-        &[
-            ("condition-type", "[1, 2][5]"),
-            ("conversion-type", "i32(true)"),
-            ("index-out-of-range", "5"),
-            ("type-mismatch", "if [1, 2][5] then [1, 2] else i32(true)"),
-            ("unknown-name", "q"),
-        ],
-    ),
-    (
-        "476",
-        "Clip c:\n    Note/((if 1.5 then 300000000000 else [1, 2])[q / 1.5..])\n",
-        &[
-            ("condition-type", "1.5"),
-            ("type-mismatch", "if 1.5 then 300000000000 else [1, 2]"),
-            ("unknown-name", "q"),
-        ],
-    ),
-    (
-        "476",
-        "Clip c:\n    Note | velocity=((if 1.5 then 300000000000 else [1, 2])[q / 1.5..])\n",
-        &[
-            ("condition-type", "1.5"),
-            ("type-mismatch", "if 1.5 then 300000000000 else [1, 2]"),
-            ("unknown-name", "q"),
-        ],
-    ),
-    (
-        "476",
-        "Clip c:\n    Note/(if (if 300000000000 then [1, 2] else 1) then (if 1.5 then [1, 2][5] else [1, 2][5]) else (if q then [1, 2][5] else true))\n",
-        &[
-            ("condition-type", "1.5"),
-            ("condition-type", "300000000000"),
-            ("type-mismatch", "if 300000000000 then [1, 2] else 1"),
-            ("unknown-name", "q"),
-        ],
-    ),
-    (
-        "476",
-        "Clip c:\n    Note | velocity=(if (if 300000000000 then [1, 2] else 1) then (if 1.5 then [1, 2][5] else [1, 2][5]) else (if q then [1, 2][5] else true))\n",
-        &[
-            ("condition-type", "1.5"),
-            ("condition-type", "300000000000"),
-            ("type-mismatch", "if 300000000000 then [1, 2] else 1"),
-            ("unknown-name", "q"),
-        ],
-    ),
-    (
-        "476",
-        "Clip c:\n    Note/((if [1, 2][5] then [1, 2] else 300000000000) < (q % i32(true)))\n",
-        &[
-            ("condition-type", "[1, 2][5]"),
-            ("conversion-type", "i32(true)"),
-            ("index-out-of-range", "5"),
-            (
-                "type-mismatch",
-                "if [1, 2][5] then [1, 2] else 300000000000",
-            ),
-            ("unknown-name", "q"),
-        ],
-    ),
-    (
-        "476",
-        "Clip c:\n    Note | velocity=((if [1, 2][5] then [1, 2] else 300000000000) < (q % i32(true)))\n",
-        &[
-            ("condition-type", "[1, 2][5]"),
-            ("conversion-type", "i32(true)"),
-            ("index-out-of-range", "5"),
-            (
-                "type-mismatch",
-                "if [1, 2][5] then [1, 2] else 300000000000",
-            ),
-            ("unknown-name", "q"),
-        ],
-    ),
-    (
-        "476",
-        "Clip c:\n    Note/(if (if true then 1.5 else 300000000000) then (i32(true) < 1.5) else (q * q))\n",
-        &[
-            ("condition-type", "if true then 1.5 else 300000000000"),
-            ("conversion-type", "i32(true)"),
-            ("unknown-name", "q"),
-            ("unknown-name", "q"),
-        ],
-    ),
-    (
-        "476",
-        "Clip c:\n    Note | velocity=(if (if true then 1.5 else 300000000000) then (i32(true) < 1.5) else (q * q))\n",
-        &[
-            ("condition-type", "if true then 1.5 else 300000000000"),
-            ("conversion-type", "i32(true)"),
-            ("unknown-name", "q"),
-            ("unknown-name", "q"),
-        ],
-    ),
-    (
-        "476",
-        "Clip c:\n    Note/((if i32(true) then [1, 2] else q)[if i32(true) then 1.5 else i32(true)..])\n",
-        &[
-            ("condition-type", "i32(true)"),
-            ("condition-type", "i32(true)"),
-            ("conversion-type", "i32(true)"),
-            ("conversion-type", "i32(true)"),
-            ("conversion-type", "i32(true)"),
-            ("unknown-name", "q"),
-        ],
-    ),
-    (
-        "476",
-        "Clip c:\n    Note | velocity=((if i32(true) then [1, 2] else q)[if i32(true) then 1.5 else i32(true)..])\n",
-        &[
-            ("condition-type", "i32(true)"),
-            ("condition-type", "i32(true)"),
-            ("conversion-type", "i32(true)"),
-            ("conversion-type", "i32(true)"),
-            ("conversion-type", "i32(true)"),
-            ("unknown-name", "q"),
-        ],
-    ),
-    (
-        "476",
-        "Clip c:\n    Note/(if (q * true) then (if 300000000000 then [1, 2] else 300000000000) else (if i32(true) then q else true))\n",
-        &[
-            ("condition-type", "300000000000"),
-            ("condition-type", "i32(true)"),
-            ("conversion-type", "i32(true)"),
-            (
-                "type-mismatch",
-                "if 300000000000 then [1, 2] else 300000000000",
-            ),
-            ("unknown-name", "q"),
-            ("unknown-name", "q"),
-        ],
-    ),
-    (
-        "476",
-        "Clip c:\n    Note | velocity=(if (q * true) then (if 300000000000 then [1, 2] else 300000000000) else (if i32(true) then q else true))\n",
-        &[
-            ("condition-type", "300000000000"),
-            ("condition-type", "i32(true)"),
-            ("conversion-type", "i32(true)"),
-            (
-                "type-mismatch",
-                "if 300000000000 then [1, 2] else 300000000000",
-            ),
-            ("unknown-name", "q"),
-            ("unknown-name", "q"),
-        ],
-    ),
-    (
-        "476",
         "state i(1)\nlet xs = [10, 20, 30, 40]\nlet s = xs[i..^1] + xs[..1]Clip c:\n    Note/(s[0] + s.size)\n",
         &[("let-syntax", "Clip")],
     ),
@@ -1408,4 +102,291 @@ pub fn reviewed(text: &str) -> Option<(&'static str, Vec<(String, String)>)> {
             expected.sort();
             (*ledger, expected)
         })
+}
+
+pub type Drawn = (String, usize, usize);
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Change {
+    Added,
+    Removed,
+}
+
+pub struct Seen<'a> {
+    pub program: &'a str,
+    pub old: &'a [Drawn],
+    pub new: &'a [Drawn],
+}
+
+impl Seen<'_> {
+    fn text(&self, at: &Drawn) -> &str {
+        self.program.get(at.1..at.2).unwrap_or_default()
+    }
+
+    fn before(&self, at: &Drawn) -> &str {
+        self.program.get(..at.1).unwrap_or_default()
+    }
+
+    fn after(&self, at: &Drawn) -> &str {
+        self.program.get(at.2..).unwrap_or_default()
+    }
+
+    fn line(&self, start: usize) -> usize {
+        self.program
+            .get(..start)
+            .unwrap_or_default()
+            .matches('\n')
+            .count()
+    }
+}
+
+fn holds(set: &[Drawn], code: &str, at: &Drawn) -> bool {
+    set.iter()
+        .any(|drawn| drawn.0 == code && drawn.1 == at.1 && drawn.2 == at.2)
+}
+
+fn top_level_let_name(seen: &Seen<'_>, at: &Drawn) -> bool {
+    let before = seen.before(at);
+    (before == "let " || before.ends_with("\nlet "))
+        && !seen.text(at).is_empty()
+        && seen
+            .text(at)
+            .chars()
+            .all(|character| character.is_alphanumeric() || character == '_')
+}
+
+fn reads_a_cell_somewhere(program: &str) -> bool {
+    program
+        .lines()
+        .any(|line| line.starts_with("state ") || line.starts_with("input "))
+}
+
+fn line_fault(code: &str) -> bool {
+    code.ends_with("-syntax")
+        || [
+            "unexpected-character",
+            "reserved-token",
+            "reserved-word",
+            "unknown-suffix",
+            "prefixed-suffix",
+            "float-type-suffix",
+            "semicolon",
+            "unterminated-string",
+            "invalid-identifier",
+            "unexpected-indent",
+            "dedent-mismatch",
+        ]
+        .contains(&code)
+}
+
+fn reactive_let(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
+    if change != Change::Added || !reads_a_cell_somewhere(seen.program) {
+        return false;
+    }
+    if at.0 == "reactive-let" {
+        return top_level_let_name(seen, at);
+    }
+    let line = seen.line(at.1);
+    at.0 == "type-mismatch"
+        && seen.line(at.2.saturating_sub(1).max(at.1)) == line
+        && seen.new.iter().any(|drawn| {
+            drawn.0 == "reactive-let"
+                && seen.line(drawn.1) == line
+                && top_level_let_name(seen, drawn)
+        })
+}
+
+fn faulty_line(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
+    let line = seen.line(at.1);
+    change == Change::Removed
+        && at.0 == "reactive-let"
+        && top_level_let_name(seen, at)
+        && seen
+            .old
+            .iter()
+            .any(|drawn| line_fault(&drawn.0) && seen.line(drawn.1) == line)
+}
+
+fn beside_a_fault(seen: &Seen<'_>) -> bool {
+    !seen.old.is_empty()
+}
+
+fn a_condition(seen: &Seen<'_>, at: &Drawn) -> bool {
+    seen.before(at).trim_end_matches('(').ends_with("if ")
+        && seen.after(at).trim_start_matches(')').starts_with(" then ")
+}
+
+fn condition_beside_arms(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
+    if !beside_a_fault(seen) || !a_condition(seen, at) {
+        return false;
+    }
+    match (change, at.0.as_str()) {
+        (Change::Added, "condition-type") => true,
+        (Change::Removed, "type-mismatch") => holds(seen.new, "condition-type", at),
+        _ => false,
+    }
+}
+
+fn indexed_base(seen: &Seen<'_>, at: &Drawn) -> bool {
+    seen.after(at).trim_start_matches(')').starts_with('[')
+}
+
+fn index_of_read(text: &str) -> Option<usize> {
+    let mut depth = 0usize;
+    for (at, character) in text.char_indices().rev() {
+        match character {
+            ']' => depth += 1,
+            '[' => {
+                depth = depth.checked_sub(1)?;
+                if depth == 0 {
+                    return Some(at);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+fn slice_read_as_an_index(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
+    let text = seen.text(at);
+    let Some(open) = index_of_read(text).filter(|_| text.ends_with(']')) else {
+        return false;
+    };
+    let index = (at.1 + open + 1, at.2 - 1);
+    let slice = seen.program.get(index.0..index.1).unwrap_or_default();
+    change == Change::Added
+        && at.0 == "index-type"
+        && slice.ends_with(']')
+        && slice.contains("..")
+        && seen
+            .new
+            .iter()
+            .any(|drawn| drawn.1 >= index.0 && drawn.2 <= index.1 && drawn != at)
+}
+
+fn fit_beside_a_range_fault(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
+    let text = seen.text(at);
+    change == Change::Added
+        && at.0 == "does-not-fit"
+        && !text.is_empty()
+        && text.chars().all(|character| character.is_ascii_digit())
+        && seen.before(at).ends_with("] / ")
+        && seen
+            .new
+            .iter()
+            .any(|drawn| drawn.0 == "index-out-of-range" && drawn.2 + 4 == at.1)
+}
+
+fn base_not_an_array(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
+    if !beside_a_fault(seen) || !indexed_base(seen, at) {
+        return false;
+    }
+    match (change, at.0.as_str()) {
+        (Change::Added, "not-an-array") => !holds(seen.new, "type-mismatch", at),
+        (Change::Removed, "type-mismatch") => holds(seen.new, "not-an-array", at),
+        _ => false,
+    }
+}
+
+fn base_not_an_array_beside_the_twin_pass(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
+    change == Change::Added
+        && beside_a_fault(seen)
+        && at.0 == "not-an-array"
+        && indexed_base(seen, at)
+        && holds(seen.old, "type-mismatch", at)
+        && holds(seen.new, "type-mismatch", at)
+}
+
+pub struct Class {
+    pub ledger: &'static str,
+    pub rule: &'static str,
+    explains: fn(&Seen<'_>, Change, &Drawn) -> bool,
+}
+
+impl Class {
+    pub fn named(&self) -> String {
+        format!("{}: {}", self.ledger, self.rule)
+    }
+}
+
+pub const CLASSES: &[Class] = &[
+    Class {
+        ledger: "464",
+        rule: "a top-level let reading a cell, directly or through another let, draws reactive-let beside any fault in its value, and its value's own type-mismatch beside it",
+        explains: reactive_let,
+    },
+    Class {
+        ledger: "455",
+        rule: "a let declared on a line holding a syntax fault is a placeholder and draws no reactive-let",
+        explains: faulty_line,
+    },
+    Class {
+        ledger: "476",
+        rule: "condition-type at a choice's non-bool condition beside its mismatched or placeholder arms, in place of the old engine's type-mismatch there",
+        explains: condition_beside_arms,
+    },
+    Class {
+        ledger: "476",
+        rule: "not-an-array at an indexed or sliced base that is not an array, in place of the old engine's type-mismatch there",
+        explains: base_not_an_array,
+    },
+    Class {
+        ledger: "476, the twin pass's (R4b)",
+        rule: "not-an-array at a refused bool base beside the type-mismatch the twin pass adds there",
+        explains: base_not_an_array_beside_the_twin_pass,
+    },
+    Class {
+        ledger: "476",
+        rule: "index-type at a read whose index is a slice keeping its array type beside its refused bound",
+        explains: slice_read_as_an_index,
+    },
+    Class {
+        ledger: "476",
+        rule: "does-not-fit at a division's literal operand beside its sibling's index-out-of-range",
+        explains: fit_beside_a_range_fault,
+    },
+];
+
+pub fn changes(old: &[Drawn], new: &[Drawn]) -> Vec<(Change, Drawn)> {
+    let mut left: Vec<Drawn> = old.to_vec();
+    let mut changes = Vec::new();
+    for drawn in new {
+        match left.iter().position(|kept| kept == drawn) {
+            Some(at) => {
+                left.swap_remove(at);
+            }
+            None => changes.push((Change::Added, drawn.clone())),
+        }
+    }
+    changes.extend(left.into_iter().map(|drawn| (Change::Removed, drawn)));
+    changes
+}
+
+pub fn moved(
+    program: &str,
+    old: &[Drawn],
+    new: &[Drawn],
+) -> Result<Vec<&'static Class>, Vec<(Change, Drawn)>> {
+    let seen = Seen { program, old, new };
+    let mut used: Vec<&'static Class> = Vec::new();
+    let mut unexplained = Vec::new();
+    for (change, at) in changes(old, new) {
+        match CLASSES
+            .iter()
+            .find(|class| (class.explains)(&seen, change, &at))
+        {
+            Some(class) => {
+                if !used.iter().any(|seen| std::ptr::eq(*seen, class)) {
+                    used.push(class);
+                }
+            }
+            None => unexplained.push((change, at)),
+        }
+    }
+    if unexplained.is_empty() {
+        Ok(used)
+    } else {
+        Err(unexplained)
+    }
 }

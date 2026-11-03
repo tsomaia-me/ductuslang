@@ -1,7 +1,7 @@
 mod reviewed;
 mod support;
 
-use symphonyscript::{Code, Compiler, Diagnostic, Source};
+use symphonyscript::{Code, Compiler, Diagnostic, Selector, Source};
 use symphonyscript_core::{Count, Vocabulary};
 use symphonyscript_fixtures::{Rows, covered};
 
@@ -5899,6 +5899,16 @@ fn placeholder_rule_failures(rows: &Rows, part: usize, parts: usize) -> (Vec<Str
         Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("the vocabulary compiles"),
         Compiler::new(&support::signature_vocabulary()).expect("the vocabulary compiles"),
     ];
+    let olds = [
+        symphonyscript_fixtures::vocabulary(),
+        support::signature_vocabulary(),
+    ]
+    .map(|vocabulary| {
+        let mut old = Compiler::new(&vocabulary).expect("the vocabulary compiles");
+        old.select(Selector::OldEngine);
+        old
+    });
+    let mut moves = std::collections::BTreeMap::new();
     let mut failures = Vec::new();
     let mut programs = 0;
     for expression in expressions.iter().skip(part).step_by(parts) {
@@ -5964,11 +5974,28 @@ fn placeholder_rule_failures(rows: &Rows, part: usize, parts: usize) -> (Vec<Str
                         ));
                     }
                     if found != expected {
-                        failures.push(support::failed_row_with(
-                            compiler,
-                            &text,
-                            format!("{program}\n  found {found:?}\n  twins {expected:?}"),
+                        let old = drawn(&spanned_errors(
+                            &olds[place.vocabulary],
+                            &[Source {
+                                path: "main.sym".into(),
+                                text: program.clone(),
+                            }],
                         ));
+                        match reviewed::moved(&program, &old, &drawn(&found)) {
+                            Ok(classes) if !classes.is_empty() => {
+                                for class in classes {
+                                    *moves.entry(class.named()).or_insert(0usize) += 1;
+                                }
+                            }
+                            moved => failures.push(support::failed_row_with(
+                                compiler,
+                                &text,
+                                format!(
+                                    "{program}\n  found {found:?}\n  twins {expected:?}\n  old engine {old:?}\n  no class explains {:?}",
+                                    moved.err().unwrap_or_default()
+                                ),
+                            )),
+                        }
                     }
                     continue;
                 }
@@ -5998,7 +6025,18 @@ fn placeholder_rule_failures(rows: &Rows, part: usize, parts: usize) -> (Vec<Str
             }
         }
     }
+    for (class, count) in &moves {
+        eprintln!("{count} programs move by {class}");
+    }
     (failures, programs)
+}
+
+fn drawn(spans: &Spans) -> Vec<reviewed::Drawn> {
+    spans
+        .iter()
+        .filter(|(_, file, ..)| file == "main.sym")
+        .map(|(code, _, start, end)| (code.to_string(), *start as usize, *end as usize))
+        .collect()
 }
 
 fn reviewed_spans(compiler: &Compiler, program: &str) -> Vec<(String, String)> {

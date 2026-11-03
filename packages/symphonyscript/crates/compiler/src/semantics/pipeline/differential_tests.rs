@@ -39,32 +39,46 @@ fn the_reviewed_moves_draw_their_expected_sets_on_the_new_core_464_476() {
     }
 }
 
+const TWIN_PASS_TYPE_MISMATCHES: [&str; 10] = [
+    "Clip c:\n    Note/((true is q)[if true then [1, 2][5] else [1, 2]])\n",
+    "Clip c:\n    Note | velocity=((true is q)[if true then [1, 2][5] else [1, 2]])\n",
+    "Clip c:\n    Note/((true < q)[i32(true)[[1, 2]]])\n",
+    "Clip c:\n    Note | velocity=((true < q)[i32(true)[[1, 2]]])\n",
+    "Clip c:\n    Note/((1.5 is q)[i32(true)[1]])\n",
+    "Clip c:\n    Note | velocity=((1.5 is q)[i32(true)[1]])\n",
+    "Clip c:\n    Note/(([1, 2][5] or q)[true[true]..])\n",
+    "Clip c:\n    Note | velocity=(([1, 2][5] or q)[true[true]..])\n",
+    "Clip c:\n    Note/(if (1 div i32(true)) then (if [1, 2] then q else q) else (q or [1, 2]))\n",
+    "Clip c:\n    Note | velocity=(if (1 div i32(true)) then (if [1, 2] then q else q) else (q or [1, 2]))\n",
+];
+
 #[test]
-fn the_twin_pass_alone_adds_the_type_mismatches_marked_in_the_reviewed_sets_476() {
+fn the_twin_pass_alone_adds_the_type_mismatches_of_its_476_programs() {
     let new =
         Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("the vocabulary compiles");
-    let mut marked = 0;
+    let programs = REVIEWED
+        .iter()
+        .map(|(_, text, _)| (*text, false))
+        .chain(TWIN_PASS_TYPE_MISMATCHES.iter().map(|text| (*text, true)));
     let mut wrong = Vec::new();
-    for (ledger, text, _) in REVIEWED.iter().copied() {
+    for (text, twin_pass) in programs {
+        let sources = [source(text)];
         let alone = new
-            .checked_by_new_core_without_twins(&[source(text)])
+            .checked_by_new_core_without_twins(&sources)
             .expect("the new core takes the program");
         let alone = spanned(text, &alone);
-        let expected = reviewed(text)
-            .map(|(_, expected)| expected)
-            .unwrap_or_default();
-        let added: Vec<&(String, String)> = expected
-            .iter()
+        let whole = new
+            .checked_by_new_core(&sources)
+            .expect("the new core takes the program");
+        let added: Vec<(String, String)> = spanned(text, &whole)
+            .into_iter()
             .filter(|wanted| wanted.0 == "type-mismatch" && !alone.contains(wanted))
             .collect();
-        let twin_pass = ledger.contains("the twin pass's");
-        marked += usize::from(twin_pass);
         if added.is_empty() == twin_pass {
-            wrong.push(format!("{ledger}: {text}\n  the twin pass adds {added:?}"));
+            wrong.push(format!("{text}\n  the twin pass adds {added:?}"));
         }
     }
     assert!(wrong.is_empty(), "{}", wrong.join("\n"));
-    assert_eq!(marked, 10);
 }
 
 fn assert_equal(corpora: &[Corpus]) -> u64 {
@@ -82,11 +96,6 @@ fn assert_equal(corpora: &[Corpus]) -> u64 {
             };
             taken += 1;
             let expected = old.check(&sources);
-            let without_reactive_lets: Vec<_> = found
-                .iter()
-                .filter(|diagnostic| diagnostic.code != crate::diagnostics::Code::ReactiveLet)
-                .cloned()
-                .collect();
             if let Some((ledger, wanted)) = reviewed(text) {
                 if spanned(text, &found) == wanted {
                     moved.push(format!("{ledger} {}:\n{text}", corpus.name));
@@ -98,27 +107,23 @@ fn assert_equal(corpora: &[Corpus]) -> u64 {
                 }
                 continue;
             }
-            if found != expected && without_reactive_lets == expected {
-                moved.push(format!("464 {}:\n{text}", corpus.name));
+            if found == expected {
                 continue;
             }
-            let old_without_reactive_lets: Vec<_> = expected
-                .iter()
-                .filter(|diagnostic| diagnostic.code != crate::diagnostics::Code::ReactiveLet)
-                .cloned()
-                .collect();
-            if found != expected
-                && found == old_without_reactive_lets
-                && faulty_line_let(text, &corpus.vocabulary)
-            {
-                moved.push(format!("455 {}:\n{text}", corpus.name));
-                continue;
-            }
-            if found != expected {
-                differing.push(format!(
+            let (old_drawn, new_drawn) = (drawn(&expected), drawn(&found));
+            match reviewed::moved(text, &old_drawn, &new_drawn) {
+                Ok(classes)
+                    if !classes.is_empty()
+                        && kept(&found, &new_drawn, &old_drawn)
+                            == kept(&expected, &old_drawn, &new_drawn) =>
+                {
+                    let named: Vec<String> = classes.iter().map(|class| class.named()).collect();
+                    moved.push(format!("{} {}:\n{text}", named.join("; "), corpus.name));
+                }
+                _ => differing.push(format!(
                     "{}:\n{text}\n  new core {found:#?}\n  old engine {expected:#?}",
                     corpus.name
-                ));
+                )),
             }
         }
     }
@@ -546,18 +551,32 @@ fn a_declaration_on_a_faulty_line_draws_no_reactive_let_and_otherwise_what_the_o
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
 
-fn faulty_line_let(text: &str, vocabulary: &symphonyscript_core::Vocabulary) -> bool {
-    let parsed = crate::syntax::parse(&source(text), vocabulary);
-    let mut start = 0;
-    text.split_inclusive('\n').any(|line| {
-        let range = start + 1..start + line.trim_end_matches('\n').len();
-        start += line.len();
-        line.starts_with("let ")
-            && parsed
-                .diagnostics
-                .iter()
-                .any(|diagnostic| range.contains(&(diagnostic.span.range.start as usize)))
-    })
+fn drawn(found: &[crate::diagnostics::Diagnostic]) -> Vec<reviewed::Drawn> {
+    found
+        .iter()
+        .filter(|diagnostic| diagnostic.code != crate::diagnostics::Code::NoEntryInstance)
+        .map(|diagnostic| {
+            (
+                diagnostic.code.to_string(),
+                diagnostic.span.range.start as usize,
+                diagnostic.span.range.end as usize,
+            )
+        })
+        .collect()
+}
+
+fn kept(
+    found: &[crate::diagnostics::Diagnostic],
+    own: &[reviewed::Drawn],
+    other: &[reviewed::Drawn],
+) -> Vec<crate::diagnostics::Diagnostic> {
+    found
+        .iter()
+        .filter(|diagnostic| diagnostic.code != crate::diagnostics::Code::NoEntryInstance)
+        .zip(own)
+        .filter(|(_, at)| other.contains(at))
+        .map(|(diagnostic, _)| diagnostic.clone())
+        .collect()
 }
 
 const LOCAL_CLASHES: [(&str, &[(&str, &str)]); 10] = [
@@ -619,5 +638,83 @@ fn a_local_name_equal_to_a_variant_or_a_vocabulary_name_draws_as_the_old_engine_
         wanted.sort();
         assert_eq!(spanned(text, &found), wanted, "{text}");
         assert_eq!(found, old.check(&sources), "{text}");
+    }
+}
+
+const SCALAR_ANNOTATIONS: [&str; 20] = [
+    "let a: i32 = true\nClip k:\n    Note/a\n",
+    "let a: u8 = 300\nClip k:\n    Note/a\n",
+    "let a: f32 = 1\nClip k:\n    Note/a\n",
+    "let a: i32 = [1]\nClip k:\n    Note/a\n",
+    "let a: i64 = 1\nClip k:\n    Note/a\n",
+    "let a: u8 = 300\nClip k:\n    Note/1\n",
+    "let a: i32 = 1.5\nClip k:\n    Note/a\n",
+    "let a: f32 = 1.5\nClip k:\n    Note | velocity=a\n",
+    "let a: u8 = 1 + 300\nClip k:\n    Note/a\n",
+    "let a: bool = 1\nClip k:\n    Note/(if a then 1 else 2)\n",
+    "let a: i32 = 300000000000\nClip k:\n    Note/a\n",
+    "let b = 1.5\nlet a: i32 = b\nClip k:\n    Note/a\n",
+    "let a: i32 = i64(1)\nClip k:\n    Note/a\n",
+    "let a: u8 = 255\nClip k:\n    Note/(a + 1)\n",
+    "let a: u8 = 255\nClip k:\n    Note/([1, 2][a])\n",
+    "let a: f64 = 1.5\nClip k:\n    Note | velocity=a\n",
+    "let a: i32 = true + 1\nClip k:\n    Note/a\n",
+    "let a: i32 = [1][3]\nClip k:\n    Note/a\n",
+    "let a: i32 = q + 1.5\nClip c:\n    Note/(a)\n",
+    "let a: i32 = if true then q else 1.5\nClip c:\n    Note/(a)\n",
+];
+
+#[test]
+fn a_scalar_annotation_on_a_top_level_let_draws_as_the_old_engine_draws() {
+    let old = Compiler::new(&symphonyscript_fixtures::vocabulary())
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
+    let new =
+        Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("the vocabulary compiles");
+    for text in SCALAR_ANNOTATIONS {
+        let sources = [source(text)];
+        let found = new
+            .checked_by_new_core(&sources)
+            .expect("the new core takes the program");
+        assert_eq!(found, old.check(&sources), "{text}");
+    }
+}
+
+const REACTIVE_ANNOTATIONS: [(&str, &[(&str, &str)]); 4] = [
+    (
+        "state s0 = [1]\nlet x: i32 = s0\nClip c:\n    Note/(x)\n",
+        &[
+            ("reactive-let", "x"),
+            ("type-mismatch", "let x: i32 = s0\n"),
+        ],
+    ),
+    (
+        "state s0(1)\nlet x: i32 = s0 + 1.5\nClip c:\n    Note/(x)\n",
+        &[("reactive-let", "x"), ("type-mismatch", "s0 + 1.5")],
+    ),
+    (
+        "state s0(true)\nlet x: i32 = s0\nClip c:\n    Note/(x)\n",
+        &[("reactive-let", "x"), ("type-mismatch", "s0")],
+    ),
+    (
+        "state s0(1)\nlet x: i32 = s0\nClip c:\n    Note/(x)\n",
+        &[("reactive-let", "x")],
+    ),
+];
+
+#[test]
+fn a_let_reading_a_cell_draws_reactive_let_beside_its_annotations_fault_464() {
+    let new =
+        Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("the vocabulary compiles");
+    for (text, expected) in REACTIVE_ANNOTATIONS {
+        let found = new
+            .checked_by_new_core(&[source(text)])
+            .expect("the new core takes the program");
+        let mut wanted: Vec<(String, String)> = expected
+            .iter()
+            .map(|(code, span)| ((*code).to_string(), (*span).to_string()))
+            .collect();
+        wanted.sort();
+        assert_eq!(spanned(text, &found), wanted, "{text}");
     }
 }

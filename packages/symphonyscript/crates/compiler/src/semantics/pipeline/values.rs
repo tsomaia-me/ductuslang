@@ -402,7 +402,10 @@ impl Core<'_> {
                         && !self.cyclic.get(at as usize).copied().unwrap_or(false)
                     {
                         if let Some(annotated) = self.annotation_ty(at)? {
-                            let let_ty = flexible(annotated);
+                            let let_ty = match self.fact(self.let_root(at)?)?.fixed {
+                                Some(own) if widens(own, annotated) => evaluated_in(annotated),
+                                _ => flexible(annotated),
+                            };
                             if matches!(class(node_ty), 1 | 2 | 4..=6) {
                                 frame.steps.push(Step::Widen(evaluated_in(node_ty)));
                             }

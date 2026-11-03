@@ -89,9 +89,6 @@ impl Core<'_> {
         let Some(ty) = self.annotation_ty(at)? else {
             return Ok(Ok(()));
         };
-        if self.let_reads_cell(at)? {
-            return Ok(Ok(()));
-        }
         let root = self.let_root(at)?;
         for node in self.postorder(root)? {
             if matches!(self.ir.node(node)?.0, Op::Call | Op::NamedCall) {
