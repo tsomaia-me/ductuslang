@@ -189,6 +189,14 @@ impl Core<'_> {
                 )?;
                 return self.evaluate_own(root);
             }
+            Leaf::Float if integer && self.reads_float_cell(root)? => {
+                self.draw_at(
+                    Code::FloatToInteger,
+                    root,
+                    "a float cell is used where an integer is expected; a conversion states the rounding",
+                )?;
+                return self.evaluate_own(root);
+            }
             Leaf::Float if integer => {
                 self.draw_at(
                     Code::TypeMismatch,
@@ -216,6 +224,7 @@ impl Core<'_> {
         let evaluated = match fact.fixed {
             Some(own) if int_range(own).is_some() && int_range(ty).is_some() => ty,
             Some(own) => own,
+            None if self.is_reactive(root)? => ty,
             None => flexible(ty),
         };
         if self.is_kept(root)? {

@@ -11,7 +11,9 @@ use crate::semantics::ir::{CellWord, InputId, StateId};
 use crate::source::Source;
 
 fn analyzed<R>(text: &str, inspect: impl FnOnce(&Engine<'_>) -> R) -> (Vec<(Code, String)>, R) {
-    let compiler = Compiler::new(&vocabulary()).expect("the vocabulary compiles");
+    let compiler = Compiler::new(&vocabulary())
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
     let source = Source {
         path: "test.sym".into(),
         text: text.into(),

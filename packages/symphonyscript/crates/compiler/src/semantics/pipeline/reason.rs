@@ -13,4 +13,5 @@ pub(crate) enum Reason {
     StringAttribute,
     ArrayAttribute,
     ValueLimitWarning,
+    CellGroup,
 }

@@ -1,7 +1,7 @@
 use super::reason::Reason;
 use super::slice::{LANDED, Slice};
 use crate::semantics::ir::Suffix;
-use crate::semantics::ir::flat::{ABSENT, AttrForm, FlatIr, ItemRec, NONE, Op, TopRec};
+use crate::semantics::ir::flat::{ABSENT, AttrForm, CellRec, FlatIr, ItemRec, NONE, Op, TopRec};
 
 pub(crate) fn op_slice(op: Op) -> Slice {
     match op {
@@ -29,7 +29,8 @@ pub(crate) fn op_slice(op: Op) -> Slice {
 pub(crate) fn top_slice(top: TopRec) -> Slice {
     match top {
         TopRec::Let(_) | TopRec::Placement(_) => Slice::One,
-        TopRec::Cell(_) | TopRec::Fn(_) => Slice::Pending,
+        TopRec::Cell(_) => Slice::One,
+        TopRec::Fn(_) => Slice::Pending,
         TopRec::Pattern(_) => Slice::Three,
         TopRec::Placeholder { .. } | TopRec::Drawn(_) | TopRec::Skip => Slice::DefaultFlip,
     }
@@ -75,6 +76,14 @@ pub(crate) fn covers(ir: &FlatIr) -> bool {
                 .lets
                 .get(*at as usize)
                 .is_none_or(|rec| rec.is_match || rec.faulty_line || annotated(ir, rec.binder))
+        {
+            return false;
+        }
+        if let TopRec::Cell(at) = top
+            && ir
+                .cells
+                .get(*at as usize)
+                .is_none_or(|rec| !plain_cell(ir, rec))
         {
             return false;
         }
@@ -135,10 +144,22 @@ pub(crate) fn reason_slice(reason: Reason) -> Slice {
         }
         Reason::StringAttribute => Slice::DefaultFlip,
         Reason::PatternOrWirePlacement => Slice::Three,
+        Reason::CellGroup => Slice::Four,
         Reason::BareVariant | Reason::UnitAttribute | Reason::EnumAttribute => Slice::Five,
     }
 }
 
 pub(crate) fn declines(reason: Reason) -> bool {
     !landed(reason_slice(reason))
+}
+
+fn plain_cell(ir: &FlatIr, rec: &CellRec) -> bool {
+    let host_fed = rec.rule == NONE && rec.init != NONE;
+    let derived = rec.rule != NONE && rec.init == NONE;
+    (host_fed || derived)
+        && !rec.faulty_line
+        && rec.drawn.0 == rec.drawn.1
+        && rec.clock.0 == rec.clock.1
+        && rec.capacity.is_none()
+        && !annotated(ir, rec.binder)
 }

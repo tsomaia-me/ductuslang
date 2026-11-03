@@ -1,5 +1,6 @@
 mod analyze;
 mod array_node;
+mod cells;
 mod check;
 mod collect;
 mod consistency;

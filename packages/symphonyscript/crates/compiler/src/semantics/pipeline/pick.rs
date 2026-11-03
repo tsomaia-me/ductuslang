@@ -23,7 +23,11 @@ impl Core<'_> {
                     DeclRef::Let(at) if !self.cyclic.get(at as usize).copied().unwrap_or(false) => {
                         node = self.let_root(at)?;
                     }
-                    DeclRef::Let(_) | DeclRef::None | DeclRef::Instance(_) | DeclRef::Duplicate => {
+                    DeclRef::Let(_)
+                    | DeclRef::Cell(_)
+                    | DeclRef::None
+                    | DeclRef::Instance(_)
+                    | DeclRef::Duplicate => {
                         return Ok(None);
                     }
                 },

@@ -49,8 +49,15 @@ impl Core<'_> {
                 | ItemRec::Line(_)
                 | ItemRec::Paren(_) => None,
             },
-            TopRec::Cell(_)
-            | TopRec::Fn(_)
+            TopRec::Cell(at) => {
+                let rec = self
+                    .ir
+                    .cells
+                    .get(at as usize)
+                    .ok_or(Internal::missed("IR cell"))?;
+                Some((self.ir.binder(rec.binder)?.name, DeclRef::Cell(at)))
+            }
+            TopRec::Fn(_)
             | TopRec::Pattern(_)
             | TopRec::Placeholder { .. }
             | TopRec::Drawn(_)
@@ -58,7 +65,7 @@ impl Core<'_> {
         })
     }
 
-    fn name_span(&self, file: u32, name: u32) -> Result<Span, Internal> {
+    pub fn name_span(&self, file: u32, name: u32) -> Result<Span, Internal> {
         let entry = self.ir.name(name).ok_or(Internal::missed("IR name"))?;
         Ok(self.span(file, entry.lo, entry.hi))
     }
@@ -150,7 +157,7 @@ impl Core<'_> {
                 .copied()
                 .unwrap_or(DeclRef::None);
             match decl {
-                DeclRef::Let(_) => {}
+                DeclRef::Let(_) | DeclRef::Cell(_) => {}
                 DeclRef::Duplicate => self.placeholders.push(node),
                 DeclRef::Instance(_) => return Ok(Err(Declined(Reason::NameOfInstance))),
                 DeclRef::None => {

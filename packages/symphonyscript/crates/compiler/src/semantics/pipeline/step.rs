@@ -4,7 +4,8 @@ use crate::semantics::operators::EvalTy;
 pub(crate) enum Step {
     Visit(u32, EvalTy),
     Apply(u32, EvalTy),
-    Choose(u32, u32, EvalTy),
+    Choose(u32, EvalTy),
+    Runtime(u32),
     Pick(u32, EvalTy),
     Record(u32, bool, u32, EvalTy),
     Fit(u32, EvalTy),

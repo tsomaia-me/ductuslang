@@ -281,7 +281,7 @@ const DECIDING_NONE: &[(&str, &str)] = &[
         "the array literal a read selects its element from, ARCHITECTURE §7's compile-time element read",
     ),
     (
-        "pipeline/values.rs evaluate_own",
+        "pipeline/values.rs evaluate_owned",
         "the parts of a faulty expression read in their own types, ARCHITECTURE §7's placeholder rule",
     ),
     (

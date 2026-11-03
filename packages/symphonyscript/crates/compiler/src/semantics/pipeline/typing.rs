@@ -188,6 +188,10 @@ impl Core<'_> {
             if let Some(slot) = self.facts.get_mut(local) {
                 *slot = Some(fact);
             }
+            let reactive = self.node_reactive(node)?;
+            if let Some(slot) = self.reactive.get_mut(local) {
+                *slot = reactive;
+            }
         }
         Ok(Ok(()))
     }
@@ -200,12 +204,15 @@ impl Core<'_> {
             Op::Bool => Fact::scalar(Leaf::Bool),
             Op::Name => match self.bound(node)? {
                 DeclRef::Let(at) => {
-                    if self.cyclic.get(at as usize).copied().unwrap_or(false) {
+                    if self.cyclic.get(at as usize).copied().unwrap_or(false)
+                        || self.let_reads_cell(at)?
+                    {
                         Fact::PLACEHOLDER
                     } else {
                         self.fact(self.let_root(at)?)?
                     }
                 }
+                DeclRef::Cell(at) => self.fact(self.cell_root(at)?)?,
                 DeclRef::Duplicate | DeclRef::None => Fact::PLACEHOLDER,
                 DeclRef::Instance(_) => {
                     return Ok(Err(Declined(Reason::NameOfInstance)));
@@ -561,7 +568,10 @@ impl Core<'_> {
         if leaves.contains(&Leaf::Placeholder) {
             return Ok(Ok(Fact::PLACEHOLDER));
         }
-        if first.dims.len() != second.dims.len() {
+        if first.dims.len() != second.dims.len()
+            && first.leaf != Leaf::Error
+            && second.leaf != Leaf::Error
+        {
             self.draw_at(
                 Code::TypeMismatch,
                 node,
@@ -740,6 +750,27 @@ impl Core<'_> {
         };
         if index.leaf == Leaf::Placeholder {
             return Ok(Fact::PLACEHOLDER);
+        }
+        if !refused
+            && !faulty_index
+            && self.is_reactive(a)?
+            && !self.is_reactive(b)?
+            && let Some((array, slices)) = self.view(a)?
+            && slices.is_empty()
+            && let Ok(Value::Int(position)) = self.evaluate(b, EvalTy::Exact)?
+        {
+            let (_, start, count, _) = self.ir.node(array)?;
+            let (read_op, _, _, _) = self.ir.node(node)?;
+            let position = if read_op == Op::IndexFromEnd {
+                i128::from(count) - position
+            } else {
+                position
+            };
+            if let Ok(position) = u32::try_from(position)
+                && position < count
+            {
+                return self.fact(self.kid(start + position)?);
+            }
         }
         if refused || faulty_index {
             return self.keep(node, element);

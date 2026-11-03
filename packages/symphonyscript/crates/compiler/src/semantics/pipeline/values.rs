@@ -13,8 +13,8 @@ use crate::semantics::counted_walk::CountedWalk;
 use crate::semantics::ir::FloatLit;
 use crate::semantics::ir::flat::{NONE, Op, binary_of};
 use crate::semantics::operators::{
-    EvalTy, I64Position, Operands, Operator, Value, int_range, outside_i64, plan_op, represents,
-    ty_name,
+    EvalTy, I64Position, Operands, Operator, Value, index_outside, int_range, outside_i64, plan_op,
+    represents, ty_name,
 };
 use symphonyscript_core::BinaryOp;
 
@@ -80,7 +80,7 @@ impl Core<'_> {
     }
 
     fn visit(&mut self, node: u32, ty: EvalTy, steps: &mut Vec<Step>) -> Result<(), Internal> {
-        let (op, a, b, c) = self.ir.node(node)?;
+        let (op, a, b, _) = self.ir.node(node)?;
         steps.push(Step::Apply(node, ty));
         let float = matches!(ty, EvalTy::F32 | EvalTy::F64);
         let operands: Vec<(u32, EvalTy)> = match op {
@@ -115,7 +115,7 @@ impl Core<'_> {
             }
             Op::If => {
                 steps.pop();
-                steps.push(Step::Choose(b, c, ty));
+                steps.push(Step::Choose(node, ty));
                 vec![(a, EvalTy::Bool)]
             }
             Op::Array => self
@@ -246,11 +246,17 @@ impl Core<'_> {
                         frame.steps = steps;
                     }
                 }
-                Step::Choose(then, otherwise, arm_ty) => {
+                Step::Choose(choice, arm_ty) => {
+                    let (_, condition, then, otherwise) = self.ir.node(choice)?;
                     let test = frame.values.pop().ok_or(Internal::missed("value stack"))?;
                     match test {
                         Value::Bool(true) => frame.steps.push(Step::Visit(then, arm_ty)),
                         Value::Bool(false) => frame.steps.push(Step::Visit(otherwise, arm_ty)),
+                        Value::Error if self.is_reactive(condition)? => {
+                            frame.steps.push(Step::Runtime(2));
+                            frame.steps.push(Step::Visit(otherwise, arm_ty));
+                            frame.steps.push(Step::Visit(then, arm_ty));
+                        }
                         Value::Int(_)
                         | Value::F32(_)
                         | Value::F64(_)
@@ -260,6 +266,15 @@ impl Core<'_> {
                         | Value::Array(_)
                         | Value::Error => frame.values.push(Value::Error),
                     }
+                }
+                Step::Runtime(count) => {
+                    let keep = frame
+                        .values
+                        .len()
+                        .checked_sub(count as usize)
+                        .ok_or(Internal::missed("value stack"))?;
+                    frame.values.truncate(keep);
+                    frame.values.push(Value::Error);
                 }
                 Step::Pick(read, element_ty) => {
                     let mut values = std::mem::take(&mut frame.values);
@@ -278,7 +293,19 @@ impl Core<'_> {
                                 .push(Step::Record(read, true, element, element_ty));
                             frame.steps.push(Step::Visit(element, element_ty));
                         }
-                        None => frame.values.push(Value::Error),
+                        None => {
+                            let (_, base, index, _) = self.ir.node(read)?;
+                            match self.view(base)? {
+                                Some((array, _)) if self.is_reactive(index)? => {
+                                    let (_, start, count, _) = self.ir.node(array)?;
+                                    frame.steps.push(Step::Runtime(count));
+                                    for at in (start..start + count).rev() {
+                                        frame.steps.push(Step::Visit(self.kid(at)?, element_ty));
+                                    }
+                                }
+                                Some(_) | None => frame.values.push(Value::Error),
+                            }
+                        }
                     }
                 }
                 Step::Fit(read, read_ty) => {
@@ -351,6 +378,60 @@ impl Core<'_> {
             Op::Bool => Value::Bool(a == 1),
             Op::Name => match self.bound(node)? {
                 DeclRef::Let(at) => self.memo(at, ty).unwrap_or(Value::Error),
+                DeclRef::Cell(at) => {
+                    if let Some(rec) = self.ir.cells.get(at as usize).copied()
+                        && rec.rule != NONE
+                        && let Some(done) = self
+                            .rule_runs
+                            .get_mut(at as usize)
+                            .and_then(|runs| runs.get_mut(class(ty)))
+                        && !*done
+                    {
+                        *done = true;
+                        if let Err(declined) = self.evaluate(rec.rule, ty)? {
+                            return Ok(Err(declined));
+                        }
+                    }
+                    if !self.owning
+                        && let Some(range) = int_range(ty)
+                        && let Some(rec) = self.ir.cells.get(at as usize).copied()
+                        && rec.rule == NONE
+                    {
+                        let init = match self.evaluate(rec.init, EvalTy::Exact)? {
+                            Ok(init) => init,
+                            Err(declined) => return Ok(Err(declined)),
+                        };
+                        if let Value::Int(init) = init
+                            && !range.contains(&init)
+                        {
+                            let name = self.ir.binder(rec.binder)?.name;
+                            let entry = self.ir.name(name).ok_or(Internal::missed("IR name"))?;
+                            let text = self.ir.symbols.text(entry.sym).to_string();
+                            self.draw_at(
+                                Code::DoesNotFit,
+                                node,
+                                format!(
+                                    "the initial value of `{text}` does not fit the type this use reads it in"
+                                ),
+                            )?;
+                        }
+                    }
+                    let side = match class(ty) {
+                        _ if self.owning => Some(0),
+                        1 | 2 => Some(1),
+                        3 => None,
+                        _ => Some(0),
+                    };
+                    if let Some(side) = side
+                        && let Some(seen) = self
+                            .cell_uses
+                            .get_mut(at as usize)
+                            .and_then(|uses| uses.get_mut(side))
+                    {
+                        *seen = true;
+                    }
+                    Value::Error
+                }
                 DeclRef::Duplicate | DeclRef::None => Value::Error,
                 DeclRef::Instance(_) => return Ok(Err(Declined(Reason::NameOfInstance))),
             },
@@ -399,6 +480,7 @@ impl Core<'_> {
             Op::Index => {
                 let position = pop(stack)?;
                 let array = pop(stack)?;
+                self.runtime_outside((node, a, b), (&array, &position), I64Position::Index)?;
                 plan_op(
                     self,
                     Operator::Element(a, b),
@@ -408,6 +490,7 @@ impl Core<'_> {
             Op::IndexFromEnd => {
                 let offset = pop(stack)?;
                 let array = pop(stack)?;
+                self.runtime_outside((node, a, b), (&array, &offset), I64Position::Offset)?;
                 if let (Value::Array(held), Value::Int(offset)) = (&array, offset) {
                     if i64::try_from(offset).is_err() {
                         self.draw_at(
@@ -464,6 +547,36 @@ impl Core<'_> {
             | Op::TyVar
             | Op::Bad => return Err(Internal::missed("an op the coverage table leaves out")),
         }))
+    }
+
+    fn runtime_outside(
+        &mut self,
+        (read, base, index): (u32, u32, u32),
+        (array, position): (&CoreValue, &CoreValue),
+        at: I64Position,
+    ) -> Result<(), Internal> {
+        let Value::Int(value) = position else {
+            return Ok(());
+        };
+        if !array.is_error() || !self.is_reactive(base)? {
+            return Ok(());
+        }
+        let Some(length) = self.fact(base)?.dims.first().copied() else {
+            return Ok(());
+        };
+        let (position, drawn) = if at == I64Position::Offset {
+            if i64::try_from(*value).is_err() {
+                self.draw_at(Code::IndexOutOfRange, index, outside_i64(at, *value))?;
+                return Ok(());
+            }
+            (i128::from(length) - value, read)
+        } else {
+            (*value, index)
+        };
+        if !(0..i128::from(length)).contains(&position) {
+            index_outside(self, drawn, position, u64::from(length))?;
+        }
+        Ok(())
     }
 
     fn binary_operator(
@@ -523,7 +636,7 @@ impl Core<'_> {
         Ok(EvalTy::F32)
     }
 
-    fn own_ty(&self, node: u32) -> Result<Option<EvalTy>, Internal> {
+    pub fn own_ty(&self, node: u32) -> Result<Option<EvalTy>, Internal> {
         let fact = self.fact(node)?;
         if let Some(fixed) = fact.fixed
             && !matches!(fact.leaf, Leaf::Placeholder | Leaf::Error)
@@ -564,12 +677,20 @@ impl Core<'_> {
     }
 
     pub fn evaluate_own(&mut self, root: u32) -> Stage<()> {
+        let owning = std::mem::replace(&mut self.owning, true);
+        let outcome = self.evaluate_owned(root);
+        self.owning = owning;
+        outcome
+    }
+
+    fn evaluate_owned(&mut self, root: u32) -> Stage<()> {
         let mut stack = vec![(root, false)];
         while let Some((node, indexed)) = stack.pop() {
             let fact = self.fact(node)?;
             let own = self.own_ty(node)?;
             if let Some(own) = own
                 && !self.is_kept(node)?
+                && !self.is_reactive(node)?
             {
                 let value = match self.evaluate(node, own)? {
                     Ok(value) => value,

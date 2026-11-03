@@ -55,9 +55,19 @@ pub(crate) fn analyze(inputs: &Inputs<'_>) -> Result<Option<Run>, Internal> {
         return declined(reason);
     }
     core.declaration_cycles()?;
+    if let Err(reason) = stage(core.type_cells())? {
+        return declined(reason);
+    }
     if let Err(reason) = stage(core.check_attributes())? {
         return declined(reason);
     }
+    if let Err(reason) = stage(core.check_cells())? {
+        return declined(reason);
+    }
+    if let Err(reason) = stage(core.check_reactive_lets())? {
+        return declined(reason);
+    }
+    core.check_integer_cells()?;
     core.check_counts()?;
     core.check_reachability()?;
     core.consistency()?;
