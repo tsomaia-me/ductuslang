@@ -59,6 +59,9 @@ impl Core<'_> {
         let mut bound = Vec::new();
         for (position, binder) in params.into_iter().enumerate() {
             let name = self.ir.binder(binder)?.name;
+            if !self.ir.named(name) {
+                continue;
+            }
             let sym = self.ir.name(name).ok_or(Internal::missed("IR name"))?.sym.0;
             bound.push(Bound {
                 sym,
@@ -73,6 +76,9 @@ impl Core<'_> {
                 .get(at as usize)
                 .ok_or(Internal::missed("IR let"))?;
             let name = self.ir.binder(rec.binder)?.name;
+            if !self.ir.named(name) {
+                continue;
+            }
             let sym = self.ir.name(name).ok_or(Internal::missed("IR name"))?.sym.0;
             bound.push(Bound {
                 sym,

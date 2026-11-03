@@ -794,8 +794,8 @@ impl Core<'_> {
             | Op::TyScalar
             | Op::TyName
             | Op::TyArray
-            | Op::TyVar
-            | Op::Bad => return Err(Internal::missed("an op the coverage table leaves out")),
+            | Op::TyVar => return Err(Internal::missed("an op the coverage table leaves out")),
+            Op::Bad => Value::Error,
         }))
     }
 

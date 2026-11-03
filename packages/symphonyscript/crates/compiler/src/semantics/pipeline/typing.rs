@@ -185,6 +185,9 @@ impl Core<'_> {
 
     fn node_fact(&mut self, node: u32) -> Stage<Fact> {
         let (op, a, b, c) = self.ir.node(node)?;
+        if self.holds_a_missing_operand(node)? {
+            return Ok(Ok(Fact::PLACEHOLDER));
+        }
         Ok(Ok(match op {
             Op::Int => Fact::scalar(Leaf::Int),
             Op::Float => Fact::scalar(Leaf::Float),
@@ -270,8 +273,8 @@ impl Core<'_> {
             | Op::TyScalar
             | Op::TyName
             | Op::TyArray
-            | Op::TyVar
-            | Op::Bad => return Err(Internal::missed("an op the coverage table leaves out")),
+            | Op::TyVar => return Err(Internal::missed("an op the coverage table leaves out")),
+            Op::Bad => Fact::PLACEHOLDER,
         }))
     }
 
@@ -891,5 +894,20 @@ fn operand_message(op: BinaryOp) -> &'static str {
         BinaryOp::Sub | BinaryOp::Mul | BinaryOp::Rem | BinaryOp::Pow => {
             "this operator takes numbers"
         }
+    }
+}
+
+impl Core<'_> {
+    pub fn holds_a_missing_operand(&self, node: u32) -> Result<bool, Internal> {
+        let (op, _, _, _) = self.ir.node(node)?;
+        if matches!(op, Op::Call | Op::NamedCall | Op::For) {
+            return Ok(false);
+        }
+        for operand in self.operands(node)? {
+            if self.ir.node(operand)?.0 == Op::Bad {
+                return Ok(true);
+            }
+        }
+        Ok(false)
     }
 }

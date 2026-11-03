@@ -1,4 +1,5 @@
 use super::core::{Core, Stage};
+use super::decl_ref::DeclRef;
 use super::declined::Declined;
 use super::instance_row::InstanceRow;
 use super::reason::Reason;
@@ -22,24 +23,41 @@ impl Core<'_> {
     fn row(&mut self, item: u32, file: u32, parent: u32) -> Stage<u32> {
         CountedWalk::CoreExpandRow.step();
         let placement = self.placement(item)?;
-        let Some(kind_name) = self.ir.name_text(placement.kind) else {
-            return Ok(Err(Declined(Reason::FrontEndFault)));
+        let Some(kind_name) = self
+            .ir
+            .name_text(placement.kind)
+            .filter(|_| self.ir.named(placement.kind))
+        else {
+            return Ok(Ok(NONE));
         };
-        let Some(kind) = self.vocabulary.node_kind_named(kind_name) else {
+        let duplicated = self
+            .ir
+            .name(placement.kind)
+            .is_some_and(|entry| self.decl.get(entry.sym.0 as usize) == Some(&DeclRef::Duplicate));
+        let found = self
+            .vocabulary
+            .node_kind_named(kind_name)
+            .filter(|_| !duplicated);
+        let Some(kind) = found else {
             let reason = self.placement_kind_reason(kind_name);
             if let Some(reason) = reason {
                 return Ok(Err(Declined(reason)));
             }
-            let text = kind_name.to_string();
-            self.unknown_kind = true;
-            let span = self.name_span(file, placement.kind)?;
-            self.draw(
-                crate::diagnostics::Code::UnknownKind,
-                span,
-                format!("`{text}` is not a node kind or a pattern"),
-            );
+            if parent != NONE {
+                self.unknown_children.insert(parent);
+                self.unknown_kind = true;
+                self.unknown_wires = true;
+            } else if self.ir.named(placement.as_name) {
+                self.unknown_top = true;
+                self.unknown_kind = true;
+                self.unknown_wires = true;
+            }
+            self.unknown_kind_drawn(file, placement.kind)?;
             return Ok(Ok(NONE));
         };
+        if parent == NONE && !self.ir.named(placement.as_name) {
+            return Ok(Ok(NONE));
+        }
         if parent != NONE && placement.as_name != NONE {
             return Ok(Err(Declined(Reason::ChildName)));
         }
@@ -123,5 +141,40 @@ impl Core<'_> {
         } else {
             None
         }
+    }
+}
+
+impl Core<'_> {
+    fn unknown_kind_drawn(&mut self, file: u32, name: u32) -> Result<(), Internal> {
+        let entry = *self.ir.name(name).ok_or(Internal::missed("IR name"))?;
+        let found = self
+            .decl
+            .get(entry.sym.0 as usize)
+            .copied()
+            .unwrap_or(DeclRef::None);
+        let silent = match found {
+            DeclRef::Duplicate => true,
+            DeclRef::None => self.skipped_top.binary_search(&entry.sym.0).is_ok(),
+            DeclRef::Let(_)
+            | DeclRef::Cell(_)
+            | DeclRef::Instance(_)
+            | DeclRef::Param(_)
+            | DeclRef::Fn(_) => false,
+        };
+        if silent {
+            return Ok(());
+        }
+        let text = self.ir.symbols.text(entry.sym).to_string();
+        let known = found != DeclRef::None
+            || self.vocabulary_clash(&text).is_some()
+            || self.vocabulary.native_named(&text).is_some();
+        let message = if known {
+            format!("`{text}` is not a kind")
+        } else {
+            format!("`{text}` is not a node kind or a pattern")
+        };
+        let span = self.name_span(file, name)?;
+        self.draw(crate::diagnostics::Code::UnknownKind, span, message);
+        Ok(())
     }
 }

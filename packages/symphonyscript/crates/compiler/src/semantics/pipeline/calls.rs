@@ -70,7 +70,10 @@ impl Core<'_> {
 
     fn binder_sym(&self, binder: u32) -> Result<u32, Internal> {
         let name = self.ir.binder(binder)?.name;
-        Ok(self.ir.name(name).ok_or(Internal::missed("IR name"))?.sym.0)
+        Ok(match self.ir.name(name) {
+            Some(entry) if !entry.faulty => entry.sym.0,
+            Some(_) | None => u32::MAX,
+        })
     }
 
     pub fn scope_of(&self, owner: u32) -> Result<Vec<(u32, DeclRef)>, Internal> {
@@ -378,6 +381,9 @@ impl Core<'_> {
         let name = self.function_name(function)?;
         if self.ir.node(node)?.0 == Op::NamedCall && self.named_order(node)?.is_none() {
             self.named_faults(node, function, &name, &params)?;
+            return Ok(Ok(Fact::PLACEHOLDER));
+        }
+        if args.len() != params.len() && self.cut(node)? {
             return Ok(Ok(Fact::PLACEHOLDER));
         }
         if args.len() > params.len() {
@@ -741,7 +747,7 @@ impl Core<'_> {
             }
             seen.push(entry.sym.0);
         }
-        if faulty {
+        if faulty || self.cut(node)? {
             return Ok(());
         }
         let span = self.node_span(node)?;
@@ -808,5 +814,11 @@ impl Core<'_> {
             }
         }
         Ok(())
+    }
+}
+
+impl Core<'_> {
+    pub fn cut(&self, node: u32) -> Result<bool, Internal> {
+        Ok(self.ir.node(node)?.3 % 2 == 1)
     }
 }

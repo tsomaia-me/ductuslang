@@ -17,6 +17,7 @@ mod fact;
 mod fold_run;
 mod folds;
 mod frame;
+mod front_end;
 mod host;
 mod instance_row;
 mod leaf;

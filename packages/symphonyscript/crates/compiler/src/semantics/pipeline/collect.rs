@@ -72,6 +72,47 @@ impl Core<'_> {
         })
     }
 
+    fn faulty_line(&self, top: TopRec) -> bool {
+        match top {
+            TopRec::Let(at) => self
+                .ir
+                .lets
+                .get(at as usize)
+                .is_some_and(|rec| rec.faulty_line),
+            TopRec::Cell(at) => self
+                .ir
+                .cells
+                .get(at as usize)
+                .is_some_and(|rec| rec.faulty_line),
+            TopRec::Fn(at) => self
+                .ir
+                .fns
+                .get(at as usize)
+                .is_some_and(|rec| rec.faulty_line),
+            TopRec::Pattern(_)
+            | TopRec::Placement(_)
+            | TopRec::Placeholder { .. }
+            | TopRec::Drawn(_)
+            | TopRec::Skip => false,
+        }
+    }
+
+    fn declared_name(&self, top: TopRec) -> Result<Option<(u32, DeclRef)>, Internal> {
+        if let TopRec::Placeholder { name, .. } = top {
+            return Ok(self.ir.named(name).then_some((name, DeclRef::Duplicate)));
+        }
+        let Some((name, decl)) = self.top_name(top)? else {
+            return Ok(None);
+        };
+        if !self.ir.named(name) {
+            return Ok(None);
+        }
+        if self.faulty_line(top) {
+            return Ok(Some((name, DeclRef::Duplicate)));
+        }
+        Ok(Some((name, decl)))
+    }
+
     pub fn name_span(&self, file: u32, name: u32) -> Result<Span, Internal> {
         let entry = self.ir.name(name).ok_or(Internal::missed("IR name"))?;
         Ok(self.span(file, entry.lo, entry.hi))
@@ -94,7 +135,7 @@ impl Core<'_> {
                 {
                     *slot = file;
                 }
-                let Some((name, decl)) = self.top_name(top)? else {
+                let Some((name, decl)) = self.declared_name(top)? else {
                     continue;
                 };
                 let entry = *self.ir.name(name).ok_or(Internal::missed("IR name"))?;
@@ -185,8 +226,12 @@ impl Core<'_> {
     }
 
     fn bind_names(&mut self) -> Stage<()> {
+        let skipped_top = self.skipped_top();
+        self.skipped_top.clone_from(&skipped_top);
         for local in 0..self.ir.op.len() {
-            if self.ir.op.get(local) != Some(&Op::Name) {
+            if self.ir.op.get(local) != Some(&Op::Name)
+                || !self.reached.get(local).copied().unwrap_or(false)
+            {
                 continue;
             }
             CountedWalk::BindLookup.step();
@@ -196,7 +241,7 @@ impl Core<'_> {
             if self.enclosing_hit(node, entry.sym.0)? && self.scoped(node, entry.sym.0)?.is_none() {
                 return Ok(Err(Declined(Reason::NestedScope)));
             }
-            let decl = match self.scoped(node, entry.sym.0)? {
+            let mut decl = match self.scoped(node, entry.sym.0)? {
                 Some(decl) => decl,
                 None => self
                     .decl
@@ -204,6 +249,12 @@ impl Core<'_> {
                     .copied()
                     .unwrap_or(DeclRef::None),
             };
+            if decl == DeclRef::None
+                && !self.names_the_vocabulary(entry.sym)
+                && self.may_declare(node, entry.sym.0, &skipped_top)?
+            {
+                decl = DeclRef::Duplicate;
+            }
             match decl {
                 DeclRef::Let(_) | DeclRef::Cell(_) | DeclRef::Param(_) | DeclRef::Fn(_) => {}
                 DeclRef::Duplicate => self.placeholders.push(node),
@@ -235,5 +286,84 @@ impl Core<'_> {
             }
         }
         Ok(Ok(()))
+    }
+}
+
+impl Core<'_> {
+    fn region_syms(&self, file: u32, regions: (u32, u32)) -> Vec<u32> {
+        let Some(rec) = self.ir.files.get(file as usize) else {
+            return Vec::new();
+        };
+        let order = self
+            .ir
+            .name_order
+            .get(rec.names.0 as usize..rec.names.1 as usize)
+            .unwrap_or_default();
+        let lo_of = |index: &u32| self.ir.names.get(*index as usize).map_or(0, |name| name.lo);
+        let mut syms = Vec::new();
+        for at in regions.0..regions.1 {
+            let Some(region) = self.ir.regions.get(at as usize) else {
+                continue;
+            };
+            let from = order.partition_point(|index| lo_of(index) < region.0);
+            for index in order.get(from..).unwrap_or_default() {
+                if lo_of(index) >= region.1 {
+                    break;
+                }
+                if let Some(name) = self.ir.names.get(*index as usize) {
+                    syms.push(name.sym.0);
+                }
+            }
+        }
+        syms
+    }
+
+    pub fn skipped_top(&self) -> Vec<u32> {
+        let mut syms = Vec::new();
+        for (file, rec) in self.ir.files.iter().enumerate() {
+            syms.extend(self.region_syms(u32::try_from(file).unwrap_or(0), rec.regions));
+        }
+        syms.sort_unstable();
+        syms.dedup();
+        syms
+    }
+
+    fn may_declare(&self, node: u32, sym: u32, skipped_top: &[u32]) -> Result<bool, Internal> {
+        let mut owner = self.body_of.get(self.local(node)?).copied().unwrap_or(NONE);
+        while owner != NONE {
+            if owner < self.functions() {
+                let rec = self
+                    .ir
+                    .fns
+                    .get(owner as usize)
+                    .ok_or(Internal::missed("IR function"))?;
+                if self
+                    .region_syms(self.file_of(rec.value), rec.regions)
+                    .contains(&sym)
+                {
+                    return Ok(true);
+                }
+                break;
+            }
+            let fold = self
+                .fold_nodes
+                .get((owner - self.functions()) as usize)
+                .copied()
+                .unwrap_or(NONE);
+            if fold == NONE {
+                break;
+            }
+            owner = self.body_of.get(self.local(fold)?).copied().unwrap_or(NONE);
+        }
+        Ok(skipped_top.binary_search(&sym).is_ok())
+    }
+}
+
+impl Core<'_> {
+    fn names_the_vocabulary(&self, sym: crate::semantics::ir::flat::Sym) -> bool {
+        let text = self.ir.symbols.text(sym);
+        self.vocabulary_clash(text).is_some()
+            || self.vocabulary.native_named(text).is_some()
+            || self.variants.owner(text).is_some()
     }
 }

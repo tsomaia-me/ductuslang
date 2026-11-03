@@ -62,6 +62,11 @@ pub(crate) struct Core<'a> {
     pub fold_nodes: Vec<u32>,
     pub warned: HashSet<u32>,
     pub unknown_kind: bool,
+    pub unknown_top: bool,
+    pub unknown_wires: bool,
+    pub unknown_children: HashSet<u32>,
+    pub skipped_top: Vec<u32>,
+    pub reached: Vec<bool>,
     pub body_index: HashMap<BodyKey, u32>,
 }
 
@@ -113,6 +118,11 @@ impl<'a> Core<'a> {
             fold_nodes: vec![NONE; ir.fors.len()],
             warned: HashSet::new(),
             unknown_kind: false,
+            unknown_top: false,
+            unknown_wires: false,
+            unknown_children: HashSet::new(),
+            skipped_top: Vec::new(),
+            reached: vec![false; nodes],
             body_index: HashMap::new(),
         }
     }

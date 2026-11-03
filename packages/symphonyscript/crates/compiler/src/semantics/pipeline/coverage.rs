@@ -23,7 +23,8 @@ pub(crate) fn op_slice(op: Op) -> Slice {
         Op::To => Slice::Two,
         Op::Past | Op::Stepped => Slice::Four,
         Op::Variant => Slice::Five,
-        Op::Str | Op::Match | Op::Field | Op::MethodCall | Op::NamedMethodCall | Op::Bad => {
+        Op::Bad => Slice::One,
+        Op::Str | Op::Match | Op::Field | Op::MethodCall | Op::NamedMethodCall => {
             Slice::DefaultFlip
         }
     }
@@ -78,7 +79,7 @@ pub(crate) fn covers(ir: &FlatIr) -> bool {
             && ir
                 .lets
                 .get(*at as usize)
-                .is_none_or(|rec| rec.is_match || rec.faulty_line || annotated(ir, rec.binder))
+                .is_none_or(|rec| rec.is_match || annotated(ir, rec.binder))
         {
             return false;
         }
@@ -149,7 +150,6 @@ fn item_landed(ir: &FlatIr, item: &ItemRec) -> bool {
 
 pub(crate) fn reason_slice(reason: Reason) -> Slice {
     match reason {
-        Reason::FrontEndFault => Slice::Pending,
         Reason::ChildName => Slice::DefaultFlip,
         Reason::ArrayAttribute => Slice::Pending,
         Reason::PreludeItems | Reason::NameOfInstance | Reason::NameOfVocabulary => {
@@ -174,16 +174,13 @@ fn plain_cell(ir: &FlatIr, rec: &CellRec) -> bool {
     let host_fed = rec.rule == NONE && rec.init != NONE;
     let derived = rec.rule != NONE && rec.init == NONE;
     (host_fed || derived)
-        && !rec.faulty_line
-        && rec.drawn.0 == rec.drawn.1
         && rec.clock.0 == rec.clock.1
         && rec.capacity.is_none()
         && !annotated(ir, rec.binder)
 }
 
 fn plain_function(ir: &FlatIr, rec: &FnRec) -> bool {
-    !rec.faulty_line
-        && rec.regions.0 == rec.regions.1
+    rec.regions.0 == rec.regions.1
         && (rec.params.0..rec.params.1).all(|binder| {
             ir.binders
                 .get(binder as usize)
@@ -192,7 +189,7 @@ fn plain_function(ir: &FlatIr, rec: &FnRec) -> bool {
         && (rec.lets.0..rec.lets.1).all(|at| {
             ir.lets
                 .get(at as usize)
-                .is_some_and(|rec| !rec.is_match && !rec.faulty_line && !annotated(ir, rec.binder))
+                .is_some_and(|rec| !rec.is_match && !annotated(ir, rec.binder))
         })
 }
 
@@ -206,6 +203,6 @@ fn plain_fold(ir: &FlatIr, rec: &ForRec) -> bool {
         && (rec.lets.0..rec.lets.1).all(|at| {
             ir.lets
                 .get(at as usize)
-                .is_some_and(|rec| !rec.is_match && !rec.faulty_line && !annotated(ir, rec.binder))
+                .is_some_and(|rec| !rec.is_match && !annotated(ir, rec.binder))
         })
 }

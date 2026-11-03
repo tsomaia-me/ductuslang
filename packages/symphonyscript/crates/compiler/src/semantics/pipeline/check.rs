@@ -297,7 +297,7 @@ impl Core<'_> {
                     ),
                 );
             }
-            if found.len() < count.min() as usize {
+            if found.len() < count.min() as usize && !self.unknown_top {
                 let span = self.span(0, 0, 0);
                 self.draw(
                     Code::CountBelowMinimum,
@@ -335,7 +335,12 @@ impl Core<'_> {
             .map(|entry| (entry, "outgoing"))
             .chain(decl.incoming.iter().map(|entry| (entry, "incoming")));
         for ((wire_kind, count), direction) in directed {
-            if count.min() == 0 {
+            let unknown = if direction == "outgoing" {
+                self.unknown_children.contains(&row)
+            } else {
+                self.unknown_wires
+            };
+            if count.min() == 0 || unknown {
                 continue;
             }
             let name = self
@@ -411,7 +416,7 @@ impl Core<'_> {
                     ),
                 );
             }
-            if found.len() < count.min() as usize {
+            if found.len() < count.min() as usize && !self.unknown_children.contains(&parent) {
                 let span = self.row_span(parent)?;
                 self.draw(
                     Code::CountBelowMinimum,

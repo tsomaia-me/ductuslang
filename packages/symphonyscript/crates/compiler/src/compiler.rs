@@ -207,7 +207,6 @@ impl Compiler {
                 vocabulary: &self.vocabulary,
                 variants: &self.variants,
                 limits: self.limits,
-                front_end_faults: front > 0,
             }) {
                 Ok(run) => run,
                 Err(internal) => {

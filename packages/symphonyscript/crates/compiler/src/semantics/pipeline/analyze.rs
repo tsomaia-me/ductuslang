@@ -16,7 +16,6 @@ pub(crate) struct Inputs<'a> {
     pub vocabulary: &'a Vocabulary,
     pub variants: &'a Variants,
     pub limits: Limits,
-    pub front_end_faults: bool,
 }
 
 fn declined(reason: Reason) -> Result<Option<Run>, Internal> {
@@ -41,15 +40,9 @@ pub(crate) fn analyze(inputs: &Inputs<'_>) -> Result<Option<Run>, Internal> {
     if !inputs.prelude.top.is_empty() {
         return declined(Reason::PreludeItems);
     }
-    let faulty = inputs.front_end_faults
-        || !ir.drawn.is_empty()
-        || !ir.regions.is_empty()
-        || ir.names.iter().any(|name| name.faulty);
-    if faulty {
-        return declined(Reason::FrontEndFault);
-    }
     let mut stages = Stages::begin(ir.op.len());
     let mut core = Core::new(ir, inputs.vocabulary, inputs.variants, inputs.limits);
+    core.front_end_drawn()?;
     if let Err(reason) = stage(core.collect())? {
         return declined(reason);
     }

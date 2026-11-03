@@ -150,3 +150,49 @@ fn exhaustive_differential_the_robustness_corpus() {
     let corpora: Vec<Corpus> = (0..4).flat_map(robustness_quarter).collect();
     assert_equal(&corpora);
 }
+
+const FRONT_END_FAULTS: [(&str, &[(&str, &str)]); 6] = [
+    ("Clip c:\n    Note/(1 + )\n", &[("expression-syntax", ")")]),
+    (
+        "state a(1[)\nClip c:\n    Note/(a)\n",
+        &[("expression-syntax", ")")],
+    ),
+    (
+        "let x = 1 & 2\nClip c:\n    Note/(x + 1)\n",
+        &[("unexpected-character", "&")],
+    ),
+    (
+        "let y = (1 +\nClip c:\n    Note/(y + 1)\n",
+        &[("expression-syntax", "Clip")],
+    ),
+    (
+        "Clip c:\n    Note/60\nstate     Note/62 when fill_on\n",
+        &[("cell-syntax", "/"), ("duplicate-name", "Note")],
+    ),
+    (
+        "File ::= Item*\nClip c:\n    Note/(Item)\n",
+        &[("placement-syntax", "::"), ("unknown-kind", "File")],
+    ),
+];
+
+#[test]
+fn a_program_whose_front_end_drew_a_fault_compiles_through_the_new_core_by_the_placeholders() {
+    let old = Compiler::new(&symphonyscript_fixtures::vocabulary())
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
+    let new =
+        Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("the vocabulary compiles");
+    for (text, expected) in FRONT_END_FAULTS {
+        let sources = [source(text)];
+        let found = new
+            .checked_by_new_core(&sources)
+            .expect("the new core takes the program");
+        let mut wanted: Vec<(String, String)> = expected
+            .iter()
+            .map(|(code, span)| ((*code).to_string(), (*span).to_string()))
+            .collect();
+        wanted.sort();
+        assert_eq!(spanned(text, &found), wanted, "{text}");
+        assert_eq!(found, old.check(&sources), "{text}");
+    }
+}
