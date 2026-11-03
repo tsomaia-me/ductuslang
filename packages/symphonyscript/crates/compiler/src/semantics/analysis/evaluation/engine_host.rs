@@ -56,7 +56,7 @@ impl OperatorHost for Engine<'_> {
         CArray::new(items)
     }
 
-    fn lengths(&self, value: &CVal) -> Vec<u32> {
+    fn lengths(&mut self, value: &CVal) -> Vec<u32> {
         lengths_of(value)
     }
 }

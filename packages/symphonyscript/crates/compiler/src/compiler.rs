@@ -12,14 +12,17 @@ use symphonyscript_core::{LimitOverrides, Limits, Span, Vocabulary};
 
 use crate::diagnostics::{Code, Diagnostic, Severity};
 use crate::failed::Failed;
+use crate::selector::Selector;
 use crate::semantics::Internal;
 use crate::semantics::analysis::Engine;
 use crate::semantics::analyze;
 use crate::semantics::collection::Variants;
-use crate::semantics::ir::{ExprId, FlatIr, Hir, adapt_file, build_flat_file};
+use crate::semantics::ir::{ExprId, FlatIr, Hir, adapt_file_mapped, build_flat_file};
+use crate::semantics::pipeline;
 use crate::semantics::reporting::Report;
 use crate::source::Source;
 use crate::syntax::parse;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 #[cfg(test)]
 thread_local! {
@@ -32,6 +35,8 @@ pub struct Compiler {
     prelude: Hir,
     prelude_ir: FlatIr,
     limits: Limits,
+    selector: Selector,
+    taken: AtomicU64,
 }
 
 impl Compiler {
@@ -90,25 +95,51 @@ impl Compiler {
             prelude: hir,
             prelude_ir: ir,
             limits,
+            selector: Selector::Default,
+            taken: AtomicU64::new(0),
         })
     }
 
-    pub fn check(&self, sources: &[Source]) -> Vec<Diagnostic> {
-        self.analyzed(sources, |_| ()).0
+    pub fn select(&mut self, selector: Selector) {
+        self.selector = selector;
     }
 
+    pub fn taken_by_new_core(&self) -> u64 {
+        self.taken.load(Ordering::Relaxed)
+    }
+
+    pub fn check(&self, sources: &[Source]) -> Vec<Diagnostic> {
+        self.analyzed_by(sources, |_| (), analyze::name_twins, Route::Selected)
+            .unwrap_or_default()
+            .0
+    }
+
+    #[cfg(test)]
     pub(crate) fn analyzed<R>(
         &self,
         sources: &[Source],
         inspect: impl FnOnce(&Engine<'_>) -> R,
     ) -> (Vec<Diagnostic>, Option<R>) {
-        self.analyzed_by(sources, inspect, analyze::name_twins)
+        self.analyzed_by(sources, inspect, analyze::name_twins, Route::OldEngine)
+            .unwrap_or_default()
     }
 
     #[cfg(test)]
     pub(crate) fn checked_by_whole_program(&self, sources: &[Source]) -> Vec<Diagnostic> {
-        self.analyzed_by(sources, |_| (), analyze::whole_program_twins)
-            .0
+        self.analyzed_by(
+            sources,
+            |_| (),
+            analyze::whole_program_twins,
+            Route::Selected,
+        )
+        .unwrap_or_default()
+        .0
+    }
+
+    #[cfg(test)]
+    pub(crate) fn checked_by_new_core(&self, sources: &[Source]) -> Option<Vec<Diagnostic>> {
+        self.analyzed_by(sources, |_| (), analyze::name_twins, Route::NewCoreOnly)
+            .map(|(diagnostics, _)| diagnostics)
     }
 
     fn analyzed_by<R>(
@@ -120,10 +151,12 @@ impl Compiler {
             &[ExprId],
             &[Diagnostic],
         ) -> Result<Vec<Diagnostic>, Internal>,
-    ) -> (Vec<Diagnostic>, Option<R>) {
+        route: Route,
+    ) -> Option<(Vec<Diagnostic>, Option<R>)> {
         let mut hir = self.prelude.clone();
         let mut ir = FlatIr::after(&self.prelude_ir);
         let mut report = Report::default();
+        let mut exprs_of: Vec<(u32, ExprId)> = Vec::new();
         let mut ordered: Vec<&Source> = sources.iter().collect();
         ordered.sort_by(|a, b| a.path.as_bytes().cmp(b.path.as_bytes()));
         for source in ordered {
@@ -150,22 +183,61 @@ impl Compiler {
             report
                 .diagnostics
                 .extend(parsed.diagnostics.iter().cloned());
-            if let Err(internal) =
-                lowered(&mut ir, &mut hir, &source.path, &parsed, &self.vocabulary)
-            {
-                analyze::internal_error(&hir, &mut report, internal);
-                return (report.finish(&hir.files), None);
+            match lowered(&mut ir, &mut hir, &source.path, &parsed, &self.vocabulary) {
+                Ok(mapped) => exprs_of.extend(mapped),
+                Err(internal) => {
+                    analyze::internal_error(&hir, &mut report, internal);
+                    return Some((report.finish(&hir.files), None));
+                }
             }
         }
         let front = report.diagnostics.len();
-        let (inspected, placeholders) = analyze::program(
-            &hir,
-            &self.vocabulary,
-            &self.variants,
-            self.limits,
-            &mut report,
-            inspect,
-        );
+        let taken = if route == Route::OldEngine
+            || (route == Route::Selected && self.selector == Selector::OldEngine)
+            || front > 0
+        {
+            None
+        } else {
+            match pipeline::analyze(
+                &self.prelude_ir,
+                &ir,
+                &self.vocabulary,
+                &self.variants,
+                self.limits,
+            ) {
+                Ok(run) => run,
+                Err(internal) => {
+                    analyze::internal_error(&hir, &mut report, internal);
+                    return Some((report.finish(&hir.files), None));
+                }
+            }
+        };
+        let (inspected, placeholders) = match taken {
+            Some(run) => {
+                self.taken.fetch_add(1, Ordering::Relaxed);
+                report.diagnostics.extend(run.diagnostics);
+                let placeholders = run
+                    .placeholders
+                    .iter()
+                    .filter_map(|node| {
+                        exprs_of
+                            .iter()
+                            .find(|(mapped, _)| mapped == node)
+                            .map(|(_, expr)| *expr)
+                    })
+                    .collect::<Vec<ExprId>>();
+                (None, placeholders)
+            }
+            None if route == Route::NewCoreOnly => return None,
+            None => analyze::program(
+                &hir,
+                &self.vocabulary,
+                &self.variants,
+                self.limits,
+                &mut report,
+                inspect,
+            ),
+        };
         if !placeholders.is_empty() {
             let analysis = analyze::Analysis {
                 hir: &hir,
@@ -194,7 +266,7 @@ impl Compiler {
                 }
             }
         }
-        (report.finish(&hir.files), inspected)
+        Some((report.finish(&hir.files), inspected))
     }
 }
 
@@ -204,8 +276,15 @@ fn lowered(
     path: &str,
     parsed: &crate::syntax::Parsed,
     vocabulary: &Vocabulary,
-) -> Result<(), Internal> {
+) -> Result<Vec<(u32, ExprId)>, Internal> {
     let file = ir.files.len();
     build_flat_file(ir, path, parsed, vocabulary)?;
-    adapt_file(hir, ir, file)
+    adapt_file_mapped(hir, ir, file)
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Route {
+    Selected,
+    OldEngine,
+    NewCoreOnly,
 }

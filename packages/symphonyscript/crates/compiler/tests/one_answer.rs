@@ -249,6 +249,22 @@ const DECIDING_NONE: &[(&str, &str)] = &[
         "the compile-time value of an operator over its operand values, evaluated by SPEC §4.6: the one place that states what each operator computes, for both engines",
     ),
     (
+        "pipeline/coverage.rs op_slice",
+        "the slice of M2r R3 that builds each IR op, the selector's coverage table",
+    ),
+    (
+        "pipeline/typing.rs node_fact",
+        "the kind and shape of an IR node in the new core, typed bottom-up",
+    ),
+    (
+        "pipeline/typing.rs operands",
+        "the operands of an IR node, the structure the new core's walks follow",
+    ),
+    (
+        "pipeline/values.rs run",
+        "the operator an IR node evaluates by in the new core, its value computed by `operators/plan_op.rs`",
+    ),
+    (
         "scopes/checker.rs expr",
         "which names an expression uses, for scope checks",
     ),

@@ -10,6 +10,7 @@ mod failed;
 mod pinned_row;
 #[cfg(test)]
 mod pinned_row_tests;
+mod selector;
 mod semantics;
 mod source;
 pub mod syntax;
@@ -17,6 +18,7 @@ pub mod syntax;
 pub use compiler::Compiler;
 pub use diagnostics::{Code, Diagnostic, Related, Severity};
 pub use failed::Failed;
+pub use selector::Selector;
 pub use source::Source;
 
 #[cfg(test)]

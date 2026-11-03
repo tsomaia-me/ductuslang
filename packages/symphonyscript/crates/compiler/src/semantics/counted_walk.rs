@@ -186,10 +186,18 @@ pub(crate) enum CountedWalk {
     ExpandRow,
     IrBuilderStep,
     IrNode,
+    BindLookup,
+    CoreExpandRow,
+    SigNode,
+    ValueRun,
+    CheckRow,
+    JoinNode,
+    CursorStep,
+    DenseLayout,
 }
 
 #[cfg(test)]
-const WALKS: usize = 180;
+const WALKS: usize = 188;
 
 #[cfg(test)]
 thread_local! {
@@ -379,6 +387,14 @@ impl CountedWalk {
         CountedWalk::ExpandRow,
         CountedWalk::IrBuilderStep,
         CountedWalk::IrNode,
+        CountedWalk::BindLookup,
+        CountedWalk::CoreExpandRow,
+        CountedWalk::SigNode,
+        CountedWalk::ValueRun,
+        CountedWalk::CheckRow,
+        CountedWalk::JoinNode,
+        CountedWalk::CursorStep,
+        CountedWalk::DenseLayout,
     ];
 
     pub(crate) fn step(self) {

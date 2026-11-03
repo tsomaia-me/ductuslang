@@ -36,5 +36,5 @@ pub(crate) trait OperatorHost {
 
     fn array(&mut self, items: Vec<Held<Self>>) -> Self::Array;
 
-    fn lengths(&self, value: &Held<Self>) -> Vec<u32>;
+    fn lengths(&mut self, value: &Held<Self>) -> Vec<u32>;
 }

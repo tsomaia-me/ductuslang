@@ -444,6 +444,7 @@ impl Adapter<'_> {
             *args = Args::Cut(Box::new(whole));
         }
         let id = ExprId(index(self.hir.exprs.len()));
+        self.exprs_of.push((node, id));
         self.hir.exprs.push(Expr { kind, loc });
         Ok(id)
     }

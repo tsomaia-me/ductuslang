@@ -1,0 +1,81 @@
+use super::core::Core;
+use super::core_value::CoreValue;
+use crate::diagnostics::Code;
+use crate::semantics::Internal;
+use crate::semantics::operators::{OperatorHost, Value};
+
+impl OperatorHost for Core<'_> {
+    type Node = u32;
+    type Array = u32;
+    type Reference = u32;
+
+    fn fault(&mut self, code: Code, node: u32, message: String) -> Result<(), Internal> {
+        self.draw_at(code, node, message)
+    }
+
+    fn fault_helped(
+        &mut self,
+        code: Code,
+        node: u32,
+        message: String,
+        help: String,
+    ) -> Result<(), Internal> {
+        let span = self.node_span(node)?;
+        self.diagnostics
+            .push(crate::diagnostics::Diagnostic::new(code, span, message).with_help(help));
+        Ok(())
+    }
+
+    fn within_value_limit(
+        &mut self,
+        _node: u32,
+        value: CoreValue,
+        _built: &str,
+    ) -> Result<CoreValue, Internal> {
+        let held = match &value {
+            Value::Array(_) => self.store.elements(&value),
+            Value::Str(text) => u64::try_from(text.chars().count()).unwrap_or(u64::MAX),
+            Value::Int(_)
+            | Value::F32(_)
+            | Value::F64(_)
+            | Value::Bool(_)
+            | Value::Enum(..)
+            | Value::Node(_)
+            | Value::Error => return Ok(value),
+        };
+        if held
+            > self
+                .limits
+                .value_elements_warning
+                .min(self.limits.value_elements)
+        {
+            self.declined = true;
+            return Ok(Value::Error);
+        }
+        Ok(value)
+    }
+
+    fn join(&mut self, left: &u32, right: &u32) -> Result<u32, Code> {
+        self.store.join(*left, *right)
+    }
+
+    fn slice(&mut self, base: &u32, start: usize, end: usize) -> u32 {
+        self.store.slice(*base, start, end)
+    }
+
+    fn length(&self, array: &u32) -> usize {
+        self.store.len(*array) as usize
+    }
+
+    fn element(&mut self, array: &u32, position: usize) -> Option<CoreValue> {
+        self.store.element(*array, position)
+    }
+
+    fn array(&mut self, items: Vec<CoreValue>) -> u32 {
+        self.store.literal(items)
+    }
+
+    fn lengths(&mut self, value: &CoreValue) -> Vec<u32> {
+        self.store.lengths(value)
+    }
+}

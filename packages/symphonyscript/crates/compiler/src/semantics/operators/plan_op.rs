@@ -336,7 +336,11 @@ fn array_value<H: OperatorHost + ?Sized>(
         return Ok(Value::Array(host.array(Vec::new())));
     };
     let inner = host.lengths(first);
-    if values.iter().any(|value| host.lengths(value) != inner) {
+    let mut ragged = false;
+    for value in &values {
+        ragged = ragged || host.lengths(value) != inner;
+    }
+    if ragged {
         host.fault(Code::RaggedArray, node, RAGGED.to_string())?;
         return Ok(Value::Error);
     }
