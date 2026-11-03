@@ -99,7 +99,7 @@ A finding, gap, limitation, review note or task that is not built in the round t
 - No comments in authored files (repository CLAUDE.md).
 - An implementer works by `docs/IMPLEMENTING.md`, and its code avoids every smell of `docs/SMELLS.md` and follows `.claude/docs/CODING.md` § How you build rules 1 to 4 and 7 to 9, § Tests but for its TypeScript, route, component, journey and visual rules, and § Good patterns, its § Hot paths from M3. Where a rule of that file conflicts with this plan, this plan decides.
 - `Cargo.lock` is committed, as a workspace with binaries commits it.
-- Dependencies: `libm` in core; `unicode-ident`, `unicode-normalization`, `unicode-width`, `rowan` and `num-bigint` in the compiler; `lsp-server` and `lsp-types` in the tool; the IntelliJ Platform Gradle Plugin for the JetBrains plugin; synaptic-kernel in the adapter. Dev-dependencies for tests are the implementer's choice.
+- Dependencies: `libm` in core; `unicode-ident`, `unicode-normalization`, `unicode-width` and `num-bigint` in the compiler; `lsp-server` and `lsp-types` in the tool; the IntelliJ Platform Gradle Plugin for the JetBrains plugin; synaptic-kernel in the adapter. Dev-dependencies for tests are the implementer's choice.
 
 ## M1: Front end
 
