@@ -20,7 +20,7 @@ fn project(name: &str, text: String) -> Project {
 
 pub fn deep_projects() -> Vec<Project> {
     let expressions = format!(
-        "state x(true)\nfn f(v): v\nlet a = {}\nlet b = {}\nlet c = {}\nlet d = {}x\nlet e = {}\nlet g = {}1\nClip top:\n    Note/{} when d\n    Note/(f(a) + c + g + b{})\n",
+        "state x(true)\nfn f(v): v\nlet a = {}\nlet b = {}\nlet c = {}\nstate d = {}x\nlet e = {}\nlet g = {}1\nClip top:\n    Note/{} when d\n    Note/(f(a) + c + g + b{})\n",
         nested("(", "1", ")"),
         nested("[", "1", "]"),
         nested("f(", "1", ")"),
