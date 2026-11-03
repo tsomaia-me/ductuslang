@@ -1,20 +1,42 @@
-use rowan::{GreenNodeBuilder, Language};
-
 use super::{AstNode, BodyItem, Expr, Item};
-use crate::syntax::symphony_language::SymphonyLanguage;
-use crate::syntax::syntax_node::SyntaxNode;
-use crate::syntax::{NodeView, SyntaxKind};
+use crate::syntax::token_columns::TokenColumns;
+use crate::syntax::tree_columns::TreeColumns;
+use crate::syntax::{Parsed, SyntaxKind};
 
-fn tree(shape: &[(Option<SyntaxKind>, SyntaxKind, &str)]) -> SyntaxNode {
-    let mut builder = GreenNodeBuilder::new();
-    for (open, kind, text) in shape {
-        match open {
-            Some(SyntaxKind::Dedent) => builder.finish_node(),
-            Some(_) => builder.start_node(SymphonyLanguage::kind_to_raw(*kind)),
-            None => builder.token(SymphonyLanguage::kind_to_raw(*kind), text),
+fn tree(shape: &[(Option<SyntaxKind>, SyntaxKind, &str)]) -> Parsed {
+    let mut text = String::new();
+    let mut tokens = TokenColumns::default();
+    let mut tree = TreeColumns::default();
+    let mut open: Vec<(SyntaxKind, u32, u32)> = Vec::new();
+    let count = |tokens: &TokenColumns| u32::try_from(tokens.len()).unwrap_or(u32::MAX);
+    for (opens, kind, piece) in shape {
+        match opens {
+            Some(SyntaxKind::Dedent) => {
+                if let Some((kind, first, nodes)) = open.pop() {
+                    tree.push(kind, (first, count(&tokens)), nodes);
+                }
+            }
+            Some(_) => open.push((
+                *kind,
+                count(&tokens),
+                u32::try_from(tree.len()).unwrap_or(u32::MAX),
+            )),
+            None => {
+                if !kind.is_trivia() {
+                    tokens.sig.push(count(&tokens));
+                }
+                tokens.kinds.push(*kind);
+                tokens
+                    .starts
+                    .push(u32::try_from(text.len()).unwrap_or(u32::MAX));
+                text.push_str(piece);
+            }
         }
     }
-    SyntaxNode::new_root(builder.finish())
+    tokens
+        .starts
+        .push(u32::try_from(text.len()).unwrap_or(u32::MAX));
+    Parsed::new(text, tokens, tree, Vec::new(), Vec::new())
 }
 
 #[test]
@@ -23,7 +45,7 @@ fn the_typed_view_reads_a_hand_built_tree() {
     let start = |kind| (Some(Indent), kind, "");
     let end = (Some(Dedent), Error, "");
     let token = |kind, text| (None, kind, text);
-    let root = tree(&[
+    let parsed = tree(&[
         start(File),
         start(Placement),
         token(Ident, "Clip"),
@@ -51,8 +73,11 @@ fn the_typed_view_reads_a_hand_built_tree() {
         end,
         end,
     ]);
-    assert_eq!(root.to_string(), "Clip Cafe\u{301}:\n    Note/60\n");
-    let file = super::File::cast(NodeView::new(root.clone())).expect("a file");
+    assert_eq!(
+        parsed.root().to_string(),
+        "Clip Cafe\u{301}:\n    Note/60\n"
+    );
+    let file = super::File::cast(parsed.root()).expect("a file");
     let items: Vec<Item> = file.items().collect();
     let Some(Item::Placement(clip)) = items.first() else {
         panic!("a placement");

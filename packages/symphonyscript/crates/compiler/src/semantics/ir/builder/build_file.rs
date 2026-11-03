@@ -36,7 +36,7 @@ pub(crate) fn build_file(
                 }
                 _ => skipped.extend(skipped_names(&child)),
             }
-        } else if let Some(item) = Item::cast(child.clone()) {
+        } else if let Some(item) = Item::cast(child) {
             skipped.extend(error_names(&child));
             if !matches!(item, Item::Placement(_)) {
                 skipped.extend(builder.header_names(&child));

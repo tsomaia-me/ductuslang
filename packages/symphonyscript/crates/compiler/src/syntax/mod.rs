@@ -1,21 +1,29 @@
 pub mod ast;
+mod child_list;
+mod children;
+#[cfg(test)]
+mod cost_tests;
+mod descendants;
 mod element_view;
 mod lex;
 mod lexed;
 mod lexer;
-mod navigation;
 mod nfc;
 mod node_view;
 mod parse;
 mod parsed;
 mod parser;
-mod symphony_language;
-mod syntax_element;
+mod preorder;
+#[cfg(test)]
+#[allow(dead_code)]
+mod rowan_oracle;
+#[cfg(test)]
+mod side_by_side;
 mod syntax_kind;
-mod syntax_node;
-mod syntax_token;
 mod token;
+mod token_columns;
 mod token_view;
+mod tree_columns;
 mod walk;
 
 pub use element_view::ElementView;

@@ -29,6 +29,10 @@ impl CountingAllocator {
         (ALLOCATIONS.load(Ordering::Relaxed), live)
     }
 
+    pub(crate) fn held_since((_, live): (u64, u64)) -> u64 {
+        LIVE.load(Ordering::Relaxed).saturating_sub(live)
+    }
+
     pub(crate) fn since((allocations, live): (u64, u64)) -> (u64, u64) {
         (
             ALLOCATIONS

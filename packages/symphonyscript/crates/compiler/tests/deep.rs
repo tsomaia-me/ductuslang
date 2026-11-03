@@ -29,7 +29,6 @@ fn round_trip(text: String, clean: bool) {
     let tree = parsed.root();
     assert_eq!(tree.to_string(), text);
     assert!(support::sexp(&tree).starts_with("File["));
-    drop(tree);
     let again = support::parsed(&text);
     assert_eq!(parsed, again);
     assert!(format!("{again:?}").starts_with("Parsed {"));
@@ -132,9 +131,6 @@ fn the_typed_view_walks_a_deep_tree() {
         }
         assert_eq!(depth, DEPTH);
         assert!(matches!(value, Expr::Literal(_)));
-        drop(value);
-        drop(decl);
-        drop(file);
         drop(parsed);
     });
 }
@@ -154,7 +150,7 @@ fn views_of_a_deep_parse_drop_before_their_parse_result() {
             })
             .collect();
         assert!(nodes.len() > DEPTH);
-        let deepest = nodes.last().expect("a deepest node").clone();
+        let deepest = *nodes.last().expect("a deepest node");
         assert_eq!(deepest.ancestors().count(), DEPTH + 3);
         let offset = deepest.range().start;
         let tokens = root.token_at_offset(offset);
@@ -186,13 +182,9 @@ fn views_of_a_deep_parse_drop_before_their_parse_result() {
                 .as_deref(),
             Some("1")
         );
-        drop((first, last, inner));
-        let parent = deepest.parent().expect("a parent");
-        drop(parent);
+        assert!(deepest.parent().is_some());
         drop(tokens);
-        drop(deepest);
         drop(nodes);
-        drop(root);
         drop(parsed);
     });
 }

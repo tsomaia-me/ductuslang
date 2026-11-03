@@ -288,7 +288,7 @@ impl HirBuilder<'_> {
                     if child.kind() == SyntaxKind::NamedArg {
                         lambdas.extend(child.children().find_map(ast::Lambda::cast));
                         named.extend(ast::NamedArg::cast(child));
-                    } else if let Some(lambda) = ast::Lambda::cast(child.clone()) {
+                    } else if let Some(lambda) = ast::Lambda::cast(child) {
                         lambdas.push(lambda);
                     } else {
                         positional.extend(ast::Expr::cast(child).map(Some));

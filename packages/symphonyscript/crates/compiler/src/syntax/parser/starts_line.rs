@@ -1,10 +1,10 @@
 use symphonyscript_core::Vocabulary;
 
 use super::placements::FLAG_TOKENS;
-use crate::syntax::lexer::LineStart;
+use crate::syntax::lexer::LineToken;
+use crate::syntax::lexer::{LineStart, LineTokens};
 use crate::syntax::nfc::nfc;
 use crate::syntax::syntax_kind::SyntaxKind;
-use crate::syntax::token::Token;
 
 pub(super) fn starts_line(line: &LineStart<'_>, text: &str, vocabulary: &Vocabulary) -> bool {
     match line.first.kind {
@@ -28,13 +28,13 @@ fn name_starts_line(line: &LineStart<'_>, text: &str, vocabulary: &Vocabulary) -
     let Some(next) = rest.next() else {
         return line.top_level;
     };
-    let adjacent = next.range.start == line.first.range.end;
+    let adjacent = next.start == line.first.end;
     let flag = adjacent && FLAG_TOKENS.contains(&next.kind);
     if line.top_level {
         return flag || matches!(next.kind, SyntaxKind::Ident | SyntaxKind::AsKw);
     }
     if next.kind == SyntaxKind::Slash {
-        return is_kind(line.first, text, vocabulary)
+        return is_kind(&line.first, text, vocabulary)
             || (adjacent && !line.closes_region && default_value_ends_line(rest));
     }
     flag || matches!(
@@ -47,19 +47,19 @@ fn name_starts_line(line: &LineStart<'_>, text: &str, vocabulary: &Vocabulary) -
     )
 }
 
-fn significant<'t>(tokens: &'t [Token]) -> impl Iterator<Item = &'t Token> + 't {
+fn significant<'t>(tokens: LineTokens<'t>) -> impl Iterator<Item = LineToken> + 't {
     tokens.iter().filter(|token| !token.kind.is_trivia())
 }
 
-fn is_kind(token: &Token, text: &str, vocabulary: &Vocabulary) -> bool {
-    let Some(name) = text.get(token.range.start as usize..token.range.end as usize) else {
+fn is_kind(token: &LineToken, text: &str, vocabulary: &Vocabulary) -> bool {
+    let Some(name) = text.get(token.start as usize..token.end as usize) else {
         return false;
     };
     let name = nfc(name);
     vocabulary.node_kind_named(&name).is_some() || vocabulary.wire_kind_named(&name).is_some()
 }
 
-fn default_value_ends_line<'t>(mut rest: impl Iterator<Item = &'t Token>) -> bool {
+fn default_value_ends_line(mut rest: impl Iterator<Item = LineToken>) -> bool {
     let Some(first) = rest.next() else {
         return false;
     };
@@ -87,11 +87,11 @@ fn default_value_ends_line<'t>(mut rest: impl Iterator<Item = &'t Token>) -> boo
     })
 }
 
-fn skip_closed<'t>(
-    rest: &mut impl Iterator<Item = &'t Token>,
+fn skip_closed(
+    rest: &mut impl Iterator<Item = LineToken>,
     open: SyntaxKind,
     close: SyntaxKind,
-) -> Option<Option<&'t Token>> {
+) -> Option<Option<LineToken>> {
     let mut depth = 1usize;
     while let Some(token) = rest.next() {
         if token.kind == open {
@@ -106,7 +106,7 @@ fn skip_closed<'t>(
     None
 }
 
-fn skip_name_value<'t>(rest: &mut impl Iterator<Item = &'t Token>) -> Option<Option<&'t Token>> {
+fn skip_name_value(rest: &mut impl Iterator<Item = LineToken>) -> Option<Option<LineToken>> {
     let mut dotted = false;
     loop {
         let Some(separator) = rest.next() else {
@@ -125,7 +125,7 @@ fn skip_name_value<'t>(rest: &mut impl Iterator<Item = &'t Token>) -> Option<Opt
     }
 }
 
-fn skip_to_value<'t>(rest: &mut impl Iterator<Item = &'t Token>) -> Option<Option<&'t Token>> {
+fn skip_to_value(rest: &mut impl Iterator<Item = LineToken>) -> Option<Option<LineToken>> {
     if rest.next()?.kind != SyntaxKind::Dot || rest.next()?.kind != SyntaxKind::Ident {
         return None;
     }

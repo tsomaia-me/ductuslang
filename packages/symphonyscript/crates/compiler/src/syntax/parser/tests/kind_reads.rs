@@ -5,7 +5,7 @@ use crate::semantics::counted_walk::CountedWalk;
 use crate::source::Source;
 
 #[derive(Clone, Copy, Debug)]
-enum Nest {
+pub(crate) enum Nest {
     Parentheses,
     ArrayAndIndex,
     Call,
@@ -15,7 +15,7 @@ enum Nest {
     Inlined,
 }
 
-const NESTS: [Nest; 7] = [
+pub(crate) const NESTS: [Nest; 7] = [
     Nest::Parentheses,
     Nest::ArrayAndIndex,
     Nest::Call,
@@ -29,7 +29,11 @@ fn nested(opening: &str, middle: &str, closing: &str, depth: usize) -> String {
     format!("{}{middle}{}", opening.repeat(depth), closing.repeat(depth))
 }
 
-fn nest_program(nest: Nest, n: usize) -> String {
+pub(super) fn nest_programs(n: usize) -> Vec<String> {
+    NESTS.iter().map(|nest| nest_program(*nest, n)).collect()
+}
+
+pub(crate) fn nest_program(nest: Nest, n: usize) -> String {
     let depth = |of: Nest| {
         if matches!(
             (nest, of),
@@ -72,12 +76,12 @@ fn kind_reads(text: &str) -> (u64, u64) {
         text: text.into(),
     };
     let vocabulary = vocabulary();
-    let before = CountedWalk::ParserKindAt.steps();
+    let before = CountedWalk::ParseKindRead.steps();
     let (_, diagnostics, cost) = Parser::new(&source, &vocabulary).run_counting();
     assert!(diagnostics.is_empty(), "{diagnostics:?}");
     (
         u64::try_from(cost.tokens).unwrap_or(u64::MAX),
-        CountedWalk::ParserKindAt.steps() - before,
+        CountedWalk::ParseKindRead.steps() - before,
     )
 }
 

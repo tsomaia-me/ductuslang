@@ -269,7 +269,7 @@ impl HirBuilder<'_> {
                 break;
             }
             if current.kind() == SyntaxKind::Ident && current.range().start >= fault {
-                names.push(Name::new(current.clone()).text());
+                names.push(Name::new(current).text());
             }
             token = current.next_token();
         }
