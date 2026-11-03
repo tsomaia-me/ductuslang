@@ -128,7 +128,7 @@ impl<'p> IrBuilder<'p, '_> {
                 self.finish(view, base, marks)?
             };
             if !matches!(value, Value::Staged { .. }) {
-                self.staged.truncate(marks.staged);
+                self.staged.truncate(marks.staged as usize);
             }
             self.stack.truncate(base);
             marks.empty_type |= view.kind() == SyntaxKind::TypeRef && view.range().is_empty();
@@ -232,7 +232,7 @@ impl<'p> IrBuilder<'p, '_> {
             .iter()
             .map(|slot| (slot.0, slot.1))
             .collect();
-        self.staged.truncate(marks.staged);
+        self.staged.truncate(marks.staged as usize);
         let start = index(self.staged.len());
         self.staged.extend(values);
         Value::Staged {
@@ -400,10 +400,10 @@ impl<'p> IrBuilder<'p, '_> {
         let Ok(at) = slots.binary_search_by_key(&node.index(), |slot| slot.0) else {
             return Vec::new();
         };
-        let from = slots.get(at).map_or(0, |slot| slot.2.errs);
+        let from = slots.get(at).map_or(0, |slot| slot.2.errs as usize);
         let to = slots
             .get(at + 1)
-            .map_or(self.errs.len(), |slot| slot.2.errs);
+            .map_or(self.errs.len(), |slot| slot.2.errs as usize);
         self.errs.get(from..to).unwrap_or_default().to_vec()
     }
 }

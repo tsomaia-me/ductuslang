@@ -116,7 +116,7 @@ impl<'p> IrBuilder<'p, '_> {
 
     pub(super) fn error_node(&mut self, view: NodeView<'p>, marks: Marks) -> Value {
         marks.truncate(self.ir);
-        self.errs.truncate(marks.errs);
+        self.errs.truncate(marks.errs as usize);
         let range = view.range();
         self.errs.push((range.start, range.end));
         Value::Nothing

@@ -10,6 +10,8 @@ mod builder;
 mod bundle_for_rec;
 mod bundle_rec;
 mod cell_rec;
+#[cfg(test)]
+mod cost_tests;
 mod drawn;
 mod dropped;
 mod field_rec;

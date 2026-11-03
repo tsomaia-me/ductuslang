@@ -72,7 +72,7 @@ impl<'p> IrBuilder<'p, '_> {
             SyntaxKind::Attrs => Some(self.attrs(base)),
             SyntaxKind::AttrEntry => self.attr_entry(view, base, marks),
             SyntaxKind::Body => {
-                self.errs.truncate(marks.errs);
+                self.errs.truncate(marks.errs as usize);
                 self.body(view, base)
             }
             SyntaxKind::Block => Some(self.block(view, base)),
