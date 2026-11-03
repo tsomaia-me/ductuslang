@@ -143,8 +143,73 @@ impl Core<'_> {
     }
 
     pub fn arguments(&self, node: u32) -> Result<Vec<u32>, Internal> {
+        let (op, _, start, shape) = self.ir.node(node)?;
+        if op != Op::NamedCall {
+            return (start..start + shape / 2).map(|at| self.kid(at)).collect();
+        }
+        if let Some(ordered) = self.named_order(node)? {
+            return Ok(ordered);
+        }
+        Ok(self
+            .named_arguments(node)?
+            .into_iter()
+            .map(|(_, value)| value)
+            .collect())
+    }
+
+    pub fn named_arguments(&self, node: u32) -> Result<Vec<(u32, u32)>, Internal> {
         let (_, _, start, shape) = self.ir.node(node)?;
-        (start..start + shape / 2).map(|at| self.kid(at)).collect()
+        let count = shape / 2;
+        let mut named = Vec::new();
+        for at in 0..count {
+            named.push((self.kid(start + 2 * at)?, self.kid(start + 2 * at + 1)?));
+        }
+        Ok(named)
+    }
+
+    pub fn param_syms(&self, function: u32) -> Result<Vec<u32>, Internal> {
+        let rec = self
+            .ir
+            .fns
+            .get(function as usize)
+            .ok_or(Internal::missed("IR function"))?;
+        (rec.params.0..rec.params.1)
+            .map(|binder| self.binder_sym(binder))
+            .collect()
+    }
+
+    fn named_order(&self, node: u32) -> Result<Option<Vec<u32>>, Internal> {
+        let Some(function) = self.callee(node)? else {
+            return Ok(None);
+        };
+        let params = self.param_syms(function)?;
+        let named = self.named_arguments(node)?;
+        if named.len() != params.len() {
+            return Ok(None);
+        }
+        let mut ordered = Vec::new();
+        for param in params {
+            let mut found = None;
+            for (name, value) in &named {
+                let sym = self
+                    .ir
+                    .name(*name)
+                    .ok_or(Internal::missed("IR name"))?
+                    .sym
+                    .0;
+                if sym == param {
+                    if found.is_some() {
+                        return Ok(None);
+                    }
+                    found = Some(*value);
+                }
+            }
+            let Some(value) = found else {
+                return Ok(None);
+            };
+            ordered.push(value);
+        }
+        Ok(Some(ordered))
     }
 
     fn callee(&self, node: u32) -> Result<Option<u32>, Internal> {
@@ -176,7 +241,7 @@ impl Core<'_> {
                     nodes.extend(self.postorder(fold_root)?);
                 }
             }
-            if op == Op::Call
+            if matches!(op, Op::Call | Op::NamedCall)
                 && let Some(callee) = self.callee(node)?
             {
                 out.push(callee);
@@ -225,7 +290,7 @@ impl Core<'_> {
             }
         }
         for local in 0..self.ir.op.len() {
-            if self.ir.op.get(local) != Some(&Op::Call) {
+            if !matches!(self.ir.op.get(local), Some(Op::Call | Op::NamedCall)) {
                 continue;
             }
             let node = self.ir.base + u32::try_from(local).unwrap_or(0);
@@ -311,6 +376,10 @@ impl Core<'_> {
         let args = self.arguments(node)?;
         let params = self.param_names(function)?;
         let name = self.function_name(function)?;
+        if self.ir.node(node)?.0 == Op::NamedCall && self.named_order(node)?.is_none() {
+            self.named_faults(node, function, &name, &params)?;
+            return Ok(Ok(Fact::PLACEHOLDER));
+        }
         if args.len() > params.len() {
             let count = params.len();
             self.draw_at(
@@ -480,7 +549,7 @@ impl Core<'_> {
         let mut calls = Vec::new();
         loop {
             let (op, _, _, _) = self.ir.node(node)?;
-            if op != Op::Call {
+            if !matches!(op, Op::Call | Op::NamedCall) {
                 break;
             }
             let Some(body) = self.body_of_call(node) else {
@@ -510,7 +579,7 @@ impl Core<'_> {
         let mut inner: Vec<Option<u64>> = vec![None; count];
         let mut calls_of: Vec<Vec<u32>> = vec![Vec::new(); count];
         for local in 0..self.ir.op.len() {
-            if self.ir.op.get(local) != Some(&Op::Call) {
+            if !matches!(self.ir.op.get(local), Some(Op::Call | Op::NamedCall)) {
                 continue;
             }
             let node = self.ir.base + u32::try_from(local).unwrap_or(0);
@@ -559,7 +628,7 @@ impl Core<'_> {
         }
         let mut charges = Vec::new();
         for local in 0..self.ir.op.len() {
-            if self.ir.op.get(local) != Some(&Op::Call) {
+            if !matches!(self.ir.op.get(local), Some(Op::Call | Op::NamedCall)) {
                 continue;
             }
             let node = self.ir.base + u32::try_from(local).unwrap_or(0);
@@ -616,7 +685,7 @@ impl Core<'_> {
 impl Core<'_> {
     pub fn calls_a_non_function(&self) -> Result<bool, Internal> {
         for local in 0..self.ir.op.len() {
-            if self.ir.op.get(local) != Some(&Op::Call) {
+            if !matches!(self.ir.op.get(local), Some(Op::Call | Op::NamedCall)) {
                 continue;
             }
             let node = self.ir.base + u32::try_from(local).unwrap_or(0);
@@ -625,5 +694,119 @@ impl Core<'_> {
             }
         }
         Ok(false)
+    }
+}
+
+impl Core<'_> {
+    fn named_faults(
+        &mut self,
+        node: u32,
+        function: u32,
+        name: &str,
+        params: &[String],
+    ) -> Result<(), Internal> {
+        let syms = self.param_syms(function)?;
+        let file = self.file_of(node);
+        let mut seen: Vec<u32> = Vec::new();
+        let mut faulty = false;
+        for (arg, _) in self.named_arguments(node)? {
+            let entry = *self.ir.name(arg).ok_or(Internal::missed("IR name"))?;
+            let text = self.ir.symbols.text(entry.sym).to_string();
+            let span = self.span(file, entry.lo, entry.hi);
+            if !syms.contains(&entry.sym.0) {
+                let declared: Vec<String> =
+                    params.iter().map(|param| format!("`{param}`")).collect();
+                let diagnostic = crate::diagnostics::Diagnostic::new(
+                    Code::UnknownParameter,
+                    span,
+                    format!("the function has no parameter `{text}`"),
+                )
+                .with_help(format!(
+                    "name a parameter `{name}` declares: {}",
+                    declared.join(", ")
+                ));
+                let diagnostic = self.chained(diagnostic);
+                self.diagnostics.push(diagnostic);
+                faulty = true;
+            } else if seen.contains(&entry.sym.0) {
+                let diagnostic = crate::diagnostics::Diagnostic::new(
+                    Code::DuplicateArgument,
+                    span,
+                    format!("the parameter `{text}` is supplied twice"),
+                )
+                .with_help("supply the parameter once");
+                let diagnostic = self.chained(diagnostic);
+                self.diagnostics.push(diagnostic);
+                faulty = true;
+            }
+            seen.push(entry.sym.0);
+        }
+        if faulty {
+            return Ok(());
+        }
+        let span = self.node_span(node)?;
+        for (sym, param) in syms.iter().zip(params) {
+            if seen.contains(sym) {
+                continue;
+            }
+            let diagnostic = crate::diagnostics::Diagnostic::new(
+                Code::MissingArgument,
+                span.clone(),
+                format!("the parameter `{param}` has no default and no argument"),
+            )
+            .with_help(format!(
+                "pass `{param}` in the call, as in `{name}({})`",
+                params.join(", ")
+            ));
+            let diagnostic = self.chained(diagnostic);
+            self.diagnostics.push(diagnostic);
+        }
+        Ok(())
+    }
+}
+
+impl Core<'_> {
+    pub fn unread_named_faults(&mut self) -> Result<(), Internal> {
+        for local in 0..self.ir.op.len() {
+            if self.ir.op.get(local) != Some(&Op::NamedCall) {
+                continue;
+            }
+            let node = self.ir.base + u32::try_from(local).unwrap_or(0);
+            let Some(function) = self.callee(node)? else {
+                continue;
+            };
+            let syms = self.param_syms(function)?;
+            let params = self.param_names(function)?;
+            let name = self.function_name(function)?;
+            let file = self.file_of(node);
+            for (arg, _) in self.named_arguments(node)? {
+                let entry = *self.ir.name(arg).ok_or(Internal::missed("IR name"))?;
+                if syms.contains(&entry.sym.0) {
+                    continue;
+                }
+                let span = self.span(file, entry.lo, entry.hi);
+                if self
+                    .diagnostics
+                    .iter()
+                    .any(|seen| seen.code == Code::UnknownParameter && seen.span == span)
+                {
+                    continue;
+                }
+                let text = self.ir.symbols.text(entry.sym).to_string();
+                let declared: Vec<String> =
+                    params.iter().map(|param| format!("`{param}`")).collect();
+                let diagnostic = crate::diagnostics::Diagnostic::new(
+                    Code::UnknownParameter,
+                    span,
+                    format!("the function has no parameter `{text}`"),
+                )
+                .with_help(format!(
+                    "name a parameter `{name}` declares: {}",
+                    declared.join(", ")
+                ));
+                self.diagnostics.push(diagnostic);
+            }
+        }
+        Ok(())
     }
 }

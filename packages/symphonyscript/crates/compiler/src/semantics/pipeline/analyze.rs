@@ -81,6 +81,7 @@ pub(crate) fn analyze(inputs: &Inputs<'_>) -> Result<Option<Run>, Internal> {
         core.check_reachability()?;
     }
     core.consistency()?;
+    core.unread_named_faults()?;
     stages.mark("infer and check");
     Ok(Some(finished(core)))
 }

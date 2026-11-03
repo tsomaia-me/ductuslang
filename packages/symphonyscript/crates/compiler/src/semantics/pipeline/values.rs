@@ -117,7 +117,7 @@ impl Core<'_> {
             }
             Op::And | Op::Or => vec![(a, EvalTy::Bool), (b, EvalTy::Bool)],
             Op::Not => vec![(a, EvalTy::Bool)],
-            Op::Call => {
+            Op::Call | Op::NamedCall => {
                 steps.pop();
                 steps.push(Step::Enter(node, ty));
                 let mut operands = Vec::new();
@@ -175,7 +175,6 @@ impl Core<'_> {
             | Op::Variant
             | Op::To
             | Op::Field
-            | Op::NamedCall
             | Op::MethodCall
             | Op::NamedMethodCall
             | Op::Past
@@ -1057,7 +1056,7 @@ impl Core<'_> {
                     }
                     stack.push((a, false));
                 }
-                Op::Call => {
+                Op::Call | Op::NamedCall => {
                     for arg in self.arguments(node)?.into_iter().rev() {
                         stack.push((arg, false));
                     }
@@ -1091,7 +1090,6 @@ impl Core<'_> {
                 | Op::To
                 | Op::Convert
                 | Op::Field
-                | Op::NamedCall
                 | Op::MethodCall
                 | Op::NamedMethodCall
                 | Op::Past

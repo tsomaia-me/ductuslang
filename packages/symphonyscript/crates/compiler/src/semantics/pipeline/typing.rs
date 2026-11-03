@@ -56,7 +56,7 @@ impl Core<'_> {
                 operands
             }
             Op::If => vec![a, b, c],
-            Op::Call => self.arguments(node)?,
+            Op::Call | Op::NamedCall => self.arguments(node)?,
             Op::For => self.fold_operands(node)?,
             Op::Array => (a..a + b)
                 .map(|at| self.kid(at))
@@ -69,7 +69,6 @@ impl Core<'_> {
             | Op::Variant
             | Op::To
             | Op::Field
-            | Op::NamedCall
             | Op::MethodCall
             | Op::NamedMethodCall
             | Op::Past
@@ -247,7 +246,7 @@ impl Core<'_> {
             Op::Array => self.array_fact(node, a, b)?,
             Op::Index | Op::IndexFromEnd => self.index_fact(node, a, b)?,
             Op::Convert => self.convert_fact(node, a, b)?,
-            Op::Call => match self.call_fact(node)? {
+            Op::Call | Op::NamedCall => match self.call_fact(node)? {
                 Ok(fact) => fact,
                 Err(declined) => return Ok(Err(declined)),
             },
@@ -263,7 +262,6 @@ impl Core<'_> {
             | Op::Variant
             | Op::To
             | Op::Field
-            | Op::NamedCall
             | Op::MethodCall
             | Op::NamedMethodCall
             | Op::Past

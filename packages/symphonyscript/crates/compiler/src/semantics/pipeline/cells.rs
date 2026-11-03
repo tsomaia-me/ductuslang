@@ -36,7 +36,7 @@ impl Core<'_> {
                 DeclRef::None | DeclRef::Instance(_) | DeclRef::Duplicate | DeclRef::Fn(_) => false,
             });
         }
-        if op == Op::Call {
+        if matches!(op, Op::Call | Op::NamedCall) {
             return self.call_reactive(node);
         }
         if op == Op::If {
