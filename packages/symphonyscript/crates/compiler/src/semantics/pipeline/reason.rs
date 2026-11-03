@@ -16,5 +16,6 @@ pub(crate) enum Reason {
     LocalCycle,
     LocalClash,
     NestedScope,
+    Pending,
     ReactiveFor,
 }

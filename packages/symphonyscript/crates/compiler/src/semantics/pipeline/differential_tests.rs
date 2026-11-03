@@ -342,3 +342,48 @@ fn the_exhaustive_rows_classes_draw_the_old_engines_sets_on_the_new_core() {
         assert_eq!(found, old.check(&sources), "{text}");
     }
 }
+
+fn nested_folds(depth: usize) -> String {
+    let mut value = String::from("0");
+    for level in (0..depth).rev() {
+        value =
+            format!("(for x{level} in [1] into a{level} from 0: a{level} + x{level} + {value})");
+    }
+    format!("let v = {value}\nClip c:\n    Note/([0][v])\n")
+}
+
+fn call_chain(length: usize) -> String {
+    let mut text = String::new();
+    for index in 0..length {
+        text.push_str(&format!("fn step{index}(x): step{}(x)\n", index + 1));
+    }
+    text.push_str(&format!(
+        "fn step{length}(x): x\nstate i(1)\nClip c:\n    Note/(step0(i))\n    Note/(step0(64))\n"
+    ));
+    text
+}
+
+#[test]
+fn nested_folds_and_a_call_chain_type_and_evaluate_on_a_small_stack() {
+    for text in [nested_folds(300), call_chain(1_000)] {
+        let worker = std::thread::Builder::new()
+            .stack_size(1 << 18)
+            .spawn(move || {
+                let compiler = Compiler::new(&symphonyscript_fixtures::vocabulary())
+                    .expect("the vocabulary compiles");
+                let sources = [source(&text)];
+                let found = compiler
+                    .checked_by_new_core(&sources)
+                    .expect("the new core takes the program");
+                assert!(
+                    spanned(&text, &found)
+                        .iter()
+                        .all(|(code, _)| code == "index-out-of-range")
+                );
+            })
+            .expect("the thread starts");
+        worker
+            .join()
+            .expect("the work finishes without overflowing");
+    }
+}

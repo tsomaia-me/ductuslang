@@ -4,6 +4,7 @@ use super::declined::Declined;
 use super::fact::Fact;
 use super::folds::{ANY_LENGTH, dims_agree};
 use super::leaf::Leaf;
+use super::need::Need;
 use super::reason::Reason;
 use super::width::{combined, is_fixed_float, target_ty};
 use crate::diagnostics::Code;
@@ -141,6 +142,17 @@ impl Core<'_> {
             }
             if expanded {
                 if let Err(declined) = self.type_root(self.let_root(at)?)? {
+                    if declined == Declined(Reason::Pending) {
+                        let open = stack
+                            .iter()
+                            .filter(|(_, opened)| *opened)
+                            .map(|(at, _)| *at);
+                        for reopened in open.chain([at]).collect::<Vec<u32>>() {
+                            if let Some(slot) = self.let_state.get_mut(reopened as usize) {
+                                *slot = NEW;
+                            }
+                        }
+                    }
                     return Ok(Err(declined));
                 }
                 if let Some(slot) = self.let_state.get_mut(at as usize) {
@@ -168,10 +180,63 @@ impl Core<'_> {
     }
 
     pub fn type_root(&mut self, root: u32) -> Stage<()> {
+        if self.driving {
+            return self.type_nodes(root);
+        }
+        self.driving = true;
+        let outcome = self.drive(root);
+        self.driving = false;
+        self.need = None;
+        outcome
+    }
+
+    fn drive(&mut self, root: u32) -> Stage<()> {
+        let mut jobs = vec![Need::Local(NONE, root, self.inst)];
+        while let Some(job) = jobs.last().copied() {
+            let outcome = match job {
+                Need::Body(body) => self.type_body(body)?,
+                Need::Local(_, root, inst) => {
+                    let outer = std::mem::replace(&mut self.inst, inst);
+                    let outcome = self.type_nodes(root);
+                    self.inst = outer;
+                    outcome?
+                }
+            };
+            match outcome {
+                Ok(()) => {
+                    jobs.pop();
+                    if let Need::Local(at, _, inst) = job {
+                        self.typing_locals.remove(&(inst, at));
+                    }
+                }
+                Err(Declined(Reason::Pending)) => {
+                    let need = self.need.take().ok_or(Internal::missed("a pending job"))?;
+                    if let Need::Local(at, _, inst) = need
+                        && !self.typing_locals.insert((inst, at))
+                    {
+                        return Ok(Err(Declined(Reason::LocalCycle)));
+                    }
+                    jobs.push(need);
+                }
+                Err(declined) => return Ok(Err(declined)),
+            }
+        }
+        Ok(Ok(()))
+    }
+
+    pub fn pending<T>(&mut self, need: Need) -> Stage<T> {
+        self.need = Some(need);
+        Ok(Err(Declined(Reason::Pending)))
+    }
+
+    fn type_nodes(&mut self, root: u32) -> Stage<()> {
         if self.has_fact(root)? {
             return Ok(Ok(()));
         }
         for node in self.postorder(root)? {
+            if self.has_fact(node)? {
+                continue;
+            }
             CountedWalk::SigNode.step();
             let fact = match self.node_fact(node)? {
                 Ok(fact) => fact,
@@ -202,13 +267,10 @@ impl Core<'_> {
                         .is_some_and(|rec| rec.owner != NONE);
                     let cyclic = self.cyclic.get(at as usize).copied().unwrap_or(false);
                     if local && !cyclic && !self.has_fact(root)? {
-                        if !self.typing_locals.insert((self.inst, at)) {
+                        if self.typing_locals.contains(&(self.inst, at)) {
                             return Ok(Err(Declined(Reason::LocalCycle)));
                         }
-                        if let Err(declined) = self.type_root(root)? {
-                            return Ok(Err(declined));
-                        }
-                        self.typing_locals.remove(&(self.inst, at));
+                        return self.pending(Need::Local(at, root, self.inst));
                     }
                     if self.cyclic.get(at as usize).copied().unwrap_or(false)
                         || self.let_reads_cell(at)?

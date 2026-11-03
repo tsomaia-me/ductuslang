@@ -5,6 +5,7 @@ use super::decl_ref::DeclRef;
 use super::declined::Declined;
 use super::fact::Fact;
 use super::leaf::Leaf;
+use super::need::Need;
 use super::reason::Reason;
 use super::typing::unify;
 use super::width::combined;
@@ -229,10 +230,7 @@ impl Core<'_> {
         });
         let at = u32::try_from(self.bodies.len() - 1).unwrap_or(NONE);
         self.body_index.insert(key, at);
-        if let Err(declined) = self.type_body(at)? {
-            return Ok(Err(declined));
-        }
-        Ok(Ok(at))
+        self.pending(Need::Body(at))
     }
 
     pub fn for_fact(&mut self, node: u32) -> Stage<Fact> {

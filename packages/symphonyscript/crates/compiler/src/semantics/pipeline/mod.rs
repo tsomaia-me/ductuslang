@@ -25,6 +25,7 @@ mod leaf;
 #[cfg(test)]
 mod ledger_tests;
 mod locals;
+mod need;
 mod pick;
 mod reason;
 mod run;

@@ -3,6 +3,7 @@ use super::core::{Core, Stage};
 use super::decl_ref::DeclRef;
 use super::declined::Declined;
 use super::fact::Fact;
+use super::need::Need;
 use super::reason::Reason;
 use crate::diagnostics::{Code, Related};
 use crate::semantics::Internal;
@@ -435,10 +436,7 @@ impl Core<'_> {
                 });
                 let body = u32::try_from(self.bodies.len() - 1).unwrap_or(NONE);
                 self.body_index.insert(key, body);
-                if let Err(declined) = self.type_body(body)? {
-                    return Ok(Err(declined));
-                }
-                body
+                return self.pending(Need::Body(body));
             }
         };
         self.call_body.insert((self.inst, node), body);
@@ -486,7 +484,7 @@ impl Core<'_> {
         }
         let typed = std::mem::replace(&mut self.diagnostics, drawn);
         if let Some(record) = self.bodies.get_mut(body as usize) {
-            record.diagnostics = typed;
+            record.diagnostics.extend(typed);
         }
         self.inst = outer;
         outcome

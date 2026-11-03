@@ -8,6 +8,7 @@ use super::decl_ref::DeclRef;
 use super::declined::Declined;
 use super::fact::Fact;
 use super::instance_row::InstanceRow;
+use super::need::Need;
 use super::store::Store;
 use crate::diagnostics::{Code, Diagnostic, Related};
 use crate::semantics::Internal;
@@ -41,6 +42,8 @@ pub(crate) struct Core<'a> {
     pub cell_uses: Vec<[bool; 2]>,
     pub owning: bool,
     pub unchecked: bool,
+    pub driving: bool,
+    pub need: Option<Need>,
 
     pub rule_runs: Vec<[bool; 7]>,
     pub inst: u32,
@@ -98,6 +101,8 @@ impl<'a> Core<'a> {
             cell_uses: vec![[false, false]; ir.cells.len()],
             owning: false,
             unchecked: false,
+            driving: false,
+            need: None,
 
             rule_runs: vec![[false; 7]; ir.cells.len()],
             inst: NONE,

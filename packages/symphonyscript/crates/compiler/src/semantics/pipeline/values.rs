@@ -942,8 +942,23 @@ impl Core<'_> {
     }
 
     fn evaluate_owned(&mut self, root: u32) -> Stage<()> {
+        let inst = self.inst;
+        let chain = self.eval_chain.len();
+        let outcome = self.own_walk(root);
+        self.inst = inst;
+        self.eval_chain.truncate(chain);
+        outcome
+    }
+
+    fn own_walk(&mut self, root: u32) -> Stage<()> {
         let mut stack = vec![(root, false)];
+        let mut leaves: Vec<u32> = Vec::new();
         while let Some((node, indexed)) = stack.pop() {
+            if node == NONE {
+                self.eval_chain.pop();
+                self.inst = leaves.pop().ok_or(Internal::missed("a call to leave"))?;
+                continue;
+            }
             let fact = self.fact(node)?;
             let own = self.own_ty(node)?;
             if let Some(own) = own
@@ -1088,14 +1103,10 @@ impl Core<'_> {
                     }
                     if let Some(body) = self.body_of_call(node) {
                         let value = self.body_value(body)?;
-                        let outer = std::mem::replace(&mut self.inst, body);
+                        leaves.push(std::mem::replace(&mut self.inst, body));
                         self.eval_chain.push(node);
-                        let outcome = self.evaluate_owned(value);
-                        self.eval_chain.pop();
-                        self.inst = outer;
-                        if let Err(declined) = outcome? {
-                            return Ok(Err(declined));
-                        }
+                        stack.push((NONE, false));
+                        stack.push((value, false));
                     }
                 }
                 Op::Name => {
