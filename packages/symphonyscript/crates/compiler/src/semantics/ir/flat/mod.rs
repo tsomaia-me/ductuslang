@@ -25,6 +25,8 @@ mod iteration;
 mod let_rec;
 mod name_kind;
 mod name_range;
+#[cfg(test)]
+mod names_tests;
 mod op;
 mod part;
 mod pattern_rec;
