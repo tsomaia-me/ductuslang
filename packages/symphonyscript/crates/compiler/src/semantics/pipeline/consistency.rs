@@ -11,43 +11,57 @@ fn integer(class: usize) -> bool {
     matches!(class, 0 | 4..=6)
 }
 
-type Reads = Vec<(u32, usize, CoreValue)>;
+type Reads = Vec<(u32, usize, Vec<u32>, CoreValue)>;
 
 impl Core<'_> {
     pub fn consistency(&mut self) -> Result<(), Internal> {
         let mut by_target: BTreeMap<(bool, u32), Reads> = BTreeMap::new();
-        for ((read, class), (target, value)) in &self.uses {
+        for ((read, class, chain), (target, value)) in &self.uses {
             CountedWalk::CoreUse.step();
             if *class != 3 {
-                by_target
-                    .entry(*target)
-                    .or_default()
-                    .push((*read, *class, value.clone()));
+                by_target.entry(*target).or_default().push((
+                    *read,
+                    *class,
+                    chain.clone(),
+                    value.clone(),
+                ));
             }
         }
         for (_, uses) in by_target {
-            let Some((int_read, _, int_value)) =
-                uses.iter().find(|(_, class, _)| integer(*class)).cloned()
+            let Some((int_read, _, int_chain, int_value)) = uses
+                .iter()
+                .find(|(_, class, _, _)| integer(*class))
+                .cloned()
             else {
                 continue;
             };
-            let mut float_read = None;
-            for (read, class, value) in &uses {
-                if !integer(*class) && *read != int_read && !self.same_number(&int_value, value) {
-                    float_read = Some(*read);
+            let mut float = None;
+            for (read, class, chain, value) in &uses {
+                if !integer(*class)
+                    && (*read != int_read || *chain != int_chain)
+                    && !self.same_number(&int_value, value)
+                {
+                    float = Some((*read, chain.clone()));
                     break;
                 }
             }
-            let Some(float_read) = float_read else {
+            let Some((float_read, float_chain)) = float else {
                 continue;
             };
             let span = self.node_span(int_read)?;
             let float_span = self.node_span(float_read)?;
-            let related = if float_span == span {
-                Vec::new()
-            } else {
-                vec![(float_span, "the float use".to_string())]
-            };
+            let mut related = Vec::new();
+            if float_span != span {
+                related.push((float_span, "the float use".to_string()));
+            }
+            if float_chain != int_chain {
+                for call in float_chain.iter().rev() {
+                    related.push((self.node_span(*call)?, "in this call".to_string()));
+                }
+            }
+            for call in int_chain.iter().rev() {
+                related.push((self.node_span(*call)?, "in this call".to_string()));
+            }
             self.draw_related(
                 Code::InconsistentUses,
                 span,

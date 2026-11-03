@@ -171,7 +171,7 @@ impl Core<'_> {
                 return self.evaluate_own(root);
             }
             Leaf::Bool if ty != EvalTy::Bool => {
-                self.draw_at(
+                self.draw_at_root(
                     Code::TypeMismatch,
                     root,
                     format!(
@@ -182,7 +182,7 @@ impl Core<'_> {
                 return self.evaluate_own(root);
             }
             Leaf::Empty | Leaf::Int | Leaf::Float if ty == EvalTy::Bool => {
-                self.draw_at(
+                self.draw_at_root(
                     Code::TypeMismatch,
                     root,
                     "this value has the wrong type here; `bool` is expected",
@@ -190,7 +190,7 @@ impl Core<'_> {
                 return self.evaluate_own(root);
             }
             Leaf::Float if integer && self.reads_float_cell(root)? => {
-                self.draw_at(
+                self.draw_at_root(
                     Code::FloatToInteger,
                     root,
                     "a float cell is used where an integer is expected; a conversion states the rounding",
@@ -198,7 +198,7 @@ impl Core<'_> {
                 return self.evaluate_own(root);
             }
             Leaf::Float if integer => {
-                self.draw_at(
+                self.draw_at_root(
                     Code::TypeMismatch,
                     root,
                     "a float value stands where an integer is expected; a conversion states the rounding",
@@ -210,7 +210,7 @@ impl Core<'_> {
         if let Some(own) = fact.fixed
             && !widens(own, ty)
         {
-            self.draw_at(
+            self.draw_at_root(
                 Code::TypeMismatch,
                 root,
                 format!(
@@ -222,7 +222,7 @@ impl Core<'_> {
             return self.evaluate_own(root);
         }
         let evaluated = match fact.fixed {
-            Some(own) if int_range(own).is_some() && int_range(ty).is_some() => ty,
+            Some(own) if widens(own, ty) => ty,
             Some(own) => own,
             None if self.is_reactive(root)? => ty,
             None => flexible(ty),
@@ -241,7 +241,7 @@ impl Core<'_> {
             _ => true,
         };
         if !fits {
-            self.draw_at(
+            self.draw_at_root(
                 Code::DoesNotFit,
                 root,
                 format!("this value does not fit `{}`", ty_name(ty)),

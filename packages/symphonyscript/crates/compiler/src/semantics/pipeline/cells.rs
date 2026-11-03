@@ -26,22 +26,18 @@ impl Core<'_> {
             .is_some_and(|rec| rec.rule != NONE)
     }
 
-    pub fn is_reactive(&self, node: u32) -> Result<bool, Internal> {
-        Ok(self
-            .reactive
-            .get(self.local(node)?)
-            .copied()
-            .unwrap_or(false))
-    }
-
     pub fn node_reactive(&mut self, node: u32) -> Result<bool, Internal> {
         let (op, _, _, _) = self.ir.node(node)?;
         if op == Op::Name {
             return Ok(match self.bound(node)? {
                 DeclRef::Cell(_) => true,
                 DeclRef::Let(at) => self.let_reads_cell(at)?,
-                DeclRef::None | DeclRef::Instance(_) | DeclRef::Duplicate => false,
+                DeclRef::Param(position) => self.param_fact(position)?.1,
+                DeclRef::None | DeclRef::Instance(_) | DeclRef::Duplicate | DeclRef::Fn(_) => false,
             });
+        }
+        if op == Op::Call {
+            return self.call_reactive(node);
         }
         if op == Op::If {
             let (_, condition, then, otherwise) = self.ir.node(node)?;
@@ -66,11 +62,7 @@ impl Core<'_> {
 
     pub fn let_reads_cell(&mut self, at: u32) -> Result<bool, Internal> {
         let root = self.let_root(at)?;
-        if self
-            .facts
-            .get(self.local(root)?)
-            .is_some_and(Option::is_some)
-        {
+        if self.has_fact(root)? {
             return self.is_reactive(root);
         }
         if let Some(Some(known)) = self.reads_cell.get(at as usize) {
@@ -96,7 +88,11 @@ impl Core<'_> {
                 match self.bound(node)? {
                     DeclRef::Cell(_) => found = true,
                     DeclRef::Let(other) => stack.push(other),
-                    DeclRef::None | DeclRef::Instance(_) | DeclRef::Duplicate => {}
+                    DeclRef::None
+                    | DeclRef::Instance(_)
+                    | DeclRef::Duplicate
+                    | DeclRef::Param(_)
+                    | DeclRef::Fn(_) => {}
                 }
             }
         }
@@ -120,7 +116,11 @@ impl Core<'_> {
                 let grouped = match self.bound(node)? {
                     DeclRef::Cell(other) => !self.derived(at) || self.derived(other),
                     DeclRef::Let(other) => self.let_reads_cell(other)?,
-                    DeclRef::None | DeclRef::Instance(_) | DeclRef::Duplicate => false,
+                    DeclRef::None
+                    | DeclRef::Instance(_)
+                    | DeclRef::Duplicate
+                    | DeclRef::Param(_)
+                    | DeclRef::Fn(_) => false,
                 };
                 if grouped {
                     return Ok(Err(Declined(Reason::CellGroup)));

@@ -71,6 +71,9 @@ pub(crate) fn analyze(inputs: &Inputs<'_>) -> Result<Option<Run>, Internal> {
     core.check_counts()?;
     core.check_reachability()?;
     core.consistency()?;
+    let mut seen = std::collections::HashSet::new();
+    core.diagnostics
+        .retain(|diagnostic| seen.insert(format!("{diagnostic:?}")));
     Ok(Some(Run {
         diagnostics: core.diagnostics,
         placeholders: core.placeholders,

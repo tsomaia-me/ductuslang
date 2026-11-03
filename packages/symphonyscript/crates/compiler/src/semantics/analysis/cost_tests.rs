@@ -2635,7 +2635,9 @@ const DEMAND_BOUNDS: [(&str, u64, u64); 4] = [
 ];
 
 fn demand_failures(sizes: [usize; 3]) -> Vec<String> {
-    let compiler = Compiler::new(&vocabulary()).expect("the vocabulary compiles");
+    let compiler = Compiler::new(&vocabulary())
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
     let walks = DEMAND_BOUNDS.map(|(walk, _, _)| walk);
     let mut failures = Vec::new();
     for figure in FIGURES {
@@ -2674,7 +2676,9 @@ fn the_demand_loops_bookkeeping_is_constant_per_query_on_the_figure_programs_431
 }
 
 fn hashing_failures(sizes: [usize; 3]) -> Vec<String> {
-    let compiler = Compiler::new(&vocabulary()).expect("the vocabulary compiles");
+    let compiler = Compiler::new(&vocabulary())
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
     let mut failures = Vec::new();
     for (figure, most, per) in [
         (Figure::Inlined, 7, 1),
@@ -2722,7 +2726,8 @@ fn doubling_failures(limit: u64) -> Vec<String> {
             ..LimitOverrides::default()
         },
     )
-    .expect("the vocabulary compiles");
+    .expect("the vocabulary compiles")
+    .on_the_old_engine();
     let refused = format!(
         "this call of `f` passes an array that holds {} elements, more than the {} a compile-time value holds",
         crate::semantics::reporting::grouped(2 * limit),

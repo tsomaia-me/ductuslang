@@ -7,4 +7,6 @@ pub(crate) struct Frame {
     pub ty: EvalTy,
     pub steps: Vec<Step>,
     pub values: Vec<CoreValue>,
+    pub call: Option<(u32, Vec<CoreValue>)>,
+    pub inst: u32,
 }

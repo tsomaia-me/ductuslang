@@ -14,4 +14,9 @@ pub(crate) enum Reason {
     ArrayAttribute,
     ValueLimitWarning,
     CellGroup,
+    FunctionValue,
+    Recursion,
+    LocalCycle,
+    LocalClash,
+    InlineLimit,
 }

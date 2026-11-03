@@ -5,4 +5,6 @@ pub(crate) enum DeclRef {
     Cell(u32),
     Instance(u32),
     Duplicate,
+    Param(u32),
+    Fn(u32),
 }

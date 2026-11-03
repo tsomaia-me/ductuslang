@@ -46,9 +46,11 @@ pub(crate) use attr_form::AttrForm;
 pub(crate) use builder::{SCALARS, build_flat_file};
 pub(crate) use cell_rec::CellRec;
 pub(crate) use flat_ir::FlatIr;
+pub(crate) use fn_rec::FnRec;
 pub(crate) use item_rec::ItemRec;
 pub(crate) use op::Op;
 pub(crate) use placement_rec::PlacementRec;
+pub(crate) use sym::Sym;
 pub(crate) use top_rec::TopRec;
 
 use symphonyscript_core::BinaryOp;

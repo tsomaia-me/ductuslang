@@ -55,6 +55,7 @@ impl Core<'_> {
                 operands
             }
             Op::If => vec![a, b, c],
+            Op::Call => self.arguments(node)?,
             Op::Array => (a..a + b)
                 .map(|at| self.kid(at))
                 .collect::<Result<_, _>>()?,
@@ -66,7 +67,6 @@ impl Core<'_> {
             | Op::Variant
             | Op::To
             | Op::Field
-            | Op::Call
             | Op::NamedCall
             | Op::MethodCall
             | Op::NamedMethodCall
@@ -110,7 +110,13 @@ impl Core<'_> {
     fn read_lets(&self, root: u32) -> Result<Vec<u32>, Internal> {
         let mut reads = Vec::new();
         for node in self.postorder(root)? {
-            if let DeclRef::Let(at) = self.bound(node)? {
+            if let DeclRef::Let(at) = self.bound(node)?
+                && self
+                    .ir
+                    .lets
+                    .get(at as usize)
+                    .is_some_and(|rec| rec.owner == NONE)
+            {
                 reads.push(at);
             }
         }
@@ -120,15 +126,6 @@ impl Core<'_> {
     pub fn bound(&self, node: u32) -> Result<DeclRef, Internal> {
         let local = self.local(node)?;
         Ok(self.bind.get(local).copied().unwrap_or(DeclRef::None))
-    }
-
-    pub fn fact(&self, node: u32) -> Result<Fact, Internal> {
-        let local = self.local(node)?;
-        self.facts
-            .get(local)
-            .cloned()
-            .flatten()
-            .ok_or(Internal::missed("new-core fact"))
     }
 
     pub fn ensure_typed(&mut self, root: u32) -> Stage<Fact> {
@@ -170,12 +167,8 @@ impl Core<'_> {
         Ok(Ok(self.fact(root)?))
     }
 
-    fn type_root(&mut self, root: u32) -> Stage<()> {
-        if self
-            .facts
-            .get(self.local(root)?)
-            .is_some_and(Option::is_some)
-        {
+    pub fn type_root(&mut self, root: u32) -> Stage<()> {
+        if self.has_fact(root)? {
             return Ok(Ok(()));
         }
         for node in self.postorder(root)? {
@@ -184,14 +177,8 @@ impl Core<'_> {
                 Ok(fact) => fact,
                 Err(declined) => return Ok(Err(declined)),
             };
-            let local = self.local(node)?;
-            if let Some(slot) = self.facts.get_mut(local) {
-                *slot = Some(fact);
-            }
             let reactive = self.node_reactive(node)?;
-            if let Some(slot) = self.reactive.get_mut(local) {
-                *slot = reactive;
-            }
+            self.set_fact(node, fact, reactive)?;
         }
         Ok(Ok(()))
     }
@@ -204,6 +191,21 @@ impl Core<'_> {
             Op::Bool => Fact::scalar(Leaf::Bool),
             Op::Name => match self.bound(node)? {
                 DeclRef::Let(at) => {
+                    let root = self.let_root(at)?;
+                    let local = self
+                        .ir
+                        .lets
+                        .get(at as usize)
+                        .is_some_and(|rec| rec.owner != NONE);
+                    if local && !self.has_fact(root)? {
+                        if !self.typing_locals.insert((self.inst, at)) {
+                            return Ok(Err(Declined(Reason::LocalCycle)));
+                        }
+                        if let Err(declined) = self.type_root(root)? {
+                            return Ok(Err(declined));
+                        }
+                        self.typing_locals.remove(&(self.inst, at));
+                    }
                     if self.cyclic.get(at as usize).copied().unwrap_or(false)
                         || self.let_reads_cell(at)?
                     {
@@ -213,6 +215,8 @@ impl Core<'_> {
                     }
                 }
                 DeclRef::Cell(at) => self.fact(self.cell_root(at)?)?,
+                DeclRef::Param(position) => self.param_fact(position)?.0,
+                DeclRef::Fn(_) => return Ok(Err(Declined(Reason::FunctionValue))),
                 DeclRef::Duplicate | DeclRef::None => Fact::PLACEHOLDER,
                 DeclRef::Instance(_) => {
                     return Ok(Err(Declined(Reason::NameOfInstance)));
@@ -241,6 +245,10 @@ impl Core<'_> {
             Op::Array => self.array_fact(node, a, b)?,
             Op::Index | Op::IndexFromEnd => self.index_fact(node, a, b)?,
             Op::Convert => self.convert_fact(node, a, b)?,
+            Op::Call => match self.call_fact(node)? {
+                Ok(fact) => fact,
+                Err(declined) => return Ok(Err(declined)),
+            },
             Op::Slice => match self.slice_fact(node, a, b, c)? {
                 Ok(fact) => fact,
                 Err(declined) => return Ok(Err(declined)),
@@ -249,7 +257,6 @@ impl Core<'_> {
             | Op::Variant
             | Op::To
             | Op::Field
-            | Op::Call
             | Op::NamedCall
             | Op::MethodCall
             | Op::NamedMethodCall
@@ -263,18 +270,6 @@ impl Core<'_> {
             | Op::TyVar
             | Op::Bad => return Err(Internal::missed("an op the coverage table leaves out")),
         }))
-    }
-
-    fn keep(&mut self, node: u32, fact: Fact) -> Result<Fact, Internal> {
-        let local = self.local(node)?;
-        if let Some(slot) = self.kept.get_mut(local) {
-            *slot = true;
-        }
-        Ok(fact)
-    }
-
-    pub fn is_kept(&self, node: u32) -> Result<bool, Internal> {
-        Ok(self.kept.get(self.local(node)?).copied().unwrap_or(false))
     }
 
     fn unary_fact(&mut self, node: u32, op: Op, a: u32) -> Result<Fact, Internal> {

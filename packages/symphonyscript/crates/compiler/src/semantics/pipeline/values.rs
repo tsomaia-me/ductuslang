@@ -106,6 +106,19 @@ impl Core<'_> {
             }
             Op::And | Op::Or => vec![(a, EvalTy::Bool), (b, EvalTy::Bool)],
             Op::Not => vec![(a, EvalTy::Bool)],
+            Op::Call => {
+                steps.pop();
+                steps.push(Step::Enter(node, ty));
+                let mut operands = Vec::new();
+                for arg in self.arguments(node)? {
+                    let arg_ty = match self.fact(arg)?.fixed {
+                        Some(_) => self.own_ty(arg)?.unwrap_or(EvalTy::Exact),
+                        None => ty,
+                    };
+                    operands.push((arg, arg_ty));
+                }
+                operands
+            }
             Op::Convert => {
                 let own = self.own_ty(a)?.unwrap_or(EvalTy::Exact);
                 if own == EvalTy::Exact && self.fact(a)?.fixed.is_none() {
@@ -151,7 +164,6 @@ impl Core<'_> {
             | Op::Variant
             | Op::To
             | Op::Field
-            | Op::Call
             | Op::NamedCall
             | Op::MethodCall
             | Op::NamedMethodCall
@@ -172,20 +184,33 @@ impl Core<'_> {
     }
 
     pub fn evaluate(&mut self, root: u32, ty: EvalTy) -> Stage<CoreValue> {
+        let inst = self.inst;
+        let chain = self.eval_chain.len();
+        let outcome = self.evaluate_frames(root, ty);
+        self.inst = inst;
+        self.eval_chain.truncate(chain);
+        outcome
+    }
+
+    fn evaluate_frames(&mut self, root: u32, ty: EvalTy) -> Stage<CoreValue> {
         let ty = evaluated_in(ty);
         let mut frames: Vec<Frame> = vec![Frame {
             owner: None,
             ty,
             steps: vec![Step::Visit(root, ty)],
             values: Vec::new(),
+            call: None,
+            inst: self.inst,
         }];
         loop {
             let Some(frame) = frames.last_mut() else {
                 return Err(Internal::missed("evaluation frame"));
             };
+            self.inst = frame.inst;
             let Some(step) = frame.steps.pop() else {
                 let value = frame.values.pop().ok_or(Internal::missed("value stack"))?;
                 let (owner, frame_ty) = (frame.owner, frame.ty);
+                let called = frame.call.is_some();
                 frames.pop();
                 CountedWalk::ValueRun.step();
                 match owner {
@@ -201,6 +226,12 @@ impl Core<'_> {
                             parent.values.push(value);
                         }
                     }
+                    None if called => {
+                        self.eval_chain.pop();
+                        if let Some(parent) = frames.last_mut() {
+                            parent.values.push(value);
+                        }
+                    }
                     None => return Ok(Ok(value)),
                 }
                 continue;
@@ -208,6 +239,44 @@ impl Core<'_> {
             match step {
                 Step::Visit(node, node_ty) => {
                     let (op, _, _, _) = self.ir.node(node)?;
+                    if op == Op::Name {
+                        match self.bound(node)? {
+                            DeclRef::Param(position) => {
+                                let value = frames
+                                    .iter()
+                                    .rev()
+                                    .find_map(|open| open.call.as_ref())
+                                    .and_then(|(_, args)| args.get(position as usize).cloned())
+                                    .unwrap_or(Value::Error);
+                                if let Some(frame) = frames.last_mut() {
+                                    frame.values.push(value);
+                                }
+                                continue;
+                            }
+                            DeclRef::Let(at)
+                                if self
+                                    .ir
+                                    .lets
+                                    .get(at as usize)
+                                    .is_some_and(|rec| rec.owner != NONE) =>
+                            {
+                                let root = self.let_root(at)?;
+                                if let Some(frame) = frames.last_mut() {
+                                    frame.steps.push(Step::Visit(root, node_ty));
+                                }
+                                continue;
+                            }
+                            DeclRef::None
+                            | DeclRef::Let(_)
+                            | DeclRef::Cell(_)
+                            | DeclRef::Instance(_)
+                            | DeclRef::Duplicate
+                            | DeclRef::Fn(_) => {}
+                        }
+                    }
+                    let Some(frame) = frames.last_mut() else {
+                        return Err(Internal::missed("evaluation frame"));
+                    };
                     if op == Op::Name
                         && let DeclRef::Let(at) = self.bound(node)?
                         && !self.cyclic.get(at as usize).copied().unwrap_or(false)
@@ -237,6 +306,8 @@ impl Core<'_> {
                             ty: let_ty,
                             steps: vec![Step::Visit(root, let_ty)],
                             values: Vec::new(),
+                            call: None,
+                            inst: NONE,
                         });
                         continue;
                     }
@@ -266,6 +337,29 @@ impl Core<'_> {
                         | Value::Array(_)
                         | Value::Error => frame.values.push(Value::Error),
                     }
+                }
+                Step::Enter(call, call_ty) => {
+                    let count = self.arguments(call)?.len();
+                    let start = frame
+                        .values
+                        .len()
+                        .checked_sub(count)
+                        .ok_or(Internal::missed("value stack"))?;
+                    let args = frame.values.split_off(start);
+                    let Some(body) = self.body_of_call(call) else {
+                        frame.values.push(Value::Error);
+                        continue;
+                    };
+                    let value = self.body_value(body)?;
+                    self.eval_chain.push(call);
+                    frames.push(Frame {
+                        owner: None,
+                        ty: call_ty,
+                        steps: vec![Step::Visit(value, call_ty)],
+                        values: Vec::new(),
+                        call: Some((call, args)),
+                        inst: body,
+                    });
                 }
                 Step::Runtime(count) => {
                     let keep = frame
@@ -325,10 +419,11 @@ impl Core<'_> {
                 Step::Record(read, element, target, read_ty) => {
                     if let Some(value) = frame.values.last()
                         && !value.is_error()
+                        && !matches!(value, Value::Array(_))
                     {
                         let value = value.clone();
                         self.uses
-                            .entry((read, class(read_ty)))
+                            .entry((read, class(read_ty), self.eval_chain.clone()))
                             .or_insert(((element, target), value));
                     }
                 }
@@ -432,7 +527,9 @@ impl Core<'_> {
                     }
                     Value::Error
                 }
-                DeclRef::Duplicate | DeclRef::None => Value::Error,
+                DeclRef::Duplicate | DeclRef::None | DeclRef::Param(_) | DeclRef::Fn(_) => {
+                    Value::Error
+                }
                 DeclRef::Instance(_) => return Ok(Err(Declined(Reason::NameOfInstance))),
             },
             Op::Neg => {
@@ -806,6 +903,22 @@ impl Core<'_> {
                     }
                     stack.push((a, false));
                 }
+                Op::Call => {
+                    for arg in self.arguments(node)?.into_iter().rev() {
+                        stack.push((arg, false));
+                    }
+                    if let Some(body) = self.body_of_call(node) {
+                        let value = self.body_value(body)?;
+                        let outer = std::mem::replace(&mut self.inst, body);
+                        self.eval_chain.push(node);
+                        let outcome = self.evaluate_owned(value);
+                        self.eval_chain.pop();
+                        self.inst = outer;
+                        if let Err(declined) = outcome? {
+                            return Ok(Err(declined));
+                        }
+                    }
+                }
                 Op::Name => {
                     if let DeclRef::Let(at) = self.bound(node)?
                         && !self.cyclic.get(at as usize).copied().unwrap_or(false)
@@ -824,7 +937,6 @@ impl Core<'_> {
                 | Op::To
                 | Op::Convert
                 | Op::Field
-                | Op::Call
                 | Op::NamedCall
                 | Op::MethodCall
                 | Op::NamedMethodCall

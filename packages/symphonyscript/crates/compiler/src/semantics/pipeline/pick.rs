@@ -11,6 +11,7 @@ impl Core<'_> {
     pub fn view(&self, base: u32) -> Result<Option<(u32, Vec<u32>)>, Internal> {
         let mut node = base;
         let mut slices = Vec::new();
+        let mut depth = self.eval_chain.len();
         loop {
             let (op, a, _, _) = self.ir.node(node)?;
             match op {
@@ -20,6 +21,17 @@ impl Core<'_> {
                     node = a;
                 }
                 Op::Name => match self.bound(node)? {
+                    DeclRef::Param(position) if depth > 0 => {
+                        depth -= 1;
+                        let call = *self
+                            .eval_chain
+                            .get(depth)
+                            .ok_or(Internal::missed("a call"))?;
+                        node = *self
+                            .arguments(call)?
+                            .get(position as usize)
+                            .ok_or(Internal::missed("an argument"))?;
+                    }
                     DeclRef::Let(at) if !self.cyclic.get(at as usize).copied().unwrap_or(false) => {
                         node = self.let_root(at)?;
                     }
@@ -27,7 +39,9 @@ impl Core<'_> {
                     | DeclRef::Cell(_)
                     | DeclRef::None
                     | DeclRef::Instance(_)
-                    | DeclRef::Duplicate => {
+                    | DeclRef::Duplicate
+                    | DeclRef::Param(_)
+                    | DeclRef::Fn(_) => {
                         return Ok(None);
                     }
                 },

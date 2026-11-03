@@ -1,7 +1,9 @@
 use super::reason::Reason;
 use super::slice::{LANDED, Slice};
 use crate::semantics::ir::Suffix;
-use crate::semantics::ir::flat::{ABSENT, AttrForm, CellRec, FlatIr, ItemRec, NONE, Op, TopRec};
+use crate::semantics::ir::flat::{
+    ABSENT, AttrForm, CellRec, FlatIr, FnRec, ItemRec, NONE, Op, TopRec,
+};
 
 pub(crate) fn op_slice(op: Op) -> Slice {
     match op {
@@ -15,7 +17,8 @@ pub(crate) fn op_slice(op: Op) -> Slice {
         Op::IndexFromEnd | Op::Slice => Slice::One,
         Op::Convert => Slice::One,
         Op::For => Slice::Pending,
-        Op::Call | Op::NamedCall => Slice::Pending,
+        Op::Call => Slice::One,
+        Op::NamedCall => Slice::Pending,
         Op::TyScalar | Op::TyName | Op::TyArray | Op::TyVar => Slice::Pending,
         Op::To => Slice::Two,
         Op::Past | Op::Stepped => Slice::Four,
@@ -30,7 +33,7 @@ pub(crate) fn top_slice(top: TopRec) -> Slice {
     match top {
         TopRec::Let(_) | TopRec::Placement(_) => Slice::One,
         TopRec::Cell(_) => Slice::One,
-        TopRec::Fn(_) => Slice::Pending,
+        TopRec::Fn(_) => Slice::One,
         TopRec::Pattern(_) => Slice::Three,
         TopRec::Placeholder { .. } | TopRec::Drawn(_) | TopRec::Skip => Slice::DefaultFlip,
     }
@@ -76,6 +79,14 @@ pub(crate) fn covers(ir: &FlatIr) -> bool {
                 .lets
                 .get(*at as usize)
                 .is_none_or(|rec| rec.is_match || rec.faulty_line || annotated(ir, rec.binder))
+        {
+            return false;
+        }
+        if let TopRec::Fn(at) = top
+            && ir
+                .fns
+                .get(*at as usize)
+                .is_none_or(|rec| !plain_function(ir, rec))
         {
             return false;
         }
@@ -145,6 +156,8 @@ pub(crate) fn reason_slice(reason: Reason) -> Slice {
         Reason::StringAttribute => Slice::DefaultFlip,
         Reason::PatternOrWirePlacement => Slice::Three,
         Reason::CellGroup => Slice::Four,
+        Reason::FunctionValue | Reason::Recursion => Slice::DefaultFlip,
+        Reason::LocalCycle | Reason::LocalClash | Reason::InlineLimit => Slice::Pending,
         Reason::BareVariant | Reason::UnitAttribute | Reason::EnumAttribute => Slice::Five,
     }
 }
@@ -162,4 +175,19 @@ fn plain_cell(ir: &FlatIr, rec: &CellRec) -> bool {
         && rec.clock.0 == rec.clock.1
         && rec.capacity.is_none()
         && !annotated(ir, rec.binder)
+}
+
+fn plain_function(ir: &FlatIr, rec: &FnRec) -> bool {
+    !rec.faulty_line
+        && rec.regions.0 == rec.regions.1
+        && (rec.params.0..rec.params.1).all(|binder| {
+            ir.binders
+                .get(binder as usize)
+                .is_some_and(|binder| binder.annotation == NONE && binder.default == NONE)
+        })
+        && (rec.lets.0..rec.lets.1).all(|at| {
+            ir.lets
+                .get(at as usize)
+                .is_some_and(|rec| !rec.is_match && !rec.faulty_line && !annotated(ir, rec.binder))
+        })
 }

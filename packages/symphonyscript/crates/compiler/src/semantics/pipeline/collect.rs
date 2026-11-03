@@ -11,7 +11,7 @@ use crate::semantics::counted_walk::CountedWalk;
 use crate::semantics::ir::flat::{ItemRec, NONE, Op, TopRec};
 
 impl Core<'_> {
-    fn vocabulary_clash(&self, text: &str) -> Option<&'static str> {
+    pub fn vocabulary_clash(&self, text: &str) -> Option<&'static str> {
         if BuiltinName::all().any(|builtin| builtin.name() == text) {
             return Some("a built-in name");
         }
@@ -57,11 +57,17 @@ impl Core<'_> {
                     .ok_or(Internal::missed("IR cell"))?;
                 Some((self.ir.binder(rec.binder)?.name, DeclRef::Cell(at)))
             }
-            TopRec::Fn(_)
-            | TopRec::Pattern(_)
-            | TopRec::Placeholder { .. }
-            | TopRec::Drawn(_)
-            | TopRec::Skip => None,
+            TopRec::Fn(at) => {
+                let rec = self
+                    .ir
+                    .fns
+                    .get(at as usize)
+                    .ok_or(Internal::missed("IR function"))?;
+                Some((rec.name, DeclRef::Fn(at)))
+            }
+            TopRec::Pattern(_) | TopRec::Placeholder { .. } | TopRec::Drawn(_) | TopRec::Skip => {
+                None
+            }
         })
     }
 
@@ -71,6 +77,7 @@ impl Core<'_> {
     }
 
     pub fn collect(&mut self) -> Stage<()> {
+        self.mark_bodies()?;
         self.decl = vec![DeclRef::None; self.ir.symbols.end() as usize];
         let mut first: Vec<Option<Span>> = vec![None; self.decl.len()];
         for (file, rec) in self.ir.files.iter().enumerate() {
@@ -139,7 +146,26 @@ impl Core<'_> {
                 }
             }
         }
-        self.bind_names()
+        if let Err(declined) = self.bind_names()? {
+            return Ok(Err(declined));
+        }
+        if self.calls_a_non_function()? {
+            return Ok(Err(Declined(Reason::FunctionValue)));
+        }
+        if self.recursive()? {
+            return Ok(Err(Declined(Reason::Recursion)));
+        }
+        if let Some(reason) = self.local_faults()? {
+            return Ok(Err(Declined(reason)));
+        }
+        let inline_limit = self
+            .limits
+            .inlined_calls_warning
+            .min(self.limits.inlined_calls);
+        if self.inline_count()? > inline_limit {
+            return Ok(Err(Declined(Reason::InlineLimit)));
+        }
+        Ok(Ok(()))
     }
 
     fn bind_names(&mut self) -> Stage<()> {
@@ -151,13 +177,16 @@ impl Core<'_> {
             let node = self.ir.base + u32::try_from(local).unwrap_or(u32::MAX);
             let name = *self.ir.a.get(local).ok_or(Internal::missed("IR name"))?;
             let entry = *self.ir.name(name).ok_or(Internal::missed("IR name"))?;
-            let decl = self
-                .decl
-                .get(entry.sym.0 as usize)
-                .copied()
-                .unwrap_or(DeclRef::None);
+            let decl = match self.scoped(node, entry.sym.0)? {
+                Some(decl) => decl,
+                None => self
+                    .decl
+                    .get(entry.sym.0 as usize)
+                    .copied()
+                    .unwrap_or(DeclRef::None),
+            };
             match decl {
-                DeclRef::Let(_) | DeclRef::Cell(_) => {}
+                DeclRef::Let(_) | DeclRef::Cell(_) | DeclRef::Param(_) | DeclRef::Fn(_) => {}
                 DeclRef::Duplicate => self.placeholders.push(node),
                 DeclRef::Instance(_) => return Ok(Err(Declined(Reason::NameOfInstance))),
                 DeclRef::None => {
