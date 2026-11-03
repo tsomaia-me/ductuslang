@@ -141,7 +141,24 @@ fn without_vocabulary_tokens(debug: &str) -> String {
     kept
 }
 
+fn without_cut_marks(hir: &Hir) -> Hir {
+    let mut kept = hir.clone();
+    for expr in &mut kept.exprs {
+        if let crate::semantics::ir::ExprKind::Call(_, args) = &mut expr.kind
+            && let crate::semantics::ir::Args::Cut(inner) = args
+        {
+            let whole = std::mem::replace(
+                inner.as_mut(),
+                crate::semantics::ir::Args::Positional(Vec::new()),
+            );
+            *args = whole;
+        }
+    }
+    kept
+}
+
 fn golden_line(text: &str, hir: &Hir) -> String {
+    let hir = &without_cut_marks(hir);
     let placeholders: Vec<String> = hir
         .placeholders
         .iter()

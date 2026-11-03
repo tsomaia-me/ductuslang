@@ -421,6 +421,7 @@ impl Remap {
             Args::Received(receiver, rest) => {
                 Args::Received(self.expr(*receiver)?, Box::new(self.args(rest)?))
             }
+            Args::Cut(inner) => Args::Cut(Box::new(self.args(inner)?)),
         })
     }
 

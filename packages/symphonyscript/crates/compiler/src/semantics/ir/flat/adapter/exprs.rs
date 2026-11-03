@@ -436,6 +436,13 @@ impl Adapter<'_> {
             Op::Bad => ExprKind::Error,
             Op::TyScalar | Op::TyName | Op::TyArray | Op::TyVar => return Err(missed()),
         };
+        let mut kind = kind;
+        if c % 2 == 1
+            && let ExprKind::Call(_, args) = &mut kind
+        {
+            let whole = std::mem::replace(args, Args::Positional(Vec::new()));
+            *args = Args::Cut(Box::new(whole));
+        }
         let id = ExprId(index(self.hir.exprs.len()));
         self.hir.exprs.push(Expr { kind, loc });
         Ok(id)

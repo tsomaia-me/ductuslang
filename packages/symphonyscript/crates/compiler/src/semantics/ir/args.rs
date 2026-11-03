@@ -6,6 +6,7 @@ pub(crate) enum Args {
     Positional(Vec<ExprId>),
     Named(Vec<(Ident, ExprId)>),
     Received(ExprId, Box<Args>),
+    Cut(Box<Args>),
 }
 
 impl Args {
@@ -18,6 +19,7 @@ impl Args {
                 values.extend(rest.values());
                 values
             }
+            Args::Cut(inner) => inner.values(),
         }
     }
 
@@ -30,13 +32,26 @@ impl Args {
                 values.extend(rest.positional()?);
                 Some(values)
             }
+            Args::Cut(inner) => inner.positional(),
         }
     }
 
     pub fn receiver(&self) -> Option<ExprId> {
         match self {
             Args::Received(receiver, _) => Some(*receiver),
+            Args::Cut(inner) => inner.receiver(),
             Args::Positional(_) | Args::Named(_) => None,
+        }
+    }
+
+    pub fn is_cut(&self) -> bool {
+        matches!(self, Args::Cut(_))
+    }
+
+    pub fn uncut(&self) -> &Args {
+        match self {
+            Args::Cut(inner) => inner.uncut(),
+            Args::Positional(_) | Args::Named(_) | Args::Received(..) => self,
         }
     }
 }

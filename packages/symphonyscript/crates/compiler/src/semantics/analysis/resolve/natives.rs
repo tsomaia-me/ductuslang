@@ -46,6 +46,9 @@ impl Engine<'_> {
             return Ok(None);
         }
         let arity = decl.signature.params.len();
+        if vals.len() != arity && args.is_cut() {
+            return Ok(Some(Val::Error));
+        }
         if vals.len() != arity {
             self.error(
                 Code::ArgumentCount,

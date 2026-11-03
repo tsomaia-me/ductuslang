@@ -9,6 +9,7 @@ pub(super) fn bound_sources<'a>(
     scope: ScopeId,
 ) -> Result<Vec<ParamSource>, BindFault<'a>> {
     let mut sources: Vec<Option<ParamSource>> = vec![None; params.len()];
+    let args = args.uncut();
     let (skipped, args) = match args {
         Args::Received(receiver, rest) => {
             let Some(first) = sources.first_mut() else {
@@ -22,7 +23,7 @@ pub(super) fn bound_sources<'a>(
             });
             (1, rest.as_ref())
         }
-        Args::Positional(_) | Args::Named(_) => (0, args),
+        Args::Positional(_) | Args::Named(_) | Args::Cut(_) => (0, args),
     };
     match args {
         Args::Positional(values) => {
@@ -62,7 +63,7 @@ pub(super) fn bound_sources<'a>(
                     });
             }
         }
-        Args::Received(..) => {
+        Args::Received(..) | Args::Cut(_) => {
             return Err(BindFault::TooMany {
                 given: args.values().len(),
             });
