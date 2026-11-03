@@ -74,6 +74,18 @@ fn assert_equal(corpora: &[Corpus]) -> u64 {
                 moved.push(format!("464 {}:\n{text}", corpus.name));
                 continue;
             }
+            let old_without_reactive_lets: Vec<_> = expected
+                .iter()
+                .filter(|diagnostic| diagnostic.code != crate::diagnostics::Code::ReactiveLet)
+                .cloned()
+                .collect();
+            if found != expected
+                && found == old_without_reactive_lets
+                && faulty_line_let(text, &corpus.vocabulary)
+            {
+                moved.push(format!("455 {}:\n{text}", corpus.name));
+                continue;
+            }
             if found != expected {
                 differing.push(format!(
                     "{}:\n{text}\n  new core {found:#?}\n  old engine {expected:#?}",
@@ -84,7 +96,7 @@ fn assert_equal(corpora: &[Corpus]) -> u64 {
     }
     eprintln!("the new core took {taken} programs");
     eprintln!(
-        "{} of them move by a reviewed ledger rule (464, 476):\n{}",
+        "{} of them move by a reviewed ledger rule (455, 464, 476):\n{}",
         moved.len(),
         moved.join("\n")
     );
@@ -164,7 +176,15 @@ fn a_program_whose_front_end_drew_a_fault_compiles_through_the_new_core_by_the_p
     }
 }
 
-const SHARED_STEP: [(&str, &[(&str, &str)]); 10] = [
+const SHARED_STEP: [(&str, &[(&str, &str)]); 12] = [
+    (
+        "state level(0.0)\nlet l = level * 2state held = if l > 1 then l else held.past(1, 0.0)\nClip c | gain=held:\n    Note\n",
+        &[("let-syntax", "held"), ("unknown-suffix", "state")],
+    ),
+    (
+        "state level(0.0)\nlet l = level * 2\nClip c | gain=l:\n    Note\n",
+        &[("reactive-let", "l")],
+    ),
     (
         "Clip c:\n    Note/(j[^1])\nlet j = if k[0] > 1 then k else e + [3]\nlet e = []\n([1, 2]): i32[..4]\nstate k\n",
         &[("cell-syntax", "\n"), ("top-level-syntax", "(")],
@@ -382,4 +402,111 @@ fn nested_folds_and_a_call_chain_type_and_evaluate_on_a_small_stack() {
             .join()
             .expect("the work finishes without overflowing");
     }
+}
+
+const FAULTY_LINE_DECLARATIONS: [(&str, &str, bool); 6] = [
+    ("let l = level * 2", "l", true),
+    ("let l = level * 2 + 1.5", "l", true),
+    ("let l = [level, 1][0]", "l", true),
+    ("let l = f(level)", "l", true),
+    ("state n = level * 2", "n", false),
+    ("fn g(a): a * level", "g(1)", false),
+];
+
+const LINE_FAULTS: [&str; 4] = [" &", " )", " held = 1", "state"];
+
+fn faulty_line_programs(fault: Option<&str>) -> Vec<(String, String)> {
+    let mut programs = Vec::new();
+    for (declaration, read, _) in FAULTY_LINE_DECLARATIONS {
+        let line = match fault {
+            Some(fault) => format!("{declaration}{fault}\n"),
+            None => format!("{declaration}\n"),
+        };
+        let items = [
+            "state level(0.0)\nfn f(v): v + 1\n".to_string(),
+            line,
+            format!("Clip c:\n    Note | velocity=({read})\n"),
+        ];
+        for order in [[0, 1, 2], [2, 1, 0]] {
+            let text: String = order
+                .iter()
+                .filter_map(|at| items.get(*at).map(String::as_str))
+                .collect();
+            programs.push((text, declaration.to_string()));
+        }
+    }
+    programs
+}
+
+#[test]
+fn a_declaration_on_a_faulty_line_draws_no_reactive_let_and_otherwise_what_the_old_engine_draws_455()
+ {
+    let old = Compiler::new(&symphonyscript_fixtures::vocabulary())
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
+    let new =
+        Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("the vocabulary compiles");
+    let mut failures = Vec::new();
+    let mut taken = 0;
+    for fault in LINE_FAULTS {
+        for (text, declaration) in faulty_line_programs(Some(fault)) {
+            let sources = [source(&text)];
+            let Some(found) = new.checked_by_new_core(&sources) else {
+                continue;
+            };
+            taken += 1;
+            let expected: Vec<_> = old
+                .check(&sources)
+                .into_iter()
+                .filter(|diagnostic| diagnostic.code != crate::diagnostics::Code::ReactiveLet)
+                .collect();
+            if found != expected {
+                failures.push(format!(
+                    "{text}\n  new core {:?}\n  old engine without reactive-let {:?}",
+                    spanned(&text, &found),
+                    spanned(&text, &expected)
+                ));
+            }
+            if declaration.starts_with("let") && fault == " &" && found.is_empty() {
+                failures.push(format!("{text}\n  draws nothing, not even its fault"));
+            }
+        }
+    }
+    for (text, declaration) in faulty_line_programs(None) {
+        let sources = [source(&text)];
+        let Some(found) = new.checked_by_new_core(&sources) else {
+            continue;
+        };
+        taken += 1;
+        let reactive = FAULTY_LINE_DECLARATIONS
+            .iter()
+            .any(|(form, _, reactive)| *form == declaration && *reactive);
+        let drawn: Vec<(String, String)> = spanned(&text, &found);
+        let wanted: Vec<(String, String)> = if reactive {
+            vec![("reactive-let".to_string(), "l".to_string())]
+        } else {
+            Vec::new()
+        };
+        if drawn != wanted || found != old.check(&sources) {
+            failures.push(format!(
+                "{text}\n  valid twin draws {drawn:?}, wanted {wanted:?}"
+            ));
+        }
+    }
+    assert!(taken >= 40, "the new core took {taken} programs");
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+fn faulty_line_let(text: &str, vocabulary: &symphonyscript_core::Vocabulary) -> bool {
+    let parsed = crate::syntax::parse(&source(text), vocabulary);
+    let mut start = 0;
+    text.split_inclusive('\n').any(|line| {
+        let range = start + 1..start + line.trim_end_matches('\n').len();
+        start += line.len();
+        line.starts_with("let ")
+            && parsed
+                .diagnostics
+                .iter()
+                .any(|diagnostic| range.contains(&(diagnostic.span.range.start as usize)))
+    })
 }

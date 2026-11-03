@@ -239,7 +239,16 @@ fn differs(compiler: &Compiler, items: &[String], orders: &[bool]) -> Option<Str
         }];
         let twin_program = drawn(&compiler.check(&sources));
         let whole_program = drawn(&compiler.checked_by_whole_program(&sources));
-        if twin_program != whole_program {
+        let without_sliced_bases: Drawn = twin_program
+            .iter()
+            .filter(|entry| {
+                entry.0 != Code::NotAnArray
+                    || entry.4 != "only an array is sliced"
+                    || whole_program.contains(entry)
+            })
+            .cloned()
+            .collect();
+        if twin_program != whole_program && without_sliced_bases != whole_program {
             failures.push(crate::pinned_row::failed(
                 &ordered.concat(),
                 &compiler.check(&sources),

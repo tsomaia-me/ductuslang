@@ -514,13 +514,35 @@ const BUDGETS: [(&str, f64); 4] = [
     ("infer and check", 0.4),
 ];
 
+fn stage_run(compiler: &Compiler, text: &str) -> Option<(Run, Vec<(&'static str, Duration)>)> {
+    let mut best: Option<(Run, Vec<(&'static str, Duration)>)> = None;
+    for _ in 0..3 {
+        let again = run(compiler, text)?;
+        let stages = super::stages::last();
+        best = Some(match best {
+            None => (again, stages),
+            Some((mut kept, mut kept_stages)) => {
+                kept.time = kept.time.min(again.time);
+                for (slot, (_, spent)) in kept_stages.iter_mut().zip(stages) {
+                    slot.1 = slot.1.min(spent);
+                }
+                (kept, kept_stages)
+            }
+        });
+    }
+    best
+}
+
 fn stage_failures(sizes: [usize; 3]) -> Vec<String> {
     let compiler = Compiler::new(&vocabulary()).expect("the vocabulary compiles");
     let mut failures = Vec::new();
-    let mut figures: Vec<Vec<(&str, f64)>> = Vec::new();
-    for n in sizes {
+    let mut times = [0u64; 3];
+    let mut peaks = [0u64; 3];
+    let mut walks = [0u64; 3];
+    let mut figures: Vec<Vec<(&str, u64)>> = Vec::new();
+    for (at, n) in sizes.into_iter().enumerate() {
         let text = figure(n);
-        let Some(found) = run(&compiler, &text) else {
+        let Some((found, stages)) = stage_run(&compiler, &text) else {
             failures.push(format!("the figure at {n}: the new core declined it"));
             continue;
         };
@@ -531,7 +553,7 @@ fn stage_failures(sizes: [usize; 3]) -> Vec<String> {
         let nodes = super::stages::nodes().max(1);
         let mut shown = Vec::new();
         let mut figure = Vec::new();
-        for (stage, spent) in super::stages::last() {
+        for (stage, spent) in stages {
             let per_node = spent.as_secs_f64() * 1e6 / nodes as f64;
             let budget = BUDGETS
                 .iter()
@@ -540,20 +562,46 @@ fn stage_failures(sizes: [usize; 3]) -> Vec<String> {
             shown.push(format!(
                 "{stage} {per_node:.3} µs a node (its release budget {budget})"
             ));
-            figure.push((stage, per_node));
+            figure.push((stage, u64::try_from(spent.as_micros()).unwrap_or(u64::MAX)));
         }
-        println!("the figure at {n}, {nodes} nodes: {}", shown.join(", "));
+        println!(
+            "the figure at {n}, {nodes} nodes, best of three: {}, PeakBytes {}, counted walks {}",
+            shown.join(", "),
+            found.peak,
+            found.walks
+        );
         figures.push(figure);
+        if let Some(slot) = times.get_mut(at) {
+            *slot = u64::try_from(found.time.as_micros()).unwrap_or(u64::MAX);
+        }
+        if let Some(slot) = peaks.get_mut(at) {
+            *slot = found.peak;
+        }
+        if let Some(slot) = walks.get_mut(at) {
+            *slot = found.walks;
+        }
     }
-    if let (Some(first), Some(last)) = (figures.first(), figures.last()) {
-        for ((stage, small), (_, large)) in first.iter().zip(last) {
-            if *large > small * 1.5 + 0.02 {
+    if times.first().copied().unwrap_or(0) >= 100_000
+        && let [first, second, third] = figures.as_slice()
+    {
+        for ((stage, a), ((_, b), (_, c))) in first.iter().zip(second.iter().zip(third)) {
+            if !doubles_at_most([*a, *b, *c], 20_000) {
                 failures.push(format!(
-                    "{stage}: {small:.3} µs a node at {} and {large:.3} at {}, not linear",
-                    sizes[0], sizes[2]
+                    "{stage}: {a}, {b}, {c} µs best of three at {sizes:?}, not linear"
                 ));
             }
         }
+    }
+    if !doubles_at_most(walks, 64) {
+        failures.push(format!(
+            "the figure: counted walks {walks:?} are not linear"
+        ));
+    }
+    if walks.first().copied().unwrap_or(0) == 0 {
+        failures.push("the figure: no counted walk at its smallest size".to_string());
+    }
+    if !doubles_at_most(peaks, 1 << 20) {
+        failures.push(format!("the figure: PeakBytes {peaks:?} is not linear"));
     }
     failures
 }

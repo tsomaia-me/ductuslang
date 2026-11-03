@@ -155,7 +155,7 @@ impl Core<'_> {
             let TopRec::Let(at) = top else {
                 continue;
             };
-            if !self.let_reads_cell(at)? {
+            if self.faulty_declaration(top)? || !self.let_reads_cell(at)? {
                 continue;
             }
             let root = self.let_root(at)?;

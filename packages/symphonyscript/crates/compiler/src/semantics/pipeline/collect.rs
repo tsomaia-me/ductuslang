@@ -107,10 +107,14 @@ impl Core<'_> {
         if !self.ir.named(name) {
             return Ok(None);
         }
-        if self.faulty_line(top) || self.faulty_cell(top)? {
+        if self.faulty_declaration(top)? {
             return Ok(Some((name, DeclRef::Duplicate)));
         }
         Ok(Some((name, decl)))
+    }
+
+    pub fn faulty_declaration(&self, top: TopRec) -> Result<bool, Internal> {
+        Ok(self.faulty_line(top) || self.faulty_cell(top)?)
     }
 
     fn faulty_cell(&self, top: TopRec) -> Result<bool, Internal> {
