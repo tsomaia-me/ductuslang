@@ -6,7 +6,6 @@ publish.workspace = true
 
 [dependencies]
 num-bigint = "0.4"
-rowan = "0.16"
 symphonyscript-core.workspace = true
 unicode-ident = "1"
 unicode-normalization = "0.1"

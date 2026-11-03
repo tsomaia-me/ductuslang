@@ -16,7 +16,6 @@ use super::wire::Wire;
 use crate::semantics::Internal;
 
 #[derive(Clone, Debug, Default)]
-#[cfg_attr(test, derive(PartialEq))]
 pub(crate) struct Hir {
     pub files: Vec<String>,
     pub exprs: Vec<Expr>,

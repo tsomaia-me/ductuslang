@@ -5,6 +5,8 @@ mod children;
 mod cost_tests;
 mod descendants;
 mod element_view;
+#[cfg(test)]
+mod front_end_goldens;
 mod lex;
 mod lexed;
 mod lexer;
@@ -14,11 +16,6 @@ mod parse;
 mod parsed;
 mod parser;
 mod preorder;
-#[cfg(test)]
-#[allow(dead_code)]
-mod rowan_oracle;
-#[cfg(test)]
-mod side_by_side;
 mod syntax_kind;
 mod token;
 mod token_columns;
