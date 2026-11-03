@@ -93,7 +93,7 @@ A finding, gap, limitation, review note or task that is not built in the round t
 
 ### Code conventions
 
-- Rust edition 2024. Every crate forbids `unsafe` code, and a clippy warning fails the checks.
+- Rust edition 2024. Every crate forbids `unsafe` code, but for the counting allocator of the compiler's unit-test binary, which alone allows it, and a clippy warning fails the checks.
 - One public entity per file, the file named after it; modules are folders.
 - No comments in authored files (repository CLAUDE.md).
 - An implementer works by `docs/IMPLEMENTING.md`, and its code avoids every smell of `docs/SMELLS.md` and follows `.claude/docs/CODING.md` § How you build rules 1 to 4 and 7 to 9, § Tests but for its TypeScript, route, component, journey and visual rules, and § Good patterns, its § Hot paths from M3. Where a rule of that file conflicts with this plan, this plan decides.
