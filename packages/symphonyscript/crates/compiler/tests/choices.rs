@@ -1177,7 +1177,9 @@ fn check_case(rows: &Rows, case: &Case, compilers: &mut Compilers, outcome: &mut
         )
     };
     let built = build(&choice);
+    let before = compiler.taken_by_new_core();
     let found = spans(compiler, &built.text);
+    let by_new_core = compiler.taken_by_new_core() > before;
     outcome.programs += 1;
     let expected: Spans = match &twin {
         None if rejected_call => {
@@ -1187,7 +1189,23 @@ fn check_case(rows: &Rows, case: &Case, compilers: &mut Compilers, outcome: &mut
         None if case.relation == Relation::Family => {
             [(Code::MixedFamilies, built.start, built.end)].into()
         }
-        None => [(Code::TypeMismatch, built.start, built.end)].into(),
+        None => {
+            let mut drawn: Spans = [(Code::TypeMismatch, built.start, built.end)].into();
+            let let_reads_cell = match taken {
+                None => true,
+                Some(0) => reads_cell(case.forms.0, case.contents.0),
+                Some(_) => reads_cell(case.forms.1, case.contents.1),
+            };
+            if case.position == Position::TopLet
+                && let_reads_cell
+                && by_new_core
+                && let Some(at) = built.text.find("let x = ")
+            {
+                let name = at + "let ".len();
+                drawn.insert((Code::ReactiveLet, name, name + 1));
+            }
+            drawn
+        }
         Some(twin) => {
             let value = if case.chooser.is_match() {
                 format!("{}\n", twin.text)

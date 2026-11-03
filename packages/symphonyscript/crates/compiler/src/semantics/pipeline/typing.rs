@@ -623,6 +623,17 @@ impl Core<'_> {
         }))
     }
 
+    fn kept_slice(&mut self, node: u32, base: &Fact) -> Result<Fact, Internal> {
+        if base.dims.is_empty() || matches!(base.leaf, Leaf::Placeholder | Leaf::Error) {
+            return Ok(Fact::PLACEHOLDER);
+        }
+        let mut kept = base.clone();
+        if let Some(first) = kept.dims.first_mut() {
+            *first = ANY_LENGTH;
+        }
+        self.keep(node, kept)
+    }
+
     fn slice_fact(&mut self, node: u32, a: u32, start: u32, flags: u32) -> Stage<Fact> {
         let base = self.fact(a)?;
         let bounds = [self.kid(start)?, self.kid(start + 1)?];
@@ -639,7 +650,7 @@ impl Core<'_> {
                 node,
                 "a slice bound is an integer, not an array",
             )?;
-            return Ok(Ok(Fact::PLACEHOLDER));
+            return Ok(Ok(self.kept_slice(node, &base)?));
         }
         if self.named_placeholder(a, &base)? {
             return Ok(Ok(Fact::PLACEHOLDER));
@@ -661,8 +672,17 @@ impl Core<'_> {
                 refused = true;
             }
         }
-        if refused {
+        let mut named = false;
+        for (bound, fact) in &facts {
+            if fact.leaf == Leaf::Placeholder && self.holds_name_placeholder(*bound)? {
+                named = true;
+            }
+        }
+        if refused && named {
             return Ok(Ok(Fact::PLACEHOLDER));
+        }
+        if refused {
+            return Ok(Ok(self.kept_slice(node, &base)?));
         }
         let length = base.dims.first().copied().unwrap_or(0);
         if length == ANY_LENGTH {
@@ -731,7 +751,8 @@ impl Core<'_> {
             return Ok(Fact::PLACEHOLDER);
         }
         if base.dims.is_empty() && !matches!(base.leaf, Leaf::Placeholder | Leaf::Error) {
-            if index.leaf != Leaf::Placeholder {
+            let placeheld = index.leaf == Leaf::Placeholder && self.holds_name_placeholder(b)?;
+            if !placeheld {
                 self.draw_at(Code::NotAnArray, a, "only an array is indexed")?;
             }
             return Ok(Fact::PLACEHOLDER);

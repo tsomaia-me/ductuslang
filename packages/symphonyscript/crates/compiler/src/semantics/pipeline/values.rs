@@ -575,9 +575,6 @@ impl Core<'_> {
                         Ok(value) => value,
                         Err(declined) => return Ok(Err(declined)),
                     };
-                    if self.declined {
-                        return Ok(Err(Declined(Reason::ValueLimitWarning)));
-                    }
                     values.push(value);
                     if let Some(frame) = frames.last_mut() {
                         frame.values = values;

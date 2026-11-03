@@ -8,6 +8,7 @@ use crate::syntax::front_end_goldens::{
 fn assert_equal(corpora: &[Corpus]) -> u64 {
     let mut taken = 0;
     let mut differing = Vec::new();
+    let mut moved = Vec::new();
     for corpus in corpora {
         let mut old = Compiler::new(&corpus.vocabulary).expect("the vocabulary compiles");
         old.select(Selector::OldEngine);
@@ -19,6 +20,15 @@ fn assert_equal(corpora: &[Corpus]) -> u64 {
             };
             taken += 1;
             let expected = old.check(&sources);
+            let without_reactive_lets: Vec<_> = found
+                .iter()
+                .filter(|diagnostic| diagnostic.code != crate::diagnostics::Code::ReactiveLet)
+                .cloned()
+                .collect();
+            if found != expected && without_reactive_lets == expected {
+                moved.push(format!("{}:\n{text}", corpus.name));
+                continue;
+            }
             if found != expected {
                 differing.push(format!(
                     "{}:\n{text}\n  new core {found:#?}\n  old engine {expected:#?}",
@@ -28,6 +38,11 @@ fn assert_equal(corpora: &[Corpus]) -> u64 {
         }
     }
     eprintln!("the new core took {taken} programs");
+    eprintln!(
+        "{} of them draw `reactive-let` beside another fault (G3, ledger 464):\n{}",
+        moved.len(),
+        moved.join("\n")
+    );
     let shown: Vec<&str> = differing.iter().take(5).map(String::as_str).collect();
     assert!(
         differing.is_empty(),

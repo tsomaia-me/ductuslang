@@ -33,3 +33,5 @@ mod width;
 pub(crate) use analyze::{Inputs, analyze};
 #[cfg(test)]
 mod differential_tests;
+#[cfg(test)]
+mod ledger_tests;

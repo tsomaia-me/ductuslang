@@ -53,12 +53,12 @@ pub(crate) struct Core<'a> {
     pub instances: Vec<InstanceRow>,
     pub top_instances: Vec<u32>,
     pub store: Store,
-    pub declined: bool,
     pub let_values: Vec<[Option<CoreValue>; 7]>,
     pub uses: BTreeMap<UseKey, UseValue>,
     pub fold_steps: u64,
     pub stop: Option<(usize, Diagnostic)>,
     pub fold_nodes: Vec<u32>,
+    pub warned: HashSet<u32>,
 }
 
 impl<'a> Core<'a> {
@@ -102,12 +102,12 @@ impl<'a> Core<'a> {
             instances: Vec::new(),
             top_instances: Vec::new(),
             store: Store::default(),
-            declined: false,
             let_values: vec![[None, None, None, None, None, None, None]; ir.lets.len()],
             uses: BTreeMap::new(),
             fold_steps: 0,
             stop: None,
             fold_nodes: vec![NONE; ir.fors.len()],
+            warned: HashSet::new(),
         }
     }
 

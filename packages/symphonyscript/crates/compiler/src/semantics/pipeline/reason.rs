@@ -12,7 +12,6 @@ pub(crate) enum Reason {
     EnumAttribute,
     StringAttribute,
     ArrayAttribute,
-    ValueLimitWarning,
     CellGroup,
     FunctionValue,
     Recursion,

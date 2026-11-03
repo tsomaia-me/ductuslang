@@ -1,6 +1,7 @@
 use super::body_instance::BodyInstance;
 use super::core::{Core, Stage};
 use super::core_value::CoreValue;
+use super::decl_ref::DeclRef;
 use super::declined::Declined;
 use super::fact::Fact;
 use super::leaf::Leaf;
@@ -354,13 +355,15 @@ impl Core<'_> {
                 "the expansion runs more than {} `for` iterations and pattern uses",
                 grouped(bound)
             );
-            let span = self.node_span(node)?;
-            let diagnostic = Diagnostic::new(Code::ExpansionLimit, span, message);
-            self.stop = Some((self.diagnostics.len(), diagnostic));
+            self.stop_at(Code::ExpansionLimit, node, message)?;
             return Ok(Ok(false));
         }
         if self.fold_steps - 1 == self.limits.expansion_steps_warning {
-            return Ok(Err(Declined(Reason::ValueLimitWarning)));
+            let counted = format!(
+                "the expansion runs more than {} `for` iterations and pattern uses",
+                grouped(self.limits.expansion_steps_warning)
+            );
+            self.warn_at(node, "expansion_steps", counted, bound)?;
         }
         Ok(Ok(true))
     }
@@ -378,5 +381,65 @@ impl Core<'_> {
             | Value::Node(_)
             | Value::Error => Value::Error,
         }
+    }
+}
+
+impl Core<'_> {
+    pub fn holds_name_placeholder(&self, node: u32) -> Result<bool, Internal> {
+        for at in self.postorder(node)? {
+            let (op, _, _, _) = self.ir.node(at)?;
+            if op != Op::Name {
+                continue;
+            }
+            match self.bound(at)? {
+                DeclRef::None | DeclRef::Duplicate => return Ok(true),
+                DeclRef::Param(_) if self.fact(at)?.leaf == Leaf::Placeholder => return Ok(true),
+                DeclRef::Let(_)
+                | DeclRef::Cell(_)
+                | DeclRef::Instance(_)
+                | DeclRef::Param(_)
+                | DeclRef::Fn(_) => {}
+            }
+        }
+        Ok(false)
+    }
+}
+
+impl Core<'_> {
+    pub fn stop_at(&mut self, code: Code, node: u32, message: String) -> Result<(), Internal> {
+        if self.stop.is_some() {
+            return Ok(());
+        }
+        let span = self.node_span(node)?;
+        let diagnostic = Diagnostic::new(code, span, message);
+        self.stop = Some((self.diagnostics.len(), diagnostic));
+        Ok(())
+    }
+
+    pub fn warn_at(
+        &mut self,
+        node: u32,
+        key: &str,
+        counted: String,
+        bound: u64,
+    ) -> Result<(), Internal> {
+        if self.stop.is_some() || !self.warned.insert(node) {
+            return Ok(());
+        }
+        let span = self.node_span(node)?;
+        let diagnostic = Diagnostic::new(
+            Code::LimitWarning,
+            span,
+            format!(
+                "{counted}, the warning value of the limit of {}",
+                grouped(bound)
+            ),
+        )
+        .with_help(format!(
+            "reduce the work, or raise `{key}_warning` in the package's `options` or with `--limit {key}_warning=<value>`"
+        ));
+        let diagnostic = self.chained(diagnostic);
+        self.diagnostics.push(diagnostic);
+        Ok(())
     }
 }

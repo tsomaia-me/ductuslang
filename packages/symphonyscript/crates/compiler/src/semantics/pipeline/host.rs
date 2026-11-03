@@ -3,6 +3,7 @@ use super::core_value::CoreValue;
 use crate::diagnostics::Code;
 use crate::semantics::Internal;
 use crate::semantics::operators::{OperatorHost, Value};
+use crate::semantics::reporting::grouped;
 
 impl OperatorHost for Core<'_> {
     type Node = u32;
@@ -28,9 +29,9 @@ impl OperatorHost for Core<'_> {
 
     fn within_value_limit(
         &mut self,
-        _node: u32,
+        node: u32,
         value: CoreValue,
-        _built: &str,
+        built: &str,
     ) -> Result<CoreValue, Internal> {
         let held = match &value {
             Value::Array(_) => self.store.elements(&value),
@@ -43,14 +44,26 @@ impl OperatorHost for Core<'_> {
             | Value::Node(_)
             | Value::Error => return Ok(value),
         };
-        if held
-            > self
-                .limits
-                .value_elements_warning
-                .min(self.limits.value_elements)
-        {
-            self.declined = true;
+        let unit = if matches!(value, Value::Str(_)) {
+            "characters"
+        } else {
+            "elements"
+        };
+        if held > self.limits.value_elements {
+            let message = format!(
+                "{built} holds {} {unit}, more than the {} a compile-time value holds",
+                grouped(held),
+                grouped(self.limits.value_elements)
+            );
+            self.stop_at(Code::ValueLimit, node, message)?;
             return Ok(Value::Error);
+        }
+        if held > self.limits.value_elements_warning {
+            let counted = format!(
+                "{built} holds more than {} {unit}",
+                grouped(self.limits.value_elements_warning)
+            );
+            self.warn_at(node, "value_elements", counted, self.limits.value_elements)?;
         }
         Ok(value)
     }

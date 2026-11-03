@@ -167,9 +167,6 @@ impl Core<'_> {
             if let Err(declined) = self.evaluate_own(root)? {
                 return Ok(Err(declined));
             }
-            if matches!(self.fact(root)?.leaf, Leaf::Placeholder | Leaf::Error) {
-                continue;
-            }
             let rec = self
                 .ir
                 .lets

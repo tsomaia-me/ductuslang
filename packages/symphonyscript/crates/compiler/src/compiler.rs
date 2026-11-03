@@ -220,15 +220,12 @@ impl Compiler {
             Some(run) => {
                 self.taken.fetch_add(1, Ordering::Relaxed);
                 report.diagnostics.extend(run.diagnostics);
+                let mapped: std::collections::HashMap<u32, ExprId> =
+                    exprs_of.iter().copied().collect();
                 let placeholders = run
                     .placeholders
                     .iter()
-                    .filter_map(|node| {
-                        exprs_of
-                            .iter()
-                            .find(|(mapped, _)| mapped == node)
-                            .map(|(_, expr)| *expr)
-                    })
+                    .filter_map(|node| mapped.get(node).copied())
                     .collect::<Vec<ExprId>>();
                 (None, placeholders)
             }
