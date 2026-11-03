@@ -82,7 +82,11 @@ impl Core<'_> {
                 (ty, true)
             }
         } else if op == Op::If && position == 0 {
-            (Some(EvalTy::Bool), false)
+            if self.faulty(a)? || self.fact(node)?.leaf != Leaf::Error {
+                (Some(EvalTy::Bool), false)
+            } else {
+                (None, false)
+            }
         } else if op == Op::If {
             (ty, true)
         } else if op == Op::Convert

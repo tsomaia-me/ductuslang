@@ -628,6 +628,7 @@ impl Core<'_> {
             )?;
             return Ok(Ok(Fact::PLACEHOLDER));
         }
+        let wrong_test = !matches!(test.leaf, Leaf::Bool | Leaf::Placeholder | Leaf::Error);
         if leaves.contains(&Leaf::Placeholder) {
             return Ok(Ok(Fact::PLACEHOLDER));
         }
@@ -642,11 +643,11 @@ impl Core<'_> {
             )?;
             return Ok(Ok(Fact::PLACEHOLDER));
         }
-        if leaves.contains(&Leaf::Error) {
+        if wrong_test {
+            self.draw_at(Code::ConditionType, condition, "the condition is a `bool`")?;
             return Ok(Ok(Fact::ERROR));
         }
-        if test.leaf != Leaf::Bool {
-            self.draw_at(Code::ConditionType, condition, "the condition is a `bool`")?;
+        if leaves.contains(&Leaf::Error) {
             return Ok(Ok(Fact::ERROR));
         }
         let Some(leaf) = unify(first.leaf, second.leaf) else {
@@ -711,6 +712,12 @@ impl Core<'_> {
         for bound in bounds.into_iter().filter(|bound| *bound != NONE) {
             facts.push((bound, self.fact(bound)?));
         }
+        let faulty = |fact: &Fact| matches!(fact.leaf, Leaf::Placeholder | Leaf::Error);
+        let not_an_array = base.dims.is_empty()
+            && (!faulty(&base) || (base.leaf == Leaf::Placeholder && self.bool_valued(a)?));
+        if not_an_array {
+            self.draw_at(Code::NotAnArray, a, "only an array is sliced")?;
+        }
         if facts
             .iter()
             .any(|(_, fact)| !fact.dims.is_empty() && fact.leaf != Leaf::Error)
@@ -725,12 +732,7 @@ impl Core<'_> {
         if self.named_placeholder(a, &base)? {
             return Ok(Ok(Fact::PLACEHOLDER));
         }
-        let placeheld = facts.iter().any(|(_, fact)| fact.leaf == Leaf::Placeholder);
-        let faulty = |fact: &Fact| matches!(fact.leaf, Leaf::Placeholder | Leaf::Error);
-        if base.dims.is_empty() && !faulty(&base) {
-            if !placeheld {
-                self.draw_at(Code::NotAnArray, a, "only an array is sliced")?;
-            }
+        if not_an_array {
             return Ok(Ok(Fact::PLACEHOLDER));
         }
         let mut refused = faulty(&base);
@@ -801,6 +803,82 @@ impl Core<'_> {
         }))
     }
 
+    fn bool_valued(&self, node: u32) -> Result<bool, Internal> {
+        let (op, _, _, _) = self.ir.node(node)?;
+        Ok(matches!(
+            op,
+            Op::Lt | Op::Le | Op::Gt | Op::Ge | Op::Is | Op::IsNot | Op::And | Op::Or | Op::Not
+        ) && !self.holds_a_missing_operand(node)?)
+    }
+
+    fn may_hold_array(&self, node: u32) -> Result<bool, Internal> {
+        let mut stack = vec![node];
+        while let Some(node) = stack.pop() {
+            let (op, a, b, c) = self.ir.node(node)?;
+            match op {
+                Op::Name => {
+                    if self.fact(node)?.leaf == Leaf::Placeholder {
+                        return Ok(true);
+                    }
+                }
+                Op::If => {
+                    let condition = self.fact(a)?;
+                    if condition.leaf == Leaf::Bool && condition.dims.is_empty() {
+                        stack.push(b);
+                        stack.push(c);
+                    }
+                }
+                Op::Add
+                | Op::Index
+                | Op::IndexFromEnd
+                | Op::Slice
+                | Op::Call
+                | Op::NamedCall
+                | Op::For => {
+                    if self.holds_name_placeholder(node)? {
+                        return Ok(true);
+                    }
+                }
+                Op::Int
+                | Op::Float
+                | Op::Bool
+                | Op::Str
+                | Op::Variant
+                | Op::To
+                | Op::Field
+                | Op::MethodCall
+                | Op::NamedMethodCall
+                | Op::Past
+                | Op::Stepped
+                | Op::Match
+                | Op::Array
+                | Op::Neg
+                | Op::Not
+                | Op::Sub
+                | Op::Mul
+                | Op::Div
+                | Op::IntDiv
+                | Op::Rem
+                | Op::Pow
+                | Op::And
+                | Op::Or
+                | Op::Lt
+                | Op::Le
+                | Op::Gt
+                | Op::Ge
+                | Op::Is
+                | Op::IsNot
+                | Op::Convert
+                | Op::TyScalar
+                | Op::TyName
+                | Op::TyArray
+                | Op::TyVar
+                | Op::Bad => {}
+            }
+        }
+        Ok(false)
+    }
+
     fn named_placeholder(&self, node: u32, fact: &Fact) -> Result<bool, Internal> {
         let (op, _, _, _) = self.ir.node(node)?;
         Ok(fact.leaf == Leaf::Placeholder && op == Op::Name)
@@ -820,8 +898,10 @@ impl Core<'_> {
         if self.named_placeholder(a, &base)? {
             return Ok(Fact::PLACEHOLDER);
         }
-        if base.dims.is_empty() && !matches!(base.leaf, Leaf::Placeholder | Leaf::Error) {
-            let placeheld = index.leaf == Leaf::Placeholder && self.holds_name_placeholder(b)?;
+        let known_base = !matches!(base.leaf, Leaf::Placeholder | Leaf::Error)
+            || (base.leaf == Leaf::Placeholder && self.bool_valued(a)?);
+        if base.dims.is_empty() && known_base {
+            let placeheld = index.leaf == Leaf::Placeholder && self.may_hold_array(b)?;
             if !placeheld {
                 self.draw_at(Code::NotAnArray, a, "only an array is indexed")?;
             }

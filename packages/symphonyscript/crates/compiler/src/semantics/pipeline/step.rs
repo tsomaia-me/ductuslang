@@ -9,6 +9,7 @@ pub(crate) enum Step {
     Pick(u32, EvalTy),
     Record(u32, bool, u32, EvalTy),
     Fit(u32, EvalTy),
+    Widen(EvalTy),
     Enter(u32, EvalTy),
     Fold(u32, EvalTy),
     FoldRun(u32, EvalTy),

@@ -5,34 +5,10 @@ use crate::syntax::front_end_goldens::{
     spec_and_lesson_corpora,
 };
 
-type Reviewed = (
-    &'static str,
-    &'static str,
-    &'static [(&'static str, &'static str)],
-);
+#[path = "../../../tests/reviewed/mod.rs"]
+mod reviewed;
 
-const REVIEWED: [Reviewed; 3] = [
-    (
-        "464",
-        "\nstate a(1)\nstate b(2)\nstate i(0)\n\nlet s = a + b\nlet c = [a, b, s]\n",
-        &[("reactive-let", "c"), ("reactive-let", "s")],
-    ),
-    (
-        "476",
-        "let q = 1\nClip k:\n    Note/((true is q)[if true then [1, 2][5] else [1, 2]])\n",
-        &[
-            ("not-an-array", "true is q"),
-            ("operand-type", "true is q"),
-            ("type-mismatch", "if true then [1, 2][5] else [1, 2]"),
-            ("index-out-of-range", "5"),
-        ],
-    ),
-    (
-        "476",
-        "Clip k:\n    Note/([1, 2][true..])\n",
-        &[("type-mismatch", "[1, 2][true..]"), ("index-type", "true")],
-    ),
-];
+use reviewed::{REVIEWED, reviewed};
 
 fn spanned(text: &str, found: &[crate::diagnostics::Diagnostic]) -> Vec<(String, String)> {
     let mut spans: Vec<(String, String)> = found
@@ -50,25 +26,11 @@ fn spanned(text: &str, found: &[crate::diagnostics::Diagnostic]) -> Vec<(String,
     spans
 }
 
-fn reviewed(text: &str) -> Option<(&'static str, Vec<(String, String)>)> {
-    REVIEWED
-        .iter()
-        .find(|(_, program, _)| *program == text)
-        .map(|(ledger, _, expected)| {
-            let mut expected: Vec<(String, String)> = expected
-                .iter()
-                .map(|(code, span)| ((*code).to_string(), (*span).to_string()))
-                .collect();
-            expected.sort();
-            (*ledger, expected)
-        })
-}
-
 #[test]
 fn the_reviewed_moves_draw_their_expected_sets_on_the_new_core_464_476() {
     let new =
         Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("the vocabulary compiles");
-    for (ledger, text, _) in REVIEWED {
+    for (ledger, text, _) in REVIEWED.iter().copied() {
         let found = new
             .checked_by_new_core(&[source(text)])
             .expect("the new core takes the program");
@@ -286,7 +248,7 @@ fn the_shared_steps_programs_draw_the_old_engines_sets_on_the_new_core_beside_th
     }
 }
 
-const EXHAUSTIVE_CLASSES: [(&str, &[(&str, &str)]); 6] = [
+const EXHAUSTIVE_CLASSES: [(&str, &[(&str, &str)]); 10] = [
     (
         "state f([1.5, 2.5])\nstate n(0)\nClip c:\n    Note/(f[n])\n",
         &[("type-mismatch", "f[n]")],
@@ -294,6 +256,32 @@ const EXHAUSTIVE_CLASSES: [(&str, &[(&str, &str)]); 6] = [
     (
         "state f([1.5, 2.5])\nClip c:\n    Note/(f[0])\n",
         &[("float-to-integer", "f[0]")],
+    ),
+    (
+        "let q = i64(1)\nClip c:\n    Note/((i32(true) - 300000000000) % (1.5 / q))\n",
+        &[
+            ("conversion-type", "i32(true)"),
+            ("does-not-fit", "300000000000"),
+            ("type-mismatch", "(i32(true) - 300000000000) % (1.5 / q)"),
+        ],
+    ),
+    (
+        "Clip c:\n    Note/((i32(1) - 300000000000) % 1.5)\n",
+        &[
+            ("does-not-fit", "300000000000"),
+            ("type-mismatch", "(i32(1) - 300000000000) % 1.5"),
+        ],
+    ),
+    (
+        "Clip c:\n    Note/((i32(1) - 300000000000) % i64(2))\n",
+        &[
+            ("does-not-fit", "300000000000"),
+            ("type-mismatch", "(i32(1) - 300000000000) % i64(2)"),
+        ],
+    ),
+    (
+        "Clip c:\n    Note | velocity=((i32(1) - 300000000000) + 1.5)\n",
+        &[("does-not-fit", "300000000000")],
     ),
     (
         "Clip c:\n    Note/(if (true + 1.5) then 1 else (if [1, 2][5] then 1 else 2))\n",

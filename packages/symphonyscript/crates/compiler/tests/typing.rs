@@ -1,3 +1,4 @@
+mod reviewed;
 mod support;
 
 use symphonyscript::{Code, Compiler, Diagnostic, Source};
@@ -5941,6 +5942,17 @@ fn placeholder_rule_failures(rows: &Rows, part: usize, parts: usize) -> (Vec<Str
                     }],
                 );
                 programs += 1;
+                if let Some((ledger, wanted)) = reviewed::reviewed(&program) {
+                    let drawn = reviewed_spans(compiler, &program);
+                    if drawn != wanted {
+                        failures.push(support::failed_row_with(
+                            compiler,
+                            &text,
+                            format!("{ledger} {program}\n  drawn {drawn:?}\n  reviewed {wanted:?}"),
+                        ));
+                    }
+                    continue;
+                }
                 if expression.holds_name() {
                     let mut expected = common_to_twins(compiler, &program);
                     for site in sites.iter().filter(|site| site.leaf == NAME) {
@@ -5987,6 +5999,26 @@ fn placeholder_rule_failures(rows: &Rows, part: usize, parts: usize) -> (Vec<Str
         }
     }
     (failures, programs)
+}
+
+fn reviewed_spans(compiler: &Compiler, program: &str) -> Vec<(String, String)> {
+    let mut spans: Vec<(String, String)> = compiler
+        .check(&[Source {
+            path: "main.sym".into(),
+            text: program.to_string(),
+        }])
+        .into_iter()
+        .filter(|diagnostic| diagnostic.code != Code::NoEntryInstance)
+        .map(|diagnostic| {
+            let range = diagnostic.span.range.start as usize..diagnostic.span.range.end as usize;
+            (
+                diagnostic.code.to_string(),
+                program.get(range).unwrap_or_default().to_string(),
+            )
+        })
+        .collect();
+    spans.sort();
+    spans
 }
 
 fn assert_placeholder_rule(failures: &[String], programs: usize, expected_programs: usize) {

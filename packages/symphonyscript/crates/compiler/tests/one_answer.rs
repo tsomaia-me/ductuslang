@@ -261,6 +261,10 @@ const DECIDING_NONE: &[(&str, &str)] = &[
         "the operands of an IR node, the structure the new core's walks follow",
     ),
     (
+        "pipeline/typing.rs may_hold_array",
+        "whether an index's value could be an array for some value of a name placeholder it reads, the placeholder rule's withheld not-an-array",
+    ),
+    (
         "pipeline/typing.rs unary_fact",
         "the kind of a unary operator's value in the new core over its operand's kind, SPEC §4.3",
     ),

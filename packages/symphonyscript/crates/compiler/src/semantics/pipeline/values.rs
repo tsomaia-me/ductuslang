@@ -14,8 +14,8 @@ use crate::semantics::counted_walk::CountedWalk;
 use crate::semantics::ir::FloatLit;
 use crate::semantics::ir::flat::{NONE, Op, binary_of};
 use crate::semantics::operators::{
-    EvalTy, I64Position, Operands, Operator, Value, index_outside, int_range, outside_i64, plan_op,
-    represents, ty_name,
+    EvalTy, I64Position, Operands, Operator, Value, convert, index_outside, int_range, outside_i64,
+    plan_op, represents, ty_name,
 };
 use symphonyscript_core::BinaryOp;
 
@@ -206,10 +206,40 @@ impl Core<'_> {
                 }
             }
         };
+        let arithmetic = matches!(
+            op,
+            Op::Neg | Op::Add | Op::Sub | Op::Mul | Op::Div | Op::Rem | Op::Pow
+        );
         for (operand, operand_ty) in operands.into_iter().rev() {
-            steps.push(Step::Visit(operand, operand_ty));
+            match self.own_width(operand, operand_ty)? {
+                Some(own) if arithmetic => {
+                    steps.push(Step::Widen(operand_ty));
+                    steps.push(Step::Visit(operand, own));
+                }
+                Some(_) | None => steps.push(Step::Visit(operand, operand_ty)),
+            }
         }
         Ok(())
+    }
+
+    fn own_width(&self, operand: u32, ty: EvalTy) -> Result<Option<EvalTy>, Internal> {
+        if !self.owning {
+            return Ok(None);
+        }
+        let concrete = int_range(ty).is_some() || matches!(ty, EvalTy::F32 | EvalTy::F64);
+        let fact = self.fact(operand)?;
+        Ok(match fact.fixed {
+            Some(own)
+                if concrete
+                    && own != ty
+                    && widens(own, ty)
+                    && fact.dims.is_empty()
+                    && !matches!(fact.leaf, Leaf::Placeholder | Leaf::Error) =>
+            {
+                Some(own)
+            }
+            Some(_) | None => None,
+        })
     }
 
     pub fn evaluate(&mut self, root: u32, ty: EvalTy) -> Stage<CoreValue> {
@@ -564,6 +594,11 @@ impl Core<'_> {
                                 Some(_) | None => frame.values.push(Value::Error),
                             }
                         }
+                    }
+                }
+                Step::Widen(target) => {
+                    if let Some(value) = frame.values.pop() {
+                        frame.values.push(convert(value, target));
                     }
                 }
                 Step::Fit(read, read_ty) => {
@@ -977,6 +1012,13 @@ impl Core<'_> {
             let (op, a, b, c) = self.ir.node(node)?;
             match op {
                 Op::If => {
+                    let condition = self.fact(a)?;
+                    if condition.dims.is_empty()
+                        && !matches!(condition.leaf, Leaf::Bool | Leaf::Placeholder | Leaf::Error)
+                    {
+                        stack.push((a, false));
+                        continue;
+                    }
                     let test = match self.known(a, EvalTy::Bool, &mut stack)? {
                         Ok(test) => test,
                         Err(declined) => return Ok(Err(declined)),
