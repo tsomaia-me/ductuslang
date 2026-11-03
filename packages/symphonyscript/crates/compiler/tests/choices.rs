@@ -1196,10 +1196,10 @@ fn check_case(rows: &Rows, case: &Case, compilers: &mut Compilers, outcome: &mut
                 Some(0) => reads_cell(case.forms.0, case.contents.0),
                 Some(_) => reads_cell(case.forms.1, case.contents.1),
             };
-            if case.position == Position::TopLet
+            if matches!(case.position, Position::TopLet | Position::Annotation)
                 && let_reads_cell
                 && by_new_core
-                && let Some(at) = built.text.find("let x = ")
+                && let Some(at) = built.text.find("let x")
             {
                 let name = at + "let ".len();
                 drawn.insert((Code::ReactiveLet, name, name + 1));

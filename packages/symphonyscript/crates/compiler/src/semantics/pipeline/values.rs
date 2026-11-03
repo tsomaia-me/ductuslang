@@ -1,3 +1,4 @@
+use super::annotation::Refusal;
 use super::core::{Core, Stage};
 use super::core_value::CoreValue;
 use super::decl_ref::DeclRef;
@@ -325,6 +326,10 @@ impl Core<'_> {
                 CountedWalk::ValueRun.step();
                 match owner {
                     Some(at) => {
+                        let value = match self.annotation_ty(at)? {
+                            Some(annotated) => self.annotation_fit(at, annotated, value)?,
+                            None => value,
+                        };
                         if let Some(slot) = self
                             .let_values
                             .get_mut(at as usize)
@@ -396,6 +401,36 @@ impl Core<'_> {
                         && let DeclRef::Let(at) = self.bound(node)?
                         && !self.cyclic.get(at as usize).copied().unwrap_or(false)
                     {
+                        if let Some(annotated) = self.annotation_ty(at)? {
+                            let let_ty = flexible(annotated);
+                            if matches!(class(node_ty), 1 | 2 | 4..=6) {
+                                frame.steps.push(Step::Widen(evaluated_in(node_ty)));
+                            }
+                            if let Some(value) = self.memo(at, let_ty) {
+                                frame.values.push(value);
+                                continue;
+                            }
+                            if self.annotation_refusal(at, annotated)? != Refusal::Kept {
+                                frame.values.push(Value::Error);
+                                continue;
+                            }
+                            if frames.iter().any(|open| open.owner == Some(at)) {
+                                return Err(Internal::missed(
+                                    "an open declaration outside every cycle",
+                                ));
+                            }
+                            let root = self.let_root(at)?;
+                            frames.push(Frame {
+                                owner: Some(at),
+                                ty: let_ty,
+                                steps: vec![Step::Visit(root, let_ty)],
+                                values: Vec::new(),
+                                call: None,
+                                inst: NONE,
+                                fold: None,
+                            });
+                            continue;
+                        }
                         frame.steps.push(Step::Record(node, false, at, node_ty));
                         let flexible_let = self.fact(self.let_root(at)?)?.fixed.is_none();
                         if flexible_let && (4..=6).contains(&class(node_ty)) {

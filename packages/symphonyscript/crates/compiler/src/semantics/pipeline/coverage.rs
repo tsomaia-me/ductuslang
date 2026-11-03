@@ -4,6 +4,7 @@ use crate::semantics::ir::Suffix;
 use crate::semantics::ir::flat::{
     ABSENT, AttrForm, CellRec, FlatIr, FnRec, ForRec, ItemRec, NONE, Op, TopRec,
 };
+use crate::semantics::operators::EvalTy;
 
 pub(crate) fn op_slice(op: Op) -> Slice {
     match op {
@@ -19,7 +20,8 @@ pub(crate) fn op_slice(op: Op) -> Slice {
         Op::For => Slice::One,
         Op::Call => Slice::One,
         Op::NamedCall => Slice::One,
-        Op::TyScalar | Op::TyName | Op::TyArray | Op::TyVar => Slice::Pending,
+        Op::TyScalar => Slice::Pending,
+        Op::TyName | Op::TyArray | Op::TyVar => Slice::Pending,
         Op::To => Slice::Two,
         Op::Past | Op::Stepped => Slice::Four,
         Op::Variant => Slice::Five,
@@ -79,7 +81,7 @@ pub(crate) fn covers(ir: &FlatIr) -> bool {
             && ir
                 .lets
                 .get(*at as usize)
-                .is_none_or(|rec| rec.is_match || annotated(ir, rec.binder))
+                .is_none_or(|rec| rec.is_match || !scalar_annotation(ir, rec.binder))
         {
             return false;
         }
@@ -160,7 +162,7 @@ pub(crate) fn reason_slice(reason: Reason) -> Slice {
         Reason::CellGroup => Slice::Four,
         Reason::FunctionValue | Reason::Recursion => Slice::DefaultFlip,
         Reason::LocalCycle | Reason::LocalClash => Slice::Pending,
-        Reason::NestedScope => Slice::Pending,
+        Reason::NestedScope | Reason::AnnotatedCall => Slice::Pending,
         Reason::Pending => Slice::One,
         Reason::ReactiveFor => Slice::Three,
         Reason::BareVariant | Reason::UnitAttribute | Reason::EnumAttribute => Slice::Five,
@@ -205,5 +207,24 @@ fn plain_fold(ir: &FlatIr, rec: &ForRec) -> bool {
             ir.lets
                 .get(at as usize)
                 .is_some_and(|rec| !rec.is_match && !annotated(ir, rec.binder))
+        })
+}
+
+fn scalar_annotation(ir: &FlatIr, binder: u32) -> bool {
+    let Some(binder) = ir.binders.get(binder as usize) else {
+        return false;
+    };
+    if binder.annotation == NONE {
+        return true;
+    }
+    let Ok((op, code, _, _)) = ir.node(binder.annotation) else {
+        return false;
+    };
+    op == Op::TyScalar
+        && super::width::target_ty(code).is_some_and(|ty| {
+            matches!(
+                ty,
+                EvalTy::U8 | EvalTy::I32 | EvalTy::I64 | EvalTy::F32 | EvalTy::F64 | EvalTy::Bool
+            )
         })
 }

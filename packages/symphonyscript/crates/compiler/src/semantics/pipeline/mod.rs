@@ -1,4 +1,5 @@
 mod analyze;
+mod annotation;
 mod array_node;
 mod body_instance;
 mod calls;

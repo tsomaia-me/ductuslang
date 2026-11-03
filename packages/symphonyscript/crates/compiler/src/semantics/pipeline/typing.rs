@@ -155,6 +155,9 @@ impl Core<'_> {
                     }
                     return Ok(Err(declined));
                 }
+                if let Err(declined) = self.check_annotation(at)? {
+                    return Ok(Err(declined));
+                }
                 if let Some(slot) = self.let_state.get_mut(at as usize) {
                     *slot = DONE;
                 }
@@ -277,7 +280,7 @@ impl Core<'_> {
                     {
                         Fact::PLACEHOLDER
                     } else {
-                        self.fact(self.let_root(at)?)?
+                        self.let_fact(at)?
                     }
                 }
                 DeclRef::Cell(at) => self.fact(self.cell_root(at)?)?,
