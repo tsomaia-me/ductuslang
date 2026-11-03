@@ -61,7 +61,7 @@ fn head(node: &NodeView<'_>) -> std::ops::Range<u32> {
             ElementView::Node(child) if child.kind() == SyntaxKind::Body => break,
             ElementView::Node(child) => {
                 let mut token = child.last_token();
-                while let Some(current) = token.clone() {
+                while let Some(current) = token {
                     crate::semantics::counted_walk::CountedWalk::BodiesHead.step();
                     if current.range().start < child.range().start {
                         token = None;
@@ -141,7 +141,7 @@ impl<'p> HirBuilder<'_> {
                         }
                         _ => skipped.extend(skipped_names(&child)),
                     }
-                } else if let Some(item) = AstBodyItem::cast(child.clone()) {
+                } else if let Some(item) = AstBodyItem::cast(child) {
                     let lone = matches!(item, AstBodyItem::Placement(_));
                     let before = items.len();
                     self.dropped = false;
@@ -159,7 +159,7 @@ impl<'p> HirBuilder<'_> {
             }
             if let Some(members) = node.members() {
                 for (position, member) in members.members().enumerate() {
-                    let syntax = member.syntax().clone();
+                    let syntax = *member.syntax();
                     self.dropped = false;
                     self.member(member, position > 0, &mut items, &mut pending);
                     if self.dropped {

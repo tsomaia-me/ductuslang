@@ -13,7 +13,7 @@ fn views_navigate_children_parents_and_ancestors() {
     assert!(root.parent().is_none());
     let placement = root.children().next().expect("a placement");
     assert_eq!(placement.kind(), SyntaxKind::Placement);
-    assert_eq!(placement.parent(), Some(root.clone()));
+    assert_eq!(placement.parent(), Some(root));
     let literal = root
         .preorder()
         .filter_map(|event| match event {

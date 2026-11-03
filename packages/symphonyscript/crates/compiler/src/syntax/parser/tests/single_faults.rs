@@ -63,7 +63,7 @@ const LEXER_AND_PARSER_CODES: &[Code] = &[
     Code::PackageSyntax,
 ];
 
-const SEEDS: u64 = 24;
+pub(super) const SEEDS: u64 = 24;
 
 fn parse_counting(text: &str) -> (Vec<Diagnostic>, Cost) {
     let source = Source {

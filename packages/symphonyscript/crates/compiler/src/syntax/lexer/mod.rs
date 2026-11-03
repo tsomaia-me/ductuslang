@@ -1,20 +1,22 @@
 mod clause;
 mod line_start;
 mod mode;
+mod raw_diagnostic;
 mod region;
 mod scan;
 mod suspension;
 #[cfg(test)]
 mod tests;
 
-use symphonyscript_core::{RESERVED_WORDS, Span, Vocabulary};
+use symphonyscript_core::{RESERVED_WORDS, Vocabulary};
 use unicode_width::UnicodeWidthChar;
 
 use std::ops::Range;
 
 use self::clause::Clause;
-pub(crate) use self::line_start::LineStart;
+pub(crate) use self::line_start::{LineStart, LineToken, LineTokens};
 use self::mode::Mode;
+use self::raw_diagnostic::RawDiagnostic;
 use self::region::Region;
 pub(crate) use self::scan::is_ident_continue;
 use self::scan::is_ident_start;
@@ -22,8 +24,9 @@ use self::suspension::Suspension;
 use super::lexed::Lexed;
 use super::nfc::nfc;
 use super::syntax_kind::SyntaxKind;
-use super::token::Token;
+use super::token_columns::TokenColumns;
 use crate::diagnostics::{Code, Diagnostic, stray_closer_help};
+use crate::semantics::counted_walk::CountedWalk;
 use crate::source::Source;
 
 pub(crate) struct Lexer<'a> {
@@ -31,8 +34,8 @@ pub(crate) struct Lexer<'a> {
     text: &'a str,
     vocabulary: &'a Vocabulary,
     pos: usize,
-    tokens: Vec<Token>,
-    diagnostics: Vec<Diagnostic>,
+    columns: TokenColumns,
+    diagnostics: Vec<RawDiagnostic>,
     stack: Vec<u32>,
     depth: u32,
     modes: Vec<Mode>,
@@ -64,7 +67,7 @@ impl<'a> Lexer<'a> {
             text: &source.text,
             vocabulary,
             pos: 0,
-            tokens: Vec::new(),
+            columns: TokenColumns::reserved(source.text.len()),
             diagnostics: Vec::new(),
             stack: vec![0],
             depth: 0,
@@ -74,7 +77,7 @@ impl<'a> Lexer<'a> {
             pending_newline: None,
             clause: None,
             clause_pending: false,
-            depths: Vec::new(),
+            depths: Vec::with_capacity(source.text.len() / 2),
             suspended: Vec::new(),
             regions: Vec::new(),
             stacks: Vec::new(),
@@ -93,10 +96,22 @@ impl<'a> Lexer<'a> {
 
     pub(crate) fn run(mut self) -> Lexed {
         while self.advance() {}
+        let (columns, diagnostics) = self.finish();
         Lexed {
-            tokens: self.tokens,
-            diagnostics: self.diagnostics,
+            tokens: columns.tokens(),
+            diagnostics,
         }
+    }
+
+    pub(crate) fn finish(mut self) -> (TokenColumns, Vec<Diagnostic>) {
+        self.columns.starts.push(self.pos as u32);
+        let file = self.source.path.as_str();
+        let diagnostics = self
+            .diagnostics
+            .into_iter()
+            .map(|diagnostic| diagnostic.into_diagnostic(file))
+            .collect();
+        (self.columns, diagnostics)
     }
 
     pub(crate) fn advance(&mut self) -> bool {
@@ -125,12 +140,29 @@ impl<'a> Lexer<'a> {
     pub(crate) fn settled(&self) -> usize {
         match self.pending_newline {
             Some(index) if !self.finished => index,
-            _ => self.tokens.len(),
+            _ => self.columns.len(),
         }
     }
 
-    pub(crate) fn token_at(&self, index: usize) -> Option<&Token> {
-        self.tokens.get(index)
+    pub(crate) fn kind_of(&self, index: usize) -> Option<SyntaxKind> {
+        self.columns.kind(index)
+    }
+
+    pub(crate) fn range_of(&self, index: usize) -> Option<Range<u32>> {
+        let start = self.columns.start(index)?;
+        Some(start..self.end_of(index))
+    }
+
+    pub(crate) fn significant_at(&self, at: usize) -> Option<usize> {
+        self.columns
+            .sig
+            .get(at)
+            .map(|index| *index as usize)
+            .filter(|index| *index < self.settled())
+    }
+
+    fn end_of(&self, index: usize) -> u32 {
+        self.columns.start(index + 1).unwrap_or(self.pos as u32)
     }
 
     pub(crate) fn work(&self) -> usize {
@@ -139,10 +171,6 @@ impl<'a> Lexer<'a> {
 
     pub(crate) fn peak_stored_entries(&self) -> usize {
         self.peak_stored_entries
-    }
-
-    pub(crate) fn into_diagnostics(self) -> Vec<Diagnostic> {
-        self.diagnostics
     }
 
     pub(crate) fn faulted_at(&mut self, offset: u32) -> bool {
@@ -171,15 +199,18 @@ impl<'a> Lexer<'a> {
 
     pub(crate) fn token_before(&mut self, offset: u32) -> Option<usize> {
         let work = &mut self.work;
-        let mut index = self.tokens.partition_point(|token| {
+        let starts = &self.columns.starts;
+        let mut at = self.columns.sig.partition_point(|token| {
             *work += 1;
-            token.range.start < offset
+            starts
+                .get(*token as usize)
+                .is_some_and(|start| *start < offset)
         });
-        while index > 0 {
-            index -= 1;
+        while at > 0 {
+            at -= 1;
             self.work += 1;
-            let token = self.tokens.get(index)?;
-            if !token.kind.is_trivia() && !token.range.is_empty() {
+            let index = *self.columns.sig.get(at)? as usize;
+            if !self.range_of(index)?.is_empty() {
                 return Some(index);
             }
         }
@@ -191,7 +222,7 @@ impl<'a> Lexer<'a> {
         token: usize,
         starts_line: impl Fn(&LineStart<'_>) -> bool,
     ) -> Option<usize> {
-        let start = self.tokens.get(token)?.range.start as usize;
+        let start = self.columns.start(token)? as usize;
         let region = self
             .regions
             .partition_point(|region| region.open <= start)
@@ -263,17 +294,33 @@ impl<'a> Lexer<'a> {
     }
 
     fn line_start_of(&self, line: &Suspension) -> Option<LineStart<'_>> {
-        let first = self.tokens.get(line.first_token)?;
-        let line_end = self
-            .text
-            .get(first.range.start as usize..)
-            .and_then(|rest| rest.find('\n'))
-            .map_or(self.text.len(), |offset| {
-                first.range.start as usize + offset
-            }) as u32;
-        let after = self.tokens.get(line.first_token + 1..).unwrap_or_default();
-        let length = after.partition_point(|token| token.range.start < line_end);
-        let rest = after.get(..length).unwrap_or_default();
+        let first = LineToken {
+            kind: self.kind_of(line.first_token)?,
+            start: self.columns.start(line.first_token)?,
+            end: self.end_of(line.first_token),
+        };
+        let line_end =
+            self.text
+                .get(first.start as usize..)
+                .and_then(|rest| rest.find('\n'))
+                .map_or(self.text.len(), |offset| first.start as usize + offset) as u32;
+        CountedWalk::LexByte.step_by((line_end - first.start) as usize);
+        let after = self
+            .columns
+            .starts
+            .get(line.first_token + 1..)
+            .unwrap_or_default();
+        let length = after.partition_point(|start| *start < line_end);
+        let rest = LineTokens {
+            kinds: self
+                .columns
+                .kinds
+                .get(line.first_token + 1..)
+                .and_then(|kinds| kinds.get(..length))
+                .unwrap_or_default(),
+            starts: after.get(..length).unwrap_or_default(),
+            end: self.end_of(line.first_token + length),
+        };
         let rest_depths = self
             .depths
             .get(line.first_token + 1..)
@@ -301,14 +348,15 @@ impl<'a> Lexer<'a> {
             return;
         };
         let keep = self
-            .tokens
-            .partition_point(|token| (token.range.start as usize) < suspension.offset)
+            .columns
+            .starts
+            .partition_point(|start| (*start as usize) < suspension.offset)
             .max(consumed);
         let from = keep
             .checked_sub(1)
-            .and_then(|index| self.tokens.get(index))
-            .map_or(suspension.offset, |token| {
-                (token.range.end as usize).max(suspension.offset)
+            .filter(|index| *index < self.columns.len())
+            .map_or(suspension.offset, |index| {
+                (self.end_of(index) as usize).max(suspension.offset)
             });
         let snapshot = self
             .regions
@@ -319,12 +367,18 @@ impl<'a> Lexer<'a> {
             .get(snapshot)
             .cloned()
             .unwrap_or_else(|| vec![0]);
-        self.tokens.truncate(keep);
+        self.columns.kinds.truncate(keep);
+        self.columns.starts.truncate(keep);
+        let significant = self
+            .columns
+            .sig
+            .partition_point(|token| (*token as usize) < keep);
+        self.columns.sig.truncate(significant);
         self.depths.truncate(keep);
         let offset = suspension.offset as u32;
         let kept = self
             .diagnostics
-            .partition_point(|diagnostic| diagnostic.span.range.start < offset);
+            .partition_point(|diagnostic| diagnostic.range.start < offset);
         self.diagnostics.truncate(kept);
         let kept = self.faults.partition_point(|fault| fault.start < offset);
         self.faults.truncate(kept);
@@ -384,6 +438,7 @@ impl<'a> Lexer<'a> {
         self.line_break();
         self.record_faults(first_diagnostic);
         self.work += self.pos - begin;
+        CountedWalk::LexByte.step_by(self.pos - begin);
     }
 
     fn record_faults(&mut self, first: usize) {
@@ -392,7 +447,7 @@ impl<'a> Lexer<'a> {
             .get(first..)
             .unwrap_or_default()
             .iter()
-            .map(|diagnostic| diagnostic.span.range.clone())
+            .map(|diagnostic| diagnostic.range.clone())
             .collect();
         ranges.sort_by_key(|range| range.start);
         for range in ranges {
@@ -417,7 +472,7 @@ impl<'a> Lexer<'a> {
         if self.depth > 0 {
             self.suspended.push(Suspension {
                 offset: self.line_start,
-                first_token: self.tokens.len(),
+                first_token: self.columns.len(),
                 column: leading.chars().count() as u32,
                 region: self.regions.len().saturating_sub(1),
             });
@@ -439,25 +494,20 @@ impl<'a> Lexer<'a> {
             let misaligned = column == clause.display && column != clause.column && column > top;
             if misaligned {
                 let end = self.pos + self.char_len(self.pos);
-                self.diagnostics.push(
-                    Diagnostic::new(
-                        Code::ClauseColumn,
-                        self.span(self.pos, end),
-                        format!(
-                            "this line lines up with the attribute clause only on screen; its first entry is at column {}",
-                            clause.column + 1
-                        ),
-                    )
-                    .with_help(format!(
-                        "wide characters before the clause make column {} show at display column {}",
-                        clause.column + 1,
-                        clause.display + 1
-                    )),
+                let summary = format!(
+                    "this line lines up with the attribute clause only on screen; its first entry is at column {}",
+                    clause.column + 1
                 );
+                let help = format!(
+                    "wide characters before the clause make column {} show at display column {}",
+                    clause.column + 1,
+                    clause.display + 1
+                );
+                self.raw(Code::ClauseColumn, self.pos, end, summary, Some(help));
             }
             if aligned || misaligned {
                 if let Some(index) = self.pending_newline.take() {
-                    self.tokens[index].kind = SyntaxKind::Whitespace;
+                    self.trivial(index);
                 }
                 self.line_has_token = true;
                 self.clause = Some(clause);
@@ -525,7 +575,7 @@ impl<'a> Lexer<'a> {
         if self.depth == 0 && self.line_has_token {
             self.push(SyntaxKind::Newline, start);
             self.json_next = false;
-            self.pending_newline = Some(self.tokens.len() - 1);
+            self.pending_newline = Some(self.columns.len() - 1);
             self.line_has_token = false;
         } else {
             self.push(SyntaxKind::Whitespace, start);
@@ -1118,26 +1168,24 @@ impl<'a> Lexer<'a> {
             (':', _) => (SyntaxKind::Colon, 1),
             ('=', Some('=')) => {
                 self.pos += 2;
-                self.diagnostics.push(
-                    Diagnostic::new(
-                        Code::ReservedToken,
-                        self.span(start, self.pos),
-                        "`==` is reserved",
-                    )
-                    .with_help("compare with `is`"),
+                self.raw(
+                    Code::ReservedToken,
+                    start,
+                    self.pos,
+                    "`==` is reserved",
+                    Some("compare with `is`".into()),
                 );
                 self.push(SyntaxKind::Error, start);
                 return;
             }
             ('!', Some('=')) => {
                 self.pos += 2;
-                self.diagnostics.push(
-                    Diagnostic::new(
-                        Code::ReservedToken,
-                        self.span(start, self.pos),
-                        "`!=` is reserved",
-                    )
-                    .with_help("compare with `is not`"),
+                self.raw(
+                    Code::ReservedToken,
+                    start,
+                    self.pos,
+                    "`!=` is reserved",
+                    Some("compare with `is not`".into()),
                 );
                 self.push(SyntaxKind::Error, start);
                 return;
@@ -1197,22 +1245,18 @@ impl<'a> Lexer<'a> {
             self.pos += c.len_utf8();
         }
         let text = &self.text[start..self.pos];
-        let mut diagnostic = Diagnostic::new(
-            Code::UnexpectedCharacter,
-            self.span(start, self.pos),
-            format!("unexpected `{}`", text.escape_debug()),
-        );
+        let summary = format!("unexpected `{}`", text.escape_debug());
         let mut chars = text.chars();
-        if let (Some(closer), None) = (chars.next(), chars.next())
-            && let Some(help) = stray_closer_help(closer)
-        {
-            diagnostic = diagnostic.with_help(help);
-        }
-        self.diagnostics.push(diagnostic);
+        let help = match (chars.next(), chars.next()) {
+            (Some(closer), None) => stray_closer_help(closer),
+            _ => None,
+        };
+        self.raw(Code::UnexpectedCharacter, start, self.pos, summary, help);
         self.push(SyntaxKind::Error, start);
     }
 
     fn push(&mut self, kind: SyntaxKind, start: usize) {
+        CountedWalk::LexToken.step();
         let normal = self.modes.is_empty();
         self.depths.push(self.depth);
         if !kind.is_trivia() {
@@ -1258,10 +1302,11 @@ impl<'a> Lexer<'a> {
                 _ => {}
             }
         }
-        self.tokens.push(Token {
-            kind,
-            range: start as u32..self.pos as u32,
-        });
+        if !kind.is_trivia() {
+            self.columns.sig.push(self.columns.len() as u32);
+        }
+        self.columns.kinds.push(kind);
+        self.columns.starts.push(start as u32);
     }
 
     fn ends_region_here(&self, column: u32) -> bool {
@@ -1309,16 +1354,33 @@ impl<'a> Lexer<'a> {
         self.text[at..].chars().next().map_or(0, char::len_utf8)
     }
 
-    fn span(&self, start: usize, end: usize) -> Span {
-        Span {
-            file: self.source.path.clone(),
-            range: start as u32..end as u32,
-        }
+    fn error(&mut self, code: Code, start: usize, end: usize, message: impl Into<String>) {
+        self.raw(code, start, end, message, None);
     }
 
-    fn error(&mut self, code: Code, start: usize, end: usize, message: impl Into<String>) {
-        let span = self.span(start, end);
-        self.diagnostics.push(Diagnostic::new(code, span, message));
+    fn raw(
+        &mut self,
+        code: Code,
+        start: usize,
+        end: usize,
+        summary: impl Into<String>,
+        help: Option<String>,
+    ) {
+        self.diagnostics.push(RawDiagnostic {
+            code,
+            range: start as u32..end as u32,
+            summary: summary.into(),
+            help,
+        });
+    }
+
+    fn trivial(&mut self, index: usize) {
+        if let Some(kind) = self.columns.kinds.get_mut(index) {
+            *kind = SyntaxKind::Whitespace;
+        }
+        if let Ok(at) = self.columns.sig.binary_search(&(index as u32)) {
+            self.columns.sig.remove(at);
+        }
     }
 }
 
@@ -1331,5 +1393,6 @@ fn word(text: &str) -> &str {
     let end = chars
         .find(|(_, c)| !is_ident_continue(*c))
         .map_or(text.len(), |(offset, _)| offset);
+    CountedWalk::LexByte.step_by(end);
     text.get(..end).unwrap_or_default()
 }

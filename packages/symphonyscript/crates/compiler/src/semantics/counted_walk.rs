@@ -169,7 +169,10 @@ pub(crate) enum CountedWalk {
     EngineIsDone,
     EngineScopeOf,
     EngineFunctionOfScope,
-    ParserKindAt,
+    ParseKindRead,
+    LexByte,
+    LexToken,
+    ParseNode,
     HirBuilderCall,
     FaultsUnclosed,
     SyntaxViewElement,
@@ -178,7 +181,7 @@ pub(crate) enum CountedWalk {
 }
 
 #[cfg(test)]
-const WALKS: usize = 175;
+const WALKS: usize = 178;
 
 #[cfg(test)]
 thread_local! {
@@ -357,7 +360,10 @@ impl CountedWalk {
         CountedWalk::EngineIsDone,
         CountedWalk::EngineScopeOf,
         CountedWalk::EngineFunctionOfScope,
-        CountedWalk::ParserKindAt,
+        CountedWalk::ParseKindRead,
+        CountedWalk::LexByte,
+        CountedWalk::LexToken,
+        CountedWalk::ParseNode,
         CountedWalk::HirBuilderCall,
         CountedWalk::FaultsUnclosed,
         CountedWalk::SyntaxViewElement,
@@ -372,6 +378,20 @@ impl CountedWalk {
                 step.set(step.get().saturating_add(1));
             }
         });
+    }
+
+    pub(crate) fn step_by(self, count: usize) {
+        #[cfg(test)]
+        STEPS.with(|steps| {
+            if let Some(step) = steps.get(self as usize) {
+                step.set(
+                    step.get()
+                        .saturating_add(u64::try_from(count).unwrap_or(u64::MAX)),
+                );
+            }
+        });
+        #[cfg(not(test))]
+        let _ = count;
     }
 
     #[cfg(test)]

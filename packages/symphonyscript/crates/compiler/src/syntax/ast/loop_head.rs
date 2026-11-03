@@ -13,7 +13,7 @@ pub struct LoopHead<'p>(NodeView<'p>);
 
 impl<'p> LoopHead<'p> {
     pub(super) fn of(node: &NodeView<'p>) -> Self {
-        Self(node.clone())
+        Self(*node)
     }
 
     pub fn names(&self) -> Vec<LoopName<'p>> {

@@ -1,101 +1,143 @@
 use std::fmt;
-use std::marker::PhantomData;
+use std::hash::{Hash, Hasher};
 use std::ops::Range;
 
-use rowan::{NodeOrToken, TextSize};
-
+use super::children::{Children, Elements};
+use super::descendants::Descendants;
 use super::element_view::ElementView;
-use super::navigation;
-use super::parsed::Parsed;
+use super::parsed::{NO_NODE, Parsed};
+use super::preorder::Preorder;
 use super::syntax_kind::SyntaxKind;
-use super::syntax_node::SyntaxNode;
 use super::token_view::TokenView;
 use super::walk::Walk;
 
-#[derive(Clone, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy)]
 pub struct NodeView<'p> {
-    raw: SyntaxNode,
-    parsed: PhantomData<&'p Parsed>,
+    parsed: &'p Parsed,
+    index: u32,
 }
 
 impl<'p> NodeView<'p> {
-    pub(crate) fn new(raw: SyntaxNode) -> Self {
-        Self {
-            raw,
-            parsed: PhantomData,
-        }
+    pub(crate) fn new(parsed: &'p Parsed, index: u32) -> Self {
+        Self { parsed, index }
     }
 
     pub fn kind(&self) -> SyntaxKind {
-        self.raw.kind()
+        self.parsed
+            .tree()
+            .kinds
+            .get(self.index as usize)
+            .copied()
+            .unwrap_or(SyntaxKind::ErrorNode)
     }
 
     pub fn range(&self) -> Range<u32> {
-        let range = self.raw.text_range();
-        u32::from(range.start())..u32::from(range.end())
+        let (first, end) = self.parsed.tree().tokens(self.index);
+        self.parsed.token_start(first)..self.parsed.token_start(end)
     }
 
     pub fn text(&self) -> String {
-        self.raw.to_string()
+        self.slice().to_string()
     }
 
     pub fn parent(&self) -> Option<NodeView<'p>> {
-        self.raw.parent().map(NodeView::new)
+        let parent = self.parsed.parent_of(self.index);
+        (parent != NO_NODE).then(|| NodeView::new(self.parsed, parent))
     }
 
     pub fn ancestors(&self) -> impl Iterator<Item = NodeView<'p>> + use<'p> {
-        self.raw.ancestors().map(NodeView::new)
+        std::iter::successors(Some(*self), NodeView::parent)
     }
 
     pub fn children(&self) -> impl Iterator<Item = NodeView<'p>> + use<'p> {
-        self.raw.children().map(|child| {
+        let parsed = self.parsed;
+        Children::of(parsed, self.index).map(move |child| {
             crate::semantics::counted_walk::CountedWalk::SyntaxViewElement.step();
-            NodeView::new(child)
+            NodeView::new(parsed, child)
         })
     }
 
     pub fn children_with_tokens(&self) -> impl Iterator<Item = ElementView<'p>> + use<'p> {
-        self.raw.children_with_tokens().map(|child| {
+        Elements::of(self.parsed, self.index).inspect(|_| {
             crate::semantics::counted_walk::CountedWalk::SyntaxViewElement.step();
-            ElementView::new(child)
         })
     }
 
     pub(crate) fn descendants(&self) -> impl Iterator<Item = NodeView<'p>> + use<'p> {
-        self.raw.descendants().map(|node| {
+        let parsed = self.parsed;
+        Descendants::of(parsed, self.index).map(move |node| {
             crate::semantics::counted_walk::CountedWalk::SyntaxViewElement.step();
-            NodeView::new(node)
+            NodeView::new(parsed, node)
         })
     }
 
     pub fn preorder(&self) -> impl Iterator<Item = Walk<'p>> + use<'p> {
-        self.raw.preorder_with_tokens().map(|event| {
+        Preorder::of(self.parsed, self.index).inspect(|_| {
             crate::semantics::counted_walk::CountedWalk::SyntaxViewElement.step();
-            match event {
-                rowan::WalkEvent::Enter(element) => Walk::Enter(ElementView::new(element)),
-                rowan::WalkEvent::Leave(element) => Walk::Leave(ElementView::new(element)),
-            }
         })
     }
 
     pub fn first_token(&self) -> Option<TokenView<'p>> {
-        navigation::first_token(NodeOrToken::Node(self.raw.clone())).map(TokenView::new)
+        let (first, end) = self.parsed.tree().tokens(self.index);
+        (first < end).then(|| TokenView::new(self.parsed, first))
     }
 
     pub fn last_token(&self) -> Option<TokenView<'p>> {
-        navigation::last_token(NodeOrToken::Node(self.raw.clone())).map(TokenView::new)
+        let (first, end) = self.parsed.tree().tokens(self.index);
+        (first < end).then(|| TokenView::new(self.parsed, end - 1))
     }
 
     pub fn token_at_offset(&self, offset: u32) -> Vec<TokenView<'p>> {
-        let range = self.raw.text_range();
-        let offset = TextSize::from(offset);
-        if offset < range.start() || offset > range.end() {
+        let range = self.range();
+        if offset < range.start || offset > range.end {
             return Vec::new();
         }
-        navigation::tokens_at_offset(&self.raw, offset)
-            .into_iter()
-            .map(TokenView::new)
-            .collect()
+        let (first, end) = self.parsed.tree().tokens(self.index);
+        let starts = self
+            .parsed
+            .tokens()
+            .starts
+            .get(first as usize..end as usize)
+            .unwrap_or_default();
+        let mut at =
+            first + u32::try_from(starts.partition_point(|start| *start <= offset)).unwrap_or(0);
+        let mut found = Vec::new();
+        while at > first {
+            at -= 1;
+            let start = self.parsed.token_start(at);
+            let token_end = self.parsed.token_start(at + 1);
+            if token_end < offset {
+                break;
+            }
+            if start < token_end {
+                found.push(TokenView::new(self.parsed, at));
+            }
+        }
+        found.reverse();
+        found
+    }
+
+    fn slice(&self) -> &'p str {
+        let range = self.range();
+        self.parsed
+            .text()
+            .get(range.start as usize..range.end as usize)
+            .unwrap_or_default()
+    }
+}
+
+impl PartialEq for NodeView<'_> {
+    fn eq(&self, other: &Self) -> bool {
+        std::ptr::eq(self.parsed, other.parsed) && self.index == other.index
+    }
+}
+
+impl Eq for NodeView<'_> {}
+
+impl Hash for NodeView<'_> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        std::ptr::hash(self.parsed, state);
+        self.index.hash(state);
     }
 }
 
@@ -107,6 +149,6 @@ impl fmt::Debug for NodeView<'_> {
 
 impl fmt::Display for NodeView<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fmt::Display::fmt(&self.raw, f)
+        f.write_str(self.slice())
     }
 }
