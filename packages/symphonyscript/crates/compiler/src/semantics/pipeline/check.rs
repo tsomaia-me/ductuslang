@@ -151,6 +151,13 @@ impl Core<'_> {
         Ok(Ok(()))
     }
 
+    pub fn own_check(&mut self, root: u32) -> Stage<()> {
+        if self.unchecked {
+            return Ok(Ok(()));
+        }
+        self.evaluate_own(root)
+    }
+
     pub fn bind_value(&mut self, root: u32, name: &str, ty: EvalTy) -> Stage<()> {
         let fact: Fact = match self.ensure_typed(root)? {
             Ok(fact) => fact,
@@ -168,7 +175,7 @@ impl Core<'_> {
                         ty_name(ty)
                     ),
                 )?;
-                return self.evaluate_own(root);
+                return self.own_check(root);
             }
             Leaf::Bool if ty != EvalTy::Bool => {
                 self.draw_at_root(
@@ -179,7 +186,7 @@ impl Core<'_> {
                         ty_name(ty)
                     ),
                 )?;
-                return self.evaluate_own(root);
+                return self.own_check(root);
             }
             Leaf::Empty | Leaf::Int | Leaf::Float if ty == EvalTy::Bool => {
                 self.draw_at_root(
@@ -187,7 +194,7 @@ impl Core<'_> {
                     root,
                     "this value has the wrong type here; `bool` is expected",
                 )?;
-                return self.evaluate_own(root);
+                return self.own_check(root);
             }
             Leaf::Float if integer && self.reads_float_cell(root)? => {
                 self.draw_at_root(
@@ -195,7 +202,7 @@ impl Core<'_> {
                     root,
                     "a float cell is used where an integer is expected; a conversion states the rounding",
                 )?;
-                return self.evaluate_own(root);
+                return self.own_check(root);
             }
             Leaf::Float if integer => {
                 self.draw_at_root(
@@ -203,7 +210,7 @@ impl Core<'_> {
                     root,
                     "a float value stands where an integer is expected; a conversion states the rounding",
                 )?;
-                return self.evaluate_own(root);
+                return self.own_check(root);
             }
             Leaf::Bool | Leaf::Empty | Leaf::Int | Leaf::Float => {}
         }
@@ -219,7 +226,7 @@ impl Core<'_> {
                     ty_name(ty)
                 ),
             )?;
-            return self.evaluate_own(root);
+            return self.own_check(root);
         }
         let evaluated = match fact.fixed {
             Some(own) if widens(own, ty) => ty,
@@ -227,8 +234,8 @@ impl Core<'_> {
             None if self.is_reactive(root)? => ty,
             None => flexible(ty),
         };
-        if self.is_kept(root)? {
-            return self.evaluate_own(root);
+        if self.is_kept(root)? || self.unchecked {
+            return self.own_check(root);
         }
         let value = match self.evaluate(root, evaluated)? {
             Ok(value) => value,

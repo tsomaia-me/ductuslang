@@ -41,7 +41,8 @@ impl Core<'_> {
         }
         if op == Op::If {
             let (_, condition, then, otherwise) = self.ir.node(node)?;
-            if !self.is_reactive(condition)? {
+            let test = self.fact(condition)?;
+            if test.leaf == Leaf::Bool && test.dims.is_empty() && !self.is_reactive(condition)? {
                 let taken = match self.evaluate(condition, EvalTy::Bool)? {
                     Ok(Value::Bool(true)) => Some(then),
                     Ok(Value::Bool(false)) => Some(otherwise),
@@ -227,8 +228,16 @@ impl Core<'_> {
     pub fn reads_float_cell(&self, root: u32) -> Result<bool, Internal> {
         let mut node = root;
         loop {
-            let (op, a, _, _) = self.ir.node(node)?;
-            if matches!(op, Op::Index | Op::IndexFromEnd | Op::Slice) {
+            let (op, a, b, _) = self.ir.node(node)?;
+            if matches!(op, Op::Index | Op::IndexFromEnd) {
+                let index = self.fact(b)?;
+                if index.leaf != Leaf::Int || !index.dims.is_empty() || self.is_reactive(b)? {
+                    return Ok(false);
+                }
+                node = a;
+                continue;
+            }
+            if op == Op::Slice {
                 node = a;
                 continue;
             }

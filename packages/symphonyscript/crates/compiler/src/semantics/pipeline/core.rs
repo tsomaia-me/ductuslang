@@ -40,6 +40,7 @@ pub(crate) struct Core<'a> {
     pub reactive: Vec<bool>,
     pub cell_uses: Vec<[bool; 2]>,
     pub owning: bool,
+    pub unchecked: bool,
 
     pub rule_runs: Vec<[bool; 7]>,
     pub inst: u32,
@@ -96,6 +97,7 @@ impl<'a> Core<'a> {
             reactive: vec![false; nodes],
             cell_uses: vec![[false, false]; ir.cells.len()],
             owning: false,
+            unchecked: false,
 
             rule_runs: vec![[false; 7]; ir.cells.len()],
             inst: NONE,

@@ -9,6 +9,7 @@ struct Detached {
     node: u32,
     ty: Option<EvalTy>,
     group: u32,
+    unchecked: bool,
 }
 
 const BINARY: [Op; 15] = [
@@ -34,6 +35,26 @@ impl Core<'_> {
         Ok(matches!(
             self.fact(node)?.leaf,
             Leaf::Placeholder | Leaf::Error
+        ))
+    }
+
+    fn unchosen(&mut self, condition: u32) -> Result<bool, Internal> {
+        if self.faulty(condition)? {
+            return Ok(true);
+        }
+        if self.is_reactive(condition)? {
+            return Ok(false);
+        }
+        let fact = self.fact(condition)?;
+        if fact.leaf != Leaf::Bool
+            || !fact.dims.is_empty()
+            || self.holds_name_placeholder(condition)?
+        {
+            return Ok(true);
+        }
+        Ok(matches!(
+            self.evaluate(condition, EvalTy::Bool)?,
+            Ok(Value::Error)
         ))
     }
 
@@ -115,8 +136,8 @@ impl Core<'_> {
         }
         let mut found: Vec<Detached> = Vec::new();
         let mut faults = false;
-        let mut stack = vec![(root, Some(ty), root, None::<usize>)];
-        while let Some((node, typed, group, picked)) = stack.pop() {
+        let mut stack = vec![(root, Some(ty), root, None::<usize>, false)];
+        while let Some((node, typed, group, picked, unchecked)) = stack.pop() {
             let (op, a, _, _) = self.ir.node(node)?;
             if matches!(op, Op::Call | Op::NamedCall | Op::For) {
                 continue;
@@ -138,6 +159,8 @@ impl Core<'_> {
             for (position, child) in children.into_iter().enumerate() {
                 let unread = (op == Op::Array && picked.is_some_and(|picked| picked != position))
                     || (op == Op::If && position > 0 && self.faulty(a)?);
+                let child_unchecked =
+                    unchecked || (op == Op::If && position > 0 && self.unchosen(a)?);
                 let (child_ty, through) = if refused || beside_fault || unread {
                     (None, false)
                 } else {
@@ -155,12 +178,13 @@ impl Core<'_> {
                     faults = true;
                 }
                 if self.faulty(child)? && !reactive_fault {
-                    stack.push((child, child_ty, child_group, child_picked));
+                    stack.push((child, child_ty, child_group, child_picked, child_unchecked));
                 } else {
                     found.push(Detached {
                         node: child,
                         ty: child_ty,
                         group: child_group,
+                        unchecked: child_unchecked,
                     });
                 }
             }
@@ -211,10 +235,14 @@ impl Core<'_> {
             if matches!(self.ir.node(entry.node)?.0, Op::Call | Op::NamedCall) {
                 continue;
             }
-            if let Err(declined) = self.bind_value(entry.node, name, ty)? {
+            let unchecked = self.unchecked || entry.unchecked;
+            let outer = std::mem::replace(&mut self.unchecked, unchecked);
+            let outcome = self.bind_value(entry.node, name, ty);
+            self.unchecked = outer;
+            if let Err(declined) = outcome? {
                 return Ok(Err(declined));
             }
         }
-        self.evaluate_own(root)
+        self.own_check(root)
     }
 }

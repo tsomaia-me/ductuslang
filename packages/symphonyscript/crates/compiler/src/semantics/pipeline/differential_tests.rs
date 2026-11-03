@@ -277,3 +277,68 @@ fn the_shared_steps_programs_draw_the_old_engines_sets_on_the_new_core_beside_th
         assert_eq!(found, old.check(&sources), "{text}");
     }
 }
+
+const EXHAUSTIVE_CLASSES: [(&str, &[(&str, &str)]); 6] = [
+    (
+        "state f([1.5, 2.5])\nstate n(0)\nClip c:\n    Note/(f[n])\n",
+        &[("type-mismatch", "f[n]")],
+    ),
+    (
+        "state f([1.5, 2.5])\nClip c:\n    Note/(f[0])\n",
+        &[("float-to-integer", "f[0]")],
+    ),
+    (
+        "Clip c:\n    Note/(if (true + 1.5) then 1 else (if [1, 2][5] then 1 else 2))\n",
+        &[
+            ("condition-type", "[1, 2][5]"),
+            ("operand-type", "true + 1.5"),
+        ],
+    ),
+    (
+        "Clip c:\n    Note/(if (1.5 is [1, 2]) then 1 else (if [1, 2][5] then 2 else 3))\n",
+        &[
+            ("array-operand", "1.5 is [1, 2]"),
+            ("condition-type", "[1, 2][5]"),
+        ],
+    ),
+    (
+        "state q(false)\nClip c:\n    Note/(if (1 and q) then 1 else (if [1, 2][5] then 3 else 2))\n",
+        &[
+            ("condition-type", "[1, 2][5]"),
+            ("index-out-of-range", "5"),
+            ("type-mismatch", "1"),
+        ],
+    ),
+    (
+        "Clip c:\n    Note/((if i32(true) then i32(true) else true)[300000000000 % i32(true)..])\n",
+        &[
+            ("condition-type", "i32(true)"),
+            ("conversion-type", "i32(true)"),
+            ("conversion-type", "i32(true)"),
+            ("conversion-type", "i32(true)"),
+            ("does-not-fit", "300000000000"),
+        ],
+    ),
+];
+
+#[test]
+fn the_exhaustive_rows_classes_draw_the_old_engines_sets_on_the_new_core() {
+    let old = Compiler::new(&symphonyscript_fixtures::vocabulary())
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
+    let new =
+        Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("the vocabulary compiles");
+    for (text, expected) in EXHAUSTIVE_CLASSES {
+        let sources = [source(text)];
+        let found = new
+            .checked_by_new_core(&sources)
+            .expect("the new core takes the program");
+        let mut wanted: Vec<(String, String)> = expected
+            .iter()
+            .map(|(code, span)| ((*code).to_string(), (*span).to_string()))
+            .collect();
+        wanted.sort();
+        assert_eq!(spanned(text, &found), wanted, "{text}");
+        assert_eq!(found, old.check(&sources), "{text}");
+    }
+}

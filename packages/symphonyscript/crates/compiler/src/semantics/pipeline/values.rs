@@ -969,6 +969,12 @@ impl Core<'_> {
                     match test {
                         Some(Value::Bool(true)) => stack.push((b, false)),
                         Some(Value::Bool(false)) => stack.push((c, false)),
+                        _ if self.is_reactive(a)?
+                            && !matches!(self.fact(a)?.leaf, Leaf::Placeholder | Leaf::Error) =>
+                        {
+                            stack.push((c, false));
+                            stack.push((b, false));
+                        }
                         Some(
                             Value::Int(_)
                             | Value::F32(_)
@@ -1058,7 +1064,11 @@ impl Core<'_> {
                         if bound == NONE {
                             continue;
                         }
-                        match self.known(bound, EvalTy::Exact, &mut stack)? {
+                        let bound_ty = match self.fact(bound)?.fixed {
+                            Some(_) => self.own_ty(bound)?.unwrap_or(EvalTy::Exact),
+                            None => EvalTy::Exact,
+                        };
+                        match self.known(bound, bound_ty, &mut stack)? {
                             Ok(Some(Value::Int(value))) if i64::try_from(value).is_err() => {
                                 self.draw_at(
                                     Code::IndexOutOfRange,
