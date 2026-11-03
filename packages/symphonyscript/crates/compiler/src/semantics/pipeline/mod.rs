@@ -14,6 +14,8 @@ mod decl_ref;
 mod declined;
 mod expand;
 mod fact;
+mod fold_run;
+mod folds;
 mod frame;
 mod host;
 mod instance_row;

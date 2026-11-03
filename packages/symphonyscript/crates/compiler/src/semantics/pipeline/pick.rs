@@ -15,13 +15,17 @@ impl Core<'_> {
         loop {
             let (op, a, _, _) = self.ir.node(node)?;
             match op {
-                Op::Array => return Ok(Some((node, slices))),
+                Op::Array => {
+                    let in_caller = depth < self.eval_chain.len()
+                        && self.body_of.get(self.local(node)?).copied().unwrap_or(NONE) != NONE;
+                    return Ok((!in_caller).then_some((node, slices)));
+                }
                 Op::Slice => {
                     slices.push(node);
                     node = a;
                 }
                 Op::Name => match self.bound(node)? {
-                    DeclRef::Param(position) if depth > 0 => {
+                    DeclRef::Param(position) if depth > 0 && !self.in_fold(node)? => {
                         depth -= 1;
                         let call = *self
                             .eval_chain

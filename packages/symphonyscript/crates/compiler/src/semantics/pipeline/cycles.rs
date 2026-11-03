@@ -26,7 +26,7 @@ impl Core<'_> {
         let mut edges: Vec<Vec<u32>> = vec![Vec::new(); count];
         for at in self.top_lets() {
             let mut reads = Vec::new();
-            for node in self.postorder(self.let_root(at)?)? {
+            for node in self.deep_postorder(self.let_root(at)?)? {
                 if let super::decl_ref::DeclRef::Let(read) = self.bound(node)? {
                     reads.push(read);
                 }

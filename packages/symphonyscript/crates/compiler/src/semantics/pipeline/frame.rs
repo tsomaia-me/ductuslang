@@ -1,4 +1,5 @@
 use super::core_value::CoreValue;
+use super::fold_run::FoldRun;
 use super::step::Step;
 use crate::semantics::operators::EvalTy;
 
@@ -9,4 +10,5 @@ pub(crate) struct Frame {
     pub values: Vec<CoreValue>,
     pub call: Option<(u32, Vec<CoreValue>)>,
     pub inst: u32,
+    pub fold: Option<FoldRun>,
 }

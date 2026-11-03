@@ -80,7 +80,7 @@ impl Core<'_> {
                 Some(slot) if !*slot => *slot = true,
                 Some(_) | None => continue,
             }
-            for node in self.postorder(self.let_root(current)?)? {
+            for node in self.deep_postorder(self.let_root(current)?)? {
                 let (op, _, _, _) = self.ir.node(node)?;
                 if op != Op::Name {
                     continue;

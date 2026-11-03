@@ -47,6 +47,7 @@ pub(crate) use builder::{SCALARS, build_flat_file};
 pub(crate) use cell_rec::CellRec;
 pub(crate) use flat_ir::FlatIr;
 pub(crate) use fn_rec::FnRec;
+pub(crate) use for_rec::ForRec;
 pub(crate) use item_rec::ItemRec;
 pub(crate) use op::Op;
 pub(crate) use placement_rec::PlacementRec;

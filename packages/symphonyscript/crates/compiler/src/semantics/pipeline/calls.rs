@@ -14,22 +14,48 @@ const OPEN: u8 = 1;
 const DONE: u8 = 2;
 
 impl Core<'_> {
-    fn function_roots(&self, function: u32) -> Result<Vec<u32>, Internal> {
-        let rec = self
-            .ir
-            .fns
-            .get(function as usize)
-            .ok_or(Internal::missed("IR function"))?;
+    pub fn functions(&self) -> u32 {
+        u32::try_from(self.ir.fns.len()).unwrap_or(0)
+    }
+
+    pub fn owners(&self) -> u32 {
+        self.functions() + u32::try_from(self.ir.fors.len()).unwrap_or(0)
+    }
+
+    pub fn function_roots(&self, owner: u32) -> Result<Vec<u32>, Internal> {
+        let (lets, value) = if owner < self.functions() {
+            let rec = self
+                .ir
+                .fns
+                .get(owner as usize)
+                .ok_or(Internal::missed("IR function"))?;
+            (rec.lets, rec.value)
+        } else {
+            let rec = self
+                .ir
+                .fors
+                .get((owner - self.functions()) as usize)
+                .ok_or(Internal::missed("IR for"))?;
+            (rec.lets, rec.body)
+        };
         let mut roots = Vec::new();
-        for at in rec.lets.0..rec.lets.1 {
+        for at in lets.0..lets.1 {
             roots.push(self.let_root(at)?);
         }
-        roots.push(rec.value);
+        roots.push(value);
         Ok(roots)
     }
 
     pub fn mark_bodies(&mut self) -> Result<(), Internal> {
-        for function in 0..u32::try_from(self.ir.fns.len()).unwrap_or(0) {
+        for local in 0..self.ir.op.len() {
+            if self.ir.op.get(local) == Some(&Op::For)
+                && let Some(record) = self.ir.a.get(local).copied()
+                && let Some(slot) = self.fold_nodes.get_mut(record as usize)
+            {
+                *slot = self.ir.base + u32::try_from(local).unwrap_or(0);
+            }
+        }
+        for function in 0..self.owners() {
             for root in self.function_roots(function)? {
                 for node in self.postorder(root)? {
                     let local = self.local(node)?;
@@ -42,30 +68,78 @@ impl Core<'_> {
         Ok(())
     }
 
-    pub fn scoped(&self, node: u32, sym: u32) -> Result<Option<DeclRef>, Internal> {
-        let function = self.body_of.get(self.local(node)?).copied().unwrap_or(NONE);
-        let Some(rec) = self.ir.fns.get(function as usize) else {
-            return Ok(None);
+    fn binder_sym(&self, binder: u32) -> Result<u32, Internal> {
+        let name = self.ir.binder(binder)?.name;
+        Ok(self.ir.name(name).ok_or(Internal::missed("IR name"))?.sym.0)
+    }
+
+    pub fn scope_of(&self, owner: u32) -> Result<Vec<(u32, DeclRef)>, Internal> {
+        let mut scope = Vec::new();
+        let (params, lets) = if owner < self.functions() {
+            let rec = self
+                .ir
+                .fns
+                .get(owner as usize)
+                .ok_or(Internal::missed("IR function"))?;
+            let params: Vec<u32> = (rec.params.0..rec.params.1).collect();
+            (params, rec.lets)
+        } else {
+            let rec = self
+                .ir
+                .fors
+                .get((owner - self.functions()) as usize)
+                .ok_or(Internal::missed("IR for"))?;
+            let mut params: Vec<u32> = (rec.names.0..rec.names.1).collect();
+            params.push(rec.accumulator);
+            (params, rec.lets)
         };
-        for (position, binder) in (rec.params.0..rec.params.1).enumerate() {
-            let name = self.ir.binder(binder)?.name;
-            if self.ir.name(name).is_some_and(|entry| entry.sym.0 == sym) {
-                return Ok(Some(DeclRef::Param(u32::try_from(position).unwrap_or(0))));
-            }
+        for (position, binder) in params.into_iter().enumerate() {
+            scope.push((
+                self.binder_sym(binder)?,
+                DeclRef::Param(u32::try_from(position).unwrap_or(0)),
+            ));
         }
-        for at in rec.lets.0..rec.lets.1 {
+        for at in lets.0..lets.1 {
             let binder = self
                 .ir
                 .lets
                 .get(at as usize)
                 .ok_or(Internal::missed("IR let"))?
                 .binder;
-            let name = self.ir.binder(binder)?.name;
-            if self.ir.name(name).is_some_and(|entry| entry.sym.0 == sym) {
-                return Ok(Some(DeclRef::Let(at)));
+            scope.push((self.binder_sym(binder)?, DeclRef::Let(at)));
+        }
+        Ok(scope)
+    }
+
+    pub fn scoped(&self, node: u32, sym: u32) -> Result<Option<DeclRef>, Internal> {
+        let owner = self.body_of.get(self.local(node)?).copied().unwrap_or(NONE);
+        if owner == NONE {
+            return Ok(None);
+        }
+        Ok(self
+            .scope_of(owner)?
+            .into_iter()
+            .find(|(bound, _)| *bound == sym)
+            .map(|(_, decl)| decl))
+    }
+
+    pub fn enclosing_hit(&self, node: u32, sym: u32) -> Result<bool, Internal> {
+        let mut owner = self.body_of.get(self.local(node)?).copied().unwrap_or(NONE);
+        while owner != NONE && owner >= self.functions() {
+            let fold = self
+                .fold_nodes
+                .get((owner - self.functions()) as usize)
+                .copied()
+                .unwrap_or(NONE);
+            if fold == NONE {
+                return Ok(false);
+            }
+            owner = self.body_of.get(self.local(fold)?).copied().unwrap_or(NONE);
+            if owner != NONE && self.scope_of(owner)?.iter().any(|(bound, _)| *bound == sym) {
+                return Ok(true);
             }
         }
-        Ok(None)
+        Ok(false)
     }
 
     pub fn arguments(&self, node: u32) -> Result<Vec<u32>, Internal> {
@@ -92,8 +166,16 @@ impl Core<'_> {
 
     fn reached(&self, root: u32, functions: u32) -> Result<Vec<u32>, Internal> {
         let mut out = Vec::new();
-        for node in self.postorder(root)? {
-            let (op, _, _, _) = self.ir.node(node)?;
+        let mut nodes = self.postorder(root)?;
+        let mut cursor = 0;
+        while let Some(node) = nodes.get(cursor).copied() {
+            cursor += 1;
+            let (op, record, _, _) = self.ir.node(node)?;
+            if op == Op::For {
+                for fold_root in self.function_roots(functions + record)? {
+                    nodes.extend(self.postorder(fold_root)?);
+                }
+            }
             if op == Op::Call
                 && let Some(callee) = self.callee(node)?
             {
@@ -295,7 +377,7 @@ impl Core<'_> {
         Ok(Ok(fact?))
     }
 
-    fn type_body(&mut self, body: u32) -> Stage<()> {
+    pub fn type_body(&mut self, body: u32) -> Stage<()> {
         let function = self
             .bodies
             .get(body as usize)
@@ -328,12 +410,10 @@ impl Core<'_> {
             .get(body as usize)
             .ok_or(Internal::missed("body instance"))?
             .function;
-        Ok(self
-            .ir
-            .fns
-            .get(function as usize)
-            .ok_or(Internal::missed("IR function"))?
-            .value)
+        self.function_roots(function)?
+            .last()
+            .copied()
+            .ok_or(Internal::missed("a body value"))
     }
 
     pub fn call_reactive(&mut self, node: u32) -> Result<bool, Internal> {
@@ -408,38 +488,17 @@ impl Core<'_> {
 }
 
 impl Core<'_> {
-    fn local_names(&self, function: u32) -> Result<Vec<u32>, Internal> {
-        let rec = self
-            .ir
-            .fns
-            .get(function as usize)
-            .ok_or(Internal::missed("IR function"))?;
-        let mut syms = Vec::new();
-        for binder in rec.params.0..rec.params.1 {
-            let name = self.ir.binder(binder)?.name;
-            syms.push(self.ir.name(name).ok_or(Internal::missed("IR name"))?.sym.0);
-        }
-        for at in rec.lets.0..rec.lets.1 {
-            let binder = self
-                .ir
-                .lets
-                .get(at as usize)
-                .ok_or(Internal::missed("IR let"))?
-                .binder;
-            let name = self.ir.binder(binder)?.name;
-            syms.push(self.ir.name(name).ok_or(Internal::missed("IR name"))?.sym.0);
-        }
-        Ok(syms)
-    }
-
     pub fn local_faults(&mut self) -> Result<Option<Reason>, Internal> {
-        for function in 0..u32::try_from(self.ir.fns.len()).unwrap_or(0) {
-            let syms = self.local_names(function)?;
+        for function in 0..self.owners() {
+            let scope = self.scope_of(function)?;
+            let syms: Vec<u32> = scope.iter().map(|(sym, _)| *sym).collect();
+            let enclosing = self.enclosing_syms(function)?;
             for (position, sym) in syms.iter().enumerate() {
                 let text = self.ir.symbols.text(crate::semantics::ir::flat::Sym(*sym));
                 let clash = syms
                     .get(..position)
                     .is_some_and(|before| before.contains(sym))
+                    || enclosing.contains(sym)
                     || self.variants.owner(text).is_some()
                     || self.vocabulary_clash(text).is_some()
                     || self
@@ -450,12 +509,19 @@ impl Core<'_> {
                     return Ok(Some(Reason::LocalClash));
                 }
             }
-            let rec = *self
-                .ir
-                .fns
-                .get(function as usize)
-                .ok_or(Internal::missed("IR function"))?;
-            let lets: Vec<u32> = (rec.lets.0..rec.lets.1).collect();
+            let lets: Vec<u32> = scope
+                .iter()
+                .filter_map(|(_, decl)| match decl {
+                    DeclRef::Let(at) => Some(*at),
+                    DeclRef::None
+                    | DeclRef::Cell(_)
+                    | DeclRef::Instance(_)
+                    | DeclRef::Duplicate
+                    | DeclRef::Param(_)
+                    | DeclRef::Fn(_) => None,
+                })
+                .collect();
+            let first = lets.first().copied().unwrap_or(0);
             let mut reads: Vec<Vec<u32>> = Vec::new();
             for at in &lets {
                 let mut read = Vec::new();
@@ -463,7 +529,7 @@ impl Core<'_> {
                     if let DeclRef::Let(other) = self.bound(node)?
                         && lets.contains(&other)
                     {
-                        read.push(other - rec.lets.0);
+                        read.push(other - first);
                     }
                 }
                 reads.push(read);
@@ -504,17 +570,17 @@ impl Core<'_> {
         let count = self.ir.fns.len();
         let mut inner: Vec<Option<u64>> = vec![None; count];
         let mut calls_of: Vec<Vec<u32>> = vec![Vec::new(); count];
-        for function in 0..u32::try_from(count).unwrap_or(0) {
-            for root in self.function_roots(function)? {
-                for node in self.postorder(root)? {
-                    let (op, _, _, _) = self.ir.node(node)?;
-                    if op == Op::Call
-                        && let Some(callee) = self.callee(node)?
-                        && let Some(out) = calls_of.get_mut(function as usize)
-                    {
-                        out.push(callee);
-                    }
-                }
+        for local in 0..self.ir.op.len() {
+            if self.ir.op.get(local) != Some(&Op::Call) {
+                continue;
+            }
+            let node = self.ir.base + u32::try_from(local).unwrap_or(0);
+            let function = self.function_owner(node)?;
+            if function != NONE
+                && let Some(callee) = self.callee(node)?
+                && let Some(out) = calls_of.get_mut(function as usize)
+            {
+                out.push(callee);
             }
         }
         for start in 0..count {
@@ -547,12 +613,13 @@ impl Core<'_> {
         }
         let mut total = 0u64;
         for local in 0..self.ir.op.len() {
-            if self.ir.op.get(local) != Some(&Op::Call)
-                || self.body_of.get(local).copied().unwrap_or(NONE) != NONE
-            {
+            if self.ir.op.get(local) != Some(&Op::Call) {
                 continue;
             }
             let node = self.ir.base + u32::try_from(local).unwrap_or(0);
+            if self.function_owner(node)? != NONE {
+                continue;
+            }
             if let Some(callee) = self.callee(node)? {
                 let below = inner.get(callee as usize).copied().flatten().unwrap_or(0);
                 total = total.saturating_add(1).saturating_add(below);

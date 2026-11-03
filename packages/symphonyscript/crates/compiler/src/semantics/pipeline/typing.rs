@@ -2,6 +2,7 @@ use super::core::{Core, Stage};
 use super::decl_ref::DeclRef;
 use super::declined::Declined;
 use super::fact::Fact;
+use super::folds::{ANY_LENGTH, dims_agree};
 use super::leaf::Leaf;
 use super::reason::Reason;
 use super::width::{combined, is_fixed_float, target_ty};
@@ -56,6 +57,7 @@ impl Core<'_> {
             }
             Op::If => vec![a, b, c],
             Op::Call => self.arguments(node)?,
+            Op::For => self.fold_operands(node)?,
             Op::Array => (a..a + b)
                 .map(|at| self.kid(at))
                 .collect::<Result<_, _>>()?,
@@ -73,7 +75,6 @@ impl Core<'_> {
             | Op::Past
             | Op::Stepped
             | Op::Match
-            | Op::For
             | Op::TyScalar
             | Op::TyName
             | Op::TyArray
@@ -109,7 +110,7 @@ impl Core<'_> {
 
     fn read_lets(&self, root: u32) -> Result<Vec<u32>, Internal> {
         let mut reads = Vec::new();
-        for node in self.postorder(root)? {
+        for node in self.deep_postorder(root)? {
             if let DeclRef::Let(at) = self.bound(node)?
                 && self
                     .ir
@@ -249,6 +250,10 @@ impl Core<'_> {
                 Ok(fact) => fact,
                 Err(declined) => return Ok(Err(declined)),
             },
+            Op::For => match self.for_fact(node)? {
+                Ok(fact) => fact,
+                Err(declined) => return Ok(Err(declined)),
+            },
             Op::Slice => match self.slice_fact(node, a, b, c)? {
                 Ok(fact) => fact,
                 Err(declined) => return Ok(Err(declined)),
@@ -263,7 +268,6 @@ impl Core<'_> {
             | Op::Past
             | Op::Stepped
             | Op::Match
-            | Op::For
             | Op::TyScalar
             | Op::TyName
             | Op::TyArray
@@ -661,6 +665,9 @@ impl Core<'_> {
             return Ok(Ok(Fact::PLACEHOLDER));
         }
         let length = base.dims.first().copied().unwrap_or(0);
+        if length == ANY_LENGTH {
+            return Ok(Ok(base));
+        }
         let mut window = [0, i128::from(length)];
         for (side, bound) in bounds.into_iter().enumerate() {
             if bound == NONE {
@@ -793,7 +800,10 @@ impl Core<'_> {
         let Some(first) = facts.first().cloned() else {
             return Err(Internal::missed("array element"));
         };
-        if facts.iter().any(|fact| fact.dims != first.dims) {
+        if facts
+            .iter()
+            .any(|fact| !dims_agree(&fact.dims, &first.dims))
+        {
             self.draw_at(Code::RaggedArray, node, RAGGED)?;
             return Ok(Fact::PLACEHOLDER);
         }
@@ -835,7 +845,7 @@ fn numeric_leaf(a: Leaf, b: Leaf) -> Leaf {
     }
 }
 
-fn unify(a: Leaf, b: Leaf) -> Option<Leaf> {
+pub(crate) fn unify(a: Leaf, b: Leaf) -> Option<Leaf> {
     match (a, b) {
         (Leaf::Placeholder, _) | (_, Leaf::Placeholder) => Some(Leaf::Placeholder),
         (Leaf::Error, _) | (_, Leaf::Error) => Some(Leaf::Error),

@@ -2,6 +2,7 @@ use super::core::{Core, Stage};
 use super::core_value::CoreValue;
 use super::decl_ref::DeclRef;
 use super::declined::Declined;
+use super::fold_run::FoldRun;
 use super::frame::Frame;
 use super::leaf::Leaf;
 use super::reason::Reason;
@@ -170,12 +171,31 @@ impl Core<'_> {
             | Op::Past
             | Op::Stepped
             | Op::Match
-            | Op::For
             | Op::TyScalar
             | Op::TyName
             | Op::TyArray
             | Op::TyVar
             | Op::Bad => Vec::new(),
+            Op::For => {
+                steps.pop();
+                let own = self.fact(node)?.fixed.unwrap_or(ty);
+                steps.push(Step::Fold(node, own));
+                let rec = self.fold_rec(node)?;
+                if rec.range {
+                    vec![
+                        (rec.iterable.0, EvalTy::Exact),
+                        (rec.iterable.1, EvalTy::Exact),
+                    ]
+                } else {
+                    let fact = self.fact(rec.iterable.0)?;
+                    let items_ty = match fact.fixed {
+                        Some(fixed) => fixed,
+                        None if fact.leaf == Leaf::Bool => EvalTy::Bool,
+                        None => EvalTy::Exact,
+                    };
+                    vec![(rec.iterable.0, items_ty)]
+                }
+            }
         };
         for (operand, operand_ty) in operands.into_iter().rev() {
             steps.push(Step::Visit(operand, operand_ty));
@@ -201,12 +221,50 @@ impl Core<'_> {
             values: Vec::new(),
             call: None,
             inst: self.inst,
+            fold: None,
         }];
         loop {
             let Some(frame) = frames.last_mut() else {
                 return Err(Internal::missed("evaluation frame"));
             };
             self.inst = frame.inst;
+            if frame.steps.is_empty()
+                && let Some(run) = frame.fold.as_mut()
+            {
+                let value = frame.values.pop().ok_or(Internal::missed("value stack"))?;
+                let next = run.next + 1;
+                let mut value = value;
+                if !value.is_error() && next < run.count {
+                    let proceed = match self.fold_step(run.node)? {
+                        Ok(proceed) => proceed,
+                        Err(declined) => return Ok(Err(declined)),
+                    };
+                    if proceed {
+                        let element = self.fold_item(&run.items, next);
+                        run.next = next;
+                        let mut args = Vec::new();
+                        if run.indexed {
+                            args.push(Value::Int(i128::try_from(next).unwrap_or(0)));
+                        }
+                        args.push(element);
+                        args.push(value);
+                        let body = self.fold_rec(run.node)?.body;
+                        let ty = frame.ty;
+                        frame.call = Some((run.node, args));
+                        frame.values.clear();
+                        frame.steps.push(Step::Visit(body, ty));
+                        continue;
+                    }
+                    value = Value::Error;
+                }
+                frames.pop();
+                CountedWalk::ValueRun.step();
+                if let Some(parent) = frames.last_mut() {
+                    parent.values.push(value);
+                    continue;
+                }
+                return Ok(Ok(value));
+            }
             let Some(step) = frame.steps.pop() else {
                 let value = frame.values.pop().ok_or(Internal::missed("value stack"))?;
                 let (owner, frame_ty) = (frame.owner, frame.ty);
@@ -308,6 +366,7 @@ impl Core<'_> {
                             values: Vec::new(),
                             call: None,
                             inst: NONE,
+                            fold: None,
                         });
                         continue;
                     }
@@ -338,6 +397,88 @@ impl Core<'_> {
                         | Value::Error => frame.values.push(Value::Error),
                     }
                 }
+                Step::Fold(fold, fold_ty) => {
+                    let rec = self.fold_rec(fold)?;
+                    let count = if rec.range { 2 } else { 1 };
+                    let keep = frame
+                        .values
+                        .len()
+                        .checked_sub(count)
+                        .ok_or(Internal::missed("value stack"))?;
+                    let valid = match frame.values.get(keep..) {
+                        Some([Value::Int(_), Value::Int(_)]) => rec.range,
+                        Some([Value::Array(_)]) => !rec.range,
+                        Some(_) | None => false,
+                    };
+                    if valid {
+                        frame.steps.push(Step::FoldRun(fold, fold_ty));
+                        frame.steps.push(Step::Visit(rec.start, fold_ty));
+                    } else {
+                        frame.values.truncate(keep);
+                        frame.values.push(Value::Error);
+                    }
+                }
+                Step::FoldRun(fold, fold_ty) => {
+                    let rec = self.fold_rec(fold)?;
+                    let start = frame.values.pop().ok_or(Internal::missed("value stack"))?;
+                    let (items, count) = if rec.range {
+                        let high = frame.values.pop().ok_or(Internal::missed("value stack"))?;
+                        let low = frame.values.pop().ok_or(Internal::missed("value stack"))?;
+                        match (low, high) {
+                            (Value::Int(low), Value::Int(high)) => (
+                                Value::Int(low),
+                                usize::try_from((high - low).max(0)).unwrap_or(usize::MAX),
+                            ),
+                            _ => (Value::Error, 0),
+                        }
+                    } else {
+                        let items = frame.values.pop().ok_or(Internal::missed("value stack"))?;
+                        let count = match &items {
+                            Value::Array(array) => self.store.len(*array) as usize,
+                            _ => 0,
+                        };
+                        (items, count)
+                    };
+                    if start.is_error() || count == 0 {
+                        frame.values.push(start);
+                        continue;
+                    }
+                    let Some(body) = self.call_body.get(&(self.inst, fold)).copied() else {
+                        frame.values.push(Value::Error);
+                        continue;
+                    };
+                    let proceed = match self.fold_step(fold)? {
+                        Ok(proceed) => proceed,
+                        Err(declined) => return Ok(Err(declined)),
+                    };
+                    if !proceed {
+                        frame.values.push(Value::Error);
+                        continue;
+                    }
+                    let indexed = self.fold_names(fold)? >= 2;
+                    let first = self.fold_item(&items, 0);
+                    let mut args = Vec::new();
+                    if indexed {
+                        args.push(Value::Int(0));
+                    }
+                    args.push(first);
+                    args.push(start);
+                    frames.push(Frame {
+                        owner: None,
+                        ty: fold_ty,
+                        steps: vec![Step::Visit(rec.body, fold_ty)],
+                        values: Vec::new(),
+                        call: Some((fold, args)),
+                        inst: body,
+                        fold: Some(FoldRun {
+                            node: fold,
+                            items,
+                            next: 0,
+                            count,
+                            indexed,
+                        }),
+                    });
+                }
                 Step::Enter(call, call_ty) => {
                     let count = self.arguments(call)?.len();
                     let start = frame
@@ -359,6 +500,7 @@ impl Core<'_> {
                         values: Vec::new(),
                         call: Some((call, args)),
                         inst: body,
+                        fold: None,
                     });
                 }
                 Step::Runtime(count) => {

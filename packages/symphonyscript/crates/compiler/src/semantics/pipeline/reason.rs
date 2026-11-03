@@ -19,4 +19,6 @@ pub(crate) enum Reason {
     LocalCycle,
     LocalClash,
     InlineLimit,
+    NestedScope,
+    ReactiveFor,
 }

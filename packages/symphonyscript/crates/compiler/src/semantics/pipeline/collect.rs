@@ -177,6 +177,9 @@ impl Core<'_> {
             let node = self.ir.base + u32::try_from(local).unwrap_or(u32::MAX);
             let name = *self.ir.a.get(local).ok_or(Internal::missed("IR name"))?;
             let entry = *self.ir.name(name).ok_or(Internal::missed("IR name"))?;
+            if self.enclosing_hit(node, entry.sym.0)? && self.scoped(node, entry.sym.0)?.is_none() {
+                return Ok(Err(Declined(Reason::NestedScope)));
+            }
             let decl = match self.scoped(node, entry.sym.0)? {
                 Some(decl) => decl,
                 None => self

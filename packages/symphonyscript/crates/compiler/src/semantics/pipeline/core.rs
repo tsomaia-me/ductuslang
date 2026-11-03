@@ -56,6 +56,9 @@ pub(crate) struct Core<'a> {
     pub declined: bool,
     pub let_values: Vec<[Option<CoreValue>; 7]>,
     pub uses: BTreeMap<UseKey, UseValue>,
+    pub fold_steps: u64,
+    pub stop: Option<(usize, Diagnostic)>,
+    pub fold_nodes: Vec<u32>,
 }
 
 impl<'a> Core<'a> {
@@ -102,6 +105,9 @@ impl<'a> Core<'a> {
             declined: false,
             let_values: vec![[None, None, None, None, None, None, None]; ir.lets.len()],
             uses: BTreeMap::new(),
+            fold_steps: 0,
+            stop: None,
+            fold_nodes: vec![NONE; ir.fors.len()],
         }
     }
 

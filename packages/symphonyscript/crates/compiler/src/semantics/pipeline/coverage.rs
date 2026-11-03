@@ -2,7 +2,7 @@ use super::reason::Reason;
 use super::slice::{LANDED, Slice};
 use crate::semantics::ir::Suffix;
 use crate::semantics::ir::flat::{
-    ABSENT, AttrForm, CellRec, FlatIr, FnRec, ItemRec, NONE, Op, TopRec,
+    ABSENT, AttrForm, CellRec, FlatIr, FnRec, ForRec, ItemRec, NONE, Op, TopRec,
 };
 
 pub(crate) fn op_slice(op: Op) -> Slice {
@@ -16,7 +16,7 @@ pub(crate) fn op_slice(op: Op) -> Slice {
         Op::If => Slice::One,
         Op::IndexFromEnd | Op::Slice => Slice::One,
         Op::Convert => Slice::One,
-        Op::For => Slice::Pending,
+        Op::For => Slice::One,
         Op::Call => Slice::One,
         Op::NamedCall => Slice::Pending,
         Op::TyScalar | Op::TyName | Op::TyArray | Op::TyVar => Slice::Pending,
@@ -99,7 +99,8 @@ pub(crate) fn covers(ir: &FlatIr) -> bool {
             return false;
         }
     }
-    ir.items.iter().all(|item| item_landed(ir, item))
+    ir.fors.iter().all(|rec| plain_fold(ir, rec))
+        && ir.items.iter().all(|item| item_landed(ir, item))
 }
 
 fn annotated(ir: &FlatIr, binder: u32) -> bool {
@@ -158,6 +159,8 @@ pub(crate) fn reason_slice(reason: Reason) -> Slice {
         Reason::CellGroup => Slice::Four,
         Reason::FunctionValue | Reason::Recursion => Slice::DefaultFlip,
         Reason::LocalCycle | Reason::LocalClash | Reason::InlineLimit => Slice::Pending,
+        Reason::NestedScope => Slice::Pending,
+        Reason::ReactiveFor => Slice::Three,
         Reason::BareVariant | Reason::UnitAttribute | Reason::EnumAttribute => Slice::Five,
     }
 }
@@ -185,6 +188,20 @@ fn plain_function(ir: &FlatIr, rec: &FnRec) -> bool {
                 .get(binder as usize)
                 .is_some_and(|binder| binder.annotation == NONE && binder.default == NONE)
         })
+        && (rec.lets.0..rec.lets.1).all(|at| {
+            ir.lets
+                .get(at as usize)
+                .is_some_and(|rec| !rec.is_match && !rec.faulty_line && !annotated(ir, rec.binder))
+        })
+}
+
+fn plain_fold(ir: &FlatIr, rec: &ForRec) -> bool {
+    let names = rec.names.1.saturating_sub(rec.names.0);
+    (1..=2).contains(&names)
+        && rec.accumulator != NONE
+        && (rec.names.0..rec.names.1)
+            .chain([rec.accumulator])
+            .all(|binder| !annotated(ir, binder))
         && (rec.lets.0..rec.lets.1).all(|at| {
             ir.lets
                 .get(at as usize)
