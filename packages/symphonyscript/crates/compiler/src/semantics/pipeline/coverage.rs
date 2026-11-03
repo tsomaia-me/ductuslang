@@ -1,3 +1,4 @@
+use super::reason::Reason;
 use super::slice::{LANDED, Slice};
 use crate::semantics::ir::Suffix;
 use crate::semantics::ir::flat::{ABSENT, AttrForm, FlatIr, ItemRec, NONE, Op, TopRec};
@@ -7,10 +8,12 @@ pub(crate) fn op_slice(op: Op) -> Slice {
         Op::Int | Op::Float | Op::Bool | Op::Name => Slice::One,
         Op::Neg | Op::Add | Op::Sub | Op::Mul => Slice::One,
         Op::Array | Op::Index => Slice::One,
-        Op::Div | Op::IntDiv | Op::Rem | Op::Pow => Slice::Pending,
-        Op::Not | Op::And | Op::Or => Slice::Pending,
-        Op::Lt | Op::Le | Op::Gt | Op::Ge | Op::Is | Op::IsNot => Slice::Pending,
-        Op::If | Op::IndexFromEnd | Op::Slice | Op::Convert | Op::For => Slice::Pending,
+        Op::Div | Op::IntDiv | Op::Rem | Op::Pow => Slice::One,
+        Op::Not | Op::And | Op::Or => Slice::One,
+        Op::Lt | Op::Le | Op::Gt | Op::Ge | Op::Is | Op::IsNot => Slice::One,
+        Op::If => Slice::One,
+        Op::IndexFromEnd | Op::Slice => Slice::One,
+        Op::Convert | Op::For => Slice::Pending,
         Op::Call | Op::NamedCall => Slice::Pending,
         Op::TyScalar | Op::TyName | Op::TyArray | Op::TyVar => Slice::Pending,
         Op::To => Slice::Two,
@@ -48,13 +51,7 @@ fn literal_landed(ir: &FlatIr, suffix: u32) -> bool {
     suffix == NONE || matches!(ir.suffixes.get(suffix as usize), Some(Suffix::None))
 }
 
-pub(crate) fn covers(prelude: &FlatIr, ir: &FlatIr) -> bool {
-    if !prelude.top.is_empty() || !ir.drawn.is_empty() || !ir.regions.is_empty() {
-        return false;
-    }
-    if ir.names.iter().any(|name| name.faulty) {
-        return false;
-    }
+pub(crate) fn covers(ir: &FlatIr) -> bool {
     for (local, op) in ir.op.iter().enumerate() {
         if !landed(op_slice(*op)) {
             return false;
@@ -126,4 +123,21 @@ fn item_landed(ir: &FlatIr, item: &ItemRec) -> bool {
             && block.regions.0 == block.regions.1
             && block.lets.0 == block.lets.1
     })
+}
+
+pub(crate) fn reason_slice(reason: Reason) -> Slice {
+    match reason {
+        Reason::FrontEndFault | Reason::ChildName | Reason::UnknownKind => Slice::Pending,
+        Reason::ValueLimitWarning | Reason::ArrayAttribute => Slice::Pending,
+        Reason::PreludeItems | Reason::NameOfInstance | Reason::NameOfVocabulary => {
+            Slice::DefaultFlip
+        }
+        Reason::StringAttribute => Slice::DefaultFlip,
+        Reason::PatternOrWirePlacement => Slice::Three,
+        Reason::BareVariant | Reason::UnitAttribute | Reason::EnumAttribute => Slice::Five,
+    }
+}
+
+pub(crate) fn declines(reason: Reason) -> bool {
+    !landed(reason_slice(reason))
 }

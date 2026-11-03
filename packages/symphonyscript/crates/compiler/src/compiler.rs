@@ -104,6 +104,12 @@ impl Compiler {
         self.selector = selector;
     }
 
+    #[cfg(test)]
+    pub(crate) fn on_the_old_engine(mut self) -> Compiler {
+        self.selector = Selector::OldEngine;
+        self
+    }
+
     pub fn taken_by_new_core(&self) -> u64 {
         self.taken.load(Ordering::Relaxed)
     }
@@ -120,7 +126,7 @@ impl Compiler {
         sources: &[Source],
         inspect: impl FnOnce(&Engine<'_>) -> R,
     ) -> (Vec<Diagnostic>, Option<R>) {
-        self.analyzed_by(sources, inspect, analyze::name_twins, Route::OldEngine)
+        self.analyzed_by(sources, inspect, analyze::name_twins, Route::Selected)
             .unwrap_or_default()
     }
 
@@ -192,19 +198,17 @@ impl Compiler {
             }
         }
         let front = report.diagnostics.len();
-        let taken = if route == Route::OldEngine
-            || (route == Route::Selected && self.selector == Selector::OldEngine)
-            || front > 0
-        {
+        let taken = if route == Route::Selected && self.selector == Selector::OldEngine {
             None
         } else {
-            match pipeline::analyze(
-                &self.prelude_ir,
-                &ir,
-                &self.vocabulary,
-                &self.variants,
-                self.limits,
-            ) {
+            match pipeline::analyze(&pipeline::Inputs {
+                prelude: &self.prelude_ir,
+                ir: &ir,
+                vocabulary: &self.vocabulary,
+                variants: &self.variants,
+                limits: self.limits,
+                front_end_faults: front > 0,
+            }) {
                 Ok(run) => run,
                 Err(internal) => {
                     analyze::internal_error(&hir, &mut report, internal);
@@ -285,6 +289,5 @@ fn lowered(
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Route {
     Selected,
-    OldEngine,
     NewCoreOnly,
 }

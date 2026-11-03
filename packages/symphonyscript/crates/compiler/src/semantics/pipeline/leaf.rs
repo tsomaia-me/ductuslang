@@ -1,7 +1,8 @@
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(crate) enum Leaf {
-    Any,
+    Placeholder,
     Error,
+    Empty,
     Bool,
     Int,
     Float,

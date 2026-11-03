@@ -1,6 +1,7 @@
 use super::core::{Core, Stage};
 use super::declined::Declined;
 use super::instance_row::InstanceRow;
+use super::reason::Reason;
 use crate::semantics::Internal;
 use crate::semantics::counted_walk::CountedWalk;
 use crate::semantics::ir::flat::{ItemRec, NONE, PlacementRec, TopRec};
@@ -22,13 +23,13 @@ impl Core<'_> {
         CountedWalk::CoreExpandRow.step();
         let placement = self.placement(item)?;
         let Some(kind_name) = self.ir.name_text(placement.kind) else {
-            return Ok(Err(Declined));
+            return Ok(Err(Declined(Reason::FrontEndFault)));
         };
         let Some(kind) = self.vocabulary.node_kind_named(kind_name) else {
-            return Ok(Err(Declined));
+            return Ok(Err(Declined(self.placement_kind_reason(kind_name))));
         };
         if parent != NONE && placement.as_name != NONE {
-            return Ok(Err(Declined));
+            return Ok(Err(Declined(Reason::ChildName)));
         }
         let row = u32::try_from(self.instances.len()).map_err(|_| Internal::missed("row"))?;
         self.instances.push(InstanceRow {
@@ -95,5 +96,15 @@ impl Core<'_> {
             }
         }
         Ok(Ok(()))
+    }
+}
+
+impl Core<'_> {
+    fn placement_kind_reason(&self, kind: &str) -> Reason {
+        if self.vocabulary.wire_kind_named(kind).is_some() {
+            Reason::PatternOrWirePlacement
+        } else {
+            Reason::UnknownKind
+        }
     }
 }

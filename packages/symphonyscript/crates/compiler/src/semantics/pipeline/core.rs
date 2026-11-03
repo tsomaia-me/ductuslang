@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use symphonyscript_core::{Limits, Span, Vocabulary};
 
 use super::core_value::CoreValue;
@@ -23,14 +25,17 @@ pub(crate) struct Core<'a> {
     pub decl: Vec<DeclRef>,
     pub bind: Vec<DeclRef>,
     pub facts: Vec<Option<Fact>>,
+    pub kept: Vec<bool>,
     pub let_state: Vec<u8>,
     pub let_file: Vec<u32>,
     pub cyclic: Vec<bool>,
+    pub owned: Vec<bool>,
     pub instances: Vec<InstanceRow>,
     pub top_instances: Vec<u32>,
     pub store: Store,
     pub declined: bool,
     pub let_values: Vec<[Option<CoreValue>; 4]>,
+    pub uses: BTreeMap<(u32, usize), ((bool, u32), CoreValue)>,
 }
 
 impl<'a> Core<'a> {
@@ -51,14 +56,17 @@ impl<'a> Core<'a> {
             decl: Vec::new(),
             bind: vec![DeclRef::None; nodes],
             facts: vec![None; nodes],
+            kept: vec![false; nodes],
             let_state: vec![0; ir.lets.len()],
             let_file: vec![0; ir.lets.len()],
             cyclic: vec![false; ir.lets.len()],
+            owned: vec![false; ir.lets.len()],
             instances: Vec::new(),
             top_instances: Vec::new(),
             store: Store::default(),
             declined: false,
             let_values: vec![[None, None, None, None]; ir.lets.len()],
+            uses: BTreeMap::new(),
         }
     }
 

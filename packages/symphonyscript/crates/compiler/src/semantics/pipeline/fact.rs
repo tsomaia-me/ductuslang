@@ -7,8 +7,8 @@ pub(crate) struct Fact {
 }
 
 impl Fact {
-    pub const ANY: Fact = Fact {
-        leaf: Leaf::Any,
+    pub const PLACEHOLDER: Fact = Fact {
+        leaf: Leaf::Placeholder,
         dims: Vec::new(),
     };
 

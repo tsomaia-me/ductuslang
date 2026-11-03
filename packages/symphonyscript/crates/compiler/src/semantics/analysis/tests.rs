@@ -91,7 +91,9 @@ fn analyzed_under<R>(
     text: &str,
     inspect: impl FnOnce(&Engine<'_>) -> R,
 ) -> (Vec<Diagnostic>, R) {
-    let compiler = Compiler::with_limits(&vocabulary(), limits).expect("the vocabulary compiles");
+    let compiler = Compiler::with_limits(&vocabulary(), limits)
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
     let source = Source {
         path: "test.sym".into(),
         text: text.into(),
@@ -105,7 +107,9 @@ fn analyzed_with<R>(
     text: &str,
     inspect: impl FnOnce(&Engine<'_>) -> R,
 ) -> (Vec<Diagnostic>, R) {
-    let compiler = Compiler::new(vocabulary).expect("the vocabulary compiles");
+    let compiler = Compiler::new(vocabulary)
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
     let source = Source {
         path: "test.sym".into(),
         text: text.into(),
@@ -800,8 +804,9 @@ fn clean_runs_holding_no_placeholder(
     projects: impl Iterator<Item = Project> + Send,
     limits: LimitOverrides,
 ) -> usize {
-    let compiler =
-        Compiler::with_limits(&vocabulary(), limits).expect("the example vocabulary compiles");
+    let compiler = Compiler::with_limits(&vocabulary(), limits)
+        .expect("the example vocabulary compiles")
+        .on_the_old_engine();
     std::thread::scope(|threads| {
         let runs: Vec<_> = projects
             .map(|project| {
@@ -3872,7 +3877,9 @@ fn no_mutant_of_an_example_or_fixture_that_draws_no_error_holds_a_placeholder() 
         let mut failures = Vec::new();
         let mut clean = 0;
         for (corpus, (vocabulary, texts)) in corpora.iter().enumerate() {
-            let compiler = Compiler::new(vocabulary).expect("the vocabulary compiles");
+            let compiler = Compiler::new(vocabulary)
+                .expect("the vocabulary compiles")
+                .on_the_old_engine();
             for text in texts {
                 for (span, kind) in kinded_tokens(text, vocabulary) {
                     for mutation in 0..robustness_corpus::MUTATIONS {

@@ -261,8 +261,28 @@ const DECIDING_NONE: &[(&str, &str)] = &[
         "the operands of an IR node, the structure the new core's walks follow",
     ),
     (
-        "pipeline/values.rs run",
+        "pipeline/typing.rs unary_fact",
+        "the kind of a unary operator's value in the new core over its operand's kind, SPEC §4.3",
+    ),
+    (
+        "pipeline/typing.rs binary_fact",
+        "the kind of a binary operator's value in the new core over its operands' kinds, SPEC §4.3",
+    ),
+    (
+        "pipeline/values.rs visit",
+        "the types an IR node's operands are evaluated in by the new core, SPEC §4.2's expected-type flow",
+    ),
+    (
+        "pipeline/values.rs apply",
         "the operator an IR node evaluates by in the new core, its value computed by `operators/plan_op.rs`",
+    ),
+    (
+        "pipeline/pick.rs view",
+        "the array literal a read selects its element from, ARCHITECTURE §7's compile-time element read",
+    ),
+    (
+        "pipeline/values.rs evaluate_own",
+        "the parts of a faulty expression read in their own types, ARCHITECTURE §7's placeholder rule",
     ),
     (
         "scopes/checker.rs expr",

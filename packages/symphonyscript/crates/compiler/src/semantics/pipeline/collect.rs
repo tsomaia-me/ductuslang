@@ -3,6 +3,7 @@ use symphonyscript_core::Span;
 use super::core::{Core, Stage};
 use super::decl_ref::DeclRef;
 use super::declined::Declined;
+use super::reason::Reason;
 use crate::diagnostics::Code;
 use crate::semantics::Internal;
 use crate::semantics::collection::BuiltinName;
@@ -151,14 +152,19 @@ impl Core<'_> {
             match decl {
                 DeclRef::Let(_) => {}
                 DeclRef::Duplicate => self.placeholders.push(node),
-                DeclRef::Instance(_) => return Ok(Err(Declined)),
+                DeclRef::Instance(_) => return Ok(Err(Declined(Reason::NameOfInstance))),
                 DeclRef::None => {
                     let text = self.ir.symbols.text(entry.sym).to_string();
                     if self.vocabulary_clash(&text).is_some()
                         || self.vocabulary.native_named(&text).is_some()
                         || self.variants.owner(&text).is_some()
                     {
-                        return Ok(Err(Declined));
+                        let reason = if self.variants.owner(&text).is_some() {
+                            Reason::BareVariant
+                        } else {
+                            Reason::NameOfVocabulary
+                        };
+                        return Ok(Err(Declined(reason)));
                     }
                     let span = self.node_span(node)?;
                     self.draw(

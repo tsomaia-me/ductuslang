@@ -6,6 +6,7 @@ use super::core::{Core, Stage};
 use super::declined::Declined;
 use super::fact::Fact;
 use super::leaf::Leaf;
+use super::reason::Reason;
 use crate::diagnostics::Code;
 use crate::semantics::Internal;
 use crate::semantics::counted_walk::CountedWalk;
@@ -102,7 +103,7 @@ impl Core<'_> {
                     .get(at as usize)
                     .ok_or(Internal::missed("IR attribute"))?;
                 let AttrForm::Value(root) = entry.form else {
-                    return Ok(Err(Declined));
+                    return Err(Internal::missed("a flag the coverage table leaves out"));
                 };
                 let name = self
                     .ir
@@ -138,7 +139,7 @@ impl Core<'_> {
             for (attr, _, root) in sources {
                 let attr = decl.attrs.get(attr).ok_or(Internal::missed("attribute"))?;
                 let Some(ty) = expected(attr) else {
-                    return Ok(Err(Declined));
+                    return Ok(Err(Declined(attribute_reason(attr))));
                 };
                 if let Err(declined) = self.bind_value(root, &attr.name, ty)? {
                     return Ok(Err(declined));
@@ -155,8 +156,7 @@ impl Core<'_> {
         };
         let integer = int_range(ty).is_some();
         match fact.leaf {
-            Leaf::Any => return Ok(Ok(())),
-            Leaf::Error => return self.evaluate_own(root),
+            Leaf::Placeholder | Leaf::Error => return self.evaluate_own(root),
             _ if !fact.dims.is_empty() => {
                 self.draw_at(
                     Code::TypeMismatch,
@@ -179,7 +179,7 @@ impl Core<'_> {
                 )?;
                 return self.evaluate_own(root);
             }
-            Leaf::Int | Leaf::Float if ty == EvalTy::Bool => {
+            Leaf::Empty | Leaf::Int | Leaf::Float if ty == EvalTy::Bool => {
                 self.draw_at(
                     Code::TypeMismatch,
                     root,
@@ -195,7 +195,10 @@ impl Core<'_> {
                 )?;
                 return self.evaluate_own(root);
             }
-            Leaf::Bool | Leaf::Int | Leaf::Float => {}
+            Leaf::Bool | Leaf::Empty | Leaf::Int | Leaf::Float => {}
+        }
+        if self.is_kept(root)? {
+            return self.evaluate_own(root);
         }
         let value = match self.evaluate(root, ty)? {
             Ok(value) => value,
@@ -456,5 +459,24 @@ impl Core<'_> {
             );
         }
         Ok(())
+    }
+}
+
+fn attribute_reason(attr: &AttrDecl) -> Reason {
+    if attr.unit.is_some() {
+        return Reason::UnitAttribute;
+    }
+    if !attr.ty.lengths.is_empty() || attr.ty.capacity.is_some() {
+        return Reason::ArrayAttribute;
+    }
+    match attr.ty.scalar {
+        Scalar::Enum(_) => Reason::EnumAttribute,
+        Scalar::Str
+        | Scalar::U8
+        | Scalar::I32
+        | Scalar::I64
+        | Scalar::F32
+        | Scalar::F64
+        | Scalar::Bool => Reason::StringAttribute,
     }
 }

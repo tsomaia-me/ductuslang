@@ -2135,7 +2135,9 @@ fn ring_program(size: usize, reversed: bool) -> String {
 }
 
 fn ring_failures(sizes: [usize; 3]) -> Vec<String> {
-    let compiler = Compiler::new(&vocabulary()).expect("the vocabulary compiles");
+    let compiler = Compiler::new(&vocabulary())
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
     let mut failures = Vec::new();
     for reversed in [false, true] {
         let runs = sizes.map(|size| measured(&compiler, &ring_program(size, reversed)));

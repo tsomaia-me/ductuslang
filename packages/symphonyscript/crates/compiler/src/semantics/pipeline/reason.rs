@@ -1,0 +1,16 @@
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum Reason {
+    FrontEndFault,
+    PreludeItems,
+    NameOfInstance,
+    NameOfVocabulary,
+    BareVariant,
+    PatternOrWirePlacement,
+    UnknownKind,
+    ChildName,
+    UnitAttribute,
+    EnumAttribute,
+    StringAttribute,
+    ArrayAttribute,
+    ValueLimitWarning,
+}

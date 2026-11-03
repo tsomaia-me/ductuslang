@@ -3,10 +3,13 @@ use super::decl_ref::DeclRef;
 use super::declined::Declined;
 use super::fact::Fact;
 use super::leaf::Leaf;
+use super::reason::Reason;
 use crate::diagnostics::Code;
 use crate::semantics::Internal;
 use crate::semantics::counted_walk::CountedWalk;
-use crate::semantics::ir::flat::Op;
+use crate::semantics::ir::flat::{NONE, Op, binary_of};
+use crate::semantics::operators::{EvalTy, Value};
+use symphonyscript_core::BinaryOp;
 
 const OPERAND: &str = "operators and conversions apply to single values, not arrays";
 const SINGLE_OPERANDS: &str =
@@ -20,31 +23,12 @@ const DONE: u8 = 2;
 
 impl Core<'_> {
     pub fn operands(&self, node: u32) -> Result<Vec<u32>, Internal> {
-        let (op, a, b, _) = self.ir.node(node)?;
+        let (op, a, b, c) = self.ir.node(node)?;
         Ok(match op {
-            Op::Neg => vec![a],
-            Op::Add | Op::Sub | Op::Mul | Op::Index => vec![a, b],
-            Op::Array => (a..a + b)
-                .map(|at| self.kid(at))
-                .collect::<Result<_, _>>()?,
-            Op::Int
-            | Op::Float
-            | Op::Bool
-            | Op::Name
-            | Op::Str
-            | Op::Variant
-            | Op::To
-            | Op::Convert
-            | Op::Field
-            | Op::IndexFromEnd
-            | Op::Slice
-            | Op::Call
-            | Op::NamedCall
-            | Op::MethodCall
-            | Op::NamedMethodCall
-            | Op::Past
-            | Op::Stepped
-            | Op::Not
+            Op::Neg | Op::Not => vec![a],
+            Op::Add
+            | Op::Sub
+            | Op::Mul
             | Op::Div
             | Op::IntDiv
             | Op::Rem
@@ -57,7 +41,37 @@ impl Core<'_> {
             | Op::Ge
             | Op::Is
             | Op::IsNot
-            | Op::If
+            | Op::Index
+            | Op::IndexFromEnd => vec![a, b],
+            Op::Slice => {
+                let mut operands = vec![a];
+                for at in b..b + 2 {
+                    let bound = self.kid(at)?;
+                    if bound != NONE {
+                        operands.push(bound);
+                    }
+                }
+                operands
+            }
+            Op::If => vec![a, b, c],
+            Op::Array => (a..a + b)
+                .map(|at| self.kid(at))
+                .collect::<Result<_, _>>()?,
+            Op::Int
+            | Op::Float
+            | Op::Bool
+            | Op::Name
+            | Op::Str
+            | Op::Variant
+            | Op::To
+            | Op::Convert
+            | Op::Field
+            | Op::Call
+            | Op::NamedCall
+            | Op::MethodCall
+            | Op::NamedMethodCall
+            | Op::Past
+            | Op::Stepped
             | Op::Match
             | Op::For
             | Op::TyScalar
@@ -179,7 +193,7 @@ impl Core<'_> {
     }
 
     fn node_fact(&mut self, node: u32) -> Stage<Fact> {
-        let (op, a, b, _) = self.ir.node(node)?;
+        let (op, a, b, c) = self.ir.node(node)?;
         Ok(Ok(match op {
             Op::Int => Fact::scalar(Leaf::Int),
             Op::Float => Fact::scalar(Leaf::Float),
@@ -187,67 +201,20 @@ impl Core<'_> {
             Op::Name => match self.bound(node)? {
                 DeclRef::Let(at) => {
                     if self.cyclic.get(at as usize).copied().unwrap_or(false) {
-                        Fact::ANY
+                        Fact::PLACEHOLDER
                     } else {
                         self.fact(self.let_root(at)?)?
                     }
                 }
-                DeclRef::Duplicate | DeclRef::None => Fact::ANY,
-                DeclRef::Instance(_) => return Ok(Err(Declined)),
+                DeclRef::Duplicate | DeclRef::None => Fact::PLACEHOLDER,
+                DeclRef::Instance(_) => {
+                    return Ok(Err(Declined(Reason::NameOfInstance)));
+                }
             },
-            Op::Neg => {
-                let operand = self.fact(a)?;
-                match operand.leaf {
-                    Leaf::Any => return Ok(Err(Declined)),
-                    Leaf::Error => Fact::ERROR,
-                    _ if !operand.dims.is_empty() => {
-                        self.draw_at(Code::ArrayOperand, node, OPERAND)?;
-                        Fact::ERROR
-                    }
-                    Leaf::Bool => {
-                        self.draw_at(Code::OperandType, node, "unary `-` takes a number")?;
-                        Fact::ERROR
-                    }
-                    Leaf::Int | Leaf::Float => operand,
-                }
-            }
-            Op::Add | Op::Sub | Op::Mul => return self.arith_fact(node, op, a, b),
-            Op::Array => return self.array_fact(node, a, b),
-            Op::Index => {
-                let base = self.fact(a)?;
-                let index = self.fact(b)?;
-                if base.leaf == Leaf::Any || index.leaf == Leaf::Any || !index.dims.is_empty() {
-                    return Ok(Err(Declined));
-                }
-                if matches!(index.leaf, Leaf::Float | Leaf::Bool) {
-                    self.draw_at(Code::IndexType, b, "an index is an integer")?;
-                }
-                if base.leaf == Leaf::Error {
-                    return Ok(Ok(Fact::ERROR));
-                }
-                if base.dims.is_empty() {
-                    self.draw_at(Code::NotAnArray, a, "only an array is indexed")?;
-                    return Ok(Ok(Fact::ERROR));
-                }
-                Fact {
-                    leaf: base.leaf,
-                    dims: base.dims.get(1..).unwrap_or_default().to_vec(),
-                }
-            }
-            Op::Str
-            | Op::Variant
-            | Op::To
-            | Op::Convert
-            | Op::Field
-            | Op::IndexFromEnd
-            | Op::Slice
-            | Op::Call
-            | Op::NamedCall
-            | Op::MethodCall
-            | Op::NamedMethodCall
-            | Op::Past
-            | Op::Stepped
-            | Op::Not
+            Op::Neg | Op::Not => self.unary_fact(node, op, a)?,
+            Op::Add
+            | Op::Sub
+            | Op::Mul
             | Op::Div
             | Op::IntDiv
             | Op::Rem
@@ -259,7 +226,246 @@ impl Core<'_> {
             | Op::Gt
             | Op::Ge
             | Op::Is
-            | Op::IsNot
+            | Op::IsNot => self.binary_fact(node, op, a, b)?,
+            Op::If => match self.choice_fact(node, a, b, c)? {
+                Ok(fact) => fact,
+                Err(declined) => return Ok(Err(declined)),
+            },
+            Op::Array => self.array_fact(node, a, b)?,
+            Op::Index | Op::IndexFromEnd => self.index_fact(node, a, b)?,
+            Op::Slice => match self.slice_fact(node, a, b, c)? {
+                Ok(fact) => fact,
+                Err(declined) => return Ok(Err(declined)),
+            },
+            Op::Str
+            | Op::Variant
+            | Op::To
+            | Op::Convert
+            | Op::Field
+            | Op::Call
+            | Op::NamedCall
+            | Op::MethodCall
+            | Op::NamedMethodCall
+            | Op::Past
+            | Op::Stepped
+            | Op::Match
+            | Op::For
+            | Op::TyScalar
+            | Op::TyName
+            | Op::TyArray
+            | Op::TyVar
+            | Op::Bad => return Err(Internal::missed("an op the coverage table leaves out")),
+        }))
+    }
+
+    fn keep(&mut self, node: u32, fact: Fact) -> Result<Fact, Internal> {
+        let local = self.local(node)?;
+        if let Some(slot) = self.kept.get_mut(local) {
+            *slot = true;
+        }
+        Ok(fact)
+    }
+
+    pub fn is_kept(&self, node: u32) -> Result<bool, Internal> {
+        Ok(self.kept.get(self.local(node)?).copied().unwrap_or(false))
+    }
+
+    fn unary_fact(&mut self, node: u32, op: Op, a: u32) -> Result<Fact, Internal> {
+        let operand = self.fact(a)?;
+        if operand.leaf == Leaf::Placeholder {
+            return Ok(Fact::PLACEHOLDER);
+        }
+        if !operand.dims.is_empty() {
+            if operand.leaf != Leaf::Error {
+                self.draw_at(Code::ArrayOperand, node, OPERAND)?;
+            }
+            return Ok(Fact::PLACEHOLDER);
+        }
+        let boolean = Fact::scalar(Leaf::Bool);
+        match (op, operand.leaf) {
+            (Op::Not, Leaf::Bool) => Ok(boolean),
+            (Op::Not, Leaf::Error) => self.keep(node, boolean),
+            (Op::Not, Leaf::Placeholder | Leaf::Empty | Leaf::Int | Leaf::Float) => {
+                self.draw_at(Code::OperandType, node, "`not` takes a `bool`")?;
+                self.keep(node, boolean)
+            }
+            (Op::Neg, Leaf::Bool) => {
+                self.draw_at(Code::OperandType, node, "unary `-` takes a number")?;
+                Ok(Fact::ERROR)
+            }
+            (Op::Neg, Leaf::Empty | Leaf::Int) => Ok(Fact::scalar(Leaf::Int)),
+            (Op::Neg, Leaf::Float) => Ok(Fact::scalar(Leaf::Float)),
+            (Op::Neg, Leaf::Placeholder | Leaf::Error) => Ok(Fact::ERROR),
+            (
+                Op::Int
+                | Op::Float
+                | Op::Bool
+                | Op::Str
+                | Op::Name
+                | Op::Variant
+                | Op::To
+                | Op::Convert
+                | Op::Array
+                | Op::Field
+                | Op::Index
+                | Op::IndexFromEnd
+                | Op::Slice
+                | Op::Call
+                | Op::NamedCall
+                | Op::MethodCall
+                | Op::NamedMethodCall
+                | Op::Past
+                | Op::Stepped
+                | Op::Add
+                | Op::Sub
+                | Op::Mul
+                | Op::Div
+                | Op::IntDiv
+                | Op::Rem
+                | Op::Pow
+                | Op::And
+                | Op::Or
+                | Op::Lt
+                | Op::Le
+                | Op::Gt
+                | Op::Ge
+                | Op::Is
+                | Op::IsNot
+                | Op::If
+                | Op::Match
+                | Op::For
+                | Op::TyScalar
+                | Op::TyName
+                | Op::TyArray
+                | Op::TyVar
+                | Op::Bad,
+                _,
+            ) => Err(Internal::missed("a unary operator")),
+        }
+    }
+
+    fn binary_fact(&mut self, node: u32, op: Op, a: u32, b: u32) -> Result<Fact, Internal> {
+        let left = self.fact(a)?;
+        let right = self.fact(b)?;
+        let boolean = matches!(
+            op,
+            Op::And | Op::Or | Op::Lt | Op::Le | Op::Gt | Op::Ge | Op::Is | Op::IsNot
+        );
+        if left.leaf == Leaf::Placeholder || right.leaf == Leaf::Placeholder {
+            return Ok(Fact::PLACEHOLDER);
+        }
+        let arrays = (!left.dims.is_empty(), !right.dims.is_empty());
+        let open_array = |fact: &Fact| !fact.dims.is_empty() && fact.leaf == Leaf::Error;
+        if arrays != (false, false) {
+            if op != Op::Add {
+                if open_array(&left) || open_array(&right) {
+                    return Ok(Fact::PLACEHOLDER);
+                }
+                self.draw_at(Code::ArrayOperand, node, SINGLE_OPERANDS)?;
+                if boolean {
+                    return self.keep(node, Fact::scalar(Leaf::Bool));
+                }
+                return Ok(Fact::PLACEHOLDER);
+            }
+            if arrays != (true, true) {
+                let (single, array) = if arrays.0 {
+                    (&right, &left)
+                } else {
+                    (&left, &right)
+                };
+                if single.leaf != Leaf::Error && !open_array(array) {
+                    self.draw_at(Code::ArrayOperand, node, JOIN_SINGLE)?;
+                }
+                return Ok(Fact::PLACEHOLDER);
+            }
+            return self.join_fact(node, &left, &right);
+        }
+        let (x, y) = (left.leaf, right.leaf);
+        if x == Leaf::Error || y == Leaf::Error {
+            if boolean {
+                return self.keep(node, Fact::scalar(Leaf::Bool));
+            }
+            return Ok(Fact::ERROR);
+        }
+        let numeric = |leaf: Leaf| matches!(leaf, Leaf::Int | Leaf::Float | Leaf::Empty);
+        let logical = |leaf: Leaf| leaf == Leaf::Bool;
+        let kept_bool = Fact::scalar(Leaf::Bool);
+        Ok(match op {
+            Op::Add | Op::Sub | Op::Mul | Op::Rem | Op::Pow => {
+                if !(numeric(x) && numeric(y)) {
+                    self.operand_type(node, op)?;
+                    return Ok(Fact::ERROR);
+                }
+                Fact::scalar(numeric_leaf(x, y))
+            }
+            Op::Div => {
+                if !(numeric(x) && numeric(y)) {
+                    self.operand_type(node, op)?;
+                    return Ok(Fact::ERROR);
+                }
+                Fact::scalar(Leaf::Float)
+            }
+            Op::IntDiv => {
+                let integer = |leaf: Leaf| matches!(leaf, Leaf::Int | Leaf::Empty);
+                if !(integer(x) && integer(y)) {
+                    self.operand_type(node, op)?;
+                    return Ok(Fact::ERROR);
+                }
+                Fact::scalar(Leaf::Int)
+            }
+            Op::Lt | Op::Le | Op::Gt | Op::Ge => {
+                if !(numeric(x) && numeric(y)) {
+                    self.operand_type(node, op)?;
+                    return self.keep(node, kept_bool);
+                }
+                Fact::scalar(Leaf::Bool)
+            }
+            Op::Is | Op::IsNot => {
+                let comparable = (numeric(x) && numeric(y)) || (logical(x) && logical(y));
+                if !comparable {
+                    self.operand_type(node, op)?;
+                    return self.keep(node, kept_bool);
+                }
+                Fact::scalar(Leaf::Bool)
+            }
+            Op::And | Op::Or => {
+                match (logical(x), logical(y)) {
+                    (true, true) => return Ok(Fact::scalar(Leaf::Bool)),
+                    (false, false) => self.operand_type(node, op)?,
+                    (true, false) => self.draw_at(
+                        Code::TypeMismatch,
+                        b,
+                        "this value has the wrong type here; `bool` is expected",
+                    )?,
+                    (false, true) => self.draw_at(
+                        Code::TypeMismatch,
+                        a,
+                        "this value has the wrong type here; `bool` is expected",
+                    )?,
+                }
+                return self.keep(node, kept_bool);
+            }
+            Op::Int
+            | Op::Float
+            | Op::Bool
+            | Op::Str
+            | Op::Name
+            | Op::Variant
+            | Op::To
+            | Op::Convert
+            | Op::Array
+            | Op::Field
+            | Op::Index
+            | Op::IndexFromEnd
+            | Op::Slice
+            | Op::Call
+            | Op::NamedCall
+            | Op::MethodCall
+            | Op::NamedMethodCall
+            | Op::Past
+            | Op::Stepped
+            | Op::Neg
+            | Op::Not
             | Op::If
             | Op::Match
             | Op::For
@@ -267,104 +473,316 @@ impl Core<'_> {
             | Op::TyName
             | Op::TyArray
             | Op::TyVar
-            | Op::Bad => return Ok(Err(Declined)),
-        }))
+            | Op::Bad => return Err(Internal::missed("a binary operator")),
+        })
     }
 
-    fn arith_fact(&mut self, node: u32, op: Op, a: u32, b: u32) -> Stage<Fact> {
-        let left = self.fact(a)?;
-        let right = self.fact(b)?;
-        if left.leaf == Leaf::Any || right.leaf == Leaf::Any {
-            return Ok(Err(Declined));
-        }
-        if left.leaf == Leaf::Error || right.leaf == Leaf::Error {
-            return Ok(Ok(Fact::ERROR));
-        }
-        let arrays = (!left.dims.is_empty(), !right.dims.is_empty());
-        if arrays != (false, false) {
-            if op != Op::Add {
-                self.draw_at(Code::ArrayOperand, node, SINGLE_OPERANDS)?;
-                return Ok(Ok(Fact::ERROR));
-            }
-            if arrays != (true, true) {
-                if left.leaf == Leaf::Bool || right.leaf == Leaf::Bool {
-                    return Ok(Err(Declined));
-                }
-                self.draw_at(Code::ArrayOperand, node, JOIN_SINGLE)?;
-                return Ok(Ok(Fact::ERROR));
-            }
-            let (Some(left_len), Some(right_len)) = (left.dims.first(), right.dims.first()) else {
-                return Err(Internal::missed("array length"));
-            };
-            if left.dims.get(1..) != right.dims.get(1..)
-                || (left.leaf == Leaf::Bool) != (right.leaf == Leaf::Bool)
-                || *left_len == 0
-                || *right_len == 0
-            {
-                return Ok(Err(Declined));
-            }
-            let mut dims = left.dims.clone();
-            if let Some(first) = dims.first_mut() {
-                *first = left_len.saturating_add(*right_len);
-            }
-            return Ok(Ok(Fact {
-                leaf: numeric(left.leaf, right.leaf),
-                dims,
-            }));
-        }
-        if left.leaf == Leaf::Bool || right.leaf == Leaf::Bool {
-            let message = if op == Op::Add {
-                "`+` takes two numbers or two strings"
-            } else {
-                "this operator takes numbers"
-            };
-            self.draw_at(Code::OperandType, node, message)?;
-            return Ok(Ok(Fact::ERROR));
-        }
-        Ok(Ok(Fact::scalar(numeric(left.leaf, right.leaf))))
+    fn operand_type(&mut self, node: u32, op: Op) -> Result<(), Internal> {
+        let binary = binary_of(op).ok_or(Internal::missed("a binary operator"))?;
+        self.draw_at(Code::OperandType, node, operand_message(binary))
     }
 
-    fn array_fact(&mut self, node: u32, start: u32, count: u32) -> Stage<Fact> {
-        if count == 0 {
-            return Ok(Err(Declined));
+    fn join_fact(&mut self, node: u32, left: &Fact, right: &Fact) -> Result<Fact, Internal> {
+        let (Some(left_len), Some(right_len)) = (left.dims.first(), right.dims.first()) else {
+            return Err(Internal::missed("array length"));
+        };
+        let inner = if *left_len == 0 {
+            &right.dims
+        } else {
+            &left.dims
+        };
+        let mut dims = inner.clone();
+        if let Some(first) = dims.first_mut() {
+            *first = left_len.saturating_add(*right_len);
         }
-        let mut facts = Vec::new();
-        for at in start..start + count {
-            facts.push(self.fact(self.kid(at)?)?);
-        }
-        if facts.iter().any(|fact| fact.leaf == Leaf::Any) {
-            return Ok(Err(Declined));
-        }
-        if facts.iter().any(|fact| fact.leaf == Leaf::Error) {
-            return Ok(Ok(Fact::ERROR));
-        }
-        let first = facts.first().cloned().ok_or(Internal::missed("element"))?;
-        let mut leaf = first.leaf;
-        for fact in facts.iter().skip(1) {
-            if (fact.leaf == Leaf::Bool) != (leaf == Leaf::Bool) {
+        let leaf = match unify(left.leaf, right.leaf) {
+            Some(leaf) => leaf,
+            None => {
                 self.draw_at(
                     Code::TypeMismatch,
                     node,
                     "the elements of the array hold values of different types",
                 )?;
-                return Ok(Ok(Fact::ERROR));
+                Leaf::Error
             }
-            leaf = numeric(leaf, fact.leaf);
+        };
+        Ok(Fact { leaf, dims })
+    }
+
+    fn choice_fact(&mut self, node: u32, condition: u32, then: u32, otherwise: u32) -> Stage<Fact> {
+        let test = self.fact(condition)?;
+        let (first, second) = (self.fact(then)?, self.fact(otherwise)?);
+        let leaves = [test.leaf, first.leaf, second.leaf];
+        if !test.dims.is_empty() {
+            self.draw_at(
+                Code::ConditionType,
+                node,
+                "the condition of an `if` is a `bool`, not an array",
+            )?;
+            return Ok(Ok(Fact::PLACEHOLDER));
         }
+        if leaves.contains(&Leaf::Placeholder) {
+            return Ok(Ok(Fact::PLACEHOLDER));
+        }
+        if first.dims.len() != second.dims.len() {
+            self.draw_at(
+                Code::TypeMismatch,
+                node,
+                "the branches hold arrays of different shapes",
+            )?;
+            return Ok(Ok(Fact::PLACEHOLDER));
+        }
+        if leaves.contains(&Leaf::Error) {
+            return Ok(Ok(Fact::ERROR));
+        }
+        if test.leaf != Leaf::Bool {
+            self.draw_at(Code::ConditionType, condition, "the condition is a `bool`")?;
+            return Ok(Ok(Fact::ERROR));
+        }
+        let Some(leaf) = unify(first.leaf, second.leaf) else {
+            self.draw_at(
+                Code::TypeMismatch,
+                node,
+                "the branches of an `if` hold values of different types",
+            )?;
+            return Ok(Ok(Fact::ERROR));
+        };
+        if first.dims == second.dims {
+            return Ok(Ok(Fact {
+                leaf,
+                dims: first.dims,
+            }));
+        }
+        let taken = match self.evaluate(condition, EvalTy::Bool)? {
+            Ok(Value::Bool(true)) => first.dims,
+            Ok(Value::Bool(false)) => second.dims,
+            Ok(
+                Value::Int(_)
+                | Value::F32(_)
+                | Value::F64(_)
+                | Value::Enum(..)
+                | Value::Str(_)
+                | Value::Node(_)
+                | Value::Array(_)
+                | Value::Error,
+            ) => return Ok(Ok(Fact::ERROR)),
+            Err(declined) => return Ok(Err(declined)),
+        };
+        Ok(Ok(Fact { leaf, dims: taken }))
+    }
+
+    fn slice_fact(&mut self, node: u32, a: u32, start: u32, flags: u32) -> Stage<Fact> {
+        let base = self.fact(a)?;
+        let bounds = [self.kid(start)?, self.kid(start + 1)?];
+        let mut facts = Vec::new();
+        for bound in bounds.into_iter().filter(|bound| *bound != NONE) {
+            facts.push((bound, self.fact(bound)?));
+        }
+        if facts
+            .iter()
+            .any(|(_, fact)| !fact.dims.is_empty() && fact.leaf != Leaf::Error)
+        {
+            self.draw_at(
+                Code::IndexType,
+                node,
+                "a slice bound is an integer, not an array",
+            )?;
+            return Ok(Ok(Fact::PLACEHOLDER));
+        }
+        if self.named_placeholder(a, &base)? {
+            return Ok(Ok(Fact::PLACEHOLDER));
+        }
+        let placeheld = facts.iter().any(|(_, fact)| fact.leaf == Leaf::Placeholder);
+        let faulty = |fact: &Fact| matches!(fact.leaf, Leaf::Placeholder | Leaf::Error);
+        if base.dims.is_empty() && !faulty(&base) {
+            if !placeheld {
+                self.draw_at(Code::NotAnArray, a, "only an array is sliced")?;
+            }
+            return Ok(Ok(Fact::PLACEHOLDER));
+        }
+        let mut refused = faulty(&base);
+        for (bound, fact) in &facts {
+            if faulty(fact) {
+                refused = true;
+            } else if !fact.dims.is_empty() || matches!(fact.leaf, Leaf::Float | Leaf::Bool) {
+                self.draw_at(Code::IndexType, *bound, "a slice bound is an integer")?;
+                refused = true;
+            }
+        }
+        if refused {
+            return Ok(Ok(Fact::PLACEHOLDER));
+        }
+        let length = base.dims.first().copied().unwrap_or(0);
+        let mut window = [0, i128::from(length)];
+        for (side, bound) in bounds.into_iter().enumerate() {
+            if bound == NONE {
+                continue;
+            }
+            let value = match self.evaluate(bound, EvalTy::Exact)? {
+                Ok(Value::Int(value)) if i64::try_from(value).is_ok() => value,
+                Ok(
+                    Value::Int(_)
+                    | Value::F32(_)
+                    | Value::F64(_)
+                    | Value::Bool(_)
+                    | Value::Enum(..)
+                    | Value::Str(_)
+                    | Value::Node(_)
+                    | Value::Array(_)
+                    | Value::Error,
+                ) => continue,
+                Err(declined) => return Ok(Err(declined)),
+            };
+            let from_end = flags & (1 << side) != 0;
+            let position = if from_end {
+                i128::from(length) - value
+            } else {
+                value
+            };
+            if let Some(slot) = window.get_mut(side) {
+                *slot = position.clamp(0, i128::from(length));
+            }
+        }
+        let [low, high] = window;
+        let sliced = u32::try_from(high.max(low) - low).unwrap_or(0);
+        let mut dims = base.dims.clone();
+        if let Some(first) = dims.first_mut() {
+            *first = sliced;
+        }
+        Ok(Ok(Fact {
+            leaf: base.leaf,
+            dims,
+        }))
+    }
+
+    fn named_placeholder(&self, node: u32, fact: &Fact) -> Result<bool, Internal> {
+        let (op, _, _, _) = self.ir.node(node)?;
+        Ok(fact.leaf == Leaf::Placeholder && op == Op::Name)
+    }
+
+    fn index_fact(&mut self, node: u32, a: u32, b: u32) -> Result<Fact, Internal> {
+        let base = self.fact(a)?;
+        let index = self.fact(b)?;
+        if !index.dims.is_empty() && !matches!(index.leaf, Leaf::Placeholder | Leaf::Error) {
+            self.draw_at(
+                Code::IndexType,
+                node,
+                "an index is an integer, not an array",
+            )?;
+            return Ok(Fact::PLACEHOLDER);
+        }
+        if self.named_placeholder(a, &base)? {
+            return Ok(Fact::PLACEHOLDER);
+        }
+        if base.dims.is_empty() && !matches!(base.leaf, Leaf::Placeholder | Leaf::Error) {
+            if index.leaf != Leaf::Placeholder {
+                self.draw_at(Code::NotAnArray, a, "only an array is indexed")?;
+            }
+            return Ok(Fact::PLACEHOLDER);
+        }
+        let faulty_index = matches!(index.leaf, Leaf::Placeholder | Leaf::Error);
+        let refused = !faulty_index
+            && (!index.dims.is_empty() || matches!(index.leaf, Leaf::Float | Leaf::Bool));
+        if refused {
+            self.draw_at(Code::IndexType, b, "an index is an integer")?;
+        }
+        if base.leaf == Leaf::Placeholder || base.dims.is_empty() {
+            return Ok(Fact::PLACEHOLDER);
+        }
+        let element = Fact {
+            leaf: base.leaf,
+            dims: base.dims.get(1..).unwrap_or_default().to_vec(),
+        };
+        if index.leaf == Leaf::Placeholder {
+            return Ok(Fact::PLACEHOLDER);
+        }
+        if refused || faulty_index {
+            return self.keep(node, element);
+        }
+        Ok(element)
+    }
+
+    fn array_fact(&mut self, node: u32, start: u32, count: u32) -> Result<Fact, Internal> {
+        if count == 0 {
+            return Ok(Fact {
+                leaf: Leaf::Empty,
+                dims: vec![0],
+            });
+        }
+        let mut facts = Vec::new();
+        for at in start..start + count {
+            facts.push(self.fact(self.kid(at)?)?);
+        }
+        if facts.iter().any(|fact| {
+            fact.leaf == Leaf::Placeholder || (fact.leaf == Leaf::Error && !fact.dims.is_empty())
+        }) {
+            return Ok(Fact::PLACEHOLDER);
+        }
+        let Some(first) = facts.first().cloned() else {
+            return Err(Internal::missed("array element"));
+        };
         if facts.iter().any(|fact| fact.dims != first.dims) {
             self.draw_at(Code::RaggedArray, node, RAGGED)?;
-            return Ok(Ok(Fact::ERROR));
+            return Ok(Fact::PLACEHOLDER);
         }
         let mut dims = vec![count];
         dims.extend(first.dims.iter().copied());
-        Ok(Ok(Fact { leaf, dims }))
+        let mut leaf = first.leaf;
+        for fact in facts.iter().skip(1) {
+            let Some(unified) = unify(leaf, fact.leaf) else {
+                self.draw_at(
+                    Code::TypeMismatch,
+                    node,
+                    "the elements of the array hold values of different types",
+                )?;
+                return Ok(Fact {
+                    leaf: Leaf::Error,
+                    dims,
+                });
+            };
+            leaf = unified;
+        }
+        Ok(Fact { leaf, dims })
     }
 }
 
-fn numeric(a: Leaf, b: Leaf) -> Leaf {
+fn leaf_of(leaf: Leaf) -> Leaf {
+    if leaf == Leaf::Empty { Leaf::Int } else { leaf }
+}
+
+fn numeric_leaf(a: Leaf, b: Leaf) -> Leaf {
+    if leaf_of(a) == Leaf::Int && leaf_of(b) == Leaf::Int {
+        Leaf::Int
+    } else {
+        Leaf::Float
+    }
+}
+
+fn unify(a: Leaf, b: Leaf) -> Option<Leaf> {
     match (a, b) {
-        (Leaf::Bool, Leaf::Bool) => Leaf::Bool,
-        (Leaf::Int, Leaf::Int) => Leaf::Int,
-        _ => Leaf::Float,
+        (Leaf::Placeholder, _) | (_, Leaf::Placeholder) => Some(Leaf::Placeholder),
+        (Leaf::Error, _) | (_, Leaf::Error) => Some(Leaf::Error),
+        (Leaf::Empty, other) | (other, Leaf::Empty) => Some(other),
+        (Leaf::Bool, Leaf::Bool) => Some(Leaf::Bool),
+        (Leaf::Bool, _) | (_, Leaf::Bool) => None,
+        (x, y) => Some(numeric_leaf(x, y)),
+    }
+}
+
+fn operand_message(op: BinaryOp) -> &'static str {
+    match op {
+        BinaryOp::Add => "`+` takes two numbers or two strings",
+        BinaryOp::Div => "`/` takes numbers",
+        BinaryOp::IntDiv => "`div` takes integers",
+        BinaryOp::Lt | BinaryOp::Le | BinaryOp::Gt | BinaryOp::Ge => {
+            "`<`, `<=`, `>` and `>=` compare numbers"
+        }
+        BinaryOp::Is | BinaryOp::IsNot => {
+            "`is` compares two numbers, `bool`s, values of one enum or strings"
+        }
+        BinaryOp::And | BinaryOp::Or => "`and` and `or` take `bool`s",
+        BinaryOp::Sub | BinaryOp::Mul | BinaryOp::Rem | BinaryOp::Pow => {
+            "this operator takes numbers"
+        }
     }
 }
