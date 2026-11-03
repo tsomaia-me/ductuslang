@@ -3,7 +3,7 @@ use std::ops::Range;
 use crate::diagnostics::Diagnostic;
 use crate::syntax::{ElementView, NodeView, SyntaxKind};
 
-pub(super) struct Faults {
+pub(crate) struct Faults {
     marks: Vec<(u32, u32)>,
 }
 

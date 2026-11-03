@@ -15,7 +15,7 @@ use super::unknown_names::UnknownNames;
 use super::wire::Wire;
 use crate::semantics::Internal;
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub(crate) struct Hir {
     pub files: Vec<String>,
     pub exprs: Vec<Expr>,

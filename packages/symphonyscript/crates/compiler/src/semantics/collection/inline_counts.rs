@@ -245,9 +245,10 @@ fn call_sites(
 }
 
 fn defaulted(callee: &FnDecl, args: &Args) -> Vec<usize> {
+    let args = args.uncut();
     let (skipped, args) = match args {
         Args::Received(_, rest) => (1, rest.as_ref()),
-        Args::Positional(_) | Args::Named(_) => (0, args),
+        Args::Positional(_) | Args::Named(_) | Args::Cut(_) => (0, args),
     };
     callee
         .params
@@ -261,7 +262,7 @@ fn defaulted(callee: &FnDecl, args: &Args) -> Vec<usize> {
                     Args::Named(values) => !values.iter().any(|(name, _)| {
                         param.name.as_ref().is_some_and(|own| own.text == name.text)
                     }),
-                    Args::Received(..) => false,
+                    Args::Received(..) | Args::Cut(_) => false,
                 }
         })
         .map(|(position, _)| position)

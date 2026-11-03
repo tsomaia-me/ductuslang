@@ -8,7 +8,7 @@ use crate::diagnostics::{Code, Diagnostic};
 use crate::semantics::Internal;
 use crate::semantics::collection::Variants;
 use crate::semantics::counted_walk::CountedWalk;
-use crate::semantics::ir::{ExprId, ExprKind, Hir, Top, build_file};
+use crate::semantics::ir::{ExprId, ExprKind, FlatIr, Hir, Top, adapt_file, build_flat_file};
 use crate::semantics::reporting::{Report, span};
 use crate::source::Source;
 use crate::syntax::parse;
@@ -190,7 +190,9 @@ impl Twins {
             let twin_name = self.fresh.get(name).ok_or(Internal::missed("twin name"))?;
             expr.kind = ExprKind::Name(twin_name.clone());
         }
-        build_file(&mut twin, &self.path, parsed, analysis.vocabulary)?;
+        let mut ir = FlatIr::default();
+        build_flat_file(&mut ir, &self.path, parsed, analysis.vocabulary)?;
+        adapt_file(&mut twin, &ir, 0)?;
         let mut report = Report::default();
         program(
             &twin,

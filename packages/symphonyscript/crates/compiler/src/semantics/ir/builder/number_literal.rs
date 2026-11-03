@@ -2,7 +2,7 @@ use symphonyscript_core::{Scalar, Vocabulary};
 
 use crate::semantics::ir::{FloatLit, Number, Suffix};
 
-pub(super) fn number_literal(text: &str, vocabulary: &Vocabulary) -> Option<(Number, Suffix)> {
+pub(crate) fn number_literal(text: &str, vocabulary: &Vocabulary) -> Option<(Number, Suffix)> {
     let bytes = text.as_bytes();
     if let Some(radix) = prefixed_radix(bytes) {
         let digits: String = text.get(2..)?.chars().filter(|c| *c != '_').collect();

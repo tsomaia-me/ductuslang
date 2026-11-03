@@ -166,6 +166,9 @@ impl Engine<'_> {
             return Ok(None);
         }
         let arity = builtin_arity(builtin);
+        if vals.len() != arity && args.is_cut() {
+            return Ok(Some(Val::Error));
+        }
         if vals.len() != arity {
             self.error(
                 Code::ArgumentCount,
@@ -714,7 +717,7 @@ impl Engine<'_> {
         let function = decl.name.as_ref().map_or("", |name| name.text.as_str());
         let sources = match bound_sources(params, args, scope) {
             Ok(sources) => sources,
-            Err(BindFault::TooMany { .. }) if !decl.skipped_params.is_empty() => {
+            Err(BindFault::TooMany { .. }) if !decl.skipped_params.is_empty() || args.is_cut() => {
                 return Ok(None);
             }
             Err(BindFault::Unknown(name)) if decl.skipped_params.holds(&name.text) => {
@@ -776,7 +779,7 @@ impl Engine<'_> {
             .collect();
         for (param, source) in params.iter().zip(&sources) {
             if matches!(source, ParamSource::Missing) {
-                if let Some(name) = &param.name {
+                if let Some(name) = param.name.as_ref().filter(|_| !args.is_cut()) {
                     self.error_helped(
                         Code::MissingArgument,
                         loc,
@@ -848,9 +851,10 @@ fn paired(args: &Args, other: &Args) -> Option<Vec<(ExprId, ExprId)>> {
             pairs.extend(paired(rest, other_rest)?);
             Some(pairs)
         }
+        (Args::Cut(inner), Args::Cut(other_inner)) => paired(inner, other_inner),
         (
-            Args::Positional(_) | Args::Named(_) | Args::Received(..),
-            Args::Positional(_) | Args::Named(_) | Args::Received(..),
+            Args::Positional(_) | Args::Named(_) | Args::Received(..) | Args::Cut(_),
+            Args::Positional(_) | Args::Named(_) | Args::Received(..) | Args::Cut(_),
         ) => None,
     }
 }

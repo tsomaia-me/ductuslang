@@ -17,6 +17,10 @@ impl<'p> TokenView<'p> {
         Self { parsed, index }
     }
 
+    pub(crate) fn index(&self) -> u32 {
+        self.index
+    }
+
     pub fn kind(&self) -> SyntaxKind {
         self.parsed
             .tokens()

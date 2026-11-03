@@ -6,6 +6,7 @@ pub(crate) struct Loc {
 }
 
 impl Loc {
+    #[cfg(test)]
     pub fn new(file: u32, range: std::ops::Range<u32>) -> Self {
         Self {
             file,

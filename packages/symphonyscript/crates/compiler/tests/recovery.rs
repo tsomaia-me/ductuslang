@@ -1485,3 +1485,64 @@ fn the_faults_before_a_brackets_region_draw_whatever_the_bracket_and_the_order_c
     support::assert_no_failure(&failures);
     assert_eq!(programs, 12);
 }
+
+#[test]
+fn a_call_whose_argument_list_a_fault_cuts_short_draws_its_syntax_fault_alone_458() {
+    let compiler = symphonyscript::Compiler::new(&vocabulary()).expect("the vocabulary compiles");
+    type Row<'a> = (&'a [&'a str], &'a [Code]);
+    let rows: [Row; 9] = [
+        (
+            &["fn f(a, b): a + b\n", "Clip k | gain=f(1\n"],
+            &[Code::ExpressionSyntax],
+        ),
+        (&["fn f(a, b): a + b\n", "Clip k | gain=f(1, 2)\n"], &[]),
+        (
+            &["fn f(a, b): a + b\n", "Clip k | gain=f(1, 2, 3\n"],
+            &[Code::ExpressionSyntax],
+        ),
+        (
+            &["fn f(a, b): a + b\n", "Clip k | gain=f(1, 2, 3)\n"],
+            &[Code::ArgumentCount],
+        ),
+        (
+            &["fn f(a, b): a + b\n", "Clip k | gain=f(b=1\n"],
+            &[Code::ExpressionSyntax],
+        ),
+        (
+            &["fn f(a, b): a + b\n", "Clip k | gain=f(b=1)\n"],
+            &[Code::MissingArgument],
+        ),
+        (&["Clip k | gain=min(1\n"], &[Code::ExpressionSyntax]),
+        (&["Clip k | gain=min(1)\n"], &[Code::ArgumentCount]),
+        (
+            &["fn f(a, b): a + b\n", "Clip k | gain=f(1) + (2\n"],
+            &[Code::ExpressionSyntax, Code::MissingArgument],
+        ),
+    ];
+    let mut failures = Vec::new();
+    for (items, expected) in rows {
+        for order in support::permutations(items) {
+            let text = order.concat();
+            let diagnostics: Vec<symphonyscript::Diagnostic> = compiler
+                .check(&[support::source(&text)])
+                .into_iter()
+                .filter(|diagnostic| diagnostic.code != Code::NoEntryInstance)
+                .collect();
+            let mut codes: Vec<Code> = diagnostics
+                .iter()
+                .map(|diagnostic| diagnostic.code)
+                .collect();
+            codes.sort();
+            let mut wanted = expected.to_vec();
+            wanted.sort();
+            if codes != wanted {
+                failures.push(support::failed(
+                    &text,
+                    &diagnostics,
+                    format!("{text}\n  draws {codes:?}\n  expected {wanted:?}"),
+                ));
+            }
+        }
+    }
+    support::assert_no_failure(&failures);
+}

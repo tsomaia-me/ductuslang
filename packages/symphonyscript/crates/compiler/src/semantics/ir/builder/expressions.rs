@@ -5,8 +5,8 @@ use super::number_literal::number_literal;
 use super::scalar_type::scalar_type;
 use crate::diagnostics::Code;
 use crate::semantics::ir::{
-    Args, ExprId, ExprKind, ForExpr, Ident, Iterable, LetDecl, Loc, LoopVar, MatchArm, SliceBound,
-    StrPart, TypeRef,
+    Args, Expr, ExprId, ExprKind, ForExpr, Ident, Iterable, LetDecl, Loc, LoopVar, MatchArm,
+    SliceBound, StrPart, TypeRef,
 };
 use crate::syntax::ast::{self, AstNode, StringPart};
 use crate::syntax::{SyntaxKind, TokenView};
@@ -33,6 +33,7 @@ pub(super) enum Shape {
     Positional(usize),
     Named(Vec<Ident>),
     Dot(Ident, Loc, Box<Shape>),
+    Cut(Box<Shape>),
     Str(Vec<Option<String>>),
     For(Box<ForShape>),
 }
@@ -281,6 +282,7 @@ impl HirBuilder<'_> {
                 let Some(args) = node.args() else {
                     return (Shape::Leaf(ExprKind::Error), Vec::new());
                 };
+                let cut = self.faults.first_in(args.syntax().range()).is_some();
                 let mut lambdas = Vec::new();
                 let mut positional = Vec::new();
                 let mut named = Vec::new();
@@ -330,10 +332,14 @@ impl HirBuilder<'_> {
                     }
                     Shape::Named(names)
                 };
-                match dot {
-                    Some((callee, loc)) => (Shape::Dot(callee, loc, Box::new(shape)), children),
-                    None => (shape, children),
+                let shape = match dot {
+                    Some((callee, loc)) => Shape::Dot(callee, loc, Box::new(shape)),
+                    None => shape,
+                };
+                if cut {
+                    return (Shape::Cut(Box::new(shape)), children);
                 }
+                (shape, children)
             }
             ast::Expr::Json(node) => self.unbuilt(node.syntax().range(), DOCUMENT_LITERAL),
             ast::Expr::Record(node) => {
@@ -445,6 +451,19 @@ impl HirBuilder<'_> {
                 let callee = next(self);
                 let args = names.into_iter().map(|name| (name, next(self))).collect();
                 self.push(ExprKind::Call(callee, Args::Named(args)), loc)
+            }
+            Shape::Cut(inner) => {
+                let rest: Vec<ExprId> = operands.collect();
+                let id = self.finish(*inner, loc, rest);
+                if let Some(Expr {
+                    kind: ExprKind::Call(_, args),
+                    ..
+                }) = self.hir.exprs.get_mut(id.index())
+                {
+                    let whole = std::mem::replace(args, Args::Positional(Vec::new()));
+                    *args = Args::Cut(Box::new(whole));
+                }
+                id
             }
             Shape::Dot(callee, callee_loc, rest) => {
                 let receiver = next(self);
