@@ -455,6 +455,23 @@ struct Measured {
     peak_bytes: u64,
 }
 
+const SOURCE_WALKS: [CountedWalk; 4] = [
+    CountedWalk::LexByte,
+    CountedWalk::LexToken,
+    CountedWalk::ParseKindRead,
+    CountedWalk::ParseNode,
+];
+
+fn follows_the_source(counter: &str) -> bool {
+    SOURCE_WALKS
+        .iter()
+        .any(|walk| format!("{walk:?}") == counter)
+}
+
+fn text_length(text: &str) -> u64 {
+    u64::try_from(text.len()).unwrap_or(u64::MAX)
+}
+
 fn measured(compiler: &Compiler, text: &str) -> Measured {
     let source = Source {
         path: "cost.sym".into(),
@@ -690,9 +707,14 @@ fn measured_row(compiler: &Compiler, row: &Row) -> Report {
     }
     let mut least = (u64::MAX, "");
     for (index, (counter, _)) in runs[0].counts.iter().enumerate() {
+        let source = follows_the_source(counter);
         let points = [0, 1, 2].map(|run| {
             (
-                program_and_built_elements(construct, shape, sizes[run], &texts[run]),
+                if source {
+                    text_length(&texts[run])
+                } else {
+                    program_and_built_elements(construct, shape, sizes[run], &texts[run])
+                },
                 runs[run].counts.get(index).map_or(0, |(_, count)| *count),
             )
         });
@@ -898,9 +920,14 @@ fn capacity_failures(sizes: [usize; 3]) -> Vec<String> {
         }
     }
     for (index, (counter, _)) in runs[0].counts.iter().enumerate() {
+        let source = follows_the_source(counter);
         let points = [0, 1, 2].map(|run| {
             (
-                u64::try_from(sizes[run]).unwrap_or(u64::MAX),
+                if source {
+                    text_length(&capacity_program(sizes[run]))
+                } else {
+                    u64::try_from(sizes[run]).unwrap_or(u64::MAX)
+                },
                 runs[run].counts.get(index).map_or(0, |(_, count)| *count),
             )
         });
@@ -1208,9 +1235,14 @@ fn stress_every_walk_that_follows_a_chain_of_lets_costs_work_linear_in_the_chain
                     u64::try_from(texts[run].len() + built).unwrap_or(u64::MAX)
                 };
                 for (index, (counter, _)) in runs[0].counts.iter().enumerate() {
+                    let source = follows_the_source(counter);
                     let points = [0, 1, 2].map(|run| {
                         (
-                            size(run),
+                            if source {
+                                text_length(&texts[run])
+                            } else {
+                                size(run)
+                            },
                             runs[run].counts.get(index).map_or(0, |(_, count)| *count),
                         )
                     });
@@ -1441,7 +1473,9 @@ fn template_walk_failures(sizes: [usize; 3], growth: bool) -> Vec<String> {
                     .any(|walk| format!("{walk:?}") == *counter);
                 let points = [0, 1, 2].map(|run| {
                     let size = sizes[run];
-                    let measure = if checks {
+                    let measure = if follows_the_source(counter) {
+                        texts[run].len()
+                    } else if checks {
                         size
                     } else {
                         texts[run].len() + size * size
@@ -2481,8 +2515,8 @@ fn beside_twins_failures(
         for (index, done) in first.iter().enumerate() {
             let by_size = [0, 1, 2].map(|run| runs[run].get(index).copied().unwrap_or(0));
             let flat = by_size.iter().all(|work| work == done);
-            let scanned =
-                Some(index) == scan && linear([0, 1, 2].map(|run| (lengths[run], by_size[run])));
+            let scanned = (Some(index) == scan || follows_the_source(&work_name(index)))
+                && linear([0, 1, 2].map(|run| (lengths[run], by_size[run])));
             if !flat && !scanned {
                 failures.push(row_failure(
                     &shape.program(sizes[0], 1),
@@ -2499,7 +2533,9 @@ fn beside_twins_failures(
                 )
             });
             let by_length = [3, 4, 5].map(|run| (lengths[run], by_count[run - 3].1));
-            let grows_with_count = linear(by_count) || (Some(index) == scan && linear(by_length));
+            let grows_with_count = linear(by_count)
+                || ((Some(index) == scan || follows_the_source(&work_name(index)))
+                    && linear(by_length));
             if !grows_with_count {
                 failures.push(row_failure(
                     &shape.program(sizes[0], 1),
