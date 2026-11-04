@@ -9,4 +9,5 @@ pub(crate) struct LoopRun {
     pub facts: Vec<Fact>,
     pub next: usize,
     pub env: u32,
+    pub inst: u32,
 }

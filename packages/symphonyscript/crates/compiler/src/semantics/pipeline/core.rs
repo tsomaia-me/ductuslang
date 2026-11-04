@@ -108,6 +108,7 @@ pub(crate) struct Core<'a> {
     pub scope_of: HashMap<u32, u32>,
     pub loops: Vec<u32>,
     pub envs: Vec<super::env::Env>,
+    pub env_vals: Vec<CoreValue>,
     pub loop_uses: HashMap<(u32, u32), [bool; 2]>,
 }
 
@@ -198,6 +199,7 @@ impl<'a> Core<'a> {
             scope_of: HashMap::new(),
             loops: super::loops::loop_items(ir),
             envs: Vec::new(),
+            env_vals: Vec::new(),
             loop_uses: HashMap::new(),
         }
     }

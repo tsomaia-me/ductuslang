@@ -184,7 +184,7 @@ impl Core<'_> {
                     if !self.loop_step(run.item)? {
                         return Ok(Ok(()));
                     }
-                    let env = self.loop_env(&run)?;
+                    let env = self.loop_env(&mut run)?;
                     let ItemRec::For(rec) = *self.ir.item(run.item)? else {
                         return Err(Internal::missed("IR for block"));
                     };

@@ -2,7 +2,6 @@ use symphonyscript_core::Span;
 
 use super::body_instance::BodyInstance;
 use super::core::{Core, Stage};
-use super::core_value::CoreValue;
 use super::decl_ref::DeclRef;
 use super::declined::Declined;
 use super::env::Env;
@@ -174,7 +173,12 @@ impl Core<'_> {
         let mut chain = Vec::new();
         let mut at = env;
         while let Some(record) = self.envs.get(at as usize) {
-            chain.push((NONE, record.inst, record.values.clone()));
+            let values = self
+                .env_vals
+                .get(record.values.0 as usize..record.values.1 as usize)
+                .unwrap_or_default()
+                .to_vec();
+            chain.push((NONE, record.inst, values));
             at = record.parent;
         }
         self.inst = self
@@ -245,6 +249,7 @@ impl Core<'_> {
                 facts: vec![Fact::scalar(Leaf::Int)],
                 next: 0,
                 env,
+                inst: NONE,
             })));
         }
         let root = head.iterable.0;
@@ -308,6 +313,7 @@ impl Core<'_> {
             facts,
             next: 0,
             env,
+            inst: NONE,
         })))
     }
 
@@ -437,7 +443,7 @@ impl Core<'_> {
         Ok(true)
     }
 
-    pub fn loop_env(&mut self, run: &LoopRun) -> Result<u32, Internal> {
+    pub fn loop_env(&mut self, run: &mut LoopRun) -> Result<u32, Internal> {
         let owner = self.loop_owner(run.item);
         let position = run.next;
         let element = match &run.items {
@@ -453,18 +459,33 @@ impl Core<'_> {
             | Value::Node(_)
             | Value::Error => Value::Error,
         };
-        let mut values: Vec<CoreValue> = Vec::new();
+        let start = u32::try_from(self.env_vals.len()).unwrap_or(NONE);
         if run.facts.len() >= 2 {
-            values.push(i128::try_from(position).map_or(Value::Error, Value::Int));
+            self.env_vals
+                .push(i128::try_from(position).map_or(Value::Error, Value::Int));
         }
-        values.push(element);
+        self.env_vals.push(element);
+        let end = u32::try_from(self.env_vals.len()).unwrap_or(NONE);
+        if run.inst == NONE {
+            run.inst = self.loop_inst(owner, run)?;
+        }
+        CountedWalk::CoreLoopIteration.step();
+        self.envs.push(Env {
+            parent: run.env,
+            inst: run.inst,
+            values: (start, end),
+        });
+        Ok(u32::try_from(self.envs.len() - 1).unwrap_or(NONE))
+    }
+
+    fn loop_inst(&mut self, owner: u32, run: &LoopRun) -> Result<u32, Internal> {
         let parent = self
             .envs
             .get(run.env as usize)
             .map_or(NONE, |record| record.inst);
         let reactive_args = vec![false; run.facts.len()];
         let key = (owner, parent, run.facts.clone(), reactive_args.clone());
-        let inst = match self.body_index.get(&key).copied() {
+        Ok(match self.body_index.get(&key).copied() {
             Some(inst) => inst,
             None => {
                 CountedWalk::CoreLoopBody.step();
@@ -479,14 +500,7 @@ impl Core<'_> {
                 self.body_index.insert(key, inst);
                 inst
             }
-        };
-        CountedWalk::CoreLoopIteration.step();
-        self.envs.push(Env {
-            parent: run.env,
-            inst,
-            values,
-        });
-        Ok(u32::try_from(self.envs.len() - 1).unwrap_or(NONE))
+        })
     }
 }
 
