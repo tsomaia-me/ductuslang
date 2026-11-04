@@ -108,6 +108,7 @@ pub(crate) struct Core<'a> {
     pub row_reads: BTreeMap<(u32, u32), u32>,
     pub row_choices: HashMap<(u32, u32), EvalTy>,
     pub ref_insts: HashMap<(u32, u32, u32), u32>,
+    pub typed_as: HashMap<u32, u32>,
     pub inst_row: HashMap<u32, (u32, u32)>,
     pub owner_insts: HashMap<u32, Vec<u32>>,
     pub inst_reads: BTreeMap<(u32, u32), u32>,
@@ -210,6 +211,7 @@ impl<'a> Core<'a> {
             row_reads: BTreeMap::new(),
             row_choices: HashMap::new(),
             ref_insts: HashMap::new(),
+            typed_as: HashMap::new(),
             inst_row: HashMap::new(),
             owner_insts: HashMap::new(),
             inst_reads: BTreeMap::new(),
@@ -320,7 +322,23 @@ impl Core<'_> {
         if self.inst == NONE {
             return Err(Internal::missed("a body instance"));
         }
-        Ok(Some((self.owner_inst(owner), node)))
+        let inst = self.owner_inst(owner);
+        Ok(Some((
+            self.typed_as.get(&inst).copied().unwrap_or(inst),
+            node,
+        )))
+    }
+
+    pub fn path_inst(&self, node: u32) -> Option<u32> {
+        let owner = self
+            .body_of
+            .get(self.local(node).ok()?)
+            .copied()
+            .unwrap_or(NONE);
+        if owner == NONE || self.inst == NONE {
+            return None;
+        }
+        Some(self.owner_inst(owner))
     }
 
     pub fn owner_inst(&self, owner: u32) -> u32 {

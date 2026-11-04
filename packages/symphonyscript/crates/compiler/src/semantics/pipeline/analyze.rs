@@ -69,6 +69,7 @@ pub(crate) fn analyze(inputs: &Inputs<'_>) -> Result<Option<Run>, Internal> {
     if let Err(reason) = stage(core.type_attr_reads())? {
         return declined(reason);
     }
+    core.share_ref_bodies()?;
     if let Err(reason) = stage(core.choose_destinations())? {
         return declined(reason);
     }

@@ -1428,7 +1428,6 @@ impl Core<'_> {
         if let Some(inst) = self.ref_insts.get(&(owner, parent, row)).copied() {
             return Ok(inst);
         }
-        CountedWalk::CoreLoopBody.step();
         self.bodies.push(BodyInstance {
             function: owner,
             parent,

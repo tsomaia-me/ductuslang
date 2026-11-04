@@ -485,7 +485,7 @@ impl Core<'_> {
     }
 
     pub fn read_at(&self, node: u32) -> Result<u32, Internal> {
-        if let Some((inst, _)) = self.in_body(node).ok().flatten()
+        if let Some(inst) = self.path_inst(node)
             && let Some(at) = self.inst_reads.get(&(node, inst))
         {
             return Ok(*at);
