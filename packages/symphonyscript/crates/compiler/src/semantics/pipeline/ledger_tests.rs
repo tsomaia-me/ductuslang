@@ -846,3 +846,103 @@ fn stress_a_placement_for_of_a_million_notes_costs_walks_and_peak_bytes_linear_i
     }
     assert_none(&failures);
 }
+
+fn fold_nest(iterable: &str, start: &str, wrapped: bool) -> impl Fn(usize) -> String {
+    move |n| {
+        let mut body = format!("ac{n}");
+        for at in (1..=n).rev() {
+            let inner = if at == n {
+                body.clone()
+            } else if wrapped {
+                format!("ac{at} + ({body})")
+            } else {
+                format!("({body})")
+            };
+            body = format!("for ix{at} in {iterable} into ac{at} from {start}: {inner}");
+        }
+        format!("state hh([1])\nstate v = ({body})\n")
+    }
+}
+
+const SPEC_FOLD_TWINS: [&str; 6] = [
+    "state readings([1, 2])\nstate total = 1 + (for i, x in readings into sum from 0: sum + i * x)\n",
+    "state readings([1, 2])\nstate high = for x in readings into kept from 0: if x > 60 then kept + x else kept\n",
+    "state readings([1, 2, 3])\nstate rises = for i in 1..3 into n from 0: if readings[i] > readings[i - 1] then n + 1 else n\n",
+    "let ramp = [0.2, 0.5, 0.8]\nClip c:\n    for i, p in ramp:\n        Note/1 | velocity=p\n",
+    "state hh([1])\nstate v = (for ix1 in hh into ac1 from 0: (for ix2 in hh into ac2 from 0: ac1 + ac2))\n",
+    "state hh([1])\nstate v = (for ix1 in [1] into ac1 from hh[0]: ac1 + (for ix2 in [1] into ac2 from hh[0]: ac2))\n",
+];
+
+const FOLD_NESTS: [(&str, &str, &str, bool); 3] = [
+    ("446 plain nest", "hh", "0", false),
+    ("446 wrapped body", "hh", "0", true),
+    ("446 compile-time iterable", "[1]", "hh[0]", false),
+];
+
+#[test]
+fn nested_folds_reading_a_cell_draw_nothing_beside_spec_examples_446() {
+    let new = Compiler::new(&vocabulary()).expect("the vocabulary compiles");
+    let old = Compiler::new(&vocabulary())
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
+    for text in SPEC_FOLD_TWINS {
+        let sources = [Source {
+            path: "ledger.sym".into(),
+            text: text.into(),
+        }];
+        let found = new
+            .checked_by_new_core(&sources)
+            .unwrap_or_else(|| panic!("the new core takes {text}"));
+        assert_eq!(found, old.check(&sources), "{text}");
+    }
+    for (name, iterable, start, wrapped) in FOLD_NESTS {
+        assert_none(&ledger_failures(
+            name,
+            [100, 200, 400],
+            fold_nest(iterable, start, wrapped),
+            &none,
+            Timing::Printed,
+        ));
+    }
+}
+
+#[test]
+#[ignore = "stress"]
+fn stress_nested_folds_over_a_cell_cost_walks_and_peak_bytes_linear_in_their_depth_446() {
+    let (name, iterable, start, wrapped) = FOLD_NESTS[0];
+    assert_none(&ledger_failures(
+        name,
+        [2_500, 5_000, 10_000],
+        fold_nest(iterable, start, wrapped),
+        &none,
+        Timing::Judged,
+    ));
+}
+
+#[test]
+#[ignore = "stress"]
+fn stress_nested_folds_with_wrapped_bodies_over_a_cell_cost_walks_and_peak_bytes_linear_in_their_depth_446()
+ {
+    let (name, iterable, start, wrapped) = FOLD_NESTS[1];
+    assert_none(&ledger_failures(
+        name,
+        [2_500, 5_000, 10_000],
+        fold_nest(iterable, start, wrapped),
+        &none,
+        Timing::Judged,
+    ));
+}
+
+#[test]
+#[ignore = "stress"]
+fn stress_nested_folds_over_a_compile_time_iterable_with_a_cell_reading_start_cost_walks_and_peak_bytes_linear_in_their_depth_446()
+ {
+    let (name, iterable, start, wrapped) = FOLD_NESTS[2];
+    assert_none(&ledger_failures(
+        name,
+        [2_500, 5_000, 10_000],
+        fold_nest(iterable, start, wrapped),
+        &none,
+        Timing::Judged,
+    ));
+}

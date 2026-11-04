@@ -249,6 +249,7 @@ impl Core<'_> {
         self.scope_of.clone_from(&scope_of);
         let skipped_top = self.skipped_top();
         self.skipped_top.clone_from(&skipped_top);
+        let mut enclosing = std::collections::HashMap::new();
         for local in 0..self.ir.op.len() {
             if self.ir.op.get(local) != Some(&Op::Name)
                 || !self.reached.get(local).copied().unwrap_or(false)
@@ -261,7 +262,7 @@ impl Core<'_> {
             let entry = *self.ir.name(name).ok_or(Internal::missed("IR name"))?;
             let scoped = match self.scoped(node, entry.sym.0)? {
                 Some(decl) => Some(decl),
-                None => match self.enclosing_decl(node, entry.sym.0)? {
+                None => match self.enclosing_decl(node, entry.sym.0, &mut enclosing)? {
                     Some((owner, decl)) => {
                         self.outer_owner.insert(node, owner);
                         Some(decl)

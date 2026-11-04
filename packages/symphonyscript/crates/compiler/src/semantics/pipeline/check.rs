@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 
 use symphonyscript_core::{AttrDecl, AttrId, Count, NodeKind, Scalar, Span};
 
+use super::annotation::SHAPE;
 use super::attr_item::AttrItem;
 use super::core::{Core, Stage};
 use super::declined::Declined;
@@ -343,12 +344,71 @@ impl Core<'_> {
         self.evaluate_own(root)
     }
 
+    fn leaf_refusal(
+        &mut self,
+        root: u32,
+        fact: &Fact,
+        ty: EvalTy,
+    ) -> Result<Option<(Code, String)>, Internal> {
+        let integer = int_range(ty).is_some();
+        Ok(Some(match fact.leaf {
+            Leaf::Bool if ty != EvalTy::Bool => (
+                Code::TypeMismatch,
+                format!(
+                    "this value has the wrong type here; `{}` is expected",
+                    ty_name(ty)
+                ),
+            ),
+            Leaf::Empty | Leaf::Int | Leaf::Float if ty == EvalTy::Bool => (
+                Code::TypeMismatch,
+                "this value has the wrong type here; `bool` is expected".to_string(),
+            ),
+            Leaf::Float if integer && self.reads_float_cell(root)? => (
+                Code::FloatToInteger,
+                "a float cell is used where an integer is expected; a conversion states the rounding"
+                    .to_string(),
+            ),
+            Leaf::Float if integer => (
+                Code::TypeMismatch,
+                "a float value stands where an integer is expected; a conversion states the rounding"
+                    .to_string(),
+            ),
+            Leaf::Placeholder | Leaf::Error | Leaf::Bool | Leaf::Empty | Leaf::Int | Leaf::Float => {
+                return Ok(None);
+            }
+        }))
+    }
+
+    pub fn rule_refused(
+        &mut self,
+        root: u32,
+        ty: EvalTy,
+        reactive: bool,
+    ) -> Result<bool, Internal> {
+        let fact = self.fact(root)?;
+        if matches!(fact.leaf, Leaf::Placeholder | Leaf::Error) {
+            return Ok(true);
+        }
+        if !fact.dims.is_empty() {
+            self.draw_at(Code::TypeMismatch, root, SHAPE)?;
+            return Ok(true);
+        }
+        if let Some((code, summary)) = self.leaf_refusal(root, &fact, ty)? {
+            self.draw_at_root(code, root, summary)?;
+            return Ok(true);
+        }
+        if fact.fixed.is_some_and(|own| !widens(own, ty)) {
+            self.refuse_fixed(root, ty, reactive)?;
+            return Ok(true);
+        }
+        Ok(false)
+    }
+
     pub fn bind_value(&mut self, root: u32, name: &str, ty: EvalTy) -> Stage<()> {
         let fact: Fact = match self.ensure_typed(root)? {
             Ok(fact) => fact,
             Err(declined) => return Ok(Err(declined)),
         };
-        let integer = int_range(ty).is_some();
         match fact.leaf {
             Leaf::Placeholder | Leaf::Error => return self.detached(root, name, ty),
             _ if !fact.dims.is_empty() => {
@@ -368,42 +428,12 @@ impl Core<'_> {
                 )?;
                 return self.own_check(root);
             }
-            Leaf::Bool if ty != EvalTy::Bool => {
-                self.draw_at_root(
-                    Code::TypeMismatch,
-                    root,
-                    format!(
-                        "this value has the wrong type here; `{}` is expected",
-                        ty_name(ty)
-                    ),
-                )?;
-                return self.own_check(root);
+            Leaf::Bool | Leaf::Empty | Leaf::Int | Leaf::Float => {
+                if let Some((code, summary)) = self.leaf_refusal(root, &fact, ty)? {
+                    self.draw_at_root(code, root, summary)?;
+                    return self.own_check(root);
+                }
             }
-            Leaf::Empty | Leaf::Int | Leaf::Float if ty == EvalTy::Bool => {
-                self.draw_at_root(
-                    Code::TypeMismatch,
-                    root,
-                    "this value has the wrong type here; `bool` is expected",
-                )?;
-                return self.own_check(root);
-            }
-            Leaf::Float if integer && self.reads_float_cell(root)? => {
-                self.draw_at_root(
-                    Code::FloatToInteger,
-                    root,
-                    "a float cell is used where an integer is expected; a conversion states the rounding",
-                )?;
-                return self.own_check(root);
-            }
-            Leaf::Float if integer => {
-                self.draw_at_root(
-                    Code::TypeMismatch,
-                    root,
-                    "a float value stands where an integer is expected; a conversion states the rounding",
-                )?;
-                return self.own_check(root);
-            }
-            Leaf::Bool | Leaf::Empty | Leaf::Int | Leaf::Float => {}
         }
         let reactive = self.is_reactive(root)?;
         if let Some(own) = fact.fixed
