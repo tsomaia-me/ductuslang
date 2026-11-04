@@ -349,15 +349,23 @@ impl Core<'_> {
 
     pub fn evaluate(&mut self, root: u32, ty: EvalTy) -> Stage<CoreValue> {
         let inst = self.inst;
-        let chain = self.eval_chain.len();
+        let chain = self.eval_chain.clone();
         let outcome = self.evaluate_frames(root, ty);
         self.inst = inst;
-        self.eval_chain.truncate(chain);
+        self.eval_chain = chain;
         outcome
+    }
+
+    fn enter_let_frame(&mut self, outer_chains: &mut Vec<Vec<u32>>) {
+        if !self.eval_chain.is_empty() {
+            self.unmemoized();
+        }
+        outer_chains.push(std::mem::take(&mut self.eval_chain));
     }
 
     fn evaluate_frames(&mut self, root: u32, ty: EvalTy) -> Stage<CoreValue> {
         let ty = evaluated_in(ty);
+        let mut outer_chains: Vec<Vec<u32>> = Vec::new();
         let mut frames: Vec<Frame> = vec![Frame {
             owner: None,
             ty,
@@ -414,6 +422,11 @@ impl Core<'_> {
                 let (owner, frame_ty) = (frame.owner, frame.ty);
                 let called = frame.call.is_some();
                 frames.pop();
+                if owner.is_some()
+                    && let Some(outer) = outer_chains.pop()
+                {
+                    self.eval_chain = outer;
+                }
                 CountedWalk::ValueRun.step();
                 match owner {
                     Some(at) => {
@@ -576,6 +589,7 @@ impl Core<'_> {
                                 ));
                             }
                             let root = self.let_root(at)?;
+                            self.enter_let_frame(&mut outer_chains);
                             frames.push(Frame {
                                 owner: Some(at),
                                 ty: let_ty,
@@ -607,6 +621,7 @@ impl Core<'_> {
                             flexible(node_ty)
                         };
                         let root = self.let_root(at)?;
+                        self.enter_let_frame(&mut outer_chains);
                         frames.push(Frame {
                             owner: Some(at),
                             ty: let_ty,

@@ -141,21 +141,51 @@ impl Core<'_> {
                 continue;
             }
             if expanded {
-                if let Err(declined) = self.type_root(self.let_root(at)?)? {
-                    if declined == Declined(Reason::Pending) {
-                        let open = stack
-                            .iter()
-                            .filter(|(_, opened)| *opened)
-                            .map(|(at, _)| *at);
-                        for reopened in open.chain([at]).collect::<Vec<u32>>() {
-                            if let Some(slot) = self.let_state.get_mut(reopened as usize) {
-                                *slot = NEW;
+                let top = self.typing_bodies > 0
+                    && self.inst != NONE
+                    && self
+                        .ir
+                        .lets
+                        .get(at as usize)
+                        .is_some_and(|rec| rec.owner == NONE);
+                let outer = if top {
+                    std::mem::replace(&mut self.inst, NONE)
+                } else {
+                    self.inst
+                };
+                let mark = self.diagnostics.len();
+                let typed = self.type_root(self.let_root(at)?);
+                let typed = match typed {
+                    Ok(Ok(())) if top => self
+                        .check_annotation(at)
+                        .map(|checked| checked.map(|()| true)),
+                    Ok(Ok(())) => Ok(Ok(false)),
+                    Ok(Err(declined)) => Ok(Err(declined)),
+                    Err(internal) => Err(internal),
+                };
+                if top {
+                    self.inst = outer;
+                    let drawn = self.diagnostics.split_off(mark);
+                    self.top_drawn.extend(drawn);
+                }
+                let checked = match typed? {
+                    Ok(checked) => checked,
+                    Err(declined) => {
+                        if declined == Declined(Reason::Pending) {
+                            let open = stack
+                                .iter()
+                                .filter(|(_, opened)| *opened)
+                                .map(|(at, _)| *at);
+                            for reopened in open.chain([at]).collect::<Vec<u32>>() {
+                                if let Some(slot) = self.let_state.get_mut(reopened as usize) {
+                                    *slot = NEW;
+                                }
                             }
                         }
+                        return Ok(Err(declined));
                     }
-                    return Ok(Err(declined));
-                }
-                if let Err(declined) = self.check_annotation(at)? {
+                };
+                if !checked && let Err(declined) = self.check_annotation(at)? {
                     return Ok(Err(declined));
                 }
                 if let Some(slot) = self.let_state.get_mut(at as usize) {

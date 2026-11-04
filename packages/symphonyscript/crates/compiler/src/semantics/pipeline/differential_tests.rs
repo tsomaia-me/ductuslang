@@ -1825,3 +1825,32 @@ fn a_call_whose_body_holds_a_refused_operator_checks_its_operands_with_the_sites
         assert_eq!(found, old.check(&sources), "{text}");
     }
 }
+
+const CHAINS_OF_BODY_READS: [&str; 9] = [
+    "fn f(n): n + [1, 2][..0][0]\nClip c:\n    Note/(f(1))\n",
+    "fn f(n): [1, 2][..0][0]\nClip c:\n    Note/(f(1))\n    Note/(f(2))\n",
+    "fn f(n): n + [1, 2][..0][0]\nClip c:\n    Note/(f(1) + 1)\n",
+    "fn f(n): [1, 2][..n][0]\nClip c:\n    Note/(f(0))\n",
+    "let y = [1, 2][..0][0]\nClip c:\n    Note/(y)\n",
+    "let xs = [1, true]\nfn f(n): n + xs[5]\nClip c:\n    Note/(f(1))\n",
+    "let xs = [1, true]\nfn f(n): n + xs[0]\nClip c:\n    Note/(f(1))\n    Note/(f(2))\n",
+    "Clip c:\n    Note/(f(1))\nfn f(n): n + xs[^5]\nlet xs = [1, true]\n",
+    "let xs = [1, 2]\nlet ys = xs[5]\nfn f(n): n + ys\nClip c:\n    Note/(f(1))\n",
+];
+
+#[test]
+fn a_top_level_lets_fault_read_in_a_body_draws_unchained_and_a_helped_fault_in_a_call_carries_its_chain()
+ {
+    let vocabulary = symphonyscript_fixtures::vocabulary();
+    let old = Compiler::new(&vocabulary)
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
+    let new = Compiler::new(&vocabulary).expect("the vocabulary compiles");
+    for text in CHAINS_OF_BODY_READS {
+        let sources = [source(text)];
+        let found = new
+            .checked_by_new_core(&sources)
+            .unwrap_or_else(|| panic!("the new core takes {text}"));
+        assert_eq!(found, old.check(&sources), "{text}");
+    }
+}

@@ -497,6 +497,7 @@ impl Core<'_> {
             .function;
         let outer = std::mem::replace(&mut self.inst, body);
         let drawn = std::mem::take(&mut self.diagnostics);
+        self.typing_bodies += 1;
         let mut outcome = Ok(Ok(()));
         for root in self.function_roots(function)? {
             outcome = self.ensure_typed(root).map(|typed| typed.map(|_| ()));
@@ -505,6 +506,11 @@ impl Core<'_> {
             }
         }
         let typed = std::mem::replace(&mut self.diagnostics, drawn);
+        self.typing_bodies -= 1;
+        if self.typing_bodies == 0 {
+            let top = std::mem::take(&mut self.top_drawn);
+            self.diagnostics.extend(top);
+        }
         if let Some(record) = self.bodies.get_mut(body as usize) {
             record.diagnostics.extend(typed);
         }
