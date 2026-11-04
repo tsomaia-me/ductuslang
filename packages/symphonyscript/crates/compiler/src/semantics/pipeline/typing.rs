@@ -275,6 +275,7 @@ impl Core<'_> {
         if self.has_fact(root)? {
             return Ok(Ok(()));
         }
+        let mut references = false;
         for node in self.postorder(root)? {
             if self.has_fact(node)? {
                 continue;
@@ -288,9 +289,10 @@ impl Core<'_> {
             if fact.node && reactive && self.in_body(node)?.is_some() {
                 return Ok(Err(Declined(Reason::ReactiveReference)));
             }
+            references |= fact.node;
             self.set_fact(node, fact, reactive)?;
         }
-        if self.fact(root)?.node && !self.holds_references(root) {
+        if references && !self.holds_references(root) {
             return Ok(Err(Declined(Reason::NameOfInstance)));
         }
         Ok(Ok(()))
