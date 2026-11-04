@@ -354,7 +354,7 @@ impl Compiler {
             })
         {
             TAKEN.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-            compared(sources, &found, &old.check(sources));
+            compared(sources, &found, &old.check(sources), self.limits);
         }
         (found, engine)
     }
@@ -416,11 +416,20 @@ fn unequal(
     (left, theirs)
 }
 
-fn compared(sources: &[Source], found: &[Diagnostic], expected: &[Diagnostic]) {
+fn compared(
+    sources: &[Source],
+    found: &[Diagnostic],
+    expected: &[Diagnostic],
+    limits: LimitOverrides,
+) {
     let joined: Vec<&str> = sources.iter().map(|source| source.text.as_str()).collect();
     let joined = joined.join("\n");
     let text = joined.as_str();
-    let reviewed_set = reviewed::reviewed(text).map(|(_, wanted)| wanted);
+    let loop_head_limits =
+        limits.inlined_calls == Some(10) && limits.inlined_calls_warning == Some(5);
+    let reviewed_set = reviewed::reviewed(text)
+        .filter(|(ledger, _)| *ledger != reviewed::LOOP_HEAD_STOP || loop_head_limits)
+        .map(|(_, wanted)| wanted);
     let same = match &reviewed_set {
         Some(wanted) => {
             let mut spans: Vec<(String, String)> = drawn(sources, found)
@@ -468,6 +477,25 @@ fn compared(sources: &[Source], found: &[Diagnostic], expected: &[Diagnostic]) {
                 return;
             }
         }
+    }
+    let entry = |set: &[Diagnostic]| {
+        set.iter()
+            .any(|diagnostic| diagnostic.code == Code::NoEntryInstance)
+    };
+    let rest = |set: &[Diagnostic]| -> Vec<Diagnostic> {
+        set.iter()
+            .filter(|diagnostic| diagnostic.code != Code::NoEntryInstance)
+            .cloned()
+            .collect()
+    };
+    if reviewed_set.is_none()
+        && reviewed::holds_a_placement_for(text)
+        && entry(found)
+        && !entry(expected)
+        && rest(found) == rest(expected)
+    {
+        MOVED.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        return;
     }
     record(sources, found, expected);
 }

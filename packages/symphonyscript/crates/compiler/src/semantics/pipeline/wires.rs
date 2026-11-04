@@ -73,7 +73,7 @@ impl Core<'_> {
         Ok(true)
     }
 
-    pub fn wire_row(&mut self, item: u32, file: u32, source: u32) -> Stage<()> {
+    pub fn wire_row(&mut self, item: u32, file: u32, source: u32, env: u32) -> Stage<()> {
         CountedWalk::CoreExpandRow.step();
         let wire = self.wire_rec(item)?;
         let found = self
@@ -97,6 +97,7 @@ impl Core<'_> {
             candidates: (0, 0),
             fixed: false,
             chosen,
+            env,
         });
         Ok(Ok(()))
     }
@@ -333,6 +334,9 @@ impl Core<'_> {
     }
 
     pub fn check_wire_cycles(&mut self) -> Result<(), Internal> {
+        if self.wires.is_empty() {
+            return Ok(());
+        }
         let edges = self.wire_edges();
         let components = strongly_connected(&edges);
         let mut component_of = vec![0usize; edges.len()];

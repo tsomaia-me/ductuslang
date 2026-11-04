@@ -1,22 +1,34 @@
 use symphonyscript_core::Span;
 
+use super::annotation::{Refusal, annotated_fact, refusal};
 use super::body_instance::BodyInstance;
 use super::core::{Core, Stage};
+use super::core_value::CoreValue;
 use super::decl_ref::DeclRef;
 use super::declined::Declined;
 use super::env::Env;
 use super::fact::Fact;
+use super::folds::{ANY_LENGTH, ELEMENT_SHAPE, ELEMENT_TYPE, RANGE_TYPE};
 use super::leaf::Leaf;
 use super::loop_run::LoopRun;
 use super::reason::Reason;
+use super::width::is_fixed_float;
 use crate::diagnostics::{Code, Diagnostic};
 use crate::semantics::Internal;
 use crate::semantics::counted_walk::CountedWalk;
 use crate::semantics::ir::flat::{
-    AttrForm, FlatIr, ForBlockRec, ItemRec, Iteration, NONE, Op, PlacementRec,
+    AttrForm, FlatIr, ForBlockRec, ItemRec, Iteration, NONE, Op, PlacementRec, WireRec,
 };
-use crate::semantics::operators::{EvalTy, Value};
+use crate::semantics::operators::{EvalTy, Value, convert_to};
 use crate::semantics::reporting::grouped;
+
+const NOT_A_CELL: u8 = 0;
+
+const THROUGH_A_LET: u8 = 1;
+
+const DIRECTLY: u8 = 2;
+
+const THROUGH_A_PATH: u8 = 3;
 
 const ITERABLE: &str = "a `for` iterates over a range or an array";
 
@@ -178,7 +190,7 @@ impl Core<'_> {
                 .get(record.values.0 as usize..record.values.1 as usize)
                 .unwrap_or_default()
                 .to_vec();
-            chain.push((NONE, record.inst, values));
+            chain.push((at, record.inst, values));
             at = record.parent;
         }
         self.inst = self
@@ -242,18 +254,34 @@ impl Core<'_> {
                 _ => return Err(Internal::missed("two range bounds")),
             };
             let count = usize::try_from((high - low).max(0)).unwrap_or(usize::MAX);
+            if count > 0
+                && let Some(ty) = self.binder_ty(head.names.0)?
+                && let Some(range) = crate::semantics::operators::int_range(ty)
+                && (!range.contains(&low) || !range.contains(&(high - 1)))
+            {
+                let span = self.iterable_span(head)?;
+                self.draw(
+                    Code::DoesNotFit,
+                    span,
+                    format!(
+                        "this value does not fit `{}`",
+                        crate::semantics::operators::ty_name(ty)
+                    ),
+                );
+            }
             return Ok(Ok(Some(LoopRun {
                 item,
                 items: Value::Int(low),
                 count,
-                facts: vec![Fact::scalar(Leaf::Int)],
+                facts: self.annotated_loop_names(rec, vec![Fact::scalar(Leaf::Int)])?,
                 next: 0,
                 env,
                 inst: NONE,
+                open: false,
             })));
         }
         let root = head.iterable.0;
-        match self.cell_head(root, REACTIVE)? {
+        match self.cell_head(root, REACTIVE, false)? {
             Ok(true) => return Ok(Ok(None)),
             Ok(false) => {}
             Err(declined) => return Ok(Err(declined)),
@@ -265,8 +293,15 @@ impl Core<'_> {
         if fact.node {
             return Ok(Err(Declined(Reason::LoopHead)));
         }
+        let open = fact.leaf == Leaf::Placeholder
+            || (fact.leaf == Leaf::Error && fact.dims.is_empty())
+            || fact.dims.first() == Some(&ANY_LENGTH);
         if matches!(fact.leaf, Leaf::Placeholder | Leaf::Error) {
-            return Ok(Err(Declined(Reason::LoopHead)));
+            return Ok(if open {
+                Ok(Some(LoopRun::unrun(item, env)))
+            } else {
+                Err(Declined(Reason::LoopHead))
+            });
         }
         if self.is_reactive(root)? {
             self.draw_at(Code::ReactiveIterable, root, REACTIVE)?;
@@ -276,16 +311,35 @@ impl Core<'_> {
             self.draw_at(Code::IterableType, root, ITERABLE)?;
             return Ok(Ok(None));
         }
-        let Some(items_ty) = self.own_ty(root)? else {
+        let Some(own) = self.own_ty(root)? else {
             return Ok(Ok(None));
         };
+        let element_fact = Fact {
+            leaf: fact.leaf,
+            dims: fact.dims.get(1..).unwrap_or_default().to_vec(),
+            fixed: fact.fixed,
+            read: fact.read,
+            node: false,
+        };
+        let items_ty = match self.binder_ty(head.names.1 - 1)? {
+            Some(annotated) if refusal(&element_fact, annotated) == Refusal::Kept => annotated,
+            Some(_) | None => own,
+        };
+        if self.holds_kept(root)? {
+            return Ok(if open {
+                Ok(Some(LoopRun::unrun(item, env)))
+            } else {
+                Err(Declined(Reason::LoopHead))
+            });
+        }
         let items = match self.evaluate(root, items_ty)? {
             Ok(items) => items,
             Err(declined) => return Ok(Err(declined)),
         };
         let count = match &items {
             Value::Array(array) => self.store.len(*array) as usize,
-            Value::Error => return Ok(Ok(None)),
+            Value::Error if open => return Ok(Ok(Some(LoopRun::unrun(item, env)))),
+            Value::Error => return Ok(Err(Declined(Reason::LoopHead))),
             Value::Int(_)
             | Value::F32(_)
             | Value::F64(_)
@@ -306,6 +360,7 @@ impl Core<'_> {
         } else {
             vec![element]
         };
+        let facts = self.annotated_loop_names(rec, facts)?;
         Ok(Ok(Some(LoopRun {
             item,
             items,
@@ -314,24 +369,32 @@ impl Core<'_> {
             next: 0,
             env,
             inst: NONE,
+            open: false,
         })))
     }
 
-    fn reaches_cell(&self, root: u32) -> Result<bool, Internal> {
+    fn reaches_cell(&self, root: u32) -> Result<u8, Internal> {
         let mut seen = std::collections::HashSet::new();
-        let mut stack = vec![root];
-        while let Some(current) = stack.pop() {
+        let mut stack = vec![(root, false)];
+        let mut reached = NOT_A_CELL;
+        let mut choice = false;
+        while let Some((current, through_let)) = stack.pop() {
             if !seen.insert(current) {
                 continue;
             }
             for node in self.deep_postorder(current)? {
                 let (op, _, _, _) = self.ir.node(node)?;
                 if matches!(op, Op::Field | Op::To | Op::Past | Op::Stepped) {
-                    return Ok(true);
+                    return Ok(THROUGH_A_PATH);
                 }
+                choice |= matches!(op, Op::If | Op::Match);
                 if matches!(op, Op::Call | Op::NamedCall) {
                     if let Some(function) = self.callee(node)? {
-                        stack.extend(self.function_roots(function)?);
+                        stack.extend(
+                            self.function_roots(function)?
+                                .into_iter()
+                                .map(|root| (root, through_let)),
+                        );
                     }
                     continue;
                 }
@@ -339,8 +402,17 @@ impl Core<'_> {
                     continue;
                 }
                 match self.bound(node)? {
-                    DeclRef::Cell(_) => return Ok(true),
-                    DeclRef::Let(at) => stack.push(self.let_root(at)?),
+                    DeclRef::Cell(_) => {
+                        reached = reached.max(if through_let { THROUGH_A_LET } else { DIRECTLY });
+                    }
+                    DeclRef::Let(at) => {
+                        let top = self
+                            .ir
+                            .lets
+                            .get(at as usize)
+                            .is_some_and(|rec| rec.owner == NONE);
+                        stack.push((self.let_root(at)?, through_let || top));
+                    }
                     DeclRef::None
                     | DeclRef::Instance(_)
                     | DeclRef::Duplicate
@@ -349,23 +421,95 @@ impl Core<'_> {
                 }
             }
         }
+        if choice && reached != NOT_A_CELL {
+            return Ok(THROUGH_A_PATH);
+        }
+        Ok(reached)
+    }
+
+    fn holds_kept(&self, root: u32) -> Result<bool, Internal> {
+        let mut seen = std::collections::HashSet::new();
+        let mut stack = vec![root];
+        while let Some(current) = stack.pop() {
+            if !seen.insert(current) {
+                continue;
+            }
+            for node in self.deep_postorder(current)? {
+                if self.is_kept(node)? {
+                    return Ok(true);
+                }
+                if self.ir.node(node)?.0 == Op::Name
+                    && let DeclRef::Let(at) = self.bound(node)?
+                {
+                    stack.push(self.let_root(at)?);
+                }
+            }
+        }
         Ok(false)
     }
 
-    fn cell_head(&mut self, root: u32, message: &str) -> Stage<bool> {
-        if !self.reaches_cell(root)? {
-            return Ok(Ok(false));
+    fn cell_head(&mut self, root: u32, message: &str, bound: bool) -> Stage<bool> {
+        match self.reaches_cell(root)? {
+            NOT_A_CELL => Ok(Ok(false)),
+            THROUGH_A_LET => Ok(Ok(true)),
+            DIRECTLY => {
+                let (op, a, b, _) = self.ir.node(root)?;
+                let literal = |node: u32| {
+                    self.ir
+                        .node(node)
+                        .is_ok_and(|(op, _, _, _)| op == Op::Array)
+                };
+                let array = if bound || matches!(op, Op::Array | Op::Slice) {
+                    Some(true)
+                } else if op == Op::Name
+                    && let DeclRef::Cell(at) = self.bound(root)?
+                {
+                    self.cell_shape(at)?
+                } else if op == Op::Add && (literal(a) || literal(b)) {
+                    Some(true)
+                } else {
+                    None
+                };
+                match array {
+                    Some(true) => self.draw_at(Code::ReactiveIterable, root, message)?,
+                    Some(false) => self.draw_at(Code::IterableType, root, ITERABLE)?,
+                    None => return Ok(Err(Declined(Reason::LoopHead))),
+                }
+                Ok(Ok(true))
+            }
+            _ => Ok(Err(Declined(Reason::LoopHead))),
         }
-        let (op, _, _, _) = self.ir.node(root)?;
-        if op == Op::Name && matches!(self.bound(root)?, DeclRef::Cell(_)) {
-            self.draw_at(Code::ReactiveIterable, root, message)?;
-            return Ok(Ok(true));
+    }
+
+    fn cell_shape(&self, at: u32) -> Result<Option<bool>, Internal> {
+        let rec = *self
+            .ir
+            .cells
+            .get(at as usize)
+            .ok_or(Internal::missed("IR cell"))?;
+        let annotation = self.ir.binder(rec.binder)?.annotation;
+        let node = if annotation != NONE {
+            annotation
+        } else if rec.init != NONE {
+            rec.init
+        } else {
+            rec.rule
+        };
+        if node == NONE {
+            return Ok(None);
         }
-        Ok(Err(Declined(Reason::LoopHead)))
+        let op = self.ir.node(node)?.0;
+        Ok(if matches!(op, Op::TyArray | Op::Array) {
+            Some(true)
+        } else if matches!(op, Op::TyScalar | Op::Int | Op::Float | Op::Bool) {
+            Some(false)
+        } else {
+            None
+        })
     }
 
     fn range_bound(&mut self, bound: u32) -> Stage<Option<i128>> {
-        match self.cell_head(bound, REACTIVE_BOUND)? {
+        match self.cell_head(bound, REACTIVE_BOUND, true)? {
             Ok(true) => return Ok(Ok(None)),
             Ok(false) => {}
             Err(declined) => return Ok(Err(declined)),
@@ -459,6 +603,10 @@ impl Core<'_> {
             | Value::Node(_)
             | Value::Error => Value::Error,
         };
+        let element = match (run.facts.last().and_then(|fact| fact.fixed), &element) {
+            (Some(ty), Value::Int(_)) if is_fixed_float(ty) => convert_to(element, ty),
+            _ => element,
+        };
         let start = u32::try_from(self.env_vals.len()).unwrap_or(NONE);
         if run.facts.len() >= 2 {
             self.env_vals
@@ -474,6 +622,7 @@ impl Core<'_> {
             parent: run.env,
             inst: run.inst,
             values: (start, end),
+            at: u32::try_from(position).unwrap_or(NONE),
         });
         Ok(u32::try_from(self.envs.len() - 1).unwrap_or(NONE))
     }
@@ -510,7 +659,7 @@ impl Core<'_> {
         for root in self.function_roots(owner)? {
             for node in self.deep_postorder(root)? {
                 let (op, _, _, _) = self.ir.node(node)?;
-                if matches!(op, Op::Field | Op::To) {
+                if op == Op::To {
                     return Ok(false);
                 }
             }
@@ -553,6 +702,7 @@ impl Core<'_> {
                             .iter()
                             .rev(),
                     ),
+                    ItemRec::Wire(wire) if self.bare_wire(wire)? => {}
                     ItemRec::Wire(_)
                     | ItemRec::Bundle(_)
                     | ItemRec::When(_)
@@ -616,55 +766,90 @@ impl Core<'_> {
 }
 
 impl Core<'_> {
-    pub fn loop_use(
+    pub fn loop_element(
         &mut self,
         node: u32,
         owner: u32,
         position: u32,
         ty: EvalTy,
-    ) -> Result<(), Internal> {
-        if self.loop_at(owner).is_none() || self.loop_rec(owner)?.head.range {
-            return Ok(());
+        stored: &CoreValue,
+    ) -> Stage<CoreValue> {
+        let Some(at) = self.loop_at(owner) else {
+            return Ok(Ok(stored.clone()));
+        };
+        let head = self.loop_rec(owner)?.head;
+        let names = head.names.1.saturating_sub(head.names.0);
+        let class = super::values::class(ty);
+        if head.range || position + 1 != names || class == 3 {
+            return Ok(Ok(stored.clone()));
         }
         let fact = self.param_fact(node, position)?.0;
         if fact.fixed.is_some() || !matches!(fact.leaf, Leaf::Int | Leaf::Float) {
-            return Ok(());
+            return Ok(Ok(stored.clone()));
         }
-        let float = matches!(super::values::class(ty), 1 | 2);
-        let integer = matches!(super::values::class(ty), 0 | 4..=6);
-        let slot = self.loop_uses.entry((owner, position)).or_default();
-        slot[0] |= integer;
-        slot[1] |= float;
-        Ok(())
-    }
-
-    pub fn loop_uses_agree(&self) -> Stage<()> {
-        if self
-            .loop_uses
-            .values()
-            .any(|[integer, float]| *integer && *float)
-        {
-            return Ok(Err(Declined(Reason::LoopHead)));
-        }
-        Ok(Ok(()))
-    }
-}
-
-impl Core<'_> {
-    pub fn loop_heads_call(&self) -> Result<bool, Internal> {
-        for item in &self.loops {
-            let ItemRec::For(rec) = *self.ir.item(*item)? else {
-                continue;
-            };
-            for root in iterable_roots(rec.head) {
-                for node in self.deep_postorder(root)? {
-                    if matches!(self.ir.node(node)?.0, Op::Call | Op::NamedCall) {
-                        return Ok(true);
-                    }
+        let bodies = &self.bodies;
+        let Some(env) = self
+            .own_calls
+            .iter()
+            .rev()
+            .find(|(_, inst, _)| {
+                bodies
+                    .get(*inst as usize)
+                    .is_some_and(|body| body.function == owner)
+            })
+            .map(|(env, _, _)| *env)
+        else {
+            return Ok(Ok(stored.clone()));
+        };
+        let Some(record) = self.envs.get(env as usize).copied() else {
+            return Ok(Ok(stored.clone()));
+        };
+        let element = if class == 0 {
+            stored.clone()
+        } else {
+            let item = self
+                .loops
+                .get(at as usize)
+                .copied()
+                .ok_or(Internal::missed("a placement for"))?;
+            let key = (item, record.parent, class);
+            let items = match self.loop_items.get(&key) {
+                Some(items) => items.clone(),
+                None => {
+                    let saved = self.enter_env(record.parent);
+                    let chain = std::mem::take(&mut self.eval_chain);
+                    let outcome = self.evaluate(head.iterable.0, ty);
+                    self.eval_chain = chain;
+                    self.leave_env(saved);
+                    let items = match outcome? {
+                        Ok(items) => items,
+                        Err(declined) => return Ok(Err(declined)),
+                    };
+                    self.loop_items.insert(key, items.clone());
+                    items
                 }
+            };
+            match items {
+                Value::Array(array) => self
+                    .store
+                    .element(array, record.at as usize)
+                    .unwrap_or(Value::Error),
+                Value::Int(_)
+                | Value::F32(_)
+                | Value::F64(_)
+                | Value::Bool(_)
+                | Value::Enum(..)
+                | Value::Str(_)
+                | Value::Node(_)
+                | Value::Error => Value::Error,
             }
+        };
+        if !element.is_error() && !matches!(element, Value::Array(_)) {
+            self.loop_reads
+                .entry((env, node, class))
+                .or_insert_with(|| element.clone());
         }
-        Ok(false)
+        Ok(Ok(element))
     }
 }
 
@@ -755,5 +940,241 @@ impl Core<'_> {
             format!("`{text}` is not a node kind or a pattern"),
         );
         Ok(Ok(()))
+    }
+}
+
+impl Core<'_> {
+    pub fn open_body(&mut self, item: u32, parent: u32) -> Result<(), Internal> {
+        let ItemRec::For(rec) = *self.ir.item(item)? else {
+            return Err(Internal::missed("IR for block"));
+        };
+        let mut kinds = Vec::new();
+        let mut unknown = false;
+        let mut blocks = vec![(rec.body, true)];
+        while let Some((block, direct)) = blocks.pop() {
+            let Some(found) = self.ir.blocks.get(block as usize) else {
+                continue;
+            };
+            let mut items: Vec<u32> = self
+                .ir
+                .block_items
+                .get(found.items.0 as usize..found.items.1 as usize)
+                .unwrap_or_default()
+                .to_vec();
+            while let Some(child) = items.pop() {
+                match *self.ir.item(child)? {
+                    ItemRec::Placement(placement) => {
+                        let kind = self
+                            .ir
+                            .name_text(placement.kind)
+                            .filter(|_| self.ir.named(placement.kind))
+                            .and_then(|name| self.vocabulary.node_kind_named(name));
+                        match kind {
+                            Some(kind) => {
+                                if direct {
+                                    kinds.push(kind);
+                                }
+                                if self
+                                    .vocabulary
+                                    .node_kind(kind)
+                                    .is_some_and(|decl| decl.entry)
+                                {
+                                    unknown = true;
+                                }
+                            }
+                            None => unknown = true,
+                        }
+                        blocks.push((placement.body, false));
+                    }
+                    ItemRec::For(inner) => blocks.push((inner.body, direct)),
+                    ItemRec::Line(members) => items.extend(
+                        self.ir
+                            .members
+                            .get(members.0 as usize..members.1 as usize)
+                            .unwrap_or_default(),
+                    ),
+                    ItemRec::Wire(_)
+                    | ItemRec::Bundle(_)
+                    | ItemRec::When(_)
+                    | ItemRec::Paren(_) => unknown = true,
+                }
+            }
+        }
+        if unknown {
+            self.unknown_children.insert(parent);
+            self.unknown_kind = true;
+        }
+        self.open_children.entry(parent).or_default().extend(kinds);
+        Ok(())
+    }
+}
+
+impl Core<'_> {
+    pub fn named_in_loops(&mut self) -> Result<(), Internal> {
+        for at in 0..self.loops.len() {
+            let item = *self
+                .loops
+                .get(at)
+                .ok_or(Internal::missed("a placement for"))?;
+            let ItemRec::For(rec) = *self.ir.item(item)? else {
+                return Err(Internal::missed("IR for block"));
+            };
+            let file = self.file_of(rec.head.iterable.0);
+            let Some(block) = self.ir.blocks.get(rec.body as usize).copied() else {
+                continue;
+            };
+            let mut items: Vec<u32> = self
+                .ir
+                .block_items
+                .get(block.items.0 as usize..block.items.1 as usize)
+                .unwrap_or_default()
+                .iter()
+                .rev()
+                .copied()
+                .collect();
+            while let Some(child) = items.pop() {
+                let name = match *self.ir.item(child)? {
+                    ItemRec::Placement(placement) if placement.has_as => placement.as_name,
+                    ItemRec::Wire(wire) => wire.as_name,
+                    ItemRec::Line(members) => {
+                        items.extend(
+                            self.ir
+                                .members
+                                .get(members.0 as usize..members.1 as usize)
+                                .unwrap_or_default()
+                                .iter()
+                                .rev(),
+                        );
+                        continue;
+                    }
+                    ItemRec::Placement(_)
+                    | ItemRec::For(_)
+                    | ItemRec::Bundle(_)
+                    | ItemRec::When(_)
+                    | ItemRec::Paren(_) => continue,
+                };
+                if !self.ir.named(name) {
+                    continue;
+                }
+                let span = self.name_span(file, name)?;
+                self.draw(
+                    Code::NamedInFor,
+                    span,
+                    "placements in a `for` body are anonymous",
+                );
+            }
+            self.loop_name_clashes(rec, file)?;
+        }
+        Ok(())
+    }
+}
+
+impl Core<'_> {
+    fn loop_name_clashes(&mut self, rec: ForBlockRec, file: u32) -> Result<(), Internal> {
+        let mut names = Vec::new();
+        for binder in rec.head.names.0..rec.head.names.1 {
+            let at = *self.ir.binder(binder)?;
+            let sym = self
+                .ir
+                .name(at.name)
+                .ok_or(Internal::missed("IR name"))?
+                .sym;
+            names.push((sym, self.span(file, at.lo, at.hi)));
+        }
+        let mut blocks = vec![(rec.body, false)];
+        while let Some((block, nested)) = blocks.pop() {
+            let Some(found) = self.ir.blocks.get(block as usize).copied() else {
+                continue;
+            };
+            let mut items: Vec<u32> = self
+                .ir
+                .block_items
+                .get(found.items.0 as usize..found.items.1 as usize)
+                .unwrap_or_default()
+                .to_vec();
+            while let Some(child) = items.pop() {
+                match *self.ir.item(child)? {
+                    ItemRec::Placement(placement) => {
+                        if nested && placement.has_as && self.ir.named(placement.as_name) {
+                            let entry = *self
+                                .ir
+                                .name(placement.as_name)
+                                .ok_or(Internal::missed("IR name"))?;
+                            if let Some((_, repeated)) =
+                                names.iter().find(|(sym, _)| *sym == entry.sym).cloned()
+                            {
+                                let text = self.ir.symbols.text(entry.sym).to_string();
+                                let span = self.name_span(file, placement.as_name)?;
+                                self.draw_related(
+                                    Code::ChildNameClash,
+                                    span,
+                                    vec![(repeated, "the name it repeats".to_string())],
+                                    format!(
+                                        "`{text}` names a pattern parameter, a pattern `let` or a `for` variable visible here"
+                                    ),
+                                );
+                            }
+                        }
+                        blocks.push((placement.body, true));
+                    }
+                    ItemRec::For(inner) => blocks.push((inner.body, nested)),
+                    ItemRec::Line(members) => items.extend(
+                        self.ir
+                            .members
+                            .get(members.0 as usize..members.1 as usize)
+                            .unwrap_or_default(),
+                    ),
+                    ItemRec::Wire(_)
+                    | ItemRec::Bundle(_)
+                    | ItemRec::When(_)
+                    | ItemRec::Paren(_) => {}
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+impl Core<'_> {
+    fn annotated_loop_names(
+        &mut self,
+        rec: ForBlockRec,
+        mut facts: Vec<Fact>,
+    ) -> Result<Vec<Fact>, Internal> {
+        let head = rec.head;
+        for (binder, fact) in (head.names.0..head.names.1).zip(facts.iter_mut()) {
+            let Some(ty) = self.binder_ty(binder)? else {
+                continue;
+            };
+            let summary = match (refusal(fact, ty), head.range) {
+                (Refusal::Shape, _) => Some(ELEMENT_SHAPE),
+                (Refusal::Type, false) => Some(ELEMENT_TYPE),
+                (Refusal::Type, true) => Some(RANGE_TYPE),
+                (Refusal::Kept | Refusal::Silent, _) => None,
+            };
+            if let Some(summary) = summary {
+                let at = *self.ir.binder(binder)?;
+                let span = self.span(self.file_of(head.iterable.0), at.lo, at.hi);
+                self.draw(Code::TypeMismatch, span, summary);
+            }
+            *fact = annotated_fact(ty);
+        }
+        Ok(facts)
+    }
+}
+
+impl Core<'_> {
+    fn bare_wire(&self, wire: WireRec) -> Result<bool, Internal> {
+        let known = self
+            .ir
+            .name_text(wire.kind)
+            .filter(|_| self.ir.named(wire.kind))
+            .is_some_and(|name| self.vocabulary.wire_kind_named(name).is_some());
+        Ok(known
+            && wire.attrs.0 == wire.attrs.1
+            && wire.default == NONE
+            && wire.gate == NONE
+            && self.ir.node(wire.destination)?.0 == Op::Name
+            && matches!(self.bound(wire.destination)?, DeclRef::Instance(_)))
     }
 }

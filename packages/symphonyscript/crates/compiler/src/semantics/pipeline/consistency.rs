@@ -69,6 +69,47 @@ impl Core<'_> {
                 "this value is an integer here and a different number at its float use",
             );
         }
+        self.loop_consistency()
+    }
+
+    fn loop_consistency(&mut self) -> Result<(), Internal> {
+        let mut by_env: BTreeMap<u32, Vec<(u32, usize, CoreValue)>> = BTreeMap::new();
+        for ((env, read, class), value) in &self.loop_reads {
+            CountedWalk::CoreUse.step();
+            by_env
+                .entry(*env)
+                .or_default()
+                .push((*read, *class, value.clone()));
+        }
+        let mut drawn = std::collections::BTreeSet::new();
+        for (_, reads) in by_env {
+            let Some((int_read, _, int_value)) =
+                reads.iter().find(|(_, class, _)| integer(*class)).cloned()
+            else {
+                continue;
+            };
+            let mut float = None;
+            for (read, class, value) in &reads {
+                if !integer(*class) && *read != int_read && !self.same_number(&int_value, value) {
+                    float = Some(*read);
+                    break;
+                }
+            }
+            let Some(float_read) = float else {
+                continue;
+            };
+            if !drawn.insert((int_read, float_read)) {
+                continue;
+            }
+            let span = self.node_span(int_read)?;
+            let float_span = self.node_span(float_read)?;
+            self.draw_related(
+                Code::InconsistentUses,
+                span,
+                vec![(float_span, "the float use".to_string())],
+                "this value is an integer here and a different number at its float use",
+            );
+        }
         Ok(())
     }
 

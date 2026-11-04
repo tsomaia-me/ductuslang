@@ -37,6 +37,12 @@ fn stop_limits() -> symphonyscript_core::LimitOverrides {
 fn judged_under(ledger: &str) -> Compiler {
     let limits = if ledger == reviewed::LIMIT_STOP {
         stop_limits()
+    } else if ledger == reviewed::LOOP_HEAD_STOP {
+        symphonyscript_core::LimitOverrides {
+            inlined_calls: Some(10),
+            inlined_calls_warning: Some(5),
+            ..symphonyscript_core::LimitOverrides::default()
+        }
     } else {
         symphonyscript_core::LimitOverrides::default()
     };
@@ -127,6 +133,13 @@ fn assert_equal(corpora: &[Corpus]) -> u64 {
                 continue;
             }
             if found == expected {
+                continue;
+            }
+            if open_loop_entry(text, &found, &expected) {
+                moved.push(format!(
+                    "476 (an open loop's no-entry-instance) {}:\n{text}",
+                    corpus.name
+                ));
                 continue;
             }
             let (old_drawn, new_drawn) = (drawn(&expected), drawn(&found));
@@ -2222,4 +2235,26 @@ const CHOICE_TYPE_FAULTS: [Summarized; 13] = [
 fn a_choice_keeps_its_arms_type_whatever_its_condition_holds_and_its_arm_is_checked_in_its_own_type()
  {
     assert_summarized(&CHOICE_TYPE_FAULTS);
+}
+
+fn open_loop_entry(
+    text: &str,
+    found: &[crate::diagnostics::Diagnostic],
+    expected: &[crate::diagnostics::Diagnostic],
+) -> bool {
+    use crate::diagnostics::Code;
+    let entry = |set: &[crate::diagnostics::Diagnostic]| {
+        set.iter()
+            .any(|diagnostic| diagnostic.code == Code::NoEntryInstance)
+    };
+    let rest = |set: &[crate::diagnostics::Diagnostic]| -> Vec<crate::diagnostics::Diagnostic> {
+        set.iter()
+            .filter(|diagnostic| diagnostic.code != Code::NoEntryInstance)
+            .cloned()
+            .collect()
+    };
+    reviewed::holds_a_placement_for(text)
+        && entry(found)
+        && !entry(expected)
+        && rest(found) == rest(expected)
 }

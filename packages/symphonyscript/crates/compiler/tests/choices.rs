@@ -1750,29 +1750,45 @@ fn a_scalar_annotation_refusing_a_choice_with_a_recursive_arm_draws_where_its_fi
     assert_outcome(&covered(recursive_annotation_outcome), (109, 0));
 }
 
-#[test]
-#[ignore = "exhaustive"]
-fn exhaustive_differential_the_arms_of_a_compile_time_true_choice_agree_wherever_it_stands() {
-    support::assert_both_engines_agree(
-        exhaustive_the_arms_of_a_compile_time_true_choice_agree_wherever_it_stands,
-    );
-}
-
-#[test]
-#[ignore = "exhaustive"]
-fn exhaustive_differential_the_arms_of_a_compile_time_false_choice_agree_wherever_it_stands() {
-    support::assert_both_engines_agree(
-        exhaustive_the_arms_of_a_compile_time_false_choice_agree_wherever_it_stands,
-    );
-}
-
-fn runtime_choice_differential(part: usize) {
+fn choice_differential(chooser: Chooser, parts: usize, part: usize) {
     support::assert_both_engines_agree(|| {
-        let outcome = cases_hold(&Rows::Every, Chooser::Flag, |case| {
-            (case.pair * 2 + usize::from(case.reversed)) % 3 == part
+        let outcome = cases_hold(&Rows::Every, chooser, |case| {
+            (case.pair * 2 + usize::from(case.reversed)) % parts == part
         });
         support::assert_no_failure(&outcome.failures);
     });
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_differential_the_arms_of_a_compile_time_true_choice_agree_wherever_it_stands_part_1()
+{
+    choice_differential(Chooser::True, 2, 0);
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_differential_the_arms_of_a_compile_time_true_choice_agree_wherever_it_stands_part_2()
+{
+    choice_differential(Chooser::True, 2, 1);
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_differential_the_arms_of_a_compile_time_false_choice_agree_wherever_it_stands_part_1()
+{
+    choice_differential(Chooser::False, 2, 0);
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_differential_the_arms_of_a_compile_time_false_choice_agree_wherever_it_stands_part_2()
+{
+    choice_differential(Chooser::False, 2, 1);
+}
+
+fn runtime_choice_differential(part: usize) {
+    choice_differential(Chooser::Flag, 3, part);
 }
 
 #[test]
@@ -1795,10 +1811,16 @@ fn exhaustive_differential_the_arms_of_a_runtime_choice_agree_wherever_it_stands
 
 #[test]
 #[ignore = "exhaustive"]
-fn exhaustive_differential_the_arms_of_a_match_on_an_integer_input_agree_wherever_it_stands() {
-    support::assert_both_engines_agree(
-        exhaustive_the_arms_of_a_match_on_an_integer_input_agree_wherever_it_stands,
-    );
+fn exhaustive_differential_the_arms_of_a_match_on_an_integer_input_agree_wherever_it_stands_part_1()
+{
+    choice_differential(Chooser::Integer, 2, 0);
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_differential_the_arms_of_a_match_on_an_integer_input_agree_wherever_it_stands_part_2()
+{
+    choice_differential(Chooser::Integer, 2, 1);
 }
 
 #[test]

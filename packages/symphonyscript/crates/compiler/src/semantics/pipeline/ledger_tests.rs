@@ -829,13 +829,20 @@ fn stress_a_placement_for_of_a_million_notes_costs_walks_and_peak_bytes_linear_i
         &warnings_past_half,
         Timing::Printed,
     );
+    let base = run(&compiler, &placement_for(0)).map_or(0, |found| found.peak);
     for size in sizes {
         let Some(found) = run(&compiler, &placement_for(size)) else {
             failures.push(format!("450 at {size}: the new core declined it"));
             continue;
         };
-        let items = u64::try_from(size + 1).unwrap_or(u64::MAX);
-        println!("450 at {size}: {} B an expanded item", found.peak / items);
+        let items = u64::try_from(size).unwrap_or(u64::MAX);
+        let share = found.peak.saturating_sub(base) / items;
+        println!("450 at {size}: {share} B an expanded item above the {base} B of no iteration");
+        if size == 999_999 && share > 112 {
+            failures.push(format!(
+                "450 at {size}: {share} B an expanded item, past 112 B"
+            ));
+        }
     }
     assert_none(&failures);
 }

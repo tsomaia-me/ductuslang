@@ -47,7 +47,7 @@ impl Core<'_> {
             .get(row as usize)
             .ok_or(Internal::missed("row"))?;
         let placement = self.placement(record.item)?;
-        if !self.ir.named(placement.as_name) {
+        if record.env != NONE || !self.ir.named(placement.as_name) {
             return Ok(None);
         }
         Ok(self.ir.name(placement.as_name).map(|name| name.sym.0))
