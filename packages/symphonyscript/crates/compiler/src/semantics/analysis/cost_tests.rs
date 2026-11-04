@@ -519,41 +519,41 @@ fn measured_files(compiler: &Compiler, sources: &[Source]) -> Measured {
     let (built_before, visited_before) = CArray::work();
     let (_, examined) = compiler.analyzed(&[], |engine: &Engine<'_>| engine.variants.examined());
     let examined = examined.unwrap_or(0);
-    let taken_before = compiler.taken_by_new_core();
     let allocated = crate::counting_allocator::CountingAllocator::begin();
-    let (diagnostics, found) = compiler.analyzed(sources, |engine: &Engine<'_>| {
-        let memo = &engine.memo;
-        vec![
-            ("calls", engine.call_count),
-            ("capacity_rounds", memo.capacity_rounds),
-            ("settlement_visits", memo.settlement_visits),
-            ("kind_visits", memo.kind_visits),
-            ("capacity_visits", memo.capacity_visits),
-            ("reach_work", memo.reach_work),
-            ("reach_reports", memo.reach_reports),
-            ("layout_visits", memo.layout_visits),
-            ("flow_work", memo.flow_work.get()),
-            ("use_steps", memo.use_steps.get()),
-            ("arm_walks", memo.arm_walks.get()),
-            ("query_runs", memo.query_runs),
-            ("evaluation_work", memo.evaluation_work),
-            ("cycle_work", memo.cycle_work),
-            ("read_walk", memo.read_walk),
-            ("iterated_elements", memo.iterated_elements),
-            (
-                "nodes",
-                u64::try_from(engine.nodes.len()).unwrap_or(u64::MAX),
-            ),
-            ("variants_examined", engine.variants.examined() - examined),
-            (
-                "program_bytes",
-                memo.programs
-                    .values()
-                    .map(|program| u64::try_from(program.bytes()).unwrap_or(u64::MAX))
-                    .sum(),
-            ),
-        ]
-    });
+    let ((diagnostics, found), engine) =
+        compiler.analyzed_by_engine(sources, |engine: &Engine<'_>| {
+            let memo = &engine.memo;
+            vec![
+                ("calls", engine.call_count),
+                ("capacity_rounds", memo.capacity_rounds),
+                ("settlement_visits", memo.settlement_visits),
+                ("kind_visits", memo.kind_visits),
+                ("capacity_visits", memo.capacity_visits),
+                ("reach_work", memo.reach_work),
+                ("reach_reports", memo.reach_reports),
+                ("layout_visits", memo.layout_visits),
+                ("flow_work", memo.flow_work.get()),
+                ("use_steps", memo.use_steps.get()),
+                ("arm_walks", memo.arm_walks.get()),
+                ("query_runs", memo.query_runs),
+                ("evaluation_work", memo.evaluation_work),
+                ("cycle_work", memo.cycle_work),
+                ("read_walk", memo.read_walk),
+                ("iterated_elements", memo.iterated_elements),
+                (
+                    "nodes",
+                    u64::try_from(engine.nodes.len()).unwrap_or(u64::MAX),
+                ),
+                ("variants_examined", engine.variants.examined() - examined),
+                (
+                    "program_bytes",
+                    memo.programs
+                        .values()
+                        .map(|program| u64::try_from(program.bytes()).unwrap_or(u64::MAX))
+                        .sum(),
+                ),
+            ]
+        });
     let (allocations, peak_bytes) = crate::counting_allocator::CountingAllocator::since(allocated);
     let (built_after, visited_after) = CArray::work();
     let mut counts: Vec<(String, u64)> = found
@@ -580,7 +580,7 @@ fn measured_files(compiler: &Compiler, sources: &[Source]) -> Measured {
         counts,
         allocations,
         peak_bytes,
-        new_core: compiler.taken_by_new_core() > taken_before,
+        new_core: engine == crate::Selector::NewCore,
     }
 }
 

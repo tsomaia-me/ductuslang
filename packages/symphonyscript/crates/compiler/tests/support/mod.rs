@@ -338,15 +338,14 @@ impl Compiler {
         self.new.select(selector);
     }
 
-    pub fn taken_by_new_core(&self) -> u64 {
-        self.new.taken_by_new_core()
+    pub fn check(&self, sources: &[Source]) -> Vec<Diagnostic> {
+        self.check_by_engine(sources).0
     }
 
-    pub fn check(&self, sources: &[Source]) -> Vec<Diagnostic> {
-        let before = self.new.taken_by_new_core();
-        let found = self.new.check(sources);
+    pub fn check_by_engine(&self, sources: &[Source]) -> (Vec<Diagnostic>, Selector) {
+        let (found, engine) = self.new.check_by_engine(sources);
         if COMPARING.load(std::sync::atomic::Ordering::Relaxed)
-            && self.new.taken_by_new_core() > before
+            && engine == Selector::NewCore
             && let Some(old) = self.old.get_or_init(|| {
                 let mut old =
                     symphonyscript::Compiler::with_limits(&self.vocabulary, self.limits).ok()?;
@@ -357,7 +356,7 @@ impl Compiler {
             TAKEN.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             compared(sources, &found, &old.check(sources));
         }
-        found
+        (found, engine)
     }
 }
 

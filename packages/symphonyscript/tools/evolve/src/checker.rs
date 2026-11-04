@@ -3,7 +3,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use symphonyscript::syntax::parse;
-use symphonyscript::{Code, Compiler, Diagnostic, Failed};
+use symphonyscript::{Code, Compiler, Diagnostic, Failed, Selector};
 use symphonyscript_core::{LimitOverrides, Vocabulary};
 
 use crate::differing_codes::differing_codes;
@@ -78,6 +78,27 @@ impl Checker {
         guarded(self.budget, move || compiler.check(&sources))
     }
 
+    fn compile_by_engine(&self, program: &Program) -> (Guarded<Vec<Diagnostic>>, bool) {
+        let compiler = Arc::clone(&self.compiler);
+        let sources = program.compiler_sources();
+        match guarded(self.budget, move || compiler.check_by_engine(&sources)) {
+            Guarded::Finished {
+                value: (value, engine),
+                elapsed,
+                work,
+            } => (
+                Guarded::Finished {
+                    value,
+                    elapsed,
+                    work,
+                },
+                engine == Selector::NewCore,
+            ),
+            Guarded::Panicked { message } => (Guarded::Panicked { message }, false),
+            Guarded::TimedOut => (Guarded::TimedOut, false),
+        }
+    }
+
     pub fn parses(&self, program: &Program) -> bool {
         let vocabulary = self.vocabulary.clone();
         let sources = program.compiler_sources();
@@ -92,9 +113,8 @@ impl Checker {
     }
 
     pub fn verdict(&self, program: &Program) -> Verdict {
-        let before = self.compiler.taken_by_new_core();
-        let compiled = self.compile(program);
-        if self.compiler.taken_by_new_core() > before {
+        let (compiled, by_new_core) = self.compile_by_engine(program);
+        if by_new_core {
             self.new_core.fetch_add(1, Ordering::Relaxed);
         }
         let mut verdict = Verdict {
