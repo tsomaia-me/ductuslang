@@ -900,3 +900,44 @@ fn an_annotated_accumulator_is_its_start_and_bodys_expected_type_drawing_what_a_
         ],
     );
 }
+
+const REFERENCE_PATHS: [&str; 7] = [
+    "state g(0.5)\nClip verse | gain=g\nClip chorus | gain=2\nlet sections = [verse, chorus]\nClip c:\n    for s in sections:\n        Note/(s.gain)\n",
+    "Clip verse | gain=0.5\nClip chorus | gain=2\nlet sections = [verse, chorus]\nClip c:\n    for s in sections:\n        Note | velocity=s.gain\n",
+    "Clip verse | gain=0.5\nClip chorus | gain=2\nClip c:\n    for s in [verse, chorus]:\n        Note/(s.gain)\n",
+    "Clip verse | gain=0.5\nClip chorus | gain=2\nClip c:\n    for i, s in [verse, chorus]:\n        Note/(s.bogus)\n",
+    "state g(0.5)\nClip verse | gain=g\nClip chorus | gain=0.25\nClip c:\n    for s in [verse, chorus, verse]:\n        Note | velocity=s.gain\n",
+    "state g(0.5)\nClip verse | gain=g\nClip c:\n    for s in [verse]:\n        Note | velocity=s.gain + 0.25\n",
+    "Clip verse | gain=0.5\nClip c:\n    for i, s in [verse, verse]:\n        Note/(i) | velocity=s.gain\n",
+];
+
+#[test]
+fn a_loop_name_holding_a_reference_reads_its_rows_attribute_in_a_typed_body_per_row_for_ref1() {
+    let vocabulary = symphonyscript_fixtures::vocabulary();
+    assert_engines_agree(&vocabulary, &REFERENCE_PATHS);
+    let new = Compiler::new(&vocabulary).expect("the vocabulary compiles");
+    for (text, typed) in [
+        (REFERENCE_PATHS[0], 2),
+        (REFERENCE_PATHS[4], 2),
+        (REFERENCE_PATHS[6], 1),
+    ] {
+        let bodies = CountedWalk::CoreLoopBody.steps();
+        new.checked_by_new_core(&[source(text)])
+            .unwrap_or_else(|| panic!("the new core takes {text}"));
+        assert_eq!(CountedWalk::CoreLoopBody.steps() - bodies, typed, "{text}");
+    }
+    let found = new
+        .checked_by_new_core(&[source(REFERENCE_PATHS[0])])
+        .expect("the new core takes for_ref1");
+    let at = |code| {
+        found
+            .iter()
+            .filter(|diagnostic| diagnostic.code == code)
+            .map(|diagnostic| diagnostic.span.range.clone())
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(at(crate::diagnostics::Code::TypeMismatch), vec![130..136]);
+    assert_eq!(at(crate::diagnostics::Code::FloatToInteger), vec![130..136]);
+    let text = "Clip verse:\n    Note as h /60\nClip c:\n    for s in [verse]:\n        Note/(s.h.pitch)\n";
+    assert!(new.checked_by_new_core(&[source(text)]).is_none(), "{text}");
+}

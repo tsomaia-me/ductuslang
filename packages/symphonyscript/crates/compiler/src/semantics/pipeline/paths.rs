@@ -308,11 +308,13 @@ impl Core<'_> {
                         row => End::Row(row),
                     }
                 }
+                DeclRef::Param(position) => {
+                    return self.loop_name_path_end(node, receiver, position, field);
+                }
                 DeclRef::None
                 | DeclRef::Duplicate
                 | DeclRef::Let(_)
                 | DeclRef::Cell(_)
-                | DeclRef::Param(_)
                 | DeclRef::Fn(_) => {
                     return Ok(Err(Declined(Reason::Member)));
                 }
@@ -324,6 +326,9 @@ impl Core<'_> {
                 End::Placeholder
             }
         } else if op == Op::Field {
+            if self.per_inst_paths.contains(&receiver) {
+                return Ok(Err(Declined(Reason::Member)));
+            }
             *ends
                 .get(&receiver)
                 .ok_or(Internal::missed("a path's receiver"))?
@@ -480,6 +485,11 @@ impl Core<'_> {
     }
 
     pub fn read_at(&self, node: u32) -> Result<u32, Internal> {
+        if let Some((inst, _)) = self.in_body(node).ok().flatten()
+            && let Some(at) = self.inst_reads.get(&(node, inst))
+        {
+            return Ok(*at);
+        }
         let at = self.paths.get(self.local(node)?).copied().unwrap_or(NONE);
         if self.wire_now == NONE {
             return Ok(at);
@@ -496,6 +506,11 @@ impl Core<'_> {
             .row_reads
             .range((node, 0)..=(node, u32::MAX))
             .map(|(_, at)| *at)
+            .chain(
+                self.inst_reads
+                    .range((node, 0)..=(node, u32::MAX))
+                    .map(|(_, at)| *at),
+            )
             .collect();
         let at = self.paths.get(self.local(node)?).copied().unwrap_or(NONE);
         if at != NONE && !reads.contains(&at) {
@@ -1013,5 +1028,48 @@ impl Core<'_> {
             .is_some_and(|block| {
                 block.items.0 == block.items.1 && block.members.0 == block.members.1
             }))
+    }
+}
+
+impl Core<'_> {
+    fn loop_name_path_end(
+        &mut self,
+        node: u32,
+        receiver: u32,
+        position: u32,
+        field: u32,
+    ) -> Stage<End> {
+        let owner = self.binding_owner(receiver)?;
+        let insts = self.owner_insts.get(&owner).cloned().unwrap_or_default();
+        if self.loop_at(owner).is_none() || insts.is_empty() {
+            return Ok(Err(Declined(Reason::Member)));
+        }
+        self.per_inst_paths.insert(node);
+        let mut first = None;
+        for inst in insts {
+            let Some((held, row)) = self.inst_row.get(&inst).copied() else {
+                return Ok(Err(Declined(Reason::Member)));
+            };
+            if held != position {
+                return Ok(Err(Declined(Reason::Member)));
+            }
+            let end = match self.step_row(node, row, field)? {
+                Ok(end) => end,
+                Err(declined) => return Ok(Err(declined)),
+            };
+            match end {
+                End::Attr(at) => {
+                    self.inst_reads.insert((node, inst), at);
+                }
+                End::Row(_) | End::To => return Ok(Err(Declined(Reason::Member))),
+                End::Value | End::Placeholder => {}
+            }
+            if first.is_none()
+                || matches!(end, End::Attr(_)) && !matches!(first, Some(End::Attr(_)))
+            {
+                first = Some(end);
+            }
+        }
+        Ok(Ok(first.unwrap_or(End::Placeholder)))
     }
 }

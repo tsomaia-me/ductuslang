@@ -68,9 +68,17 @@ impl Core<'_> {
         for function in 0..self.owners() {
             for root in self.function_roots(function)? {
                 for node in self.postorder(root)? {
-                    let local = self.local(node)?;
-                    if let Some(slot) = self.body_of.get_mut(local) {
-                        *slot = function;
+                    let mut current = node;
+                    loop {
+                        let local = self.local(current)?;
+                        if let Some(slot) = self.body_of.get_mut(local) {
+                            *slot = function;
+                        }
+                        let (op, receiver, _, _) = self.ir.node(current)?;
+                        if op != Op::Field {
+                            break;
+                        }
+                        current = receiver;
                     }
                 }
             }

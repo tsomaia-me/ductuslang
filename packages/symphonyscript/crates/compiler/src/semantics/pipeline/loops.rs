@@ -614,6 +614,17 @@ impl Core<'_> {
             (Some(ty), Value::Int(_)) if is_fixed_float(ty) => convert_to(element, ty),
             _ => element,
         };
+        let referenced = match &element {
+            Value::Node(row)
+                if run
+                    .facts
+                    .last()
+                    .is_some_and(|fact| fact.node && fact.dims.is_empty()) =>
+            {
+                Some(*row)
+            }
+            _ => None,
+        };
         let start = u32::try_from(self.env_vals.len()).unwrap_or(NONE);
         if run.facts.len() >= 2 {
             self.env_vals
@@ -621,13 +632,19 @@ impl Core<'_> {
         }
         self.env_vals.push(element);
         let end = u32::try_from(self.env_vals.len()).unwrap_or(NONE);
-        if run.inst == NONE {
-            run.inst = self.loop_inst(owner, run)?;
-        }
+        let inst = match referenced {
+            Some(row) if self.reads_paths_through(owner)? => self.ref_inst(owner, run, row)?,
+            Some(_) | None => {
+                if run.inst == NONE {
+                    run.inst = self.loop_inst(owner, run)?;
+                }
+                run.inst
+            }
+        };
         CountedWalk::CoreLoopIteration.step();
         self.envs.push(Env {
             parent: run.env,
-            inst: run.inst,
+            inst,
             values: (start, end),
             at: u32::try_from(position).unwrap_or(NONE),
         });
@@ -1373,5 +1390,57 @@ impl Core<'_> {
             }
         }
         Ok(())
+    }
+}
+
+impl Core<'_> {
+    fn reads_paths_through(&mut self, owner: u32) -> Result<bool, Internal> {
+        if self.path_owners.is_none() {
+            let mut owners = std::collections::HashSet::new();
+            for local in 0..self.ir.op.len() {
+                if self.ir.op.get(local) != Some(&Op::Field) {
+                    continue;
+                }
+                let receiver = self.ir.a.get(local).copied().unwrap_or(NONE);
+                if self.ir.node(receiver)?.0 != Op::Name
+                    || !matches!(self.bound(receiver)?, DeclRef::Param(_))
+                {
+                    continue;
+                }
+                let bound = self.binding_owner(receiver)?;
+                if self.loop_at(bound).is_some() {
+                    owners.insert(bound);
+                }
+            }
+            self.path_owners = Some(owners);
+        }
+        Ok(self
+            .path_owners
+            .as_ref()
+            .is_some_and(|owners| owners.contains(&owner)))
+    }
+
+    fn ref_inst(&mut self, owner: u32, run: &LoopRun, row: u32) -> Result<u32, Internal> {
+        let parent = self
+            .envs
+            .get(run.env as usize)
+            .map_or(NONE, |record| record.inst);
+        if let Some(inst) = self.ref_insts.get(&(owner, parent, row)).copied() {
+            return Ok(inst);
+        }
+        CountedWalk::CoreLoopBody.step();
+        self.bodies.push(BodyInstance {
+            function: owner,
+            parent,
+            args: run.facts.clone(),
+            reactive_args: vec![false; run.facts.len()],
+            diagnostics: Vec::new(),
+        });
+        let inst = u32::try_from(self.bodies.len() - 1).unwrap_or(NONE);
+        let position = u32::try_from(run.facts.len().saturating_sub(1)).unwrap_or(NONE);
+        self.ref_insts.insert((owner, parent, row), inst);
+        self.inst_row.insert(inst, (position, row));
+        self.owner_insts.entry(owner).or_default().push(inst);
+        Ok(inst)
     }
 }
