@@ -26,9 +26,15 @@ const DONE: u8 = 2;
 
 impl Core<'_> {
     pub fn operands(&self, node: u32) -> Result<Vec<u32>, Internal> {
+        let mut operands = Vec::new();
+        self.push_operands(node, &mut operands)?;
+        Ok(operands)
+    }
+
+    fn push_operands(&self, node: u32, out: &mut Vec<u32>) -> Result<(), Internal> {
         let (op, a, b, c) = self.ir.node(node)?;
-        Ok(match op {
-            Op::Neg | Op::Not | Op::Convert => vec![a],
+        match op {
+            Op::Neg | Op::Not | Op::Convert => out.push(a),
             Op::Add
             | Op::Sub
             | Op::Mul
@@ -45,23 +51,24 @@ impl Core<'_> {
             | Op::Is
             | Op::IsNot
             | Op::Index
-            | Op::IndexFromEnd => vec![a, b],
+            | Op::IndexFromEnd => out.extend([a, b]),
             Op::Slice => {
-                let mut operands = vec![a];
+                out.push(a);
                 for at in b..b + 2 {
                     let bound = self.kid(at)?;
                     if bound != NONE {
-                        operands.push(bound);
+                        out.push(bound);
                     }
                 }
-                operands
             }
-            Op::If => vec![a, b, c],
-            Op::Call | Op::NamedCall => self.arguments(node)?,
-            Op::For => self.fold_operands(node)?,
-            Op::Array => (a..a + b)
-                .map(|at| self.kid(at))
-                .collect::<Result<_, _>>()?,
+            Op::If => out.extend([a, b, c]),
+            Op::Call | Op::NamedCall => out.extend(self.arguments(node)?),
+            Op::For => out.extend(self.fold_operands(node)?),
+            Op::Array => {
+                for at in a..a + b {
+                    out.push(self.kid(at)?);
+                }
+            }
             Op::Int
             | Op::Float
             | Op::Bool
@@ -79,22 +86,24 @@ impl Core<'_> {
             | Op::TyName
             | Op::TyArray
             | Op::TyVar
-            | Op::Bad => Vec::new(),
-        })
+            | Op::Bad => {}
+        }
+        Ok(())
     }
 
     pub fn postorder(&self, root: u32) -> Result<Vec<u32>, Internal> {
         let mut order = Vec::new();
         let mut stack = vec![(root, false)];
+        let mut kids = Vec::new();
         while let Some((node, visited)) = stack.pop() {
             if visited {
                 order.push(node);
                 continue;
             }
             stack.push((node, true));
-            for operand in self.operands(node)?.into_iter().rev() {
-                stack.push((operand, false));
-            }
+            kids.clear();
+            self.push_operands(node, &mut kids)?;
+            stack.extend(kids.iter().rev().map(|kid| (*kid, false)));
         }
         Ok(order)
     }

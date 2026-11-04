@@ -216,8 +216,8 @@ impl Core<'_> {
         let mut warned = false;
         for (call, callee, count) in self.inline_charges()? {
             inlined = inlined.saturating_add(count);
-            let name = self.function_name(callee)?;
             if inlined > self.limits.inlined_calls {
+                let name = self.function_name(callee)?;
                 let message = format!(
                     "this call of `{name}` makes the compilation inline more than {} calls",
                     grouped(self.limits.inlined_calls)
@@ -227,6 +227,7 @@ impl Core<'_> {
             }
             if !warned && inlined > self.limits.inlined_calls_warning {
                 warned = true;
+                let name = self.function_name(callee)?;
                 let counted = format!(
                     "this call of `{name}` makes the compilation inline more than {} calls",
                     grouped(self.limits.inlined_calls_warning)
