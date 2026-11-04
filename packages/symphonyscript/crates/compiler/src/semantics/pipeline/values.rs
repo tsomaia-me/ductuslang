@@ -112,7 +112,7 @@ impl Core<'_> {
         let (op, a, b, _) = self.ir.node(node)?;
         steps.push(Step::Apply(node, ty));
         let flows = !self.unflowed.remove(&node);
-        if op == Op::Name && !flows {
+        if matches!(op, Op::Name | Op::Field) && !flows {
             self.unflowed.insert(node);
         }
         let float = matches!(ty, EvalTy::F32 | EvalTy::F64);
@@ -510,10 +510,20 @@ impl Core<'_> {
             match step {
                 Step::Visit(node, node_ty) => {
                     let (op, _, _, _) = self.ir.node(node)?;
-                    if self.fitting && op == Op::Name && self.is_reactive(node)? {
+                    if self.fitting
+                        && matches!(op, Op::Name | Op::Field)
+                        && self.is_reactive(node)?
+                    {
                         if let Some(frame) = frames.last_mut() {
                             frame.values.push(Value::Error);
                         }
+                        continue;
+                    }
+                    if op == Op::Field && self.bare_cell_read(node)?.is_some() {
+                        let Some(frame) = frames.last_mut() else {
+                            return Err(Internal::missed("evaluation frame"));
+                        };
+                        self.visit(node, node_ty, &mut frame.steps)?;
                         continue;
                     }
                     if op == Op::Field {
@@ -1008,7 +1018,7 @@ impl Core<'_> {
     fn apply(&mut self, node: u32, ty: EvalTy, stack: &mut Vec<CoreValue>) -> Stage<CoreValue> {
         let pop = |stack: &mut Vec<CoreValue>| stack.pop().ok_or(Internal::missed("value stack"));
         let (op, a, b, _) = self.ir.node(node)?;
-        let unflowed = op == Op::Name && self.unflowed.remove(&node);
+        let unflowed = matches!(op, Op::Name | Op::Field) && self.unflowed.remove(&node);
         Ok(Ok(match op {
             Op::Int => {
                 let value = *self
@@ -1034,65 +1044,10 @@ impl Core<'_> {
             Op::Bool => Value::Bool(a == 1),
             Op::Name => match self.bound(node)? {
                 DeclRef::Let(at) => self.memo(at, ty).unwrap_or(Value::Error),
-                DeclRef::Cell(_) if self.fitting => Value::Error,
-                DeclRef::Cell(at) => {
-                    if let Some(rec) = self.ir.cells.get(at as usize).copied()
-                        && rec.rule != NONE
-                        && let Some(done) = self
-                            .rule_runs
-                            .get_mut(at as usize)
-                            .and_then(|runs| runs.get_mut(class(ty)))
-                        && !*done
-                    {
-                        *done = true;
-                        if unflowed {
-                            self.unflowed.insert(rec.rule);
-                        }
-                        if let Err(declined) = self.evaluate(rec.rule, ty)? {
-                            return Ok(Err(declined));
-                        }
-                    }
-                    if !self.owning
-                        && self.cell_annotation_ty(at)?.is_none()
-                        && let Some(range) = int_range(ty)
-                        && let Some(rec) = self.ir.cells.get(at as usize).copied()
-                        && rec.rule == NONE
-                    {
-                        let init = match self.evaluate(rec.init, EvalTy::Exact)? {
-                            Ok(init) => init,
-                            Err(declined) => return Ok(Err(declined)),
-                        };
-                        if let Value::Int(init) = init
-                            && !range.contains(&init)
-                        {
-                            let name = self.ir.binder(rec.binder)?.name;
-                            let entry = self.ir.name(name).ok_or(Internal::missed("IR name"))?;
-                            let text = self.ir.symbols.text(entry.sym).to_string();
-                            self.draw_at(
-                                Code::DoesNotFit,
-                                node,
-                                format!(
-                                    "the initial value of `{text}` does not fit the type this use reads it in"
-                                ),
-                            )?;
-                        }
-                    }
-                    let side = match class(ty) {
-                        _ if self.owning => Some(0),
-                        1 | 2 => Some(1),
-                        3 => None,
-                        _ => Some(0),
-                    };
-                    if let Some(side) = side
-                        && let Some(seen) = self
-                            .cell_uses
-                            .get_mut(at as usize)
-                            .and_then(|uses| uses.get_mut(side))
-                    {
-                        *seen = true;
-                    }
-                    Value::Error
-                }
+                DeclRef::Cell(at) => match self.read_cell(at, node, ty, unflowed)? {
+                    Ok(value) => value,
+                    Err(declined) => return Ok(Err(declined)),
+                },
                 DeclRef::Duplicate | DeclRef::None | DeclRef::Param(_) | DeclRef::Fn(_) => {
                     Value::Error
                 }
@@ -1191,10 +1146,16 @@ impl Core<'_> {
                     Operands::Many(values),
                 )?
             }
+            Op::Field => match self.bare_cell_read(node)? {
+                Some(at) => match self.read_cell(at, node, ty, unflowed)? {
+                    Ok(value) => value,
+                    Err(declined) => return Ok(Err(declined)),
+                },
+                None => return Err(Internal::missed("a path read of a cell")),
+            },
             Op::If
             | Op::Str
             | Op::Variant
-            | Op::Field
             | Op::Call
             | Op::NamedCall
             | Op::MethodCall
@@ -1209,6 +1170,68 @@ impl Core<'_> {
             | Op::TyVar => return Err(Internal::missed("an op the coverage table leaves out")),
             Op::Bad | Op::To => Value::Error,
         }))
+    }
+
+    fn read_cell(&mut self, at: u32, node: u32, ty: EvalTy, unflowed: bool) -> Stage<CoreValue> {
+        if self.fitting {
+            return Ok(Ok(Value::Error));
+        }
+        if let Some(rec) = self.ir.cells.get(at as usize).copied()
+            && rec.rule != NONE
+            && let Some(done) = self
+                .rule_runs
+                .get_mut(at as usize)
+                .and_then(|runs| runs.get_mut(class(ty)))
+            && !*done
+        {
+            *done = true;
+            if unflowed {
+                self.unflowed.insert(rec.rule);
+            }
+            if let Err(declined) = self.evaluate(rec.rule, ty)? {
+                return Ok(Err(declined));
+            }
+        }
+        if !self.owning
+            && self.cell_annotation_ty(at)?.is_none()
+            && let Some(range) = int_range(ty)
+            && let Some(rec) = self.ir.cells.get(at as usize).copied()
+            && rec.rule == NONE
+        {
+            let init = match self.evaluate(rec.init, EvalTy::Exact)? {
+                Ok(init) => init,
+                Err(declined) => return Ok(Err(declined)),
+            };
+            if let Value::Int(init) = init
+                && !range.contains(&init)
+            {
+                let name = self.ir.binder(rec.binder)?.name;
+                let entry = self.ir.name(name).ok_or(Internal::missed("IR name"))?;
+                let text = self.ir.symbols.text(entry.sym).to_string();
+                self.draw_at(
+                    Code::DoesNotFit,
+                    node,
+                    format!(
+                        "the initial value of `{text}` does not fit the type this use reads it in"
+                    ),
+                )?;
+            }
+        }
+        let side = match class(ty) {
+            _ if self.owning => Some(0),
+            1 | 2 => Some(1),
+            3 => None,
+            _ => Some(0),
+        };
+        if let Some(side) = side
+            && let Some(seen) = self
+                .cell_uses
+                .get_mut(at as usize)
+                .and_then(|uses| uses.get_mut(side))
+        {
+            *seen = true;
+        }
+        Ok(Ok(Value::Error))
     }
 
     fn runtime_outside(

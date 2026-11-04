@@ -372,7 +372,10 @@ impl Core<'_> {
                     {
                         return Ok(Err(declined));
                     }
-                    super::annotation::annotated_fact(read.ty)
+                    match self.bare_cell_read(node)? {
+                        Some(at) => self.cell_read_fact(at)?,
+                        None => super::annotation::annotated_fact(read.ty),
+                    }
                 }
                 None => {
                     self.draw_body_path_faults(node);

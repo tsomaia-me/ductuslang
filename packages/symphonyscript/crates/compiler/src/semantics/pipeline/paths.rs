@@ -378,15 +378,6 @@ impl Core<'_> {
         for (_, faults) in left {
             self.diagnostics.extend(faults);
         }
-        let roots: Vec<u32> = self
-            .attr_reads
-            .iter()
-            .map(|read| read.root)
-            .filter(|root| *root != NONE)
-            .collect();
-        if self.roots_read_cell(roots)? {
-            return Ok(Err(Declined(Reason::ReactivePath)));
-        }
         if !self.attr_reads.is_empty() && self.recursive()? {
             return Ok(Err(Declined(Reason::Recursion)));
         }
@@ -452,51 +443,29 @@ impl Core<'_> {
         }
     }
 
-    fn roots_read_cell(&mut self, roots: Vec<u32>) -> Result<bool, Internal> {
-        let mut seen_lets = vec![false; self.ir.lets.len()];
-        let mut seen_reads = vec![false; self.attr_reads.len()];
-        let mut stack = roots;
-        while let Some(current) = stack.pop() {
-            for node in self.deep_postorder(current)? {
-                let (op, _, _, _) = self.ir.node(node)?;
-                if op == Op::Field {
-                    let read = self.paths.get(self.local(node)?).copied().unwrap_or(NONE);
-                    if let Some(slot) = seen_reads.get_mut(read as usize)
-                        && !*slot
-                    {
-                        *slot = true;
-                        let inner = self
-                            .attr_reads
-                            .get(read as usize)
-                            .map_or(NONE, |at| at.root);
-                        if inner != NONE {
-                            stack.push(inner);
-                        }
-                    }
-                    continue;
-                }
-                if op != Op::Name {
-                    continue;
-                }
-                match self.bound(node)? {
-                    DeclRef::Cell(_) => return Ok(true),
-                    DeclRef::Let(at) => {
-                        if let Some(slot) = seen_lets.get_mut(at as usize)
-                            && !*slot
-                        {
-                            *slot = true;
-                            stack.push(self.let_root(at)?);
-                        }
-                    }
-                    DeclRef::None
-                    | DeclRef::Instance(_)
-                    | DeclRef::Duplicate
-                    | DeclRef::Param(_)
-                    | DeclRef::Fn(_) => {}
-                }
-            }
+    pub fn read_root(&self, node: u32) -> Result<Option<u32>, Internal> {
+        Ok(self
+            .path_read(node)?
+            .filter(|read| !read.cyclic && read.root != NONE)
+            .map(|read| read.root))
+    }
+
+    pub fn bare_cell_read(&self, node: u32) -> Result<Option<u32>, Internal> {
+        let Some(root) = self.read_root(node)? else {
+            return Ok(None);
+        };
+        if self.ir.node(root)?.0 != Op::Name {
+            return Ok(None);
         }
-        Ok(false)
+        Ok(match self.bound(root)? {
+            DeclRef::Cell(at) => Some(at),
+            DeclRef::None
+            | DeclRef::Instance(_)
+            | DeclRef::Duplicate
+            | DeclRef::Let(_)
+            | DeclRef::Param(_)
+            | DeclRef::Fn(_) => None,
+        })
     }
 
     pub fn path_read(&self, node: u32) -> Result<Option<&AttrRead>, Internal> {
