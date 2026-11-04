@@ -362,7 +362,9 @@ impl Core<'_> {
             self.keep_body_faults(node, before, &mut held)?;
             if !self.is_field_receiver(node) {
                 match end {
-                    End::Row(_) => return Ok(Err(Declined(Reason::NameOfInstance))),
+                    End::Row(row) => {
+                        self.path_rows.insert(node, row);
+                    }
                     End::Attr(at) => {
                         if let Some(slot) = self.paths.get_mut(local) {
                             *slot = at;

@@ -257,6 +257,10 @@ const DECIDING_NONE: &[(&str, &str)] = &[
         "the slice of M2r R3 that builds each IR op written as a wire's destination, SPEC §8.2's name, `if` and indexed array",
     ),
     (
+        "pipeline/references.rs reference_fact",
+        "which IR ops carry a node reference from their operands in the new core (SPEC §6.2, §8.2: an array, an `if` and an index), every other op declining one",
+    ),
+    (
         "pipeline/typing.rs node_fact",
         "the kind and shape of an IR node in the new core, typed bottom-up",
     ),

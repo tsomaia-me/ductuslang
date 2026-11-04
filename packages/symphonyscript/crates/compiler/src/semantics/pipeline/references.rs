@@ -1,0 +1,209 @@
+use super::core::{Core, Stage};
+use super::decl_ref::DeclRef;
+use super::declined::Declined;
+use super::fact::Fact;
+use super::leaf::Leaf;
+use super::reason::Reason;
+use crate::diagnostics::Code;
+use crate::semantics::Internal;
+use crate::semantics::ir::flat::{ItemRec, NONE, Op};
+
+const ELEMENTS: &str = "the elements of the array hold values of different types";
+
+fn known(fact: &Fact) -> bool {
+    fact.node || !matches!(fact.leaf, Leaf::Placeholder | Leaf::Error)
+}
+
+impl Core<'_> {
+    pub fn mark_reference_roots(&mut self) -> Result<(), Internal> {
+        let mut roots = Vec::new();
+        for rec in &self.ir.lets {
+            if self.ir.binder(rec.binder)?.annotation == NONE {
+                roots.push(rec.value);
+            }
+        }
+        for item in &self.ir.items {
+            if let ItemRec::Wire(wire) = item {
+                roots.push(wire.destination);
+            }
+        }
+        roots.sort_unstable();
+        self.reference_roots = roots;
+        Ok(())
+    }
+
+    pub fn holds_references(&self, root: u32) -> bool {
+        self.reference_roots.binary_search(&root).is_ok()
+    }
+
+    pub fn reference_fact(&mut self, node: u32) -> Stage<Option<Fact>> {
+        let (op, a, b, _) = self.ir.node(node)?;
+        if op == Op::Field {
+            return Ok(Ok(self
+                .path_rows
+                .contains_key(&node)
+                .then(|| Fact::node_reference(Vec::new()))));
+        }
+        let operands = self.operands(node)?;
+        let mut facts = Vec::with_capacity(operands.len());
+        for operand in operands {
+            facts.push(self.fact(operand)?);
+        }
+        if !facts.iter().any(|fact| fact.node) {
+            return Ok(Ok(None));
+        }
+        match op {
+            Op::Array => self.reference_array(node, &facts),
+            Op::If => self.reference_choice(node, a, &facts),
+            Op::Index => self.reference_element(node, (a, b), &facts),
+            Op::Int | Op::Float | Op::Bool | Op::Name | Op::Neg | Op::Not | Op::Convert => {
+                Ok(Err(Declined(Reason::NameOfInstance)))
+            }
+            Op::Add | Op::Sub | Op::Mul | Op::Div | Op::IntDiv | Op::Rem | Op::Pow => {
+                Ok(Err(Declined(Reason::NameOfInstance)))
+            }
+            Op::And | Op::Or | Op::Lt | Op::Le | Op::Gt | Op::Ge | Op::Is | Op::IsNot => {
+                Ok(Err(Declined(Reason::NameOfInstance)))
+            }
+            Op::IndexFromEnd | Op::Slice | Op::For | Op::Call | Op::NamedCall => {
+                Ok(Err(Declined(Reason::NameOfInstance)))
+            }
+            Op::TyScalar | Op::TyArray | Op::TyName | Op::TyVar | Op::To | Op::Field => {
+                Ok(Err(Declined(Reason::NameOfInstance)))
+            }
+            Op::Past | Op::Stepped | Op::Variant | Op::Bad | Op::Str | Op::Match => {
+                Ok(Err(Declined(Reason::NameOfInstance)))
+            }
+            Op::MethodCall | Op::NamedMethodCall => Ok(Err(Declined(Reason::NameOfInstance))),
+        }
+    }
+
+    fn reference_array(&mut self, node: u32, facts: &[Fact]) -> Stage<Option<Fact>> {
+        let count = u32::try_from(facts.len()).unwrap_or(u32::MAX);
+        if facts.iter().any(|fact| !fact.dims.is_empty()) {
+            return Ok(Err(Declined(Reason::NameOfInstance)));
+        }
+        if facts
+            .iter()
+            .any(|fact| !fact.node && fact.leaf == Leaf::Placeholder)
+        {
+            return Ok(Ok(Some(Fact::PLACEHOLDER)));
+        }
+        if facts.iter().all(|fact| fact.node) {
+            return Ok(Ok(Some(Fact::node_reference(vec![count]))));
+        }
+        if facts.iter().all(known) {
+            self.draw_at(Code::TypeMismatch, node, ELEMENTS)?;
+        }
+        Ok(Ok(Some(Fact {
+            dims: vec![count],
+            ..Fact::ERROR
+        })))
+    }
+
+    fn reference_choice(
+        &mut self,
+        node: u32,
+        condition: u32,
+        facts: &[Fact],
+    ) -> Stage<Option<Fact>> {
+        let [test, first, second] = facts else {
+            return Err(Internal::missed("an if's operands"));
+        };
+        if test.node || !first.dims.is_empty() || !second.dims.is_empty() {
+            return Ok(Err(Declined(Reason::NameOfInstance)));
+        }
+        if !test.dims.is_empty() {
+            self.draw_at(
+                Code::ConditionType,
+                node,
+                "the condition of an `if` is a `bool`, not an array",
+            )?;
+        } else if !matches!(test.leaf, Leaf::Bool | Leaf::Placeholder | Leaf::Error) {
+            self.draw_at_root(Code::ConditionType, condition, "the condition is a `bool`")?;
+        }
+        if [first, second]
+            .iter()
+            .any(|fact| !fact.node && fact.leaf == Leaf::Placeholder)
+        {
+            return Ok(Ok(Some(Fact::PLACEHOLDER)));
+        }
+        if !(first.node && second.node) {
+            if known(first) && known(second) {
+                self.draw_at(
+                    Code::TypeMismatch,
+                    node,
+                    "the branches of an `if` hold values of different types",
+                )?;
+            }
+            return Ok(Ok(Some(Fact::ERROR)));
+        }
+        let fact = Fact::node_reference(Vec::new());
+        if !test.dims.is_empty() || test.leaf != Leaf::Bool {
+            return Ok(Ok(Some(self.keep(node, fact)?)));
+        }
+        Ok(Ok(Some(fact)))
+    }
+
+    fn reference_element(
+        &mut self,
+        node: u32,
+        (base, index): (u32, u32),
+        facts: &[Fact],
+    ) -> Stage<Option<Fact>> {
+        let [array, position] = facts else {
+            return Err(Internal::missed("an index's operands"));
+        };
+        if position.node || !array.node {
+            return Ok(Err(Declined(Reason::NameOfInstance)));
+        }
+        let faulty = matches!(position.leaf, Leaf::Placeholder | Leaf::Error);
+        if !position.dims.is_empty() && !faulty {
+            self.draw_at(
+                Code::IndexType,
+                node,
+                "an index is an integer, not an array",
+            )?;
+            return Ok(Ok(Some(Fact::PLACEHOLDER)));
+        }
+        if array.dims.is_empty() {
+            if position.leaf == Leaf::Placeholder {
+                return Ok(Err(Declined(Reason::NameOfInstance)));
+            }
+            self.draw_at(Code::NotAnArray, base, "only an array is indexed")?;
+            return Ok(Ok(Some(Fact::PLACEHOLDER)));
+        }
+        let refused = !faulty && matches!(position.leaf, Leaf::Float | Leaf::Bool);
+        if refused {
+            self.draw_at_root(Code::IndexType, index, "an index is an integer")?;
+        }
+        if position.leaf == Leaf::Placeholder {
+            return Ok(Ok(Some(Fact::PLACEHOLDER)));
+        }
+        let element = Fact::node_reference(array.dims.get(1..).unwrap_or_default().to_vec());
+        if refused || faulty {
+            return Ok(Ok(Some(self.keep(node, element)?)));
+        }
+        Ok(Ok(Some(element)))
+    }
+
+    pub fn reference_elements(&self, base: u32) -> Result<Option<Vec<u32>>, Internal> {
+        let mut node = base;
+        loop {
+            let (op, a, b, _) = self.ir.node(node)?;
+            if op == Op::Array && b > 0 {
+                return (a..a + b)
+                    .map(|at| self.kid(at))
+                    .collect::<Result<Vec<u32>, Internal>>()
+                    .map(Some);
+            }
+            let DeclRef::Let(at) = self.bound(node)? else {
+                return Ok(None);
+            };
+            if op != Op::Name || self.cyclic.get(at as usize).copied().unwrap_or(true) {
+                return Ok(None);
+            }
+            node = self.let_root(at)?;
+        }
+    }
+}

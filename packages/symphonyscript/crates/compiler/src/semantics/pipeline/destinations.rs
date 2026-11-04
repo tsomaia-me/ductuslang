@@ -1,5 +1,9 @@
 use super::core::{Core, Stage};
+use super::decl_ref::DeclRef;
+use super::declined::Declined;
+use super::fact::Fact;
 use super::leaf::Leaf;
+use super::reason::Reason;
 use crate::diagnostics::Code;
 use crate::semantics::Internal;
 use crate::semantics::counted_walk::CountedWalk;
@@ -47,10 +51,18 @@ impl Core<'_> {
                 continue;
             }
             let root = self.wire_rec(row.item)?.destination;
-            let mut found = Vec::new();
-            let choice = match self.choose(root, true, &mut found)? {
-                Ok(choice) => choice,
+            let fact = match self.ensure_typed(root)? {
+                Ok(fact) => fact,
                 Err(declined) => return Ok(Err(declined)),
+            };
+            let mut found = Vec::new();
+            let choice = if self.names_one_instance(root, &fact)? {
+                match self.choose(root, true, &mut found)? {
+                    Ok(choice) => choice,
+                    Err(declined) => return Ok(Err(declined)),
+                }
+            } else {
+                Choice::Unknown
             };
             let first = u32::try_from(self.candidates.len()).unwrap_or(u32::MAX);
             match choice {
@@ -67,9 +79,33 @@ impl Core<'_> {
         Ok(Ok(()))
     }
 
+    fn names_one_instance(&mut self, root: u32, fact: &Fact) -> Result<bool, Internal> {
+        if fact.node && fact.dims.is_empty() {
+            return Ok(true);
+        }
+        if !fact.node && matches!(fact.leaf, Leaf::Placeholder | Leaf::Error) {
+            return Ok(false);
+        }
+        let summary = if fact.dims.is_empty() {
+            "a destination names an instance"
+        } else {
+            "a destination is one instance, not an array"
+        };
+        self.draw_at(Code::DestinationType, root, summary)?;
+        Ok(false)
+    }
+
     fn choose(&mut self, node: u32, live: bool, found: &mut Vec<u32>) -> Stage<Choice> {
         CountedWalk::CoreWireDestination.step();
         let (op, a, b, c) = self.ir.node(node)?;
+        if op == Op::Name
+            && let DeclRef::Let(at) = self.bound(node)?
+        {
+            if self.cyclic.get(at as usize).copied().unwrap_or(true) {
+                return Ok(Ok(Choice::Unknown));
+            }
+            return self.choose(self.let_root(at)?, live, found);
+        }
         let (test, arms) = if op == Op::If {
             let test = match self.condition(node, a, live)? {
                 Ok(test) => test,
@@ -77,20 +113,23 @@ impl Core<'_> {
             };
             (test, vec![b, c])
         } else if op == Op::Index {
-            let (_, start, count, _) = self.ir.node(a)?;
+            let Some(elements) = self.reference_elements(a)? else {
+                return Ok(Err(Declined(Reason::DestinationValue)));
+            };
+            let count = u32::try_from(elements.len()).unwrap_or(u32::MAX);
             let test = match self.position(node, b, count, live)? {
                 Ok(test) => test,
                 Err(declined) => return Ok(Err(declined)),
             };
-            let elements = (start..start + count)
-                .map(|at| self.kid(at))
-                .collect::<Result<Vec<u32>, Internal>>()?;
             (test, elements)
         } else {
             if !live {
                 return Ok(Ok(Choice::Unknown));
             }
-            let target = self.candidate_row(node)?;
+            let target = match self.path_rows.get(&node) {
+                Some(row) => *row,
+                None => self.candidate_row(node)?,
+            };
             if target == NONE {
                 return Ok(Ok(Choice::Unknown));
             }

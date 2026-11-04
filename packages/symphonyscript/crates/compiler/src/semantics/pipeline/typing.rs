@@ -285,7 +285,13 @@ impl Core<'_> {
                 Err(declined) => return Ok(Err(declined)),
             };
             let reactive = self.node_reactive(node)?;
+            if fact.node && reactive && self.in_body(node)?.is_some() {
+                return Ok(Err(Declined(Reason::ReactiveReference)));
+            }
             self.set_fact(node, fact, reactive)?;
+        }
+        if self.fact(root)?.node && !self.holds_references(root) {
+            return Ok(Err(Declined(Reason::NameOfInstance)));
         }
         Ok(Ok(()))
     }
@@ -294,6 +300,11 @@ impl Core<'_> {
         let (op, a, b, c) = self.ir.node(node)?;
         if self.holds_a_missing_operand(node)? {
             return Ok(Ok(Fact::PLACEHOLDER));
+        }
+        match self.reference_fact(node)? {
+            Ok(Some(fact)) => return Ok(Ok(fact)),
+            Ok(None) => {}
+            Err(declined) => return Ok(Err(declined)),
         }
         Ok(Ok(match op {
             Op::Int => Fact::scalar(Leaf::Int),
@@ -325,9 +336,7 @@ impl Core<'_> {
                 DeclRef::Param(position) => self.param_fact(node, position)?.0,
                 DeclRef::Fn(_) => return Ok(Err(Declined(Reason::FunctionValue))),
                 DeclRef::Duplicate | DeclRef::None => Fact::PLACEHOLDER,
-                DeclRef::Instance(_) => {
-                    return Ok(Err(Declined(Reason::NameOfInstance)));
-                }
+                DeclRef::Instance(_) => Fact::node_reference(Vec::new()),
             },
             Op::Neg | Op::Not => self.unary_fact(node, op, a)?,
             Op::Add
@@ -694,6 +703,7 @@ impl Core<'_> {
             dims,
             fixed,
             read,
+            node: false,
         })
     }
 
@@ -746,6 +756,7 @@ impl Core<'_> {
                 dims: first.dims,
                 fixed,
                 read,
+                node: false,
             };
             return Ok(Ok(self.keep(node, kept)?));
         }
@@ -755,6 +766,7 @@ impl Core<'_> {
                 dims: first.dims,
                 fixed,
                 read,
+                node: false,
             }));
         }
         let taken = match self.evaluate(condition, EvalTy::Bool)? {
@@ -790,6 +802,7 @@ impl Core<'_> {
             dims: taken,
             fixed,
             read,
+            node: false,
         }))
     }
 
@@ -900,6 +913,7 @@ impl Core<'_> {
             dims,
             fixed: base.fixed,
             read: base.read,
+            node: false,
         }))
     }
 
@@ -1021,6 +1035,7 @@ impl Core<'_> {
             dims: base.dims.get(1..).unwrap_or_default().to_vec(),
             fixed: base.fixed,
             read: base.read,
+            node: base.node,
         };
         if index.leaf == Leaf::Placeholder {
             return Ok(Fact::PLACEHOLDER);
@@ -1060,6 +1075,7 @@ impl Core<'_> {
                 dims: vec![0],
                 fixed: None,
                 read: None,
+                node: false,
             });
         }
         let mut facts = Vec::new();
@@ -1096,6 +1112,7 @@ impl Core<'_> {
                     dims,
                     fixed: None,
                     read: None,
+                    node: false,
                 });
             };
             leaf = unified;
@@ -1110,6 +1127,7 @@ impl Core<'_> {
             dims,
             fixed,
             read,
+            node: false,
         })
     }
 }

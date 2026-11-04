@@ -42,6 +42,7 @@ mod paths;
 mod pick;
 mod reason;
 mod recording;
+mod references;
 mod run;
 mod slice;
 mod stages;

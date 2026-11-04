@@ -8,6 +8,7 @@ pub(crate) struct Fact {
     pub dims: Vec<u32>,
     pub fixed: Option<EvalTy>,
     pub read: Option<EvalTy>,
+    pub node: bool,
 }
 
 impl Fact {
@@ -16,6 +17,7 @@ impl Fact {
         dims: Vec::new(),
         fixed: None,
         read: None,
+        node: false,
     };
 
     pub const ERROR: Fact = Fact {
@@ -23,6 +25,7 @@ impl Fact {
         dims: Vec::new(),
         fixed: None,
         read: None,
+        node: false,
     };
 
     pub fn scalar(leaf: Leaf) -> Fact {
@@ -31,6 +34,7 @@ impl Fact {
             dims: Vec::new(),
             fixed: None,
             read: None,
+            node: false,
         }
     }
 
@@ -40,6 +44,7 @@ impl Fact {
             dims: Vec::new(),
             fixed,
             read: None,
+            node: false,
         }
     }
 
@@ -49,6 +54,17 @@ impl Fact {
             dims: Vec::new(),
             fixed,
             read,
+            node: false,
+        }
+    }
+
+    pub fn node_reference(dims: Vec<u32>) -> Fact {
+        Fact {
+            leaf: Leaf::Error,
+            dims,
+            fixed: None,
+            read: None,
+            node: true,
         }
     }
 
