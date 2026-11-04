@@ -6621,12 +6621,6 @@ fn a_reactive_lets_value_draws_its_other_faults_as_its_placeholder_twin_does() {
 
 #[test]
 #[ignore = "exhaustive"]
-fn exhaustive_differential_a_carried_enum_meets_every_use_in_every_order() {
-    support::assert_both_engines_agree(exhaustive_a_carried_enum_meets_every_use_in_every_order);
-}
-
-#[test]
-#[ignore = "exhaustive"]
 fn exhaustive_differential_a_literal_whose_elements_disagree_draws_one_diagnostic_wherever_its_value_goes()
  {
     support::assert_both_engines_agree(

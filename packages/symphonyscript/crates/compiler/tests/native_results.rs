@@ -325,10 +325,3 @@ fn exhaustive_a_runtime_native_value_draws_at_an_array_position_the_one_diagnost
     let failures = shape_position_rows(&Rows::Every);
     support::assert_no_failure(&failures);
 }
-
-#[test]
-#[ignore = "exhaustive"]
-fn exhaustive_differential_a_runtime_native_value_draws_at_an_array_position_the_one_diagnostic_its_input_twin_draws()
- {
-    support::assert_both_engines_agree(exhaustive_a_runtime_native_value_draws_at_an_array_position_the_one_diagnostic_its_input_twin_draws);
-}

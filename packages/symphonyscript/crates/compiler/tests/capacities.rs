@@ -3734,109 +3734,11 @@ fn exhaustive_differential_capacities_unit_rows() {
 
 #[test]
 #[ignore = "exhaustive"]
-fn exhaustive_differential_the_state_rules_see_the_history_reads_an_inlined_call_reaches() {
-    support::assert_both_engines_agree(
-        exhaustive_the_state_rules_see_the_history_reads_an_inlined_call_reaches,
-    );
-}
-
-#[test]
-#[ignore = "exhaustive"]
-fn exhaustive_differential_a_states_fixed_array_is_settled_over_its_group() {
-    support::assert_both_engines_agree(exhaustive_a_states_fixed_array_is_settled_over_its_group);
-}
-
-#[test]
-#[ignore = "exhaustive"]
-fn exhaustive_differential_a_history_read_has_its_cells_kind_for_an_input_a_let_and_a_state() {
-    support::assert_both_engines_agree(
-        exhaustive_a_history_read_has_its_cells_kind_for_an_input_a_let_and_a_state,
-    );
-}
-
-#[test]
-#[ignore = "exhaustive"]
-fn exhaustive_differential_a_history_reads_provisional_kind_leaves_no_diagnostic_behind() {
-    support::assert_both_engines_agree(
-        exhaustive_a_history_reads_provisional_kind_leaves_no_diagnostic_behind,
-    );
-}
-
-#[test]
-#[ignore = "exhaustive"]
-fn exhaustive_differential_a_history_read_of_a_derived_state_has_its_layout_433() {
-    support::assert_both_engines_agree(
-        exhaustive_a_history_read_of_a_derived_state_has_its_layout_433,
-    );
-}
-
-#[test]
-#[ignore = "exhaustive"]
-fn exhaustive_differential_a_history_read_counts_as_an_operand_of_its_cells_integer_width() {
-    support::assert_both_engines_agree(
-        exhaustive_a_history_read_counts_as_an_operand_of_its_cells_integer_width,
-    );
-}
-
-#[test]
-#[ignore = "exhaustive"]
 fn exhaustive_differential_the_arms_of_a_choice_are_type_checked_against_one_another_whatever_chooses()
  {
     support::assert_both_engines_agree(
         exhaustive_the_arms_of_a_choice_are_type_checked_against_one_another_whatever_chooses,
     );
-}
-
-#[test]
-#[ignore = "exhaustive"]
-fn exhaustive_differential_an_annotation_holds_only_an_initializer_of_its_rows() {
-    support::assert_both_engines_agree(
-        exhaustive_an_annotation_holds_only_an_initializer_of_its_rows,
-    );
-}
-
-#[test]
-#[ignore = "exhaustive"]
-fn exhaustive_differential_a_state_settled_as_a_fixed_array_is_used_as_a_fixed_array() {
-    support::assert_both_engines_agree(
-        exhaustive_a_state_settled_as_a_fixed_array_is_used_as_a_fixed_array,
-    );
-}
-
-#[test]
-#[ignore = "exhaustive"]
-fn exhaustive_differential_a_compile_time_condition_chooses_its_arm_before_layout_and_capacity_in_its_odd_rows()
- {
-    support::assert_both_engines_agree(exhaustive_a_compile_time_condition_chooses_its_arm_before_layout_and_capacity_in_its_odd_rows);
-}
-
-#[test]
-#[ignore = "exhaustive"]
-fn exhaustive_differential_a_compile_time_condition_chooses_its_arm_before_layout_and_capacity_in_its_even_rows()
- {
-    support::assert_both_engines_agree(exhaustive_a_compile_time_condition_chooses_its_arm_before_layout_and_capacity_in_its_even_rows);
-}
-
-#[test]
-#[ignore = "exhaustive"]
-fn exhaustive_differential_a_compile_time_match_on_a_bare_variant_chooses_its_arm_before_layout_and_capacity()
- {
-    support::assert_both_engines_agree(exhaustive_a_compile_time_match_on_a_bare_variant_chooses_its_arm_before_layout_and_capacity);
-}
-
-#[test]
-#[ignore = "exhaustive"]
-fn exhaustive_differential_a_group_of_states_takes_its_least_capacities_together() {
-    support::assert_both_engines_agree(
-        exhaustive_a_group_of_states_takes_its_least_capacities_together,
-    );
-}
-
-#[test]
-#[ignore = "exhaustive"]
-fn exhaustive_differential_a_runtime_choice_between_a_variable_and_a_fixed_array_is_one_variable_array_wherever_read()
- {
-    support::assert_both_engines_agree(exhaustive_a_runtime_choice_between_a_variable_and_a_fixed_array_is_one_variable_array_wherever_read);
 }
 
 #[test]

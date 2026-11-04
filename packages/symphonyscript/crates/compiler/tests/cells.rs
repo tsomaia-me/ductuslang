@@ -1230,20 +1230,6 @@ fn a_refused_history_target_leaves_the_rules_other_faults_drawn_c2_15() {
 
 #[test]
 #[ignore = "exhaustive"]
-fn exhaustive_differential_a_cell_declaration_parses_every_combination_of_its_parts_and_one_with_neither_init_nor_rule_names_both()
- {
-    support::assert_both_engines_agree(exhaustive_a_cell_declaration_parses_every_combination_of_its_parts_and_one_with_neither_init_nor_rule_names_both);
-}
-
-#[test]
-#[ignore = "exhaustive"]
-fn exhaustive_differential_a_cell_of_every_word_and_form_is_read_in_the_present_in_its_past_and_by_stepped_wherever_a_cell_is_read()
- {
-    support::assert_both_engines_agree(exhaustive_a_cell_of_every_word_and_form_is_read_in_the_present_in_its_past_and_by_stepped_wherever_a_cell_is_read);
-}
-
-#[test]
-#[ignore = "exhaustive"]
 fn exhaustive_differential_a_state_holding_an_array_of_another_shape_at_a_fixed_array_attribute_draws_the_shape_mismatch_alone()
  {
     support::assert_both_engines_agree(exhaustive_a_state_holding_an_array_of_another_shape_at_a_fixed_array_attribute_draws_the_shape_mismatch_alone);

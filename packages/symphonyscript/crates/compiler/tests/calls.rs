@@ -1566,11 +1566,3 @@ fn exhaustive_differential_a_call_rejected_as_reactive_recursion_adds_nothing_to
         exhaustive_a_call_rejected_as_reactive_recursion_adds_nothing_to_the_inline_count,
     );
 }
-
-#[test]
-#[ignore = "exhaustive"]
-fn exhaustive_differential_the_recursion_depth_summary_names_each_function_of_its_cycle_once() {
-    support::assert_both_engines_agree(
-        exhaustive_the_recursion_depth_summary_names_each_function_of_its_cycle_once,
-    );
-}

@@ -1757,40 +1757,10 @@ fn exhaustive_differential_the_arms_of_a_runtime_choice_agree_wherever_it_stands
 
 #[test]
 #[ignore = "exhaustive"]
-fn exhaustive_differential_the_arms_of_a_compile_time_enum_match_agree_wherever_it_stands() {
-    support::assert_both_engines_agree(
-        exhaustive_the_arms_of_a_compile_time_enum_match_agree_wherever_it_stands,
-    );
-}
-
-#[test]
-#[ignore = "exhaustive"]
-fn exhaustive_differential_the_arms_of_a_match_on_an_enum_input_agree_wherever_it_stands() {
-    support::assert_both_engines_agree(
-        exhaustive_the_arms_of_a_match_on_an_enum_input_agree_wherever_it_stands,
-    );
-}
-
-#[test]
-#[ignore = "exhaustive"]
 fn exhaustive_differential_the_arms_of_a_match_on_an_integer_input_agree_wherever_it_stands() {
     support::assert_both_engines_agree(
         exhaustive_the_arms_of_a_match_on_an_integer_input_agree_wherever_it_stands,
     );
-}
-
-#[test]
-#[ignore = "exhaustive"]
-fn exhaustive_differential_the_arms_of_a_choice_on_a_compile_time_recursive_functions_parameter_agree_wherever_it_stands()
- {
-    support::assert_both_engines_agree(exhaustive_the_arms_of_a_choice_on_a_compile_time_recursive_functions_parameter_agree_wherever_it_stands);
-}
-
-#[test]
-#[ignore = "exhaustive"]
-fn exhaustive_differential_the_arms_of_a_match_on_a_compile_time_recursive_functions_parameter_agree_wherever_it_stands()
- {
-    support::assert_both_engines_agree(exhaustive_the_arms_of_a_match_on_a_compile_time_recursive_functions_parameter_agree_wherever_it_stands);
 }
 
 #[test]

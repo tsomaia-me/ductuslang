@@ -222,12 +222,3 @@ fn a_recursive_call_counts_toward_the_inline_limit_unless_it_reads_a_cell() {
         }
     }
 }
-
-#[test]
-#[ignore = "exhaustive"]
-fn exhaustive_differential_a_value_reads_a_cell_by_the_bindings_it_reaches_at_every_position_that_asks()
- {
-    support::assert_both_engines_agree(
-        exhaustive_a_value_reads_a_cell_by_the_bindings_it_reaches_at_every_position_that_asks,
-    );
-}

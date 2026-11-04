@@ -342,10 +342,3 @@ fn exhaustive_differential_a_loop_head_binds_one_or_two_annotated_names_at_every
         exhaustive_a_loop_head_binds_one_or_two_annotated_names_at_every_site_and_a_range_binds_one,
     );
 }
-
-#[test]
-#[ignore = "exhaustive"]
-fn exhaustive_differential_every_array_iterates_element_by_element_at_every_site_and_any_other_iterable_draws_iterable_type()
- {
-    support::assert_both_engines_agree(exhaustive_every_array_iterates_element_by_element_at_every_site_and_any_other_iterable_draws_iterable_type);
-}

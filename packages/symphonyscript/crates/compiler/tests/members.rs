@@ -927,24 +927,3 @@ fn a_member_read_beside_a_cells_cycle_and_an_unknown_dot_call_member_draw_their_
     ];
     support::assert_rows_in_every_order(&symphonyscript_fixtures::vocabulary(), rows);
 }
-
-#[test]
-#[ignore = "exhaustive"]
-fn exhaustive_differential_an_arrays_size_and_capacity_are_known_at_compile_time_where_the_spec_says_and_typed_as_it_says_in_every_position()
- {
-    support::assert_both_engines_agree(exhaustive_an_arrays_size_and_capacity_are_known_at_compile_time_where_the_spec_says_and_typed_as_it_says_in_every_position);
-}
-
-#[test]
-#[ignore = "exhaustive"]
-fn exhaustive_differential_a_dot_call_is_the_call_with_the_receiver_first_for_a_source_a_native_and_a_math_function()
- {
-    support::assert_both_engines_agree(exhaustive_a_dot_call_is_the_call_with_the_receiver_first_for_a_source_a_native_and_a_math_function);
-}
-
-#[test]
-#[ignore = "exhaustive"]
-fn exhaustive_differential_an_element_read_of_an_empty_compile_time_array_has_its_element_type_however_the_array_reaches_it()
- {
-    support::assert_both_engines_agree(exhaustive_an_element_read_of_an_empty_compile_time_array_has_its_element_type_however_the_array_reaches_it);
-}

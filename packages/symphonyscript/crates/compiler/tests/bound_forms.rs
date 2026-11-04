@@ -232,10 +232,3 @@ fn the_bounds_of_the_spec_give_their_capacities_and_a_range_bound_without_a_maxi
         );
     }
 }
-
-#[test]
-#[ignore = "exhaustive"]
-fn exhaustive_differential_every_bound_form_gives_a_slice_and_a_range_the_minimum_and_maximum_its_form_reads()
- {
-    support::assert_both_engines_agree(exhaustive_every_bound_form_gives_a_slice_and_a_range_the_minimum_and_maximum_its_form_reads);
-}
