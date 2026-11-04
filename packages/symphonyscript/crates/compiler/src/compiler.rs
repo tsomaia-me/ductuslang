@@ -22,7 +22,6 @@ use crate::semantics::pipeline;
 use crate::semantics::reporting::Report;
 use crate::source::Source;
 use crate::syntax::parse;
-use std::sync::atomic::{AtomicU64, Ordering};
 
 #[cfg(test)]
 thread_local! {
@@ -36,7 +35,6 @@ pub struct Compiler {
     prelude_ir: FlatIr,
     limits: Limits,
     selector: Selector,
-    taken: AtomicU64,
 }
 
 impl Compiler {
@@ -96,7 +94,6 @@ impl Compiler {
             prelude_ir: ir,
             limits,
             selector: Selector::Default,
-            taken: AtomicU64::new(0),
         })
     }
 
@@ -108,10 +105,6 @@ impl Compiler {
     pub(crate) fn on_the_old_engine(mut self) -> Compiler {
         self.selector = Selector::OldEngine;
         self
-    }
-
-    pub fn taken_by_new_core(&self) -> u64 {
-        self.taken.load(Ordering::Relaxed)
     }
 
     pub fn check(&self, sources: &[Source]) -> Vec<Diagnostic> {
@@ -248,7 +241,6 @@ impl Compiler {
             }
         };
         let engine = if taken.is_some() {
-            self.taken.fetch_add(1, Ordering::Relaxed);
             Selector::NewCore
         } else {
             Selector::OldEngine
