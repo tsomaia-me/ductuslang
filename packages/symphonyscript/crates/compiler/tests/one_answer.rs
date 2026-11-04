@@ -253,6 +253,10 @@ const DECIDING_NONE: &[(&str, &str)] = &[
         "the slice of M2r R3 that builds each IR op, the selector's coverage table",
     ),
     (
+        "pipeline/coverage.rs destination_slice",
+        "the slice of M2r R3 that builds each IR op written as a wire's destination, SPEC §8.2's name, `if` and indexed array",
+    ),
+    (
         "pipeline/typing.rs node_fact",
         "the kind and shape of an IR node in the new core, typed bottom-up",
     ),

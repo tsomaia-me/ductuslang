@@ -8,4 +8,5 @@ pub(crate) struct WireRow {
     pub source: u32,
     pub candidates: (u32, u32),
     pub fixed: bool,
+    pub chosen: bool,
 }

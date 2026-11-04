@@ -642,6 +642,9 @@ impl Core<'_> {
             .wires
             .get(wire as usize)
             .ok_or(Internal::missed("wire row"))?;
+        if row.chosen {
+            return Ok(Err(Declined(Reason::ChosenDestinationPath)));
+        }
         let mut target = match self.wire_targets(&row).as_slice() {
             [] => return Ok(Ok(End::Placeholder)),
             [target] => *target,

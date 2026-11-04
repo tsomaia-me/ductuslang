@@ -172,11 +172,44 @@ pub(crate) fn top_wire_slice() -> Slice {
 }
 
 pub(crate) fn destination_slice(op: Op) -> Slice {
-    if op == Op::Name {
-        Slice::Two
-    } else {
-        Slice::Pending
+    match op {
+        Op::Name | Op::If | Op::Index => Slice::Two,
+        Op::Int | Op::Float | Op::Bool | Op::Neg | Op::Add | Op::Sub | Op::Mul => Slice::Pending,
+        Op::Array | Op::Div | Op::IntDiv | Op::Rem | Op::Pow => Slice::Pending,
+        Op::Not | Op::And | Op::Or => Slice::Pending,
+        Op::Lt | Op::Le | Op::Gt | Op::Ge | Op::Is | Op::IsNot => Slice::Pending,
+        Op::IndexFromEnd | Op::Slice | Op::Convert | Op::For => Slice::Pending,
+        Op::Call | Op::NamedCall | Op::TyScalar | Op::TyArray | Op::TyName | Op::TyVar => {
+            Slice::Pending
+        }
+        Op::To | Op::Field | Op::Past | Op::Stepped | Op::Variant | Op::Bad => Slice::Pending,
+        Op::Str | Op::Match | Op::MethodCall | Op::NamedMethodCall => Slice::Pending,
     }
+}
+
+pub(crate) fn destination_candidates(ir: &FlatIr, root: u32) -> Option<Vec<u32>> {
+    let mut out = Vec::new();
+    let mut stack = vec![root];
+    while let Some(node) = stack.pop() {
+        let (op, a, b, c) = ir.node(node).ok()?;
+        if !landed(destination_slice(op)) {
+            return None;
+        }
+        if op == Op::If {
+            stack.extend([c, b]);
+        } else if op == Op::Index {
+            let (base, start, count, _) = ir.node(a).ok()?;
+            if base != Op::Array || count == 0 {
+                return None;
+            }
+            for at in (start..start + count).rev() {
+                stack.push(ir.kid(at).ok()?);
+            }
+        } else {
+            out.push(node);
+        }
+    }
+    Some(out)
 }
 
 fn wire_landed(ir: &FlatIr, wire: &WireRec) -> bool {
@@ -185,9 +218,7 @@ fn wire_landed(ir: &FlatIr, wire: &WireRec) -> bool {
         && wire.as_name == NONE
         && !wire.attrs_cut
         && value_entries(ir, wire.attrs)
-        && ir
-            .node(wire.destination)
-            .is_ok_and(|(op, _, _, _)| landed(destination_slice(op)))
+        && destination_candidates(ir, wire.destination).is_some()
 }
 
 pub(crate) fn reason_slice(reason: Reason) -> Slice {
@@ -205,7 +236,9 @@ pub(crate) fn reason_slice(reason: Reason) -> Slice {
         Reason::AnnotatedCall => Slice::Pending,
         Reason::Pending => Slice::One,
         Reason::ReactiveFor => Slice::Three,
-        Reason::DestinationValue | Reason::WireKind => Slice::Pending,
+        Reason::DestinationValue | Reason::WireKind | Reason::ChosenDestinationPath => {
+            Slice::Pending
+        }
         Reason::BareVariant | Reason::UnitAttribute | Reason::EnumAttribute => Slice::Five,
     }
 }
