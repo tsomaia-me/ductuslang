@@ -186,6 +186,7 @@ pub type Drawn = (String, usize, usize);
 pub enum Change {
     Added,
     Removed,
+    Restated,
 }
 
 pub struct Seen<'a> {
@@ -272,8 +273,9 @@ fn reactive_let(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
         })
 }
 
-fn read_of_a_reactive_let(seen: &Seen<'_>, _: Change, at: &Drawn) -> bool {
-    if at.0 == "reactive-let" || !reads_a_cell_somewhere(seen.program) {
+fn read_of_a_reactive_let(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
+    if change == Change::Restated || at.0 == "reactive-let" || !reads_a_cell_somewhere(seen.program)
+    {
         return false;
     }
     let line = seen.line(at.1);
@@ -507,6 +509,7 @@ fn annotated_array_rule(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
         .filter(|(_, lo, hi)| holds(seen.new, "type-mismatch", &(String::new(), *lo, *hi)))
         .any(|(name, lo, hi)| match change {
             Change::Added => at.0 == "type-mismatch" && at.1 == lo && at.2 == hi,
+            Change::Restated => false,
             Change::Removed => {
                 let line = seen.line(at.1);
                 (at.1 >= lo && at.2 <= hi)
@@ -715,6 +718,57 @@ fn integer_cell_through_a_call(seen: &Seen<'_>, change: Change, at: &Drawn) -> b
         })
 }
 
+fn declares_an_integer_annotated_cell(program: &str) -> bool {
+    program.lines().any(|line| {
+        ["state ", "input "]
+            .iter()
+            .any(|head| line.starts_with(head))
+            && [": u8", ": i32", ": i64"]
+                .iter()
+                .any(|ty| line.trim_end().ends_with(ty))
+    })
+}
+
+fn computes_in_the_annotations_type(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
+    let line = seen
+        .program
+        .lines()
+        .nth(seen.line(at.1))
+        .unwrap_or_default();
+    let annotated = line
+        .strip_prefix("let ")
+        .and_then(|tail| tail.split_once(" = "))
+        .and_then(|(head, _)| head.split_once(": "))
+        .is_some_and(|(_, ty)| ["u8", "i32", "i64"].contains(&ty));
+    let text = seen.text(at);
+    matches!(change, Change::Removed | Change::Restated)
+        && at.0 == "does-not-fit"
+        && annotated
+        && !text.is_empty()
+        && text.chars().all(|character| character.is_ascii_digit())
+        && declares_an_integer_annotated_cell(seen.program)
+        && seen
+            .new
+            .iter()
+            .any(|drawn| drawn.0 == "reactive-let" && seen.line(drawn.1) == seen.line(at.1))
+}
+
+fn branches_beside_a_condition(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
+    let text = seen.text(at);
+    let opened = text.len() - text.trim_start_matches('(').len();
+    let Some(rest) = text.get(opened..).and_then(|tail| tail.strip_prefix("if ")) else {
+        return false;
+    };
+    let start = at.1 + opened + 3;
+    let condition = start + rest.len() - rest.trim_start_matches('(').len();
+    change == Change::Added
+        && at.0 == "type-mismatch"
+        && seen
+            .new
+            .iter()
+            .any(|drawn| drawn.0 == "condition-type" && (start..=condition).contains(&drawn.1))
+}
+
 pub struct Class {
     pub ledger: &'static str,
     pub rule: &'static str,
@@ -818,6 +872,16 @@ pub const CLASSES: &[Class] = &[
         rule: "a slice whose bound is refused keeps its array type, so the position that holds one value draws its type-mismatch at the slice beside the bound's index-type (ARCHITECTURE §7: a value whose type an error leaves known keeps that type), which the old engine misses",
         explains: slice_keeps_its_array_type,
     },
+    Class {
+        ledger: "476",
+        rule: "a reactive let annotated with an integer type that its cell read widens or saturates into computes its operation in the annotation's type, a cell being read in the expected type (SPEC §4.2, §4.4), so a literal draws does-not-fit against the annotation's type alone, where the old engine checks it in the cell's type",
+        explains: computes_in_the_annotations_type,
+    },
+    Class {
+        ledger: "476",
+        rule: "a choice whose condition draws condition-type draws its branches' type-mismatch beside it, since the program with the condition repaired draws it (G17, G7's converse), which the old engine misses",
+        explains: branches_beside_a_condition,
+    },
 ];
 
 fn annotated_let_value(seen: &Seen<'_>, at: &Drawn) -> bool {
@@ -903,4 +967,11 @@ fn explained(classes: &'static [Class], seen: &Seen<'_>) -> Explained {
 
 pub fn moved(program: &str, old: &[Drawn], new: &[Drawn]) -> Explained {
     explained(CLASSES, &Seen { program, old, new })
+}
+
+pub fn restated(program: &str, old: &[Drawn], new: &[Drawn], at: &Drawn) -> bool {
+    let seen = Seen { program, old, new };
+    CLASSES
+        .iter()
+        .any(|class| (class.explains)(&seen, Change::Restated, at))
 }

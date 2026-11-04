@@ -1264,28 +1264,36 @@ impl Core<'_> {
     }
 
     pub fn evaluate_own(&mut self, root: u32) -> Stage<()> {
+        self.evaluate_own_in(root, None)
+    }
+
+    pub fn evaluate_own_in(&mut self, root: u32, expected: Option<EvalTy>) -> Stage<()> {
         let owning = std::mem::replace(&mut self.owning, true);
-        let outcome = self.evaluate_owned(root);
+        let outcome = self.evaluate_owned(root, expected);
         self.owning = owning;
         outcome
     }
 
-    fn evaluate_owned(&mut self, root: u32) -> Stage<()> {
+    fn evaluate_owned(&mut self, root: u32, expected: Option<EvalTy>) -> Stage<()> {
         let inst = self.inst;
         let chain = self.eval_chain.len();
         let calls = self.own_calls.len();
-        let outcome = self.own_walk(root);
+        let outcome = self.own_walk(root, expected);
         self.inst = inst;
         self.eval_chain.truncate(chain);
         self.own_calls.truncate(calls);
         outcome
     }
 
-    fn own_walk(&mut self, root: u32) -> Stage<()> {
+    fn own_walk(&mut self, root: u32, expected: Option<EvalTy>) -> Stage<()> {
         let mut stack = vec![(root, false)];
         let mut leaves: Vec<u32> = Vec::new();
         let mut fits: Vec<u32> = Vec::new();
         let mut unfixed = HashMap::new();
+        let mut flowing: HashMap<(u32, u32), EvalTy> = HashMap::new();
+        if let Some(ty) = expected {
+            flowing.insert((self.inst, root), ty);
+        }
         while let Some((node, indexed)) = stack.pop() {
             if node == NONE {
                 self.eval_chain.pop();
@@ -1319,11 +1327,27 @@ impl Core<'_> {
                 && !self.is_kept(node)?
                 && (!self.is_reactive(node)? || self.runtime_in_own(node, own, &mut unfixed)?)
             {
-                self.unflowed.insert(node);
+                let flowed = match flowing.get(&(self.inst, node)).copied() {
+                    Some(ty)
+                        if self.is_reactive(node)?
+                            && (widens(own, ty)
+                                || (fact.fixed.is_none()
+                                    && int_range(own).is_some()
+                                    && int_range(ty).is_some())) =>
+                    {
+                        Some(ty)
+                    }
+                    Some(_) | None => None,
+                };
+                if flowed.is_none() {
+                    self.unflowed.insert(node);
+                }
                 let divided = op == Op::Div
                     && fact.own().is_none()
                     && matches!(own, EvalTy::F32 | EvalTy::F64);
-                let evaluated = if !divided {
+                let evaluated = if let Some(ty) = flowed {
+                    ty
+                } else if !divided {
                     own
                 } else if self.is_reactive(node)? {
                     self.division_ty(a, b)?
@@ -1341,6 +1365,10 @@ impl Core<'_> {
             }
             match op {
                 Op::If => {
+                    if let Some(ty) = flowing.get(&(self.inst, node)).copied() {
+                        flowing.insert((self.inst, b), ty);
+                        flowing.insert((self.inst, c), ty);
+                    }
                     let condition = self.fact(a)?;
                     if condition.dims.is_empty()
                         && !matches!(condition.leaf, Leaf::Bool | Leaf::Placeholder | Leaf::Error)

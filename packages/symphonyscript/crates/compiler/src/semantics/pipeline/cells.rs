@@ -1,4 +1,4 @@
-use super::annotation::annotated_fact;
+use super::annotation::{Refusal, annotated_fact};
 use super::core::{Core, Stage};
 use super::decl_ref::DeclRef;
 use super::declined::Declined;
@@ -187,7 +187,17 @@ impl Core<'_> {
             if !self.is_reactive(root)? {
                 continue;
             }
-            if let Err(declined) = self.evaluate_own(root)? {
+            let expected = match self.annotation_ty(at)? {
+                Some(ty)
+                    if self.annotation_dims(at)?.is_empty()
+                        && self.reads_only_annotated_cells(at)?
+                        && self.annotation_refusal(at, ty)? == Refusal::Kept =>
+                {
+                    Some(ty)
+                }
+                Some(_) | None => None,
+            };
+            if let Err(declined) = self.evaluate_own_in(root, expected)? {
                 return Ok(Err(declined));
             }
             let rec = self
@@ -298,5 +308,36 @@ impl Core<'_> {
             }
             return Ok(op == Op::Name && matches!(self.bound(node)?, DeclRef::Cell(_)));
         }
+    }
+}
+
+impl Core<'_> {
+    fn reads_only_annotated_cells(&self, at: u32) -> Result<bool, Internal> {
+        let mut seen = vec![false; self.ir.lets.len()];
+        let mut stack = vec![at];
+        while let Some(current) = stack.pop() {
+            match seen.get_mut(current as usize) {
+                Some(slot) if !*slot => *slot = true,
+                Some(_) | None => continue,
+            }
+            for node in self.deep_postorder(self.let_root(current)?)? {
+                if self.ir.node(node)?.0 != Op::Name {
+                    continue;
+                }
+                match self.bound(node)? {
+                    DeclRef::Cell(cell) if self.cell_annotation_ty(cell)?.is_none() => {
+                        return Ok(false);
+                    }
+                    DeclRef::Let(other) => stack.push(other),
+                    DeclRef::Cell(_)
+                    | DeclRef::None
+                    | DeclRef::Instance(_)
+                    | DeclRef::Duplicate
+                    | DeclRef::Param(_)
+                    | DeclRef::Fn(_) => {}
+                }
+            }
+        }
+        Ok(true)
     }
 }

@@ -425,12 +425,27 @@ fn compared(sources: &[Source], found: &[Diagnostic], expected: &[Diagnostic]) {
     }
     if reviewed_set.is_none() && !text.is_empty() {
         let (old, new) = (drawn(sources, expected), drawn(sources, found));
-        if let Ok(classes) = reviewed::moved(text, &old, &new)
-            && !classes.is_empty()
-            && kept(found, &new, &old) == kept(expected, &old, &new)
-        {
-            MOVED.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-            return;
+        if let Ok(classes) = reviewed::moved(text, &old, &new) {
+            let (mine, theirs) = (kept(found, &new, &old), kept(expected, &old, &new));
+            let restated: Vec<bool> = mine
+                .iter()
+                .zip(&theirs)
+                .filter(|(a, b)| a != b)
+                .map(|(a, b)| {
+                    a.code == b.code
+                        && a.span == b.span
+                        && drawn(sources, std::slice::from_ref(a))
+                            .first()
+                            .is_some_and(|at| reviewed::restated(text, &old, &new, at))
+                })
+                .collect();
+            if mine.len() == theirs.len()
+                && restated.iter().all(|explained| *explained)
+                && (!classes.is_empty() || !restated.is_empty())
+            {
+                MOVED.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                return;
+            }
         }
     }
     record(sources, found, expected);

@@ -5,6 +5,7 @@ use symphonyscript_core::{AttrDecl, Count, NodeKind, Scalar, Span};
 use super::core::{Core, Stage};
 use super::declined::Declined;
 use super::fact::Fact;
+use super::folds::ANY_LENGTH;
 use super::leaf::Leaf;
 use super::reason::Reason;
 use super::values::flexible;
@@ -298,12 +299,18 @@ impl Core<'_> {
         match fact.leaf {
             Leaf::Placeholder | Leaf::Error => return self.detached(root, name, ty),
             _ if !fact.dims.is_empty() => {
+                let variable = self.variable_length(root)?;
                 self.draw_at(
                     Code::TypeMismatch,
                     root,
                     format!(
-                        "`{name}` holds one `{}`, and this value is an array",
-                        ty_name(ty)
+                        "`{name}` holds one `{}`, and this value is {}",
+                        ty_name(ty),
+                        if variable {
+                            "a variable array"
+                        } else {
+                            "an array"
+                        }
                     ),
                 )?;
                 return self.own_check(root);
@@ -649,5 +656,25 @@ fn attribute_reason(attr: &AttrDecl) -> Reason {
         | Scalar::F32
         | Scalar::F64
         | Scalar::Bool => Reason::StringAttribute,
+    }
+}
+
+impl Core<'_> {
+    fn variable_length(&self, root: u32) -> Result<bool, Internal> {
+        if !self.is_reactive(root)? {
+            return Ok(false);
+        }
+        if self.fact(root)?.dims.first() == Some(&ANY_LENGTH) {
+            return Ok(true);
+        }
+        if self.ir.node(root)?.0 != Op::Slice {
+            return Ok(false);
+        }
+        for bound in self.bounds(root)? {
+            if bound != NONE && self.is_reactive(bound)? {
+                return Ok(true);
+            }
+        }
+        Ok(false)
     }
 }

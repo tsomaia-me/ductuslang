@@ -708,9 +708,6 @@ impl Core<'_> {
             )?;
             return Ok(Ok(Fact::PLACEHOLDER));
         }
-        if wrong_test {
-            return Ok(Ok(Fact::ERROR));
-        }
         if leaves.contains(&Leaf::Error) {
             return Ok(Ok(Fact::ERROR));
         }
@@ -722,6 +719,9 @@ impl Core<'_> {
             )?;
             return Ok(Ok(Fact::ERROR));
         };
+        if wrong_test {
+            return Ok(Ok(Fact::ERROR));
+        }
         let fixed = combined(first.fixed, second.fixed, leaf == Leaf::Float);
         let read = reads(first.read, second.read, leaf == Leaf::Float);
         if first.dims == second.dims {

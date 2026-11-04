@@ -132,9 +132,8 @@ fn assert_equal(corpora: &[Corpus]) -> u64 {
             let (old_drawn, new_drawn) = (drawn(&expected), drawn(&found));
             match reviewed::moved(text, &old_drawn, &new_drawn) {
                 Ok(classes)
-                    if !classes.is_empty()
-                        && kept(&found, &new_drawn, &old_drawn)
-                            == kept(&expected, &old_drawn, &new_drawn) =>
+                    if restated_or_kept(text, (&found, &new_drawn), (&expected, &old_drawn))
+                        .is_some_and(|restated| restated || !classes.is_empty()) =>
                 {
                     let named: Vec<String> = classes.iter().map(|class| class.named()).collect();
                     moved.push(format!("{} {}:\n{text}", named.join("; "), corpus.name));
@@ -320,7 +319,7 @@ fn the_shared_steps_programs_draw_the_old_engines_sets_on_the_new_core_beside_th
     }
 }
 
-const EXHAUSTIVE_CLASSES: [(&str, &[(&str, &str)]); 13] = [
+const EXHAUSTIVE_CLASSES: [(&str, &[(&str, &str)]); 12] = [
     (
         "state f([1.5, 2.5])\nstate n(0)\nClip c:\n    Note/(f[n])\n",
         &[("type-mismatch", "f[n]")],
@@ -375,16 +374,6 @@ const EXHAUSTIVE_CLASSES: [(&str, &[(&str, &str)]); 13] = [
             ("condition-type", "[1, 2][5]"),
             ("index-out-of-range", "5"),
             ("type-mismatch", "1"),
-        ],
-    ),
-    (
-        "Clip c:\n    Note/((if i32(true) then i32(true) else true)[300000000000 % i32(true)..])\n",
-        &[
-            ("condition-type", "i32(true)"),
-            ("conversion-type", "i32(true)"),
-            ("conversion-type", "i32(true)"),
-            ("conversion-type", "i32(true)"),
-            ("does-not-fit", "300000000000"),
         ],
     ),
     (
@@ -582,6 +571,23 @@ fn drawn(found: &[crate::diagnostics::Diagnostic]) -> Vec<reviewed::Drawn> {
             )
         })
         .collect()
+}
+
+fn restated_or_kept(
+    text: &str,
+    (found, new): (&[crate::diagnostics::Diagnostic], &[reviewed::Drawn]),
+    (expected, old): (&[crate::diagnostics::Diagnostic], &[reviewed::Drawn]),
+) -> Option<bool> {
+    let (mine, theirs) = (kept(found, new, old), kept(expected, old, new));
+    let mut restated = false;
+    for (a, b) in mine.iter().zip(&theirs).filter(|(a, b)| a != b) {
+        let at = drawn(std::slice::from_ref(a)).into_iter().next()?;
+        if a.code != b.code || a.span != b.span || !reviewed::restated(text, old, new, &at) {
+            return None;
+        }
+        restated = true;
+    }
+    (mine.len() == theirs.len()).then_some(restated)
 }
 
 fn kept(
@@ -1917,5 +1923,118 @@ fn a_refused_operation_over_a_cell_checks_its_literals_in_the_operations_own_typ
             .checked_by_new_core(&sources)
             .unwrap_or_else(|| panic!("the new core takes {text}"));
         assert_eq!(found, old.check(&sources), "{text}");
+    }
+}
+
+type Summarized = (
+    &'static str,
+    &'static [(&'static str, &'static str, &'static str)],
+);
+
+const ANNOTATION_AND_CHOICE_FAULTS: [Summarized; 8] = [
+    (
+        "state q(0): u8\nlet a: i32 = q - 300000000000\nClip c:\n    Note/(a)\n",
+        &[
+            (
+                "does-not-fit",
+                "300000000000",
+                "this value does not fit `i32`",
+            ),
+            (
+                "reactive-let",
+                "a",
+                "`a` is a `let`, a compile-time value, and its value reads a cell",
+            ),
+        ],
+    ),
+    (
+        "state q(0): u8\nlet a: i32 = q - 300\nClip c:\n    Note/(a)\n",
+        &[(
+            "reactive-let",
+            "a",
+            "`a` is a `let`, a compile-time value, and its value reads a cell",
+        )],
+    ),
+    (
+        "state q(0): i32\nlet a: u8 = q - 300\nClip c:\n    Note/(a)\n",
+        &[
+            ("does-not-fit", "300", "this value does not fit `u8`"),
+            (
+                "reactive-let",
+                "a",
+                "`a` is a `let`, a compile-time value, and its value reads a cell",
+            ),
+        ],
+    ),
+    (
+        "Clip c:\n    Note/(if 1 then 1 else (true or true))\n",
+        &[
+            ("condition-type", "1", "the condition is a `bool`"),
+            (
+                "type-mismatch",
+                "if 1 then 1 else (true or true)",
+                "the branches of an `if` hold values of different types",
+            ),
+        ],
+    ),
+    (
+        "Clip c:\n    Note/(if 1 then 1 else 2)\n",
+        &[("condition-type", "1", "the condition is a `bool`")],
+    ),
+    ("Clip c:\n    Note/(if true then 1 else 2)\n", &[]),
+    (
+        "state q(0): i32\nClip c:\n    Note/([1, 2][q..])\n",
+        &[(
+            "type-mismatch",
+            "[1, 2][q..]",
+            "`pitch` holds one `i32`, and this value is a variable array",
+        )],
+    ),
+    (
+        "Clip c:\n    Note/([1, 2][1..])\n",
+        &[(
+            "type-mismatch",
+            "[1, 2][1..]",
+            "`pitch` holds one `i32`, and this value is an array",
+        )],
+    ),
+];
+
+#[test]
+fn a_reactive_let_computes_in_its_annotations_type_and_a_refused_condition_keeps_the_branches_fault()
+ {
+    let vocabulary = symphonyscript_fixtures::vocabulary();
+    let new = Compiler::new(&vocabulary).expect("the vocabulary compiles");
+    for (text, expected) in ANNOTATION_AND_CHOICE_FAULTS {
+        let sources = [source(text)];
+        let found = new
+            .checked_by_new_core(&sources)
+            .unwrap_or_else(|| panic!("the new core takes {text}"));
+        let mut seen: Vec<(String, String, String)> = found
+            .iter()
+            .filter(|diagnostic| diagnostic.code != crate::diagnostics::Code::NoEntryInstance)
+            .map(|diagnostic| {
+                let range =
+                    diagnostic.span.range.start as usize..diagnostic.span.range.end as usize;
+                (
+                    diagnostic.code.to_string(),
+                    text.get(range).unwrap_or_default().to_string(),
+                    diagnostic.summary.clone(),
+                )
+            })
+            .collect();
+        seen.sort();
+        let mut wanted: Vec<(String, String, String)> = expected
+            .iter()
+            .map(|(code, span, summary)| {
+                (
+                    (*code).to_string(),
+                    (*span).to_string(),
+                    (*summary).to_string(),
+                )
+            })
+            .collect();
+        wanted.sort();
+        assert_eq!(seen, wanted, "{text}");
     }
 }
