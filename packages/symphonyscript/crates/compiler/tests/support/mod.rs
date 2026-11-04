@@ -361,15 +361,20 @@ impl Compiler {
     }
 }
 
-fn drawn(found: &[Diagnostic]) -> Vec<reviewed::Drawn> {
+fn drawn(sources: &[Source], found: &[Diagnostic]) -> Vec<reviewed::Drawn> {
     found
         .iter()
         .filter(|diagnostic| diagnostic.code != Code::NoEntryInstance)
         .map(|diagnostic| {
+            let offset: usize = sources
+                .iter()
+                .take_while(|source| source.path != diagnostic.span.file)
+                .map(|source| source.text.len() + 1)
+                .sum();
             (
                 diagnostic.code.to_string(),
-                diagnostic.span.range.start as usize,
-                diagnostic.span.range.end as usize,
+                offset + diagnostic.span.range.start as usize,
+                offset + diagnostic.span.range.end as usize,
             )
         })
         .collect()
@@ -396,31 +401,30 @@ fn kept(
         .collect()
 }
 
+fn unequal(
+    mine: Vec<Diagnostic>,
+    mut theirs: Vec<Diagnostic>,
+) -> (Vec<Diagnostic>, Vec<Diagnostic>) {
+    let mut left = Vec::new();
+    for diagnostic in mine {
+        match theirs.iter().position(|other| *other == diagnostic) {
+            Some(at) => {
+                theirs.remove(at);
+            }
+            None => left.push(diagnostic),
+        }
+    }
+    (left, theirs)
+}
+
 fn compared(sources: &[Source], found: &[Diagnostic], expected: &[Diagnostic]) {
     let joined: Vec<&str> = sources.iter().map(|source| source.text.as_str()).collect();
     let joined = joined.join("\n");
     let text = joined.as_str();
-    let (found, expected) = match sources {
-        [first, _, ..] => {
-            let part = |set: &[Diagnostic], own: bool| -> Vec<Diagnostic> {
-                set.iter()
-                    .filter(|diagnostic| (diagnostic.span.file == first.path) == own)
-                    .cloned()
-                    .collect()
-            };
-            if part(found, false) != part(expected, false) {
-                record(sources, text, found, expected);
-                return;
-            }
-            (part(found, true), part(expected, true))
-        }
-        _ => (found.to_vec(), expected.to_vec()),
-    };
-    let (found, expected) = (found.as_slice(), expected.as_slice());
     let reviewed_set = reviewed::reviewed(text).map(|(_, wanted)| wanted);
     let same = match &reviewed_set {
         Some(wanted) => {
-            let mut spans: Vec<(String, String)> = drawn(found)
+            let mut spans: Vec<(String, String)> = drawn(sources, found)
                 .into_iter()
                 .map(|(code, lo, hi)| (code, text.get(lo..hi).unwrap_or_default().to_string()))
                 .collect();
@@ -436,19 +440,40 @@ fn compared(sources: &[Source], found: &[Diagnostic], expected: &[Diagnostic]) {
         return;
     }
     if reviewed_set.is_none() && !text.is_empty() {
-        let (old, new) = (drawn(expected), drawn(found));
-        if let Ok(classes) = reviewed::moved(text, &old, &new)
-            && !classes.is_empty()
-            && kept(found, &new, &old) == kept(expected, &old, &new)
-        {
-            MOVED.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-            return;
+        let (old, new) = (drawn(sources, expected), drawn(sources, found));
+        if let Ok(classes) = reviewed::moved(text, &old, &new) {
+            let (rest_found, rest_expected) = unequal(found.to_vec(), expected.to_vec());
+            let (rest_new, rest_old) =
+                (drawn(sources, &rest_found), drawn(sources, &rest_expected));
+            let (mine, theirs) = (
+                kept(&rest_found, &rest_new, &rest_old),
+                kept(&rest_expected, &rest_old, &rest_new),
+            );
+            let restated: Vec<bool> = mine
+                .iter()
+                .zip(&theirs)
+                .filter(|(a, b)| a != b)
+                .map(|(a, b)| {
+                    a.code == b.code
+                        && a.span == b.span
+                        && drawn(sources, std::slice::from_ref(a))
+                            .first()
+                            .is_some_and(|at| reviewed::restated(text, &old, &new, at))
+                })
+                .collect();
+            if mine.len() == theirs.len()
+                && restated.iter().all(|explained| *explained)
+                && (!classes.is_empty() || !restated.is_empty())
+            {
+                MOVED.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                return;
+            }
         }
     }
-    record(sources, text, found, expected);
+    record(sources, found, expected);
 }
 
-fn record(sources: &[Source], text: &str, found: &[Diagnostic], expected: &[Diagnostic]) {
+fn record(sources: &[Source], found: &[Diagnostic], expected: &[Diagnostic]) {
     let files: Vec<&str> = sources.iter().map(|source| source.text.as_str()).collect();
     let shown = |set: &[Diagnostic]| -> String {
         set.iter()
@@ -456,10 +481,14 @@ fn record(sources: &[Source], text: &str, found: &[Diagnostic], expected: &[Diag
             .map(|diagnostic| {
                 let range =
                     diagnostic.span.range.start as usize..diagnostic.span.range.end as usize;
+                let own = sources
+                    .iter()
+                    .find(|source| source.path == diagnostic.span.file)
+                    .map_or("", |source| source.text.as_str());
                 format!(
                     "\n    {} `{}` [{}] {}",
                     diagnostic.code,
-                    text.get(range).unwrap_or_default(),
+                    own.get(range).unwrap_or_default(),
                     diagnostic.related.len(),
                     diagnostic.summary
                 )

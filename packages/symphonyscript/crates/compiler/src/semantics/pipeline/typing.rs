@@ -31,7 +31,7 @@ impl Core<'_> {
         Ok(operands)
     }
 
-    fn push_operands(&self, node: u32, out: &mut Vec<u32>) -> Result<(), Internal> {
+    pub fn push_operands(&self, node: u32, out: &mut Vec<u32>) -> Result<(), Internal> {
         let (op, a, b, c) = self.ir.node(node)?;
         match op {
             Op::Neg | Op::Not | Op::Convert => out.push(a),
@@ -681,20 +681,17 @@ impl Core<'_> {
     fn choice_fact(&mut self, node: u32, condition: u32, then: u32, otherwise: u32) -> Stage<Fact> {
         let test = self.fact(condition)?;
         let (first, second) = (self.fact(then)?, self.fact(otherwise)?);
-        let leaves = [test.leaf, first.leaf, second.leaf];
         if !test.dims.is_empty() {
             self.draw_at(
                 Code::ConditionType,
                 node,
                 "the condition of an `if` is a `bool`, not an array",
             )?;
-            return Ok(Ok(Fact::PLACEHOLDER));
-        }
-        let wrong_test = !matches!(test.leaf, Leaf::Bool | Leaf::Placeholder | Leaf::Error);
-        if wrong_test {
+        } else if !matches!(test.leaf, Leaf::Bool | Leaf::Placeholder | Leaf::Error) {
             self.draw_at(Code::ConditionType, condition, "the condition is a `bool`")?;
         }
-        if leaves.contains(&Leaf::Placeholder) {
+        let refused = !test.dims.is_empty() || test.leaf != Leaf::Bool;
+        if first.leaf == Leaf::Placeholder || second.leaf == Leaf::Placeholder {
             return Ok(Ok(Fact::PLACEHOLDER));
         }
         if first.dims.len() != second.dims.len()
@@ -708,10 +705,7 @@ impl Core<'_> {
             )?;
             return Ok(Ok(Fact::PLACEHOLDER));
         }
-        if wrong_test {
-            return Ok(Ok(Fact::ERROR));
-        }
-        if leaves.contains(&Leaf::Error) {
+        if first.leaf == Leaf::Error || second.leaf == Leaf::Error {
             return Ok(Ok(Fact::ERROR));
         }
         let Some(leaf) = unify(first.leaf, second.leaf) else {
@@ -724,6 +718,18 @@ impl Core<'_> {
         };
         let fixed = combined(first.fixed, second.fixed, leaf == Leaf::Float);
         let read = reads(first.read, second.read, leaf == Leaf::Float);
+        if refused {
+            if first.dims != second.dims {
+                return Ok(Ok(Fact::ERROR));
+            }
+            let kept = Fact {
+                leaf,
+                dims: first.dims,
+                fixed,
+                read,
+            };
+            return Ok(Ok(self.keep(node, kept)?));
+        }
         if first.dims == second.dims {
             return Ok(Ok(Fact {
                 leaf,

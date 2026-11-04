@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use super::annotation::Refusal;
 use super::core::{Core, Stage};
 use super::core_value::CoreValue;
@@ -67,6 +69,24 @@ impl Core<'_> {
         })
     }
 
+    fn division_ty(&self, a: u32, b: u32) -> Result<EvalTy, Internal> {
+        for operand in [a, b] {
+            let fact = self.fact(operand)?;
+            let wide = match fact.own() {
+                Some(own) => matches!(own, EvalTy::I64 | EvalTy::F64),
+                None => {
+                    fact.dims.is_empty()
+                        && matches!(fact.leaf, Leaf::Int | Leaf::Float)
+                        && self.is_reactive(operand)?
+                }
+            };
+            if wide {
+                return Ok(EvalTy::F64);
+            }
+        }
+        Ok(EvalTy::F32)
+    }
+
     fn pair_ty(&self, a: u32, b: u32) -> Result<EvalTy, Internal> {
         let (left, right) = (self.fact(a)?, self.fact(b)?);
         let float = left.leaf == Leaf::Float || right.leaf == Leaf::Float;
@@ -76,7 +96,14 @@ impl Core<'_> {
         let (x, y) = (left.leaf, right.leaf);
         Ok(match (x, y) {
             (Leaf::Bool, _) | (_, Leaf::Bool) => EvalTy::Bool,
-            (Leaf::Float, _) | (_, Leaf::Float) => EvalTy::F64,
+            (Leaf::Float, _) | (_, Leaf::Float) => {
+                let mut wide = false;
+                for (operand, fact) in [(a, &left), (b, &right)] {
+                    wide |= fact.leaf == Leaf::Float && self.is_reactive(operand)?;
+                    wide |= self.own_float(operand)? == EvalTy::F64;
+                }
+                if wide { EvalTy::F64 } else { EvalTy::F32 }
+            }
             _ => EvalTy::Exact,
         })
     }
@@ -98,17 +125,18 @@ impl Core<'_> {
                 .collect(),
             Op::Div if !float => {
                 let defaulted = self.fact(a)?.fixed.is_none() && self.fact(b)?.fixed.is_none();
+                let target = self.division_ty(a, b)?;
                 for operand in [b, a] {
                     self.unflowed.insert(operand);
                     let fact = self.fact(operand)?;
                     if defaulted && fact.dims.is_empty() && fact.leaf == Leaf::Int {
-                        steps.push(Step::Float(operand, EvalTy::F32));
+                        steps.push(Step::Float(operand, target));
                         steps.push(Step::Visit(operand, EvalTy::Exact));
-                    } else if let Some(own) = self.own_width(operand, EvalTy::F32, false)? {
-                        steps.push(Step::Widen(EvalTy::F32));
+                    } else if let Some(own) = self.own_width(operand, target, false)? {
+                        steps.push(Step::Widen(target));
                         steps.push(Step::Visit(operand, own));
                     } else {
-                        steps.push(Step::Visit(operand, EvalTy::F32));
+                        steps.push(Step::Visit(operand, target));
                     }
                 }
                 return Ok(());
@@ -172,7 +200,11 @@ impl Core<'_> {
                 if own == EvalTy::Exact && self.fact(a)?.fixed.is_none() {
                     steps.push(Step::Fit(a, EvalTy::I64));
                 }
-                vec![(a, own)]
+                let divided = self.ir.node(a)?.0 == Op::Div
+                    && operand.own().is_none()
+                    && matches!(own, EvalTy::F32 | EvalTy::F64)
+                    && !self.is_reactive(a)?;
+                vec![(a, if divided { EvalTy::Exact } else { own })]
             }
             Op::If => {
                 steps.pop();
@@ -1232,27 +1264,36 @@ impl Core<'_> {
     }
 
     pub fn evaluate_own(&mut self, root: u32) -> Stage<()> {
+        self.evaluate_own_in(root, None)
+    }
+
+    pub fn evaluate_own_in(&mut self, root: u32, expected: Option<EvalTy>) -> Stage<()> {
         let owning = std::mem::replace(&mut self.owning, true);
-        let outcome = self.evaluate_owned(root);
+        let outcome = self.evaluate_owned(root, expected);
         self.owning = owning;
         outcome
     }
 
-    fn evaluate_owned(&mut self, root: u32) -> Stage<()> {
+    fn evaluate_owned(&mut self, root: u32, expected: Option<EvalTy>) -> Stage<()> {
         let inst = self.inst;
         let chain = self.eval_chain.len();
         let calls = self.own_calls.len();
-        let outcome = self.own_walk(root);
+        let outcome = self.own_walk(root, expected);
         self.inst = inst;
         self.eval_chain.truncate(chain);
         self.own_calls.truncate(calls);
         outcome
     }
 
-    fn own_walk(&mut self, root: u32) -> Stage<()> {
+    fn own_walk(&mut self, root: u32, expected: Option<EvalTy>) -> Stage<()> {
         let mut stack = vec![(root, false)];
         let mut leaves: Vec<u32> = Vec::new();
         let mut fits: Vec<u32> = Vec::new();
+        let mut unfixed = HashMap::new();
+        let mut flowing: HashMap<(u32, u32), EvalTy> = HashMap::new();
+        if let Some(ty) = expected {
+            flowing.insert((self.inst, root), ty);
+        }
         while let Some((node, indexed)) = stack.pop() {
             if node == NONE {
                 self.eval_chain.pop();
@@ -1284,10 +1325,36 @@ impl Core<'_> {
             }
             if let Some(own) = own
                 && !self.is_kept(node)?
-                && (!self.is_reactive(node)? || runtime_in_own(op, own))
+                && (!self.is_reactive(node)? || self.runtime_in_own(node, own, &mut unfixed)?)
             {
-                self.unflowed.insert(node);
-                let value = match self.evaluate(node, own)? {
+                let flowed = match flowing.get(&(self.inst, node)).copied() {
+                    Some(ty)
+                        if self.is_reactive(node)?
+                            && (widens(own, ty)
+                                || (fact.fixed.is_none()
+                                    && int_range(own).is_some()
+                                    && int_range(ty).is_some())) =>
+                    {
+                        Some(ty)
+                    }
+                    Some(_) | None => None,
+                };
+                if flowed.is_none() {
+                    self.unflowed.insert(node);
+                }
+                let divided = op == Op::Div
+                    && fact.own().is_none()
+                    && matches!(own, EvalTy::F32 | EvalTy::F64);
+                let evaluated = if let Some(ty) = flowed {
+                    ty
+                } else if !divided {
+                    own
+                } else if self.is_reactive(node)? {
+                    self.division_ty(a, b)?
+                } else {
+                    EvalTy::Exact
+                };
+                let value = match self.evaluate(node, evaluated)? {
                     Ok(value) => value,
                     Err(declined) => return Ok(Err(declined)),
                 };
@@ -1298,6 +1365,10 @@ impl Core<'_> {
             }
             match op {
                 Op::If => {
+                    if let Some(ty) = flowing.get(&(self.inst, node)).copied() {
+                        flowing.insert((self.inst, b), ty);
+                        flowing.insert((self.inst, c), ty);
+                    }
                     let condition = self.fact(a)?;
                     if condition.dims.is_empty()
                         && !matches!(condition.leaf, Leaf::Bool | Leaf::Placeholder | Leaf::Error)
@@ -1520,6 +1591,76 @@ impl Core<'_> {
         Ok(Ok(()))
     }
 
+    fn runtime_in_own(
+        &self,
+        node: u32,
+        own: EvalTy,
+        unfixed: &mut HashMap<(u32, u32), bool>,
+    ) -> Result<bool, Internal> {
+        let (op, ..) = self.ir.node(node)?;
+        if int_range(own).is_some() {
+            return Ok(matches!(
+                op,
+                Op::Neg | Op::Add | Op::Sub | Op::Mul | Op::Rem | Op::Pow | Op::IntDiv
+            ));
+        }
+        let computed = match own {
+            EvalTy::F32 | EvalTy::F64 => matches!(
+                op,
+                Op::Neg | Op::Add | Op::Sub | Op::Mul | Op::Div | Op::Rem | Op::Pow
+            ),
+            EvalTy::Bool => matches!(op, Op::Lt | Op::Le | Op::Gt | Op::Ge | Op::Is | Op::IsNot),
+            EvalTy::Exact
+            | EvalTy::Default
+            | EvalTy::U8
+            | EvalTy::I32
+            | EvalTy::I64
+            | EvalTy::DefaultF32
+            | EvalTy::DefaultF64
+            | EvalTy::Enum(_)
+            | EvalTy::Str
+            | EvalTy::Node => false,
+        };
+        Ok(computed && !self.reads_unfixed_number(node, unfixed)?)
+    }
+
+    fn reads_unfixed_number(
+        &self,
+        node: u32,
+        unfixed: &mut HashMap<(u32, u32), bool>,
+    ) -> Result<bool, Internal> {
+        if let Some(found) = unfixed.get(&(self.inst, node)) {
+            return Ok(*found);
+        }
+        let mut kids = Vec::new();
+        for at in self.postorder(node)? {
+            if unfixed.contains_key(&(self.inst, at)) {
+                continue;
+            }
+            let fact = self.fact(at)?;
+            let read = self.ir.node(at)?.0 == Op::Name
+                && matches!(fact.leaf, Leaf::Float | Leaf::Int)
+                && self.is_reactive(at)?
+                && match self.bound(at)? {
+                    DeclRef::Cell(cell) => self.cell_annotation_ty(cell)?.is_none(),
+                    DeclRef::Let(_)
+                    | DeclRef::Param(_)
+                    | DeclRef::None
+                    | DeclRef::Instance(_)
+                    | DeclRef::Duplicate
+                    | DeclRef::Fn(_) => fact.own().is_none(),
+                };
+            kids.clear();
+            self.push_operands(at, &mut kids)?;
+            let found = read
+                || kids
+                    .iter()
+                    .any(|kid| unfixed.get(&(self.inst, *kid)).copied().unwrap_or(false));
+            unfixed.insert((self.inst, at), found);
+        }
+        Ok(unfixed.get(&(self.inst, node)).copied().unwrap_or(false))
+    }
+
     fn integer_literal(
         &mut self,
         node: u32,
@@ -1619,12 +1760,4 @@ impl Core<'_> {
             }
         }
     }
-}
-
-fn runtime_in_own(op: Op, own: EvalTy) -> bool {
-    int_range(own).is_some()
-        && matches!(
-            op,
-            Op::Neg | Op::Add | Op::Sub | Op::Mul | Op::Rem | Op::Pow | Op::IntDiv
-        )
 }

@@ -4,7 +4,7 @@ use std::collections::{BTreeSet, HashMap};
 
 use support::Compiler;
 use symphonyscript::{Code, Source};
-use symphonyscript_fixtures::{Rows, covered};
+use symphonyscript_fixtures::{Rows, covered, covered_where};
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 enum Element {
@@ -1478,8 +1478,23 @@ fn exhaustive_the_arms_of_a_match_on_an_enum_input_agree_wherever_it_stands() {
 
 #[test]
 fn the_arms_of_a_match_on_an_integer_input_agree_wherever_it_stands() {
-    assert_covered_arms_hold(Chooser::Integer, 527, 0);
+    assert_outcome(
+        &covered_where(|rows| arms_hold(rows, Chooser::Integer), |at| at % 3 == 0),
+        (INTEGER_INPUT_FIRST_THIRD, 0),
+    );
 }
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_the_arms_of_a_match_on_an_integer_input_agree_wherever_it_stands_in_the_rest_of_the_covering()
+ {
+    assert_outcome(
+        &covered_where(|rows| arms_hold(rows, Chooser::Integer), |at| at % 3 != 0),
+        (527 - INTEGER_INPUT_FIRST_THIRD, 0),
+    );
+}
+
+const INTEGER_INPUT_FIRST_THIRD: usize = 176;
 
 #[test]
 #[ignore = "exhaustive"]
@@ -1747,12 +1762,31 @@ fn exhaustive_differential_the_arms_of_a_compile_time_false_choice_agree_whereve
     );
 }
 
+fn runtime_choice_differential(part: usize) {
+    support::assert_both_engines_agree(|| {
+        let outcome = cases_hold(&Rows::Every, Chooser::Flag, |case| {
+            (case.pair * 2 + usize::from(case.reversed)) % 3 == part
+        });
+        support::assert_no_failure(&outcome.failures);
+    });
+}
+
 #[test]
 #[ignore = "exhaustive"]
-fn exhaustive_differential_the_arms_of_a_runtime_choice_agree_wherever_it_stands() {
-    support::assert_both_engines_agree(
-        exhaustive_the_arms_of_a_runtime_choice_agree_wherever_it_stands,
-    );
+fn exhaustive_differential_the_arms_of_a_runtime_choice_agree_wherever_it_stands_part_1() {
+    runtime_choice_differential(0);
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_differential_the_arms_of_a_runtime_choice_agree_wherever_it_stands_part_2() {
+    runtime_choice_differential(1);
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_differential_the_arms_of_a_runtime_choice_agree_wherever_it_stands_part_3() {
+    runtime_choice_differential(2);
 }
 
 #[test]

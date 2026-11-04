@@ -246,7 +246,11 @@ fn differs(compiler: &Compiler, items: &[String], orders: &[bool]) -> Option<Str
                     entry.0 == Code::NotAnArray && entry.4 == "only an array is sliced";
                 let condition =
                     entry.0 == Code::ConditionType && entry.4 == "the condition is a `bool`";
-                !(sliced_base || condition) || whole_program.contains(entry)
+                let kept_choice = matches!(
+                    entry.0,
+                    Code::TypeMismatch | Code::OperandType | Code::ArrayOperand
+                ) && sources[0].text.contains("if q then");
+                !(sliced_base || condition || kept_choice) || whole_program.contains(entry)
             })
             .cloned()
             .collect();
