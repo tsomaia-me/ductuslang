@@ -1194,7 +1194,6 @@ impl Core<'_> {
             Op::If
             | Op::Str
             | Op::Variant
-            | Op::To
             | Op::Field
             | Op::Call
             | Op::NamedCall
@@ -1208,7 +1207,7 @@ impl Core<'_> {
             | Op::TyName
             | Op::TyArray
             | Op::TyVar => return Err(Internal::missed("an op the coverage table leaves out")),
-            Op::Bad => Value::Error,
+            Op::Bad | Op::To => Value::Error,
         }))
     }
 

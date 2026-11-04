@@ -378,7 +378,6 @@ impl Core<'_> {
             },
             Op::Str
             | Op::Variant
-            | Op::To
             | Op::MethodCall
             | Op::NamedMethodCall
             | Op::Past
@@ -388,7 +387,7 @@ impl Core<'_> {
             | Op::TyName
             | Op::TyArray
             | Op::TyVar => return Err(Internal::missed("an op the coverage table leaves out")),
-            Op::Bad => Fact::PLACEHOLDER,
+            Op::Bad | Op::To => Fact::PLACEHOLDER,
         }))
     }
 
@@ -752,12 +751,19 @@ impl Core<'_> {
         let taken = match self.evaluate(condition, EvalTy::Bool)? {
             Ok(Value::Bool(true)) => first.dims,
             Ok(Value::Bool(false)) => second.dims,
-            Ok(Value::Error) if self.inst != NONE && !self.is_reactive(condition)? => first
-                .dims
-                .iter()
-                .zip(&second.dims)
-                .map(|(a, b)| if a == b { *a } else { ANY_LENGTH })
-                .collect(),
+            Ok(Value::Error)
+                if (self.inst != NONE && !self.is_reactive(condition)?)
+                    || (self.inst == NONE
+                        && self.in_body(condition).is_ok_and(|key| key.is_none())
+                        && self.is_reactive(condition)?) =>
+            {
+                first
+                    .dims
+                    .iter()
+                    .zip(&second.dims)
+                    .map(|(a, b)| if a == b { *a } else { ANY_LENGTH })
+                    .collect()
+            }
             Ok(
                 Value::Int(_)
                 | Value::F32(_)

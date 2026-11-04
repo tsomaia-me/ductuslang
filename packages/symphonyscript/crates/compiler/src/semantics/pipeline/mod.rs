@@ -46,6 +46,8 @@ mod slice;
 mod stages;
 mod step;
 mod store;
+#[cfg(test)]
+mod to_tests;
 mod typing;
 mod values;
 mod width;

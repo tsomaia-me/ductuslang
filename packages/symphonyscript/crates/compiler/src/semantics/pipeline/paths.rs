@@ -11,12 +11,13 @@ use super::reason::Reason;
 use crate::diagnostics::Code;
 use crate::semantics::Internal;
 use crate::semantics::counted_walk::CountedWalk;
-use crate::semantics::ir::flat::{AttrForm, NONE, Op};
+use crate::semantics::ir::flat::{ABSENT, AttrForm, ItemRec, NONE, Op};
 use crate::semantics::operators::EvalTy;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum End {
     Row(u32),
+    To,
     Attr(u32),
     Placeholder,
     Value,
@@ -265,8 +266,11 @@ impl Core<'_> {
             .ok_or(Internal::missed("node kind"))?;
         let text = self.ir.symbols.text(entry.sym).to_string();
         let Some(attr) = decl.attrs.iter().position(|attr| attr.name == text) else {
+            if self.may_name_any(row)? {
+                return Ok(Ok(End::Placeholder));
+            }
             let span = self.span(self.file_of(node), entry.lo, entry.hi);
-            let owner = format!("the `{}` named `{}`", decl.name, self.named_row_text(row)?);
+            let owner = self.row_owner(row)?;
             self.draw(
                 Code::UnknownAttribute,
                 span,
@@ -307,6 +311,12 @@ impl Core<'_> {
                     return Ok(Err(Declined(Reason::Member)));
                 }
             }
+        } else if op == Op::To {
+            if self.to_wire(receiver).is_some() {
+                End::To
+            } else {
+                End::Placeholder
+            }
         } else if op == Op::Field {
             *ends
                 .get(&receiver)
@@ -316,6 +326,8 @@ impl Core<'_> {
         };
         match start {
             End::Row(row) => self.step_row(node, row, field),
+            End::To if self.is_field_receiver(node) => Ok(Ok(End::To)),
+            End::To => self.destination_path_end(node),
             End::Attr(_) => {
                 let text = self.ir.name_text(field).unwrap_or_default().to_string();
                 self.draw_at(
@@ -333,6 +345,8 @@ impl Core<'_> {
 
     pub fn resolve_paths(&mut self) -> Stage<()> {
         self.index_children()?;
+        self.index_to_wires()?;
+        self.misplaced_to()?;
         let mut ends: HashMap<u32, End> = HashMap::new();
         for local in 0..self.ir.op.len() {
             if self.ir.op.get(local) != Some(&Op::Field)
@@ -354,7 +368,7 @@ impl Core<'_> {
                             *slot = at;
                         }
                     }
-                    End::Placeholder | End::Value => {}
+                    End::Placeholder | End::Value | End::To => {}
                 }
             }
             ends.insert(node, end);
@@ -465,5 +479,230 @@ impl Core<'_> {
             }
         }
         Ok(Ok(()))
+    }
+}
+
+impl Core<'_> {
+    fn index_to_wires(&mut self) -> Result<(), Internal> {
+        let mut rows: HashMap<u32, u32> = HashMap::new();
+        for (at, row) in self.wires.iter().enumerate() {
+            rows.insert(row.item, u32::try_from(at).unwrap_or(u32::MAX));
+        }
+        let mut found = Vec::new();
+        for (item, rec) in self.ir.items.iter().enumerate() {
+            let ItemRec::Wire(wire) = rec else {
+                continue;
+            };
+            let item = u32::try_from(item).unwrap_or(u32::MAX);
+            if self.ir.dropped(item) {
+                continue;
+            }
+            let mut roots = vec![wire.default];
+            let entries = self
+                .ir
+                .attr_entries
+                .get(wire.attrs.0 as usize..wire.attrs.1 as usize)
+                .unwrap_or_default();
+            for entry in entries {
+                if let AttrForm::Value(value) = entry.form {
+                    roots.push(value);
+                }
+            }
+            let wire_at = rows.get(&item).copied().unwrap_or(NONE);
+            for root in roots.into_iter().filter(|root| *root != NONE) {
+                for node in self.deep_postorder(root)? {
+                    let mut current = node;
+                    loop {
+                        CountedWalk::CorePathStep.step();
+                        let (op, receiver, _, _) = self.ir.node(current)?;
+                        if op == Op::Field {
+                            current = receiver;
+                            continue;
+                        }
+                        if op == Op::To {
+                            found.push((current, wire_at));
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+        found.sort_unstable();
+        found.dedup();
+        self.to_wires = found;
+        Ok(())
+    }
+
+    fn to_wire(&self, node: u32) -> Option<u32> {
+        let at = self.to_wires.partition_point(|entry| entry.0 < node);
+        self.to_wires
+            .get(at)
+            .filter(|entry| entry.0 == node)
+            .map(|entry| entry.1)
+    }
+
+    fn misplaced_to(&mut self) -> Result<(), Internal> {
+        for local in 0..self.ir.op.len() {
+            if self.ir.op.get(local) != Some(&Op::To)
+                || !self.reached.get(local).copied().unwrap_or(false)
+            {
+                continue;
+            }
+            let node = self.ir.base + u32::try_from(local).unwrap_or(u32::MAX);
+            if self.to_wire(node).is_none() {
+                self.draw_at(
+                    Code::MisplacedTo,
+                    node,
+                    "`to` is written only in a wire placement's `/expr`, gate and attribute clause",
+                )?;
+            } else if !self.is_field_receiver(node) {
+                self.draw_at(
+                    Code::MisplacedTo,
+                    node,
+                    "`to` starts a path that ends at an attribute, as in `to.gain`",
+                )?;
+            }
+        }
+        Ok(())
+    }
+
+    fn row_owner(&self, row: u32) -> Result<String, Internal> {
+        let kind = self
+            .instances
+            .get(row as usize)
+            .ok_or(Internal::missed("row"))?
+            .kind;
+        let decl = self
+            .vocabulary
+            .node_kind(kind)
+            .ok_or(Internal::missed("node kind"))?;
+        Ok(format!(
+            "the `{}` named `{}`",
+            decl.name,
+            self.named_row_text(row)?
+        ))
+    }
+
+    fn destination_path_end(&mut self, node: u32) -> Stage<End> {
+        let mut segments = Vec::new();
+        let mut current = node;
+        loop {
+            CountedWalk::CorePathStep.step();
+            let (op, receiver, field, _) = self.ir.node(current)?;
+            if op != Op::Field {
+                break;
+            }
+            segments.push(field);
+            current = receiver;
+        }
+        segments.reverse();
+        let wire = self
+            .to_wire(current)
+            .ok_or(Internal::missed("a `to` path's wire"))?;
+        if wire == NONE {
+            return Ok(Ok(End::Placeholder));
+        }
+        let row = *self
+            .wires
+            .get(wire as usize)
+            .ok_or(Internal::missed("wire row"))?;
+        let mut target = match self.wire_targets(&row).as_slice() {
+            [] => return Ok(Ok(End::Placeholder)),
+            [target] => *target,
+            _ => {
+                return Err(Internal::missed(
+                    "a destination the coverage table leaves out",
+                ));
+            }
+        };
+        let text = segments
+            .iter()
+            .map(|segment| self.ir.name_text(*segment).unwrap_or_default())
+            .collect::<Vec<_>>()
+            .join(".");
+        let file = self.file_of(node);
+        let (last, steps) = segments
+            .split_last()
+            .ok_or(Internal::missed("a `to` path's segment"))?;
+        for step in steps {
+            let entry = *self.ir.name(*step).ok_or(Internal::missed("IR name"))?;
+            if let Some(child) = self.child_named(target, entry.sym.0) {
+                target = child;
+                continue;
+            }
+            if self.may_name_any(target)? {
+                return Ok(Ok(End::Placeholder));
+            }
+            let owner = self.row_owner(target)?;
+            let span = self.span(file, entry.lo, entry.hi);
+            let name = self.ir.symbols.text(entry.sym).to_string();
+            self.draw(
+                Code::UnknownAttribute,
+                span,
+                format!(
+                    "{owner} has no named child, wire or pattern use `{name}`, so `to.{text}` reads nothing there"
+                ),
+            );
+            return Ok(Ok(End::Value));
+        }
+        let entry = *self.ir.name(*last).ok_or(Internal::missed("IR name"))?;
+        let span = self.span(file, entry.lo, entry.hi);
+        if self.child_named(target, entry.sym.0).is_some() {
+            self.draw(
+                Code::MisplacedTo,
+                span,
+                format!(
+                    "`to.{text}` ends at an instance or a wire; a `to` path ends at an attribute"
+                ),
+            );
+            return Ok(Ok(End::Value));
+        }
+        let kind = self
+            .instances
+            .get(target as usize)
+            .ok_or(Internal::missed("row"))?
+            .kind;
+        let decl = self
+            .vocabulary
+            .node_kind(kind)
+            .ok_or(Internal::missed("node kind"))?;
+        let name = self.ir.symbols.text(entry.sym).to_string();
+        let Some(attr) = decl.attrs.iter().position(|attr| attr.name == name) else {
+            if self.may_name_any(target)? {
+                return Ok(Ok(End::Placeholder));
+            }
+            let owner = self.row_owner(target)?;
+            self.draw(
+                Code::UnknownAttribute,
+                span,
+                format!("the destination, {owner}, has no attribute `{name}`"),
+            );
+            return Ok(Ok(End::Value));
+        };
+        let declared = decl.attrs.get(attr).ok_or(Internal::missed("attribute"))?;
+        let Some(ty) = super::check::expected(declared) else {
+            return Ok(Err(Declined(super::check::attribute_reason(declared))));
+        };
+        Ok(Ok(End::Attr(self.attr_read(target, attr, ty)?)))
+    }
+}
+
+impl Core<'_> {
+    fn may_name_any(&self, row: u32) -> Result<bool, Internal> {
+        let record = *self
+            .instances
+            .get(row as usize)
+            .ok_or(Internal::missed("row"))?;
+        let placement = self.placement(record.item)?;
+        if placement.body == NONE || placement.body == ABSENT {
+            return Ok(false);
+        }
+        Ok(self
+            .ir
+            .blocks
+            .get(placement.body as usize)
+            .is_some_and(|block| {
+                block.items.0 == block.items.1 && block.members.0 == block.members.1
+            }))
     }
 }

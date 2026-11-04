@@ -738,3 +738,43 @@ fn stress_paths_through_named_instances_cost_time_and_memory_linear_in_the_paths
         Timing::Judged,
     ));
 }
+
+#[test]
+fn a_join_of_a_reactive_choice_with_an_array_of_another_type_draws_its_type_mismatch_beside_reactive_let_464()
+ {
+    let compiler = Compiler::new(&vocabulary()).expect("the vocabulary compiles");
+    for (joined, expected) in [
+        ("[3]", &["reactive-let"][..]),
+        ("[true]", &["reactive-let", "type-mismatch"][..]),
+    ] {
+        let text = format!(
+            "state f(false)\nlet m = (if f then [1, 2] else [3, 4, 5]) + {joined}\nClip c:\n    Note/(m[0])\n"
+        );
+        let found = run(&compiler, &text).expect("the new core takes the program");
+        assert_eq!(codes(&found.diagnostics), expected, "{text}");
+    }
+}
+
+fn to_chains(n: usize) -> String {
+    let mut text = String::new();
+    for at in 0..n {
+        let next = (at + 1) % n;
+        let far = (at + 7) % n;
+        text.push_str(&format!(
+            "Clip c{at} | gain=0.5:\n    Note as h /60 | velocity=0.25\n    Plays | gain=to.h.velocity transpose=to.h.pitch: c{next}\n    Plays | gain=to.gain: c{far}\n"
+        ));
+    }
+    text
+}
+
+#[test]
+#[ignore = "stress"]
+fn stress_to_paths_cost_time_and_memory_linear_in_the_wires_and_their_paths() {
+    assert_none(&ledger_failures(
+        "to paths",
+        [5_000, 10_000, 20_000],
+        to_chains,
+        &none,
+        Timing::Judged,
+    ));
+}

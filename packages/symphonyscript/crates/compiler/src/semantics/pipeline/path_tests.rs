@@ -44,7 +44,7 @@ fn a_path_through_named_instances_and_their_children_reads_the_attribute_as_the_
 
 #[test]
 fn a_path_draws_its_unknown_attribute_cycle_and_type_faults_beside_its_valid_twin() {
-    let cases: [(&str, &[Code]); 8] = [
+    let cases: [(&str, &[Code]); 11] = [
         (
             "Clip c | level=2:\n    Note as h /60\nClip d | gain=c.level:\n    Note/c.h.pitch\n",
             &[],
@@ -70,6 +70,15 @@ fn a_path_draws_its_unknown_attribute_cycle_and_type_faults_beside_its_valid_twi
         (
             "Clip c:\n    Note as h /60\n    Note as h /61\n",
             &[Code::ChildNameClash],
+        ),
+        ("Clip a | gain=b.gain:\n    Note\nClip b:\n    Note\n", &[]),
+        (
+            "Clip a | gain=b.sequence:\n    Note\nClip b:\n    Note\n",
+            &[Code::UnknownAttribute],
+        ),
+        (
+            "Clip a | seq=b.sequence:\n    Note\nClip b:\n    Note\n",
+            &[Code::UnknownAttribute, Code::UnknownAttribute],
         ),
     ];
     let vocabulary = symphonyscript_fixtures::vocabulary();

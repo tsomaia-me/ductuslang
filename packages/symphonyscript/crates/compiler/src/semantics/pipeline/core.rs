@@ -98,6 +98,7 @@ pub(crate) struct Core<'a> {
     pub attr_order: Vec<u32>,
     pub field_receivers: Vec<u32>,
     pub child_index: Vec<(u32, u32, u32)>,
+    pub to_wires: Vec<(u32, u32)>,
 }
 
 impl<'a> Core<'a> {
@@ -178,6 +179,7 @@ impl<'a> Core<'a> {
             attr_order: Vec::new(),
             field_receivers: Vec::new(),
             child_index: Vec::new(),
+            to_wires: Vec::new(),
         }
     }
 
