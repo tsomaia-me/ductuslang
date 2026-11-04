@@ -24,9 +24,6 @@ impl Core<'_> {
     fn row(&mut self, item: u32, file: u32, parent: u32, env: u32) -> Stage<u32> {
         CountedWalk::CoreExpandRow.step();
         let placement = self.placement(item)?;
-        if env != NONE && placement.has_as {
-            return Ok(Err(Declined(Reason::BodyItem)));
-        }
         let Some(kind_name) = self
             .ir
             .name_text(placement.kind)
@@ -85,6 +82,7 @@ impl Core<'_> {
     }
 
     pub fn expand(&mut self) -> Stage<()> {
+        self.named_in_loops()?;
         let mut pending: Vec<u32> = Vec::new();
         for (file, rec) in self.ir.files.iter().enumerate() {
             let file = u32::try_from(file).unwrap_or(0);
@@ -200,9 +198,8 @@ impl Core<'_> {
                 }
             };
             match *self.ir.item(item)? {
-                ItemRec::Wire(_) if env != NONE => return Ok(Err(Declined(Reason::BodyItem))),
                 ItemRec::Wire(_) => {
-                    if let Err(declined) = self.wire_row(item, record.file, parent)? {
+                    if let Err(declined) = self.wire_row(item, record.file, parent, env)? {
                         return Ok(Err(declined));
                     }
                 }
@@ -218,6 +215,9 @@ impl Core<'_> {
                         Some(run) if run.count == 0 => {
                             if let Err(declined) = self.unrun_names(item, record.file)? {
                                 return Ok(Err(declined));
+                            }
+                            if run.open {
+                                self.open_body(item, parent)?;
                             }
                         }
                         Some(run) => work.push(Work::Loop(run)),

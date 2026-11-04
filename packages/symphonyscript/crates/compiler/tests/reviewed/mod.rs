@@ -161,6 +161,34 @@ pub const REVIEWED: &[Reviewed] = &[
         ],
     ),
     (
+        "476",
+        "state sec(0)\nSession s:\n    Clip as a:\n        Plays | gain=to.seq[0]: b\n        Plays | gain=to.seq.size: [b, c][sec]\n        Plays | gain=to.seq[3]: [b, c][sec]\n        Plays | gain=to.seq[0]: c\n    Clip as b\n    Clip as c | seq=[1, 2, 3]\n    Clip as d | seq=(if sec > 0 then b.seq else c.seq)\n    Clip as e | seq=(if sec > 0 then b.seq else c.seq) + [1, 2]\n",
+        &[
+            ("child-not-accepted", "Clip as a"),
+            ("child-not-accepted", "Clip as b"),
+            ("child-not-accepted", "Clip as c | seq=[1, 2, 3]"),
+            (
+                "child-not-accepted",
+                "Clip as d | seq=(if sec > 0 then b.seq else c.seq)",
+            ),
+            (
+                "child-not-accepted",
+                "Clip as e | seq=(if sec > 0 then b.seq else c.seq) + [1, 2]",
+            ),
+            ("to-candidates", "seq"),
+            ("unknown-attribute", "seq"),
+            ("unknown-attribute", "seq"),
+            ("unknown-attribute", "seq"),
+            ("unknown-attribute", "seq"),
+            ("unknown-attribute", "seq"),
+            ("unknown-attribute", "seq"),
+            ("unknown-attribute", "seq"),
+            ("unknown-attribute", "seq"),
+            ("unknown-attribute", "seq"),
+            ("unknown-attribute", "seq"),
+        ],
+    ),
+    (
         LIMIT_STOP,
         "fn g(x): for i in 0..x into a from 0: a + i\nfn f(x): g(x) + g(x)\nClip c:\n    Note/(f(2))\n    Note/(f(2))\n    Note/(f(2))\n",
         &[
@@ -168,9 +196,21 @@ pub const REVIEWED: &[Reviewed] = &[
             ("limit-warning", "for i in 0..x into a from 0: a + i"),
         ],
     ),
+    (
+        LOOP_HEAD_STOP,
+        "fn f(x): x\nClip c:\n    for k in 0..(f(0) + f(0) + f(0) + f(0) + f(0) + f(0) + f(0)):\n        Note\n",
+        &[("limit-warning", "f(0)")],
+    ),
+    (
+        LOOP_HEAD_STOP,
+        "fn f(x): x\nClip c:\n    for k in 0..(f(0) + f(0) + f(0) + f(0) + f(0) + f(0) + f(0) + f(0) + f(0) + f(0) + f(0) + f(0)):\n        Note\n",
+        &[("inline-limit", "f(0)"), ("limit-warning", "f(0)")],
+    ),
 ];
 
 pub const LIMIT_STOP: &str = "limit-stop (H11)";
+
+pub const LOOP_HEAD_STOP: &str = "limit-stop (loop head, source order)";
 
 pub type Carried = (
     &'static str,
@@ -5088,6 +5128,48 @@ fn choice_arm_in_the_cells_type(seen: &Seen<'_>, change: Change, at: &Drawn) -> 
         }
 }
 
+fn annotated_placement_loop_name(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
+    if at.0 != "type-mismatch" {
+        return false;
+    }
+    let head = seen.before(at).rsplit('\n').next().unwrap_or_default();
+    let rest = seen.after(at).split('\n').next().unwrap_or_default();
+    let line = format!("{head}{}{rest}", seen.text(at));
+    let names = line
+        .trim_start()
+        .strip_prefix("for ")
+        .and_then(|tail| tail.split_once(" in "))
+        .map(|(names, _)| names);
+    let Some(names) = names else {
+        return false;
+    };
+    if !line.starts_with(' ') || line.contains(" into ") || !names.contains(": ") {
+        return false;
+    }
+    match change {
+        Change::Added | Change::Restated => {
+            seen.after(at).starts_with(": ") && (head.ends_with("for ") || head.ends_with(", "))
+        }
+        Change::Removed => head.ends_with(" in ") && rest == ":",
+    }
+}
+
+fn inline_order_in_a_loop_head(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
+    let line = seen.before(at).rsplit('\n').next().unwrap_or_default();
+    let rest = seen.after(at).split('\n').next().unwrap_or_default();
+    let in_a_head = line.trim_start().starts_with("for ")
+        && line.contains(" in ")
+        && !line.contains(" into ")
+        && !rest.contains(" into ");
+    let call = seen.text(at).ends_with(')') && seen.text(at).contains('(');
+    let count = |set: &[Drawn]| set.iter().filter(|drawn| drawn.0 == at.0).count();
+    change != Change::Restated
+        && matches!(at.0.as_str(), "inline-limit" | "limit-warning")
+        && in_a_head
+        && call
+        && count(seen.old) == count(seen.new)
+}
+
 pub struct Class {
     pub ledger: &'static str,
     pub rule: &'static str,
@@ -5216,6 +5298,16 @@ pub const CLASSES: &[Class] = &[
         rule: "a literal arm beside an annotated cell's read is checked in the choice's own type, the cell's (ARCHITECTURE §7's own-type sentence), so it draws does-not-fit against an integer cell's type, which the old engine misses, and none beside an f64 cell, where the old engine checks it against f32",
         explains: choice_arm_in_the_cells_type,
     },
+    Class {
+        ledger: LOOP_HEAD_STOP,
+        rule: "a loop head's calls are inlined in source order, left to right (ARCHITECTURE §7 stage 6: a frame evaluates an operator's operands in source order), so its limit-warning and inline-limit fall on the calls that order reaches past the warning value and the limit, where the old engine counts right to left",
+        explains: inline_order_in_a_loop_head,
+    },
+    Class {
+        ledger: "476",
+        rule: "an annotated name of a placement `for` fixes its type as a `for` expression's does (SPEC §7.9, §4.5), so elements that do not have the annotated type draw one type-mismatch at the name with the loop name's summary, where the old engine draws it at the iterable or with a value's summary",
+        explains: annotated_placement_loop_name,
+    },
 ];
 
 fn annotated_let_value(seen: &Seen<'_>, at: &Drawn) -> bool {
@@ -5328,4 +5420,13 @@ pub fn restated(program: &str, old: &[Drawn], new: &[Drawn], at: &Drawn) -> bool
     CLASSES
         .iter()
         .any(|class| (class.explains)(&seen, Change::Restated, at))
+}
+
+pub fn holds_a_placement_for(program: &str) -> bool {
+    program.lines().any(|line| {
+        line.starts_with(' ')
+            && line.trim_start().starts_with("for ")
+            && line.contains(" in ")
+            && !line.contains(" into ")
+    })
 }

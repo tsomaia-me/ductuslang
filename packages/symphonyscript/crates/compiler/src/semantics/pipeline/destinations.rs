@@ -51,18 +51,13 @@ impl Core<'_> {
                 continue;
             }
             let root = self.wire_rec(row.item)?.destination;
-            let fact = match self.ensure_typed(root)? {
-                Ok(fact) => fact,
-                Err(declined) => return Ok(Err(declined)),
-            };
+            let saved = self.enter_env(row.env);
             let mut found = Vec::new();
-            let choice = if self.names_one_instance(root, &fact)? {
-                match self.choose(root, true, &mut found)? {
-                    Ok(choice) => choice,
-                    Err(declined) => return Ok(Err(declined)),
-                }
-            } else {
-                Choice::Unknown
+            let chosen = self.chosen_destination(root, &mut found);
+            self.leave_env(saved);
+            let choice = match chosen? {
+                Ok(choice) => choice,
+                Err(declined) => return Ok(Err(declined)),
             };
             let first = u32::try_from(self.candidates.len()).unwrap_or(u32::MAX);
             match choice {
@@ -228,5 +223,18 @@ impl Core<'_> {
             | Value::Array(_)
             | Value::Error => Test::Faulty,
         }))
+    }
+}
+
+impl Core<'_> {
+    fn chosen_destination(&mut self, root: u32, found: &mut Vec<u32>) -> Stage<Choice> {
+        let fact = match self.ensure_typed(root)? {
+            Ok(fact) => fact,
+            Err(declined) => return Ok(Err(declined)),
+        };
+        if self.names_one_instance(root, &fact)? {
+            return self.choose(root, true, found);
+        }
+        Ok(Ok(Choice::Unknown))
     }
 }

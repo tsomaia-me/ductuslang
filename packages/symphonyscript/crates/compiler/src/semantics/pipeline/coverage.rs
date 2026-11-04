@@ -192,7 +192,7 @@ fn loop_landed(ir: &FlatIr, rec: &ForBlockRec) -> bool {
     let head = rec.head;
     let names = head.names.1.saturating_sub(head.names.0);
     (1..=2).contains(&names)
-        && (head.names.0..head.names.1).all(|binder| !annotated(ir, binder))
+        && (head.names.0..head.names.1).all(|binder| scalar_annotation(ir, binder))
         && head.iterable.0 != NONE
         && (!head.range || head.iterable.1 != NONE)
         && ir.blocks.get(rec.body as usize).is_some_and(|block| {

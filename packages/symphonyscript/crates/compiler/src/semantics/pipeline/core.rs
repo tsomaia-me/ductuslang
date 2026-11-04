@@ -109,7 +109,9 @@ pub(crate) struct Core<'a> {
     pub loops: Vec<u32>,
     pub envs: Vec<super::env::Env>,
     pub env_vals: Vec<CoreValue>,
-    pub loop_uses: HashMap<(u32, u32), [bool; 2]>,
+    pub loop_items: HashMap<(u32, u32, usize), CoreValue>,
+    pub open_children: HashMap<u32, Vec<symphonyscript_core::NodeKind>>,
+    pub loop_reads: BTreeMap<(u32, u32, usize), CoreValue>,
 }
 
 impl<'a> Core<'a> {
@@ -200,7 +202,9 @@ impl<'a> Core<'a> {
             loops: super::loops::loop_items(ir),
             envs: Vec::new(),
             env_vals: Vec::new(),
-            loop_uses: HashMap::new(),
+            loop_items: HashMap::new(),
+            open_children: HashMap::new(),
+            loop_reads: BTreeMap::new(),
         }
     }
 

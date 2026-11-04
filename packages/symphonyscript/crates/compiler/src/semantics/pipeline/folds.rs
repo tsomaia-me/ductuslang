@@ -27,10 +27,11 @@ pub(crate) fn dims_agree(a: &[u32], b: &[u32]) -> bool {
 
 const ROUNDS: u32 = 4;
 
-const ELEMENT_TYPE: &str =
+pub(crate) const ELEMENT_TYPE: &str =
     "the elements do not have the loop name's annotated type; a conversion states the rounding";
-const ELEMENT_SHAPE: &str = "the elements' shape differs from the loop name's annotated type";
-const RANGE_TYPE: &str = "a range's values do not have the loop name's annotated type";
+pub(crate) const ELEMENT_SHAPE: &str =
+    "the elements' shape differs from the loop name's annotated type";
+pub(crate) const RANGE_TYPE: &str = "a range's values do not have the loop name's annotated type";
 
 const START_AND_BODY: &str =
     "the start and the body of a `for` expression hold values of different types";

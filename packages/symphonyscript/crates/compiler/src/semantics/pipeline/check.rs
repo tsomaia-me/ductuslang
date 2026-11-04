@@ -110,9 +110,10 @@ impl Core<'_> {
                 lo: rec.lo,
                 hi: rec.hi,
             };
-            if let Err(declined) =
-                self.item_attributes(item, &decl.name, &decl.attrs, decl.default_attr)?
-            {
+            let saved = self.enter_env(row.env);
+            let checked = self.item_attributes(item, &decl.name, &decl.attrs, decl.default_attr);
+            self.leave_env(saved);
+            if let Err(declined) = checked? {
                 return Ok(Err(declined));
             }
         }
@@ -565,7 +566,14 @@ impl Core<'_> {
                     ),
                 );
             }
-            if found.len() < count.min() as usize && !self.unknown_children.contains(&parent) {
+            let open = self
+                .open_children
+                .get(&parent)
+                .is_some_and(|kinds| kinds.contains(kind));
+            if found.len() < count.min() as usize
+                && !open
+                && !self.unknown_children.contains(&parent)
+            {
                 let span = self.row_span(parent)?;
                 self.draw(
                     Code::CountBelowMinimum,
