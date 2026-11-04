@@ -2,7 +2,8 @@ use crate::compiler::Compiler;
 use crate::diagnostics::Code;
 use crate::syntax::front_end_goldens::source;
 
-const TO_PATHS: [&str; 20] = [
+const TO_PATHS: [&str; 21] = [
+    "fn f(): to.gain\nClip a:\n    Plays | gain=f(): b\nClip b:\n    Note/1\n",
     "Clip verse:\n    Plays | gain=to.hook.velocity: chorus\nClip chorus:\n    Note as hook /72 | velocity=0.9\n",
     "Clip a:\n    Plays | gain=to.gain: b\nClip b | gain=0.25:\n    Note/1\n",
     "Clip a:\n    Plays | gain=to.level: b\nClip b:\n    Note/1\n",
@@ -101,12 +102,12 @@ fn a_to_path_draws_its_unknown_attribute_and_misplaced_to_faults_beside_its_vali
 }
 
 #[test]
-fn a_to_path_in_a_function_body_or_a_gate_stays_with_the_old_engine() {
+fn a_to_path_in_a_gate_or_a_named_wire_stays_with_the_old_engine() {
     let vocabulary = symphonyscript_fixtures::vocabulary();
     let new = Compiler::new(&vocabulary).expect("the vocabulary compiles");
     for text in [
-        "fn f(): to.gain\nClip a:\n    Plays | gain=f(): b\nClip b:\n    Note/1\n",
         "Clip a:\n    Plays when to.gain > 0.5: b\nClip b:\n    Note/1\n",
+        "Clip a:\n    Plays as w | gain=to.gain: b\nClip b:\n    Note/1\n",
     ] {
         assert!(new.checked_by_new_core(&[source(text)]).is_none(), "{text}");
     }

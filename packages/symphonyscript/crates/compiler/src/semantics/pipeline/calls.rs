@@ -280,13 +280,20 @@ impl Core<'_> {
             {
                 out.push(functions + at);
             }
+            if op == Op::Field {
+                let read = self.paths.get(self.local(node)?).copied().unwrap_or(NONE);
+                if read != NONE {
+                    let lets = u32::try_from(self.ir.lets.len()).unwrap_or(0);
+                    out.push(functions + lets + read);
+                }
+            }
         }
         Ok(out)
     }
 
     pub fn recursive(&self) -> Result<bool, Internal> {
         let functions = u32::try_from(self.ir.fns.len()).unwrap_or(0);
-        let count = self.ir.fns.len() + self.ir.lets.len();
+        let count = self.ir.fns.len() + self.ir.lets.len() + self.attr_reads.len();
         let mut edges: Vec<Vec<u32>> = vec![Vec::new(); count];
         for function in 0..functions {
             let mut out = Vec::new();
@@ -306,6 +313,16 @@ impl Core<'_> {
                 *slot = out;
             }
         }
+        let reads = self.ir.fns.len() + self.ir.lets.len();
+        for (at, read) in self.attr_reads.iter().enumerate() {
+            if read.root == NONE {
+                continue;
+            }
+            let out = self.reached(read.root, functions)?;
+            if let Some(slot) = edges.get_mut(reads + at) {
+                *slot = out;
+            }
+        }
         let mut state = vec![NEW; count];
         let mut starts: Vec<usize> = Vec::new();
         for (at, rec) in self.ir.lets.iter().enumerate() {
@@ -313,6 +330,7 @@ impl Core<'_> {
                 starts.push(functions as usize + at);
             }
         }
+        starts.extend((0..self.attr_reads.len()).map(|at| reads + at));
         for local in 0..self.ir.op.len() {
             if !matches!(self.ir.op.get(local), Some(Op::Call | Op::NamedCall)) {
                 continue;

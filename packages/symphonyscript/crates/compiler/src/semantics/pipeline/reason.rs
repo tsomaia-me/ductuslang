@@ -20,7 +20,5 @@ pub(crate) enum Reason {
     DestinationValue,
     WireKind,
     Member,
-    ChildName,
-    PathInBody,
     ReactivePath,
 }

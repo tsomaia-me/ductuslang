@@ -86,6 +86,7 @@ pub(crate) fn analyze(inputs: &Inputs<'_>) -> Result<Option<Run>, Internal> {
     }
     core.consistency()?;
     core.unread_named_faults()?;
+    core.unreached_body_path_faults();
     stages.mark("infer and check");
     Ok(Some(finished(core)))
 }

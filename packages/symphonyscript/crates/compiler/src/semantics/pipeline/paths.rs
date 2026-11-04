@@ -8,7 +8,7 @@ use super::core_value::CoreValue;
 use super::decl_ref::DeclRef;
 use super::declined::Declined;
 use super::reason::Reason;
-use crate::diagnostics::Code;
+use crate::diagnostics::{Code, Diagnostic};
 use crate::semantics::Internal;
 use crate::semantics::counted_walk::CountedWalk;
 use crate::semantics::ir::flat::{ABSENT, AttrForm, ItemRec, NONE, Op};
@@ -287,9 +287,6 @@ impl Core<'_> {
 
     fn path_end(&mut self, node: u32, ends: &HashMap<u32, End>) -> Stage<End> {
         let (_, receiver, field, missing) = self.ir.node(node)?;
-        if self.body_of.get(self.local(node)?).copied().unwrap_or(NONE) != NONE {
-            return Ok(Err(Declined(Reason::PathInBody)));
-        }
         if missing == 1 {
             return Ok(Ok(End::Placeholder));
         }
@@ -348,6 +345,7 @@ impl Core<'_> {
         self.index_to_wires()?;
         self.misplaced_to()?;
         let mut ends: HashMap<u32, End> = HashMap::new();
+        let mut held: HashMap<u32, Vec<Diagnostic>> = HashMap::new();
         for local in 0..self.ir.op.len() {
             if self.ir.op.get(local) != Some(&Op::Field)
                 || !self.reached.get(local).copied().unwrap_or(false)
@@ -356,10 +354,12 @@ impl Core<'_> {
             }
             CountedWalk::CorePathStep.step();
             let node = self.ir.base + u32::try_from(local).unwrap_or(u32::MAX);
+            let before = self.diagnostics.len();
             let end = match self.path_end(node, &ends)? {
                 Ok(end) => end,
                 Err(declined) => return Ok(Err(declined)),
             };
+            self.keep_body_faults(node, before, &mut held)?;
             if !self.is_field_receiver(node) {
                 match end {
                     End::Row(_) => return Ok(Err(Declined(Reason::NameOfInstance))),
@@ -373,6 +373,11 @@ impl Core<'_> {
             }
             ends.insert(node, end);
         }
+        let mut left: Vec<(u32, Vec<Diagnostic>)> = held.into_iter().collect();
+        left.sort_by_key(|(node, _)| *node);
+        for (_, faults) in left {
+            self.diagnostics.extend(faults);
+        }
         let roots: Vec<u32> = self
             .attr_reads
             .iter()
@@ -382,7 +387,69 @@ impl Core<'_> {
         if self.roots_read_cell(roots)? {
             return Ok(Err(Declined(Reason::ReactivePath)));
         }
+        if !self.attr_reads.is_empty() && self.recursive()? {
+            return Ok(Err(Declined(Reason::Recursion)));
+        }
         Ok(Ok(()))
+    }
+
+    fn keep_body_faults(
+        &mut self,
+        node: u32,
+        before: usize,
+        held: &mut HashMap<u32, Vec<Diagnostic>>,
+    ) -> Result<(), Internal> {
+        let drawn = self
+            .diagnostics
+            .split_off(before.min(self.diagnostics.len()));
+        if self.is_field_receiver(node) {
+            if !drawn.is_empty() {
+                held.insert(node, drawn);
+            }
+            return Ok(());
+        }
+        let mut faults = Vec::new();
+        let mut current = node;
+        while let Ok((Op::Field, receiver, _, _)) = self.ir.node(current) {
+            if let Some(inner) = held.remove(&receiver) {
+                faults.splice(0..0, inner);
+            }
+            current = receiver;
+        }
+        faults.extend(drawn);
+        if faults.is_empty() {
+            return Ok(());
+        }
+        if self.function_owner(node)? == NONE {
+            self.diagnostics.extend(faults);
+        } else {
+            self.body_path_faults.insert(node, (faults, false));
+        }
+        Ok(())
+    }
+
+    pub fn draw_body_path_faults(&mut self, node: u32) {
+        let Some((faults, drawn)) = self.body_path_faults.get_mut(&node) else {
+            return;
+        };
+        *drawn = true;
+        for diagnostic in faults.clone() {
+            let diagnostic = self.chained(diagnostic);
+            self.push_drawn(diagnostic);
+        }
+    }
+
+    pub fn unreached_body_path_faults(&mut self) {
+        let mut left: Vec<(u32, Vec<Diagnostic>)> = self
+            .body_path_faults
+            .iter()
+            .filter(|(_, (_, drawn))| !*drawn)
+            .map(|(node, (faults, _))| (*node, faults.clone()))
+            .collect();
+        left.sort_by_key(|(node, _)| *node);
+        for (_, faults) in left {
+            self.diagnostics.extend(faults);
+        }
     }
 
     fn roots_read_cell(&mut self, roots: Vec<u32>) -> Result<bool, Internal> {

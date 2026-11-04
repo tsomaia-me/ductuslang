@@ -374,7 +374,10 @@ impl Core<'_> {
                     }
                     super::annotation::annotated_fact(read.ty)
                 }
-                None => Fact::PLACEHOLDER,
+                None => {
+                    self.draw_body_path_faults(node);
+                    Fact::PLACEHOLDER
+                }
             },
             Op::Str
             | Op::Variant
