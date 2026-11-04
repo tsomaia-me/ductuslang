@@ -5305,6 +5305,11 @@ pub const CLASSES: &[Class] = &[
     },
     Class {
         ledger: "476",
+        rule: "a `for` expression iterating a cell whose init its scalar annotation refuses draws iterable-type at the iterable, since the refused init leaves the annotated scalar type known (ARCHITECTURE §7) and a `for` iterates a range or an array (SPEC §7.9), where the old engine reads the cell as a placeholder",
+        explains: iterable_of_a_refused_init,
+    },
+    Class {
+        ledger: "476",
         rule: "an annotated name of a placement `for` fixes its type as a `for` expression's does (SPEC §7.9, §4.5), so elements that do not have the annotated type draw one type-mismatch at the name with the loop name's summary, where the old engine draws it at the iterable or with a value's summary",
         explains: annotated_placement_loop_name,
     },
@@ -5481,5 +5486,27 @@ pub fn runs_no_iteration(program: &str, new: &[Drawn]) -> bool {
             || let_lines(program, program.get(lo..hi).unwrap_or_default())
                 .into_iter()
                 .any(|(start, line)| within(start, start + line.len()))
+    })
+}
+
+fn iterable_of_a_refused_init(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
+    let name = seen.text(at);
+    if change != Change::Added
+        || at.0 != "iterable-type"
+        || name.is_empty()
+        || !name.chars().all(|c| c.is_alphanumeric() || c == '_')
+        || !seen.after(at).starts_with(" into ")
+    {
+        return false;
+    }
+    let head = format!("state {name}(");
+    lines_at(seen.program).into_iter().any(|(start, line)| {
+        line.starts_with(&head)
+            && line
+                .rsplit_once("): ")
+                .is_some_and(|(_, ty)| !ty.is_empty() && ty.chars().all(char::is_alphanumeric))
+            && seen.old.iter().any(|drawn| {
+                drawn.0 == "type-mismatch" && drawn.1 >= start && drawn.2 <= start + line.len()
+            })
     })
 }

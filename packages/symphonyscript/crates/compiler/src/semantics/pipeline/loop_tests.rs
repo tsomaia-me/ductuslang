@@ -738,3 +738,57 @@ fn a_to_path_in_a_loop_body_resolves_per_wire_row_and_reference_and_choice_heads
         ]
     );
 }
+
+const REACTIVE_FOLDS: [&str; 18] = [
+    "state readings([1, 2, 3])\nstate total = 1 + (for i, x in readings into sum from 0: sum + i * x)\n",
+    "state r([1, 2])\nlet t = for x in r into s from 0: s + x\n",
+    "state s0(1)\nstate t = for i in 0..3 into s from s0: s + i\n",
+    "state k(2)\nstate t = for i in 0..3 into s from 0: s + k\n",
+    "state r([1, 2])\nstate t = for x in r into s from 0: s + true\n",
+    "state r([1, 2])\nstate t = for x in r into s from 0.5: s + x\n",
+    "state r([1.5, 2])\nstate t = for x in r into s from 0: s + x\n",
+    "state r([1, 2])\nClip c:\n    Note/(for x in r into s from 0: s + x)\n",
+    "state r([1, 2])\nfn f(xs): for x in xs into s from 0: s + x\nstate t = f(r)\n",
+    "state r([1, 2])\nstate t = for x in r into s from 0: s + (for y in r into u from 0: u + y * x)\n",
+    "state r([1, 2])\nstate t = for x in r into s from 0: s + 1.5\n",
+    "state r([1, 2])\nstate t = for x in r into s: f32 from 0: s + x\n",
+    "state r([1, 2])\nClip c:\n    for i in 0..2:\n        Note/(for x in r into s from i: s + x)\n",
+    "state r([1, 2])\nstate t = for x in r into s from 0: if x > 1 then s + x else s\n",
+    "state r([true, false])\nstate t = for x in r into s from 0: s + x\n",
+    "state r([1, 2])\nstate t = for i, x in r into s from 0: s + i * x + 3000000000\n",
+    "state r([1, 2])\nstate t: u8 = for x in r into s from 0: s + x\n",
+    "state k(1)\nlet big = for i in 0..3 into s from 0: s + i\nstate t = big + k\n",
+];
+
+#[test]
+fn a_for_expression_reading_a_cell_is_one_cell_its_body_typed_with_its_slots_and_accumulator_476() {
+    let vocabulary = symphonyscript_fixtures::vocabulary();
+    assert_engines_agree(&vocabulary, &REACTIVE_FOLDS);
+    assert_engines_agree(
+        &vocabulary,
+        &[
+            "state readings(1)\nstate total = 1 + (for i, x in readings into sum from 0: sum + i * x)\n",
+        ],
+    );
+    assert_moved(&[(
+        &vocabulary,
+        "state readings([]): i32\n\nstate total = 1 + (for i, x in readings into sum from 0: sum + i * x)\n",
+        vec![
+            (crate::diagnostics::Code::NoEntryInstance, 0, 0),
+            (crate::diagnostics::Code::TypeMismatch, 15, 17),
+            (crate::diagnostics::Code::IterableType, 56, 64),
+        ],
+        vec![
+            (crate::diagnostics::Code::NoEntryInstance, 0, 0),
+            (crate::diagnostics::Code::TypeMismatch, 15, 17),
+        ],
+    )]);
+    let new = Compiler::new(&vocabulary).expect("the vocabulary compiles");
+    for text in [
+        "state n(3)\nstate t = for i in 0..n into s from 0: s + i\n",
+        "state r([1, 2])\nstate t = for x in r into s from []: s + [x]\n",
+        "state r([1, 2])\nstate t = for x in r into s: i32 from 0: s + 1.5\n",
+    ] {
+        assert!(new.checked_by_new_core(&[source(text)]).is_none(), "{text}");
+    }
+}
