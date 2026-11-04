@@ -1761,25 +1761,29 @@ fn choice_differential(chooser: Chooser, parts: usize, part: usize) {
 
 #[test]
 #[ignore = "exhaustive"]
-fn exhaustive_differential_the_arms_of_a_compile_time_true_choice_agree_wherever_it_stands_part_1() {
+fn exhaustive_differential_the_arms_of_a_compile_time_true_choice_agree_wherever_it_stands_part_1()
+{
     choice_differential(Chooser::True, 2, 0);
 }
 
 #[test]
 #[ignore = "exhaustive"]
-fn exhaustive_differential_the_arms_of_a_compile_time_true_choice_agree_wherever_it_stands_part_2() {
+fn exhaustive_differential_the_arms_of_a_compile_time_true_choice_agree_wherever_it_stands_part_2()
+{
     choice_differential(Chooser::True, 2, 1);
 }
 
 #[test]
 #[ignore = "exhaustive"]
-fn exhaustive_differential_the_arms_of_a_compile_time_false_choice_agree_wherever_it_stands_part_1() {
+fn exhaustive_differential_the_arms_of_a_compile_time_false_choice_agree_wherever_it_stands_part_1()
+{
     choice_differential(Chooser::False, 2, 0);
 }
 
 #[test]
 #[ignore = "exhaustive"]
-fn exhaustive_differential_the_arms_of_a_compile_time_false_choice_agree_wherever_it_stands_part_2() {
+fn exhaustive_differential_the_arms_of_a_compile_time_false_choice_agree_wherever_it_stands_part_2()
+{
     choice_differential(Chooser::False, 2, 1);
 }
 
@@ -1807,13 +1811,15 @@ fn exhaustive_differential_the_arms_of_a_runtime_choice_agree_wherever_it_stands
 
 #[test]
 #[ignore = "exhaustive"]
-fn exhaustive_differential_the_arms_of_a_match_on_an_integer_input_agree_wherever_it_stands_part_1() {
+fn exhaustive_differential_the_arms_of_a_match_on_an_integer_input_agree_wherever_it_stands_part_1()
+{
     choice_differential(Chooser::Integer, 2, 0);
 }
 
 #[test]
 #[ignore = "exhaustive"]
-fn exhaustive_differential_the_arms_of_a_match_on_an_integer_input_agree_wherever_it_stands_part_2() {
+fn exhaustive_differential_the_arms_of_a_match_on_an_integer_input_agree_wherever_it_stands_part_2()
+{
     choice_differential(Chooser::Integer, 2, 1);
 }
 

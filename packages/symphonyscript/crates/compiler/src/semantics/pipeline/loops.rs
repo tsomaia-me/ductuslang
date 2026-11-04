@@ -17,7 +17,7 @@ use crate::diagnostics::{Code, Diagnostic};
 use crate::semantics::Internal;
 use crate::semantics::counted_walk::CountedWalk;
 use crate::semantics::ir::flat::{
-    AttrForm, FlatIr, ForBlockRec, ItemRec, Iteration, NONE, Op, PlacementRec,
+    AttrForm, FlatIr, ForBlockRec, ItemRec, Iteration, NONE, Op, PlacementRec, WireRec,
 };
 use crate::semantics::operators::{EvalTy, Value, convert_to};
 use crate::semantics::reporting::grouped;
@@ -454,27 +454,21 @@ impl Core<'_> {
             THROUGH_A_LET => Ok(Ok(true)),
             DIRECTLY => {
                 let (op, a, b, _) = self.ir.node(root)?;
-                let array = match op {
-                    _ if bound => Some(true),
-                    Op::Name => match self.bound(root)? {
-                        DeclRef::Cell(at) => self.cell_shape(at)?,
-                        DeclRef::None
-                        | DeclRef::Let(_)
-                        | DeclRef::Instance(_)
-                        | DeclRef::Duplicate
-                        | DeclRef::Param(_)
-                        | DeclRef::Fn(_) => None,
-                    },
-                    Op::Array | Op::Slice => Some(true),
-                    Op::Add => {
-                        let literal = |node: u32| {
-                            self.ir
-                                .node(node)
-                                .is_ok_and(|(op, _, _, _)| op == Op::Array)
-                        };
-                        (literal(a) || literal(b)).then_some(true)
-                    }
-                    _ => None,
+                let literal = |node: u32| {
+                    self.ir
+                        .node(node)
+                        .is_ok_and(|(op, _, _, _)| op == Op::Array)
+                };
+                let array = if bound || matches!(op, Op::Array | Op::Slice) {
+                    Some(true)
+                } else if op == Op::Name
+                    && let DeclRef::Cell(at) = self.bound(root)?
+                {
+                    self.cell_shape(at)?
+                } else if op == Op::Add && (literal(a) || literal(b)) {
+                    Some(true)
+                } else {
+                    None
                 };
                 match array {
                     Some(true) => self.draw_at(Code::ReactiveIterable, root, message)?,
@@ -504,10 +498,13 @@ impl Core<'_> {
         if node == NONE {
             return Ok(None);
         }
-        Ok(match self.ir.node(node)?.0 {
-            Op::TyArray | Op::Array => Some(true),
-            Op::TyScalar | Op::Int | Op::Float | Op::Bool => Some(false),
-            _ => None,
+        let op = self.ir.node(node)?.0;
+        Ok(if matches!(op, Op::TyArray | Op::Array) {
+            Some(true)
+        } else if matches!(op, Op::TyScalar | Op::Int | Op::Float | Op::Bool) {
+            Some(false)
+        } else {
+            None
         })
     }
 
@@ -705,14 +702,7 @@ impl Core<'_> {
                             .iter()
                             .rev(),
                     ),
-                    ItemRec::Wire(wire)
-                        if self
-                            .ir
-                            .name_text(wire.kind)
-                            .filter(|_| self.ir.named(wire.kind))
-                            .is_some_and(|name| {
-                                self.vocabulary.wire_kind_named(name).is_some()
-                            }) => {}
+                    ItemRec::Wire(wire) if self.bare_wire(wire)? => {}
                     ItemRec::Wire(_)
                     | ItemRec::Bundle(_)
                     | ItemRec::When(_)
@@ -1073,6 +1063,73 @@ impl Core<'_> {
                     "placements in a `for` body are anonymous",
                 );
             }
+            self.loop_name_clashes(rec, file)?;
+        }
+        Ok(())
+    }
+}
+
+impl Core<'_> {
+    fn loop_name_clashes(&mut self, rec: ForBlockRec, file: u32) -> Result<(), Internal> {
+        let mut names = Vec::new();
+        for binder in rec.head.names.0..rec.head.names.1 {
+            let at = *self.ir.binder(binder)?;
+            let sym = self
+                .ir
+                .name(at.name)
+                .ok_or(Internal::missed("IR name"))?
+                .sym;
+            names.push((sym, self.span(file, at.lo, at.hi)));
+        }
+        let mut blocks = vec![(rec.body, false)];
+        while let Some((block, nested)) = blocks.pop() {
+            let Some(found) = self.ir.blocks.get(block as usize).copied() else {
+                continue;
+            };
+            let mut items: Vec<u32> = self
+                .ir
+                .block_items
+                .get(found.items.0 as usize..found.items.1 as usize)
+                .unwrap_or_default()
+                .to_vec();
+            while let Some(child) = items.pop() {
+                match *self.ir.item(child)? {
+                    ItemRec::Placement(placement) => {
+                        if nested && placement.has_as && self.ir.named(placement.as_name) {
+                            let entry = *self
+                                .ir
+                                .name(placement.as_name)
+                                .ok_or(Internal::missed("IR name"))?;
+                            if let Some((_, repeated)) =
+                                names.iter().find(|(sym, _)| *sym == entry.sym).cloned()
+                            {
+                                let text = self.ir.symbols.text(entry.sym).to_string();
+                                let span = self.name_span(file, placement.as_name)?;
+                                self.draw_related(
+                                    Code::ChildNameClash,
+                                    span,
+                                    vec![(repeated, "the name it repeats".to_string())],
+                                    format!(
+                                        "`{text}` names a pattern parameter, a pattern `let` or a `for` variable visible here"
+                                    ),
+                                );
+                            }
+                        }
+                        blocks.push((placement.body, true));
+                    }
+                    ItemRec::For(inner) => blocks.push((inner.body, nested)),
+                    ItemRec::Line(members) => items.extend(
+                        self.ir
+                            .members
+                            .get(members.0 as usize..members.1 as usize)
+                            .unwrap_or_default(),
+                    ),
+                    ItemRec::Wire(_)
+                    | ItemRec::Bundle(_)
+                    | ItemRec::When(_)
+                    | ItemRec::Paren(_) => {}
+                }
+            }
         }
         Ok(())
     }
@@ -1103,5 +1160,21 @@ impl Core<'_> {
             *fact = annotated_fact(ty);
         }
         Ok(facts)
+    }
+}
+
+impl Core<'_> {
+    fn bare_wire(&self, wire: WireRec) -> Result<bool, Internal> {
+        let known = self
+            .ir
+            .name_text(wire.kind)
+            .filter(|_| self.ir.named(wire.kind))
+            .is_some_and(|name| self.vocabulary.wire_kind_named(name).is_some());
+        Ok(known
+            && wire.attrs.0 == wire.attrs.1
+            && wire.default == NONE
+            && wire.gate == NONE
+            && self.ir.node(wire.destination)?.0 == Op::Name
+            && matches!(self.bound(wire.destination)?, DeclRef::Instance(_)))
     }
 }

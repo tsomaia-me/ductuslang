@@ -490,3 +490,17 @@ const WIRES_IN_BODIES: [&str; 6] = [
 fn a_wire_in_a_loop_body_is_one_wire_row_per_iteration_with_its_iterations_names() {
     assert_engines_agree(&symphonyscript_fixtures::vocabulary(), &WIRES_IN_BODIES);
 }
+
+const CLASHES_IN_BODIES: [&str; 6] = [
+    "Track t:\n    for i in 0..2:\n        Synth:\n            Osc as i\n",
+    "Clip c:\n    for i in 0..2:\n        Note as i\n",
+    "Track t:\n    for i in 0..2:\n        Synth:\n            Osc as j\n",
+    "Track t:\n    for i, k in [1, 2]:\n        Synth:\n            Osc as k\n",
+    "Track t:\n    for i in 0..2:\n        for j in 0..2:\n            Synth:\n                Osc as i\n",
+    "Track t:\n    for i in 0..0:\n        Synth:\n            Osc as i\n",
+];
+
+#[test]
+fn a_child_named_like_an_enclosing_loop_name_inside_a_loop_body_draws_child_name_clash() {
+    assert_engines_agree(&symphonyscript_fixtures::vocabulary(), &CLASHES_IN_BODIES);
+}
