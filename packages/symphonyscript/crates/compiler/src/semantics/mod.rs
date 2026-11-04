@@ -18,6 +18,8 @@ mod counted_walk_tests;
 mod internal;
 pub(crate) mod ir;
 pub(crate) mod math_package;
+pub(crate) mod operators;
+pub(crate) mod pipeline;
 pub(crate) mod reporting;
 pub(crate) mod scopes;
 

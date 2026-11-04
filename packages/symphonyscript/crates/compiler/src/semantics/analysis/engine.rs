@@ -1519,13 +1519,7 @@ impl<'a> Engine<'a> {
         position: i128,
         length: u64,
     ) -> Result<(), Internal> {
-        let message = format!("the index {position} is outside the array of length {length}");
-        match crate::diagnostics::index_outside_help(length) {
-            Some(help) => {
-                self.error_at_node_helped(Code::IndexOutOfRange, index, Vec::new(), message, help)
-            }
-            None => self.error_at_node(Code::IndexOutOfRange, index, message),
-        }
+        crate::semantics::operators::index_outside(self, index, position, length)
     }
 
     pub(in crate::semantics::analysis) fn error_at_node_helped(

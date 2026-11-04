@@ -75,7 +75,8 @@ fn run() -> Result<(), String> {
         .map_err(|error| format!("{output}: {error}"))?;
     let seconds = started.elapsed().as_secs_f64();
     eprintln!(
-        "evolve-check: {checked} programs, {flagged} with signals, {seconds:.3} s, {:.1} programs/s",
+        "evolve-check: {checked} programs, {flagged} with signals, {} taken by the new core, {seconds:.3} s, {:.1} programs/s",
+        checker.new_core_programs(),
         if seconds > 0.0 {
             checked as f64 / seconds
         } else {

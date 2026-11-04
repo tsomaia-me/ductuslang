@@ -45,6 +45,10 @@ impl Symbols {
         Sym(self.own.insert(text, hash))
     }
 
+    pub fn end(&self) -> u32 {
+        self.own.end()
+    }
+
     pub fn text(&self, sym: Sym) -> &str {
         if sym.0 < self.own.first() {
             return self

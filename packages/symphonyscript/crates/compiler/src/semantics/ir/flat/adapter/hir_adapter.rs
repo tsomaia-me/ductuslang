@@ -4,8 +4,8 @@ use super::super::top_rec::TopRec;
 use super::super::{ABSENT, NONE, index};
 use crate::semantics::Internal;
 use crate::semantics::ir::{
-    BlockId, FnDecl, FnId, Hir, Ident, Input, InputId, LetDecl, LetId, Loc, Param, PatternDecl,
-    PatternId, StateDecl, StateId, Top, UnknownNames,
+    BlockId, ExprId, FnDecl, FnId, Hir, Ident, Input, InputId, LetDecl, LetId, Loc, Param,
+    PatternDecl, PatternId, StateDecl, StateId, Top, UnknownNames,
 };
 
 pub(super) struct Adapter<'h> {
@@ -13,9 +13,18 @@ pub(super) struct Adapter<'h> {
     pub ir: &'h FlatIr,
     pub file: u32,
     pub rec: FileRec,
+    pub exprs_of: Vec<(u32, ExprId)>,
 }
 
 pub(crate) fn adapt_file(hir: &mut Hir, ir: &FlatIr, file: usize) -> Result<(), Internal> {
+    adapt_file_mapped(hir, ir, file).map(|_| ())
+}
+
+pub(crate) fn adapt_file_mapped(
+    hir: &mut Hir,
+    ir: &FlatIr,
+    file: usize,
+) -> Result<Vec<(u32, ExprId)>, Internal> {
     let rec = *ir.files.get(file).ok_or(Internal::missed("IR file"))?;
     let index = u32::try_from(hir.files.len()).unwrap_or(u32::MAX);
     hir.files.push(ir.text(rec.path).to_string());
@@ -24,6 +33,7 @@ pub(crate) fn adapt_file(hir: &mut Hir, ir: &FlatIr, file: usize) -> Result<(), 
         ir,
         file: index,
         rec,
+        exprs_of: Vec::new(),
     };
     for at in rec.top.0..rec.top.1 {
         let top = *ir
@@ -34,7 +44,7 @@ pub(crate) fn adapt_file(hir: &mut Hir, ir: &FlatIr, file: usize) -> Result<(), 
     }
     let skipped = adapter.region_names(rec.regions);
     adapter.hir.skipped_top.join(&skipped);
-    Ok(())
+    Ok(adapter.exprs_of)
 }
 
 impl Adapter<'_> {

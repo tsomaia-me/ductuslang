@@ -9,7 +9,6 @@ use super::ctx::Ctx;
 use super::frame::Frame;
 use super::frame_spare::FrameSpare;
 use super::frame_values::FrameValues;
-use super::is_float_ty::is_float_ty;
 use super::leaf_fact::LeafFact;
 use super::machine::Machine;
 use super::machine_key::MachineKey;
@@ -56,6 +55,7 @@ use crate::semantics::analysis::val::Val;
 use crate::semantics::analysis::width::Width;
 use crate::semantics::counted_walk::CountedWalk;
 use crate::semantics::ir::{ExprId, FnId};
+use crate::semantics::operators::is_float_ty;
 use crate::semantics::reporting::grouped;
 use symphonyscript_core::AttrId;
 

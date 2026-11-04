@@ -1,11 +1,6 @@
 use std::rc::Rc;
 
-use symphonyscript_core::BinaryOp;
-
-use super::convert::convert;
-use super::convert_to::convert_to;
 use super::ctx::Ctx;
-use super::exact_binary::exact_binary;
 use super::fetch_entry::FetchEntry;
 use super::fetched::Fetched;
 use super::instr::Instr;
@@ -14,10 +9,7 @@ use super::loop_found::LoopFound;
 use super::loop_items::LoopItems;
 use super::program::Program;
 use super::ran::Ran;
-use super::run::{
-    JOIN_SINGLE, SINGLE_OPERANDS, compare, fits_f32, float_binary, int_position, narrowed,
-    scaled_into, wide_fits_f32,
-};
+use super::run::{SINGLE_OPERANDS, fits_f32, narrowed, scaled_into, wide_fits_f32};
 use crate::diagnostics::Code;
 use crate::semantics::Internal;
 use crate::semantics::analysis::c_val::CVal;
@@ -31,6 +23,9 @@ use crate::semantics::analysis::outside_i64::outside_i64;
 use crate::semantics::analysis::query::Query;
 use crate::semantics::analysis::reachable::Reachable;
 use crate::semantics::counted_walk::CountedWalk;
+use crate::semantics::operators::{
+    JOIN_SINGLE, Operands, Operator, convert_to, int_position, plan_op,
+};
 
 impl Engine<'_> {
     pub(super) fn run_program(
@@ -185,7 +180,7 @@ impl Engine<'_> {
                     }
                 }
                 Instr::Pick(index, targets, end) => {
-                    let Some(position) = int_position(pop(stack)?) else {
+                    let Some(position) = int_position(&pop(stack)?) else {
                         stack.push(CVal::Error);
                         pc = *end as usize;
                         continue;
@@ -220,67 +215,34 @@ impl Engine<'_> {
                 }
                 Instr::Element(base, index, lay) => {
                     let (value, position) = pair(stack, lay)?;
-                    let value = match int_position(position) {
-                        Some(position) => self.element(*base, *index, value, position)?,
-                        None => CVal::Error,
-                    };
-                    stack.push(value);
+                    let operator = Operator::Element(*base, *index);
+                    stack.push(plan_op(self, operator, Operands::Two(value, position))?);
                 }
                 Instr::Array(node, count, lay) => {
                     let values = operands(stack, *count as usize, lay)?;
-                    stack.push(self.array_value(*node, values)?);
+                    stack.push(plan_op(
+                        self,
+                        Operator::Array(*node),
+                        Operands::Many(values),
+                    )?);
                 }
                 Instr::Not => {
-                    let value = match pop(stack)? {
-                        CVal::Bool(value) => CVal::Bool(!value),
-                        CVal::Int(_)
-                        | CVal::F32(_)
-                        | CVal::F64(_)
-                        | CVal::Enum(..)
-                        | CVal::Str(_)
-                        | CVal::Node(_)
-                        | CVal::Array(_)
-                        | CVal::Error => CVal::Error,
-                    };
-                    stack.push(value);
+                    let value = pop(stack)?;
+                    stack.push(plan_op(self, Operator::Not, Operands::One(value))?);
                 }
                 Instr::Neg(node, own) => {
-                    let value = match pop(stack)? {
-                        CVal::Int(value) => self.integer(*node, *own, value.checked_neg())?,
-                        CVal::F32(value) => CVal::F32(-value),
-                        CVal::F64(value) => CVal::F64(-value),
-                        CVal::Bool(_)
-                        | CVal::Enum(..)
-                        | CVal::Str(_)
-                        | CVal::Node(_)
-                        | CVal::Array(_)
-                        | CVal::Error => CVal::Error,
-                    };
-                    stack.push(value);
+                    let value = pop(stack)?;
+                    let operator = Operator::Neg(*node, *own);
+                    stack.push(plan_op(self, operator, Operands::One(value))?);
                 }
                 Instr::Logic(op, lay) => {
-                    let value = match pair(stack, lay)? {
-                        (CVal::Bool(a), CVal::Bool(b)) => {
-                            CVal::Bool(if *op == BinaryOp::And { a && b } else { a || b })
-                        }
-                        _ => CVal::Error,
-                    };
-                    stack.push(value);
+                    let (a, b) = pair(stack, lay)?;
+                    stack.push(plan_op(self, Operator::Logic(*op), Operands::Two(a, b))?);
                 }
                 Instr::Arith(op, node, own, lay) => {
-                    let value = match pair(stack, lay)? {
-                        (CVal::Int(a), CVal::Int(b)) => {
-                            self.integer(*node, *own, exact_binary(*op, a, b))?
-                        }
-                        (CVal::F32(a), CVal::F32(b)) => CVal::F32(
-                            float_binary(*op, a, b).ok_or(Internal::missed("float operator"))?,
-                        ),
-                        (CVal::F64(a), CVal::F64(b)) => CVal::F64(
-                            float_binary(*op, a, b).ok_or(Internal::missed("float operator"))?,
-                        ),
-                        _ => CVal::Error,
-                    };
-                    stack.push(value);
+                    let (a, b) = pair(stack, lay)?;
+                    let operator = Operator::Arith(*op, *node, *own);
+                    stack.push(plan_op(self, operator, Operands::Two(a, b))?);
                 }
                 Instr::Compare(op, ty, a_fit, b_fit, lay) => {
                     let (a, b) = pair(stack, lay)?;
@@ -292,11 +254,7 @@ impl Engine<'_> {
                         Some(node) => self.fit(*node, b, *ty)?,
                         None => b,
                     };
-                    stack.push(if a.is_error() || b.is_error() {
-                        CVal::Error
-                    } else {
-                        compare(*op, &a, &b)
-                    });
+                    stack.push(plan_op(self, Operator::Compare(*op), Operands::Two(a, b))?);
                 }
                 Instr::FlexPair(narrow) => {
                     let b = pop(stack)?;
@@ -306,37 +264,19 @@ impl Engine<'_> {
                     }
                 }
                 Instr::StrAdd(node, lay) => {
-                    let value = match pair(stack, lay)? {
-                        (CVal::Str(a), CVal::Str(b)) => {
-                            CVal::Str(Rc::from(format!("{a}{b}").as_str()))
-                        }
-                        _ => CVal::Error,
-                    };
-                    stack.push(self.within_value_limit(*node, value, "this join")?);
+                    let (a, b) = pair(stack, lay)?;
+                    stack.push(plan_op(self, Operator::StrAdd(*node), Operands::Two(a, b))?);
                 }
                 Instr::IntDivFloat(node, own, flexible, lay) => {
-                    let value = match pair(stack, lay)? {
-                        (CVal::Int(a), CVal::Int(b)) => {
-                            let value = self.integer(
-                                *node,
-                                EvalTy::Exact,
-                                exact_binary(BinaryOp::IntDiv, a, b),
-                            )?;
-                            self.convert_integer(*node, *flexible, value, *own)?
-                        }
-                        _ => CVal::Error,
-                    };
-                    stack.push(value);
+                    let (a, b) = pair(stack, lay)?;
+                    let operator = Operator::IntDivFloat(*node, *own, *flexible);
+                    stack.push(plan_op(self, operator, Operands::Two(a, b))?);
                 }
                 Instr::Div(posts, lay) => {
                     let (a, b) = pair(stack, lay)?;
                     let a = self.operand_post(posts.0, a)?;
                     let b = self.operand_post(posts.1, b)?;
-                    stack.push(match (a, b) {
-                        (CVal::F32(a), CVal::F32(b)) => CVal::F32(a / b),
-                        (CVal::F64(a), CVal::F64(b)) => CVal::F64(a / b),
-                        _ => CVal::Error,
-                    });
+                    stack.push(plan_op(self, Operator::Div, Operands::Two(a, b))?);
                 }
                 Instr::FromEnd(rhs, end) => {
                     if let CVal::Int(value) = pop(stack)?
@@ -382,7 +322,8 @@ impl Engine<'_> {
                     }
                     (CVal::Array(a), CVal::Array(b)) => {
                         drop_kept(stack, *keep);
-                        stack.push(self.joined(*node, &a, &b)?);
+                        let joined = Operands::Two(CVal::Array(a), CVal::Array(b));
+                        stack.push(plan_op(self, Operator::Join(*node), joined)?);
                         pc = *end as usize;
                     }
                     (CVal::Array(_), _) | (_, CVal::Array(_)) => {
@@ -406,44 +347,27 @@ impl Engine<'_> {
                 },
                 Instr::ConvertTo(own) => {
                     let value = pop(stack)?;
-                    stack.push(convert(value, *own));
+                    stack.push(plan_op(
+                        self,
+                        Operator::ConvertTo(*own),
+                        Operands::One(value),
+                    )?);
                 }
                 Instr::Join(node, lay) => {
-                    let value = match pair(stack, lay)? {
-                        (CVal::Array(left), CVal::Array(right)) => {
-                            self.joined(*node, &left, &right)?
-                        }
-                        (CVal::Error, _) | (_, CVal::Error) => CVal::Error,
-                        _ => {
-                            self.error_at_node(Code::ArrayOperand, *node, JOIN_SINGLE)?;
-                            CVal::Error
-                        }
-                    };
-                    stack.push(value);
+                    let (left, right) = pair(stack, lay)?;
+                    let operator = Operator::Join(*node);
+                    stack.push(plan_op(self, operator, Operands::Two(left, right))?);
                 }
                 Instr::Slice(base, lower, upper, lay) => {
                     let count = 1 + usize::from(lower.is_some()) + usize::from(upper.is_some());
-                    let mut values = operands(stack, count, lay)?.into_iter();
-                    let value = values.next().ok_or(Internal::missed("slice base"))?;
-                    let start = match lower {
-                        Some((bound, from_end)) => {
-                            let at = values.next().ok_or(Internal::missed("slice bound"))?;
-                            self.bound_position(*bound, at, *from_end)?
-                        }
-                        None => None,
-                    };
-                    let end = match upper {
-                        Some((bound, from_end)) => {
-                            let at = values.next().ok_or(Internal::missed("slice bound"))?;
-                            self.bound_position(*bound, at, *from_end)?
-                        }
-                        None => None,
-                    };
-                    stack.push(self.slice_value(*base, value, start, end)?);
+                    let values = operands(stack, count, lay)?;
+                    let operator = Operator::Slice(*base, *lower, *upper);
+                    stack.push(plan_op(self, operator, Operands::Many(values))?);
                 }
                 Instr::Length(operand) => {
                     let value = pop(stack)?;
-                    stack.push(self.length_of(*operand, value)?);
+                    let operator = Operator::Length(*operand);
+                    stack.push(plan_op(self, operator, Operands::One(value))?);
                 }
                 Instr::Bytes(node, operand) => {
                     let value = pop(stack)?;
@@ -466,10 +390,8 @@ impl Engine<'_> {
                     for (value, post) in values.into_iter().zip(posts.iter()) {
                         posted.push(self.operand_post(*post, value)?);
                     }
-                    let value = self
-                        .builtin_value(*node, *builtin, *own, posted)?
-                        .unwrap_or(CVal::Error);
-                    stack.push(value);
+                    let operator = Operator::Builtin(*node, *builtin, *own);
+                    stack.push(plan_op(self, operator, Operands::Many(posted))?);
                 }
                 Instr::Concat(node, parts, lay) => {
                     let count = parts

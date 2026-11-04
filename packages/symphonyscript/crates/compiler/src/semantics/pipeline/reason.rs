@@ -1,0 +1,22 @@
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum Reason {
+    PreludeItems,
+    NameOfInstance,
+    NameOfVocabulary,
+    BareVariant,
+    PatternOrWirePlacement,
+    ChildName,
+    UnitAttribute,
+    EnumAttribute,
+    StringAttribute,
+    ArrayAttribute,
+    CellGroup,
+    FunctionValue,
+    Recursion,
+    LocalCycle,
+    LocalClash,
+    NestedScope,
+    AnnotatedCall,
+    Pending,
+    ReactiveFor,
+}

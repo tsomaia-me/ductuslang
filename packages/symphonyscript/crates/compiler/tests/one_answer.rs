@@ -17,8 +17,8 @@ const DECIDING_NONE: &[(&str, &str)] = &[
         "the enum a bare variant takes from its expected type, SPEC §4.2's enum flow",
     ),
     (
-        "analysis/evaluation/compile.rs plan_op",
-        "the compile-time value of a node, evaluated by SPEC §4.6: the one place that states what each operator computes",
+        "analysis/evaluation/compile.rs plan_instructions",
+        "the old engine's instructions for a node, each operator's value computed by `operators/plan_op.rs`",
     ),
     (
         "analysis/evaluation/run.rs fit",
@@ -245,6 +245,54 @@ const DECIDING_NONE: &[(&str, &str)] = &[
         "the operands of a node, the structure every walk follows",
     ),
     (
+        "operators/plan_op.rs plan_op",
+        "the compile-time value of an operator over its operand values, evaluated by SPEC §4.6: the one place that states what each operator computes, for both engines",
+    ),
+    (
+        "pipeline/coverage.rs op_slice",
+        "the slice of M2r R3 that builds each IR op, the selector's coverage table",
+    ),
+    (
+        "pipeline/typing.rs node_fact",
+        "the kind and shape of an IR node in the new core, typed bottom-up",
+    ),
+    (
+        "pipeline/typing.rs operands",
+        "the operands of an IR node, the structure the new core's walks follow",
+    ),
+    (
+        "pipeline/typing.rs may_hold_array",
+        "whether an index's value could be an array for some value of a name placeholder it reads, the placeholder rule's withheld not-an-array",
+    ),
+    (
+        "pipeline/typing.rs unary_fact",
+        "the kind of a unary operator's value in the new core over its operand's kind, SPEC §4.3",
+    ),
+    (
+        "pipeline/typing.rs binary_fact",
+        "the kind of a binary operator's value in the new core over its operands' kinds, SPEC §4.3",
+    ),
+    (
+        "pipeline/values.rs visit",
+        "the types an IR node's operands are evaluated in by the new core, SPEC §4.2's expected-type flow",
+    ),
+    (
+        "pipeline/values.rs apply",
+        "the operator an IR node evaluates by in the new core, its value computed by `operators/plan_op.rs`",
+    ),
+    (
+        "pipeline/pick.rs view",
+        "the array literal a read selects its element from, ARCHITECTURE §7's compile-time element read",
+    ),
+    (
+        "pipeline/check.rs refuse_fixed",
+        "the fixed-type operands a runtime value's cells are read around, each refused at itself, SPEC §4.2's fixed-type operand",
+    ),
+    (
+        "pipeline/values.rs own_walk",
+        "the parts of a faulty expression read in their own types, ARCHITECTURE §7's placeholder rule",
+    ),
+    (
         "scopes/checker.rs expr",
         "which names an expression uses, for scope checks",
     ),
@@ -337,7 +385,7 @@ fn names_enum(pattern: &str) -> bool {
             at == 0 || !(bytes[at - 1].is_ascii_alphanumeric() || bytes[at - 1] == b'_')
         })
     };
-    starts("ExprKind::") || starts("Op::")
+    starts("ExprKind::") || starts("Op::") || starts("Operator::")
 }
 
 fn catches_all(pattern: &str) -> bool {

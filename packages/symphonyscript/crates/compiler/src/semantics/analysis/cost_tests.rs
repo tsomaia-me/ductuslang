@@ -453,6 +453,34 @@ struct Measured {
     counts: Vec<(String, u64)>,
     allocations: u64,
     peak_bytes: u64,
+    new_core: bool,
+}
+
+const CORE_WALKS: [CountedWalk; 9] = [
+    CountedWalk::BindLookup,
+    CountedWalk::CoreExpandRow,
+    CountedWalk::SigNode,
+    CountedWalk::ValueRun,
+    CountedWalk::CheckRow,
+    CountedWalk::JoinNode,
+    CountedWalk::CursorStep,
+    CountedWalk::DenseLayout,
+    CountedWalk::CoreUse,
+];
+
+fn core_walk_failure(run: &Measured, name: &str, text: &str) -> Option<String> {
+    let walked = CORE_WALKS.iter().any(|walk| {
+        let counter = format!("{walk:?}");
+        run.counts
+            .iter()
+            .any(|(name, count)| *name == counter && *count > 0)
+    });
+    (run.new_core && !walked).then(|| {
+        row_failure(
+            text,
+            format!("{name}: the new core took it and counted none of its walks"),
+        )
+    })
 }
 
 const SOURCE_WALKS: [CountedWalk; 4] = [
@@ -485,6 +513,7 @@ fn measured_files(compiler: &Compiler, sources: &[Source]) -> Measured {
     let (built_before, visited_before) = CArray::work();
     let (_, examined) = compiler.analyzed(&[], |engine: &Engine<'_>| engine.variants.examined());
     let examined = examined.unwrap_or(0);
+    let taken_before = compiler.taken_by_new_core();
     let allocated = crate::counting_allocator::CountingAllocator::begin();
     let (diagnostics, found) = compiler.analyzed(sources, |engine: &Engine<'_>| {
         let memo = &engine.memo;
@@ -542,6 +571,7 @@ fn measured_files(compiler: &Compiler, sources: &[Source]) -> Measured {
         counts,
         allocations,
         peak_bytes,
+        new_core: compiler.taken_by_new_core() > taken_before,
     }
 }
 
@@ -705,6 +735,9 @@ fn measured_row(compiler: &Compiler, row: &Row) -> Report {
             ));
         }
     }
+    if let Some(failure) = core_walk_failure(&runs[0], &name, &texts[0]) {
+        failures.push(failure);
+    }
     let mut least = (u64::MAX, "");
     for (index, (counter, _)) in runs[0].counts.iter().enumerate() {
         let source = follows_the_source(counter);
@@ -749,7 +782,7 @@ fn measured_row(compiler: &Compiler, row: &Row) -> Report {
         .map(|run| run.counts.iter().map(|(_, count)| count).sum::<u64>());
     Report {
         line: format!(
-            "{name}: n {sizes:?}, size {:?}, smallest count {} {}, all counts {work:?}, {} ms",
+            "{name}: n {sizes:?}, size {:?}, smallest count {} {}, all counts {work:?}, {} ms, {}",
             [0, 1, 2].map(|run| program_and_built_elements(
                 construct,
                 shape,
@@ -758,7 +791,12 @@ fn measured_row(compiler: &Compiler, row: &Row) -> Report {
             )),
             least.1,
             least.0,
-            started.elapsed().as_millis()
+            started.elapsed().as_millis(),
+            if runs[0].new_core {
+                "the new core"
+            } else {
+                "the old engine"
+            }
         ),
         failures,
     }
@@ -1677,6 +1715,7 @@ fn untaken_measured(compiler: &Compiler, text: &str) -> Measured {
         counts,
         allocations,
         peak_bytes,
+        new_core: false,
     }
 }
 
@@ -1831,6 +1870,9 @@ fn unknown_names_failures(sizes: [usize; 3]) -> Vec<String> {
                 items.concat()
             });
             let runs = texts.each_ref().map(|text| measured(&compiler, text));
+            if let Some(failure) = core_walk_failure(&runs[0], &name, &texts[0]) {
+                failures.push(failure);
+            }
             for ((run, n), text) in runs.iter().zip(sizes).zip(&texts) {
                 let unknown = run
                     .errors
@@ -2135,7 +2177,9 @@ fn ring_program(size: usize, reversed: bool) -> String {
 }
 
 fn ring_failures(sizes: [usize; 3]) -> Vec<String> {
-    let compiler = Compiler::new(&vocabulary()).expect("the vocabulary compiles");
+    let compiler = Compiler::new(&vocabulary())
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
     let mut failures = Vec::new();
     for reversed in [false, true] {
         let runs = sizes.map(|size| measured(&compiler, &ring_program(size, reversed)));
@@ -2633,7 +2677,9 @@ const DEMAND_BOUNDS: [(&str, u64, u64); 4] = [
 ];
 
 fn demand_failures(sizes: [usize; 3]) -> Vec<String> {
-    let compiler = Compiler::new(&vocabulary()).expect("the vocabulary compiles");
+    let compiler = Compiler::new(&vocabulary())
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
     let walks = DEMAND_BOUNDS.map(|(walk, _, _)| walk);
     let mut failures = Vec::new();
     for figure in FIGURES {
@@ -2672,7 +2718,9 @@ fn the_demand_loops_bookkeeping_is_constant_per_query_on_the_figure_programs_431
 }
 
 fn hashing_failures(sizes: [usize; 3]) -> Vec<String> {
-    let compiler = Compiler::new(&vocabulary()).expect("the vocabulary compiles");
+    let compiler = Compiler::new(&vocabulary())
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
     let mut failures = Vec::new();
     for (figure, most, per) in [
         (Figure::Inlined, 7, 1),
@@ -2720,7 +2768,8 @@ fn doubling_failures(limit: u64) -> Vec<String> {
             ..LimitOverrides::default()
         },
     )
-    .expect("the vocabulary compiles");
+    .expect("the vocabulary compiles")
+    .on_the_old_engine();
     let refused = format!(
         "this call of `f` passes an array that holds {} elements, more than the {} a compile-time value holds",
         crate::semantics::reporting::grouped(2 * limit),

@@ -1,4 +1,5 @@
 use crate::semantics::builtin::Builtin;
+use crate::semantics::operators::NOT_AN_ARRAY;
 use symphonyscript_core::{BinaryOp, Scalar};
 
 use super::annotation::Annotation;
@@ -644,7 +645,5 @@ impl Engine<'_> {
 const LENGTH: &str = "an array's length and capacity are below 2³¹";
 
 const JOIN_ROWS: &str = "the rows of the joined arrays have different shapes";
-
-pub(crate) const NOT_AN_ARRAY: &str = "`.size` reads the length of an array";
 
 const BOUND_TYPE: &str = "a slice bound is an integer, not an array";

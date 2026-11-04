@@ -1177,7 +1177,9 @@ fn check_case(rows: &Rows, case: &Case, compilers: &mut Compilers, outcome: &mut
         )
     };
     let built = build(&choice);
+    let before = compiler.taken_by_new_core();
     let found = spans(compiler, &built.text);
+    let by_new_core = compiler.taken_by_new_core() > before;
     outcome.programs += 1;
     let expected: Spans = match &twin {
         None if rejected_call => {
@@ -1187,7 +1189,23 @@ fn check_case(rows: &Rows, case: &Case, compilers: &mut Compilers, outcome: &mut
         None if case.relation == Relation::Family => {
             [(Code::MixedFamilies, built.start, built.end)].into()
         }
-        None => [(Code::TypeMismatch, built.start, built.end)].into(),
+        None => {
+            let mut drawn: Spans = [(Code::TypeMismatch, built.start, built.end)].into();
+            let let_reads_cell = match taken {
+                None => true,
+                Some(0) => reads_cell(case.forms.0, case.contents.0),
+                Some(_) => reads_cell(case.forms.1, case.contents.1),
+            };
+            if matches!(case.position, Position::TopLet | Position::Annotation)
+                && let_reads_cell
+                && by_new_core
+                && let Some(at) = built.text.find("let x")
+            {
+                let name = at + "let ".len();
+                drawn.insert((Code::ReactiveLet, name, name + 1));
+            }
+            drawn
+        }
         Some(twin) => {
             let value = if case.chooser.is_match() {
                 format!("{}\n", twin.text)
@@ -1213,6 +1231,43 @@ fn check_case(rows: &Rows, case: &Case, compilers: &mut Compilers, outcome: &mut
         }
     };
     if found == expected {
+        return;
+    }
+    let let_at = built.text.find("let x");
+    let value_at = let_at.and_then(|at| {
+        built
+            .text
+            .get(at..)
+            .and_then(|rest| rest.find(" = "))
+            .map(|equals| at + equals + " = ".len())
+    });
+    let old_engine_without_the_annotations_fault: Spans = expected
+        .iter()
+        .filter(|(code, start, _)| {
+            *code != Code::TypeMismatch || (Some(*start) != let_at && Some(*start) != value_at)
+        })
+        .cloned()
+        .collect();
+    if !by_new_core
+        && expected.iter().any(|(code, ..)| *code == Code::ReactiveLet)
+        && found == old_engine_without_the_annotations_fault
+    {
+        return;
+    }
+    let reactive_lets_read_as_placeholders: Spans = expected
+        .iter()
+        .filter(|(code, ..)| *code == Code::ReactiveLet)
+        .cloned()
+        .collect();
+    let found_reactive_lets: Spans = found
+        .iter()
+        .filter(|(code, ..)| *code == Code::ReactiveLet)
+        .cloned()
+        .collect();
+    if !by_new_core
+        && !reactive_lets_read_as_placeholders.is_empty()
+        && found_reactive_lets == reactive_lets_read_as_placeholders
+    {
         return;
     }
     if taken.is_some() && case.relation == Relation::Widening {

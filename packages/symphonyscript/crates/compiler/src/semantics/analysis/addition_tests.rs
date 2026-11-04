@@ -30,7 +30,9 @@ fn analyzed_within<R>(
     text: &str,
     inspect: impl FnOnce(&Engine<'_>) -> R,
 ) -> (Vec<Diagnostic>, R) {
-    let compiler = Compiler::with_limits(vocabulary, limits).expect("the vocabulary compiles");
+    let compiler = Compiler::with_limits(vocabulary, limits)
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
     let source = Source {
         path: "test.sym".into(),
         text: text.into(),

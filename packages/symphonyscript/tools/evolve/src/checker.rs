@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use symphonyscript::syntax::parse;
@@ -29,6 +30,7 @@ pub struct Checker {
     vocabulary: Vocabulary,
     budget: Duration,
     memory_bound: u64,
+    new_core: AtomicU64,
 }
 
 impl Checker {
@@ -51,6 +53,7 @@ impl Checker {
             vocabulary,
             budget,
             memory_bound: DEFAULT_MEMORY_BOUND,
+            new_core: AtomicU64::new(0),
         })
     }
 
@@ -59,6 +62,10 @@ impl Checker {
             memory_bound: bytes_per_source_byte,
             ..self
         }
+    }
+
+    pub fn new_core_programs(&self) -> u64 {
+        self.new_core.load(Ordering::Relaxed)
     }
 
     pub fn vocabulary(&self) -> &Vocabulary {
@@ -85,7 +92,11 @@ impl Checker {
     }
 
     pub fn verdict(&self, program: &Program) -> Verdict {
+        let before = self.compiler.taken_by_new_core();
         let compiled = self.compile(program);
+        if self.compiler.taken_by_new_core() > before {
+            self.new_core.fetch_add(1, Ordering::Relaxed);
+        }
         let mut verdict = Verdict {
             id: program.id.clone(),
             parses: self.parses(program),

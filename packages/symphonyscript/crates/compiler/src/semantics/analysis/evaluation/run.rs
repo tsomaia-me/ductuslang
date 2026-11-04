@@ -1,25 +1,18 @@
 use std::rc::Rc;
 
 use crate::semantics::builtin::Builtin;
-use symphonyscript_core::{BinaryOp, Scalar, SpecFloat, UnaryOp};
+use symphonyscript_core::{BinaryOp, Scalar, UnaryOp};
 
 use super::concat_part::ConcatPart;
-use super::convert::convert;
-use super::convert_to::convert_to;
 use super::ctx::Ctx;
-use super::int_range::int_range;
 use super::is_f32::is_f32;
-use super::is_float_ty::is_float_ty;
 use super::is_int_ty::is_int_ty;
 use super::operand_post::OperandPost;
 use super::own_type::own_type;
 use super::ran::Ran;
-use super::represents::represents;
 use super::text::text;
-use super::ty_name::ty_name;
 use crate::diagnostics::Code;
 use crate::semantics::Internal;
-use crate::semantics::analysis::c_array::CArray;
 use crate::semantics::analysis::c_val::CVal;
 use crate::semantics::analysis::engine::Engine;
 use crate::semantics::analysis::eval_ty::EvalTy;
@@ -37,6 +30,12 @@ use crate::semantics::analysis::some::some;
 use crate::semantics::analysis::widens::widens;
 use crate::semantics::analysis::width::Width;
 use crate::semantics::ir::{FloatLit, Number, Suffix};
+use crate::semantics::operators::convert_to;
+use crate::semantics::operators::int_range;
+use crate::semantics::operators::is_float_ty;
+use crate::semantics::operators::represents;
+use crate::semantics::operators::ty_name;
+use crate::semantics::operators::{converted_integer, integer};
 
 impl Engine<'_> {
     pub(in crate::semantics::analysis) fn run_eval(
@@ -103,63 +102,6 @@ impl Engine<'_> {
             None => self.error_at_node(need.code, node, need.message.clone())?,
         }
         Ok(CVal::Error)
-    }
-
-    pub(super) fn element(
-        &mut self,
-        base: NodeId,
-        index: NodeId,
-        value: CVal,
-        position: i128,
-    ) -> Result<CVal, Internal> {
-        let array = match value {
-            CVal::Array(array) => array,
-            CVal::Error => return Ok(CVal::Error),
-            CVal::Int(_)
-            | CVal::F32(_)
-            | CVal::F64(_)
-            | CVal::Bool(_)
-            | CVal::Enum(..)
-            | CVal::Str(_)
-            | CVal::Node(_) => {
-                self.error_at_node(Code::NotAnArray, base, "only an array is indexed")?;
-                return Ok(CVal::Error);
-            }
-        };
-        let item = usize::try_from(position)
-            .ok()
-            .and_then(|position| array.get(position).cloned());
-        Ok(match item {
-            Some(item) => item,
-            None => {
-                let length = u64::try_from(array.len()).unwrap_or(u64::MAX);
-                self.index_outside(index, position, length)?;
-                CVal::Error
-            }
-        })
-    }
-
-    pub(super) fn array_value(
-        &mut self,
-        node: NodeId,
-        values: Vec<CVal>,
-    ) -> Result<CVal, Internal> {
-        if values.iter().any(CVal::is_error) {
-            return Ok(CVal::Error);
-        }
-        let Some(first) = values.first() else {
-            return Ok(CVal::Array(CArray::new(Vec::new())));
-        };
-        let inner = lengths_of(first);
-        if values.iter().any(|value| lengths_of(value) != inner) {
-            self.error_at_node(
-                Code::RaggedArray,
-                node,
-                "the elements of an array are arrays of one length, or all single values",
-            )?;
-            return Ok(CVal::Error);
-        }
-        self.within_value_limit(node, CVal::Array(CArray::new(values)), "this array")
     }
 
     pub(super) fn takes_a_type(&self, node: NodeId) -> Result<bool, Internal> {
@@ -301,33 +243,6 @@ impl Engine<'_> {
         Ok(Ok(CVal::Error))
     }
 
-    pub(super) fn integer(
-        &mut self,
-        node: NodeId,
-        own: EvalTy,
-        value: Option<i128>,
-    ) -> Result<CVal, Internal> {
-        let Some(value) = value.filter(|value| *value != i128::MIN) else {
-            self.error_at_node(
-                Code::IntegerOverflow,
-                node,
-                "this value's magnitude reaches 2¹²⁷",
-            )?;
-            return Ok(CVal::Error);
-        };
-        if let Some(range) = int_range(own)
-            && !range.contains(&value)
-        {
-            self.error_at_node(
-                Code::ConstantOverflow,
-                node,
-                format!("this `{}` operation saturates", ty_name(own)),
-            )?;
-            return Ok(CVal::Error);
-        }
-        Ok(CVal::Int(value))
-    }
-
     pub(super) fn rand_value(
         &mut self,
         args: &[NodeId],
@@ -356,84 +271,6 @@ impl Engine<'_> {
             [seed, n] => CVal::F32(symphonyscript_core::rand(*seed, *n)),
             _ => CVal::Error,
         })
-    }
-
-    pub(super) fn builtin_value(
-        &mut self,
-        node: NodeId,
-        builtin: Builtin,
-        own: EvalTy,
-        values: Vec<CVal>,
-    ) -> Result<Option<CVal>, Internal> {
-        if let Some(ints) = values
-            .iter()
-            .map(|value| match value {
-                CVal::Int(value) => Some(*value),
-                CVal::F32(_)
-                | CVal::F64(_)
-                | CVal::Bool(_)
-                | CVal::Enum(..)
-                | CVal::Str(_)
-                | CVal::Node(_)
-                | CVal::Array(_)
-                | CVal::Error => None,
-            })
-            .collect::<Option<Vec<i128>>>()
-        {
-            let value = match (builtin, ints.as_slice()) {
-                (Builtin::Abs, [x]) => x.checked_abs(),
-                (Builtin::Min, [a, b]) => Some(*a.min(b)),
-                (Builtin::Max, [a, b]) => Some(*a.max(b)),
-                (Builtin::Clamp, [x, lo, hi]) => Some(*x.max(lo).min(hi)),
-                _ => return Ok(Some(CVal::Error)),
-            };
-            return Ok(Some(self.integer(node, own, value)?));
-        }
-        let floats32: Option<Vec<f32>> = values
-            .iter()
-            .map(|value| match value {
-                CVal::F32(value) => Some(*value),
-                CVal::Int(_)
-                | CVal::F64(_)
-                | CVal::Bool(_)
-                | CVal::Enum(..)
-                | CVal::Str(_)
-                | CVal::Node(_)
-                | CVal::Array(_)
-                | CVal::Error => None,
-            })
-            .collect();
-        if let Some(floats) = floats32 {
-            return Ok(Some(CVal::F32(
-                builtin
-                    .core()
-                    .and_then(|core| f32::spec_builtin(core, &floats))
-                    .ok_or(Internal::missed("built-in"))?,
-            )));
-        }
-        let floats64: Option<Vec<f64>> = values
-            .iter()
-            .map(|value| match value {
-                CVal::F64(value) => Some(*value),
-                CVal::Int(_)
-                | CVal::F32(_)
-                | CVal::Bool(_)
-                | CVal::Enum(..)
-                | CVal::Str(_)
-                | CVal::Node(_)
-                | CVal::Array(_)
-                | CVal::Error => None,
-            })
-            .collect();
-        Ok(Some(match floats64 {
-            Some(floats) => CVal::F64(
-                builtin
-                    .core()
-                    .and_then(|core| f64::spec_builtin(core, &floats))
-                    .ok_or(Internal::missed("built-in"))?,
-            ),
-            None => CVal::Error,
-        }))
     }
 
     pub(super) fn concat_value(
@@ -569,42 +406,6 @@ impl Engine<'_> {
         })?))
     }
 
-    pub(super) fn convert_integer(
-        &mut self,
-        node: NodeId,
-        flexible: bool,
-        value: CVal,
-        ty: EvalTy,
-    ) -> Result<CVal, Internal> {
-        let CVal::Int(integer) = value else {
-            return Ok(value);
-        };
-        let converted = convert(value, ty);
-        let exactly = match converted {
-            CVal::F32(float) => represents(integer, f64::from(float)),
-            CVal::F64(float) => represents(integer, float),
-            CVal::Int(_)
-            | CVal::Bool(_)
-            | CVal::Enum(..)
-            | CVal::Str(_)
-            | CVal::Node(_)
-            | CVal::Array(_)
-            | CVal::Error => true,
-        };
-        if flexible && !exactly {
-            self.error_at_node(
-                Code::DoesNotFit,
-                node,
-                format!(
-                    "the integer {integer} converts to `{}` inexactly",
-                    ty_name(ty)
-                ),
-            )?;
-            return Ok(CVal::Error);
-        }
-        Ok(converted)
-    }
-
     pub(super) fn scaled_leaf(
         &mut self,
         node: NodeId,
@@ -627,21 +428,24 @@ impl Engine<'_> {
             | CVal::Error => CVal::Error,
         })
     }
-}
 
-pub(super) const JOIN_SINGLE: &str = "`+` joins two arrays, and one of these is a single value";
+    pub(super) fn integer(
+        &mut self,
+        node: NodeId,
+        own: EvalTy,
+        value: Option<i128>,
+    ) -> Result<CVal, Internal> {
+        integer(self, node, own, value)
+    }
 
-pub(super) fn int_position(value: CVal) -> Option<i128> {
-    match value {
-        CVal::Int(position) => Some(position),
-        CVal::F32(_)
-        | CVal::F64(_)
-        | CVal::Bool(_)
-        | CVal::Enum(..)
-        | CVal::Str(_)
-        | CVal::Node(_)
-        | CVal::Array(_)
-        | CVal::Error => None,
+    pub(super) fn convert_integer(
+        &mut self,
+        node: NodeId,
+        flexible: bool,
+        value: CVal,
+        ty: EvalTy,
+    ) -> Result<CVal, Internal> {
+        converted_integer(self, node, flexible, value, ty)
     }
 }
 
@@ -716,72 +520,6 @@ fn exact_integer(value: &CVal, number: &Number, scale: Option<f64>) -> bool {
         | CVal::Array(_)
         | CVal::Error => false,
     }
-}
-
-pub(super) fn float_binary<
-    F: SpecFloat
-        + std::ops::Add<Output = F>
-        + std::ops::Sub<Output = F>
-        + std::ops::Mul<Output = F>
-        + std::ops::Div<Output = F>,
->(
-    op: BinaryOp,
-    a: F,
-    b: F,
-) -> Option<F> {
-    Some(match op {
-        BinaryOp::Add => a + b,
-        BinaryOp::Sub => a - b,
-        BinaryOp::Mul => a * b,
-        BinaryOp::Div => a / b,
-        BinaryOp::Rem => a.spec_rem(b),
-        BinaryOp::Pow => a.spec_pow(b),
-        BinaryOp::IntDiv
-        | BinaryOp::Is
-        | BinaryOp::IsNot
-        | BinaryOp::Lt
-        | BinaryOp::Le
-        | BinaryOp::Gt
-        | BinaryOp::Ge
-        | BinaryOp::And
-        | BinaryOp::Or => return None,
-    })
-}
-
-pub(super) fn compare(op: BinaryOp, a: &CVal, b: &CVal) -> CVal {
-    let ordering = match (a, b) {
-        (CVal::Int(a), CVal::Int(b)) => a.partial_cmp(b),
-        (CVal::F32(a), CVal::F32(b)) => a.partial_cmp(b),
-        (CVal::F64(a), CVal::F64(b)) => a.partial_cmp(b),
-        (CVal::Bool(a), CVal::Bool(b)) => a.partial_cmp(b),
-        (CVal::Enum(x, a), CVal::Enum(y, b)) if x == y => a.partial_cmp(b),
-        (CVal::Str(a), CVal::Str(b)) => a.partial_cmp(b),
-        _ => return CVal::Error,
-    };
-    let result = match op {
-        BinaryOp::Is => ordering == Some(std::cmp::Ordering::Equal),
-        BinaryOp::IsNot => ordering != Some(std::cmp::Ordering::Equal),
-        BinaryOp::Lt => ordering == Some(std::cmp::Ordering::Less),
-        BinaryOp::Le => matches!(
-            ordering,
-            Some(std::cmp::Ordering::Less | std::cmp::Ordering::Equal)
-        ),
-        BinaryOp::Gt => ordering == Some(std::cmp::Ordering::Greater),
-        BinaryOp::Ge => matches!(
-            ordering,
-            Some(std::cmp::Ordering::Greater | std::cmp::Ordering::Equal)
-        ),
-        BinaryOp::Add
-        | BinaryOp::Sub
-        | BinaryOp::Mul
-        | BinaryOp::Div
-        | BinaryOp::IntDiv
-        | BinaryOp::Rem
-        | BinaryOp::Pow
-        | BinaryOp::And
-        | BinaryOp::Or => return CVal::Error,
-    };
-    CVal::Bool(result)
 }
 
 pub(super) fn expected_scalar(ty: EvalTy) -> Option<Scalar> {

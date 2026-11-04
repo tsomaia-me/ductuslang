@@ -1,6 +1,7 @@
+mod reviewed;
 mod support;
 
-use symphonyscript::{Code, Compiler, Diagnostic, Source};
+use symphonyscript::{Code, Compiler, Diagnostic, Selector, Source};
 use symphonyscript_core::{Count, Vocabulary};
 use symphonyscript_fixtures::{Rows, covered};
 
@@ -5869,16 +5870,28 @@ fn own_fault(site: &LeafSite, base: u32, whole: bool) -> Option<((Code, String, 
 }
 
 #[test]
-fn every_fault_beside_another_fault_draws_by_the_placeholder_rule() {
-    let (failures, programs) = covered(|rows| placeholder_rule_failures(rows, 0, 1));
-    assert_placeholder_rule(&failures, programs, 457);
+fn every_fault_beside_another_fault_draws_by_the_placeholder_rule_in_the_first_third() {
+    let (failures, programs) = covered(|rows| placeholder_rule_failures(rows, (0, 1), (0, 3)));
+    assert_placeholder_rule(&failures, programs, 153);
+}
+
+#[test]
+fn every_fault_beside_another_fault_draws_by_the_placeholder_rule_in_the_second_third() {
+    let (failures, programs) = covered(|rows| placeholder_rule_failures(rows, (0, 1), (1, 3)));
+    assert_placeholder_rule(&failures, programs, 152);
+}
+
+#[test]
+fn every_fault_beside_another_fault_draws_by_the_placeholder_rule_in_the_last_third() {
+    let (failures, programs) = covered(|rows| placeholder_rule_failures(rows, (0, 1), (2, 3)));
+    assert_placeholder_rule(&failures, programs, 152);
 }
 
 #[test]
 #[ignore = "exhaustive"]
 fn exhaustive_every_fault_beside_another_fault_draws_by_the_placeholder_rule_in_the_odd_expressions()
  {
-    let (failures, programs) = placeholder_rule_failures(&Rows::Every, 0, 2);
+    let (failures, programs) = placeholder_rule_failures(&Rows::Every, (0, 2), (0, 1));
     assert_placeholder_rule(&failures, programs, 15_810);
 }
 
@@ -5886,20 +5899,40 @@ fn exhaustive_every_fault_beside_another_fault_draws_by_the_placeholder_rule_in_
 #[ignore = "exhaustive"]
 fn exhaustive_every_fault_beside_another_fault_draws_by_the_placeholder_rule_in_the_even_expressions()
  {
-    let (failures, programs) = placeholder_rule_failures(&Rows::Every, 1, 2);
+    let (failures, programs) = placeholder_rule_failures(&Rows::Every, (1, 2), (0, 1));
     assert_placeholder_rule(&failures, programs, 15_810);
 }
 
-fn placeholder_rule_failures(rows: &Rows, part: usize, parts: usize) -> (Vec<String>, usize) {
+fn placeholder_rule_failures(
+    rows: &Rows,
+    (part, parts): (usize, usize),
+    (chosen_part, chosen_parts): (usize, usize),
+) -> (Vec<String>, usize) {
     let pool = generated(2);
     let mut expressions: Vec<Generated> = pool.clone();
     expressions.extend(sampled_depth_three(&pool, 3000));
-    let compilers = [
-        Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("the vocabulary compiles"),
-        Compiler::new(&support::signature_vocabulary()).expect("the vocabulary compiles"),
-    ];
+    let compilers = std::cell::LazyCell::new(|| {
+        [
+            symphonyscript_fixtures::vocabulary(),
+            support::signature_vocabulary(),
+        ]
+        .map(|vocabulary| Compiler::new(&vocabulary).expect("the vocabulary compiles"))
+    });
+    let olds = std::cell::LazyCell::new(|| {
+        [
+            symphonyscript_fixtures::vocabulary(),
+            support::signature_vocabulary(),
+        ]
+        .map(|vocabulary| {
+            let mut old = Compiler::new(&vocabulary).expect("the vocabulary compiles");
+            old.select(Selector::OldEngine);
+            old
+        })
+    });
+    let mut moves = std::collections::BTreeMap::new();
     let mut failures = Vec::new();
     let mut programs = 0;
+    let mut taken = 0usize;
     for expression in expressions.iter().skip(part).step_by(parts) {
         let mut text = String::new();
         let mut sites = Vec::new();
@@ -5923,6 +5956,10 @@ fn placeholder_rule_failures(rows: &Rows, part: usize, parts: usize) -> (Vec<Str
                 if !rows.take(&tag) {
                     continue;
                 }
+                taken += 1;
+                if (taken - 1) % chosen_parts != chosen_part {
+                    continue;
+                }
                 let before: usize = order
                     .iter()
                     .take_while(|index| **index != 0)
@@ -5941,6 +5978,17 @@ fn placeholder_rule_failures(rows: &Rows, part: usize, parts: usize) -> (Vec<Str
                     }],
                 );
                 programs += 1;
+                if let Some((ledger, wanted)) = reviewed::reviewed(&program) {
+                    let drawn = reviewed_spans(compiler, &program);
+                    if drawn != wanted {
+                        failures.push(support::failed_row_with(
+                            compiler,
+                            &text,
+                            format!("{ledger} {program}\n  drawn {drawn:?}\n  reviewed {wanted:?}"),
+                        ));
+                    }
+                    continue;
+                }
                 if expression.holds_name() {
                     let mut expected = common_to_twins(compiler, &program);
                     for site in sites.iter().filter(|site| site.leaf == NAME) {
@@ -5952,11 +6000,36 @@ fn placeholder_rule_failures(rows: &Rows, part: usize, parts: usize) -> (Vec<Str
                         ));
                     }
                     if found != expected {
-                        failures.push(support::failed_row_with(
-                            compiler,
-                            &text,
-                            format!("{program}\n  found {found:?}\n  twins {expected:?}"),
+                        let old = drawn(&spanned_errors(
+                            &olds[place.vocabulary],
+                            &[Source {
+                                path: "main.sym".into(),
+                                text: program.clone(),
+                            }],
                         ));
+                        let moved = match reviewed::moved(&program, &old, &drawn(&found)) {
+                            Ok(classes) if classes.is_empty() => reviewed::missed_by_the_twin_pass(
+                                &program,
+                                &drawn(&expected),
+                                &drawn(&found),
+                            ),
+                            moved => moved,
+                        };
+                        match moved {
+                            Ok(classes) if !classes.is_empty() => {
+                                for class in classes {
+                                    *moves.entry(class.named()).or_insert(0usize) += 1;
+                                }
+                            }
+                            moved => failures.push(support::failed_row_with(
+                                compiler,
+                                &text,
+                                format!(
+                                    "{program}\n  found {found:?}\n  twins {expected:?}\n  old engine {old:?}\n  no class explains {:?}",
+                                    moved.err().unwrap_or_default()
+                                ),
+                            )),
+                        }
                     }
                     continue;
                 }
@@ -5986,7 +6059,38 @@ fn placeholder_rule_failures(rows: &Rows, part: usize, parts: usize) -> (Vec<Str
             }
         }
     }
+    for (class, count) in &moves {
+        eprintln!("{count} programs move by {class}");
+    }
     (failures, programs)
+}
+
+fn drawn(spans: &Spans) -> Vec<reviewed::Drawn> {
+    spans
+        .iter()
+        .filter(|(_, file, ..)| file == "main.sym")
+        .map(|(code, _, start, end)| (code.to_string(), *start as usize, *end as usize))
+        .collect()
+}
+
+fn reviewed_spans(compiler: &Compiler, program: &str) -> Vec<(String, String)> {
+    let mut spans: Vec<(String, String)> = compiler
+        .check(&[Source {
+            path: "main.sym".into(),
+            text: program.to_string(),
+        }])
+        .into_iter()
+        .filter(|diagnostic| diagnostic.code != Code::NoEntryInstance)
+        .map(|diagnostic| {
+            let range = diagnostic.span.range.start as usize..diagnostic.span.range.end as usize;
+            (
+                diagnostic.code.to_string(),
+                program.get(range).unwrap_or_default().to_string(),
+            )
+        })
+        .collect();
+    spans.sort();
+    spans
 }
 
 fn assert_placeholder_rule(failures: &[String], programs: usize, expected_programs: usize) {
