@@ -4839,7 +4839,7 @@ fn a_let_whose_initializer_drew_an_error_is_a_placeholder_at_an_array_attribute_
         ),
         (
             &[note, "let m = note + true\n", "Clip as g | fixed=m\n"],
-            &[(Code::OperandType, "note + true")],
+            &[(Code::OperandType, "note + true"), (Code::ReactiveLet, "m")],
         ),
         (
             &[

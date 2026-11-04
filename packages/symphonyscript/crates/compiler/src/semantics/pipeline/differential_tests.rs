@@ -1505,3 +1505,89 @@ fn an_array_annotation_on_a_top_level_let_fixes_its_whole_values_type_476() {
         assert!(new.checked_by_new_core(&[source(text)]).is_none(), "{text}");
     }
 }
+
+const NATIVES_ARRAY_ATTRIBUTES: [&str; 17] = [
+    "Clip c | trio=[1, 2, 3]\n",
+    "Clip c | trio=[1, 2]\n",
+    "Clip c | trio=1\n",
+    "Clip c | trio=[1.5, 2, 3]\n",
+    "Clip c | trio=[1, 2, 3000000000]\n",
+    "Clip c | trio=[true, false, true]\n",
+    "Clip c | trio=[[1], [2], [3]]\n",
+    "let t = [1, 2, 3]\nClip c | trio=t + [4]\n",
+    "state s(1)\nClip c | trio=[s, 2, 3]\n",
+    "state s(1.5)\nClip c | trio=[s, 2, 3]\n",
+    "Clip c | trio=[u8(1), 2, 3]\n",
+    "Clip c | trio=[i64(1), 2, 3]\n",
+    "Clip c | trio=[q, 2, 3]\n",
+    "Clip c | trio=q\n",
+    "Clip c | trio=[1, 2, 3][0]\n",
+    "Clip c | gain=[1.0]\n",
+    "Clip c | trio=[1 + true, 2, 3]\n",
+];
+
+const SIGNATURES_ARRAY_ATTRIBUTES: [&str; 11] = [
+    "Clip c | fixed=[1, 2, 3]\n",
+    "Clip c | fixed=[1, 2, 300]\n",
+    "Clip c | fixed=[1, 2, -1]\n",
+    "Clip c | fixed=[i32(1), 2, 3]\n",
+    "Clip c | fixed=[u8(1), 2, 3]\n",
+    "Clip c | fixed=[1.5, 2, 3]\n",
+    "state s(1)\nClip c | fixed=[s, 2, 3]\n",
+    "state s(1): i64\nClip c | fixed=[s + i64(1), 2, 3]\n",
+    "Clip c | fixed=[1, 2]\n",
+    "Clip c | fixed=[u8(255) + 4, 2, 3]\n",
+    "Clip c | fixed=[255 + 4, 2, 3]\n",
+];
+
+const TO_ARRAYS_ARRAY_ATTRIBUTES: [&str; 8] = [
+    "Clip c | steps=[0.5, 1, 2]\n",
+    "Clip c | steps=[0.5, 1]\n",
+    "Clip c | steps=[f64(0.5), 1, 2]\n",
+    "state s(1)\nClip c | steps=[s, 1, 2]\n",
+    "state s(1.5)\nClip c | steps=[s, 1, 2]\n",
+    "Lane l | steps=[1, 2]\n",
+    "Lane l | steps=[1e40, 2]\n",
+    "Clip c | steps=[true, 1, 2]\n",
+];
+
+#[test]
+fn a_fixed_array_attribute_binds_its_literals_elements_as_the_old_engine_does() {
+    let vocabularies = [
+        (
+            symphonyscript_fixtures::native_vocabulary(),
+            NATIVES_ARRAY_ATTRIBUTES.as_slice(),
+        ),
+        (
+            symphonyscript_fixtures::signature_vocabulary(),
+            SIGNATURES_ARRAY_ATTRIBUTES.as_slice(),
+        ),
+        (
+            symphonyscript_fixtures::to_array_vocabulary(),
+            TO_ARRAYS_ARRAY_ATTRIBUTES.as_slice(),
+        ),
+    ];
+    for (vocabulary, programs) in vocabularies {
+        let old = Compiler::new(&vocabulary)
+            .expect("the vocabulary compiles")
+            .on_the_old_engine();
+        let new = Compiler::new(&vocabulary).expect("the vocabulary compiles");
+        for text in programs {
+            let sources = [source(text)];
+            let found = new
+                .checked_by_new_core(&sources)
+                .unwrap_or_else(|| panic!("the new core takes {text}"));
+            assert_eq!(found, old.check(&sources), "{text}");
+        }
+    }
+    let new = Compiler::new(&symphonyscript_fixtures::native_vocabulary())
+        .expect("the vocabulary compiles");
+    for text in [
+        "let t = [1, 2, 3]\nClip c | trio=t\n",
+        "Clip c | trio=[1, 2, 3, 4][0..3]\n",
+        "Clip c | seq=[1, 2]\n",
+        "Clip c | rows=[[1, 2]]\n",
+    ] {
+        assert!(new.checked_by_new_core(&[source(text)]).is_none(), "{text}");
+    }
+}

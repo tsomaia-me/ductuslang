@@ -25,6 +25,18 @@ fn describe(count: Count) -> String {
     }
 }
 
+fn expected_array(attr: &AttrDecl) -> Option<(EvalTy, u32)> {
+    let [length] = attr.ty.lengths.as_slice() else {
+        return None;
+    };
+    if attr.ty.capacity.is_some() || attr.unit.is_some() {
+        return None;
+    }
+    let mut scalar = attr.clone();
+    scalar.ty.lengths.clear();
+    expected(&scalar).map(|ty| (ty, *length))
+}
+
 fn expected(attr: &AttrDecl) -> Option<EvalTy> {
     if !attr.ty.lengths.is_empty() || attr.ty.capacity.is_some() || attr.unit.is_some() {
         return None;
@@ -140,6 +152,12 @@ impl Core<'_> {
             }
             for (attr, _, root) in sources {
                 let attr = decl.attrs.get(attr).ok_or(Internal::missed("attribute"))?;
+                if let Some((ty, length)) = expected_array(attr) {
+                    if let Err(declined) = self.bind_array(root, &attr.name, ty, length)? {
+                        return Ok(Err(declined));
+                    }
+                    continue;
+                }
                 let Some(ty) = expected(attr) else {
                     return Ok(Err(Declined(attribute_reason(attr))));
                 };
@@ -236,6 +254,33 @@ impl Core<'_> {
             stack.extend(through.into_iter().rev());
         }
         Ok(refused)
+    }
+
+    fn bind_array(&mut self, root: u32, name: &str, ty: EvalTy, length: u32) -> Stage<()> {
+        let fact: Fact = match self.ensure_typed(root)? {
+            Ok(fact) => fact,
+            Err(declined) => return Ok(Err(declined)),
+        };
+        if matches!(fact.leaf, Leaf::Placeholder | Leaf::Error) {
+            return self.own_check(root);
+        }
+        if fact.dims != [length] {
+            self.draw_at(
+                Code::TypeMismatch,
+                root,
+                "the value's array shape differs from the attribute's type",
+            )?;
+            return self.own_check(root);
+        }
+        if self.ir.node(root)?.0 != Op::Array {
+            return Ok(Err(Declined(Reason::ArrayAttribute)));
+        }
+        for element in self.operands(root)? {
+            if let Err(declined) = self.bind_value(element, name, ty)? {
+                return Ok(Err(declined));
+            }
+        }
+        Ok(Ok(()))
     }
 
     pub fn own_check(&mut self, root: u32) -> Stage<()> {
