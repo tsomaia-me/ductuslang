@@ -1,6 +1,7 @@
 mod support;
 
-use symphonyscript::{Code, Compiler, Diagnostic};
+use support::Compiler;
+use symphonyscript::{Code, Diagnostic};
 use symphonyscript_fixtures::{Rows, covered, vocabulary};
 
 const TARGETS: &str =

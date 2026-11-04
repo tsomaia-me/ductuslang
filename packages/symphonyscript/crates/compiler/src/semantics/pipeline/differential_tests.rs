@@ -26,12 +26,28 @@ fn spanned(text: &str, found: &[crate::diagnostics::Diagnostic]) -> Vec<(String,
     spans
 }
 
+fn stop_limits() -> symphonyscript_core::LimitOverrides {
+    symphonyscript_core::LimitOverrides {
+        expansion_steps: Some(10),
+        expansion_steps_warning: Some(5),
+        ..symphonyscript_core::LimitOverrides::default()
+    }
+}
+
+fn judged_under(ledger: &str) -> Compiler {
+    let limits = if ledger == reviewed::LIMIT_STOP {
+        stop_limits()
+    } else {
+        symphonyscript_core::LimitOverrides::default()
+    };
+    Compiler::with_limits(&symphonyscript_fixtures::vocabulary(), limits)
+        .expect("the vocabulary compiles")
+}
+
 #[test]
 fn the_reviewed_moves_draw_their_expected_sets_on_the_new_core_464_476() {
-    let new =
-        Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("the vocabulary compiles");
     for (ledger, text, _) in REVIEWED.iter().copied() {
-        let found = new
+        let found = judged_under(ledger)
             .checked_by_new_core(&[source(text)])
             .expect("the new core takes the program");
         let expected = reviewed(text).map(|(_, expected)| expected);
@@ -54,14 +70,17 @@ const TWIN_PASS_TYPE_MISMATCHES: [&str; 10] = [
 
 #[test]
 fn the_twin_pass_alone_adds_the_type_mismatches_of_its_476_programs() {
-    let new =
-        Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("the vocabulary compiles");
     let programs = REVIEWED
         .iter()
-        .map(|(_, text, _)| (*text, false))
-        .chain(TWIN_PASS_TYPE_MISMATCHES.iter().map(|text| (*text, true)));
+        .map(|(ledger, text, _)| (*ledger, *text, false))
+        .chain(
+            TWIN_PASS_TYPE_MISMATCHES
+                .iter()
+                .map(|text| ("476", *text, true)),
+        );
     let mut wrong = Vec::new();
-    for (text, twin_pass) in programs {
+    for (ledger, text, twin_pass) in programs {
+        let new = judged_under(ledger);
         let sources = [source(text)];
         let alone = new
             .checked_by_new_core_without_twins(&sources)
@@ -129,7 +148,7 @@ fn assert_equal(corpora: &[Corpus]) -> u64 {
     }
     eprintln!("the new core took {taken} programs");
     eprintln!(
-        "{} of them move by a reviewed ledger rule (455, 464, 476):\n{}",
+        "{} of them move by a reviewed ledger rule (455, 464, 476, 478):\n{}",
         moved.len(),
         moved.join("\n")
     );
@@ -570,11 +589,18 @@ fn kept(
     own: &[reviewed::Drawn],
     other: &[reviewed::Drawn],
 ) -> Vec<crate::diagnostics::Diagnostic> {
+    let mut left: Vec<&reviewed::Drawn> = other.iter().collect();
     found
         .iter()
         .filter(|diagnostic| diagnostic.code != crate::diagnostics::Code::NoEntryInstance)
         .zip(own)
-        .filter(|(_, at)| other.contains(at))
+        .filter(|(_, at)| match left.iter().position(|kept| kept == at) {
+            Some(position) => {
+                left.swap_remove(position);
+                true
+            }
+            None => false,
+        })
         .map(|(diagnostic, _)| diagnostic.clone())
         .collect()
 }
@@ -936,6 +962,157 @@ fn a_cells_scalar_annotation_types_its_reads_and_checks_its_init_as_the_old_engi
     }
 }
 
+const DERIVED_CELL_ANNOTATIONS: [&str; 20] = [
+    "state s(1)\nstate q: i32 = s + 1\nClip c:\n    Note/(q)\n",
+    "state s(1)\nstate q: u8 = s + 300\nClip c:\n    Note/(q)\n",
+    "state s(1)\nstate q: i32 = s + 1.5\nClip c:\n    Note/(q)\n",
+    "state s(1)\nstate q: f64 = s + 1.5\nClip c:\n    Note/(q)\n",
+    "state s(1)\nstate q: bool = s + 1\nClip c:\n    Note/(q)\n",
+    "state s(1)\nstate q: bool = s > 1\nClip c:\n    Note/(if q then 1 else 2)\n",
+    "state s(1)\nstate q: i64 = s + 1\nClip c:\n    Note/(q)\n",
+    "state s(1)\nstate q: i64 = s + 1\nClip c:\n    Note/(q + 1)\n",
+    "state s(1)\nstate q: i32 = s + i64(1)\nClip c:\n    Note/(q)\n",
+    "state s(1.5): f64\nstate q: i32 = s + 1\nClip c:\n    Note/(q)\n",
+    "state s(1)\nstate q: u8 = s\nClip c:\n    Note/([1, 2][q])\n",
+    "state s(1)\nstate q: i32 = s + true\nClip c:\n    Note/(q)\n",
+    "state s(1)\nstate q: f32 = s * 2\nClip c:\n    Note | velocity=(q)\n",
+    "state s(1)\nstate q: i32 = s + 1\nlet a = q + 1\nClip c:\n    Note/(a)\n",
+    "state s(1)\nstate q: u8 = s + 1\nClip c:\n    Note/(q + (u8(255) + 4))\n",
+    "state s(1)\nstate q: i32 = x + 1\nClip c:\n    Note/(q)\n",
+    "state s(1)\nstate q: i32 = 1 + 1\nClip c:\n    Note/(q)\n",
+    "state s(1)\nstate q: u8 = s * 2\nClip c:\n    Note | velocity=(q)\n",
+    "state s(0.5)\nstate q: f32 = s\nClip c:\n    Note | velocity=(q)\n",
+    "state s(1)\nstate q: i32 = s + 1\n",
+];
+
+#[test]
+fn a_derived_cells_scalar_annotation_types_its_reads_and_checks_its_rule_as_the_old_engine_does() {
+    let old = Compiler::new(&symphonyscript_fixtures::vocabulary())
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
+    let new =
+        Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("the vocabulary compiles");
+    for text in DERIVED_CELL_ANNOTATIONS {
+        let sources = [source(text)];
+        let found = new
+            .checked_by_new_core(&sources)
+            .unwrap_or_else(|| panic!("the new core takes {text}"));
+        assert_eq!(found, old.check(&sources), "{text}");
+    }
+}
+
+const ANNOTATED_ARRAY_RULES: [(&str, &[(&str, &str)]); 5] = [
+    (
+        "state s(1)\nstate q: i32 = [s]\nClip c:\n    Note/(q)\n",
+        &[("type-mismatch", "[s]")],
+    ),
+    (
+        "state s(1)\nstate q: i32 = [s]\n",
+        &[("type-mismatch", "[s]")],
+    ),
+    (
+        "state s(1)\nstate q: i32 = [s, s + 1]\nClip c:\n    Note/(q + 1)\n",
+        &[("type-mismatch", "[s, s + 1]")],
+    ),
+    (
+        "state s(1)\nstate q: u8 = [s + 300]\nClip c:\n    Note/(q)\n",
+        &[("type-mismatch", "[s + 300]")],
+    ),
+    (
+        "state s(1)\nstate q: bool = [s > 1]\nClip c:\n    Note/(if q then 1 else 2)\n",
+        &[("type-mismatch", "[s > 1]")],
+    ),
+];
+
+const ANNOTATED_ARRAY_RULE_TWINS: [&str; 3] = [
+    "state s(1)\nstate q: i32 = [s][0]\nClip c:\n    Note/(q)\n",
+    "state s(1)\nstate q: i32 = s\nClip c:\n    Note/(q)\n",
+    "state q([1]): i32\nClip c:\n    Note/(q)\n",
+];
+
+#[test]
+fn an_annotated_derived_cells_array_rule_draws_its_type_mismatch_at_the_rule_476() {
+    let old = Compiler::new(&symphonyscript_fixtures::vocabulary())
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
+    let new =
+        Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("the vocabulary compiles");
+    for (text, expected) in ANNOTATED_ARRAY_RULES {
+        let sources = [source(text)];
+        let found = new
+            .checked_by_new_core(&sources)
+            .unwrap_or_else(|| panic!("the new core takes {text}"));
+        let mut wanted: Vec<(String, String)> = expected
+            .iter()
+            .map(|(code, span)| ((*code).to_string(), (*span).to_string()))
+            .collect();
+        wanted.sort();
+        assert_eq!(spanned(text, &found), wanted, "{text}");
+        assert!(
+            found
+                .iter()
+                .filter(|diagnostic| diagnostic.code == crate::diagnostics::Code::TypeMismatch)
+                .all(|diagnostic| diagnostic.summary
+                    == "the rule's shape differs from the cell's type"),
+            "{text}"
+        );
+        let before = old.check(&sources);
+        let classes = reviewed::moved(text, &drawn(&before), &drawn(&found))
+            .unwrap_or_else(|unexplained| panic!("{text}: {unexplained:?}"));
+        assert!(
+            !classes.is_empty() && classes.iter().all(|class| class.ledger == "476"),
+            "{text}"
+        );
+    }
+    for text in ANNOTATED_ARRAY_RULE_TWINS {
+        let sources = [source(text)];
+        let found = new
+            .checked_by_new_core(&sources)
+            .unwrap_or_else(|| panic!("the new core takes {text}"));
+        assert_eq!(found, old.check(&sources), "{text}");
+    }
+}
+
+const FLOWING_TYPES_AND_FLOAT_CONVERSIONS: [&str; 20] = [
+    "state q(0): i32\nClip c:\n    Note/(q + (u8(255) + 4))\n",
+    "state q(0): i32\nClip c:\n    Note/([1, 2][q + (u8(255) + 4)])\n",
+    "state q(0)\nClip c:\n    Note/([1, 2][q + (u8(255) + 4)])\n",
+    "state q(0)\nClip c:\n    Note/(q + (u8(255) + 4))\n",
+    "state q(0): i32\nClip c:\n    Note/(if q > 1 then q + (u8(255) + 4) else 1)\n",
+    "state q(0): i32\nClip c:\n    Note/([1, 2][if true then q + (u8(255) + 4) else 1])\n",
+    "state q(0): i32\nClip c:\n    Note/(q * (q + (u8(255) + 4)))\n",
+    "state q(0): i32\nfn f(x): x + (u8(255) + 4)\nClip c:\n    Note/(f(q))\n",
+    "state q(0): i32\nClip c:\n    Note/(i32(q + (u8(255) + 4)))\n",
+    "state q(0): i32\nClip c:\n    Note/(q > u8(255) + 4)\n",
+    "state s(1)\nstate q: i32 = s + 1\nClip c:\n    Note/(q + (u8(255) + 4))\n",
+    "state s(1)\nClip c:\n    Note/(f32(s))\n",
+    "state s(1)\nClip c:\n    Note | velocity=(f32(s))\n",
+    "state s(1)\nClip c:\n    Note/(f64(s))\n",
+    "state s(1)\nClip c:\n    Note/(f32(s + 1))\n",
+    "state s(1): i32\nClip c:\n    Note/(f32(s))\n",
+    "state s(1): i32\nClip c:\n    Note/(f64(s))\n",
+    "state s(1)\nClip c:\n    Note/(i32(f32(s)))\n",
+    "state s(1)\nClip c:\n    Note/(f32(s + [1, 2][5]))\n",
+    "state s(1.5)\nClip c:\n    Note/(f32(s))\n",
+];
+
+#[test]
+fn a_type_flowing_in_equal_to_a_cells_own_computes_a_fixed_operand_in_it_and_a_refused_float_conversion_reads_its_cell_as_a_float()
+ {
+    let old = Compiler::new(&symphonyscript_fixtures::vocabulary())
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
+    let new =
+        Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("the vocabulary compiles");
+    for text in FLOWING_TYPES_AND_FLOAT_CONVERSIONS {
+        let sources = [source(text)];
+        let found = new
+            .checked_by_new_core(&sources)
+            .unwrap_or_else(|| panic!("the new core takes {text}"));
+        assert_eq!(found, old.check(&sources), "{text}");
+    }
+}
+
 const FLOAT_CELLS_THROUGH_A_CALL: [&str; 8] = [
     "state tw(0.5): f64\nfn h(z):\n    let x = tw\n    x\nClip c:\n    Note/(h(0))\n",
     "state tw(0.5)\nfn h(z):\n    let x = tw\n    x\nClip c:\n    Note/(h(0))\n",
@@ -1086,5 +1263,617 @@ fn a_gate_program_reading_a_reactive_let_draws_its_repaired_twins_set_beside_rea
         );
         wanted.sort();
         assert_eq!(spanned(text, &found), wanted, "{text}");
+    }
+}
+
+const CONVERSION_OPERANDS: [(&str, &[(&str, &str)]); 8] = [
+    (
+        "Clip c:\n    Note | velocity=(f32(u8(255) + 4))\n",
+        &[("constant-overflow", "u8(255) + 4")],
+    ),
+    (
+        "Clip c:\n    Note | velocity=(f64(u8(255) + 4))\n",
+        &[
+            ("constant-overflow", "u8(255) + 4"),
+            ("type-mismatch", "f64(u8(255) + 4)"),
+        ],
+    ),
+    (
+        "Clip c:\n    Note | velocity=(f32(u8(1) + 300))\n",
+        &[("does-not-fit", "300")],
+    ),
+    (
+        "Clip c:\n    Note/(f32(u8(255) + 4))\n",
+        &[
+            ("constant-overflow", "u8(255) + 4"),
+            ("type-mismatch", "f32(u8(255) + 4)"),
+        ],
+    ),
+    (
+        "state s(1)\nClip c:\n    Note | velocity=(f32(s + u8(1)))\n",
+        &[],
+    ),
+    (
+        "state s(1)\nClip c:\n    Note | velocity=(f32(s + i64(1)))\n",
+        &[],
+    ),
+    (
+        "state q(0): i64\nClip c:\n    Note | velocity=(f32(q + (u8(255) + 4)))\n",
+        &[("constant-overflow", "u8(255) + 4")],
+    ),
+    (
+        "state q(0)\nClip c:\n    Note | velocity=(f32(q + (u8(250) + 4)))\n",
+        &[],
+    ),
+];
+
+const CONVERSION_OPERAND_TWINS: [&str; 5] = [
+    "Clip c:\n    Note | velocity=(f32(u8(250) + 4))\n",
+    "state s(1)\nClip c:\n    Note | velocity=(f32(s + 1))\n",
+    "Clip c:\n    Note/(i32(u8(255) + 4))\n",
+    "Clip c:\n    Note/(i32(2.7))\n",
+    "Clip c:\n    Note/(i32(2.7 + 1))\n",
+];
+
+#[test]
+fn a_conversions_operand_is_computed_in_its_own_type_where_the_old_engine_flows_the_target_478() {
+    let old = Compiler::new(&symphonyscript_fixtures::vocabulary())
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
+    let new =
+        Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("the vocabulary compiles");
+    for (text, expected) in CONVERSION_OPERANDS {
+        let sources = [source(text)];
+        let found = new
+            .checked_by_new_core(&sources)
+            .unwrap_or_else(|| panic!("the new core takes {text}"));
+        let mut wanted: Vec<(String, String)> = expected
+            .iter()
+            .map(|(code, span)| ((*code).to_string(), (*span).to_string()))
+            .collect();
+        wanted.sort();
+        assert_eq!(spanned(text, &found), wanted, "{text}");
+        let before = old.check(&sources);
+        assert_ne!(before, found, "{text}");
+        let classes = reviewed::moved(text, &drawn(&before), &drawn(&found))
+            .unwrap_or_else(|unexplained| panic!("{text}: {unexplained:?}"));
+        assert!(
+            !classes.is_empty() && classes.iter().all(|class| class.ledger == "478"),
+            "{text}"
+        );
+    }
+    for text in CONVERSION_OPERAND_TWINS {
+        let sources = [source(text)];
+        let found = new
+            .checked_by_new_core(&sources)
+            .unwrap_or_else(|| panic!("the new core takes {text}"));
+        assert_eq!(found, old.check(&sources), "{text}");
+    }
+}
+
+const FOLD_ANNOTATIONS: [&str; 24] = [
+    "let n = for i in 0..3 into a: i32 from 0: a + i\nClip c:\n    Note/(n)\n",
+    "let n = for i in 0..3 into a: u8 from 0: a + i + 300\nClip c:\n    Note/(n)\n",
+    "let n = for i in 0..3 into a: u8 from 300: a + i\nClip c:\n    Note/(n)\n",
+    "let n = for i in 0..3 into a: f32 from 0: a + i\nClip c:\n    Note | velocity=(n)\n",
+    "let n = for i in 0..3 into a: bool from false: a or i > 1\nClip c:\n    Note/(if n then 1 else 2)\n",
+    "let n = for i in 0..3 into a: i64 from 0: a + i\nClip c:\n    Note/(n)\n",
+    "let n = for i in 0..3 into a: u8 from 0: a + 100\nClip c:\n    Note/(n)\n",
+    "let n = for i in 0..3 into a: u8 from 250: a + 1\nClip c:\n    Note/(n)\n",
+    "let n = for i in 0..3 into a: f64 from 0: a + i\nClip c:\n    Note | velocity=(n)\n",
+    "let n = for i: i32 in 0..3 into a from 0: a + i\nClip c:\n    Note/(n)\n",
+    "let n = for x: u8 in [1, 300] into a from 0: a + x\nClip c:\n    Note/(n)\n",
+    "let n = for x: u8 in [1, 2] into a from 0: a + x\nClip c:\n    Note/(n)\n",
+    "let n = for i: u8 in 0..300 into a from 0: a + i\nClip c:\n    Note/(n)\n",
+    "let n = for x: i32 in [1.5] into a from 0: a + x\nClip c:\n    Note/(n)\n",
+    "let n = for x: f32 in [1, 2] into a from 0: a + x\nClip c:\n    Note/(n)\n",
+    "let n = for i, x: u8 in [1, 2] into a from 0: a + x + i\nClip c:\n    Note/(n)\n",
+    "let n = for x: bool in [true] into a from 0: a + x\nClip c:\n    Note/(n)\n",
+    "let n = for i in 0..3 into a: u8 from 0: 300\nClip c:\n    Note/(n)\n",
+    "let n = for i: f32 in 0..3 into a from 0.0: a + i\nClip c:\n    Note | velocity=(n)\n",
+    "let n = for x: f64 in [1, 2] into a from 0.0: a + x\nClip c:\n    Note | velocity=(n)\n",
+    "fn f(k): for i in 0..k into a: u8 from 0: a + 100\nClip c:\n    Note/(f(3))\n",
+    "let n = for i, x: i32 in [1.5] into a from 0: a + i\nClip c:\n    Note/(n)\n",
+    "let n = for i in 0..3 into a: u8 from q: a + i\nClip c:\n    Note/(n)\n",
+    "let n = for i in 0..3 into a: u8 from 0: a + (for j in 0..2 into b: u8 from 0: b + 200)\nClip c:\n    Note/(n)\n",
+];
+
+const FOLD_ANNOTATION_FAULTS: [(&str, &[(&str, &str)]); 6] = [
+    (
+        "let n = for i in 0..3 into a: i32 from 0.5: a + i\nClip c:\n    Note/(n)\n",
+        &[("type-mismatch", "0.5")],
+    ),
+    (
+        "let n = for i in 0..3 into a: i32 from [0]: a + [i]\nClip c:\n    Note/(n)\n",
+        &[("array-operand", "a + [i]"), ("type-mismatch", "[0]")],
+    ),
+    (
+        "let n = for i in 0..3 into a: i32 from 0: a + 1.5\nClip c:\n    Note/(n)\n",
+        &[("type-mismatch", "a + 1.5")],
+    ),
+    (
+        "let n = for i in 0..3 into a: u8 from 0: a + i64(1)\nClip c:\n    Note/(n)\n",
+        &[("type-mismatch", "a + i64(1)")],
+    ),
+    (
+        "let n = for x: i32 in [[1]] into a from 0: a + x\nClip c:\n    Note/(n)\n",
+        &[("type-mismatch", "x")],
+    ),
+    (
+        "let n = for i in 0..3 into a: bool from 0: a\nClip c:\n    Note/(if n then 1 else 2)\n",
+        &[("type-mismatch", "0")],
+    ),
+];
+
+#[test]
+fn an_annotated_accumulator_or_loop_name_fixes_its_type_as_spec_4_5_states_476() {
+    let old = Compiler::new(&symphonyscript_fixtures::vocabulary())
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
+    let new =
+        Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("the vocabulary compiles");
+    for text in FOLD_ANNOTATIONS {
+        let sources = [source(text)];
+        let found = new
+            .checked_by_new_core(&sources)
+            .unwrap_or_else(|| panic!("the new core takes {text}"));
+        assert_eq!(found, old.check(&sources), "{text}");
+    }
+    for (text, expected) in FOLD_ANNOTATION_FAULTS {
+        let sources = [source(text)];
+        let found = new
+            .checked_by_new_core(&sources)
+            .unwrap_or_else(|| panic!("the new core takes {text}"));
+        let mut wanted: Vec<(String, String)> = expected
+            .iter()
+            .map(|(code, span)| ((*code).to_string(), (*span).to_string()))
+            .collect();
+        wanted.sort();
+        assert_eq!(spanned(text, &found), wanted, "{text}");
+        let before = old.check(&sources);
+        let classes = reviewed::moved(text, &drawn(&before), &drawn(&found))
+            .unwrap_or_else(|unexplained| panic!("{text}: {unexplained:?}"));
+        assert!(
+            !classes.is_empty() && classes.iter().all(|class| class.ledger == "476"),
+            "{text}"
+        );
+    }
+}
+
+const ARRAY_ANNOTATIONS: [&str; 24] = [
+    "let x: i32[3] = [1, 2, 3]\nClip c:\n    Note/(x[1])\n",
+    "let x: u8[2] = [1, 300]\nClip c:\n    Note/(x[1])\n",
+    "let x: i32[3] = [1, 2]\nClip c:\n    Note/(x[1])\n",
+    "let x: i32[2] = 1\nClip c:\n    Note/(x[1])\n",
+    "let x: i32[2] = [1.5, 2]\nClip c:\n    Note/(x[1])\n",
+    "let x: i32[3][2] = [[1, 2, 3], [4, 5, 6]]\nClip c:\n    Note/(x[1][2])\n",
+    "let x: i32[2][3] = [[1, 2, 3], [4, 5, 6]]\nClip c:\n    Note/(x[1][2])\n",
+    "let x: f32[2] = [1, 2]\nClip c:\n    Note | velocity=(x[1])\n",
+    "let x: bool[2] = [true, false]\nClip c:\n    Note/(if x[0] then 1 else 2)\n",
+    "let x: i32[2] = [1, 2]\nClip c:\n    Note/(x)\n",
+    "let x: i32[2] = [1, 2] + [3]\nClip c:\n    Note/(x[1])\n",
+    "state s(1)\nlet x: i32[2] = [s, 1]\nClip c:\n    Note/(x[1])\n",
+    "let x: u8[2] = [1, 300]\n",
+    "let x: u8[2] = [1, 2]\nlet y = x[0] + 300\nClip c:\n    Note/(y)\n",
+    "let x: i32[2] = [1, 2]\nlet y = x + [3]\nClip c:\n    Note/(y[2])\n",
+    "let x: i32[2] = [1, [2]]\nClip c:\n    Note/(x[0])\n",
+    "let x: i32[2] = [true, 2]\nClip c:\n    Note/(x[0])\n",
+    "let y = [1.5, 2]\nlet x: i32[2] = y\nClip c:\n    Note/(x[0])\n",
+    "let x: f32[2] = [1, 2.5]\nClip c:\n    Note | velocity=(x[0])\n",
+    "let x: i32[2] = [1, 2]\nClip c:\n    Note/(x[^1])\n",
+    "let x: i32[3] = [1, 2, 3]\nClip c:\n    Note/(x[0..2][1])\n",
+    "let x: u8[2] = [1, 2][0..2]\nClip c:\n    Note/(x[0])\n",
+    "let x: i32[2] = [q, 1]\nClip c:\n    Note/(x[0])\n",
+    "let x: i64 = 1\nClip c:\n    Note/(x)\n",
+];
+
+const ARRAY_ANNOTATION_FAULTS: [(&str, &[(&str, &str)]); 5] = [
+    (
+        "let x: u8[2] = [1, 300]\nClip c:\n    Note/(x[0])\n",
+        &[("does-not-fit", "300")],
+    ),
+    (
+        "let x: i64[2] = [1, 2]\nClip c:\n    Note/(x[1])\n",
+        &[("type-mismatch", "x[1]")],
+    ),
+    (
+        "let x: i64[2] = [1, 2]\nClip c:\n    Note | velocity=(x[1])\n",
+        &[("type-mismatch", "x[1]")],
+    ),
+    (
+        "let x: i32[2] = [1.5, 2.5]\nClip c:\n    Note/(x[0])\n",
+        &[("type-mismatch", "1.5"), ("type-mismatch", "2.5")],
+    ),
+    (
+        "let k = 300\nlet x: u8[2] = [1, k]\nClip c:\n    Note/(x[0])\n",
+        &[("does-not-fit", "k")],
+    ),
+];
+
+#[test]
+fn an_array_annotation_on_a_top_level_let_fixes_its_whole_values_type_476() {
+    let old = Compiler::new(&symphonyscript_fixtures::vocabulary())
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
+    let new =
+        Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("the vocabulary compiles");
+    for text in ARRAY_ANNOTATIONS {
+        let sources = [source(text)];
+        let found = new
+            .checked_by_new_core(&sources)
+            .unwrap_or_else(|| panic!("the new core takes {text}"));
+        assert_eq!(found, old.check(&sources), "{text}");
+    }
+    for (text, expected) in ARRAY_ANNOTATION_FAULTS {
+        let sources = [source(text)];
+        let found = new
+            .checked_by_new_core(&sources)
+            .unwrap_or_else(|| panic!("the new core takes {text}"));
+        let mut wanted: Vec<(String, String)> = expected
+            .iter()
+            .map(|(code, span)| ((*code).to_string(), (*span).to_string()))
+            .collect();
+        wanted.sort();
+        assert_eq!(spanned(text, &found), wanted, "{text}");
+        let before = old.check(&sources);
+        let classes = reviewed::moved(text, &drawn(&before), &drawn(&found))
+            .unwrap_or_else(|unexplained| panic!("{text}: {unexplained:?}"));
+        assert!(
+            !classes.is_empty() && classes.iter().all(|class| class.ledger == "476"),
+            "{text}"
+        );
+    }
+    for text in [
+        "let x: i32[0] = []\nClip c:\n    Note/(1)\n",
+        "state q([1, 2]): i32[2]\nClip c:\n    Note/(q[1])\n",
+        "let n = for x: i32[2] in [[1, 2], [3, 4]] into a from 0: a + x[1]\nClip c:\n    Note/(n)\n",
+    ] {
+        assert!(new.checked_by_new_core(&[source(text)]).is_none(), "{text}");
+    }
+}
+
+const NATIVES_ARRAY_ATTRIBUTES: [&str; 17] = [
+    "Clip c | trio=[1, 2, 3]\n",
+    "Clip c | trio=[1, 2]\n",
+    "Clip c | trio=1\n",
+    "Clip c | trio=[1.5, 2, 3]\n",
+    "Clip c | trio=[1, 2, 3000000000]\n",
+    "Clip c | trio=[true, false, true]\n",
+    "Clip c | trio=[[1], [2], [3]]\n",
+    "let t = [1, 2, 3]\nClip c | trio=t + [4]\n",
+    "state s(1)\nClip c | trio=[s, 2, 3]\n",
+    "state s(1.5)\nClip c | trio=[s, 2, 3]\n",
+    "Clip c | trio=[u8(1), 2, 3]\n",
+    "Clip c | trio=[i64(1), 2, 3]\n",
+    "Clip c | trio=[q, 2, 3]\n",
+    "Clip c | trio=q\n",
+    "Clip c | trio=[1, 2, 3][0]\n",
+    "Clip c | gain=[1.0]\n",
+    "Clip c | trio=[1 + true, 2, 3]\n",
+];
+
+const SIGNATURES_ARRAY_ATTRIBUTES: [&str; 11] = [
+    "Clip c | fixed=[1, 2, 3]\n",
+    "Clip c | fixed=[1, 2, 300]\n",
+    "Clip c | fixed=[1, 2, -1]\n",
+    "Clip c | fixed=[i32(1), 2, 3]\n",
+    "Clip c | fixed=[u8(1), 2, 3]\n",
+    "Clip c | fixed=[1.5, 2, 3]\n",
+    "state s(1)\nClip c | fixed=[s, 2, 3]\n",
+    "state s(1): i64\nClip c | fixed=[s + i64(1), 2, 3]\n",
+    "Clip c | fixed=[1, 2]\n",
+    "Clip c | fixed=[u8(255) + 4, 2, 3]\n",
+    "Clip c | fixed=[255 + 4, 2, 3]\n",
+];
+
+const TO_ARRAYS_ARRAY_ATTRIBUTES: [&str; 8] = [
+    "Clip c | steps=[0.5, 1, 2]\n",
+    "Clip c | steps=[0.5, 1]\n",
+    "Clip c | steps=[f64(0.5), 1, 2]\n",
+    "state s(1)\nClip c | steps=[s, 1, 2]\n",
+    "state s(1.5)\nClip c | steps=[s, 1, 2]\n",
+    "Lane l | steps=[1, 2]\n",
+    "Lane l | steps=[1e40, 2]\n",
+    "Clip c | steps=[true, 1, 2]\n",
+];
+
+#[test]
+fn a_fixed_array_attribute_binds_its_literals_elements_as_the_old_engine_does() {
+    let vocabularies = [
+        (
+            symphonyscript_fixtures::native_vocabulary(),
+            NATIVES_ARRAY_ATTRIBUTES.as_slice(),
+        ),
+        (
+            symphonyscript_fixtures::signature_vocabulary(),
+            SIGNATURES_ARRAY_ATTRIBUTES.as_slice(),
+        ),
+        (
+            symphonyscript_fixtures::to_array_vocabulary(),
+            TO_ARRAYS_ARRAY_ATTRIBUTES.as_slice(),
+        ),
+    ];
+    for (vocabulary, programs) in vocabularies {
+        let old = Compiler::new(&vocabulary)
+            .expect("the vocabulary compiles")
+            .on_the_old_engine();
+        let new = Compiler::new(&vocabulary).expect("the vocabulary compiles");
+        for text in programs {
+            let sources = [source(text)];
+            let found = new
+                .checked_by_new_core(&sources)
+                .unwrap_or_else(|| panic!("the new core takes {text}"));
+            assert_eq!(found, old.check(&sources), "{text}");
+        }
+    }
+    let new = Compiler::new(&symphonyscript_fixtures::native_vocabulary())
+        .expect("the vocabulary compiles");
+    for text in [
+        "let t = [1, 2, 3]\nClip c | trio=t\n",
+        "Clip c | trio=[1, 2, 3, 4][0..3]\n",
+        "Clip c | seq=[1, 2]\n",
+        "Clip c | rows=[[1, 2]]\n",
+    ] {
+        assert!(new.checked_by_new_core(&[source(text)]).is_none(), "{text}");
+    }
+}
+
+const NESTED_SCOPES: [&str; 22] = [
+    "fn f(p): for i in 0..3 into s from 0: s + p\nClip c:\n    Note/([0][f(2) - 6])\n    Note/([0][f(5) - 15])\n",
+    "fn f(p): for i in 0..3 into s from 0: s + p\nClip c:\n    Note/([0][f(2) - 7])\n",
+    "fn f(p):\n    let k = p + 1\n    for i in 0..3 into s from 0: s + k\nClip c:\n    Note/([0][f(2) - 9])\n",
+    "fn f(p):\n    let k = [p, p + 1]\n    for i in 0..2 into s from 0: s + k[i]\nClip c:\n    Note/([0][f(3) - 7])\n",
+    "fn h(v): v * 2\nfn f(p):\n    let k = h(p)\n    for i in 0..2 into s from 0: s + k + h(i)\nClip c:\n    Note/([0][f(3) - 14])\n",
+    "fn f(p, q): for x in p into s from 0: s + x * q\nClip c:\n    Note/([0][f([1, 2], 3) - 9])\n",
+    "fn f(p): for i in 0..3 into s from 0: s + p\nClip c:\n    Note/(f(true))\n",
+    "fn f(p): for i in 0..3 into s from 0: s + p\nClip c:\n    Note | velocity=(f(0.25))\n    Note | velocity=(f(0.125))\n",
+    "fn f(p): for i in 0..3 into s from 0: s + p\nClip c:\n    Note | velocity=(f(0.5))\n",
+    "fn f(p): for i in 0..2 into s from 0: s + p + true\nClip c:\n    Note/(f(1))\n",
+    "fn g(p): for i in 0..2 into s from 0: s + (for j in 0..2 into u from 0: u + p + i)\nClip c:\n    Note/([0][g(1) - 6])\n    Note/([0][g(2) - 10])\n",
+    "fn f(p): for i in 0..3 into s from 0: s + p\nlet t = for i in 0..3 into a from 0: a + f(i)\nClip c:\n    Note/t\n",
+    "let t = for i in 0..3 into a from 0: a + (for j in 0..2 into b from 0: b + i)\nClip c:\n    Note/([0, 0, 0, 0, 0, 0, 0][t - 6])\n",
+    "let t = for i in 0..3 into a from 0: a + (for j in 0..2 into b from 0: b + a)\nClip c:\n    Note/([0][t - 7])\n",
+    "let t = for i in 0..3 into a from 0:\n    let w = i * 10\n    a + (for j in 0..2 into b from 0: b + w)\nClip c:\n    Note/([0][t - 60])\n",
+    "let t = for i in 0..3 into a from 0: a + (for j in 0..2 into b from 0: b + (for k in 0..2 into e from 0: e + i))\nClip c:\n    Note/([0][t - 12])\n",
+    "let t = for i in 0..3 into a from 0: a + (for j in 0..2 into a from 0: a + i)\nClip c:\n    Note/([0][t - 6])\n",
+    "let t = for i in 0..3 into a from 0.5: a + (for j in 0..2 into b from 0: b + i)\nClip c:\n    Note | velocity=(t)\n",
+    "let t = for i in 0..3 into a from []: a + [(for j in 0..2 into b from 0: b + i)]\nClip c:\n    Note/([0][t[2] - 4])\n",
+    "let t = for i in 0..2 into a from 0: a + (for j in 0..300 into b from 0: b + i)\nClip c:\n    Note/(t)\n",
+    "let t = for i in 0..3 into a from 0: a + (for j in 0..2 into b from 0: b + a + true)\nClip c:\n    Note/t\n",
+    "let t = for i in 0..3 into a from 0: a + (for j in 0..2 into b from 0: b + [1, 2][i])\nClip c:\n    Note/t\n",
+];
+
+#[test]
+fn a_fold_body_reads_an_enclosing_fold_or_function_name_from_the_frame_that_binds_it() {
+    let vocabulary = symphonyscript_fixtures::vocabulary();
+    let old = Compiler::new(&vocabulary)
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
+    let new = Compiler::new(&vocabulary).expect("the vocabulary compiles");
+    for text in NESTED_SCOPES {
+        let sources = [source(text)];
+        let found = new
+            .checked_by_new_core(&sources)
+            .unwrap_or_else(|| panic!("the new core takes {text}"));
+        assert_eq!(found, old.check(&sources), "{text}");
+    }
+}
+
+const MEMOIZED_CALLS: [&str; 11] = [
+    "fn f(x): x * 4611686018427387904\nClip c:\n    Note/(f(4))\n    Note/(f(4))\n",
+    "fn f(x): u8(x) + 1\nClip c:\n    Note/(f(300))\n    Note/(f(300))\n",
+    "fn g(x): u8(x)\nfn f(x): g(x) + g(x)\nClip c:\n    Note/(f(300))\n    Note/(f(300))\n",
+    "let big = [1, 2]\nfn f(x): x[5]\nClip c:\n    Note/(f(big))\n    Note/(f(big))\n",
+    "let big = [1, 2]\nfn g(x): x[5]\nfn f(x): g(x) + 1\nClip c:\n    Note/(f(big))\n    Note/(f(big))\n",
+    "fn f(x): [1, 2][x]\nClip c:\n    Note/(f(4))\n    Note/(f(4))\n    Note/(f(1))\n",
+    "fn f(x): for i in 0..x into a from 0: a + i\nClip c:\n    Note/(f(2))\n    Note/(f(2))\n    Note/(f(2))\n",
+    "let big = [1, 2]\nfn f(x): x[0] + x[1]\nClip c:\n    Note/(f(big))\n    Note | velocity=(f(big))\n",
+    "fn f(x): for i in 0..x into a from 0: a + i\nClip c:\n    Note/(f(3))\n    Note/(f(3))\n    Note/(f(3))\n    Note/(f(3))\n",
+    "fn f(p): for i in 0..4 into s from [p]: s + s\nClip c:\n    Note/(f(1)[0])\n",
+    "fn h(s): s + s\nfn f(p): for i in 0..4 into s from [p]: h(s)\nClip c:\n    Note/(f(1)[0])\n",
+];
+
+type Stop = (
+    &'static str,
+    [(&'static str, std::ops::Range<u32>, usize); 2],
+);
+
+const MEMOIZED_STOP: Stop = (
+    "fn g(x): for i in 0..x into a from 0: a + i\nfn f(x): g(x) + g(x)\nClip c:\n    Note/(f(2))\n    Note/(f(2))\n    Note/(f(2))\n",
+    [("expansion-limit", 9..43, 2), ("limit-warning", 9..43, 2)],
+);
+
+#[test]
+fn a_memoized_call_draws_its_faults_at_each_sites_chain_and_charges_its_iterations_again() {
+    let overrides = symphonyscript_core::LimitOverrides {
+        value_elements: Some(8),
+        value_elements_warning: Some(4),
+        ..stop_limits()
+    };
+    let vocabulary = symphonyscript_fixtures::vocabulary();
+    let old = Compiler::with_limits(&vocabulary, overrides)
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
+    let new = Compiler::with_limits(&vocabulary, overrides).expect("the vocabulary compiles");
+    for text in MEMOIZED_CALLS {
+        let sources = [source(text)];
+        let found = new
+            .checked_by_new_core(&sources)
+            .unwrap_or_else(|| panic!("the new core takes {text}"));
+        assert_eq!(found, old.check(&sources), "{text}");
+    }
+    let (text, expected) = MEMOIZED_STOP;
+    let found = new
+        .checked_by_new_core(&[source(text)])
+        .unwrap_or_else(|| panic!("the new core takes {text}"));
+    let found: Vec<_> = found
+        .iter()
+        .map(|d| (d.code.to_string(), d.span.range.clone(), d.related.len()))
+        .collect();
+    let expected: Vec<_> = expected
+        .iter()
+        .map(|(code, range, chain)| (code.to_string(), range.clone(), *chain))
+        .collect();
+    assert_eq!(found, expected, "{text}");
+    assert_eq!(
+        reviewed(text).map(|(ledger, _)| ledger),
+        Some(reviewed::LIMIT_STOP)
+    );
+}
+
+const FOLD_FAULTS_PER_SITE: [(&str, &str, usize); 4] = [
+    (
+        "fn f(p): for i in 0..2 into s from 0: s + true\nClip c:\n    Note/(f(1))\n    Note/(f(2))\n",
+        "s + true",
+        2,
+    ),
+    (
+        "fn f(p): for i in 0..2 into s from 0: s + true\nClip c:\n    Note/(f(1))\n    Note/(f(2))\n    Note/(f(3))\n",
+        "s + true",
+        3,
+    ),
+    (
+        "fn g(p): for i in 0..2 into s from 0: s + true\nfn f(p): g(p) + 1\nClip c:\n    Note/(f(1))\n    Note/(f(2))\n",
+        "s + true",
+        2,
+    ),
+    (
+        "fn f(p):\n    let k = p + 1\n    for i in 0..2 into s from 0: s + k + true\nClip c:\n    Note/(f(1))\n    Note | velocity=(f(2))\n",
+        "s + k + true",
+        2,
+    ),
+];
+
+const FOLD_FAULT_TWINS: [&str; 5] = [
+    "fn f(p): p + true\nClip c:\n    Note/(f(1))\n    Note/(f(2))\n",
+    "fn f(p): for i in 0..2 into s from 0: s + true\nClip c:\n    Note/(f(1))\n",
+    "let t = for i in 0..2 into s from 0: s + true\nClip c:\n    Note/(t)\n    Note/(t)\n",
+    "fn f(p): for i in 0..2 into s from 0: s + [1, 2][p]\nClip c:\n    Note/(f(5))\n    Note/(f(5))\n",
+    "fn f(p):\n    let k = p + 1\n    for i in 0..2 into s from 0: s + [1, 2][5] + k\nClip c:\n    Note/(f(1))\n    Note/(f(2))\n",
+];
+
+#[test]
+fn a_fault_inside_a_fold_in_a_function_body_draws_at_each_call_sites_chain_479() {
+    let vocabulary = symphonyscript_fixtures::vocabulary();
+    let old = Compiler::new(&vocabulary)
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
+    let new = Compiler::new(&vocabulary).expect("the vocabulary compiles");
+    for (text, span, sites) in FOLD_FAULTS_PER_SITE {
+        let sources = [source(text)];
+        let found = new
+            .checked_by_new_core(&sources)
+            .unwrap_or_else(|| panic!("the new core takes {text}"));
+        let mut chains: Vec<u32> = found
+            .iter()
+            .filter(|d| {
+                text.get(d.span.range.start as usize..d.span.range.end as usize) == Some(span)
+            })
+            .filter_map(|d| d.related.last().map(|site| site.span.range.start))
+            .collect();
+        chains.dedup();
+        assert_eq!(chains.len(), sites, "{text}");
+        let before = old.check(&sources);
+        let classes = reviewed::moved(text, &drawn(&before), &drawn(&found))
+            .unwrap_or_else(|unexplained| panic!("{text}: {unexplained:?}"));
+        assert!(
+            !classes.is_empty() && classes.iter().all(|class| class.ledger == "479"),
+            "{text}"
+        );
+        assert_eq!(
+            kept(&found, &drawn(&found), &drawn(&before)),
+            kept(&before, &drawn(&before), &drawn(&found)),
+            "{text}"
+        );
+    }
+    for text in FOLD_FAULT_TWINS {
+        let sources = [source(text)];
+        let found = new
+            .checked_by_new_core(&sources)
+            .unwrap_or_else(|| panic!("the new core takes {text}"));
+        assert_eq!(found, old.check(&sources), "{text}");
+    }
+}
+
+const REFUSED_BODIES: [&str; 12] = [
+    "fn f(p): [1, 2][p] + true\nClip c:\n    Note/(f(5))\n",
+    "fn f(p): true + [1, 2][p]\nClip c:\n    Note/(f(5))\n",
+    "fn f(p): (true + 1) + [1, 2][p]\nClip c:\n    Note/(f(5))\n",
+    "fn f(p): [1, 2][p] + (true + 1)\nClip c:\n    Note/(f(5))\n",
+    "fn f(p): [p] * 0 + [1, 2][p]\nClip c:\n    Note/(f(5)[0])\n",
+    "fn g(q): [1, 2][q] + true\nfn f(p): g(p + 3)\nClip c:\n    Note/(f(2))\n    Note/(f(0))\n",
+    "fn f(p, r): [1, 2][p] + r\nClip c:\n    Note/(f(5, true))\n",
+    "state s(1)\nfn f(p): [1, 2][p] + true\nClip c:\n    Note/(f(s))\n",
+    "fn f(p): [1, 2][p + 300000000000] + true\nClip c:\n    Note/(f(5))\n",
+    "fn f(p): [1, 2][p] + true\nClip c:\n    Note/(f(1))\n",
+    "fn f(p): (true + 1) + (p + 300000000000)\nClip c:\n    Note/(f(5))\n",
+    "let k = 5\nClip c:\n    Note/(([1] * 0 + [1, 2][k])[0])\n",
+];
+
+#[test]
+fn a_call_whose_body_holds_a_refused_operator_checks_its_operands_with_the_sites_arguments() {
+    let vocabulary = symphonyscript_fixtures::vocabulary();
+    let old = Compiler::new(&vocabulary)
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
+    let new = Compiler::new(&vocabulary).expect("the vocabulary compiles");
+    for text in REFUSED_BODIES {
+        let sources = [source(text)];
+        let found = new
+            .checked_by_new_core(&sources)
+            .unwrap_or_else(|| panic!("the new core takes {text}"));
+        assert_eq!(found, old.check(&sources), "{text}");
+    }
+}
+
+const CHAINS_OF_BODY_READS: [&str; 9] = [
+    "fn f(n): n + [1, 2][..0][0]\nClip c:\n    Note/(f(1))\n",
+    "fn f(n): [1, 2][..0][0]\nClip c:\n    Note/(f(1))\n    Note/(f(2))\n",
+    "fn f(n): n + [1, 2][..0][0]\nClip c:\n    Note/(f(1) + 1)\n",
+    "fn f(n): [1, 2][..n][0]\nClip c:\n    Note/(f(0))\n",
+    "let y = [1, 2][..0][0]\nClip c:\n    Note/(y)\n",
+    "let xs = [1, true]\nfn f(n): n + xs[5]\nClip c:\n    Note/(f(1))\n",
+    "let xs = [1, true]\nfn f(n): n + xs[0]\nClip c:\n    Note/(f(1))\n    Note/(f(2))\n",
+    "Clip c:\n    Note/(f(1))\nfn f(n): n + xs[^5]\nlet xs = [1, true]\n",
+    "let xs = [1, 2]\nlet ys = xs[5]\nfn f(n): n + ys\nClip c:\n    Note/(f(1))\n",
+];
+
+#[test]
+fn a_top_level_lets_fault_read_in_a_body_draws_unchained_and_a_helped_fault_in_a_call_carries_its_chain()
+ {
+    let vocabulary = symphonyscript_fixtures::vocabulary();
+    let old = Compiler::new(&vocabulary)
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
+    let new = Compiler::new(&vocabulary).expect("the vocabulary compiles");
+    for text in CHAINS_OF_BODY_READS {
+        let sources = [source(text)];
+        let found = new
+            .checked_by_new_core(&sources)
+            .unwrap_or_else(|| panic!("the new core takes {text}"));
+        assert_eq!(found, old.check(&sources), "{text}");
+    }
+}
+
+const RUNTIME_NON_BOOL_CONDITIONS: [&str; 4] = [
+    "state q(0): i32\nClip c:\n    Note/(if q then q else [1, 2][5])\n",
+    "state q(0)\nClip c:\n    Note/(if q then [1, 2][5] else 3)\n",
+    "Clip c:\n    Note/(if 1 then 3 else [1, 2][5])\n",
+    "state q(0)\nClip c:\n    Note/(if q then 3 else 4)\n",
+];
+
+#[test]
+fn a_runtime_condition_of_another_type_than_bool_checks_both_arms_as_the_old_engine_does() {
+    let vocabulary = symphonyscript_fixtures::vocabulary();
+    let old = Compiler::new(&vocabulary)
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
+    let new = Compiler::new(&vocabulary).expect("the vocabulary compiles");
+    for text in RUNTIME_NON_BOOL_CONDITIONS {
+        let sources = [source(text)];
+        let found = new
+            .checked_by_new_core(&sources)
+            .unwrap_or_else(|| panic!("the new core takes {text}"));
+        assert_eq!(found, old.check(&sources), "{text}");
     }
 }

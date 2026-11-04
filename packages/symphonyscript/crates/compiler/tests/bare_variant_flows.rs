@@ -1,6 +1,7 @@
 mod support;
 
-use symphonyscript::{Code, Compiler, Severity, Source};
+use support::Compiler;
+use symphonyscript::{Code, Severity, Source};
 use symphonyscript_core::{Count, Vocabulary};
 use symphonyscript_fixtures::{Rows, covered};
 

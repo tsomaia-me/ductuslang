@@ -1,7 +1,8 @@
 mod support;
 
+use support::Compiler;
 use support::{Row, signature_vocabulary};
-use symphonyscript::{Code, Compiler, Severity, Source};
+use symphonyscript::{Code, Severity, Source};
 use symphonyscript_fixtures::native_vocabulary;
 
 fn codes(text: &str) -> Vec<Code> {
@@ -525,4 +526,22 @@ fn an_unset_variable_array_attribute_reads_as_the_fixed_array_of_its_default() {
             "{b}{diagnostic:?}"
         );
     }
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_differential_natives() {
+    support::assert_both_engines_agree(|| {
+        a_native_call_is_typed_by_its_signature();
+        an_array_parameter_of_a_fixed_length_or_a_capacity_bounds_its_argument();
+        a_native_call_with_a_cell_runs_at_runtime_unless_it_takes_a_string();
+        a_variable_array_attribute_accepts_a_value_up_to_its_capacity_and_refuses_a_larger_one();
+        a_native_calls_compile_time_arguments_are_typed_and_fit_by_its_signature();
+        a_native_argument_in_a_unit_family_is_an_error_at_the_argument();
+        every_one_dimensional_u8_parameter_takes_a_compile_time_string_as_its_bytes();
+        a_capacity_of_result_holds_at_most_its_parameters_capacity_in_rows();
+        a_capacity_of_result_over_a_fixed_array_has_its_length_as_its_capacity_whether_or_not_it_reads_a_cell();
+        a_cell_reading_string_at_a_u8_array_parameter_draws_one_reactive_string();
+        an_unset_variable_array_attribute_reads_as_the_fixed_array_of_its_default();
+    });
 }

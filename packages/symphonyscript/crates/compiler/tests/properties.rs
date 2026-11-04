@@ -1,6 +1,7 @@
 mod support;
 
-use symphonyscript::{Code, Compiler, Diagnostic, Source};
+use support::Compiler;
+use symphonyscript::{Code, Diagnostic, Source};
 use symphonyscript_fixtures::{
     Project, ProjectFile, control_project, dsp_project, lighting_project, music_project,
     pending_spec_examples, spec_projects, vocabulary,

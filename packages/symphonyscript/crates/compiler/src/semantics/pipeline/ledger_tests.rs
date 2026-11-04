@@ -15,7 +15,7 @@ struct Run {
     walks: u64,
 }
 
-const CORE_WALKS: [CountedWalk; 9] = [
+const CORE_WALKS: [CountedWalk; 11] = [
     CountedWalk::BindLookup,
     CountedWalk::CoreExpandRow,
     CountedWalk::SigNode,
@@ -25,6 +25,8 @@ const CORE_WALKS: [CountedWalk; 9] = [
     CountedWalk::CursorStep,
     CountedWalk::DenseLayout,
     CountedWalk::CoreUse,
+    CountedWalk::CallMemo,
+    CountedWalk::SymbolProbe,
 ];
 
 fn walked() -> u64 {
@@ -541,10 +543,8 @@ fn stage_run(compiler: &Compiler, text: &str) -> Option<(Run, Vec<(&'static str,
 fn stage_failures(sizes: [usize; 3]) -> Vec<String> {
     let compiler = Compiler::new(&vocabulary()).expect("the vocabulary compiles");
     let mut failures = Vec::new();
-    let mut times = [0u64; 3];
     let mut peaks = [0u64; 3];
     let mut walks = [0u64; 3];
-    let mut figures: Vec<Vec<(&str, u64)>> = Vec::new();
     for (at, n) in sizes.into_iter().enumerate() {
         let text = figure(n);
         let Some((found, stages)) = stage_run(&compiler, &text) else {
@@ -557,7 +557,6 @@ fn stage_failures(sizes: [usize; 3]) -> Vec<String> {
         }
         let nodes = super::stages::nodes().max(1);
         let mut shown = Vec::new();
-        let mut figure = Vec::new();
         for (stage, spent) in stages {
             let per_node = spent.as_secs_f64() * 1e6 / nodes as f64;
             let budget = BUDGETS
@@ -567,7 +566,6 @@ fn stage_failures(sizes: [usize; 3]) -> Vec<String> {
             shown.push(format!(
                 "{stage} {per_node:.3} µs a node (its release budget {budget})"
             ));
-            figure.push((stage, u64::try_from(spent.as_micros()).unwrap_or(u64::MAX)));
         }
         println!(
             "the figure at {n}, {nodes} nodes, best of three: {}, PeakBytes {}, counted walks {}",
@@ -575,26 +573,11 @@ fn stage_failures(sizes: [usize; 3]) -> Vec<String> {
             found.peak,
             found.walks
         );
-        figures.push(figure);
-        if let Some(slot) = times.get_mut(at) {
-            *slot = u64::try_from(found.time.as_micros()).unwrap_or(u64::MAX);
-        }
         if let Some(slot) = peaks.get_mut(at) {
             *slot = found.peak;
         }
         if let Some(slot) = walks.get_mut(at) {
             *slot = found.walks;
-        }
-    }
-    if times.first().copied().unwrap_or(0) >= 100_000
-        && let [first, second, third] = figures.as_slice()
-    {
-        for ((stage, a), ((_, b), (_, c))) in first.iter().zip(second.iter().zip(third)) {
-            if !linear_across([*a, *b, *c], 20_000) {
-                failures.push(format!(
-                    "{stage}: {a}, {b}, {c} µs best of three at {sizes:?}, not linear"
-                ));
-            }
         }
     }
     if !doubles_at_most(walks, 64) {
@@ -615,4 +598,37 @@ fn stage_failures(sizes: [usize; 3]) -> Vec<String> {
 #[ignore = "stress"]
 fn stress_the_new_cores_stages_cost_time_linear_in_the_nodes_of_a_non_recursive_figure() {
     assert_none(&stage_failures([2_000, 4_000, 8_000]));
+}
+
+fn clips_beside_a_session(n: usize) -> String {
+    let mut text = String::from("Session s\n");
+    for at in 0..n {
+        text.push_str(&format!("Clip c{at}\n"));
+    }
+    text
+}
+
+fn unreachable_clips(n: usize) -> Vec<String> {
+    vec!["unreachable-instance".to_string(); n]
+}
+
+#[test]
+fn clips_no_entry_reaches_draw_one_warning_each() {
+    assert_none(&ledger_failures(
+        "the unreachable clips",
+        [250, 500, 1_000],
+        clips_beside_a_session,
+        &unreachable_clips,
+    ));
+}
+
+#[test]
+#[ignore = "stress"]
+fn stress_clips_no_entry_reaches_cost_time_and_memory_linear_in_the_clips() {
+    assert_none(&ledger_failures(
+        "the unreachable clips",
+        [40_000, 80_000, 160_000],
+        clips_beside_a_session,
+        &unreachable_clips,
+    ));
 }

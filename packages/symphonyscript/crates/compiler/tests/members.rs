@@ -1,6 +1,7 @@
 mod support;
 
-use symphonyscript::{Code, Compiler};
+use support::Compiler;
+use symphonyscript::Code;
 use symphonyscript_core::{
     Bounded, Count, NativeArg, NativeOut, NativeSignature, NativeType, Ty, Value, Vocabulary,
 };

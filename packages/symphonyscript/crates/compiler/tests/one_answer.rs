@@ -257,7 +257,7 @@ const DECIDING_NONE: &[(&str, &str)] = &[
         "the kind and shape of an IR node in the new core, typed bottom-up",
     ),
     (
-        "pipeline/typing.rs operands",
+        "pipeline/typing.rs push_operands",
         "the operands of an IR node, the structure the new core's walks follow",
     ),
     (

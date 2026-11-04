@@ -1,6 +1,7 @@
 mod support;
 
-use symphonyscript::{Code, Compiler, Diagnostic};
+use support::Compiler;
+use symphonyscript::{Code, Diagnostic};
 use symphonyscript_fixtures::{Rows, covered, vocabulary};
 
 const CELLS: &str = "state a([]): i32[..5]\nstate i(1)\nlet k = 4\n";

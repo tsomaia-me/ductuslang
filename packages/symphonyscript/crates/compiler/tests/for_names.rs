@@ -1,6 +1,7 @@
 mod support;
 
-use symphonyscript::{Code, Compiler, Diagnostic};
+use support::Compiler;
+use symphonyscript::{Code, Diagnostic};
 use symphonyscript_fixtures::{Rows, covered, vocabulary};
 
 #[derive(Clone, Copy, PartialEq)]
@@ -278,4 +279,12 @@ fn a_block_let_is_visible_throughout_its_block_and_the_names_of_one_head_and_blo
             "{text}\n  draws {found:?}, not one {expected:?} at {at:?}"
         );
     }
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_differential_a_for_expressions_names_are_new_and_distinct_names_whatever_they_bind() {
+    support::assert_both_engines_agree(
+        exhaustive_a_for_expressions_names_are_new_and_distinct_names_whatever_they_bind,
+    );
 }

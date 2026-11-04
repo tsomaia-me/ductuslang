@@ -1,6 +1,7 @@
 mod support;
 
-use symphonyscript::{Code, Compiler, Diagnostic, Severity, Source};
+use support::Compiler;
+use symphonyscript::{Code, Diagnostic, Severity, Source};
 use symphonyscript_core::{Count, LimitOverrides, Vocabulary};
 use symphonyscript_fixtures::{Rows, covered, vocabulary};
 
@@ -1249,4 +1250,18 @@ fn joined_results(levels: u64) -> String {
     format!(
         "fn f(n): if n is 0 then [1] else f(n - 1) + f(n - 1)\nClip c:\n    Note/(f({levels}).size div 100000)\n"
     )
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_differential_a_limit_reached_through_a_default_that_calls_its_function_names_the_default_in_its_help()
+ {
+    support::assert_both_engines_agree(exhaustive_a_limit_reached_through_a_default_that_calls_its_function_names_the_default_in_its_help);
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_differential_a_count_past_its_warning_value_draws_the_warning_where_the_limit_would_draw_its_error()
+ {
+    support::assert_both_engines_agree(exhaustive_a_count_past_its_warning_value_draws_the_warning_where_the_limit_would_draw_its_error);
 }

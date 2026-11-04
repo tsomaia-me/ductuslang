@@ -146,7 +146,25 @@ pub const REVIEWED: &[Reviewed] = &[
             ("reserved-token", "=="),
         ],
     ),
+    (
+        "476",
+        "Clip c:\n    Note/((if 1 > 0 then [1] else [true])[2 ** 63])\n",
+        &[
+            ("index-out-of-range", "2 ** 63"),
+            ("type-mismatch", "if 1 > 0 then [1] else [true]"),
+        ],
+    ),
+    (
+        LIMIT_STOP,
+        "fn g(x): for i in 0..x into a from 0: a + i\nfn f(x): g(x) + g(x)\nClip c:\n    Note/(f(2))\n    Note/(f(2))\n    Note/(f(2))\n",
+        &[
+            ("expansion-limit", "for i in 0..x into a from 0: a + i"),
+            ("limit-warning", "for i in 0..x into a from 0: a + i"),
+        ],
+    ),
 ];
+
+pub const LIMIT_STOP: &str = "limit-stop (H11)";
 
 pub fn reviewed(text: &str) -> Option<(&'static str, Vec<(String, String)>)> {
     REVIEWED
@@ -259,14 +277,23 @@ fn read_of_a_reactive_let(seen: &Seen<'_>, _: Change, at: &Drawn) -> bool {
         return false;
     }
     let line = seen.line(at.1);
-    let text = seen.program.lines().nth(line).unwrap_or_default();
+    let mut texts = vec![seen.program.lines().nth(line).unwrap_or_default()];
+    if let Some(function) = function_before(seen.program, at.1)
+        .and_then(|text| text.strip_prefix("fn "))
+        .and_then(|text| text.split_once('('))
+        .map(|(name, _)| format!("{name}("))
+    {
+        texts.extend(
+            seen.program
+                .lines()
+                .filter(|text| !text.starts_with("fn ") && text.contains(&function)),
+        );
+    }
     seen.new.iter().any(|drawn| {
         drawn.0 == "reactive-let"
             && top_level_let_name(seen, drawn)
             && seen.line(drawn.1) != line
-            && text
-                .split(|character: char| !(character.is_alphanumeric() || character == '_'))
-                .any(|word| word == seen.text(drawn))
+            && texts.iter().any(|text| reads_word(text, seen.text(drawn)))
     })
 }
 
@@ -372,6 +399,204 @@ fn base_not_an_array_beside_the_twin_pass(seen: &Seen<'_>, change: Change, at: &
         && holds(seen.new, "type-mismatch", at)
 }
 
+fn word_start(program: &str, at: usize) -> bool {
+    program
+        .get(..at)
+        .and_then(|before| before.chars().next_back())
+        .is_none_or(|character| !(character.is_alphanumeric() || character == '_'))
+}
+
+fn closing(program: &str, open: usize) -> Option<usize> {
+    let mut depth = 0usize;
+    for (at, character) in program.get(open..)?.char_indices() {
+        match character {
+            '(' => depth += 1,
+            ')' => {
+                depth = depth.checked_sub(1)?;
+                if depth == 0 {
+                    return Some(open + at);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+fn float_conversion_operands(program: &str) -> Vec<(usize, usize)> {
+    let mut operands = Vec::new();
+    for target in ["f32(", "f64("] {
+        for (at, _) in program.match_indices(target) {
+            if !word_start(program, at) {
+                continue;
+            }
+            let open = at + target.len() - 1;
+            let Some(close) = closing(program, open) else {
+                continue;
+            };
+            let operand = program.get(open + 1..close).unwrap_or_default();
+            let fixed = ["u8(", "i32(", "i64("].iter().any(|inner| {
+                operand
+                    .match_indices(inner)
+                    .any(|(start, _)| word_start(operand, start))
+            });
+            if fixed {
+                operands.push((open + 1, close));
+            }
+        }
+    }
+    operands
+}
+
+fn conversion_stops_the_expected_type(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
+    let inside = |(lo, hi): (usize, usize)| at.1 >= lo && at.2 <= hi;
+    let operands = float_conversion_operands(seen.program);
+    match (change, at.0.as_str()) {
+        (Change::Added, "constant-overflow" | "does-not-fit")
+        | (Change::Removed, "type-mismatch") => operands.into_iter().any(inside),
+        (Change::Removed, "integer-cell") => {
+            let name = seen.text(at);
+            !name.is_empty()
+                && operands.into_iter().any(|(lo, hi)| {
+                    seen.program
+                        .get(lo..hi)
+                        .unwrap_or_default()
+                        .split(|character: char| !(character.is_alphanumeric() || character == '_'))
+                        .any(|word| word == name)
+                })
+        }
+        _ => false,
+    }
+}
+
+fn annotated_array_rules(program: &str) -> Vec<(&str, usize, usize)> {
+    let mut rules = Vec::new();
+    let mut start = 0;
+    for line in program.split_inclusive('\n') {
+        let text = line.trim_end_matches('\n');
+        if let Some((head, rule)) = text
+            .strip_prefix("state ")
+            .and_then(|tail| tail.split_once(" = "))
+            && let Some((name, ty)) = head.split_once(": ")
+            && !ty.is_empty()
+            && rule.starts_with('[')
+        {
+            let lo = start + text.len() - rule.len();
+            rules.push((name, lo, start + text.len()));
+        }
+        start += line.len();
+    }
+    rules
+}
+
+fn reads_word(text: &str, name: &str) -> bool {
+    text.split(|character: char| !(character.is_alphanumeric() || character == '_'))
+        .any(|word| word == name)
+}
+
+fn annotated_array_rule(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
+    annotated_array_rules(seen.program)
+        .into_iter()
+        .filter(|(_, lo, hi)| holds(seen.new, "type-mismatch", &(String::new(), *lo, *hi)))
+        .any(|(name, lo, hi)| match change {
+            Change::Added => at.0 == "type-mismatch" && at.1 == lo && at.2 == hi,
+            Change::Removed => {
+                let line = seen.line(at.1);
+                (at.1 >= lo && at.2 <= hi)
+                    || (line != seen.line(lo)
+                        && reads_word(seen.program.lines().nth(line).unwrap_or_default(), name))
+            }
+        })
+}
+
+fn annotated_accumulator(line: &str) -> bool {
+    line.split_once(" into ")
+        .and_then(|(_, rest)| rest.split_once(' '))
+        .is_some_and(|(name, rest)| name.ends_with(':') && rest.contains(" from "))
+}
+
+fn annotated_fold(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
+    if change != Change::Added || at.0 != "type-mismatch" {
+        return false;
+    }
+    let line = seen
+        .program
+        .lines()
+        .nth(seen.line(at.1))
+        .unwrap_or_default();
+    let before = seen.before(at);
+    let head = before.rsplit('\n').next().unwrap_or_default();
+    let loop_name = seen.after(at).starts_with(": ")
+        && (head.ends_with("for ") || head.ends_with(", "))
+        && line.contains(" in ");
+    let start = head.ends_with(" from ") && annotated_accumulator(line);
+    let body = head.ends_with(": ") && head.contains(" from ") && annotated_accumulator(line);
+    loop_name || start || body
+}
+
+fn annotated_array_lets(program: &str) -> Vec<(&str, usize, usize)> {
+    let mut lets = Vec::new();
+    let mut start = 0;
+    for line in program.split_inclusive('\n') {
+        let text = line.trim_end_matches('\n');
+        if let Some((head, value)) = text
+            .strip_prefix("let ")
+            .and_then(|tail| tail.split_once(" = "))
+            && let Some((name, ty)) = head.split_once(": ")
+            && ty.ends_with(']')
+        {
+            let lo = start + text.len() - value.len();
+            lets.push((name, lo, start + text.len()));
+        }
+        start += line.len();
+    }
+    lets
+}
+
+fn annotated_array_let(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
+    change == Change::Added
+        && matches!(at.0.as_str(), "does-not-fit" | "type-mismatch")
+        && annotated_array_lets(seen.program)
+            .into_iter()
+            .any(|(name, lo, hi)| {
+                (at.1 >= lo && at.2 <= hi)
+                    || (at.0 == "type-mismatch"
+                        && seen
+                            .text(at)
+                            .strip_prefix(name)
+                            .is_some_and(|rest| rest.starts_with('[')))
+            })
+}
+
+fn function_before(program: &str, at: usize) -> Option<&str> {
+    let mut start = program.get(..at)?.rfind('\n').map_or(0, |line| line + 1);
+    while program[start..].starts_with(' ') && start > 0 {
+        start = program
+            .get(..start - 1)?
+            .rfind('\n')
+            .map_or(0, |line| line + 1);
+    }
+    program
+        .get(start..at)
+        .filter(|text| text.starts_with("fn "))
+}
+
+fn fold_fault_at_each_call(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
+    change == Change::Added
+        && holds(seen.old, &at.0, at)
+        && function_before(seen.program, at.1).is_some_and(|text| {
+            text.rfind("for ")
+                .is_some_and(|fold| text[fold..].contains(" into "))
+        })
+}
+
+fn choice_refused_once(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
+    change == Change::Removed
+        && at.0 == "type-mismatch"
+        && seen.text(at).starts_with("if ")
+        && holds(seen.new, "type-mismatch", at)
+}
+
 pub struct Class {
     pub ledger: &'static str,
     pub rule: &'static str,
@@ -392,7 +617,7 @@ pub const CLASSES: &[Class] = &[
     },
     Class {
         ledger: "464",
-        rule: "a read of a top-level let reading a cell keeps the let's known type, so the expression reading it draws the faults that type gives beside the let's reactive-let, where the old engine read the let as a placeholder",
+        rule: "a read of a top-level let reading a cell keeps the let's known type, so the expression reading it, directly or through a call it is passed to, draws the faults that type gives beside the let's reactive-let, where the old engine read the let as a placeholder",
         explains: read_of_a_reactive_let,
     },
     Class {
@@ -424,6 +649,36 @@ pub const CLASSES: &[Class] = &[
         ledger: "476",
         rule: "does-not-fit at a division's literal operand beside its sibling's index-out-of-range",
         explains: fit_beside_a_range_fault,
+    },
+    Class {
+        ledger: "476",
+        rule: "an annotated derived cell whose rule is an array draws its type-mismatch at the rule, its reads typed by the annotation and the rule checked in its own type, in place of the old engine's faults at its reads and inside its rule",
+        explains: annotated_array_rule,
+    },
+    Class {
+        ledger: "476",
+        rule: "an annotated fold accumulator's start and body, and an annotated loop name's elements, draw type-mismatch where they do not have the annotated type (SPEC §4.5), which the old engine misses",
+        explains: annotated_fold,
+    },
+    Class {
+        ledger: "476",
+        rule: "a top-level let with an array annotation fixes its whole value's type: each element that does not have or fit the element type draws at itself whichever element a read selects, and an element read keeps the fixed element type, which the old engine misses",
+        explains: annotated_array_let,
+    },
+    Class {
+        ledger: "478",
+        rule: "a float conversion's operand holding a fixed-type operand computes in its own type, so its own overflow or fit draws inside it, and the old engine's integer-cell warning and widening type-mismatch from the float target flowing into it do not",
+        explains: conversion_stops_the_expected_type,
+    },
+    Class {
+        ledger: "479",
+        rule: "a fault inside a fold in a function body draws at each call site with that site's chain, the body checked as inlined at the call (SPEC §6.3), where the old engine draws it at the first site alone",
+        explains: fold_fault_at_each_call,
+    },
+    Class {
+        ledger: "411",
+        rule: "a choice whose arms the position refuses as one value draws one type-mismatch at the choice, where the old engine draws a second one there for the same fault (ledger 385's rule, ARCHITECTURE §7: one fault draws one diagnostic)",
+        explains: choice_refused_once,
     },
 ];
 

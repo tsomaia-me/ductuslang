@@ -1,6 +1,7 @@
 mod support;
 
-use symphonyscript::{Code, Compiler, Diagnostic};
+use support::Compiler;
+use symphonyscript::{Code, Diagnostic};
 use symphonyscript_core::LimitOverrides;
 use symphonyscript_fixtures::vocabulary;
 
@@ -1547,4 +1548,21 @@ fn a_fault_reached_through_two_chains_of_one_depth_names_the_chain_through_the_b
             );
         }
     }
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_differential_a_fault_inside_inlined_calls_names_each_call_innermost_first() {
+    support::assert_both_engines_agree(
+        exhaustive_a_fault_inside_inlined_calls_names_each_call_innermost_first,
+    );
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_differential_a_call_rejected_as_reactive_recursion_adds_nothing_to_the_inline_count()
+{
+    support::assert_both_engines_agree(
+        exhaustive_a_call_rejected_as_reactive_recursion_adds_nothing_to_the_inline_count,
+    );
 }

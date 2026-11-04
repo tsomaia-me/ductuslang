@@ -322,7 +322,7 @@ fn use_site(position: usize, value: &str) -> String {
 }
 
 fn read_rows(rows: &Rows) -> (Vec<String>, usize) {
-    let compiler = symphonyscript::Compiler::new(&symphonyscript_fixtures::vocabulary())
+    let compiler = support::Compiler::new(&symphonyscript_fixtures::vocabulary())
         .expect("the vocabulary compiles");
     let mut failures = Vec::new();
     let mut programs = 0;
@@ -565,7 +565,7 @@ fn a_derived_cells_init_counts_for_its_own_past_and_fits_the_type_its_rule_gives
         ),
     ];
     support::assert_rows_in_every_order(&symphonyscript_fixtures::vocabulary(), rows);
-    let compiler = symphonyscript::Compiler::new(&symphonyscript_fixtures::vocabulary())
+    let compiler = support::Compiler::new(&symphonyscript_fixtures::vocabulary())
         .expect("the vocabulary compiles");
     let cycles: &[&[(&str, &str)]] = &[
         &[
@@ -779,7 +779,7 @@ const SHAPED_ATTRIBUTES: [(&str, &str); 3] = [
 ];
 
 fn shaped_state_rows(rows: &Rows) -> Vec<String> {
-    let compiler = symphonyscript::Compiler::new(&symphonyscript_fixtures::native_vocabulary())
+    let compiler = support::Compiler::new(&symphonyscript_fixtures::native_vocabulary())
         .expect("the native vocabulary compiles");
     let mut failures = Vec::new();
     for (form, items) in SHAPED_STATES.iter().enumerate() {
@@ -868,7 +868,7 @@ fn quoted<'h>(help: &'h str, after: &str) -> &'h str {
 #[test]
 fn history_fallbacks_help_names_a_fallback_and_an_init_of_the_cells_type_that_compile_when_applied()
 {
-    let compiler = symphonyscript::Compiler::new(&symphonyscript_fixtures::vocabulary())
+    let compiler = support::Compiler::new(&symphonyscript_fixtures::vocabulary())
         .expect("the vocabulary compiles");
     let mut failures = Vec::new();
     for items in UNSTARTED {
@@ -1072,7 +1072,7 @@ fn a_derived_cell_or_an_unclocked_cycle_that_reads_no_cell_outside_itself_draws_
         ),
     ];
     support::assert_rows_in_every_order(&symphonyscript_fixtures::vocabulary(), rows);
-    let compiler = symphonyscript::Compiler::new(&symphonyscript_fixtures::vocabulary())
+    let compiler = support::Compiler::new(&symphonyscript_fixtures::vocabulary())
         .expect("the vocabulary compiles");
     let cycles: [(&[&str], &[Code]); 4] = [
         (
@@ -1126,7 +1126,7 @@ fn a_derived_cell_or_an_unclocked_cycle_that_reads_no_cell_outside_itself_draws_
 #[test]
 fn a_history_read_or_stepped_of_an_unmarked_parameter_draws_history_target_with_a_help_naming_cell_c1_8()
  {
-    let compiler = symphonyscript::Compiler::new(&symphonyscript_fixtures::vocabulary())
+    let compiler = support::Compiler::new(&symphonyscript_fixtures::vocabulary())
         .expect("the vocabulary compiles");
     for body in ["x.past(1)", "x.past(1, 0)", "(if x.stepped then 1 else 2)"] {
         for text in [
@@ -1148,7 +1148,7 @@ fn a_history_read_or_stepped_of_an_unmarked_parameter_draws_history_target_with_
 
 #[test]
 fn a_stepped_or_history_read_of_a_compile_time_let_draws_history_target_lens_2_g_a_d4() {
-    let compiler = symphonyscript::Compiler::new(&symphonyscript_fixtures::vocabulary())
+    let compiler = support::Compiler::new(&symphonyscript_fixtures::vocabulary())
         .expect("the vocabulary compiles");
     for value in ["3", "[1, 2]"] {
         for read in ["(if q.stepped then 1 else 2)", "(i32(q.past(1, 0) * 0))"] {
@@ -1226,4 +1226,11 @@ fn a_refused_history_target_leaves_the_rules_other_faults_drawn_c2_15() {
             }
         }
     }
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_differential_a_state_holding_an_array_of_another_shape_at_a_fixed_array_attribute_draws_the_shape_mismatch_alone()
+ {
+    support::assert_both_engines_agree(exhaustive_a_state_holding_an_array_of_another_shape_at_a_fixed_array_attribute_draws_the_shape_mismatch_alone);
 }

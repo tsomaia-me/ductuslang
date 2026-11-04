@@ -1351,7 +1351,7 @@ fn a_missing_closer_reported_at_a_declarations_line_leaves_the_declaration_built
     ];
     let mut failures = Vec::new();
     for (vocabulary, items, expected) in rows {
-        let compiler = symphonyscript::Compiler::new(vocabulary).expect("the vocabulary compiles");
+        let compiler = support::Compiler::new(vocabulary).expect("the vocabulary compiles");
         for order in support::permutations(items) {
             let text = order.concat();
             let diagnostics: Vec<symphonyscript::Diagnostic> = compiler
@@ -1380,7 +1380,7 @@ fn a_missing_closer_reported_at_a_declarations_line_leaves_the_declaration_built
 
 #[test]
 fn a_missing_closer_marks_the_expression_it_closes_and_not_the_next_item() {
-    let compiler = symphonyscript::Compiler::new(&vocabulary()).expect("the vocabulary compiles");
+    let compiler = support::Compiler::new(&vocabulary()).expect("the vocabulary compiles");
     type Row<'a> = (&'a [&'a str], &'a [Code], &'a [(Code, &'a str)]);
     let rows: [Row; 4] = [
         (
@@ -1488,7 +1488,7 @@ fn the_faults_before_a_brackets_region_draw_whatever_the_bracket_and_the_order_c
 
 #[test]
 fn a_call_whose_argument_list_a_fault_cuts_short_draws_its_syntax_fault_alone_458() {
-    let compiler = symphonyscript::Compiler::new(&vocabulary()).expect("the vocabulary compiles");
+    let compiler = support::Compiler::new(&vocabulary()).expect("the vocabulary compiles");
     type Row<'a> = (&'a [&'a str], &'a [Code]);
     let rows: [Row; 9] = [
         (

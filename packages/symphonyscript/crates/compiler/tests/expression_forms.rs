@@ -383,3 +383,10 @@ fn a_type_name_after_is_is_the_alternative_test_and_draws_unbuilt_construct_c2_1
         }
     }
 }
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_differential_every_new_expression_form_parses_in_every_position_and_draws_one_unbuilt_construct_or_its_fault()
+ {
+    support::assert_both_engines_agree(exhaustive_every_new_expression_form_parses_in_every_position_and_draws_one_unbuilt_construct_or_its_fault);
+}

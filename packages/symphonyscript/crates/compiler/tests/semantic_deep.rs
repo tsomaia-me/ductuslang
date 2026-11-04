@@ -2,7 +2,8 @@ mod support;
 
 use std::collections::BTreeMap;
 
-use symphonyscript::{Code, Compiler, Source};
+use support::Compiler;
+use symphonyscript::{Code, Source};
 use symphonyscript_core::{Count, LimitOverrides, Vocabulary};
 use symphonyscript_fixtures::deep_projects;
 

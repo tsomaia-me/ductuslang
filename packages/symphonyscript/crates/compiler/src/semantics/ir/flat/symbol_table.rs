@@ -1,3 +1,5 @@
+use crate::semantics::counted_walk::CountedWalk;
+
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(crate) struct SymbolTable {
     first: u32,
@@ -36,8 +38,9 @@ impl SymbolTable {
 
     pub fn find(&self, text: &str, hash: u64) -> Option<u32> {
         let mask = self.slots.len().checked_sub(1)?;
-        let mut slot = usize::try_from(hash).unwrap_or(usize::MAX) & mask;
+        let mut slot = home(hash, mask);
         loop {
+            CountedWalk::SymbolProbe.step();
             let held = *self.slots.get(slot)?;
             let local = held.checked_sub(1)?;
             let sym = self.first.saturating_add(local);
@@ -57,16 +60,19 @@ impl SymbolTable {
         self.starts
             .push(u32::try_from(self.text.len()).unwrap_or(u32::MAX));
         self.text.push_str(text);
-        self.place(local, hash);
+        self.place(local, hash, true);
         self.first.saturating_add(local)
     }
 
-    fn place(&mut self, local: u32, hash: u64) {
+    fn place(&mut self, local: u32, hash: u64, counted: bool) {
         let Some(mask) = self.slots.len().checked_sub(1) else {
             return;
         };
-        let mut slot = usize::try_from(hash).unwrap_or(usize::MAX) & mask;
+        let mut slot = home(hash, mask);
         while let Some(held) = self.slots.get_mut(slot) {
+            if counted {
+                CountedWalk::SymbolProbe.step();
+            }
             if *held == 0 {
                 *held = local + 1;
                 return;
@@ -80,8 +86,16 @@ impl SymbolTable {
         self.slots = vec![0; size];
         for local in 0..self.hashes.len() {
             if let Some(hash) = self.hashes.get(local).copied() {
-                self.place(u32::try_from(local).unwrap_or(u32::MAX), hash);
+                self.place(u32::try_from(local).unwrap_or(u32::MAX), hash, false);
             }
         }
     }
+}
+
+fn home(hash: u64, mask: usize) -> usize {
+    let bits = mask.count_ones();
+    if bits == 0 {
+        return 0;
+    }
+    usize::try_from(hash >> (64 - bits)).unwrap_or(0) & mask
 }

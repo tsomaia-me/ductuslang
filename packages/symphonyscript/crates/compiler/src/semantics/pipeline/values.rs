@@ -84,7 +84,12 @@ impl Core<'_> {
     fn visit(&mut self, node: u32, ty: EvalTy, steps: &mut Vec<Step>) -> Result<(), Internal> {
         let (op, a, b, _) = self.ir.node(node)?;
         steps.push(Step::Apply(node, ty));
+        let flows = !self.unflowed.remove(&node);
+        if op == Op::Name && !flows {
+            self.unflowed.insert(node);
+        }
         let float = matches!(ty, EvalTy::F32 | EvalTy::F64);
+        let (mut integer_flow, mut picked) = (false, false);
         let operands: Vec<(u32, EvalTy)> = match op {
             Op::Neg | Op::Add | Op::Sub | Op::Mul | Op::Rem | Op::Pow => self
                 .operands(node)?
@@ -94,6 +99,7 @@ impl Core<'_> {
             Op::Div if !float => {
                 let defaulted = self.fact(a)?.fixed.is_none() && self.fact(b)?.fixed.is_none();
                 for operand in [b, a] {
+                    self.unflowed.insert(operand);
                     let fact = self.fact(operand)?;
                     if defaulted && fact.dims.is_empty() && fact.leaf == Leaf::Int {
                         steps.push(Step::Float(operand, EvalTy::F32));
@@ -111,12 +117,13 @@ impl Core<'_> {
             Op::IntDiv => {
                 let fixed = self.fact(node)?.fixed;
                 let mut own = self.integral(node)?;
-                let flows = match fixed {
+                let reaches = match fixed {
                     Some(fixed) => int_range(fixed).is_some() && widens(fixed, ty),
                     None => self.is_reactive(node)?,
                 };
-                if int_range(ty).is_some() && flows {
+                if int_range(ty).is_some() && reaches {
                     own = ty;
+                    integer_flow = true;
                 }
                 vec![(a, own), (b, own)]
             }
@@ -124,6 +131,7 @@ impl Core<'_> {
                 let pair = self.pair_ty(a, b)?;
                 if pair == EvalTy::Exact {
                     for operand in [b, a] {
+                        self.unflowed.insert(operand);
                         let fact = self.fact(operand)?;
                         if fact.fixed.is_none() && fact.dims.is_empty() && fact.leaf == Leaf::Int {
                             steps.push(Step::Fit(operand, EvalTy::I64));
@@ -156,6 +164,7 @@ impl Core<'_> {
                     && operand.read.is_some_and(|read| int_range(read).is_some())
                     && operand.dims.is_empty()
                 {
+                    self.unflowed.insert(a);
                     steps.push(Step::Visit(a, target));
                     return Ok(());
                 }
@@ -168,6 +177,9 @@ impl Core<'_> {
             Op::If => {
                 steps.pop();
                 steps.push(Step::Choose(node, ty));
+                if !flows {
+                    self.unflowed.insert(node);
+                }
                 vec![(a, EvalTy::Bool)]
             }
             Op::Array => self
@@ -177,6 +189,7 @@ impl Core<'_> {
                 .collect(),
             Op::Index | Op::IndexFromEnd => match self.pick_operands(node)? {
                 Some(operands) => {
+                    picked = true;
                     steps.pop();
                     steps.push(Step::Pick(node, ty));
                     operands
@@ -225,10 +238,12 @@ impl Core<'_> {
                     ]
                 } else {
                     let fact = self.fact(rec.iterable.0)?;
-                    let items_ty = match fact.fixed {
-                        Some(fixed) => fixed,
-                        None if fact.leaf == Leaf::Bool => EvalTy::Bool,
-                        None => EvalTy::Exact,
+                    let element = usize::from(self.fold_names(node)? >= 2);
+                    let items_ty = match (self.item_ty(&rec, element)?, fact.fixed) {
+                        (Some(annotated), _) if fact.dims.len() == 1 => annotated,
+                        (_, Some(fixed)) => fixed,
+                        (_, None) if fact.leaf == Leaf::Bool => EvalTy::Bool,
+                        (_, None) => EvalTy::Exact,
                     };
                     vec![(rec.iterable.0, items_ty)]
                 }
@@ -241,8 +256,52 @@ impl Core<'_> {
         let compared = matches!(op, Op::Lt | Op::Le | Op::Gt | Op::Ge | Op::Is | Op::IsNot);
         let reactive = (arithmetic || compared || op == Op::IntDiv) && self.is_reactive(node)?;
         let runtime = reactive && !compared;
-        let stopped = compared || self.fact(node)?.own() == Some(ty);
-        for (operand, operand_ty) in operands.into_iter().rev() {
+        let stopped = compared || (!flows && self.fact(node)?.own() == Some(ty));
+        let mut through = Vec::with_capacity(operands.len());
+        for (operand, _) in &operands {
+            through.push(match op {
+                Op::Neg | Op::Add | Op::Sub | Op::Mul | Op::Rem | Op::Pow | Op::Div | Op::Array => {
+                    true
+                }
+                Op::IntDiv => integer_flow,
+                Op::Index | Op::IndexFromEnd | Op::Slice => !picked && *operand == a,
+                Op::Call | Op::NamedCall => self.fact(*operand)?.fixed.is_none(),
+                Op::Int
+                | Op::Float
+                | Op::Bool
+                | Op::Name
+                | Op::Str
+                | Op::Variant
+                | Op::To
+                | Op::Field
+                | Op::MethodCall
+                | Op::NamedMethodCall
+                | Op::Past
+                | Op::Stepped
+                | Op::Match
+                | Op::TyScalar
+                | Op::TyName
+                | Op::TyArray
+                | Op::TyVar
+                | Op::Bad
+                | Op::And
+                | Op::Or
+                | Op::Not
+                | Op::Lt
+                | Op::Le
+                | Op::Gt
+                | Op::Ge
+                | Op::Is
+                | Op::IsNot
+                | Op::Convert
+                | Op::If
+                | Op::For => false,
+            });
+        }
+        for ((operand, operand_ty), through) in operands.into_iter().zip(through).rev() {
+            if !(flows && through) {
+                self.unflowed.insert(operand);
+            }
             if runtime && self.compile_time_operand(operand, operand_ty)? {
                 steps.push(Step::Fit(operand, operand_ty));
                 steps.push(Step::Visit(operand, EvalTy::Exact));
@@ -290,15 +349,23 @@ impl Core<'_> {
 
     pub fn evaluate(&mut self, root: u32, ty: EvalTy) -> Stage<CoreValue> {
         let inst = self.inst;
-        let chain = self.eval_chain.len();
+        let chain = self.eval_chain.clone();
         let outcome = self.evaluate_frames(root, ty);
         self.inst = inst;
-        self.eval_chain.truncate(chain);
+        self.eval_chain = chain;
         outcome
+    }
+
+    fn enter_let_frame(&mut self, outer_chains: &mut Vec<Vec<u32>>) {
+        if !self.eval_chain.is_empty() {
+            self.unmemoized();
+        }
+        outer_chains.push(std::mem::take(&mut self.eval_chain));
     }
 
     fn evaluate_frames(&mut self, root: u32, ty: EvalTy) -> Stage<CoreValue> {
         let ty = evaluated_in(ty);
+        let mut outer_chains: Vec<Vec<u32>> = Vec::new();
         let mut frames: Vec<Frame> = vec![Frame {
             owner: None,
             ty,
@@ -325,7 +392,7 @@ impl Core<'_> {
                         Err(declined) => return Ok(Err(declined)),
                     };
                     if proceed {
-                        let element = self.fold_item(&run.items, next);
+                        let element = self.fold_item(run.node, &run.items, next)?;
                         run.next = next;
                         let mut args = Vec::new();
                         if run.indexed {
@@ -355,6 +422,11 @@ impl Core<'_> {
                 let (owner, frame_ty) = (frame.owner, frame.ty);
                 let called = frame.call.is_some();
                 frames.pop();
+                if owner.is_some()
+                    && let Some(outer) = outer_chains.pop()
+                {
+                    self.eval_chain = outer;
+                }
                 CountedWalk::ValueRun.step();
                 match owner {
                     Some(at) => {
@@ -375,6 +447,7 @@ impl Core<'_> {
                     }
                     None if called => {
                         self.eval_chain.pop();
+                        self.end_recording(frames.len() + 1, &value);
                         if let Some(parent) = frames.last_mut() {
                             parent.values.push(value);
                         }
@@ -395,11 +468,40 @@ impl Core<'_> {
                     if op == Op::Name {
                         match self.bound(node)? {
                             DeclRef::Param(position) => {
+                                let owner = self.binding_owner(node)?;
+                                let bodies = &self.bodies;
+                                let owns = |open: &&Frame| {
+                                    open.call.is_some()
+                                        && bodies
+                                            .get(open.inst as usize)
+                                            .is_some_and(|body| body.function == owner)
+                                };
+                                let walked = || {
+                                    self.own_calls
+                                        .iter()
+                                        .rev()
+                                        .find(|(_, inst, _)| {
+                                            bodies
+                                                .get(*inst as usize)
+                                                .is_some_and(|body| body.function == owner)
+                                        })
+                                        .map(|(_, _, args)| args)
+                                };
                                 let value = frames
                                     .iter()
                                     .rev()
-                                    .find_map(|open| open.call.as_ref())
-                                    .and_then(|(_, args)| args.get(position as usize).cloned())
+                                    .find(owns)
+                                    .and_then(|open| open.call.as_ref())
+                                    .map(|(_, args)| args)
+                                    .or_else(walked)
+                                    .or_else(|| {
+                                        frames
+                                            .iter()
+                                            .rev()
+                                            .find_map(|open| open.call.as_ref())
+                                            .map(|(_, args)| args)
+                                    })
+                                    .and_then(|args| args.get(position as usize).cloned())
                                     .unwrap_or(Value::Error);
                                 if let Some(frame) = frames.last_mut() {
                                     frame.values.push(value);
@@ -415,6 +517,9 @@ impl Core<'_> {
                             {
                                 let root = self.let_root(at)?;
                                 let cyclic = self.cyclic.get(at as usize).copied().unwrap_or(false);
+                                if self.unflowed.remove(&node) && !cyclic {
+                                    self.unflowed.insert(root);
+                                }
                                 if let Some(frame) = frames.last_mut() {
                                     if cyclic {
                                         frame.values.push(Value::Error);
@@ -451,6 +556,7 @@ impl Core<'_> {
                                 && !*owned
                             {
                                 *owned = true;
+                                self.unmemoized();
                                 if let Err(declined) = self.operand_fits(at)? {
                                     return Ok(Err(declined));
                                 }
@@ -461,6 +567,9 @@ impl Core<'_> {
                         if let Some(annotated) = self.annotation_ty(at)? {
                             let let_ty = match self.fact(self.let_root(at)?)?.fixed {
                                 Some(own) if widens(own, annotated) => evaluated_in(annotated),
+                                _ if !self.annotation_dims(at)?.is_empty() => {
+                                    evaluated_in(annotated)
+                                }
                                 _ => flexible(annotated),
                             };
                             if matches!(class(node_ty), 1 | 2 | 4..=6) {
@@ -480,6 +589,7 @@ impl Core<'_> {
                                 ));
                             }
                             let root = self.let_root(at)?;
+                            self.enter_let_frame(&mut outer_chains);
                             frames.push(Frame {
                                 owner: Some(at),
                                 ty: let_ty,
@@ -511,6 +621,7 @@ impl Core<'_> {
                             flexible(node_ty)
                         };
                         let root = self.let_root(at)?;
+                        self.enter_let_frame(&mut outer_chains);
                         frames.push(Frame {
                             owner: Some(at),
                             ty: let_ty,
@@ -530,6 +641,7 @@ impl Core<'_> {
                 }
                 Step::Choose(choice, arm_ty) => {
                     let (_, condition, then, otherwise) = self.ir.node(choice)?;
+                    let unflowed = self.unflowed.remove(&choice);
                     let test = frame.values.pop().ok_or(Internal::missed("value stack"))?;
                     let held = self.fact(condition)?;
                     let test = if held.leaf == Leaf::Bool && held.dims.is_empty() {
@@ -538,9 +650,22 @@ impl Core<'_> {
                         Value::Error
                     };
                     match test {
-                        Value::Bool(true) => frame.steps.push(Step::Visit(then, arm_ty)),
-                        Value::Bool(false) => frame.steps.push(Step::Visit(otherwise, arm_ty)),
+                        Value::Bool(true) => {
+                            if unflowed {
+                                self.unflowed.insert(then);
+                            }
+                            frame.steps.push(Step::Visit(then, arm_ty));
+                        }
+                        Value::Bool(false) => {
+                            if unflowed {
+                                self.unflowed.insert(otherwise);
+                            }
+                            frame.steps.push(Step::Visit(otherwise, arm_ty));
+                        }
                         Value::Error if self.is_reactive(condition)? => {
+                            if unflowed {
+                                self.unflowed.extend([then, otherwise]);
+                            }
                             frame.steps.push(Step::Runtime(2));
                             frame.steps.push(Step::Visit(otherwise, arm_ty));
                             frame.steps.push(Step::Visit(then, arm_ty));
@@ -568,7 +693,7 @@ impl Core<'_> {
                         Some([Value::Array(_)]) => !rec.range,
                         Some(_) | None => false,
                     };
-                    if valid {
+                    if valid && !self.annotated_fold_refused(fold)? {
                         frame.steps.push(Step::FoldRun(fold, fold_ty));
                         frame.steps.push(Step::Visit(rec.start, fold_ty));
                     } else {
@@ -601,7 +726,7 @@ impl Core<'_> {
                         frame.values.push(start);
                         continue;
                     }
-                    let Some(body) = self.call_body.get(&(self.inst, fold)).copied() else {
+                    let Some(body) = self.body_of_call(fold) else {
                         frame.values.push(Value::Error);
                         continue;
                     };
@@ -614,7 +739,7 @@ impl Core<'_> {
                         continue;
                     }
                     let indexed = self.fold_names(fold)? >= 2;
-                    let first = self.fold_item(&items, 0);
+                    let first = self.fold_item(fold, &items, 0)?;
                     let mut args = Vec::new();
                     if indexed {
                         args.push(Value::Int(0));
@@ -649,7 +774,17 @@ impl Core<'_> {
                         frame.values.push(Value::Error);
                         continue;
                     };
+                    let key = self.memo_key(body, call_ty, &args);
+                    if let Some(key) = key.as_ref()
+                        && let Some(value) = self.memo_hit(key, call)
+                    {
+                        frame.values.push(value);
+                        continue;
+                    }
                     let value = self.body_value(body)?;
+                    if let Some(key) = key {
+                        self.begin_recording(key, frames.len() + 1);
+                    }
                     self.eval_chain.push(call);
                     frames.push(Frame {
                         owner: None,
@@ -765,6 +900,7 @@ impl Core<'_> {
     fn apply(&mut self, node: u32, ty: EvalTy, stack: &mut Vec<CoreValue>) -> Stage<CoreValue> {
         let pop = |stack: &mut Vec<CoreValue>| stack.pop().ok_or(Internal::missed("value stack"));
         let (op, a, b, _) = self.ir.node(node)?;
+        let unflowed = op == Op::Name && self.unflowed.remove(&node);
         Ok(Ok(match op {
             Op::Int => {
                 let value = *self
@@ -801,6 +937,9 @@ impl Core<'_> {
                         && !*done
                     {
                         *done = true;
+                        if unflowed {
+                            self.unflowed.insert(rec.rule);
+                        }
                         if let Err(declined) = self.evaluate(rec.rule, ty)? {
                             return Ok(Err(declined));
                         }
@@ -1102,9 +1241,11 @@ impl Core<'_> {
     fn evaluate_owned(&mut self, root: u32) -> Stage<()> {
         let inst = self.inst;
         let chain = self.eval_chain.len();
+        let calls = self.own_calls.len();
         let outcome = self.own_walk(root);
         self.inst = inst;
         self.eval_chain.truncate(chain);
+        self.own_calls.truncate(calls);
         outcome
     }
 
@@ -1115,16 +1256,37 @@ impl Core<'_> {
         while let Some((node, indexed)) = stack.pop() {
             if node == NONE {
                 self.eval_chain.pop();
+                self.own_calls.pop();
                 self.inst = leaves.pop().ok_or(Internal::missed("a call to leave"))?;
                 continue;
             }
             let fact = self.fact(node)?;
             let own = self.own_ty(node)?;
             let (op, a, b, c) = self.ir.node(node)?;
+            if op == Op::Convert
+                && let Some(target) = fact.fixed.filter(|target| is_fixed_float(*target))
+                && self.is_reactive(a)?
+            {
+                let operand = self.fact(a)?;
+                if operand.fixed.is_none()
+                    && operand.read.is_some_and(|read| int_range(read).is_some())
+                    && operand.dims.is_empty()
+                {
+                    self.unflowed.insert(a);
+                    let owning = std::mem::replace(&mut self.owning, false);
+                    let outcome = self.evaluate(a, target);
+                    self.owning = owning;
+                    if let Err(declined) = outcome? {
+                        return Ok(Err(declined));
+                    }
+                    continue;
+                }
+            }
             if let Some(own) = own
                 && !self.is_kept(node)?
                 && (!self.is_reactive(node)? || runtime_in_own(op, own))
             {
+                self.unflowed.insert(node);
                 let value = match self.evaluate(node, own)? {
                     Ok(value) => value,
                     Err(declined) => return Ok(Err(declined)),
@@ -1140,6 +1302,10 @@ impl Core<'_> {
                     if condition.dims.is_empty()
                         && !matches!(condition.leaf, Leaf::Bool | Leaf::Placeholder | Leaf::Error)
                     {
+                        if self.is_reactive(a)? {
+                            stack.push((c, false));
+                            stack.push((b, false));
+                        }
                         stack.push((a, false));
                         continue;
                     }
@@ -1213,6 +1379,7 @@ impl Core<'_> {
                             let runtime = self.is_reactive(a)? && !self.is_reactive(element)?;
                             match self.own_ty(node)?.filter(|_| runtime) {
                                 Some(own) => {
+                                    self.unflowed.insert(element);
                                     if let Err(declined) = self.evaluate(element, own)? {
                                         return Ok(Err(declined));
                                     }
@@ -1264,13 +1431,28 @@ impl Core<'_> {
                     stack.push((a, false));
                 }
                 Op::Call | Op::NamedCall => {
-                    for arg in self.arguments(node)?.into_iter().rev() {
-                        stack.push((arg, false));
+                    let mut args = Vec::new();
+                    for arg in self.arguments(node)? {
+                        let held = match self.own_ty(arg)? {
+                            Some(own) if !self.is_kept(arg)? && !self.is_reactive(arg)? => {
+                                self.unflowed.insert(arg);
+                                match self.evaluate(arg, own)? {
+                                    Ok(value) => Some(value),
+                                    Err(declined) => return Ok(Err(declined)),
+                                }
+                            }
+                            Some(_) | None => None,
+                        };
+                        if held.is_none() {
+                            stack.push((arg, false));
+                        }
+                        args.push(held.unwrap_or(Value::Error));
                     }
                     if let Some(body) = self.body_of_call(node) {
                         let value = self.body_value(body)?;
                         leaves.push(std::mem::replace(&mut self.inst, body));
                         self.eval_chain.push(node);
+                        self.own_calls.push((node, body, args));
                         stack.push((NONE, false));
                         stack.push((value, false));
                     }
@@ -1282,6 +1464,7 @@ impl Core<'_> {
                         && !*owned
                     {
                         *owned = true;
+                        self.unmemoized();
                         fits.push(at);
                         stack.push((self.let_root(at)?, false));
                     }

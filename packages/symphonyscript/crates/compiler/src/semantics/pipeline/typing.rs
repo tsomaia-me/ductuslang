@@ -26,9 +26,15 @@ const DONE: u8 = 2;
 
 impl Core<'_> {
     pub fn operands(&self, node: u32) -> Result<Vec<u32>, Internal> {
+        let mut operands = Vec::new();
+        self.push_operands(node, &mut operands)?;
+        Ok(operands)
+    }
+
+    fn push_operands(&self, node: u32, out: &mut Vec<u32>) -> Result<(), Internal> {
         let (op, a, b, c) = self.ir.node(node)?;
-        Ok(match op {
-            Op::Neg | Op::Not | Op::Convert => vec![a],
+        match op {
+            Op::Neg | Op::Not | Op::Convert => out.push(a),
             Op::Add
             | Op::Sub
             | Op::Mul
@@ -45,23 +51,24 @@ impl Core<'_> {
             | Op::Is
             | Op::IsNot
             | Op::Index
-            | Op::IndexFromEnd => vec![a, b],
+            | Op::IndexFromEnd => out.extend([a, b]),
             Op::Slice => {
-                let mut operands = vec![a];
+                out.push(a);
                 for at in b..b + 2 {
                     let bound = self.kid(at)?;
                     if bound != NONE {
-                        operands.push(bound);
+                        out.push(bound);
                     }
                 }
-                operands
             }
-            Op::If => vec![a, b, c],
-            Op::Call | Op::NamedCall => self.arguments(node)?,
-            Op::For => self.fold_operands(node)?,
-            Op::Array => (a..a + b)
-                .map(|at| self.kid(at))
-                .collect::<Result<_, _>>()?,
+            Op::If => out.extend([a, b, c]),
+            Op::Call | Op::NamedCall => out.extend(self.arguments(node)?),
+            Op::For => out.extend(self.fold_operands(node)?),
+            Op::Array => {
+                for at in a..a + b {
+                    out.push(self.kid(at)?);
+                }
+            }
             Op::Int
             | Op::Float
             | Op::Bool
@@ -79,22 +86,24 @@ impl Core<'_> {
             | Op::TyName
             | Op::TyArray
             | Op::TyVar
-            | Op::Bad => Vec::new(),
-        })
+            | Op::Bad => {}
+        }
+        Ok(())
     }
 
     pub fn postorder(&self, root: u32) -> Result<Vec<u32>, Internal> {
         let mut order = Vec::new();
         let mut stack = vec![(root, false)];
+        let mut kids = Vec::new();
         while let Some((node, visited)) = stack.pop() {
             if visited {
                 order.push(node);
                 continue;
             }
             stack.push((node, true));
-            for operand in self.operands(node)?.into_iter().rev() {
-                stack.push((operand, false));
-            }
+            kids.clear();
+            self.push_operands(node, &mut kids)?;
+            stack.extend(kids.iter().rev().map(|kid| (*kid, false)));
         }
         Ok(order)
     }
@@ -141,21 +150,51 @@ impl Core<'_> {
                 continue;
             }
             if expanded {
-                if let Err(declined) = self.type_root(self.let_root(at)?)? {
-                    if declined == Declined(Reason::Pending) {
-                        let open = stack
-                            .iter()
-                            .filter(|(_, opened)| *opened)
-                            .map(|(at, _)| *at);
-                        for reopened in open.chain([at]).collect::<Vec<u32>>() {
-                            if let Some(slot) = self.let_state.get_mut(reopened as usize) {
-                                *slot = NEW;
+                let top = self.typing_bodies > 0
+                    && self.inst != NONE
+                    && self
+                        .ir
+                        .lets
+                        .get(at as usize)
+                        .is_some_and(|rec| rec.owner == NONE);
+                let outer = if top {
+                    std::mem::replace(&mut self.inst, NONE)
+                } else {
+                    self.inst
+                };
+                let mark = self.diagnostics.len();
+                let typed = self.type_root(self.let_root(at)?);
+                let typed = match typed {
+                    Ok(Ok(())) if top => self
+                        .check_annotation(at)
+                        .map(|checked| checked.map(|()| true)),
+                    Ok(Ok(())) => Ok(Ok(false)),
+                    Ok(Err(declined)) => Ok(Err(declined)),
+                    Err(internal) => Err(internal),
+                };
+                if top {
+                    self.inst = outer;
+                    let drawn = self.diagnostics.split_off(mark);
+                    self.top_drawn.extend(drawn);
+                }
+                let checked = match typed? {
+                    Ok(checked) => checked,
+                    Err(declined) => {
+                        if declined == Declined(Reason::Pending) {
+                            let open = stack
+                                .iter()
+                                .filter(|(_, opened)| *opened)
+                                .map(|(at, _)| *at);
+                            for reopened in open.chain([at]).collect::<Vec<u32>>() {
+                                if let Some(slot) = self.let_state.get_mut(reopened as usize) {
+                                    *slot = NEW;
+                                }
                             }
                         }
+                        return Ok(Err(declined));
                     }
-                    return Ok(Err(declined));
-                }
-                if let Err(declined) = self.check_annotation(at)? {
+                };
+                if !checked && let Err(declined) = self.check_annotation(at)? {
                     return Ok(Err(declined));
                 }
                 if let Some(slot) = self.let_state.get_mut(at as usize) {
@@ -270,10 +309,11 @@ impl Core<'_> {
                         .is_some_and(|rec| rec.owner != NONE);
                     let cyclic = self.cyclic.get(at as usize).copied().unwrap_or(false);
                     if local && !cyclic && !self.has_fact(root)? {
-                        if self.typing_locals.contains(&(self.inst, at)) {
+                        let inst = self.inst_key(root)?;
+                        if self.typing_locals.contains(&(inst, at)) {
                             return Ok(Err(Declined(Reason::LocalCycle)));
                         }
-                        return self.pending(Need::Local(at, root, self.inst));
+                        return self.pending(Need::Local(at, root, inst));
                     }
                     if self.cyclic.get(at as usize).copied().unwrap_or(false) {
                         Fact::PLACEHOLDER
@@ -282,7 +322,7 @@ impl Core<'_> {
                     }
                 }
                 DeclRef::Cell(at) => self.cell_read_fact(at)?,
-                DeclRef::Param(position) => self.param_fact(position)?.0,
+                DeclRef::Param(position) => self.param_fact(node, position)?.0,
                 DeclRef::Fn(_) => return Ok(Err(Declined(Reason::FunctionValue))),
                 DeclRef::Duplicate | DeclRef::None => Fact::PLACEHOLDER,
                 DeclRef::Instance(_) => {

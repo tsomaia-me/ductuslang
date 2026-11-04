@@ -21,7 +21,8 @@ pub(crate) fn op_slice(op: Op) -> Slice {
         Op::Call => Slice::One,
         Op::NamedCall => Slice::One,
         Op::TyScalar => Slice::One,
-        Op::TyName | Op::TyArray | Op::TyVar => Slice::Pending,
+        Op::TyArray => Slice::One,
+        Op::TyName | Op::TyVar => Slice::Pending,
         Op::To => Slice::Two,
         Op::Past | Op::Stepped => Slice::Four,
         Op::Variant => Slice::Five,
@@ -81,7 +82,7 @@ pub(crate) fn covers(ir: &FlatIr) -> bool {
             && ir
                 .lets
                 .get(*at as usize)
-                .is_none_or(|rec| rec.is_match || !scalar_annotation(ir, rec.binder))
+                .is_none_or(|rec| rec.is_match || !let_annotation(ir, rec.binder))
         {
             return false;
         }
@@ -162,7 +163,7 @@ pub(crate) fn reason_slice(reason: Reason) -> Slice {
         Reason::CellGroup => Slice::Four,
         Reason::FunctionValue | Reason::Recursion => Slice::DefaultFlip,
         Reason::LocalCycle | Reason::LocalClash => Slice::Pending,
-        Reason::NestedScope | Reason::AnnotatedCall => Slice::Pending,
+        Reason::AnnotatedCall => Slice::Pending,
         Reason::Pending => Slice::One,
         Reason::ReactiveFor => Slice::Three,
         Reason::BareVariant | Reason::UnitAttribute | Reason::EnumAttribute => Slice::Five,
@@ -179,7 +180,7 @@ fn plain_cell(ir: &FlatIr, rec: &CellRec) -> bool {
     (host_fed || derived)
         && rec.clock.0 == rec.clock.1
         && rec.capacity.is_none()
-        && (!annotated(ir, rec.binder) || (host_fed && scalar_annotation(ir, rec.binder)))
+        && scalar_annotation(ir, rec.binder)
 }
 
 fn plain_function(ir: &FlatIr, rec: &FnRec) -> bool {
@@ -202,7 +203,7 @@ fn plain_fold(ir: &FlatIr, rec: &ForRec) -> bool {
         && rec.accumulator != NONE
         && (rec.names.0..rec.names.1)
             .chain([rec.accumulator])
-            .all(|binder| !annotated(ir, binder))
+            .all(|binder| scalar_annotation(ir, binder))
         && (rec.lets.0..rec.lets.1).all(|at| {
             ir.lets
                 .get(at as usize)
@@ -210,14 +211,31 @@ fn plain_fold(ir: &FlatIr, rec: &ForRec) -> bool {
         })
 }
 
-fn scalar_annotation(ir: &FlatIr, binder: u32) -> bool {
-    let Some(binder) = ir.binders.get(binder as usize) else {
+fn let_annotation(ir: &FlatIr, binder: u32) -> bool {
+    let Some(rec) = ir.binders.get(binder as usize) else {
         return false;
     };
-    if binder.annotation == NONE {
+    if rec.annotation == NONE {
         return true;
     }
-    let Ok((op, code, _, _)) = ir.node(binder.annotation) else {
+    let mut node = rec.annotation;
+    while let Ok((Op::TyArray, inner, length, known)) = ir.node(node) {
+        if known != 1 || !(1..1 << 31).contains(&length) {
+            return false;
+        }
+        node = inner;
+    }
+    scalar_node(ir, node)
+}
+
+fn scalar_annotation(ir: &FlatIr, binder: u32) -> bool {
+    ir.binders
+        .get(binder as usize)
+        .is_some_and(|binder| binder.annotation == NONE || scalar_node(ir, binder.annotation))
+}
+
+fn scalar_node(ir: &FlatIr, node: u32) -> bool {
+    let Ok((op, code, _, _)) = ir.node(node) else {
         return false;
     };
     op == Op::TyScalar

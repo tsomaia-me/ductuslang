@@ -456,7 +456,7 @@ struct Measured {
     new_core: bool,
 }
 
-const CORE_WALKS: [CountedWalk; 9] = [
+const CORE_WALKS: [CountedWalk; 10] = [
     CountedWalk::BindLookup,
     CountedWalk::CoreExpandRow,
     CountedWalk::SigNode,
@@ -466,6 +466,7 @@ const CORE_WALKS: [CountedWalk; 9] = [
     CountedWalk::CursorStep,
     CountedWalk::DenseLayout,
     CountedWalk::CoreUse,
+    CountedWalk::CallMemo,
 ];
 
 fn core_walk_failure(run: &Measured, name: &str, text: &str) -> Option<String> {
@@ -558,6 +559,9 @@ fn measured_files(compiler: &Compiler, sources: &[Source]) -> Measured {
     counts.push(("built_elements".into(), built_after - built_before));
     counts.push(("visited_arrays".into(), visited_after - visited_before));
     for (walk, before) in CountedWalk::ALL.iter().zip(walks_before) {
+        if *walk == CountedWalk::SymbolProbe {
+            continue;
+        }
         counts.push((format!("{walk:?}"), walk.steps() - before));
     }
     let errors = diagnostics

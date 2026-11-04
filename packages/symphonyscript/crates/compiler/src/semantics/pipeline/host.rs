@@ -22,8 +22,9 @@ impl OperatorHost for Core<'_> {
         help: String,
     ) -> Result<(), Internal> {
         let span = self.node_span(node)?;
-        self.diagnostics
-            .push(crate::diagnostics::Diagnostic::new(code, span, message).with_help(help));
+        let diagnostic = crate::diagnostics::Diagnostic::new(code, span, message).with_help(help);
+        let diagnostic = self.chained(diagnostic);
+        self.push_drawn(diagnostic);
         Ok(())
     }
 

@@ -1,6 +1,7 @@
 mod support;
 
-use symphonyscript::{Code, Compiler};
+use support::Compiler;
+use symphonyscript::Code;
 use symphonyscript_fixtures::{Orders, Rows, covered, vocabulary};
 
 type InlineRow = (Vec<String>, Vec<(Code, &'static str)>);

@@ -1,7 +1,8 @@
-mod reviewed;
 mod support;
 
-use symphonyscript::{Code, Compiler, Diagnostic, Selector, Source};
+use support::Compiler;
+use support::reviewed;
+use symphonyscript::{Code, Diagnostic, Selector, Source};
 use symphonyscript_core::{Count, Vocabulary};
 use symphonyscript_fixtures::{Rows, covered};
 
@@ -3965,7 +3966,7 @@ fn a_match_label_with_the_scrutinees_type_suffix_is_accepted() {
     ];
     support::assert_rows_in_every_order(&symphonyscript_fixtures::vocabulary(), rows);
     let compiler =
-        symphonyscript::Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("compiles");
+        support::Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("compiles");
     let text =
         "state b(3): u8\nstate v = match b:\n    3i32: 1\n    else: 2\nClip c:\n    Note/v\n";
     let diagnostics = compiler.check(&[support::source(text)]);
@@ -4676,8 +4677,7 @@ fn a_runtime_choice_between_strings_where_a_u8_array_is_expected_is_a_variable_a
         ),
     ];
     support::assert_rows_in_every_order(&support::signature_vocabulary(), rows);
-    let compiler =
-        symphonyscript::Compiler::new(&support::signature_vocabulary()).expect("it compiles");
+    let compiler = support::Compiler::new(&support::signature_vocabulary()).expect("it compiles");
     let text = "state f(false)\nClip as g | data=(if f then \"GET\" else \"ABCDEFGHI\")\n";
     let summaries: Vec<String> = support::errors(compiler.check(&[support::source(text)]))
         .into_iter()
@@ -4839,7 +4839,7 @@ fn a_let_whose_initializer_drew_an_error_is_a_placeholder_at_an_array_attribute_
         ),
         (
             &[note, "let m = note + true\n", "Clip as g | fixed=m\n"],
-            &[(Code::OperandType, "note + true")],
+            &[(Code::OperandType, "note + true"), (Code::ReactiveLet, "m")],
         ),
         (
             &[
@@ -5148,7 +5148,7 @@ fn beside_a_placeholder_an_operand_draws_only_where_its_twin_draws_with_its_twin
         ),
     ];
     support::assert_rows_in_every_order(&support::signature_vocabulary(), rows);
-    let compiler = symphonyscript::Compiler::new(&envelope).expect("it compiles");
+    let compiler = support::Compiler::new(&envelope).expect("it compiles");
     let text = "state x(1)\nEnv e | attack=(x * 2ms + true)\n";
     let summaries: Vec<String> = support::errors(compiler.check(&[support::source(text)]))
         .into_iter()
@@ -6617,4 +6617,42 @@ fn a_reactive_lets_value_draws_its_other_faults_as_its_placeholder_twin_does() {
             }
         }
     }
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_differential_a_literal_whose_elements_disagree_draws_one_diagnostic_wherever_its_value_goes()
+ {
+    support::assert_both_engines_agree(
+        exhaustive_a_literal_whose_elements_disagree_draws_one_diagnostic_wherever_its_value_goes,
+    );
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_differential_inconsistent_uses_name_each_use_with_its_calls() {
+    support::assert_both_engines_agree(exhaustive_inconsistent_uses_name_each_use_with_its_calls);
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_differential_beside_a_placeholder_that_is_not_a_names_the_partner_is_checked_in_its_own_type()
+ {
+    support::assert_both_engines_agree(
+        exhaustive_beside_a_placeholder_that_is_not_a_names_the_partner_is_checked_in_its_own_type,
+    );
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_differential_a_literal_beside_a_fixed_type_operand_takes_the_flowing_float_type_and_a_recursive_result_the_calls_type()
+ {
+    support::assert_both_engines_agree(exhaustive_a_literal_beside_a_fixed_type_operand_takes_the_flowing_float_type_and_a_recursive_result_the_calls_type);
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_differential_an_integer_looking_recursive_body_under_a_float_expected_type_computes_in_that_type_from_its_literals_up_292()
+ {
+    support::assert_both_engines_agree(exhaustive_an_integer_looking_recursive_body_under_a_float_expected_type_computes_in_that_type_from_its_literals_up_292);
 }

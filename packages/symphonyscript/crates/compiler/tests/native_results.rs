@@ -4,7 +4,8 @@ use std::collections::BTreeMap;
 
 use symphonyscript_fixtures::{Rows, covered};
 
-use symphonyscript::{Code, Compiler, Source};
+use support::Compiler;
+use symphonyscript::{Code, Source};
 use symphonyscript_fixtures::native_vocabulary;
 
 struct NativeResult {

@@ -8,7 +8,10 @@ use super::decl_ref::DeclRef;
 use super::declined::Declined;
 use super::fact::Fact;
 use super::instance_row::InstanceRow;
+use super::memo_entry::MemoEntry;
+use super::memo_key::MemoKey;
 use super::need::Need;
+use super::recording::Recording;
 use super::store::Store;
 use crate::diagnostics::{Code, Diagnostic, Related};
 use crate::semantics::Internal;
@@ -19,7 +22,7 @@ pub(crate) type Stage<T> = Result<Result<T, Declined>, Internal>;
 
 pub(crate) type UseKey = (u32, usize, Vec<u32>);
 
-pub(crate) type BodyKey = (u32, Vec<Fact>, Vec<bool>);
+pub(crate) type BodyKey = (u32, u32, Vec<Fact>, Vec<bool>);
 
 pub(crate) type UseValue = ((bool, u32), CoreValue);
 
@@ -41,8 +44,12 @@ pub(crate) struct Core<'a> {
     pub reactive: Vec<bool>,
     pub cell_uses: Vec<[bool; 2]>,
     pub owning: bool,
+    pub own_calls: Vec<(u32, u32, Vec<CoreValue>)>,
+    pub top_drawn: Vec<Diagnostic>,
+    pub typing_bodies: u32,
     pub unchecked: bool,
     pub fitting: bool,
+    pub unflowed: HashSet<u32>,
     pub driving: bool,
     pub need: Option<Need>,
 
@@ -73,6 +80,10 @@ pub(crate) struct Core<'a> {
     pub skipped_top: Vec<u32>,
     pub reached: Vec<bool>,
     pub body_index: HashMap<BodyKey, u32>,
+    pub outer_owner: HashMap<u32, u32>,
+    pub call_memo: HashMap<MemoKey, MemoEntry>,
+    pub recordings: Vec<Recording>,
+    pub reaches_out: Vec<bool>,
 }
 
 impl<'a> Core<'a> {
@@ -101,8 +112,12 @@ impl<'a> Core<'a> {
             reactive: vec![false; nodes],
             cell_uses: vec![[false, false]; ir.cells.len()],
             owning: false,
+            own_calls: Vec::new(),
+            top_drawn: Vec::new(),
+            typing_bodies: 0,
             unchecked: false,
             fitting: false,
+            unflowed: HashSet::new(),
             driving: false,
             need: None,
 
@@ -133,6 +148,10 @@ impl<'a> Core<'a> {
             skipped_top: Vec::new(),
             reached: vec![false; nodes],
             body_index: HashMap::new(),
+            outer_owner: HashMap::new(),
+            call_memo: HashMap::new(),
+            recordings: Vec::new(),
+            reaches_out: vec![false; ir.fors.len()],
         }
     }
 
@@ -230,7 +249,32 @@ impl Core<'_> {
         if self.inst == NONE {
             return Err(Internal::missed("a body instance"));
         }
-        Ok(Some((self.inst, node)))
+        Ok(Some((self.owner_inst(owner), node)))
+    }
+
+    pub fn owner_inst(&self, owner: u32) -> u32 {
+        let mut at = self.inst;
+        while let Some(body) = self.bodies.get(at as usize) {
+            if body.function == owner {
+                return at;
+            }
+            at = body.parent;
+        }
+        self.inst
+    }
+
+    pub fn inst_key(&self, node: u32) -> Result<u32, Internal> {
+        Ok(match self.in_body(node)? {
+            Some((inst, _)) => inst,
+            None => self.inst,
+        })
+    }
+
+    pub fn binding_owner(&self, node: u32) -> Result<u32, Internal> {
+        Ok(match self.outer_owner.get(&node) {
+            Some(owner) => *owner,
+            None => self.body_of.get(self.local(node)?).copied().unwrap_or(NONE),
+        })
     }
 
     pub fn fact(&self, node: u32) -> Result<Fact, Internal> {
@@ -307,7 +351,8 @@ impl Core<'_> {
 }
 
 impl Core<'_> {
-    fn push_drawn(&mut self, diagnostic: Diagnostic) {
+    pub fn push_drawn(&mut self, diagnostic: Diagnostic) {
+        self.record(&diagnostic);
         if self.eval_chain.is_empty() {
             self.diagnostics.push(diagnostic);
         } else {

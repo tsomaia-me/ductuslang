@@ -1,6 +1,7 @@
 mod support;
 
-use symphonyscript::{Code, Compiler};
+use support::Compiler;
+use symphonyscript::Code;
 use symphonyscript_fixtures::{Orders, Rows, covered, native_vocabulary, vocabulary};
 
 struct Base {
@@ -243,4 +244,12 @@ fn a_widening_choice_with_a_derived_state_arm_as_an_index_draws_one_diagnostic_4
         }
     }
     assert_eq!(programs, 32);
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_differential_an_element_read_has_its_elements_shape_whatever_array_it_reads() {
+    support::assert_both_engines_agree(
+        exhaustive_an_element_read_has_its_elements_shape_whatever_array_it_reads,
+    );
 }

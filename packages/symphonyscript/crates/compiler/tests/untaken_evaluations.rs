@@ -2,8 +2,9 @@ mod support;
 
 use std::collections::BTreeSet;
 
+use support::Compiler;
 use support::error_texts;
-use symphonyscript::{Code, Compiler};
+use symphonyscript::Code;
 use symphonyscript_core::LimitOverrides;
 use symphonyscript_fixtures::{Rows, covered, vocabulary};
 

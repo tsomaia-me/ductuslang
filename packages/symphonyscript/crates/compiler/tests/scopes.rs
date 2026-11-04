@@ -1,6 +1,7 @@
 mod support;
 
-use symphonyscript::{Code, Compiler};
+use support::Compiler;
+use symphonyscript::Code;
 use symphonyscript_core::Vocabulary;
 use symphonyscript_fixtures::{bounded_vocabulary, vocabulary};
 
@@ -400,7 +401,7 @@ fn a_child_wire_or_loop_name_equal_to_a_visible_local_is_refused_naming_both() {
     ];
     let vocabulary = symphonyscript_fixtures::vocabulary();
     support::assert_rows_in_every_order(&vocabulary, rows);
-    let compiler = symphonyscript::Compiler::new(&vocabulary).expect("the vocabulary compiles");
+    let compiler = support::Compiler::new(&vocabulary).expect("the vocabulary compiles");
     for (items, _) in rows {
         let text = items.concat();
         for diagnostic in support::errors(compiler.check(&[support::source(&text)])) {

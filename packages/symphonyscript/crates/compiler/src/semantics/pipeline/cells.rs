@@ -35,7 +35,7 @@ impl Core<'_> {
         Ok(fact)
     }
 
-    fn derived(&self, at: u32) -> bool {
+    pub fn derived(&self, at: u32) -> bool {
         self.ir
             .cells
             .get(at as usize)
@@ -48,7 +48,7 @@ impl Core<'_> {
             return Ok(match self.bound(node)? {
                 DeclRef::Cell(_) => true,
                 DeclRef::Let(at) => self.let_reads_cell(at)?,
-                DeclRef::Param(position) => self.param_fact(position)?.1,
+                DeclRef::Param(position) => self.param_fact(node, position)?.1,
                 DeclRef::None | DeclRef::Instance(_) | DeclRef::Duplicate | DeclRef::Fn(_) => false,
             });
         }

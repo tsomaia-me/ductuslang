@@ -1,6 +1,7 @@
 mod support;
 
-use symphonyscript::{Code, Compiler, Diagnostic, Severity, Source};
+use support::Compiler;
+use symphonyscript::{Code, Diagnostic, Severity, Source};
 use symphonyscript_core::LimitOverrides;
 use symphonyscript_fixtures::{Rows, covered, vocabulary};
 
@@ -686,4 +687,24 @@ fn every_range_bound_of_a_for_expression_is_checked_against_i64_before_any_itera
         }
     }
     support::assert_no_failure(&failures);
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_differential_for_values() {
+    support::assert_both_engines_agree(|| {
+        a_for_expression_folds_its_iterable_into_the_value_or_the_capacity_its_rules_give();
+        exhaustive_a_for_expression_folds_its_iterable_into_the_value_or_the_capacity_its_rules_give();
+        the_for_expressions_of_the_spec_hold_the_values_and_capacities_the_spec_gives();
+        a_compile_time_for_counts_each_iteration_toward_the_expansion_limit_and_its_warning();
+        a_for_expression_starts_from_its_start_and_yields_the_start_over_an_empty_iterable();
+        a_for_expression_is_a_compile_time_value_only_when_its_iterable_start_and_body_read_no_cell(
+        );
+        exhaustive_a_for_expression_is_a_compile_time_value_only_when_its_iterable_start_and_body_read_no_cell();
+        a_for_expressions_body_counts_once_toward_the_inline_limit_however_many_times_it_runs();
+        the_accumulator_takes_the_type_its_start_and_body_unify_to_as_if_arms_do_and_an_annotation_fixes_it();
+        a_capacity_past_an_annotated_accumulator_names_both_and_the_fix_its_help_names_passes();
+        a_for_bodys_type_fault_draws_whatever_holds_the_expression_as_its_derived_cell_twin_draws_c1_1_c2_1();
+        every_range_bound_of_a_for_expression_is_checked_against_i64_before_any_iteration_c1_6_cs_10();
+    });
 }

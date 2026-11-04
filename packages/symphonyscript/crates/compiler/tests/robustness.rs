@@ -4,8 +4,9 @@ mod support;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
 use robustness_corpus::{MUTATIONS, corpora, mutant, mutants};
+use support::Compiler;
 use symphonyscript::syntax::lex;
-use symphonyscript::{Code, Compiler, Source};
+use symphonyscript::{Code, Source};
 use symphonyscript_core::Vocabulary;
 use symphonyscript_fixtures::{Rows, covered, vocabulary};
 
@@ -241,4 +242,34 @@ fn a_destination_sliced_by_a_cell_is_refused_as_an_array() {
             ),
         ],
     );
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_differential_no_mutant_of_an_example_or_fixture_draws_an_internal_error_or_panics_in_the_odd_samples()
+ {
+    support::assert_both_engines_agree(exhaustive_no_mutant_of_an_example_or_fixture_draws_an_internal_error_or_panics_in_the_odd_samples);
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_differential_no_mutant_of_an_example_or_fixture_draws_an_internal_error_or_panics_in_the_even_samples()
+ {
+    support::assert_both_engines_agree(exhaustive_no_mutant_of_an_example_or_fixture_draws_an_internal_error_or_panics_in_the_even_samples);
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_differential_no_mutant_of_a_for_expression_or_loop_head_example_draws_an_internal_error()
+ {
+    support::assert_both_engines_agree(
+        exhaustive_no_mutant_of_a_for_expression_or_loop_head_example_draws_an_internal_error,
+    );
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_differential_no_mutant_of_a_recursive_function_reading_a_cell_through_a_let_draws_an_internal_error()
+ {
+    support::assert_both_engines_agree(exhaustive_no_mutant_of_a_recursive_function_reading_a_cell_through_a_let_draws_an_internal_error);
 }

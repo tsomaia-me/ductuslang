@@ -277,7 +277,7 @@ fn the_examples_of_the_brief_parse_to_trees_that_carry_each_part() {
 #[test]
 fn a_reference_to_a_name_declared_twice_draws_what_its_unknown_name_twin_draws_c1_7() {
     let compiler =
-        symphonyscript::Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("compiles");
+        support::Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("compiles");
     let uses = [
         "Note/(a + true)",
         "Note/(a[1.5])",
@@ -320,4 +320,11 @@ fn a_reference_to_a_name_declared_twice_draws_what_its_unknown_name_twin_draws_c
         }
     }
     support::assert_no_failure(&failures);
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_differential_every_type_form_parses_in_every_annotation_and_draws_one_unbuilt_construct_where_it_is_not_built()
+ {
+    support::assert_both_engines_agree(exhaustive_every_type_form_parses_in_every_annotation_and_draws_one_unbuilt_construct_where_it_is_not_built);
 }

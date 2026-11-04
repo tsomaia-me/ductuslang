@@ -2,7 +2,8 @@ mod support;
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use symphonyscript::{Code, Compiler};
+use support::Compiler;
+use symphonyscript::Code;
 use symphonyscript_fixtures::{Rows, covered, native_vocabulary};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]

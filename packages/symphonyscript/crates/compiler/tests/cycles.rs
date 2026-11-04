@@ -2,7 +2,8 @@ mod support;
 
 use std::collections::BTreeSet;
 
-use symphonyscript::{Code, Compiler, Diagnostic, Severity, Source};
+use support::Compiler;
+use symphonyscript::{Code, Diagnostic, Severity, Source};
 use symphonyscript_core::LimitOverrides;
 use symphonyscript_fixtures::vocabulary;
 
@@ -714,4 +715,13 @@ fn a_cycle_through_an_argument_names_the_caller_and_no_parameter_c1_9() {
         }
     }
     support::assert_no_failure(&failures);
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_differential_every_cycle_of_declarations_draws_one_declaration_cycle_in_every_order()
+{
+    support::assert_both_engines_agree(
+        exhaustive_every_cycle_of_declarations_draws_one_declaration_cycle_in_every_order,
+    );
 }

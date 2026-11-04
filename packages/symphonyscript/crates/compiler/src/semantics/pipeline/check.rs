@@ -25,6 +25,18 @@ fn describe(count: Count) -> String {
     }
 }
 
+fn expected_array(attr: &AttrDecl) -> Option<(EvalTy, u32)> {
+    let [length] = attr.ty.lengths.as_slice() else {
+        return None;
+    };
+    if attr.ty.capacity.is_some() || attr.unit.is_some() {
+        return None;
+    }
+    let mut scalar = attr.clone();
+    scalar.ty.lengths.clear();
+    expected(&scalar).map(|ty| (ty, *length))
+}
+
 fn expected(attr: &AttrDecl) -> Option<EvalTy> {
     if !attr.ty.lengths.is_empty() || attr.ty.capacity.is_some() || attr.unit.is_some() {
         return None;
@@ -64,11 +76,10 @@ impl Core<'_> {
             CountedWalk::CheckRow.step();
             let record = *self.instances.get(row).ok_or(Internal::missed("row"))?;
             let placement = self.placement(record.item)?;
-            let decl = self
-                .vocabulary
+            let vocabulary = self.vocabulary;
+            let decl = vocabulary
                 .node_kind(record.kind)
-                .ok_or(Internal::missed("node kind"))?
-                .clone();
+                .ok_or(Internal::missed("node kind"))?;
             let mut sources: Vec<(usize, Span, u32)> = Vec::new();
             let mut set = |core: &mut Self, attr: usize, span: Span, root: u32| {
                 if let Some((_, earlier, _)) = sources.iter().find(|(seen, _, _)| *seen == attr) {
@@ -140,6 +151,12 @@ impl Core<'_> {
             }
             for (attr, _, root) in sources {
                 let attr = decl.attrs.get(attr).ok_or(Internal::missed("attribute"))?;
+                if let Some((ty, length)) = expected_array(attr) {
+                    if let Err(declined) = self.bind_array(root, &attr.name, ty, length)? {
+                        return Ok(Err(declined));
+                    }
+                    continue;
+                }
                 let Some(ty) = expected(attr) else {
                     return Ok(Err(Declined(attribute_reason(attr))));
                 };
@@ -236,6 +253,33 @@ impl Core<'_> {
             stack.extend(through.into_iter().rev());
         }
         Ok(refused)
+    }
+
+    fn bind_array(&mut self, root: u32, name: &str, ty: EvalTy, length: u32) -> Stage<()> {
+        let fact: Fact = match self.ensure_typed(root)? {
+            Ok(fact) => fact,
+            Err(declined) => return Ok(Err(declined)),
+        };
+        if matches!(fact.leaf, Leaf::Placeholder | Leaf::Error) {
+            return self.own_check(root);
+        }
+        if fact.dims != [length] {
+            self.draw_at(
+                Code::TypeMismatch,
+                root,
+                "the value's array shape differs from the attribute's type",
+            )?;
+            return self.own_check(root);
+        }
+        if self.ir.node(root)?.0 != Op::Array {
+            return Ok(Err(Declined(Reason::ArrayAttribute)));
+        }
+        for element in self.operands(root)? {
+            if let Err(declined) = self.bind_value(element, name, ty)? {
+                return Ok(Err(declined));
+            }
+        }
+        Ok(Ok(()))
     }
 
     pub fn own_check(&mut self, root: u32) -> Stage<()> {
@@ -418,11 +462,10 @@ impl Core<'_> {
             .instances
             .get(row as usize)
             .ok_or(Internal::missed("row"))?;
-        let decl = self
-            .vocabulary
+        let vocabulary = self.vocabulary;
+        let decl = vocabulary
             .node_kind(record.kind)
-            .ok_or(Internal::missed("node kind"))?
-            .clone();
+            .ok_or(Internal::missed("node kind"))?;
         let directed = decl
             .outgoing
             .iter()
@@ -462,11 +505,10 @@ impl Core<'_> {
             .instances
             .get(parent as usize)
             .ok_or(Internal::missed("row"))?;
-        let decl = self
-            .vocabulary
+        let vocabulary = self.vocabulary;
+        let decl = vocabulary
             .node_kind(record.kind)
-            .ok_or(Internal::missed("node kind"))?
-            .clone();
+            .ok_or(Internal::missed("node kind"))?;
         let mut by_kind: BTreeMap<NodeKind, Vec<u32>> = BTreeMap::new();
         for child in record.children.0..record.children.1 {
             let kind = self
@@ -494,7 +536,7 @@ impl Core<'_> {
             by_kind.entry(kind).or_default().push(child);
         }
         for (kind, count) in &decl.children {
-            let found = by_kind.get(kind).cloned().unwrap_or_default();
+            let found = by_kind.get(kind).map_or(&[][..], Vec::as_slice);
             let name = self.kind_name(*kind)?;
             if let Some(max) = count.max()
                 && let Some(extra) = found.get(max as usize)
