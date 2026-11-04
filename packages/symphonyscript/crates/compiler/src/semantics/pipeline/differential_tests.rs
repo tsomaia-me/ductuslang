@@ -1054,3 +1054,37 @@ fn a_read_of_a_let_reading_a_cell_keeps_the_lets_known_type_and_its_operands_fit
         assert_eq!(spanned(text, &found), wanted, "{text}");
     }
 }
+
+const GATE_REPAIRS: [(&str, &str, &str); 2] = [
+    (
+        "\nstate base_pitch(48.0)\nlet pitch_offset = base_pitch * 0.5\n\nfn fifth(p):\n    p + 7\n\nClip melody:\n    Note/(base_pitch + 7)\n    Note/(fifth(base_pitch))\n    Note/(base_pitch + pitch_offset)\n\nSynth lead:\n    Osc | freq=(base_pitch * 2.5)\n",
+        "\nstate base_pitch(48.0)\nstate pitch_offset = base_pitch * 0.5\n\nfn fifth(p):\n    p + 7\n\nClip melody:\n    Note/(base_pitch + 7)\n    Note/(fifth(base_pitch))\n    Note/(base_pitch + pitch_offset)\n\nSynth lead:\n    Osc | freq=(base_pitch * 2.5)\n",
+        "pitch_offset",
+    ),
+    (
+        "\nstate a(2)\nstate b(3)\nstate i(0)\n\nlet c = [b, a, b + a]\nlet mutated = [b * 2, a + 1, c[i] + 1]\n\nClip main:\n    Note/1 | velocity=a\n    Note/2 | velocity=b\n    Note/3 | velocity=c[i]\n",
+        "\nstate a(2)\nstate b(3)\nstate i(0)\n\nstate c = [b, a, b + a]\nstate mutated = [b * 2, a + 1, c[i] + 1]\n\nClip main:\n    Note/1 | velocity=a\n    Note/2 | velocity=b\n    Note/3 | velocity=c[i]\n",
+        "c mutated",
+    ),
+];
+
+#[test]
+fn a_gate_program_reading_a_reactive_let_draws_its_repaired_twins_set_beside_reactive_let_464() {
+    let old = Compiler::new(&symphonyscript_fixtures::vocabulary())
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
+    let new =
+        Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("the vocabulary compiles");
+    for (text, repaired, lets) in GATE_REPAIRS {
+        let found = new
+            .checked_by_new_core(&[source(text)])
+            .unwrap_or_else(|| panic!("the new core takes {text}"));
+        let mut wanted = spanned(repaired, &old.check(&[source(repaired)]));
+        wanted.extend(
+            lets.split(' ')
+                .map(|name| ("reactive-let".to_string(), name.to_string())),
+        );
+        wanted.sort();
+        assert_eq!(spanned(text, &found), wanted, "{text}");
+    }
+}

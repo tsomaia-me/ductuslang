@@ -11,6 +11,54 @@ pub const REVIEWED: &[Reviewed] = &[
         &[("reactive-let", "c"), ("reactive-let", "s")],
     ),
     (
+        "464",
+        "\nstate a(1)\nlet b = a + 0.5\nlet gate = b > 1\n\nClip c:\n    Note/60 | velocity=gate\n",
+        &[
+            ("reactive-let", "b"),
+            ("reactive-let", "gate"),
+            ("type-mismatch", "gate"),
+        ],
+    ),
+    (
+        "464",
+        "state f(false)\nlet v = if f then [60, 64] else [62, 65]\nlet k = 1 + 1\n\nClip melody:\n    Note/(v[0])\n    Note/(v[k])\n",
+        &[("index-out-of-range", "k"), ("reactive-let", "v")],
+    ),
+    (
+        "464",
+        "\nstate a(1)\nstate b(2)\nstate i(0)\nlet c = [a, b, a + b]\nstate i(i + 1)\nlet d = c * 2\n",
+        &[
+            ("array-operand", "c * 2"),
+            ("duplicate-name", "i"),
+            ("reactive-let", "c"),
+            ("reactive-let", "d"),
+        ],
+    ),
+    (
+        "464",
+        "\nstate a(2)\nstate b(3)\nstate i(0)\nlet c = [b, a, b + a]\nlet mutated = [c, a * 2, b - 1]\n",
+        &[
+            ("ragged-array", "[c, a * 2, b - 1]"),
+            ("reactive-let", "c"),
+            ("reactive-let", "mutated"),
+        ],
+    ),
+    (
+        "464",
+        "\nstate base_pitch(48.0)\nlet pitch_offset = base_pitch * 0.5\n\nfn fifth(p):\n    p + 7\n\nClip melody:\n    Note/(base_pitch + 7)\n    Note/(fifth(base_pitch))\n    Note/(base_pitch + pitch_offset)\n\nSynth lead:\n    Osc | freq=(base_pitch * 2.5)\n",
+        &[
+            ("reactive-let", "pitch_offset"),
+            ("type-mismatch", "base_pitch + 7"),
+            ("type-mismatch", "base_pitch + pitch_offset"),
+            ("type-mismatch", "p + 7"),
+        ],
+    ),
+    (
+        "464",
+        "\nstate a(2)\nstate b(3)\nstate i(0)\n\nlet c = [b, a, b + a]\nlet mutated = [b * 2, a + 1, c[i] + 1]\n\nClip main:\n    Note/1 | velocity=a\n    Note/2 | velocity=b\n    Note/3 | velocity=c[i]\n",
+        &[("reactive-let", "c"), ("reactive-let", "mutated")],
+    ),
+    (
         "476",
         "let q = 1\nClip k:\n    Note/((true is q)[if true then [1, 2][5] else [1, 2]])\n",
         &[
