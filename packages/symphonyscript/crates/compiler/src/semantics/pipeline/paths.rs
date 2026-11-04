@@ -14,6 +14,15 @@ use crate::semantics::counted_walk::CountedWalk;
 use crate::semantics::ir::flat::{ABSENT, AttrForm, ItemRec, NONE, Op};
 use crate::semantics::operators::EvalTy;
 
+fn same_end(one: (End, Option<EvalTy>), other: (End, Option<EvalTy>)) -> bool {
+    let unknown = |(end, ty): (End, Option<EvalTy>)| {
+        ty.is_none() && matches!(end, End::Value | End::Placeholder)
+    };
+    unknown(one)
+        || unknown(other)
+        || (std::mem::discriminant(&one.0) == std::mem::discriminant(&other.0) && one.1 == other.1)
+}
+
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum End {
     Row(u32),
@@ -470,9 +479,40 @@ impl Core<'_> {
         })
     }
 
-    pub fn path_read(&self, node: u32) -> Result<Option<&AttrRead>, Internal> {
+    pub fn read_at(&self, node: u32) -> Result<u32, Internal> {
         let at = self.paths.get(self.local(node)?).copied().unwrap_or(NONE);
-        Ok(self.attr_reads.get(at as usize))
+        if self.wire_now == NONE {
+            return Ok(at);
+        }
+        Ok(self
+            .row_reads
+            .get(&(node, self.wire_now))
+            .copied()
+            .unwrap_or(at))
+    }
+
+    pub fn node_reads(&self, node: u32) -> Result<Vec<u32>, Internal> {
+        let mut reads: Vec<u32> = self
+            .row_reads
+            .range((node, 0)..=(node, u32::MAX))
+            .map(|(_, at)| *at)
+            .collect();
+        let at = self.paths.get(self.local(node)?).copied().unwrap_or(NONE);
+        if at != NONE && !reads.contains(&at) {
+            reads.insert(0, at);
+        }
+        Ok(reads)
+    }
+
+    pub fn to_choice(&self, node: u32) -> Option<EvalTy> {
+        self.row_choices
+            .get(&(node, self.wire_now))
+            .or_else(|| self.to_choices.get(&node))
+            .copied()
+    }
+
+    pub fn path_read(&self, node: u32) -> Result<Option<&AttrRead>, Internal> {
+        Ok(self.attr_reads.get(self.read_at(node)? as usize))
     }
 }
 
@@ -522,9 +562,11 @@ impl Core<'_> {
 
 impl Core<'_> {
     fn index_to_wires(&mut self) -> Result<(), Internal> {
-        let mut rows: HashMap<u32, u32> = HashMap::new();
+        let mut rows: HashMap<u32, Vec<u32>> = HashMap::new();
         for (at, row) in self.wires.iter().enumerate() {
-            rows.insert(row.item, u32::try_from(at).unwrap_or(u32::MAX));
+            rows.entry(row.item)
+                .or_default()
+                .push(u32::try_from(at).unwrap_or(u32::MAX));
         }
         let mut found = Vec::new();
         for (item, rec) in self.ir.items.iter().enumerate() {
@@ -546,7 +588,7 @@ impl Core<'_> {
                     roots.push(value);
                 }
             }
-            let wire_at = rows.get(&item).copied().unwrap_or(NONE);
+            let wire_rows = rows.get(&item).cloned().unwrap_or_else(|| vec![NONE]);
             for root in roots.into_iter().filter(|root| *root != NONE) {
                 for node in self.deep_postorder(root)? {
                     let mut current = node;
@@ -558,7 +600,7 @@ impl Core<'_> {
                             continue;
                         }
                         if op == Op::To {
-                            found.push((current, wire_at));
+                            found.extend(wire_rows.iter().map(|wire| (current, *wire)));
                         }
                         break;
                     }
@@ -621,7 +663,18 @@ impl Core<'_> {
         ))
     }
 
-    fn segments_to_wire(&self, node: u32) -> Result<(Vec<u32>, u32), Internal> {
+    fn to_rows(&self, node: u32) -> Vec<u32> {
+        let at = self.to_wires.partition_point(|entry| entry.0 < node);
+        self.to_wires
+            .get(at..)
+            .unwrap_or_default()
+            .iter()
+            .take_while(|entry| entry.0 == node)
+            .map(|entry| entry.1)
+            .collect()
+    }
+
+    fn segments_to_wire(&self, node: u32) -> Result<(Vec<u32>, Vec<u32>), Internal> {
         let mut segments = Vec::new();
         let mut current = node;
         loop {
@@ -634,14 +687,53 @@ impl Core<'_> {
             current = receiver;
         }
         segments.reverse();
-        let wire = self
-            .to_wire(current)
-            .ok_or(Internal::missed("a `to` path's wire"))?;
-        Ok((segments, wire))
+        let wires = self.to_rows(current);
+        if wires.is_empty() {
+            return Err(Internal::missed("a `to` path's wire"));
+        }
+        Ok((segments, wires))
     }
 
     fn destination_path_end(&mut self, node: u32) -> Stage<End> {
-        let (segments, wire) = self.segments_to_wire(node)?;
+        let (segments, wires) = self.segments_to_wire(node)?;
+        if let [wire] = wires.as_slice() {
+            return self.row_path_end(node, &segments, *wire);
+        }
+        let mut first: Option<(End, Option<EvalTy>)> = None;
+        for wire in wires {
+            self.wire_now = wire;
+            let end = self.row_path_end(node, &segments, wire);
+            self.wire_now = NONE;
+            let end = match end? {
+                Ok(end) => end,
+                Err(declined) => return Ok(Err(declined)),
+            };
+            if let End::Attr(at) = end {
+                self.row_reads.insert((node, wire), at);
+            }
+            let seen = (end, self.row_end_ty(node, wire, end));
+            match first {
+                Some(earlier) if !same_end(earlier, seen) => {
+                    return Ok(Err(Declined(Reason::BodyItem)));
+                }
+                Some((End::Attr(_), _)) => {}
+                Some(_) | None if seen.1.is_some() || first.is_none() => first = Some(seen),
+                Some(_) | None => {}
+            }
+        }
+        Ok(Ok(first.map_or(End::Placeholder, |(end, _)| end)))
+    }
+
+    fn row_end_ty(&self, node: u32, wire: u32, end: End) -> Option<EvalTy> {
+        match end {
+            End::Attr(at) => self.attr_reads.get(at as usize).map(|read| read.ty),
+            End::Value | End::Placeholder | End::Row(_) | End::To => {
+                self.row_choices.get(&(node, wire)).copied()
+            }
+        }
+    }
+
+    fn row_path_end(&mut self, node: u32, segments: &[u32], wire: u32) -> Stage<End> {
         if wire == NONE {
             return Ok(Ok(End::Placeholder));
         }
@@ -650,21 +742,23 @@ impl Core<'_> {
             .get(wire as usize)
             .ok_or(Internal::missed("wire row"))?;
         if row.chosen {
-            self.deferred_to.push(node);
+            self.deferred_to.push((node, wire));
             return Ok(Ok(End::Placeholder));
         }
         let targets = self.wire_targets(&row);
         if targets.is_empty() {
             return Ok(Ok(End::Placeholder));
         }
-        self.end_over_candidates(node, &segments, &targets)
+        self.end_over_candidates(node, segments, &targets)
     }
 
     pub fn resolve_chosen_paths(&mut self) -> Stage<()> {
         let mut deferred = std::mem::take(&mut self.deferred_to);
         deferred.sort_unstable();
-        for node in deferred {
-            let (segments, wire) = self.segments_to_wire(node)?;
+        let mut seen: HashMap<u32, (End, Option<EvalTy>)> = HashMap::new();
+        for (node, wire) in deferred {
+            let (segments, wires) = self.segments_to_wire(node)?;
+            let several = wires.len() > 1;
             let row = *self
                 .wires
                 .get(wire as usize)
@@ -677,15 +771,35 @@ impl Core<'_> {
             if targets.is_empty() {
                 continue;
             }
-            let end = match self.end_over_candidates(node, &segments, &targets)? {
+            if several {
+                self.wire_now = wire;
+            }
+            let end = self.end_over_candidates(node, &segments, &targets);
+            self.wire_now = NONE;
+            let end = match end? {
                 Ok(end) => end,
                 Err(declined) => return Ok(Err(declined)),
             };
+            if several {
+                if let End::Attr(at) = end {
+                    self.row_reads.insert((node, wire), at);
+                }
+                let found = (end, self.row_end_ty(node, wire, end));
+                match seen.get(&node).copied() {
+                    None => {
+                        seen.insert(node, found);
+                    }
+                    Some(earlier) if same_end(earlier, found) => {}
+                    Some(_) => return Ok(Err(Declined(Reason::BodyItem))),
+                }
+            }
             let End::Attr(at) = end else {
                 continue;
             };
             let local = self.local(node)?;
-            if let Some(slot) = self.paths.get_mut(local) {
+            if let Some(slot) = self.paths.get_mut(local)
+                && *slot == NONE
+            {
                 *slot = at;
             }
             let read = self
@@ -743,6 +857,9 @@ impl Core<'_> {
             return Ok(Ok(End::Value));
         }
         self.to_choices.insert(node, ty);
+        if self.wire_now != NONE {
+            self.row_choices.insert((node, self.wire_now), ty);
+        }
         Ok(Ok(End::Value))
     }
 

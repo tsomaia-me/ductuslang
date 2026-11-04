@@ -110,13 +110,14 @@ pub(crate) fn covers(ir: &FlatIr) -> bool {
         }
     }
     let members = line_members(ir);
+    let in_loops = loop_children(ir);
     ir.fors.iter().all(|rec| plain_fold(ir, rec))
         && ir.cells.iter().all(|rec| plain_cell(ir, rec))
         && ir
             .items
             .iter()
             .enumerate()
-            .all(|(at, item)| item_landed(ir, item, &members, at))
+            .all(|(at, item)| item_landed(ir, item, (&members, &in_loops), at))
 }
 
 fn annotated(ir: &FlatIr, binder: u32) -> bool {
@@ -140,12 +141,47 @@ fn line_members(ir: &FlatIr) -> Vec<u32> {
     members
 }
 
-fn item_landed(ir: &FlatIr, item: &ItemRec, members: &[u32], at: usize) -> bool {
+fn loop_children(ir: &FlatIr) -> Vec<u32> {
+    let mut found = Vec::new();
+    for item in &ir.items {
+        let ItemRec::For(rec) = item else {
+            continue;
+        };
+        let Some(block) = ir.blocks.get(rec.body as usize) else {
+            continue;
+        };
+        let mut items: Vec<u32> = ir
+            .block_items
+            .get(block.items.0 as usize..block.items.1 as usize)
+            .unwrap_or_default()
+            .to_vec();
+        while let Some(child) = items.pop() {
+            found.push(child);
+            if let Some(ItemRec::Line(range)) = ir.items.get(child as usize) {
+                items.extend(
+                    ir.members
+                        .get(range.0 as usize..range.1 as usize)
+                        .unwrap_or_default(),
+                );
+            }
+        }
+    }
+    found.sort_unstable();
+    found
+}
+
+fn item_landed(
+    ir: &FlatIr,
+    item: &ItemRec,
+    (members, in_loops): (&[u32], &[u32]),
+    at: usize,
+) -> bool {
     if !landed(item_slice(item)) {
         return false;
     }
     if let ItemRec::Wire(wire) = item {
-        return wire_landed(ir, wire);
+        let in_loop = u32::try_from(at).is_ok_and(|at| in_loops.binary_search(&at).is_ok());
+        return wire_landed(ir, wire, in_loop);
     }
     if let ItemRec::For(rec) = item {
         return loop_landed(ir, rec);
@@ -270,10 +306,10 @@ fn instance_path(ir: &FlatIr, field: u32) -> bool {
     matches!(ir.node(node), Ok((Op::Name, ..)))
 }
 
-fn wire_landed(ir: &FlatIr, wire: &WireRec) -> bool {
+fn wire_landed(ir: &FlatIr, wire: &WireRec, in_loop: bool) -> bool {
     wire.gate == NONE
         && wire.flags.0 == wire.flags.1
-        && wire.as_name == NONE
+        && (wire.as_name == NONE || in_loop)
         && !wire.attrs_cut
         && value_entries(ir, wire.attrs)
         && destination_candidates(ir, wire.destination).is_some()

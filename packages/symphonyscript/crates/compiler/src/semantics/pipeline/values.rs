@@ -556,7 +556,7 @@ impl Core<'_> {
                                 if matches!(class(node_ty), 1 | 2 | 4..=6) {
                                     frame.steps.push(Step::Widen(evaluated_in(node_ty)));
                                 }
-                                let at = self.paths.get(self.local(node)?).copied().unwrap_or(NONE);
+                                let at = self.read_at(node)?;
                                 let memo = self
                                     .attr_values
                                     .get(at as usize)

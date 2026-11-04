@@ -55,11 +55,22 @@ impl Core<'_> {
         if op == Op::Field {
             return match self.read_root(node)? {
                 Some(root) => self.is_reactive(root),
-                None => Ok(self.to_choices.contains_key(&node)),
+                None => Ok(self.to_choice(node).is_some()),
             };
         }
         if matches!(op, Op::Call | Op::NamedCall) {
             return self.call_reactive(node);
+        }
+        if op == Op::For
+            && let Some(body) = self.body_of_call(node)
+        {
+            let rec = self.fold_rec(node)?;
+            let outer = std::mem::replace(&mut self.inst, body);
+            let reactive = self.is_reactive(rec.body);
+            self.inst = outer;
+            if reactive? {
+                return Ok(true);
+            }
         }
         if op == Op::If {
             let (_, condition, then, otherwise) = self.ir.node(node)?;

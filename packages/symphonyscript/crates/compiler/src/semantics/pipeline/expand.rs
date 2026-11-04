@@ -204,26 +204,19 @@ impl Core<'_> {
                     }
                 }
                 ItemRec::For(_) => {
-                    if !self.loop_body_landed(item)? {
-                        return Ok(Err(Declined(Reason::BodyItem)));
-                    }
                     let run = match self.loop_head(item, env)? {
                         Ok(run) => run,
                         Err(declined) => return Ok(Err(declined)),
                     };
                     match run {
-                        Some(run) if run.count == 0 => {
+                        Some(run) if run.count > 0 => work.push(Work::Loop(run)),
+                        run => {
                             if let Err(declined) = self.unrun_names(item, record.file)? {
                                 return Ok(Err(declined));
                             }
-                            if run.open {
+                            if run.is_none_or(|run| run.open) {
                                 self.open_body(item, parent)?;
                             }
-                        }
-                        Some(run) => work.push(Work::Loop(run)),
-                        None => {
-                            self.unknown_children.insert(parent);
-                            self.unknown_kind = true;
                         }
                     }
                 }

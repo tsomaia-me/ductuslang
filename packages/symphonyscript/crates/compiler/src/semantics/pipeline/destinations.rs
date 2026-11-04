@@ -121,6 +121,16 @@ impl Core<'_> {
             if !live {
                 return Ok(Ok(Choice::Unknown));
             }
+            if op == Op::Name && matches!(self.bound(node)?, DeclRef::Param(_)) {
+                return Ok(match self.evaluate(node, EvalTy::Exact)? {
+                    Ok(Value::Node(row)) if row != NONE => {
+                        found.push(row);
+                        Ok(Choice::Known(row))
+                    }
+                    Ok(_) => Ok(Choice::Unknown),
+                    Err(declined) => Err(declined),
+                });
+            }
             let target = match self.path_rows.get(&node) {
                 Some(row) => *row,
                 None => self.candidate_row(node)?,

@@ -5305,6 +5305,11 @@ pub const CLASSES: &[Class] = &[
     },
     Class {
         ledger: "476",
+        rule: "a `for` expression iterating a cell whose init its scalar annotation refuses draws iterable-type at the iterable, since the refused init leaves the annotated scalar type known (ARCHITECTURE §7) and a `for` iterates a range or an array (SPEC §7.9), where the old engine reads the cell as a placeholder",
+        explains: iterable_of_a_refused_init,
+    },
+    Class {
+        ledger: "476",
         rule: "an annotated name of a placement `for` fixes its type as a `for` expression's does (SPEC §7.9, §4.5), so elements that do not have the annotated type draw one type-mismatch at the name with the loop name's summary, where the old engine draws it at the iterable or with a value's summary",
         explains: annotated_placement_loop_name,
     },
@@ -5422,11 +5427,86 @@ pub fn restated(program: &str, old: &[Drawn], new: &[Drawn], at: &Drawn) -> bool
         .any(|class| (class.explains)(&seen, Change::Restated, at))
 }
 
-pub fn holds_a_placement_for(program: &str) -> bool {
-    program.lines().any(|line| {
-        line.starts_with(' ')
-            && line.trim_start().starts_with("for ")
-            && line.contains(" in ")
-            && !line.contains(" into ")
+fn lines_at(program: &str) -> Vec<(usize, &str)> {
+    let mut at = 0;
+    program
+        .split('\n')
+        .map(|line| {
+            let start = at;
+            at += line.len() + 1;
+            (start, line)
+        })
+        .collect()
+}
+
+fn placement_heads(program: &str) -> Vec<(usize, usize)> {
+    lines_at(program)
+        .into_iter()
+        .filter(|(_, line)| {
+            line.starts_with(' ')
+                && line.trim_start().starts_with("for ")
+                && line.contains(" in ")
+                && !line.contains(" into ")
+        })
+        .map(|(start, line)| {
+            let indent = line.len() - line.trim_start().len();
+            let end = line.trim_end().strip_suffix(':').unwrap_or(line.trim_end());
+            (start + indent + "for ".len(), start + end.len())
+        })
+        .collect()
+}
+
+fn let_lines<'a>(program: &'a str, head: &str) -> Vec<(usize, &'a str)> {
+    let iterable = head.split_once(" in ").map_or("", |(_, iterable)| iterable);
+    let names: Vec<&str> = iterable
+        .split(|c: char| !(c.is_alphanumeric() || c == '_'))
+        .filter(|word| word.starts_with(|c: char| c.is_alphabetic() || c == '_'))
+        .collect();
+    lines_at(program)
+        .into_iter()
+        .filter(|(_, line)| {
+            line.strip_prefix("let ").is_some_and(|rest| {
+                let name = rest
+                    .split(|c: char| !(c.is_alphanumeric() || c == '_'))
+                    .next()
+                    .unwrap_or_default();
+                names.contains(&name)
+            })
+        })
+        .collect()
+}
+
+pub fn runs_no_iteration(program: &str, new: &[Drawn]) -> bool {
+    let within = |lo: usize, hi: usize| {
+        new.iter()
+            .any(|drawn| drawn.0 != "no-entry-instance" && drawn.1 >= lo && drawn.2 <= hi)
+    };
+    placement_heads(program).into_iter().any(|(lo, hi)| {
+        within(lo, hi)
+            || let_lines(program, program.get(lo..hi).unwrap_or_default())
+                .into_iter()
+                .any(|(start, line)| within(start, start + line.len()))
+    })
+}
+
+fn iterable_of_a_refused_init(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
+    let name = seen.text(at);
+    if change != Change::Added
+        || at.0 != "iterable-type"
+        || name.is_empty()
+        || !name.chars().all(|c| c.is_alphanumeric() || c == '_')
+        || !seen.after(at).starts_with(" into ")
+    {
+        return false;
+    }
+    let head = format!("state {name}(");
+    lines_at(seen.program).into_iter().any(|(start, line)| {
+        line.starts_with(&head)
+            && line
+                .rsplit_once("): ")
+                .is_some_and(|(_, ty)| !ty.is_empty() && ty.chars().all(char::is_alphanumeric))
+            && seen.old.iter().any(|drawn| {
+                drawn.0 == "type-mismatch" && drawn.1 >= start && drawn.2 <= start + line.len()
+            })
     })
 }

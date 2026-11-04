@@ -2253,8 +2253,53 @@ fn open_loop_entry(
             .cloned()
             .collect()
     };
-    reviewed::holds_a_placement_for(text)
+    reviewed::runs_no_iteration(text, &drawn(found))
         && entry(found)
         && !entry(expected)
         && rest(found) == rest(expected)
+}
+
+#[test]
+fn a_no_entry_instance_alone_moves_only_for_a_program_whose_placement_for_runs_no_iteration_476() {
+    use crate::diagnostics::Code;
+    let vocabulary = symphonyscript_fixtures::vocabulary();
+    let old = Compiler::new(&vocabulary)
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
+    let entry = old
+        .check(&[source("Clip c:\n    Note/1\n")])
+        .into_iter()
+        .find(|diagnostic| diagnostic.code == Code::NoEntryInstance)
+        .expect("a program of no entry kind draws no-entry-instance");
+    for (text, moves) in [
+        ("Clip c:\n    for x in zz:\n        Note/x\n", true),
+        ("Clip c:\n    for x in true:\n        Note/x\n", true),
+        (
+            "Clip c:\n    for x in [1, 2][0..300000000000000000000]:\n        Note/x\n",
+            true,
+        ),
+        (
+            "state s(1)\nlet ys = [s]\nClip c:\n    for x in ys:\n        Note/x\n",
+            true,
+        ),
+        ("Clip c:\n    for x in [1, 2]:\n        Note/x\n", false),
+        ("Clip c:\n    for x in [1, 2]:\n        Note/zz\n", false),
+        (
+            "Clip c:\n    Note/zz\n    for x in [1, 2]:\n        Note/x\n",
+            false,
+        ),
+        (
+            "let ys = [1, 2]\nClip c:\n    Note/(1 + true)\n    for x in ys:\n        Note/x\n",
+            false,
+        ),
+    ] {
+        let expected: Vec<_> = old
+            .check(&[source(text)])
+            .into_iter()
+            .filter(|diagnostic| diagnostic.code != Code::NoEntryInstance)
+            .collect();
+        let mut found = expected.clone();
+        found.insert(0, entry.clone());
+        assert_eq!(open_loop_entry(text, &found, &expected), moves, "{text}");
+    }
 }

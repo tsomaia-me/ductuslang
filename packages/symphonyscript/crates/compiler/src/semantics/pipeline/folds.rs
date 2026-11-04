@@ -268,7 +268,7 @@ impl Core<'_> {
         node: u32,
         rec: &ForRec,
         items: Vec<Fact>,
-        ty: EvalTy,
+        (ty, reactive): (EvalTy, (bool, bool)),
     ) -> Stage<Fact> {
         let (_, record, _, _) = self.ir.node(node)?;
         let start = self.fact(rec.start)?;
@@ -280,18 +280,27 @@ impl Core<'_> {
         let owner = self.functions() + record;
         let mut args = items;
         args.push(annotated_fact(ty));
-        let body = match self.fold_instance(node, owner, args)? {
-            Ok(body) => body,
-            Err(declined) => return Ok(Err(declined)),
+        let mut reactive = reactive;
+        let (body, found) = loop {
+            let body = match self.fold_instance(node, owner, args.clone(), reactive)? {
+                Ok(body) => body,
+                Err(declined) => return Ok(Err(declined)),
+            };
+            let outer = std::mem::replace(&mut self.inst, body);
+            let found = self.fact(rec.body);
+            let body_reactive = self.is_reactive(rec.body);
+            self.inst = outer;
+            if body_reactive? && !reactive.1 {
+                reactive.1 = true;
+                continue;
+            }
+            break (body, found);
         };
-        let outer = std::mem::replace(&mut self.inst, body);
-        let found = self.fact(rec.body);
-        let reactive = self.is_reactive(rec.body);
-        self.inst = outer;
-        if reactive? {
+        let found = found?;
+        let kept = |fact: &Fact| matches!(refusal(fact, ty), Refusal::Kept | Refusal::Silent);
+        if reactive.1 && !(kept(&found) && kept(&start)) {
             return Ok(Err(Declined(Reason::ReactiveFor)));
         }
-        let found = found?;
         let key = self.inst_key(node)?;
         self.call_body.insert((key, node), body);
         self.replay_fold(node, body)?;
@@ -323,8 +332,17 @@ impl Core<'_> {
         ))
     }
 
-    fn fold_instance(&mut self, node: u32, owner: u32, args: Vec<Fact>) -> Stage<u32> {
-        let reactive_args = vec![false; args.len()];
+    fn fold_instance(
+        &mut self,
+        node: u32,
+        owner: u32,
+        args: Vec<Fact>,
+        (items, acc): (bool, bool),
+    ) -> Stage<u32> {
+        let mut reactive_args = vec![items; args.len()];
+        if let Some(last) = reactive_args.last_mut() {
+            *last = acc;
+        }
         let reaches_out = self
             .reaches_out
             .get((owner - self.functions()) as usize)
@@ -354,36 +372,45 @@ impl Core<'_> {
     pub fn for_fact(&mut self, node: u32) -> Stage<Fact> {
         let (_, record, _, _) = self.ir.node(node)?;
         let rec = self.fold_rec(node)?;
-        for operand in self.fold_operands(node)? {
-            if self.is_reactive(operand)? {
-                return Ok(Err(Declined(Reason::ReactiveFor)));
-            }
+        let iterable =
+            self.is_reactive(rec.iterable.0)? || (rec.range && self.is_reactive(rec.iterable.1)?);
+        if iterable && rec.range {
+            return Ok(Err(Declined(Reason::ReactiveFor)));
         }
+        let reactive = (iterable, iterable || self.is_reactive(rec.start)?);
         let Some(items) = self.fold_head(node, &rec)? else {
             return Ok(Ok(Fact::PLACEHOLDER));
         };
         if let Some(ty) = self.accumulator_ty(&rec)? {
-            return self.annotated_fold(node, &rec, items, ty);
+            return self.annotated_fold(node, &rec, items, (ty, reactive));
         }
         let start = self.fact(rec.start)?;
         if faulty(&start) {
             return Ok(Ok(Fact::PLACEHOLDER));
         }
         let owner = self.functions() + record;
+        let mut reactive = reactive;
         let mut acc = variable(&start);
         let mut round = 0;
         let (body, body_fact) = loop {
             let mut args = items.clone();
             args.push(acc.clone());
-            let body = match self.fold_instance(node, owner, args)? {
+            let body = match self.fold_instance(node, owner, args, reactive)? {
                 Ok(body) => body,
                 Err(declined) => return Ok(Err(declined)),
             };
             let outer = std::mem::replace(&mut self.inst, body);
             let found = self.fact(rec.body);
-            let reactive = self.is_reactive(rec.body);
+            let body_reactive = self.is_reactive(rec.body);
             self.inst = outer;
-            if reactive? {
+            if body_reactive? && !reactive.1 {
+                reactive.1 = true;
+                continue;
+            }
+            if reactive.1
+                && (!start.dims.is_empty()
+                    || !found.as_ref().is_ok_and(|found| found.dims.is_empty()))
+            {
                 return Ok(Err(Declined(Reason::ReactiveFor)));
             }
             let found = found?;

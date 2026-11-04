@@ -291,7 +291,7 @@ impl Core<'_> {
             Err(declined) => return Ok(Err(declined)),
         };
         if fact.node {
-            return Ok(Err(Declined(Reason::LoopHead)));
+            return self.reference_loop(item, rec, env);
         }
         let open = fact.leaf == Leaf::Placeholder
             || (fact.leaf == Leaf::Error && fact.dims.is_empty())
@@ -336,6 +336,9 @@ impl Core<'_> {
             Ok(items) => items,
             Err(declined) => return Ok(Err(declined)),
         };
+        if self.outside_slice(root)? {
+            return Ok(Ok(Some(LoopRun::unrun(item, env))));
+        }
         let count = match &items {
             Value::Array(array) => self.store.len(*array) as usize,
             Value::Error if open => return Ok(Ok(Some(LoopRun::unrun(item, env)))),
@@ -449,7 +452,11 @@ impl Core<'_> {
     }
 
     fn cell_head(&mut self, root: u32, message: &str, bound: bool) -> Stage<bool> {
-        match self.reaches_cell(root)? {
+        let reached = self.reaches_cell(root)?;
+        if reached == THROUGH_A_PATH && self.ir.node(root)?.0 == Op::If {
+            return self.choice_head(root, message, bound);
+        }
+        match reached {
             NOT_A_CELL => Ok(Ok(false)),
             THROUGH_A_LET => Ok(Ok(true)),
             DIRECTLY => {
@@ -654,19 +661,6 @@ impl Core<'_> {
 }
 
 impl Core<'_> {
-    pub fn loop_body_landed(&self, item: u32) -> Result<bool, Internal> {
-        let owner = self.loop_owner(item);
-        for root in self.function_roots(owner)? {
-            for node in self.deep_postorder(root)? {
-                let (op, _, _, _) = self.ir.node(node)?;
-                if op == Op::To {
-                    return Ok(false);
-                }
-            }
-        }
-        Ok(true)
-    }
-
     pub fn unrun_names(&mut self, item: u32, file: u32) -> Stage<()> {
         let ItemRec::For(rec) = *self.ir.item(item)? else {
             return Err(Internal::missed("IR for block"));
@@ -703,6 +697,7 @@ impl Core<'_> {
                             .rev(),
                     ),
                     ItemRec::Wire(wire) if self.bare_wire(wire)? => {}
+                    ItemRec::Wire(wire) if self.plain_wire(wire)? => self.unrun_wire(wire, file)?,
                     ItemRec::Wire(_)
                     | ItemRec::Bundle(_)
                     | ItemRec::When(_)
@@ -1176,5 +1171,207 @@ impl Core<'_> {
             && wire.gate == NONE
             && self.ir.node(wire.destination)?.0 == Op::Name
             && matches!(self.bound(wire.destination)?, DeclRef::Instance(_)))
+    }
+}
+
+impl Core<'_> {
+    fn outside_slice(&self, root: u32) -> Result<bool, Internal> {
+        let mut seen = std::collections::HashSet::new();
+        let mut stack = vec![root];
+        while let Some(node) = stack.pop() {
+            if !seen.insert(node) {
+                continue;
+            }
+            let (op, a, b, _) = self.ir.node(node)?;
+            if op == Op::Slice {
+                for bound in self.bounds(node)? {
+                    if bound != NONE && self.outside_bound(bound)? {
+                        return Ok(true);
+                    }
+                }
+                stack.push(a);
+            } else if op == Op::Add {
+                stack.extend([a, b]);
+            } else if op == Op::Name
+                && let DeclRef::Let(at) = self.bound(node)?
+            {
+                stack.push(self.let_root(at)?);
+            }
+        }
+        Ok(false)
+    }
+
+    fn outside_bound(&self, bound: u32) -> Result<bool, Internal> {
+        let span = self.node_span(bound)?;
+        Ok(self
+            .diagnostics
+            .iter()
+            .any(|drawn| drawn.code == Code::IndexOutOfRange && drawn.span == span))
+    }
+}
+
+impl Core<'_> {
+    fn reference_loop(&mut self, item: u32, rec: ForBlockRec, env: u32) -> Stage<Option<LoopRun>> {
+        let head = rec.head;
+        let root = head.iterable.0;
+        let fact = self.fact(root)?;
+        if fact.dims.is_empty()
+            || self.is_kept(root)?
+            || self.binder_ty(head.names.1 - 1)?.is_some()
+        {
+            return Ok(Err(Declined(Reason::LoopHead)));
+        }
+        let items = match self.evaluate(root, EvalTy::Exact)? {
+            Ok(items) => items,
+            Err(declined) => return Ok(Err(declined)),
+        };
+        let Value::Array(array) = items else {
+            return Ok(Err(Declined(Reason::LoopHead)));
+        };
+        let count = self.store.len(array) as usize;
+        for at in 0..count {
+            if !matches!(
+                self.store.element(array, at),
+                Some(Value::Node(_) | Value::Array(_))
+            ) {
+                return Ok(Err(Declined(Reason::LoopHead)));
+            }
+        }
+        let element = Fact::node_reference(fact.dims.get(1..).unwrap_or_default().to_vec());
+        let names = head.names.1.saturating_sub(head.names.0);
+        let facts = if names >= 2 {
+            vec![Fact::scalar(Leaf::Int), element]
+        } else {
+            vec![element]
+        };
+        let facts = self.annotated_loop_names(rec, facts)?;
+        Ok(Ok(Some(LoopRun {
+            item,
+            items,
+            count,
+            facts,
+            next: 0,
+            env,
+            inst: NONE,
+            open: false,
+        })))
+    }
+}
+
+impl Core<'_> {
+    fn choice_head(&mut self, root: u32, message: &str, bound: bool) -> Stage<bool> {
+        let (_, condition, then, otherwise) = self.ir.node(root)?;
+        let arms = [self.reaches_cell(then)?, self.reaches_cell(otherwise)?];
+        let condition_reach = self.reaches_cell(condition)?;
+        if condition_reach == NOT_A_CELL {
+            let test = match self.ensure_typed(condition)? {
+                Ok(test) => test,
+                Err(declined) => return Ok(Err(declined)),
+            };
+            if test.leaf != Leaf::Bool || !test.dims.is_empty() || self.is_kept(condition)? {
+                return Ok(Err(Declined(Reason::LoopHead)));
+            }
+            let (reached, other) = match self.evaluate(condition, EvalTy::Bool)? {
+                Ok(Value::Bool(true)) => (arms[0], arms[1]),
+                Ok(Value::Bool(false)) => (arms[1], arms[0]),
+                Ok(_) => return Ok(Err(Declined(Reason::LoopHead))),
+                Err(declined) => return Ok(Err(declined)),
+            };
+            return Ok(match reached {
+                NOT_A_CELL if other == NOT_A_CELL => Ok(false),
+                THROUGH_A_LET if other != DIRECTLY => Ok(true),
+                _ => Err(Declined(Reason::LoopHead)),
+            });
+        }
+        if condition_reach != DIRECTLY || arms != [NOT_A_CELL; 2] {
+            return Ok(Err(Declined(Reason::LoopHead)));
+        }
+        let fact = match self.ensure_typed(then)? {
+            Ok(fact) => fact,
+            Err(declined) => return Ok(Err(declined)),
+        };
+        let other = match self.ensure_typed(otherwise)? {
+            Ok(other) => other,
+            Err(declined) => return Ok(Err(declined)),
+        };
+        if other.leaf != fact.leaf || other.dims.len() != fact.dims.len() || other.node {
+            return Ok(Err(Declined(Reason::LoopHead)));
+        }
+        if fact.node || matches!(fact.leaf, Leaf::Placeholder | Leaf::Error) {
+            return Ok(Err(Declined(Reason::LoopHead)));
+        }
+        if bound || !fact.dims.is_empty() {
+            self.draw_at(Code::ReactiveIterable, root, message)?;
+        } else {
+            self.draw_at(Code::IterableType, root, ITERABLE)?;
+        }
+        Ok(Ok(true))
+    }
+}
+
+impl Core<'_> {
+    fn plain_wire(&self, wire: WireRec) -> Result<bool, Internal> {
+        let bare = WireRec {
+            attrs: (0, 0),
+            default: NONE,
+            ..wire
+        };
+        if wire.attrs_cut || !self.bare_wire(bare)? {
+            return Ok(false);
+        }
+        let mut values = vec![wire.default];
+        for at in wire.attrs.0..wire.attrs.1 {
+            let entry = *self
+                .ir
+                .attr_entries
+                .get(at as usize)
+                .ok_or(Internal::missed("IR attribute"))?;
+            let AttrForm::Value(value) = entry.form else {
+                return Ok(false);
+            };
+            values.push(value);
+        }
+        for value in values.into_iter().filter(|value| *value != NONE) {
+            for node in self.deep_postorder(value)? {
+                if matches!(self.ir.node(node)?.0, Op::To | Op::Field) {
+                    return Ok(false);
+                }
+            }
+        }
+        Ok(true)
+    }
+
+    fn unrun_wire(&mut self, wire: WireRec, file: u32) -> Result<(), Internal> {
+        let Some(decl) = self
+            .ir
+            .name_text(wire.kind)
+            .and_then(|name| self.vocabulary.wire_kind_named(name))
+            .and_then(|kind| self.vocabulary.wire_kind(kind))
+        else {
+            return Err(Internal::missed("wire kind"));
+        };
+        let kind_text = decl.name.clone();
+        let names: Vec<String> = decl.attrs.iter().map(|attr| attr.name.clone()).collect();
+        for at in wire.attrs.0..wire.attrs.1 {
+            let entry = *self
+                .ir
+                .attr_entries
+                .get(at as usize)
+                .ok_or(Internal::missed("IR attribute"))?;
+            let name = *self
+                .ir
+                .name(entry.name)
+                .ok_or(Internal::missed("IR name"))?;
+            let text = self.ir.symbols.text(name.sym).to_string();
+            if !names.contains(&text) {
+                let span = self.span(file, name.lo, name.hi);
+                self.draw(
+                    Code::UnknownAttribute,
+                    span,
+                    format!("`{kind_text}` has no attribute `{text}`"),
+                );
+            }
+        }
+        Ok(())
     }
 }
