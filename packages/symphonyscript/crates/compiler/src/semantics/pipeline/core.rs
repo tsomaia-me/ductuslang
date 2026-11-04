@@ -19,7 +19,7 @@ pub(crate) type Stage<T> = Result<Result<T, Declined>, Internal>;
 
 pub(crate) type UseKey = (u32, usize, Vec<u32>);
 
-pub(crate) type BodyKey = (u32, Vec<Fact>, Vec<bool>);
+pub(crate) type BodyKey = (u32, u32, Vec<Fact>, Vec<bool>);
 
 pub(crate) type UseValue = ((bool, u32), CoreValue);
 
@@ -74,6 +74,8 @@ pub(crate) struct Core<'a> {
     pub skipped_top: Vec<u32>,
     pub reached: Vec<bool>,
     pub body_index: HashMap<BodyKey, u32>,
+    pub outer_owner: HashMap<u32, u32>,
+    pub reaches_out: Vec<bool>,
 }
 
 impl<'a> Core<'a> {
@@ -135,6 +137,8 @@ impl<'a> Core<'a> {
             skipped_top: Vec::new(),
             reached: vec![false; nodes],
             body_index: HashMap::new(),
+            outer_owner: HashMap::new(),
+            reaches_out: vec![false; ir.fors.len()],
         }
     }
 
@@ -232,7 +236,32 @@ impl Core<'_> {
         if self.inst == NONE {
             return Err(Internal::missed("a body instance"));
         }
-        Ok(Some((self.inst, node)))
+        Ok(Some((self.owner_inst(owner), node)))
+    }
+
+    pub fn owner_inst(&self, owner: u32) -> u32 {
+        let mut at = self.inst;
+        while let Some(body) = self.bodies.get(at as usize) {
+            if body.function == owner {
+                return at;
+            }
+            at = body.parent;
+        }
+        self.inst
+    }
+
+    pub fn inst_key(&self, node: u32) -> Result<u32, Internal> {
+        Ok(match self.in_body(node)? {
+            Some((inst, _)) => inst,
+            None => self.inst,
+        })
+    }
+
+    pub fn binding_owner(&self, node: u32) -> Result<u32, Internal> {
+        Ok(match self.outer_owner.get(&node) {
+            Some(owner) => *owner,
+            None => self.body_of.get(self.local(node)?).copied().unwrap_or(NONE),
+        })
     }
 
     pub fn fact(&self, node: u32) -> Result<Fact, Internal> {

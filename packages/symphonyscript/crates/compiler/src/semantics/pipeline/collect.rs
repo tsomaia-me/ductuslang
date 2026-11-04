@@ -250,10 +250,17 @@ impl Core<'_> {
             let node = self.ir.base + u32::try_from(local).unwrap_or(u32::MAX);
             let name = *self.ir.a.get(local).ok_or(Internal::missed("IR name"))?;
             let entry = *self.ir.name(name).ok_or(Internal::missed("IR name"))?;
-            if self.enclosing_hit(node, entry.sym.0)? && self.scoped(node, entry.sym.0)?.is_none() {
-                return Ok(Err(Declined(Reason::NestedScope)));
-            }
-            let mut decl = match self.scoped(node, entry.sym.0)? {
+            let scoped = match self.scoped(node, entry.sym.0)? {
+                Some(decl) => Some(decl),
+                None => match self.enclosing_decl(node, entry.sym.0)? {
+                    Some((owner, decl)) => {
+                        self.outer_owner.insert(node, owner);
+                        Some(decl)
+                    }
+                    None => None,
+                },
+            };
+            let mut decl = match scoped {
                 Some(decl) => decl,
                 None => self
                     .decl

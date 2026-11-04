@@ -270,10 +270,11 @@ impl Core<'_> {
                         .is_some_and(|rec| rec.owner != NONE);
                     let cyclic = self.cyclic.get(at as usize).copied().unwrap_or(false);
                     if local && !cyclic && !self.has_fact(root)? {
-                        if self.typing_locals.contains(&(self.inst, at)) {
+                        let inst = self.inst_key(root)?;
+                        if self.typing_locals.contains(&(inst, at)) {
                             return Ok(Err(Declined(Reason::LocalCycle)));
                         }
-                        return self.pending(Need::Local(at, root, self.inst));
+                        return self.pending(Need::Local(at, root, inst));
                     }
                     if self.cyclic.get(at as usize).copied().unwrap_or(false) {
                         Fact::PLACEHOLDER
@@ -282,7 +283,7 @@ impl Core<'_> {
                     }
                 }
                 DeclRef::Cell(at) => self.cell_read_fact(at)?,
-                DeclRef::Param(position) => self.param_fact(position)?.0,
+                DeclRef::Param(position) => self.param_fact(node, position)?.0,
                 DeclRef::Fn(_) => return Ok(Err(Declined(Reason::FunctionValue))),
                 DeclRef::Duplicate | DeclRef::None => Fact::PLACEHOLDER,
                 DeclRef::Instance(_) => {

@@ -127,23 +127,43 @@ impl Core<'_> {
             .map(|(_, decl)| decl))
     }
 
-    pub fn enclosing_hit(&self, node: u32, sym: u32) -> Result<bool, Internal> {
+    pub fn enclosing_decl(
+        &mut self,
+        node: u32,
+        sym: u32,
+    ) -> Result<Option<(u32, DeclRef)>, Internal> {
         let mut owner = self.body_of.get(self.local(node)?).copied().unwrap_or(NONE);
+        let mut crossed = Vec::new();
         while owner != NONE && owner >= self.functions() {
+            let record = owner - self.functions();
             let fold = self
                 .fold_nodes
-                .get((owner - self.functions()) as usize)
+                .get(record as usize)
                 .copied()
                 .unwrap_or(NONE);
             if fold == NONE {
-                return Ok(false);
+                return Ok(None);
             }
+            crossed.push(record);
             owner = self.body_of.get(self.local(fold)?).copied().unwrap_or(NONE);
-            if owner != NONE && self.scope_of(owner)?.iter().any(|(bound, _)| *bound == sym) {
-                return Ok(true);
+            if owner == NONE {
+                return Ok(None);
+            }
+            let found = self
+                .scope_of(owner)?
+                .into_iter()
+                .find(|(bound, _)| *bound == sym)
+                .map(|(_, decl)| decl);
+            if let Some(decl) = found {
+                for record in crossed {
+                    if let Some(slot) = self.reaches_out.get_mut(record as usize) {
+                        *slot = true;
+                    }
+                }
+                return Ok(Some((owner, decl)));
             }
         }
-        Ok(false)
+        Ok(None)
     }
 
     pub fn arguments(&self, node: u32) -> Result<Vec<u32>, Internal> {
@@ -423,13 +443,14 @@ impl Core<'_> {
             facts.push(self.fact(*arg)?);
             reactive.push(self.is_reactive(*arg)?);
         }
-        let key = (function, facts.clone(), reactive.clone());
+        let key = (function, NONE, facts.clone(), reactive.clone());
         let found = self.body_index.get(&key).copied();
         let body = match found {
             Some(body) => body,
             None => {
                 self.bodies.push(BodyInstance {
                     function,
+                    parent: NONE,
                     args: facts,
                     reactive_args: reactive,
                     diagnostics: Vec::new(),
@@ -439,7 +460,8 @@ impl Core<'_> {
                 return self.pending(Need::Body(body));
             }
         };
-        self.call_body.insert((self.inst, node), body);
+        let key = self.inst_key(node)?;
+        self.call_body.insert((key, node), body);
         let span = self.node_span(node)?;
         let replayed: Vec<_> = self
             .bodies
@@ -491,7 +513,9 @@ impl Core<'_> {
     }
 
     pub fn body_of_call(&self, node: u32) -> Option<u32> {
-        self.call_body.get(&(self.inst, node)).copied()
+        self.inst_key(node)
+            .ok()
+            .and_then(|key| self.call_body.get(&(key, node)).copied())
     }
 
     pub fn body_value(&self, body: u32) -> Result<u32, Internal> {
@@ -522,10 +546,11 @@ impl Core<'_> {
         reactive
     }
 
-    pub fn param_fact(&self, position: u32) -> Result<(Fact, bool), Internal> {
+    pub fn param_fact(&self, node: u32, position: u32) -> Result<(Fact, bool), Internal> {
+        let owner = self.binding_owner(node)?;
         let body = self
             .bodies
-            .get(self.inst as usize)
+            .get(self.owner_inst(owner) as usize)
             .ok_or(Internal::missed("body instance"))?;
         let fact = body
             .args

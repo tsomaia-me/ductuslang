@@ -1591,3 +1591,44 @@ fn a_fixed_array_attribute_binds_its_literals_elements_as_the_old_engine_does() 
         assert!(new.checked_by_new_core(&[source(text)]).is_none(), "{text}");
     }
 }
+
+const NESTED_SCOPES: [&str; 22] = [
+    "fn f(p): for i in 0..3 into s from 0: s + p\nClip c:\n    Note/([0][f(2) - 6])\n    Note/([0][f(5) - 15])\n",
+    "fn f(p): for i in 0..3 into s from 0: s + p\nClip c:\n    Note/([0][f(2) - 7])\n",
+    "fn f(p):\n    let k = p + 1\n    for i in 0..3 into s from 0: s + k\nClip c:\n    Note/([0][f(2) - 9])\n",
+    "fn f(p):\n    let k = [p, p + 1]\n    for i in 0..2 into s from 0: s + k[i]\nClip c:\n    Note/([0][f(3) - 7])\n",
+    "fn h(v): v * 2\nfn f(p):\n    let k = h(p)\n    for i in 0..2 into s from 0: s + k + h(i)\nClip c:\n    Note/([0][f(3) - 14])\n",
+    "fn f(p, q): for x in p into s from 0: s + x * q\nClip c:\n    Note/([0][f([1, 2], 3) - 9])\n",
+    "fn f(p): for i in 0..3 into s from 0: s + p\nClip c:\n    Note/(f(true))\n",
+    "fn f(p): for i in 0..3 into s from 0: s + p\nClip c:\n    Note | velocity=(f(0.25))\n    Note | velocity=(f(0.125))\n",
+    "fn f(p): for i in 0..3 into s from 0: s + p\nClip c:\n    Note | velocity=(f(0.5))\n",
+    "fn f(p): for i in 0..2 into s from 0: s + p + true\nClip c:\n    Note/(f(1))\n",
+    "fn g(p): for i in 0..2 into s from 0: s + (for j in 0..2 into u from 0: u + p + i)\nClip c:\n    Note/([0][g(1) - 6])\n    Note/([0][g(2) - 10])\n",
+    "fn f(p): for i in 0..3 into s from 0: s + p\nlet t = for i in 0..3 into a from 0: a + f(i)\nClip c:\n    Note/t\n",
+    "let t = for i in 0..3 into a from 0: a + (for j in 0..2 into b from 0: b + i)\nClip c:\n    Note/([0, 0, 0, 0, 0, 0, 0][t - 6])\n",
+    "let t = for i in 0..3 into a from 0: a + (for j in 0..2 into b from 0: b + a)\nClip c:\n    Note/([0][t - 7])\n",
+    "let t = for i in 0..3 into a from 0:\n    let w = i * 10\n    a + (for j in 0..2 into b from 0: b + w)\nClip c:\n    Note/([0][t - 60])\n",
+    "let t = for i in 0..3 into a from 0: a + (for j in 0..2 into b from 0: b + (for k in 0..2 into e from 0: e + i))\nClip c:\n    Note/([0][t - 12])\n",
+    "let t = for i in 0..3 into a from 0: a + (for j in 0..2 into a from 0: a + i)\nClip c:\n    Note/([0][t - 6])\n",
+    "let t = for i in 0..3 into a from 0.5: a + (for j in 0..2 into b from 0: b + i)\nClip c:\n    Note | velocity=(t)\n",
+    "let t = for i in 0..3 into a from []: a + [(for j in 0..2 into b from 0: b + i)]\nClip c:\n    Note/([0][t[2] - 4])\n",
+    "let t = for i in 0..2 into a from 0: a + (for j in 0..300 into b from 0: b + i)\nClip c:\n    Note/(t)\n",
+    "let t = for i in 0..3 into a from 0: a + (for j in 0..2 into b from 0: b + a + true)\nClip c:\n    Note/t\n",
+    "let t = for i in 0..3 into a from 0: a + (for j in 0..2 into b from 0: b + [1, 2][i])\nClip c:\n    Note/t\n",
+];
+
+#[test]
+fn a_fold_body_reads_an_enclosing_fold_or_function_name_from_the_frame_that_binds_it() {
+    let vocabulary = symphonyscript_fixtures::vocabulary();
+    let old = Compiler::new(&vocabulary)
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
+    let new = Compiler::new(&vocabulary).expect("the vocabulary compiles");
+    for text in NESTED_SCOPES {
+        let sources = [source(text)];
+        let found = new
+            .checked_by_new_core(&sources)
+            .unwrap_or_else(|| panic!("the new core takes {text}"));
+        assert_eq!(found, old.check(&sources), "{text}");
+    }
+}

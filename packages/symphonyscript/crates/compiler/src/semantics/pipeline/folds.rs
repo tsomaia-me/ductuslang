@@ -283,7 +283,7 @@ impl Core<'_> {
         let owner = self.functions() + record;
         let mut args = items;
         args.push(annotated_fact(ty));
-        let body = match self.fold_instance(owner, args)? {
+        let body = match self.fold_instance(node, owner, args)? {
             Ok(body) => body,
             Err(declined) => return Ok(Err(declined)),
         };
@@ -295,7 +295,8 @@ impl Core<'_> {
             return Ok(Err(Declined(Reason::ReactiveFor)));
         }
         let found = found?;
-        self.call_body.insert((self.inst, node), body);
+        let key = self.inst_key(node)?;
+        self.call_body.insert((key, node), body);
         self.replay_fold(node, body)?;
         match refusal(&found, ty) {
             Refusal::Shape => self.draw_at(Code::TypeMismatch, rec.body, SHAPE)?,
@@ -313,7 +314,7 @@ impl Core<'_> {
         if refusal(&self.fact(rec.start)?, ty) != Refusal::Kept {
             return Ok(true);
         }
-        let Some(body) = self.call_body.get(&(self.inst, node)).copied() else {
+        let Some(body) = self.body_of_call(node) else {
             return Ok(true);
         };
         let outer = std::mem::replace(&mut self.inst, body);
@@ -325,14 +326,25 @@ impl Core<'_> {
         ))
     }
 
-    fn fold_instance(&mut self, owner: u32, args: Vec<Fact>) -> Stage<u32> {
+    fn fold_instance(&mut self, node: u32, owner: u32, args: Vec<Fact>) -> Stage<u32> {
         let reactive_args = vec![false; args.len()];
-        let key = (owner, args.clone(), reactive_args.clone());
+        let reaches_out = self
+            .reaches_out
+            .get((owner - self.functions()) as usize)
+            .copied()
+            .unwrap_or(false);
+        let parent = if reaches_out {
+            self.inst_key(node)?
+        } else {
+            NONE
+        };
+        let key = (owner, parent, args.clone(), reactive_args.clone());
         if let Some(at) = self.body_index.get(&key).copied() {
             return Ok(Ok(at));
         }
         self.bodies.push(BodyInstance {
             function: owner,
+            parent,
             args,
             reactive_args,
             diagnostics: Vec::new(),
@@ -366,7 +378,7 @@ impl Core<'_> {
         let (body, body_fact) = loop {
             let mut args = items.clone();
             args.push(acc.clone());
-            let body = match self.fold_instance(owner, args)? {
+            let body = match self.fold_instance(node, owner, args)? {
                 Ok(body) => body,
                 Err(declined) => return Ok(Err(declined)),
             };
@@ -416,7 +428,8 @@ impl Core<'_> {
             acc = next;
             round += 1;
         };
-        self.call_body.insert((self.inst, node), body);
+        let key = self.inst_key(node)?;
+        self.call_body.insert((key, node), body);
         self.replay_fold(node, body)?;
         if faulty(&body_fact) {
             return Ok(Ok(if body_fact.leaf == Leaf::Placeholder {

@@ -454,10 +454,22 @@ impl Core<'_> {
                     if op == Op::Name {
                         match self.bound(node)? {
                             DeclRef::Param(position) => {
+                                let owner = self.binding_owner(node)?;
+                                let bodies = &self.bodies;
+                                let owns = |open: &&Frame| {
+                                    open.call.is_some()
+                                        && bodies
+                                            .get(open.inst as usize)
+                                            .is_some_and(|body| body.function == owner)
+                                };
                                 let value = frames
                                     .iter()
                                     .rev()
-                                    .find_map(|open| open.call.as_ref())
+                                    .find(owns)
+                                    .or_else(|| {
+                                        frames.iter().rev().find(|open| open.call.is_some())
+                                    })
+                                    .and_then(|open| open.call.as_ref())
                                     .and_then(|(_, args)| args.get(position as usize).cloned())
                                     .unwrap_or(Value::Error);
                                 if let Some(frame) = frames.last_mut() {
@@ -680,7 +692,7 @@ impl Core<'_> {
                         frame.values.push(start);
                         continue;
                     }
-                    let Some(body) = self.call_body.get(&(self.inst, fold)).copied() else {
+                    let Some(body) = self.body_of_call(fold) else {
                         frame.values.push(Value::Error);
                         continue;
                     };
