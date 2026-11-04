@@ -259,6 +259,8 @@ impl Core<'_> {
         self.destination_roots = destinations;
         self.mark_field_receivers();
         let (scopes, scope_of) = self.child_scopes()?;
+        self.child_scopes.clone_from(&scopes);
+        self.scope_of.clone_from(&scope_of);
         let skipped_top = self.skipped_top();
         self.skipped_top.clone_from(&skipped_top);
         for local in 0..self.ir.op.len() {
@@ -418,7 +420,7 @@ impl Core<'_> {
 
 type ChildScope = (u32, Vec<(u32, u32)>);
 
-fn child_in_scope(scopes: &[ChildScope], scope: Option<u32>, sym: u32) -> Option<u32> {
+pub fn child_in_scope(scopes: &[ChildScope], scope: Option<u32>, sym: u32) -> Option<u32> {
     let mut at = scope.unwrap_or(NONE);
     while let Some((parent, names)) = scopes.get(at as usize) {
         let found = names.partition_point(|entry| entry.0 < sym);
@@ -481,11 +483,10 @@ impl Core<'_> {
                 for root in roots.into_iter().filter(|root| *root != NONE) {
                     for node in self.deep_postorder(root)? {
                         CountedWalk::BindLookup.step();
+                        scope_of.insert(node, scope);
                         let mut current = node;
                         while let (Op::Field, receiver, _, _) = self.ir.node(current)? {
                             current = receiver;
-                        }
-                        if self.ir.node(current)?.0 == Op::Name {
                             scope_of.insert(current, scope);
                         }
                     }
