@@ -2,6 +2,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 
 use symphonyscript_core::{Limits, Span, Vocabulary};
 
+use super::attr_read::AttrRead;
 use super::body_instance::BodyInstance;
 use super::core_value::CoreValue;
 use super::decl_ref::DeclRef;
@@ -90,6 +91,13 @@ pub(crate) struct Core<'a> {
     pub row_of_item: Vec<u32>,
     pub expanded: u64,
     pub destination_roots: Vec<u32>,
+    pub paths: Vec<u32>,
+    pub attr_reads: Vec<AttrRead>,
+    pub attr_index: HashMap<(u32, u32), u32>,
+    pub attr_values: Vec<[Option<CoreValue>; 7]>,
+    pub attr_order: Vec<u32>,
+    pub field_receivers: Vec<u32>,
+    pub child_index: Vec<(u32, u32, u32)>,
 }
 
 impl<'a> Core<'a> {
@@ -163,6 +171,13 @@ impl<'a> Core<'a> {
             row_of_item: vec![NONE; ir.items.len()],
             expanded: 0,
             destination_roots: Vec::new(),
+            paths: vec![NONE; nodes],
+            attr_reads: Vec::new(),
+            attr_index: HashMap::new(),
+            attr_values: Vec::new(),
+            attr_order: Vec::new(),
+            field_receivers: Vec::new(),
+            child_index: Vec::new(),
         }
     }
 

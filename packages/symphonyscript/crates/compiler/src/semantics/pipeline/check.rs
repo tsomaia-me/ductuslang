@@ -39,7 +39,7 @@ fn expected_array(attr: &AttrDecl) -> Option<(EvalTy, u32)> {
     expected(&scalar).map(|ty| (ty, *length))
 }
 
-fn expected(attr: &AttrDecl) -> Option<EvalTy> {
+pub(super) fn expected(attr: &AttrDecl) -> Option<EvalTy> {
     if !attr.ty.lengths.is_empty() || attr.ty.capacity.is_some() || attr.unit.is_some() {
         return None;
     }
@@ -657,7 +657,7 @@ impl Core<'_> {
     }
 }
 
-fn attribute_reason(attr: &AttrDecl) -> Reason {
+pub(super) fn attribute_reason(attr: &AttrDecl) -> Reason {
     if attr.unit.is_some() {
         return Reason::UnitAttribute;
     }

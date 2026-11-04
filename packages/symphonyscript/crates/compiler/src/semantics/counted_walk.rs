@@ -201,10 +201,11 @@ pub(crate) enum CountedWalk {
     CheckWireRow,
     CheckWireCandidate,
     CheckWireCycle,
+    CorePathStep,
 }
 
 #[cfg(test)]
-const WALKS: usize = 195;
+const WALKS: usize = 196;
 
 #[cfg(test)]
 thread_local! {
@@ -409,6 +410,7 @@ impl CountedWalk {
         CountedWalk::CheckWireRow,
         CountedWalk::CheckWireCandidate,
         CountedWalk::CheckWireCycle,
+        CountedWalk::CorePathStep,
     ];
 
     pub(crate) fn step(self) {

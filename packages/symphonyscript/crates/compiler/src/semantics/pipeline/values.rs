@@ -461,6 +461,18 @@ impl Core<'_> {
                 }
                 CountedWalk::ValueRun.step();
                 match owner {
+                    Some(at) if at as usize >= self.ir.lets.len() => {
+                        if let Some(slot) = self
+                            .attr_values
+                            .get_mut(at as usize - self.ir.lets.len())
+                            .and_then(|slots| slots.get_mut(class(frame_ty)))
+                        {
+                            *slot = Some(value.clone());
+                        }
+                        if let Some(parent) = frames.last_mut() {
+                            parent.values.push(value);
+                        }
+                    }
                     Some(at) => {
                         let value = match self.annotation_ty(at)? {
                             Some(annotated) => self.annotation_fit(at, annotated, value)?,
@@ -494,6 +506,60 @@ impl Core<'_> {
                     if self.fitting && op == Op::Name && self.is_reactive(node)? {
                         if let Some(frame) = frames.last_mut() {
                             frame.values.push(Value::Error);
+                        }
+                        continue;
+                    }
+                    if op == Op::Field {
+                        let read = self.path_read(node)?.cloned();
+                        let plan = match read {
+                            Some(read) if !read.cyclic && read.root == NONE => {
+                                Some((self.default_read(&read)?, NONE, EvalTy::Exact))
+                            }
+                            Some(read) if !read.cyclic => {
+                                let read_ty = match self.fact(read.root)?.fixed {
+                                    Some(own) if widens(own, read.ty) => evaluated_in(read.ty),
+                                    _ => flexible(read.ty),
+                                };
+                                Some((Value::Error, read.root, read_ty))
+                            }
+                            Some(_) | None => None,
+                        };
+                        let Some(frame) = frames.last_mut() else {
+                            return Err(Internal::missed("evaluation frame"));
+                        };
+                        match plan {
+                            Some((value, root, read_ty)) => {
+                                if matches!(class(node_ty), 1 | 2 | 4..=6) {
+                                    frame.steps.push(Step::Widen(evaluated_in(node_ty)));
+                                }
+                                let at = self.paths.get(self.local(node)?).copied().unwrap_or(NONE);
+                                let memo = self
+                                    .attr_values
+                                    .get(at as usize)
+                                    .and_then(|slots| slots.get(class(read_ty)))
+                                    .cloned()
+                                    .flatten();
+                                if root == NONE {
+                                    frame.values.push(value);
+                                } else if let Some(memo) = memo {
+                                    frame.values.push(memo);
+                                } else {
+                                    self.enter_let_frame(&mut outer_chains);
+                                    let owner = u32::try_from(self.ir.lets.len())
+                                        .unwrap_or(u32::MAX)
+                                        .saturating_add(at);
+                                    frames.push(Frame {
+                                        owner: Some(owner),
+                                        ty: read_ty,
+                                        steps: vec![Step::Visit(root, read_ty)],
+                                        values: Vec::new(),
+                                        call: None,
+                                        inst: NONE,
+                                        fold: None,
+                                    });
+                                }
+                            }
+                            None => frame.values.push(Value::Error),
                         }
                         continue;
                     }

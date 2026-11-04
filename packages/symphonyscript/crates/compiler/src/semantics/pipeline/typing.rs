@@ -364,10 +364,21 @@ impl Core<'_> {
                 Ok(fact) => fact,
                 Err(declined) => return Ok(Err(declined)),
             },
+            Op::Field => match self.path_read(node)?.cloned() {
+                Some(read) if read.cyclic => Fact::PLACEHOLDER,
+                Some(read) => {
+                    if read.root != NONE
+                        && let Err(declined) = self.ensure_typed(read.root)?
+                    {
+                        return Ok(Err(declined));
+                    }
+                    super::annotation::annotated_fact(read.ty)
+                }
+                None => Fact::PLACEHOLDER,
+            },
             Op::Str
             | Op::Variant
             | Op::To
-            | Op::Field
             | Op::MethodCall
             | Op::NamedMethodCall
             | Op::Past
@@ -594,12 +605,12 @@ impl Core<'_> {
                 match (logical(x), logical(y)) {
                     (true, true) => return Ok(Fact::scalar(Leaf::Bool)),
                     (false, false) => self.operand_type(node, op)?,
-                    (true, false) => self.draw_at(
+                    (true, false) => self.draw_at_root(
                         Code::TypeMismatch,
                         b,
                         "this value has the wrong type here; `bool` is expected",
                     )?,
-                    (false, true) => self.draw_at(
+                    (false, true) => self.draw_at_root(
                         Code::TypeMismatch,
                         a,
                         "this value has the wrong type here; `bool` is expected",
@@ -688,7 +699,7 @@ impl Core<'_> {
                 "the condition of an `if` is a `bool`, not an array",
             )?;
         } else if !matches!(test.leaf, Leaf::Bool | Leaf::Placeholder | Leaf::Error) {
-            self.draw_at(Code::ConditionType, condition, "the condition is a `bool`")?;
+            self.draw_at_root(Code::ConditionType, condition, "the condition is a `bool`")?;
         }
         let refused = !test.dims.is_empty() || test.leaf != Leaf::Bool;
         if first.leaf == Leaf::Placeholder || second.leaf == Leaf::Placeholder {
@@ -813,7 +824,7 @@ impl Core<'_> {
             if faulty(fact) {
                 refused = true;
             } else if !fact.dims.is_empty() || matches!(fact.leaf, Leaf::Float | Leaf::Bool) {
-                self.draw_at(Code::IndexType, *bound, "a slice bound is an integer")?;
+                self.draw_at_root(Code::IndexType, *bound, "a slice bound is an integer")?;
                 refused = true;
             }
         }
@@ -985,7 +996,7 @@ impl Core<'_> {
         let refused = !faulty_index
             && (!index.dims.is_empty() || matches!(index.leaf, Leaf::Float | Leaf::Bool));
         if refused {
-            self.draw_at(Code::IndexType, b, "an index is an integer")?;
+            self.draw_at_root(Code::IndexType, b, "an index is an integer")?;
         }
         if base.leaf == Leaf::Placeholder || base.dims.is_empty() {
             return Ok(Fact::PLACEHOLDER);

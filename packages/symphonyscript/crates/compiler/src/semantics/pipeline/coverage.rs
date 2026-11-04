@@ -24,12 +24,11 @@ pub(crate) fn op_slice(op: Op) -> Slice {
         Op::TyArray => Slice::One,
         Op::TyName | Op::TyVar => Slice::Pending,
         Op::To => Slice::Pending,
+        Op::Field => Slice::Two,
         Op::Past | Op::Stepped => Slice::Four,
         Op::Variant => Slice::Five,
         Op::Bad => Slice::One,
-        Op::Str | Op::Match | Op::Field | Op::MethodCall | Op::NamedMethodCall => {
-            Slice::DefaultFlip
-        }
+        Op::Str | Op::Match | Op::MethodCall | Op::NamedMethodCall => Slice::DefaultFlip,
     }
 }
 
@@ -193,7 +192,8 @@ fn wire_landed(ir: &FlatIr, wire: &WireRec) -> bool {
 
 pub(crate) fn reason_slice(reason: Reason) -> Slice {
     match reason {
-        Reason::ChildName => Slice::DefaultFlip,
+        Reason::Member => Slice::DefaultFlip,
+        Reason::PathInBody | Reason::ReactivePath | Reason::ChildName => Slice::Pending,
         Reason::ArrayAttribute => Slice::Pending,
         Reason::PreludeItems | Reason::NameOfInstance | Reason::NameOfVocabulary => {
             Slice::DefaultFlip

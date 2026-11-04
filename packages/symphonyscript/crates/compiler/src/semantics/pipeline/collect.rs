@@ -255,6 +255,8 @@ impl Core<'_> {
             .collect();
         destinations.sort_unstable();
         self.destination_roots = destinations;
+        self.mark_field_receivers();
+        let child_syms = self.child_syms()?;
         let skipped_top = self.skipped_top();
         self.skipped_top.clone_from(&skipped_top);
         for local in 0..self.ir.op.len() {
@@ -291,6 +293,9 @@ impl Core<'_> {
             {
                 decl = DeclRef::Duplicate;
             }
+            if child_syms.binary_search(&entry.sym.0).is_ok() {
+                return Ok(Err(Declined(Reason::ChildName)));
+            }
             let destination = self.destination_roots.binary_search(&node).is_ok();
             match decl {
                 DeclRef::Let(_) | DeclRef::Cell(_) | DeclRef::Param(_) | DeclRef::Fn(_)
@@ -300,7 +305,7 @@ impl Core<'_> {
                 }
                 DeclRef::Let(_) | DeclRef::Cell(_) | DeclRef::Param(_) | DeclRef::Fn(_) => {}
                 DeclRef::Duplicate => self.placeholders.push(node),
-                DeclRef::Instance(_) if destination => {}
+                DeclRef::Instance(_) if destination || self.is_field_receiver(node) => {}
                 DeclRef::Instance(_) => return Ok(Err(Declined(Reason::NameOfInstance))),
                 DeclRef::None => {
                     let text = self.ir.symbols.text(entry.sym).to_string();
@@ -408,5 +413,38 @@ impl Core<'_> {
         self.vocabulary_clash(text).is_some()
             || self.vocabulary.native_named(text).is_some()
             || self.variants.owner(text).is_some()
+    }
+}
+
+impl Core<'_> {
+    fn child_syms(&self) -> Result<Vec<u32>, Internal> {
+        let mut top = vec![false; self.ir.items.len()];
+        for rec in &self.ir.top {
+            if let TopRec::Placement(item) = rec
+                && let Some(slot) = top.get_mut(*item as usize)
+            {
+                *slot = true;
+            }
+        }
+        let mut syms = Vec::new();
+        for (at, item) in self.ir.items.iter().enumerate() {
+            let as_name = match item {
+                ItemRec::Placement(placement) => placement.as_name,
+                ItemRec::Wire(wire) => wire.as_name,
+                ItemRec::Bundle(_)
+                | ItemRec::For(_)
+                | ItemRec::When(_)
+                | ItemRec::Line(_)
+                | ItemRec::Paren(_) => NONE,
+            };
+            if top.get(at).copied().unwrap_or(true) || !self.ir.named(as_name) {
+                continue;
+            }
+            let entry = self.ir.name(as_name).ok_or(Internal::missed("IR name"))?;
+            syms.push(entry.sym.0);
+        }
+        syms.sort_unstable();
+        syms.dedup();
+        Ok(syms)
     }
 }

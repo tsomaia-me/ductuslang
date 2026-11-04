@@ -63,7 +63,7 @@ impl Core<'_> {
                 drawn.push((self.file_of(node), (a, b)));
             } else if op == Op::For {
                 stack.extend(self.function_roots(self.functions() + a)?);
-            } else if matches!(op, Op::Call | Op::NamedCall) {
+            } else if matches!(op, Op::Call | Op::NamedCall | Op::Field) {
                 stack.push(a);
             }
             stack.extend(self.operands(node)?.into_iter().filter(|at| *at != NONE));

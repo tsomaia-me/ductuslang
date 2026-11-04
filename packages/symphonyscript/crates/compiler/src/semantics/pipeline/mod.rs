@@ -2,7 +2,10 @@ mod analyze;
 mod annotation;
 mod array_node;
 mod attr_item;
+mod attr_read;
 mod body_instance;
+#[cfg(test)]
+mod call_result_tests;
 mod calls;
 mod cells;
 mod check;
@@ -32,6 +35,9 @@ mod memo_arg;
 mod memo_entry;
 mod memo_key;
 mod need;
+#[cfg(test)]
+mod path_tests;
+mod paths;
 mod pick;
 mod reason;
 mod recording;

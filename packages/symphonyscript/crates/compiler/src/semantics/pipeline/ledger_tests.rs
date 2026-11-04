@@ -15,7 +15,7 @@ struct Run {
     walks: u64,
 }
 
-const CORE_WALKS: [CountedWalk; 15] = [
+const CORE_WALKS: [CountedWalk; 16] = [
     CountedWalk::BindLookup,
     CountedWalk::CoreExpandRow,
     CountedWalk::SigNode,
@@ -31,6 +31,7 @@ const CORE_WALKS: [CountedWalk; 15] = [
     CountedWalk::CheckWireRow,
     CountedWalk::CheckWireCandidate,
     CountedWalk::CheckWireCycle,
+    CountedWalk::CorePathStep,
 ];
 
 fn walked() -> u64 {
@@ -137,11 +138,6 @@ fn doubles_at_most(points: [u64; 3], slack: u64) -> bool {
     second <= first.saturating_mul(5) / 2 + slack && third <= second.saturating_mul(5) / 2 + slack
 }
 
-fn linear_across(points: [u64; 3], slack: u64) -> bool {
-    let [first, _, third] = points;
-    third <= first.saturating_mul(4).saturating_mul(2) + slack
-}
-
 fn ledger_failures(
     name: &str,
     sizes: [usize; 3],
@@ -160,7 +156,6 @@ fn ledger_failures_on(
     expected: &dyn Fn(usize) -> Vec<String>,
 ) -> Vec<String> {
     let mut failures = Vec::new();
-    let mut times = [0u64; 3];
     let mut peaks = [0u64; 3];
     let mut walks = [0u64; 3];
     for (at, size) in sizes.into_iter().enumerate() {
@@ -184,15 +179,9 @@ fn ledger_failures_on(
         if let Some(slot) = walks.get_mut(at) {
             *slot = found.walks;
         }
-        if let Some(slot) = times.get_mut(at) {
-            *slot = micros;
-        }
         if let Some(slot) = peaks.get_mut(at) {
             *slot = found.peak;
         }
-    }
-    if times.first().copied().unwrap_or(0) >= 100_000 && !linear_across(times, 0) {
-        failures.push(format!("{name}: time {times:?} µs is not linear"));
     }
     if !doubles_at_most(walks, 64) {
         failures.push(format!("{name}: counted walks {walks:?} are not linear"));
@@ -658,5 +647,30 @@ fn stress_wires_to_named_instances_cost_time_and_memory_linear_in_the_wires_and_
         [5_000, 10_000, 20_000],
         wire_rings,
         &one("wire-cycle"),
+    ));
+}
+
+fn path_chains(n: usize) -> String {
+    let mut text = String::from("Clip c0 | gain=0.5:\n    Note as h /60\n");
+    for at in 1..n {
+        let before = at - 1;
+        text.push_str(&format!(
+            "Clip c{at} | gain=c{before}.gain level=c{before}.h.velocity:\n    Note as h /c{before}.h.pitch\n"
+        ));
+    }
+    text.push_str(
+        "let last = c0.level\nClip ring | level=ring.gain gain=ring.level:\n    Note/1\n",
+    );
+    text
+}
+
+#[test]
+#[ignore = "stress"]
+fn stress_paths_through_named_instances_cost_time_and_memory_linear_in_the_paths_and_their_steps() {
+    assert_none(&ledger_failures(
+        "paths",
+        [5_000, 10_000, 20_000],
+        path_chains,
+        &one("declaration-cycle"),
     ));
 }

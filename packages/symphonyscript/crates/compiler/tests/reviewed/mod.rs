@@ -7,6 +7,11 @@ pub type Reviewed = (
 pub const REVIEWED: &[Reviewed] = &[
     (
         "464",
+        "state base([60, 62])\nlet doubled = base * 2\n\nSession main:\n    Includes: keys\n\nTrack keys:\n    Piano\n    Starts: melody\n\nClip melody:\n    Note/(doubled[1])\n",
+        &[("array-operand", "base * 2"), ("reactive-let", "doubled")],
+    ),
+    (
+        "464",
         "\nstate a(1)\nstate b(2)\nstate i(0)\n\nlet s = a + b\nlet c = [a, b, s]\n",
         &[("reactive-let", "c"), ("reactive-let", "s")],
     ),

@@ -58,9 +58,6 @@ impl Core<'_> {
         if parent == NONE && !self.ir.named(placement.as_name) {
             return Ok(Ok(NONE));
         }
-        if parent != NONE && placement.as_name != NONE {
-            return Ok(Err(Declined(Reason::ChildName)));
-        }
         if !self.charge_item(file, placement.lo, placement.hi)? {
             return Ok(Ok(NONE));
         }
