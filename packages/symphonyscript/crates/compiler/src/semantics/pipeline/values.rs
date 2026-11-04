@@ -4,11 +4,9 @@ use super::annotation::Refusal;
 use super::core::{Core, Stage};
 use super::core_value::CoreValue;
 use super::decl_ref::DeclRef;
-use super::declined::Declined;
 use super::fold_run::FoldRun;
 use super::frame::Frame;
 use super::leaf::Leaf;
-use super::reason::Reason;
 use super::step::Step;
 use super::width::{combined, is_fixed_float, target_ty, widens};
 use crate::diagnostics::Code;
@@ -524,6 +522,15 @@ impl Core<'_> {
                             return Err(Internal::missed("evaluation frame"));
                         };
                         self.visit(node, node_ty, &mut frame.steps)?;
+                        continue;
+                    }
+                    if op == Op::Field
+                        && let Some(row) = self.path_rows.get(&node).copied()
+                    {
+                        let Some(frame) = frames.last_mut() else {
+                            return Err(Internal::missed("evaluation frame"));
+                        };
+                        frame.values.push(Value::Node(row));
                         continue;
                     }
                     if op == Op::Field {
@@ -1051,7 +1058,10 @@ impl Core<'_> {
                 DeclRef::Duplicate | DeclRef::None | DeclRef::Param(_) | DeclRef::Fn(_) => {
                     Value::Error
                 }
-                DeclRef::Instance(_) => return Ok(Err(Declined(Reason::NameOfInstance))),
+                DeclRef::Instance(item) => match self.row_of_item.get(item as usize).copied() {
+                    Some(row) if row != NONE => Value::Node(row),
+                    Some(_) | None => Value::Error,
+                },
             },
             Op::Neg => {
                 let operand = pop(stack)?;

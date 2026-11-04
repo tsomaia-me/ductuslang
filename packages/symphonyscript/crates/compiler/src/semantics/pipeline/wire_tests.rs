@@ -1,4 +1,4 @@
-use symphonyscript_core::Vocabulary;
+use symphonyscript_core::{Count, Vocabulary};
 
 use crate::compiler::Compiler;
 use crate::diagnostics::Code;
@@ -190,15 +190,194 @@ fn a_to_path_over_several_candidates_draws_its_faults_beside_its_valid_twin() {
 }
 
 #[test]
-fn a_chosen_destination_holding_a_value_stays_with_the_old_engine() {
+fn a_reference_read_where_a_value_is_expected_stays_with_the_old_engine() {
     let vocabulary = symphonyscript_fixtures::vocabulary();
     let new = Compiler::new(&vocabulary).expect("the vocabulary compiles");
     for text in [
-        "state look(0)\nClip a:\n    Note/1\nClip c:\n    Note/3\n    Plays: [a, 1][look]\n",
-        "let d = a\nClip a:\n    Note/1\nClip c:\n    Note/3\n    Plays: d\n",
+        "Clip a:\n    Note/1\nClip c:\n    Note/(a)\n",
+        "Clip a:\n    Note/1\nClip c:\n    Note/(a + 1)\n",
+        "let d = a\nClip a:\n    Note/1\nClip c:\n    Note/(d)\n",
+        "let q = c\nClip c:\n    Note/(if true then q else 1.5)\n",
+        "let q = c\nClip c:\n    Note | velocity=(if 1 then true else q)\n",
+        "state i(0)\nfn pick(k):\n    let t = [a, b][k]\n    k\nClip a:\n    Note/1\nClip b:\n    Note/2\nClip c:\n    Note/(pick(i))\n",
+        "let d: i32 = a\nClip a:\n    Note/1\nClip c:\n    Note/3\n    Plays: d\n",
+        "Clip a:\n    Note as h /1\nClip c | level=a.h:\n    Note/3\n",
+        "let d = a\nClip a | level=2:\n    Note/1\nClip c | level=d.level:\n    Note/3\n",
     ] {
         assert!(new.checked_by_new_core(&[source(text)]).is_none(), "{text}");
     }
+}
+
+const REFERENCE_WIRES: [&str; 26] = [
+    "let d = a\nClip a:\n    Note/1\nClip c:\n    Note/3\n    Plays: d\n",
+    "state look(0)\nlet xs = [a, b]\nClip a:\n    Note/1\nClip b:\n    Note/2\nClip c:\n    Note/3\n    Plays: xs[look]\n",
+    "let xs = [a, b]\nClip a:\n    Note/1\nClip b:\n    Note/2\nClip c:\n    Note/3\n    Plays: xs[1]\n",
+    "state look(0)\nClip a:\n    Note/1\nClip c:\n    Note/3\n    Plays: [a, 1][look]\n",
+    "Clip a:\n    Note/1\nClip b:\n    Note/2\nClip c:\n    Note/3\n    Plays: [a, b]\n",
+    "Clip a:\n    Note/1\nClip c:\n    Note/3\n    Plays: 1\n",
+    "Clip a:\n    Note/1\nClip c:\n    Note/3\n    Plays: true\n",
+    "let d = 1\nClip a:\n    Note/1\nClip c:\n    Note/3\n    Plays: d\n",
+    "state look(0)\nClip a:\n    Note/1\nClip c:\n    Note/3\n    Plays: look\n",
+    "let d = a\nClip a:\n    Note/1\n",
+    "let d = if true then a else b\nClip a:\n    Note/1\nClip b:\n    Note/2\nClip c:\n    Note/3\n    Plays: d\n",
+    "state f(false)\nlet d = if f then a else b\nClip a:\n    Note/1\nClip b:\n    Note/2\nClip c:\n    Note/3\n    Plays: d\n",
+    "let xs = [a, b]\nClip a:\n    Note/1\nClip b:\n    Note/2\nClip c:\n    Note/3\n    Plays: xs\n",
+    "let d = a\nlet e = d\nClip a:\n    Note/1\nClip c:\n    Note/3\n    Plays: e\n",
+    "let d = a\nClip a:\n    Note/1\nClip c:\n    Note/3\n    Plays | gain=to.gain: d\n",
+    "Clip a:\n    Note/1\nClip c:\n    Note/3\n    Plays: if true then a else 1\n",
+    "let d = a.h\nClip a:\n    Note as h /1\n",
+    "Clip a:\n    Note as h /1\nClip c:\n    Note/3\n    Plays: a.h\n",
+    "let xs = [a, b]\nClip a:\n    Note/1\nClip b:\n    Note/2\nClip c:\n    Note/3\n    Plays: xs[5]\n",
+    "state look(0.5)\nlet xs = [a, b]\nClip a:\n    Note/1\nClip b:\n    Note/2\nClip c:\n    Note/3\n    Plays: xs[look]\n",
+    "state look(0)\nlet d = [a, b][look]\nClip a:\n    Note/1\nClip b:\n    Note/2\nClip c:\n    Note/3\n    Plays: d\n",
+    "let d = e\nlet e = d\nClip a:\n    Note/1\nClip c:\n    Note/3\n    Plays: d\n",
+    "state look(0)\nlet d = a\nClip a:\n    Note/1\nClip b:\n    Note/2\nClip c:\n    Note/3\n    Plays: if look > 0 then d else b\n",
+    "let d = f\nClip a:\n    Note/1\n    Plays: d\nFilter f\n",
+    "let xs = [a, b]\nlet ys = xs\nClip a:\n    Note/1\nClip b:\n    Note/2\nClip c:\n    Note/3\n    Plays: ys[0]\n",
+    "Clip a:\n    Note/1\nClip c:\n    Note/3\n    Plays: [a][0][0]\n",
+];
+
+const REFERENCE_BOUNDED_WIRES: [&str; 2] = [
+    "state k(0)\nlet xs = [r, r]\nRoot r:\n    Item\n    Link: xs[k]\n",
+    "let xs = [r, r]\nRoot r:\n    Item\n    Link: xs[1]\n",
+];
+
+#[test]
+fn a_destination_through_lets_paths_and_values_checks_as_the_old_engine_does() {
+    assert_engines_agree(&symphonyscript_fixtures::vocabulary(), &REFERENCE_WIRES);
+    assert_engines_agree(
+        &symphonyscript_fixtures::bounded_vocabulary(),
+        &REFERENCE_BOUNDED_WIRES,
+    );
+}
+
+fn new_codes(vocabulary: &Vocabulary, text: &str) -> Vec<Code> {
+    let new = Compiler::new(vocabulary).expect("the vocabulary compiles");
+    new.checked_by_new_core(&[source(text)])
+        .unwrap_or_else(|| panic!("the new core takes {text}"))
+        .iter()
+        .map(|diagnostic| diagnostic.code)
+        .filter(|code| *code != Code::NoEntryInstance)
+        .collect()
+}
+
+fn old_codes(vocabulary: &Vocabulary, text: &str) -> Vec<Code> {
+    let old = Compiler::new(vocabulary)
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
+    old.check(&[source(text)])
+        .iter()
+        .map(|diagnostic| diagnostic.code)
+        .filter(|code| *code != Code::NoEntryInstance)
+        .collect()
+}
+
+#[test]
+fn a_destination_draws_destination_type_beside_its_valid_twin() {
+    let vocabulary = symphonyscript_fixtures::vocabulary();
+    let cases: [(&str, &[Code]); 6] = [
+        (
+            "let d = a\nClip a:\n    Note/1\nClip c:\n    Note/3\n    Plays: d\n",
+            &[],
+        ),
+        (
+            "let d = 1\nClip a:\n    Note/1\nClip c:\n    Note/3\n    Plays: d\n",
+            &[Code::DestinationType],
+        ),
+        (
+            "let xs = [a, b]\nClip a:\n    Note/1\nClip b:\n    Note/2\nClip c:\n    Note/3\n    Plays: xs[0]\n",
+            &[],
+        ),
+        (
+            "let xs = [a, b]\nClip a:\n    Note/1\nClip b:\n    Note/2\nClip c:\n    Note/3\n    Plays: xs\n",
+            &[Code::DestinationType],
+        ),
+        (
+            "Clip a:\n    Note as h /1\nClip c:\n    Note/3\n    Plays: a\n",
+            &[],
+        ),
+        (
+            "Clip a:\n    Note as h /1\nClip c:\n    Note/3\n    Plays: a.h\n",
+            &[Code::WireEndpoint],
+        ),
+    ];
+    for (text, codes) in cases {
+        assert_eq!(new_codes(&vocabulary, text), codes, "{text}");
+    }
+}
+
+#[test]
+fn a_bool_index_and_a_runtime_to_read_keep_the_new_cores_sets_476() {
+    let bounded = symphonyscript_fixtures::bounded_vocabulary();
+    let index = "state sw(true)\nRoot r:\n    Item\n    Link: [r, r][sw]\n";
+    assert_eq!(new_codes(&bounded, index), [Code::IndexType]);
+    assert_eq!(
+        old_codes(&bounded, index),
+        [Code::CountBelowMinimum, Code::IndexType]
+    );
+    let vocabulary = symphonyscript_fixtures::vocabulary();
+    for destination in ["[a, b][look]", "xs[look]"] {
+        let read = format!(
+            "state look(0)\nlet xs = [a, b]\nClip a | gain=0.5:\n    Note/1\nClip b | gain=0.7:\n    Note/2\nClip c:\n    Note/3\n    Plays | transpose=to.gain: {destination}\n"
+        );
+        assert_eq!(new_codes(&vocabulary, &read), [Code::TypeMismatch]);
+        assert_eq!(old_codes(&vocabulary, &read), [Code::FloatToInteger]);
+    }
+}
+
+#[test]
+fn a_compile_time_choice_in_a_runtime_destination_counts_its_taken_arm_alone_476() {
+    let vocabulary = symphonyscript_fixtures::vocabulary();
+    let program = |arm: &str| {
+        format!(
+            "state look(0)\nClip a:\n    Note/1\nClip c:\n    Note/3\n    Plays: [if {arm} then a else f, c][look]\nFilter f\n"
+        )
+    };
+    let taken = program("true");
+    assert_eq!(new_codes(&vocabulary, &taken), []);
+    assert_eq!(old_codes(&vocabulary, &taken), [Code::WireEndpoint]);
+    for arm in ["false", "look > 0"] {
+        let text = program(arm);
+        assert_eq!(new_codes(&vocabulary, &text), [Code::WireEndpoint]);
+        assert_eq!(old_codes(&vocabulary, &text), [Code::WireEndpoint]);
+    }
+}
+
+fn differing_vocabulary() -> Vocabulary {
+    let mut v = Vocabulary::builder("differing");
+    let desk = v.node("Desk");
+    let lamp = v.node("Lamp");
+    let dial = v.node("Dial");
+    let feeds = v.wire("Feeds");
+    v.kind(desk).top_level(Count::Exactly(1)).entry();
+    v.kind(lamp)
+        .top_level(Count::Any)
+        .attr::<i32>("level")
+        .default(0);
+    v.kind(dial)
+        .top_level(Count::Any)
+        .attr::<f32>("level")
+        .default(0.0);
+    v.wire_kind(feeds)
+        .connects(desk, lamp)
+        .connects(desk, dial)
+        .attr::<f32>("gain")
+        .default(1.0);
+    v.build().expect("the differing vocabulary builds")
+}
+
+#[test]
+fn a_to_path_over_candidates_whose_attribute_types_differ_draws_to_candidates() {
+    let vocabulary = differing_vocabulary();
+    let program = |second: &str| {
+        format!("state k(0)\nDesk d:\n    Feeds | gain=to.level: [a, b][k]\nDial a\n{second} b\n")
+    };
+    let differing = program("Lamp");
+    assert_eq!(new_codes(&vocabulary, &differing), [Code::ToCandidates]);
+    assert_eq!(old_codes(&vocabulary, &differing), [Code::ToCandidates]);
+    let alike = program("Dial");
+    assert_eq!(new_codes(&vocabulary, &alike), []);
+    assert_eq!(old_codes(&vocabulary, &alike), []);
 }
 
 #[test]

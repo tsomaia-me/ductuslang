@@ -103,7 +103,6 @@ fn a_path_from_a_let_or_a_member_to_an_instance_or_through_a_function_cycle_stay
     let new = Compiler::new(&vocabulary).expect("the vocabulary compiles");
     for text in [
         "let xs = [1, 2]\nClip c:\n    Note/xs.size\n",
-        "Clip c:\n    Note as h /60\nlet x = c.h\n",
         "let n = f()\nfn f(): c.gain\nClip c | gain=n:\n    Note/n\n",
         "let n = f()\nfn f(): m\nlet m = c.gain\nClip c | gain=n:\n    Note/n\n",
         "Clip c:\n    Note as h /60\nClip d:\n    Note/c.h.length\n",

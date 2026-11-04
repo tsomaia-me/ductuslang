@@ -87,7 +87,8 @@ impl Core<'_> {
         if !self.charge_item(file, wire.lo, wire.hi)? {
             return Ok(Ok(()));
         }
-        let chosen = self.ir.node(wire.destination)?.0 != Op::Name;
+        let chosen = self.ir.node(wire.destination)?.0 != Op::Name
+            || !matches!(self.bound(wire.destination)?, DeclRef::Instance(_));
         self.wires.push(WireRow {
             kind,
             item,

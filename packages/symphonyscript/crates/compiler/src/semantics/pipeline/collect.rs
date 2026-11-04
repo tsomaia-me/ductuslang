@@ -3,7 +3,6 @@ use std::collections::HashMap;
 use symphonyscript_core::Span;
 
 use super::core::{Core, Stage};
-use super::coverage::destination_candidates;
 use super::decl_ref::DeclRef;
 use super::declined::Declined;
 use super::reason::Reason;
@@ -242,26 +241,7 @@ impl Core<'_> {
     }
 
     fn bind_names(&mut self) -> Stage<()> {
-        let mut destinations: Vec<u32> = self
-            .ir
-            .items
-            .iter()
-            .filter_map(|item| match item {
-                ItemRec::Wire(wire) => Some(
-                    destination_candidates(self.ir, wire.destination)
-                        .unwrap_or_else(|| vec![wire.destination]),
-                ),
-                ItemRec::Placement(_)
-                | ItemRec::Bundle(_)
-                | ItemRec::For(_)
-                | ItemRec::When(_)
-                | ItemRec::Line(_)
-                | ItemRec::Paren(_) => None,
-            })
-            .flatten()
-            .collect();
-        destinations.sort_unstable();
-        self.destination_roots = destinations;
+        self.mark_reference_roots()?;
         self.mark_field_receivers();
         let (scopes, scope_of) = self.child_scopes()?;
         self.child_scopes.clone_from(&scopes);
@@ -303,17 +283,13 @@ impl Core<'_> {
             {
                 decl = DeclRef::Duplicate;
             }
-            let destination = self.destination_roots.binary_search(&node).is_ok();
             match decl {
-                DeclRef::Let(_) | DeclRef::Cell(_) | DeclRef::Param(_) | DeclRef::Fn(_)
-                    if destination =>
-                {
-                    return Ok(Err(Declined(Reason::DestinationValue)));
-                }
-                DeclRef::Let(_) | DeclRef::Cell(_) | DeclRef::Param(_) | DeclRef::Fn(_) => {}
+                DeclRef::Let(_)
+                | DeclRef::Cell(_)
+                | DeclRef::Param(_)
+                | DeclRef::Fn(_)
+                | DeclRef::Instance(_) => {}
                 DeclRef::Duplicate => self.placeholders.push(node),
-                DeclRef::Instance(_) if destination || self.is_field_receiver(node) => {}
-                DeclRef::Instance(_) => return Ok(Err(Declined(Reason::NameOfInstance))),
                 DeclRef::None => {
                     let text = self.ir.symbols.text(entry.sym).to_string();
                     if self.vocabulary_clash(&text).is_some()
