@@ -1,6 +1,7 @@
 mod support;
 
-use symphonyscript::{Code, Compiler, Severity, Source};
+use support::Compiler;
+use symphonyscript::{Code, Severity, Source};
 use symphonyscript_core::{Count, Vocabulary};
 use symphonyscript_fixtures::{Rows, covered};
 
@@ -975,4 +976,65 @@ fn a_flows_secondary_spans_never_repeat_its_primary_and_name_each_let_once() {
         }
     }
     support::assert_no_failure(&failures);
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_differential_a_reactive_flow_meets_its_uses_in_every_order_directly_aliased_carried_or_written()
+ {
+    support::assert_both_engines_agree(exhaustive_a_reactive_flow_meets_its_uses_in_every_order_directly_aliased_carried_or_written);
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_differential_a_reactive_flow_meets_its_uses_in_every_order_compared() {
+    support::assert_both_engines_agree(
+        exhaustive_a_reactive_flow_meets_its_uses_in_every_order_compared,
+    );
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_differential_a_reactive_flow_meets_its_uses_in_every_order_partnered() {
+    support::assert_both_engines_agree(
+        exhaustive_a_reactive_flow_meets_its_uses_in_every_order_partnered,
+    );
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_differential_a_reactive_flow_meets_its_uses_in_every_order_typed_or_in_a_cycle() {
+    support::assert_both_engines_agree(
+        exhaustive_a_reactive_flow_meets_its_uses_in_every_order_typed_or_in_a_cycle,
+    );
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_differential_a_compile_time_flow_meets_its_uses_in_every_order_directly_aliased_carried_or_written()
+ {
+    support::assert_both_engines_agree(exhaustive_a_compile_time_flow_meets_its_uses_in_every_order_directly_aliased_carried_or_written);
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_differential_a_compile_time_flow_meets_its_uses_in_every_order_compared_partnered_typed_or_in_a_cycle()
+ {
+    support::assert_both_engines_agree(exhaustive_a_compile_time_flow_meets_its_uses_in_every_order_compared_partnered_typed_or_in_a_cycle);
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_differential_a_reactive_flow_meets_enums_of_different_variants_in_every_order() {
+    support::assert_both_engines_agree(
+        exhaustive_a_reactive_flow_meets_enums_of_different_variants_in_every_order,
+    );
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_differential_a_compile_time_flow_meets_enums_of_different_variants_in_every_order() {
+    support::assert_both_engines_agree(
+        exhaustive_a_compile_time_flow_meets_enums_of_different_variants_in_every_order,
+    );
 }

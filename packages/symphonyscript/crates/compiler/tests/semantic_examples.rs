@@ -3,8 +3,9 @@ mod support;
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
+use support::Compiler;
 use symphonyscript::syntax::lex;
-use symphonyscript::{Code, Compiler, Severity, Source};
+use symphonyscript::{Code, Severity, Source};
 use symphonyscript_fixtures::{
     PENDING_EXAMPLES, SPEC_SYM_EXAMPLES, SpecExample, control_project, document_examples,
     dsp_project, lighting_project, music_project, pending_key, pending_lines,

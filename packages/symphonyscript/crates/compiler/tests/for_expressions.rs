@@ -1,6 +1,7 @@
 mod support;
 
-use symphonyscript::{Code, Compiler, Diagnostic};
+use support::Compiler;
+use symphonyscript::{Code, Diagnostic};
 use symphonyscript_fixtures::{Rows, covered, spec_examples, vocabulary};
 
 const HELD: &str = "state held([]): i32[..10]\n";
@@ -372,4 +373,11 @@ fn a_for_head_cut_inside_a_bracket_draws_one_diagnostic_c2_9() {
         }
     }
     assert_eq!(programs, 112);
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_differential_a_for_expression_stands_bare_only_as_a_whole_value_and_draws_what_a_value_of_its_type_draws()
+ {
+    support::assert_both_engines_agree(exhaustive_a_for_expression_stands_bare_only_as_a_whole_value_and_draws_what_a_value_of_its_type_draws);
 }

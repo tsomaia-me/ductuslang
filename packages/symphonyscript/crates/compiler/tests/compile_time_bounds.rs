@@ -2,7 +2,8 @@ mod support;
 
 use std::collections::BTreeSet;
 
-use symphonyscript::{Code, Compiler, Source};
+use support::Compiler;
+use symphonyscript::{Code, Source};
 use symphonyscript_fixtures::{Rows, covered, native_vocabulary};
 
 #[derive(Clone)]
@@ -892,4 +893,44 @@ fn an_index_outside_i64_beside_a_disagreeing_literal_draws_the_i64_message_416()
             );
         }
     }
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_differential_a_compile_time_index_bound_or_offset_outside_i64_draws_at_the_bound_whatever_the_base_400()
+ {
+    support::assert_both_engines_agree(exhaustive_a_compile_time_index_bound_or_offset_outside_i64_draws_at_the_bound_whatever_the_base_400);
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_differential_a_slice_whose_bound_is_in_error_reads_no_value_so_only_the_bound_draws()
+{
+    support::assert_both_engines_agree(
+        exhaustive_a_slice_whose_bound_is_in_error_reads_no_value_so_only_the_bound_draws,
+    );
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_differential_a_bound_beside_a_placeholder_base_draws_its_own_fault_and_the_base_draws_once()
+ {
+    support::assert_both_engines_agree(
+        exhaustive_a_bound_beside_a_placeholder_base_draws_its_own_fault_and_the_base_draws_once,
+    );
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_differential_every_compile_time_index_form_reads_only_the_element_it_selects() {
+    support::assert_both_engines_agree(
+        exhaustive_every_compile_time_index_form_reads_only_the_element_it_selects,
+    );
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_differential_a_bound_or_an_index_beside_a_base_resolve_made_a_placeholder_draws_its_own_fault_381()
+ {
+    support::assert_both_engines_agree(exhaustive_a_bound_or_an_index_beside_a_base_resolve_made_a_placeholder_draws_its_own_fault_381);
 }

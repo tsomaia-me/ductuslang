@@ -1,6 +1,7 @@
 mod support;
 
-use symphonyscript::{Code, Compiler, Source};
+use support::Compiler;
+use symphonyscript::{Code, Source};
 use symphonyscript_core::{Count, Vocabulary};
 
 fn vocabulary(prelude: &str) -> Vocabulary {

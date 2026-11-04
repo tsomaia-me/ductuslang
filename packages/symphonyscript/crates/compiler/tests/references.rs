@@ -1,6 +1,7 @@
 mod support;
 
-use symphonyscript::{Code, Compiler, Diagnostic};
+use support::Compiler;
+use symphonyscript::{Code, Diagnostic};
 use symphonyscript_fixtures::{Rows, covered, vocabulary};
 
 const TARGETS: &str =
@@ -144,4 +145,11 @@ fn the_paths_of_the_spec_read_through_a_let_holding_the_wire_and_the_node() {
     let compiler = Compiler::new(&vocabulary()).expect("the vocabulary compiles");
     let text = "Clip verse | gain=0.8:\n    Note as hook /65 | velocity=0.9\n\nClip chorus | gain=verse.gain * 1.2:\n    Note/72 | velocity=verse.hook.velocity\n    Plays as back | transpose=-2: verse\n\nlet hook = verse.hook\nlet back = chorus.back\n\nClip outro | gain=back.transpose:\n    Note/60 | velocity=hook.velocity\n";
     assert_eq!(errors(&compiler, text), vec![], "{text}");
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_differential_a_reference_to_a_node_or_a_wire_reads_its_attribute_in_every_position_it_stands_in()
+ {
+    support::assert_both_engines_agree(exhaustive_a_reference_to_a_node_or_a_wire_reads_its_attribute_in_every_position_it_stands_in);
 }

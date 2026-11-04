@@ -1,6 +1,7 @@
 mod support;
 
-use symphonyscript::{Code, Compiler};
+use support::Compiler;
+use symphonyscript::Code;
 use symphonyscript_fixtures::{Orders, Rows, covered, vocabulary};
 
 type InlineRow = (Vec<String>, Vec<(Code, &'static str)>);
@@ -220,4 +221,13 @@ fn a_recursive_call_counts_toward_the_inline_limit_unless_it_reads_a_cell() {
             assert_eq!(support::error_texts(&four, &text), expected, "{text}");
         }
     }
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_differential_a_value_reads_a_cell_by_the_bindings_it_reaches_at_every_position_that_asks()
+ {
+    support::assert_both_engines_agree(
+        exhaustive_a_value_reads_a_cell_by_the_bindings_it_reaches_at_every_position_that_asks,
+    );
 }

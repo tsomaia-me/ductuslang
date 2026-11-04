@@ -1,6 +1,7 @@
 mod support;
 
-use symphonyscript::{Code, Compiler, Diagnostic, Severity, Source};
+use support::Compiler;
+use symphonyscript::{Code, Diagnostic, Severity, Source};
 use symphonyscript_core::LimitOverrides;
 use symphonyscript_fixtures::{
     bar_vocabulary, bounded_vocabulary, native_vocabulary, prelude_vocabulary, vocabulary,

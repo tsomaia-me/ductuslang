@@ -1,6 +1,7 @@
 mod support;
 
-use symphonyscript::{Code, Compiler};
+use support::Compiler;
+use symphonyscript::Code;
 use symphonyscript_core::Vocabulary;
 use symphonyscript_fixtures::vocabulary;
 
@@ -3680,4 +3681,176 @@ fn a_join_in_a_for_body_is_bounded_by_the_accumulator_before_its_last_iteration_
         assert_eq!(codes(&text), expected, "{text}");
     }
     assert_eq!(programs, 26);
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_differential_capacities_unit_rows() {
+    support::assert_both_engines_agree(|| {
+        each_row_of_the_capacity_table_gives_its_capacity();
+        a_state_holds_a_fixed_array_when_its_initializer_keeps_its_fallbacks_length();
+        a_state_with_no_capacity_is_an_error();
+        the_state_rules_see_the_history_reads_an_inlined_call_reaches();
+        a_states_fixed_array_is_settled_over_its_group();
+        a_compile_time_index_outside_a_fixed_history_read_is_an_error();
+        a_state_annotation_states_its_array();
+        history_reads_form_no_cycle_and_a_present_read_of_itself_does();
+        a_state_s_own_history_reads_count_as_their_fallbacks_for_its_kind();
+        a_history_read_of_an_input_takes_its_initial_value_as_its_fallback();
+        a_history_reads_fallback_takes_the_cells_type();
+        a_history_read_has_its_cells_kind_for_an_input_a_let_and_a_state();
+        a_history_reads_provisional_kind_leaves_no_diagnostic_behind();
+        a_history_read_of_a_let_whose_initializer_drew_an_error_draws_nothing_of_its_own();
+        a_history_read_of_a_derived_state_has_its_layout_433();
+        a_chain_of_slices_keeps_its_capacity_and_its_length();
+        a_history_read_counts_as_an_operand_of_its_cells_integer_width();
+        the_arms_of_a_choice_are_type_checked_against_one_another_whatever_chooses();
+        an_annotation_holds_only_an_initializer_of_its_rows();
+        a_type_whose_length_or_capacity_is_missing_or_malformed_is_a_placeholder();
+        a_state_settled_as_a_fixed_array_is_used_as_a_fixed_array();
+        a_compile_time_condition_chooses_its_arm_before_layout_and_capacity_forward_and_reversed();
+        a_compile_time_match_on_a_bare_variant_chooses_its_arm_before_layout_and_capacity();
+        a_group_of_states_takes_its_least_capacities_together();
+        a_capacity_reaching_two_to_the_thirty_one_draws_length_limit_where_it_arises();
+        a_runtime_choice_between_a_variable_and_a_fixed_array_is_one_variable_array_wherever_read();
+        an_array_where_a_single_value_is_expected_is_refused_in_the_positions_own_words();
+        every_diagnostic_carries_a_help_that_states_its_fix();
+        an_iterable_that_reads_a_cell_draws_reactive_iterable_whatever_its_layout();
+        an_array_bracket_that_lost_an_element_to_a_fault_is_a_placeholder_with_no_length();
+        an_array_bracket_whose_elements_all_stand_keeps_its_length_and_its_faults();
+        a_match_choices_span_ends_at_its_last_token_as_an_ifs_does_304();
+        a_disagreeing_literal_is_a_placeholder_at_every_holder_and_draws_its_own_diagnostic_alone_384();
+        a_variable_array_where_a_single_value_stands_draws_at_its_holder_once_385();
+        a_cell_array_under_a_scalar_annotation_draws_the_shape_mismatch_at_the_let_as_its_fixed_twin_401();
+        an_array_holder_beside_a_single_value_draws_ragged_array_at_the_literal_as_its_fixed_twin_402();
+        an_element_read_through_a_let_draws_its_fit_fault_at_the_read_as_its_literal_twin_383();
+        an_index_read_of_a_disagreeing_literal_its_slice_or_a_let_holding_it_draws_the_literals_diagnostic_alone_382();
+        the_summaries_of_a_derived_cells_capacity_faults_call_the_expression_after_the_equals_its_rule_c1_13();
+        a_groups_history_read_of_a_member_with_no_init_or_fallback_starts_at_its_own_length_c1_4();
+        a_history_read_has_its_cells_shape_whatever_its_fallback_c2_6();
+        a_join_in_a_for_body_is_bounded_by_the_accumulator_before_its_last_iteration_c2_12();
+    });
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_differential_the_state_rules_see_the_history_reads_an_inlined_call_reaches() {
+    support::assert_both_engines_agree(
+        exhaustive_the_state_rules_see_the_history_reads_an_inlined_call_reaches,
+    );
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_differential_a_states_fixed_array_is_settled_over_its_group() {
+    support::assert_both_engines_agree(exhaustive_a_states_fixed_array_is_settled_over_its_group);
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_differential_a_history_read_has_its_cells_kind_for_an_input_a_let_and_a_state() {
+    support::assert_both_engines_agree(
+        exhaustive_a_history_read_has_its_cells_kind_for_an_input_a_let_and_a_state,
+    );
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_differential_a_history_reads_provisional_kind_leaves_no_diagnostic_behind() {
+    support::assert_both_engines_agree(
+        exhaustive_a_history_reads_provisional_kind_leaves_no_diagnostic_behind,
+    );
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_differential_a_history_read_of_a_derived_state_has_its_layout_433() {
+    support::assert_both_engines_agree(
+        exhaustive_a_history_read_of_a_derived_state_has_its_layout_433,
+    );
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_differential_a_history_read_counts_as_an_operand_of_its_cells_integer_width() {
+    support::assert_both_engines_agree(
+        exhaustive_a_history_read_counts_as_an_operand_of_its_cells_integer_width,
+    );
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_differential_the_arms_of_a_choice_are_type_checked_against_one_another_whatever_chooses()
+ {
+    support::assert_both_engines_agree(
+        exhaustive_the_arms_of_a_choice_are_type_checked_against_one_another_whatever_chooses,
+    );
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_differential_an_annotation_holds_only_an_initializer_of_its_rows() {
+    support::assert_both_engines_agree(
+        exhaustive_an_annotation_holds_only_an_initializer_of_its_rows,
+    );
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_differential_a_state_settled_as_a_fixed_array_is_used_as_a_fixed_array() {
+    support::assert_both_engines_agree(
+        exhaustive_a_state_settled_as_a_fixed_array_is_used_as_a_fixed_array,
+    );
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_differential_a_compile_time_condition_chooses_its_arm_before_layout_and_capacity_in_its_odd_rows()
+ {
+    support::assert_both_engines_agree(exhaustive_a_compile_time_condition_chooses_its_arm_before_layout_and_capacity_in_its_odd_rows);
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_differential_a_compile_time_condition_chooses_its_arm_before_layout_and_capacity_in_its_even_rows()
+ {
+    support::assert_both_engines_agree(exhaustive_a_compile_time_condition_chooses_its_arm_before_layout_and_capacity_in_its_even_rows);
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_differential_a_compile_time_match_on_a_bare_variant_chooses_its_arm_before_layout_and_capacity()
+ {
+    support::assert_both_engines_agree(exhaustive_a_compile_time_match_on_a_bare_variant_chooses_its_arm_before_layout_and_capacity);
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_differential_a_group_of_states_takes_its_least_capacities_together() {
+    support::assert_both_engines_agree(
+        exhaustive_a_group_of_states_takes_its_least_capacities_together,
+    );
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_differential_a_runtime_choice_between_a_variable_and_a_fixed_array_is_one_variable_array_wherever_read()
+ {
+    support::assert_both_engines_agree(exhaustive_a_runtime_choice_between_a_variable_and_a_fixed_array_is_one_variable_array_wherever_read);
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_differential_an_array_bracket_that_lost_an_element_to_a_fault_is_a_placeholder_with_no_length()
+ {
+    support::assert_both_engines_agree(
+        exhaustive_an_array_bracket_that_lost_an_element_to_a_fault_is_a_placeholder_with_no_length,
+    );
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_differential_an_index_read_of_a_disagreeing_literal_its_slice_or_a_let_holding_it_draws_the_literals_diagnostic_alone_382()
+ {
+    support::assert_both_engines_agree(exhaustive_an_index_read_of_a_disagreeing_literal_its_slice_or_a_let_holding_it_draws_the_literals_diagnostic_alone_382);
 }

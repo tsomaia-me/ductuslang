@@ -2,7 +2,8 @@ mod support;
 
 use std::collections::{BTreeSet, HashMap};
 
-use symphonyscript::{Code, Compiler, Source};
+use support::Compiler;
+use symphonyscript::{Code, Source};
 use symphonyscript_fixtures::{Rows, covered};
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -1728,4 +1729,73 @@ fn recursive_annotation_outcome(rows: &Rows) -> Outcome {
 fn a_scalar_annotation_refusing_a_choice_with_a_recursive_arm_draws_where_its_fixed_twin_draws_in_either_order_403()
  {
     assert_outcome(&covered(recursive_annotation_outcome), (109, 0));
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_differential_the_arms_of_a_compile_time_true_choice_agree_wherever_it_stands() {
+    support::assert_both_engines_agree(
+        exhaustive_the_arms_of_a_compile_time_true_choice_agree_wherever_it_stands,
+    );
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_differential_the_arms_of_a_compile_time_false_choice_agree_wherever_it_stands() {
+    support::assert_both_engines_agree(
+        exhaustive_the_arms_of_a_compile_time_false_choice_agree_wherever_it_stands,
+    );
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_differential_the_arms_of_a_runtime_choice_agree_wherever_it_stands() {
+    support::assert_both_engines_agree(
+        exhaustive_the_arms_of_a_runtime_choice_agree_wherever_it_stands,
+    );
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_differential_the_arms_of_a_compile_time_enum_match_agree_wherever_it_stands() {
+    support::assert_both_engines_agree(
+        exhaustive_the_arms_of_a_compile_time_enum_match_agree_wherever_it_stands,
+    );
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_differential_the_arms_of_a_match_on_an_enum_input_agree_wherever_it_stands() {
+    support::assert_both_engines_agree(
+        exhaustive_the_arms_of_a_match_on_an_enum_input_agree_wherever_it_stands,
+    );
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_differential_the_arms_of_a_match_on_an_integer_input_agree_wherever_it_stands() {
+    support::assert_both_engines_agree(
+        exhaustive_the_arms_of_a_match_on_an_integer_input_agree_wherever_it_stands,
+    );
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_differential_the_arms_of_a_choice_on_a_compile_time_recursive_functions_parameter_agree_wherever_it_stands()
+ {
+    support::assert_both_engines_agree(exhaustive_the_arms_of_a_choice_on_a_compile_time_recursive_functions_parameter_agree_wherever_it_stands);
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_differential_the_arms_of_a_match_on_a_compile_time_recursive_functions_parameter_agree_wherever_it_stands()
+ {
+    support::assert_both_engines_agree(exhaustive_the_arms_of_a_match_on_a_compile_time_recursive_functions_parameter_agree_wherever_it_stands);
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_differential_a_recursive_results_widening_choice_refused_by_its_holder_draws_the_holders_one_diagnostic_and_nothing_at_the_call_in_every_order_403()
+ {
+    support::assert_both_engines_agree(exhaustive_a_recursive_results_widening_choice_refused_by_its_holder_draws_the_holders_one_diagnostic_and_nothing_at_the_call_in_every_order_403);
 }

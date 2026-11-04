@@ -1,7 +1,8 @@
 mod support;
 
+use support::Compiler;
 use support::{errors, source};
-use symphonyscript::{Code, Compiler};
+use symphonyscript::Code;
 use symphonyscript_core::LimitOverrides;
 use symphonyscript_fixtures::vocabulary;
 

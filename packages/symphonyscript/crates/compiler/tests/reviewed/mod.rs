@@ -147,6 +147,14 @@ pub const REVIEWED: &[Reviewed] = &[
         ],
     ),
     (
+        "476",
+        "Clip c:\n    Note/((if 1 > 0 then [1] else [true])[2 ** 63])\n",
+        &[
+            ("index-out-of-range", "2 ** 63"),
+            ("type-mismatch", "if 1 > 0 then [1] else [true]"),
+        ],
+    ),
+    (
         LIMIT_STOP,
         "fn g(x): for i in 0..x into a from 0: a + i\nfn f(x): g(x) + g(x)\nClip c:\n    Note/(f(2))\n    Note/(f(2))\n    Note/(f(2))\n",
         &[
@@ -269,14 +277,23 @@ fn read_of_a_reactive_let(seen: &Seen<'_>, _: Change, at: &Drawn) -> bool {
         return false;
     }
     let line = seen.line(at.1);
-    let text = seen.program.lines().nth(line).unwrap_or_default();
+    let mut texts = vec![seen.program.lines().nth(line).unwrap_or_default()];
+    if let Some(function) = function_before(seen.program, at.1)
+        .and_then(|text| text.strip_prefix("fn "))
+        .and_then(|text| text.split_once('('))
+        .map(|(name, _)| format!("{name}("))
+    {
+        texts.extend(
+            seen.program
+                .lines()
+                .filter(|text| !text.starts_with("fn ") && text.contains(&function)),
+        );
+    }
     seen.new.iter().any(|drawn| {
         drawn.0 == "reactive-let"
             && top_level_let_name(seen, drawn)
             && seen.line(drawn.1) != line
-            && text
-                .split(|character: char| !(character.is_alphanumeric() || character == '_'))
-                .any(|word| word == seen.text(drawn))
+            && texts.iter().any(|text| reads_word(text, seen.text(drawn)))
     })
 }
 
@@ -573,6 +590,13 @@ fn fold_fault_at_each_call(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool 
         })
 }
 
+fn choice_refused_once(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
+    change == Change::Removed
+        && at.0 == "type-mismatch"
+        && seen.text(at).starts_with("if ")
+        && holds(seen.new, "type-mismatch", at)
+}
+
 pub struct Class {
     pub ledger: &'static str,
     pub rule: &'static str,
@@ -593,7 +617,7 @@ pub const CLASSES: &[Class] = &[
     },
     Class {
         ledger: "464",
-        rule: "a read of a top-level let reading a cell keeps the let's known type, so the expression reading it draws the faults that type gives beside the let's reactive-let, where the old engine read the let as a placeholder",
+        rule: "a read of a top-level let reading a cell keeps the let's known type, so the expression reading it, directly or through a call it is passed to, draws the faults that type gives beside the let's reactive-let, where the old engine read the let as a placeholder",
         explains: read_of_a_reactive_let,
     },
     Class {
@@ -650,6 +674,11 @@ pub const CLASSES: &[Class] = &[
         ledger: "479",
         rule: "a fault inside a fold in a function body draws at each call site with that site's chain, the body checked as inlined at the call (SPEC §6.3), where the old engine draws it at the first site alone",
         explains: fold_fault_at_each_call,
+    },
+    Class {
+        ledger: "411",
+        rule: "a choice whose arms the position refuses as one value draws one type-mismatch at the choice, where the old engine draws a second one there for the same fault (ledger 385's rule, ARCHITECTURE §7: one fault draws one diagnostic)",
+        explains: choice_refused_once,
     },
 ];
 

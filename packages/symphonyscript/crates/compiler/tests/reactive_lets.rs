@@ -1,6 +1,7 @@
 mod support;
 
-use symphonyscript::{Code, Compiler};
+use support::Compiler;
+use symphonyscript::Code;
 use symphonyscript_fixtures::vocabulary;
 
 const CELLS: &str = "state note(60)\nstate flag(false)\nstate held([]): i32[..4]\nstate w(Wave::Saw)\nstate level(0.5)\nClip verse | gain=0.5:\n    Note\nClip bound | gain=level:\n    Note\n";

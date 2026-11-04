@@ -1,7 +1,8 @@
 #![allow(dead_code, unused_imports)]
 
 use symphonyscript::syntax::{ElementView, NodeView, Parsed, SyntaxKind, Walk, parse};
-use symphonyscript::{Code, Compiler, Diagnostic, Severity, Source};
+use symphonyscript::{Code, Diagnostic, Selector, Severity, Source};
+use symphonyscript_core::LimitOverrides;
 use symphonyscript_core::Vocabulary;
 use symphonyscript_fixtures::vocabulary;
 pub use symphonyscript_fixtures::{Orders, signature_vocabulary, to_array_vocabulary};
@@ -299,4 +300,204 @@ pub fn assert_none_fail((failures, programs): (Vec<String>, usize), expected: us
         failures.len()
     );
     assert_eq!(programs, expected);
+}
+
+#[path = "../reviewed/mod.rs"]
+pub mod reviewed;
+
+static COMPARING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+static TAKEN: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+static MOVED: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+static DIFFERING: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
+
+pub struct Compiler {
+    new: symphonyscript::Compiler,
+    old: std::sync::OnceLock<Option<symphonyscript::Compiler>>,
+    vocabulary: Vocabulary,
+    limits: LimitOverrides,
+}
+
+impl Compiler {
+    pub fn new(vocabulary: &Vocabulary) -> Result<Compiler, symphonyscript::Failed> {
+        Compiler::with_limits(vocabulary, LimitOverrides::default())
+    }
+
+    pub fn with_limits(
+        vocabulary: &Vocabulary,
+        limits: LimitOverrides,
+    ) -> Result<Compiler, symphonyscript::Failed> {
+        Ok(Compiler {
+            new: symphonyscript::Compiler::with_limits(vocabulary, limits)?,
+            old: std::sync::OnceLock::new(),
+            vocabulary: vocabulary.clone(),
+            limits,
+        })
+    }
+
+    pub fn select(&mut self, selector: Selector) {
+        self.new.select(selector);
+    }
+
+    pub fn taken_by_new_core(&self) -> u64 {
+        self.new.taken_by_new_core()
+    }
+
+    pub fn check(&self, sources: &[Source]) -> Vec<Diagnostic> {
+        let before = self.new.taken_by_new_core();
+        let found = self.new.check(sources);
+        if COMPARING.load(std::sync::atomic::Ordering::Relaxed)
+            && self.new.taken_by_new_core() > before
+            && let Some(old) = self.old.get_or_init(|| {
+                let mut old =
+                    symphonyscript::Compiler::with_limits(&self.vocabulary, self.limits).ok()?;
+                old.select(Selector::OldEngine);
+                Some(old)
+            })
+        {
+            TAKEN.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            compared(sources, &found, &old.check(sources));
+        }
+        found
+    }
+}
+
+fn drawn(found: &[Diagnostic]) -> Vec<reviewed::Drawn> {
+    found
+        .iter()
+        .filter(|diagnostic| diagnostic.code != Code::NoEntryInstance)
+        .map(|diagnostic| {
+            (
+                diagnostic.code.to_string(),
+                diagnostic.span.range.start as usize,
+                diagnostic.span.range.end as usize,
+            )
+        })
+        .collect()
+}
+
+fn kept(
+    found: &[Diagnostic],
+    own: &[reviewed::Drawn],
+    other: &[reviewed::Drawn],
+) -> Vec<Diagnostic> {
+    let mut left: Vec<&reviewed::Drawn> = other.iter().collect();
+    found
+        .iter()
+        .filter(|diagnostic| diagnostic.code != Code::NoEntryInstance)
+        .zip(own)
+        .filter(|(_, at)| match left.iter().position(|kept| kept == at) {
+            Some(position) => {
+                left.swap_remove(position);
+                true
+            }
+            None => false,
+        })
+        .map(|(diagnostic, _)| diagnostic.clone())
+        .collect()
+}
+
+fn compared(sources: &[Source], found: &[Diagnostic], expected: &[Diagnostic]) {
+    let joined: Vec<&str> = sources.iter().map(|source| source.text.as_str()).collect();
+    let joined = joined.join("\n");
+    let text = joined.as_str();
+    let (found, expected) = match sources {
+        [first, _, ..] => {
+            let part = |set: &[Diagnostic], own: bool| -> Vec<Diagnostic> {
+                set.iter()
+                    .filter(|diagnostic| (diagnostic.span.file == first.path) == own)
+                    .cloned()
+                    .collect()
+            };
+            if part(found, false) != part(expected, false) {
+                record(sources, text, found, expected);
+                return;
+            }
+            (part(found, true), part(expected, true))
+        }
+        _ => (found.to_vec(), expected.to_vec()),
+    };
+    let (found, expected) = (found.as_slice(), expected.as_slice());
+    let reviewed_set = reviewed::reviewed(text).map(|(_, wanted)| wanted);
+    let same = match &reviewed_set {
+        Some(wanted) => {
+            let mut spans: Vec<(String, String)> = drawn(found)
+                .into_iter()
+                .map(|(code, lo, hi)| (code, text.get(lo..hi).unwrap_or_default().to_string()))
+                .collect();
+            spans.sort();
+            &spans == wanted
+        }
+        None => found == expected,
+    };
+    if same {
+        if reviewed_set.is_some() {
+            MOVED.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        }
+        return;
+    }
+    if reviewed_set.is_none() && !text.is_empty() {
+        let (old, new) = (drawn(expected), drawn(found));
+        if let Ok(classes) = reviewed::moved(text, &old, &new)
+            && !classes.is_empty()
+            && kept(found, &new, &old) == kept(expected, &old, &new)
+        {
+            MOVED.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            return;
+        }
+    }
+    record(sources, text, found, expected);
+}
+
+fn record(sources: &[Source], text: &str, found: &[Diagnostic], expected: &[Diagnostic]) {
+    let files: Vec<&str> = sources.iter().map(|source| source.text.as_str()).collect();
+    let shown = |set: &[Diagnostic]| -> String {
+        set.iter()
+            .filter(|diagnostic| diagnostic.code != Code::NoEntryInstance)
+            .map(|diagnostic| {
+                let range =
+                    diagnostic.span.range.start as usize..diagnostic.span.range.end as usize;
+                format!(
+                    "\n    {} `{}` [{}] {}",
+                    diagnostic.code,
+                    text.get(range).unwrap_or_default(),
+                    diagnostic.related.len(),
+                    diagnostic.summary
+                )
+            })
+            .collect()
+    };
+    if let Ok(mut differing) = DIFFERING.lock() {
+        let entry = format!(
+            "{}\n  new core:{}\n  old engine:{}",
+            files.join("\n----\n"),
+            shown(found),
+            shown(expected)
+        );
+        if !differing.contains(&entry) {
+            differing.push(entry);
+        }
+    }
+}
+
+pub fn assert_both_engines_agree(run: impl FnOnce()) {
+    COMPARING.store(true, std::sync::atomic::Ordering::Relaxed);
+    run();
+    COMPARING.store(false, std::sync::atomic::Ordering::Relaxed);
+    let taken = TAKEN.load(std::sync::atomic::Ordering::Relaxed);
+    let moved = MOVED.load(std::sync::atomic::Ordering::Relaxed);
+    let differing = DIFFERING
+        .lock()
+        .map(|list| list.clone())
+        .unwrap_or_default();
+    eprintln!("the new core took {taken} programs, {moved} of them moved by a reviewed rule");
+    for entry in &differing {
+        eprintln!("DIFFERS {entry}");
+    }
+    let shown: Vec<&str> = differing.iter().take(5).map(String::as_str).collect();
+    assert!(
+        differing.is_empty(),
+        "{} of {taken} programs the new core took differ from the old engine:\n{}",
+        differing.len(),
+        shown.join("\n")
+    );
 }

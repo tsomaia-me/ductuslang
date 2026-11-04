@@ -1,6 +1,7 @@
 mod support;
 
-use symphonyscript::{Code, Compiler, Diagnostic};
+use support::Compiler;
+use symphonyscript::{Code, Diagnostic};
 use symphonyscript_fixtures::{Rows, covered, spec_examples, vocabulary};
 
 const HEADS: [(&str, &str, bool); 6] = [
@@ -331,4 +332,20 @@ fn every_array_iterates_element_by_element_at_every_site_and_any_other_iterable_
 fn exhaustive_every_array_iterates_element_by_element_at_every_site_and_any_other_iterable_draws_iterable_type()
  {
     support::assert_none_fail(iterable_rows(&Rows::Every), 46);
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_differential_a_loop_head_binds_one_or_two_annotated_names_at_every_site_and_a_range_binds_one()
+ {
+    support::assert_both_engines_agree(
+        exhaustive_a_loop_head_binds_one_or_two_annotated_names_at_every_site_and_a_range_binds_one,
+    );
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_differential_every_array_iterates_element_by_element_at_every_site_and_any_other_iterable_draws_iterable_type()
+ {
+    support::assert_both_engines_agree(exhaustive_every_array_iterates_element_by_element_at_every_site_and_any_other_iterable_draws_iterable_type);
 }

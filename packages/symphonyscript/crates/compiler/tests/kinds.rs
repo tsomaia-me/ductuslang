@@ -1,6 +1,7 @@
 mod support;
 
-use symphonyscript::{Code, Compiler};
+use support::Compiler;
+use symphonyscript::Code;
 use symphonyscript_fixtures::{Orders, Rows, covered, vocabulary};
 
 const BASES: [(&str, &str, &str, &str); 4] = [
@@ -94,4 +95,13 @@ fn an_element_read_whose_compile_time_index_is_in_error_has_its_elements_type() 
 #[ignore = "exhaustive"]
 fn exhaustive_an_element_read_whose_compile_time_index_is_in_error_has_its_elements_type() {
     support::assert_none_fail(index_rows(&Rows::Every, Orders::Every), 72);
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_differential_an_element_read_whose_compile_time_index_is_in_error_has_its_elements_type()
+ {
+    support::assert_both_engines_agree(
+        exhaustive_an_element_read_whose_compile_time_index_is_in_error_has_its_elements_type,
+    );
 }
