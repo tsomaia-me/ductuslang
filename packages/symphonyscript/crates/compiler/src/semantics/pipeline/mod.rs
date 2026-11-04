@@ -26,9 +26,14 @@ mod leaf;
 #[cfg(test)]
 mod ledger_tests;
 mod locals;
+mod memo;
+mod memo_arg;
+mod memo_entry;
+mod memo_key;
 mod need;
 mod pick;
 mod reason;
+mod recording;
 mod run;
 mod slice;
 mod stages;

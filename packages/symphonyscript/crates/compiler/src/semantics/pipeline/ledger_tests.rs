@@ -15,7 +15,7 @@ struct Run {
     walks: u64,
 }
 
-const CORE_WALKS: [CountedWalk; 10] = [
+const CORE_WALKS: [CountedWalk; 11] = [
     CountedWalk::BindLookup,
     CountedWalk::CoreExpandRow,
     CountedWalk::SigNode,
@@ -25,6 +25,7 @@ const CORE_WALKS: [CountedWalk; 10] = [
     CountedWalk::CursorStep,
     CountedWalk::DenseLayout,
     CountedWalk::CoreUse,
+    CountedWalk::CallMemo,
     CountedWalk::SymbolProbe,
 ];
 

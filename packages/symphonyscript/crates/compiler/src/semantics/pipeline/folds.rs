@@ -549,6 +549,7 @@ impl Core<'_> {
             return Ok(());
         }
         let span = self.node_span(node)?;
+        self.unmemoized();
         let diagnostic = Diagnostic::new(code, span, message);
         self.stop = Some((self.diagnostics.len(), diagnostic));
         Ok(())
@@ -564,6 +565,7 @@ impl Core<'_> {
         if self.stop.is_some() || !self.warned.insert(node) {
             return Ok(());
         }
+        self.unmemoized();
         let span = self.node_span(node)?;
         let diagnostic = Diagnostic::new(
             Code::LimitWarning,

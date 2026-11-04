@@ -434,6 +434,7 @@ impl Core<'_> {
                     }
                     None if called => {
                         self.eval_chain.pop();
+                        self.end_recording(frames.len() + 1, &value);
                         if let Some(parent) = frames.last_mut() {
                             parent.values.push(value);
                         }
@@ -525,6 +526,7 @@ impl Core<'_> {
                                 && !*owned
                             {
                                 *owned = true;
+                                self.unmemoized();
                                 if let Err(declined) = self.operand_fits(at)? {
                                     return Ok(Err(declined));
                                 }
@@ -740,7 +742,17 @@ impl Core<'_> {
                         frame.values.push(Value::Error);
                         continue;
                     };
+                    let key = self.memo_key(body, call_ty, &args);
+                    if let Some(key) = key.as_ref()
+                        && let Some(value) = self.memo_hit(key, call)
+                    {
+                        frame.values.push(value);
+                        continue;
+                    }
                     let value = self.body_value(body)?;
+                    if let Some(key) = key {
+                        self.begin_recording(key, frames.len() + 1);
+                    }
                     self.eval_chain.push(call);
                     frames.push(Frame {
                         owner: None,
@@ -1398,6 +1410,7 @@ impl Core<'_> {
                         && !*owned
                     {
                         *owned = true;
+                        self.unmemoized();
                         fits.push(at);
                         stack.push((self.let_root(at)?, false));
                     }

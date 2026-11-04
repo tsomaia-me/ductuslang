@@ -1632,3 +1632,65 @@ fn a_fold_body_reads_an_enclosing_fold_or_function_name_from_the_frame_that_bind
         assert_eq!(found, old.check(&sources), "{text}");
     }
 }
+
+const MEMOIZED_CALLS: [&str; 8] = [
+    "fn f(x): x * 4611686018427387904\nClip c:\n    Note/(f(4))\n    Note/(f(4))\n",
+    "fn f(x): u8(x) + 1\nClip c:\n    Note/(f(300))\n    Note/(f(300))\n",
+    "fn g(x): u8(x)\nfn f(x): g(x) + g(x)\nClip c:\n    Note/(f(300))\n    Note/(f(300))\n",
+    "let big = [1, 2]\nfn f(x): x[5]\nClip c:\n    Note/(f(big))\n    Note/(f(big))\n",
+    "let big = [1, 2]\nfn g(x): x[5]\nfn f(x): g(x) + 1\nClip c:\n    Note/(f(big))\n    Note/(f(big))\n",
+    "fn f(x): [1, 2][x]\nClip c:\n    Note/(f(4))\n    Note/(f(4))\n    Note/(f(1))\n",
+    "fn f(x): for i in 0..x into a from 0: a + i\nClip c:\n    Note/(f(2))\n    Note/(f(2))\n    Note/(f(2))\n",
+    "let big = [1, 2]\nfn f(x): x[0] + x[1]\nClip c:\n    Note/(f(big))\n    Note | velocity=(f(big))\n",
+];
+
+type Stop = (
+    &'static str,
+    [(&'static str, std::ops::Range<u32>, usize); 2],
+);
+
+const MEMOIZED_STOPS: [Stop; 2] = [
+    (
+        "fn f(x): for i in 0..x into a from 0: a + i\nClip c:\n    Note/(f(3))\n    Note/(f(3))\n    Note/(f(3))\n    Note/(f(3))\n",
+        [("expansion-limit", 9..43, 0), ("limit-warning", 9..43, 1)],
+    ),
+    (
+        "fn g(x): for i in 0..x into a from 0: a + i\nfn f(x): g(x) + g(x)\nClip c:\n    Note/(f(2))\n    Note/(f(2))\n    Note/(f(2))\n",
+        [("expansion-limit", 9..43, 0), ("limit-warning", 9..43, 2)],
+    ),
+];
+
+#[test]
+fn a_memoized_call_draws_its_faults_at_each_sites_chain_and_charges_its_iterations_again() {
+    let overrides = symphonyscript_core::LimitOverrides {
+        expansion_steps: Some(10),
+        expansion_steps_warning: Some(5),
+        ..symphonyscript_core::LimitOverrides::default()
+    };
+    let vocabulary = symphonyscript_fixtures::vocabulary();
+    let old = Compiler::with_limits(&vocabulary, overrides)
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
+    let new = Compiler::with_limits(&vocabulary, overrides).expect("the vocabulary compiles");
+    for text in MEMOIZED_CALLS {
+        let sources = [source(text)];
+        let found = new
+            .checked_by_new_core(&sources)
+            .unwrap_or_else(|| panic!("the new core takes {text}"));
+        assert_eq!(found, old.check(&sources), "{text}");
+    }
+    for (text, expected) in MEMOIZED_STOPS {
+        let found = new
+            .checked_by_new_core(&[source(text)])
+            .unwrap_or_else(|| panic!("the new core takes {text}"));
+        let found: Vec<_> = found
+            .iter()
+            .map(|d| (d.code.to_string(), d.span.range.clone(), d.related.len()))
+            .collect();
+        let expected: Vec<_> = expected
+            .iter()
+            .map(|(code, range, chain)| (code.to_string(), range.clone(), *chain))
+            .collect();
+        assert_eq!(found, expected, "{text}");
+    }
+}

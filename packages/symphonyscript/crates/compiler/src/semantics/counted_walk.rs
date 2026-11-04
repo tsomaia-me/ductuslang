@@ -195,11 +195,12 @@ pub(crate) enum CountedWalk {
     CursorStep,
     DenseLayout,
     CoreUse,
+    CallMemo,
     SymbolProbe,
 }
 
 #[cfg(test)]
-const WALKS: usize = 190;
+const WALKS: usize = 191;
 
 #[cfg(test)]
 thread_local! {
@@ -398,6 +399,7 @@ impl CountedWalk {
         CountedWalk::CursorStep,
         CountedWalk::DenseLayout,
         CountedWalk::CoreUse,
+        CountedWalk::CallMemo,
         CountedWalk::SymbolProbe,
     ];
 

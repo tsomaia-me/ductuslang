@@ -8,7 +8,10 @@ use super::decl_ref::DeclRef;
 use super::declined::Declined;
 use super::fact::Fact;
 use super::instance_row::InstanceRow;
+use super::memo_entry::MemoEntry;
+use super::memo_key::MemoKey;
 use super::need::Need;
+use super::recording::Recording;
 use super::store::Store;
 use crate::diagnostics::{Code, Diagnostic, Related};
 use crate::semantics::Internal;
@@ -75,6 +78,8 @@ pub(crate) struct Core<'a> {
     pub reached: Vec<bool>,
     pub body_index: HashMap<BodyKey, u32>,
     pub outer_owner: HashMap<u32, u32>,
+    pub call_memo: HashMap<MemoKey, MemoEntry>,
+    pub recordings: Vec<Recording>,
     pub reaches_out: Vec<bool>,
 }
 
@@ -138,6 +143,8 @@ impl<'a> Core<'a> {
             reached: vec![false; nodes],
             body_index: HashMap::new(),
             outer_owner: HashMap::new(),
+            call_memo: HashMap::new(),
+            recordings: Vec::new(),
             reaches_out: vec![false; ir.fors.len()],
         }
     }
@@ -338,7 +345,8 @@ impl Core<'_> {
 }
 
 impl Core<'_> {
-    fn push_drawn(&mut self, diagnostic: Diagnostic) {
+    pub fn push_drawn(&mut self, diagnostic: Diagnostic) {
+        self.record(&diagnostic);
         if self.eval_chain.is_empty() {
             self.diagnostics.push(diagnostic);
         } else {

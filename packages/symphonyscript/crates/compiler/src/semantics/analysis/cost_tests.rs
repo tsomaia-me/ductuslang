@@ -456,7 +456,7 @@ struct Measured {
     new_core: bool,
 }
 
-const CORE_WALKS: [CountedWalk; 9] = [
+const CORE_WALKS: [CountedWalk; 10] = [
     CountedWalk::BindLookup,
     CountedWalk::CoreExpandRow,
     CountedWalk::SigNode,
@@ -466,6 +466,7 @@ const CORE_WALKS: [CountedWalk; 9] = [
     CountedWalk::CursorStep,
     CountedWalk::DenseLayout,
     CountedWalk::CoreUse,
+    CountedWalk::CallMemo,
 ];
 
 fn core_walk_failure(run: &Measured, name: &str, text: &str) -> Option<String> {
