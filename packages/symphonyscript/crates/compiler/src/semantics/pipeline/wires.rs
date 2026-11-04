@@ -87,6 +87,7 @@ impl Core<'_> {
         if !self.charge_item(file, wire.lo, wire.hi)? {
             return Ok(Ok(()));
         }
+        let chosen = self.ir.node(wire.destination)?.0 != Op::Name;
         self.wires.push(WireRow {
             kind,
             item,
@@ -94,27 +95,29 @@ impl Core<'_> {
             source,
             candidates: (0, 0),
             fixed: false,
+            chosen,
         });
         Ok(Ok(()))
+    }
+
+    pub fn candidate_row(&self, node: u32) -> Result<u32, Internal> {
+        Ok(match self.bind.get(self.local(node)?).copied() {
+            Some(DeclRef::Instance(item)) => {
+                self.row_of_item.get(item as usize).copied().unwrap_or(NONE)
+            }
+            Some(_) | None => NONE,
+        })
     }
 
     pub fn resolve_destinations(&mut self) -> Result<(), Internal> {
         for at in 0..self.wires.len() {
             CountedWalk::CoreWireDestination.step();
             let row = *self.wires.get(at).ok_or(Internal::missed("wire row"))?;
-            let root = self.wire_rec(row.item)?.destination;
-            let (op, _, _, _) = self.ir.node(root)?;
-            if op != Op::Name {
-                return Err(Internal::missed(
-                    "a destination the coverage table leaves out",
-                ));
+            if row.chosen {
+                continue;
             }
-            let target = match self.bind.get(self.local(root)?).copied() {
-                Some(DeclRef::Instance(item)) => {
-                    self.row_of_item.get(item as usize).copied().unwrap_or(NONE)
-                }
-                Some(_) | None => NONE,
-            };
+            let root = self.wire_rec(row.item)?.destination;
+            let target = self.candidate_row(root)?;
             let first = index(self.candidates.len());
             if target != NONE {
                 self.candidates.push(target);

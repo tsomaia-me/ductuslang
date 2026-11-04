@@ -378,15 +378,6 @@ impl Core<'_> {
         for (_, faults) in left {
             self.diagnostics.extend(faults);
         }
-        let roots: Vec<u32> = self
-            .attr_reads
-            .iter()
-            .map(|read| read.root)
-            .filter(|root| *root != NONE)
-            .collect();
-        if self.roots_read_cell(roots)? {
-            return Ok(Err(Declined(Reason::ReactivePath)));
-        }
         if !self.attr_reads.is_empty() && self.recursive()? {
             return Ok(Err(Declined(Reason::Recursion)));
         }
@@ -452,51 +443,29 @@ impl Core<'_> {
         }
     }
 
-    fn roots_read_cell(&mut self, roots: Vec<u32>) -> Result<bool, Internal> {
-        let mut seen_lets = vec![false; self.ir.lets.len()];
-        let mut seen_reads = vec![false; self.attr_reads.len()];
-        let mut stack = roots;
-        while let Some(current) = stack.pop() {
-            for node in self.deep_postorder(current)? {
-                let (op, _, _, _) = self.ir.node(node)?;
-                if op == Op::Field {
-                    let read = self.paths.get(self.local(node)?).copied().unwrap_or(NONE);
-                    if let Some(slot) = seen_reads.get_mut(read as usize)
-                        && !*slot
-                    {
-                        *slot = true;
-                        let inner = self
-                            .attr_reads
-                            .get(read as usize)
-                            .map_or(NONE, |at| at.root);
-                        if inner != NONE {
-                            stack.push(inner);
-                        }
-                    }
-                    continue;
-                }
-                if op != Op::Name {
-                    continue;
-                }
-                match self.bound(node)? {
-                    DeclRef::Cell(_) => return Ok(true),
-                    DeclRef::Let(at) => {
-                        if let Some(slot) = seen_lets.get_mut(at as usize)
-                            && !*slot
-                        {
-                            *slot = true;
-                            stack.push(self.let_root(at)?);
-                        }
-                    }
-                    DeclRef::None
-                    | DeclRef::Instance(_)
-                    | DeclRef::Duplicate
-                    | DeclRef::Param(_)
-                    | DeclRef::Fn(_) => {}
-                }
-            }
+    pub fn read_root(&self, node: u32) -> Result<Option<u32>, Internal> {
+        Ok(self
+            .path_read(node)?
+            .filter(|read| !read.cyclic && read.root != NONE)
+            .map(|read| read.root))
+    }
+
+    pub fn bare_cell_read(&self, node: u32) -> Result<Option<u32>, Internal> {
+        let Some(root) = self.read_root(node)? else {
+            return Ok(None);
+        };
+        if self.ir.node(root)?.0 != Op::Name {
+            return Ok(None);
         }
-        Ok(false)
+        Ok(match self.bound(root)? {
+            DeclRef::Cell(at) => Some(at),
+            DeclRef::None
+            | DeclRef::Instance(_)
+            | DeclRef::Duplicate
+            | DeclRef::Let(_)
+            | DeclRef::Param(_)
+            | DeclRef::Fn(_) => None,
+        })
     }
 
     pub fn path_read(&self, node: u32) -> Result<Option<&AttrRead>, Internal> {
@@ -650,7 +619,7 @@ impl Core<'_> {
         ))
     }
 
-    fn destination_path_end(&mut self, node: u32) -> Stage<End> {
+    fn segments_to_wire(&self, node: u32) -> Result<(Vec<u32>, u32), Internal> {
         let mut segments = Vec::new();
         let mut current = node;
         loop {
@@ -666,6 +635,11 @@ impl Core<'_> {
         let wire = self
             .to_wire(current)
             .ok_or(Internal::missed("a `to` path's wire"))?;
+        Ok((segments, wire))
+    }
+
+    fn destination_path_end(&mut self, node: u32) -> Stage<End> {
+        let (segments, wire) = self.segments_to_wire(node)?;
         if wire == NONE {
             return Ok(Ok(End::Placeholder));
         }
@@ -673,15 +647,111 @@ impl Core<'_> {
             .wires
             .get(wire as usize)
             .ok_or(Internal::missed("wire row"))?;
-        let mut target = match self.wire_targets(&row).as_slice() {
-            [] => return Ok(Ok(End::Placeholder)),
-            [target] => *target,
-            _ => {
-                return Err(Internal::missed(
-                    "a destination the coverage table leaves out",
-                ));
+        if row.chosen {
+            self.deferred_to.push(node);
+            return Ok(Ok(End::Placeholder));
+        }
+        let targets = self.wire_targets(&row);
+        if targets.is_empty() {
+            return Ok(Ok(End::Placeholder));
+        }
+        self.end_over_candidates(node, &segments, &targets)
+    }
+
+    pub fn resolve_chosen_paths(&mut self) -> Stage<()> {
+        let mut deferred = std::mem::take(&mut self.deferred_to);
+        deferred.sort_unstable();
+        for node in deferred {
+            let (segments, wire) = self.segments_to_wire(node)?;
+            let row = *self
+                .wires
+                .get(wire as usize)
+                .ok_or(Internal::missed("wire row"))?;
+            let targets = self
+                .candidates
+                .get(row.candidates.0 as usize..row.candidates.1 as usize)
+                .unwrap_or_default()
+                .to_vec();
+            if targets.is_empty() {
+                continue;
             }
+            let end = match self.end_over_candidates(node, &segments, &targets)? {
+                Ok(end) => end,
+                Err(declined) => return Ok(Err(declined)),
+            };
+            let End::Attr(at) = end else {
+                continue;
+            };
+            let local = self.local(node)?;
+            if let Some(slot) = self.paths.get_mut(local) {
+                *slot = at;
+            }
+            let read = self
+                .attr_reads
+                .get(at as usize)
+                .ok_or(Internal::missed("attribute read"))?;
+            if !read.cyclic
+                && read.root != NONE
+                && let Err(declined) = self.ensure_typed(read.root)?
+            {
+                return Ok(Err(declined));
+            }
+        }
+        Ok(Ok(()))
+    }
+
+    fn end_over_candidates(&mut self, node: u32, segments: &[u32], targets: &[u32]) -> Stage<End> {
+        let several = targets.len() > 1;
+        let mut found = Vec::with_capacity(targets.len());
+        for target in targets {
+            CountedWalk::CorePathStep.step();
+            match self.candidate_attr(node, segments, *target, several)? {
+                Ok(Ok(attr)) => found.push(attr),
+                Ok(Err(end)) => return Ok(Ok(end)),
+                Err(declined) => return Ok(Err(declined)),
+            }
+        }
+        let Some((row, attr, ty)) = found.first().copied() else {
+            return Ok(Ok(End::Placeholder));
         };
+        if !several {
+            return Ok(Ok(End::Attr(self.attr_read(row, attr, ty)?)));
+        }
+        if let Some((other, _, _)) = found.iter().find(|(_, _, own)| *own != ty).copied() {
+            let name = self
+                .vocabulary
+                .node_kind(
+                    self.instances
+                        .get(row as usize)
+                        .ok_or(Internal::missed("row"))?
+                        .kind,
+                )
+                .and_then(|decl| decl.attrs.get(attr))
+                .ok_or(Internal::missed("attribute"))?
+                .name
+                .clone();
+            let (one, other) = (self.row_owner(row)?, self.row_owner(other)?);
+            self.draw_at(
+                Code::ToCandidates,
+                node,
+                format!(
+                    "the destination candidates hold `{name}` with different types or unit families, {one} and {other} among them, and a `to` read takes one"
+                ),
+            )?;
+            return Ok(Ok(End::Value));
+        }
+        self.to_choices.insert(node, ty);
+        Ok(Ok(End::Value))
+    }
+
+    fn candidate_attr(
+        &mut self,
+        node: u32,
+        segments: &[u32],
+        start: u32,
+        several: bool,
+    ) -> Stage<Result<(u32, usize, EvalTy), End>> {
+        let mut target = start;
         let text = segments
             .iter()
             .map(|segment| self.ir.name_text(*segment).unwrap_or_default())
@@ -691,6 +761,11 @@ impl Core<'_> {
         let (last, steps) = segments
             .split_last()
             .ok_or(Internal::missed("a `to` path's segment"))?;
+        let missing = if several {
+            Code::ToCandidates
+        } else {
+            Code::UnknownAttribute
+        };
         for step in steps {
             let entry = *self.ir.name(*step).ok_or(Internal::missed("IR name"))?;
             if let Some(child) = self.child_named(target, entry.sym.0) {
@@ -698,19 +773,19 @@ impl Core<'_> {
                 continue;
             }
             if self.may_name_any(target)? {
-                return Ok(Ok(End::Placeholder));
+                return Ok(Ok(Err(End::Placeholder)));
             }
             let owner = self.row_owner(target)?;
             let span = self.span(file, entry.lo, entry.hi);
             let name = self.ir.symbols.text(entry.sym).to_string();
             self.draw(
-                Code::UnknownAttribute,
+                missing,
                 span,
                 format!(
                     "{owner} has no named child, wire or pattern use `{name}`, so `to.{text}` reads nothing there"
                 ),
             );
-            return Ok(Ok(End::Value));
+            return Ok(Ok(Err(End::Value)));
         }
         let entry = *self.ir.name(*last).ok_or(Internal::missed("IR name"))?;
         let span = self.span(file, entry.lo, entry.hi);
@@ -722,7 +797,7 @@ impl Core<'_> {
                     "`to.{text}` ends at an instance or a wire; a `to` path ends at an attribute"
                 ),
             );
-            return Ok(Ok(End::Value));
+            return Ok(Ok(Err(End::Value)));
         }
         let kind = self
             .instances
@@ -736,21 +811,26 @@ impl Core<'_> {
         let name = self.ir.symbols.text(entry.sym).to_string();
         let Some(attr) = decl.attrs.iter().position(|attr| attr.name == name) else {
             if self.may_name_any(target)? {
-                return Ok(Ok(End::Placeholder));
+                return Ok(Ok(Err(End::Placeholder)));
             }
             let owner = self.row_owner(target)?;
+            let code = if steps.is_empty() {
+                Code::UnknownAttribute
+            } else {
+                missing
+            };
             self.draw(
-                Code::UnknownAttribute,
+                code,
                 span,
                 format!("the destination, {owner}, has no attribute `{name}`"),
             );
-            return Ok(Ok(End::Value));
+            return Ok(Ok(Err(End::Value)));
         };
         let declared = decl.attrs.get(attr).ok_or(Internal::missed("attribute"))?;
         let Some(ty) = super::check::expected(declared) else {
             return Ok(Err(Declined(super::check::attribute_reason(declared))));
         };
-        Ok(Ok(End::Attr(self.attr_read(target, attr, ty)?)))
+        Ok(Ok(Ok((target, attr, ty))))
     }
 }
 

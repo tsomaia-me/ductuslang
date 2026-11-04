@@ -52,6 +52,12 @@ impl Core<'_> {
                 DeclRef::None | DeclRef::Instance(_) | DeclRef::Duplicate | DeclRef::Fn(_) => false,
             });
         }
+        if op == Op::Field {
+            return match self.read_root(node)? {
+                Some(root) => self.is_reactive(root),
+                None => Ok(self.to_choices.contains_key(&node)),
+            };
+        }
         if matches!(op, Op::Call | Op::NamedCall) {
             return self.call_reactive(node);
         }
@@ -86,18 +92,35 @@ impl Core<'_> {
             return Ok(*known);
         }
         let mut seen = std::collections::HashSet::new();
+        let mut seen_roots = std::collections::HashSet::new();
         let mut stack = vec![at];
+        let mut paths = Vec::new();
         let mut found = false;
-        while let Some(current) = stack.pop() {
-            if let Some(Some(known)) = self.reads_cell.get(current as usize) {
-                found = found || *known;
-                continue;
-            }
-            if !seen.insert(current) {
-                continue;
-            }
-            for node in self.deep_postorder(self.let_root(current)?)? {
+        loop {
+            let root = if let Some(current) = stack.pop() {
+                if let Some(Some(known)) = self.reads_cell.get(current as usize) {
+                    found = found || *known;
+                    continue;
+                }
+                if !seen.insert(current) {
+                    continue;
+                }
+                self.let_root(current)?
+            } else if let Some(root) = paths.pop() {
+                root
+            } else {
+                break;
+            };
+            for node in self.deep_postorder(root)? {
                 let (op, _, _, _) = self.ir.node(node)?;
+                if op == Op::Field {
+                    if let Some(inner) = self.read_root(node)?
+                        && seen_roots.insert(inner)
+                    {
+                        paths.push(inner);
+                    }
+                    continue;
+                }
                 if op != Op::Name {
                     continue;
                 }
@@ -301,6 +324,16 @@ impl Core<'_> {
                 node = a;
                 continue;
             }
+            if op == Op::Field {
+                let Some(root) = self.read_root(node)? else {
+                    return Ok(false);
+                };
+                if self.bare_cell_read(node)?.is_some() {
+                    node = root;
+                    continue;
+                }
+                return self.reads_cell_directly(root);
+            }
             if op == Op::Slice {
                 node = a;
                 continue;
@@ -319,6 +352,11 @@ impl Core<'_> {
                 continue;
             }
             for node in self.deep_postorder(self.let_root(current)?)? {
+                if let Some(cell) = self.bare_cell_read(node)?
+                    && self.cell_annotation_ty(cell)?.is_none()
+                {
+                    return Ok(false);
+                }
                 if self.ir.node(node)?.0 != Op::Name {
                     continue;
                 }
@@ -337,5 +375,28 @@ impl Core<'_> {
             }
         }
         Ok(true)
+    }
+}
+
+impl Core<'_> {
+    fn reads_cell_directly(&self, root: u32) -> Result<bool, Internal> {
+        let mut seen = std::collections::HashSet::new();
+        let mut stack = vec![root];
+        while let Some(current) = stack.pop() {
+            if !seen.insert(current) {
+                continue;
+            }
+            for node in self.deep_postorder(current)? {
+                let (op, _, _, _) = self.ir.node(node)?;
+                if op == Op::Field {
+                    stack.extend(self.read_root(node)?);
+                    continue;
+                }
+                if op == Op::Name && matches!(self.bound(node)?, DeclRef::Cell(_)) {
+                    return Ok(true);
+                }
+            }
+        }
+        Ok(false)
     }
 }

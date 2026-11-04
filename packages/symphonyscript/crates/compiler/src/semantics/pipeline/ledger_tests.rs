@@ -778,3 +778,29 @@ fn stress_to_paths_cost_time_and_memory_linear_in_the_wires_and_their_paths() {
         Timing::Judged,
     ));
 }
+
+fn chosen_rings(n: usize) -> String {
+    let mut text = String::from("state look(0)\n");
+    for at in 0..n {
+        let next = (at + 1) % n;
+        let far = (at + 7) % n;
+        let back = (at + n - 1) % n;
+        text.push_str(&format!(
+            "Clip c{at} | gain=0.5:\n    Note as h /60 | velocity=0.25\n    Plays | gain=to.h.velocity transpose=to.h.pitch: [c{next}, c{far}, c{back}][look]\n    Plays | gain=to.gain: if look > 0 then c{far} else (if true then c{next} else c{back})\n"
+        ));
+    }
+    text
+}
+
+#[test]
+#[ignore = "stress"]
+fn stress_chosen_destinations_and_their_to_paths_cost_time_and_memory_linear_in_the_wires_and_their_candidates()
+ {
+    assert_none(&ledger_failures(
+        "chosen destinations",
+        [5_000, 10_000, 20_000],
+        chosen_rings,
+        &none,
+        Timing::Judged,
+    ));
+}

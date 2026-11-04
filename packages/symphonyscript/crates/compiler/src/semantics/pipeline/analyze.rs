@@ -69,6 +69,12 @@ pub(crate) fn analyze(inputs: &Inputs<'_>) -> Result<Option<Run>, Internal> {
     if let Err(reason) = stage(core.type_attr_reads())? {
         return declined(reason);
     }
+    if let Err(reason) = stage(core.choose_destinations())? {
+        return declined(reason);
+    }
+    if let Err(reason) = stage(core.resolve_chosen_paths())? {
+        return declined(reason);
+    }
     stages.mark("resolve");
     if let Err(reason) = stage(core.check_attributes())? {
         return declined(reason);

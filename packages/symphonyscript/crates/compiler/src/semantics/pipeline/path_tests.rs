@@ -106,7 +106,6 @@ fn a_path_from_a_let_or_a_member_to_an_instance_or_through_a_function_cycle_stay
         "Clip c:\n    Note as h /60\nlet x = c.h\n",
         "let n = f()\nfn f(): c.gain\nClip c | gain=n:\n    Note/n\n",
         "let n = f()\nfn f(): m\nlet m = c.gain\nClip c | gain=n:\n    Note/n\n",
-        "state s(0.5)\nClip c | level=s:\n    Note/60\nlet n = c.level\n",
         "Clip c:\n    Note as h /60\nClip d:\n    Note/c.h.length\n",
     ] {
         assert!(new.checked_by_new_core(&[source(text)]).is_none(), "{text}");
@@ -223,5 +222,104 @@ fn a_name_in_a_body_reads_a_child_of_its_body_or_an_enclosing_one_as_the_old_eng
             .checked_by_new_core(&sources)
             .unwrap_or_else(|| panic!("the new core takes {text}"));
         assert_eq!(found, old.check(&sources), "{text}");
+    }
+}
+
+const REACTIVE_PATHS: [&str; 17] = [
+    "state s0(0.5)\nClip c | gain=s0:\n    Note/(c.gain)\n",
+    "state s0(0.5)\nClip c | gain=s0:\n    Note/60\nlet a = c.gain + 1.0\nClip d | gain=a:\n    Note/1\n",
+    "state s0(1)\nClip c | gain=s0:\n    Note/(c.gain)\n",
+    "state s0(1)\nClip c | level=s0:\n    Note/60\nClip d | level=c.level:\n    Note/1\n",
+    "state s0(1)\nClip c | gain=s0 + 1:\n    Note/60\nClip d | gain=c.gain * 2:\n    Note/1\n",
+    "state s0(0.5)\nClip c | gain=s0:\n    Note as h | velocity=s0\nClip d:\n    Note/(c.h.velocity)\n",
+    "state s0(1): u8\nClip c | level=s0:\n    Note/(c.level + 300)\n",
+    "state s0(0.5)\nClip c | gain=s0:\n    Note/60\nfn f(): c.gain\nClip d:\n    Note/(f())\n",
+    "state s0(1)\nClip c | level=s0:\n    Note/60\nClip d | level=c.level:\n    Note/1\nClip e | level=d.level + 1:\n    Note/1\n",
+    "state s0(1)\nClip c | level=s0:\n    Note/60\nstate q = c.level + 1\nClip d | level=q:\n    Note/1\n",
+    "state s0(1)\nClip c | gain=s0 + 0.5:\n    Note/(c.gain)\n",
+    "state s0(3000000000)\nClip c:\n    Note as h /s0\nClip d:\n    Note/(c.h.pitch)\n",
+    "state s0(3000000000)\nClip c:\n    Note as h /s0\nClip d | gain=c.h.pitch:\n    Note/1\n",
+    "state s0(0.5)\nClip c | gain=s0:\n    Note/(c.gain + 1)\n",
+    "state s0(1)\nClip c | gain=s0:\n    Note/60\nlet a = [c.gain]\n",
+    "state s0(1)\nClip c | gain=s0:\n    Note/(c.gain + true)\n",
+    "state s0(0.5)\nClip c | gain=s0:\n    Note/([1, 2][c.gain])\n",
+];
+
+#[test]
+fn a_path_whose_attribute_reaches_a_cell_reads_the_cell_as_the_old_engine_does() {
+    let vocabulary = symphonyscript_fixtures::vocabulary();
+    let old = Compiler::new(&vocabulary)
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
+    let new = Compiler::new(&vocabulary).expect("the vocabulary compiles");
+    for text in REACTIVE_PATHS {
+        let sources = [source(text)];
+        let found = new
+            .checked_by_new_core(&sources)
+            .unwrap_or_else(|| panic!("the new core takes {text}"));
+        assert_eq!(found, old.check(&sources), "{text}");
+    }
+}
+
+#[test]
+fn a_path_reaching_a_cell_draws_its_cell_faults_beside_its_valid_twin() {
+    let cases: [(&str, &[Code]); 11] = [
+        (
+            "state s0(0.5)\nClip c | gain=s0:\n    Note/(c.gain)\n",
+            &[Code::FloatToInteger],
+        ),
+        (
+            "state s0(0.5)\nClip c | gain=s0:\n    Note/(i32(c.gain))\n",
+            &[],
+        ),
+        (
+            "state s0(1)\nlet w = s0\nClip c | gain=w:\n    Note/60\nClip d:\n    Note/(c.gain)\n",
+            &[Code::ReactiveLet, Code::TypeMismatch],
+        ),
+        (
+            "let w = 1\nClip c | gain=w:\n    Note/60\nClip d:\n    Note/(c.gain)\n",
+            &[Code::TypeMismatch],
+        ),
+        (
+            "state s0(1)\nlet w = s0\nClip c | gain=w:\n    Note/60\nClip d:\n    Note/(i32(c.gain))\n",
+            &[Code::ReactiveLet],
+        ),
+        (
+            "state s0(3000000000)\nClip c:\n    Note as h /s0\nClip d:\n    Note/(c.h.pitch)\n",
+            &[Code::DoesNotFit, Code::DoesNotFit],
+        ),
+        (
+            "state s0(3)\nClip c:\n    Note as h /s0\nClip d:\n    Note/(c.h.pitch)\n",
+            &[],
+        ),
+        (
+            "state s0(1)\nClip c | level=s0:\n    Note/60\nlet x = if s0 > 0 then 1 else 2\nClip d | level=x:\n    Note/1\n",
+            &[Code::ReactiveLet],
+        ),
+        (
+            "state s0(1)\nClip c | level=s0:\n    Note/60\nlet x = if c.level > 0 then 1 else 2\nClip d | level=x:\n    Note/1\n",
+            &[Code::ReactiveLet],
+        ),
+        (
+            "state s0(1)\nClip c | level=s0:\n    Note/60\nlet x = 1\nClip d | level=x:\n    Note/1\n",
+            &[Code::IntegerCell],
+        ),
+        (
+            "state s0(1)\nClip c | level=s0:\n    Note/60\nstate x = if s0 > 0 then 1 else 2\nClip d | level=x:\n    Note/1\n",
+            &[],
+        ),
+    ];
+    let vocabulary = symphonyscript_fixtures::vocabulary();
+    let new = Compiler::new(&vocabulary).expect("the vocabulary compiles");
+    for (text, codes) in cases {
+        let found = new
+            .checked_by_new_core(&[source(text)])
+            .unwrap_or_else(|| panic!("the new core takes {text}"));
+        let found: Vec<Code> = found
+            .iter()
+            .map(|diagnostic| diagnostic.code)
+            .filter(|code| *code != Code::NoEntryInstance && *code != Code::UnreachableInstance)
+            .collect();
+        assert_eq!(found, codes, "{text}");
     }
 }

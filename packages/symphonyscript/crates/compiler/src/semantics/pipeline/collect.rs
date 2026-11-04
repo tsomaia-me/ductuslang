@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use symphonyscript_core::Span;
 
 use super::core::{Core, Stage};
+use super::coverage::destination_candidates;
 use super::decl_ref::DeclRef;
 use super::declined::Declined;
 use super::reason::Reason;
@@ -246,7 +247,10 @@ impl Core<'_> {
             .items
             .iter()
             .filter_map(|item| match item {
-                ItemRec::Wire(wire) => Some(wire.destination),
+                ItemRec::Wire(wire) => Some(
+                    destination_candidates(self.ir, wire.destination)
+                        .unwrap_or_else(|| vec![wire.destination]),
+                ),
                 ItemRec::Placement(_)
                 | ItemRec::Bundle(_)
                 | ItemRec::For(_)
@@ -254,6 +258,7 @@ impl Core<'_> {
                 | ItemRec::Line(_)
                 | ItemRec::Paren(_) => None,
             })
+            .flatten()
             .collect();
         destinations.sort_unstable();
         self.destination_roots = destinations;
