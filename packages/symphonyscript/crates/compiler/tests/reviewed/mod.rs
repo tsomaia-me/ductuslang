@@ -4744,8 +4744,25 @@ fn annotated_accumulator(line: &str) -> bool {
 }
 
 fn annotated_fold(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
-    if change != Change::Added || at.0 != "type-mismatch" {
+    let code = at.0.as_str();
+    if change != Change::Added
+        || !matches!(
+            code,
+            "type-mismatch" | "float-to-integer" | "does-not-fit" | "integer-cell"
+        )
+    {
         return false;
+    }
+    if code == "integer-cell" {
+        let name = seen.text(at);
+        return seen.before(at).ends_with("state ")
+            && seen.program.lines().any(|line| {
+                annotated_accumulator(line)
+                    && line
+                        .split_once(" from ")
+                        .and_then(|(_, rest)| rest.split_once(": "))
+                        .is_some_and(|(start, _)| reads_word(start, name))
+            });
     }
     let line = seen
         .program
@@ -4754,12 +4771,15 @@ fn annotated_fold(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
         .unwrap_or_default();
     let before = seen.before(at);
     let head = before.rsplit('\n').next().unwrap_or_default();
-    let loop_name = seen.after(at).starts_with(": ")
+    let loop_name = code == "type-mismatch"
+        && seen.after(at).starts_with(": ")
         && (head.ends_with("for ") || head.ends_with(", "))
         && line.contains(" in ");
-    let start = head.ends_with(" from ") && annotated_accumulator(line);
-    let body = head.ends_with(": ") && head.contains(" from ") && annotated_accumulator(line);
-    loop_name || start || body
+    let inside = annotated_accumulator(line)
+        && head
+            .rsplit_once(" into ")
+            .is_some_and(|(_, rest)| rest.contains(" from "));
+    loop_name || inside
 }
 
 fn annotated_array_lets(program: &str) -> Vec<(&str, usize, usize)> {
@@ -5230,7 +5250,7 @@ pub const CLASSES: &[Class] = &[
     },
     Class {
         ledger: "476",
-        rule: "an annotated fold accumulator's start and body, and an annotated loop name's elements, draw type-mismatch where they do not have the annotated type (SPEC §4.5), which the old engine misses",
+        rule: "an annotated fold accumulator's start and body, and an annotated loop name's elements, draw type-mismatch where they do not have the annotated type (SPEC §4.5), and the start and body of an annotated fold draw what the same expression draws as the rule of a derived cell with that annotation (SPEC §5.10, §4.2; DECISIONS.md 22:13Z), which the old engine misses",
         explains: annotated_fold,
     },
     Class {

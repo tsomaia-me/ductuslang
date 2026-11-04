@@ -813,6 +813,11 @@ impl Core<'_> {
                 }
                 Step::Fold(fold, fold_ty) => {
                     let rec = self.fold_rec(fold)?;
+                    if self.is_reactive(fold)?
+                        && let Err(declined) = self.annotated_body_fits(fold)?
+                    {
+                        return Ok(Err(declined));
+                    }
                     let count = if rec.range { 2 } else { 1 };
                     let keep = frame
                         .values
@@ -1642,6 +1647,14 @@ impl Core<'_> {
                         stack.push((value, false));
                     }
                 }
+                Op::For => {
+                    if let Err(declined) = self.annotated_body_fits(node)? {
+                        return Ok(Err(declined));
+                    }
+                    for operand in self.operands(node)?.into_iter().rev() {
+                        stack.push((operand, false));
+                    }
+                }
                 Op::Name => {
                     if let DeclRef::Let(at) = self.bound(node)?
                         && !self.cyclic.get(at as usize).copied().unwrap_or(false)
@@ -1685,7 +1698,6 @@ impl Core<'_> {
                 | Op::IsNot
                 | Op::Array
                 | Op::Match
-                | Op::For
                 | Op::TyScalar
                 | Op::TyName
                 | Op::TyArray

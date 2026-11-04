@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use super::body_instance::BodyInstance;
 use super::core::{Core, Stage};
 use super::decl_ref::DeclRef;
@@ -141,35 +143,50 @@ impl Core<'_> {
         &mut self,
         node: u32,
         sym: u32,
+        memo: &mut HashMap<(u32, u32), Option<(u32, DeclRef)>>,
     ) -> Result<Option<(u32, DeclRef)>, Internal> {
         let mut owner = self.body_of.get(self.local(node)?).copied().unwrap_or(NONE);
+        let mut walked = Vec::new();
         let mut crossed = Vec::new();
-        while owner != NONE && owner >= self.functions() {
+        let found = loop {
+            if owner == NONE || owner < self.functions() {
+                break None;
+            }
+            if let Some(hit) = memo.get(&(owner, sym)) {
+                break *hit;
+            }
+            walked.push(owner);
             if self.anchor(owner) == NONE {
-                return Ok(None);
+                break None;
             }
             if self.is_fold(owner) {
                 crossed.push(owner - self.functions());
             }
-            owner = self.parent_owner(owner)?;
-            if owner == NONE {
-                return Ok(None);
+            let parent = self.parent_owner(owner)?;
+            if parent == NONE {
+                break None;
             }
-            let found = self
-                .scope_of(owner)?
+            let decl = self
+                .scope_of(parent)?
                 .into_iter()
                 .find(|(bound, _)| *bound == sym)
                 .map(|(_, decl)| decl);
-            if let Some(decl) = found {
-                for record in crossed {
-                    if let Some(slot) = self.reaches_out.get_mut(record as usize) {
-                        *slot = true;
-                    }
+            if let Some(decl) = decl {
+                break Some((parent, decl));
+            }
+            owner = parent;
+        };
+        if found.is_some() {
+            for record in crossed {
+                if let Some(slot) = self.reaches_out.get_mut(record as usize) {
+                    *slot = true;
                 }
-                return Ok(Some((owner, decl)));
             }
         }
-        Ok(None)
+        for owner in walked {
+            memo.insert((owner, sym), found);
+        }
+        Ok(found)
     }
 
     pub fn arguments(&self, node: u32) -> Result<Vec<u32>, Internal> {

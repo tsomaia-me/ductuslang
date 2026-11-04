@@ -119,7 +119,7 @@ impl Core<'_> {
 
     fn read_lets(&self, root: u32) -> Result<Vec<u32>, Internal> {
         let mut reads = Vec::new();
-        for node in self.deep_postorder(root)? {
+        for node in self.postorder(root)? {
             if let DeclRef::Let(at) = self.bound(node)?
                 && self
                     .ir

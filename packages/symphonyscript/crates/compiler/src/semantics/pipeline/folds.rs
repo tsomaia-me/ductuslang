@@ -1,4 +1,4 @@
-use super::annotation::{Refusal, SHAPE, TYPE, annotated_fact, refusal};
+use super::annotation::{Refusal, annotated_fact, refusal};
 use super::body_instance::BodyInstance;
 use super::core::{Core, Stage};
 use super::core_value::CoreValue;
@@ -118,19 +118,51 @@ impl Core<'_> {
         Ok(owner)
     }
 
-    pub fn enclosing_syms(&self, owner: u32) -> Result<Vec<u32>, Internal> {
-        let mut syms = Vec::new();
-        let mut owner = owner;
-        while owner != NONE && owner >= self.functions() {
-            if self.anchor(owner) == NONE {
-                break;
-            }
-            owner = self.parent_owner(owner)?;
-            if owner != NONE {
-                syms.extend(self.scope_of(owner)?.into_iter().map(|(sym, _)| sym));
+    pub fn enclosed_names(&self) -> Result<std::collections::HashSet<(u32, u32)>, Internal> {
+        let owners = self.owners();
+        let mut children: Vec<Vec<u32>> = vec![Vec::new(); owners as usize];
+        let mut roots = Vec::new();
+        for owner in 0..owners {
+            let parent = if owner >= self.functions() && self.anchor(owner) != NONE {
+                self.parent_owner(owner)?
+            } else {
+                NONE
+            };
+            match children.get_mut(parent as usize) {
+                Some(list) => list.push(owner),
+                None => roots.push(owner),
             }
         }
-        Ok(syms)
+        let mut active: std::collections::HashMap<u32, u32> = std::collections::HashMap::new();
+        let mut found = std::collections::HashSet::new();
+        let mut stack: Vec<(u32, bool)> =
+            roots.into_iter().rev().map(|root| (root, false)).collect();
+        while let Some((owner, leaving)) = stack.pop() {
+            let scope = self.scope_of(owner)?;
+            if leaving {
+                for (sym, _) in scope {
+                    if let Some(count) = active.get_mut(&sym) {
+                        *count = count.saturating_sub(1);
+                    }
+                }
+                continue;
+            }
+            if owner >= self.functions() {
+                for (sym, _) in &scope {
+                    if active.get(sym).copied().unwrap_or(0) > 0 {
+                        found.insert((owner, *sym));
+                    }
+                }
+            }
+            for (sym, _) in scope {
+                *active.entry(sym).or_insert(0) += 1;
+            }
+            stack.push((owner, true));
+            for child in children.get(owner as usize).into_iter().flatten().rev() {
+                stack.push((*child, false));
+            }
+        }
+        Ok(found)
     }
 
     pub fn deep_postorder(&self, root: u32) -> Result<Vec<u32>, Internal> {
@@ -271,17 +303,18 @@ impl Core<'_> {
         (ty, reactive): (EvalTy, (bool, bool)),
     ) -> Stage<Fact> {
         let (_, record, _, _) = self.ir.node(node)?;
-        let start = self.fact(rec.start)?;
-        match refusal(&start, ty) {
-            Refusal::Shape => self.draw_at(Code::TypeMismatch, rec.start, SHAPE)?,
-            Refusal::Type => self.draw_at(Code::TypeMismatch, rec.start, TYPE)?,
-            Refusal::Kept | Refusal::Silent => {}
-        }
+        let start_reactive = self.is_reactive(rec.start)?;
+        self.rule_refused(rec.start, ty, start_reactive)?;
         let owner = self.functions() + record;
         let mut args = items;
-        args.push(annotated_fact(ty));
+        let accumulator = annotated_fact(ty);
+        args.push(if accumulator.leaf == Leaf::Bool {
+            accumulator
+        } else {
+            Fact::numeric(accumulator.leaf, None, Some(ty))
+        });
         let mut reactive = reactive;
-        let (body, found) = loop {
+        let body = loop {
             let body = match self.fold_instance(node, owner, args.clone(), reactive)? {
                 Ok(body) => body,
                 Err(declined) => return Ok(Err(declined)),
@@ -290,25 +323,20 @@ impl Core<'_> {
             let found = self.fact(rec.body);
             let body_reactive = self.is_reactive(rec.body);
             self.inst = outer;
+            found?;
             if body_reactive? && !reactive.1 {
                 reactive.1 = true;
                 continue;
             }
-            break (body, found);
+            break body;
         };
-        let found = found?;
-        let kept = |fact: &Fact| matches!(refusal(fact, ty), Refusal::Kept | Refusal::Silent);
-        if reactive.1 && !(kept(&found) && kept(&start)) {
-            return Ok(Err(Declined(Reason::ReactiveFor)));
-        }
         let key = self.inst_key(node)?;
         self.call_body.insert((key, node), body);
         self.replay_fold(node, body)?;
-        match refusal(&found, ty) {
-            Refusal::Shape => self.draw_at(Code::TypeMismatch, rec.body, SHAPE)?,
-            Refusal::Type => self.draw_at(Code::TypeMismatch, rec.body, TYPE)?,
-            Refusal::Kept | Refusal::Silent => {}
-        }
+        let outer = std::mem::replace(&mut self.inst, body);
+        let refused = self.rule_refused(rec.body, ty, reactive.1);
+        self.inst = outer;
+        refused?;
         Ok(Ok(annotated_fact(ty)))
     }
 
@@ -620,5 +648,24 @@ impl Core<'_> {
         ));
         let diagnostic = self.chained(diagnostic);
         self.diagnostics.push(diagnostic);
+    }
+}
+
+impl Core<'_> {
+    pub fn annotated_body_fits(&mut self, node: u32) -> Stage<()> {
+        let rec = self.fold_rec(node)?;
+        let Some(ty) = self.accumulator_ty(&rec)? else {
+            return Ok(Ok(()));
+        };
+        if !self.is_reactive(node)? || self.annotated_fold_refused(node)? {
+            return Ok(Ok(()));
+        }
+        let Some(body) = self.body_of_call(node) else {
+            return Ok(Ok(()));
+        };
+        let outer = std::mem::replace(&mut self.inst, body);
+        let outcome = self.evaluate(rec.body, ty);
+        self.inst = outer;
+        outcome.map(|outcome| outcome.map(|_| ()))
     }
 }

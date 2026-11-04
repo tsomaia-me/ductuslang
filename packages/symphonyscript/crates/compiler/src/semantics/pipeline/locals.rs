@@ -148,6 +148,7 @@ impl Core<'_> {
     }
 
     pub fn local_faults(&mut self) -> Result<Option<Reason>, Internal> {
+        let enclosed = self.enclosed_names()?;
         for owner in 0..self.owners() {
             let fold = owner >= self.functions();
             let bound = self.bound_names(owner)?;
@@ -203,7 +204,7 @@ impl Core<'_> {
                 if !fold {
                     continue;
                 }
-                let enclosing = self.enclosing_syms(owner)?.contains(&name.sym);
+                let enclosing = enclosed.contains(&(owner, name.sym));
                 if !enclosing && let Some(child) = self.visible_child(owner, name.sym)? {
                     let summary =
                         format!("`{text}` equals a visible name, and a `for` binds only new names");

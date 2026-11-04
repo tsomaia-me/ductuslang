@@ -787,8 +787,116 @@ fn a_for_expression_reading_a_cell_is_one_cell_its_body_typed_with_its_slots_and
     for text in [
         "state n(3)\nstate t = for i in 0..n into s from 0: s + i\n",
         "state r([1, 2])\nstate t = for x in r into s from []: s + [x]\n",
-        "state r([1, 2])\nstate t = for x in r into s: i32 from 0: s + 1.5\n",
     ] {
         assert!(new.checked_by_new_core(&[source(text)]).is_none(), "{text}");
     }
+}
+
+const ANNOTATED_FOLDS: [(&str, &str, &str); 8] = [
+    (
+        "state t = for x in [1, 2] into s: i32 from 0: s + x * 1.5\n",
+        "s + x * 1.5",
+        "state s(0): i32\nstate t: i32 = s + 1 * 1.5\n",
+    ),
+    (
+        "state q(0)\nstate t = for x in [1, 2] into s: i32 from q: s + x * 1.5\n",
+        "s + x * 1.5",
+        "state s(0): i32\nstate t: i32 = s + 1 * 1.5\n",
+    ),
+    (
+        "state q(0)\nstate t = for x in [1, 2] into s: i32 from q: s + i64(x)\n",
+        "i64(x)",
+        "state s(0): i32\nstate t: i32 = s + i64(1)\n",
+    ),
+    (
+        "state q(0)\nstate t = for x in [q] into s: i32 from 0.5: s + x\n",
+        "0.5",
+        "state t: i32 = 0.5\n",
+    ),
+    (
+        "state q(0.5)\nstate t = for x in [1, 2] into s: i32 from 0: s + q\n",
+        "s + q",
+        "state s(0): i32\nstate q(0.5)\nstate t: i32 = s + q\n",
+    ),
+    (
+        "state q(0)\nstate t = for x in [1, 2] into s: i32 from i64(q): s + x\n",
+        "i64(q)",
+        "state q(0)\nstate t: i32 = i64(q)\n",
+    ),
+    (
+        "state q(0)\nstate t = for x in [1, 2] into s: u8 from q + 300: s + x\n",
+        "300",
+        "state q(0)\nstate t: u8 = q + 300\n",
+    ),
+    (
+        "state q(0)\nstate t = for x in [1, 2] into s: i32 from q: true\n",
+        "true",
+        "state s(0): i32\nstate t: i32 = true\n",
+    ),
+];
+
+#[test]
+fn an_annotated_accumulator_is_its_start_and_bodys_expected_type_drawing_what_a_derived_cell_rule_draws_476()
+ {
+    let vocabulary = symphonyscript_fixtures::vocabulary();
+    let new = Compiler::new(&vocabulary).expect("the vocabulary compiles");
+    let summaries = |text: &str| -> Vec<(crate::diagnostics::Code, String)> {
+        new.checked_by_new_core(&[source(text)])
+            .unwrap_or_else(|| panic!("the new core takes {text}"))
+            .into_iter()
+            .map(|found| (found.code, found.summary))
+            .collect()
+    };
+    let mut moved = Vec::new();
+    let mut twins = Vec::new();
+    for (fold, at, twin) in ANNOTATED_FOLDS {
+        assert_eq!(summaries(fold), summaries(twin), "{fold}");
+        let start = u32::try_from(fold.rfind(at).unwrap_or(0)).unwrap_or(0);
+        let end = start + u32::try_from(at.len()).unwrap_or(0);
+        let code = summaries(twin)
+            .into_iter()
+            .map(|(code, _)| code)
+            .find(|code| *code != crate::diagnostics::Code::NoEntryInstance)
+            .unwrap_or(crate::diagnostics::Code::NoEntryInstance);
+        moved.push((
+            &vocabulary,
+            fold,
+            vec![
+                (crate::diagnostics::Code::NoEntryInstance, 0, 0),
+                (code, start, end),
+            ],
+            vec![(crate::diagnostics::Code::NoEntryInstance, 0, 0)],
+        ));
+        twins.push(twin);
+    }
+    let floating = "state q(0)\nstate t = for x in [1, 2] into s: f32 from q: s + x * 1.5\n";
+    assert_eq!(
+        summaries(floating),
+        summaries("state q(0)\nstate t: f32 = q\n"),
+        "{floating}"
+    );
+    moved.push((
+        &vocabulary,
+        floating,
+        vec![
+            (crate::diagnostics::Code::NoEntryInstance, 0, 0),
+            (crate::diagnostics::Code::IntegerCell, 6, 7),
+        ],
+        vec![(crate::diagnostics::Code::NoEntryInstance, 0, 0)],
+    ));
+    twins.push("state q(0)\nstate t: f32 = q\n");
+    assert_moved(&moved);
+    assert_engines_agree(&vocabulary, &twins);
+    assert_engines_agree(
+        &vocabulary,
+        &[
+            "state q(0)\nstate t = for x in [1, 2] into s: u8 from q: s + 300\n",
+            "state s(0): u8\nstate t: u8 = s + 300\n",
+            "state q(0)\nstate t = for x in [1, 2] into s: bool from q > 0: s + 1\n",
+            "state q(0)\nstate t = for x in [1, 2] into s: i32 from q: s + x\n",
+            "state r([1, 2])\nstate t = for x in r into s: i32 from 0: s + x\n",
+            "let t = for x in [1, 2] into s: i32 from 0: s + x * 1.5\n",
+            "let t = for x in [1, 2] into s: u8 from 0: s + 300\nClip c:\n    Note/t\n",
+        ],
+    );
 }
