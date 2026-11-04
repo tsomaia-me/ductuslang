@@ -15,7 +15,7 @@ struct Run {
     walks: u64,
 }
 
-const CORE_WALKS: [CountedWalk; 11] = [
+const CORE_WALKS: [CountedWalk; 15] = [
     CountedWalk::BindLookup,
     CountedWalk::CoreExpandRow,
     CountedWalk::SigNode,
@@ -27,6 +27,10 @@ const CORE_WALKS: [CountedWalk; 11] = [
     CountedWalk::CoreUse,
     CountedWalk::CallMemo,
     CountedWalk::SymbolProbe,
+    CountedWalk::CoreWireDestination,
+    CountedWalk::CheckWireRow,
+    CountedWalk::CheckWireCandidate,
+    CountedWalk::CheckWireCycle,
 ];
 
 fn walked() -> u64 {
@@ -630,5 +634,29 @@ fn stress_clips_no_entry_reaches_cost_time_and_memory_linear_in_the_clips() {
         [40_000, 80_000, 160_000],
         clips_beside_a_session,
         &unreachable_clips,
+    ));
+}
+
+fn wire_rings(n: usize) -> String {
+    let mut text = String::new();
+    for at in 0..n {
+        let next = (at + 1) % n;
+        let far = (at + 7) % n;
+        text.push_str(&format!(
+            "Clip clip{at}:\n    Note/1\n    Plays | gain=0.5: clip{next}\n    Starts: clip{far}\n"
+        ));
+        text.push_str(&format!("Filter filter{at}:\n    Feeds: filter{next}\n"));
+    }
+    text
+}
+
+#[test]
+#[ignore = "stress"]
+fn stress_wires_to_named_instances_cost_time_and_memory_linear_in_the_wires_and_their_candidates() {
+    assert_none(&ledger_failures(
+        "wires",
+        [5_000, 10_000, 20_000],
+        wire_rings,
+        &one("wire-cycle"),
     ));
 }

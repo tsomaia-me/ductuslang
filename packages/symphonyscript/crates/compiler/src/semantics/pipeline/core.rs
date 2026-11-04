@@ -13,6 +13,7 @@ use super::memo_key::MemoKey;
 use super::need::Need;
 use super::recording::Recording;
 use super::store::Store;
+use super::wire_row::WireRow;
 use crate::diagnostics::{Code, Diagnostic, Related};
 use crate::semantics::Internal;
 use crate::semantics::collection::Variants;
@@ -84,6 +85,11 @@ pub(crate) struct Core<'a> {
     pub call_memo: HashMap<MemoKey, MemoEntry>,
     pub recordings: Vec<Recording>,
     pub reaches_out: Vec<bool>,
+    pub wires: Vec<WireRow>,
+    pub candidates: Vec<u32>,
+    pub row_of_item: Vec<u32>,
+    pub expanded: u64,
+    pub destination_roots: Vec<u32>,
 }
 
 impl<'a> Core<'a> {
@@ -152,6 +158,11 @@ impl<'a> Core<'a> {
             call_memo: HashMap::new(),
             recordings: Vec::new(),
             reaches_out: vec![false; ir.fors.len()],
+            wires: Vec::new(),
+            candidates: Vec::new(),
+            row_of_item: vec![NONE; ir.items.len()],
+            expanded: 0,
+            destination_roots: Vec::new(),
         }
     }
 

@@ -61,6 +61,9 @@ impl Core<'_> {
         if parent != NONE && placement.as_name != NONE {
             return Ok(Err(Declined(Reason::ChildName)));
         }
+        if !self.charge_item(file, placement.lo, placement.hi)? {
+            return Ok(Ok(NONE));
+        }
         let row = u32::try_from(self.instances.len()).map_err(|_| Internal::missed("row"))?;
         self.instances.push(InstanceRow {
             kind,
@@ -68,6 +71,9 @@ impl Core<'_> {
             file,
             children: (0, 0),
         });
+        if let Some(slot) = self.row_of_item.get_mut(item as usize) {
+            *slot = row;
+        }
         Ok(Ok(row))
     }
 
@@ -117,6 +123,12 @@ impl Core<'_> {
                     .block_items
                     .get(at as usize)
                     .ok_or(Internal::missed("IR block item"))?;
+                if matches!(self.ir.item(item)?, ItemRec::Wire(_)) {
+                    if let Err(declined) = self.wire_row(item, record.file, parent)? {
+                        return Ok(Err(declined));
+                    }
+                    continue;
+                }
                 let row = match self.row(item, record.file, parent)? {
                     Ok(row) => row,
                     Err(declined) => return Ok(Err(declined)),

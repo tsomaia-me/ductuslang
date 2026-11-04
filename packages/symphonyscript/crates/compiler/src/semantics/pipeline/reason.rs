@@ -18,4 +18,6 @@ pub(crate) enum Reason {
     AnnotatedCall,
     Pending,
     ReactiveFor,
+    DestinationValue,
+    WireKind,
 }

@@ -1,6 +1,7 @@
 mod analyze;
 mod annotation;
 mod array_node;
+mod attr_item;
 mod body_instance;
 mod calls;
 mod cells;
@@ -42,6 +43,10 @@ mod store;
 mod typing;
 mod values;
 mod width;
+mod wire_row;
+#[cfg(test)]
+mod wire_tests;
+mod wires;
 
 pub(crate) use analyze::{Inputs, analyze};
 #[cfg(test)]

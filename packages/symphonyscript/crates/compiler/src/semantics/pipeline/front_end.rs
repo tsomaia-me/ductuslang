@@ -77,20 +77,21 @@ impl Core<'_> {
     fn placement_roots(&self, item: u32, roots: &mut Vec<u32>) -> Result<(), Internal> {
         let mut items = vec![item];
         while let Some(item) = items.pop() {
-            let ItemRec::Placement(placement) = *self.ir.item(item)? else {
-                continue;
+            let placement = match *self.ir.item(item)? {
+                ItemRec::Placement(placement) => placement,
+                ItemRec::Wire(wire) => {
+                    roots.extend([wire.default, wire.gate, wire.destination]);
+                    self.entry_roots(wire.attrs, roots);
+                    continue;
+                }
+                ItemRec::Bundle(_)
+                | ItemRec::For(_)
+                | ItemRec::When(_)
+                | ItemRec::Line(_)
+                | ItemRec::Paren(_) => continue,
             };
             roots.extend([placement.default, placement.gate]);
-            let entries = self
-                .ir
-                .attr_entries
-                .get(placement.attrs.0 as usize..placement.attrs.1 as usize)
-                .unwrap_or_default();
-            for entry in entries {
-                if let AttrForm::Value(value) = entry.form {
-                    roots.push(value);
-                }
-            }
+            self.entry_roots(placement.attrs, roots);
             if placement.body == NONE {
                 continue;
             }
@@ -109,6 +110,19 @@ impl Core<'_> {
             }
         }
         Ok(())
+    }
+
+    fn entry_roots(&self, attrs: (u32, u32), roots: &mut Vec<u32>) {
+        let entries = self
+            .ir
+            .attr_entries
+            .get(attrs.0 as usize..attrs.1 as usize)
+            .unwrap_or_default();
+        for entry in entries {
+            if let AttrForm::Value(value) = entry.form {
+                roots.push(value);
+            }
+        }
     }
 
     fn emit_drawn(&mut self, file: u32, range: (u32, u32)) -> Result<(), Internal> {

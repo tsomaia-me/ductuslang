@@ -53,6 +53,7 @@ pub(crate) use op::Op;
 pub(crate) use placement_rec::PlacementRec;
 pub(crate) use sym::Sym;
 pub(crate) use top_rec::TopRec;
+pub(crate) use wire_rec::WireRec;
 
 use symphonyscript_core::BinaryOp;
 

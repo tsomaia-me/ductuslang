@@ -55,6 +55,10 @@ pub(crate) fn analyze(inputs: &Inputs<'_>) -> Result<Option<Run>, Internal> {
         return declined(reason);
     }
     stages.mark("expand");
+    if core.stop.is_some() {
+        return Ok(Some(finished(core)));
+    }
+    core.resolve_destinations()?;
     core.declaration_cycles()?;
     if let Err(reason) = stage(core.type_cells())? {
         return declined(reason);
