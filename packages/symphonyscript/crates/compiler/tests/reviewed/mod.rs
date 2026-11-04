@@ -62,6 +62,16 @@ pub const REVIEWED: &[Reviewed] = &[
     ),
     (
         "476",
+        "state k([1, 2]): i32\n[..4]\nlet e = []\nlet j = if k[0] > 1 then k else e + [3]\nClip c:\n    Note/(j[^1])\n",
+        &[
+            ("not-an-array", "k"),
+            ("reactive-let", "j"),
+            ("top-level-syntax", "["),
+            ("type-mismatch", "[1, 2]"),
+        ],
+    ),
+    (
+        "476",
         "Clip k:\n    Note/(if 1 then [1] else 2)\n",
         &[
             ("condition-type", "1"),
