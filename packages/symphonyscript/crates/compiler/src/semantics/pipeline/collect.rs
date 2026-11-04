@@ -5,6 +5,7 @@ use symphonyscript_core::Span;
 use super::core::{Core, Stage};
 use super::decl_ref::DeclRef;
 use super::declined::Declined;
+use super::loops::iterable_roots;
 use super::reason::Reason;
 use crate::diagnostics::Code;
 use crate::semantics::Internal;
@@ -444,11 +445,31 @@ impl Core<'_> {
                     wire.attrs,
                     NONE,
                 ),
-                ItemRec::Bundle(_)
-                | ItemRec::For(_)
-                | ItemRec::When(_)
-                | ItemRec::Line(_)
-                | ItemRec::Paren(_) => continue,
+                ItemRec::For(rec) => {
+                    if let Some(block) = self.ir.blocks.get(rec.body as usize) {
+                        for at in block.items.0..block.items.1 {
+                            let child = *self
+                                .ir
+                                .block_items
+                                .get(at as usize)
+                                .ok_or(Internal::missed("IR block item"))?;
+                            if !self.ir.dropped(child) {
+                                stack.push((child, scope));
+                            }
+                        }
+                    }
+                    (iterable_roots(rec.head), (0, 0), NONE)
+                }
+                ItemRec::Line(members) => {
+                    for at in members.0..members.1 {
+                        let member = self.ir.members.get(at as usize).copied().unwrap_or(NONE);
+                        if member != NONE {
+                            stack.push((member, scope));
+                        }
+                    }
+                    continue;
+                }
+                ItemRec::Bundle(_) | ItemRec::When(_) | ItemRec::Paren(_) => continue,
             };
             for entry in self
                 .ir
@@ -490,14 +511,30 @@ impl Core<'_> {
                 if self.ir.dropped(child) {
                     continue;
                 }
-                if let ItemRec::Placement(placement) = *self.ir.item(child)?
-                    && self.ir.named(placement.as_name)
-                {
-                    let entry = self
+                let members = match *self.ir.item(child)? {
+                    ItemRec::Line(members) => self
                         .ir
-                        .name(placement.as_name)
-                        .ok_or(Internal::missed("IR name"))?;
-                    names.push((entry.sym.0, child));
+                        .members
+                        .get(members.0 as usize..members.1 as usize)
+                        .unwrap_or_default()
+                        .to_vec(),
+                    ItemRec::Placement(_)
+                    | ItemRec::Wire(_)
+                    | ItemRec::Bundle(_)
+                    | ItemRec::For(_)
+                    | ItemRec::When(_)
+                    | ItemRec::Paren(_) => vec![child],
+                };
+                for member in members {
+                    if let Ok(ItemRec::Placement(placement)) = self.ir.item(member).copied()
+                        && self.ir.named(placement.as_name)
+                    {
+                        let entry = self
+                            .ir
+                            .name(placement.as_name)
+                            .ok_or(Internal::missed("IR name"))?;
+                        names.push((entry.sym.0, member));
+                    }
                 }
                 stack.push((child, inner));
             }

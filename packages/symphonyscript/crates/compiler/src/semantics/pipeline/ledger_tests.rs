@@ -15,7 +15,7 @@ struct Run {
     walks: u64,
 }
 
-const CORE_WALKS: [CountedWalk; 16] = [
+const CORE_WALKS: [CountedWalk; 18] = [
     CountedWalk::BindLookup,
     CountedWalk::CoreExpandRow,
     CountedWalk::SigNode,
@@ -32,6 +32,8 @@ const CORE_WALKS: [CountedWalk; 16] = [
     CountedWalk::CheckWireCandidate,
     CountedWalk::CheckWireCycle,
     CountedWalk::CorePathStep,
+    CountedWalk::CoreLoopIteration,
+    CountedWalk::CoreLoopBody,
 ];
 
 fn walked() -> u64 {
@@ -803,4 +805,37 @@ fn stress_chosen_destinations_and_their_to_paths_cost_time_and_memory_linear_in_
         &none,
         Timing::Judged,
     ));
+}
+
+fn placement_for(n: usize) -> String {
+    format!("Clip c:\n    for i in 0..{n}:\n        Note/i\n")
+}
+
+fn warnings_past_half(n: usize) -> Vec<String> {
+    let warnings = usize::from(n >= 500_000) + usize::from(n > 500_000);
+    vec!["limit-warning".to_string(); warnings]
+}
+
+#[test]
+#[ignore = "stress"]
+fn stress_a_placement_for_of_a_million_notes_costs_walks_and_peak_bytes_linear_in_the_notes_450() {
+    let sizes = [250_000, 500_000, 999_999];
+    let compiler = Compiler::new(&vocabulary()).expect("the vocabulary compiles");
+    let mut failures = ledger_failures_on(
+        &compiler,
+        "450",
+        sizes,
+        placement_for,
+        &warnings_past_half,
+        Timing::Printed,
+    );
+    for size in sizes {
+        let Some(found) = run(&compiler, &placement_for(size)) else {
+            failures.push(format!("450 at {size}: the new core declined it"));
+            continue;
+        };
+        let items = u64::try_from(size + 1).unwrap_or(u64::MAX);
+        println!("450 at {size}: {} B an expanded item", found.peak / items);
+    }
+    assert_none(&failures);
 }

@@ -89,9 +89,10 @@ impl Core<'_> {
                 lo: placement.lo,
                 hi: placement.hi,
             };
-            if let Err(declined) =
-                self.item_attributes(item, &decl.name, &decl.attrs, decl.default_attr)?
-            {
+            let saved = self.enter_env(record.env);
+            let checked = self.item_attributes(item, &decl.name, &decl.attrs, decl.default_attr);
+            self.leave_env(saved);
+            if let Err(declined) = checked? {
                 return Ok(Err(declined));
             }
         }

@@ -2,7 +2,8 @@ use super::reason::Reason;
 use super::slice::{LANDED, Slice};
 use crate::semantics::ir::Suffix;
 use crate::semantics::ir::flat::{
-    ABSENT, AttrForm, CellRec, FlatIr, FnRec, ForRec, ItemRec, NONE, Op, TopRec, WireRec,
+    ABSENT, AttrForm, CellRec, FlatIr, FnRec, ForBlockRec, ForRec, ItemRec, NONE, Op, TopRec,
+    WireRec,
 };
 use crate::semantics::operators::EvalTy;
 
@@ -37,7 +38,7 @@ pub(crate) fn top_slice(top: TopRec) -> Slice {
         TopRec::Let(_) | TopRec::Placement(_) => Slice::One,
         TopRec::Cell(_) => Slice::One,
         TopRec::Fn(_) => Slice::One,
-        TopRec::Pattern(_) => Slice::Three,
+        TopRec::Pattern(_) => Slice::Pending,
         TopRec::Placeholder { .. } | TopRec::Drawn(_) | TopRec::Skip => Slice::DefaultFlip,
     }
 }
@@ -108,8 +109,14 @@ pub(crate) fn covers(ir: &FlatIr) -> bool {
             return false;
         }
     }
+    let members = line_members(ir);
     ir.fors.iter().all(|rec| plain_fold(ir, rec))
-        && ir.items.iter().all(|item| item_landed(ir, item))
+        && ir.cells.iter().all(|rec| plain_cell(ir, rec))
+        && ir
+            .items
+            .iter()
+            .enumerate()
+            .all(|(at, item)| item_landed(ir, item, &members, at))
 }
 
 fn annotated(ir: &FlatIr, binder: u32) -> bool {
@@ -118,12 +125,33 @@ fn annotated(ir: &FlatIr, binder: u32) -> bool {
         .is_none_or(|binder| binder.annotation != NONE)
 }
 
-fn item_landed(ir: &FlatIr, item: &ItemRec) -> bool {
+fn line_members(ir: &FlatIr) -> Vec<u32> {
+    let mut members = Vec::new();
+    for item in &ir.items {
+        if let ItemRec::Line(range) = item {
+            members.extend(
+                ir.members
+                    .get(range.0 as usize..range.1 as usize)
+                    .unwrap_or_default(),
+            );
+        }
+    }
+    members.sort_unstable();
+    members
+}
+
+fn item_landed(ir: &FlatIr, item: &ItemRec, members: &[u32], at: usize) -> bool {
     if !landed(item_slice(item)) {
         return false;
     }
     if let ItemRec::Wire(wire) = item {
         return wire_landed(ir, wire);
+    }
+    if let ItemRec::For(rec) = item {
+        return loop_landed(ir, rec);
+    }
+    if matches!(item, ItemRec::Line(_)) {
+        return u32::try_from(at).is_ok_and(|at| ir.block_items.contains(&at));
     }
     let ItemRec::Placement(placement) = item else {
         return true;
@@ -132,7 +160,8 @@ fn item_landed(ir: &FlatIr, item: &ItemRec) -> bool {
         || placement.flags.0 != placement.flags.1
         || placement.attrs_cut
         || placement.skipped_block.is_some()
-        || placement.inline
+        || (placement.inline
+            && u32::try_from(at).map_or(true, |at| members.binary_search(&at).is_err()))
     {
         return false;
     }
@@ -157,6 +186,20 @@ fn item_landed(ir: &FlatIr, item: &ItemRec) -> bool {
             && block.regions.0 == block.regions.1
             && block.lets.0 == block.lets.1
     })
+}
+
+fn loop_landed(ir: &FlatIr, rec: &ForBlockRec) -> bool {
+    let head = rec.head;
+    let names = head.names.1.saturating_sub(head.names.0);
+    (1..=2).contains(&names)
+        && (head.names.0..head.names.1).all(|binder| !annotated(ir, binder))
+        && head.iterable.0 != NONE
+        && (!head.range || head.iterable.1 != NONE)
+        && ir.blocks.get(rec.body as usize).is_some_and(|block| {
+            block.members.0 == block.members.1
+                && block.regions.0 == block.regions.1
+                && block.lets.0 == block.lets.1
+        })
 }
 
 fn value_entries(ir: &FlatIr, attrs: (u32, u32)) -> bool {
@@ -244,15 +287,16 @@ pub(crate) fn reason_slice(reason: Reason) -> Slice {
             Slice::DefaultFlip
         }
         Reason::StringAttribute => Slice::DefaultFlip,
-        Reason::PatternOrWirePlacement => Slice::Three,
+        Reason::PatternOrWirePlacement => Slice::Pending,
         Reason::CellGroup => Slice::Four,
         Reason::FunctionValue | Reason::Recursion => Slice::DefaultFlip,
         Reason::LocalCycle | Reason::LocalClash => Slice::Pending,
         Reason::AnnotatedCall => Slice::Pending,
         Reason::Pending => Slice::One,
-        Reason::ReactiveFor => Slice::Three,
+        Reason::ReactiveFor => Slice::Pending,
         Reason::DestinationValue | Reason::ReactiveReference | Reason::WireKind => Slice::Pending,
         Reason::BareVariant | Reason::UnitAttribute | Reason::EnumAttribute => Slice::Five,
+        Reason::LoopHead | Reason::BodyItem => Slice::Pending,
     }
 }
 

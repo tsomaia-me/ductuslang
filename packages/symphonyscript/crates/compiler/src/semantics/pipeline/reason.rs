@@ -21,4 +21,6 @@ pub(crate) enum Reason {
     ReactiveReference,
     WireKind,
     Member,
+    LoopHead,
+    BodyItem,
 }
