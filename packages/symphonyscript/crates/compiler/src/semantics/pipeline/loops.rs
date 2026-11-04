@@ -653,3 +653,93 @@ impl Core<'_> {
         Ok(false)
     }
 }
+
+impl Core<'_> {
+    pub fn unknown_body(&mut self, body: u32, file: u32) -> Stage<()> {
+        let mut blocks = vec![body];
+        let mut items = Vec::new();
+        while let Some(block) = blocks.pop() {
+            let Some(found) = self.ir.blocks.get(block as usize) else {
+                continue;
+            };
+            if found.members.0 != found.members.1 || found.lets.0 != found.lets.1 {
+                return Ok(Err(Declined(Reason::BodyItem)));
+            }
+            items.extend(
+                self.ir
+                    .block_items
+                    .get(found.items.0 as usize..found.items.1 as usize)
+                    .unwrap_or_default()
+                    .iter()
+                    .rev(),
+            );
+            while let Some(child) = items.pop() {
+                match *self.ir.item(child)? {
+                    ItemRec::Placement(placement) => {
+                        if placement.has_as || placement.inline {
+                            return Ok(Err(Declined(Reason::BodyItem)));
+                        }
+                        if let Err(declined) = self.unknown_body_kind(placement, file)? {
+                            return Ok(Err(declined));
+                        }
+                        blocks.push(placement.body);
+                    }
+                    ItemRec::For(inner) => blocks.push(inner.body),
+                    ItemRec::Line(members) => items.extend(
+                        self.ir
+                            .members
+                            .get(members.0 as usize..members.1 as usize)
+                            .unwrap_or_default()
+                            .iter()
+                            .rev(),
+                    ),
+                    ItemRec::Wire(_)
+                    | ItemRec::Bundle(_)
+                    | ItemRec::When(_)
+                    | ItemRec::Paren(_) => {
+                        return Ok(Err(Declined(Reason::BodyItem)));
+                    }
+                }
+            }
+        }
+        Ok(Ok(()))
+    }
+
+    fn unknown_body_kind(&mut self, placement: PlacementRec, file: u32) -> Stage<()> {
+        let Some(kind_name) = self
+            .ir
+            .name_text(placement.kind)
+            .filter(|_| self.ir.named(placement.kind))
+        else {
+            return Ok(Ok(()));
+        };
+        if self.vocabulary.node_kind_named(kind_name).is_some() {
+            return Ok(Ok(()));
+        }
+        if self.vocabulary.wire_kind_named(kind_name).is_some()
+            || self.vocabulary_clash(kind_name).is_some()
+            || self.vocabulary.native_named(kind_name).is_some()
+        {
+            return Ok(Err(Declined(Reason::BodyItem)));
+        }
+        let entry = *self
+            .ir
+            .name(placement.kind)
+            .ok_or(Internal::missed("IR name"))?;
+        let declared = self
+            .decl
+            .get(entry.sym.0 as usize)
+            .is_some_and(|decl| *decl != DeclRef::None);
+        if declared || self.skipped_top.binary_search(&entry.sym.0).is_ok() {
+            return Ok(Ok(()));
+        }
+        let text = self.ir.symbols.text(entry.sym).to_string();
+        let span = self.name_span(file, placement.kind)?;
+        self.draw(
+            Code::UnknownKind,
+            span,
+            format!("`{text}` is not a node kind or a pattern"),
+        );
+        Ok(Ok(()))
+    }
+}

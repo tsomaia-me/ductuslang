@@ -57,6 +57,11 @@ impl Core<'_> {
                 self.unknown_wires = true;
             }
             self.unknown_kind_drawn(file, placement.kind)?;
+            if placement.body != NONE
+                && let Err(declined) = self.unknown_body(placement.body, file)?
+            {
+                return Ok(Err(declined));
+            }
             return Ok(Ok(NONE));
         };
         if parent == NONE && !self.ir.named(placement.as_name) {

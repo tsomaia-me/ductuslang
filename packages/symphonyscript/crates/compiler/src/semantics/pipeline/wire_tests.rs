@@ -418,3 +418,24 @@ fn a_wire_draws_its_endpoint_count_and_cycle_faults_beside_its_valid_twin() {
         assert_eq!(found, codes, "{text}");
     }
 }
+
+#[test]
+fn a_to_path_through_a_child_one_candidate_lacks_draws_to_candidates_alone_476() {
+    let vocabulary = symphonyscript_fixtures::vocabulary();
+    let program = |child: &str, end: &str| {
+        format!(
+            "state sec(0)\nClip b:\n    Note/1\nClip c:\n    Note{child}/2\nClip d:\n    Note/3\n    Plays | gain=to.seq.{end}: [b, c][sec]\n"
+        )
+    };
+    for child in [" as seq", ""] {
+        let text = program(child, "size");
+        assert_eq!(new_codes(&vocabulary, &text), [Code::ToCandidates]);
+        assert_eq!(
+            old_codes(&vocabulary, &text),
+            [Code::UnknownAttribute, Code::ToCandidates]
+        );
+    }
+    let twin = program(" as seq", "pitch");
+    assert_eq!(new_codes(&vocabulary, &twin), [Code::ToCandidates]);
+    assert_eq!(old_codes(&vocabulary, &twin), new_codes(&vocabulary, &twin));
+}

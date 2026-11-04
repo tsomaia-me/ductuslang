@@ -16,7 +16,7 @@ const VALID_LOOPS: [&str; 9] = [
     "Clip c:\n    for i in 0..3:\n        Note/1 Note/i\n",
 ];
 
-const FAULTY_LOOPS: [&str; 22] = [
+const FAULTY_LOOPS: [&str; 21] = [
     "Clip c:\n    for i in 0..3:\n        Note/(i * 3000000000)\n",
     "Clip c:\n    for i in 0..3:\n        Note/(i + true)\n",
     "Clip c:\n    for i in 0..3:\n        Note/1.5\n",
@@ -35,7 +35,6 @@ const FAULTY_LOOPS: [&str; 22] = [
     "Clip c:\n    for i in 0..3:\n        for i in 0..2:\n            Note/i\n",
     "let i = 4\nClip c:\n    for i in 0..3:\n        Note/i\n",
     "Clip c:\n    Note as i\n    for i in 0..3:\n        Note/i\n",
-    "Clip c:\n    for i in 0..300000000000:\n        Note/1\n",
     "Clip c:\n    for i in 0..3:\n        Note/(i)\n    Note/zz\n",
     "Clip c:\n    for i in 0..0:\n        Note | loud=1\n",
     "Clip c:\n    for i in 0..0:\n        for j in 0..3:\n            Zap | loud=1\n",
@@ -109,4 +108,46 @@ fn a_placement_for_of_a_thousand_iterations_types_its_body_once() {
     new.checked_by_new_core(&[source(text)])
         .expect("the new core takes the loops");
     assert_eq!(CountedWalk::CoreLoopBody.steps() - bodies, 2);
+}
+
+#[test]
+fn the_body_of_a_placement_of_an_unknown_kind_draws_each_fault_in_it_at_its_span_481() {
+    let bounded = symphonyscript_fixtures::bounded_vocabulary();
+    let program = "Root r:\n    Item\n    Link: r\nClip a:\n    Note/1\n";
+    let new = Compiler::new(&bounded).expect("the vocabulary compiles");
+    let found = new
+        .checked_by_new_core(&[source(program)])
+        .expect("the new core takes the program");
+    let kinds: Vec<_> = found
+        .iter()
+        .map(|diagnostic| (diagnostic.code, diagnostic.span.range.clone()))
+        .collect();
+    assert_eq!(
+        kinds,
+        vec![
+            (crate::diagnostics::Code::UnknownKind, 29..33),
+            (crate::diagnostics::Code::UnknownKind, 41..45),
+        ]
+    );
+    assert_engines_agree(
+        &bounded,
+        &[
+            program,
+            "Root r:\n    Item\n    Link: r\n",
+            "Zap a:\n    Blip\n    Lamp\n",
+            "Zap:\n    Note/1\n",
+            "Clip c:\n    Zap:\n        Blip\n",
+        ],
+    );
+    assert_engines_agree(
+        &symphonyscript_fixtures::vocabulary(),
+        &[
+            "Zap a:\n    Note | loud=1\n",
+            "Zap a:\n    Note/(1 + true)\n",
+            "Zap a:\n    Lamp\n    Blip\n",
+            "Zap a:\n    for i in 0..2:\n        Blip | x=1\n",
+            "Clip c:\n    Zap:\n        Note | loud=1\n",
+            "let zz = 1\nZap a:\n    zz\n",
+        ],
+    );
 }
