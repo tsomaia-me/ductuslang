@@ -197,10 +197,15 @@ pub(crate) enum CountedWalk {
     CoreUse,
     CallMemo,
     SymbolProbe,
+    CoreWireDestination,
+    CheckWireRow,
+    CheckWireCandidate,
+    CheckWireCycle,
+    CorePathStep,
 }
 
 #[cfg(test)]
-const WALKS: usize = 191;
+const WALKS: usize = 196;
 
 #[cfg(test)]
 thread_local! {
@@ -401,6 +406,11 @@ impl CountedWalk {
         CountedWalk::CoreUse,
         CountedWalk::CallMemo,
         CountedWalk::SymbolProbe,
+        CountedWalk::CoreWireDestination,
+        CountedWalk::CheckWireRow,
+        CountedWalk::CheckWireCandidate,
+        CountedWalk::CheckWireCycle,
+        CountedWalk::CorePathStep,
     ];
 
     pub(crate) fn step(self) {

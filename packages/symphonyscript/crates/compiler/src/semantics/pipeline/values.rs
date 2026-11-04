@@ -398,6 +398,7 @@ impl Core<'_> {
     fn evaluate_frames(&mut self, root: u32, ty: EvalTy) -> Stage<CoreValue> {
         let ty = evaluated_in(ty);
         let mut outer_chains: Vec<Vec<u32>> = Vec::new();
+        let mut open: std::collections::HashSet<u32> = std::collections::HashSet::new();
         let mut frames: Vec<Frame> = vec![Frame {
             owner: None,
             ty,
@@ -441,6 +442,9 @@ impl Core<'_> {
                     }
                     value = Value::Error;
                 }
+                if let Some(owner) = frame.owner {
+                    open.remove(&owner);
+                }
                 frames.pop();
                 CountedWalk::ValueRun.step();
                 if let Some(parent) = frames.last_mut() {
@@ -453,6 +457,9 @@ impl Core<'_> {
                 let value = frame.values.pop().ok_or(Internal::missed("value stack"))?;
                 let (owner, frame_ty) = (frame.owner, frame.ty);
                 let called = frame.call.is_some();
+                if let Some(owner) = owner {
+                    open.remove(&owner);
+                }
                 frames.pop();
                 if owner.is_some()
                     && let Some(outer) = outer_chains.pop()
@@ -461,6 +468,18 @@ impl Core<'_> {
                 }
                 CountedWalk::ValueRun.step();
                 match owner {
+                    Some(at) if at as usize >= self.ir.lets.len() => {
+                        if let Some(slot) = self
+                            .attr_values
+                            .get_mut(at as usize - self.ir.lets.len())
+                            .and_then(|slots| slots.get_mut(class(frame_ty)))
+                        {
+                            *slot = Some(value.clone());
+                        }
+                        if let Some(parent) = frames.last_mut() {
+                            parent.values.push(value);
+                        }
+                    }
                     Some(at) => {
                         let value = match self.annotation_ty(at)? {
                             Some(annotated) => self.annotation_fit(at, annotated, value)?,
@@ -494,6 +513,61 @@ impl Core<'_> {
                     if self.fitting && op == Op::Name && self.is_reactive(node)? {
                         if let Some(frame) = frames.last_mut() {
                             frame.values.push(Value::Error);
+                        }
+                        continue;
+                    }
+                    if op == Op::Field {
+                        let read = self.path_read(node)?.cloned();
+                        let plan = match read {
+                            Some(read) if !read.cyclic && read.root == NONE => {
+                                Some((self.default_read(&read)?, NONE, EvalTy::Exact))
+                            }
+                            Some(read) if !read.cyclic => {
+                                let read_ty = match self.fact(read.root)?.fixed {
+                                    Some(own) if widens(own, read.ty) => evaluated_in(read.ty),
+                                    _ => flexible(read.ty),
+                                };
+                                Some((Value::Error, read.root, read_ty))
+                            }
+                            Some(_) | None => None,
+                        };
+                        let Some(frame) = frames.last_mut() else {
+                            return Err(Internal::missed("evaluation frame"));
+                        };
+                        match plan {
+                            Some((value, root, read_ty)) => {
+                                if matches!(class(node_ty), 1 | 2 | 4..=6) {
+                                    frame.steps.push(Step::Widen(evaluated_in(node_ty)));
+                                }
+                                let at = self.paths.get(self.local(node)?).copied().unwrap_or(NONE);
+                                let memo = self
+                                    .attr_values
+                                    .get(at as usize)
+                                    .and_then(|slots| slots.get(class(read_ty)))
+                                    .cloned()
+                                    .flatten();
+                                if root == NONE {
+                                    frame.values.push(value);
+                                } else if let Some(memo) = memo {
+                                    frame.values.push(memo);
+                                } else {
+                                    self.enter_let_frame(&mut outer_chains);
+                                    let owner = u32::try_from(self.ir.lets.len())
+                                        .unwrap_or(u32::MAX)
+                                        .saturating_add(at);
+                                    open.insert(owner);
+                                    frames.push(Frame {
+                                        owner: Some(owner),
+                                        ty: read_ty,
+                                        steps: vec![Step::Visit(root, read_ty)],
+                                        values: Vec::new(),
+                                        call: None,
+                                        inst: NONE,
+                                        fold: None,
+                                    });
+                                }
+                            }
+                            None => frame.values.push(Value::Error),
                         }
                         continue;
                     }
@@ -615,13 +689,14 @@ impl Core<'_> {
                                 frame.values.push(Value::Error);
                                 continue;
                             }
-                            if frames.iter().any(|open| open.owner == Some(at)) {
+                            if open.contains(&at) {
                                 return Err(Internal::missed(
                                     "an open declaration outside every cycle",
                                 ));
                             }
                             let root = self.let_root(at)?;
                             self.enter_let_frame(&mut outer_chains);
+                            open.insert(at);
                             frames.push(Frame {
                                 owner: Some(at),
                                 ty: let_ty,
@@ -642,7 +717,7 @@ impl Core<'_> {
                             frame.values.push(value);
                             continue;
                         }
-                        if frames.iter().any(|open| open.owner == Some(at)) {
+                        if open.contains(&at) {
                             return Err(Internal::missed(
                                 "an open declaration outside every cycle",
                             ));
@@ -654,6 +729,7 @@ impl Core<'_> {
                         };
                         let root = self.let_root(at)?;
                         self.enter_let_frame(&mut outer_chains);
+                        open.insert(at);
                         frames.push(Frame {
                             owner: Some(at),
                             ty: let_ty,
@@ -1118,7 +1194,6 @@ impl Core<'_> {
             Op::If
             | Op::Str
             | Op::Variant
-            | Op::To
             | Op::Field
             | Op::Call
             | Op::NamedCall
@@ -1132,7 +1207,7 @@ impl Core<'_> {
             | Op::TyName
             | Op::TyArray
             | Op::TyVar => return Err(Internal::missed("an op the coverage table leaves out")),
-            Op::Bad => Value::Error,
+            Op::Bad | Op::To => Value::Error,
         }))
     }
 

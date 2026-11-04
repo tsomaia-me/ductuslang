@@ -2,7 +2,7 @@ use super::reason::Reason;
 use super::slice::{LANDED, Slice};
 use crate::semantics::ir::Suffix;
 use crate::semantics::ir::flat::{
-    ABSENT, AttrForm, CellRec, FlatIr, FnRec, ForRec, ItemRec, NONE, Op, TopRec,
+    ABSENT, AttrForm, CellRec, FlatIr, FnRec, ForRec, ItemRec, NONE, Op, TopRec, WireRec,
 };
 use crate::semantics::operators::EvalTy;
 
@@ -24,12 +24,11 @@ pub(crate) fn op_slice(op: Op) -> Slice {
         Op::TyArray => Slice::One,
         Op::TyName | Op::TyVar => Slice::Pending,
         Op::To => Slice::Two,
+        Op::Field => Slice::Two,
         Op::Past | Op::Stepped => Slice::Four,
         Op::Variant => Slice::Five,
         Op::Bad => Slice::One,
-        Op::Str | Op::Match | Op::Field | Op::MethodCall | Op::NamedMethodCall => {
-            Slice::DefaultFlip
-        }
+        Op::Str | Op::Match | Op::MethodCall | Op::NamedMethodCall => Slice::DefaultFlip,
     }
 }
 
@@ -78,6 +77,12 @@ pub(crate) fn covers(ir: &FlatIr) -> bool {
         if !landed(top_slice(*top)) {
             return false;
         }
+        if let TopRec::Placement(item) = top
+            && matches!(ir.items.get(*item as usize), Some(ItemRec::Wire(_)))
+            && !landed(top_wire_slice())
+        {
+            return false;
+        }
         if let TopRec::Let(at) = top
             && ir
                 .lets
@@ -117,6 +122,9 @@ fn item_landed(ir: &FlatIr, item: &ItemRec) -> bool {
     if !landed(item_slice(item)) {
         return false;
     }
+    if let ItemRec::Wire(wire) = item {
+        return wire_landed(ir, wire);
+    }
     let ItemRec::Placement(placement) = item else {
         return true;
     };
@@ -151,9 +159,41 @@ fn item_landed(ir: &FlatIr, item: &ItemRec) -> bool {
     })
 }
 
+fn value_entries(ir: &FlatIr, attrs: (u32, u32)) -> bool {
+    ir.attr_entries
+        .get(attrs.0 as usize..attrs.1 as usize)
+        .unwrap_or_default()
+        .iter()
+        .all(|entry| matches!(entry.form, AttrForm::Value(_)))
+}
+
+pub(crate) fn top_wire_slice() -> Slice {
+    Slice::Pending
+}
+
+pub(crate) fn destination_slice(op: Op) -> Slice {
+    if op == Op::Name {
+        Slice::Two
+    } else {
+        Slice::Pending
+    }
+}
+
+fn wire_landed(ir: &FlatIr, wire: &WireRec) -> bool {
+    wire.gate == NONE
+        && wire.flags.0 == wire.flags.1
+        && wire.as_name == NONE
+        && !wire.attrs_cut
+        && value_entries(ir, wire.attrs)
+        && ir
+            .node(wire.destination)
+            .is_ok_and(|(op, _, _, _)| landed(destination_slice(op)))
+}
+
 pub(crate) fn reason_slice(reason: Reason) -> Slice {
     match reason {
-        Reason::ChildName => Slice::DefaultFlip,
+        Reason::Member => Slice::DefaultFlip,
+        Reason::PathInBody | Reason::ReactivePath | Reason::ChildName => Slice::Pending,
         Reason::ArrayAttribute => Slice::Pending,
         Reason::PreludeItems | Reason::NameOfInstance | Reason::NameOfVocabulary => {
             Slice::DefaultFlip
@@ -166,6 +206,7 @@ pub(crate) fn reason_slice(reason: Reason) -> Slice {
         Reason::AnnotatedCall => Slice::Pending,
         Reason::Pending => Slice::One,
         Reason::ReactiveFor => Slice::Three,
+        Reason::DestinationValue | Reason::WireKind => Slice::Pending,
         Reason::BareVariant | Reason::UnitAttribute | Reason::EnumAttribute => Slice::Five,
     }
 }

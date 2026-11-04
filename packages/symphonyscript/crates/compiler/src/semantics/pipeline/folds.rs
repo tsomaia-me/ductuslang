@@ -565,8 +565,22 @@ impl Core<'_> {
         if self.stop.is_some() || !self.warned.insert(node) {
             return Ok(());
         }
-        self.unmemoized();
         let span = self.node_span(node)?;
+        self.warn_span(span, key, counted, bound);
+        Ok(())
+    }
+
+    pub fn warn_span(
+        &mut self,
+        span: symphonyscript_core::Span,
+        key: &str,
+        counted: String,
+        bound: u64,
+    ) {
+        if self.stop.is_some() {
+            return;
+        }
+        self.unmemoized();
         let diagnostic = Diagnostic::new(
             Code::LimitWarning,
             span,
@@ -580,6 +594,5 @@ impl Core<'_> {
         ));
         let diagnostic = self.chained(diagnostic);
         self.diagnostics.push(diagnostic);
-        Ok(())
     }
 }

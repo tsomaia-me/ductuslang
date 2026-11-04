@@ -55,8 +55,18 @@ pub(crate) fn analyze(inputs: &Inputs<'_>) -> Result<Option<Run>, Internal> {
         return declined(reason);
     }
     stages.mark("expand");
+    if core.stop.is_some() {
+        return Ok(Some(finished(core)));
+    }
+    core.resolve_destinations()?;
+    if let Err(reason) = stage(core.resolve_paths())? {
+        return declined(reason);
+    }
     core.declaration_cycles()?;
     if let Err(reason) = stage(core.type_cells())? {
+        return declined(reason);
+    }
+    if let Err(reason) = stage(core.type_attr_reads())? {
         return declined(reason);
     }
     stages.mark("resolve");

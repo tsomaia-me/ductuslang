@@ -1,7 +1,8 @@
 use std::collections::BTreeMap;
 
-use symphonyscript_core::{AttrDecl, Count, NodeKind, Scalar, Span};
+use symphonyscript_core::{AttrDecl, AttrId, Count, NodeKind, Scalar, Span};
 
+use super::attr_item::AttrItem;
 use super::core::{Core, Stage};
 use super::declined::Declined;
 use super::fact::Fact;
@@ -16,7 +17,7 @@ use crate::semantics::counted_walk::CountedWalk;
 use crate::semantics::ir::flat::{AttrForm, NONE, Op};
 use crate::semantics::operators::{EvalTy, Value, int_range, ty_name};
 
-fn describe(count: Count) -> String {
+pub(super) fn describe(count: Count) -> String {
     match count {
         Count::Exactly(n) => format!("exactly {n}"),
         Count::AtLeast(n) => format!("at least {n}"),
@@ -38,7 +39,7 @@ fn expected_array(attr: &AttrDecl) -> Option<(EvalTy, u32)> {
     expected(&scalar).map(|ty| (ty, *length))
 }
 
-fn expected(attr: &AttrDecl) -> Option<EvalTy> {
+pub(super) fn expected(attr: &AttrDecl) -> Option<EvalTy> {
     if !attr.ty.lengths.is_empty() || attr.ty.capacity.is_some() || attr.unit.is_some() {
         return None;
     }
@@ -63,7 +64,7 @@ impl Core<'_> {
             .clone())
     }
 
-    fn row_span(&self, row: u32) -> Result<Span, Internal> {
+    pub fn row_span(&self, row: u32) -> Result<Span, Internal> {
         let record = *self
             .instances
             .get(row as usize)
@@ -73,97 +74,145 @@ impl Core<'_> {
     }
 
     pub fn check_attributes(&mut self) -> Stage<()> {
+        let vocabulary = self.vocabulary;
         for row in 0..self.instances.len() {
             CountedWalk::CheckRow.step();
             let record = *self.instances.get(row).ok_or(Internal::missed("row"))?;
             let placement = self.placement(record.item)?;
-            let vocabulary = self.vocabulary;
             let decl = vocabulary
                 .node_kind(record.kind)
                 .ok_or(Internal::missed("node kind"))?;
-            let mut sources: Vec<(usize, Span, u32)> = Vec::new();
-            let mut set = |core: &mut Self, attr: usize, span: Span, root: u32| {
-                if let Some((_, earlier, _)) = sources.iter().find(|(seen, _, _)| *seen == attr) {
-                    let name = decl
-                        .attrs
-                        .get(attr)
-                        .map(|attr| attr.name.clone())
-                        .unwrap_or_default();
-                    core.draw_related(
-                        Code::DuplicateAttribute,
-                        span,
-                        vec![(earlier.clone(), "first set here".to_string())],
-                        format!("the attribute `{name}` is set twice"),
-                    );
-                    return;
-                }
-                sources.push((attr, span, root));
+            let item = AttrItem {
+                file: record.file,
+                default: placement.default,
+                attrs: placement.attrs,
+                lo: placement.lo,
+                hi: placement.hi,
             };
-            if placement.default != NONE {
-                let span = self.node_span(placement.default)?;
-                match decl.default_attr {
-                    Some(attr) => set(self, attr.index(), span, placement.default),
-                    None => self.draw(
-                        Code::NoDefaultAttribute,
-                        span,
-                        format!("`{}` has no default attribute for `/expr`", decl.name),
+            if let Err(declined) =
+                self.item_attributes(item, &decl.name, &decl.attrs, decl.default_attr)?
+            {
+                return Ok(Err(declined));
+            }
+        }
+        for wire in 0..self.wires.len() {
+            CountedWalk::CheckWireRow.step();
+            let row = *self.wires.get(wire).ok_or(Internal::missed("wire row"))?;
+            let rec = self.wire_rec(row.item)?;
+            let decl = vocabulary
+                .wire_kind(row.kind)
+                .ok_or(Internal::missed("wire kind"))?;
+            let item = AttrItem {
+                file: row.file,
+                default: rec.default,
+                attrs: rec.attrs,
+                lo: rec.lo,
+                hi: rec.hi,
+            };
+            if let Err(declined) =
+                self.item_attributes(item, &decl.name, &decl.attrs, decl.default_attr)?
+            {
+                return Ok(Err(declined));
+            }
+        }
+        Ok(Ok(()))
+    }
+
+    fn item_attributes(
+        &mut self,
+        item: AttrItem,
+        kind_name: &str,
+        decl_attrs: &[AttrDecl],
+        default_attr: Option<AttrId>,
+    ) -> Stage<()> {
+        let AttrItem {
+            file,
+            default,
+            attrs,
+            lo,
+            hi,
+        } = item;
+        let mut sources: Vec<(usize, Span, u32)> = Vec::new();
+        let mut set = |core: &mut Self, attr: usize, span: Span, root: u32| {
+            if let Some((_, earlier, _)) = sources.iter().find(|(seen, _, _)| *seen == attr) {
+                let name = decl_attrs
+                    .get(attr)
+                    .map(|attr| attr.name.clone())
+                    .unwrap_or_default();
+                core.draw_related(
+                    Code::DuplicateAttribute,
+                    span,
+                    vec![(earlier.clone(), "first set here".to_string())],
+                    format!("the attribute `{name}` is set twice"),
+                );
+                return;
+            }
+            sources.push((attr, span, root));
+        };
+        if default != NONE {
+            let span = self.node_span(default)?;
+            match default_attr {
+                Some(attr) => set(self, attr.index(), span, default),
+                None => self.draw(
+                    Code::NoDefaultAttribute,
+                    span,
+                    format!("`{}` has no default attribute for `/expr`", kind_name),
+                ),
+            }
+        }
+        for at in attrs.0..attrs.1 {
+            let entry = *self
+                .ir
+                .attr_entries
+                .get(at as usize)
+                .ok_or(Internal::missed("IR attribute"))?;
+            let AttrForm::Value(root) = entry.form else {
+                return Err(Internal::missed("a flag the coverage table leaves out"));
+            };
+            let name = self
+                .ir
+                .name(entry.name)
+                .ok_or(Internal::missed("IR name"))?;
+            let text = self.ir.symbols.text(name.sym).to_string();
+            let name_span = self.span(file, name.lo, name.hi);
+            match decl_attrs.iter().position(|attr| attr.name == text) {
+                Some(attr) => {
+                    let span = self.span(file, entry.lo, entry.hi);
+                    set(self, attr, span, root);
+                }
+                None => self.draw(
+                    Code::UnknownAttribute,
+                    name_span,
+                    format!("`{}` has no attribute `{text}`", kind_name),
+                ),
+            }
+        }
+        for (position, attr) in decl_attrs.iter().enumerate() {
+            if attr.default.is_none() && !sources.iter().any(|(seen, _, _)| *seen == position) {
+                let span = self.span(file, lo, hi);
+                self.draw(
+                    Code::MissingAttribute,
+                    span,
+                    format!(
+                        "`{}` needs a value for `{}`, which has no default",
+                        kind_name, attr.name
                     ),
-                }
+                );
             }
-            for at in placement.attrs.0..placement.attrs.1 {
-                let entry = *self
-                    .ir
-                    .attr_entries
-                    .get(at as usize)
-                    .ok_or(Internal::missed("IR attribute"))?;
-                let AttrForm::Value(root) = entry.form else {
-                    return Err(Internal::missed("a flag the coverage table leaves out"));
-                };
-                let name = self
-                    .ir
-                    .name(entry.name)
-                    .ok_or(Internal::missed("IR name"))?;
-                let text = self.ir.symbols.text(name.sym).to_string();
-                let name_span = self.span(record.file, name.lo, name.hi);
-                match decl.attrs.iter().position(|attr| attr.name == text) {
-                    Some(attr) => {
-                        let span = self.span(record.file, entry.lo, entry.hi);
-                        set(self, attr, span, root);
-                    }
-                    None => self.draw(
-                        Code::UnknownAttribute,
-                        name_span,
-                        format!("`{}` has no attribute `{text}`", decl.name),
-                    ),
-                }
-            }
-            for (position, attr) in decl.attrs.iter().enumerate() {
-                if attr.default.is_none() && !sources.iter().any(|(seen, _, _)| *seen == position) {
-                    let span = self.span(record.file, placement.lo, placement.hi);
-                    self.draw(
-                        Code::MissingAttribute,
-                        span,
-                        format!(
-                            "`{}` needs a value for `{}`, which has no default",
-                            decl.name, attr.name
-                        ),
-                    );
-                }
-            }
-            for (attr, _, root) in sources {
-                let attr = decl.attrs.get(attr).ok_or(Internal::missed("attribute"))?;
-                if let Some((ty, length)) = expected_array(attr) {
-                    if let Err(declined) = self.bind_array(root, &attr.name, ty, length)? {
-                        return Ok(Err(declined));
-                    }
-                    continue;
-                }
-                let Some(ty) = expected(attr) else {
-                    return Ok(Err(Declined(attribute_reason(attr))));
-                };
-                if let Err(declined) = self.bind_value(root, &attr.name, ty)? {
+        }
+        for (attr, _, root) in sources {
+            let attr = decl_attrs.get(attr).ok_or(Internal::missed("attribute"))?;
+            if let Some((ty, length)) = expected_array(attr) {
+                if let Err(declined) = self.bind_array(root, &attr.name, ty, length)? {
                     return Ok(Err(declined));
                 }
+                continue;
+            }
+            let Some(ty) = expected(attr) else {
+                return Ok(Err(Declined(attribute_reason(attr))));
+            };
+            if let Err(declined) = self.bind_value(root, &attr.name, ty)? {
+                return Ok(Err(declined));
             }
         }
         Ok(Ok(()))
@@ -458,52 +507,8 @@ impl Core<'_> {
         for parent in 0..self.instances.len() {
             self.children_counts(u32::try_from(parent).unwrap_or(u32::MAX))?;
         }
-        for row in 0..self.instances.len() {
-            self.wire_minimums(u32::try_from(row).unwrap_or(u32::MAX))?;
-        }
-        Ok(())
-    }
-
-    fn wire_minimums(&mut self, row: u32) -> Result<(), Internal> {
-        let record = *self
-            .instances
-            .get(row as usize)
-            .ok_or(Internal::missed("row"))?;
-        let vocabulary = self.vocabulary;
-        let decl = vocabulary
-            .node_kind(record.kind)
-            .ok_or(Internal::missed("node kind"))?;
-        let directed = decl
-            .outgoing
-            .iter()
-            .map(|entry| (entry, "outgoing"))
-            .chain(decl.incoming.iter().map(|entry| (entry, "incoming")));
-        for ((wire_kind, count), direction) in directed {
-            let unknown = if direction == "outgoing" {
-                self.unknown_children.contains(&row)
-            } else {
-                self.unknown_wires
-            };
-            if count.min() == 0 || unknown {
-                continue;
-            }
-            let name = self
-                .vocabulary
-                .wire_kind(*wire_kind)
-                .ok_or(Internal::missed("wire kind"))?
-                .name
-                .clone();
-            let span = self.row_span(row)?;
-            self.draw(
-                Code::CountBelowMinimum,
-                span,
-                format!(
-                    "this `{}` has 0 {direction} `{name}` wires, and it needs {}",
-                    decl.name,
-                    describe(*count)
-                ),
-            );
-        }
+        self.check_wire_counts()?;
+        self.check_wire_cycles()?;
         Ok(())
     }
 
@@ -599,6 +604,15 @@ impl Core<'_> {
             );
             return Ok(());
         }
+        if self.unknown_wires
+            || self
+                .wires
+                .iter()
+                .any(|wire| wire.candidates.0 == wire.candidates.1)
+        {
+            return Ok(());
+        }
+        let edges = self.wire_edges();
         let mut reached = vec![false; self.instances.len()];
         let mut stack = entries;
         while let Some(row) = stack.pop() {
@@ -614,6 +628,9 @@ impl Core<'_> {
                 .get(row as usize)
                 .ok_or(Internal::missed("row"))?;
             stack.extend(record.children.0..record.children.1);
+            if let Some(targets) = edges.get(row as usize) {
+                stack.extend(targets.iter().copied());
+            }
         }
         for row in self.top_instances.clone() {
             if reached.get(row as usize).copied().unwrap_or(true) {
@@ -640,7 +657,7 @@ impl Core<'_> {
     }
 }
 
-fn attribute_reason(attr: &AttrDecl) -> Reason {
+pub(super) fn attribute_reason(attr: &AttrDecl) -> Reason {
     if attr.unit.is_some() {
         return Reason::UnitAttribute;
     }

@@ -334,8 +334,11 @@ impl Core<'_> {
             }
             while let Some((vertex, next)) = stack.pop() {
                 CountedWalk::BindLookup.step();
-                let out = edges.get(vertex as usize).cloned().unwrap_or_default();
-                if let Some(target) = out.get(next).copied() {
+                let target = edges
+                    .get(vertex as usize)
+                    .and_then(|out| out.get(next))
+                    .copied();
+                if let Some(target) = target {
                     stack.push((vertex, next + 1));
                     match state.get(target as usize).copied() {
                         Some(OPEN) => {

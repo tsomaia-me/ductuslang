@@ -7,6 +7,11 @@ pub type Reviewed = (
 pub const REVIEWED: &[Reviewed] = &[
     (
         "464",
+        "state base([60, 62])\nlet doubled = base * 2\n\nSession main:\n    Includes: keys\n\nTrack keys:\n    Piano\n    Starts: melody\n\nClip melody:\n    Note/(doubled[1])\n",
+        &[("array-operand", "base * 2"), ("reactive-let", "doubled")],
+    ),
+    (
+        "464",
         "\nstate a(1)\nstate b(2)\nstate i(0)\n\nlet s = a + b\nlet c = [a, b, s]\n",
         &[("reactive-let", "c"), ("reactive-let", "s")],
     ),
@@ -4459,6 +4464,19 @@ fn read_of_a_reactive_let(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
     })
 }
 
+fn path_beside_an_unknown_attribute(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
+    change == Change::Added
+        && at.0 == "unknown-attribute"
+        && seen.before(at).ends_with('.')
+        && seen.old.iter().any(|drawn| {
+            drawn.0 == "unknown-attribute"
+                && drawn.2 < at.1
+                && seen.program.get(drawn.2..at.1).is_some_and(|between| {
+                    between.starts_with('=') && !between.contains(char::is_whitespace)
+                })
+        })
+}
+
 fn faulty_line(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
     let line = seen.line(at.1);
     change == Change::Removed
@@ -5137,6 +5155,11 @@ pub const CLASSES: &[Class] = &[
         ledger: "476",
         rule: "a top-level let with an array annotation fixes its whole value's type: each element that does not have or fit the element type draws at itself whichever element a read selects, and an element read keeps the fixed element type, which the old engine misses",
         explains: annotated_array_let,
+    },
+    Class {
+        ledger: "476",
+        rule: "a path in an unknown attribute's value draws its own unknown-attribute at the segment that names no child, wire or attribute, since the program with the attribute repaired to one the kind declares still draws it, which the old engine misses",
+        explains: path_beside_an_unknown_attribute,
     },
     Class {
         ledger: "478",

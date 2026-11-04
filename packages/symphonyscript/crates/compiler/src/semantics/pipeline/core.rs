@@ -2,6 +2,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 
 use symphonyscript_core::{Limits, Span, Vocabulary};
 
+use super::attr_read::AttrRead;
 use super::body_instance::BodyInstance;
 use super::core_value::CoreValue;
 use super::decl_ref::DeclRef;
@@ -13,6 +14,7 @@ use super::memo_key::MemoKey;
 use super::need::Need;
 use super::recording::Recording;
 use super::store::Store;
+use super::wire_row::WireRow;
 use crate::diagnostics::{Code, Diagnostic, Related};
 use crate::semantics::Internal;
 use crate::semantics::collection::Variants;
@@ -84,6 +86,19 @@ pub(crate) struct Core<'a> {
     pub call_memo: HashMap<MemoKey, MemoEntry>,
     pub recordings: Vec<Recording>,
     pub reaches_out: Vec<bool>,
+    pub wires: Vec<WireRow>,
+    pub candidates: Vec<u32>,
+    pub row_of_item: Vec<u32>,
+    pub expanded: u64,
+    pub destination_roots: Vec<u32>,
+    pub paths: Vec<u32>,
+    pub attr_reads: Vec<AttrRead>,
+    pub attr_index: HashMap<(u32, u32), u32>,
+    pub attr_values: Vec<[Option<CoreValue>; 7]>,
+    pub attr_order: Vec<u32>,
+    pub field_receivers: Vec<u32>,
+    pub child_index: Vec<(u32, u32, u32)>,
+    pub to_wires: Vec<(u32, u32)>,
 }
 
 impl<'a> Core<'a> {
@@ -152,6 +167,19 @@ impl<'a> Core<'a> {
             call_memo: HashMap::new(),
             recordings: Vec::new(),
             reaches_out: vec![false; ir.fors.len()],
+            wires: Vec::new(),
+            candidates: Vec::new(),
+            row_of_item: vec![NONE; ir.items.len()],
+            expanded: 0,
+            destination_roots: Vec::new(),
+            paths: vec![NONE; nodes],
+            attr_reads: Vec::new(),
+            attr_index: HashMap::new(),
+            attr_values: Vec::new(),
+            attr_order: Vec::new(),
+            field_receivers: Vec::new(),
+            child_index: Vec::new(),
+            to_wires: Vec::new(),
         }
     }
 

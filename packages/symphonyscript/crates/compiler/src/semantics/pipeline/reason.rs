@@ -5,7 +5,6 @@ pub(crate) enum Reason {
     NameOfVocabulary,
     BareVariant,
     PatternOrWirePlacement,
-    ChildName,
     UnitAttribute,
     EnumAttribute,
     StringAttribute,
@@ -18,4 +17,10 @@ pub(crate) enum Reason {
     AnnotatedCall,
     Pending,
     ReactiveFor,
+    DestinationValue,
+    WireKind,
+    Member,
+    ChildName,
+    PathInBody,
+    ReactivePath,
 }

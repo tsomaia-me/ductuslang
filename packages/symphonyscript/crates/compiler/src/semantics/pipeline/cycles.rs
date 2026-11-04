@@ -1,7 +1,10 @@
+use symphonyscript_core::Span;
+
 use super::core::Core;
+use super::decl_ref::DeclRef;
 use crate::diagnostics::Code;
 use crate::semantics::Internal;
-use crate::semantics::ir::flat::TopRec;
+use crate::semantics::ir::flat::{NONE, Op, TopRec};
 
 impl Core<'_> {
     fn top_lets(&self) -> Vec<u32> {
@@ -21,23 +24,79 @@ impl Core<'_> {
             .collect()
     }
 
-    pub fn declaration_cycles(&mut self) -> Result<(), Internal> {
-        let count = self.ir.lets.len();
-        let mut edges: Vec<Vec<u32>> = vec![Vec::new(); count];
-        for at in self.top_lets() {
-            let mut reads = Vec::new();
-            for node in self.deep_postorder(self.let_root(at)?)? {
-                if let super::decl_ref::DeclRef::Let(read) = self.bound(node)? {
+    fn declaration_reads(&self, root: u32, lets: u32) -> Result<Vec<u32>, Internal> {
+        let mut reads = Vec::new();
+        for node in self.deep_postorder(root)? {
+            let op = self.ir.node(node)?.0;
+            if op == Op::Name {
+                if let DeclRef::Let(read) = self.bound(node)? {
                     reads.push(read);
                 }
+            } else if op == Op::Field {
+                let read = self.paths.get(self.local(node)?).copied().unwrap_or(NONE);
+                if read != NONE {
+                    reads.push(lets + read);
+                }
             }
+        }
+        Ok(reads)
+    }
+
+    fn declaration_key(&self, member: u32, lets: u32) -> Result<(u32, u32), Internal> {
+        if let Some(read) = member
+            .checked_sub(lets)
+            .and_then(|at| self.attr_reads.get(at as usize))
+        {
+            return Ok(read.key);
+        }
+        let rec = self
+            .ir
+            .lets
+            .get(member as usize)
+            .ok_or(Internal::missed("IR let"))?;
+        Ok((
+            self.let_file.get(member as usize).copied().unwrap_or(0),
+            rec.lo,
+        ))
+    }
+
+    pub fn declaration_cycles(&mut self) -> Result<(), Internal> {
+        let lets = u32::try_from(self.ir.lets.len()).unwrap_or(u32::MAX);
+        let count = self.ir.lets.len() + self.attr_reads.len();
+        let mut edges: Vec<Vec<u32>> = vec![Vec::new(); count];
+        for at in self.top_lets() {
+            let reads = self.declaration_reads(self.let_root(at)?, lets)?;
             if let Some(slot) = edges.get_mut(at as usize) {
                 *slot = reads;
             }
         }
+        for at in 0..self.attr_reads.len() {
+            let root = self.attr_reads.get(at).map_or(NONE, |read| read.root);
+            if root == NONE {
+                continue;
+            }
+            let reads = self.declaration_reads(root, lets)?;
+            if let Some(slot) = edges.get_mut(self.ir.lets.len() + at) {
+                *slot = reads;
+            }
+        }
         let components = strongly_connected(&edges);
+        for component in &components {
+            for member in component {
+                if let Some(at) = member.checked_sub(lets) {
+                    self.attr_order.push(at);
+                }
+            }
+        }
         for component in components {
-            let Some(&first) = component.iter().min() else {
+            let mut first = None;
+            for member in &component {
+                let key = self.declaration_key(*member, lets)?;
+                if first.is_none_or(|(seen, _)| key < seen) {
+                    first = Some((key, *member));
+                }
+            }
+            let Some((_, first)) = first else {
                 continue;
             };
             let looped = component.len() > 1
@@ -48,41 +107,65 @@ impl Core<'_> {
                 continue;
             }
             for member in &component {
-                if let Some(slot) = self.cyclic.get_mut(*member as usize) {
+                if let Some(read) = member
+                    .checked_sub(lets)
+                    .and_then(|at| self.attr_reads.get_mut(at as usize))
+                {
+                    read.cyclic = true;
+                } else if let Some(slot) = self.cyclic.get_mut(*member as usize) {
                     *slot = true;
                 }
             }
             let cycle = shortest_cycle(&edges, &component, first);
-            self.draw_cycle(&cycle)?;
+            let mut names = Vec::new();
+            for member in cycle {
+                match member
+                    .checked_sub(lets)
+                    .and_then(|at| self.attr_reads.get(at as usize))
+                {
+                    Some(read) => names.push((read.label.clone(), read.span.clone())),
+                    None => names.push(self.let_name(member)?),
+                }
+            }
+            self.draw_named_cycle(names);
         }
         Ok(())
+    }
+
+    fn let_name(&self, at: u32) -> Result<(String, Span), Internal> {
+        let rec = self
+            .ir
+            .lets
+            .get(at as usize)
+            .ok_or(Internal::missed("IR let"))?;
+        let binder = *self.ir.binder(rec.binder)?;
+        let entry = *self
+            .ir
+            .name(binder.name)
+            .ok_or(Internal::missed("IR name"))?;
+        let file = if rec.owner == NONE {
+            self.let_file.get(at as usize).copied().unwrap_or(0)
+        } else {
+            self.file_of(rec.value)
+        };
+        Ok((
+            self.ir.symbols.text(entry.sym).to_string(),
+            self.span(file, entry.lo, entry.hi),
+        ))
     }
 
     pub(super) fn draw_cycle(&mut self, cycle: &[u32]) -> Result<(), Internal> {
         let mut names = Vec::new();
         for at in cycle {
-            let rec = self
-                .ir
-                .lets
-                .get(*at as usize)
-                .ok_or(Internal::missed("IR let"))?;
-            let binder = *self.ir.binder(rec.binder)?;
-            let entry = *self
-                .ir
-                .name(binder.name)
-                .ok_or(Internal::missed("IR name"))?;
-            let file = if rec.owner == crate::semantics::ir::flat::NONE {
-                self.let_file.get(*at as usize).copied().unwrap_or(0)
-            } else {
-                self.file_of(rec.value)
-            };
-            names.push((
-                self.ir.symbols.text(entry.sym).to_string(),
-                self.span(file, entry.lo, entry.hi),
-            ));
+            names.push(self.let_name(*at)?);
         }
+        self.draw_named_cycle(names);
+        Ok(())
+    }
+
+    fn draw_named_cycle(&mut self, names: Vec<(String, Span)>) {
         let Some((first_name, first_span)) = names.first().cloned() else {
-            return Ok(());
+            return;
         };
         let mut text: Vec<&str> = names.iter().map(|(name, _)| name.as_str()).collect();
         text.push(first_name.as_str());
@@ -93,7 +176,6 @@ impl Core<'_> {
             .map(|(_, span)| (span.clone(), "a declaration on the cycle".to_string()))
             .collect();
         self.draw_related(Code::DeclarationCycle, first_span, related, summary);
-        Ok(())
     }
 }
 

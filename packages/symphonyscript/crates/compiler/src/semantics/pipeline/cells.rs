@@ -85,7 +85,7 @@ impl Core<'_> {
         if let Some(Some(known)) = self.reads_cell.get(at as usize) {
             return Ok(*known);
         }
-        let mut seen = vec![false; self.ir.lets.len()];
+        let mut seen = std::collections::HashSet::new();
         let mut stack = vec![at];
         let mut found = false;
         while let Some(current) = stack.pop() {
@@ -93,9 +93,8 @@ impl Core<'_> {
                 found = found || *known;
                 continue;
             }
-            match seen.get_mut(current as usize) {
-                Some(slot) if !*slot => *slot = true,
-                Some(_) | None => continue,
+            if !seen.insert(current) {
+                continue;
             }
             for node in self.deep_postorder(self.let_root(current)?)? {
                 let (op, _, _, _) = self.ir.node(node)?;
@@ -313,12 +312,11 @@ impl Core<'_> {
 
 impl Core<'_> {
     fn reads_only_annotated_cells(&self, at: u32) -> Result<bool, Internal> {
-        let mut seen = vec![false; self.ir.lets.len()];
+        let mut seen = std::collections::HashSet::new();
         let mut stack = vec![at];
         while let Some(current) = stack.pop() {
-            match seen.get_mut(current as usize) {
-                Some(slot) if !*slot => *slot = true,
-                Some(_) | None => continue,
+            if !seen.insert(current) {
+                continue;
             }
             for node in self.deep_postorder(self.let_root(current)?)? {
                 if self.ir.node(node)?.0 != Op::Name {
