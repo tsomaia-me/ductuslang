@@ -132,12 +132,68 @@ fn a_chosen_destination_counts_its_candidates_beside_its_valid_twin() {
     }
 }
 
+const CHOSEN_TO_PATHS: [&str; 14] = [
+    "state look(0)\nClip a | gain=0.5:\n    Note/1\nClip b | gain=0.7:\n    Note/2\nClip c:\n    Note/3\n    Plays | gain=to.gain: [a, b][look]\n",
+    "state look(0)\nClip a:\n    Note as h /1\nClip b:\n    Note/2\nClip c:\n    Note/3\n    Plays | gain=to.h.velocity: [a, b][look]\n",
+    "state look(0)\nClip a:\n    Note as h /1 | velocity=0.5\nClip b:\n    Note as h /2\nClip c:\n    Note/3\n    Plays | gain=to.h.velocity: [a, b][look]\n",
+    "Clip a:\n    Note as h /1\nClip b:\n    Note/2\nClip c:\n    Note/3\n    Plays | gain=to.h.velocity: if true then a else b\n",
+    "Clip a:\n    Note as h /1\nClip b:\n    Note/2\nClip c:\n    Note/3\n    Plays | gain=to.h.velocity: if false then a else b\n",
+    "state look(0)\nClip a:\n    Note/1\nClip b:\n    Note/2\nClip c:\n    Note/3\n    Plays | gain=to.nope: [a, b][look]\n",
+    "state look(0)\nClip a:\n    Note/1\nClip b:\n    Note/2\nClip c:\n    Note/3\n    Plays | gain=to.gain * 2: [a, b][look]\n",
+    "state look(0)\nClip a:\n    Note/1\nClip b:\n    Note/2\nClip c:\n    Note/3\n    Plays | gain=to.level: [a, b][look]\n",
+    "state look(0)\nClip a:\n    Note/1\nFilter b:\n    Note/2\nClip c:\n    Note/3\n    Plays | gain=to.gain: [a, b][look]\n",
+    "state look(0)\nClip a:\n    Note/1\nClip c:\n    Note/3\n    Plays | gain=to.gain: [a, a][look]\n",
+    "state look(0)\nClip a:\n    Note as h /1\nClip c:\n    Note/3\n    Plays | gain=to.h: [a, a][look]\n",
+    "state look(0)\nClip a | gain=0.5:\n    Note/1\nClip b | gain=0.7:\n    Note/2\nClip c:\n    Note/3\n    Plays/to.gain: [a, b][look]\n",
+    "state look(0)\nClip a:\n    Note/1\nClip b:\n    Note/2\nClip c:\n    Note/3\n    Plays | gain=to.gain: [a, nope][look]\n",
+    "state look(0)\nClip a | gain=0.5:\n    Note/1\nClip b | gain=0.7:\n    Note/2\nClip c:\n    Note/3\n    Plays | gain=to.gain + 300000000000: [a, b][look]\n",
+];
+
 #[test]
-fn a_chosen_destination_beside_a_to_path_or_holding_a_value_stays_with_the_old_engine() {
+fn a_to_path_over_a_chosen_destination_reads_its_candidates_attributes_as_the_old_engine_does() {
+    assert_engines_agree(&symphonyscript_fixtures::vocabulary(), &CHOSEN_TO_PATHS);
+}
+
+#[test]
+fn a_to_path_over_several_candidates_draws_its_faults_beside_its_valid_twin() {
+    let cases: [(&str, &[Code]); 4] = [
+        (
+            "state look(0)\nClip a:\n    Note as h /1\nClip b:\n    Note as h /2\nClip c:\n    Note/3\n    Plays | gain=to.h.velocity: [a, b][look]\n",
+            &[],
+        ),
+        (
+            "state look(0)\nClip a:\n    Note as h /1\nClip b:\n    Note/2\nClip c:\n    Note/3\n    Plays | gain=to.h.velocity: [a, b][look]\n",
+            &[Code::ToCandidates],
+        ),
+        (
+            "state look(0)\nClip a:\n    Note/1\nClip b:\n    Note/2\nClip c:\n    Note/3\n    Plays | gain=to.gain: [a, b][look]\n",
+            &[],
+        ),
+        (
+            "state look(0)\nClip a:\n    Note/1\nClip b:\n    Note/2\nClip c:\n    Note/3\n    Plays | transpose=to.gain: [a, b][look]\n",
+            &[Code::TypeMismatch],
+        ),
+    ];
+    let vocabulary = symphonyscript_fixtures::vocabulary();
+    let new = Compiler::new(&vocabulary).expect("the vocabulary compiles");
+    for (text, codes) in cases {
+        let found = new
+            .checked_by_new_core(&[source(text)])
+            .unwrap_or_else(|| panic!("the new core takes {text}"));
+        let found: Vec<Code> = found
+            .iter()
+            .map(|diagnostic| diagnostic.code)
+            .filter(|code| *code != Code::NoEntryInstance)
+            .collect();
+        assert_eq!(found, codes, "{text}");
+    }
+}
+
+#[test]
+fn a_chosen_destination_holding_a_value_stays_with_the_old_engine() {
     let vocabulary = symphonyscript_fixtures::vocabulary();
     let new = Compiler::new(&vocabulary).expect("the vocabulary compiles");
     for text in [
-        "state look(0)\nClip a | gain=0.5:\n    Note/1\nClip b | gain=0.7:\n    Note/2\nClip c:\n    Note/3\n    Plays | gain=to.gain: [a, b][look]\n",
         "state look(0)\nClip a:\n    Note/1\nClip c:\n    Note/3\n    Plays: [a, 1][look]\n",
         "let d = a\nClip a:\n    Note/1\nClip c:\n    Note/3\n    Plays: d\n",
     ] {

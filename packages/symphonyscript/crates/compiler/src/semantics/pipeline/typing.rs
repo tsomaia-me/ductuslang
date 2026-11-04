@@ -377,10 +377,13 @@ impl Core<'_> {
                         None => super::annotation::annotated_fact(read.ty),
                     }
                 }
-                None => {
-                    self.draw_body_path_faults(node);
-                    Fact::PLACEHOLDER
-                }
+                None => match self.to_choices.get(&node).copied() {
+                    Some(ty) => super::annotation::annotated_fact(ty),
+                    None => {
+                        self.draw_body_path_faults(node);
+                        Fact::PLACEHOLDER
+                    }
+                },
             },
             Op::Str
             | Op::Variant

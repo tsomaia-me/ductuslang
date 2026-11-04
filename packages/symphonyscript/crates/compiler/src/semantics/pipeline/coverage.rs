@@ -236,9 +236,7 @@ pub(crate) fn reason_slice(reason: Reason) -> Slice {
         Reason::AnnotatedCall => Slice::Pending,
         Reason::Pending => Slice::One,
         Reason::ReactiveFor => Slice::Three,
-        Reason::DestinationValue | Reason::WireKind | Reason::ChosenDestinationPath => {
-            Slice::Pending
-        }
+        Reason::DestinationValue | Reason::WireKind => Slice::Pending,
         Reason::BareVariant | Reason::UnitAttribute | Reason::EnumAttribute => Slice::Five,
     }
 }

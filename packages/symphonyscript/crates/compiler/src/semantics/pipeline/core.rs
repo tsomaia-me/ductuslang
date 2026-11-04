@@ -19,6 +19,7 @@ use crate::diagnostics::{Code, Diagnostic, Related};
 use crate::semantics::Internal;
 use crate::semantics::collection::Variants;
 use crate::semantics::ir::flat::{FlatIr, NONE};
+use crate::semantics::operators::EvalTy;
 
 pub(crate) type Stage<T> = Result<Result<T, Declined>, Internal>;
 
@@ -100,6 +101,8 @@ pub(crate) struct Core<'a> {
     pub child_index: Vec<(u32, u32, u32)>,
     pub to_wires: Vec<(u32, u32)>,
     pub body_path_faults: HashMap<u32, (Vec<Diagnostic>, bool)>,
+    pub deferred_to: Vec<u32>,
+    pub to_choices: HashMap<u32, EvalTy>,
     pub child_scopes: Vec<(u32, Vec<(u32, u32)>)>,
     pub scope_of: HashMap<u32, u32>,
 }
@@ -184,6 +187,8 @@ impl<'a> Core<'a> {
             child_index: Vec::new(),
             to_wires: Vec::new(),
             body_path_faults: HashMap::new(),
+            deferred_to: Vec::new(),
+            to_choices: HashMap::new(),
             child_scopes: Vec::new(),
             scope_of: HashMap::new(),
         }

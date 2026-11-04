@@ -55,7 +55,7 @@ impl Core<'_> {
         if op == Op::Field {
             return match self.read_root(node)? {
                 Some(root) => self.is_reactive(root),
-                None => Ok(false),
+                None => Ok(self.to_choices.contains_key(&node)),
             };
         }
         if matches!(op, Op::Call | Op::NamedCall) {

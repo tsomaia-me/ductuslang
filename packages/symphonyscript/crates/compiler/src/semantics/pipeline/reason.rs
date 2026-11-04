@@ -18,7 +18,6 @@ pub(crate) enum Reason {
     Pending,
     ReactiveFor,
     DestinationValue,
-    ChosenDestinationPath,
     WireKind,
     Member,
 }
