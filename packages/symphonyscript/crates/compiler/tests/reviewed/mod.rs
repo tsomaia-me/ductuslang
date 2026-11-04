@@ -597,6 +597,16 @@ fn fold_fault_at_each_call(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool 
         })
 }
 
+fn slice_keeps_its_array_type(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
+    change == Change::Added
+        && at.0 == "type-mismatch"
+        && seen.text(at).trim_end_matches('\n').ends_with("..]")
+        && seen
+            .new
+            .iter()
+            .any(|drawn| drawn.0 == "index-type" && drawn.1 >= at.1 && drawn.2 <= at.2)
+}
+
 fn choice_refused_once(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
     change == Change::Removed
         && at.0 == "type-mismatch"
@@ -641,7 +651,11 @@ fn integer_cell_read_inside_a_refusal(seen: &Seen<'_>, change: Change, at: &Draw
             seen.new.iter().any(|drawn| {
                 matches!(
                     drawn.0.as_str(),
-                    "type-mismatch" | "not-an-array" | "operand-type" | "condition-type"
+                    "type-mismatch"
+                        | "not-an-array"
+                        | "operand-type"
+                        | "condition-type"
+                        | "conversion-type"
                 ) && drawn.1 <= *lo
                     && *hi <= drawn.2
                     && (drawn.1, drawn.2) != (*lo, *hi)
@@ -798,6 +812,11 @@ pub const CLASSES: &[Class] = &[
         ledger: "476",
         rule: "an integer host-fed cell whose every read lies inside a refused value draws no integer-cell warning, since the program with the refused value repaired reads the cell nowhere, where the old engine draws it from a refused comparison",
         explains: integer_cell_read_inside_a_refusal,
+    },
+    Class {
+        ledger: "476",
+        rule: "a slice whose bound is refused keeps its array type, so the position that holds one value draws its type-mismatch at the slice beside the bound's index-type (ARCHITECTURE §7: a value whose type an error leaves known keeps that type), which the old engine misses",
+        explains: slice_keeps_its_array_type,
     },
 ];
 
