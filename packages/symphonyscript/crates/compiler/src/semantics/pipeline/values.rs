@@ -1302,6 +1302,10 @@ impl Core<'_> {
                     if condition.dims.is_empty()
                         && !matches!(condition.leaf, Leaf::Bool | Leaf::Placeholder | Leaf::Error)
                     {
+                        if self.is_reactive(a)? {
+                            stack.push((c, false));
+                            stack.push((b, false));
+                        }
                         stack.push((a, false));
                         continue;
                     }

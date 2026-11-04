@@ -1854,3 +1854,26 @@ fn a_top_level_lets_fault_read_in_a_body_draws_unchained_and_a_helped_fault_in_a
         assert_eq!(found, old.check(&sources), "{text}");
     }
 }
+
+const RUNTIME_NON_BOOL_CONDITIONS: [&str; 4] = [
+    "state q(0): i32\nClip c:\n    Note/(if q then q else [1, 2][5])\n",
+    "state q(0)\nClip c:\n    Note/(if q then [1, 2][5] else 3)\n",
+    "Clip c:\n    Note/(if 1 then 3 else [1, 2][5])\n",
+    "state q(0)\nClip c:\n    Note/(if q then 3 else 4)\n",
+];
+
+#[test]
+fn a_runtime_condition_of_another_type_than_bool_checks_both_arms_as_the_old_engine_does() {
+    let vocabulary = symphonyscript_fixtures::vocabulary();
+    let old = Compiler::new(&vocabulary)
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
+    let new = Compiler::new(&vocabulary).expect("the vocabulary compiles");
+    for text in RUNTIME_NON_BOOL_CONDITIONS {
+        let sources = [source(text)];
+        let found = new
+            .checked_by_new_core(&sources)
+            .unwrap_or_else(|| panic!("the new core takes {text}"));
+        assert_eq!(found, old.check(&sources), "{text}");
+    }
+}
