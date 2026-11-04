@@ -224,7 +224,13 @@ impl Core<'_> {
             op,
             Op::Neg | Op::Add | Op::Sub | Op::Mul | Op::Div | Op::Rem | Op::Pow
         );
+        let runtime = (arithmetic || op == Op::IntDiv) && self.is_reactive(node)?;
         for (operand, operand_ty) in operands.into_iter().rev() {
+            if runtime && self.compile_time_operand(operand, operand_ty)? {
+                steps.push(Step::Fit(operand, operand_ty));
+                steps.push(Step::Visit(operand, EvalTy::Exact));
+                continue;
+            }
             match self.own_width(operand, operand_ty)? {
                 Some(own) if arithmetic => {
                     steps.push(Step::Widen(operand_ty));
@@ -234,6 +240,14 @@ impl Core<'_> {
             }
         }
         Ok(())
+    }
+
+    fn compile_time_operand(&self, operand: u32, ty: EvalTy) -> Result<bool, Internal> {
+        if int_range(ty).is_none() || self.is_reactive(operand)? || self.is_kept(operand)? {
+            return Ok(false);
+        }
+        let fact = self.fact(operand)?;
+        Ok(fact.fixed.is_none() && fact.dims.is_empty() && fact.leaf == Leaf::Int)
     }
 
     fn own_width(&self, operand: u32, ty: EvalTy) -> Result<Option<EvalTy>, Internal> {
@@ -354,6 +368,12 @@ impl Core<'_> {
             match step {
                 Step::Visit(node, node_ty) => {
                     let (op, _, _, _) = self.ir.node(node)?;
+                    if self.fitting && op == Op::Name && self.is_reactive(node)? {
+                        if let Some(frame) = frames.last_mut() {
+                            frame.values.push(Value::Error);
+                        }
+                        continue;
+                    }
                     if op == Op::Name {
                         match self.bound(node)? {
                             DeclRef::Param(position) => {
@@ -733,15 +753,7 @@ impl Core<'_> {
             Op::Bool => Value::Bool(a == 1),
             Op::Name => match self.bound(node)? {
                 DeclRef::Let(at) => self.memo(at, ty).unwrap_or(Value::Error),
-                DeclRef::Cell(at) if self.repairing => {
-                    match self.ir.cells.get(at as usize).copied() {
-                        Some(rec) if rec.rule == NONE => match self.evaluate(rec.init, ty)? {
-                            Ok(init) => init,
-                            Err(declined) => return Ok(Err(declined)),
-                        },
-                        Some(_) | None => Value::Error,
-                    }
-                }
+                DeclRef::Cell(_) if self.fitting => Value::Error,
                 DeclRef::Cell(at) => {
                     if let Some(rec) = self.ir.cells.get(at as usize).copied()
                         && rec.rule != NONE
@@ -1062,6 +1074,7 @@ impl Core<'_> {
     fn own_walk(&mut self, root: u32) -> Stage<()> {
         let mut stack = vec![(root, false)];
         let mut leaves: Vec<u32> = Vec::new();
+        let mut fits: Vec<u32> = Vec::new();
         while let Some((node, indexed)) = stack.pop() {
             if node == NONE {
                 self.eval_chain.pop();
@@ -1232,9 +1245,7 @@ impl Core<'_> {
                         && !*owned
                     {
                         *owned = true;
-                        if let Err(declined) = self.reactive_fit(at)? {
-                            return Ok(Err(declined));
-                        }
+                        fits.push(at);
                         stack.push((self.let_root(at)?, false));
                     }
                 }
@@ -1279,6 +1290,11 @@ impl Core<'_> {
                         stack.push((operand, false));
                     }
                 }
+            }
+        }
+        for at in fits {
+            if let Err(declined) = self.operand_fits(at)? {
+                return Ok(Err(declined));
             }
         }
         Ok(Ok(()))

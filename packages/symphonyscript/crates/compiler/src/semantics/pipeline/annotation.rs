@@ -1,11 +1,10 @@
 use super::core::{Core, Stage};
 use super::core_value::CoreValue;
-use super::decl_ref::DeclRef;
 use super::declined::Declined;
 use super::fact::Fact;
 use super::leaf::Leaf;
 use super::reason::Reason;
-use super::values::{evaluated_in, flexible};
+use super::values::evaluated_in;
 use super::width::{is_fixed_float, target_ty, widens};
 use crate::diagnostics::Code;
 use crate::semantics::Internal;
@@ -162,39 +161,38 @@ impl Core<'_> {
         }
     }
 
-    pub fn reactive_fit(&mut self, at: u32) -> Stage<()> {
+    pub fn operand_fits(&mut self, at: u32) -> Stage<()> {
         let Some(ty) = self.annotation_ty(at)? else {
             return Ok(Ok(()));
         };
-        if int_range(ty).is_none()
-            || self.repairing
+        if (int_range(ty).is_none() && !is_fixed_float(ty))
+            || self.fitting
             || !self.let_reads_cell(at)?
             || self.annotation_refusal(at, ty)? != Refusal::Kept
         {
             return Ok(Ok(()));
         }
         let root = self.let_root(at)?;
-        for node in self.postorder(root)? {
-            let op = self.ir.node(node)?.0;
-            let reads_let = op == Op::Name && matches!(self.bound(node)?, DeclRef::Let(_));
-            if reads_let || matches!(op, Op::For | Op::Call | Op::NamedCall) {
-                return Ok(Ok(()));
+        let (drawn, stop) = (self.diagnostics.len(), self.stop.clone());
+        let chain = std::mem::take(&mut self.eval_chain);
+        let outer = std::mem::replace(&mut self.inst, NONE);
+        self.fitting = true;
+        let outcome = self.evaluate(root, evaluated_in(ty));
+        self.fitting = false;
+        self.inst = outer;
+        self.eval_chain = chain;
+        self.stop = stop;
+        for diagnostic in self.diagnostics.split_off(drawn) {
+            let fit = diagnostic.code == Code::DoesNotFit
+                && !self
+                    .diagnostics
+                    .iter()
+                    .any(|seen| seen.code == diagnostic.code && seen.span == diagnostic.span);
+            if fit {
+                self.diagnostics.push(diagnostic);
             }
         }
-        let let_ty = match self.fact(root)?.fixed {
-            Some(own) if widens(own, ty) => evaluated_in(ty),
-            _ => flexible(ty),
-        };
-        let (drawn, stop) = (self.diagnostics.len(), self.stop.clone());
-        self.repairing = true;
-        let outcome = self.evaluate(root, let_ty);
-        self.repairing = false;
-        self.diagnostics.truncate(drawn);
-        self.stop = stop;
-        match outcome? {
-            Ok(value) => self.annotation_fit(at, ty, value).map(|_| Ok(())),
-            Err(declined) => Ok(Err(declined)),
-        }
+        outcome.map(|outcome| outcome.map(|_| ()))
     }
 
     pub fn annotation_fit(

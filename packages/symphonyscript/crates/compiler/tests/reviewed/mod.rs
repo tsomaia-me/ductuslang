@@ -313,7 +313,7 @@ impl Class {
 pub const CLASSES: &[Class] = &[
     Class {
         ledger: "464",
-        rule: "a top-level let reading a cell, directly or through another let, draws reactive-let beside any fault in its value or its annotation, and its value's own type-mismatch or its annotation's does-not-fit beside it",
+        rule: "a top-level let reading a cell, directly or through another let, draws reactive-let beside any fault in its value or its annotation, and its value's own type-mismatch or a compile-time operand's does-not-fit against its runtime operation's type beside it",
         explains: reactive_let,
     },
     Class {

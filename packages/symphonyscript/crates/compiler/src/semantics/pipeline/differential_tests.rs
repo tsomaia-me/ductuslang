@@ -680,7 +680,7 @@ fn a_scalar_annotation_on_a_top_level_let_draws_as_the_old_engine_draws() {
     }
 }
 
-const REACTIVE_ANNOTATIONS: [(&str, &[(&str, &str)]); 9] = [
+const REACTIVE_ANNOTATIONS: [(&str, &[(&str, &str)]); 14] = [
     (
         "state s0 = [1]\nlet x: i32 = s0\nClip c:\n    Note/(x)\n",
         &[
@@ -702,10 +702,7 @@ const REACTIVE_ANNOTATIONS: [(&str, &[(&str, &str)]); 9] = [
     ),
     (
         "state s0(1)\nlet x: u8 = s0 + 300\nClip c:\n    Note/(x)\n",
-        &[
-            ("does-not-fit", "let x: u8 = s0 + 300\n"),
-            ("reactive-let", "x"),
-        ],
+        &[("does-not-fit", "300"), ("reactive-let", "x")],
     ),
     (
         "state s0(1)\nlet x: u8 = s0 + 300\n",
@@ -713,20 +710,44 @@ const REACTIVE_ANNOTATIONS: [(&str, &[(&str, &str)]); 9] = [
     ),
     (
         "state s0(300)\nlet x: u8 = s0\nClip c:\n    Note/(x)\n",
-        &[("does-not-fit", "s0"), ("reactive-let", "x")],
+        &[("reactive-let", "x")],
     ),
     (
         "state s0(-100)\nlet x: u8 = s0 + 300\nClip c:\n    Note/(x)\n",
+        &[("does-not-fit", "300"), ("reactive-let", "x")],
+    ),
+    (
+        "state s0(-100)\nlet x: u8 = s0 + 100\nClip c:\n    Note/(x)\n",
         &[("reactive-let", "x")],
     ),
     (
         "state s0(1)\nlet x: u8 = s0 + 254\nClip c:\n    Note/(x)\n",
         &[("reactive-let", "x")],
     ),
+    (
+        "state s0(1)\nlet x: u8 = 300 * s0 + (200 + 100)\nClip c:\n    Note/(x)\n",
+        &[
+            ("does-not-fit", "200 + 100"),
+            ("does-not-fit", "300"),
+            ("reactive-let", "x"),
+        ],
+    ),
+    (
+        "state s0(1)\nlet k = 300\nlet x: u8 = s0 - k\nClip c:\n    Note/(x)\n",
+        &[("does-not-fit", "k"), ("reactive-let", "x")],
+    ),
+    (
+        "state s0(1)\nstate d = s0 + 1\nlet x: u8 = d - 300\nClip c:\n    Note/(x)\n",
+        &[("does-not-fit", "300"), ("reactive-let", "x")],
+    ),
+    (
+        "state s0(1)\nlet x: u8 = s0 + u8(1) * 300\nClip c:\n    Note/(x)\n",
+        &[("does-not-fit", "300"), ("reactive-let", "x")],
+    ),
 ];
 
 #[test]
-fn a_let_reading_a_cell_draws_reactive_let_beside_its_annotations_fault_and_fit_464() {
+fn a_let_reading_a_cell_draws_reactive_let_beside_its_annotations_fault_and_its_operands_fit_464() {
     let new =
         Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("the vocabulary compiles");
     for (text, expected) in REACTIVE_ANNOTATIONS {
@@ -739,6 +760,32 @@ fn a_let_reading_a_cell_draws_reactive_let_beside_its_annotations_fault_and_fit_
             .collect();
         wanted.sort();
         assert_eq!(spanned(text, &found), wanted, "{text}");
+    }
+}
+
+const RUNTIME_OPERANDS: [&str; 7] = [
+    "state s0(1): u8\nClip c:\n    Note/([1, 2][s0 + (200 + 100)])\n",
+    "state s0(1): u8\nClip c:\n    Note/([1, 2][s0 + 200 * 2])\n",
+    "state s0(1): u8\nClip c:\n    Note/([1, 2][s0 + [1, 300][1]])\n",
+    "state s0(1): u8\nClip c:\n    Note/([1, 2][s0 + (if true then 300 else 1)])\n",
+    "state s0(1): u8\nClip c:\n    Note/([1, 2][s0 + -1])\n",
+    "state s0(1): u8\nlet k = 300\nClip c:\n    Note/([1, 2][s0 div k])\n",
+    "state s0(1): u8\nClip c:\n    Note/([1, 2][s0 + u8(1) * 300])\n",
+];
+
+#[test]
+fn a_compile_time_operand_of_a_runtime_operation_is_computed_exactly_and_fitted_at_its_span() {
+    let old = Compiler::new(&symphonyscript_fixtures::vocabulary())
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
+    let new =
+        Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("the vocabulary compiles");
+    for text in RUNTIME_OPERANDS {
+        let sources = [source(text)];
+        let found = new
+            .checked_by_new_core(&sources)
+            .expect("the new core takes the program");
+        assert_eq!(found, old.check(&sources), "{text}");
     }
 }
 
