@@ -401,6 +401,22 @@ fn kept(
         .collect()
 }
 
+fn unequal(
+    mine: Vec<Diagnostic>,
+    mut theirs: Vec<Diagnostic>,
+) -> (Vec<Diagnostic>, Vec<Diagnostic>) {
+    let mut left = Vec::new();
+    for diagnostic in mine {
+        match theirs.iter().position(|other| *other == diagnostic) {
+            Some(at) => {
+                theirs.remove(at);
+            }
+            None => left.push(diagnostic),
+        }
+    }
+    (left, theirs)
+}
+
 fn compared(sources: &[Source], found: &[Diagnostic], expected: &[Diagnostic]) {
     let joined: Vec<&str> = sources.iter().map(|source| source.text.as_str()).collect();
     let joined = joined.join("\n");
@@ -426,7 +442,13 @@ fn compared(sources: &[Source], found: &[Diagnostic], expected: &[Diagnostic]) {
     if reviewed_set.is_none() && !text.is_empty() {
         let (old, new) = (drawn(sources, expected), drawn(sources, found));
         if let Ok(classes) = reviewed::moved(text, &old, &new) {
-            let (mine, theirs) = (kept(found, &new, &old), kept(expected, &old, &new));
+            let (rest_found, rest_expected) = unequal(found.to_vec(), expected.to_vec());
+            let (rest_new, rest_old) =
+                (drawn(sources, &rest_found), drawn(sources, &rest_expected));
+            let (mine, theirs) = (
+                kept(&rest_found, &rest_new, &rest_old),
+                kept(&rest_expected, &rest_old, &rest_new),
+            );
             let restated: Vec<bool> = mine
                 .iter()
                 .zip(&theirs)

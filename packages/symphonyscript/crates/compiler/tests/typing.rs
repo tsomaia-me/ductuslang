@@ -4915,7 +4915,10 @@ fn beside_a_placeholder_an_operand_draws_only_what_its_expression_draws_for_ever
         ),
         (
             &["Clip c:\n    Note/(if nothing then 1.5 else 2.5)\n"],
-            &[(Code::UnknownName, "nothing")],
+            &[
+                (Code::UnknownName, "nothing"),
+                (Code::TypeMismatch, "if nothing then 1.5 else 2.5"),
+            ],
         ),
         (
             &[x, "Clip c:\n    Note/(if true then x else 1.5)\n"],
@@ -5106,7 +5109,10 @@ fn beside_a_placeholder_an_operand_draws_only_where_its_twin_draws_with_its_twin
         ),
         (
             &[x, "Clip c:\n    Note/(if (1 + true) then x else 2.5)\n"],
-            &[(Code::OperandType, "1 + true")],
+            &[
+                (Code::OperandType, "1 + true"),
+                (Code::TypeMismatch, "if (1 + true) then x else 2.5"),
+            ],
         ),
         (
             &["Clip c:\n    Note/((nothing - true) + true)\n"],
@@ -6456,8 +6462,8 @@ fn where_the_flow_stops_a_literal_beside_a_fixed_type_operand_takes_the_operands
 }
 
 #[test]
-fn an_annotated_value_holding_a_faulty_choice_draws_the_faults_inside_it_and_no_shape_mismatch_392()
-{
+fn an_annotated_value_holding_a_choice_with_a_faulty_condition_draws_the_faults_inside_it_and_the_shape_mismatch_its_arms_give_392()
+ {
     let read = "Clip c:\n    Note/(a)\n";
     let rows: &[support::Row] = &[
         (
@@ -6465,6 +6471,10 @@ fn an_annotated_value_holding_a_faulty_choice_draws_the_faults_inside_it_and_no_
             &[
                 (Code::ConditionType, "[1, 2][5]"),
                 (Code::IndexOutOfRange, "5"),
+                (
+                    Code::TypeMismatch,
+                    "let a: i32 = if [1, 2][5] then [1, 2] else [1, 2]\n",
+                ),
             ],
         ),
         (
@@ -6475,6 +6485,10 @@ fn an_annotated_value_holding_a_faulty_choice_draws_the_faults_inside_it_and_no_
             &[
                 (Code::ConditionType, "[1, 2][5]"),
                 (Code::IndexOutOfRange, "5"),
+                (
+                    Code::TypeMismatch,
+                    "let a: i32[3] = if [1, 2][5] then [1, 2] else [1, 2]\n",
+                ),
             ],
         ),
         (
@@ -6485,11 +6499,21 @@ fn an_annotated_value_holding_a_faulty_choice_draws_the_faults_inside_it_and_no_
             &[
                 (Code::ConditionType, "1 + [1, 2][5]"),
                 (Code::IndexOutOfRange, "5"),
+                (
+                    Code::TypeMismatch,
+                    "let a: i32 = if 1 + [1, 2][5] then [1, 2] else [1, 2]\n",
+                ),
             ],
         ),
         (
             &["let a: i32 = if 1 then [1, 2] else [1, 2]\n", read],
-            &[(Code::ConditionType, "1")],
+            &[
+                (Code::ConditionType, "1"),
+                (
+                    Code::TypeMismatch,
+                    "let a: i32 = if 1 then [1, 2] else [1, 2]\n",
+                ),
+            ],
         ),
         (
             &["let a: i32 = if [1, 2][5] then 1 else 2\n", read],

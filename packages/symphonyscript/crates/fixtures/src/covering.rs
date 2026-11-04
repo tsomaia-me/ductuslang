@@ -92,6 +92,10 @@ impl Rows<'_> {
 }
 
 pub fn covered<T>(run: impl Fn(&Rows) -> T) -> T {
+    covered_where(run, |_| true)
+}
+
+pub fn covered_where<T>(run: impl Fn(&Rows) -> T, keep: impl Fn(usize) -> bool) -> T {
     let seen = Mutex::new(Vec::new());
     run(&Rows::Recording(&seen));
     let mut tags: Vec<Vec<usize>> = seen.into_inner().unwrap_or_default();
@@ -99,7 +103,9 @@ pub fn covered<T>(run: impl Fn(&Rows) -> T) -> T {
     tags.dedup();
     let chosen = covering(&tags)
         .into_iter()
-        .map(|index| tags[index].clone())
+        .enumerate()
+        .filter(|(at, _)| keep(*at))
+        .map(|(_, index)| tags[index].clone())
         .collect();
     run(&Rows::Chosen(Mutex::new(chosen)))
 }

@@ -32,7 +32,7 @@ mod vocabulary_documented;
 pub use bar_vocabulary::bar_vocabulary;
 pub use bounded_vocabulary::bounded_vocabulary;
 pub use control_project::control_project;
-pub use covering::{Rows, covered, covering};
+pub use covering::{Rows, covered, covered_where, covering};
 pub use deep_projects::deep_projects;
 pub use document_examples::document_examples;
 pub use dsp_project::dsp_project;

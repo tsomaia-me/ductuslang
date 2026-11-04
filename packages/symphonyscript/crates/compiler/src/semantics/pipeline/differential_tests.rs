@@ -2003,9 +2003,13 @@ const ANNOTATION_AND_CHOICE_FAULTS: [Summarized; 8] = [
 #[test]
 fn a_reactive_let_computes_in_its_annotations_type_and_a_refused_condition_keeps_the_branches_fault()
  {
+    assert_summarized(&ANNOTATION_AND_CHOICE_FAULTS);
+}
+
+fn assert_summarized(table: &[Summarized]) {
     let vocabulary = symphonyscript_fixtures::vocabulary();
     let new = Compiler::new(&vocabulary).expect("the vocabulary compiles");
-    for (text, expected) in ANNOTATION_AND_CHOICE_FAULTS {
+    for (text, expected) in table {
         let sources = [source(text)];
         let found = new
             .checked_by_new_core(&sources)
@@ -2037,4 +2041,185 @@ fn a_reactive_let_computes_in_its_annotations_type_and_a_refused_condition_keeps
         wanted.sort();
         assert_eq!(seen, wanted, "{text}");
     }
+}
+
+const CONDITION: &str = "the condition is a `bool`";
+const ARRAY_CONDITION: &str = "the condition of an `if` is a `bool`, not an array";
+const WRONG_I32: &str = "this value has the wrong type here; `i32` is expected";
+const BRANCHES: &str = "the branches of an `if` hold values of different types";
+
+const CHOICE_TYPE_FAULTS: [Summarized; 13] = [
+    (
+        "Clip c:\n    Note/(if 1 then true else true)\n",
+        &[
+            ("condition-type", "1", CONDITION),
+            ("type-mismatch", "if 1 then true else true", WRONG_I32),
+        ],
+    ),
+    (
+        "Clip c:\n    Note/(if true then true else true)\n",
+        &[("type-mismatch", "if true then true else true", WRONG_I32)],
+    ),
+    (
+        "let q = 1\nClip c:\n    Note/(if true then true else (if 1 then 2 else 3))\n",
+        &[
+            ("condition-type", "1", CONDITION),
+            (
+                "type-mismatch",
+                "if true then true else (if 1 then 2 else 3)",
+                BRANCHES,
+            ),
+        ],
+    ),
+    (
+        "Clip c:\n    Note/(if ([1, 2][5][i32(true)]) then (300000000000 is 1.5) else (1.5 or 1.5))\n",
+        &[
+            (
+                "conversion-type",
+                "i32(true)",
+                "a `bool` or an enum value is not converted",
+            ),
+            (
+                "index-out-of-range",
+                "5",
+                "the index 5 is outside the array of length 2",
+            ),
+            ("not-an-array", "[1, 2][5]", "only an array is indexed"),
+            ("operand-type", "1.5 or 1.5", "`and` and `or` take `bool`s"),
+            (
+                "type-mismatch",
+                "if ([1, 2][5][i32(true)]) then (300000000000 is 1.5) else (1.5 or 1.5)",
+                WRONG_I32,
+            ),
+        ],
+    ),
+    (
+        "Clip c:\n    Note/(if [1] then true else 1)\n",
+        &[
+            ("condition-type", "if [1] then true else 1", ARRAY_CONDITION),
+            ("type-mismatch", "if [1] then true else 1", BRANCHES),
+        ],
+    ),
+    (
+        "state s(0)\nClip c:\n    Note/(if s then true else true)\n",
+        &[
+            ("condition-type", "s", CONDITION),
+            ("type-mismatch", "if s then true else true", WRONG_I32),
+        ],
+    ),
+    (
+        "state s(false)\nClip c:\n    Note/(if s then true else true)\n",
+        &[("type-mismatch", "if s then true else true", WRONG_I32)],
+    ),
+    (
+        "Clip c:\n    Note/((if 1 then [1] else [2])[1.5 < 1..])\n",
+        &[
+            ("condition-type", "1", CONDITION),
+            ("index-type", "1.5 < 1", "a slice bound is an integer"),
+            (
+                "type-mismatch",
+                "(if 1 then [1] else [2])[1.5 < 1..]",
+                "`pitch` holds one `i32`, and this value is an array",
+            ),
+        ],
+    ),
+    (
+        "state q(0): i32\nClip c:\n    Note/(1 and (if true then 300000000000 else q))\n",
+        &[
+            (
+                "does-not-fit",
+                "300000000000",
+                "this value does not fit `i32`",
+            ),
+            (
+                "operand-type",
+                "1 and (if true then 300000000000 else q)",
+                "`and` and `or` take `bool`s",
+            ),
+            (
+                "type-mismatch",
+                "1 and (if true then 300000000000 else q)",
+                WRONG_I32,
+            ),
+        ],
+    ),
+    (
+        "state q(0.5): f64\nClip c:\n    Note/(true and (if true then 300000000000 else q))\n",
+        &[
+            (
+                "type-mismatch",
+                "if true then 300000000000 else q",
+                "this value has the wrong type here; `bool` is expected",
+            ),
+            (
+                "type-mismatch",
+                "true and (if true then 300000000000 else q)",
+                WRONG_I32,
+            ),
+        ],
+    ),
+    (
+        "state q(0): i32\nClip c:\n    Note/(true and (if true then 300 else q))\n",
+        &[
+            (
+                "type-mismatch",
+                "if true then 300 else q",
+                "this value has the wrong type here; `bool` is expected",
+            ),
+            (
+                "type-mismatch",
+                "true and (if true then 300 else q)",
+                WRONG_I32,
+            ),
+        ],
+    ),
+    (
+        "state q(0): i32\nClip c:\n    Note/(if ([1, 2][5] - [1, 2]) then ([1, 2] is [1, 2]) else (if q then [1, 2] else [1, 2][5]))\n",
+        &[
+            (
+                "array-operand",
+                "[1, 2] is [1, 2]",
+                "only `+` takes arrays, which it joins; every other operator takes single values",
+            ),
+            (
+                "array-operand",
+                "[1, 2][5] - [1, 2]",
+                "only `+` takes arrays, which it joins; every other operator takes single values",
+            ),
+            ("condition-type", "q", CONDITION),
+            (
+                "index-out-of-range",
+                "5",
+                "the index 5 is outside the array of length 2",
+            ),
+            (
+                "type-mismatch",
+                "if q then [1, 2] else [1, 2][5]",
+                "the branches hold arrays of different shapes",
+            ),
+        ],
+    ),
+    (
+        "state q(0): i32\nClip c:\n    Note/(if true then ([1, 2] is [1, 2]) else (if q then [1, 2] else [1, 2][5]))\n",
+        &[
+            (
+                "array-operand",
+                "[1, 2] is [1, 2]",
+                "only `+` takes arrays, which it joins; every other operator takes single values",
+            ),
+            ("condition-type", "q", CONDITION),
+            ("type-mismatch", "[1, 2] is [1, 2]", WRONG_I32),
+            (
+                "type-mismatch",
+                "if q then [1, 2] else [1, 2][5]",
+                "the branches hold arrays of different shapes",
+            ),
+        ],
+    ),
+];
+
+#[test]
+fn a_choice_keeps_its_arms_type_whatever_its_condition_holds_and_its_arm_is_checked_in_its_own_type()
+ {
+    assert_summarized(&CHOICE_TYPE_FAULTS);
 }
