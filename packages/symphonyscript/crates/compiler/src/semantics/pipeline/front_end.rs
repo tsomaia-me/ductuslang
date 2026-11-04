@@ -1,4 +1,5 @@
 use super::core::Core;
+use super::loops::iterable_roots;
 use crate::semantics::Internal;
 use crate::semantics::ir::flat::{AttrForm, ItemRec, NONE, Op, TopRec};
 
@@ -77,36 +78,51 @@ impl Core<'_> {
     fn placement_roots(&self, item: u32, roots: &mut Vec<u32>) -> Result<(), Internal> {
         let mut items = vec![item];
         while let Some(item) = items.pop() {
-            let placement = match *self.ir.item(item)? {
-                ItemRec::Placement(placement) => placement,
+            let (placement, body) = match *self.ir.item(item)? {
+                ItemRec::Placement(placement) => (placement, placement.body),
                 ItemRec::Wire(wire) => {
                     roots.extend([wire.default, wire.gate, wire.destination]);
                     self.entry_roots(wire.attrs, roots);
                     continue;
                 }
-                ItemRec::Bundle(_)
-                | ItemRec::For(_)
-                | ItemRec::When(_)
-                | ItemRec::Line(_)
-                | ItemRec::Paren(_) => continue,
+                ItemRec::For(rec) => {
+                    roots.extend(iterable_roots(rec.head));
+                    self.block_children(rec.body, &mut items)?;
+                    continue;
+                }
+                ItemRec::Line(members) => {
+                    items.extend(
+                        self.ir
+                            .members
+                            .get(members.0 as usize..members.1 as usize)
+                            .unwrap_or_default(),
+                    );
+                    continue;
+                }
+                ItemRec::Bundle(_) | ItemRec::When(_) | ItemRec::Paren(_) => continue,
             };
             roots.extend([placement.default, placement.gate]);
             self.entry_roots(placement.attrs, roots);
-            if placement.body == NONE {
-                continue;
-            }
-            let Some(block) = self.ir.blocks.get(placement.body as usize) else {
-                continue;
-            };
-            for at in block.items.0..block.items.1 {
-                let child = *self
-                    .ir
-                    .block_items
-                    .get(at as usize)
-                    .ok_or(Internal::missed("IR block item"))?;
-                if !self.ir.dropped(child) {
-                    items.push(child);
-                }
+            self.block_children(body, &mut items)?;
+        }
+        Ok(())
+    }
+
+    fn block_children(&self, body: u32, items: &mut Vec<u32>) -> Result<(), Internal> {
+        if body == NONE {
+            return Ok(());
+        }
+        let Some(block) = self.ir.blocks.get(body as usize) else {
+            return Ok(());
+        };
+        for at in block.items.0..block.items.1 {
+            let child = *self
+                .ir
+                .block_items
+                .get(at as usize)
+                .ok_or(Internal::missed("IR block item"))?;
+            if !self.ir.dropped(child) {
+                items.push(child);
             }
         }
         Ok(())

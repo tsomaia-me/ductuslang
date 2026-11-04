@@ -266,7 +266,7 @@ impl Core<'_> {
             .ok_or(Internal::missed("node kind"))?;
         let text = self.ir.symbols.text(entry.sym).to_string();
         let Some(attr) = decl.attrs.iter().position(|attr| attr.name == text) else {
-            if self.may_name_any(row)? {
+            if self.may_name_any(row)? || self.names_unexpanded_child(row, entry.sym.0)? {
                 return Ok(Ok(End::Placeholder));
             }
             let span = self.span(self.file_of(node), entry.lo, entry.hi);
@@ -837,6 +837,49 @@ impl Core<'_> {
 }
 
 impl Core<'_> {
+    fn names_unexpanded_child(&self, row: u32, sym: u32) -> Result<bool, Internal> {
+        let record = *self
+            .instances
+            .get(row as usize)
+            .ok_or(Internal::missed("row"))?;
+        let placement = self.placement(record.item)?;
+        let Some(block) = self.ir.blocks.get(placement.body as usize) else {
+            return Ok(false);
+        };
+        let mut items: Vec<u32> = self
+            .ir
+            .block_items
+            .get(block.items.0 as usize..block.items.1 as usize)
+            .unwrap_or_default()
+            .to_vec();
+        while let Some(item) = items.pop() {
+            match *self.ir.item(item)? {
+                ItemRec::Placement(child) => {
+                    if self.ir.named(child.as_name)
+                        && self
+                            .ir
+                            .name(child.as_name)
+                            .is_some_and(|name| name.sym.0 == sym)
+                    {
+                        return Ok(true);
+                    }
+                }
+                ItemRec::Line(members) => items.extend(
+                    self.ir
+                        .members
+                        .get(members.0 as usize..members.1 as usize)
+                        .unwrap_or_default(),
+                ),
+                ItemRec::Wire(_)
+                | ItemRec::Bundle(_)
+                | ItemRec::For(_)
+                | ItemRec::When(_)
+                | ItemRec::Paren(_) => {}
+            }
+        }
+        Ok(false)
+    }
+
     fn may_name_any(&self, row: u32) -> Result<bool, Internal> {
         let record = *self
             .instances

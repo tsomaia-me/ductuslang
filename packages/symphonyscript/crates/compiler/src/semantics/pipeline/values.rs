@@ -626,6 +626,7 @@ impl Core<'_> {
                                     })
                                     .and_then(|args| args.get(position as usize).cloned())
                                     .unwrap_or(Value::Error);
+                                self.loop_use(node, owner, position, node_ty)?;
                                 if let Some(frame) = frames.last_mut() {
                                     frame.values.push(value);
                                 }

@@ -44,6 +44,9 @@ pub(crate) fn analyze(inputs: &Inputs<'_>) -> Result<Option<Run>, Internal> {
     let mut stages = Stages::begin(ir.op.len());
     let mut core = Core::new(ir, inputs.vocabulary, inputs.variants, inputs.limits);
     core.front_end_drawn()?;
+    if core.loop_heads_call()? {
+        return declined(Reason::LoopHead);
+    }
     if let Err(reason) = stage(core.collect())? {
         return declined(reason);
     }
@@ -89,6 +92,9 @@ pub(crate) fn analyze(inputs: &Inputs<'_>) -> Result<Option<Run>, Internal> {
     core.check_counts()?;
     if !core.unknown_kind {
         core.check_reachability()?;
+    }
+    if let Err(reason) = stage(core.loop_uses_agree())? {
+        return declined(reason);
     }
     core.consistency()?;
     core.unread_named_faults()?;

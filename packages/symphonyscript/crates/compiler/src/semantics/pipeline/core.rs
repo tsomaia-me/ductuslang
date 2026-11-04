@@ -106,6 +106,9 @@ pub(crate) struct Core<'a> {
     pub to_choices: HashMap<u32, EvalTy>,
     pub child_scopes: Vec<(u32, Vec<(u32, u32)>)>,
     pub scope_of: HashMap<u32, u32>,
+    pub loops: Vec<u32>,
+    pub envs: Vec<super::env::Env>,
+    pub loop_uses: HashMap<(u32, u32), [bool; 2]>,
 }
 
 impl<'a> Core<'a> {
@@ -193,6 +196,9 @@ impl<'a> Core<'a> {
             to_choices: HashMap::new(),
             child_scopes: Vec::new(),
             scope_of: HashMap::new(),
+            loops: super::loops::loop_items(ir),
+            envs: Vec::new(),
+            loop_uses: HashMap::new(),
         }
     }
 

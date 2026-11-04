@@ -3,6 +3,7 @@ use super::core::{Core, Stage};
 use super::decl_ref::DeclRef;
 use super::declined::Declined;
 use super::fact::Fact;
+use super::loops::loop_body;
 use super::need::Need;
 use super::reason::Reason;
 use crate::diagnostics::{Code, Related};
@@ -20,10 +21,16 @@ impl Core<'_> {
     }
 
     pub fn owners(&self) -> u32 {
-        self.functions() + u32::try_from(self.ir.fors.len()).unwrap_or(0)
+        self.functions()
+            + u32::try_from(self.ir.fors.len()).unwrap_or(0)
+            + u32::try_from(self.loops.len()).unwrap_or(0)
     }
 
     pub fn function_roots(&self, owner: u32) -> Result<Vec<u32>, Internal> {
+        if self.loop_at(owner).is_some() {
+            let rec = self.loop_rec(owner)?;
+            return Ok(loop_body(self.ir, rec.body)?.0);
+        }
         let (lets, value) = if owner < self.functions() {
             let rec = self
                 .ir
@@ -79,7 +86,10 @@ impl Core<'_> {
 
     pub fn scope_of(&self, owner: u32) -> Result<Vec<(u32, DeclRef)>, Internal> {
         let mut scope = Vec::new();
-        let (params, lets) = if owner < self.functions() {
+        let (params, lets) = if self.loop_at(owner).is_some() {
+            let head = self.loop_rec(owner)?.head;
+            ((head.names.0..head.names.1).collect(), (0, 0))
+        } else if owner < self.functions() {
             let rec = self
                 .ir
                 .fns
@@ -135,17 +145,13 @@ impl Core<'_> {
         let mut owner = self.body_of.get(self.local(node)?).copied().unwrap_or(NONE);
         let mut crossed = Vec::new();
         while owner != NONE && owner >= self.functions() {
-            let record = owner - self.functions();
-            let fold = self
-                .fold_nodes
-                .get(record as usize)
-                .copied()
-                .unwrap_or(NONE);
-            if fold == NONE {
+            if self.anchor(owner) == NONE {
                 return Ok(None);
             }
-            crossed.push(record);
-            owner = self.body_of.get(self.local(fold)?).copied().unwrap_or(NONE);
+            if self.is_fold(owner) {
+                crossed.push(owner - self.functions());
+            }
+            owner = self.parent_owner(owner)?;
             if owner == NONE {
                 return Ok(None);
             }
@@ -236,7 +242,7 @@ impl Core<'_> {
         Ok(Some(ordered))
     }
 
-    fn callee(&self, node: u32) -> Result<Option<u32>, Internal> {
+    pub fn callee(&self, node: u32) -> Result<Option<u32>, Internal> {
         let (_, callee, _, _) = self.ir.node(node)?;
         let (op, _, _, _) = self.ir.node(callee)?;
         if op != Op::Name {

@@ -23,11 +23,7 @@ impl Core<'_> {
 
     fn owner_node(&self, owner: u32) -> Result<u32, Internal> {
         if owner >= self.functions() {
-            return Ok(self
-                .fold_nodes
-                .get((owner - self.functions()) as usize)
-                .copied()
-                .unwrap_or(NONE));
+            return Ok(self.anchor(owner));
         }
         let rec = self
             .ir
@@ -39,7 +35,10 @@ impl Core<'_> {
 
     fn bound_names(&self, owner: u32) -> Result<Vec<Bound>, Internal> {
         let node = self.owner_node(owner)?;
-        let (params, lets) = if owner < self.functions() {
+        let (params, lets) = if self.loop_at(owner).is_some() {
+            let head = self.loop_rec(owner)?.head;
+            ((head.names.0..head.names.1).collect::<Vec<u32>>(), (0, 0))
+        } else if owner < self.functions() {
             let rec = self
                 .ir
                 .fns
@@ -306,14 +305,10 @@ impl Core<'_> {
 
 impl Core<'_> {
     fn visible_child(&self, owner: u32, sym: u32) -> Result<Option<Span>, Internal> {
-        let Some(fold) = owner
-            .checked_sub(self.functions())
-            .and_then(|at| self.fold_nodes.get(at as usize))
-            .copied()
-            .filter(|fold| *fold != NONE)
-        else {
+        let fold = self.anchor(owner);
+        if fold == NONE {
             return Ok(None);
-        };
+        }
         let scope = self.scope_of.get(&fold).copied();
         let Some(child) = super::collect::child_in_scope(&self.child_scopes, scope, sym) else {
             return Ok(None);

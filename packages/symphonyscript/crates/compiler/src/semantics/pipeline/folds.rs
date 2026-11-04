@@ -121,15 +121,10 @@ impl Core<'_> {
         let mut syms = Vec::new();
         let mut owner = owner;
         while owner != NONE && owner >= self.functions() {
-            let fold = self
-                .fold_nodes
-                .get((owner - self.functions()) as usize)
-                .copied()
-                .unwrap_or(NONE);
-            if fold == NONE {
+            if self.anchor(owner) == NONE {
                 break;
             }
-            owner = self.body_of.get(self.local(fold)?).copied().unwrap_or(NONE);
+            owner = self.parent_owner(owner)?;
             if owner != NONE {
                 syms.extend(self.scope_of(owner)?.into_iter().map(|(sym, _)| sym));
             }

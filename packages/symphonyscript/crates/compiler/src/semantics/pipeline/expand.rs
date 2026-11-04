@@ -3,6 +3,7 @@ use super::decl_ref::DeclRef;
 use super::declined::Declined;
 use super::instance_row::InstanceRow;
 use super::reason::Reason;
+use super::work::Work;
 use crate::semantics::Internal;
 use crate::semantics::counted_walk::CountedWalk;
 use crate::semantics::ir::flat::{ItemRec, NONE, PlacementRec, TopRec};
@@ -20,9 +21,12 @@ impl Core<'_> {
         }
     }
 
-    fn row(&mut self, item: u32, file: u32, parent: u32) -> Stage<u32> {
+    fn row(&mut self, item: u32, file: u32, parent: u32, env: u32) -> Stage<u32> {
         CountedWalk::CoreExpandRow.step();
         let placement = self.placement(item)?;
+        if env != NONE && placement.has_as {
+            return Ok(Err(Declined(Reason::BodyItem)));
+        }
         let Some(kind_name) = self
             .ir
             .name_text(placement.kind)
@@ -40,7 +44,7 @@ impl Core<'_> {
             .filter(|_| !duplicated);
         let Some(kind) = found else {
             let reason = self.placement_kind_reason(kind_name);
-            if let Some(reason) = reason {
+            if let Some(reason) = reason.or(placement.inline.then_some(Reason::BodyItem)) {
                 return Ok(Err(Declined(reason)));
             }
             if parent != NONE {
@@ -67,6 +71,7 @@ impl Core<'_> {
             item,
             file,
             children: (0, 0),
+            env,
         });
         if let Some(slot) = self.row_of_item.get_mut(item as usize) {
             *slot = row;
@@ -85,7 +90,7 @@ impl Core<'_> {
                     .get(at as usize)
                     .ok_or(Internal::missed("IR top item"))?;
                 if let TopRec::Placement(item) = top {
-                    let row = match self.row(item, file, NONE)? {
+                    let row = match self.row(item, file, NONE, NONE)? {
                         Ok(row) => row,
                         Err(declined) => return Ok(Err(declined)),
                     };
@@ -108,31 +113,14 @@ impl Core<'_> {
             if placement.body == NONE {
                 continue;
             }
-            let block = *self
-                .ir
-                .blocks
-                .get(placement.body as usize)
-                .ok_or(Internal::missed("IR block"))?;
             let first = u32::try_from(self.instances.len()).unwrap_or(u32::MAX);
-            for at in block.items.0..block.items.1 {
-                let item = *self
-                    .ir
-                    .block_items
-                    .get(at as usize)
-                    .ok_or(Internal::missed("IR block item"))?;
-                if matches!(self.ir.item(item)?, ItemRec::Wire(_)) {
-                    if let Err(declined) = self.wire_row(item, record.file, parent)? {
-                        return Ok(Err(declined));
-                    }
-                    continue;
-                }
-                let row = match self.row(item, record.file, parent)? {
-                    Ok(row) => row,
-                    Err(declined) => return Ok(Err(declined)),
-                };
-                if row != NONE {
-                    pending.push(row);
-                }
+            if let Err(declined) =
+                self.expand_block(placement.body, record, parent, &mut pending)?
+            {
+                return Ok(Err(declined));
+            }
+            if self.stop.is_some() {
+                return Ok(Ok(()));
             }
             let end = u32::try_from(self.instances.len()).unwrap_or(u32::MAX);
             if let Some(row) = self.instances.get_mut(parent as usize) {
@@ -141,8 +129,117 @@ impl Core<'_> {
         }
         Ok(Ok(()))
     }
-}
 
+    fn expand_block(
+        &mut self,
+        body: u32,
+        record: InstanceRow,
+        parent: u32,
+        pending: &mut Vec<u32>,
+    ) -> Stage<()> {
+        let block = *self
+            .ir
+            .blocks
+            .get(body as usize)
+            .ok_or(Internal::missed("IR block"))?;
+        let mut work = vec![Work::Items(block.items.0, block.items.1, record.env)];
+        while let Some(job) = work.pop() {
+            if self.stop.is_some() {
+                return Ok(Ok(()));
+            }
+            let (item, env) = match job {
+                Work::Items(at, end, env) => {
+                    if at >= end {
+                        continue;
+                    }
+                    work.push(Work::Items(at + 1, end, env));
+                    let item = *self
+                        .ir
+                        .block_items
+                        .get(at as usize)
+                        .ok_or(Internal::missed("IR block item"))?;
+                    (item, env)
+                }
+                Work::Members(at, end, env) => {
+                    if at >= end {
+                        continue;
+                    }
+                    work.push(Work::Members(at + 1, end, env));
+                    let item = *self
+                        .ir
+                        .members
+                        .get(at as usize)
+                        .ok_or(Internal::missed("IR member"))?;
+                    (item, env)
+                }
+                Work::Loop(mut run) => {
+                    if run.next >= run.count {
+                        continue;
+                    }
+                    if !self.loop_step(run.item)? {
+                        return Ok(Ok(()));
+                    }
+                    let env = self.loop_env(&run)?;
+                    let ItemRec::For(rec) = *self.ir.item(run.item)? else {
+                        return Err(Internal::missed("IR for block"));
+                    };
+                    run.next += 1;
+                    work.push(Work::Loop(run));
+                    let block = *self
+                        .ir
+                        .blocks
+                        .get(rec.body as usize)
+                        .ok_or(Internal::missed("IR block"))?;
+                    work.push(Work::Items(block.items.0, block.items.1, env));
+                    continue;
+                }
+            };
+            match *self.ir.item(item)? {
+                ItemRec::Wire(_) if env != NONE => return Ok(Err(Declined(Reason::BodyItem))),
+                ItemRec::Wire(_) => {
+                    if let Err(declined) = self.wire_row(item, record.file, parent)? {
+                        return Ok(Err(declined));
+                    }
+                }
+                ItemRec::For(_) => {
+                    if !self.loop_body_landed(item)? {
+                        return Ok(Err(Declined(Reason::BodyItem)));
+                    }
+                    let run = match self.loop_head(item, env)? {
+                        Ok(run) => run,
+                        Err(declined) => return Ok(Err(declined)),
+                    };
+                    match run {
+                        Some(run) if run.count == 0 => {
+                            if let Err(declined) = self.unrun_names(item, record.file)? {
+                                return Ok(Err(declined));
+                            }
+                        }
+                        Some(run) => work.push(Work::Loop(run)),
+                        None => {
+                            self.unknown_children.insert(parent);
+                            self.unknown_kind = true;
+                        }
+                    }
+                }
+                ItemRec::Line(members) => work.push(Work::Members(members.0, members.1, env)),
+                ItemRec::Placement(_) => {
+                    let row = match self.row(item, record.file, parent, env)? {
+                        Ok(row) => row,
+                        Err(declined) => return Ok(Err(declined)),
+                    };
+                    if row != NONE {
+                        pending.push(row);
+                    }
+                }
+                ItemRec::Bundle(_) | ItemRec::When(_) | ItemRec::Paren(_) => {
+                    return Ok(Err(Declined(Reason::BodyItem)));
+                }
+            }
+        }
+        Ok(Ok(()))
+    }
+}
 impl Core<'_> {
     fn placement_kind_reason(&self, kind: &str) -> Option<Reason> {
         if self.vocabulary.wire_kind_named(kind).is_some() {
@@ -154,7 +251,7 @@ impl Core<'_> {
 }
 
 impl Core<'_> {
-    fn unknown_kind_drawn(&mut self, file: u32, name: u32) -> Result<(), Internal> {
+    pub fn unknown_kind_drawn(&mut self, file: u32, name: u32) -> Result<(), Internal> {
         let entry = *self.ir.name(name).ok_or(Internal::missed("IR name"))?;
         let found = self
             .decl

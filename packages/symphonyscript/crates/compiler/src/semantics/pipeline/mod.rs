@@ -19,6 +19,7 @@ mod decl_ref;
 mod declined;
 mod destinations;
 mod detached;
+mod env;
 mod expand;
 mod fact;
 mod fold_run;
@@ -31,6 +32,10 @@ mod leaf;
 #[cfg(test)]
 mod ledger_tests;
 mod locals;
+mod loop_run;
+#[cfg(test)]
+mod loop_tests;
+mod loops;
 mod memo;
 mod memo_arg;
 mod memo_entry;
@@ -57,6 +62,7 @@ mod wire_row;
 #[cfg(test)]
 mod wire_tests;
 mod wires;
+mod work;
 
 pub(crate) use analyze::{Inputs, analyze};
 #[cfg(test)]
