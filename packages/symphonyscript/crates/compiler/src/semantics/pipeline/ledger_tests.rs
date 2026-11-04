@@ -138,14 +138,31 @@ fn doubles_at_most(points: [u64; 3], slack: u64) -> bool {
     second <= first.saturating_mul(5) / 2 + slack && third <= second.saturating_mul(5) / 2 + slack
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Timing {
+    Printed,
+    Judged,
+}
+
+fn time_failure(name: &str, sizes: [usize; 3], micros: [u64; 3]) -> Option<String> {
+    let [smallest, _, largest] = micros;
+    let [first, _, last] = sizes;
+    let ratio = u64::try_from(last / first.max(1)).unwrap_or(u64::MAX);
+    let bound = smallest.saturating_mul(5).saturating_mul(ratio) / 2;
+    println!("{name}: {largest} µs at {last} against {smallest} µs at {first}, bound {bound} µs");
+    (largest > bound)
+        .then(|| format!("{name}: time {micros:?} µs grows past 2.5 times the size ratio {ratio}"))
+}
+
 fn ledger_failures(
     name: &str,
     sizes: [usize; 3],
     program: impl Fn(usize) -> String,
     expected: &dyn Fn(usize) -> Vec<String>,
+    timing: Timing,
 ) -> Vec<String> {
     let compiler = Compiler::new(&vocabulary()).expect("the vocabulary compiles");
-    ledger_failures_on(&compiler, name, sizes, program, expected)
+    ledger_failures_on(&compiler, name, sizes, program, expected, timing)
 }
 
 fn ledger_failures_on(
@@ -154,10 +171,12 @@ fn ledger_failures_on(
     sizes: [usize; 3],
     program: impl Fn(usize) -> String,
     expected: &dyn Fn(usize) -> Vec<String>,
+    timing: Timing,
 ) -> Vec<String> {
     let mut failures = Vec::new();
     let mut peaks = [0u64; 3];
     let mut walks = [0u64; 3];
+    let mut micros = [0u64; 3];
     for (at, size) in sizes.into_iter().enumerate() {
         let text = program(size);
         let Some(found) = best_run(compiler, &text) else {
@@ -171,16 +190,19 @@ fn ledger_failures_on(
                 "{name} at {size}: draws {drawn:?}, expected {expected:?}"
             ));
         }
-        let micros = u64::try_from(found.time.as_micros()).unwrap_or(u64::MAX);
+        let spent = u64::try_from(found.time.as_micros()).unwrap_or(u64::MAX);
         println!(
             "{name} at {size}: {} µs best of three, PeakBytes {}, counted walks {}",
-            micros, found.peak, found.walks
+            spent, found.peak, found.walks
         );
         if let Some(slot) = walks.get_mut(at) {
             *slot = found.walks;
         }
         if let Some(slot) = peaks.get_mut(at) {
             *slot = found.peak;
+        }
+        if let Some(slot) = micros.get_mut(at) {
+            *slot = spent;
         }
     }
     if !doubles_at_most(walks, 64) {
@@ -191,6 +213,9 @@ fn ledger_failures_on(
     }
     if !doubles_at_most(peaks, 1 << 20) {
         failures.push(format!("{name}: PeakBytes {peaks:?} is not linear"));
+    }
+    if timing == Timing::Judged {
+        failures.extend(time_failure(name, sizes, micros));
     }
     failures
 }
@@ -252,7 +277,13 @@ fn two_joins_onto_one_older_version_each_keep_their_elements_449() {
 
 #[test]
 fn a_fold_over_a_range_and_a_fold_over_its_array_draw_nothing_444() {
-    assert_none(&ledger_failures("444", [200, 400, 800], fold_sum, &none));
+    assert_none(&ledger_failures(
+        "444",
+        [200, 400, 800],
+        fold_sum,
+        &none,
+        Timing::Printed,
+    ));
 }
 
 #[test]
@@ -264,6 +295,7 @@ fn stress_a_fold_over_a_range_and_a_fold_over_its_array_cost_time_and_memory_lin
         [20_000, 40_000, 80_000],
         fold_sum,
         &none,
+        Timing::Judged,
     ));
 }
 
@@ -272,9 +304,10 @@ fn stress_a_fold_over_a_range_and_a_fold_over_its_array_cost_time_and_memory_lin
 fn stress_a_chain_of_joining_lets_costs_time_and_memory_linear_in_the_chain_449() {
     assert_none(&ledger_failures(
         "449",
-        [1_000, 2_000, 4_000],
+        [8_000, 16_000, 32_000],
         let_chain,
         &none,
+        Timing::Judged,
     ));
 }
 
@@ -284,9 +317,10 @@ fn stress_one_expression_joining_one_let_many_times_costs_time_and_memory_linear
 {
     assert_none(&ledger_failures(
         "449",
-        [5_000, 10_000, 20_000],
+        [25_000, 50_000, 100_000],
         one_join,
         &none,
+        Timing::Judged,
     ));
 }
 
@@ -295,9 +329,10 @@ fn stress_one_expression_joining_one_let_many_times_costs_time_and_memory_linear
 fn stress_a_fold_reading_its_newest_element_costs_time_and_memory_linear_in_its_range_449() {
     assert_none(&ledger_failures(
         "449",
-        [20_000, 40_000, 80_000],
+        [40_000, 80_000, 160_000],
         last_fold,
         &none,
+        Timing::Judged,
     ));
 }
 
@@ -309,6 +344,7 @@ fn stress_a_fold_reading_an_older_element_costs_time_and_memory_linear_in_its_ra
         [20_000, 40_000, 80_000],
         halving_fold,
         &none,
+        Timing::Judged,
     ));
 }
 
@@ -316,7 +352,7 @@ fn unknown_names(n: usize) -> Vec<String> {
     vec!["unknown-name".to_string(); n]
 }
 
-fn chains_447(sizes: [usize; 3], undeclared: bool) -> Vec<String> {
+fn chains_447(sizes: [usize; 3], undeclared: bool, timing: Timing) -> Vec<String> {
     let mut failures = Vec::new();
     if undeclared {
         failures.extend(ledger_failures(
@@ -324,6 +360,7 @@ fn chains_447(sizes: [usize; 3], undeclared: bool) -> Vec<String> {
             sizes,
             undeclared_chain,
             &unknown_names,
+            timing,
         ));
     }
     failures.extend(ledger_failures(
@@ -331,44 +368,59 @@ fn chains_447(sizes: [usize; 3], undeclared: bool) -> Vec<String> {
         sizes,
         chain_on("1", "0"),
         &one("index-out-of-range"),
+        timing,
     ));
     failures.extend(ledger_failures(
         "447 on [0] from 1",
         sizes,
         chain_on("0", "1"),
         &one("index-out-of-range"),
+        timing,
     ));
     failures.extend(ledger_failures(
         "447 lets from 1",
         sizes,
         let_index_chain("1"),
         &one("index-out-of-range"),
+        timing,
     ));
     failures.extend(ledger_failures(
         "447 valid",
         sizes,
         chain_on("0", "0"),
         &none,
+        timing,
     ));
     failures.extend(ledger_failures(
         "447 valid lets",
         sizes,
         let_index_chain("0"),
         &none,
+        timing,
     ));
-    failures.extend(ledger_failures("447 runtime", sizes, runtime_chain, &none));
+    failures.extend(ledger_failures(
+        "447 runtime",
+        sizes,
+        runtime_chain,
+        &none,
+        timing,
+    ));
     failures
 }
 
 #[test]
 fn an_element_read_whose_index_is_in_error_has_its_elements_type_447() {
-    assert_none(&chains_447([25, 50, 100], true));
+    assert_none(&chains_447([25, 50, 100], true, Timing::Printed));
 }
 
 #[test]
 #[ignore = "stress"]
 fn stress_chains_of_element_reads_cost_time_and_memory_linear_in_the_chain_447() {
-    assert_none(&chains_447([2_500, 5_000, 10_000], false));
+    assert_none(&chains_447(
+        [25_000, 50_000, 100_000],
+        false,
+        Timing::Judged,
+    ));
 }
 
 #[test]
@@ -400,6 +452,7 @@ fn cells_reading_one_long_let_draw_nothing_467() {
         [25, 50, 100],
         cells_over_one_let,
         &none,
+        Timing::Printed,
     ));
 }
 
@@ -408,9 +461,10 @@ fn cells_reading_one_long_let_draw_nothing_467() {
 fn stress_cells_reading_one_long_let_cost_time_and_memory_linear_in_the_cells_467() {
     assert_none(&ledger_failures(
         "467",
-        [2_500, 5_000, 10_000],
+        [5_000, 10_000, 20_000],
         cells_over_one_let,
         &none,
+        Timing::Judged,
     ));
 }
 
@@ -466,7 +520,7 @@ fn calls_of_one_big_let(sites: usize) -> String {
     text
 }
 
-fn memo_failures(sizes: [usize; 3]) -> Vec<String> {
+fn memo_failures(sizes: [usize; 3], timing: Timing) -> Vec<String> {
     let overrides = symphonyscript_core::LimitOverrides {
         inlined_calls: Some(1_000_000),
         inlined_calls_warning: Some(1_000_000),
@@ -480,18 +534,19 @@ fn memo_failures(sizes: [usize; 3]) -> Vec<String> {
         sizes,
         calls_of_one_big_let,
         &none,
+        timing,
     )
 }
 
 #[test]
 fn a_function_called_with_one_big_let_at_many_sites_draws_nothing_425() {
-    assert_none(&memo_failures([250, 500, 1_000]));
+    assert_none(&memo_failures([250, 500, 1_000], Timing::Printed));
 }
 
 #[test]
 #[ignore = "stress"]
 fn stress_a_function_called_with_one_big_let_costs_time_and_memory_linear_in_the_sites_425() {
-    assert_none(&memo_failures([25_000, 50_000, 100_000]));
+    assert_none(&memo_failures([25_000, 50_000, 100_000], Timing::Judged));
 }
 
 fn figure(n: usize) -> String {
@@ -538,6 +593,7 @@ fn stage_failures(sizes: [usize; 3]) -> Vec<String> {
     let mut failures = Vec::new();
     let mut peaks = [0u64; 3];
     let mut walks = [0u64; 3];
+    let mut micros = [0u64; 3];
     for (at, n) in sizes.into_iter().enumerate() {
         let text = figure(n);
         let Some((found, stages)) = stage_run(&compiler, &text) else {
@@ -572,6 +628,9 @@ fn stage_failures(sizes: [usize; 3]) -> Vec<String> {
         if let Some(slot) = walks.get_mut(at) {
             *slot = found.walks;
         }
+        if let Some(slot) = micros.get_mut(at) {
+            *slot = u64::try_from(found.time.as_micros()).unwrap_or(u64::MAX);
+        }
     }
     if !doubles_at_most(walks, 64) {
         failures.push(format!(
@@ -584,6 +643,7 @@ fn stage_failures(sizes: [usize; 3]) -> Vec<String> {
     if !doubles_at_most(peaks, 1 << 20) {
         failures.push(format!("the figure: PeakBytes {peaks:?} is not linear"));
     }
+    failures.extend(time_failure("the figure", sizes, micros));
     failures
 }
 
@@ -612,6 +672,7 @@ fn clips_no_entry_reaches_draw_one_warning_each() {
         [250, 500, 1_000],
         clips_beside_a_session,
         &unreachable_clips,
+        Timing::Printed,
     ));
 }
 
@@ -623,6 +684,7 @@ fn stress_clips_no_entry_reaches_cost_time_and_memory_linear_in_the_clips() {
         [40_000, 80_000, 160_000],
         clips_beside_a_session,
         &unreachable_clips,
+        Timing::Judged,
     ));
 }
 
@@ -647,6 +709,7 @@ fn stress_wires_to_named_instances_cost_time_and_memory_linear_in_the_wires_and_
         [5_000, 10_000, 20_000],
         wire_rings,
         &one("wire-cycle"),
+        Timing::Judged,
     ));
 }
 
@@ -672,5 +735,6 @@ fn stress_paths_through_named_instances_cost_time_and_memory_linear_in_the_paths
         [5_000, 10_000, 20_000],
         path_chains,
         &one("declaration-cycle"),
+        Timing::Judged,
     ));
 }

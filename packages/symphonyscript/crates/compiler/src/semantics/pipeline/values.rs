@@ -398,6 +398,7 @@ impl Core<'_> {
     fn evaluate_frames(&mut self, root: u32, ty: EvalTy) -> Stage<CoreValue> {
         let ty = evaluated_in(ty);
         let mut outer_chains: Vec<Vec<u32>> = Vec::new();
+        let mut open: std::collections::HashSet<u32> = std::collections::HashSet::new();
         let mut frames: Vec<Frame> = vec![Frame {
             owner: None,
             ty,
@@ -441,6 +442,9 @@ impl Core<'_> {
                     }
                     value = Value::Error;
                 }
+                if let Some(owner) = frame.owner {
+                    open.remove(&owner);
+                }
                 frames.pop();
                 CountedWalk::ValueRun.step();
                 if let Some(parent) = frames.last_mut() {
@@ -453,6 +457,9 @@ impl Core<'_> {
                 let value = frame.values.pop().ok_or(Internal::missed("value stack"))?;
                 let (owner, frame_ty) = (frame.owner, frame.ty);
                 let called = frame.call.is_some();
+                if let Some(owner) = owner {
+                    open.remove(&owner);
+                }
                 frames.pop();
                 if owner.is_some()
                     && let Some(outer) = outer_chains.pop()
@@ -548,6 +555,7 @@ impl Core<'_> {
                                     let owner = u32::try_from(self.ir.lets.len())
                                         .unwrap_or(u32::MAX)
                                         .saturating_add(at);
+                                    open.insert(owner);
                                     frames.push(Frame {
                                         owner: Some(owner),
                                         ty: read_ty,
@@ -681,13 +689,14 @@ impl Core<'_> {
                                 frame.values.push(Value::Error);
                                 continue;
                             }
-                            if frames.iter().any(|open| open.owner == Some(at)) {
+                            if open.contains(&at) {
                                 return Err(Internal::missed(
                                     "an open declaration outside every cycle",
                                 ));
                             }
                             let root = self.let_root(at)?;
                             self.enter_let_frame(&mut outer_chains);
+                            open.insert(at);
                             frames.push(Frame {
                                 owner: Some(at),
                                 ty: let_ty,
@@ -708,7 +717,7 @@ impl Core<'_> {
                             frame.values.push(value);
                             continue;
                         }
-                        if frames.iter().any(|open| open.owner == Some(at)) {
+                        if open.contains(&at) {
                             return Err(Internal::missed(
                                 "an open declaration outside every cycle",
                             ));
@@ -720,6 +729,7 @@ impl Core<'_> {
                         };
                         let root = self.let_root(at)?;
                         self.enter_let_frame(&mut outer_chains);
+                        open.insert(at);
                         frames.push(Frame {
                             owner: Some(at),
                             ty: let_ty,
