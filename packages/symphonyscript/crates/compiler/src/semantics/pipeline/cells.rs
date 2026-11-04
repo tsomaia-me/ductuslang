@@ -35,7 +35,7 @@ impl Core<'_> {
         Ok(fact)
     }
 
-    fn derived(&self, at: u32) -> bool {
+    pub fn derived(&self, at: u32) -> bool {
         self.ir
             .cells
             .get(at as usize)

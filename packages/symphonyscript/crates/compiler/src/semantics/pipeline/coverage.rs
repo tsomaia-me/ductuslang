@@ -162,7 +162,7 @@ pub(crate) fn reason_slice(reason: Reason) -> Slice {
         Reason::CellGroup => Slice::Four,
         Reason::FunctionValue | Reason::Recursion => Slice::DefaultFlip,
         Reason::LocalCycle | Reason::LocalClash => Slice::Pending,
-        Reason::NestedScope | Reason::AnnotatedCall => Slice::Pending,
+        Reason::NestedScope | Reason::AnnotatedCall | Reason::AnnotatedArrayRule => Slice::Pending,
         Reason::Pending => Slice::One,
         Reason::ReactiveFor => Slice::Three,
         Reason::BareVariant | Reason::UnitAttribute | Reason::EnumAttribute => Slice::Five,
@@ -179,7 +179,7 @@ fn plain_cell(ir: &FlatIr, rec: &CellRec) -> bool {
     (host_fed || derived)
         && rec.clock.0 == rec.clock.1
         && rec.capacity.is_none()
-        && (!annotated(ir, rec.binder) || (host_fed && scalar_annotation(ir, rec.binder)))
+        && scalar_annotation(ir, rec.binder)
 }
 
 fn plain_function(ir: &FlatIr, rec: &FnRec) -> bool {

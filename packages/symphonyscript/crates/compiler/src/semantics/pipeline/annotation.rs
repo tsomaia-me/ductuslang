@@ -65,6 +65,9 @@ impl Core<'_> {
             let text = self.ir.symbols.text(entry.sym).to_string();
             return self.bind_value(root, &text, ty);
         }
+        if self.derived(at) {
+            return Ok(Err(Declined(Reason::AnnotatedArrayRule)));
+        }
         self.draw_at(
             Code::TypeMismatch,
             root,

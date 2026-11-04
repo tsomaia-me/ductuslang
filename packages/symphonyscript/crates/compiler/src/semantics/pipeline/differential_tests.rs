@@ -936,6 +936,89 @@ fn a_cells_scalar_annotation_types_its_reads_and_checks_its_init_as_the_old_engi
     }
 }
 
+const DERIVED_CELL_ANNOTATIONS: [&str; 20] = [
+    "state s(1)\nstate q: i32 = s + 1\nClip c:\n    Note/(q)\n",
+    "state s(1)\nstate q: u8 = s + 300\nClip c:\n    Note/(q)\n",
+    "state s(1)\nstate q: i32 = s + 1.5\nClip c:\n    Note/(q)\n",
+    "state s(1)\nstate q: f64 = s + 1.5\nClip c:\n    Note/(q)\n",
+    "state s(1)\nstate q: bool = s + 1\nClip c:\n    Note/(q)\n",
+    "state s(1)\nstate q: bool = s > 1\nClip c:\n    Note/(if q then 1 else 2)\n",
+    "state s(1)\nstate q: i64 = s + 1\nClip c:\n    Note/(q)\n",
+    "state s(1)\nstate q: i64 = s + 1\nClip c:\n    Note/(q + 1)\n",
+    "state s(1)\nstate q: i32 = s + i64(1)\nClip c:\n    Note/(q)\n",
+    "state s(1.5): f64\nstate q: i32 = s + 1\nClip c:\n    Note/(q)\n",
+    "state s(1)\nstate q: u8 = s\nClip c:\n    Note/([1, 2][q])\n",
+    "state s(1)\nstate q: i32 = s + true\nClip c:\n    Note/(q)\n",
+    "state s(1)\nstate q: f32 = s * 2\nClip c:\n    Note | velocity=(q)\n",
+    "state s(1)\nstate q: i32 = s + 1\nlet a = q + 1\nClip c:\n    Note/(a)\n",
+    "state s(1)\nstate q: u8 = s + 1\nClip c:\n    Note/(q + (u8(255) + 4))\n",
+    "state s(1)\nstate q: i32 = x + 1\nClip c:\n    Note/(q)\n",
+    "state s(1)\nstate q: i32 = 1 + 1\nClip c:\n    Note/(q)\n",
+    "state s(1)\nstate q: u8 = s * 2\nClip c:\n    Note | velocity=(q)\n",
+    "state s(0.5)\nstate q: f32 = s\nClip c:\n    Note | velocity=(q)\n",
+    "state s(1)\nstate q: i32 = s + 1\n",
+];
+
+#[test]
+fn a_derived_cells_scalar_annotation_types_its_reads_and_checks_its_rule_as_the_old_engine_does() {
+    let old = Compiler::new(&symphonyscript_fixtures::vocabulary())
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
+    let new =
+        Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("the vocabulary compiles");
+    for text in DERIVED_CELL_ANNOTATIONS {
+        let sources = [source(text)];
+        let found = new
+            .checked_by_new_core(&sources)
+            .unwrap_or_else(|| panic!("the new core takes {text}"));
+        assert_eq!(found, old.check(&sources), "{text}");
+    }
+    let array_rule = [source(
+        "state s(1)\nstate q: i32 = [s]\nClip c:\n    Note/(q)\n",
+    )];
+    assert!(new.checked_by_new_core(&array_rule).is_none());
+}
+
+const FLOWING_TYPES_AND_FLOAT_CONVERSIONS: [&str; 20] = [
+    "state q(0): i32\nClip c:\n    Note/(q + (u8(255) + 4))\n",
+    "state q(0): i32\nClip c:\n    Note/([1, 2][q + (u8(255) + 4)])\n",
+    "state q(0)\nClip c:\n    Note/([1, 2][q + (u8(255) + 4)])\n",
+    "state q(0)\nClip c:\n    Note/(q + (u8(255) + 4))\n",
+    "state q(0): i32\nClip c:\n    Note/(if q > 1 then q + (u8(255) + 4) else 1)\n",
+    "state q(0): i32\nClip c:\n    Note/([1, 2][if true then q + (u8(255) + 4) else 1])\n",
+    "state q(0): i32\nClip c:\n    Note/(q * (q + (u8(255) + 4)))\n",
+    "state q(0): i32\nfn f(x): x + (u8(255) + 4)\nClip c:\n    Note/(f(q))\n",
+    "state q(0): i32\nClip c:\n    Note/(i32(q + (u8(255) + 4)))\n",
+    "state q(0): i32\nClip c:\n    Note/(q > u8(255) + 4)\n",
+    "state s(1)\nstate q: i32 = s + 1\nClip c:\n    Note/(q + (u8(255) + 4))\n",
+    "state s(1)\nClip c:\n    Note/(f32(s))\n",
+    "state s(1)\nClip c:\n    Note | velocity=(f32(s))\n",
+    "state s(1)\nClip c:\n    Note/(f64(s))\n",
+    "state s(1)\nClip c:\n    Note/(f32(s + 1))\n",
+    "state s(1): i32\nClip c:\n    Note/(f32(s))\n",
+    "state s(1): i32\nClip c:\n    Note/(f64(s))\n",
+    "state s(1)\nClip c:\n    Note/(i32(f32(s)))\n",
+    "state s(1)\nClip c:\n    Note/(f32(s + [1, 2][5]))\n",
+    "state s(1.5)\nClip c:\n    Note/(f32(s))\n",
+];
+
+#[test]
+fn a_type_flowing_in_equal_to_a_cells_own_computes_a_fixed_operand_in_it_and_a_refused_float_conversion_reads_its_cell_as_a_float()
+ {
+    let old = Compiler::new(&symphonyscript_fixtures::vocabulary())
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
+    let new =
+        Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("the vocabulary compiles");
+    for text in FLOWING_TYPES_AND_FLOAT_CONVERSIONS {
+        let sources = [source(text)];
+        let found = new
+            .checked_by_new_core(&sources)
+            .unwrap_or_else(|| panic!("the new core takes {text}"));
+        assert_eq!(found, old.check(&sources), "{text}");
+    }
+}
+
 const FLOAT_CELLS_THROUGH_A_CALL: [&str; 8] = [
     "state tw(0.5): f64\nfn h(z):\n    let x = tw\n    x\nClip c:\n    Note/(h(0))\n",
     "state tw(0.5)\nfn h(z):\n    let x = tw\n    x\nClip c:\n    Note/(h(0))\n",

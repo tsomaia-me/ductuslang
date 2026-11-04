@@ -43,6 +43,7 @@ pub(crate) struct Core<'a> {
     pub owning: bool,
     pub unchecked: bool,
     pub fitting: bool,
+    pub unflowed: HashSet<u32>,
     pub driving: bool,
     pub need: Option<Need>,
 
@@ -103,6 +104,7 @@ impl<'a> Core<'a> {
             owning: false,
             unchecked: false,
             fitting: false,
+            unflowed: HashSet::new(),
             driving: false,
             need: None,
 
