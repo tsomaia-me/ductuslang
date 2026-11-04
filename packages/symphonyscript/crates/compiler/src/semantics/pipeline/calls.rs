@@ -287,9 +287,8 @@ impl Core<'_> {
                 out.push(functions + at);
             }
             if op == Op::Field {
-                let read = self.paths.get(self.local(node)?).copied().unwrap_or(NONE);
-                if read != NONE {
-                    let lets = u32::try_from(self.ir.lets.len()).unwrap_or(0);
+                let lets = u32::try_from(self.ir.lets.len()).unwrap_or(0);
+                for read in self.node_reads(node)? {
                     out.push(functions + lets + read);
                 }
             }

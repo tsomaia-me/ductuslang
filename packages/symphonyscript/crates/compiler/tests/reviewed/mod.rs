@@ -5422,11 +5422,64 @@ pub fn restated(program: &str, old: &[Drawn], new: &[Drawn], at: &Drawn) -> bool
         .any(|class| (class.explains)(&seen, Change::Restated, at))
 }
 
-pub fn holds_a_placement_for(program: &str) -> bool {
-    program.lines().any(|line| {
-        line.starts_with(' ')
-            && line.trim_start().starts_with("for ")
-            && line.contains(" in ")
-            && !line.contains(" into ")
+fn lines_at(program: &str) -> Vec<(usize, &str)> {
+    let mut at = 0;
+    program
+        .split('\n')
+        .map(|line| {
+            let start = at;
+            at += line.len() + 1;
+            (start, line)
+        })
+        .collect()
+}
+
+fn placement_heads(program: &str) -> Vec<(usize, usize)> {
+    lines_at(program)
+        .into_iter()
+        .filter(|(_, line)| {
+            line.starts_with(' ')
+                && line.trim_start().starts_with("for ")
+                && line.contains(" in ")
+                && !line.contains(" into ")
+        })
+        .map(|(start, line)| {
+            let indent = line.len() - line.trim_start().len();
+            let end = line.trim_end().strip_suffix(':').unwrap_or(line.trim_end());
+            (start + indent + "for ".len(), start + end.len())
+        })
+        .collect()
+}
+
+fn let_lines<'a>(program: &'a str, head: &str) -> Vec<(usize, &'a str)> {
+    let iterable = head.split_once(" in ").map_or("", |(_, iterable)| iterable);
+    let names: Vec<&str> = iterable
+        .split(|c: char| !(c.is_alphanumeric() || c == '_'))
+        .filter(|word| word.starts_with(|c: char| c.is_alphabetic() || c == '_'))
+        .collect();
+    lines_at(program)
+        .into_iter()
+        .filter(|(_, line)| {
+            line.strip_prefix("let ").is_some_and(|rest| {
+                let name = rest
+                    .split(|c: char| !(c.is_alphanumeric() || c == '_'))
+                    .next()
+                    .unwrap_or_default();
+                names.contains(&name)
+            })
+        })
+        .collect()
+}
+
+pub fn runs_no_iteration(program: &str, new: &[Drawn]) -> bool {
+    let within = |lo: usize, hi: usize| {
+        new.iter()
+            .any(|drawn| drawn.0 != "no-entry-instance" && drawn.1 >= lo && drawn.2 <= hi)
+    };
+    placement_heads(program).into_iter().any(|(lo, hi)| {
+        within(lo, hi)
+            || let_lines(program, program.get(lo..hi).unwrap_or_default())
+                .into_iter()
+                .any(|(start, line)| within(start, start + line.len()))
     })
 }

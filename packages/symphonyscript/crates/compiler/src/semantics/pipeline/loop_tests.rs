@@ -65,7 +65,7 @@ fn assert_engines_agree(vocabulary: &Vocabulary, programs: &[&str]) {
 fn a_placement_for_over_a_range_or_an_array_checks_as_the_old_engine_does() {
     let vocabulary = symphonyscript_fixtures::vocabulary();
     assert_engines_agree(&vocabulary, &VALID_LOOPS);
-    assert_engines_agree(&vocabulary, &FAULTY_LOOPS);
+    assert_engines_agree_but_the_entry(&vocabulary, &FAULTY_LOOPS);
 }
 
 #[test]
@@ -262,7 +262,7 @@ const CALLS_IN_HEADS: [&str; 6] = [
 #[test]
 fn a_call_in_a_loop_head_is_inlined_in_source_order_left_to_right() {
     use crate::diagnostics::Code;
-    assert_engines_agree(&symphonyscript_fixtures::vocabulary(), &CALLS_IN_HEADS);
+    assert_engines_agree_but_the_entry(&symphonyscript_fixtures::vocabulary(), &CALLS_IN_HEADS);
     let limits = symphonyscript_core::LimitOverrides {
         inlined_calls: Some(10),
         inlined_calls_warning: Some(5),
@@ -360,7 +360,7 @@ const CELL_READING_HEADS: [&str; 8] = [
 fn a_loop_head_reading_a_cell_draws_reactive_iterable_and_one_through_a_reactive_let_draws_that_lets_fault_alone()
  {
     let vocabulary = symphonyscript_fixtures::vocabulary();
-    assert_engines_agree(&vocabulary, &CELL_READING_HEADS);
+    assert_engines_agree_but_the_entry(&vocabulary, &CELL_READING_HEADS);
     assert_engines_agree(
         &vocabulary,
         &[
@@ -503,4 +503,238 @@ const CLASHES_IN_BODIES: [&str; 6] = [
 #[test]
 fn a_child_named_like_an_enclosing_loop_name_inside_a_loop_body_draws_child_name_clash() {
     assert_engines_agree(&symphonyscript_fixtures::vocabulary(), &CLASHES_IN_BODIES);
+}
+
+type Drawn = Vec<(crate::diagnostics::Code, u32, u32)>;
+
+type Moved<'a> = (&'a Vocabulary, &'a str, Drawn, Drawn);
+
+fn assert_moved(moved: &[Moved<'_>]) {
+    for (vocabulary, text, expected, kept) in moved {
+        let sources = [source(text)];
+        let found = Compiler::new(vocabulary)
+            .expect("the vocabulary compiles")
+            .checked_by_new_core(&sources)
+            .unwrap_or_else(|| panic!("the new core takes {text}"));
+        let mut found = spans(&found);
+        found.sort_unstable();
+        let mut wanted = expected.clone();
+        wanted.sort_unstable();
+        assert_eq!(found, wanted, "{text}");
+        let old = Compiler::new(vocabulary)
+            .expect("the vocabulary compiles")
+            .on_the_old_engine()
+            .check(&sources);
+        let mut old = spans(&old);
+        old.sort_unstable();
+        let mut kept = kept.clone();
+        kept.sort_unstable();
+        assert_eq!(old, kept, "{text}");
+    }
+}
+
+#[test]
+fn a_placement_for_whose_head_draws_its_own_fault_runs_no_iteration_and_resolves_its_body_476() {
+    use crate::diagnostics::Code;
+    let vocabulary = symphonyscript_fixtures::vocabulary();
+    let bounded = symphonyscript_fixtures::bounded_vocabulary();
+    assert_moved(&[
+        (
+            &vocabulary,
+            "Clip c:\n    for x in true:\n        Note | bogus=1\n",
+            vec![
+                (Code::IterableType, 21, 25),
+                (Code::UnknownAttribute, 42, 47),
+                (Code::NoEntryInstance, 0, 0),
+            ],
+            vec![(Code::IterableType, 21, 25)],
+        ),
+        (
+            &vocabulary,
+            "Clip c:\n    for x in 0..true:\n        Note | bogus=1\n        Note/(1 + true)\n",
+            vec![
+                (Code::RangeBound, 24, 28),
+                (Code::UnknownAttribute, 45, 50),
+                (Code::NoEntryInstance, 0, 0),
+            ],
+            vec![(Code::RangeBound, 24, 28)],
+        ),
+        (
+            &vocabulary,
+            "Clip c:\n    for x in 300000000000000000000..2:\n        Note | bogus=1\n",
+            vec![
+                (Code::RangeBound, 21, 42),
+                (Code::UnknownAttribute, 62, 67),
+                (Code::NoEntryInstance, 0, 0),
+            ],
+            vec![(Code::RangeBound, 21, 42)],
+        ),
+        (
+            &vocabulary,
+            "state s([1, 2])\nClip c:\n    for x in s:\n        Note | bogus=1\n",
+            vec![
+                (Code::ReactiveIterable, 37, 38),
+                (Code::UnknownAttribute, 55, 60),
+                (Code::NoEntryInstance, 0, 0),
+            ],
+            vec![(Code::ReactiveIterable, 37, 38)],
+        ),
+        (
+            &vocabulary,
+            "state s(1)\nlet ys = [s]\nClip c:\n    for x in ys:\n        Note | bogus=1\n",
+            vec![
+                (Code::ReactiveLet, 15, 17),
+                (Code::UnknownAttribute, 64, 69),
+                (Code::NoEntryInstance, 0, 0),
+            ],
+            vec![(Code::ReactiveLet, 15, 17)],
+        ),
+        (
+            &bounded,
+            "Root r:\n    for i, x in 0..2:\n        Item | zz=1\n    Link: r\n",
+            vec![
+                (Code::IterableType, 19, 20),
+                (Code::UnknownAttribute, 45, 47),
+            ],
+            vec![(Code::IterableType, 19, 20)],
+        ),
+        (
+            &bounded,
+            "Root r:\n    for x in 0..true:\n        Item\n        Item\n        Item\n    Link: r\n",
+            vec![(Code::RangeBound, 24, 28)],
+            vec![(Code::RangeBound, 24, 28)],
+        ),
+    ]);
+    assert_engines_agree(
+        &vocabulary,
+        &[
+            "Clip c:\n    for x in [1, 2]:\n        Note | velocity=1\n",
+            "Clip c:\n    for x in 0..2:\n        Note | velocity=1\n",
+            "state s([1, 2])\nClip c:\n    for x in [1, 2]:\n        Note | velocity=1\n",
+        ],
+    );
+    assert_engines_agree(
+        &bounded,
+        &[
+            "Root r:\n    for i, x in [1, 2]:\n        Item\n    Link: r\n",
+            "Root r:\n    for x in 0..2:\n        Item\n    Link: r\n",
+        ],
+    );
+}
+
+#[test]
+fn a_placement_for_over_a_slice_whose_bound_is_outside_i64_runs_no_iteration_476() {
+    use crate::diagnostics::Code;
+    let vocabulary = symphonyscript_fixtures::vocabulary();
+    let bounded = symphonyscript_fixtures::bounded_vocabulary();
+    assert_moved(&[
+        (
+            &vocabulary,
+            "Clip c:\n    for x in [1, 2, 3][0..300000000000000000000]:\n        Note/(x + true)\n",
+            vec![
+                (Code::IndexOutOfRange, 34, 55),
+                (Code::NoEntryInstance, 0, 0),
+            ],
+            vec![
+                (Code::IndexOutOfRange, 34, 55),
+                (Code::NoEntryInstance, 0, 0),
+                (Code::OperandType, 72, 80),
+            ],
+        ),
+        (
+            &vocabulary,
+            "let xs = [1, 2, 3][0..300000000000000000000]\nClip c:\n    for x in xs + [4]:\n        Note/(x + true)\n        Nope\n",
+            vec![
+                (Code::IndexOutOfRange, 22, 43),
+                (Code::UnknownKind, 108, 112),
+            ],
+            vec![
+                (Code::IndexOutOfRange, 22, 43),
+                (Code::UnknownKind, 108, 112),
+                (Code::OperandType, 90, 98),
+            ],
+        ),
+        (
+            &bounded,
+            "Root r:\n    Item\n    for x in [1, 2][0..300000000000000000000]:\n        Item\n        Item\n    Link: r\n",
+            vec![(Code::IndexOutOfRange, 40, 61)],
+            vec![
+                (Code::IndexOutOfRange, 40, 61),
+                (Code::CountExceeded, 85, 89),
+            ],
+        ),
+    ]);
+    assert_engines_agree(
+        &vocabulary,
+        &[
+            "Clip c:\n    for x in [1, 2, 3][0..2]:\n        Note/(x + true)\n",
+            "Clip c:\n    for x in [[1, 2][0..300000000000000000000]]:\n        Note/x\n",
+        ],
+    );
+}
+
+const TO_IN_BODIES: [&str; 9] = [
+    "Clip as a:\n    for i in 0..2:\n        Plays | gain=to.gain * 2: [b, c][i]\nClip as b | gain=0.5\nClip as c | gain=3\n",
+    "Clip as a:\n    for i in 0..2:\n        Plays | gain=to.bogus: [b, c][i]\nClip as b\nClip as c\n",
+    "Clip as a:\n    for i in 0..2:\n        Cues | gain=to.gain: [b, d][i]\nClip as b\nLane as d\n",
+    "Clip as a:\n    for i in 0..2:\n        Cues | gain=to.gain: [d, b][i]\nClip as b\nLane as d\n",
+    "Clip as a:\n    for i in 0..2:\n        Cues | gain=to.gain + true: [d, b][i]\nClip as b\nLane as d\n",
+    "Clip as a:\n    for i in 0..3:\n        Cues | gain=to.gain * 3000000000000: [b, d, c][i]\nClip as b\nClip as c | gain=2\nLane as d\n",
+    "Clip as a:\n    for d in [b, c]:\n        Plays | gain=to.gain: d\nClip as b | gain=0.5\nClip as c\n",
+    "Clip as a:\n    for i in 0..2:\n        Plays as w | gain=to.gain: [b, c][i]\nClip as b\nClip as c\n",
+    "Clip as a:\n    for i in 0..2:\n        Plays: [b, c][i]\nClip as b\nClip as c\n",
+];
+
+const REFERENCE_ITERABLES: [&str; 4] = [
+    "Clip as a:\n    for d in [b, c]:\n        Plays: d\nClip as b\nClip as c\n",
+    "Clip as a:\n    for i, d in [b, c]:\n        Plays | gain=i: d\nClip as b\nClip as c\n",
+    "let ds = [b, c]\nClip as a:\n    for d in ds:\n        Plays: d\nClip as b\nClip as c\n",
+    "Clip as a:\n    for d in [b, e]:\n        Plays: d\nClip as b\nLane as e\n",
+];
+
+const UNRUN_WIRES: [&str; 4] = [
+    "Clip as a:\n    for i in 0..0:\n        Plays | bogus=1: b\nClip as b\n",
+    "Clip as a:\n    for i in 0..0:\n        Plays | gain=1: b\nClip as b\n",
+    "Clip as a:\n    for i in 0..0:\n        Plays/1: b\nClip as b\n",
+    "Clip as a:\n    for i in 0..0:\n        Plays/(1 + true) | trio=[1, 2]: b\nClip as b\n",
+];
+
+const CHOICE_HEADS: [&str; 4] = [
+    "state sec(0)\nClip c:\n    for i in (if sec > 0 then [1] else [2]):\n        Note/i\n",
+    "state sec(0)\nClip c:\n    for i in 0..(if sec > 0 then 1 else 2):\n        Note/i\n",
+    "state sec(0)\nlet k = sec\nClip c:\n    for i in (if true then [k] else [2]):\n        Note/i\n",
+    "state sec(0)\nClip c:\n    for i in (if sec > 0 then 1 else 2):\n        Note/i\n",
+];
+
+#[test]
+fn a_to_path_in_a_loop_body_resolves_per_wire_row_and_reference_and_choice_heads_iterate() {
+    let to_arrays = symphonyscript_fixtures::to_array_vocabulary();
+    assert_engines_agree(&to_arrays, &TO_IN_BODIES);
+    assert_engines_agree(&to_arrays, &REFERENCE_ITERABLES);
+    assert_engines_agree(&to_arrays, &UNRUN_WIRES);
+    let vocabulary = symphonyscript_fixtures::vocabulary();
+    assert_engines_agree_but_the_entry(&vocabulary, &CHOICE_HEADS);
+    assert_engines_agree(
+        &vocabulary,
+        &[
+            "Clip c:\n    for i in (if true then [1] else [2]):\n        Note/i\n",
+            "Clip c:\n    for i in 0..(if false then 1 else 2):\n        Note/i\n",
+        ],
+    );
+    let new = Compiler::new(&to_arrays).expect("the vocabulary compiles");
+    let text = "Clip as a:\n    for i in 0..2:\n        Plays | gain=to.bogus: [b, c][i]\nClip as b\nClip as c\n";
+    let found = new
+        .checked_by_new_core(&[source(text)])
+        .expect("the new core takes the loop");
+    let summaries: Vec<&str> = found
+        .iter()
+        .map(|diagnostic| diagnostic.summary.as_str())
+        .collect();
+    assert_eq!(
+        summaries,
+        vec![
+            "the destination, the `Clip` named `b`, has no attribute `bogus`",
+            "the destination, the `Clip` named `c`, has no attribute `bogus`",
+        ]
+    );
 }

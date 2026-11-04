@@ -489,7 +489,7 @@ fn compared(
             .collect()
     };
     if reviewed_set.is_none()
-        && reviewed::holds_a_placement_for(text)
+        && reviewed::runs_no_iteration(text, &drawn(sources, found))
         && entry(found)
         && !entry(expected)
         && rest(found) == rest(expected)

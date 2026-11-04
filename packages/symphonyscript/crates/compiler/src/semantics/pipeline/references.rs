@@ -23,8 +23,15 @@ impl Core<'_> {
             }
         }
         for item in &self.ir.items {
-            if let ItemRec::Wire(wire) = item {
-                roots.push(wire.destination);
+            match item {
+                ItemRec::Wire(wire) => roots.push(wire.destination),
+                ItemRec::For(rec) if !rec.head.range => roots.push(rec.head.iterable.0),
+                ItemRec::For(_)
+                | ItemRec::Placement(_)
+                | ItemRec::Bundle(_)
+                | ItemRec::When(_)
+                | ItemRec::Line(_)
+                | ItemRec::Paren(_) => {}
             }
         }
         roots.sort_unstable();

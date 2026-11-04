@@ -388,7 +388,7 @@ impl Core<'_> {
                         None => super::annotation::annotated_fact(read.ty),
                     }
                 }
-                None => match self.to_choices.get(&node).copied() {
+                None => match self.to_choice(node) {
                     Some(ty) => super::annotation::annotated_fact(ty),
                     None => {
                         self.draw_body_path_faults(node);

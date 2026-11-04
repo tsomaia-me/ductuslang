@@ -33,8 +33,7 @@ impl Core<'_> {
                     reads.push(read);
                 }
             } else if op == Op::Field {
-                let read = self.paths.get(self.local(node)?).copied().unwrap_or(NONE);
-                if read != NONE {
+                for read in self.node_reads(node)? {
                     reads.push(lets + read);
                 }
             }

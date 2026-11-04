@@ -111,7 +111,9 @@ impl Core<'_> {
                 hi: rec.hi,
             };
             let saved = self.enter_env(row.env);
+            self.wire_now = u32::try_from(wire).unwrap_or(NONE);
             let checked = self.item_attributes(item, &decl.name, &decl.attrs, decl.default_attr);
+            self.wire_now = NONE;
             self.leave_env(saved);
             if let Err(declined) = checked? {
                 return Ok(Err(declined));
