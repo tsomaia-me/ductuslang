@@ -129,7 +129,7 @@ fn assert_equal(corpora: &[Corpus]) -> u64 {
     }
     eprintln!("the new core took {taken} programs");
     eprintln!(
-        "{} of them move by a reviewed ledger rule (455, 464, 476):\n{}",
+        "{} of them move by a reviewed ledger rule (455, 464, 476, 478):\n{}",
         moved.len(),
         moved.join("\n")
     );
@@ -1169,5 +1169,90 @@ fn a_gate_program_reading_a_reactive_let_draws_its_repaired_twins_set_beside_rea
         );
         wanted.sort();
         assert_eq!(spanned(text, &found), wanted, "{text}");
+    }
+}
+
+const CONVERSION_OPERANDS: [(&str, &[(&str, &str)]); 8] = [
+    (
+        "Clip c:\n    Note | velocity=(f32(u8(255) + 4))\n",
+        &[("constant-overflow", "u8(255) + 4")],
+    ),
+    (
+        "Clip c:\n    Note | velocity=(f64(u8(255) + 4))\n",
+        &[
+            ("constant-overflow", "u8(255) + 4"),
+            ("type-mismatch", "f64(u8(255) + 4)"),
+        ],
+    ),
+    (
+        "Clip c:\n    Note | velocity=(f32(u8(1) + 300))\n",
+        &[("does-not-fit", "300")],
+    ),
+    (
+        "Clip c:\n    Note/(f32(u8(255) + 4))\n",
+        &[
+            ("constant-overflow", "u8(255) + 4"),
+            ("type-mismatch", "f32(u8(255) + 4)"),
+        ],
+    ),
+    (
+        "state s(1)\nClip c:\n    Note | velocity=(f32(s + u8(1)))\n",
+        &[],
+    ),
+    (
+        "state s(1)\nClip c:\n    Note | velocity=(f32(s + i64(1)))\n",
+        &[],
+    ),
+    (
+        "state q(0): i64\nClip c:\n    Note | velocity=(f32(q + (u8(255) + 4)))\n",
+        &[("constant-overflow", "u8(255) + 4")],
+    ),
+    (
+        "state q(0)\nClip c:\n    Note | velocity=(f32(q + (u8(250) + 4)))\n",
+        &[],
+    ),
+];
+
+const CONVERSION_OPERAND_TWINS: [&str; 5] = [
+    "Clip c:\n    Note | velocity=(f32(u8(250) + 4))\n",
+    "state s(1)\nClip c:\n    Note | velocity=(f32(s + 1))\n",
+    "Clip c:\n    Note/(i32(u8(255) + 4))\n",
+    "Clip c:\n    Note/(i32(2.7))\n",
+    "Clip c:\n    Note/(i32(2.7 + 1))\n",
+];
+
+#[test]
+fn a_conversions_operand_is_computed_in_its_own_type_where_the_old_engine_flows_the_target_478() {
+    let old = Compiler::new(&symphonyscript_fixtures::vocabulary())
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
+    let new =
+        Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("the vocabulary compiles");
+    for (text, expected) in CONVERSION_OPERANDS {
+        let sources = [source(text)];
+        let found = new
+            .checked_by_new_core(&sources)
+            .unwrap_or_else(|| panic!("the new core takes {text}"));
+        let mut wanted: Vec<(String, String)> = expected
+            .iter()
+            .map(|(code, span)| ((*code).to_string(), (*span).to_string()))
+            .collect();
+        wanted.sort();
+        assert_eq!(spanned(text, &found), wanted, "{text}");
+        let before = old.check(&sources);
+        assert_ne!(before, found, "{text}");
+        let classes = reviewed::moved(text, &drawn(&before), &drawn(&found))
+            .unwrap_or_else(|unexplained| panic!("{text}: {unexplained:?}"));
+        assert!(
+            !classes.is_empty() && classes.iter().all(|class| class.ledger == "478"),
+            "{text}"
+        );
+    }
+    for text in CONVERSION_OPERAND_TWINS {
+        let sources = [source(text)];
+        let found = new
+            .checked_by_new_core(&sources)
+            .unwrap_or_else(|| panic!("the new core takes {text}"));
+        assert_eq!(found, old.check(&sources), "{text}");
     }
 }

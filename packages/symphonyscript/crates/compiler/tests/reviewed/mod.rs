@@ -372,6 +372,76 @@ fn base_not_an_array_beside_the_twin_pass(seen: &Seen<'_>, change: Change, at: &
         && holds(seen.new, "type-mismatch", at)
 }
 
+fn word_start(program: &str, at: usize) -> bool {
+    program
+        .get(..at)
+        .and_then(|before| before.chars().next_back())
+        .is_none_or(|character| !(character.is_alphanumeric() || character == '_'))
+}
+
+fn closing(program: &str, open: usize) -> Option<usize> {
+    let mut depth = 0usize;
+    for (at, character) in program.get(open..)?.char_indices() {
+        match character {
+            '(' => depth += 1,
+            ')' => {
+                depth = depth.checked_sub(1)?;
+                if depth == 0 {
+                    return Some(open + at);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+fn float_conversion_operands(program: &str) -> Vec<(usize, usize)> {
+    let mut operands = Vec::new();
+    for target in ["f32(", "f64("] {
+        for (at, _) in program.match_indices(target) {
+            if !word_start(program, at) {
+                continue;
+            }
+            let open = at + target.len() - 1;
+            let Some(close) = closing(program, open) else {
+                continue;
+            };
+            let operand = program.get(open + 1..close).unwrap_or_default();
+            let fixed = ["u8(", "i32(", "i64("].iter().any(|inner| {
+                operand
+                    .match_indices(inner)
+                    .any(|(start, _)| word_start(operand, start))
+            });
+            if fixed {
+                operands.push((open + 1, close));
+            }
+        }
+    }
+    operands
+}
+
+fn conversion_stops_the_expected_type(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
+    let inside = |(lo, hi): (usize, usize)| at.1 >= lo && at.2 <= hi;
+    let operands = float_conversion_operands(seen.program);
+    match (change, at.0.as_str()) {
+        (Change::Added, "constant-overflow" | "does-not-fit")
+        | (Change::Removed, "type-mismatch") => operands.into_iter().any(inside),
+        (Change::Removed, "integer-cell") => {
+            let name = seen.text(at);
+            !name.is_empty()
+                && operands.into_iter().any(|(lo, hi)| {
+                    seen.program
+                        .get(lo..hi)
+                        .unwrap_or_default()
+                        .split(|character: char| !(character.is_alphanumeric() || character == '_'))
+                        .any(|word| word == name)
+                })
+        }
+        _ => false,
+    }
+}
+
 pub struct Class {
     pub ledger: &'static str,
     pub rule: &'static str,
@@ -424,6 +494,11 @@ pub const CLASSES: &[Class] = &[
         ledger: "476",
         rule: "does-not-fit at a division's literal operand beside its sibling's index-out-of-range",
         explains: fit_beside_a_range_fault,
+    },
+    Class {
+        ledger: "478",
+        rule: "a float conversion's operand holding a fixed-type operand computes in its own type, so its own overflow or fit draws inside it, and the old engine's integer-cell warning and widening type-mismatch from the float target flowing into it do not",
+        explains: conversion_stops_the_expected_type,
     },
 ];
 
