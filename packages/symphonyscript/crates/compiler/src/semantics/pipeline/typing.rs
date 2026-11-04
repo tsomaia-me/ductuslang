@@ -31,7 +31,7 @@ impl Core<'_> {
         Ok(operands)
     }
 
-    fn push_operands(&self, node: u32, out: &mut Vec<u32>) -> Result<(), Internal> {
+    pub fn push_operands(&self, node: u32, out: &mut Vec<u32>) -> Result<(), Internal> {
         let (op, a, b, c) = self.ir.node(node)?;
         match op {
             Op::Neg | Op::Not | Op::Convert => out.push(a),

@@ -368,15 +368,22 @@ fn slice_read_as_an_index(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
 
 fn fit_beside_a_range_fault(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
     let text = seen.text(at);
+    let left = seen.before(at).ends_with("] / ")
+        && seen
+            .new
+            .iter()
+            .any(|drawn| drawn.0 == "index-out-of-range" && drawn.2 + 4 == at.1);
+    let right = seen.after(at).starts_with(" / [")
+        && seen.new.iter().any(|drawn| {
+            drawn.0 == "index-out-of-range"
+                && drawn.1 > at.2
+                && seen.line(drawn.1) == seen.line(at.1)
+        });
     change == Change::Added
         && at.0 == "does-not-fit"
         && !text.is_empty()
         && text.chars().all(|character| character.is_ascii_digit())
-        && seen.before(at).ends_with("] / ")
-        && seen
-            .new
-            .iter()
-            .any(|drawn| drawn.0 == "index-out-of-range" && drawn.2 + 4 == at.1)
+        && (left || right)
 }
 
 fn base_not_an_array(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
@@ -597,6 +604,103 @@ fn choice_refused_once(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
         && holds(seen.new, "type-mismatch", at)
 }
 
+fn cell_reads(program: &str, name: &str) -> Vec<(usize, usize)> {
+    let mut reads = Vec::new();
+    let mut start = 0;
+    for line in program.split_inclusive('\n') {
+        let declares = ["state ", "input "].iter().any(|head| {
+            line.strip_prefix(head)
+                .and_then(|rest| rest.strip_prefix(name))
+                .is_some_and(|rest| !rest.starts_with(|c: char| c.is_alphanumeric() || c == '_'))
+        });
+        if !declares {
+            for (at, _) in line.match_indices(name) {
+                let lo = start + at;
+                let hi = lo + name.len();
+                let ends = program
+                    .get(hi..)
+                    .and_then(|rest| rest.chars().next())
+                    .is_none_or(|c| !(c.is_alphanumeric() || c == '_'));
+                if word_start(program, lo) && ends {
+                    reads.push((lo, hi));
+                }
+            }
+        }
+        start += line.len();
+    }
+    reads
+}
+
+fn integer_cell_read_inside_a_refusal(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
+    let name = seen.text(at);
+    let reads = cell_reads(seen.program, name);
+    change == Change::Removed
+        && at.0 == "integer-cell"
+        && !reads.is_empty()
+        && reads.iter().all(|(lo, hi)| {
+            seen.new.iter().any(|drawn| {
+                matches!(
+                    drawn.0.as_str(),
+                    "type-mismatch" | "not-an-array" | "operand-type" | "condition-type"
+                ) && drawn.1 <= *lo
+                    && *hi <= drawn.2
+                    && (drawn.1, drawn.2) != (*lo, *hi)
+            })
+        })
+}
+
+fn integer_cell_in_an_integer_conversion(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
+    let name = seen.text(at);
+    let reads = cell_reads(seen.program, name);
+    let operands: Vec<(usize, usize)> = ["u8(", "i32(", "i64("]
+        .iter()
+        .flat_map(|target| {
+            seen.program
+                .match_indices(target)
+                .filter(|(start, _)| word_start(seen.program, *start))
+                .filter_map(|(start, _)| {
+                    let open = start + target.len() - 1;
+                    closing(seen.program, open).map(|close| (open + 1, close))
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect();
+    change == Change::Added
+        && at.0 == "integer-cell"
+        && !reads.is_empty()
+        && reads
+            .iter()
+            .all(|(lo, hi)| operands.iter().any(|(start, end)| start <= lo && hi <= end))
+}
+
+fn integer_cell_through_a_call(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
+    let name = seen.text(at);
+    if change != Change::Added || at.0 != "integer-cell" || name.is_empty() {
+        return false;
+    }
+    seen.program
+        .lines()
+        .filter_map(|line| line.strip_prefix("fn "))
+        .filter_map(|line| {
+            line.split_once('(')
+                .map(|(function, _)| format!("{function}("))
+        })
+        .any(|function| {
+            seen.program
+                .match_indices(&function)
+                .filter(|(start, _)| {
+                    word_start(seen.program, *start) && !seen.program[..*start].ends_with("fn ")
+                })
+                .filter_map(|(start, _)| {
+                    let open = start + function.len() - 1;
+                    closing(seen.program, open).map(|close| (open, close))
+                })
+                .any(|(open, close)| {
+                    reads_word(seen.program.get(open + 1..close).unwrap_or_default(), name)
+                })
+        })
+}
+
 pub struct Class {
     pub ledger: &'static str,
     pub rule: &'static str,
@@ -647,7 +751,7 @@ pub const CLASSES: &[Class] = &[
     },
     Class {
         ledger: "476",
-        rule: "does-not-fit at a division's literal operand beside its sibling's index-out-of-range",
+        rule: "does-not-fit at a division's literal operand, on either side, beside its sibling's index-out-of-range",
         explains: fit_beside_a_range_fault,
     },
     Class {
@@ -679,6 +783,21 @@ pub const CLASSES: &[Class] = &[
         ledger: "411",
         rule: "a choice whose arms the position refuses as one value draws one type-mismatch at the choice, where the old engine draws a second one there for the same fault (ledger 385's rule, ARCHITECTURE §7: one fault draws one diagnostic)",
         explains: choice_refused_once,
+    },
+    Class {
+        ledger: "480",
+        rule: "an integer host-fed cell whose every use expects a float draws its integer-cell warning when a use reaches the float position through a call's argument, the body checked as inlined at the call (SPEC §4.4, §6.3), which the old engine misses",
+        explains: integer_cell_through_a_call,
+    },
+    Class {
+        ledger: "478",
+        rule: "an integer conversion's operand computes in its own type, so an integer host-fed cell read there beside a float operand is a use that expects a float and draws its integer-cell warning (SPEC §4.2, §4.4), where the old engine flows the integer target into it",
+        explains: integer_cell_in_an_integer_conversion,
+    },
+    Class {
+        ledger: "476",
+        rule: "an integer host-fed cell whose every read lies inside a refused value draws no integer-cell warning, since the program with the refused value repaired reads the cell nowhere, where the old engine draws it from a refused comparison",
+        explains: integer_cell_read_inside_a_refusal,
     },
 ];
 

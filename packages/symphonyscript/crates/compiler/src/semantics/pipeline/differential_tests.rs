@@ -1877,3 +1877,44 @@ fn a_runtime_condition_of_another_type_than_bool_checks_both_arms_as_the_old_eng
         assert_eq!(found, old.check(&sources), "{text}");
     }
 }
+
+const OWN_TYPE_OPERATIONS: [&str; 22] = [
+    "state q(0.5): f32\nClip c:\n    Note/(q - 300000000000)\n",
+    "state q(0.5): f32\nClip c:\n    Note/(300000000000 - q)\n",
+    "state q(0.5): f32\nClip c:\n    Note/((q - 300000000000) / 2)\n",
+    "state q(0.5): f32\nClip c:\n    Note/(q * 1e300)\n",
+    "state q(0.5): f32\nClip c:\n    Note/(q + 1)\n",
+    "state q(0.5): f32\nClip c:\n    Note/(q / 0)\n",
+    "state q(0.5)\nClip c:\n    Note/(q - 300000000000)\n",
+    "state q(0.5)\nClip c:\n    Note/(q / 300000000000)\n",
+    "state q(0): i32\nClip c:\n    Note/(q / 300000000000)\n",
+    "state q(0): u8\nClip c:\n    Note/(300000000000 / q)\n",
+    "state q(0): i64\nClip c:\n    Note/(q / 300000000000)\n",
+    "state q(0)\nClip c:\n    Note/(q / 300000000000)\n",
+    "state x(1)\nClip c:\n    Note/(x + 300000000000 + 1.5)\n",
+    "state q(0): i32\nClip c:\n    Note/(q is 300000000000)\n",
+    "state q(0): u8\nClip c:\n    Note/(q < 300000000000)\n",
+    "state q(0.5): f32\nClip c:\n    Note/(q is 300000000000)\n",
+    "state q(0.5)\nClip c:\n    Note/(q is 300000000000)\n",
+    "let q = 0.5\nClip c:\n    Note/(q is 300000000000)\n",
+    "let q = 0.5\nClip c:\n    Note/(if (q is 300000000000) then 1 else 2)\n",
+    "let q = 1\nClip c:\n    Note/(q / 300000000000)\n",
+    "let x = i64(1) / 300000000000\nClip c:\n    Note/(1)\n",
+    "state q(0): i32\nClip c:\n    Note | velocity=(q / 300000000000)\n",
+];
+
+#[test]
+fn a_refused_operation_over_a_cell_checks_its_literals_in_the_operations_own_type() {
+    let vocabulary = symphonyscript_fixtures::vocabulary();
+    let old = Compiler::new(&vocabulary)
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
+    let new = Compiler::new(&vocabulary).expect("the vocabulary compiles");
+    for text in OWN_TYPE_OPERATIONS {
+        let sources = [source(text)];
+        let found = new
+            .checked_by_new_core(&sources)
+            .unwrap_or_else(|| panic!("the new core takes {text}"));
+        assert_eq!(found, old.check(&sources), "{text}");
+    }
+}

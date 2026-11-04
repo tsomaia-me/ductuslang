@@ -6628,6 +6628,63 @@ fn exhaustive_differential_a_literal_whose_elements_disagree_draws_one_diagnosti
     );
 }
 
+fn placeholder_rule_differential(part: usize, chosen_part: usize) {
+    support::assert_both_engines_agree(|| {
+        let (failures, _) = placeholder_rule_failures(&Rows::Every, (part, 2), (chosen_part, 3));
+        support::assert_no_failure(&failures);
+    });
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_differential_every_fault_beside_another_fault_draws_by_the_placeholder_rule_in_the_odd_expressions_part_1()
+ {
+    placeholder_rule_differential(0, 0);
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_differential_every_fault_beside_another_fault_draws_by_the_placeholder_rule_in_the_odd_expressions_part_2()
+ {
+    placeholder_rule_differential(0, 1);
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_differential_every_fault_beside_another_fault_draws_by_the_placeholder_rule_in_the_odd_expressions_part_3()
+ {
+    placeholder_rule_differential(0, 2);
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_differential_every_fault_beside_another_fault_draws_by_the_placeholder_rule_in_the_even_expressions_part_1()
+ {
+    placeholder_rule_differential(1, 0);
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_differential_every_fault_beside_another_fault_draws_by_the_placeholder_rule_in_the_even_expressions_part_2()
+ {
+    placeholder_rule_differential(1, 1);
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_differential_every_fault_beside_another_fault_draws_by_the_placeholder_rule_in_the_even_expressions_part_3()
+ {
+    placeholder_rule_differential(1, 2);
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_differential_a_cell_read_through_a_literals_group_keeps_its_own_kind() {
+    support::assert_both_engines_agree(
+        exhaustive_a_cell_read_through_a_literals_group_keeps_its_own_kind,
+    );
+}
+
 #[test]
 #[ignore = "exhaustive"]
 fn exhaustive_differential_inconsistent_uses_name_each_use_with_its_calls() {
