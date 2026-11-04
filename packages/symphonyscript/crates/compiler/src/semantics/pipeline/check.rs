@@ -76,11 +76,10 @@ impl Core<'_> {
             CountedWalk::CheckRow.step();
             let record = *self.instances.get(row).ok_or(Internal::missed("row"))?;
             let placement = self.placement(record.item)?;
-            let decl = self
-                .vocabulary
+            let vocabulary = self.vocabulary;
+            let decl = vocabulary
                 .node_kind(record.kind)
-                .ok_or(Internal::missed("node kind"))?
-                .clone();
+                .ok_or(Internal::missed("node kind"))?;
             let mut sources: Vec<(usize, Span, u32)> = Vec::new();
             let mut set = |core: &mut Self, attr: usize, span: Span, root: u32| {
                 if let Some((_, earlier, _)) = sources.iter().find(|(seen, _, _)| *seen == attr) {
@@ -463,11 +462,10 @@ impl Core<'_> {
             .instances
             .get(row as usize)
             .ok_or(Internal::missed("row"))?;
-        let decl = self
-            .vocabulary
+        let vocabulary = self.vocabulary;
+        let decl = vocabulary
             .node_kind(record.kind)
-            .ok_or(Internal::missed("node kind"))?
-            .clone();
+            .ok_or(Internal::missed("node kind"))?;
         let directed = decl
             .outgoing
             .iter()
@@ -507,11 +505,10 @@ impl Core<'_> {
             .instances
             .get(parent as usize)
             .ok_or(Internal::missed("row"))?;
-        let decl = self
-            .vocabulary
+        let vocabulary = self.vocabulary;
+        let decl = vocabulary
             .node_kind(record.kind)
-            .ok_or(Internal::missed("node kind"))?
-            .clone();
+            .ok_or(Internal::missed("node kind"))?;
         let mut by_kind: BTreeMap<NodeKind, Vec<u32>> = BTreeMap::new();
         for child in record.children.0..record.children.1 {
             let kind = self
@@ -539,7 +536,7 @@ impl Core<'_> {
             by_kind.entry(kind).or_default().push(child);
         }
         for (kind, count) in &decl.children {
-            let found = by_kind.get(kind).cloned().unwrap_or_default();
+            let found = by_kind.get(kind).map_or(&[][..], Vec::as_slice);
             let name = self.kind_name(*kind)?;
             if let Some(max) = count.max()
                 && let Some(extra) = found.get(max as usize)

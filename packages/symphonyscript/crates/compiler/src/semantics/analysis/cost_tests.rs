@@ -558,6 +558,9 @@ fn measured_files(compiler: &Compiler, sources: &[Source]) -> Measured {
     counts.push(("built_elements".into(), built_after - built_before));
     counts.push(("visited_arrays".into(), visited_after - visited_before));
     for (walk, before) in CountedWalk::ALL.iter().zip(walks_before) {
+        if *walk == CountedWalk::SymbolProbe {
+            continue;
+        }
         counts.push((format!("{walk:?}"), walk.steps() - before));
     }
     let errors = diagnostics

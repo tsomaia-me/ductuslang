@@ -6,6 +6,7 @@ use super::declined::Declined;
 use super::reason::Reason;
 use super::run::Run;
 use super::stages::Stages;
+use crate::diagnostics::Code;
 use crate::semantics::Internal;
 use crate::semantics::collection::Variants;
 use crate::semantics::ir::flat::FlatIr;
@@ -84,11 +85,39 @@ fn finished(mut core: Core<'_>) -> Run {
         core.diagnostics.truncate(at);
         core.diagnostics.push(diagnostic);
     }
-    let mut seen = std::collections::HashSet::new();
-    core.diagnostics
-        .retain(|diagnostic| seen.insert(format!("{diagnostic:?}")));
+    let mut seen: std::collections::HashMap<(Code, u32, u32, Option<u32>), Vec<usize>> =
+        std::collections::HashMap::new();
+    let mut kept = Vec::new();
+    for (at, diagnostic) in core.diagnostics.iter().enumerate() {
+        let same = seen
+            .entry((
+                diagnostic.code,
+                diagnostic.span.range.start,
+                diagnostic.span.range.end,
+                diagnostic
+                    .related
+                    .last()
+                    .map(|related| related.span.range.start),
+            ))
+            .or_default();
+        if same
+            .iter()
+            .any(|earlier| core.diagnostics.get(*earlier) == Some(diagnostic))
+        {
+            continue;
+        }
+        same.push(at);
+        kept.push(at);
+    }
+    let mut diagnostics = std::mem::take(&mut core.diagnostics);
+    let mut at = 0;
+    diagnostics.retain(|_| {
+        let keep = kept.binary_search(&at).is_ok();
+        at += 1;
+        keep
+    });
     Run {
-        diagnostics: core.diagnostics,
+        diagnostics,
         placeholders: core.placeholders,
     }
 }

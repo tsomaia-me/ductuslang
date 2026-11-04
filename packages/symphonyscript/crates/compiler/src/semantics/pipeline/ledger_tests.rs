@@ -15,7 +15,7 @@ struct Run {
     walks: u64,
 }
 
-const CORE_WALKS: [CountedWalk; 9] = [
+const CORE_WALKS: [CountedWalk; 10] = [
     CountedWalk::BindLookup,
     CountedWalk::CoreExpandRow,
     CountedWalk::SigNode,
@@ -25,6 +25,7 @@ const CORE_WALKS: [CountedWalk; 9] = [
     CountedWalk::CursorStep,
     CountedWalk::DenseLayout,
     CountedWalk::CoreUse,
+    CountedWalk::SymbolProbe,
 ];
 
 fn walked() -> u64 {
@@ -615,4 +616,37 @@ fn stage_failures(sizes: [usize; 3]) -> Vec<String> {
 #[ignore = "stress"]
 fn stress_the_new_cores_stages_cost_time_linear_in_the_nodes_of_a_non_recursive_figure() {
     assert_none(&stage_failures([2_000, 4_000, 8_000]));
+}
+
+fn clips_beside_a_session(n: usize) -> String {
+    let mut text = String::from("Session s\n");
+    for at in 0..n {
+        text.push_str(&format!("Clip c{at}\n"));
+    }
+    text
+}
+
+fn unreachable_clips(n: usize) -> Vec<String> {
+    vec!["unreachable-instance".to_string(); n]
+}
+
+#[test]
+fn clips_no_entry_reaches_draw_one_warning_each() {
+    assert_none(&ledger_failures(
+        "the unreachable clips",
+        [250, 500, 1_000],
+        clips_beside_a_session,
+        &unreachable_clips,
+    ));
+}
+
+#[test]
+#[ignore = "stress"]
+fn stress_clips_no_entry_reaches_cost_time_and_memory_linear_in_the_clips() {
+    assert_none(&ledger_failures(
+        "the unreachable clips",
+        [40_000, 80_000, 160_000],
+        clips_beside_a_session,
+        &unreachable_clips,
+    ));
 }
