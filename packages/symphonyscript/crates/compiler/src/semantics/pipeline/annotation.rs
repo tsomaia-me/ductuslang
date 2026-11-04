@@ -12,8 +12,9 @@ use crate::semantics::ir::flat::{NONE, Op};
 use crate::semantics::operators::{EvalTy, Value, int_range, ty_name};
 use symphonyscript_core::Span;
 
-const SHAPE: &str = "the value's shape differs from its annotated type";
-const TYPE: &str = "the value does not have the annotated type; a conversion states the rounding";
+pub(crate) const SHAPE: &str = "the value's shape differs from its annotated type";
+pub(crate) const TYPE: &str =
+    "the value does not have the annotated type; a conversion states the rounding";
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Refusal {
@@ -82,7 +83,7 @@ impl Core<'_> {
             .ok_or(Internal::missed("IR cell"))
     }
 
-    fn binder_ty(&self, binder: u32) -> Result<Option<EvalTy>, Internal> {
+    pub fn binder_ty(&self, binder: u32) -> Result<Option<EvalTy>, Internal> {
         let annotation = self.ir.binder(binder)?.annotation;
         if annotation == NONE {
             return Ok(None);
@@ -106,17 +107,7 @@ impl Core<'_> {
     }
 
     pub fn annotation_refusal(&self, at: u32, ty: EvalTy) -> Result<Refusal, Internal> {
-        let fact = self.fact(self.let_root(at)?)?;
-        Ok(match fact.leaf {
-            Leaf::Placeholder | Leaf::Error => Refusal::Silent,
-            _ if !fact.dims.is_empty() => Refusal::Shape,
-            Leaf::Bool if ty == EvalTy::Bool => Refusal::Kept,
-            Leaf::Bool => Refusal::Type,
-            _ if ty == EvalTy::Bool => Refusal::Type,
-            Leaf::Float if int_range(ty).is_some() => Refusal::Type,
-            _ if fact.fixed.is_some_and(|own| !widens(own, ty)) => Refusal::Type,
-            Leaf::Empty | Leaf::Int | Leaf::Float => Refusal::Kept,
-        })
+        Ok(refusal(&self.fact(self.let_root(at)?)?, ty))
     }
 
     fn let_span(&self, at: u32) -> Result<Span, Internal> {
@@ -219,5 +210,18 @@ impl Core<'_> {
         };
         self.eval_chain = chain;
         outcome.map(|()| Value::Error)
+    }
+}
+
+pub(crate) fn refusal(fact: &Fact, ty: EvalTy) -> Refusal {
+    match fact.leaf {
+        Leaf::Placeholder | Leaf::Error => Refusal::Silent,
+        _ if !fact.dims.is_empty() => Refusal::Shape,
+        Leaf::Bool if ty == EvalTy::Bool => Refusal::Kept,
+        Leaf::Bool => Refusal::Type,
+        _ if ty == EvalTy::Bool => Refusal::Type,
+        Leaf::Float if int_range(ty).is_some() => Refusal::Type,
+        _ if fact.fixed.is_some_and(|own| !widens(own, ty)) => Refusal::Type,
+        Leaf::Empty | Leaf::Int | Leaf::Float => Refusal::Kept,
     }
 }

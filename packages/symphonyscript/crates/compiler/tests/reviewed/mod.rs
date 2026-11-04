@@ -482,6 +482,31 @@ fn annotated_array_rule(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
         })
 }
 
+fn annotated_accumulator(line: &str) -> bool {
+    line.split_once(" into ")
+        .and_then(|(_, rest)| rest.split_once(' '))
+        .is_some_and(|(name, rest)| name.ends_with(':') && rest.contains(" from "))
+}
+
+fn annotated_fold(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
+    if change != Change::Added || at.0 != "type-mismatch" {
+        return false;
+    }
+    let line = seen
+        .program
+        .lines()
+        .nth(seen.line(at.1))
+        .unwrap_or_default();
+    let before = seen.before(at);
+    let head = before.rsplit('\n').next().unwrap_or_default();
+    let loop_name = seen.after(at).starts_with(": ")
+        && (head.ends_with("for ") || head.ends_with(", "))
+        && line.contains(" in ");
+    let start = head.ends_with(" from ") && annotated_accumulator(line);
+    let body = head.ends_with(": ") && head.contains(" from ") && annotated_accumulator(line);
+    loop_name || start || body
+}
+
 pub struct Class {
     pub ledger: &'static str,
     pub rule: &'static str,
@@ -539,6 +564,11 @@ pub const CLASSES: &[Class] = &[
         ledger: "476",
         rule: "an annotated derived cell whose rule is an array draws its type-mismatch at the rule, its reads typed by the annotation and the rule checked in its own type, in place of the old engine's faults at its reads and inside its rule",
         explains: annotated_array_rule,
+    },
+    Class {
+        ledger: "476",
+        rule: "an annotated fold accumulator's start and body, and an annotated loop name's elements, draw type-mismatch where they do not have the annotated type (SPEC §4.5), which the old engine misses",
+        explains: annotated_fold,
     },
     Class {
         ledger: "478",

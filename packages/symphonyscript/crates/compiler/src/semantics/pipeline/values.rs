@@ -238,10 +238,12 @@ impl Core<'_> {
                     ]
                 } else {
                     let fact = self.fact(rec.iterable.0)?;
-                    let items_ty = match fact.fixed {
-                        Some(fixed) => fixed,
-                        None if fact.leaf == Leaf::Bool => EvalTy::Bool,
-                        None => EvalTy::Exact,
+                    let element = usize::from(self.fold_names(node)? >= 2);
+                    let items_ty = match (self.item_ty(&rec, element)?, fact.fixed) {
+                        (Some(annotated), _) if fact.dims.len() == 1 => annotated,
+                        (_, Some(fixed)) => fixed,
+                        (_, None) if fact.leaf == Leaf::Bool => EvalTy::Bool,
+                        (_, None) => EvalTy::Exact,
                     };
                     vec![(rec.iterable.0, items_ty)]
                 }
@@ -382,7 +384,7 @@ impl Core<'_> {
                         Err(declined) => return Ok(Err(declined)),
                     };
                     if proceed {
-                        let element = self.fold_item(&run.items, next);
+                        let element = self.fold_item(run.node, &run.items, next)?;
                         run.next = next;
                         let mut args = Vec::new();
                         if run.indexed {
@@ -642,7 +644,7 @@ impl Core<'_> {
                         Some([Value::Array(_)]) => !rec.range,
                         Some(_) | None => false,
                     };
-                    if valid {
+                    if valid && !self.annotated_fold_refused(fold)? {
                         frame.steps.push(Step::FoldRun(fold, fold_ty));
                         frame.steps.push(Step::Visit(rec.start, fold_ty));
                     } else {
@@ -688,7 +690,7 @@ impl Core<'_> {
                         continue;
                     }
                     let indexed = self.fold_names(fold)? >= 2;
-                    let first = self.fold_item(&items, 0);
+                    let first = self.fold_item(fold, &items, 0)?;
                     let mut args = Vec::new();
                     if indexed {
                         args.push(Value::Int(0));

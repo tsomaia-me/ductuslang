@@ -1324,3 +1324,92 @@ fn a_conversions_operand_is_computed_in_its_own_type_where_the_old_engine_flows_
         assert_eq!(found, old.check(&sources), "{text}");
     }
 }
+
+const FOLD_ANNOTATIONS: [&str; 24] = [
+    "let n = for i in 0..3 into a: i32 from 0: a + i\nClip c:\n    Note/(n)\n",
+    "let n = for i in 0..3 into a: u8 from 0: a + i + 300\nClip c:\n    Note/(n)\n",
+    "let n = for i in 0..3 into a: u8 from 300: a + i\nClip c:\n    Note/(n)\n",
+    "let n = for i in 0..3 into a: f32 from 0: a + i\nClip c:\n    Note | velocity=(n)\n",
+    "let n = for i in 0..3 into a: bool from false: a or i > 1\nClip c:\n    Note/(if n then 1 else 2)\n",
+    "let n = for i in 0..3 into a: i64 from 0: a + i\nClip c:\n    Note/(n)\n",
+    "let n = for i in 0..3 into a: u8 from 0: a + 100\nClip c:\n    Note/(n)\n",
+    "let n = for i in 0..3 into a: u8 from 250: a + 1\nClip c:\n    Note/(n)\n",
+    "let n = for i in 0..3 into a: f64 from 0: a + i\nClip c:\n    Note | velocity=(n)\n",
+    "let n = for i: i32 in 0..3 into a from 0: a + i\nClip c:\n    Note/(n)\n",
+    "let n = for x: u8 in [1, 300] into a from 0: a + x\nClip c:\n    Note/(n)\n",
+    "let n = for x: u8 in [1, 2] into a from 0: a + x\nClip c:\n    Note/(n)\n",
+    "let n = for i: u8 in 0..300 into a from 0: a + i\nClip c:\n    Note/(n)\n",
+    "let n = for x: i32 in [1.5] into a from 0: a + x\nClip c:\n    Note/(n)\n",
+    "let n = for x: f32 in [1, 2] into a from 0: a + x\nClip c:\n    Note/(n)\n",
+    "let n = for i, x: u8 in [1, 2] into a from 0: a + x + i\nClip c:\n    Note/(n)\n",
+    "let n = for x: bool in [true] into a from 0: a + x\nClip c:\n    Note/(n)\n",
+    "let n = for i in 0..3 into a: u8 from 0: 300\nClip c:\n    Note/(n)\n",
+    "let n = for i: f32 in 0..3 into a from 0.0: a + i\nClip c:\n    Note | velocity=(n)\n",
+    "let n = for x: f64 in [1, 2] into a from 0.0: a + x\nClip c:\n    Note | velocity=(n)\n",
+    "fn f(k): for i in 0..k into a: u8 from 0: a + 100\nClip c:\n    Note/(f(3))\n",
+    "let n = for i, x: i32 in [1.5] into a from 0: a + i\nClip c:\n    Note/(n)\n",
+    "let n = for i in 0..3 into a: u8 from q: a + i\nClip c:\n    Note/(n)\n",
+    "let n = for i in 0..3 into a: u8 from 0: a + (for j in 0..2 into b: u8 from 0: b + 200)\nClip c:\n    Note/(n)\n",
+];
+
+const FOLD_ANNOTATION_FAULTS: [(&str, &[(&str, &str)]); 6] = [
+    (
+        "let n = for i in 0..3 into a: i32 from 0.5: a + i\nClip c:\n    Note/(n)\n",
+        &[("type-mismatch", "0.5")],
+    ),
+    (
+        "let n = for i in 0..3 into a: i32 from [0]: a + [i]\nClip c:\n    Note/(n)\n",
+        &[("array-operand", "a + [i]"), ("type-mismatch", "[0]")],
+    ),
+    (
+        "let n = for i in 0..3 into a: i32 from 0: a + 1.5\nClip c:\n    Note/(n)\n",
+        &[("type-mismatch", "a + 1.5")],
+    ),
+    (
+        "let n = for i in 0..3 into a: u8 from 0: a + i64(1)\nClip c:\n    Note/(n)\n",
+        &[("type-mismatch", "a + i64(1)")],
+    ),
+    (
+        "let n = for x: i32 in [[1]] into a from 0: a + x\nClip c:\n    Note/(n)\n",
+        &[("type-mismatch", "x")],
+    ),
+    (
+        "let n = for i in 0..3 into a: bool from 0: a\nClip c:\n    Note/(if n then 1 else 2)\n",
+        &[("type-mismatch", "0")],
+    ),
+];
+
+#[test]
+fn an_annotated_accumulator_or_loop_name_fixes_its_type_as_spec_4_5_states_476() {
+    let old = Compiler::new(&symphonyscript_fixtures::vocabulary())
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
+    let new =
+        Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("the vocabulary compiles");
+    for text in FOLD_ANNOTATIONS {
+        let sources = [source(text)];
+        let found = new
+            .checked_by_new_core(&sources)
+            .unwrap_or_else(|| panic!("the new core takes {text}"));
+        assert_eq!(found, old.check(&sources), "{text}");
+    }
+    for (text, expected) in FOLD_ANNOTATION_FAULTS {
+        let sources = [source(text)];
+        let found = new
+            .checked_by_new_core(&sources)
+            .unwrap_or_else(|| panic!("the new core takes {text}"));
+        let mut wanted: Vec<(String, String)> = expected
+            .iter()
+            .map(|(code, span)| ((*code).to_string(), (*span).to_string()))
+            .collect();
+        wanted.sort();
+        assert_eq!(spanned(text, &found), wanted, "{text}");
+        let before = old.check(&sources);
+        let classes = reviewed::moved(text, &drawn(&before), &drawn(&found))
+            .unwrap_or_else(|unexplained| panic!("{text}: {unexplained:?}"));
+        assert!(
+            !classes.is_empty() && classes.iter().all(|class| class.ledger == "476"),
+            "{text}"
+        );
+    }
+}

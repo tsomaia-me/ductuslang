@@ -1,3 +1,4 @@
+use super::annotation::{Refusal, SHAPE, TYPE, annotated_fact, refusal};
 use super::body_instance::BodyInstance;
 use super::core::{Core, Stage};
 use super::core_value::CoreValue;
@@ -8,11 +9,11 @@ use super::leaf::Leaf;
 use super::need::Need;
 use super::reason::Reason;
 use super::typing::unify;
-use super::width::combined;
+use super::width::{combined, is_fixed_float};
 use crate::diagnostics::{Code, Diagnostic, for_start_and_body_help};
 use crate::semantics::Internal;
 use crate::semantics::ir::flat::{ForRec, NONE, Op};
-use crate::semantics::operators::{EvalTy, Value};
+use crate::semantics::operators::{EvalTy, Value, convert_to};
 use crate::semantics::reporting::grouped;
 
 pub(crate) const ANY_LENGTH: u32 = u32::MAX;
@@ -25,6 +26,11 @@ pub(crate) fn dims_agree(a: &[u32], b: &[u32]) -> bool {
 }
 
 const ROUNDS: u32 = 4;
+
+const ELEMENT_TYPE: &str =
+    "the elements do not have the loop name's annotated type; a conversion states the rounding";
+const ELEMENT_SHAPE: &str = "the elements' shape differs from the loop name's annotated type";
+const RANGE_TYPE: &str = "a range's values do not have the loop name's annotated type";
 
 const START_AND_BODY: &str =
     "the start and the body of a `for` expression hold values of different types";
@@ -193,7 +199,9 @@ impl Core<'_> {
                     return Ok(None);
                 }
             }
-            return Ok(Some(vec![Fact::scalar(Leaf::Int)]));
+            return self
+                .annotated_items(node, rec, vec![Fact::scalar(Leaf::Int)])
+                .map(Some);
         }
         let values = rec.iterable.0;
         let fact = self.fact(values)?;
@@ -210,11 +218,111 @@ impl Core<'_> {
             fixed: fact.fixed,
             read: fact.read,
         };
-        Ok(Some(if names >= 2 {
+        let items = if names >= 2 {
             vec![Fact::scalar(Leaf::Int), element]
         } else {
             vec![element]
-        }))
+        };
+        self.annotated_items(node, rec, items).map(Some)
+    }
+
+    fn annotated_items(
+        &mut self,
+        node: u32,
+        rec: &ForRec,
+        mut items: Vec<Fact>,
+    ) -> Result<Vec<Fact>, Internal> {
+        for (binder, item) in (rec.names.0..rec.names.1).zip(items.iter_mut()) {
+            let Some(ty) = self.binder_ty(binder)? else {
+                continue;
+            };
+            let summary = match (refusal(item, ty), rec.range) {
+                (Refusal::Shape, _) => Some(ELEMENT_SHAPE),
+                (Refusal::Type, false) => Some(ELEMENT_TYPE),
+                (Refusal::Type, true) => Some(RANGE_TYPE),
+                (Refusal::Kept | Refusal::Silent, _) => None,
+            };
+            if let Some(summary) = summary {
+                let at = *self.ir.binder(binder)?;
+                let span = self.span(self.file_of(node), at.lo, at.hi);
+                let diagnostic = Diagnostic::new(Code::TypeMismatch, span, summary);
+                let diagnostic = self.chained(diagnostic);
+                self.diagnostics.push(diagnostic);
+            }
+            *item = annotated_fact(ty);
+        }
+        Ok(items)
+    }
+
+    pub fn accumulator_ty(&self, rec: &ForRec) -> Result<Option<EvalTy>, Internal> {
+        self.binder_ty(rec.accumulator)
+    }
+
+    pub fn item_ty(&self, rec: &ForRec, position: usize) -> Result<Option<EvalTy>, Internal> {
+        let binder = rec.names.0 + u32::try_from(position).unwrap_or(u32::MAX);
+        if binder >= rec.names.1 {
+            return Ok(None);
+        }
+        self.binder_ty(binder)
+    }
+
+    fn annotated_fold(
+        &mut self,
+        node: u32,
+        rec: &ForRec,
+        items: Vec<Fact>,
+        ty: EvalTy,
+    ) -> Stage<Fact> {
+        let (_, record, _, _) = self.ir.node(node)?;
+        let start = self.fact(rec.start)?;
+        match refusal(&start, ty) {
+            Refusal::Shape => self.draw_at(Code::TypeMismatch, rec.start, SHAPE)?,
+            Refusal::Type => self.draw_at(Code::TypeMismatch, rec.start, TYPE)?,
+            Refusal::Kept | Refusal::Silent => {}
+        }
+        let owner = self.functions() + record;
+        let mut args = items;
+        args.push(annotated_fact(ty));
+        let body = match self.fold_instance(owner, args)? {
+            Ok(body) => body,
+            Err(declined) => return Ok(Err(declined)),
+        };
+        let outer = std::mem::replace(&mut self.inst, body);
+        let found = self.fact(rec.body);
+        let reactive = self.is_reactive(rec.body);
+        self.inst = outer;
+        if reactive? {
+            return Ok(Err(Declined(Reason::ReactiveFor)));
+        }
+        let found = found?;
+        self.call_body.insert((self.inst, node), body);
+        self.replay_fold(node, body)?;
+        match refusal(&found, ty) {
+            Refusal::Shape => self.draw_at(Code::TypeMismatch, rec.body, SHAPE)?,
+            Refusal::Type => self.draw_at(Code::TypeMismatch, rec.body, TYPE)?,
+            Refusal::Kept | Refusal::Silent => {}
+        }
+        Ok(Ok(annotated_fact(ty)))
+    }
+
+    pub fn annotated_fold_refused(&mut self, node: u32) -> Result<bool, Internal> {
+        let rec = self.fold_rec(node)?;
+        let Some(ty) = self.accumulator_ty(&rec)? else {
+            return Ok(false);
+        };
+        if refusal(&self.fact(rec.start)?, ty) != Refusal::Kept {
+            return Ok(true);
+        }
+        let Some(body) = self.call_body.get(&(self.inst, node)).copied() else {
+            return Ok(true);
+        };
+        let outer = std::mem::replace(&mut self.inst, body);
+        let found = self.fact(rec.body);
+        self.inst = outer;
+        Ok(!matches!(
+            refusal(&found?, ty),
+            Refusal::Kept | Refusal::Silent
+        ))
     }
 
     fn fold_instance(&mut self, owner: u32, args: Vec<Fact>) -> Stage<u32> {
@@ -245,6 +353,9 @@ impl Core<'_> {
         let Some(items) = self.fold_head(node, &rec)? else {
             return Ok(Ok(Fact::PLACEHOLDER));
         };
+        if let Some(ty) = self.accumulator_ty(&rec)? {
+            return self.annotated_fold(node, &rec, items, ty);
+        }
         let start = self.fact(rec.start)?;
         if faulty(&start) {
             return Ok(Ok(Fact::PLACEHOLDER));
@@ -371,8 +482,13 @@ impl Core<'_> {
         Ok(Ok(true))
     }
 
-    pub fn fold_item(&mut self, items: &CoreValue, position: usize) -> CoreValue {
-        match items {
+    pub fn fold_item(
+        &mut self,
+        fold: u32,
+        items: &CoreValue,
+        position: usize,
+    ) -> Result<CoreValue, Internal> {
+        let item = match items {
             Value::Array(array) => self.store.element(*array, position).unwrap_or(Value::Error),
             Value::Int(start) => i128::try_from(position)
                 .map_or(Value::Error, |position| Value::Int(start + position)),
@@ -383,7 +499,13 @@ impl Core<'_> {
             | Value::Str(_)
             | Value::Node(_)
             | Value::Error => Value::Error,
-        }
+        };
+        let rec = self.fold_rec(fold)?;
+        let element = usize::from(rec.names.1 - rec.names.0 >= 2);
+        Ok(match (self.item_ty(&rec, element)?, &item) {
+            (Some(ty), Value::Int(_)) if is_fixed_float(ty) => convert_to(item, ty),
+            _ => item,
+        })
     }
 }
 
