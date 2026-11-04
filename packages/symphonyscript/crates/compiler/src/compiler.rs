@@ -115,9 +115,15 @@ impl Compiler {
     }
 
     pub fn check(&self, sources: &[Source]) -> Vec<Diagnostic> {
+        self.check_by_engine(sources).0
+    }
+
+    pub fn check_by_engine(&self, sources: &[Source]) -> (Vec<Diagnostic>, Selector) {
         self.analyzed_by(sources, |_| (), analyze::name_twins, Route::Selected)
-            .unwrap_or_default()
-            .0
+            .map_or(
+                (Vec::new(), Selector::OldEngine),
+                |(diagnostics, _, engine)| (diagnostics, engine),
+            )
     }
 
     #[cfg(test)]
@@ -126,8 +132,20 @@ impl Compiler {
         sources: &[Source],
         inspect: impl FnOnce(&Engine<'_>) -> R,
     ) -> (Vec<Diagnostic>, Option<R>) {
+        self.analyzed_by_engine(sources, inspect).0
+    }
+
+    #[cfg(test)]
+    pub(crate) fn analyzed_by_engine<R>(
+        &self,
+        sources: &[Source],
+        inspect: impl FnOnce(&Engine<'_>) -> R,
+    ) -> ((Vec<Diagnostic>, Option<R>), Selector) {
         self.analyzed_by(sources, inspect, analyze::name_twins, Route::Selected)
-            .unwrap_or_default()
+            .map_or(
+                ((Vec::new(), None), Selector::OldEngine),
+                |(diagnostics, inspected, engine)| ((diagnostics, inspected), engine),
+            )
     }
 
     #[cfg(test)]
@@ -145,7 +163,7 @@ impl Compiler {
     #[cfg(test)]
     pub(crate) fn checked_by_new_core(&self, sources: &[Source]) -> Option<Vec<Diagnostic>> {
         self.analyzed_by(sources, |_| (), analyze::name_twins, Route::NewCoreOnly)
-            .map(|(diagnostics, _)| diagnostics)
+            .map(|(diagnostics, _, _)| diagnostics)
     }
 
     #[cfg(test)]
@@ -159,7 +177,7 @@ impl Compiler {
             |_, _, found| Ok(found.to_vec()),
             Route::NewCoreOnly,
         )
-        .map(|(diagnostics, _)| diagnostics)
+        .map(|(diagnostics, _, _)| diagnostics)
     }
 
     fn analyzed_by<R>(
@@ -172,7 +190,7 @@ impl Compiler {
             &[Diagnostic],
         ) -> Result<Vec<Diagnostic>, Internal>,
         route: Route,
-    ) -> Option<(Vec<Diagnostic>, Option<R>)> {
+    ) -> Option<(Vec<Diagnostic>, Option<R>, Selector)> {
         let mut hir = self.prelude.clone();
         let mut ir = FlatIr::after(&self.prelude_ir);
         let mut report = Report::default();
@@ -207,7 +225,7 @@ impl Compiler {
                 Ok(mapped) => exprs_of.extend(mapped),
                 Err(internal) => {
                     analyze::internal_error(&hir, &mut report, internal);
-                    return Some((report.finish(&hir.files), None));
+                    return Some((report.finish(&hir.files), None, Selector::OldEngine));
                 }
             }
         }
@@ -225,13 +243,18 @@ impl Compiler {
                 Ok(run) => run,
                 Err(internal) => {
                     analyze::internal_error(&hir, &mut report, internal);
-                    return Some((report.finish(&hir.files), None));
+                    return Some((report.finish(&hir.files), None, Selector::OldEngine));
                 }
             }
         };
+        let engine = if taken.is_some() {
+            self.taken.fetch_add(1, Ordering::Relaxed);
+            Selector::NewCore
+        } else {
+            Selector::OldEngine
+        };
         let (inspected, placeholders) = match taken {
             Some(run) => {
-                self.taken.fetch_add(1, Ordering::Relaxed);
                 report.diagnostics.extend(run.diagnostics);
                 let mapped: std::collections::HashMap<u32, ExprId> =
                     exprs_of.iter().copied().collect();
@@ -280,7 +303,7 @@ impl Compiler {
                 }
             }
         }
-        Some((report.finish(&hir.files), inspected))
+        Some((report.finish(&hir.files), inspected, engine))
     }
 }
 

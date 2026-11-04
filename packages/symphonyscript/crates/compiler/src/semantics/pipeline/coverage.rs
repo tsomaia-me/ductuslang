@@ -193,7 +193,7 @@ fn wire_landed(ir: &FlatIr, wire: &WireRec) -> bool {
 pub(crate) fn reason_slice(reason: Reason) -> Slice {
     match reason {
         Reason::Member => Slice::DefaultFlip,
-        Reason::PathInBody | Reason::ReactivePath | Reason::ChildName => Slice::Pending,
+        Reason::ReactivePath => Slice::Pending,
         Reason::ArrayAttribute => Slice::Pending,
         Reason::PreludeItems | Reason::NameOfInstance | Reason::NameOfVocabulary => {
             Slice::DefaultFlip

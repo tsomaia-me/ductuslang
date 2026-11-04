@@ -901,19 +901,25 @@ fn body_read(items: &[String]) -> String {
 type Spans = BTreeSet<(Code, usize, usize)>;
 
 fn spans(compiler: &Compiler, text: &str) -> Spans {
-    support::errors(compiler.check(&[Source {
+    spans_by_engine(compiler, text).0
+}
+
+fn spans_by_engine(compiler: &Compiler, text: &str) -> (Spans, bool) {
+    let (found, engine) = compiler.check_by_engine(&[Source {
         path: "main.sym".into(),
         text: text.to_string(),
-    }]))
-    .into_iter()
-    .map(|diagnostic| {
-        (
-            diagnostic.code,
-            usize::try_from(diagnostic.span.range.start).unwrap_or(usize::MAX),
-            usize::try_from(diagnostic.span.range.end).unwrap_or(usize::MAX),
-        )
-    })
-    .collect()
+    }]);
+    let spans = support::errors(found)
+        .into_iter()
+        .map(|diagnostic| {
+            (
+                diagnostic.code,
+                usize::try_from(diagnostic.span.range.start).unwrap_or(usize::MAX),
+                usize::try_from(diagnostic.span.range.end).unwrap_or(usize::MAX),
+            )
+        })
+        .collect();
+    (spans, engine == symphonyscript::Selector::NewCore)
 }
 
 fn capacity(content: Content) -> usize {
@@ -1178,9 +1184,7 @@ fn check_case(rows: &Rows, case: &Case, compilers: &mut Compilers, outcome: &mut
         )
     };
     let built = build(&choice);
-    let before = compiler.taken_by_new_core();
-    let found = spans(compiler, &built.text);
-    let by_new_core = compiler.taken_by_new_core() > before;
+    let (found, by_new_core) = spans_by_engine(compiler, &built.text);
     outcome.programs += 1;
     let expected: Spans = match &twin {
         None if rejected_call => {

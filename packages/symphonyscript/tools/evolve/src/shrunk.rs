@@ -173,7 +173,7 @@ fn operands<'p>(children: &[NodeView<'p>]) -> Vec<NodeView<'p>> {
         if child.kind() == SyntaxKind::ArgList {
             operands.extend(child.children().filter(is_operand));
         } else if is_operand(child) {
-            operands.push(child.clone());
+            operands.push(*child);
         }
     }
     operands

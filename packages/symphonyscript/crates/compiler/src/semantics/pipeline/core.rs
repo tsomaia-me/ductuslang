@@ -99,6 +99,9 @@ pub(crate) struct Core<'a> {
     pub field_receivers: Vec<u32>,
     pub child_index: Vec<(u32, u32, u32)>,
     pub to_wires: Vec<(u32, u32)>,
+    pub body_path_faults: HashMap<u32, (Vec<Diagnostic>, bool)>,
+    pub child_scopes: Vec<(u32, Vec<(u32, u32)>)>,
+    pub scope_of: HashMap<u32, u32>,
 }
 
 impl<'a> Core<'a> {
@@ -180,6 +183,9 @@ impl<'a> Core<'a> {
             field_receivers: Vec::new(),
             child_index: Vec::new(),
             to_wires: Vec::new(),
+            body_path_faults: HashMap::new(),
+            child_scopes: Vec::new(),
+            scope_of: HashMap::new(),
         }
     }
 

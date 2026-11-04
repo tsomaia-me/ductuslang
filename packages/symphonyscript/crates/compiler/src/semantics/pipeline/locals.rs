@@ -6,7 +6,7 @@ use super::decl_ref::DeclRef;
 use super::reason::Reason;
 use crate::diagnostics::{Code, Diagnostic, Related};
 use crate::semantics::Internal;
-use crate::semantics::ir::flat::{NONE, Sym};
+use crate::semantics::ir::flat::{ItemRec, NONE, Sym};
 
 struct Bound {
     sym: u32,
@@ -205,6 +205,18 @@ impl Core<'_> {
                     continue;
                 }
                 let enclosing = self.enclosing_syms(owner)?.contains(&name.sym);
+                if !enclosing && let Some(child) = self.visible_child(owner, name.sym)? {
+                    let summary =
+                        format!("`{text}` equals a visible name, and a `for` binds only new names");
+                    self.draw_local(
+                        Code::ForVariableClash,
+                        name.span.clone(),
+                        summary,
+                        "rename the name the `for` binds",
+                        (child, "the visible name it equals"),
+                    );
+                    continue;
+                }
                 let top = self
                     .decl
                     .get(name.sym as usize)
@@ -289,5 +301,26 @@ impl Core<'_> {
             self.draw_cycle(&cycle)?;
         }
         Ok(())
+    }
+}
+
+impl Core<'_> {
+    fn visible_child(&self, owner: u32, sym: u32) -> Result<Option<Span>, Internal> {
+        let Some(fold) = owner
+            .checked_sub(self.functions())
+            .and_then(|at| self.fold_nodes.get(at as usize))
+            .copied()
+            .filter(|fold| *fold != NONE)
+        else {
+            return Ok(None);
+        };
+        let scope = self.scope_of.get(&fold).copied();
+        let Some(child) = super::collect::child_in_scope(&self.child_scopes, scope, sym) else {
+            return Ok(None);
+        };
+        let ItemRec::Placement(placement) = *self.ir.item(child)? else {
+            return Ok(None);
+        };
+        Ok(Some(self.name_span(self.file_of(fold), placement.as_name)?))
     }
 }

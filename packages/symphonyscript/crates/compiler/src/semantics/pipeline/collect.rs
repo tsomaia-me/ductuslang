@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use symphonyscript_core::Span;
 
 use super::core::{Core, Stage};
@@ -8,7 +10,7 @@ use crate::diagnostics::Code;
 use crate::semantics::Internal;
 use crate::semantics::collection::BuiltinName;
 use crate::semantics::counted_walk::CountedWalk;
-use crate::semantics::ir::flat::{ItemRec, NONE, Op, TopRec};
+use crate::semantics::ir::flat::{ABSENT, AttrForm, ItemRec, NONE, Op, TopRec};
 use crate::semantics::reporting::grouped;
 
 impl Core<'_> {
@@ -256,7 +258,9 @@ impl Core<'_> {
         destinations.sort_unstable();
         self.destination_roots = destinations;
         self.mark_field_receivers();
-        let child_syms = self.child_syms()?;
+        let (scopes, scope_of) = self.child_scopes()?;
+        self.child_scopes.clone_from(&scopes);
+        self.scope_of.clone_from(&scope_of);
         let skipped_top = self.skipped_top();
         self.skipped_top.clone_from(&skipped_top);
         for local in 0..self.ir.op.len() {
@@ -276,7 +280,8 @@ impl Core<'_> {
                         self.outer_owner.insert(node, owner);
                         Some(decl)
                     }
-                    None => None,
+                    None => child_in_scope(&scopes, scope_of.get(&node).copied(), entry.sym.0)
+                        .map(DeclRef::Instance),
                 },
             };
             let mut decl = match scoped {
@@ -292,9 +297,6 @@ impl Core<'_> {
                 && self.may_declare(node, entry.sym.0, &skipped_top)?
             {
                 decl = DeclRef::Duplicate;
-            }
-            if child_syms.binary_search(&entry.sym.0).is_ok() {
-                return Ok(Err(Declined(Reason::ChildName)));
             }
             let destination = self.destination_roots.binary_search(&node).is_ok();
             match decl {
@@ -416,35 +418,111 @@ impl Core<'_> {
     }
 }
 
-impl Core<'_> {
-    fn child_syms(&self) -> Result<Vec<u32>, Internal> {
-        let mut top = vec![false; self.ir.items.len()];
-        for rec in &self.ir.top {
-            if let TopRec::Placement(item) = rec
-                && let Some(slot) = top.get_mut(*item as usize)
-            {
-                *slot = true;
-            }
+type ChildScope = (u32, Vec<(u32, u32)>);
+
+pub fn child_in_scope(scopes: &[ChildScope], scope: Option<u32>, sym: u32) -> Option<u32> {
+    let mut at = scope.unwrap_or(NONE);
+    while let Some((parent, names)) = scopes.get(at as usize) {
+        let found = names.partition_point(|entry| entry.0 < sym);
+        if let Some(entry) = names.get(found).filter(|entry| entry.0 == sym) {
+            return Some(entry.1);
         }
-        let mut syms = Vec::new();
-        for (at, item) in self.ir.items.iter().enumerate() {
-            let as_name = match item {
-                ItemRec::Placement(placement) => placement.as_name,
-                ItemRec::Wire(wire) => wire.as_name,
+        at = *parent;
+    }
+    None
+}
+
+impl Core<'_> {
+    fn child_scopes(&self) -> Result<(Vec<ChildScope>, HashMap<u32, u32>), Internal> {
+        let mut scopes: Vec<ChildScope> = Vec::new();
+        let mut scope_of = HashMap::new();
+        let mut stack: Vec<(u32, u32)> = self
+            .ir
+            .top
+            .iter()
+            .filter_map(|rec| match rec {
+                TopRec::Placement(item) => Some((*item, NONE)),
+                TopRec::Let(_)
+                | TopRec::Cell(_)
+                | TopRec::Fn(_)
+                | TopRec::Pattern(_)
+                | TopRec::Placeholder { .. }
+                | TopRec::Drawn(_)
+                | TopRec::Skip => None,
+            })
+            .collect();
+        while let Some((item, scope)) = stack.pop() {
+            let (mut roots, attrs, body) = match *self.ir.item(item)? {
+                ItemRec::Placement(placement) => (
+                    vec![placement.default, placement.gate],
+                    placement.attrs,
+                    placement.body,
+                ),
+                ItemRec::Wire(wire) => (
+                    vec![wire.default, wire.gate, wire.destination],
+                    wire.attrs,
+                    NONE,
+                ),
                 ItemRec::Bundle(_)
                 | ItemRec::For(_)
                 | ItemRec::When(_)
                 | ItemRec::Line(_)
-                | ItemRec::Paren(_) => NONE,
+                | ItemRec::Paren(_) => continue,
             };
-            if top.get(at).copied().unwrap_or(true) || !self.ir.named(as_name) {
+            for entry in self
+                .ir
+                .attr_entries
+                .get(attrs.0 as usize..attrs.1 as usize)
+                .unwrap_or_default()
+            {
+                if let AttrForm::Value(value) = entry.form {
+                    roots.push(value);
+                }
+            }
+            if scope != NONE {
+                for root in roots.into_iter().filter(|root| *root != NONE) {
+                    for node in self.deep_postorder(root)? {
+                        CountedWalk::BindLookup.step();
+                        scope_of.insert(node, scope);
+                        let mut current = node;
+                        while let (Op::Field, receiver, _, _) = self.ir.node(current)? {
+                            current = receiver;
+                            scope_of.insert(current, scope);
+                        }
+                    }
+                }
+            }
+            if body == NONE || body == ABSENT {
                 continue;
             }
-            let entry = self.ir.name(as_name).ok_or(Internal::missed("IR name"))?;
-            syms.push(entry.sym.0);
+            let Some(block) = self.ir.blocks.get(body as usize) else {
+                continue;
+            };
+            let inner = u32::try_from(scopes.len()).unwrap_or(NONE);
+            let mut names = Vec::new();
+            for at in block.items.0..block.items.1 {
+                let child = *self
+                    .ir
+                    .block_items
+                    .get(at as usize)
+                    .ok_or(Internal::missed("IR block item"))?;
+                if self.ir.dropped(child) {
+                    continue;
+                }
+                if let ItemRec::Placement(placement) = *self.ir.item(child)?
+                    && self.ir.named(placement.as_name)
+                {
+                    let entry = self
+                        .ir
+                        .name(placement.as_name)
+                        .ok_or(Internal::missed("IR name"))?;
+                    names.push((entry.sym.0, child));
+                }
+                stack.push((child, inner));
+            }
+            names.sort_unstable();
+            scopes.push((scope, names));
         }
-        syms.sort_unstable();
-        syms.dedup();
-        Ok(syms)
+        Ok((scopes, scope_of))
     }
 }
