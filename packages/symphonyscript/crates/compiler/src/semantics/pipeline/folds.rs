@@ -550,7 +550,7 @@ impl Core<'_> {
         }
         let span = self.node_span(node)?;
         self.unmemoized();
-        let diagnostic = Diagnostic::new(code, span, message);
+        let diagnostic = self.chained(Diagnostic::new(code, span, message));
         self.stop = Some((self.diagnostics.len(), diagnostic));
         Ok(())
     }

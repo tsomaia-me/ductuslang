@@ -26,12 +26,28 @@ fn spanned(text: &str, found: &[crate::diagnostics::Diagnostic]) -> Vec<(String,
     spans
 }
 
+fn stop_limits() -> symphonyscript_core::LimitOverrides {
+    symphonyscript_core::LimitOverrides {
+        expansion_steps: Some(10),
+        expansion_steps_warning: Some(5),
+        ..symphonyscript_core::LimitOverrides::default()
+    }
+}
+
+fn judged_under(ledger: &str) -> Compiler {
+    let limits = if ledger == reviewed::LIMIT_STOP {
+        stop_limits()
+    } else {
+        symphonyscript_core::LimitOverrides::default()
+    };
+    Compiler::with_limits(&symphonyscript_fixtures::vocabulary(), limits)
+        .expect("the vocabulary compiles")
+}
+
 #[test]
 fn the_reviewed_moves_draw_their_expected_sets_on_the_new_core_464_476() {
-    let new =
-        Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("the vocabulary compiles");
     for (ledger, text, _) in REVIEWED.iter().copied() {
-        let found = new
+        let found = judged_under(ledger)
             .checked_by_new_core(&[source(text)])
             .expect("the new core takes the program");
         let expected = reviewed(text).map(|(_, expected)| expected);
@@ -54,14 +70,17 @@ const TWIN_PASS_TYPE_MISMATCHES: [&str; 10] = [
 
 #[test]
 fn the_twin_pass_alone_adds_the_type_mismatches_of_its_476_programs() {
-    let new =
-        Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("the vocabulary compiles");
     let programs = REVIEWED
         .iter()
-        .map(|(_, text, _)| (*text, false))
-        .chain(TWIN_PASS_TYPE_MISMATCHES.iter().map(|text| (*text, true)));
+        .map(|(ledger, text, _)| (*ledger, *text, false))
+        .chain(
+            TWIN_PASS_TYPE_MISMATCHES
+                .iter()
+                .map(|text| ("476", *text, true)),
+        );
     let mut wrong = Vec::new();
-    for (text, twin_pass) in programs {
+    for (ledger, text, twin_pass) in programs {
+        let new = judged_under(ledger);
         let sources = [source(text)];
         let alone = new
             .checked_by_new_core_without_twins(&sources)
@@ -570,11 +589,18 @@ fn kept(
     own: &[reviewed::Drawn],
     other: &[reviewed::Drawn],
 ) -> Vec<crate::diagnostics::Diagnostic> {
+    let mut left: Vec<&reviewed::Drawn> = other.iter().collect();
     found
         .iter()
         .filter(|diagnostic| diagnostic.code != crate::diagnostics::Code::NoEntryInstance)
         .zip(own)
-        .filter(|(_, at)| other.contains(at))
+        .filter(|(_, at)| match left.iter().position(|kept| kept == at) {
+            Some(position) => {
+                left.swap_remove(position);
+                true
+            }
+            None => false,
+        })
         .map(|(diagnostic, _)| diagnostic.clone())
         .collect()
 }
@@ -1633,7 +1659,7 @@ fn a_fold_body_reads_an_enclosing_fold_or_function_name_from_the_frame_that_bind
     }
 }
 
-const MEMOIZED_CALLS: [&str; 8] = [
+const MEMOIZED_CALLS: [&str; 11] = [
     "fn f(x): x * 4611686018427387904\nClip c:\n    Note/(f(4))\n    Note/(f(4))\n",
     "fn f(x): u8(x) + 1\nClip c:\n    Note/(f(300))\n    Note/(f(300))\n",
     "fn g(x): u8(x)\nfn f(x): g(x) + g(x)\nClip c:\n    Note/(f(300))\n    Note/(f(300))\n",
@@ -1642,6 +1668,9 @@ const MEMOIZED_CALLS: [&str; 8] = [
     "fn f(x): [1, 2][x]\nClip c:\n    Note/(f(4))\n    Note/(f(4))\n    Note/(f(1))\n",
     "fn f(x): for i in 0..x into a from 0: a + i\nClip c:\n    Note/(f(2))\n    Note/(f(2))\n    Note/(f(2))\n",
     "let big = [1, 2]\nfn f(x): x[0] + x[1]\nClip c:\n    Note/(f(big))\n    Note | velocity=(f(big))\n",
+    "fn f(x): for i in 0..x into a from 0: a + i\nClip c:\n    Note/(f(3))\n    Note/(f(3))\n    Note/(f(3))\n    Note/(f(3))\n",
+    "fn f(p): for i in 0..4 into s from [p]: s + s\nClip c:\n    Note/(f(1)[0])\n",
+    "fn h(s): s + s\nfn f(p): for i in 0..4 into s from [p]: h(s)\nClip c:\n    Note/(f(1)[0])\n",
 ];
 
 type Stop = (
@@ -1649,23 +1678,17 @@ type Stop = (
     [(&'static str, std::ops::Range<u32>, usize); 2],
 );
 
-const MEMOIZED_STOPS: [Stop; 2] = [
-    (
-        "fn f(x): for i in 0..x into a from 0: a + i\nClip c:\n    Note/(f(3))\n    Note/(f(3))\n    Note/(f(3))\n    Note/(f(3))\n",
-        [("expansion-limit", 9..43, 0), ("limit-warning", 9..43, 1)],
-    ),
-    (
-        "fn g(x): for i in 0..x into a from 0: a + i\nfn f(x): g(x) + g(x)\nClip c:\n    Note/(f(2))\n    Note/(f(2))\n    Note/(f(2))\n",
-        [("expansion-limit", 9..43, 0), ("limit-warning", 9..43, 2)],
-    ),
-];
+const MEMOIZED_STOP: Stop = (
+    "fn g(x): for i in 0..x into a from 0: a + i\nfn f(x): g(x) + g(x)\nClip c:\n    Note/(f(2))\n    Note/(f(2))\n    Note/(f(2))\n",
+    [("expansion-limit", 9..43, 2), ("limit-warning", 9..43, 2)],
+);
 
 #[test]
 fn a_memoized_call_draws_its_faults_at_each_sites_chain_and_charges_its_iterations_again() {
     let overrides = symphonyscript_core::LimitOverrides {
-        expansion_steps: Some(10),
-        expansion_steps_warning: Some(5),
-        ..symphonyscript_core::LimitOverrides::default()
+        value_elements: Some(8),
+        value_elements_warning: Some(4),
+        ..stop_limits()
     };
     let vocabulary = symphonyscript_fixtures::vocabulary();
     let old = Compiler::with_limits(&vocabulary, overrides)
@@ -1679,18 +1702,95 @@ fn a_memoized_call_draws_its_faults_at_each_sites_chain_and_charges_its_iteratio
             .unwrap_or_else(|| panic!("the new core takes {text}"));
         assert_eq!(found, old.check(&sources), "{text}");
     }
-    for (text, expected) in MEMOIZED_STOPS {
+    let (text, expected) = MEMOIZED_STOP;
+    let found = new
+        .checked_by_new_core(&[source(text)])
+        .unwrap_or_else(|| panic!("the new core takes {text}"));
+    let found: Vec<_> = found
+        .iter()
+        .map(|d| (d.code.to_string(), d.span.range.clone(), d.related.len()))
+        .collect();
+    let expected: Vec<_> = expected
+        .iter()
+        .map(|(code, range, chain)| (code.to_string(), range.clone(), *chain))
+        .collect();
+    assert_eq!(found, expected, "{text}");
+    assert_eq!(
+        reviewed(text).map(|(ledger, _)| ledger),
+        Some(reviewed::LIMIT_STOP)
+    );
+}
+
+const FOLD_FAULTS_PER_SITE: [(&str, &str, usize); 4] = [
+    (
+        "fn f(p): for i in 0..2 into s from 0: s + true\nClip c:\n    Note/(f(1))\n    Note/(f(2))\n",
+        "s + true",
+        2,
+    ),
+    (
+        "fn f(p): for i in 0..2 into s from 0: s + true\nClip c:\n    Note/(f(1))\n    Note/(f(2))\n    Note/(f(3))\n",
+        "s + true",
+        3,
+    ),
+    (
+        "fn g(p): for i in 0..2 into s from 0: s + true\nfn f(p): g(p) + 1\nClip c:\n    Note/(f(1))\n    Note/(f(2))\n",
+        "s + true",
+        2,
+    ),
+    (
+        "fn f(p):\n    let k = p + 1\n    for i in 0..2 into s from 0: s + k + true\nClip c:\n    Note/(f(1))\n    Note | velocity=(f(2))\n",
+        "s + k + true",
+        2,
+    ),
+];
+
+const FOLD_FAULT_TWINS: [&str; 5] = [
+    "fn f(p): p + true\nClip c:\n    Note/(f(1))\n    Note/(f(2))\n",
+    "fn f(p): for i in 0..2 into s from 0: s + true\nClip c:\n    Note/(f(1))\n",
+    "let t = for i in 0..2 into s from 0: s + true\nClip c:\n    Note/(t)\n    Note/(t)\n",
+    "fn f(p): for i in 0..2 into s from 0: s + [1, 2][p]\nClip c:\n    Note/(f(5))\n    Note/(f(5))\n",
+    "fn f(p):\n    let k = p + 1\n    for i in 0..2 into s from 0: s + [1, 2][5] + k\nClip c:\n    Note/(f(1))\n    Note/(f(2))\n",
+];
+
+#[test]
+fn a_fault_inside_a_fold_in_a_function_body_draws_at_each_call_sites_chain_479() {
+    let vocabulary = symphonyscript_fixtures::vocabulary();
+    let old = Compiler::new(&vocabulary)
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
+    let new = Compiler::new(&vocabulary).expect("the vocabulary compiles");
+    for (text, span, sites) in FOLD_FAULTS_PER_SITE {
+        let sources = [source(text)];
         let found = new
-            .checked_by_new_core(&[source(text)])
+            .checked_by_new_core(&sources)
             .unwrap_or_else(|| panic!("the new core takes {text}"));
-        let found: Vec<_> = found
+        let mut chains: Vec<u32> = found
             .iter()
-            .map(|d| (d.code.to_string(), d.span.range.clone(), d.related.len()))
+            .filter(|d| {
+                text.get(d.span.range.start as usize..d.span.range.end as usize) == Some(span)
+            })
+            .filter_map(|d| d.related.last().map(|site| site.span.range.start))
             .collect();
-        let expected: Vec<_> = expected
-            .iter()
-            .map(|(code, range, chain)| (code.to_string(), range.clone(), *chain))
-            .collect();
-        assert_eq!(found, expected, "{text}");
+        chains.dedup();
+        assert_eq!(chains.len(), sites, "{text}");
+        let before = old.check(&sources);
+        let classes = reviewed::moved(text, &drawn(&before), &drawn(&found))
+            .unwrap_or_else(|unexplained| panic!("{text}: {unexplained:?}"));
+        assert!(
+            !classes.is_empty() && classes.iter().all(|class| class.ledger == "479"),
+            "{text}"
+        );
+        assert_eq!(
+            kept(&found, &drawn(&found), &drawn(&before)),
+            kept(&before, &drawn(&before), &drawn(&found)),
+            "{text}"
+        );
+    }
+    for text in FOLD_FAULT_TWINS {
+        let sources = [source(text)];
+        let found = new
+            .checked_by_new_core(&sources)
+            .unwrap_or_else(|| panic!("the new core takes {text}"));
+        assert_eq!(found, old.check(&sources), "{text}");
     }
 }

@@ -146,7 +146,17 @@ pub const REVIEWED: &[Reviewed] = &[
             ("reserved-token", "=="),
         ],
     ),
+    (
+        LIMIT_STOP,
+        "fn g(x): for i in 0..x into a from 0: a + i\nfn f(x): g(x) + g(x)\nClip c:\n    Note/(f(2))\n    Note/(f(2))\n    Note/(f(2))\n",
+        &[
+            ("expansion-limit", "for i in 0..x into a from 0: a + i"),
+            ("limit-warning", "for i in 0..x into a from 0: a + i"),
+        ],
+    ),
 ];
+
+pub const LIMIT_STOP: &str = "limit-stop (H11)";
 
 pub fn reviewed(text: &str) -> Option<(&'static str, Vec<(String, String)>)> {
     REVIEWED
@@ -541,6 +551,28 @@ fn annotated_array_let(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
             })
 }
 
+fn function_before(program: &str, at: usize) -> Option<&str> {
+    let mut start = program.get(..at)?.rfind('\n').map_or(0, |line| line + 1);
+    while program[start..].starts_with(' ') && start > 0 {
+        start = program
+            .get(..start - 1)?
+            .rfind('\n')
+            .map_or(0, |line| line + 1);
+    }
+    program
+        .get(start..at)
+        .filter(|text| text.starts_with("fn "))
+}
+
+fn fold_fault_at_each_call(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
+    change == Change::Added
+        && holds(seen.old, &at.0, at)
+        && function_before(seen.program, at.1).is_some_and(|text| {
+            text.rfind("for ")
+                .is_some_and(|fold| text[fold..].contains(" into "))
+        })
+}
+
 pub struct Class {
     pub ledger: &'static str,
     pub rule: &'static str,
@@ -613,6 +645,11 @@ pub const CLASSES: &[Class] = &[
         ledger: "478",
         rule: "a float conversion's operand holding a fixed-type operand computes in its own type, so its own overflow or fit draws inside it, and the old engine's integer-cell warning and widening type-mismatch from the float target flowing into it do not",
         explains: conversion_stops_the_expected_type,
+    },
+    Class {
+        ledger: "479",
+        rule: "a fault inside a fold in a function body draws at each call site with that site's chain, the body checked as inlined at the call (SPEC §6.3), where the old engine draws it at the first site alone",
+        explains: fold_fault_at_each_call,
     },
 ];
 
