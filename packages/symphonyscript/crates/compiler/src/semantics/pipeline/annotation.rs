@@ -65,14 +65,12 @@ impl Core<'_> {
             let text = self.ir.symbols.text(entry.sym).to_string();
             return self.bind_value(root, &text, ty);
         }
-        if self.derived(at) {
-            return Ok(Err(Declined(Reason::AnnotatedArrayRule)));
-        }
-        self.draw_at(
-            Code::TypeMismatch,
-            root,
-            "the init's shape differs from the cell's type",
-        )?;
+        let summary = if self.derived(at) {
+            "the rule's shape differs from the cell's type"
+        } else {
+            "the init's shape differs from the cell's type"
+        };
+        self.draw_at(Code::TypeMismatch, root, summary)?;
         self.own_check(root)
     }
 

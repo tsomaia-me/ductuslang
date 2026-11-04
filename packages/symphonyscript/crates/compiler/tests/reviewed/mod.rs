@@ -442,6 +442,46 @@ fn conversion_stops_the_expected_type(seen: &Seen<'_>, change: Change, at: &Draw
     }
 }
 
+fn annotated_array_rules(program: &str) -> Vec<(&str, usize, usize)> {
+    let mut rules = Vec::new();
+    let mut start = 0;
+    for line in program.split_inclusive('\n') {
+        let text = line.trim_end_matches('\n');
+        if let Some((head, rule)) = text
+            .strip_prefix("state ")
+            .and_then(|tail| tail.split_once(" = "))
+            && let Some((name, ty)) = head.split_once(": ")
+            && !ty.is_empty()
+            && rule.starts_with('[')
+        {
+            let lo = start + text.len() - rule.len();
+            rules.push((name, lo, start + text.len()));
+        }
+        start += line.len();
+    }
+    rules
+}
+
+fn reads_word(text: &str, name: &str) -> bool {
+    text.split(|character: char| !(character.is_alphanumeric() || character == '_'))
+        .any(|word| word == name)
+}
+
+fn annotated_array_rule(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
+    annotated_array_rules(seen.program)
+        .into_iter()
+        .filter(|(_, lo, hi)| holds(seen.new, "type-mismatch", &(String::new(), *lo, *hi)))
+        .any(|(name, lo, hi)| match change {
+            Change::Added => at.0 == "type-mismatch" && at.1 == lo && at.2 == hi,
+            Change::Removed => {
+                let line = seen.line(at.1);
+                (at.1 >= lo && at.2 <= hi)
+                    || (line != seen.line(lo)
+                        && reads_word(seen.program.lines().nth(line).unwrap_or_default(), name))
+            }
+        })
+}
+
 pub struct Class {
     pub ledger: &'static str,
     pub rule: &'static str,
@@ -494,6 +534,11 @@ pub const CLASSES: &[Class] = &[
         ledger: "476",
         rule: "does-not-fit at a division's literal operand beside its sibling's index-out-of-range",
         explains: fit_beside_a_range_fault,
+    },
+    Class {
+        ledger: "476",
+        rule: "an annotated derived cell whose rule is an array draws its type-mismatch at the rule, its reads typed by the annotation and the rule checked in its own type, in place of the old engine's faults at its reads and inside its rule",
+        explains: annotated_array_rule,
     },
     Class {
         ledger: "478",

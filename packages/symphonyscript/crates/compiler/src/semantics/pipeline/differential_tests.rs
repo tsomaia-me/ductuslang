@@ -973,10 +973,78 @@ fn a_derived_cells_scalar_annotation_types_its_reads_and_checks_its_rule_as_the_
             .unwrap_or_else(|| panic!("the new core takes {text}"));
         assert_eq!(found, old.check(&sources), "{text}");
     }
-    let array_rule = [source(
+}
+
+const ANNOTATED_ARRAY_RULES: [(&str, &[(&str, &str)]); 5] = [
+    (
         "state s(1)\nstate q: i32 = [s]\nClip c:\n    Note/(q)\n",
-    )];
-    assert!(new.checked_by_new_core(&array_rule).is_none());
+        &[("type-mismatch", "[s]")],
+    ),
+    (
+        "state s(1)\nstate q: i32 = [s]\n",
+        &[("type-mismatch", "[s]")],
+    ),
+    (
+        "state s(1)\nstate q: i32 = [s, s + 1]\nClip c:\n    Note/(q + 1)\n",
+        &[("type-mismatch", "[s, s + 1]")],
+    ),
+    (
+        "state s(1)\nstate q: u8 = [s + 300]\nClip c:\n    Note/(q)\n",
+        &[("type-mismatch", "[s + 300]")],
+    ),
+    (
+        "state s(1)\nstate q: bool = [s > 1]\nClip c:\n    Note/(if q then 1 else 2)\n",
+        &[("type-mismatch", "[s > 1]")],
+    ),
+];
+
+const ANNOTATED_ARRAY_RULE_TWINS: [&str; 3] = [
+    "state s(1)\nstate q: i32 = [s][0]\nClip c:\n    Note/(q)\n",
+    "state s(1)\nstate q: i32 = s\nClip c:\n    Note/(q)\n",
+    "state q([1]): i32\nClip c:\n    Note/(q)\n",
+];
+
+#[test]
+fn an_annotated_derived_cells_array_rule_draws_its_type_mismatch_at_the_rule_476() {
+    let old = Compiler::new(&symphonyscript_fixtures::vocabulary())
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
+    let new =
+        Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("the vocabulary compiles");
+    for (text, expected) in ANNOTATED_ARRAY_RULES {
+        let sources = [source(text)];
+        let found = new
+            .checked_by_new_core(&sources)
+            .unwrap_or_else(|| panic!("the new core takes {text}"));
+        let mut wanted: Vec<(String, String)> = expected
+            .iter()
+            .map(|(code, span)| ((*code).to_string(), (*span).to_string()))
+            .collect();
+        wanted.sort();
+        assert_eq!(spanned(text, &found), wanted, "{text}");
+        assert!(
+            found
+                .iter()
+                .filter(|diagnostic| diagnostic.code == crate::diagnostics::Code::TypeMismatch)
+                .all(|diagnostic| diagnostic.summary
+                    == "the rule's shape differs from the cell's type"),
+            "{text}"
+        );
+        let before = old.check(&sources);
+        let classes = reviewed::moved(text, &drawn(&before), &drawn(&found))
+            .unwrap_or_else(|unexplained| panic!("{text}: {unexplained:?}"));
+        assert!(
+            !classes.is_empty() && classes.iter().all(|class| class.ledger == "476"),
+            "{text}"
+        );
+    }
+    for text in ANNOTATED_ARRAY_RULE_TWINS {
+        let sources = [source(text)];
+        let found = new
+            .checked_by_new_core(&sources)
+            .unwrap_or_else(|| panic!("the new core takes {text}"));
+        assert_eq!(found, old.check(&sources), "{text}");
+    }
 }
 
 const FLOWING_TYPES_AND_FLOAT_CONVERSIONS: [&str; 20] = [
