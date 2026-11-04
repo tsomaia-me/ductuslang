@@ -463,15 +463,32 @@ impl Core<'_> {
                                             .get(open.inst as usize)
                                             .is_some_and(|body| body.function == owner)
                                 };
+                                let walked = || {
+                                    self.own_calls
+                                        .iter()
+                                        .rev()
+                                        .find(|(_, inst, _)| {
+                                            bodies
+                                                .get(*inst as usize)
+                                                .is_some_and(|body| body.function == owner)
+                                        })
+                                        .map(|(_, _, args)| args)
+                                };
                                 let value = frames
                                     .iter()
                                     .rev()
                                     .find(owns)
-                                    .or_else(|| {
-                                        frames.iter().rev().find(|open| open.call.is_some())
-                                    })
                                     .and_then(|open| open.call.as_ref())
-                                    .and_then(|(_, args)| args.get(position as usize).cloned())
+                                    .map(|(_, args)| args)
+                                    .or_else(walked)
+                                    .or_else(|| {
+                                        frames
+                                            .iter()
+                                            .rev()
+                                            .find_map(|open| open.call.as_ref())
+                                            .map(|(_, args)| args)
+                                    })
+                                    .and_then(|args| args.get(position as usize).cloned())
                                     .unwrap_or(Value::Error);
                                 if let Some(frame) = frames.last_mut() {
                                     frame.values.push(value);
@@ -1209,9 +1226,11 @@ impl Core<'_> {
     fn evaluate_owned(&mut self, root: u32) -> Stage<()> {
         let inst = self.inst;
         let chain = self.eval_chain.len();
+        let calls = self.own_calls.len();
         let outcome = self.own_walk(root);
         self.inst = inst;
         self.eval_chain.truncate(chain);
+        self.own_calls.truncate(calls);
         outcome
     }
 
@@ -1222,6 +1241,7 @@ impl Core<'_> {
         while let Some((node, indexed)) = stack.pop() {
             if node == NONE {
                 self.eval_chain.pop();
+                self.own_calls.pop();
                 self.inst = leaves.pop().ok_or(Internal::missed("a call to leave"))?;
                 continue;
             }
@@ -1392,13 +1412,28 @@ impl Core<'_> {
                     stack.push((a, false));
                 }
                 Op::Call | Op::NamedCall => {
-                    for arg in self.arguments(node)?.into_iter().rev() {
-                        stack.push((arg, false));
+                    let mut args = Vec::new();
+                    for arg in self.arguments(node)? {
+                        let held = match self.own_ty(arg)? {
+                            Some(own) if !self.is_kept(arg)? && !self.is_reactive(arg)? => {
+                                self.unflowed.insert(arg);
+                                match self.evaluate(arg, own)? {
+                                    Ok(value) => Some(value),
+                                    Err(declined) => return Ok(Err(declined)),
+                                }
+                            }
+                            Some(_) | None => None,
+                        };
+                        if held.is_none() {
+                            stack.push((arg, false));
+                        }
+                        args.push(held.unwrap_or(Value::Error));
                     }
                     if let Some(body) = self.body_of_call(node) {
                         let value = self.body_value(body)?;
                         leaves.push(std::mem::replace(&mut self.inst, body));
                         self.eval_chain.push(node);
+                        self.own_calls.push((node, body, args));
                         stack.push((NONE, false));
                         stack.push((value, false));
                     }

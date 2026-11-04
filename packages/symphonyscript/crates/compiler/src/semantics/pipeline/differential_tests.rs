@@ -1794,3 +1794,34 @@ fn a_fault_inside_a_fold_in_a_function_body_draws_at_each_call_sites_chain_479()
         assert_eq!(found, old.check(&sources), "{text}");
     }
 }
+
+const REFUSED_BODIES: [&str; 12] = [
+    "fn f(p): [1, 2][p] + true\nClip c:\n    Note/(f(5))\n",
+    "fn f(p): true + [1, 2][p]\nClip c:\n    Note/(f(5))\n",
+    "fn f(p): (true + 1) + [1, 2][p]\nClip c:\n    Note/(f(5))\n",
+    "fn f(p): [1, 2][p] + (true + 1)\nClip c:\n    Note/(f(5))\n",
+    "fn f(p): [p] * 0 + [1, 2][p]\nClip c:\n    Note/(f(5)[0])\n",
+    "fn g(q): [1, 2][q] + true\nfn f(p): g(p + 3)\nClip c:\n    Note/(f(2))\n    Note/(f(0))\n",
+    "fn f(p, r): [1, 2][p] + r\nClip c:\n    Note/(f(5, true))\n",
+    "state s(1)\nfn f(p): [1, 2][p] + true\nClip c:\n    Note/(f(s))\n",
+    "fn f(p): [1, 2][p + 300000000000] + true\nClip c:\n    Note/(f(5))\n",
+    "fn f(p): [1, 2][p] + true\nClip c:\n    Note/(f(1))\n",
+    "fn f(p): (true + 1) + (p + 300000000000)\nClip c:\n    Note/(f(5))\n",
+    "let k = 5\nClip c:\n    Note/(([1] * 0 + [1, 2][k])[0])\n",
+];
+
+#[test]
+fn a_call_whose_body_holds_a_refused_operator_checks_its_operands_with_the_sites_arguments() {
+    let vocabulary = symphonyscript_fixtures::vocabulary();
+    let old = Compiler::new(&vocabulary)
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
+    let new = Compiler::new(&vocabulary).expect("the vocabulary compiles");
+    for text in REFUSED_BODIES {
+        let sources = [source(text)];
+        let found = new
+            .checked_by_new_core(&sources)
+            .unwrap_or_else(|| panic!("the new core takes {text}"));
+        assert_eq!(found, old.check(&sources), "{text}");
+    }
+}
