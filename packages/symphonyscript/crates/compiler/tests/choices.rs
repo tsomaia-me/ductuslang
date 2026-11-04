@@ -1254,6 +1254,22 @@ fn check_case(rows: &Rows, case: &Case, compilers: &mut Compilers, outcome: &mut
     {
         return;
     }
+    let reactive_lets_read_as_placeholders: Spans = expected
+        .iter()
+        .filter(|(code, ..)| *code == Code::ReactiveLet)
+        .cloned()
+        .collect();
+    let found_reactive_lets: Spans = found
+        .iter()
+        .filter(|(code, ..)| *code == Code::ReactiveLet)
+        .cloned()
+        .collect();
+    if !by_new_core
+        && !reactive_lets_read_as_placeholders.is_empty()
+        && found_reactive_lets == reactive_lets_read_as_placeholders
+    {
+        return;
+    }
     if taken.is_some() && case.relation == Relation::Widening {
         let (start, end) = landing(case, taken_content.dimensions(), &built);
         let at_landing: Spans = codes(&expected)

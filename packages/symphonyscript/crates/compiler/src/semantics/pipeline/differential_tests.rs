@@ -963,3 +963,94 @@ fn a_float_cell_read_through_a_call_or_a_local_let_where_an_integer_is_expected_
         assert_eq!(found, old.check(&sources), "{text}");
     }
 }
+
+const CELL_READS_IN_THE_USES_TYPE: [&str; 16] = [
+    "state q(0): i64\nClip c:\n    Note/(q)\n",
+    "state q(0): i64\nClip c:\n    Note/(q + 1)\n",
+    "state q(0): i64\nClip c:\n    Note | velocity=(q)\n",
+    "state q(0): i32\nClip c:\n    Note/(q)\n",
+    "state s(1)\nClip c:\n    Note/(s + i64(1))\n",
+    "state s(1)\nClip c:\n    Note/(s + i32(1))\n",
+    "state s(1): i64\nClip c:\n    Note | velocity=(s + i64(1))\n",
+    "state s(1)\nClip c:\n    Note/(s * (i64(1) + 2) + i64(3))\n",
+    "state s(1)\nClip c:\n    Note/(if true then s + i64(1) else 2)\n",
+    "state fl(0.5): f64\nClip c:\n    Note | velocity=(fl + f64(1))\n",
+    "state s0(-100)\nClip c:\n    Note/([1, 2][s0 + u8(1)])\n",
+    "state s0(-100)\nClip c:\n    Note/([1, 2][s0 + i32(1)])\n",
+    "state s0(1)\nClip c:\n    Note/([1, 2][s0 + 10000000000000000000])\n",
+    "state s0(1): u8\nClip c:\n    Note/(i64(s0 + 300))\n",
+    "state s0(1): u8\nClip c:\n    Note/(i64(s0 + 100))\n",
+    "state s(1)\nClip c:\n    Note | velocity=(f32(s))\n",
+];
+
+#[test]
+fn a_cell_read_takes_the_type_its_use_expects_and_a_fixed_operand_beside_it_is_refused_at_itself() {
+    let old = Compiler::new(&symphonyscript_fixtures::vocabulary())
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
+    let new =
+        Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("the vocabulary compiles");
+    for text in CELL_READS_IN_THE_USES_TYPE {
+        let sources = [source(text)];
+        let found = new
+            .checked_by_new_core(&sources)
+            .unwrap_or_else(|| panic!("the new core takes {text}"));
+        assert_eq!(found, old.check(&sources), "{text}");
+    }
+}
+
+const TYPES_THROUGH_A_REACTIVE_LET: [(&str, &[(&str, &str)]); 8] = [
+    (
+        "state s0(1)\nlet x: u8 = s0 div 300\nClip c:\n    Note/(x)\n",
+        &[("does-not-fit", "300"), ("reactive-let", "x")],
+    ),
+    (
+        "state s0(1)\nlet x: u8 = s0 div 3\nClip c:\n    Note/(x)\n",
+        &[("reactive-let", "x")],
+    ),
+    (
+        "state s0(1)\nlet w = s0\nlet x: u8 = w + 300\nClip c:\n    Note/(x)\n",
+        &[
+            ("does-not-fit", "300"),
+            ("reactive-let", "w"),
+            ("reactive-let", "x"),
+        ],
+    ),
+    (
+        "state s0(1)\nlet w = s0\nlet x: u8 = w + 100\nClip c:\n    Note/(x)\n",
+        &[("reactive-let", "w"), ("reactive-let", "x")],
+    ),
+    (
+        "state s0(1)\nlet w = s0\nlet x: u8 = w + 300\n",
+        &[("reactive-let", "w"), ("reactive-let", "x")],
+    ),
+    (
+        "state s0(1)\nlet w = s0 + i64(1)\nClip c:\n    Note/(w)\n",
+        &[("reactive-let", "w"), ("type-mismatch", "w")],
+    ),
+    (
+        "state s0(1)\nlet w = s0\nClip c:\n    Note/(w + true)\n",
+        &[("operand-type", "w + true"), ("reactive-let", "w")],
+    ),
+    (
+        "state s0(1)\nlet w = [s0, 1]\nClip c:\n    Note/(w)\n",
+        &[("reactive-let", "w"), ("type-mismatch", "w")],
+    ),
+];
+
+#[test]
+fn a_read_of_a_let_reading_a_cell_keeps_the_lets_known_type_and_its_operands_fit_464() {
+    let new =
+        Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("the vocabulary compiles");
+    for (text, expected) in TYPES_THROUGH_A_REACTIVE_LET {
+        let found = new
+            .checked_by_new_core(&[source(text)])
+            .unwrap_or_else(|| panic!("the new core takes {text}"));
+        let mut wanted: Vec<(String, String)> = expected
+            .iter()
+            .map(|(code, span)| ((*code).to_string(), (*span).to_string()))
+            .collect();
+        wanted.sort();
+        assert_eq!(spanned(text, &found), wanted, "{text}");
+    }
+}

@@ -208,6 +208,7 @@ impl Core<'_> {
             leaf: fact.leaf,
             dims: fact.dims.get(1..).unwrap_or_default().to_vec(),
             fixed: fact.fixed,
+            read: fact.read,
         };
         Ok(Some(if names >= 2 {
             vec![Fact::scalar(Leaf::Int), element]
@@ -290,7 +291,12 @@ impl Core<'_> {
                 ),
                 None => (start.leaf, start.fixed),
             };
-            let next = Fact { leaf, dims, fixed };
+            let next = Fact {
+                leaf,
+                dims,
+                fixed,
+                read: None,
+            };
             let settled =
                 (next.leaf == acc.leaf || acc.leaf == Leaf::Empty) && next.dims == acc.dims;
             if settled || round + 1 >= ROUNDS {
@@ -321,6 +327,7 @@ impl Core<'_> {
             leaf,
             dims: acc.dims,
             fixed,
+            read: None,
         }))
     }
 

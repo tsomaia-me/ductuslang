@@ -1,6 +1,8 @@
+use super::annotation::annotated_fact;
 use super::core::{Core, Stage};
 use super::decl_ref::DeclRef;
 use super::declined::Declined;
+use super::fact::Fact;
 use super::leaf::Leaf;
 use super::reason::Reason;
 use super::values::flexible;
@@ -17,6 +19,20 @@ impl Core<'_> {
             .get(at as usize)
             .ok_or(Internal::missed("IR cell"))?;
         Ok(if rec.rule == NONE { rec.init } else { rec.rule })
+    }
+
+    pub fn cell_read_fact(&self, at: u32) -> Result<Fact, Internal> {
+        if let Some(ty) = self.cell_annotation_ty(at)? {
+            return Ok(Fact::numeric(annotated_fact(ty).leaf, None, Some(ty)));
+        }
+        let mut fact = self.fact(self.cell_root(at)?)?;
+        if !self.derived(at) && fact.fixed.is_none() && fact.read.is_none() {
+            fact.read = match fact.leaf {
+                Leaf::Int | Leaf::Empty => Some(EvalTy::I64),
+                Leaf::Float | Leaf::Bool | Leaf::Placeholder | Leaf::Error => None,
+            };
+        }
+        Ok(fact)
     }
 
     fn derived(&self, at: u32) -> bool {

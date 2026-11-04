@@ -8,7 +8,7 @@ use super::frame::Frame;
 use super::leaf::Leaf;
 use super::reason::Reason;
 use super::step::Step;
-use super::width::{combined, target_ty, widens};
+use super::width::{combined, is_fixed_float, target_ty, widens};
 use crate::diagnostics::Code;
 use crate::semantics::Internal;
 use crate::semantics::counted_walk::CountedWalk;
@@ -61,7 +61,7 @@ impl Core<'_> {
     }
 
     fn integral(&self, node: u32) -> Result<EvalTy, Internal> {
-        Ok(match self.fact(node)?.fixed {
+        Ok(match self.fact(node)?.own() {
             Some(fixed) if int_range(fixed).is_some() => fixed,
             Some(_) | None => EvalTy::Exact,
         })
@@ -70,7 +70,7 @@ impl Core<'_> {
     fn pair_ty(&self, a: u32, b: u32) -> Result<EvalTy, Internal> {
         let (left, right) = (self.fact(a)?, self.fact(b)?);
         let float = left.leaf == Leaf::Float || right.leaf == Leaf::Float;
-        if let Some(fixed) = combined(left.fixed, right.fixed, float) {
+        if let Some(fixed) = combined(left.own(), right.own(), float) {
             return Ok(fixed);
         }
         let (x, y) = (left.leaf, right.leaf);
@@ -98,7 +98,7 @@ impl Core<'_> {
                     if defaulted && fact.dims.is_empty() && fact.leaf == Leaf::Int {
                         steps.push(Step::Float(operand, EvalTy::F32));
                         steps.push(Step::Visit(operand, EvalTy::Exact));
-                    } else if let Some(own) = self.own_width(operand, EvalTy::F32)? {
+                    } else if let Some(own) = self.own_width(operand, EvalTy::F32, false)? {
                         steps.push(Step::Widen(EvalTy::F32));
                         steps.push(Step::Visit(operand, own));
                     } else {
@@ -109,8 +109,13 @@ impl Core<'_> {
             }
             Op::Div => vec![(a, ty), (b, ty)],
             Op::IntDiv => {
+                let fixed = self.fact(node)?.fixed;
                 let mut own = self.integral(node)?;
-                if int_range(own).is_some() && int_range(ty).is_some() && widens(own, ty) {
+                let flows = match fixed {
+                    Some(fixed) => int_range(fixed).is_some() && widens(fixed, ty),
+                    None => self.is_reactive(node)?,
+                };
+                if int_range(ty).is_some() && flows {
                     own = ty;
                 }
                 vec![(a, own), (b, own)]
@@ -145,6 +150,15 @@ impl Core<'_> {
                 operands
             }
             Op::Convert => {
+                let (target, operand) = (self.fact(node)?.fixed, self.fact(a)?);
+                if let Some(target) = target.filter(|target| is_fixed_float(*target))
+                    && operand.fixed.is_none()
+                    && operand.read.is_some_and(|read| int_range(read).is_some())
+                    && operand.dims.is_empty()
+                {
+                    steps.push(Step::Visit(a, target));
+                    return Ok(());
+                }
                 let own = self.own_ty(a)?.unwrap_or(EvalTy::Exact);
                 if own == EvalTy::Exact && self.fact(a)?.fixed.is_none() {
                     steps.push(Step::Fit(a, EvalTy::I64));
@@ -224,15 +238,19 @@ impl Core<'_> {
             op,
             Op::Neg | Op::Add | Op::Sub | Op::Mul | Op::Div | Op::Rem | Op::Pow
         );
-        let runtime = (arithmetic || op == Op::IntDiv) && self.is_reactive(node)?;
+        let compared = matches!(op, Op::Lt | Op::Le | Op::Gt | Op::Ge | Op::Is | Op::IsNot);
+        let reactive = (arithmetic || compared || op == Op::IntDiv) && self.is_reactive(node)?;
+        let runtime = reactive && !compared;
+        let stopped = compared || self.fact(node)?.own() == Some(ty);
         for (operand, operand_ty) in operands.into_iter().rev() {
             if runtime && self.compile_time_operand(operand, operand_ty)? {
                 steps.push(Step::Fit(operand, operand_ty));
                 steps.push(Step::Visit(operand, EvalTy::Exact));
                 continue;
             }
-            match self.own_width(operand, operand_ty)? {
-                Some(own) if arithmetic => {
+            let apart = reactive && stopped && !self.is_reactive(operand)?;
+            match self.own_width(operand, operand_ty, apart)? {
+                Some(own) if arithmetic || apart => {
                     steps.push(Step::Widen(operand_ty));
                     steps.push(Step::Visit(operand, own));
                 }
@@ -250,8 +268,8 @@ impl Core<'_> {
         Ok(fact.fixed.is_none() && fact.dims.is_empty() && fact.leaf == Leaf::Int)
     }
 
-    fn own_width(&self, operand: u32, ty: EvalTy) -> Result<Option<EvalTy>, Internal> {
-        if !self.owning {
+    fn own_width(&self, operand: u32, ty: EvalTy, apart: bool) -> Result<Option<EvalTy>, Internal> {
+        if !self.owning && !apart {
             return Ok(None);
         }
         let concrete = int_range(ty).is_some() || matches!(ty, EvalTy::F32 | EvalTy::F64);
@@ -421,6 +439,25 @@ impl Core<'_> {
                         && let DeclRef::Let(at) = self.bound(node)?
                         && !self.cyclic.get(at as usize).copied().unwrap_or(false)
                     {
+                        let top = self
+                            .ir
+                            .lets
+                            .get(at as usize)
+                            .is_some_and(|rec| rec.owner == NONE);
+                        if top && self.let_reads_cell(at)? {
+                            if !self.fitting
+                                && !self.owning
+                                && let Some(owned) = self.owned.get_mut(at as usize)
+                                && !*owned
+                            {
+                                *owned = true;
+                                if let Err(declined) = self.operand_fits(at)? {
+                                    return Ok(Err(declined));
+                                }
+                            }
+                            frame.values.push(Value::Error);
+                            continue;
+                        }
                         if let Some(annotated) = self.annotation_ty(at)? {
                             let let_ty = match self.fact(self.let_root(at)?)?.fixed {
                                 Some(own) if widens(own, annotated) => evaluated_in(annotated),
@@ -1017,7 +1054,7 @@ impl Core<'_> {
 
     pub fn own_ty(&self, node: u32) -> Result<Option<EvalTy>, Internal> {
         let fact = self.fact(node)?;
-        if let Some(fixed) = fact.fixed
+        if let Some(fixed) = fact.own()
             && !matches!(fact.leaf, Leaf::Placeholder | Leaf::Error)
         {
             return Ok(Some(fixed));
@@ -1083,9 +1120,10 @@ impl Core<'_> {
             }
             let fact = self.fact(node)?;
             let own = self.own_ty(node)?;
+            let (op, a, b, c) = self.ir.node(node)?;
             if let Some(own) = own
                 && !self.is_kept(node)?
-                && !self.is_reactive(node)?
+                && (!self.is_reactive(node)? || runtime_in_own(op, own))
             {
                 let value = match self.evaluate(node, own)? {
                     Ok(value) => value,
@@ -1096,7 +1134,6 @@ impl Core<'_> {
                 }
                 continue;
             }
-            let (op, a, b, c) = self.ir.node(node)?;
             match op {
                 Op::If => {
                     let condition = self.fact(a)?;
@@ -1208,7 +1245,7 @@ impl Core<'_> {
                         if bound == NONE {
                             continue;
                         }
-                        let bound_ty = match self.fact(bound)?.fixed {
+                        let bound_ty = match self.fact(bound)?.own() {
                             Some(_) => self.own_ty(bound)?.unwrap_or(EvalTy::Exact),
                             None => EvalTy::Exact,
                         };
@@ -1399,4 +1436,12 @@ impl Core<'_> {
             }
         }
     }
+}
+
+fn runtime_in_own(op: Op, own: EvalTy) -> bool {
+    int_range(own).is_some()
+        && matches!(
+            op,
+            Op::Neg | Op::Add | Op::Sub | Op::Mul | Op::Rem | Op::Pow | Op::IntDiv
+        )
 }

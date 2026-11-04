@@ -12,7 +12,7 @@ use super::width::widens;
 use crate::diagnostics::Code;
 use crate::semantics::Internal;
 use crate::semantics::counted_walk::CountedWalk;
-use crate::semantics::ir::flat::{AttrForm, NONE};
+use crate::semantics::ir::flat::{AttrForm, NONE, Op};
 use crate::semantics::operators::{EvalTy, Value, int_range, ty_name};
 
 fn describe(count: Count) -> String {
@@ -151,6 +151,93 @@ impl Core<'_> {
         Ok(Ok(()))
     }
 
+    fn refuse_fixed(
+        &mut self,
+        root: u32,
+        ty: EvalTy,
+        reactive: bool,
+    ) -> Result<Vec<u32>, Internal> {
+        let mut stack = vec![root];
+        let mut refused = Vec::new();
+        while let Some(node) = stack.pop() {
+            let fact = self.fact(node)?;
+            let Some(own) = fact.fixed.filter(|own| !widens(*own, ty)) else {
+                continue;
+            };
+            let (op, a, b, c) = self.ir.node(node)?;
+            let soft = reactive && fact.read.is_some();
+            let through = match op {
+                Op::Neg | Op::Add | Op::Sub | Op::Mul | Op::Div | Op::Rem | Op::Pow | Op::Array
+                    if soft =>
+                {
+                    self.operands(node)?
+                }
+                Op::IntDiv if soft && int_range(ty).is_some() => self.operands(node)?,
+                Op::IntDiv if soft => continue,
+                Op::If if soft => vec![b, c],
+                Op::Index | Op::IndexFromEnd if soft => vec![a],
+                Op::Neg
+                | Op::Add
+                | Op::Sub
+                | Op::Mul
+                | Op::Div
+                | Op::IntDiv
+                | Op::Rem
+                | Op::Pow
+                | Op::Array
+                | Op::If
+                | Op::Index
+                | Op::IndexFromEnd
+                | Op::Int
+                | Op::Float
+                | Op::Bool
+                | Op::Name
+                | Op::Str
+                | Op::Variant
+                | Op::To
+                | Op::Field
+                | Op::MethodCall
+                | Op::NamedMethodCall
+                | Op::Past
+                | Op::Stepped
+                | Op::Match
+                | Op::TyScalar
+                | Op::TyName
+                | Op::TyArray
+                | Op::TyVar
+                | Op::Bad
+                | Op::And
+                | Op::Or
+                | Op::Not
+                | Op::Lt
+                | Op::Le
+                | Op::Gt
+                | Op::Ge
+                | Op::Is
+                | Op::IsNot
+                | Op::Call
+                | Op::NamedCall
+                | Op::Convert
+                | Op::Slice
+                | Op::For => Vec::new(),
+            };
+            if through.is_empty() {
+                self.draw_at_root(
+                    Code::TypeMismatch,
+                    node,
+                    format!(
+                        "a `{}` value does not widen into `{}`",
+                        ty_name(own),
+                        ty_name(ty)
+                    ),
+                )?;
+                refused.push(node);
+            }
+            stack.extend(through.into_iter().rev());
+        }
+        Ok(refused)
+    }
+
     pub fn own_check(&mut self, root: u32) -> Stage<()> {
         if self.unchecked {
             return Ok(Ok(()));
@@ -214,24 +301,24 @@ impl Core<'_> {
             }
             Leaf::Bool | Leaf::Empty | Leaf::Int | Leaf::Float => {}
         }
+        let reactive = self.is_reactive(root)?;
         if let Some(own) = fact.fixed
             && !widens(own, ty)
         {
-            self.draw_at_root(
-                Code::TypeMismatch,
-                root,
-                format!(
-                    "a `{}` value does not widen into `{}`",
-                    ty_name(own),
-                    ty_name(ty)
-                ),
-            )?;
-            return self.own_check(root);
+            let refused = self.refuse_fixed(root, ty, reactive)?;
+            if refused.contains(&root) {
+                return self.own_check(root);
+            }
+            for node in refused {
+                if let Err(declined) = self.own_check(node)? {
+                    return Ok(Err(declined));
+                }
+            }
         }
         let evaluated = match fact.fixed {
             Some(own) if widens(own, ty) => ty,
+            _ if reactive => ty,
             Some(own) => own,
-            None if self.is_reactive(root)? => ty,
             None => flexible(ty),
         };
         if self.is_kept(root)? || self.unchecked {

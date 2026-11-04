@@ -206,6 +206,22 @@ fn reactive_let(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
         })
 }
 
+fn read_of_a_reactive_let(seen: &Seen<'_>, _: Change, at: &Drawn) -> bool {
+    if at.0 == "reactive-let" || !reads_a_cell_somewhere(seen.program) {
+        return false;
+    }
+    let line = seen.line(at.1);
+    let text = seen.program.lines().nth(line).unwrap_or_default();
+    seen.new.iter().any(|drawn| {
+        drawn.0 == "reactive-let"
+            && top_level_let_name(seen, drawn)
+            && seen.line(drawn.1) != line
+            && text
+                .split(|character: char| !(character.is_alphanumeric() || character == '_'))
+                .any(|word| word == seen.text(drawn))
+    })
+}
+
 fn faulty_line(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
     let line = seen.line(at.1);
     change == Change::Removed
@@ -325,6 +341,11 @@ pub const CLASSES: &[Class] = &[
         ledger: "464",
         rule: "a top-level let reading a cell, directly or through another let, draws reactive-let beside any fault in its value or its annotation, and its value's own type-mismatch or a compile-time operand's does-not-fit against its runtime operation's type beside it",
         explains: reactive_let,
+    },
+    Class {
+        ledger: "464",
+        rule: "a read of a top-level let reading a cell keeps the let's known type, so the expression reading it draws the faults that type gives beside the let's reactive-let, where the old engine read the let as a placeholder",
+        explains: read_of_a_reactive_let,
     },
     Class {
         ledger: "455",

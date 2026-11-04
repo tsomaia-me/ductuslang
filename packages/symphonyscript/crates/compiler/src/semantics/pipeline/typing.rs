@@ -1,8 +1,7 @@
-use super::annotation::annotated_fact;
 use super::core::{Core, Stage};
 use super::decl_ref::DeclRef;
 use super::declined::Declined;
-use super::fact::Fact;
+use super::fact::{Fact, reads};
 use super::folds::{ANY_LENGTH, dims_agree};
 use super::leaf::Leaf;
 use super::need::Need;
@@ -276,18 +275,13 @@ impl Core<'_> {
                         }
                         return self.pending(Need::Local(at, root, self.inst));
                     }
-                    if self.cyclic.get(at as usize).copied().unwrap_or(false)
-                        || (!local && self.let_reads_cell(at)?)
-                    {
+                    if self.cyclic.get(at as usize).copied().unwrap_or(false) {
                         Fact::PLACEHOLDER
                     } else {
                         self.let_fact(at)?
                     }
                 }
-                DeclRef::Cell(at) => match self.cell_annotation_ty(at)? {
-                    Some(ty) => annotated_fact(ty),
-                    None => self.fact(self.cell_root(at)?)?,
-                },
+                DeclRef::Cell(at) => self.cell_read_fact(at)?,
                 DeclRef::Param(position) => self.param_fact(position)?.0,
                 DeclRef::Fn(_) => return Ok(Err(Declined(Reason::FunctionValue))),
                 DeclRef::Duplicate | DeclRef::None => Fact::PLACEHOLDER,
@@ -370,9 +364,11 @@ impl Core<'_> {
                 self.draw_at(Code::OperandType, node, "unary `-` takes a number")?;
                 Ok(Fact::ERROR)
             }
-            (Op::Neg, Leaf::Empty | Leaf::Int | Leaf::Float) => {
-                Ok(Fact::fixed(leaf_of(operand.leaf), operand.fixed))
-            }
+            (Op::Neg, Leaf::Empty | Leaf::Int | Leaf::Float) => Ok(Fact::numeric(
+                leaf_of(operand.leaf),
+                operand.fixed,
+                operand.read,
+            )),
             (Op::Neg, Leaf::Placeholder | Leaf::Error) => Ok(Fact::ERROR),
             (
                 Op::Int
@@ -509,14 +505,23 @@ impl Core<'_> {
                     return Ok(Fact::ERROR);
                 }
                 let leaf = numeric_leaf(x, y);
-                Fact::fixed(leaf, combined(left.fixed, right.fixed, leaf == Leaf::Float))
+                let float = leaf == Leaf::Float;
+                Fact::numeric(
+                    leaf,
+                    combined(left.fixed, right.fixed, float),
+                    reads(left.read, right.read, float),
+                )
             }
             Op::Div => {
                 if !(numeric(x) && numeric(y)) {
                     self.operand_type(node, op)?;
                     return Ok(Fact::ERROR);
                 }
-                Fact::fixed(Leaf::Float, combined(left.fixed, right.fixed, true))
+                Fact::numeric(
+                    Leaf::Float,
+                    combined(left.fixed, right.fixed, true),
+                    reads(left.read, right.read, true),
+                )
             }
             Op::IntDiv => {
                 let integer = |leaf: Leaf| matches!(leaf, Leaf::Int | Leaf::Empty);
@@ -524,7 +529,11 @@ impl Core<'_> {
                     self.operand_type(node, op)?;
                     return Ok(Fact::ERROR);
                 }
-                Fact::fixed(Leaf::Int, combined(left.fixed, right.fixed, false))
+                Fact::numeric(
+                    Leaf::Int,
+                    combined(left.fixed, right.fixed, false),
+                    reads(left.read, right.read, false),
+                )
             }
             Op::Lt | Op::Le | Op::Gt | Op::Ge => {
                 if !(numeric(x) && numeric(y)) {
@@ -620,7 +629,13 @@ impl Core<'_> {
             }
         };
         let fixed = combined(left.fixed, right.fixed, leaf == Leaf::Float);
-        Ok(Fact { leaf, dims, fixed })
+        let read = reads(left.read, right.read, leaf == Leaf::Float);
+        Ok(Fact {
+            leaf,
+            dims,
+            fixed,
+            read,
+        })
     }
 
     fn choice_fact(&mut self, node: u32, condition: u32, then: u32, otherwise: u32) -> Stage<Fact> {
@@ -668,11 +683,13 @@ impl Core<'_> {
             return Ok(Ok(Fact::ERROR));
         };
         let fixed = combined(first.fixed, second.fixed, leaf == Leaf::Float);
+        let read = reads(first.read, second.read, leaf == Leaf::Float);
         if first.dims == second.dims {
             return Ok(Ok(Fact {
                 leaf,
                 dims: first.dims,
                 fixed,
+                read,
             }));
         }
         let taken = match self.evaluate(condition, EvalTy::Bool)? {
@@ -700,6 +717,7 @@ impl Core<'_> {
             leaf,
             dims: taken,
             fixed,
+            read,
         }))
     }
 
@@ -809,6 +827,7 @@ impl Core<'_> {
             leaf: base.leaf,
             dims,
             fixed: base.fixed,
+            read: base.read,
         }))
     }
 
@@ -929,6 +948,7 @@ impl Core<'_> {
             leaf: base.leaf,
             dims: base.dims.get(1..).unwrap_or_default().to_vec(),
             fixed: base.fixed,
+            read: base.read,
         };
         if index.leaf == Leaf::Placeholder {
             return Ok(Fact::PLACEHOLDER);
@@ -967,6 +987,7 @@ impl Core<'_> {
                 leaf: Leaf::Empty,
                 dims: vec![0],
                 fixed: None,
+                read: None,
             });
         }
         let mut facts = Vec::new();
@@ -1002,15 +1023,22 @@ impl Core<'_> {
                     leaf: Leaf::Error,
                     dims,
                     fixed: None,
+                    read: None,
                 });
             };
             leaf = unified;
         }
-        let mut fixed = None;
+        let (mut fixed, mut read) = (None, None);
         for fact in &facts {
             fixed = combined(fixed, fact.fixed, leaf == Leaf::Float);
+            read = reads(read, fact.read, leaf == Leaf::Float);
         }
-        Ok(Fact { leaf, dims, fixed })
+        Ok(Fact {
+            leaf,
+            dims,
+            fixed,
+            read,
+        })
     }
 }
 

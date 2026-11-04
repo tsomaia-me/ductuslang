@@ -285,6 +285,10 @@ const DECIDING_NONE: &[(&str, &str)] = &[
         "the array literal a read selects its element from, ARCHITECTURE §7's compile-time element read",
     ),
     (
+        "pipeline/check.rs refuse_fixed",
+        "the fixed-type operands a runtime value's cells are read around, each refused at itself, SPEC §4.2's fixed-type operand",
+    ),
+    (
         "pipeline/values.rs own_walk",
         "the parts of a faulty expression read in their own types, ARCHITECTURE §7's placeholder rule",
     ),
