@@ -1413,3 +1413,95 @@ fn an_annotated_accumulator_or_loop_name_fixes_its_type_as_spec_4_5_states_476()
         );
     }
 }
+
+const ARRAY_ANNOTATIONS: [&str; 24] = [
+    "let x: i32[3] = [1, 2, 3]\nClip c:\n    Note/(x[1])\n",
+    "let x: u8[2] = [1, 300]\nClip c:\n    Note/(x[1])\n",
+    "let x: i32[3] = [1, 2]\nClip c:\n    Note/(x[1])\n",
+    "let x: i32[2] = 1\nClip c:\n    Note/(x[1])\n",
+    "let x: i32[2] = [1.5, 2]\nClip c:\n    Note/(x[1])\n",
+    "let x: i32[3][2] = [[1, 2, 3], [4, 5, 6]]\nClip c:\n    Note/(x[1][2])\n",
+    "let x: i32[2][3] = [[1, 2, 3], [4, 5, 6]]\nClip c:\n    Note/(x[1][2])\n",
+    "let x: f32[2] = [1, 2]\nClip c:\n    Note | velocity=(x[1])\n",
+    "let x: bool[2] = [true, false]\nClip c:\n    Note/(if x[0] then 1 else 2)\n",
+    "let x: i32[2] = [1, 2]\nClip c:\n    Note/(x)\n",
+    "let x: i32[2] = [1, 2] + [3]\nClip c:\n    Note/(x[1])\n",
+    "state s(1)\nlet x: i32[2] = [s, 1]\nClip c:\n    Note/(x[1])\n",
+    "let x: u8[2] = [1, 300]\n",
+    "let x: u8[2] = [1, 2]\nlet y = x[0] + 300\nClip c:\n    Note/(y)\n",
+    "let x: i32[2] = [1, 2]\nlet y = x + [3]\nClip c:\n    Note/(y[2])\n",
+    "let x: i32[2] = [1, [2]]\nClip c:\n    Note/(x[0])\n",
+    "let x: i32[2] = [true, 2]\nClip c:\n    Note/(x[0])\n",
+    "let y = [1.5, 2]\nlet x: i32[2] = y\nClip c:\n    Note/(x[0])\n",
+    "let x: f32[2] = [1, 2.5]\nClip c:\n    Note | velocity=(x[0])\n",
+    "let x: i32[2] = [1, 2]\nClip c:\n    Note/(x[^1])\n",
+    "let x: i32[3] = [1, 2, 3]\nClip c:\n    Note/(x[0..2][1])\n",
+    "let x: u8[2] = [1, 2][0..2]\nClip c:\n    Note/(x[0])\n",
+    "let x: i32[2] = [q, 1]\nClip c:\n    Note/(x[0])\n",
+    "let x: i64 = 1\nClip c:\n    Note/(x)\n",
+];
+
+const ARRAY_ANNOTATION_FAULTS: [(&str, &[(&str, &str)]); 5] = [
+    (
+        "let x: u8[2] = [1, 300]\nClip c:\n    Note/(x[0])\n",
+        &[("does-not-fit", "300")],
+    ),
+    (
+        "let x: i64[2] = [1, 2]\nClip c:\n    Note/(x[1])\n",
+        &[("type-mismatch", "x[1]")],
+    ),
+    (
+        "let x: i64[2] = [1, 2]\nClip c:\n    Note | velocity=(x[1])\n",
+        &[("type-mismatch", "x[1]")],
+    ),
+    (
+        "let x: i32[2] = [1.5, 2.5]\nClip c:\n    Note/(x[0])\n",
+        &[("type-mismatch", "1.5"), ("type-mismatch", "2.5")],
+    ),
+    (
+        "let k = 300\nlet x: u8[2] = [1, k]\nClip c:\n    Note/(x[0])\n",
+        &[("does-not-fit", "k")],
+    ),
+];
+
+#[test]
+fn an_array_annotation_on_a_top_level_let_fixes_its_whole_values_type_476() {
+    let old = Compiler::new(&symphonyscript_fixtures::vocabulary())
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
+    let new =
+        Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("the vocabulary compiles");
+    for text in ARRAY_ANNOTATIONS {
+        let sources = [source(text)];
+        let found = new
+            .checked_by_new_core(&sources)
+            .unwrap_or_else(|| panic!("the new core takes {text}"));
+        assert_eq!(found, old.check(&sources), "{text}");
+    }
+    for (text, expected) in ARRAY_ANNOTATION_FAULTS {
+        let sources = [source(text)];
+        let found = new
+            .checked_by_new_core(&sources)
+            .unwrap_or_else(|| panic!("the new core takes {text}"));
+        let mut wanted: Vec<(String, String)> = expected
+            .iter()
+            .map(|(code, span)| ((*code).to_string(), (*span).to_string()))
+            .collect();
+        wanted.sort();
+        assert_eq!(spanned(text, &found), wanted, "{text}");
+        let before = old.check(&sources);
+        let classes = reviewed::moved(text, &drawn(&before), &drawn(&found))
+            .unwrap_or_else(|unexplained| panic!("{text}: {unexplained:?}"));
+        assert!(
+            !classes.is_empty() && classes.iter().all(|class| class.ledger == "476"),
+            "{text}"
+        );
+    }
+    for text in [
+        "let x: i32[0] = []\nClip c:\n    Note/(1)\n",
+        "state q([1, 2]): i32[2]\nClip c:\n    Note/(q[1])\n",
+        "let n = for x: i32[2] in [[1, 2], [3, 4]] into a from 0: a + x[1]\nClip c:\n    Note/(n)\n",
+    ] {
+        assert!(new.checked_by_new_core(&[source(text)]).is_none(), "{text}");
+    }
+}

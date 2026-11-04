@@ -36,7 +36,10 @@ impl Core<'_> {
                             .get(position as usize)
                             .ok_or(Internal::missed("an argument"))?;
                     }
-                    DeclRef::Let(at) if !self.cyclic.get(at as usize).copied().unwrap_or(false) => {
+                    DeclRef::Let(at)
+                        if !self.cyclic.get(at as usize).copied().unwrap_or(false)
+                            && self.annotation_ty(at)?.is_none() =>
+                    {
                         node = self.let_root(at)?;
                     }
                     DeclRef::Let(_)

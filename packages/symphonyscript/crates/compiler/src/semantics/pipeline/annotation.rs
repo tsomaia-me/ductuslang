@@ -84,11 +84,14 @@ impl Core<'_> {
     }
 
     pub fn binder_ty(&self, binder: u32) -> Result<Option<EvalTy>, Internal> {
-        let annotation = self.ir.binder(binder)?.annotation;
-        if annotation == NONE {
+        let node = self.ir.binder(binder)?.annotation;
+        if node == NONE {
             return Ok(None);
         }
-        let (op, code, _, _) = self.ir.node(annotation)?;
+        let (mut op, mut code, _, _) = self.ir.node(node)?;
+        while op == Op::TyArray {
+            (op, code, _, _) = self.ir.node(code)?;
+        }
         if op != Op::TyScalar {
             return Err(Internal::missed(
                 "an annotation the coverage table leaves out",
@@ -99,15 +102,78 @@ impl Core<'_> {
             .ok_or(Internal::missed("an annotated type"))
     }
 
+    pub fn binder_dims(&self, binder: u32) -> Result<Vec<u32>, Internal> {
+        let mut dims = Vec::new();
+        let mut node = self.ir.binder(binder)?.annotation;
+        while node != NONE {
+            let (op, inner, length, _) = self.ir.node(node)?;
+            if op != Op::TyArray {
+                break;
+            }
+            dims.push(length);
+            node = inner;
+        }
+        Ok(dims)
+    }
+
+    pub fn annotation_dims(&self, at: u32) -> Result<Vec<u32>, Internal> {
+        let rec = self
+            .ir
+            .lets
+            .get(at as usize)
+            .ok_or(Internal::missed("IR let"))?;
+        self.binder_dims(rec.binder)
+    }
+
     pub fn let_fact(&self, at: u32) -> Result<Fact, Internal> {
         match self.annotation_ty(at)? {
-            Some(ty) => Ok(annotated_fact(ty)),
+            Some(ty) => {
+                let mut fact = annotated_fact(ty);
+                fact.dims = self.annotation_dims(at)?;
+                Ok(fact)
+            }
             None => self.fact(self.let_root(at)?),
         }
     }
 
     pub fn annotation_refusal(&self, at: u32, ty: EvalTy) -> Result<Refusal, Internal> {
-        Ok(refusal(&self.fact(self.let_root(at)?)?, ty))
+        let fact = self.fact(self.let_root(at)?)?;
+        let dims = self.annotation_dims(at)?;
+        if dims.is_empty() || matches!(fact.leaf, Leaf::Placeholder | Leaf::Error) {
+            return Ok(refusal(&fact, ty));
+        }
+        if fact.dims != dims {
+            return Ok(Refusal::Shape);
+        }
+        Ok(refusal(
+            &Fact {
+                dims: Vec::new(),
+                ..fact
+            },
+            ty,
+        ))
+    }
+
+    fn draw_refused_elements(&mut self, root: u32, ty: EvalTy) -> Result<(), Internal> {
+        let mut stack = vec![root];
+        while let Some(node) = stack.pop() {
+            let fact = self.fact(node)?;
+            if self.ir.node(node)?.0 == Op::Array && !fact.dims.is_empty() {
+                stack.extend(self.operands(node)?.into_iter().rev());
+                continue;
+            }
+            if refusal(
+                &Fact {
+                    dims: Vec::new(),
+                    ..fact
+                },
+                ty,
+            ) == Refusal::Type
+            {
+                self.draw_at(Code::TypeMismatch, node, TYPE)?;
+            }
+        }
+        Ok(())
     }
 
     fn let_span(&self, at: u32) -> Result<Span, Internal> {
@@ -144,8 +210,12 @@ impl Core<'_> {
                 self.draw(Code::TypeMismatch, span, SHAPE);
                 self.own_check(root)
             }
-            Refusal::Type => {
+            Refusal::Type if self.annotation_dims(at)?.is_empty() => {
                 self.draw_at(Code::TypeMismatch, root, TYPE)?;
+                self.own_check(root)
+            }
+            Refusal::Type => {
+                self.draw_refused_elements(root, ty)?;
                 self.own_check(root)
             }
             Refusal::Silent => self.own_check(root),
@@ -158,6 +228,7 @@ impl Core<'_> {
             return Ok(Ok(()));
         };
         if (int_range(ty).is_none() && !is_fixed_float(ty))
+            || !self.annotation_dims(at)?.is_empty()
             || self.fitting
             || !self.let_reads_cell(at)?
             || self.annotation_refusal(at, ty)? != Refusal::Kept

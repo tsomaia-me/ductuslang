@@ -507,6 +507,40 @@ fn annotated_fold(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
     loop_name || start || body
 }
 
+fn annotated_array_lets(program: &str) -> Vec<(&str, usize, usize)> {
+    let mut lets = Vec::new();
+    let mut start = 0;
+    for line in program.split_inclusive('\n') {
+        let text = line.trim_end_matches('\n');
+        if let Some((head, value)) = text
+            .strip_prefix("let ")
+            .and_then(|tail| tail.split_once(" = "))
+            && let Some((name, ty)) = head.split_once(": ")
+            && ty.ends_with(']')
+        {
+            let lo = start + text.len() - value.len();
+            lets.push((name, lo, start + text.len()));
+        }
+        start += line.len();
+    }
+    lets
+}
+
+fn annotated_array_let(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
+    change == Change::Added
+        && matches!(at.0.as_str(), "does-not-fit" | "type-mismatch")
+        && annotated_array_lets(seen.program)
+            .into_iter()
+            .any(|(name, lo, hi)| {
+                (at.1 >= lo && at.2 <= hi)
+                    || (at.0 == "type-mismatch"
+                        && seen
+                            .text(at)
+                            .strip_prefix(name)
+                            .is_some_and(|rest| rest.starts_with('[')))
+            })
+}
+
 pub struct Class {
     pub ledger: &'static str,
     pub rule: &'static str,
@@ -569,6 +603,11 @@ pub const CLASSES: &[Class] = &[
         ledger: "476",
         rule: "an annotated fold accumulator's start and body, and an annotated loop name's elements, draw type-mismatch where they do not have the annotated type (SPEC §4.5), which the old engine misses",
         explains: annotated_fold,
+    },
+    Class {
+        ledger: "476",
+        rule: "a top-level let with an array annotation fixes its whole value's type: each element that does not have or fit the element type draws at itself whichever element a read selects, and an element read keeps the fixed element type, which the old engine misses",
+        explains: annotated_array_let,
     },
     Class {
         ledger: "478",

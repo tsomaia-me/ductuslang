@@ -523,6 +523,9 @@ impl Core<'_> {
                         if let Some(annotated) = self.annotation_ty(at)? {
                             let let_ty = match self.fact(self.let_root(at)?)?.fixed {
                                 Some(own) if widens(own, annotated) => evaluated_in(annotated),
+                                _ if !self.annotation_dims(at)?.is_empty() => {
+                                    evaluated_in(annotated)
+                                }
                                 _ => flexible(annotated),
                             };
                             if matches!(class(node_ty), 1 | 2 | 4..=6) {
