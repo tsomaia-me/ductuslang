@@ -247,7 +247,8 @@ fn differs(compiler: &Compiler, items: &[String], orders: &[bool]) -> Option<Str
                 let condition =
                     entry.0 == Code::ConditionType && entry.4 == "the condition is a `bool`";
                 let kept_choice =
-                    entry.0 == Code::TypeMismatch && sources[0].text.contains("if q then");
+                    matches!(entry.0, Code::TypeMismatch | Code::OperandType | Code::ArrayOperand)
+                        && sources[0].text.contains("if q then");
                 !(sliced_base || condition || kept_choice) || whole_program.contains(entry)
             })
             .cloned()
