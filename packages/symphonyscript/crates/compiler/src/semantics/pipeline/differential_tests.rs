@@ -1878,7 +1878,8 @@ fn a_runtime_condition_of_another_type_than_bool_checks_both_arms_as_the_old_eng
     }
 }
 
-const OWN_TYPE_OPERATIONS: [&str; 22] = [
+const OWN_TYPE_OPERATIONS: [&str; 23] = [
+    "Clip c:\n    Note/(u8(300000000000 / 300000000000))\n",
     "state q(0.5): f32\nClip c:\n    Note/(q - 300000000000)\n",
     "state q(0.5): f32\nClip c:\n    Note/(300000000000 - q)\n",
     "state q(0.5): f32\nClip c:\n    Note/((q - 300000000000) / 2)\n",

@@ -1747,12 +1747,31 @@ fn exhaustive_differential_the_arms_of_a_compile_time_false_choice_agree_whereve
     );
 }
 
+fn runtime_choice_differential(part: usize) {
+    support::assert_both_engines_agree(|| {
+        let outcome = cases_hold(&Rows::Every, Chooser::Flag, |case| {
+            (case.pair * 2 + usize::from(case.reversed)) % 3 == part
+        });
+        support::assert_no_failure(&outcome.failures);
+    });
+}
+
 #[test]
 #[ignore = "exhaustive"]
-fn exhaustive_differential_the_arms_of_a_runtime_choice_agree_wherever_it_stands() {
-    support::assert_both_engines_agree(
-        exhaustive_the_arms_of_a_runtime_choice_agree_wherever_it_stands,
-    );
+fn exhaustive_differential_the_arms_of_a_runtime_choice_agree_wherever_it_stands_part_1() {
+    runtime_choice_differential(0);
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_differential_the_arms_of_a_runtime_choice_agree_wherever_it_stands_part_2() {
+    runtime_choice_differential(1);
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_differential_the_arms_of_a_runtime_choice_agree_wherever_it_stands_part_3() {
+    runtime_choice_differential(2);
 }
 
 #[test]

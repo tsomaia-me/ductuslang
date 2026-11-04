@@ -200,7 +200,11 @@ impl Core<'_> {
                 if own == EvalTy::Exact && self.fact(a)?.fixed.is_none() {
                     steps.push(Step::Fit(a, EvalTy::I64));
                 }
-                vec![(a, own)]
+                let divided = self.ir.node(a)?.0 == Op::Div
+                    && operand.own().is_none()
+                    && matches!(own, EvalTy::F32 | EvalTy::F64)
+                    && !self.is_reactive(a)?;
+                vec![(a, if divided { EvalTy::Exact } else { own })]
             }
             Op::If => {
                 steps.pop();
