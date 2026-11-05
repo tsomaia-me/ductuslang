@@ -95,18 +95,10 @@ impl Core<'_> {
         }
         for function in 0..self.owners() {
             for root in self.function_roots(function)? {
-                for node in self.postorder(root)? {
-                    let mut current = node;
-                    loop {
-                        let local = self.local(current)?;
-                        if let Some(slot) = self.body_of.get_mut(local) {
-                            *slot = function;
-                        }
-                        let (op, receiver, _, _) = self.ir.node(current)?;
-                        if op != Op::Field {
-                            break;
-                        }
-                        current = receiver;
+                for node in self.with_receivers(root)? {
+                    let local = self.local(node)?;
+                    if let Some(slot) = self.body_of.get_mut(local) {
+                        *slot = function;
                     }
                 }
             }
@@ -318,7 +310,7 @@ impl Core<'_> {
 
     fn reached(&self, root: u32, functions: u32) -> Result<Vec<u32>, Internal> {
         let mut out = Vec::new();
-        let mut nodes = self.postorder(root)?;
+        let mut nodes = self.with_receivers(root)?;
         let mut cursor = 0;
         while let Some(node) = nodes.get(cursor).copied() {
             cursor += 1;
@@ -941,5 +933,20 @@ impl Core<'_> {
 impl Core<'_> {
     pub fn cut(&self, node: u32) -> Result<bool, Internal> {
         Ok(self.ir.node(node)?.3 % 2 == 1)
+    }
+}
+
+impl Core<'_> {
+    pub fn with_receivers(&self, root: u32) -> Result<Vec<u32>, Internal> {
+        let mut nodes = self.postorder(root)?;
+        let mut cursor = 0;
+        while let Some(node) = nodes.get(cursor).copied() {
+            cursor += 1;
+            let (op, receiver, _, _) = self.ir.node(node)?;
+            if op == Op::Field {
+                nodes.extend(self.postorder(receiver)?);
+            }
+        }
+        Ok(nodes)
     }
 }
