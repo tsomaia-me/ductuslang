@@ -1191,11 +1191,13 @@ fn check_case(rows: &Rows, case: &Case, compilers: &mut Compilers, outcome: &mut
             let call = built.text.find("rr(1)").unwrap_or(0);
             [(Code::ReactiveRecursion, call, call + "rr(1)".len())].into()
         }
-        None if case.relation == Relation::Family => {
-            [(Code::MixedFamilies, built.start, built.end)].into()
-        }
         None => {
-            let mut drawn: Spans = [(Code::TypeMismatch, built.start, built.end)].into();
+            let code = if case.relation == Relation::Family {
+                Code::MixedFamilies
+            } else {
+                Code::TypeMismatch
+            };
+            let mut drawn: Spans = [(code, built.start, built.end)].into();
             let let_reads_cell = match taken {
                 None => true,
                 Some(0) => reads_cell(case.forms.0, case.contents.0),

@@ -247,6 +247,7 @@ impl Core<'_> {
             fixed: fact.fixed,
             read: fact.read,
             node: false,
+            family: None,
         };
         let items = if names >= 2 {
             vec![Fact::scalar(Leaf::Int), element]
@@ -534,6 +535,7 @@ impl Core<'_> {
                 fixed,
                 read: None,
                 node: false,
+                family: None,
             };
             let settled =
                 (next.leaf == acc.leaf || acc.leaf == Leaf::Empty) && next.dims == acc.dims;
@@ -568,6 +570,7 @@ impl Core<'_> {
             fixed,
             read: None,
             node: false,
+            family: None,
         }))
     }
 

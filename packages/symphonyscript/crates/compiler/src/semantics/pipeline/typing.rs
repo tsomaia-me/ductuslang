@@ -759,6 +759,7 @@ impl Core<'_> {
             fixed,
             read,
             node: false,
+            family: None,
         })
     }
 
@@ -815,6 +816,7 @@ impl Core<'_> {
                 fixed,
                 read,
                 node: false,
+                family: None,
             };
             return Ok(Ok(self.keep(node, kept)?));
         }
@@ -825,6 +827,7 @@ impl Core<'_> {
                 fixed,
                 read,
                 node: false,
+                family: None,
             }));
         }
         let taken = match self.evaluate(condition, EvalTy::Bool)? {
@@ -860,6 +863,7 @@ impl Core<'_> {
             fixed,
             read,
             node: false,
+            family: None,
         }))
     }
 
@@ -971,6 +975,7 @@ impl Core<'_> {
             fixed: base.fixed,
             read: base.read,
             node: false,
+            family: None,
         }))
     }
 
@@ -1027,6 +1032,7 @@ impl Core<'_> {
             fixed: base.fixed,
             read: base.read,
             node: base.node,
+            family: None,
         };
         if index.leaf == Leaf::Placeholder {
             return Ok(Fact::PLACEHOLDER);
@@ -1067,6 +1073,7 @@ impl Core<'_> {
                 fixed: None,
                 read: None,
                 node: false,
+                family: None,
             });
         }
         let mut facts = Vec::new();
@@ -1124,6 +1131,7 @@ impl Core<'_> {
                     fixed: None,
                     read: None,
                     node: false,
+                    family: None,
                 });
             };
             leaf = unified;
@@ -1139,6 +1147,7 @@ impl Core<'_> {
             fixed,
             read,
             node: false,
+            family: None,
         })
     }
 }

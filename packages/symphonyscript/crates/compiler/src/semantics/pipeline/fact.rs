@@ -9,6 +9,7 @@ pub(crate) struct Fact {
     pub fixed: Option<EvalTy>,
     pub read: Option<EvalTy>,
     pub node: bool,
+    pub family: Option<symphonyscript_core::FamilyId>,
 }
 
 impl Fact {
@@ -18,6 +19,7 @@ impl Fact {
         fixed: None,
         read: None,
         node: false,
+        family: None,
     };
 
     pub const ERROR: Fact = Fact {
@@ -26,6 +28,7 @@ impl Fact {
         fixed: None,
         read: None,
         node: false,
+        family: None,
     };
 
     pub fn scalar(leaf: Leaf) -> Fact {
@@ -35,6 +38,7 @@ impl Fact {
             fixed: None,
             read: None,
             node: false,
+            family: None,
         }
     }
 
@@ -45,6 +49,7 @@ impl Fact {
             fixed,
             read: None,
             node: false,
+            family: None,
         }
     }
 
@@ -55,6 +60,7 @@ impl Fact {
             fixed,
             read,
             node: false,
+            family: None,
         }
     }
 
@@ -65,6 +71,7 @@ impl Fact {
             fixed: None,
             read: None,
             node: true,
+            family: None,
         }
     }
 

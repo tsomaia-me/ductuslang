@@ -3009,3 +3009,74 @@ fn a_cyclic_declarations_rule_draws_every_fault_that_holds_whatever_the_cycle_ho
     }
     assert_eq!(programs, 24 * 8 + 120 + 6 + 2 * 2);
 }
+
+#[test]
+fn a_family_flows_through_a_functions_or_a_patterns_parameter_to_the_attribute_it_reaches_in_every_order_504()
+ {
+    let old = Compiler::new(&symphonyscript_fixtures::vocabulary())
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
+    let new =
+        Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("the vocabulary compiles");
+    let mut programs = 0;
+    let mut mismatched = 0;
+    for argument in ["2bars", "2s", "2", "delay * 2"] {
+        for attribute in ["length", "velocity"] {
+            let shapes = [
+                (
+                    "fn hit(v): v\n".to_string(),
+                    format!("Clip c:\n    Note | {attribute}=(hit({argument}))\n"),
+                ),
+                (
+                    format!("pattern Hit(default pitch, v):\n    Note/pitch | {attribute}=v\n"),
+                    format!("Clip c:\n    Hit/60 | v={argument}\n"),
+                ),
+            ];
+            for (declaration, placement) in shapes {
+                let items = vec!["state delay(250ms)\n".to_string(), declaration, placement];
+                for text in orders(&items) {
+                    let sources = [source(&text)];
+                    let found = new
+                        .checked_by_new_core(&sources)
+                        .unwrap_or_else(|| panic!("the new core takes {text}"));
+                    assert_eq!(found, old.check(&sources), "{text}");
+                    mismatched += usize::from(
+                        found
+                            .iter()
+                            .any(|drawn| drawn.code == crate::diagnostics::Code::UnitMismatch),
+                    );
+                    programs += 1;
+                }
+            }
+        }
+    }
+    assert_eq!(programs, 4 * 2 * 2 * 6);
+    assert_eq!(mismatched, (1 + 1 + 1 + 2) * 2 * 6);
+}
+
+#[test]
+fn a_condition_of_a_destination_beside_a_name_that_names_nothing_draws_its_own_faults() {
+    let old = Compiler::new(&symphonyscript_fixtures::vocabulary())
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
+    let new =
+        Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("the vocabulary compiles");
+    for condition in [
+        "-flash_on",
+        "not -flash_on",
+        "(1 + true)",
+        "[1][3] > 0",
+        "flash_on",
+    ] {
+        for arms in ["flash else dusk", "dusk else dusk"] {
+            let text = format!(
+                "state flash_on(false)\nScene dusk:\n    Triggers: night\nScene night:\n    Triggers: if {condition} then {arms}\n"
+            );
+            let sources = [source(&text)];
+            let found = new
+                .checked_by_new_core(&sources)
+                .unwrap_or_else(|| panic!("the new core takes {text}"));
+            assert_eq!(found, old.check(&sources), "{text}");
+        }
+    }
+}

@@ -1,7 +1,8 @@
 use crate::compiler::Compiler;
 use crate::syntax::front_end_goldens::source;
 
-const FAMILIES: [&str; 59] = [
+const FAMILIES: [&str; 60] = [
+    "fn f(x): x\nClip c:\n    Note/(f(2bars))\n",
     "Clip c:\n    Note/(1000ms)\n",
     "Clip c:\n    Note/(2bars)\n",
     "Clip c:\n    Note | length=1000ms\n",
@@ -63,14 +64,13 @@ const FAMILIES: [&str; 59] = [
     "state x(1s)\nstate y = x.past(1) + 1\nScene s:\n    Cue | at=y\n",
 ];
 
-const DECLINED: [&str; 7] = [
+const DECLINED: [&str; 6] = [
     "Clip c:\n    for i in 0..2s:\n        Note\n",
     "Clip c:\n    Note/([1, 2][0..1bars][0])\n",
     "Clip c:\n    Note/([1, 2][1s])\n",
     "Clip c:\n    Note | length=([1bars, 2bars][0..1bars][0])\n",
     "Clip c:\n    Note | length=(for i in 0..3 into a from 0bars: a + 1)\n",
     "fn f(x): x + 1\nScene s:\n    Cue | at=(f(5ms))\n",
-    "fn f(x): x\nClip c:\n    Note/(f(2bars))\n",
 ];
 
 #[test]

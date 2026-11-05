@@ -98,6 +98,9 @@ impl Core<'_> {
     }
 
     pub fn enum_gate(&mut self, node: u32, fact: &Fact) -> Stage<()> {
+        if !self.enums_seen {
+            return Ok(Ok(()));
+        }
         let (op, a, b, c) = self.ir.node(node)?;
         for kid in self.operands(node)? {
             let leaf = self.fact(kid)?.leaf;
@@ -185,10 +188,22 @@ impl Core<'_> {
 
 impl Core<'_> {
     pub fn check_variants(&mut self) -> Stage<()> {
+        self.enums_seen = !self.bare.is_empty();
         for local in 0..self.ir.op.len() {
-            if self.ir.op.get(local) != Some(&Op::Variant) {
+            let op = self.ir.op.get(local).copied();
+            if matches!(op, Some(Op::Int | Op::Float))
+                && let Some(suffix) = self.ir.b.get(local)
+                && matches!(
+                    self.ir.suffixes.get(*suffix as usize),
+                    Some(crate::semantics::ir::Suffix::Unit { .. })
+                )
+            {
+                self.units_seen = true;
+            }
+            if op != Some(Op::Variant) {
                 continue;
             }
+            self.enums_seen = true;
             let node = self.ir.base + u32::try_from(local).unwrap_or(0);
             let (_, enumeration, variant, _) = self.ir.node(node)?;
             let enum_text = self.name_text(enumeration)?;
@@ -207,6 +222,9 @@ impl Core<'_> {
                 format!("the enum `{enum_text}` has no variant `{variant_text}`"),
             );
             self.unknown_variants.insert(node);
+        }
+        if self.enums_seen {
+            return Ok(Err(Declined(Reason::EnumFlow)));
         }
         Ok(Ok(()))
     }

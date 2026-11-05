@@ -566,6 +566,12 @@ impl Core<'_> {
             match step {
                 Step::Visit(node, node_ty) => {
                     let (op, _, _, _) = self.ir.node(node)?;
+                    if self.family_faults.contains(&node) {
+                        if let Some(frame) = frames.last_mut() {
+                            frame.values.push(Value::Error);
+                        }
+                        continue;
+                    }
                     if self.fitting
                         && matches!(op, Op::Name | Op::Field)
                         && self.is_reactive(node)?

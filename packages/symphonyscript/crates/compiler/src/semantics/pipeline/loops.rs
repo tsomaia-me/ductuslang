@@ -356,6 +356,7 @@ impl Core<'_> {
             fixed: fact.fixed,
             read: fact.read,
             node: false,
+            family: None,
         };
         let items_ty = match self.binder_ty(head.names.1 - 1)? {
             Some(annotated) if refusal(&element_fact, annotated) == Refusal::Kept => annotated,
@@ -393,6 +394,7 @@ impl Core<'_> {
             fixed: fact.fixed,
             read: fact.read,
             node: false,
+            family: None,
         };
         let facts = if names >= 2 {
             vec![Fact::scalar(Leaf::Int), element]

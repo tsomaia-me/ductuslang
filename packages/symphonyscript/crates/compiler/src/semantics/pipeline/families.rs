@@ -22,7 +22,7 @@ fn numeric(fact: &Fact) -> bool {
 
 impl Core<'_> {
     pub fn family(&self, node: u32) -> Option<FamilyId> {
-        self.families.get(&node).copied()
+        self.fact(node).ok().and_then(|fact| fact.family)
     }
 
     pub fn unit_scale(&self, family: FamilyId, unit: usize) -> Result<f64, Internal> {
@@ -88,9 +88,13 @@ impl Core<'_> {
     }
 
     pub fn node_family(&mut self, node: u32, fact: &mut Fact) -> Stage<()> {
+        if !self.units_seen {
+            return Ok(Ok(()));
+        }
         let (op, a, b, c) = self.ir.node(node)?;
         let kids = self.operands(node)?;
         let in_body = self.in_body(node)?.is_some();
+        let takers = self.takers.len();
         let found = if open(fact) {
             None
         } else {
@@ -104,8 +108,8 @@ impl Core<'_> {
                     DeclRef::Cell(at) if !self.is_cyclic_cell(at) => {
                         self.family(self.cell_root(at)?)
                     }
+                    DeclRef::Param(_) => fact.family,
                     DeclRef::Cell(_)
-                    | DeclRef::Param(_)
                     | DeclRef::Instance(_)
                     | DeclRef::Fn(_)
                     | DeclRef::Pattern(_)
@@ -115,7 +119,7 @@ impl Core<'_> {
                 Op::Neg | Op::Convert => self.family(a),
                 Op::Add | Op::Sub | Op::Rem => match self.one_family(node, &[a, b])? {
                     Some(family) => family,
-                    None => return self.family_error(fact),
+                    None => return self.family_error(node, fact),
                 },
                 Op::Lt | Op::Le | Op::Gt | Op::Ge | Op::Is | Op::IsNot => {
                     if numeric(&self.fact(a)?) && numeric(&self.fact(b)?) {
@@ -130,14 +134,14 @@ impl Core<'_> {
                             node,
                             "two unit values are not multiplied",
                         )?;
-                        return self.family_error(fact);
+                        return self.family_error(node, fact);
                     }
                     (family, None) | (None, family) => family,
                 },
                 Op::Pow => {
                     if self.family(a).is_some() || self.family(b).is_some() {
                         self.draw_at(Code::UnitOperation, node, "`**` takes no unit value")?;
-                        return self.family_error(fact);
+                        return self.family_error(node, fact);
                     }
                     None
                 }
@@ -149,7 +153,7 @@ impl Core<'_> {
                             node,
                             "these values belong to different unit families",
                         )?;
-                        return self.family_error(fact);
+                        return self.family_error(node, fact);
                     }
                     (Some(family), None) => Some(family),
                     (None, Some(_)) => {
@@ -158,18 +162,19 @@ impl Core<'_> {
                             node,
                             "a plain number is not divided by a unit value",
                         )?;
-                        return self.family_error(fact);
+                        return self.family_error(node, fact);
                     }
                     (None, None) => None,
                 },
                 Op::If => match self.one_family(node, &[b, c])? {
                     Some(family) => family,
-                    None => return self.family_error(fact),
+                    None => return self.family_error(node, fact),
                 },
                 Op::Array => match self.one_family(node, &kids)? {
                     Some(family) => family,
-                    None => return self.family_error(fact),
+                    None => return self.family_error(node, fact),
                 },
+                Op::Call | Op::NamedCall => fact.family,
                 Op::Index => {
                     if self.family(b).is_some() {
                         return Ok(Err(Declined(Reason::UnitFlow)));
@@ -193,8 +198,6 @@ impl Core<'_> {
                 | Op::Or
                 | Op::IndexFromEnd
                 | Op::For
-                | Op::Call
-                | Op::NamedCall
                 | Op::Field
                 | Op::To
                 | Op::Variant
@@ -214,16 +217,15 @@ impl Core<'_> {
                 }
             }
         };
-        if let Some(family) = found {
-            if in_body {
-                return Ok(Err(Declined(Reason::UnitFlow)));
-            }
-            self.families.insert(node, family);
+        fact.family = found;
+        if in_body && self.takers.len() > takers {
+            return Ok(Err(Declined(Reason::UnitFlow)));
         }
         Ok(Ok(()))
     }
 
-    fn family_error(&mut self, fact: &mut Fact) -> Stage<()> {
+    fn family_error(&mut self, node: u32, fact: &mut Fact) -> Stage<()> {
+        self.family_faults.insert(node);
         *fact = Fact::ERROR;
         Ok(Ok(()))
     }
@@ -241,12 +243,12 @@ impl Core<'_> {
             return Ok(());
         }
         match (self.family(root), unit) {
-            (Some(_), None) => self.draw_at(
+            (Some(_), None) => self.draw_at_root(
                 Code::UnitMismatch,
                 root,
                 "a unit value is bound to an attribute of no unit family",
             ),
-            (Some(family), Some(unit)) if family != unit.family => self.draw_at(
+            (Some(family), Some(unit)) if family != unit.family => self.draw_at_root(
                 Code::UnitMismatch,
                 root,
                 "a unit value is bound to an attribute of another unit family",
@@ -269,7 +271,7 @@ impl Core<'_> {
                 | DeclRef::None => Vec::new(),
             },
             Op::Index | Op::IndexFromEnd | Op::Slice => vec![a],
-            Op::Call | Op::NamedCall => Vec::new(),
+            Op::Call | Op::NamedCall => self.arguments(node)?,
             Op::Int
             | Op::Float
             | Op::Bool
@@ -369,6 +371,9 @@ impl Core<'_> {
         node: u32,
         ty: crate::semantics::operators::EvalTy,
     ) -> Result<Option<super::core_value::CoreValue>, Internal> {
+        if !self.units_seen {
+            return Ok(None);
+        }
         let (op, a, _, _) = self.ir.node(node)?;
         let Suffix::Unit { family, unit } = self.literal_suffix(node)? else {
             return Ok(None);

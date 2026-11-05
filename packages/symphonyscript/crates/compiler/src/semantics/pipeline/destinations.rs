@@ -268,3 +268,25 @@ impl Core<'_> {
         Ok(Ok(Choice::Unknown))
     }
 }
+
+impl Core<'_> {
+    pub fn destination_names(&mut self) -> Result<(), Internal> {
+        let mut names = Vec::new();
+        for item in &self.ir.items {
+            let crate::semantics::ir::flat::ItemRec::Wire(rec) = item else {
+                continue;
+            };
+            for node in self.postorder(rec.destination)? {
+                if self.ir.node(node)?.0 == Op::Name && self.bound(node)? == DeclRef::None {
+                    names.push(node);
+                }
+            }
+        }
+        if !names.is_empty() {
+            names.sort_unstable();
+            self.placeholders
+                .retain(|node| names.binary_search(node).is_err());
+        }
+        Ok(())
+    }
+}
