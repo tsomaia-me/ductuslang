@@ -33,6 +33,9 @@ mod history;
 #[cfg(test)]
 mod history_tests;
 mod host;
+#[cfg(test)]
+mod init_fit_tests;
+mod init_read;
 mod inits;
 mod instance_row;
 mod leaf;
