@@ -57,10 +57,20 @@ impl Core<'_> {
             });
         }
         if op == Op::Field {
-            return match self.read_root(node)? {
-                Some(root) => self.is_reactive(root),
-                None => Ok(self.to_choice(node).is_some()),
+            let Some(root) = self.read_root(node)? else {
+                return Ok(self.to_choice(node).is_some());
             };
+            let env = match self.path_read(node)?.cloned() {
+                Some(read) => self.read_env(&read)?,
+                None => NONE,
+            };
+            if env == NONE {
+                return self.is_reactive(root);
+            }
+            let saved = self.enter_env(env);
+            let reactive = self.is_reactive(root);
+            self.leave_env(saved);
+            return reactive;
         }
         if matches!(op, Op::Call | Op::NamedCall) {
             return self.call_reactive(node);

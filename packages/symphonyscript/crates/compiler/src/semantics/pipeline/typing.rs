@@ -384,7 +384,7 @@ impl Core<'_> {
                 Some(read) if read.cyclic => Fact::PLACEHOLDER,
                 Some(read) => {
                     if read.root != NONE
-                        && let Err(declined) = self.ensure_typed(read.root)?
+                        && let Err(declined) = self.typed_in_env(&read)?
                     {
                         return Ok(Err(declined));
                     }

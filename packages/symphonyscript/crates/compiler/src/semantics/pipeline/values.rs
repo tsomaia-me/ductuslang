@@ -377,6 +377,26 @@ impl Core<'_> {
         })
     }
 
+    fn read_in_env(&mut self, read: &super::attr_read::AttrRead) -> Stage<(CoreValue, EvalTy)> {
+        let env = self.read_env(read)?;
+        let saved = self.enter_env(env);
+        let chain = std::mem::take(&mut self.eval_chain);
+        let outcome = self.read_value(read);
+        self.eval_chain = chain;
+        self.leave_env(saved);
+        outcome
+    }
+
+    fn read_value(&mut self, read: &super::attr_read::AttrRead) -> Stage<(CoreValue, EvalTy)> {
+        let read_ty = match self.fact(read.root)?.fixed {
+            Some(own) if widens(own, read.ty) => evaluated_in(read.ty),
+            _ => flexible(read.ty),
+        };
+        Ok(self
+            .evaluate(read.root, read_ty)?
+            .map(|value| (value, read_ty)))
+    }
+
     pub fn evaluate(&mut self, root: u32, ty: EvalTy) -> Stage<CoreValue> {
         let inst = self.inst;
         let chain = self.eval_chain.clone();
@@ -538,6 +558,12 @@ impl Core<'_> {
                         let plan = match read {
                             Some(read) if !read.cyclic && read.root == NONE => {
                                 Some((self.default_read(&read)?, NONE, EvalTy::Exact))
+                            }
+                            Some(read) if !read.cyclic && self.read_env(&read)? != NONE => {
+                                match self.read_in_env(&read)? {
+                                    Ok((value, read_ty)) => Some((value, NONE, read_ty)),
+                                    Err(declined) => return Ok(Err(declined)),
+                                }
                             }
                             Some(read) if !read.cyclic => {
                                 let read_ty = match self.fact(read.root)?.fixed {

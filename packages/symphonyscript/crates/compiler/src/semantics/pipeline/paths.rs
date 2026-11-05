@@ -7,6 +7,7 @@ use super::core::{Core, Stage};
 use super::core_value::CoreValue;
 use super::decl_ref::DeclRef;
 use super::declined::Declined;
+use super::fact::Fact;
 use super::reason::Reason;
 use crate::diagnostics::{Code, Diagnostic};
 use crate::semantics::Internal;
@@ -422,11 +423,6 @@ impl Core<'_> {
                     Ok(end) => end,
                     Err(declined) => return Ok(Err(declined)),
                 };
-                if let End::Attr(at) = end
-                    && self.read_in_use(row, at)?
-                {
-                    return Ok(Err(Declined(Reason::PatternUse)));
-                }
                 Ok(Ok(end))
             }
             End::To if self.is_field_receiver(node) => Ok(Ok(End::To)),
@@ -654,13 +650,13 @@ impl Core<'_> {
 impl Core<'_> {
     pub fn type_attr_reads(&mut self) -> Stage<()> {
         for at in self.attr_order.clone() {
-            let Some(read) = self.attr_reads.get(at as usize) else {
+            let Some(read) = self.attr_reads.get(at as usize).cloned() else {
                 continue;
             };
             if read.cyclic || read.root == NONE {
                 continue;
             }
-            if let Err(declined) = self.ensure_typed(read.root)? {
+            if let Err(declined) = self.typed_in_env(&read)? {
                 return Ok(Err(declined));
             }
         }
@@ -913,10 +909,11 @@ impl Core<'_> {
             let read = self
                 .attr_reads
                 .get(at as usize)
+                .cloned()
                 .ok_or(Internal::missed("attribute read"))?;
             if !read.cyclic
                 && read.root != NONE
-                && let Err(declined) = self.ensure_typed(read.root)?
+                && let Err(declined) = self.typed_in_env(&read)?
             {
                 return Ok(Err(declined));
             }
@@ -1168,19 +1165,35 @@ impl Core<'_> {
 }
 
 impl Core<'_> {
-    fn read_in_use(&self, row: u32, at: u32) -> Result<bool, Internal> {
+    pub fn read_env(&self, read: &AttrRead) -> Result<u32, Internal> {
         let env = self
             .instances
-            .get(row as usize)
+            .get(read.row as usize)
             .ok_or(Internal::missed("row"))?
             .env;
-        let root = self
-            .attr_reads
-            .get(at as usize)
-            .map_or(NONE, |read| read.root);
-        if env == NONE || root == NONE {
-            return Ok(false);
+        if env == NONE || read.root == NONE || read.cyclic {
+            return Ok(NONE);
         }
-        Ok(self.body_of.get(self.local(root)?).copied().unwrap_or(NONE) != NONE)
+        if self
+            .body_of
+            .get(self.local(read.root)?)
+            .copied()
+            .unwrap_or(NONE)
+            == NONE
+        {
+            return Ok(NONE);
+        }
+        Ok(env)
+    }
+
+    pub fn typed_in_env(&mut self, read: &AttrRead) -> Stage<Fact> {
+        let env = self.read_env(read)?;
+        if env == NONE {
+            return self.ensure_typed(read.root);
+        }
+        let saved = self.enter_env(env);
+        let typed = self.ensure_typed(read.root);
+        self.leave_env(saved);
+        typed
     }
 }
