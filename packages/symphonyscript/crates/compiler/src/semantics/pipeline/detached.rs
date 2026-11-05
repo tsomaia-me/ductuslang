@@ -133,6 +133,9 @@ impl Core<'_> {
         Ok(match fact.leaf {
             Leaf::Placeholder | Leaf::Error => false,
             Leaf::Bool => ty != EvalTy::Bool,
+            Leaf::Enum(Some(id)) => ty != EvalTy::Enum(id),
+            Leaf::Enum(None) => !matches!(ty, EvalTy::Enum(_)),
+            Leaf::Empty | Leaf::Int | Leaf::Float if matches!(ty, EvalTy::Enum(_)) => true,
             Leaf::Empty | Leaf::Int | Leaf::Float if ty == EvalTy::Bool => true,
             Leaf::Float if integer => true,
             Leaf::Empty | Leaf::Int | Leaf::Float => fact.fixed.is_some_and(|own| !widens(own, ty)),

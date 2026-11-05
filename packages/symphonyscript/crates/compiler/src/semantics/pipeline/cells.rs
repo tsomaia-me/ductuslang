@@ -45,7 +45,7 @@ impl Core<'_> {
         if !self.derived(at) && fact.fixed.is_none() && fact.read.is_none() {
             fact.read = match fact.leaf {
                 Leaf::Int | Leaf::Empty => Some(EvalTy::I64),
-                Leaf::Float | Leaf::Bool | Leaf::Placeholder | Leaf::Error => None,
+                Leaf::Float | Leaf::Bool | Leaf::Placeholder | Leaf::Error | Leaf::Enum(_) => None,
             };
         }
         Ok(fact)
@@ -329,7 +329,7 @@ impl Core<'_> {
         Ok(())
     }
 
-    fn name_text(&self, name: u32) -> Result<String, Internal> {
+    pub fn name_text(&self, name: u32) -> Result<String, Internal> {
         let entry = self.ir.name(name).ok_or(Internal::missed("IR name"))?;
         Ok(self.ir.symbols.text(entry.sym).to_string())
     }

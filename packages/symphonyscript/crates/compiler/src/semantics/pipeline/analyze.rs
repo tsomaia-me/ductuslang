@@ -47,6 +47,9 @@ pub(crate) fn analyze(inputs: &Inputs<'_>) -> Result<Option<Run>, Internal> {
     if let Err(reason) = stage(core.collect())? {
         return declined(reason);
     }
+    if let Err(reason) = stage(core.check_variants())? {
+        return declined(reason);
+    }
     stages.mark("collect");
     if core.stop.is_some() {
         return Ok(Some(finished(core)));

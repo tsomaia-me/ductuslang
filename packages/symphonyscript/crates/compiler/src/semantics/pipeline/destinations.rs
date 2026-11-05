@@ -181,7 +181,7 @@ impl Core<'_> {
         match fact.leaf {
             Leaf::Bool => {}
             Leaf::Placeholder | Leaf::Error => return Ok(Ok(Test::Faulty)),
-            Leaf::Empty | Leaf::Int | Leaf::Float => {
+            Leaf::Empty | Leaf::Int | Leaf::Float | Leaf::Enum(_) => {
                 self.draw_at_root(Code::ConditionType, condition, "the condition is a `bool`")?;
                 return self.refused_test(condition, live);
             }

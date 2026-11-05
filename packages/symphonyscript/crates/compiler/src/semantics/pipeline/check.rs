@@ -215,8 +215,14 @@ impl Core<'_> {
             }
             let mut plain = attr.clone();
             plain.unit = None;
-            let Some(ty) = expected(&plain) else {
-                return Ok(Err(Declined(attribute_reason(attr))));
+            let ty = match (expected(&plain), plain.ty.scalar) {
+                (Some(ty), _) => ty,
+                (None, Scalar::Enum(id))
+                    if plain.ty.lengths.is_empty() && plain.ty.capacity.is_none() =>
+                {
+                    EvalTy::Enum(id)
+                }
+                (None, _) => return Ok(Err(Declined(attribute_reason(attr)))),
             };
             if let Some(unit) = attr.unit
                 && self.unit_scale(unit.family, unit.default_unit)? != 1.0
@@ -374,7 +380,28 @@ impl Core<'_> {
                 Code::TypeMismatch,
                 format!(
                     "this value has the wrong type here; `{}` is expected",
-                    ty_name(ty)
+                    self.ty_text(ty)?
+                ),
+            ),
+            Leaf::Enum(Some(id)) if ty != EvalTy::Enum(id) => (
+                Code::TypeMismatch,
+                format!(
+                    "this value has the wrong type here; `{}` is expected",
+                    self.ty_text(ty)?
+                ),
+            ),
+            Leaf::Enum(None) if !matches!(ty, EvalTy::Enum(_)) => (
+                Code::TypeMismatch,
+                format!(
+                    "this value has the wrong type here; `{}` is expected",
+                    self.ty_text(ty)?
+                ),
+            ),
+            Leaf::Empty | Leaf::Int | Leaf::Float if matches!(ty, EvalTy::Enum(_)) => (
+                Code::TypeMismatch,
+                format!(
+                    "this value has the wrong type here; `{}` is expected",
+                    self.ty_text(ty)?
                 ),
             ),
             Leaf::Empty | Leaf::Int | Leaf::Float if ty == EvalTy::Bool => (
@@ -391,7 +418,13 @@ impl Core<'_> {
                 "a float value stands where an integer is expected; a conversion states the rounding"
                     .to_string(),
             ),
-            Leaf::Placeholder | Leaf::Error | Leaf::Bool | Leaf::Empty | Leaf::Int | Leaf::Float => {
+            Leaf::Placeholder
+            | Leaf::Error
+            | Leaf::Bool
+            | Leaf::Empty
+            | Leaf::Int
+            | Leaf::Float
+            | Leaf::Enum(_) => {
                 return Ok(None);
             }
         }))
@@ -427,6 +460,9 @@ impl Core<'_> {
             Ok(fact) => fact,
             Err(declined) => return Ok(Err(declined)),
         };
+        if let EvalTy::Enum(id) = ty {
+            self.resolve_bare(root, id, true)?;
+        }
         match fact.leaf {
             Leaf::Placeholder | Leaf::Error => return self.detached(root, name, ty),
             _ if !fact.dims.is_empty() => {
@@ -446,7 +482,7 @@ impl Core<'_> {
                 )?;
                 return self.own_check(root);
             }
-            Leaf::Bool | Leaf::Empty | Leaf::Int | Leaf::Float => {
+            Leaf::Bool | Leaf::Empty | Leaf::Int | Leaf::Float | Leaf::Enum(_) => {
                 if let Some((code, summary)) = self.leaf_refusal(root, &fact, ty)? {
                     self.draw_at_root(code, root, summary)?;
                     return self.own_check(root);

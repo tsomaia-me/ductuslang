@@ -170,6 +170,9 @@ pub(crate) struct Core<'a> {
     pub cell_capacities: HashMap<u32, i128>,
     pub extent_cache: HashMap<u32, super::extent::Extent>,
     pub families: HashMap<u32, symphonyscript_core::FamilyId>,
+    pub bare: HashSet<u32>,
+    pub unknown_variants: HashSet<u32>,
+    pub bare_enums: HashMap<u32, symphonyscript_core::EnumId>,
     pub takers: Vec<(u32, symphonyscript_core::FamilyId)>,
     pub unit_feeds: Vec<(u32, symphonyscript_core::FamilyId)>,
 }
@@ -322,6 +325,9 @@ impl<'a> Core<'a> {
             cell_capacities: HashMap::new(),
             extent_cache: HashMap::new(),
             families: HashMap::new(),
+            bare: HashSet::new(),
+            unknown_variants: HashSet::new(),
+            bare_enums: HashMap::new(),
             takers: Vec::new(),
             unit_feeds: Vec::new(),
         }

@@ -1153,6 +1153,7 @@ impl Core<'_> {
                     Ok(value) => value,
                     Err(declined) => return Ok(Err(declined)),
                 },
+                DeclRef::None if self.is_bare(node) => self.variant_value(node)?,
                 DeclRef::Duplicate
                 | DeclRef::None
                 | DeclRef::Param(_)
@@ -1270,6 +1271,7 @@ impl Core<'_> {
                 Value::Error
             }
             Op::Stepped => Value::Error,
+            Op::Variant => self.variant_value(node)?,
             Op::Field => match self.bare_cell_read(node)? {
                 Some(at) => match self.read_cell(at, node, ty, unflowed)? {
                     Ok(value) => value,
@@ -1279,7 +1281,6 @@ impl Core<'_> {
             },
             Op::If
             | Op::Str
-            | Op::Variant
             | Op::Call
             | Op::NamedCall
             | Op::MethodCall
@@ -1461,7 +1462,8 @@ impl Core<'_> {
             Leaf::Empty | Leaf::Int => Some(EvalTy::Exact),
             Leaf::Float => Some(self.own_float(node)?),
             Leaf::Bool => Some(EvalTy::Bool),
-            Leaf::Placeholder | Leaf::Error => None,
+            Leaf::Enum(Some(id)) => Some(EvalTy::Enum(id)),
+            Leaf::Placeholder | Leaf::Error | Leaf::Enum(None) => None,
         })
     }
 

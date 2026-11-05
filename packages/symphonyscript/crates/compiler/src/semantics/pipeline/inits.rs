@@ -84,8 +84,9 @@ impl Core<'_> {
         let integer = widest(&[4, 5, 6]);
         match cell.leaf {
             Leaf::Bool => EvalTy::Bool,
+            Leaf::Enum(Some(id)) => EvalTy::Enum(id),
             Leaf::Float => float.or(cell.own()).unwrap_or(EvalTy::F64),
-            Leaf::Int | Leaf::Empty | Leaf::Placeholder | Leaf::Error => {
+            Leaf::Int | Leaf::Empty | Leaf::Placeholder | Leaf::Error | Leaf::Enum(None) => {
                 integer.or(float).or(cell.own()).unwrap_or(EvalTy::I64)
             }
         }

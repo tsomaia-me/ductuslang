@@ -297,6 +297,9 @@ impl Core<'_> {
             if let Err(declined) = self.node_family(node, &mut fact)? {
                 return Ok(Err(declined));
             }
+            if let Err(declined) = self.enum_gate(node, &fact)? {
+                return Ok(Err(declined));
+            }
             let reactive = self.node_reactive(node)?;
             if fact.node && reactive && self.in_body(node)?.is_some() {
                 return Ok(Err(Declined(Reason::ReactiveReference)));
@@ -352,6 +355,7 @@ impl Core<'_> {
                 DeclRef::Fn(_) | DeclRef::Pattern(_) => {
                     return Ok(Err(Declined(Reason::FunctionValue)));
                 }
+                DeclRef::None if self.is_bare(node) => Fact::scalar(Leaf::Enum(None)),
                 DeclRef::Duplicate | DeclRef::None => Fact::PLACEHOLDER,
                 DeclRef::Instance(_) => Fact::node_reference(Vec::new()),
             },
@@ -419,8 +423,11 @@ impl Core<'_> {
                     }
                 },
             },
+            Op::Variant => match self.variant_fact(node)? {
+                Ok(fact) => fact,
+                Err(declined) => return Ok(Err(declined)),
+            },
             Op::Str
-            | Op::Variant
             | Op::MethodCall
             | Op::NamedMethodCall
             | Op::Match
@@ -447,11 +454,14 @@ impl Core<'_> {
         match (op, operand.leaf) {
             (Op::Not, Leaf::Bool) => Ok(boolean),
             (Op::Not, Leaf::Error) => self.keep(node, boolean),
-            (Op::Not, Leaf::Placeholder | Leaf::Empty | Leaf::Int | Leaf::Float) => {
+            (
+                Op::Not,
+                Leaf::Placeholder | Leaf::Empty | Leaf::Int | Leaf::Float | Leaf::Enum(_),
+            ) => {
                 self.draw_at(Code::OperandType, node, "`not` takes a `bool`")?;
                 self.keep(node, boolean)
             }
-            (Op::Neg, Leaf::Bool) => {
+            (Op::Neg, Leaf::Bool | Leaf::Enum(_)) => {
                 self.draw_at(Code::OperandType, node, "unary `-` takes a number")?;
                 Ok(Fact::ERROR)
             }
@@ -531,7 +541,7 @@ impl Core<'_> {
         }
         match operand.leaf {
             Leaf::Error => self.keep(node, converted),
-            Leaf::Bool => {
+            Leaf::Bool | Leaf::Enum(_) => {
                 self.draw_at(
                     Code::ConversionType,
                     node,
@@ -634,7 +644,13 @@ impl Core<'_> {
                 Fact::scalar(Leaf::Bool)
             }
             Op::Is | Op::IsNot => {
-                let comparable = (numeric(x) && numeric(y)) || (logical(x) && logical(y));
+                let enums = match (x, y) {
+                    (Leaf::Enum(Some(left)), Leaf::Enum(Some(right))) => left == right,
+                    (Leaf::Enum(Some(_)), Leaf::Enum(None))
+                    | (Leaf::Enum(None), Leaf::Enum(Some(_))) => true,
+                    _ => false,
+                };
+                let comparable = (numeric(x) && numeric(y)) || (logical(x) && logical(y)) || enums;
                 if !comparable {
                     self.operand_type(node, op)?;
                     return self.keep(node, kept_bool);
@@ -1146,6 +1162,10 @@ pub(crate) fn unify(a: Leaf, b: Leaf) -> Option<Leaf> {
         (Leaf::Empty, other) | (other, Leaf::Empty) => Some(other),
         (Leaf::Bool, Leaf::Bool) => Some(Leaf::Bool),
         (Leaf::Bool, _) | (_, Leaf::Bool) => None,
+        (Leaf::Enum(Some(x)), Leaf::Enum(Some(y))) => (x == y).then_some(a),
+        (Leaf::Enum(Some(_)), Leaf::Enum(None)) => Some(a),
+        (Leaf::Enum(None), Leaf::Enum(_)) => Some(b),
+        (Leaf::Enum(_), _) | (_, Leaf::Enum(_)) => None,
         (x, y) => Some(numeric_leaf(x, y)),
     }
 }

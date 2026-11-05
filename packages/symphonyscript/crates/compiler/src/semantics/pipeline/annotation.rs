@@ -605,7 +605,7 @@ pub(crate) fn refusal(fact: &Fact, ty: EvalTy) -> Refusal {
         Leaf::Placeholder | Leaf::Error => Refusal::Silent,
         _ if !fact.dims.is_empty() => Refusal::Shape,
         Leaf::Bool if ty == EvalTy::Bool => Refusal::Kept,
-        Leaf::Bool => Refusal::Type,
+        Leaf::Bool | Leaf::Enum(_) => Refusal::Type,
         _ if ty == EvalTy::Bool => Refusal::Type,
         Leaf::Float if int_range(ty).is_some() => Refusal::Type,
         _ if fact.fixed.is_some_and(|own| !widens(own, ty)) => Refusal::Type,
