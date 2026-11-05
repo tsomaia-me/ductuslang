@@ -911,10 +911,23 @@ fn nested_folds_reading_a_cell_draw_nothing_beside_spec_examples_446() {
     let old = Compiler::new(&vocabulary())
         .expect("the vocabulary compiles")
         .on_the_old_engine();
-    for text in SPEC_FOLD_TWINS {
+    let annotated = SPEC_FOLD_TWINS.iter().map(|text| {
+        text.replace("state readings([1, 2])", "state readings([1, 2]): i32[..4]")
+            .replace(
+                "state readings([1, 2, 3])",
+                "state readings([1, 2, 3]): i32[..4]",
+            )
+            .replace("state hh([1])", "state hh([1]): i32[..1]")
+    });
+    let texts: Vec<String> = SPEC_FOLD_TWINS
+        .iter()
+        .map(|text| (*text).to_string())
+        .chain(annotated)
+        .collect();
+    for text in &texts {
         let sources = [Source {
             path: "ledger.sym".into(),
-            text: text.into(),
+            text: text.clone(),
         }];
         let found = new
             .checked_by_new_core(&sources)
@@ -1159,6 +1172,63 @@ fn stress_a_join_chain_onto_a_variable_array_cell_costs_time_and_memory_linear_i
         "500 state",
         [4_000, 8_000, 16_000],
         variable_join_chain("state"),
+        &none,
+        Timing::Judged,
+    ));
+}
+
+fn ring_and_chain_of_array_history_reads(n: usize) -> String {
+    let mut text = format!(
+        "state x(1)\nstate r0([0]) = (r{}.past(1) + [x])[^4..]\nstate c0([0]) = (c0.past(1) + [x])[^4..]\n",
+        n - 1
+    );
+    for at in 1..n {
+        text.push_str(&format!(
+            "state r{at} = (r{}.past(1, [0]) + [1])[^4..]\n",
+            at - 1
+        ));
+        text.push_str(&format!(
+            "state c{at}([0]) = (c{at}.past(1) + c{})[^4..]\n",
+            at - 1
+        ));
+    }
+    text.push_str(&read_of(&format!("r{}[0] + c{}[0]", n - 1, n - 1)));
+    text
+}
+
+#[test]
+fn a_ring_and_a_chain_of_cells_holding_variable_arrays_and_reading_one_anothers_history_draw_what_the_old_engine_draws()
+ {
+    let vocabulary = vocabulary();
+    let old = Compiler::new(&vocabulary)
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
+    let new = Compiler::new(&vocabulary).expect("the vocabulary compiles");
+    for n in [2, 3, 5] {
+        let text = ring_and_chain_of_array_history_reads(n);
+        let sources = [crate::syntax::front_end_goldens::source(&text)];
+        let found = new
+            .checked_by_new_core(&sources)
+            .unwrap_or_else(|| panic!("the new core takes {text}"));
+        assert_eq!(found, old.check(&sources), "{text}");
+    }
+    assert_none(&ledger_failures(
+        "array cell groups",
+        [25, 50, 100],
+        ring_and_chain_of_array_history_reads,
+        &none,
+        Timing::Printed,
+    ));
+}
+
+#[test]
+#[ignore = "stress"]
+fn stress_a_ring_and_a_chain_of_cells_holding_variable_arrays_settle_in_time_and_memory_linear_in_the_cells()
+ {
+    assert_none(&ledger_failures(
+        "array cell groups",
+        [1_000, 2_000, 4_000],
+        ring_and_chain_of_array_history_reads,
         &none,
         Timing::Judged,
     ));
