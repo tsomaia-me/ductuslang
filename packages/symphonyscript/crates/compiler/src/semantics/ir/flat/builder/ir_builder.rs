@@ -24,6 +24,7 @@ pub(super) struct IrBuilder<'p, 'i> {
     pub parsed: &'p Parsed,
     pub vocabulary: &'p Vocabulary,
     pub faults: Faults,
+    line_faults: Vec<(u32, u32)>,
     stack: Vec<(u32, Value, Marks)>,
     pub staged: Vec<(u32, Value)>,
     pub errs: Vec<(u32, u32)>,
@@ -57,6 +58,7 @@ pub(crate) fn build_flat_file(
             parsed,
             vocabulary,
             faults: Faults::new(&parsed.diagnostics, &parsed.detached, root.syntax()),
+            line_faults: line_faults(parsed),
             stack: Vec::new(),
             staged: Vec::new(),
             errs: Vec::new(),
@@ -387,6 +389,16 @@ impl<'p> IrBuilder<'p, '_> {
         self.faults.touch(range)
     }
 
+    pub fn fault_reach(&self, last: u32) -> u32 {
+        let count = self
+            .line_faults
+            .partition_point(|(start, _)| *start <= last);
+        count
+            .checked_sub(1)
+            .and_then(|at| self.line_faults.get(at))
+            .map_or(0, |(_, reach)| *reach)
+    }
+
     pub fn first_in(&self, range: Range<u32>) -> Option<u32> {
         self.faults.first_in(range)
     }
@@ -411,4 +423,37 @@ impl<'p> IrBuilder<'p, '_> {
 pub(super) fn span(node: &NodeView<'_>) -> (u32, u32) {
     let range = node.range();
     (range.start, range.end)
+}
+
+fn line_faults(parsed: &Parsed) -> Vec<(u32, u32)> {
+    let mut faults: Vec<(u32, u32)> = parsed
+        .diagnostics
+        .iter()
+        .map(|diagnostic| {
+            let range = &diagnostic.span.range;
+            if (parsed.detached.contains(range) || parsed.at_layout.contains(range))
+                && let Some(break_at) = break_before(parsed.text(), range.start)
+            {
+                return (break_at, break_at.saturating_add(1));
+            }
+            (range.start, range.end.max(range.start.saturating_add(1)))
+        })
+        .collect();
+    faults.sort_unstable();
+    let mut furthest = 0;
+    for fault in &mut faults {
+        furthest = furthest.max(fault.1);
+        fault.1 = furthest;
+    }
+    faults
+}
+
+fn break_before(text: &str, start: u32) -> Option<u32> {
+    let before = text.get(..start as usize)?;
+    let break_at = before.rfind('\n')?;
+    before
+        .get(break_at + 1..)
+        .is_some_and(|indent| indent.chars().all(char::is_whitespace))
+        .then(|| u32::try_from(break_at).ok())
+        .flatten()
 }

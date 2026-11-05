@@ -9,4 +9,4 @@ pub(crate) enum Slice {
     Pending,
 }
 
-pub(crate) const LANDED: Slice = Slice::Three;
+pub(crate) const LANDED: Slice = Slice::Four;

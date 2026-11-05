@@ -23,3 +23,39 @@ fn a_failing_row_prints_as_one_line_holding_its_program_and_its_whole_diagnostic
         r#"pinned-row {"program": "let a = \"\t\"\n", "diagnostics": [{"counter": "HashProbe", "counts": [1, 2, 4]}]}"#
     );
 }
+
+fn pinned_failures() -> Vec<String> {
+    vec![
+        "pinned-row {\"program\": \"a\"}\nfirst".to_string(),
+        "pinned-row {\"program\": \"b\"}\nsecond".to_string(),
+    ]
+}
+
+#[test]
+fn a_row_failing_exactly_its_pinned_set_passes_in_any_order() {
+    crate::pinned_row::assert_pinned_failures(
+        &pinned_failures(),
+        "pinned-row {\"program\": \"b\"}\npinned-row {\"program\": \"a\"}\n",
+        488,
+    );
+}
+
+#[test]
+#[should_panic(expected = "the failing set differs from the 1 rows ledger 488 pins: 2 fail")]
+fn a_row_failing_one_program_beyond_its_pinned_set_fails() {
+    crate::pinned_row::assert_pinned_failures(
+        &pinned_failures(),
+        "pinned-row {\"program\": \"a\"}\n",
+        488,
+    );
+}
+
+#[test]
+#[should_panic(expected = "the failing set differs from the 3 rows ledger 488 pins: 2 fail")]
+fn a_row_failing_one_program_fewer_than_its_pinned_set_fails() {
+    crate::pinned_row::assert_pinned_failures(
+        &pinned_failures(),
+        "pinned-row {\"program\": \"a\"}\npinned-row {\"program\": \"b\"}\npinned-row {\"program\": \"c\"}\n",
+        488,
+    );
+}

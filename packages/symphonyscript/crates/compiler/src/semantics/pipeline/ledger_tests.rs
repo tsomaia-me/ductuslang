@@ -15,7 +15,7 @@ struct Run {
     walks: u64,
 }
 
-const CORE_WALKS: [CountedWalk; 20] = [
+const CORE_WALKS: [CountedWalk; 21] = [
     CountedWalk::BindLookup,
     CountedWalk::CoreExpandRow,
     CountedWalk::SigNode,
@@ -36,6 +36,7 @@ const CORE_WALKS: [CountedWalk; 20] = [
     CountedWalk::CoreLoopBody,
     CountedWalk::CorePatternUse,
     CountedWalk::CorePatternBody,
+    CountedWalk::CoreInitRead,
 ];
 
 fn walked() -> u64 {
@@ -134,6 +135,19 @@ fn cells_over_one_let(n: usize) -> String {
         text.push_str(&format!("state c{at} = big + x\n"));
     }
     text.push_str(&read_of(&format!("c{}", n - 1)));
+    text
+}
+
+fn ring_and_chain_of_history_reads(n: usize) -> String {
+    let mut text = format!(
+        "state x(1)\nstate r0(0) = r{}.past(1) + x\nstate c0(0) = c0.past(1) + x\n",
+        n - 1
+    );
+    for at in 1..n {
+        text.push_str(&format!("state r{at} = r{}.past(1) + 1\n", at - 1));
+        text.push_str(&format!("state c{at}(0) = c{at}.past(1) + c{}\n", at - 1));
+    }
+    text.push_str(&read_of(&format!("r{} + c{}", n - 1, n - 1)));
     text
 }
 
@@ -1015,4 +1029,28 @@ fn stress_nested_and_named_pattern_uses_cost_walks_and_peak_bytes_linear_in_the_
         Timing::Judged,
     ));
     assert_eq!(CountedWalk::CorePatternBody.steps() - bodies, once * 3 * 3);
+}
+
+#[test]
+fn a_ring_and_a_chain_of_cells_reading_one_anothers_history_draw_nothing() {
+    assert_none(&ledger_failures(
+        "cell groups",
+        [25, 50, 100],
+        ring_and_chain_of_history_reads,
+        &none,
+        Timing::Printed,
+    ));
+}
+
+#[test]
+#[ignore = "stress"]
+fn stress_a_ring_and_a_chain_of_cells_reading_one_anothers_history_settle_in_time_and_memory_linear_in_the_cells()
+ {
+    assert_none(&ledger_failures(
+        "cell groups",
+        [1_000, 2_000, 4_000],
+        ring_and_chain_of_history_reads,
+        &none,
+        Timing::Judged,
+    ));
 }

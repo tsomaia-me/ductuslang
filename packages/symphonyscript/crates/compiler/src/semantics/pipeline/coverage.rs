@@ -344,7 +344,7 @@ pub(crate) fn reason_slice(reason: Reason) -> Slice {
         }
         Reason::StringAttribute => Slice::DefaultFlip,
         Reason::PatternOrWirePlacement => Slice::Pending,
-        Reason::CellGroup => Slice::Four,
+        Reason::CellGroup => Slice::Pending,
         Reason::FunctionValue | Reason::Recursion => Slice::DefaultFlip,
         Reason::LocalCycle | Reason::LocalClash => Slice::Pending,
         Reason::AnnotatedCall => Slice::Pending,
@@ -362,7 +362,7 @@ pub(crate) fn declines(reason: Reason) -> bool {
 
 fn plain_cell(ir: &FlatIr, rec: &CellRec) -> bool {
     let host_fed = rec.rule == NONE && rec.init != NONE;
-    let derived = rec.rule != NONE && rec.init == NONE;
+    let derived = rec.rule != NONE;
     (host_fed || derived)
         && rec.clock.0 == rec.clock.1
         && rec.capacity.is_none()

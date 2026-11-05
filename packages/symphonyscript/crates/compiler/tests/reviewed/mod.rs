@@ -394,22 +394,6 @@ pub const CARRIED_TO_R4B: &[Carried] = &[
         ],
     ),
     (
-        "Clip c:\n    Note/((q or i32(true))[q[[1, 2][5]..]])\n\nlet q = [1]\n",
-        &[
-            ("index-type", "(q or i32(true))[q[[1, 2][5]..]]"),
-            ("array-operand", "q or i32(true)"),
-            ("conversion-type", "i32(true)"),
-            ("index-out-of-range", "5"),
-        ],
-        &[
-            ("index-type", "(q or i32(true))[q[[1, 2][5]..]]"),
-            ("array-operand", "q or i32(true)"),
-            ("not-an-array", "q or i32(true)"),
-            ("conversion-type", "i32(true)"),
-            ("index-out-of-range", "5"),
-        ],
-    ),
-    (
         "Clip c:\n    Note/(if (if [1, 2] then q else 1) then ([1, 2][5] or true) else (if [1, 2] then 1 else [1, 2]))\n\nstate q(0): i32\n",
         &[
             ("condition-type", "if [1, 2] then q else 1"),
@@ -975,22 +959,6 @@ pub const CARRIED_TO_R4B: &[Carried] = &[
         &[("conversion-type", "i32(true)"), ("operand-type", "q * q")],
     ),
     (
-        "let a: i32 = (q or i32(true))[q[[1, 2][5]..]]\nClip c:\n    Note/(a)\n\nlet q = [1]\n",
-        &[
-            ("index-type", "(q or i32(true))[q[[1, 2][5]..]]"),
-            ("array-operand", "q or i32(true)"),
-            ("conversion-type", "i32(true)"),
-            ("index-out-of-range", "5"),
-        ],
-        &[
-            ("index-type", "(q or i32(true))[q[[1, 2][5]..]]"),
-            ("array-operand", "q or i32(true)"),
-            ("not-an-array", "q or i32(true)"),
-            ("conversion-type", "i32(true)"),
-            ("index-out-of-range", "5"),
-        ],
-    ),
-    (
         "let a: i32 = if (if [1, 2] then q else 1) then ([1, 2][5] or true) else (if [1, 2] then 1 else [1, 2])\nClip c:\n    Note/(a)\n\nstate q(0): i32\n",
         &[
             ("reactive-let", "a"),
@@ -1342,38 +1310,6 @@ pub const CARRIED_TO_R4B: &[Carried] = &[
             ("conversion-type", "i32(true)"),
             ("operand-type", "i32(true) and i32(true)"),
             ("conversion-type", "i32(true)"),
-        ],
-    ),
-    (
-        "Clip c:\n    Note | velocity=((q or i32(true))[q[[1, 2][5]..]])\n\nlet q = [1]\n",
-        &[
-            ("index-type", "(q or i32(true))[q[[1, 2][5]..]]"),
-            ("array-operand", "q or i32(true)"),
-            ("conversion-type", "i32(true)"),
-            ("index-out-of-range", "5"),
-        ],
-        &[
-            ("index-type", "(q or i32(true))[q[[1, 2][5]..]]"),
-            ("array-operand", "q or i32(true)"),
-            ("not-an-array", "q or i32(true)"),
-            ("conversion-type", "i32(true)"),
-            ("index-out-of-range", "5"),
-        ],
-    ),
-    (
-        "Clip c:\n    Note/(a)\nlet a: i32 = (q or i32(true))[q[[1, 2][5]..]]\n\nlet q = [1]\n",
-        &[
-            ("index-type", "(q or i32(true))[q[[1, 2][5]..]]"),
-            ("array-operand", "q or i32(true)"),
-            ("conversion-type", "i32(true)"),
-            ("index-out-of-range", "5"),
-        ],
-        &[
-            ("index-type", "(q or i32(true))[q[[1, 2][5]..]]"),
-            ("array-operand", "q or i32(true)"),
-            ("not-an-array", "q or i32(true)"),
-            ("conversion-type", "i32(true)"),
-            ("index-out-of-range", "5"),
         ],
     ),
     (
@@ -2377,6 +2313,7 @@ pub const CARRIED_TO_R4B: &[Carried] = &[
             ("array-operand", "[1, 2] or [1, 2][5]"),
             ("index-out-of-range", "5"),
             ("index-type", "[1, 2][[1, 2]..]"),
+            ("not-an-array", "[1, 2] or [1, 2][5]"),
         ],
         &[
             ("array-operand", "[1, 2] or [1, 2][5]"),
@@ -3453,6 +3390,7 @@ pub const CARRIED_TO_R4B: &[Carried] = &[
             ("array-operand", "[1, 2] or [1, 2][5]"),
             ("index-out-of-range", "5"),
             ("index-type", "[1, 2][[1, 2]..]"),
+            ("not-an-array", "[1, 2] or [1, 2][5]"),
         ],
         &[
             ("array-operand", "[1, 2] or [1, 2][5]"),
@@ -4452,11 +4390,26 @@ fn line_fault(code: &str) -> bool {
             "unknown-suffix",
             "prefixed-suffix",
             "float-type-suffix",
+            "float-digits",
             "semicolon",
             "unterminated-string",
             "invalid-identifier",
+            "invalid-escape",
             "unexpected-indent",
             "dedent-mismatch",
+            "tab-indentation",
+            "clause-column",
+            "misplaced-caret",
+            "misplaced-underscore",
+            "misplaced-wire",
+            "integer-too-large",
+            "chained-comparison",
+            "mixed-arguments",
+            "match-position",
+            "inline-placement",
+            "top-level-wire",
+            "unparenthesized-for",
+            "unparenthesized-if",
         ]
         .contains(&code)
 }
@@ -4519,13 +4472,73 @@ fn path_beside_an_unknown_attribute(seen: &Seen<'_>, change: Change, at: &Drawn)
 
 fn faulty_line(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
     let line = seen.line(at.1);
+    let nameless = (seen.before(at).is_empty() || seen.before(at).ends_with('\n'))
+        && seen.text(at).starts_with("let ");
     change == Change::Removed
         && at.0 == "reactive-let"
-        && top_level_let_name(seen, at)
-        && seen
-            .old
-            .iter()
-            .any(|drawn| line_fault(&drawn.0) && seen.line(drawn.1) == line)
+        && (top_level_let_name(seen, at) || nameless)
+        && seen.old.iter().any(|drawn| {
+            line_fault(&drawn.0)
+                && seen.line(drawn.1) <= line
+                && line <= seen.line(drawn.2.max(drawn.1 + 1) - 1)
+        })
+}
+
+fn reactive_let_history_target(seen: &Seen<'_>, at: &Drawn) -> bool {
+    let text = seen.text(at);
+    let Some((name, _)) = text.split_once('.') else {
+        return false;
+    };
+    at.0 == "history-target"
+        && (text.ends_with(".stepped") || text.contains(".past("))
+        && seen.new.iter().any(|drawn| {
+            drawn.0 == "reactive-let" && top_level_let_name(seen, drawn) && seen.text(drawn) == name
+        })
+}
+
+fn history_of_a_reactive_let(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
+    match change {
+        Change::Added => reactive_let_history_target(seen, at),
+        Change::Removed => {
+            matches!(
+                at.0.as_str(),
+                "float-to-integer" | "type-mismatch" | "does-not-fit" | "integer-cell"
+            ) && seen
+                .new
+                .iter()
+                .any(|drawn| reactive_let_history_target(seen, drawn))
+        }
+        Change::Restated => false,
+    }
+}
+
+fn host_fed_init(seen: &Seen<'_>, at: &Drawn) -> bool {
+    let line = seen.before(at).rsplit('\n').next().unwrap_or_default();
+    at.0 == "reactive-initializer" && line.starts_with("state ") && line.ends_with('(')
+}
+
+fn history_init(seen: &Seen<'_>, at: &Drawn) -> bool {
+    host_fed_init(seen, at)
+        && (seen.text(at).contains(".past(") || seen.text(at).contains(".stepped"))
+}
+
+fn cycle_through_history_gone(seen: &Seen<'_>) -> bool {
+    seen.old.iter().any(|drawn| drawn.0 == "declaration-cycle")
+        && !seen.new.iter().any(|drawn| drawn.0 == "declaration-cycle")
+        && seen.new.iter().any(|drawn| history_init(seen, drawn))
+}
+
+fn host_fed_init_reading_history(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
+    match change {
+        Change::Added => host_fed_init(seen, at) && cycle_through_history_gone(seen),
+        Change::Removed => {
+            let name = seen.text(at);
+            at.0 == "declaration-cycle"
+                && seen.program.contains(&format!("state {name}("))
+                && cycle_through_history_gone(seen)
+        }
+        Change::Restated => false,
+    }
 }
 
 fn beside_a_fault(seen: &Seen<'_>) -> bool {
@@ -5227,6 +5240,16 @@ pub const CLASSES: &[Class] = &[
         ledger: "455",
         rule: "a let declared on a line holding a syntax fault is a placeholder and draws no reactive-let",
         explains: faulty_line,
+    },
+    Class {
+        ledger: "487",
+        rule: "a history read of a top-level let reading a cell draws history-target at the read beside the let's reactive-let, as the program with the let repaired to a compile-time value does, and the read is a placeholder, so the faults the old engine drew from the let's type at its readers are gone",
+        explains: history_of_a_reactive_let,
+    },
+    Class {
+        ledger: "489",
+        rule: "a host-fed cell whose init reads a cell's history, its own or another host-fed cell's, draws reactive-initializer at the init (SPEC §6.1: the init is a compile-time value) and no declaration-cycle (SPEC §6.6: a history read forms no cycle), where the old engine draws declaration-cycle through the history read",
+        explains: host_fed_init_reading_history,
     },
     Class {
         ledger: "476",

@@ -125,3 +125,25 @@ pub(crate) fn failed_example(program: &str, message: impl std::fmt::Display) -> 
         .unwrap_or_else(|failed| panic!("the example vocabulary compiles: {failed:?}"));
     failed_with(&compiler, program, message)
 }
+
+pub(crate) fn assert_pinned_failures(failures: &[String], pinned: &str, ledger: u32) {
+    let mut found: Vec<&str> = failures
+        .iter()
+        .map(|failure| failure.lines().next().unwrap_or_default())
+        .collect();
+    found.sort_unstable();
+    let mut expected: Vec<&str> = pinned.lines().filter(|line| !line.is_empty()).collect();
+    expected.sort_unstable();
+    for line in found.iter().filter(|line| !expected.contains(line)) {
+        println!("failing beyond the pin of ledger {ledger}: {line}");
+    }
+    for line in expected.iter().filter(|line| !found.contains(line)) {
+        println!("pinned by ledger {ledger} and no longer failing: {line}");
+    }
+    assert!(
+        found == expected,
+        "the failing set differs from the {} rows ledger {ledger} pins: {} fail",
+        expected.len(),
+        found.len()
+    );
+}

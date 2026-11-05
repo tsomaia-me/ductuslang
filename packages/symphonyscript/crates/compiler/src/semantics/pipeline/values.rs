@@ -229,6 +229,8 @@ impl Core<'_> {
                 }
                 None => vec![(a, ty), (b, self.integral(b)?)],
             },
+            Op::Past if self.is_own_history(node) => Vec::new(),
+            Op::Past => vec![(a, ty)],
             Op::Slice => {
                 let mut operands = vec![(a, ty)];
                 for bound in self.bounds(node)? {
@@ -248,7 +250,6 @@ impl Core<'_> {
             | Op::Field
             | Op::MethodCall
             | Op::NamedMethodCall
-            | Op::Past
             | Op::Stepped
             | Op::Match
             | Op::TyScalar
@@ -290,9 +291,15 @@ impl Core<'_> {
         let mut through = Vec::with_capacity(operands.len());
         for (operand, _) in &operands {
             through.push(match op {
-                Op::Neg | Op::Add | Op::Sub | Op::Mul | Op::Rem | Op::Pow | Op::Div | Op::Array => {
-                    true
-                }
+                Op::Neg
+                | Op::Add
+                | Op::Sub
+                | Op::Mul
+                | Op::Rem
+                | Op::Pow
+                | Op::Div
+                | Op::Array
+                | Op::Past => true,
                 Op::IntDiv => integer_flow,
                 Op::Index | Op::IndexFromEnd | Op::Slice => !picked && *operand == a,
                 Op::Call | Op::NamedCall => self.fact(*operand)?.fixed.is_none(),
@@ -306,7 +313,6 @@ impl Core<'_> {
                 | Op::Field
                 | Op::MethodCall
                 | Op::NamedMethodCall
-                | Op::Past
                 | Op::Stepped
                 | Op::Match
                 | Op::TyScalar
@@ -400,7 +406,9 @@ impl Core<'_> {
     pub fn evaluate(&mut self, root: u32, ty: EvalTy) -> Stage<CoreValue> {
         let inst = self.inst;
         let chain = self.eval_chain.clone();
+        let from = self.init_reads.len();
         let outcome = self.evaluate_frames(root, ty);
+        self.flush_init_reads(from)?;
         self.inst = inst;
         self.eval_chain = chain;
         outcome
@@ -475,6 +483,7 @@ impl Core<'_> {
                 let value = frame.values.pop().ok_or(Internal::missed("value stack"))?;
                 let (owner, frame_ty) = (frame.owner, frame.ty);
                 let called = frame.call.is_some();
+                let (call_node, body) = (frame.call.as_ref().map(|(call, _)| *call), frame.inst);
                 if let Some(owner) = owner {
                     open.remove(&owner);
                 }
@@ -515,6 +524,12 @@ impl Core<'_> {
                         }
                     }
                     None if called => {
+                        if let Some(call) = call_node
+                            && matches!(self.ir.node(call)?.0, Op::Call | Op::NamedCall)
+                        {
+                            let root = self.body_value(body)?;
+                            self.return_init_read(call, root);
+                        }
                         self.eval_chain.pop();
                         self.end_recording(frames.len() + 1, &value);
                         if let Some(parent) = frames.last_mut() {
@@ -652,6 +667,19 @@ impl Core<'_> {
                                     })
                                     .and_then(|args| args.get(position as usize).cloned())
                                     .unwrap_or(Value::Error);
+                                let called = frames
+                                    .iter()
+                                    .rev()
+                                    .find(owns)
+                                    .and_then(|open| open.call.as_ref())
+                                    .map(|(call, _)| *call);
+                                if let Some(call) = called
+                                    && matches!(self.ir.node(call)?.0, Op::Call | Op::NamedCall)
+                                    && let Some(argument) =
+                                        self.arguments(call)?.get(position as usize).copied()
+                                {
+                                    self.bind_init_read(node, argument, node_ty);
+                                }
                                 let value = match self
                                     .loop_element(node, owner, position, node_ty, &value)?
                                 {
@@ -1149,6 +1177,7 @@ impl Core<'_> {
             Op::Index => {
                 let position = pop(stack)?;
                 let array = pop(stack)?;
+                self.step_init_read((node, a), &position, false);
                 self.runtime_outside((node, a, b), (&array, &position), I64Position::Index)?;
                 plan_op(
                     self,
@@ -1159,6 +1188,7 @@ impl Core<'_> {
             Op::IndexFromEnd => {
                 let offset = pop(stack)?;
                 let array = pop(stack)?;
+                self.step_init_read((node, a), &offset, true);
                 self.runtime_outside((node, a, b), (&array, &offset), I64Position::Offset)?;
                 if let (Value::Array(held), Value::Int(offset)) = (&array, offset) {
                     if i64::try_from(offset).is_err() {
@@ -1191,12 +1221,24 @@ impl Core<'_> {
                 let values = stack.split_off(start);
                 let lower = (lower != NONE).then_some((lower, flags & 1 != 0));
                 let upper = (upper != NONE).then_some((upper, flags & 2 != 0));
+                let mut bounds = values.iter().skip(1);
+                let low = lower.and_then(|(_, end)| bounds.next().map(|at| (at, end)));
+                let high = upper.and_then(|(_, end)| bounds.next().map(|at| (at, end)));
+                self.slice_init_read((node, a), low, high);
                 plan_op(
                     self,
                     Operator::Slice(a, lower, upper),
                     Operands::Many(values),
                 )?
             }
+            Op::Past => {
+                if !self.is_own_history(node) {
+                    pop(stack)?;
+                    self.pass_init_read(node, a);
+                }
+                Value::Error
+            }
+            Op::Stepped => Value::Error,
             Op::Field => match self.bare_cell_read(node)? {
                 Some(at) => match self.read_cell(at, node, ty, unflowed)? {
                     Ok(value) => value,
@@ -1211,8 +1253,6 @@ impl Core<'_> {
             | Op::NamedCall
             | Op::MethodCall
             | Op::NamedMethodCall
-            | Op::Past
-            | Op::Stepped
             | Op::Match
             | Op::For
             | Op::TyScalar
@@ -1236,10 +1276,11 @@ impl Core<'_> {
             && slot.is_none()
         {
             *slot = Some((ty, unflowed));
+            self.read_log.push(at);
         }
         if !self.owning
             && self.cell_annotation_ty(at)?.is_none()
-            && let Some(range) = int_range(ty)
+            && int_range(ty).is_some()
             && let Some(rec) = self.ir.cells.get(at as usize).copied()
             && rec.rule == NONE
         {
@@ -1247,19 +1288,15 @@ impl Core<'_> {
                 Ok(init) => init,
                 Err(declined) => return Ok(Err(declined)),
             };
-            if let Value::Int(init) = init
-                && !range.contains(&init)
-            {
-                let name = self.ir.binder(rec.binder)?.name;
-                let entry = self.ir.name(name).ok_or(Internal::missed("IR name"))?;
-                let text = self.ir.symbols.text(entry.sym).to_string();
-                self.draw_at(
-                    Code::DoesNotFit,
-                    node,
-                    format!(
-                        "the initial value of `{text}` does not fit the type this use reads it in"
-                    ),
-                )?;
+            match init {
+                Value::Int(_) | Value::Array(_) => self.hold_init_read(node, at, init, ty),
+                Value::F32(_)
+                | Value::F64(_)
+                | Value::Bool(_)
+                | Value::Enum(..)
+                | Value::Str(_)
+                | Value::Node(_)
+                | Value::Error => {}
             }
         }
         let side = match class(ty) {
@@ -1680,7 +1717,8 @@ impl Core<'_> {
                     }
                 }
                 Op::Name => {
-                    if let DeclRef::Let(at) = self.bound(node)?
+                    if !self.is_history_target(node)
+                        && let DeclRef::Let(at) = self.bound(node)?
                         && !self.cyclic.get(at as usize).copied().unwrap_or(false)
                         && let Some(owned) = self.owned.get_mut(at as usize)
                         && !*owned

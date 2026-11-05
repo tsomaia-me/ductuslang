@@ -62,6 +62,7 @@ impl<'p> IrBuilder<'p, '_> {
             hi: local.hi,
             is_match: local.is_match,
             faulty_line: false,
+            line_fault: false,
         });
         index(self.ir.lets.len() - 1)
     }
@@ -134,6 +135,22 @@ impl<'p> IrBuilder<'p, '_> {
         self.first_in(start + 1..line_end(view)).is_some()
     }
 
+    fn line_fault(&self, view: &NodeView<'_>) -> bool {
+        let text = self.parsed.text();
+        let start = view.range().start as usize;
+        let first = text
+            .get(..start)
+            .and_then(|before| before.rfind('\n'))
+            .map_or(0, |at| at + 1);
+        let end = line_end(view) as usize;
+        let last = text
+            .get(end..)
+            .and_then(|after| after.find('\n'))
+            .map_or(text.len(), |at| end + at);
+        self.fault_reach(u32::try_from(last).unwrap_or(u32::MAX))
+            > u32::try_from(first).unwrap_or(u32::MAX)
+    }
+
     pub(super) fn let_decl(
         &mut self,
         view: NodeView<'p>,
@@ -158,6 +175,7 @@ impl<'p> IrBuilder<'p, '_> {
         };
         let ty = node.ty().and_then(|ty| self.value_at(base, ty.syntax()));
         let ty = self.commit_type(ty);
+        let line_fault = self.line_fault(&view);
         let faulty_line = self.faulty_line(&view);
         let binder = self.binder(name, BinderKind::Let, ty, whole);
         self.ir.lets.push(LetRec {
@@ -168,6 +186,7 @@ impl<'p> IrBuilder<'p, '_> {
             hi: whole.1,
             is_match,
             faulty_line,
+            line_fault,
         });
         Some(Value::Top(TopRec::Let(index(self.ir.lets.len() - 1))))
     }

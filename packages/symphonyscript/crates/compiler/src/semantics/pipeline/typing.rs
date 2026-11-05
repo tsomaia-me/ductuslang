@@ -62,6 +62,11 @@ impl Core<'_> {
                 }
             }
             Op::If => out.extend([a, b, c]),
+            Op::Past => {
+                out.push(a);
+                out.extend([b, c].into_iter().filter(|at| *at != NONE));
+            }
+            Op::Stepped => out.push(a),
             Op::Call | Op::NamedCall => out.extend(self.arguments(node)?),
             Op::For => out.extend(self.fold_operands(node)?),
             Op::Array => {
@@ -79,8 +84,6 @@ impl Core<'_> {
             | Op::Field
             | Op::MethodCall
             | Op::NamedMethodCall
-            | Op::Past
-            | Op::Stepped
             | Op::Match
             | Op::TyScalar
             | Op::TyName
@@ -120,6 +123,9 @@ impl Core<'_> {
     fn read_lets(&self, root: u32) -> Result<Vec<u32>, Internal> {
         let mut reads = Vec::new();
         for node in self.postorder(root)? {
+            if self.is_history_target(node) {
+                continue;
+            }
             if let DeclRef::Let(at) = self.bound(node)?
                 && self
                     .ir
@@ -315,6 +321,7 @@ impl Core<'_> {
             Op::Int => Fact::scalar(Leaf::Int),
             Op::Float => Fact::scalar(Leaf::Float),
             Op::Bool => Fact::scalar(Leaf::Bool),
+            Op::Name if self.is_history_target(node) => self.history_target_fact(node)?,
             Op::Name => match self.bound(node)? {
                 DeclRef::Let(at) => {
                     let root = self.let_root(at)?;
@@ -380,6 +387,14 @@ impl Core<'_> {
                 Ok(fact) => fact,
                 Err(declined) => return Ok(Err(declined)),
             },
+            Op::Past => match self.history_fact(node, a, b, c)? {
+                Ok(fact) => fact,
+                Err(declined) => return Ok(Err(declined)),
+            },
+            Op::Stepped => match self.stepped_fact(node, a)? {
+                Ok(fact) => fact,
+                Err(declined) => return Ok(Err(declined)),
+            },
             Op::Field => match self.path_read(node)?.cloned() {
                 Some(read) if read.cyclic => Fact::PLACEHOLDER,
                 Some(read) => {
@@ -405,8 +420,6 @@ impl Core<'_> {
             | Op::Variant
             | Op::MethodCall
             | Op::NamedMethodCall
-            | Op::Past
-            | Op::Stepped
             | Op::Match
             | Op::TyScalar
             | Op::TyName
@@ -932,74 +945,6 @@ impl Core<'_> {
         ) && !self.holds_a_missing_operand(node)?)
     }
 
-    fn may_hold_array(&self, node: u32) -> Result<bool, Internal> {
-        let mut stack = vec![node];
-        while let Some(node) = stack.pop() {
-            let (op, a, b, c) = self.ir.node(node)?;
-            match op {
-                Op::Name => {
-                    if self.fact(node)?.leaf == Leaf::Placeholder {
-                        return Ok(true);
-                    }
-                }
-                Op::If => {
-                    let condition = self.fact(a)?;
-                    if condition.leaf == Leaf::Bool && condition.dims.is_empty() {
-                        stack.push(b);
-                        stack.push(c);
-                    }
-                }
-                Op::Add
-                | Op::Index
-                | Op::IndexFromEnd
-                | Op::Slice
-                | Op::Call
-                | Op::NamedCall
-                | Op::For => {
-                    if self.holds_name_placeholder(node)? {
-                        return Ok(true);
-                    }
-                }
-                Op::Int
-                | Op::Float
-                | Op::Bool
-                | Op::Str
-                | Op::Variant
-                | Op::To
-                | Op::Field
-                | Op::MethodCall
-                | Op::NamedMethodCall
-                | Op::Past
-                | Op::Stepped
-                | Op::Match
-                | Op::Array
-                | Op::Neg
-                | Op::Not
-                | Op::Sub
-                | Op::Mul
-                | Op::Div
-                | Op::IntDiv
-                | Op::Rem
-                | Op::Pow
-                | Op::And
-                | Op::Or
-                | Op::Lt
-                | Op::Le
-                | Op::Gt
-                | Op::Ge
-                | Op::Is
-                | Op::IsNot
-                | Op::Convert
-                | Op::TyScalar
-                | Op::TyName
-                | Op::TyArray
-                | Op::TyVar
-                | Op::Bad => {}
-            }
-        }
-        Ok(false)
-    }
-
     fn named_placeholder(&self, node: u32, fact: &Fact) -> Result<bool, Internal> {
         let (op, _, _, _) = self.ir.node(node)?;
         Ok(fact.leaf == Leaf::Placeholder && op == Op::Name)
@@ -1014,6 +959,11 @@ impl Core<'_> {
                 node,
                 "an index is an integer, not an array",
             )?;
+            let known_base = !matches!(base.leaf, Leaf::Placeholder | Leaf::Error)
+                || (base.leaf == Leaf::Placeholder && self.bool_valued(a)?);
+            if base.dims.is_empty() && known_base && !self.named_placeholder(a, &base)? {
+                self.draw_at(Code::NotAnArray, a, "only an array is indexed")?;
+            }
             return Ok(Fact::PLACEHOLDER);
         }
         if self.named_placeholder(a, &base)? {
@@ -1022,10 +972,7 @@ impl Core<'_> {
         let known_base = !matches!(base.leaf, Leaf::Placeholder | Leaf::Error)
             || (base.leaf == Leaf::Placeholder && self.bool_valued(a)?);
         if base.dims.is_empty() && known_base {
-            let placeheld = index.leaf == Leaf::Placeholder && self.may_hold_array(b)?;
-            if !placeheld {
-                self.draw_at(Code::NotAnArray, a, "only an array is indexed")?;
-            }
+            self.draw_at(Code::NotAnArray, a, "only an array is indexed")?;
             return Ok(Fact::PLACEHOLDER);
         }
         let faulty_index = matches!(index.leaf, Leaf::Placeholder | Leaf::Error);

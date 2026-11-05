@@ -856,7 +856,10 @@ impl Core<'_> {
         }
         for local in 0..self.ir.op.len() {
             let node = self.ir.base + u32::try_from(local).unwrap_or(0);
-            if matches!(self.bind.get(local), Some(DeclRef::Fn(_))) && !callees.contains(&node) {
+            if matches!(self.bind.get(local), Some(DeclRef::Fn(_)))
+                && !callees.contains(&node)
+                && !self.is_history_target(node)
+            {
                 return Ok(true);
             }
         }
