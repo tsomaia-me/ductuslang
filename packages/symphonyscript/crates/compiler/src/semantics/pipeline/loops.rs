@@ -236,6 +236,19 @@ impl Core<'_> {
             return Err(Internal::missed("IR for block"));
         };
         let saved = self.enter_env(env);
+        for root in iterable_roots(rec.head) {
+            match self.reads_deferred(root) {
+                Ok(false) => {}
+                Ok(true) => {
+                    self.leave_env(saved);
+                    return Ok(Err(Declined(Reason::PatternUse)));
+                }
+                Err(internal) => {
+                    self.leave_env(saved);
+                    return Err(internal);
+                }
+            }
+        }
         let outcome = self.loop_head_in(item, rec, env);
         self.leave_env(saved);
         outcome
@@ -429,10 +442,18 @@ impl Core<'_> {
                             .is_some_and(|rec| rec.owner == NONE);
                         stack.push((self.let_root(at)?, through_let || top));
                     }
+                    DeclRef::Param(position) => {
+                        if self
+                            .param_fact(node, position)
+                            .is_ok_and(|(_, reactive)| reactive)
+                        {
+                            reached =
+                                reached.max(if through_let { THROUGH_A_LET } else { DIRECTLY });
+                        }
+                    }
                     DeclRef::None
                     | DeclRef::Instance(_)
                     | DeclRef::Duplicate
-                    | DeclRef::Param(_)
                     | DeclRef::Fn(_)
                     | DeclRef::Pattern(_) => {}
                 }

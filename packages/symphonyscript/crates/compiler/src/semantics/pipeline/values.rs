@@ -377,6 +377,26 @@ impl Core<'_> {
         })
     }
 
+    fn read_in_env(&mut self, read: &super::attr_read::AttrRead) -> Stage<(CoreValue, EvalTy)> {
+        let env = self.read_env(read)?;
+        let saved = self.enter_env(env);
+        let chain = std::mem::take(&mut self.eval_chain);
+        let outcome = self.read_value(read);
+        self.eval_chain = chain;
+        self.leave_env(saved);
+        outcome
+    }
+
+    fn read_value(&mut self, read: &super::attr_read::AttrRead) -> Stage<(CoreValue, EvalTy)> {
+        let read_ty = match self.fact(read.root)?.fixed {
+            Some(own) if widens(own, read.ty) => evaluated_in(read.ty),
+            _ => flexible(read.ty),
+        };
+        Ok(self
+            .evaluate(read.root, read_ty)?
+            .map(|value| (value, read_ty)))
+    }
+
     pub fn evaluate(&mut self, root: u32, ty: EvalTy) -> Stage<CoreValue> {
         let inst = self.inst;
         let chain = self.eval_chain.clone();
@@ -525,7 +545,7 @@ impl Core<'_> {
                         continue;
                     }
                     if op == Op::Field
-                        && let Some(row) = self.path_rows.get(&node).copied()
+                        && let Some(row) = self.path_row(node)
                     {
                         let Some(frame) = frames.last_mut() else {
                             return Err(Internal::missed("evaluation frame"));
@@ -538,6 +558,12 @@ impl Core<'_> {
                         let plan = match read {
                             Some(read) if !read.cyclic && read.root == NONE => {
                                 Some((self.default_read(&read)?, NONE, EvalTy::Exact))
+                            }
+                            Some(read) if !read.cyclic && self.read_env(&read)? != NONE => {
+                                match self.read_in_env(&read)? {
+                                    Ok((value, read_ty)) => Some((value, NONE, read_ty)),
+                                    Err(declined) => return Ok(Err(declined)),
+                                }
                             }
                             Some(read) if !read.cyclic => {
                                 let read_ty = match self.fact(read.root)?.fixed {
@@ -1198,24 +1224,18 @@ impl Core<'_> {
     }
 
     fn read_cell(&mut self, at: u32, node: u32, ty: EvalTy, unflowed: bool) -> Stage<CoreValue> {
-        if self.fitting {
+        if self.fitting || self.is_cyclic_cell(at) {
             return Ok(Ok(Value::Error));
         }
         if let Some(rec) = self.ir.cells.get(at as usize).copied()
             && rec.rule != NONE
-            && let Some(done) = self
-                .rule_runs
+            && let Some(slot) = self
+                .rule_reads
                 .get_mut(at as usize)
-                .and_then(|runs| runs.get_mut(class(ty)))
-            && !*done
+                .and_then(|reads| reads.get_mut(class(ty)))
+            && slot.is_none()
         {
-            *done = true;
-            if unflowed {
-                self.unflowed.insert(rec.rule);
-            }
-            if let Err(declined) = self.evaluate(rec.rule, ty)? {
-                return Ok(Err(declined));
-            }
+            *slot = Some((ty, unflowed));
         }
         if !self.owning
             && self.cell_annotation_ty(at)?.is_none()

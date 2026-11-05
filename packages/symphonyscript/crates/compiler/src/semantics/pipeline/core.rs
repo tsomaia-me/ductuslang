@@ -56,7 +56,9 @@ pub(crate) struct Core<'a> {
     pub driving: bool,
     pub need: Option<Need>,
 
-    pub rule_runs: Vec<[bool; 7]>,
+    pub rule_reads: Vec<[Option<(EvalTy, bool)>; 7]>,
+    pub cell_order: Vec<u32>,
+    pub cell_cyclic: Vec<bool>,
     pub inst: u32,
     pub body_of: Vec<u32>,
     pub bodies: Vec<BodyInstance>,
@@ -118,7 +120,7 @@ pub(crate) struct Core<'a> {
     pub use_args: HashMap<u32, Vec<(u32, u32)>>,
     pub use_values: HashMap<(u32, u32, usize), CoreValue>,
     pub use_faults: HashMap<u32, Vec<Diagnostic>>,
-    pub default_faults: HashMap<u32, Vec<Diagnostic>>,
+    pub default_faults: HashMap<(u32, u32), Vec<Diagnostic>>,
     pub typing_now: u32,
     pub inst_row: HashMap<u32, (u32, u32)>,
     pub owner_insts: HashMap<u32, Vec<u32>>,
@@ -133,6 +135,22 @@ pub(crate) struct Core<'a> {
     pub loop_items: HashMap<(u32, u32, usize), CoreValue>,
     pub open_children: HashMap<u32, Vec<symphonyscript_core::NodeKind>>,
     pub loop_reads: BTreeMap<(u32, u32, usize), CoreValue>,
+    pub placeholder_uses: Vec<(u32, u32, Span, u32)>,
+    pub default_nodes: HashMap<u32, u32>,
+    pub default_insts: HashMap<(u32, u32), u32>,
+    pub deferred_uses: Vec<(u32, Vec<u32>)>,
+    pub deferred_params: HashSet<(u32, u32)>,
+    pub pattern_items: HashMap<u32, u32>,
+    pub own_reads: HashSet<u32>,
+    pub env_rows: HashMap<(u32, u32), u32>,
+    pub env_reads: BTreeMap<(u32, u32), u32>,
+    pub use_names: HashMap<(u32, u32), u32>,
+    pub use_index: Vec<(u32, u32, u32)>,
+    pub group_items: HashSet<u32>,
+    pub path_env: u32,
+    pub env_path_rows: HashMap<(u32, u32), u32>,
+    pub env_param_reads: HashMap<u32, Vec<(u32, u32)>>,
+    pub sig_index: HashMap<(super::core::BodyKey, Vec<(u32, super::ref_bodies::Binding)>), u32>,
 }
 
 impl<'a> Core<'a> {
@@ -170,7 +188,9 @@ impl<'a> Core<'a> {
             driving: false,
             need: None,
 
-            rule_runs: vec![[false; 7]; ir.cells.len()],
+            rule_reads: vec![[None; 7]; ir.cells.len()],
+            cell_order: Vec::new(),
+            cell_cyclic: vec![false; ir.cells.len()],
             inst: NONE,
             body_of: vec![NONE; nodes],
             bodies: Vec::new(),
@@ -247,6 +267,22 @@ impl<'a> Core<'a> {
             loop_items: HashMap::new(),
             open_children: HashMap::new(),
             loop_reads: BTreeMap::new(),
+            placeholder_uses: Vec::new(),
+            default_nodes: HashMap::new(),
+            default_insts: HashMap::new(),
+            deferred_uses: Vec::new(),
+            deferred_params: HashSet::new(),
+            pattern_items: HashMap::new(),
+            own_reads: HashSet::new(),
+            env_rows: HashMap::new(),
+            env_reads: BTreeMap::new(),
+            use_names: HashMap::new(),
+            use_index: Vec::new(),
+            group_items: HashSet::new(),
+            path_env: NONE,
+            env_path_rows: HashMap::new(),
+            env_param_reads: HashMap::new(),
+            sig_index: HashMap::new(),
         }
     }
 
@@ -487,6 +523,7 @@ impl Core<'_> {
             let mut own = diagnostic.clone();
             let keep = own.related.len().saturating_sub(self.use_links.len());
             own.related.truncate(keep);
+            let inst = self.typed_as.get(&inst).copied().unwrap_or(inst);
             self.use_faults.entry(inst).or_default().push(own);
         }
         if self.eval_chain.is_empty() && self.use_links.len() < 2 {

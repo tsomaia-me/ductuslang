@@ -112,3 +112,134 @@ fn a_to_path_in_a_gate_or_a_named_wire_stays_with_the_old_engine() {
         assert!(new.checked_by_new_core(&[source(text)]).is_none(), "{text}");
     }
 }
+
+const PAIR: &str = "pattern Pair(default v):\n    Note as a /v\n    Note as b /v | velocity=0.5\n";
+const HOOK: &str = "pattern Hook(default v):\n    Note as hook /v\n    Note/v\n";
+const WRAP: &str = "pattern Wrap(default v):\n    Pair as p /v\n    Note as c /v\n";
+
+fn through_uses(head: &str, body: &str) -> String {
+    format!("{head}{body}")
+}
+
+#[test]
+fn a_to_path_steps_through_the_names_inside_a_named_pattern_use_as_the_old_engine_does_486() {
+    let pair_wrap = format!("{PAIR}{WRAP}");
+    let cases: [(String, &[Code]); 14] = [
+        (
+            through_uses(
+                PAIR,
+                "Clip chorus:\n    Pair as p /60\nClip verse:\n    Plays | gain=to.p.a.velocity: chorus\n",
+            ),
+            &[],
+        ),
+        (
+            through_uses(
+                PAIR,
+                "Clip chorus:\n    Pair as p /60\nClip verse:\n    Plays | gain=to.p.b.velocity: chorus\n",
+            ),
+            &[],
+        ),
+        (
+            through_uses(
+                PAIR,
+                "Clip chorus:\n    Pair as p /60\nClip verse:\n    Plays | gain=to.p.a: chorus\n",
+            ),
+            &[Code::MisplacedTo],
+        ),
+        (
+            through_uses(
+                PAIR,
+                "Clip chorus:\n    Pair as p /60\nClip verse:\n    Plays | gain=to.p: chorus\n",
+            ),
+            &[Code::MisplacedTo],
+        ),
+        (
+            through_uses(
+                PAIR,
+                "Clip chorus:\n    Pair as p /60\nClip verse:\n    Plays | gain=to.p.c.velocity: chorus\n",
+            ),
+            &[Code::UnknownAttribute],
+        ),
+        (
+            through_uses(
+                PAIR,
+                "Clip chorus:\n    Pair as p /60\nClip verse:\n    Plays | gain=to.p.velocity: chorus\n",
+            ),
+            &[Code::UnknownAttribute],
+        ),
+        (
+            through_uses(
+                PAIR,
+                "Clip chorus:\n    Pair as p /60\nClip verse:\n    Plays | gain=to.p.b.nope: chorus\n",
+            ),
+            &[Code::UnknownAttribute],
+        ),
+        (
+            through_uses(
+                PAIR,
+                "Clip chorus:\n    Pair as p /60\nClip verse:\n    Plays | gain=to.a.velocity: chorus\n",
+            ),
+            &[Code::UnknownAttribute],
+        ),
+        (
+            through_uses(
+                HOOK,
+                "Clip lk:\n    Hook as lk /60\nClip verse:\n    Plays | gain=to.lk.hook.velocity: lk\n",
+            ),
+            &[],
+        ),
+        (
+            through_uses(
+                HOOK,
+                "Clip lk:\n    Hook as lk /60\nClip verse:\n    Plays | gain=to.lk.hook: lk\n",
+            ),
+            &[Code::MisplacedTo],
+        ),
+        (
+            through_uses(
+                &pair_wrap,
+                "Clip chorus:\n    Wrap as w /60\nClip verse:\n    Plays | gain=to.w.p.a.velocity: chorus\n    Plays | gain=to.w.c.velocity: chorus\n",
+            ),
+            &[],
+        ),
+        (
+            through_uses(
+                &pair_wrap,
+                "Clip chorus:\n    Wrap as w /60\nClip verse:\n    Plays | gain=to.w.p: chorus\n",
+            ),
+            &[Code::MisplacedTo],
+        ),
+        (
+            through_uses(
+                &pair_wrap,
+                "Clip chorus:\n    Wrap as w /60\nClip verse:\n    Plays | gain=to.w.p.zz: chorus\n",
+            ),
+            &[Code::UnknownAttribute],
+        ),
+        (
+            through_uses(
+                PAIR,
+                "state sec(0)\nClip chorus:\n    Pair as p /60\nClip other:\n    Note as z /1\nClip verse:\n    Plays | gain=to.p.b.velocity: [chorus, other][sec]\n",
+            ),
+            &[Code::ToCandidates],
+        ),
+    ];
+    let vocabulary = symphonyscript_fixtures::vocabulary();
+    let old = Compiler::new(&vocabulary)
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
+    let new = Compiler::new(&vocabulary).expect("the vocabulary compiles");
+    for (text, codes) in cases {
+        let sources = [source(&text)];
+        let found = new
+            .checked_by_new_core(&sources)
+            .unwrap_or_else(|| panic!("the new core takes {text}"));
+        assert_eq!(found, old.check(&sources), "{text}");
+        let found: Vec<Code> = found
+            .iter()
+            .map(|diagnostic| diagnostic.code)
+            .filter(|code| *code != Code::NoEntryInstance && *code != Code::UnreachableInstance)
+            .collect();
+        assert_eq!(found, codes, "{text}");
+    }
+}

@@ -106,6 +106,9 @@ impl Core<'_> {
         if let Some(slot) = self.row_of_item.get_mut(named_by as usize) {
             *slot = row;
         }
+        if env != NONE && named_by == item && self.pattern_items.contains_key(&item) {
+            self.env_rows.insert((item, env), row);
+        }
         Ok(Ok(row))
     }
 
@@ -174,11 +177,25 @@ impl Core<'_> {
             .get(body as usize)
             .ok_or(Internal::missed("IR block"))?;
         let mut work = vec![Work::Items(block.items.0, block.items.1, record.env)];
-        while let Some(job) = work.pop() {
+        let mut late: Vec<Work> = Vec::new();
+        loop {
+            let job = match work.pop() {
+                Some(job) => job,
+                None if late.is_empty() => break,
+                None => late.remove(0),
+            };
             if self.stop.is_some() {
                 return Ok(Ok(()));
             }
+            let mut bound = false;
             let (item, env) = match job {
+                Work::Late(item, env) => {
+                    if let Err(declined) = self.bind_path_args(env)? {
+                        return Ok(Err(declined));
+                    }
+                    bound = true;
+                    (item, env)
+                }
                 Work::Items(at, end, env) => {
                     if at >= end {
                         continue;
@@ -233,12 +250,19 @@ impl Core<'_> {
                     }
                 }
                 ItemRec::For(_) => {
+                    if !bound && self.head_reads_deferred(item, env)? {
+                        late.push(Work::Late(item, env));
+                        continue;
+                    }
                     let run = match self.loop_head(item, env)? {
                         Ok(run) => run,
                         Err(declined) => return Ok(Err(declined)),
                     };
                     match run {
-                        Some(run) if run.count > 0 => work.push(Work::Loop(run)),
+                        Some(run) if run.count > 0 => {
+                            self.reserve_loop(&run)?;
+                            work.push(Work::Loop(run));
+                        }
                         run => {
                             if let Err(declined) = self.unrun_names(item, file)? {
                                 return Ok(Err(declined));
@@ -256,10 +280,23 @@ impl Core<'_> {
                             self.unknown_use(parent);
                             continue;
                         }
-                        if placement.has_as || self.ir.named(placement.as_name) {
-                            let Ok(Some(_)) = self.stand_in(pattern)? else {
-                                return Ok(Err(Declined(Reason::PatternUse)));
+                        let named = self.ir.named(placement.as_name);
+                        if placement.has_as || named {
+                            let stand_in = match self.stand_in(pattern)? {
+                                Ok(stand_in) => stand_in,
+                                Err(declined) => return Ok(Err(declined)),
                             };
+                            if stand_in.is_none() {
+                                if !named {
+                                    return Ok(Err(Declined(Reason::PatternUse)));
+                                }
+                                if let Err(declined) =
+                                    self.group_use(item, pattern, (file, parent, env), &mut work)?
+                                {
+                                    return Ok(Err(declined));
+                                }
+                                continue;
+                            }
                             let row = match self.stand_in_row(
                                 item,
                                 pattern,
@@ -302,6 +339,40 @@ impl Core<'_> {
                 }
             }
         }
+        Ok(Ok(()))
+    }
+
+    fn group_use(
+        &mut self,
+        item: u32,
+        pattern: u32,
+        (file, parent, env): (u32, u32, u32),
+        work: &mut Vec<Work>,
+    ) -> Stage<()> {
+        let placement = self.placement(item)?;
+        let key = u32::try_from(self.instances.len()).unwrap_or(NONE);
+        let made = match self.use_env(item, pattern, (file, env), true)? {
+            Ok(Some(made)) => made,
+            Ok(None) => return Ok(Ok(())),
+            Err(declined) => return Ok(Err(declined)),
+        };
+        self.group_items.insert(item);
+        self.use_names.insert((item, env), made);
+        if env == NONE
+            && let Some(entry) = self.ir.name(placement.as_name).copied()
+        {
+            let span = self.span(file, entry.lo, entry.hi);
+            self.placeholder_uses
+                .push((parent, placement.as_name, span, key));
+            self.use_index.push((parent, entry.sym.0, made));
+        }
+        let body = self.pattern_parts(pattern)?.1;
+        let block = *self
+            .ir
+            .blocks
+            .get(body as usize)
+            .ok_or(Internal::missed("IR block"))?;
+        work.push(Work::Items(block.items.0, block.items.1, made));
         Ok(Ok(()))
     }
 }
@@ -347,6 +418,41 @@ impl Core<'_> {
         };
         let span = self.name_span(file, name)?;
         self.draw(crate::diagnostics::Code::UnknownKind, span, message);
+        Ok(())
+    }
+}
+
+impl Core<'_> {
+    fn reserve_loop(&mut self, run: &super::loop_run::LoopRun) -> Result<(), Internal> {
+        let ItemRec::For(rec) = *self.ir.item(run.item)? else {
+            return Err(Internal::missed("IR for block"));
+        };
+        let steps = self.limits.expansion_steps.saturating_sub(self.fold_steps);
+        let count = run.count.min(usize::try_from(steps).unwrap_or(usize::MAX));
+        let block = *self
+            .ir
+            .blocks
+            .get(rec.body as usize)
+            .ok_or(Internal::missed("IR block"))?;
+        let mut placements = 0usize;
+        for item in self
+            .ir
+            .block_items
+            .get(block.items.0 as usize..block.items.1 as usize)
+            .unwrap_or_default()
+        {
+            if matches!(self.ir.item(*item)?, ItemRec::Placement(_)) {
+                placements += 1;
+            }
+        }
+        let items = self.limits.expanded_items.saturating_sub(self.expanded);
+        let rows = count
+            .saturating_mul(placements)
+            .min(usize::try_from(items).unwrap_or(usize::MAX));
+        self.instances.reserve(rows);
+        self.envs.reserve(count);
+        self.env_vals
+            .reserve(count.saturating_mul(run.facts.len().max(1)));
         Ok(())
     }
 }

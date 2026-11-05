@@ -3270,7 +3270,7 @@ fn a_cell_array_under_a_scalar_annotation_draws_the_shape_mismatch_at_the_let_as
     let rows: &[support::Row] = &[
         (
             &["state s0 = [1]\n", "state x: i32 = s0\n", read],
-            &[(Code::TypeMismatch, "x")],
+            &[(Code::TypeMismatch, "s0")],
         ),
         (
             &["state s0([1, 2]): i32[..4]\n", "state x: i32 = s0\n", read],
@@ -3284,7 +3284,7 @@ fn a_cell_array_under_a_scalar_annotation_draws_the_shape_mismatch_at_the_let_as
                 "state x: i32 = if flag then s0 else s1\n",
                 read,
             ],
-            &[(Code::TypeMismatch, "x")],
+            &[(Code::TypeMismatch, "if flag then s0 else s1")],
         ),
         (
             &["let x: i32 = [1]\n", read],

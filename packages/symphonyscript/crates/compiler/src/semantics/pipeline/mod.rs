@@ -7,6 +7,8 @@ mod body_instance;
 #[cfg(test)]
 mod call_result_tests;
 mod calls;
+#[cfg(test)]
+mod cell_tests;
 mod cells;
 mod check;
 mod collect;
