@@ -416,3 +416,78 @@ fn a_history_read_of_a_let_draws_history_target_beside_its_reactive_let_in_every
         );
     }
 }
+
+fn every_order(items: &[&str]) -> Vec<String> {
+    if items.len() <= 1 {
+        return vec![items.concat()];
+    }
+    let mut found = Vec::new();
+    for (at, first) in items.iter().enumerate() {
+        let mut rest = items.to_vec();
+        rest.remove(at);
+        for tail in every_order(&rest) {
+            found.push(format!("{first}{tail}"));
+        }
+    }
+    found
+}
+
+#[test]
+fn a_host_fed_init_reading_a_cells_history_draws_reactive_initializer_and_no_declaration_cycle_in_every_order_489()
+ {
+    let cases: [(&[&str], &[Code]); 5] = [
+        (
+            &[
+                "state recent(recent.past(1, 0) + 1)\n",
+                "Clip c:\n    Note/(recent)\n",
+            ],
+            &[Code::ReactiveInitializer],
+        ),
+        (
+            &[
+                "state note(0)\n",
+                "state recent(recent.past(1, 0) + note)\n",
+                "Clip c:\n    Note/(recent)\n",
+            ],
+            &[Code::ReactiveInitializer],
+        ),
+        (
+            &[
+                "state a(b.past(1, 0) + 1)\n",
+                "state b(a.past(1, 0))\n",
+                "Clip c:\n    Note/(a + b)\n",
+            ],
+            &[Code::ReactiveInitializer, Code::ReactiveInitializer],
+        ),
+        (
+            &[
+                "state a(b.past(1, 0) + 1)\n",
+                "state b(a)\n",
+                "Clip c:\n    Note/(a + b)\n",
+            ],
+            &[Code::ReactiveInitializer, Code::ReactiveInitializer],
+        ),
+        (
+            &[
+                "state note(0)\n",
+                "state recent(0) = recent.past(1, 0) + note\n",
+                "Clip c:\n    Note/(recent)\n",
+            ],
+            &[],
+        ),
+    ];
+    let new =
+        Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("the vocabulary compiles");
+    for (items, codes) in cases {
+        for text in every_order(items) {
+            let found: Vec<Code> = new
+                .checked_by_new_core(&[source(&text)])
+                .unwrap_or_else(|| panic!("the new core takes {text}"))
+                .iter()
+                .map(|diagnostic| diagnostic.code)
+                .filter(|code| *code != Code::NoEntryInstance && *code != Code::UnreachableInstance)
+                .collect();
+            assert_eq!(found, codes, "{text}");
+        }
+    }
+}

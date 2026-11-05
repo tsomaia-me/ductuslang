@@ -4574,6 +4574,35 @@ fn history_of_a_reactive_let(seen: &Seen<'_>, change: Change, at: &Drawn) -> boo
     }
 }
 
+fn host_fed_init(seen: &Seen<'_>, at: &Drawn) -> bool {
+    let line = seen.before(at).rsplit('\n').next().unwrap_or_default();
+    at.0 == "reactive-initializer" && line.starts_with("state ") && line.ends_with('(')
+}
+
+fn history_init(seen: &Seen<'_>, at: &Drawn) -> bool {
+    host_fed_init(seen, at)
+        && (seen.text(at).contains(".past(") || seen.text(at).contains(".stepped"))
+}
+
+fn cycle_through_history_gone(seen: &Seen<'_>) -> bool {
+    seen.old.iter().any(|drawn| drawn.0 == "declaration-cycle")
+        && !seen.new.iter().any(|drawn| drawn.0 == "declaration-cycle")
+        && seen.new.iter().any(|drawn| history_init(seen, drawn))
+}
+
+fn host_fed_init_reading_history(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
+    match change {
+        Change::Added => host_fed_init(seen, at) && cycle_through_history_gone(seen),
+        Change::Removed => {
+            let name = seen.text(at);
+            at.0 == "declaration-cycle"
+                && seen.program.contains(&format!("state {name}("))
+                && cycle_through_history_gone(seen)
+        }
+        Change::Restated => false,
+    }
+}
+
 fn beside_a_fault(seen: &Seen<'_>) -> bool {
     !seen.old.is_empty()
 }
@@ -5278,6 +5307,11 @@ pub const CLASSES: &[Class] = &[
         ledger: "487",
         rule: "a history read of a top-level let reading a cell draws history-target at the read beside the let's reactive-let, as the program with the let repaired to a compile-time value does, and the read is a placeholder, so the faults the old engine drew from the let's type at its readers are gone",
         explains: history_of_a_reactive_let,
+    },
+    Class {
+        ledger: "489",
+        rule: "a host-fed cell whose init reads a cell's history, its own or another host-fed cell's, draws reactive-initializer at the init (SPEC §6.1: the init is a compile-time value) and no declaration-cycle (SPEC §6.6: a history read forms no cycle), where the old engine draws declaration-cycle through the history read",
+        explains: host_fed_init_reading_history,
     },
     Class {
         ledger: "476",

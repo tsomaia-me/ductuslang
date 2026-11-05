@@ -373,9 +373,6 @@ impl Core<'_> {
             Ok(order) => order,
             Err(declined) => return Ok(Err(declined)),
         };
-        if self.held_back()? {
-            return Ok(Err(Declined(Reason::CellGroup)));
-        }
         let mut settled = HashSet::new();
         for at in order.iter().copied() {
             if self.is_cyclic_cell(at) {
@@ -469,6 +466,9 @@ impl Core<'_> {
     fn group_unrun(&self, members: &[u32]) -> bool {
         let mut own = false;
         for member in members {
+            if !self.derived(*member) {
+                return false;
+            }
             let faulty = self
                 .cell_root(*member)
                 .and_then(|root| self.fact(root))
@@ -724,24 +724,5 @@ impl Core<'_> {
             }
         }
         Ok(())
-    }
-}
-
-impl Core<'_> {
-    fn held_back(&self) -> Result<bool, Internal> {
-        for at in 0..u32::try_from(self.ir.cells.len()).unwrap_or(0) {
-            let Some(rec) = self.ir.cells.get(at as usize).copied() else {
-                continue;
-            };
-            if rec.rule != NONE || rec.init == NONE || self.is_cyclic_cell(at) {
-                continue;
-            }
-            for node in self.deep_postorder(rec.init)? {
-                if self.ir.node(node)?.0 == Op::Name && self.bound(node)? == DeclRef::Cell(at) {
-                    return Ok(true);
-                }
-            }
-        }
-        Ok(false)
     }
 }
