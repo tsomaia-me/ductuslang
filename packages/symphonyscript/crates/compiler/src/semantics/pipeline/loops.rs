@@ -477,6 +477,10 @@ impl Core<'_> {
         Ok(reached)
     }
 
+    pub fn reaches_a_cell(&self, root: u32) -> Result<bool, Internal> {
+        Ok(self.reaches_cell(root)? != NOT_A_CELL)
+    }
+
     fn holds_kept(&self, root: u32) -> Result<bool, Internal> {
         let mut seen = std::collections::HashSet::new();
         let mut stack = vec![root];

@@ -3152,3 +3152,51 @@ fn a_family_read_inside_a_placement_for_body_or_a_pattern_use_body_takes_that_bo
     assert_eq!(taken + declined, programs);
     assert!(taken >= 3 * (2 + 6 + 6) + 2, "{taken}");
 }
+
+#[test]
+fn a_let_reaching_a_cell_through_a_call_and_read_only_by_a_placement_loop_head_draws_reactive_let_in_every_order()
+ {
+    let old = Compiler::new(&symphonyscript_fixtures::vocabulary())
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
+    let new =
+        Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("the vocabulary compiles");
+    let mut programs = 0;
+    let mut reactive = 0;
+    for (cell, head) in [
+        ("state w0([]): i32[..4]\n", "(ch)"),
+        ("state w0(3)\n", "0..ch"),
+    ] {
+        for functions in [
+            "fn i0(z): w0\n",
+            "fn i1(z): w0\nfn i0(z): i1(z)\n",
+            "fn i0(z): [z, z]\n",
+            "fn i0(z): z\n",
+        ] {
+            let items = vec![
+                cell.to_string(),
+                functions.to_string(),
+                "let ch = i0(0)\n".to_string(),
+                format!("Clip c:\n    for e in {head}:\n        Note/e\n"),
+            ];
+            for text in orders(&items) {
+                let text = format!(
+                    "{text}Session main:\n    Includes: t\nTrack t:\n    Piano\n    Starts: c\n"
+                );
+                let sources = [source(&text)];
+                let found = new
+                    .checked_by_new_core(&sources)
+                    .unwrap_or_else(|| panic!("the new core takes {text}"));
+                assert_eq!(found, old.check(&sources), "{text}");
+                reactive += usize::from(
+                    found
+                        .iter()
+                        .any(|drawn| drawn.code == crate::diagnostics::Code::ReactiveLet),
+                );
+                programs += 1;
+            }
+        }
+    }
+    assert_eq!(programs, 2 * 4 * 24);
+    assert_eq!(reactive, 2 * 2 * 24);
+}
