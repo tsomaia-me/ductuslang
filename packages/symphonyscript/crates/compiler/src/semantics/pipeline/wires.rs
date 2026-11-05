@@ -187,9 +187,8 @@ impl Core<'_> {
             .instances
             .get(row as usize)
             .ok_or(Internal::missed("row"))?;
-        let placement = self.placement(record.item)?;
-        if self.ir.named(placement.as_name)
-            && let Some(name) = self.ir.name(placement.as_name)
+        if self.ir.named(record.name)
+            && let Some(name) = self.ir.name(record.name)
         {
             return Ok(self.ir.symbols.text(name.sym).to_string());
         }

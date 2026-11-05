@@ -11,18 +11,18 @@ fn integer(class: usize) -> bool {
     matches!(class, 0 | 4..=6)
 }
 
-type Reads = Vec<(u32, usize, Vec<u32>, CoreValue)>;
+type Reads = Vec<(u32, usize, (Vec<u32>, Vec<u32>), CoreValue)>;
 
 impl Core<'_> {
     pub fn consistency(&mut self) -> Result<(), Internal> {
         let mut by_target: BTreeMap<(bool, u32), Reads> = BTreeMap::new();
-        for ((read, class, chain), (target, value)) in &self.uses {
+        for ((read, class, chain, links), (target, value)) in &self.uses {
             CountedWalk::CoreUse.step();
             if *class != 3 {
                 by_target.entry(*target).or_default().push((
                     *read,
                     *class,
-                    chain.clone(),
+                    (chain.clone(), links.clone()),
                     value.clone(),
                 ));
             }
@@ -55,13 +55,9 @@ impl Core<'_> {
                 related.push((float_span, "the float use".to_string()));
             }
             if float_chain != int_chain {
-                for call in float_chain.iter().rev() {
-                    related.push((self.node_span(*call)?, "in this call".to_string()));
-                }
+                self.chain_links(&float_chain, &mut related)?;
             }
-            for call in int_chain.iter().rev() {
-                related.push((self.node_span(*call)?, "in this call".to_string()));
-            }
+            self.chain_links(&int_chain, &mut related)?;
             self.draw_related(
                 Code::InconsistentUses,
                 span,
@@ -82,7 +78,7 @@ impl Core<'_> {
                 .push((*read, *class, value.clone()));
         }
         let mut drawn = std::collections::BTreeSet::new();
-        for (_, reads) in by_env {
+        for (env, reads) in by_env {
             let Some((int_read, _, int_value)) =
                 reads.iter().find(|(_, class, _)| integer(*class)).cloned()
             else {
@@ -98,22 +94,24 @@ impl Core<'_> {
             let Some(float_read) = float else {
                 continue;
             };
-            if !drawn.insert((int_read, float_read)) {
-                continue;
+            let saved = self.enter_env(env);
+            let links: Vec<u32> = self.use_links.iter().map(|(item, _)| *item).collect();
+            if drawn.insert((int_read, float_read, links)) {
+                let span = self.node_span(int_read)?;
+                let float_span = self.node_span(float_read)?;
+                self.draw_related(
+                    Code::InconsistentUses,
+                    span,
+                    vec![(float_span, "the float use".to_string())],
+                    "this value is an integer here and a different number at its float use",
+                );
             }
-            let span = self.node_span(int_read)?;
-            let float_span = self.node_span(float_read)?;
-            self.draw_related(
-                Code::InconsistentUses,
-                span,
-                vec![(float_span, "the float use".to_string())],
-                "this value is an integer here and a different number at its float use",
-            );
+            self.leave_env(saved);
         }
         Ok(())
     }
 
-    fn same_number(&mut self, int: &CoreValue, float: &CoreValue) -> bool {
+    pub fn same_number(&mut self, int: &CoreValue, float: &CoreValue) -> bool {
         let mut pairs = vec![(int.clone(), float.clone())];
         while let Some(pair) = pairs.pop() {
             CountedWalk::CoreUse.step();
@@ -147,5 +145,23 @@ impl Core<'_> {
             }
         }
         true
+    }
+}
+
+impl Core<'_> {
+    fn chain_links(
+        &self,
+        (calls, uses): &(Vec<u32>, Vec<u32>),
+        related: &mut Vec<(symphonyscript_core::Span, String)>,
+    ) -> Result<(), Internal> {
+        for call in calls.iter().rev() {
+            related.push((self.node_span(*call)?, "in this call".to_string()));
+        }
+        for item in uses {
+            if let Some(span) = self.use_spans.get(item) {
+                related.push((span.clone(), "in this use of the pattern".to_string()));
+            }
+        }
+        Ok(())
     }
 }

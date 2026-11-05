@@ -15,10 +15,10 @@ struct Bound {
 }
 
 impl Core<'_> {
-    fn binder_span(&self, owner_node: u32, binder: u32) -> Result<Span, Internal> {
+    fn binder_span(&self, file: u32, binder: u32) -> Result<Span, Internal> {
         let name = self.ir.binder(binder)?.name;
         let entry = *self.ir.name(name).ok_or(Internal::missed("IR name"))?;
-        Ok(self.span(self.file_of(owner_node), entry.lo, entry.hi))
+        Ok(self.span(file, entry.lo, entry.hi))
     }
 
     fn owner_node(&self, owner: u32) -> Result<u32, Internal> {
@@ -34,10 +34,16 @@ impl Core<'_> {
     }
 
     fn bound_names(&self, owner: u32) -> Result<Vec<Bound>, Internal> {
-        let node = self.owner_node(owner)?;
+        let file = match self.pattern_at(owner) {
+            Some(pattern) => self.pattern_file(pattern),
+            None => self.file_of(self.owner_node(owner)?),
+        };
         let (params, lets) = if self.loop_at(owner).is_some() {
             let head = self.loop_rec(owner)?.head;
             ((head.names.0..head.names.1).collect::<Vec<u32>>(), (0, 0))
+        } else if let Some(pattern) = self.pattern_at(owner) {
+            let params = self.pattern_parts(pattern)?.0;
+            ((params.0..params.1).collect::<Vec<u32>>(), (0, 0))
         } else if owner < self.functions() {
             let rec = self
                 .ir
@@ -64,7 +70,7 @@ impl Core<'_> {
             let sym = self.ir.name(name).ok_or(Internal::missed("IR name"))?.sym.0;
             bound.push(Bound {
                 sym,
-                span: self.binder_span(node, binder)?,
+                span: self.binder_span(file, binder)?,
                 decl: DeclRef::Param(u32::try_from(position).unwrap_or(0)),
             });
         }
@@ -81,7 +87,7 @@ impl Core<'_> {
             let sym = self.ir.name(name).ok_or(Internal::missed("IR name"))?.sym.0;
             bound.push(Bound {
                 sym,
-                span: self.binder_span(rec.value, rec.binder)?,
+                span: self.binder_span(self.file_of(rec.value), rec.binder)?,
                 decl: DeclRef::Let(at),
             });
         }
@@ -111,6 +117,7 @@ impl Core<'_> {
             Some(
                 DeclRef::None
                 | DeclRef::Fn(_)
+                | DeclRef::Pattern(_)
                 | DeclRef::Instance(_)
                 | DeclRef::Duplicate
                 | DeclRef::Param(_),
@@ -150,7 +157,7 @@ impl Core<'_> {
     pub fn local_faults(&mut self) -> Result<Option<Reason>, Internal> {
         let enclosed = self.enclosed_names()?;
         for owner in 0..self.owners() {
-            let fold = owner >= self.functions();
+            let fold = owner >= self.functions() && self.pattern_at(owner).is_none();
             let bound = self.bound_names(owner)?;
             for (position, name) in bound.iter().enumerate() {
                 let text = self.ir.symbols.text(Sym(name.sym)).to_string();
@@ -260,7 +267,8 @@ impl Core<'_> {
                 | DeclRef::Instance(_)
                 | DeclRef::Duplicate
                 | DeclRef::Param(_)
-                | DeclRef::Fn(_) => None,
+                | DeclRef::Fn(_)
+                | DeclRef::Pattern(_) => None,
             })
             .collect();
         let Some(&first) = lets.first() else {

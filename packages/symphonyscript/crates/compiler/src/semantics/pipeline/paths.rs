@@ -55,11 +55,10 @@ impl Core<'_> {
             .instances
             .get(row as usize)
             .ok_or(Internal::missed("row"))?;
-        let placement = self.placement(record.item)?;
-        if record.env != NONE || !self.ir.named(placement.as_name) {
+        if !record.reachable || !self.ir.named(record.name) {
             return Ok(None);
         }
-        Ok(self.ir.name(placement.as_name).map(|name| name.sym.0))
+        Ok(self.ir.name(record.name).map(|name| name.sym.0))
     }
 
     fn row_name_span(&self, row: u32) -> Result<symphonyscript_core::Span, Internal> {
@@ -67,8 +66,7 @@ impl Core<'_> {
             .instances
             .get(row as usize)
             .ok_or(Internal::missed("row"))?;
-        let placement = self.placement(record.item)?;
-        self.name_span(record.file, placement.as_name)
+        self.name_span(record.name_file, record.name)
     }
 
     fn named_row_text(&self, row: u32) -> Result<String, Internal> {
@@ -76,10 +74,9 @@ impl Core<'_> {
             .instances
             .get(row as usize)
             .ok_or(Internal::missed("row"))?;
-        let placement = self.placement(record.item)?;
         Ok(self
             .ir
-            .name_text(placement.as_name)
+            .name_text(record.name)
             .unwrap_or_default()
             .to_string())
     }
@@ -315,7 +312,8 @@ impl Core<'_> {
                 | DeclRef::Duplicate
                 | DeclRef::Let(_)
                 | DeclRef::Cell(_)
-                | DeclRef::Fn(_) => {
+                | DeclRef::Fn(_)
+                | DeclRef::Pattern(_) => {
                     return Ok(Err(Declined(Reason::Member)));
                 }
             }
@@ -336,7 +334,18 @@ impl Core<'_> {
             return Ok(Err(Declined(Reason::Member)));
         };
         match start {
-            End::Row(row) => self.step_row(node, row, field),
+            End::Row(row) => {
+                let end = match self.step_row(node, row, field)? {
+                    Ok(end) => end,
+                    Err(declined) => return Ok(Err(declined)),
+                };
+                if let End::Attr(at) = end
+                    && self.read_in_use(row, at)?
+                {
+                    return Ok(Err(Declined(Reason::PatternUse)));
+                }
+                Ok(Ok(end))
+            }
             End::To if self.is_field_receiver(node) => Ok(Ok(End::To)),
             End::To => self.destination_path_end(node),
             End::Attr(_) => {
@@ -480,12 +489,13 @@ impl Core<'_> {
             | DeclRef::Duplicate
             | DeclRef::Let(_)
             | DeclRef::Param(_)
-            | DeclRef::Fn(_) => None,
+            | DeclRef::Fn(_)
+            | DeclRef::Pattern(_) => None,
         })
     }
 
     pub fn read_at(&self, node: u32) -> Result<u32, Internal> {
-        if let Some((inst, _)) = self.in_body(node).ok().flatten()
+        if let Some(inst) = self.path_inst(node)
             && let Some(at) = self.inst_reads.get(&(node, inst))
         {
             return Ok(*at);
@@ -1071,5 +1081,23 @@ impl Core<'_> {
             }
         }
         Ok(Ok(first.unwrap_or(End::Placeholder)))
+    }
+}
+
+impl Core<'_> {
+    fn read_in_use(&self, row: u32, at: u32) -> Result<bool, Internal> {
+        let env = self
+            .instances
+            .get(row as usize)
+            .ok_or(Internal::missed("row"))?
+            .env;
+        let root = self
+            .attr_reads
+            .get(at as usize)
+            .map_or(NONE, |read| read.root);
+        if env == NONE || root == NONE {
+            return Ok(false);
+        }
+        Ok(self.body_of.get(self.local(root)?).copied().unwrap_or(NONE) != NONE)
     }
 }

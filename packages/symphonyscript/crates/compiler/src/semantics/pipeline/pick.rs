@@ -48,7 +48,8 @@ impl Core<'_> {
                     | DeclRef::Instance(_)
                     | DeclRef::Duplicate
                     | DeclRef::Param(_)
-                    | DeclRef::Fn(_) => {
+                    | DeclRef::Fn(_)
+                    | DeclRef::Pattern(_) => {
                         return Ok(None);
                     }
                 },

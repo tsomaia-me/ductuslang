@@ -912,7 +912,8 @@ const REFERENCE_PATHS: [&str; 7] = [
 ];
 
 #[test]
-fn a_loop_name_holding_a_reference_reads_its_rows_attribute_in_a_typed_body_per_row_for_ref1() {
+fn a_loop_name_holding_a_reference_reads_its_rows_attribute_in_a_typed_body_per_binding_signature_for_ref1()
+ {
     let vocabulary = symphonyscript_fixtures::vocabulary();
     assert_engines_agree(&vocabulary, &REFERENCE_PATHS);
     let new = Compiler::new(&vocabulary).expect("the vocabulary compiles");
@@ -940,4 +941,45 @@ fn a_loop_name_holding_a_reference_reads_its_rows_attribute_in_a_typed_body_per_
     assert_eq!(at(crate::diagnostics::Code::FloatToInteger), vec![130..136]);
     let text = "Clip verse:\n    Note as h /60\nClip c:\n    for s in [verse]:\n        Note/(s.h.pitch)\n";
     assert!(new.checked_by_new_core(&[source(text)]).is_none(), "{text}");
+}
+
+fn alike_rows(rows: usize, cell: bool) -> String {
+    let mut text = String::from("state g(0.5)\n");
+    let mut names = Vec::new();
+    for at in 0..rows {
+        let gain = if cell && at == rows / 2 {
+            "g".to_string()
+        } else {
+            format!("0.{}", at % 10)
+        };
+        text.push_str(&format!("Clip r{at} | gain={gain}\n"));
+        names.push(format!("r{at}"));
+    }
+    text.push_str(&format!(
+        "let rows = [{}]\nClip c:\n    for s in rows:\n        Note | velocity=s.gain\n",
+        names.join(", ")
+    ));
+    text
+}
+
+#[test]
+fn rows_whose_read_attributes_bind_alike_share_one_typed_body_and_a_cell_bound_row_types_a_second()
+{
+    let vocabulary = symphonyscript_fixtures::vocabulary();
+    assert_engines_agree(
+        &vocabulary,
+        &[&alike_rows(20, false), &alike_rows(20, true)],
+    );
+    let new = Compiler::new(&vocabulary).expect("the vocabulary compiles");
+    for (cell, typed) in [(false, 1), (true, 2)] {
+        let text = alike_rows(10_000, cell);
+        let bodies = CountedWalk::CoreLoopBody.steps();
+        new.checked_by_new_core(&[source(&text)])
+            .unwrap_or_else(|| panic!("the new core takes 10,000 rows, a cell bound: {cell}"));
+        assert_eq!(
+            CountedWalk::CoreLoopBody.steps() - bodies,
+            typed,
+            "a cell bound: {cell}"
+        );
+    }
 }

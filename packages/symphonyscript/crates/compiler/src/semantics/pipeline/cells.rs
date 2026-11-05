@@ -49,7 +49,11 @@ impl Core<'_> {
                 DeclRef::Cell(_) => true,
                 DeclRef::Let(at) => self.let_reads_cell(at)?,
                 DeclRef::Param(position) => self.param_fact(node, position)?.1,
-                DeclRef::None | DeclRef::Instance(_) | DeclRef::Duplicate | DeclRef::Fn(_) => false,
+                DeclRef::None
+                | DeclRef::Instance(_)
+                | DeclRef::Duplicate
+                | DeclRef::Fn(_)
+                | DeclRef::Pattern(_) => false,
             });
         }
         if op == Op::Field {
@@ -142,7 +146,8 @@ impl Core<'_> {
                     | DeclRef::Instance(_)
                     | DeclRef::Duplicate
                     | DeclRef::Param(_)
-                    | DeclRef::Fn(_) => {}
+                    | DeclRef::Fn(_)
+                    | DeclRef::Pattern(_) => {}
                 }
             }
         }
@@ -170,7 +175,8 @@ impl Core<'_> {
                     | DeclRef::Instance(_)
                     | DeclRef::Duplicate
                     | DeclRef::Param(_)
-                    | DeclRef::Fn(_) => false,
+                    | DeclRef::Fn(_)
+                    | DeclRef::Pattern(_) => false,
                 };
                 if grouped {
                     return Ok(Err(Declined(Reason::CellGroup)));
@@ -309,7 +315,8 @@ impl Core<'_> {
             | DeclRef::Cell(_)
             | DeclRef::Instance(_)
             | DeclRef::Duplicate
-            | DeclRef::Fn(_) => false,
+            | DeclRef::Fn(_)
+            | DeclRef::Pattern(_) => false,
         })
     }
 
@@ -381,7 +388,8 @@ impl Core<'_> {
                     | DeclRef::Instance(_)
                     | DeclRef::Duplicate
                     | DeclRef::Param(_)
-                    | DeclRef::Fn(_) => {}
+                    | DeclRef::Fn(_)
+                    | DeclRef::Pattern(_) => {}
                 }
             }
         }

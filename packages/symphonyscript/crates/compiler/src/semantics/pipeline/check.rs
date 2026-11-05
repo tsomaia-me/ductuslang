@@ -172,7 +172,7 @@ impl Core<'_> {
                 .get(at as usize)
                 .ok_or(Internal::missed("IR attribute"))?;
             let AttrForm::Value(root) = entry.form else {
-                return Err(Internal::missed("a flag the coverage table leaves out"));
+                return Ok(Err(Declined(Reason::PatternUse)));
             };
             let name = self
                 .ir
@@ -493,7 +493,7 @@ impl Core<'_> {
             if decl.top_level.is_none() {
                 let span = self.row_span(row)?;
                 let message = format!("a `{}` does not stand at top level", decl.name);
-                self.draw(Code::NotTopLevel, span, message);
+                self.draw_in_row(row, Code::NotTopLevel, span, message);
                 continue;
             }
             by_kind.entry(kind).or_default().push(row);
@@ -516,7 +516,8 @@ impl Core<'_> {
                 && let Some(extra) = found.get(max as usize)
             {
                 let span = self.row_span(*extra)?;
-                self.draw(
+                self.draw_in_row(
+                    *extra,
                     Code::CountExceeded,
                     span,
                     format!(
@@ -576,7 +577,7 @@ impl Core<'_> {
                         self.kind_name(kind)?
                     )
                 };
-                self.draw(Code::ChildNotAccepted, span, message);
+                self.draw_in_row(child, Code::ChildNotAccepted, span, message);
                 continue;
             }
             by_kind.entry(kind).or_default().push(child);
@@ -588,7 +589,8 @@ impl Core<'_> {
                 && let Some(extra) = found.get(max as usize)
             {
                 let span = self.row_span(*extra)?;
-                self.draw(
+                self.draw_in_row(
+                    *extra,
                     Code::CountExceeded,
                     span,
                     format!(
@@ -607,7 +609,8 @@ impl Core<'_> {
                 && !self.unknown_children.contains(&parent)
             {
                 let span = self.row_span(parent)?;
-                self.draw(
+                self.draw_in_row(
+                    parent,
                     Code::CountBelowMinimum,
                     span,
                     format!(
@@ -681,13 +684,12 @@ impl Core<'_> {
                 .instances
                 .get(row as usize)
                 .ok_or(Internal::missed("row"))?;
-            let placement = self.placement(record.item)?;
             let name = self
                 .ir
-                .name(placement.as_name)
+                .name(record.name)
                 .ok_or(Internal::missed("IR name"))?;
             let label = self.ir.symbols.text(name.sym).to_string();
-            let span = self.span(record.file, name.lo, name.hi);
+            let span = self.span(record.name_file, name.lo, name.hi);
             self.draw(
                 Code::UnreachableInstance,
                 span,
@@ -734,5 +736,17 @@ impl Core<'_> {
             }
         }
         Ok(false)
+    }
+}
+
+impl Core<'_> {
+    fn draw_in_row(&mut self, row: u32, code: Code, span: Span, message: String) {
+        let env = self
+            .instances
+            .get(row as usize)
+            .map_or(NONE, |record| record.env);
+        let saved = self.enter_env(env);
+        self.draw(code, span, message);
+        self.leave_env(saved);
     }
 }

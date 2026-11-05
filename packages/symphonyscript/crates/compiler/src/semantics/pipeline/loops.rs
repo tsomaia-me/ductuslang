@@ -180,8 +180,20 @@ impl Core<'_> {
             .unwrap_or(NONE))
     }
 
-    pub fn enter_env(&mut self, env: u32) -> (u32, usize) {
-        let saved = (self.inst, self.own_calls.len());
+    pub fn enter_env(&mut self, env: u32) -> (u32, usize, Vec<(u32, u32)>) {
+        let mut links = Vec::new();
+        let mut at = env;
+        while let Some(record) = self.envs.get(at as usize) {
+            if record.use_item != NONE {
+                links.push((record.use_item, record.inst));
+            }
+            at = record.parent;
+        }
+        let saved = (
+            self.inst,
+            self.own_calls.len(),
+            std::mem::replace(&mut self.use_links, links),
+        );
         let mut chain = Vec::new();
         let mut at = env;
         while let Some(record) = self.envs.get(at as usize) {
@@ -201,9 +213,10 @@ impl Core<'_> {
         saved
     }
 
-    pub fn leave_env(&mut self, saved: (u32, usize)) {
+    pub fn leave_env(&mut self, saved: (u32, usize, Vec<(u32, u32)>)) {
         self.inst = saved.0;
         self.own_calls.truncate(saved.1);
+        self.use_links = saved.2;
     }
 
     fn iterable_span(&self, head: Iteration) -> Result<Span, Internal> {
@@ -376,7 +389,7 @@ impl Core<'_> {
         })))
     }
 
-    fn reaches_cell(&self, root: u32) -> Result<u8, Internal> {
+    pub fn reaches_cell(&self, root: u32) -> Result<u8, Internal> {
         let mut seen = std::collections::HashSet::new();
         let mut stack = vec![(root, false)];
         let mut reached = NOT_A_CELL;
@@ -420,7 +433,8 @@ impl Core<'_> {
                     | DeclRef::Instance(_)
                     | DeclRef::Duplicate
                     | DeclRef::Param(_)
-                    | DeclRef::Fn(_) => {}
+                    | DeclRef::Fn(_)
+                    | DeclRef::Pattern(_) => {}
                 }
             }
         }
@@ -570,9 +584,13 @@ impl Core<'_> {
         let ItemRec::For(rec) = *self.ir.item(item)? else {
             return Err(Internal::missed("IR for block"));
         };
+        let span = self.iterable_span(rec.head)?;
+        Ok(self.expansion_step(span))
+    }
+
+    pub fn expansion_step(&mut self, span: Span) -> bool {
         self.fold_steps += 1;
         let bound = self.limits.expansion_steps;
-        let span = self.iterable_span(rec.head)?;
         if self.fold_steps > bound {
             let message = format!(
                 "the expansion runs more than {} `for` iterations and pattern uses",
@@ -582,7 +600,7 @@ impl Core<'_> {
                 self.diagnostics.len(),
                 Diagnostic::new(Code::ExpansionLimit, span, message),
             ));
-            return Ok(false);
+            return false;
         }
         if self.fold_steps - 1 == self.limits.expansion_steps_warning {
             let counted = format!(
@@ -591,7 +609,7 @@ impl Core<'_> {
             );
             self.warn_span(span, "expansion_steps", counted, bound);
         }
-        Ok(true)
+        true
     }
 
     pub fn loop_env(&mut self, run: &mut LoopRun) -> Result<u32, Internal> {
@@ -647,6 +665,7 @@ impl Core<'_> {
             inst,
             values: (start, end),
             at: u32::try_from(position).unwrap_or(NONE),
+            use_item: NONE,
         });
         Ok(u32::try_from(self.envs.len() - 1).unwrap_or(NONE))
     }
@@ -682,7 +701,11 @@ impl Core<'_> {
         let ItemRec::For(rec) = *self.ir.item(item)? else {
             return Err(Internal::missed("IR for block"));
         };
-        let mut blocks = vec![rec.body];
+        self.unrun_block(rec.body, file)
+    }
+
+    pub fn unrun_block(&mut self, body: u32, file: u32) -> Stage<()> {
+        let mut blocks = vec![body];
         let mut items = Vec::new();
         while let Some(block) = blocks.pop() {
             let Some(found) = self.ir.blocks.get(block as usize) else {
@@ -728,6 +751,9 @@ impl Core<'_> {
     }
 
     fn unrun_placement(&mut self, placement: PlacementRec, file: u32) -> Stage<()> {
+        if let Some(pattern) = self.used_pattern(placement.kind) {
+            return self.unrun_use(placement, pattern, file);
+        }
         let Some(kind_name) = self
             .ir
             .name_text(placement.kind)
@@ -787,6 +813,9 @@ impl Core<'_> {
         stored: &CoreValue,
     ) -> Stage<CoreValue> {
         let Some(at) = self.loop_at(owner) else {
+            if self.pattern_at(owner).is_some() {
+                return self.use_element(owner, position, ty, stored);
+            }
             return Ok(Ok(stored.clone()));
         };
         let head = self.loop_rec(owner)?.head;
@@ -917,6 +946,9 @@ impl Core<'_> {
     }
 
     fn unknown_body_kind(&mut self, placement: PlacementRec, file: u32) -> Stage<()> {
+        if self.used_pattern(placement.kind).is_some() {
+            return Ok(Ok(()));
+        }
         let Some(kind_name) = self
             .ir
             .name_text(placement.kind)
@@ -1428,7 +1460,6 @@ impl Core<'_> {
         if let Some(inst) = self.ref_insts.get(&(owner, parent, row)).copied() {
             return Ok(inst);
         }
-        CountedWalk::CoreLoopBody.step();
         self.bodies.push(BodyInstance {
             function: owner,
             parent,

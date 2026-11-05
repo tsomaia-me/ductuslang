@@ -663,7 +663,8 @@ impl Core<'_> {
                             | DeclRef::Cell(_)
                             | DeclRef::Instance(_)
                             | DeclRef::Duplicate
-                            | DeclRef::Fn(_) => {}
+                            | DeclRef::Fn(_)
+                            | DeclRef::Pattern(_) => {}
                         }
                     }
                     let Some(frame) = frames.last_mut() else {
@@ -1013,8 +1014,9 @@ impl Core<'_> {
                         && !matches!(value, Value::Array(_))
                     {
                         let value = value.clone();
+                        let links = self.use_links.iter().map(|(item, _)| *item).collect();
                         self.uses
-                            .entry((read, class(read_ty), self.eval_chain.clone()))
+                            .entry((read, class(read_ty), self.eval_chain.clone(), links))
                             .or_insert(((element, target), value));
                     }
                 }
@@ -1066,9 +1068,11 @@ impl Core<'_> {
                     Ok(value) => value,
                     Err(declined) => return Ok(Err(declined)),
                 },
-                DeclRef::Duplicate | DeclRef::None | DeclRef::Param(_) | DeclRef::Fn(_) => {
-                    Value::Error
-                }
+                DeclRef::Duplicate
+                | DeclRef::None
+                | DeclRef::Param(_)
+                | DeclRef::Fn(_)
+                | DeclRef::Pattern(_) => Value::Error,
                 DeclRef::Instance(item) => match self.row_of_item.get(item as usize).copied() {
                     Some(row) if row != NONE => Value::Node(row),
                     Some(_) | None => Value::Error,
@@ -1774,7 +1778,8 @@ impl Core<'_> {
                     | DeclRef::None
                     | DeclRef::Instance(_)
                     | DeclRef::Duplicate
-                    | DeclRef::Fn(_) => fact.own().is_none(),
+                    | DeclRef::Fn(_)
+                    | DeclRef::Pattern(_) => fact.own().is_none(),
                 };
             kids.clear();
             self.push_operands(at, &mut kids)?;

@@ -58,6 +58,9 @@ pub(crate) fn analyze(inputs: &Inputs<'_>) -> Result<Option<Run>, Internal> {
     if core.stop.is_some() {
         return Ok(Some(finished(core)));
     }
+    if let Err(reason) = stage(core.unused_patterns())? {
+        return declined(reason);
+    }
     core.resolve_destinations()?;
     if let Err(reason) = stage(core.resolve_paths())? {
         return declined(reason);
@@ -69,6 +72,7 @@ pub(crate) fn analyze(inputs: &Inputs<'_>) -> Result<Option<Run>, Internal> {
     if let Err(reason) = stage(core.type_attr_reads())? {
         return declined(reason);
     }
+    core.share_ref_bodies()?;
     if let Err(reason) = stage(core.choose_destinations())? {
         return declined(reason);
     }
@@ -93,6 +97,7 @@ pub(crate) fn analyze(inputs: &Inputs<'_>) -> Result<Option<Run>, Internal> {
     core.consistency()?;
     core.unread_named_faults()?;
     core.unreached_body_path_faults();
+    core.replay_use_faults();
     stages.mark("infer and check");
     Ok(Some(finished(core)))
 }

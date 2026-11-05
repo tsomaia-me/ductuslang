@@ -44,9 +44,12 @@ mod need;
 #[cfg(test)]
 mod path_tests;
 mod paths;
+#[cfg(test)]
+mod pattern_tests;
 mod pick;
 mod reason;
 mod recording;
+mod ref_bodies;
 mod references;
 mod run;
 mod slice;
@@ -56,6 +59,7 @@ mod store;
 #[cfg(test)]
 mod to_tests;
 mod typing;
+mod uses;
 mod values;
 mod width;
 mod wire_row;

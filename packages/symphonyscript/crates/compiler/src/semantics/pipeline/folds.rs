@@ -590,7 +590,8 @@ impl Core<'_> {
                 | DeclRef::Cell(_)
                 | DeclRef::Instance(_)
                 | DeclRef::Param(_)
-                | DeclRef::Fn(_) => {}
+                | DeclRef::Fn(_)
+                | DeclRef::Pattern(_) => {}
             }
         }
         Ok(false)
