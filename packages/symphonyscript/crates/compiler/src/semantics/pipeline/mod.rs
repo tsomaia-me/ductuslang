@@ -4,10 +4,14 @@ mod array_node;
 mod attr_item;
 mod attr_read;
 mod body_instance;
+mod bound_form;
 mod bounds;
 #[cfg(test)]
 mod call_result_tests;
 mod calls;
+mod capacities;
+#[cfg(test)]
+mod capacity_tests;
 #[cfg(test)]
 mod cell_tests;
 mod cells;
@@ -24,6 +28,8 @@ mod destinations;
 mod detached;
 mod env;
 mod expand;
+mod extent;
+mod extreme;
 mod fact;
 mod fold_run;
 mod folds;
@@ -58,12 +64,15 @@ mod paths;
 #[cfg(test)]
 mod pattern_tests;
 mod pick;
+mod piecewise;
+mod ratio;
 mod reason;
 mod recording;
 mod ref_bodies;
 mod references;
 mod run;
 mod slice;
+mod slice_transform;
 mod stages;
 mod step;
 mod store;

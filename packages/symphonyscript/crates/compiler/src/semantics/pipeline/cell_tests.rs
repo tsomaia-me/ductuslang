@@ -178,11 +178,22 @@ fn a_host_fed_variable_array_cell_and_a_reactive_fold_over_it_or_a_cell_bounded_
             .collect();
         assert_eq!(found, codes, "{text}");
     }
-    let doubling = "state hh([1, 2]): i32[..40]\nstate v = for x in hh into a from [0]: a + a\nClip c:\n    Note/(v[0])\n";
-    assert!(
-        new.checked_by_new_core(&[source(doubling)]).is_none(),
-        "{doubling}"
-    );
+    for (capacity, codes) in [("4", &[][..]), ("40", &[Code::LengthLimit][..])] {
+        let doubling = format!(
+            "state hh([1, 2]): i32[..{capacity}]\nstate v = for x in hh into a from [0]: a + a\nClip c:\n    Note/(v[0])\n"
+        );
+        let sources = [source(&doubling)];
+        let found = new
+            .checked_by_new_core(&sources)
+            .unwrap_or_else(|| panic!("the new core takes {doubling}"));
+        assert_eq!(found, old.check(&sources), "{doubling}");
+        let found: Vec<Code> = found
+            .iter()
+            .map(|diagnostic| diagnostic.code)
+            .filter(|code| *code != Code::NoEntryInstance)
+            .collect();
+        assert_eq!(found, codes, "{doubling}");
+    }
 }
 
 const BODY_USES: [(&str, &[Code]); 12] = [

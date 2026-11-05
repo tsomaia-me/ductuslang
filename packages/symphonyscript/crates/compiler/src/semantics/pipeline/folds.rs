@@ -3,11 +3,9 @@ use super::body_instance::BodyInstance;
 use super::core::{Core, Stage};
 use super::core_value::CoreValue;
 use super::decl_ref::DeclRef;
-use super::declined::Declined;
 use super::fact::Fact;
 use super::leaf::Leaf;
 use super::need::Need;
-use super::reason::Reason;
 use super::typing::unify;
 use super::width::{combined, is_fixed_float};
 use crate::diagnostics::{Code, Diagnostic, for_start_and_body_help};
@@ -398,32 +396,6 @@ impl Core<'_> {
         self.pending(Need::Body(at))
     }
 
-    fn reads_accumulator(&self, root: u32, owner: u32, position: u32) -> Result<bool, Internal> {
-        for node in self.postorder(root)? {
-            if self.ir.node(node)?.0 == Op::Name
-                && self.bound(node)? == DeclRef::Param(position)
-                && self.binding_owner(node)? == owner
-            {
-                return Ok(true);
-            }
-        }
-        Ok(false)
-    }
-
-    fn doubles_accumulator(&self, rec: &ForRec, owner: u32) -> Result<bool, Internal> {
-        let position = rec.names.1 - rec.names.0;
-        for node in self.postorder(rec.body)? {
-            let (op, a, b, _) = self.ir.node(node)?;
-            if op == Op::Add
-                && self.reads_accumulator(a, owner, position)?
-                && self.reads_accumulator(b, owner, position)?
-            {
-                return Ok(true);
-            }
-        }
-        Ok(false)
-    }
-
     pub fn for_fact(&mut self, node: u32) -> Stage<Fact> {
         let (_, record, _, _) = self.ir.node(node)?;
         let rec = self.fold_rec(node)?;
@@ -461,12 +433,6 @@ impl Core<'_> {
             if body_reactive? && !reactive.1 {
                 reactive.1 = true;
                 continue;
-            }
-            if reactive.1
-                && found.as_ref().is_ok_and(|found| !found.dims.is_empty())
-                && self.doubles_accumulator(&rec, owner)?
-            {
-                return Ok(Err(Declined(Reason::ReactiveFor)));
             }
             let found = found?;
             if faulty(&found) {

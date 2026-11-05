@@ -164,6 +164,7 @@ pub(crate) struct Core<'a> {
     pub init_open: super::init_read::Index,
     pub init_args: super::init_read::Index,
     pub init_serial: u64,
+    pub cell_capacities: HashMap<u32, i128>,
 }
 
 impl<'a> Core<'a> {
@@ -308,6 +309,7 @@ impl<'a> Core<'a> {
             init_open: HashMap::new(),
             init_args: HashMap::new(),
             init_serial: 0,
+            cell_capacities: HashMap::new(),
         }
     }
 

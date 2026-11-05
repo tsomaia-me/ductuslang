@@ -15,7 +15,7 @@ struct Run {
     walks: u64,
 }
 
-const CORE_WALKS: [CountedWalk; 21] = [
+const CORE_WALKS: [CountedWalk; 22] = [
     CountedWalk::BindLookup,
     CountedWalk::CoreExpandRow,
     CountedWalk::SigNode,
@@ -37,6 +37,7 @@ const CORE_WALKS: [CountedWalk; 21] = [
     CountedWalk::CorePatternUse,
     CountedWalk::CorePatternBody,
     CountedWalk::CoreInitRead,
+    CountedWalk::CoreCapacity,
 ];
 
 fn walked() -> u64 {

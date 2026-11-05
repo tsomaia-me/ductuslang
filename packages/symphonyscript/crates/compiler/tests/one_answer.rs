@@ -301,6 +301,18 @@ const DECIDING_NONE: &[(&str, &str)] = &[
         "the minimum and maximum a range or slice bound that reads a cell has by its form, SPEC §7.9's bound rule",
     ),
     (
+        "pipeline/capacities.rs checked_root",
+        "the nodes whose capacity the length limit checks, joins, `for` expressions and calls that read a cell, SPEC §3.2",
+    ),
+    (
+        "pipeline/capacities.rs combined_extent",
+        "a value's capacity from its operands' capacities, SPEC §3.7's capacity table and §5.10's accumulator rule",
+    ),
+    (
+        "pipeline/capacities.rs extent_parts",
+        "the operands whose capacities a value's capacity reads, SPEC §3.7's capacity table",
+    ),
+    (
         "pipeline/check.rs refuse_fixed",
         "the fixed-type operands a runtime value's cells are read around, each refused at itself, SPEC §4.2's fixed-type operand",
     ),

@@ -360,7 +360,6 @@ pub(crate) fn reason_slice(reason: Reason) -> Slice {
         Reason::LocalCycle | Reason::LocalClash => Slice::Pending,
         Reason::AnnotatedCall => Slice::Pending,
         Reason::Pending => Slice::One,
-        Reason::ReactiveFor => Slice::Pending,
         Reason::DestinationValue | Reason::ReactiveReference | Reason::WireKind => Slice::Pending,
         Reason::BareVariant | Reason::UnitAttribute | Reason::EnumAttribute => Slice::Five,
         Reason::LoopHead | Reason::BodyItem | Reason::PatternUse => Slice::Pending,
