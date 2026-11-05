@@ -7,4 +7,5 @@ pub(crate) struct LetRec {
     pub hi: u32,
     pub is_match: bool,
     pub faulty_line: bool,
+    pub line_fault: bool,
 }

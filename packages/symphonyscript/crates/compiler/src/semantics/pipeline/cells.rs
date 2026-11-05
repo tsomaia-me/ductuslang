@@ -222,6 +222,11 @@ impl Core<'_> {
                 continue;
             };
             if self.faulty_declaration(top)?
+                || self
+                    .ir
+                    .lets
+                    .get(at as usize)
+                    .is_some_and(|rec| rec.line_fault)
                 || self.cyclic.get(at as usize).copied().unwrap_or(false)
                 || !self.let_reads_cell(at)?
             {

@@ -4452,12 +4452,26 @@ fn line_fault(code: &str) -> bool {
             "unknown-suffix",
             "prefixed-suffix",
             "float-type-suffix",
+            "float-digits",
             "semicolon",
             "unterminated-string",
             "invalid-identifier",
+            "invalid-escape",
             "unexpected-indent",
             "dedent-mismatch",
+            "tab-indentation",
+            "clause-column",
             "misplaced-caret",
+            "misplaced-underscore",
+            "misplaced-wire",
+            "integer-too-large",
+            "chained-comparison",
+            "mixed-arguments",
+            "match-position",
+            "inline-placement",
+            "top-level-wire",
+            "unparenthesized-for",
+            "unparenthesized-if",
         ]
         .contains(&code)
 }
@@ -4525,10 +4539,11 @@ fn faulty_line(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
     change == Change::Removed
         && at.0 == "reactive-let"
         && (top_level_let_name(seen, at) || nameless)
-        && seen
-            .old
-            .iter()
-            .any(|drawn| line_fault(&drawn.0) && seen.line(drawn.1) == line)
+        && seen.old.iter().any(|drawn| {
+            line_fault(&drawn.0)
+                && seen.line(drawn.1) <= line
+                && line <= seen.line(drawn.2.max(drawn.1 + 1) - 1)
+        })
 }
 
 fn reactive_let_history_target(seen: &Seen<'_>, at: &Drawn) -> bool {
