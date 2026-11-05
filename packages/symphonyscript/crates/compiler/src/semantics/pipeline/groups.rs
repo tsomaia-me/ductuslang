@@ -256,6 +256,22 @@ impl Core<'_> {
             .filter(|init| *init != NONE)
     }
 
+    pub fn group_settled(&self, node: u32, at: u32) -> Option<Fact> {
+        if !self.group_reads.contains_key(&node) {
+            return None;
+        }
+        let mut settled = self.group_kinds.get(&at)?.clone();
+        if open_kind(&settled) {
+            return None;
+        }
+        if self.group_variable.contains(&at)
+            && let Some(first) = settled.dims.first_mut()
+        {
+            *first = ANY_LENGTH;
+        }
+        Some(settled)
+    }
+
     fn seedless(&self, member: u32) -> Result<bool, Internal> {
         for node in self.group_history.get(&member).into_iter().flatten() {
             if self.group_seed(*node, member)?.is_none() {

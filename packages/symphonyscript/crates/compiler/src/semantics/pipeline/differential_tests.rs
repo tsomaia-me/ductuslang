@@ -2742,3 +2742,25 @@ fn a_let_reading_the_history_of_another_member_of_a_group_draws_what_the_old_eng
         }
     }
 }
+
+#[test]
+fn a_fallback_of_another_shape_than_its_groups_settled_cell_draws_what_the_old_engine_draws() {
+    let old = Compiler::new(&symphonyscript_fixtures::vocabulary())
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
+    let new =
+        Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("the vocabulary compiles");
+    let programs = [
+        "state note(60)\nstate recent = (recent.past(1, []) + [note])[^8]\nClip c:\n    Note/(recent[^1])\n",
+        "state note(60)\nstate recent = (recent.past(1, 0) + [note])[^8..]\nClip c:\n    Note/(recent[^1])\n",
+        "state note(60)\nstate recent = recent.past(1, [1]) + note\nClip c:\n    Note/(recent)\n",
+        "state note(60)\nstate recent = (recent.past(1, []) + [note])[^8..]\nClip c:\n    Note/(recent[^1])\n",
+    ];
+    for text in programs {
+        let sources = [source(text)];
+        if let Some(found) = new.checked_by_new_core(&sources) {
+            assert_eq!(found, old.check(&sources), "{text}");
+        }
+        assert_eq!(new.check(&sources), old.check(&sources), "{text}");
+    }
+}
