@@ -37,6 +37,8 @@ use super::tree_columns::TreeColumns;
 use crate::diagnostics::{Code, Diagnostic, mismatched_closer_help, stray_closer_help};
 use crate::source::Source;
 
+type FaultRanges = (Vec<Range<u32>>, Vec<Range<u32>>);
+
 pub(crate) struct Parser<'a> {
     source: &'a Source,
     vocabulary: &'a Vocabulary,
@@ -47,6 +49,7 @@ pub(crate) struct Parser<'a> {
     builder: TreeBuilder,
     diagnostics: Vec<Diagnostic>,
     detached: Vec<Range<u32>>,
+    at_layout: Vec<Range<u32>>,
     stray_reports: Vec<usize>,
     line_error: bool,
     block_ended: bool,
@@ -68,6 +71,7 @@ impl<'a> Parser<'a> {
             builder: TreeBuilder::new(source.text.len()),
             diagnostics: Vec::new(),
             detached: Vec::new(),
+            at_layout: Vec::new(),
             stray_reports: Vec::new(),
             line_error: false,
             block_ended: false,
@@ -80,17 +84,17 @@ impl<'a> Parser<'a> {
 
     pub(crate) fn run(self) -> Parsed {
         let text = self.source.text.clone();
-        let (tokens, tree, diagnostics, _, detached) = self.parsed();
-        Parsed::new(text, tokens, tree, diagnostics, detached)
+        let (tokens, tree, diagnostics, _, (detached, at_layout)) = self.parsed();
+        Parsed::new(text, tokens, tree, diagnostics, detached).with_layout(at_layout)
     }
 
     #[cfg(test)]
     fn run_counting(self) -> (Parsed, Vec<Diagnostic>, Cost) {
         let text = self.source.text.clone();
-        let (tokens, tree, diagnostics, cost, detached) = self.parsed();
+        let (tokens, tree, diagnostics, cost, (detached, at_layout)) = self.parsed();
         let kept = diagnostics.clone();
         (
-            Parsed::new(text, tokens, tree, diagnostics, detached),
+            Parsed::new(text, tokens, tree, diagnostics, detached).with_layout(at_layout),
             kept,
             cost,
         )
@@ -103,7 +107,7 @@ impl<'a> Parser<'a> {
         TreeColumns,
         Vec<Diagnostic>,
         Cost,
-        Vec<Range<u32>>,
+        FaultRanges,
     ) {
         self.builder.start_node(SyntaxKind::File);
         self.tasks.push(Task::File);
@@ -130,7 +134,13 @@ impl<'a> Parser<'a> {
         diagnostics.extend(self.diagnostics);
         diagnostics
             .sort_by_cached_key(|diagnostic| crate::semantics::reporting::order(&[], diagnostic));
-        (tokens, tree, diagnostics, cost, self.detached)
+        (
+            tokens,
+            tree,
+            diagnostics,
+            cost,
+            (self.detached, self.at_layout),
+        )
     }
 
     fn fill(&mut self, index: usize) -> bool {
@@ -772,6 +782,11 @@ impl<'a> Parser<'a> {
         }
         self.line_error = true;
         if !self.at(SyntaxKind::Error) && !self.same_fault_as_lexer(diagnostic.span.range.start) {
+            if self.at_end()
+                || self.at_any(&[SyntaxKind::Newline, SyntaxKind::Indent, SyntaxKind::Dedent])
+            {
+                self.at_layout.push(diagnostic.span.range.clone());
+            }
             self.diagnostics.push(diagnostic);
         }
         self.resync();

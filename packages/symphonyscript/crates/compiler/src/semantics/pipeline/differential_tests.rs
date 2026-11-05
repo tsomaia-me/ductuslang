@@ -2439,3 +2439,58 @@ fn a_missing_closer_or_block_reported_at_a_lets_first_token_counts_against_its_o
     }
     assert_eq!(programs, 72);
 }
+
+#[test]
+fn a_fault_raised_at_a_layout_token_counts_against_the_line_that_token_ends_so_the_let_beside_it_draws_reactive_let_in_every_order_496()
+ {
+    let old = Compiler::new(&symphonyscript_fixtures::vocabulary())
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
+    let new =
+        Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("the vocabulary compiles");
+    let cell = "state i(1)\n".to_string();
+    let read = "let s = i + 1\n".to_string();
+    let valid = "Clip c:\n    Note/(1)\n".to_string();
+    let at_dedent = "Clip c:\n    state Note/(1)\n".to_string();
+    let at_newline = "Clip e | gain=\n".to_string();
+    let at_operand = "Clip f | gain=1 +\n".to_string();
+    let shortest = [
+        "state i(1)\n".to_string(),
+        "let xs = [10, 20, 30, 40]\n".to_string(),
+        "let s = xs[i..^1] + xs[..1]\n".to_string(),
+        "Clip c:\n    state Note/(s[0] + s.size)\n".to_string(),
+    ];
+    let sets: Vec<Vec<String>> = vec![
+        vec![cell.clone(), read.clone(), valid],
+        vec![cell.clone(), read.clone(), at_dedent.clone()],
+        vec![cell.clone(), read.clone(), at_newline.clone()],
+        vec![cell.clone(), read.clone(), at_operand.clone()],
+        vec![
+            cell.clone(),
+            read.clone(),
+            at_dedent.clone(),
+            at_newline.clone(),
+        ],
+        vec![cell, read, at_operand, at_dedent],
+        shortest.to_vec(),
+    ];
+    let mut programs = 0;
+    for items in &sets {
+        for text in orders(items) {
+            programs += 1;
+            let found = new
+                .checked_by_new_core(&[source(&text)])
+                .unwrap_or_else(|| panic!("the new core takes {text}"));
+            let at = text.find("let s").map_or(0, |at| at + 4);
+            assert!(
+                found.iter().any(|diagnostic| {
+                    diagnostic.code == crate::diagnostics::Code::ReactiveLet
+                        && diagnostic.span.range.start as usize == at
+                }),
+                "{text}\n  {found:?}"
+            );
+            assert_eq!(found, old.check(&[source(&text)]), "{text}");
+        }
+    }
+    assert_eq!(programs, 96);
+}

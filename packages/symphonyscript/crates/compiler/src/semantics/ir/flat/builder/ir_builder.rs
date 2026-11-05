@@ -431,7 +431,7 @@ fn line_faults(parsed: &Parsed) -> Vec<(u32, u32)> {
         .iter()
         .map(|diagnostic| {
             let range = &diagnostic.span.range;
-            if parsed.detached.contains(range)
+            if (parsed.detached.contains(range) || parsed.at_layout.contains(range))
                 && let Some(break_at) = break_before(parsed.text(), range.start)
             {
                 return (break_at, break_at.saturating_add(1));

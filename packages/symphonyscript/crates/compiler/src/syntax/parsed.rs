@@ -18,6 +18,7 @@ pub struct Parsed {
     tree: TreeColumns,
     pub diagnostics: Vec<Diagnostic>,
     pub(crate) detached: Vec<Range<u32>>,
+    pub(crate) at_layout: Vec<Range<u32>>,
     parents: OnceLock<Vec<u32>>,
     token_parents: OnceLock<Vec<u32>>,
 }
@@ -36,9 +37,15 @@ impl Parsed {
             tree,
             diagnostics,
             detached,
+            at_layout: Vec::new(),
             parents: OnceLock::new(),
             token_parents: OnceLock::new(),
         }
+    }
+
+    pub(crate) fn with_layout(mut self, at_layout: Vec<Range<u32>>) -> Self {
+        self.at_layout = at_layout;
+        self
     }
 
     pub fn root(&self) -> NodeView<'_> {
@@ -133,6 +140,7 @@ impl PartialEq for Parsed {
             && self.tree == other.tree
             && self.diagnostics == other.diagnostics
             && self.detached == other.detached
+            && self.at_layout == other.at_layout
     }
 }
 
