@@ -41,7 +41,14 @@ fn expected_array(attr: &AttrDecl) -> Option<(EvalTy, u32)> {
 }
 
 pub(super) fn expected(attr: &AttrDecl) -> Option<EvalTy> {
-    if !attr.ty.lengths.is_empty() || attr.ty.capacity.is_some() || attr.unit.is_some() {
+    if attr.unit.is_some() || matches!(attr.ty.scalar, Scalar::Enum(_)) {
+        return None;
+    }
+    plain_expected(attr)
+}
+
+fn plain_expected(attr: &AttrDecl) -> Option<EvalTy> {
+    if !attr.ty.lengths.is_empty() || attr.ty.capacity.is_some() {
         return None;
     }
     Some(match attr.ty.scalar {
@@ -51,7 +58,8 @@ pub(super) fn expected(attr: &AttrDecl) -> Option<EvalTy> {
         Scalar::F32 => EvalTy::F32,
         Scalar::F64 => EvalTy::F64,
         Scalar::Bool => EvalTy::Bool,
-        Scalar::Enum(_) | Scalar::Str => return None,
+        Scalar::Enum(id) => EvalTy::Enum(id),
+        Scalar::Str => return None,
     })
 }
 
@@ -217,16 +225,8 @@ impl Core<'_> {
                 }
                 continue;
             }
-            let mut plain = attr.clone();
-            plain.unit = None;
-            let ty = match (expected(&plain), plain.ty.scalar) {
-                (Some(ty), _) => ty,
-                (None, Scalar::Enum(id))
-                    if plain.ty.lengths.is_empty() && plain.ty.capacity.is_none() =>
-                {
-                    EvalTy::Enum(id)
-                }
-                (None, _) => return Ok(Err(Declined(attribute_reason(attr)))),
+            let Some(ty) = plain_expected(attr) else {
+                return Ok(Err(Declined(attribute_reason(attr))));
             };
             if let Some(unit) = attr.unit
                 && self.unit_scale(unit.family, unit.default_unit)? != 1.0

@@ -235,6 +235,9 @@ impl Core<'_> {
         root: u32,
         unit: Option<symphonyscript_core::AttrUnit>,
     ) -> Result<(), Internal> {
+        if !self.units_seen {
+            return Ok(());
+        }
         if let Some(unit) = unit {
             self.unit_feeds.push((root, unit.family, self.feed_env));
         }
