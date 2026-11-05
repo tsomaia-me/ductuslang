@@ -24,7 +24,12 @@ impl Core<'_> {
             .collect()
     }
 
-    fn declaration_reads(&self, root: u32, env: u32, lets: u32) -> Result<Vec<u32>, Internal> {
+    fn declaration_reads(
+        &self,
+        root: u32,
+        env: u32,
+        (lets, cells): (u32, u32),
+    ) -> Result<Vec<u32>, Internal> {
         let mut reads = Vec::new();
         let mut stack = vec![(root, env)];
         let mut seen = std::collections::HashSet::new();
@@ -37,12 +42,12 @@ impl Core<'_> {
                 if op == Op::Name {
                     match self.bound(node)? {
                         DeclRef::Let(read) => reads.push(read),
+                        DeclRef::Cell(read) => reads.push(cells + read),
                         DeclRef::Param(position) if env != NONE => {
                             stack.extend(self.argument_of(node, position, env)?);
                         }
                         DeclRef::Param(_)
                         | DeclRef::None
-                        | DeclRef::Cell(_)
                         | DeclRef::Instance(_)
                         | DeclRef::Duplicate
                         | DeclRef::Fn(_)
@@ -58,7 +63,19 @@ impl Core<'_> {
         Ok(reads)
     }
 
-    fn declaration_key(&self, member: u32, lets: u32) -> Result<(u32, u32), Internal> {
+    fn declaration_key(
+        &self,
+        member: u32,
+        (lets, cells): (u32, u32),
+    ) -> Result<(u32, u32), Internal> {
+        if let Some(at) = member.checked_sub(cells) {
+            let rec = self
+                .ir
+                .cells
+                .get(at as usize)
+                .ok_or(Internal::missed("IR cell"))?;
+            return Ok((self.file_of(self.cell_root(at)?), rec.lo));
+        }
         if let Some(read) = member
             .checked_sub(lets)
             .and_then(|at| self.attr_reads.get(at as usize))
@@ -76,12 +93,27 @@ impl Core<'_> {
         ))
     }
 
+    fn cell_name(&self, at: u32) -> Result<(String, Span), Internal> {
+        let rec = self
+            .ir
+            .cells
+            .get(at as usize)
+            .ok_or(Internal::missed("IR cell"))?;
+        let name = self.ir.binder(rec.binder)?.name;
+        let entry = *self.ir.name(name).ok_or(Internal::missed("IR name"))?;
+        Ok((
+            self.ir.symbols.text(entry.sym).to_string(),
+            self.span(self.file_of(self.cell_root(at)?), entry.lo, entry.hi),
+        ))
+    }
+
     pub fn declaration_cycles(&mut self) -> Result<(), Internal> {
         let lets = u32::try_from(self.ir.lets.len()).unwrap_or(u32::MAX);
-        let count = self.ir.lets.len() + self.attr_reads.len();
+        let cells = u32::try_from(self.ir.lets.len() + self.attr_reads.len()).unwrap_or(u32::MAX);
+        let count = self.ir.lets.len() + self.attr_reads.len() + self.ir.cells.len();
         let mut edges: Vec<Vec<u32>> = vec![Vec::new(); count];
         for at in self.top_lets() {
-            let reads = self.declaration_reads(self.let_root(at)?, NONE, lets)?;
+            let reads = self.declaration_reads(self.let_root(at)?, NONE, (lets, cells))?;
             if let Some(slot) = edges.get_mut(at as usize) {
                 *slot = reads;
             }
@@ -94,15 +126,26 @@ impl Core<'_> {
                 continue;
             }
             let env = self.read_env(&read)?;
-            let reads = self.declaration_reads(read.root, env, lets)?;
+            let reads = self.declaration_reads(read.root, env, (lets, cells))?;
             if let Some(slot) = edges.get_mut(self.ir.lets.len() + at) {
+                *slot = reads;
+            }
+        }
+        for at in 0..u32::try_from(self.ir.cells.len()).unwrap_or(0) {
+            if !self.derived(at) {
+                continue;
+            }
+            let reads = self.declaration_reads(self.cell_root(at)?, NONE, (lets, cells))?;
+            if let Some(slot) = edges.get_mut((cells + at) as usize) {
                 *slot = reads;
             }
         }
         let components = strongly_connected(&edges);
         for component in &components {
             for member in component {
-                if let Some(at) = member.checked_sub(lets) {
+                if let Some(at) = member.checked_sub(lets)
+                    && *member < cells
+                {
                     self.attr_order.push(at);
                 }
             }
@@ -110,7 +153,7 @@ impl Core<'_> {
         for component in components {
             let mut first = None;
             for member in &component {
-                let key = self.declaration_key(*member, lets)?;
+                let key = self.declaration_key(*member, (lets, cells))?;
                 if first.is_none_or(|(seen, _)| key < seen) {
                     first = Some((key, *member));
                 }
@@ -126,7 +169,11 @@ impl Core<'_> {
                 continue;
             }
             for member in &component {
-                if let Some(read) = member
+                if let Some(at) = member.checked_sub(cells) {
+                    if let Some(slot) = self.cell_cyclic.get_mut(at as usize) {
+                        *slot = true;
+                    }
+                } else if let Some(read) = member
                     .checked_sub(lets)
                     .and_then(|at| self.attr_reads.get_mut(at as usize))
                 {
@@ -138,6 +185,10 @@ impl Core<'_> {
             let cycle = shortest_cycle(&edges, &component, first);
             let mut names = Vec::new();
             for member in cycle {
+                if let Some(at) = member.checked_sub(cells) {
+                    names.push(self.cell_name(at)?);
+                    continue;
+                }
                 match member
                     .checked_sub(lets)
                     .and_then(|at| self.attr_reads.get(at as usize))

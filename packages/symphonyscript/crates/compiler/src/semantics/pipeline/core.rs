@@ -56,7 +56,9 @@ pub(crate) struct Core<'a> {
     pub driving: bool,
     pub need: Option<Need>,
 
-    pub rule_runs: Vec<[bool; 7]>,
+    pub rule_reads: Vec<[Option<(EvalTy, bool)>; 7]>,
+    pub cell_order: Vec<u32>,
+    pub cell_cyclic: Vec<bool>,
     pub inst: u32,
     pub body_of: Vec<u32>,
     pub bodies: Vec<BodyInstance>,
@@ -186,7 +188,9 @@ impl<'a> Core<'a> {
             driving: false,
             need: None,
 
-            rule_runs: vec![[false; 7]; ir.cells.len()],
+            rule_reads: vec![[None; 7]; ir.cells.len()],
+            cell_order: Vec::new(),
+            cell_cyclic: vec![false; ir.cells.len()],
             inst: NONE,
             body_of: vec![NONE; nodes],
             bodies: Vec::new(),

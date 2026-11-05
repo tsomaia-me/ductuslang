@@ -1224,24 +1224,18 @@ impl Core<'_> {
     }
 
     fn read_cell(&mut self, at: u32, node: u32, ty: EvalTy, unflowed: bool) -> Stage<CoreValue> {
-        if self.fitting {
+        if self.fitting || self.is_cyclic_cell(at) {
             return Ok(Ok(Value::Error));
         }
         if let Some(rec) = self.ir.cells.get(at as usize).copied()
             && rec.rule != NONE
-            && let Some(done) = self
-                .rule_runs
+            && let Some(slot) = self
+                .rule_reads
                 .get_mut(at as usize)
-                .and_then(|runs| runs.get_mut(class(ty)))
-            && !*done
+                .and_then(|reads| reads.get_mut(class(ty)))
+            && slot.is_none()
         {
-            *done = true;
-            if unflowed {
-                self.unflowed.insert(rec.rule);
-            }
-            if let Err(declined) = self.evaluate(rec.rule, ty)? {
-                return Ok(Err(declined));
-            }
+            *slot = Some((ty, unflowed));
         }
         if !self.owning
             && self.cell_annotation_ty(at)?.is_none()

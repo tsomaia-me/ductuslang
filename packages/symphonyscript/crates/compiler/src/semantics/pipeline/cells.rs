@@ -1,3 +1,5 @@
+use std::collections::{HashMap, HashSet};
+
 use super::annotation::{Refusal, annotated_fact};
 use super::core::{Core, Stage};
 use super::decl_ref::DeclRef;
@@ -22,6 +24,9 @@ impl Core<'_> {
     }
 
     pub fn cell_read_fact(&self, at: u32) -> Result<Fact, Internal> {
+        if self.is_cyclic_cell(at) {
+            return Ok(Fact::PLACEHOLDER);
+        }
         if let Some(ty) = self.cell_annotation_ty(at)? {
             return Ok(Fact::numeric(annotated_fact(ty).leaf, None, Some(ty)));
         }
@@ -33,6 +38,10 @@ impl Core<'_> {
             };
         }
         Ok(fact)
+    }
+
+    pub fn is_cyclic_cell(&self, at: u32) -> bool {
+        self.cell_cyclic.get(at as usize).copied().unwrap_or(false)
     }
 
     pub fn derived(&self, at: u32) -> bool {
@@ -167,11 +176,116 @@ impl Core<'_> {
         Ok(found)
     }
 
+    fn direct_reads(&self, roots: &[u32]) -> Result<Reads, Internal> {
+        let mut cells = Vec::new();
+        let mut sources = Vec::new();
+        for root in roots {
+            for node in self.deep_postorder(*root)? {
+                let (op, _, _, _) = self.ir.node(node)?;
+                if matches!(op, Op::Call | Op::NamedCall)
+                    && let Some(function) = self.callee(node)?
+                {
+                    sources.push(Source::Fn(function));
+                }
+                if op != Op::Name {
+                    continue;
+                }
+                match self.bound(node)? {
+                    DeclRef::Cell(other) => cells.push(other),
+                    DeclRef::Let(other) => sources.push(Source::Let(other)),
+                    DeclRef::None
+                    | DeclRef::Instance(_)
+                    | DeclRef::Duplicate
+                    | DeclRef::Param(_)
+                    | DeclRef::Fn(_)
+                    | DeclRef::Pattern(_) => {}
+                }
+            }
+        }
+        Ok((cells, sources))
+    }
+
+    fn cells_read(
+        &self,
+        root: u32,
+        memo: &mut HashMap<Source, Reads>,
+    ) -> Result<Vec<u32>, Internal> {
+        let (mut found, mut pending) = self.direct_reads(&[root])?;
+        let mut seen = HashSet::new();
+        while let Some(source) = pending.pop() {
+            if !seen.insert(source) {
+                continue;
+            }
+            let (cells, sources) = match memo.entry(source) {
+                std::collections::hash_map::Entry::Occupied(entry) => entry.into_mut(),
+                std::collections::hash_map::Entry::Vacant(entry) => {
+                    let roots = match source {
+                        Source::Let(at) => vec![self.let_root(at)?],
+                        Source::Fn(at) => self.function_roots(at)?,
+                    };
+                    entry.insert(self.direct_reads(&roots)?)
+                }
+            };
+            found.extend(cells.iter().copied());
+            pending.extend(sources.iter().copied());
+        }
+        Ok(found)
+    }
+
+    fn cell_order(&self) -> Result<Option<Vec<u32>>, Internal> {
+        let count = u32::try_from(self.ir.cells.len()).unwrap_or(0);
+        let mut reads = Vec::with_capacity(count as usize);
+        let mut memo = HashMap::new();
+        for at in 0..count {
+            reads.push(if self.derived(at) && !self.is_cyclic_cell(at) {
+                let mut read = self.cells_read(self.cell_root(at)?, &mut memo)?;
+                read.retain(|other| !self.is_cyclic_cell(*other));
+                read
+            } else {
+                Vec::new()
+            });
+        }
+        let mut state = vec![0u8; count as usize];
+        let mut order = Vec::with_capacity(count as usize);
+        for first in 0..count {
+            if state.get(first as usize) != Some(&0) {
+                continue;
+            }
+            let mut stack = vec![(first, 0usize)];
+            if let Some(slot) = state.get_mut(first as usize) {
+                *slot = 1;
+            }
+            while let Some((at, next)) = stack.pop() {
+                let read = reads
+                    .get(at as usize)
+                    .and_then(|list| list.get(next))
+                    .copied();
+                let Some(read) = read else {
+                    if let Some(slot) = state.get_mut(at as usize) {
+                        *slot = 2;
+                    }
+                    order.push(at);
+                    continue;
+                };
+                stack.push((at, next + 1));
+                match state.get(read as usize) {
+                    Some(0) => {
+                        if let Some(slot) = state.get_mut(read as usize) {
+                            *slot = 1;
+                        }
+                        stack.push((read, 0));
+                    }
+                    Some(1) => return Ok(None),
+                    Some(_) | None => {}
+                }
+            }
+        }
+        Ok(Some(order))
+    }
+
     pub fn type_cells(&mut self) -> Stage<()> {
         let count = u32::try_from(self.ir.cells.len()).unwrap_or(0);
-        let mut order: Vec<u32> = (0..count).filter(|at| !self.derived(*at)).collect();
-        order.extend((0..count).filter(|at| self.derived(*at)));
-        for at in order {
+        for at in 0..count {
             let root = self.cell_root(at)?;
             for node in self.postorder(root)? {
                 let (op, _, _, _) = self.ir.node(node)?;
@@ -179,9 +293,9 @@ impl Core<'_> {
                     continue;
                 }
                 let grouped = match self.bound(node)? {
-                    DeclRef::Cell(other) => !self.derived(at) || self.derived(other),
-                    DeclRef::Let(other) => self.let_reads_cell(other)?,
+                    DeclRef::Cell(_) => !self.derived(at),
                     DeclRef::None
+                    | DeclRef::Let(_)
                     | DeclRef::Instance(_)
                     | DeclRef::Duplicate
                     | DeclRef::Param(_)
@@ -192,15 +306,28 @@ impl Core<'_> {
                     return Ok(Err(Declined(Reason::CellGroup)));
                 }
             }
+        }
+        let Some(order) = self.cell_order()? else {
+            return Ok(Err(Declined(Reason::CellGroup)));
+        };
+        for at in order.iter().copied() {
+            if self.is_cyclic_cell(at) {
+                continue;
+            }
+            let root = self.cell_root(at)?;
             if let Err(declined) = self.ensure_typed(root)? {
                 return Ok(Err(declined));
             }
         }
+        self.cell_order = order;
         Ok(Ok(()))
     }
 
     pub fn check_cells(&mut self) -> Stage<()> {
-        for at in 0..u32::try_from(self.ir.cells.len()).unwrap_or(0) {
+        for at in self.cell_order.clone().into_iter().rev() {
+            if self.is_cyclic_cell(at) {
+                continue;
+            }
             let root = self.cell_root(at)?;
             if let Some(ty) = self.cell_annotation_ty(at)? {
                 if let Err(declined) = self.check_cell_annotation(at, ty)? {
@@ -208,13 +335,54 @@ impl Core<'_> {
                 }
                 continue;
             }
-            let checked = match self.own_ty(root)? {
-                Some(own) if self.derived(at) && !self.is_kept(root)? => {
-                    self.evaluate(root, flexible(own))?.map(|_| ())
-                }
-                Some(_) | None => self.evaluate_own(root)?,
-            };
-            if let Err(declined) = checked {
+            if let Err(declined) = self.check_own_cell(at, root)? {
+                return Ok(Err(declined));
+            }
+            if let Err(declined) = self.run_rule_reads(at)? {
+                return Ok(Err(declined));
+            }
+        }
+        Ok(Ok(()))
+    }
+
+    fn check_own_cell(&mut self, at: u32, root: u32) -> Stage<()> {
+        Ok(match self.own_ty(root)? {
+            Some(own) if self.derived(at) && !self.is_kept(root)? => {
+                self.evaluate(root, flexible(own))?.map(|_| ())
+            }
+            Some(_) | None => self.evaluate_own(root)?,
+        })
+    }
+
+    fn run_rule_reads(&mut self, at: u32) -> Stage<()> {
+        let Some(rec) = self.ir.cells.get(at as usize).copied() else {
+            return Err(Internal::missed("IR cell"));
+        };
+        if rec.rule == NONE {
+            return Ok(Ok(()));
+        }
+        let reads = self
+            .rule_reads
+            .get(at as usize)
+            .copied()
+            .unwrap_or_default();
+        let widest = |classes: &[usize]| {
+            classes
+                .iter()
+                .rev()
+                .find_map(|at| reads.get(*at).copied().flatten())
+        };
+        let runs = [
+            reads.first().copied().flatten(),
+            widest(&[1, 2]),
+            reads.get(3).copied().flatten(),
+            widest(&[4, 5, 6]),
+        ];
+        for (ty, unflowed) in runs.into_iter().flatten() {
+            if unflowed {
+                self.unflowed.insert(rec.rule);
+            }
+            if let Err(declined) = self.evaluate(rec.rule, ty)? {
                 return Ok(Err(declined));
             }
         }
@@ -226,7 +394,10 @@ impl Core<'_> {
             let TopRec::Let(at) = top else {
                 continue;
             };
-            if self.faulty_declaration(top)? || !self.let_reads_cell(at)? {
+            if self.faulty_declaration(top)?
+                || self.cyclic.get(at as usize).copied().unwrap_or(false)
+                || !self.let_reads_cell(at)?
+            {
                 continue;
             }
             let root = self.let_root(at)?;
@@ -473,3 +644,11 @@ impl Core<'_> {
         Ok(Some((root, caller)))
     }
 }
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+enum Source {
+    Let(u32),
+    Fn(u32),
+}
+
+type Reads = (Vec<u32>, Vec<Source>);

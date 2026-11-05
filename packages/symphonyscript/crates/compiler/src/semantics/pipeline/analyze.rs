@@ -86,10 +86,10 @@ pub(crate) fn analyze(inputs: &Inputs<'_>) -> Result<Option<Run>, Internal> {
     if let Err(reason) = stage(core.check_attributes())? {
         return declined(reason);
     }
-    if let Err(reason) = stage(core.check_cells())? {
+    if let Err(reason) = stage(core.check_reactive_lets())? {
         return declined(reason);
     }
-    if let Err(reason) = stage(core.check_reactive_lets())? {
+    if let Err(reason) = stage(core.check_cells())? {
         return declined(reason);
     }
     core.check_integer_cells()?;

@@ -4696,7 +4696,17 @@ fn conversion_stops_the_expected_type(seen: &Seen<'_>, change: Change, at: &Draw
     }
 }
 
+fn array_cells(program: &str) -> Vec<&str> {
+    program
+        .lines()
+        .filter_map(|line| line.strip_prefix("state ")?.split_once(" = "))
+        .filter(|(name, rule)| !name.contains(':') && rule.starts_with('['))
+        .map(|(name, _)| name)
+        .collect()
+}
+
 fn annotated_array_rules(program: &str) -> Vec<(&str, usize, usize)> {
+    let arrays = array_cells(program);
     let mut rules = Vec::new();
     let mut start = 0;
     for line in program.split_inclusive('\n') {
@@ -4706,7 +4716,7 @@ fn annotated_array_rules(program: &str) -> Vec<(&str, usize, usize)> {
             .and_then(|tail| tail.split_once(" = "))
             && let Some((name, ty)) = head.split_once(": ")
             && !ty.is_empty()
-            && rule.starts_with('[')
+            && (rule.starts_with('[') || arrays.iter().any(|array| reads_word(rule, array)))
         {
             let lo = start + text.len() - rule.len();
             rules.push((name, lo, start + text.len()));
