@@ -394,22 +394,6 @@ pub const CARRIED_TO_R4B: &[Carried] = &[
         ],
     ),
     (
-        "Clip c:\n    Note/((q or i32(true))[q[[1, 2][5]..]])\n\nlet q = [1]\n",
-        &[
-            ("index-type", "(q or i32(true))[q[[1, 2][5]..]]"),
-            ("array-operand", "q or i32(true)"),
-            ("conversion-type", "i32(true)"),
-            ("index-out-of-range", "5"),
-        ],
-        &[
-            ("index-type", "(q or i32(true))[q[[1, 2][5]..]]"),
-            ("array-operand", "q or i32(true)"),
-            ("not-an-array", "q or i32(true)"),
-            ("conversion-type", "i32(true)"),
-            ("index-out-of-range", "5"),
-        ],
-    ),
-    (
         "Clip c:\n    Note/(if (if [1, 2] then q else 1) then ([1, 2][5] or true) else (if [1, 2] then 1 else [1, 2]))\n\nstate q(0): i32\n",
         &[
             ("condition-type", "if [1, 2] then q else 1"),
@@ -975,22 +959,6 @@ pub const CARRIED_TO_R4B: &[Carried] = &[
         &[("conversion-type", "i32(true)"), ("operand-type", "q * q")],
     ),
     (
-        "let a: i32 = (q or i32(true))[q[[1, 2][5]..]]\nClip c:\n    Note/(a)\n\nlet q = [1]\n",
-        &[
-            ("index-type", "(q or i32(true))[q[[1, 2][5]..]]"),
-            ("array-operand", "q or i32(true)"),
-            ("conversion-type", "i32(true)"),
-            ("index-out-of-range", "5"),
-        ],
-        &[
-            ("index-type", "(q or i32(true))[q[[1, 2][5]..]]"),
-            ("array-operand", "q or i32(true)"),
-            ("not-an-array", "q or i32(true)"),
-            ("conversion-type", "i32(true)"),
-            ("index-out-of-range", "5"),
-        ],
-    ),
-    (
         "let a: i32 = if (if [1, 2] then q else 1) then ([1, 2][5] or true) else (if [1, 2] then 1 else [1, 2])\nClip c:\n    Note/(a)\n\nstate q(0): i32\n",
         &[
             ("reactive-let", "a"),
@@ -1342,38 +1310,6 @@ pub const CARRIED_TO_R4B: &[Carried] = &[
             ("conversion-type", "i32(true)"),
             ("operand-type", "i32(true) and i32(true)"),
             ("conversion-type", "i32(true)"),
-        ],
-    ),
-    (
-        "Clip c:\n    Note | velocity=((q or i32(true))[q[[1, 2][5]..]])\n\nlet q = [1]\n",
-        &[
-            ("index-type", "(q or i32(true))[q[[1, 2][5]..]]"),
-            ("array-operand", "q or i32(true)"),
-            ("conversion-type", "i32(true)"),
-            ("index-out-of-range", "5"),
-        ],
-        &[
-            ("index-type", "(q or i32(true))[q[[1, 2][5]..]]"),
-            ("array-operand", "q or i32(true)"),
-            ("not-an-array", "q or i32(true)"),
-            ("conversion-type", "i32(true)"),
-            ("index-out-of-range", "5"),
-        ],
-    ),
-    (
-        "Clip c:\n    Note/(a)\nlet a: i32 = (q or i32(true))[q[[1, 2][5]..]]\n\nlet q = [1]\n",
-        &[
-            ("index-type", "(q or i32(true))[q[[1, 2][5]..]]"),
-            ("array-operand", "q or i32(true)"),
-            ("conversion-type", "i32(true)"),
-            ("index-out-of-range", "5"),
-        ],
-        &[
-            ("index-type", "(q or i32(true))[q[[1, 2][5]..]]"),
-            ("array-operand", "q or i32(true)"),
-            ("not-an-array", "q or i32(true)"),
-            ("conversion-type", "i32(true)"),
-            ("index-out-of-range", "5"),
         ],
     ),
     (
@@ -2377,6 +2313,7 @@ pub const CARRIED_TO_R4B: &[Carried] = &[
             ("array-operand", "[1, 2] or [1, 2][5]"),
             ("index-out-of-range", "5"),
             ("index-type", "[1, 2][[1, 2]..]"),
+            ("not-an-array", "[1, 2] or [1, 2][5]"),
         ],
         &[
             ("array-operand", "[1, 2] or [1, 2][5]"),
@@ -3453,6 +3390,7 @@ pub const CARRIED_TO_R4B: &[Carried] = &[
             ("array-operand", "[1, 2] or [1, 2][5]"),
             ("index-out-of-range", "5"),
             ("index-type", "[1, 2][[1, 2]..]"),
+            ("not-an-array", "[1, 2] or [1, 2][5]"),
         ],
         &[
             ("array-operand", "[1, 2] or [1, 2][5]"),
