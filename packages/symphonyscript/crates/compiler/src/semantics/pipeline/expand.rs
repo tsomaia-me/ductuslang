@@ -259,10 +259,23 @@ impl Core<'_> {
                             self.unknown_use(parent);
                             continue;
                         }
-                        if placement.has_as || self.ir.named(placement.as_name) {
-                            let Ok(Some(_)) = self.stand_in(pattern)? else {
-                                return Ok(Err(Declined(Reason::PatternUse)));
+                        let named = self.ir.named(placement.as_name);
+                        if placement.has_as || named {
+                            let stand_in = match self.stand_in(pattern)? {
+                                Ok(stand_in) => stand_in,
+                                Err(declined) => return Ok(Err(declined)),
                             };
+                            if stand_in.is_none() {
+                                if !named {
+                                    return Ok(Err(Declined(Reason::PatternUse)));
+                                }
+                                if let Err(declined) =
+                                    self.group_use(item, pattern, (file, parent, env), &mut work)?
+                                {
+                                    return Ok(Err(declined));
+                                }
+                                continue;
+                            }
                             let row = match self.stand_in_row(
                                 item,
                                 pattern,
@@ -305,6 +318,40 @@ impl Core<'_> {
                 }
             }
         }
+        Ok(Ok(()))
+    }
+
+    fn group_use(
+        &mut self,
+        item: u32,
+        pattern: u32,
+        (file, parent, env): (u32, u32, u32),
+        work: &mut Vec<Work>,
+    ) -> Stage<()> {
+        let placement = self.placement(item)?;
+        let key = u32::try_from(self.instances.len()).unwrap_or(NONE);
+        let made = match self.use_env(item, pattern, (file, env), true)? {
+            Ok(Some(made)) => made,
+            Ok(None) => return Ok(Ok(())),
+            Err(declined) => return Ok(Err(declined)),
+        };
+        self.group_items.insert(item);
+        self.use_names.insert((item, env), made);
+        if env == NONE
+            && let Some(entry) = self.ir.name(placement.as_name).copied()
+        {
+            let span = self.span(file, entry.lo, entry.hi);
+            self.placeholder_uses
+                .push((parent, placement.as_name, span, key));
+            self.use_index.push((parent, entry.sym.0, made));
+        }
+        let body = self.pattern_parts(pattern)?.1;
+        let block = *self
+            .ir
+            .blocks
+            .get(body as usize)
+            .ok_or(Internal::missed("IR block"))?;
+        work.push(Work::Items(block.items.0, block.items.1, made));
         Ok(Ok(()))
     }
 }

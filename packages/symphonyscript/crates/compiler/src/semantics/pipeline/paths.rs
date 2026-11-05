@@ -15,6 +15,16 @@ use crate::semantics::counted_walk::CountedWalk;
 use crate::semantics::ir::flat::{ABSENT, AttrForm, ItemRec, NONE, Op};
 use crate::semantics::operators::EvalTy;
 
+fn earliest(
+    one: symphonyscript_core::Span,
+    other: Option<symphonyscript_core::Span>,
+) -> symphonyscript_core::Span {
+    match other {
+        Some(other) if other.file == one.file && other.range.start < one.range.start => other,
+        Some(_) | None => one,
+    }
+}
+
 fn same_end(one: (End, Option<EvalTy>), other: (End, Option<EvalTy>)) -> bool {
     let unknown = |(end, ty): (End, Option<EvalTy>)| {
         ty.is_none() && matches!(end, End::Value | End::Placeholder)
@@ -27,6 +37,7 @@ fn same_end(one: (End, Option<EvalTy>), other: (End, Option<EvalTy>)) -> bool {
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum End {
     Row(u32),
+    Use(u32),
     To,
     Attr(u32),
     Placeholder,
@@ -100,6 +111,7 @@ impl Core<'_> {
         }
         index.sort_unstable();
         self.child_index = index;
+        self.use_index.sort_unstable();
         for row in 0..self.instances.len() {
             let row = u32::try_from(row).unwrap_or(u32::MAX);
             let Some(sym) = self.row_sym(row)? else {
@@ -154,9 +166,10 @@ impl Core<'_> {
                     other = self.child_named(body, sym);
                 }
             }
+            let held = self.placeholder_named(parent.get(row as usize).copied(), sym, row);
             let earlier = match other {
-                Some(other) => Some(self.row_name_span(other)?),
-                None => self.placeholder_named(parent.get(row as usize).copied(), sym, row),
+                Some(other) => Some(earliest(self.row_name_span(other)?, held)),
+                None => held,
             };
             if let Some(earlier) = earlier {
                 let text = self.named_row_text(row)?;
@@ -217,19 +230,21 @@ impl Core<'_> {
                 .filter(|row| row < key)
                 .map(|row| self.row_name_span(row))
                 .transpose()?;
-            if earlier.is_none() {
-                earlier = held
-                    .iter()
-                    .take(at)
-                    .find(|other| {
-                        other.0 == *body
-                            && self
-                                .ir
-                                .name(other.1)
-                                .is_some_and(|found| found.sym == entry.sym)
-                    })
-                    .map(|other| other.2.clone());
-            }
+            let before = held
+                .iter()
+                .take(at)
+                .find(|other| {
+                    other.0 == *body
+                        && self
+                            .ir
+                            .name(other.1)
+                            .is_some_and(|found| found.sym == entry.sym)
+                })
+                .map(|other| other.2.clone());
+            earlier = match earlier {
+                Some(row) => Some(earliest(row, before)),
+                None => before,
+            };
             let mut up = *body;
             while earlier.is_none() && up != NONE {
                 up = parent.get(up as usize).copied().unwrap_or(NONE);
@@ -348,6 +363,9 @@ impl Core<'_> {
         if let Some(child) = self.use_child_named(row, entry.sym)? {
             return Ok(Ok(End::Row(child)));
         }
+        if let Some(env) = self.use_named(row, entry.sym.0) {
+            return Ok(Ok(End::Use(env)));
+        }
         let kind = self
             .instances
             .get(row as usize)
@@ -388,7 +406,10 @@ impl Core<'_> {
             match self.bound(receiver)? {
                 DeclRef::Instance(item) => {
                     match self.row_of_item.get(item as usize).copied().unwrap_or(NONE) {
-                        NONE => End::Placeholder,
+                        NONE => self
+                            .use_names
+                            .get(&(item, self.path_env))
+                            .map_or(End::Placeholder, |env| End::Use(*env)),
                         row => End::Row(row),
                     }
                 }
@@ -428,6 +449,7 @@ impl Core<'_> {
                 };
                 Ok(Ok(end))
             }
+            End::Use(env) => self.step_use(node, env, field),
             End::To if self.is_field_receiver(node) => Ok(Ok(End::To)),
             End::To => self.destination_path_end(node),
             End::Attr(_) => {
@@ -447,6 +469,9 @@ impl Core<'_> {
 
     pub fn resolve_paths(&mut self) -> Stage<()> {
         self.index_children()?;
+        if self.group_use_named()? {
+            return Ok(Err(Declined(Reason::PatternUse)));
+        }
         self.index_to_wires()?;
         self.misplaced_to()?;
         let mut ends: HashMap<u32, End> = HashMap::new();
@@ -473,6 +498,7 @@ impl Core<'_> {
                     End::Row(row) => {
                         self.path_rows.insert(node, row);
                     }
+                    End::Use(_) => return Ok(Err(Declined(Reason::PatternUse))),
                     End::Attr(at) => {
                         if let Some(slot) = self.paths.get_mut(local) {
                             *slot = at;
@@ -852,7 +878,7 @@ impl Core<'_> {
     fn row_end_ty(&self, node: u32, wire: u32, end: End) -> Option<EvalTy> {
         match end {
             End::Attr(at) => self.attr_reads.get(at as usize).map(|read| read.ty),
-            End::Value | End::Placeholder | End::Row(_) | End::To => {
+            End::Value | End::Placeholder | End::Row(_) | End::Use(_) | End::To => {
                 self.row_choices.get(&(node, wire)).copied()
             }
         }
@@ -1172,7 +1198,7 @@ impl Core<'_> {
                 End::Attr(at) => {
                     self.inst_reads.insert((node, inst), at);
                 }
-                End::Row(_) | End::To => return Ok(Err(Declined(Reason::Member))),
+                End::Row(_) | End::Use(_) | End::To => return Ok(Err(Declined(Reason::Member))),
                 End::Value | End::Placeholder => {}
             }
             if first.is_none()
@@ -1291,7 +1317,9 @@ impl Core<'_> {
                     }
                 }
                 let links = self.enter_env(env);
+                self.path_env = env;
                 let outcome = self.use_paths_in(pattern, env, &nodes);
+                self.path_env = NONE;
                 self.leave_env(links);
                 for (item, row) in saved {
                     if let Some(slot) = self.row_of_item.get_mut(item as usize) {
@@ -1318,7 +1346,7 @@ impl Core<'_> {
             };
             if !self.is_field_receiver(*node) {
                 match end {
-                    End::Row(_) => return Ok(Err(Declined(Reason::PatternUse))),
+                    End::Row(_) | End::Use(_) => return Ok(Err(Declined(Reason::PatternUse))),
                     End::Attr(read) => {
                         self.env_reads.insert((*node, env), read);
                     }
@@ -1357,5 +1385,114 @@ impl Core<'_> {
             }
         }
         Ok(None)
+    }
+}
+
+impl Core<'_> {
+    fn use_named(&self, row: u32, sym: u32) -> Option<u32> {
+        if self.use_index.is_empty() {
+            return None;
+        }
+        let at = self
+            .use_index
+            .partition_point(|entry| (entry.0, entry.1) < (row, sym));
+        self.use_index
+            .get(at)
+            .filter(|entry| (entry.0, entry.1) == (row, sym))
+            .map(|entry| entry.2)
+    }
+
+    fn step_use(&mut self, node: u32, env: u32, field: u32) -> Stage<End> {
+        CountedWalk::CorePathStep.step();
+        let entry = *self.ir.name(field).ok_or(Internal::missed("IR name"))?;
+        let record = *self
+            .envs
+            .get(env as usize)
+            .ok_or(Internal::missed("use env"))?;
+        let pattern = self
+            .bodies
+            .get(record.inst as usize)
+            .and_then(|body| self.pattern_at(body.function))
+            .ok_or(Internal::missed("a use's pattern"))?;
+        let body = self.pattern_parts(pattern)?.1;
+        let block = *self
+            .ir
+            .blocks
+            .get(body as usize)
+            .ok_or(Internal::missed("IR block"))?;
+        let mut items: Vec<u32> = self
+            .ir
+            .block_items
+            .get(block.items.0 as usize..block.items.1 as usize)
+            .unwrap_or_default()
+            .to_vec();
+        while let Some(item) = items.pop() {
+            match *self.ir.item(item)? {
+                ItemRec::Placement(child) => {
+                    if !self.ir.named(child.as_name)
+                        || self
+                            .ir
+                            .name(child.as_name)
+                            .is_none_or(|name| name.sym != entry.sym)
+                    {
+                        continue;
+                    }
+                    if let Some(row) = self.env_rows.get(&(item, env)) {
+                        return Ok(Ok(End::Row(*row)));
+                    }
+                    if let Some(inner) = self.use_names.get(&(item, env)) {
+                        return Ok(Ok(End::Use(*inner)));
+                    }
+                    return Ok(Ok(End::Placeholder));
+                }
+                ItemRec::Line(members) => items.extend(
+                    self.ir
+                        .members
+                        .get(members.0 as usize..members.1 as usize)
+                        .unwrap_or_default(),
+                ),
+                ItemRec::Wire(_)
+                | ItemRec::Bundle(_)
+                | ItemRec::For(_)
+                | ItemRec::When(_)
+                | ItemRec::Paren(_) => {}
+            }
+        }
+        let name = self
+            .ir
+            .patterns
+            .get(pattern as usize)
+            .ok_or(Internal::missed("IR pattern"))?
+            .name;
+        let owner = self.ir.name_text(name).unwrap_or_default().to_string();
+        let text = self.ir.symbols.text(entry.sym).to_string();
+        let span = self.span(self.file_of(node), entry.lo, entry.hi);
+        self.draw(
+            Code::UnknownAttribute,
+            span,
+            format!("the use of `{owner}` has no child, wire or attribute `{text}`"),
+        );
+        Ok(Ok(End::Value))
+    }
+
+    pub fn group_use_named(&self) -> Result<bool, Internal> {
+        if self.group_items.is_empty() {
+            return Ok(false);
+        }
+        for local in 0..self.ir.op.len() {
+            if self.ir.op.get(local) != Some(&Op::Name)
+                || !self.reached.get(local).copied().unwrap_or(false)
+            {
+                continue;
+            }
+            let node = self.ir.base + u32::try_from(local).unwrap_or(u32::MAX);
+            if let Some(DeclRef::Instance(item)) = self.bind.get(local)
+                && self.group_items.contains(item)
+                && !self.is_field_receiver(node)
+            {
+                return Ok(true);
+            }
+        }
+        Ok(false)
     }
 }

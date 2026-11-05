@@ -114,9 +114,10 @@ fn the_declined_pattern_forms_stay_with_the_old_engine() {
     let new = Compiler::new(&vocabulary).expect("the vocabulary compiles");
     for text in [
         "pattern P(default v):\n    Note as n /v\n    Note/(n.pitch)\n",
-        "state s(0)\npattern P(default v, w = v + 1):\n    Note/w\nClip c:\n    P/s\n",
         "pattern P(default v):\n    for i in 0..v:\n        Note/i\nClip c:\n    Note as n /2\n    P/(n.pitch)\n",
-        "pattern Voice(default f):\n    Osc as osc /f\n    Filter\nSynth s:\n    Voice as v1 /440\n",
+        "pattern Voice(default f):\n    Osc as osc /f\n    Filter\nSynth s:\n    Voice as v1 /440\n    Feeds: v1\n",
+        "pattern Voice(default f):\n    Osc as osc /f\n    Filter\nSynth s:\n    Voice as v1 /440\n    Osc /(v1)\n",
+        "pattern Voice(default f):\n    Osc as osc /f\n    Filter\nSynth s:\n    Voice as v1 /440\nClip c | gain=s.v1\n",
         "pattern P(default v):\n    Plays: v\nClip c:\n    P/d\nClip d\n",
     ] {
         assert!(new.checked_by_new_core(&[source(text)]).is_none(), "{text}");
@@ -569,4 +570,92 @@ fn a_pattern_body_reads_the_as_names_of_its_own_children_in_each_uses_env() {
         })
         .collect();
     assert_eq!(chains, vec![vec![129..132]]);
+}
+
+const GROUP_USES: [&str; 17] = [
+    "pattern Lead(default p):\n    Note as n /p\n    Note\nClip c:\n    Lead as l /1\n    Lead as m /7\nClip d:\n    Note/([1, 2][c.m.n.pitch])\n    Note/([1, 2][c.l.n.pitch])\n",
+    "pattern Lead(default p):\n    Note as n /p\n    Note\npattern Two(default q):\n    Lead as a /q\n    Lead as b /(q + 5)\nClip c:\n    Two as t /1\nClip d:\n    Note/([1, 2][c.t.a.n.pitch])\n    Note/([1, 2][c.t.b.n.pitch])\n    Note/(c.t.c.n.pitch)\n",
+    "pattern Lead(default p):\n    Note as n /p\n    Note\npattern Two(default q):\n    Lead as a /q\n    Lead as b /(q + 5)\n    Note/([1, 2][b.n.pitch])\nClip c:\n    Two as t /1\n    Two as u /0\n",
+    "pattern Lead(default p):\n    Note as n /p\n    Note\nClip c:\n    Lead as l /1\n    Note as l /2\n    Lead as pitch /3\n    Lead as gain /4\n",
+    "pattern Lead(default p):\n    Note as n /p\n    Note\nSession s:\n    Track:\n        Synth as y\nClip c:\n    Lead as l /1\n    Note/(c.l.n.velocity + c.l.n.pitch)\n",
+    "pattern Lead(default p):\n    Note as n /p\n    Note\nClip c:\n    Lead as l /(1 + true)\nClip d:\n    Note/(c.l.n.pitch)\n    Note/(c.l.x)\n    Note/(c.l.n.x)\n",
+    "pattern Q(default v):\n    Note/v\npattern Lead(default p):\n    Q as n /p\n    Note\nClip c:\n    Lead as l /1\n    Lead as m /9\nClip d:\n    Note/([1, 2][c.m.n.pitch])\n",
+    "pattern Lead(default p):\n    Note as n /p\n    Note\nClip c:\n    Note as n /4\n    Lead as l /1\nClip d:\n    Note/([1, 2][c.n.pitch])\n",
+    "pattern Voice(default f):\n    Osc as osc /f\n    Filter\nSynth s:\n    Voice as v1 /440\nClip c | gain=s.v1.osc.gain\n",
+    "pattern Voice(default f):\n    Osc as osc /f\n    Filter\nSynth s:\n    Voice as v1 /440\nClip c | gain=s.v1.gain\n",
+    "pattern Voice(default f):\n    Osc as osc /f\n    Filter\nSynth s:\n    Voice as v1 /440\n    Osc as v1\n    Voice as v1 /441\n",
+    "pattern Voice(default f):\n    Osc as osc /f\n    Filter as fl\npattern Pair():\n    Voice as a /1\n    Voice as b /2\nSynth s:\n    Pair as p\nClip c | gain=s.p.b.fl.cutoff\n",
+    "pattern Voice(default f):\n    Osc as osc /f\n    Filter\nSynth s:\n    Osc as osc\n    Voice as v1 /440\n",
+    "pattern Voice(default f):\n    Osc as osc /f\n    Filter\nSynth s:\n    for i in 0..2:\n        Voice as v1 /440\n",
+    "pattern Voice(default f):\n    Osc as osc /f\n    Filter\nSynth s:\n    Voice as v1 /440\nClip c | gain=s.v1.osc.freq + s.v1.osc.freq\n",
+    "pattern Voice(default f):\n    Osc as osc /f\n    Filter\npattern W():\n    Synth:\n        Voice as v1 /440\n        Osc /(v1.osc.freq)\nW top\n",
+    "pattern Voice(default f):\n    Osc as osc /f\n    Filter\nSynth s:\n    Voice as v1 /440\n    Voice as v2 /(v1.osc.freq + true)\nClip c | gain=s.v2.nope\n",
+];
+
+#[test]
+fn a_named_group_use_makes_its_children_reachable_through_its_name_and_draws_its_name_clashes() {
+    let vocabulary = symphonyscript_fixtures::vocabulary();
+    assert_engines_agree(&vocabulary, &GROUP_USES);
+    let new = Compiler::new(&vocabulary).expect("the vocabulary compiles");
+    assert_eq!(
+        codes_of(
+            &new,
+            "pattern Voice(default f):\n    Osc as osc /f\n    Filter\nSynth s:\n    Voice as v1 /(1 + true)\nClip c | gain=s.v1.osc.freq\n"
+        ),
+        vec![
+            (Code::NoEntryInstance, 0..0, 0),
+            (Code::OperandType, 82..90, 0),
+            (Code::TypeMismatch, 106..119, 0),
+        ]
+    );
+}
+
+const LATE_DEFAULTS: [&str; 8] = [
+    "state s(0)\npattern P(default v, w = v + 1):\n    Note/w\nClip c:\n    P/s\n",
+    "state s(0)\npattern P(default v, w = v + true):\n    Note/w\nClip c:\n    P/s\n    P/s\n",
+    "state s(0)\npattern P(default v, w = v + 1):\n    Note/([1, 2][w])\nClip c:\n    P/s\n    P/1\n    P/5\n",
+    "pattern P(default v, w = v + 1):\n    Note/([1, 2][w])\nClip c:\n    Note as n /2\n    P/(n.pitch)\n",
+    "state s(0)\npattern P(default v, w = v + 1):\n    Note/w\nClip c:\n    P/s | w=2\n    P/s | w=true\n",
+    "state s(0.5)\npattern P(default v, w = v + 1):\n    Note/w\nClip c:\n    P/s\n",
+    "state s(0)\npattern P(default v, w = v + 1, x = w * 2):\n    Note/x | velocity=w\nClip c:\n    P/s\n",
+    "state s(0)\npattern P(default v, w = [v, 1]):\n    Note/(w[0])\nClip c:\n    P/s\n",
+];
+
+#[test]
+fn a_default_reading_a_cell_fed_or_path_fed_parameter_is_keyed_once_that_parameter_is_known() {
+    let vocabulary = symphonyscript_fixtures::vocabulary();
+    assert_engines_agree(&vocabulary, &LATE_DEFAULTS);
+    let new = Compiler::new(&vocabulary).expect("the vocabulary compiles");
+    assert_eq!(
+        codes_of(
+            &new,
+            "state s(0)\npattern P(default v, w = v + 300000000000):\n    Note/1 | velocity=w\nClip c:\n    P/s\n"
+        ),
+        vec![
+            (Code::NoEntryInstance, 0..0, 0),
+            (Code::IntegerCell, 6..7, 0),
+            (Code::DoesNotFit, 40..52, 1),
+        ]
+    );
+    assert_eq!(
+        codes_of(
+            &new,
+            "state s(0)\nClip c:\n    Note/1 | velocity=(s + 300000000000)\n"
+        ),
+        vec![
+            (Code::NoEntryInstance, 0..0, 0),
+            (Code::IntegerCell, 6..7, 0),
+            (Code::DoesNotFit, 46..58, 0),
+        ]
+    );
+    assert_eq!(
+        codes_of(
+            &new,
+            "state s(0)\npattern P(default v, w = v * 2):\n    for i in 0..w:\n        Note/i\nClip c:\n    P/s\n"
+        ),
+        vec![
+            (Code::NoEntryInstance, 0..0, 0),
+            (Code::ReactiveIterable, 60..61, 1),
+        ]
+    );
 }
