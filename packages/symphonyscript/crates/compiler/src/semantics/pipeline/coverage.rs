@@ -61,7 +61,18 @@ fn literal_landed(ir: &FlatIr, suffix: u32) -> bool {
 }
 
 pub(crate) fn covers(ir: &FlatIr) -> bool {
+    let variable: Vec<usize> = ir
+        .cells
+        .iter()
+        .filter(|rec| variable_annotation(ir, rec.binder) && (rec.rule == NONE || rec.init == NONE))
+        .filter_map(|rec| ir.binders.get(rec.binder as usize))
+        .filter_map(|binder| binder.annotation.checked_sub(ir.base))
+        .map(|local| local as usize)
+        .collect();
     for (local, op) in ir.op.iter().enumerate() {
+        if *op == Op::TyVar && variable.contains(&local) {
+            continue;
+        }
         if !landed(op_slice(*op)) {
             return false;
         }
@@ -349,7 +360,6 @@ pub(crate) fn reason_slice(reason: Reason) -> Slice {
         Reason::LocalCycle | Reason::LocalClash => Slice::Pending,
         Reason::AnnotatedCall => Slice::Pending,
         Reason::Pending => Slice::One,
-        Reason::ReactiveFor => Slice::Pending,
         Reason::DestinationValue | Reason::ReactiveReference | Reason::WireKind => Slice::Pending,
         Reason::BareVariant | Reason::UnitAttribute | Reason::EnumAttribute => Slice::Five,
         Reason::LoopHead | Reason::BodyItem | Reason::PatternUse => Slice::Pending,
@@ -366,7 +376,26 @@ fn plain_cell(ir: &FlatIr, rec: &CellRec) -> bool {
     (host_fed || derived)
         && rec.clock.0 == rec.clock.1
         && rec.capacity.is_none()
-        && scalar_annotation(ir, rec.binder)
+        && (scalar_annotation(ir, rec.binder)
+            || host_fed && variable_annotation(ir, rec.binder)
+            || derived && rec.init == NONE && array_annotation(ir, rec.binder))
+}
+
+fn array_annotation(ir: &FlatIr, binder: u32) -> bool {
+    let Some(rec) = ir.binders.get(binder as usize) else {
+        return false;
+    };
+    variable_annotation(ir, binder)
+        || matches!(ir.node(rec.annotation), Ok((Op::TyArray, inner, length, 1))
+            if (1..1 << 31).contains(&length) && scalar_node(ir, inner))
+}
+
+fn variable_annotation(ir: &FlatIr, binder: u32) -> bool {
+    let Some(rec) = ir.binders.get(binder as usize) else {
+        return false;
+    };
+    matches!(ir.node(rec.annotation), Ok((Op::TyVar, inner, capacity, 1))
+        if (1..1 << 31).contains(&capacity) && scalar_node(ir, inner))
 }
 
 fn plain_function(ir: &FlatIr, rec: &FnRec) -> bool {

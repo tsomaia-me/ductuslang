@@ -5,6 +5,7 @@ use super::core::{Core, Stage};
 use super::core_value::CoreValue;
 use super::decl_ref::DeclRef;
 use super::fold_run::FoldRun;
+use super::folds::ANY_LENGTH;
 use super::frame::Frame;
 use super::leaf::Leaf;
 use super::step::Step;
@@ -113,9 +114,31 @@ impl Core<'_> {
         if matches!(op, Op::Name | Op::Field) && !flows {
             self.unflowed.insert(node);
         }
+        self.mark_unused_reads(op, node)?;
         let float = matches!(ty, EvalTy::F32 | EvalTy::F64);
         let (mut integer_flow, mut picked) = (false, false);
         let operands: Vec<(u32, EvalTy)> = match op {
+            Op::Neg
+            | Op::Add
+            | Op::Sub
+            | Op::Mul
+            | Op::Rem
+            | Op::Pow
+            | Op::Div
+            | Op::IntDiv
+            | Op::Lt
+            | Op::Le
+            | Op::Gt
+            | Op::Ge
+            | Op::Is
+            | Op::IsNot
+                if self.refused_by_arrays(op, node)? =>
+            {
+                self.operands(node)?
+                    .into_iter()
+                    .map(|at| (at, EvalTy::Exact))
+                    .collect()
+            }
             Op::Neg | Op::Add | Op::Sub | Op::Mul | Op::Rem | Op::Pow => self
                 .operands(node)?
                 .into_iter()
@@ -1278,8 +1301,9 @@ impl Core<'_> {
             *slot = Some((ty, unflowed));
             self.read_log.push(at);
         }
+        let variable = self.cell_capacity_annotation(at)?.is_some();
         if !self.owning
-            && self.cell_annotation_ty(at)?.is_none()
+            && (variable || self.cell_annotation_ty(at)?.is_none())
             && int_range(ty).is_some()
             && let Some(rec) = self.ir.cells.get(at as usize).copied()
             && rec.rule == NONE
@@ -1288,8 +1312,16 @@ impl Core<'_> {
                 Ok(init) => init,
                 Err(declined) => return Ok(Err(declined)),
             };
+            let own = self.cell_annotation_ty(at)?.and_then(int_range);
+            let misses_own = own.is_some_and(|own| self.outside_range(&init, &own));
             match init {
-                Value::Int(_) | Value::Array(_) => self.hold_init_read(node, at, init, ty),
+                Value::Int(_) | Value::Array(_) if !misses_own => {
+                    self.hold_init_read(node, at, init, ty);
+                    if variable {
+                        self.whole_init_read();
+                    }
+                }
+                Value::Int(_) | Value::Array(_) => {}
                 Value::F32(_)
                 | Value::F64(_)
                 | Value::Bool(_)
@@ -1300,6 +1332,7 @@ impl Core<'_> {
             }
         }
         let side = match class(ty) {
+            _ if self.unused_reads.remove(&(self.inst, node)) => None,
             _ if self.owning => Some(0),
             1 | 2 => Some(1),
             3 => None,
@@ -1331,6 +1364,12 @@ impl Core<'_> {
         let Some(length) = self.fact(base)?.dims.first().copied() else {
             return Ok(());
         };
+        if length == ANY_LENGTH || self.variable_length(base)? {
+            if i64::try_from(*value).is_err() {
+                self.draw_at(Code::IndexOutOfRange, index, outside_i64(at, *value))?;
+            }
+            return Ok(());
+        }
         let (position, drawn) = if at == I64Position::Offset {
             if i64::try_from(*value).is_err() {
                 self.draw_at(Code::IndexOutOfRange, index, outside_i64(at, *value))?;
@@ -1586,6 +1625,24 @@ impl Core<'_> {
                         | None => {}
                     }
                 }
+                Op::Index | Op::IndexFromEnd
+                    if flowing.contains_key(&(self.inst, node))
+                        && self.is_kept(node)?
+                        && self.is_reactive(a)?
+                        && !self.fact(a)?.dims.is_empty() =>
+                {
+                    let ty = flowing
+                        .get(&(self.inst, node))
+                        .copied()
+                        .unwrap_or(EvalTy::Exact);
+                    stack.push((b, true));
+                    let owning = std::mem::replace(&mut self.owning, false);
+                    let outcome = self.evaluate(a, ty);
+                    self.owning = owning;
+                    if let Err(declined) = outcome? {
+                        return Ok(Err(declined));
+                    }
+                }
                 Op::Index | Op::IndexFromEnd => match self.pick_operands(node)? {
                     Some(operands) => {
                         let mut values = Vec::new();
@@ -1692,6 +1749,12 @@ impl Core<'_> {
                                     Err(declined) => return Ok(Err(declined)),
                                 }
                             }
+                            Some(own) if !self.is_kept(arg)? => {
+                                match self.bound_in_own(arg, own)? {
+                                    Ok(value) => Some(value),
+                                    Err(declined) => return Ok(Err(declined)),
+                                }
+                            }
                             Some(_) | None => None,
                         };
                         if held.is_none() {
@@ -1726,7 +1789,15 @@ impl Core<'_> {
                         *owned = true;
                         self.unmemoized();
                         fits.push(at);
-                        stack.push((self.let_root(at)?, false));
+                        let root = self.let_root(at)?;
+                        match self.own_ty(root)? {
+                            Some(own) if self.local_runtime_let(at)? && !self.is_kept(root)? => {
+                                if let Err(declined) = self.bound_in_own(root, own)? {
+                                    return Ok(Err(declined));
+                                }
+                            }
+                            Some(_) | None => stack.push((root, false)),
+                        }
                     }
                 }
                 Op::Int
@@ -1948,5 +2019,67 @@ impl Core<'_> {
                 Ok(Value::Error)
             }
         }
+    }
+}
+
+impl Core<'_> {
+    fn bound_in_own(&mut self, root: u32, own: EvalTy) -> Stage<CoreValue> {
+        self.unflowed.insert(root);
+        let owning = std::mem::replace(&mut self.owning, false);
+        let outcome = self.evaluate(root, own);
+        self.owning = owning;
+        outcome
+    }
+
+    fn local_runtime_let(&self, at: u32) -> Result<bool, Internal> {
+        let local = self
+            .ir
+            .lets
+            .get(at as usize)
+            .is_some_and(|rec| rec.owner != NONE);
+        Ok(local && self.is_reactive(self.let_root(at)?)?)
+    }
+
+    fn mark_unused_reads(&mut self, op: Op, node: u32) -> Result<(), Internal> {
+        if matches!(op, Op::Name | Op::Field) {
+            return Ok(());
+        }
+        let refused = matches!(
+            op,
+            Op::Neg
+                | Op::Add
+                | Op::Sub
+                | Op::Mul
+                | Op::Rem
+                | Op::Pow
+                | Op::Div
+                | Op::IntDiv
+                | Op::Lt
+                | Op::Le
+                | Op::Gt
+                | Op::Ge
+                | Op::Is
+                | Op::IsNot
+        ) && self.refused_by_arrays(op, node)?;
+        if self.unused_reads.remove(&(self.inst, node)) || refused {
+            for operand in self.operands(node)? {
+                self.unused_reads.insert((self.inst, operand));
+            }
+        }
+        Ok(())
+    }
+
+    fn refused_by_arrays(&self, op: Op, node: u32) -> Result<bool, Internal> {
+        let mut arrays = 0;
+        for operand in self.operands(node)? {
+            if !self.fact(operand)?.dims.is_empty() {
+                arrays += 1;
+            }
+        }
+        Ok(if op == Op::Add {
+            arrays == 1
+        } else {
+            arrays > 0
+        })
     }
 }

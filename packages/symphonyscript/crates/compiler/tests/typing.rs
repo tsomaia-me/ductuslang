@@ -4183,10 +4183,16 @@ fn a_choice_holding_an_operand_a_syntax_fault_leaves_missing_draws_its_syntax_di
             }
             let text = format!("{inputs}{before}{twin}{after}");
             let found = codes(&text);
-            if found != [*drawn] {
+            let reads_cell = before.starts_with("let ") && !twin.starts_with("if 5 ");
+            let expected: Vec<Code> = if reads_cell {
+                vec![Code::ReactiveLet, *drawn]
+            } else {
+                vec![*drawn]
+            };
+            if found != expected {
                 failures.push(support::failed_row(
                     &text,
-                    format!("{text:?}: expected {drawn:?}, found {found:?}"),
+                    format!("{text:?}: expected {expected:?}, found {found:?}"),
                 ));
             }
         }

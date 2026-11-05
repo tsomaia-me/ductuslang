@@ -701,6 +701,22 @@ impl Core<'_> {
         } else {
             &left.dims
         };
+        let (_, a, b, _) = self.ir.node(node)?;
+        if *left_len != 0
+            && *right_len != 0
+            && !dims_agree(
+                left.dims.get(1..).unwrap_or_default(),
+                right.dims.get(1..).unwrap_or_default(),
+            )
+            && (self.is_reactive(a)? || self.is_reactive(b)?)
+        {
+            self.draw_at(
+                Code::RaggedArray,
+                node,
+                "the rows of the joined arrays have different shapes",
+            )?;
+            return Ok(Fact::PLACEHOLDER);
+        }
         let mut dims = inner.clone();
         if let Some(first) = dims.first_mut() {
             *first = left_len.saturating_add(*right_len);
@@ -743,15 +759,18 @@ impl Core<'_> {
         if first.leaf == Leaf::Placeholder || second.leaf == Leaf::Placeholder {
             return Ok(Ok(Fact::PLACEHOLDER));
         }
+        let variable_arm =
+            first.dims.first() == Some(&ANY_LENGTH) || second.dims.first() == Some(&ANY_LENGTH);
         if first.dims.len() != second.dims.len()
             && first.leaf != Leaf::Error
             && second.leaf != Leaf::Error
         {
-            self.draw_at(
-                Code::TypeMismatch,
-                node,
-                "the branches hold arrays of different shapes",
-            )?;
+            let summary = if variable_arm && unify(first.leaf, second.leaf).is_none() {
+                "the branches of an `if` hold values of different types"
+            } else {
+                "the branches hold arrays of different shapes"
+            };
+            self.draw_at(Code::TypeMismatch, node, summary)?;
             return Ok(Ok(Fact::PLACEHOLDER));
         }
         if first.leaf == Leaf::Error || second.leaf == Leaf::Error {
@@ -793,9 +812,8 @@ impl Core<'_> {
             Ok(Value::Bool(true)) => first.dims,
             Ok(Value::Bool(false)) => second.dims,
             Ok(Value::Error)
-                if (self.inst != NONE && !self.is_reactive(condition)?)
-                    || (self.inst == NONE
-                        && self.in_body(condition).is_ok_and(|key| key.is_none())
+                if self.inst != NONE
+                    || (self.in_body(condition).is_ok_and(|key| key.is_none())
                         && self.is_reactive(condition)?) =>
             {
                 first
@@ -1044,11 +1062,31 @@ impl Core<'_> {
         let Some(first) = facts.first().cloned() else {
             return Err(Internal::missed("array element"));
         };
-        if facts
-            .iter()
-            .any(|fact| !dims_agree(&fact.dims, &first.dims))
-        {
+        let mut shapes = Vec::with_capacity(facts.len());
+        for (at, fact) in (start..start + count).zip(&facts) {
+            let kid = self.kid(at)?;
+            let variable = !fact.dims.is_empty() && self.variable_length(kid)?;
+            let mut dims = fact.dims.clone();
+            if let Some(length) = dims.first_mut().filter(|_| variable) {
+                *length = ANY_LENGTH;
+            }
+            shapes.push((kid, variable, dims));
+        }
+        let fixed_first = !first.dims.is_empty() && shapes.first().is_some_and(|shape| !shape.1);
+        let mut ragged = false;
+        if shapes.iter().any(|(_, variable, dims)| {
+            (!fixed_first || !*variable) && !dims_agree(dims, &first.dims)
+        }) {
             self.draw_at(Code::RaggedArray, node, RAGGED)?;
+            ragged = true;
+        }
+        for (kid, variable, _) in shapes.iter().skip(1) {
+            if fixed_first && *variable {
+                self.draw_at(Code::RaggedArray, *kid, RAGGED)?;
+                ragged = true;
+            }
+        }
+        if ragged {
             return Ok(Fact::PLACEHOLDER);
         }
         let mut dims = vec![count];

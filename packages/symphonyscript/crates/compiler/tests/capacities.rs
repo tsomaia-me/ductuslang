@@ -1226,7 +1226,10 @@ fn the_arms_of_a_choice_are_type_checked_against_one_another_whatever_chooses_in
                 "let a = g(0)\n",
                 read_a,
             ],
-            &[(Code::TypeMismatch, "if i > 5 then [[1]] else held")],
+            &[
+                (Code::TypeMismatch, "if i > 5 then [[1]] else held"),
+                (Code::ReactiveLet, "a"),
+            ],
         ),
         (
             &[
@@ -3274,7 +3277,7 @@ fn a_cell_array_under_a_scalar_annotation_draws_the_shape_mismatch_at_the_let_as
         ),
         (
             &["state s0([1, 2]): i32[..4]\n", "state x: i32 = s0\n", read],
-            &[(Code::TypeMismatch, "x")],
+            &[(Code::TypeMismatch, "s0")],
         ),
         (
             &[
@@ -3330,7 +3333,7 @@ fn an_array_holder_beside_a_single_value_draws_ragged_array_at_the_literal_as_it
         ),
         (
             &[host, "let x = [(s0), 1]\n", "Clip c:\n    Note/(x[1])\n"],
-            &[(Code::RaggedArray, "[(s0), 1]")],
+            &[(Code::RaggedArray, "[(s0), 1]"), (Code::ReactiveLet, "x")],
         ),
         (
             &[host, "Clip c:\n    Note/([[(s0), 1], [1, 2]][0][0])\n"],

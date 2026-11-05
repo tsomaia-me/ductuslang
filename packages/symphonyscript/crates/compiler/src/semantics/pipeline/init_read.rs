@@ -288,6 +288,12 @@ impl Core<'_> {
         }
     }
 
+    pub fn whole_init_read(&mut self) {
+        if let Some(entry) = self.init_reads.last_mut() {
+            entry.open = false;
+        }
+    }
+
     fn close_init_read(&mut self, at: usize) {
         if let Some(entry) = self.init_reads.get_mut(at) {
             entry.open = false;

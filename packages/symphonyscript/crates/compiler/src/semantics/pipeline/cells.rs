@@ -24,7 +24,14 @@ impl Core<'_> {
             return Ok(Fact::PLACEHOLDER);
         }
         if let Some(ty) = self.cell_annotation_ty(at)? {
-            return Ok(Fact::numeric(annotated_fact(ty).leaf, None, Some(ty)));
+            let mut fact = Fact::numeric(annotated_fact(ty).leaf, None, Some(ty));
+            fact.dims = self.binder_dims(
+                self.ir
+                    .cells
+                    .get(at as usize)
+                    .map_or(NONE, |rec| rec.binder),
+            )?;
+            return Ok(fact);
         }
         let mut fact = self.fact(self.cell_root(at)?)?;
         if !self.derived(at) && fact.fixed.is_none() && fact.read.is_none() {
@@ -206,6 +213,9 @@ impl Core<'_> {
             widest(&[4, 5, 6]),
         ];
         for (ty, unflowed) in runs.into_iter().flatten() {
+            if matches!(ty, EvalTy::Exact | EvalTy::Default) {
+                continue;
+            }
             if unflowed {
                 self.unflowed.insert(rec.rule);
             }
@@ -275,11 +285,20 @@ impl Core<'_> {
             if self.derived(at) || self.cell_uses.get(at as usize) != Some(&[false, true]) {
                 continue;
             }
+            let variable = self.cell_capacity_annotation(at)?.is_some();
             let fact = self.fact(self.cell_root(at)?)?;
-            if !matches!(fact.leaf, Leaf::Int | Leaf::Empty)
-                || !fact.dims.is_empty()
-                || fact.fixed.is_some()
-            {
+            let integer = if variable {
+                matches!(
+                    self.cell_annotation_ty(at)?,
+                    Some(EvalTy::U8 | EvalTy::I32 | EvalTy::I64)
+                )
+            } else {
+                matches!(fact.leaf, Leaf::Int)
+                    || (matches!(fact.leaf, Leaf::Empty)
+                        && fact.dims.is_empty()
+                        && fact.fixed.is_none())
+            };
+            if !integer {
                 continue;
             }
             let rec = self

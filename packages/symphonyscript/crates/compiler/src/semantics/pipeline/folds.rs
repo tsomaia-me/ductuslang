@@ -3,11 +3,9 @@ use super::body_instance::BodyInstance;
 use super::core::{Core, Stage};
 use super::core_value::CoreValue;
 use super::decl_ref::DeclRef;
-use super::declined::Declined;
 use super::fact::Fact;
 use super::leaf::Leaf;
 use super::need::Need;
-use super::reason::Reason;
 use super::typing::unify;
 use super::width::{combined, is_fixed_float};
 use crate::diagnostics::{Code, Diagnostic, for_start_and_body_help};
@@ -216,7 +214,8 @@ impl Core<'_> {
                     self.draw_at(Code::RangeBound, bound, "a range bound is an integer")?;
                     return Ok(None);
                 }
-                if let Ok(Value::Int(value)) = self.evaluate(bound, EvalTy::Exact)?
+                if !self.is_reactive(bound)?
+                    && let Ok(Value::Int(value)) = self.evaluate(bound, EvalTy::Exact)?
                     && i64::try_from(value).is_err()
                 {
                     self.draw_at(
@@ -402,13 +401,13 @@ impl Core<'_> {
         let rec = self.fold_rec(node)?;
         let iterable =
             self.is_reactive(rec.iterable.0)? || (rec.range && self.is_reactive(rec.iterable.1)?);
-        if iterable && rec.range {
-            return Ok(Err(Declined(Reason::ReactiveFor)));
-        }
         let reactive = (iterable, iterable || self.is_reactive(rec.start)?);
         let Some(items) = self.fold_head(node, &rec)? else {
             return Ok(Ok(Fact::PLACEHOLDER));
         };
+        if iterable && rec.range {
+            self.reactive_range_bounds(&rec)?;
+        }
         if let Some(ty) = self.accumulator_ty(&rec)? {
             return self.annotated_fold(node, &rec, items, (ty, reactive));
         }
@@ -434,12 +433,6 @@ impl Core<'_> {
             if body_reactive? && !reactive.1 {
                 reactive.1 = true;
                 continue;
-            }
-            if reactive.1
-                && (!start.dims.is_empty()
-                    || !found.as_ref().is_ok_and(|found| found.dims.is_empty()))
-            {
-                return Ok(Err(Declined(Reason::ReactiveFor)));
             }
             let found = found?;
             if faulty(&found) {

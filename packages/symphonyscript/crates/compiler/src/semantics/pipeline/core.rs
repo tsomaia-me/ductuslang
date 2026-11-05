@@ -54,6 +54,7 @@ pub(crate) struct Core<'a> {
     pub unchecked: bool,
     pub fitting: bool,
     pub unflowed: HashSet<u32>,
+    pub unused_reads: HashSet<(u32, u32)>,
     pub driving: bool,
     pub need: Option<Need>,
 
@@ -163,6 +164,8 @@ pub(crate) struct Core<'a> {
     pub init_open: super::init_read::Index,
     pub init_args: super::init_read::Index,
     pub init_serial: u64,
+    pub cell_capacities: HashMap<u32, i128>,
+    pub extent_cache: HashMap<u32, super::extent::Extent>,
 }
 
 impl<'a> Core<'a> {
@@ -197,6 +200,7 @@ impl<'a> Core<'a> {
             unchecked: false,
             fitting: false,
             unflowed: HashSet::new(),
+            unused_reads: HashSet::new(),
             driving: false,
             need: None,
 
@@ -306,6 +310,8 @@ impl<'a> Core<'a> {
             init_open: HashMap::new(),
             init_args: HashMap::new(),
             init_serial: 0,
+            cell_capacities: HashMap::new(),
+            extent_cache: HashMap::new(),
         }
     }
 
@@ -402,6 +408,20 @@ impl<'a> Core<'a> {
     ) -> Result<(), Internal> {
         let span = self.node_span(node)?;
         self.draw(code, span, summary);
+        Ok(())
+    }
+
+    pub fn draw_helped_at(
+        &mut self,
+        code: Code,
+        node: u32,
+        summary: impl Into<String>,
+        help: impl Into<String>,
+    ) -> Result<(), Internal> {
+        let span = self.node_span(node)?;
+        let diagnostic = Diagnostic::new(code, span, summary).with_help(help);
+        let diagnostic = self.chained(diagnostic);
+        self.push_drawn(diagnostic);
         Ok(())
     }
 

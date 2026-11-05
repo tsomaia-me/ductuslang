@@ -15,7 +15,7 @@ struct Run {
     walks: u64,
 }
 
-const CORE_WALKS: [CountedWalk; 21] = [
+const CORE_WALKS: [CountedWalk; 22] = [
     CountedWalk::BindLookup,
     CountedWalk::CoreExpandRow,
     CountedWalk::SigNode,
@@ -37,6 +37,7 @@ const CORE_WALKS: [CountedWalk; 21] = [
     CountedWalk::CorePatternUse,
     CountedWalk::CorePatternBody,
     CountedWalk::CoreInitRead,
+    CountedWalk::CoreCapacity,
 ];
 
 fn walked() -> u64 {
@@ -880,6 +881,15 @@ fn fold_nest(iterable: &str, start: &str, wrapped: bool) -> impl Fn(usize) -> St
     }
 }
 
+fn annotated_fold_nest(
+    iterable: &'static str,
+    start: &'static str,
+    wrapped: bool,
+) -> impl Fn(usize) -> String {
+    let nest = fold_nest(iterable, start, wrapped);
+    move |n| nest(n).replacen("state hh([1])\n", "state hh([1]): i32[..1]\n", 1)
+}
+
 const SPEC_FOLD_TWINS: [&str; 6] = [
     "state readings([1, 2])\nstate total = 1 + (for i, x in readings into sum from 0: sum + i * x)\n",
     "state readings([1, 2])\nstate high = for x in readings into kept from 0: if x > 60 then kept + x else kept\n",
@@ -916,6 +926,13 @@ fn nested_folds_reading_a_cell_draw_nothing_beside_spec_examples_446() {
             name,
             [100, 200, 400],
             fold_nest(iterable, start, wrapped),
+            &none,
+            Timing::Printed,
+        ));
+        assert_none(&ledger_failures(
+            &format!("{name}, annotated"),
+            [100, 200, 400],
+            annotated_fold_nest(iterable, start, wrapped),
             &none,
             Timing::Printed,
         ));
@@ -1050,6 +1067,98 @@ fn stress_a_ring_and_a_chain_of_cells_reading_one_anothers_history_settle_in_tim
         "cell groups",
         [1_000, 2_000, 4_000],
         ring_and_chain_of_history_reads,
+        &none,
+        Timing::Judged,
+    ));
+}
+
+#[test]
+#[ignore = "stress"]
+fn stress_nested_folds_over_an_annotated_variable_array_cell_cost_walks_and_peak_bytes_linear_in_their_depth_446()
+ {
+    let (_, iterable, start, wrapped) = FOLD_NESTS[0];
+    assert_none(&ledger_failures(
+        "446 plain nest over i32[..1]",
+        [2_500, 5_000, 10_000],
+        annotated_fold_nest(iterable, start, wrapped),
+        &none,
+        Timing::Judged,
+    ));
+}
+
+#[test]
+#[ignore = "stress"]
+fn stress_nested_folds_with_wrapped_bodies_over_an_annotated_variable_array_cell_cost_walks_and_peak_bytes_linear_in_their_depth_446()
+ {
+    let (_, iterable, start, wrapped) = FOLD_NESTS[1];
+    assert_none(&ledger_failures(
+        "446 wrapped body over i32[..1]",
+        [2_500, 5_000, 10_000],
+        annotated_fold_nest(iterable, start, wrapped),
+        &none,
+        Timing::Judged,
+    ));
+}
+
+#[test]
+#[ignore = "stress"]
+fn stress_nested_folds_over_a_compile_time_iterable_with_a_start_reading_an_annotated_variable_array_cell_cost_walks_and_peak_bytes_linear_in_their_depth_446()
+ {
+    let (_, iterable, start, wrapped) = FOLD_NESTS[2];
+    assert_none(&ledger_failures(
+        "446 compile-time iterable over i32[..1]",
+        [2_500, 5_000, 10_000],
+        annotated_fold_nest(iterable, start, wrapped),
+        &none,
+        Timing::Judged,
+    ));
+}
+
+fn variable_join_chain(word: &'static str) -> impl Fn(usize) -> String {
+    move |n| {
+        let joins = vec!["[1]"; n].join(" + ");
+        let readers: String = (0..n)
+            .map(|at| format!("state s{at} = t[^2..]\n"))
+            .collect();
+        format!(
+            "state held([]): i32[..1]\n{word} t = held + {joins}\n{readers}{}",
+            read_of("t[0]")
+        )
+    }
+}
+
+#[test]
+fn a_join_chain_onto_a_variable_array_cell_costs_work_and_memory_linear_in_the_chain_500() {
+    assert_none(&ledger_failures(
+        "500 let",
+        [250, 500, 1_000],
+        variable_join_chain("let"),
+        &one("reactive-let"),
+        Timing::Printed,
+    ));
+    assert_none(&ledger_failures(
+        "500 state",
+        [250, 500, 1_000],
+        variable_join_chain("state"),
+        &none,
+        Timing::Printed,
+    ));
+}
+
+#[test]
+#[ignore = "stress"]
+fn stress_a_join_chain_onto_a_variable_array_cell_costs_time_and_memory_linear_in_the_chain_500() {
+    assert_none(&ledger_failures(
+        "500 let",
+        [4_000, 8_000, 16_000],
+        variable_join_chain("let"),
+        &one("reactive-let"),
+        Timing::Judged,
+    ));
+    assert_none(&ledger_failures(
+        "500 state",
+        [4_000, 8_000, 16_000],
+        variable_join_chain("state"),
         &none,
         Timing::Judged,
     ));

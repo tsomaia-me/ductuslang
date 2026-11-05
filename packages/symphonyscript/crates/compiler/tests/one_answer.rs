@@ -289,6 +289,34 @@ const DECIDING_NONE: &[(&str, &str)] = &[
         "the array literal a read selects its element from, ARCHITECTURE §7's compile-time element read",
     ),
     (
+        "pipeline/annotation.rs binder_dims",
+        "the lengths an annotation's array type forms give, a fixed array's length and a variable array's open one, SPEC §3.7 and §4.5",
+    ),
+    (
+        "pipeline/annotation.rs cell_capacity_annotation",
+        "the capacity a host-fed cell's variable-array annotation states, SPEC §3.7 and §6.1",
+    ),
+    (
+        "pipeline/bounds.rs extremes_at",
+        "the minimum and maximum a range or slice bound that reads a cell has by its form, SPEC §7.9's bound rule",
+    ),
+    (
+        "pipeline/capacities.rs checked_root",
+        "the nodes whose capacity the length limit checks, joins, `for` expressions and calls that read a cell, SPEC §3.2",
+    ),
+    (
+        "pipeline/capacities.rs combined_extent",
+        "a value's capacity from its operands' capacities, SPEC §3.7's capacity table and §5.10's accumulator rule",
+    ),
+    (
+        "pipeline/capacities.rs extent_parts",
+        "the operands whose capacities a value's capacity reads, SPEC §3.7's capacity table",
+    ),
+    (
+        "pipeline/capacities.rs env_read",
+        "whether a node's capacity reads a cell a group's solve holds or a parameter, so its capacity is not cached, ARCHITECTURE §7 stage 6's capacities in work independent of their values",
+    ),
+    (
         "pipeline/check.rs refuse_fixed",
         "the fixed-type operands a runtime value's cells are read around, each refused at itself, SPEC §4.2's fixed-type operand",
     ),
