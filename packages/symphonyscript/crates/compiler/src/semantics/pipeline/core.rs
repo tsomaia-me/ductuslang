@@ -160,6 +160,9 @@ pub(crate) struct Core<'a> {
     pub group_kinds: HashMap<u32, Fact>,
     pub read_log: Vec<u32>,
     pub init_reads: Vec<super::init_read::InitRead>,
+    pub init_open: super::init_read::Index,
+    pub init_args: super::init_read::Index,
+    pub init_serial: u64,
 }
 
 impl<'a> Core<'a> {
@@ -300,6 +303,9 @@ impl<'a> Core<'a> {
             group_kinds: HashMap::new(),
             read_log: Vec::new(),
             init_reads: Vec::new(),
+            init_open: HashMap::new(),
+            init_args: HashMap::new(),
+            init_serial: 0,
         }
     }
 

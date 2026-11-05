@@ -1,10 +1,14 @@
+use std::collections::HashMap;
 use std::ops::RangeInclusive;
 
 use super::core::Core;
 use super::core_value::CoreValue;
 use crate::diagnostics::Code;
 use crate::semantics::Internal;
+use crate::semantics::counted_walk::CountedWalk;
 use crate::semantics::operators::{EvalTy, Value, int_range};
+
+pub(crate) type Index = HashMap<(u32, Vec<u32>), Vec<(usize, u64)>>;
 
 #[derive(Clone, Debug)]
 pub(crate) struct InitRead {
@@ -17,27 +21,89 @@ pub(crate) struct InitRead {
     pub open: bool,
     pub pinned: bool,
     pub bound: bool,
+    pub serial: u64,
+}
+
+fn listed(index: &mut Index, entry: &InitRead, at: usize) {
+    index
+        .entry((entry.node, entry.chain.clone()))
+        .or_default()
+        .push((at, entry.serial));
+}
+
+fn found(
+    index: &mut Index,
+    reads: &[InitRead],
+    (node, chain): (u32, &[u32]),
+    fits: fn(&InitRead) -> bool,
+) -> Option<usize> {
+    let list = index.get_mut(&(node, chain.to_vec()))?;
+    let live = |(at, serial): (usize, u64)| {
+        reads.get(at).is_some_and(|entry| {
+            entry.serial == serial
+                && entry.open
+                && entry.node == node
+                && entry.chain == chain
+                && fits(entry)
+        })
+    };
+    while let Some(last) = list.last().copied() {
+        CountedWalk::CoreInitRead.step();
+        if live(last) {
+            return Some(last.0);
+        }
+        list.pop();
+    }
+    None
 }
 
 impl Core<'_> {
     pub fn hold_init_read(&mut self, node: u32, cell: u32, held: CoreValue, ty: EvalTy) {
-        self.init_reads.push(InitRead {
+        let chain = self.eval_chain.clone();
+        self.push_init_read(InitRead {
             node,
             span: node,
             cell,
             held: vec![held],
             ty,
-            chain: self.eval_chain.clone(),
+            chain,
             open: true,
             pinned: false,
             bound: false,
+            serial: 0,
         });
     }
 
-    fn open_init_read(&self, base: u32) -> Option<usize> {
-        self.init_reads.iter().rposition(|read| {
-            read.open && !read.bound && read.node == base && read.chain == self.eval_chain
-        })
+    fn push_init_read(&mut self, mut entry: InitRead) {
+        self.init_serial += 1;
+        entry.serial = self.init_serial;
+        let at = self.init_reads.len();
+        listed(&mut self.init_open, &entry, at);
+        listed(&mut self.init_args, &entry, at);
+        self.init_reads.push(entry);
+    }
+
+    fn relisted(&mut self, at: usize) {
+        if let Some(entry) = self.init_reads.get(at) {
+            listed(&mut self.init_open, entry, at);
+            listed(&mut self.init_args, entry, at);
+        }
+    }
+
+    fn dropped(&mut self, at: usize) {
+        if let Some(entry) = self.init_reads.get_mut(at) {
+            entry.open = false;
+            entry.held.clear();
+        }
+    }
+
+    fn open_init_read(&mut self, base: u32) -> Option<usize> {
+        found(
+            &mut self.init_open,
+            &self.init_reads,
+            (base, &self.eval_chain),
+            |entry| !entry.bound,
+        )
     }
 
     fn arrays(held: &[CoreValue]) -> Option<Vec<u32>> {
@@ -113,7 +179,7 @@ impl Core<'_> {
         match stepped {
             Some(stepped) => self.move_init_read(at, read, stepped),
             None => {
-                self.init_reads.remove(at);
+                self.dropped(at);
             }
         }
     }
@@ -150,7 +216,7 @@ impl Core<'_> {
             let within = 0 <= start && start <= end && end <= length;
             let (true, Ok(start), Ok(end)) = (within, usize::try_from(start), usize::try_from(end))
             else {
-                self.init_reads.remove(at);
+                self.dropped(at);
                 return;
             };
             sliced.push(Value::Array(self.store.slice(array, start, end)));
@@ -169,10 +235,12 @@ impl Core<'_> {
         let Some((_, caller)) = self.eval_chain.split_last() else {
             return;
         };
-        let found = self.init_reads.iter().rposition(|entry| {
-            entry.open && !entry.pinned && entry.node == argument && entry.chain == caller
-        });
-        let Some(at) = found else {
+        let Some(at) = found(
+            &mut self.init_args,
+            &self.init_reads,
+            (argument, caller),
+            |entry| !entry.pinned,
+        ) else {
             return;
         };
         let held = self.held_at(at);
@@ -185,7 +253,7 @@ impl Core<'_> {
         entry.bound = true;
         let cell = entry.cell;
         let chain = self.eval_chain.clone();
-        self.init_reads.push(InitRead {
+        self.push_init_read(InitRead {
             node: read,
             span: read,
             cell,
@@ -195,6 +263,7 @@ impl Core<'_> {
             open: true,
             pinned: false,
             bound: false,
+            serial: 0,
         });
     }
 
@@ -215,6 +284,7 @@ impl Core<'_> {
             entry.node = call;
             entry.span = call;
             entry.chain = caller;
+            self.relisted(at);
         }
     }
 
@@ -232,13 +302,19 @@ impl Core<'_> {
             }
             entry.held = held;
         }
+        self.relisted(at);
     }
 
     pub fn flush_init_reads(&mut self, from: usize) -> Result<(), Internal> {
         let reads = self.init_reads.split_off(from.min(self.init_reads.len()));
+        if self.init_reads.is_empty() {
+            self.init_open.clear();
+            self.init_args.clear();
+        }
         let chain = std::mem::take(&mut self.eval_chain);
         let mut outcome = Ok(());
         for read in reads {
+            CountedWalk::CoreInitRead.step();
             if read.bound {
                 continue;
             }
