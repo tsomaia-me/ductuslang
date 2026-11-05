@@ -142,6 +142,10 @@ impl Core<'_> {
         let checked = self.length_limits(&covered);
         self.inst = outer;
         checked?;
+        let outer = std::mem::replace(&mut self.inst, NONE);
+        let annotated = self.annotated_capacities();
+        self.inst = outer;
+        annotated?;
         if let Some((at, _)) = self.stop.as_mut()
             && *at < mark
         {
@@ -729,12 +733,12 @@ impl Core<'_> {
         if let Some(capacity) = walk.cells.get(&at) {
             return Ok(Parts::Leaf(Extent::Variable(capacity.clone())));
         }
+        if let Some(capacity) = self.cell_capacity_annotation(at)? {
+            return Ok(Parts::Leaf(Extent::Variable(Piecewise::constant(
+                i128::from(capacity),
+            ))));
+        }
         if !self.derived(at) {
-            if let Some(capacity) = self.cell_capacity_annotation(at)? {
-                return Ok(Parts::Leaf(Extent::Variable(Piecewise::constant(
-                    i128::from(capacity),
-                ))));
-            }
             return Ok(Parts::Leaf(self.fixed_cell(at)?));
         }
         if let Some(capacity) = self.cell_capacities.get(&at) {
@@ -996,6 +1000,53 @@ impl Core<'_> {
         walk.checking = saved;
         self.inst = outer;
         found
+    }
+}
+
+impl Core<'_> {
+    fn annotated_capacities(&mut self) -> Result<(), Internal> {
+        let count = u32::try_from(self.ir.cells.len()).unwrap_or(0);
+        for at in 0..count {
+            CountedWalk::CoreCapacity.step();
+            if !self.derived(at) || self.is_cyclic_cell(at) {
+                continue;
+            }
+            let Some(capacity) = self.cell_capacity_annotation(at)? else {
+                continue;
+            };
+            let root = self.cell_root(at)?;
+            if !self.has_fact(root)? {
+                continue;
+            }
+            let fact = self.fact(root)?;
+            if fact.dims.len() != 1 || matches!(fact.leaf, Leaf::Placeholder | Leaf::Error) {
+                continue;
+            }
+            let mut walk = Walk::new(Checking::Nothing);
+            let holds = self.extent_in(root, &mut walk, &mut HashMap::new())?.held();
+            let capacity = i128::from(capacity);
+            if holds <= capacity || holds >= LIMIT {
+                continue;
+            }
+            let (name, _) = self.capacity_name(at)?;
+            let span = self.cell_declaration_span(at)?;
+            let help = if capacity == 1 {
+                String::from("slice the value to its newest element with `[^1..]`")
+            } else {
+                format!("slice the value to its newest {capacity} elements with `[^{capacity}..]`")
+            };
+            let diagnostic = crate::diagnostics::Diagnostic::new(
+                Code::CapacityExceeded,
+                span,
+                format!(
+                    "`{name}` holds up to {holds} elements, more than its annotated capacity {capacity}"
+                ),
+            )
+            .with_help(help);
+            let diagnostic = self.chained(diagnostic);
+            self.push_drawn(diagnostic);
+        }
+        Ok(())
     }
 }
 

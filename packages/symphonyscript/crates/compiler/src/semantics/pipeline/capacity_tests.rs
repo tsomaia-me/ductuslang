@@ -231,3 +231,93 @@ fn the_capacity_pass_counts_its_walk_linear_in_a_chain_of_joins() {
         }
     }
 }
+
+const TABLE: [(&str, u32); 17] = [
+    ("[1, 2, 3]", 3),
+    ("a", 5),
+    ("a + [1, 2]", 7),
+    ("a + a", 10),
+    ("a[^3..]", 3),
+    ("a[^8..]", 5),
+    ("a[..2 - i]", 5),
+    ("a[1..]", 4),
+    ("a[..2]", 2),
+    ("a[1..^1]", 3),
+    ("a[2..^1]", 2),
+    ("a[i..]", 5),
+    ("a[..i]", 5),
+    ("a[^i..]", 5),
+    ("[1, 2, 3, 4][i..]", 4),
+    ("(a + a)[^3..]", 3),
+    ("if flag then [1] else a + a", 10),
+];
+
+const ANNOTATED: [(&str, &[Code]); 8] = [
+    ("state probe: i32[..8] = a + [1.5]", &[Code::TypeMismatch]),
+    ("state probe: i32[..8] = a[0]", &[Code::TypeMismatch]),
+    ("state probe: u8[..8] = a + [300]", &[Code::DoesNotFit]),
+    ("state probe: i32[3] = a", &[Code::VariableArray]),
+    ("state probe: i32[4] = a[^4..]", &[Code::VariableArray]),
+    ("state probe: i32[2] = [note, note]", &[]),
+    (
+        "state probe: i32[2] = [note, note, note]",
+        &[Code::TypeMismatch],
+    ),
+    (
+        "state probe: i32[..2] = [note, note, note]",
+        &[Code::CapacityExceeded],
+    ),
+];
+
+fn both_orders(items: &[String]) -> [String; 2] {
+    let forward = items
+        .iter()
+        .fold(String::new(), |text, item| text + item + "\n");
+    let reversed = items
+        .iter()
+        .rev()
+        .fold(String::new(), |text, item| text + item + "\n");
+    [forward, reversed]
+}
+
+#[test]
+fn a_derived_cell_annotated_with_an_array_takes_the_capacity_table_and_its_shape_as_the_old_engine_does()
+ {
+    let vocabulary = symphonyscript_fixtures::vocabulary();
+    let old = Compiler::new(&vocabulary)
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
+    let new = Compiler::new(&vocabulary).expect("the vocabulary compiles");
+    let cells = "state a([]): i32[..5]\nstate i(1)\nstate flag(false)\nstate note(60)\n";
+    let mut cases: Vec<(String, Vec<Code>)> = Vec::new();
+    for (value, capacity) in TABLE {
+        for (annotated, codes) in [
+            (capacity, vec![]),
+            (capacity - 1, vec![Code::CapacityExceeded]),
+        ] {
+            cases.push((format!("state probe: i32[..{annotated}] = {value}"), codes));
+        }
+    }
+    for (cell, codes) in ANNOTATED {
+        cases.push((cell.to_string(), codes.to_vec()));
+    }
+    let mut programs = 0;
+    for (cell, codes) in &cases {
+        let text = format!("{cells}{cell}\nClip c:\n    Note/(probe[0])\n");
+        for text in both_orders(&items(&text)) {
+            let sources = [source(&text)];
+            let found = new
+                .checked_by_new_core(&sources)
+                .unwrap_or_else(|| panic!("the new core takes {text}"));
+            assert_eq!(found, old.check(&sources), "{text}");
+            let found: Vec<Code> = found
+                .iter()
+                .map(|diagnostic| diagnostic.code)
+                .filter(|code| *code != Code::NoEntryInstance)
+                .collect();
+            assert_eq!(&found, codes, "{text}");
+            programs += 1;
+        }
+    }
+    assert_eq!(programs, 84);
+}

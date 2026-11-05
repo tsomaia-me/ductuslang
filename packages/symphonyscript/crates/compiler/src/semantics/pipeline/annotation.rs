@@ -16,6 +16,7 @@ use symphonyscript_core::Span;
 pub(crate) const SHAPE: &str = "the value's shape differs from its annotated type";
 pub(crate) const TYPE: &str =
     "the value does not have the annotated type; a conversion states the rounding";
+const ROWS: &str = "the value's rows differ from its annotated type";
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Refusal {
@@ -61,6 +62,10 @@ impl Core<'_> {
             Ok(fact) => fact,
             Err(declined) => return Ok(Err(declined)),
         };
+        let dims = self.binder_dims(self.cell_binder(at)?)?;
+        if self.derived(at) && !dims.is_empty() {
+            return self.check_derived_array(at, root, &fact, (ty, &dims));
+        }
         if let Some(capacity) = self.cell_capacity_annotation(at)? {
             return self.check_variable_init(root, &fact, (ty, capacity));
         }
@@ -128,6 +133,62 @@ impl Core<'_> {
             Refusal::Silent | Refusal::Shape => self.own_check(root),
             Refusal::Kept => self.evaluate(root, ty).map(|found| found.map(|_| ())),
         }
+    }
+
+    fn check_derived_array(
+        &mut self,
+        at: u32,
+        root: u32,
+        fact: &Fact,
+        (ty, dims): (EvalTy, &[u32]),
+    ) -> Stage<()> {
+        if matches!(fact.leaf, Leaf::Placeholder | Leaf::Error) {
+            return self.own_check(root);
+        }
+        if fact.dims.len() != dims.len() {
+            self.draw_at(Code::TypeMismatch, root, ROWS)?;
+            return self.own_check(root);
+        }
+        let variable = fact.dims.first() == Some(&ANY_LENGTH) || self.variable_length(root)?;
+        match dims.first() {
+            Some(length) if *length != ANY_LENGTH && variable => {
+                let name = self.ir.binder(self.cell_binder(at)?)?.name;
+                let entry = self.ir.name(name).ok_or(Internal::missed("IR name"))?;
+                let text = self.ir.symbols.text(entry.sym).to_string();
+                self.draw_at(
+                    Code::VariableArray,
+                    root,
+                    format!("`{text}` holds a fixed array, and its rule yields a variable array"),
+                )?;
+                return self.own_check(root);
+            }
+            Some(length) if *length != ANY_LENGTH && fact.dims.first() != Some(length) => {
+                self.draw_at(Code::TypeMismatch, root, SHAPE)?;
+                return self.own_check(root);
+            }
+            Some(_) | None => {}
+        }
+        let element = Fact {
+            dims: Vec::new(),
+            ..fact.clone()
+        };
+        match refusal(&element, ty) {
+            Refusal::Type => {
+                self.draw_refused_leaves(root, ty)?;
+                self.own_check(root)
+            }
+            Refusal::Silent | Refusal::Shape => self.own_check(root),
+            Refusal::Kept => self.evaluate(root, ty).map(|found| found.map(|_| ())),
+        }
+    }
+
+    pub fn cell_declaration_span(&self, at: u32) -> Result<Span, Internal> {
+        let rec = self
+            .ir
+            .cells
+            .get(at as usize)
+            .ok_or(Internal::missed("IR cell"))?;
+        Ok(self.span(self.file_of(self.cell_root(at)?), rec.lo, rec.hi))
     }
 
     fn cell_binder(&self, at: u32) -> Result<u32, Internal> {
