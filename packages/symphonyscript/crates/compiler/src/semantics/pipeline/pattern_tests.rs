@@ -113,7 +113,6 @@ fn the_declined_pattern_forms_stay_with_the_old_engine() {
     let vocabulary = symphonyscript_fixtures::vocabulary();
     let new = Compiler::new(&vocabulary).expect("the vocabulary compiles");
     for text in [
-        "pattern P(default v):\n    Note as n /v\n    Note/(n.pitch)\n",
         "pattern P(default v):\n    for i in 0..v:\n        Note/i\nClip c:\n    Note as n /2\n    P/(n.pitch)\n",
         "pattern Voice(default f):\n    Osc as osc /f\n    Filter\nSynth s:\n    Voice as v1 /440\n    Feeds: v1\n",
         "pattern Voice(default f):\n    Osc as osc /f\n    Filter\nSynth s:\n    Voice as v1 /440\n    Osc /(v1)\n",
@@ -721,4 +720,45 @@ fn a_parameter_bound_to_an_expression_over_cells_draws_at_its_reads_what_that_ex
             (Code::TypeMismatch, 81..89),
         ]
     );
+}
+
+const UNUSED_OWN_NAMES: [&str; 11] = [
+    "pattern P(default v):\n    Note as n /v\n    Note/(n.pitch)\n",
+    "pattern P(default v):\n    Note as n /v\n    Note/(n.bogus)\n",
+    "pattern P(default v):\n    Clip as x:\n        Note as n /v\n    Note/(x.n.pitch)\n    Note/(x.m.pitch)\n",
+    "pattern P(default v):\n    Note as n /v\n    Note/(n.pitch.z)\n",
+    "pattern P(default v):\n    Note as n /v\n    Note/(n.pitch + true)\n    Note/(n)\n",
+    "pattern Q(default v):\n    Note/v\npattern P(default v):\n    Q as n /v\n    Note/(n.pitch)\n    Note/(n.bogus)\n",
+    "pattern Q(default v):\n    Note/v\n    Note/v\npattern P(default v):\n    Q as n /v\n    Note/(n.pitch)\n",
+    "pattern P(default v):\n    Nope as n /v\n    Note/(n.pitch)\n",
+    "pattern P(default v):\n    Note as n /v\n    Plays: n\n",
+    "pattern Q(default v):\n    Note as n /v\n    Note/v\npattern P(default v):\n    Q as q /v\n    Note/(q.n.pitch)\n    Note/(q.n.x)\n    Note/(q.m)\n",
+    "pattern P(default v):\n    Note as n /v\n    for i in 0..v:\n        Note/(n.pitch + i)\n        Note/(n.y)\n",
+];
+
+#[test]
+fn an_unused_pattern_resolves_the_paths_through_its_own_names_by_the_written_kinds_and_checks_nothing_else()
+ {
+    let vocabulary = symphonyscript_fixtures::vocabulary();
+    assert_engines_agree(&vocabulary, &UNUSED_OWN_NAMES);
+}
+
+const LOCAL_ROW_PATHS: [&str; 8] = [
+    "pattern P(default v):\n    Synth as y:\n        Osc as o /v:\n            Feeds: y.f\n        Filter as f\n    Synth\nTrack t:\n    P/1\n    P/2\n",
+    "pattern P(default v):\n    Synth as y:\n        Osc as o /v:\n            Feeds: y.g\n        Filter as f\n    Synth\nTrack t:\n    P/1\n",
+    "pattern P(default v):\n    Synth as y:\n        Osc as o /v:\n            Feeds: y.o\n        Filter as f\n    Synth\nTrack t:\n    P/1\n",
+    "pattern P(default v):\n    Synth as y:\n        Osc as o /v:\n            Feeds: (if v > 1 then y.f else y.g)\n        Filter as f\n        Filter as g\n    Synth\nTrack t:\n    P/1\n    P/2\n",
+    "pattern P(default v):\n    Synth as y:\n        Osc as o /v:\n            Feeds: y.f\n            Modulates: y.f\n        Filter as f\n    Synth\nSession s:\n    Track:\n        P/1\n",
+    "pattern P(default v):\n    Synth as y:\n        Osc as o /v:\n            Feeds: o\n        Filter as f\n    Synth\nTrack t:\n    P/1\n",
+    "pattern P(default v):\n    Synth:\n        Osc as o /v:\n            Feeds: o\nTrack t:\n    P/1\n",
+    "Synth y:\n    Osc as o /1:\n        Feeds: y.f\n    Filter as f\n",
+];
+
+#[test]
+fn a_pattern_local_path_ending_at_a_row_names_that_uses_row_and_a_wire_fault_names_the_use() {
+    let vocabulary = symphonyscript_fixtures::vocabulary();
+    assert_engines_agree(&vocabulary, &LOCAL_ROW_PATHS);
+    let new = Compiler::new(&vocabulary).expect("the vocabulary compiles");
+    let stand_in_name = "pattern P(default v):\n    Synth as y:\n        Osc as o /v:\n            Feeds: y.g\n        Filter as f\nTrack t:\n    P/1\n";
+    assert!(new.checked_by_new_core(&[source(stand_in_name)]).is_none());
 }

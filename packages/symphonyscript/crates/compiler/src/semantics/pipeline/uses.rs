@@ -39,8 +39,11 @@ impl Core<'_> {
             if self.patterns_used.contains(&pattern) {
                 continue;
             }
-            if self.names_in_pattern(pattern)? || self.own_reads.contains(&pattern) {
+            if self.names_in_pattern(pattern)? {
                 return Ok(Err(Declined(Reason::PatternUse)));
+            }
+            if self.own_reads.contains(&pattern) {
+                self.written_paths(pattern)?;
             }
             let body = self.pattern_parts(pattern)?.1;
             let file = self.pattern_file(pattern);
@@ -1010,7 +1013,7 @@ impl Core<'_> {
         }
     }
 
-    fn duplicated_kind(&self, item: u32) -> Result<bool, Internal> {
+    pub fn duplicated_kind(&self, item: u32) -> Result<bool, Internal> {
         let kind = self.placement(item)?.kind;
         Ok(self.ir.named(kind)
             && self.ir.name(kind).is_some_and(|entry| {
@@ -1195,6 +1198,7 @@ impl Core<'_> {
     fn pattern_clashes(&mut self, pattern: u32) -> Result<Vec<u32>, Internal> {
         let (params, body) = self.pattern_parts(pattern)?;
         let file = self.pattern_file(pattern);
+        let own = self.stand_in_item(body)?;
         let mut visible: Vec<(u32, symphonyscript_core::Span)> = Vec::new();
         for binder in params.0..params.1 {
             let rec = *self.ir.binder(binder)?;
@@ -1243,7 +1247,9 @@ impl Core<'_> {
                     .ok_or(Internal::missed("IR name"))?;
                 let span = self.span(file, entry.lo, entry.hi);
                 let text = self.ir.symbols.text(entry.sym).to_string();
-                all.push(entry.sym.0);
+                if item != own {
+                    all.push(entry.sym.0);
+                }
                 self.pattern_items.insert(item, pattern);
                 let param = outer
                     .iter()

@@ -228,7 +228,7 @@ impl Core<'_> {
                         self.row_kind_name(target)?
                     );
                     let span = self.wire_span(wire)?;
-                    self.draw(Code::WireEndpoint, span, message);
+                    self.draw_wire(wire, Code::WireEndpoint, span, message);
                 }
                 incoming_any.push((target, row.kind.index(), wire));
                 if row.fixed {
@@ -294,7 +294,8 @@ impl Core<'_> {
             && let Some(wire) = toward_max.get(max as usize).copied()
         {
             let span = self.wire_span(wire)?;
-            self.draw(
+            self.draw_wire(
+                wire,
                 Code::CountExceeded,
                 span,
                 format!(
@@ -396,7 +397,8 @@ impl Core<'_> {
                 format!("{} wires", grouped(count))
             };
             let span = self.wire_span(wire)?;
-            self.draw(
+            self.draw_wire(
+                wire,
                 Code::WireCycle,
                 span,
                 format!(
@@ -463,4 +465,19 @@ fn cycle_path(
     path.push(source);
     path.reverse();
     Ok(path)
+}
+
+impl Core<'_> {
+    fn draw_wire(
+        &mut self,
+        wire: u32,
+        code: Code,
+        span: symphonyscript_core::Span,
+        summary: impl Into<String>,
+    ) {
+        let env = self.wires.get(wire as usize).map_or(NONE, |row| row.env);
+        let saved = self.enter_env(env);
+        self.draw(code, span, summary);
+        self.leave_env(saved);
+    }
 }

@@ -545,7 +545,7 @@ impl Core<'_> {
                         continue;
                     }
                     if op == Op::Field
-                        && let Some(row) = self.path_rows.get(&node).copied()
+                        && let Some(row) = self.path_row(node)
                     {
                         let Some(frame) = frames.last_mut() else {
                             return Err(Internal::missed("evaluation frame"));

@@ -451,7 +451,8 @@ impl Core<'_> {
             .collect();
         for pattern in 0..u32::try_from(self.ir.patterns.len()).unwrap_or(0) {
             let body = self.pattern_parts(pattern)?.1;
-            self.block_scope(body, NONE, &mut scopes, &mut stack)?;
+            let own = self.stand_in_item(body)?;
+            self.block_scope(body, (NONE, own), &mut scopes, &mut stack)?;
         }
         while let Some((item, scope)) = stack.pop() {
             let (mut roots, attrs, body) = match *self.ir.item(item)? {
@@ -517,7 +518,7 @@ impl Core<'_> {
             if body == NONE || body == ABSENT {
                 continue;
             }
-            self.block_scope(body, scope, &mut scopes, &mut stack)?;
+            self.block_scope(body, (scope, NONE), &mut scopes, &mut stack)?;
         }
         Ok((scopes, scope_of))
     }
@@ -525,7 +526,7 @@ impl Core<'_> {
     fn block_scope(
         &self,
         body: u32,
-        scope: u32,
+        (scope, own): (u32, u32),
         scopes: &mut Vec<ChildScope>,
         stack: &mut Vec<(u32, u32)>,
     ) -> Result<(), Internal> {
@@ -560,6 +561,7 @@ impl Core<'_> {
             for member in members {
                 if let Ok(ItemRec::Placement(placement)) = self.ir.item(member).copied()
                     && self.ir.named(placement.as_name)
+                    && member != own
                 {
                     let entry = self
                         .ir
@@ -573,5 +575,40 @@ impl Core<'_> {
         names.sort_unstable();
         scopes.push((scope, names));
         Ok(())
+    }
+}
+
+impl Core<'_> {
+    pub fn stand_in_item(&self, body: u32) -> Result<u32, Internal> {
+        let Some(block) = self.ir.blocks.get(body as usize) else {
+            return Ok(NONE);
+        };
+        let items = self
+            .ir
+            .block_items
+            .get(block.items.0 as usize..block.items.1 as usize)
+            .unwrap_or_default();
+        let [item] = items else {
+            return Ok(NONE);
+        };
+        let ItemRec::Placement(placement) = *self.ir.item(*item)? else {
+            return Ok(NONE);
+        };
+        let Some(entry) = self
+            .ir
+            .name(placement.kind)
+            .filter(|_| self.ir.named(placement.kind))
+        else {
+            return Ok(NONE);
+        };
+        let declared = self
+            .decl
+            .get(entry.sym.0 as usize)
+            .is_some_and(|decl| *decl != DeclRef::None);
+        let node = self
+            .vocabulary
+            .node_kind_named(self.ir.symbols.text(entry.sym))
+            .is_some();
+        Ok(if node && !declared { *item } else { NONE })
     }
 }

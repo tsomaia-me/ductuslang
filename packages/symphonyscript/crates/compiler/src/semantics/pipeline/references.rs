@@ -47,8 +47,8 @@ impl Core<'_> {
         let (op, a, b, _) = self.ir.node(node)?;
         if op == Op::Field {
             return Ok(Ok(self
-                .path_rows
-                .contains_key(&node)
+                .path_row(node)
+                .is_some()
                 .then(|| Fact::node_reference(Vec::new()))));
         }
         let operands = self.operands(node)?;

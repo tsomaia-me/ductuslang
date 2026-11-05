@@ -1346,7 +1346,10 @@ impl Core<'_> {
             };
             if !self.is_field_receiver(*node) {
                 match end {
-                    End::Row(_) | End::Use(_) => return Ok(Err(Declined(Reason::PatternUse))),
+                    End::Row(row) => {
+                        self.env_path_rows.insert((*node, env), row);
+                    }
+                    End::Use(_) => return Ok(Err(Declined(Reason::PatternUse))),
                     End::Attr(read) => {
                         self.env_reads.insert((*node, env), read);
                     }
@@ -1494,5 +1497,208 @@ impl Core<'_> {
             }
         }
         Ok(false)
+    }
+}
+
+#[derive(Clone, Copy)]
+enum Written {
+    Item(u32, u32),
+    Use(u32),
+    Attr,
+    Value,
+}
+
+impl Core<'_> {
+    pub fn written_paths(&mut self, pattern: u32) -> Result<(), Internal> {
+        let mut ends: HashMap<u32, Written> = HashMap::new();
+        for local in 0..self.ir.op.len() {
+            if self.ir.op.get(local) != Some(&Op::Field) {
+                continue;
+            }
+            let node = self.ir.base + u32::try_from(local).unwrap_or(u32::MAX);
+            if self.use_local(node)? != Some(pattern) {
+                continue;
+            }
+            CountedWalk::CorePathStep.step();
+            let (_, receiver, field, missing) = self.ir.node(node)?;
+            let start = if missing == 1 {
+                Written::Value
+            } else if self.ir.node(receiver)?.0 == Op::Field {
+                ends.get(&receiver).copied().unwrap_or(Written::Value)
+            } else if let DeclRef::Instance(item) = self.bound(receiver)? {
+                self.written_item(item)?
+            } else {
+                Written::Value
+            };
+            let end = match start {
+                Written::Item(named, kind_item) => {
+                    self.written_step(node, field, named, kind_item)?
+                }
+                Written::Use(used) => self.written_use_step(node, field, used)?,
+                Written::Attr => {
+                    let text = self.ir.name_text(field).unwrap_or_default().to_string();
+                    self.draw_at(
+                        Code::UnknownAttribute,
+                        node,
+                        format!(
+                            "`.{text}` reads an attribute of an instance or a wire, and this is a value"
+                        ),
+                    )?;
+                    Written::Value
+                }
+                Written::Value => Written::Value,
+            };
+            ends.insert(node, end);
+        }
+        Ok(())
+    }
+
+    fn written_item(&self, item: u32) -> Result<Written, Internal> {
+        let kind = self.placement(item)?.kind;
+        if let Some(used) = self.used_pattern(kind) {
+            if self.cyclic_pattern(used) {
+                return Ok(Written::Value);
+            }
+            return Ok(match self.stand_in(used)? {
+                Ok(Some(inner)) if !self.duplicated_kind(inner)? => Written::Item(item, inner),
+                Ok(Some(_)) | Err(_) => Written::Value,
+                Ok(None) => Written::Use(used),
+            });
+        }
+        Ok(if self.written_kind(item)?.is_some() {
+            Written::Item(item, item)
+        } else {
+            Written::Value
+        })
+    }
+
+    fn written_kind(&self, item: u32) -> Result<Option<symphonyscript_core::NodeKind>, Internal> {
+        let kind = self.placement(item)?.kind;
+        if !self.ir.named(kind) {
+            return Ok(None);
+        }
+        let entry = *self.ir.name(kind).ok_or(Internal::missed("IR name"))?;
+        if self
+            .decl
+            .get(entry.sym.0 as usize)
+            .is_some_and(|decl| *decl != DeclRef::None)
+        {
+            return Ok(None);
+        }
+        Ok(self
+            .vocabulary
+            .node_kind_named(self.ir.symbols.text(entry.sym)))
+    }
+
+    fn written_child(&self, block: u32, sym: u32) -> Result<Option<u32>, Internal> {
+        let Some(found) = self.ir.blocks.get(block as usize) else {
+            return Ok(None);
+        };
+        let mut items: Vec<u32> = self
+            .ir
+            .block_items
+            .get(found.items.0 as usize..found.items.1 as usize)
+            .unwrap_or_default()
+            .to_vec();
+        while let Some(item) = items.pop() {
+            match *self.ir.item(item)? {
+                ItemRec::Placement(child) => {
+                    if self.ir.named(child.as_name)
+                        && self
+                            .ir
+                            .name(child.as_name)
+                            .is_some_and(|name| name.sym.0 == sym)
+                    {
+                        return Ok(Some(item));
+                    }
+                }
+                ItemRec::Line(members) => items.extend(
+                    self.ir
+                        .members
+                        .get(members.0 as usize..members.1 as usize)
+                        .unwrap_or_default(),
+                ),
+                ItemRec::Wire(_)
+                | ItemRec::Bundle(_)
+                | ItemRec::For(_)
+                | ItemRec::When(_)
+                | ItemRec::Paren(_) => {}
+            }
+        }
+        Ok(None)
+    }
+
+    fn written_step(
+        &mut self,
+        node: u32,
+        field: u32,
+        named: u32,
+        kind_item: u32,
+    ) -> Result<Written, Internal> {
+        let entry = *self.ir.name(field).ok_or(Internal::missed("IR name"))?;
+        let body = self.placement(kind_item)?.body;
+        if let Some(child) = self.written_child(body, entry.sym.0)? {
+            return self.written_item(child);
+        }
+        let Some(kind) = self.written_kind(kind_item)? else {
+            return Ok(Written::Value);
+        };
+        let decl = self
+            .vocabulary
+            .node_kind(kind)
+            .ok_or(Internal::missed("node kind"))?;
+        let text = self.ir.symbols.text(entry.sym).to_string();
+        if decl.attrs.iter().any(|attr| attr.name == text) {
+            return Ok(Written::Attr);
+        }
+        let kind_name = decl.name.clone();
+        let name = self
+            .ir
+            .name_text(self.placement(named)?.as_name)
+            .unwrap_or_default()
+            .to_string();
+        let span = self.span(self.file_of(node), entry.lo, entry.hi);
+        self.draw(
+            Code::UnknownAttribute,
+            span,
+            format!("the `{kind_name}` named `{name}` has no child, wire or attribute `{text}`"),
+        );
+        Ok(Written::Value)
+    }
+
+    fn written_use_step(&mut self, node: u32, field: u32, used: u32) -> Result<Written, Internal> {
+        let entry = *self.ir.name(field).ok_or(Internal::missed("IR name"))?;
+        let body = self.pattern_parts(used)?.1;
+        if let Some(child) = self.written_child(body, entry.sym.0)? {
+            return self.written_item(child);
+        }
+        let name = self
+            .ir
+            .patterns
+            .get(used as usize)
+            .ok_or(Internal::missed("IR pattern"))?
+            .name;
+        let owner = self.ir.name_text(name).unwrap_or_default().to_string();
+        let text = self.ir.symbols.text(entry.sym).to_string();
+        let span = self.span(self.file_of(node), entry.lo, entry.hi);
+        self.draw(
+            Code::UnknownAttribute,
+            span,
+            format!("the use of `{owner}` has no child, wire or attribute `{text}`"),
+        );
+        Ok(Written::Value)
+    }
+}
+
+impl Core<'_> {
+    pub fn path_row(&self, node: u32) -> Option<u32> {
+        if !self.env_path_rows.is_empty() {
+            for (env, _, _) in self.own_calls.iter().rev() {
+                if let Some(row) = self.env_path_rows.get(&(node, *env)) {
+                    return Some(*row);
+                }
+            }
+        }
+        self.path_rows.get(&node).copied()
     }
 }

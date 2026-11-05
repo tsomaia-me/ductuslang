@@ -131,8 +131,8 @@ impl Core<'_> {
                     Err(declined) => Err(declined),
                 });
             }
-            let target = match self.path_rows.get(&node) {
-                Some(row) => *row,
+            let target = match self.path_row(node) {
+                Some(row) => row,
                 None => self.candidate_row(node)?,
             };
             if target == NONE {
