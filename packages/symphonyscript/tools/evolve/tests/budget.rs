@@ -125,3 +125,32 @@ fn the_check_writes_every_verdict_in_order_across_a_compile_past_the_budget() {
     assert_eq!(verdicts[1]["elapsed_ms"], Value::Null, "{}", verdicts[1]);
     assert_eq!(verdicts[1]["signals"], json!(["slow"]), "{}", verdicts[1]);
 }
+
+#[test]
+fn each_time_and_verdict_names_the_engine_that_compiled_its_program_and_a_timed_out_one_none() {
+    let recursive = "fn g(n): if n < 1 then 0 else g(n - 1)\nClip c:\n    Note/(g(3))\n";
+    let heavy = inlining(1000);
+    let programs = [("light", LIGHT), ("recursive", recursive)];
+    let expected = [json!("new"), json!("old")];
+    let (given, taken) = written("engine-time", &programs);
+    let times = run(env!("CARGO_BIN_EXE_evolve-time"), "600", &given, &taken);
+    let (given, taken) = written("engine-check", &programs);
+    let verdicts = run(env!("CARGO_BIN_EXE_evolve-check"), "600", &given, &taken);
+    for lines in [&times, &verdicts] {
+        let engines: Vec<&Value> = lines.iter().map(|line| &line["engine"]).collect();
+        assert_eq!(engines, [&expected[0], &expected[1]], "{lines:?}");
+    }
+    let (given, taken) = written("engine-past", &[("heavy", &heavy)]);
+    for binary in [
+        env!("CARGO_BIN_EXE_evolve-time"),
+        env!("CARGO_BIN_EXE_evolve-check"),
+    ] {
+        let past = run(binary, "0.02", &given, &taken);
+        assert_eq!(
+            (&past[0]["elapsed_ms"], &past[0]["engine"]),
+            (&Value::Null, &Value::Null),
+            "{binary}: {}",
+            past[0]
+        );
+    }
+}

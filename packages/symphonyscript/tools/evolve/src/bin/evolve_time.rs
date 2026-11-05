@@ -49,7 +49,8 @@ fn run() -> Result<(), String> {
         let program: Program = serde_json::from_str(&line)
             .map_err(|error| format!("{input}:{}: {error}", index + 1))?;
         let running = running_compiles();
-        let timed = match checker.compile(&program) {
+        let (compiled, engine) = checker.compile_by_engine(&program);
+        let timed = match compiled {
             Guarded::Finished {
                 value,
                 elapsed,
@@ -63,6 +64,7 @@ fn run() -> Result<(), String> {
                 codes.dedup();
                 json!({
                     "id": program.id,
+                    "engine": engine,
                     "elapsed_ms": elapsed.as_secs_f64() * 1000.0,
                     "diagnostics": value.len(),
                     "codes": codes,
@@ -72,10 +74,10 @@ fn run() -> Result<(), String> {
                 })
             }
             Guarded::Panicked { message } => {
-                json!({"id": program.id, "elapsed_ms": null, "panic": message, "running_compiles": running})
+                json!({"id": program.id, "engine": engine, "elapsed_ms": null, "panic": message, "running_compiles": running})
             }
             Guarded::TimedOut => {
-                json!({"id": program.id, "elapsed_ms": null, "running_compiles": running})
+                json!({"id": program.id, "engine": engine, "elapsed_ms": null, "running_compiles": running})
             }
         };
         writeln!(writer, "{timed}").map_err(|error| format!("{output}: {error}"))?;

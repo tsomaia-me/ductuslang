@@ -126,10 +126,11 @@ def shard(binaries, programs, warnings, work, alone, index, vocabulary, members)
                 raw = json.loads(line)
             except json.JSONDecodeError:
                 continue
-            found[raw["id"]] = verdicts.compact(raw, warnings), verdicts.detail(raw), raw["elapsed_ms"]
+            found[raw["id"]] = (verdicts.compact(raw, warnings), verdicts.detail(raw), raw["elapsed_ms"],
+                              raw.get("engine"))
     if alone:
         for program_key in members:
-            found.setdefault(program_key, (*verdicts.aborted(finished.returncode), None))
+            found.setdefault(program_key, (*verdicts.aborted(finished.returncode), None, None))
     return found
 
 
@@ -151,8 +152,8 @@ def checked(binaries, programs, warnings, keys, jobs, work, alone):
 
 
 def unknown_tags(programs):
-    return {program_key: (*verdicts.unknown_tag(program["tag"]), None) for program_key, program in programs.items()
-            if program.get("vocabulary", MAIN) is None}
+    return {program_key: (*verdicts.unknown_tag(program["tag"]), None, None)
+            for program_key, program in programs.items() if program.get("vocabulary", MAIN) is None}
 
 
 def unknown_tag_note(programs, keys):
@@ -164,6 +165,13 @@ def unknown_tag_note(programs, keys):
 def checked_again(found, previous, keys):
     return [program_key for program_key in keys if program_key not in found
             or "slow" in (found[program_key][0]["outcome"], previous.get(program_key, {}).get("outcome"))]
+
+
+def check_times(profile, jobs, load, programs, found):
+    return {"profile": profile, "jobs": jobs, "budget_s": BUDGET_SECONDS, "load": round(load, 2),
+            "programs": [{"key": program_key, "set": programs[program_key]["set"],
+                          "elapsed_ms": found[program_key][2], "engine": found[program_key][3]}
+                         for program_key in sorted(programs)]}
 
 
 def check(arguments):
@@ -201,12 +209,8 @@ def check(arguments):
                for program_key in sorted(programs)}
     details = {program_key: found[program_key][1] for program_key in programs if found[program_key][1]}
     write_jsonl_gz(run / "verdicts.jsonl.gz", current.values())
-    times = {"profile": arguments.profile, "jobs": arguments.jobs, "budget_s": BUDGET_SECONDS,
-             "load": round(check_load, 2),
-             "programs": [{"key": program_key, "set": programs[program_key]["set"],
-                           "elapsed_ms": found[program_key][2]} for program_key in sorted(programs)]}
     with gzip.open(run / "check-times.json.gz", "wt", encoding="utf-8") as out:
-        json.dump(times, out)
+        json.dump(check_times(arguments.profile, arguments.jobs, check_load, programs, found), out)
     notes = [f"Machine time: build {build_seconds:.0f} s in the {arguments.profile} profile, check "
              f"{check_seconds:.0f} s with {arguments.jobs} jobs; "
              f"1-minute load {load:.1f} before, {os.getloadavg()[0]:.1f} after.",

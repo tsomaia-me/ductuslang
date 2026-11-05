@@ -2,12 +2,14 @@ use serde::Serialize;
 use symphonyscript::{Diagnostic, Related};
 use symphonyscript_core::Span;
 
+use crate::engine::Engine;
 use crate::finding::Finding;
 use crate::signal::Signal;
 
 #[derive(Clone, PartialEq, Debug, Serialize)]
 pub struct Verdict {
     pub id: serde_json::Value,
+    pub engine: Option<Engine>,
     pub parses: bool,
     pub diagnostics: Vec<DiagnosticRecord>,
     pub signals: Vec<Signal>,

@@ -537,7 +537,10 @@ fn a_workload_that_allocates_quadratically_grows_superlinearly_and_a_linear_one_
 #[test]
 fn a_program_that_compiles_in_linear_work_draws_no_scaling_signal() {
     let checker = checker(DEFAULT_BUDGET);
-    let program = program(&[("main.sym", LINEAR)]);
+    let wide = format!(
+        "{LINEAR}Clip wide:\n    for i in 0..2000:\n        Note/(48 + i % 12) | velocity=0.5\n"
+    );
+    let program = program(&[("main.sym", wide.as_str())]);
     let verdict = checker.verdict(&program);
     assert!(verdict.allocations.is_some_and(|count| count >= 1_000));
     assert_eq!(
