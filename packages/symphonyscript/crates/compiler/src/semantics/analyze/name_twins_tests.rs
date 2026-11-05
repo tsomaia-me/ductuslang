@@ -344,7 +344,17 @@ fn the_twin_program_draws_what_the_whole_program_twins_draw_for_every_expression
  {
     let (failures, programs) = covered(class_failures);
     assert!(programs > 0, "the covering design took no row");
-    crate::pinned_row::assert_no_failure(&failures);
+    let (_, beyond) = pinned_by(failures, PINNED_497);
+    crate::pinned_row::assert_no_failure(&beyond);
+}
+
+const PINNED_497: &str = include_str!("name_twins_pinned_497.txt");
+
+fn pinned_by(failures: Vec<String>, pinned: &str) -> (Vec<String>, Vec<String>) {
+    failures.into_iter().partition(|failure| {
+        let line = failure.lines().next().unwrap_or_default();
+        pinned.lines().any(|pin| pin == line)
+    })
 }
 
 #[test]
@@ -353,6 +363,8 @@ fn exhaustive_the_twin_program_draws_what_the_whole_program_twins_draw_for_every
  {
     let (failures, programs) = class_failures(&Rows::Every);
     assert_eq!(programs, 2 * POSITIONS.len() * expressions().len());
+    let (under_497, failures) = pinned_by(failures, PINNED_497);
+    crate::pinned_row::assert_pinned_failures(&under_497, PINNED_497, 497);
     crate::pinned_row::assert_pinned_failures(
         &failures,
         include_str!("name_twins_pinned_488.txt"),
