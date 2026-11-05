@@ -1692,7 +1692,8 @@ impl Core<'_> {
                     }
                 }
                 Op::Name => {
-                    if let DeclRef::Let(at) = self.bound(node)?
+                    if !self.is_history_target(node)
+                        && let DeclRef::Let(at) = self.bound(node)?
                         && !self.cyclic.get(at as usize).copied().unwrap_or(false)
                         && let Some(owned) = self.owned.get_mut(at as usize)
                         && !*owned

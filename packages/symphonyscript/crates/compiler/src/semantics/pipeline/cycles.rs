@@ -147,10 +147,15 @@ impl Core<'_> {
             }
         }
         for at in 0..u32::try_from(self.ir.cells.len()).unwrap_or(0) {
-            if !self.derived(at) {
+            let root = if self.derived(at) {
+                self.cell_root(at)?
+            } else {
+                self.ir.cells.get(at as usize).map_or(NONE, |rec| rec.init)
+            };
+            if root == NONE {
                 continue;
             }
-            let reads = self.declaration_reads(self.cell_root(at)?, NONE, (lets, cells, fns))?;
+            let reads = self.declaration_reads(root, NONE, (lets, cells, fns))?;
             if let Some(slot) = edges.get_mut((cells + at) as usize) {
                 *slot = reads;
             }

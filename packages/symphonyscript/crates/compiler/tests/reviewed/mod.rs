@@ -4457,6 +4457,7 @@ fn line_fault(code: &str) -> bool {
             "invalid-identifier",
             "unexpected-indent",
             "dedent-mismatch",
+            "misplaced-caret",
         ]
         .contains(&code)
 }
@@ -4519,13 +4520,43 @@ fn path_beside_an_unknown_attribute(seen: &Seen<'_>, change: Change, at: &Drawn)
 
 fn faulty_line(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
     let line = seen.line(at.1);
+    let nameless = (seen.before(at).is_empty() || seen.before(at).ends_with('\n'))
+        && seen.text(at).starts_with("let ");
     change == Change::Removed
         && at.0 == "reactive-let"
-        && top_level_let_name(seen, at)
+        && (top_level_let_name(seen, at) || nameless)
         && seen
             .old
             .iter()
             .any(|drawn| line_fault(&drawn.0) && seen.line(drawn.1) == line)
+}
+
+fn reactive_let_history_target(seen: &Seen<'_>, at: &Drawn) -> bool {
+    let text = seen.text(at);
+    let Some((name, _)) = text.split_once('.') else {
+        return false;
+    };
+    at.0 == "history-target"
+        && (text.ends_with(".stepped") || text.contains(".past("))
+        && seen.new.iter().any(|drawn| {
+            drawn.0 == "reactive-let" && top_level_let_name(seen, drawn) && seen.text(drawn) == name
+        })
+}
+
+fn history_of_a_reactive_let(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
+    match change {
+        Change::Added => reactive_let_history_target(seen, at),
+        Change::Removed => {
+            matches!(
+                at.0.as_str(),
+                "float-to-integer" | "type-mismatch" | "does-not-fit" | "integer-cell"
+            ) && seen
+                .new
+                .iter()
+                .any(|drawn| reactive_let_history_target(seen, drawn))
+        }
+        Change::Restated => false,
+    }
 }
 
 fn beside_a_fault(seen: &Seen<'_>) -> bool {
@@ -5227,6 +5258,11 @@ pub const CLASSES: &[Class] = &[
         ledger: "455",
         rule: "a let declared on a line holding a syntax fault is a placeholder and draws no reactive-let",
         explains: faulty_line,
+    },
+    Class {
+        ledger: "487",
+        rule: "a history read of a top-level let reading a cell draws history-target at the read beside the let's reactive-let, as the program with the let repaired to a compile-time value does, and the read is a placeholder, so the faults the old engine drew from the let's type at its readers are gone",
+        explains: history_of_a_reactive_let,
     },
     Class {
         ledger: "476",

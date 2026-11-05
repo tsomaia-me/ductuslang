@@ -35,7 +35,6 @@ pub(crate) fn history_targets(ir: &FlatIr) -> Vec<u8> {
 enum Target {
     Cell(u32),
     Let,
-    ReactiveLet(u32),
     Faulty,
 }
 
@@ -91,7 +90,6 @@ impl Core<'_> {
         }
         let at = match cell {
             Target::Cell(at) => at,
-            Target::ReactiveLet(at) => return Ok(Ok(self.let_fact(at)?)),
             Target::Let | Target::Faulty => {
                 self.compile_time_target(node, "history")?;
                 return Ok(Ok(Fact::PLACEHOLDER));
@@ -142,7 +140,7 @@ impl Core<'_> {
 
     pub fn stepped_fact(&mut self, node: u32, target: u32) -> Stage<Fact> {
         match self.history_cell(target, "step")? {
-            Ok(Target::Cell(_) | Target::ReactiveLet(_)) => Ok(Ok(Fact::scalar(Leaf::Bool))),
+            Ok(Target::Cell(_)) => Ok(Ok(Fact::scalar(Leaf::Bool))),
             Ok(Target::Let) => {
                 self.compile_time_target(node, "step")?;
                 Ok(Ok(Fact::PLACEHOLDER))
@@ -179,9 +177,6 @@ impl Core<'_> {
             {
                 if self.cyclic.get(at as usize).copied().unwrap_or(false) {
                     return Ok(Ok(Target::Faulty));
-                }
-                if self.let_reads_cell(at)? {
-                    return Ok(Ok(Target::ReactiveLet(at)));
                 }
                 return Ok(Ok(Target::Let));
             }

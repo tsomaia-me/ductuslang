@@ -123,6 +123,9 @@ impl Core<'_> {
     fn read_lets(&self, root: u32) -> Result<Vec<u32>, Internal> {
         let mut reads = Vec::new();
         for node in self.postorder(root)? {
+            if self.is_history_target(node) {
+                continue;
+            }
             if let DeclRef::Let(at) = self.bound(node)?
                 && self
                     .ir

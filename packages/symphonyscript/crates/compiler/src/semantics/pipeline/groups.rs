@@ -675,9 +675,11 @@ fn present_order(component: &[u32], all: &[CellReads]) -> Option<Vec<u32>> {
 impl Core<'_> {
     fn scalar_group(&self, members: &[u32]) -> Result<(), Declined> {
         for member in members {
-            if self.group_kinds.get(member).is_none_or(|fact| {
-                !fact.dims.is_empty() || matches!(fact.leaf, Leaf::Placeholder | Leaf::Error)
-            }) {
+            if self
+                .group_kinds
+                .get(member)
+                .is_none_or(|fact| !fact.dims.is_empty() || fact.leaf == Leaf::Error)
+            {
                 return Err(Declined(Reason::CellGroup));
             }
             let init = self
@@ -689,6 +691,11 @@ impl Core<'_> {
                 return Err(Declined(Reason::CellGroup));
             }
         }
+        let placeholder = members.iter().any(|member| {
+            self.group_kinds
+                .get(member)
+                .is_some_and(|fact| fact.leaf == Leaf::Placeholder)
+        });
         let nodes = members
             .iter()
             .filter_map(|member| self.cell_reads.get(*member as usize))
@@ -699,6 +706,15 @@ impl Core<'_> {
                 .ir
                 .node(node)
                 .map_or(NONE, |(_, _, _, fallback)| fallback);
+            let open = self.group_reads.get(&node).is_some_and(|(target, _)| {
+                self.ir
+                    .cells
+                    .get(*target as usize)
+                    .is_some_and(|rec| rec.init == NONE)
+            });
+            if placeholder && fallback == NONE && open {
+                return Err(Declined(Reason::CellGroup));
+            }
             if fallback != NONE
                 && self
                     .fact(fallback)
@@ -713,20 +729,11 @@ impl Core<'_> {
 
 impl Core<'_> {
     fn held_back(&self) -> Result<bool, Internal> {
-        if !self.groups.is_empty() {
-            let faulty_let = self.ir.top.iter().any(|top| {
-                matches!(top, crate::semantics::ir::flat::TopRec::Let(at)
-                    if self.ir.lets.get(*at as usize).is_some_and(|rec| rec.faulty_line))
-            });
-            if faulty_let {
-                return Ok(true);
-            }
-        }
         for at in 0..u32::try_from(self.ir.cells.len()).unwrap_or(0) {
             let Some(rec) = self.ir.cells.get(at as usize).copied() else {
                 continue;
             };
-            if rec.rule != NONE || rec.init == NONE {
+            if rec.rule != NONE || rec.init == NONE || self.is_cyclic_cell(at) {
                 continue;
             }
             for node in self.deep_postorder(rec.init)? {
