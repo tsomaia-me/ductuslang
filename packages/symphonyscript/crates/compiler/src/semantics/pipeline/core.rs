@@ -118,7 +118,7 @@ pub(crate) struct Core<'a> {
     pub use_args: HashMap<u32, Vec<(u32, u32)>>,
     pub use_values: HashMap<(u32, u32, usize), CoreValue>,
     pub use_faults: HashMap<u32, Vec<Diagnostic>>,
-    pub default_faults: HashMap<u32, Vec<Diagnostic>>,
+    pub default_faults: HashMap<(u32, u32), Vec<Diagnostic>>,
     pub typing_now: u32,
     pub inst_row: HashMap<u32, (u32, u32)>,
     pub owner_insts: HashMap<u32, Vec<u32>>,
@@ -133,6 +133,9 @@ pub(crate) struct Core<'a> {
     pub loop_items: HashMap<(u32, u32, usize), CoreValue>,
     pub open_children: HashMap<u32, Vec<symphonyscript_core::NodeKind>>,
     pub loop_reads: BTreeMap<(u32, u32, usize), CoreValue>,
+    pub placeholder_uses: Vec<(u32, u32, Span, u32)>,
+    pub default_nodes: HashMap<u32, u32>,
+    pub default_insts: HashMap<(u32, u32), u32>,
 }
 
 impl<'a> Core<'a> {
@@ -247,6 +250,9 @@ impl<'a> Core<'a> {
             loop_items: HashMap::new(),
             open_children: HashMap::new(),
             loop_reads: BTreeMap::new(),
+            placeholder_uses: Vec::new(),
+            default_nodes: HashMap::new(),
+            default_insts: HashMap::new(),
         }
     }
 

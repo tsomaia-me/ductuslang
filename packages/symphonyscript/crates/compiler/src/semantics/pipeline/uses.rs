@@ -112,6 +112,7 @@ impl Core<'_> {
         let mut facts = Vec::new();
         let mut reactive = Vec::new();
         let mut faults = Vec::new();
+        let mut temps = Vec::new();
         let start = u32::try_from(self.env_vals.len()).unwrap_or(NONE);
         for (position, (root, caller)) in bound.clone().into_iter().enumerate() {
             reactive.push(false);
@@ -126,24 +127,37 @@ impl Core<'_> {
                 continue;
             }
             let defaulted = defaults.get(position) == Some(&root);
-            let drawn = self.diagnostics.len();
-            let saved = self.enter_env(caller);
-            let value = self.argument(root);
-            self.leave_env(saved);
-            if defaulted {
+            let value = if defaulted {
+                let temp = self.default_inst(pattern, env, (&facts, &reactive), root)?;
+                if temp != NONE {
+                    temps.push((position, temp));
+                }
+                let drawn = self.diagnostics.len();
+                let saved = self.enter_env(NONE);
+                self.enter_default(temp, start);
+                let typed = self.ensure_typed(root);
+                self.leave_env(saved);
                 let own = self.diagnostics.split_off(drawn);
-                let held = self.default_faults.entry(root).or_default();
+                let held = self.default_faults.entry((root, temp)).or_default();
                 held.extend(own);
                 faults.extend(held.iter().cloned());
-            }
-            match value? {
-                Ok((fact, value, _))
-                    if defaulted
-                        && value.is_error()
-                        && !matches!(fact.leaf, Leaf::Placeholder | Leaf::Error) =>
-                {
-                    return Ok(Err(Declined(Reason::PatternUse)));
+                if let Err(declined) = typed? {
+                    return Ok(Err(declined));
                 }
+                self.use_spans.insert(item, span.clone());
+                let saved = self.enter_env(env);
+                self.use_links.insert(0, (item, NONE));
+                self.enter_default(temp, start);
+                let value = self.argument(root);
+                self.leave_env(saved);
+                value
+            } else {
+                let saved = self.enter_env(caller);
+                let value = self.argument(root);
+                self.leave_env(saved);
+                value
+            };
+            match value? {
                 Ok((fact, value, cells)) => {
                     facts.push(fact);
                     self.env_vals.push(value);
@@ -161,6 +175,12 @@ impl Core<'_> {
             (facts, reactive),
             (span, bound),
         )?;
+        if let Ok(Some(made)) = made {
+            for (position, temp) in temps {
+                self.default_insts
+                    .insert((made, u32::try_from(position).unwrap_or(NONE)), temp);
+            }
+        }
         if let Ok(Some(made)) = made
             && !faults.is_empty()
             && let Some(record) = self.envs.get(made as usize).copied()
@@ -258,6 +278,51 @@ impl Core<'_> {
             }
         }
         Ok(Ok(bound))
+    }
+
+    fn default_inst(
+        &mut self,
+        pattern: u32,
+        env: u32,
+        (facts, reactive): (&[Fact], &[bool]),
+        root: u32,
+    ) -> Result<u32, Internal> {
+        if !self.default_nodes.contains_key(&root) {
+            return Ok(NONE);
+        }
+        let owner = self.patterns_start() + pattern;
+        let parent = self
+            .envs
+            .get(env as usize)
+            .map_or(NONE, |record| record.inst);
+        let reactive = reactive.get(..facts.len()).unwrap_or_default().to_vec();
+        let key = (owner, parent, facts.to_vec(), reactive.clone());
+        if let Some(inst) = self.body_index.get(&key).copied() {
+            return Ok(inst);
+        }
+        self.bodies.push(BodyInstance {
+            function: owner,
+            parent,
+            args: facts.to_vec(),
+            reactive_args: reactive,
+            diagnostics: Vec::new(),
+        });
+        let inst = u32::try_from(self.bodies.len() - 1).unwrap_or(NONE);
+        self.body_index.insert(key, inst);
+        Ok(inst)
+    }
+
+    fn enter_default(&mut self, temp: u32, start: u32) {
+        if temp == NONE {
+            return;
+        }
+        let values = self
+            .env_vals
+            .get(start as usize..)
+            .unwrap_or_default()
+            .to_vec();
+        self.own_calls.push((NONE, temp, values));
+        self.inst = temp;
     }
 
     fn use_made(
@@ -417,7 +482,21 @@ impl Core<'_> {
         else {
             return Ok(Ok(stored.clone()));
         };
-        let saved = self.enter_env(caller);
+        let defaulted = match self.pattern_at(owner) {
+            Some(pattern) => {
+                let params = self.pattern_parts(pattern)?.0;
+                self.ir.binder(params.0 + position)?.default == root
+            }
+            None => false,
+        };
+        let saved = self.enter_env(if defaulted { env } else { caller });
+        if defaulted {
+            self.inst = self
+                .default_insts
+                .get(&(env, position))
+                .copied()
+                .unwrap_or(NONE);
+        }
         let chain = std::mem::take(&mut self.eval_chain);
         let outcome = self.evaluate(root, ty);
         self.eval_chain = chain;
@@ -656,7 +735,7 @@ impl Core<'_> {
                 .name(placement.kind)
                 .ok_or(Internal::missed("IR name"))?;
             if self.decl.get(entry.sym.0 as usize) == Some(&DeclRef::Duplicate) {
-                return Ok(Err(Declined(Reason::PatternUse)));
+                return Ok(Ok(Some(*item)));
             }
             let text = self.ir.symbols.text(entry.sym);
             let node = self.vocabulary.node_kind_named(text).is_some()
@@ -666,6 +745,14 @@ impl Core<'_> {
                     .is_none_or(|decl| *decl == DeclRef::None);
             return Ok(Ok(node.then_some(*item)));
         }
+    }
+
+    fn duplicated_kind(&self, item: u32) -> Result<bool, Internal> {
+        let kind = self.placement(item)?.kind;
+        Ok(self.ir.named(kind)
+            && self.ir.name(kind).is_some_and(|entry| {
+                self.decl.get(entry.sym.0 as usize) == Some(&DeclRef::Duplicate)
+            }))
     }
 
     pub fn unknown_use(&mut self, parent: u32) {
@@ -737,6 +824,15 @@ impl Core<'_> {
             } else {
                 NONE
             };
+            if self.duplicated_kind(inner)? {
+                if parent == NONE {
+                    self.unknown_use(NONE);
+                } else if reachable && let Some(entry) = self.ir.name(name).copied() {
+                    let span = self.span(file, entry.lo, entry.hi);
+                    let key = u32::try_from(self.instances.len()).unwrap_or(NONE);
+                    self.placeholder_uses.push((parent, name, span, key));
+                }
+            }
             return self.named_row(
                 inner,
                 (inner_file, parent, made),

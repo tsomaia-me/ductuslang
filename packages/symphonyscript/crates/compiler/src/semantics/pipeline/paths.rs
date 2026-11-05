@@ -153,13 +153,96 @@ impl Core<'_> {
                     other = self.child_named(body, sym);
                 }
             }
-            if let Some(other) = other {
+            let earlier = match other {
+                Some(other) => Some(self.row_name_span(other)?),
+                None => self.placeholder_named(parent.get(row as usize).copied(), sym, row),
+            };
+            if let Some(earlier) = earlier {
                 let text = self.named_row_text(row)?;
                 let span = self.row_name_span(row)?;
-                let earlier = self.row_name_span(other)?;
                 self.draw_related(
                     Code::ChildNameClash,
                     span,
+                    vec![(earlier, "the other name".to_string())],
+                    format!(
+                        "`{text}` names another child or wire of this body or of an enclosing one"
+                    ),
+                );
+            }
+        }
+        self.placeholder_clashes(&parent)
+    }
+
+    fn placeholder_named(
+        &self,
+        body: Option<u32>,
+        sym: u32,
+        before: u32,
+    ) -> Option<symphonyscript_core::Span> {
+        let body = body.filter(|body| *body != NONE)?;
+        self.placeholder_uses
+            .iter()
+            .find(|held| {
+                held.0 == body
+                    && held.3 <= before
+                    && self.ir.name(held.1).is_some_and(|entry| entry.sym.0 == sym)
+            })
+            .map(|held| held.2.clone())
+    }
+
+    fn placeholder_clashes(&mut self, parent: &[u32]) -> Result<(), Internal> {
+        let held = self.placeholder_uses.clone();
+        for (at, (body, name, span, key)) in held.iter().enumerate() {
+            let entry = *self.ir.name(*name).ok_or(Internal::missed("IR name"))?;
+            let text = self.ir.symbols.text(entry.sym).to_string();
+            let owner = self
+                .instances
+                .get(*body as usize)
+                .ok_or(Internal::missed("row"))?
+                .kind;
+            let decl = self
+                .vocabulary
+                .node_kind(owner)
+                .ok_or(Internal::missed("node kind"))?;
+            if decl.attrs.iter().any(|attr| attr.name == text) {
+                let message = format!(
+                    "`{text}` is an attribute of the parent's kind `{}`",
+                    decl.name
+                );
+                self.draw(Code::ChildNameClash, span.clone(), message);
+            }
+            let mut earlier = self
+                .child_named(*body, entry.sym.0)
+                .filter(|row| row < key)
+                .map(|row| self.row_name_span(row))
+                .transpose()?;
+            if earlier.is_none() {
+                earlier = held
+                    .iter()
+                    .take(at)
+                    .find(|other| {
+                        other.0 == *body
+                            && self
+                                .ir
+                                .name(other.1)
+                                .is_some_and(|found| found.sym == entry.sym)
+                    })
+                    .map(|other| other.2.clone());
+            }
+            let mut up = *body;
+            while earlier.is_none() && up != NONE {
+                up = parent.get(up as usize).copied().unwrap_or(NONE);
+                if up != NONE {
+                    earlier = self
+                        .child_named(up, entry.sym.0)
+                        .map(|row| self.row_name_span(row))
+                        .transpose()?;
+                }
+            }
+            if let Some(earlier) = earlier {
+                self.draw_related(
+                    Code::ChildNameClash,
+                    span.clone(),
                     vec![(earlier, "the other name".to_string())],
                     format!(
                         "`{text}` names another child or wire of this body or of an enclosing one"

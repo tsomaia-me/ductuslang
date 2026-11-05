@@ -119,7 +119,6 @@ fn the_declined_pattern_forms_stay_with_the_old_engine() {
         "pattern P(default v):\n    Plays: v\nClip c:\n    P/d\nClip d\n",
         "pattern P(default v):\n    Note/v\nClip c:\n    P/(d.gain)\nClip d | gain=0.5\n",
         "pattern P(default v):\n    Note as n /v\n    Note/(n.pitch)\nClip c:\n    P/1\n",
-        "pattern P(default v, w = [1][2]):\n    Note/v | velocity=w\nClip c:\n    P/1\n",
     ] {
         assert!(new.checked_by_new_core(&[source(text)]).is_none(), "{text}");
     }
@@ -357,4 +356,67 @@ fn a_named_placement_in_a_pattern_body_and_a_named_stand_in_use_draw_their_name_
             .iter()
             .any(|diagnostic| diagnostic.code == Code::ChildNameClash)
     );
+}
+
+const PLACEHOLDER_STAND_INS: [&str; 10] = [
+    "pattern P(default v):\n    Q/v\nlet Q = 1\nlet Q = 2\nClip c:\n    P as p /1\n    Note/(p.pitch)\n",
+    "pattern P(default v):\n    Q/v\nlet Q = 1\nlet Q = 2\nP as p /1\nClip c:\n    Note/(p.pitch)\n",
+    "pattern P(default v):\n    Q/v\nlet Q = 1\nlet Q = 2\nClip c:\n    P as p /1\n    P as p /2\n",
+    "pattern P(default v):\n    Q/(v + true)\nlet Q = 1\nlet Q = 2\nClip c:\n    P as p /1\n",
+    "pattern P(default v):\n    Q/v | gain=(1 + true)\nlet Q = 1\nlet Q = 2\nP as p /1\n",
+    "pattern P(default v):\n    Q/v\npattern Q(default v):\n    Note/v\npattern Q(default v):\n    Note/v\nClip c:\n    P as p /1\n",
+    "pattern P(default v):\n    Q/v\nlet Q = 1\nlet Q = 2\nClip c:\n    P as gain /1\n",
+    "pattern P(default v):\n    Q/v\nlet Q = 1\nlet Q = 2\nClip c:\n    P as p /1\n    Note as p /2\n",
+    "pattern P(default v):\n    Q/v\nlet Q = 1\nlet Q = 2\nClip c:\n    Note as p /2\n    P as p /1\n",
+    "pattern P(default v):\n    Q/v\nlet Q = 1\nlet Q = 2\nSession s:\n    Clip as p\n    Clip as d:\n        P as p /1\n",
+];
+
+const PLACEHOLDER_TWINS: [&str; 3] = [
+    "pattern P(default v):\n    Q/v\npattern Q(default v):\n    Note/v\nClip c:\n    P as p /1\n    Note/1\n",
+    "pattern P(default v):\n    Note/v\nClip c:\n    P as p /1\n    Note as p /2\n",
+    "pattern P(default v):\n    Note/v\nClip c:\n    P as gain /1\n",
+];
+
+#[test]
+fn a_named_stand_in_whose_kind_is_a_duplicated_name_is_a_placeholder_whose_name_still_clashes() {
+    let vocabulary = symphonyscript_fixtures::vocabulary();
+    assert_engines_agree(&vocabulary, &PLACEHOLDER_STAND_INS);
+    assert_engines_agree(&vocabulary, &PLACEHOLDER_TWINS);
+}
+
+const DEFAULTS: [&str; 12] = [
+    "pattern P(default v, w = [1, 2][v]):\n    Note/v | velocity=w\nClip c:\n    P/1\n    P/5\n",
+    "pattern P(default v, w = v + 1):\n    Note/w\nClip c:\n    P/1\n    P/2\n",
+    "pattern P(default v, w = v + true):\n    Note/w\nClip c:\n    P/1\n    P/2\n",
+    "pattern P(default v, w = v * 0.5):\n    Note/v | velocity=w\nClip c:\n    P/1\n",
+    "pattern P(default v, w = x, x = 1):\n    Note/v | velocity=w\nClip c:\n    P/1\n",
+    "pattern P(default v, w = v + 300000000000):\n    Note/w\nClip c:\n    P/1\n",
+    "pattern P(default v, w = v):\n    Note/w | velocity=w\nClip c:\n    P/1\n    P/2 | w=3\n",
+    "pattern P(default v, n = v):\n    for i in 0..n:\n        Note/i\nClip c:\n    P/2\n    P/3\n",
+    "pattern P(default v, w = [1][2]):\n    Note/v | velocity=w\nClip c:\n    P/1\n    P/2\n",
+    "pattern Q(default v, w = [1][2]):\n    Note/v | velocity=w\npattern P(default v):\n    Q/v\nClip c:\n    P/1\n    P/2\n",
+    "pattern P(default v, w = 300000000000):\n    Note/v | velocity=w\nClip c:\n    P/1\n",
+    "pattern P(default v, w = 1 / 0):\n    Note/v | velocity=w\nClip c:\n    P/1\n    P/2 | w=3\n",
+];
+
+#[test]
+fn a_default_reads_the_earlier_parameters_and_its_value_faults_draw_at_each_outermost_use() {
+    let vocabulary = symphonyscript_fixtures::vocabulary();
+    assert_engines_agree(&vocabulary, &DEFAULTS);
+    let new = Compiler::new(&vocabulary).expect("the vocabulary compiles");
+    let found = new
+        .checked_by_new_core(&[source(DEFAULTS[9])])
+        .expect("the new core takes a default whose value faults under a nested use");
+    let chains: Vec<Vec<std::ops::Range<u32>>> = found
+        .iter()
+        .filter(|diagnostic| diagnostic.code == Code::IndexOutOfRange)
+        .map(|diagnostic| {
+            diagnostic
+                .related
+                .iter()
+                .map(|related| related.span.range.clone())
+                .collect()
+        })
+        .collect();
+    assert_eq!(chains, vec![vec![84..87, 100..103], vec![84..87, 108..111]]);
 }

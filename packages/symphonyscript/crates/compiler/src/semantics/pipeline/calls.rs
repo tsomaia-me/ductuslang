@@ -103,6 +103,51 @@ impl Core<'_> {
                 }
             }
         }
+        self.mark_defaults()?;
+        Ok(())
+    }
+
+    fn mark_defaults(&mut self) -> Result<(), Internal> {
+        for pattern in 0..u32::try_from(self.ir.patterns.len()).unwrap_or(0) {
+            let params = self.pattern_parts(pattern)?.0;
+            let owner = self.patterns_start() + pattern;
+            let mut earlier = Vec::new();
+            for (position, binder) in (params.0..params.1).enumerate() {
+                let rec = *self.ir.binder(binder)?;
+                if rec.default != NONE && !earlier.is_empty() {
+                    let nodes = self.with_receivers(rec.default)?;
+                    let mut reads = false;
+                    for node in &nodes {
+                        if self.ir.node(*node)?.0 != Op::Name {
+                            continue;
+                        }
+                        let name = *self
+                            .ir
+                            .a
+                            .get(self.local(*node)?)
+                            .ok_or(Internal::missed("IR name"))?;
+                        if let Some(entry) = self.ir.name(name)
+                            && earlier.contains(&entry.sym.0)
+                        {
+                            reads = true;
+                        }
+                    }
+                    if reads {
+                        let position = u32::try_from(position).unwrap_or(NONE);
+                        for node in nodes {
+                            let local = self.local(node)?;
+                            if let Some(slot) = self.body_of.get_mut(local)
+                                && *slot == NONE
+                            {
+                                *slot = owner;
+                                self.default_nodes.insert(node, position);
+                            }
+                        }
+                    }
+                }
+                earlier.push(self.binder_sym(binder)?);
+            }
+        }
         Ok(())
     }
 
@@ -163,10 +208,13 @@ impl Core<'_> {
         if owner == NONE {
             return Ok(None);
         }
+        let before = self.default_nodes.get(&node).copied().unwrap_or(NONE);
         Ok(self
             .scope_of(owner)?
             .into_iter()
-            .find(|(bound, _)| *bound == sym)
+            .find(|(bound, decl)| {
+                *bound == sym && !matches!(decl, DeclRef::Param(position) if *position >= before)
+            })
             .map(|(_, decl)| decl))
     }
 
