@@ -64,8 +64,7 @@ const FAMILIES: [&str; 60] = [
     "state x(1s)\nstate y = x.past(1) + 1\nScene s:\n    Cue | at=y\n",
 ];
 
-const DECLINED: [&str; 1] =
-    ["Clip c:\n    Note | length=(for x in [1bars, 2] into a from 0bars: a + x)\n"];
+const DECLINED: [&str; 0] = [];
 
 #[test]
 fn unit_literals_families_through_expressions_and_unit_attributes_draw_what_the_old_engine_draws() {
@@ -239,6 +238,11 @@ fn a_for_expressions_start_and_body_take_one_family_and_its_value_reaches_the_at
         "let t = for i in 0..3 into a from 0bars: a + 1\nClip c:\n    Note | length=t\n",
         "let t = for i in 0..3 into a from 0bars: a + 1\nClip c:\n    Note/1\n",
         "fn f(x): for i in 0..3 into a from x: a + 1\nClip c:\n    Note | length=(f(1bars))\n",
+        "Clip c:\n    Note | length=(for x in [1bars, 2] into a from 0bars: a + x)\n",
+        "Clip c:\n    Note | velocity=(for x in [1bars, 2] into a from 0: a + x)\n",
+        "Clip c:\n    Note | length=(for x in [1bars, 2] into a from 0: a + 1)\n",
+        "let xs = [1s, 2]\nClip c:\n    Note | length=(for x in xs into a from 0bars: a + x)\n",
+        "Clip c:\n    Note | length=(for i, x in [1bars, 2bars] into a from 0bars: a + x)\n",
         "Clip c:\n    Note/(for i in 0..3 into a from 0: a + 1)\n",
     ] {
         let sources = [source(text)];

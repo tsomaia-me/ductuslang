@@ -253,7 +253,7 @@ impl Core<'_> {
             fixed: fact.fixed,
             read: fact.read,
             node: false,
-            family: None,
+            family: fact.family,
         };
         let items = if names >= 2 {
             vec![Fact::scalar(Leaf::Int), element]

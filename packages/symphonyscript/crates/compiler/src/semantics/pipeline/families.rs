@@ -373,15 +373,6 @@ impl Core<'_> {
 
     fn fold_family(&mut self, node: u32) -> Stage<Option<FamilyId>> {
         let rec = self.fold_rec(node)?;
-        let mut iterable = vec![rec.iterable.0];
-        if rec.range {
-            iterable.push(rec.iterable.1);
-        }
-        for at in iterable {
-            if self.family(at).is_some() && !self.family_faults.contains(&at) {
-                return Ok(Err(Declined(Reason::UnitFlow)));
-            }
-        }
         let Some(body) = self.body_of_call(node) else {
             return Ok(Ok(self.family(rec.start)));
         };
