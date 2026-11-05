@@ -1106,6 +1106,7 @@ impl Core<'_> {
             if let Ok(row) = made_row
                 && row != NONE
                 && outer != NONE
+                && self.pattern_items.contains_key(&item)
             {
                 self.env_rows.insert((item, outer), row);
             }

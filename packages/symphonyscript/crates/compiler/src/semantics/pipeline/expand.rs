@@ -106,7 +106,7 @@ impl Core<'_> {
         if let Some(slot) = self.row_of_item.get_mut(named_by as usize) {
             *slot = row;
         }
-        if env != NONE && named_by == item {
+        if env != NONE && named_by == item && self.pattern_items.contains_key(&item) {
             self.env_rows.insert((item, env), row);
         }
         Ok(Ok(row))
@@ -241,7 +241,10 @@ impl Core<'_> {
                         Err(declined) => return Ok(Err(declined)),
                     };
                     match run {
-                        Some(run) if run.count > 0 => work.push(Work::Loop(run)),
+                        Some(run) if run.count > 0 => {
+                            self.reserve_loop(&run)?;
+                            work.push(Work::Loop(run));
+                        }
                         run => {
                             if let Err(declined) = self.unrun_names(item, file)? {
                                 return Ok(Err(declined));
@@ -397,6 +400,41 @@ impl Core<'_> {
         };
         let span = self.name_span(file, name)?;
         self.draw(crate::diagnostics::Code::UnknownKind, span, message);
+        Ok(())
+    }
+}
+
+impl Core<'_> {
+    fn reserve_loop(&mut self, run: &super::loop_run::LoopRun) -> Result<(), Internal> {
+        let ItemRec::For(rec) = *self.ir.item(run.item)? else {
+            return Err(Internal::missed("IR for block"));
+        };
+        let steps = self.limits.expansion_steps.saturating_sub(self.fold_steps);
+        let count = run.count.min(usize::try_from(steps).unwrap_or(usize::MAX));
+        let block = *self
+            .ir
+            .blocks
+            .get(rec.body as usize)
+            .ok_or(Internal::missed("IR block"))?;
+        let mut placements = 0usize;
+        for item in self
+            .ir
+            .block_items
+            .get(block.items.0 as usize..block.items.1 as usize)
+            .unwrap_or_default()
+        {
+            if matches!(self.ir.item(*item)?, ItemRec::Placement(_)) {
+                placements += 1;
+            }
+        }
+        let items = self.limits.expanded_items.saturating_sub(self.expanded);
+        let rows = count
+            .saturating_mul(placements)
+            .min(usize::try_from(items).unwrap_or(usize::MAX));
+        self.instances.reserve(rows);
+        self.envs.reserve(count);
+        self.env_vals
+            .reserve(count.saturating_mul(run.facts.len().max(1)));
         Ok(())
     }
 }
