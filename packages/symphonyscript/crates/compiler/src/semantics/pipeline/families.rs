@@ -196,11 +196,14 @@ impl Core<'_> {
                     }
                     self.family(a)
                 }
+                Op::For => match self.fold_family(node)? {
+                    Ok(family) => family,
+                    Err(declined) => return Ok(Err(declined)),
+                },
                 Op::Bool
                 | Op::Not
                 | Op::And
                 | Op::Or
-                | Op::For
                 | Op::Field
                 | Op::To
                 | Op::Variant
@@ -362,6 +365,60 @@ impl Core<'_> {
         Ok(chains)
     }
 
+    fn function_inst(&self, inst: u32) -> bool {
+        self.bodies
+            .get(inst as usize)
+            .is_some_and(|body| body.function < self.functions())
+    }
+
+    fn fold_family(&mut self, node: u32) -> Stage<Option<FamilyId>> {
+        let rec = self.fold_rec(node)?;
+        let mut iterable = vec![rec.iterable.0];
+        if rec.range {
+            iterable.push(rec.iterable.1);
+        }
+        for at in iterable {
+            if self.family(at).is_some() && !self.family_faults.contains(&at) {
+                return Ok(Err(Declined(Reason::UnitFlow)));
+            }
+        }
+        let Some(body) = self.body_of_call(node) else {
+            return Ok(Ok(self.family(rec.start)));
+        };
+        let value = self.body_value(body)?;
+        let outer = self.inst;
+        self.inst = body;
+        let found = (self.family(value), self.fact(value));
+        let key = self.in_body(value)?.map_or(NONE, |(inst, _)| inst);
+        self.inst = outer;
+        let (inner, fact) = (found.0, found.1?);
+        let start = self.fact(rec.start)?;
+        Ok(Ok(match (self.family(rec.start), inner) {
+            (Some(left), Some(right)) if left != right => {
+                self.draw_at(
+                    Code::MixedFamilies,
+                    node,
+                    "the start and the body of this `for` belong to different unit families, which never convert",
+                )?;
+                None
+            }
+            (Some(family), Some(_)) => Some(family),
+            (Some(family), None) => {
+                if numeric(&fact) && !open(&fact) {
+                    self.takers.push((value, family, key));
+                }
+                Some(family)
+            }
+            (None, Some(family)) => {
+                if numeric(&start) && !open(&start) {
+                    self.takers.push((rec.start, family, NONE));
+                }
+                Some(family)
+            }
+            (None, None) => None,
+        }))
+    }
+
     fn loop_iterable(&self, node: u32, env: u32) -> Result<Option<(u32, u32)>, Internal> {
         let owner = self.binding_owner(node)?;
         if self.loop_at(owner).is_none() {
@@ -404,7 +461,7 @@ impl Core<'_> {
                 CountedWalk::CoreFamilies.step();
                 self.inst = inst;
                 let key = self.in_body(node)?.map_or(NONE, |(inst, _)| inst);
-                let chain: Vec<u32> = if key == NONE {
+                let chain: Vec<u32> = if key == NONE || !self.function_inst(key) {
                     Vec::new()
                 } else {
                     frames.iter().map(|(call, _, _)| *call).collect()
@@ -454,6 +511,11 @@ impl Core<'_> {
                     inner.push((node, env, inst));
                     stack.push((self.body_value(body)?, env, body, inner));
                     continue;
+                }
+                if op == Op::For
+                    && let Some(body) = self.body_of_call(node)
+                {
+                    stack.push((self.body_value(body)?, env, body, frames.clone()));
                 }
                 for next in self.carried(node)? {
                     stack.push((next, env, inst, frames.clone()));

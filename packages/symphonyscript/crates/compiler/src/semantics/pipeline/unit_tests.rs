@@ -65,7 +65,7 @@ const FAMILIES: [&str; 60] = [
 ];
 
 const DECLINED: [&str; 1] =
-    ["Clip c:\n    Note | length=(for i in 0..3 into a from 0bars: a + 1)\n"];
+    ["Clip c:\n    Note | length=(for x in [1bars, 2] into a from 0bars: a + x)\n"];
 
 #[test]
 fn unit_literals_families_through_expressions_and_unit_attributes_draw_what_the_old_engine_draws() {
@@ -221,4 +221,40 @@ fn a_plain_value_inside_a_function_body_takes_the_family_its_call_site_gives_and
             .unwrap_or_else(|| panic!("the new core takes {text}"));
         assert_eq!(found, old.check(&sources), "{text}");
     }
+}
+
+#[test]
+fn a_for_expressions_start_and_body_take_one_family_and_its_value_reaches_the_attribute_it_is_bound_to()
+ {
+    let vocabulary = symphonyscript_fixtures::vocabulary();
+    let old = Compiler::new(&vocabulary)
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
+    let new = Compiler::new(&vocabulary).expect("the vocabulary compiles");
+    for text in [
+        "Clip c:\n    Note | length=(for i in 0..3 into a from 0bars: a + 1bars)\n",
+        "Clip c:\n    Note | length=(for i in 0..3 into a from 0bars: a + 1)\n",
+        "Clip c:\n    Note | velocity=(for i in 0..3 into a from 0bars: a + 1)\n",
+        "Clip c:\n    Note | length=(for i in 0..3 into a from 0s: a + 1bars)\n",
+        "let t = for i in 0..3 into a from 0bars: a + 1\nClip c:\n    Note | length=t\n",
+        "let t = for i in 0..3 into a from 0bars: a + 1\nClip c:\n    Note/1\n",
+        "fn f(x): for i in 0..3 into a from x: a + 1\nClip c:\n    Note | length=(f(1bars))\n",
+        "Clip c:\n    Note/(for i in 0..3 into a from 0: a + 1)\n",
+    ] {
+        let sources = [source(text)];
+        let found = new
+            .checked_by_new_core(&sources)
+            .unwrap_or_else(|| panic!("the new core takes {text}"));
+        assert_eq!(found, old.check(&sources), "{text}");
+    }
+    let text = "Clip c:\n    Note | length=(for i in 0..3 into a from 0: a + 1bars)\n";
+    let found = new
+        .checked_by_new_core(&[source(text)])
+        .unwrap_or_else(|| panic!("the new core takes {text}"));
+    assert!(
+        found
+            .iter()
+            .all(|drawn| drawn.code == crate::diagnostics::Code::NoEntryInstance),
+        "{text}"
+    );
 }
