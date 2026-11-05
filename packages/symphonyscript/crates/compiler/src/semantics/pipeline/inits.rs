@@ -53,7 +53,7 @@ impl Core<'_> {
         if matches!(cell.leaf, Leaf::Placeholder | Leaf::Error) {
             return self.own_check(init);
         }
-        if held.dims != cell.dims {
+        if !super::folds::dims_agree(&held.dims, &cell.dims) {
             self.draw_at(Code::TypeMismatch, init, INIT_SHAPE)?;
             return self.own_check(init);
         }

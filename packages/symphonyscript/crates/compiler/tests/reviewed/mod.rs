@@ -5342,6 +5342,21 @@ pub const CLASSES: &[Class] = &[
         explains: faulty_line,
     },
     Class {
+        ledger: "461",
+        rule: "a history read with neither fallback nor init in a group of cells yields the cell's own settled shape, the group's open kinds taking their inits' (SPEC §6.6), where the old engine joins it as a single value and draws array-operand and reads the cell as a placeholder, so an annotation reading it draws the type-mismatch its settled shape gives",
+        explains: open_history_join,
+    },
+    Class {
+        ledger: "476",
+        rule: "a top-level let annotated with a variable array of a scalar draws an element that does not have or fit the element type at the element (ARCHITECTURE §7: every fault draws at its span), as a let annotated with a fixed array does on both engines, where the old engine draws it at the whole declaration",
+        explains: variable_let_element,
+    },
+    Class {
+        ledger: "476",
+        rule: "a top-level let whose value its array annotation refuses, by its rows or its capacity, keeps the annotated type (ARCHITECTURE §7: a value whose type an error leaves known keeps that type), so a read of it draws the faults that type gives, where the old engine reads the let as a placeholder",
+        explains: refused_array_let_keeps_its_type,
+    },
+    Class {
         ledger: "476",
         rule: "a host-fed cell annotated with a variable array whose init the cell refuses draws one diagnostic for the fault, at each refused element or at the init, and its reads keep the annotated type (ARCHITECTURE §7: a value whose type an error leaves known keeps that type), where the old engine adds a type-mismatch at the whole init and reads the cell as a placeholder",
         explains: refused_variable_init,
@@ -5931,4 +5946,82 @@ fn condition_cut_by_a_line_fault(seen: &Seen<'_>, change: Change, at: &Drawn) ->
             .iter()
             .chain(seen.new.iter())
             .any(|drawn| line_fault(&drawn.0) && drawn.1 == at.2)
+}
+
+fn open_history_join(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
+    if change == Change::Added && at.0 == "type-mismatch" {
+        let name = seen.text(at);
+        return !name.is_empty()
+            && name
+                .chars()
+                .all(|character| character.is_alphanumeric() || character == '_')
+            && seen.old.iter().any(|drawn| {
+                drawn.0 == "array-operand"
+                    && open_history_join(seen, Change::Removed, drawn)
+                    && lines_at(seen.program)
+                        .get(seen.line(drawn.1))
+                        .is_some_and(|(_, line)| line.starts_with(&format!("state {name}(")))
+            });
+    }
+    if change != Change::Removed || at.0 != "array-operand" {
+        return false;
+    }
+    let text = seen.text(at);
+    let open = |name: &str| {
+        seen.program
+            .lines()
+            .any(|line| line.starts_with(&format!("state {name} = ")))
+    };
+    text.match_indices(".past(").any(|(dot, _)| {
+        let name: String = text[..dot]
+            .chars()
+            .rev()
+            .take_while(|character| character.is_alphanumeric() || *character == '_')
+            .collect::<Vec<char>>()
+            .into_iter()
+            .rev()
+            .collect();
+        let call = &text[dot + 6..];
+        let one = call
+            .split_once(')')
+            .is_some_and(|(argument, _)| !argument.contains(','));
+        !name.is_empty() && one && open(&name)
+    })
+}
+
+fn whole_let_line<'a>(seen: &Seen<'a>, at: &Drawn) -> Option<(&'a str, &'a str)> {
+    let (start, line) = lines_at(seen.program)
+        .into_iter()
+        .find(|(start, _)| *start == at.1)?;
+    if at.2 != start + line.len() + 1 && at.2 != start + line.len() {
+        return None;
+    }
+    let (head, _) = line.strip_prefix("let ")?.split_once(" = ")?;
+    let (name, ty) = head.split_once(": ")?;
+    ty.ends_with(']').then_some((name, ty))
+}
+
+fn variable_let_element(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
+    if change != Change::Removed || !matches!(at.0.as_str(), "type-mismatch" | "does-not-fit") {
+        return false;
+    }
+    let Some((_, ty)) = whole_let_line(seen, at) else {
+        return false;
+    };
+    ty.contains("[..")
+        && seen
+            .new
+            .iter()
+            .any(|drawn| drawn.0 == at.0 && drawn.1 > at.1 && drawn.2 <= at.2)
+}
+
+fn refused_array_let_keeps_its_type(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
+    if change != Change::Added || !matches!(at.0.as_str(), "type-mismatch" | "operand-type") {
+        return false;
+    }
+    seen.old.iter().any(|drawn| {
+        matches!(drawn.0.as_str(), "capacity-exceeded" | "type-mismatch")
+            && seen.line(drawn.1) != seen.line(at.1)
+            && whole_let_line(seen, drawn).is_some_and(|(name, _)| reads_word(seen.text(at), name))
+    })
 }

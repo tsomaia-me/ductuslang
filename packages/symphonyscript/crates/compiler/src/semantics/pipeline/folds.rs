@@ -1,11 +1,13 @@
-use super::annotation::{Refusal, annotated_fact, refusal};
+use super::annotation::{ROWS, Refusal, annotated_fact, refusal};
 use super::body_instance::BodyInstance;
 use super::core::{Core, Stage};
 use super::core_value::CoreValue;
 use super::decl_ref::DeclRef;
+use super::declined::Declined;
 use super::fact::Fact;
 use super::leaf::Leaf;
 use super::need::Need;
+use super::reason::Reason;
 use super::typing::unify;
 use super::width::{combined, is_fixed_float};
 use crate::diagnostics::{Code, Diagnostic, for_start_and_body_help};
@@ -302,16 +304,21 @@ impl Core<'_> {
         (ty, reactive): (EvalTy, (bool, bool)),
     ) -> Stage<Fact> {
         let (_, record, _, _) = self.ir.node(node)?;
+        let dims = self.binder_dims(rec.accumulator)?;
         let start_reactive = self.is_reactive(rec.start)?;
-        self.rule_refused(rec.start, ty, start_reactive)?;
+        if dims.is_empty() {
+            self.rule_refused(rec.start, ty, start_reactive)?;
+        }
         let owner = self.functions() + record;
         let mut args = items;
         let accumulator = annotated_fact(ty);
-        args.push(if accumulator.leaf == Leaf::Bool {
+        let mut accumulator = if accumulator.leaf == Leaf::Bool {
             accumulator
         } else {
             Fact::numeric(accumulator.leaf, None, Some(ty))
-        });
+        };
+        accumulator.dims.clone_from(&dims);
+        args.push(accumulator);
         let mut reactive = reactive;
         let body = loop {
             let body = match self.fold_instance(node, owner, args.clone(), reactive)? {
@@ -329,9 +336,22 @@ impl Core<'_> {
             }
             break body;
         };
+        if !dims.is_empty() && !reactive.1 {
+            return Ok(Err(Declined(Reason::CompileTimeArrayAccumulator)));
+        }
         let key = self.inst_key(node)?;
         self.call_body.insert((key, node), body);
         self.replay_fold(node, body)?;
+        if !dims.is_empty() {
+            self.array_refusal(rec.start, ty, true)?;
+            let outer = std::mem::replace(&mut self.inst, body);
+            let refused = self.array_refusal(rec.body, ty, true);
+            self.inst = outer;
+            refused?;
+            let mut fact = annotated_fact(ty);
+            fact.dims = dims;
+            return Ok(Ok(fact));
+        }
         let outer = std::mem::replace(&mut self.inst, body);
         let refused = self.rule_refused(rec.body, ty, reactive.1);
         self.inst = outer;
@@ -339,11 +359,60 @@ impl Core<'_> {
         Ok(Ok(annotated_fact(ty)))
     }
 
+    fn array_refusal(&mut self, root: u32, ty: EvalTy, draw: bool) -> Result<bool, Internal> {
+        let fact = self.fact(root)?;
+        if matches!(fact.leaf, Leaf::Placeholder | Leaf::Error) {
+            return Ok(true);
+        }
+        if fact.dims.len() != 1 {
+            if draw {
+                self.draw_at(Code::TypeMismatch, root, ROWS)?;
+            }
+            return Ok(true);
+        }
+        let element = Fact {
+            dims: Vec::new(),
+            ..fact
+        };
+        match refusal(&element, ty) {
+            Refusal::Kept => Ok(false),
+            Refusal::Type => {
+                if draw {
+                    self.draw_refused_leaves(root, ty)?;
+                }
+                Ok(true)
+            }
+            Refusal::Silent | Refusal::Shape => Ok(true),
+        }
+    }
+
+    fn array_accumulator_fits(&mut self, node: u32, rec: &ForRec, ty: EvalTy) -> Stage<()> {
+        let Some(body) = self.body_of_call(node) else {
+            return Ok(Ok(()));
+        };
+        if !self.array_refusal(rec.start, ty, false)?
+            && let Err(declined) = self.evaluate(rec.start, ty)?
+        {
+            return Ok(Err(declined));
+        }
+        let outer = std::mem::replace(&mut self.inst, body);
+        let outcome = match self.array_refusal(rec.body, ty, false) {
+            Ok(false) => self.evaluate(rec.body, ty).map(|found| found.map(|_| ())),
+            Ok(true) => Ok(Ok(())),
+            Err(error) => Err(error),
+        };
+        self.inst = outer;
+        outcome
+    }
+
     pub fn annotated_fold_refused(&mut self, node: u32) -> Result<bool, Internal> {
         let rec = self.fold_rec(node)?;
         let Some(ty) = self.accumulator_ty(&rec)? else {
             return Ok(false);
         };
+        if !self.binder_dims(rec.accumulator)?.is_empty() {
+            return Ok(true);
+        }
         if refusal(&self.fact(rec.start)?, ty) != Refusal::Kept {
             return Ok(true);
         }
@@ -651,6 +720,9 @@ impl Core<'_> {
         let Some(ty) = self.accumulator_ty(&rec)? else {
             return Ok(Ok(()));
         };
+        if self.is_reactive(node)? && !self.binder_dims(rec.accumulator)?.is_empty() {
+            return self.array_accumulator_fits(node, &rec, ty);
+        }
         if !self.is_reactive(node)? || self.annotated_fold_refused(node)? {
             return Ok(Ok(()));
         }

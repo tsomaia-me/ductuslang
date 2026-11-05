@@ -110,6 +110,15 @@ impl Core<'_> {
         if matches!(fact.leaf, Leaf::Placeholder | Leaf::Error) {
             return Ok(Ok(fact));
         }
+        if let Some(settled) = self.group_settled(node, at)
+            && !fallback_fits(&held, &settled)
+        {
+            self.draw_at(Code::TypeMismatch, fallback, FALLBACK_SHAPE)?;
+            if let Err(declined) = self.own_check(fallback)? {
+                return Ok(Err(declined));
+            }
+            return Ok(Ok(settled));
+        }
         if !fallback_fits(&held, &fact) {
             self.draw_at(Code::TypeMismatch, fallback, FALLBACK_SHAPE)?;
             if let Err(declined) = self.own_check(fallback)? {

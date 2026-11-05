@@ -321,3 +321,154 @@ fn a_derived_cell_annotated_with_an_array_takes_the_capacity_table_and_its_shape
     }
     assert_eq!(programs, 84);
 }
+
+const ACCUMULATORS: [(&str, &[Code], bool); 12] = [
+    ("into a: i32[..8] from []: a + [x]", &[], true),
+    (
+        "into a: i32[..2] from []: a + [x]",
+        &[Code::CapacityExceeded],
+        true,
+    ),
+    (
+        "into a: i32[..2] from [1, 2, 3]: a[1..] + [x]",
+        &[Code::CapacityExceeded],
+        true,
+    ),
+    (
+        "into a: i32[..8] from [1, 2, 3, 4, 5, 6, 7, 8, 9]: a[1..] + [x]",
+        &[Code::CapacityExceeded],
+        true,
+    ),
+    ("into a: i32[..4] from []: a[^3..] + [x]", &[], true),
+    (
+        "into a: f32[..8] from []: a + [x]",
+        &[Code::TypeMismatch, Code::FloatToInteger],
+        true,
+    ),
+    (
+        "into a: i32[..8] from [1.5]: a + [x]",
+        &[Code::TypeMismatch],
+        false,
+    ),
+    (
+        "into a: i32[..8] from []: a + [1.5]",
+        &[Code::TypeMismatch],
+        false,
+    ),
+    (
+        "into a: i32[..8] from 5: a + [x]",
+        &[Code::TypeMismatch],
+        false,
+    ),
+    ("into a: i32[..8] from []: x", &[Code::TypeMismatch], false),
+    (
+        "into a: i32[..8] from [[1]]: a",
+        &[Code::TypeMismatch],
+        false,
+    ),
+    (
+        "into a: u8[..8] from [300]: a + [x]",
+        &[Code::DoesNotFit],
+        false,
+    ),
+];
+
+#[test]
+fn a_for_expression_over_a_cell_whose_accumulator_is_annotated_with_a_variable_array_holds_the_annotated_capacity_and_draws_capacity_exceeded_beyond_it()
+ {
+    let vocabulary = symphonyscript_fixtures::vocabulary();
+    let old = Compiler::new(&vocabulary)
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
+    let new = Compiler::new(&vocabulary).expect("the vocabulary compiles");
+    let mut programs = 0;
+    for (fold, codes, agreed) in ACCUMULATORS {
+        let text = format!(
+            "state hh([1]): i32[..4]\nstate v = for x in hh {fold}\nstate t: i32[..9] = v + [1]\nClip c:\n    Note/(v[0])\n"
+        );
+        for text in both_orders(&items(&text)) {
+            let sources = [source(&text)];
+            let found = new
+                .checked_by_new_core(&sources)
+                .unwrap_or_else(|| panic!("the new core takes {text}"));
+            if agreed {
+                assert_eq!(found, old.check(&sources), "{text}");
+            }
+            let mut found: Vec<Code> = found
+                .iter()
+                .map(|diagnostic| diagnostic.code)
+                .filter(|code| *code != Code::NoEntryInstance)
+                .collect();
+            found.sort_by_key(|code| code.as_str());
+            let mut wanted = codes.to_vec();
+            wanted.sort_by_key(|code| code.as_str());
+            assert_eq!(found, wanted, "{text}");
+            programs += 1;
+        }
+    }
+    let read = "state hh([1]): i32[..4]\nstate v = for x in hh into a: i32[..8] from []: a + [x]\nstate t: i32[..8] = v + [1]\nClip c:\n    Note/(t[0])\n";
+    for text in both_orders(&items(read)) {
+        let sources = [source(&text)];
+        let found = new
+            .checked_by_new_core(&sources)
+            .unwrap_or_else(|| panic!("the new core takes {text}"));
+        assert_eq!(found, old.check(&sources), "{text}");
+        assert!(
+            found
+                .iter()
+                .any(|diagnostic| diagnostic.code == Code::CapacityExceeded
+                    && diagnostic.summary.contains("holds up to 9")),
+            "{text}"
+        );
+    }
+    let compile_time =
+        "let v = for i in 0..3 into a: i32[..2] from []: a + [i]\nClip c:\n    Note/(v[0])\n";
+    assert!(new.checked_by_new_core(&[source(compile_time)]).is_none());
+    assert_eq!(programs, 24);
+}
+
+const HISTORY_FALLBACKS: [(&str, &[Code]); 5] = [
+    (
+        "state h = hh.past(1, [1, 2, 3])\nstate t: i32[..2] = h",
+        &[Code::CapacityExceeded],
+    ),
+    (
+        "state h = hh.past(1, [1, 2, 3])\nstate t: i32[..3] = h",
+        &[],
+    ),
+    ("state h = hh.past(1)\nstate t: i32[..2] = h", &[]),
+    (
+        "state h = hh.past(1)\nstate t: i32[..1] = h",
+        &[Code::CapacityExceeded],
+    ),
+    (
+        "state t: i32[..3] = hh.past(1, [1, 2, 3]) + [1]",
+        &[Code::CapacityExceeded],
+    ),
+];
+
+#[test]
+fn a_history_read_of_a_variable_array_cell_has_the_larger_of_the_cells_capacity_and_its_fallbacks()
+{
+    let vocabulary = symphonyscript_fixtures::vocabulary();
+    let old = Compiler::new(&vocabulary)
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
+    let new = Compiler::new(&vocabulary).expect("the vocabulary compiles");
+    for (cells, codes) in HISTORY_FALLBACKS {
+        let text = format!("state hh([1]): i32[..2]\n{cells}\nClip c:\n    Note/(t[0])\n");
+        for text in both_orders(&items(&text)) {
+            let sources = [source(&text)];
+            let found = new
+                .checked_by_new_core(&sources)
+                .unwrap_or_else(|| panic!("the new core takes {text}"));
+            assert_eq!(found, old.check(&sources), "{text}");
+            let found: Vec<Code> = found
+                .iter()
+                .map(|diagnostic| diagnostic.code)
+                .filter(|code| *code != Code::NoEntryInstance)
+                .collect();
+            assert_eq!(&found, codes, "{text}");
+        }
+    }
+}

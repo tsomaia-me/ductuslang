@@ -5,6 +5,7 @@ use super::cycles::strongly_connected;
 use super::decl_ref::DeclRef;
 use super::declined::Declined;
 use super::fact::Fact;
+use super::folds::ANY_LENGTH;
 use super::leaf::Leaf;
 use super::reason::Reason;
 use crate::diagnostics::{Code, Diagnostic};
@@ -173,10 +174,20 @@ impl Core<'_> {
                     if group_of.get(target as usize).copied() != u32::try_from(group).ok() {
                         continue;
                     }
-                    if !rule.contains(&node) {
+                    match self.group_reads.get(&node) {
+                        Some((_, reader)) if *reader != *member => {
+                            return Ok(Err(Declined(Reason::CellGroup)));
+                        }
+                        Some(_) => continue,
+                        None => {}
+                    }
+                    let in_body =
+                        self.body_of.get(self.local(node)?).copied().unwrap_or(NONE) != NONE;
+                    if !rule.contains(&node) && (in_body || target == *member) {
                         return Ok(Err(Declined(Reason::CellGroup)));
                     }
                     self.group_reads.insert(node, (target, *member));
+                    self.group_history.entry(target).or_default().push(node);
                 }
             }
         }
@@ -190,13 +201,21 @@ impl Core<'_> {
         let Some((target, reader)) = self.group_reads.get(&node).copied() else {
             return Ok(None);
         };
-        let settled = self
-            .group_kinds
-            .get(&target)
-            .filter(|fact| fact.leaf != Leaf::Empty)
-            .cloned();
+        let settled = match self.group_kinds.get(&target) {
+            Some(fact) => match self.open_member(target, fact) {
+                Some(init) => Some(self.fact(init)?),
+                None => Some(fact.clone()),
+            },
+            None => None,
+        }
+        .filter(|fact| fact.leaf != Leaf::Empty);
         let seed = self.group_seed(node, target)?;
-        Ok(Some(match (seed, settled) {
+        let mut found = match (seed, settled) {
+            (Some(seed), Some(settled))
+                if matches!(settled.leaf, Leaf::Placeholder | Leaf::Error) =>
+            {
+                seed
+            }
             (Some(seed), Some(settled)) if target != reader => {
                 match super::typing::unify(seed.leaf, settled.leaf) {
                     Some(leaf) if leaf == seed.leaf && leaf != settled.leaf => seed,
@@ -206,7 +225,80 @@ impl Core<'_> {
             (Some(seed), _) => seed,
             (None, Some(settled)) => settled,
             (None, None) => Fact::scalar(Leaf::Empty),
-        }))
+        };
+        if self.group_variable.contains(&target)
+            && let Some(first) = found.dims.first_mut()
+        {
+            *first = ANY_LENGTH;
+        }
+        Ok(Some(found))
+    }
+
+    fn open_reads(&self, members: &[u32]) -> Result<bool, Internal> {
+        for member in members {
+            for node in self.group_history.get(member).into_iter().flatten() {
+                if self.group_seed(*node, *member)?.is_none() {
+                    return Ok(true);
+                }
+            }
+        }
+        Ok(false)
+    }
+
+    pub fn open_member(&self, at: u32, fact: &Fact) -> Option<u32> {
+        if !self.group_open.contains(&at) || !open_kind(fact) {
+            return None;
+        }
+        self.ir
+            .cells
+            .get(at as usize)
+            .map(|rec| rec.init)
+            .filter(|init| *init != NONE)
+    }
+
+    pub fn group_settled(&self, node: u32, at: u32) -> Option<Fact> {
+        if !self.group_reads.contains_key(&node) {
+            return None;
+        }
+        let mut settled = self.group_kinds.get(&at)?.clone();
+        if open_kind(&settled) {
+            return None;
+        }
+        if self.group_variable.contains(&at)
+            && let Some(first) = settled.dims.first_mut()
+        {
+            *first = ANY_LENGTH;
+        }
+        Some(settled)
+    }
+
+    fn seedless(&self, member: u32) -> Result<bool, Internal> {
+        for node in self.group_history.get(&member).into_iter().flatten() {
+            if self.group_seed(*node, member)?.is_none() {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
+    fn holds_variable(&self, member: u32, fact: &Fact) -> Result<bool, Internal> {
+        let Some(length) = fact.dims.first().copied() else {
+            return Ok(false);
+        };
+        if matches!(fact.leaf, Leaf::Placeholder | Leaf::Error) {
+            return Ok(false);
+        }
+        if length == ANY_LENGTH {
+            return Ok(true);
+        }
+        for node in self.group_history.get(&member).into_iter().flatten() {
+            if let Some(seed) = self.group_seed(*node, member)?
+                && seed.dims.first() != Some(&length)
+            {
+                return Ok(true);
+            }
+        }
+        Ok(false)
     }
 
     fn group_seed(&self, node: u32, target: u32) -> Result<Option<Fact>, Internal> {
@@ -284,7 +376,14 @@ impl Core<'_> {
             Ok(fact) => fact,
             Err(declined) => return Ok(Err(declined)),
         };
-        let changed = self.group_kinds.get(&member) != Some(&fact);
+        let resized = self
+            .group_kinds
+            .get(&member)
+            .is_some_and(|before| resized(before, &fact))
+            && self.seedless(member)?;
+        let variable =
+            (resized || self.holds_variable(member, &fact)?) && self.group_variable.insert(member);
+        let changed = variable || self.group_kinds.get(&member) != Some(&fact);
         self.group_kinds.insert(member, fact);
         Ok(Ok(changed))
     }
@@ -308,16 +407,40 @@ impl Core<'_> {
         let warned = self.warned.clone();
         let mut queue: std::collections::BTreeSet<usize> = (0..members.len()).collect();
         let mut budget = members.len().saturating_mul(SETTLE_ROUNDS);
-        while let Some(position) = queue.pop_first() {
-            if budget == 0 {
-                return Ok(Err(Declined(Reason::CellGroup)));
+        loop {
+            while let Some(position) = queue.pop_first() {
+                if budget == 0 {
+                    return Ok(Err(Declined(Reason::CellGroup)));
+                }
+                budget -= 1;
+                let member = members.get(position).copied().unwrap_or(NONE);
+                match self.type_member(member)? {
+                    Ok(true) => queue.extend(readers.get(&member).into_iter().flatten().copied()),
+                    Ok(false) => {}
+                    Err(declined) => return Ok(Err(declined)),
+                }
             }
-            budget -= 1;
-            let member = members.get(position).copied().unwrap_or(NONE);
-            match self.type_member(member)? {
-                Ok(true) => queue.extend(readers.get(&member).into_iter().flatten().copied()),
-                Ok(false) => {}
-                Err(declined) => return Ok(Err(declined)),
+            if !self.open_reads(members)? {
+                break;
+            }
+            for (position, member) in members.iter().enumerate() {
+                let init = self
+                    .ir
+                    .cells
+                    .get(*member as usize)
+                    .map_or(NONE, |rec| rec.init);
+                let open = self.group_kinds.get(member).is_some_and(open_kind);
+                if open
+                    && init != NONE
+                    && !self.is_reactive(init)?
+                    && self.group_open.insert(*member)
+                {
+                    queue.insert(position);
+                    queue.extend(readers.get(member).into_iter().flatten().copied());
+                }
+            }
+            if queue.is_empty() {
+                break;
             }
         }
         self.diagnostics.truncate(mark);
@@ -328,7 +451,7 @@ impl Core<'_> {
                 return Ok(Err(declined));
             }
         }
-        Ok(self.scalar_group(members))
+        Ok(self.settled_group(members))
     }
 
     fn check_group(&mut self, members: &[u32]) -> Stage<()> {
@@ -634,6 +757,21 @@ impl Core<'_> {
     }
 }
 
+fn resized(before: &Fact, after: &Fact) -> bool {
+    let fixed = |fact: &Fact| {
+        (!matches!(fact.leaf, Leaf::Placeholder | Leaf::Error))
+            .then(|| fact.dims.first().copied())
+            .flatten()
+            .filter(|length| *length != ANY_LENGTH)
+    };
+    matches!((fixed(before), fixed(after)), (Some(a), Some(b)) if a != b)
+}
+
+fn open_kind(fact: &Fact) -> bool {
+    matches!(fact.leaf, Leaf::Placeholder | Leaf::Error)
+        || (fact.leaf == Leaf::Empty && fact.dims.is_empty())
+}
+
 fn present_order(component: &[u32], all: &[CellReads]) -> Option<Vec<u32>> {
     let mut sorted = component.to_vec();
     sorted.sort_unstable();
@@ -673,21 +811,13 @@ fn present_order(component: &[u32], all: &[CellReads]) -> Option<Vec<u32>> {
 }
 
 impl Core<'_> {
-    fn scalar_group(&self, members: &[u32]) -> Result<(), Declined> {
+    fn settled_group(&self, members: &[u32]) -> Result<(), Declined> {
         for member in members {
             if self
                 .group_kinds
                 .get(member)
-                .is_none_or(|fact| !fact.dims.is_empty() || fact.leaf == Leaf::Error)
+                .is_none_or(|fact| fact.leaf == Leaf::Error)
             {
-                return Err(Declined(Reason::CellGroup));
-            }
-            let init = self
-                .ir
-                .cells
-                .get(*member as usize)
-                .map_or(NONE, |rec| rec.init);
-            if init != NONE && self.fact(init).map_or(true, |fact| !fact.dims.is_empty()) {
                 return Err(Declined(Reason::CellGroup));
             }
         }
@@ -713,13 +843,6 @@ impl Core<'_> {
                     .is_some_and(|rec| rec.init == NONE)
             });
             if placeholder && fallback == NONE && open {
-                return Err(Declined(Reason::CellGroup));
-            }
-            if fallback != NONE
-                && self
-                    .fact(fallback)
-                    .map_or(true, |fact| !fact.dims.is_empty())
-            {
                 return Err(Declined(Reason::CellGroup));
             }
         }

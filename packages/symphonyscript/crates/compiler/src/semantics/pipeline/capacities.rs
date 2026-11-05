@@ -162,6 +162,9 @@ impl Core<'_> {
         if !self.derived(at) || self.is_cyclic_cell(at) || self.cell_annotation_ty(at)?.is_some() {
             return Ok(false);
         }
+        if self.group_variable.contains(&at) {
+            return Ok(true);
+        }
         let root = self.cell_root(at)?;
         if !self.has_fact(root)? {
             return Ok(false);
@@ -960,6 +963,26 @@ impl Core<'_> {
             )?
             .capacity();
         let most = grown(&function, start, count);
+        if let Some(annotated) = self.binder_capacity(rec.accumulator)? {
+            let annotated = i128::from(annotated);
+            if walk.checking == Checking::Everything && most > annotated {
+                let span = self.node_span(node)?;
+                let seen = self.diagnostics.iter().any(|diagnostic| {
+                    diagnostic.code == Code::CapacityExceeded && diagnostic.span == span
+                });
+                if !seen {
+                    self.draw_helped_at(
+                        Code::CapacityExceeded,
+                        node,
+                        format!(
+                            "this `for` expression holds up to {most} elements, more than the annotated capacity {annotated} of its accumulator"
+                        ),
+                        crate::diagnostics::accumulator_capacity_help(annotated, most),
+                    )?;
+                }
+            }
+            return Ok(Extent::Variable(Piecewise::constant(annotated)));
+        }
         if walk.checking == Checking::Everything {
             let entered = grown(&function, start, count.saturating_sub(1).max(0));
             self.fold_body_extent(

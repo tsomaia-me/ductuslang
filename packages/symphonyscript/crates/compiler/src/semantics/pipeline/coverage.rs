@@ -65,7 +65,11 @@ pub(crate) fn covers(ir: &FlatIr) -> bool {
         .cells
         .iter()
         .filter(|rec| variable_annotation(ir, rec.binder) && (rec.rule == NONE || rec.init == NONE))
-        .filter_map(|rec| ir.binders.get(rec.binder as usize))
+        .map(|rec| rec.binder)
+        .chain(ir.fors.iter().map(|rec| rec.accumulator))
+        .chain(ir.lets.iter().map(|rec| rec.binder))
+        .filter(|binder| *binder != NONE && variable_annotation(ir, *binder))
+        .filter_map(|binder| ir.binders.get(binder as usize))
         .filter_map(|binder| binder.annotation.checked_sub(ir.base))
         .map(|local| local as usize)
         .collect();
@@ -358,7 +362,7 @@ pub(crate) fn reason_slice(reason: Reason) -> Slice {
         Reason::CellGroup => Slice::Pending,
         Reason::FunctionValue | Reason::Recursion => Slice::DefaultFlip,
         Reason::LocalCycle | Reason::LocalClash => Slice::Pending,
-        Reason::AnnotatedCall => Slice::Pending,
+        Reason::AnnotatedCall | Reason::CompileTimeArrayAccumulator => Slice::Pending,
         Reason::Pending => Slice::One,
         Reason::DestinationValue | Reason::ReactiveReference | Reason::WireKind => Slice::Pending,
         Reason::BareVariant | Reason::UnitAttribute | Reason::EnumAttribute => Slice::Five,
@@ -416,9 +420,8 @@ fn plain_fold(ir: &FlatIr, rec: &ForRec) -> bool {
     let names = rec.names.1.saturating_sub(rec.names.0);
     (1..=2).contains(&names)
         && rec.accumulator != NONE
-        && (rec.names.0..rec.names.1)
-            .chain([rec.accumulator])
-            .all(|binder| scalar_annotation(ir, binder))
+        && (rec.names.0..rec.names.1).all(|binder| scalar_annotation(ir, binder))
+        && (scalar_annotation(ir, rec.accumulator) || variable_annotation(ir, rec.accumulator))
         && (rec.lets.0..rec.lets.1).all(|at| {
             ir.lets
                 .get(at as usize)
@@ -430,7 +433,7 @@ fn let_annotation(ir: &FlatIr, binder: u32) -> bool {
     let Some(rec) = ir.binders.get(binder as usize) else {
         return false;
     };
-    if rec.annotation == NONE {
+    if rec.annotation == NONE || variable_annotation(ir, binder) {
         return true;
     }
     let mut node = rec.annotation;

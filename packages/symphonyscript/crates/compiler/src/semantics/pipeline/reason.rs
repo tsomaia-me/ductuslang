@@ -15,6 +15,7 @@ pub(crate) enum Reason {
     LocalCycle,
     LocalClash,
     AnnotatedCall,
+    CompileTimeArrayAccumulator,
     Pending,
     DestinationValue,
     ReactiveReference,
