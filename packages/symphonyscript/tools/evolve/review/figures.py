@@ -277,7 +277,7 @@ def new_core_profile(elapsed, nodes, load, profile, engines):
     target = NEW_CORE_NODE_TARGETS_US[profile]
     past = {**row["past_target"], "node": median is None or median > target}
     return {**row, "counted_programs": len(per_node), "per_node_us": median, "target_node_us": target,
-            "past_target": past if elapsed else dict.fromkeys(past, False)}
+            "past_target": past if elapsed else dict.fromkeys(past, None)}
 
 
 def new_core_figure(times, elapsed, nodes, loads, below, scale=FULL, engines=None):
