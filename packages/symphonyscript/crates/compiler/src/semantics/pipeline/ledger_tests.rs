@@ -1233,3 +1233,55 @@ fn stress_a_ring_and_a_chain_of_cells_holding_variable_arrays_settle_in_time_and
         Timing::Judged,
     ));
 }
+
+fn family_chain(n: usize) -> String {
+    let mut text = String::from("let v0 = 1bars\n");
+    for at in 1..=n {
+        text.push_str(&format!("let v{at} = v{} + 1\n", at - 1));
+    }
+    text.push_str(&format!("Clip c:\n    Note | length=v{n}\n"));
+    text
+}
+
+#[test]
+fn a_chain_of_lets_of_one_family_read_at_a_unit_attribute_takes_its_family_at_every_link() {
+    let compiler = Compiler::new(&vocabulary()).expect("the vocabulary compiles");
+    for n in [1, 5, 50] {
+        let text = family_chain(n);
+        let found = compiler
+            .checked_by_new_core(&[crate::syntax::front_end_goldens::source(&text)])
+            .unwrap_or_else(|| panic!("the new core takes {text}"));
+        assert_eq!(codes(&found), Vec::<String>::new(), "{text}");
+    }
+    let unread = family_chain(5).replace("Note | length=v5", "Note/1");
+    let found = compiler
+        .checked_by_new_core(&[crate::syntax::front_end_goldens::source(&unread)])
+        .expect("the new core takes the unread chain");
+    assert_eq!(codes(&found), Vec::<String>::new(), "{unread}");
+    let pitched = family_chain(5).replace("Note | length=v5", "Note/v5");
+    let found = compiler
+        .checked_by_new_core(&[crate::syntax::front_end_goldens::source(&pitched)])
+        .expect("the new core takes the chain read at a pitch");
+    let old = Compiler::new(&vocabulary())
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
+    assert_eq!(
+        found,
+        old.check(&[crate::syntax::front_end_goldens::source(&pitched)]),
+        "{pitched}"
+    );
+    assert_eq!(codes(&found).len(), 6, "{pitched}");
+}
+
+#[test]
+#[ignore = "stress"]
+fn stress_a_chain_of_lets_of_one_family_read_at_a_unit_attribute_types_in_time_and_memory_linear_in_the_chain()
+ {
+    assert_none(&ledger_failures(
+        "family let chain",
+        [1_000, 2_000, 4_000],
+        family_chain,
+        &none,
+        Timing::Judged,
+    ));
+}
