@@ -276,9 +276,10 @@ impl Core<'_> {
                 }
             }
             if self.family(head.iterable.0).is_some() || self.family(head.iterable.1).is_some() {
-                return Ok(Err(super::declined::Declined(
-                    super::reason::Reason::UnitFlow,
-                )));
+                for bound in [head.iterable.0, head.iterable.1] {
+                    self.unit_position(bound, "a range bound")?;
+                }
+                return Ok(Ok(None));
             }
             let (low, high) = match bounds.as_slice() {
                 [low, high] => (*low, *high),

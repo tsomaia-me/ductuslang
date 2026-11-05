@@ -175,10 +175,13 @@ impl Core<'_> {
                     None => return self.family_error(node, fact),
                 },
                 Op::Call | Op::NamedCall => fact.family,
-                Op::Index => {
-                    if self.family(b).is_some() {
-                        return Ok(Err(Declined(Reason::UnitFlow)));
-                    }
+                Op::Index | Op::IndexFromEnd => {
+                    let position = if op == Op::Index {
+                        "an index"
+                    } else {
+                        "a `^` offset"
+                    };
+                    self.unit_position(b, position)?;
                     self.family(a)
                 }
                 Op::Past => self.family(a),
@@ -186,8 +189,8 @@ impl Core<'_> {
                 Op::Slice => {
                     for at in [b, b + 1] {
                         let bound = self.kid(at)?;
-                        if bound != NONE && self.family(bound).is_some() {
-                            return Ok(Err(Declined(Reason::UnitFlow)));
+                        if bound != NONE {
+                            self.unit_position(bound, "a slice bound")?;
                         }
                     }
                     self.family(a)
@@ -196,7 +199,6 @@ impl Core<'_> {
                 | Op::Not
                 | Op::And
                 | Op::Or
-                | Op::IndexFromEnd
                 | Op::For
                 | Op::Field
                 | Op::To
@@ -222,6 +224,18 @@ impl Core<'_> {
             return Ok(Err(Declined(Reason::UnitFlow)));
         }
         Ok(Ok(()))
+    }
+
+    pub fn unit_position(&mut self, node: u32, position: &str) -> Result<(), Internal> {
+        if self.family(node).is_none() || self.family_faults.contains(&node) {
+            return Ok(());
+        }
+        self.family_faults.insert(node);
+        self.draw_at(
+            Code::UnitOperation,
+            node,
+            format!("a unit value is not {position}"),
+        )
     }
 
     fn family_error(&mut self, node: u32, fact: &mut Fact) -> Stage<()> {

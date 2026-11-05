@@ -64,11 +64,7 @@ const FAMILIES: [&str; 60] = [
     "state x(1s)\nstate y = x.past(1) + 1\nScene s:\n    Cue | at=y\n",
 ];
 
-const DECLINED: [&str; 6] = [
-    "Clip c:\n    for i in 0..2s:\n        Note\n",
-    "Clip c:\n    Note/([1, 2][0..1bars][0])\n",
-    "Clip c:\n    Note/([1, 2][1s])\n",
-    "Clip c:\n    Note | length=([1bars, 2bars][0..1bars][0])\n",
+const DECLINED: [&str; 2] = [
     "Clip c:\n    Note | length=(for i in 0..3 into a from 0bars: a + 1)\n",
     "fn f(x): x + 1\nScene s:\n    Cue | at=(f(5ms))\n",
 ];
@@ -89,5 +85,78 @@ fn unit_literals_families_through_expressions_and_unit_attributes_draw_what_the_
     }
     for text in DECLINED {
         assert_eq!(new.checked_by_new_core(&[source(text)]), None, "{text}");
+    }
+}
+
+#[test]
+fn a_unit_value_as_an_index_a_slice_bound_a_range_bound_or_an_offset_draws_unit_operation_505() {
+    let vocabulary = symphonyscript_fixtures::vocabulary();
+    let old = Compiler::new(&vocabulary)
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
+    let new = Compiler::new(&vocabulary).expect("the vocabulary compiles");
+    let session = "Session main:\n    Includes: t\nTrack t:\n    Piano\n    Starts: c\n";
+    for text in [
+        "Clip c:\n    for i in 0..2s:\n        Note\n",
+        "Clip c:\n    for i in 1s..2:\n        Note\n",
+        "Clip c:\n    for i in 0..2:\n        Note/([1, 2][i])\n",
+        "Clip c:\n    Note/([1, 2][(1s) div 1s])\n",
+        "Clip c:\n    Note/([1, 2][^1])\n",
+    ] {
+        let sources = [source(&format!("{session}{text}"))];
+        let found = new
+            .checked_by_new_core(&sources)
+            .unwrap_or_else(|| panic!("the new core takes {text}"));
+        assert_eq!(found, old.check(&sources), "{text}");
+    }
+    for (text, position, at) in [
+        ("Clip c:\n    Note/([1, 2][1s])\n", "an index", "1s"),
+        (
+            "let k = 1s\nClip c:\n    Note/([1, 2][k])\n",
+            "an index",
+            "k",
+        ),
+        (
+            "Clip c:\n    Note/([1, 2][0..1bars][0])\n",
+            "a slice bound",
+            "1bars",
+        ),
+        (
+            "Clip c:\n    Note/([1, 2][1s..][0])\n",
+            "a slice bound",
+            "1s",
+        ),
+        ("Clip c:\n    Note/([1, 2][^1s])\n", "a `^` offset", "1s"),
+        (
+            "Clip c:\n    Note | length=([1bars, 2bars][0..1bars][0])\n",
+            "a slice bound",
+            "1bars",
+        ),
+    ] {
+        let program = format!("{session}{text}");
+        let found = new
+            .checked_by_new_core(&[source(&program)])
+            .unwrap_or_else(|| panic!("the new core takes {text}"));
+        let drawn: Vec<(String, String, String)> = found
+            .iter()
+            .map(|diagnostic| {
+                let range =
+                    diagnostic.span.range.start as usize..diagnostic.span.range.end as usize;
+                (
+                    diagnostic.code.to_string(),
+                    program.get(range).unwrap_or_default().to_string(),
+                    diagnostic.summary.clone(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            drawn,
+            vec![(
+                "unit-operation".to_string(),
+                at.to_string(),
+                format!("a unit value is not {position}"),
+            )],
+            "{text}"
+        );
     }
 }
