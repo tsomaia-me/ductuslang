@@ -28,7 +28,7 @@ impl Core<'_> {
         &self,
         root: u32,
         env: u32,
-        (lets, cells): (u32, u32),
+        (lets, cells, fns): (u32, u32, u32),
     ) -> Result<Vec<u32>, Internal> {
         let mut reads = Vec::new();
         let mut stack = vec![(root, env)];
@@ -39,7 +39,12 @@ impl Core<'_> {
             }
             for node in self.deep_postorder(root)? {
                 let op = self.ir.node(node)?.0;
-                if op == Op::Name {
+                if matches!(op, Op::Call | Op::NamedCall)
+                    && let Some(function) = self.callee(node)?
+                {
+                    reads.push(fns + function);
+                }
+                if op == Op::Name && !self.is_history_target(node) {
                     match self.bound(node)? {
                         DeclRef::Let(read) => reads.push(read),
                         DeclRef::Cell(read) => reads.push(cells + read),
@@ -66,8 +71,16 @@ impl Core<'_> {
     fn declaration_key(
         &self,
         member: u32,
-        (lets, cells): (u32, u32),
+        (lets, cells, fns): (u32, u32, u32),
     ) -> Result<(u32, u32), Internal> {
+        if let Some(at) = member.checked_sub(fns) {
+            let rec = self
+                .ir
+                .fns
+                .get(at as usize)
+                .ok_or(Internal::missed("IR function"))?;
+            return Ok((self.file_of(rec.value), rec.lo));
+        }
         if let Some(at) = member.checked_sub(cells) {
             let rec = self
                 .ir
@@ -110,10 +123,12 @@ impl Core<'_> {
     pub fn declaration_cycles(&mut self) -> Result<(), Internal> {
         let lets = u32::try_from(self.ir.lets.len()).unwrap_or(u32::MAX);
         let cells = u32::try_from(self.ir.lets.len() + self.attr_reads.len()).unwrap_or(u32::MAX);
-        let count = self.ir.lets.len() + self.attr_reads.len() + self.ir.cells.len();
+        let fns = cells + u32::try_from(self.ir.cells.len()).unwrap_or(u32::MAX);
+        let count =
+            self.ir.lets.len() + self.attr_reads.len() + self.ir.cells.len() + self.ir.fns.len();
         let mut edges: Vec<Vec<u32>> = vec![Vec::new(); count];
         for at in self.top_lets() {
-            let reads = self.declaration_reads(self.let_root(at)?, NONE, (lets, cells))?;
+            let reads = self.declaration_reads(self.let_root(at)?, NONE, (lets, cells, fns))?;
             if let Some(slot) = edges.get_mut(at as usize) {
                 *slot = reads;
             }
@@ -126,7 +141,7 @@ impl Core<'_> {
                 continue;
             }
             let env = self.read_env(&read)?;
-            let reads = self.declaration_reads(read.root, env, (lets, cells))?;
+            let reads = self.declaration_reads(read.root, env, (lets, cells, fns))?;
             if let Some(slot) = edges.get_mut(self.ir.lets.len() + at) {
                 *slot = reads;
             }
@@ -135,8 +150,17 @@ impl Core<'_> {
             if !self.derived(at) {
                 continue;
             }
-            let reads = self.declaration_reads(self.cell_root(at)?, NONE, (lets, cells))?;
+            let reads = self.declaration_reads(self.cell_root(at)?, NONE, (lets, cells, fns))?;
             if let Some(slot) = edges.get_mut((cells + at) as usize) {
+                *slot = reads;
+            }
+        }
+        for at in 0..self.functions() {
+            let mut reads = Vec::new();
+            for root in self.function_roots(at)? {
+                reads.extend(self.declaration_reads(root, NONE, (lets, cells, fns))?);
+            }
+            if let Some(slot) = edges.get_mut((fns + at) as usize) {
                 *slot = reads;
             }
         }
@@ -153,7 +177,7 @@ impl Core<'_> {
         for component in components {
             let mut first = None;
             for member in &component {
-                let key = self.declaration_key(*member, (lets, cells))?;
+                let key = self.declaration_key(*member, (lets, cells, fns))?;
                 if first.is_none_or(|(seen, _)| key < seen) {
                     first = Some((key, *member));
                 }
@@ -165,10 +189,13 @@ impl Core<'_> {
                 || edges
                     .get(first as usize)
                     .is_some_and(|reads| reads.contains(&first));
-            if !looped {
+            if !looped || component.iter().all(|member| *member >= fns) {
                 continue;
             }
             for member in &component {
+                if *member >= fns {
+                    continue;
+                }
                 if let Some(at) = member.checked_sub(cells) {
                     if let Some(slot) = self.cell_cyclic.get_mut(at as usize) {
                         *slot = true;
@@ -185,6 +212,10 @@ impl Core<'_> {
             let cycle = shortest_cycle(&edges, &component, first);
             let mut names = Vec::new();
             for member in cycle {
+                if let Some(at) = member.checked_sub(fns) {
+                    names.push(self.fn_name(at)?);
+                    continue;
+                }
                 if let Some(at) = member.checked_sub(cells) {
                     names.push(self.cell_name(at)?);
                     continue;
@@ -352,4 +383,19 @@ pub(super) fn strongly_connected(edges: &[Vec<u32>]) -> Vec<Vec<u32>> {
         }
     }
     components
+}
+
+impl Core<'_> {
+    fn fn_name(&self, at: u32) -> Result<(String, Span), Internal> {
+        let rec = self
+            .ir
+            .fns
+            .get(at as usize)
+            .ok_or(Internal::missed("IR function"))?;
+        let entry = *self.ir.name(rec.name).ok_or(Internal::missed("IR name"))?;
+        Ok((
+            self.ir.symbols.text(entry.sym).to_string(),
+            self.span(self.file_of(rec.value), entry.lo, entry.hi),
+        ))
+    }
 }

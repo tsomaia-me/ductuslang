@@ -229,6 +229,8 @@ impl Core<'_> {
                 }
                 None => vec![(a, ty), (b, self.integral(b)?)],
             },
+            Op::Past if self.is_own_history(node) => Vec::new(),
+            Op::Past => vec![(a, ty)],
             Op::Slice => {
                 let mut operands = vec![(a, ty)];
                 for bound in self.bounds(node)? {
@@ -248,7 +250,6 @@ impl Core<'_> {
             | Op::Field
             | Op::MethodCall
             | Op::NamedMethodCall
-            | Op::Past
             | Op::Stepped
             | Op::Match
             | Op::TyScalar
@@ -290,9 +291,15 @@ impl Core<'_> {
         let mut through = Vec::with_capacity(operands.len());
         for (operand, _) in &operands {
             through.push(match op {
-                Op::Neg | Op::Add | Op::Sub | Op::Mul | Op::Rem | Op::Pow | Op::Div | Op::Array => {
-                    true
-                }
+                Op::Neg
+                | Op::Add
+                | Op::Sub
+                | Op::Mul
+                | Op::Rem
+                | Op::Pow
+                | Op::Div
+                | Op::Array
+                | Op::Past => true,
                 Op::IntDiv => integer_flow,
                 Op::Index | Op::IndexFromEnd | Op::Slice => !picked && *operand == a,
                 Op::Call | Op::NamedCall => self.fact(*operand)?.fixed.is_none(),
@@ -306,7 +313,6 @@ impl Core<'_> {
                 | Op::Field
                 | Op::MethodCall
                 | Op::NamedMethodCall
-                | Op::Past
                 | Op::Stepped
                 | Op::Match
                 | Op::TyScalar
@@ -1197,6 +1203,13 @@ impl Core<'_> {
                     Operands::Many(values),
                 )?
             }
+            Op::Past => {
+                if !self.is_own_history(node) {
+                    pop(stack)?;
+                }
+                Value::Error
+            }
+            Op::Stepped => Value::Error,
             Op::Field => match self.bare_cell_read(node)? {
                 Some(at) => match self.read_cell(at, node, ty, unflowed)? {
                     Ok(value) => value,
@@ -1211,8 +1224,6 @@ impl Core<'_> {
             | Op::NamedCall
             | Op::MethodCall
             | Op::NamedMethodCall
-            | Op::Past
-            | Op::Stepped
             | Op::Match
             | Op::For
             | Op::TyScalar
@@ -1236,6 +1247,7 @@ impl Core<'_> {
             && slot.is_none()
         {
             *slot = Some((ty, unflowed));
+            self.read_log.push(at);
         }
         if !self.owning
             && self.cell_annotation_ty(at)?.is_none()

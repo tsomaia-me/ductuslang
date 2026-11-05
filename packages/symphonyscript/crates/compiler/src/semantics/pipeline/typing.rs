@@ -62,6 +62,11 @@ impl Core<'_> {
                 }
             }
             Op::If => out.extend([a, b, c]),
+            Op::Past => {
+                out.push(a);
+                out.extend([b, c].into_iter().filter(|at| *at != NONE));
+            }
+            Op::Stepped => out.push(a),
             Op::Call | Op::NamedCall => out.extend(self.arguments(node)?),
             Op::For => out.extend(self.fold_operands(node)?),
             Op::Array => {
@@ -79,8 +84,6 @@ impl Core<'_> {
             | Op::Field
             | Op::MethodCall
             | Op::NamedMethodCall
-            | Op::Past
-            | Op::Stepped
             | Op::Match
             | Op::TyScalar
             | Op::TyName
@@ -315,6 +318,7 @@ impl Core<'_> {
             Op::Int => Fact::scalar(Leaf::Int),
             Op::Float => Fact::scalar(Leaf::Float),
             Op::Bool => Fact::scalar(Leaf::Bool),
+            Op::Name if self.is_history_target(node) => self.history_target_fact(node)?,
             Op::Name => match self.bound(node)? {
                 DeclRef::Let(at) => {
                     let root = self.let_root(at)?;
@@ -380,6 +384,14 @@ impl Core<'_> {
                 Ok(fact) => fact,
                 Err(declined) => return Ok(Err(declined)),
             },
+            Op::Past => match self.history_fact(node, a, b, c)? {
+                Ok(fact) => fact,
+                Err(declined) => return Ok(Err(declined)),
+            },
+            Op::Stepped => match self.stepped_fact(node, a)? {
+                Ok(fact) => fact,
+                Err(declined) => return Ok(Err(declined)),
+            },
             Op::Field => match self.path_read(node)?.cloned() {
                 Some(read) if read.cyclic => Fact::PLACEHOLDER,
                 Some(read) => {
@@ -405,8 +417,6 @@ impl Core<'_> {
             | Op::Variant
             | Op::MethodCall
             | Op::NamedMethodCall
-            | Op::Past
-            | Op::Stepped
             | Op::Match
             | Op::TyScalar
             | Op::TyName

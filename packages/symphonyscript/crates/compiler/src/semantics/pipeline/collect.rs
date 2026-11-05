@@ -309,6 +309,16 @@ impl Core<'_> {
                 DeclRef::Duplicate => self.placeholders.push(node),
                 DeclRef::None => {
                     let text = self.ir.symbols.text(entry.sym).to_string();
+                    let known = self.vocabulary_clash(&text).is_some()
+                        || self.vocabulary.native_named(&text).is_some()
+                        || self.variants.owner(&text).is_some();
+                    if known && self.is_history_target(node) {
+                        let span = self.node_span(node)?;
+                        let what = self.history_word(node);
+                        self.not_a_cell(span, &text, what);
+                        self.placeholders.push(node);
+                        continue;
+                    }
                     if self.vocabulary_clash(&text).is_some()
                         || self.vocabulary.native_named(&text).is_some()
                         || self.variants.owner(&text).is_some()

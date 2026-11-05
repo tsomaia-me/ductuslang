@@ -28,7 +28,12 @@ mod fold_run;
 mod folds;
 mod frame;
 mod front_end;
+mod groups;
+mod history;
+#[cfg(test)]
+mod history_tests;
 mod host;
+mod inits;
 mod instance_row;
 mod leaf;
 #[cfg(test)]

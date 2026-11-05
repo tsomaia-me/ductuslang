@@ -8,6 +8,7 @@ use super::core_value::CoreValue;
 use super::decl_ref::DeclRef;
 use super::declined::Declined;
 use super::fact::Fact;
+use super::history::history_targets;
 use super::instance_row::InstanceRow;
 use super::memo_entry::MemoEntry;
 use super::memo_key::MemoKey;
@@ -151,6 +152,13 @@ pub(crate) struct Core<'a> {
     pub env_path_rows: HashMap<(u32, u32), u32>,
     pub env_param_reads: HashMap<u32, Vec<(u32, u32)>>,
     pub sig_index: HashMap<(super::core::BodyKey, Vec<(u32, super::ref_bodies::Binding)>), u32>,
+    pub history_target: Vec<u8>,
+    pub cell_reads: Vec<super::groups::CellReads>,
+    pub cell_group: Vec<u32>,
+    pub groups: Vec<Vec<u32>>,
+    pub group_reads: HashMap<u32, (u32, u32)>,
+    pub group_kinds: HashMap<u32, Fact>,
+    pub read_log: Vec<u32>,
 }
 
 impl<'a> Core<'a> {
@@ -283,6 +291,13 @@ impl<'a> Core<'a> {
             env_path_rows: HashMap::new(),
             env_param_reads: HashMap::new(),
             sig_index: HashMap::new(),
+            history_target: history_targets(ir),
+            cell_reads: Vec::new(),
+            cell_group: Vec::new(),
+            groups: Vec::new(),
+            group_reads: HashMap::new(),
+            group_kinds: HashMap::new(),
+            read_log: Vec::new(),
         }
     }
 
