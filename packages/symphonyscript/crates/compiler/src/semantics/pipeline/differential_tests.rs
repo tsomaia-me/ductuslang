@@ -3080,3 +3080,75 @@ fn a_condition_of_a_destination_beside_a_name_that_names_nothing_draws_its_own_f
         }
     }
 }
+
+#[test]
+fn a_family_read_inside_a_placement_for_body_or_a_pattern_use_body_takes_that_bodys_facts_in_every_order_506()
+ {
+    let old = Compiler::new(&symphonyscript_fixtures::vocabulary())
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
+    let new =
+        Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("the vocabulary compiles");
+    let breaker = "Session main:\n    Includes: t\nTrack t:\n    Piano\n    Starts: c\nClip c:\n    for i in 0..bars:\n        Note/(60 + i) | length=1bars\n    Note/(bars * 12) | length=4bars + bars\n    Note/48 | length=bars\n";
+    let mut taken = 0;
+    let mut declined = 0;
+    let mut programs = 0;
+    for tail in ["length=4bars + 1", "length=4bars", "velocity=4bars + 1"] {
+        let shapes = [
+            (
+                String::new(),
+                format!("Clip c:\n    for i in 0..bars:\n        Note/(60 + i) | length=1bars\n    Note/48 | {tail}\n"),
+                true,
+            ),
+            (
+                "pattern Hit(default pitch, v):\n    Note/pitch | length=v\n".to_string(),
+                format!("Clip c:\n    Hit/60 | v=1bars + bars\n    Note/48 | {tail}\n"),
+                true,
+            ),
+            (
+                "pattern Hit(default pitch, v):\n    for i in 0..2:\n        Note/(pitch + i) | length=v\n".to_string(),
+                format!("Clip c:\n    Hit/60 | v=1bars\n    Hit/62 | v=bars + 2bars\n    Note/48 | {tail}\n"),
+                true,
+            ),
+            (
+                String::new(),
+                format!("Clip c:\n    Note/60 | length=(for i in 0..bars into a from 0bars: a + 1bars)\n    Note/48 | {tail}\n"),
+                false,
+            ),
+        ];
+        for (declaration, placement, landed) in shapes {
+            let mut items = vec!["let bars = 4\n".to_string(), placement];
+            if !declaration.is_empty() {
+                items.push(declaration);
+            }
+            for text in orders(&items) {
+                let sources = [source(&text)];
+                programs += 1;
+                match new.checked_by_new_core(&sources) {
+                    Some(found) => {
+                        assert_eq!(found, old.check(&sources), "{text}");
+                        taken += 1;
+                    }
+                    None => {
+                        assert!(!landed, "the new core takes {text}");
+                        declined += 1;
+                    }
+                }
+            }
+        }
+    }
+    let items = ["let bars = 4\n".to_string(), breaker.to_string()];
+    for text in orders(&items) {
+        let sources = [source(&text)];
+        let found = new
+            .checked_by_new_core(&sources)
+            .unwrap_or_else(|| panic!("the new core takes {text}"));
+        assert_eq!(found, old.check(&sources), "{text}");
+        assert!(found.is_empty(), "{text}");
+        programs += 1;
+        taken += 1;
+    }
+    assert_eq!(programs, 3 * (2 + 6 + 6 + 2) + 2);
+    assert_eq!(taken + declined, programs);
+    assert!(taken >= 3 * (2 + 6 + 6) + 2, "{taken}");
+}

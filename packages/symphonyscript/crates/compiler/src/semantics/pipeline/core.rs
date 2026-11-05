@@ -109,6 +109,7 @@ pub(crate) struct Core<'a> {
     pub deferred_to: Vec<(u32, u32)>,
     pub to_choices: HashMap<u32, EvalTy>,
     pub wire_now: u32,
+    pub feed_env: u32,
     pub row_reads: BTreeMap<(u32, u32), u32>,
     pub row_choices: HashMap<(u32, u32), EvalTy>,
     pub ref_insts: HashMap<(u32, u32, u32), u32>,
@@ -176,7 +177,7 @@ pub(crate) struct Core<'a> {
     pub enums_seen: bool,
     pub bare_enums: HashMap<u32, symphonyscript_core::EnumId>,
     pub takers: Vec<(u32, symphonyscript_core::FamilyId)>,
-    pub unit_feeds: Vec<(u32, symphonyscript_core::FamilyId)>,
+    pub unit_feeds: Vec<(u32, symphonyscript_core::FamilyId, u32)>,
 }
 
 impl<'a> Core<'a> {
@@ -266,6 +267,7 @@ impl<'a> Core<'a> {
             deferred_to: Vec::new(),
             to_choices: HashMap::new(),
             wire_now: NONE,
+            feed_env: NONE,
             row_reads: BTreeMap::new(),
             row_choices: HashMap::new(),
             ref_insts: HashMap::new(),

@@ -91,7 +91,9 @@ impl Core<'_> {
                 hi: placement.hi,
             };
             let saved = self.enter_env(record.env);
+            self.feed_env = record.env;
             let checked = self.item_attributes(item, &decl.name, &decl.attrs, decl.default_attr);
+            self.feed_env = NONE;
             self.leave_env(saved);
             if let Err(declined) = checked? {
                 return Ok(Err(declined));
@@ -113,8 +115,10 @@ impl Core<'_> {
             };
             let saved = self.enter_env(row.env);
             self.wire_now = u32::try_from(wire).unwrap_or(NONE);
+            self.feed_env = row.env;
             let checked = self.item_attributes(item, &decl.name, &decl.attrs, decl.default_attr);
             self.wire_now = NONE;
+            self.feed_env = NONE;
             self.leave_env(saved);
             if let Err(declined) = checked? {
                 return Ok(Err(declined));

@@ -236,7 +236,7 @@ impl Core<'_> {
         unit: Option<symphonyscript_core::AttrUnit>,
     ) -> Result<(), Internal> {
         if let Some(unit) = unit {
-            self.unit_feeds.push((root, unit.family));
+            self.unit_feeds.push((root, unit.family, self.feed_env));
         }
         let fact = self.fact(root)?;
         if open(&fact) || !numeric(&fact) {
@@ -319,19 +319,45 @@ impl Core<'_> {
         }
         let mut reached: std::collections::HashSet<(u32, FamilyId)> =
             std::collections::HashSet::new();
-        for (root, family) in std::mem::take(&mut self.unit_feeds) {
-            let mut stack = vec![root];
-            while let Some(node) = stack.pop() {
+        let mut walked: std::collections::HashSet<(u32, FamilyId, u32)> =
+            std::collections::HashSet::new();
+        let outer = self.inst;
+        for (root, family, env) in std::mem::take(&mut self.unit_feeds) {
+            let mut stack = vec![(root, env)];
+            while let Some((node, env)) = stack.pop() {
                 CountedWalk::CoreFamilies.step();
-                if !reached.insert((node, family)) {
+                self.inst = self
+                    .envs
+                    .get(env as usize)
+                    .map_or(NONE, |record| record.inst);
+                let key = match self.in_body(node)? {
+                    Some(_) => env,
+                    None => NONE,
+                };
+                if !walked.insert((node, family, key)) {
                     continue;
                 }
+                reached.insert((node, family));
                 let fact = self.fact(node)?;
-                if open(&fact) || self.family(node) == Some(family) {
-                    stack.extend(self.carried(node)?);
+                if !open(&fact) && self.family(node) != Some(family) {
+                    continue;
+                }
+                if let (Op::Name, DeclRef::Param(position)) =
+                    (self.ir.node(node)?.0, self.bound(node)?)
+                {
+                    if let Some((argument, caller)) = self.argument_of(node, position, env)?
+                        && !self.default_nodes.contains_key(&argument)
+                    {
+                        stack.push((argument, caller));
+                    }
+                    continue;
+                }
+                for next in self.carried(node)? {
+                    stack.push((next, env));
                 }
             }
         }
+        self.inst = outer;
         let mut held = std::collections::HashSet::new();
         let mut stack: Vec<u32> = Vec::new();
         for (local, fact) in self.facts.iter().enumerate() {
