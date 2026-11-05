@@ -16,9 +16,9 @@ const SUBAGENT_HEAD = '**Your context holds ';
 const SUBAGENT_TAIL = ' Wrap up now: finish or set aside the piece in hand, commit what passes if you commit, write where you stopped and what is next where your brief keeps your progress, run your hand-back checks, and hand back. Start nothing new.';
 const NOTICE = '**Compaction at 315k; you are at 255k.** Write your note now, before any other tool call: `pnpm grounding --role <ROLE>`, with the note on stdin, under 4,000 characters. Say what you are doing, the decisions in force, the next step, and at the end the files to re-read in order. Then carry on with your work; nothing else changes, and 60k is left after the note.';
 
-function subagentNotice(held, compactsNear) {
+function subagentNotice(held, compactsNear, threshold = '600k') {
   const compaction = compactsNear == null ? '' : `it compacts near ${compactsNear}, and `;
-  return `${SUBAGENT_HEAD}${held} tokens, past the 600k at which you wrap up; ${compaction}you must not reach compaction.**${SUBAGENT_TAIL}`;
+  return `${SUBAGENT_HEAD}${held} tokens, past the ${threshold} at which you wrap up; ${compaction}you must not reach compaction.**${SUBAGENT_TAIL}`;
 }
 
 function tempDir() {
@@ -334,7 +334,7 @@ test('the subagent threshold is the notice point where that is lower, and 600k a
   const dir = tempDir();
   const transcriptPath = writeSession(dir, 'session-a', baseLines({ input: 0, cacheCreation: 0, cacheRead: 1000 }));
   writeSubagent(transcriptPath, 'session-a', 'low', subagentLines({ input: 0, cacheCreation: 0, cacheRead: 255000 }));
-  assert.equal(runSubagent({ dir, transcriptPath, agentId: 'low', window: WINDOW }).trim(), subagentNotice('255k', '315k'));
+  assert.equal(runSubagent({ dir, transcriptPath, agentId: 'low', window: WINDOW }).trim(), subagentNotice('255k', '315k', '255k'));
   writeSubagent(transcriptPath, 'session-a', 'none', subagentLines({ input: 0, cacheCreation: 0, cacheRead: 599999 }));
   assert.equal(runSubagent({ dir, transcriptPath, agentId: 'none', window: '' }), '');
   writeSubagent(transcriptPath, 'session-a', 'none', subagentLines({ input: 0, cacheCreation: 0, cacheRead: 600000 }));
@@ -348,7 +348,7 @@ test('the main notice is unchanged beside a subagent', () => {
   const transcriptPath = writeSession(dir, 'session-a', baseLines({ input: 15000, cacheCreation: 0, cacheRead: 290000 }));
   writeSubagent(transcriptPath, 'session-a', 'a1', subagentLines({ input: 0, cacheCreation: 0, cacheRead: 700000 }));
   const subagentOutput = runSubagent({ dir, transcriptPath, agentId: 'a1', window: WINDOW });
-  assert.equal(subagentOutput.trim(), subagentNotice('700k', '315k'));
+  assert.equal(subagentOutput.trim(), subagentNotice('700k', '315k', '255k'));
   const main = runHook({ harnessDir: dir, transcriptPath });
   assert.equal(main.status, 0);
   assert.equal(main.stdout.trim(), NOTICE);

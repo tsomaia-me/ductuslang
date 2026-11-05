@@ -76,9 +76,9 @@ function formatOutput(eventName, notice) {
   return notice;
 }
 
-function subagentNoticeText(context, compactAt) {
+function subagentNoticeText(context, compactAt, threshold) {
   const compaction = compactAt == null ? '' : `it compacts near ${thousands(compactAt)}, and `;
-  return `**Your context holds ${thousands(context)} tokens, past the ${thousands(SUBAGENT_WRAP_UP_TOKENS)} at which you wrap up; ${compaction}you must not reach compaction.** Wrap up now: finish or set aside the piece in hand, commit what passes if you commit, write where you stopped and what is next where your brief keeps your progress, run your hand-back checks, and hand back. Start nothing new.`;
+  return `**Your context holds ${thousands(context)} tokens, past the ${thousands(threshold)} at which you wrap up; ${compaction}you must not reach compaction.** Wrap up now: finish or set aside the piece in hand, commit what passes if you commit, write where you stopped and what is next where your brief keeps your progress, run your hand-back checks, and hand back. Start nothing new.`;
 }
 
 function subagentTranscriptPath(input) {
@@ -107,7 +107,7 @@ async function watchSubagent(input) {
     if (error.code === 'EEXIST') return;
     throw error;
   }
-  process.stdout.write(formatOutput(input.hook_event_name, subagentNoticeText(context, compactAt)) + '\n');
+  process.stdout.write(formatOutput(input.hook_event_name, subagentNoticeText(context, compactAt, threshold)) + '\n');
 }
 
 async function main() {
