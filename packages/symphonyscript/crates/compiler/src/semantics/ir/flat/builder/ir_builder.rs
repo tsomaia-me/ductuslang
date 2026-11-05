@@ -431,6 +431,11 @@ fn line_faults(parsed: &Parsed) -> Vec<(u32, u32)> {
         .iter()
         .map(|diagnostic| {
             let range = &diagnostic.span.range;
+            if parsed.detached.contains(range)
+                && let Some(break_at) = break_before(parsed.text(), range.start)
+            {
+                return (break_at, break_at.saturating_add(1));
+            }
             (range.start, range.end.max(range.start.saturating_add(1)))
         })
         .collect();
@@ -441,4 +446,14 @@ fn line_faults(parsed: &Parsed) -> Vec<(u32, u32)> {
         fault.1 = furthest;
     }
     faults
+}
+
+fn break_before(text: &str, start: u32) -> Option<u32> {
+    let before = text.get(..start as usize)?;
+    let break_at = before.rfind('\n')?;
+    before
+        .get(break_at + 1..)
+        .is_some_and(|indent| indent.chars().all(char::is_whitespace))
+        .then(|| u32::try_from(break_at).ok())
+        .flatten()
 }

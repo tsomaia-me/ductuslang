@@ -2382,3 +2382,60 @@ fn a_let_whose_line_holds_a_syntax_fault_at_its_start_middle_or_end_draws_no_rea
         }
     }
 }
+
+#[test]
+fn a_missing_closer_or_block_reported_at_a_lets_first_token_counts_against_its_own_line_so_the_let_draws_reactive_let_in_every_order_492()
+ {
+    let old = Compiler::new(&symphonyscript_fixtures::vocabulary())
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
+    let new =
+        Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("the vocabulary compiles");
+    let reactive_at_l = |text: &str, found: &[crate::diagnostics::Diagnostic]| {
+        let at = text.find("let l").map_or(0, |at| at + 4);
+        found.iter().any(|diagnostic| {
+            diagnostic.code == crate::diagnostics::Code::ReactiveLet
+                && diagnostic.span.range.start as usize == at
+        })
+    };
+    let valid = [
+        "state level(0.0)\n".to_string(),
+        "let l = level * 2\n".to_string(),
+        "Clip c:\n    Note/(1)\n".to_string(),
+        "Clip d:\n    Note\n".to_string(),
+    ];
+    let faulty = [
+        "state level(0.0)\n".to_string(),
+        "let l = level * 2\n".to_string(),
+        "Clip c:\n    Note/(1\n".to_string(),
+        "Clip d:\n".to_string(),
+    ];
+    let own = [
+        "state level(0.0)\n".to_string(),
+        "let l = level * 2\n".to_string(),
+        "let m = (level * 2\n".to_string(),
+        "Clip c:\n    Note/(1\n".to_string(),
+    ];
+    let mut programs = 0;
+    for items in [&valid, &faulty, &own] {
+        for text in orders(items) {
+            programs += 1;
+            let found = new
+                .checked_by_new_core(&[source(&text)])
+                .unwrap_or_else(|| panic!("the new core takes {text}"));
+            assert!(reactive_at_l(&text, &found), "{text}\n  {found:?}");
+            assert_eq!(found, old.check(&[source(&text)]), "{text}");
+            if items == &own {
+                let at = text.find("let m").map_or(0, |at| at + 4);
+                assert!(
+                    !found.iter().any(|diagnostic| {
+                        diagnostic.code == crate::diagnostics::Code::ReactiveLet
+                            && diagnostic.span.range.start as usize == at
+                    }),
+                    "{text}\n  {found:?}"
+                );
+            }
+        }
+    }
+    assert_eq!(programs, 72);
+}
