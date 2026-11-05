@@ -5358,6 +5358,11 @@ pub const CLASSES: &[Class] = &[
     },
     Class {
         ledger: "476",
+        rule: "an unclocked cycle of cells whose history reads have neither fallback nor init and that reads no cell outside itself draws unrun-cell at its first cell (SPEC §6.6: the same error as a cell that reads only its own history), where the old engine joins the open reads as single values and draws not-an-array at the slice over them",
+        explains: unrun_cycle,
+    },
+    Class {
+        ledger: "476",
         rule: "a host-fed cell annotated with a variable array whose init the cell refuses draws one diagnostic for the fault, at each refused element or at the init, and its reads keep the annotated type (ARCHITECTURE §7: a value whose type an error leaves known keeps that type), where the old engine adds a type-mismatch at the whole init and reads the cell as a placeholder",
         explains: refused_variable_init,
     },
@@ -6024,4 +6029,31 @@ fn refused_array_let_keeps_its_type(seen: &Seen<'_>, change: Change, at: &Drawn)
             && seen.line(drawn.1) != seen.line(at.1)
             && whole_let_line(seen, drawn).is_some_and(|(name, _)| reads_word(seen.text(at), name))
     })
+}
+
+fn unrun_cycle(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
+    let unrun = |set: &[Drawn]| set.iter().any(|drawn| drawn.0 == "unrun-cell");
+    if change == Change::Added && at.0 == "unrun-cell" {
+        let name = seen.text(at);
+        return !unrun(seen.old)
+            && seen
+                .old
+                .iter()
+                .any(|drawn| unrun_cycle(seen, Change::Removed, drawn))
+            && lines_at(seen.program)
+                .get(seen.line(at.1))
+                .is_some_and(|(start, line)| {
+                    *start + "state ".len() == at.1 && line.starts_with(&format!("state {name}"))
+                });
+    }
+    if change != Change::Removed || at.0 != "not-an-array" || !unrun(seen.new) {
+        return false;
+    }
+    let text = seen.text(at);
+    text.contains(".past(")
+        && !text.contains(", ")
+        && seen
+            .program
+            .get(at.2..)
+            .is_some_and(|after| after.starts_with(")[") || after.starts_with('['))
 }

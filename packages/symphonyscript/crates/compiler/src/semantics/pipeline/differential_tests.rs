@@ -2644,10 +2644,15 @@ fn a_groups_history_read_with_neither_fallback_nor_init_takes_its_cells_settled_
                 .collect();
             assert_eq!(spanned(&text, &found), wanted, "{text}");
             let before = old.check(&sources);
-            if before != found && !wanted.iter().any(|(code, _)| code == "unrun-cell") {
+            if before != found {
                 let classes = reviewed::moved(&text, &drawn(&before), &drawn(&found))
                     .unwrap_or_else(|left| panic!("{text}\n  unexplained {left:?}"));
-                assert!(classes.iter().all(|class| class.ledger == "461"), "{text}");
+                let ledger = if wanted.iter().any(|(code, _)| code == "unrun-cell") {
+                    "476"
+                } else {
+                    "461"
+                };
+                assert!(classes.iter().all(|class| class.ledger == ledger), "{text}");
             }
             programs += 1;
         }
@@ -2880,4 +2885,127 @@ fn a_let_annotated_with_a_variable_array_holds_its_value_checks_its_capacity_and
         "state hh([1]): i32[..4]\nlet xs: u8[..4] = hh + [300]\nClip c:\n    Note/(xs[0])\n";
     let sources = [source(reactive)];
     assert_eq!(new.checked_by_new_core(&sources), Some(old.check(&sources)));
+}
+
+const CYCLIC_ROOTS: [OpenGroup; 12] = [
+    (
+        &[
+            "fn f(v): v.past(1, 0)\n",
+            "state x(1)\n",
+            "state h = f(h) + x\n",
+        ],
+        &[("declaration-cycle", "h"), ("history-target", "v")],
+    ),
+    (
+        &[
+            "fn f(v): v.past(1, 0)\n",
+            "state x(1)\n",
+            "state h = f(x) + h\n",
+        ],
+        &[("declaration-cycle", "h"), ("history-target", "v")],
+    ),
+    (
+        &[
+            "fn f(v): v.past(1, 0)\n",
+            "state x(1)\n",
+            "state h = f(g) + x\n",
+            "state g = h\n",
+        ],
+        &[("declaration-cycle", "h"), ("history-target", "v")],
+    ),
+    (
+        &["fn f(v): v.past(1, 0)\n", "let h = f(h)\n"],
+        &[("declaration-cycle", "h"), ("history-target", "v")],
+    ),
+    (
+        &["fn f(v): v.past(1, 0)\n", "let h = b\n", "let b = f(h)\n"],
+        &[("declaration-cycle", "h"), ("history-target", "v")],
+    ),
+    (
+        &[
+            "fn f(v): 1 + true\n",
+            "state x(1)\n",
+            "state h = f(h) + x\n",
+        ],
+        &[("declaration-cycle", "h"), ("operand-type", "1 + true")],
+    ),
+    (
+        &["let h = (1 + true) + h\n"],
+        &[("declaration-cycle", "h"), ("operand-type", "1 + true")],
+    ),
+    (
+        &["let h = [1][5] + h\n"],
+        &[("declaration-cycle", "h"), ("index-out-of-range", "5")],
+    ),
+    (
+        &["fn f(v): v\n", "fn g(v): f(1 + true)\n", "let h = g(h)\n"],
+        &[("declaration-cycle", "h"), ("operand-type", "1 + true")],
+    ),
+    (
+        &[
+            "state x(1)\n",
+            "state h(1 + true) = g + x\n",
+            "state g = h\n",
+        ],
+        &[("declaration-cycle", "h"), ("operand-type", "1 + true")],
+    ),
+    (
+        &["fn f(v): v + 1\n", "state x(1)\n", "state h = f(x) + x\n"],
+        &[],
+    ),
+    (
+        &[
+            "state x(1)\n",
+            "state h(1 + 1) = g + x\n",
+            "state g = h.past(1)\n",
+        ],
+        &[],
+    ),
+];
+
+#[test]
+fn a_cyclic_declarations_rule_draws_every_fault_that_holds_whatever_the_cycle_holds_in_every_order_503()
+ {
+    let old = Compiler::new(&symphonyscript_fixtures::vocabulary())
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
+    let new =
+        Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("the vocabulary compiles");
+    let mut programs = 0;
+    for (items, wanted) in CYCLIC_ROOTS {
+        let mut items: Vec<String> = items.iter().map(|item| (*item).to_string()).collect();
+        items.push("Clip c:\n    Note/h\n".to_string());
+        let mut wanted: Vec<(String, String)> = wanted
+            .iter()
+            .map(|(code, span)| ((*code).to_string(), (*span).to_string()))
+            .collect();
+        wanted.sort();
+        for text in orders(&items) {
+            let sources = [source(&text)];
+            let found = new
+                .checked_by_new_core(&sources)
+                .unwrap_or_else(|| panic!("the new core takes {text}"));
+            let cycle = found
+                .iter()
+                .find(|diagnostic| diagnostic.code == crate::diagnostics::Code::DeclarationCycle)
+                .map(|diagnostic| {
+                    text.get(
+                        diagnostic.span.range.start as usize..diagnostic.span.range.end as usize,
+                    )
+                    .unwrap_or_default()
+                    .to_string()
+                });
+            let wanted: Vec<(String, String)> = wanted
+                .iter()
+                .map(|(code, span)| match (code.as_str(), &cycle) {
+                    ("declaration-cycle", Some(first)) => (code.clone(), first.clone()),
+                    _ => (code.clone(), span.clone()),
+                })
+                .collect();
+            assert_eq!(spanned(&text, &found), wanted, "{text}");
+            assert_eq!(found, old.check(&sources), "{text}");
+            programs += 1;
+        }
+    }
+    assert_eq!(programs, 24 * 8 + 120 + 6 + 2 * 2);
 }

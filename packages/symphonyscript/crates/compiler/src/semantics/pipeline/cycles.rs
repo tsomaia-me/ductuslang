@@ -404,3 +404,43 @@ impl Core<'_> {
         ))
     }
 }
+
+impl Core<'_> {
+    pub fn check_cyclic_roots(&mut self) -> super::core::Stage<()> {
+        for top in self.ir.top.clone() {
+            let roots = match top {
+                TopRec::Let(at) if self.cyclic.get(at as usize).copied().unwrap_or(false) => {
+                    vec![self.let_root(at)?]
+                }
+                TopRec::Cell(at) if self.is_cyclic_cell(at) => {
+                    let rec = self
+                        .ir
+                        .cells
+                        .get(at as usize)
+                        .ok_or(Internal::missed("IR cell"))?;
+                    [rec.rule, rec.init]
+                        .into_iter()
+                        .filter(|root| *root != NONE)
+                        .collect()
+                }
+                TopRec::Let(_)
+                | TopRec::Cell(_)
+                | TopRec::Fn(_)
+                | TopRec::Pattern(_)
+                | TopRec::Placement(_)
+                | TopRec::Placeholder { .. }
+                | TopRec::Drawn(_)
+                | TopRec::Skip => continue,
+            };
+            for root in roots {
+                if let Err(declined) = self.ensure_typed(root)? {
+                    return Ok(Err(declined));
+                }
+                if let Err(declined) = self.own_check(root)? {
+                    return Ok(Err(declined));
+                }
+            }
+        }
+        Ok(Ok(()))
+    }
+}
