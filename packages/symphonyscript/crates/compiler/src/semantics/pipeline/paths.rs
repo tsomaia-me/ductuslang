@@ -320,7 +320,7 @@ impl Core<'_> {
         Ok((NONE, 0, 0))
     }
 
-    fn attr_read(&mut self, row: u32, attr: usize, ty: EvalTy) -> Result<u32, Internal> {
+    pub fn attr_read(&mut self, row: u32, attr: usize, ty: EvalTy) -> Result<u32, Internal> {
         let key = (row, u32::try_from(attr).unwrap_or(u32::MAX));
         if let Some(found) = self.attr_index.get(&key) {
             return Ok(*found);

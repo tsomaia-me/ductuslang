@@ -1426,3 +1426,143 @@ impl Core<'_> {
         Ok(None)
     }
 }
+
+impl Core<'_> {
+    pub fn head_reads_deferred(&mut self, item: u32, env: u32) -> Result<bool, Internal> {
+        if self.deferred_params.is_empty() {
+            return Ok(false);
+        }
+        let ItemRec::For(rec) = *self.ir.item(item)? else {
+            return Err(Internal::missed("IR for block"));
+        };
+        let saved = self.enter_env(env);
+        let mut found = Ok(false);
+        for root in super::loops::iterable_roots(rec.head) {
+            found = self.reads_deferred(root);
+            if !matches!(found, Ok(false)) {
+                break;
+            }
+        }
+        self.leave_env(saved);
+        found
+    }
+
+    pub fn bind_path_args(&mut self, env: u32) -> Stage<()> {
+        let mut at = env;
+        while let Some(record) = self.envs.get(at as usize).copied() {
+            let here = at;
+            at = record.parent;
+            if record.use_item == NONE {
+                continue;
+            }
+            let count = record.values.1.saturating_sub(record.values.0);
+            for position in 0..count {
+                if !self.deferred_params.contains(&(record.inst, position)) {
+                    continue;
+                }
+                let Some((root, caller)) = self
+                    .use_args
+                    .get(&here)
+                    .and_then(|args| args.get(position as usize))
+                    .copied()
+                else {
+                    continue;
+                };
+                if caller == NONE && self.default_nodes.contains_key(&root) {
+                    return Ok(Err(Declined(Reason::PatternUse)));
+                }
+                let cells = match self.early_paths(root, caller)? {
+                    Ok(cells) => cells,
+                    Err(declined) => return Ok(Err(declined)),
+                };
+                if cells {
+                    if let Some(slot) = self
+                        .bodies
+                        .get_mut(record.inst as usize)
+                        .and_then(|body| body.reactive_args.get_mut(position as usize))
+                    {
+                        *slot = true;
+                    }
+                    self.deferred_params.remove(&(record.inst, position));
+                    continue;
+                }
+                let saved = self.enter_env(caller);
+                let outcome = self.late_argument(root);
+                self.leave_env(saved);
+                let (fact, value, cells) = match outcome? {
+                    Ok(found) => found,
+                    Err(declined) => return Ok(Err(declined)),
+                };
+                if let Some(body) = self.bodies.get_mut(record.inst as usize) {
+                    if let Some(slot) = body.args.get_mut(position as usize) {
+                        *slot = fact;
+                    }
+                    if let Some(slot) = body.reactive_args.get_mut(position as usize) {
+                        *slot = cells;
+                    }
+                }
+                if let Some(slot) = self.env_vals.get_mut((record.values.0 + position) as usize) {
+                    *slot = value;
+                }
+                self.deferred_params.remove(&(record.inst, position));
+            }
+        }
+        Ok(Ok(()))
+    }
+
+    fn early_paths(&mut self, root: u32, caller: u32) -> Stage<bool> {
+        let mut cells = false;
+        for node in self.postorder(root)? {
+            let (op, receiver, field, missing) = self.ir.node(node)?;
+            if op == Op::To {
+                return Ok(Err(Declined(Reason::PatternUse)));
+            }
+            if op != Op::Field {
+                continue;
+            }
+            if missing == 1 || self.ir.node(receiver)?.0 != Op::Name {
+                return Ok(Err(Declined(Reason::PatternUse)));
+            }
+            let DeclRef::Instance(item) = self.bound(receiver)? else {
+                return Ok(Err(Declined(Reason::PatternUse)));
+            };
+            let row = if self.pattern_items.contains_key(&item) {
+                self.env_rows.get(&(item, caller)).copied().unwrap_or(NONE)
+            } else {
+                self.row_of_item.get(item as usize).copied().unwrap_or(NONE)
+            };
+            let Some(record) = self.instances.get(row as usize).copied() else {
+                return Ok(Err(Declined(Reason::PatternUse)));
+            };
+            let decl = self
+                .vocabulary
+                .node_kind(record.kind)
+                .ok_or(Internal::missed("node kind"))?;
+            let text = self.ir.name_text(field).unwrap_or_default().to_string();
+            let Some(attr) = decl.attrs.iter().position(|attr| attr.name == text) else {
+                return Ok(Err(Declined(Reason::PatternUse)));
+            };
+            let declared = decl.attrs.get(attr).ok_or(Internal::missed("attribute"))?;
+            let Some(ty) = super::check::expected(declared) else {
+                return Ok(Err(Declined(Reason::PatternUse)));
+            };
+            let read = self.attr_read(row, attr, ty)?;
+            let written = self
+                .attr_reads
+                .get(read as usize)
+                .map_or(NONE, |found| found.root);
+            if written != NONE && self.reaches_cell(written)? != 0 {
+                cells = true;
+            }
+            if self.pattern_items.contains_key(&item) {
+                self.env_reads.insert((node, caller), read);
+            } else {
+                let local = self.local(node)?;
+                if let Some(slot) = self.paths.get_mut(local) {
+                    *slot = read;
+                }
+            }
+        }
+        Ok(Ok(cells))
+    }
+}

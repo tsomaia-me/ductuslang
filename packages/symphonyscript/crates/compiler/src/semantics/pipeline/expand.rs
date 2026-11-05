@@ -177,11 +177,25 @@ impl Core<'_> {
             .get(body as usize)
             .ok_or(Internal::missed("IR block"))?;
         let mut work = vec![Work::Items(block.items.0, block.items.1, record.env)];
-        while let Some(job) = work.pop() {
+        let mut late: Vec<Work> = Vec::new();
+        loop {
+            let job = match work.pop() {
+                Some(job) => job,
+                None if late.is_empty() => break,
+                None => late.remove(0),
+            };
             if self.stop.is_some() {
                 return Ok(Ok(()));
             }
+            let mut bound = false;
             let (item, env) = match job {
+                Work::Late(item, env) => {
+                    if let Err(declined) = self.bind_path_args(env)? {
+                        return Ok(Err(declined));
+                    }
+                    bound = true;
+                    (item, env)
+                }
                 Work::Items(at, end, env) => {
                     if at >= end {
                         continue;
@@ -236,6 +250,10 @@ impl Core<'_> {
                     }
                 }
                 ItemRec::For(_) => {
+                    if !bound && self.head_reads_deferred(item, env)? {
+                        late.push(Work::Late(item, env));
+                        continue;
+                    }
                     let run = match self.loop_head(item, env)? {
                         Ok(run) => run,
                         Err(declined) => return Ok(Err(declined)),

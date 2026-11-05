@@ -113,7 +113,7 @@ fn the_declined_pattern_forms_stay_with_the_old_engine() {
     let vocabulary = symphonyscript_fixtures::vocabulary();
     let new = Compiler::new(&vocabulary).expect("the vocabulary compiles");
     for text in [
-        "pattern P(default v):\n    for i in 0..v:\n        Note/i\nClip c:\n    Note as n /2\n    P/(n.pitch)\n",
+        "pattern P(default v):\n    for i in 0..v:\n        Note/([1, 2][i])\nClip c:\n    P/(d.n.pitch)\nClip d:\n    Note as n /3\n",
         "pattern Voice(default f):\n    Osc as osc /f\n    Filter\nSynth s:\n    Voice as v1 /440\n    Feeds: v1\n",
         "pattern Voice(default f):\n    Osc as osc /f\n    Filter\nSynth s:\n    Voice as v1 /440\n    Osc /(v1)\n",
         "pattern Voice(default f):\n    Osc as osc /f\n    Filter\nSynth s:\n    Voice as v1 /440\nClip c | gain=s.v1\n",
@@ -790,4 +790,48 @@ fn a_reference_argument_binds_its_rows_and_keys_its_use_by_the_bindings_the_body
     ] {
         assert!(new.checked_by_new_core(&[source(text)]).is_none(), "{text}");
     }
+}
+
+const PATH_FED_LOOPS: [&str; 7] = [
+    "pattern P(default v):\n    for i in 0..v:\n        Note/i\nClip c:\n    Note as n /2\n    P/(n.pitch)\n",
+    "pattern P(default v):\n    for i in 0..v:\n        Note/([1, 2][i])\nClip c:\n    P/(n.pitch)\n    Note as n /3\n",
+    "pattern Q(default v):\n    Note/v\npattern P(default v):\n    for i in 0..v:\n        Note/([1, 2][i])\nClip c:\n    Q as n /3\n    P/(n.pitch)\n",
+    "pattern P(default v):\n    for i in 0..v:\n        Note/([1, 2][i])\nClip c:\n    Note as n /3\n    P/(n.pitch + 1)\n    P/(n.pitch - 2)\n",
+    "pattern P(default v):\n    for i in 0..v:\n        Note/([1, 2][i])\npattern W(default u):\n    Note as m /u\n    P/(m.pitch)\nClip c:\n    W/3\n    W/1\n",
+    "pattern P(default v):\n    for i in 0..v:\n        Note/([1, 2][i])\n        for k in 0..v:\n            Note/k\nClip c:\n    Note as n /3\n    P/(n.pitch)\n",
+    "pattern P(default v, w = 2):\n    for i in 0..(v + w):\n        Note/([1, 2, 3, 4][i])\nClip c:\n    Note as n /3\n    P/(n.pitch)\n",
+];
+
+#[test]
+fn a_loop_head_reading_a_path_fed_parameter_expands_once_the_rows_of_its_body_are_written() {
+    let vocabulary = symphonyscript_fixtures::vocabulary();
+    assert_engines_agree(&vocabulary, &PATH_FED_LOOPS);
+    let new = Compiler::new(&vocabulary).expect("the vocabulary compiles");
+    let codes = |text: &str| -> Vec<(Code, std::ops::Range<u32>)> {
+        codes_of(&new, text)
+            .into_iter()
+            .map(|(code, range, _)| (code, range))
+            .collect()
+    };
+    assert_eq!(
+        codes(
+            "state s(0)\npattern P(default v):\n    for i in 0..v:\n        Note/i\nClip c:\n    Note as n /s\n    P/(n.pitch)\n"
+        ),
+        vec![
+            (Code::NoEntryInstance, 0..0),
+            (Code::ReactiveIterable, 49..50)
+        ]
+    );
+    assert_eq!(
+        codes(
+            "pattern P(default v):\n    for i in 0..v:\n        Note/i\nClip c:\n    Note as n /2\n    P/(n.velocity)\n"
+        ),
+        vec![(Code::NoEntryInstance, 0..0), (Code::RangeBound, 38..39)]
+    );
+    assert_eq!(
+        codes(
+            "pattern P(default v):\n    for i in 0..v:\n        Note/i\nClip c:\n    Note as n /(1 + true)\n    P/(n.pitch)\n"
+        ),
+        vec![(Code::NoEntryInstance, 0..0), (Code::OperandType, 80..88)]
+    );
 }
