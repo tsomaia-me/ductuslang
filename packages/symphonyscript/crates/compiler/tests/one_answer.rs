@@ -261,6 +261,14 @@ const DECIDING_NONE: &[(&str, &str)] = &[
         "which IR ops carry a node reference from their operands in the new core (SPEC §6.2, §8.2: an array, an `if` and an index), every other op declining one",
     ),
     (
+        "pipeline/families.rs node_family",
+        "the unit family of an IR node in the new core, from its operands as SPEC §3.6 states it",
+    ),
+    (
+        "pipeline/families.rs carried",
+        "the operands that carry a family value toward an attribute, the walk from a unit attribute to its plain values",
+    ),
+    (
         "pipeline/typing.rs node_fact",
         "the kind and shape of an IR node in the new core, typed bottom-up",
     ),

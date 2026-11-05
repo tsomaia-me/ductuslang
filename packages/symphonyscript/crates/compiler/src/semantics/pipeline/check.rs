@@ -213,12 +213,20 @@ impl Core<'_> {
                 }
                 continue;
             }
-            let Some(ty) = expected(attr) else {
+            let mut plain = attr.clone();
+            plain.unit = None;
+            let Some(ty) = expected(&plain) else {
                 return Ok(Err(Declined(attribute_reason(attr))));
             };
+            if let Some(unit) = attr.unit
+                && self.unit_scale(unit.family, unit.default_unit)? != 1.0
+            {
+                return Ok(Err(Declined(Reason::UnitAttribute)));
+            }
             if let Err(declined) = self.bind_value(root, &attr.name, ty)? {
                 return Ok(Err(declined));
             }
+            self.bind_unit(root, attr.unit)?;
         }
         Ok(Ok(()))
     }

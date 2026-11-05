@@ -275,6 +275,11 @@ impl Core<'_> {
                     Err(declined) => return Ok(Err(declined)),
                 }
             }
+            if self.family(head.iterable.0).is_some() || self.family(head.iterable.1).is_some() {
+                return Ok(Err(super::declined::Declined(
+                    super::reason::Reason::UnitFlow,
+                )));
+            }
             let (low, high) = match bounds.as_slice() {
                 [low, high] => (*low, *high),
                 _ => return Err(Internal::missed("two range bounds")),
@@ -318,6 +323,11 @@ impl Core<'_> {
         };
         if fact.node {
             return self.reference_loop(item, rec, env);
+        }
+        if self.family(root).is_some() {
+            return Ok(Err(super::declined::Declined(
+                super::reason::Reason::UnitFlow,
+            )));
         }
         let open = fact.leaf == Leaf::Placeholder
             || (fact.leaf == Leaf::Error && fact.dims.is_empty())

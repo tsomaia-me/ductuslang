@@ -6,6 +6,7 @@ pub(crate) enum Reason {
     BareVariant,
     PatternOrWirePlacement,
     UnitAttribute,
+    UnitFlow,
     EnumAttribute,
     StringAttribute,
     ArrayAttribute,

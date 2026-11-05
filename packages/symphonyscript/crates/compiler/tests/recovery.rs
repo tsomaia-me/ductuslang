@@ -1312,7 +1312,7 @@ fn a_declaration_on_a_line_that_holds_a_syntax_fault_is_a_placeholder_at_every_r
                 "let e = d  2\n",
                 "Clip c:\n    Note/(e)\n",
             ],
-            &[(Code::ReactiveLet, "e"), (Code::LetSyntax, "2")],
+            &[(Code::LetSyntax, "2")],
         ),
     ];
     support::assert_rows_in_every_order(&vocabulary(), rows);

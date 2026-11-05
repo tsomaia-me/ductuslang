@@ -97,6 +97,7 @@ pub(crate) fn analyze(inputs: &Inputs<'_>) -> Result<Option<Run>, Internal> {
     }
     core.settle_capacities()?;
     core.check_integer_cells()?;
+    core.plain_in_family()?;
     core.check_counts()?;
     if !core.unknown_kind {
         core.check_reachability()?;

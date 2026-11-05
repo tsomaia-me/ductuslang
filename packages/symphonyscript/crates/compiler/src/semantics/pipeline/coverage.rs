@@ -60,7 +60,7 @@ fn literal_landed(ir: &FlatIr, suffix: u32) -> bool {
     suffix == NONE
         || matches!(
             ir.suffixes.get(suffix as usize),
-            Some(Suffix::None | Suffix::Type(_))
+            Some(Suffix::None | Suffix::Type(_) | Suffix::Unit { .. })
         )
 }
 
@@ -370,6 +370,7 @@ pub(crate) fn reason_slice(reason: Reason) -> Slice {
         Reason::Pending => Slice::One,
         Reason::DestinationValue | Reason::ReactiveReference | Reason::WireKind => Slice::Pending,
         Reason::BareVariant | Reason::UnitAttribute | Reason::EnumAttribute => Slice::Five,
+        Reason::UnitFlow => Slice::Pending,
         Reason::LoopHead | Reason::BodyItem | Reason::PatternUse => Slice::Pending,
     }
 }

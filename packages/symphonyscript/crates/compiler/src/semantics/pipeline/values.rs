@@ -1123,9 +1123,10 @@ impl Core<'_> {
                     .ints
                     .get(a as usize)
                     .ok_or(Internal::missed("IR integer"))?;
-                match self.suffix_ty(node)? {
-                    Some(own) => self.suffixed_integer(node, value, own)?,
-                    None => self.integer_literal(node, value, ty)?,
+                match (self.suffix_ty(node)?, self.unit_literal(node, ty)?) {
+                    (_, Some(value)) => value,
+                    (Some(own), None) => self.suffixed_integer(node, value, own)?,
+                    (None, None) => self.integer_literal(node, value, ty)?,
                 }
             }
             Op::Float => {
@@ -1140,7 +1141,10 @@ impl Core<'_> {
                     exponent: entry.exponent,
                 };
                 let own = self.suffix_ty(node)?.unwrap_or(ty);
-                self.float_literal(node, &literal, own)?
+                match self.unit_literal(node, ty)? {
+                    Some(value) => value,
+                    None => self.float_literal(node, &literal, own)?,
+                }
             }
             Op::Bool => Value::Bool(a == 1),
             Op::Name => match self.bound(node)? {
@@ -1985,7 +1989,7 @@ impl Core<'_> {
         }
     }
 
-    fn float_literal(
+    pub fn float_literal(
         &mut self,
         node: u32,
         literal: &FloatLit,

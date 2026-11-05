@@ -169,6 +169,9 @@ pub(crate) struct Core<'a> {
     pub init_serial: u64,
     pub cell_capacities: HashMap<u32, i128>,
     pub extent_cache: HashMap<u32, super::extent::Extent>,
+    pub families: HashMap<u32, symphonyscript_core::FamilyId>,
+    pub takers: Vec<(u32, symphonyscript_core::FamilyId)>,
+    pub unit_feeds: Vec<(u32, symphonyscript_core::FamilyId)>,
 }
 
 impl<'a> Core<'a> {
@@ -318,6 +321,9 @@ impl<'a> Core<'a> {
             init_serial: 0,
             cell_capacities: HashMap::new(),
             extent_cache: HashMap::new(),
+            families: HashMap::new(),
+            takers: Vec::new(),
+            unit_feeds: Vec::new(),
         }
     }
 

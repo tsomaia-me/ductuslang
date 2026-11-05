@@ -43,7 +43,14 @@ impl Core<'_> {
                 };
                 Fact::fixed(leaf, Some(ty))
             }
-            None => Fact::scalar(leaf),
+            None => match self.literal_suffix(node)? {
+                Suffix::Unit { family, unit }
+                    if leaf == Leaf::Float || self.unit_scale(family, unit)?.fract() != 0.0 =>
+                {
+                    Fact::scalar(Leaf::Float)
+                }
+                Suffix::Unit { .. } | Suffix::None | Suffix::Type(_) => Fact::scalar(leaf),
+            },
         })
     }
 }

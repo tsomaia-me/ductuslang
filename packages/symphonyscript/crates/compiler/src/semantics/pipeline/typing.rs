@@ -290,10 +290,13 @@ impl Core<'_> {
             self.typing_now += 1;
             let outcome = self.node_fact(node);
             self.typing_now -= 1;
-            let fact = match outcome? {
+            let mut fact = match outcome? {
                 Ok(fact) => fact,
                 Err(declined) => return Ok(Err(declined)),
             };
+            if let Err(declined) = self.node_family(node, &mut fact)? {
+                return Ok(Err(declined));
+            }
             let reactive = self.node_reactive(node)?;
             if fact.node && reactive && self.in_body(node)?.is_some() {
                 return Ok(Err(Declined(Reason::ReactiveReference)));
