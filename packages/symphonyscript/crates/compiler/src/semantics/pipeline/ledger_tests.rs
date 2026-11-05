@@ -1113,3 +1113,53 @@ fn stress_nested_folds_over_a_compile_time_iterable_with_a_start_reading_an_anno
         Timing::Judged,
     ));
 }
+
+fn variable_join_chain(word: &'static str) -> impl Fn(usize) -> String {
+    move |n| {
+        let joins = vec!["[1]"; n].join(" + ");
+        let readers: String = (0..n)
+            .map(|at| format!("state s{at} = t[^2..]\n"))
+            .collect();
+        format!(
+            "state held([]): i32[..1]\n{word} t = held + {joins}\n{readers}{}",
+            read_of("t[0]")
+        )
+    }
+}
+
+#[test]
+fn a_join_chain_onto_a_variable_array_cell_costs_work_and_memory_linear_in_the_chain_500() {
+    assert_none(&ledger_failures(
+        "500 let",
+        [250, 500, 1_000],
+        variable_join_chain("let"),
+        &one("reactive-let"),
+        Timing::Printed,
+    ));
+    assert_none(&ledger_failures(
+        "500 state",
+        [250, 500, 1_000],
+        variable_join_chain("state"),
+        &none,
+        Timing::Printed,
+    ));
+}
+
+#[test]
+#[ignore = "stress"]
+fn stress_a_join_chain_onto_a_variable_array_cell_costs_time_and_memory_linear_in_the_chain_500() {
+    assert_none(&ledger_failures(
+        "500 let",
+        [4_000, 8_000, 16_000],
+        variable_join_chain("let"),
+        &one("reactive-let"),
+        Timing::Judged,
+    ));
+    assert_none(&ledger_failures(
+        "500 state",
+        [4_000, 8_000, 16_000],
+        variable_join_chain("state"),
+        &none,
+        Timing::Judged,
+    ));
+}

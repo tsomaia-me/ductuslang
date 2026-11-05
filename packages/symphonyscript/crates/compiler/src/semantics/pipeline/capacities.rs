@@ -558,6 +558,8 @@ impl Core<'_> {
         done: &mut HashMap<u32, Extent>,
     ) -> Result<Extent, Internal> {
         let mut parts: HashMap<u32, Vec<u32>> = HashMap::new();
+        let mut dependent: HashSet<u32> = HashSet::new();
+        let caching = walk.checking == Checking::Nothing && walk.frames.is_empty();
         let mut stack = vec![(root, false)];
         while let Some((node, ready)) = stack.pop() {
             CountedWalk::CoreCapacity.step();
@@ -571,6 +573,13 @@ impl Core<'_> {
                     .map(|operand| done.get(operand).cloned().unwrap_or(Extent::Fixed(0)))
                     .collect();
                 let extent = self.combined_extent(node, &values, walk)?;
+                if operands.iter().any(|operand| dependent.contains(operand))
+                    || self.env_read(node, walk)?
+                {
+                    dependent.insert(node);
+                } else if caching && self.top_level(node)? {
+                    self.extent_cache.insert(node, extent.clone());
+                }
                 done.insert(node, extent);
                 continue;
             }
@@ -578,8 +587,15 @@ impl Core<'_> {
                 done.insert(node, Extent::Fixed(0));
                 continue;
             }
+            if caching && let Some(cached) = self.extent_cache.get(&node) {
+                done.insert(node, cached.clone());
+                continue;
+            }
             match self.extent_parts(node, walk)? {
                 Parts::Leaf(extent) => {
+                    if self.env_read(node, walk)? {
+                        dependent.insert(node);
+                    }
                     done.insert(node, extent);
                 }
                 Parts::Operands(operands) => {
@@ -980,5 +996,69 @@ impl Core<'_> {
         walk.checking = saved;
         self.inst = outer;
         found
+    }
+}
+
+impl Core<'_> {
+    fn top_level(&self, node: u32) -> Result<bool, Internal> {
+        Ok(self.body_of.get(self.local(node)?).copied().unwrap_or(NONE) == NONE)
+    }
+
+    fn env_read(&self, node: u32, walk: &Walk) -> Result<bool, Internal> {
+        let (op, a, _, _) = self.ir.node(node)?;
+        let target = match op {
+            Op::Name => node,
+            Op::Past => a,
+            Op::Call | Op::NamedCall | Op::For => return Ok(!walk.cells.is_empty()),
+            Op::Int
+            | Op::Float
+            | Op::Bool
+            | Op::Str
+            | Op::Variant
+            | Op::To
+            | Op::Field
+            | Op::MethodCall
+            | Op::NamedMethodCall
+            | Op::Stepped
+            | Op::If
+            | Op::Match
+            | Op::Array
+            | Op::Index
+            | Op::IndexFromEnd
+            | Op::Slice
+            | Op::Neg
+            | Op::Not
+            | Op::Add
+            | Op::Sub
+            | Op::Mul
+            | Op::Div
+            | Op::IntDiv
+            | Op::Rem
+            | Op::Pow
+            | Op::And
+            | Op::Or
+            | Op::Lt
+            | Op::Le
+            | Op::Gt
+            | Op::Ge
+            | Op::Is
+            | Op::IsNot
+            | Op::Convert
+            | Op::TyScalar
+            | Op::TyName
+            | Op::TyArray
+            | Op::TyVar
+            | Op::Bad => return Ok(false),
+        };
+        Ok(match self.bound(target)? {
+            DeclRef::Cell(at) => walk.cells.contains_key(&at),
+            DeclRef::Param(_) => true,
+            DeclRef::None
+            | DeclRef::Let(_)
+            | DeclRef::Instance(_)
+            | DeclRef::Duplicate
+            | DeclRef::Fn(_)
+            | DeclRef::Pattern(_) => false,
+        })
     }
 }

@@ -313,6 +313,10 @@ const DECIDING_NONE: &[(&str, &str)] = &[
         "the operands whose capacities a value's capacity reads, SPEC §3.7's capacity table",
     ),
     (
+        "pipeline/capacities.rs env_read",
+        "whether a node's capacity reads a cell a group's solve holds or a parameter, so its capacity is not cached, ARCHITECTURE §7 stage 6's capacities in work independent of their values",
+    ),
+    (
         "pipeline/check.rs refuse_fixed",
         "the fixed-type operands a runtime value's cells are read around, each refused at itself, SPEC §4.2's fixed-type operand",
     ),
