@@ -24,17 +24,34 @@ impl Core<'_> {
             .collect()
     }
 
-    fn declaration_reads(&self, root: u32, lets: u32) -> Result<Vec<u32>, Internal> {
+    fn declaration_reads(&self, root: u32, env: u32, lets: u32) -> Result<Vec<u32>, Internal> {
         let mut reads = Vec::new();
-        for node in self.deep_postorder(root)? {
-            let op = self.ir.node(node)?.0;
-            if op == Op::Name {
-                if let DeclRef::Let(read) = self.bound(node)? {
-                    reads.push(read);
-                }
-            } else if op == Op::Field {
-                for read in self.node_reads(node)? {
-                    reads.push(lets + read);
+        let mut stack = vec![(root, env)];
+        let mut seen = std::collections::HashSet::new();
+        while let Some((root, env)) = stack.pop() {
+            if !seen.insert((root, env)) {
+                continue;
+            }
+            for node in self.deep_postorder(root)? {
+                let op = self.ir.node(node)?.0;
+                if op == Op::Name {
+                    match self.bound(node)? {
+                        DeclRef::Let(read) => reads.push(read),
+                        DeclRef::Param(position) if env != NONE => {
+                            stack.extend(self.argument_of(node, position, env)?);
+                        }
+                        DeclRef::Param(_)
+                        | DeclRef::None
+                        | DeclRef::Cell(_)
+                        | DeclRef::Instance(_)
+                        | DeclRef::Duplicate
+                        | DeclRef::Fn(_)
+                        | DeclRef::Pattern(_) => {}
+                    }
+                } else if op == Op::Field {
+                    for read in self.node_reads(node)? {
+                        reads.push(lets + read);
+                    }
                 }
             }
         }
@@ -64,17 +81,20 @@ impl Core<'_> {
         let count = self.ir.lets.len() + self.attr_reads.len();
         let mut edges: Vec<Vec<u32>> = vec![Vec::new(); count];
         for at in self.top_lets() {
-            let reads = self.declaration_reads(self.let_root(at)?, lets)?;
+            let reads = self.declaration_reads(self.let_root(at)?, NONE, lets)?;
             if let Some(slot) = edges.get_mut(at as usize) {
                 *slot = reads;
             }
         }
         for at in 0..self.attr_reads.len() {
-            let root = self.attr_reads.get(at).map_or(NONE, |read| read.root);
-            if root == NONE {
+            let Some(read) = self.attr_reads.get(at).cloned() else {
+                continue;
+            };
+            if read.root == NONE {
                 continue;
             }
-            let reads = self.declaration_reads(root, lets)?;
+            let env = self.read_env(&read)?;
+            let reads = self.declaration_reads(read.root, env, lets)?;
             if let Some(slot) = edges.get_mut(self.ir.lets.len() + at) {
                 *slot = reads;
             }

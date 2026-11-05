@@ -106,6 +106,9 @@ impl Core<'_> {
         if let Some(slot) = self.row_of_item.get_mut(named_by as usize) {
             *slot = row;
         }
+        if env != NONE && named_by == item {
+            self.env_rows.insert((item, env), row);
+        }
         Ok(Ok(row))
     }
 

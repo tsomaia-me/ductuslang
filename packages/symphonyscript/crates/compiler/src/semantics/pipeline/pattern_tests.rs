@@ -113,11 +113,11 @@ fn the_declined_pattern_forms_stay_with_the_old_engine() {
     let vocabulary = symphonyscript_fixtures::vocabulary();
     let new = Compiler::new(&vocabulary).expect("the vocabulary compiles");
     for text in [
-        "state s(1)\npattern P(default v):\n    Note/v\nClip c:\n    P/s\n",
+        "pattern P(default v):\n    Note as n /v\n    Note/(n.pitch)\n",
+        "state s(0)\npattern P(default v, w = v + 1):\n    Note/w\nClip c:\n    P/s\n",
+        "pattern P(default v):\n    for i in 0..v:\n        Note/i\nClip c:\n    Note as n /2\n    P/(n.pitch)\n",
         "pattern Voice(default f):\n    Osc as osc /f\n    Filter\nSynth s:\n    Voice as v1 /440\n",
         "pattern P(default v):\n    Plays: v\nClip c:\n    P/d\nClip d\n",
-        "pattern P(default v):\n    Note/v\nClip c:\n    P/(d.gain)\nClip d | gain=0.5\n",
-        "pattern P(default v):\n    Note as n /v\n    Note/(n.pitch)\nClip c:\n    P/1\n",
     ] {
         assert!(new.checked_by_new_core(&[source(text)]).is_none(), "{text}");
     }
@@ -452,4 +452,121 @@ fn a_path_into_a_stand_in_rows_attribute_written_in_the_pattern_body_reads_it_in
         .map(|diagnostic| diagnostic.span.range.clone())
         .collect();
     assert_eq!(ranges, vec![113..120]);
+}
+
+const CELL_ARGUMENTS: [&str; 13] = [
+    "state s(1)\npattern P(default v):\n    Note/v\nClip c:\n    P/s\n",
+    "state s(1.5)\npattern P(default v):\n    Note/v\nClip c:\n    P/s\n",
+    "state s(1)\npattern P(default v):\n    Note/(v + true)\nClip c:\n    P/s\n    P/2\n",
+    "state s(1)\npattern Q(default v):\n    Note/v\npattern P(default v):\n    Q/v\nClip c:\n    P/s\n",
+    "state s(1)\npattern P(default v):\n    Note/v | velocity=v\nClip c:\n    P/s\n",
+    "state s(1)\nlet k = s + 1\npattern P(default v):\n    Note/v\nClip c:\n    P/k\n",
+    "state s(1)\npattern P(default v):\n    Note/v\nClip c:\n    P/(s + 1)\n    P/(s + 300000000000)\n",
+    "state s(1)\npattern P(default v):\n    Note/([1, 2][v])\nClip c:\n    P/s\n",
+    "state s(1)\nstate t = s * 2\npattern P(default v):\n    Note/v\n    Note/(v * 2)\nClip c:\n    P/t\n    P/s\n    P/3\n",
+    "state s(1)\npattern P(default v):\n    Note/v\nClip c:\n    P/(s + 300000000000)\n",
+    "state s(1)\npattern P(default v):\n    Note/v\n    Note/1 | velocity=v\nClip c:\n    P/(s + 3000000000)\n",
+    "state s(1)\nClip c:\n    Note/1 | velocity=(s + 300000000000)\n",
+    "state s(1)\nClip c:\n    Note/1 | velocity=(s + 1)\n",
+];
+
+const PATH_ARGUMENTS: [&str; 11] = [
+    "pattern P(default v):\n    Note/v\nClip c:\n    P/(d.gain)\nClip d | gain=0.5\n",
+    "pattern P(default v):\n    Note/1 | velocity=v\nClip c:\n    P/(d.gain)\nClip d | gain=0.5\n",
+    "pattern P(default v):\n    Note/v\nClip c:\n    P/(d.bogus)\nClip d\n",
+    "pattern P(default v):\n    Q/v\npattern Q(default v):\n    Note/1 | velocity=v\nClip c:\n    P/(d.gain)\n    P/(e.gain)\nClip d | gain=0.5\nClip e | gain=2\n",
+    "pattern P(default v):\n    Plays | gain=v: e\nClip c:\n    Plays | gain=to.gain: d\n    P/(c.gain)\nClip d\nClip e\n",
+    "pattern P(default v):\n    Note/([1, 2, 3][v])\nClip c:\n    Note as n /1\n    Note as m /5\n    P/(n.pitch)\n    P/(m.pitch)\n",
+    "pattern P(default v):\n    Note/(v * 1000000)\nClip c:\n    Note as n /3000\n    P/(n.pitch)\n",
+    "pattern P(default v):\n    Q/(v + 1)\npattern Q(default v):\n    Note/([1, 2][v])\nClip c:\n    Note as n /0\n    Note as m /3\n    P/(n.pitch)\n    P/(m.pitch)\n",
+    "state s(1)\npattern P(default v):\n    Note/(v + 1)\nClip c:\n    Note as n /s\n    P/(n.pitch)\n",
+    "pattern P(default v):\n    Note/v\nClip c:\n    P/1\n    P/(d.gain)\n    P/(e.gain)\nClip d | gain=0.5\nClip e | gain=0.25\n",
+    "pattern P(default v):\n    Note/1 | velocity=v\nClip c:\n    P/(d.gain)\n    P/(e.gain)\nClip d | gain=0.5\nClip e | gain=0.25\n",
+];
+
+fn codes_of(new: &Compiler, text: &str) -> Vec<(Code, std::ops::Range<u32>, usize)> {
+    new.checked_by_new_core(&[source(text)])
+        .unwrap_or_else(|| panic!("the new core takes {text}"))
+        .iter()
+        .map(|diagnostic| {
+            (
+                diagnostic.code,
+                diagnostic.span.range.clone(),
+                diagnostic.related.len(),
+            )
+        })
+        .collect()
+}
+
+#[test]
+fn an_argument_that_reads_a_cell_or_a_path_keys_its_use_once_the_cells_and_paths_are_known() {
+    let vocabulary = symphonyscript_fixtures::vocabulary();
+    assert_engines_agree(&vocabulary, &CELL_ARGUMENTS);
+    assert_engines_agree(&vocabulary, &PATH_ARGUMENTS);
+    let new = Compiler::new(&vocabulary).expect("the vocabulary compiles");
+    assert_eq!(
+        codes_of(
+            &new,
+            "state s(1)\npattern P(default v):\n    Note/1 | velocity=v\nClip c:\n    P/(s + 300000000000)\n"
+        ),
+        vec![
+            (Code::NoEntryInstance, 0..0, 0),
+            (Code::IntegerCell, 6..7, 0),
+            (Code::DoesNotFit, 76..88, 0),
+        ]
+    );
+    assert_eq!(
+        codes_of(
+            &new,
+            "state s(1)\npattern P(default v):\n    Note/1 | velocity=v\nClip c:\n    P/(s + 1)\n"
+        ),
+        vec![
+            (Code::NoEntryInstance, 0..0, 0),
+            (Code::IntegerCell, 6..7, 0)
+        ]
+    );
+    assert_eq!(
+        codes_of(
+            &new,
+            "state s(1)\npattern P(default v):\n    for i in 0..v:\n        Note/i\nClip c:\n    P/s\n"
+        ),
+        vec![
+            (Code::NoEntryInstance, 0..0, 0),
+            (Code::ReactiveIterable, 49..50, 1),
+        ]
+    );
+}
+
+const OWN_NAMES: [&str; 9] = [
+    "pattern P(default v):\n    Note as n /v\n    Note/(n.pitch)\nClip c:\n    P/1\n",
+    "pattern P(default v):\n    Note as n /v\n    Note/(n.pitch)\nClip c:\n    P/1\n    P/2\n",
+    "pattern P(default v):\n    Note/(n.pitch)\n    Note as n /v\nClip c:\n    P/1\n",
+    "pattern P(default v):\n    Clip as x:\n        Note as n /v\n    Note/(x.n.pitch + 0.5)\nSession s:\n    P/1\n",
+    "pattern P(default v):\n    Note as n /v | velocity=0.5\n    Note/([1, 2][n.pitch]) | velocity=(n.velocity * 2)\nClip c:\n    P/1\n    P/5\n",
+    "pattern P(default v):\n    Note as n /v\n    Note/(n.bogus)\nClip c:\n    P/1\n    P/2\n",
+    "pattern P(default v):\n    Note as n /(v * 1000000)\n    Note/(n.pitch)\nClip c:\n    P/3000\n",
+    "pattern Q(default v):\n    Note as n /v\n    Note/([1, 2][n.pitch])\npattern P(default v):\n    Q/(v + 1)\nClip c:\n    P/0\n    P/4\n",
+    "pattern P(default v):\n    Note as n /v\n    for i in 0..2:\n        Note/(n.pitch + i)\nClip c:\n    P/1\n",
+];
+
+#[test]
+fn a_pattern_body_reads_the_as_names_of_its_own_children_in_each_uses_env() {
+    let vocabulary = symphonyscript_fixtures::vocabulary();
+    assert_engines_agree(&vocabulary, &OWN_NAMES);
+    let new = Compiler::new(&vocabulary).expect("the vocabulary compiles");
+    let found = new
+        .checked_by_new_core(&[source(OWN_NAMES[4])])
+        .expect("the new core takes a body reading its own child");
+    let chains: Vec<Vec<std::ops::Range<u32>>> = found
+        .iter()
+        .filter(|diagnostic| diagnostic.code == Code::IndexOutOfRange)
+        .map(|diagnostic| {
+            diagnostic
+                .related
+                .iter()
+                .map(|related| related.span.range.clone())
+                .collect()
+        })
+        .collect();
+    assert_eq!(chains, vec![vec![129..132]]);
 }

@@ -69,6 +69,9 @@ pub(crate) fn analyze(inputs: &Inputs<'_>) -> Result<Option<Run>, Internal> {
     if let Err(reason) = stage(core.type_cells())? {
         return declined(reason);
     }
+    if let Err(reason) = stage(core.key_deferred_uses())? {
+        return declined(reason);
+    }
     if let Err(reason) = stage(core.type_attr_reads())? {
         return declined(reason);
     }

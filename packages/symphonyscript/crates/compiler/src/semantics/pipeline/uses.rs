@@ -39,7 +39,7 @@ impl Core<'_> {
             if self.patterns_used.contains(&pattern) {
                 continue;
             }
-            if self.names_in_pattern(pattern)? {
+            if self.names_in_pattern(pattern)? || self.own_reads.contains(&pattern) {
                 return Ok(Err(Declined(Reason::PatternUse)));
             }
             let body = self.pattern_parts(pattern)?.1;
@@ -113,6 +113,7 @@ impl Core<'_> {
         let mut reactive = Vec::new();
         let mut faults = Vec::new();
         let mut temps = Vec::new();
+        let mut late: Vec<(u32, bool)> = Vec::new();
         let start = u32::try_from(self.env_vals.len()).unwrap_or(NONE);
         for (position, (root, caller)) in bound.clone().into_iter().enumerate() {
             reactive.push(false);
@@ -127,6 +128,23 @@ impl Core<'_> {
                 continue;
             }
             let defaulted = defaults.get(position) == Some(&root);
+            if defaulted && self.reads_late(root, &late)? {
+                return Ok(Err(Declined(Reason::PatternUse)));
+            }
+            if !defaulted {
+                let saved = self.enter_env(caller);
+                let deferred = self.deferred_arg(root);
+                self.leave_env(saved);
+                if let Some(cells) = deferred? {
+                    facts.push(Fact::PLACEHOLDER);
+                    self.env_vals.push(CoreValue::Error);
+                    if let Some(slot) = reactive.last_mut() {
+                        *slot = cells;
+                    }
+                    late.push((u32::try_from(position).unwrap_or(NONE), cells));
+                    continue;
+                }
+            }
             let value = if defaulted {
                 let temp = self.default_inst(pattern, env, (&facts, &reactive), root)?;
                 if temp != NONE {
@@ -171,10 +189,15 @@ impl Core<'_> {
         let made = self.use_made(
             item,
             pattern,
-            (env, start),
+            (env, start, late.is_empty()),
             (facts, reactive),
             (span, bound),
         )?;
+        if let Ok(Some(made)) = made
+            && !late.is_empty()
+        {
+            self.defer_use(made, &late);
+        }
         if let Ok(Some(made)) = made {
             for (position, temp) in temps {
                 self.default_insts
@@ -329,7 +352,7 @@ impl Core<'_> {
         &mut self,
         item: u32,
         pattern: u32,
-        (env, start): (u32, u32),
+        (env, start, indexed): (u32, u32, bool),
         (facts, reactive_args): (Vec<Fact>, Vec<bool>),
         (span, bound): (symphonyscript_core::Span, Vec<(u32, u32)>),
     ) -> Stage<Option<u32>> {
@@ -340,7 +363,12 @@ impl Core<'_> {
             .map_or(NONE, |record| record.inst);
         let owner = self.patterns_start() + pattern;
         let key = (owner, parent, facts.clone(), reactive_args.clone());
-        let inst = match self.body_index.get(&key).copied() {
+        let found = if indexed {
+            self.body_index.get(&key).copied()
+        } else {
+            None
+        };
+        let inst = match found {
             Some(inst) => inst,
             None => {
                 CountedWalk::CorePatternBody.step();
@@ -352,7 +380,9 @@ impl Core<'_> {
                     diagnostics: Vec::new(),
                 });
                 let inst = u32::try_from(self.bodies.len() - 1).unwrap_or(NONE);
-                self.body_index.insert(key, inst);
+                if indexed {
+                    self.body_index.insert(key, inst);
+                }
                 inst
             }
         };
@@ -385,6 +415,142 @@ impl Core<'_> {
         if fact.node || self.is_reactive(root)? {
             return Ok(Err(Declined(Reason::PatternUse)));
         }
+        self.argument_value(root, fact)
+    }
+
+    fn late_argument(&mut self, root: u32) -> Stage<(Fact, CoreValue, bool)> {
+        let fact = match self.ensure_typed(root)? {
+            Ok(fact) => fact,
+            Err(declined) => return Ok(Err(declined)),
+        };
+        if fact.node {
+            return Ok(Err(Declined(Reason::PatternUse)));
+        }
+        if self.is_reactive(root)? {
+            return Ok(Ok((fact, CoreValue::Error, true)));
+        }
+        self.argument_value(root, fact)
+    }
+
+    fn deferred_arg(&self, root: u32) -> Result<Option<bool>, Internal> {
+        let mut path = false;
+        for node in self.postorder(root)? {
+            path |= matches!(self.ir.node(node)?.0, Op::Field | Op::To);
+        }
+        if !path && self.reaches_cell(root)? != 0 {
+            return Ok(Some(true));
+        }
+        if path || self.reads_deferred(root)? {
+            return Ok(Some(false));
+        }
+        Ok(None)
+    }
+
+    pub fn reads_deferred(&self, root: u32) -> Result<bool, Internal> {
+        if self.deferred_params.is_empty() {
+            return Ok(false);
+        }
+        for node in self.deep_postorder(root)? {
+            if self.ir.node(node)?.0 != Op::Name {
+                continue;
+            }
+            if let DeclRef::Param(position) = self.bound(node)? {
+                let inst = self.owner_inst(self.binding_owner(node)?);
+                if self.deferred_params.contains(&(inst, position)) {
+                    return Ok(true);
+                }
+            }
+        }
+        Ok(false)
+    }
+
+    fn reads_late(&self, root: u32, late: &[(u32, bool)]) -> Result<bool, Internal> {
+        if late.is_empty() || !self.default_nodes.contains_key(&root) {
+            return Ok(false);
+        }
+        for node in self.postorder(root)? {
+            if self.ir.node(node)?.0 == Op::Name
+                && let DeclRef::Param(position) = self.bound(node)?
+                && late.iter().any(|(at, _)| *at == position)
+            {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
+    fn defer_use(&mut self, made: u32, late: &[(u32, bool)]) {
+        let Some(record) = self.envs.get(made as usize).copied() else {
+            return;
+        };
+        for (position, cells) in late {
+            if !cells {
+                self.deferred_params.insert((record.inst, *position));
+            }
+        }
+        self.deferred_uses
+            .push((made, late.iter().map(|(position, _)| *position).collect()));
+    }
+
+    pub fn key_deferred_uses(&mut self) -> Stage<()> {
+        let deferred = std::mem::take(&mut self.deferred_uses);
+        for (env, positions) in deferred {
+            let record = *self
+                .envs
+                .get(env as usize)
+                .ok_or(Internal::missed("use env"))?;
+            let args = self.use_args.get(&env).cloned().unwrap_or_default();
+            for position in positions {
+                let Some((root, caller)) = args.get(position as usize).copied() else {
+                    continue;
+                };
+                let saved = self.enter_env(caller);
+                let outcome = self.late_argument(root);
+                self.leave_env(saved);
+                let (fact, value, cells) = match outcome? {
+                    Ok(found) => found,
+                    Err(declined) => return Ok(Err(declined)),
+                };
+                if let Some(body) = self.bodies.get_mut(record.inst as usize) {
+                    if let Some(slot) = body.args.get_mut(position as usize) {
+                        *slot = fact;
+                    }
+                    if let Some(slot) = body.reactive_args.get_mut(position as usize) {
+                        *slot = cells;
+                    }
+                }
+                if let Some(slot) = self.env_vals.get_mut((record.values.0 + position) as usize) {
+                    *slot = value;
+                }
+            }
+            let body = self
+                .bodies
+                .get(record.inst as usize)
+                .ok_or(Internal::missed("body instance"))?;
+            let parent = self
+                .typed_as
+                .get(&body.parent)
+                .copied()
+                .unwrap_or(body.parent);
+            let key = (
+                body.function,
+                parent,
+                body.args.clone(),
+                body.reactive_args.clone(),
+            );
+            match self.body_index.get(&key).copied() {
+                Some(shared) => {
+                    self.typed_as.insert(record.inst, shared);
+                }
+                None => {
+                    self.body_index.insert(key, record.inst);
+                }
+            }
+        }
+        Ok(Ok(()))
+    }
+
+    fn argument_value(&mut self, root: u32, fact: Fact) -> Stage<(Fact, CoreValue, bool)> {
         if fact.leaf == Leaf::Placeholder {
             return Ok(Ok((Fact::PLACEHOLDER, CoreValue::Error, false)));
         }
@@ -468,7 +634,13 @@ impl Core<'_> {
             .and_then(|body| body.args.get(position as usize))
             .cloned()
             .ok_or(Internal::missed("argument fact"))?;
-        if fact.fixed.is_some() || !matches!(fact.leaf, Leaf::Int | Leaf::Float) {
+        let cells = self
+            .bodies
+            .get(inst as usize)
+            .and_then(|body| body.reactive_args.get(position as usize))
+            .copied()
+            .unwrap_or(false);
+        if !cells && (fact.fixed.is_some() || !matches!(fact.leaf, Leaf::Int | Leaf::Float)) {
             return Ok(Ok(stored.clone()));
         }
         if let Some(value) = self.use_values.get(&(env, position, class)) {
@@ -518,9 +690,26 @@ impl Core<'_> {
             if record.use_item == NONE {
                 continue;
             }
-            let Some(faults) = self.use_faults.get(&record.inst).cloned() else {
+            let shared = self
+                .typed_as
+                .get(&record.inst)
+                .copied()
+                .unwrap_or(record.inst);
+            let mut faults = self
+                .use_faults
+                .get(&record.inst)
+                .cloned()
+                .unwrap_or_default();
+            if shared != record.inst {
+                for fault in self.use_faults.get(&shared).cloned().unwrap_or_default() {
+                    if !faults.contains(&fault) {
+                        faults.push(fault);
+                    }
+                }
+            }
+            if faults.is_empty() {
                 continue;
-            };
+            }
             let saved = self.enter_env(u32::try_from(env).unwrap_or(NONE));
             for fault in faults {
                 let mut related = fault.related.clone();
@@ -796,6 +985,7 @@ impl Core<'_> {
         reachable: bool,
     ) -> Stage<u32> {
         let placement = self.placement(item)?;
+        let outer = env;
         let (mut at, mut using, mut from, mut env) = (item, pattern, file, env);
         loop {
             let made = match self.use_env(at, using, (from, env), at == item)? {
@@ -833,12 +1023,19 @@ impl Core<'_> {
                     self.placeholder_uses.push((parent, name, span, key));
                 }
             }
-            return self.named_row(
+            let made_row = self.named_row(
                 inner,
                 (inner_file, parent, made),
                 (name, file, reachable && name != NONE),
                 item,
-            );
+            )?;
+            if let Ok(row) = made_row
+                && row != NONE
+                && outer != NONE
+            {
+                self.env_rows.insert((item, outer), row);
+            }
+            return Ok(made_row);
         }
     }
 }
@@ -888,7 +1085,10 @@ impl Core<'_> {
             else {
                 continue;
             };
-            if matches!(self.bind.get(local), Some(DeclRef::Param(_))) {
+            if matches!(
+                self.bind.get(local),
+                Some(DeclRef::Param(_) | DeclRef::Instance(_))
+            ) {
                 continue;
             }
             let name = *self.ir.a.get(local).ok_or(Internal::missed("IR name"))?;
@@ -904,6 +1104,14 @@ impl Core<'_> {
             let named = declined || names.iter().any(|sym| reads.contains(sym));
             if let Some(slot) = self.named_patterns.get_mut(pattern as usize) {
                 *slot = named;
+            }
+        }
+        for local in 0..self.ir.op.len() {
+            if self.ir.op.get(local) == Some(&Op::Name)
+                && let Some(DeclRef::Instance(item)) = self.bind.get(local)
+                && let Some(pattern) = self.pattern_items.get(item).copied()
+            {
+                self.own_reads.insert(pattern);
             }
         }
         Ok(())
@@ -961,6 +1169,7 @@ impl Core<'_> {
                 let span = self.span(file, entry.lo, entry.hi);
                 let text = self.ir.symbols.text(entry.sym).to_string();
                 all.push(entry.sym.0);
+                self.pattern_items.insert(item, pattern);
                 let param = outer
                     .iter()
                     .take(params)
@@ -998,5 +1207,42 @@ impl Core<'_> {
             }
         }
         Ok(all)
+    }
+}
+
+impl Core<'_> {
+    pub fn argument_of(
+        &self,
+        node: u32,
+        position: u32,
+        env: u32,
+    ) -> Result<Option<(u32, u32)>, Internal> {
+        let owner = self.binding_owner(node)?;
+        let mut at = env;
+        while let Some(record) = self.envs.get(at as usize) {
+            let owned = self
+                .bodies
+                .get(record.inst as usize)
+                .is_some_and(|body| body.function == owner);
+            if record.use_item != NONE && owned {
+                let Some((root, caller)) = self
+                    .use_args
+                    .get(&at)
+                    .and_then(|args| args.get(position as usize))
+                    .copied()
+                else {
+                    return Ok(None);
+                };
+                if root == NONE {
+                    return Ok(None);
+                }
+                if self.default_nodes.contains_key(&root) {
+                    return Ok(Some((root, at)));
+                }
+                return Ok(Some((root, caller)));
+            }
+            at = record.parent;
+        }
+        Ok(None)
     }
 }

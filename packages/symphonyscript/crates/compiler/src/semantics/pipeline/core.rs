@@ -136,6 +136,12 @@ pub(crate) struct Core<'a> {
     pub placeholder_uses: Vec<(u32, u32, Span, u32)>,
     pub default_nodes: HashMap<u32, u32>,
     pub default_insts: HashMap<(u32, u32), u32>,
+    pub deferred_uses: Vec<(u32, Vec<u32>)>,
+    pub deferred_params: HashSet<(u32, u32)>,
+    pub pattern_items: HashMap<u32, u32>,
+    pub own_reads: HashSet<u32>,
+    pub env_rows: HashMap<(u32, u32), u32>,
+    pub env_reads: BTreeMap<(u32, u32), u32>,
 }
 
 impl<'a> Core<'a> {
@@ -253,6 +259,12 @@ impl<'a> Core<'a> {
             placeholder_uses: Vec::new(),
             default_nodes: HashMap::new(),
             default_insts: HashMap::new(),
+            deferred_uses: Vec::new(),
+            deferred_params: HashSet::new(),
+            pattern_items: HashMap::new(),
+            own_reads: HashSet::new(),
+            env_rows: HashMap::new(),
+            env_reads: BTreeMap::new(),
         }
     }
 
@@ -493,6 +505,7 @@ impl Core<'_> {
             let mut own = diagnostic.clone();
             let keep = own.related.len().saturating_sub(self.use_links.len());
             own.related.truncate(keep);
+            let inst = self.typed_as.get(&inst).copied().unwrap_or(inst);
             self.use_faults.entry(inst).or_default().push(own);
         }
         if self.eval_chain.is_empty() && self.use_links.len() < 2 {

@@ -345,6 +345,9 @@ impl Core<'_> {
         if let Some(child) = self.child_named(row, entry.sym.0) {
             return Ok(Ok(End::Row(child)));
         }
+        if let Some(child) = self.use_child_named(row, entry.sym)? {
+            return Ok(Ok(End::Row(child)));
+        }
         let kind = self
             .instances
             .get(row as usize)
@@ -456,6 +459,9 @@ impl Core<'_> {
             }
             CountedWalk::CorePathStep.step();
             let node = self.ir.base + u32::try_from(local).unwrap_or(u32::MAX);
+            if self.use_local(node)?.is_some() {
+                continue;
+            }
             let before = self.diagnostics.len();
             let end = match self.path_end(node, &ends)? {
                 Ok(end) => end,
@@ -481,6 +487,9 @@ impl Core<'_> {
         left.sort_by_key(|(node, _)| *node);
         for (_, faults) in left {
             self.diagnostics.extend(faults);
+        }
+        if let Err(declined) = self.resolve_use_paths()? {
+            return Ok(Err(declined));
         }
         if !self.attr_reads.is_empty() && self.recursive()? {
             return Ok(Err(Declined(Reason::Recursion)));
@@ -574,6 +583,13 @@ impl Core<'_> {
     }
 
     pub fn read_at(&self, node: u32) -> Result<u32, Internal> {
+        if !self.env_reads.is_empty() {
+            for (env, _, _) in self.own_calls.iter().rev() {
+                if let Some(at) = self.env_reads.get(&(node, *env)) {
+                    return Ok(*at);
+                }
+            }
+        }
         if let Some(inst) = self.path_inst(node)
             && let Some(at) = self.inst_reads.get(&(node, inst))
         {
@@ -595,6 +611,11 @@ impl Core<'_> {
             .row_reads
             .range((node, 0)..=(node, u32::MAX))
             .map(|(_, at)| *at)
+            .chain(
+                self.env_reads
+                    .range((node, 0)..=(node, u32::MAX))
+                    .map(|(_, at)| *at),
+            )
             .chain(
                 self.inst_reads
                     .range((node, 0)..=(node, u32::MAX))
@@ -1195,5 +1216,146 @@ impl Core<'_> {
         let typed = self.ensure_typed(read.root);
         self.leave_env(saved);
         typed
+    }
+}
+
+impl Core<'_> {
+    fn use_local(&self, node: u32) -> Result<Option<u32>, Internal> {
+        if self.pattern_items.is_empty() {
+            return Ok(None);
+        }
+        let mut current = node;
+        while let (Op::Field, receiver, _, _) = self.ir.node(current)? {
+            current = receiver;
+        }
+        if self.ir.node(current)?.0 != Op::Name {
+            return Ok(None);
+        }
+        Ok(match self.bound(current)? {
+            DeclRef::Instance(item) => self.pattern_items.get(&item).copied(),
+            DeclRef::None
+            | DeclRef::Let(_)
+            | DeclRef::Cell(_)
+            | DeclRef::Param(_)
+            | DeclRef::Duplicate
+            | DeclRef::Fn(_)
+            | DeclRef::Pattern(_) => None,
+        })
+    }
+
+    fn resolve_use_paths(&mut self) -> Stage<()> {
+        let mut nodes = Vec::new();
+        for local in 0..self.ir.op.len() {
+            if self.ir.op.get(local) != Some(&Op::Field)
+                || !self.reached.get(local).copied().unwrap_or(false)
+            {
+                continue;
+            }
+            let node = self.ir.base + u32::try_from(local).unwrap_or(u32::MAX);
+            if let Some(pattern) = self.use_local(node)? {
+                nodes.push((pattern, node));
+            }
+        }
+        if nodes.is_empty() {
+            return Ok(Ok(()));
+        }
+        let rows = self.env_rows.clone();
+        let mut patterns: Vec<u32> = nodes.iter().map(|(pattern, _)| *pattern).collect();
+        patterns.sort_unstable();
+        patterns.dedup();
+        for pattern in patterns {
+            let owner = self.patterns_start() + pattern;
+            let items: Vec<u32> = self
+                .pattern_items
+                .iter()
+                .filter(|(_, at)| **at == pattern)
+                .map(|(item, _)| *item)
+                .collect();
+            for env in 0..u32::try_from(self.envs.len()).unwrap_or(0) {
+                let Some(record) = self.envs.get(env as usize).copied() else {
+                    continue;
+                };
+                let owned = self
+                    .bodies
+                    .get(record.inst as usize)
+                    .is_some_and(|body| body.function == owner);
+                if record.use_item == NONE || !owned {
+                    continue;
+                }
+                CountedWalk::CorePathStep.step();
+                let mut saved = Vec::new();
+                for item in &items {
+                    let row = rows.get(&(*item, env)).copied().unwrap_or(NONE);
+                    if let Some(slot) = self.row_of_item.get_mut(*item as usize) {
+                        saved.push((*item, std::mem::replace(slot, row)));
+                    }
+                }
+                let links = self.enter_env(env);
+                let outcome = self.use_paths_in(pattern, env, &nodes);
+                self.leave_env(links);
+                for (item, row) in saved {
+                    if let Some(slot) = self.row_of_item.get_mut(item as usize) {
+                        *slot = row;
+                    }
+                }
+                if let Err(declined) = outcome? {
+                    return Ok(Err(declined));
+                }
+            }
+        }
+        Ok(Ok(()))
+    }
+
+    fn use_paths_in(&mut self, pattern: u32, env: u32, nodes: &[(u32, u32)]) -> Stage<()> {
+        let mut ends: HashMap<u32, End> = HashMap::new();
+        for (at, node) in nodes {
+            if *at != pattern {
+                continue;
+            }
+            let end = match self.path_end(*node, &ends)? {
+                Ok(end) => end,
+                Err(declined) => return Ok(Err(declined)),
+            };
+            if !self.is_field_receiver(*node) {
+                match end {
+                    End::Row(_) => return Ok(Err(Declined(Reason::PatternUse))),
+                    End::Attr(read) => {
+                        self.env_reads.insert((*node, env), read);
+                    }
+                    End::Placeholder | End::Value | End::To => {}
+                }
+            }
+            ends.insert(*node, end);
+        }
+        Ok(Ok(()))
+    }
+}
+
+impl Core<'_> {
+    fn use_child_named(
+        &self,
+        row: u32,
+        sym: crate::semantics::ir::flat::Sym,
+    ) -> Result<Option<u32>, Internal> {
+        let record = *self
+            .instances
+            .get(row as usize)
+            .ok_or(Internal::missed("row"))?;
+        if record.env == NONE || self.pattern_items.is_empty() {
+            return Ok(None);
+        }
+        for child in record.children.0..record.children.1 {
+            let found = *self
+                .instances
+                .get(child as usize)
+                .ok_or(Internal::missed("row"))?;
+            if found.env != NONE
+                && self.ir.named(found.name)
+                && self.ir.name(found.name).is_some_and(|name| name.sym == sym)
+            {
+                return Ok(Some(child));
+            }
+        }
+        Ok(None)
     }
 }
