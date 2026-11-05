@@ -978,3 +978,41 @@ fn stress_anonymous_pattern_uses_cost_walks_and_peak_bytes_linear_in_the_uses() 
     ));
     assert_eq!(CountedWalk::CorePatternBody.steps() - bodies, 2 * 3 * 3);
 }
+
+fn nested_and_named_uses(count: usize) -> String {
+    let mut text = String::from(
+        "pattern Arp(default root, steps = 2):\n    for i in 0..steps:\n        Note/(root + i)\npattern Pair(default root):\n    Arp/root\n    Arp/(root + 12) | steps=1\npattern One(default v):\n    Note/v\npattern Lead(default v):\n    One/v\nClip c:\n",
+    );
+    for at in 0..count {
+        match at % 3 {
+            0 => text.push_str(&format!("    Pair/{}\n", 36 + at % 24)),
+            1 => text.push_str(&format!("    One as o{at} /{}\n", 40 + at % 24)),
+            _ => text.push_str(&format!("    Lead/{}\n", 50 + at % 12)),
+        }
+    }
+    text
+}
+
+#[test]
+#[ignore = "stress"]
+fn stress_nested_and_named_pattern_uses_cost_walks_and_peak_bytes_linear_in_the_uses() {
+    let compiler = Compiler::new(&vocabulary()).expect("the vocabulary compiles");
+    let bodies = CountedWalk::CorePatternBody.steps();
+    compiler
+        .checked_by_new_core(&[crate::syntax::front_end_goldens::source(
+            &nested_and_named_uses(30),
+        )])
+        .expect("the new core takes nested and named uses");
+    let once = CountedWalk::CorePatternBody.steps() - bodies;
+    assert!(once > 0);
+    let bodies = CountedWalk::CorePatternBody.steps();
+    assert_none(&ledger_failures_on(
+        &compiler,
+        "nested and named pattern uses",
+        [6_000, 12_000, 24_000],
+        nested_and_named_uses,
+        &none,
+        Timing::Judged,
+    ));
+    assert_eq!(CountedWalk::CorePatternBody.steps() - bodies, once * 3 * 3);
+}

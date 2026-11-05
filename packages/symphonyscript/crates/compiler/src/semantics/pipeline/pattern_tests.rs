@@ -109,14 +109,17 @@ fn uses_with_one_key_type_the_pattern_body_once_and_a_fixed_argument_types_a_sec
 }
 
 #[test]
-fn a_named_use_and_a_named_placement_in_a_pattern_body_stay_with_the_old_engine() {
+fn the_declined_pattern_forms_stay_with_the_old_engine() {
     let vocabulary = symphonyscript_fixtures::vocabulary();
     let new = Compiler::new(&vocabulary).expect("the vocabulary compiles");
     for text in [
-        "pattern P(default v):\n    Note/v\nClip c:\n    P as p /1\n",
-        "pattern P(default v):\n    Note as n /v\nClip c:\n    P/1\n",
         "state s(1)\npattern P(default v):\n    Note/v\nClip c:\n    P/s\n",
-        "pattern Arp(default root):\n    Note/root\nClip verse:\n    Arp/(1.5)\n",
+        "pattern Voice(default f):\n    Osc as osc /f\n    Filter\nSynth s:\n    Voice as v1 /440\n",
+        "pattern P(default v):\n    Note/v | velocity=0.5\nClip c:\n    P as p /1\n    Note/(p.velocity)\n",
+        "pattern P(default v):\n    Plays: v\nClip c:\n    P/d\nClip d\n",
+        "pattern P(default v):\n    Note/v\nClip c:\n    P/(d.gain)\nClip d | gain=0.5\n",
+        "pattern P(default v):\n    Note as n /v\n    Note/(n.pitch)\nClip c:\n    P/1\n",
+        "pattern P(default v, w = [1][2]):\n    Note/v | velocity=w\nClip c:\n    P/1\n",
     ] {
         assert!(new.checked_by_new_core(&[source(text)]).is_none(), "{text}");
     }
@@ -285,5 +288,73 @@ fn name_entries_supply_a_bool_parameter_and_a_pattern_is_used_from_another_file(
                 "Clip c:\n    P/1\n    for i in 0..0:\n        P/2 | bogus=2\n",
             ],
         ],
+    );
+}
+
+const ARGUMENTS: [&str; 12] = [
+    "pattern P(default v):\n    Note/v\nClip c:\n    P/(1.5)\n",
+    "pattern P(default v):\n    Note/v | velocity=v\nClip c:\n    P/(1.5)\n",
+    "pattern P(default v):\n    Note/1 | velocity=v\nClip c:\n    P/(1.5)\n    P/2\n",
+    "pattern P(default v):\n    Note/(v + 1) | velocity=(v * 0.5)\nClip c:\n    P/(2.5)\n",
+    "pattern P(default v):\n    Osc/v | rate=v\nSynth s:\n    P/(0.1)\n",
+    "pattern P(default v):\n    Osc/v | rate=v\nSynth s:\n    P/16777217\n",
+    "pattern Q(default v):\n    Osc/v | rate=v\npattern P(default v):\n    Q/v\nSynth s:\n    P/(0.1)\n    P/16777217\n",
+    "pattern P(default v):\n    Note/([1, 2, 3][v])\nClip c:\n    P/(1.5)\n",
+    "pattern P(default v):\n    Note/v\nClip c:\n    P/(1 + true)\n    P/([1][3])\n",
+    "pattern P(default v, w = 1 + true):\n    Note/v | velocity=w\nClip c:\n    P/1\n    P/2\n",
+    "pattern P(default v, w = [1][0] + true):\n    Note/v | velocity=w\nClip c:\n    P/1\n    P/2 | w=0.5\n",
+    "pattern P(default v):\n    Note/v\nClip c:\n    P/bogus\n",
+];
+
+#[test]
+fn a_flexible_float_argument_a_faulty_argument_and_a_faulty_default_draw_as_the_old_engine_draws_them()
+ {
+    let vocabulary = symphonyscript_fixtures::vocabulary();
+    assert_engines_agree(&vocabulary, &ARGUMENTS);
+    let new = Compiler::new(&vocabulary).expect("the vocabulary compiles");
+    let found = new
+        .checked_by_new_core(&[source(ARGUMENTS[9])])
+        .expect("the new core takes a faulty default");
+    let chains: Vec<Vec<std::ops::Range<u32>>> = found
+        .iter()
+        .filter(|diagnostic| diagnostic.code == Code::OperandType)
+        .map(|diagnostic| {
+            diagnostic
+                .related
+                .iter()
+                .map(|related| related.span.range.clone())
+                .collect()
+        })
+        .collect();
+    assert_eq!(chains, vec![vec![72..75], vec![80..83]]);
+}
+
+const NAMED: [&str; 12] = [
+    "pattern P(default v):\n    Note as v /1\n",
+    "pattern P(default v):\n    Note as v /1\nClip c:\n    P/1\n    P/2\n",
+    "pattern P(default v):\n    Note as gain /v\nClip c:\n    P/1\n    P/2\n",
+    "pattern P(default v):\n    Note as n /v\n    Note as n /2\nClip c:\n    P/1\n    P/2\n",
+    "pattern P(default v):\n    Note as n /v\n    for i in 0..2:\n        Note as m /i\nClip c:\n    P/1\n",
+    "pattern P(default v):\n    Note as n /v\nClip c:\n    Note as n /3\n    P/1\n    P/2\n",
+    "pattern P(default v):\n    Clip as x:\n        Note as v /v\nSession s:\n    P/1\n",
+    "pattern P(default v):\n    Clip as x:\n        Note as n /v\n        Note as n /v\nSession s:\n    P/1\n",
+    "pattern P(default v):\n    Note/v\nClip c:\n    P as p /1\n    P as p /2\n",
+    "pattern P(default v):\n    Note/v\nClip c:\n    P as level /1\n",
+    "pattern P():\n    Note\nClip c:\n    P as gain\n",
+    "pattern Voice(default f):\n    Osc as osc /f\nSynth s:\n    Voice as v1 /440\nClip c:\n    Note/(s.v1.osc.freq)\n",
+];
+
+#[test]
+fn a_named_placement_in_a_pattern_body_and_a_named_stand_in_use_draw_their_name_clashes() {
+    let vocabulary = symphonyscript_fixtures::vocabulary();
+    assert_engines_agree(&vocabulary, &NAMED);
+    let new = Compiler::new(&vocabulary).expect("the vocabulary compiles");
+    let found = new
+        .checked_by_new_core(&[source(NAMED[8])])
+        .expect("the new core takes two named stand-in uses");
+    assert!(
+        found
+            .iter()
+            .any(|diagnostic| diagnostic.code == Code::ChildNameClash)
     );
 }

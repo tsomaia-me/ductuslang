@@ -10,7 +10,7 @@ use super::reason::Reason;
 use crate::diagnostics::{Code, Related};
 use crate::semantics::Internal;
 use crate::semantics::counted_walk::CountedWalk;
-use crate::semantics::ir::flat::{AttrForm, ItemRec, NONE, Op, PlacementRec};
+use crate::semantics::ir::flat::{ABSENT, AttrForm, ItemRec, NONE, Op, PlacementRec};
 use crate::semantics::operators::EvalTy;
 
 impl Core<'_> {
@@ -87,8 +87,7 @@ impl Core<'_> {
         top: bool,
     ) -> Stage<Option<u32>> {
         let placement = self.placement(item)?;
-        if (!top && self.ir.named(placement.as_name))
-            || placement.has_as
+        if (!top && (self.ir.named(placement.as_name) || placement.has_as))
             || self.names_in_pattern(pattern)?
             || placement.body != NONE
             || placement.inline
@@ -111,8 +110,11 @@ impl Core<'_> {
             defaults.push(self.ir.binder(binder)?.default);
         }
         let mut facts = Vec::new();
+        let mut reactive = Vec::new();
+        let mut faults = Vec::new();
         let start = u32::try_from(self.env_vals.len()).unwrap_or(NONE);
         for (position, (root, caller)) in bound.clone().into_iter().enumerate() {
+            reactive.push(false);
             if root == NONE && caller != NONE {
                 facts.push(Fact::scalar(Leaf::Bool));
                 self.env_vals.push(CoreValue::Bool(caller == 1));
@@ -123,24 +125,54 @@ impl Core<'_> {
                 self.env_vals.push(CoreValue::Error);
                 continue;
             }
+            let defaulted = defaults.get(position) == Some(&root);
+            let drawn = self.diagnostics.len();
             let saved = self.enter_env(caller);
             let value = self.argument(root);
             self.leave_env(saved);
+            if defaulted {
+                let own = self.diagnostics.split_off(drawn);
+                let held = self.default_faults.entry(root).or_default();
+                held.extend(own);
+                faults.extend(held.iter().cloned());
+            }
             match value? {
-                Ok((fact, _))
-                    if defaults.get(position) == Some(&root)
-                        && matches!(fact.leaf, Leaf::Placeholder | Leaf::Error) =>
+                Ok((fact, value, _))
+                    if defaulted
+                        && value.is_error()
+                        && !matches!(fact.leaf, Leaf::Placeholder | Leaf::Error) =>
                 {
                     return Ok(Err(Declined(Reason::PatternUse)));
                 }
-                Ok((fact, value)) => {
+                Ok((fact, value, cells)) => {
                     facts.push(fact);
                     self.env_vals.push(value);
+                    if let Some(slot) = reactive.last_mut() {
+                        *slot = cells;
+                    }
                 }
                 Err(declined) => return Ok(Err(declined)),
             }
         }
-        self.use_made(item, pattern, (env, start), facts, (span, bound))
+        let made = self.use_made(
+            item,
+            pattern,
+            (env, start),
+            (facts, reactive),
+            (span, bound),
+        )?;
+        if let Ok(Some(made)) = made
+            && !faults.is_empty()
+            && let Some(record) = self.envs.get(made as usize).copied()
+        {
+            let held = self.use_faults.entry(record.inst).or_default();
+            for fault in faults {
+                if !held.contains(&fault) {
+                    held.push(fault);
+                }
+            }
+        }
+        Ok(made)
     }
 
     pub fn use_sources(
@@ -233,7 +265,7 @@ impl Core<'_> {
         item: u32,
         pattern: u32,
         (env, start): (u32, u32),
-        facts: Vec<Fact>,
+        (facts, reactive_args): (Vec<Fact>, Vec<bool>),
         (span, bound): (symphonyscript_core::Span, Vec<(u32, u32)>),
     ) -> Stage<Option<u32>> {
         let end = u32::try_from(self.env_vals.len()).unwrap_or(NONE);
@@ -242,7 +274,6 @@ impl Core<'_> {
             .get(env as usize)
             .map_or(NONE, |record| record.inst);
         let owner = self.patterns_start() + pattern;
-        let reactive_args = vec![false; facts.len()];
         let key = (owner, parent, facts.clone(), reactive_args.clone());
         let inst = match self.body_index.get(&key).copied() {
             Some(inst) => inst,
@@ -273,7 +304,7 @@ impl Core<'_> {
         Ok(Ok(Some(made)))
     }
 
-    fn argument(&mut self, root: u32) -> Stage<(Fact, CoreValue)> {
+    fn argument(&mut self, root: u32) -> Stage<(Fact, CoreValue, bool)> {
         for node in self.postorder(root)? {
             if matches!(self.ir.node(node)?.0, Op::Field | Op::To) {
                 return Ok(Err(Declined(Reason::PatternUse)));
@@ -286,17 +317,14 @@ impl Core<'_> {
             Ok(fact) => fact,
             Err(declined) => return Ok(Err(declined)),
         };
-        if fact.node
-            || self.is_reactive(root)?
-            || (fact.leaf == Leaf::Float && fact.fixed.is_none())
-        {
+        if fact.node || self.is_reactive(root)? {
             return Ok(Err(Declined(Reason::PatternUse)));
         }
         if fact.leaf == Leaf::Placeholder {
-            return Ok(Ok((Fact::PLACEHOLDER, CoreValue::Error)));
+            return Ok(Ok((Fact::PLACEHOLDER, CoreValue::Error, false)));
         }
         if fact.leaf == Leaf::Error {
-            return Ok(Ok((fact, CoreValue::Error)));
+            return Ok(Ok((fact, CoreValue::Error, false)));
         }
         let Some(own) = self.own_ty(root)? else {
             return Ok(Err(Declined(Reason::PatternUse)));
@@ -305,7 +333,10 @@ impl Core<'_> {
             Ok(value) => value,
             Err(declined) => return Ok(Err(declined)),
         };
-        if value.is_error() || (fact.fixed.is_none() && !self.integral_value(&value)) {
+        if value.is_error() {
+            return Ok(Ok((fact, value, false)));
+        }
+        if fact.fixed.is_none() && fact.leaf != Leaf::Float && !self.integral_value(&value) {
             return Ok(Err(Declined(Reason::PatternUse)));
         }
         if fact.fixed.is_none() && fact.leaf == Leaf::Int {
@@ -317,7 +348,7 @@ impl Core<'_> {
                 return Ok(Err(Declined(Reason::PatternUse)));
             }
         }
-        Ok(Ok((fact, value)))
+        Ok(Ok((fact, value, false)))
     }
 
     fn integral_value(&mut self, value: &CoreValue) -> bool {
@@ -435,6 +466,14 @@ impl Core<'_> {
 
 impl Core<'_> {
     pub fn names_in_pattern(&self, pattern: u32) -> Result<bool, Internal> {
+        Ok(self
+            .named_patterns
+            .get(pattern as usize)
+            .copied()
+            .unwrap_or(true))
+    }
+
+    fn pattern_items_declined(&self, pattern: u32) -> Result<bool, Internal> {
         let mut blocks = vec![self.pattern_parts(pattern)?.1];
         let mut items = Vec::new();
         while let Some(block) = blocks.pop() {
@@ -450,7 +489,7 @@ impl Core<'_> {
             while let Some(item) = items.pop() {
                 match *self.ir.item(item)? {
                     ItemRec::Placement(placement) => {
-                        if placement.has_as || self.ir.named(placement.as_name) {
+                        if placement.has_as && !self.ir.named(placement.as_name) {
                             return Ok(true);
                         }
                         blocks.push(placement.body);
@@ -659,7 +698,18 @@ impl Core<'_> {
             }
             Err(declined) => return Ok(Err(declined)),
         }
-        let (mut at, mut using, mut from, mut env) = (item, pattern, file, NONE);
+        self.stand_in_row(item, pattern, (file, NONE, NONE), true)
+    }
+
+    pub fn stand_in_row(
+        &mut self,
+        item: u32,
+        pattern: u32,
+        (file, parent, env): (u32, u32, u32),
+        reachable: bool,
+    ) -> Stage<u32> {
+        let placement = self.placement(item)?;
+        let (mut at, mut using, mut from, mut env) = (item, pattern, file, env);
         loop {
             let made = match self.use_env(at, using, (from, env), at == item)? {
                 Ok(Some(made)) => made,
@@ -682,10 +732,15 @@ impl Core<'_> {
                 (at, using, from, env) = (inner, next, inner_file, made);
                 continue;
             }
+            let name = if self.ir.named(placement.as_name) {
+                placement.as_name
+            } else {
+                NONE
+            };
             return self.named_row(
                 inner,
-                (inner_file, NONE, made),
-                (placement.as_name, file, true),
+                (inner_file, parent, made),
+                (name, file, reachable && name != NONE),
                 item,
             );
         }
@@ -719,5 +774,133 @@ impl Core<'_> {
             at = record.parent;
         }
         file
+    }
+}
+
+impl Core<'_> {
+    pub fn pattern_names(&mut self) -> Result<(), Internal> {
+        let mut read: std::collections::HashMap<u32, Vec<u32>> = std::collections::HashMap::new();
+        let start = self.patterns_start();
+        for local in 0..self.ir.op.len() {
+            if self.ir.op.get(local) != Some(&Op::Name) {
+                continue;
+            }
+            let owner = self.body_of.get(local).copied().unwrap_or(NONE);
+            let Some(pattern) = owner
+                .checked_sub(start)
+                .filter(|at| (*at as usize) < self.ir.patterns.len())
+            else {
+                continue;
+            };
+            if matches!(self.bind.get(local), Some(DeclRef::Param(_))) {
+                continue;
+            }
+            let name = *self.ir.a.get(local).ok_or(Internal::missed("IR name"))?;
+            if let Some(entry) = self.ir.name(name) {
+                read.entry(pattern).or_default().push(entry.sym.0);
+            }
+        }
+        for pattern in 0..u32::try_from(self.ir.patterns.len()).unwrap_or(0) {
+            CountedWalk::CorePatternGraph.step();
+            let declined = self.pattern_items_declined(pattern)?;
+            let reads = read.remove(&pattern).unwrap_or_default();
+            let names = self.pattern_clashes(pattern)?;
+            let named = declined || names.iter().any(|sym| reads.contains(sym));
+            if let Some(slot) = self.named_patterns.get_mut(pattern as usize) {
+                *slot = named;
+            }
+        }
+        Ok(())
+    }
+
+    fn pattern_clashes(&mut self, pattern: u32) -> Result<Vec<u32>, Internal> {
+        let (params, body) = self.pattern_parts(pattern)?;
+        let file = self.pattern_file(pattern);
+        let mut visible: Vec<(u32, symphonyscript_core::Span)> = Vec::new();
+        for binder in params.0..params.1 {
+            let rec = *self.ir.binder(binder)?;
+            if let Some(entry) = self.ir.name(rec.name).filter(|_| self.ir.named(rec.name)) {
+                visible.push((entry.sym.0, self.span(file, entry.lo, entry.hi)));
+            }
+        }
+        let params = visible.len();
+        let mut all = Vec::new();
+        let mut blocks = vec![(body, visible)];
+        while let Some((block, outer)) = blocks.pop() {
+            let Some(found) = self.ir.blocks.get(block as usize).copied() else {
+                continue;
+            };
+            let mut items: Vec<u32> = self
+                .ir
+                .block_items
+                .get(found.items.0 as usize..found.items.1 as usize)
+                .unwrap_or_default()
+                .to_vec();
+            let mut at = 0;
+            while let Some(item) = items.get(at).copied() {
+                at += 1;
+                if let ItemRec::Line(members) = *self.ir.item(item)? {
+                    items.extend(
+                        self.ir
+                            .members
+                            .get(members.0 as usize..members.1 as usize)
+                            .unwrap_or_default(),
+                    );
+                }
+            }
+            let mut here: Vec<(u32, symphonyscript_core::Span)> = Vec::new();
+            let mut bodies = Vec::new();
+            for item in items {
+                let ItemRec::Placement(placement) = *self.ir.item(item)? else {
+                    continue;
+                };
+                bodies.push(placement.body);
+                if !self.ir.named(placement.as_name) {
+                    continue;
+                }
+                let entry = *self
+                    .ir
+                    .name(placement.as_name)
+                    .ok_or(Internal::missed("IR name"))?;
+                let span = self.span(file, entry.lo, entry.hi);
+                let text = self.ir.symbols.text(entry.sym).to_string();
+                all.push(entry.sym.0);
+                let param = outer
+                    .iter()
+                    .take(params)
+                    .find(|(sym, _)| *sym == entry.sym.0)
+                    .map(|(_, span)| span.clone());
+                let other = here
+                    .iter()
+                    .chain(outer.iter().skip(params).rev())
+                    .find(|(sym, _)| *sym == entry.sym.0)
+                    .map(|(_, span)| span.clone());
+                if let Some(repeated) = param {
+                    self.draw_related(
+                        Code::ChildNameClash,
+                        span.clone(),
+                        vec![(repeated, "the name it repeats".to_string())],
+                        format!("`{text}` names a pattern parameter, a pattern `let` or a `for` variable visible here"),
+                    );
+                } else if let Some(earlier) = other {
+                    self.draw_related(
+                        Code::ChildNameClash,
+                        span.clone(),
+                        vec![(earlier, "the other name".to_string())],
+                        format!("`{text}` names another child or wire of this body or of an enclosing one"),
+                    );
+                }
+                here.push((entry.sym.0, span));
+            }
+            for inner in bodies {
+                if inner == NONE || inner == ABSENT {
+                    continue;
+                }
+                let mut seen = outer.clone();
+                seen.extend(here.iter().cloned());
+                blocks.push((inner, seen));
+            }
+        }
+        Ok(all)
     }
 }

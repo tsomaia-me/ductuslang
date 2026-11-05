@@ -256,6 +256,24 @@ impl Core<'_> {
                             self.unknown_use(parent);
                             continue;
                         }
+                        if placement.has_as || self.ir.named(placement.as_name) {
+                            let Ok(Some(_)) = self.stand_in(pattern)? else {
+                                return Ok(Err(Declined(Reason::PatternUse)));
+                            };
+                            let row = match self.stand_in_row(
+                                item,
+                                pattern,
+                                (file, parent, env),
+                                env == NONE,
+                            )? {
+                                Ok(row) => row,
+                                Err(declined) => return Ok(Err(declined)),
+                            };
+                            if row != NONE {
+                                pending.push(row);
+                            }
+                            continue;
+                        }
                         match self.use_env(item, pattern, (file, env), false)? {
                             Ok(Some(made)) => {
                                 let body = self.pattern_parts(pattern)?.1;
