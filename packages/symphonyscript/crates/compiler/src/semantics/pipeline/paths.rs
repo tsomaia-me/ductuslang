@@ -1029,7 +1029,7 @@ impl Core<'_> {
         start: u32,
         several: bool,
     ) -> Stage<Result<(u32, usize, EvalTy), End>> {
-        let mut target = start;
+        let mut target = End::Row(start);
         let text = segments
             .iter()
             .map(|segment| self.ir.name_text(*segment).unwrap_or_default())
@@ -1046,14 +1046,24 @@ impl Core<'_> {
         };
         for step in steps {
             let entry = *self.ir.name(*step).ok_or(Internal::missed("IR name"))?;
-            if let Some(child) = self.child_named(target, entry.sym.0) {
-                target = child;
-                continue;
+            match self.to_step(target, entry.sym)? {
+                Some(next @ (End::Row(_) | End::Use(_))) => {
+                    target = next;
+                    continue;
+                }
+                Some(_) => return Ok(Ok(Err(End::Placeholder))),
+                None => {}
             }
-            if self.may_name_any(target)? {
-                return Ok(Ok(Err(End::Placeholder)));
-            }
-            let owner = self.row_owner(target)?;
+            let owner = match target {
+                End::Row(row) if self.may_name_any(row)? => {
+                    return Ok(Ok(Err(End::Placeholder)));
+                }
+                End::Row(row) => self.row_owner(row)?,
+                End::Use(env) => format!("the use of `{}`", self.use_pattern_name(env)?),
+                End::To | End::Attr(_) | End::Placeholder | End::Value => {
+                    return Err(Internal::missed("a `to` path's step"));
+                }
+            };
             let span = self.span(file, entry.lo, entry.hi);
             let name = self.ir.symbols.text(entry.sym).to_string();
             self.draw(
@@ -1067,7 +1077,7 @@ impl Core<'_> {
         }
         let entry = *self.ir.name(*last).ok_or(Internal::missed("IR name"))?;
         let span = self.span(file, entry.lo, entry.hi);
-        if self.child_named(target, entry.sym.0).is_some() {
+        if self.to_step(target, entry.sym)?.is_some() {
             self.draw(
                 Code::MisplacedTo,
                 span,
@@ -1077,6 +1087,22 @@ impl Core<'_> {
             );
             return Ok(Ok(Err(End::Value)));
         }
+        let target = match target {
+            End::Row(row) => row,
+            End::Use(env) => {
+                let owner = self.use_pattern_name(env)?;
+                let name = self.ir.symbols.text(entry.sym).to_string();
+                self.draw(
+                    missing,
+                    span,
+                    format!("the destination, the use of `{owner}`, has no attribute `{name}`"),
+                );
+                return Ok(Ok(Err(End::Value)));
+            }
+            End::To | End::Attr(_) | End::Placeholder | End::Value => {
+                return Err(Internal::missed("a `to` path's end"));
+            }
+        };
         let kind = self
             .instances
             .get(target as usize)
@@ -1109,6 +1135,29 @@ impl Core<'_> {
             return Ok(Err(Declined(super::check::attribute_reason(declared))));
         };
         Ok(Ok(Ok((target, attr, ty))))
+    }
+
+    fn to_step(
+        &self,
+        target: End,
+        sym: crate::semantics::ir::flat::Sym,
+    ) -> Result<Option<End>, Internal> {
+        match target {
+            End::Row(row) => {
+                if let Some(child) = self.child_named(row, sym.0) {
+                    return Ok(Some(End::Row(child)));
+                }
+                if let Some(child) = self.use_child_named(row, sym)? {
+                    return Ok(Some(End::Row(child)));
+                }
+                Ok(self.use_named(row, sym.0).map(End::Use))
+            }
+            End::Use(env) => {
+                CountedWalk::CorePathStep.step();
+                self.use_item_named(env, sym)
+            }
+            End::To | End::Attr(_) | End::Placeholder | End::Value => Ok(None),
+        }
     }
 }
 
@@ -1412,19 +1461,34 @@ impl Core<'_> {
             .map(|entry| entry.2)
     }
 
-    fn step_use(&mut self, node: u32, env: u32, field: u32) -> Stage<End> {
-        CountedWalk::CorePathStep.step();
-        let entry = *self.ir.name(field).ok_or(Internal::missed("IR name"))?;
+    fn use_pattern(&self, env: u32) -> Result<u32, Internal> {
         let record = *self
             .envs
             .get(env as usize)
             .ok_or(Internal::missed("use env"))?;
-        let pattern = self
-            .bodies
+        self.bodies
             .get(record.inst as usize)
             .and_then(|body| self.pattern_at(body.function))
-            .ok_or(Internal::missed("a use's pattern"))?;
-        let body = self.pattern_parts(pattern)?.1;
+            .ok_or(Internal::missed("a use's pattern"))
+    }
+
+    fn use_pattern_name(&self, env: u32) -> Result<String, Internal> {
+        let pattern = self.use_pattern(env)?;
+        let name = self
+            .ir
+            .patterns
+            .get(pattern as usize)
+            .ok_or(Internal::missed("IR pattern"))?
+            .name;
+        Ok(self.ir.name_text(name).unwrap_or_default().to_string())
+    }
+
+    fn use_item_named(
+        &self,
+        env: u32,
+        sym: crate::semantics::ir::flat::Sym,
+    ) -> Result<Option<End>, Internal> {
+        let body = self.pattern_parts(self.use_pattern(env)?)?.1;
         let block = *self
             .ir
             .blocks
@@ -1443,17 +1507,17 @@ impl Core<'_> {
                         || self
                             .ir
                             .name(child.as_name)
-                            .is_none_or(|name| name.sym != entry.sym)
+                            .is_none_or(|name| name.sym != sym)
                     {
                         continue;
                     }
                     if let Some(row) = self.env_rows.get(&(item, env)) {
-                        return Ok(Ok(End::Row(*row)));
+                        return Ok(Some(End::Row(*row)));
                     }
                     if let Some(inner) = self.use_names.get(&(item, env)) {
-                        return Ok(Ok(End::Use(*inner)));
+                        return Ok(Some(End::Use(*inner)));
                     }
-                    return Ok(Ok(End::Placeholder));
+                    return Ok(Some(End::Placeholder));
                 }
                 ItemRec::Line(members) => items.extend(
                     self.ir
@@ -1468,13 +1532,16 @@ impl Core<'_> {
                 | ItemRec::Paren(_) => {}
             }
         }
-        let name = self
-            .ir
-            .patterns
-            .get(pattern as usize)
-            .ok_or(Internal::missed("IR pattern"))?
-            .name;
-        let owner = self.ir.name_text(name).unwrap_or_default().to_string();
+        Ok(None)
+    }
+
+    fn step_use(&mut self, node: u32, env: u32, field: u32) -> Stage<End> {
+        CountedWalk::CorePathStep.step();
+        let entry = *self.ir.name(field).ok_or(Internal::missed("IR name"))?;
+        if let Some(end) = self.use_item_named(env, entry.sym)? {
+            return Ok(Ok(end));
+        }
+        let owner = self.use_pattern_name(env)?;
         let text = self.ir.symbols.text(entry.sym).to_string();
         let span = self.span(self.file_of(node), entry.lo, entry.hi);
         self.draw(
