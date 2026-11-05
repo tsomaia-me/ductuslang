@@ -54,6 +54,7 @@ pub(crate) struct Core<'a> {
     pub unchecked: bool,
     pub fitting: bool,
     pub unflowed: HashSet<u32>,
+    pub unused_reads: HashSet<(u32, u32)>,
     pub driving: bool,
     pub need: Option<Need>,
 
@@ -197,6 +198,7 @@ impl<'a> Core<'a> {
             unchecked: false,
             fitting: false,
             unflowed: HashSet::new(),
+            unused_reads: HashSet::new(),
             driving: false,
             need: None,
 
@@ -402,6 +404,20 @@ impl<'a> Core<'a> {
     ) -> Result<(), Internal> {
         let span = self.node_span(node)?;
         self.draw(code, span, summary);
+        Ok(())
+    }
+
+    pub fn draw_helped_at(
+        &mut self,
+        code: Code,
+        node: u32,
+        summary: impl Into<String>,
+        help: impl Into<String>,
+    ) -> Result<(), Internal> {
+        let span = self.node_span(node)?;
+        let diagnostic = Diagnostic::new(code, span, summary).with_help(help);
+        let diagnostic = self.chained(diagnostic);
+        self.push_drawn(diagnostic);
         Ok(())
     }
 

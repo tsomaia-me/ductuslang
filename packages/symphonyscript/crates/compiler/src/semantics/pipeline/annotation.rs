@@ -2,6 +2,7 @@ use super::core::{Core, Stage};
 use super::core_value::CoreValue;
 use super::declined::Declined;
 use super::fact::Fact;
+use super::folds::ANY_LENGTH;
 use super::leaf::Leaf;
 use super::reason::Reason;
 use super::values::evaluated_in;
@@ -60,6 +61,9 @@ impl Core<'_> {
             Ok(fact) => fact,
             Err(declined) => return Ok(Err(declined)),
         };
+        if let Some(capacity) = self.cell_capacity_annotation(at)? {
+            return self.check_variable_init(root, &fact, (ty, capacity));
+        }
         if fact.dims.is_empty() || matches!(fact.leaf, Leaf::Placeholder | Leaf::Error) {
             let name = self.ir.binder(self.cell_binder(at)?)?.name;
             let entry = self.ir.name(name).ok_or(Internal::missed("IR name"))?;
@@ -73,6 +77,57 @@ impl Core<'_> {
         };
         self.draw_at(Code::TypeMismatch, root, summary)?;
         self.own_check(root)
+    }
+
+    fn check_variable_init(
+        &mut self,
+        root: u32,
+        fact: &Fact,
+        (ty, capacity): (EvalTy, u32),
+    ) -> Stage<()> {
+        if matches!(fact.leaf, Leaf::Placeholder | Leaf::Error) {
+            return self.own_check(root);
+        }
+        let Some((length, inner)) = fact.dims.split_first() else {
+            self.draw_at(
+                Code::TypeMismatch,
+                root,
+                "a variable-array cell's init is an array",
+            )?;
+            return self.own_check(root);
+        };
+        if !inner.is_empty() && *length > 0 {
+            self.draw_at(
+                Code::TypeMismatch,
+                root,
+                "the init's rows differ from the cell's type",
+            )?;
+            return self.own_check(root);
+        }
+        if *length > capacity {
+            let help = if capacity == 1 {
+                String::from("slice the value to its newest element with `[^1..]`")
+            } else {
+                format!("slice the value to its newest {capacity} elements with `[^{capacity}..]`")
+            };
+            let summary = format!(
+                "the initializer holds {length} elements, more than the capacity {capacity}"
+            );
+            self.draw_helped_at(Code::CapacityExceeded, root, summary, help)?;
+            return self.own_check(root);
+        }
+        let element = Fact {
+            dims: Vec::new(),
+            ..fact.clone()
+        };
+        match refusal(&element, ty) {
+            Refusal::Type => {
+                self.draw_refused_leaves(root, ty)?;
+                self.own_check(root)
+            }
+            Refusal::Silent | Refusal::Shape => self.own_check(root),
+            Refusal::Kept => self.evaluate(root, ty).map(|found| found.map(|_| ())),
+        }
     }
 
     fn cell_binder(&self, at: u32) -> Result<u32, Internal> {
@@ -89,7 +144,7 @@ impl Core<'_> {
             return Ok(None);
         }
         let (mut op, mut code, _, _) = self.ir.node(node)?;
-        while op == Op::TyArray {
+        while matches!(op, Op::TyArray | Op::TyVar) {
             (op, code, _, _) = self.ir.node(code)?;
         }
         if op != Op::TyScalar {
@@ -107,13 +162,114 @@ impl Core<'_> {
         let mut node = self.ir.binder(binder)?.annotation;
         while node != NONE {
             let (op, inner, length, _) = self.ir.node(node)?;
-            if op != Op::TyArray {
-                break;
+            match op {
+                Op::TyArray => dims.push(length),
+                Op::TyVar => dims.push(ANY_LENGTH),
+                Op::Int
+                | Op::Float
+                | Op::Bool
+                | Op::Str
+                | Op::Variant
+                | Op::Name
+                | Op::To
+                | Op::Field
+                | Op::Call
+                | Op::NamedCall
+                | Op::MethodCall
+                | Op::NamedMethodCall
+                | Op::Past
+                | Op::Stepped
+                | Op::If
+                | Op::Match
+                | Op::For
+                | Op::Array
+                | Op::Index
+                | Op::IndexFromEnd
+                | Op::Slice
+                | Op::Neg
+                | Op::Not
+                | Op::Add
+                | Op::Sub
+                | Op::Mul
+                | Op::Div
+                | Op::IntDiv
+                | Op::Rem
+                | Op::Pow
+                | Op::And
+                | Op::Or
+                | Op::Lt
+                | Op::Le
+                | Op::Gt
+                | Op::Ge
+                | Op::Is
+                | Op::IsNot
+                | Op::Convert
+                | Op::TyScalar
+                | Op::TyName
+                | Op::Bad => break,
             }
-            dims.push(length);
             node = inner;
         }
         Ok(dims)
+    }
+
+    pub fn cell_capacity_annotation(&self, at: u32) -> Result<Option<u32>, Internal> {
+        let binder = self.cell_binder(at)?;
+        let node = self.ir.binder(binder)?.annotation;
+        if node == NONE {
+            return Ok(None);
+        }
+        Ok(match self.ir.node(node)? {
+            (Op::TyVar, _, capacity, _) => Some(capacity),
+            (
+                Op::Int
+                | Op::Float
+                | Op::Bool
+                | Op::Str
+                | Op::Variant
+                | Op::Name
+                | Op::To
+                | Op::Field
+                | Op::Call
+                | Op::NamedCall
+                | Op::MethodCall
+                | Op::NamedMethodCall
+                | Op::Past
+                | Op::Stepped
+                | Op::If
+                | Op::Match
+                | Op::For
+                | Op::Array
+                | Op::Index
+                | Op::IndexFromEnd
+                | Op::Slice
+                | Op::Neg
+                | Op::Not
+                | Op::Add
+                | Op::Sub
+                | Op::Mul
+                | Op::Div
+                | Op::IntDiv
+                | Op::Rem
+                | Op::Pow
+                | Op::And
+                | Op::Or
+                | Op::Lt
+                | Op::Le
+                | Op::Gt
+                | Op::Ge
+                | Op::Is
+                | Op::IsNot
+                | Op::Convert
+                | Op::TyScalar
+                | Op::TyName
+                | Op::TyArray
+                | Op::Bad,
+                _,
+                _,
+                _,
+            ) => None,
+        })
     }
 
     pub fn annotation_dims(&self, at: u32) -> Result<Vec<u32>, Internal> {
@@ -171,6 +327,25 @@ impl Core<'_> {
             ) == Refusal::Type
             {
                 self.draw_at(Code::TypeMismatch, node, TYPE)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn draw_refused_leaves(&mut self, root: u32, ty: EvalTy) -> Result<(), Internal> {
+        let mut stack = vec![root];
+        while let Some(node) = stack.pop() {
+            let fact = self.fact(node)?;
+            if self.ir.node(node)?.0 == Op::Array && !fact.dims.is_empty() {
+                stack.extend(self.operands(node)?.into_iter().rev());
+                continue;
+            }
+            let leaf = Fact {
+                dims: Vec::new(),
+                ..fact
+            };
+            if let Some((code, summary)) = self.leaf_refusal(node, &leaf, ty)? {
+                self.draw_at(code, node, summary)?;
             }
         }
         Ok(())

@@ -783,13 +783,13 @@ fn a_for_expression_reading_a_cell_is_one_cell_its_body_typed_with_its_slots_and
             (crate::diagnostics::Code::TypeMismatch, 15, 17),
         ],
     )]);
-    let new = Compiler::new(&vocabulary).expect("the vocabulary compiles");
-    for text in [
-        "state n(3)\nstate t = for i in 0..n into s from 0: s + i\n",
-        "state r([1, 2])\nstate t = for x in r into s from []: s + [x]\n",
-    ] {
-        assert!(new.checked_by_new_core(&[source(text)]).is_none(), "{text}");
-    }
+    assert_engines_agree(
+        &vocabulary,
+        &[
+            "state n(3)\nstate t = for i in 0..n into s from 0: s + i\n",
+            "state r([1, 2])\nstate t = for x in r into s from []: s + [x]\n",
+        ],
+    );
 }
 
 const ANNOTATED_FOLDS: [(&str, &str, &str); 8] = [

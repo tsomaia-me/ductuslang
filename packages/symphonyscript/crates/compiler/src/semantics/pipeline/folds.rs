@@ -216,7 +216,8 @@ impl Core<'_> {
                     self.draw_at(Code::RangeBound, bound, "a range bound is an integer")?;
                     return Ok(None);
                 }
-                if let Ok(Value::Int(value)) = self.evaluate(bound, EvalTy::Exact)?
+                if !self.is_reactive(bound)?
+                    && let Ok(Value::Int(value)) = self.evaluate(bound, EvalTy::Exact)?
                     && i64::try_from(value).is_err()
                 {
                     self.draw_at(
@@ -397,18 +398,44 @@ impl Core<'_> {
         self.pending(Need::Body(at))
     }
 
+    fn reads_accumulator(&self, root: u32, owner: u32, position: u32) -> Result<bool, Internal> {
+        for node in self.postorder(root)? {
+            if self.ir.node(node)?.0 == Op::Name
+                && self.bound(node)? == DeclRef::Param(position)
+                && self.binding_owner(node)? == owner
+            {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
+    fn doubles_accumulator(&self, rec: &ForRec, owner: u32) -> Result<bool, Internal> {
+        let position = rec.names.1 - rec.names.0;
+        for node in self.postorder(rec.body)? {
+            let (op, a, b, _) = self.ir.node(node)?;
+            if op == Op::Add
+                && self.reads_accumulator(a, owner, position)?
+                && self.reads_accumulator(b, owner, position)?
+            {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
     pub fn for_fact(&mut self, node: u32) -> Stage<Fact> {
         let (_, record, _, _) = self.ir.node(node)?;
         let rec = self.fold_rec(node)?;
         let iterable =
             self.is_reactive(rec.iterable.0)? || (rec.range && self.is_reactive(rec.iterable.1)?);
-        if iterable && rec.range {
-            return Ok(Err(Declined(Reason::ReactiveFor)));
-        }
         let reactive = (iterable, iterable || self.is_reactive(rec.start)?);
         let Some(items) = self.fold_head(node, &rec)? else {
             return Ok(Ok(Fact::PLACEHOLDER));
         };
+        if iterable && rec.range {
+            self.reactive_range_bounds(&rec)?;
+        }
         if let Some(ty) = self.accumulator_ty(&rec)? {
             return self.annotated_fold(node, &rec, items, (ty, reactive));
         }
@@ -436,8 +463,8 @@ impl Core<'_> {
                 continue;
             }
             if reactive.1
-                && (!start.dims.is_empty()
-                    || !found.as_ref().is_ok_and(|found| found.dims.is_empty()))
+                && found.as_ref().is_ok_and(|found| !found.dims.is_empty())
+                && self.doubles_accumulator(&rec, owner)?
             {
                 return Ok(Err(Declined(Reason::ReactiveFor)));
             }

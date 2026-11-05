@@ -61,7 +61,18 @@ fn literal_landed(ir: &FlatIr, suffix: u32) -> bool {
 }
 
 pub(crate) fn covers(ir: &FlatIr) -> bool {
+    let variable: Vec<usize> = ir
+        .cells
+        .iter()
+        .filter(|rec| rec.rule == NONE && variable_annotation(ir, rec.binder))
+        .filter_map(|rec| ir.binders.get(rec.binder as usize))
+        .filter_map(|binder| binder.annotation.checked_sub(ir.base))
+        .map(|local| local as usize)
+        .collect();
     for (local, op) in ir.op.iter().enumerate() {
+        if *op == Op::TyVar && variable.contains(&local) {
+            continue;
+        }
         if !landed(op_slice(*op)) {
             return false;
         }
@@ -366,7 +377,15 @@ fn plain_cell(ir: &FlatIr, rec: &CellRec) -> bool {
     (host_fed || derived)
         && rec.clock.0 == rec.clock.1
         && rec.capacity.is_none()
-        && scalar_annotation(ir, rec.binder)
+        && (scalar_annotation(ir, rec.binder) || host_fed && variable_annotation(ir, rec.binder))
+}
+
+fn variable_annotation(ir: &FlatIr, binder: u32) -> bool {
+    let Some(rec) = ir.binders.get(binder as usize) else {
+        return false;
+    };
+    matches!(ir.node(rec.annotation), Ok((Op::TyVar, inner, capacity, 1))
+        if (1..1 << 31).contains(&capacity) && scalar_node(ir, inner))
 }
 
 fn plain_function(ir: &FlatIr, rec: &FnRec) -> bool {

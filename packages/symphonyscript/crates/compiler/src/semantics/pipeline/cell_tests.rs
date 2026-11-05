@@ -103,3 +103,158 @@ fn a_derived_cell_reading_a_reactive_let_draws_what_its_repaired_twin_draws_besi
         assert_eq!(found, codes, "{text}");
     }
 }
+
+const VARIABLE_CELLS: [&str; 16] = [
+    "state held([]): i32[..10]\nClip c:\n    Note/(held[0])\n",
+    "state held([1, 2]): i32[..1]\nClip c:\n    Note/(held[0])\n",
+    "state held(3): i32[..4]\nClip c:\n    Note/(held[0])\n",
+    "state held([[1]]): i32[..4]\nClip c:\n    Note/(held[0])\n",
+    "state hh([300]): u8[..2]\nClip c:\n    Note/(hh[0])\n",
+    "state hh([1, 300, 2.5]): u8[..2]\nClip c:\n    Note/(hh[0])\n",
+    "state hh([1, true]): i32[..2]\nClip c:\n    Note/(hh[0])\n",
+    "state hh([1]): i32[..1]\nstate v = hh + [2]\nClip c:\n    Note/(v[0])\n",
+    "state hh([1]): f32[..2]\nClip c:\n    Note/(hh[0])\n",
+    "state hh([1]): i32[..2]\nClip c:\n    Note/(hh)\n",
+    "state hh([1]): i32[..2]\nClip c:\n    Note/(hh + 1)\n",
+    "state hh([1, 2]): i32[..2]\nstate t = hh[0] + hh[1]\nClip c | gain=t:\n    Note/(hh[^1])\n",
+    "state hh([]): i32[..2]\nClip c | gain=hh[0]:\n    Note/(hh[^1])\n",
+    "state hh([1]): i32[..2]\nstate s = for x in hh into a from 0: a + x\nClip c:\n    Note/(s)\n",
+    "stream hh([1]): i32[..2]\nClip c:\n    Note/(hh[0])\n",
+    "state hh([1 + true]): i32[..2]\nClip c:\n    Note/(hh[0])\n",
+];
+
+const REACTIVE_FOLDS: [&str; 10] = [
+    "state n(3)\nClip c:\n    Note/(for i in 0..n into a from 0: a + i)\n",
+    "state n(3)\nClip c:\n    Note/(for i in n..4 into a from 0: a + i)\n",
+    "state n(3)\nClip c:\n    Note/(for i in 0..(n - 1) into a from 0: a + i)\n",
+    "state n(3)\nClip c:\n    Note/(for i in 0..4 into a from n: a + i)\n",
+    "state hh([1, 2]): i32[..4]\nstate v = for x in hh into a from []: a + [x]\nClip c:\n    Note/(v[0])\n",
+    "state hh([1, 2]): i32[..4]\nstate v = for x in hh into a from []: if x > 1 then a + [x] else a\nClip c:\n    Note/(v[^1])\n",
+    "state hh([1, 2]): i32[..4]\nstate v = for x in hh into a from [0]: a + [x, x]\nClip c:\n    Note/(v[0])\n",
+    "state s(1)\nClip c:\n    Note/((for i in 0..3 into a from []: a + [s])[0])\n",
+    "state hh([1, 2]): i32[..4]\nstate v = for x in hh into a from []: (a + [x])[^2..]\nClip c | gain=v[0]:\n    Note/(v[1])\n",
+    "state s(1)\nstate v = [[s]] + [s]\nClip c:\n    Note/(v[0])\n",
+];
+
+#[test]
+fn a_host_fed_variable_array_cell_and_a_reactive_fold_over_it_or_a_cell_bounded_range_draw_as_the_old_engine_does()
+ {
+    let vocabulary = symphonyscript_fixtures::vocabulary();
+    let old = Compiler::new(&vocabulary)
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
+    let new = Compiler::new(&vocabulary).expect("the vocabulary compiles");
+    for text in VARIABLE_CELLS.iter().chain(REACTIVE_FOLDS.iter()) {
+        let sources = [source(text)];
+        let found = new
+            .checked_by_new_core(&sources)
+            .unwrap_or_else(|| panic!("the new core takes {text}"));
+        assert_eq!(found, old.check(&sources), "{text}");
+    }
+    let cases: [(&str, &[Code]); 8] = [
+        (VARIABLE_CELLS[0], &[]),
+        (VARIABLE_CELLS[1], &[Code::CapacityExceeded]),
+        (VARIABLE_CELLS[2], &[Code::TypeMismatch]),
+        (VARIABLE_CELLS[4], &[Code::DoesNotFit]),
+        (
+            "state held([1.5]): i32[..4]\nClip c:\n    Note/(held[0])\n",
+            &[Code::TypeMismatch],
+        ),
+        (REACTIVE_FOLDS[0], &[Code::RangeBound]),
+        (
+            "state n(3)\nClip c:\n    Note/(for i in 0..4 into a from n: a + i)\n",
+            &[],
+        ),
+        (REACTIVE_FOLDS[4], &[]),
+    ];
+    for (text, codes) in cases {
+        let found = new
+            .checked_by_new_core(&[source(text)])
+            .unwrap_or_else(|| panic!("the new core takes {text}"));
+        let found: Vec<Code> = found
+            .iter()
+            .map(|diagnostic| diagnostic.code)
+            .filter(|code| *code != Code::NoEntryInstance)
+            .collect();
+        assert_eq!(found, codes, "{text}");
+    }
+    let doubling = "state hh([1, 2]): i32[..40]\nstate v = for x in hh into a from [0]: a + a\nClip c:\n    Note/(v[0])\n";
+    assert!(
+        new.checked_by_new_core(&[source(doubling)]).is_none(),
+        "{doubling}"
+    );
+}
+
+const BODY_USES: [(&str, &[Code]); 12] = [
+    (
+        "state v0([]): i32[..4]\nstate v1([]): f64[..4]\nfn pass(v): v\nClip c:\n    Note/((pass(if true then v0 else v1))[0])\n",
+        &[Code::IntegerCell, Code::FloatToInteger],
+    ),
+    (
+        "state v0([]): i32[..4]\nstate v1([]): f64[..4]\nfn h(z):\n    let x = if true then v0 else v1\n    x\nClip c:\n    Note/((h(0))[0])\n",
+        &[Code::IntegerCell, Code::FloatToInteger],
+    ),
+    (
+        "state v0([]): i32[..4]\nstate v1([]): f64[..4]\nstate flag(true)\nfn h(z):\n    let x = if flag then v0 else v1\n    x\nClip c:\n    Note/((h(0))[0])\n",
+        &[Code::IntegerCell, Code::FloatToInteger],
+    ),
+    (
+        "state v0([]): i32[..4]\nstate v1([]): f64[..4]\nClip c:\n    Note/((if true then v0 else v1)[0])\n",
+        &[Code::TypeMismatch],
+    ),
+    (
+        "state v0(1)\nstate v1(1.5)\nstate flag(true)\nfn h(z):\n    let x = if flag then v0 else v1\n    x\nClip c:\n    Note/(h(0))\n",
+        &[Code::IntegerCell, Code::FloatToInteger],
+    ),
+    (
+        "state v0(1)\nstate v1(1.5)\nstate flag(true)\nfn pass(v): v\nClip c:\n    Note/(pass(if flag then v0 else v1))\n",
+        &[Code::IntegerCell, Code::FloatToInteger],
+    ),
+    (
+        "state v0(1)\nfn h(z):\n    let x = v0 * 1.5\n    x\nClip c:\n    Note/(h(0) + true)\n",
+        &[Code::IntegerCell, Code::OperandType],
+    ),
+    (
+        "state v0(1)\nstate v1(1.5)\nstate flag(true)\nfn h(z):\n    let x = if flag then v0 + 300000000000 else v1\n    x\nClip c:\n    Note/(h(0))\n",
+        &[Code::IntegerCell, Code::DoesNotFit, Code::FloatToInteger],
+    ),
+    (
+        "state v0(1)\nstate v1(1.5)\nstate flag(true)\nfn h(z): if flag then v0 else v1\nClip c:\n    Note/(h(0))\n",
+        &[Code::TypeMismatch],
+    ),
+    (
+        "state v0(1)\nstate v1(1.5)\nstate flag(true)\nClip c:\n    Note/(if flag then v0 else v1)\n",
+        &[Code::TypeMismatch],
+    ),
+    (
+        "state v0(1)\nfn h(v): v * 1.5\nClip c | gain=v0:\n    Note/(h(v0))\n",
+        &[Code::TypeMismatch],
+    ),
+    (
+        "state v0(1)\nstate v1(1.5)\nstate flag(true)\nfn h(z):\n    let x = if flag then v0 else v1\n    x\nClip c | gain=h(0):\n    Note/(1)\n",
+        &[Code::IntegerCell],
+    ),
+];
+
+#[test]
+fn a_local_let_or_an_argument_a_refused_call_reads_reads_its_cells_in_its_own_type_so_a_float_use_there_counts_for_integer_cell()
+ {
+    let vocabulary = symphonyscript_fixtures::vocabulary();
+    let old = Compiler::new(&vocabulary)
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
+    let new = Compiler::new(&vocabulary).expect("the vocabulary compiles");
+    for (text, codes) in BODY_USES {
+        let sources = [source(text)];
+        let found = new
+            .checked_by_new_core(&sources)
+            .unwrap_or_else(|| panic!("the new core takes {text}"));
+        assert_eq!(found, old.check(&sources), "{text}");
+        let found: Vec<Code> = found
+            .iter()
+            .map(|diagnostic| diagnostic.code)
+            .filter(|code| *code != Code::NoEntryInstance)
+            .collect();
+        assert_eq!(found, codes, "{text}");
+    }
+}

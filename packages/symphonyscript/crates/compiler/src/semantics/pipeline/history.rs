@@ -1,6 +1,7 @@
 use super::core::{Core, Stage};
 use super::decl_ref::DeclRef;
 use super::fact::Fact;
+use super::folds::ANY_LENGTH;
 use super::leaf::Leaf;
 use crate::diagnostics::{Code, Diagnostic};
 use crate::semantics::Internal;
@@ -109,7 +110,7 @@ impl Core<'_> {
         if matches!(fact.leaf, Leaf::Placeholder | Leaf::Error) {
             return Ok(Ok(fact));
         }
-        if held.dims != fact.dims {
+        if !fallback_fits(&held, &fact) {
             self.draw_at(Code::TypeMismatch, fallback, FALLBACK_SHAPE)?;
             if let Err(declined) = self.own_check(fallback)? {
                 return Ok(Err(declined));
@@ -247,4 +248,16 @@ impl Core<'_> {
         let loops = self.functions() + u32::try_from(self.ir.fors.len()).unwrap_or(0);
         Ok(owner >= loops && owner < self.patterns_start())
     }
+}
+
+fn fallback_fits(held: &Fact, cell: &Fact) -> bool {
+    if held.leaf == Leaf::Empty && held.dims == [0] && !cell.dims.is_empty() {
+        return true;
+    }
+    held.dims.len() == cell.dims.len()
+        && held
+            .dims
+            .iter()
+            .zip(&cell.dims)
+            .all(|(held, cell)| held == cell || *cell == ANY_LENGTH)
 }

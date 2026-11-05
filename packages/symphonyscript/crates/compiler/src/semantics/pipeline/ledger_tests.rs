@@ -880,6 +880,15 @@ fn fold_nest(iterable: &str, start: &str, wrapped: bool) -> impl Fn(usize) -> St
     }
 }
 
+fn annotated_fold_nest(
+    iterable: &'static str,
+    start: &'static str,
+    wrapped: bool,
+) -> impl Fn(usize) -> String {
+    let nest = fold_nest(iterable, start, wrapped);
+    move |n| nest(n).replacen("state hh([1])\n", "state hh([1]): i32[..1]\n", 1)
+}
+
 const SPEC_FOLD_TWINS: [&str; 6] = [
     "state readings([1, 2])\nstate total = 1 + (for i, x in readings into sum from 0: sum + i * x)\n",
     "state readings([1, 2])\nstate high = for x in readings into kept from 0: if x > 60 then kept + x else kept\n",
@@ -916,6 +925,13 @@ fn nested_folds_reading_a_cell_draw_nothing_beside_spec_examples_446() {
             name,
             [100, 200, 400],
             fold_nest(iterable, start, wrapped),
+            &none,
+            Timing::Printed,
+        ));
+        assert_none(&ledger_failures(
+            &format!("{name}, annotated"),
+            [100, 200, 400],
+            annotated_fold_nest(iterable, start, wrapped),
             &none,
             Timing::Printed,
         ));
@@ -1050,6 +1066,48 @@ fn stress_a_ring_and_a_chain_of_cells_reading_one_anothers_history_settle_in_tim
         "cell groups",
         [1_000, 2_000, 4_000],
         ring_and_chain_of_history_reads,
+        &none,
+        Timing::Judged,
+    ));
+}
+
+#[test]
+#[ignore = "stress"]
+fn stress_nested_folds_over_an_annotated_variable_array_cell_cost_walks_and_peak_bytes_linear_in_their_depth_446()
+ {
+    let (_, iterable, start, wrapped) = FOLD_NESTS[0];
+    assert_none(&ledger_failures(
+        "446 plain nest over i32[..1]",
+        [2_500, 5_000, 10_000],
+        annotated_fold_nest(iterable, start, wrapped),
+        &none,
+        Timing::Judged,
+    ));
+}
+
+#[test]
+#[ignore = "stress"]
+fn stress_nested_folds_with_wrapped_bodies_over_an_annotated_variable_array_cell_cost_walks_and_peak_bytes_linear_in_their_depth_446()
+ {
+    let (_, iterable, start, wrapped) = FOLD_NESTS[1];
+    assert_none(&ledger_failures(
+        "446 wrapped body over i32[..1]",
+        [2_500, 5_000, 10_000],
+        annotated_fold_nest(iterable, start, wrapped),
+        &none,
+        Timing::Judged,
+    ));
+}
+
+#[test]
+#[ignore = "stress"]
+fn stress_nested_folds_over_a_compile_time_iterable_with_a_start_reading_an_annotated_variable_array_cell_cost_walks_and_peak_bytes_linear_in_their_depth_446()
+ {
+    let (_, iterable, start, wrapped) = FOLD_NESTS[2];
+    assert_none(&ledger_failures(
+        "446 compile-time iterable over i32[..1]",
+        [2_500, 5_000, 10_000],
+        annotated_fold_nest(iterable, start, wrapped),
         &none,
         Timing::Judged,
     ));

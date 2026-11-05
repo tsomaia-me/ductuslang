@@ -318,6 +318,16 @@ impl Core<'_> {
         if matches!(fact.leaf, Leaf::Placeholder | Leaf::Error) {
             return self.own_check(root);
         }
+        if fact.dims.len() == 1 && self.variable_length(root)? {
+            let form = format!("{}[{length}]", ty_name(ty));
+            self.draw_helped_at(
+                Code::VariableArray,
+                root,
+                "this value is a variable array, and a fixed array is expected here",
+                format!("pass a fixed `{form}` here, such as a cell annotated `{form}`"),
+            )?;
+            return self.own_check(root);
+        }
         if fact.dims != [length] {
             self.draw_at(
                 Code::TypeMismatch,
@@ -344,7 +354,7 @@ impl Core<'_> {
         self.evaluate_own(root)
     }
 
-    fn leaf_refusal(
+    pub(super) fn leaf_refusal(
         &mut self,
         root: u32,
         fact: &Fact,
@@ -720,7 +730,7 @@ pub(super) fn attribute_reason(attr: &AttrDecl) -> Reason {
 }
 
 impl Core<'_> {
-    fn variable_length(&self, root: u32) -> Result<bool, Internal> {
+    pub(super) fn variable_length(&self, root: u32) -> Result<bool, Internal> {
         if !self.is_reactive(root)? {
             return Ok(false);
         }

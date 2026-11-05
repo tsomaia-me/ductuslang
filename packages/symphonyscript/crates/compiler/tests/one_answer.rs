@@ -289,6 +289,18 @@ const DECIDING_NONE: &[(&str, &str)] = &[
         "the array literal a read selects its element from, ARCHITECTURE §7's compile-time element read",
     ),
     (
+        "pipeline/annotation.rs binder_dims",
+        "the lengths an annotation's array type forms give, a fixed array's length and a variable array's open one, SPEC §3.7 and §4.5",
+    ),
+    (
+        "pipeline/annotation.rs cell_capacity_annotation",
+        "the capacity a host-fed cell's variable-array annotation states, SPEC §3.7 and §6.1",
+    ),
+    (
+        "pipeline/bounds.rs extremes_at",
+        "the minimum and maximum a range or slice bound that reads a cell has by its form, SPEC §7.9's bound rule",
+    ),
+    (
         "pipeline/check.rs refuse_fixed",
         "the fixed-type operands a runtime value's cells are read around, each refused at itself, SPEC §4.2's fixed-type operand",
     ),

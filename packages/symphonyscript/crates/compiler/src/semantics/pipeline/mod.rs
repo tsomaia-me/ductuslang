@@ -4,6 +4,7 @@ mod array_node;
 mod attr_item;
 mod attr_read;
 mod body_instance;
+mod bounds;
 #[cfg(test)]
 mod call_result_tests;
 mod calls;
