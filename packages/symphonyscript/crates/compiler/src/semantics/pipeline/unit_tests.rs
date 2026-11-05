@@ -64,10 +64,8 @@ const FAMILIES: [&str; 60] = [
     "state x(1s)\nstate y = x.past(1) + 1\nScene s:\n    Cue | at=y\n",
 ];
 
-const DECLINED: [&str; 2] = [
-    "Clip c:\n    Note | length=(for i in 0..3 into a from 0bars: a + 1)\n",
-    "fn f(x): x + 1\nScene s:\n    Cue | at=(f(5ms))\n",
-];
+const DECLINED: [&str; 1] =
+    ["Clip c:\n    Note | length=(for i in 0..3 into a from 0bars: a + 1)\n"];
 
 #[test]
 fn unit_literals_families_through_expressions_and_unit_attributes_draw_what_the_old_engine_draws() {
@@ -181,6 +179,41 @@ fn a_placement_loops_name_takes_its_iterables_family_and_a_plain_element_is_read
         "Clip c:\n    for i, x in [1bars, 2bars]:\n        Note/(60 + i) | length=x\n",
         "Clip c:\n    for x in [1bars, 2]:\n        Note\n",
         "Clip c:\n    for x in [1, 2]:\n        Note | length=x\n",
+    ] {
+        let sources = [source(text)];
+        let found = new
+            .checked_by_new_core(&sources)
+            .unwrap_or_else(|| panic!("the new core takes {text}"));
+        assert_eq!(found, old.check(&sources), "{text}");
+    }
+}
+
+#[test]
+fn a_plain_value_inside_a_function_body_takes_the_family_its_call_site_gives_and_draws_per_call_site()
+ {
+    let vocabulary = symphonyscript_fixtures::vocabulary();
+    let old = Compiler::new(&vocabulary)
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
+    let new = Compiler::new(&vocabulary).expect("the vocabulary compiles");
+    for text in [
+        "fn f(x): x + 1\nScene s:\n    Cue | at=(f(5ms))\n",
+        "fn f(x): x + 1\nClip c:\n    Note | length=(f(2bars))\n",
+        "fn f(x): x + 1\nClip c:\n    Note | velocity=(f(2bars))\n",
+        "fn f(x): x + 1\nClip c:\n    Note/(f(2bars))\n",
+        "fn f(x, y): x + y\nClip c:\n    Note | length=(f(2bars, 3))\n",
+        "fn f(x, y): x + y\nClip c:\n    Note | length=(f(2bars, 3))\n    Note/(f(2, 3))\n",
+        "fn g(x): x * 2\nfn f(x): g(x) + 1\nClip c:\n    Note | length=(f(2bars))\n    Note | velocity=(f(2bars))\n",
+        "fn f(x): x + 1\nlet a = f(2bars)\nClip c:\n    Note | length=a\n",
+        "pattern P(default p, v):\n    Note/p | length=(v + 1)\nClip c:\n    P/60 | v=2bars\n",
+        "fn f(x): x + 1\nClip c:\n    Note | length=(f(zz))\n",
+        "fn g(x): x + 1\nfn f(x): g(x) * 2\nClip c:\n    Note | length=(f(2bars))\n    Note | velocity=(f(2bars))\n",
+        "fn f(x): x + 1\nlet a = f(2bars)\nClip c:\n    Note/1\n",
+        "fn f(x): x + 1\npattern P(default p):\n    Note/p | length=(f(2bars))\nClip c:\n    P/60\n    P/62\n",
+        "fn f(x): x + 1\nClip c:\n    for i in 0..3:\n        Note/(60 + i) | length=(f(2bars))\n",
+        "fn f(x):\n    let y = x + 1\n    y\nClip c:\n    Note | length=(f(2bars))\n    Note | velocity=(f(2bars))\n",
+        "fn f(x): x + 1\nClip c:\n    Note | length=(f(2bars))\n    Note | length=(f(2))\n",
+        "fn f(x): [x, 1]\nClip c:\n    Note | length=(f(2bars)[1])\n",
     ] {
         let sources = [source(text)];
         let found = new

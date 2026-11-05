@@ -176,7 +176,7 @@ pub(crate) struct Core<'a> {
     pub units_seen: bool,
     pub enums_seen: bool,
     pub bare_enums: HashMap<u32, symphonyscript_core::EnumId>,
-    pub takers: Vec<(u32, symphonyscript_core::FamilyId)>,
+    pub takers: Vec<(u32, symphonyscript_core::FamilyId, u32)>,
     pub unit_feeds: Vec<(u32, symphonyscript_core::FamilyId, u32)>,
 }
 

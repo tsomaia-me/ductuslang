@@ -12,6 +12,8 @@ use crate::semantics::counted_walk::CountedWalk;
 use crate::semantics::ir::Suffix;
 use crate::semantics::ir::flat::{NONE, Op};
 
+type Feed = (u32, u32, u32, Vec<(u32, u32, u32)>);
+
 fn open(fact: &Fact) -> bool {
     matches!(fact.leaf, Leaf::Placeholder | Leaf::Error)
 }
@@ -80,7 +82,8 @@ impl Core<'_> {
         if let Some(family) = family {
             for (operand, fact) in operands.iter().zip(&facts) {
                 if self.family(*operand).is_none() && numeric(fact) && !open(fact) {
-                    self.takers.push((*operand, family));
+                    let key = self.in_body(*operand)?.map_or(NONE, |(inst, _)| inst);
+                    self.takers.push((*operand, family, key));
                 }
             }
         }
@@ -93,8 +96,6 @@ impl Core<'_> {
         }
         let (op, a, b, c) = self.ir.node(node)?;
         let kids = self.operands(node)?;
-        let in_body = self.in_body(node)?.is_some();
-        let takers = self.takers.len();
         let found = if open(fact) {
             None
         } else {
@@ -223,9 +224,6 @@ impl Core<'_> {
             }
         };
         fact.family = found;
-        if in_body && self.takers.len() > takers {
-            return Ok(Err(Declined(Reason::UnitFlow)));
-        }
         Ok(Ok(()))
     }
 
@@ -333,6 +331,37 @@ impl Core<'_> {
         })
     }
 
+    fn call_chains(
+        &self,
+        inst: u32,
+        sites: &std::collections::HashMap<u32, Vec<(u32, u32)>>,
+    ) -> Result<Vec<Vec<u32>>, Internal> {
+        let function = |inst: u32| {
+            self.bodies
+                .get(inst as usize)
+                .is_some_and(|body| body.function < self.functions())
+        };
+        if inst == NONE || !function(inst) {
+            return Ok(vec![Vec::new()]);
+        }
+        let mut chains = Vec::new();
+        let mut stack: Vec<(u32, Vec<u32>)> = vec![(inst, Vec::new())];
+        while let Some((at, inner)) = stack.pop() {
+            CountedWalk::CoreFamilies.step();
+            for (caller, call) in sites.get(&at).map(Vec::as_slice).unwrap_or_default() {
+                let mut chain = vec![*call];
+                chain.extend(inner.iter().copied());
+                if function(*caller) {
+                    stack.push((*caller, chain));
+                } else {
+                    chains.push(chain);
+                }
+            }
+        }
+        chains.sort_unstable();
+        Ok(chains)
+    }
+
     fn loop_iterable(&self, node: u32, env: u32) -> Result<Option<(u32, u32)>, Internal> {
         let owner = self.binding_owner(node)?;
         if self.loop_at(owner).is_none() {
@@ -360,77 +389,136 @@ impl Core<'_> {
         if self.takers.is_empty() {
             return Ok(());
         }
-        let mut reached: std::collections::HashSet<(u32, FamilyId)> =
+        let mut reached: std::collections::HashSet<(u32, FamilyId, u32, Vec<u32>)> =
             std::collections::HashSet::new();
-        let mut walked: std::collections::HashSet<(u32, FamilyId, u32)> =
+        let mut walked: std::collections::HashSet<(u32, FamilyId, u32, u32, Vec<u32>)> =
             std::collections::HashSet::new();
         let outer = self.inst;
         for (root, family, env) in std::mem::take(&mut self.unit_feeds) {
-            let mut stack = vec![(root, env)];
-            while let Some((node, env)) = stack.pop() {
+            let inst = self
+                .envs
+                .get(env as usize)
+                .map_or(NONE, |record| record.inst);
+            let mut stack: Vec<Feed> = vec![(root, env, inst, Vec::new())];
+            while let Some((node, env, inst, frames)) = stack.pop() {
                 CountedWalk::CoreFamilies.step();
-                self.inst = self
-                    .envs
-                    .get(env as usize)
-                    .map_or(NONE, |record| record.inst);
-                let key = match self.in_body(node)? {
-                    Some(_) => env,
-                    None => NONE,
+                self.inst = inst;
+                let key = self.in_body(node)?.map_or(NONE, |(inst, _)| inst);
+                let chain: Vec<u32> = if key == NONE {
+                    Vec::new()
+                } else {
+                    frames.iter().map(|(call, _, _)| *call).collect()
                 };
-                if !walked.insert((node, family, key)) {
+                let site = if key == NONE { NONE } else { env };
+                if !walked.insert((node, family, key, site, chain.clone())) {
                     continue;
                 }
-                reached.insert((node, family));
+                reached.insert((node, family, key, chain));
                 let fact = self.fact(node)?;
                 if !open(&fact) && self.family(node) != Some(family) {
                     continue;
                 }
-                if let (Op::Name, DeclRef::Param(position)) =
-                    (self.ir.node(node)?.0, self.bound(node)?)
-                {
-                    if let Some((argument, caller)) = self.argument_of(node, position, env)?
+                let op = self.ir.node(node)?.0;
+                if let (Op::Name, DeclRef::Param(position)) = (op, self.bound(node)?) {
+                    if self.binding_owner(node)? < self.functions() {
+                        if let Some((call, caller_env, caller_inst)) = frames.last().copied()
+                            && let Some(argument) =
+                                self.arguments(call)?.get(position as usize).copied()
+                        {
+                            let mut outer_frames = frames.clone();
+                            outer_frames.pop();
+                            stack.push((argument, caller_env, caller_inst, outer_frames));
+                        }
+                    } else if let Some((argument, caller)) =
+                        self.argument_of(node, position, env)?
                         && !self.default_nodes.contains_key(&argument)
                     {
-                        stack.push((argument, caller));
-                    } else if let Some(iterable) = self.loop_iterable(node, env)? {
-                        stack.push(iterable);
+                        let caller_inst = self
+                            .envs
+                            .get(caller as usize)
+                            .map_or(NONE, |record| record.inst);
+                        stack.push((argument, caller, caller_inst, frames.clone()));
+                    } else if let Some((iterable, outer_env)) = self.loop_iterable(node, env)? {
+                        let outer_inst = self
+                            .envs
+                            .get(outer_env as usize)
+                            .map_or(NONE, |record| record.inst);
+                        stack.push((iterable, outer_env, outer_inst, frames.clone()));
                     }
                     continue;
                 }
+                if matches!(op, Op::Call | Op::NamedCall)
+                    && let Some(body) = self.body_of_call(node)
+                {
+                    let mut inner = frames.clone();
+                    inner.push((node, env, inst));
+                    stack.push((self.body_value(body)?, env, body, inner));
+                    continue;
+                }
                 for next in self.carried(node)? {
-                    stack.push((next, env));
+                    stack.push((next, env, inst, frames.clone()));
+                }
+            }
+        }
+        let mut held = std::collections::HashSet::new();
+        let mut stack: Vec<(u32, u32)> = Vec::new();
+        for (local, fact) in self.facts.iter().enumerate() {
+            if fact.as_ref().is_some_and(open) {
+                stack.push((self.ir.base + u32::try_from(local).unwrap_or(0), NONE));
+            }
+        }
+        for ((inst, node), fact) in &self.body_facts {
+            if open(fact) {
+                stack.push((*node, *inst));
+            }
+        }
+        while let Some((node, inst)) = stack.pop() {
+            CountedWalk::CoreFamilies.step();
+            self.inst = inst;
+            let key = self.in_body(node)?.map_or(NONE, |(inst, _)| inst);
+            if held.insert((node, key)) {
+                for next in self.carried(node)? {
+                    stack.push((next, inst));
                 }
             }
         }
         self.inst = outer;
-        let mut held = std::collections::HashSet::new();
-        let mut stack: Vec<u32> = Vec::new();
-        for (local, fact) in self.facts.iter().enumerate() {
-            if fact.as_ref().is_some_and(open) {
-                stack.push(self.ir.base + u32::try_from(local).unwrap_or(0));
-            }
-        }
-        while let Some(node) = stack.pop() {
-            CountedWalk::CoreFamilies.step();
-            if held.insert(node) {
-                stack.extend(self.carried(node)?);
-            }
-        }
         let mut takers = std::mem::take(&mut self.takers);
-        takers.sort_unstable_by_key(|(node, family)| (*node, family.index()));
+        takers.sort_unstable_by_key(|(node, family, key)| (*node, family.index(), *key));
         takers.dedup();
-        for (node, family) in takers {
-            if reached.contains(&(node, family)) || held.contains(&node) {
+        let mut sites: std::collections::HashMap<u32, Vec<(u32, u32)>> =
+            std::collections::HashMap::new();
+        if takers.iter().any(|(_, _, key)| *key != NONE) {
+            for ((caller, call), body) in &self.call_body {
+                let typed = |inst: &u32| self.typed_as.get(inst).copied().unwrap_or(*inst);
+                sites
+                    .entry(typed(body))
+                    .or_default()
+                    .push((typed(caller), *call));
+            }
+            for found in sites.values_mut() {
+                found.sort_unstable();
+            }
+        }
+        for (node, family, key) in takers {
+            if held.contains(&(node, key)) {
                 continue;
             }
             let name = self.family_name(family)?;
-            self.draw_at(
-                Code::PlainInFamily,
-                node,
-                format!(
-                    "this plain value takes the unit family `{name}`, and its family value reaches no attribute of that family to give its unit"
-                ),
-            )?;
+            let summary = format!(
+                "this plain value takes the unit family `{name}`, and its family value reaches no attribute of that family to give its unit"
+            );
+            for chain in self.call_chains(key, &sites)? {
+                if reached.contains(&(node, family, key, chain.clone())) {
+                    continue;
+                }
+                let span = self.node_span(node)?;
+                let mut related = Vec::new();
+                for call in chain.iter().rev() {
+                    related.push((self.node_span(*call)?, "in this call".to_string()));
+                }
+                self.draw_related(Code::PlainInFamily, span, related, summary.clone());
+            }
         }
         Ok(())
     }
