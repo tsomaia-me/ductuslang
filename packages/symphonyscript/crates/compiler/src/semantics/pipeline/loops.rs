@@ -325,11 +325,6 @@ impl Core<'_> {
         if fact.node {
             return self.reference_loop(item, rec, env);
         }
-        if self.family(root).is_some() {
-            return Ok(Err(super::declined::Declined(
-                super::reason::Reason::UnitFlow,
-            )));
-        }
         let open = fact.leaf == Leaf::Placeholder
             || (fact.leaf == Leaf::Error && fact.dims.is_empty())
             || fact.dims.first() == Some(&ANY_LENGTH);
@@ -395,7 +390,7 @@ impl Core<'_> {
             fixed: fact.fixed,
             read: fact.read,
             node: false,
-            family: None,
+            family: fact.family,
         };
         let facts = if names >= 2 {
             vec![Fact::scalar(Leaf::Int), element]

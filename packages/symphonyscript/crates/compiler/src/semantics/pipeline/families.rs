@@ -333,6 +333,29 @@ impl Core<'_> {
         })
     }
 
+    fn loop_iterable(&self, node: u32, env: u32) -> Result<Option<(u32, u32)>, Internal> {
+        let owner = self.binding_owner(node)?;
+        if self.loop_at(owner).is_none() {
+            return Ok(None);
+        }
+        let head = self.loop_rec(owner)?.head;
+        if head.range {
+            return Ok(None);
+        }
+        let mut at = env;
+        while let Some(record) = self.envs.get(at as usize) {
+            if self
+                .bodies
+                .get(record.inst as usize)
+                .is_some_and(|body| body.function == owner)
+            {
+                return Ok(Some((head.iterable.0, record.parent)));
+            }
+            at = record.parent;
+        }
+        Ok(None)
+    }
+
     pub fn plain_in_family(&mut self) -> Result<(), Internal> {
         if self.takers.is_empty() {
             return Ok(());
@@ -369,6 +392,8 @@ impl Core<'_> {
                         && !self.default_nodes.contains_key(&argument)
                     {
                         stack.push((argument, caller));
+                    } else if let Some(iterable) = self.loop_iterable(node, env)? {
+                        stack.push(iterable);
                     }
                     continue;
                 }

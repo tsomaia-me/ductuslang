@@ -163,3 +163,29 @@ fn a_unit_value_as_an_index_a_slice_bound_a_range_bound_or_an_offset_draws_unit_
         );
     }
 }
+
+#[test]
+fn a_placement_loops_name_takes_its_iterables_family_and_a_plain_element_is_read_where_the_name_is()
+{
+    let vocabulary = symphonyscript_fixtures::vocabulary();
+    let old = Compiler::new(&vocabulary)
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
+    let new = Compiler::new(&vocabulary).expect("the vocabulary compiles");
+    for text in [
+        "Clip c:\n    for x in [1bars, 2bars]:\n        Note | length=x\n",
+        "Clip c:\n    for x in [1bars, 2]:\n        Note | length=x\n",
+        "Clip c:\n    for x in [1bars, 2]:\n        Note | velocity=x\n",
+        "let xs = [1s, 2]\nClip c:\n    for x in xs:\n        Note | length=x\n",
+        "let xs = [1bars, 2]\nClip c:\n    for x in xs:\n        Note | length=x\n",
+        "Clip c:\n    for i, x in [1bars, 2bars]:\n        Note/(60 + i) | length=x\n",
+        "Clip c:\n    for x in [1bars, 2]:\n        Note\n",
+        "Clip c:\n    for x in [1, 2]:\n        Note | length=x\n",
+    ] {
+        let sources = [source(text)];
+        let found = new
+            .checked_by_new_core(&sources)
+            .unwrap_or_else(|| panic!("the new core takes {text}"));
+        assert_eq!(found, old.check(&sources), "{text}");
+    }
+}
