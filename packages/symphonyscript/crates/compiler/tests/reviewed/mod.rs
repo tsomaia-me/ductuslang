@@ -220,6 +220,26 @@ pub type Carried = (
 
 pub const CARRIED_TO_R4B: &[Carried] = &[
     (
+        "state k([1, 2]): i32[..4]\nlet e = []\nlet j = -if k[0] > 1 then k else e + [3]\nClip c:\n    Note/(j[^1])\n",
+        &[("unparenthesized-if", "if")],
+        &[
+            ("array-operand", "-if k[0] > 1 then k else e + [3]"),
+            ("unparenthesized-if", "if"),
+        ],
+    ),
+    (
+        "Clip c:\n    Note | velocity=((q[[1, 2][5]..])[if true then q else 1.5])\n\nstate q([]): i32[..4]\n",
+        &[
+            ("index-out-of-range", "5"),
+            ("type-mismatch", "if true then q else 1.5"),
+        ],
+        &[
+            ("index-out-of-range", "5"),
+            ("type-mismatch", "if true then q else 1.5"),
+            ("integer-cell", "q"),
+        ],
+    ),
+    (
         "Clip c:\n    Note | velocity=(if (true < 1) then (q - i32(true)) else (q[[1, 2][5]]))\n\nstate q([]): i32[..4]\n",
         &[
             ("operand-type", "true < 1"),
@@ -5468,6 +5488,21 @@ pub const CLASSES: &[Class] = &[
         rule: "an annotated name of a placement `for` fixes its type as a `for` expression's does (SPEC §7.9, §4.5), so elements that do not have the annotated type draw one type-mismatch at the name with the loop name's summary, where the old engine draws it at the iterable or with a value's summary",
         explains: annotated_placement_loop_name,
     },
+    Class {
+        ledger: "476",
+        rule: "an integer host-fed cell read only in an arm a compile-time choice does not take, directly or through a function or a `let` read only there, has no use there (SPEC §6.2: such a choice reads the cells of the arm it takes alone; ARCHITECTURE §7: an untaken arm is checked in its own types only) and draws no integer-cell, where the old engine counts the untaken arm's read as a float use",
+        explains: integer_cell_read_only_untaken,
+    },
+    Class {
+        ledger: "476",
+        rule: "a function body's local `let` that holds a cell's read stands for that read in the body, checked as inlined at its call (SPEC §6.3), so the cell read through the `let` where a float is expected is a float use and draws integer-cell, as the same body reading the cell directly draws on both engines, where the old engine misses it through the `let`",
+        explains: integer_cell_through_a_local_let,
+    },
+    Class {
+        ledger: "476",
+        rule: "a condition the parser ends where a syntax fault on its line begins leaves the intended condition unknown, the rest of it lying in that fault's region (ARCHITECTURE §7.1: a fault's region is the rest of its line), so the choice draws no condition-type, where the old engine types the cut condition as written (the head's reading of 15:39Z 2026-11-05)",
+        explains: condition_cut_by_a_line_fault,
+    },
 ];
 
 fn annotated_let_value(seen: &Seen<'_>, at: &Drawn) -> bool {
@@ -5756,4 +5791,136 @@ fn variable_array_index(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
         }
         Change::Restated => false,
     }
+}
+
+fn untaken_arms(program: &str) -> Vec<(usize, usize)> {
+    let mut arms = Vec::new();
+    for (head, taken) in [("if true then ", true), ("if false then ", false)] {
+        for (start, _) in program.match_indices(head) {
+            if !word_start(program, start) {
+                continue;
+            }
+            let then_start = start + head.len();
+            let mut depth = 0i32;
+            let mut else_at = None;
+            for (offset, character) in program[then_start..].char_indices() {
+                match character {
+                    '(' | '[' => depth += 1,
+                    ')' | ']' => depth -= 1,
+                    '\n' if depth <= 0 => break,
+                    _ => {}
+                }
+                if depth < 0 {
+                    break;
+                }
+                if depth == 0 && program[then_start + offset..].starts_with(" else ") {
+                    else_at = Some(then_start + offset);
+                    break;
+                }
+            }
+            let Some(else_at) = else_at else {
+                continue;
+            };
+            if !taken {
+                arms.push((then_start, else_at));
+                continue;
+            }
+            let else_start = else_at + " else ".len();
+            let mut depth = 0i32;
+            let mut end = program.len();
+            for (offset, character) in program[else_start..].char_indices() {
+                match character {
+                    '(' | '[' => depth += 1,
+                    ')' | ']' => depth -= 1,
+                    '\n' if depth <= 0 => {
+                        end = else_start + offset;
+                        break;
+                    }
+                    _ => {}
+                }
+                if depth < 0 {
+                    end = else_start + offset;
+                    break;
+                }
+            }
+            arms.push((else_start, end));
+        }
+    }
+    arms
+}
+
+fn line_span(program: &str, at: usize) -> (usize, usize) {
+    let start = program
+        .get(..at)
+        .and_then(|text| text.rfind('\n'))
+        .map_or(0, |at| at + 1);
+    let end = program
+        .get(at..)
+        .and_then(|text| text.find('\n'))
+        .map_or(program.len(), |offset| at + offset);
+    (start, end)
+}
+
+fn only_untaken(program: &str, name: &str, arms: &[(usize, usize)], depth: usize) -> bool {
+    if depth > 4 {
+        return false;
+    }
+    let reads: Vec<(usize, usize)> = cell_reads(program, name)
+        .into_iter()
+        .filter(|(lo, _)| {
+            let before = program.get(..*lo).unwrap_or_default();
+            !before.ends_with("fn ") && !before.ends_with("let ")
+        })
+        .collect();
+    !reads.is_empty()
+        && reads.iter().all(|(lo, hi)| {
+            if arms.iter().any(|(start, end)| start <= lo && hi <= end) {
+                return true;
+            }
+            let (start, end) = line_span(program, *lo);
+            let line = program.get(start..end).unwrap_or_default();
+            let trimmed = line.trim_start();
+            let holder = if let Some(rest) = trimmed.strip_prefix("fn ") {
+                rest.split_once('(').map(|(function, _)| function)
+            } else if let Some(rest) = trimmed.strip_prefix("let ") {
+                rest.split_once(" = ").map(|(local, _)| local)
+            } else {
+                None
+            };
+            holder.is_some_and(|holder| only_untaken(program, holder, arms, depth + 1))
+        })
+}
+
+fn integer_cell_read_only_untaken(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
+    let name = seen.text(at);
+    change == Change::Removed
+        && at.0 == "integer-cell"
+        && !name.is_empty()
+        && only_untaken(seen.program, name, &untaken_arms(seen.program), 0)
+}
+
+fn integer_cell_through_a_local_let(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
+    let name = seen.text(at);
+    change == Change::Added
+        && at.0 == "integer-cell"
+        && !name.is_empty()
+        && seen.program.lines().any(|line| {
+            line.starts_with("    ")
+                && line
+                    .trim_start()
+                    .strip_prefix("let ")
+                    .and_then(|rest| rest.split_once(" = "))
+                    .is_some_and(|(_, value)| value == name)
+        })
+}
+
+fn condition_cut_by_a_line_fault(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
+    change == Change::Removed
+        && at.0 == "condition-type"
+        && seen.text(at).starts_with("if ")
+        && seen
+            .old
+            .iter()
+            .chain(seen.new.iter())
+            .any(|drawn| line_fault(&drawn.0) && drawn.1 == at.2)
 }

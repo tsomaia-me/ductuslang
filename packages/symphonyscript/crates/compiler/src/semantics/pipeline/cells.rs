@@ -213,6 +213,9 @@ impl Core<'_> {
             widest(&[4, 5, 6]),
         ];
         for (ty, unflowed) in runs.into_iter().flatten() {
+            if matches!(ty, EvalTy::Exact | EvalTy::Default) {
+                continue;
+            }
             if unflowed {
                 self.unflowed.insert(rec.rule);
             }

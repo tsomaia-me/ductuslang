@@ -269,3 +269,78 @@ fn a_local_let_or_an_argument_a_refused_call_reads_reads_its_cells_in_its_own_ty
         assert_eq!(found, codes, "{text}");
     }
 }
+
+const REPAIRED_USES: [(&str, bool); 8] = [
+    (
+        "state q([]): i32[..4]\nClip c:\n    Note | velocity=(q[1.5])\n",
+        true,
+    ),
+    (
+        "state q([]): i32[..4]\nClip c:\n    Note | velocity=(q[true])\n",
+        true,
+    ),
+    (
+        "state q([]): i32[..4]\nClip c:\n    Note | velocity=(q[0])\n",
+        true,
+    ),
+    ("state q([]): i32[..4]\nClip c:\n    Note/(q[0])\n", false),
+    (
+        "state x(1)\nstate held([]): i32[..10]\nstate y = x * 0.5\nstate s = y.past(1, 0.0)\nstate probe = held[s..]\nClip c:\n    Note/(probe[0])\n",
+        true,
+    ),
+    (
+        "state x(1)\nstate held([]): i32[..10]\nstate y = x * 0.5\nstate s = y.past(1, 0.0)\nClip c:\n    Note/(held[s..][0])\n",
+        true,
+    ),
+    (
+        "state x(1)\nstate y = x * 0.5\nstate s = y.past(1, 0.0)\nClip c:\n    Note/1\n",
+        true,
+    ),
+    (
+        "state x(1)\nstate y = x * 2\nstate s = y.past(1, 0)\nstate held([]): i32[..10]\nClip c:\n    Note/(held[s..][0])\n",
+        false,
+    ),
+];
+
+#[test]
+fn a_cell_read_where_a_refused_index_or_bound_stands_keeps_its_float_use_for_integer_cell() {
+    let vocabulary = symphonyscript_fixtures::vocabulary();
+    let old = Compiler::new(&vocabulary)
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
+    let new = Compiler::new(&vocabulary).expect("the vocabulary compiles");
+    for (text, warned) in REPAIRED_USES {
+        let lines: Vec<&str> = text.lines().collect();
+        let mut items: Vec<String> = Vec::new();
+        for line in lines {
+            match items.last_mut() {
+                Some(item) if line.starts_with(' ') => {
+                    item.push('\n');
+                    item.push_str(line);
+                }
+                _ => items.push(line.to_string()),
+            }
+        }
+        let forward = items
+            .iter()
+            .fold(String::new(), |text, item| text + item + "\n");
+        let reversed = items
+            .iter()
+            .rev()
+            .fold(String::new(), |text, item| text + item + "\n");
+        for text in [forward, reversed] {
+            let sources = [source(&text)];
+            let found = new
+                .checked_by_new_core(&sources)
+                .unwrap_or_else(|| panic!("the new core takes {text}"));
+            assert_eq!(found, old.check(&sources), "{text}");
+            assert_eq!(
+                found
+                    .iter()
+                    .any(|diagnostic| diagnostic.code == Code::IntegerCell),
+                warned,
+                "{text}"
+            );
+        }
+    }
+}

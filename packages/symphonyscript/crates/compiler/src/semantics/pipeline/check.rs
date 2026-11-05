@@ -465,6 +465,12 @@ impl Core<'_> {
             Some(own) => own,
             None => flexible(ty),
         };
+        if self.is_kept(root)?
+            && !self.unchecked
+            && matches!(self.ir.node(root)?.0, Op::Index | Op::IndexFromEnd)
+        {
+            return self.evaluate_own_in(root, Some(evaluated));
+        }
         if self.is_kept(root)? || self.unchecked {
             return self.own_check(root);
         }

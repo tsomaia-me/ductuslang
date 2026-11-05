@@ -1625,6 +1625,24 @@ impl Core<'_> {
                         | None => {}
                     }
                 }
+                Op::Index | Op::IndexFromEnd
+                    if flowing.contains_key(&(self.inst, node))
+                        && self.is_kept(node)?
+                        && self.is_reactive(a)?
+                        && !self.fact(a)?.dims.is_empty() =>
+                {
+                    let ty = flowing
+                        .get(&(self.inst, node))
+                        .copied()
+                        .unwrap_or(EvalTy::Exact);
+                    stack.push((b, true));
+                    let owning = std::mem::replace(&mut self.owning, false);
+                    let outcome = self.evaluate(a, ty);
+                    self.owning = owning;
+                    if let Err(declined) = outcome? {
+                        return Ok(Err(declined));
+                    }
+                }
                 Op::Index | Op::IndexFromEnd => match self.pick_operands(node)? {
                     Some(operands) => {
                         let mut values = Vec::new();
