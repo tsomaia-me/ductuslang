@@ -342,7 +342,72 @@ impl Core<'_> {
             .lets
             .get(at as usize)
             .ok_or(Internal::missed("IR let"))?;
-        self.binder_dims(rec.binder)
+        let mut dims = self.binder_dims(rec.binder)?;
+        if dims.first() == Some(&ANY_LENGTH) {
+            let root = self.let_root(at)?;
+            if self.has_fact(root)? {
+                let fact = self.fact(root)?;
+                if let [length] = fact.dims.as_slice()
+                    && !matches!(fact.leaf, Leaf::Placeholder | Leaf::Error)
+                    && let Some(first) = dims.first_mut()
+                {
+                    *first = *length;
+                }
+            }
+        }
+        Ok(dims)
+    }
+
+    fn let_rows_refused(&mut self, at: u32, root: u32) -> Result<bool, Internal> {
+        let rec = *self
+            .ir
+            .lets
+            .get(at as usize)
+            .ok_or(Internal::missed("IR let"))?;
+        if self.binder_capacity(rec.binder)?.is_none() {
+            return Ok(false);
+        }
+        let fact = self.fact(root)?;
+        if matches!(fact.leaf, Leaf::Placeholder | Leaf::Error) || fact.dims.len() == 1 {
+            return Ok(false);
+        }
+        let span = self.let_span(at)?;
+        self.draw(Code::TypeMismatch, span, ROWS);
+        Ok(true)
+    }
+
+    fn let_capacity_exceeded(&mut self, at: u32, length: u32) -> Result<bool, Internal> {
+        let rec = *self
+            .ir
+            .lets
+            .get(at as usize)
+            .ok_or(Internal::missed("IR let"))?;
+        let Some(capacity) = self.binder_capacity(rec.binder)? else {
+            return Ok(false);
+        };
+        if length <= capacity {
+            return Ok(false);
+        }
+        let span = self.let_span(at)?;
+        let name = self.ir.binder(rec.binder)?.name;
+        let entry = self.ir.name(name).ok_or(Internal::missed("IR name"))?;
+        let text = self.ir.symbols.text(entry.sym).to_string();
+        let help = if capacity == 1 {
+            String::from("slice the value to its newest element with `[^1..]`")
+        } else {
+            format!("slice the value to its newest {capacity} elements with `[^{capacity}..]`")
+        };
+        let diagnostic = crate::diagnostics::Diagnostic::new(
+            Code::CapacityExceeded,
+            span,
+            format!(
+                "`{text}` holds {length} elements, more than its annotated capacity {capacity}"
+            ),
+        )
+        .with_help(help);
+        let diagnostic = self.chained(diagnostic);
+        self.push_drawn(diagnostic);
+        Ok(true)
     }
 
     pub fn let_fact(&self, at: u32) -> Result<Fact, Internal> {
@@ -443,6 +508,9 @@ impl Core<'_> {
     }
 
     fn annotation_check(&mut self, at: u32, root: u32, ty: EvalTy) -> Stage<()> {
+        if self.let_rows_refused(at, root)? {
+            return self.own_check(root);
+        }
         match self.annotation_refusal(at, ty)? {
             Refusal::Shape => {
                 let span = self.let_span(at)?;
@@ -503,6 +571,15 @@ impl Core<'_> {
         ty: EvalTy,
         value: CoreValue,
     ) -> Result<CoreValue, Internal> {
+        if let Value::Array(array) = &value {
+            let length = self.store.len(*array);
+            let chain = std::mem::take(&mut self.eval_chain);
+            let exceeded = self.let_capacity_exceeded(at, length);
+            self.eval_chain = chain;
+            if exceeded? {
+                return Ok(Value::Error);
+            }
+        }
         let (Value::Int(integer), Some(range)) = (&value, int_range(ty)) else {
             return Ok(value);
         };

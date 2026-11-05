@@ -2764,3 +2764,120 @@ fn a_fallback_of_another_shape_than_its_groups_settled_cell_draws_what_the_old_e
         assert_eq!(new.check(&sources), old.check(&sources), "{text}");
     }
 }
+
+type VariableLet = (
+    &'static str,
+    &'static str,
+    &'static [(&'static str, &'static str)],
+);
+
+const VARIABLE_LETS: [VariableLet; 14] = [
+    ("let xs: i32[..4] = [1, 2]", "xs[1]", &[]),
+    (
+        "let xs: i32[..4] = [1, 2]",
+        "xs[3]",
+        &[("index-out-of-range", "3")],
+    ),
+    (
+        "let xs: i32[..1] = [1, 2]",
+        "xs[0]",
+        &[("capacity-exceeded", "let xs: i32[..1] = [1, 2]\n")],
+    ),
+    (
+        "let xs: i32[..2] = [1, 2] + [3]",
+        "xs[0]",
+        &[("capacity-exceeded", "let xs: i32[..2] = [1, 2] + [3]\n")],
+    ),
+    (
+        "let xs: i32[..2] = for i in 0..3 into a from []: a + [i]",
+        "xs[0]",
+        &[(
+            "capacity-exceeded",
+            "let xs: i32[..2] = for i in 0..3 into a from []: a + [i]\n",
+        )],
+    ),
+    (
+        "let xs: i32[..4] = [1.5, 2]",
+        "xs[0]",
+        &[("type-mismatch", "1.5")],
+    ),
+    (
+        "let xs: i32[..4] = [1.5, 2] + [3]",
+        "xs[0]",
+        &[("type-mismatch", "[1.5, 2] + [3]")],
+    ),
+    (
+        "let xs: u8[..4] = [1, 300]",
+        "xs[0]",
+        &[("does-not-fit", "300")],
+    ),
+    (
+        "let xs: u8[..4] = [1, 2] + [300]",
+        "xs[0]",
+        &[("does-not-fit", "300")],
+    ),
+    (
+        "let xs: i32[..4] = [[1], [2]]",
+        "xs[0]",
+        &[("type-mismatch", "let xs: i32[..4] = [[1], [2]]\n")],
+    ),
+    (
+        "let xs: i32[..4] = 5",
+        "xs",
+        &[
+            ("type-mismatch", "let xs: i32[..4] = 5\n"),
+            ("type-mismatch", "xs"),
+        ],
+    ),
+    (
+        "let xs: i32[..1] = [1, 2]",
+        "xs[1] + true",
+        &[
+            ("capacity-exceeded", "let xs: i32[..1] = [1, 2]\n"),
+            ("operand-type", "xs[1] + true"),
+        ],
+    ),
+    ("let xs: i32[..4] = []", "(xs + [1])[0]", &[]),
+    ("let xs: i32[..4] = [1, 2]", "(xs + [1])[2]", &[]),
+];
+
+#[test]
+fn a_let_annotated_with_a_variable_array_holds_its_value_checks_its_capacity_and_elements_and_keeps_its_type()
+ {
+    let old = Compiler::new(&symphonyscript_fixtures::vocabulary())
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
+    let new =
+        Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("the vocabulary compiles");
+    for (declaration, read, wanted) in VARIABLE_LETS {
+        let mut wanted: Vec<(String, String)> = wanted
+            .iter()
+            .map(|(code, span)| ((*code).to_string(), (*span).to_string()))
+            .collect();
+        wanted.sort();
+        let items = [
+            format!("{declaration}\n"),
+            format!("Clip c:\n    Note/({read})\n"),
+        ];
+        for text in [
+            items.concat(),
+            [items[1].clone(), items[0].clone()].concat(),
+        ] {
+            let sources = [source(&text)];
+            let found = new
+                .checked_by_new_core(&sources)
+                .unwrap_or_else(|| panic!("the new core takes {text}"));
+            assert_eq!(spanned(&text, &found), wanted, "{text}");
+            let before = old.check(&sources);
+            if before != found {
+                let classes = reviewed::moved(&text, &drawn(&before), &drawn(&found))
+                    .unwrap_or_else(|left| panic!("{text}\n  unexplained {left:?}"));
+                assert!(classes.iter().all(|class| class.ledger == "476"), "{text}");
+            }
+        }
+    }
+    let reactive =
+        "state hh([1]): i32[..4]\nlet xs: u8[..4] = hh + [300]\nClip c:\n    Note/(xs[0])\n";
+    let sources = [source(reactive)];
+    assert_eq!(new.checked_by_new_core(&sources), Some(old.check(&sources)));
+}

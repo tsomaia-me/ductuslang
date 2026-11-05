@@ -67,6 +67,7 @@ pub(crate) fn covers(ir: &FlatIr) -> bool {
         .filter(|rec| variable_annotation(ir, rec.binder) && (rec.rule == NONE || rec.init == NONE))
         .map(|rec| rec.binder)
         .chain(ir.fors.iter().map(|rec| rec.accumulator))
+        .chain(ir.lets.iter().map(|rec| rec.binder))
         .filter(|binder| *binder != NONE && variable_annotation(ir, *binder))
         .filter_map(|binder| ir.binders.get(binder as usize))
         .filter_map(|binder| binder.annotation.checked_sub(ir.base))
@@ -432,7 +433,7 @@ fn let_annotation(ir: &FlatIr, binder: u32) -> bool {
     let Some(rec) = ir.binders.get(binder as usize) else {
         return false;
     };
-    if rec.annotation == NONE {
+    if rec.annotation == NONE || variable_annotation(ir, binder) {
         return true;
     }
     let mut node = rec.annotation;
