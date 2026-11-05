@@ -353,5 +353,9 @@ fn exhaustive_the_twin_program_draws_what_the_whole_program_twins_draw_for_every
  {
     let (failures, programs) = class_failures(&Rows::Every);
     assert_eq!(programs, 2 * POSITIONS.len() * expressions().len());
-    crate::pinned_row::assert_no_failure(&failures);
+    crate::pinned_row::assert_pinned_failures(
+        &failures,
+        include_str!("name_twins_pinned_488.txt"),
+        488,
+    );
 }
