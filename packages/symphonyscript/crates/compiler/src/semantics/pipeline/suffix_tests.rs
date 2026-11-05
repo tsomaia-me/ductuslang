@@ -52,3 +52,28 @@ fn a_type_suffix_fixes_its_literals_type_and_an_integer_suffix_on_a_float_is_an_
         assert_eq!(found, old.check(&sources), "{text}");
     }
 }
+
+#[test]
+fn a_fold_over_a_flexible_float_array_evaluates_its_elements_in_their_own_float_type() {
+    let vocabulary = symphonyscript_fixtures::vocabulary();
+    let old = Compiler::new(&vocabulary)
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
+    let new = Compiler::new(&vocabulary).expect("the vocabulary compiles");
+    for text in [
+        "let v = for x in [3.0, 5.0] into s from 0: 5\nClip k:\n    Note/([0, 1][v])\n",
+        "let v = for x in [3.0, 5.0] into s from 0: i32(x)\nClip k:\n    Note/([0, 1][v + 0])\n",
+        "let v = for x in [3.0, 5.0] into s from 0: i32(x)\nClip k:\n    Note/([0, 1][i32(v)])\n",
+        "let v = for x in [3.0, 5.0] into s from 0: s * 10 + (i32(x))\nClip k:\n    Note/([0][v])\n",
+        "let v = for x in [0.1, 0.2] into s from 0.0: s + x\nClip k:\n    Note/([0, 1][i32(v * 10)])\n",
+        "let v = for x in [1e300, 2.0] into s from 0.0: x\nClip k:\n    Note/([0, 1][i32(v)])\n",
+        "let v = for x in [3.5, 5.5] into s from 0.0: s + x\nClip k:\n    Note | velocity=(v)\n",
+        "let v = for x in [3, 5] into s from 0: i32(x)\nClip k:\n    Note/([0, 1][v])\n",
+    ] {
+        let sources = [source(text)];
+        let found = new
+            .checked_by_new_core(&sources)
+            .unwrap_or_else(|| panic!("the new core takes {text}"));
+        assert_eq!(found, old.check(&sources), "{text}");
+    }
+}

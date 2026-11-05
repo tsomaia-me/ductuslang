@@ -297,6 +297,7 @@ impl Core<'_> {
                         (Some(annotated), _) if fact.dims.len() == 1 => annotated,
                         (_, Some(fixed)) => fixed,
                         (_, None) if fact.leaf == Leaf::Bool => EvalTy::Bool,
+                        (_, None) if fact.leaf == Leaf::Float => self.own_float(rec.iterable.0)?,
                         (_, None) => EvalTy::Exact,
                     };
                     vec![(rec.iterable.0, items_ty)]
