@@ -473,8 +473,19 @@ impl Core<'_> {
         Ok(reached)
     }
 
-    pub fn reaches_a_cell(&self, root: u32) -> Result<bool, Internal> {
-        Ok(self.reaches_cell(root)? != NOT_A_CELL)
+    pub fn calls_reach_a_cell(&self, root: u32) -> Result<bool, Internal> {
+        for node in self.postorder(root)? {
+            if matches!(self.ir.node(node)?.0, Op::Call | Op::NamedCall)
+                && let Some(function) = self.callee(node)?
+            {
+                for body in self.function_roots(function)? {
+                    if self.reaches_cell(body)? != NOT_A_CELL {
+                        return Ok(true);
+                    }
+                }
+            }
+        }
+        Ok(false)
     }
 
     fn holds_kept(&self, root: u32) -> Result<bool, Internal> {
