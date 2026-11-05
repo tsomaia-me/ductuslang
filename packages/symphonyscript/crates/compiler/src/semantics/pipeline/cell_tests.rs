@@ -270,7 +270,32 @@ fn a_local_let_or_an_argument_a_refused_call_reads_reads_its_cells_in_its_own_ty
     }
 }
 
-const REPAIRED_USES: [(&str, bool); 8] = [
+const REPAIRED_USES: [(&str, bool); 15] = [
+    (
+        "state q([1, 2])\nClip c:\n    Note | velocity=(q[1.5])\n",
+        true,
+    ),
+    (
+        "state q([1, 2])\nClip c:\n    Note | velocity=(q[true])\n",
+        true,
+    ),
+    (
+        "state q([1, 2])\nClip c:\n    Note | velocity=(q[1])\n",
+        true,
+    ),
+    ("state q([1, 2])\nClip c:\n    Note/(q[1])\n", false),
+    (
+        "state q([[1, 2], [3, 4]])\nClip c:\n    Note | velocity=(q[0][1] * 1.5)\n",
+        true,
+    ),
+    (
+        "state q([1, 2])\nfn f(x): x[1] * 0.5\nClip c:\n    Note | velocity=f(q)\n",
+        true,
+    ),
+    (
+        "state q([1, 2])\nClip c:\n    Note | velocity=(q[0] * 1.5)\n    Note | pitch=q[1]\n",
+        false,
+    ),
     (
         "state q([]): i32[..4]\nClip c:\n    Note | velocity=(q[1.5])\n",
         true,

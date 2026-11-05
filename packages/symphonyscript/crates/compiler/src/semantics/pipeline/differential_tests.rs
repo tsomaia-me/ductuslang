@@ -572,6 +572,62 @@ fn a_declaration_on_a_faulty_line_draws_no_reactive_let_and_otherwise_what_the_o
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
 
+const FAULTY_LINE_VALUES: [(&str, &str, &str); 7] = [
+    ("if k[0] > 1 then k else e + 3]", "let-syntax", "]"),
+    ("if k[0] > 1 then k else e + -3]", "let-syntax", "]"),
+    ("if k[0] > 1 then k else e +  3]", "let-syntax", "]"),
+    ("if k[0] > 1 then k else e + 13]", "let-syntax", "]"),
+    (
+        "-if k[0] > 1 then k else e + [3]",
+        "unparenthesized-if",
+        "if",
+    ),
+    (
+        "- if k[0] > 1 then k else e + [3]",
+        "unparenthesized-if",
+        "if",
+    ),
+    ("e + 3]", "let-syntax", "]"),
+];
+
+#[test]
+fn a_let_on_a_line_holding_a_syntax_fault_draws_no_type_fault_of_its_own_on_that_line_455() {
+    let old = Compiler::new(&symphonyscript_fixtures::vocabulary())
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
+    let new =
+        Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("the vocabulary compiles");
+    for (value, code, at) in FAULTY_LINE_VALUES {
+        let items = [
+            "state k([1, 2]): i32[..4]\n".to_string(),
+            "let e = []\n".to_string(),
+            format!("let j = {value}\n"),
+            "Clip c:\n    Note/(j[^1])\n".to_string(),
+        ];
+        for order in [[0, 1, 2, 3], [3, 2, 1, 0]] {
+            let text: String = order
+                .iter()
+                .filter_map(|at| items.get(*at).map(String::as_str))
+                .collect();
+            let sources = [source(&text)];
+            let found = new
+                .checked_by_new_core(&sources)
+                .unwrap_or_else(|| panic!("the new core takes {text}"));
+            assert_eq!(
+                spanned(&text, &found),
+                vec![(code.to_string(), at.to_string())],
+                "{text}"
+            );
+            let before = old.check(&sources);
+            if before != found {
+                let classes = reviewed::moved(&text, &drawn(&before), &drawn(&found))
+                    .unwrap_or_else(|left| panic!("{text}\n  unexplained {left:?}"));
+                assert!(classes.iter().all(|class| class.ledger == "455"), "{text}");
+            }
+        }
+    }
+}
+
 fn drawn(found: &[crate::diagnostics::Diagnostic]) -> Vec<reviewed::Drawn> {
     found
         .iter()

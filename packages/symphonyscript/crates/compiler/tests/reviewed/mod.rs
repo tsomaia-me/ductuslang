@@ -220,14 +220,6 @@ pub type Carried = (
 
 pub const CARRIED_TO_R4B: &[Carried] = &[
     (
-        "state k([1, 2]): i32[..4]\nlet e = []\nlet j = -if k[0] > 1 then k else e + [3]\nClip c:\n    Note/(j[^1])\n",
-        &[("unparenthesized-if", "if")],
-        &[
-            ("array-operand", "-if k[0] > 1 then k else e + [3]"),
-            ("unparenthesized-if", "if"),
-        ],
-    ),
-    (
         "Clip c:\n    Note | velocity=((q[[1, 2][5]..])[if true then q else 1.5])\n\nstate q([]): i32[..4]\n",
         &[
             ("index-out-of-range", "5"),
@@ -4506,16 +4498,32 @@ fn path_beside_an_unknown_attribute(seen: &Seen<'_>, change: Change, at: &Drawn)
 
 fn faulty_line(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
     let line = seen.line(at.1);
-    let nameless = (seen.before(at).is_empty() || seen.before(at).ends_with('\n'))
-        && seen.text(at).starts_with("let ");
-    change == Change::Removed
-        && at.0 == "reactive-let"
-        && (top_level_let_name(seen, at) || nameless)
-        && seen.old.iter().any(|drawn| {
-            line_fault(&drawn.0)
-                && seen.line(drawn.1) <= line
-                && line <= seen.line(drawn.2.max(drawn.1 + 1) - 1)
-        })
+    let faulty = seen.old.iter().any(|drawn| {
+        line_fault(&drawn.0)
+            && seen.line(drawn.1) <= line
+            && line <= seen.line(drawn.2.max(drawn.1 + 1) - 1)
+    });
+    if change != Change::Removed || !faulty {
+        return false;
+    }
+    if at.0 == "reactive-let" {
+        let nameless = (seen.before(at).is_empty() || seen.before(at).ends_with('\n'))
+            && seen.text(at).starts_with("let ");
+        return top_level_let_name(seen, at) || nameless;
+    }
+    [
+        "array-operand",
+        "operand-type",
+        "type-mismatch",
+        "not-an-array",
+        "index-type",
+        "does-not-fit",
+    ]
+    .contains(&at.0.as_str())
+        && seen.line(at.2.saturating_sub(1).max(at.1)) == line
+        && lines_at(seen.program)
+            .get(line)
+            .is_some_and(|(_, text)| text.starts_with("let "))
 }
 
 fn variable_inits(program: &str) -> Vec<(usize, usize, usize)> {
@@ -5330,7 +5338,7 @@ pub const CLASSES: &[Class] = &[
     },
     Class {
         ledger: "455",
-        rule: "a let declared on a line holding a syntax fault is a placeholder and draws no reactive-let",
+        rule: "a let declared on a line holding a syntax fault is a placeholder and its value draws nothing of its own, its reactive-let and a type fault on its line alike, since the line's intended text is unknown (ARCHITECTURE §7: a syntax fault leaves no type known)",
         explains: faulty_line,
     },
     Class {

@@ -293,9 +293,10 @@ impl Core<'_> {
                     Some(EvalTy::U8 | EvalTy::I32 | EvalTy::I64)
                 )
             } else {
-                matches!(fact.leaf, Leaf::Int | Leaf::Empty)
-                    && fact.dims.is_empty()
-                    && fact.fixed.is_none()
+                matches!(fact.leaf, Leaf::Int)
+                    || (matches!(fact.leaf, Leaf::Empty)
+                        && fact.dims.is_empty()
+                        && fact.fixed.is_none())
             };
             if !integer {
                 continue;
