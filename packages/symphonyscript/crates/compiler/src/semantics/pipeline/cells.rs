@@ -342,6 +342,14 @@ impl Core<'_> {
                 continue;
             }
             if op == Op::Name && self.local_or_param(node)? {
+                if let DeclRef::Param(position) = self.bound(node)?
+                    && let Some((root, caller)) = self.use_argument(node, position)?
+                {
+                    let saved = self.enter_env(caller);
+                    let found = self.reads_float_cell(root);
+                    self.leave_env(saved);
+                    return found;
+                }
                 return self.is_reactive(node);
             }
             if matches!(op, Op::Index | Op::IndexFromEnd) {
@@ -427,5 +435,41 @@ impl Core<'_> {
             }
         }
         Ok(false)
+    }
+}
+
+impl Core<'_> {
+    fn use_argument(&self, node: u32, position: u32) -> Result<Option<(u32, u32)>, Internal> {
+        let owner = self.binding_owner(node)?;
+        if self.pattern_at(owner).is_none() {
+            return Ok(None);
+        }
+        let bodies = &self.bodies;
+        let Some(env) = self
+            .own_calls
+            .iter()
+            .rev()
+            .find(|(env, inst, _)| {
+                *env != NONE
+                    && bodies
+                        .get(*inst as usize)
+                        .is_some_and(|body| body.function == owner)
+            })
+            .map(|(env, _, _)| *env)
+        else {
+            return Ok(None);
+        };
+        let Some((root, caller)) = self
+            .use_args
+            .get(&env)
+            .and_then(|args| args.get(position as usize))
+            .copied()
+        else {
+            return Ok(None);
+        };
+        if root == NONE || self.default_nodes.contains_key(&root) {
+            return Ok(None);
+        }
+        Ok(Some((root, caller)))
     }
 }

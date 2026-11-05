@@ -659,3 +659,66 @@ fn a_default_reading_a_cell_fed_or_path_fed_parameter_is_keyed_once_that_paramet
         ]
     );
 }
+
+const CELL_OR_VALUE_ARGUMENTS: [&str; 4] = [
+    "let base = 42.0\npattern Riff(default root):\n    Clip:\n        Note/root Note/(root + 7) Note/(root + 12)\nRiff low /base\nRiff high /(base + 12)\n",
+    "state tension(0.5)\nstate base = 36 + tension * 12\nClip c:\n    Note/base Note/(base + 7)\n",
+    "state tension(0.5)\npattern Riff(default root):\n    Clip:\n        Note/root Note/(root + 7)\nRiff low /tension\n",
+    "state tension(0.5)\nClip c:\n    Note/(36 + tension * 12) Note/((36 + tension * 12) + 7)\n",
+];
+
+#[test]
+fn a_parameter_bound_to_an_expression_over_cells_draws_at_its_reads_what_that_expression_draws_in_place()
+ {
+    let vocabulary = symphonyscript_fixtures::vocabulary();
+    assert_engines_agree(&vocabulary, &CELL_OR_VALUE_ARGUMENTS);
+    let new = Compiler::new(&vocabulary).expect("the vocabulary compiles");
+    let mismatches = |found: Vec<(Code, std::ops::Range<u32>, usize)>| {
+        found
+            .into_iter()
+            .map(|(code, range, _)| (code, range))
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(
+        mismatches(codes_of(
+            &new,
+            "state tension(0.5)\nlet base = 36 + tension * 12\npattern Riff(default root):\n    Clip:\n        Note/root Note/(root + 7) Note/(root + 12)\nRiff low /base\nRiff high /(base + 12)\n"
+        )),
+        vec![
+            (Code::NoEntryInstance, 0..0),
+            (Code::ReactiveLet, 23..27),
+            (Code::TypeMismatch, 99..103),
+            (Code::TypeMismatch, 99..103),
+            (Code::TypeMismatch, 110..118),
+            (Code::TypeMismatch, 110..118),
+            (Code::TypeMismatch, 126..135),
+            (Code::TypeMismatch, 126..135),
+        ]
+    );
+    assert_eq!(
+        mismatches(codes_of(
+            &new,
+            "state tension(0.5)\nstate base = 36 + tension * 12\npattern Riff(default root):\n    Clip:\n        Note/root Note/(root + 7) Note/(root + 12)\nRiff low /base\nRiff high /(base + 12)\n"
+        )),
+        vec![
+            (Code::NoEntryInstance, 0..0),
+            (Code::TypeMismatch, 101..105),
+            (Code::FloatToInteger, 101..105),
+            (Code::TypeMismatch, 112..120),
+            (Code::TypeMismatch, 112..120),
+            (Code::TypeMismatch, 128..137),
+            (Code::TypeMismatch, 128..137),
+        ]
+    );
+    assert_eq!(
+        mismatches(codes_of(
+            &new,
+            "state tension(0.5)\npattern Riff(default root):\n    Clip:\n        Note/root Note/(root + 7)\nRiff low /(36 + tension * 12)\n"
+        )),
+        vec![
+            (Code::NoEntryInstance, 0..0),
+            (Code::TypeMismatch, 70..74),
+            (Code::TypeMismatch, 81..89),
+        ]
+    );
+}
