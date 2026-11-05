@@ -76,6 +76,9 @@ mod slice_transform;
 mod stages;
 mod step;
 mod store;
+mod suffix;
+#[cfg(test)]
+mod suffix_tests;
 #[cfg(test)]
 mod to_tests;
 mod typing;

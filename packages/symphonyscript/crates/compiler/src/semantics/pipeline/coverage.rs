@@ -57,7 +57,11 @@ fn landed(slice: Slice) -> bool {
 }
 
 fn literal_landed(ir: &FlatIr, suffix: u32) -> bool {
-    suffix == NONE || matches!(ir.suffixes.get(suffix as usize), Some(Suffix::None))
+    suffix == NONE
+        || matches!(
+            ir.suffixes.get(suffix as usize),
+            Some(Suffix::None | Suffix::Type(_))
+        )
 }
 
 pub(crate) fn covers(ir: &FlatIr) -> bool {

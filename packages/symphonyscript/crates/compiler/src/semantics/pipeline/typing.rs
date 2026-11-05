@@ -318,8 +318,8 @@ impl Core<'_> {
             Err(declined) => return Ok(Err(declined)),
         }
         Ok(Ok(match op {
-            Op::Int => Fact::scalar(Leaf::Int),
-            Op::Float => Fact::scalar(Leaf::Float),
+            Op::Int => self.literal_fact(node, Leaf::Int)?,
+            Op::Float => self.literal_fact(node, Leaf::Float)?,
             Op::Bool => Fact::scalar(Leaf::Bool),
             Op::Name if self.is_history_target(node) => self.history_target_fact(node)?,
             Op::Name => match self.bound(node)? {

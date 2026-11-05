@@ -1123,7 +1123,10 @@ impl Core<'_> {
                     .ints
                     .get(a as usize)
                     .ok_or(Internal::missed("IR integer"))?;
-                self.integer_literal(node, value, ty)?
+                match self.suffix_ty(node)? {
+                    Some(own) => self.suffixed_integer(node, value, own)?,
+                    None => self.integer_literal(node, value, ty)?,
+                }
             }
             Op::Float => {
                 let entry = *self
@@ -1136,7 +1139,8 @@ impl Core<'_> {
                     digits: self.ir.text(entry.digits).to_string(),
                     exponent: entry.exponent,
                 };
-                self.float_literal(node, &literal, ty)?
+                let own = self.suffix_ty(node)?.unwrap_or(ty);
+                self.float_literal(node, &literal, own)?
             }
             Op::Bool => Value::Bool(a == 1),
             Op::Name => match self.bound(node)? {
@@ -1921,7 +1925,7 @@ impl Core<'_> {
         Ok(unfixed.get(&(self.inst, node)).copied().unwrap_or(false))
     }
 
-    fn integer_literal(
+    pub fn integer_literal(
         &mut self,
         node: u32,
         value: i128,
