@@ -853,21 +853,22 @@ class Review(unittest.TestCase):
                                 float("inf"), lambda: 2.0, scale)
             taken = json.loads((root / figures.QUICK_NAME).read_text())
             calls = {profile: (binaries[profile] / "calls.log").read_text().splitlines() for profile in binaries}
-        first, second, third = key(breakers[0]), key(breakers[1]), key(breakers[2])
+        first, second, third, fifth = key(breakers[0]), key(breakers[1]), key(breakers[2]), key(breakers[4])
         for profile in figures.PROFILES:
             self.assertEqual(calls[profile], [f"5 {second}#0 {second}#1 {second}#2 {first}#0 {first}#1 {first}#2",
-                                              f"5 {first}#0 {first}#1 {first}#2 {third}#0 {third}#1 {third}#2"])
+                                              f"5 {first}#0 {first}#1 {first}#2 {third}#0 {third}#1 {third}#2 "
+                                              f"{fifth}#0 {fifth}#1 {fifth}#2"])
         figure = taken["figures"][1]
         self.assertEqual((figure["work"], figure["measured_by"]),
-                         ("A program the new core takes", "Check over the 2 slowest breaker programs the verdict check "
-                                                          "found the new core taking, median and 99th percentile of "
-                                                          "each one's median, and the median time a syntax node"))
+                         ("A program the new core takes", "Check over every breaker program the verdict check found "
+                                                          "the new core taking, median and 99th percentile of each "
+                                                          "one's median, and their time a syntax node"))
         fields = ("programs", "past_budget", "median_ms", "p99_ms", "counted_programs", "per_node_us",
                   "target_node_us", "targets_ms", "engines", "past_target", "load")
         self.assertEqual({name: figure["dev"][name] for name in fields},
-                         {"programs": 2, "past_budget": 0, "median_ms": 0.04, "p99_ms": 0.04, "counted_programs": 2,
+                         {"programs": 3, "past_budget": 0, "median_ms": 0.04, "p99_ms": 0.04, "counted_programs": 3,
                           "per_node_us": 2.0, "target_node_us": 1.3, "targets_ms": {"median": 0.5, "p99": 2.0},
-                          "engines": {"new": 2, "old": 0, "unknown": 0},
+                          "engines": {"new": 3, "old": 0, "unknown": 0},
                           "past_target": {"median": False, "p99": False, "node": True}, "load": 2.0})
         self.assertEqual({name: figure["release"][name] for name in ("median_ms", "per_node_us", "target_node_us",
                                                                      "targets_ms", "past_target")},
@@ -879,8 +880,8 @@ class Review(unittest.TestCase):
         self.assertEqual(taken["past_target"], ["A program the new core takes node (dev)"])
         self.assertEqual(taken["figures"][0]["dev"]["engines"], {"new": 1, "old": 1, "unknown": 0})
         lines = printed.getvalue().splitlines()
-        for line in ["A program the new core takes, dev: median 0.04 ms, p99 0.04 ms over 2 programs, 0 past the "
-                     "budget, median 2.000 us a syntax node over 2 programs, target 1.3 us, load 2.00; PAST TARGET "
+        for line in ["A program the new core takes, dev: median 0.04 ms, p99 0.04 ms over 3 programs, 0 past the "
+                     "budget, 2.000 us a syntax node over 3 programs, target 1.3 us, load 2.00; PAST TARGET "
                      "node 1.3 us",
                      "A program the new core takes: release : dev median 0.25, p99 0.25, a syntax node 0.25",
                      "A program the new core takes: breaker programs each engine takes in the verdict check: new 3, "

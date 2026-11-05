@@ -32,10 +32,10 @@ QUICK_BREAKERS = ("A program of the breaker corpus",
                   "Check over the {breakers} slowest programs, median and 99th percentile of each one's median")
 NEW_CORE = ("A program the new core takes",
             "Check over every breaker program the verdict check found the new core taking, median and 99th "
-            "percentile, and the median time a syntax node")
+            "percentile, and their time a syntax node")
 QUICK_NEW_CORE = ("A program the new core takes",
-                  "Check over the {breakers} slowest breaker programs the verdict check found the new core taking, "
-                  "median and 99th percentile of each one's median, and the median time a syntax node")
+                  "Check over every breaker program the verdict check found the new core taking, median and 99th "
+                  "percentile of each one's median, and their time a syntax node")
 NEW_CORE_HEADING = "New core"
 NEW = "new"
 ENGINES = (NEW, "old")
@@ -272,18 +272,19 @@ def per_node_times(elapsed, nodes):
 def new_core_profile(elapsed, nodes, load, profile, engines):
     row = breaker_profile(elapsed, load, BREAKER_TARGETS_MS[profile], engines)
     per_node = per_node_times(elapsed, nodes)
-    finished = sorted(us for us in per_node.values() if us is not None)
-    median = ranked(finished, len(per_node), 0.5)
+    finished = [program_key for program_key, us in per_node.items() if us is not None]
+    total_nodes = sum(nodes[program_key] for program_key in finished)
+    whole = sum(elapsed[program_key] for program_key in finished) * 1000 / total_nodes if total_nodes else None
     target = NEW_CORE_NODE_TARGETS_US[profile]
-    past = {**row["past_target"], "node": median is None or median > target}
-    return {**row, "counted_programs": len(per_node), "per_node_us": median, "target_node_us": target,
+    past = {**row["past_target"], "node": whole is None or whole > target}
+    return {**row, "counted_programs": len(per_node), "per_node_us": whole, "target_node_us": target,
             "past_target": past if elapsed else dict.fromkeys(past, None)}
 
 
 def new_core_figure(times, elapsed, nodes, loads, below, scale=FULL, engines=None):
     counted = len(elapsed["dev"])
-    judged = (f"each program's time divided by its syntax nodes as evolve-count counts them, the median of those "
-              f"over the programs it counts against {NEW_CORE_NODE_TARGETS_US['release']} us a syntax node release "
+    judged = (f"the timed programs' total time divided by their total syntax nodes as evolve-count counts them, "
+              f"against {NEW_CORE_NODE_TARGETS_US['release']} us a syntax node release "
               f"and {NEW_CORE_NODE_TARGETS_US['dev']} us dev; beside it, how many {BREAKER_SET} programs each engine "
               f"takes in the verdict check, by the engine its check-times.json.gz row names")
     if scale["breakers"] is None:
@@ -294,9 +295,9 @@ def new_core_figure(times, elapsed, nodes, loads, below, scale=FULL, engines=Non
                   f"timed one and reads as null; nearest-rank percentiles over all {counted} programs; {judged}")
     else:
         figure = stated(QUICK_NEW_CORE, scale)
-        method = (f"the {scale['breakers']} {BREAKER_SET} programs whose check-times.json.gz row names the new "
-                  f"core slowest in the verdict check's times ({times['profile']} profile) among those it timed "
-                  f"within its {times['budget_s']} s budget, or all of them when fewer, {RUNS} runs each in one "
+        method = (f"every {BREAKER_SET} program whose check-times.json.gz row names the new core among those the "
+                  f"verdict check ({times['profile']} profile) timed within its {times['budget_s']} s budget, "
+                  f"{RUNS} runs each in one "
                   f"process per profile, one job, {waited(below)}; each program's median, a program past the budget "
                   f"in any run ranking above every timed one and reading as null; nearest-rank percentiles over the "
                   f"{counted} programs; {judged}")
@@ -407,7 +408,7 @@ def new_core_breakers(binaries, work, times, sources, timings, settle, below, sc
         else:
             loads[profile] = settle()
             elapsed[profile], engines[profile] = quick_breaker_elapsed(binaries[profile], work, times, sources,
-                                                                       scale["breakers"], NEW)
+                                                                       None, NEW)
     counts = counted(binaries["dev"], [{"id": program_key, "sources": sources[program_key]}
                                        for program_key in elapsed["dev"]], work, True)
     nodes = {program_key: row["syntax_nodes"] for program_key, row in counts.items()}
@@ -689,7 +690,7 @@ def shown_new_core(figure):
         if row["past_target"]["node"]:
             marks.append(f"PAST TARGET node {row['target_node_us']} us")
         lines.append(f"{figure['work']}, {profile}: median {row['median_ms']} ms, p99 {row['p99_ms']} ms over "
-                     f"{row['programs']} programs, {row['past_budget']} past the budget, median "
+                     f"{row['programs']} programs, {row['past_budget']} past the budget, "
                      f"{cost(row['per_node_us'])} a syntax node over {row['counted_programs']} programs, target "
                      f"{row['target_node_us']} us, load {row['load']:.2f}{notes(*marks)}")
     lines.append(f"{figure['work']}: release : dev median {figure['ratio']['median']}, p99 {figure['ratio']['p99']}, "
