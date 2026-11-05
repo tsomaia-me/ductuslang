@@ -8,7 +8,7 @@ use crate::semantics::counted_walk::CountedWalk;
 use crate::semantics::ir::flat::{NONE, Op};
 use crate::semantics::operators::EvalTy;
 
-type Binding = Option<(EvalTy, bool, bool, bool, Option<Fact>, Option<EvalTy>, u32)>;
+pub(crate) type Binding = Option<(EvalTy, bool, bool, bool, Option<Fact>, Option<EvalTy>, u32)>;
 
 impl Core<'_> {
     pub fn share_ref_bodies(&mut self) -> Result<(), Internal> {
@@ -56,7 +56,7 @@ impl Core<'_> {
         Ok(())
     }
 
-    fn binding(&self, at: u32) -> Result<Binding, Internal> {
+    pub fn binding(&self, at: u32) -> Result<Binding, Internal> {
         let Some(read) = self.attr_reads.get(at as usize) else {
             return Ok(None);
         };

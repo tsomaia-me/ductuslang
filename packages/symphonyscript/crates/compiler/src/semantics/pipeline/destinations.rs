@@ -109,6 +109,19 @@ impl Core<'_> {
             (test, vec![b, c])
         } else if op == Op::Index {
             let Some(elements) = self.reference_elements(a)? else {
+                if live
+                    && self.ir.node(a)?.0 == Op::Name
+                    && matches!(self.bound(a)?, DeclRef::Param(_))
+                {
+                    return Ok(match self.evaluate(node, EvalTy::Exact)? {
+                        Ok(Value::Node(row)) if row != NONE => {
+                            found.push(row);
+                            Ok(Choice::Known(row))
+                        }
+                        Ok(_) => Ok(Choice::Unknown),
+                        Err(declined) => Err(declined),
+                    });
+                }
                 return Ok(Err(Declined(Reason::DestinationValue)));
             };
             let count = u32::try_from(elements.len()).unwrap_or(u32::MAX);

@@ -147,6 +147,8 @@ pub(crate) struct Core<'a> {
     pub group_items: HashSet<u32>,
     pub path_env: u32,
     pub env_path_rows: HashMap<(u32, u32), u32>,
+    pub env_param_reads: HashMap<u32, Vec<(u32, u32)>>,
+    pub sig_index: HashMap<(super::core::BodyKey, Vec<(u32, super::ref_bodies::Binding)>), u32>,
 }
 
 impl<'a> Core<'a> {
@@ -275,6 +277,8 @@ impl<'a> Core<'a> {
             group_items: HashSet::new(),
             path_env: NONE,
             env_path_rows: HashMap::new(),
+            env_param_reads: HashMap::new(),
+            sig_index: HashMap::new(),
         }
     }
 

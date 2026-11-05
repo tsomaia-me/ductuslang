@@ -6,7 +6,7 @@ use super::leaf::Leaf;
 use super::reason::Reason;
 use crate::diagnostics::Code;
 use crate::semantics::Internal;
-use crate::semantics::ir::flat::{ItemRec, NONE, Op};
+use crate::semantics::ir::flat::{AttrForm, ItemRec, NONE, Op};
 
 const ELEMENTS: &str = "the elements of the array hold values of different types";
 
@@ -26,6 +26,19 @@ impl Core<'_> {
             match item {
                 ItemRec::Wire(wire) => roots.push(wire.destination),
                 ItemRec::For(rec) if !rec.head.range => roots.push(rec.head.iterable.0),
+                ItemRec::Placement(placement) if self.used_pattern(placement.kind).is_some() => {
+                    roots.push(placement.default);
+                    for entry in self
+                        .ir
+                        .attr_entries
+                        .get(placement.attrs.0 as usize..placement.attrs.1 as usize)
+                        .unwrap_or_default()
+                    {
+                        if let AttrForm::Value(value) = entry.form {
+                            roots.push(value);
+                        }
+                    }
+                }
                 ItemRec::For(_)
                 | ItemRec::Placement(_)
                 | ItemRec::Bundle(_)

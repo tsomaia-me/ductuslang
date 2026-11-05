@@ -414,6 +414,10 @@ impl Core<'_> {
                     }
                 }
                 DeclRef::Param(position) => {
+                    let owner = self.binding_owner(receiver)?;
+                    if self.pattern_at(owner).is_some() {
+                        return self.use_param_path_end(node, owner, position, field);
+                    }
                     return self.loop_name_path_end(node, receiver, position, field);
                 }
                 DeclRef::None
@@ -471,6 +475,9 @@ impl Core<'_> {
         self.index_children()?;
         if self.group_use_named()? {
             return Ok(Err(Declined(Reason::PatternUse)));
+        }
+        if let Err(declined) = self.bind_reference_args()? {
+            return Ok(Err(declined));
         }
         self.index_to_wires()?;
         self.misplaced_to()?;
@@ -1700,5 +1707,73 @@ impl Core<'_> {
             }
         }
         self.path_rows.get(&node).copied()
+    }
+}
+
+impl Core<'_> {
+    fn use_param_path_end(
+        &mut self,
+        node: u32,
+        owner: u32,
+        position: u32,
+        field: u32,
+    ) -> Stage<End> {
+        if self.is_field_receiver(node) {
+            return Ok(Err(Declined(Reason::Member)));
+        }
+        let mut first = None;
+        for env in 0..u32::try_from(self.envs.len()).unwrap_or(0) {
+            let Some(record) = self.envs.get(env as usize).copied() else {
+                continue;
+            };
+            let owned = self
+                .bodies
+                .get(record.inst as usize)
+                .is_some_and(|body| body.function == owner);
+            if record.use_item == NONE || !owned {
+                continue;
+            }
+            CountedWalk::CorePathStep.step();
+            let value = self
+                .env_vals
+                .get((record.values.0 + position) as usize)
+                .cloned()
+                .unwrap_or(CoreValue::Error);
+            let row = match value {
+                CoreValue::Node(row) if row != NONE => row,
+                CoreValue::Error | CoreValue::Node(_) => continue,
+                CoreValue::Int(_)
+                | CoreValue::F32(_)
+                | CoreValue::F64(_)
+                | CoreValue::Bool(_)
+                | CoreValue::Enum(..)
+                | CoreValue::Str(_)
+                | CoreValue::Array(_) => return Ok(Err(Declined(Reason::Member))),
+            };
+            let links = self.enter_env(env);
+            let end = self.step_row(node, row, field);
+            self.leave_env(links);
+            let end = match end? {
+                Ok(end) => end,
+                Err(declined) => return Ok(Err(declined)),
+            };
+            match end {
+                End::Attr(at) => {
+                    self.env_reads.insert((node, env), at);
+                    self.env_param_reads
+                        .entry(env)
+                        .or_default()
+                        .push((node, at));
+                }
+                End::Row(_) | End::Use(_) | End::To => return Ok(Err(Declined(Reason::Member))),
+                End::Value | End::Placeholder => {}
+            }
+            if first.is_none()
+                || matches!(end, End::Attr(_)) && !matches!(first, Some(End::Attr(_)))
+            {
+                first = Some(end);
+            }
+        }
+        Ok(Ok(first.unwrap_or(End::Placeholder)))
     }
 }

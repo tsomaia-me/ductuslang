@@ -117,7 +117,6 @@ fn the_declined_pattern_forms_stay_with_the_old_engine() {
         "pattern Voice(default f):\n    Osc as osc /f\n    Filter\nSynth s:\n    Voice as v1 /440\n    Feeds: v1\n",
         "pattern Voice(default f):\n    Osc as osc /f\n    Filter\nSynth s:\n    Voice as v1 /440\n    Osc /(v1)\n",
         "pattern Voice(default f):\n    Osc as osc /f\n    Filter\nSynth s:\n    Voice as v1 /440\nClip c | gain=s.v1\n",
-        "pattern P(default v):\n    Plays: v\nClip c:\n    P/d\nClip d\n",
     ] {
         assert!(new.checked_by_new_core(&[source(text)]).is_none(), "{text}");
     }
@@ -761,4 +760,34 @@ fn a_pattern_local_path_ending_at_a_row_names_that_uses_row_and_a_wire_fault_nam
     let new = Compiler::new(&vocabulary).expect("the vocabulary compiles");
     let stand_in_name = "pattern P(default v):\n    Synth as y:\n        Osc as o /v:\n            Feeds: y.g\n        Filter as f\nTrack t:\n    P/1\n";
     assert!(new.checked_by_new_core(&[source(stand_in_name)]).is_none());
+}
+
+const REFERENCE_ARGUMENTS: [&str; 13] = [
+    "pattern P(default v):\n    Plays: v\nClip c:\n    P/d\nClip d\n",
+    "pattern P(default v):\n    Note/1 | velocity=(v.gain)\nClip c:\n    P/d\n    P/e\nClip d | gain=0.5\nClip e\n",
+    "state s(0.5)\npattern P(default v):\n    Note/(v.gain)\nClip c:\n    P/d\n    P/e\nClip d | gain=s\nClip e\n",
+    "pattern P(default v):\n    Note/1 | velocity=(v.bogus)\nClip c:\n    P/d\nClip d\n",
+    "pattern P(default v):\n    Plays: v\nClip c:\n    P/x\nSession x\n",
+    "pattern P(default v):\n    Note/1 | velocity=(v.gain + 1)\nClip c:\n    P/d\nClip d | gain=(1 + true)\n",
+    "pattern P(default v):\n    Plays: v\nClip c:\n    P/c\n",
+    "pattern P(default v, w):\n    Plays: v\n    Note/1 | velocity=(w.gain)\nClip c:\n    P/d | w=e\nClip d\nClip e | gain=0.25\n",
+    "pattern P(default v):\n    Plays: v[1]\nClip c:\n    P/([d, e])\nClip d\nClip e\n",
+    "pattern P(default v):\n    Plays: v[2]\nClip c:\n    P/([d, e])\nClip d\nClip e\n",
+    "pattern P(default v):\n    Plays: v[1]\nClip c:\n    P/([d, x])\nClip d\nSession x\n",
+    "pattern P(default v):\n    Plays: v\nClip c:\n    P/(true)\n",
+    "pattern P(default v):\n    Note/1 | velocity=(v.gain)\nClip c:\n    P/e\n    P/d\nClip d | gain=(c.gain)\nClip e | gain=0.5\n",
+];
+
+#[test]
+fn a_reference_argument_binds_its_rows_and_keys_its_use_by_the_bindings_the_body_reads_through_it()
+{
+    let vocabulary = symphonyscript_fixtures::vocabulary();
+    assert_engines_agree(&vocabulary, &REFERENCE_ARGUMENTS);
+    let new = Compiler::new(&vocabulary).expect("the vocabulary compiles");
+    for text in [
+        "pattern P(default v):\n    Note/(v)\nClip c:\n    P/d\nClip d\n",
+        "pattern P(default v):\n    Note/1 | velocity=(v[0].gain)\nClip c:\n    P/([d, e])\nClip d\nClip e\n",
+    ] {
+        assert!(new.checked_by_new_core(&[source(text)]).is_none(), "{text}");
+    }
 }

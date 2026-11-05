@@ -142,7 +142,11 @@ impl Core<'_> {
             }
             if !defaulted {
                 let saved = self.enter_env(caller);
-                let deferred = self.deferred_arg(root);
+                let deferred = match self.reference_arg(root) {
+                    Ok(true) => Ok(Some(false)),
+                    Ok(false) => self.deferred_arg(root),
+                    Err(internal) => Err(internal),
+                };
                 self.leave_env(saved);
                 if let Some(cells) = deferred? {
                     facts.push(Fact::PLACEHOLDER);
@@ -433,12 +437,87 @@ impl Core<'_> {
             Err(declined) => return Ok(Err(declined)),
         };
         if fact.node {
-            return Ok(Err(Declined(Reason::PatternUse)));
+            if self.is_reactive(root)? || !self.reference_arg(root)? {
+                return Ok(Err(Declined(Reason::PatternUse)));
+            }
+            return Ok(match self.evaluate(root, EvalTy::Exact)? {
+                Ok(value) => Ok((fact, value, false)),
+                Err(declined) => Err(declined),
+            });
         }
         if self.is_reactive(root)? {
             return Ok(Ok((fact, CoreValue::Error, true)));
         }
         self.argument_value(root, fact)
+    }
+
+    pub fn reference_arg(&self, root: u32) -> Result<bool, Internal> {
+        let op = self.ir.node(root)?.0;
+        let names = if op == Op::Name {
+            vec![root]
+        } else if op == Op::Array {
+            self.operands(root)?
+        } else {
+            return Ok(false);
+        };
+        if names.is_empty() {
+            return Ok(false);
+        }
+        for name in names {
+            if self.ir.node(name)?.0 != Op::Name {
+                return Ok(false);
+            }
+            let DeclRef::Instance(item) = self.bound(name)? else {
+                return Ok(false);
+            };
+            if self.group_items.contains(&item) {
+                return Ok(false);
+            }
+        }
+        Ok(true)
+    }
+
+    pub fn bind_reference_args(&mut self) -> Stage<()> {
+        let deferred = self.deferred_uses.clone();
+        for (env, positions) in deferred {
+            let record = *self
+                .envs
+                .get(env as usize)
+                .ok_or(Internal::missed("use env"))?;
+            let args = self.use_args.get(&env).cloned().unwrap_or_default();
+            for position in positions {
+                let Some((root, caller)) = args.get(position as usize).copied() else {
+                    continue;
+                };
+                if caller == NONE && self.default_nodes.contains_key(&root) {
+                    continue;
+                }
+                let saved = self.enter_env(caller);
+                let reference = self.reference_arg(root);
+                let outcome = match reference {
+                    Ok(true) => self.late_argument(root).map(Some),
+                    Ok(false) => Ok(None),
+                    Err(internal) => Err(internal),
+                };
+                self.leave_env(saved);
+                let Some(outcome) = outcome? else {
+                    continue;
+                };
+                let (fact, value, _) = match outcome {
+                    Ok(found) => found,
+                    Err(declined) => return Ok(Err(declined)),
+                };
+                if let Some(body) = self.bodies.get_mut(record.inst as usize)
+                    && let Some(slot) = body.args.get_mut(position as usize)
+                {
+                    *slot = fact;
+                }
+                if let Some(slot) = self.env_vals.get_mut((record.values.0 + position) as usize) {
+                    *slot = value;
+                }
+            }
+        }
+        Ok(Ok(()))
     }
 
     fn deferred_arg(&self, root: u32) -> Result<Option<bool>, Internal> {
@@ -553,12 +632,32 @@ impl Core<'_> {
                 body.args.clone(),
                 body.reactive_args.clone(),
             );
-            match self.body_index.get(&key).copied() {
+            let reads = self.env_param_reads.get(&env).cloned().unwrap_or_default();
+            if reads.is_empty() {
+                match self.body_index.get(&key).copied() {
+                    Some(shared) => {
+                        self.typed_as.insert(record.inst, shared);
+                    }
+                    None => {
+                        self.body_index.insert(key, record.inst);
+                    }
+                }
+                continue;
+            }
+            let mut signature = Vec::with_capacity(reads.len());
+            for (node, at) in reads {
+                signature.push((node, self.binding(at)?));
+            }
+            match self
+                .sig_index
+                .get(&(key.clone(), signature.clone()))
+                .copied()
+            {
                 Some(shared) => {
                     self.typed_as.insert(record.inst, shared);
                 }
                 None => {
-                    self.body_index.insert(key, record.inst);
+                    self.sig_index.insert((key, signature), record.inst);
                 }
             }
         }
