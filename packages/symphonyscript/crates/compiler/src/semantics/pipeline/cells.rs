@@ -34,6 +34,14 @@ impl Core<'_> {
             return Ok(fact);
         }
         let mut fact = self.fact(self.cell_root(at)?)?;
+        if let Some(init) = self.open_member(at, &fact) {
+            fact = self.fact(init)?;
+        }
+        if self.group_variable.contains(&at)
+            && let Some(first) = fact.dims.first_mut()
+        {
+            *first = super::folds::ANY_LENGTH;
+        }
         if !self.derived(at) && fact.fixed.is_none() && fact.read.is_none() {
             fact.read = match fact.leaf {
                 Leaf::Int | Leaf::Empty => Some(EvalTy::I64),

@@ -162,6 +162,9 @@ impl Core<'_> {
         if !self.derived(at) || self.is_cyclic_cell(at) || self.cell_annotation_ty(at)?.is_some() {
             return Ok(false);
         }
+        if self.group_variable.contains(&at) {
+            return Ok(true);
+        }
         let root = self.cell_root(at)?;
         if !self.has_fact(root)? {
             return Ok(false);

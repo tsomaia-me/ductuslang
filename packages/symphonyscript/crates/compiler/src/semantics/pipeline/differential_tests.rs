@@ -2550,3 +2550,155 @@ fn a_fault_raised_at_a_layout_token_counts_against_the_line_that_token_ends_so_t
     }
     assert_eq!(programs, 96);
 }
+
+type OpenGroup = (
+    &'static [&'static str],
+    &'static [(&'static str, &'static str)],
+);
+
+const OPEN_HISTORY_GROUPS: [OpenGroup; 5] = [
+    (
+        &[
+            "state n(0)\n",
+            "state r([0, 0]) = (b.past(1) + b.past(1) + [n])[3..]\n",
+            "state b = r\n",
+            "state t: i32[2] = r\n",
+        ],
+        &[],
+    ),
+    (
+        &[
+            "state n(0)\n",
+            "state r([0, 0]) = (b.past(1) + b.past(2) + [n])[3..]\n",
+            "state b = r\n",
+            "state t: i32[2] = r\n",
+        ],
+        &[],
+    ),
+    (
+        &[
+            "state n(0)\n",
+            "state r([0, 0]) = (b.past(1) + c.past(1) + [n])[3..]\n",
+            "state b = r\n",
+            "state c = r\n",
+            "state t: i32[2] = r\n",
+        ],
+        &[],
+    ),
+    (
+        &[
+            "state n(0)\n",
+            "state r([0, 0]) = (b.past(1) + b.past(1) + [n])[3..]\n",
+            "state b = r\n",
+            "state t: i32[3] = r\n",
+        ],
+        &[("type-mismatch", "r")],
+    ),
+    (
+        &[
+            "state n(0)\n",
+            "state r([0, 0]) = (b.past(1) + b.past(1))[2..]\n",
+            "state b = r\n",
+            "state t: i32[2] = r\n",
+        ],
+        &[("unrun-cell", "r")],
+    ),
+];
+
+#[test]
+fn a_groups_history_read_with_neither_fallback_nor_init_takes_its_cells_settled_shape_in_every_order_461()
+ {
+    let old = Compiler::new(&symphonyscript_fixtures::vocabulary())
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
+    let new =
+        Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("the vocabulary compiles");
+    let mut programs = 0;
+    for (items, wanted) in OPEN_HISTORY_GROUPS {
+        let items: Vec<String> = items.iter().map(|item| (*item).to_string()).collect();
+        let mut wanted: Vec<(String, String)> = wanted
+            .iter()
+            .map(|(code, span)| ((*code).to_string(), (*span).to_string()))
+            .collect();
+        wanted.sort();
+        for text in orders(&items) {
+            let sources = [source(&text)];
+            let found = new
+                .checked_by_new_core(&sources)
+                .unwrap_or_else(|| panic!("the new core takes {text}"));
+            let first = if text.find("state b").unwrap_or(0) < text.find("state r").unwrap_or(0) {
+                "b"
+            } else {
+                "r"
+            };
+            let wanted: Vec<(String, String)> = wanted
+                .iter()
+                .map(|(code, span)| {
+                    let span = if code == "unrun-cell" {
+                        first.to_string()
+                    } else {
+                        span.clone()
+                    };
+                    (code.clone(), span)
+                })
+                .collect();
+            assert_eq!(spanned(&text, &found), wanted, "{text}");
+            let before = old.check(&sources);
+            if before != found && !wanted.iter().any(|(code, _)| code == "unrun-cell") {
+                let classes = reviewed::moved(&text, &drawn(&before), &drawn(&found))
+                    .unwrap_or_else(|left| panic!("{text}\n  unexplained {left:?}"));
+                assert!(classes.iter().all(|class| class.ledger == "461"), "{text}");
+            }
+            programs += 1;
+        }
+    }
+    assert_eq!(programs, 24 * 4 + 120);
+}
+
+const ARRAY_GROUPS: [&str; 16] = [
+    "state x(1)\nstate h = h.past(1, [0, 0])[1..] + [x]\nClip c:\n    Note/(h[0])\n",
+    "state x(1)\nstate h = h.past(1, [0, 0]) + [x]\nClip c:\n    Note/(h[0])\n",
+    "state x(1)\nstate a = (b.past(1, []) + [x])[^4..]\nstate b = a\nClip c:\n    Note/(a[0] + b[0])\n",
+    "state x(1)\nstate a = b.past(1, [0]) + [x]\nstate b = a.past(1, [0])\nClip c:\n    Note/(a[0])\n",
+    "state x(1)\nstate a([0, 0]) = (a.past(1) + [x])[1..]\nClip c:\n    Note/(a[0])\n",
+    "state x(1)\nstate a([0, 0]) = a.past(1) + [x]\nClip c:\n    Note/(a[0])\n",
+    "state x(1)\nstate h = (h.past(1, []) + [x, x])[^3..]\nstate t: i32[..2] = h\nClip c:\n    Note/(t[0])\n",
+    "state x(1)\nstate h = (h.past(1, [1.5]) + [x])[^3..]\nClip c:\n    Note/(h[0])\n",
+    "state x(1.5)\nstate h = (h.past(1, []) + [x])[^3..]\nClip c:\n    Note | velocity=(h[0])\n",
+    "state x(1)\nstate h = if x > 0 then h.past(1, [0]) else [x, x]\nClip c:\n    Note/(h[0])\n",
+    "state x(1)\nstate h = h.past(1, 0) + [x]\nClip c:\n    Note/(h[0])\n",
+    "state x(1)\nstate h = (h.past(1, []) + [x])[^3..]\nstate g = (h.past(2, [1, 2, 3, 4]) + [x])\nClip c:\n    Note/(g[0])\n",
+    "state x(1)\nstate a([0, 0, 0]) = (a.past(1) + [x])[^2..]\nClip c:\n    Note/(a[0])\n",
+    "state go(0): i32\nstate t([1, 2]) = r.past(1, [go, go])\nstate r = [t[1], t] + 1\nClip c:\n    Note/(r[0])\n",
+    "state t([1, 2, 3]) = r.past(1)\nstate r = [t[1], t[0] + go]\nstate go(0): i32\nClip c:\n    Note/(t[0] + r[1])\n",
+    "state t([]) = r.past(1)\nstate r = (t + [go])[^4..]\nstate go(0): i32\nClip c:\n    Note\n",
+];
+
+#[test]
+fn a_group_of_cells_holding_arrays_settles_fixedness_and_capacities_together_as_the_old_engine_does()
+ {
+    let old = Compiler::new(&symphonyscript_fixtures::vocabulary())
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
+    let new =
+        Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("the vocabulary compiles");
+    for program in ARRAY_GROUPS {
+        let mut items: Vec<String> = Vec::new();
+        for line in program.lines() {
+            match items.last_mut() {
+                Some(item) if line.starts_with(' ') => {
+                    item.push_str(line);
+                    item.push('\n');
+                }
+                _ => items.push(format!("{line}\n")),
+            }
+        }
+        for text in orders(&items) {
+            let sources = [source(&text)];
+            let found = new
+                .checked_by_new_core(&sources)
+                .unwrap_or_else(|| panic!("the new core takes {text}"));
+            assert_eq!(found, old.check(&sources), "{text}");
+        }
+    }
+}

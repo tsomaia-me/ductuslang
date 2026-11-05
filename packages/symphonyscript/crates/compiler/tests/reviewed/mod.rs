@@ -5342,6 +5342,11 @@ pub const CLASSES: &[Class] = &[
         explains: faulty_line,
     },
     Class {
+        ledger: "461",
+        rule: "a history read with neither fallback nor init in a group of cells yields the cell's own settled shape, the group's open kinds taking their inits' (SPEC §6.6), where the old engine joins it as a single value and draws array-operand and reads the cell as a placeholder, so an annotation reading it draws the type-mismatch its settled shape gives",
+        explains: open_history_join,
+    },
+    Class {
         ledger: "476",
         rule: "a host-fed cell annotated with a variable array whose init the cell refuses draws one diagnostic for the fault, at each refused element or at the init, and its reads keep the annotated type (ARCHITECTURE §7: a value whose type an error leaves known keeps that type), where the old engine adds a type-mismatch at the whole init and reads the cell as a placeholder",
         explains: refused_variable_init,
@@ -5931,4 +5936,45 @@ fn condition_cut_by_a_line_fault(seen: &Seen<'_>, change: Change, at: &Drawn) ->
             .iter()
             .chain(seen.new.iter())
             .any(|drawn| line_fault(&drawn.0) && drawn.1 == at.2)
+}
+
+fn open_history_join(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
+    if change == Change::Added && at.0 == "type-mismatch" {
+        let name = seen.text(at);
+        return !name.is_empty()
+            && name
+                .chars()
+                .all(|character| character.is_alphanumeric() || character == '_')
+            && seen.old.iter().any(|drawn| {
+                drawn.0 == "array-operand"
+                    && open_history_join(seen, Change::Removed, drawn)
+                    && lines_at(seen.program)
+                        .get(seen.line(drawn.1))
+                        .is_some_and(|(_, line)| line.starts_with(&format!("state {name}(")))
+            });
+    }
+    if change != Change::Removed || at.0 != "array-operand" {
+        return false;
+    }
+    let text = seen.text(at);
+    let open = |name: &str| {
+        seen.program
+            .lines()
+            .any(|line| line.starts_with(&format!("state {name} = ")))
+    };
+    text.match_indices(".past(").any(|(dot, _)| {
+        let name: String = text[..dot]
+            .chars()
+            .rev()
+            .take_while(|character| character.is_alphanumeric() || *character == '_')
+            .collect::<Vec<char>>()
+            .into_iter()
+            .rev()
+            .collect();
+        let call = &text[dot + 6..];
+        let one = call
+            .split_once(')')
+            .is_some_and(|(argument, _)| !argument.contains(','));
+        !name.is_empty() && one && open(&name)
+    })
 }
