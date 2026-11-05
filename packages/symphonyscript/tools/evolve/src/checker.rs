@@ -3,10 +3,11 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use symphonyscript::syntax::parse;
-use symphonyscript::{Code, Compiler, Diagnostic, Failed, Selector};
+use symphonyscript::{Code, Compiler, Diagnostic, Failed};
 use symphonyscript_core::{LimitOverrides, Vocabulary};
 
 use crate::differing_codes::differing_codes;
+use crate::engine::Engine;
 use crate::finding::Finding;
 use crate::guarded::{Guarded, guarded};
 use crate::measured::Measured;
@@ -78,12 +79,15 @@ impl Checker {
         guarded(self.budget, move || compiler.check(&sources))
     }
 
-    fn compile_by_engine(&self, program: &Program) -> (Guarded<Vec<Diagnostic>>, bool) {
+    pub fn compile_by_engine(
+        &self,
+        program: &Program,
+    ) -> (Guarded<Vec<Diagnostic>>, Option<Engine>) {
         let compiler = Arc::clone(&self.compiler);
         let sources = program.compiler_sources();
         match guarded(self.budget, move || compiler.check_by_engine(&sources)) {
             Guarded::Finished {
-                value: (value, engine),
+                value: (value, selector),
                 elapsed,
                 work,
             } => (
@@ -92,10 +96,10 @@ impl Checker {
                     elapsed,
                     work,
                 },
-                engine == Selector::NewCore,
+                Some(Engine::of(selector)),
             ),
-            Guarded::Panicked { message } => (Guarded::Panicked { message }, false),
-            Guarded::TimedOut => (Guarded::TimedOut, false),
+            Guarded::Panicked { message } => (Guarded::Panicked { message }, None),
+            Guarded::TimedOut => (Guarded::TimedOut, None),
         }
     }
 
@@ -113,12 +117,13 @@ impl Checker {
     }
 
     pub fn verdict(&self, program: &Program) -> Verdict {
-        let (compiled, by_new_core) = self.compile_by_engine(program);
-        if by_new_core {
+        let (compiled, engine) = self.compile_by_engine(program);
+        if engine == Some(Engine::New) {
             self.new_core.fetch_add(1, Ordering::Relaxed);
         }
         let mut verdict = Verdict {
             id: program.id.clone(),
+            engine,
             parses: self.parses(program),
             diagnostics: Vec::new(),
             signals: Vec::new(),

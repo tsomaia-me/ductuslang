@@ -52,6 +52,21 @@ with open(taken, "w") as out:
                               "span": [0, 0], "message": "", "help": None, "related": []}],
                               "signals": [], "findings": [], "elapsed_ms": 1.0}) + "\\n")
 """
+ENGINE_CHECK = """#!/usr/bin/env python3
+import json, os, sys
+given, taken = sys.argv[-2], sys.argv[-1]
+with open(taken, "w") as out:
+    for line in open(given):
+        program = json.loads(line)
+        words = program["sources"][0]["text"].split()
+        if "abort" in words:
+            out.flush()
+            os.abort()
+        out.write(json.dumps({"id": program["id"], "engine": words[-1], "parses": True,
+                              "diagnostics": [{"code": words[0], "file": "main.sym", "span": [0, 0], "message": "",
+                                               "help": None, "related": []}],
+                              "signals": [], "findings": [], "elapsed_ms": 1.0}) + "\\n")
+"""
 FAKE_TIME = """#!/usr/bin/env python3
 import json, sys
 from pathlib import Path
@@ -70,8 +85,9 @@ with open(taken, "w") as out:
             continue
         codes = sorted({word[5:] for word in words if word.startswith("code:")})
         scale = max([int(word[6:]) for word in words if word.startswith("scale:")] or [1])
-        out.write(json.dumps({"id": each["id"], "elapsed_ms": elapsed * scale, "diagnostics": len(codes),
-                              "codes": codes, "peak_bytes": 1000 * scale}) + "\\n")
+        engine = next((word[7:] for word in words if word.startswith("engine:")), "old")
+        out.write(json.dumps({"id": each["id"], "engine": engine, "elapsed_ms": elapsed * scale,
+                              "diagnostics": len(codes), "codes": codes, "peak_bytes": 1000 * scale}) + "\\n")
 """
 FAKE_COUNT = """#!/usr/bin/env python3
 import json, sys
@@ -143,10 +159,10 @@ def breaker_times(root, rows):
         json.dump({"profile": "dev", "jobs": 4, "budget_s": 5, "load": 9.0, "programs": rows}, out)
 
 
-def measuring_only(measured):
+def measuring_only(measured, shapes=()):
     stack = contextlib.ExitStack()
     stack.enter_context(mock.patch.object(figures, "measured_programs", return_value=measured))
-    stack.enter_context(mock.patch.object(figures, "measured_shapes", return_value=[]))
+    stack.enter_context(mock.patch.object(figures, "measured_shapes", return_value=list(shapes)))
     stack.enter_context(mock.patch.object(figures, "project_figures", return_value=[]))
     return stack
 
@@ -443,15 +459,15 @@ class Review(unittest.TestCase):
                                               f"600 {raised} inlined#0 inlined#1 inlined#2",
                                               f"600 {raised} not#0 not#1 not#2"])
         self.assertEqual([each.get("limits") for each in taken["figures"]],
-                         [None, *[{"inlined_calls": 1_000_000, "inlined_calls_warning": 500_000}] * 2])
+                         [None, None, *[{"inlined_calls": 1_000_000, "inlined_calls_warning": 500_000}] * 2])
         self.assertTrue(all("with inlined_calls at 1,000,000 and inlined_calls_warning at 500,000, 3 runs"
-                            in each["method"] for each in taken["figures"][1:]))
+                            in each["method"] for each in taken["figures"][2:]))
         self.assertEqual((taken["load_below"], taken["profiles"], taken["check_profile"]),
                          (4.0, ["dev", "release"], "dev"))
         self.assertEqual([(each["dev"]["load"], each["release"]["load"]) for each in taken["figures"]],
-                         [(3.1, 3.2), (3.3, 3.4), (3.5, 3.6)])
+                         [(3.1, 3.2), (3.1, 3.2), (3.3, 3.4), (3.5, 3.6)])
         self.assertEqual([(each["dev"]["per_unit_us"], each["release"]["per_unit_us"], each["ratio"])
-                          for each in taken["figures"][1:]], [(500.0, 500.0, 1.0), (1000.0, 1000.0, 1.0)])
+                          for each in taken["figures"][2:]], [(500.0, 500.0, 1.0), (1000.0, 1000.0, 1.0)])
         self.assertEqual({name: taken["figures"][0]["dev"][name] for name in ("programs", "past_budget", "median_ms")},
                          {"programs": 3, "past_budget": 1, "median_ms": 2.0})
         self.assertTrue(all("one job" in each["method"] and "below 4.0 or the figures have waited 10 minutes"
@@ -470,7 +486,7 @@ class Review(unittest.TestCase):
                 figures.measure(binaries, root / "times.json.gz", root / "breakers.jsonl.gz", root / "figures.json",
                                 4.0, lambda: 1.0)
             taken = json.loads((root / "figures.json").read_text())
-        inlined = taken["figures"][1]
+        inlined = taken["figures"][2]
         self.assertEqual((inlined["dev"]["median_ms"], inlined["release"]["median_ms"], inlined["ratio"]),
                          (1.4, 1.0, 0.71))
         self.assertEqual([(inlined[profile]["target_us"], inlined[profile]["past_target"])
@@ -566,7 +582,7 @@ class Review(unittest.TestCase):
         self.assertEqual((void, taken["void"], taken["scale"]), (voided, voided, "full"))
         self.assertNotIn("void", taken["figures"][0])
         self.assertEqual([(each["program"], each["void"], each["dev"]["codes"], each["release"]["codes"],
-                           each["expected_codes"]) for each in taken["figures"][1:]],
+                           each["expected_codes"]) for each in taken["figures"][2:]],
                          [("inlined", False, list(both), list(both), list(both)),
                           ("not", True, ["no-entry-instance", "type-mismatch"], ["no-entry-instance", "type-mismatch"],
                            ["no-entry-instance"]),
@@ -619,7 +635,7 @@ class Review(unittest.TestCase):
         self.assertEqual(breaker_figure["measured_by"], "Check over the 2 slowest programs, median and 99th percentile "
                                                         "of each one's median")
         self.assertIn("3 runs each in one process per profile, one job", breaker_figure["method"])
-        self.assertEqual((taken["figures"][1]["measured_by"], taken["figures"][1]["dev"]["per_unit_us"]),
+        self.assertEqual((taken["figures"][2]["measured_by"], taken["figures"][2]["dev"]["per_unit_us"]),
                          ("the deep-expressions fixture at depth 10,000, each construct", 0.2))
         self.assertEqual(figures.slowest_breakers({"programs": rows}, 3), [rows[0], rows[2], rows[3]])
 
@@ -782,6 +798,201 @@ class Review(unittest.TestCase):
         self.assertIn("A whole-project recompile: 2 files, 3 lines, 1,000 syntax nodes, 400 expanded items",
                       figures.shown(recompile).splitlines())
 
+    def test_every_figure_row_records_the_engine_its_program_ran_on_in_each_profile_and_at_each_size(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            binaries = fake_pair(root, {"dev": 1.4, "release": 1.0})
+            work = root / "work"
+            work.mkdir()
+            inlined = figures.program_figure(binaries, work, figures.stated(figures.INLINED, figures.QUICK), "inlined",
+                                             "engine:new", 4, (), lambda: 1.0, 4.0)
+            sized = [(10, "engine:new scale:1", 10, ()), (20, "engine:old scale:2", 20, ()), (40, "scale:4", 40, ())]
+            shape = figures.shape_figure(binaries, work, figures.stated_shape(figures.EXPANSION, (10, 20, 40)),
+                                         "expansion", sized, lambda: 1.0, 4.0)
+            expansion_figure = {"sizes": [10, 20, 40], "void": False,
+                                **{profile: {"sizes": [{"size": size, "units": size, "peak_bytes": 900, "engine": "new"}
+                                                       for size in (10, 20, 40)]} for profile in figures.PROFILES}}
+            recompile, memory = figures.project_figures(binaries, work, lambda: 1.0, 4.0, expansion_figure)
+        for profile in figures.PROFILES:
+            self.assertEqual(inlined[profile]["engine"], "new")
+            self.assertEqual([row["engine"] for row in shape[profile]["sizes"]], ["new", "old", "old"])
+            self.assertEqual(recompile[profile]["engine"], "old")
+            self.assertEqual([entry["engine"] for entry in memory[profile]["entries"]], ["old", "new", "new", "new"])
+        self.assertEqual([figures.engine_of(runs) for runs in ([{"engine": "new"}, {"engine": "new"}],
+                                                               [{"engine": "new"}, {"engine": "old"}],
+                                                               [{"engine": None, "panic": "boom"}], [])],
+                         ["new", "mixed", None, None])
+        elapsed = {"a": 1.0, "b": 2.0, "c": None}
+        engines = {"a": "new", "b": "old", "c": None}
+        breakers = figures.breaker_figure({"profile": "dev", "budget_s": 5}, {"dev": elapsed, "release": elapsed},
+                                          {"dev": 1.0, "release": 1.0}, 4.0, figures.FULL,
+                                          {"dev": engines, "release": {"a": "new", "b": "new", "c": "new"}})
+        self.assertEqual((breakers["dev"]["engines"], breakers["release"]["engines"]),
+                         ({"new": 1, "old": 1, "unknown": 1}, {"new": 3, "old": 0, "unknown": 0}))
+        self.assertIn("A program of the breaker corpus, dev: engines at this run new 1, old 1, unknown 1",
+                      figures.shown(breakers).splitlines())
+
+    def test_the_new_core_row_times_the_breakers_it_takes_per_syntax_node_beside_each_engines_count(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            binaries = fake_pair(root, {"dev": 0.04, "release": 0.01})
+            texts = ("breaker 0 engine:new", "breaker 1 engine:old", "breaker 2 engine:new", "breaker 3",
+                     "breaker 4 engine:new", "breaker 5")
+            breakers = [program(text, "breakers") for text in texts]
+            write_jsonl_gz(root / "breakers.jsonl.gz", [{"key": key(each), **each} for each in breakers])
+            rows = [{"key": key(each), "set": "breakers", "elapsed_ms": ms, "engine": engine}
+                    for each, ms, engine in zip(breakers, (9.0, 50.0, 7.0, None, 3.0), ("new", "old", "new", None,
+                                                                                       "new"))]
+            rows += [{"key": key(breakers[5]), "set": "breakers", "elapsed_ms": 8.0},
+                     {"key": "p1", "set": "probes", "elapsed_ms": 60.0, "engine": "new"}]
+            breaker_times(root, rows)
+            scale = {**figures.QUICK, "breakers": 2}
+            printed = io.StringIO()
+            with measuring_only([]), contextlib.redirect_stdout(printed):
+                figures.measure(binaries, root / "times.json.gz", root / "breakers.jsonl.gz", root / figures.QUICK_NAME,
+                                float("inf"), lambda: 2.0, scale)
+            taken = json.loads((root / figures.QUICK_NAME).read_text())
+            calls = {profile: (binaries[profile] / "calls.log").read_text().splitlines() for profile in binaries}
+        first, second, third = key(breakers[0]), key(breakers[1]), key(breakers[2])
+        for profile in figures.PROFILES:
+            self.assertEqual(calls[profile], [f"5 {second}#0 {second}#1 {second}#2 {first}#0 {first}#1 {first}#2",
+                                              f"5 {first}#0 {first}#1 {first}#2 {third}#0 {third}#1 {third}#2"])
+        figure = taken["figures"][1]
+        self.assertEqual((figure["work"], figure["measured_by"]),
+                         ("A program the new core takes", "Check over the 2 slowest breaker programs the verdict check "
+                                                          "found the new core taking, median and 99th percentile of "
+                                                          "each one's median, and the median time a syntax node"))
+        fields = ("programs", "past_budget", "median_ms", "p99_ms", "counted_programs", "per_node_us",
+                  "target_node_us", "targets_ms", "engines", "past_target", "load")
+        self.assertEqual({name: figure["dev"][name] for name in fields},
+                         {"programs": 2, "past_budget": 0, "median_ms": 0.04, "p99_ms": 0.04, "counted_programs": 2,
+                          "per_node_us": 2.0, "target_node_us": 1.3, "targets_ms": {"median": 0.5, "p99": 2.0},
+                          "engines": {"new": 2, "old": 0, "unknown": 0},
+                          "past_target": {"median": False, "p99": False, "node": True}, "load": 2.0})
+        self.assertEqual({name: figure["release"][name] for name in ("median_ms", "per_node_us", "target_node_us",
+                                                                     "targets_ms", "past_target")},
+                         {"median_ms": 0.01, "per_node_us": 0.5, "target_node_us": 1.0,
+                          "targets_ms": {"median": 0.38, "p99": 1.5},
+                          "past_target": {"median": False, "p99": False, "node": False}})
+        self.assertEqual((figure["taken_in_check"], figure["ratio"]),
+                         ({"new": 3, "old": 1, "unknown": 2}, {"median": 0.25, "p99": 0.25, "node": 0.25}))
+        self.assertEqual(taken["past_target"], ["A program the new core takes node (dev)"])
+        self.assertEqual(taken["figures"][0]["dev"]["engines"], {"new": 1, "old": 1, "unknown": 0})
+        lines = printed.getvalue().splitlines()
+        for line in ["A program the new core takes, dev: median 0.04 ms, p99 0.04 ms over 2 programs, 0 past the "
+                     "budget, median 2.000 us a syntax node over 2 programs, target 1.3 us, load 2.00; PAST TARGET "
+                     "node 1.3 us",
+                     "A program the new core takes: release : dev median 0.25, p99 0.25, a syntax node 0.25",
+                     "A program the new core takes: breaker programs each engine takes in the verdict check: new 3, "
+                     "old 1, unknown 2"]:
+            self.assertIn(line, lines)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            binaries = fake_pair(root, {"dev": 0.04, "release": 0.01})
+            write_jsonl_gz(root / "breakers.jsonl.gz", [{"key": key(each), **each} for each in breakers[:2]])
+            breaker_times(root, rows[:2])
+            with measuring_only([]), contextlib.redirect_stdout(io.StringIO()):
+                figures.measure(binaries, root / "times.json.gz", root / "breakers.jsonl.gz", root / "figures.json",
+                                4.0, lambda: 1.0)
+            full = json.loads((root / "figures.json").read_text())["figures"][1]
+            calls = (binaries["dev"] / "calls.log").read_text().splitlines()
+        self.assertEqual(calls, [f"5 {first} {second}"])
+        self.assertEqual((full["measured_by"], full["dev"]["programs"], full["dev"]["median_ms"],
+                          full["dev"]["per_node_us"], full["dev"]["engines"], full["taken_in_check"]),
+                         (figures.NEW_CORE[1], 1, 0.04, 2.0, {"new": 1, "old": 0, "unknown": 0},
+                          {"new": 1, "old": 1, "unknown": 0}))
+        self.assertIn("timed in the breaker figure's own run, each once in one process per profile, one job",
+                      full["method"])
+
+    def test_a_shape_judges_its_marginal_cost_between_its_smallest_and_largest_size_against_its_per_unit_target(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            binaries = fake_pair(root, {"dev": 1.0, "release": 0.5})
+            work = root / "work"
+            work.mkdir()
+
+            def shaped(figure, label, texts):
+                sized = [(size, text, size, ()) for size, text in zip((10, 20, 40), texts)]
+                return figures.shape_figure(binaries, work, figures.stated_shape(figure, (10, 20, 40)), label, sized,
+                                            lambda: 1.0, 4.0)
+            growing = shaped(figures.EXPANSION, "expansion", ("scale:1", "scale:2", "scale:4"))
+            flat = shaped(figures.EXPANSION, "expansion", ("scale:1", "scale:1", "scale:1"))
+            untargeted = shaped(figures.REFERENCE_USES, "reference uses", ("scale:1", "scale:2", "scale:4"))
+            panicking = shaped(figures.EXPANSION, "expansion", ("scale:1", "scale:2", "panic"))
+        judged = ("marginal_us", "target_us", "past_target_marginal")
+        self.assertEqual([tuple(each[profile][name] for name in judged)
+                          for each in (growing, flat, untargeted, panicking) for profile in figures.PROFILES],
+                         [(100.0, 0.91, True), (50.0, 0.7, True), (0.0, 0.91, False), (0.0, 0.7, False),
+                          (100.0, None, False), (50.0, None, False), (None, 0.91, True), (None, 0.7, True)])
+        self.assertEqual(figures.marginal([{"size": 10, "units": 10, "median_ms": 1.0},
+                                           {"size": 10, "units": 10, "median_ms": 2.0}]), None)
+        self.assertIn("expansion marginal (dev)", figures.past_targets(growing))
+        self.assertIn("expansion marginal (release)", figures.past_targets(growing))
+        self.assertFalse(any("marginal" in named
+                             for named in figures.past_targets(flat) + figures.past_targets(untargeted)))
+        shown = figures.shown(growing).splitlines()
+        self.assertEqual(shown[1], "An expanded item, expansion, dev: marginal 100.000 us a unit between 10 and 40, "
+                                   "target 0.91 us; PAST TARGET 0.91 us")
+        self.assertIn("A use of a pattern with a reference parameter, reference uses, release: marginal 50.000 us a "
+                      "unit between 10 and 40, no target", figures.shown(untargeted).splitlines())
+        self.assertIn("marginal cost the difference between the largest and the smallest size's medians",
+                      growing["method"])
+
+    def test_the_rows_whose_programs_the_new_core_takes_are_listed_under_new_core_with_their_costs_and_targets(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            binaries = fake_pair(root, {"dev": 1.0, "release": 0.5})
+            breakers = [program("breaker 0 engine:new", "breakers"), program("breaker 1 engine:old", "breakers")]
+            write_jsonl_gz(root / "breakers.jsonl.gz", [{"key": key(each), **each} for each in breakers])
+            breaker_times(root, [{"key": key(breakers[0]), "set": "breakers", "elapsed_ms": 9.0, "engine": "new"},
+                                 {"key": key(breakers[1]), "set": "breakers", "elapsed_ms": 5.0, "engine": "old"}])
+            measured = [(figures.INLINED, "inlined", "engine:new", 4, ()),
+                        (figures.NESTING, "not", "engine:old", 2, ())]
+            shapes = [(figures.stated_shape(figures.EXPANSION, (10, 20, 40)), "expansion",
+                       [(size, f"engine:new scale:{factor}", size, ())
+                        for size, factor in ((10, 1), (20, 2), (40, 4))]),
+                      (figures.stated_shape(figures.REFERENCE_USES, (10, 20, 40)), "reference uses",
+                       [(size, f"engine:{engine} scale:{factor}", size, ())
+                        for size, engine, factor in ((10, "new", 1), (20, "old", 2), (40, "new", 4))])]
+            printed = io.StringIO()
+            with measuring_only(measured, shapes), contextlib.redirect_stdout(printed):
+                figures.measure(binaries, root / "times.json.gz", root / "breakers.jsonl.gz", root / figures.QUICK_NAME,
+                                float("inf"), lambda: 1.0, {**figures.QUICK, "breakers": 2})
+            taken = json.loads((root / figures.QUICK_NAME).read_text())
+            work = root / "work"
+            work.mkdir()
+            recompile = figures.project_figures(binaries, work, lambda: 1.0, 4.0, None)[0]
+        self.assertEqual([(each["program"], each["unit"], each["size"]) for each in taken["new_core"]],
+                         [("new-core breakers", "syntax node", None), ("inlined", "unit", None),
+                          ("expansion", "unit", 40)])
+        self.assertEqual((taken["new_core"][2]["dev"], taken["new_core"][2]["ratio"]),
+                         ({"per_unit_us": 100.0, "marginal_us": 100.0, "target_us": 0.91, "past_target": True,
+                           "past_target_marginal": True}, 0.5))
+        self.assertEqual(taken["new_core"][0]["release"],
+                         {"per_unit_us": 25.0, "marginal_us": None, "target_us": 1.0, "past_target": True,
+                          "past_target_marginal": None})
+        lines = printed.getvalue().splitlines()
+        heading = lines.index("New core")
+        self.assertEqual(lines[heading + 1:heading + 4], [
+            "A program the new core takes, new-core breakers: dev 50.000 us a syntax node, marginal one size, target "
+            "1.300 us, PAST TARGET; release 25.000 us a syntax node, marginal one size, target 1.000 us, PAST TARGET; "
+            "release : dev 0.5",
+            "An inlined call, inlined: dev 250.000 us a unit, marginal one size, target 2.000 us, PAST TARGET; release "
+            "125.000 us a unit, marginal one size, target 1.500 us, PAST TARGET; release : dev 0.5",
+            "An expanded item, expansion: dev 100.000 us a unit at 40, marginal 100.000 us, target 0.910 us, PAST "
+            "TARGET, marginal PAST TARGET; release 50.000 us a unit at 40, marginal 50.000 us, target 0.700 us, PAST "
+            "TARGET, marginal PAST TARGET; release : dev 0.5"])
+        self.assertTrue(lines[heading + 4].startswith("figures past their target: "))
+        self.assertTrue(all(line.startswith(("A ", "An ")) for line in lines[:heading]))
+        self.assertFalse(figures.on_new_core(recompile))
+        for profile in figures.PROFILES:
+            recompile[profile]["engine"] = "new"
+        entry = figures.new_core_entry(recompile)
+        self.assertTrue(figures.on_new_core(recompile))
+        self.assertEqual((entry["unit"], round(entry["dev"]["per_unit_us"], 6), round(entry["dev"]["target_us"], 6),
+                          entry["dev"]["past_target"], round(entry["release"]["target_us"], 6), entry["ratio"]),
+                         ("syntax node, the items' share in its target", 1.0, 1.664, False, 1.28, 0.5))
+
 class Running(unittest.TestCase):
     def test_a_program_that_kills_its_shard_costs_only_itself_and_a_slow_one_is_checked_again_alone(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -804,6 +1015,34 @@ class Running(unittest.TestCase):
             text = entry["sources"][0]["text"].rsplit(" ", 1)[0]
             self.assertEqual(found[program_key][:2], expected[text], text)
             self.assertEqual(found[program_key][2], None if text == "abort" else 1.0, text)
+
+    def test_each_check_time_row_names_the_engine_its_verdict_names_and_the_verdict_record_stays_as_it_was(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            executable(root / "evolve-check", ENGINE_CHECK)
+            texts = ("type-mismatch new", "operand-type old", "abort")
+            programs = {key(program(text)): program(text) for text in texts}
+            found = run.checked(root, programs, WARNINGS, list(programs), 2, root / "work", True)
+        by_text = {entry["sources"][0]["text"]: program_key for program_key, entry in programs.items()}
+        self.assertEqual({text: found[by_text[text]][2:] for text in texts},
+                         {"type-mismatch new": (1.0, "new"), "operand-type old": (1.0, "old"), "abort": (None, None)})
+        self.assertEqual(found[by_text["type-mismatch new"]][:2], checked("reject", "type-mismatch"))
+        self.assertEqual(found[by_text["abort"]][:2], verdicts.aborted(-6))
+        times = run.check_times("dev", 2, 3.456, programs, found)
+        self.assertEqual({name: times[name] for name in ("profile", "jobs", "budget_s", "load")},
+                         {"profile": "dev", "jobs": 2, "budget_s": 5, "load": 3.46})
+        self.assertEqual([row["key"] for row in times["programs"]], sorted(programs))
+        self.assertEqual({row["key"]: (row["set"], row["elapsed_ms"], row["engine"]) for row in times["programs"]},
+                         {by_text["type-mismatch new"]: ("mutants", 1.0, "new"),
+                          by_text["operand-type old"]: ("mutants", 1.0, "old"),
+                          by_text["abort"]: ("mutants", None, None)})
+        raw = {"id": "k", "engine": "new", "parses": True, "diagnostics": [drawn("type-mismatch")], "signals": [],
+               "findings": [], "elapsed_ms": 1.0}
+        without = {name: value for name, value in raw.items() if name != "engine"}
+        self.assertEqual((verdicts.compact(raw, WARNINGS), verdicts.detail(raw)),
+                         (verdicts.compact(without, WARNINGS), verdicts.detail(without)))
+        self.assertNotIn("engine", verdicts.compact(raw, WARNINGS))
+        self.assertEqual(run.unknown_tags({"u": program("x", tag="weird", vocabulary=None)})["u"][2:], (None, None))
 
     def test_each_probe_program_is_checked_under_the_vocabulary_its_tag_names_and_an_unknown_tag_is_reported(self):
         tagged = ("#signature\nClip c:\n    Note\n#expect\n----\n#weird\nlet a = 1\n----\n\nlet b = 2\n"
@@ -837,7 +1076,7 @@ class Running(unittest.TestCase):
                           if program_key in found},
                          {"p/a.sym:2": ["signature"], "p/a.sym:10": ["main"], "p/a.sym:14": ["bounded"],
                           "p/b.sym": ["main"], "b.sym": ["main"]})
-        self.assertEqual(unknown, {by_origin["p/a.sym:7"]: (*verdicts.unknown_tag("weird"), None)})
+        self.assertEqual(unknown, {by_origin["p/a.sym:7"]: (*verdicts.unknown_tag("weird"), None, None)})
         self.assertEqual(unknown[by_origin["p/a.sym:7"]][0]["outcome"], "unknown-tag")
         self.assertEqual(run.unknown_tag_note(programs, unknown),
                          "Probes whose tag names no vocabulary, reported and not checked: 1; p/a.sym:7 (#weird).")
