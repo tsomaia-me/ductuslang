@@ -101,6 +101,9 @@ fn a_unit_value_as_an_index_a_slice_bound_a_range_bound_or_an_offset_draws_unit_
         "Clip c:\n    for i in 1s..2:\n        Note\n",
         "Clip c:\n    for i in 0..2:\n        Note/([1, 2][i])\n",
         "Clip c:\n    Note/([1, 2][(1s) div 1s])\n",
+        "Clip c:\n    Note/(for i in 0..2s into a from 0: a)\n",
+        "Clip c:\n    Note/(for i in 1s..2 into a from 0: a + i)\n",
+        "let n = for i in 0..2s into a from 0: a + 1\nClip c:\n    Note/(n)\n",
         "Clip c:\n    Note/([1, 2][^1])\n",
     ] {
         let sources = [source(&format!("{session}{text}"))];

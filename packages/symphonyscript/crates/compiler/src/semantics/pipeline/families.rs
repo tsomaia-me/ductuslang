@@ -212,7 +212,10 @@ impl Core<'_> {
                 | Op::Match
                 | Op::MethodCall
                 | Op::NamedMethodCall => {
-                    if kids.iter().any(|kid| self.family(*kid).is_some()) {
+                    if kids
+                        .iter()
+                        .any(|kid| self.family(*kid).is_some() && !self.family_faults.contains(kid))
+                    {
                         return Ok(Err(Declined(Reason::UnitFlow)));
                     }
                     None

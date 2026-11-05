@@ -207,6 +207,12 @@ impl Core<'_> {
                     return Ok(None);
                 }
             }
+            if bounds.iter().any(|bound| self.family(*bound).is_some()) {
+                for bound in bounds {
+                    self.unit_position(bound, "a range bound")?;
+                }
+                return Ok(None);
+            }
             for bound in bounds {
                 let fact = self.fact(bound)?;
                 if faulty(&fact) {
