@@ -3200,3 +3200,37 @@ fn a_let_reaching_a_cell_through_a_call_and_read_only_by_a_placement_loop_head_d
     assert_eq!(programs, 2 * 4 * 24);
     assert_eq!(reactive, 2 * 2 * 24);
 }
+
+#[test]
+fn an_arm_beside_an_arm_in_error_takes_no_expected_type_and_a_refused_float_index_or_bound_is_checked_in_its_own_type()
+ {
+    let old = Compiler::new(&symphonyscript_fixtures::vocabulary())
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
+    let new =
+        Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("the vocabulary compiles");
+    for text in [
+        "Clip c:\n    Note/(if true then (1 + true) else true)\n",
+        "Clip c:\n    Note/(if true then (1 + true) else Wave::Saw)\n",
+        "Clip c:\n    Note/(if false then true else (1 + true))\n",
+        "Clip c:\n    Note/(if true then (if true then 1 else true) else 2)\n",
+        "Clip c:\n    Note/([1, 2][300000000000 % 1.5])\n",
+        "Clip c:\n    Note/([1, 2][300000000000 % 1.5] + 1)\n",
+        "Clip c:\n    Note/([1, 2][(1 - 300000000000) / 2])\n",
+        "Clip c:\n    Note/([1, 2][(1 - 300000000000) / 2..][0])\n",
+        "Clip c:\n    Note/([1, 2][300000000000 % 1.5..][0])\n",
+        "Clip c:\n    Note/([1, 2][..300000000000 % 1.5][0])\n",
+        "Clip c:\n    Note/([1, 2][1.5..][0])\n",
+        "let v = [1, 2]\nClip c:\n    Note/(v[300000000000 % 1.5])\n",
+        "let x = 300000000000 % 1.5\nClip c:\n    Note/([1, 2][x])\n",
+        "let a = [1, 2][300000000000 % 1.5..]\nClip c:\n    Note/(a[0])\n",
+        "Clip c:\n    Note/([1, 2][0])\n",
+        "Clip c:\n    Note/(if true then 1 else 2)\n",
+    ] {
+        let sources = [source(text)];
+        let found = new
+            .checked_by_new_core(&sources)
+            .unwrap_or_else(|| panic!("the new core takes {text}"));
+        assert_eq!(found, old.check(&sources), "{text}");
+    }
+}

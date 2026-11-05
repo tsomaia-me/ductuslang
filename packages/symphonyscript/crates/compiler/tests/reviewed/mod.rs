@@ -5218,6 +5218,8 @@ fn choice_keeps_its_arms_type(seen: &Seen<'_>, change: Change, at: &Drawn) -> bo
                     | "not-an-array"
                     | "does-not-fit"
                     | "condition-type"
+                    | "conversion-type"
+                    | "array-operand"
             ) && refused.iter().any(|choice| {
                 (at.1 <= choice.span.0 && choice.span.1 <= at.2)
                     || seen.program.get(choice.span.1..at.1) == Some(")[")
@@ -5775,6 +5777,15 @@ fn operator_over_a_variable_shape_choice(seen: &Seen<'_>, change: Change, at: &D
 }
 
 fn refused_beside_a_variable_array(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
+    if change == Change::Added
+        && at.0 == "index-out-of-range"
+        && choices(seen.program).iter().any(|choice| {
+            condition_refused(seen, choice)
+                && choice.arms.iter().any(|arm| arm.0 <= at.1 && at.2 <= arm.1)
+        })
+    {
+        return true;
+    }
     change == Change::Added
         && matches!(
             at.0.as_str(),

@@ -52,25 +52,20 @@ const DECLINED: [&str; 10] = [
 ];
 
 #[test]
-fn a_program_holding_a_variant_falls_back_to_the_old_engine_whole_until_the_defects_its_programs_expose_are_fixed()
- {
+fn qualified_and_bare_variants_enum_attributes_enum_cells_and_is_draw_what_the_old_engine_draws() {
     let vocabulary = symphonyscript_fixtures::vocabulary();
     let old = Compiler::new(&vocabulary)
         .expect("the vocabulary compiles")
         .on_the_old_engine();
     let new = Compiler::new(&vocabulary).expect("the vocabulary compiles");
-    for text in ENUMS.iter().chain(DECLINED.iter()) {
+    for text in ENUMS {
         let sources = [source(text)];
-        let found = new.checked_by_new_core(&sources);
-        if let Some(found) = found {
-            assert_eq!(found, old.check(&sources), "{text}");
-        }
+        let found = new
+            .checked_by_new_core(&sources)
+            .unwrap_or_else(|| panic!("the new core takes {text}"));
+        assert_eq!(found, old.check(&sources), "{text}");
     }
-    for text in [
-        "Synth s:\n    Osc | wave=Saw\n",
-        "Synth s:\n    Osc | wave=Wave::Saw\n",
-        "state w(Wave::Saw)\nSynth s:\n    Osc | wave=w\n",
-    ] {
+    for text in DECLINED {
         assert_eq!(new.checked_by_new_core(&[source(text)]), None, "{text}");
     }
 }

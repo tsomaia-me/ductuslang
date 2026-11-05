@@ -168,9 +168,15 @@ impl Core<'_> {
             } else {
                 None
             };
+            let mut error_arm = false;
+            if op == Op::If {
+                for arm in children.iter().skip(1) {
+                    error_arm |= self.fact(*arm)?.leaf == Leaf::Error;
+                }
+            }
             for (position, child) in children.into_iter().enumerate() {
                 let unread = (op == Op::Array && picked.is_some_and(|picked| picked != position))
-                    || (op == Op::If && position > 0 && self.faulty(a)?);
+                    || (op == Op::If && position > 0 && (error_arm || self.faulty(a)?));
                 let child_unchecked =
                     unchecked || (op == Op::If && position > 0 && self.unchosen(a)?);
                 let (child_ty, through) = if refused || beside_fault || unread {

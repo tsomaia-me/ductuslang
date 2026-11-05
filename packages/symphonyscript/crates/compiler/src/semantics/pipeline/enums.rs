@@ -223,9 +223,6 @@ impl Core<'_> {
             );
             self.unknown_variants.insert(node);
         }
-        if self.enums_seen {
-            return Ok(Err(Declined(Reason::EnumFlow)));
-        }
         Ok(Ok(()))
     }
 }

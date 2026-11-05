@@ -62,8 +62,12 @@ impl Core<'_> {
     }
 
     fn integral(&self, node: u32) -> Result<EvalTy, Internal> {
-        Ok(match self.fact(node)?.own() {
+        let fact = self.fact(node)?;
+        let divided = fact.own().is_none() && self.ir.node(node)?.0 == Op::Div;
+        let float = fact.leaf == Leaf::Float && fact.dims.is_empty() && !divided;
+        Ok(match fact.own() {
             Some(fixed) if int_range(fixed).is_some() => fixed,
+            Some(_) | None if float => self.own_ty(node)?.unwrap_or(EvalTy::Exact),
             Some(_) | None => EvalTy::Exact,
         })
     }
@@ -1664,7 +1668,8 @@ impl Core<'_> {
                     Some(operands) => {
                         let mut values = Vec::new();
                         for operand in operands {
-                            match self.known(operand, EvalTy::Exact, &mut stack)? {
+                            let ty = self.integral(operand)?;
+                            match self.known(operand, ty, &mut stack)? {
                                 Ok(Some(value)) => values.push(value),
                                 Ok(None) => break,
                                 Err(declined) => return Ok(Err(declined)),
@@ -1739,7 +1744,7 @@ impl Core<'_> {
                         }
                         let bound_ty = match self.fact(bound)?.own() {
                             Some(_) => self.own_ty(bound)?.unwrap_or(EvalTy::Exact),
-                            None => EvalTy::Exact,
+                            None => self.integral(bound)?,
                         };
                         match self.known(bound, bound_ty, &mut stack)? {
                             Ok(Some(Value::Int(value))) if i64::try_from(value).is_err() => {
