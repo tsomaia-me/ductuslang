@@ -23,7 +23,7 @@ use crate::semantics::operators::EvalTy;
 
 pub(crate) type Stage<T> = Result<Result<T, Declined>, Internal>;
 
-pub(crate) type UseKey = (u32, usize, Vec<u32>);
+pub(crate) type UseKey = (u32, usize, Vec<u32>, Vec<u32>);
 
 pub(crate) type BodyKey = (u32, u32, Vec<Fact>, Vec<bool>);
 
@@ -109,6 +109,14 @@ pub(crate) struct Core<'a> {
     pub row_choices: HashMap<(u32, u32), EvalTy>,
     pub ref_insts: HashMap<(u32, u32, u32), u32>,
     pub typed_as: HashMap<u32, u32>,
+    pub pattern_files: Vec<u32>,
+    pub patterns_used: HashSet<u32>,
+    pub use_links: Vec<(u32, u32)>,
+    pub use_spans: HashMap<u32, Span>,
+    pub use_args: HashMap<u32, Vec<(u32, u32)>>,
+    pub use_values: HashMap<(u32, u32, usize), CoreValue>,
+    pub use_faults: HashMap<u32, Vec<Diagnostic>>,
+    pub typing_now: u32,
     pub inst_row: HashMap<u32, (u32, u32)>,
     pub owner_insts: HashMap<u32, Vec<u32>>,
     pub inst_reads: BTreeMap<(u32, u32), u32>,
@@ -212,6 +220,14 @@ impl<'a> Core<'a> {
             row_choices: HashMap::new(),
             ref_insts: HashMap::new(),
             typed_as: HashMap::new(),
+            pattern_files: vec![0; ir.patterns.len()],
+            patterns_used: HashSet::new(),
+            use_links: Vec::new(),
+            use_spans: HashMap::new(),
+            use_args: HashMap::new(),
+            use_values: HashMap::new(),
+            use_faults: HashMap::new(),
+            typing_now: 0,
             inst_row: HashMap::new(),
             owner_insts: HashMap::new(),
             inst_reads: BTreeMap::new(),
@@ -265,6 +281,23 @@ impl<'a> Core<'a> {
     }
 
     pub fn chained(&self, diagnostic: Diagnostic) -> Diagnostic {
+        let diagnostic = self.call_chained(diagnostic);
+        if self.use_links.is_empty() {
+            return diagnostic;
+        }
+        let mut related = diagnostic.related.clone();
+        for (item, _) in &self.use_links {
+            if let Some(span) = self.use_spans.get(item) {
+                related.push(Related {
+                    span: span.clone(),
+                    label: "in this use of the pattern".to_string(),
+                });
+            }
+        }
+        diagnostic.with_related(related)
+    }
+
+    pub fn call_chained(&self, diagnostic: Diagnostic) -> Diagnostic {
         if self.eval_chain.is_empty() {
             return diagnostic;
         }
@@ -442,6 +475,14 @@ impl Core<'_> {
 impl Core<'_> {
     pub fn push_drawn(&mut self, diagnostic: Diagnostic) {
         self.record(&diagnostic);
+        if self.typing_now > 0
+            && let Some((_, inst)) = self.use_links.first().copied()
+        {
+            let mut own = diagnostic.clone();
+            let keep = own.related.len().saturating_sub(self.use_links.len());
+            own.related.truncate(keep);
+            self.use_faults.entry(inst).or_default().push(own);
+        }
         if self.eval_chain.is_empty() {
             self.diagnostics.push(diagnostic);
         } else {

@@ -576,7 +576,7 @@ impl Core<'_> {
                         self.kind_name(kind)?
                     )
                 };
-                self.draw(Code::ChildNotAccepted, span, message);
+                self.draw_in_row(child, Code::ChildNotAccepted, span, message);
                 continue;
             }
             by_kind.entry(kind).or_default().push(child);
@@ -588,7 +588,8 @@ impl Core<'_> {
                 && let Some(extra) = found.get(max as usize)
             {
                 let span = self.row_span(*extra)?;
-                self.draw(
+                self.draw_in_row(
+                    *extra,
                     Code::CountExceeded,
                     span,
                     format!(
@@ -607,7 +608,8 @@ impl Core<'_> {
                 && !self.unknown_children.contains(&parent)
             {
                 let span = self.row_span(parent)?;
-                self.draw(
+                self.draw_in_row(
+                    parent,
                     Code::CountBelowMinimum,
                     span,
                     format!(
@@ -734,5 +736,17 @@ impl Core<'_> {
             }
         }
         Ok(false)
+    }
+}
+
+impl Core<'_> {
+    fn draw_in_row(&mut self, row: u32, code: Code, span: Span, message: String) {
+        let env = self
+            .instances
+            .get(row as usize)
+            .map_or(NONE, |record| record.env);
+        let saved = self.enter_env(env);
+        self.draw(code, span, message);
+        self.leave_env(saved);
     }
 }

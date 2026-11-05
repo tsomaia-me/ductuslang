@@ -46,7 +46,18 @@ impl Core<'_> {
                         roots.extend(self.function_roots(at)?);
                     }
                     TopRec::Placement(item) => self.placement_roots(item, &mut roots)?,
-                    TopRec::Pattern(_) | TopRec::Skip => {}
+                    TopRec::Pattern(at) => {
+                        let (params, body) = self.pattern_parts(at)?;
+                        for binder in params.0..params.1 {
+                            roots.push(self.ir.binder(binder)?.default);
+                        }
+                        let mut items = Vec::new();
+                        self.block_children(body, &mut items)?;
+                        for item in items {
+                            self.placement_roots(item, &mut roots)?;
+                        }
+                    }
+                    TopRec::Skip => {}
                 }
             }
         }

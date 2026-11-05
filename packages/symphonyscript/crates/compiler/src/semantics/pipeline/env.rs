@@ -4,4 +4,5 @@ pub(crate) struct Env {
     pub inst: u32,
     pub values: (u32, u32),
     pub at: u32,
+    pub use_item: u32,
 }

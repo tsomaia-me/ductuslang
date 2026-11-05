@@ -77,7 +77,8 @@ impl Core<'_> {
             | DeclRef::Duplicate
             | DeclRef::Let(_)
             | DeclRef::Param(_)
-            | DeclRef::Fn(_) => None,
+            | DeclRef::Fn(_)
+            | DeclRef::Pattern(_) => None,
         };
         let fixed = self
             .facts

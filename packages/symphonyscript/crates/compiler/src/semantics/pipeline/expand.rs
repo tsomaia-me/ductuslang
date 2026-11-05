@@ -24,6 +24,9 @@ impl Core<'_> {
     fn row(&mut self, item: u32, file: u32, parent: u32, env: u32) -> Stage<u32> {
         CountedWalk::CoreExpandRow.step();
         let placement = self.placement(item)?;
+        if self.used_pattern(placement.kind).is_some() {
+            return Ok(Err(Declined(Reason::PatternUse)));
+        }
         let Some(kind_name) = self
             .ir
             .name_text(placement.kind)
@@ -221,7 +224,23 @@ impl Core<'_> {
                     }
                 }
                 ItemRec::Line(members) => work.push(Work::Members(members.0, members.1, env)),
-                ItemRec::Placement(_) => {
+                ItemRec::Placement(placement) => {
+                    if let Some(pattern) = self.used_pattern(placement.kind) {
+                        match self.use_env(item, pattern, record.file, env)? {
+                            Ok(Some(made)) => {
+                                let body = self.pattern_parts(pattern)?.1;
+                                let block = *self
+                                    .ir
+                                    .blocks
+                                    .get(body as usize)
+                                    .ok_or(Internal::missed("IR block"))?;
+                                work.push(Work::Items(block.items.0, block.items.1, made));
+                            }
+                            Ok(None) => {}
+                            Err(declined) => return Ok(Err(declined)),
+                        }
+                        continue;
+                    }
                     let row = match self.row(item, record.file, parent, env)? {
                         Ok(row) => row,
                         Err(declined) => return Ok(Err(declined)),
@@ -263,7 +282,8 @@ impl Core<'_> {
             | DeclRef::Cell(_)
             | DeclRef::Instance(_)
             | DeclRef::Param(_)
-            | DeclRef::Fn(_) => false,
+            | DeclRef::Fn(_)
+            | DeclRef::Pattern(_) => false,
         };
         if silent {
             return Ok(());

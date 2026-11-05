@@ -315,7 +315,8 @@ impl Core<'_> {
                 | DeclRef::Duplicate
                 | DeclRef::Let(_)
                 | DeclRef::Cell(_)
-                | DeclRef::Fn(_) => {
+                | DeclRef::Fn(_)
+                | DeclRef::Pattern(_) => {
                     return Ok(Err(Declined(Reason::Member)));
                 }
             }
@@ -480,7 +481,8 @@ impl Core<'_> {
             | DeclRef::Duplicate
             | DeclRef::Let(_)
             | DeclRef::Param(_)
-            | DeclRef::Fn(_) => None,
+            | DeclRef::Fn(_)
+            | DeclRef::Pattern(_) => None,
         })
     }
 

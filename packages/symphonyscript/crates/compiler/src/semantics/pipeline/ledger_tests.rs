@@ -15,7 +15,7 @@ struct Run {
     walks: u64,
 }
 
-const CORE_WALKS: [CountedWalk; 18] = [
+const CORE_WALKS: [CountedWalk; 20] = [
     CountedWalk::BindLookup,
     CountedWalk::CoreExpandRow,
     CountedWalk::SigNode,
@@ -34,6 +34,8 @@ const CORE_WALKS: [CountedWalk; 18] = [
     CountedWalk::CorePathStep,
     CountedWalk::CoreLoopIteration,
     CountedWalk::CoreLoopBody,
+    CountedWalk::CorePatternUse,
+    CountedWalk::CorePatternBody,
 ];
 
 fn walked() -> u64 {
@@ -945,4 +947,34 @@ fn stress_nested_folds_over_a_compile_time_iterable_with_a_cell_reading_start_co
         &none,
         Timing::Judged,
     ));
+}
+
+fn pattern_uses(count: usize) -> String {
+    let mut text = String::from(
+        "pattern Arp(default root, steps = 4, gap = 4):\n    for i in 0..steps:\n        Note/(root + i * gap)\npattern Pad(default v):\n    Note/v | velocity=0.5\n    Note/(v + 7)\nClip c:\n",
+    );
+    for at in 0..count {
+        match at % 3 {
+            0 => text.push_str(&format!("    Arp/{}\n", 36 + at % 24)),
+            1 => text.push_str(&format!("    Arp/{} | steps=2 gap=3\n", 40 + at % 24)),
+            _ => text.push_str(&format!("    Pad/{}\n", 50 + at % 12)),
+        }
+    }
+    text
+}
+
+#[test]
+#[ignore = "stress"]
+fn stress_anonymous_pattern_uses_cost_walks_and_peak_bytes_linear_in_the_uses() {
+    let compiler = Compiler::new(&vocabulary()).expect("the vocabulary compiles");
+    let bodies = CountedWalk::CorePatternBody.steps();
+    assert_none(&ledger_failures_on(
+        &compiler,
+        "pattern uses",
+        [2_500, 5_000, 10_000],
+        pattern_uses,
+        &none,
+        Timing::Judged,
+    ));
+    assert_eq!(CountedWalk::CorePatternBody.steps() - bodies, 2 * 3 * 3);
 }

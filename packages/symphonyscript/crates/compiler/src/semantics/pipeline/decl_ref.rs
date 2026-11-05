@@ -7,4 +7,5 @@ pub(crate) enum DeclRef {
     Duplicate,
     Param(u32),
     Fn(u32),
+    Pattern(u32),
 }

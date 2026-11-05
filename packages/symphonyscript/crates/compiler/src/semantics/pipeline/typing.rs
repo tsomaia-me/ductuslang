@@ -281,7 +281,10 @@ impl Core<'_> {
                 continue;
             }
             CountedWalk::SigNode.step();
-            let fact = match self.node_fact(node)? {
+            self.typing_now += 1;
+            let outcome = self.node_fact(node);
+            self.typing_now -= 1;
+            let fact = match outcome? {
                 Ok(fact) => fact,
                 Err(declined) => return Ok(Err(declined)),
             };
@@ -336,7 +339,9 @@ impl Core<'_> {
                 }
                 DeclRef::Cell(at) => self.cell_read_fact(at)?,
                 DeclRef::Param(position) => self.param_fact(node, position)?.0,
-                DeclRef::Fn(_) => return Ok(Err(Declined(Reason::FunctionValue))),
+                DeclRef::Fn(_) | DeclRef::Pattern(_) => {
+                    return Ok(Err(Declined(Reason::FunctionValue)));
+                }
                 DeclRef::Duplicate | DeclRef::None => Fact::PLACEHOLDER,
                 DeclRef::Instance(_) => Fact::node_reference(Vec::new()),
             },

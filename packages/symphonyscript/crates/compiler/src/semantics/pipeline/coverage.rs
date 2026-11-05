@@ -38,7 +38,7 @@ pub(crate) fn top_slice(top: TopRec) -> Slice {
         TopRec::Let(_) | TopRec::Placement(_) => Slice::One,
         TopRec::Cell(_) => Slice::One,
         TopRec::Fn(_) => Slice::One,
-        TopRec::Pattern(_) => Slice::Pending,
+        TopRec::Pattern(_) => Slice::Three,
         TopRec::Placeholder { .. } | TopRec::Drawn(_) | TopRec::Skip => Slice::DefaultFlip,
     }
 }
@@ -89,6 +89,16 @@ pub(crate) fn covers(ir: &FlatIr) -> bool {
                 .lets
                 .get(*at as usize)
                 .is_none_or(|rec| rec.is_match || !let_annotation(ir, rec.binder))
+        {
+            return false;
+        }
+        if let TopRec::Pattern(at) = top
+            && ir.patterns.get(*at as usize).is_none_or(|rec| {
+                rec.regions.0 != rec.regions.1
+                    || rec.skipped_default
+                    || rec.faulty_line
+                    || !plain_block(ir, rec.body)
+            })
         {
             return false;
         }
@@ -332,7 +342,7 @@ pub(crate) fn reason_slice(reason: Reason) -> Slice {
         Reason::ReactiveFor => Slice::Pending,
         Reason::DestinationValue | Reason::ReactiveReference | Reason::WireKind => Slice::Pending,
         Reason::BareVariant | Reason::UnitAttribute | Reason::EnumAttribute => Slice::Five,
-        Reason::LoopHead | Reason::BodyItem => Slice::Pending,
+        Reason::LoopHead | Reason::BodyItem | Reason::PatternUse => Slice::Pending,
     }
 }
 
@@ -411,4 +421,13 @@ fn scalar_node(ir: &FlatIr, node: u32) -> bool {
                 EvalTy::U8 | EvalTy::I32 | EvalTy::I64 | EvalTy::F32 | EvalTy::F64 | EvalTy::Bool
             )
         })
+}
+
+fn plain_block(ir: &FlatIr, body: u32) -> bool {
+    ir.blocks.get(body as usize).is_some_and(|block| {
+        block.items.0 != block.items.1
+            && block.members.0 == block.members.1
+            && block.regions.0 == block.regions.1
+            && block.lets.0 == block.lets.1
+    })
 }

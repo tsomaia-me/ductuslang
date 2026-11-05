@@ -69,9 +69,15 @@ impl Core<'_> {
                     .ok_or(Internal::missed("IR function"))?;
                 Some((rec.name, DeclRef::Fn(at)))
             }
-            TopRec::Pattern(_) | TopRec::Placeholder { .. } | TopRec::Drawn(_) | TopRec::Skip => {
-                None
+            TopRec::Pattern(at) => {
+                let rec = self
+                    .ir
+                    .patterns
+                    .get(at as usize)
+                    .ok_or(Internal::missed("IR pattern"))?;
+                Some((rec.name, DeclRef::Pattern(at)))
             }
+            TopRec::Placeholder { .. } | TopRec::Drawn(_) | TopRec::Skip => None,
         })
     }
 
@@ -150,6 +156,11 @@ impl Core<'_> {
                 {
                     *slot = file;
                 }
+                if let TopRec::Pattern(index) = top
+                    && let Some(slot) = self.pattern_files.get_mut(index as usize)
+                {
+                    *slot = file;
+                }
                 let Some((name, decl)) = self.declared_name(top)? else {
                     continue;
                 };
@@ -206,6 +217,7 @@ impl Core<'_> {
         if let Err(declined) = self.bind_names()? {
             return Ok(Err(declined));
         }
+        self.pattern_declarations()?;
         if self.calls_a_non_function()? {
             return Ok(Err(Declined(Reason::FunctionValue)));
         }
@@ -291,6 +303,7 @@ impl Core<'_> {
                 | DeclRef::Param(_)
                 | DeclRef::Fn(_)
                 | DeclRef::Instance(_) => {}
+                DeclRef::Pattern(_) => return Ok(Err(Declined(Reason::PatternUse))),
                 DeclRef::Duplicate => self.placeholders.push(node),
                 DeclRef::None => {
                     let text = self.ir.symbols.text(entry.sym).to_string();
