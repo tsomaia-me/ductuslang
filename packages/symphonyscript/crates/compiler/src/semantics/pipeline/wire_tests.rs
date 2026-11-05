@@ -79,7 +79,7 @@ const CHOSEN_WIRES: [&str; 22] = [
     "state look(0)\nlet w = look\nClip a:\n    Note/1\n    Plays: [b, c][w]\nClip b:\n    Note/2\nClip c:\n    Note/3\n",
 ];
 
-const CHOSEN_BOUNDED_WIRES: [&str; 8] = [
+const CHOSEN_BOUNDED_WIRES: [&str; 7] = [
     "state sw(true)\nRoot r:\n    Item\n    Link: if sw then r else r\n",
     "Root r:\n    Item\n    Link: if true then r else r\n",
     "state sw(true)\nRoot r:\n    Item\n    Link: if sw then r else z\n",
@@ -87,7 +87,6 @@ const CHOSEN_BOUNDED_WIRES: [&str; 8] = [
     "Root r:\n    Item\n    Link: if 1 then r else r\n",
     "Root r:\n    Item\n    Link: [r, r][2.5]\n",
     "Root r:\n    Item\n    Link: [r, r][7]\n",
-    "state k(1.5)\nRoot r:\n    Item\n    Link: if k then r else r\n",
 ];
 
 #[test]
@@ -113,7 +112,7 @@ fn a_chosen_destination_counts_its_candidates_beside_its_valid_twin() {
         ),
         (
             "state k(1.5)\nRoot r:\n    Item\n    Link: if k then r else r\n",
-            &[Code::ConditionType],
+            &[Code::CountBelowMinimum, Code::ConditionType],
         ),
         (
             "state k(0)\nRoot r:\n    Item\n    Link: if k > 0 then r else r\n",

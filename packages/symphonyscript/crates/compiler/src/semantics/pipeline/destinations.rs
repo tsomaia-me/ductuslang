@@ -176,17 +176,24 @@ impl Core<'_> {
                 node,
                 "the condition of an `if` is a `bool`, not an array",
             )?;
-            return Ok(Ok(Test::Faulty));
+            return self.refused_test(condition, live);
         }
         match fact.leaf {
             Leaf::Bool => {}
             Leaf::Placeholder | Leaf::Error => return Ok(Ok(Test::Faulty)),
             Leaf::Empty | Leaf::Int | Leaf::Float => {
                 self.draw_at_root(Code::ConditionType, condition, "the condition is a `bool`")?;
-                return Ok(Ok(Test::Faulty));
+                return self.refused_test(condition, live);
             }
         }
         self.chosen_value(condition, EvalTy::Bool, live, 2)
+    }
+
+    fn refused_test(&mut self, condition: u32, live: bool) -> Stage<Test> {
+        if live && self.is_reactive(condition)? {
+            return Ok(Ok(Test::Runtime));
+        }
+        Ok(Ok(Test::Faulty))
     }
 
     fn position(&mut self, node: u32, index: u32, count: u32, live: bool) -> Stage<Test> {
