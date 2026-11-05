@@ -16,7 +16,7 @@ use symphonyscript_core::Span;
 pub(crate) const SHAPE: &str = "the value's shape differs from its annotated type";
 pub(crate) const TYPE: &str =
     "the value does not have the annotated type; a conversion states the rounding";
-const ROWS: &str = "the value's rows differ from its annotated type";
+pub(crate) const ROWS: &str = "the value's rows differ from its annotated type";
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Refusal {
@@ -275,7 +275,10 @@ impl Core<'_> {
     }
 
     pub fn cell_capacity_annotation(&self, at: u32) -> Result<Option<u32>, Internal> {
-        let binder = self.cell_binder(at)?;
+        self.binder_capacity(self.cell_binder(at)?)
+    }
+
+    pub fn binder_capacity(&self, binder: u32) -> Result<Option<u32>, Internal> {
         let node = self.ir.binder(binder)?.annotation;
         if node == NONE {
             return Ok(None);
@@ -393,7 +396,7 @@ impl Core<'_> {
         Ok(())
     }
 
-    fn draw_refused_leaves(&mut self, root: u32, ty: EvalTy) -> Result<(), Internal> {
+    pub fn draw_refused_leaves(&mut self, root: u32, ty: EvalTy) -> Result<(), Internal> {
         let mut stack = vec![root];
         while let Some(node) = stack.pop() {
             let fact = self.fact(node)?;

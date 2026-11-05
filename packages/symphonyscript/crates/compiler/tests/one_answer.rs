@@ -293,7 +293,7 @@ const DECIDING_NONE: &[(&str, &str)] = &[
         "the lengths an annotation's array type forms give, a fixed array's length and a variable array's open one, SPEC §3.7 and §4.5",
     ),
     (
-        "pipeline/annotation.rs cell_capacity_annotation",
+        "pipeline/annotation.rs binder_capacity",
         "the capacity a host-fed cell's variable-array annotation states, SPEC §3.7 and §6.1",
     ),
     (
