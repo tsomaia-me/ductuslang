@@ -174,7 +174,16 @@ impl Core<'_> {
                     if group_of.get(target as usize).copied() != u32::try_from(group).ok() {
                         continue;
                     }
-                    if !rule.contains(&node) {
+                    match self.group_reads.get(&node) {
+                        Some((_, reader)) if *reader != *member => {
+                            return Ok(Err(Declined(Reason::CellGroup)));
+                        }
+                        Some(_) => continue,
+                        None => {}
+                    }
+                    let in_body =
+                        self.body_of.get(self.local(node)?).copied().unwrap_or(NONE) != NONE;
+                    if !rule.contains(&node) && (in_body || target == *member) {
                         return Ok(Err(Declined(Reason::CellGroup)));
                     }
                     self.group_reads.insert(node, (target, *member));

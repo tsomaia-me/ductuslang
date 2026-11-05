@@ -2702,3 +2702,43 @@ fn a_group_of_cells_holding_arrays_settles_fixedness_and_capacities_together_as_
         }
     }
 }
+
+#[test]
+fn a_let_reading_the_history_of_another_member_of_a_group_draws_what_the_old_engine_draws() {
+    let old = Compiler::new(&symphonyscript_fixtures::vocabulary())
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
+    let new =
+        Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("the vocabulary compiles");
+    let programs: [&[&str]; 2] = [
+        &[
+            "state x(1)\n",
+            "let k = b.past(1, 0)\n",
+            "state h = k + x\n",
+            "state b = h\n",
+            "Clip c:\n    Note/(h)\n",
+        ],
+        &[
+            "state x(1)\n",
+            "let k = b.past(1, [0])\n",
+            "state h = (k + [x])[^2..]\n",
+            "state b = h\n",
+        ],
+    ];
+    for items in programs {
+        let items: Vec<String> = items.iter().map(|item| (*item).to_string()).collect();
+        for text in orders(&items) {
+            let sources = [source(&text)];
+            let found = new
+                .checked_by_new_core(&sources)
+                .unwrap_or_else(|| panic!("the new core takes {text}"));
+            assert_eq!(found, old.check(&sources), "{text}");
+            assert!(
+                found
+                    .iter()
+                    .any(|diagnostic| diagnostic.code == crate::diagnostics::Code::ReactiveLet),
+                "{text}"
+            );
+        }
+    }
+}
