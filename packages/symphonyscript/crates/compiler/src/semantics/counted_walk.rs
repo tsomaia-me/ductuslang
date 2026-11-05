@@ -206,10 +206,11 @@ pub(crate) enum CountedWalk {
     CoreLoopBody,
     CorePatternUse,
     CorePatternBody,
+    CorePatternGraph,
 }
 
 #[cfg(test)]
-const WALKS: usize = 200;
+const WALKS: usize = 201;
 
 #[cfg(test)]
 thread_local! {
@@ -419,6 +420,7 @@ impl CountedWalk {
         CountedWalk::CoreLoopBody,
         CountedWalk::CorePatternUse,
         CountedWalk::CorePatternBody,
+        CountedWalk::CorePatternGraph,
     ];
 
     pub(crate) fn step(self) {

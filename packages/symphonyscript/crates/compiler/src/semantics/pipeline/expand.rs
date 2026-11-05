@@ -22,11 +22,33 @@ impl Core<'_> {
     }
 
     fn row(&mut self, item: u32, file: u32, parent: u32, env: u32) -> Stage<u32> {
+        let placement = self.placement(item)?;
+        if let Some(pattern) = self.used_pattern(placement.kind) {
+            if parent != NONE {
+                return Ok(Err(Declined(Reason::PatternUse)));
+            }
+            if !self.ir.named(placement.as_name) {
+                return Ok(Ok(NONE));
+            }
+            return self.top_use(item, pattern, file);
+        }
+        let name = (
+            placement.as_name,
+            file,
+            env == NONE && self.ir.named(placement.as_name),
+        );
+        self.named_row(item, (file, parent, env), name, item)
+    }
+
+    pub fn named_row(
+        &mut self,
+        item: u32,
+        (file, parent, env): (u32, u32, u32),
+        (name, name_file, reachable): (u32, u32, bool),
+        named_by: u32,
+    ) -> Stage<u32> {
         CountedWalk::CoreExpandRow.step();
         let placement = self.placement(item)?;
-        if self.used_pattern(placement.kind).is_some() {
-            return Ok(Err(Declined(Reason::PatternUse)));
-        }
         let Some(kind_name) = self
             .ir
             .name_text(placement.kind)
@@ -64,7 +86,7 @@ impl Core<'_> {
             }
             return Ok(Ok(NONE));
         };
-        if parent == NONE && !self.ir.named(placement.as_name) {
+        if parent == NONE && !self.ir.named(name) {
             return Ok(Ok(NONE));
         }
         if !self.charge_item(file, placement.lo, placement.hi)? {
@@ -77,8 +99,11 @@ impl Core<'_> {
             file,
             children: (0, 0),
             env,
+            name,
+            name_file,
+            reachable,
         });
-        if let Some(slot) = self.row_of_item.get_mut(item as usize) {
+        if let Some(slot) = self.row_of_item.get_mut(named_by as usize) {
             *slot = row;
         }
         Ok(Ok(row))
@@ -200,9 +225,10 @@ impl Core<'_> {
                     continue;
                 }
             };
+            let file = self.env_file(env, record.file);
             match *self.ir.item(item)? {
                 ItemRec::Wire(_) => {
-                    if let Err(declined) = self.wire_row(item, record.file, parent, env)? {
+                    if let Err(declined) = self.wire_row(item, file, parent, env)? {
                         return Ok(Err(declined));
                     }
                 }
@@ -214,7 +240,7 @@ impl Core<'_> {
                     match run {
                         Some(run) if run.count > 0 => work.push(Work::Loop(run)),
                         run => {
-                            if let Err(declined) = self.unrun_names(item, record.file)? {
+                            if let Err(declined) = self.unrun_names(item, file)? {
                                 return Ok(Err(declined));
                             }
                             if run.is_none_or(|run| run.open) {
@@ -226,7 +252,11 @@ impl Core<'_> {
                 ItemRec::Line(members) => work.push(Work::Members(members.0, members.1, env)),
                 ItemRec::Placement(placement) => {
                     if let Some(pattern) = self.used_pattern(placement.kind) {
-                        match self.use_env(item, pattern, record.file, env)? {
+                        if self.cyclic_pattern(pattern) {
+                            self.unknown_use(parent);
+                            continue;
+                        }
+                        match self.use_env(item, pattern, (file, env), false)? {
                             Ok(Some(made)) => {
                                 let body = self.pattern_parts(pattern)?.1;
                                 let block = *self
@@ -241,7 +271,7 @@ impl Core<'_> {
                         }
                         continue;
                     }
-                    let row = match self.row(item, record.file, parent, env)? {
+                    let row = match self.row(item, file, parent, env)? {
                         Ok(row) => row,
                         Err(declined) => return Ok(Err(declined)),
                     };

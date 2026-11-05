@@ -751,8 +751,8 @@ impl Core<'_> {
     }
 
     fn unrun_placement(&mut self, placement: PlacementRec, file: u32) -> Stage<()> {
-        if self.used_pattern(placement.kind).is_some() {
-            return Ok(Err(Declined(Reason::PatternUse)));
+        if let Some(pattern) = self.used_pattern(placement.kind) {
+            return self.unrun_use(placement, pattern, file);
         }
         let Some(kind_name) = self
             .ir
@@ -947,7 +947,7 @@ impl Core<'_> {
 
     fn unknown_body_kind(&mut self, placement: PlacementRec, file: u32) -> Stage<()> {
         if self.used_pattern(placement.kind).is_some() {
-            return Ok(Err(Declined(Reason::PatternUse)));
+            return Ok(Ok(()));
         }
         let Some(kind_name) = self
             .ir

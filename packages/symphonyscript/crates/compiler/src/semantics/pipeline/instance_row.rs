@@ -7,4 +7,7 @@ pub(crate) struct InstanceRow {
     pub file: u32,
     pub children: (u32, u32),
     pub env: u32,
+    pub name: u32,
+    pub name_file: u32,
+    pub reachable: bool,
 }

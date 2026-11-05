@@ -121,13 +121,19 @@ pub(crate) fn covers(ir: &FlatIr) -> bool {
     }
     let members = line_members(ir);
     let in_loops = loop_children(ir);
+    let mut patterns: Vec<u32> = ir
+        .patterns
+        .iter()
+        .filter_map(|rec| ir.name(rec.name).map(|entry| entry.sym.0))
+        .collect();
+    patterns.sort_unstable();
     ir.fors.iter().all(|rec| plain_fold(ir, rec))
         && ir.cells.iter().all(|rec| plain_cell(ir, rec))
         && ir
             .items
             .iter()
             .enumerate()
-            .all(|(at, item)| item_landed(ir, item, (&members, &in_loops), at))
+            .all(|(at, item)| item_landed(ir, item, (&members, &in_loops, &patterns), at))
 }
 
 fn annotated(ir: &FlatIr, binder: u32) -> bool {
@@ -183,7 +189,7 @@ fn loop_children(ir: &FlatIr) -> Vec<u32> {
 fn item_landed(
     ir: &FlatIr,
     item: &ItemRec,
-    (members, in_loops): (&[u32], &[u32]),
+    (members, in_loops, patterns): (&[u32], &[u32], &[u32]),
     at: usize,
 ) -> bool {
     if !landed(item_slice(item)) {
@@ -215,9 +221,13 @@ fn item_landed(
         .attr_entries
         .get(placement.attrs.0 as usize..placement.attrs.1 as usize)
         .unwrap_or_default();
-    if entries
-        .iter()
-        .any(|entry| !matches!(entry.form, AttrForm::Value(_)))
+    let used = ir
+        .name(placement.kind)
+        .is_some_and(|entry| patterns.binary_search(&entry.sym.0).is_ok());
+    if !used
+        && entries
+            .iter()
+            .any(|entry| !matches!(entry.form, AttrForm::Value(_)))
     {
         return false;
     }

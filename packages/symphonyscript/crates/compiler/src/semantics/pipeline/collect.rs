@@ -218,6 +218,7 @@ impl Core<'_> {
             return Ok(Err(declined));
         }
         self.pattern_declarations()?;
+        self.pattern_cycles()?;
         if self.calls_a_non_function()? {
             return Ok(Err(Declined(Reason::FunctionValue)));
         }

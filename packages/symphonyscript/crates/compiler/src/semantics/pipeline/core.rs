@@ -111,6 +111,7 @@ pub(crate) struct Core<'a> {
     pub typed_as: HashMap<u32, u32>,
     pub pattern_files: Vec<u32>,
     pub patterns_used: HashSet<u32>,
+    pub cyclic_patterns: Vec<bool>,
     pub use_links: Vec<(u32, u32)>,
     pub use_spans: HashMap<u32, Span>,
     pub use_args: HashMap<u32, Vec<(u32, u32)>>,
@@ -221,6 +222,7 @@ impl<'a> Core<'a> {
             ref_insts: HashMap::new(),
             typed_as: HashMap::new(),
             pattern_files: vec![0; ir.patterns.len()],
+            cyclic_patterns: vec![false; ir.patterns.len()],
             patterns_used: HashSet::new(),
             use_links: Vec::new(),
             use_spans: HashMap::new(),
@@ -483,7 +485,7 @@ impl Core<'_> {
             own.related.truncate(keep);
             self.use_faults.entry(inst).or_default().push(own);
         }
-        if self.eval_chain.is_empty() {
+        if self.eval_chain.is_empty() && self.use_links.len() < 2 {
             self.diagnostics.push(diagnostic);
         } else {
             self.push_one_per_chain(diagnostic, false);

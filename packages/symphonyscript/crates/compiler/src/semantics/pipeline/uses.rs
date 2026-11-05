@@ -10,7 +10,7 @@ use super::reason::Reason;
 use crate::diagnostics::{Code, Related};
 use crate::semantics::Internal;
 use crate::semantics::counted_walk::CountedWalk;
-use crate::semantics::ir::flat::{AttrForm, ItemRec, NONE, Op};
+use crate::semantics::ir::flat::{AttrForm, ItemRec, NONE, Op, PlacementRec};
 use crate::semantics::operators::EvalTy;
 
 impl Core<'_> {
@@ -79,22 +79,19 @@ impl Core<'_> {
 }
 
 impl Core<'_> {
-    pub fn use_env(&mut self, item: u32, pattern: u32, file: u32, env: u32) -> Stage<Option<u32>> {
+    pub fn use_env(
+        &mut self,
+        item: u32,
+        pattern: u32,
+        (file, env): (u32, u32),
+        top: bool,
+    ) -> Stage<Option<u32>> {
         let placement = self.placement(item)?;
-        let mut at = env;
-        while let Some(record) = self.envs.get(at as usize) {
-            if record.use_item != NONE {
-                return Ok(Err(Declined(Reason::PatternUse)));
-            }
-            at = record.parent;
-        }
-        let params = self.pattern_parts(pattern)?.0;
-        if self.ir.named(placement.as_name)
+        if (!top && self.ir.named(placement.as_name))
             || placement.has_as
             || self.names_in_pattern(pattern)?
             || placement.body != NONE
             || placement.inline
-            || self.pattern_file(pattern) != file
         {
             return Ok(Err(Declined(Reason::PatternUse)));
         }
@@ -104,6 +101,56 @@ impl Core<'_> {
         if !self.expansion_step(span.clone()) {
             return Ok(Ok(None));
         }
+        let bound = match self.use_sources(placement, pattern, (file, env), span.clone())? {
+            Ok(bound) => bound,
+            Err(declined) => return Ok(Err(declined)),
+        };
+        let params = self.pattern_parts(pattern)?.0;
+        let mut defaults = Vec::new();
+        for binder in params.0..params.1 {
+            defaults.push(self.ir.binder(binder)?.default);
+        }
+        let mut facts = Vec::new();
+        let start = u32::try_from(self.env_vals.len()).unwrap_or(NONE);
+        for (position, (root, caller)) in bound.clone().into_iter().enumerate() {
+            if root == NONE && caller != NONE {
+                facts.push(Fact::scalar(Leaf::Bool));
+                self.env_vals.push(CoreValue::Bool(caller == 1));
+                continue;
+            }
+            if root == NONE {
+                facts.push(Fact::PLACEHOLDER);
+                self.env_vals.push(CoreValue::Error);
+                continue;
+            }
+            let saved = self.enter_env(caller);
+            let value = self.argument(root);
+            self.leave_env(saved);
+            match value? {
+                Ok((fact, _))
+                    if defaults.get(position) == Some(&root)
+                        && matches!(fact.leaf, Leaf::Placeholder | Leaf::Error) =>
+                {
+                    return Ok(Err(Declined(Reason::PatternUse)));
+                }
+                Ok((fact, value)) => {
+                    facts.push(fact);
+                    self.env_vals.push(value);
+                }
+                Err(declined) => return Ok(Err(declined)),
+            }
+        }
+        self.use_made(item, pattern, (env, start), facts, (span, bound))
+    }
+
+    pub fn use_sources(
+        &mut self,
+        placement: PlacementRec,
+        pattern: u32,
+        (file, env): (u32, u32),
+        span: symphonyscript_core::Span,
+    ) -> Stage<Vec<(u32, u32)>> {
+        let params = self.pattern_parts(pattern)?.0;
         let count = (params.1 - params.0) as usize;
         let mut sources: Vec<Option<(u32, u32)>> = vec![None; count];
         if placement.default != NONE {
@@ -129,8 +176,9 @@ impl Core<'_> {
                 .attr_entries
                 .get(at as usize)
                 .ok_or(Internal::missed("IR attribute"))?;
-            let AttrForm::Value(value) = entry.form else {
-                return Ok(Err(Declined(Reason::PatternUse)));
+            let value = match entry.form {
+                AttrForm::Value(value) => (value, env),
+                AttrForm::Set(set) => (NONE, u32::from(set)),
             };
             let name = *self
                 .ir
@@ -157,19 +205,15 @@ impl Core<'_> {
                     name_span,
                     format!("the parameter `{text}` is supplied twice"),
                 ),
-                Some(slot @ None) => *slot = Some((value, env)),
+                Some(slot @ None) => *slot = Some(value),
             }
         }
         let mut bound = Vec::new();
-        let mut defaulted = Vec::new();
         for (binder, source) in (params.0..params.1).zip(sources) {
             let rec = *self.ir.binder(binder)?;
             match source {
                 Some(source) => bound.push(source),
-                None if rec.default != NONE => {
-                    defaulted.push(rec.default);
-                    bound.push((rec.default, NONE));
-                }
+                None if rec.default != NONE => bound.push((rec.default, NONE)),
                 None => {
                     let text = self.ir.name_text(rec.name).unwrap_or_default().to_string();
                     self.draw(
@@ -181,31 +225,17 @@ impl Core<'_> {
                 }
             }
         }
-        let mut facts = Vec::new();
-        let start = u32::try_from(self.env_vals.len()).unwrap_or(NONE);
-        for (root, caller) in bound.clone() {
-            if root == NONE {
-                facts.push(Fact::PLACEHOLDER);
-                self.env_vals.push(CoreValue::Error);
-                continue;
-            }
-            let saved = self.enter_env(caller);
-            let value = self.argument(root);
-            self.leave_env(saved);
-            match value? {
-                Ok((fact, _))
-                    if defaulted.contains(&root)
-                        && matches!(fact.leaf, Leaf::Placeholder | Leaf::Error) =>
-                {
-                    return Ok(Err(Declined(Reason::PatternUse)));
-                }
-                Ok((fact, value)) => {
-                    facts.push(fact);
-                    self.env_vals.push(value);
-                }
-                Err(declined) => return Ok(Err(declined)),
-            }
-        }
+        Ok(Ok(bound))
+    }
+
+    fn use_made(
+        &mut self,
+        item: u32,
+        pattern: u32,
+        (env, start): (u32, u32),
+        facts: Vec<Fact>,
+        (span, bound): (symphonyscript_core::Span, Vec<(u32, u32)>),
+    ) -> Stage<Option<u32>> {
         let end = u32::try_from(self.env_vals.len()).unwrap_or(NONE);
         let parent = self
             .envs
@@ -392,7 +422,11 @@ impl Core<'_> {
                         });
                     }
                 }
-                self.diagnostics.push(fault.with_related(related));
+                if self.use_links.len() < 2 {
+                    self.diagnostics.push(fault.with_related(related));
+                } else {
+                    self.push_one_per_chain(fault.with_related(related), false);
+                }
             }
             self.leave_env(saved);
         }
@@ -440,5 +474,250 @@ impl Core<'_> {
             }
         }
         Ok(false)
+    }
+}
+
+impl Core<'_> {
+    fn patterns_in_body(&self, pattern: u32) -> Result<Vec<u32>, Internal> {
+        let mut blocks = vec![self.pattern_parts(pattern)?.1];
+        let mut items = Vec::new();
+        let mut found = Vec::new();
+        while let Some(block) = blocks.pop() {
+            let Some(rec) = self.ir.blocks.get(block as usize) else {
+                continue;
+            };
+            items.extend(
+                self.ir
+                    .block_items
+                    .get(rec.items.0 as usize..rec.items.1 as usize)
+                    .unwrap_or_default(),
+            );
+            while let Some(item) = items.pop() {
+                CountedWalk::CorePatternGraph.step();
+                match *self.ir.item(item)? {
+                    ItemRec::Placement(placement) => {
+                        if let Some(used) = self.used_pattern(placement.kind) {
+                            found.push(used);
+                        }
+                        blocks.push(placement.body);
+                    }
+                    ItemRec::For(rec) => blocks.push(rec.body),
+                    ItemRec::Line(members) => items.extend(
+                        self.ir
+                            .members
+                            .get(members.0 as usize..members.1 as usize)
+                            .unwrap_or_default(),
+                    ),
+                    ItemRec::Wire(_)
+                    | ItemRec::Bundle(_)
+                    | ItemRec::When(_)
+                    | ItemRec::Paren(_) => {}
+                }
+            }
+        }
+        found.sort_unstable();
+        found.dedup();
+        Ok(found)
+    }
+
+    pub fn pattern_cycles(&mut self) -> Result<(), Internal> {
+        let mut edges = Vec::new();
+        for pattern in 0..u32::try_from(self.ir.patterns.len()).unwrap_or(0) {
+            edges.push(self.patterns_in_body(pattern)?);
+        }
+        let mut components = super::cycles::strongly_connected(&edges);
+        for component in &mut components {
+            component.sort_unstable();
+        }
+        components.sort_unstable();
+        for component in components {
+            let looped = match component.as_slice() {
+                [one] => edges
+                    .get(*one as usize)
+                    .is_some_and(|targets| targets.contains(one)),
+                _ => true,
+            };
+            if !looped {
+                continue;
+            }
+            let mut names = Vec::new();
+            let mut spans = Vec::new();
+            for member in &component {
+                if let Some(slot) = self.cyclic_patterns.get_mut(*member as usize) {
+                    *slot = true;
+                }
+                let rec = *self
+                    .ir
+                    .patterns
+                    .get(*member as usize)
+                    .ok_or(Internal::missed("IR pattern"))?;
+                let file = self.pattern_file(*member);
+                names.push(format!(
+                    "`{}`",
+                    self.ir.name_text(rec.name).unwrap_or_default()
+                ));
+                spans.push(self.name_span(file, rec.name)?);
+            }
+            let message = if names.len() == 1 {
+                format!("the pattern {} uses itself", names.join(""))
+            } else {
+                format!("the patterns {} use each other", names.join(", "))
+            };
+            let mut spans = spans.into_iter();
+            let Some(first) = spans.next() else {
+                continue;
+            };
+            let others = spans
+                .map(|span| (span, "a pattern on the cycle".to_string()))
+                .collect();
+            self.draw_related(Code::RecursivePattern, first, others, message);
+        }
+        Ok(())
+    }
+
+    pub fn cyclic_pattern(&self, pattern: u32) -> bool {
+        self.cyclic_patterns
+            .get(pattern as usize)
+            .copied()
+            .unwrap_or(false)
+    }
+
+    pub fn stand_in(&self, pattern: u32) -> Stage<Option<u32>> {
+        let mut at = pattern;
+        loop {
+            if self.cyclic_pattern(at) {
+                return Ok(Ok(None));
+            }
+            let body = self.pattern_parts(at)?.1;
+            let block = *self
+                .ir
+                .blocks
+                .get(body as usize)
+                .ok_or(Internal::missed("IR block"))?;
+            let items = self
+                .ir
+                .block_items
+                .get(block.items.0 as usize..block.items.1 as usize)
+                .unwrap_or_default();
+            let [item] = items else {
+                return Ok(Ok(None));
+            };
+            let ItemRec::Placement(placement) = *self.ir.item(*item)? else {
+                return Ok(Ok(None));
+            };
+            if !self.ir.named(placement.kind) {
+                return Ok(Ok(None));
+            }
+            if let Some(next) = self.used_pattern(placement.kind) {
+                at = next;
+                continue;
+            }
+            let entry = *self
+                .ir
+                .name(placement.kind)
+                .ok_or(Internal::missed("IR name"))?;
+            if self.decl.get(entry.sym.0 as usize) == Some(&DeclRef::Duplicate) {
+                return Ok(Err(Declined(Reason::PatternUse)));
+            }
+            let text = self.ir.symbols.text(entry.sym);
+            let node = self.vocabulary.node_kind_named(text).is_some()
+                && self
+                    .decl
+                    .get(entry.sym.0 as usize)
+                    .is_none_or(|decl| *decl == DeclRef::None);
+            return Ok(Ok(node.then_some(*item)));
+        }
+    }
+
+    pub fn unknown_use(&mut self, parent: u32) {
+        self.unknown_kind = true;
+        self.unknown_wires = true;
+        if parent == NONE {
+            self.unknown_top = true;
+        } else {
+            self.unknown_children.insert(parent);
+        }
+    }
+
+    pub fn top_use(&mut self, item: u32, pattern: u32, file: u32) -> Stage<u32> {
+        let placement = self.placement(item)?;
+        if self.cyclic_pattern(pattern) {
+            self.unknown_use(NONE);
+            return Ok(Ok(NONE));
+        }
+        match self.stand_in(pattern)? {
+            Ok(Some(_)) => {}
+            Ok(None) => {
+                let span = self.name_span(file, placement.kind)?;
+                self.draw(
+                    Code::TopLevelPattern,
+                    span,
+                    "only a pattern that stands in for a single node placement is used at top level",
+                );
+                self.unknown_use(NONE);
+                return Ok(Ok(NONE));
+            }
+            Err(declined) => return Ok(Err(declined)),
+        }
+        let (mut at, mut using, mut from, mut env) = (item, pattern, file, NONE);
+        loop {
+            let made = match self.use_env(at, using, (from, env), at == item)? {
+                Ok(Some(made)) => made,
+                Ok(None) => return Ok(Ok(NONE)),
+                Err(declined) => return Ok(Err(declined)),
+            };
+            let body = self.pattern_parts(using)?.1;
+            let block = *self
+                .ir
+                .blocks
+                .get(body as usize)
+                .ok_or(Internal::missed("IR block"))?;
+            let inner = *self
+                .ir
+                .block_items
+                .get(block.items.0 as usize)
+                .ok_or(Internal::missed("IR block item"))?;
+            let inner_file = self.pattern_file(using);
+            if let Some(next) = self.used_pattern(self.placement(inner)?.kind) {
+                (at, using, from, env) = (inner, next, inner_file, made);
+                continue;
+            }
+            return self.named_row(
+                inner,
+                (inner_file, NONE, made),
+                (placement.as_name, file, true),
+                item,
+            );
+        }
+    }
+}
+
+impl Core<'_> {
+    pub fn unrun_use(&mut self, placement: PlacementRec, pattern: u32, file: u32) -> Stage<()> {
+        if placement.body != NONE || placement.inline {
+            return Ok(Err(Declined(Reason::PatternUse)));
+        }
+        let span = self.span(file, placement.lo, placement.hi);
+        match self.use_sources(placement, pattern, (file, NONE), span)? {
+            Ok(_) => Ok(Ok(())),
+            Err(declined) => Ok(Err(declined)),
+        }
+    }
+}
+
+impl Core<'_> {
+    pub fn env_file(&self, env: u32, file: u32) -> u32 {
+        let mut at = env;
+        while let Some(record) = self.envs.get(at as usize) {
+            if record.use_item != NONE {
+                return self
+                    .bodies
+                    .get(record.inst as usize)
+                    .and_then(|body| self.pattern_at(body.function))
+                    .map_or(file, |pattern| self.pattern_file(pattern));
+            }
+            at = record.parent;
+        }
+        file
     }
 }
