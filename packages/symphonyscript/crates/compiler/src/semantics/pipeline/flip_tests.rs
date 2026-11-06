@@ -1387,3 +1387,28 @@ fn a_compile_time_fold_in_a_function_body_draws_capacity_exceeded_per_call_with_
  {
     assert_eq!(drawn_codes(&FOLDS_IN_BODIES), 42);
 }
+
+const NOT_VALUES_IN_BODIES: [&[&str]; 5] = [
+    &["fn lowest(i): min + i\n", "Clip c:\n    Note/(lowest(0))\n"],
+    &[
+        "fn lowest(i): min + i\n",
+        "Clip c:\n    Note/(lowest(0))\n    Note/(lowest(1))\n",
+    ],
+    &["fn lowest(i): min + i\n", "Clip c:\n    Note/(1)\n"],
+    &[
+        "state held([1, 2, 3])\n",
+        "fn lowest(i):\n    let a = held[i]\n    if i >= 3 then 127 else min)(a, lowest(i + 1))\n",
+        "Clip c:\n    Note/(lowest(0))\n",
+    ],
+    &[
+        "fn lowest(i): Lamp + i\n",
+        "fn twice(i): lowest(i) + lowest(i + 1)\n",
+        "Clip c:\n    Note/(twice(0))\n",
+    ],
+];
+
+#[test]
+fn a_name_that_is_no_value_in_a_function_body_draws_not_a_value_at_each_call_beside_a_valid_twin_in_every_order()
+ {
+    assert_eq!(same_as_the_old_engine(&NOT_VALUES_IN_BODIES), 66);
+}

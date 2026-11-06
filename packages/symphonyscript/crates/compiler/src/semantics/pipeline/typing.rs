@@ -360,6 +360,12 @@ impl Core<'_> {
             Op::Float => self.literal_fact(node, Leaf::Float)?,
             Op::Bool => Fact::scalar(Leaf::Bool),
             Op::Name if self.is_history_target(node) => self.history_target_fact(node)?,
+            Op::Name if self.not_values.contains_key(&node) => {
+                let summary = self.not_values.get(&node).cloned().unwrap_or_default();
+                self.draw_at(Code::NotAValue, node, summary)?;
+                self.not_values_drawn.insert(node);
+                Fact::PLACEHOLDER
+            }
             Op::Name => match self.bound(node)? {
                 DeclRef::Let(at) => {
                     let root = self.let_root(at)?;

@@ -345,6 +345,11 @@ impl Core<'_> {
                         .not_a_value(&text)
                         .filter(|_| !type_operands.contains(&node))
                     {
+                        let owner = self.body_of.get(self.local(node)?).copied().unwrap_or(NONE);
+                        if owner != NONE && owner < self.functions() {
+                            self.not_values.insert(node, format!("`{text}` is {what}"));
+                            continue;
+                        }
                         let span = self.node_span(node)?;
                         self.draw(Code::NotAValue, span, format!("`{text}` is {what}"));
                         continue;
@@ -729,5 +734,22 @@ impl Core<'_> {
             }
         }
         Ok(found)
+    }
+}
+
+impl Core<'_> {
+    pub fn uncalled_not_values(&mut self) -> Result<(), Internal> {
+        let mut left: Vec<(u32, String)> = self
+            .not_values
+            .iter()
+            .filter(|(node, _)| !self.not_values_drawn.contains(node))
+            .map(|(node, summary)| (*node, summary.clone()))
+            .collect();
+        left.sort_unstable();
+        for (node, summary) in left {
+            let span = self.node_span(node)?;
+            self.draw(Code::NotAValue, span, summary);
+        }
+        Ok(())
     }
 }

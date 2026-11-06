@@ -106,6 +106,7 @@ pub(crate) fn analyze(inputs: &Inputs<'_>) -> Result<Option<Run>, Internal> {
     if let Err(reason) = stage(core.check_cyclic_roots())? {
         return declined(reason);
     }
+    core.uncalled_not_values()?;
     core.settle_capacities()?;
     core.check_integer_cells()?;
     if let Err(reason) = stage(core.plain_in_family())? {
