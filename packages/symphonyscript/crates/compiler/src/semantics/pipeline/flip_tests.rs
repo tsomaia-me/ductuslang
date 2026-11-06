@@ -2223,3 +2223,34 @@ fn a_dot_call_of_a_source_function_is_the_call_with_its_receiver_first_beside_a_
  {
     assert_eq!(same_as_the_old_engine(&DOT_CALLS), 72);
 }
+
+const FUNCTION_NAMES_AND_NON_FUNCTIONS: [&[&str]; 16] = [
+    &["fn f(): 1\n", "Clip c:\n    Note/(f + 1)\n"],
+    &["fn f(): 1\n", "Clip c:\n    Note/f\n"],
+    &["fn f(): 1\n", "Clip c:\n    Note/([f, 2][0])\n"],
+    &["fn f(): 1\n", "Clip c:\n    Note/(if true then f else 2)\n"],
+    &["fn f(): 1\nstate s = f\n", "Clip c:\n    Note/s\n"],
+    &["fn f(): 1\nlet g = f\n", "Clip c:\n    Note/(g())\n"],
+    &["fn f(): 1\n", "Clip c:\n    Note | accent=(f is f)\n"],
+    &["fn f(): 1\nfn h(x): x + 1\n", "Clip c:\n    Note/(h(f))\n"],
+    &["fn f(): 1\nfn k(): f\n", "Clip c:\n    Note/(k())\n"],
+    &["fn f(): 1\n", "Clip c:\n    Note/(i32(f))\n"],
+    &["let g = 3\n", "Clip c:\n    Note/(g(1 + true))\n"],
+    &[
+        "state g(1)\n",
+        "Clip c:\n    Note | velocity=(g(1) + 0.5)\n",
+    ],
+    &["Osc as o\n", "Clip c:\n    Note/(o())\n"],
+    &["let g = 3\nlet h = g(1)\n", "Clip c:\n    Note/h\n"],
+    &["let g = 3\n", "Clip c:\n    Note/(g(zz))\n"],
+    &["let g = 3\n", "Clip c:\n    Note/(g(a=1))\n"],
+];
+
+#[test]
+fn a_function_name_outside_a_callee_is_not_a_value_and_a_call_of_a_value_is_not_callable_beside_a_valid_twin_in_every_order()
+ {
+    assert_eq!(
+        same_as_the_old_engine(&FUNCTION_NAMES_AND_NON_FUNCTIONS),
+        96
+    );
+}

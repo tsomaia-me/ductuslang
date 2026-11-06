@@ -519,6 +519,17 @@ impl Core<'_> {
 
     pub fn call_fact(&mut self, node: u32) -> Stage<Fact> {
         let Some(function) = self.callee(node)? else {
+            if self.not_callable(node)? {
+                let callee = self.ir.node(node)?.1;
+                let name = self.ir.node(callee)?.1;
+                let text = self.ir.name_text(name).unwrap_or_default().to_string();
+                self.draw_at(
+                    Code::NotCallable,
+                    callee,
+                    format!("`{text}` is not a function"),
+                )?;
+                return Ok(Ok(Fact::PLACEHOLDER));
+            }
             return Ok(Err(Declined(Reason::FunctionValue)));
         };
         let args = self.arguments(node)?;
@@ -855,28 +866,63 @@ impl Core<'_> {
 
 impl Core<'_> {
     pub fn calls_a_non_function(&self) -> Result<bool, Internal> {
-        let mut callees = std::collections::HashSet::new();
         for local in 0..self.ir.op.len() {
             let reached = self.reached.get(local).copied().unwrap_or(false);
             if !reached || !matches!(self.ir.op.get(local), Some(Op::Call | Op::NamedCall)) {
                 continue;
             }
             let node = self.ir.base + u32::try_from(local).unwrap_or(0);
-            if self.callee(node)?.is_none() {
-                return Ok(true);
-            }
-            callees.insert(self.ir.node(node)?.1);
-        }
-        for local in 0..self.ir.op.len() {
-            let node = self.ir.base + u32::try_from(local).unwrap_or(0);
-            if matches!(self.bind.get(local), Some(DeclRef::Fn(_)))
-                && !callees.contains(&node)
-                && !self.is_history_target(node)
-            {
+            if self.callee(node)?.is_none() && !self.not_callable(node)? {
                 return Ok(true);
             }
         }
         Ok(false)
+    }
+
+    pub fn not_callable(&self, node: u32) -> Result<bool, Internal> {
+        let (op, callee, _, _) = self.ir.node(node)?;
+        if !matches!(op, Op::Call | Op::NamedCall) || self.callee(node)?.is_some() {
+            return Ok(false);
+        }
+        if self.ir.node(callee)?.0 != Op::Name {
+            return Ok(false);
+        }
+        Ok(matches!(
+            self.bound(callee)?,
+            DeclRef::Let(_) | DeclRef::Cell(_) | DeclRef::Param(_) | DeclRef::Instance(_)
+        ))
+    }
+
+    pub fn function_values(&mut self) -> Result<(), Internal> {
+        let mut callees = std::collections::HashSet::new();
+        for local in 0..self.ir.op.len() {
+            if matches!(self.ir.op.get(local), Some(Op::Call | Op::NamedCall)) {
+                callees.insert(self.ir.a.get(local).copied().unwrap_or(NONE));
+            }
+        }
+        for local in 0..self.ir.op.len() {
+            let node = self.ir.base + u32::try_from(local).unwrap_or(0);
+            let reached = self.reached.get(local).copied().unwrap_or(false);
+            if !reached
+                || !matches!(self.bind.get(local), Some(DeclRef::Fn(_)))
+                || callees.contains(&node)
+                || self.is_history_target(node)
+            {
+                continue;
+            }
+            let name = self.ir.a.get(local).copied().unwrap_or(NONE);
+            let text = self.ir.name_text(name).unwrap_or_default().to_string();
+            let summary = format!("`{text}` is a function, which is only called");
+            let owner = self.body_of.get(local).copied().unwrap_or(NONE);
+            if owner != NONE && owner < self.functions() {
+                self.not_values.insert(node, summary);
+                continue;
+            }
+            let span = self.node_span(node)?;
+            self.draw(Code::NotAValue, span, summary);
+            self.function_values.insert(node);
+        }
+        Ok(())
     }
 }
 

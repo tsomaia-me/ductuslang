@@ -499,7 +499,17 @@ impl Core<'_> {
             return Ok(Vec::new());
         }
         let Some(function) = self.callee(node)? else {
-            return Ok(Vec::new());
+            if !self.not_callable(node)? {
+                return Ok(Vec::new());
+            }
+            if op == Op::Call {
+                return self.arguments(node);
+            }
+            return Ok(self
+                .named_arguments(node)?
+                .into_iter()
+                .map(|(_, value)| value)
+                .collect());
         };
         let params = self.param_syms(function)?;
         if op == Op::Call {

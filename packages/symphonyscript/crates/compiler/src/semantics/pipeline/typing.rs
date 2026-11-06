@@ -398,6 +398,7 @@ impl Core<'_> {
                 }
                 DeclRef::Cell(at) => self.cell_read_fact(at)?,
                 DeclRef::Param(position) => self.param_fact(node, position)?.0,
+                DeclRef::Fn(_) if self.function_values.contains(&node) => Fact::PLACEHOLDER,
                 DeclRef::Fn(_) | DeclRef::Pattern(_) => {
                     return Ok(Err(Declined(Reason::FunctionValue)));
                 }
