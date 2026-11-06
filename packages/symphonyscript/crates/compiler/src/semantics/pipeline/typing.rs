@@ -452,6 +452,7 @@ impl Core<'_> {
                 Ok(fact) => fact,
                 Err(declined) => return Ok(Err(declined)),
             },
+            Op::Field if self.array_members.contains_key(&node) => Fact::scalar(Leaf::Int),
             Op::Field => match self.path_read(node)?.cloned() {
                 Some(read) if read.cyclic => Fact::PLACEHOLDER,
                 Some(read) => {

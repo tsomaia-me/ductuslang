@@ -709,7 +709,10 @@ impl Core<'_> {
                         }
                         continue;
                     }
-                    if op == Op::Field && self.bare_cell_read(node)?.is_some() {
+                    if op == Op::Field
+                        && (self.array_members.contains_key(&node)
+                            || self.bare_cell_read(node)?.is_some())
+                    {
                         let Some(frame) = frames.last_mut() else {
                             return Err(Internal::missed("evaluation frame"));
                         };
@@ -1504,6 +1507,9 @@ impl Core<'_> {
             }
             Op::Stepped => Value::Error,
             Op::Variant => self.variant_value(node)?,
+            Op::Field if self.array_members.contains_key(&node) => {
+                Value::Int(self.array_members.get(&node).copied().unwrap_or(0))
+            }
             Op::Field => match self.bare_cell_read(node)? {
                 Some(at) => match self.read_cell(at, node, ty, unflowed)? {
                     Ok(value) => value,

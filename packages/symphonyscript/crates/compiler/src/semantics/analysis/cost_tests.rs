@@ -1995,7 +1995,7 @@ fn empty_chain_walks(sizes: [(usize, usize); 3]) -> (Vec<String>, [u64; 3], Stri
     let steps = runs.each_ref().map(|run| {
         run.counts
             .iter()
-            .find(|(name, _)| name == "PathsSlicedGroup")
+            .find(|(name, _)| name == "SigNode")
             .map_or(0, |(_, count)| *count)
     });
     for ((run, size), text) in runs.iter().zip(sizes).zip(&texts) {
@@ -2031,7 +2031,7 @@ fn an_empty_arrays_let_chain_is_walked_once_per_let_whatever_reads_it_388() {
         if !linear(points) {
             failures.push(row_failure(
                 &smallest,
-                format!("388 {sizes:?}: PathsSlicedGroup {steps:?}"),
+                format!("388 {sizes:?}: SigNode {steps:?}"),
             ));
         }
         if steps[0] == 0 {

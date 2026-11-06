@@ -8,6 +8,7 @@ use super::core_value::CoreValue;
 use super::decl_ref::DeclRef;
 use super::declined::Declined;
 use super::fact::Fact;
+use super::folds::ANY_LENGTH;
 use super::leaf::Leaf;
 use super::reason::Reason;
 use crate::diagnostics::{Code, Diagnostic};
@@ -421,7 +422,7 @@ impl Core<'_> {
                     }
                     return self.loop_name_path_end(node, receiver, position, field);
                 }
-                DeclRef::Let(at) => match self.let_reference_row(at)? {
+                DeclRef::Let(at) => match self.let_reference_row(at, node, field)? {
                     Ok(row) => row,
                     Err(declined) => return Ok(Err(declined)),
                 },
@@ -442,6 +443,17 @@ impl Core<'_> {
         } else if op == Op::Field {
             if self.per_inst_paths.contains(&receiver) {
                 return Ok(Err(Declined(Reason::Member)));
+            }
+            if self.array_members.contains_key(&receiver) {
+                let text = self.ir.name_text(field).unwrap_or_default().to_string();
+                self.draw_at(
+                    Code::UnknownAttribute,
+                    node,
+                    format!(
+                        "`.{text}` reads an attribute of an instance or a wire, and this is a value"
+                    ),
+                )?;
+                return Ok(Ok(End::Value));
             }
             *ends
                 .get(&receiver)
@@ -1847,7 +1859,7 @@ impl Core<'_> {
 }
 
 impl Core<'_> {
-    fn let_reference_row(&mut self, at: u32) -> Stage<End> {
+    fn let_reference_row(&mut self, at: u32, node: u32, field: u32) -> Stage<End> {
         let root = self.let_root(at)?;
         if self.body_of.get(self.local(root)?).copied().unwrap_or(NONE) != NONE {
             return Ok(Err(Declined(Reason::Member)));
@@ -1855,10 +1867,8 @@ impl Core<'_> {
         if self.let_reads_cell(at)? {
             return Ok(Ok(End::Placeholder));
         }
-        for read in self.postorder(root)? {
-            if self.ir.node(read)?.0 == Op::Field {
-                return Ok(Err(Declined(Reason::Member)));
-            }
+        if !self.path_free_let(at)? {
+            return Ok(Err(Declined(Reason::Member)));
         }
         let fact = match self.ensure_typed(root)? {
             Ok(fact) => fact,
@@ -1870,7 +1880,10 @@ impl Core<'_> {
         if fact.leaf == Leaf::Error && !fact.node {
             return Ok(Ok(End::Placeholder));
         }
-        if !fact.node || !fact.dims.is_empty() {
+        if !fact.node {
+            return self.let_member(node, field, &fact);
+        }
+        if !fact.dims.is_empty() {
             return Ok(Err(Declined(Reason::Member)));
         }
         let (drawn, stop) = (self.diagnostics.len(), self.stop.clone());
@@ -1882,5 +1895,92 @@ impl Core<'_> {
             Ok(_) => End::Placeholder,
             Err(declined) => return Ok(Err(declined)),
         }))
+    }
+}
+
+impl Core<'_> {
+    fn let_member(&mut self, node: u32, field: u32, fact: &Fact) -> Stage<End> {
+        let text = self.ir.name_text(field).unwrap_or_default().to_string();
+        let member = matches!(text.as_str(), "size" | "capacity");
+        let length = fact.dims.first().copied();
+        let numeric = matches!(
+            fact.leaf,
+            Leaf::Int | Leaf::Float | Leaf::Bool | Leaf::Enum(_)
+        );
+        if member && numeric && !fact.dims.is_empty() && length != Some(ANY_LENGTH) {
+            self.array_members
+                .insert(node, i128::from(length.unwrap_or(0)));
+            return Ok(Ok(End::Value));
+        }
+        let declared = self
+            .ir
+            .name(field)
+            .and_then(|entry| self.decl.get(entry.sym.0 as usize))
+            .is_some_and(|decl| *decl != DeclRef::None);
+        if member && numeric && fact.dims.is_empty() && !declared {
+            self.draw_at(
+                Code::UnknownAttribute,
+                node,
+                format!(
+                    "`.{text}` reads an attribute of an instance or a wire, and this is a value"
+                ),
+            )?;
+            return Ok(Ok(End::Value));
+        }
+        Ok(Err(Declined(Reason::Member)))
+    }
+}
+
+impl Core<'_> {
+    fn path_free_let(&mut self, at: u32) -> Result<bool, Internal> {
+        if let Some(known) = self.path_free.get(&at) {
+            return Ok(*known);
+        }
+        let mut lets = vec![at];
+        let mut seen = std::collections::HashSet::new();
+        let found = self.path_free_walk(&mut lets, &mut seen);
+        let free = found?;
+        for at in seen {
+            if free {
+                self.path_free.insert(at, true);
+            }
+        }
+        self.path_free.insert(at, free);
+        Ok(free)
+    }
+
+    fn path_free_walk(
+        &self,
+        lets: &mut Vec<u32>,
+        seen: &mut std::collections::HashSet<u32>,
+    ) -> Result<bool, Internal> {
+        while let Some(at) = lets.pop() {
+            if !seen.insert(at) {
+                continue;
+            }
+            if self.path_free.get(&at) == Some(&true) {
+                continue;
+            }
+            for read in self.postorder(self.let_root(at)?)? {
+                let op = self.ir.node(read)?.0;
+                if matches!(
+                    op,
+                    Op::Field
+                        | Op::To
+                        | Op::Call
+                        | Op::NamedCall
+                        | Op::MethodCall
+                        | Op::NamedMethodCall
+                ) {
+                    return Ok(false);
+                }
+                if op == Op::Name
+                    && let DeclRef::Let(other) = self.bound(read)?
+                {
+                    lets.push(other);
+                }
+            }
+        }
+        Ok(true)
     }
 }

@@ -1836,3 +1836,40 @@ fn a_path_through_a_let_holding_a_reference_reads_the_instance_it_holds_and_thro
     let rows: Vec<&[&str]> = rows.iter().map(Vec::as_slice).collect();
     assert_eq!(same_as_the_old_engine(&rows), 192);
 }
+
+const LET_ARRAY_MEMBERS: [&[&str]; 13] = [
+    &["Clip c:\n    Note/(xs.size)\n"],
+    &["Clip c:\n    Note/(xs.capacity + 300)\n"],
+    &["Clip c:\n    Note/([1, 2][xs.size])\n"],
+    &["Clip c:\n    Note/(ys.size)\n"],
+    &["Clip c:\n    Note/(k.size)\n"],
+    &["Clip c:\n    Note/(k.capacity)\n"],
+    &["Clip c:\n    Note/(xs.size.size)\n"],
+    &["Clip c:\n    Note/(ys.size + 1.5)\n"],
+    &["Clip c:\n    Note when xs.size\n"],
+    &["Clip c:\n    Note/((for i in 0..xs.size into a from 0: a + i))\n"],
+    &[
+        "let n = xs.size\nlet m: u8 = n * 200\n",
+        "Clip c:\n    Note/(m)\n",
+    ],
+    &[
+        "let n = xs.size\nlet zs = [n, n, n]\n",
+        "Clip c:\n    Note/(zs[n + 1])\n",
+    ],
+    &["Clip c | level=xs.size:\n    Note/1\n"],
+];
+
+#[test]
+fn a_let_arrays_size_and_capacity_are_its_length_known_at_compile_time_and_a_scalar_lets_draw_unknown_attribute_beside_a_valid_twin_in_every_order()
+ {
+    let rows: Vec<Vec<&str>> = LET_ARRAY_MEMBERS
+        .iter()
+        .map(|items| {
+            let mut row = vec!["let xs = [5, 6]\nlet ys = [[1, 2], [3, 4], [5, 6]]\nlet k = 2\n"];
+            row.extend(items.iter());
+            row
+        })
+        .collect();
+    let rows: Vec<&[&str]> = rows.iter().map(Vec::as_slice).collect();
+    assert_eq!(same_as_the_old_engine(&rows), 114);
+}
