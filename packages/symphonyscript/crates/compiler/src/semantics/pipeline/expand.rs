@@ -284,7 +284,6 @@ impl Core<'_> {
                             work.push(Work::Loop(run));
                         }
                         run => {
-                            self.unrun_loop |= run.as_ref().is_none_or(|run| run.open);
                             if let Err(declined) = self.unrun_names(item, file)? {
                                 return Ok(Err(declined));
                             }

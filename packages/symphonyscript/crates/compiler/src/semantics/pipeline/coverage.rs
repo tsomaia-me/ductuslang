@@ -459,18 +459,6 @@ fn instance_path(ir: &FlatIr, field: u32) -> bool {
 }
 
 fn wire_landed(ir: &FlatIr, wire: &WireRec, in_loop: bool) -> bool {
-    if wire.gate != NONE
-        && let Ok((lo, hi)) = ir.span(wire.gate)
-        && ir.op.iter().enumerate().any(|(local, op)| {
-            *op == Op::To
-                && u32::try_from(local)
-                    .ok()
-                    .and_then(|local| ir.span(local + ir.base).ok())
-                    .is_some_and(|(start, end)| lo <= start && end <= hi)
-        })
-    {
-        return false;
-    }
     wire.flags.0 == wire.flags.1
         && (wire.as_name == NONE || in_loop)
         && !wire.attrs_cut

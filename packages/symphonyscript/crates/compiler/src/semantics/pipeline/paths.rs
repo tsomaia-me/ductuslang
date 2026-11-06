@@ -735,7 +735,7 @@ impl Core<'_> {
             if self.ir.dropped(item) {
                 continue;
             }
-            let mut roots = vec![wire.default];
+            let mut roots = vec![wire.default, wire.gate];
             let entries = self
                 .ir
                 .attr_entries

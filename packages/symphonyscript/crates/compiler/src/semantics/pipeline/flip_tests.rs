@@ -141,3 +141,28 @@ fn a_parameters_default_reading_a_cell_is_bound_once_the_cells_are_known_and_dra
  {
     assert_eq!(same_as_the_old_engine(&CELL_DEFAULTS), 120);
 }
+
+const WIRE_GATE_PATHS: [&[&str]; 4] = [
+    &[
+        "Clip a:\n    Plays when to.gain > 0.5: b\n",
+        "Clip b | gain=0.7:\n    Note/1\n",
+    ],
+    &[
+        "Clip a:\n    Plays when to.gain: b\n",
+        "Clip b:\n    Note/1\n",
+    ],
+    &[
+        "Clip a:\n    Plays when to.gain > 300000000000: b\n",
+        "Clip b:\n    Note/1\n",
+    ],
+    &[
+        "Clip a:\n    for i in 0..2:\n        Plays when to.gain > i: b\n",
+        "Clip b:\n    Note/1\n",
+    ],
+];
+
+#[test]
+fn a_to_path_in_a_wires_gate_starts_at_the_wires_destination_and_draws_what_the_old_engine_draws_beside_a_valid_twin_in_every_order()
+ {
+    assert_eq!(same_as_the_old_engine(&WIRE_GATE_PATHS), 24);
+}

@@ -155,14 +155,13 @@ fn a_flexible_comparison_operand_takes_its_default_float_type_and_a_value_that_d
     }
 }
 
-const DECLINED: [&str; 7] = [
+const DECLINED: [&str; 6] = [
     "Output :master\n",
     "Clip c: Nope/1\n",
     "pattern Stab(default root, gap = 3):\n    [Note/root Note/(root + gap)]\n    Note/(root + 12)\nClip c:\n    Stab/55 | gap=5\n",
     "Clip c:\n    Note/60 when nope\n",
     "Plant boiler:\n    when nope:\n        Valve/0.3\n",
     "state note(60)\nClip c:\n    Note when (if q then 300000000000 else [1, 2][5])\n",
-    "Clip a:\n    Plays when to.gain > 0.5: b\nClip b:\n    Note/1\n",
 ];
 
 #[test]
@@ -240,8 +239,18 @@ fn a_when_block_places_every_arm_and_its_guards_are_gates_drawing_what_the_old_e
     }
     assert_eq!(programs, 62);
     let unrun = "Clip c:\n    for x in q:\n        Note/(x)\n    when true:\n        Note/(1)\n";
-    assert!(
-        new.checked_by_new_core(&[source(unrun)]).is_none(),
+    let codes: Vec<crate::diagnostics::Code> = new
+        .checked_by_new_core(&[source(unrun)])
+        .unwrap_or_else(|| panic!("the new core takes {unrun}"))
+        .iter()
+        .map(|diagnostic| diagnostic.code)
+        .collect();
+    assert_eq!(
+        codes,
+        [
+            crate::diagnostics::Code::NoEntryInstance,
+            crate::diagnostics::Code::UnknownName
+        ],
         "{unrun}"
     );
 }
