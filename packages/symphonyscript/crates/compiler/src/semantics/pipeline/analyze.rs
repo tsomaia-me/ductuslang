@@ -62,6 +62,7 @@ pub(crate) fn analyze(inputs: &Inputs<'_>) -> Result<Option<Run>, Internal> {
     if core.stop.is_some() {
         return Ok(Some(finished(core)));
     }
+    core.bare_declarations()?;
     if let Err(reason) = stage(core.unused_patterns())? {
         return declined(reason);
     }
@@ -101,7 +102,9 @@ pub(crate) fn analyze(inputs: &Inputs<'_>) -> Result<Option<Run>, Internal> {
     }
     core.settle_capacities()?;
     core.check_integer_cells()?;
-    core.plain_in_family()?;
+    if let Err(reason) = stage(core.plain_in_family())? {
+        return declined(reason);
+    }
     core.check_counts()?;
     if !core.unknown_kind {
         core.check_reachability()?;

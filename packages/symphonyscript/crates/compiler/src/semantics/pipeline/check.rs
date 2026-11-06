@@ -228,12 +228,22 @@ impl Core<'_> {
             let Some(ty) = plain_expected(attr) else {
                 return Ok(Err(Declined(attribute_reason(attr))));
             };
-            if let Some(unit) = attr.unit
-                && self.unit_scale(unit.family, unit.default_unit)? != 1.0
-            {
-                return Ok(Err(Declined(Reason::UnitAttribute)));
+            let mut scaled = None;
+            if let Some(unit) = attr.unit {
+                let scale = self.unit_scale(unit.family, unit.default_unit)?;
+                if scale != 1.0 {
+                    let fractional = int_range(ty).is_some() && scale.fract() != 0.0;
+                    match self.default_readable(root, fractional)? {
+                        Ok(true) => scaled = Some((root, unit.family, unit.default_unit, ty)),
+                        Ok(false) => return Ok(Err(Declined(Reason::UnitAttribute))),
+                        Err(declined) => return Ok(Err(declined)),
+                    }
+                }
             }
-            if let Err(declined) = self.bind_value(root, &attr.name, ty)? {
+            let outer = std::mem::replace(&mut self.default_scale, scaled);
+            let outcome = self.bind_value(root, &attr.name, ty);
+            self.default_scale = outer;
+            if let Err(declined) = outcome? {
                 return Ok(Err(declined));
             }
             self.bind_unit(root, attr.unit)?;
@@ -471,12 +481,13 @@ impl Core<'_> {
             Leaf::Placeholder | Leaf::Error => return self.detached(root, name, ty),
             _ if !fact.dims.is_empty() => {
                 let variable = self.variable_length(root)?;
+                let held = self.ty_text(ty)?;
                 self.draw_at(
                     Code::TypeMismatch,
                     root,
                     format!(
                         "`{name}` holds one `{}`, and this value is {}",
-                        ty_name(ty),
+                        held,
                         if variable {
                             "a variable array"
                         } else {

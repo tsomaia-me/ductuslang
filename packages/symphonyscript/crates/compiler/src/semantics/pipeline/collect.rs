@@ -141,6 +141,14 @@ impl Core<'_> {
 
     pub fn collect(&mut self) -> Stage<()> {
         self.mark_bodies()?;
+        for (local, op) in self.ir.op.iter().enumerate() {
+            if *op == Op::TyName
+                && let Some(name) = self.ir.a.get(local).copied()
+                && self.vocabulary.enum_named(&self.name_text(name)?).is_none()
+            {
+                return Ok(Err(Declined(Reason::EnumFlow)));
+            }
+        }
         self.decl = vec![DeclRef::None; self.ir.symbols.end() as usize];
         let mut first: Vec<Option<Span>> = vec![None; self.decl.len()];
         for (file, rec) in self.ir.files.iter().enumerate() {

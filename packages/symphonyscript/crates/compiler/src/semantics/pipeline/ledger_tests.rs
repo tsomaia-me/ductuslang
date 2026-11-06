@@ -1352,3 +1352,51 @@ fn stress_a_plain_value_in_a_nest_of_functions_called_at_two_sites_a_level_draws
         Timing::Judged,
     ));
 }
+
+pub(super) fn bare_alias_chain(n: usize) -> String {
+    let mut text = String::from("let a0 = Saw\n");
+    for at in 1..=n {
+        text.push_str(&format!("let a{at} = a{}\n", at - 1));
+    }
+    text.push_str(&format!("Synth s:\n    Osc | wave=a{n}\n"));
+    text
+}
+
+#[test]
+#[ignore = "stress"]
+fn stress_a_chain_of_lets_aliasing_a_bare_variant_read_at_an_enum_attribute_takes_its_enum_in_time_and_memory_linear_in_the_chain()
+ {
+    assert_none(&ledger_failures(
+        "bare alias chain",
+        [1_000, 2_000, 4_000],
+        bare_alias_chain,
+        &none,
+        Timing::Judged,
+    ));
+}
+
+pub(super) fn untyped_alias_chain(n: usize) -> String {
+    let mut text = String::from("let a0 = Saw\n");
+    for at in 1..=n {
+        text.push_str(&format!("let a{at} = a{}\n", at - 1));
+    }
+    text.push_str(&format!("Clip c:\n    Note/a{n}\n"));
+    text
+}
+
+fn one_untyped_flow(_: usize) -> Vec<String> {
+    vec!["type-mismatch".to_string()]
+}
+
+#[test]
+#[ignore = "stress"]
+fn stress_an_untyped_bare_variant_flow_of_aliasing_lets_draws_one_diagnostic_whose_related_spans_grow_linearly_in_time_and_memory_linear_in_the_chain()
+ {
+    assert_none(&ledger_failures(
+        "untyped alias chain",
+        [1_000, 2_000, 4_000],
+        untyped_alias_chain,
+        &one_untyped_flow,
+        Timing::Judged,
+    ));
+}

@@ -890,8 +890,14 @@ impl Core<'_> {
                                 self.unflowed.extend([then, otherwise]);
                             }
                             frame.steps.push(Step::Runtime(2));
-                            frame.steps.push(Step::Visit(otherwise, arm_ty));
-                            frame.steps.push(Step::Visit(then, arm_ty));
+                            for arm in [otherwise, then] {
+                                if self.compile_time_operand(arm, arm_ty)? {
+                                    frame.steps.push(Step::Fit(arm, arm_ty));
+                                    frame.steps.push(Step::Visit(arm, EvalTy::Exact));
+                                } else {
+                                    frame.steps.push(Step::Visit(arm, arm_ty));
+                                }
+                            }
                         }
                         Value::Int(_)
                         | Value::F32(_)
@@ -1116,6 +1122,10 @@ impl Core<'_> {
                     let value = match self.apply(node, node_ty, &mut values)? {
                         Ok(value) => value,
                         Err(declined) => return Ok(Err(declined)),
+                    };
+                    let value = match self.reads_default_unit(node)? {
+                        Some((family, unit)) => self.in_default_unit(node, value, family, unit)?,
+                        None => value,
                     };
                     values.push(value);
                     if let Some(frame) = frames.last_mut() {
@@ -1465,6 +1475,32 @@ impl Core<'_> {
         Ok(EvalTy::F32)
     }
 
+    fn arms_unified(&self, choice: u32, own: Option<EvalTy>) -> Result<Option<EvalTy>, Internal> {
+        let fact = self.fact(choice)?;
+        if !fact.dims.is_empty() {
+            return Ok(None);
+        }
+        if let Some(fixed) = fact.own() {
+            return Ok(Some(fixed));
+        }
+        if fact.leaf != Leaf::Float {
+            return Ok(None);
+        }
+        let (_, _, then, otherwise) = self.ir.node(choice)?;
+        let (mut fixed, mut wide) = (false, false);
+        for arm in [then, otherwise] {
+            if self.fact(arm)?.own().is_some() || self.is_reactive(arm)? {
+                fixed = true;
+                wide |= matches!(self.own_ty(arm)?, Some(EvalTy::I64 | EvalTy::F64));
+            }
+        }
+        Ok(match (fixed, wide) {
+            (false, _) => None,
+            (true, true) => Some(EvalTy::F64),
+            (true, false) => own,
+        })
+    }
+
     pub fn own_ty(&self, node: u32) -> Result<Option<EvalTy>, Internal> {
         let fact = self.fact(node)?;
         if let Some(fixed) = fact.own()
@@ -1533,9 +1569,9 @@ impl Core<'_> {
         let mut leaves: Vec<u32> = Vec::new();
         let mut fits: Vec<u32> = Vec::new();
         let mut unfixed = HashMap::new();
-        let mut flowing: HashMap<(u32, u32), EvalTy> = HashMap::new();
+        let mut flowing: HashMap<(u32, u32), (EvalTy, bool)> = HashMap::new();
         if let Some(ty) = expected {
-            flowing.insert((self.inst, root), ty);
+            flowing.insert((self.inst, root), (ty, true));
         }
         while let Some((node, indexed)) = stack.pop() {
             if node == NONE {
@@ -1570,7 +1606,24 @@ impl Core<'_> {
                 && !self.is_kept(node)?
                 && (!self.is_reactive(node)? || self.runtime_in_own(node, own, &mut unfixed)?)
             {
-                let flowed = match flowing.get(&(self.inst, node)).copied() {
+                let (flowing_ty, placed) = match flowing.get(&(self.inst, node)).copied() {
+                    Some((ty, placed)) => (Some(ty), placed),
+                    None => (None, false),
+                };
+                let flexible_arm = match flowing_ty {
+                    Some(ty)
+                        if !self.is_reactive(node)?
+                            && fact.fixed.is_none()
+                            && fact.dims.is_empty()
+                            && matches!(fact.leaf, Leaf::Int | Leaf::Float)
+                            && (is_fixed_float(ty)
+                                || (fact.leaf == Leaf::Int && int_range(ty).is_some())) =>
+                    {
+                        Some(ty)
+                    }
+                    Some(_) | None => None,
+                };
+                let flowed = match flowing_ty {
                     Some(ty)
                         if self.is_reactive(node)?
                             && (widens(own, ty)
@@ -1588,7 +1641,9 @@ impl Core<'_> {
                 let divided = op == Op::Div
                     && fact.own().is_none()
                     && matches!(own, EvalTy::F32 | EvalTy::F64);
-                let evaluated = if let Some(ty) = flowed {
+                let evaluated = if let Some(ty) = flexible_arm {
+                    flexible(ty)
+                } else if let Some(ty) = flowed {
                     ty
                 } else if !divided {
                     own
@@ -1597,10 +1652,22 @@ impl Core<'_> {
                 } else {
                     EvalTy::Exact
                 };
-                let value = match self.evaluate(node, evaluated)? {
+                let owning = std::mem::replace(&mut self.owning, flowed.is_none() || !placed);
+                let outcome = self.evaluate(node, evaluated);
+                self.owning = owning;
+                let value = match outcome? {
                     Ok(value) => value,
                     Err(declined) => return Ok(Err(declined)),
                 };
+                if let (Some(ty), Value::Int(held)) = (flexible_arm, &value)
+                    && int_range(ty).is_some_and(|range| !range.contains(held))
+                {
+                    self.draw_at(
+                        Code::DoesNotFit,
+                        node,
+                        format!("this value does not fit `{}`", ty_name(ty)),
+                    )?;
+                }
                 if indexed && fact.dims.is_empty() {
                     self.index_outside_i64(node, &value)?;
                 }
@@ -1608,9 +1675,14 @@ impl Core<'_> {
             }
             match op {
                 Op::If => {
-                    if let Some(ty) = flowing.get(&(self.inst, node)).copied() {
-                        flowing.insert((self.inst, b), ty);
-                        flowing.insert((self.inst, c), ty);
+                    let unified = self.arms_unified(node, own)?;
+                    if let Some(flow) = flowing
+                        .get(&(self.inst, node))
+                        .copied()
+                        .or(unified.map(|ty| (ty, false)))
+                    {
+                        flowing.insert((self.inst, b), flow);
+                        flowing.insert((self.inst, c), flow);
                     }
                     let condition = self.fact(a)?;
                     if condition.dims.is_empty()
@@ -1657,8 +1729,7 @@ impl Core<'_> {
                 {
                     let ty = flowing
                         .get(&(self.inst, node))
-                        .copied()
-                        .unwrap_or(EvalTy::Exact);
+                        .map_or(EvalTy::Exact, |flow| flow.0);
                     stack.push((b, true));
                     let owning = std::mem::replace(&mut self.owning, false);
                     let outcome = self.evaluate(a, ty);

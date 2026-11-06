@@ -27,6 +27,9 @@ pub(crate) enum Refusal {
 }
 
 pub(crate) fn annotated_fact(ty: EvalTy) -> Fact {
+    if let EvalTy::Enum(id) = ty {
+        return Fact::scalar(Leaf::Enum(Some(id)));
+    }
     let leaf = if is_fixed_float(ty) {
         Leaf::Float
     } else if ty == EvalTy::Bool {
@@ -207,6 +210,13 @@ impl Core<'_> {
         let (mut op, mut code, _, _) = self.ir.node(node)?;
         while matches!(op, Op::TyArray | Op::TyVar) {
             (op, code, _, _) = self.ir.node(code)?;
+        }
+        if op == Op::TyName {
+            return self
+                .vocabulary
+                .enum_named(&self.name_text(code)?)
+                .map(|id| Some(EvalTy::Enum(id)))
+                .ok_or(Internal::missed("an annotated enum"));
         }
         if op != Op::TyScalar {
             return Err(Internal::missed(
@@ -605,7 +615,10 @@ pub(crate) fn refusal(fact: &Fact, ty: EvalTy) -> Refusal {
         Leaf::Placeholder | Leaf::Error => Refusal::Silent,
         _ if !fact.dims.is_empty() => Refusal::Shape,
         Leaf::Bool if ty == EvalTy::Bool => Refusal::Kept,
+        Leaf::Enum(Some(id)) if ty == EvalTy::Enum(id) => Refusal::Kept,
+        Leaf::Enum(None) if matches!(ty, EvalTy::Enum(_)) => Refusal::Kept,
         Leaf::Bool | Leaf::Enum(_) => Refusal::Type,
+        _ if matches!(ty, EvalTy::Enum(_)) => Refusal::Type,
         _ if ty == EvalTy::Bool => Refusal::Type,
         Leaf::Float if int_range(ty).is_some() => Refusal::Type,
         _ if fact.fixed.is_some_and(|own| !widens(own, ty)) => Refusal::Type,

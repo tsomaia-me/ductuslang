@@ -220,258 +220,6 @@ pub type Carried = (
 
 pub const CARRIED_TO_R4B: &[Carried] = &[
     (
-        "Clip c:\n    Note/(if (q or Wave::Saw) then (300000000000 + 300000000000) else ([1, 2] / true))\n\nstate q(0): i32\n",
-        &[
-            ("operand-type", "q or Wave::Saw"),
-            ("array-operand", "[1, 2] / true"),
-        ],
-        &[
-            ("operand-type", "q or Wave::Saw"),
-            ("does-not-fit", "300000000000 + 300000000000"),
-            ("array-operand", "[1, 2] / true"),
-        ],
-    ),
-    (
-        "Clip c:\n    Note/(if (q or Wave::Saw) then (300000000000 + 300000000000) else ([1, 2] / true))\n\nstate q(0): u8\n",
-        &[
-            ("operand-type", "q or Wave::Saw"),
-            ("array-operand", "[1, 2] / true"),
-        ],
-        &[
-            ("operand-type", "q or Wave::Saw"),
-            ("does-not-fit", "300000000000 + 300000000000"),
-            ("array-operand", "[1, 2] / true"),
-        ],
-    ),
-    (
-        "Clip c:\n    Note/(if (q or Wave::Saw) then (300000000000 + 300000000000) else ([1, 2] / true))\n\nstate q(0): i64\n",
-        &[
-            ("operand-type", "q or Wave::Saw"),
-            ("array-operand", "[1, 2] / true"),
-        ],
-        &[
-            ("operand-type", "q or Wave::Saw"),
-            ("does-not-fit", "300000000000 + 300000000000"),
-            ("array-operand", "[1, 2] / true"),
-        ],
-    ),
-    (
-        "Clip c:\n    Note/(if (q or Wave::Saw) then (300000000000 + 300000000000) else ([1, 2] / true))\n\nstate q(0.5): f32\n",
-        &[
-            ("operand-type", "q or Wave::Saw"),
-            ("array-operand", "[1, 2] / true"),
-        ],
-        &[
-            ("operand-type", "q or Wave::Saw"),
-            ("does-not-fit", "300000000000 + 300000000000"),
-            ("array-operand", "[1, 2] / true"),
-        ],
-    ),
-    (
-        "Clip c:\n    Note/(if (q or Wave::Saw) then (300000000000 + 300000000000) else ([1, 2] / true))\n\nstate q(0.5): f64\n",
-        &[
-            ("operand-type", "q or Wave::Saw"),
-            ("array-operand", "[1, 2] / true"),
-        ],
-        &[
-            ("operand-type", "q or Wave::Saw"),
-            ("does-not-fit", "300000000000 + 300000000000"),
-            ("array-operand", "[1, 2] / true"),
-        ],
-    ),
-    (
-        "Clip c:\n    Note/(if (q or Wave::Saw) then (300000000000 + 300000000000) else ([1, 2] / true))\n\nstate q(false)\n",
-        &[
-            ("type-mismatch", "Wave::Saw"),
-            ("array-operand", "[1, 2] / true"),
-        ],
-        &[
-            ("type-mismatch", "Wave::Saw"),
-            ("does-not-fit", "300000000000 + 300000000000"),
-            ("array-operand", "[1, 2] / true"),
-        ],
-    ),
-    (
-        "Clip c:\n    Note/(if (q or Wave::Saw) then (300000000000 + 300000000000) else ([1, 2] / true))\n\nstate q(Wave::Sine)\n",
-        &[
-            ("operand-type", "q or Wave::Saw"),
-            ("array-operand", "[1, 2] / true"),
-        ],
-        &[
-            ("operand-type", "q or Wave::Saw"),
-            ("does-not-fit", "300000000000 + 300000000000"),
-            ("array-operand", "[1, 2] / true"),
-        ],
-    ),
-    (
-        "Clip c:\n    Note | velocity=(if (if [1, 2] then q else Wave::Saw) then (1 + [1, 2][5]) else (q / i32(true)))\n\nstate q(0): i32\n",
-        &[
-            ("condition-type", "if [1, 2] then q else Wave::Saw"),
-            ("type-mismatch", "if [1, 2] then q else Wave::Saw"),
-            ("conversion-type", "i32(true)"),
-        ],
-        &[
-            ("condition-type", "if [1, 2] then q else Wave::Saw"),
-            ("conversion-type", "i32(true)"),
-            ("integer-cell", "q"),
-        ],
-    ),
-    (
-        "Clip c:\n    Note | velocity=(if (if [1, 2] then q else Wave::Saw) then (1 + [1, 2][5]) else (q / i32(true)))\n\nstate q(0): u8\n",
-        &[
-            ("condition-type", "if [1, 2] then q else Wave::Saw"),
-            ("type-mismatch", "if [1, 2] then q else Wave::Saw"),
-            ("conversion-type", "i32(true)"),
-        ],
-        &[
-            ("condition-type", "if [1, 2] then q else Wave::Saw"),
-            ("conversion-type", "i32(true)"),
-            ("integer-cell", "q"),
-        ],
-    ),
-    (
-        "Clip c:\n    Note | velocity=(if (if [1, 2] then q else Wave::Saw) then (1 + [1, 2][5]) else (q / i32(true)))\n\nstate q(0): i64\n",
-        &[
-            ("condition-type", "if [1, 2] then q else Wave::Saw"),
-            ("type-mismatch", "if [1, 2] then q else Wave::Saw"),
-            ("conversion-type", "i32(true)"),
-        ],
-        &[
-            ("condition-type", "if [1, 2] then q else Wave::Saw"),
-            ("conversion-type", "i32(true)"),
-            ("integer-cell", "q"),
-        ],
-    ),
-    (
-        "Clip c:\n    Note | velocity=(if (q or Wave::Saw) then (300000000000 + 300000000000) else ([1, 2] / true))\n\nstate q(0): i32\n",
-        &[
-            ("operand-type", "q or Wave::Saw"),
-            ("array-operand", "[1, 2] / true"),
-        ],
-        &[
-            ("operand-type", "q or Wave::Saw"),
-            ("does-not-fit", "300000000000"),
-            ("does-not-fit", "300000000000"),
-            ("array-operand", "[1, 2] / true"),
-        ],
-    ),
-    (
-        "Clip c:\n    Note | velocity=(if (q or Wave::Saw) then (300000000000 + 300000000000) else ([1, 2] / true))\n\nstate q(0): u8\n",
-        &[
-            ("operand-type", "q or Wave::Saw"),
-            ("array-operand", "[1, 2] / true"),
-        ],
-        &[
-            ("operand-type", "q or Wave::Saw"),
-            ("does-not-fit", "300000000000"),
-            ("does-not-fit", "300000000000"),
-            ("array-operand", "[1, 2] / true"),
-        ],
-    ),
-    (
-        "Clip c:\n    Note | velocity=(if (q or Wave::Saw) then (300000000000 + 300000000000) else ([1, 2] / true))\n\nstate q(0): i64\n",
-        &[
-            ("operand-type", "q or Wave::Saw"),
-            ("array-operand", "[1, 2] / true"),
-        ],
-        &[
-            ("operand-type", "q or Wave::Saw"),
-            ("does-not-fit", "300000000000"),
-            ("does-not-fit", "300000000000"),
-            ("array-operand", "[1, 2] / true"),
-        ],
-    ),
-    (
-        "Clip c:\n    Note | velocity=(if (q or Wave::Saw) then (300000000000 + 300000000000) else ([1, 2] / true))\n\nstate q(0.5): f32\n",
-        &[
-            ("operand-type", "q or Wave::Saw"),
-            ("array-operand", "[1, 2] / true"),
-        ],
-        &[
-            ("operand-type", "q or Wave::Saw"),
-            ("does-not-fit", "300000000000"),
-            ("does-not-fit", "300000000000"),
-            ("array-operand", "[1, 2] / true"),
-        ],
-    ),
-    (
-        "Clip c:\n    Note | velocity=(if (q or Wave::Saw) then (300000000000 + 300000000000) else ([1, 2] / true))\n\nstate q(0.5): f64\n",
-        &[
-            ("operand-type", "q or Wave::Saw"),
-            ("array-operand", "[1, 2] / true"),
-        ],
-        &[
-            ("operand-type", "q or Wave::Saw"),
-            ("does-not-fit", "300000000000"),
-            ("does-not-fit", "300000000000"),
-            ("array-operand", "[1, 2] / true"),
-        ],
-    ),
-    (
-        "Clip c:\n    Note | velocity=(if (q or Wave::Saw) then (300000000000 + 300000000000) else ([1, 2] / true))\n\nstate q(false)\n",
-        &[
-            ("type-mismatch", "Wave::Saw"),
-            ("array-operand", "[1, 2] / true"),
-        ],
-        &[
-            ("type-mismatch", "Wave::Saw"),
-            ("does-not-fit", "300000000000"),
-            ("does-not-fit", "300000000000"),
-            ("array-operand", "[1, 2] / true"),
-        ],
-    ),
-    (
-        "Clip c:\n    Note | velocity=(if (q or Wave::Saw) then (300000000000 + 300000000000) else ([1, 2] / true))\n\nstate q(Wave::Sine)\n",
-        &[
-            ("operand-type", "q or Wave::Saw"),
-            ("array-operand", "[1, 2] / true"),
-        ],
-        &[
-            ("operand-type", "q or Wave::Saw"),
-            ("does-not-fit", "300000000000"),
-            ("does-not-fit", "300000000000"),
-            ("array-operand", "[1, 2] / true"),
-        ],
-    ),
-    (
-        "Clip c:\n    Note/(if (Wave::Saw or q) then (q % 300000000000) else (1.5 * q))\n\nstate q(0): i32\n",
-        &[
-            (
-                "type-mismatch",
-                "if (Wave::Saw or q) then (q % 300000000000) else (1.5 * q)",
-            ),
-            ("operand-type", "Wave::Saw or q"),
-            ("does-not-fit", "300000000000"),
-        ],
-        &[
-            (
-                "type-mismatch",
-                "if (Wave::Saw or q) then (q % 300000000000) else (1.5 * q)",
-            ),
-            ("operand-type", "Wave::Saw or q"),
-            ("does-not-fit", "300000000000"),
-        ],
-    ),
-    (
-        "Clip c:\n    Note/(if (Wave::Saw or q) then (q % 300000000000) else (1.5 * q))\n\nstate q(0): u8\n",
-        &[
-            (
-                "type-mismatch",
-                "if (Wave::Saw or q) then (q % 300000000000) else (1.5 * q)",
-            ),
-            ("operand-type", "Wave::Saw or q"),
-            ("does-not-fit", "300000000000"),
-        ],
-        &[
-            (
-                "type-mismatch",
-                "if (Wave::Saw or q) then (q % 300000000000) else (1.5 * q)",
-            ),
-            ("operand-type", "Wave::Saw or q"),
-            ("does-not-fit", "300000000000"),
-        ],
-    ),
-    (
         "Clip c:\n    Note | velocity=(if (300000000000 and 300000000000) then (q / 1.5) else (if [1, 2] then Wave::Saw else [1, 2][5]))\n\nstate q(0): i32\n",
         &[
             ("operand-type", "300000000000 and 300000000000"),
@@ -2735,8 +2483,9 @@ pub const CARRIED_TO_R4B: &[Carried] = &[
         "Clip c:\n    Note/(if (300000000000 < 300000000000) then (if [1, 2] then [1, 2] else 1.5) else (if q then [1, 2][5] else 300000000000))\n\nstate q(false)\n",
         &[
             ("condition-type", "if [1, 2] then [1, 2] else 1.5"),
-            ("type-mismatch", "if [1, 2] then [1, 2] else 1.5"),
+            ("does-not-fit", "300000000000"),
             ("index-out-of-range", "5"),
+            ("type-mismatch", "if [1, 2] then [1, 2] else 1.5"),
         ],
         &[
             ("condition-type", "if [1, 2] then [1, 2] else 1.5"),
@@ -2748,6 +2497,7 @@ pub const CARRIED_TO_R4B: &[Carried] = &[
         "Clip c:\n    Note/(if (300000000000 < 300000000000) then (if [1, 2] then [1, 2] else 1.5) else (if q then [1, 2][5] else 300000000000))\n\nlet q = false\n",
         &[
             ("condition-type", "if [1, 2] then [1, 2] else 1.5"),
+            ("does-not-fit", "if q then [1, 2][5] else 300000000000"),
             ("type-mismatch", "if [1, 2] then [1, 2] else 1.5"),
         ],
         &[
@@ -2820,20 +2570,6 @@ pub const CARRIED_TO_R4B: &[Carried] = &[
         &[
             ("condition-type", "i32(true)"),
             ("conversion-type", "i32(true)"),
-        ],
-    ),
-    (
-        "Clip c:\n    Note/((if q then 300000000000 else i32(true))[q + q..])\n\nstate q(false)\n",
-        &[
-            ("not-an-array", "if q then 300000000000 else i32(true)"),
-            ("conversion-type", "i32(true)"),
-            ("operand-type", "q + q"),
-        ],
-        &[
-            ("not-an-array", "if q then 300000000000 else i32(true)"),
-            ("does-not-fit", "300000000000"),
-            ("conversion-type", "i32(true)"),
-            ("operand-type", "q + q"),
         ],
     ),
     (
@@ -3034,32 +2770,6 @@ pub const CARRIED_TO_R4B: &[Carried] = &[
         "Clip c:\n    Note/(i32(q[1.5..]))\n\nlet q = [1]\n",
         &[("array-operand", "i32(q[1.5..])"), ("index-type", "1.5")],
         &[("index-type", "1.5")],
-    ),
-    (
-        "Clip c:\n    Note/(not (if q then i32(true) else 300000000000))\n\nstate q(false)\n",
-        &[
-            (
-                "type-mismatch",
-                "not (if q then i32(true) else 300000000000)",
-            ),
-            (
-                "operand-type",
-                "not (if q then i32(true) else 300000000000)",
-            ),
-            ("conversion-type", "i32(true)"),
-        ],
-        &[
-            (
-                "type-mismatch",
-                "not (if q then i32(true) else 300000000000)",
-            ),
-            (
-                "operand-type",
-                "not (if q then i32(true) else 300000000000)",
-            ),
-            ("conversion-type", "i32(true)"),
-            ("does-not-fit", "300000000000"),
-        ],
     ),
     (
         "let a: i32 = if true then 300000000000 else q\nClip c:\n    Note/(a)\n\nstate q(0): i32\n",
@@ -3279,10 +2989,11 @@ pub const CARRIED_TO_R4B: &[Carried] = &[
     (
         "let a: i32 = (if q then 300000000000 else i32(true))[q + q..]\nClip c:\n    Note/(a)\n\nstate q(false)\n",
         &[
-            ("reactive-let", "a"),
-            ("not-an-array", "if q then 300000000000 else i32(true)"),
             ("conversion-type", "i32(true)"),
+            ("does-not-fit", "300000000000"),
+            ("not-an-array", "if q then 300000000000 else i32(true)"),
             ("operand-type", "q + q"),
+            ("reactive-let", "a"),
         ],
         &[
             ("not-an-array", "if q then 300000000000 else i32(true)"),
@@ -3423,16 +3134,17 @@ pub const CARRIED_TO_R4B: &[Carried] = &[
     (
         "let a: i32 = not (if q then i32(true) else 300000000000)\nClip c:\n    Note/(a)\n\nstate q(false)\n",
         &[
+            ("conversion-type", "i32(true)"),
+            ("does-not-fit", "300000000000"),
+            (
+                "operand-type",
+                "not (if q then i32(true) else 300000000000)",
+            ),
             ("reactive-let", "a"),
             (
                 "type-mismatch",
                 "not (if q then i32(true) else 300000000000)",
             ),
-            (
-                "operand-type",
-                "not (if q then i32(true) else 300000000000)",
-            ),
-            ("conversion-type", "i32(true)"),
         ],
         &[
             ("reactive-let", "a"),
@@ -3813,8 +3525,9 @@ pub const CARRIED_TO_R4B: &[Carried] = &[
         "Clip c:\n    Note | velocity=(if (300000000000 < 300000000000) then (if [1, 2] then [1, 2] else 1.5) else (if q then [1, 2][5] else 300000000000))\n\nstate q(false)\n",
         &[
             ("condition-type", "if [1, 2] then [1, 2] else 1.5"),
-            ("type-mismatch", "if [1, 2] then [1, 2] else 1.5"),
+            ("does-not-fit", "300000000000"),
             ("index-out-of-range", "5"),
+            ("type-mismatch", "if [1, 2] then [1, 2] else 1.5"),
         ],
         &[
             ("condition-type", "if [1, 2] then [1, 2] else 1.5"),
@@ -3826,6 +3539,7 @@ pub const CARRIED_TO_R4B: &[Carried] = &[
         "Clip c:\n    Note | velocity=(if (300000000000 < 300000000000) then (if [1, 2] then [1, 2] else 1.5) else (if q then [1, 2][5] else 300000000000))\n\nlet q = false\n",
         &[
             ("condition-type", "if [1, 2] then [1, 2] else 1.5"),
+            ("does-not-fit", "300000000000"),
             ("type-mismatch", "if [1, 2] then [1, 2] else 1.5"),
         ],
         &[
@@ -3956,26 +3670,13 @@ pub const CARRIED_TO_R4B: &[Carried] = &[
         ],
     ),
     (
-        "Clip c:\n    Note | velocity=((if q then 300000000000 else i32(true))[q + q..])\n\nstate q(false)\n",
-        &[
-            ("not-an-array", "if q then 300000000000 else i32(true)"),
-            ("conversion-type", "i32(true)"),
-            ("operand-type", "q + q"),
-        ],
-        &[
-            ("not-an-array", "if q then 300000000000 else i32(true)"),
-            ("does-not-fit", "300000000000"),
-            ("conversion-type", "i32(true)"),
-            ("operand-type", "q + q"),
-        ],
-    ),
-    (
         "Clip c:\n    Note/(a)\nlet a: i32 = (if q then 300000000000 else i32(true))[q + q..]\n\nstate q(false)\n",
         &[
-            ("reactive-let", "a"),
-            ("not-an-array", "if q then 300000000000 else i32(true)"),
             ("conversion-type", "i32(true)"),
+            ("does-not-fit", "300000000000"),
+            ("not-an-array", "if q then 300000000000 else i32(true)"),
             ("operand-type", "q + q"),
+            ("reactive-let", "a"),
         ],
         &[
             ("not-an-array", "if q then 300000000000 else i32(true)"),
@@ -4313,44 +4014,19 @@ pub const CARRIED_TO_R4B: &[Carried] = &[
         &[("index-type", "1.5")],
     ),
     (
-        "Clip c:\n    Note | velocity=(not (if q then i32(true) else 300000000000))\n\nstate q(false)\n",
-        &[
-            (
-                "type-mismatch",
-                "not (if q then i32(true) else 300000000000)",
-            ),
-            (
-                "operand-type",
-                "not (if q then i32(true) else 300000000000)",
-            ),
-            ("conversion-type", "i32(true)"),
-        ],
-        &[
-            (
-                "type-mismatch",
-                "not (if q then i32(true) else 300000000000)",
-            ),
-            (
-                "operand-type",
-                "not (if q then i32(true) else 300000000000)",
-            ),
-            ("conversion-type", "i32(true)"),
-            ("does-not-fit", "300000000000"),
-        ],
-    ),
-    (
         "Clip c:\n    Note/(a)\nlet a: i32 = not (if q then i32(true) else 300000000000)\n\nstate q(false)\n",
         &[
+            ("conversion-type", "i32(true)"),
+            ("does-not-fit", "300000000000"),
+            (
+                "operand-type",
+                "not (if q then i32(true) else 300000000000)",
+            ),
             ("reactive-let", "a"),
             (
                 "type-mismatch",
                 "not (if q then i32(true) else 300000000000)",
             ),
-            (
-                "operand-type",
-                "not (if q then i32(true) else 300000000000)",
-            ),
-            ("conversion-type", "i32(true)"),
         ],
         &[
             ("reactive-let", "a"),
@@ -5455,7 +5131,7 @@ pub const CLASSES: &[Class] = &[
     },
     Class {
         ledger: "476",
-        rule: "the arms of a choice whose condition is refused are checked as a runtime choice's (DECISIONS.md 11:07Z (1)), with or without a variable-array cell, so their index ranges, fits and types draw inside them and a cell read in them is a use, which draws integer-cell where every use expects a float, as the program with the condition repaired to a cell's read draws them, where the old engine is silent",
+        rule: "the arms of a choice whose condition is refused are checked as a runtime choice's (DECISIONS.md 11:07Z (1)), with or without a variable-array cell, so their index ranges, fits and types draw inside them, the arms unify as a runtime choice's (a type-mismatch at the choice where they disagree), and a cell read in them is a use, which draws integer-cell where every use expects a float and keeps it from drawing where the choice stands as a condition, as the program with the condition repaired to a cell's read draws them, where the old engine is silent",
         explains: arm_of_a_refused_condition,
     },
     Class {
@@ -5852,6 +5528,27 @@ fn operator_over_a_variable_shape_choice(seen: &Seen<'_>, change: Change, at: &D
 }
 
 fn arm_of_a_refused_condition(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
+    let all = choices(seen.program);
+    if change == Change::Removed && at.0 == "integer-cell" {
+        let name = seen.text(at);
+        return cell_reads(seen.program, name).iter().any(|(lo, hi)| {
+            all.iter().any(|choice| {
+                condition_refused(seen, choice)
+                    && all.iter().any(|outer| {
+                        outer.condition.0 <= choice.span.0 && choice.span.1 <= outer.condition.1
+                    })
+                    && choice.arms.iter().any(|arm| arm.0 <= *lo && *hi <= arm.1)
+            })
+        });
+    }
+    if change == Change::Added
+        && at.0 == "type-mismatch"
+        && all
+            .iter()
+            .any(|choice| condition_refused(seen, choice) && choice.span == (at.1, at.2))
+    {
+        return true;
+    }
     if change == Change::Added && at.0 == "integer-cell" {
         let name = seen.text(at);
         return cell_reads(seen.program, name).iter().any(|(lo, hi)| {
