@@ -409,3 +409,114 @@ fn a_compile_time_operand_inside_a_reactive_expression_is_checked_in_the_type_it
  {
     assert_eq!(same_as_the_old_engine(&INNER_FITS), 222);
 }
+
+const UNANNOTATED_HISTORY_TARGETS: [(&[&str], &[Code]); 8] = [
+    (
+        &[
+            "state x(1)\n",
+            "let l = x + 1\n",
+            "Clip c:\n    Note/(l.past(1, 0) + 3000000000)\n    Note/(l.past(1, 0) + 3)\n",
+        ],
+        &[
+            Code::DoesNotFit,
+            Code::HistoryTarget,
+            Code::HistoryTarget,
+            Code::ReactiveLet,
+        ],
+    ),
+    (
+        &[
+            "state x(1)\n",
+            "let l = x + 1\n",
+            "state s = l.past(1, 0)\n",
+            "Clip c:\n    Note/(s + 3000000000)\n",
+        ],
+        &[Code::DoesNotFit, Code::HistoryTarget, Code::ReactiveLet],
+    ),
+    (
+        &[
+            "state x(1)\n",
+            "let l = x + 1\n",
+            "state s = l.past(1, 0)\n",
+            "Clip c:\n    Note when s > 3000000000\n",
+        ],
+        &[Code::HistoryTarget, Code::ReactiveLet],
+    ),
+    (
+        &[
+            "state x(1.5)\n",
+            "let l = x + 1\n",
+            "Clip c:\n    Note/(l.past(1, 0))\n",
+        ],
+        &[Code::FloatToInteger, Code::HistoryTarget, Code::ReactiveLet],
+    ),
+    (
+        &[
+            "let l = 2\n",
+            "Clip c:\n    Note/(l.past(1, 0) + 3000000000)\n",
+        ],
+        &[Code::DoesNotFit, Code::HistoryTarget],
+    ),
+    (
+        &["let l = 2.5\n", "Clip c:\n    Note/(l.past(1, 0))\n"],
+        &[Code::FloatToInteger, Code::HistoryTarget],
+    ),
+    (
+        &[
+            "let l = [1, 2]\n",
+            "Clip c:\n    Note/(l.past(1, [0, 0])[5])\n",
+        ],
+        &[Code::HistoryTarget, Code::IndexOutOfRange],
+    ),
+    (
+        &[
+            "state x(1)\n",
+            "let l = x + 1\n",
+            "let m = l.past(1, 0) + 1\n",
+            "Clip c:\n    Note/(m + 3000000000)\n",
+        ],
+        &[
+            Code::DoesNotFit,
+            Code::HistoryTarget,
+            Code::ReactiveLet,
+            Code::ReactiveLet,
+        ],
+    ),
+];
+
+#[test]
+fn a_history_read_of_an_unannotated_let_is_typed_as_the_cell_the_let_repaired_to_a_state_would_be_in_every_order_516()
+ {
+    let vocabulary = symphonyscript_fixtures::vocabulary();
+    let new = Compiler::new(&vocabulary).expect("the vocabulary compiles");
+    let mut programs = 0;
+    for (items, codes) in UNANNOTATED_HISTORY_TARGETS {
+        let mut expected = codes.to_vec();
+        expected.sort_by_key(|code| format!("{code:?}"));
+        for text in twins(items) {
+            let found = new
+                .checked_by_new_core(&[source(&text)])
+                .unwrap_or_else(|| panic!("the new core takes {text}"));
+            let mut found: Vec<Code> = found
+                .iter()
+                .map(|diagnostic| diagnostic.code)
+                .filter(|code| *code != Code::NoEntryInstance)
+                .collect();
+            found.sort_by_key(|code| format!("{code:?}"));
+            assert_eq!(found, expected, "{text}");
+            programs += 1;
+        }
+    }
+    assert_eq!(programs, 426);
+    for text in twins(&[
+        "state x(1)\n",
+        "let t = s * x\n",
+        "state s = t.past(1, 0)\n",
+        "Clip k:\n    Note/(s)\n",
+    ]) {
+        assert!(
+            new.checked_by_new_core(&[source(&text)]).is_none(),
+            "{text}"
+        );
+    }
+}

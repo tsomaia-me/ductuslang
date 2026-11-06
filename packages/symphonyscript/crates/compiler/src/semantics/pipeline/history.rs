@@ -1,8 +1,10 @@
 use super::core::{Core, Stage};
 use super::decl_ref::DeclRef;
+use super::declined::Declined;
 use super::fact::Fact;
 use super::folds::ANY_LENGTH;
 use super::leaf::Leaf;
+use super::reason::Reason;
 use crate::diagnostics::{Code, Diagnostic};
 use crate::semantics::Internal;
 use crate::semantics::ir::flat::{FlatIr, NONE, Op};
@@ -95,6 +97,19 @@ impl Core<'_> {
                 self.compile_time_target(node, "history")?;
                 let kept = match self.bound(target)? {
                     DeclRef::Let(at) if self.annotation_ty(at)?.is_some() => self.let_fact(at)?,
+                    DeclRef::Let(at)
+                        if self
+                            .ir
+                            .lets
+                            .get(at as usize)
+                            .is_some_and(|rec| rec.owner == NONE) =>
+                    {
+                        let root = self.let_root(at)?;
+                        if !self.has_fact(root)? {
+                            return Ok(Err(Declined(Reason::CellGroup)));
+                        }
+                        self.fact(root)?
+                    }
                     _ => Fact::PLACEHOLDER,
                 };
                 if matches!(kept.leaf, Leaf::Placeholder | Leaf::Error) || kept.node {

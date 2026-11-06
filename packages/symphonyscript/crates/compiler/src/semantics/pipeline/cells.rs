@@ -440,6 +440,15 @@ impl Core<'_> {
                 return self.reads_cell_directly(root);
             }
             if op == Op::Past {
+                if let DeclRef::Let(at) = self.bound(a)?
+                    && self
+                        .ir
+                        .lets
+                        .get(at as usize)
+                        .is_some_and(|rec| rec.owner == NONE)
+                {
+                    return Ok(true);
+                }
                 node = a;
                 continue;
             }

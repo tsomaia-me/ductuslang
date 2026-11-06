@@ -120,6 +120,25 @@ impl Core<'_> {
             .value)
     }
 
+    fn history_lets(&self, root: u32) -> Result<Vec<u32>, Internal> {
+        let mut lets = Vec::new();
+        for node in self.postorder(root)? {
+            let (op, a, _, _) = self.ir.node(node)?;
+            if op == Op::Past
+                && let DeclRef::Let(at) = self.bound(a)?
+                && self
+                    .ir
+                    .lets
+                    .get(at as usize)
+                    .is_some_and(|rec| rec.owner == NONE)
+                && self.annotation_ty(at)?.is_none()
+            {
+                lets.push(at);
+            }
+        }
+        Ok(lets)
+    }
+
     fn read_lets(&self, root: u32) -> Result<Vec<u32>, Internal> {
         let mut reads = Vec::new();
         for node in self.postorder(root)? {
@@ -146,6 +165,11 @@ impl Core<'_> {
 
     pub fn ensure_typed(&mut self, root: u32) -> Stage<Fact> {
         let mut stack: Vec<(u32, bool)> = Vec::new();
+        for at in self.history_lets(root)? {
+            if self.let_state.get(at as usize) == Some(&NEW) {
+                stack.push((at, false));
+            }
+        }
         for at in self.read_lets(root)?.into_iter().rev() {
             stack.push((at, false));
         }
@@ -215,7 +239,12 @@ impl Core<'_> {
                 *slot = OPEN;
             }
             stack.push((at, true));
-            for read in self.read_lets(self.let_root(at)?)?.into_iter().rev() {
+            let root = self.let_root(at)?;
+            for read in self
+                .history_lets(root)?
+                .into_iter()
+                .chain(self.read_lets(root)?.into_iter().rev())
+            {
                 if self.let_state.get(read as usize) == Some(&NEW) {
                     stack.push((read, false));
                 }

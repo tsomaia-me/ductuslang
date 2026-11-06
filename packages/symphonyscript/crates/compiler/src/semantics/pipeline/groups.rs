@@ -25,12 +25,14 @@ struct Direct {
     cells: Vec<u32>,
     history: Vec<(u32, u32)>,
     sources: Vec<Source>,
+    lets: Vec<u32>,
 }
 
 #[derive(Clone, Default, Debug)]
 pub(crate) struct CellReads {
     pub present: Vec<u32>,
     pub history: Vec<(u32, u32)>,
+    pub after: Vec<u32>,
 }
 
 const SETTLE_ROUNDS: usize = 64;
@@ -53,8 +55,25 @@ impl Core<'_> {
                     continue;
                 }
                 if matches!(op, Op::Past | Op::Stepped) {
-                    if let DeclRef::Cell(other) = self.bound(a)? {
-                        found.history.push((other, node));
+                    match self.bound(a)? {
+                        DeclRef::Cell(other) => found.history.push((other, node)),
+                        DeclRef::Let(other) => {
+                            if self.annotation_ty(other)?.is_none()
+                                && self
+                                    .ir
+                                    .lets
+                                    .get(other as usize)
+                                    .is_some_and(|rec| rec.owner == NONE)
+                            {
+                                found.lets.push(other);
+                            }
+                        }
+                        DeclRef::None
+                        | DeclRef::Instance(_)
+                        | DeclRef::Duplicate
+                        | DeclRef::Param(_)
+                        | DeclRef::Fn(_)
+                        | DeclRef::Pattern(_) => {}
                     }
                     continue;
                 }
@@ -85,11 +104,17 @@ impl Core<'_> {
         let mut reads = CellReads {
             present: direct.cells,
             history: direct.history,
+            after: Vec::new(),
         };
-        let mut pending = direct.sources;
+        let mut pending: Vec<(Source, bool)> = direct
+            .sources
+            .into_iter()
+            .map(|source| (source, false))
+            .collect();
+        pending.extend(direct.lets.into_iter().map(|at| (Source::Let(at), true)));
         let mut seen = HashSet::new();
-        while let Some(source) = pending.pop() {
-            if !seen.insert(source) {
+        while let Some((source, after)) = pending.pop() {
+            if !seen.insert((source, after)) {
                 continue;
             }
             let found = match memo.entry(source) {
@@ -103,9 +128,17 @@ impl Core<'_> {
                     entry.insert(self.direct_reads(&roots)?)
                 }
             };
-            reads.present.extend(found.cells.iter().copied());
-            reads.history.extend(found.history.iter().copied());
-            pending.extend(found.sources.iter().copied());
+            if after {
+                reads.after.extend(found.cells.iter().copied());
+                reads
+                    .after
+                    .extend(found.history.iter().map(|(target, _)| *target));
+            } else {
+                reads.present.extend(found.cells.iter().copied());
+                reads.history.extend(found.history.iter().copied());
+            }
+            pending.extend(found.sources.iter().map(|source| (*source, after)));
+            pending.extend(found.lets.iter().map(|at| (Source::Let(*at), true)));
         }
         Ok(reads)
     }
@@ -121,6 +154,7 @@ impl Core<'_> {
                 reads
                     .history
                     .retain(|(other, _)| !self.is_cyclic_cell(*other));
+                reads.after.retain(|other| !self.is_cyclic_cell(*other));
                 reads
             } else {
                 CellReads::default()
@@ -131,6 +165,7 @@ impl Core<'_> {
             .map(|reads| {
                 let mut edges = reads.present.clone();
                 edges.extend(reads.history.iter().map(|(target, _)| *target));
+                edges.extend(reads.after.iter().copied());
                 edges
             })
             .collect();
@@ -138,6 +173,12 @@ impl Core<'_> {
         let mut group_of = vec![NONE; count as usize];
         let mut groups = Vec::new();
         for component in strongly_connected(&edges) {
+            if component.iter().any(|member| {
+                all.get(*member as usize)
+                    .is_some_and(|reads| reads.after.iter().any(|at| component.contains(at)))
+            }) {
+                return Ok(Err(Declined(Reason::CellGroup)));
+            }
             let single = component.len() == 1;
             let first = component.first().copied().unwrap_or(NONE);
             let own = all
@@ -610,7 +651,12 @@ impl Core<'_> {
             let Some(reads) = self.cell_reads.get(*member as usize) else {
                 return false;
             };
-            if reads.present.iter().any(|read| !members.contains(read)) {
+            if reads
+                .present
+                .iter()
+                .chain(&reads.after)
+                .any(|read| !members.contains(read))
+            {
                 return false;
             }
             for (target, _) in &reads.history {
