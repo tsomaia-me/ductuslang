@@ -6301,17 +6301,21 @@ fn range_bound_beside_a_faulty_fold(seen: &Seen<'_>, change: Change, at: &Drawn)
         return false;
     }
     let line = seen.line(at.1);
-    let rule = lines_at(seen.program)
-        .get(line)
-        .is_some_and(|(_, text)| text.starts_with("state ") && text.contains("into"));
+    let Some((_, text)) = lines_at(seen.program).get(line).copied() else {
+        return false;
+    };
+    let rule = text.starts_with("state ") && text.contains("into");
+    let open = text.trim_end().ends_with(':');
     rule && !seen
         .old
         .iter()
         .any(|drawn| drawn.0 == "range-bound" && drawn.1 == at.1)
-        && seen
-            .old
-            .iter()
-            .any(|drawn| drawn.0 != "range-bound" && drawn.1 >= at.2 && seen.line(drawn.1) == line)
+        && seen.old.iter().any(|drawn| {
+            let at_line = seen.line(drawn.1);
+            drawn.0 != "range-bound"
+                && drawn.1 >= at.2
+                && (at_line == line || (open && at_line == line + 1))
+        })
 }
 
 fn read_of_a_cell_beside_its_refused_init(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
