@@ -13,9 +13,10 @@ use crate::semantics::ir::Suffix;
 use crate::semantics::ir::flat::{NONE, Op};
 
 #[derive(Default)]
-struct FeedFound {
-    reached: std::collections::HashSet<(u32, FamilyId, u32)>,
-    fed: std::collections::HashSet<(u32, u32, FamilyId)>,
+pub(super) struct FeedFound {
+    pub reached: std::collections::HashSet<(u32, FamilyId, u32)>,
+    pub fed: std::collections::HashSet<(u32, u32, FamilyId)>,
+    pub folds: std::collections::HashSet<(u32, u32)>,
 }
 
 struct Link {
@@ -94,10 +95,7 @@ impl Core<'_> {
             for (operand, fact) in operands.iter().zip(&facts) {
                 if self.family(*operand).is_none() && numeric(fact) && !open(fact) {
                     let key = self.in_body(*operand)?.map_or(NONE, |(inst, _)| inst);
-                    if key == NONE {
-                        self.top_takers.insert((*operand, family));
-                    }
-                    self.takers.push((*operand, family, key));
+                    self.taker(*operand, family, key);
                 }
             }
         }
@@ -349,7 +347,7 @@ impl Core<'_> {
         })
     }
 
-    fn function_inst(&self, inst: u32) -> bool {
+    pub(super) fn function_inst(&self, inst: u32) -> bool {
         self.bodies
             .get(inst as usize)
             .is_some_and(|body| body.function < self.functions())
@@ -380,13 +378,13 @@ impl Core<'_> {
             (Some(family), Some(_)) => Some(family),
             (Some(family), None) => {
                 if numeric(&fact) && !open(&fact) {
-                    self.takers.push((value, family, key));
+                    self.taker(value, family, key);
                 }
                 Some(family)
             }
             (None, Some(family)) => {
                 if numeric(&start) && !open(&start) {
-                    self.takers.push((rec.start, family, NONE));
+                    self.taker(rec.start, family, NONE);
                 }
                 Some(family)
             }
@@ -417,7 +415,7 @@ impl Core<'_> {
         Ok(None)
     }
 
-    fn feed_walk(
+    pub(super) fn feed_walk(
         &mut self,
         start: (u32, u32, u32),
         family: FamilyId,
@@ -437,11 +435,20 @@ impl Core<'_> {
                 continue;
             }
             found.reached.insert((node, family, key));
+            if !self.has_fact(node)? {
+                continue;
+            }
             let fact = self.fact(node)?;
             if !open(&fact) && self.family(node) != Some(family) {
                 continue;
             }
             let op = self.ir.node(node)?.0;
+            if open(&fact)
+                && matches!(op, Op::Call | Op::NamedCall)
+                && self.body_of_call(node).is_none()
+            {
+                continue;
+            }
             if let (Op::Name, DeclRef::Param(position)) = (op, self.bound(node)?) {
                 if self.binding_owner(node)? < self.functions() {
                     params.push(position);
@@ -483,6 +490,10 @@ impl Core<'_> {
             if op == Op::For
                 && let Some(body) = self.body_of_call(node)
             {
+                let caller = self.inst_key(node)?;
+                let caller = self.typed_as.get(&caller).copied().unwrap_or(caller);
+                let typed = self.typed_as.get(&body).copied().unwrap_or(body);
+                found.folds.insert((caller, typed));
                 stack.push((self.body_value(body)?, env, body));
             }
             for next in self.carried(node)? {
@@ -492,7 +503,7 @@ impl Core<'_> {
         Ok(())
     }
 
-    fn callee_first_bodies(&self) -> Vec<u32> {
+    pub(super) fn callee_first_bodies(&self) -> Vec<u32> {
         let mut nested: std::collections::HashMap<u32, Vec<u32>> = std::collections::HashMap::new();
         let mut bodies: Vec<u32> = Vec::new();
         for ((caller, _), body) in &self.call_body {
@@ -554,20 +565,28 @@ impl Core<'_> {
     }
 
     pub fn plain_in_family(&mut self) -> Stage<()> {
+        if self.scaled_accumulator {
+            return Ok(Err(Declined(Reason::UnitAttribute)));
+        }
         let by_family = self.units_by_family()?;
         let mixed: Vec<FamilyId> = by_family
             .iter()
             .filter(|(_, many, _)| *many)
             .map(|(family, _, _)| *family)
             .collect();
-        for (_, family, key) in &self.takers {
-            let scaled = by_family.iter().any(|(fed, _, any)| fed == family && *any);
-            if *key != NONE && scaled {
-                return Ok(Err(Declined(Reason::UnitAttribute)));
-            }
-        }
         if self.takers.is_empty() && mixed.is_empty() {
             return Ok(Ok(()));
+        }
+        let open_body = self.body_facts.values().any(open)
+            || self
+                .facts
+                .iter()
+                .any(|fact| fact.as_ref().is_some_and(open));
+        for (_, family, key) in &self.takers {
+            let scaled = by_family.iter().any(|(fed, _, any)| fed == family && *any);
+            if open_body && scaled && *key != NONE && self.function_inst(*key) {
+                return Ok(Err(Declined(Reason::UnitAttribute)));
+            }
         }
         let outer = self.inst;
         let feeds = std::mem::take(&mut self.unit_feeds);
@@ -675,6 +694,25 @@ impl Core<'_> {
                 "this plain value feeds two attributes of one unit family with different default units",
             );
         }
+        for conflict in std::mem::take(&mut self.unit_conflicts) {
+            let span = self.node_span(conflict.node)?;
+            let mut related = vec![
+                (self.node_span(conflict.first)?, "one attribute".to_string()),
+                (
+                    self.node_span(conflict.second)?,
+                    "the other attribute".to_string(),
+                ),
+            ];
+            for call in &conflict.chain {
+                related.push((self.node_span(*call)?, "in this call".to_string()));
+            }
+            self.draw_related(
+                Code::ConflictingUnits,
+                span,
+                related,
+                "this plain value feeds two attributes of one unit family with different default units",
+            );
+        }
         for (cell, first, second) in cell_conflicts {
             let (name, _) = self.cell_name(cell)?;
             let span = self.node_span(first)?;
@@ -731,6 +769,8 @@ impl Core<'_> {
                 list.dedup();
             }
         }
+        let mut fed_memo: std::collections::HashMap<(u32, FamilyId), bool> =
+            std::collections::HashMap::new();
         for (node, family, key) in takers {
             if held.contains(&(node, key)) || conflicting.contains(&node) {
                 continue;
@@ -749,9 +789,18 @@ impl Core<'_> {
                 }
             } else {
                 let inside = found.reached.contains(&(node, family, key));
-                self.unreached_chains(key, family, inside, &sites, &found, &top)?
+                if inside && self.fully_fed(key, family, &sites, &found, &top, &mut fed_memo) {
+                    Vec::new()
+                } else {
+                    self.unreached_chains(key, family, inside, &sites, &found, &top)?
+                }
             };
             for chain in chains {
+                if chain.last().is_some_and(|outermost| {
+                    self.unit_conflicted.contains(&(node, key, *outermost))
+                }) {
+                    continue;
+                }
                 let span = self.node_span(node)?;
                 let mut related = Vec::new();
                 for call in &chain {
@@ -763,7 +812,7 @@ impl Core<'_> {
         Ok(Ok(()))
     }
 
-    fn call_order(&self, call: u32) -> Result<(u32, u32, u32), Internal> {
+    pub(super) fn call_order(&self, call: u32) -> Result<(u32, u32, u32), Internal> {
         let (lo, hi) = self.ir.span(call)?;
         Ok((self.file_of(call), lo, hi))
     }
@@ -966,7 +1015,10 @@ impl Core<'_> {
         }
         for node in self.postorder(root)? {
             let readable = match self.ir.node(node)?.0 {
-                Op::Name => matches!(self.bound(node)?, DeclRef::Cell(_)),
+                Op::Name => matches!(
+                    self.bound(node)?,
+                    DeclRef::Cell(_) | DeclRef::Let(_) | DeclRef::Param(_)
+                ),
                 Op::Int
                 | Op::Float
                 | Op::Bool
@@ -988,22 +1040,22 @@ impl Core<'_> {
                 | Op::If
                 | Op::Array
                 | Op::Index
-                | Op::IndexFromEnd => true,
+                | Op::IndexFromEnd
+                | Op::Convert
+                | Op::Call
+                | Op::NamedCall
+                | Op::Past
+                | Op::Slice
+                | Op::For => true,
                 Op::Str
                 | Op::Variant
                 | Op::To
-                | Op::Convert
                 | Op::Field
-                | Op::Call
-                | Op::NamedCall
                 | Op::MethodCall
                 | Op::NamedMethodCall
-                | Op::Past
                 | Op::Stepped
                 | Op::Is
                 | Op::IsNot
-                | Op::Slice
-                | Op::For
                 | Op::Match
                 | Op::TyScalar
                 | Op::TyName
@@ -1016,18 +1068,6 @@ impl Core<'_> {
             }
         }
         Ok(Ok(true))
-    }
-
-    pub fn reads_default_unit(&self, node: u32) -> Result<Option<(FamilyId, usize)>, Internal> {
-        let Some((root, family, unit, _)) = self.default_scale else {
-            return Ok(None);
-        };
-        let fact = self.fact(node)?;
-        if open(&fact) || !numeric(&fact) {
-            return Ok(None);
-        }
-        let plain_root = node == root && self.family(node).is_none();
-        Ok((plain_root || self.top_takers.contains(&(node, family))).then_some((family, unit)))
     }
 }
 
@@ -1067,7 +1107,8 @@ impl Core<'_> {
             Value::F64(held) => held.is_finite(),
             _ => true,
         };
-        if node != root && !fits {
+        let literal = matches!(self.ir.node(node)?.0, Op::Int | Op::Float);
+        if node != root && literal && !fits {
             self.draw_at(
                 Code::DoesNotFit,
                 node,
@@ -1076,5 +1117,88 @@ impl Core<'_> {
             return Ok(Value::Error);
         }
         Ok(scaled)
+    }
+}
+
+impl Core<'_> {
+    pub fn fixed_root_outside(
+        &self,
+        node: u32,
+        value: &super::core_value::CoreValue,
+    ) -> Result<bool, Internal> {
+        let Some((root, _, _, _)) = self.default_scale else {
+            return Ok(false);
+        };
+        if node != root {
+            return Ok(false);
+        }
+        let range = self
+            .fact(node)?
+            .fixed
+            .and_then(crate::semantics::operators::int_range);
+        Ok(match (value, range) {
+            (crate::semantics::operators::Value::Int(held), Some(range)) => !range.contains(held),
+            _ => false,
+        })
+    }
+}
+
+impl Core<'_> {
+    pub fn accumulator_read(&self, node: u32) -> Result<bool, Internal> {
+        if self.ir.node(node)?.0 != Op::Name {
+            return Ok(false);
+        }
+        let DeclRef::Param(position) = self.bound(node)? else {
+            return Ok(false);
+        };
+        let owner = self.binding_owner(node)?;
+        if !self.is_fold(owner) {
+            return Ok(false);
+        }
+        let rec = self
+            .ir
+            .fors
+            .get((owner - self.functions()) as usize)
+            .ok_or(Internal::missed("IR for"))?;
+        Ok(position == rec.names.1 - rec.names.0)
+    }
+}
+
+impl Core<'_> {
+    fn fully_fed(
+        &self,
+        body: u32,
+        family: FamilyId,
+        sites: &std::collections::HashMap<u32, Vec<(u32, u32)>>,
+        found: &FeedFound,
+        top: &FeedFound,
+        memo: &mut std::collections::HashMap<(u32, FamilyId), bool>,
+    ) -> bool {
+        let mut stack = vec![(body, false)];
+        while let Some((at, expanded)) = stack.pop() {
+            if memo.contains_key(&(at, family)) {
+                continue;
+            }
+            let list = sites.get(&at).map(Vec::as_slice).unwrap_or_default();
+            if !expanded {
+                stack.push((at, true));
+                for (caller, _) in list {
+                    if self.function_inst(*caller) && !memo.contains_key(&(*caller, family)) {
+                        stack.push((*caller, false));
+                    }
+                }
+                continue;
+            }
+            CountedWalk::CoreFamilies.step();
+            let fed = !list.is_empty()
+                && list.iter().all(|(caller, call)| {
+                    let here = found.fed.contains(&(*caller, *call, family))
+                        || top.fed.contains(&(*caller, *call, family));
+                    here && (!self.function_inst(*caller)
+                        || memo.get(&(*caller, family)).copied().unwrap_or(false))
+                });
+            memo.insert((at, family), fed);
+        }
+        memo.get(&(body, family)).copied().unwrap_or(false)
     }
 }

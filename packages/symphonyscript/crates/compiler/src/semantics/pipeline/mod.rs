@@ -86,6 +86,8 @@ mod suffix_tests;
 #[cfg(test)]
 mod to_tests;
 mod typing;
+mod unit_conflict;
+mod unit_reach;
 #[cfg(test)]
 mod unit_tests;
 mod uses;

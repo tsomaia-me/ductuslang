@@ -10,6 +10,7 @@ use super::fact::Fact;
 use super::folds::ANY_LENGTH;
 use super::leaf::Leaf;
 use super::reason::Reason;
+use super::unit_conflict::AttributeFeed;
 use super::values::flexible;
 use super::width::widens;
 use crate::diagnostics::Code;
@@ -82,7 +83,115 @@ impl Core<'_> {
         Ok(self.span(record.file, placement.lo, placement.hi))
     }
 
+    fn item_feeds(
+        &self,
+        item: AttrItem,
+        decl_attrs: &[AttrDecl],
+        default_attr: Option<AttrId>,
+        env: u32,
+        wire: u32,
+        feeds: &mut Vec<AttributeFeed>,
+    ) -> Result<(), Internal> {
+        let mut seen: Vec<usize> = Vec::new();
+        let mut roots: Vec<(usize, u32)> = Vec::new();
+        if item.default != NONE
+            && let Some(attr) = default_attr
+        {
+            seen.push(attr.index());
+            roots.push((attr.index(), item.default));
+        }
+        for at in item.attrs.0..item.attrs.1 {
+            let entry = *self
+                .ir
+                .attr_entries
+                .get(at as usize)
+                .ok_or(Internal::missed("IR attribute"))?;
+            let AttrForm::Value(root) = entry.form else {
+                continue;
+            };
+            let name = self
+                .ir
+                .name(entry.name)
+                .ok_or(Internal::missed("IR name"))?;
+            let text = self.ir.symbols.text(name.sym);
+            if let Some(attr) = decl_attrs.iter().position(|attr| attr.name == text)
+                && !seen.contains(&attr)
+            {
+                seen.push(attr);
+                roots.push((attr, root));
+            }
+        }
+        for (attr, root) in roots {
+            let decl = decl_attrs.get(attr).ok_or(Internal::missed("attribute"))?;
+            if let Some(unit) = decl.unit
+                && expected_array(decl).is_none()
+                && plain_expected(decl).is_some()
+            {
+                feeds.push((root, unit.family, unit.default_unit, env, wire));
+            }
+        }
+        Ok(())
+    }
+
+    fn attribute_feeds(&self) -> Result<Vec<AttributeFeed>, Internal> {
+        let vocabulary = self.vocabulary;
+        let mut feeds = Vec::new();
+        for record in &self.instances {
+            let placement = self.placement(record.item)?;
+            let decl = vocabulary
+                .node_kind(record.kind)
+                .ok_or(Internal::missed("node kind"))?;
+            let item = AttrItem {
+                file: record.file,
+                default: placement.default,
+                attrs: placement.attrs,
+                lo: placement.lo,
+                hi: placement.hi,
+            };
+            self.item_feeds(
+                item,
+                &decl.attrs,
+                decl.default_attr,
+                record.env,
+                NONE,
+                &mut feeds,
+            )?;
+        }
+        for (wire, row) in self.wires.iter().enumerate() {
+            let rec = self.wire_rec(row.item)?;
+            let decl = vocabulary
+                .wire_kind(row.kind)
+                .ok_or(Internal::missed("wire kind"))?;
+            let item = AttrItem {
+                file: row.file,
+                default: rec.default,
+                attrs: rec.attrs,
+                lo: rec.lo,
+                hi: rec.hi,
+            };
+            let wire = u32::try_from(wire).unwrap_or(NONE);
+            self.item_feeds(
+                item,
+                &decl.attrs,
+                decl.default_attr,
+                row.env,
+                wire,
+                &mut feeds,
+            )?;
+        }
+        Ok(feeds)
+    }
+
     pub fn check_attributes(&mut self) -> Stage<()> {
+        if self.cycle_through_refused {
+            return Ok(Err(Declined(Reason::LocalCycle)));
+        }
+        if self.units_seen {
+            let feeds = self.attribute_feeds()?;
+            if let Err(declined) = self.find_unit_conflicts(feeds)? {
+                return Ok(Err(declined));
+            }
+        }
         let vocabulary = self.vocabulary;
         for row in 0..self.instances.len() {
             CountedWalk::CheckRow.step();

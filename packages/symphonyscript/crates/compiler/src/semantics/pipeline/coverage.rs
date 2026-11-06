@@ -268,7 +268,8 @@ fn loop_landed(ir: &FlatIr, rec: &ForBlockRec) -> bool {
     let head = rec.head;
     let names = head.names.1.saturating_sub(head.names.0);
     (1..=2).contains(&names)
-        && (head.names.0..head.names.1).all(|binder| scalar_annotation(ir, binder))
+        && (head.names.0..head.names.1)
+            .all(|binder| scalar_annotation(ir, binder) || enum_annotation(ir, binder))
         && head.iterable.0 != NONE
         && (!head.range || head.iterable.1 != NONE)
         && ir.blocks.get(rec.body as usize).is_some_and(|block| {
@@ -430,7 +431,8 @@ fn plain_fold(ir: &FlatIr, rec: &ForRec) -> bool {
     let names = rec.names.1.saturating_sub(rec.names.0);
     (1..=2).contains(&names)
         && rec.accumulator != NONE
-        && (rec.names.0..rec.names.1).all(|binder| scalar_annotation(ir, binder))
+        && (rec.names.0..rec.names.1)
+            .all(|binder| scalar_annotation(ir, binder) || enum_annotation(ir, binder))
         && (scalar_annotation(ir, rec.accumulator) || variable_annotation(ir, rec.accumulator))
         && (rec.lets.0..rec.lets.1).all(|at| {
             ir.lets
@@ -460,6 +462,12 @@ fn scalar_annotation(ir: &FlatIr, binder: u32) -> bool {
     ir.binders
         .get(binder as usize)
         .is_some_and(|binder| binder.annotation == NONE || scalar_node(ir, binder.annotation))
+}
+
+fn enum_annotation(ir: &FlatIr, binder: u32) -> bool {
+    ir.binders
+        .get(binder as usize)
+        .is_some_and(|binder| enum_node(ir, binder.annotation))
 }
 
 fn enum_node(ir: &FlatIr, node: u32) -> bool {

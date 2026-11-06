@@ -14,4 +14,5 @@ pub(crate) enum Step {
     Enter(u32, EvalTy),
     Fold(u32, EvalTy),
     FoldRun(u32, EvalTy),
+    Scale(u32),
 }

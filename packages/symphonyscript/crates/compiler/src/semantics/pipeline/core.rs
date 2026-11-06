@@ -179,7 +179,16 @@ pub(crate) struct Core<'a> {
     pub untyped_bare: HashSet<u32>,
     pub takers: Vec<(u32, symphonyscript_core::FamilyId, u32)>,
     pub unit_feeds: Vec<(u32, symphonyscript_core::FamilyId, usize, u32)>,
-    pub top_takers: HashSet<(u32, symphonyscript_core::FamilyId)>,
+    pub taker_set: HashSet<(u32, symphonyscript_core::FamilyId, u32)>,
+    pub unit_reaches: HashMap<
+        (u32, u32, symphonyscript_core::FamilyId),
+        std::rc::Rc<super::unit_reach::UnitReach>,
+    >,
+    pub unit_let_values: HashMap<(u32, usize, symphonyscript_core::FamilyId, usize), CoreValue>,
+    pub unit_conflicted: HashSet<(u32, u32, u32)>,
+    pub cycle_through_refused: bool,
+    pub scaled_accumulator: bool,
+    pub unit_conflicts: Vec<super::unit_conflict::UnitConflict>,
     pub default_scale: Option<(
         u32,
         symphonyscript_core::FamilyId,
@@ -345,7 +354,13 @@ impl<'a> Core<'a> {
             untyped_bare: HashSet::new(),
             takers: Vec::new(),
             unit_feeds: Vec::new(),
-            top_takers: HashSet::new(),
+            taker_set: HashSet::new(),
+            unit_reaches: HashMap::new(),
+            unit_let_values: HashMap::new(),
+            unit_conflicted: HashSet::new(),
+            cycle_through_refused: false,
+            scaled_accumulator: false,
+            unit_conflicts: Vec::new(),
             default_scale: None,
         }
     }

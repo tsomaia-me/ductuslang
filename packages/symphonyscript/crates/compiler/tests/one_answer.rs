@@ -270,7 +270,11 @@ const DECIDING_NONE: &[(&str, &str)] = &[
     ),
     (
         "pipeline/families.rs default_readable",
-        "the operators the new core reads in an attribute's default unit whose scale is not 1 as far as slice 5 builds it, a read of a let or a call declined",
+        "the operators the new core reads in an attribute's default unit whose scale is not 1 as far as slice 5 builds it, a string, a path, a member and a match declined",
+    ),
+    (
+        "pipeline/unit_reach.rs reach_walk",
+        "the operands a family value is carried through within one evaluation frame, and the calls, lets and folds whose frames read in the attribute's default unit, SPEC §3.6's reaching rule",
     ),
     (
         "pipeline/families.rs carried",

@@ -3804,3 +3804,260 @@ fn a_plain_value_at_an_attribute_whose_default_unit_has_a_scale_other_than_1_rea
     }
     assert_eq!(programs, 5 * 6 + 24 + 4 + 5 + 7 * 2 + 3 + 3 * 2);
 }
+
+const BODY_UNITS_BAR: &[&[&str]] = &[
+    &[
+        "fn plus1(x): x + 1",
+        "Bar b | bar_len=plus1(1bars) beat_len=plus1(1bars)",
+    ],
+    &[
+        "fn plus1(x): x + 3000000000000000000",
+        "Bar b | bar_len=plus1(1beats)",
+    ],
+    &[
+        "fn plus1(x): x + 3000000000000000000",
+        "Bar b | beat_len=plus1(1beats)",
+    ],
+    &[
+        "fn plus1(x): x + 2000000000000000000",
+        "Bar b | bar_len=plus1(1beats) beat_len=plus1(1beats)",
+    ],
+    &[
+        "fn plus1(x): x + 3000000000000000000",
+        "Bar b | bar_len=plus1(1beats) beat_len=plus1(1beats)",
+    ],
+    &[
+        "fn f(x): x + 3000000000000000000",
+        "Bar c | beat_len=f(1beats)",
+        "Bar b | bar_len=f(1beats)",
+    ],
+    &["let x = 3000000000000000000", "Bar b | bar_len=x"],
+    &["let x = 3000000000000000000", "Bar b | beat_len=x"],
+    &["let x = 5", "Bar b | bar_len=x beat_len=x"],
+    &["let x = 3000000000000000000 + 1beats", "Bar b | bar_len=x"],
+    &["fn f(): 3000000000000000000", "Bar b | bar_len=f()"],
+    &[
+        "fn f(): 3000000000000000000",
+        "Bar b | bar_len=(f() + 1beats)",
+    ],
+    &["Bar b | bar_len=(i64(3000000000000000000) + 1beats)"],
+    &["Bar b | bar_len=[3000000000000000000, 2][0..][0]"],
+    &["Bar b | bar_len=[1beats, 3000000000000000000][0..][1]"],
+    &["Bar b | bar_len=(for i in [1, 2] into a from 0: a + 1500000000000000000)"],
+    &["Bar b | bar_len=(for i in [1, 2] into a from 1beats: a + 1500000000000000000)"],
+    &["Bar b | bar_len=(for i in [1, 2] into a from 1beats: a + 1000000000000000000)"],
+    &["Bar b | bar_len=(for i in [1beats, 2beats] into a from 0beats: a + i + 1)"],
+    &["state n(2)", "Bar b | bar_len=n.past(1)"],
+    &["state n(2): i64", "Bar b | bar_len=(n.past(1) + 1beats)"],
+    &["fn g(x): x", "Bar b | bar_len=g(3000000000000000000)"],
+    &[
+        "fn g(x): x",
+        "Bar b | bar_len=(g(3000000000000000000) + 1beats)",
+    ],
+    &["Bar b | bar_len=(if true then 3000000000000000000 else 2)"],
+    &["Bar b | bar_len=[3000000000000000000, 2][0]"],
+    &["let y = 1beats + 1", "Bar b | bar_len=y beat_len=y"],
+    &[
+        "let y = 1",
+        "Bar b | bar_len=(y + 1beats) beat_len=(y + 1beats)",
+    ],
+    &[
+        "let y = [1bars, 3000000000000000000]",
+        "Bar b | bar_len=(y[1])",
+    ],
+    &[
+        "let y = [1bars, 3000000000000000000]",
+        "Bar b | bar_len=(y[1] + (if y[1] > 1beats then 1beats else 2beats))",
+    ],
+    &[
+        "fn f(x): x + 1",
+        "Bar b | bar_len=(f(1beats) + (if f(1beats) > 2beats then 1beats else 2beats))",
+    ],
+    &[
+        "fn f(x): x + 1",
+        "let y = f(1beats)",
+        "Bar b | bar_len=y beat_len=y",
+    ],
+    &[
+        "fn f(x): x + 1500000000000000000",
+        "Bar b | bar_len=f(f(1beats))",
+    ],
+    &[
+        "let y = 3000000000000000000",
+        "Bar b | bar_len=(y + 1beats)",
+    ],
+    &[
+        "let y = 1beats + 1500000000000000000",
+        "Bar b | bar_len=(y + y)",
+    ],
+    &[
+        "let y = 1beats + 3000000000000000000",
+        "Bar b | beat_len=y",
+        "Bar c | bar_len=y",
+    ],
+    &[
+        "let y = 3000000000000000000",
+        "Bar b | beat_len=(y + 1beats)",
+        "Bar c | bar_len=(y + 1beats)",
+    ],
+    &[
+        "fn f(x): x + 1",
+        "fn g(x): f(x) + 1",
+        "let y = g(1beats)",
+        "Bar b | bar_len=y beat_len=y",
+    ],
+    &[
+        "fn f(x): x + 1",
+        "fn g(x): f(x) + f(x)",
+        "let y = g(1beats)",
+        "Bar b | bar_len=y beat_len=y",
+    ],
+    &[
+        "fn f(x): x + 3000000000000000000",
+        "let y = f(1beats)",
+        "Bar b | bar_len=y beat_len=y",
+        "Bar c | bar_len=f(1beats)",
+    ],
+    &[
+        "fn f(x): for i in [1, 2] into a from x: a + 1",
+        "let y = f(1beats)",
+        "Bar b | bar_len=y beat_len=y",
+    ],
+    &[
+        "fn f(x): for i in [1, 2] into a from x: a + 3000000000000000000",
+        "Bar b | beat_len=f(1beats) bar_len=f(1beats)",
+    ],
+    &[
+        "fn f(a): a[1]",
+        "Bar b | bar_len=f([1bars, 3000000000000000000])",
+    ],
+    &[
+        "fn f(a): a[1] + 1beats",
+        "Bar b | bar_len=f([1, 3000000000000000000])",
+    ],
+    &["fn f(): 1", "let y = f()", "Bar b | bar_len=y beat_len=y"],
+    &["Bar b | bar_len=i32(3)"],
+    &["Bar b | bar_len=(u8(3) + 1beats)"],
+];
+
+const BODY_UNITS_BOUNDED: &[&[&str]] = &[
+    &[
+        "fn plus1(x): x + 1",
+        "A a | long=plus1(5bars)",
+        "B b | short=plus1(5bars)",
+    ],
+    &[
+        "fn plus1(x): x + 1e308",
+        "A a | long=plus1(5bars)",
+        "B b | short=plus1(5bars)",
+    ],
+    &["fn f(): 1e308", "A a | long=f()"],
+    &["fn f(): 1e308", "A a | long=(f() + 1beats)"],
+    &["let y = 1e308", "A a | long=y"],
+    &["let y = 1e308", "A a | long=(y + 1beats)"],
+    &["let y = 1e308 + 1beats", "A a | long=y", "B b | short=y"],
+    &["let y = 1e308 + 1beats", "A a | long=y"],
+    &["fn f(x): x + 1e308", "let y = f(1beats)", "A a | long=y"],
+    &[
+        "fn f(x): x + 1",
+        "let y = f(1beats)",
+        "A a | long=y",
+        "B b | short=y",
+    ],
+    &["A a | long=f64(1e308)"],
+    &["A a | long=(f64(1e308) + 1beats)"],
+    &["A a | long=f32(1e38)"],
+    &["A a | long=[1e308, 2.0][0..][0]"],
+    &["state q(1.0)", "A a | long=(q.past(1) + 1e308)"],
+    &[
+        "fn f(x): x + 1",
+        "fn g(x): f(x) + f(x)",
+        "A a | long=g(1beats)",
+        "B b | short=g(1beats)",
+    ],
+    &["fn f(x): x * 2", "A a | long=(f(1e308) + 1beats)"],
+    &["fn f(x): x", "A a | long=f(f(1e308))"],
+    &["fn f(x): [x, 1e308]", "A a | long=(f(1beats)[1])"],
+];
+
+const BODY_UNITS_ENVELOPE: &[&[&str]] = &[
+    &["fn f(x): x + 1", "Env e | attack=f(1s) release=f(1s)"],
+    &["let y = 1s + 2", "Env e | attack=y release=y"],
+    &["let y = 2", "Env e | attack=(y + 1s) release=(y + 1s)"],
+    &["Env e | release=(i32(5) + 1s)"],
+    &["state q(1): i32", "Env e | attack=(q.past(1) + 1s)"],
+    &["Env e | attack=(for i in [1, 2] into a from 0s: a + 1)"],
+    &["fn f(x): x div 2", "Env e | attack=(f(5) + 1s)"],
+    &["let y = 5 div 2", "Env e | attack=(y + 1s)"],
+    &["fn f(x): (x div 2) + 1s", "Env e | attack=f(5)"],
+];
+
+const BODY_UNITS_DECLINED: &[&[&str]] = &[
+    &[
+        "fn g(): 1bars + 1",
+        "let x = g()",
+        "Bar b | bar_len=(g(x)) beat_len=x",
+    ],
+    &[
+        "fn g(): 1bars + 1+",
+        "let x = g()",
+        "Bar b | bar_len=(g()) beat_len=x",
+    ],
+    &[
+        "fn g(): 1bars + 1",
+        "let x = g()+",
+        "Bar b | bar_len=(g()) beat_len=x",
+    ],
+    &[
+        "fn g(): 1bars + 1",
+        "let x = g(x)",
+        "Bar b | bar_len=(g()) beat_len=x",
+    ],
+    &["Bar b | bar_len=i64(3000000000000000000)"],
+    &["Bar b | bar_len=-(i64(3000000000000000000))"],
+    &["Bar b | bar_len=(for i in [1beats, 2beats] into a from 3: a + i)"],
+    &["Bar b | bar_len=(for i in [1beats, 2beats] into a from 3000000000000000000: a + i)"],
+];
+
+#[test]
+fn a_plain_value_in_a_body_reads_in_the_default_unit_its_call_reaches_and_a_default_unit_attribute_reads_lets_calls_folds_and_conversions_in_every_order_lb8()
+ {
+    let mut programs = 0;
+    for (vocabulary, rows) in [
+        (symphonyscript_fixtures::bar_vocabulary(), BODY_UNITS_BAR),
+        (
+            symphonyscript_fixtures::bounded_vocabulary(),
+            BODY_UNITS_BOUNDED,
+        ),
+        (
+            symphonyscript_fixtures::envelope_vocabulary(),
+            BODY_UNITS_ENVELOPE,
+        ),
+    ] {
+        let old = Compiler::new(&vocabulary)
+            .expect("the vocabulary compiles")
+            .on_the_old_engine();
+        let new = Compiler::new(&vocabulary).expect("the vocabulary compiles");
+        for lines in rows {
+            let items: Vec<String> = lines.iter().map(|line| format!("{line}\n")).collect();
+            for text in orders(&items) {
+                let sources = [source(&text)];
+                let found = new
+                    .checked_by_new_core(&sources)
+                    .unwrap_or_else(|| panic!("the new core takes {text}"));
+                assert_eq!(found, old.check(&sources), "{text}");
+                programs += 1;
+            }
+        }
+    }
+    let vocabulary = symphonyscript_fixtures::bar_vocabulary();
+    let new = Compiler::new(&vocabulary).expect("the vocabulary compiles");
+    for lines in BODY_UNITS_DECLINED {
+        let text: String = lines.iter().map(|line| format!("{line}\n")).collect();
+        assert!(
+            new.checked_by_new_core(&[source(&text)]).is_none(),
+            "{text}"
+        );
+    }
+    assert_eq!(programs, 281);
+}

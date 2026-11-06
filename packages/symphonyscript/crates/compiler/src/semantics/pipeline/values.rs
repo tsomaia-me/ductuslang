@@ -9,6 +9,7 @@ use super::folds::ANY_LENGTH;
 use super::frame::Frame;
 use super::leaf::Leaf;
 use super::step::Step;
+use super::unit_reach::FrameUnit;
 use super::width::{combined, is_fixed_float, target_ty, widens};
 use crate::diagnostics::Code;
 use crate::semantics::Internal;
@@ -45,6 +46,18 @@ pub(crate) fn evaluated_in(ty: EvalTy) -> EvalTy {
     }
 }
 
+fn merge_reach(
+    scaled: &mut std::collections::HashSet<u32>,
+    merged: &mut std::collections::HashSet<usize>,
+    unit: Option<&FrameUnit>,
+) {
+    if let Some(unit) = unit
+        && merged.insert(std::rc::Rc::as_ptr(&unit.reach) as usize)
+    {
+        scaled.extend(unit.reach.scaled.iter().copied());
+    }
+}
+
 pub(crate) fn flexible(ty: EvalTy) -> EvalTy {
     match class(ty) {
         4..=6 => EvalTy::Exact,
@@ -59,6 +72,21 @@ impl Core<'_> {
             .and_then(|slots| slots.get(class(ty)))
             .cloned()
             .flatten()
+    }
+
+    fn let_memo(
+        &self,
+        at: u32,
+        ty: EvalTy,
+        unit: Option<(symphonyscript_core::FamilyId, usize)>,
+    ) -> Option<CoreValue> {
+        match unit {
+            Some((family, unit)) => self
+                .unit_let_values
+                .get(&(at, class(ty), family, unit))
+                .cloned(),
+            None => self.memo(at, ty),
+        }
     }
 
     fn integral(&self, node: u32) -> Result<EvalTy, Internal> {
@@ -453,6 +481,15 @@ impl Core<'_> {
         let ty = evaluated_in(ty);
         let mut outer_chains: Vec<Vec<u32>> = Vec::new();
         let mut open: std::collections::HashSet<u32> = std::collections::HashSet::new();
+        let unit = match self.default_scale {
+            Some((scaled, family, unit, _)) if scaled == root => {
+                Some(self.frame_unit(root, self.inst, family, unit)?)
+            }
+            Some(_) | None => None,
+        };
+        let mut scaled: std::collections::HashSet<u32> = std::collections::HashSet::new();
+        let mut merged: std::collections::HashSet<usize> = std::collections::HashSet::new();
+        merge_reach(&mut scaled, &mut merged, unit.as_ref());
         let mut frames: Vec<Frame> = vec![Frame {
             owner: None,
             ty,
@@ -461,6 +498,7 @@ impl Core<'_> {
             call: None,
             inst: self.inst,
             fold: None,
+            unit,
         }];
         loop {
             let Some(frame) = frames.last_mut() else {
@@ -510,6 +548,7 @@ impl Core<'_> {
             let Some(step) = frame.steps.pop() else {
                 let value = frame.values.pop().ok_or(Internal::missed("value stack"))?;
                 let (owner, frame_ty) = (frame.owner, frame.ty);
+                let frame_unit = frame.unit.as_ref().map(|unit| (unit.family, unit.unit));
                 let called = frame.call.is_some();
                 let (call_node, body) = (frame.call.as_ref().map(|(call, _)| *call), frame.inst);
                 if let Some(owner) = owner {
@@ -540,7 +579,10 @@ impl Core<'_> {
                             Some(annotated) => self.annotation_fit(at, annotated, value)?,
                             None => value,
                         };
-                        if let Some(slot) = self
+                        if let Some((family, unit)) = frame_unit {
+                            self.unit_let_values
+                                .insert((at, class(frame_ty), family, unit), value.clone());
+                        } else if let Some(slot) = self
                             .let_values
                             .get_mut(at as usize)
                             .and_then(|slots| slots.get_mut(class(frame_ty)))
@@ -576,6 +618,12 @@ impl Core<'_> {
                             frame.values.push(Value::Error);
                         }
                         continue;
+                    }
+                    if let Some(frame) = frames.last_mut()
+                        && frame.unit.as_ref().is_some()
+                        && scaled.contains(&node)
+                    {
+                        frame.steps.push(Step::Scale(node));
                     }
                     if self.fitting
                         && matches!(op, Op::Name | Op::Field)
@@ -656,6 +704,7 @@ impl Core<'_> {
                                         call: None,
                                         inst: NONE,
                                         fold: None,
+                                        unit: None,
                                     });
                                 }
                             }
@@ -782,6 +831,15 @@ impl Core<'_> {
                             frame.values.push(Value::Error);
                             continue;
                         }
+                        let let_unit = match frame.unit.as_ref() {
+                            Some(unit) if unit.reach.entered.contains(&node) => {
+                                let (family, unit) = (unit.family, unit.unit);
+                                Some(self.frame_unit(self.let_root(at)?, NONE, family, unit)?)
+                            }
+                            Some(_) | None => None,
+                        };
+                        let memo_unit = let_unit.as_ref().map(|unit| (unit.family, unit.unit));
+                        merge_reach(&mut scaled, &mut merged, let_unit.as_ref());
                         if let Some(annotated) = self.annotation_ty(at)? {
                             let let_ty = match self.fact(self.let_root(at)?)?.fixed {
                                 Some(own) if widens(own, annotated) => evaluated_in(annotated),
@@ -793,7 +851,7 @@ impl Core<'_> {
                             if matches!(class(node_ty), 1 | 2 | 4..=6) {
                                 frame.steps.push(Step::Widen(evaluated_in(node_ty)));
                             }
-                            if let Some(value) = self.memo(at, let_ty) {
+                            if let Some(value) = self.let_memo(at, let_ty, memo_unit) {
                                 frame.values.push(value);
                                 continue;
                             }
@@ -817,6 +875,7 @@ impl Core<'_> {
                                 call: None,
                                 inst: NONE,
                                 fold: None,
+                                unit: let_unit,
                             });
                             continue;
                         }
@@ -825,7 +884,7 @@ impl Core<'_> {
                         if flexible_let && (4..=6).contains(&class(node_ty)) {
                             frame.steps.push(Step::Fit(node, node_ty));
                         }
-                        if let Some(value) = self.memo(at, node_ty) {
+                        if let Some(value) = self.let_memo(at, node_ty, memo_unit) {
                             frame.values.push(value);
                             continue;
                         }
@@ -850,6 +909,7 @@ impl Core<'_> {
                             call: None,
                             inst: NONE,
                             fold: None,
+                            unit: let_unit,
                         });
                         continue;
                     }
@@ -980,6 +1040,14 @@ impl Core<'_> {
                     }
                     args.push(first);
                     args.push(start);
+                    let fold_unit = match frame.unit.as_ref() {
+                        Some(unit) if unit.reach.entered.contains(&fold) => {
+                            let (family, unit) = (unit.family, unit.unit);
+                            Some(self.frame_unit(rec.body, body, family, unit)?)
+                        }
+                        Some(_) | None => None,
+                    };
+                    merge_reach(&mut scaled, &mut merged, fold_unit.as_ref());
                     frames.push(Frame {
                         owner: None,
                         ty: fold_ty,
@@ -994,6 +1062,7 @@ impl Core<'_> {
                             count,
                             indexed,
                         }),
+                        unit: fold_unit,
                     });
                 }
                 Step::Enter(call, call_ty) => {
@@ -1008,14 +1077,34 @@ impl Core<'_> {
                         frame.values.push(Value::Error);
                         continue;
                     };
-                    let key = self.memo_key(body, call_ty, &args);
+                    let value = self.body_value(body)?;
+                    let call_unit = match frame.unit.as_ref() {
+                        Some(unit) if unit.reach.entered.contains(&call) => {
+                            let (family, unit) = (unit.family, unit.unit);
+                            Some(self.frame_unit(value, body, family, unit)?)
+                        }
+                        Some(_) | None => None,
+                    };
+                    merge_reach(&mut scaled, &mut merged, call_unit.as_ref());
+                    let tag = match call_unit.as_ref() {
+                        Some(unit) => {
+                            let outermost = self.eval_chain.first().copied().unwrap_or(call);
+                            let conflicted = !self.unit_conflicted.is_empty();
+                            Some((
+                                unit.family,
+                                unit.unit,
+                                if conflicted { outermost } else { NONE },
+                            ))
+                        }
+                        None => None,
+                    };
+                    let key = self.memo_key(body, call_ty, &args, tag);
                     if let Some(key) = key.as_ref()
                         && let Some(value) = self.memo_hit(key, call)
                     {
                         frame.values.push(value);
                         continue;
                     }
-                    let value = self.body_value(body)?;
                     if let Some(key) = key {
                         self.begin_recording(key, frames.len() + 1);
                     }
@@ -1028,6 +1117,7 @@ impl Core<'_> {
                         call: Some((call, args)),
                         inst: body,
                         fold: None,
+                        unit: call_unit,
                     });
                 }
                 Step::Runtime(count) => {
@@ -1117,15 +1207,32 @@ impl Core<'_> {
                             .or_insert(((element, target), value));
                     }
                 }
+                Step::Scale(node) => {
+                    let Some((family, unit)) =
+                        frame.unit.as_ref().map(|unit| (unit.family, unit.unit))
+                    else {
+                        continue;
+                    };
+                    let value = frame.values.pop().ok_or(Internal::missed("value stack"))?;
+                    let value = if self.scale_conflicted(node)? {
+                        value
+                    } else {
+                        self.in_default_unit(node, value, family, unit)?
+                    };
+                    if self.fixed_root_outside(node, &value)? {
+                        return Ok(Err(super::declined::Declined(
+                            super::reason::Reason::UnitAttribute,
+                        )));
+                    }
+                    if let Some(frame) = frames.last_mut() {
+                        frame.values.push(value);
+                    }
+                }
                 Step::Apply(node, node_ty) => {
                     let mut values = std::mem::take(&mut frame.values);
                     let value = match self.apply(node, node_ty, &mut values)? {
                         Ok(value) => value,
                         Err(declined) => return Ok(Err(declined)),
-                    };
-                    let value = match self.reads_default_unit(node)? {
-                        Some((family, unit)) => self.in_default_unit(node, value, family, unit)?,
-                        None => value,
                     };
                     values.push(value);
                     if let Some(frame) = frames.last_mut() {
