@@ -16,11 +16,14 @@ fn twins(items: &[&str]) -> Vec<String> {
 }
 
 fn same_as_the_old_engine(rows: &[&[&str]]) -> usize {
-    let vocabulary = symphonyscript_fixtures::vocabulary();
-    let old = Compiler::new(&vocabulary)
+    same_in(&symphonyscript_fixtures::vocabulary(), rows)
+}
+
+fn same_in(vocabulary: &symphonyscript_core::Vocabulary, rows: &[&[&str]]) -> usize {
+    let old = Compiler::new(vocabulary)
         .expect("the vocabulary compiles")
         .on_the_old_engine();
-    let new = Compiler::new(&vocabulary).expect("the vocabulary compiles");
+    let new = Compiler::new(vocabulary).expect("the vocabulary compiles");
     let mut programs = 0;
     for items in rows {
         for text in twins(items) {
@@ -2651,5 +2654,29 @@ fn an_unknown_callee_draws_its_name_alone_and_a_math_dot_call_is_the_math_call_b
     assert_eq!(
         same_as_the_old_engine(&UNKNOWN_CALLEES_AND_MATH_DOT_CALLS),
         46
+    );
+}
+
+const NATIVE_FAULTS: [&[&str]; 9] = [
+    &["Clip c:\n    Note/(checksum())\n"],
+    &["Clip c:\n    Note/(checksum([u8(1)], 1 + true))\n"],
+    &["Clip c:\n    Note/(pair_sum(zz, 1))\n"],
+    &["Clip c:\n    Note/(checksum(x=1))\n"],
+    &["Clip c:\n    Note/(checksum(x=1 + true))\n"],
+    &["Clip c:\n    Note/(checksum(x=zz))\n"],
+    &["let k = checksum()\n", "Clip c:\n    Note/1\n"],
+    &["fn f(): mirror()\n", "Clip c:\n    Note/(f() + f())\n"],
+    &["state q(1)\n", "Clip c:\n    Note/(three(q, q))\n"],
+];
+
+#[test]
+fn a_native_call_of_another_count_or_with_named_arguments_draws_as_a_math_call_does_beside_a_valid_twin_in_every_order()
+ {
+    assert_eq!(
+        same_in(
+            &symphonyscript_fixtures::native_vocabulary(),
+            &NATIVE_FAULTS
+        ),
+        30
     );
 }

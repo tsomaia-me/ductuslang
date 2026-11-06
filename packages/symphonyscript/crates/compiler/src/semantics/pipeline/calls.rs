@@ -526,6 +526,9 @@ impl Core<'_> {
 
     pub fn call_fact(&mut self, node: u32) -> Stage<Fact> {
         let Some(function) = self.callee(node)? else {
+            if self.native_fault(node)? {
+                return Ok(Ok(Fact::PLACEHOLDER));
+            }
             if let Some(name) = self.math_named(node)? {
                 self.draw_at(
                     Code::NamedBuiltinArguments,
@@ -903,6 +906,8 @@ impl Core<'_> {
                 && self.math_miscount(node)?.is_none()
                 && self.math_named(node)?.is_none()
                 && !self.unknown_callee(node)?
+                && self.native_miscount(node)?.is_none()
+                && self.native_named(node)?.is_none()
             {
                 return Ok(true);
             }
@@ -1365,5 +1370,69 @@ impl Core<'_> {
             && self.vocabulary.native_named(text).is_none()
             && self.variants.owner(text).is_none()
             && !MATH.iter().any(|(known, _)| *known == text))
+    }
+}
+
+impl Core<'_> {
+    fn native_callee(&self, node: u32) -> Result<Option<(String, u32)>, Internal> {
+        let (op, callee, _, _) = self.ir.node(node)?;
+        if !matches!(op, Op::Call | Op::NamedCall)
+            || self.ir.node(callee)?.0 != Op::Name
+            || self.bound(callee)? != DeclRef::None
+        {
+            return Ok(None);
+        }
+        let text = self
+            .ir
+            .name_text(self.ir.node(callee)?.1)
+            .unwrap_or_default();
+        let Some(decl) = self
+            .vocabulary
+            .native_named(text)
+            .and_then(|id| self.vocabulary.native(id))
+        else {
+            return Ok(None);
+        };
+        let arity = u32::try_from(decl.signature.params.len()).unwrap_or(u32::MAX);
+        Ok(Some((decl.name.to_string(), arity)))
+    }
+
+    pub fn native_miscount(&self, node: u32) -> Result<Option<(String, u32, u32)>, Internal> {
+        let (op, _, _, shape) = self.ir.node(node)?;
+        if op != Op::Call || shape % 2 != 0 {
+            return Ok(None);
+        }
+        Ok(self
+            .native_callee(node)?
+            .filter(|(_, arity)| shape != 2 * arity)
+            .map(|(name, arity)| (name, arity, shape / 2)))
+    }
+
+    pub fn native_named(&self, node: u32) -> Result<Option<String>, Internal> {
+        if self.ir.node(node)?.0 != Op::NamedCall {
+            return Ok(None);
+        }
+        Ok(self.native_callee(node)?.map(|(name, _)| name))
+    }
+
+    pub fn native_fault(&mut self, node: u32) -> Result<bool, Internal> {
+        if let Some(name) = self.native_named(node)? {
+            self.draw_at(
+                Code::NamedBuiltinArguments,
+                node,
+                format!("the native function `{name}` takes positional arguments only"),
+            )?;
+            return Ok(true);
+        }
+        let Some((name, arity, given)) = self.native_miscount(node)? else {
+            return Ok(false);
+        };
+        let noun = if arity == 1 { "argument" } else { "arguments" };
+        self.draw_at(
+            Code::ArgumentCount,
+            node,
+            format!("`{name}` takes {arity} {noun}, not {given}"),
+        )?;
+        Ok(true)
     }
 }

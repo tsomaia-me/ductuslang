@@ -502,6 +502,7 @@ impl Core<'_> {
             if !self.not_callable(node)?
                 && self.math_named(node)?.is_none()
                 && !self.unknown_callee(node)?
+                && self.native_named(node)?.is_none()
             {
                 return Ok(Vec::new());
             }
