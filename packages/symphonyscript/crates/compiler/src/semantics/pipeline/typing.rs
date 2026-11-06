@@ -570,13 +570,13 @@ impl Core<'_> {
         let converted = Fact::fixed(leaf, Some(target));
         let operand = self.fact(a)?;
         if operand.leaf == Leaf::Placeholder {
-            return Ok(Fact::PLACEHOLDER);
+            return self.keep_kind(node, converted);
         }
         if !operand.dims.is_empty() {
             if operand.leaf != Leaf::Error {
                 self.draw_at(Code::ArrayOperand, node, OPERAND)?;
             }
-            return Ok(Fact::PLACEHOLDER);
+            return self.keep_kind(node, converted);
         }
         match operand.leaf {
             Leaf::Error => self.keep(node, converted),
@@ -1045,6 +1045,9 @@ impl Core<'_> {
             if base.dims.is_empty() && known_base && !self.named_placeholder(a, &base)? {
                 self.draw_at(Code::NotAnArray, a, "only an array is indexed")?;
             }
+            if !base.dims.is_empty() && !matches!(base.leaf, Leaf::Placeholder | Leaf::Error) {
+                return self.keep_kind(node, element_of(&base));
+            }
             return Ok(Fact::PLACEHOLDER);
         }
         if self.named_placeholder(a, &base)? {
@@ -1074,7 +1077,10 @@ impl Core<'_> {
             family: None,
         };
         if index.leaf == Leaf::Placeholder {
-            return Ok(Fact::PLACEHOLDER);
+            if base.leaf == Leaf::Error {
+                return Ok(Fact::PLACEHOLDER);
+            }
+            return self.keep_kind(node, element);
         }
         if !refused
             && !faulty_index
@@ -1248,5 +1254,31 @@ impl Core<'_> {
             }
         }
         Ok(false)
+    }
+}
+
+impl Core<'_> {
+    fn keep_kind(&mut self, node: u32, fact: Fact) -> Result<Fact, Internal> {
+        if !self.holds_a_missing_operand(node)? {
+            let key = (self.inst_key(node)?, node);
+            self.placeholder_kinds.insert(key, fact);
+        }
+        Ok(Fact::PLACEHOLDER)
+    }
+
+    pub fn placeholder_kind(&self, node: u32) -> Result<Option<Fact>, Internal> {
+        let key = (self.inst_key(node)?, node);
+        Ok(self.placeholder_kinds.get(&key).cloned())
+    }
+}
+
+fn element_of(base: &Fact) -> Fact {
+    Fact {
+        leaf: base.leaf,
+        dims: base.dims.get(1..).unwrap_or_default().to_vec(),
+        fixed: base.fixed,
+        read: base.read,
+        node: base.node,
+        family: None,
     }
 }

@@ -718,14 +718,14 @@ impl Core<'_> {
             let node = self.ir.base + u32::try_from(local).unwrap_or(u32::MAX);
             let (_, _, mut operand, _) = self.ir.node(node)?;
             while let Ok((op, base, _, _)) = self.ir.node(operand) {
-                match op {
-                    Op::Name => {
-                        found.insert(operand);
-                        break;
-                    }
-                    Op::Index => operand = base,
-                    _ => break,
+                if op == Op::Name {
+                    found.insert(operand);
+                    break;
                 }
+                if op != Op::Index {
+                    break;
+                }
+                operand = base;
             }
         }
         Ok(found)

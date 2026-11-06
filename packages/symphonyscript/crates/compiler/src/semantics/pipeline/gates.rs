@@ -1,10 +1,8 @@
 use super::core::{Core, Stage};
 use super::fact::Fact;
 use super::leaf::Leaf;
-use super::width::target_ty;
 use crate::diagnostics::Code;
-use crate::semantics::Internal;
-use crate::semantics::ir::flat::{NONE, Op};
+use crate::semantics::ir::flat::NONE;
 use crate::semantics::operators::EvalTy;
 
 impl Core<'_> {
@@ -34,7 +32,10 @@ impl Core<'_> {
             return Ok(Ok(()));
         }
         if matches!(fact.leaf, Leaf::Placeholder | Leaf::Error) {
-            if self.kept_non_bool(root)? {
+            if self
+                .placeholder_kind(root)?
+                .is_some_and(|kept| kept.leaf != Leaf::Bool || !kept.dims.is_empty())
+            {
                 self.draw_at_root(Code::ConditionType, root, "a gate or a guard is a `bool`")?;
             }
             return self.detached(root, "", EvalTy::Bool);
@@ -44,22 +45,5 @@ impl Core<'_> {
             return self.own_check(root);
         }
         self.bind_value(root, "", EvalTy::Bool)
-    }
-
-    fn kept_non_bool(&self, root: u32) -> Result<bool, Internal> {
-        let (op, a, b, _) = self.ir.node(root)?;
-        if self.holds_a_missing_operand(root)? {
-            return Ok(false);
-        }
-        Ok(match op {
-            Op::Convert => target_ty(b).is_some_and(|target| target != EvalTy::Bool),
-            Op::Index | Op::IndexFromEnd => {
-                let base = self.fact(a)?;
-                !base.dims.is_empty()
-                    && !matches!(base.leaf, Leaf::Placeholder | Leaf::Error)
-                    && (base.leaf != Leaf::Bool || base.dims.len() > 1)
-            }
-            _ => false,
-        })
     }
 }

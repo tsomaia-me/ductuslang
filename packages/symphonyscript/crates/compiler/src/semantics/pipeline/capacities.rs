@@ -18,6 +18,12 @@ use crate::semantics::counted_walk::CountedWalk;
 use crate::semantics::ir::flat::{NONE, Op};
 use crate::semantics::operators::{EvalTy, Value};
 
+type OwnCall = (u32, u32, Vec<CoreValue>);
+
+const CONTEXT_DEPTH: usize = 64;
+
+const CONTEXTS: usize = 4096;
+
 const CEILING: i128 = 1 << 120;
 
 const STEPS: u64 = 1 << 20;
@@ -973,8 +979,17 @@ impl Core<'_> {
             let annotated = i128::from(annotated);
             if (walk.checking == Checking::Everything || walk.accumulators) && most > annotated {
                 let span = self.node_span(node)?;
+                let related = self
+                    .chained(crate::diagnostics::Diagnostic::new(
+                        Code::CapacityExceeded,
+                        span.clone(),
+                        "",
+                    ))
+                    .related;
                 let seen = self.diagnostics.iter().any(|diagnostic| {
-                    diagnostic.code == Code::CapacityExceeded && diagnostic.span == span
+                    diagnostic.code == Code::CapacityExceeded
+                        && diagnostic.span == span
+                        && diagnostic.related == related
                 });
                 if !seen {
                     self.draw_helped_at(
@@ -1035,12 +1050,81 @@ impl Core<'_> {
 impl Core<'_> {
     fn compile_time_accumulators(&mut self) -> Result<(), Internal> {
         for (node, inst) in self.compile_time_folds.clone() {
+            if self.body_of.get(self.local(node)?).copied().unwrap_or(NONE) != NONE {
+                self.accumulators_per_call(node, inst)?;
+                continue;
+            }
             self.inst = inst;
             let mut walk = Walk::new(Checking::Nothing);
             walk.accumulators = true;
             self.extent_in(node, &mut walk, &mut HashMap::new())?;
         }
         Ok(())
+    }
+
+    fn accumulators_per_call(&mut self, node: u32, inst: u32) -> Result<(), Internal> {
+        for context in self.call_contexts(inst, 0)? {
+            for (call, _, _) in &context {
+                self.eval_chain.push(*call);
+            }
+            let depth = context.len();
+            self.own_calls.extend(context);
+            self.inst = inst;
+            let mut walk = Walk::new(Checking::Nothing);
+            walk.accumulators = true;
+            let found = self.extent_in(node, &mut walk, &mut HashMap::new());
+            let calls = self.own_calls.len().saturating_sub(depth);
+            self.own_calls.truncate(calls);
+            let chain = self.eval_chain.len().saturating_sub(depth);
+            self.eval_chain.truncate(chain);
+            found?;
+        }
+        Ok(())
+    }
+
+    fn call_contexts(&mut self, inst: u32, depth: usize) -> Result<Vec<Vec<OwnCall>>, Internal> {
+        if depth > CONTEXT_DEPTH {
+            return Ok(Vec::new());
+        }
+        let mut calls: Vec<(u32, u32)> = self
+            .call_body
+            .iter()
+            .filter(|(_, body)| **body == inst)
+            .map(|(key, _)| *key)
+            .collect();
+        calls.sort_unstable_by_key(|(caller, call)| (*call, *caller));
+        let mut found = Vec::new();
+        for (caller, call) in calls {
+            let called = self.call_body.values().any(|body| *body == caller);
+            let outer = if called {
+                self.call_contexts(caller, depth + 1)?
+            } else {
+                vec![Vec::new()]
+            };
+            for mut context in outer {
+                if found.len() >= CONTEXTS {
+                    break;
+                }
+                let depth = context.len();
+                self.own_calls.extend(context.iter().cloned());
+                self.inst = caller;
+                let mut args = Vec::new();
+                for argument in self.arguments(call)? {
+                    let chain = std::mem::take(&mut self.eval_chain);
+                    let (drawn, stop) = (self.diagnostics.len(), self.stop.clone());
+                    let value = self.evaluate(argument, EvalTy::Exact)?;
+                    self.diagnostics.truncate(drawn);
+                    self.stop = stop;
+                    self.eval_chain = chain;
+                    args.push(value.unwrap_or(Value::Error));
+                }
+                let calls = self.own_calls.len().saturating_sub(depth);
+                self.own_calls.truncate(calls);
+                context.push((call, inst, args));
+                found.push(context);
+            }
+        }
+        Ok(found)
     }
 
     fn annotated_capacities(&mut self) -> Result<(), Internal> {
