@@ -1,7 +1,8 @@
 use crate::compiler::Compiler;
 use crate::syntax::front_end_goldens::source;
 
-const ENUMS: [&str; 35] = [
+const ENUMS: [&str; 36] = [
+    "let a = Saw\nSynth s:\n    Osc | wave=a\n",
     "state m(Manual): Mode\nSynth s:\n    Osc | wave=Saw\n",
     "Clip c:\n    Note/(i32(Wave::Saw))\n",
     "Clip c:\n    Note/(if Wave::Saw is Mode::Auto then 1 else 2)\n",
@@ -39,10 +40,9 @@ const ENUMS: [&str; 35] = [
     "Synth s:\n    Osc | wave=Wave::Zig\n",
 ];
 
-const DECLINED: [&str; 9] = [
+const DECLINED: [&str; 8] = [
     "fn f(w): w\nSynth s:\n    Osc | wave=(f(Saw))\n",
     "fn pick(x): if x then Wave::Saw else Wave::Sine\nSynth s:\n    Osc | wave=(pick(true))\n",
-    "let a = Saw\nSynth s:\n    Osc | wave=a\n",
     "state w(Saw)\nSynth s:\n    Osc | wave=w\n",
     "state w(Wave::Saw)\nClip c:\n    Note/(if w.past(1) is Saw then 1 else 2)\n",
     "state w(Wave::Saw)\nstate m = w.past(1, Sine)\nSynth s:\n    Osc | wave=m\n",
@@ -110,6 +110,51 @@ fn an_enum_annotation_types_its_let_or_cell_and_gives_a_bare_init_its_enum_in_bo
         "state m(Saw): Mode\nPlant p | mode=m\n",
         "state m(Manual): Nope\nPlant p | mode=m\n",
     ] {
+        assert_eq!(new.checked_by_new_core(&[source(text)]), None, "{text}");
+    }
+}
+
+const BARE_LETS: [(&str, &str); 4] = [
+    ("let a = Saw\n", "Synth s:\n    Osc | wave=a\n"),
+    (
+        "state b(true)\nlet a = if b then Saw else Square\n",
+        "Synth s:\n    Osc | wave=a\n",
+    ),
+    (
+        "let a = Saw\n",
+        "Synth s:\n    Osc | wave=a\n    Osc | wave=a\n",
+    ),
+    (
+        "let a = Square\n",
+        "Synth s:\n    Osc | wave=a\nSynth t:\n    Osc | wave=a\n",
+    ),
+];
+
+const BARE_LETS_DECLINED: [&str; 5] = [
+    "let a = Saw\nSynth s:\n    Osc | wave=a\nPlant p | mode=a\n",
+    "let a = Manual\nSynth s:\n    Osc | wave=a\n",
+    "let a = Saw\nClip c:\n    Note/a\n",
+    "state w(Saw)\nSynth s:\n    Osc | wave=w\n",
+    "let a = Sine\nSynth s:\n    for i in 0..2:\n        Osc | wave=a\n",
+];
+
+#[test]
+fn a_bare_valued_let_read_only_at_attributes_of_one_enum_takes_that_enum_in_both_orders() {
+    let vocabulary = symphonyscript_fixtures::vocabulary();
+    let old = Compiler::new(&vocabulary)
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
+    let new = Compiler::new(&vocabulary).expect("the vocabulary compiles");
+    for (first, second) in BARE_LETS {
+        for text in [format!("{first}{second}"), format!("{second}{first}")] {
+            let sources = [source(&text)];
+            let found = new
+                .checked_by_new_core(&sources)
+                .unwrap_or_else(|| panic!("the new core takes {text}"));
+            assert_eq!(found, old.check(&sources), "{text}");
+        }
+    }
+    for text in BARE_LETS_DECLINED {
         assert_eq!(new.checked_by_new_core(&[source(text)]), None, "{text}");
     }
 }

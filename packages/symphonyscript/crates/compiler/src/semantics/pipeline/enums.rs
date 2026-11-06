@@ -245,3 +245,139 @@ impl Core<'_> {
         Ok(Ok(()))
     }
 }
+
+impl Core<'_> {
+    fn bare_valued(&self, root: u32) -> Result<bool, Internal> {
+        let mut stack = vec![root];
+        while let Some(node) = stack.pop() {
+            let (op, _, b, c) = self.ir.node(node)?;
+            if op == Op::If {
+                stack.extend([c, b]);
+            } else if !(op == Op::Name && self.is_bare(node)) {
+                return Ok(false);
+            }
+        }
+        Ok(true)
+    }
+
+    fn enum_attribute_roots(
+        &self,
+    ) -> Result<std::collections::HashMap<u32, Option<EnumId>>, Internal> {
+        let mut roots = std::collections::HashMap::new();
+        let mut items: Vec<(
+            u32,
+            u32,
+            &[symphonyscript_core::AttrDecl],
+            Option<symphonyscript_core::AttrId>,
+        )> = Vec::new();
+        for record in &self.instances {
+            let placement = self.placement(record.item)?;
+            let decl = self
+                .vocabulary
+                .node_kind(record.kind)
+                .ok_or(Internal::missed("node kind"))?;
+            items.push((
+                placement.default,
+                placement.attrs.0,
+                &decl.attrs,
+                decl.default_attr,
+            ));
+            items.push((NONE, placement.attrs.1, &decl.attrs, None));
+        }
+        for row in &self.wires {
+            let rec = self.wire_rec(row.item)?;
+            let decl = self
+                .vocabulary
+                .wire_kind(row.kind)
+                .ok_or(Internal::missed("wire kind"))?;
+            items.push((rec.default, rec.attrs.0, &decl.attrs, decl.default_attr));
+            items.push((NONE, rec.attrs.1, &decl.attrs, None));
+        }
+        let enum_of = |attr: Option<&symphonyscript_core::AttrDecl>| match attr {
+            Some(attr) if attr.ty.lengths.is_empty() && attr.ty.capacity.is_none() => {
+                match attr.ty.scalar {
+                    symphonyscript_core::Scalar::Enum(id) => Some(id),
+                    _ => None,
+                }
+            }
+            Some(_) | None => None,
+        };
+        for pair in items.chunks(2) {
+            let [(default, start, attrs, default_attr), (_, end, _, _)] = pair else {
+                continue;
+            };
+            if *default != NONE {
+                let attr = default_attr.and_then(|attr| attrs.get(attr.index()));
+                roots.insert(*default, enum_of(attr));
+            }
+            for at in *start..*end {
+                let entry = *self
+                    .ir
+                    .attr_entries
+                    .get(at as usize)
+                    .ok_or(Internal::missed("IR attribute"))?;
+                let crate::semantics::ir::flat::AttrForm::Value(root) = entry.form else {
+                    continue;
+                };
+                let name = self
+                    .ir
+                    .name(entry.name)
+                    .ok_or(Internal::missed("IR name"))?;
+                let text = self.ir.symbols.text(name.sym);
+                roots.insert(root, enum_of(attrs.iter().find(|attr| attr.name == text)));
+            }
+        }
+        Ok(roots)
+    }
+
+    pub fn bare_declarations(&mut self) -> Result<(), Internal> {
+        if self.bare.is_empty() {
+            return Ok(());
+        }
+        let mut roots: Vec<(DeclRef, u32)> = Vec::new();
+        for (at, rec) in self.ir.lets.iter().enumerate() {
+            let at = u32::try_from(at).unwrap_or(u32::MAX);
+            if rec.owner == NONE
+                && !rec.is_match
+                && self.annotation_ty(at)?.is_none()
+                && self.bare_valued(rec.value)?
+            {
+                roots.push((DeclRef::Let(at), rec.value));
+            }
+        }
+        if roots.is_empty() {
+            return Ok(());
+        }
+        let mut reads: std::collections::HashMap<DeclRef, Vec<u32>> =
+            std::collections::HashMap::new();
+        for (local, op) in self.ir.op.iter().enumerate() {
+            if *op != Op::Name {
+                continue;
+            }
+            let node = self.ir.base + u32::try_from(local).unwrap_or(0);
+            let bound = self.bound(node)?;
+            if roots.iter().any(|(decl, _)| *decl == bound) {
+                reads.entry(bound).or_default().push(node);
+            }
+        }
+        let attributes = self.enum_attribute_roots()?;
+        for (decl, root) in roots {
+            let Some(found) = reads.get(&decl) else {
+                continue;
+            };
+            let mut wanted = None;
+            let mut agreed = true;
+            for read in found {
+                match (attributes.get(read).copied().flatten(), wanted) {
+                    (Some(id), None) => wanted = Some(id),
+                    (Some(id), Some(seen)) if id == seen => {}
+                    (Some(_) | None, _) => agreed = false,
+                }
+            }
+            if agreed && let Some(id) = wanted {
+                self.resolve_bare(root, id, true)?;
+            }
+        }
+        Ok(())
+    }
+}

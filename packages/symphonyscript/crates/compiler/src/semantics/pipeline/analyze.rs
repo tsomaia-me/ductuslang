@@ -62,6 +62,7 @@ pub(crate) fn analyze(inputs: &Inputs<'_>) -> Result<Option<Run>, Internal> {
     if core.stop.is_some() {
         return Ok(Some(finished(core)));
     }
+    core.bare_declarations()?;
     if let Err(reason) = stage(core.unused_patterns())? {
         return declined(reason);
     }
