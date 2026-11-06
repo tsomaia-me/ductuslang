@@ -111,12 +111,14 @@ fn an_enum_annotation_types_its_let_or_cell_and_gives_a_bare_init_its_enum_in_bo
     }
 }
 
-const BARE_LETS: [(&str, &str); 4] = [
-    ("let a = Saw\n", "Synth s:\n    Osc | wave=a\n"),
+const BARE_LETS: [(&str, &str); 6] = [
     (
-        "state b(true)\nlet a = if b then Saw else Square\n",
-        "Synth s:\n    Osc | wave=a\n",
+        "let b = a\nlet a = Saw\n",
+        "Synth s:\n    Osc | wave=b\n    Osc | wave=a\n",
     ),
+    ("let a = b\nlet b = a\n", "Synth s:\n    Osc | wave=b\n"),
+    ("let a = Saw\n", "Synth s:\n    Osc | wave=a\n"),
+    ("let a = Saw\nlet b = a\n", "Synth s:\n    Osc | wave=b\n"),
     (
         "let a = Saw\n",
         "Synth s:\n    Osc | wave=a\n    Osc | wave=a\n",
@@ -127,7 +129,10 @@ const BARE_LETS: [(&str, &str); 4] = [
     ),
 ];
 
-const BARE_LETS_DECLINED: [&str; 4] = [
+const BARE_LETS_DECLINED: [&str; 7] = [
+    "state b(true)\nlet a = if b then Saw else Square\nSynth s:\n    Osc | wave=a\n",
+    "state t(true)\nlet a = Saw\nlet b = a\nlet c = if t then b else Square\nSynth s:\n    Osc | wave=c\n",
+    "let a = Saw\nlet b = a\nSynth s:\n    Osc | wave=b\nPlant p | mode=a\n",
     "let a = Saw\nSynth s:\n    Osc | wave=a\nPlant p | mode=a\n",
     "let a = Manual\nSynth s:\n    Osc | wave=a\n",
     "let a = Saw\nClip c:\n    Note/a\n",

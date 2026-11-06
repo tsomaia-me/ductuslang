@@ -243,17 +243,35 @@ impl Core<'_> {
 }
 
 impl Core<'_> {
-    fn bare_valued(&self, root: u32) -> Result<bool, Internal> {
+    fn bare_valued(
+        &self,
+        root: u32,
+        members: &std::collections::HashSet<u32>,
+        aliases: &mut Vec<(u32, u32)>,
+    ) -> Result<bool, Internal> {
         let mut stack = vec![root];
+        let mut bare = false;
         while let Some(node) = stack.pop() {
-            let (op, _, b, c) = self.ir.node(node)?;
+            let (op, a, b, c) = self.ir.node(node)?;
             if op == Op::If {
+                for read in self.postorder(a)? {
+                    if self.ir.node(read)?.0 == Op::Name && !self.is_bare(read) {
+                        return Ok(false);
+                    }
+                }
                 stack.extend([c, b]);
-            } else if !(op == Op::Name && self.is_bare(node)) {
+            } else if op == Op::Name && self.is_bare(node) {
+                bare = true;
+            } else if op == Op::Name
+                && let DeclRef::Let(at) = self.bound(node)?
+                && members.contains(&at)
+            {
+                aliases.push((node, at));
+            } else {
                 return Ok(false);
             }
         }
-        Ok(true)
+        Ok(bare || !aliases.is_empty())
     }
 
     fn enum_attribute_roots(
@@ -330,35 +348,104 @@ impl Core<'_> {
         if self.bare.is_empty() {
             return Ok(());
         }
-        let mut roots: Vec<(DeclRef, u32)> = Vec::new();
+        let mut shaped: std::collections::HashMap<u32, Vec<(u32, u32)>> =
+            std::collections::HashMap::new();
+        let open: std::collections::HashSet<u32> = (0..self.ir.lets.len())
+            .filter_map(|at| u32::try_from(at).ok())
+            .collect();
         for (at, rec) in self.ir.lets.iter().enumerate() {
             let at = u32::try_from(at).unwrap_or(u32::MAX);
+            let mut aliases = Vec::new();
             if rec.owner == NONE
                 && !rec.is_match
                 && self.annotation_ty(at)?.is_none()
-                && self.bare_valued(rec.value)?
+                && self.bare_valued(rec.value, &open, &mut aliases)?
             {
-                roots.push((DeclRef::Let(at), rec.value));
+                shaped.insert(at, aliases);
             }
         }
-        if roots.is_empty() {
+        let mut members: std::collections::HashSet<u32> = std::collections::HashSet::new();
+        let mut refused: std::collections::HashSet<u32> = std::collections::HashSet::new();
+        let mut order: Vec<u32> = shaped.keys().copied().collect();
+        order.sort_unstable();
+        for start in order {
+            let mut stack = vec![(start, false)];
+            let mut visiting = std::collections::HashSet::new();
+            while let Some((at, done)) = stack.pop() {
+                if members.contains(&at) || refused.contains(&at) {
+                    continue;
+                }
+                let Some(aliases) = shaped.get(&at) else {
+                    refused.insert(at);
+                    continue;
+                };
+                if done {
+                    visiting.remove(&at);
+                    if aliases.iter().all(|(_, target)| members.contains(target)) {
+                        members.insert(at);
+                    } else {
+                        refused.insert(at);
+                    }
+                    continue;
+                }
+                if !visiting.insert(at) {
+                    refused.insert(at);
+                    continue;
+                }
+                stack.push((at, true));
+                for (_, target) in aliases {
+                    if !members.contains(target) && !refused.contains(target) {
+                        if visiting.contains(target) {
+                            refused.insert(*target);
+                        } else {
+                            stack.push((*target, false));
+                        }
+                    }
+                }
+            }
+        }
+        if members.is_empty() {
             return Ok(());
         }
-        let mut reads: std::collections::HashMap<DeclRef, Vec<u32>> =
-            std::collections::HashMap::new();
+        let mut parent: std::collections::HashMap<u32, u32> =
+            members.iter().map(|at| (*at, *at)).collect();
+        let find = |parent: &std::collections::HashMap<u32, u32>, mut at: u32| {
+            while let Some(up) = parent.get(&at).copied().filter(|up| *up != at) {
+                at = up;
+            }
+            at
+        };
+        let mut internal = std::collections::HashSet::new();
+        for at in &members {
+            for (node, target) in shaped.get(at).map(Vec::as_slice).unwrap_or_default() {
+                internal.insert(*node);
+                let (x, y) = (find(&parent, *at), find(&parent, *target));
+                if x != y {
+                    parent.insert(x.max(y), x.min(y));
+                }
+            }
+        }
+        let mut reads: std::collections::HashMap<u32, Vec<u32>> = std::collections::HashMap::new();
         for (local, op) in self.ir.op.iter().enumerate() {
             if *op != Op::Name {
                 continue;
             }
             let node = self.ir.base + u32::try_from(local).unwrap_or(0);
-            let bound = self.bound(node)?;
-            if roots.iter().any(|(decl, _)| *decl == bound) {
-                reads.entry(bound).or_default().push(node);
+            if internal.contains(&node) {
+                continue;
+            }
+            if let DeclRef::Let(at) = self.bound(node)?
+                && members.contains(&at)
+            {
+                reads.entry(find(&parent, at)).or_default().push(node);
             }
         }
         let attributes = self.enum_attribute_roots()?;
-        for (decl, root) in roots {
-            let Some(found) = reads.get(&decl) else {
+        let mut groups: Vec<u32> = members.iter().map(|at| find(&parent, *at)).collect();
+        groups.sort_unstable();
+        groups.dedup();
+        for group in groups {
+            let Some(found) = reads.get(&group) else {
                 continue;
             };
             let mut wanted = None;
@@ -370,7 +457,16 @@ impl Core<'_> {
                     (Some(_) | None, _) => agreed = false,
                 }
             }
-            if agreed && let Some(id) = wanted {
+            let Some(id) = wanted.filter(|_| agreed) else {
+                continue;
+            };
+            let mut roots = Vec::new();
+            for at in &members {
+                if find(&parent, *at) == group {
+                    roots.push(self.let_root(*at)?);
+                }
+            }
+            for root in roots {
                 self.resolve_bare(root, id, true)?;
             }
         }
