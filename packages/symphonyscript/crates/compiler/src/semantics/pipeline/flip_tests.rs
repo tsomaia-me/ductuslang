@@ -1561,3 +1561,17 @@ fn a_vocabulary_type_after_is_draws_unbuilt_construct_and_nothing_of_its_left_op
  {
     assert_eq!(same_as_the_old_engine(&VOCABULARY_TYPE_OPERANDS), 22);
 }
+
+const FOLD_NAMES_CLASHING_WITH_PATTERNS: [&[&str]; 1] = [&[
+    "pattern P():\n    Note/1\n",
+    "let y = for P in [1] into a from 0: a + P\n",
+    "Clip c:\n    P\n    Note/(y)\n",
+]];
+
+#[test]
+fn a_fold_name_equal_to_a_pattern_draws_for_variable_clash_beside_a_valid_twin_in_every_order() {
+    assert_eq!(
+        same_as_the_old_engine(&FOLD_NAMES_CLASHING_WITH_PATTERNS),
+        24
+    );
+}

@@ -122,6 +122,14 @@ impl Core<'_> {
                         .map(|rec| (rec.name, rec.value)),
                 );
             }
+            Some(DeclRef::Pattern(at)) => {
+                let declared = self
+                    .ir
+                    .patterns
+                    .get(at as usize)
+                    .map(|rec| (rec.name, self.ir.base));
+                return self.declared_span(declared);
+            }
             Some(DeclRef::Instance(item)) => {
                 let declared = if let ItemRec::Placement(placement) = self.ir.item(item)? {
                     Some((placement.as_name, self.ir.base))
@@ -130,8 +138,7 @@ impl Core<'_> {
                 };
                 return self.declared_span(declared);
             }
-            Some(DeclRef::None | DeclRef::Pattern(_) | DeclRef::Duplicate | DeclRef::Param(_))
-            | None => return Ok(None),
+            Some(DeclRef::None | DeclRef::Duplicate | DeclRef::Param(_)) | None => return Ok(None),
         };
         let Some(binder) = binder else {
             return Ok(None);
