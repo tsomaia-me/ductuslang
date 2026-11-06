@@ -533,7 +533,9 @@ fn plain_fold(ir: &FlatIr, rec: &ForRec) -> bool {
         && rec.accumulator != NONE
         && (rec.names.0..rec.names.1)
             .all(|binder| scalar_annotation(ir, binder) || enum_annotation(ir, binder))
-        && (scalar_annotation(ir, rec.accumulator) || variable_annotation(ir, rec.accumulator))
+        && (scalar_annotation(ir, rec.accumulator)
+            || variable_annotation(ir, rec.accumulator)
+            || enum_annotation(ir, rec.accumulator))
         && (rec.lets.0..rec.lets.1).all(|at| {
             ir.lets
                 .get(at as usize)

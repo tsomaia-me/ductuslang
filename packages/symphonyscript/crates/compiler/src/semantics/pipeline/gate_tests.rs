@@ -491,3 +491,59 @@ fn a_fixed_type_integer_root_read_in_a_scaled_default_unit_saturates_in_its_own_
         }
     }
 }
+
+const ENUM_ACCUMULATORS: [(&str, &[&str]); 4] = [
+    (
+        "Synth s:\n    Osc | wave=(for w in [Wave::Saw] into a: Mode from Wave::Sine: w)\n",
+        &["Wave::Sine", "w"],
+    ),
+    (
+        "Synth s:\n    Osc | wave=(for w in [Wave::Saw] into a: Wave from 1: w)\n",
+        &["1"],
+    ),
+    (
+        "Synth s:\n    Osc | wave=(for w in [1, 2] into a: Wave from Wave::Sine: w)\n",
+        &["w"],
+    ),
+    (
+        "Synth s:\n    Osc | wave=(for w in [Wave::Saw] into a: Wave from Wave::Sine: w)\n",
+        &[],
+    ),
+];
+
+#[test]
+fn an_enum_annotated_accumulator_refusing_its_start_or_body_draws_type_mismatch_there_as_an_annotated_lets_refused_init_does_510()
+ {
+    let vocabulary = symphonyscript_fixtures::vocabulary();
+    let new = Compiler::new(&vocabulary).expect("the vocabulary compiles");
+    let twin = "Synth t:\n    Osc | wave=(for w in [Wave::Saw] into a: Wave from Wave::Sine: w)\n";
+    for (program, refused) in ENUM_ACCUMULATORS {
+        for order in Orders::Every.of(&[program, twin]) {
+            let text = order.concat();
+            let found = new
+                .checked_by_new_core(&[source(&text)])
+                .unwrap_or_else(|| panic!("the new core takes {text}"));
+            let mut mismatched: Vec<&str> = found
+                .iter()
+                .filter(|diagnostic| {
+                    diagnostic.code == crate::diagnostics::Code::TypeMismatch
+                        && diagnostic.summary.ends_with("`Mode` is expected")
+                        || diagnostic.code == crate::diagnostics::Code::TypeMismatch
+                            && diagnostic.summary.ends_with("`Wave` is expected")
+                            && !text
+                                .get(diagnostic.span.range.start as usize..)
+                                .is_some_and(|rest| rest.starts_with("for "))
+                })
+                .filter_map(|diagnostic| {
+                    text.get(
+                        diagnostic.span.range.start as usize..diagnostic.span.range.end as usize,
+                    )
+                })
+                .collect();
+            mismatched.sort_unstable();
+            let mut wanted = refused.to_vec();
+            wanted.sort_unstable();
+            assert_eq!(mismatched, wanted, "{text}");
+        }
+    }
+}

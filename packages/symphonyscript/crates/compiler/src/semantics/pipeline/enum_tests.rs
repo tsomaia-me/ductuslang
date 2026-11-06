@@ -433,10 +433,9 @@ const LOOP_NAME_ENUMS: [(&str, &str); 11] = [
     ),
 ];
 
-const LOOP_NAME_ENUMS_DECLINED: [&str; 4] = [
+const LOOP_NAME_ENUMS_DECLINED: [&str; 3] = [
     "Synth s:\n    for w: Wave in [Saw, Sine]:\n        Osc | wave=w\n",
     "Synth s:\n    Osc | wave=(for w: Wave in [Saw, Sine] into a from Wave::Saw: w)\n",
-    "Synth s:\n    Osc | wave=(for w in [Wave::Saw] into a: Mode from Wave::Sine: w)\n",
     "Synth s:\n    for w: Wave in [Wave::Saw, Wave::Sine]:\n        Osc | wave=(if w is Saw then Wave::Sine else w)\n",
 ];
 
