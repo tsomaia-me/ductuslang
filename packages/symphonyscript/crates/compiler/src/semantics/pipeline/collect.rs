@@ -31,7 +31,7 @@ impl Core<'_> {
         None
     }
 
-    fn top_name(&self, top: TopRec) -> Result<Option<(u32, DeclRef)>, Internal> {
+    pub(super) fn top_name(&self, top: TopRec) -> Result<Option<(u32, DeclRef)>, Internal> {
         Ok(match top {
             TopRec::Let(at) => {
                 let rec = self

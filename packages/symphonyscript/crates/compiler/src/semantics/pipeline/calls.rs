@@ -99,9 +99,14 @@ impl Core<'_> {
         for function in 0..self.owners() {
             for root in self.function_roots(function)? {
                 for node in self.with_receivers(root)? {
-                    let local = self.local(node)?;
-                    if let Some(slot) = self.body_of.get_mut(local) {
-                        *slot = function;
+                    let (op, callee, _, _) = self.ir.node(node)?;
+                    let named = matches!(op, Op::Call | Op::NamedCall)
+                        && self.ir.node(callee)?.0 == Op::Name;
+                    for marked in std::iter::once(node).chain(named.then_some(callee)) {
+                        let local = self.local(marked)?;
+                        if let Some(slot) = self.body_of.get_mut(local) {
+                            *slot = function;
+                        }
                     }
                 }
             }
@@ -544,6 +549,7 @@ impl Core<'_> {
                     callee,
                     format!("`{text}` is not a function"),
                 )?;
+                self.not_callables_drawn.insert(callee);
                 return Ok(Ok(Fact::PLACEHOLDER));
             }
             return Ok(Err(Declined(Reason::FunctionValue)));
@@ -1298,5 +1304,33 @@ impl Core<'_> {
             .iter()
             .find(|(known, _)| *known == text)
             .map(|(known, _)| *known))
+    }
+}
+
+impl Core<'_> {
+    pub fn uncalled_not_callables(&mut self) -> Result<(), Internal> {
+        for local in 0..self.ir.op.len() {
+            let reached = self.reached.get(local).copied().unwrap_or(false);
+            if !reached || !matches!(self.ir.op.get(local), Some(Op::Call | Op::NamedCall)) {
+                continue;
+            }
+            let node = self.ir.base + u32::try_from(local).unwrap_or(0);
+            if !self.not_callable(node)? {
+                continue;
+            }
+            let callee = self.ir.node(node)?.1;
+            if self.not_callables_drawn.contains(&callee) {
+                continue;
+            }
+            let name = self.ir.node(callee)?.1;
+            let text = self.ir.name_text(name).unwrap_or_default().to_string();
+            let span = self.node_span(callee)?;
+            self.draw(
+                Code::NotCallable,
+                span,
+                format!("`{text}` is not a function"),
+            );
+        }
+        Ok(())
     }
 }

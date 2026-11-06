@@ -5345,6 +5345,21 @@ pub const CLASSES: &[Class] = &[
     },
     Class {
         ledger: "476",
+        rule: "a cell rule's `for` expression draws range-bound at a range bound that reads a cell with no maximum beside a fault later on its line, in its head, its start or its body, as the program with that fault repaired does (DECISIONS.md 2026-11-03: a diagnostic stands beside another fault exactly when the repaired program still draws it), where the old engine draws nothing at the bound (`state total = for i in 0..n into sum from 0: sum + zz`)",
+        explains: range_bound_beside_a_faulty_fold,
+    },
+    Class {
+        ledger: "476",
+        rule: "a read of a scalar-annotated cell beside the cell's refused init keeps the cell's type, so its member draws unknown-attribute and its join with an array array-operand, as the program with the init repaired to a valid value of the cell's type does (DECISIONS.md 2026-11-03), where the old engine draws nothing at the read (`state held([]): i32` with `held.size` or `held + [note]`)",
+        explains: read_of_a_cell_beside_its_refused_init,
+    },
+    Class {
+        ledger: "476",
+        rule: "a slice whose bound holds a syntax fault is still an array, so a position of a single value draws type-mismatch at it, as the program with the bound repaired does (DECISIONS.md 2026-11-03), where the old engine draws nothing at the slice (`Note/(xs[1 % ..3])`)",
+        explains: slice_with_a_faulty_bound,
+    },
+    Class {
+        ledger: "476",
         rule: "a `to` path whose candidate list names an instance declared by a placement on a line holding a syntax fault draws nothing of that candidate, the name being a placeholder wherever it is used (ARCHITECTURE §7), where the old engine reads the instance and draws to-candidates or unknown-attribute at the path (`Clip chorus(:` with `gain=to.hook.velocity: [chorus, bridge][section]`)",
         explains: to_through_a_faulty_line_name,
     },
@@ -6248,4 +6263,61 @@ fn fixed_type_operand_of_a_cell_rule(seen: &Seen<'_>, change: Change, at: &Drawn
         seen.program
             .contains(&format!("state {name} = {conversion}"))
     })
+}
+
+fn range_bound_beside_a_faulty_fold(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
+    if change != Change::Added || at.0 != "range-bound" {
+        return false;
+    }
+    let line = seen.line(at.1);
+    let rule = lines_at(seen.program)
+        .get(line)
+        .is_some_and(|(_, text)| text.starts_with("state ") && text.contains(" into "));
+    rule && !seen
+        .old
+        .iter()
+        .any(|drawn| drawn.0 == "range-bound" && drawn.1 == at.1)
+        && seen
+            .old
+            .iter()
+            .any(|drawn| drawn.0 != "range-bound" && drawn.1 >= at.2 && seen.line(drawn.1) == line)
+}
+
+fn read_of_a_cell_beside_its_refused_init(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
+    if change != Change::Added || !matches!(at.0.as_str(), "unknown-attribute" | "array-operand") {
+        return false;
+    }
+    let words: Vec<&str> = seen
+        .text(at)
+        .split(|c: char| !(c.is_alphanumeric() || c == '_'))
+        .filter(|word| !word.is_empty())
+        .collect();
+    lines_at(seen.program).into_iter().any(|(start, line)| {
+        let Some((cell, rest)) = line
+            .strip_prefix("state ")
+            .and_then(|rest| rest.split_once('('))
+        else {
+            return false;
+        };
+        words.contains(&cell)
+            && rest
+                .rsplit_once("): ")
+                .is_some_and(|(_, ty)| !ty.is_empty() && ty.chars().all(char::is_alphanumeric))
+            && seen.old.iter().any(|drawn| {
+                drawn.0 == "type-mismatch" && drawn.1 >= start && drawn.2 <= start + line.len()
+            })
+    })
+}
+
+fn slice_with_a_faulty_bound(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
+    let text = seen.text(at);
+    change == Change::Added
+        && at.0 == "type-mismatch"
+        && text.contains("..")
+        && text.ends_with(']')
+        && seen.old.iter().any(|drawn| {
+            matches!(drawn.0.as_str(), "expression-syntax" | "misplaced-caret")
+                && drawn.1 >= at.1
+                && drawn.2 <= at.2
+        })
 }

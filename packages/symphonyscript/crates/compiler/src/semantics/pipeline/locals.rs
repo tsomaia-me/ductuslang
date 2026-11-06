@@ -252,6 +252,21 @@ impl Core<'_> {
                     format!("`{text}` equals a visible name, and a `for` binds only new names");
                 let duplicate = !enclosing
                     && self.decl.get(name.sym as usize).copied() == Some(DeclRef::Duplicate);
+                let faulty_placement = if duplicate {
+                    self.faulty_placement_span(name.sym)?
+                } else {
+                    None
+                };
+                if let Some(visible) = faulty_placement {
+                    self.draw_local(
+                        Code::ForVariableClash,
+                        name.span.clone(),
+                        summary,
+                        "rename the name the `for` binds",
+                        (visible, "the visible name it equals"),
+                    );
+                    continue;
+                }
                 if (vocabulary && !(enclosing || top)) || duplicate {
                     let diagnostic =
                         Diagnostic::new(Code::ForVariableClash, name.span.clone(), summary)
@@ -359,5 +374,29 @@ impl Core<'_> {
         let file = self.ir.files.partition_point(|file| file.names.1 <= name);
         let file = u32::try_from(file).unwrap_or(0);
         Ok(Some(self.span(file, entry.lo, entry.hi)))
+    }
+
+    fn faulty_placement_span(&self, sym: u32) -> Result<Option<Span>, Internal> {
+        let mut found = None;
+        let mut declared = 0;
+        for top in &self.ir.top {
+            let Some((name, decl)) = self.top_name(*top)? else {
+                continue;
+            };
+            if self.ir.name(name).is_none_or(|entry| entry.sym.0 != sym) {
+                continue;
+            }
+            declared += 1;
+            if let DeclRef::Instance(item) = decl
+                && let ItemRec::Placement(placement) = self.ir.item(item)?
+                && placement.faulty_line
+            {
+                found = Some(placement.as_name);
+            }
+        }
+        match found {
+            Some(name) if declared == 1 => self.declared_span(Some((name, self.ir.base))),
+            Some(_) | None => Ok(None),
+        }
     }
 }

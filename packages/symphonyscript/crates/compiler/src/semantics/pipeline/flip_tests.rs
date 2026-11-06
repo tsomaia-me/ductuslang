@@ -2541,3 +2541,55 @@ fn a_flexible_argument_fits_at_each_use_of_its_parameter_and_a_reactive_body_ref
  {
     assert_eq!(same_as_the_old_engine(&PARAMETER_FITS), 96);
 }
+
+const NOT_CALLABLE_ANYWHERE: [&[&str]; 12] = [
+    &["state k(1)\nlet j = k(1)\n", "Clip c:\n    Note/1\n"],
+    &["let k = 1\nlet j = k(1)\n", "Clip c:\n    Note/1\n"],
+    &["let k = 1\nfn g(): k(1)\n", "Clip c:\n    Note/1\n"],
+    &[
+        "state k(1)\nfn g(): k(1)\n",
+        "Clip c:\n    Note/(g() + g())\n",
+    ],
+    &["state k(1)\nlet j = k(1) +\n", "Clip c:\n    Note/1\n"],
+    &[
+        "state k(1)\nlet j = k(1)\nlet m = j + 1\n",
+        "Clip c:\n    Note/m\n",
+    ],
+    &["fn h(p): p(1)\n", "Clip c:\n    Note/(h(2))\n"],
+    &["fn h(p): p(1 + true)\n", "Clip c:\n    Note/(h(2))\n"],
+    &["fn h(p): p(1)\n", "Clip c:\n    Note/1\n"],
+    &["fn h(p): p\n", "Clip c:\n    Note/(h(2))\n"],
+    &["fn h(p): p(zz)\n", "Clip c:\n    Note/(h(2) + h(3))\n"],
+    &["fn h(abs): abs(1)\n", "Clip c:\n    Note/(h(2))\n"],
+];
+
+#[test]
+fn a_callee_naming_a_value_or_a_parameter_draws_not_callable_once_outside_every_call_and_at_each_call_inside_one_beside_a_valid_twin_in_every_order()
+ {
+    assert_eq!(same_as_the_old_engine(&NOT_CALLABLE_ANYWHERE), 72);
+}
+
+const CLASH_WITH_A_FAULTY_PLACEMENT: [&[&str]; 4] = [
+    &[
+        "state rises = for i in 1..3 into n from 0: n + 1\nxstate n(4)\n",
+        "Clip c:\n    Note/rises\n",
+    ],
+    &[
+        "state rises = for i in 1..3 into n from 0: n + 1\nClip n(4)\n",
+        "Clip c:\n    Note/rises\n",
+    ],
+    &[
+        "state rises = for i in 1..3 into n from 0: n + 1\nstate n(4) +\n",
+        "Clip c:\n    Note/rises\n",
+    ],
+    &[
+        "state rises = for i in 1..3 into n from 0: n + 1\nlet n = 4\nlet n = 5\n",
+        "Clip c:\n    Note/rises\n",
+    ],
+];
+
+#[test]
+fn a_for_name_equal_to_a_placement_on_a_faulty_line_draws_its_clash_with_that_name_as_related_beside_a_valid_twin_in_every_order()
+ {
+    assert_eq!(same_as_the_old_engine(&CLASH_WITH_A_FAULTY_PLACEMENT), 24);
+}
