@@ -5352,7 +5352,7 @@ pub const CLASSES: &[Class] = &[
     },
     Class {
         ledger: "476",
-        rule: "a gate whose value holds a refused index, slice bound, conversion or condition draws the faults the type those faults leave known gives, condition-type at the value where it is no `bool`, type-mismatch or array-operand at an operand of `and` or `or` (ARCHITECTURE §7: a value whose type an error leaves known keeps that type), as the program with the faults repaired draws on both engines, where the old engine is silent; and a gate that is an array choice draws one condition-type, where the old engine draws a second at the same span; a gate value refused as no `bool` is checked in its own type, so a literal inside it that does not fit draws does-not-fit (ARCHITECTURE §7: an operand that a refused condition holds is checked in its own type), where the old engine checks nothing inside it",
+        rule: "a gate whose value holds a refused index, slice bound, conversion or condition draws the faults the type those faults leave known gives, condition-type at the value where it is no `bool`, type-mismatch or array-operand at an operand of `and` or `or` (ARCHITECTURE §7: a value whose type an error leaves known keeps that type), as the program with the faults repaired draws on both engines, where the old engine is silent; and a gate that is an array choice draws one condition-type, where the old engine draws a second at the same span; a gate value refused as no `bool` is checked in its own type, so a literal inside it that does not fit draws does-not-fit (ARCHITECTURE §7: an operand that a refused condition holds is checked in its own type), where the old engine checks nothing inside it, a negated choice whose arms unify in `u8` saturating there draws constant-overflow (SPEC §4.6); and the old engine's condition-type at a slice condition whose bound holds a refused index, which the program with the index repaired draws on neither engine, does not draw",
         explains: gate_beside_its_faults,
     },
     Class {
@@ -5964,10 +5964,29 @@ fn gate_beside_its_faults(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
                 drawn.0 == "condition-type" && drawn.1 > start && drawn.1 <= at.1 && at.2 <= drawn.2
             });
     }
+    if change == Change::Added && at.0 == "constant-overflow" {
+        let text = seen.text(at);
+        return at.1 > start
+            && text.starts_with("-(if ")
+            && seen.program.lines().any(|declared| {
+                declared
+                    .strip_prefix("state ")
+                    .and_then(|rest| rest.split_once('('))
+                    .is_some_and(|(name, rest)| rest.ends_with("): u8") && reads_word(text, name))
+            });
+    }
     if change == Change::Removed {
+        let text = seen.text(at);
         return at.0 == "condition-type"
             && at.1 > start
-            && seen.new.iter().any(|drawn| drawn == at);
+            && (seen.new.iter().any(|drawn| drawn == at)
+                || (text.ends_with("..]")
+                    && seen.old.iter().any(|drawn| {
+                        drawn.0 == "index-out-of-range" && drawn.1 > at.1 && drawn.2 <= at.2
+                    })
+                    && seen.new.iter().any(|drawn| {
+                        drawn.0 == "condition-type" && drawn.1 < at.1 && at.2 < drawn.2
+                    })));
     }
     change == Change::Added
         && at.1 > start
