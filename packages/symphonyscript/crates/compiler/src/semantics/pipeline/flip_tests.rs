@@ -742,3 +742,37 @@ fn a_when_block_inside_a_placement_for_body_or_a_pattern_body_draws_what_the_old
  {
     assert_eq!(same_as_the_old_engine(&NESTED_WHENS), 84);
 }
+
+const NESTED_BUNDLES: [&[&str]; 9] = [
+    &[
+        "pattern Stab(default root, gap = 3):\n    [Note/root Note/(root + gap)]\n    Note/(root + 12)\nClip c:\n    Stab/55 | gap=5\n    Stab/55 | gap=true\n    Stab/55 | gap=3000000000\n",
+    ],
+    &[
+        "Clip c:\n    for i in 0..3:\n        [Note/(i) Note/(i + 1)]\n        (Note/(i) when i > 1)\n",
+    ],
+    &[
+        "pattern P(default x):\n    [Note/x Note/(x + true)]\n    (Note/x)\n",
+        "Clip c:\n    P/1\n    P/2\n",
+    ],
+    &[
+        "state live(true)\n",
+        "Clip c:\n    for i in 0..3:\n        when live:\n            [Note/(i) Note/(3000000000)]\n",
+    ],
+    &[
+        "Clip c:\n    for i in 0..3:\n        [Note as n /(i) Note/(i + 1)]\n        (Note as m /(i))\n",
+    ],
+    &["Clip c:\n    for i in 0..3:\n        [Note/(i) Bogus/1]\n"],
+    &["Clip c:\n    for i in 0..0:\n        [Note/(i) (Note/(i) | velocity=true)]\n"],
+    &["Rig r:\n    for i in 0..2:\n        [Lamp/0.2 Note/1]\n"],
+    &[
+        "state lit(0.5)\n",
+        "pattern P(default x):\n    [Lamp/x (Lamp/0.5 | hue=lit)]\n",
+        "Rig r:\n    P/0.2\n",
+    ],
+];
+
+#[test]
+fn a_bundle_or_a_parenthesized_placement_inside_a_placement_for_body_or_a_pattern_body_draws_what_the_old_engine_draws_beside_a_valid_twin_in_every_order()
+ {
+    assert_eq!(same_as_the_old_engine(&NESTED_BUNDLES), 48);
+}

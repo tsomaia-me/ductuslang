@@ -134,7 +134,14 @@ pub(crate) fn loop_body(ir: &FlatIr, block: u32) -> Result<(Vec<u32>, Vec<u32>),
                         }
                     }
                 }
-                ItemRec::Paren(_) | ItemRec::Bundle(_) => {}
+                ItemRec::Bundle(rec) => items.extend(
+                    ir.members
+                        .get(rec.members.0 as usize..rec.members.1 as usize)
+                        .unwrap_or_default()
+                        .iter()
+                        .filter(|member| **member != NONE),
+                ),
+                ItemRec::Paren(_) => {}
             }
         }
     }
@@ -894,7 +901,9 @@ impl Core<'_> {
                     ItemRec::Wire(wire) if self.bare_wire(wire)? => {}
                     ItemRec::Wire(wire) if self.plain_wire(wire)? => self.unrun_wire(wire, file)?,
                     ItemRec::When(_) => items.extend(self.when_items(child).into_iter().rev()),
-                    ItemRec::Wire(_) | ItemRec::Bundle(_) | ItemRec::Paren(_) => {
+                    ItemRec::Bundle(_) => items.extend(self.bundle_items(child)),
+                    ItemRec::Paren(inner) if inner != NONE => items.push(inner),
+                    ItemRec::Wire(_) | ItemRec::Paren(_) => {
                         return Ok(Err(Declined(Reason::BodyItem)));
                     }
                 }
@@ -1100,7 +1109,9 @@ impl Core<'_> {
                             .rev(),
                     ),
                     ItemRec::When(_) => items.extend(self.when_items(child).into_iter().rev()),
-                    ItemRec::Wire(_) | ItemRec::Bundle(_) | ItemRec::Paren(_) => {
+                    ItemRec::Bundle(_) => items.extend(self.bundle_items(child)),
+                    ItemRec::Paren(inner) if inner != NONE => items.push(inner),
+                    ItemRec::Wire(_) | ItemRec::Paren(_) => {
                         return Ok(Err(Declined(Reason::BodyItem)));
                     }
                 }
@@ -1202,7 +1213,9 @@ impl Core<'_> {
                             .unwrap_or_default(),
                     ),
                     ItemRec::When(_) => items.extend(self.when_items(child)),
-                    ItemRec::Wire(_) | ItemRec::Bundle(_) | ItemRec::Paren(_) => unknown = true,
+                    ItemRec::Bundle(_) => items.extend(self.bundle_items(child)),
+                    ItemRec::Paren(inner) if inner != NONE => items.push(inner),
+                    ItemRec::Wire(_) | ItemRec::Paren(_) => unknown = true,
                 }
             }
         }
@@ -1257,10 +1270,15 @@ impl Core<'_> {
                         items.extend(self.when_items(child).into_iter().rev());
                         continue;
                     }
-                    ItemRec::Placement(_)
-                    | ItemRec::For(_)
-                    | ItemRec::Bundle(_)
-                    | ItemRec::Paren(_) => continue,
+                    ItemRec::Bundle(_) => {
+                        items.extend(self.bundle_items(child).into_iter().rev());
+                        continue;
+                    }
+                    ItemRec::Paren(inner) if inner != NONE => {
+                        items.push(inner);
+                        continue;
+                    }
+                    ItemRec::Placement(_) | ItemRec::For(_) | ItemRec::Paren(_) => continue,
                 };
                 if !self.ir.named(name) {
                     continue;
@@ -1334,7 +1352,9 @@ impl Core<'_> {
                             .unwrap_or_default(),
                     ),
                     ItemRec::When(_) => items.extend(self.when_items(child)),
-                    ItemRec::Wire(_) | ItemRec::Bundle(_) | ItemRec::Paren(_) => {}
+                    ItemRec::Bundle(_) => items.extend(self.bundle_items(child)),
+                    ItemRec::Paren(inner) if inner != NONE => items.push(inner),
+                    ItemRec::Wire(_) | ItemRec::Paren(_) => {}
                 }
             }
         }

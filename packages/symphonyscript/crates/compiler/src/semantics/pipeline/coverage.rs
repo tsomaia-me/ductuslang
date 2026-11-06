@@ -295,7 +295,6 @@ fn item_landed(
             .unwrap_or_default();
         return !rec.faulty
             && rec.each.is_none()
-            && u32::try_from(at).is_ok_and(|at| nested.binary_search(&at).is_err())
             && !members.is_empty()
             && members.iter().all(|member| {
                 let member = match ir.items.get(*member as usize) {
