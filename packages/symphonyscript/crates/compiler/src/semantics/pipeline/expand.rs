@@ -176,6 +176,22 @@ impl Core<'_> {
             .blocks
             .get(body as usize)
             .ok_or(Internal::missed("IR block"))?;
+        for at in block.members.0..block.members.1 {
+            let member = self.ir.members.get(at as usize).copied().unwrap_or(NONE);
+            let member = match self.ir.item(member).copied() {
+                Ok(ItemRec::Paren(inner)) => inner,
+                _ => member,
+            };
+            if let Ok(ItemRec::Placement(placement)) = self.ir.item(member).copied() {
+                let known = self
+                    .ir
+                    .name_text(placement.kind)
+                    .is_some_and(|kind| self.vocabulary.node_kind_named(kind).is_some());
+                if !known {
+                    return Ok(Err(Declined(Reason::BodyItem)));
+                }
+            }
+        }
         let mut work = vec![
             Work::Members(block.members.0, block.members.1, record.env),
             Work::Items(block.items.0, block.items.1, record.env),

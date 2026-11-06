@@ -331,6 +331,7 @@ fn item_landed(
     }
     ir.blocks.get(placement.body as usize).is_some_and(|block| {
         let inline = block.items.0 == block.items.1
+            && (!top || ir.named(placement.as_name))
             && u32::try_from(at).is_ok_and(|at| nested.binary_search(&at).is_err())
             && ir
                 .members
