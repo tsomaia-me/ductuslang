@@ -251,9 +251,10 @@ impl Core<'_> {
                 .rev()
                 .find_map(|at| reads.get(*at).copied().flatten())
         };
+        let integer = self.fact(rec.rule)?.leaf == Leaf::Int;
         let runs = [
             reads.first().copied().flatten(),
-            widest(&[1, 2]),
+            widest(&[1, 2]).filter(|_| !integer),
             reads.get(3).copied().flatten(),
             widest(&[4, 5, 6]),
         ];

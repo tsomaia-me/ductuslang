@@ -520,3 +520,111 @@ fn a_history_read_of_an_unannotated_let_is_typed_as_the_cell_the_let_repaired_to
         );
     }
 }
+
+const FIXED_OPERANDS: [(&[&str], &[Code]); 10] = [
+    (
+        &["state big(1)\n", "state k = i32(big) + 300000000000\n"],
+        &[Code::DoesNotFit],
+    ),
+    (
+        &[
+            "state big(1)\n",
+            "state k = i32(big) + 300000000000\n",
+            "Clip c:\n    Note | velocity=k\n",
+        ],
+        &[Code::DoesNotFit],
+    ),
+    (
+        &[
+            "state big(1)\n",
+            "state k = u8(big) + 300\n",
+            "Clip c:\n    Note when k > 1\n",
+        ],
+        &[Code::DoesNotFit],
+    ),
+    (
+        &[
+            "state big(1)\n",
+            "state k = u8(big) + 300\n",
+            "Clip c:\n    Note/k\n",
+        ],
+        &[],
+    ),
+    (
+        &[
+            "state big(1)\n",
+            "state k = big + 16777217\n",
+            "Clip c:\n    Note | velocity=k\n",
+        ],
+        &[],
+    ),
+    (
+        &[
+            "state big(1)\n",
+            "pattern G(default x):\n    Note\n",
+            "Clip c:\n    G/(i32(big) + 300000000000)\n",
+        ],
+        &[Code::DoesNotFit],
+    ),
+    (
+        &[
+            "state big(1.5)\n",
+            "pattern G(default x):\n    Note | velocity=x\n",
+            "Clip c:\n    G/(u8(big) + 300)\n",
+        ],
+        &[],
+    ),
+    (
+        &[
+            "state x(1)\n",
+            "state s = i32(x)\n",
+            "Clip c:\n    Note when s > 3000000000\n",
+        ],
+        &[Code::DoesNotFit],
+    ),
+    (
+        &[
+            "state q(0): i32\n",
+            "Clip c:\n    Note when ((i32(1) div i32(1)) % (300000000000 * [1, 2][1]))\n",
+        ],
+        &[Code::ConditionType, Code::DoesNotFit],
+    ),
+    (
+        &[
+            "state q(0): i32\n",
+            "Clip c:\n    Note when ((300000000001 % 1) div (if i32(true) then q else 300000000000))\n",
+        ],
+        &[
+            Code::ConditionType,
+            Code::ConditionType,
+            Code::ConversionType,
+            Code::DoesNotFit,
+        ],
+    ),
+];
+
+#[test]
+fn a_fixed_type_operand_gives_its_literals_its_type_in_a_derived_cell_with_no_integer_use_an_unread_argument_a_comparison_and_a_refused_gate_in_every_order()
+ {
+    let vocabulary = symphonyscript_fixtures::vocabulary();
+    let new = Compiler::new(&vocabulary).expect("the vocabulary compiles");
+    let mut programs = 0;
+    for (items, codes) in FIXED_OPERANDS {
+        let mut expected = codes.to_vec();
+        expected.sort_by_key(|code| format!("{code:?}"));
+        for text in twins(items) {
+            let found = new
+                .checked_by_new_core(&[source(&text)])
+                .unwrap_or_else(|| panic!("the new core takes {text}"));
+            let mut found: Vec<Code> = found
+                .iter()
+                .map(|diagnostic| diagnostic.code)
+                .filter(|code| *code != Code::NoEntryInstance)
+                .collect();
+            found.sort_by_key(|code| format!("{code:?}"));
+            assert_eq!(found, expected, "{text}");
+            programs += 1;
+        }
+    }
+    assert_eq!(programs, 186);
+}

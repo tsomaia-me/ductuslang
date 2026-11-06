@@ -5348,8 +5348,13 @@ pub const CLASSES: &[Class] = &[
     },
     Class {
         ledger: "476",
-        rule: "a gate whose value holds a refused index, slice bound, conversion or condition draws the faults the type those faults leave known gives, condition-type at the value where it is no `bool`, type-mismatch or array-operand at an operand of `and` or `or` (ARCHITECTURE §7: a value whose type an error leaves known keeps that type), as the program with the faults repaired draws on both engines, where the old engine is silent; and a gate that is an array choice draws one condition-type, where the old engine draws a second at the same span",
+        rule: "a gate whose value holds a refused index, slice bound, conversion or condition draws the faults the type those faults leave known gives, condition-type at the value where it is no `bool`, type-mismatch or array-operand at an operand of `and` or `or` (ARCHITECTURE §7: a value whose type an error leaves known keeps that type), as the program with the faults repaired draws on both engines, where the old engine is silent; and a gate that is an array choice draws one condition-type, where the old engine draws a second at the same span; a gate value refused as no `bool` is checked in its own type, so a literal inside it that does not fit draws does-not-fit (ARCHITECTURE §7: an operand that a refused condition holds is checked in its own type), where the old engine checks nothing inside it",
         explains: gate_beside_its_faults,
+    },
+    Class {
+        ledger: "476",
+        rule: "a derived cell's rule or a reactive pattern argument whose operand is a conversion of a cell to `u8` or `i32` computes in that fixed type where no integer use gives it a width, so a literal beside it that does not fit that type draws does-not-fit at the literal (SPEC §4.1: the fit check applies where a fixed-type operand gives a literal its type; §4.4 and §4.5: an integer derived cell's width is the widest its integer uses expect, else the widest of its operands), as the comparison with such a cell gives a literal the cell's type, where the old engine is silent or draws it only for some inits of the cell; such an argument read at a float use is the expression itself at that use (SPEC §6.6, ledger 483), the conversion widening into the float type before the operation (SPEC §4.2), so the literal fits, where the old engine draws does-not-fit in the conversion's type for some inits",
+        explains: fixed_type_operand_of_a_cell_rule,
     },
 ];
 
@@ -5949,6 +5954,12 @@ fn gate_beside_its_faults(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
         return false;
     };
     let start = at.1 - (line.len() - gate);
+    if change == Change::Added && at.0 == "does-not-fit" {
+        return at.1 > start
+            && seen.new.iter().any(|drawn| {
+                drawn.0 == "condition-type" && drawn.1 > start && drawn.1 <= at.1 && at.2 <= drawn.2
+            });
+    }
     if change == Change::Removed {
         return at.0 == "condition-type"
             && at.1 > start
@@ -5964,4 +5975,42 @@ fn gate_beside_its_faults(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
         && seen.old.iter().any(|drawn| {
             drawn.0 != at.0 && drawn.1 > start && seen.line(drawn.1) == seen.line(at.1)
         })
+}
+
+fn fixed_type_operand_of_a_cell_rule(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
+    if change == Change::Restated || at.0 != "does-not-fit" {
+        return false;
+    }
+    let literal = seen.text(at);
+    if literal.is_empty() || !literal.bytes().all(|byte| byte.is_ascii_digit()) {
+        return false;
+    }
+    let line = seen.before(at).rsplit('\n').next().unwrap_or_default();
+    let cell = |name: &str| seen.program.contains(&format!("state {name}("));
+    let converted = |text: &str| {
+        ["u8(", "i32("].iter().any(|conversion| {
+            text.rsplit_once(conversion).is_some_and(|(_, rest)| {
+                rest.split_once(')').is_some_and(|(name, operator)| {
+                    cell(name) && matches!(operator, " + " | " - " | " * ")
+                })
+            })
+        })
+    };
+    if change == Change::Removed {
+        return line.contains("/(") && converted(line);
+    }
+    if (line.starts_with("state ") || line.contains("/(")) && converted(line) {
+        return true;
+    }
+    let Some(name) = line
+        .trim_start()
+        .strip_prefix("Note when ")
+        .and_then(|rest| rest.strip_suffix(" > "))
+    else {
+        return false;
+    };
+    ["u8(", "i32("].iter().any(|conversion| {
+        seen.program
+            .contains(&format!("state {name} = {conversion}"))
+    })
 }
