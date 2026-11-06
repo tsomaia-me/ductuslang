@@ -5485,8 +5485,7 @@ fn gate_beside_the_twin_pass(seen: &Seen<'_>, change: Change, at: &Drawn) -> boo
         .map_or(seen.program.len(), |found| at.2 + found);
     let line = seen.program.get(start..end).unwrap_or_default();
     let gate = line.find(" when ").map(|found| start + found);
-    change == Change::Removed
-        && matches!(at.0.as_str(), "condition-type" | "not-an-array")
+    change != Change::Restated
         && gate.is_some_and(|gate| gate < at.1)
         && seen.program.get(at.1..end).is_some_and(|rest| {
             rest.contains('q')
@@ -5510,7 +5509,7 @@ pub const TWIN_PASS_CLASSES: &[Class] = &[
     },
     Class {
         ledger: "476, the twin pass's (R4b)",
-        rule: "at a gate holding a name placeholder, a condition-type or not-an-array that every value of the placeholder draws on the new core (a conversion's target type, a refused condition, a sliced base that is no array), which the twin pass misses because a gate's twins run on the whole program on the old engine, whose runs lose that type for some values (488's and 497's kind)",
+        rule: "at a gate holding a name placeholder, the twin pass runs the whole-program twins on the old engine, so the gate draws the old engine's set (a conversion's target type, a refused condition, a choice's arms, a sliced base, an index or a fit beside the placeholder), where the new core's twins differ (488's and 497's kind)",
         explains: gate_beside_the_twin_pass,
     },
 ];

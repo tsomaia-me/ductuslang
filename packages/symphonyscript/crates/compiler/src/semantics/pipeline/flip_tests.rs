@@ -1514,3 +1514,16 @@ fn an_annotated_let_whose_init_is_a_call_checks_the_body_result_against_the_anno
  {
     assert_eq!(same_as_the_old_engine(&ANNOTATED_CALLS), 264);
 }
+
+const REFERENCES_BESIDE_ARRAYS: [&[&str]; 4] = [
+    &["Clip c:\n    Note/(i32(q / [1, 2]))\n", "let q = c\n"],
+    &["Clip c:\n    Note/(u8([1, 2] and q))\n", "let q = c\n"],
+    &["Clip c:\n    Note/(q / [1, 2])\n", "let q = c\n"],
+    &["Clip c:\n    Note when q < [1, 2]\n", "let q = c\n"],
+];
+
+#[test]
+fn a_reference_operand_beside_an_array_operand_draws_array_operand_beside_a_valid_twin_in_every_order()
+ {
+    assert_eq!(same_as_the_old_engine(&REFERENCES_BESIDE_ARRAYS), 24);
+}

@@ -73,6 +73,10 @@ impl Core<'_> {
         if !facts.iter().any(|fact| fact.node) {
             return Ok(Ok(None));
         }
+        let joined = facts.iter().any(|fact| !fact.node && !fact.dims.is_empty());
+        if joined && binary_of(op).is_some() && op != Op::Add {
+            return Ok(Ok(None));
+        }
         match op {
             Op::Array => self.reference_array(node, &facts),
             Op::If => self.reference_choice(node, a, &facts),
