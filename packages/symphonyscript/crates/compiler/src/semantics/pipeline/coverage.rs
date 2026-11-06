@@ -150,13 +150,27 @@ pub(crate) fn covers(ir: &FlatIr) -> bool {
         .filter_map(|rec| ir.name(rec.name).map(|entry| entry.sym.0))
         .collect();
     patterns.sort_unstable();
+    let mut tops: Vec<u32> = ir
+        .top
+        .iter()
+        .filter_map(|top| match top {
+            TopRec::Placement(at) => Some(*at),
+            _ => None,
+        })
+        .collect();
+    tops.sort_unstable();
+    let mut blocks = ir.block_items.clone();
+    blocks.sort_unstable();
     ir.fors.iter().all(|rec| plain_fold(ir, rec))
         && ir.cells.iter().all(|rec| plain_cell(ir, rec))
-        && ir
-            .items
-            .iter()
-            .enumerate()
-            .all(|(at, item)| item_landed(ir, item, (&members, &in_loops, &patterns, &nested), at))
+        && ir.items.iter().enumerate().all(|(at, item)| {
+            item_landed(
+                ir,
+                item,
+                (&members, &in_loops, &patterns, &nested, &tops, &blocks),
+                at,
+            )
+        })
 }
 
 fn annotated(ir: &FlatIr, binder: u32) -> bool {
@@ -249,7 +263,14 @@ fn loop_children(ir: &FlatIr) -> Vec<u32> {
 fn item_landed(
     ir: &FlatIr,
     item: &ItemRec,
-    (members, in_loops, patterns, nested): (&[u32], &[u32], &[u32], &[u32]),
+    (members, in_loops, patterns, nested, tops, blocks): (
+        &[u32],
+        &[u32],
+        &[u32],
+        &[u32],
+        &[u32],
+        &[u32],
+    ),
     at: usize,
 ) -> bool {
     if !landed(item_slice(item)) {
@@ -291,7 +312,7 @@ fn item_landed(
             && u32::try_from(at).is_ok_and(|at| nested.binary_search(&at).is_err());
     }
     if matches!(item, ItemRec::Line(_)) {
-        return u32::try_from(at).is_ok_and(|at| ir.block_items.contains(&at));
+        return u32::try_from(at).is_ok_and(|at| blocks.binary_search(&at).is_ok());
     }
     let ItemRec::Placement(placement) = item else {
         return true;
@@ -299,7 +320,7 @@ fn item_landed(
     let used = ir
         .name(placement.kind)
         .is_some_and(|entry| patterns.binary_search(&entry.sym.0).is_ok());
-    let top = u32::try_from(at).is_ok_and(|at| ir.top.contains(&TopRec::Placement(at)));
+    let top = u32::try_from(at).is_ok_and(|at| tops.binary_search(&at).is_ok());
     if (placement.gate != NONE && used && top)
         || (placement.gate != NONE
             && placement.default != NONE
@@ -607,12 +628,11 @@ fn nested_whens(ir: &FlatIr) -> Vec<u32> {
         }
     }
     let mut found = Vec::new();
-    let mut seen = Vec::new();
+    let mut seen = std::collections::HashSet::new();
     while let Some(block) = blocks.pop() {
-        if seen.contains(&block) {
+        if !seen.insert(block) {
             continue;
         }
-        seen.push(block);
         let Some(rec) = ir.blocks.get(block as usize) else {
             continue;
         };

@@ -4038,6 +4038,62 @@ pub const CARRIED_TO_R4B: &[Carried] = &[
             ("does-not-fit", "300000000000"),
         ],
     ),
+    (
+        "Clip c:\n    Note when ((300000000000 - 1.5) % (if [1, 2] then q else i32(true)))\n",
+        &[
+            ("unknown-name", "q"),
+            ("condition-type", "if [1, 2] then q else i32(true)"),
+            ("conversion-type", "i32(true)"),
+            ("does-not-fit", "300000000000"),
+        ],
+        &[
+            ("unknown-name", "q"),
+            ("condition-type", "if [1, 2] then q else i32(true)"),
+            ("conversion-type", "i32(true)"),
+            ("does-not-fit", "300000000000"),
+        ],
+    ),
+    (
+        "Clip c:\n    Note when (u8(if q then true else Wave::Saw))\n",
+        &[("unknown-name", "q")],
+        &[("unknown-name", "q")],
+    ),
+    (
+        "Clip c:\n    Note when (i32(if q then Wave::Saw else 1.5))\n",
+        &[("unknown-name", "q")],
+        &[("unknown-name", "q")],
+    ),
+    (
+        "Clip c:\n    Note when (i32(if q then [1, 2][5] else Wave::Saw))\n",
+        &[("unknown-name", "q")],
+        &[("unknown-name", "q")],
+    ),
+    (
+        "Clip c:\n    Note when (u8(if q then 1.5 else 1))\n",
+        &[("unknown-name", "q")],
+        &[("unknown-name", "q")],
+    ),
+    (
+        "Clip c:\n    Note when (if (1 div i32(true)) then (if [1, 2] then q else q) else (q or [1, 2]))\n",
+        &[
+            ("unknown-name", "q"),
+            ("unknown-name", "q"),
+            ("unknown-name", "q"),
+            ("array-operand", "q or [1, 2]"),
+            ("condition-type", "if [1, 2] then q else q"),
+            ("type-mismatch", "1 div i32(true)"),
+            ("conversion-type", "i32(true)"),
+        ],
+        &[
+            ("unknown-name", "q"),
+            ("unknown-name", "q"),
+            ("unknown-name", "q"),
+            ("array-operand", "q or [1, 2]"),
+            ("condition-type", "if [1, 2] then q else q"),
+            ("type-mismatch", "1 div i32(true)"),
+            ("conversion-type", "i32(true)"),
+        ],
+    ),
 ];
 
 pub const CARRIED: &str = "480, carried to R4b";
@@ -5432,18 +5488,31 @@ fn let_lines<'a>(program: &'a str, head: &str) -> Vec<(usize, &'a str)> {
         .split(|c: char| !(c.is_alphanumeric() || c == '_'))
         .filter(|word| word.starts_with(|c: char| c.is_alphabetic() || c == '_'))
         .collect();
-    lines_at(program)
-        .into_iter()
-        .filter(|(_, line)| {
-            let words: Vec<&str> = line
-                .split(|c: char| !(c.is_alphanumeric() || c == '_'))
-                .collect();
-            words.iter().any(|word| {
-                word.strip_suffix("let")
-                    .is_some_and(|lead| lead.chars().all(|c| c.is_ascii_digit()))
-            }) && words.iter().any(|word| names.contains(word))
-        })
-        .collect()
+    let lines = lines_at(program);
+    let mut found = Vec::new();
+    for (at, (start, line)) in lines.iter().enumerate() {
+        let joined = match lines.get(at + 1) {
+            Some((next, text)) if let_word(line.trim()) => {
+                program.get(*start..next + text.len()).unwrap_or(line)
+            }
+            _ => line,
+        };
+        let words: Vec<&str> = joined
+            .split(|c: char| !(c.is_alphanumeric() || c == '_'))
+            .collect();
+        if words.iter().any(|word| let_word(word)) && words.iter().any(|word| names.contains(word))
+        {
+            found.push((*start, joined));
+        }
+    }
+    found
+}
+
+fn let_word(word: &str) -> bool {
+    word.starts_with("let")
+        || word
+            .strip_suffix("let")
+            .is_some_and(|lead| lead.chars().all(|c| c.is_ascii_digit()))
 }
 
 pub fn runs_no_iteration(program: &str, new: &[Drawn]) -> bool {
@@ -5853,7 +5922,13 @@ fn unrun_cycle(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
 }
 
 fn unclosed(line: &str) -> bool {
-    let opened = line.chars().filter(|c| matches!(c, '(' | '[')).count();
-    let closed = line.chars().filter(|c| matches!(c, ')' | ']')).count();
+    let opened = line
+        .chars()
+        .filter(|c| matches!(c, '(' | '[' | '{'))
+        .count();
+    let closed = line
+        .chars()
+        .filter(|c| matches!(c, ')' | ']' | '}'))
+        .count();
     opened > closed
 }
