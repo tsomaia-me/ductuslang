@@ -110,6 +110,8 @@ impl Core<'_> {
             let allowed = match op {
                 Op::If => kid != a && (kid == b || kid == c),
                 Op::Is | Op::IsNot => true,
+                Op::Array => known.is_some(),
+                Op::Index | Op::IndexFromEnd => known.is_some() && kid == a,
                 Op::Convert
                 | Op::Not
                 | Op::Neg
@@ -130,9 +132,6 @@ impl Core<'_> {
                 | Op::Float
                 | Op::Bool
                 | Op::Name
-                | Op::Array
-                | Op::Index
-                | Op::IndexFromEnd
                 | Op::Slice
                 | Op::For
                 | Op::Call

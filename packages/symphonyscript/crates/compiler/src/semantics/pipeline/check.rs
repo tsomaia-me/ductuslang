@@ -481,12 +481,13 @@ impl Core<'_> {
             Leaf::Placeholder | Leaf::Error => return self.detached(root, name, ty),
             _ if !fact.dims.is_empty() => {
                 let variable = self.variable_length(root)?;
+                let held = self.ty_text(ty)?;
                 self.draw_at(
                     Code::TypeMismatch,
                     root,
                     format!(
                         "`{name}` holds one `{}`, and this value is {}",
-                        ty_name(ty),
+                        held,
                         if variable {
                             "a variable array"
                         } else {

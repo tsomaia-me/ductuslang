@@ -1,7 +1,8 @@
 use crate::compiler::Compiler;
 use crate::syntax::front_end_goldens::source;
 
-const ENUMS: [&str; 36] = [
+const ENUMS: [&str; 37] = [
+    "Synth s:\n    Osc | wave=([Wave::Saw, Wave::Sine][1])\n",
     "let a = Saw\nSynth s:\n    Osc | wave=a\n",
     "state m(Manual): Mode\nSynth s:\n    Osc | wave=Saw\n",
     "Clip c:\n    Note/(i32(Wave::Saw))\n",
@@ -40,7 +41,7 @@ const ENUMS: [&str; 36] = [
     "Synth s:\n    Osc | wave=Wave::Zig\n",
 ];
 
-const DECLINED: [&str; 8] = [
+const DECLINED: [&str; 7] = [
     "fn f(w): w\nSynth s:\n    Osc | wave=(f(Saw))\n",
     "fn pick(x): if x then Wave::Saw else Wave::Sine\nSynth s:\n    Osc | wave=(pick(true))\n",
     "state w(Saw)\nSynth s:\n    Osc | wave=w\n",
@@ -48,7 +49,6 @@ const DECLINED: [&str; 8] = [
     "state w(Wave::Saw)\nstate m = w.past(1, Sine)\nSynth s:\n    Osc | wave=m\n",
     "Synth s:\n    for w in [Wave::Saw, Wave::Sine]:\n        Osc | wave=w\n",
     "Synth s:\n    Osc | wave=(if Saw then Saw else Saw)\n",
-    "Synth s:\n    Osc | wave=([Wave::Saw, Wave::Sine][1])\n",
 ];
 
 #[test]
@@ -156,5 +156,66 @@ fn a_bare_valued_let_read_only_at_attributes_of_one_enum_takes_that_enum_in_both
     }
     for text in BARE_LETS_DECLINED {
         assert_eq!(new.checked_by_new_core(&[source(text)]), None, "{text}");
+    }
+}
+
+const ENUM_ARRAYS: [(&str, &str); 12] = [
+    (
+        "",
+        "Synth s:\n    Osc | wave=([Wave::Saw, Wave::Sine][1])\n",
+    ),
+    (
+        "",
+        "Synth s:\n    Osc | wave=([Wave::Saw, Wave::Sine][5])\n",
+    ),
+    ("", "Synth s:\n    Osc | wave=([Wave::Saw, 1][0])\n"),
+    (
+        "",
+        "Synth s:\n    Osc | wave=([Wave::Saw, Mode::Auto][0])\n",
+    ),
+    (
+        "let ws = [Wave::Saw, Wave::Sine]\n",
+        "Synth s:\n    Osc | wave=(ws[1])\n",
+    ),
+    ("", "Clip c:\n    Note/([Wave::Saw][0])\n"),
+    (
+        "",
+        "Synth s:\n    Osc | wave=([Wave::Saw, Wave::Sine][^1])\n",
+    ),
+    (
+        "state i(0)\n",
+        "Synth s:\n    Osc | wave=([Wave::Saw, Wave::Sine][i])\n",
+    ),
+    ("", "Synth s:\n    Osc | wave=[Wave::Saw, Wave::Sine]\n"),
+    (
+        "let ws = [Wave::Saw, Wave::Sine]\n",
+        "Clip c:\n    Note/(if ws[0] is Wave::Saw then 1 else 2)\n",
+    ),
+    (
+        "",
+        "Synth s:\n    Osc | wave=([[Wave::Saw], [Wave::Sine]][1][0])\n",
+    ),
+    (
+        "let ws = [Wave::Saw, Wave::Sine] + [Wave::Square]\n",
+        "Synth s:\n    Osc | wave=(ws[2])\n",
+    ),
+];
+
+#[test]
+fn an_array_of_qualified_variants_is_built_joined_and_read_by_index_as_the_old_engine_reads_it_in_both_orders()
+ {
+    let vocabulary = symphonyscript_fixtures::vocabulary();
+    let old = Compiler::new(&vocabulary)
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
+    let new = Compiler::new(&vocabulary).expect("the vocabulary compiles");
+    for (first, second) in ENUM_ARRAYS {
+        for text in [format!("{first}{second}"), format!("{second}{first}")] {
+            let sources = [source(&text)];
+            let found = new
+                .checked_by_new_core(&sources)
+                .unwrap_or_else(|| panic!("the new core takes {text}"));
+            assert_eq!(found, old.check(&sources), "{text}");
+        }
     }
 }
