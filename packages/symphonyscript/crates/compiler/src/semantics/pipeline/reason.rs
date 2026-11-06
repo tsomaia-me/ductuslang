@@ -16,7 +16,6 @@ pub(crate) enum Reason {
     Recursion,
     LocalCycle,
     LocalClash,
-    AnnotatedCall,
     Pending,
     DestinationValue,
     ReactiveReference,

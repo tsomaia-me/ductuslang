@@ -1469,3 +1469,48 @@ fn a_cell_whose_init_or_rule_is_an_instance_name_draws_state_value_and_its_reade
  {
     assert_eq!(same_as_the_old_engine(&CELLS_HOLDING_REFERENCES), 192);
 }
+
+const ANNOTATED_CALLS: [&[&str]; 7] = [
+    &[
+        "fn f(n): n * 100\n",
+        "let x: u8 = f(3)\n",
+        "Clip c:\n    Note/(x)\n",
+    ],
+    &[
+        "fn f(n): n * 100\n",
+        "let x: u8 = f(1)\n",
+        "Clip c:\n    Note/(x)\n",
+    ],
+    &[
+        "fn f(n): n + 0.5\n",
+        "let x: i32 = f(1)\n",
+        "Clip c:\n    Note/(x)\n",
+    ],
+    &[
+        "fn f(n): [n, n]\n",
+        "let x: i32[2] = f(1)\n",
+        "Clip c:\n    Note/(x[0])\n",
+    ],
+    &[
+        "fn f(n): n\n",
+        "let x: u8 = f(1) + 300\n",
+        "Clip c:\n    Note/(x)\n",
+    ],
+    &[
+        "fn f(n): true\n",
+        "let x: i32 = f(1)\n",
+        "Clip c:\n    Note/(x)\n",
+    ],
+    &[
+        "fn g(n): n + 0.5\n",
+        "fn f(n): g(n)\n",
+        "let x: i32 = f(1)\n",
+        "Clip c:\n    Note/(x)\n",
+    ],
+];
+
+#[test]
+fn an_annotated_let_whose_init_is_a_call_checks_the_body_result_against_the_annotation_beside_a_valid_twin_in_every_order()
+ {
+    assert_eq!(same_as_the_old_engine(&ANNOTATED_CALLS), 264);
+}

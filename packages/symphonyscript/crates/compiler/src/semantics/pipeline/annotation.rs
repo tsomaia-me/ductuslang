@@ -1,10 +1,8 @@
 use super::core::{Core, Stage};
 use super::core_value::CoreValue;
-use super::declined::Declined;
 use super::fact::Fact;
 use super::folds::ANY_LENGTH;
 use super::leaf::Leaf;
-use super::reason::Reason;
 use super::values::evaluated_in;
 use super::width::{is_fixed_float, target_ty, widens};
 use crate::diagnostics::Code;
@@ -504,11 +502,6 @@ impl Core<'_> {
             return Ok(Ok(()));
         };
         let root = self.let_root(at)?;
-        for node in self.postorder(root)? {
-            if matches!(self.ir.node(node)?.0, Op::Call | Op::NamedCall) {
-                return Ok(Err(Declined(Reason::AnnotatedCall)));
-            }
-        }
         let chain = std::mem::take(&mut self.eval_chain);
         let outer = std::mem::replace(&mut self.inst, NONE);
         let outcome = self.annotation_check(at, root, ty);
@@ -528,7 +521,7 @@ impl Core<'_> {
                 self.own_check(root)
             }
             Refusal::Type if self.annotation_dims(at)?.is_empty() => {
-                self.draw_at(Code::TypeMismatch, root, TYPE)?;
+                self.draw_through_calls(root)?;
                 self.own_check(root)
             }
             Refusal::Type => {
@@ -624,5 +617,28 @@ pub(crate) fn refusal(fact: &Fact, ty: EvalTy) -> Refusal {
         Leaf::Float if int_range(ty).is_some() => Refusal::Type,
         _ if fact.fixed.is_some_and(|own| !widens(own, ty)) => Refusal::Type,
         Leaf::Empty | Leaf::Int | Leaf::Float => Refusal::Kept,
+    }
+}
+
+impl Core<'_> {
+    fn draw_through_calls(&mut self, root: u32) -> Result<(), Internal> {
+        let (inst, chain) = (self.inst, self.eval_chain.len());
+        let mut node = root;
+        loop {
+            let op = self.ir.node(node)?.0;
+            if op != Op::Call && op != Op::NamedCall {
+                break;
+            }
+            let Some(body) = self.body_of_call(node) else {
+                break;
+            };
+            self.eval_chain.push(node);
+            self.inst = body;
+            node = self.body_value(body)?;
+        }
+        let drawn = self.draw_at(Code::TypeMismatch, node, TYPE);
+        self.inst = inst;
+        self.eval_chain.truncate(chain);
+        drawn
     }
 }
