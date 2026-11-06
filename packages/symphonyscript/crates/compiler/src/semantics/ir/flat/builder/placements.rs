@@ -78,6 +78,7 @@ impl<'p> IrBuilder<'p, '_> {
             None => NONE,
         };
         let at = head(&view);
+        let faulty_line = self.faulty_line(&view);
         self.ir.items.push(ItemRec::Placement(PlacementRec {
             kind,
             flags,
@@ -92,6 +93,7 @@ impl<'p> IrBuilder<'p, '_> {
             inline: false,
             lo: at.0,
             hi: at.1,
+            faulty_line,
         }));
         Some(Value::Item(index(self.ir.items.len() - 1)))
     }

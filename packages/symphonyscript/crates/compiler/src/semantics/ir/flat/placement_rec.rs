@@ -13,4 +13,5 @@ pub(crate) struct PlacementRec {
     pub inline: bool,
     pub lo: u32,
     pub hi: u32,
+    pub faulty_line: bool,
 }

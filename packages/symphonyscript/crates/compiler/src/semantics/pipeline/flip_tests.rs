@@ -1289,3 +1289,42 @@ fn an_annotated_let_holding_an_instance_name_refuses_it_and_keeps_its_type_in_ev
         24
     );
 }
+
+const FAULTY_LINE_INSTANCES: [&[&str]; 7] = [
+    &["xlet a = checksum(\"GET\")\n", "Clip c:\n    Note/a\n"],
+    &[
+        "state1 demand(0.5)\n",
+        "Plant boiler:\n    Valve | open=demand * 0.8\n",
+    ],
+    &["xlet a = 1\n", "Clip c:\n    Note when a\n"],
+    &["xlet a = 1\n", "Clip c:\n    Note/(a[0])\n"],
+    &["Clip a:\n    Note/a\n"],
+    &["Clip a:\n    Note when a\n"],
+    &["Clip a:\n    Note/(a[0])\n"],
+];
+
+#[test]
+fn an_instance_name_declared_on_a_line_holding_a_syntax_fault_is_a_placeholder_at_every_use_beside_a_valid_twin_in_every_order()
+ {
+    assert_eq!(same_as_the_old_engine(&FAULTY_LINE_INSTANCES), 30);
+}
+
+const BUNDLE_MEMBER_NAMES: [&[&str]; 4] = [
+    &[
+        "Rig stage:\n    Scene as dusk | hold=8:\n        Cue/0\n        Dims: wash\n    [Lamp as wash]\n",
+    ],
+    &[
+        "Rig stage:\n    [Lamp as wash]\n    Scene as dusk | hold=8:\n        Cue/0\n        Dims: wash\n",
+    ],
+    &["Rig stage:\n    Scene as dusk | hold=8:\n        Dims: wash\n    [Lamp as wash Lamp]\n"],
+    &[
+        "Rig stage:\n    Scene as dusk | hold=8:\n        Cue/0 Cue/2\n        Dims: wash\n    [Lamp as wash\n    Lamp\n",
+        "Scene night:\n    Cue/0\n    Triggers: stage.dusk\n",
+    ],
+];
+
+#[test]
+fn a_bundle_members_as_name_on_a_line_is_in_scope_for_its_siblings_bodies_beside_a_valid_twin_in_every_order()
+ {
+    assert_eq!(same_as_the_old_engine(&BUNDLE_MEMBER_NAMES), 12);
+}

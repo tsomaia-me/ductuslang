@@ -98,11 +98,13 @@ impl Core<'_> {
                 .fns
                 .get(at as usize)
                 .is_some_and(|rec| rec.faulty_line),
-            TopRec::Pattern(_)
-            | TopRec::Placement(_)
-            | TopRec::Placeholder { .. }
-            | TopRec::Drawn(_)
-            | TopRec::Skip => false,
+            TopRec::Placement(item) => matches!(
+                self.ir.items.get(item as usize),
+                Some(ItemRec::Placement(placement)) if placement.faulty_line
+            ),
+            TopRec::Pattern(_) | TopRec::Placeholder { .. } | TopRec::Drawn(_) | TopRec::Skip => {
+                false
+            }
         }
     }
 
@@ -611,7 +613,14 @@ impl Core<'_> {
                     vec![child]
                 }
             };
+            let mut flat = Vec::with_capacity(members.len());
             for member in members {
+                match self.ir.item(member).copied() {
+                    Ok(ItemRec::Bundle(_)) => flat.extend(self.bundle_items(member)),
+                    _ => flat.push(member),
+                }
+            }
+            for member in flat {
                 let member = match self.ir.item(member).copied() {
                     Ok(ItemRec::Paren(inner)) if inner != NONE => inner,
                     _ => member,
