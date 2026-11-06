@@ -4345,6 +4345,31 @@ fn refused_variable_init(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
         })
 }
 
+fn float_literal(text: &str) -> bool {
+    let digits = text
+        .chars()
+        .take_while(|c| c.is_ascii_alphanumeric() || *c == '.')
+        .collect::<String>();
+    digits.starts_with(|c: char| c.is_ascii_digit())
+        && (digits.contains('.') || digits.contains('e'))
+        && !digits.ends_with("f32")
+        && !digits.ends_with("f64")
+}
+
+fn integer_cell_in_a_flexible_float_operation(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
+    let name = seen.text(at);
+    let reads = cell_reads(seen.program, name);
+    change == Change::Added
+        && at.0 == "integer-cell"
+        && !reads.is_empty()
+        && reads.iter().all(|(_, hi)| {
+            let after = seen.program.get(*hi..).unwrap_or_default();
+            [" + ", " - ", " * ", " / "]
+                .iter()
+                .any(|op| after.strip_prefix(op).is_some_and(float_literal))
+        })
+}
+
 fn integer_cell_as_a_float_start(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
     let name = seen.text(at);
     change == Change::Added
@@ -4366,6 +4391,52 @@ fn reactive_let_history_target(seen: &Seen<'_>, at: &Drawn) -> bool {
         })
 }
 
+fn let_history_target(seen: &Seen<'_>, at: &Drawn) -> bool {
+    let text = seen.text(at);
+    let Some((name, _)) = text.split_once('.') else {
+        return false;
+    };
+    at.0 == "history-target"
+        && (text.ends_with(".stepped") || text.contains(".past("))
+        && lines_at(seen.program).iter().any(|(_, line)| {
+            line.strip_prefix("let ")
+                .and_then(|rest| rest.strip_prefix(name))
+                .is_some_and(|rest| rest.starts_with(' ') || rest.starts_with(':'))
+        })
+}
+
+fn history_cells_of_lets<'a>(seen: &Seen<'a>) -> Vec<&'a str> {
+    let targets: Vec<&str> = seen
+        .new
+        .iter()
+        .filter(|drawn| let_history_target(seen, drawn))
+        .filter_map(|drawn| seen.text(drawn).split_once('.').map(|(name, _)| name))
+        .collect();
+    lines_at(seen.program)
+        .into_iter()
+        .filter_map(|(_, line)| {
+            let (cell, rule) = line.strip_prefix("state ")?.split_once(" = ")?;
+            let (target, _) = rule.split_once(".past(")?;
+            targets.contains(&target).then_some(cell)
+        })
+        .collect()
+}
+
+fn read_of_a_lets_history_cell(seen: &Seen<'_>, at: &Drawn) -> bool {
+    let line = lines_at(seen.program)
+        .into_iter()
+        .rfind(|(start, _)| *start <= at.1)
+        .map(|(_, line)| line)
+        .unwrap_or_default();
+    matches!(
+        at.0.as_str(),
+        "float-to-integer" | "does-not-fit" | "condition-type" | "operand-type"
+    ) && !line.starts_with("state ")
+        && history_cells_of_lets(seen)
+            .iter()
+            .any(|cell| reads_word(line, cell))
+}
+
 fn history_of_a_reactive_let(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
     match change {
         Change::Added => {
@@ -4378,12 +4449,10 @@ fn history_of_a_reactive_let(seen: &Seen<'_>, change: Change, at: &Drawn) -> boo
                         | "condition-type"
                         | "operand-type"
                         | "index-out-of-range"
-                ) && seen
-                    .new
-                    .iter()
-                    .any(|drawn| reactive_let_history_target(seen, drawn)))
+                ) && seen.new.iter().any(|drawn| let_history_target(seen, drawn)))
         }
-        Change::Removed | Change::Restated => false,
+        Change::Removed => read_of_a_lets_history_cell(seen, at),
+        Change::Restated => false,
     }
 }
 
@@ -5181,8 +5250,13 @@ pub const CLASSES: &[Class] = &[
         explains: integer_cell_as_a_float_start,
     },
     Class {
+        ledger: "476",
+        rule: "an integer host-fed cell read only as the operand of an operation with a flexible float literal is read as a float there (SPEC §4.3: a flexible float meeting an operand of fixed integer type makes the operation a float one, `f64` for an `i64` operand), so every use expects a float and the cell draws integer-cell (SPEC §4.4), also where the operation stands in a comparison, where the old engine draws nothing (`state big(1)` with `Note when big + 1e39 > 1`, `big + 1.5 > 1` or `big * 2.5 > 1`)",
+        explains: integer_cell_in_a_flexible_float_operation,
+    },
+    Class {
         ledger: "487",
-        rule: "a history read of a top-level let reading a cell draws history-target at the read beside the let's reactive-let, as the program with the let repaired to a compile-time value does, and the read of an annotated let keeps the annotated type (ARCHITECTURE §7: a value whose type an error leaves known keeps that type), so its readers draw the faults that type gives whatever value repairs the read, where the old engine reads it as a placeholder; the read of an unannotated top-level let is typed as the cell the let repaired to a `state` would be (ledger 516), a float one read as an integer drawing float-to-integer and an array one's index its range, and no fault the old engine drew is removed",
+        rule: "a history read of a top-level let reading a cell draws history-target at the read beside the let's reactive-let, as the program with the let repaired to a compile-time value does, and the read of an annotated let keeps the annotated type (ARCHITECTURE §7: a value whose type an error leaves known keeps that type), so its readers draw the faults that type gives whatever value repairs the read, where the old engine reads it as a placeholder; the read of an unannotated top-level let is typed as the cell the let repaired to a `state` would be (ledger 516), a float one read as an integer drawing float-to-integer, an array one's index its range, and a fallback the repaired cell refuses its type-mismatch; a fault the old engine drew at a read of a cell whose rule is that history read is removed only where the program with the let repaired to a `state` draws none there (`Note when s > 3000000000`, `Note when s` and `not s` beside a `0` fallback of a `bool` let, `Note/(s)` beside a `0.5` fallback of an integer let); a compile-time let's history read is typed and judged the same way",
         explains: history_of_a_reactive_let,
     },
     Class {

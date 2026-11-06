@@ -91,8 +91,14 @@ impl Core<'_> {
             Ok(false) => return Ok(Ok(Fact::PLACEHOLDER)),
             Err(declined) => return Ok(Err(declined)),
         }
-        let at = match cell {
-            Target::Cell(at) => at,
+        let (at, fact) = match cell {
+            Target::Cell(at) => (
+                Some(at),
+                match self.group_read(node)? {
+                    Some(fact) => fact,
+                    None => self.cell_read_fact(at)?,
+                },
+            ),
             Target::Let | Target::Faulty => {
                 self.compile_time_target(node, "history")?;
                 let kept = match self.bound(target)? {
@@ -115,12 +121,8 @@ impl Core<'_> {
                 if matches!(kept.leaf, Leaf::Placeholder | Leaf::Error) || kept.node {
                     return Ok(Ok(Fact::PLACEHOLDER));
                 }
-                return Ok(Ok(kept));
+                (None, kept)
             }
-        };
-        let fact = match self.group_read(node)? {
-            Some(fact) => fact,
-            None => self.cell_read_fact(at)?,
         };
         if fallback == NONE {
             return Ok(Ok(fact));
@@ -132,7 +134,8 @@ impl Core<'_> {
         if matches!(fact.leaf, Leaf::Placeholder | Leaf::Error) {
             return Ok(Ok(fact));
         }
-        if let Some(settled) = self.group_settled(node, at)
+        if let Some(at) = at
+            && let Some(settled) = self.group_settled(node, at)
             && !fallback_fits(&held, &settled)
         {
             self.draw_at(Code::TypeMismatch, fallback, FALLBACK_SHAPE)?;
@@ -154,7 +157,11 @@ impl Core<'_> {
             }
             return Ok(Ok(fact));
         }
-        let ty = match self.cell_annotation_ty(at)? {
+        let annotated = match at {
+            Some(at) => self.cell_annotation_ty(at)?,
+            None => None,
+        };
+        let ty = match annotated {
             Some(ty) => ty,
             None => match fact.leaf {
                 Leaf::Bool => EvalTy::Bool,
