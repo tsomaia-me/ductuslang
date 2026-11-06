@@ -5472,6 +5472,31 @@ fn bound_beside_a_kept_choice(seen: &Seen<'_>, change: Change, at: &Drawn) -> bo
         })
 }
 
+fn gate_beside_the_twin_pass(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
+    let start = seen
+        .program
+        .get(..at.1)
+        .and_then(|before| before.rfind('\n'))
+        .map_or(0, |at| at + 1);
+    let end = seen
+        .program
+        .get(at.2..)
+        .and_then(|after| after.find('\n'))
+        .map_or(seen.program.len(), |found| at.2 + found);
+    let line = seen.program.get(start..end).unwrap_or_default();
+    let gate = line.find(" when ").map(|found| start + found);
+    change == Change::Removed
+        && matches!(at.0.as_str(), "condition-type" | "not-an-array")
+        && gate.is_some_and(|gate| gate < at.1)
+        && seen.program.get(at.1..end).is_some_and(|rest| {
+            rest.contains('q')
+                || seen
+                    .program
+                    .get(start..at.1)
+                    .is_some_and(|head| head.contains('q'))
+        })
+}
+
 pub const TWIN_PASS_CLASSES: &[Class] = &[
     Class {
         ledger: "476, the twin pass's (R4b)",
@@ -5482,6 +5507,11 @@ pub const TWIN_PASS_CLASSES: &[Class] = &[
         ledger: "476, the twin pass's (R4b)",
         rule: "index-type at the bound or index of a read whose base is a choice over the placeholder with a refused condition, which stands since the repaired bound still draws it (G18), and which the twin pass misses because its scalar twins keep the choice's type and draw not-an-array at the base in its place",
         explains: bound_beside_a_kept_choice,
+    },
+    Class {
+        ledger: "476, the twin pass's (R4b)",
+        rule: "at a gate holding a name placeholder, a condition-type or not-an-array that every value of the placeholder draws on the new core (a conversion's target type, a refused condition, a sliced base that is no array), which the twin pass misses because a gate's twins run on the whole program on the old engine, whose runs lose that type for some values (488's and 497's kind)",
+        explains: gate_beside_the_twin_pass,
     },
 ];
 

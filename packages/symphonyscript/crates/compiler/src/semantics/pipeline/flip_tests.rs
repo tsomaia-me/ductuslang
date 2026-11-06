@@ -1022,6 +1022,33 @@ fn drawn_codes(rows: &[(&[&str], &[Code])]) -> usize {
     programs
 }
 
+const PLACEHOLDER_GATES: [&[&str]; 10] = [
+    &["Clip c:\n    Note when q > 1\n"],
+    &[
+        "state s(1)\n",
+        "Clip c:\n    Note when q + s > 3000000000\n",
+    ],
+    &["Clip c:\n    Note/60 when nope\n"],
+    &["Plant boiler:\n    when nope:\n        Valve/0.3\n"],
+    &["Clip c:\n    Note when (u8(if q then true else Wave::Saw))\n"],
+    &["Clip c:\n    Note when (u8(if q then 1.5 else 1))\n"],
+    &["Clip c:\n    Note when ((300000000000 - 1.5) % (if [1, 2] then q else i32(true)))\n"],
+    &[
+        "Clip c:\n    Note when (if (1 div i32(true)) then (if [1, 2] then q else q) else (q or [1, 2]))\n",
+    ],
+    &["Clip c:\n    Note when (if q then 1 else 2)\n"],
+    &[
+        "state note(60)\n",
+        "Clip c:\n    Note when (if q then 300000000000 else [1, 2][5])\n",
+    ],
+];
+
+#[test]
+fn a_gate_holding_an_unknown_name_draws_what_the_whole_program_twins_draw_beside_a_valid_twin_in_every_order()
+ {
+    assert_eq!(same_as_the_old_engine(&PLACEHOLDER_GATES), 28);
+}
+
 const REFUSED_CHOICE_GATES: [(&[&str], &[Code]); 2] = [
     (
         &["Clip c:\n    Note when (if 1 then 1 else 2)\n"],
@@ -1037,6 +1064,28 @@ const REFUSED_CHOICE_GATES: [(&[&str], &[Code]); 2] = [
 fn a_non_bool_gate_choice_beside_its_refused_condition_draws_condition_type_at_the_gate_in_every_order()
  {
     assert_eq!(drawn_codes(&REFUSED_CHOICE_GATES), 4);
+}
+
+const KEPT_TYPE_GATES: [&[&str]; 4] = [
+    &["state q([]): i32[..4]\n", "Clip c:\n    Note when (q[q])\n"],
+    &[
+        "state q([]): i32[..4]\n",
+        "Clip c:\n    Note when ([1, 2][q])\n",
+    ],
+    &[
+        "state q([]): i32[..4]\n",
+        "Clip c:\n    Note when (i32([1, 2][q]))\n",
+    ],
+    &[
+        "state q([]): i32[..4]\n",
+        "Clip c:\n    Note when ((q[[1, 2][5]..])[if true then q else 1.5])\n",
+    ],
+];
+
+#[test]
+fn a_gate_whose_value_an_error_leaves_of_a_known_non_bool_type_draws_condition_type_beside_a_valid_twin_in_every_order()
+ {
+    assert_eq!(same_as_the_old_engine(&KEPT_TYPE_GATES), 24);
 }
 
 const MEMBERS_WITH_BODIES: [&[&str]; 9] = [
@@ -1110,7 +1159,7 @@ const NAMES_THAT_ARE_NO_VALUES: [&[&str]; 9] = [
     &["Clip a:\n    Note/(Plays)\n"],
     &["Clip c:\n    Note/(sin + 1.5)\n"],
     &["state s(Lamp)\n", "Clip c:\n    Note/(s)\n"],
-    &["Clip c:\n    Note/([Lamp, 2][5])\n"],
+    &["Clip c:\n    Note when Lamp\n    Note/([Lamp, 2][5])\n"],
 ];
 
 #[test]
