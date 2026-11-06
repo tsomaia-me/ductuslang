@@ -565,9 +565,6 @@ impl Core<'_> {
     }
 
     pub fn plain_in_family(&mut self) -> Stage<()> {
-        if self.scaled_accumulator {
-            return Ok(Err(Declined(Reason::UnitAttribute)));
-        }
         let by_family = self.units_by_family()?;
         let mixed: Vec<FamilyId> = by_family
             .iter()

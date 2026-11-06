@@ -286,3 +286,35 @@ fn an_argument_that_binds_no_parameter_is_no_read_and_draws_nothing_of_its_own_b
  {
     assert_eq!(same_as_the_old_engine(&UNBOUND_ARGUMENTS), 216);
 }
+
+const PLAIN_STARTS: [&str; 6] = [
+    "Bar b | bar_len=(for i in [1beats, 2beats] into a from 3: a + i)\n",
+    "Bar b | bar_len=(for i in [1beats, 2beats] into a from 3: a * 2 + i)\n",
+    "Bar b | bar_len=(for i in [1beats, 2beats] into a from 3: a + i + 1)\n",
+    "Bar b | bar_len=(for i in [1beats, 2beats] into a from 1000000000000000000: a + i)\n",
+    "Bar b | bar_len=(for i in [1beats, 2beats] into a from 3000000000000000000: a + i)\n",
+    "Bar b | bar_len=(for i in [1beats, 2beats] into a from 0: a + i + 3000000000000000000)\n",
+];
+
+#[test]
+fn a_plain_fold_start_is_read_once_in_the_default_unit_and_the_accumulator_in_base_units_drawing_no_plain_in_family_510()
+ {
+    let vocabulary = symphonyscript_fixtures::bar_vocabulary();
+    let new = Compiler::new(&vocabulary).expect("the vocabulary compiles");
+    let twin = "Bar t | bar_len=(for i in [1beats] into a from 1beats: a + i)\n";
+    let overflows = [false, false, false, false, true, true];
+    for (program, overflow) in PLAIN_STARTS.iter().zip(overflows) {
+        for order in Orders::Every.of(&[*program, twin]) {
+            let text = order.concat();
+            let found: Vec<Code> = new
+                .checked_by_new_core(&[source(&text)])
+                .unwrap_or_else(|| panic!("the new core takes {text}"))
+                .iter()
+                .map(|diagnostic| diagnostic.code)
+                .filter(|code| *code != Code::NoEntryInstance)
+                .collect();
+            let expected: &[Code] = if overflow { &[Code::DoesNotFit] } else { &[] };
+            assert_eq!(found, expected, "{text}");
+        }
+    }
+}

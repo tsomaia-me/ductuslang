@@ -189,7 +189,6 @@ pub(crate) struct Core<'a> {
     pub cycle_through_refused: bool,
     pub unbound_nodes: std::collections::HashSet<u32>,
     pub guards: Vec<(u32, u32)>,
-    pub scaled_accumulator: bool,
     pub unit_conflicts: Vec<super::unit_conflict::UnitConflict>,
     pub default_scale: Option<(
         u32,
@@ -363,7 +362,6 @@ impl<'a> Core<'a> {
             cycle_through_refused: false,
             unbound_nodes: std::collections::HashSet::new(),
             guards: Vec::new(),
-            scaled_accumulator: false,
             unit_conflicts: Vec::new(),
             default_scale: None,
         }

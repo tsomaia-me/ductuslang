@@ -4013,8 +4013,6 @@ const BODY_UNITS_DECLINED: &[&[&str]] = &[
         "let x = g(x)",
         "Bar b | bar_len=(g()) beat_len=x",
     ],
-    &["Bar b | bar_len=(for i in [1beats, 2beats] into a from 3: a + i)"],
-    &["Bar b | bar_len=(for i in [1beats, 2beats] into a from 3000000000000000000: a + i)"],
 ];
 
 #[test]

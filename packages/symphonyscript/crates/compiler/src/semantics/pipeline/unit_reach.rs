@@ -111,7 +111,6 @@ impl Core<'_> {
                         && (node == root || self.is_taker(node, family)?)
                     {
                         if self.accumulator_read(node)? {
-                            self.scaled_accumulator = true;
                             continue;
                         }
                         let op = self.ir.node(node)?.0;
