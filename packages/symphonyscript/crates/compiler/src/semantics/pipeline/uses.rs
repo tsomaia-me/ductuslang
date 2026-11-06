@@ -1370,6 +1370,7 @@ impl Core<'_> {
                     );
                 }
             }
+            self.nested_pattern_items(&items, pattern)?;
             let mut here: Vec<(u32, symphonyscript_core::Span)> = Vec::new();
             let mut bodies = Vec::new();
             for item in items {
@@ -1604,5 +1605,41 @@ impl Core<'_> {
             }
         }
         Ok(Ok(cells))
+    }
+}
+
+impl Core<'_> {
+    fn nested_pattern_items(&mut self, items: &[u32], pattern: u32) -> Result<(), Internal> {
+        let mut stack: Vec<u32> = Vec::new();
+        for item in items {
+            match *self.ir.item(*item)? {
+                ItemRec::When(_) => stack.extend(self.when_items(*item)),
+                ItemRec::Bundle(_) => stack.extend(self.bundle_items(*item)),
+                ItemRec::Paren(inner) if inner != NONE => stack.push(inner),
+                ItemRec::Placement(_)
+                | ItemRec::Wire(_)
+                | ItemRec::For(_)
+                | ItemRec::Line(_)
+                | ItemRec::Paren(_) => {}
+            }
+        }
+        while let Some(item) = stack.pop() {
+            match *self.ir.item(item)? {
+                ItemRec::Placement(placement) if self.ir.named(placement.as_name) => {
+                    self.pattern_items.insert(item, pattern);
+                }
+                ItemRec::Line(members) => stack.extend(
+                    self.ir
+                        .members
+                        .get(members.0 as usize..members.1 as usize)
+                        .unwrap_or_default(),
+                ),
+                ItemRec::When(_) => stack.extend(self.when_items(item)),
+                ItemRec::Bundle(_) => stack.extend(self.bundle_items(item)),
+                ItemRec::Paren(inner) if inner != NONE => stack.push(inner),
+                ItemRec::Placement(_) | ItemRec::Wire(_) | ItemRec::For(_) | ItemRec::Paren(_) => {}
+            }
+        }
+        Ok(())
     }
 }
