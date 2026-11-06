@@ -1316,3 +1316,39 @@ fn stress_lets_each_calling_a_function_over_a_long_chain_of_lets_draw_reactive_l
         Timing::Judged,
     ));
 }
+
+pub(super) fn family_nest(depth: usize, placements: &str) -> String {
+    let mut text = String::from("fn f0(x): x + 1\n");
+    for at in 1..=depth {
+        text.push_str(&format!("fn f{at}(x): f{}(x) + f{}(x)\n", at - 1, at - 1));
+    }
+    text.push_str("Clip c:\n");
+    for attribute in placements.split(',') {
+        text.push_str(&format!("    Note | {attribute}=(f{depth}(1bars))\n"));
+    }
+    text
+}
+
+fn one_plain_in_family_beside_its_unit_mismatch(_: usize) -> Vec<String> {
+    vec!["plain-in-family".to_string(), "unit-mismatch".to_string()]
+}
+
+#[test]
+#[ignore = "stress"]
+fn stress_a_plain_value_in_a_nest_of_functions_called_at_two_sites_a_level_draws_once_per_outermost_call_in_time_linear_in_the_depth_508()
+ {
+    let limits = symphonyscript_core::LimitOverrides {
+        inlined_calls: Some(1 << 26),
+        inlined_calls_warning: Some(1 << 26),
+        ..symphonyscript_core::LimitOverrides::default()
+    };
+    let compiler = Compiler::with_limits(&vocabulary(), limits).expect("the vocabulary compiles");
+    assert_none(&ledger_failures_on(
+        &compiler,
+        "plain value in a two-site nest",
+        [6, 12, 24],
+        |depth| family_nest(depth, "length,velocity"),
+        &one_plain_in_family_beside_its_unit_mismatch,
+        Timing::Judged,
+    ));
+}

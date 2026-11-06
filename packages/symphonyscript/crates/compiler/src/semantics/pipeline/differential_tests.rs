@@ -3276,7 +3276,9 @@ fn a_let_calling_a_function_over_a_chain_of_lets_ending_at_a_cell_draws_reactive
     }
 }
 
-const REFUSED_CONDITION_AND_BASE_MOVES: [&str; 13] = [
+const REFUSED_CONDITION_AND_BASE_MOVES: [&str; 15] = [
+    "Clip c:\n    Note | velocity=(-(if 1.5 then 1.5 else q))\n\nstate q(0): i32\n",
+    "Clip c:\n    Note | velocity=((if 1 then q else [1, 2][5]) - (if i32(true) then 1 else 1.5))\n\nstate q(0): u8\n",
     "Clip c:\n    Note/((1 + 300000000000)[if 1 then Wave::Saw else q..])\n\nlet q = [1]\n",
     "Clip c:\n    Note | velocity=((1 + 300000000000)[if 1 then Wave::Saw else q..])\n\nlet q = [1]\n",
     "Clip c:\n    Note/((1 + 300000000000)[if 1 then true else q..])\n\nlet q = [1]\n",
@@ -3327,5 +3329,32 @@ fn faults_in_the_arms_of_a_refused_condition_a_scalar_sliced_base_and_a_cell_rea
             .checked_by_new_core(&sources)
             .unwrap_or_else(|| panic!("the new core takes {text}"));
         assert_eq!(found, old.check(&sources), "{text}");
+    }
+}
+
+#[test]
+fn a_plain_value_in_a_nest_of_functions_draws_one_plain_in_family_per_outermost_call_naming_the_first_longest_chain_508()
+ {
+    let old = Compiler::new(&symphonyscript_fixtures::vocabulary())
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
+    let new =
+        Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("the vocabulary compiles");
+    for depth in 0..4 {
+        for placements in [
+            "length,velocity",
+            "velocity,length",
+            "velocity",
+            "velocity,velocity",
+            "length",
+            "velocity,length,velocity",
+        ] {
+            let text = super::ledger_tests::family_nest(depth, placements);
+            let sources = [source(&text)];
+            let found = new
+                .checked_by_new_core(&sources)
+                .unwrap_or_else(|| panic!("the new core takes {text}"));
+            assert_eq!(found, old.check(&sources), "{text}");
+        }
     }
 }
