@@ -1445,7 +1445,7 @@ fn calls_reading_a_cell(depth: usize) -> String {
 }
 
 #[test]
-fn a_chain_of_calls_each_reading_a_cell_costs_call_chain_work_linear_in_its_depth_524() {
+fn a_chain_of_calls_each_reading_a_cell_costs_call_chain_work_and_memory_linear_in_its_depth_524() {
     let deep = symphonyscript_core::LimitOverrides {
         nesting_depth: Some(4_000),
         inlined_calls: Some(4_000),
@@ -1453,16 +1453,18 @@ fn a_chain_of_calls_each_reading_a_cell_costs_call_chain_work_linear_in_its_dept
         ..symphonyscript_core::LimitOverrides::default()
     };
     let compiler = Compiler::with_limits(&vocabulary(), deep).expect("the vocabulary compiles");
-    let mut walked = Vec::new();
-    for depth in [200usize, 400] {
+    let (mut walked, mut peaks) = (Vec::new(), Vec::new());
+    for depth in [1_000usize, 2_000] {
         let text = calls_reading_a_cell(depth);
         let before = CountedWalk::CoreCallChain.steps();
+        let allocated = CountingAllocator::begin();
         let found = compiler
             .checked_by_new_core(&[Source {
                 path: "main.sym".into(),
                 text: text.clone(),
             }])
             .unwrap_or_else(|| panic!("the new core takes {text}"));
+        peaks.push(CountingAllocator::since(allocated).1);
         assert!(
             found
                 .iter()
@@ -1471,8 +1473,9 @@ fn a_chain_of_calls_each_reading_a_cell_costs_call_chain_work_linear_in_its_dept
         );
         walked.push(CountedWalk::CoreCallChain.steps() - before);
     }
-    let [smaller, larger] = walked[..] else {
-        panic!("{walked:?}");
+    let (&[smaller, larger], &[low, high]) = (walked.as_slice(), peaks.as_slice()) else {
+        panic!("{walked:?} {peaks:?}");
     };
     assert!(smaller > 0 && larger <= smaller * 5 / 2, "{walked:?}");
+    assert!(low > 0 && high <= low * 9 / 4, "{peaks:?}");
 }
