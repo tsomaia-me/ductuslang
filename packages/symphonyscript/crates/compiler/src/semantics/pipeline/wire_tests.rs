@@ -194,7 +194,6 @@ fn a_reference_read_where_a_value_is_expected_stays_with_the_old_engine() {
     let new = Compiler::new(&vocabulary).expect("the vocabulary compiles");
     for text in [
         "state i(0)\nfn pick(k):\n    let t = [a, b][k]\n    k\nClip a:\n    Note/1\nClip b:\n    Note/2\nClip c:\n    Note/(pick(i))\n",
-        "let d: i32 = a\nClip a:\n    Note/1\nClip c:\n    Note/3\n    Plays: d\n",
         "let d = a\nClip a | level=2:\n    Note/1\nClip c | level=d.level:\n    Note/3\n",
     ] {
         assert!(new.checked_by_new_core(&[source(text)]).is_none(), "{text}");

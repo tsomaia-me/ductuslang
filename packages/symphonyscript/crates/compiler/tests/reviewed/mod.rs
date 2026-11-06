@@ -4348,6 +4348,21 @@ fn fit_beside_a_name_that_is_no_value(seen: &Seen<'_>, change: Change, at: &Draw
         })
 }
 
+fn destination_of_a_refused_annotated_let(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
+    let name = seen.text(at);
+    change == Change::Added
+        && at.0 == "destination-type"
+        && !name.is_empty()
+        && lines_at(seen.program).iter().any(|(start, line)| {
+            line.strip_prefix("let ")
+                .and_then(|rest| rest.strip_prefix(name))
+                .is_some_and(|rest| rest.starts_with(':'))
+                && seen.new.iter().any(|drawn| {
+                    drawn.0 == "type-mismatch" && seen.line(drawn.1) == seen.line(*start)
+                })
+        })
+}
+
 fn integer_cell_as_a_float_start(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
     let name = seen.text(at);
     change == Change::Added
@@ -5230,6 +5245,11 @@ pub const CLASSES: &[Class] = &[
         ledger: "480",
         rule: "a vocabulary name standing as a value (a node kind, a wire kind, an enum, a function) draws not-a-value and is a placeholder, so a fault at a literal beside it that holds only for some value of the name, a fit or a float in an integer position, does not stand (the placeholder rule, as beside an unknown name), where the old engine checks the literal in the position's type (`Note/(Lamp + 300000000000)`)",
         explains: fit_beside_a_name_that_is_no_value,
+    },
+    Class {
+        ledger: "476",
+        rule: "a let annotated with a value type whose init it refuses keeps the annotated type (ARCHITECTURE §7: a value whose type an error leaves known keeps that type), so a destination naming it draws destination-type, as the program with the init repaired to a value of that type does, where the old engine reads the let as a placeholder (`let d: i32 = a` with `Plays: d`)",
+        explains: destination_of_a_refused_annotated_let,
     },
     Class {
         ledger: "487",

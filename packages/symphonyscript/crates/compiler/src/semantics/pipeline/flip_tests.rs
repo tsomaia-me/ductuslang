@@ -1272,3 +1272,26 @@ fn an_instance_name_as_an_operand_draws_the_operators_refusal_as_the_old_engine_
         2
     );
 }
+
+#[test]
+fn an_annotated_let_holding_an_instance_name_refuses_it_and_keeps_its_type_in_every_order() {
+    assert_eq!(
+        same_as_the_old_engine(&[&[
+            "let d: i32 = a\n",
+            "Clip a:\n    Note/1\n",
+            "Clip c:\n    Note/(d)\n"
+        ]]),
+        24
+    );
+    assert_eq!(
+        drawn_codes(&[(
+            &[
+                "let d: i32 = a\n",
+                "Clip a:\n    Note/1\n",
+                "Clip c:\n    Note/3\n    Plays: d\n"
+            ],
+            &[Code::DestinationType, Code::TypeMismatch]
+        )]),
+        24
+    );
+}

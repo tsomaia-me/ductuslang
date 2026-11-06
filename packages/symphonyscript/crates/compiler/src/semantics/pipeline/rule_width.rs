@@ -180,7 +180,7 @@ impl Core<'_> {
         }
         for at in 0..u32::try_from(self.ir.lets.len()).unwrap_or(0) {
             if self.let_root(at)? == root {
-                return Ok(false);
+                return Ok(self.ir.node(root)?.0 == Op::Name && self.annotation_ty(at)?.is_some());
             }
         }
         Ok(true)

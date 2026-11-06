@@ -612,6 +612,7 @@ impl Core<'_> {
 
 pub(crate) fn refusal(fact: &Fact, ty: EvalTy) -> Refusal {
     match fact.leaf {
+        Leaf::Placeholder | Leaf::Error if fact.node && fact.dims.is_empty() => Refusal::Type,
         Leaf::Placeholder | Leaf::Error => Refusal::Silent,
         _ if !fact.dims.is_empty() => Refusal::Shape,
         Leaf::Bool if ty == EvalTy::Bool => Refusal::Kept,
