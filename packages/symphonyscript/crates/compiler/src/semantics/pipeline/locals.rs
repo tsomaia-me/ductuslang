@@ -114,14 +114,23 @@ impl Core<'_> {
         let binder = match self.decl.get(sym as usize).copied() {
             Some(DeclRef::Let(at)) => self.ir.lets.get(at as usize).map(|rec| rec.binder),
             Some(DeclRef::Cell(at)) => self.ir.cells.get(at as usize).map(|rec| rec.binder),
-            Some(
-                DeclRef::None
-                | DeclRef::Fn(_)
-                | DeclRef::Pattern(_)
-                | DeclRef::Instance(_)
-                | DeclRef::Duplicate
-                | DeclRef::Param(_),
-            )
+            Some(DeclRef::Fn(at)) => {
+                return self.declared_span(
+                    self.ir
+                        .fns
+                        .get(at as usize)
+                        .map(|rec| (rec.name, rec.value)),
+                );
+            }
+            Some(DeclRef::Instance(item)) => {
+                let declared = if let ItemRec::Placement(placement) = self.ir.item(item)? {
+                    Some((placement.as_name, self.ir.base))
+                } else {
+                    None
+                };
+                return self.declared_span(declared);
+            }
+            Some(DeclRef::None | DeclRef::Pattern(_) | DeclRef::Duplicate | DeclRef::Param(_))
             | None => return Ok(None),
         };
         let Some(binder) = binder else {
@@ -326,5 +335,18 @@ impl Core<'_> {
             return Ok(None);
         };
         Ok(Some(self.name_span(self.file_of(fold), placement.as_name)?))
+    }
+}
+
+impl Core<'_> {
+    fn declared_span(&self, declared: Option<(u32, u32)>) -> Result<Option<Span>, Internal> {
+        let Some((name, node)) = declared else {
+            return Ok(None);
+        };
+        if self.ir.files.len() != 1 || node == NONE {
+            return Ok(None);
+        }
+        let entry = *self.ir.name(name).ok_or(Internal::missed("IR name"))?;
+        Ok(Some(self.span(self.file_of(node), entry.lo, entry.hi)))
     }
 }

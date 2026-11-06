@@ -1527,3 +1527,23 @@ fn a_reference_operand_beside_an_array_operand_draws_array_operand_beside_a_vali
  {
     assert_eq!(same_as_the_old_engine(&REFERENCES_BESIDE_ARRAYS), 24);
 }
+
+const FOLD_NAMES_CLASHING: [&[&str]; 3] = [
+    &[
+        "fn g(): 1\n",
+        "let y = for g in [1] into a from 0: a + g\n",
+        "Clip c:\n    Note/(y)\n",
+    ],
+    &["Clip c:\n    Note/(for c in [1] into a from 0: a + c)\n"],
+    &[
+        "Clip k:\n    Note/1\n",
+        "let y = for i in [1] into k from 0: k + i\n",
+        "Clip c:\n    Note/(y)\n",
+    ],
+];
+
+#[test]
+fn a_fold_name_equal_to_a_function_or_an_instance_draws_for_variable_clash_beside_a_valid_twin_in_every_order()
+ {
+    assert_eq!(same_as_the_old_engine(&FOLD_NAMES_CLASHING), 50);
+}
