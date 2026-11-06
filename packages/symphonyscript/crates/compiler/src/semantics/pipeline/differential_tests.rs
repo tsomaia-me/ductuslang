@@ -1687,12 +1687,7 @@ fn a_fixed_array_attribute_binds_its_literals_elements_as_the_old_engine_does() 
     }
     let new = Compiler::new(&symphonyscript_fixtures::native_vocabulary())
         .expect("the vocabulary compiles");
-    for text in [
-        "let t = [1, 2, 3]\nClip c | trio=t\n",
-        "Clip c | trio=[1, 2, 3, 4][0..3]\n",
-        "Clip c | seq=[1, 2]\n",
-        "Clip c | rows=[[1, 2]]\n",
-    ] {
+    for text in ["Clip c | seq=[1, 2]\n", "Clip c | rows=[[1, 2]]\n"] {
         assert!(new.checked_by_new_core(&[source(text)]).is_none(), "{text}");
     }
 }

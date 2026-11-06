@@ -1914,3 +1914,57 @@ fn a_literal_arrays_size_and_capacity_are_its_length_known_at_compile_time_besid
  {
     assert_eq!(same_as_the_old_engine(&LITERAL_ARRAY_MEMBERS), 10);
 }
+
+const ARRAY_ATTRIBUTE_VALUES: [&[&str]; 10] = [
+    &["Clip c | trio=[1, 2, 3, 4][0..3]:\n    Note/1\n"],
+    &["let xs = [1, 2, 3]\n", "Clip c | trio=xs:\n    Note/1\n"],
+    &["let xs = [1, 2]\n", "Clip c | trio=xs:\n    Note/1\n"],
+    &[
+        "let xs = [1, 3000000000, 2]\n",
+        "Clip c | trio=xs:\n    Note/1\n",
+    ],
+    &["let xs = [1, 2.5, 2]\n", "Clip c | trio=xs:\n    Note/1\n"],
+    &[
+        "let xs = [1, 2, 3]\nlet ys = xs\n",
+        "Clip c | trio=ys:\n    Note/1\n",
+    ],
+    &[
+        "let xs = [[1, 2], [3, 4]]\n",
+        "Clip c | trio=xs[0]:\n    Note/1\n",
+    ],
+    &[
+        "let xs = [1, 2, 3]\n",
+        "Clip c | trio=(if true then xs else [4, 5, 6]):\n    Note/1\n",
+    ],
+    &[
+        "let xs = [1, 2, 3000000000]\n",
+        "Clip c | trio=xs[0..]:\n    Note/1\n",
+    ],
+    &[
+        "let xs = [1, 2, 3]\n",
+        "Clip c | trio=xs[1..]:\n    Note/1\n",
+    ],
+];
+
+#[test]
+fn an_integer_array_attribute_whose_value_is_a_compile_time_array_draws_its_shape_and_fit_at_the_value_as_the_old_engine_does()
+ {
+    let vocabulary = symphonyscript_fixtures::native_vocabulary();
+    let old = Compiler::new(&vocabulary)
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
+    let new = Compiler::new(&vocabulary).expect("the vocabulary compiles");
+    let mut programs = 0;
+    for items in ARRAY_ATTRIBUTE_VALUES {
+        for order in Orders::Every.of(items) {
+            let text = order.concat();
+            let sources = [source(&text)];
+            let found = new
+                .checked_by_new_core(&sources)
+                .unwrap_or_else(|| panic!("the new core takes {text}"));
+            assert_eq!(found, old.check(&sources), "{text}");
+            programs += 1;
+        }
+    }
+    assert_eq!(programs, 19);
+}

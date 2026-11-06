@@ -482,7 +482,7 @@ impl Core<'_> {
             return self.own_check(root);
         }
         if self.ir.node(root)?.0 != Op::Array {
-            return Ok(Err(Declined(Reason::ArrayAttribute)));
+            return self.bind_array_value(root, &fact, ty);
         }
         for element in self.operands(root)? {
             if let Err(declined) = self.bind_value(element, name, ty)? {
@@ -960,5 +960,46 @@ impl Core<'_> {
         let saved = self.enter_env(env);
         self.draw(code, span, message);
         self.leave_env(saved);
+    }
+}
+
+impl Core<'_> {
+    fn bind_array_value(&mut self, root: u32, fact: &Fact, ty: EvalTy) -> Stage<()> {
+        let Some(range) = int_range(ty) else {
+            return Ok(Err(Declined(Reason::ArrayAttribute)));
+        };
+        if self.is_reactive(root)? || fact.fixed.is_some() {
+            return Ok(Err(Declined(Reason::ArrayAttribute)));
+        }
+        if fact.leaf == Leaf::Float {
+            self.draw_at(
+                Code::TypeMismatch,
+                root,
+                "a float value stands where an integer is expected; a conversion states the rounding",
+            )?;
+            return Ok(Ok(()));
+        }
+        if fact.leaf != Leaf::Int {
+            return Ok(Err(Declined(Reason::ArrayAttribute)));
+        }
+        let value = match self.evaluate(root, EvalTy::Exact)? {
+            Ok(Value::Array(array)) => array,
+            Ok(_) => return Ok(Ok(())),
+            Err(declined) => return Ok(Err(declined)),
+        };
+        let count = self.store.len(value) as usize;
+        for position in 0..count {
+            if let Some(Value::Int(held)) = self.store.element(value, position)
+                && !range.contains(&held)
+            {
+                self.draw_at(
+                    Code::DoesNotFit,
+                    root,
+                    format!("this value does not fit `{}`", ty_name(ty)),
+                )?;
+                break;
+            }
+        }
+        Ok(Ok(()))
     }
 }
