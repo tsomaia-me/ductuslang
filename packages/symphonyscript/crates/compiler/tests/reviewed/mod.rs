@@ -4038,62 +4038,6 @@ pub const CARRIED_TO_R4B: &[Carried] = &[
             ("does-not-fit", "300000000000"),
         ],
     ),
-    (
-        "Clip c:\n    Note when ((300000000000 - 1.5) % (if [1, 2] then q else i32(true)))\n",
-        &[
-            ("unknown-name", "q"),
-            ("condition-type", "if [1, 2] then q else i32(true)"),
-            ("conversion-type", "i32(true)"),
-            ("does-not-fit", "300000000000"),
-        ],
-        &[
-            ("unknown-name", "q"),
-            ("condition-type", "if [1, 2] then q else i32(true)"),
-            ("conversion-type", "i32(true)"),
-            ("does-not-fit", "300000000000"),
-        ],
-    ),
-    (
-        "Clip c:\n    Note when (u8(if q then true else Wave::Saw))\n",
-        &[("unknown-name", "q")],
-        &[("unknown-name", "q")],
-    ),
-    (
-        "Clip c:\n    Note when (i32(if q then Wave::Saw else 1.5))\n",
-        &[("unknown-name", "q")],
-        &[("unknown-name", "q")],
-    ),
-    (
-        "Clip c:\n    Note when (i32(if q then [1, 2][5] else Wave::Saw))\n",
-        &[("unknown-name", "q")],
-        &[("unknown-name", "q")],
-    ),
-    (
-        "Clip c:\n    Note when (u8(if q then 1.5 else 1))\n",
-        &[("unknown-name", "q")],
-        &[("unknown-name", "q")],
-    ),
-    (
-        "Clip c:\n    Note when (if (1 div i32(true)) then (if [1, 2] then q else q) else (q or [1, 2]))\n",
-        &[
-            ("unknown-name", "q"),
-            ("unknown-name", "q"),
-            ("unknown-name", "q"),
-            ("array-operand", "q or [1, 2]"),
-            ("condition-type", "if [1, 2] then q else q"),
-            ("type-mismatch", "1 div i32(true)"),
-            ("conversion-type", "i32(true)"),
-        ],
-        &[
-            ("unknown-name", "q"),
-            ("unknown-name", "q"),
-            ("unknown-name", "q"),
-            ("array-operand", "q or [1, 2]"),
-            ("condition-type", "if [1, 2] then q else q"),
-            ("type-mismatch", "1 div i32(true)"),
-            ("conversion-type", "i32(true)"),
-        ],
-    ),
 ];
 
 pub const CARRIED: &str = "480, carried to R4b";

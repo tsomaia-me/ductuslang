@@ -155,17 +155,10 @@ fn a_flexible_comparison_operand_takes_its_default_float_type_and_a_value_that_d
     }
 }
 
-const DECLINED: [&str; 5] = [
-    "Output :master\n",
-    "Clip c: Nope/1\n",
-    "Clip c:\n    Note/60 when nope\n",
-    "Plant boiler:\n    when nope:\n        Valve/0.3\n",
-    "state note(60)\nClip c:\n    Note when (if q then 300000000000 else [1, 2][5])\n",
-];
+const DECLINED: [&str; 2] = ["Output :master\n", "Clip c: Nope/1\n"];
 
 #[test]
-fn a_gate_reading_a_reactive_pattern_parameter_or_a_choice_beside_its_refused_condition_stays_with_the_old_engine()
- {
+fn an_unknown_kind_at_a_top_level_placement_stays_with_the_old_engine() {
     let vocabulary = symphonyscript_fixtures::vocabulary();
     let new = Compiler::new(&vocabulary).expect("the vocabulary compiles");
     for text in DECLINED {

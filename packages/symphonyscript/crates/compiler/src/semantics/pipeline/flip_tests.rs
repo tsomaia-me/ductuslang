@@ -976,3 +976,99 @@ fn a_derived_float_cell_or_a_reactive_argument_read_only_in_a_comparison_with_a_
  {
     assert_eq!(same_as_the_old_engine(&COMPARED_WIDTHS), 204);
 }
+
+fn drawn_codes(rows: &[(&[&str], &[Code])]) -> usize {
+    let vocabulary = symphonyscript_fixtures::vocabulary();
+    let new = Compiler::new(&vocabulary).expect("the vocabulary compiles");
+    let mut programs = 0;
+    for (items, codes) in rows {
+        let mut expected = codes.to_vec();
+        expected.sort_by_key(|code| format!("{code:?}"));
+        for text in twins(items) {
+            let found = new
+                .checked_by_new_core(&[source(&text)])
+                .unwrap_or_else(|| panic!("the new core takes {text}"));
+            let mut found: Vec<Code> = found
+                .iter()
+                .map(|diagnostic| diagnostic.code)
+                .filter(|code| *code != Code::NoEntryInstance)
+                .collect();
+            found.sort_by_key(|code| format!("{code:?}"));
+            assert_eq!(found, expected, "{text}");
+            programs += 1;
+        }
+    }
+    programs
+}
+
+const PLACEHOLDER_GATES: [(&[&str], &[Code]); 12] = [
+    (&["Clip c:\n    Note when q > 1\n"], &[Code::UnknownName]),
+    (
+        &[
+            "state s(1)\n",
+            "Clip c:\n    Note when q + s > 3000000000\n",
+        ],
+        &[Code::UnknownName],
+    ),
+    (&["Clip c:\n    Note/60 when nope\n"], &[Code::UnknownName]),
+    (
+        &["Plant boiler:\n    when nope:\n        Valve/0.3\n"],
+        &[Code::UnknownName],
+    ),
+    (
+        &["Clip c:\n    Note when (u8(if q then true else Wave::Saw))\n"],
+        &[Code::ConditionType, Code::TypeMismatch, Code::UnknownName],
+    ),
+    (
+        &["Clip c:\n    Note when (u8(if q then 1.5 else 1))\n"],
+        &[Code::ConditionType, Code::UnknownName],
+    ),
+    (
+        &["Clip c:\n    Note when ((300000000000 - 1.5) % (if [1, 2] then q else i32(true)))\n"],
+        &[
+            Code::ConditionType,
+            Code::ConversionType,
+            Code::DoesNotFit,
+            Code::UnknownName,
+        ],
+    ),
+    (
+        &[
+            "Clip c:\n    Note when (if (1 div i32(true)) then (if [1, 2] then q else q) else (q or [1, 2]))\n",
+        ],
+        &[
+            Code::ArrayOperand,
+            Code::ConditionType,
+            Code::ConditionType,
+            Code::ConversionType,
+            Code::UnknownName,
+            Code::UnknownName,
+            Code::UnknownName,
+        ],
+    ),
+    (
+        &["Clip c:\n    Note when (if q then 1 else 2)\n"],
+        &[Code::ConditionType, Code::UnknownName],
+    ),
+    (
+        &[
+            "state note(60)\n",
+            "Clip c:\n    Note when (if q then 300000000000 else [1, 2][5])\n",
+        ],
+        &[Code::ConditionType, Code::UnknownName],
+    ),
+    (
+        &["Clip c:\n    Note when (if 1 then 1 else 2)\n"],
+        &[Code::ConditionType, Code::ConditionType],
+    ),
+    (
+        &["Clip c:\n    Note when (if (1 + true) then 1 else 2)\n"],
+        &[Code::ConditionType, Code::OperandType],
+    ),
+];
+
+#[test]
+fn a_gate_holding_an_unknown_name_or_a_choice_beside_its_refused_condition_is_checked_as_a_bool_by_the_twin_pass_in_every_order()
+ {
+    assert_eq!(drawn_codes(&PLACEHOLDER_GATES), 32);
+}
