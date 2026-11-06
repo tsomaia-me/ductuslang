@@ -2593,3 +2593,32 @@ fn a_for_name_equal_to_a_placement_on_a_faulty_line_draws_its_clash_with_that_na
  {
     assert_eq!(same_as_the_old_engine(&CLASH_WITH_A_FAULTY_PLACEMENT), 24);
 }
+
+const NAMED_DOT_CALLS: [&[&str]; 11] = [
+    &["fn f(a, b): a + b\n", "Clip c:\n    Note/(1.f(b=2))\n"],
+    &["fn f(a, b): a + b\n", "Clip c:\n    Note/(1.f(a=2))\n"],
+    &["fn f(a, b): a + b\n", "Clip c:\n    Note/(1.f(c=2))\n"],
+    &[
+        "fn f(a, b, c): a + b + c\n",
+        "Clip c:\n    Note/(1.f(c=2, b=3))\n",
+    ],
+    &["fn f(a): a\n", "Clip c:\n    Note/(1.f(b=2))\n"],
+    &[
+        "fn f(a, b): a + b\nstate q(1)\n",
+        "Clip c:\n    Note/(q.f(b=3000000000))\n",
+    ],
+    &["fn f(a, b): a + b\n", "Clip c:\n    Note/(1.f(b=2, b=3))\n"],
+    &["fn f(a, b): a + b\n", "Clip c:\n    Note/(1.f(b=zz))\n"],
+    &["fn f(a, b): a + b\n", "Clip c:\n    Note/([1, 2].f(b=2))\n"],
+    &[
+        "fn f(a, b): a - b\nlet x = 5\n",
+        "Clip c:\n    Note/(x.f(b=2) + x.f(2))\n",
+    ],
+    &["fn f(a, b): a - b\n", "Clip c:\n    Note/(1.f(b=true))\n"],
+];
+
+#[test]
+fn a_named_dot_call_binds_its_receiver_to_the_first_parameter_and_its_names_to_the_rest_beside_a_valid_twin_in_every_order()
+ {
+    assert_eq!(same_as_the_old_engine(&NAMED_DOT_CALLS), 66);
+}
