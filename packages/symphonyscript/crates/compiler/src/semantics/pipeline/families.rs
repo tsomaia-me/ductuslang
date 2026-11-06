@@ -603,6 +603,11 @@ impl Core<'_> {
             if !mixed.contains(&family) {
                 continue;
             }
+            self.inst = inst;
+            let held = self.fact(root)?;
+            if open(&held) || !numeric(&held) {
+                continue;
+            }
             let mut own = FeedFound::default();
             self.feed_walk((root, env, inst), family, &summaries, &mut own, &mut params)?;
             for (node, _, key) in own.reached {

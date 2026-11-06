@@ -3695,7 +3695,27 @@ const BARS_DEFAULT: [DefaultUnitProgram; 10] = [
     ),
 ];
 
-const BAR_LENGTHS: [DefaultUnitProgram; 7] = [
+const BAR_LENGTHS: [DefaultUnitProgram; 12] = [
+    (
+        &["state n(2)", "Bar b | bar_len=(n + 1bars) beat_len=n/"],
+        &[("expression-syntax", "\n")],
+    ),
+    (
+        &["state n(2)", "Bar b | bar_len=(n + 1bars) beat_len=n+"],
+        &[("expression-syntax", "\n")],
+    ),
+    (
+        &["state n(2)", "Bar b | bar_len=(n + 1bars) beat_len=(n / 2)"],
+        &[("type-mismatch", "n / 2")],
+    ),
+    (
+        &["state n(2)", "Bar b | bar_len=n beat_len=(n / 2)"],
+        &[("type-mismatch", "n / 2")],
+    ),
+    (
+        &["state n(2)", "Bar b | bar_len=n beat_len=(n + 1beats)"],
+        &[("conflicting-units", "n + 1beats")],
+    ),
     (
         &["Bar b | bar_len=3000000000000000000"],
         &[("does-not-fit", "3000000000000000000")],
@@ -3782,5 +3802,5 @@ fn a_plain_value_at_an_attribute_whose_default_unit_has_a_scale_other_than_1_rea
             }
         }
     }
-    assert_eq!(programs, 5 * 6 + 24 + 4 + 5 + 2 * 2 + 3 + 3 * 2);
+    assert_eq!(programs, 5 * 6 + 24 + 4 + 5 + 7 * 2 + 3 + 3 * 2);
 }
