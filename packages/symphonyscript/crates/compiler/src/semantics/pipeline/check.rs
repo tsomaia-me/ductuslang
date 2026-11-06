@@ -60,7 +60,7 @@ fn plain_expected(attr: &AttrDecl) -> Option<EvalTy> {
         Scalar::F64 => EvalTy::F64,
         Scalar::Bool => EvalTy::Bool,
         Scalar::Enum(id) => EvalTy::Enum(id),
-        Scalar::Str => return None,
+        Scalar::Str => EvalTy::Str,
     })
 }
 
@@ -507,6 +507,17 @@ impl Core<'_> {
     ) -> Result<Option<(Code, String)>, Internal> {
         let integer = int_range(ty).is_some();
         Ok(Some(match fact.leaf {
+            Leaf::Empty | Leaf::Int | Leaf::Float | Leaf::Bool | Leaf::Enum(_)
+                if ty == EvalTy::Str =>
+            {
+                (
+                    Code::TypeMismatch,
+                    format!(
+                        "this value has the wrong type here; `{}` is expected",
+                        self.ty_text(ty)?
+                    ),
+                )
+            }
             Leaf::Bool if ty != EvalTy::Bool => (
                 Code::TypeMismatch,
                 format!(

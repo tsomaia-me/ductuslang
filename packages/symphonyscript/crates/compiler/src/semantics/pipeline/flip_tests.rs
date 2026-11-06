@@ -1198,3 +1198,24 @@ const PI_READS: [&[&str]; 11] = [
 fn pi_is_a_flexible_float_drawing_what_the_old_engine_draws_beside_a_valid_twin_in_every_order() {
     assert_eq!(same_as_the_old_engine(&PI_READS), 34);
 }
+
+const STRING_ATTRIBUTES: [&[&str]; 12] = [
+    &["Track t | label=1\n"],
+    &["Track t | label=true\n"],
+    &["Track t | label=1.5\n"],
+    &["state s(1)\n", "Track t | label=s\n"],
+    &["Track t | label=[1, 2]\n"],
+    &["Track t | label=(1 + true)\n"],
+    &["Kit k:\n    Sampler/3\n"],
+    &["Track t | label=Wave::Saw\n"],
+    &["Track t\n"],
+    &["Kit k:\n    Sampler\n"],
+    &["fn f(x): x\n", "Track t | label=f(1)\n"],
+    &["Track t | label=(if true then 1 else 2)\n"],
+];
+
+#[test]
+fn a_value_that_is_no_string_at_a_string_attribute_draws_what_the_old_engine_draws_beside_a_valid_twin_in_every_order()
+ {
+    assert_eq!(same_as_the_old_engine(&STRING_ATTRIBUTES), 32);
+}
