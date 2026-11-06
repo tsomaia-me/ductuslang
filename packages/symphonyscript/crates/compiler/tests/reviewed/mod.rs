@@ -4340,6 +4340,14 @@ fn loop_name_in_an_unknown_kinds_body(seen: &Seen<'_>, change: Change, at: &Draw
         && unknown_parent
 }
 
+fn fit_beside_a_name_that_is_no_value(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
+    change == Change::Removed
+        && matches!(at.0.as_str(), "does-not-fit" | "type-mismatch")
+        && seen.new.iter().any(|drawn| {
+            drawn.0 == "not-a-value" && seen.line(drawn.1) == seen.line(at.1) && drawn.1 < at.1
+        })
+}
+
 fn integer_cell_as_a_float_start(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
     let name = seen.text(at);
     change == Change::Added
@@ -5217,6 +5225,11 @@ pub const CLASSES: &[Class] = &[
         ledger: "476",
         rule: "a placement in the body of a placement of an unknown kind, inside a placement `for` body, whose kind is a loop variable's name draws unknown-kind, as it does under a known kind and in the program with the unknown kind repaired (the repair rule; SPEC §7.1), where the old engine is silent (`for s in sections:` with `xStarts:` holding `s` on the next line)",
         explains: loop_name_in_an_unknown_kinds_body,
+    },
+    Class {
+        ledger: "480",
+        rule: "a vocabulary name standing as a value (a node kind, a wire kind, an enum, a function) draws not-a-value and is a placeholder, so a fault at a literal beside it that holds only for some value of the name, a fit or a float in an integer position, does not stand (the placeholder rule, as beside an unknown name), where the old engine checks the literal in the position's type (`Note/(Lamp + 300000000000)`)",
+        explains: fit_beside_a_name_that_is_no_value,
     },
     Class {
         ledger: "487",

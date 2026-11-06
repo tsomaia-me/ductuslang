@@ -1155,3 +1155,27 @@ fn a_top_item_the_front_end_draws_or_skips_draws_what_the_old_engine_draws_besid
  {
     assert_eq!(same_as_the_old_engine(&DRAWN_TOPS), 24);
 }
+
+const NAMES_THAT_ARE_NO_VALUES: [&[&str]; 9] = [
+    &["let x = Lamp\n", "Rig r:\n    Lamp/0.1\n"],
+    &["Rig r:\n    Lamp/(Lamp)\n"],
+    &["Clip c:\n    Note/(sin)\n"],
+    &["Synth s:\n    Osc | freq=(rand)\n"],
+    &["Synth s:\n    Osc | freq=Wave\n"],
+    &["Clip a:\n    Note/(Plays)\n"],
+    &["Clip c:\n    Note/(sin + 1.5)\n"],
+    &["state s(Lamp)\n", "Clip c:\n    Note/(s)\n"],
+    &["Clip c:\n    Note when Lamp\n    Note/([Lamp, 2][5])\n"],
+];
+
+#[test]
+fn a_vocabulary_name_standing_as_a_value_draws_not_a_value_beside_a_valid_twin_in_every_order() {
+    assert_eq!(same_as_the_old_engine(&NAMES_THAT_ARE_NO_VALUES), 26);
+    assert_eq!(
+        drawn_codes(&[(
+            &["Clip c:\n    Note/(Lamp + 300000000000)\n"],
+            &[Code::NotAValue]
+        )]),
+        2
+    );
+}

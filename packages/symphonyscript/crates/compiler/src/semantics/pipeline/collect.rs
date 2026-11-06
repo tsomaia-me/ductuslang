@@ -272,6 +272,7 @@ impl Core<'_> {
         let skipped_top = self.skipped_top();
         self.skipped_top.clone_from(&skipped_top);
         let mut enclosing = std::collections::HashMap::new();
+        let type_operands = self.type_operands()?;
         for local in 0..self.ir.op.len() {
             if self.ir.op.get(local) != Some(&Op::Name)
                 || !self.reached.get(local).copied().unwrap_or(false)
@@ -332,6 +333,14 @@ impl Core<'_> {
                         && self.vocabulary.native_named(&text).is_none()
                     {
                         self.bare.insert(node);
+                        continue;
+                    }
+                    if let Some(what) = self
+                        .not_a_value(&text)
+                        .filter(|_| !type_operands.contains(&node))
+                    {
+                        let span = self.node_span(node)?;
+                        self.draw(Code::NotAValue, span, format!("`{text}` is {what}"));
                         continue;
                     }
                     if self.vocabulary_clash(&text).is_some()
@@ -660,5 +669,52 @@ impl Core<'_> {
             .node_kind_named(self.ir.symbols.text(entry.sym))
             .is_some();
         Ok(if node && !declared { *item } else { NONE })
+    }
+}
+
+impl Core<'_> {
+    fn not_a_value(&self, text: &str) -> Option<&'static str> {
+        if self.variants.owner(text).is_some() || text == BuiltinName::Pi.name() {
+            return None;
+        }
+        if self.vocabulary.native_named(text).is_some()
+            || BuiltinName::all().any(|builtin| builtin.name() == text)
+        {
+            return Some("a function, which is only called");
+        }
+        if self.vocabulary.node_kind_named(text).is_some() {
+            return Some("a node kind, which is only placed");
+        }
+        if self.vocabulary.wire_kind_named(text).is_some() {
+            return Some("a wire kind, which is only placed");
+        }
+        if self.vocabulary.enum_named(text).is_some() {
+            return Some("an enum, whose variants are written `Enum::Variant`");
+        }
+        None
+    }
+}
+
+impl Core<'_> {
+    fn type_operands(&self) -> Result<std::collections::HashSet<u32>, Internal> {
+        let mut found = std::collections::HashSet::new();
+        for local in 0..self.ir.op.len() {
+            if !matches!(self.ir.op.get(local), Some(Op::Is | Op::IsNot)) {
+                continue;
+            }
+            let node = self.ir.base + u32::try_from(local).unwrap_or(u32::MAX);
+            let (_, _, mut operand, _) = self.ir.node(node)?;
+            while let Ok((op, base, _, _)) = self.ir.node(operand) {
+                match op {
+                    Op::Name => {
+                        found.insert(operand);
+                        break;
+                    }
+                    Op::Index => operand = base,
+                    _ => break,
+                }
+            }
+        }
+        Ok(found)
     }
 }
