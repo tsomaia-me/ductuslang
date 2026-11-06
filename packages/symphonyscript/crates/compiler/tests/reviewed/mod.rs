@@ -4314,6 +4314,34 @@ fn integer_cell_in_a_flexible_float_operation(seen: &Seen<'_>, change: Change, a
         })
 }
 
+fn history_of_a_faulty_line_name(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
+    let name = seen.text(at);
+    let mut start = 0;
+    let mut declared = false;
+    for line in seen.program.split_inclusive('\n') {
+        let end = start + line.len();
+        let mut words = line.split_whitespace();
+        let placed = match (words.next(), words.next()) {
+            (Some(kind), Some(rest)) => {
+                !line.starts_with(' ')
+                    && !matches!(
+                        kind,
+                        "state" | "let" | "fn" | "pattern" | "stream" | "input"
+                    )
+                    && rest.split('(').next() == Some(name)
+            }
+            _ => false,
+        };
+        let faulty = seen
+            .old
+            .iter()
+            .any(|drawn| drawn.0 == "placement-syntax" && (start..end).contains(&drawn.1));
+        declared |= placed && faulty;
+        start = end;
+    }
+    change == Change::Removed && at.0 == "history-target" && !name.is_empty() && declared
+}
+
 fn loop_name_in_an_unknown_kinds_body(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
     let name = seen.text(at);
     let names_a_loop_variable = [
@@ -5240,6 +5268,11 @@ pub const CLASSES: &[Class] = &[
         ledger: "476",
         rule: "a placement in the body of a placement of an unknown kind, inside a placement `for` body, whose kind is a loop variable's name draws unknown-kind, as it does under a known kind and in the program with the unknown kind repaired (the repair rule; SPEC §7.1), where the old engine is silent (`for s in sections:` with `xStarts:` holding `s` on the next line)",
         explains: loop_name_in_an_unknown_kinds_body,
+    },
+    Class {
+        ledger: "476",
+        rule: "a history read of a name declared by a placement on a line holding a syntax fault draws nothing, the name being a placeholder wherever it is used (ARCHITECTURE §7), where the old engine draws history-target at it (`xstate gate(false)` with `gate.past(2)`)",
+        explains: history_of_a_faulty_line_name,
     },
     Class {
         ledger: "480",
