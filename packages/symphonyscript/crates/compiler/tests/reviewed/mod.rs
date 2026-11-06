@@ -5358,6 +5358,11 @@ pub const CLASSES: &[Class] = &[
         rule: "a condition the parser ends where a syntax fault on its line begins leaves the intended condition unknown, the rest of it lying in that fault's region (ARCHITECTURE §7.1: a fault's region is the rest of its line), so the choice draws no condition-type, where the old engine types the cut condition as written (the head's reading of 15:39Z 2026-11-05)",
         explains: condition_cut_by_a_line_fault,
     },
+    Class {
+        ledger: "476",
+        rule: "a gate whose value holds a refused index, slice bound, conversion or condition draws condition-type at the value where the type those faults leave known is no `bool` (ARCHITECTURE §7: a value whose type an error leaves known keeps that type), as the program with the faults repaired draws, where the old engine is silent",
+        explains: gate_beside_its_faults,
+    },
 ];
 
 fn annotated_let_value(seen: &Seen<'_>, at: &Drawn) -> bool {
@@ -5948,4 +5953,15 @@ fn unclosed(line: &str) -> bool {
         .filter(|c| matches!(c, ')' | ']' | '}'))
         .count();
     opened > closed
+}
+
+fn gate_beside_its_faults(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
+    let before = seen.before(at);
+    change == Change::Added
+        && at.0 == "condition-type"
+        && (before.ends_with("when (") || before.ends_with("when "))
+        && seen
+            .old
+            .iter()
+            .any(|drawn| drawn.0 != "condition-type" && drawn.1 >= at.1 && drawn.2 <= at.2)
 }
