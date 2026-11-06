@@ -320,6 +320,7 @@ impl Core<'_> {
                 for arg in self.arguments(node)? {
                     let arg_ty = match self.fact(arg)?.fixed {
                         Some(_) => self.own_ty(arg)?.unwrap_or(EvalTy::Exact),
+                        None if self.flexible_integer(arg)? => flexible(ty),
                         None => ty,
                     };
                     operands.push((arg, arg_ty));
@@ -901,6 +902,23 @@ impl Core<'_> {
                                 {
                                     self.bind_init_read(node, argument, node_ty);
                                 }
+                                let argued = called.or_else(|| {
+                                    self.own_calls
+                                        .iter()
+                                        .rev()
+                                        .find(|(_, inst, _)| {
+                                            self.bodies
+                                                .get(*inst as usize)
+                                                .is_some_and(|body| body.function == owner)
+                                        })
+                                        .map(|(call, _, _)| *call)
+                                });
+                                let value = match argued {
+                                    Some(call) => {
+                                        self.parameter_fit(call, position, node, node_ty, value)?
+                                    }
+                                    None => value,
+                                };
                                 let value = match self
                                     .loop_element(node, owner, position, node_ty, &value)?
                                 {
@@ -1823,6 +1841,46 @@ impl Core<'_> {
         })
     }
 
+    fn flexible_integer(&self, arg: u32) -> Result<bool, Internal> {
+        let fact = self.fact(arg)?;
+        Ok(fact.fixed.is_none()
+            && fact.leaf == Leaf::Int
+            && fact.dims.is_empty()
+            && !self.is_reactive(arg)?)
+    }
+
+    fn parameter_fit(
+        &mut self,
+        call: u32,
+        position: u32,
+        read: u32,
+        read_ty: EvalTy,
+        value: CoreValue,
+    ) -> Result<CoreValue, Internal> {
+        if !matches!(
+            self.ir.node(call).map(|node| node.0),
+            Ok(Op::Call | Op::NamedCall)
+        ) {
+            return Ok(value);
+        }
+        let Some(argument) = self.arguments(call)?.get(position as usize).copied() else {
+            return Ok(value);
+        };
+        if let Value::Int(held) = &value
+            && (4..=6).contains(&class(read_ty))
+            && int_range(read_ty).is_some_and(|range| !range.contains(held))
+            && self.flexible_integer(argument)?
+        {
+            self.draw_at(
+                Code::DoesNotFit,
+                read,
+                format!("this value does not fit `{}`", ty_name(read_ty)),
+            )?;
+            return Ok(Value::Error);
+        }
+        Ok(value)
+    }
+
     pub fn own_ty(&self, node: u32) -> Result<Option<EvalTy>, Internal> {
         let fact = self.fact(node)?;
         if let Some(fixed) = fact.own()
@@ -2165,6 +2223,11 @@ impl Core<'_> {
                         let held = match self.own_ty(arg)? {
                             Some(own) if !self.is_kept(arg)? && !self.is_reactive(arg)? => {
                                 self.unflowed.insert(arg);
+                                let own = if self.flexible_integer(arg)? {
+                                    flexible(own)
+                                } else {
+                                    own
+                                };
                                 match self.evaluate(arg, own)? {
                                     Ok(value) => Some(value),
                                     Err(declined) => return Ok(Err(declined)),

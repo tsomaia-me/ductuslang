@@ -2471,3 +2471,73 @@ fn a_math_call_of_another_count_draws_argument_count_and_checks_its_arguments_be
  {
     assert_eq!(same_as_the_old_engine(&MATH_COUNTS), 32);
 }
+
+const PARAMETER_FITS: [&[&str]; 16] = [
+    &[
+        "fn plus(a, b): a + b\nstate q(1)\n",
+        "Clip c:\n    Note/(plus(q, 30))\n",
+    ],
+    &[
+        "fn plus(a, b): a + b\nstate q(1)\n",
+        "Clip c:\n    Note/(plus(q, 3000000000))\n",
+    ],
+    &[
+        "fn plus(a, b): a + b\nstate q(1)\n",
+        "Clip c:\n    Note/(q.plus(3000000000))\n",
+    ],
+    &[
+        "fn plus(a, b): a + b\nstate q(1)\n",
+        "Clip c:\n    Note/(plus(q, 3000000000 + 1))\n",
+    ],
+    &[
+        "fn plus(a, b): a + b\nstate q(1)\nlet z = 3000000000\n",
+        "Clip c:\n    Note/(plus(q, z))\n",
+    ],
+    &[
+        "fn plus(a, b): a + b\n",
+        "Clip c:\n    Note/(plus(1, 3000000000))\n",
+    ],
+    &[
+        "fn two(b): (u8(1) + b) + i64(b)\n",
+        "Clip c:\n    Note/(two(300))\n",
+    ],
+    &[
+        "fn two(b): i64(b) + (u8(1) + b)\n",
+        "Clip c:\n    Note/(two(300))\n",
+    ],
+    &[
+        "fn two(b): (u8(1) + b) + i64(b)\n",
+        "Clip c:\n    Note/(two(30))\n",
+    ],
+    &[
+        "fn two(a, b): (a + b) + i64(b)\nstate q(1)\n",
+        "Clip c:\n    Note/(two(q, 3000000000))\n",
+    ],
+    &[
+        "fn two(a, b): (a + b) + i64(b)\nstate q(1)\n",
+        "Clip c:\n    Note/(two(q, 30))\n",
+    ],
+    &[
+        "fn f(b, q): b + q\nfn g(b): f(b, q) + i64(b)\nstate q(1)\n",
+        "Clip c:\n    Note/(g(3000000000))\n",
+    ],
+    &[
+        "fn two(a): (a + 1) + i64(1)\nstate q(1)\n",
+        "Clip c:\n    Note/(two(q))\n",
+    ],
+    &[
+        "fn f(a, b): a\nstate q(1)\n",
+        "Clip c:\n    Note/(f(q, 3000000000))\n",
+    ],
+    &["fn f(a): u8(a)\n", "Clip c:\n    Note/(f(3000000000))\n"],
+    &[
+        "fn f(a, b): u8(a) + b\nstate q(1)\n",
+        "Clip c:\n    Note/(f(3000000000, q))\n",
+    ],
+];
+
+#[test]
+fn a_flexible_argument_fits_at_each_use_of_its_parameter_and_a_reactive_body_refuses_its_own_operand_beside_a_valid_twin_in_every_order()
+ {
+    assert_eq!(same_as_the_old_engine(&PARAMETER_FITS), 96);
+}

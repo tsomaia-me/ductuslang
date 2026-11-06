@@ -19,6 +19,8 @@ use crate::semantics::counted_walk::CountedWalk;
 use crate::semantics::ir::flat::{AttrForm, NONE, Op};
 use crate::semantics::operators::{EvalTy, Value, int_range, ty_name};
 
+type Refused = (u32, u32, Vec<u32>, bool);
+
 pub(super) fn describe(count: Count) -> String {
     match count {
         Count::Exactly(n) => format!("exactly {n}"),
@@ -373,15 +375,43 @@ impl Core<'_> {
         root: u32,
         ty: EvalTy,
         reactive: bool,
-    ) -> Result<Vec<u32>, Internal> {
-        let mut stack = vec![root];
+    ) -> Result<Vec<Refused>, Internal> {
+        let (outer, base) = (self.inst, self.eval_chain.clone());
+        let mut stack = vec![(root, outer, Vec::new(), true)];
         let mut refused = Vec::new();
-        while let Some(node) = stack.pop() {
+        let outcome = self.refuse_walk(ty, reactive, &mut stack, &mut refused, &base);
+        self.inst = outer;
+        self.eval_chain = base;
+        outcome?;
+        Ok(refused)
+    }
+
+    fn refuse_walk(
+        &mut self,
+        ty: EvalTy,
+        reactive: bool,
+        stack: &mut Vec<Refused>,
+        refused: &mut Vec<Refused>,
+        base: &[u32],
+    ) -> Result<(), Internal> {
+        while let Some((node, inst, chain, whole)) = stack.pop() {
+            self.inst = inst;
+            self.eval_chain = base.iter().chain(chain.iter()).copied().collect();
             let fact = self.fact(node)?;
             let Some(own) = fact.fixed.filter(|own| !widens(*own, ty)) else {
                 continue;
             };
             let (op, a, b, c) = self.ir.node(node)?;
+            if reactive
+                && matches!(op, Op::Call | Op::NamedCall)
+                && let Some(body) = self.body_of_call(node)
+            {
+                let value = self.body_value(body)?;
+                let mut inner = chain;
+                inner.push(node);
+                stack.push((value, body, inner, whole));
+                continue;
+            }
             let soft = reactive && (fact.read.is_some() || self.adaptive_operand(node)?);
             let through = match op {
                 Op::Neg | Op::Add | Op::Sub | Op::Mul | Op::Div | Op::Rem | Op::Pow | Op::Array
@@ -448,11 +478,16 @@ impl Core<'_> {
                         ty_name(ty)
                     ),
                 )?;
-                refused.push(node);
+                refused.push((node, inst, chain.clone(), whole));
             }
-            stack.extend(through.into_iter().rev());
+            stack.extend(
+                through
+                    .into_iter()
+                    .rev()
+                    .map(|kid| (kid, inst, chain.clone(), false)),
+            );
         }
-        Ok(refused)
+        Ok(())
     }
 
     fn bind_array(&mut self, root: u32, name: &str, ty: EvalTy, length: u32) -> Stage<()> {
@@ -646,11 +681,17 @@ impl Core<'_> {
             && !widens(own, ty)
         {
             let refused = self.refuse_fixed(root, ty, reactive)?;
-            if refused.contains(&root) {
+            if refused.iter().any(|(_, _, _, whole)| *whole) {
                 return self.own_check(root);
             }
-            for node in refused {
-                if let Err(declined) = self.own_check(node)? {
+            let (outer, base) = (self.inst, self.eval_chain.clone());
+            for (node, inst, chain, _) in refused {
+                self.inst = inst;
+                self.eval_chain = base.iter().chain(chain.iter()).copied().collect();
+                let checked = self.own_check(node);
+                self.inst = outer;
+                self.eval_chain.clone_from(&base);
+                if let Err(declined) = checked? {
                     return Ok(Err(declined));
                 }
             }
