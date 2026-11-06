@@ -268,6 +268,11 @@ impl Core<'_> {
             }
             Op::And | Op::Or => vec![(a, EvalTy::Bool), (b, EvalTy::Bool)],
             Op::Not => vec![(a, EvalTy::Bool)],
+            Op::Call if self.abs_call(node)? => self
+                .arguments(node)?
+                .into_iter()
+                .map(|arg| (arg, ty))
+                .collect(),
             Op::Call | Op::NamedCall => {
                 steps.pop();
                 steps.push(Step::Enter(node, ty));
@@ -1535,6 +1540,15 @@ impl Core<'_> {
                 },
                 None => return Err(Internal::missed("a path read of a cell")),
             },
+            Op::Call if self.abs_call(node)? => match pop(stack)? {
+                Value::Int(value) => crate::semantics::operators::integer(
+                    self,
+                    node,
+                    ty,
+                    Some(value.saturating_abs()),
+                )?,
+                other => absolute(other),
+            },
             Op::If
             | Op::Str
             | Op::Call
@@ -2494,5 +2508,13 @@ impl Core<'_> {
         } else {
             arrays > 0
         })
+    }
+}
+
+fn absolute(value: CoreValue) -> CoreValue {
+    match value {
+        Value::F32(value) => Value::F32(value.abs()),
+        Value::F64(value) => Value::F64(value.abs()),
+        other => other,
     }
 }

@@ -519,6 +519,9 @@ impl Core<'_> {
 
     pub fn call_fact(&mut self, node: u32) -> Stage<Fact> {
         let Some(function) = self.callee(node)? else {
+            if self.abs_call(node)? {
+                return self.abs_fact(node);
+            }
             if self.not_callable(node)? {
                 let callee = self.ir.node(node)?.1;
                 let name = self.ir.node(callee)?.1;
@@ -872,7 +875,7 @@ impl Core<'_> {
                 continue;
             }
             let node = self.ir.base + u32::try_from(local).unwrap_or(0);
-            if self.callee(node)?.is_none() && !self.not_callable(node)? {
+            if self.callee(node)?.is_none() && !self.not_callable(node)? && !self.abs_call(node)? {
                 return Ok(true);
             }
         }
@@ -1058,5 +1061,51 @@ impl Core<'_> {
             }
         }
         Ok(nodes)
+    }
+}
+
+impl Core<'_> {
+    pub fn abs_call(&self, node: u32) -> Result<bool, Internal> {
+        let (op, callee, _, shape) = self.ir.node(node)?;
+        if op != Op::Call || shape != 2 || self.ir.node(callee)?.0 != Op::Name {
+            return Ok(false);
+        }
+        if self.bound(callee)? != DeclRef::None {
+            return Ok(false);
+        }
+        let name = self.ir.node(callee)?.1;
+        Ok(self.ir.name_text(name) == Some("abs"))
+    }
+}
+
+impl Core<'_> {
+    fn abs_fact(&mut self, node: u32) -> Stage<Fact> {
+        let Some(arg) = self.arguments(node)?.first().copied() else {
+            return Err(Internal::missed("an argument of abs"));
+        };
+        let fact = self.fact(arg)?;
+        if fact.leaf == super::leaf::Leaf::Placeholder {
+            return Ok(Ok(Fact::PLACEHOLDER));
+        }
+        if fact.leaf == super::leaf::Leaf::Error {
+            return Ok(Ok(Fact::ERROR));
+        }
+        let numeric = matches!(
+            fact.leaf,
+            super::leaf::Leaf::Int | super::leaf::Leaf::Float | super::leaf::Leaf::Empty
+        );
+        if !fact.dims.is_empty() {
+            self.draw_at(
+                Code::ArrayOperand,
+                node,
+                "built-ins apply to single values, not arrays",
+            )?;
+            return Ok(Ok(Fact::ERROR));
+        }
+        if !numeric || !fact.dims.is_empty() || fact.node {
+            self.draw_at(Code::OperandType, node, "`abs` takes numbers")?;
+            return Ok(Ok(Fact::ERROR));
+        }
+        Ok(Ok(fact))
     }
 }

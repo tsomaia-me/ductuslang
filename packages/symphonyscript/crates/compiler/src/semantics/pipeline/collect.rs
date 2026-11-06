@@ -276,6 +276,7 @@ impl Core<'_> {
         self.skipped_top.clone_from(&skipped_top);
         let mut enclosing = std::collections::HashMap::new();
         let type_operands = self.type_operands()?;
+        let abs_callees = self.abs_callees()?;
         for local in 0..self.ir.op.len() {
             if self.ir.op.get(local) != Some(&Op::Name)
                 || !self.reached.get(local).copied().unwrap_or(false)
@@ -336,6 +337,9 @@ impl Core<'_> {
                         && self.vocabulary.native_named(&text).is_none()
                     {
                         self.bare.insert(node);
+                        continue;
+                    }
+                    if abs_callees.contains(&node) {
                         continue;
                     }
                     if text == BuiltinName::Pi.name() {
@@ -752,5 +756,23 @@ impl Core<'_> {
             self.draw(Code::NotAValue, span, summary);
         }
         Ok(())
+    }
+}
+
+impl Core<'_> {
+    fn abs_callees(&self) -> Result<std::collections::HashSet<u32>, Internal> {
+        let mut found = std::collections::HashSet::new();
+        for local in 0..self.ir.op.len() {
+            if self.ir.op.get(local) != Some(&Op::Call) || self.ir.c.get(local) != Some(&2) {
+                continue;
+            }
+            let callee = self.ir.a.get(local).copied().unwrap_or(NONE);
+            if self.ir.node(callee)?.0 == Op::Name
+                && self.ir.name_text(self.ir.node(callee)?.1) == Some("abs")
+            {
+                found.insert(callee);
+            }
+        }
+        Ok(found)
     }
 }

@@ -2254,3 +2254,38 @@ fn a_function_name_outside_a_callee_is_not_a_value_and_a_call_of_a_value_is_not_
         96
     );
 }
+
+const ABSOLUTE_VALUES: [&[&str]; 20] = [
+    &["Clip c:\n    Note/(abs(-3))\n"],
+    &["Clip c:\n    Note/(abs(-2147483648))\n"],
+    &["Clip c:\n    Note/(abs(-3000000000) - 3000000000)\n"],
+    &["Clip c:\n    Note | velocity=(abs(-0.5))\n"],
+    &["Clip c:\n    Note/(abs(true))\n"],
+    &["Clip c:\n    Note/(abs([1, 2]))\n"],
+    &["Clip c:\n    Note/(abs([true]))\n"],
+    &["state q(1)\n", "Clip c:\n    Note/(abs(q) + 3000000000)\n"],
+    &["state q(0.5)\n", "Clip c:\n    Note/(abs(q))\n"],
+    &["let x = abs(-5)\n", "Clip c:\n    Note/([1, 2][x])\n"],
+    &[
+        "fn f(a): abs(a) + 1\n",
+        "Clip c:\n    Note/(f(-3))\n    Note | velocity=(f(-0.25))\n",
+    ],
+    &["Clip c:\n    Note/(abs(zz))\n"],
+    &["Clip c:\n    Note/(abs(i32(-2147483648)))\n"],
+    &["Clip c:\n    Note/(abs(u8(3)) + 300)\n"],
+    &[
+        "state q(1)\nstate r = abs(q) * 2\n",
+        "Clip c:\n    Note/r\n",
+    ],
+    &["Clip c:\n    Note/(abs(i64(-5)) + 3000000000)\n"],
+    &["Clip c:\n    Note/(abs(u8(200)))\n"],
+    &["state q(1): i32\n", "Clip c:\n    Note/(abs(q))\n"],
+    &["Clip c:\n    Note/(abs(if true then -3 else 2.5))\n"],
+    &["Clip c:\n    Note/(abs(-3000000000))\n"],
+];
+
+#[test]
+fn abs_of_one_number_is_its_magnitude_in_the_operands_type_saturating_beside_a_valid_twin_in_every_order()
+ {
+    assert_eq!(same_as_the_old_engine(&ABSOLUTE_VALUES), 64);
+}
