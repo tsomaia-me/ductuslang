@@ -1800,3 +1800,39 @@ fn a_reference_that_reads_a_cell_in_a_body_draws_what_the_old_engine_draws_and_a
  {
     assert_eq!(same_as_the_old_engine(&REACTIVE_REFERENCES_IN_BODIES), 216);
 }
+
+const PATHS_THROUGH_LETS: [&[&str]; 8] = [
+    &["let d = a\n", "Clip c | level=d.level:\n    Note/3\n"],
+    &["let d = a\n", "Clip c | level=d.nope:\n    Note/3\n"],
+    &["let d = [a, b][1]\n", "Clip c:\n    Note/(d.level)\n"],
+    &[
+        "let d = if true then a else b\n",
+        "Clip c | level=d.level:\n    Note/3\n",
+    ],
+    &[
+        "state s(0)\nlet d = [a, b][s]\n",
+        "Clip c | level=d.level:\n    Note/3\n",
+    ],
+    &[
+        "let d = a\nlet e = d\n",
+        "Clip c | level=e.level:\n    Note/3\n",
+    ],
+    &["let d = c\n", "Clip c | level=d.level:\n    Note/3\n"],
+    &["let d = 1 + true\n", "Clip c:\n    Note/(d.level)\n"],
+];
+
+#[test]
+fn a_path_through_a_let_holding_a_reference_reads_the_instance_it_holds_and_through_any_other_let_draws_what_the_old_engine_draws_beside_a_valid_twin_in_every_order()
+ {
+    let rows: Vec<Vec<&str>> = PATHS_THROUGH_LETS
+        .iter()
+        .map(|items| {
+            let mut row =
+                vec!["Clip a | level=2:\n    Note as h /1\nClip b | level=3:\n    Note/2\n"];
+            row.extend(items.iter());
+            row
+        })
+        .collect();
+    let rows: Vec<&[&str]> = rows.iter().map(Vec::as_slice).collect();
+    assert_eq!(same_as_the_old_engine(&rows), 192);
+}

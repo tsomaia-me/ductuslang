@@ -8,6 +8,7 @@ use super::core_value::CoreValue;
 use super::decl_ref::DeclRef;
 use super::declined::Declined;
 use super::fact::Fact;
+use super::leaf::Leaf;
 use super::reason::Reason;
 use crate::diagnostics::{Code, Diagnostic};
 use crate::semantics::Internal;
@@ -420,9 +421,12 @@ impl Core<'_> {
                     }
                     return self.loop_name_path_end(node, receiver, position, field);
                 }
+                DeclRef::Let(at) => match self.let_reference_row(at)? {
+                    Ok(row) => row,
+                    Err(declined) => return Ok(Err(declined)),
+                },
                 DeclRef::None
                 | DeclRef::Duplicate
-                | DeclRef::Let(_)
                 | DeclRef::Cell(_)
                 | DeclRef::Fn(_)
                 | DeclRef::Pattern(_) => {
@@ -1839,5 +1843,44 @@ impl Core<'_> {
             }
         }
         Ok(Ok(first.unwrap_or(End::Placeholder)))
+    }
+}
+
+impl Core<'_> {
+    fn let_reference_row(&mut self, at: u32) -> Stage<End> {
+        let root = self.let_root(at)?;
+        if self.body_of.get(self.local(root)?).copied().unwrap_or(NONE) != NONE {
+            return Ok(Err(Declined(Reason::Member)));
+        }
+        if self.let_reads_cell(at)? {
+            return Ok(Ok(End::Placeholder));
+        }
+        for read in self.postorder(root)? {
+            if self.ir.node(read)?.0 == Op::Field {
+                return Ok(Err(Declined(Reason::Member)));
+            }
+        }
+        let fact = match self.ensure_typed(root)? {
+            Ok(fact) => fact,
+            Err(declined) => return Ok(Err(declined)),
+        };
+        if matches!(fact.leaf, Leaf::Placeholder) {
+            return Ok(Ok(End::Placeholder));
+        }
+        if fact.leaf == Leaf::Error && !fact.node {
+            return Ok(Ok(End::Placeholder));
+        }
+        if !fact.node || !fact.dims.is_empty() {
+            return Ok(Err(Declined(Reason::Member)));
+        }
+        let (drawn, stop) = (self.diagnostics.len(), self.stop.clone());
+        let value = self.evaluate(root, EvalTy::Exact)?;
+        self.diagnostics.truncate(drawn);
+        self.stop = stop;
+        Ok(Ok(match value {
+            Ok(CoreValue::Node(row)) if row != NONE => End::Row(row),
+            Ok(_) => End::Placeholder,
+            Err(declined) => return Ok(Err(declined)),
+        }))
     }
 }
