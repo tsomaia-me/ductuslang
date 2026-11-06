@@ -350,6 +350,34 @@ impl Core<'_> {
         if self.bare.is_empty() {
             return Ok(());
         }
+        for at in 0..self.ir.cells.len() {
+            let Some(rec) = self.ir.cells.get(at).copied() else {
+                continue;
+            };
+            let at = u32::try_from(at).unwrap_or(u32::MAX);
+            if rec.rule != NONE
+                || rec.init == NONE
+                || self.cell_annotation_ty(at)?.is_some()
+                || self.ir.node(rec.init)?.0 != Op::Name
+                || !self.is_bare(rec.init)
+            {
+                continue;
+            }
+            let text = self.name_text(self.ir.node(rec.init)?.1)?;
+            let Some(id) = self.variants.owner(&text) else {
+                continue;
+            };
+            let owner = self.enum_name(id)?;
+            self.draw_helped_at(
+                Code::UnknownName,
+                rec.init,
+                format!(
+                    "`{text}` names a variant only where `{owner}` is expected; elsewhere it is written `{owner}::{text}`"
+                ),
+                format!("write `{owner}::{text}`, or use `{text}` in a position that expects a `{owner}`"),
+            )?;
+            self.untyped_bare.insert(rec.init);
+        }
         let mut shaped: std::collections::HashMap<u32, Vec<(u32, u32)>> =
             std::collections::HashMap::new();
         let open: std::collections::HashSet<u32> = (0..self.ir.lets.len())

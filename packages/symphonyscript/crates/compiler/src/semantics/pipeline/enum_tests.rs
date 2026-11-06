@@ -41,9 +41,8 @@ const ENUMS: [&str; 37] = [
     "Synth s:\n    Osc | wave=Wave::Zig\n",
 ];
 
-const DECLINED: [&str; 4] = [
+const DECLINED: [&str; 3] = [
     "fn f(w): w\nSynth s:\n    Osc | wave=(f(Saw))\n",
-    "state w(Saw)\nSynth s:\n    Osc | wave=w\n",
     "state w(Wave::Saw)\nstate m = w.past(1, Sine)\nSynth s:\n    Osc | wave=m\n",
     "Synth s:\n    Osc | wave=(if Saw then Saw else Saw)\n",
 ];
@@ -129,11 +128,10 @@ const BARE_LETS: [(&str, &str); 6] = [
     ),
 ];
 
-const BARE_LETS_DECLINED: [&str; 4] = [
+const BARE_LETS_DECLINED: [&str; 3] = [
     "state b(true)\nlet a = if b then Saw else Square\nSynth s:\n    Osc | wave=a\n",
     "state t(true)\nlet a = Saw\nlet b = a\nlet c = if t then b else Square\nSynth s:\n    Osc | wave=c\n",
     "let a = Manual\nSynth s:\n    Osc | wave=a\n",
-    "state w(Saw)\nSynth s:\n    Osc | wave=w\n",
 ];
 
 #[test]
@@ -292,7 +290,14 @@ fn a_qualified_variant_inside_a_function_or_a_placement_for_body_draws_what_the_
     }
 }
 
-const UNTYPED_FLOWS: [(&str, &str); 12] = [
+const UNTYPED_FLOWS: [(&str, &str); 16] = [
+    ("state w(Saw)\n", "Synth s:\n    Osc | wave=w\n"),
+    (
+        "state w(Saw)\n",
+        "Clip c:\n    Note/(if w is Wave::Saw then 1 else 2)\n",
+    ),
+    ("state w(Saw)\n", "Clip c:\n    Note/w\n"),
+    ("state w(Auto)\n", "Plant p | mode=w\n"),
     (
         "let a = Saw\nlet b = Sine\n",
         "Clip c1:\n    Note/(if a is b then 1 else 2)\n",
