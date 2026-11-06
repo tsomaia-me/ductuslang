@@ -1992,3 +1992,64 @@ fn a_member_of_an_unknown_kind_draws_unknown_kind_with_the_old_engines_naming_hi
  {
     assert_eq!(same_as_the_old_engine(&UNKNOWN_MEMBER_KINDS), 20);
 }
+
+const DIVIDED_INTEGER_LITERALS: [&[&str]; 16] = [
+    &[
+        "state q(0): i32\n",
+        "Clip c:\n    Note/([1, 2][i32(300000000000 / q)])\n",
+    ],
+    &[
+        "state q(0): i32\n",
+        "Clip c:\n    Note/(if 300000000000 / q > 1 then 1 else 2)\n",
+    ],
+    &[
+        "state q(0): u8\n",
+        "Clip c:\n    Note | accent=(300000000000 / q > 1.5)\n",
+    ],
+    &[
+        "let x = 300000000000 / 7\n",
+        "Clip c:\n    Note/(if x > 1 then 1 else 2)\n",
+    ],
+    &[
+        "let x = 300000000000 / 7\n",
+        "Clip c:\n    Note/(i32(x + 1))\n",
+    ],
+    &[
+        "let x = 300000000000 / 7\n",
+        "Clip c:\n    Note | velocity=x\n",
+    ],
+    &[
+        "let x = 300000000000 / 7\n",
+        "Clip c:\n    Note/(i32(f64(x)))\n",
+    ],
+    &["Clip c:\n    Note/(i32(f32(300000000000 / 7)))\n"],
+    &["Clip c:\n    Note/(i32(f64(300000000000 / 7)))\n"],
+    &["Clip c:\n    Note/(i32(300000000000 / 7))\n"],
+    &[
+        "state q(2)\n",
+        "Clip c:\n    Note/(if 3 / q > 1 then 1 else 2)\n",
+    ],
+    &["state q(2)\n", "Clip c:\n    Note/(i32(3 / q))\n"],
+    &[
+        "state q(2)\n",
+        "Clip c:\n    Note/(if (q + 0.5) * 2 > 1 then 1 else 2)\n",
+    ],
+    &[
+        "state q(2)\n",
+        "Clip c:\n    Note/(if q > 1.5 then 1 else 2)\n",
+    ],
+    &[
+        "state q(2)\n",
+        "Clip c:\n    Note/(if f32(q) > 1 then 1 else 2)\n",
+    ],
+    &[
+        "state q(2)\n",
+        "Clip c:\n    Note | velocity=(3 / q)\n    Note/(if 3 / q > 1 then 1 else 2)\n",
+    ],
+];
+
+#[test]
+fn an_integer_literal_divided_states_its_fault_and_a_cell_divided_its_float_use_as_the_old_engine_does_beside_a_valid_twin_in_every_order()
+ {
+    assert_eq!(same_as_the_old_engine(&DIVIDED_INTEGER_LITERALS), 84);
+}

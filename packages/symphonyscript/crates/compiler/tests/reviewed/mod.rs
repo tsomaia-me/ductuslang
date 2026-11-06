@@ -5171,15 +5171,6 @@ fn choice_keeps_its_arms_type(seen: &Seen<'_>, change: Change, at: &Drawn) -> bo
     }
 }
 
-fn divided_integer_literal_converts_inexactly(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
-    let text = seen.text(at);
-    change == Change::Restated
-        && at.0 == "does-not-fit"
-        && !text.is_empty()
-        && text.chars().all(|c| c.is_ascii_digit())
-        && (seen.after(at).starts_with(" / ") || seen.before(at).ends_with(" / "))
-}
-
 fn cell_type<'a>(program: &'a str, name: &str) -> Option<&'a str> {
     program.lines().find_map(|line| {
         line.strip_prefix("state ")
@@ -5479,11 +5470,6 @@ pub const CLASSES: &[Class] = &[
         ledger: "476",
         rule: "a choice keeps its arms' type whatever its condition holds (G18, ARCHITECTURE §7: a value whose type an error leaves known keeps that type), so beside a refused condition the faults that type gives draw at the choice, at the expression or condition holding it and at a bound beside it, a kept scalar base draws not-an-array in place of its bound's index-type (SPEC §5.5), and the old engine's type-mismatch at one arm, which only that arm taken draws, does not, nor its does-not-fit at a literal beside the choice inside an expression the new core refuses whole, which it computes in its `f32` default for the choice",
         explains: choice_keeps_its_arms_type,
-    },
-    Class {
-        ledger: "476",
-        rule: "an integer literal that is an operand of `/` converts to the float type the division computes in (SPEC §4.2: integer operands convert as `/` does), so where it does not convert exactly its does-not-fit states the inexact conversion (`300000000000 / q` with an integer cell `q`), where the old engine states that the value does not fit the float type, at the same span",
-        explains: divided_integer_literal_converts_inexactly,
     },
     Class {
         ledger: "476",

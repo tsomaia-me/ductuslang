@@ -301,6 +301,10 @@ const DECIDING_NONE: &[(&str, &str)] = &[
         "the types an IR node's operands are evaluated in by the new core, SPEC §4.2's expected-type flow",
     ),
     (
+        "pipeline/values.rs mark_unexpected_reads",
+        "the operands whose float type is no expected type, so a host-fed cell read there is no use expecting a float, SPEC §6.1's integer-cell warning",
+    ),
+    (
         "pipeline/values.rs apply",
         "the operator an IR node evaluates by in the new core, its value computed by `operators/plan_op.rs`",
     ),

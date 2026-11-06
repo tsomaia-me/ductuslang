@@ -131,7 +131,11 @@ impl Core<'_> {
                 let (mut host, mut derived, mut argument, mut literal) =
                     (false, false, false, false);
                 for (operand, fact) in [(a, &left), (b, &right)] {
-                    if fact.leaf == Leaf::Float && self.is_reactive(operand)? {
+                    let (op, x, y, _) = self.ir.node(operand)?;
+                    let narrow_division = op == Op::Div
+                        && fact.dims.is_empty()
+                        && self.division_ty(x, y)? == EvalTy::F32;
+                    if fact.leaf == Leaf::Float && self.is_reactive(operand)? && !narrow_division {
                         let (reads_host, reads_derived) = self.reactive_reads(operand)?;
                         host |= reads_host;
                         derived |= reads_derived;
@@ -167,6 +171,7 @@ impl Core<'_> {
             self.unflowed.insert(node);
         }
         self.mark_unused_reads(op, node)?;
+        self.mark_unexpected_reads(op, node)?;
         let float = matches!(ty, EvalTy::F32 | EvalTy::F64);
         let (mut integer_flow, mut picked, mut float_pair) = (false, false, false);
         let operands: Vec<(u32, EvalTy)> = match op {
@@ -211,7 +216,7 @@ impl Core<'_> {
                 return Ok(());
             }
             Op::Div if !float => {
-                let defaulted = self.fact(a)?.fixed.is_none() && self.fact(b)?.fixed.is_none();
+                let defaulted = self.fact(a)?.own().is_none() && self.fact(b)?.own().is_none();
                 let target = self.division_ty(a, b)?;
                 for operand in [b, a] {
                     self.unflowed.insert(operand);
@@ -291,11 +296,20 @@ impl Core<'_> {
                 if own == EvalTy::Exact && self.fact(a)?.fixed.is_none() {
                     steps.push(Step::Fit(a, EvalTy::I64));
                 }
-                let divided = self.ir.node(a)?.0 == Op::Div
-                    && operand.own().is_none()
+                let loose = operand.own().is_none()
+                    && operand.dims.is_empty()
                     && matches!(own, EvalTy::F32 | EvalTy::F64)
                     && !self.is_reactive(a)?;
-                vec![(a, if divided { EvalTy::Exact } else { own })]
+                let into_float = target.filter(|target| is_fixed_float(*target));
+                let read_ty = match into_float {
+                    Some(target) if loose => target,
+                    Some(_) => own,
+                    None if loose && self.ir.node(a)?.0 == Op::Div => EvalTy::Exact,
+                    None if loose && own == EvalTy::F64 => EvalTy::DefaultF64,
+                    None if loose => EvalTy::DefaultF32,
+                    None => own,
+                };
+                vec![(a, read_ty)]
             }
             Op::If => {
                 steps.pop();
@@ -973,6 +987,8 @@ impl Core<'_> {
                         }
                         let let_ty = if self.fact(self.let_root(at)?)?.fixed.is_some() {
                             evaluated_in(node_ty)
+                        } else if matches!(node_ty, EvalTy::DefaultF32 | EvalTy::DefaultF64) {
+                            node_ty
                         } else {
                             flexible(node_ty)
                         };
@@ -1581,6 +1597,7 @@ impl Core<'_> {
         }
         let side = match class(ty) {
             _ if self.unused_reads.remove(&(self.inst, node)) => None,
+            _ if self.unexpected_reads.remove(&(self.inst, node)) => Some(0),
             _ if self.owning => Some(0),
             1 | 2 => Some(1),
             3 => None,
@@ -2352,6 +2369,91 @@ impl Core<'_> {
             .get(at as usize)
             .is_some_and(|rec| rec.owner != NONE);
         Ok(local && self.is_reactive(self.let_root(at)?)?)
+    }
+
+    fn mark_unexpected_reads(&mut self, op: Op, node: u32) -> Result<(), Internal> {
+        if matches!(op, Op::Name | Op::Field) {
+            return Ok(());
+        }
+        let inherited = self.unexpected_reads.remove(&(self.inst, node));
+        let marked: Vec<u32> = match op {
+            Op::Lt | Op::Le | Op::Gt | Op::Ge | Op::Is | Op::IsNot => {
+                let mut marked = Vec::new();
+                for operand in self.operands(node)? {
+                    if self.fact(operand)?.leaf != Leaf::Int {
+                        marked.push(operand);
+                    }
+                }
+                marked
+            }
+            Op::Convert
+                if !self
+                    .fact(node)?
+                    .fixed
+                    .is_some_and(|target| is_fixed_float(target)) =>
+            {
+                self.operands(node)?
+            }
+            Op::Neg
+            | Op::Add
+            | Op::Sub
+            | Op::Mul
+            | Op::Div
+            | Op::IntDiv
+            | Op::Rem
+            | Op::Pow
+            | Op::If
+            | Op::Array
+            | Op::Index
+            | Op::IndexFromEnd
+            | Op::Slice
+                if inherited =>
+            {
+                self.operands(node)?
+            }
+            Op::Int
+            | Op::Float
+            | Op::Bool
+            | Op::Str
+            | Op::Name
+            | Op::Variant
+            | Op::To
+            | Op::Convert
+            | Op::Field
+            | Op::Neg
+            | Op::Add
+            | Op::Sub
+            | Op::Mul
+            | Op::Div
+            | Op::IntDiv
+            | Op::Rem
+            | Op::Pow
+            | Op::If
+            | Op::Array
+            | Op::Index
+            | Op::IndexFromEnd
+            | Op::Slice
+            | Op::Call
+            | Op::NamedCall
+            | Op::MethodCall
+            | Op::NamedMethodCall
+            | Op::Past
+            | Op::Stepped
+            | Op::Not
+            | Op::And
+            | Op::Or
+            | Op::Match
+            | Op::For
+            | Op::TyScalar
+            | Op::TyName
+            | Op::TyArray
+            | Op::TyVar
+            | Op::Bad => Vec::new(),
+        };
+        for operand in marked {
+            self.unexpected_reads.insert((self.inst, operand));
+        }
+        Ok(())
     }
 
     fn mark_unused_reads(&mut self, op: Op, node: u32) -> Result<(), Internal> {
