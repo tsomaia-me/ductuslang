@@ -107,7 +107,34 @@ pub(crate) fn loop_body(ir: &FlatIr, block: u32) -> Result<(Vec<u32>, Vec<u32>),
                     );
                 }
                 ItemRec::Paren(inner) if inner != NONE => items.push(inner),
-                ItemRec::Paren(_) | ItemRec::Bundle(_) | ItemRec::When(_) => {}
+                ItemRec::When(rec) => {
+                    let mut arms = vec![rec.otherwise];
+                    for arm in ir
+                        .arms
+                        .get(rec.arms.0 as usize..rec.arms.1 as usize)
+                        .unwrap_or_default()
+                    {
+                        roots.push(arm.0);
+                        arms.push(arm.1);
+                    }
+                    for arm in arms {
+                        if let Some(found) = ir.blocks.get(arm as usize) {
+                            items.extend(
+                                ir.block_items
+                                    .get(found.items.0 as usize..found.items.1 as usize)
+                                    .unwrap_or_default(),
+                            );
+                            items.extend(
+                                ir.members
+                                    .get(found.members.0 as usize..found.members.1 as usize)
+                                    .unwrap_or_default()
+                                    .iter()
+                                    .filter(|member| **member != NONE),
+                            );
+                        }
+                    }
+                }
+                ItemRec::Paren(_) | ItemRec::Bundle(_) => {}
             }
         }
     }
@@ -866,10 +893,8 @@ impl Core<'_> {
                     ),
                     ItemRec::Wire(wire) if self.bare_wire(wire)? => {}
                     ItemRec::Wire(wire) if self.plain_wire(wire)? => self.unrun_wire(wire, file)?,
-                    ItemRec::Wire(_)
-                    | ItemRec::Bundle(_)
-                    | ItemRec::When(_)
-                    | ItemRec::Paren(_) => {
+                    ItemRec::When(_) => items.extend(self.when_items(child).into_iter().rev()),
+                    ItemRec::Wire(_) | ItemRec::Bundle(_) | ItemRec::Paren(_) => {
                         return Ok(Err(Declined(Reason::BodyItem)));
                     }
                 }
@@ -1074,10 +1099,8 @@ impl Core<'_> {
                             .iter()
                             .rev(),
                     ),
-                    ItemRec::Wire(_)
-                    | ItemRec::Bundle(_)
-                    | ItemRec::When(_)
-                    | ItemRec::Paren(_) => {
+                    ItemRec::When(_) => items.extend(self.when_items(child).into_iter().rev()),
+                    ItemRec::Wire(_) | ItemRec::Bundle(_) | ItemRec::Paren(_) => {
                         return Ok(Err(Declined(Reason::BodyItem)));
                     }
                 }
@@ -1178,10 +1201,8 @@ impl Core<'_> {
                             .get(members.0 as usize..members.1 as usize)
                             .unwrap_or_default(),
                     ),
-                    ItemRec::Wire(_)
-                    | ItemRec::Bundle(_)
-                    | ItemRec::When(_)
-                    | ItemRec::Paren(_) => unknown = true,
+                    ItemRec::When(_) => items.extend(self.when_items(child)),
+                    ItemRec::Wire(_) | ItemRec::Bundle(_) | ItemRec::Paren(_) => unknown = true,
                 }
             }
         }
@@ -1232,10 +1253,13 @@ impl Core<'_> {
                         );
                         continue;
                     }
+                    ItemRec::When(_) => {
+                        items.extend(self.when_items(child).into_iter().rev());
+                        continue;
+                    }
                     ItemRec::Placement(_)
                     | ItemRec::For(_)
                     | ItemRec::Bundle(_)
-                    | ItemRec::When(_)
                     | ItemRec::Paren(_) => continue,
                 };
                 if !self.ir.named(name) {
@@ -1309,10 +1333,8 @@ impl Core<'_> {
                             .get(members.0 as usize..members.1 as usize)
                             .unwrap_or_default(),
                     ),
-                    ItemRec::Wire(_)
-                    | ItemRec::Bundle(_)
-                    | ItemRec::When(_)
-                    | ItemRec::Paren(_) => {}
+                    ItemRec::When(_) => items.extend(self.when_items(child)),
+                    ItemRec::Wire(_) | ItemRec::Bundle(_) | ItemRec::Paren(_) => {}
                 }
             }
         }

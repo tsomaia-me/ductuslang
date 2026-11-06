@@ -985,7 +985,8 @@ impl Core<'_> {
                             .get(members.0 as usize..members.1 as usize)
                             .unwrap_or_default(),
                     ),
-                    ItemRec::Bundle(_) | ItemRec::When(_) | ItemRec::Paren(_) => {
+                    ItemRec::When(_) => items.extend(self.when_items(item)),
+                    ItemRec::Bundle(_) | ItemRec::Paren(_) => {
                         return Ok(true);
                     }
                 }
@@ -1026,10 +1027,8 @@ impl Core<'_> {
                             .get(members.0 as usize..members.1 as usize)
                             .unwrap_or_default(),
                     ),
-                    ItemRec::Wire(_)
-                    | ItemRec::Bundle(_)
-                    | ItemRec::When(_)
-                    | ItemRec::Paren(_) => {}
+                    ItemRec::When(_) => items.extend(self.when_items(item)),
+                    ItemRec::Wire(_) | ItemRec::Bundle(_) | ItemRec::Paren(_) => {}
                 }
             }
         }

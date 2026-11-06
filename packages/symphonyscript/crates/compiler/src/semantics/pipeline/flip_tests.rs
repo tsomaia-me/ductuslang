@@ -696,3 +696,49 @@ fn a_compile_time_for_expression_whose_annotated_accumulator_its_capacity_rule_o
     }
     assert_eq!(programs, 50);
 }
+
+const NESTED_WHENS: [&[&str]; 10] = [
+    &[
+        "state live(true)\n",
+        "Clip c:\n    for i in 0..3:\n        when live:\n            Note/(60 + i)\n",
+    ],
+    &[
+        "Clip c:\n    for i in 0..3:\n        when i > 1:\n            Note/(60 + i)\n        else:\n            Note/1\n",
+    ],
+    &[
+        "state live(true)\n",
+        "pattern P(default x):\n    when live:\n        Note/x\n",
+        "Clip c:\n    P/3\n",
+    ],
+    &[
+        "pattern P(default x):\n    when x > 1:\n        Note/x\n    when 1:\n        Note\n",
+        "Clip c:\n    P/3\n    P/0\n",
+    ],
+    &[
+        "Clip c:\n    for i in 0..3:\n        when [1, 2][i + 1] > 1:\n            Note/(3000000000)\n",
+    ],
+    &[
+        "state live(true)\n",
+        "Clip c:\n    for i in 0..3:\n        when live:\n            Note as n /(60 + i)\n",
+    ],
+    &[
+        "pattern P(default x):\n    when x:\n        Q\n",
+        "pattern Q():\n    P/true\n",
+        "Clip c:\n    P/true\n",
+    ],
+    &[
+        "state live(true)\n",
+        "Clip c:\n    for i in 0..3:\n        when live:\n            Bogus/1\n            for j in 0..i:\n                Note/(j)\n",
+    ],
+    &["Clip c:\n    for i in 0..3:\n        when i:\n            Note\n"],
+    &[
+        "state s(1)\n",
+        "Clip c:\n    for i in 0..3:\n        when s > i:\n            Note/(i) Note/(i + 1)\n        else:\n            (Note/(i * 2))\n",
+    ],
+];
+
+#[test]
+fn a_when_block_inside_a_placement_for_body_or_a_pattern_body_draws_what_the_old_engine_draws_beside_a_valid_twin_in_every_order()
+ {
+    assert_eq!(same_as_the_old_engine(&NESTED_WHENS), 84);
+}

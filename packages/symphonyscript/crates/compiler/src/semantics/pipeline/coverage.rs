@@ -310,8 +310,7 @@ fn item_landed(
             });
     }
     if let ItemRec::When(rec) = item {
-        return when_landed(ir, rec.arms, rec.otherwise)
-            && u32::try_from(at).is_ok_and(|at| nested.binary_search(&at).is_err());
+        return when_landed(ir, rec.arms, rec.otherwise);
     }
     if matches!(item, ItemRec::Line(_)) {
         return u32::try_from(at).is_ok_and(|at| blocks.binary_search(&at).is_ok());
