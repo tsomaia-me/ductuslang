@@ -1391,6 +1391,10 @@ impl Core<'_> {
             || self.math_call(node)?
             || self.math_miscount(node)?.is_some()
             || self.math_named(node)?.is_some();
-        Ok(!self.fact(receiver)?.node && callable)
+        let receiver_fact = self.fact(receiver)?;
+        let faulty = self.ir.node(receiver)?.0 == Op::To
+            || (self.math_named(node)?.is_none()
+                && matches!(receiver_fact.leaf, Leaf::Placeholder | Leaf::Error));
+        Ok(!receiver_fact.node && callable && !(faulty && self.callee(node)?.is_none()))
     }
 }

@@ -6303,7 +6303,7 @@ fn range_bound_beside_a_faulty_fold(seen: &Seen<'_>, change: Change, at: &Drawn)
     let line = seen.line(at.1);
     let rule = lines_at(seen.program)
         .get(line)
-        .is_some_and(|(_, text)| text.starts_with("state ") && text.contains(" into "));
+        .is_some_and(|(_, text)| text.starts_with("state ") && text.contains("into"));
     rule && !seen
         .old
         .iter()

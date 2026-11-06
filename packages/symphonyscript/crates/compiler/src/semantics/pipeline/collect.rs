@@ -389,12 +389,27 @@ impl Core<'_> {
                         };
                         return Ok(Err(Declined(reason)));
                     }
-                    let span = self.node_span(node)?;
-                    self.draw(
-                        Code::UnknownName,
-                        span,
-                        format!("`{text}` names nothing in scope"),
-                    );
+                    let member = match text.as_str() {
+                        "len" => Some("size"),
+                        "bytes" => Some("bytes"),
+                        _ => None,
+                    };
+                    match member.filter(|_| callees.contains(&node)) {
+                        Some(member) => self.draw_helped_at(
+                            Code::UnknownName,
+                            node,
+                            format!("`{text}` names nothing in scope"),
+                            format!("write `x.{member}`"),
+                        )?,
+                        None => {
+                            let span = self.node_span(node)?;
+                            self.draw(
+                                Code::UnknownName,
+                                span,
+                                format!("`{text}` names nothing in scope"),
+                            );
+                        }
+                    }
                     if !callees.contains(&node) {
                         self.placeholders.push(node);
                     }
