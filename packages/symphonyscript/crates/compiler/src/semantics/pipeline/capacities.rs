@@ -44,6 +44,7 @@ struct Walk {
     frames: Vec<(u32, Vec<Option<Extent>>)>,
     checking: Checking,
     reached: Vec<Reach>,
+    accumulators: bool,
 }
 
 impl Walk {
@@ -53,6 +54,7 @@ impl Walk {
             frames: Vec::new(),
             checking,
             reached: Vec::new(),
+            accumulators: false,
         }
     }
 
@@ -146,6 +148,10 @@ impl Core<'_> {
         let annotated = self.annotated_capacities();
         self.inst = outer;
         annotated?;
+        let outer = self.inst;
+        let folds = self.compile_time_accumulators();
+        self.inst = outer;
+        folds?;
         if let Some((at, _)) = self.stop.as_mut()
             && *at < mark
         {
@@ -626,7 +632,7 @@ impl Core<'_> {
         if matches!(fact.leaf, Leaf::Placeholder | Leaf::Error) {
             return Ok(Parts::Leaf(Extent::Fixed(0)));
         }
-        if !self.is_reactive(node)? {
+        if !walk.accumulators && !self.is_reactive(node)? {
             return Ok(Parts::Leaf(Extent::open(length)));
         }
         let (op, a, b, c) = self.ir.node(node)?;
@@ -965,7 +971,7 @@ impl Core<'_> {
         let most = grown(&function, start, count);
         if let Some(annotated) = self.binder_capacity(rec.accumulator)? {
             let annotated = i128::from(annotated);
-            if walk.checking == Checking::Everything && most > annotated {
+            if (walk.checking == Checking::Everything || walk.accumulators) && most > annotated {
                 let span = self.node_span(node)?;
                 let seen = self.diagnostics.iter().any(|diagnostic| {
                     diagnostic.code == Code::CapacityExceeded && diagnostic.span == span
@@ -1027,6 +1033,16 @@ impl Core<'_> {
 }
 
 impl Core<'_> {
+    fn compile_time_accumulators(&mut self) -> Result<(), Internal> {
+        for (node, inst) in self.compile_time_folds.clone() {
+            self.inst = inst;
+            let mut walk = Walk::new(Checking::Nothing);
+            walk.accumulators = true;
+            self.extent_in(node, &mut walk, &mut HashMap::new())?;
+        }
+        Ok(())
+    }
+
     fn annotated_capacities(&mut self) -> Result<(), Internal> {
         let count = u32::try_from(self.ir.cells.len()).unwrap_or(0);
         for at in 0..count {

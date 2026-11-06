@@ -4656,6 +4656,10 @@ fn annotated_accumulator(line: &str) -> bool {
 
 fn annotated_fold(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
     let code = at.0.as_str();
+    if change == Change::Added && code == "capacity-exceeded" {
+        let text = seen.text(at);
+        return text.starts_with("for ") && annotated_accumulator(text) && text.contains("[..");
+    }
     if change != Change::Added
         || !matches!(
             code,
@@ -5243,7 +5247,7 @@ pub const CLASSES: &[Class] = &[
     },
     Class {
         ledger: "476",
-        rule: "an annotated fold accumulator's start and body, and an annotated loop name's elements, draw type-mismatch where they do not have the annotated type (SPEC §4.5), and the start and body of an annotated fold draw what the same expression draws as the rule of a derived cell with that annotation (SPEC §5.10, §4.2; DECISIONS.md 22:13Z), which the old engine misses",
+        rule: "an annotated fold accumulator's start and body, and an annotated loop name's elements, draw type-mismatch where they do not have the annotated type (SPEC §4.5), and the start and body of an annotated fold draw what the same expression draws as the rule of a derived cell with that annotation (SPEC §5.10, §4.2; DECISIONS.md 22:13Z), which the old engine misses; and a compile-time `for` expression whose accumulator is annotated `T[..N]` draws capacity-exceeded where the capacity its body's rule finds over the iterations its iterable can run passes N (SPEC §5.10, ledger 502), as its reactive twin does on both engines, where the old engine is silent",
         explains: annotated_fold,
     },
     Class {

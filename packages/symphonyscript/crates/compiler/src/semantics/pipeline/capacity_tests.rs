@@ -423,7 +423,16 @@ fn a_for_expression_over_a_cell_whose_accumulator_is_annotated_with_a_variable_a
     }
     let compile_time =
         "let v = for i in 0..3 into a: i32[..2] from []: a + [i]\nClip c:\n    Note/(v[0])\n";
-    assert!(new.checked_by_new_core(&[source(compile_time)]).is_none());
+    let found = new
+        .checked_by_new_core(&[source(compile_time)])
+        .unwrap_or_else(|| panic!("the new core takes {compile_time}"));
+    assert!(
+        found
+            .iter()
+            .any(|diagnostic| diagnostic.code == Code::CapacityExceeded
+                && diagnostic.summary.contains("holds up to 3")),
+        "{compile_time}"
+    );
     assert_eq!(programs, 24);
 }
 

@@ -628,3 +628,71 @@ fn a_fixed_type_operand_gives_its_literals_its_type_in_a_derived_cell_with_no_in
     }
     assert_eq!(programs, 186);
 }
+
+const COMPILE_TIME_ACCUMULATORS: [(&[&str], &[Code]); 6] = [
+    (
+        &[
+            "let xs = for i in 0..5 into a: i32[..3] from []: a + [i]\n",
+            "Clip c:\n    Note/(xs[0])\n",
+        ],
+        &[Code::CapacityExceeded],
+    ),
+    (
+        &[
+            "let xs = for i in 0..2 into a: i32[..3] from []: a + [i]\n",
+            "Clip c:\n    Note/(xs[0])\n",
+        ],
+        &[],
+    ),
+    (
+        &["Clip c:\n    Note/((for i in 0..5 into a: i32[..3] from [1, 2, 3, 4]: a + [i])[0])\n"],
+        &[Code::CapacityExceeded],
+    ),
+    (
+        &[
+            "let xs = for i in [1, 2, 3, 4, 5] into a: i32[..3] from []: a + [i]\n",
+            "let ys = xs\n",
+            "Clip c:\n    Note/(ys[0])\n",
+        ],
+        &[Code::CapacityExceeded],
+    ),
+    (
+        &[
+            "let xs = for i in 0..5 into a: i32[..3] from []: (if i > 2 then a else a + [i])\n",
+            "Clip c:\n    Note/(xs[4])\n",
+        ],
+        &[Code::CapacityExceeded],
+    ),
+    (
+        &[
+            "let xs = for i in 0..5 into a: i32[..3] from []: a + [i]\n",
+            "Clip c:\n    Note/(xs[0] + 3000000000)\n",
+        ],
+        &[Code::DoesNotFit, Code::CapacityExceeded],
+    ),
+];
+
+#[test]
+fn a_compile_time_for_expression_whose_annotated_accumulator_its_capacity_rule_outgrows_draws_capacity_exceeded_in_every_order_502()
+ {
+    let vocabulary = symphonyscript_fixtures::vocabulary();
+    let new = Compiler::new(&vocabulary).expect("the vocabulary compiles");
+    let mut programs = 0;
+    for (items, codes) in COMPILE_TIME_ACCUMULATORS {
+        for text in twins(items) {
+            let mut found: Vec<Code> = new
+                .checked_by_new_core(&[source(&text)])
+                .unwrap_or_else(|| panic!("the new core takes {text}"))
+                .iter()
+                .map(|diagnostic| diagnostic.code)
+                .filter(|code| *code != Code::NoEntryInstance)
+                .collect();
+            found.sort_by_key(|code| format!("{code:?}"));
+            let mut expected = codes.to_vec();
+            expected.sort_by_key(|code| format!("{code:?}"));
+            assert_eq!(found, expected, "{text}");
+            programs += 1;
+        }
+    }
+    assert_eq!(programs, 50);
+}
