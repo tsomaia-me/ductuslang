@@ -9,7 +9,13 @@ use crate::semantics::counted_walk::CountedWalk;
 use crate::semantics::operators::EvalTy;
 
 impl Core<'_> {
-    pub fn memo_key(&self, body: u32, ty: EvalTy, args: &[CoreValue]) -> Option<MemoKey> {
+    pub fn memo_key(
+        &self,
+        body: u32,
+        ty: EvalTy,
+        args: &[CoreValue],
+        unit: Option<(symphonyscript_core::FamilyId, usize, u32)>,
+    ) -> Option<MemoKey> {
         if self.stop.is_some() {
             return None;
         }
@@ -19,6 +25,7 @@ impl Core<'_> {
             ty,
             flags: [self.fitting, self.owning, self.unchecked],
             args,
+            unit,
         })
     }
 

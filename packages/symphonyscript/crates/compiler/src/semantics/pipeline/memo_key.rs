@@ -7,4 +7,5 @@ pub(crate) struct MemoKey {
     pub ty: EvalTy,
     pub flags: [bool; 3],
     pub args: Vec<MemoArg>,
+    pub unit: Option<(symphonyscript_core::FamilyId, usize, u32)>,
 }
