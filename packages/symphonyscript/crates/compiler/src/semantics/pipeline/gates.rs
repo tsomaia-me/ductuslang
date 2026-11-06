@@ -18,7 +18,10 @@ impl Core<'_> {
             Err(declined) => return Ok(Err(declined)),
         };
         for node in self.postorder(root)? {
-            if self.fact(node)?.leaf == Leaf::Placeholder {
+            let unknown = self.ir.node(node)?.0 == Op::Name
+                && self.bound(node)? == DeclRef::None
+                && !self.is_bare(node);
+            if unknown || self.fact(node)?.leaf == Leaf::Placeholder {
                 return Ok(Err(Declined(Reason::BodyItem)));
             }
         }
@@ -27,9 +30,6 @@ impl Core<'_> {
             && self.is_reactive(root)?
         {
             return Ok(Err(Declined(Reason::PatternUse)));
-        }
-        if matches!(fact.leaf, Leaf::Placeholder | Leaf::Error) {
-            return self.detached(root, "", EvalTy::Bool);
         }
         if !fact.dims.is_empty() {
             let value = if self.variable_length(root)? {
@@ -43,6 +43,9 @@ impl Core<'_> {
                 format!("a gate or a guard is one `bool`, and this value is {value}"),
             )?;
             return self.own_check(root);
+        }
+        if matches!(fact.leaf, Leaf::Placeholder | Leaf::Error) {
+            return self.detached(root, "", EvalTy::Bool);
         }
         if fact.leaf != Leaf::Bool {
             let (op, condition, _, _) = self.ir.node(root)?;
