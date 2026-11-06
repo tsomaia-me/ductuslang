@@ -426,11 +426,11 @@ impl Core<'_> {
                     Ok(row) => row,
                     Err(declined) => return Ok(Err(declined)),
                 },
-                DeclRef::None
-                | DeclRef::Duplicate
-                | DeclRef::Cell(_)
-                | DeclRef::Fn(_)
-                | DeclRef::Pattern(_) => {
+                DeclRef::Cell(at) => match self.cell_member(at, node, field)? {
+                    Ok(end) => end,
+                    Err(declined) => return Ok(Err(declined)),
+                },
+                DeclRef::None | DeclRef::Duplicate | DeclRef::Fn(_) | DeclRef::Pattern(_) => {
                     return Ok(Err(Declined(Reason::Member)));
                 }
             }
@@ -1982,5 +1982,26 @@ impl Core<'_> {
             }
         }
         Ok(true)
+    }
+}
+
+impl Core<'_> {
+    fn cell_member(&mut self, at: u32, node: u32, field: u32) -> Stage<End> {
+        let text = self.ir.name_text(field).unwrap_or_default().to_string();
+        let annotation = self.ir.binder(self.cell_binder(at)?)?.annotation;
+        if annotation == NONE {
+            return Ok(Err(Declined(Reason::Member)));
+        }
+        let (op, _, held, levels) = self.ir.node(annotation)?;
+        let variable = op == Op::TyVar && text == "capacity";
+        let fixed = op == Op::TyArray
+            && levels == 1
+            && held != ANY_LENGTH
+            && matches!(text.as_str(), "size" | "capacity");
+        if !(variable || fixed) {
+            return Ok(Err(Declined(Reason::Member)));
+        }
+        self.array_members.insert(node, i128::from(held));
+        Ok(Ok(End::Value))
     }
 }

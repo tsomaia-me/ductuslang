@@ -192,7 +192,7 @@ impl Core<'_> {
         Ok(self.span(self.file_of(self.cell_root(at)?), rec.lo, rec.hi))
     }
 
-    fn cell_binder(&self, at: u32) -> Result<u32, Internal> {
+    pub fn cell_binder(&self, at: u32) -> Result<u32, Internal> {
         self.ir
             .cells
             .get(at as usize)

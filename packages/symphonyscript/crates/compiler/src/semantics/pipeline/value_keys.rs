@@ -53,12 +53,11 @@ impl Core<'_> {
                     bounds.push((node, rec.iterable.0));
                     bounds.push((node, rec.iterable.1));
                 }
-            } else if matches!(op, Some(Op::Call | Op::NamedCall)) {
-                if let Some(callee) = self.callee(node)?
-                    && let Some(list) = calls.get_mut(callee as usize)
-                {
-                    list.push(node);
-                }
+            } else if matches!(op, Some(Op::Call | Op::NamedCall))
+                && let Some(callee) = self.callee(node)?
+                && let Some(list) = calls.get_mut(callee as usize)
+            {
+                list.push(node);
             }
         }
         let mut owners = vec![UNSET; folds as usize];

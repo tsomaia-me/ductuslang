@@ -1873,3 +1873,30 @@ fn a_let_arrays_size_and_capacity_are_its_length_known_at_compile_time_and_a_sca
     let rows: Vec<&[&str]> = rows.iter().map(Vec::as_slice).collect();
     assert_eq!(same_as_the_old_engine(&rows), 114);
 }
+
+const CELL_CAPACITIES: [&[&str]; 6] = [
+    &["Clip c:\n    Note/(held.capacity)\n"],
+    &["Clip c:\n    Note/(held.capacity + 300)\n"],
+    &["Clip c:\n    Note/([1, 2][held.capacity])\n"],
+    &["Clip c:\n    Note/(held.capacity.size)\n"],
+    &[
+        "let n = held.capacity\nlet m: u8 = n * 100\n",
+        "Clip c:\n    Note/(m)\n",
+    ],
+    &["state r = held.capacity + q\n", "Clip c:\n    Note/(r)\n"],
+];
+
+#[test]
+fn a_variable_cells_capacity_is_its_annotated_capacity_known_at_compile_time_reading_no_cell_beside_a_valid_twin_in_every_order()
+ {
+    let rows: Vec<Vec<&str>> = CELL_CAPACITIES
+        .iter()
+        .map(|items| {
+            let mut row = vec!["state held([]): i32[..4]\nstate q(2)\n"];
+            row.extend(items.iter());
+            row
+        })
+        .collect();
+    let rows: Vec<&[&str]> = rows.iter().map(Vec::as_slice).collect();
+    assert_eq!(same_as_the_old_engine(&rows), 72);
+}
