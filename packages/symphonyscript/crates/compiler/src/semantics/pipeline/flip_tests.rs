@@ -1696,3 +1696,53 @@ fn a_reference_operand_draws_what_a_number_in_its_place_draws_at_and_or_a_join_a
  {
     assert_eq!(same_as_the_old_engine(&REFERENCE_OPERATORS), 78);
 }
+
+const CLASHES_ACROSS_FILES: [(&str, &str); 4] = [
+    (
+        "fn f(x): x + 1\n",
+        "let y = for f in [1, 2] into a from 0: a + f\n",
+    ),
+    (
+        "Clip k:\n    Note/1\n",
+        "let y = for k in [1, 2] into a from 0: a + k\n",
+    ),
+    (
+        "pattern P(v):\n    Note/(v)\n",
+        "let y = for P in [1, 2] into a from 0: a + P\n",
+    ),
+    (
+        "fn g(x): x\n",
+        "let y = for f in [1, 2] into a from 0: a + f\n",
+    ),
+];
+
+#[test]
+fn a_fold_name_equal_to_a_name_another_file_declares_draws_for_variable_clash_at_that_declaration_as_the_old_engine_does()
+ {
+    let vocabulary = symphonyscript_fixtures::vocabulary();
+    let old = Compiler::new(&vocabulary)
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
+    let new = Compiler::new(&vocabulary).expect("the vocabulary compiles");
+    let mut programs = 0;
+    for (declared, folded) in CLASHES_ACROSS_FILES {
+        for (first, second) in [("a.sym", "main.sym"), ("main.sym", "a.sym")] {
+            let sources = [
+                crate::Source {
+                    path: first.into(),
+                    text: declared.into(),
+                },
+                crate::Source {
+                    path: second.into(),
+                    text: format!("{folded}Clip c:\n    Note/(y)\n{TWIN}"),
+                },
+            ];
+            let found = new
+                .checked_by_new_core(&sources)
+                .unwrap_or_else(|| panic!("the new core takes {declared}{folded}"));
+            assert_eq!(found, old.check(&sources), "{declared}{folded}");
+            programs += 1;
+        }
+    }
+    assert_eq!(programs, 8);
+}

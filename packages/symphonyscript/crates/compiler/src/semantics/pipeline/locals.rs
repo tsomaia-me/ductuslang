@@ -352,10 +352,12 @@ impl Core<'_> {
         let Some((name, node)) = declared else {
             return Ok(None);
         };
-        if self.ir.files.len() != 1 || node == NONE {
+        if node == NONE {
             return Ok(None);
         }
         let entry = *self.ir.name(name).ok_or(Internal::missed("IR name"))?;
-        Ok(Some(self.span(self.file_of(node), entry.lo, entry.hi)))
+        let file = self.ir.files.partition_point(|file| file.names.1 <= name);
+        let file = u32::try_from(file).unwrap_or(0);
+        Ok(Some(self.span(file, entry.lo, entry.hi)))
     }
 }
