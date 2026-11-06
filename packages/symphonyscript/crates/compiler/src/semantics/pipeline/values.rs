@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use super::annotation::Refusal;
+use super::call_chain::CallChain;
 use super::core::{Core, Stage};
 use super::core_value::CoreValue;
 use super::decl_ref::DeclRef;
@@ -605,16 +606,16 @@ impl Core<'_> {
 
     pub fn evaluate(&mut self, root: u32, ty: EvalTy) -> Stage<CoreValue> {
         let inst = self.inst;
-        let chain = self.eval_chain.clone();
+        let (depth, chain) = (self.eval_chain.len(), self.eval_chain.id());
         let from = self.init_reads.len();
         let outcome = self.evaluate_frames(root, ty);
         self.flush_init_reads(from)?;
         self.inst = inst;
-        self.eval_chain = chain;
+        self.chain_arena.restore(&mut self.eval_chain, depth, chain);
         outcome
     }
 
-    fn enter_let_frame(&mut self, outer_chains: &mut Vec<Vec<u32>>) {
+    fn enter_let_frame(&mut self, outer_chains: &mut Vec<CallChain>) {
         if !self.eval_chain.is_empty() {
             self.unmemoized();
         }
@@ -623,7 +624,7 @@ impl Core<'_> {
 
     fn evaluate_frames(&mut self, root: u32, ty: EvalTy) -> Stage<CoreValue> {
         let ty = evaluated_in(ty);
-        let mut outer_chains: Vec<Vec<u32>> = Vec::new();
+        let mut outer_chains: Vec<CallChain> = Vec::new();
         let mut open: std::collections::HashSet<u32> = std::collections::HashSet::new();
         let unit = match self.default_scale {
             Some((scaled, family, unit, _)) if scaled == root => {
@@ -1275,7 +1276,7 @@ impl Core<'_> {
                     if let Some(key) = key {
                         self.begin_recording(key, frames.len() + 1);
                     }
-                    self.eval_chain.push(call);
+                    self.push_call(call);
                     frames.push(Frame {
                         owner: None,
                         ty: call_ty,
@@ -1369,8 +1370,9 @@ impl Core<'_> {
                     {
                         let value = value.clone();
                         let links = self.use_links.iter().map(|(item, _)| *item).collect();
+                        CountedWalk::CoreCallChain.step_by(self.eval_chain.len());
                         self.uses
-                            .entry((read, class(read_ty), self.eval_chain.clone(), links))
+                            .entry((read, class(read_ty), self.eval_chain.to_vec(), links))
                             .or_insert(((element, target), value));
                     }
                 }
@@ -2272,7 +2274,7 @@ impl Core<'_> {
                     if let Some(body) = self.body_of_call(node) {
                         let value = self.body_value(body)?;
                         leaves.push(std::mem::replace(&mut self.inst, body));
-                        self.eval_chain.push(node);
+                        self.push_call(node);
                         self.own_calls.push((node, body, args));
                         stack.push((NONE, false));
                         stack.push((value, false));

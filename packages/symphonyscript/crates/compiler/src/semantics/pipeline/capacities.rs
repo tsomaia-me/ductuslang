@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 
 use super::bound_form::BoundForm;
+use super::call_chain::CallChain;
 use super::calls::chain_key;
 use super::core::Core;
 use super::core_value::CoreValue;
@@ -35,7 +36,7 @@ enum Checking {
 struct Reach {
     node: u32,
     inst: u32,
-    chain: Vec<u32>,
+    chain: CallChain,
     total: i128,
     fold: bool,
 }
@@ -924,7 +925,7 @@ impl Core<'_> {
         let outer = std::mem::replace(&mut self.inst, body);
         walk.frames
             .push((function, values.iter().cloned().map(Some).collect()));
-        self.eval_chain.push(node);
+        self.push_call(node);
         let found = self.extent_in(value, walk, &mut HashMap::new());
         self.eval_chain.pop();
         walk.frames.pop();

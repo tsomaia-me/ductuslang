@@ -6,6 +6,7 @@ mod attr_read;
 mod body_instance;
 mod bound_form;
 mod bounds;
+mod call_chain;
 #[cfg(test)]
 mod call_result_tests;
 mod calls;

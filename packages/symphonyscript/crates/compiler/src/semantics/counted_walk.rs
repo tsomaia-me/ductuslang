@@ -211,10 +211,11 @@ pub(crate) enum CountedWalk {
     CoreCapacity,
     CoreFamilies,
     CoreCellReach,
+    CoreCallChain,
 }
 
 #[cfg(test)]
-const WALKS: usize = 205;
+const WALKS: usize = 206;
 
 #[cfg(test)]
 thread_local! {
@@ -429,6 +430,7 @@ impl CountedWalk {
         CountedWalk::CoreCapacity,
         CountedWalk::CoreFamilies,
         CountedWalk::CoreCellReach,
+        CountedWalk::CoreCallChain,
     ];
 
     pub(crate) fn step(self) {

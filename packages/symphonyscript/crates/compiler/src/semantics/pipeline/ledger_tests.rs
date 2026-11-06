@@ -15,7 +15,7 @@ struct Run {
     walks: u64,
 }
 
-const CORE_WALKS: [CountedWalk; 24] = [
+const CORE_WALKS: [CountedWalk; 25] = [
     CountedWalk::BindLookup,
     CountedWalk::CoreExpandRow,
     CountedWalk::SigNode,
@@ -40,6 +40,7 @@ const CORE_WALKS: [CountedWalk; 24] = [
     CountedWalk::CoreCapacity,
     CountedWalk::CoreFamilies,
     CountedWalk::CoreCellReach,
+    CountedWalk::CoreCallChain,
 ];
 
 fn walked() -> u64 {
@@ -1427,4 +1428,51 @@ fn stress_a_chain_of_lets_and_functions_read_in_two_default_units_reads_each_pla
         &none,
         Timing::Judged,
     ));
+}
+
+fn calls_reading_a_cell(depth: usize) -> String {
+    let mut text = String::from("state held([]): i32[..4]\n");
+    for level in 0..depth {
+        text.push_str(&format!(
+            "fn walk{level}(i): if i >= held.size then 0 else held[i] + walk{}(i + 1)\n",
+            level + 1
+        ));
+    }
+    text.push_str(&format!(
+        "fn walk{depth}(i): 0\nClip c:\n    Note/(walk0(0))\n"
+    ));
+    text
+}
+
+#[test]
+fn a_chain_of_calls_each_reading_a_cell_costs_call_chain_work_linear_in_its_depth_524() {
+    let deep = symphonyscript_core::LimitOverrides {
+        nesting_depth: Some(4_000),
+        inlined_calls: Some(4_000),
+        inlined_calls_warning: Some(4_000),
+        ..symphonyscript_core::LimitOverrides::default()
+    };
+    let compiler = Compiler::with_limits(&vocabulary(), deep).expect("the vocabulary compiles");
+    let mut walked = Vec::new();
+    for depth in [200usize, 400] {
+        let text = calls_reading_a_cell(depth);
+        let before = CountedWalk::CoreCallChain.steps();
+        let found = compiler
+            .checked_by_new_core(&[Source {
+                path: "main.sym".into(),
+                text: text.clone(),
+            }])
+            .unwrap_or_else(|| panic!("the new core takes {text}"));
+        assert!(
+            found
+                .iter()
+                .all(|diagnostic| diagnostic.severity() != crate::diagnostics::Severity::Error),
+            "{found:?}"
+        );
+        walked.push(CountedWalk::CoreCallChain.steps() - before);
+    }
+    let [smaller, larger] = walked[..] else {
+        panic!("{walked:?}");
+    };
+    assert!(smaller > 0 && larger <= smaller * 5 / 2, "{walked:?}");
 }

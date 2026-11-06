@@ -632,7 +632,7 @@ impl Core<'_> {
             let Some(body) = self.body_of_call(node) else {
                 break;
             };
-            self.eval_chain.push(node);
+            self.push_call(node);
             self.inst = body;
             node = self.body_value(body)?;
         }

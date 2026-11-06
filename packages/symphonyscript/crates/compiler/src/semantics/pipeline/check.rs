@@ -4,6 +4,7 @@ use symphonyscript_core::{AttrDecl, AttrId, Count, NodeKind, Scalar, Span};
 
 use super::annotation::SHAPE;
 use super::attr_item::AttrItem;
+use super::call_chain::CallChain;
 use super::core::{Core, Stage};
 use super::declined::Declined;
 use super::fact::Fact;
@@ -392,11 +393,14 @@ impl Core<'_> {
         reactive: bool,
         stack: &mut Vec<Refused>,
         refused: &mut Vec<Refused>,
-        base: &[u32],
+        base: &CallChain,
     ) -> Result<(), Internal> {
         while let Some((node, inst, chain, whole)) = stack.pop() {
             self.inst = inst;
-            self.eval_chain = base.iter().chain(chain.iter()).copied().collect();
+            self.eval_chain = base.clone();
+            for call in &chain {
+                self.push_call(*call);
+            }
             let fact = self.fact(node)?;
             let Some(own) = fact.fixed.filter(|own| !widens(*own, ty)) else {
                 continue;
@@ -687,7 +691,10 @@ impl Core<'_> {
             let (outer, base) = (self.inst, self.eval_chain.clone());
             for (node, inst, chain, _) in refused {
                 self.inst = inst;
-                self.eval_chain = base.iter().chain(chain.iter()).copied().collect();
+                self.eval_chain = base.clone();
+                for call in &chain {
+                    self.push_call(*call);
+                }
                 let checked = self.own_check(node);
                 self.inst = outer;
                 self.eval_chain.clone_from(&base);

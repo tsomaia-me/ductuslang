@@ -4,6 +4,7 @@ use symphonyscript_core::{Limits, Span, Vocabulary};
 
 use super::attr_read::AttrRead;
 use super::body_instance::BodyInstance;
+use super::call_chain::{CallChain, ChainArena};
 use super::core_value::CoreValue;
 use super::decl_ref::DeclRef;
 use super::declined::Declined;
@@ -78,7 +79,8 @@ pub(crate) struct Core<'a> {
     pub body_kept: HashSet<(u32, u32)>,
     pub body_reactive: HashSet<(u32, u32)>,
     pub call_body: HashMap<(u32, u32), u32>,
-    pub eval_chain: Vec<u32>,
+    pub eval_chain: CallChain,
+    pub chain_arena: ChainArena,
     pub typing_locals: HashSet<(u32, u32)>,
     pub reads_cell: Vec<Option<bool>>,
     pub instances: Vec<InstanceRow>,
@@ -273,7 +275,8 @@ impl<'a> Core<'a> {
             body_kept: HashSet::new(),
             body_reactive: HashSet::new(),
             call_body: HashMap::new(),
-            eval_chain: Vec::new(),
+            eval_chain: CallChain::default(),
+            chain_arena: ChainArena::default(),
             typing_locals: HashSet::new(),
             reads_cell: vec![None; ir.lets.len()],
             instances: Vec::new(),
@@ -664,5 +667,11 @@ impl Core<'_> {
         } else {
             self.push_one_per_chain(diagnostic, false);
         }
+    }
+}
+
+impl Core<'_> {
+    pub fn push_call(&mut self, call: u32) {
+        self.chain_arena.push(&mut self.eval_chain, call);
     }
 }
