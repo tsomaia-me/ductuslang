@@ -299,7 +299,8 @@ fn item_landed(
     let used = ir
         .name(placement.kind)
         .is_some_and(|entry| patterns.binary_search(&entry.sym.0).is_ok());
-    if (placement.gate != NONE && used)
+    let top = u32::try_from(at).is_ok_and(|at| ir.top.contains(&TopRec::Placement(at)));
+    if (placement.gate != NONE && used && top)
         || (placement.gate != NONE
             && placement.default != NONE
             && matches!(ir.node(placement.default), Ok((Op::Bad, ..))))

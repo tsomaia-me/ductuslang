@@ -402,3 +402,45 @@ fn a_body_after_the_colon_on_the_placements_line_places_its_members_as_children_
     }
     assert_eq!(programs, 16);
 }
+
+const GATED_USES: [&[&str]; 4] = [
+    &[
+        "state live(true)\n",
+        "pattern Riff(default root):\n    Note/root\n    Note/(root + 7)\n",
+        "Clip c:\n    Riff/48 when live\n    Riff/50 when 1\n",
+    ],
+    &[
+        "pattern Riff(default root):\n    Note/root\n",
+        "Clip c:\n    for i in 0..2:\n        Riff/(48 + i) when i > 0\n        Riff/50 when [true]\n",
+    ],
+    &[
+        "pattern Riff(default root):\n    Note/root\n",
+        "Clip c:\n    Riff/48 when 2 / 0 > 1\n",
+    ],
+    &[
+        "pattern Riff(default root):\n    Note/root when root\n",
+        "Clip c:\n    Riff/48 when true\n",
+    ],
+];
+
+#[test]
+fn a_gate_on_a_pattern_use_is_a_bool_checked_in_the_callers_scope_drawing_what_the_old_engine_draws_beside_a_valid_twin_in_every_order()
+ {
+    let vocabulary = symphonyscript_fixtures::vocabulary();
+    let old = Compiler::new(&vocabulary)
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
+    let new = Compiler::new(&vocabulary).expect("the vocabulary compiles");
+    let mut programs = 0;
+    for items in GATED_USES {
+        for text in twins(items) {
+            let sources = [source(&text)];
+            let found = new
+                .checked_by_new_core(&sources)
+                .unwrap_or_else(|| panic!("the new core takes {text}"));
+            assert_eq!(found, old.check(&sources), "{text}");
+            programs += 1;
+        }
+    }
+    assert_eq!(programs, 42);
+}

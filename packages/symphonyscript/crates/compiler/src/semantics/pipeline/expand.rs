@@ -281,6 +281,9 @@ impl Core<'_> {
                 ItemRec::Line(members) => work.push(Work::Members(members.0, members.1, env)),
                 ItemRec::Placement(placement) => {
                     if let Some(pattern) = self.used_pattern(placement.kind) {
+                        if placement.gate != NONE {
+                            self.guards.push((placement.gate, env));
+                        }
                         if self.cyclic_pattern(pattern) {
                             self.unknown_use(parent);
                             continue;
