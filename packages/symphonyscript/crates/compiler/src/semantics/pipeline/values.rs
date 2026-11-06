@@ -307,6 +307,7 @@ impl Core<'_> {
                 }
                 return Ok(());
             }
+            Op::NamedCall if self.math_named(node)?.is_some() => Vec::new(),
             Op::Call if self.math_call(node)? || self.math_miscount(node)?.is_some() => self
                 .arguments(node)?
                 .into_iter()
@@ -1579,6 +1580,7 @@ impl Core<'_> {
                 },
                 None => return Err(Internal::missed("a path read of a cell")),
             },
+            Op::NamedCall if self.math_named(node)?.is_some() => Value::Error,
             Op::Call if self.math_miscount(node)?.is_some() => {
                 for _ in self.arguments(node)? {
                     pop(stack)?;

@@ -521,6 +521,14 @@ impl Core<'_> {
 
     pub fn call_fact(&mut self, node: u32) -> Stage<Fact> {
         let Some(function) = self.callee(node)? else {
+            if let Some(name) = self.math_named(node)? {
+                self.draw_at(
+                    Code::NamedBuiltinArguments,
+                    node,
+                    format!("the built-in `{name}` takes positional arguments only"),
+                )?;
+                return Ok(Ok(Fact::PLACEHOLDER));
+            }
             if self.math_miscount(node)?.is_some() {
                 return self.math_count_fact(node);
             }
@@ -884,6 +892,7 @@ impl Core<'_> {
                 && !self.not_callable(node)?
                 && !self.math_call(node)?
                 && self.math_miscount(node)?.is_none()
+                && self.math_named(node)?.is_none()
             {
                 return Ok(true);
             }
@@ -1265,5 +1274,25 @@ impl Core<'_> {
             format!("`{name}` takes {arity} {noun}, not {given}"),
         )?;
         Ok(Ok(Fact::PLACEHOLDER))
+    }
+}
+
+impl Core<'_> {
+    pub fn math_named(&self, node: u32) -> Result<Option<&'static str>, Internal> {
+        let (op, callee, _, _) = self.ir.node(node)?;
+        if op != Op::NamedCall || self.ir.node(callee)?.0 != Op::Name {
+            return Ok(None);
+        }
+        if self.bound(callee)? != DeclRef::None {
+            return Ok(None);
+        }
+        let text = self
+            .ir
+            .name_text(self.ir.node(callee)?.1)
+            .unwrap_or_default();
+        Ok(MATH
+            .iter()
+            .find(|(known, _)| *known == text)
+            .map(|(known, _)| *known))
     }
 }

@@ -2441,7 +2441,11 @@ fn rand_is_an_f32_fixed_by_two_integers_each_fitting_i64_beside_a_valid_twin_in_
     assert_eq!(same_as_the_old_engine(&RANDS), 22);
 }
 
-const MATH_COUNTS: [&[&str]; 6] = [
+const MATH_COUNTS: [&[&str]; 10] = [
+    &["Clip c:\n    Note/(abs(x=1 + true))\n"],
+    &["Clip c:\n    Note/(min(a=1, b=zz))\n"],
+    &["fn f(a): abs(x=a)\n", "Clip c:\n    Note/(f(1))\n"],
+    &["let y = max(a=1, b=2)\n", "Clip c:\n    Note/y\n"],
     &["Clip c:\n    Note/(abs(1, 2))\n"],
     &["Clip c:\n    Note/(min(1))\n"],
     &["Clip c:\n    Note/(clamp(1, 2))\n"],
@@ -2456,5 +2460,5 @@ const MATH_COUNTS: [&[&str]; 6] = [
 #[test]
 fn a_math_call_of_another_count_draws_argument_count_and_checks_its_arguments_beside_a_valid_twin_in_every_order()
  {
-    assert_eq!(same_as_the_old_engine(&MATH_COUNTS), 16);
+    assert_eq!(same_as_the_old_engine(&MATH_COUNTS), 32);
 }

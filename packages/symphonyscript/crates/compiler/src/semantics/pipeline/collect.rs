@@ -763,7 +763,7 @@ impl Core<'_> {
     fn math_callees(&self) -> Result<std::collections::HashSet<u32>, Internal> {
         let mut found = std::collections::HashSet::new();
         for local in 0..self.ir.op.len() {
-            if self.ir.op.get(local) != Some(&Op::Call) {
+            if !matches!(self.ir.op.get(local), Some(Op::Call | Op::NamedCall)) {
                 continue;
             }
             let callee = self.ir.a.get(local).copied().unwrap_or(NONE);
@@ -775,7 +775,8 @@ impl Core<'_> {
                 .name_text(self.ir.node(callee)?.1)
                 .unwrap_or_default();
             if super::calls::math_arity(text).is_some()
-                && self.ir.c.get(local).is_some_and(|shape| shape % 2 == 0)
+                && (self.ir.op.get(local) == Some(&Op::NamedCall)
+                    || self.ir.c.get(local).is_some_and(|shape| shape % 2 == 0))
             {
                 found.insert(callee);
             }
