@@ -84,6 +84,7 @@ pub(crate) fn loop_body(ir: &FlatIr, block: u32) -> Result<(Vec<u32>, Vec<u32>),
             .get(rec.items.0 as usize..rec.items.1 as usize)
             .unwrap_or_default()
             .to_vec();
+        items.extend(member_items(ir, rec.members));
         while let Some(item) = items.pop() {
             match *ir.item(item)? {
                 ItemRec::Placement(placement) => {
@@ -881,6 +882,7 @@ impl Core<'_> {
                     .iter()
                     .rev(),
             );
+            items.extend(member_items(self.ir, found.members));
             while let Some(child) = items.pop() {
                 match *self.ir.item(child)? {
                     ItemRec::Placement(placement) => {
@@ -1088,6 +1090,7 @@ impl Core<'_> {
                     .iter()
                     .rev(),
             );
+            items.extend(member_items(self.ir, found.members));
             while let Some(child) = items.pop() {
                 match *self.ir.item(child)? {
                     ItemRec::Placement(placement) => {
@@ -1180,6 +1183,7 @@ impl Core<'_> {
                 .get(found.items.0 as usize..found.items.1 as usize)
                 .unwrap_or_default()
                 .to_vec();
+            items.extend(member_items(self.ir, found.members));
             while let Some(child) = items.pop() {
                 match *self.ir.item(child)? {
                     ItemRec::Placement(placement) => {
@@ -1319,6 +1323,7 @@ impl Core<'_> {
                 .get(found.items.0 as usize..found.items.1 as usize)
                 .unwrap_or_default()
                 .to_vec();
+            items.extend(member_items(self.ir, found.members));
             while let Some(child) = items.pop() {
                 match *self.ir.item(child)? {
                     ItemRec::Placement(placement) => {
@@ -1666,4 +1671,14 @@ impl Core<'_> {
         self.owner_insts.entry(owner).or_default().push(inst);
         Ok(inst)
     }
+}
+
+pub(crate) fn member_items(ir: &FlatIr, members: (u32, u32)) -> Vec<u32> {
+    ir.members
+        .get(members.0 as usize..members.1 as usize)
+        .unwrap_or_default()
+        .iter()
+        .copied()
+        .filter(|member| *member != NONE)
+        .collect()
 }

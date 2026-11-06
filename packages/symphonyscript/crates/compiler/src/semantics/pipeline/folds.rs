@@ -3,7 +3,6 @@ use super::body_instance::BodyInstance;
 use super::core::{Core, Stage};
 use super::core_value::CoreValue;
 use super::decl_ref::DeclRef;
-use super::declined::Declined;
 use super::fact::Fact;
 use super::leaf::Leaf;
 use super::need::Need;

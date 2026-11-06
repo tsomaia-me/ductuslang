@@ -143,7 +143,6 @@ pub(crate) fn covers(ir: &FlatIr) -> bool {
     }
     let members = line_members(ir);
     let in_loops = loop_children(ir);
-    let nested = nested_whens(ir);
     let mut patterns: Vec<u32> = ir
         .patterns
         .iter()
@@ -167,7 +166,7 @@ pub(crate) fn covers(ir: &FlatIr) -> bool {
             item_landed(
                 ir,
                 item,
-                (&members, &in_loops, &patterns, &nested, &tops, &blocks),
+                (&members, &in_loops, &patterns, &tops, &blocks),
                 at,
             )
         })
@@ -260,19 +259,12 @@ fn loop_children(ir: &FlatIr) -> Vec<u32> {
     found
 }
 
-type Sorted<'a> = (
-    &'a [u32],
-    &'a [u32],
-    &'a [u32],
-    &'a [u32],
-    &'a [u32],
-    &'a [u32],
-);
+type Sorted<'a> = (&'a [u32], &'a [u32], &'a [u32], &'a [u32], &'a [u32]);
 
 fn item_landed(
     ir: &FlatIr,
     item: &ItemRec,
-    (members, in_loops, patterns, nested, tops, blocks): Sorted<'_>,
+    (members, in_loops, patterns, tops, blocks): Sorted<'_>,
     at: usize,
 ) -> bool {
     if !landed(item_slice(item)) {
@@ -349,7 +341,6 @@ fn item_landed(
     ir.blocks.get(placement.body as usize).is_some_and(|block| {
         let inline = block.items.0 == block.items.1
             && (!top || ir.named(placement.as_name))
-            && u32::try_from(at).is_ok_and(|at| nested.binary_search(&at).is_err())
             && ir
                 .members
                 .get(block.members.0 as usize..block.members.1 as usize)
@@ -602,55 +593,6 @@ fn plain_block(ir: &FlatIr, body: u32) -> bool {
             && block.regions.0 == block.regions.1
             && block.lets.0 == block.lets.1
     })
-}
-
-fn nested_whens(ir: &FlatIr) -> Vec<u32> {
-    let mut blocks: Vec<u32> = ir.patterns.iter().map(|rec| rec.body).collect();
-    for item in &ir.items {
-        if let ItemRec::For(rec) = item {
-            blocks.push(rec.body);
-        }
-    }
-    let mut found = Vec::new();
-    let mut seen = std::collections::HashSet::new();
-    while let Some(block) = blocks.pop() {
-        if !seen.insert(block) {
-            continue;
-        }
-        let Some(rec) = ir.blocks.get(block as usize) else {
-            continue;
-        };
-        let mut items: Vec<u32> = ir
-            .block_items
-            .get(rec.items.0 as usize..rec.items.1 as usize)
-            .unwrap_or_default()
-            .to_vec();
-        while let Some(child) = items.pop() {
-            found.push(child);
-            match ir.items.get(child as usize) {
-                Some(ItemRec::Line(range)) => items.extend(
-                    ir.members
-                        .get(range.0 as usize..range.1 as usize)
-                        .unwrap_or_default(),
-                ),
-                Some(ItemRec::When(rec)) => {
-                    for arm in ir
-                        .arms
-                        .get(rec.arms.0 as usize..rec.arms.1 as usize)
-                        .unwrap_or_default()
-                    {
-                        blocks.push(arm.1);
-                    }
-                    blocks.push(rec.otherwise);
-                }
-                Some(ItemRec::Placement(placement)) => blocks.push(placement.body),
-                Some(ItemRec::For(rec)) => blocks.push(rec.body),
-                Some(ItemRec::Wire(_) | ItemRec::Bundle(_) | ItemRec::Paren(_)) | None => {}
-            }
-        }
-    }
-    found.sort_unstable();
-    found
 }
 
 fn when_landed(ir: &FlatIr, (first, end): (u32, u32), otherwise: u32) -> bool {

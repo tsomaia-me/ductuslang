@@ -965,6 +965,7 @@ impl Core<'_> {
                     .get(found.items.0 as usize..found.items.1 as usize)
                     .unwrap_or_default(),
             );
+            items.extend(super::loops::member_items(self.ir, found.members));
             while let Some(item) = items.pop() {
                 match *self.ir.item(item)? {
                     ItemRec::Placement(placement) => {
@@ -1013,6 +1014,7 @@ impl Core<'_> {
                     .get(rec.items.0 as usize..rec.items.1 as usize)
                     .unwrap_or_default(),
             );
+            items.extend(super::loops::member_items(self.ir, rec.members));
             while let Some(item) = items.pop() {
                 CountedWalk::CorePatternGraph.step();
                 match *self.ir.item(item)? {

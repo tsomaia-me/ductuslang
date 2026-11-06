@@ -776,3 +776,24 @@ fn a_bundle_or_a_parenthesized_placement_inside_a_placement_for_body_or_a_patter
  {
     assert_eq!(same_as_the_old_engine(&NESTED_BUNDLES), 48);
 }
+
+const NESTED_INLINE_BODIES: [&[&str]; 6] = [
+    &["Clip c:\n    for i in 0..3:\n        Note: Note/(i)\n"],
+    &[
+        "pattern P(default x):\n    Note: Note/x\n",
+        "Clip c:\n    P/1\n",
+    ],
+    &["Clip c:\n    for i in 0..3:\n        Rig: Lamp/(i)\n"],
+    &[
+        "pattern P(default x):\n    Rig as r: Lamp/x Lamp/(x + true)\n",
+        "Rig q:\n    P/1\n",
+    ],
+    &["Rig r:\n    for i in 0..2:\n        Rig: Lamp/0.2 Note/1\n"],
+    &["Rig q:\n    for i in 0..0:\n        Rig: Lamp/(i + 0.5)\n"],
+];
+
+#[test]
+fn a_placement_body_after_the_colon_inside_a_placement_for_body_or_a_pattern_body_draws_what_the_old_engine_draws_beside_a_valid_twin_in_every_order()
+ {
+    assert_eq!(same_as_the_old_engine(&NESTED_INLINE_BODIES), 20);
+}
