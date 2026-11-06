@@ -2890,3 +2890,18 @@ fn a_flag_attribute_sets_a_bool_attribute_and_draws_type_mismatch_unknown_or_dup
  {
     assert_eq!(same_as_the_old_engine(&FLAG_ATTRIBUTES), 48);
 }
+
+const PLACEMENT_FLAGS: [&[&str]; 6] = [
+    &["Rig r:\n    Lamp*\n", "Rig s:\n    Lamp\n"],
+    &["Rig r:\n    Lamp**\n"],
+    &["Rig r:\n    Lamp~\n"],
+    &["Rig r:\n    Lamp* | strobe\n"],
+    &["Rig r:\n    Lamp*/0.5 | !strobe\n"],
+    &["Rig r:\n    Lamp* as a | level=0.5\n    Lamp | level=a.level\n"],
+];
+
+#[test]
+fn a_placement_flag_sets_its_bool_attribute_and_draws_unknown_flag_or_duplicate_attribute_as_the_old_engine_does_beside_a_valid_twin_in_every_order()
+ {
+    assert_eq!(same_as_the_old_engine(&PLACEMENT_FLAGS), 16);
+}

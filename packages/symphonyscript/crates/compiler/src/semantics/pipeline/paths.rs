@@ -305,6 +305,17 @@ impl Core<'_> {
             .ok_or(Internal::missed("attribute"))?
             .name
             .as_str();
+        let flagged = decl.attrs.get(attr).and_then(|attr| attr.flag);
+        for at in placement.flags.0..placement.flags.1 {
+            let flag = *self
+                .ir
+                .flags
+                .get(at as usize)
+                .ok_or(Internal::missed("IR flag"))?;
+            if Some(flag.flag) == flagged {
+                return Ok((ABSENT, flag.lo, flag.hi));
+            }
+        }
         for at in placement.attrs.0..placement.attrs.1 {
             let entry = *self
                 .ir

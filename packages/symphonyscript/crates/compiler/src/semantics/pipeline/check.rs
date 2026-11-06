@@ -148,6 +148,7 @@ impl Core<'_> {
                 file: record.file,
                 default: placement.default,
                 attrs: placement.attrs,
+                flags: placement.flags,
                 lo: placement.lo,
                 hi: placement.hi,
             };
@@ -169,6 +170,7 @@ impl Core<'_> {
                 file: row.file,
                 default: rec.default,
                 attrs: rec.attrs,
+                flags: rec.flags,
                 lo: rec.lo,
                 hi: rec.hi,
             };
@@ -207,6 +209,7 @@ impl Core<'_> {
                 file: record.file,
                 default: placement.default,
                 attrs: placement.attrs,
+                flags: placement.flags,
                 lo: placement.lo,
                 hi: placement.hi,
             };
@@ -234,6 +237,7 @@ impl Core<'_> {
                 file: row.file,
                 default: rec.default,
                 attrs: rec.attrs,
+                flags: rec.flags,
                 lo: rec.lo,
                 hi: rec.hi,
             };
@@ -266,6 +270,7 @@ impl Core<'_> {
             file,
             default,
             attrs,
+            flags,
             lo,
             hi,
         } = item;
@@ -286,6 +291,25 @@ impl Core<'_> {
             }
             sources.push((attr, span, root));
         };
+        for at in flags.0..flags.1 {
+            let flag = *self
+                .ir
+                .flags
+                .get(at as usize)
+                .ok_or(Internal::missed("IR flag"))?;
+            let span = self.span(file, flag.lo, flag.hi);
+            match decl_attrs
+                .iter()
+                .position(|attr| attr.flag == Some(flag.flag))
+            {
+                Some(attr) => set(self, attr, span, NONE),
+                None => self.draw(
+                    Code::UnknownFlag,
+                    span,
+                    format!("`{kind_name}` has no attribute flagged `{}`", flag.flag),
+                ),
+            }
+        }
         if default != NONE {
             let span = self.node_span(default)?;
             match default_attr {
