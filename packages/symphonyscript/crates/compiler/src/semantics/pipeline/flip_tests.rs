@@ -1,4 +1,5 @@
 use crate::compiler::Compiler;
+use crate::diagnostics::Code;
 use crate::syntax::front_end_goldens::source;
 use symphonyscript_fixtures::Orders;
 
@@ -165,4 +166,77 @@ const WIRE_GATE_PATHS: [&[&str]; 4] = [
 fn a_to_path_in_a_wires_gate_starts_at_the_wires_destination_and_draws_what_the_old_engine_draws_beside_a_valid_twin_in_every_order()
  {
     assert_eq!(same_as_the_old_engine(&WIRE_GATE_PATHS), 24);
+}
+
+const FAULTY_DEFAULT_GATES: [&[&str]; 3] = [
+    &["let j = [1, 2]\n", "Clip c:\n    Note/when (j[^1])\n"],
+    &["Clip c:\n    Note/when 1\n"],
+    &["Clip c:\n    Note/when [1, 2][5] > 1\n"],
+];
+
+#[test]
+fn a_gate_beside_a_faulty_default_is_checked_as_a_bool_drawing_what_the_old_engine_draws_beside_a_valid_twin_in_every_order()
+ {
+    assert_eq!(same_as_the_old_engine(&FAULTY_DEFAULT_GATES), 10);
+}
+
+const ANNOTATED_HISTORY_TARGETS: [(&[&str], &[Code]); 4] = [
+    (
+        &[
+            "state x(1)\n",
+            "let l: i32 = x + 1\n",
+            "state s = l.past(1, 0)\n",
+            "Clip c:\n    Note when s > 3000000000\n",
+        ],
+        &[Code::DoesNotFit, Code::HistoryTarget, Code::ReactiveLet],
+    ),
+    (
+        &[
+            "state x(1)\n",
+            "let l: i32 = x + 1\n",
+            "Clip c:\n    Note/(l.past(1, 0) + 3000000000)\n",
+        ],
+        &[Code::DoesNotFit, Code::HistoryTarget, Code::ReactiveLet],
+    ),
+    (
+        &[
+            "state x(1)\n",
+            "let t: i32 = s * x\n",
+            "state s = t.past(1, 0)\n",
+            "Clip k:\n    Note/(s)\n",
+        ],
+        &[Code::HistoryTarget, Code::ReactiveLet],
+    ),
+    (
+        &[
+            "let l: i32 = 1\n",
+            "state s = l.past(1, 0)\n",
+            "Clip c:\n    Note when s\n",
+        ],
+        &[Code::ConditionType, Code::HistoryTarget],
+    ),
+];
+
+#[test]
+fn a_history_read_of_an_annotated_let_keeps_the_annotated_type_so_its_readers_draw_the_faults_that_type_gives_in_every_order()
+ {
+    let vocabulary = symphonyscript_fixtures::vocabulary();
+    let new = Compiler::new(&vocabulary).expect("the vocabulary compiles");
+    let mut programs = 0;
+    for (items, codes) in ANNOTATED_HISTORY_TARGETS {
+        for text in twins(items) {
+            let found = new
+                .checked_by_new_core(&[source(&text)])
+                .unwrap_or_else(|| panic!("the new core takes {text}"));
+            let mut found: Vec<Code> = found
+                .iter()
+                .map(|diagnostic| diagnostic.code)
+                .filter(|code| *code != Code::NoEntryInstance)
+                .collect();
+            found.sort_by_key(|code| format!("{code:?}"));
+            assert_eq!(found, codes, "{text}");
+            programs += 1;
+        }
+    }
+    assert_eq!(programs, 288);
 }

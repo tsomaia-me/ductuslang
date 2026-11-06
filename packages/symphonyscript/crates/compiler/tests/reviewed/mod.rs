@@ -4368,15 +4368,32 @@ fn reactive_let_history_target(seen: &Seen<'_>, at: &Drawn) -> bool {
 
 fn history_of_a_reactive_let(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
     match change {
-        Change::Added => reactive_let_history_target(seen, at),
+        Change::Added => {
+            reactive_let_history_target(seen, at)
+                || (matches!(
+                    at.0.as_str(),
+                    "float-to-integer"
+                        | "type-mismatch"
+                        | "does-not-fit"
+                        | "condition-type"
+                        | "operand-type"
+                ) && seen
+                    .new
+                    .iter()
+                    .any(|drawn| reactive_let_history_target(seen, drawn)))
+        }
         Change::Removed => {
             matches!(
                 at.0.as_str(),
                 "float-to-integer" | "type-mismatch" | "does-not-fit" | "integer-cell"
-            ) && seen
-                .new
-                .iter()
-                .any(|drawn| reactive_let_history_target(seen, drawn))
+            ) && seen.new.iter().any(|drawn| {
+                reactive_let_history_target(seen, drawn)
+                    && seen.text(drawn).split_once('.').is_some_and(|(name, _)| {
+                        seen.program
+                            .lines()
+                            .any(|line| line.starts_with(&format!("let {name} =")))
+                    })
+            })
         }
         Change::Restated => false,
     }
@@ -5173,7 +5190,7 @@ pub const CLASSES: &[Class] = &[
     },
     Class {
         ledger: "487",
-        rule: "a history read of a top-level let reading a cell draws history-target at the read beside the let's reactive-let, as the program with the let repaired to a compile-time value does, and the read is a placeholder, so the faults the old engine drew from the let's type at its readers are gone",
+        rule: "a history read of a top-level let reading a cell draws history-target at the read beside the let's reactive-let, as the program with the let repaired to a compile-time value does, and the read of an annotated let keeps the annotated type (ARCHITECTURE §7: a value whose type an error leaves known keeps that type), so its readers draw the faults that type gives whatever value repairs the read, where the old engine reads it as a placeholder; the read of an unannotated let is still a placeholder, so the faults the old engine drew from that let's type at its readers are gone",
         explains: history_of_a_reactive_let,
     },
     Class {

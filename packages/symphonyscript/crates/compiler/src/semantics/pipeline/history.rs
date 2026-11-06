@@ -93,7 +93,14 @@ impl Core<'_> {
             Target::Cell(at) => at,
             Target::Let | Target::Faulty => {
                 self.compile_time_target(node, "history")?;
-                return Ok(Ok(Fact::PLACEHOLDER));
+                let kept = match self.bound(target)? {
+                    DeclRef::Let(at) if self.annotation_ty(at)?.is_some() => self.let_fact(at)?,
+                    _ => Fact::PLACEHOLDER,
+                };
+                if matches!(kept.leaf, Leaf::Placeholder | Leaf::Error) || kept.node {
+                    return Ok(Ok(Fact::PLACEHOLDER));
+                }
+                return Ok(Ok(kept));
             }
         };
         let fact = match self.group_read(node)? {
@@ -154,7 +161,7 @@ impl Core<'_> {
             Ok(Target::Cell(_)) => Ok(Ok(Fact::scalar(Leaf::Bool))),
             Ok(Target::Let) => {
                 self.compile_time_target(node, "step")?;
-                Ok(Ok(Fact::PLACEHOLDER))
+                Ok(Ok(Fact::scalar(Leaf::Bool)))
             }
             Ok(Target::Faulty) => Ok(Ok(Fact::PLACEHOLDER)),
             Err(declined) => Ok(Err(declined)),

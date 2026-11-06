@@ -307,7 +307,9 @@ impl Core<'_> {
                 }
                 None => vec![(a, ty), (b, self.integral(b)?)],
             },
-            Op::Past if self.is_own_history(node) => Vec::new(),
+            Op::Past if self.is_own_history(node) || matches!(self.bound(a)?, DeclRef::Let(_)) => {
+                Vec::new()
+            }
             Op::Past => vec![(a, ty)],
             Op::Slice => {
                 let mut operands = vec![(a, ty)];
@@ -1456,7 +1458,7 @@ impl Core<'_> {
                 )?
             }
             Op::Past => {
-                if !self.is_own_history(node) {
+                if !self.is_own_history(node) && !matches!(self.bound(a)?, DeclRef::Let(_)) {
                     pop(stack)?;
                     self.pass_init_read(node, a);
                 }

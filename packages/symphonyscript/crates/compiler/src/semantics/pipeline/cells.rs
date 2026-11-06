@@ -64,6 +64,9 @@ impl Core<'_> {
 
     pub fn node_reactive(&mut self, node: u32) -> Result<bool, Internal> {
         let (op, _, _, _) = self.ir.node(node)?;
+        if matches!(op, Op::Past | Op::Stepped) {
+            return Ok(true);
+        }
         if op == Op::Name {
             return Ok(match self.bound(node)? {
                 DeclRef::Cell(_) => true,

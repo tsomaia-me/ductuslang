@@ -21,7 +21,9 @@ impl Core<'_> {
             let unknown = self.ir.node(node)?.0 == Op::Name
                 && self.bound(node)? == DeclRef::None
                 && !self.is_bare(node);
-            if unknown || self.fact(node)?.leaf == Leaf::Placeholder {
+            if unknown
+                || (self.fact(node)?.leaf == Leaf::Placeholder && !self.is_history_target(node))
+            {
                 return Ok(Err(Declined(Reason::BodyItem)));
             }
         }
