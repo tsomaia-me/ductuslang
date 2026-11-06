@@ -417,6 +417,9 @@ impl<'p> IrBuilder<'p, '_> {
                 "a type after `is` (SPEC §5.3)",
             );
         }
+        if let Some(at) = self.vocabulary_type_operand(&node) {
+            return self.unbuilt_at(marks, at, whole, "a type after `is` (SPEC §5.3)");
+        }
         let op = node.op();
         match op.as_ref().map(TokenView::kind) {
             Some(SyntaxKind::Question2) => {
@@ -685,4 +688,28 @@ fn unescape_into(text: &str, out: &mut String) -> bool {
         out.push(escaped);
     }
     true
+}
+
+impl IrBuilder<'_, '_> {
+    fn vocabulary_type_operand(&self, node: &ast::BinaryExpr<'_>) -> Option<(u32, u32)> {
+        let is = node.op().is_some_and(|op| op.kind() == SyntaxKind::IsKw);
+        if !is {
+            return None;
+        }
+        let rhs = node.rhs()?;
+        let whole = rhs.syntax().range();
+        let mut operand = rhs;
+        while let ast::Expr::Index(index) = operand {
+            operand = index.base()?;
+        }
+        let ast::Expr::NameRef(name) = operand else {
+            return None;
+        };
+        let name = name.name()?;
+        let text = name.text();
+        let vocabulary = self.vocabulary.enum_named(&text).is_some()
+            || self.vocabulary.node_kind_named(&text).is_some()
+            || self.vocabulary.wire_kind_named(&text).is_some();
+        vocabulary.then_some((whole.start, whole.end))
+    }
 }

@@ -1547,3 +1547,17 @@ fn a_fold_name_equal_to_a_function_or_an_instance_draws_for_variable_clash_besid
  {
     assert_eq!(same_as_the_old_engine(&FOLD_NAMES_CLASHING), 50);
 }
+
+const VOCABULARY_TYPE_OPERANDS: [&[&str]; 5] = [
+    &["state s(1)\n", "Clip c:\n    Note when s is Wave\n"],
+    &["state s(1)\n", "Clip c:\n    Note when s is Lamp\n"],
+    &["Clip c:\n    Note when (1 + true) is Wave\n"],
+    &["Clip c:\n    Note/(if 3 is not Lamp then 1 else 2)\n"],
+    &["state s(Wave::Saw)\n", "Clip c:\n    Note when s is Wave\n"],
+];
+
+#[test]
+fn a_vocabulary_type_after_is_draws_unbuilt_construct_and_nothing_of_its_left_operand_beside_a_valid_twin_in_every_order()
+ {
+    assert_eq!(same_as_the_old_engine(&VOCABULARY_TYPE_OPERANDS), 22);
+}
