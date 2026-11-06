@@ -386,3 +386,79 @@ fn an_untyped_bare_variant_flow_draws_one_diagnostic_at_its_first_writer_naming_
         }
     }
 }
+
+const LOOP_NAME_ENUMS: [(&str, &str); 11] = [
+    (
+        "let k = 1\n",
+        "Synth s:\n    for w: Wave in [Wave::Saw, Wave::Sine]:\n        Osc | wave=w\n",
+    ),
+    (
+        "let k = 1\n",
+        "Synth s:\n    for w: Mode in [Wave::Saw, Wave::Sine]:\n        Osc | wave=w\n",
+    ),
+    (
+        "let k = 1\n",
+        "Synth s:\n    for w: Wave in [1, 2]:\n        Osc | wave=w\n",
+    ),
+    (
+        "let k = 1\n",
+        "Synth s:\n    for w: Mode in [Wave::Saw]:\n        Osc | mode=w\n",
+    ),
+    (
+        "let k = 1\n",
+        "Synth s:\n    for i, w: Wave in [Wave::Saw, Wave::Sine]:\n        Osc | wave=w\n",
+    ),
+    (
+        "let k = 1\n",
+        "Synth s:\n    for w: Wave in [Wave::Saw, Wave::Sine]:\n        Osc | mode=w\n",
+    ),
+    (
+        "let ws = [Wave::Saw, Wave::Sine]\n",
+        "Synth s:\n    for w: Wave in ws:\n        Osc | wave=w\n",
+    ),
+    (
+        "let k = 1\n",
+        "Synth s:\n    for i: Wave in 0..2:\n        Osc | wave=i\n",
+    ),
+    (
+        "let k = 1\n",
+        "Synth s:\n    Osc | wave=(for w: Wave in [Wave::Saw, Wave::Sine] into a from Wave::Saw: w)\n",
+    ),
+    (
+        "let k = 1\n",
+        "Synth s:\n    Osc | wave=(for w: Mode in [Wave::Saw] into a from Wave::Saw: a)\n",
+    ),
+    (
+        "let k = 1\n",
+        "Synth s:\n    Osc | wave=(for i, w: Wave in [Wave::Saw] into a from Wave::Sine: w)\n",
+    ),
+];
+
+const LOOP_NAME_ENUMS_DECLINED: [&str; 4] = [
+    "Synth s:\n    for w: Wave in [Saw, Sine]:\n        Osc | wave=w\n",
+    "Synth s:\n    Osc | wave=(for w: Wave in [Saw, Sine] into a from Wave::Saw: w)\n",
+    "Synth s:\n    Osc | wave=(for w in [Wave::Saw] into a: Mode from Wave::Sine: w)\n",
+    "Synth s:\n    for w: Wave in [Wave::Saw, Wave::Sine]:\n        Osc | wave=(if w is Saw then Wave::Sine else w)\n",
+];
+
+#[test]
+fn an_enum_annotation_on_a_loop_name_or_a_fold_name_types_the_name_and_a_refused_iterable_draws_as_the_old_engine_draws_in_both_orders()
+ {
+    let vocabulary = symphonyscript_fixtures::vocabulary();
+    let old = Compiler::new(&vocabulary)
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
+    let new = Compiler::new(&vocabulary).expect("the vocabulary compiles");
+    for (first, second) in LOOP_NAME_ENUMS {
+        for text in [format!("{first}{second}"), format!("{second}{first}")] {
+            let sources = [source(&text)];
+            let found = new
+                .checked_by_new_core(&sources)
+                .unwrap_or_else(|| panic!("the new core takes {text}"));
+            assert_eq!(found, old.check(&sources), "{text}");
+        }
+    }
+    for text in LOOP_NAME_ENUMS_DECLINED {
+        assert_eq!(new.checked_by_new_core(&[source(text)]), None, "{text}");
+    }
+}

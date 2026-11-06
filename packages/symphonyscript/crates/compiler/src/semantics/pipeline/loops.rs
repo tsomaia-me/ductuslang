@@ -1324,6 +1324,15 @@ impl Core<'_> {
                 (Refusal::Type, true) => Some(RANGE_TYPE),
                 (Refusal::Kept | Refusal::Silent, _) => None,
             };
+            if matches!(ty, EvalTy::Enum(_)) && summary.is_some() {
+                let mut span = self.node_span(head.iterable.0)?;
+                if head.range {
+                    span.range.end = self.node_span(head.iterable.1)?.range.end;
+                }
+                self.draw(Code::TypeMismatch, span, super::annotation::TYPE);
+                *fact = Fact::ERROR;
+                continue;
+            }
             if let Some(summary) = summary {
                 let at = *self.ir.binder(binder)?;
                 let span = self.span(self.file_of(head.iterable.0), at.lo, at.hi);
