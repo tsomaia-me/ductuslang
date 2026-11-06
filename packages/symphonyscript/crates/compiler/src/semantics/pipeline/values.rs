@@ -1280,11 +1280,11 @@ impl Core<'_> {
                     } else {
                         self.in_default_unit(node, value, family, unit)?
                     };
-                    if self.fixed_root_outside(node, &value)? {
-                        return Ok(Err(super::declined::Declined(
-                            super::reason::Reason::UnitAttribute,
-                        )));
-                    }
+                    let value = if self.fixed_root_outside(node, &value)? {
+                        self.saturated_root(node, value)?
+                    } else {
+                        value
+                    };
                     if let Some(frame) = frames.last_mut() {
                         frame.values.push(value);
                     }

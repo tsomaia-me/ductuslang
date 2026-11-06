@@ -444,3 +444,50 @@ fn a_gate_on_a_pattern_use_is_a_bool_checked_in_the_callers_scope_drawing_what_t
     }
     assert_eq!(programs, 42);
 }
+
+const SATURATED_ROOTS: [(&str, &str); 2] = [
+    (
+        "Bar b | bar_len=i64(3000000000000000000)\n",
+        "i64(3000000000000000000)",
+    ),
+    (
+        "Bar b | bar_len=-(i64(3000000000000000000))\n",
+        "-(i64(3000000000000000000))",
+    ),
+];
+
+#[test]
+fn a_fixed_type_integer_root_read_in_a_scaled_default_unit_saturates_in_its_own_type_and_draws_constant_overflow_at_the_root_510()
+ {
+    let vocabulary = symphonyscript_fixtures::bar_vocabulary();
+    let new = Compiler::new(&vocabulary).expect("the vocabulary compiles");
+    let twin = "Bar t | bar_len=i64(3)\n";
+    for (program, root) in SATURATED_ROOTS {
+        for order in Orders::Every.of(&[program, twin]) {
+            let text = order.concat();
+            let found = new
+                .checked_by_new_core(&[source(&text)])
+                .unwrap_or_else(|| panic!("the new core takes {text}"));
+            let drawn: Vec<(crate::diagnostics::Code, &str)> = found
+                .iter()
+                .map(|diagnostic| {
+                    let range =
+                        diagnostic.span.range.start as usize..diagnostic.span.range.end as usize;
+                    (diagnostic.code, text.get(range).unwrap_or_default())
+                })
+                .collect();
+            assert!(
+                drawn.contains(&(crate::diagnostics::Code::ConstantOverflow, root)),
+                "{text}: {drawn:?}"
+            );
+            assert_eq!(
+                drawn
+                    .iter()
+                    .filter(|(code, _)| *code == crate::diagnostics::Code::ConstantOverflow)
+                    .count(),
+                1,
+                "{text}"
+            );
+        }
+    }
+}
