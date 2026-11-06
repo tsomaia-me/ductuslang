@@ -111,7 +111,12 @@ impl Core<'_> {
                 Op::If => kid != a && (kid == b || kid == c),
                 Op::Is | Op::IsNot => true,
                 Op::Array | Op::Call | Op::NamedCall | Op::For => known.is_some(),
-                Op::Past => known.is_some(),
+                Op::Past => {
+                    known.is_some()
+                        || (kid == c
+                            && c != NONE
+                            && matches!(self.fact(a)?.leaf, Leaf::Enum(Some(_))))
+                }
                 Op::Index | Op::IndexFromEnd => {
                     known.is_some() && kid == a && !self.fact(kid)?.dims.is_empty()
                 }
@@ -164,6 +169,13 @@ impl Core<'_> {
                 }
                 _ => {}
             }
+        }
+        if op == Op::Past
+            && c != NONE
+            && self.fact(c)?.leaf == Leaf::Enum(None)
+            && let Leaf::Enum(Some(id)) = self.fact(a)?.leaf
+        {
+            self.resolve_bare(c, id, true)?;
         }
         if op == Op::If
             && let Leaf::Enum(Some(id)) = fact.leaf

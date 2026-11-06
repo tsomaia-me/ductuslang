@@ -41,9 +41,8 @@ const ENUMS: [&str; 37] = [
     "Synth s:\n    Osc | wave=Wave::Zig\n",
 ];
 
-const DECLINED: [&str; 3] = [
+const DECLINED: [&str; 2] = [
     "fn f(w): w\nSynth s:\n    Osc | wave=(f(Saw))\n",
-    "state w(Wave::Saw)\nstate m = w.past(1, Sine)\nSynth s:\n    Osc | wave=m\n",
     "Synth s:\n    Osc | wave=(if Saw then Saw else Saw)\n",
 ];
 
@@ -460,5 +459,58 @@ fn an_enum_annotation_on_a_loop_name_or_a_fold_name_types_the_name_and_a_refused
     }
     for text in LOOP_NAME_ENUMS_DECLINED {
         assert_eq!(new.checked_by_new_core(&[source(text)]), None, "{text}");
+    }
+}
+
+const BARE_FALLBACKS: [(&str, &str); 8] = [
+    (
+        "state w(Wave::Saw)\n",
+        "Synth s:\n    Osc | wave=w.past(1, Sine)\n",
+    ),
+    (
+        "state w(Wave::Saw)\n",
+        "Synth s:\n    Osc | wave=w.past(1, Auto)\n",
+    ),
+    (
+        "state w(Wave::Saw)\n",
+        "Synth s:\n    Osc | wave=w.past(1, Nope)\n",
+    ),
+    (
+        "state w(Wave::Saw)\n",
+        "Synth s:\n    Osc | wave=w.past(2, Wave::Sine)\n",
+    ),
+    (
+        "state w(Wave::Saw)\nstate v = w.past(1, Sine)\n",
+        "Synth s:\n    Osc | wave=v\n",
+    ),
+    (
+        "state w(Wave::Saw)\n",
+        "Clip c:\n    Note/(if w.past(1, Sine) is Saw then 1 else 2)\n",
+    ),
+    (
+        "state w(Wave::Saw)\nstate x = if w.past(1, Square) is Wave::Saw then w else w.past(1, Sine)\n",
+        "Synth s:\n    Osc | wave=x\n",
+    ),
+    (
+        "state m(Mode::Auto)\n",
+        "Plant p | mode=m.past(1, Manual)\n",
+    ),
+];
+
+#[test]
+fn a_bare_history_fallback_takes_its_cells_enum_as_the_old_engine_resolves_it_in_both_orders() {
+    let vocabulary = symphonyscript_fixtures::vocabulary();
+    let old = Compiler::new(&vocabulary)
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
+    let new = Compiler::new(&vocabulary).expect("the vocabulary compiles");
+    for (first, second) in BARE_FALLBACKS {
+        for text in [format!("{first}{second}"), format!("{second}{first}")] {
+            let sources = [source(&text)];
+            let found = new
+                .checked_by_new_core(&sources)
+                .unwrap_or_else(|| panic!("the new core takes {text}"));
+            assert_eq!(found, old.check(&sources), "{text}");
+        }
     }
 }
