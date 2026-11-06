@@ -2027,9 +2027,6 @@ impl Core<'_> {
             }
             kinds.push(element);
         }
-        Ok(kinds
-            .windows(2)
-            .all(|pair| pair.first() == pair.last())
-            .then_some(count))
+        Ok((!kinds.is_empty()).then_some(count))
     }
 }

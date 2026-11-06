@@ -1901,7 +1901,9 @@ fn a_variable_cells_capacity_is_its_annotated_capacity_known_at_compile_time_rea
     assert_eq!(same_as_the_old_engine(&rows), 72);
 }
 
-const LITERAL_ARRAY_MEMBERS: [&[&str]; 5] = [
+const LITERAL_ARRAY_MEMBERS: [&[&str]; 7] = [
+    &["Clip c:\n    Note/([1, 2.5].size)\n"],
+    &["Clip c:\n    Note/([1, 2.5, 3000000000].capacity)\n"],
     &["Clip c:\n    Note/([5, 6].size)\n"],
     &["Clip c:\n    Note/([5, 6].capacity + 300)\n"],
     &["Clip c:\n    Note/([1, 2][[5, 6].size])\n"],
@@ -1912,7 +1914,7 @@ const LITERAL_ARRAY_MEMBERS: [&[&str]; 5] = [
 #[test]
 fn a_literal_arrays_size_and_capacity_are_its_length_known_at_compile_time_beside_a_valid_twin_in_every_order()
  {
-    assert_eq!(same_as_the_old_engine(&LITERAL_ARRAY_MEMBERS), 10);
+    assert_eq!(same_as_the_old_engine(&LITERAL_ARRAY_MEMBERS), 14);
 }
 
 const ARRAY_ATTRIBUTE_VALUES: [&[&str]; 10] = [
