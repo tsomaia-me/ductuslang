@@ -250,7 +250,9 @@ impl Core<'_> {
                 }
                 let summary =
                     format!("`{text}` equals a visible name, and a `for` binds only new names");
-                if vocabulary && !(enclosing || top) {
+                let duplicate = !enclosing
+                    && self.decl.get(name.sym as usize).copied() == Some(DeclRef::Duplicate);
+                if (vocabulary && !(enclosing || top)) || duplicate {
                     let diagnostic =
                         Diagnostic::new(Code::ForVariableClash, name.span.clone(), summary)
                             .with_help("rename the name the `for` binds");
