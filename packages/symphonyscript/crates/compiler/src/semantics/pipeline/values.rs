@@ -139,7 +139,7 @@ impl Core<'_> {
                     }
                     literal |= self.own_float(operand)? == EvalTy::F64;
                 }
-                if host || literal && !(argument && !derived) {
+                if host || literal && (!argument || derived) {
                     EvalTy::F64
                 } else {
                     EvalTy::F32
