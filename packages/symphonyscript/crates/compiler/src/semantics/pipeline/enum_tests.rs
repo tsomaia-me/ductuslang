@@ -41,13 +41,11 @@ const ENUMS: [&str; 37] = [
     "Synth s:\n    Osc | wave=Wave::Zig\n",
 ];
 
-const DECLINED: [&str; 7] = [
+const DECLINED: [&str; 5] = [
     "fn f(w): w\nSynth s:\n    Osc | wave=(f(Saw))\n",
-    "fn pick(x): if x then Wave::Saw else Wave::Sine\nSynth s:\n    Osc | wave=(pick(true))\n",
     "state w(Saw)\nSynth s:\n    Osc | wave=w\n",
     "state w(Wave::Saw)\nClip c:\n    Note/(if w.past(1) is Saw then 1 else 2)\n",
     "state w(Wave::Saw)\nstate m = w.past(1, Sine)\nSynth s:\n    Osc | wave=m\n",
-    "Synth s:\n    for w in [Wave::Saw, Wave::Sine]:\n        Osc | wave=w\n",
     "Synth s:\n    Osc | wave=(if Saw then Saw else Saw)\n",
 ];
 
@@ -130,12 +128,11 @@ const BARE_LETS: [(&str, &str); 4] = [
     ),
 ];
 
-const BARE_LETS_DECLINED: [&str; 5] = [
+const BARE_LETS_DECLINED: [&str; 4] = [
     "let a = Saw\nSynth s:\n    Osc | wave=a\nPlant p | mode=a\n",
     "let a = Manual\nSynth s:\n    Osc | wave=a\n",
     "let a = Saw\nClip c:\n    Note/a\n",
     "state w(Saw)\nSynth s:\n    Osc | wave=w\n",
-    "let a = Sine\nSynth s:\n    for i in 0..2:\n        Osc | wave=a\n",
 ];
 
 #[test]
@@ -210,6 +207,52 @@ fn an_array_of_qualified_variants_is_built_joined_and_read_by_index_as_the_old_e
         .on_the_old_engine();
     let new = Compiler::new(&vocabulary).expect("the vocabulary compiles");
     for (first, second) in ENUM_ARRAYS {
+        for text in [format!("{first}{second}"), format!("{second}{first}")] {
+            let sources = [source(&text)];
+            let found = new
+                .checked_by_new_core(&sources)
+                .unwrap_or_else(|| panic!("the new core takes {text}"));
+            assert_eq!(found, old.check(&sources), "{text}");
+        }
+    }
+}
+
+const ENUMS_IN_BODIES: [(&str, &str); 6] = [
+    (
+        "fn pick(x): if x then Wave::Saw else Wave::Sine\n",
+        "Synth s:\n    Osc | wave=(pick(true))\n",
+    ),
+    (
+        "fn pick(x): if x then Wave::Saw else Wave::Sine\nstate b(true)\n",
+        "Synth s:\n    Osc | wave=(pick(b))\n",
+    ),
+    (
+        "",
+        "Synth s:\n    for w in [Wave::Saw, Wave::Sine]:\n        Osc | wave=w\n",
+    ),
+    (
+        "fn bad(x): if x then Wave::Saw else Mode::Auto\n",
+        "Synth s:\n    Osc | wave=(bad(true))\n",
+    ),
+    (
+        "",
+        "Clip c:\n    for i in 0..2:\n        Note/(if [Wave::Saw, Wave::Sine][i] is Wave::Saw then 1 else 2)\n",
+    ),
+    (
+        "let a = Sine\n",
+        "Synth s:\n    for i in 0..2:\n        Osc | wave=a\n",
+    ),
+];
+
+#[test]
+fn a_qualified_variant_inside_a_function_or_a_placement_for_body_draws_what_the_old_engine_draws_in_both_orders()
+ {
+    let vocabulary = symphonyscript_fixtures::vocabulary();
+    let old = Compiler::new(&vocabulary)
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
+    let new = Compiler::new(&vocabulary).expect("the vocabulary compiles");
+    for (first, second) in ENUMS_IN_BODIES {
         for text in [format!("{first}{second}"), format!("{second}{first}")] {
             let sources = [source(&text)];
             let found = new

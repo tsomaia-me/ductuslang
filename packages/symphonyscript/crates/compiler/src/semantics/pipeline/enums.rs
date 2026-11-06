@@ -151,7 +151,7 @@ impl Core<'_> {
                 | Op::MethodCall
                 | Op::NamedMethodCall => false,
             };
-            if !allowed || self.in_body(node)?.is_some() {
+            if !allowed || (known.is_none() && self.in_body(node)?.is_some()) {
                 return Ok(Err(Declined(Reason::EnumFlow)));
             }
         }
@@ -178,7 +178,7 @@ impl Core<'_> {
         {
             return Ok(Err(Declined(Reason::BareVariant)));
         }
-        if matches!(fact.leaf, Leaf::Enum(_)) && self.in_body(node)?.is_some() {
+        if fact.leaf == Leaf::Enum(None) && self.in_body(node)?.is_some() {
             return Ok(Err(Declined(Reason::EnumFlow)));
         }
         Ok(Ok(()))
