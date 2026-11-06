@@ -15,7 +15,7 @@ struct Run {
     walks: u64,
 }
 
-const CORE_WALKS: [CountedWalk; 22] = [
+const CORE_WALKS: [CountedWalk; 24] = [
     CountedWalk::BindLookup,
     CountedWalk::CoreExpandRow,
     CountedWalk::SigNode,
@@ -38,6 +38,8 @@ const CORE_WALKS: [CountedWalk; 22] = [
     CountedWalk::CorePatternBody,
     CountedWalk::CoreInitRead,
     CountedWalk::CoreCapacity,
+    CountedWalk::CoreFamilies,
+    CountedWalk::CoreCellReach,
 ];
 
 fn walked() -> u64 {
@@ -1282,6 +1284,35 @@ fn stress_a_chain_of_lets_of_one_family_read_at_a_unit_attribute_types_in_time_a
         [1_000, 2_000, 4_000],
         family_chain,
         &none,
+        Timing::Judged,
+    ));
+}
+
+pub(super) fn lets_calling_functions_over_a_let_chain(n: usize) -> String {
+    let mut text = String::from("state s(0)\nlet c0 = s\n");
+    for at in 1..=n {
+        text.push_str(&format!("let c{at} = c{} + 1\n", at - 1));
+    }
+    for at in 0..n {
+        text.push_str(&format!("fn g{at}(z): c{n} + z\nlet w{at} = g{at}({at})\n"));
+    }
+    text.push_str(&read_of("1"));
+    text
+}
+
+pub(super) fn reactive_lets_of_the_let_chain(n: usize) -> Vec<String> {
+    vec!["reactive-let".to_string(); 2 * n + 1]
+}
+
+#[test]
+#[ignore = "stress"]
+fn stress_lets_each_calling_a_function_over_a_long_chain_of_lets_draw_reactive_let_in_time_linear_in_the_program_507()
+ {
+    assert_none(&ledger_failures(
+        "lets calling functions over a let chain",
+        [1_000, 2_000, 4_000],
+        lets_calling_functions_over_a_let_chain,
+        &reactive_lets_of_the_let_chain,
         Timing::Judged,
     ));
 }

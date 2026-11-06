@@ -882,7 +882,10 @@ impl Core<'_> {
                             }
                             frame.steps.push(Step::Visit(otherwise, arm_ty));
                         }
-                        Value::Error if self.is_reactive(condition)? => {
+                        Value::Error
+                            if self.is_reactive(condition)?
+                                || self.fact(condition)?.leaf != Leaf::Placeholder =>
+                        {
                             if unflowed {
                                 self.unflowed.extend([then, otherwise]);
                             }

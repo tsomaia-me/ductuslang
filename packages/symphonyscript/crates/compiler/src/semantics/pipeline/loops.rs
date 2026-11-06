@@ -473,19 +473,103 @@ impl Core<'_> {
         Ok(reached)
     }
 
-    pub fn calls_reach_a_cell(&self, root: u32) -> Result<bool, Internal> {
+    pub fn calls_reach_a_cell(
+        &self,
+        root: u32,
+        reaching: &mut Option<Vec<bool>>,
+    ) -> Result<bool, Internal> {
         for node in self.postorder(root)? {
-            if matches!(self.ir.node(node)?.0, Op::Call | Op::NamedCall)
-                && let Some(function) = self.callee(node)?
+            if !matches!(self.ir.node(node)?.0, Op::Call | Op::NamedCall) {
+                continue;
+            }
+            let Some(function) = self.callee(node)? else {
+                continue;
+            };
+            if reaching.is_none() {
+                *reaching = Some(self.cell_reaching_functions()?);
+            }
+            if reaching
+                .as_ref()
+                .and_then(|table| table.get(function as usize))
+                .copied()
+                .unwrap_or(false)
             {
-                for body in self.function_roots(function)? {
-                    if self.reaches_cell(body)? != NOT_A_CELL {
-                        return Ok(true);
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
+    fn cell_reaching_functions(&self) -> Result<Vec<bool>, Internal> {
+        let functions = self.functions() as usize;
+        let owners = functions + self.ir.lets.len();
+        let mut reached = vec![false; owners];
+        let mut edges: Vec<(u32, u32)> = Vec::new();
+        for owner in 0..owners {
+            let roots = match owner.checked_sub(functions) {
+                None => self.function_roots(u32::try_from(owner).unwrap_or(u32::MAX))?,
+                Some(at) => vec![self.let_root(u32::try_from(at).unwrap_or(u32::MAX))?],
+            };
+            let reader = u32::try_from(owner).unwrap_or(u32::MAX);
+            for body in roots {
+                for node in self.deep_postorder(body)? {
+                    CountedWalk::CoreCellReach.step();
+                    let (op, _, _, _) = self.ir.node(node)?;
+                    let base = if matches!(op, Op::Field | Op::To | Op::Past | Op::Stepped) {
+                        true
+                    } else if matches!(op, Op::Call | Op::NamedCall) {
+                        if let Some(function) = self.callee(node)? {
+                            edges.push((function, reader));
+                        }
+                        false
+                    } else if op == Op::Name {
+                        match self.bound(node)? {
+                            DeclRef::Cell(_) => true,
+                            DeclRef::Let(at) => {
+                                let read = functions.saturating_add(at as usize);
+                                edges.push((u32::try_from(read).unwrap_or(u32::MAX), reader));
+                                false
+                            }
+                            DeclRef::Param(position) => self
+                                .param_fact(node, position)
+                                .is_ok_and(|(_, reactive)| reactive),
+                            DeclRef::None
+                            | DeclRef::Instance(_)
+                            | DeclRef::Duplicate
+                            | DeclRef::Fn(_)
+                            | DeclRef::Pattern(_) => false,
+                        }
+                    } else {
+                        false
+                    };
+                    if base && let Some(slot) = reached.get_mut(owner) {
+                        *slot = true;
                     }
                 }
             }
         }
-        Ok(false)
+        edges.sort_unstable();
+        let mut stack: Vec<u32> = (0..owners)
+            .filter(|at| reached.get(*at).copied().unwrap_or(false))
+            .filter_map(|at| u32::try_from(at).ok())
+            .collect();
+        while let Some(read) = stack.pop() {
+            let from = edges.partition_point(|(target, _)| *target < read);
+            for (target, reader) in edges.get(from..).unwrap_or_default() {
+                if *target != read {
+                    break;
+                }
+                CountedWalk::CoreCellReach.step();
+                if let Some(slot) = reached.get_mut(*reader as usize)
+                    && !*slot
+                {
+                    *slot = true;
+                    stack.push(*reader);
+                }
+            }
+        }
+        reached.truncate(functions);
+        Ok(reached)
     }
 
     fn holds_kept(&self, root: u32) -> Result<bool, Internal> {

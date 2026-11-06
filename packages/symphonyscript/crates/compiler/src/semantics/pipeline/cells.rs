@@ -235,6 +235,7 @@ impl Core<'_> {
     }
 
     pub fn check_reactive_lets(&mut self) -> Stage<()> {
+        let mut reaching = None;
         for top in self.ir.top.clone() {
             let TopRec::Let(at) = top else {
                 continue;
@@ -246,7 +247,8 @@ impl Core<'_> {
                     .get(at as usize)
                     .is_some_and(|rec| rec.line_fault)
                 || self.cyclic.get(at as usize).copied().unwrap_or(false)
-                || !(self.let_reads_cell(at)? || self.calls_reach_a_cell(self.let_root(at)?)?)
+                || !(self.let_reads_cell(at)?
+                    || self.calls_reach_a_cell(self.let_root(at)?, &mut reaching)?)
             {
                 continue;
             }

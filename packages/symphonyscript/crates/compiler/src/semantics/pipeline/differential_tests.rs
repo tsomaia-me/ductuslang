@@ -332,7 +332,7 @@ fn the_shared_steps_programs_draw_the_old_engines_sets_on_the_new_core_beside_th
     }
 }
 
-const EXHAUSTIVE_CLASSES: [(&str, &[(&str, &str)]); 12] = [
+const EXHAUSTIVE_CLASSES: [(&str, &[(&str, &str)]); 11] = [
     (
         "state f([1.5, 2.5])\nstate n(0)\nClip c:\n    Note/(f[n])\n",
         &[("type-mismatch", "f[n]")],
@@ -372,13 +372,6 @@ const EXHAUSTIVE_CLASSES: [(&str, &[(&str, &str)]); 12] = [
         &[
             ("condition-type", "[1, 2][5]"),
             ("operand-type", "true + 1.5"),
-        ],
-    ),
-    (
-        "Clip c:\n    Note/(if (1.5 is [1, 2]) then 1 else (if [1, 2][5] then 2 else 3))\n",
-        &[
-            ("array-operand", "1.5 is [1, 2]"),
-            ("condition-type", "[1, 2][5]"),
         ],
     ),
     (
@@ -890,7 +883,8 @@ fn a_compile_time_operand_of_a_runtime_operation_is_computed_exactly_and_fitted_
     }
 }
 
-const UNTAKEN_UNDER_A_KEPT_CONDITION: [&str; 4] = [
+const ARMS_UNDER_A_REFUSED_CONDITION: [&str; 5] = [
+    "Clip c:\n    Note/(if (1.5 is [1, 2]) then 1 else (if [1, 2][5] then 2 else 3))\n",
     "let a = i32(if i32(true) then [1, 2][5] else [1, 2][5])\nClip c:\n    Note/(a)\n",
     "let a = i32(if i32(true) then [1, 2][5] else [1, 2][5])\nClip c:\n    Note | velocity=(a)\n",
     "let a = u8(if i32(true) then [1, 2][5] else 2)\nClip c:\n    Note/(a)\n",
@@ -898,18 +892,28 @@ const UNTAKEN_UNDER_A_KEPT_CONDITION: [&str; 4] = [
 ];
 
 #[test]
-fn a_choice_whose_condition_keeps_a_type_other_than_bool_takes_no_arm_when_its_let_is_read() {
+fn a_choice_whose_condition_is_refused_checks_both_arms_as_a_runtime_choice_and_draws_their_index_ranges_476()
+ {
     let old = Compiler::new(&symphonyscript_fixtures::vocabulary())
         .expect("the vocabulary compiles")
         .on_the_old_engine();
     let new =
         Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("the vocabulary compiles");
-    for text in UNTAKEN_UNDER_A_KEPT_CONDITION {
+    for text in ARMS_UNDER_A_REFUSED_CONDITION {
         let sources = [source(text)];
         let found = new
             .checked_by_new_core(&sources)
             .expect("the new core takes the program");
-        assert_eq!(found, old.check(&sources), "{text}");
+        assert!(
+            spanned(text, &found).contains(&("index-out-of-range".to_string(), "5".to_string())),
+            "{text}"
+        );
+        let classes = reviewed::moved(text, &drawn(&old.check(&sources)), &drawn(&found))
+            .unwrap_or_else(|unexplained| panic!("{text}: {unexplained:?}"));
+        assert!(
+            !classes.is_empty() && classes.iter().all(|class| class.ledger == "476"),
+            "{text}"
+        );
     }
 }
 
@@ -3227,6 +3231,97 @@ fn an_arm_beside_an_arm_in_error_takes_no_expected_type_and_a_refused_float_inde
         "Clip c:\n    Note/([1, 2][0])\n",
         "Clip c:\n    Note/(if true then 1 else 2)\n",
     ] {
+        let sources = [source(text)];
+        let found = new
+            .checked_by_new_core(&sources)
+            .unwrap_or_else(|| panic!("the new core takes {text}"));
+        assert_eq!(found, old.check(&sources), "{text}");
+    }
+}
+
+#[test]
+fn a_let_calling_a_function_over_a_chain_of_lets_ending_at_a_cell_draws_reactive_let_as_464_reads_it_507()
+ {
+    let old = Compiler::new(&symphonyscript_fixtures::vocabulary())
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
+    let new =
+        Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("the vocabulary compiles");
+    for n in [1, 3, 8] {
+        let text = super::ledger_tests::lets_calling_functions_over_a_let_chain(n);
+        let sources = [source(&text)];
+        let found = new
+            .checked_by_new_core(&sources)
+            .unwrap_or_else(|| panic!("the new core takes {text}"));
+        let mut wanted: Vec<(String, String)> = (0..=n)
+            .map(|at| format!("c{at}"))
+            .chain((0..n).map(|at| format!("w{at}")))
+            .map(|name| ("reactive-let".to_string(), name))
+            .collect();
+        wanted.sort();
+        assert_eq!(spanned(&text, &found), wanted, "{text}");
+        let classes = reviewed::moved(&text, &drawn(&old.check(&sources)), &drawn(&found))
+            .unwrap_or_else(|unexplained| panic!("{text}: {unexplained:?}"));
+        assert!(
+            !classes.is_empty() && classes.iter().all(|class| class.ledger == "464"),
+            "{text}"
+        );
+        let valid = text.replace("let c0 = s\n", "let c0 = 0\n");
+        let sources = [source(&valid)];
+        let found = new
+            .checked_by_new_core(&sources)
+            .unwrap_or_else(|| panic!("the new core takes {valid}"));
+        assert_eq!(found, old.check(&sources), "{valid}");
+        assert_eq!(spanned(&valid, &found), Vec::new(), "{valid}");
+    }
+}
+
+const REFUSED_CONDITION_AND_BASE_MOVES: [&str; 13] = [
+    "Clip c:\n    Note/((1 + 300000000000)[if 1 then Wave::Saw else q..])\n\nlet q = [1]\n",
+    "Clip c:\n    Note | velocity=((1 + 300000000000)[if 1 then Wave::Saw else q..])\n\nlet q = [1]\n",
+    "Clip c:\n    Note/((1 + 300000000000)[if 1 then true else q..])\n\nlet q = [1]\n",
+    "Clip c:\n    Note/(if ([1, 2][5] is q) then (Wave::Saw / i32(true)) else (1.5 - 300000000000))\n\nstate q([]): i32[..4]\n",
+    "Clip c:\n    Note | velocity=(if ([1, 2][5] is q) then (Wave::Saw / i32(true)) else (1.5 - 300000000000))\n\nstate q([]): i32[..4]\n",
+    "Clip c:\n    Note/(if (if 300000000000 then [1, 2] else [1, 2]) then (Wave::Saw / [1, 2]) else ([1, 2] or 1))\n",
+    "Clip c:\n    Note | velocity=(if (if 300000000000 then [1, 2] else [1, 2]) then (Wave::Saw / [1, 2]) else ([1, 2] or 1))\n",
+    "Clip c:\n    Note | velocity=(if (Wave::Saw or q) then (q % 300000000000) else (1.5 * q))\n\nstate q(0): i32\n",
+    "Clip c:\n    Note | velocity=(if (Wave::Saw or q) then (q % 300000000000) else (1.5 * q))\n\nstate q(0): u8\n",
+    "Clip c:\n    Note | velocity=(if (Wave::Saw or q) then (q % 300000000000) else (1.5 * q))\n\nstate q(0): i64\n",
+    "Clip c:\n    Note | velocity=(if (true or q) then (q % 300000000000) else (1.5 * q))\n\nstate q(0): i32\n",
+    "Clip c:\n    Note | velocity=((q[[1, 2]..])[Wave::Saw < 1])\n\nstate q([]): i32[..4]\n",
+    "Clip c:\n    Note | velocity=((q[[1, 2]..])[true < 1])\n\nstate q([]): i32[..4]\n",
+];
+
+const REFUSED_CONDITION_AND_BASE_TWINS: [&str; 6] = [
+    "Clip c:\n    Note/((1 + 300000000000)[0..])\n",
+    "state b(false)\nClip c:\n    Note/(if b then (true / i32(true)) else (1.5 - 300000000000))\n",
+    "state b(false)\nClip c:\n    Note/(if b then (true / [1, 2]) else ([1, 2] or 1))\n",
+    "state b(false)\nClip c:\n    Note | velocity=(if b then (q % 300000000000) else (1.5 * q))\n\nstate q(0): i32\n",
+    "Clip c:\n    Note | velocity=((q[0..])[0])\n\nstate q([]): i32[..4]\n",
+    "Clip c:\n    Note | velocity=(if (300000000000 and 300000000000) then (q / 1.5) else 2)\n\nstate q(0): i32\n",
+];
+
+#[test]
+fn faults_in_the_arms_of_a_refused_condition_a_scalar_sliced_base_and_a_cell_read_beside_a_refusal_draw_as_their_repaired_twins_476()
+ {
+    let old = Compiler::new(&symphonyscript_fixtures::vocabulary())
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
+    let new =
+        Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("the vocabulary compiles");
+    for text in REFUSED_CONDITION_AND_BASE_MOVES {
+        let sources = [source(text)];
+        let found = new
+            .checked_by_new_core(&sources)
+            .unwrap_or_else(|| panic!("the new core takes {text}"));
+        let classes = reviewed::moved(text, &drawn(&old.check(&sources)), &drawn(&found))
+            .unwrap_or_else(|unexplained| panic!("{text}: {unexplained:?}"));
+        assert!(
+            !classes.is_empty() && classes.iter().all(|class| class.ledger == "476"),
+            "{text}"
+        );
+    }
+    for text in REFUSED_CONDITION_AND_BASE_TWINS {
         let sources = [source(text)];
         let found = new
             .checked_by_new_core(&sources)

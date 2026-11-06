@@ -5432,8 +5432,8 @@ impl Generated {
                     Reach::Read => match condition.value() {
                         Model::Bool(true) => (Reach::Read, Reach::Unread),
                         Model::Bool(false) => (Reach::Unread, Reach::Read),
-                        Model::Unsure => (Reach::Unsure, Reach::Unsure),
-                        _ => (Reach::Unread, Reach::Unread),
+                        Model::Placeholder => (Reach::Unread, Reach::Unread),
+                        _ => (Reach::Unsure, Reach::Unsure),
                     },
                     other => (other, other),
                 };
