@@ -355,7 +355,16 @@ impl Core<'_> {
                 }
                 Some(_) | None => None,
             };
-            if let Err(declined) = self.evaluate_own_in(root, expected)? {
+            let outcome = match self.seeded_let_ty(at, root)? {
+                Some(ty) => {
+                    let owning = std::mem::replace(&mut self.owning, true);
+                    let outcome = self.evaluate(root, ty);
+                    self.owning = owning;
+                    outcome?.map(|_| ())
+                }
+                None => self.evaluate_own_in(root, expected)?,
+            };
+            if let Err(declined) = outcome {
                 return Ok(Err(declined));
             }
             let rec = self
@@ -374,6 +383,21 @@ impl Core<'_> {
             );
         }
         Ok(Ok(()))
+    }
+
+    fn seeded_let_ty(&self, at: u32, root: u32) -> Result<Option<EvalTy>, Internal> {
+        let seeded = self
+            .cyclic_let_reads
+            .iter()
+            .any(|(node, read)| *read == at && self.let_seeds.contains_key(node));
+        if !seeded {
+            return Ok(None);
+        }
+        let fact = self.fact(root)?;
+        if !fact.dims.is_empty() || fact.leaf != Leaf::Int {
+            return Ok(None);
+        }
+        Ok(Some(fact.own().unwrap_or(EvalTy::I32)))
     }
 
     pub fn check_integer_cells(&mut self) -> Result<(), Internal> {

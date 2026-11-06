@@ -1429,7 +1429,7 @@ fn a_name_that_is_no_value_in_a_function_body_draws_not_a_value_at_each_call_bes
     assert_eq!(same_as_the_old_engine(&NOT_VALUES_IN_BODIES), 66);
 }
 
-const LET_CYCLES: [(&[&str], &[Code]); 2] = [
+const LET_CYCLES: [(&[&str], &[Code]); 5] = [
     (
         &[
             "state x(1.5)\n",
@@ -1448,12 +1448,44 @@ const LET_CYCLES: [(&[&str], &[Code]); 2] = [
         ],
         &[Code::HistoryTarget, Code::ReactiveLet],
     ),
+    (
+        &[
+            "state x(1)\n",
+            "let t = s + 3000000000\n",
+            "state s = t.past(1, 0)\n",
+            "Clip k:\n    Note/(s + 3000000000)\n",
+        ],
+        &[
+            Code::DoesNotFit,
+            Code::DoesNotFit,
+            Code::HistoryTarget,
+            Code::ReactiveLet,
+        ],
+    ),
+    (
+        &[
+            "state x(1)\n",
+            "let t = s + 3000000000\n",
+            "state s = t.past(1, 0)\n",
+            "Clip k:\n    Note/(s)\n",
+        ],
+        &[Code::DoesNotFit, Code::HistoryTarget, Code::ReactiveLet],
+    ),
+    (
+        &[
+            "state x(1)\n",
+            "let t = s + 3\n",
+            "state s = t.past(1, 0)\n",
+            "Clip k:\n    Note/(s)\n",
+        ],
+        &[Code::HistoryTarget, Code::ReactiveLet],
+    ),
 ];
 
 #[test]
 fn a_cell_on_a_cycle_through_a_lets_history_takes_the_type_the_repaired_cell_settles_to_in_every_order_519()
  {
-    assert_eq!(drawn_codes(&LET_CYCLES), 240);
+    assert_eq!(drawn_codes(&LET_CYCLES), 600);
 }
 
 const CELLS_HOLDING_REFERENCES: [&[&str]; 4] = [
