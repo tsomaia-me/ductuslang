@@ -1439,3 +1439,33 @@ fn a_cell_on_a_cycle_through_a_lets_history_takes_the_type_the_repaired_cell_set
  {
     assert_eq!(drawn_codes(&LET_CYCLES), 240);
 }
+
+const CELLS_HOLDING_REFERENCES: [&[&str]; 4] = [
+    &[
+        "Clip a:\n    Note/1\n",
+        "state s(a)\n",
+        "Clip c:\n    Note/(s)\n",
+    ],
+    &[
+        "Clip a:\n    Note/1\n",
+        "state s = a\n",
+        "Clip c:\n    Note/(s)\n",
+    ],
+    &[
+        "Clip a:\n    Note/1\n",
+        "state s(a)\n",
+        "Clip c:\n    Note/(s + 1)\n    Note when s\n",
+    ],
+    &[
+        "Clip a:\n    Note/1\n",
+        "state s = a\n",
+        "state u = s + 1\n",
+        "Clip c:\n    Note/(u)\n",
+    ],
+];
+
+#[test]
+fn a_cell_whose_init_or_rule_is_an_instance_name_draws_state_value_and_its_readers_nothing_beside_a_valid_twin_in_every_order()
+ {
+    assert_eq!(same_as_the_old_engine(&CELLS_HOLDING_REFERENCES), 192);
+}

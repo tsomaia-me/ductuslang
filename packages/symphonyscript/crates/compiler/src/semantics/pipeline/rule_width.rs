@@ -4,7 +4,7 @@ use super::leaf::Leaf;
 use super::width::widens;
 use crate::diagnostics::Code;
 use crate::semantics::Internal;
-use crate::semantics::ir::flat::Op;
+use crate::semantics::ir::flat::{NONE, Op};
 use crate::semantics::operators::{EvalTy, ty_name};
 
 fn widened_through(op: Op) -> bool {
@@ -200,13 +200,22 @@ impl Core<'_> {
 
 impl Core<'_> {
     pub fn placed_root(&self, root: u32) -> Result<bool, Internal> {
-        if self
+        if let Some(at) = self
             .ir
             .cells
             .iter()
-            .any(|rec| rec.init == root || rec.rule == root)
+            .position(|rec| rec.init == root || rec.rule == root)
         {
-            return Ok(false);
+            let at = u32::try_from(at).unwrap_or(NONE);
+            let single = self
+                .ir
+                .cells
+                .get(at as usize)
+                .is_some_and(|rec| rec.init == NONE || rec.rule == NONE);
+            return Ok(single
+                && self.ir.node(root)?.0 == Op::Name
+                && self.cell_annotation_ty(at)?.is_none()
+                && self.cell_capacity_annotation(at)?.is_none());
         }
         for at in 0..u32::try_from(self.ir.lets.len()).unwrap_or(0) {
             if self.let_root(at)? == root {

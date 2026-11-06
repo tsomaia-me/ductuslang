@@ -24,6 +24,9 @@ impl Core<'_> {
         if self.is_cyclic_cell(at) {
             return Ok(Fact::PLACEHOLDER);
         }
+        if self.holds_a_reference(at)? {
+            return Ok(Fact::PLACEHOLDER);
+        }
         if let Some(ty) = self.cell_annotation_ty(at)? {
             let mut fact = Fact::numeric(annotated_fact(ty).leaf, None, Some(ty));
             fact.dims = self.binder_dims(
@@ -599,5 +602,12 @@ impl Core<'_> {
             return Ok(None);
         }
         Ok(Some((root, caller)))
+    }
+}
+
+impl Core<'_> {
+    pub fn holds_a_reference(&self, at: u32) -> Result<bool, Internal> {
+        let root = self.cell_root(at)?;
+        Ok(self.has_fact(root)? && self.fact(root)?.node)
     }
 }

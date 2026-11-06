@@ -591,6 +591,16 @@ impl Core<'_> {
             return Ok(Ok(()));
         }
         let root = self.cell_root(at)?;
+        if self.holds_a_reference(at)? {
+            let derived = self.derived(at);
+            let word = if derived { "a state" } else { "a cell" };
+            self.draw_at(
+                Code::StateValue,
+                root,
+                format!("{word} never holds a node reference"),
+            )?;
+            return Ok(Ok(()));
+        }
         if let Some(ty) = self.cell_annotation_ty(at)? {
             if let Err(declined) = self.check_cell_annotation(at, ty)? {
                 return Ok(Err(declined));
