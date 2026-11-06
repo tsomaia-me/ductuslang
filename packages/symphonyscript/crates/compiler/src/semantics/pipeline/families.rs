@@ -577,6 +577,17 @@ impl Core<'_> {
         if self.takers.is_empty() && mixed.is_empty() {
             return Ok(Ok(()));
         }
+        let open_body = self.body_facts.values().any(open)
+            || self
+                .facts
+                .iter()
+                .any(|fact| fact.as_ref().is_some_and(open));
+        for (_, family, key) in &self.takers {
+            let scaled = by_family.iter().any(|(fed, _, any)| fed == family && *any);
+            if open_body && scaled && *key != NONE && self.function_inst(*key) {
+                return Ok(Err(Declined(Reason::UnitAttribute)));
+            }
+        }
         let outer = self.inst;
         let feeds = std::mem::take(&mut self.unit_feeds);
         let mut families: Vec<FamilyId> = feeds.iter().map(|(_, family, _, _)| *family).collect();

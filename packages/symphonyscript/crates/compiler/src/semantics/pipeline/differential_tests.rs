@@ -3807,11 +3807,6 @@ fn a_plain_value_at_an_attribute_whose_default_unit_has_a_scale_other_than_1_rea
 
 const BODY_UNITS_BAR: &[&[&str]] = &[
     &[
-        "fn g(): 1bars + 1",
-        "let x = g()",
-        "Bar b | bar_len=(g(x)) beat_len=x",
-    ],
-    &[
         "fn plus1(x): x + 1",
         "Bar b | bar_len=plus1(1bars) beat_len=plus1(1bars)",
     ],
@@ -4000,6 +3995,21 @@ const BODY_UNITS_ENVELOPE: &[&[&str]] = &[
 const BODY_UNITS_DECLINED: &[&[&str]] = &[
     &[
         "fn g(): 1bars + 1",
+        "let x = g()",
+        "Bar b | bar_len=(g(x)) beat_len=x",
+    ],
+    &[
+        "fn g(): 1bars + 1+",
+        "let x = g()",
+        "Bar b | bar_len=(g()) beat_len=x",
+    ],
+    &[
+        "fn g(): 1bars + 1",
+        "let x = g()+",
+        "Bar b | bar_len=(g()) beat_len=x",
+    ],
+    &[
+        "fn g(): 1bars + 1",
         "let x = g(x)",
         "Bar b | bar_len=(g()) beat_len=x",
     ],
@@ -4049,5 +4059,5 @@ fn a_plain_value_in_a_body_reads_in_the_default_unit_its_call_reaches_and_a_defa
             "{text}"
         );
     }
-    assert_eq!(programs, 287);
+    assert_eq!(programs, 281);
 }
