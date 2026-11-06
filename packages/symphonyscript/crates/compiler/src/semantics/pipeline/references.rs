@@ -121,7 +121,7 @@ impl Core<'_> {
                 }
                 for (operand, fact) in self.operands(node)?.into_iter().zip(facts.iter()) {
                     if fact.node && fact.dims.is_empty() {
-                        self.draw_at(
+                        self.draw_at_root(
                             Code::TypeMismatch,
                             operand,
                             "this value has the wrong type here; `bool` is expected",

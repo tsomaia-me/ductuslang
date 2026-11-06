@@ -461,7 +461,7 @@ pub(crate) fn reason_slice(reason: Reason) -> Slice {
         Reason::FunctionValue | Reason::Recursion => Slice::DefaultFlip,
         Reason::LocalCycle | Reason::LocalClash => Slice::Pending,
         Reason::Pending => Slice::One,
-        Reason::DestinationValue | Reason::ReactiveReference | Reason::WireKind => Slice::Pending,
+        Reason::DestinationValue | Reason::WireKind => Slice::Pending,
         Reason::BareVariant | Reason::UnitAttribute | Reason::EnumAttribute => Slice::Pending,
         Reason::UnitFlow | Reason::EnumFlow => Slice::Pending,
         Reason::LoopHead | Reason::BodyItem | Reason::PatternUse => Slice::Pending,

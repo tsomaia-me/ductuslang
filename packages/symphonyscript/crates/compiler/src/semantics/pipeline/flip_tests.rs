@@ -1746,3 +1746,57 @@ fn a_fold_name_equal_to_a_name_another_file_declares_draws_for_variable_clash_at
     }
     assert_eq!(programs, 8);
 }
+
+const REACTIVE_REFERENCES_IN_BODIES: [&[&str]; 9] = [
+    &[
+        "state s(0)\nClip a:\n    Note/1\nClip b:\n    Note/2\n",
+        "fn pick(t): if t > 0 then a else b\n",
+        "Clip c:\n    Note when pick(s)\n",
+    ],
+    &[
+        "state s(0)\nClip a:\n    Note/1\nClip b:\n    Note/2\n",
+        "fn pick(t): if t > 0 then a else b\n",
+        "Clip c:\n    Note/(pick(s))\n",
+    ],
+    &[
+        "state s(0)\nClip a:\n    Note/1\nClip b:\n    Note/2\n",
+        "fn pick(t): if t > 0 then a else b\n",
+        "Clip c:\n    Note when (pick(s) and true)\n",
+    ],
+    &[
+        "state s(0)\nClip a:\n    Note/1\nClip b:\n    Note/2\n",
+        "fn pick(t): if t > 0 then a else b\nfn twice(t): pick(t)\n",
+        "Clip c:\n    Note when twice(s)\n",
+    ],
+    &[
+        "state s(0)\nClip a:\n    Note/1\nClip b:\n    Note/2\n",
+        "fn pick(t): [a, b][t]\n",
+        "Clip c:\n    Note when (not pick(s))\n",
+    ],
+    &[
+        "state s(0)\nClip a:\n    Note/1\nClip b:\n    Note/2\n",
+        "fn pick(k):\n    let t = [a, b][k]\n    k\n",
+        "Clip c:\n    Note/(pick(s))\n",
+    ],
+    &[
+        "state s(0)\nClip a:\n    Note/1\nClip b:\n    Note/2\n",
+        "fn pick(k):\n    let t = [a, b][k]\n    t\n",
+        "Clip c:\n    Note when pick(s)\n",
+    ],
+    &[
+        "Clip a:\n    Note/1\nClip b:\n    Note/2\n",
+        "fn pick(k):\n    let t = [a, b][k]\n    k\n",
+        "Clip c:\n    Note/(pick(1))\n",
+    ],
+    &[
+        "state s(0)\nClip a:\n    Note/1\nClip b:\n    Note/2\n",
+        "pattern P(default t):\n    Note | velocity=(if t > 0 then a else b)\n",
+        "Clip c:\n    P/(s)\n",
+    ],
+];
+
+#[test]
+fn a_reference_that_reads_a_cell_in_a_body_draws_what_the_old_engine_draws_and_a_body_let_holding_one_draws_reactive_node_reference_beside_a_valid_twin_in_every_order()
+ {
+    assert_eq!(same_as_the_old_engine(&REACTIVE_REFERENCES_IN_BODIES), 216);
+}

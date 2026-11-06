@@ -329,9 +329,14 @@ impl Core<'_> {
             if let Err(declined) = self.enum_gate(node, &fact)? {
                 return Ok(Err(declined));
             }
-            let reactive = self.node_reactive(node)?;
-            if fact.node && reactive && self.in_body(node)?.is_some() {
-                return Ok(Err(Declined(Reason::ReactiveReference)));
+            let mut reactive = self.node_reactive(node)?;
+            if fact.node
+                && reactive
+                && self.in_body(node)?.is_some()
+                && self.reactive_local_reference(node)?
+            {
+                fact = Fact::PLACEHOLDER;
+                reactive = false;
             }
             references |= fact.node;
             self.set_fact(node, fact, reactive)?;
@@ -1290,5 +1295,20 @@ fn element_of(base: &Fact) -> Fact {
         read: base.read,
         node: base.node,
         family: None,
+    }
+}
+
+impl Core<'_> {
+    fn reactive_local_reference(&mut self, node: u32) -> Result<bool, Internal> {
+        let Some(rec) = self.ir.lets.iter().find(|rec| rec.value == node).copied() else {
+            return Ok(false);
+        };
+        let span = self.span(self.file_of(node), rec.lo, rec.hi);
+        self.draw(
+            Code::ReactiveNodeReference,
+            span,
+            "a value holding node references reads no cell; write the choice in the destination",
+        );
+        Ok(true)
     }
 }

@@ -18,7 +18,6 @@ pub(crate) enum Reason {
     LocalClash,
     Pending,
     DestinationValue,
-    ReactiveReference,
     WireKind,
     Member,
     LoopHead,
