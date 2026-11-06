@@ -370,7 +370,7 @@ const REACTIVE_LET_TARGETS: [(&str, &[Code]); 7] = [
     ),
     (
         "let y = 5\nstate s = y.past(1, 0.5)\nClip k:\n    Note/(s)\n",
-        &[Code::HistoryTarget, Code::TypeMismatch],
+        &[Code::HistoryTarget],
     ),
     (
         "state x(1)\nlet y = 5\nstate s = y.past(1, 0)\nClip k:\n    Note/(s)\n",

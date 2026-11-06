@@ -4335,25 +4335,11 @@ fn reactive_let_history_target(seen: &Seen<'_>, at: &Drawn) -> bool {
         })
 }
 
-fn let_history_target(seen: &Seen<'_>, at: &Drawn) -> bool {
-    let text = seen.text(at);
-    let Some((name, _)) = text.split_once('.') else {
-        return false;
-    };
-    at.0 == "history-target"
-        && (text.ends_with(".stepped") || text.contains(".past("))
-        && lines_at(seen.program).iter().any(|(_, line)| {
-            line.strip_prefix("let ")
-                .and_then(|rest| rest.strip_prefix(name))
-                .is_some_and(|rest| rest.starts_with(' ') || rest.starts_with(':'))
-        })
-}
-
 fn history_cells_of_lets<'a>(seen: &Seen<'a>) -> Vec<&'a str> {
     let targets: Vec<&str> = seen
         .new
         .iter()
-        .filter(|drawn| let_history_target(seen, drawn))
+        .filter(|drawn| reactive_let_history_target(seen, drawn))
         .filter_map(|drawn| seen.text(drawn).split_once('.').map(|(name, _)| name))
         .collect();
     lines_at(seen.program)
@@ -4393,7 +4379,10 @@ fn history_of_a_reactive_let(seen: &Seen<'_>, change: Change, at: &Drawn) -> boo
                         | "condition-type"
                         | "operand-type"
                         | "index-out-of-range"
-                ) && seen.new.iter().any(|drawn| let_history_target(seen, drawn)))
+                ) && seen
+                    .new
+                    .iter()
+                    .any(|drawn| reactive_let_history_target(seen, drawn)))
         }
         Change::Removed => read_of_a_lets_history_cell(seen, at),
         Change::Restated => false,
@@ -5200,7 +5189,7 @@ pub const CLASSES: &[Class] = &[
     },
     Class {
         ledger: "487",
-        rule: "a history read of a top-level let reading a cell draws history-target at the read beside the let's reactive-let, as the program with the let repaired to a compile-time value does, and the read of an annotated let keeps the annotated type (ARCHITECTURE §7: a value whose type an error leaves known keeps that type), so its readers draw the faults that type gives whatever value repairs the read, where the old engine reads it as a placeholder; the read of an unannotated top-level let is typed as the cell the let repaired to a `state` would be (ledger 516), a float one read as an integer drawing float-to-integer, an array one's index its range, and a fallback the repaired cell refuses its type-mismatch; a fault the old engine drew at a read of a cell whose rule is that history read is removed only where the program with the let repaired to a `state` draws none there (`Note when s > 3000000000`, `Note when s` and `not s` beside a `0` fallback of a `bool` let, `Note/(s)` beside a `0.5` fallback of an integer let); a compile-time let's history read is typed and judged the same way",
+        rule: "a history read of a top-level let reading a cell draws history-target at the read beside the let's reactive-let, as the program with the let repaired to a compile-time value does, and the read of an annotated let keeps the annotated type (ARCHITECTURE §7: a value whose type an error leaves known keeps that type), so its readers draw the faults that type gives whatever value repairs the read, where the old engine reads it as a placeholder; the read of an unannotated top-level let is typed as the cell the let repaired to a `state` would be (ledger 516), a float one read as an integer drawing float-to-integer, an array one's index its range, and a fallback the repaired cell refuses its type-mismatch; a fault the old engine drew at a read of a cell whose rule is that history read is removed only where the program with the let repaired to a `state` draws none there (`Note when s > 3000000000`, `Note when s` and `not s` beside a `0` fallback of a `bool` let, `Note/(s)` beside a `0.5` fallback of an integer let reading a cell); a compile-time let is no repaired cell, so its history read stays a placeholder that draws nothing further",
         explains: history_of_a_reactive_let,
     },
     Class {

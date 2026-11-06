@@ -410,7 +410,7 @@ fn a_compile_time_operand_inside_a_reactive_expression_is_checked_in_the_type_it
     assert_eq!(same_as_the_old_engine(&INNER_FITS), 222);
 }
 
-const UNANNOTATED_HISTORY_TARGETS: [(&[&str], &[Code]); 8] = [
+const UNANNOTATED_HISTORY_TARGETS: [(&[&str], &[Code]); 11] = [
     (
         &[
             "state x(1)\n",
@@ -455,18 +455,41 @@ const UNANNOTATED_HISTORY_TARGETS: [(&[&str], &[Code]); 8] = [
             "let l = 2\n",
             "Clip c:\n    Note/(l.past(1, 0) + 3000000000)\n",
         ],
-        &[Code::DoesNotFit, Code::HistoryTarget],
+        &[Code::HistoryTarget],
     ),
     (
         &["let l = 2.5\n", "Clip c:\n    Note/(l.past(1, 0))\n"],
-        &[Code::FloatToInteger, Code::HistoryTarget],
+        &[Code::HistoryTarget],
     ),
     (
         &[
             "let l = [1, 2]\n",
             "Clip c:\n    Note/(l.past(1, [0, 0])[5])\n",
         ],
-        &[Code::HistoryTarget, Code::IndexOutOfRange],
+        &[Code::HistoryTarget],
+    ),
+    (
+        &[
+            "let q = [1, 2]\n",
+            "Clip c:\n    Note/(i32(q.past(1, 0) * 0))\n",
+        ],
+        &[Code::HistoryTarget],
+    ),
+    (
+        &[
+            "let q = [1, 2]\n",
+            "state s = (i32(q.past(1, 0) * 0))\n",
+            "Clip c:\n    Note/s\n",
+        ],
+        &[Code::HistoryTarget],
+    ),
+    (
+        &[
+            "let q = [1, 2]\n",
+            "fn f(): (i32(q.past(1, 0) * 0))\n",
+            "Clip c:\n    Note/(f())\n",
+        ],
+        &[Code::HistoryTarget],
     ),
     (
         &[
@@ -485,7 +508,7 @@ const UNANNOTATED_HISTORY_TARGETS: [(&[&str], &[Code]); 8] = [
 ];
 
 #[test]
-fn a_history_read_of_an_unannotated_let_is_typed_as_the_cell_the_let_repaired_to_a_state_would_be_in_every_order_516()
+fn a_history_read_of_an_unannotated_let_reading_a_cell_is_typed_as_the_cell_the_let_repaired_to_a_state_would_be_and_of_a_compile_time_let_draws_nothing_further_in_every_order_516()
  {
     let vocabulary = symphonyscript_fixtures::vocabulary();
     let new = Compiler::new(&vocabulary).expect("the vocabulary compiles");
@@ -507,7 +530,7 @@ fn a_history_read_of_an_unannotated_let_is_typed_as_the_cell_the_let_repaired_to
             programs += 1;
         }
     }
-    assert_eq!(programs, 426);
+    assert_eq!(programs, 480);
     for text in twins(&[
         "state x(1)\n",
         "let t = s * x\n",

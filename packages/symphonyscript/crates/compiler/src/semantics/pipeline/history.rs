@@ -108,7 +108,8 @@ impl Core<'_> {
                             .ir
                             .lets
                             .get(at as usize)
-                            .is_some_and(|rec| rec.owner == NONE) =>
+                            .is_some_and(|rec| rec.owner == NONE)
+                            && self.let_reads_cell(at)? =>
                     {
                         let root = self.let_root(at)?;
                         if !self.has_fact(root)? {
