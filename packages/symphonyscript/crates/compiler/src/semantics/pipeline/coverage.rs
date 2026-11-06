@@ -40,7 +40,7 @@ pub(crate) fn top_slice(top: TopRec) -> Slice {
         TopRec::Cell(_) => Slice::One,
         TopRec::Fn(_) => Slice::One,
         TopRec::Pattern(_) => Slice::Three,
-        TopRec::Placeholder { .. } | TopRec::Drawn(_) | TopRec::Skip => Slice::DefaultFlip,
+        TopRec::Placeholder { .. } | TopRec::Drawn(_) | TopRec::Skip => Slice::Flip,
     }
 }
 

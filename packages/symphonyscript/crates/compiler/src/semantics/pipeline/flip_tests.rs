@@ -1142,3 +1142,16 @@ fn a_bundle_member_whose_pattern_supplies_a_body_a_wire_or_a_bundle_draws_bundle
  {
     assert_eq!(same_as_the_old_engine(&MEMBERS_WITH_BODIES), 126);
 }
+
+const DRAWN_TOPS: [&[&str]; 4] = [
+    &["use foo\n", "Clip c:\n    Note/1\n"],
+    &["type T = i32\n", "Clip c:\n    Note/1\n"],
+    &["type P:\n    x: i32\n", "Clip c:\n    Note/1\n"],
+    &["publish foo\n", "Clip c:\n    Note/(foo)\n"],
+];
+
+#[test]
+fn a_top_item_the_front_end_draws_or_skips_draws_what_the_old_engine_draws_beside_a_valid_twin_in_every_order()
+ {
+    assert_eq!(same_as_the_old_engine(&DRAWN_TOPS), 24);
+}
