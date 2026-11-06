@@ -210,6 +210,10 @@ impl Core<'_> {
             let saved = self.enter_env(record.env);
             self.feed_env = record.env;
             let checked = self.item_attributes(item, &decl.name, &decl.attrs, decl.default_attr);
+            let checked = match checked {
+                Ok(Ok(())) => self.bind_gate(placement.gate),
+                other => other,
+            };
             self.feed_env = NONE;
             self.leave_env(saved);
             if let Err(declined) = checked? {
@@ -234,6 +238,10 @@ impl Core<'_> {
             self.wire_now = u32::try_from(wire).unwrap_or(NONE);
             self.feed_env = row.env;
             let checked = self.item_attributes(item, &decl.name, &decl.attrs, decl.default_attr);
+            let checked = match checked {
+                Ok(Ok(())) => self.bind_gate(rec.gate),
+                other => other,
+            };
             self.wire_now = NONE;
             self.feed_env = NONE;
             self.leave_env(saved);

@@ -141,6 +141,12 @@ impl Core<'_> {
 
     fn visit(&mut self, node: u32, ty: EvalTy, steps: &mut Vec<Step>) -> Result<(), Internal> {
         let (op, a, b, _) = self.ir.node(node)?;
+        let deferred = matches!(ty, EvalTy::DefaultF32 | EvalTy::DefaultF64).then_some(ty);
+        let ty = if deferred.is_some() {
+            evaluated_in(ty)
+        } else {
+            ty
+        };
         steps.push(Step::Apply(node, ty));
         let flows = !self.unflowed.remove(&node);
         if matches!(op, Op::Name | Op::Field) && !flows {
@@ -148,7 +154,7 @@ impl Core<'_> {
         }
         self.mark_unused_reads(op, node)?;
         let float = matches!(ty, EvalTy::F32 | EvalTy::F64);
-        let (mut integer_flow, mut picked) = (false, false);
+        let (mut integer_flow, mut picked, mut float_pair) = (false, false, false);
         let operands: Vec<(u32, EvalTy)> = match op {
             Op::Neg
             | Op::Add
@@ -174,8 +180,22 @@ impl Core<'_> {
             Op::Neg | Op::Add | Op::Sub | Op::Mul | Op::Rem | Op::Pow => self
                 .operands(node)?
                 .into_iter()
-                .map(|at| (at, ty))
+                .map(|at| (at, deferred.unwrap_or(ty)))
                 .collect(),
+            Op::Div if deferred.is_some() => {
+                let default = deferred.unwrap_or(ty);
+                for operand in [b, a] {
+                    self.unflowed.insert(operand);
+                    let fact = self.fact(operand)?;
+                    if fact.fixed.is_none() && fact.dims.is_empty() && fact.leaf == Leaf::Int {
+                        steps.push(Step::Float(operand, ty));
+                        steps.push(Step::Visit(operand, EvalTy::Exact));
+                    } else {
+                        steps.push(Step::Visit(operand, default));
+                    }
+                }
+                return Ok(());
+            }
             Op::Div if !float => {
                 let defaulted = self.fact(a)?.fixed.is_none() && self.fact(b)?.fixed.is_none();
                 let target = self.division_ty(a, b)?;
@@ -221,6 +241,9 @@ impl Core<'_> {
                     }
                     return Ok(());
                 }
+                float_pair = matches!(pair, EvalTy::F32 | EvalTy::F64)
+                    && combined(self.fact(a)?.own(), self.fact(b)?.own(), true).is_none()
+                    && !self.is_reactive(node)?;
                 vec![(a, pair), (b, pair)]
             }
             Op::And | Op::Or => vec![(a, EvalTy::Bool), (b, EvalTy::Bool)],
@@ -399,7 +422,34 @@ impl Core<'_> {
                 steps.push(Step::Visit(operand, EvalTy::Exact));
                 continue;
             }
-            let apart = reactive && stopped && !self.is_reactive(operand)?;
+            if compared
+                && matches!(operand_ty, EvalTy::F32 | EvalTy::F64)
+                && self.loose_float(operand)?
+            {
+                if float_pair {
+                    steps.push(Step::Widen(EvalTy::F64));
+                    steps.push(Step::FloatChoose(operand));
+                    steps.push(Step::Visit(operand, EvalTy::DefaultF64));
+                } else {
+                    steps.push(Step::FloatFit(operand, operand_ty));
+                    steps.push(Step::Visit(operand, operand_ty));
+                }
+                continue;
+            }
+            if float_pair {
+                steps.push(Step::Widen(EvalTy::F64));
+            }
+            if compared && !reactive && !self.owning && self.fact(operand)?.own().is_some() {
+                steps.push(Step::Owning(false));
+                steps.push(Step::Widen(operand_ty));
+                steps.push(Step::Visit(
+                    operand,
+                    self.own_ty(operand)?.unwrap_or(operand_ty),
+                ));
+                steps.push(Step::Owning(true));
+                continue;
+            }
+            let apart = (reactive && stopped && !self.is_reactive(operand)?) || compared;
             match self.own_width(operand, operand_ty, apart)? {
                 Some(own) if arithmetic || apart => {
                     steps.push(Step::Widen(operand_ty));
@@ -1205,6 +1255,17 @@ impl Core<'_> {
                         self.uses
                             .entry((read, class(read_ty), self.eval_chain.clone(), links))
                             .or_insert(((element, target), value));
+                    }
+                }
+                Step::Owning(owning) => self.owning = owning,
+                Step::FloatChoose(operand) => {
+                    if let Some(value) = frame.values.pop() {
+                        self.float_choose(operand, value, &mut frame.steps, &mut frame.values)?;
+                    }
+                }
+                Step::FloatFit(operand, fit_ty) => {
+                    if let Some(value) = frame.values.pop() {
+                        self.float_fit(operand, value, fit_ty, &mut frame.values)?;
                     }
                 }
                 Step::Scale(node) => {

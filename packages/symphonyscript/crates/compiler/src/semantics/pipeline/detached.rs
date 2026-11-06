@@ -41,7 +41,7 @@ impl Core<'_> {
         Ok(false)
     }
 
-    fn faulty(&self, node: u32) -> Result<bool, Internal> {
+    pub fn faulty(&self, node: u32) -> Result<bool, Internal> {
         Ok(matches!(
             self.fact(node)?.leaf,
             Leaf::Placeholder | Leaf::Error

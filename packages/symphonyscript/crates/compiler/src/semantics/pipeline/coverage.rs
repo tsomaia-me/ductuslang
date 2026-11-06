@@ -228,7 +228,10 @@ fn item_landed(
     let ItemRec::Placement(placement) = item else {
         return true;
     };
-    if placement.gate != NONE
+    let used = ir
+        .name(placement.kind)
+        .is_some_and(|entry| patterns.binary_search(&entry.sym.0).is_ok());
+    if (placement.gate != NONE && used)
         || placement.flags.0 != placement.flags.1
         || placement.attrs_cut
         || placement.skipped_block.is_some()
@@ -241,9 +244,6 @@ fn item_landed(
         .attr_entries
         .get(placement.attrs.0 as usize..placement.attrs.1 as usize)
         .unwrap_or_default();
-    let used = ir
-        .name(placement.kind)
-        .is_some_and(|entry| patterns.binary_search(&entry.sym.0).is_ok());
     if !used
         && entries
             .iter()
@@ -348,8 +348,19 @@ fn instance_path(ir: &FlatIr, field: u32) -> bool {
 }
 
 fn wire_landed(ir: &FlatIr, wire: &WireRec, in_loop: bool) -> bool {
-    wire.gate == NONE
-        && wire.flags.0 == wire.flags.1
+    if wire.gate != NONE
+        && let Ok((lo, hi)) = ir.span(wire.gate)
+        && ir.op.iter().enumerate().any(|(local, op)| {
+            *op == Op::To
+                && u32::try_from(local)
+                    .ok()
+                    .and_then(|local| ir.span(local + ir.base).ok())
+                    .is_some_and(|(start, end)| lo <= start && end <= hi)
+        })
+    {
+        return false;
+    }
+    wire.flags.0 == wire.flags.1
         && (wire.as_name == NONE || in_loop)
         && !wire.attrs_cut
         && value_entries(ir, wire.attrs)

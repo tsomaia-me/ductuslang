@@ -35,10 +35,14 @@ mod extent;
 mod extreme;
 mod fact;
 mod families;
+mod float_fit;
 mod fold_run;
 mod folds;
 mod frame;
 mod front_end;
+#[cfg(test)]
+mod gate_tests;
+mod gates;
 mod groups;
 mod history;
 #[cfg(test)]
