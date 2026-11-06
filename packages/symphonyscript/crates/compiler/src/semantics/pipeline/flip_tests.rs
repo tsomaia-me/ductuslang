@@ -1093,3 +1093,52 @@ fn a_gate_holding_an_unknown_name_or_a_choice_beside_its_refused_condition_is_ch
  {
     assert_eq!(drawn_codes(&PLACEHOLDER_GATES), 32);
 }
+
+const MEMBERS_WITH_BODIES: [&[&str]; 9] = [
+    &[
+        "pattern P(default x):\n    Lamp/x:\n        Lamp/0.1\n",
+        "Rig r:\n    [P/0.5]\n    [P/0.6 Lamp/0.2]\n    P/0.7\n",
+    ],
+    &[
+        "pattern P(default x):\n    [Lamp/x]\n",
+        "Rig r:\n    [P/0.5]\n",
+    ],
+    &[
+        "pattern P(default x):\n    Lamp/x\n    [Lamp/x Lamp/0.2]\n",
+        "Rig r:\n    [Lamp/0.3 P/0.5]\n",
+    ],
+    &[
+        "pattern P(default x):\n    Lamp/x\n    Lamp/0.1:\n        Lamp/0.2\n",
+        "Rig r:\n    [P/0.5]\n",
+    ],
+    &[
+        "pattern P(default x):\n    Note/1\n    Plays: b\n",
+        "Clip a:\n    [P/1]\n",
+        "Clip b:\n    Note/2\n",
+    ],
+    &[
+        "pattern Q(default x):\n    Lamp/x:\n        Lamp/0.2\n",
+        "pattern P(default x):\n    Q/x\n",
+        "Rig r:\n    [P/0.5]\n",
+    ],
+    &[
+        "pattern Q(default x):\n    Lamp/x\n    Lamp/x\n",
+        "pattern P(default x):\n    Q/x\n",
+        "Rig r:\n    [P/0.5]\n",
+    ],
+    &[
+        "pattern P(default x):\n    for i in 0..2:\n        Lamp/x:\n            Lamp/0.1\n",
+        "Rig r:\n    [P/0.5]\n",
+    ],
+    &[
+        "pattern P(default x):\n    Lamp/x\n",
+        "Rig r:\n    [P/0.5]\n    Plays: b\n",
+        "Clip b:\n    Note/2\n",
+    ],
+];
+
+#[test]
+fn a_bundle_member_whose_pattern_supplies_a_body_a_wire_or_a_bundle_draws_bundle_member_as_the_old_engine_does_beside_a_valid_twin_in_every_order()
+ {
+    assert_eq!(same_as_the_old_engine(&MEMBERS_WITH_BODIES), 126);
+}

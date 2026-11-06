@@ -149,7 +149,6 @@ pub(crate) fn covers(ir: &FlatIr) -> bool {
         .filter_map(|rec| ir.name(rec.name).map(|entry| entry.sym.0))
         .collect();
     patterns.sort_unstable();
-    let member_uses = member_patterns(ir, &patterns);
     let mut tops: Vec<u32> = ir
         .top
         .iter()
@@ -167,7 +166,7 @@ pub(crate) fn covers(ir: &FlatIr) -> bool {
             item_landed(
                 ir,
                 item,
-                (&members, &in_loops, &patterns, &member_uses, &tops, &blocks),
+                (&members, &in_loops, &patterns, &tops, &blocks),
                 at,
             )
         })
@@ -260,19 +259,12 @@ fn loop_children(ir: &FlatIr) -> Vec<u32> {
     found
 }
 
-type Sorted<'a> = (
-    &'a [u32],
-    &'a [u32],
-    &'a [u32],
-    &'a [u32],
-    &'a [u32],
-    &'a [u32],
-);
+type Sorted<'a> = (&'a [u32], &'a [u32], &'a [u32], &'a [u32], &'a [u32]);
 
 fn item_landed(
     ir: &FlatIr,
     item: &ItemRec,
-    (members, in_loops, patterns, member_uses, tops, blocks): Sorted<'_>,
+    (members, in_loops, patterns, tops, blocks): Sorted<'_>,
     at: usize,
 ) -> bool {
     if !landed(item_slice(item)) {
@@ -300,12 +292,7 @@ fn item_landed(
                     Some(ItemRec::Paren(inner)) => inner,
                     _ => member,
                 };
-                matches!(ir.items.get(*member as usize), Some(ItemRec::Placement(placement))
-                if placement.body == NONE
-                    && ir.name(placement.kind).is_none_or(|entry| {
-                        patterns.binary_search(&entry.sym.0).is_err()
-                            || member_uses.binary_search(&entry.sym.0).is_ok()
-                    }))
+                matches!(ir.items.get(*member as usize), Some(ItemRec::Placement(_)))
             });
     }
     if let ItemRec::When(rec) = item {
@@ -619,62 +606,4 @@ fn arm_block(ir: &FlatIr, body: u32) -> bool {
             && block.regions.0 == block.regions.1
             && block.lets.0 == block.lets.1
     })
-}
-
-fn member_patterns(ir: &FlatIr, patterns: &[u32]) -> Vec<u32> {
-    let mut found: Vec<u32> = ir
-        .patterns
-        .iter()
-        .filter(|rec| member_body(ir, rec.body, patterns))
-        .filter_map(|rec| ir.name(rec.name).map(|entry| entry.sym.0))
-        .collect();
-    found.sort_unstable();
-    found
-}
-
-fn member_body(ir: &FlatIr, body: u32, patterns: &[u32]) -> bool {
-    let mut blocks = vec![body];
-    while let Some(block) = blocks.pop() {
-        let Some(rec) = ir.blocks.get(block as usize) else {
-            continue;
-        };
-        let mut items: Vec<u32> = ir
-            .block_items
-            .get(rec.items.0 as usize..rec.items.1 as usize)
-            .unwrap_or_default()
-            .to_vec();
-        items.extend(super::loops::member_items(ir, rec.members));
-        while let Some(item) = items.pop() {
-            match ir.items.get(item as usize) {
-                Some(ItemRec::Placement(placement)) => {
-                    if placement.body != NONE
-                        || ir
-                            .name(placement.kind)
-                            .is_some_and(|entry| patterns.binary_search(&entry.sym.0).is_ok())
-                    {
-                        return false;
-                    }
-                }
-                Some(ItemRec::Line(range)) => items.extend(
-                    ir.members
-                        .get(range.0 as usize..range.1 as usize)
-                        .unwrap_or_default(),
-                ),
-                Some(ItemRec::Paren(inner)) => items.push(*inner),
-                Some(ItemRec::When(rec)) => {
-                    blocks.extend(
-                        ir.arms
-                            .get(rec.arms.0 as usize..rec.arms.1 as usize)
-                            .unwrap_or_default()
-                            .iter()
-                            .map(|arm| arm.1),
-                    );
-                    blocks.push(rec.otherwise);
-                }
-                Some(ItemRec::For(rec)) => blocks.push(rec.body),
-                Some(ItemRec::Wire(_) | ItemRec::Bundle(_)) | None => return false,
-            }
-        }
-    }
-    true
 }
