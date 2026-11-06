@@ -96,6 +96,7 @@ mod unit_reach;
 mod unit_tests;
 mod uses;
 mod values;
+mod whens;
 mod width;
 mod wire_row;
 #[cfg(test)]

@@ -171,3 +171,75 @@ fn a_gate_reading_a_reactive_pattern_parameter_or_a_choice_beside_its_refused_co
         assert!(new.checked_by_new_core(&[source(text)]).is_none(), "{text}");
     }
 }
+
+const WHENS: [&[&str]; 20] = [
+    &[
+        "state alarm(false)\n",
+        "Plant boiler:\n    Valve/0.1\n    when alarm:\n        Valve/0.3 Valve/0.5\n    else:\n        Valve/0.3\n",
+    ],
+    &[
+        "state phase(0)\n",
+        "Plant boiler:\n    when:\n        phase is 0: Valve/0.6\n        phase is 1: Valve/0.7\n        else: Valve/0.9\n",
+    ],
+    &["Plant boiler:\n    when 1:\n        Valve/0.3\n"],
+    &["Plant boiler:\n    when [true]:\n        Valve/0.3\n"],
+    &["Plant boiler:\n    when nope:\n        Valve/0.3\n"],
+    &["Plant boiler:\n    when true:\n        Valve/2\n"],
+    &["Plant boiler:\n    when true:\n        Note/1\n"],
+    &["Clip c:\n    when true:\n        Note/1\n    else:\n        Note/(1 + true)\n"],
+    &[
+        "state n(3)\n",
+        "Clip c:\n    when:\n        n > 2: Note/1\n        n: Note/2\n",
+    ],
+    &["Clip c:\n    when [1][3] > 0:\n        Note/1\n"],
+    &["Plant boiler:\n    when true:\n        when false:\n            Valve/0.3\n"],
+    &[
+        "Clip a:\n    when true:\n        Plays: b\n",
+        "Clip b:\n    Note/1\n",
+    ],
+    &["Clip c:\n    when true:\n        Note/1 when 2\n"],
+    &[
+        "Clip c:\n    when:\n        true: Note/1 Note/(2 + true)\n        1: Note/3\n        else: Note/4\n",
+    ],
+    &["Clip c:\n    when true: Note/1\n"],
+    &["Clip c:\n    when true: Note/1\n    else: Note/2\n"],
+    &["Plant p:\n    when:\n        true: Note/1\n"],
+    &[
+        "Clip c:\n    when:\n        [1][4] > 1: Note/1\n        else:\n            Note/2\n            Note/3\n",
+    ],
+    &[
+        "let k = 2\n",
+        "Clip c:\n    when k / 0 > 1:\n        Note/1\n",
+    ],
+    &[
+        "state live(true)\n",
+        "Clip c:\n    when live:\n        Note/1 when not live\n    Note/2\n",
+    ],
+];
+
+#[test]
+fn a_when_block_places_every_arm_and_its_guards_are_gates_drawing_what_the_old_engine_draws_beside_a_valid_twin_in_every_order()
+ {
+    let vocabulary = symphonyscript_fixtures::vocabulary();
+    let old = Compiler::new(&vocabulary)
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
+    let new = Compiler::new(&vocabulary).expect("the vocabulary compiles");
+    let mut programs = 0;
+    for items in WHENS {
+        for text in twins(items) {
+            let sources = [source(&text)];
+            let found = new
+                .checked_by_new_core(&sources)
+                .unwrap_or_else(|| panic!("the new core takes {text}"));
+            assert_eq!(found, old.check(&sources), "{text}");
+            programs += 1;
+        }
+    }
+    assert_eq!(programs, 64);
+    let unrun = "Clip c:\n    for x in q:\n        Note/(x)\n    when true:\n        Note/(1)\n";
+    assert!(
+        new.checked_by_new_core(&[source(unrun)]).is_none(),
+        "{unrun}"
+    );
+}

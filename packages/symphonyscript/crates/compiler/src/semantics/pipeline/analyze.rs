@@ -58,6 +58,9 @@ pub(crate) fn analyze(inputs: &Inputs<'_>) -> Result<Option<Run>, Internal> {
     if let Err(reason) = stage(core.expand())? {
         return declined(reason);
     }
+    if core.unrun_loop && !core.guards.is_empty() {
+        return declined(Reason::BodyItem);
+    }
     stages.mark("expand");
     if core.stop.is_some() {
         return Ok(Some(finished(core)));
@@ -89,6 +92,9 @@ pub(crate) fn analyze(inputs: &Inputs<'_>) -> Result<Option<Run>, Internal> {
     }
     stages.mark("resolve");
     if let Err(reason) = stage(core.check_attributes())? {
+        return declined(reason);
+    }
+    if let Err(reason) = stage(core.check_guards())? {
         return declined(reason);
     }
     if let Err(reason) = stage(core.check_reactive_lets())? {

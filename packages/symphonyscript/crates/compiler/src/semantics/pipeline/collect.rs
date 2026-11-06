@@ -515,7 +515,13 @@ impl Core<'_> {
                     }
                     continue;
                 }
-                ItemRec::Bundle(_) | ItemRec::When(_) | ItemRec::Paren(_) => continue,
+                ItemRec::When(_) => {
+                    for child in self.when_items(item) {
+                        stack.push((child, scope));
+                    }
+                    (self.when_guards(item), (0, 0), NONE)
+                }
+                ItemRec::Bundle(_) | ItemRec::Paren(_) => continue,
             };
             for entry in self
                 .ir
@@ -576,11 +582,11 @@ impl Core<'_> {
                     .get(members.0 as usize..members.1 as usize)
                     .unwrap_or_default()
                     .to_vec(),
+                ItemRec::When(_) => self.when_members(child)?,
                 ItemRec::Placement(_)
                 | ItemRec::Wire(_)
                 | ItemRec::Bundle(_)
                 | ItemRec::For(_)
-                | ItemRec::When(_)
                 | ItemRec::Paren(_) => vec![child],
             };
             for member in members {

@@ -264,6 +264,7 @@ impl Core<'_> {
                             work.push(Work::Loop(run));
                         }
                         run => {
+                            self.unrun_loop |= run.as_ref().is_none_or(|run| run.open);
                             if let Err(declined) = self.unrun_names(item, file)? {
                                 return Ok(Err(declined));
                             }
@@ -334,7 +335,21 @@ impl Core<'_> {
                         pending.push(row);
                     }
                 }
-                ItemRec::Bundle(_) | ItemRec::When(_) | ItemRec::Paren(_) => {
+                ItemRec::When(_) => {
+                    for guard in self.when_guards(item) {
+                        self.guards.push((guard, env));
+                    }
+                    for block in self.when_blocks(item).into_iter().rev() {
+                        let block = *self
+                            .ir
+                            .blocks
+                            .get(block as usize)
+                            .ok_or(Internal::missed("IR block"))?;
+                        work.push(Work::Members(block.members.0, block.members.1, env));
+                        work.push(Work::Items(block.items.0, block.items.1, env));
+                    }
+                }
+                ItemRec::Bundle(_) | ItemRec::Paren(_) => {
                     return Ok(Err(Declined(Reason::BodyItem)));
                 }
             }
