@@ -167,6 +167,13 @@ fn annotated(ir: &FlatIr, binder: u32) -> bool {
 
 fn line_members(ir: &FlatIr) -> Vec<u32> {
     let mut members = Vec::new();
+    for block in &ir.blocks {
+        members.extend(
+            ir.members
+                .get(block.members.0 as usize..block.members.1 as usize)
+                .unwrap_or_default(),
+        );
+    }
     for item in &ir.items {
         if let ItemRec::Bundle(rec) = item {
             members.extend(
@@ -265,6 +272,7 @@ fn item_landed(
             .unwrap_or_default();
         return !rec.faulty
             && rec.each.is_none()
+            && u32::try_from(at).is_ok_and(|at| nested.binary_search(&at).is_err())
             && !members.is_empty()
             && members.iter().all(|member| {
                 let member = match ir.items.get(*member as usize) {
@@ -321,10 +329,27 @@ fn item_landed(
         return false;
     }
     ir.blocks.get(placement.body as usize).is_some_and(|block| {
-        block.members.0 == block.members.1
+        let inline = block.items.0 == block.items.1
+            && u32::try_from(at).is_ok_and(|at| nested.binary_search(&at).is_err())
+            && ir
+                .members
+                .get(block.members.0 as usize..block.members.1 as usize)
+                .unwrap_or_default()
+                .iter()
+                .all(|member| unnamed_member(ir, *member));
+        (block.members.0 == block.members.1 || inline)
             && block.regions.0 == block.regions.1
             && block.lets.0 == block.lets.1
     })
+}
+
+fn unnamed_member(ir: &FlatIr, member: u32) -> bool {
+    let member = match ir.items.get(member as usize) {
+        Some(ItemRec::Paren(inner)) => *inner,
+        _ => member,
+    };
+    matches!(ir.items.get(member as usize), Some(ItemRec::Placement(placement))
+        if placement.body == NONE && !ir.named(placement.as_name))
 }
 
 fn loop_landed(ir: &FlatIr, rec: &ForBlockRec) -> bool {
@@ -593,6 +618,7 @@ fn nested_whens(ir: &FlatIr) -> Vec<u32> {
             .unwrap_or_default()
             .to_vec();
         while let Some(child) = items.pop() {
+            found.push(child);
             match ir.items.get(child as usize) {
                 Some(ItemRec::Line(range)) => items.extend(
                     ir.members
@@ -600,7 +626,6 @@ fn nested_whens(ir: &FlatIr) -> Vec<u32> {
                         .unwrap_or_default(),
                 ),
                 Some(ItemRec::When(rec)) => {
-                    found.push(child);
                     for arm in ir
                         .arms
                         .get(rec.arms.0 as usize..rec.arms.1 as usize)

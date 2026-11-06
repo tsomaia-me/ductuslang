@@ -176,7 +176,10 @@ impl Core<'_> {
             .blocks
             .get(body as usize)
             .ok_or(Internal::missed("IR block"))?;
-        let mut work = vec![Work::Items(block.items.0, block.items.1, record.env)];
+        let mut work = vec![
+            Work::Members(block.members.0, block.members.1, record.env),
+            Work::Items(block.items.0, block.items.1, record.env),
+        ];
         let mut late: Vec<Work> = Vec::new();
         loop {
             let job = match work.pop() {

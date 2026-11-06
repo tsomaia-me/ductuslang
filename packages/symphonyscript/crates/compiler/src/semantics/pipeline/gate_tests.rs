@@ -155,7 +155,8 @@ fn a_flexible_comparison_operand_takes_its_default_float_type_and_a_value_that_d
     }
 }
 
-const DECLINED: [&str; 5] = [
+const DECLINED: [&str; 6] = [
+    "pattern Stab(default root, gap = 3):\n    [Note/root Note/(root + gap)]\n    Note/(root + 12)\nClip c:\n    Stab/55 | gap=5\n",
     "Clip c:\n    Note/60 when nope\n",
     "Plant boiler:\n    when nope:\n        Valve/0.3\n",
     "state big(1)\npattern Gated(default active):\n    Note when active\nClip c:\n    Gated/(big > u8(255) + 4)\n",
@@ -366,4 +367,38 @@ fn a_bundles_members_are_children_of_its_parent_drawing_what_the_old_engine_draw
         }
     }
     assert_eq!(programs, 22);
+}
+
+const INLINE_BODIES: [&[&str]; 6] = [
+    &["Plant fill: Valve/0 Valve/0.5 (Controller/0.4 | gain=0.5)\n"],
+    &["Plant fill: Valve/0 Valve/2 (Controller/0.4 | gain=true)\n"],
+    &["Plant fill: Note/1\n"],
+    &["Clip c: Note/1 Note/(1 + true) Note/3\n"],
+    &["Session s: Track\n"],
+    &[
+        "state lit(0.5)\n",
+        "Rig r: Lamp/lit (Lamp/0.2 when lit > 0.2)\n",
+    ],
+];
+
+#[test]
+fn a_body_after_the_colon_on_the_placements_line_places_its_members_as_children_drawing_what_the_old_engine_draws_beside_a_valid_twin_in_every_order()
+ {
+    let vocabulary = symphonyscript_fixtures::vocabulary();
+    let old = Compiler::new(&vocabulary)
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
+    let new = Compiler::new(&vocabulary).expect("the vocabulary compiles");
+    let mut programs = 0;
+    for items in INLINE_BODIES {
+        for text in twins(items) {
+            let sources = [source(&text)];
+            let found = new
+                .checked_by_new_core(&sources)
+                .unwrap_or_else(|| panic!("the new core takes {text}"));
+            assert_eq!(found, old.check(&sources), "{text}");
+            programs += 1;
+        }
+    }
+    assert_eq!(programs, 16);
 }

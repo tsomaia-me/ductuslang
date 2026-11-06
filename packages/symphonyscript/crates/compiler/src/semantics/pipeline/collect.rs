@@ -616,6 +616,12 @@ impl Core<'_> {
             }
             stack.push((child, inner));
         }
+        for at in block.members.0..block.members.1 {
+            let member = self.ir.members.get(at as usize).copied().unwrap_or(NONE);
+            if member != NONE {
+                stack.push((member, inner));
+            }
+        }
         names.sort_unstable();
         scopes.push((scope, names));
         Ok(())

@@ -149,6 +149,14 @@ impl Core<'_> {
                 items.push(child);
             }
         }
+        items.extend(
+            self.ir
+                .members
+                .get(block.members.0 as usize..block.members.1 as usize)
+                .unwrap_or_default()
+                .iter()
+                .filter(|member| **member != NONE),
+        );
         Ok(())
     }
 
