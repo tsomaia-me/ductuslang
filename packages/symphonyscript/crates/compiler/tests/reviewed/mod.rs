@@ -4314,6 +4314,32 @@ fn integer_cell_in_a_flexible_float_operation(seen: &Seen<'_>, change: Change, a
         })
 }
 
+fn loop_name_in_an_unknown_kinds_body(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
+    let name = seen.text(at);
+    let names_a_loop_variable = [
+        format!("for {name} in "),
+        format!("for {name}, "),
+        format!(", {name} in "),
+    ]
+    .iter()
+    .any(|head| seen.program.contains(head.as_str()));
+    let unknown_parent = seen.old.iter().any(|drawn| {
+        drawn.0 == "unknown-kind"
+            && drawn.1 < at.1
+            && seen.program.get(drawn.2..at.1).is_some_and(|between| {
+                between
+                    .trim_start()
+                    .strip_prefix(':')
+                    .is_some_and(|rest| rest.trim().is_empty())
+            })
+    });
+    change == Change::Added
+        && at.0 == "unknown-kind"
+        && !name.is_empty()
+        && names_a_loop_variable
+        && unknown_parent
+}
+
 fn integer_cell_as_a_float_start(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
     let name = seen.text(at);
     change == Change::Added
@@ -5186,6 +5212,11 @@ pub const CLASSES: &[Class] = &[
         ledger: "476",
         rule: "an integer host-fed cell read only as the operand of an operation with a flexible float literal is read as a float there (SPEC §4.3: a flexible float meeting an operand of fixed integer type makes the operation a float one, `f64` for an `i64` operand), so every use expects a float and the cell draws integer-cell (SPEC §4.4), also where the operation stands in a comparison, where the old engine draws nothing (`state big(1)` with `Note when big + 1e39 > 1`, `big + 1.5 > 1` or `big * 2.5 > 1`)",
         explains: integer_cell_in_a_flexible_float_operation,
+    },
+    Class {
+        ledger: "476",
+        rule: "a placement in the body of a placement of an unknown kind, inside a placement `for` body, whose kind is a loop variable's name draws unknown-kind, as it does under a known kind and in the program with the unknown kind repaired (the repair rule; SPEC §7.1), where the old engine is silent (`for s in sections:` with `xStarts:` holding `s` on the next line)",
+        explains: loop_name_in_an_unknown_kinds_body,
     },
     Class {
         ledger: "487",
