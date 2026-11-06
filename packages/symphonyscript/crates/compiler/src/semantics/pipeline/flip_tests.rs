@@ -1219,3 +1219,24 @@ fn a_value_that_is_no_string_at_a_string_attribute_draws_what_the_old_engine_dra
  {
     assert_eq!(same_as_the_old_engine(&STRING_ATTRIBUTES), 32);
 }
+
+const INSTANCE_NAMES_AS_VALUES: [&[&str]; 9] = [
+    &["Clip a:\n    Note/1\nClip c:\n    Note/(a)\n"],
+    &["let d = a\nClip a:\n    Note/1\nClip c:\n    Note/(d)\n"],
+    &["pattern P(default v):\n    Note/(v)\nClip c:\n    P/d\nClip d\n"],
+    &["Clip c:\n    Note/(c)\n"],
+    &["let x = c\n", "Clip c:\n    Note/(x)\n"],
+    &["Clip c:\n    Note when c\n"],
+    &["Clip c:\n    Note | velocity=c\n"],
+    &["Synth s:\n    Osc | wave=s\n"],
+    &[
+        "Clip c:\n    Note/1\n",
+        "Clip d:\n    Plays: c\n    Note/(c)\n",
+    ],
+];
+
+#[test]
+fn an_instance_name_standing_as_a_whole_attribute_value_or_gate_draws_what_the_old_engine_draws_beside_a_valid_twin_in_every_order()
+ {
+    assert_eq!(same_as_the_old_engine(&INSTANCE_NAMES_AS_VALUES), 26);
+}

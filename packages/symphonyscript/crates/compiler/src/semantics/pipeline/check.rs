@@ -606,6 +606,14 @@ impl Core<'_> {
             self.resolve_bare(root, id, true)?;
         }
         match fact.leaf {
+            Leaf::Error if fact.node && fact.dims.is_empty() => {
+                let summary = format!(
+                    "this value has the wrong type here; `{}` is expected",
+                    self.ty_text(ty)?
+                );
+                self.draw_at_root(Code::TypeMismatch, root, summary)?;
+                return Ok(Ok(()));
+            }
             Leaf::Placeholder | Leaf::Error => return self.detached(root, name, ty),
             _ if !fact.dims.is_empty() => {
                 let variable = self.variable_length(root)?;

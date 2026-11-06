@@ -27,6 +27,10 @@ impl Core<'_> {
             )?;
             return self.own_check(root);
         }
+        if fact.leaf == Leaf::Error && fact.node && fact.dims.is_empty() {
+            self.draw_at_root(Code::ConditionType, root, "a gate or a guard is a `bool`")?;
+            return Ok(Ok(()));
+        }
         if matches!(fact.leaf, Leaf::Placeholder | Leaf::Error) {
             return self.detached(root, "", EvalTy::Bool);
         }

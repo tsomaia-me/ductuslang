@@ -336,7 +336,7 @@ impl Core<'_> {
             references |= fact.node;
             self.set_fact(node, fact, reactive)?;
         }
-        if references && !self.holds_references(root) {
+        if references && !self.holds_references(root) && !self.placed_name_root(root)? {
             return Ok(Err(Declined(Reason::NameOfInstance)));
         }
         Ok(Ok(()))

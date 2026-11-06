@@ -784,12 +784,8 @@ fn a_reference_argument_binds_its_rows_and_keys_its_use_by_the_bindings_the_body
     let vocabulary = symphonyscript_fixtures::vocabulary();
     assert_engines_agree(&vocabulary, &REFERENCE_ARGUMENTS);
     let new = Compiler::new(&vocabulary).expect("the vocabulary compiles");
-    for text in [
-        "pattern P(default v):\n    Note/(v)\nClip c:\n    P/d\nClip d\n",
-        "pattern P(default v):\n    Note/1 | velocity=(v[0].gain)\nClip c:\n    P/([d, e])\nClip d\nClip e\n",
-    ] {
-        assert!(new.checked_by_new_core(&[source(text)]).is_none(), "{text}");
-    }
+    let text = "pattern P(default v):\n    Note/1 | velocity=(v[0].gain)\nClip c:\n    P/([d, e])\nClip d\nClip e\n";
+    assert!(new.checked_by_new_core(&[source(text)]).is_none(), "{text}");
 }
 
 const PATH_FED_LOOPS: [&str; 7] = [

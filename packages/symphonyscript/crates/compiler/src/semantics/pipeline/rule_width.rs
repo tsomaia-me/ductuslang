@@ -167,3 +167,25 @@ impl Core<'_> {
         Ok(())
     }
 }
+
+impl Core<'_> {
+    pub fn placed_name_root(&self, root: u32) -> Result<bool, Internal> {
+        if self.ir.node(root)?.0 != Op::Name {
+            return Ok(false);
+        }
+        if self
+            .ir
+            .cells
+            .iter()
+            .any(|rec| rec.init == root || rec.rule == root)
+        {
+            return Ok(false);
+        }
+        for at in 0..u32::try_from(self.ir.lets.len()).unwrap_or(0) {
+            if self.let_root(at)? == root {
+                return Ok(false);
+            }
+        }
+        Ok(true)
+    }
+}
