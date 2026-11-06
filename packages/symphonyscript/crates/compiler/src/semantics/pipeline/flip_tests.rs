@@ -797,3 +797,41 @@ fn a_placement_body_after_the_colon_inside_a_placement_for_body_or_a_pattern_bod
  {
     assert_eq!(same_as_the_old_engine(&NESTED_INLINE_BODIES), 20);
 }
+
+const PATTERN_MEMBERS: [&[&str]; 7] = [
+    &[
+        "pattern P(default x):\n    Lamp/x\n",
+        "Rig r:\n    [Lamp/0.2 P/0.5]\n",
+    ],
+    &[
+        "pattern P(default x):\n    Lamp/x\n    Lamp/(x + 0.1)\n",
+        "Rig r:\n    [P/0.5 P/0.6]\n    [P/true]\n",
+    ],
+    &[
+        "pattern P(default x):\n    Lamp/x\n    Note/1\n",
+        "Rig r:\n    [P/0.5]\n",
+    ],
+    &[
+        "pattern P(default x):\n    for i in 0..2:\n        Lamp/(x + i)\n",
+        "Rig r:\n    [P/0.5]\n",
+    ],
+    &[
+        "pattern P(default x):\n    Lamp as l /x\n",
+        "Rig r:\n    [P/0.5 P/0.6]\n",
+    ],
+    &[
+        "state s(0.5)\n",
+        "pattern P(default x):\n    Lamp/x when x > 0.3\n",
+        "Rig r:\n    [P/s P/0.1]\n",
+    ],
+    &[
+        "pattern P(default x):\n    when x > 0.3:\n        Lamp/x\n",
+        "Rig r:\n    [P/0.5]\n",
+    ],
+];
+
+#[test]
+fn a_bundle_member_using_a_pattern_that_expands_only_to_node_placements_draws_what_the_old_engine_draws_beside_a_valid_twin_in_every_order()
+ {
+    assert_eq!(same_as_the_old_engine(&PATTERN_MEMBERS), 60);
+}
