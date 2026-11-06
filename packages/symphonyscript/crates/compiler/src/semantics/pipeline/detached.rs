@@ -168,7 +168,7 @@ impl Core<'_> {
             let mut refused = true;
             let mut beside_fault = false;
             for child in &children {
-                if self.faulty(*child)? {
+                if self.faulty(*child)? && !self.fact(*child)?.node {
                     refused = false;
                     beside_fault |= BINARY.contains(&op) && self.ir.node(*child)?.0 != Op::Name;
                 }

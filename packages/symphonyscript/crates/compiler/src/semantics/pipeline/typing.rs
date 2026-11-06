@@ -17,7 +17,7 @@ use symphonyscript_core::BinaryOp;
 const OPERAND: &str = "operators and conversions apply to single values, not arrays";
 const SINGLE_OPERANDS: &str =
     "only `+` takes arrays, which it joins; every other operator takes single values";
-const JOIN_SINGLE: &str = "`+` joins two arrays, and one of these is a single value";
+pub(super) const JOIN_SINGLE: &str = "`+` joins two arrays, and one of these is a single value";
 const RAGGED: &str = "the elements of an array are arrays of one length, or all single values";
 
 const NEW: u8 = 0;
@@ -564,7 +564,7 @@ impl Core<'_> {
         }
     }
 
-    fn convert_fact(&mut self, node: u32, a: u32, code: u32) -> Result<Fact, Internal> {
+    pub(super) fn converted_fact(code: u32) -> Result<Fact, Internal> {
         let target = target_ty(code).ok_or(Internal::missed("a conversion target"))?;
         let leaf = if is_fixed_float(target) {
             Leaf::Float
@@ -573,7 +573,11 @@ impl Core<'_> {
         } else {
             Leaf::Int
         };
-        let converted = Fact::fixed(leaf, Some(target));
+        Ok(Fact::fixed(leaf, Some(target)))
+    }
+
+    fn convert_fact(&mut self, node: u32, a: u32, code: u32) -> Result<Fact, Internal> {
+        let converted = Self::converted_fact(code)?;
         let operand = self.fact(a)?;
         if operand.leaf == Leaf::Placeholder {
             return self.keep_kind(node, converted);

@@ -1664,3 +1664,35 @@ fn a_reference_arrays_element_read_outside_it_draws_index_out_of_range_beside_it
  {
     assert_eq!(same_as_the_old_engine(&REFERENCE_ELEMENT_READS), 66);
 }
+
+const REFERENCE_OPERATORS: [&[&str]; 10] = [
+    &["Clip c:\n    Note/1\n", "Clip k:\n    Note/(c or c)\n"],
+    &["Clip c:\n    Note/1\n", "Clip k:\n    Note/(c or true)\n"],
+    &[
+        "Clip c:\n    Note/1\n",
+        "Clip k:\n    Note/(true or true)\n",
+    ],
+    &[
+        "Clip c:\n    Note/1\n",
+        "let q = c\n",
+        "Clip k:\n    Note/(q or 1)\n",
+    ],
+    &["Clip c:\n    Note/1\n", "Clip k:\n    Note/(c - 1.5)\n"],
+    &["Clip c:\n    Note/1\n", "Clip k:\n    Note/(c - true)\n"],
+    &["Clip c:\n    Note/1\n", "Clip k:\n    Note/(c + [1, 2])\n"],
+    &[
+        "Clip c:\n    Note/1\n",
+        "Clip k:\n    Note/(u8(c + [1, 2]))\n",
+    ],
+    &["Clip c:\n    Note/1\n", "Clip k:\n    Note when (u8(c))\n"],
+    &[
+        "Clip c:\n    Note/1\n",
+        "Clip k:\n    Note when (c and c)\n",
+    ],
+];
+
+#[test]
+fn a_reference_operand_draws_what_a_number_in_its_place_draws_at_and_or_a_join_and_a_conversion_beside_a_valid_twin_in_every_order()
+ {
+    assert_eq!(same_as_the_old_engine(&REFERENCE_OPERATORS), 78);
+}

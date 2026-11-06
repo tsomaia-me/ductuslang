@@ -4,7 +4,7 @@ use super::declined::Declined;
 use super::fact::Fact;
 use super::leaf::Leaf;
 use super::reason::Reason;
-use super::typing::operand_message;
+use super::typing::{JOIN_SINGLE, operand_message};
 use crate::diagnostics::Code;
 use crate::semantics::Internal;
 use crate::semantics::ir::flat::{AttrForm, ItemRec, NONE, Op, binary_of};
@@ -77,6 +77,10 @@ impl Core<'_> {
         if joined && binary_of(op).is_some() && op != Op::Add {
             return Ok(Ok(None));
         }
+        if joined && op == Op::Add && facts.iter().any(|fact| fact.node && fact.dims.is_empty()) {
+            self.draw_at(Code::ArrayOperand, node, JOIN_SINGLE)?;
+            return Ok(Ok(Some(Fact::PLACEHOLDER)));
+        }
         match op {
             Op::Array => self.reference_array(node, &facts),
             Op::If => self.reference_choice(node, a, &facts),
@@ -92,7 +96,12 @@ impl Core<'_> {
             }
             Op::Convert => {
                 self.draw_at(Code::ConversionType, node, "a conversion takes a number")?;
-                Ok(Ok(Some(Fact::ERROR)))
+                if facts.iter().any(|fact| !fact.dims.is_empty()) {
+                    return Ok(Ok(Some(Fact::ERROR)));
+                }
+                let (_, _, code, _) = self.ir.node(node)?;
+                let converted = Self::converted_fact(code)?;
+                Ok(Ok(Some(self.keep(node, converted)?)))
             }
             Op::Add | Op::Sub | Op::Mul | Op::Div | Op::IntDiv | Op::Rem | Op::Pow => {
                 let binary = binary_of(op).ok_or(Internal::missed("operator"))?;
@@ -100,6 +109,16 @@ impl Core<'_> {
                 Ok(Ok(Some(Fact::ERROR)))
             }
             Op::And | Op::Or => {
+                let refused = |fact: &Fact| {
+                    fact.node
+                        || (fact.dims.is_empty()
+                            && !matches!(fact.leaf, Leaf::Bool | Leaf::Placeholder | Leaf::Error))
+                };
+                if facts.iter().all(refused) {
+                    let binary = binary_of(op).ok_or(Internal::missed("operator"))?;
+                    self.draw_at(Code::OperandType, node, operand_message(binary))?;
+                    return Ok(Ok(Some(Fact::scalar(Leaf::Bool))));
+                }
                 for (operand, fact) in self.operands(node)?.into_iter().zip(facts.iter()) {
                     if fact.node && fact.dims.is_empty() {
                         self.draw_at(
