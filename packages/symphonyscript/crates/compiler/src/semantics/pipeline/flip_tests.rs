@@ -1900,3 +1900,17 @@ fn a_variable_cells_capacity_is_its_annotated_capacity_known_at_compile_time_rea
     let rows: Vec<&[&str]> = rows.iter().map(Vec::as_slice).collect();
     assert_eq!(same_as_the_old_engine(&rows), 72);
 }
+
+const LITERAL_ARRAY_MEMBERS: [&[&str]; 5] = [
+    &["Clip c:\n    Note/([5, 6].size)\n"],
+    &["Clip c:\n    Note/([5, 6].capacity + 300)\n"],
+    &["Clip c:\n    Note/([1, 2][[5, 6].size])\n"],
+    &["Clip c:\n    Note/([1.5, 2.5].size)\n"],
+    &["Clip c:\n    Note/([5, 6].size.size)\n"],
+];
+
+#[test]
+fn a_literal_arrays_size_and_capacity_are_its_length_known_at_compile_time_beside_a_valid_twin_in_every_order()
+ {
+    assert_eq!(same_as_the_old_engine(&LITERAL_ARRAY_MEMBERS), 10);
+}

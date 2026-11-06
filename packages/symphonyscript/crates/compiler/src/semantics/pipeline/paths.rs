@@ -458,6 +458,9 @@ impl Core<'_> {
             *ends
                 .get(&receiver)
                 .ok_or(Internal::missed("a path's receiver"))?
+        } else if let Some(count) = self.literal_array_length(receiver, field)? {
+            self.array_members.insert(node, i128::from(count));
+            End::Value
         } else {
             return Ok(Err(Declined(Reason::Member)));
         };
@@ -2003,5 +2006,30 @@ impl Core<'_> {
         }
         self.array_members.insert(node, i128::from(held));
         Ok(Ok(End::Value))
+    }
+}
+
+impl Core<'_> {
+    fn literal_array_length(&self, receiver: u32, field: u32) -> Result<Option<u32>, Internal> {
+        let text = self.ir.name_text(field).unwrap_or_default();
+        if !matches!(text, "size" | "capacity") {
+            return Ok(None);
+        }
+        let (op, start, count, _) = self.ir.node(receiver)?;
+        if op != Op::Array || count == 0 {
+            return Ok(None);
+        }
+        let mut kinds = Vec::new();
+        for at in start..start + count {
+            let element = self.ir.node(self.kid(at)?)?.0;
+            if !matches!(element, Op::Int | Op::Float) {
+                return Ok(None);
+            }
+            kinds.push(element);
+        }
+        Ok(kinds
+            .windows(2)
+            .all(|pair| pair.first() == pair.last())
+            .then_some(count))
     }
 }
