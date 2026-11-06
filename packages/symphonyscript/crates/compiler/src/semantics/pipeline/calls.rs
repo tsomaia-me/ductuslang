@@ -6,6 +6,7 @@ use super::decl_ref::DeclRef;
 use super::declined::Declined;
 use super::fact::Fact;
 use super::loops::loop_body;
+use super::memo_arg::MemoArg;
 use super::need::Need;
 use super::reason::Reason;
 use crate::diagnostics::{Code, Related};
@@ -566,20 +567,32 @@ impl Core<'_> {
             facts.push(self.fact(*arg)?);
             reactive.push(self.is_reactive(*arg)?);
         }
+        let values = self.key_values(function, &args, &reactive)?;
         let key = (function, NONE, facts.clone(), reactive.clone());
-        let found = self.body_index.get(&key).copied();
+        let held: Vec<Option<MemoArg>> = values.iter().map(MemoArg::of).collect();
+        let found = if values.is_empty() {
+            self.body_index.get(&key).copied()
+        } else {
+            self.value_index.get(&(key.clone(), held.clone())).copied()
+        };
         let body = match found {
             Some(body) => body,
             None => {
+                let keyed = !values.is_empty();
                 self.bodies.push(BodyInstance {
                     function,
                     parent: NONE,
                     args: facts,
                     reactive_args: reactive,
                     diagnostics: Vec::new(),
+                    values,
                 });
                 let body = u32::try_from(self.bodies.len() - 1).unwrap_or(NONE);
-                self.body_index.insert(key, body);
+                if keyed {
+                    self.value_index.insert((key, held), body);
+                } else {
+                    self.body_index.insert(key, body);
+                }
                 return self.pending(Need::Body(body));
             }
         };
@@ -807,7 +820,7 @@ impl Core<'_> {
     }
 }
 
-fn chain_key(diagnostic: &crate::diagnostics::Diagnostic) -> Vec<u32> {
+pub(super) fn chain_key(diagnostic: &crate::diagnostics::Diagnostic) -> Vec<u32> {
     diagnostic
         .related
         .iter()

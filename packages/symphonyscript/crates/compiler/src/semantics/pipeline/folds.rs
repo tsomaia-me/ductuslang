@@ -465,6 +465,7 @@ impl Core<'_> {
             args,
             reactive_args,
             diagnostics: Vec::new(),
+            values: Vec::new(),
         });
         let at = u32::try_from(self.bodies.len() - 1).unwrap_or(NONE);
         self.body_index.insert(key, at);

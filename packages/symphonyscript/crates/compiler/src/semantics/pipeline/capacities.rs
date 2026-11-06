@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 
 use super::bound_form::BoundForm;
+use super::calls::chain_key;
 use super::core::Core;
 use super::core_value::CoreValue;
 use super::cycles::strongly_connected;
@@ -12,17 +13,11 @@ use super::leaf::Leaf;
 use super::piecewise::Piecewise;
 use super::ratio::Ratio;
 use super::slice_transform::slice_transform;
-use crate::diagnostics::Code;
+use crate::diagnostics::{Code, Diagnostic, Related};
 use crate::semantics::Internal;
 use crate::semantics::counted_walk::CountedWalk;
 use crate::semantics::ir::flat::{NONE, Op};
 use crate::semantics::operators::{EvalTy, Value};
-
-type OwnCall = (u32, u32, Vec<CoreValue>);
-
-const CONTEXT_DEPTH: usize = 64;
-
-const CONTEXTS: usize = 4096;
 
 const CEILING: i128 = 1 << 120;
 
@@ -980,11 +975,7 @@ impl Core<'_> {
             if (walk.checking == Checking::Everything || walk.accumulators) && most > annotated {
                 let span = self.node_span(node)?;
                 let related = self
-                    .chained(crate::diagnostics::Diagnostic::new(
-                        Code::CapacityExceeded,
-                        span.clone(),
-                        "",
-                    ))
+                    .chained(Diagnostic::new(Code::CapacityExceeded, span.clone(), ""))
                     .related;
                 let seen = self.diagnostics.iter().any(|diagnostic| {
                     diagnostic.code == Code::CapacityExceeded
@@ -1049,9 +1040,13 @@ impl Core<'_> {
 
 impl Core<'_> {
     fn compile_time_accumulators(&mut self) -> Result<(), Internal> {
+        let mut own: Vec<(u32, Vec<Diagnostic>)> = Vec::new();
         for (node, inst) in self.compile_time_folds.clone() {
             if self.body_of.get(self.local(node)?).copied().unwrap_or(NONE) != NONE {
-                self.accumulators_per_call(node, inst)?;
+                let found = self.accumulators_in(node, inst)?;
+                if !found.is_empty() {
+                    own.push((inst, found));
+                }
                 continue;
             }
             self.inst = inst;
@@ -1059,72 +1054,106 @@ impl Core<'_> {
             walk.accumulators = true;
             self.extent_in(node, &mut walk, &mut HashMap::new())?;
         }
-        Ok(())
+        self.draw_through_callers(own)
     }
 
-    fn accumulators_per_call(&mut self, node: u32, inst: u32) -> Result<(), Internal> {
-        for context in self.call_contexts(inst, 0)? {
-            for (call, _, _) in &context {
-                self.eval_chain.push(*call);
-            }
-            let depth = context.len();
-            self.own_calls.extend(context);
-            self.inst = inst;
-            let mut walk = Walk::new(Checking::Nothing);
-            walk.accumulators = true;
-            let found = self.extent_in(node, &mut walk, &mut HashMap::new());
-            let calls = self.own_calls.len().saturating_sub(depth);
-            self.own_calls.truncate(calls);
-            let chain = self.eval_chain.len().saturating_sub(depth);
-            self.eval_chain.truncate(chain);
-            found?;
-        }
-        Ok(())
+    fn accumulators_in(&mut self, node: u32, inst: u32) -> Result<Vec<Diagnostic>, Internal> {
+        CountedWalk::CoreCapacity.step();
+        let frames = self.instance_frames(inst);
+        let depth = self.own_calls.len();
+        self.own_calls.extend(frames);
+        let chain = std::mem::take(&mut self.eval_chain);
+        let drawn = self.diagnostics.len();
+        self.inst = inst;
+        let mut walk = Walk::new(Checking::Nothing);
+        walk.accumulators = true;
+        let found = self.extent_in(node, &mut walk, &mut HashMap::new());
+        self.eval_chain = chain;
+        self.own_calls.truncate(depth);
+        found?;
+        Ok(self
+            .diagnostics
+            .split_off(drawn.min(self.diagnostics.len())))
     }
 
-    fn call_contexts(&mut self, inst: u32, depth: usize) -> Result<Vec<Vec<OwnCall>>, Internal> {
-        if depth > CONTEXT_DEPTH {
-            return Ok(Vec::new());
-        }
-        let mut calls: Vec<(u32, u32)> = self
+    fn draw_through_callers(&mut self, own: Vec<(u32, Vec<Diagnostic>)>) -> Result<(), Internal> {
+        let mut edges: Vec<(u32, u32, u32)> = self
             .call_body
             .iter()
-            .filter(|(_, body)| **body == inst)
-            .map(|(key, _)| *key)
+            .map(|((caller, call), body)| (*body, *call, *caller))
             .collect();
-        calls.sort_unstable_by_key(|(caller, call)| (*call, *caller));
-        let mut found = Vec::new();
-        for (caller, call) in calls {
-            let called = self.call_body.values().any(|body| *body == caller);
-            let outer = if called {
-                self.call_contexts(caller, depth + 1)?
-            } else {
-                vec![Vec::new()]
-            };
-            for mut context in outer {
-                if found.len() >= CONTEXTS {
-                    break;
-                }
-                let depth = context.len();
-                self.own_calls.extend(context.iter().cloned());
-                self.inst = caller;
-                let mut args = Vec::new();
-                for argument in self.arguments(call)? {
-                    let chain = std::mem::take(&mut self.eval_chain);
-                    let (drawn, stop) = (self.diagnostics.len(), self.stop.clone());
-                    let value = self.evaluate(argument, EvalTy::Exact)?;
-                    self.diagnostics.truncate(drawn);
-                    self.stop = stop;
-                    self.eval_chain = chain;
-                    args.push(value.unwrap_or(Value::Error));
-                }
-                let calls = self.own_calls.len().saturating_sub(depth);
-                self.own_calls.truncate(calls);
-                context.push((call, inst, args));
-                found.push(context);
+        edges.sort_unstable();
+        let mut callers: HashMap<u32, Vec<(u32, u32)>> = HashMap::new();
+        for (body, call, caller) in edges {
+            callers.entry(body).or_default().push((caller, call));
+        }
+        let mut held: HashMap<u32, Vec<Diagnostic>> = HashMap::new();
+        let mut reach = Vec::new();
+        let mut seen = HashSet::new();
+        for (inst, found) in own {
+            if seen.insert(inst) {
+                reach.push(inst);
+            }
+            let list = held.entry(inst).or_default();
+            for diagnostic in found {
+                least(list, diagnostic);
             }
         }
-        Ok(found)
+        let mut cursor = 0;
+        while let Some(inst) = reach.get(cursor).copied() {
+            cursor += 1;
+            for (caller, _) in callers.get(&inst).map(Vec::as_slice).unwrap_or_default() {
+                if callers.contains_key(caller) && seen.insert(*caller) {
+                    reach.push(*caller);
+                }
+            }
+        }
+        let mut waiting: HashMap<u32, usize> = HashMap::new();
+        for inst in &reach {
+            for (caller, _) in callers.get(inst).map(Vec::as_slice).unwrap_or_default() {
+                if seen.contains(caller) {
+                    *waiting.entry(*caller).or_default() += 1;
+                }
+            }
+        }
+        let mut ready: VecDeque<u32> = reach
+            .iter()
+            .filter(|inst| !waiting.contains_key(inst))
+            .copied()
+            .collect();
+        while let Some(inst) = ready.pop_front() {
+            CountedWalk::CoreCapacity.step();
+            let found = held.remove(&inst).unwrap_or_default();
+            for (caller, call) in callers.get(&inst).cloned().unwrap_or_default() {
+                CountedWalk::CoreCapacity.step();
+                let link = if matches!(self.ir.node(call)?.0, Op::Call | Op::NamedCall) {
+                    Some(Related {
+                        span: self.node_span(call)?,
+                        label: "in this call".to_string(),
+                    })
+                } else {
+                    None
+                };
+                let top = !seen.contains(&caller);
+                for diagnostic in &found {
+                    let mut related = diagnostic.related.clone();
+                    related.extend(link.clone());
+                    let diagnostic = diagnostic.clone().with_related(related);
+                    if top {
+                        self.push_one_per_chain(diagnostic, false);
+                    } else {
+                        least(held.entry(caller).or_default(), diagnostic);
+                    }
+                }
+                if let Some(count) = waiting.get_mut(&caller) {
+                    *count = count.saturating_sub(1);
+                    if *count == 0 {
+                        ready.push_back(caller);
+                    }
+                }
+            }
+        }
+        Ok(())
     }
 
     fn annotated_capacities(&mut self) -> Result<(), Internal> {
@@ -1158,7 +1187,7 @@ impl Core<'_> {
             } else {
                 format!("slice the value to its newest {capacity} elements with `[^{capacity}..]`")
             };
-            let diagnostic = crate::diagnostics::Diagnostic::new(
+            let diagnostic = Diagnostic::new(
                 Code::CapacityExceeded,
                 span,
                 format!(
@@ -1234,5 +1263,21 @@ impl Core<'_> {
             | DeclRef::Fn(_)
             | DeclRef::Pattern(_) => false,
         })
+    }
+}
+
+fn least(held: &mut Vec<Diagnostic>, diagnostic: Diagnostic) {
+    let found = held.iter_mut().find(|seen| {
+        seen.code == diagnostic.code
+            && seen.span == diagnostic.span
+            && seen.summary == diagnostic.summary
+    });
+    match found {
+        Some(seen) => {
+            if chain_key(&diagnostic) < chain_key(seen) {
+                *seen = diagnostic;
+            }
+        }
+        None => held.push(diagnostic),
     }
 }

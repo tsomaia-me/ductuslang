@@ -349,6 +349,7 @@ impl Core<'_> {
             args: facts.to_vec(),
             reactive_args: reactive,
             diagnostics: Vec::new(),
+            values: Vec::new(),
         });
         let inst = u32::try_from(self.bodies.len() - 1).unwrap_or(NONE);
         self.body_index.insert(key, inst);
@@ -398,6 +399,7 @@ impl Core<'_> {
                     args: facts,
                     reactive_args,
                     diagnostics: Vec::new(),
+                    values: Vec::new(),
                 });
                 let inst = u32::try_from(self.bodies.len() - 1).unwrap_or(NONE);
                 if indexed {

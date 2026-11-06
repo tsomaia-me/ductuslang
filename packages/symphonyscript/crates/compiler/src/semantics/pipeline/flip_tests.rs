@@ -1350,7 +1350,7 @@ fn a_bundle_members_as_name_on_a_line_is_in_scope_for_its_siblings_bodies_beside
     assert_eq!(same_as_the_old_engine(&BUNDLE_MEMBER_NAMES), 12);
 }
 
-const FOLDS_IN_BODIES: [(&[&str], &[Code]); 4] = [
+const FOLDS_IN_BODIES: [(&[&str], &[Code]); 6] = [
     (
         &[
             "fn f(n): for i in 0..n into a: i32[..3] from []: a + [i]\n",
@@ -1380,12 +1380,28 @@ const FOLDS_IN_BODIES: [(&[&str], &[Code]); 4] = [
         ],
         &[Code::CapacityExceeded],
     ),
+    (
+        &[
+            "fn f(n): for i in 0..n into a: i32[..3] from []: a + [i]\n",
+            "fn g(m): f(m)[0] + f(m + 1)[0]\n",
+            "Clip c:\n    Note/(g(2))\n    Note/(g(3))\n",
+        ],
+        &[Code::CapacityExceeded],
+    ),
+    (
+        &[
+            "fn f(n):\n    let k = n + 2\n    for i in 0..k into a: i32[..3] from []: a + [i]\n",
+            "fn g(m): f(m)[0]\n",
+            "Clip c:\n    Note/(g(2))\n    Note/(g(1))\n",
+        ],
+        &[Code::CapacityExceeded],
+    ),
 ];
 
 #[test]
 fn a_compile_time_fold_in_a_function_body_draws_capacity_exceeded_per_call_with_its_arguments_bound_in_every_order_502()
  {
-    assert_eq!(drawn_codes(&FOLDS_IN_BODIES), 42);
+    assert_eq!(drawn_codes(&FOLDS_IN_BODIES), 90);
 }
 
 const NOT_VALUES_IN_BODIES: [&[&str]; 5] = [

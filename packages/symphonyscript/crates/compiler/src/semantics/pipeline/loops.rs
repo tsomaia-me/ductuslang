@@ -850,6 +850,7 @@ impl Core<'_> {
                     args: run.facts.clone(),
                     reactive_args,
                     diagnostics: Vec::new(),
+                    values: Vec::new(),
                 });
                 let inst = u32::try_from(self.bodies.len() - 1).unwrap_or(NONE);
                 self.body_index.insert(key, inst);
@@ -1663,6 +1664,7 @@ impl Core<'_> {
             args: run.facts.clone(),
             reactive_args: vec![false; run.facts.len()],
             diagnostics: Vec::new(),
+            values: Vec::new(),
         });
         let inst = u32::try_from(self.bodies.len() - 1).unwrap_or(NONE);
         let position = u32::try_from(run.facts.len().saturating_sub(1)).unwrap_or(NONE);
