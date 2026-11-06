@@ -292,7 +292,19 @@ fn a_qualified_variant_inside_a_function_or_a_placement_for_body_draws_what_the_
     }
 }
 
-const UNTYPED_FLOWS: [(&str, &str); 9] = [
+const UNTYPED_FLOWS: [(&str, &str); 12] = [
+    (
+        "let a = Saw\nlet b = Sine\n",
+        "Clip c1:\n    Note/(if a is b then 1 else 2)\n",
+    ),
+    (
+        "let a = Saw\n",
+        "Clip c1:\n    Note/(if a is Wave::Sine then 1 else 2)\n",
+    ),
+    (
+        "let a = Saw\n",
+        "Clip c1:\n    Note/(if Wave::Sine is not a then 1 else 2)\n",
+    ),
     ("let a = Saw\n", "Clip c:\n    Note/a\n"),
     (
         "let a = Saw\nlet b = a\nlet c = b\n",
@@ -344,7 +356,7 @@ fn an_untyped_bare_variant_flow_draws_one_diagnostic_at_its_first_writer_naming_
     }
     assert_eq!(
         new.checked_by_new_core(&[source(
-            "let a = Saw\nlet b = Sine\nClip c1:\n    Note/(if a is b then 1 else 2)\n"
+            "let a = Saw\nClip c1:\n    Note/(if a is Mode::Auto then 1 else 2)\n"
         )]),
         None
     );

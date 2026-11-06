@@ -112,7 +112,9 @@ impl Core<'_> {
                 Op::Is | Op::IsNot => true,
                 Op::Array | Op::Call | Op::NamedCall | Op::For => known.is_some(),
                 Op::Past => known.is_some() && kid == a,
-                Op::Index | Op::IndexFromEnd => known.is_some() && kid == a,
+                Op::Index | Op::IndexFromEnd => {
+                    known.is_some() && kid == a && !self.fact(kid)?.dims.is_empty()
+                }
                 Op::Convert
                 | Op::Not
                 | Op::Neg
@@ -425,6 +427,49 @@ impl Core<'_> {
                 }
             }
         }
+        let mut attributes = self.enum_attribute_roots()?;
+        let mut linked: Vec<u32> = Vec::new();
+        let member_of = |core: &Self, node: u32| -> Result<Option<u32>, Internal> {
+            if core.ir.node(node)?.0 == Op::Name
+                && let DeclRef::Let(at) = core.bound(node)?
+                && members.contains(&at)
+            {
+                return Ok(Some(at));
+            }
+            Ok(None)
+        };
+        for (local, op) in self.ir.op.iter().enumerate() {
+            if !matches!(op, Op::Is | Op::IsNot) {
+                continue;
+            }
+            let node = self.ir.base + u32::try_from(local).unwrap_or(0);
+            let (_, left, right, _) = self.ir.node(node)?;
+            match (member_of(self, left)?, member_of(self, right)?) {
+                (Some(x), Some(y)) => {
+                    linked.push(x);
+                    internal.insert(left);
+                    internal.insert(right);
+                    let (x, y) = (find(&parent, x), find(&parent, y));
+                    if x != y {
+                        parent.insert(x.max(y), x.min(y));
+                    }
+                }
+                (Some(_), None) | (None, Some(_)) => {
+                    let (read, other) = if member_of(self, left)?.is_some() {
+                        (left, right)
+                    } else {
+                        (right, left)
+                    };
+                    let (op, enumeration, _, _) = self.ir.node(other)?;
+                    if op == Op::Variant
+                        && let Some(id) = self.vocabulary.enum_named(&self.name_text(enumeration)?)
+                    {
+                        attributes.insert(read, Some(id));
+                    }
+                }
+                (None, None) => {}
+            }
+        }
         let mut reads: std::collections::HashMap<u32, Vec<u32>> = std::collections::HashMap::new();
         for (local, op) in self.ir.op.iter().enumerate() {
             if *op != Op::Name {
@@ -440,13 +485,15 @@ impl Core<'_> {
                 reads.entry(find(&parent, at)).or_default().push(node);
             }
         }
-        let attributes = self.enum_attribute_roots()?;
         let mut groups: Vec<u32> = members.iter().map(|at| find(&parent, *at)).collect();
         groups.sort_unstable();
         groups.dedup();
         for group in groups {
-            let Some(found) = reads.get(&group) else {
-                continue;
+            let empty = Vec::new();
+            let found = match reads.get(&group) {
+                Some(found) => found,
+                None if linked.iter().any(|at| find(&parent, *at) == group) => &empty,
+                None => continue,
             };
             let mut wanted = None;
             let mut agreed = true;
@@ -467,6 +514,10 @@ impl Core<'_> {
                 .collect();
             group_lets.sort_unstable();
             if !agreed {
+                continue;
+            }
+            let tied = linked.iter().any(|at| find(&parent, *at) == group);
+            if tied && wanted.is_some() {
                 continue;
             }
             let Some(id) = wanted.filter(|_| !split) else {
