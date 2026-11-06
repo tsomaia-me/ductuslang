@@ -186,6 +186,7 @@ pub(crate) struct Core<'a> {
     >,
     pub unit_let_values: HashMap<(u32, usize, symphonyscript_core::FamilyId, usize), CoreValue>,
     pub unit_conflicted: HashSet<(u32, u32, u32)>,
+    pub cycle_through_refused: bool,
     pub scaled_accumulator: bool,
     pub unit_conflicts: Vec<super::unit_conflict::UnitConflict>,
     pub default_scale: Option<(
@@ -357,6 +358,7 @@ impl<'a> Core<'a> {
             unit_reaches: HashMap::new(),
             unit_let_values: HashMap::new(),
             unit_conflicted: HashSet::new(),
+            cycle_through_refused: false,
             scaled_accumulator: false,
             unit_conflicts: Vec::new(),
             default_scale: None,

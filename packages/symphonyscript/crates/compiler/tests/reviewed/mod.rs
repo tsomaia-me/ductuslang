@@ -4232,6 +4232,7 @@ fn faulty_line(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
         "not-an-array",
         "index-type",
         "does-not-fit",
+        "plain-in-family",
     ]
     .contains(&at.0.as_str())
         && seen.line(at.2.saturating_sub(1).max(at.1)) == line

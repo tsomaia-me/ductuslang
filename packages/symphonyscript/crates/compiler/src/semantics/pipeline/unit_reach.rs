@@ -98,7 +98,7 @@ impl Core<'_> {
         let mut stack = vec![(root, false)];
         while let Some((node, base)) = stack.pop() {
             CountedWalk::CoreFamilies.step();
-            if !seen.insert((node, base)) {
+            if !seen.insert((node, base)) || !self.has_fact(node)? {
                 continue;
             }
             let fact = self.fact(node)?;

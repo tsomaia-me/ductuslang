@@ -198,6 +198,11 @@ impl Core<'_> {
                 continue;
             }
             for member in &component {
+                if *member < lets && self.refused_call_reads(self.let_root(*member)?)? {
+                    self.cycle_through_refused = true;
+                }
+            }
+            for member in &component {
                 if *member >= fns {
                     continue;
                 }
@@ -442,5 +447,33 @@ impl Core<'_> {
             }
         }
         Ok(Ok(()))
+    }
+}
+
+impl Core<'_> {
+    fn refused_call_reads(&self, root: u32) -> Result<bool, Internal> {
+        for node in self.deep_postorder(root)? {
+            if !matches!(self.ir.node(node)?.0, Op::Call | Op::NamedCall) {
+                continue;
+            }
+            let Some(function) = self.callee(node)? else {
+                continue;
+            };
+            let Some(rec) = self.ir.fns.get(function as usize) else {
+                continue;
+            };
+            let arguments = self.arguments(node)?;
+            if arguments.len() == (rec.params.1 - rec.params.0) as usize {
+                continue;
+            }
+            for argument in arguments {
+                for inner in self.deep_postorder(argument)? {
+                    if matches!(self.ir.node(inner)?.0, Op::Name | Op::Field | Op::Call) {
+                        return Ok(true);
+                    }
+                }
+            }
+        }
+        Ok(false)
     }
 }

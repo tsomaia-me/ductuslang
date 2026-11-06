@@ -435,11 +435,20 @@ impl Core<'_> {
                 continue;
             }
             found.reached.insert((node, family, key));
+            if !self.has_fact(node)? {
+                continue;
+            }
             let fact = self.fact(node)?;
             if !open(&fact) && self.family(node) != Some(family) {
                 continue;
             }
             let op = self.ir.node(node)?.0;
+            if open(&fact)
+                && matches!(op, Op::Call | Op::NamedCall)
+                && self.body_of_call(node).is_none()
+            {
+                continue;
+            }
             if let (Op::Name, DeclRef::Param(position)) = (op, self.bound(node)?) {
                 if self.binding_owner(node)? < self.functions() {
                     params.push(position);

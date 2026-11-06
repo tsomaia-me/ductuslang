@@ -183,6 +183,9 @@ impl Core<'_> {
     }
 
     pub fn check_attributes(&mut self) -> Stage<()> {
+        if self.cycle_through_refused {
+            return Ok(Err(Declined(Reason::LocalCycle)));
+        }
         if self.units_seen {
             let feeds = self.attribute_feeds()?;
             if let Err(declined) = self.find_unit_conflicts(feeds)? {
