@@ -4314,32 +4314,56 @@ fn integer_cell_in_a_flexible_float_operation(seen: &Seen<'_>, change: Change, a
         })
 }
 
-fn history_of_a_faulty_line_name(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
-    let name = seen.text(at);
+fn faulty_line_names<'a>(seen: &Seen<'a>) -> Vec<&'a str> {
+    let mut names = Vec::new();
     let mut start = 0;
-    let mut declared = false;
     for line in seen.program.split_inclusive('\n') {
         let end = start + line.len();
         let mut words = line.split_whitespace();
-        let placed = match (words.next(), words.next()) {
-            (Some(kind), Some(rest)) => {
-                !line.starts_with(' ')
-                    && !matches!(
-                        kind,
-                        "state" | "let" | "fn" | "pattern" | "stream" | "input"
-                    )
-                    && rest.split('(').next() == Some(name)
+        if let (Some(kind), Some(rest)) = (words.next(), words.next())
+            && !line.starts_with(' ')
+            && !matches!(
+                kind,
+                "state" | "let" | "fn" | "pattern" | "stream" | "input"
+            )
+            && seen
+                .old
+                .iter()
+                .any(|drawn| drawn.0 == "placement-syntax" && (start..end).contains(&drawn.1))
+        {
+            let name = rest
+                .split(|c: char| !(c.is_alphanumeric() || c == '_'))
+                .next()
+                .unwrap_or_default();
+            if !name.is_empty() {
+                names.push(name);
             }
-            _ => false,
-        };
-        let faulty = seen
-            .old
-            .iter()
-            .any(|drawn| drawn.0 == "placement-syntax" && (start..end).contains(&drawn.1));
-        declared |= placed && faulty;
+        }
         start = end;
     }
-    change == Change::Removed && at.0 == "history-target" && !name.is_empty() && declared
+    names
+}
+
+fn history_of_a_faulty_line_name(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
+    let name = seen.text(at);
+    change == Change::Removed
+        && at.0 == "history-target"
+        && !name.is_empty()
+        && faulty_line_names(seen).contains(&name)
+}
+
+fn to_through_a_faulty_line_name(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
+    let names = faulty_line_names(seen);
+    change == Change::Removed
+        && matches!(at.0.as_str(), "to-candidates" | "unknown-attribute")
+        && seen.program.lines().any(|line| {
+            line.contains("to.")
+                && line.split_once(": ").is_some_and(|(_, candidates)| {
+                    candidates
+                        .split(|c: char| !(c.is_alphanumeric() || c == '_'))
+                        .any(|word| names.contains(&word))
+                })
+        })
 }
 
 fn not_a_value_in_an_unexpanded_loop_body(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
@@ -5285,6 +5309,11 @@ pub const CLASSES: &[Class] = &[
         ledger: "476",
         rule: "a history read of a name declared by a placement on a line holding a syntax fault draws nothing, the name being a placeholder wherever it is used (ARCHITECTURE §7), where the old engine draws history-target at it (`xstate gate(false)` with `gate.past(2)`)",
         explains: history_of_a_faulty_line_name,
+    },
+    Class {
+        ledger: "476",
+        rule: "a `to` path whose candidate list names an instance declared by a placement on a line holding a syntax fault draws nothing of that candidate, the name being a placeholder wherever it is used (ARCHITECTURE §7), where the old engine reads the instance and draws to-candidates or unknown-attribute at the path (`Clip chorus(:` with `gain=to.hook.velocity: [chorus, bridge][section]`)",
+        explains: to_through_a_faulty_line_name,
     },
     Class {
         ledger: "476",
