@@ -41,10 +41,9 @@ const ENUMS: [&str; 37] = [
     "Synth s:\n    Osc | wave=Wave::Zig\n",
 ];
 
-const DECLINED: [&str; 5] = [
+const DECLINED: [&str; 4] = [
     "fn f(w): w\nSynth s:\n    Osc | wave=(f(Saw))\n",
     "state w(Saw)\nSynth s:\n    Osc | wave=w\n",
-    "state w(Wave::Saw)\nClip c:\n    Note/(if w.past(1) is Saw then 1 else 2)\n",
     "state w(Wave::Saw)\nstate m = w.past(1, Sine)\nSynth s:\n    Osc | wave=m\n",
     "Synth s:\n    Osc | wave=(if Saw then Saw else Saw)\n",
 ];
@@ -217,7 +216,35 @@ fn an_array_of_qualified_variants_is_built_joined_and_read_by_index_as_the_old_e
     }
 }
 
-const ENUMS_IN_BODIES: [(&str, &str); 6] = [
+const ENUMS_IN_BODIES: [(&str, &str); 13] = [
+    (
+        "state w(Wave::Saw)\n",
+        "Clip c:\n    Note/(if w.past(1) is Saw then 1 else 2)\n",
+    ),
+    (
+        "state w(Wave::Saw)\n",
+        "Clip c:\n    Note/(if w.past(1) is Wave::Saw then 1 else 2)\n",
+    ),
+    (
+        "fn same(w): w\n",
+        "Synth s:\n    Osc | wave=(same(Wave::Saw))\n",
+    ),
+    (
+        "fn same(w): w\n",
+        "Synth s:\n    Osc | wave=(same(Wave::Saw))\nPlant p | mode=(same(Mode::Auto))\n",
+    ),
+    (
+        "fn same(w): w\n",
+        "Synth s:\n    Osc | wave=(same(Mode::Auto))\n",
+    ),
+    (
+        "fn f(w): if w is Wave::Saw then 1 else 2\n",
+        "Clip c:\n    Note/(f(Wave::Saw) + f(Wave::Sine))\n",
+    ),
+    (
+        "let n = for w in [Wave::Saw, Wave::Sine] into a from Wave::Saw: w\n",
+        "Synth s:\n    Osc | wave=n\n",
+    ),
     (
         "fn pick(x): if x then Wave::Saw else Wave::Sine\n",
         "Synth s:\n    Osc | wave=(pick(true))\n",
