@@ -2767,3 +2767,19 @@ fn a_math_call_over_an_array_draws_array_operand_and_one_reading_an_array_cell_k
  {
     assert_eq!(same_as_the_old_engine(&MATH_OVER_ARRAYS), 38);
 }
+
+const LEN_AND_BYTES_CALLEES: [&[&str]; 4] = [
+    &["Clip c:\n    Note/(len([1, 2]))\n"],
+    &["Clip c:\n    Note/(bytes(1 + true))\n"],
+    &[
+        "let xs = [1, 2]\n",
+        "Clip c:\n    Note/(len(xs) + lenx(xs))\n",
+    ],
+    &["state q(1)\n", "Clip c:\n    Note/(1 + bytes (q + 1))\n"],
+];
+
+#[test]
+fn an_unknown_len_or_bytes_callee_draws_its_unknown_name_with_the_member_help_beside_a_valid_twin_in_every_order()
+ {
+    assert_eq!(same_as_the_old_engine(&LEN_AND_BYTES_CALLEES), 16);
+}
