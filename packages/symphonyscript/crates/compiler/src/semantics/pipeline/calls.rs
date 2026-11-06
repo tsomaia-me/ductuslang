@@ -660,7 +660,19 @@ impl Core<'_> {
             .value;
         let outer = std::mem::replace(&mut self.inst, body);
         let fact = self.fact(value);
+        let width = if self.is_reactive(value)?
+            && fact
+                .as_ref()
+                .is_ok_and(|fact| fact.leaf == Leaf::Float && fact.dims.is_empty())
+        {
+            Some(self.reactive_width(value)?)
+        } else {
+            None
+        };
         self.inst = outer;
+        if let Some(width) = width {
+            self.call_widths.insert((key, node), width);
+        }
         Ok(Ok(fact?))
     }
 

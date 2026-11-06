@@ -2820,3 +2820,48 @@ fn a_function_read_as_a_value_in_a_body_only_unchecked_roots_reach_names_the_las
         96
     );
 }
+
+const FLOAT_WIDTHS_BESIDE_A_REFUSAL: [&[&str]; 8] = [
+    &[
+        "state q(1.5)\n",
+        "fn f(a, b): a * 1e300 + b\n",
+        "Clip c:\n    Note/(f(q, 1e400))\n",
+    ],
+    &[
+        "state q(1.5)\n",
+        "fn f(a, b): a * 1e300 + b\n",
+        "Clip c:\n    Note/(i32(f(q, 1e400)))\n",
+    ],
+    &[
+        "state q(1.5)\n",
+        "fn f(a, b): a * 1e3 + b\n",
+        "Clip c:\n    Note/(i32(f(q, 1.5)))\n",
+    ],
+    &[
+        "state q(1.5)\n",
+        "fn f(a, b): a * 1e300 + b\n",
+        "Clip c:\n    Note | velocity=(f(q, 1))\n",
+    ],
+    &[
+        "state q(1.5)\n",
+        "let b = 1e400\n",
+        "Clip c:\n    Note/(q + b)\n",
+    ],
+    &[
+        "state q(1.5)\n",
+        "let b = 1e400\n",
+        "Clip c:\n    Note/(i32(q + b))\n",
+    ],
+    &[
+        "state q(1.5)\n",
+        "let b = 1e300\n",
+        "Clip c:\n    Note/(i32(q + b))\n",
+    ],
+    &["let b = 1e400\n", "Clip c:\n    Note/(i32(b))\n"],
+];
+
+#[test]
+fn a_call_reading_an_argument_cell_computes_in_f32_and_a_lets_float_literal_keeps_its_own_width_beside_a_refusal_and_its_repaired_twin_in_every_order_523()
+ {
+    assert_eq!(same_as_the_old_engine(&FLOAT_WIDTHS_BESIDE_A_REFUSAL), 174);
+}

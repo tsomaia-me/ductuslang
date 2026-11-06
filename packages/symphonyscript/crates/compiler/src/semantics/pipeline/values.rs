@@ -1820,13 +1820,23 @@ impl Core<'_> {
     }
 
     pub fn own_float(&self, root: u32) -> Result<EvalTy, Internal> {
-        for node in self.postorder(root)? {
-            let (op, a, _, _) = self.ir.node(node)?;
-            if op == Op::Float
-                && let Some(entry) = self.ir.floats.get(a as usize)
-                && entry.value.abs() > f64::from(f32::MAX)
-            {
-                return Ok(EvalTy::F64);
+        let (mut roots, mut seen) = (vec![root], std::collections::HashSet::new());
+        while let Some(root) = roots.pop() {
+            for node in self.postorder(root)? {
+                let (op, a, _, _) = self.ir.node(node)?;
+                if op == Op::Float
+                    && let Some(entry) = self.ir.floats.get(a as usize)
+                    && entry.value.abs() > f64::from(f32::MAX)
+                {
+                    return Ok(EvalTy::F64);
+                }
+                if op == Op::Name
+                    && let DeclRef::Let(at) = self.bound(node)?
+                    && self.fact(node)?.own().is_none()
+                    && seen.insert(at)
+                {
+                    roots.push(self.let_root(at)?);
+                }
             }
         }
         Ok(EvalTy::F32)
@@ -1907,7 +1917,7 @@ impl Core<'_> {
         }
         Ok(match fact.leaf {
             Leaf::Empty | Leaf::Int => Some(EvalTy::Exact),
-            Leaf::Float => Some(self.own_float(node)?),
+            Leaf::Float => Some(self.float_of(node)?),
             Leaf::Bool => Some(EvalTy::Bool),
             Leaf::Enum(Some(id)) => Some(EvalTy::Enum(id)),
             Leaf::Placeholder | Leaf::Error | Leaf::Enum(None) => None,
@@ -2273,11 +2283,23 @@ impl Core<'_> {
                     }
                     if let Some(body) = self.body_of_call(node) {
                         let value = self.body_value(body)?;
+                        let width = self.call_widths.get(&(self.inst_key(node)?, node)).copied();
                         leaves.push(std::mem::replace(&mut self.inst, body));
                         self.push_call(node);
                         self.own_calls.push((node, body, args));
                         stack.push((NONE, false));
                         stack.push((value, false));
+                        if let Some(width) = width
+                            && width == EvalTy::F32
+                            && self.is_reactive(value)?
+                            && self.own_ty(value)? == Some(EvalTy::F64)
+                        {
+                            stack.pop();
+                            let outcome = self.evaluate(value, width);
+                            if let Err(declined) = outcome? {
+                                return Ok(Err(declined));
+                            }
+                        }
                     }
                 }
                 Op::For => {
@@ -2747,6 +2769,9 @@ fn float_fn64(name: &str, x: f64) -> f64 {
 
 impl Core<'_> {
     fn body_float(&mut self, call: u32) -> Result<Option<EvalTy>, Internal> {
+        if let Some(width) = self.call_widths.get(&(self.inst_key(call)?, call)) {
+            return Ok(Some(*width));
+        }
         let Some(body) = self.body_of_call(call) else {
             return Ok(None);
         };
@@ -2755,5 +2780,30 @@ impl Core<'_> {
         let own = self.own_ty(value);
         self.inst = outer;
         Ok(own?.filter(|ty| matches!(ty, EvalTy::F32 | EvalTy::F64)))
+    }
+}
+
+impl Core<'_> {
+    fn float_of(&self, node: u32) -> Result<EvalTy, Internal> {
+        if matches!(self.ir.node(node)?.0, Op::Call | Op::NamedCall)
+            && let Some(width) = self.call_widths.get(&(self.inst_key(node)?, node))
+        {
+            return Ok(*width);
+        }
+        self.own_float(node)
+    }
+
+    pub fn reactive_width(&self, value: u32) -> Result<EvalTy, Internal> {
+        if let Some(own) = self.fact(value)?.own() {
+            return Ok(own);
+        }
+        let (host, derived) = self.reactive_reads(value)?;
+        let argument = !host && !derived;
+        let literal = self.own_float(value)? == EvalTy::F64;
+        Ok(if host || literal && (!argument || derived) {
+            EvalTy::F64
+        } else {
+            EvalTy::F32
+        })
     }
 }
