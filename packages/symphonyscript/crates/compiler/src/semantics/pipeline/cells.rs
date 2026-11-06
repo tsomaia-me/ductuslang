@@ -8,7 +8,7 @@ use super::width::widens;
 use crate::diagnostics::Code;
 use crate::semantics::Internal;
 use crate::semantics::ir::flat::{NONE, Op, TopRec};
-use crate::semantics::operators::{EvalTy, Value, int_range};
+use crate::semantics::operators::{EvalTy, Value, int_range, ty_name};
 
 impl Core<'_> {
     pub fn cell_root(&self, at: u32) -> Result<u32, Internal> {
@@ -302,15 +302,41 @@ impl Core<'_> {
                 .rev()
                 .find_map(|at| reads.get(*at).copied().flatten())
         };
-        let integer = self.fact(rec.rule)?.leaf == Leaf::Int;
+        let fact = self.fact(rec.rule)?;
+        let integer = fact.leaf == Leaf::Int;
+        let flexible_rule = integer
+            && fact.fixed.is_none()
+            && fact.dims.is_empty()
+            && !self.is_reactive(rec.rule)?
+            && !self.is_kept(rec.rule)?;
         let runs = [
             reads.first().copied().flatten(),
             widest(&[1, 2]).filter(|_| !integer),
             reads.get(3).copied().flatten(),
-            widest(&[4, 5, 6]),
+            widest(&[4, 5, 6]).or(flexible_rule.then_some((EvalTy::I32, false))),
         ];
         for (ty, unflowed) in runs.into_iter().flatten() {
             if matches!(ty, EvalTy::Exact | EvalTy::Default) {
+                continue;
+            }
+            if flexible_rule && let Some(range) = int_range(ty) {
+                let chain = std::mem::take(&mut self.eval_chain);
+                let (drawn, stop) = (self.diagnostics.len(), self.stop.clone());
+                let value = self.evaluate(rec.rule, EvalTy::Exact);
+                self.diagnostics.truncate(drawn);
+                self.stop = stop;
+                self.eval_chain = chain;
+                match value? {
+                    Ok(Value::Int(value)) if !range.contains(&value) => {
+                        self.draw_at(
+                            Code::DoesNotFit,
+                            rec.rule,
+                            format!("this value does not fit `{}`", ty_name(ty)),
+                        )?;
+                    }
+                    Ok(_) => {}
+                    Err(declined) => return Ok(Err(declined)),
+                }
                 continue;
             }
             if unflowed {

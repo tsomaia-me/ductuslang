@@ -2131,3 +2131,44 @@ fn a_cells_size_is_its_length_known_at_compile_time_or_a_runtime_i32_bounded_by_
  {
     assert_eq!(same_as_the_old_engine(&CELL_SIZES), 168);
 }
+
+const FLEXIBLE_RULES: [&[&str]; 10] = [
+    &["state n = 2 + 3000000000\n", "Clip c:\n    Note/n\n"],
+    &[
+        "state xs([1, 2])\nstate n = xs.size + 3000000000\n",
+        "Clip c:\n    Note/n\n",
+    ],
+    &[
+        "state n = 3000000000 - 3000000000\n",
+        "Clip c:\n    Note/n\n",
+    ],
+    &[
+        "state n = [1, 2][5] + 3000000000\n",
+        "Clip c:\n    Note/n\n",
+    ],
+    &["state n = 2 + 3000000000\n", "Clip c:\n    Note/(u8(n))\n"],
+    &[
+        "state n = 2 + 3000000000\nlet m = 3\n",
+        "Clip c:\n    Note/(n + m)\n",
+    ],
+    &[
+        "state n = 2 + 30\n",
+        "state k = n + 3000000000\n",
+        "Clip c:\n    Note/k\n",
+    ],
+    &[
+        "state n = 2 + 3000000000\n",
+        "Clip c:\n    Note | velocity=n\n",
+    ],
+    &[
+        "state n = 3000000000\nstate m = n\n",
+        "Clip c:\n    Note/(u8(m))\n",
+    ],
+    &["state n = 3000000000\n", "Clip c:\n    Note/(i64(n))\n"],
+];
+
+#[test]
+fn a_derived_cells_flexible_compile_time_rule_fits_its_width_whole_as_the_old_engine_does_beside_a_valid_twin_in_every_order()
+ {
+    assert_eq!(same_as_the_old_engine(&FLEXIBLE_RULES), 78);
+}
