@@ -612,7 +612,7 @@ impl Core<'_> {
                     self.ty_text(ty)?
                 );
                 self.draw_at_root(Code::TypeMismatch, root, summary)?;
-                return Ok(Ok(()));
+                return self.own_check(root);
             }
             Leaf::Placeholder | Leaf::Error if !fact.node => return self.detached(root, name, ty),
             _ if !fact.dims.is_empty() => {
