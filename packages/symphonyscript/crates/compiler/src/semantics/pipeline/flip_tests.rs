@@ -1022,62 +1022,7 @@ fn drawn_codes(rows: &[(&[&str], &[Code])]) -> usize {
     programs
 }
 
-const PLACEHOLDER_GATES: [(&[&str], &[Code]); 12] = [
-    (&["Clip c:\n    Note when q > 1\n"], &[Code::UnknownName]),
-    (
-        &[
-            "state s(1)\n",
-            "Clip c:\n    Note when q + s > 3000000000\n",
-        ],
-        &[Code::UnknownName],
-    ),
-    (&["Clip c:\n    Note/60 when nope\n"], &[Code::UnknownName]),
-    (
-        &["Plant boiler:\n    when nope:\n        Valve/0.3\n"],
-        &[Code::UnknownName],
-    ),
-    (
-        &["Clip c:\n    Note when (u8(if q then true else Wave::Saw))\n"],
-        &[Code::ConditionType, Code::TypeMismatch, Code::UnknownName],
-    ),
-    (
-        &["Clip c:\n    Note when (u8(if q then 1.5 else 1))\n"],
-        &[Code::ConditionType, Code::UnknownName],
-    ),
-    (
-        &["Clip c:\n    Note when ((300000000000 - 1.5) % (if [1, 2] then q else i32(true)))\n"],
-        &[
-            Code::ConditionType,
-            Code::ConversionType,
-            Code::DoesNotFit,
-            Code::UnknownName,
-        ],
-    ),
-    (
-        &[
-            "Clip c:\n    Note when (if (1 div i32(true)) then (if [1, 2] then q else q) else (q or [1, 2]))\n",
-        ],
-        &[
-            Code::ArrayOperand,
-            Code::ConditionType,
-            Code::ConditionType,
-            Code::ConversionType,
-            Code::UnknownName,
-            Code::UnknownName,
-            Code::UnknownName,
-        ],
-    ),
-    (
-        &["Clip c:\n    Note when (if q then 1 else 2)\n"],
-        &[Code::ConditionType, Code::UnknownName],
-    ),
-    (
-        &[
-            "state note(60)\n",
-            "Clip c:\n    Note when (if q then 300000000000 else [1, 2][5])\n",
-        ],
-        &[Code::ConditionType, Code::UnknownName],
-    ),
+const REFUSED_CHOICE_GATES: [(&[&str], &[Code]); 2] = [
     (
         &["Clip c:\n    Note when (if 1 then 1 else 2)\n"],
         &[Code::ConditionType, Code::ConditionType],
@@ -1089,9 +1034,9 @@ const PLACEHOLDER_GATES: [(&[&str], &[Code]); 12] = [
 ];
 
 #[test]
-fn a_gate_holding_an_unknown_name_or_a_choice_beside_its_refused_condition_is_checked_as_a_bool_by_the_twin_pass_in_every_order()
+fn a_non_bool_gate_choice_beside_its_refused_condition_draws_condition_type_at_the_gate_in_every_order()
  {
-    assert_eq!(drawn_codes(&PLACEHOLDER_GATES), 32);
+    assert_eq!(drawn_codes(&REFUSED_CHOICE_GATES), 4);
 }
 
 const MEMBERS_WITH_BODIES: [&[&str]; 9] = [
@@ -1165,7 +1110,7 @@ const NAMES_THAT_ARE_NO_VALUES: [&[&str]; 9] = [
     &["Clip a:\n    Note/(Plays)\n"],
     &["Clip c:\n    Note/(sin + 1.5)\n"],
     &["state s(Lamp)\n", "Clip c:\n    Note/(s)\n"],
-    &["Clip c:\n    Note when Lamp\n    Note/([Lamp, 2][5])\n"],
+    &["Clip c:\n    Note/([Lamp, 2][5])\n"],
 ];
 
 #[test]

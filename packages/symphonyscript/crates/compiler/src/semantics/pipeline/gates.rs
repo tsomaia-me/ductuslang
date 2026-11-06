@@ -1,8 +1,11 @@
 use super::core::{Core, Stage};
+use super::decl_ref::DeclRef;
+use super::declined::Declined;
 use super::fact::Fact;
 use super::leaf::Leaf;
+use super::reason::Reason;
 use crate::diagnostics::Code;
-use crate::semantics::ir::flat::NONE;
+use crate::semantics::ir::flat::{NONE, Op};
 use crate::semantics::operators::EvalTy;
 
 impl Core<'_> {
@@ -14,6 +17,17 @@ impl Core<'_> {
             Ok(fact) => fact,
             Err(declined) => return Ok(Err(declined)),
         };
+        for node in self.postorder(root)? {
+            let unknown = self.ir.node(node)?.0 == Op::Name
+                && self.bound(node)? == DeclRef::None
+                && !self.is_bare(node)
+                && !self.pi.contains(&node);
+            if unknown
+                || (self.fact(node)?.leaf == Leaf::Placeholder && !self.is_history_target(node))
+            {
+                return Ok(Err(Declined(Reason::BodyItem)));
+            }
+        }
         if !fact.dims.is_empty() {
             let value = if self.variable_length(root)? {
                 "a variable array"
