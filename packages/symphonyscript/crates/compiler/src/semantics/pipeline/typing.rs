@@ -453,6 +453,13 @@ impl Core<'_> {
                 Err(declined) => return Ok(Err(declined)),
             },
             Op::Field if self.array_members.contains_key(&node) => Fact::scalar(Leaf::Int),
+            Op::Field if self.cell_sizes.contains_key(&node) => {
+                let at = self.cell_sizes.get(&node).copied().unwrap_or(NONE);
+                match self.cell_size_fact(node, at)? {
+                    Ok(fact) => fact,
+                    Err(declined) => return Ok(Err(declined)),
+                }
+            }
             Op::Field => match self.path_read(node)?.cloned() {
                 Some(read) if read.cyclic => Fact::PLACEHOLDER,
                 Some(read) => {
@@ -1311,5 +1318,51 @@ impl Core<'_> {
             "a value holding node references reads no cell; write the choice in the destination",
         );
         Ok(true)
+    }
+}
+
+impl Core<'_> {
+    fn cell_size_fact(&mut self, node: u32, at: u32) -> Stage<Fact> {
+        let (_, _, field, _) = self.ir.node(node)?;
+        let text = self.ir.name_text(field).unwrap_or_default().to_string();
+        if let Some(uses) = self.cell_uses.get_mut(at as usize) {
+            uses[0] = true;
+        }
+        if self.derived(at) && !self.has_fact(self.cell_root(at)?)? {
+            return Ok(Ok(Fact::PLACEHOLDER));
+        }
+        let fact = self.cell_read_fact(at)?;
+        if matches!(fact.leaf, Leaf::Placeholder | Leaf::Error) {
+            return Ok(Ok(Fact::PLACEHOLDER));
+        }
+        match fact.dims.first().copied() {
+            None => {
+                let declared = self
+                    .ir
+                    .name(field)
+                    .and_then(|entry| self.decl.get(entry.sym.0 as usize))
+                    .is_some_and(|decl| *decl != DeclRef::None);
+                if declared {
+                    return Ok(Err(Declined(Reason::Member)));
+                }
+                self.draw_at(
+                    Code::UnknownAttribute,
+                    node,
+                    format!(
+                        "`.{text}` reads an attribute of an instance or a wire, and this is a value"
+                    ),
+                )?;
+                Ok(Ok(Fact::PLACEHOLDER))
+            }
+            Some(ANY_LENGTH) if text == "size" => {
+                self.runtime_members.insert(node);
+                Ok(Ok(Fact::fixed(Leaf::Int, Some(EvalTy::I32))))
+            }
+            Some(ANY_LENGTH) => Ok(Err(Declined(Reason::Member))),
+            Some(length) => {
+                self.array_members.insert(node, i128::from(length));
+                Ok(Ok(Fact::scalar(Leaf::Int)))
+            }
+        }
     }
 }

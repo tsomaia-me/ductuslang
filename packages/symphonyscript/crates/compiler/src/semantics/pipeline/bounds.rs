@@ -84,6 +84,17 @@ impl Core<'_> {
                 let left = self.extremes_at(a, depth + 1)?;
                 left.sum(self.extremes_at(b, depth + 1)?)
             }
+            Op::Field if self.runtime_members.contains(&node) => {
+                let cell = self.cell_sizes.get(&node).copied().unwrap_or(0);
+                let capacity = match self.cell_capacity_annotation(cell)? {
+                    Some(capacity) => Some(i128::from(capacity)),
+                    None => self.cell_capacities.get(&cell).copied(),
+                };
+                Extremes {
+                    min: Some(0),
+                    max: capacity,
+                }
+            }
             Op::Sub => {
                 let left = self.extremes_at(a, depth + 1)?;
                 left.difference(self.extremes_at(b, depth + 1)?)

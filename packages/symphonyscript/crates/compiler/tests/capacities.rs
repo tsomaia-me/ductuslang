@@ -754,7 +754,8 @@ fn exhaustive_a_history_reads_provisional_kind_leaves_no_diagnostic_behind() {
 }
 
 #[test]
-fn a_history_read_of_a_let_whose_initializer_drew_an_error_draws_nothing_of_its_own() {
+fn a_history_read_of_a_let_whose_initializer_drew_an_error_draws_history_target_as_its_repaired_twin_does()
+ {
     let rows: &[support::Row] = &[
         (
             &[
@@ -763,7 +764,10 @@ fn a_history_read_of_a_let_whose_initializer_drew_an_error_draws_nothing_of_its_
                 "state s = (t.past(1, []) + [note])[^8..]\n",
                 "Clip c:\n    Note/(s.size)\n",
             ],
-            &[(Code::UnknownName, "zzz")],
+            &[
+                (Code::UnknownName, "zzz"),
+                (Code::HistoryTarget, "t.past(1, [])"),
+            ],
         ),
         (
             &[
@@ -772,7 +776,11 @@ fn a_history_read_of_a_let_whose_initializer_drew_an_error_draws_nothing_of_its_
                 "state s = (t.past(1, []) + [note])[^8..]\n",
                 "Clip c:\n    Note/(s.size)\n",
             ],
-            &[(Code::OperandType, "note + true")],
+            &[
+                (Code::ReactiveLet, "t"),
+                (Code::OperandType, "note + true"),
+                (Code::HistoryTarget, "t.past(1, [])"),
+            ],
         ),
         (
             &[
@@ -781,7 +789,11 @@ fn a_history_read_of_a_let_whose_initializer_drew_an_error_draws_nothing_of_its_
                 "state s = (t.past(1, []) + [note])[^8..]\n",
                 "Clip c:\n    Note/(s.size)\n",
             ],
-            &[(Code::UnknownName, "zzz")],
+            &[
+                (Code::ReactiveLet, "t"),
+                (Code::UnknownName, "zzz"),
+                (Code::HistoryTarget, "t.past(1, [])"),
+            ],
         ),
         (
             &[
@@ -3703,7 +3715,7 @@ fn exhaustive_differential_capacities_unit_rows() {
         a_history_reads_fallback_takes_the_cells_type();
         a_history_read_has_its_cells_kind_for_an_input_a_let_and_a_state();
         a_history_reads_provisional_kind_leaves_no_diagnostic_behind();
-        a_history_read_of_a_let_whose_initializer_drew_an_error_draws_nothing_of_its_own();
+        a_history_read_of_a_let_whose_initializer_drew_an_error_draws_history_target_as_its_repaired_twin_does();
         a_history_read_of_a_derived_state_has_its_layout_433();
         a_chain_of_slices_keeps_its_capacity_and_its_length();
         a_history_read_counts_as_an_operand_of_its_cells_integer_width();

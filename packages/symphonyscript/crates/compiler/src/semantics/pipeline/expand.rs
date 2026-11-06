@@ -499,33 +499,29 @@ impl Core<'_> {
         if !self.placement(item)?.inline {
             return Ok(None);
         }
-        for rec in &self.ir.items {
-            let ItemRec::Line(range) = rec else {
-                continue;
-            };
-            let members = self
-                .ir
-                .members
-                .get(range.0 as usize..range.1 as usize)
-                .unwrap_or_default();
-            let Some(position) = members.iter().position(|member| {
-                *member == item
-                    || matches!(self.ir.item(*member), Ok(ItemRec::Paren(inner)) if *inner == item)
-            }) else {
-                continue;
-            };
-            let Some(previous) = position.checked_sub(1).and_then(|at| members.get(at)) else {
-                return Ok(None);
-            };
-            if let Ok(ItemRec::Placement(earlier)) = self.ir.item(*previous)
-                && !self.ir.named(earlier.as_name)
-                && let Some(text) = self.ir.name_text(earlier.kind)
-            {
-                return Ok(Some(format!(
-                    "to name the placement, write `{text} as {kind}`"
-                )));
-            }
+        let Some(position) = self.ir.members.iter().position(|member| {
+            *member == item
+                || matches!(self.ir.item(*member), Ok(ItemRec::Paren(inner)) if *inner == item)
+        }) else {
             return Ok(None);
+        };
+        let Some(previous) = position
+            .checked_sub(1)
+            .and_then(|at| self.ir.members.get(at))
+        else {
+            return Ok(None);
+        };
+        let earlier = match self.ir.item(*previous) {
+            Ok(ItemRec::Paren(inner)) => self.ir.item(*inner),
+            other => other,
+        };
+        if let Ok(ItemRec::Placement(earlier)) = earlier
+            && !self.ir.named(earlier.as_name)
+            && let Some(text) = self.ir.name_text(earlier.kind)
+        {
+            return Ok(Some(format!(
+                "to name the placement, write `{text} as {kind}`"
+            )));
         }
         Ok(None)
     }

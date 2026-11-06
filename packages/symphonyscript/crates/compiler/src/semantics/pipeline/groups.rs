@@ -49,6 +49,12 @@ impl Core<'_> {
                     found.sources.push(Source::Fn(function));
                 }
                 if op == Op::Field
+                    && let Some(cell) = self.cell_sizes.get(&node)
+                {
+                    found.cells.push(*cell);
+                    continue;
+                }
+                if op == Op::Field
                     && let Some(root) = self.read_root(node)?
                 {
                     found.sources.push(Source::Root(root));

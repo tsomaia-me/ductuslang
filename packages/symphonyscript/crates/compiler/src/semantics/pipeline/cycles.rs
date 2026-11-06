@@ -61,6 +61,10 @@ impl Core<'_> {
                         | DeclRef::Fn(_)
                         | DeclRef::Pattern(_) => {}
                     }
+                } else if op == Op::Field
+                    && let Some(cell) = self.cell_sizes.get(&node)
+                {
+                    reads.push(cells + cell);
                 } else if op == Op::Field {
                     for read in self.node_reads(node)? {
                         reads.push(lets + read);

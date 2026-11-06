@@ -1974,7 +1974,11 @@ fn an_integer_array_attribute_whose_value_is_a_compile_time_array_draws_its_shap
     assert_eq!(programs, 19);
 }
 
-const UNKNOWN_MEMBER_KINDS: [&[&str]; 10] = [
+const UNKNOWN_MEMBER_KINDS: [&[&str]; 14] = [
+    &["Plant fill: Valve/0 Valvex/0.5 (Controller/0.4 | gain=0.5)\n"],
+    &["Plant fill: Valve/0 Valve/0.5 (Controller/0.4 | gain=0.5)bounded\n"],
+    &["Plant fill: Valve/0 Valve/0.5 (Controllerbounded /0.4 | gain=0.5)\n"],
+    &["Plant fill: Valve/0 Valve/0.5 x(Controller/0.4 | gain=0.5)\n"],
     &["Clip c: Nope/1\n"],
     &["Clip c:\n    [Note/1 Nope/2]\n"],
     &["Clip c:\n    Note/1 Nope/2\n"],
@@ -1990,7 +1994,7 @@ const UNKNOWN_MEMBER_KINDS: [&[&str]; 10] = [
 #[test]
 fn a_member_of_an_unknown_kind_draws_unknown_kind_with_the_old_engines_naming_hint_beside_a_valid_twin_in_every_order()
  {
-    assert_eq!(same_as_the_old_engine(&UNKNOWN_MEMBER_KINDS), 20);
+    assert_eq!(same_as_the_old_engine(&UNKNOWN_MEMBER_KINDS), 28);
 }
 
 const DIVIDED_INTEGER_LITERALS: [&[&str]; 16] = [
@@ -2052,4 +2056,78 @@ const DIVIDED_INTEGER_LITERALS: [&[&str]; 16] = [
 fn an_integer_literal_divided_states_its_fault_and_a_cell_divided_its_float_use_as_the_old_engine_does_beside_a_valid_twin_in_every_order()
  {
     assert_eq!(same_as_the_old_engine(&DIVIDED_INTEGER_LITERALS), 84);
+}
+
+const CELL_SIZES: [&[&str]; 16] = [
+    &[
+        "state held([]): i32[..10]\nstate step(0)\nstate note(60)\n",
+        "state played = held + [note]\n",
+        "Clip arp:\n    Note/(played[step % played.size])\n",
+    ],
+    &[
+        "state held([]): i32[..10]\n",
+        "Clip c:\n    Note/(held.size + 3000000000)\n",
+    ],
+    &[
+        "state held([]): i32[..10]\n",
+        "Clip c:\n    Note | velocity=(held.size / 2)\n",
+    ],
+    &[
+        "state held([]): i32[..10]\nlet n = held.size\n",
+        "Clip c:\n    Note/n\n",
+    ],
+    &[
+        "state held([]): i32[..10]\nfn f(): held.size\n",
+        "Clip c:\n    Note/(f())\n",
+    ],
+    &[
+        "state steps([true, false, true])\n",
+        "Clip c:\n    Note/(steps.size)\n",
+    ],
+    &[
+        "state steps([1, 2, 3])\nstate a = steps.size\n",
+        "Clip c:\n    Note/a\n",
+    ],
+    &[
+        "state a = b.size\n",
+        "state b = [a]\n",
+        "Clip c:\n    Note/a\n",
+    ],
+    &[
+        "state held([]): i32[..10]\n",
+        "Clip c:\n    Note/(held.size.size)\n",
+    ],
+    &[
+        "state held([]): i32[..10]\n",
+        "Clip c:\n    Note | accent=(held.size > 2)\n",
+    ],
+    &["state x(1)\n", "Clip c:\n    Note/(x.size)\n"],
+    &[
+        "state xs([1, 2])\n",
+        "Clip c:\n    Note/(xs.capacity + xs.size + 3000000000)\n",
+    ],
+    &[
+        "state note(60)\nstate ys = [note, note]\n",
+        "Clip c:\n    Note/(ys.size)\n",
+    ],
+    &[
+        "state held([]): i32[..10]\n",
+        "state recent = (recent.past(1, []) + held)[^4..]\n",
+        "Clip c:\n    Note/(recent.size)\n",
+    ],
+    &[
+        "state xs([1.5, 2.5])\n",
+        "Clip c:\n    Note | velocity=(xs[0])\n    Note/(xs.size)\n",
+    ],
+    &[
+        "state a([]): i32[..5]\n",
+        "state probe: i32[..3] = a[..a.size - 1]\n",
+        "Clip c:\n    Note/(probe[0])\n",
+    ],
+];
+
+#[test]
+fn a_cells_size_is_its_length_known_at_compile_time_or_a_runtime_i32_bounded_by_its_capacity_beside_a_valid_twin_in_every_order()
+ {
+    assert_eq!(same_as_the_old_engine(&CELL_SIZES), 168);
 }

@@ -4352,6 +4352,28 @@ fn history_of_a_faulty_line_name(seen: &Seen<'_>, change: Change, at: &Drawn) ->
         && faulty_line_names(seen).contains(&name)
 }
 
+fn history_of_a_faulty_let(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
+    let text = seen.text(at);
+    let Some((name, _)) = text.split_once('.') else {
+        return false;
+    };
+    let head = format!("let {name} = ");
+    change == Change::Added
+        && at.0 == "history-target"
+        && (text.ends_with(".stepped") || text.contains(".past("))
+        && lines_at(seen.program).into_iter().any(|(start, line)| {
+            let end = start + line.len();
+            line.starts_with(&head)
+                && seen.old.iter().any(|drawn| {
+                    drawn.1 >= start + head.len() && drawn.2 <= end && drawn.0 != "reactive-let"
+                })
+                && !seen
+                    .new
+                    .iter()
+                    .any(|drawn| drawn.0 == "reactive-let" && drawn.1 == start + 4)
+        })
+}
+
 fn to_through_a_faulty_line_name(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
     let names = faulty_line_names(seen);
     change == Change::Removed
@@ -5315,6 +5337,11 @@ pub const CLASSES: &[Class] = &[
         ledger: "476",
         rule: "a history read of a name declared by a placement on a line holding a syntax fault draws nothing, the name being a placeholder wherever it is used (ARCHITECTURE §7), where the old engine draws history-target at it (`xstate gate(false)` with `gate.past(2)`)",
         explains: history_of_a_faulty_line_name,
+    },
+    Class {
+        ledger: "476",
+        rule: "a history read of a top-level let whose value drew a fault draws history-target, as the program with the value repaired to a valid compile-time value does (DECISIONS.md 2026-11-03: a diagnostic stands beside another fault exactly when the repaired program still draws it; a let has no history whatever its value holds), where the old engine draws nothing at the read (`let t = zzz` with `t.past(1, [])`)",
+        explains: history_of_a_faulty_let,
     },
     Class {
         ledger: "476",

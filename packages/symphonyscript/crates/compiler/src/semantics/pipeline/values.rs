@@ -725,6 +725,7 @@ impl Core<'_> {
                     }
                     if op == Op::Field
                         && (self.array_members.contains_key(&node)
+                            || self.runtime_members.contains(&node)
                             || self.bare_cell_read(node)?.is_some())
                     {
                         let Some(frame) = frames.last_mut() else {
@@ -1523,6 +1524,7 @@ impl Core<'_> {
             }
             Op::Stepped => Value::Error,
             Op::Variant => self.variant_value(node)?,
+            Op::Field if self.runtime_members.contains(&node) => Value::Error,
             Op::Field if self.array_members.contains_key(&node) => {
                 Value::Int(self.array_members.get(&node).copied().unwrap_or(0))
             }

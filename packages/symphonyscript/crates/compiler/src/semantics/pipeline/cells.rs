@@ -97,6 +97,9 @@ impl Core<'_> {
                 | DeclRef::Pattern(_) => false,
             });
         }
+        if op == Op::Field && self.cell_sizes.contains_key(&node) {
+            return Ok(self.runtime_members.contains(&node));
+        }
         if op == Op::Field {
             let Some(root) = self.read_root(node)? else {
                 return Ok(self.to_choice(node).is_some());

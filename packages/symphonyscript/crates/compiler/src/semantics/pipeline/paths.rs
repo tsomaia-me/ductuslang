@@ -444,7 +444,8 @@ impl Core<'_> {
             if self.per_inst_paths.contains(&receiver) {
                 return Ok(Err(Declined(Reason::Member)));
             }
-            if self.array_members.contains_key(&receiver) {
+            if self.array_members.contains_key(&receiver) || self.cell_sizes.contains_key(&receiver)
+            {
                 let text = self.ir.name_text(field).unwrap_or_default().to_string();
                 self.draw_at(
                     Code::UnknownAttribute,
@@ -1994,9 +1995,14 @@ impl Core<'_> {
 impl Core<'_> {
     fn cell_member(&mut self, at: u32, node: u32, field: u32) -> Stage<End> {
         let text = self.ir.name_text(field).unwrap_or_default().to_string();
+        let member = matches!(text.as_str(), "size" | "capacity");
         let annotation = self.ir.binder(self.cell_binder(at)?)?.annotation;
         if annotation == NONE {
-            return Ok(Err(Declined(Reason::Member)));
+            if !member {
+                return Ok(Err(Declined(Reason::Member)));
+            }
+            self.cell_sizes.insert(node, at);
+            return Ok(Ok(End::Value));
         }
         let (op, _, held, levels) = self.ir.node(annotation)?;
         let variable = op == Op::TyVar && text == "capacity";
@@ -2005,6 +2011,10 @@ impl Core<'_> {
             && held != ANY_LENGTH
             && matches!(text.as_str(), "size" | "capacity");
         if !(variable || fixed) {
+            if member && (op == Op::TyScalar || op == Op::TyVar && levels == 1) {
+                self.cell_sizes.insert(node, at);
+                return Ok(Ok(End::Value));
+            }
             return Ok(Err(Declined(Reason::Member)));
         }
         self.array_members.insert(node, i128::from(held));
