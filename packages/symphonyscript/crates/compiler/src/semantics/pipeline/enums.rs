@@ -111,7 +111,7 @@ impl Core<'_> {
                 Op::If => kid != a && (kid == b || kid == c),
                 Op::Is | Op::IsNot => true,
                 Op::Array | Op::Call | Op::NamedCall | Op::For => known.is_some(),
-                Op::Past => known.is_some() && kid == a,
+                Op::Past => known.is_some(),
                 Op::Index | Op::IndexFromEnd => {
                     known.is_some() && kid == a && !self.fact(kid)?.dims.is_empty()
                 }

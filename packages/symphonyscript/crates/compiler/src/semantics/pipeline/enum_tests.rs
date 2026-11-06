@@ -211,7 +211,23 @@ fn an_array_of_qualified_variants_is_built_joined_and_read_by_index_as_the_old_e
     }
 }
 
-const ENUMS_IN_BODIES: [(&str, &str); 13] = [
+const ENUMS_IN_BODIES: [(&str, &str); 17] = [
+    (
+        "state w(Wave::Saw)\n",
+        "Synth s:\n    Osc | wave=(w.past(1, Wave::Sine))\n",
+    ),
+    (
+        "state w(Wave::Saw)\n",
+        "Synth s:\n    Osc | wave=(w.past(1, Mode::Auto))\n",
+    ),
+    (
+        "state w(Wave::Saw)\nstate m = w.past(1, Wave::Sine)\n",
+        "Synth s:\n    Osc | wave=m\n",
+    ),
+    (
+        "state w(Wave::Saw)\n",
+        "Clip c:\n    Note/(w.past(2, Wave::Sine))\n",
+    ),
     (
         "state w(Wave::Saw)\n",
         "Clip c:\n    Note/(if w.past(1) is Saw then 1 else 2)\n",
