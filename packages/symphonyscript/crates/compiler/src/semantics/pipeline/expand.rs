@@ -70,7 +70,7 @@ impl Core<'_> {
             .filter(|_| !duplicated);
         let Some(kind) = found else {
             let reason = self.placement_kind_reason(kind_name);
-            if let Some(reason) = reason.or(placement.inline.then_some(Reason::BodyItem)) {
+            if let Some(reason) = reason {
                 return Ok(Err(Declined(reason)));
             }
             if parent != NONE {
@@ -82,7 +82,8 @@ impl Core<'_> {
                 self.unknown_kind = true;
                 self.unknown_wires = true;
             }
-            self.unknown_kind_drawn(file, placement.kind)?;
+            let hint = self.naming_hint(item, kind_name)?;
+            self.unknown_kind_hinted(file, placement.kind, hint)?;
             if placement.body != NONE
                 && let Err(declined) = self.unknown_body(placement.body, file)?
             {
@@ -180,22 +181,6 @@ impl Core<'_> {
             .blocks
             .get(body as usize)
             .ok_or(Internal::missed("IR block"))?;
-        for at in block.members.0..block.members.1 {
-            let member = self.ir.members.get(at as usize).copied().unwrap_or(NONE);
-            let member = match self.ir.item(member).copied() {
-                Ok(ItemRec::Paren(inner)) => inner,
-                _ => member,
-            };
-            if let Ok(ItemRec::Placement(placement)) = self.ir.item(member).copied() {
-                let known = self
-                    .ir
-                    .name_text(placement.kind)
-                    .is_some_and(|kind| self.vocabulary.node_kind_named(kind).is_some());
-                if !known {
-                    return Ok(Err(Declined(Reason::BodyItem)));
-                }
-            }
-        }
         let mut work = vec![
             Work::Members(block.members.0, block.members.1, record.env),
             Work::Items(block.items.0, block.items.1, record.env),
@@ -456,6 +441,15 @@ impl Core<'_> {
 
 impl Core<'_> {
     pub fn unknown_kind_drawn(&mut self, file: u32, name: u32) -> Result<(), Internal> {
+        self.unknown_kind_hinted(file, name, None)
+    }
+
+    fn unknown_kind_hinted(
+        &mut self,
+        file: u32,
+        name: u32,
+        hint: Option<String>,
+    ) -> Result<(), Internal> {
         let entry = *self.ir.name(name).ok_or(Internal::missed("IR name"))?;
         let found = self
             .decl
@@ -485,8 +479,55 @@ impl Core<'_> {
             format!("`{text}` is not a node kind or a pattern")
         };
         let span = self.name_span(file, name)?;
-        self.draw(crate::diagnostics::Code::UnknownKind, span, message);
+        match hint {
+            Some(hint) => {
+                let diagnostic = crate::diagnostics::Diagnostic::new(
+                    crate::diagnostics::Code::UnknownKind,
+                    span,
+                    message,
+                )
+                .with_help(hint);
+                let diagnostic = self.chained(diagnostic);
+                self.push_drawn(diagnostic);
+            }
+            None => self.draw(crate::diagnostics::Code::UnknownKind, span, message),
+        }
         Ok(())
+    }
+
+    fn naming_hint(&self, item: u32, kind: &str) -> Result<Option<String>, Internal> {
+        if !self.placement(item)?.inline {
+            return Ok(None);
+        }
+        for rec in &self.ir.items {
+            let ItemRec::Line(range) = rec else {
+                continue;
+            };
+            let members = self
+                .ir
+                .members
+                .get(range.0 as usize..range.1 as usize)
+                .unwrap_or_default();
+            let Some(position) = members.iter().position(|member| {
+                *member == item
+                    || matches!(self.ir.item(*member), Ok(ItemRec::Paren(inner)) if *inner == item)
+            }) else {
+                continue;
+            };
+            let Some(previous) = position.checked_sub(1).and_then(|at| members.get(at)) else {
+                return Ok(None);
+            };
+            if let Ok(ItemRec::Placement(earlier)) = self.ir.item(*previous)
+                && !self.ir.named(earlier.as_name)
+                && let Some(text) = self.ir.name_text(earlier.kind)
+            {
+                return Ok(Some(format!(
+                    "to name the placement, write `{text} as {kind}`"
+                )));
+            }
+            return Ok(None);
+        }
+        Ok(None)
     }
 }
 

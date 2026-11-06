@@ -155,7 +155,7 @@ fn a_flexible_comparison_operand_takes_its_default_float_type_and_a_value_that_d
     }
 }
 
-const DECLINED: [&str; 2] = ["Output :master\n", "Clip c: Nope/1\n"];
+const DECLINED: [&str; 1] = ["Output :master\n"];
 
 #[test]
 fn an_unknown_kind_at_a_top_level_placement_stays_with_the_old_engine() {

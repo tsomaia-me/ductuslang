@@ -1968,3 +1968,22 @@ fn an_integer_array_attribute_whose_value_is_a_compile_time_array_draws_its_shap
     }
     assert_eq!(programs, 19);
 }
+
+const UNKNOWN_MEMBER_KINDS: [&[&str]; 10] = [
+    &["Clip c: Nope/1\n"],
+    &["Clip c:\n    [Note/1 Nope/2]\n"],
+    &["Clip c:\n    Note/1 Nope/2\n"],
+    &["Clip c:\n    [Nope/(1 + true) Note/2]\n"],
+    &["Clip c:\n    Note/1 (Nope/2 | gain=x)\n"],
+    &["Clip c:\n    Note as n /1 Nope/2\n"],
+    &["Clip c:\n    Note/1 Note/2 Nope/3\n"],
+    &["Clip c:\n    Nope/1 Note/2\n"],
+    &["Clip c:\n    [Note/1 Lamp/2]\n"],
+    &["Clip c:\n    Note/1 Lamp/2\n"],
+];
+
+#[test]
+fn a_member_of_an_unknown_kind_draws_unknown_kind_with_the_old_engines_naming_hint_beside_a_valid_twin_in_every_order()
+ {
+    assert_eq!(same_as_the_old_engine(&UNKNOWN_MEMBER_KINDS), 20);
+}
