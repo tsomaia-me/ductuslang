@@ -835,3 +835,22 @@ fn a_bundle_member_using_a_pattern_that_expands_only_to_node_placements_draws_wh
  {
     assert_eq!(same_as_the_old_engine(&PATTERN_MEMBERS), 60);
 }
+
+const FAULTY_BUNDLES: [&[&str]; 7] = [
+    &["Rig r:\n    [Lamp/0.2 Lamp/(true + 1)\n"],
+    &["Rig r:\n    for i in 0..2:\n        [Lamp/0.2 Lamp/(i + true)\n"],
+    &[
+        "pattern P(default x):\n    [Lamp/x Lamp/0.3\n",
+        "Rig r:\n    P/0.5\n",
+    ],
+    &["Rig r:\n    [Lamp/0.2 Nope/1\n"],
+    &["Rig r:\n    [Lamp/0.2 Lamp/0.3 Lamp/\n"],
+    &["Clip c:\n    [Note/1 Note/2\n    Note/3\n"],
+    &["Rig r:\n    [Lamp/0.2 Lamp as a /0.3]\n    [Lamp/0.2 Lamp/0.3\n"],
+];
+
+#[test]
+fn a_bundle_holding_a_syntax_fault_draws_what_the_old_engine_draws_beside_a_valid_twin_in_every_order()
+ {
+    assert_eq!(same_as_the_old_engine(&FAULTY_BUNDLES), 18);
+}

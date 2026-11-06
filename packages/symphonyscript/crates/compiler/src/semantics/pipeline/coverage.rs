@@ -293,8 +293,7 @@ fn item_landed(
             .members
             .get(rec.members.0 as usize..rec.members.1 as usize)
             .unwrap_or_default();
-        return !rec.faulty
-            && rec.each.is_none()
+        return rec.each.is_none()
             && !members.is_empty()
             && members.iter().all(|member| {
                 let member = match ir.items.get(*member as usize) {
