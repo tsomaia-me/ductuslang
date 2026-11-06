@@ -1240,3 +1240,35 @@ fn an_instance_name_standing_as_a_whole_attribute_value_or_gate_draws_what_the_o
  {
     assert_eq!(same_as_the_old_engine(&INSTANCE_NAMES_AS_VALUES), 26);
 }
+
+const REFERENCE_OPERANDS: [&[&str]; 16] = [
+    &["Clip a:\n    Note/1\nClip c:\n    Note/(a + 1)\n"],
+    &["let q = c\nClip c:\n    Note/(if true then q else 1.5)\n"],
+    &["Clip a:\n    Note as h /1\nClip c | level=a.h:\n    Note/3\n"],
+    &["Clip c:\n    Note/(c + 1)\n"],
+    &["Clip c:\n    Note/(-c)\n"],
+    &["Clip c:\n    Note/(i32(c))\n"],
+    &["Clip c:\n    Note/(if true then c else 1)\n"],
+    &["Clip c:\n    Note/([c][0])\n"],
+    &["Clip c:\n    Note/(c > 1)\n"],
+    &["Clip c:\n    Note/(not c)\n"],
+    &["Clip c:\n    Note when (c and true)\n"],
+    &["Clip c:\n    Note when (true or c)\n"],
+    &["Clip c:\n    Note when c is c\n"],
+    &["Clip c:\n    Note | velocity=(c * 2.0)\n"],
+    &["Clip c:\n    Note/([c, c])\n    Note/([c, 1])\n"],
+    &["let x = c + 1\n", "Clip c:\n    Note/(x)\n"],
+];
+
+#[test]
+fn an_instance_name_as_an_operand_draws_the_operators_refusal_as_the_old_engine_does_beside_a_valid_twin_in_every_order()
+ {
+    assert_eq!(same_as_the_old_engine(&REFERENCE_OPERANDS), 36);
+    assert_eq!(
+        drawn_codes(&[(
+            &["let q = c\nClip c:\n    Note | velocity=(if 1 then true else q)\n"],
+            &[Code::ConditionType, Code::TypeMismatch]
+        )]),
+        2
+    );
+}

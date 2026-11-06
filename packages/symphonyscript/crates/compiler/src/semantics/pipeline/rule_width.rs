@@ -169,10 +169,7 @@ impl Core<'_> {
 }
 
 impl Core<'_> {
-    pub fn placed_name_root(&self, root: u32) -> Result<bool, Internal> {
-        if self.ir.node(root)?.0 != Op::Name {
-            return Ok(false);
-        }
+    pub fn placed_root(&self, root: u32) -> Result<bool, Internal> {
         if self
             .ir
             .cells

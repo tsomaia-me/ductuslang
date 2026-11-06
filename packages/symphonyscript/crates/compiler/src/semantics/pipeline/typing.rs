@@ -336,7 +336,7 @@ impl Core<'_> {
             references |= fact.node;
             self.set_fact(node, fact, reactive)?;
         }
-        if references && !self.holds_references(root) && !self.placed_name_root(root)? {
+        if references && !self.holds_references(root) && !self.placed_root(root)? {
             return Ok(Err(Declined(Reason::NameOfInstance)));
         }
         Ok(Ok(()))
@@ -1218,7 +1218,7 @@ pub(crate) fn unify(a: Leaf, b: Leaf) -> Option<Leaf> {
     }
 }
 
-fn operand_message(op: BinaryOp) -> &'static str {
+pub(super) fn operand_message(op: BinaryOp) -> &'static str {
     match op {
         BinaryOp::Add => "`+` takes two numbers or two strings",
         BinaryOp::Div => "`/` takes numbers",

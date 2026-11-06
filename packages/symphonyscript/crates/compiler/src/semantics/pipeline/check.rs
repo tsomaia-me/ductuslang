@@ -614,7 +614,7 @@ impl Core<'_> {
                 self.draw_at_root(Code::TypeMismatch, root, summary)?;
                 return Ok(Ok(()));
             }
-            Leaf::Placeholder | Leaf::Error => return self.detached(root, name, ty),
+            Leaf::Placeholder | Leaf::Error if !fact.node => return self.detached(root, name, ty),
             _ if !fact.dims.is_empty() => {
                 let variable = self.variable_length(root)?;
                 let held = self.ty_text(ty)?;
@@ -633,6 +633,7 @@ impl Core<'_> {
                 )?;
                 return self.own_check(root);
             }
+            Leaf::Placeholder | Leaf::Error => return self.detached(root, name, ty),
             Leaf::Bool | Leaf::Empty | Leaf::Int | Leaf::Float | Leaf::Enum(_) => {
                 if let Some((code, summary)) = self.leaf_refusal(root, &fact, ty)? {
                     self.draw_at_root(code, root, summary)?;
