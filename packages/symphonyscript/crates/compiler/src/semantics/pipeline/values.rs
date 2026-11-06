@@ -2234,12 +2234,20 @@ impl Core<'_> {
                 }
                 Op::Call | Op::NamedCall => {
                     let mut args = Vec::new();
+                    let body_float = self.body_float(node)?;
                     for arg in self.arguments(node)? {
                         let held = match self.own_ty(arg)? {
                             Some(own) if !self.is_kept(arg)? && !self.is_reactive(arg)? => {
                                 self.unflowed.insert(arg);
+                                let loose = self.fact(arg)?;
                                 let own = if self.flexible_integer(arg)? {
                                     flexible(own)
+                                } else if let Some(float) = body_float
+                                    && loose.fixed.is_none()
+                                    && loose.leaf == Leaf::Float
+                                    && loose.dims.is_empty()
+                                {
+                                    float
                                 } else {
                                     own
                                 };
@@ -2732,5 +2740,18 @@ fn float_fn64(name: &str, x: f64) -> f64 {
         "exp" => x.exp(),
         "log" => x.ln(),
         _ => f64::NAN,
+    }
+}
+
+impl Core<'_> {
+    fn body_float(&mut self, call: u32) -> Result<Option<EvalTy>, Internal> {
+        let Some(body) = self.body_of_call(call) else {
+            return Ok(None);
+        };
+        let value = self.body_value(body)?;
+        let outer = std::mem::replace(&mut self.inst, body);
+        let own = self.own_ty(value);
+        self.inst = outer;
+        Ok(own?.filter(|ty| matches!(ty, EvalTy::F32 | EvalTy::F64)))
     }
 }

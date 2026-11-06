@@ -2705,3 +2705,29 @@ fn a_member_of_a_body_let_holding_an_array_literal_is_its_length_beside_a_valid_
  {
     assert_eq!(same_as_the_old_engine(&BODY_LET_MEMBERS), 24);
 }
+
+const LOOSE_FLOAT_ARGUMENTS: [&[&str]; 5] = [
+    &[
+        "state q(1.5)\nfn f(a, b): a + b\n",
+        "Clip c:\n    Note/(f(q, 1e400))\n",
+    ],
+    &[
+        "state q(1.5)\nfn f(a, b): a + b\n",
+        "Clip c:\n    Note | velocity=(f(q, 1e400))\n",
+    ],
+    &[
+        "state q(1.5)\nfn f(a, b): a + b\n",
+        "Clip c:\n    Note/(f(q, 1e39))\n",
+    ],
+    &["fn f(a, b): a + b\n", "Clip c:\n    Note/(f(1.5, 1e400))\n"],
+    &[
+        "state q(1.5)\nfn f(a, b): a + b\n",
+        "Clip c:\n    Note | velocity=(f(q, 0.5))\n",
+    ],
+];
+
+#[test]
+fn a_loose_float_argument_beside_a_refused_call_is_read_in_its_bodys_float_width_beside_a_valid_twin_in_every_order()
+ {
+    assert_eq!(same_as_the_old_engine(&LOOSE_FLOAT_ARGUMENTS), 30);
+}
