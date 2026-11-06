@@ -525,7 +525,13 @@ impl Core<'_> {
                     stack.push((inner, scope));
                     continue;
                 }
-                ItemRec::Bundle(_) | ItemRec::Paren(_) => continue,
+                ItemRec::Bundle(_) => {
+                    for member in self.bundle_items(item) {
+                        stack.push((member, scope));
+                    }
+                    continue;
+                }
+                ItemRec::Paren(_) => continue,
             };
             for entry in self
                 .ir
@@ -587,11 +593,10 @@ impl Core<'_> {
                     .unwrap_or_default()
                     .to_vec(),
                 ItemRec::When(_) => self.when_members(child)?,
-                ItemRec::Placement(_)
-                | ItemRec::Wire(_)
-                | ItemRec::Bundle(_)
-                | ItemRec::For(_)
-                | ItemRec::Paren(_) => vec![child],
+                ItemRec::Bundle(_) => self.bundle_items(child),
+                ItemRec::Placement(_) | ItemRec::Wire(_) | ItemRec::For(_) | ItemRec::Paren(_) => {
+                    vec![child]
+                }
             };
             for member in members {
                 let member = match self.ir.item(member).copied() {

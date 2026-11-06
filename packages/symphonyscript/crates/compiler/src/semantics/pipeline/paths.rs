@@ -1197,7 +1197,8 @@ impl Core<'_> {
                 ),
                 ItemRec::When(_) => items.extend(self.when_items(item)),
                 ItemRec::Paren(inner) if inner != NONE => items.push(inner),
-                ItemRec::Wire(_) | ItemRec::Bundle(_) | ItemRec::For(_) | ItemRec::Paren(_) => {}
+                ItemRec::Bundle(_) => items.extend(self.bundle_items(item)),
+                ItemRec::Wire(_) | ItemRec::For(_) | ItemRec::Paren(_) => {}
             }
         }
         Ok(false)
@@ -1525,7 +1526,8 @@ impl Core<'_> {
                 ),
                 ItemRec::When(_) => items.extend(self.when_items(item)),
                 ItemRec::Paren(inner) if inner != NONE => items.push(inner),
-                ItemRec::Wire(_) | ItemRec::Bundle(_) | ItemRec::For(_) | ItemRec::Paren(_) => {}
+                ItemRec::Bundle(_) => items.extend(self.bundle_items(item)),
+                ItemRec::Wire(_) | ItemRec::For(_) | ItemRec::Paren(_) => {}
             }
         }
         Ok(None)
@@ -1690,7 +1692,8 @@ impl Core<'_> {
                 ),
                 ItemRec::When(_) => items.extend(self.when_items(item)),
                 ItemRec::Paren(inner) if inner != NONE => items.push(inner),
-                ItemRec::Wire(_) | ItemRec::Bundle(_) | ItemRec::For(_) | ItemRec::Paren(_) => {}
+                ItemRec::Bundle(_) => items.extend(self.bundle_items(item)),
+                ItemRec::Wire(_) | ItemRec::For(_) | ItemRec::Paren(_) => {}
             }
         }
         Ok(None)

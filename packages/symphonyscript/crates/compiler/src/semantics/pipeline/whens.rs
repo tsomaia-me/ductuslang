@@ -98,13 +98,32 @@ impl Core<'_> {
                     items.extend(inner);
                 }
                 ItemRec::Paren(inner) if inner != NONE => items.push(inner),
-                ItemRec::Placement(_)
-                | ItemRec::Wire(_)
-                | ItemRec::Bundle(_)
-                | ItemRec::For(_)
-                | ItemRec::Paren(_) => found.push(child),
+                ItemRec::Bundle(_) => {
+                    let mut inner = self.bundle_items(child);
+                    inner.reverse();
+                    items.extend(inner);
+                }
+                ItemRec::Placement(_) | ItemRec::Wire(_) | ItemRec::For(_) | ItemRec::Paren(_) => {
+                    found.push(child)
+                }
             }
         }
         Ok(found)
+    }
+}
+
+impl Core<'_> {
+    pub fn bundle_items(&self, item: u32) -> Vec<u32> {
+        let Ok(ItemRec::Bundle(rec)) = self.ir.item(item).copied() else {
+            return Vec::new();
+        };
+        self.ir
+            .members
+            .get(rec.members.0 as usize..rec.members.1 as usize)
+            .unwrap_or_default()
+            .iter()
+            .copied()
+            .filter(|member| *member != NONE)
+            .collect()
     }
 }

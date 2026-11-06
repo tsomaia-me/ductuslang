@@ -330,3 +330,40 @@ fn an_integer_loop_name_read_as_a_float_converts_and_a_value_that_does_not_fit_d
     }
     assert_eq!(programs, 16);
 }
+
+const BUNDLES: [&[&str]; 9] = [
+    &["Rig flash:\n    [Lamp/0.2 Lamp/0.5 Lamp/0.8]\n"],
+    &["Rig flash:\n    [Lamp/0.2 Lamp/(1 + true)]\n"],
+    &["Rig flash:\n    [Lamp/0.2 Note/1]\n"],
+    &["Rig flash:\n    [Lamp/0.2 (Lamp/0.5 | hue=true)]\n"],
+    &["Rig flash:\n    [Lamp/0.2 Nope/1]\n"],
+    &["Rig flash:\n    [Lamp/0.2]\n    [Lamp/0.4 Lamp/0.6]\n"],
+    &["Clip c:\n    [Note/1 Note/2 Note/3]\n    Note/4\n"],
+    &[
+        "state lit(0.5)\n",
+        "Rig flash:\n    [Lamp/lit (Lamp/0.5 | hue=lit)]\n",
+    ],
+    &["Rig flash:\n    when true:\n        [Lamp/0.2 Lamp/2]\n"],
+];
+
+#[test]
+fn a_bundles_members_are_children_of_its_parent_drawing_what_the_old_engine_draws_beside_a_valid_twin_in_every_order()
+ {
+    let vocabulary = symphonyscript_fixtures::vocabulary();
+    let old = Compiler::new(&vocabulary)
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
+    let new = Compiler::new(&vocabulary).expect("the vocabulary compiles");
+    let mut programs = 0;
+    for items in BUNDLES {
+        for text in twins(items) {
+            let sources = [source(&text)];
+            let found = new
+                .checked_by_new_core(&sources)
+                .unwrap_or_else(|| panic!("the new core takes {text}"));
+            assert_eq!(found, old.check(&sources), "{text}");
+            programs += 1;
+        }
+    }
+    assert_eq!(programs, 22);
+}

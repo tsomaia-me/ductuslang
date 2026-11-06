@@ -119,7 +119,11 @@ impl Core<'_> {
                     items.push(inner);
                     continue;
                 }
-                ItemRec::Bundle(_) | ItemRec::Paren(_) => continue,
+                ItemRec::Bundle(_) => {
+                    items.extend(self.bundle_items(item));
+                    continue;
+                }
+                ItemRec::Paren(_) => continue,
             };
             roots.extend([placement.default, placement.gate]);
             self.entry_roots(placement.attrs, roots);

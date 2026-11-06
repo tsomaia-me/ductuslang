@@ -51,7 +51,7 @@ pub(crate) fn item_slice(item: &ItemRec) -> Slice {
         ItemRec::For(_) | ItemRec::Line(_) => Slice::Three,
         ItemRec::When(_) => Slice::Flip,
         ItemRec::Paren(_) => Slice::Flip,
-        ItemRec::Bundle(_) => Slice::DefaultFlip,
+        ItemRec::Bundle(_) => Slice::Flip,
     }
 }
 
@@ -168,6 +168,13 @@ fn annotated(ir: &FlatIr, binder: u32) -> bool {
 fn line_members(ir: &FlatIr) -> Vec<u32> {
     let mut members = Vec::new();
     for item in &ir.items {
+        if let ItemRec::Bundle(rec) = item {
+            members.extend(
+                ir.members
+                    .get(rec.members.0 as usize..rec.members.1 as usize)
+                    .unwrap_or_default(),
+            );
+        }
         if let ItemRec::Paren(inner) = item {
             members.push(*inner);
         }
@@ -250,6 +257,26 @@ fn item_landed(
     }
     if let ItemRec::Paren(inner) = item {
         return *inner != NONE;
+    }
+    if let ItemRec::Bundle(rec) = item {
+        let members = ir
+            .members
+            .get(rec.members.0 as usize..rec.members.1 as usize)
+            .unwrap_or_default();
+        return !rec.faulty
+            && rec.each.is_none()
+            && !members.is_empty()
+            && members.iter().all(|member| {
+                let member = match ir.items.get(*member as usize) {
+                    Some(ItemRec::Paren(inner)) => inner,
+                    _ => member,
+                };
+                matches!(ir.items.get(*member as usize), Some(ItemRec::Placement(placement))
+                    if placement.body == NONE
+                        && ir
+                            .name(placement.kind)
+                            .is_none_or(|entry| patterns.binary_search(&entry.sym.0).is_err()))
+            });
     }
     if let ItemRec::When(rec) = item {
         return when_landed(ir, rec.arms, rec.otherwise)

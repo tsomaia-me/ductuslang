@@ -351,7 +351,12 @@ impl Core<'_> {
                     }
                 }
                 ItemRec::Paren(inner) if inner != NONE => work.push(Work::Item(inner, env)),
-                ItemRec::Bundle(_) | ItemRec::Paren(_) => {
+                ItemRec::Bundle(_) => {
+                    for member in self.bundle_items(item).into_iter().rev() {
+                        work.push(Work::Item(member, env));
+                    }
+                }
+                ItemRec::Paren(_) => {
                     return Ok(Err(Declined(Reason::BodyItem)));
                 }
             }
