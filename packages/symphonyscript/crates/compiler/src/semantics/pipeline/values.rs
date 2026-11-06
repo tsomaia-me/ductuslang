@@ -1746,7 +1746,10 @@ impl Core<'_> {
     fn quiet_pick(&self, read: u32) -> Result<bool, Internal> {
         let (_, a, _, _) = self.ir.node(read)?;
         Ok(match self.view(a)? {
-            Some((array, _)) => matches!(self.fact(array)?.leaf, Leaf::Placeholder | Leaf::Error),
+            Some((array, _)) => {
+                let fact = self.fact(array)?;
+                matches!(fact.leaf, Leaf::Placeholder | Leaf::Error) && !fact.node
+            }
             None => false,
         })
     }

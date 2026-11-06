@@ -1599,3 +1599,36 @@ fn a_fold_name_equal_to_a_pattern_draws_for_variable_clash_beside_a_valid_twin_i
         144
     );
 }
+
+const REFERENCE_ELEMENT_READS: [&[&str]; 8] = [
+    &["Clip c:\n    Note/1\n", "Clip k:\n    Note/([c, c][5])\n"],
+    &["Clip c:\n    Note/1\n", "Clip k:\n    Note/([c, c][1])\n"],
+    &["Clip c:\n    Note/1\n", "Clip k:\n    Note/([1, 2][5])\n"],
+    &[
+        "Clip c:\n    Note/1\n",
+        "Clip k:\n    Note when ([c, c][5])\n",
+    ],
+    &[
+        "Clip c:\n    Note/1\n",
+        "Clip k:\n    Note when ([c, c][0])\n",
+    ],
+    &[
+        "Clip c:\n    Note/1\n",
+        "let q = c\n",
+        "Clip k:\n    Note/([q, q][5])\n",
+    ],
+    &[
+        "Clip c:\n    Note/1\n",
+        "Clip k:\n    Note/(1 + [c, c][5])\n",
+    ],
+    &[
+        "Clip c:\n    Note/1\n",
+        "Clip k:\n    Note/(i32([c, c][5]))\n",
+    ],
+];
+
+#[test]
+fn a_reference_arrays_element_read_outside_it_draws_index_out_of_range_beside_its_type_fault_beside_a_valid_twin_in_every_order()
+ {
+    assert_eq!(same_as_the_old_engine(&REFERENCE_ELEMENT_READS), 66);
+}
