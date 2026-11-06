@@ -2224,7 +2224,16 @@ fn a_dot_call_of_a_source_function_is_the_call_with_its_receiver_first_beside_a_
     assert_eq!(same_as_the_old_engine(&DOT_CALLS), 72);
 }
 
-const FUNCTION_NAMES_AND_NON_FUNCTIONS: [&[&str]; 16] = [
+const FUNCTION_NAMES_AND_NON_FUNCTIONS: [&[&str]; 19] = [
+    &["pattern P(x):\n    Note/x\n", "Clip c:\n    Note/(P(1))\n"],
+    &[
+        "pattern P(x):\n    Note/x\n",
+        "Clip c:\n    Note/(P(1 + true))\n    P/2\n",
+    ],
+    &[
+        "pattern P(x):\n    Note/x\n",
+        "Clip c:\n    Note/(P(x=1))\n",
+    ],
     &["fn f(): 1\n", "Clip c:\n    Note/(f + 1)\n"],
     &["fn f(): 1\n", "Clip c:\n    Note/f\n"],
     &["fn f(): 1\n", "Clip c:\n    Note/([f, 2][0])\n"],
@@ -2251,7 +2260,7 @@ fn a_function_name_outside_a_callee_is_not_a_value_and_a_call_of_a_value_is_not_
  {
     assert_eq!(
         same_as_the_old_engine(&FUNCTION_NAMES_AND_NON_FUNCTIONS),
-        96
+        114
     );
 }
 

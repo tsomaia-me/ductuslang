@@ -910,7 +910,11 @@ impl Core<'_> {
         }
         Ok(matches!(
             self.bound(callee)?,
-            DeclRef::Let(_) | DeclRef::Cell(_) | DeclRef::Param(_) | DeclRef::Instance(_)
+            DeclRef::Let(_)
+                | DeclRef::Cell(_)
+                | DeclRef::Param(_)
+                | DeclRef::Instance(_)
+                | DeclRef::Pattern(_)
         ))
     }
 

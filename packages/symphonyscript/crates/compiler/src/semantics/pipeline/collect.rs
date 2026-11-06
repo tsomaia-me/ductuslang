@@ -277,6 +277,12 @@ impl Core<'_> {
         let mut enclosing = std::collections::HashMap::new();
         let type_operands = self.type_operands()?;
         let math_callees = self.math_callees()?;
+        let mut callees = std::collections::HashSet::new();
+        for local in 0..self.ir.op.len() {
+            if matches!(self.ir.op.get(local), Some(Op::Call | Op::NamedCall)) {
+                callees.insert(self.ir.a.get(local).copied().unwrap_or(NONE));
+            }
+        }
         for local in 0..self.ir.op.len() {
             if self.ir.op.get(local) != Some(&Op::Name)
                 || !self.reached.get(local).copied().unwrap_or(false)
@@ -318,7 +324,10 @@ impl Core<'_> {
                 | DeclRef::Param(_)
                 | DeclRef::Fn(_)
                 | DeclRef::Instance(_) => {}
-                DeclRef::Pattern(_) => return Ok(Err(Declined(Reason::PatternUse))),
+                DeclRef::Pattern(_) if !callees.contains(&node) => {
+                    return Ok(Err(Declined(Reason::PatternUse)));
+                }
+                DeclRef::Pattern(_) => {}
                 DeclRef::Duplicate => self.placeholders.push(node),
                 DeclRef::None => {
                     let text = self.ir.symbols.text(entry.sym).to_string();
