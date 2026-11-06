@@ -268,6 +268,38 @@ impl Core<'_> {
             }
             Op::And | Op::Or => vec![(a, EvalTy::Bool), (b, EvalTy::Bool)],
             Op::Not => vec![(a, EvalTy::Bool)],
+            Op::Call if self.math_name(node)?.is_some_and(super::calls::float_math) => {
+                let target = match ty {
+                    EvalTy::F32 | EvalTy::F64 => ty,
+                    _ => match self.fact(node)?.own() {
+                        Some(EvalTy::F64) => EvalTy::F64,
+                        _ => EvalTy::F32,
+                    },
+                };
+                let Some(arg) = self.arguments(node)?.first().copied() else {
+                    return Err(Internal::missed("a math argument"));
+                };
+                self.unflowed.insert(arg);
+                let fact = self.fact(arg)?;
+                match (fact.fixed, fact.read) {
+                    _ if fact.leaf != Leaf::Int
+                        || !fact.dims.is_empty()
+                        || deferred.is_none() && matches!(ty, EvalTy::F32 | EvalTy::F64) =>
+                    {
+                        steps.push(Step::Visit(arg, target));
+                    }
+                    (None, None) => {
+                        steps.push(Step::Float(arg, target));
+                        steps.push(Step::Visit(arg, EvalTy::Exact));
+                    }
+                    (Some(own), _) => {
+                        steps.push(Step::Widen(target));
+                        steps.push(Step::Visit(arg, own));
+                    }
+                    (None, Some(_)) => steps.push(Step::Visit(arg, target)),
+                }
+                return Ok(());
+            }
             Op::Call if self.math_call(node)? => self
                 .arguments(node)?
                 .into_iter()
@@ -1559,6 +1591,8 @@ impl Core<'_> {
                     ("min", [x, y]) => least(x, y, true),
                     ("max", [x, y]) => least(x, y, false),
                     ("clamp", [x, lo, hi]) => least(&least(x, lo, false), hi, true),
+                    (name, [Value::F32(x)]) => Value::F32(float_fn32(name, *x)),
+                    (name, [Value::F64(x)]) => Value::F64(float_fn64(name, *x)),
                     _ => Value::Error,
                 }
             }
@@ -2418,6 +2452,7 @@ impl Core<'_> {
             Op::Convert if !self.fact(node)?.fixed.is_some_and(is_fixed_float) => {
                 self.operands(node)?
             }
+            Op::Call if inherited && self.math_call(node)? => self.operands(node)?,
             Op::Neg
             | Op::Add
             | Op::Sub
@@ -2561,4 +2596,36 @@ fn float_least(a: f64, b: f64, min: bool) -> f64 {
         };
     }
     if (a < b) == min { a } else { b }
+}
+
+fn float_fn32(name: &str, x: f32) -> f32 {
+    match name {
+        "abs" => x.abs(),
+        "floor" => x.floor(),
+        "ceil" => x.ceil(),
+        "round" => x.round(),
+        "sqrt" => x.sqrt(),
+        "sin" => x.sin(),
+        "cos" => x.cos(),
+        "tan" => x.tan(),
+        "exp" => x.exp(),
+        "log" => x.ln(),
+        _ => f32::NAN,
+    }
+}
+
+fn float_fn64(name: &str, x: f64) -> f64 {
+    match name {
+        "abs" => x.abs(),
+        "floor" => x.floor(),
+        "ceil" => x.ceil(),
+        "round" => x.round(),
+        "sqrt" => x.sqrt(),
+        "sin" => x.sin(),
+        "cos" => x.cos(),
+        "tan" => x.tan(),
+        "exp" => x.exp(),
+        "log" => x.ln(),
+        _ => f64::NAN,
+    }
 }

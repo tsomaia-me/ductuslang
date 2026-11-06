@@ -1065,7 +1065,28 @@ impl Core<'_> {
     }
 }
 
-const MATH: [(&str, u32); 4] = [("abs", 1), ("min", 2), ("max", 2), ("clamp", 3)];
+const MATH: [(&str, u32); 13] = [
+    ("abs", 1),
+    ("min", 2),
+    ("max", 2),
+    ("clamp", 3),
+    ("floor", 1),
+    ("ceil", 1),
+    ("round", 1),
+    ("sqrt", 1),
+    ("sin", 1),
+    ("cos", 1),
+    ("tan", 1),
+    ("exp", 1),
+    ("log", 1),
+];
+
+pub(crate) fn float_math(name: &str) -> bool {
+    matches!(
+        name,
+        "floor" | "ceil" | "round" | "sqrt" | "sin" | "cos" | "tan" | "exp" | "log"
+    )
+}
 
 pub(crate) fn math_arity(name: &str) -> Option<u32> {
     MATH.iter()
@@ -1121,6 +1142,27 @@ impl Core<'_> {
         if !facts.iter().all(numeric) {
             self.draw_at(Code::OperandType, node, format!("`{name}` takes numbers"))?;
             return Ok(Ok(Fact::ERROR));
+        }
+        if float_math(name) {
+            let fact = facts.first().cloned().unwrap_or(Fact::ERROR);
+            let keeps_family = matches!(name, "floor" | "ceil" | "round");
+            if !keeps_family && fact.family.is_some() {
+                self.draw_at(
+                    Code::UnitOperation,
+                    node,
+                    format!("`{name}` takes a plain number"),
+                )?;
+                return Ok(Ok(Fact::ERROR));
+            }
+            let mut found = Fact::numeric(
+                Leaf::Float,
+                fact.fixed.map(super::width::float_for),
+                fact.read.map(super::width::float_for),
+            );
+            if keeps_family {
+                found.family = fact.family;
+            }
+            return Ok(Ok(found));
         }
         let mut found = facts.first().cloned().unwrap_or(Fact::ERROR);
         for fact in facts.iter().skip(1) {

@@ -2338,6 +2338,9 @@ fn a_math_function_keeps_its_operands_unit_family_as_the_old_engine_does() {
         "let d = min(2, 1s)\nEnv e | attack=d\n",
         "Env e | attack=(min(1s, 3) / 2)\n",
         "Env e | attack=(max(3i32, 1s))\n",
+        "Env e | attack=(floor(1.5s))\n",
+        "Env e | attack=(sqrt(4s))\n",
+        "Env e | attack=(round(3))\n",
     ] {
         let sources = [source(text)];
         let found = new
@@ -2346,5 +2349,45 @@ fn a_math_function_keeps_its_operands_unit_family_as_the_old_engine_does() {
         assert_eq!(found, old.check(&sources), "{text}");
         programs += 1;
     }
-    assert_eq!(programs, 7);
+    assert_eq!(programs, 10);
+}
+
+const FLOAT_FUNCTIONS: [&[&str]; 19] = [
+    &["Clip c:\n    Note | velocity=(floor(2.7))\n"],
+    &["Clip c:\n    Note | velocity=(sqrt(2))\n"],
+    &["Clip c:\n    Note/(floor(2.5))\n"],
+    &["Clip c:\n    Note/(i32(round(2.5)))\n"],
+    &["Clip c:\n    Note/(i32(sqrt(300000000001)))\n"],
+    &["Clip c:\n    Note | velocity=(sin(i32(3)))\n"],
+    &["Clip c:\n    Note | velocity=(log(true))\n"],
+    &["Clip c:\n    Note | velocity=(exp([1.0]))\n"],
+    &["state q(0.5)\n", "Clip c:\n    Note | velocity=(cos(q))\n"],
+    &["state q(2)\n", "Clip c:\n    Note | velocity=(sqrt(q))\n"],
+    &["Clip c:\n    Note | velocity=(exp(1000))\n"],
+    &["Clip c:\n    Note | accent=(ceil(2.1) > 2)\n"],
+    &["let x = floor(2.7)\n", "Clip c:\n    Note | velocity=x\n"],
+    &[
+        "fn f(a): sqrt(a) + 1\n",
+        "Clip c:\n    Note | velocity=(f(4))\n",
+    ],
+    &["Clip c:\n    Note | velocity=(tan(1e300))\n"],
+    &["Clip c:\n    Note/([1, 2][i32(floor(1.5))])\n"],
+    &[
+        "state q(2)\n",
+        "Clip c:\n    Note/(if sqrt(q) > 1 then 1 else 2)\n",
+    ],
+    &[
+        "state q(2)\n",
+        "Clip c:\n    Note/(if floor(q / 2) > 1 then 1 else 2)\n",
+    ],
+    &[
+        "state q(2)\n",
+        "Clip c:\n    Note | velocity=(min(q, 0.5))\n",
+    ],
+];
+
+#[test]
+fn a_float_math_function_converts_an_integer_as_division_does_and_yields_a_float_beside_a_valid_twin_in_every_order()
+ {
+    assert_eq!(same_as_the_old_engine(&FLOAT_FUNCTIONS), 66);
 }
