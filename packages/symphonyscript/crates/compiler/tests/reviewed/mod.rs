@@ -5360,7 +5360,7 @@ pub const CLASSES: &[Class] = &[
     },
     Class {
         ledger: "476",
-        rule: "a gate whose value holds a refused index, slice bound, conversion or condition draws condition-type at the value where the type those faults leave known is no `bool` (ARCHITECTURE §7: a value whose type an error leaves known keeps that type), as the program with the faults repaired draws, where the old engine is silent",
+        rule: "a gate whose value holds a refused index, slice bound, conversion or condition draws the faults the type those faults leave known gives, condition-type at the value where it is no `bool`, type-mismatch or array-operand at an operand of `and` or `or` (ARCHITECTURE §7: a value whose type an error leaves known keeps that type), as the program with the faults repaired draws on both engines, where the old engine is silent",
         explains: gate_beside_its_faults,
     },
 ];
@@ -5956,12 +5956,19 @@ fn unclosed(line: &str) -> bool {
 }
 
 fn gate_beside_its_faults(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
-    let before = seen.before(at);
+    let line = seen.before(at).rsplit('\n').next().unwrap_or_default();
+    let Some(gate) = line.find(" when ") else {
+        return false;
+    };
+    let start = at.1 - (line.len() - gate);
     change == Change::Added
-        && at.0 == "condition-type"
-        && (before.ends_with("when (") || before.ends_with("when "))
-        && seen
-            .old
-            .iter()
-            .any(|drawn| drawn.0 != "condition-type" && drawn.1 >= at.1 && drawn.2 <= at.2)
+        && at.1 > start
+        && matches!(
+            at.0.as_str(),
+            "condition-type" | "type-mismatch" | "array-operand"
+        )
+        && !line.trim_start().starts_with("when")
+        && seen.old.iter().any(|drawn| {
+            drawn.0 != at.0 && drawn.1 > start && seen.line(drawn.1) == seen.line(at.1)
+        })
 }
