@@ -111,17 +111,11 @@ impl Core<'_> {
         if pair != EvalTy::F64 {
             return Ok(());
         }
-        for (name, other) in [(a, b), (b, a)] {
-            if self.ir.node(name)?.0 != Op::Name {
-                continue;
-            }
-            let DeclRef::Cell(at) = self.bound(name)? else {
+        for (operand, other) in [(a, b), (b, a)] {
+            let Some((at, names)) = self.compared_cell(operand)? else {
                 continue;
             };
-            if !self.derived(at) || self.cell_annotation_ty(at)?.is_some() {
-                continue;
-            }
-            let (cell, literal) = (self.fact(name)?, self.fact(other)?);
+            let (cell, literal) = (self.fact(operand)?, self.fact(other)?);
             let flexible = literal.leaf == Leaf::Float
                 && literal.own().is_none()
                 && literal.dims.is_empty()
@@ -134,12 +128,48 @@ impl Core<'_> {
             {
                 continue;
             }
-            self.compared_reads.insert(name);
+            self.compared_reads.extend(names);
             if !self.compared_fits.contains(&(at, other)) {
                 self.compared_fits.push((at, other));
             }
         }
         Ok(())
+    }
+
+    fn compared_cell(&self, operand: u32) -> Result<Option<(u32, Vec<u32>)>, Internal> {
+        let mut found: Option<u32> = None;
+        let mut names = Vec::new();
+        for node in self.postorder(operand)? {
+            let (op, ..) = self.ir.node(node)?;
+            if matches!(
+                op,
+                Op::Call | Op::NamedCall | Op::Past | Op::Stepped | Op::Field
+            ) {
+                return Ok(None);
+            }
+            if op != Op::Name {
+                continue;
+            }
+            match self.bound(node)? {
+                DeclRef::Cell(at)
+                    if self.derived(at)
+                        && self.cell_annotation_ty(at)?.is_none()
+                        && found.is_none_or(|cell| cell == at) =>
+                {
+                    found = Some(at);
+                    names.push(node);
+                }
+                DeclRef::Cell(_)
+                | DeclRef::Let(_)
+                | DeclRef::Param(_)
+                | DeclRef::Instance(_)
+                | DeclRef::Fn(_)
+                | DeclRef::Pattern(_)
+                | DeclRef::Duplicate
+                | DeclRef::None => return Ok(None),
+            }
+        }
+        Ok(found.map(|at| (at, names)))
     }
 
     pub fn check_compared_fits(&mut self, at: u32) -> Result<(), Internal> {

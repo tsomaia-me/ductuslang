@@ -941,7 +941,28 @@ fn a_derived_cells_fixed_operand_wider_than_the_width_its_uses_expect_draws_type
     assert_eq!(same_as_the_old_engine(&RULE_WIDTHS), 246);
 }
 
-const COMPARED_WIDTHS: [&[&str]; 10] = [
+const COMPARED_WIDTHS: [&[&str]; 14] = [
+    &[
+        "state big(1.5)\n",
+        "state k = big * 2.0\n",
+        "Clip c:\n    Note when k + 1.0 > 1e39\n",
+    ],
+    &[
+        "state big(1.5)\n",
+        "state k = big * 2.0\n",
+        "Synth s:\n    Osc | freq=k\n",
+        "Clip c:\n    Note when k + 1.0 > 1e39\n",
+    ],
+    &[
+        "state big(1.5)\n",
+        "state k = big * 2.0\n",
+        "Clip c:\n    Note when 1e39 < k * 2.0\n",
+    ],
+    &[
+        "state big(1.5)\n",
+        "state k = big * 2.0\n",
+        "Clip c:\n    Note when k + 1.0 > 1.5\n",
+    ],
     &[
         "state big(1.5)\n",
         "state k = big * 1e39\n",
@@ -995,7 +1016,7 @@ const COMPARED_WIDTHS: [&[&str]; 10] = [
 #[test]
 fn a_derived_float_cell_or_a_reactive_argument_read_only_in_a_comparison_with_a_flexible_operand_takes_the_default_f32_beside_a_valid_twin_in_every_order_518()
  {
-    assert_eq!(same_as_the_old_engine(&COMPARED_WIDTHS), 204);
+    assert_eq!(same_as_the_old_engine(&COMPARED_WIDTHS), 396);
 }
 
 fn drawn_codes(rows: &[(&[&str], &[Code])]) -> usize {
