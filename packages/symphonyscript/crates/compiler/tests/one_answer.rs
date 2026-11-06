@@ -269,6 +269,10 @@ const DECIDING_NONE: &[(&str, &str)] = &[
         "the unit family of an IR node in the new core, from its operands as SPEC §3.6 states it",
     ),
     (
+        "pipeline/families.rs default_readable",
+        "the operators the new core reads in an attribute's default unit whose scale is not 1 as far as slice 5 builds it, a read of a let or a call declined",
+    ),
+    (
         "pipeline/families.rs carried",
         "the operands that carry a family value toward an attribute, the walk from a unit attribute to its plain values",
     ),

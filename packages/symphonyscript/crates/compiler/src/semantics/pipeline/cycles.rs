@@ -106,7 +106,7 @@ impl Core<'_> {
         ))
     }
 
-    fn cell_name(&self, at: u32) -> Result<(String, Span), Internal> {
+    pub fn cell_name(&self, at: u32) -> Result<(String, Span), Internal> {
         let rec = self
             .ir
             .cells

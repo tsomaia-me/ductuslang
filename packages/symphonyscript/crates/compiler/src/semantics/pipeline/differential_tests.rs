@@ -3642,3 +3642,145 @@ fn a_choice_whose_condition_is_refused_unifies_its_arms_and_reads_its_cells_wher
         assert_eq!(found, old.check(&sources), "{text}");
     }
 }
+
+type DefaultUnitProgram = (
+    &'static [&'static str],
+    &'static [(&'static str, &'static str)],
+);
+
+const BARS_DEFAULT: [DefaultUnitProgram; 10] = [
+    (
+        &["state d(5)", "A a | long=d", "B b | short=d"],
+        &[("integer-cell", "d"), ("conflicting-units", "d")],
+    ),
+    (
+        &["state d = 2bars + 1", "A a | long=d", "B b | short=d"],
+        &[("conflicting-units", "1")],
+    ),
+    (
+        &[
+            "state d(5)",
+            "A a | long=(d + 1bars)",
+            "B b | short=(d + 1beats)",
+        ],
+        &[("integer-cell", "d"), ("conflicting-units", "")],
+    ),
+    (
+        &[
+            "state d(5)",
+            "A a | long=(d + 1bars)",
+            "B b | short=(d + 1)",
+        ],
+        &[("integer-cell", "d")],
+    ),
+    (&["A a | long=(2bars + 1)"], &[]),
+    (&["A a | long=(if true then 1 else 2bars)"], &[]),
+    (&["A a | long=[1, 2bars][0]"], &[]),
+    (
+        &["A a | long=(1e308 + 1bars)"],
+        &[("does-not-fit", "1e308")],
+    ),
+    (
+        &[
+            "state d(5)",
+            "A a | long=d",
+            "A e | long=d",
+            "B b | short=(d + 0)",
+        ],
+        &[("integer-cell", "d")],
+    ),
+    (
+        &["state d(5.5)", "B b | short=d", "A a | long=d"],
+        &[("conflicting-units", "d")],
+    ),
+];
+
+const BAR_LENGTHS: [DefaultUnitProgram; 7] = [
+    (
+        &["Bar b | bar_len=3000000000000000000"],
+        &[("does-not-fit", "3000000000000000000")],
+    ),
+    (&["Bar b | bar_len=2000000000000000000"], &[]),
+    (
+        &["Bar b | bar_len=(1beats + 3000000000000000000)"],
+        &[("does-not-fit", "1beats + 3000000000000000000")],
+    ),
+    (&["Bar b | bar_len=(2 + 1beats)"], &[]),
+    (
+        &["state d(5)", "Bar b | bar_len=d beat_len=d"],
+        &[("conflicting-units", "d")],
+    ),
+    (&["Bar b | bar_len=-2305843009213693952"], &[]),
+    (&["state q(1): i64", "Bar b | bar_len=(q + 1)"], &[]),
+];
+
+const MILLISECONDS: [DefaultUnitProgram; 6] = [
+    (&["Env e | attack=5"], &[]),
+    (
+        &["state q(1): i32", "Env e | attack=(q + 1ms)"],
+        &[("integer-cell", "q")],
+    ),
+    (
+        &["state q(1): i32", "Env e | attack=q release=q"],
+        &[("integer-cell", "q")],
+    ),
+    (&["Env e | release=(1e38 + 1s)"], &[]),
+    (&["Env e | attack=(2 div 1) release=(5 % 2)"], &[]),
+    (
+        &[
+            "state q(1): i32",
+            "Env e | attack=(if q > 0 then 1 else 2ms)",
+        ],
+        &[],
+    ),
+];
+
+#[test]
+fn a_plain_value_at_an_attribute_whose_default_unit_has_a_scale_other_than_1_reads_in_that_unit_and_two_default_units_conflict_in_every_order()
+ {
+    let mut programs = 0;
+    for (vocabulary, rows) in [
+        (
+            symphonyscript_fixtures::bounded_vocabulary(),
+            BARS_DEFAULT.as_slice(),
+        ),
+        (
+            symphonyscript_fixtures::bar_vocabulary(),
+            BAR_LENGTHS.as_slice(),
+        ),
+        (
+            symphonyscript_fixtures::envelope_vocabulary(),
+            MILLISECONDS.as_slice(),
+        ),
+    ] {
+        let old = Compiler::new(&vocabulary)
+            .expect("the vocabulary compiles")
+            .on_the_old_engine();
+        let new = Compiler::new(&vocabulary).expect("the vocabulary compiles");
+        for (lines, wanted) in rows {
+            let items: Vec<String> = lines.iter().map(|line| format!("{line}\n")).collect();
+            for text in orders(&items) {
+                let sources = [source(&text)];
+                let found = new
+                    .checked_by_new_core(&sources)
+                    .unwrap_or_else(|| panic!("the new core takes {text}"));
+                assert_eq!(found, old.check(&sources), "{text}");
+                let drawn: Vec<(String, String)> = spanned(&text, &found)
+                    .into_iter()
+                    .filter(|(code, _)| code != "count-below-minimum")
+                    .collect();
+                assert_eq!(drawn.len(), wanted.len(), "{text}");
+                for (code, span) in wanted.iter() {
+                    assert!(
+                        drawn
+                            .iter()
+                            .any(|(seen, at)| seen == code && (span.is_empty() || at == span)),
+                        "{text}"
+                    );
+                }
+                programs += 1;
+            }
+        }
+    }
+    assert_eq!(programs, 5 * 6 + 24 + 4 + 5 + 2 * 2 + 3 + 3 * 2);
+}

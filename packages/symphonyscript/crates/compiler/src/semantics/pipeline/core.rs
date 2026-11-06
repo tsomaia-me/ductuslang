@@ -177,7 +177,14 @@ pub(crate) struct Core<'a> {
     pub enums_seen: bool,
     pub bare_enums: HashMap<u32, symphonyscript_core::EnumId>,
     pub takers: Vec<(u32, symphonyscript_core::FamilyId, u32)>,
-    pub unit_feeds: Vec<(u32, symphonyscript_core::FamilyId, u32)>,
+    pub unit_feeds: Vec<(u32, symphonyscript_core::FamilyId, usize, u32)>,
+    pub top_takers: HashSet<(u32, symphonyscript_core::FamilyId)>,
+    pub default_scale: Option<(
+        u32,
+        symphonyscript_core::FamilyId,
+        usize,
+        crate::semantics::operators::EvalTy,
+    )>,
 }
 
 impl<'a> Core<'a> {
@@ -336,6 +343,8 @@ impl<'a> Core<'a> {
             bare_enums: HashMap::new(),
             takers: Vec::new(),
             unit_feeds: Vec::new(),
+            top_takers: HashSet::new(),
+            default_scale: None,
         }
     }
 

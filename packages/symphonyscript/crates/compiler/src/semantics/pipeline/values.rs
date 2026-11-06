@@ -1123,6 +1123,10 @@ impl Core<'_> {
                         Ok(value) => value,
                         Err(declined) => return Ok(Err(declined)),
                     };
+                    let value = match self.reads_default_unit(node)? {
+                        Some((family, unit)) => self.in_default_unit(node, value, family, unit)?,
+                        None => value,
+                    };
                     values.push(value);
                     if let Some(frame) = frames.last_mut() {
                         frame.values = values;
