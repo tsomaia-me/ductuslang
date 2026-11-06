@@ -25,12 +25,6 @@ impl Core<'_> {
                 return Ok(Err(Declined(Reason::BodyItem)));
             }
         }
-        if self.ir.node(root)?.0 == Op::Name
-            && matches!(self.bound(root)?, DeclRef::Param(_))
-            && self.is_reactive(root)?
-        {
-            return Ok(Err(Declined(Reason::PatternUse)));
-        }
         if !fact.dims.is_empty() {
             let value = if self.variable_length(root)? {
                 "a variable array"

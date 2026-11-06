@@ -35,6 +35,8 @@ mod extent;
 mod extreme;
 mod fact;
 mod families;
+#[cfg(test)]
+mod flip_tests;
 mod float_fit;
 mod fold_run;
 mod folds;

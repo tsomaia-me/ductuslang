@@ -155,13 +155,12 @@ fn a_flexible_comparison_operand_takes_its_default_float_type_and_a_value_that_d
     }
 }
 
-const DECLINED: [&str; 8] = [
+const DECLINED: [&str; 7] = [
     "Output :master\n",
     "Clip c: Nope/1\n",
     "pattern Stab(default root, gap = 3):\n    [Note/root Note/(root + gap)]\n    Note/(root + 12)\nClip c:\n    Stab/55 | gap=5\n",
     "Clip c:\n    Note/60 when nope\n",
     "Plant boiler:\n    when nope:\n        Valve/0.3\n",
-    "state big(1)\npattern Gated(default active):\n    Note when active\nClip c:\n    Gated/(big > u8(255) + 4)\n",
     "state note(60)\nClip c:\n    Note when (if q then 300000000000 else [1, 2][5])\n",
     "Clip a:\n    Plays when to.gain > 0.5: b\nClip b:\n    Note/1\n",
 ];

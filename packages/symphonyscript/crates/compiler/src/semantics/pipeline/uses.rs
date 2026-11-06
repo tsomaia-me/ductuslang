@@ -7,6 +7,7 @@ use super::env::Env;
 use super::fact::Fact;
 use super::leaf::Leaf;
 use super::reason::Reason;
+use super::values::flexible;
 use crate::diagnostics::{Code, Related};
 use crate::semantics::Internal;
 use crate::semantics::counted_walk::CountedWalk;
@@ -446,6 +447,18 @@ impl Core<'_> {
             });
         }
         if self.is_reactive(root)? {
+            if matches!(fact.leaf, Leaf::Int | Leaf::Float) {
+                return Ok(Ok((fact, CoreValue::Error, true)));
+            }
+            let checked = match self.own_ty(root)? {
+                Some(own) if !self.is_kept(root)? => {
+                    self.evaluate(root, flexible(own))?.map(|_| ())
+                }
+                Some(_) | None => self.evaluate_own(root)?,
+            };
+            if let Err(declined) = checked {
+                return Ok(Err(declined));
+            }
             return Ok(Ok((fact, CoreValue::Error, true)));
         }
         self.argument_value(root, fact)
