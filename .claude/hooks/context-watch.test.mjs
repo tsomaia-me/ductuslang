@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
@@ -11,7 +11,15 @@ import { TAIL_BYTES } from './context-watch.mjs';
 const HOOK_PATH = path.join(path.dirname(fileURLToPath(import.meta.url)), 'context-watch.mjs');
 const OVERSIZED_ENTRY_BYTES = 400 * 1024;
 const WINDOW = '348000';
+const BIG_WINDOW = '1000000';
+const SUBAGENT_HEAD = '**Your context holds ';
+const SUBAGENT_TAIL = ' Wrap up now: finish or set aside the piece in hand, commit what passes if you commit, write where you stopped and what is next where your brief keeps your progress, run your hand-back checks, and hand back. Start nothing new.';
 const NOTICE = '**Compaction at 315k; you are at 255k.** Write your note now, before any other tool call: `pnpm grounding --role <ROLE>`, with the note on stdin, under 4,000 characters. Say what you are doing, the decisions in force, the next step, and at the end the files to re-read in order. Then carry on with your work; nothing else changes, and 60k is left after the note.';
+
+function subagentNotice(held, compactsNear, threshold = '600k') {
+  const compaction = compactsNear == null ? '' : `it compacts near ${compactsNear}, and `;
+  return `${SUBAGENT_HEAD}${held} tokens, past the ${threshold} at which you wrap up; ${compaction}you must not reach compaction.**${SUBAGENT_TAIL}`;
+}
 
 function tempDir() {
   return mkdtempSync(path.join(os.tmpdir(), 'context-watch-test-'));
@@ -42,6 +50,26 @@ function writeTranscript(dir, lines) {
   const transcriptPath = path.join(dir, 'transcript.jsonl');
   writeFileSync(transcriptPath, lines.join('\n') + '\n');
   return transcriptPath;
+}
+
+function writeSession(dir, sessionId, lines) {
+  const projectDir = path.join(dir, 'project');
+  mkdirSync(projectDir, { recursive: true });
+  const transcriptPath = path.join(projectDir, `${sessionId}.jsonl`);
+  writeFileSync(transcriptPath, lines.join('\n') + '\n');
+  return transcriptPath;
+}
+
+function writeSubagent(transcriptPath, sessionId, agentId, lines) {
+  const subagentsDir = path.join(path.dirname(transcriptPath), sessionId, 'subagents');
+  mkdirSync(subagentsDir, { recursive: true });
+  const subagentPath = path.join(subagentsDir, `agent-${agentId}.jsonl`);
+  writeFileSync(subagentPath, lines.join('\n') + '\n');
+  return subagentPath;
+}
+
+function subagentLines(usage) {
+  return [userEntry('task'), assistantEntry({ output: 0, ...usage, sidechain: true })];
 }
 
 function runHook({ harnessDir, transcriptPath, sessionId = 'session-a', eventName = 'UserPromptSubmit', extraInput = {}, env = {} }) {
@@ -90,10 +118,16 @@ test('a sidechain entry after the main entry does not count', () => {
   assert.equal(result.stdout, '');
 });
 
-test('a subagent has no watch', () => {
+test('a subagent below the threshold prints nothing', () => {
   const dir = tempDir();
   const transcriptPath = writeTranscript(dir, baseLines({ input: 15000, cacheCreation: 0, cacheRead: 290000 }));
-  const result = runHook({ harnessDir: dir, transcriptPath, extraInput: { agent_id: 'agent-1', agent_type: 'builder' } });
+  const subagentPath = path.join(dir, 'agent-1.jsonl');
+  writeFileSync(subagentPath, subagentLines({ input: 0, cacheCreation: 0, cacheRead: 100000 }).join('\n') + '\n');
+  const result = runHook({
+    harnessDir: dir,
+    transcriptPath,
+    extraInput: { agent_id: 'agent-1', agent_type: 'builder', agent_transcript_path: subagentPath },
+  });
   assert.equal(result.status, 0);
   assert.equal(result.stdout, '');
 });
@@ -189,4 +223,135 @@ test('a missing transcript prints nothing', () => {
   const result = runHook({ harnessDir: dir, transcriptPath: path.join(dir, 'missing.jsonl') });
   assert.equal(result.status, 0);
   assert.equal(result.stdout, '');
+});
+
+function runSubagent({ dir, transcriptPath, agentId, window = BIG_WINDOW, eventName = 'UserPromptSubmit', extraInput = {} }) {
+  const result = runHook({
+    harnessDir: dir,
+    transcriptPath,
+    eventName,
+    extraInput: { agent_id: agentId, agent_type: 'builder', ...extraInput },
+    env: { CLAUDE_CODE_AUTO_COMPACT_WINDOW: window },
+  });
+  assert.equal(result.status, 0);
+  return result.stdout;
+}
+
+test('a subagent at or past the threshold gets the notice once, and again only after its context fell below it', () => {
+  const dir = tempDir();
+  const transcriptPath = writeSession(dir, 'session-a', baseLines({ input: 0, cacheCreation: 0, cacheRead: 1000 }));
+  const runAt = (cacheRead, output = 0) => {
+    writeSubagent(transcriptPath, 'session-a', 'a1', subagentLines({ input: 0, cacheCreation: 0, cacheRead, output }));
+    return runSubagent({ dir, transcriptPath, agentId: 'a1' }).trim();
+  };
+  assert.equal(runAt(599999), '');
+  assert.equal(runAt(600000), subagentNotice('600k', '967k'));
+  assert.equal(runAt(600000), '');
+  assert.equal(runAt(650000), '');
+  assert.equal(runAt(100000), '');
+  assert.equal(runAt(640000, 2000), subagentNotice('642k', '967k'));
+});
+
+test('a subagent notice follows the event name', () => {
+  const dir = tempDir();
+  const transcriptPath = writeSession(dir, 'session-a', baseLines({ input: 0, cacheCreation: 0, cacheRead: 1000 }));
+  writeSubagent(transcriptPath, 'session-a', 'a1', subagentLines({ input: 0, cacheCreation: 0, cacheRead: 700000 }));
+  const output = JSON.parse(runSubagent({ dir, transcriptPath, agentId: 'a1', eventName: 'PostToolUse' }));
+  assert.equal(output.hookSpecificOutput.hookEventName, 'PostToolUse');
+  assert.equal(output.hookSpecificOutput.additionalContext, subagentNotice('700k', '967k'));
+});
+
+test('each subagent is told once, by its own state', () => {
+  const dir = tempDir();
+  const transcriptPath = writeSession(dir, 'session-a', baseLines({ input: 0, cacheCreation: 0, cacheRead: 1000 }));
+  for (const agentId of ['a1', 'a2']) {
+    writeSubagent(transcriptPath, 'session-a', agentId, subagentLines({ input: 0, cacheCreation: 0, cacheRead: 700000 }));
+  }
+  assert.equal(runSubagent({ dir, transcriptPath, agentId: 'a1' }).trim(), subagentNotice('700k', '967k'));
+  assert.equal(runSubagent({ dir, transcriptPath, agentId: 'a2' }).trim(), subagentNotice('700k', '967k'));
+  assert.equal(runSubagent({ dir, transcriptPath, agentId: 'a1' }), '');
+  assert.equal(runSubagent({ dir, transcriptPath, agentId: 'a2' }), '');
+});
+
+test('a subagent reads its own transcript, not the main one', () => {
+  const dir = tempDir();
+  const mainBig = writeSession(dir, 'session-big', baseLines({ input: 0, cacheCreation: 0, cacheRead: 650000 }));
+  writeSubagent(mainBig, 'session-big', 'a1', subagentLines({ input: 0, cacheCreation: 0, cacheRead: 100000 }));
+  assert.equal(runSubagent({ dir, transcriptPath: mainBig, agentId: 'a1', extraInput: { session_id: 'session-big' } }), '');
+  const mainSmall = writeSession(dir, 'session-small', baseLines({ input: 0, cacheCreation: 0, cacheRead: 100000 }));
+  writeSubagent(mainSmall, 'session-small', 'a1', subagentLines({ input: 0, cacheCreation: 0, cacheRead: 650000 }));
+  const output = runSubagent({ dir, transcriptPath: mainSmall, agentId: 'a1', extraInput: { session_id: 'session-small' } });
+  assert.equal(output.trim(), subagentNotice('650k', '967k'));
+});
+
+test('sidechain entries count for a subagent and the last usage entry is the one read', () => {
+  const dir = tempDir();
+  const transcriptPath = writeSession(dir, 'session-a', baseLines({ input: 0, cacheCreation: 0, cacheRead: 1000 }));
+  const lines = [
+    userEntry('task'),
+    assistantEntry({ input: 0, cacheCreation: 0, cacheRead: 900000, output: 0, sidechain: true }),
+    userEntry('next'),
+    assistantEntry({ input: 0, cacheCreation: 0, cacheRead: 610000, output: 0, sidechain: true }),
+  ];
+  writeSubagent(transcriptPath, 'session-a', 'a1', lines);
+  assert.equal(runSubagent({ dir, transcriptPath, agentId: 'a1' }).trim(), subagentNotice('610k', '967k'));
+});
+
+test('the subagent transcript is found from agent_transcript_path, from a transcript_path that is its own, or derived', () => {
+  const lines = subagentLines({ input: 0, cacheCreation: 0, cacheRead: 700000 });
+  const notice = subagentNotice('700k', '967k');
+
+  let dir = tempDir();
+  let transcriptPath = writeSession(dir, 'session-a', baseLines({ input: 0, cacheCreation: 0, cacheRead: 1000 }));
+  const elsewhere = path.join(dir, 'elsewhere.jsonl');
+  writeFileSync(elsewhere, lines.join('\n') + '\n');
+  assert.equal(runSubagent({ dir, transcriptPath, agentId: 'a1', extraInput: { agent_transcript_path: elsewhere } }).trim(), notice);
+
+  dir = tempDir();
+  transcriptPath = writeSession(dir, 'session-a', baseLines({ input: 0, cacheCreation: 0, cacheRead: 1000 }));
+  const own = writeSubagent(transcriptPath, 'session-a', 'a1', lines);
+  assert.equal(runSubagent({ dir, transcriptPath: own, agentId: 'a1' }).trim(), notice);
+
+  dir = tempDir();
+  transcriptPath = writeSession(dir, 'session-a', baseLines({ input: 0, cacheCreation: 0, cacheRead: 1000 }));
+  writeSubagent(transcriptPath, 'session-a', 'a1', lines);
+  assert.equal(runSubagent({ dir, transcriptPath, agentId: 'a1' }).trim(), notice);
+
+  dir = tempDir();
+  transcriptPath = writeSession(dir, 'session-a', baseLines({ input: 0, cacheCreation: 0, cacheRead: 1000 }));
+  writeSubagent(transcriptPath, 'session-a', 'a1', lines);
+  assert.equal(runSubagent({ dir, transcriptPath, agentId: 'agent-a1' }).trim(), notice);
+});
+
+test('a missing subagent transcript prints nothing', () => {
+  const dir = tempDir();
+  const transcriptPath = writeSession(dir, 'session-a', baseLines({ input: 0, cacheCreation: 0, cacheRead: 900000 }));
+  assert.equal(runSubagent({ dir, transcriptPath, agentId: 'a1' }), '');
+  assert.equal(runSubagent({ dir, transcriptPath, agentId: 'a1', extraInput: { agent_transcript_path: path.join(dir, 'none.jsonl') } }), '');
+});
+
+test('the subagent threshold is the notice point where that is lower, and 600k alone with no window', () => {
+  const dir = tempDir();
+  const transcriptPath = writeSession(dir, 'session-a', baseLines({ input: 0, cacheCreation: 0, cacheRead: 1000 }));
+  writeSubagent(transcriptPath, 'session-a', 'low', subagentLines({ input: 0, cacheCreation: 0, cacheRead: 255000 }));
+  assert.equal(runSubagent({ dir, transcriptPath, agentId: 'low', window: WINDOW }).trim(), subagentNotice('255k', '315k', '255k'));
+  writeSubagent(transcriptPath, 'session-a', 'none', subagentLines({ input: 0, cacheCreation: 0, cacheRead: 599999 }));
+  assert.equal(runSubagent({ dir, transcriptPath, agentId: 'none', window: '' }), '');
+  writeSubagent(transcriptPath, 'session-a', 'none', subagentLines({ input: 0, cacheCreation: 0, cacheRead: 600000 }));
+  assert.equal(runSubagent({ dir, transcriptPath, agentId: 'none', window: '' }).trim(), subagentNotice('600k', null));
+  writeSubagent(transcriptPath, 'session-a', 'bad', subagentLines({ input: 0, cacheCreation: 0, cacheRead: 600000 }));
+  assert.equal(runSubagent({ dir, transcriptPath, agentId: 'bad', window: 'wide' }).trim(), subagentNotice('600k', null));
+});
+
+test('the main notice is unchanged beside a subagent', () => {
+  const dir = tempDir();
+  const transcriptPath = writeSession(dir, 'session-a', baseLines({ input: 15000, cacheCreation: 0, cacheRead: 290000 }));
+  writeSubagent(transcriptPath, 'session-a', 'a1', subagentLines({ input: 0, cacheCreation: 0, cacheRead: 700000 }));
+  const subagentOutput = runSubagent({ dir, transcriptPath, agentId: 'a1', window: WINDOW });
+  assert.equal(subagentOutput.trim(), subagentNotice('700k', '315k', '255k'));
+  const main = runHook({ harnessDir: dir, transcriptPath });
+  assert.equal(main.status, 0);
+  assert.equal(main.stdout.trim(), NOTICE);
+  assert.equal(runHook({ harnessDir: dir, transcriptPath }).stdout, '');
+  assert.equal(runSubagent({ dir, transcriptPath, agentId: 'a1', window: WINDOW }), '');
 });
