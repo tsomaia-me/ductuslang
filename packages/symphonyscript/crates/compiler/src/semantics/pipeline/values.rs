@@ -2388,12 +2388,7 @@ impl Core<'_> {
                 }
                 marked
             }
-            Op::Convert
-                if !self
-                    .fact(node)?
-                    .fixed
-                    .is_some_and(|target| is_fixed_float(target)) =>
-            {
+            Op::Convert if !self.fact(node)?.fixed.is_some_and(is_fixed_float) => {
                 self.operands(node)?
             }
             Op::Neg
