@@ -1837,7 +1837,7 @@ fn a_path_through_a_let_holding_a_reference_reads_the_instance_it_holds_and_thro
     assert_eq!(same_as_the_old_engine(&rows), 192);
 }
 
-const LET_ARRAY_MEMBERS: [&[&str]; 13] = [
+const LET_ARRAY_MEMBERS: [&[&str]; 16] = [
     &["Clip c:\n    Note/(xs.size)\n"],
     &["Clip c:\n    Note/(xs.capacity + 300)\n"],
     &["Clip c:\n    Note/([1, 2][xs.size])\n"],
@@ -1856,6 +1856,9 @@ const LET_ARRAY_MEMBERS: [&[&str]; 13] = [
         "let n = xs.size\nlet zs = [n, n, n]\n",
         "Clip c:\n    Note/(zs[n + 1])\n",
     ],
+    &["Clip c:\n    Note/(ys[0].capacity)\n"],
+    &["Clip c:\n    Note/(ys[2].size + 300)\n"],
+    &["Clip c:\n    Note/([1, 2][ys[1].size])\n"],
     &["Clip c | level=xs.size:\n    Note/1\n"],
 ];
 
@@ -1871,7 +1874,7 @@ fn a_let_arrays_size_and_capacity_are_its_length_known_at_compile_time_and_a_sca
         })
         .collect();
     let rows: Vec<&[&str]> = rows.iter().map(Vec::as_slice).collect();
-    assert_eq!(same_as_the_old_engine(&rows), 114);
+    assert_eq!(same_as_the_old_engine(&rows), 132);
 }
 
 const CELL_CAPACITIES: [&[&str]; 6] = [

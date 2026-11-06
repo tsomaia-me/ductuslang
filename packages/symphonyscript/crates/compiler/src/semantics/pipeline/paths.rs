@@ -458,7 +458,10 @@ impl Core<'_> {
             *ends
                 .get(&receiver)
                 .ok_or(Internal::missed("a path's receiver"))?
-        } else if let Some(count) = self.literal_array_length(receiver, field)? {
+        } else if let Some(count) = match self.literal_array_length(receiver, field)? {
+            Some(count) => Some(count),
+            None => self.element_array_length(receiver, field)?,
+        } {
             self.array_members.insert(node, i128::from(count));
             End::Value
         } else {
@@ -2028,5 +2031,41 @@ impl Core<'_> {
             kinds.push(element);
         }
         Ok((!kinds.is_empty()).then_some(count))
+    }
+}
+
+impl Core<'_> {
+    fn element_array_length(&mut self, receiver: u32, field: u32) -> Result<Option<u32>, Internal> {
+        let text = self.ir.name_text(field).unwrap_or_default();
+        if !matches!(text, "size" | "capacity") {
+            return Ok(None);
+        }
+        let (op, base, index, _) = self.ir.node(receiver)?;
+        if op != Op::Index || self.ir.node(base)?.0 != Op::Name || self.ir.node(index)?.0 != Op::Int
+        {
+            return Ok(None);
+        }
+        let DeclRef::Let(at) = self.bound(base)? else {
+            return Ok(None);
+        };
+        let root = self.let_root(at)?;
+        if self.body_of.get(self.local(root)?).copied().unwrap_or(NONE) != NONE
+            || self.let_reads_cell(at)?
+            || !self.path_free_let(at)?
+        {
+            return Ok(None);
+        }
+        let Ok(fact) = self.ensure_typed(root)? else {
+            return Ok(None);
+        };
+        let numeric = matches!(fact.leaf, Leaf::Int | Leaf::Float);
+        let (Some(outer), Some(inner)) = (fact.dims.first(), fact.dims.get(1)) else {
+            return Ok(None);
+        };
+        let Ok(Ok(CoreValue::Int(position))) = self.evaluate(index, EvalTy::Exact) else {
+            return Ok(None);
+        };
+        let inside = (0..i128::from(*outer)).contains(&position);
+        Ok((numeric && inside && *inner != ANY_LENGTH && *outer != ANY_LENGTH).then_some(*inner))
     }
 }
