@@ -579,6 +579,9 @@ impl Core<'_> {
                 return Ok(Err(declined));
             }
         }
+        if let Err(declined) = self.settle_let_cycles(&order)? {
+            return Ok(Err(declined));
+        }
         self.cell_order = order;
         Ok(Ok(()))
     }
@@ -913,5 +916,102 @@ impl Core<'_> {
             }
         }
         Ok(())
+    }
+}
+
+impl Core<'_> {
+    fn settle_let_cycles(&mut self, order: &[u32]) -> Stage<()> {
+        let reads: Vec<(u32, u32)> = self
+            .cyclic_let_reads
+            .iter()
+            .map(|(node, at)| (*node, *at))
+            .collect();
+        if reads.is_empty() {
+            return Ok(Ok(()));
+        }
+        let mut seeded = Vec::new();
+        for (node, at) in reads {
+            let (_, _, _, fallback) = self.ir.node(node)?;
+            if fallback == NONE {
+                continue;
+            }
+            let seed = match self.ensure_typed(fallback)? {
+                Ok(fact) => fact,
+                Err(declined) => return Ok(Err(declined)),
+            };
+            if matches!(seed.leaf, Leaf::Placeholder | Leaf::Error) {
+                continue;
+            }
+            self.let_seeds.insert(node, seed);
+            seeded.push((node, at));
+        }
+        if seeded.is_empty() {
+            return Ok(Ok(()));
+        }
+        let mark = self.diagnostics.len();
+        let top = self.top_drawn.len();
+        let warned = self.warned.clone();
+        for _ in 0..SETTLE_ROUNDS {
+            if let Err(declined) = self.retype_let_cycle(order, &seeded)? {
+                return Ok(Err(declined));
+            }
+            let mut changed = false;
+            for (node, at) in &seeded {
+                let fact = self.fact(self.let_root(*at)?)?;
+                let Some(seed) = self.let_seeds.get(node).cloned() else {
+                    continue;
+                };
+                if matches!(fact.leaf, Leaf::Placeholder | Leaf::Error) || fact == seed {
+                    continue;
+                }
+                if super::typing::unify(seed.leaf, fact.leaf) == Some(fact.leaf) {
+                    self.let_seeds.insert(*node, fact);
+                    changed = true;
+                }
+            }
+            if !changed {
+                break;
+            }
+        }
+        self.diagnostics.truncate(mark);
+        self.top_drawn.truncate(top);
+        self.warned = warned;
+        let mut kept = Vec::new();
+        for (node, at) in seeded {
+            if self.fact(self.let_root(at)?)?.leaf == Leaf::Placeholder {
+                self.let_seeds.remove(&node);
+            } else {
+                kept.push((node, at));
+            }
+        }
+        self.retype_let_cycle(order, &kept)
+    }
+
+    fn retype_let_cycle(&mut self, order: &[u32], seeded: &[(u32, u32)]) -> Stage<()> {
+        for (_, at) in seeded {
+            let root = self.let_root(*at)?;
+            self.clear_rule(root)?;
+        }
+        for at in order.iter().copied() {
+            if self.is_cyclic_cell(at) {
+                continue;
+            }
+            let root = self.cell_root(at)?;
+            let reads = self.postorder(root)?;
+            if !seeded.iter().any(|(node, _)| reads.contains(node)) {
+                continue;
+            }
+            self.clear_rule(root)?;
+            if let Err(declined) = self.ensure_typed(root)? {
+                return Ok(Err(declined));
+            }
+        }
+        for (_, at) in seeded {
+            let root = self.let_root(*at)?;
+            if let Err(declined) = self.ensure_typed(root)? {
+                return Ok(Err(declined));
+            }
+        }
+        Ok(Ok(()))
     }
 }

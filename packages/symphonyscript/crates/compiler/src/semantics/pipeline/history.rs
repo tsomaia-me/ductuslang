@@ -110,10 +110,15 @@ impl Core<'_> {
                             && self.let_reads_cell(at)? =>
                     {
                         let root = self.let_root(at)?;
-                        if !self.has_fact(root)? {
-                            return Ok(Ok(Fact::PLACEHOLDER));
+                        if self.has_fact(root)? && self.fact(root)?.leaf != Leaf::Placeholder {
+                            self.fact(root)?
+                        } else {
+                            self.cyclic_let_reads.insert(node, at);
+                            match self.let_seeds.get(&node) {
+                                Some(seed) => seed.clone(),
+                                None => return Ok(Ok(Fact::PLACEHOLDER)),
+                            }
                         }
-                        self.fact(root)?
                     }
                     _ => Fact::PLACEHOLDER,
                 };
@@ -214,7 +219,9 @@ impl Core<'_> {
                     .get(at as usize)
                     .is_some_and(|rec| rec.owner == NONE) =>
             {
-                if self.cyclic.get(at as usize).copied().unwrap_or(false) {
+                if self.cyclic.get(at as usize).copied().unwrap_or(false)
+                    && !self.let_reads_cell(at)?
+                {
                     return Ok(Ok(Target::Faulty));
                 }
                 return Ok(Ok(Target::Let));
