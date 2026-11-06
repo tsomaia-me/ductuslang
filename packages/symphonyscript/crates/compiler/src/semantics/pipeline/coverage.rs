@@ -260,17 +260,19 @@ fn loop_children(ir: &FlatIr) -> Vec<u32> {
     found
 }
 
+type Sorted<'a> = (
+    &'a [u32],
+    &'a [u32],
+    &'a [u32],
+    &'a [u32],
+    &'a [u32],
+    &'a [u32],
+);
+
 fn item_landed(
     ir: &FlatIr,
     item: &ItemRec,
-    (members, in_loops, patterns, nested, tops, blocks): (
-        &[u32],
-        &[u32],
-        &[u32],
-        &[u32],
-        &[u32],
-        &[u32],
-    ),
+    (members, in_loops, patterns, nested, tops, blocks): Sorted<'_>,
     at: usize,
 ) -> bool {
     if !landed(item_slice(item)) {
