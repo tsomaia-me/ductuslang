@@ -1370,6 +1370,21 @@ impl Core<'_> {
                     Ok(value) => value,
                     Err(declined) => return Ok(Err(declined)),
                 },
+                DeclRef::None if self.pi.contains(&node) => match ty {
+                    EvalTy::F32 => Value::F32(std::f32::consts::PI),
+                    EvalTy::F64 => Value::F64(std::f64::consts::PI),
+                    EvalTy::Exact
+                    | EvalTy::Default
+                    | EvalTy::U8
+                    | EvalTy::I32
+                    | EvalTy::I64
+                    | EvalTy::DefaultF32
+                    | EvalTy::DefaultF64
+                    | EvalTy::Bool
+                    | EvalTy::Enum(_)
+                    | EvalTy::Str
+                    | EvalTy::Node => Value::Error,
+                },
                 DeclRef::None if self.is_bare(node) => self.variant_value(node)?,
                 DeclRef::Duplicate
                 | DeclRef::None

@@ -335,6 +335,10 @@ impl Core<'_> {
                         self.bare.insert(node);
                         continue;
                     }
+                    if text == BuiltinName::Pi.name() {
+                        self.pi.insert(node);
+                        continue;
+                    }
                     if let Some(what) = self
                         .not_a_value(&text)
                         .filter(|_| !type_operands.contains(&node))

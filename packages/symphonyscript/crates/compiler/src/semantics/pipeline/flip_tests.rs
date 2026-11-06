@@ -1179,3 +1179,22 @@ fn a_vocabulary_name_standing_as_a_value_draws_not_a_value_beside_a_valid_twin_i
         2
     );
 }
+
+const PI_READS: [&[&str]; 11] = [
+    &["Synth s:\n    Osc | freq=pi\n"],
+    &["Synth s:\n    Osc | freq=(pi * 2.0)\n"],
+    &["Clip c:\n    Note/(pi)\n"],
+    &["Clip c:\n    Note | velocity=pi\n"],
+    &["let x = pi * 100\n", "Clip c:\n    Note | velocity=x\n"],
+    &["Clip c:\n    Note when pi > 3\n"],
+    &["Clip c:\n    Note/(i32(pi))\n"],
+    &["state s(pi)\n", "Clip c:\n    Note | velocity=s\n"],
+    &["Clip c:\n    Note/(pi + 300000000000)\n"],
+    &["fn f(x): x * pi\n", "Synth s:\n    Osc | freq=f(2)\n"],
+    &["Clip c:\n    Note when pi\n"],
+];
+
+#[test]
+fn pi_is_a_flexible_float_drawing_what_the_old_engine_draws_beside_a_valid_twin_in_every_order() {
+    assert_eq!(same_as_the_old_engine(&PI_READS), 34);
+}

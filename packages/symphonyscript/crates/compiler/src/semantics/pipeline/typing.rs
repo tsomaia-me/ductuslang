@@ -390,6 +390,7 @@ impl Core<'_> {
                 DeclRef::Fn(_) | DeclRef::Pattern(_) => {
                     return Ok(Err(Declined(Reason::FunctionValue)));
                 }
+                DeclRef::None if self.pi.contains(&node) => Fact::scalar(Leaf::Float),
                 DeclRef::None if self.untyped_bare.contains(&node) => Fact::ERROR,
                 DeclRef::None if self.is_bare(node) => {
                     Fact::scalar(Leaf::Enum(self.bare_enums.get(&node).copied()))
