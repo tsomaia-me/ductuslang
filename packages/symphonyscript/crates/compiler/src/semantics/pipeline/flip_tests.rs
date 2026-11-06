@@ -240,3 +240,49 @@ fn a_history_read_of_an_annotated_let_keeps_the_annotated_type_so_its_readers_dr
     }
     assert_eq!(programs, 288);
 }
+
+const UNBOUND_ARGUMENTS: [&[&str]; 9] = [
+    &["fn g(): 1\n", "let x = g(x)\n", "Clip c:\n    Note/(x)\n"],
+    &["fn g(a): 1\n", "let x = g(x)\n", "Clip c:\n    Note/(x)\n"],
+    &[
+        "fn g(a): a\n",
+        "let x = g(1, x + true)\n",
+        "Clip c:\n    Note/(x)\n",
+    ],
+    &[
+        "fn g(a): a\n",
+        "let x = g(1, [1, 2][5])\n",
+        "Clip c:\n    Note/(x)\n",
+    ],
+    &[
+        "fn g(a): a\n",
+        "let x = g(a=1, b=x)\n",
+        "Clip c:\n    Note/(x)\n",
+    ],
+    &[
+        "fn g(): 1\n",
+        "state s(1)\n",
+        "let x = g(s)\nClip c:\n    Note/(x)\n",
+    ],
+    &[
+        "fn g(): 1\n",
+        "state v(1)\n",
+        "Clip c:\n    Note/(g(v * 1.5))\n",
+    ],
+    &[
+        "fn g(a): a\n",
+        "fn h(b): g(b, [1, 2][5] + b)\n",
+        "Clip c:\n    Note/(h(1))\n",
+    ],
+    &[
+        "fn g(): 1\n",
+        "let y = 2\n",
+        "Clip c:\n    Note | velocity=g(y + 1e39)\n",
+    ],
+];
+
+#[test]
+fn an_argument_that_binds_no_parameter_is_no_read_and_draws_nothing_of_its_own_beside_the_calls_fault_510()
+ {
+    assert_eq!(same_as_the_old_engine(&UNBOUND_ARGUMENTS), 216);
+}

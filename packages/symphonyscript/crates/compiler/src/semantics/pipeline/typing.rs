@@ -315,6 +315,9 @@ impl Core<'_> {
 
     fn node_fact(&mut self, node: u32) -> Stage<Fact> {
         let (op, a, b, c) = self.ir.node(node)?;
+        if self.unbound_nodes.contains(&node) {
+            return Ok(Ok(Fact::PLACEHOLDER));
+        }
         if self.holds_a_missing_operand(node)? {
             return Ok(Ok(Fact::PLACEHOLDER));
         }

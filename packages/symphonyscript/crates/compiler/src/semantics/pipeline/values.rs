@@ -140,6 +140,10 @@ impl Core<'_> {
     }
 
     fn visit(&mut self, node: u32, ty: EvalTy, steps: &mut Vec<Step>) -> Result<(), Internal> {
+        if self.unbound_nodes.contains(&node) {
+            steps.push(Step::Runtime(0));
+            return Ok(());
+        }
         let (op, a, b, _) = self.ir.node(node)?;
         let deferred = matches!(ty, EvalTy::DefaultF32 | EvalTy::DefaultF64).then_some(ty);
         let ty = if deferred.is_some() {

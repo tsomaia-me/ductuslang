@@ -38,6 +38,9 @@ impl Core<'_> {
                 continue;
             }
             for node in self.deep_postorder(root)? {
+                if self.unbound_nodes.contains(&node) {
+                    continue;
+                }
                 let op = self.ir.node(node)?.0;
                 if matches!(op, Op::Call | Op::NamedCall)
                     && let Some(function) = self.callee(node)?
@@ -121,6 +124,13 @@ impl Core<'_> {
     }
 
     pub fn declaration_cycles(&mut self) -> Result<(), Internal> {
+        for local in 0..self.ir.op.len() {
+            let node = self.ir.base + u32::try_from(local).unwrap_or(u32::MAX);
+            for argument in self.unbound_arguments(node)? {
+                let inner = self.deep_postorder(argument)?;
+                self.unbound_nodes.extend(inner);
+            }
+        }
         let lets = u32::try_from(self.ir.lets.len()).unwrap_or(u32::MAX);
         let cells = u32::try_from(self.ir.lets.len() + self.attr_reads.len()).unwrap_or(u32::MAX);
         let fns = cells + u32::try_from(self.ir.cells.len()).unwrap_or(u32::MAX);
@@ -475,5 +485,33 @@ impl Core<'_> {
             }
         }
         Ok(false)
+    }
+}
+
+impl Core<'_> {
+    pub fn unbound_arguments(&self, node: u32) -> Result<Vec<u32>, Internal> {
+        let op = self.ir.node(node)?.0;
+        if !matches!(op, Op::Call | Op::NamedCall) {
+            return Ok(Vec::new());
+        }
+        let Some(function) = self.callee(node)? else {
+            return Ok(Vec::new());
+        };
+        let params = self.param_syms(function)?;
+        if op == Op::Call {
+            return Ok(self
+                .arguments(node)?
+                .into_iter()
+                .skip(params.len())
+                .collect());
+        }
+        let mut unbound = Vec::new();
+        for (name, value) in self.named_arguments(node)? {
+            let sym = self.ir.name(name).ok_or(Internal::missed("IR name"))?.sym.0;
+            if !params.contains(&sym) {
+                unbound.push(value);
+            }
+        }
+        Ok(unbound)
     }
 }
