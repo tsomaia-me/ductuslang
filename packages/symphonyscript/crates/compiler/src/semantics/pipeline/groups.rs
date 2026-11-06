@@ -160,25 +160,34 @@ impl Core<'_> {
                 CellReads::default()
             });
         }
-        let edges: Vec<Vec<u32>> = all
-            .iter()
-            .map(|reads| {
-                let mut edges = reads.present.clone();
-                edges.extend(reads.history.iter().map(|(target, _)| *target));
-                edges.extend(reads.after.iter().copied());
-                edges
-            })
-            .collect();
+        let edges = loop {
+            let edges: Vec<Vec<u32>> = all
+                .iter()
+                .map(|reads| {
+                    let mut edges = reads.present.clone();
+                    edges.extend(reads.history.iter().map(|(target, _)| *target));
+                    edges.extend(reads.after.iter().copied());
+                    edges
+                })
+                .collect();
+            let mut closed = false;
+            for component in strongly_connected(&edges) {
+                for member in &component {
+                    if let Some(reads) = all.get_mut(*member as usize) {
+                        let before = reads.after.len();
+                        reads.after.retain(|at| !component.contains(at));
+                        closed |= reads.after.len() != before;
+                    }
+                }
+            }
+            if !closed {
+                break edges;
+            }
+        };
         let mut order = Vec::with_capacity(count as usize);
         let mut group_of = vec![NONE; count as usize];
         let mut groups = Vec::new();
         for component in strongly_connected(&edges) {
-            if component.iter().any(|member| {
-                all.get(*member as usize)
-                    .is_some_and(|reads| reads.after.iter().any(|at| component.contains(at)))
-            }) {
-                return Ok(Err(Declined(Reason::CellGroup)));
-            }
             let single = component.len() == 1;
             let first = component.first().copied().unwrap_or(NONE);
             let own = all

@@ -410,7 +410,16 @@ fn a_compile_time_operand_inside_a_reactive_expression_is_checked_in_the_type_it
     assert_eq!(same_as_the_old_engine(&INNER_FITS), 222);
 }
 
-const UNANNOTATED_HISTORY_TARGETS: [(&[&str], &[Code]); 11] = [
+const UNANNOTATED_HISTORY_TARGETS: [(&[&str], &[Code]); 12] = [
+    (
+        &[
+            "state x(1)\n",
+            "let t = s * x\n",
+            "state s = t.past(1, 0)\n",
+            "Clip k:\n    Note/(s)\n",
+        ],
+        &[Code::HistoryTarget, Code::ReactiveLet],
+    ),
     (
         &[
             "state x(1)\n",
@@ -530,18 +539,7 @@ fn a_history_read_of_an_unannotated_let_reading_a_cell_is_typed_as_the_cell_the_
             programs += 1;
         }
     }
-    assert_eq!(programs, 480);
-    for text in twins(&[
-        "state x(1)\n",
-        "let t = s * x\n",
-        "state s = t.past(1, 0)\n",
-        "Clip k:\n    Note/(s)\n",
-    ]) {
-        assert!(
-            new.checked_by_new_core(&[source(&text)]).is_none(),
-            "{text}"
-        );
-    }
+    assert_eq!(programs, 600);
 }
 
 const FIXED_OPERANDS: [(&[&str], &[Code]); 10] = [

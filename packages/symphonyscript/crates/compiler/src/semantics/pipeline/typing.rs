@@ -382,6 +382,9 @@ impl Core<'_> {
                         self.let_fact(at)?
                     }
                 }
+                DeclRef::Cell(at) if self.derived(at) && !self.has_fact(self.cell_root(at)?)? => {
+                    Fact::PLACEHOLDER
+                }
                 DeclRef::Cell(at) => self.cell_read_fact(at)?,
                 DeclRef::Param(position) => self.param_fact(node, position)?.0,
                 DeclRef::Fn(_) | DeclRef::Pattern(_) => {

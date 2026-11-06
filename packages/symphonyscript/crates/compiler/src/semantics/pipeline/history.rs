@@ -1,10 +1,8 @@
 use super::core::{Core, Stage};
 use super::decl_ref::DeclRef;
-use super::declined::Declined;
 use super::fact::Fact;
 use super::folds::ANY_LENGTH;
 use super::leaf::Leaf;
-use super::reason::Reason;
 use crate::diagnostics::{Code, Diagnostic};
 use crate::semantics::Internal;
 use crate::semantics::ir::flat::{FlatIr, NONE, Op};
@@ -113,7 +111,7 @@ impl Core<'_> {
                     {
                         let root = self.let_root(at)?;
                         if !self.has_fact(root)? {
-                            return Ok(Err(Declined(Reason::CellGroup)));
+                            return Ok(Ok(Fact::PLACEHOLDER));
                         }
                         self.fact(root)?
                     }
