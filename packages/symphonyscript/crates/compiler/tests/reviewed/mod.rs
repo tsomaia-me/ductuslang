@@ -5438,7 +5438,10 @@ fn let_lines<'a>(program: &'a str, head: &str) -> Vec<(usize, &'a str)> {
             let words: Vec<&str> = line
                 .split(|c: char| !(c.is_alphanumeric() || c == '_'))
                 .collect();
-            words.contains(&"let") && words.iter().any(|word| names.contains(word))
+            words.iter().any(|word| {
+                word.strip_suffix("let")
+                    .is_some_and(|lead| lead.chars().all(|c| c.is_ascii_digit()))
+            }) && words.iter().any(|word| names.contains(word))
         })
         .collect()
 }
@@ -5452,7 +5455,7 @@ pub fn runs_no_iteration(program: &str, new: &[Drawn]) -> bool {
         within(lo, hi)
             || let_lines(program, program.get(lo..hi).unwrap_or_default())
                 .into_iter()
-                .any(|(start, line)| within(start, start + line.len() + 1))
+                .any(|(start, line)| within(start, start + line.len() + 1) || unclosed(line))
     })
 }
 
@@ -5847,4 +5850,10 @@ fn unrun_cycle(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
             .program
             .get(at.2..)
             .is_some_and(|after| after.starts_with(")[") || after.starts_with('['))
+}
+
+fn unclosed(line: &str) -> bool {
+    let opened = line.chars().filter(|c| matches!(c, '(' | '[')).count();
+    let closed = line.chars().filter(|c| matches!(c, ')' | ']')).count();
+    opened > closed
 }
