@@ -1869,7 +1869,11 @@ impl Core<'_> {
     fn let_reference_row(&mut self, at: u32, node: u32, field: u32) -> Stage<End> {
         let root = self.let_root(at)?;
         if self.body_of.get(self.local(root)?).copied().unwrap_or(NONE) != NONE {
-            return Ok(Err(Declined(Reason::Member)));
+            let Some(count) = self.literal_array_length(root, field)? else {
+                return Ok(Err(Declined(Reason::Member)));
+            };
+            self.array_members.insert(node, i128::from(count));
+            return Ok(Ok(End::Value));
         }
         if self.let_reads_cell(at)? {
             return Ok(Ok(End::Placeholder));

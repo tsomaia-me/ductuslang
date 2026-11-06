@@ -2680,3 +2680,28 @@ fn a_native_call_of_another_count_or_with_named_arguments_draws_as_a_math_call_d
         30
     );
 }
+
+const BODY_LET_MEMBERS: [&[&str]; 4] = [
+    &[
+        "fn f(n):\n    let xs = [1, 2, 3]\n    xs.size + n\n",
+        "Clip c:\n    Note/(f(3))\n",
+    ],
+    &[
+        "fn f(n):\n    let xs = [1, 2.5, 3]\n    xs.size + xs.capacity + n\n",
+        "Clip c:\n    Note/(f(3) + f(4))\n",
+    ],
+    &[
+        "fn f(n):\n    let xs = [1, 2, 3]\n    u8(xs.size) + 300 + n\n",
+        "Clip c:\n    Note/(f(3))\n",
+    ],
+    &[
+        "fn f(n):\n    let xs = [1, 2, 3]\n    xs.size\n",
+        "Clip c:\n    Note/1\n",
+    ],
+];
+
+#[test]
+fn a_member_of_a_body_let_holding_an_array_literal_is_its_length_beside_a_valid_twin_in_every_order()
+ {
+    assert_eq!(same_as_the_old_engine(&BODY_LET_MEMBERS), 24);
+}
