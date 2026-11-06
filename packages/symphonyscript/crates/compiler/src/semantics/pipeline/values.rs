@@ -128,12 +128,22 @@ impl Core<'_> {
         Ok(match (x, y) {
             (Leaf::Bool, _) | (_, Leaf::Bool) => EvalTy::Bool,
             (Leaf::Float, _) | (_, Leaf::Float) => {
-                let mut wide = false;
+                let (mut host, mut derived, mut argument, mut literal) =
+                    (false, false, false, false);
                 for (operand, fact) in [(a, &left), (b, &right)] {
-                    wide |= fact.leaf == Leaf::Float && self.is_reactive(operand)?;
-                    wide |= self.own_float(operand)? == EvalTy::F64;
+                    if fact.leaf == Leaf::Float && self.is_reactive(operand)? {
+                        let (reads_host, reads_derived) = self.reactive_reads(operand)?;
+                        host |= reads_host;
+                        derived |= reads_derived;
+                        argument |= !reads_host && !reads_derived;
+                    }
+                    literal |= self.own_float(operand)? == EvalTy::F64;
                 }
-                if wide { EvalTy::F64 } else { EvalTy::F32 }
+                if host || literal && !(argument && !derived) {
+                    EvalTy::F64
+                } else {
+                    EvalTy::F32
+                }
             }
             _ => EvalTy::Exact,
         })
@@ -234,6 +244,7 @@ impl Core<'_> {
             }
             Op::Lt | Op::Le | Op::Gt | Op::Ge | Op::Is | Op::IsNot => {
                 let pair = self.pair_ty(a, b)?;
+                self.defer_compared_fit(a, b, pair)?;
                 if pair == EvalTy::Exact {
                     for operand in [b, a] {
                         self.unflowed.insert(operand);
@@ -1512,6 +1523,7 @@ impl Core<'_> {
                 .get_mut(at as usize)
                 .and_then(|reads| reads.get_mut(class(ty)))
             && slot.is_none()
+            && !self.compared_reads.contains(&node)
         {
             *slot = Some((ty, unflowed));
             self.read_log.push(at);
@@ -1644,7 +1656,7 @@ impl Core<'_> {
         Ok(false)
     }
 
-    fn own_float(&self, root: u32) -> Result<EvalTy, Internal> {
+    pub fn own_float(&self, root: u32) -> Result<EvalTy, Internal> {
         for node in self.postorder(root)? {
             let (op, a, _, _) = self.ir.node(node)?;
             if op == Op::Float

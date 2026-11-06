@@ -80,6 +80,7 @@ mod reason;
 mod recording;
 mod ref_bodies;
 mod references;
+mod rule_width;
 mod run;
 mod slice;
 mod slice_transform;

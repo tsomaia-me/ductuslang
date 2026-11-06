@@ -3,7 +3,8 @@ use super::core::{Core, Stage};
 use super::decl_ref::DeclRef;
 use super::fact::Fact;
 use super::leaf::Leaf;
-use super::values::flexible;
+use super::values::{evaluated_in, flexible};
+use super::width::widens;
 use crate::diagnostics::Code;
 use crate::semantics::Internal;
 use crate::semantics::ir::flat::{NONE, Op, TopRec};
@@ -41,6 +42,17 @@ impl Core<'_> {
             && let Some(first) = fact.dims.first_mut()
         {
             *first = super::folds::ANY_LENGTH;
+        }
+        if self.derived(at) && fact.fixed.is_some() {
+            let own = fact.own();
+            match fact.leaf {
+                Leaf::Float => fact.fixed = None,
+                Leaf::Int => {
+                    fact.fixed = None;
+                    fact.read = own;
+                }
+                Leaf::Empty | Leaf::Bool | Leaf::Enum(_) | Leaf::Placeholder | Leaf::Error => {}
+            }
         }
         if !self.derived(at) && fact.fixed.is_none() && fact.read.is_none() {
             fact.read = match fact.leaf {
@@ -194,8 +206,12 @@ impl Core<'_> {
     }
 
     pub fn check_own_cell(&mut self, at: u32, root: u32) -> Stage<()> {
+        self.check_compared_fits(at)?;
         Ok(match self.own_ty(root)? {
             Some(own) if self.derived(at) && !self.is_kept(root)? => {
+                if let Some(width) = self.refused_width(at, root)? {
+                    return self.refuse_wider_rule(root, width);
+                }
                 let (ty, owning) = self.derived_width(at, root, own)?;
                 let owning = owning || self.owning;
                 let owning = std::mem::replace(&mut self.owning, owning);
@@ -205,6 +221,35 @@ impl Core<'_> {
             }
             Some(_) | None => self.evaluate_own(root)?,
         })
+    }
+
+    fn refused_width(&self, at: u32, root: u32) -> Result<Option<EvalTy>, Internal> {
+        let fact = self.fact(root)?;
+        let Some(fixed) = fact.fixed else {
+            return Ok(None);
+        };
+        let reads = self
+            .rule_reads
+            .get(at as usize)
+            .copied()
+            .unwrap_or_default();
+        let read = |classes: &[usize]| {
+            classes
+                .iter()
+                .find_map(|class| reads.get(*class).copied().flatten())
+                .map(|(ty, _)| evaluated_in(ty))
+        };
+        let width = match fact.leaf {
+            Leaf::Float => read(&[2, 1]).unwrap_or(EvalTy::F32),
+            Leaf::Int => match read(&[6, 5, 4]) {
+                Some(width) => width,
+                None => return Ok(None),
+            },
+            Leaf::Empty | Leaf::Bool | Leaf::Enum(_) | Leaf::Placeholder | Leaf::Error => {
+                return Ok(None);
+            }
+        };
+        Ok(Some(width).filter(|width| !widens(fixed, *width)))
     }
 
     fn derived_width(&self, at: u32, root: u32, own: EvalTy) -> Result<(EvalTy, bool), Internal> {

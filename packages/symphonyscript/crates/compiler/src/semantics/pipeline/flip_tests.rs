@@ -854,3 +854,125 @@ fn a_bundle_holding_a_syntax_fault_draws_what_the_old_engine_draws_beside_a_vali
  {
     assert_eq!(same_as_the_old_engine(&FAULTY_BUNDLES), 18);
 }
+
+const RULE_WIDTHS: [&[&str]; 14] = [
+    &[
+        "state big(1.5)\n",
+        "state k = f64(big) * 2.0\n",
+        "Clip c:\n    Note | velocity=k\n",
+    ],
+    &[
+        "state big(1.5)\n",
+        "state k = 2.0 * f64(big)\n",
+        "Clip c:\n    Note | velocity=(k + 1.0)\n",
+    ],
+    &["state big(1.5)\n", "state k = big * 2.0f64 + 1.0\n"],
+    &["state big(1)\n", "state k = (big + 1.0) * 2.0f64\n"],
+    &[
+        "state big(1.5)\n",
+        "state k = if big > 1.0 then f64(big) else 2.0\n",
+    ],
+    &[
+        "state big(1.5)\n",
+        "state k = [f64(big), 2.0]\n",
+        "Clip c:\n    Note | velocity=k[0]\n",
+    ],
+    &["state big(1.5)\n", "state k = [big, 2.0f64]\n"],
+    &[
+        "state big(1.5)\nstate k = f64(big) * 2.0\n",
+        "state m = k * 2.0\n",
+        "Clip c:\n    Note | velocity=m\n",
+    ],
+    &[
+        "state big(1)\n",
+        "state k = i64(big) * 2\n",
+        "Clip c:\n    Note/(k + 3000000000)\n",
+    ],
+    &[
+        "state big(1)\n",
+        "state k = big + i64(2)\n",
+        "Clip c:\n    Note/(k)\n",
+    ],
+    &[
+        "state big(1.5)\nstate k = f64(big) * 2.0\n",
+        "let m: f64 = 0\n",
+        "state j = k + m\n",
+    ],
+    &[
+        "state big(1.5)\nstate k = f64(big) * 2.0\n",
+        "state j: f64 = k + 1.0\n",
+        "Synth s:\n    Osc | freq=k\n",
+    ],
+    &[
+        "state big(1.5)\nstate k = f64(big) * 2.0\n",
+        "Clip c:\n    Note | velocity=(k * 2.0f64)\n",
+    ],
+    &[
+        "state big(1.5)\nstate k = f64(big) * 2.0\n",
+        "fn g(x): x\n",
+        "Clip c:\n    Note | velocity=g(k)\n",
+    ],
+];
+
+#[test]
+fn a_derived_cells_fixed_operand_wider_than_the_width_its_uses_expect_draws_type_mismatch_at_that_operand_beside_a_valid_twin_in_every_order_517()
+ {
+    assert_eq!(same_as_the_old_engine(&RULE_WIDTHS), 246);
+}
+
+const COMPARED_WIDTHS: [&[&str]; 10] = [
+    &[
+        "state big(1.5)\n",
+        "state k = big * 1e39\n",
+        "Clip c:\n    Note when k > 1\n",
+    ],
+    &[
+        "state big(1.5)\n",
+        "state k = big * 1e39\n",
+        "Clip c:\n    Note when k + 1.0 > 1\n",
+    ],
+    &[
+        "state big(1.5)\n",
+        "pattern G(default x):\n    Note when x > 1\n",
+        "Clip c:\n    G/(big * 1e39)\n",
+    ],
+    &[
+        "state big(1.5)\n",
+        "pattern G(default x):\n    Note when x > 1e39\n",
+        "Clip c:\n    G/(big)\n",
+    ],
+    &[
+        "state a(1)\n",
+        "state b = a + 0.5\n",
+        "Clip c:\n    Note when b > 1e39\n",
+    ],
+    &[
+        "state big(1.5)\nstate k = big * 2.0\n",
+        "Synth s:\n    Osc | freq=k\n",
+        "Clip c:\n    Note when k > 1e39\n",
+    ],
+    &[
+        "state big(1.5)\nstate k = big * 2.0\n",
+        "Clip c:\n    Note when k > 1e39\n    Note | velocity=k\n",
+    ],
+    &[
+        "state big(1.5)\nstate k = big * 1e39\n",
+        "fn g(x): x > 1\n",
+        "Clip c:\n    Note when g(k)\n",
+    ],
+    &[
+        "state big(1.5)\n",
+        "state k = big * 1e39\n",
+        "Clip c:\n    Note when k.past(1, 0.0) > 1\n",
+    ],
+    &[
+        "state big(1.5)\n",
+        "Clip c:\n    Note when big * 1e39 > 1\n",
+    ],
+];
+
+#[test]
+fn a_derived_float_cell_or_a_reactive_argument_read_only_in_a_comparison_with_a_flexible_operand_takes_the_default_f32_beside_a_valid_twin_in_every_order_518()
+ {
+    assert_eq!(same_as_the_old_engine(&COMPARED_WIDTHS), 204);
+}

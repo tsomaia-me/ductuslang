@@ -55,6 +55,8 @@ pub(crate) struct Core<'a> {
     pub fitting: bool,
     pub unflowed: HashSet<u32>,
     pub unused_reads: HashSet<(u32, u32)>,
+    pub compared_reads: HashSet<u32>,
+    pub compared_fits: Vec<(u32, u32)>,
     pub driving: bool,
     pub need: Option<Need>,
 
@@ -232,6 +234,8 @@ impl<'a> Core<'a> {
             fitting: false,
             unflowed: HashSet::new(),
             unused_reads: HashSet::new(),
+            compared_reads: HashSet::new(),
+            compared_fits: Vec::new(),
             driving: false,
             need: None,
 

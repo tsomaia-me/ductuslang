@@ -382,7 +382,7 @@ impl Core<'_> {
                 continue;
             };
             let (op, a, b, c) = self.ir.node(node)?;
-            let soft = reactive && fact.read.is_some();
+            let soft = reactive && (fact.read.is_some() || self.adaptive_operand(node)?);
             let through = match op {
                 Op::Neg | Op::Add | Op::Sub | Op::Mul | Op::Div | Op::Rem | Op::Pow | Op::Array
                     if soft =>
