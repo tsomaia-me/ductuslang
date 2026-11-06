@@ -132,7 +132,13 @@ impl Core<'_> {
                 continue;
             }
             let defaulted = defaults.get(position) == Some(&root);
-            if defaulted && let Some(cells) = self.late_reads(root, &late)? {
+            let read_late = match self.late_reads(root, &late)? {
+                Some(cells) => Some(cells),
+                None if defaulted && self.reaches_cell(root)? != 0 => Some(true),
+                None => None,
+            };
+            if defaulted && let Some(cells) = read_late {
+                self.use_spans.insert(item, span.clone());
                 facts.push(Fact::PLACEHOLDER);
                 self.env_vals.push(CoreValue::Error);
                 if let Some(slot) = reactive.last_mut() {
@@ -609,7 +615,11 @@ impl Core<'_> {
                 let outcome = if caller == NONE && self.default_nodes.contains_key(&root) {
                     self.late_default(env, record, position, root)?
                 } else {
+                    let defaulted = caller == NONE && self.a_default(record, position, root)?;
                     let saved = self.enter_env(caller);
+                    if defaulted {
+                        self.use_links.insert(0, (record.use_item, NONE));
+                    }
                     let outcome = self.late_argument(root);
                     self.leave_env(saved);
                     outcome?
@@ -675,6 +685,18 @@ impl Core<'_> {
             }
         }
         Ok(Ok(()))
+    }
+
+    fn a_default(&self, record: Env, position: u32, root: u32) -> Result<bool, Internal> {
+        let Some(pattern) = self
+            .bodies
+            .get(record.inst as usize)
+            .and_then(|body| self.pattern_at(body.function))
+        else {
+            return Ok(false);
+        };
+        let params = self.pattern_parts(pattern)?.0;
+        Ok(self.ir.binder(params.0 + position)?.default == root)
     }
 
     fn late_default(

@@ -107,3 +107,37 @@ fn a_pattern_parameter_bound_to_a_reactive_argument_is_typed_as_a_derived_cell_a
  {
     assert_eq!(same_as_the_old_engine(&REACTIVE_ARGUMENTS), 312);
 }
+
+const CELL_DEFAULTS: [&[&str]; 5] = [
+    &[
+        "state big(1)\n",
+        "pattern G(active = big > u8(255) + 4):\n    Note when active\n",
+        "Clip c:\n    G\n    G | active=true\n",
+    ],
+    &[
+        "state big(1)\n",
+        "pattern G(active = big > 2 / 0):\n    Note | accent=active\n",
+        "Clip c:\n    G\n",
+    ],
+    &[
+        "state big(1)\n",
+        "pattern G(active = big > [1, 2][5]):\n    Note/active\n",
+        "Clip c:\n    G\n",
+    ],
+    &[
+        "state big(1)\n",
+        "pattern G(active = big.past(1, 0) > 1):\n    Note when active\n",
+        "Clip c:\n    G\n",
+    ],
+    &[
+        "state big(1)\n",
+        "pattern G(default x, active = big > 1):\n    Note/x when active\n",
+        "Clip c:\n    G/2\n",
+    ],
+];
+
+#[test]
+fn a_parameters_default_reading_a_cell_is_bound_once_the_cells_are_known_and_draws_at_its_use_what_the_old_engine_draws_beside_a_valid_twin_in_every_order()
+ {
+    assert_eq!(same_as_the_old_engine(&CELL_DEFAULTS), 120);
+}
