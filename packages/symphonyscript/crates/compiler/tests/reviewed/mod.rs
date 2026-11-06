@@ -4936,17 +4936,48 @@ fn cell_reads(program: &str, name: &str) -> Vec<(usize, usize)> {
 
 fn integer_cell_read_beside_a_refusal(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
     let name = seen.text(at);
+    let refused = |lo: usize, hi: usize| {
+        seen.new.iter().any(|drawn| {
+            matches!(
+                drawn.0.as_str(),
+                "type-mismatch" | "operand-type" | "index-type" | "condition-type"
+            ) && drawn.1 <= lo
+                && hi <= drawn.2
+        })
+    };
     change == Change::Added
         && at.0 == "integer-cell"
         && cell_reads(seen.program, name).iter().any(|(lo, hi)| {
-            seen.new.iter().any(|drawn| {
-                matches!(
-                    drawn.0.as_str(),
-                    "type-mismatch" | "operand-type" | "index-type" | "condition-type"
-                ) && drawn.1 <= *lo
-                    && *hi <= drawn.2
-            })
+            refused(*lo, *hi)
+                || calls_of_the_body_at(seen.program, *lo)
+                    .iter()
+                    .any(|(start, end)| refused(*start, *end))
         })
+}
+
+fn calls_of_the_body_at(program: &str, at: usize) -> Vec<(usize, usize)> {
+    let Some((start, line)) = lines_at(program)
+        .into_iter()
+        .rfind(|(start, _)| *start <= at)
+    else {
+        return Vec::new();
+    };
+    let Some(name) = line
+        .strip_prefix("fn ")
+        .and_then(|rest| rest.split_once('('))
+        .map(|(name, _)| name)
+        .filter(|name| !name.is_empty())
+    else {
+        return Vec::new();
+    };
+    let call = format!("{name}(");
+    program
+        .match_indices(&call)
+        .filter(|(found, _)| {
+            word_start(program, *found) && !(start..start + line.len()).contains(found)
+        })
+        .map(|(found, _)| (found, found + call.len()))
+        .collect()
 }
 
 fn integer_cell_read_inside_a_refusal(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {

@@ -1173,7 +1173,18 @@ impl Core<'_> {
                 node,
                 "built-ins apply to single values, not arrays",
             )?;
-            return Ok(Ok(Fact::ERROR));
+            let mut runtime = true;
+            for (arg, fact) in self.arguments(node)?.into_iter().zip(&facts) {
+                if !fact.dims.is_empty() && !self.reads_an_array_cell(arg)? {
+                    runtime = false;
+                }
+            }
+            if !runtime {
+                return Ok(Ok(Fact::ERROR));
+            }
+            for fact in &mut facts {
+                fact.dims.clear();
+            }
         }
         let numeric =
             |fact: &Fact| !fact.node && matches!(fact.leaf, Leaf::Int | Leaf::Float | Leaf::Empty);
@@ -1434,5 +1445,39 @@ impl Core<'_> {
             format!("`{name}` takes {arity} {noun}, not {given}"),
         )?;
         Ok(true)
+    }
+}
+
+impl Core<'_> {
+    fn reads_an_array_cell(&mut self, root: u32) -> Result<bool, Internal> {
+        let outer = self.inst;
+        let mut stack = vec![(root, outer)];
+        let mut found = false;
+        while let Some((node, inst)) = stack.pop() {
+            self.inst = inst;
+            let (op, a, b, c) = self.ir.node(node)?;
+            if op == Op::Name {
+                if let DeclRef::Cell(_) = self.bound(node)?
+                    && self.fact(node).is_ok_and(|fact| !fact.dims.is_empty())
+                {
+                    found = true;
+                    break;
+                }
+                continue;
+            }
+            if op == Op::Add {
+                stack.extend([(a, inst), (b, inst)]);
+            } else if op == Op::If {
+                stack.extend([(b, inst), (c, inst)]);
+            } else if matches!(op, Op::Index | Op::IndexFromEnd | Op::Slice) {
+                stack.push((a, inst));
+            } else if op == Op::Call
+                && let Some(body) = self.body_of_call(node)
+            {
+                stack.push((self.body_value(body)?, body));
+            }
+        }
+        self.inst = outer;
+        Ok(found)
     }
 }

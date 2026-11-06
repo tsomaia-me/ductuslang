@@ -2731,3 +2731,31 @@ fn a_loose_float_argument_beside_a_refused_call_is_read_in_its_bodys_float_width
  {
     assert_eq!(same_as_the_old_engine(&LOOSE_FLOAT_ARGUMENTS), 30);
 }
+
+const MATH_OVER_ARRAYS: [&[&str]; 7] = [
+    &[
+        "state tw([]): f64[..4]\n",
+        "Clip c:\n    Note/(abs((tw + [])))\n",
+    ],
+    &["state v0([]): i32[..4]\n", "Clip c:\n    Note/(abs(v0))\n"],
+    &[
+        "state v0([]): i32[..4]\n",
+        "Clip c:\n    Note | velocity=(abs(v0))\n",
+    ],
+    &[
+        "state v0([1.5])\n",
+        "Clip c:\n    Note | velocity=(sqrt(v0) + min(v0, 1))\n",
+    ],
+    &["Clip c:\n    Note/(abs([1.5, 2]))\n"],
+    &["let xs = [1.5, 2]\n", "Clip c:\n    Note/(abs(xs))\n"],
+    &[
+        "state n0(false)\n",
+        "Clip c:\n    Note/(abs(if true then (if n0 then [1] else [1]) else [1.5]))\n",
+    ],
+];
+
+#[test]
+fn a_math_call_over_an_array_draws_array_operand_and_one_reading_an_array_cell_keeps_its_element_type_beside_a_valid_twin_in_every_order()
+ {
+    assert_eq!(same_as_the_old_engine(&MATH_OVER_ARRAYS), 38);
+}
