@@ -393,6 +393,16 @@ impl Core<'_> {
             {
                 found = Some(placement.as_name);
             }
+            if let DeclRef::Cell(at) = decl
+                && !self
+                    .ir
+                    .cells
+                    .get(at as usize)
+                    .is_some_and(|rec| rec.faulty_line)
+                && self.faulty_declaration(*top)?
+            {
+                found = Some(name);
+            }
         }
         match found {
             Some(name) if declared == 1 => self.declared_span(Some((name, self.ir.base))),

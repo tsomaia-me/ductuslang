@@ -2572,7 +2572,15 @@ fn a_callee_naming_a_value_or_a_parameter_draws_not_callable_once_outside_every_
     assert_eq!(same_as_the_old_engine(&NOT_CALLABLE_ANYWHERE), 72);
 }
 
-const CLASH_WITH_A_FAULTY_PLACEMENT: [&[&str]; 4] = [
+const CLASH_WITH_A_FAULTY_PLACEMENT: [&[&str]; 6] = [
+    &[
+        "state rises = for i in 1..3 into n from 0: n + 1\nstate n\n(4)\n",
+        "Clip c:\n    Note/rises\n",
+    ],
+    &[
+        "state rises = for i in 1..3 into n from 0: n + 1\nstate n\n",
+        "Clip c:\n    Note/rises\n",
+    ],
     &[
         "state rises = for i in 1..3 into n from 0: n + 1\nxstate n(4)\n",
         "Clip c:\n    Note/rises\n",
@@ -2594,7 +2602,7 @@ const CLASH_WITH_A_FAULTY_PLACEMENT: [&[&str]; 4] = [
 #[test]
 fn a_for_name_equal_to_a_placement_on_a_faulty_line_draws_its_clash_with_that_name_as_related_beside_a_valid_twin_in_every_order()
  {
-    assert_eq!(same_as_the_old_engine(&CLASH_WITH_A_FAULTY_PLACEMENT), 24);
+    assert_eq!(same_as_the_old_engine(&CLASH_WITH_A_FAULTY_PLACEMENT), 36);
 }
 
 const NAMED_DOT_CALLS: [&[&str]; 11] = [
