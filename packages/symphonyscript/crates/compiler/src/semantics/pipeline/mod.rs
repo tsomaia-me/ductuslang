@@ -26,6 +26,7 @@ mod decl_ref;
 mod declined;
 mod destinations;
 mod detached;
+mod dot_calls;
 #[cfg(test)]
 mod enum_tests;
 mod enums;

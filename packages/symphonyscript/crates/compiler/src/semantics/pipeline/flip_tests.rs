@@ -2172,3 +2172,54 @@ fn a_derived_cells_flexible_compile_time_rule_fits_its_width_whole_as_the_old_en
  {
     assert_eq!(same_as_the_old_engine(&FLEXIBLE_RULES), 78);
 }
+
+const DOT_CALLS: [&[&str]; 12] = [
+    &["fn plus(a, b): a + b\n", "Clip c:\n    Note/(3.plus(4))\n"],
+    &[
+        "fn plus(a, b): a + b\nlet x = 3\n",
+        "Clip c:\n    Note/(x.plus(4))\n",
+    ],
+    &["fn plus(a, b): a + b\n", "Clip c:\n    Note/(3.plus())\n"],
+    &[
+        "fn plus(a, b): a + b\n",
+        "Clip c:\n    Note/(3.plus(4, 5))\n",
+    ],
+    &[
+        "fn plus(a, b): a + b\n",
+        "Clip c:\n    Note/(3.plus(true))\n",
+    ],
+    &[
+        "fn first(xs): xs[0]\n",
+        "Clip c:\n    Note/([1, 2].first())\n",
+    ],
+    &[
+        "fn plus(a, b): a + b\n",
+        "Clip c:\n    Note/(3.plus(3000000000))\n",
+    ],
+    &[
+        "fn plus(a, b): a + b\n",
+        "Clip c:\n    Note/(3.plus(4).plus(5))\n",
+    ],
+    &[
+        "fn plus(a, b): a + b\nfn twice(x): x.plus(x)\n",
+        "Clip c:\n    Note/(twice(3000000000))\n",
+    ],
+    &[
+        "fn plus(a, b): a + b\nstate q(1)\n",
+        "Clip c:\n    Note/(q.plus(1))\n    Note | velocity=(q.plus(0.5))\n",
+    ],
+    &[
+        "fn at(xs, i): xs[i]\n",
+        "Clip c:\n    Note/([1, 2, 3].at(5))\n",
+    ],
+    &[
+        "fn plus(a, b): a + b\n",
+        "Clip c:\n    for i in 0..3:\n        Note/(i.plus(60))\n",
+    ],
+];
+
+#[test]
+fn a_dot_call_of_a_source_function_is_the_call_with_its_receiver_first_beside_a_valid_twin_in_every_order()
+ {
+    assert_eq!(same_as_the_old_engine(&DOT_CALLS), 72);
+}

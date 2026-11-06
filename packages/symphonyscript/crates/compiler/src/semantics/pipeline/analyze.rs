@@ -34,7 +34,11 @@ fn stage<T>(outcome: Stage<T>) -> Result<Result<T, Reason>, Internal> {
 }
 
 pub(crate) fn analyze(inputs: &Inputs<'_>) -> Result<Option<Run>, Internal> {
-    let ir = inputs.ir;
+    let desugared = super::dot_calls::dot_calls(inputs.ir);
+    let (ir, dotted) = match &desugared {
+        Some((owned, calls)) => (owned, calls.as_slice()),
+        None => (inputs.ir, &[][..]),
+    };
     if !covers(ir) {
         return Ok(None);
     }
@@ -43,6 +47,7 @@ pub(crate) fn analyze(inputs: &Inputs<'_>) -> Result<Option<Run>, Internal> {
     }
     let mut stages = Stages::begin(ir.op.len());
     let mut core = Core::new(ir, inputs.vocabulary, inputs.variants, inputs.limits);
+    core.dot_calls = dotted.iter().copied().collect();
     core.front_end_drawn()?;
     if let Err(reason) = stage(core.collect())? {
         return declined(reason);
