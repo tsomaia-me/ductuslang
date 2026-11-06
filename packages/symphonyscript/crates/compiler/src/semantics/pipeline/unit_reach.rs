@@ -95,10 +95,10 @@ impl Core<'_> {
         let mut reach = UnitReach::default();
         let mut missing = Vec::new();
         let mut seen = HashSet::new();
-        let mut stack = vec![root];
-        while let Some(node) = stack.pop() {
+        let mut stack = vec![(root, false)];
+        while let Some((node, base)) = stack.pop() {
             CountedWalk::CoreFamilies.step();
-            if !seen.insert(node) {
+            if !seen.insert((node, base)) {
                 continue;
             }
             let fact = self.fact(node)?;
@@ -143,7 +143,9 @@ impl Core<'_> {
                         if !local {
                             reach.entered.insert(node);
                         }
-                        stack.push(self.let_root(at)?);
+                        if local || base {
+                            stack.push((self.let_root(at)?, base));
+                        }
                     }
                     DeclRef::Param(position) => {
                         if self.binding_owner(node)? < self.functions() {
@@ -170,7 +172,7 @@ impl Core<'_> {
                     let arguments = self.arguments(node)?;
                     for position in &inner.params {
                         if let Some(argument) = arguments.get(*position as usize) {
-                            stack.push(*argument);
+                            stack.push((*argument, false));
                         }
                     }
                 }
@@ -178,9 +180,9 @@ impl Core<'_> {
                     if self.body_of_call(node).is_some() {
                         reach.entered.insert(node);
                     }
-                    stack.push(self.fold_rec(node)?.start);
+                    stack.push((self.fold_rec(node)?.start, false));
                 }
-                Op::Index | Op::IndexFromEnd | Op::Slice => stack.push(a),
+                Op::Index | Op::IndexFromEnd | Op::Slice => stack.push((a, true)),
                 Op::Int
                 | Op::Float
                 | Op::Bool
@@ -217,7 +219,11 @@ impl Core<'_> {
                 | Op::Str
                 | Op::Match
                 | Op::MethodCall
-                | Op::NamedMethodCall => stack.extend(self.operands(node)?),
+                | Op::NamedMethodCall => {
+                    for operand in self.operands(node)? {
+                        stack.push((operand, base && op == Op::Array));
+                    }
+                }
             }
         }
         if !missing.is_empty() {

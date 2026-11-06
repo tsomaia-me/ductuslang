@@ -749,6 +749,8 @@ impl Core<'_> {
                 list.dedup();
             }
         }
+        let mut fed_memo: std::collections::HashMap<(u32, FamilyId), bool> =
+            std::collections::HashMap::new();
         for (node, family, key) in takers {
             if held.contains(&(node, key)) || conflicting.contains(&node) {
                 continue;
@@ -767,7 +769,11 @@ impl Core<'_> {
                 }
             } else {
                 let inside = found.reached.contains(&(node, family, key));
-                self.unreached_chains(key, family, inside, &sites, &found, &top)?
+                if inside && self.fully_fed(key, family, &sites, &found, &top, &mut fed_memo) {
+                    Vec::new()
+                } else {
+                    self.unreached_chains(key, family, inside, &sites, &found, &top)?
+                }
             };
             for chain in chains {
                 if chain.last().is_some_and(|outermost| {
@@ -1135,5 +1141,44 @@ impl Core<'_> {
             .get((owner - self.functions()) as usize)
             .ok_or(Internal::missed("IR for"))?;
         Ok(position == rec.names.1 - rec.names.0)
+    }
+}
+
+impl Core<'_> {
+    fn fully_fed(
+        &self,
+        body: u32,
+        family: FamilyId,
+        sites: &std::collections::HashMap<u32, Vec<(u32, u32)>>,
+        found: &FeedFound,
+        top: &FeedFound,
+        memo: &mut std::collections::HashMap<(u32, FamilyId), bool>,
+    ) -> bool {
+        let mut stack = vec![(body, false)];
+        while let Some((at, expanded)) = stack.pop() {
+            if memo.contains_key(&(at, family)) {
+                continue;
+            }
+            let list = sites.get(&at).map(Vec::as_slice).unwrap_or_default();
+            if !expanded {
+                stack.push((at, true));
+                for (caller, _) in list {
+                    if self.function_inst(*caller) && !memo.contains_key(&(*caller, family)) {
+                        stack.push((*caller, false));
+                    }
+                }
+                continue;
+            }
+            CountedWalk::CoreFamilies.step();
+            let fed = !list.is_empty()
+                && list.iter().all(|(caller, call)| {
+                    let here = found.fed.contains(&(*caller, *call, family))
+                        || top.fed.contains(&(*caller, *call, family));
+                    here && (!self.function_inst(*caller)
+                        || memo.get(&(*caller, family)).copied().unwrap_or(false))
+                });
+            memo.insert((at, family), fed);
+        }
+        memo.get(&(body, family)).copied().unwrap_or(false)
     }
 }

@@ -1400,3 +1400,31 @@ fn stress_an_untyped_bare_variant_flow_of_aliasing_lets_draws_one_diagnostic_who
         Timing::Judged,
     ));
 }
+
+pub(super) fn scaled_let_chain(n: usize) -> String {
+    let mut text = String::from("fn g0(x): x + 1\nlet y0 = 1beats + 1\n");
+    for at in 1..=n {
+        text.push_str(&format!("fn g{at}(x): g{}(x) + 1\n", at - 1));
+        text.push_str(&format!("let y{at} = y{} + 1\n", at - 1));
+    }
+    text.push_str(&format!(
+        "Bar b | bar_len=(y{n} + g{n}(1beats)) beat_len=g{n}(2beats)\nBar c | bar_len=y{n}\n"
+    ));
+    text
+}
+
+#[test]
+#[ignore = "stress"]
+fn stress_a_chain_of_lets_and_functions_read_in_two_default_units_reads_each_plain_value_once_per_unit_in_time_and_memory_linear_in_the_chain()
+ {
+    let compiler =
+        Compiler::new(&symphonyscript_fixtures::bar_vocabulary()).expect("the vocabulary compiles");
+    assert_none(&ledger_failures_on(
+        &compiler,
+        "scaled let chain",
+        [250, 500, 1_000],
+        scaled_let_chain,
+        &none,
+        Timing::Judged,
+    ));
+}
