@@ -8,7 +8,7 @@ use super::leaf::Leaf;
 use super::reason::Reason;
 use crate::diagnostics::Code;
 use crate::semantics::Internal;
-use crate::semantics::ir::flat::Op;
+use crate::semantics::ir::flat::{NONE, Op};
 use crate::semantics::operators::{EvalTy, Value, ty_name};
 
 impl Core<'_> {
@@ -222,6 +222,25 @@ impl Core<'_> {
                 format!("the enum `{enum_text}` has no variant `{variant_text}`"),
             );
             self.unknown_variants.insert(node);
+        }
+        for at in 0..self.ir.lets.len() {
+            let at = u32::try_from(at).unwrap_or(u32::MAX);
+            if let Some(EvalTy::Enum(id)) = self.annotation_ty(at)? {
+                let root = self.let_root(at)?;
+                self.resolve_bare(root, id, true)?;
+            }
+        }
+        for at in 0..self.ir.cells.len() {
+            let at = u32::try_from(at).unwrap_or(u32::MAX);
+            if let Some(EvalTy::Enum(id)) = self.cell_annotation_ty(at)?
+                && let Some(rec) = self.ir.cells.get(at as usize).copied()
+            {
+                for root in [rec.init, rec.rule] {
+                    if root != NONE {
+                        self.resolve_bare(root, id, true)?;
+                    }
+                }
+            }
         }
         Ok(Ok(()))
     }

@@ -355,7 +355,9 @@ impl Core<'_> {
                 DeclRef::Fn(_) | DeclRef::Pattern(_) => {
                     return Ok(Err(Declined(Reason::FunctionValue)));
                 }
-                DeclRef::None if self.is_bare(node) => Fact::scalar(Leaf::Enum(None)),
+                DeclRef::None if self.is_bare(node) => {
+                    Fact::scalar(Leaf::Enum(self.bare_enums.get(&node).copied()))
+                }
                 DeclRef::Duplicate | DeclRef::None => Fact::PLACEHOLDER,
                 DeclRef::Instance(_) => Fact::node_reference(Vec::new()),
             },

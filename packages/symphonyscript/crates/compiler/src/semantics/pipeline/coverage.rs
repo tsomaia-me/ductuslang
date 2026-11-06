@@ -23,7 +23,8 @@ pub(crate) fn op_slice(op: Op) -> Slice {
         Op::NamedCall => Slice::One,
         Op::TyScalar => Slice::One,
         Op::TyArray => Slice::One,
-        Op::TyName | Op::TyVar => Slice::Pending,
+        Op::TyName => Slice::Five,
+        Op::TyVar => Slice::Pending,
         Op::To => Slice::Two,
         Op::Field => Slice::Two,
         Op::Past | Op::Stepped => Slice::Four,
@@ -386,6 +387,10 @@ fn plain_cell(ir: &FlatIr, rec: &CellRec) -> bool {
         && rec.clock.0 == rec.clock.1
         && rec.capacity.is_none()
         && (scalar_annotation(ir, rec.binder)
+            || ir
+                .binders
+                .get(rec.binder as usize)
+                .is_some_and(|binder| enum_node(ir, binder.annotation))
             || host_fed && variable_annotation(ir, rec.binder)
             || derived && rec.init == NONE && array_annotation(ir, rec.binder))
 }
@@ -438,7 +443,7 @@ fn let_annotation(ir: &FlatIr, binder: u32) -> bool {
     let Some(rec) = ir.binders.get(binder as usize) else {
         return false;
     };
-    if rec.annotation == NONE || variable_annotation(ir, binder) {
+    if rec.annotation == NONE || variable_annotation(ir, binder) || enum_node(ir, rec.annotation) {
         return true;
     }
     let mut node = rec.annotation;
@@ -455,6 +460,10 @@ fn scalar_annotation(ir: &FlatIr, binder: u32) -> bool {
     ir.binders
         .get(binder as usize)
         .is_some_and(|binder| binder.annotation == NONE || scalar_node(ir, binder.annotation))
+}
+
+fn enum_node(ir: &FlatIr, node: u32) -> bool {
+    matches!(ir.node(node), Ok((Op::TyName, ..)))
 }
 
 fn scalar_node(ir: &FlatIr, node: u32) -> bool {

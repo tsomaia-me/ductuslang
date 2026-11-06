@@ -1,7 +1,8 @@
 use crate::compiler::Compiler;
 use crate::syntax::front_end_goldens::source;
 
-const ENUMS: [&str; 34] = [
+const ENUMS: [&str; 35] = [
+    "state m(Manual): Mode\nSynth s:\n    Osc | wave=Saw\n",
     "Clip c:\n    Note/(i32(Wave::Saw))\n",
     "Clip c:\n    Note/(if Wave::Saw is Mode::Auto then 1 else 2)\n",
     "Clip c:\n    Note/(if Wave::Saw is Wave::Sine then 1 else 2)\n",
@@ -38,11 +39,10 @@ const ENUMS: [&str; 34] = [
     "Synth s:\n    Osc | wave=Wave::Zig\n",
 ];
 
-const DECLINED: [&str; 10] = [
+const DECLINED: [&str; 9] = [
     "fn f(w): w\nSynth s:\n    Osc | wave=(f(Saw))\n",
     "fn pick(x): if x then Wave::Saw else Wave::Sine\nSynth s:\n    Osc | wave=(pick(true))\n",
     "let a = Saw\nSynth s:\n    Osc | wave=a\n",
-    "state m(Manual): Mode\nSynth s:\n    Osc | wave=Saw\n",
     "state w(Saw)\nSynth s:\n    Osc | wave=w\n",
     "state w(Wave::Saw)\nClip c:\n    Note/(if w.past(1) is Saw then 1 else 2)\n",
     "state w(Wave::Saw)\nstate m = w.past(1, Sine)\nSynth s:\n    Osc | wave=m\n",
@@ -66,6 +66,50 @@ fn qualified_and_bare_variants_enum_attributes_enum_cells_and_is_draw_what_the_o
         assert_eq!(found, old.check(&sources), "{text}");
     }
     for text in DECLINED {
+        assert_eq!(new.checked_by_new_core(&[source(text)]), None, "{text}");
+    }
+}
+
+const ENUM_ANNOTATIONS: [(&str, &str); 11] = [
+    ("state m(Manual): Mode\n", "Plant p | mode=m\n"),
+    ("state m(Mode::Auto): Mode\n", "Plant p | mode=m\n"),
+    ("state m(1): Mode\n", "Plant p | mode=m\n"),
+    ("state m(Sideways): Mode\n", "Plant p | mode=m\n"),
+    ("let w: Wave = Saw\n", "Synth s:\n    Osc | wave=w\n"),
+    (
+        "let w: Wave = Wave::Square\n",
+        "Synth s:\n    Osc | wave=w\n",
+    ),
+    ("let w: Wave = Mode::Auto\n", "Synth s:\n    Osc | wave=w\n"),
+    ("let w: Wave = 3\n", "Synth s:\n    Osc | wave=w\n"),
+    (
+        "state m(Manual): Mode\n",
+        "Plant p | mode=(if m is Auto then Manual else m)\n",
+    ),
+    ("let w: Mode = Auto\n", "Synth s:\n    Osc | wave=w\n"),
+    ("state m(Manual): Mode\n", "Clip c:\n    Note/m\n"),
+];
+
+#[test]
+fn an_enum_annotation_types_its_let_or_cell_and_gives_a_bare_init_its_enum_in_both_orders() {
+    let vocabulary = symphonyscript_fixtures::vocabulary();
+    let old = Compiler::new(&vocabulary)
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
+    let new = Compiler::new(&vocabulary).expect("the vocabulary compiles");
+    for (first, second) in ENUM_ANNOTATIONS {
+        for text in [format!("{first}{second}"), format!("{second}{first}")] {
+            let sources = [source(&text)];
+            let found = new
+                .checked_by_new_core(&sources)
+                .unwrap_or_else(|| panic!("the new core takes {text}"));
+            assert_eq!(found, old.check(&sources), "{text}");
+        }
+    }
+    for text in [
+        "state m(Saw): Mode\nPlant p | mode=m\n",
+        "state m(Manual): Nope\nPlant p | mode=m\n",
+    ] {
         assert_eq!(new.checked_by_new_core(&[source(text)]), None, "{text}");
     }
 }
