@@ -276,27 +276,26 @@ impl Core<'_> {
                         _ => EvalTy::F32,
                     },
                 };
-                let Some(arg) = self.arguments(node)?.first().copied() else {
-                    return Err(Internal::missed("a math argument"));
-                };
-                self.unflowed.insert(arg);
-                let fact = self.fact(arg)?;
-                match (fact.fixed, fact.read) {
-                    _ if fact.leaf != Leaf::Int
-                        || !fact.dims.is_empty()
-                        || deferred.is_none() && matches!(ty, EvalTy::F32 | EvalTy::F64) =>
-                    {
-                        steps.push(Step::Visit(arg, target));
+                for arg in self.arguments(node)?.into_iter().rev() {
+                    self.unflowed.insert(arg);
+                    let fact = self.fact(arg)?;
+                    match (fact.fixed, fact.read) {
+                        _ if fact.leaf != Leaf::Int
+                            || !fact.dims.is_empty()
+                            || deferred.is_none() && matches!(ty, EvalTy::F32 | EvalTy::F64) =>
+                        {
+                            steps.push(Step::Visit(arg, target));
+                        }
+                        (None, None) => {
+                            steps.push(Step::Float(arg, target));
+                            steps.push(Step::Visit(arg, EvalTy::Exact));
+                        }
+                        (Some(own), _) => {
+                            steps.push(Step::Widen(target));
+                            steps.push(Step::Visit(arg, own));
+                        }
+                        (None, Some(_)) => steps.push(Step::Visit(arg, target)),
                     }
-                    (None, None) => {
-                        steps.push(Step::Float(arg, target));
-                        steps.push(Step::Visit(arg, EvalTy::Exact));
-                    }
-                    (Some(own), _) => {
-                        steps.push(Step::Widen(target));
-                        steps.push(Step::Visit(arg, own));
-                    }
-                    (None, Some(_)) => steps.push(Step::Visit(arg, target)),
                 }
                 return Ok(());
             }
@@ -1591,6 +1590,12 @@ impl Core<'_> {
                     ("min", [x, y]) => least(x, y, true),
                     ("max", [x, y]) => least(x, y, false),
                     ("clamp", [x, lo, hi]) => least(&least(x, lo, false), hi, true),
+                    ("lerp", [Value::F32(a), Value::F32(b), Value::F32(t)]) => {
+                        Value::F32(a + (b - a) * t)
+                    }
+                    ("lerp", [Value::F64(a), Value::F64(b), Value::F64(t)]) => {
+                        Value::F64(a + (b - a) * t)
+                    }
                     (name, [Value::F32(x)]) => Value::F32(float_fn32(name, *x)),
                     (name, [Value::F64(x)]) => Value::F64(float_fn64(name, *x)),
                     _ => Value::Error,

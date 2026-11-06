@@ -2341,6 +2341,9 @@ fn a_math_function_keeps_its_operands_unit_family_as_the_old_engine_does() {
         "Env e | attack=(floor(1.5s))\n",
         "Env e | attack=(sqrt(4s))\n",
         "Env e | attack=(round(3))\n",
+        "Env e | attack=(lerp(1s, 2s, 0.5))\n",
+        "Env e | attack=(lerp(1s, 2, 0.5))\n",
+        "Env e | attack=(lerp(1, 2, 1s))\n",
     ] {
         let sources = [source(text)];
         let found = new
@@ -2349,7 +2352,7 @@ fn a_math_function_keeps_its_operands_unit_family_as_the_old_engine_does() {
         assert_eq!(found, old.check(&sources), "{text}");
         programs += 1;
     }
-    assert_eq!(programs, 10);
+    assert_eq!(programs, 13);
 }
 
 const FLOAT_FUNCTIONS: [&[&str]; 19] = [
@@ -2390,4 +2393,30 @@ const FLOAT_FUNCTIONS: [&[&str]; 19] = [
 fn a_float_math_function_converts_an_integer_as_division_does_and_yields_a_float_beside_a_valid_twin_in_every_order()
  {
     assert_eq!(same_as_the_old_engine(&FLOAT_FUNCTIONS), 66);
+}
+
+const LERPS: [&[&str]; 9] = [
+    &["Clip c:\n    Note | velocity=(lerp(0, 1, 0.25))\n"],
+    &["Clip c:\n    Note/(lerp(0, 10, 0.5))\n"],
+    &["Clip c:\n    Note/(i32(lerp(0, 10, 0.5)))\n"],
+    &["Clip c:\n    Note | velocity=(lerp(true, 1, 0.5))\n"],
+    &[
+        "state q(0.5)\n",
+        "Clip c:\n    Note | velocity=(lerp(0.2, 0.8, q))\n",
+    ],
+    &[
+        "state q(1)\n",
+        "Clip c:\n    Note | velocity=(lerp(0, q, 0.5))\n",
+    ],
+    &["Clip c:\n    Note | velocity=(lerp(0, 300000000001, 0.5))\n"],
+    &["Clip c:\n    Note | velocity=(lerp(i64(0), 3, 0.5))\n"],
+    &[
+        "let x = lerp(2, 4, 0.5)\n",
+        "Clip c:\n    Note/([1, 2, 3, 4][i32(x)])\n",
+    ],
+];
+
+#[test]
+fn lerp_is_a_float_between_its_first_two_arguments_beside_a_valid_twin_in_every_order() {
+    assert_eq!(same_as_the_old_engine(&LERPS), 30);
 }

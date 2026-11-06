@@ -1065,7 +1065,8 @@ impl Core<'_> {
     }
 }
 
-const MATH: [(&str, u32); 13] = [
+const MATH: [(&str, u32); 14] = [
+    ("lerp", 3),
     ("abs", 1),
     ("min", 2),
     ("max", 2),
@@ -1084,7 +1085,7 @@ const MATH: [(&str, u32); 13] = [
 pub(crate) fn float_math(name: &str) -> bool {
     matches!(
         name,
-        "floor" | "ceil" | "round" | "sqrt" | "sin" | "cos" | "tan" | "exp" | "log"
+        "floor" | "ceil" | "round" | "sqrt" | "sin" | "cos" | "tan" | "exp" | "log" | "lerp"
     )
 }
 
@@ -1142,6 +1143,37 @@ impl Core<'_> {
         if !facts.iter().all(numeric) {
             self.draw_at(Code::OperandType, node, format!("`{name}` takes numbers"))?;
             return Ok(Ok(Fact::ERROR));
+        }
+        if name == "lerp" {
+            let third = facts.get(2).and_then(|fact| fact.family);
+            if third.is_some() {
+                self.draw_at(
+                    Code::UnitOperation,
+                    node,
+                    "the third argument of `lerp` is a plain number",
+                )?;
+                return Ok(Ok(Fact::ERROR));
+            }
+            let (first, second) = (
+                facts.first().and_then(|fact| fact.family),
+                facts.get(1).and_then(|fact| fact.family),
+            );
+            if first.is_some() && second.is_some() && first != second {
+                return Ok(Err(Declined(Reason::UnitFlow)));
+            }
+            let mut fixed = None;
+            let mut read = None;
+            for fact in &facts {
+                fixed = super::width::combined(fixed, fact.fixed, true);
+                read = super::fact::reads(read, fact.read, true);
+            }
+            let mut found = Fact::numeric(
+                Leaf::Float,
+                fixed.map(super::width::float_for),
+                read.map(super::width::float_for),
+            );
+            found.family = first.or(second);
+            return Ok(Ok(found));
         }
         if float_math(name) {
             let fact = facts.first().cloned().unwrap_or(Fact::ERROR);
