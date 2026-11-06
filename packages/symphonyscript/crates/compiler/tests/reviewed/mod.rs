@@ -4342,6 +4342,18 @@ fn history_of_a_faulty_line_name(seen: &Seen<'_>, change: Change, at: &Drawn) ->
     change == Change::Removed && at.0 == "history-target" && !name.is_empty() && declared
 }
 
+fn not_a_value_in_an_unexpanded_loop_body(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
+    let before = seen.program.get(..at.1).unwrap_or_default();
+    let line = before.rsplit('\n').next().unwrap_or_default();
+    let depth = line.len() - line.trim_start().len();
+    let in_loop = before.lines().rev().skip(1).any(|earlier| {
+        let indent = earlier.len() - earlier.trim_start().len();
+        indent < depth && earlier.trim_start().starts_with("for ")
+    });
+    let unexpanded = seen.old.iter().any(|drawn| drawn.0 == "unknown-name");
+    change == Change::Added && at.0 == "not-a-value" && in_loop && unexpanded
+}
+
 fn loop_name_in_an_unknown_kinds_body(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
     let name = seen.text(at);
     let names_a_loop_variable = [
@@ -5273,6 +5285,11 @@ pub const CLASSES: &[Class] = &[
         ledger: "476",
         rule: "a history read of a name declared by a placement on a line holding a syntax fault draws nothing, the name being a placeholder wherever it is used (ARCHITECTURE §7), where the old engine draws history-target at it (`xstate gate(false)` with `gate.past(2)`)",
         explains: history_of_a_faulty_line_name,
+    },
+    Class {
+        ledger: "476",
+        rule: "a vocabulary name standing as a value in the body of a placement `for` whose iterable holds a placeholder draws not-a-value, a name resolution error, as code nothing expands draws its name resolution errors (SPEC §6.5; `let u = sin` draws it unread on both engines), where the old engine is silent in such a body (`for s in sections:` with `when Starts: s`)",
+        explains: not_a_value_in_an_unexpanded_loop_body,
     },
     Class {
         ledger: "480",
