@@ -20,11 +20,7 @@ impl Core<'_> {
             };
             for (position, (root, caller)) in args.iter().copied().enumerate() {
                 if !(caller == NONE && self.default_nodes.contains_key(&root))
-                    && body
-                        .reactive_args
-                        .get(position)
-                        .copied()
-                        .unwrap_or(false)
+                    && body.reactive_args.get(position).copied().unwrap_or(false)
                 {
                     let position = u32::try_from(position).unwrap_or(u32::MAX);
                     unread.push((body.function, position, root, caller));
