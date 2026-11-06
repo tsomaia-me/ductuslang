@@ -30,6 +30,9 @@ impl Core<'_> {
             if !self.ir.named(placement.as_name) {
                 return Ok(Ok(NONE));
             }
+            if placement.gate != NONE {
+                self.guards.push((placement.gate, env));
+            }
             return self.top_use(item, pattern, file);
         }
         let name = (

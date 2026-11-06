@@ -318,3 +318,29 @@ fn a_plain_fold_start_is_read_once_in_the_default_unit_and_the_accumulator_in_ba
         }
     }
 }
+
+const TOP_GATED_USES: [&[&str]; 4] = [
+    &[
+        "pattern Bank(default base):\n    Plant:\n        Valve/base Valve/(base + 0.25)\n",
+        "Bank manifold /0 when true\n",
+    ],
+    &[
+        "state live(true)\n",
+        "pattern Bank(default base):\n    Plant:\n        Valve/base\n",
+        "Bank manifold /0 when live\n",
+    ],
+    &[
+        "pattern Bank(default base):\n    Plant:\n        Valve/base\n",
+        "Bank manifold /0 when 1\n",
+    ],
+    &[
+        "pattern Bank(default base):\n    Plant:\n        Valve/base\n",
+        "Bank manifold /0 when [1][3] > 0\n",
+    ],
+];
+
+#[test]
+fn a_gate_on_a_top_level_pattern_use_is_a_bool_drawing_what_the_old_engine_draws_beside_a_valid_twin_in_every_order()
+ {
+    assert_eq!(same_as_the_old_engine(&TOP_GATED_USES), 42);
+}

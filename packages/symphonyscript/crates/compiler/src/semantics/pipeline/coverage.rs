@@ -321,8 +321,7 @@ fn item_landed(
         .name(placement.kind)
         .is_some_and(|entry| patterns.binary_search(&entry.sym.0).is_ok());
     let top = u32::try_from(at).is_ok_and(|at| tops.binary_search(&at).is_ok());
-    if (placement.gate != NONE && used && top)
-        || placement.flags.0 != placement.flags.1
+    if placement.flags.0 != placement.flags.1
         || placement.attrs_cut
         || placement.skipped_block.is_some()
         || (placement.inline
