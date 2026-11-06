@@ -332,7 +332,7 @@ fn the_shared_steps_programs_draw_the_old_engines_sets_on_the_new_core_beside_th
     }
 }
 
-const EXHAUSTIVE_CLASSES: [(&str, &[(&str, &str)]); 12] = [
+const EXHAUSTIVE_CLASSES: [(&str, &[(&str, &str)]); 11] = [
     (
         "state f([1.5, 2.5])\nstate n(0)\nClip c:\n    Note/(f[n])\n",
         &[("type-mismatch", "f[n]")],
@@ -372,13 +372,6 @@ const EXHAUSTIVE_CLASSES: [(&str, &[(&str, &str)]); 12] = [
         &[
             ("condition-type", "[1, 2][5]"),
             ("operand-type", "true + 1.5"),
-        ],
-    ),
-    (
-        "Clip c:\n    Note/(if (1.5 is [1, 2]) then 1 else (if [1, 2][5] then 2 else 3))\n",
-        &[
-            ("array-operand", "1.5 is [1, 2]"),
-            ("condition-type", "[1, 2][5]"),
         ],
     ),
     (
@@ -890,7 +883,8 @@ fn a_compile_time_operand_of_a_runtime_operation_is_computed_exactly_and_fitted_
     }
 }
 
-const UNTAKEN_UNDER_A_KEPT_CONDITION: [&str; 4] = [
+const ARMS_UNDER_A_REFUSED_CONDITION: [&str; 5] = [
+    "Clip c:\n    Note/(if (1.5 is [1, 2]) then 1 else (if [1, 2][5] then 2 else 3))\n",
     "let a = i32(if i32(true) then [1, 2][5] else [1, 2][5])\nClip c:\n    Note/(a)\n",
     "let a = i32(if i32(true) then [1, 2][5] else [1, 2][5])\nClip c:\n    Note | velocity=(a)\n",
     "let a = u8(if i32(true) then [1, 2][5] else 2)\nClip c:\n    Note/(a)\n",
@@ -898,18 +892,28 @@ const UNTAKEN_UNDER_A_KEPT_CONDITION: [&str; 4] = [
 ];
 
 #[test]
-fn a_choice_whose_condition_keeps_a_type_other_than_bool_takes_no_arm_when_its_let_is_read() {
+fn a_choice_whose_condition_is_refused_checks_both_arms_as_a_runtime_choice_and_draws_their_index_ranges_476()
+ {
     let old = Compiler::new(&symphonyscript_fixtures::vocabulary())
         .expect("the vocabulary compiles")
         .on_the_old_engine();
     let new =
         Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("the vocabulary compiles");
-    for text in UNTAKEN_UNDER_A_KEPT_CONDITION {
+    for text in ARMS_UNDER_A_REFUSED_CONDITION {
         let sources = [source(text)];
         let found = new
             .checked_by_new_core(&sources)
             .expect("the new core takes the program");
-        assert_eq!(found, old.check(&sources), "{text}");
+        assert!(
+            spanned(text, &found).contains(&("index-out-of-range".to_string(), "5".to_string())),
+            "{text}"
+        );
+        let classes = reviewed::moved(text, &drawn(&old.check(&sources)), &drawn(&found))
+            .unwrap_or_else(|unexplained| panic!("{text}: {unexplained:?}"));
+        assert!(
+            !classes.is_empty() && classes.iter().all(|class| class.ledger == "476"),
+            "{text}"
+        );
     }
 }
 
@@ -2644,10 +2648,15 @@ fn a_groups_history_read_with_neither_fallback_nor_init_takes_its_cells_settled_
                 .collect();
             assert_eq!(spanned(&text, &found), wanted, "{text}");
             let before = old.check(&sources);
-            if before != found && !wanted.iter().any(|(code, _)| code == "unrun-cell") {
+            if before != found {
                 let classes = reviewed::moved(&text, &drawn(&before), &drawn(&found))
                     .unwrap_or_else(|left| panic!("{text}\n  unexplained {left:?}"));
-                assert!(classes.iter().all(|class| class.ledger == "461"), "{text}");
+                let ledger = if wanted.iter().any(|(code, _)| code == "unrun-cell") {
+                    "476"
+                } else {
+                    "461"
+                };
+                assert!(classes.iter().all(|class| class.ledger == ledger), "{text}");
             }
             programs += 1;
         }
@@ -2880,4 +2889,472 @@ fn a_let_annotated_with_a_variable_array_holds_its_value_checks_its_capacity_and
         "state hh([1]): i32[..4]\nlet xs: u8[..4] = hh + [300]\nClip c:\n    Note/(xs[0])\n";
     let sources = [source(reactive)];
     assert_eq!(new.checked_by_new_core(&sources), Some(old.check(&sources)));
+}
+
+const CYCLIC_ROOTS: [OpenGroup; 12] = [
+    (
+        &[
+            "fn f(v): v.past(1, 0)\n",
+            "state x(1)\n",
+            "state h = f(h) + x\n",
+        ],
+        &[("declaration-cycle", "h"), ("history-target", "v")],
+    ),
+    (
+        &[
+            "fn f(v): v.past(1, 0)\n",
+            "state x(1)\n",
+            "state h = f(x) + h\n",
+        ],
+        &[("declaration-cycle", "h"), ("history-target", "v")],
+    ),
+    (
+        &[
+            "fn f(v): v.past(1, 0)\n",
+            "state x(1)\n",
+            "state h = f(g) + x\n",
+            "state g = h\n",
+        ],
+        &[("declaration-cycle", "h"), ("history-target", "v")],
+    ),
+    (
+        &["fn f(v): v.past(1, 0)\n", "let h = f(h)\n"],
+        &[("declaration-cycle", "h"), ("history-target", "v")],
+    ),
+    (
+        &["fn f(v): v.past(1, 0)\n", "let h = b\n", "let b = f(h)\n"],
+        &[("declaration-cycle", "h"), ("history-target", "v")],
+    ),
+    (
+        &[
+            "fn f(v): 1 + true\n",
+            "state x(1)\n",
+            "state h = f(h) + x\n",
+        ],
+        &[("declaration-cycle", "h"), ("operand-type", "1 + true")],
+    ),
+    (
+        &["let h = (1 + true) + h\n"],
+        &[("declaration-cycle", "h"), ("operand-type", "1 + true")],
+    ),
+    (
+        &["let h = [1][5] + h\n"],
+        &[("declaration-cycle", "h"), ("index-out-of-range", "5")],
+    ),
+    (
+        &["fn f(v): v\n", "fn g(v): f(1 + true)\n", "let h = g(h)\n"],
+        &[("declaration-cycle", "h"), ("operand-type", "1 + true")],
+    ),
+    (
+        &[
+            "state x(1)\n",
+            "state h(1 + true) = g + x\n",
+            "state g = h\n",
+        ],
+        &[("declaration-cycle", "h"), ("operand-type", "1 + true")],
+    ),
+    (
+        &["fn f(v): v + 1\n", "state x(1)\n", "state h = f(x) + x\n"],
+        &[],
+    ),
+    (
+        &[
+            "state x(1)\n",
+            "state h(1 + 1) = g + x\n",
+            "state g = h.past(1)\n",
+        ],
+        &[],
+    ),
+];
+
+#[test]
+fn a_cyclic_declarations_rule_draws_every_fault_that_holds_whatever_the_cycle_holds_in_every_order_503()
+ {
+    let old = Compiler::new(&symphonyscript_fixtures::vocabulary())
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
+    let new =
+        Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("the vocabulary compiles");
+    let mut programs = 0;
+    for (items, wanted) in CYCLIC_ROOTS {
+        let mut items: Vec<String> = items.iter().map(|item| (*item).to_string()).collect();
+        items.push("Clip c:\n    Note/h\n".to_string());
+        let mut wanted: Vec<(String, String)> = wanted
+            .iter()
+            .map(|(code, span)| ((*code).to_string(), (*span).to_string()))
+            .collect();
+        wanted.sort();
+        for text in orders(&items) {
+            let sources = [source(&text)];
+            let found = new
+                .checked_by_new_core(&sources)
+                .unwrap_or_else(|| panic!("the new core takes {text}"));
+            let cycle = found
+                .iter()
+                .find(|diagnostic| diagnostic.code == crate::diagnostics::Code::DeclarationCycle)
+                .map(|diagnostic| {
+                    text.get(
+                        diagnostic.span.range.start as usize..diagnostic.span.range.end as usize,
+                    )
+                    .unwrap_or_default()
+                    .to_string()
+                });
+            let wanted: Vec<(String, String)> = wanted
+                .iter()
+                .map(|(code, span)| match (code.as_str(), &cycle) {
+                    ("declaration-cycle", Some(first)) => (code.clone(), first.clone()),
+                    _ => (code.clone(), span.clone()),
+                })
+                .collect();
+            assert_eq!(spanned(&text, &found), wanted, "{text}");
+            assert_eq!(found, old.check(&sources), "{text}");
+            programs += 1;
+        }
+    }
+    assert_eq!(programs, 24 * 8 + 120 + 6 + 2 * 2);
+}
+
+#[test]
+fn a_family_flows_through_a_functions_or_a_patterns_parameter_to_the_attribute_it_reaches_in_every_order_504()
+ {
+    let old = Compiler::new(&symphonyscript_fixtures::vocabulary())
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
+    let new =
+        Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("the vocabulary compiles");
+    let mut programs = 0;
+    let mut mismatched = 0;
+    for argument in ["2bars", "2s", "2", "delay * 2"] {
+        for attribute in ["length", "velocity"] {
+            let shapes = [
+                (
+                    "fn hit(v): v\n".to_string(),
+                    format!("Clip c:\n    Note | {attribute}=(hit({argument}))\n"),
+                ),
+                (
+                    format!("pattern Hit(default pitch, v):\n    Note/pitch | {attribute}=v\n"),
+                    format!("Clip c:\n    Hit/60 | v={argument}\n"),
+                ),
+            ];
+            for (declaration, placement) in shapes {
+                let items = vec!["state delay(250ms)\n".to_string(), declaration, placement];
+                for text in orders(&items) {
+                    let sources = [source(&text)];
+                    let found = new
+                        .checked_by_new_core(&sources)
+                        .unwrap_or_else(|| panic!("the new core takes {text}"));
+                    assert_eq!(found, old.check(&sources), "{text}");
+                    mismatched += usize::from(
+                        found
+                            .iter()
+                            .any(|drawn| drawn.code == crate::diagnostics::Code::UnitMismatch),
+                    );
+                    programs += 1;
+                }
+            }
+        }
+    }
+    assert_eq!(programs, 4 * 2 * 2 * 6);
+    assert_eq!(mismatched, (1 + 1 + 1 + 2) * 2 * 6);
+}
+
+#[test]
+fn a_condition_of_a_destination_beside_a_name_that_names_nothing_draws_its_own_faults() {
+    let old = Compiler::new(&symphonyscript_fixtures::vocabulary())
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
+    let new =
+        Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("the vocabulary compiles");
+    for condition in [
+        "-flash_on",
+        "not -flash_on",
+        "(1 + true)",
+        "[1][3] > 0",
+        "flash_on",
+    ] {
+        for arms in ["flash else dusk", "dusk else dusk"] {
+            let text = format!(
+                "state flash_on(false)\nScene dusk:\n    Triggers: night\nScene night:\n    Triggers: if {condition} then {arms}\n"
+            );
+            let sources = [source(&text)];
+            let found = new
+                .checked_by_new_core(&sources)
+                .unwrap_or_else(|| panic!("the new core takes {text}"));
+            assert_eq!(found, old.check(&sources), "{text}");
+        }
+    }
+}
+
+#[test]
+fn a_family_read_inside_a_placement_for_body_or_a_pattern_use_body_takes_that_bodys_facts_in_every_order_506()
+ {
+    let old = Compiler::new(&symphonyscript_fixtures::vocabulary())
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
+    let new =
+        Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("the vocabulary compiles");
+    let breaker = "Session main:\n    Includes: t\nTrack t:\n    Piano\n    Starts: c\nClip c:\n    for i in 0..bars:\n        Note/(60 + i) | length=1bars\n    Note/(bars * 12) | length=4bars + bars\n    Note/48 | length=bars\n";
+    let mut taken = 0;
+    let mut declined = 0;
+    let mut programs = 0;
+    for tail in ["length=4bars + 1", "length=4bars", "velocity=4bars + 1"] {
+        let shapes = [
+            (
+                String::new(),
+                format!("Clip c:\n    for i in 0..bars:\n        Note/(60 + i) | length=1bars\n    Note/48 | {tail}\n"),
+                true,
+            ),
+            (
+                "pattern Hit(default pitch, v):\n    Note/pitch | length=v\n".to_string(),
+                format!("Clip c:\n    Hit/60 | v=1bars + bars\n    Note/48 | {tail}\n"),
+                true,
+            ),
+            (
+                "pattern Hit(default pitch, v):\n    for i in 0..2:\n        Note/(pitch + i) | length=v\n".to_string(),
+                format!("Clip c:\n    Hit/60 | v=1bars\n    Hit/62 | v=bars + 2bars\n    Note/48 | {tail}\n"),
+                true,
+            ),
+            (
+                String::new(),
+                format!("Clip c:\n    Note/60 | length=(for i in 0..bars into a from 0bars: a + 1bars)\n    Note/48 | {tail}\n"),
+                false,
+            ),
+        ];
+        for (declaration, placement, landed) in shapes {
+            let mut items = vec!["let bars = 4\n".to_string(), placement];
+            if !declaration.is_empty() {
+                items.push(declaration);
+            }
+            for text in orders(&items) {
+                let sources = [source(&text)];
+                programs += 1;
+                match new.checked_by_new_core(&sources) {
+                    Some(found) => {
+                        assert_eq!(found, old.check(&sources), "{text}");
+                        taken += 1;
+                    }
+                    None => {
+                        assert!(!landed, "the new core takes {text}");
+                        declined += 1;
+                    }
+                }
+            }
+        }
+    }
+    let items = ["let bars = 4\n".to_string(), breaker.to_string()];
+    for text in orders(&items) {
+        let sources = [source(&text)];
+        let found = new
+            .checked_by_new_core(&sources)
+            .unwrap_or_else(|| panic!("the new core takes {text}"));
+        assert_eq!(found, old.check(&sources), "{text}");
+        assert!(found.is_empty(), "{text}");
+        programs += 1;
+        taken += 1;
+    }
+    assert_eq!(programs, 3 * (2 + 6 + 6 + 2) + 2);
+    assert_eq!(taken + declined, programs);
+    assert!(taken >= 3 * (2 + 6 + 6) + 2, "{taken}");
+}
+
+#[test]
+fn a_let_reaching_a_cell_through_a_call_and_read_only_by_a_placement_loop_head_draws_reactive_let_in_every_order()
+ {
+    let old = Compiler::new(&symphonyscript_fixtures::vocabulary())
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
+    let new =
+        Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("the vocabulary compiles");
+    let mut programs = 0;
+    let mut reactive = 0;
+    for (cell, head) in [
+        ("state w0([]): i32[..4]\n", "(ch)"),
+        ("state w0(3)\n", "0..ch"),
+    ] {
+        for functions in [
+            "fn i0(z): w0\n",
+            "fn i1(z): w0\nfn i0(z): i1(z)\n",
+            "fn i0(z): [z, z]\n",
+            "fn i0(z): z\n",
+        ] {
+            let items = vec![
+                cell.to_string(),
+                functions.to_string(),
+                "let ch = i0(0)\n".to_string(),
+                format!("Clip c:\n    for e in {head}:\n        Note/e\n"),
+            ];
+            for text in orders(&items) {
+                let text = format!(
+                    "{text}Session main:\n    Includes: t\nTrack t:\n    Piano\n    Starts: c\n"
+                );
+                let sources = [source(&text)];
+                let found = new
+                    .checked_by_new_core(&sources)
+                    .unwrap_or_else(|| panic!("the new core takes {text}"));
+                assert_eq!(found, old.check(&sources), "{text}");
+                reactive += usize::from(
+                    found
+                        .iter()
+                        .any(|drawn| drawn.code == crate::diagnostics::Code::ReactiveLet),
+                );
+                programs += 1;
+            }
+        }
+    }
+    assert_eq!(programs, 2 * 4 * 24);
+    assert_eq!(reactive, 2 * 2 * 24);
+}
+
+#[test]
+fn an_arm_beside_an_arm_in_error_takes_no_expected_type_and_a_refused_float_index_or_bound_is_checked_in_its_own_type()
+ {
+    let old = Compiler::new(&symphonyscript_fixtures::vocabulary())
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
+    let new =
+        Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("the vocabulary compiles");
+    for text in [
+        "Clip c:\n    Note/(if true then (1 + true) else true)\n",
+        "Clip c:\n    Note/(if true then (1 + true) else Wave::Saw)\n",
+        "Clip c:\n    Note/(if false then true else (1 + true))\n",
+        "Clip c:\n    Note/(if true then (if true then 1 else true) else 2)\n",
+        "Clip c:\n    Note/([1, 2][300000000000 % 1.5])\n",
+        "Clip c:\n    Note/([1, 2][300000000000 % 1.5] + 1)\n",
+        "Clip c:\n    Note/([1, 2][(1 - 300000000000) / 2])\n",
+        "Clip c:\n    Note/([1, 2][(1 - 300000000000) / 2..][0])\n",
+        "Clip c:\n    Note/([1, 2][300000000000 % 1.5..][0])\n",
+        "Clip c:\n    Note/([1, 2][..300000000000 % 1.5][0])\n",
+        "Clip c:\n    Note/([1, 2][1.5..][0])\n",
+        "let v = [1, 2]\nClip c:\n    Note/(v[300000000000 % 1.5])\n",
+        "let x = 300000000000 % 1.5\nClip c:\n    Note/([1, 2][x])\n",
+        "let a = [1, 2][300000000000 % 1.5..]\nClip c:\n    Note/(a[0])\n",
+        "Clip c:\n    Note/([1, 2][0])\n",
+        "Clip c:\n    Note/(if true then 1 else 2)\n",
+    ] {
+        let sources = [source(text)];
+        let found = new
+            .checked_by_new_core(&sources)
+            .unwrap_or_else(|| panic!("the new core takes {text}"));
+        assert_eq!(found, old.check(&sources), "{text}");
+    }
+}
+
+#[test]
+fn a_let_calling_a_function_over_a_chain_of_lets_ending_at_a_cell_draws_reactive_let_as_464_reads_it_507()
+ {
+    let old = Compiler::new(&symphonyscript_fixtures::vocabulary())
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
+    let new =
+        Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("the vocabulary compiles");
+    for n in [1, 3, 8] {
+        let text = super::ledger_tests::lets_calling_functions_over_a_let_chain(n);
+        let sources = [source(&text)];
+        let found = new
+            .checked_by_new_core(&sources)
+            .unwrap_or_else(|| panic!("the new core takes {text}"));
+        let mut wanted: Vec<(String, String)> = (0..=n)
+            .map(|at| format!("c{at}"))
+            .chain((0..n).map(|at| format!("w{at}")))
+            .map(|name| ("reactive-let".to_string(), name))
+            .collect();
+        wanted.sort();
+        assert_eq!(spanned(&text, &found), wanted, "{text}");
+        let classes = reviewed::moved(&text, &drawn(&old.check(&sources)), &drawn(&found))
+            .unwrap_or_else(|unexplained| panic!("{text}: {unexplained:?}"));
+        assert!(
+            !classes.is_empty() && classes.iter().all(|class| class.ledger == "464"),
+            "{text}"
+        );
+        let valid = text.replace("let c0 = s\n", "let c0 = 0\n");
+        let sources = [source(&valid)];
+        let found = new
+            .checked_by_new_core(&sources)
+            .unwrap_or_else(|| panic!("the new core takes {valid}"));
+        assert_eq!(found, old.check(&sources), "{valid}");
+        assert_eq!(spanned(&valid, &found), Vec::new(), "{valid}");
+    }
+}
+
+const REFUSED_CONDITION_AND_BASE_MOVES: [&str; 15] = [
+    "Clip c:\n    Note | velocity=(-(if 1.5 then 1.5 else q))\n\nstate q(0): i32\n",
+    "Clip c:\n    Note | velocity=((if 1 then q else [1, 2][5]) - (if i32(true) then 1 else 1.5))\n\nstate q(0): u8\n",
+    "Clip c:\n    Note/((1 + 300000000000)[if 1 then Wave::Saw else q..])\n\nlet q = [1]\n",
+    "Clip c:\n    Note | velocity=((1 + 300000000000)[if 1 then Wave::Saw else q..])\n\nlet q = [1]\n",
+    "Clip c:\n    Note/((1 + 300000000000)[if 1 then true else q..])\n\nlet q = [1]\n",
+    "Clip c:\n    Note/(if ([1, 2][5] is q) then (Wave::Saw / i32(true)) else (1.5 - 300000000000))\n\nstate q([]): i32[..4]\n",
+    "Clip c:\n    Note | velocity=(if ([1, 2][5] is q) then (Wave::Saw / i32(true)) else (1.5 - 300000000000))\n\nstate q([]): i32[..4]\n",
+    "Clip c:\n    Note/(if (if 300000000000 then [1, 2] else [1, 2]) then (Wave::Saw / [1, 2]) else ([1, 2] or 1))\n",
+    "Clip c:\n    Note | velocity=(if (if 300000000000 then [1, 2] else [1, 2]) then (Wave::Saw / [1, 2]) else ([1, 2] or 1))\n",
+    "Clip c:\n    Note | velocity=(if (Wave::Saw or q) then (q % 300000000000) else (1.5 * q))\n\nstate q(0): i32\n",
+    "Clip c:\n    Note | velocity=(if (Wave::Saw or q) then (q % 300000000000) else (1.5 * q))\n\nstate q(0): u8\n",
+    "Clip c:\n    Note | velocity=(if (Wave::Saw or q) then (q % 300000000000) else (1.5 * q))\n\nstate q(0): i64\n",
+    "Clip c:\n    Note | velocity=(if (true or q) then (q % 300000000000) else (1.5 * q))\n\nstate q(0): i32\n",
+    "Clip c:\n    Note | velocity=((q[[1, 2]..])[Wave::Saw < 1])\n\nstate q([]): i32[..4]\n",
+    "Clip c:\n    Note | velocity=((q[[1, 2]..])[true < 1])\n\nstate q([]): i32[..4]\n",
+];
+
+const REFUSED_CONDITION_AND_BASE_TWINS: [&str; 6] = [
+    "Clip c:\n    Note/((1 + 300000000000)[0..])\n",
+    "state b(false)\nClip c:\n    Note/(if b then (true / i32(true)) else (1.5 - 300000000000))\n",
+    "state b(false)\nClip c:\n    Note/(if b then (true / [1, 2]) else ([1, 2] or 1))\n",
+    "state b(false)\nClip c:\n    Note | velocity=(if b then (q % 300000000000) else (1.5 * q))\n\nstate q(0): i32\n",
+    "Clip c:\n    Note | velocity=((q[0..])[0])\n\nstate q([]): i32[..4]\n",
+    "Clip c:\n    Note | velocity=(if (300000000000 and 300000000000) then (q / 1.5) else 2)\n\nstate q(0): i32\n",
+];
+
+#[test]
+fn faults_in_the_arms_of_a_refused_condition_a_scalar_sliced_base_and_a_cell_read_beside_a_refusal_draw_as_their_repaired_twins_476()
+ {
+    let old = Compiler::new(&symphonyscript_fixtures::vocabulary())
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
+    let new =
+        Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("the vocabulary compiles");
+    for text in REFUSED_CONDITION_AND_BASE_MOVES {
+        let sources = [source(text)];
+        let found = new
+            .checked_by_new_core(&sources)
+            .unwrap_or_else(|| panic!("the new core takes {text}"));
+        let classes = reviewed::moved(text, &drawn(&old.check(&sources)), &drawn(&found))
+            .unwrap_or_else(|unexplained| panic!("{text}: {unexplained:?}"));
+        assert!(
+            !classes.is_empty() && classes.iter().all(|class| class.ledger == "476"),
+            "{text}"
+        );
+    }
+    for text in REFUSED_CONDITION_AND_BASE_TWINS {
+        let sources = [source(text)];
+        let found = new
+            .checked_by_new_core(&sources)
+            .unwrap_or_else(|| panic!("the new core takes {text}"));
+        assert_eq!(found, old.check(&sources), "{text}");
+    }
+}
+
+#[test]
+fn a_plain_value_in_a_nest_of_functions_draws_one_plain_in_family_per_outermost_call_naming_the_first_longest_chain_508()
+ {
+    let old = Compiler::new(&symphonyscript_fixtures::vocabulary())
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
+    let new =
+        Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("the vocabulary compiles");
+    for depth in 0..4 {
+        for placements in [
+            "length,velocity",
+            "velocity,length",
+            "velocity",
+            "velocity,velocity",
+            "length",
+            "velocity,length,velocity",
+        ] {
+            let text = super::ledger_tests::family_nest(depth, placements);
+            let sources = [source(&text)];
+            let found = new
+                .checked_by_new_core(&sources)
+                .unwrap_or_else(|| panic!("the new core takes {text}"));
+            assert_eq!(found, old.check(&sources), "{text}");
+        }
+    }
 }

@@ -207,6 +207,12 @@ impl Core<'_> {
                     return Ok(None);
                 }
             }
+            if bounds.iter().any(|bound| self.family(*bound).is_some()) {
+                for bound in bounds {
+                    self.unit_position(bound, "a range bound")?;
+                }
+                return Ok(None);
+            }
             for bound in bounds {
                 let fact = self.fact(bound)?;
                 if faulty(&fact) {
@@ -247,6 +253,7 @@ impl Core<'_> {
             fixed: fact.fixed,
             read: fact.read,
             node: false,
+            family: fact.family,
         };
         let items = if names >= 2 {
             vec![Fact::scalar(Leaf::Int), element]
@@ -534,6 +541,7 @@ impl Core<'_> {
                 fixed,
                 read: None,
                 node: false,
+                family: None,
             };
             let settled =
                 (next.leaf == acc.leaf || acc.leaf == Leaf::Empty) && next.dims == acc.dims;
@@ -568,6 +576,7 @@ impl Core<'_> {
             fixed,
             read: None,
             node: false,
+            family: None,
         }))
     }
 

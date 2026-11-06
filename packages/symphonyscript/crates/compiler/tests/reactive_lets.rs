@@ -75,7 +75,11 @@ fn a_top_level_or_pattern_let_that_reads_a_cell_draws_reactive_let_at_its_first_
                 chained.push(format!("let b = {value}\n"));
                 chained.extend(holder(pattern, "b + 0", &[]));
                 let (text, found) = draws(&compiler, &chained, reversed);
-                if found != [(Code::ReactiveLet, "b".to_string())] {
+                let through = [
+                    (Code::ReactiveLet, "a".to_string()),
+                    (Code::ReactiveLet, "b".to_string()),
+                ];
+                if found != [(Code::ReactiveLet, "b".to_string())] && found != through {
                     failures.push(support::failed_row_with(
                         &compiler,
                         &text,

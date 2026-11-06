@@ -41,7 +41,14 @@ fn expected_array(attr: &AttrDecl) -> Option<(EvalTy, u32)> {
 }
 
 pub(super) fn expected(attr: &AttrDecl) -> Option<EvalTy> {
-    if !attr.ty.lengths.is_empty() || attr.ty.capacity.is_some() || attr.unit.is_some() {
+    if attr.unit.is_some() || matches!(attr.ty.scalar, Scalar::Enum(_)) {
+        return None;
+    }
+    plain_expected(attr)
+}
+
+fn plain_expected(attr: &AttrDecl) -> Option<EvalTy> {
+    if !attr.ty.lengths.is_empty() || attr.ty.capacity.is_some() {
         return None;
     }
     Some(match attr.ty.scalar {
@@ -51,7 +58,8 @@ pub(super) fn expected(attr: &AttrDecl) -> Option<EvalTy> {
         Scalar::F32 => EvalTy::F32,
         Scalar::F64 => EvalTy::F64,
         Scalar::Bool => EvalTy::Bool,
-        Scalar::Enum(_) | Scalar::Str => return None,
+        Scalar::Enum(id) => EvalTy::Enum(id),
+        Scalar::Str => return None,
     })
 }
 
@@ -91,7 +99,9 @@ impl Core<'_> {
                 hi: placement.hi,
             };
             let saved = self.enter_env(record.env);
+            self.feed_env = record.env;
             let checked = self.item_attributes(item, &decl.name, &decl.attrs, decl.default_attr);
+            self.feed_env = NONE;
             self.leave_env(saved);
             if let Err(declined) = checked? {
                 return Ok(Err(declined));
@@ -113,8 +123,10 @@ impl Core<'_> {
             };
             let saved = self.enter_env(row.env);
             self.wire_now = u32::try_from(wire).unwrap_or(NONE);
+            self.feed_env = row.env;
             let checked = self.item_attributes(item, &decl.name, &decl.attrs, decl.default_attr);
             self.wire_now = NONE;
+            self.feed_env = NONE;
             self.leave_env(saved);
             if let Err(declined) = checked? {
                 return Ok(Err(declined));
@@ -213,12 +225,18 @@ impl Core<'_> {
                 }
                 continue;
             }
-            let Some(ty) = expected(attr) else {
+            let Some(ty) = plain_expected(attr) else {
                 return Ok(Err(Declined(attribute_reason(attr))));
             };
+            if let Some(unit) = attr.unit
+                && self.unit_scale(unit.family, unit.default_unit)? != 1.0
+            {
+                return Ok(Err(Declined(Reason::UnitAttribute)));
+            }
             if let Err(declined) = self.bind_value(root, &attr.name, ty)? {
                 return Ok(Err(declined));
             }
+            self.bind_unit(root, attr.unit)?;
         }
         Ok(Ok(()))
     }
@@ -366,7 +384,28 @@ impl Core<'_> {
                 Code::TypeMismatch,
                 format!(
                     "this value has the wrong type here; `{}` is expected",
-                    ty_name(ty)
+                    self.ty_text(ty)?
+                ),
+            ),
+            Leaf::Enum(Some(id)) if ty != EvalTy::Enum(id) => (
+                Code::TypeMismatch,
+                format!(
+                    "this value has the wrong type here; `{}` is expected",
+                    self.ty_text(ty)?
+                ),
+            ),
+            Leaf::Enum(None) if !matches!(ty, EvalTy::Enum(_)) => (
+                Code::TypeMismatch,
+                format!(
+                    "this value has the wrong type here; `{}` is expected",
+                    self.ty_text(ty)?
+                ),
+            ),
+            Leaf::Empty | Leaf::Int | Leaf::Float if matches!(ty, EvalTy::Enum(_)) => (
+                Code::TypeMismatch,
+                format!(
+                    "this value has the wrong type here; `{}` is expected",
+                    self.ty_text(ty)?
                 ),
             ),
             Leaf::Empty | Leaf::Int | Leaf::Float if ty == EvalTy::Bool => (
@@ -383,7 +422,13 @@ impl Core<'_> {
                 "a float value stands where an integer is expected; a conversion states the rounding"
                     .to_string(),
             ),
-            Leaf::Placeholder | Leaf::Error | Leaf::Bool | Leaf::Empty | Leaf::Int | Leaf::Float => {
+            Leaf::Placeholder
+            | Leaf::Error
+            | Leaf::Bool
+            | Leaf::Empty
+            | Leaf::Int
+            | Leaf::Float
+            | Leaf::Enum(_) => {
                 return Ok(None);
             }
         }))
@@ -419,6 +464,9 @@ impl Core<'_> {
             Ok(fact) => fact,
             Err(declined) => return Ok(Err(declined)),
         };
+        if let EvalTy::Enum(id) = ty {
+            self.resolve_bare(root, id, true)?;
+        }
         match fact.leaf {
             Leaf::Placeholder | Leaf::Error => return self.detached(root, name, ty),
             _ if !fact.dims.is_empty() => {
@@ -438,7 +486,7 @@ impl Core<'_> {
                 )?;
                 return self.own_check(root);
             }
-            Leaf::Bool | Leaf::Empty | Leaf::Int | Leaf::Float => {
+            Leaf::Bool | Leaf::Empty | Leaf::Int | Leaf::Float | Leaf::Enum(_) => {
                 if let Some((code, summary)) = self.leaf_refusal(root, &fact, ty)? {
                     self.draw_at_root(code, root, summary)?;
                     return self.own_check(root);

@@ -319,6 +319,13 @@ impl Core<'_> {
                         self.placeholders.push(node);
                         continue;
                     }
+                    if self.variants.owner(&text).is_some()
+                        && self.vocabulary_clash(&text).is_none()
+                        && self.vocabulary.native_named(&text).is_none()
+                    {
+                        self.bare.insert(node);
+                        continue;
+                    }
                     if self.vocabulary_clash(&text).is_some()
                         || self.vocabulary.native_named(&text).is_some()
                         || self.variants.owner(&text).is_some()

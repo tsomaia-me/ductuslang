@@ -512,8 +512,14 @@ impl Core<'_> {
                 continue;
             }
             let root = self.cell_root(at)?;
-            if let Err(declined) = self.ensure_typed(root)? {
-                return Ok(Err(declined));
+            match self.ensure_typed(root)? {
+                Ok(fact) if fact.leaf == super::leaf::Leaf::Enum(None) => {
+                    return Ok(Err(super::declined::Declined(
+                        super::reason::Reason::BareVariant,
+                    )));
+                }
+                Ok(_) => {}
+                Err(declined) => return Ok(Err(declined)),
             }
             let init = self.ir.cells.get(at as usize).map_or(NONE, |rec| rec.init);
             if init != NONE
@@ -751,6 +757,11 @@ impl Core<'_> {
             String::from("[]")
         } else if fact.leaf == Leaf::Bool {
             String::from("false")
+        } else if let Leaf::Enum(Some(id)) = fact.leaf
+            && let Some(decl) = self.vocabulary.enum_decl(id)
+            && let Some(variant) = decl.variants.first()
+        {
+            format!("{}::{variant}", decl.name)
         } else {
             String::from("0")
         })

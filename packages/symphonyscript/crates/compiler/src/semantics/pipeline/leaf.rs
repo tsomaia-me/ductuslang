@@ -1,3 +1,5 @@
+use symphonyscript_core::EnumId;
+
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub(crate) enum Leaf {
     Placeholder,
@@ -6,4 +8,5 @@ pub(crate) enum Leaf {
     Bool,
     Int,
     Float,
+    Enum(Option<EnumId>),
 }

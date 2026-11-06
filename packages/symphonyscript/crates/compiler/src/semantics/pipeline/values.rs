@@ -62,8 +62,12 @@ impl Core<'_> {
     }
 
     fn integral(&self, node: u32) -> Result<EvalTy, Internal> {
-        Ok(match self.fact(node)?.own() {
+        let fact = self.fact(node)?;
+        let divided = fact.own().is_none() && self.ir.node(node)?.0 == Op::Div;
+        let float = fact.leaf == Leaf::Float && fact.dims.is_empty() && !divided;
+        Ok(match fact.own() {
             Some(fixed) if int_range(fixed).is_some() => fixed,
+            Some(_) | None if float => self.own_ty(node)?.unwrap_or(EvalTy::Exact),
             Some(_) | None => EvalTy::Exact,
         })
     }
@@ -297,6 +301,7 @@ impl Core<'_> {
                         (Some(annotated), _) if fact.dims.len() == 1 => annotated,
                         (_, Some(fixed)) => fixed,
                         (_, None) if fact.leaf == Leaf::Bool => EvalTy::Bool,
+                        (_, None) if fact.leaf == Leaf::Float => self.own_float(rec.iterable.0)?,
                         (_, None) => EvalTy::Exact,
                     };
                     vec![(rec.iterable.0, items_ty)]
@@ -566,6 +571,12 @@ impl Core<'_> {
             match step {
                 Step::Visit(node, node_ty) => {
                     let (op, _, _, _) = self.ir.node(node)?;
+                    if !self.family_faults.is_empty() && self.family_faults.contains(&node) {
+                        if let Some(frame) = frames.last_mut() {
+                            frame.values.push(Value::Error);
+                        }
+                        continue;
+                    }
                     if self.fitting
                         && matches!(op, Op::Name | Op::Field)
                         && self.is_reactive(node)?
@@ -871,7 +882,10 @@ impl Core<'_> {
                             }
                             frame.steps.push(Step::Visit(otherwise, arm_ty));
                         }
-                        Value::Error if self.is_reactive(condition)? => {
+                        Value::Error
+                            if self.is_reactive(condition)?
+                                || self.fact(condition)?.leaf != Leaf::Placeholder =>
+                        {
                             if unflowed {
                                 self.unflowed.extend([then, otherwise]);
                             }
@@ -1123,7 +1137,11 @@ impl Core<'_> {
                     .ints
                     .get(a as usize)
                     .ok_or(Internal::missed("IR integer"))?;
-                self.integer_literal(node, value, ty)?
+                match (self.suffix_ty(node)?, self.unit_literal(node, ty)?) {
+                    (_, Some(value)) => value,
+                    (Some(own), None) => self.suffixed_integer(node, value, own)?,
+                    (None, None) => self.integer_literal(node, value, ty)?,
+                }
             }
             Op::Float => {
                 let entry = *self
@@ -1136,7 +1154,11 @@ impl Core<'_> {
                     digits: self.ir.text(entry.digits).to_string(),
                     exponent: entry.exponent,
                 };
-                self.float_literal(node, &literal, ty)?
+                let own = self.suffix_ty(node)?.unwrap_or(ty);
+                match self.unit_literal(node, ty)? {
+                    Some(value) => value,
+                    None => self.float_literal(node, &literal, own)?,
+                }
             }
             Op::Bool => Value::Bool(a == 1),
             Op::Name => match self.bound(node)? {
@@ -1145,6 +1167,7 @@ impl Core<'_> {
                     Ok(value) => value,
                     Err(declined) => return Ok(Err(declined)),
                 },
+                DeclRef::None if self.is_bare(node) => self.variant_value(node)?,
                 DeclRef::Duplicate
                 | DeclRef::None
                 | DeclRef::Param(_)
@@ -1262,6 +1285,7 @@ impl Core<'_> {
                 Value::Error
             }
             Op::Stepped => Value::Error,
+            Op::Variant => self.variant_value(node)?,
             Op::Field => match self.bare_cell_read(node)? {
                 Some(at) => match self.read_cell(at, node, ty, unflowed)? {
                     Ok(value) => value,
@@ -1271,7 +1295,6 @@ impl Core<'_> {
             },
             Op::If
             | Op::Str
-            | Op::Variant
             | Op::Call
             | Op::NamedCall
             | Op::MethodCall
@@ -1453,7 +1476,8 @@ impl Core<'_> {
             Leaf::Empty | Leaf::Int => Some(EvalTy::Exact),
             Leaf::Float => Some(self.own_float(node)?),
             Leaf::Bool => Some(EvalTy::Bool),
-            Leaf::Placeholder | Leaf::Error => None,
+            Leaf::Enum(Some(id)) => Some(EvalTy::Enum(id)),
+            Leaf::Placeholder | Leaf::Error | Leaf::Enum(None) => None,
         })
     }
 
@@ -1647,7 +1671,8 @@ impl Core<'_> {
                     Some(operands) => {
                         let mut values = Vec::new();
                         for operand in operands {
-                            match self.known(operand, EvalTy::Exact, &mut stack)? {
+                            let ty = self.integral(operand)?;
+                            match self.known(operand, ty, &mut stack)? {
                                 Ok(Some(value)) => values.push(value),
                                 Ok(None) => break,
                                 Err(declined) => return Ok(Err(declined)),
@@ -1722,7 +1747,7 @@ impl Core<'_> {
                         }
                         let bound_ty = match self.fact(bound)?.own() {
                             Some(_) => self.own_ty(bound)?.unwrap_or(EvalTy::Exact),
-                            None => EvalTy::Exact,
+                            None => self.integral(bound)?,
                         };
                         match self.known(bound, bound_ty, &mut stack)? {
                             Ok(Some(Value::Int(value))) if i64::try_from(value).is_err() => {
@@ -1921,7 +1946,7 @@ impl Core<'_> {
         Ok(unfixed.get(&(self.inst, node)).copied().unwrap_or(false))
     }
 
-    fn integer_literal(
+    pub fn integer_literal(
         &mut self,
         node: u32,
         value: i128,
@@ -1981,7 +2006,7 @@ impl Core<'_> {
         }
     }
 
-    fn float_literal(
+    pub fn float_literal(
         &mut self,
         node: u32,
         literal: &FloatLit,

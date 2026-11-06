@@ -824,7 +824,7 @@ fn an_offset_from_the_end_is_checked_as_an_index_at_its_own_span_c1_11_c2_8_415(
         ),
         (
             &["Clip c:\n    Note/([1, 2][^1ms])\n"],
-            &[(Code::IndexType, "1ms")],
+            &[(Code::IndexType, "1ms"), (Code::UnitOperation, "1ms")],
         ),
         (
             &["Clip c:\n    Note/([1, 2][^1.5])\n"],
@@ -840,7 +840,7 @@ fn an_offset_from_the_end_is_checked_as_an_index_at_its_own_span_c1_11_c2_8_415(
         ),
         (
             &[held, "Clip c:\n    Note/(xs[^1ms])\n"],
-            &[(Code::IndexType, "1ms")],
+            &[(Code::IndexType, "1ms"), (Code::UnitOperation, "1ms")],
         ),
         (
             &["state n(1)\n", "Clip c:\n    Note/([1, 2][^(n > 0)])\n"],

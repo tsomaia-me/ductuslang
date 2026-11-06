@@ -136,8 +136,9 @@ impl Core<'_> {
             Some(ty) => ty,
             None => match fact.leaf {
                 Leaf::Bool => EvalTy::Bool,
+                Leaf::Enum(Some(id)) => EvalTy::Enum(id),
                 Leaf::Float => fact.own().unwrap_or(EvalTy::F64),
-                Leaf::Int | Leaf::Empty | Leaf::Placeholder | Leaf::Error => {
+                Leaf::Int | Leaf::Empty | Leaf::Placeholder | Leaf::Error | Leaf::Enum(None) => {
                     fact.own().unwrap_or(EvalTy::I64)
                 }
             },

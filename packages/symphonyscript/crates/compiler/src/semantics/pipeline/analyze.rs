@@ -47,6 +47,10 @@ pub(crate) fn analyze(inputs: &Inputs<'_>) -> Result<Option<Run>, Internal> {
     if let Err(reason) = stage(core.collect())? {
         return declined(reason);
     }
+    if let Err(reason) = stage(core.check_variants())? {
+        return declined(reason);
+    }
+    core.destination_names()?;
     stages.mark("collect");
     if core.stop.is_some() {
         return Ok(Some(finished(core)));
@@ -92,8 +96,12 @@ pub(crate) fn analyze(inputs: &Inputs<'_>) -> Result<Option<Run>, Internal> {
     if let Err(reason) = stage(core.check_cells())? {
         return declined(reason);
     }
+    if let Err(reason) = stage(core.check_cyclic_roots())? {
+        return declined(reason);
+    }
     core.settle_capacities()?;
     core.check_integer_cells()?;
+    core.plain_in_family()?;
     core.check_counts()?;
     if !core.unknown_kind {
         core.check_reachability()?;

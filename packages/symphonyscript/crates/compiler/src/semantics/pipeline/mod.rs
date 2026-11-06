@@ -26,11 +26,15 @@ mod decl_ref;
 mod declined;
 mod destinations;
 mod detached;
+#[cfg(test)]
+mod enum_tests;
+mod enums;
 mod env;
 mod expand;
 mod extent;
 mod extreme;
 mod fact;
+mod families;
 mod fold_run;
 mod folds;
 mod frame;
@@ -76,9 +80,14 @@ mod slice_transform;
 mod stages;
 mod step;
 mod store;
+mod suffix;
+#[cfg(test)]
+mod suffix_tests;
 #[cfg(test)]
 mod to_tests;
 mod typing;
+#[cfg(test)]
+mod unit_tests;
 mod uses;
 mod values;
 mod width;
