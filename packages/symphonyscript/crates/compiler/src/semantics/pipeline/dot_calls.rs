@@ -17,8 +17,11 @@ pub(crate) fn dot_calls(ir: &FlatIr) -> Option<(FlatIr, Vec<u32>)> {
         let count = (shape / 2) as usize;
         let fresh = u32::try_from(owned.kids.len()).ok()?;
         if named {
-            let Some(first) = first_param(ir, *owned.a.get(local)?) else {
-                continue;
+            let method = *owned.a.get(local)?;
+            let first = match first_param(ir, method) {
+                Some(first) => first,
+                None if !names_a_function(ir, method) => method_name(ir, method)?,
+                None => continue,
             };
             let moved: Vec<u32> = owned.kids.get(start..start + 2 * count + 1)?.to_vec();
             owned.kids.push(first);
@@ -51,4 +54,24 @@ fn first_param(ir: &FlatIr, method: u32) -> Option<u32> {
         return None;
     }
     Some(ir.binders.get(rec.params.0 as usize)?.name)
+}
+
+fn method_name(ir: &FlatIr, method: u32) -> Option<u32> {
+    let local = method.checked_sub(ir.base)? as usize;
+    if ir.op.get(local) != Some(&Op::Name) {
+        return None;
+    }
+    ir.a.get(local).copied()
+}
+
+fn names_a_function(ir: &FlatIr, method: u32) -> bool {
+    let Some(sym) = method_name(ir, method)
+        .and_then(|name| ir.name(name))
+        .map(|entry| entry.sym)
+    else {
+        return true;
+    };
+    ir.fns
+        .iter()
+        .any(|rec| ir.name(rec.name).is_some_and(|entry| entry.sym == sym))
 }

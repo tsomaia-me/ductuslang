@@ -2622,3 +2622,34 @@ fn a_named_dot_call_binds_its_receiver_to_the_first_parameter_and_its_names_to_t
  {
     assert_eq!(same_as_the_old_engine(&NAMED_DOT_CALLS), 66);
 }
+
+const UNKNOWN_CALLEES_AND_MATH_DOT_CALLS: [&[&str]; 13] = [
+    &["Clip c:\n    Note/(g(1 + true))\n"],
+    &["Clip c:\n    Note/(g(zz))\n"],
+    &["Clip c:\n    Note/(g(x=1 + true))\n"],
+    &["let k = g(1)\nlet m = k + 1\n", "Clip c:\n    Note/m\n"],
+    &["fn h(): g(1)\n", "Clip c:\n    Note/(h() + h())\n"],
+    &["let x = g(x)\n", "Clip c:\n    Note/x\n"],
+    &[
+        "state q(1)\n",
+        "Clip c:\n    Note | velocity=(g(q) + q / 2)\n",
+    ],
+    &["Clip c:\n    Note/((-3).abs())\n"],
+    &["Clip c:\n    Note/(3.min(4))\n"],
+    &["Clip c:\n    Note | velocity=(2.sqrt())\n"],
+    &["Clip c:\n    Note/(1.abs(2))\n"],
+    &["Clip c:\n    Note/(1.abs(x=2))\n"],
+    &[
+        "let y = 4\n",
+        "Clip c:\n    Note/(y.max(5) + y.clamp(1, 3))\n",
+    ],
+];
+
+#[test]
+fn an_unknown_callee_draws_its_name_alone_and_a_math_dot_call_is_the_math_call_beside_a_valid_twin_in_every_order()
+ {
+    assert_eq!(
+        same_as_the_old_engine(&UNKNOWN_CALLEES_AND_MATH_DOT_CALLS),
+        46
+    );
+}

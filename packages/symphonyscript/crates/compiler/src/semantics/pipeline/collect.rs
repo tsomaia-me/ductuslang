@@ -385,7 +385,9 @@ impl Core<'_> {
                         span,
                         format!("`{text}` names nothing in scope"),
                     );
-                    self.placeholders.push(node);
+                    if !callees.contains(&node) {
+                        self.placeholders.push(node);
+                    }
                 }
             }
             if let Some(slot) = self.bind.get_mut(local) {

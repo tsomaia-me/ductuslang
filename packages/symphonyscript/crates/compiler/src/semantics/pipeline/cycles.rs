@@ -499,7 +499,10 @@ impl Core<'_> {
             return Ok(Vec::new());
         }
         let Some(function) = self.callee(node)? else {
-            if !self.not_callable(node)? && self.math_named(node)?.is_none() {
+            if !self.not_callable(node)?
+                && self.math_named(node)?.is_none()
+                && !self.unknown_callee(node)?
+            {
                 return Ok(Vec::new());
             }
             if op == Op::Call {

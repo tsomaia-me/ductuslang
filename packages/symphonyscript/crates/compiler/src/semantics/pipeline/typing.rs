@@ -433,7 +433,9 @@ impl Core<'_> {
             Op::Array => self.array_fact(node, a, b)?,
             Op::Index | Op::IndexFromEnd => self.index_fact(node, a, b)?,
             Op::Convert => self.convert_fact(node, a, b)?,
-            Op::Call if self.dot_calls.contains(&node) && !self.dot_call_lands(node)? => {
+            Op::Call | Op::NamedCall
+                if self.dot_calls.contains(&node) && !self.dot_call_lands(node)? =>
+            {
                 return Ok(Err(Declined(Reason::Member)));
             }
             Op::Call | Op::NamedCall => match self.call_fact(node)? {
@@ -1379,24 +1381,16 @@ impl Core<'_> {
         let (_, callee, _, _) = self.ir.node(node)?;
         let (_, name, _, _) = self.ir.node(callee)?;
         let text = self.ir.name_text(name).unwrap_or_default();
-        if matches!(
-            text,
-            "size"
-                | "capacity"
-                | "bytes"
-                | "map"
-                | "keys"
-                | "values"
-                | "kind"
-                | "past"
-                | "stepped"
-                | "dropped"
-        ) {
+        if super::calls::MEMBER_NAMES.contains(&text) {
             return Ok(false);
         }
         let Some(receiver) = self.arguments(node)?.first().copied() else {
             return Ok(false);
         };
-        Ok(!self.fact(receiver)?.node && self.callee(node)?.is_some())
+        let callable = self.callee(node)?.is_some()
+            || self.math_call(node)?
+            || self.math_miscount(node)?.is_some()
+            || self.math_named(node)?.is_some();
+        Ok(!self.fact(receiver)?.node && callable)
     }
 }

@@ -552,6 +552,9 @@ impl Core<'_> {
                 self.not_callables_drawn.insert(callee);
                 return Ok(Ok(Fact::PLACEHOLDER));
             }
+            if self.unknown_callee(node)? {
+                return Ok(Ok(Fact::PLACEHOLDER));
+            }
             return Ok(Err(Declined(Reason::FunctionValue)));
         };
         let args = self.arguments(node)?;
@@ -899,6 +902,7 @@ impl Core<'_> {
                 && !self.math_call(node)?
                 && self.math_miscount(node)?.is_none()
                 && self.math_named(node)?.is_none()
+                && !self.unknown_callee(node)?
             {
                 return Ok(true);
             }
@@ -1332,5 +1336,34 @@ impl Core<'_> {
             );
         }
         Ok(())
+    }
+}
+
+pub(super) const MEMBER_NAMES: [&str; 10] = [
+    "size", "capacity", "bytes", "map", "keys", "values", "kind", "past", "stepped", "dropped",
+];
+
+impl Core<'_> {
+    pub fn unknown_callee(&self, node: u32) -> Result<bool, Internal> {
+        let (op, callee, _, _) = self.ir.node(node)?;
+        if !matches!(op, Op::Call | Op::NamedCall)
+            || self.dot_calls.contains(&node)
+            || self.ir.node(callee)?.0 != Op::Name
+            || self.bound(callee)? != DeclRef::None
+            || self.callee(node)?.is_some()
+            || self.math_name(node)?.is_some()
+            || self.math_miscount(node)?.is_some()
+            || self.math_named(node)?.is_some()
+        {
+            return Ok(false);
+        }
+        let text = self
+            .ir
+            .name_text(self.ir.node(callee)?.1)
+            .unwrap_or_default();
+        Ok(self.vocabulary_clash(text).is_none()
+            && self.vocabulary.native_named(text).is_none()
+            && self.variants.owner(text).is_none()
+            && !MATH.iter().any(|(known, _)| *known == text))
     }
 }
