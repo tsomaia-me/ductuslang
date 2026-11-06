@@ -2783,3 +2783,40 @@ fn an_unknown_len_or_bytes_callee_draws_its_unknown_name_with_the_member_help_be
  {
     assert_eq!(same_as_the_old_engine(&LEN_AND_BYTES_CALLEES), 16);
 }
+
+const FUNCTION_VALUES_IN_UNCHECKED_ROOTS: [&[&str]; 7] = [
+    &[
+        "fn fib(n): if n < 2 then n else fib\n",
+        "let lengths = [fib(3), fib(4), fib(5), fib(6)]\n",
+    ],
+    &[
+        "fn fib(n): if n < 2 then n else fib\n",
+        "let l = fib(3) + fib(4)\n",
+    ],
+    &[
+        "fn fib(n): if n < 2 then n else fib\n",
+        "let x = fib(3)\n",
+        "let y = fib(4)\n",
+    ],
+    &["fn fib(n): if n < 2 then n else fib\n", "fn g(): fib(1)\n"],
+    &[
+        "fn fib(n): if n < 2 then n else fib\n",
+        "fn g(): fib(1)\n",
+        "let x = g() + fib(2)\n",
+    ],
+    &[
+        "fn fib(n): if n < 2 then n else fib\n",
+        "let x = fib(3)\n",
+        "Clip c:\n    Note/(x)\n",
+    ],
+    &["fn fib(n): if n < 2 then n else 1\n", "let x = fib(3)\n"],
+];
+
+#[test]
+fn a_function_read_as_a_value_in_a_body_only_unchecked_roots_reach_names_the_last_call_of_the_first_such_root_beside_a_valid_twin_in_every_order()
+ {
+    assert_eq!(
+        same_as_the_old_engine(&FUNCTION_VALUES_IN_UNCHECKED_ROOTS),
+        96
+    );
+}

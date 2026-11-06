@@ -787,11 +787,107 @@ impl Core<'_> {
             .map(|(node, summary)| (*node, summary.clone()))
             .collect();
         left.sort_unstable();
+        let roots = self.unchecked_roots()?;
+        let mut chains: HashMap<u32, Vec<u32>> = HashMap::new();
         for (node, summary) in left {
+            let owner = self.body_of.get(self.local(node)?).copied().unwrap_or(NONE);
+            if owner < self.functions() && !chains.contains_key(&owner) {
+                let chain = self.first_reaching_chain(owner, &roots)?;
+                chains.insert(owner, chain);
+            }
+            let calls = chains.get(&owner).cloned().unwrap_or_default();
+            let outer = std::mem::take(&mut self.eval_chain);
+            for call in calls {
+                self.push_call(call);
+            }
             let span = self.node_span(node)?;
             self.draw(Code::NotAValue, span, summary);
+            self.eval_chain = outer;
         }
         Ok(())
+    }
+
+    fn unchecked_roots(&self) -> Result<Vec<u32>, Internal> {
+        let mut called = std::collections::HashSet::new();
+        for local in 0..self.ir.op.len() {
+            if matches!(self.ir.op.get(local), Some(Op::Call | Op::NamedCall)) {
+                let node = self.ir.base + u32::try_from(local).unwrap_or(0);
+                if let Some(function) = self.callee(node)? {
+                    called.insert(function);
+                }
+            }
+        }
+        let mut roots = Vec::new();
+        for rec in &self.ir.lets {
+            let top = self.body_of.get(self.local(rec.value)?).copied();
+            if top.is_none_or(|owner| owner == NONE || owner >= self.functions()) {
+                roots.push(rec.value);
+            }
+        }
+        for function in 0..self.functions() {
+            if !called.contains(&function) {
+                roots.extend(self.function_roots(function)?);
+            }
+        }
+        roots.sort_unstable();
+        Ok(roots)
+    }
+
+    fn first_reaching_chain(&self, target: u32, roots: &[u32]) -> Result<Vec<u32>, Internal> {
+        let mut last: HashMap<u32, Option<u32>> = HashMap::new();
+        for root in roots {
+            let Some(call) = self.last_reaching_call(target, &[*root], &mut last)? else {
+                continue;
+            };
+            let mut chain = vec![call];
+            let mut function = self.callee(call)?;
+            while let Some(inner) = function.filter(|function| *function != target) {
+                let Some(next) = last.get(&inner).copied().flatten() else {
+                    break;
+                };
+                chain.push(next);
+                function = self.callee(next)?;
+            }
+            return Ok(chain);
+        }
+        Ok(Vec::new())
+    }
+
+    fn last_reaching_call(
+        &self,
+        target: u32,
+        roots: &[u32],
+        last: &mut HashMap<u32, Option<u32>>,
+    ) -> Result<Option<u32>, Internal> {
+        let mut found = None;
+        for root in roots {
+            for node in self.postorder(*root)? {
+                if !matches!(self.ir.node(node)?.0, Op::Call | Op::NamedCall) {
+                    continue;
+                }
+                let Some(function) = self.callee(node)? else {
+                    continue;
+                };
+                if function == target {
+                    found = Some(node);
+                    continue;
+                }
+                let reaches = match last.get(&function).copied() {
+                    Some(reaches) => reaches,
+                    None => {
+                        last.insert(function, None);
+                        let body = self.function_roots(function)?;
+                        let reaches = self.last_reaching_call(target, &body, last)?;
+                        last.insert(function, reaches);
+                        reaches
+                    }
+                };
+                if reaches.is_some() {
+                    found = Some(node);
+                }
+            }
+        }
+        Ok(found)
     }
 }
 
