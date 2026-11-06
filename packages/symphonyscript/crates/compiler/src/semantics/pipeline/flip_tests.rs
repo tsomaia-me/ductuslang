@@ -2440,3 +2440,21 @@ const RANDS: [&[&str]; 9] = [
 fn rand_is_an_f32_fixed_by_two_integers_each_fitting_i64_beside_a_valid_twin_in_every_order() {
     assert_eq!(same_as_the_old_engine(&RANDS), 22);
 }
+
+const MATH_COUNTS: [&[&str]; 6] = [
+    &["Clip c:\n    Note/(abs(1, 2))\n"],
+    &["Clip c:\n    Note/(min(1))\n"],
+    &["Clip c:\n    Note/(clamp(1, 2))\n"],
+    &["Clip c:\n    Note | velocity=(sqrt())\n"],
+    &["Clip c:\n    Note/(min(1, 2, 3 + true))\n"],
+    &[
+        "state q(1)\n",
+        "Clip c:\n    Note | velocity=(rand(q) + 3000000000)\n",
+    ],
+];
+
+#[test]
+fn a_math_call_of_another_count_draws_argument_count_and_checks_its_arguments_beside_a_valid_twin_in_every_order()
+ {
+    assert_eq!(same_as_the_old_engine(&MATH_COUNTS), 16);
+}

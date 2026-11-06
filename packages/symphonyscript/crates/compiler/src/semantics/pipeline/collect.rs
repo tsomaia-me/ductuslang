@@ -774,8 +774,8 @@ impl Core<'_> {
                 .ir
                 .name_text(self.ir.node(callee)?.1)
                 .unwrap_or_default();
-            if super::calls::math_arity(text).map(|arity| 2 * arity)
-                == self.ir.c.get(local).copied()
+            if super::calls::math_arity(text).is_some()
+                && self.ir.c.get(local).is_some_and(|shape| shape % 2 == 0)
             {
                 found.insert(callee);
             }

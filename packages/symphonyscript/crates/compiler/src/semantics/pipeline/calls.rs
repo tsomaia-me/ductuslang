@@ -521,6 +521,9 @@ impl Core<'_> {
 
     pub fn call_fact(&mut self, node: u32) -> Stage<Fact> {
         let Some(function) = self.callee(node)? else {
+            if self.math_miscount(node)?.is_some() {
+                return self.math_count_fact(node);
+            }
             if self.math_call(node)? {
                 return self.math_fact(node);
             }
@@ -877,7 +880,11 @@ impl Core<'_> {
                 continue;
             }
             let node = self.ir.base + u32::try_from(local).unwrap_or(0);
-            if self.callee(node)?.is_none() && !self.not_callable(node)? && !self.math_call(node)? {
+            if self.callee(node)?.is_none()
+                && !self.not_callable(node)?
+                && !self.math_call(node)?
+                && self.math_miscount(node)?.is_none()
+            {
                 return Ok(true);
             }
         }
@@ -1225,5 +1232,38 @@ impl Core<'_> {
             found.family = family;
         }
         Ok(Ok(found))
+    }
+}
+
+impl Core<'_> {
+    pub fn math_miscount(&self, node: u32) -> Result<Option<(&'static str, u32, u32)>, Internal> {
+        let (op, callee, _, shape) = self.ir.node(node)?;
+        if op != Op::Call || shape % 2 != 0 || self.ir.node(callee)?.0 != Op::Name {
+            return Ok(None);
+        }
+        if self.bound(callee)? != DeclRef::None {
+            return Ok(None);
+        }
+        let text = self
+            .ir
+            .name_text(self.ir.node(callee)?.1)
+            .unwrap_or_default();
+        Ok(MATH
+            .iter()
+            .find(|(known, arity)| *known == text && shape != 2 * arity)
+            .map(|(known, arity)| (*known, *arity, shape / 2)))
+    }
+
+    fn math_count_fact(&mut self, node: u32) -> Stage<Fact> {
+        let Some((name, arity, given)) = self.math_miscount(node)? else {
+            return Err(Internal::missed("a math call's count"));
+        };
+        let noun = if arity == 1 { "argument" } else { "arguments" };
+        self.draw_at(
+            Code::ArgumentCount,
+            node,
+            format!("`{name}` takes {arity} {noun}, not {given}"),
+        )?;
+        Ok(Ok(Fact::PLACEHOLDER))
     }
 }

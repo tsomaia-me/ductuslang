@@ -307,7 +307,7 @@ impl Core<'_> {
                 }
                 return Ok(());
             }
-            Op::Call if self.math_call(node)? => self
+            Op::Call if self.math_call(node)? || self.math_miscount(node)?.is_some() => self
                 .arguments(node)?
                 .into_iter()
                 .map(|arg| (arg, ty))
@@ -1579,6 +1579,12 @@ impl Core<'_> {
                 },
                 None => return Err(Internal::missed("a path read of a cell")),
             },
+            Op::Call if self.math_miscount(node)?.is_some() => {
+                for _ in self.arguments(node)? {
+                    pop(stack)?;
+                }
+                Value::Error
+            }
             Op::Call if self.math_call(node)? => {
                 let name = self.math_name(node)?.unwrap_or_default();
                 let arity = super::calls::math_arity(name).unwrap_or(1) as usize;
