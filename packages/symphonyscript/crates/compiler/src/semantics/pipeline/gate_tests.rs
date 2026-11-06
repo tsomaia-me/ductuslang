@@ -4,11 +4,10 @@ use symphonyscript_fixtures::Orders;
 
 const TWIN: &str = "Clip twin:\n    Note/61 when true\n";
 
-const GATES: [&[&str]; 30] = [
+const GATES: [&[&str]; 29] = [
     &["state live(true)\n", "Clip c:\n    Note/60 when live\n"],
     &["Clip c:\n    Note/60 when 1\n"],
     &["Clip c:\n    Note/60 when [true, false]\n"],
-    &["Clip c:\n    Note/60 when nope\n"],
     &["state n(3)\n", "Clip c:\n    Note/60 when n > 2\n"],
     &["state n(3)\n", "Clip c:\n    Note/60 when n\n"],
     &[
@@ -129,7 +128,7 @@ fn a_gate_on_a_node_or_a_wire_is_a_bool_that_may_read_cells_and_draws_what_the_o
             programs += 1;
         }
     }
-    assert_eq!(programs, 200);
+    assert_eq!(programs, 198);
 }
 
 #[test]
@@ -156,7 +155,9 @@ fn a_flexible_comparison_operand_takes_its_default_float_type_and_a_value_that_d
     }
 }
 
-const DECLINED: [&str; 3] = [
+const DECLINED: [&str; 5] = [
+    "Clip c:\n    Note/60 when nope\n",
+    "Plant boiler:\n    when nope:\n        Valve/0.3\n",
     "state big(1)\npattern Gated(default active):\n    Note when active\nClip c:\n    Gated/(big > u8(255) + 4)\n",
     "state note(60)\nClip c:\n    Note when (if q then 300000000000 else [1, 2][5])\n",
     "Clip a:\n    Plays when to.gain > 0.5: b\nClip b:\n    Note/1\n",
@@ -172,7 +173,7 @@ fn a_gate_reading_a_reactive_pattern_parameter_or_a_choice_beside_its_refused_co
     }
 }
 
-const WHENS: [&[&str]; 20] = [
+const WHENS: [&[&str]; 19] = [
     &[
         "state alarm(false)\n",
         "Plant boiler:\n    Valve/0.1\n    when alarm:\n        Valve/0.3 Valve/0.5\n    else:\n        Valve/0.3\n",
@@ -183,7 +184,6 @@ const WHENS: [&[&str]; 20] = [
     ],
     &["Plant boiler:\n    when 1:\n        Valve/0.3\n"],
     &["Plant boiler:\n    when [true]:\n        Valve/0.3\n"],
-    &["Plant boiler:\n    when nope:\n        Valve/0.3\n"],
     &["Plant boiler:\n    when true:\n        Valve/2\n"],
     &["Plant boiler:\n    when true:\n        Note/1\n"],
     &["Clip c:\n    when true:\n        Note/1\n    else:\n        Note/(1 + true)\n"],
@@ -236,10 +236,97 @@ fn a_when_block_places_every_arm_and_its_guards_are_gates_drawing_what_the_old_e
             programs += 1;
         }
     }
-    assert_eq!(programs, 64);
+    assert_eq!(programs, 62);
     let unrun = "Clip c:\n    for x in q:\n        Note/(x)\n    when true:\n        Note/(1)\n";
     assert!(
         new.checked_by_new_core(&[source(unrun)]).is_none(),
         "{unrun}"
     );
+}
+
+const PARENS: [&[&str]; 8] = [
+    &["Plant fill:\n    Valve/0 (Valve/0.5 | open=2) (Controller/0.4 | gain=true)\n"],
+    &["Plant fill:\n    (Valve/0.5 when 1) Valve/0.1\n"],
+    &[
+        "state live(true)\n",
+        "Plant fill:\n    (Valve/0.5 when live) Valve/0.1\n",
+    ],
+    &["Clip c:\n    (Note/60 | velocity=0.5) (Note/61 | pitch=2)\n"],
+    &["Clip c:\n    (Note/60 | nope=1) Note/2\n"],
+    &["Clip c:\n    when true:\n        (Note/60 | velocity=0.5) Note/2\n"],
+    &["Clip c:\n    (Note/(1 + true) | velocity=0.5)\n"],
+    &["Clip c:\n    (Valve/1 | open=0.5)\n"],
+];
+
+#[test]
+fn a_parenthesized_placement_on_a_line_is_one_child_drawing_what_the_old_engine_draws_beside_a_valid_twin_in_every_order()
+ {
+    let vocabulary = symphonyscript_fixtures::vocabulary();
+    let old = Compiler::new(&vocabulary)
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
+    let new = Compiler::new(&vocabulary).expect("the vocabulary compiles");
+    let mut programs = 0;
+    for items in PARENS {
+        for text in twins(items) {
+            let sources = [source(&text)];
+            let found = new
+                .checked_by_new_core(&sources)
+                .unwrap_or_else(|| panic!("the new core takes {text}"));
+            assert_eq!(found, old.check(&sources), "{text}");
+            programs += 1;
+        }
+    }
+    assert_eq!(programs, 20);
+}
+
+const LOOP_FLOATS: [&[&str]; 6] = [
+    &[
+        "let ramp = [0.2, 0.5, 0.8]\n",
+        "Rig fade_in:\n    for i, p in ramp:\n        Lamp/p | hue=1.0/ - i * 0.2\n",
+        "Rig twin_in:\n    for i, p in ramp:\n        Lamp/p | hue=1.0 - i * 0.2\n",
+    ],
+    &[
+        "Rig fade_in:\n    for i in 0..3:\n        Lamp/0.5 | hue=0.0 / (i * 0)\n",
+        "Rig twin_in:\n    for i in 0..3:\n        Lamp/0.5 | hue=1.0 - i * 0.2\n",
+    ],
+    &[
+        "Rig fade_in:\n    for i in 0..3:\n        Lamp/0.5 | hue=1.0 / i\n",
+        "Rig twin_in:\n    for i in 1..3:\n        Lamp/0.5 | hue=1.0 / i\n",
+    ],
+    &[
+        "Rig fade_in:\n    for i in 0..3:\n        Lamp/0.5 | hue=1.0 / -i\n",
+        "Rig twin_in:\n    for i in 0..3:\n        Lamp/0.5 | hue=1.0 / (i + 1)\n",
+    ],
+    &[
+        "Rig fade_in:\n    for i in 16777215..16777218:\n        Lamp/0.5 | hue=i\n",
+        "Rig twin_in:\n    for i in 0..3:\n        Lamp/0.5 | hue=i\n",
+    ],
+    &[
+        "let ramp = [0.2, 0.5, 0.8]\n",
+        "Rig fade_in:\n    for i, p in ramp:\n        Lamp/p | hue=p / i\n",
+    ],
+];
+
+#[test]
+fn an_integer_loop_name_read_as_a_float_converts_and_a_value_that_does_not_fit_draws_at_each_use_as_the_old_engine_draws_512()
+ {
+    let vocabulary = symphonyscript_fixtures::vocabulary();
+    let old = Compiler::new(&vocabulary)
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
+    let new = Compiler::new(&vocabulary).expect("the vocabulary compiles");
+    let mut programs = 0;
+    for items in LOOP_FLOATS {
+        for order in Orders::Every.of(items) {
+            let text = order.concat();
+            let sources = [source(&text)];
+            let found = new
+                .checked_by_new_core(&sources)
+                .unwrap_or_else(|| panic!("the new core takes {text}"));
+            assert_eq!(found, old.check(&sources), "{text}");
+            programs += 1;
+        }
+    }
+    assert_eq!(programs, 16);
 }

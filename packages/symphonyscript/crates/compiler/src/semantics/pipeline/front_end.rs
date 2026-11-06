@@ -115,6 +115,10 @@ impl Core<'_> {
                     items.extend(self.when_items(item));
                     continue;
                 }
+                ItemRec::Paren(inner) if inner != NONE => {
+                    items.push(inner);
+                    continue;
+                }
                 ItemRec::Bundle(_) | ItemRec::Paren(_) => continue,
             };
             roots.extend([placement.default, placement.gate]);

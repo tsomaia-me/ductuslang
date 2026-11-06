@@ -5417,13 +5417,11 @@ fn placement_heads(program: &str) -> Vec<(usize, usize)> {
         .filter(|(_, line)| {
             line.starts_with(' ')
                 && line.trim_start().starts_with("for ")
-                && line.contains(" in ")
                 && !line.contains(" into ")
         })
         .map(|(start, line)| {
             let indent = line.len() - line.trim_start().len();
-            let end = line.trim_end().strip_suffix(':').unwrap_or(line.trim_end());
-            (start + indent + "for ".len(), start + end.len())
+            (start + indent + "for ".len(), start + line.trim_end().len())
         })
         .collect()
 }
@@ -5437,13 +5435,20 @@ fn let_lines<'a>(program: &'a str, head: &str) -> Vec<(usize, &'a str)> {
     lines_at(program)
         .into_iter()
         .filter(|(_, line)| {
-            line.strip_prefix("let ").is_some_and(|rest| {
-                let name = rest
-                    .split(|c: char| !(c.is_alphanumeric() || c == '_'))
-                    .next()
-                    .unwrap_or_default();
-                names.contains(&name)
-            })
+            line.split_once("let ")
+                .filter(|(prefix, _)| {
+                    prefix
+                        .chars()
+                        .all(|c| !c.is_whitespace() && !c.is_alphabetic())
+                })
+                .map(|(_, rest)| rest)
+                .is_some_and(|rest| {
+                    let name = rest
+                        .split(|c: char| !(c.is_alphanumeric() || c == '_'))
+                        .next()
+                        .unwrap_or_default();
+                    names.contains(&name)
+                })
         })
         .collect()
 }

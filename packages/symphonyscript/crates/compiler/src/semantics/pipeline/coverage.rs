@@ -50,7 +50,8 @@ pub(crate) fn item_slice(item: &ItemRec) -> Slice {
         ItemRec::Wire(_) => Slice::Two,
         ItemRec::For(_) | ItemRec::Line(_) => Slice::Three,
         ItemRec::When(_) => Slice::Flip,
-        ItemRec::Bundle(_) | ItemRec::Paren(_) => Slice::DefaultFlip,
+        ItemRec::Paren(_) => Slice::Flip,
+        ItemRec::Bundle(_) => Slice::DefaultFlip,
     }
 }
 
@@ -167,6 +168,9 @@ fn annotated(ir: &FlatIr, binder: u32) -> bool {
 fn line_members(ir: &FlatIr) -> Vec<u32> {
     let mut members = Vec::new();
     for item in &ir.items {
+        if let ItemRec::Paren(inner) = item {
+            members.push(*inner);
+        }
         if let ItemRec::When(rec) = item {
             let mut blocks: Vec<u32> = ir
                 .arms
@@ -244,6 +248,9 @@ fn item_landed(
     if let ItemRec::For(rec) = item {
         return loop_landed(ir, rec);
     }
+    if let ItemRec::Paren(inner) = item {
+        return *inner != NONE;
+    }
     if let ItemRec::When(rec) = item {
         return when_landed(ir, rec.arms, rec.otherwise)
             && u32::try_from(at).is_ok_and(|at| nested.binary_search(&at).is_err());
@@ -258,6 +265,9 @@ fn item_landed(
         .name(placement.kind)
         .is_some_and(|entry| patterns.binary_search(&entry.sym.0).is_ok());
     if (placement.gate != NONE && used)
+        || (placement.gate != NONE
+            && placement.default != NONE
+            && matches!(ir.node(placement.default), Ok((Op::Bad, ..))))
         || placement.flags.0 != placement.flags.1
         || placement.attrs_cut
         || placement.skipped_block.is_some()

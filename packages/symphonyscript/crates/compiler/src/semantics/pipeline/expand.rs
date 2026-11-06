@@ -196,6 +196,7 @@ impl Core<'_> {
                     bound = true;
                     (item, env)
                 }
+                Work::Item(item, env) => (item, env),
                 Work::Items(at, end, env) => {
                     if at >= end {
                         continue;
@@ -349,6 +350,7 @@ impl Core<'_> {
                         work.push(Work::Items(block.items.0, block.items.1, env));
                     }
                 }
+                ItemRec::Paren(inner) if inner != NONE => work.push(Work::Item(inner, env)),
                 ItemRec::Bundle(_) | ItemRec::Paren(_) => {
                     return Ok(Err(Declined(Reason::BodyItem)));
                 }

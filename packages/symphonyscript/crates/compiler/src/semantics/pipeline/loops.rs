@@ -949,6 +949,19 @@ impl Core<'_> {
         let head = self.loop_rec(owner)?.head;
         let names = head.names.1.saturating_sub(head.names.0);
         let class = super::values::class(ty);
+        if let Value::Int(value) = stored
+            && (head.range || position + 1 != names)
+            && matches!(class, 1 | 2)
+            && self.param_fact(node, position)?.0.fixed.is_none()
+        {
+            let float = super::values::evaluated_in(ty);
+            let iterable = if head.range {
+                head.iterable
+            } else {
+                (head.iterable.0, NONE)
+            };
+            return Ok(Ok(self.loop_float(*value, float, iterable)?));
+        }
         if head.range || position + 1 != names || class == 3 {
             return Ok(Ok(stored.clone()));
         }

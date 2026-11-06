@@ -60,3 +60,44 @@ impl Core<'_> {
         Ok(())
     }
 }
+
+impl Core<'_> {
+    pub fn loop_float(
+        &mut self,
+        value: i128,
+        ty: EvalTy,
+        iterable: (u32, u32),
+    ) -> Result<CoreValue, Internal> {
+        let literal = crate::semantics::ir::FloatLit::from_integer(value);
+        let (converted, exactly) = if ty == EvalTy::F32 {
+            let float = literal.to_f32()?;
+            (
+                Value::F32(float),
+                crate::semantics::operators::represents(value, f64::from(float)),
+            )
+        } else {
+            let float = literal.to_f64()?;
+            (
+                Value::F64(float),
+                crate::semantics::operators::represents(value, float),
+            )
+        };
+        if exactly {
+            return Ok(converted);
+        }
+        let (lo, _) = self.ir.span(iterable.0)?;
+        let last = if iterable.1 == crate::semantics::ir::flat::NONE {
+            iterable.0
+        } else {
+            iterable.1
+        };
+        let (_, hi) = self.ir.span(last)?;
+        let span = self.span(self.file_of(iterable.0), lo, hi);
+        self.draw(
+            Code::DoesNotFit,
+            span,
+            format!("this value does not fit `{}`", ty_name(ty)),
+        );
+        Ok(Value::Error)
+    }
+}

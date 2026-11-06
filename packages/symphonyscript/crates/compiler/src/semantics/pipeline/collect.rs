@@ -521,6 +521,10 @@ impl Core<'_> {
                     }
                     (self.when_guards(item), (0, 0), NONE)
                 }
+                ItemRec::Paren(inner) if inner != NONE => {
+                    stack.push((inner, scope));
+                    continue;
+                }
                 ItemRec::Bundle(_) | ItemRec::Paren(_) => continue,
             };
             for entry in self
@@ -590,6 +594,10 @@ impl Core<'_> {
                 | ItemRec::Paren(_) => vec![child],
             };
             for member in members {
+                let member = match self.ir.item(member).copied() {
+                    Ok(ItemRec::Paren(inner)) if inner != NONE => inner,
+                    _ => member,
+                };
                 if let Ok(ItemRec::Placement(placement)) = self.ir.item(member).copied()
                     && self.ir.named(placement.as_name)
                     && member != own

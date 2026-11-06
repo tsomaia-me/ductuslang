@@ -97,6 +97,7 @@ impl Core<'_> {
                     inner.reverse();
                     items.extend(inner);
                 }
+                ItemRec::Paren(inner) if inner != NONE => items.push(inner),
                 ItemRec::Placement(_)
                 | ItemRec::Wire(_)
                 | ItemRec::Bundle(_)

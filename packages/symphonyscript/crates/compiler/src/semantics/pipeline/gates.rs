@@ -17,6 +17,11 @@ impl Core<'_> {
             Ok(fact) => fact,
             Err(declined) => return Ok(Err(declined)),
         };
+        for node in self.postorder(root)? {
+            if self.fact(node)?.leaf == Leaf::Placeholder {
+                return Ok(Err(Declined(Reason::BodyItem)));
+            }
+        }
         if self.ir.node(root)?.0 == Op::Name
             && matches!(self.bound(root)?, DeclRef::Param(_))
             && self.is_reactive(root)?
