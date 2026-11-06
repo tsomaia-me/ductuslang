@@ -450,26 +450,84 @@ impl Core<'_> {
             };
             let mut wanted = None;
             let mut agreed = true;
+            let mut split = false;
             for read in found {
-                match (attributes.get(read).copied().flatten(), wanted) {
-                    (Some(id), None) => wanted = Some(id),
-                    (Some(id), Some(seen)) if id == seen => {}
-                    (Some(_) | None, _) => agreed = false,
+                match (attributes.get(read).copied(), wanted) {
+                    (Some(Some(id)), None) => wanted = Some(id),
+                    (Some(Some(id)), Some(seen)) if id == seen => {}
+                    (Some(Some(_)), Some(_)) => split = true,
+                    (Some(None), _) => {}
+                    (None, _) => agreed = false,
                 }
             }
-            let Some(id) = wanted.filter(|_| agreed) else {
+            let mut group_lets: Vec<u32> = members
+                .iter()
+                .copied()
+                .filter(|at| find(&parent, *at) == group)
+                .collect();
+            group_lets.sort_unstable();
+            if !agreed {
+                continue;
+            }
+            let Some(id) = wanted.filter(|_| !split) else {
+                self.untyped_flow(&group_lets)?;
                 continue;
             };
             let mut roots = Vec::new();
-            for at in &members {
-                if find(&parent, *at) == group {
-                    roots.push(self.let_root(*at)?);
-                }
+            for at in group_lets {
+                roots.push(self.let_root(at)?);
             }
             for root in roots {
                 self.resolve_bare(root, id, true)?;
             }
         }
         Ok(())
+    }
+}
+
+impl Core<'_> {
+    fn untyped_flow(&mut self, lets: &[u32]) -> Result<(), Internal> {
+        let mut writer = None;
+        for at in lets {
+            let leaves = self.bare_leaves(self.let_root(*at)?)?;
+            if let Some(first) = leaves.first() {
+                writer = Some((*at, *first));
+                break;
+            }
+        }
+        let Some((first, node)) = writer else {
+            return Ok(());
+        };
+        let mut related = Vec::new();
+        for at in lets {
+            for leaf in self.bare_leaves(self.let_root(*at)?)? {
+                self.untyped_bare.insert(leaf);
+            }
+            if *at != first {
+                related.push((
+                    self.let_line_span(*at)?,
+                    "another use of the value".to_string(),
+                ));
+            }
+        }
+        let span = self.node_span(node)?;
+        self.draw_related(
+            Code::TypeMismatch,
+            span,
+            related,
+            "this value names a variant, and its uses expect no single enum",
+        );
+        Ok(())
+    }
+}
+
+impl Core<'_> {
+    fn let_line_span(&self, at: u32) -> Result<symphonyscript_core::Span, Internal> {
+        let rec = self
+            .ir
+            .lets
+            .get(at as usize)
+            .ok_or(Internal::missed("IR let"))?;
+        Ok(self.span(self.file_of(rec.value), rec.lo, rec.hi))
     }
 }

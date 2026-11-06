@@ -129,13 +129,10 @@ const BARE_LETS: [(&str, &str); 6] = [
     ),
 ];
 
-const BARE_LETS_DECLINED: [&str; 7] = [
+const BARE_LETS_DECLINED: [&str; 4] = [
     "state b(true)\nlet a = if b then Saw else Square\nSynth s:\n    Osc | wave=a\n",
     "state t(true)\nlet a = Saw\nlet b = a\nlet c = if t then b else Square\nSynth s:\n    Osc | wave=c\n",
-    "let a = Saw\nlet b = a\nSynth s:\n    Osc | wave=b\nPlant p | mode=a\n",
-    "let a = Saw\nSynth s:\n    Osc | wave=a\nPlant p | mode=a\n",
     "let a = Manual\nSynth s:\n    Osc | wave=a\n",
-    "let a = Saw\nClip c:\n    Note/a\n",
     "state w(Saw)\nSynth s:\n    Osc | wave=w\n",
 ];
 
@@ -293,4 +290,62 @@ fn a_qualified_variant_inside_a_function_or_a_placement_for_body_draws_what_the_
             assert_eq!(found, old.check(&sources), "{text}");
         }
     }
+}
+
+const UNTYPED_FLOWS: [(&str, &str); 9] = [
+    ("let a = Saw\n", "Clip c:\n    Note/a\n"),
+    (
+        "let a = Saw\nlet b = a\nlet c = b\n",
+        "Clip c1:\n    Note/c\n",
+    ),
+    (
+        "let c = b\nlet b = a\nlet a = Saw\n",
+        "Clip c1:\n    Note/c\n",
+    ),
+    (
+        "let a = Saw\nlet b = if true then a else Square\n",
+        "Clip c1:\n    Note/b\n",
+    ),
+    ("let a = Saw\n", "Clip c1:\n    Note/a\n    Note/a\n"),
+    (
+        "let a = Saw\n",
+        "Synth s:\n    Osc | wave=a\nClip c1:\n    Note/a\n",
+    ),
+    (
+        "let a = Saw\nlet b = a\n",
+        "Synth s:\n    Osc | wave=b\nPlant p | mode=a\n",
+    ),
+    (
+        "let a = Saw\n",
+        "Synth s:\n    Osc | wave=a\nPlant p | mode=a\n",
+    ),
+    (
+        "let a = Auto\n",
+        "Synth s:\n    Osc | wave=a\nPlant p | mode=a\n",
+    ),
+];
+
+#[test]
+fn an_untyped_bare_variant_flow_draws_one_diagnostic_at_its_first_writer_naming_every_other_let_once_in_both_orders()
+ {
+    let vocabulary = symphonyscript_fixtures::vocabulary();
+    let old = Compiler::new(&vocabulary)
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
+    let new = Compiler::new(&vocabulary).expect("the vocabulary compiles");
+    for (first, second) in UNTYPED_FLOWS {
+        for text in [format!("{first}{second}"), format!("{second}{first}")] {
+            let sources = [source(&text)];
+            let found = new
+                .checked_by_new_core(&sources)
+                .unwrap_or_else(|| panic!("the new core takes {text}"));
+            assert_eq!(found, old.check(&sources), "{text}");
+        }
+    }
+    assert_eq!(
+        new.checked_by_new_core(&[source(
+            "let a = Saw\nlet b = Sine\nClip c1:\n    Note/(if a is b then 1 else 2)\n"
+        )]),
+        None
+    );
 }
