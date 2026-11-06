@@ -1335,6 +1335,9 @@ impl Core<'_> {
         if self.derived(at) && !self.has_fact(self.cell_root(at)?)? {
             return Ok(Ok(Fact::PLACEHOLDER));
         }
+        if self.cell_annotation_ty(at)?.is_none() && !self.has_fact(self.cell_root(at)?)? {
+            return Ok(Err(Declined(Reason::Member)));
+        }
         let fact = self.cell_read_fact(at)?;
         if matches!(fact.leaf, Leaf::Placeholder | Leaf::Error) {
             return Ok(Ok(Fact::PLACEHOLDER));
