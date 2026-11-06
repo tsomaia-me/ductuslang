@@ -7,7 +7,7 @@ use super::values::flexible;
 use crate::diagnostics::Code;
 use crate::semantics::Internal;
 use crate::semantics::ir::flat::{NONE, Op, TopRec};
-use crate::semantics::operators::{EvalTy, Value};
+use crate::semantics::operators::{EvalTy, Value, int_range};
 
 impl Core<'_> {
     pub fn cell_root(&self, at: u32) -> Result<u32, Internal> {
@@ -196,9 +196,40 @@ impl Core<'_> {
     pub fn check_own_cell(&mut self, at: u32, root: u32) -> Stage<()> {
         Ok(match self.own_ty(root)? {
             Some(own) if self.derived(at) && !self.is_kept(root)? => {
-                self.evaluate(root, flexible(own))?.map(|_| ())
+                let (ty, owning) = self.derived_width(at, root, own)?;
+                let owning = owning || self.owning;
+                let owning = std::mem::replace(&mut self.owning, owning);
+                let outcome = self.evaluate(root, ty);
+                self.owning = owning;
+                outcome?.map(|_| ())
             }
             Some(_) | None => self.evaluate_own(root)?,
+        })
+    }
+
+    fn derived_width(&self, at: u32, root: u32, own: EvalTy) -> Result<(EvalTy, bool), Internal> {
+        let fact = self.fact(root)?;
+        let reads = self
+            .rule_reads
+            .get(at as usize)
+            .copied()
+            .unwrap_or_default();
+        let read = |classes: &[usize]| {
+            classes
+                .iter()
+                .find_map(|class| reads.get(*class).copied().flatten())
+        };
+        Ok(match fact.leaf {
+            Leaf::Float if fact.fixed.is_none() => {
+                (read(&[2, 1]).map_or(EvalTy::F32, |(ty, _)| ty), false)
+            }
+            Leaf::Int if fact.dims.is_empty() && int_range(own).is_some() => {
+                match read(&[6, 5, 4]) {
+                    Some(_) => (flexible(own), false),
+                    None => (own, true),
+                }
+            }
+            _ => (flexible(own), false),
         })
     }
 

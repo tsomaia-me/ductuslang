@@ -94,6 +94,7 @@ mod to_tests;
 mod typing;
 mod unit_conflict;
 mod unit_reach;
+mod unread_arg;
 #[cfg(test)]
 mod unit_tests;
 mod uses;

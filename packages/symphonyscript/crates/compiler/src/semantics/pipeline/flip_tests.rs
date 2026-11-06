@@ -344,3 +344,68 @@ fn a_gate_on_a_top_level_pattern_use_is_a_bool_drawing_what_the_old_engine_draws
  {
     assert_eq!(same_as_the_old_engine(&TOP_GATED_USES), 42);
 }
+
+const INNER_FITS: [&[&str]; 16] = [
+    &[
+        "state big(1.5)\n",
+        "Clip c:\n    Note | velocity=(big * (2 / 0))\n    Note | velocity=(big * (2 / 1))\n",
+    ],
+    &["state big(1)\n", "state k = big + 1e39\n"],
+    &["state big(1)\n", "state k = big + (u8(255) + 4)\n"],
+    &[
+        "state big(1.5)\n",
+        "state k = big * (2 / 0)\n",
+        "Synth s:\n    Osc | freq=k\n",
+    ],
+    &[
+        "state big(1.5)\n",
+        "Synth s:\n    Osc | freq=(big * (1e300 * 1e300))\n",
+    ],
+    &[
+        "state big(1.5)\n",
+        "Clip c:\n    Note | velocity=((2 / 0) + (1 / 0) * big)\n    Note | velocity=(big * -(2 / 0))\n",
+    ],
+    &[
+        "state big(1.5)\n",
+        "Clip c:\n    Note | velocity=(big * (if true then 2 / 0 else 1))\n",
+    ],
+    &[
+        "state big(1.5)\n",
+        "pattern G(default x):\n    Note\n",
+        "Clip c:\n    G/(big * (2 / 0))\n    G/(big * 1e39)\n    G/(big * 1.5)\n",
+    ],
+    &[
+        "state big(1)\n",
+        "pattern G(default x):\n    Note\n",
+        "Clip c:\n    G/(big + (u8(255) + 4))\n",
+    ],
+    &[
+        "state big(1)\n",
+        "pattern G(default x):\n    Note/x\n",
+        "Clip c:\n    G/(big + (u8(255) + 4))\n    G/(big + (2147483647 * 2))\n",
+    ],
+    &[
+        "state big(1)\n",
+        "state k = big + i32(1) * 3000000000\n",
+        "state j = big + (i32(1) + 2147483647)\n",
+    ],
+    &["state big(1): i32\n", "state k = big + 3000000000\n"],
+    &["state big(1)\n", "state k = big + 10000000000000000000\n"],
+    &[
+        "state big(1.5)\n",
+        "state k = big * 1.5\n",
+        "state j = k * 1e39\n",
+    ],
+    &["state big(1.5)\n", "state k = [big * 1e39, big]\n"],
+    &[
+        "state big(1.5)\n",
+        "state k = big * 1e39\n",
+        "Clip c:\n    Note | velocity=k\n",
+    ],
+];
+
+#[test]
+fn a_compile_time_operand_inside_a_reactive_expression_is_checked_in_the_type_it_takes_at_attributes_derived_cells_and_unread_arguments_beside_a_valid_twin_in_every_order_515()
+ {
+    assert_eq!(same_as_the_old_engine(&INNER_FITS), 222);
+}

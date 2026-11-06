@@ -100,6 +100,9 @@ pub(crate) fn analyze(inputs: &Inputs<'_>) -> Result<Option<Run>, Internal> {
     if let Err(reason) = stage(core.check_cells())? {
         return declined(reason);
     }
+    if let Err(reason) = stage(core.check_unread_arguments())? {
+        return declined(reason);
+    }
     if let Err(reason) = stage(core.check_cyclic_roots())? {
         return declined(reason);
     }

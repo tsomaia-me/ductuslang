@@ -428,6 +428,14 @@ impl Core<'_> {
                 steps.push(Step::Visit(operand, EvalTy::Exact));
                 continue;
             }
+            if runtime
+                && matches!(operand_ty, EvalTy::F32 | EvalTy::F64)
+                && self.loose_float(operand)?
+            {
+                steps.push(Step::FloatFit(operand, operand_ty));
+                steps.push(Step::Visit(operand, operand_ty));
+                continue;
+            }
             if compared
                 && matches!(operand_ty, EvalTy::F32 | EvalTy::F64)
                 && self.loose_float(operand)?
