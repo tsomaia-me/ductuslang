@@ -5360,7 +5360,7 @@ pub const CLASSES: &[Class] = &[
     },
     Class {
         ledger: "476",
-        rule: "a gate whose value holds a refused index, slice bound, conversion or condition draws the faults the type those faults leave known gives, condition-type at the value where it is no `bool`, type-mismatch or array-operand at an operand of `and` or `or` (ARCHITECTURE §7: a value whose type an error leaves known keeps that type), as the program with the faults repaired draws on both engines, where the old engine is silent",
+        rule: "a gate whose value holds a refused index, slice bound, conversion or condition draws the faults the type those faults leave known gives, condition-type at the value where it is no `bool`, type-mismatch or array-operand at an operand of `and` or `or` (ARCHITECTURE §7: a value whose type an error leaves known keeps that type), as the program with the faults repaired draws on both engines, where the old engine is silent; and a gate that is an array choice draws one condition-type, where the old engine draws a second at the same span",
         explains: gate_beside_its_faults,
     },
 ];
@@ -5961,6 +5961,11 @@ fn gate_beside_its_faults(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
         return false;
     };
     let start = at.1 - (line.len() - gate);
+    if change == Change::Removed {
+        return at.0 == "condition-type"
+            && at.1 > start
+            && seen.new.iter().any(|drawn| drawn == at);
+    }
     change == Change::Added
         && at.1 > start
         && matches!(
