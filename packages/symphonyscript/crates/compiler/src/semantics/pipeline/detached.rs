@@ -31,6 +31,16 @@ const BINARY: [Op; 15] = [
 ];
 
 impl Core<'_> {
+    fn placeholder_arm(&self, choice: u32) -> Result<bool, Internal> {
+        let (_, _, then, otherwise) = self.ir.node(choice)?;
+        for arm in [then, otherwise] {
+            if self.fact(arm)?.leaf == Leaf::Placeholder {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
     fn faulty(&self, node: u32) -> Result<bool, Internal> {
         Ok(matches!(
             self.fact(node)?.leaf,
@@ -260,6 +270,14 @@ impl Core<'_> {
             if let Err(declined) = outcome? {
                 return Ok(Err(declined));
             }
+        }
+        let placed = !faults
+            && !self.unchecked
+            && self.ir.node(root)?.0 == Op::If
+            && self.fact(root)?.leaf == Leaf::Placeholder
+            && self.placeholder_arm(root)?;
+        if placed {
+            return self.evaluate_own_in(root, Some(ty));
         }
         self.own_check(root)
     }
