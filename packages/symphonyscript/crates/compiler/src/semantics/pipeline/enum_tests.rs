@@ -102,12 +102,8 @@ fn an_enum_annotation_types_its_let_or_cell_and_gives_a_bare_init_its_enum_in_bo
             assert_eq!(found, old.check(&sources), "{text}");
         }
     }
-    for text in [
-        "state m(Saw): Mode\nPlant p | mode=m\n",
-        "state m(Manual): Nope\nPlant p | mode=m\n",
-    ] {
-        assert_eq!(new.checked_by_new_core(&[source(text)]), None, "{text}");
-    }
+    let text = "state m(Manual): Nope\nPlant p | mode=m\n";
+    assert_eq!(new.checked_by_new_core(&[source(text)]), None, "{text}");
 }
 
 const BARE_LETS: [(&str, &str); 6] = [
@@ -128,10 +124,9 @@ const BARE_LETS: [(&str, &str); 6] = [
     ),
 ];
 
-const BARE_LETS_DECLINED: [&str; 3] = [
+const BARE_LETS_DECLINED: [&str; 2] = [
     "state b(true)\nlet a = if b then Saw else Square\nSynth s:\n    Osc | wave=a\n",
     "state t(true)\nlet a = Saw\nlet b = a\nlet c = if t then b else Square\nSynth s:\n    Osc | wave=c\n",
-    "let a = Manual\nSynth s:\n    Osc | wave=a\n",
 ];
 
 #[test]
@@ -290,7 +285,22 @@ fn a_qualified_variant_inside_a_function_or_a_placement_for_body_draws_what_the_
     }
 }
 
-const UNTYPED_FLOWS: [(&str, &str); 16] = [
+const UNTYPED_FLOWS: [(&str, &str); 22] = [
+    (
+        "let a = Saw\n",
+        "Clip c1:\n    Note/(if a is Mode::Auto then 1 else 2)\n",
+    ),
+    ("state m(Saw): Mode\n", "Plant p | mode=m\n"),
+    ("let a = Manual\n", "Synth s:\n    Osc | wave=a\n"),
+    ("let w: Wave = Auto\n", "Synth s:\n    Osc | wave=w\n"),
+    (
+        "let a = Manual\nlet b = a\n",
+        "Synth s:\n    Osc | wave=b\n",
+    ),
+    (
+        "state b(true)\nstate m(if b then Saw else Auto): Mode\n",
+        "Plant p | mode=m\n",
+    ),
     ("state w(Saw)\n", "Synth s:\n    Osc | wave=w\n"),
     (
         "state w(Saw)\n",
@@ -359,10 +369,4 @@ fn an_untyped_bare_variant_flow_draws_one_diagnostic_at_its_first_writer_naming_
             assert_eq!(found, old.check(&sources), "{text}");
         }
     }
-    assert_eq!(
-        new.checked_by_new_core(&[source(
-            "let a = Saw\nClip c1:\n    Note/(if a is Mode::Auto then 1 else 2)\n"
-        )]),
-        None
-    );
 }

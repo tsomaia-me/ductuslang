@@ -225,7 +225,7 @@ impl Core<'_> {
             let at = u32::try_from(at).unwrap_or(u32::MAX);
             if let Some(EvalTy::Enum(id)) = self.annotation_ty(at)? {
                 let root = self.let_root(at)?;
-                self.resolve_bare(root, id, true)?;
+                self.settle_bare(root, id)?;
             }
         }
         for at in 0..self.ir.cells.len() {
@@ -235,7 +235,7 @@ impl Core<'_> {
             {
                 for root in [rec.init, rec.rule] {
                     if root != NONE {
-                        self.resolve_bare(root, id, true)?;
+                        self.settle_bare(root, id)?;
                     }
                 }
             }
@@ -557,7 +557,7 @@ impl Core<'_> {
                 roots.push(self.let_root(at)?);
             }
             for root in roots {
-                self.resolve_bare(root, id, true)?;
+                self.settle_bare(root, id)?;
             }
         }
         Ok(())
@@ -608,5 +608,24 @@ impl Core<'_> {
             .get(at as usize)
             .ok_or(Internal::missed("IR let"))?;
         Ok(self.span(self.file_of(rec.value), rec.lo, rec.hi))
+    }
+}
+
+impl Core<'_> {
+    fn settle_bare(&mut self, root: u32, id: EnumId) -> Result<(), Internal> {
+        let mut reads = false;
+        for node in self.postorder(root)? {
+            reads |= self.ir.node(node)?.0 == Op::Name && !self.is_bare(node);
+        }
+        self.resolve_bare(root, id, !reads)?;
+        if reads {
+            return Ok(());
+        }
+        for leaf in self.bare_leaves(root)? {
+            if !self.bare_enums.contains_key(&leaf) {
+                self.untyped_bare.insert(leaf);
+            }
+        }
+        Ok(())
     }
 }
