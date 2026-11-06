@@ -5,6 +5,7 @@ use super::core::{Core, Stage};
 use super::decl_ref::DeclRef;
 use super::declined::Declined;
 use super::fact::Fact;
+use super::leaf::Leaf;
 use super::loops::loop_body;
 use super::memo_arg::MemoArg;
 use super::need::Need;
@@ -519,8 +520,8 @@ impl Core<'_> {
 
     pub fn call_fact(&mut self, node: u32) -> Stage<Fact> {
         let Some(function) = self.callee(node)? else {
-            if self.abs_call(node)? {
-                return self.abs_fact(node);
+            if self.math_call(node)? {
+                return self.math_fact(node);
             }
             if self.not_callable(node)? {
                 let callee = self.ir.node(node)?.1;
@@ -875,7 +876,7 @@ impl Core<'_> {
                 continue;
             }
             let node = self.ir.base + u32::try_from(local).unwrap_or(0);
-            if self.callee(node)?.is_none() && !self.not_callable(node)? && !self.abs_call(node)? {
+            if self.callee(node)?.is_none() && !self.not_callable(node)? && !self.math_call(node)? {
                 return Ok(true);
             }
         }
@@ -1064,37 +1065,50 @@ impl Core<'_> {
     }
 }
 
-impl Core<'_> {
-    pub fn abs_call(&self, node: u32) -> Result<bool, Internal> {
-        let (op, callee, _, shape) = self.ir.node(node)?;
-        if op != Op::Call || shape != 2 || self.ir.node(callee)?.0 != Op::Name {
-            return Ok(false);
-        }
-        if self.bound(callee)? != DeclRef::None {
-            return Ok(false);
-        }
-        let name = self.ir.node(callee)?.1;
-        Ok(self.ir.name_text(name) == Some("abs"))
-    }
+const MATH: [(&str, u32); 4] = [("abs", 1), ("min", 2), ("max", 2), ("clamp", 3)];
+
+pub(crate) fn math_arity(name: &str) -> Option<u32> {
+    MATH.iter()
+        .find(|(known, _)| *known == name)
+        .map(|(_, arity)| *arity)
 }
 
 impl Core<'_> {
-    fn abs_fact(&mut self, node: u32) -> Stage<Fact> {
-        let Some(arg) = self.arguments(node)?.first().copied() else {
-            return Err(Internal::missed("an argument of abs"));
-        };
-        let fact = self.fact(arg)?;
-        if fact.leaf == super::leaf::Leaf::Placeholder {
+    pub fn math_name(&self, node: u32) -> Result<Option<&'static str>, Internal> {
+        let (op, callee, _, shape) = self.ir.node(node)?;
+        if op != Op::Call || self.ir.node(callee)?.0 != Op::Name {
+            return Ok(None);
+        }
+        if self.bound(callee)? != DeclRef::None {
+            return Ok(None);
+        }
+        let text = self
+            .ir
+            .name_text(self.ir.node(callee)?.1)
+            .unwrap_or_default();
+        Ok(MATH
+            .iter()
+            .find(|(known, arity)| *known == text && shape == 2 * arity)
+            .map(|(known, _)| *known))
+    }
+
+    pub fn math_call(&self, node: u32) -> Result<bool, Internal> {
+        Ok(self.math_name(node)?.is_some())
+    }
+
+    fn math_fact(&mut self, node: u32) -> Stage<Fact> {
+        let name = self.math_name(node)?.unwrap_or_default();
+        let mut facts = Vec::new();
+        for arg in self.arguments(node)? {
+            facts.push(self.fact(arg)?);
+        }
+        if facts.iter().any(|fact| fact.leaf == Leaf::Placeholder) {
             return Ok(Ok(Fact::PLACEHOLDER));
         }
-        if fact.leaf == super::leaf::Leaf::Error {
+        if facts.iter().any(|fact| fact.leaf == Leaf::Error) {
             return Ok(Ok(Fact::ERROR));
         }
-        let numeric = matches!(
-            fact.leaf,
-            super::leaf::Leaf::Int | super::leaf::Leaf::Float | super::leaf::Leaf::Empty
-        );
-        if !fact.dims.is_empty() {
+        if facts.iter().any(|fact| !fact.dims.is_empty()) {
             self.draw_at(
                 Code::ArrayOperand,
                 node,
@@ -1102,10 +1116,24 @@ impl Core<'_> {
             )?;
             return Ok(Ok(Fact::ERROR));
         }
-        if !numeric || !fact.dims.is_empty() || fact.node {
-            self.draw_at(Code::OperandType, node, "`abs` takes numbers")?;
+        let numeric =
+            |fact: &Fact| !fact.node && matches!(fact.leaf, Leaf::Int | Leaf::Float | Leaf::Empty);
+        if !facts.iter().all(numeric) {
+            self.draw_at(Code::OperandType, node, format!("`{name}` takes numbers"))?;
             return Ok(Ok(Fact::ERROR));
         }
-        Ok(Ok(fact))
+        let mut found = facts.first().cloned().unwrap_or(Fact::ERROR);
+        for fact in facts.iter().skip(1) {
+            let float = found.leaf == Leaf::Float || fact.leaf == Leaf::Float;
+            let leaf = if float { Leaf::Float } else { Leaf::Int };
+            let family = found.family;
+            found = Fact::numeric(
+                leaf,
+                super::width::combined(found.fixed, fact.fixed, float),
+                super::fact::reads(found.read, fact.read, float),
+            );
+            found.family = family;
+        }
+        Ok(Ok(found))
     }
 }

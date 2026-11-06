@@ -34,6 +34,20 @@ impl Extremes {
         }
     }
 
+    fn smaller(self, other: Extremes) -> Extremes {
+        Extremes {
+            min: self.min.zip(other.min).map(|(a, b)| a.min(b)),
+            max: either(self.max, other.max, i128::min),
+        }
+    }
+
+    fn larger(self, other: Extremes) -> Extremes {
+        Extremes {
+            min: either(self.min, other.min, i128::max),
+            max: self.max.zip(other.max).map(|(a, b)| a.max(b)),
+        }
+    }
+
     fn difference(self, other: Extremes) -> Extremes {
         let sub = |a: Option<i128>, b: Option<i128>| a.zip(b).map(|(a, b)| a.saturating_sub(b));
         Extremes {
@@ -83,6 +97,19 @@ impl Core<'_> {
             Op::Add => {
                 let left = self.extremes_at(a, depth + 1)?;
                 left.sum(self.extremes_at(b, depth + 1)?)
+            }
+            Op::Call if matches!(self.math_name(node)?, Some("min" | "max")) => {
+                let args = self.arguments(node)?;
+                let (Some(left), Some(right)) = (args.first(), args.get(1)) else {
+                    return Ok(Extremes::UNBOUNDED);
+                };
+                let left = self.extremes_at(*left, depth + 1)?;
+                let right = self.extremes_at(*right, depth + 1)?;
+                if self.math_name(node)? == Some("min") {
+                    left.smaller(right)
+                } else {
+                    left.larger(right)
+                }
             }
             Op::Field if self.runtime_members.contains(&node) => {
                 let cell = self.cell_sizes.get(&node).copied().unwrap_or(0);
@@ -172,5 +199,13 @@ impl Core<'_> {
             self.push_drawn(diagnostic);
         }
         Ok(())
+    }
+}
+
+fn either(a: Option<i128>, b: Option<i128>, pick: fn(i128, i128) -> i128) -> Option<i128> {
+    match (a, b) {
+        (Some(a), Some(b)) => Some(pick(a, b)),
+        (Some(one), None) | (None, Some(one)) => Some(one),
+        (None, None) => None,
     }
 }

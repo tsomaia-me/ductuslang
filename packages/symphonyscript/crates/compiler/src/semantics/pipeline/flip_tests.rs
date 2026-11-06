@@ -2289,3 +2289,62 @@ fn abs_of_one_number_is_its_magnitude_in_the_operands_type_saturating_beside_a_v
  {
     assert_eq!(same_as_the_old_engine(&ABSOLUTE_VALUES), 64);
 }
+
+const LEAST_AND_GREATEST: [&[&str]; 18] = [
+    &["Clip c:\n    Note/(min(3, 5))\n"],
+    &["Clip c:\n    Note/(max(3, 3000000000))\n"],
+    &["Clip c:\n    Note/(min(3, 3000000000))\n"],
+    &["Clip c:\n    Note/(clamp(70, 0, 64))\n"],
+    &["Clip c:\n    Note/(min(1.5, 2))\n"],
+    &["Clip c:\n    Note | velocity=(max(0.25, 2))\n"],
+    &["Clip c:\n    Note/(min(true, 2))\n"],
+    &["Clip c:\n    Note/(max([1], 2))\n"],
+    &["state q(1)\n", "Clip c:\n    Note/(min(q, 3000000000))\n"],
+    &["state q(1)\n", "Clip c:\n    Note/(clamp(q, 0, 64))\n"],
+    &["Clip c:\n    Note/(min(i32(3), u8(4)))\n"],
+    &["Clip c:\n    Note/(max(u8(3), 300))\n"],
+    &["Clip c:\n    Note/(min(i64(3), 2) + 3000000000)\n"],
+    &[
+        "let x = clamp(9, 0, 5)\n",
+        "Clip c:\n    Note/([1, 2][x])\n",
+    ],
+    &["Clip c:\n    Note | velocity=(min(-0.0, 0.0))\n"],
+    &["Clip c:\n    Note/(min(zz, 2))\n"],
+    &[
+        "fn f(a, b): max(a, b) + 1\n",
+        "Clip c:\n    Note/(f(1, 2))\n    Note | velocity=(f(0.5, 1))\n",
+    ],
+    &["Clip c:\n    Note/(min(abs(-70), max(1, 64)))\n"],
+];
+
+#[test]
+fn min_max_and_clamp_compute_in_their_operands_combined_type_beside_a_valid_twin_in_every_order() {
+    assert_eq!(same_as_the_old_engine(&LEAST_AND_GREATEST), 52);
+}
+
+#[test]
+fn a_math_function_keeps_its_operands_unit_family_as_the_old_engine_does() {
+    let vocabulary = symphonyscript_fixtures::envelope_vocabulary();
+    let old = Compiler::new(&vocabulary)
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
+    let new = Compiler::new(&vocabulary).expect("the vocabulary compiles");
+    let mut programs = 0;
+    for text in [
+        "Env e | attack=(min(1s, 3))\n",
+        "Env e | attack=(max(1s, 2ms))\n",
+        "Env e | attack=(clamp(3, 1s, 5s))\n",
+        "Env e | attack=(abs(-3ms) + 1)\n",
+        "let d = min(2, 1s)\nEnv e | attack=d\n",
+        "Env e | attack=(min(1s, 3) / 2)\n",
+        "Env e | attack=(max(3i32, 1s))\n",
+    ] {
+        let sources = [source(text)];
+        let found = new
+            .checked_by_new_core(&sources)
+            .unwrap_or_else(|| panic!("the new core takes {text}"));
+        assert_eq!(found, old.check(&sources), "{text}");
+        programs += 1;
+    }
+    assert_eq!(programs, 7);
+}

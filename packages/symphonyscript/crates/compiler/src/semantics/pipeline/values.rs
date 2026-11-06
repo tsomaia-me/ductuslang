@@ -268,7 +268,7 @@ impl Core<'_> {
             }
             Op::And | Op::Or => vec![(a, EvalTy::Bool), (b, EvalTy::Bool)],
             Op::Not => vec![(a, EvalTy::Bool)],
-            Op::Call if self.abs_call(node)? => self
+            Op::Call if self.math_call(node)? => self
                 .arguments(node)?
                 .into_iter()
                 .map(|arg| (arg, ty))
@@ -1540,15 +1540,28 @@ impl Core<'_> {
                 },
                 None => return Err(Internal::missed("a path read of a cell")),
             },
-            Op::Call if self.abs_call(node)? => match pop(stack)? {
-                Value::Int(value) => crate::semantics::operators::integer(
-                    self,
-                    node,
-                    ty,
-                    Some(value.saturating_abs()),
-                )?,
-                other => absolute(other),
-            },
+            Op::Call if self.math_call(node)? => {
+                let name = self.math_name(node)?.unwrap_or_default();
+                let arity = super::calls::math_arity(name).unwrap_or(1) as usize;
+                let mut args = Vec::with_capacity(arity);
+                for _ in 0..arity {
+                    args.push(pop(stack)?);
+                }
+                args.reverse();
+                match (name, args.as_slice()) {
+                    ("abs", [Value::Int(value)]) => crate::semantics::operators::integer(
+                        self,
+                        node,
+                        ty,
+                        Some(value.saturating_abs()),
+                    )?,
+                    ("abs", [other]) => absolute(other.clone()),
+                    ("min", [x, y]) => least(x, y, true),
+                    ("max", [x, y]) => least(x, y, false),
+                    ("clamp", [x, lo, hi]) => least(&least(x, lo, false), hi, true),
+                    _ => Value::Error,
+                }
+            }
             Op::If
             | Op::Str
             | Op::Call
@@ -2517,4 +2530,35 @@ fn absolute(value: CoreValue) -> CoreValue {
         Value::F64(value) => Value::F64(value.abs()),
         other => other,
     }
+}
+
+fn least(x: &CoreValue, y: &CoreValue, min: bool) -> CoreValue {
+    let pick_x = |x_first: bool| if x_first == min { x.clone() } else { y.clone() };
+    match (x, y) {
+        (Value::Int(a), Value::Int(b)) => pick_x(a <= b),
+        (Value::F32(a), Value::F32(b)) => {
+            Value::F32(float_least(f64::from(*a), f64::from(*b), min) as f32)
+        }
+        (Value::F64(a), Value::F64(b)) => Value::F64(float_least(*a, *b, min)),
+        _ => Value::Error,
+    }
+}
+
+fn float_least(a: f64, b: f64, min: bool) -> f64 {
+    if a.is_nan() {
+        return b;
+    }
+    if b.is_nan() {
+        return a;
+    }
+    if a == b {
+        let negative = a.is_sign_negative() || b.is_sign_negative();
+        let positive = a.is_sign_positive() || b.is_sign_positive();
+        return match (min, negative, positive) {
+            (true, true, _) => -a.abs(),
+            (false, _, true) => a.abs(),
+            _ => a,
+        };
+    }
+    if (a < b) == min { a } else { b }
 }

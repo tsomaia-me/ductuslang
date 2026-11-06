@@ -276,7 +276,7 @@ impl Core<'_> {
         self.skipped_top.clone_from(&skipped_top);
         let mut enclosing = std::collections::HashMap::new();
         let type_operands = self.type_operands()?;
-        let abs_callees = self.abs_callees()?;
+        let math_callees = self.math_callees()?;
         for local in 0..self.ir.op.len() {
             if self.ir.op.get(local) != Some(&Op::Name)
                 || !self.reached.get(local).copied().unwrap_or(false)
@@ -339,7 +339,7 @@ impl Core<'_> {
                         self.bare.insert(node);
                         continue;
                     }
-                    if abs_callees.contains(&node) {
+                    if math_callees.contains(&node) {
                         continue;
                     }
                     if text == BuiltinName::Pi.name() {
@@ -760,15 +760,22 @@ impl Core<'_> {
 }
 
 impl Core<'_> {
-    fn abs_callees(&self) -> Result<std::collections::HashSet<u32>, Internal> {
+    fn math_callees(&self) -> Result<std::collections::HashSet<u32>, Internal> {
         let mut found = std::collections::HashSet::new();
         for local in 0..self.ir.op.len() {
-            if self.ir.op.get(local) != Some(&Op::Call) || self.ir.c.get(local) != Some(&2) {
+            if self.ir.op.get(local) != Some(&Op::Call) {
                 continue;
             }
             let callee = self.ir.a.get(local).copied().unwrap_or(NONE);
-            if self.ir.node(callee)?.0 == Op::Name
-                && self.ir.name_text(self.ir.node(callee)?.1) == Some("abs")
+            if self.ir.node(callee)?.0 != Op::Name {
+                continue;
+            }
+            let text = self
+                .ir
+                .name_text(self.ir.node(callee)?.1)
+                .unwrap_or_default();
+            if super::calls::math_arity(text).map(|arity| 2 * arity)
+                == self.ir.c.get(local).copied()
             {
                 found.insert(callee);
             }
