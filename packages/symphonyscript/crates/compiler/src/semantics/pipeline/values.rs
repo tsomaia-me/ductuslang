@@ -299,6 +299,14 @@ impl Core<'_> {
                 }
                 return Ok(());
             }
+            Op::Call if self.math_name(node)? == Some("rand") => {
+                for arg in self.arguments(node)?.into_iter().rev() {
+                    self.unflowed.insert(arg);
+                    steps.push(Step::Fit(arg, EvalTy::I64));
+                    steps.push(Step::Visit(arg, EvalTy::Exact));
+                }
+                return Ok(());
+            }
             Op::Call if self.math_call(node)? => self
                 .arguments(node)?
                 .into_iter()
@@ -1590,6 +1598,12 @@ impl Core<'_> {
                     ("min", [x, y]) => least(x, y, true),
                     ("max", [x, y]) => least(x, y, false),
                     ("clamp", [x, lo, hi]) => least(&least(x, lo, false), hi, true),
+                    ("rand", [Value::Int(seed), Value::Int(n)]) => {
+                        match (i64::try_from(*seed), i64::try_from(*n)) {
+                            (Ok(seed), Ok(n)) => Value::F32(symphonyscript_core::rand(seed, n)),
+                            _ => Value::Error,
+                        }
+                    }
                     ("lerp", [Value::F32(a), Value::F32(b), Value::F32(t)]) => {
                         Value::F32(a + (b - a) * t)
                     }

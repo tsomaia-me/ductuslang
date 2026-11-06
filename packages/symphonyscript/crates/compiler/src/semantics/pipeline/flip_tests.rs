@@ -2420,3 +2420,23 @@ const LERPS: [&[&str]; 9] = [
 fn lerp_is_a_float_between_its_first_two_arguments_beside_a_valid_twin_in_every_order() {
     assert_eq!(same_as_the_old_engine(&LERPS), 30);
 }
+
+const RANDS: [&[&str]; 9] = [
+    &["Clip c:\n    Note | velocity=(rand(1, 2))\n"],
+    &["Clip c:\n    Note/([1, 2, 3][i32(rand(1, 2) * 3)])\n"],
+    &["Clip c:\n    Note | velocity=(rand(1.5, 2))\n"],
+    &["Clip c:\n    Note | velocity=(rand(true, 2))\n"],
+    &["Clip c:\n    Note | velocity=(rand(9223372036854775808, 2))\n"],
+    &[
+        "state q(1)\n",
+        "Clip c:\n    Note | velocity=(rand(q, 2))\n",
+    ],
+    &["Clip c:\n    Note | velocity=(rand(2 ** 70, 2))\n"],
+    &["Clip c:\n    Note/(rand(1, 2))\n"],
+    &["Clip c:\n    Note | velocity=(rand(i32(3), u8(2)) + 1)\n"],
+];
+
+#[test]
+fn rand_is_an_f32_fixed_by_two_integers_each_fitting_i64_beside_a_valid_twin_in_every_order() {
+    assert_eq!(same_as_the_old_engine(&RANDS), 22);
+}

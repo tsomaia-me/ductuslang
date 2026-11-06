@@ -14,6 +14,7 @@ use crate::diagnostics::{Code, Related};
 use crate::semantics::Internal;
 use crate::semantics::counted_walk::CountedWalk;
 use crate::semantics::ir::flat::{NONE, Op};
+use crate::semantics::operators::EvalTy;
 
 const NEW: u8 = 0;
 const OPEN: u8 = 1;
@@ -1065,7 +1066,8 @@ impl Core<'_> {
     }
 }
 
-const MATH: [(&str, u32); 14] = [
+const MATH: [(&str, u32); 15] = [
+    ("rand", 2),
     ("lerp", 3),
     ("abs", 1),
     ("min", 2),
@@ -1143,6 +1145,20 @@ impl Core<'_> {
         if !facts.iter().all(numeric) {
             self.draw_at(Code::OperandType, node, format!("`{name}` takes numbers"))?;
             return Ok(Ok(Fact::ERROR));
+        }
+        if name == "rand" {
+            if facts
+                .iter()
+                .any(|fact| !matches!(fact.leaf, Leaf::Int | Leaf::Empty))
+            {
+                self.draw_at(Code::OperandType, node, "`rand` takes two integers")?;
+                return Ok(Ok(Fact::ERROR));
+            }
+            if facts.iter().any(|fact| fact.family.is_some()) {
+                self.draw_at(Code::UnitOperation, node, "`rand` takes plain numbers")?;
+                return Ok(Ok(Fact::ERROR));
+            }
+            return Ok(Ok(Fact::fixed(Leaf::Float, Some(EvalTy::F32))));
         }
         if name == "lerp" {
             let third = facts.get(2).and_then(|fact| fact.family);
