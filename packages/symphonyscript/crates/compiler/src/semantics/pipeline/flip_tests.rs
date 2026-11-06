@@ -2865,3 +2865,28 @@ fn a_call_reading_an_argument_cell_computes_in_f32_and_a_lets_float_literal_keep
  {
     assert_eq!(same_as_the_old_engine(&FLOAT_WIDTHS_BESIDE_A_REFUSAL), 174);
 }
+
+const FLAG_ATTRIBUTES: [&[&str]; 9] = [
+    &["Rig r:\n    Lamp | strobe\n"],
+    &["Rig r:\n    Lamp | !strobe level=0.5\n"],
+    &["Rig r:\n    Lamp | strobe=true\n"],
+    &["Rig r:\n    Lamp | hue\n", "Rig s:\n    Lamp | !hue\n"],
+    &["Rig r:\n    Lamp | zap strobe\n"],
+    &[
+        "Rig r:\n    Lamp | strobe strobe\n",
+        "Rig s:\n    Lamp | strobe=true !strobe\n",
+    ],
+    &["Rig r:\n    Lamp | strobe level=(1 + true)\n"],
+    &[
+        "state intensity(0.5)\n",
+        "state glow = intensity * 0.8\n",
+        "Rig stage:\n    Lamp | level=0.7\n           hue=glow\n           strobe\n",
+    ],
+    &["Rig r:\n    Lamp as a | !strobe level=0.5\n    Lamp | level=a.level\n"],
+];
+
+#[test]
+fn a_flag_attribute_sets_a_bool_attribute_and_draws_type_mismatch_unknown_or_duplicate_attribute_as_a_value_does_beside_a_valid_twin_in_every_order()
+ {
+    assert_eq!(same_as_the_old_engine(&FLAG_ATTRIBUTES), 48);
+}

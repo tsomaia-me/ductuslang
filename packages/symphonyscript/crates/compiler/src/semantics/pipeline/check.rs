@@ -303,8 +303,9 @@ impl Core<'_> {
                 .attr_entries
                 .get(at as usize)
                 .ok_or(Internal::missed("IR attribute"))?;
-            let AttrForm::Value(root) = entry.form else {
-                return Ok(Err(Declined(Reason::PatternUse)));
+            let root = match entry.form {
+                AttrForm::Value(root) => root,
+                AttrForm::Set(_) => NONE,
             };
             let name = self
                 .ir
@@ -315,6 +316,17 @@ impl Core<'_> {
             match decl_attrs.iter().position(|attr| attr.name == text) {
                 Some(attr) => {
                     let span = self.span(file, entry.lo, entry.hi);
+                    let flag = root == NONE
+                        && decl_attrs
+                            .get(attr)
+                            .is_some_and(|decl| plain_expected(decl) != Some(EvalTy::Bool));
+                    if flag {
+                        self.draw(
+                            Code::TypeMismatch,
+                            span.clone(),
+                            format!("`{text}` alone or with `!` sets a `bool` attribute, and `{text}` is not one"),
+                        );
+                    }
                     set(self, attr, span, root);
                 }
                 None => self.draw(
@@ -338,6 +350,9 @@ impl Core<'_> {
             }
         }
         for (attr, _, root) in sources {
+            if root == NONE {
+                continue;
+            }
             let attr = decl_attrs.get(attr).ok_or(Internal::missed("attribute"))?;
             if let Some((ty, length)) = expected_array(attr) {
                 if let Err(declined) = self.bind_array(root, &attr.name, ty, length)? {

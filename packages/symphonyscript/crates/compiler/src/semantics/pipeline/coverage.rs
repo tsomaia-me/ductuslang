@@ -264,7 +264,7 @@ type Sorted<'a> = (&'a [u32], &'a [u32], &'a [u32], &'a [u32], &'a [u32]);
 fn item_landed(
     ir: &FlatIr,
     item: &ItemRec,
-    (members, in_loops, patterns, tops, blocks): Sorted<'_>,
+    (members, in_loops, _, tops, blocks): Sorted<'_>,
     at: usize,
 ) -> bool {
     if !landed(item_slice(item)) {
@@ -304,26 +304,12 @@ fn item_landed(
     let ItemRec::Placement(placement) = item else {
         return true;
     };
-    let used = ir
-        .name(placement.kind)
-        .is_some_and(|entry| patterns.binary_search(&entry.sym.0).is_ok());
     let top = u32::try_from(at).is_ok_and(|at| tops.binary_search(&at).is_ok());
     if placement.flags.0 != placement.flags.1
         || placement.attrs_cut
         || placement.skipped_block.is_some()
         || (placement.inline
             && u32::try_from(at).map_or(true, |at| members.binary_search(&at).is_err()))
-    {
-        return false;
-    }
-    let entries = ir
-        .attr_entries
-        .get(placement.attrs.0 as usize..placement.attrs.1 as usize)
-        .unwrap_or_default();
-    if !used
-        && entries
-            .iter()
-            .any(|entry| !matches!(entry.form, AttrForm::Value(_)))
     {
         return false;
     }
@@ -450,7 +436,7 @@ fn wire_landed(ir: &FlatIr, wire: &WireRec, in_loop: bool) -> bool {
 
 pub(crate) fn reason_slice(reason: Reason) -> Slice {
     match reason {
-        Reason::Member => Slice::DefaultFlip,
+        Reason::Member | Reason::FlagRead => Slice::DefaultFlip,
         Reason::ArrayAttribute => Slice::Pending,
         Reason::PreludeItems | Reason::NameOfInstance | Reason::NameOfVocabulary => {
             Slice::DefaultFlip

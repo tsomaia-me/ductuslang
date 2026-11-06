@@ -1589,7 +1589,10 @@ impl Core<'_> {
             let Some(ty) = super::check::expected(declared) else {
                 return Ok(Err(Declined(Reason::PatternUse)));
             };
-            let read = self.attr_read(row, attr, ty)?;
+            let read = match self.attr_read(row, attr, ty)? {
+                Ok(read) => read,
+                Err(declined) => return Ok(Err(declined)),
+            };
             let written = self
                 .attr_reads
                 .get(read as usize)

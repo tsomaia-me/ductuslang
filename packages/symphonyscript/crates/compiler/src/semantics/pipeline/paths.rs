@@ -315,23 +315,26 @@ impl Core<'_> {
                 continue;
             }
             let AttrForm::Value(root) = entry.form else {
-                return Err(Internal::missed("a flag the coverage table leaves out"));
+                return Ok((ABSENT, entry.lo, entry.hi));
             };
             return Ok((root, entry.lo, entry.hi));
         }
         Ok((NONE, 0, 0))
     }
 
-    pub fn attr_read(&mut self, row: u32, attr: usize, ty: EvalTy) -> Result<u32, Internal> {
+    pub fn attr_read(&mut self, row: u32, attr: usize, ty: EvalTy) -> Stage<u32> {
         let key = (row, u32::try_from(attr).unwrap_or(u32::MAX));
         if let Some(found) = self.attr_index.get(&key) {
-            return Ok(*found);
+            return Ok(Ok(*found));
         }
         let record = *self
             .instances
             .get(row as usize)
             .ok_or(Internal::missed("row"))?;
         let (root, lo, hi) = self.attr_source(row, attr)?;
+        if root == ABSENT {
+            return Ok(Err(Declined(Reason::FlagRead)));
+        }
         let name = self
             .vocabulary
             .node_kind(record.kind)
@@ -354,7 +357,7 @@ impl Core<'_> {
         self.attr_index.insert(key, at);
         self.attr_values
             .push([None, None, None, None, None, None, None]);
-        Ok(at)
+        Ok(Ok(at))
     }
 
     fn step_row(&mut self, node: u32, row: u32, field: u32) -> Stage<End> {
@@ -395,7 +398,10 @@ impl Core<'_> {
         let Some(ty) = super::check::expected(declared) else {
             return Ok(Err(Declined(super::check::attribute_reason(declared))));
         };
-        Ok(Ok(End::Attr(self.attr_read(row, attr, ty)?)))
+        match self.attr_read(row, attr, ty)? {
+            Ok(read) => Ok(Ok(End::Attr(read))),
+            Err(declined) => Ok(Err(declined)),
+        }
     }
 
     fn path_end(&mut self, node: u32, ends: &HashMap<u32, End>) -> Stage<End> {
@@ -1013,7 +1019,10 @@ impl Core<'_> {
             return Ok(Ok(End::Placeholder));
         };
         if !several {
-            return Ok(Ok(End::Attr(self.attr_read(row, attr, ty)?)));
+            return match self.attr_read(row, attr, ty)? {
+                Ok(read) => Ok(Ok(End::Attr(read))),
+                Err(declined) => Ok(Err(declined)),
+            };
         }
         if let Some((other, _, _)) = found.iter().find(|(_, _, own)| *own != ty).copied() {
             let name = self
