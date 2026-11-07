@@ -3223,3 +3223,54 @@ fn a_wire_in_a_body_no_iteration_runs_draws_its_unknown_flag_and_attribute_names
  {
     assert_eq!(same_as_the_old_engine(&UNRUN_BODY_WIRES), 140);
 }
+
+const NAMED_WIRES: [&[&str]; 10] = [
+    &[
+        "Rig stage:\n    Lamp as wash\n",
+        "Scene night:\n    Dims as soften: stage.wash\n",
+        "Scene dawn | hold=night.soften.depth * 10:\n    Cue/0\n",
+    ],
+    &[
+        "Rig stage:\n    Lamp as wash\n",
+        "Scene night:\n    Dims as soften | depth=0.4: stage.wash\n    Dims as soften: stage.wash\n    Cue as soften\n",
+    ],
+    &[
+        "Rig stage:\n    Lamp as wash\n",
+        "Scene night:\n    Cue as soften\n    Dims as soften: stage.wash\n",
+    ],
+    &[
+        "Rig stage:\n    Lamp as wash\n",
+        "Scene night:\n    Dims as hold: stage.wash\n",
+    ],
+    &[
+        "Rig stage:\n    Lamp as wash\n",
+        "Scene night:\n    Dims as soften | depth=0.4: stage.wash\n",
+        "Scene dawn | hold=night.soften.depth.x:\n    Cue/0\n",
+    ],
+    &[
+        "Rig stage:\n    Lamp as wash\n",
+        "Scene night:\n    Dims as soften | depth=true: stage.wash\n",
+        "Scene dawn | hold=night.soften.depth:\n    Cue/0\n",
+    ],
+    &[
+        "Rig stage:\n    Lamp as wash\n",
+        "Scene night:\n    Dims as soften | depth=night.soften.depth: stage.wash\n",
+    ],
+    &[
+        "Rig stage:\n    Lamp as wash\n",
+        "Scene night:\n    Dims as soften | depth=0.4: stage.wash\n",
+        "Scene dawn | hold=night.soften.depth + true:\n    Cue/0\n",
+    ],
+    &["Rig stage:\n    Lamp as soften\n    Scene:\n        Dims as soften: stage.soften\n"],
+    &[
+        "Rig stage:\n    Lamp as wash\n",
+        "Scene night:\n    Dims as soften | depth=0.4: stage.wash\n    Dims as soften: stage.wash\n",
+        "Scene dawn | hold=night.soften.foo:\n    Cue/0\n",
+    ],
+];
+
+#[test]
+fn a_named_wire_is_a_child_name_whose_attributes_a_path_reads_and_clashes_with_its_siblings_beside_a_valid_twin_in_every_order()
+ {
+    assert_eq!(same_as_the_old_engine(&NAMED_WIRES), 146);
+}

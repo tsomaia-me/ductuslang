@@ -106,6 +106,7 @@ mod value_keys;
 mod values;
 mod whens;
 mod width;
+mod wire_names;
 mod wire_row;
 #[cfg(test)]
 mod wire_tests;

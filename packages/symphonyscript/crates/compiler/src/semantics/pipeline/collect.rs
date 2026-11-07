@@ -224,6 +224,9 @@ impl Core<'_> {
                 }
             }
         }
+        if self.reads_a_wire_name()? {
+            return Ok(Err(Declined(Reason::WireName)));
+        }
         if let Err(declined) = self.bind_names()? {
             return Ok(Err(declined));
         }

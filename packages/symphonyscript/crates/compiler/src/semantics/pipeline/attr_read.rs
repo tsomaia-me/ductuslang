@@ -12,4 +12,5 @@ pub(crate) struct AttrRead {
     pub span: Span,
     pub key: (u32, u32),
     pub cyclic: bool,
+    pub wire: bool,
 }

@@ -264,15 +264,14 @@ type Sorted<'a> = (&'a [u32], &'a [u32], &'a [u32], &'a [u32], &'a [u32]);
 fn item_landed(
     ir: &FlatIr,
     item: &ItemRec,
-    (members, in_loops, _, tops, blocks): Sorted<'_>,
+    (members, _, _, tops, blocks): Sorted<'_>,
     at: usize,
 ) -> bool {
     if !landed(item_slice(item)) {
         return false;
     }
     if let ItemRec::Wire(wire) = item {
-        let in_loop = u32::try_from(at).is_ok_and(|at| in_loops.binary_search(&at).is_ok());
-        return wire_landed(ir, wire, in_loop);
+        return wire_landed(ir, wire);
     }
     if let ItemRec::For(rec) = item {
         return loop_landed(ir, rec);
@@ -425,16 +424,15 @@ fn instance_path(ir: &FlatIr, field: u32) -> bool {
     matches!(ir.node(node), Ok((Op::Name, ..)))
 }
 
-fn wire_landed(ir: &FlatIr, wire: &WireRec, in_loop: bool) -> bool {
-    (wire.as_name == NONE || in_loop)
-        && !wire.attrs_cut
+fn wire_landed(ir: &FlatIr, wire: &WireRec) -> bool {
+    !wire.attrs_cut
         && value_entries(ir, wire.attrs)
         && destination_candidates(ir, wire.destination).is_some()
 }
 
 pub(crate) fn reason_slice(reason: Reason) -> Slice {
     match reason {
-        Reason::Member | Reason::FlagRead => Slice::DefaultFlip,
+        Reason::Member | Reason::FlagRead | Reason::WireName => Slice::DefaultFlip,
         Reason::ArrayAttribute => Slice::Pending,
         Reason::PreludeItems | Reason::NameOfInstance | Reason::NameOfVocabulary => {
             Slice::DefaultFlip

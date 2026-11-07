@@ -42,6 +42,7 @@ enum End {
     Use(u32),
     To,
     Attr(u32),
+    Wire(u32),
     Placeholder,
     Value,
 }
@@ -75,7 +76,7 @@ impl Core<'_> {
         Ok(self.ir.name(record.name).map(|name| name.sym.0))
     }
 
-    fn row_name_span(&self, row: u32) -> Result<symphonyscript_core::Span, Internal> {
+    pub fn row_name_span(&self, row: u32) -> Result<symphonyscript_core::Span, Internal> {
         let record = *self
             .instances
             .get(row as usize)
@@ -113,6 +114,7 @@ impl Core<'_> {
         }
         index.sort_unstable();
         self.child_index = index;
+        self.index_wire_names()?;
         self.use_index.sort_unstable();
         for row in 0..self.instances.len() {
             let row = u32::try_from(row).unwrap_or(u32::MAX);
@@ -162,13 +164,25 @@ impl Core<'_> {
                     self.draw(Code::ChildNameClash, span, message);
                 }
             }
-            while other.is_none() && body != NONE {
+            let own = self.row_name_span(row)?;
+            let mut wired = self.wire_named_before(body, sym, &own)?;
+            while other.is_none() && wired.is_none() && body != NONE {
                 body = parent.get(body as usize).copied().unwrap_or(NONE);
                 if body != NONE {
                     other = self.child_named(body, sym);
+                    if other.is_none() {
+                        wired = self
+                            .wire_named(body, sym)
+                            .map(|wire| self.wire_name_span(wire))
+                            .transpose()?;
+                    }
                 }
             }
             let held = self.placeholder_named(parent.get(row as usize).copied(), sym, row);
+            let held = match (held, wired) {
+                (Some(held), wired) => Some(earliest(held, wired)),
+                (None, wired) => wired,
+            };
             let earlier = match other {
                 Some(other) => Some(earliest(self.row_name_span(other)?, held)),
                 None => held,
@@ -186,7 +200,8 @@ impl Core<'_> {
                 );
             }
         }
-        self.placeholder_clashes(&parent)
+        self.placeholder_clashes(&parent)?;
+        self.wire_clashes(&parent)
     }
 
     fn placeholder_named(
@@ -271,7 +286,7 @@ impl Core<'_> {
         Ok(())
     }
 
-    fn child_named(&self, parent: u32, sym: u32) -> Option<u32> {
+    pub fn child_named(&self, parent: u32, sym: u32) -> Option<u32> {
         if parent == NONE {
             return None;
         }
@@ -364,6 +379,7 @@ impl Core<'_> {
             span: self.span(record.file, lo, hi),
             key: (record.file, lo),
             cyclic: false,
+            wire: false,
         });
         self.attr_index.insert(key, at);
         self.attr_values
@@ -381,6 +397,16 @@ impl Core<'_> {
         }
         if let Some(env) = self.use_named(row, entry.sym.0) {
             return Ok(Ok(End::Use(env)));
+        }
+        if let Some(wire) = self.wire_named(row, entry.sym.0) {
+            if self
+                .wires
+                .get(wire as usize)
+                .is_none_or(|found| found.env != NONE)
+            {
+                return Ok(Err(Declined(Reason::PatternUse)));
+            }
+            return Ok(Ok(End::Wire(wire)));
         }
         let kind = self
             .instances
@@ -410,6 +436,38 @@ impl Core<'_> {
             return Ok(Err(Declined(super::check::attribute_reason(declared))));
         };
         match self.attr_read(row, attr, ty)? {
+            Ok(read) => Ok(Ok(End::Attr(read))),
+            Err(declined) => Ok(Err(declined)),
+        }
+    }
+
+    fn step_wire(&mut self, node: u32, wire: u32, field: u32) -> Stage<End> {
+        let entry = *self.ir.name(field).ok_or(Internal::missed("IR name"))?;
+        let kind = self
+            .wires
+            .get(wire as usize)
+            .ok_or(Internal::missed("wire row"))?
+            .kind;
+        let decl = self
+            .vocabulary
+            .wire_kind(kind)
+            .ok_or(Internal::missed("wire kind"))?;
+        let text = self.ir.symbols.text(entry.sym).to_string();
+        let Some(attr) = decl.attrs.iter().position(|attr| attr.name == text) else {
+            let span = self.span(self.file_of(node), entry.lo, entry.hi);
+            let owner = decl.name.clone();
+            self.draw(
+                Code::UnknownAttribute,
+                span,
+                format!("the `{owner}` wire has no child, wire or attribute `{text}`"),
+            );
+            return Ok(Ok(End::Value));
+        };
+        let declared = decl.attrs.get(attr).ok_or(Internal::missed("attribute"))?;
+        let Some(ty) = super::check::expected(declared) else {
+            return Ok(Err(Declined(super::check::attribute_reason(declared))));
+        };
+        match self.wire_attr_read(wire, attr, ty)? {
             Ok(read) => Ok(Ok(End::Attr(read))),
             Err(declined) => Ok(Err(declined)),
         }
@@ -495,6 +553,7 @@ impl Core<'_> {
                 Ok(Ok(end))
             }
             End::Use(env) => self.step_use(node, env, field),
+            End::Wire(wire) => self.step_wire(node, wire, field),
             End::To if self.is_field_receiver(node) => Ok(Ok(End::To)),
             End::To => self.destination_path_end(node),
             End::Attr(_) => {
@@ -546,6 +605,7 @@ impl Core<'_> {
                     End::Row(row) => {
                         self.path_rows.insert(node, row);
                     }
+                    End::Wire(_) => return Ok(Err(Declined(Reason::Member))),
                     End::Use(_) => return Ok(Err(Declined(Reason::PatternUse))),
                     End::Attr(at) => {
                         if let Some(slot) = self.paths.get_mut(local) {
@@ -717,16 +777,27 @@ impl Core<'_> {
 
 impl Core<'_> {
     pub fn default_read(&self, read: &AttrRead) -> Result<CoreValue, Internal> {
-        let kind = self
-            .instances
-            .get(read.row as usize)
-            .ok_or(Internal::missed("row"))?
-            .kind;
-        let default = self
-            .vocabulary
-            .node_kind(kind)
-            .and_then(|decl| decl.attrs.get(read.attr))
-            .and_then(|attr| attr.default.clone());
+        let default = if read.wire {
+            let kind = self
+                .wires
+                .get(read.row as usize)
+                .ok_or(Internal::missed("wire row"))?
+                .kind;
+            self.vocabulary
+                .wire_kind(kind)
+                .and_then(|decl| decl.attrs.get(read.attr))
+                .and_then(|attr| attr.default.clone())
+        } else {
+            let kind = self
+                .instances
+                .get(read.row as usize)
+                .ok_or(Internal::missed("row"))?
+                .kind;
+            self.vocabulary
+                .node_kind(kind)
+                .and_then(|decl| decl.attrs.get(read.attr))
+                .and_then(|attr| attr.default.clone())
+        };
         let Some(AttrDefault::Elements(values)) = default else {
             return Ok(CoreValue::Error);
         };
@@ -926,7 +997,7 @@ impl Core<'_> {
     fn row_end_ty(&self, node: u32, wire: u32, end: End) -> Option<EvalTy> {
         match end {
             End::Attr(at) => self.attr_reads.get(at as usize).map(|read| read.ty),
-            End::Value | End::Placeholder | End::Row(_) | End::Use(_) | End::To => {
+            End::Value | End::Placeholder | End::Row(_) | End::Use(_) | End::To | End::Wire(_) => {
                 self.row_choices.get(&(node, wire)).copied()
             }
         }
@@ -1099,6 +1170,7 @@ impl Core<'_> {
                 None => {}
             }
             let owner = match target {
+                End::Wire(_) => return Ok(Err(Declined(Reason::Member))),
                 End::Row(row) if self.may_name_any(row)? => {
                     return Ok(Ok(Err(End::Placeholder)));
                 }
@@ -1133,6 +1205,7 @@ impl Core<'_> {
         }
         let target = match target {
             End::Row(row) => row,
+            End::Wire(_) => return Ok(Err(Declined(Reason::Member))),
             End::Use(env) => {
                 let owner = self.use_pattern_name(env)?;
                 let name = self.ir.symbols.text(entry.sym).to_string();
@@ -1194,13 +1267,16 @@ impl Core<'_> {
                 if let Some(child) = self.use_child_named(row, sym)? {
                     return Ok(Some(End::Row(child)));
                 }
+                if let Some(wire) = self.wire_named(row, sym.0) {
+                    return Ok(Some(End::Wire(wire)));
+                }
                 Ok(self.use_named(row, sym.0).map(End::Use))
             }
             End::Use(env) => {
                 CountedWalk::CorePathStep.step();
                 self.use_item_named(env, sym)
             }
-            End::To | End::Attr(_) | End::Placeholder | End::Value => Ok(None),
+            End::To | End::Attr(_) | End::Placeholder | End::Value | End::Wire(_) => Ok(None),
         }
     }
 }
@@ -1297,7 +1373,9 @@ impl Core<'_> {
                 End::Attr(at) => {
                     self.inst_reads.insert((node, inst), at);
                 }
-                End::Row(_) | End::Use(_) | End::To => return Ok(Err(Declined(Reason::Member))),
+                End::Row(_) | End::Use(_) | End::To | End::Wire(_) => {
+                    return Ok(Err(Declined(Reason::Member)));
+                }
                 End::Value | End::Placeholder => {}
             }
             if first.is_none()
@@ -1312,11 +1390,17 @@ impl Core<'_> {
 
 impl Core<'_> {
     pub fn read_env(&self, read: &AttrRead) -> Result<u32, Internal> {
-        let env = self
-            .instances
-            .get(read.row as usize)
-            .ok_or(Internal::missed("row"))?
-            .env;
+        let env = if read.wire {
+            self.wires
+                .get(read.row as usize)
+                .ok_or(Internal::missed("wire row"))?
+                .env
+        } else {
+            self.instances
+                .get(read.row as usize)
+                .ok_or(Internal::missed("row"))?
+                .env
+        };
         if env == NONE || read.root == NONE || read.cyclic {
             return Ok(NONE);
         }
@@ -1448,6 +1532,7 @@ impl Core<'_> {
                     End::Row(row) => {
                         self.env_path_rows.insert((*node, env), row);
                     }
+                    End::Wire(_) => return Ok(Err(Declined(Reason::Member))),
                     End::Use(_) => return Ok(Err(Declined(Reason::PatternUse))),
                     End::Attr(read) => {
                         self.env_reads.insert((*node, env), read);
@@ -1873,7 +1958,9 @@ impl Core<'_> {
                         .or_default()
                         .push((node, at));
                 }
-                End::Row(_) | End::Use(_) | End::To => return Ok(Err(Declined(Reason::Member))),
+                End::Row(_) | End::Use(_) | End::To | End::Wire(_) => {
+                    return Ok(Err(Declined(Reason::Member)));
+                }
                 End::Value | End::Placeholder => {}
             }
             if first.is_none()
