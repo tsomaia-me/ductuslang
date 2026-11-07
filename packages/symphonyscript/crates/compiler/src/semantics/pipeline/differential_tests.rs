@@ -4145,3 +4145,23 @@ fn a_path_read_of_a_unit_attribute_whose_value_its_family_refuses_reads_the_attr
         );
     }
 }
+
+#[test]
+fn a_path_through_a_named_wire_of_a_faulty_line_placement_reads_the_wire_476() {
+    let old = Compiler::new(&symphonyscript_fixtures::vocabulary())
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
+    let new =
+        Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("the vocabulary compiles");
+    let text = "Rig stage:\n    Lamp as wash\n\nScene dusk | hold=8:\n    Cue as first /1 | fade=2\n\nScene night |( hold=dusk.hold * 1.5:\n    Cue/0 | fade=dusk.first.fade\n    Dims as soften | depth=0.4: stage.wash\n\nScene dawn | hold=night.soften.depth * 10:\n    Cue/0\n";
+    let sources = [source(text)];
+    let found = new
+        .checked_by_new_core(&sources)
+        .expect("the new core takes the program");
+    let classes = reviewed::moved(text, &drawn(&old.check(&sources)), &drawn(&found))
+        .unwrap_or_else(|unexplained| panic!("{text}: {unexplained:?}"));
+    assert!(
+        classes.len() == 1 && classes.iter().all(|class| class.ledger == "476"),
+        "{text}"
+    );
+}

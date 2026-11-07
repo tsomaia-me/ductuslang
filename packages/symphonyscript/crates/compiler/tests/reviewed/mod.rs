@@ -5604,6 +5604,11 @@ pub const CLASSES: &[Class] = &[
         rule: "a path read of a unit attribute whose value the attribute's family refuses reads a value of the attribute's family (ARCHITECTURE §7: a value whose type an error leaves known keeps that type), as the program with the value repaired does, where the old engine reads the refused value's family and draws unit-mismatch again at the read (`Scene dusk | hold=2bars` with `hold=dusk.hold`)",
         explains: read_of_a_refused_unit_attribute,
     },
+    Class {
+        ledger: "476",
+        rule: "a path through a named wire of a placement whose line holds a syntax fault reads the wire, as the program with the fault repaired does (the repair rule, DECISIONS.md 2026-11-03), where the old engine drops the placement's wires and draws unknown-attribute at the wire's name (`Scene night |( hold=…` holding `Dims as soften`, read as `night.soften.depth`)",
+        explains: wire_of_a_faulty_line_placement,
+    },
 ];
 
 fn annotated_let_value(seen: &Seen<'_>, at: &Drawn) -> bool {
@@ -6487,4 +6492,45 @@ fn read_of_a_refused_unit_attribute(seen: &Seen<'_>, change: Change, at: &Drawn)
             .old
             .iter()
             .any(|drawn| drawn.0 == "unit-mismatch" && drawn != at && seen.new.contains(drawn))
+}
+
+fn wire_of_a_faulty_line_placement(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
+    if change != Change::Removed || at.0 != "unknown-attribute" {
+        return false;
+    }
+    let name = seen.text(at);
+    if name.is_empty() || !seen.before(at).ends_with('.') {
+        return false;
+    }
+    let owner = seen
+        .before(at)
+        .trim_end_matches('.')
+        .rsplit(|c: char| !(c.is_alphanumeric() || c == '_'))
+        .next()
+        .unwrap_or_default()
+        .to_string();
+    let lines = lines_at(seen.program);
+    let Some(head) = lines.iter().position(|(_, line)| {
+        !line.starts_with(' ')
+            && line
+                .split_whitespace()
+                .nth(1)
+                .is_some_and(|word| word.trim_end_matches(':') == owner)
+    }) else {
+        return false;
+    };
+    let Some((start, line)) = lines.get(head) else {
+        return false;
+    };
+    let faulty = seen.old.iter().any(|drawn| {
+        drawn.1 >= *start && drawn.2 <= start + line.len() && drawn.0.ends_with("-syntax")
+    });
+    let wire = lines
+        .iter()
+        .skip(head + 1)
+        .take_while(|(_, line)| line.starts_with(' '))
+        .any(|(_, line)| {
+            line.contains(&format!(" as {name} |")) || line.contains(&format!(" as {name}:"))
+        });
+    faulty && wire
 }
