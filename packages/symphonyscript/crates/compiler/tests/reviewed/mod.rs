@@ -6,6 +6,16 @@ pub type Reviewed = (
 
 pub const REVIEWED: &[Reviewed] = &[
     (
+        "476",
+        "Clip c:\n    Note | velocity=((1 / 300000000000)[(i32(true)).size])\n",
+        &[
+            ("conversion-type", "i32(true)"),
+            ("does-not-fit", "300000000000"),
+            ("not-an-array", "1 / 300000000000"),
+            ("unknown-attribute", "(i32(true)).size"),
+        ],
+    ),
+    (
         "464",
         "state base([60, 62])\nlet doubled = base * 2\n\nSession main:\n    Includes: keys\n\nTrack keys:\n    Piano\n    Starts: melody\n\nClip melody:\n    Note/(doubled[1])\n",
         &[("array-operand", "base * 2"), ("reactive-let", "doubled")],
