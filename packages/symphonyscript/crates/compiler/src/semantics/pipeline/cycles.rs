@@ -498,6 +498,9 @@ impl Core<'_> {
         if !matches!(op, Op::Call | Op::NamedCall) {
             return Ok(Vec::new());
         }
+        if self.member_dot_candidate(node)? {
+            return Ok(self.arguments(node)?.into_iter().skip(1).collect());
+        }
         let Some(function) = self.callee(node)? else {
             if !self.not_callable(node)?
                 && self.math_named(node)?.is_none()

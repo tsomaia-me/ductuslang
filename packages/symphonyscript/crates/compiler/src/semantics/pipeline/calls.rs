@@ -1519,6 +1519,6 @@ impl Core<'_> {
             self.ir.name_text(name).unwrap_or_default(),
             "size" | "capacity" | "bytes" | "keys" | "values"
         );
-        Ok(member && self.arguments(node)?.len() == 1)
+        Ok(member && !self.arguments(node)?.is_empty())
     }
 }

@@ -1410,7 +1410,7 @@ impl Core<'_> {
         let (_, name, _, _) = self.ir.node(callee)?;
         let text = self.ir.name_text(name).unwrap_or_default().to_string();
         let arguments = self.arguments(node)?;
-        let (Op::Call, [receiver]) = (op, arguments.as_slice()) else {
+        let (Op::Call, [receiver, ..]) = (op, arguments.as_slice()) else {
             return Ok(false);
         };
         if !matches!(

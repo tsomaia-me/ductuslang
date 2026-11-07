@@ -2931,3 +2931,21 @@ fn a_member_called_with_no_arguments_draws_not_callable_on_an_array_and_unknown_
  {
     assert_eq!(same_as_the_old_engine(&MEMBER_DOT_CALLS), 54);
 }
+
+const MEMBER_DOT_CALLS_WITH_ARGUMENTS: [&[&str]; 4] = [
+    &[
+        "let xs = [1, 2]\n",
+        "Clip c:\n    Note/(xs.capacity(1 + true))\n",
+    ],
+    &["let x = 1\n", "Clip c:\n    Note/(x.size([1][4]))\n"],
+    &["let xs = [1, 2]\n", "Clip c:\n    Note/(xs.keys(q))\n"],
+    &[
+        "let xs = [1, 2]\n",
+        "Clip c:\n    Note/(xs.size(xs.size()))\n",
+    ],
+];
+
+#[test]
+fn a_member_called_with_arguments_leaves_them_unread_beside_a_valid_twin_in_every_order() {
+    assert_eq!(same_as_the_old_engine(&MEMBER_DOT_CALLS_WITH_ARGUMENTS), 24);
+}
