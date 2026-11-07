@@ -3753,3 +3753,24 @@ fn a_method_of_no_name_on_an_instance_reference_draws_unknown_name_at_the_method
         18
     );
 }
+
+const PLACEMENTS_A_REGION_RUNS_INTO: [&[&str]; 3] = [
+    &[
+        "Plant fill: Valve/0 (Controller//0.4 | gain=0.5)\n\n",
+        "Plant cooling:\n    Loop/0.3\n",
+    ],
+    &[
+        "Plant fill: Valve/0 (Controller/0.4 | gain=0.5)\n",
+        "Plant cooling:\n    Loop/0.3\n",
+    ],
+    &[
+        "Plant fill: Valve/0 (Controller//0.4 | gain=0.5)\n",
+        "Plant cooling | mode=override:\n    Valve/0.1\n    Loop/0.3\n",
+    ],
+];
+
+#[test]
+fn a_top_level_placement_a_syntax_faults_region_runs_into_draws_its_bodys_faults_beside_the_repaired_twin_in_every_order()
+ {
+    assert_eq!(same_as_the_old_engine(&PLACEMENTS_A_REGION_RUNS_INTO), 18);
+}

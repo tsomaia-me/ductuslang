@@ -4272,6 +4272,7 @@ fn an_unnamed_top_placements_body_draws_its_unknown_attribute_and_flag_names_476
     for text in [
         "Plant, cooling | mode=override:\n    Valve | zz=1\n    Loop\n    Valve~\n",
         "Plant, cooling:\n    Valve | zz=1\n",
+        "Plant fill: Valve/0 (Controller//0.4 | gain=0.5)\nPlant cooling | mode=override:\n    Valve | zz=1\n    Valve~\n",
     ] {
         let sources = [source(text)];
         let found = new

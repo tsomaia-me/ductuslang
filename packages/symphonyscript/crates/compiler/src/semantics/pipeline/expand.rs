@@ -7,7 +7,7 @@ use super::work::Work;
 use crate::diagnostics::Code;
 use crate::semantics::Internal;
 use crate::semantics::counted_walk::CountedWalk;
-use crate::semantics::ir::flat::{ItemRec, NONE, PlacementRec, TopRec};
+use crate::semantics::ir::flat::{ABSENT, ItemRec, NONE, PlacementRec, TopRec};
 
 impl Core<'_> {
     pub fn placement(&self, item: u32) -> Result<PlacementRec, Internal> {
@@ -58,6 +58,13 @@ impl Core<'_> {
             .name_text(placement.kind)
             .filter(|_| self.ir.named(placement.kind))
         else {
+            if parent == NONE
+                && placement.body != NONE
+                && placement.body != ABSENT
+                && let Err(declined) = self.unrun_block(placement.body, (file, NONE))?
+            {
+                return Ok(Err(declined));
+            }
             return Ok(Ok(NONE));
         };
         let duplicated = self
