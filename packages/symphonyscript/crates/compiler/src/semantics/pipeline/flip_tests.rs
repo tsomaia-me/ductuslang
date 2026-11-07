@@ -4468,3 +4468,41 @@ fn a_size_capacity_or_bytes_in_a_placement_loop_head_is_read_before_the_loop_run
     let rows: Vec<&[&str]> = rows.iter().map(|row| row.as_slice()).collect();
     assert_eq!(same_as_the_old_engine(&rows), 66);
 }
+
+const NOT_CALLABLE_DOT_CALLS_ON_EXPRESSIONS: [&str; 12] = [
+    "Note/((1 + true).zz())",
+    "Note/((1 + 2).zz())",
+    "Note/([1, 2].zz())",
+    "Note/([1, 2][0].zz(3))",
+    "Note/((if true then 1 else 2).zz())",
+    "Note/(abs(1).zz())",
+    "Note/([1, 2][5].zz())",
+    "Note/((1 + true).zz(a=1))",
+    "Note/((1).zz([1, 2][5]))",
+    "Note/(([1, 2][5] + 1).zz())",
+    "Note/(zz([1, 2][5]))",
+    "Note/(zz(1 + true))",
+];
+
+#[test]
+fn a_dot_call_of_a_name_that_is_no_function_on_an_expression_draws_not_callable_and_its_receivers_faults_beside_a_valid_twin_in_every_order()
+ {
+    let clips: Vec<String> = NOT_CALLABLE_DOT_CALLS_ON_EXPRESSIONS
+        .iter()
+        .map(|note| format!("Clip c:\n    {note}\n"))
+        .collect();
+    let mut rows: Vec<Vec<&str>> = clips
+        .iter()
+        .map(|clip| vec!["let zz = 1\n", clip.as_str()])
+        .collect();
+    rows.push(vec![
+        "let zz = 1\nlet q = (1 + true).zz()\n",
+        "Clip c:\n    Note/(1)\n",
+    ]);
+    rows.push(vec![
+        "let zz = 1\nlet a = [1, 2][5].zz()\n",
+        "Clip c:\n    Note/(a)\n",
+    ]);
+    let rows: Vec<&[&str]> = rows.iter().map(Vec::as_slice).collect();
+    assert_eq!(same_as_the_old_engine(&rows), 84);
+}

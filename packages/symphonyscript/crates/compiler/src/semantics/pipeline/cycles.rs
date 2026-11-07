@@ -566,6 +566,17 @@ impl Core<'_> {
         if self.member_dot_candidate(node)? {
             return Ok(self.arguments(node)?.into_iter().skip(1).collect());
         }
+        if self.dot_calls.contains(&node) && self.not_callable(node)? {
+            let values: Vec<u32> = if op == Op::Call {
+                self.arguments(node)?
+            } else {
+                self.named_arguments(node)?
+                    .into_iter()
+                    .map(|(_, value)| value)
+                    .collect()
+            };
+            return Ok(values.into_iter().skip(1).collect());
+        }
         let Some(function) = self.callee(node)? else {
             if !self.not_callable(node)?
                 && self.math_named(node)?.is_none()

@@ -1686,7 +1686,8 @@ impl Core<'_> {
                     self.bound(receiver)?,
                     DeclRef::Let(_) | DeclRef::Cell(_) | DeclRef::Param(_)
                 ),
-                _ => false,
+                Op::Field | Op::To | Op::Str => false,
+                _ => true,
             };
             if !plain {
                 return Ok(false);
