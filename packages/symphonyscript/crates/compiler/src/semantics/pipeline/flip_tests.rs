@@ -4908,3 +4908,20 @@ fn an_array_of_references_passed_to_a_function_keys_its_body_instance_by_the_arr
     let (small, large) = (work(4), work(8));
     assert!(large <= 2 * small, "{small} steps at 4 sites, {large} at 8");
 }
+
+const INSTANCE_METHOD_CALLS: [&str; 4] = [
+    "Rig stage:\n    Lamp as wash\nScene night:\n    Dims as soften | depth=0.4: stage.wash(\n\nScene dawn:\n    Cue/0\n",
+    "Rig stage:\n    Scene as dusk | hold=8:\n        Cue/0\n    Lamp as wash\nScene night:\n    Cue/0\n    Triggers: stage.dusk(\n",
+    "Rig stage:\n    Lamp as wash\nScene night:\n    Dims: stage.wash()\n",
+    "Rig stage:\n    Lamp as wash\nSession main\nScene night:\n    Cue/(stage.wash())\n",
+];
+
+#[test]
+fn a_method_call_on_an_instance_naming_its_child_or_attribute_where_no_function_has_the_name_is_declined_where_the_new_core_drew_unknown_name()
+ {
+    let new =
+        Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("the vocabulary compiles");
+    for text in INSTANCE_METHOD_CALLS {
+        assert!(new.checked_by_new_core(&[source(text)]).is_none(), "{text}");
+    }
+}

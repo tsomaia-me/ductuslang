@@ -161,6 +161,11 @@ impl Core<'_> {
                 self.draw_at(Code::OperandType, node, operand_message(binary))?;
                 Ok(Ok(Some(Fact::scalar(Leaf::Bool))))
             }
+            Op::Call | Op::NamedCall
+                if self.unknown_methods.contains(&node) && self.method_names_a_member(node)? =>
+            {
+                Ok(Err(Declined(Reason::Member)))
+            }
             Op::Call | Op::NamedCall if self.unknown_methods.contains(&node) => {
                 let (_, callee, _, _) = self.ir.node(node)?;
                 let name = self.ir.node(callee)?.1;
@@ -323,5 +328,48 @@ impl Core<'_> {
             }
             node = self.let_root(at)?;
         }
+    }
+}
+
+impl Core<'_> {
+    fn method_names_a_member(&self, call: u32) -> Result<bool, Internal> {
+        let receiver = if self.ir.node(call)?.0 == Op::NamedCall {
+            self.named_arguments(call)?.first().map(|(_, value)| *value)
+        } else {
+            self.arguments(call)?.first().copied()
+        };
+        let Some(receiver) = receiver else {
+            return Ok(false);
+        };
+        let op = self.ir.node(receiver)?.0;
+        let row = if op == Op::Field {
+            self.path_row(receiver).unwrap_or(NONE)
+        } else if op == Op::Name
+            && let DeclRef::Instance(item) = self.bound(receiver)?
+        {
+            self.row_of_item.get(item as usize).copied().unwrap_or(NONE)
+        } else {
+            NONE
+        };
+        if row == NONE {
+            return Ok(false);
+        }
+        let name = self.ir.node(self.ir.node(call)?.1)?.1;
+        let entry = *self.ir.name(name).ok_or(Internal::missed("IR name"))?;
+        if self.child_named(row, entry.sym.0).is_some()
+            || self.wire_named(row, entry.sym.0).is_some()
+        {
+            return Ok(true);
+        }
+        let kind = self
+            .instances
+            .get(row as usize)
+            .ok_or(Internal::missed("row"))?
+            .kind;
+        let text = self.ir.symbols.text(entry.sym);
+        Ok(self
+            .vocabulary
+            .node_kind(kind)
+            .is_some_and(|decl| decl.attrs.iter().any(|attr| attr.name == text)))
     }
 }
