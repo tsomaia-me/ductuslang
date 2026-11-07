@@ -5769,12 +5769,13 @@ fn placement_heads(program: &str) -> Vec<(usize, usize)> {
         })
         .map(|(start, line)| {
             let indent = line.len() - line.trim_start().len();
-            let word = if line.trim_start().starts_with('[') {
-                "[for ".len()
-            } else {
-                "for ".len()
+            let bundle = line.trim_start().starts_with('[');
+            let word = if bundle { "[for ".len() } else { "for ".len() };
+            let end = match line.find(": ") {
+                Some(colon) if bundle => colon,
+                Some(_) | None => line.trim_end().len(),
             };
-            (start + indent + word, start + line.trim_end().len())
+            (start + indent + word, start + end)
         })
         .collect()
 }
