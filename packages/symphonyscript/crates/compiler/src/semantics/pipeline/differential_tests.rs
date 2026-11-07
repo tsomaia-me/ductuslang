@@ -4375,7 +4375,13 @@ fn a_size_of_a_choice_beside_its_refused_condition_draws_unknown_attribute_as_in
 
 const SELF_HISTORY: &str = "state s(1)\nstate ys = (ys.past(1, []) + [s])[^3..]\n";
 
-const CAPACITIES_THROUGH_HISTORY: [(&str, &str, &[(&str, &str)]); 7] = [
+type ExpectedRow = (
+    &'static str,
+    &'static str,
+    &'static [(&'static str, &'static str)],
+);
+
+const CAPACITIES_THROUGH_HISTORY: [ExpectedRow; 7] = [
     (
         SELF_HISTORY,
         "Clip c:\n    Note/([1, 2][ys.capacity])\n",
@@ -4451,7 +4457,7 @@ fn a_capacity_of_a_cell_reading_its_own_history_is_its_settled_capacity_where_th
     assert_eq!(programs, 42);
 }
 
-const FUNCTION_MEMBERS: [(&str, &str, &[(&str, &str)]); 5] = [
+const FUNCTION_MEMBERS: [ExpectedRow; 5] = [
     ("fn bytes(x): x\n", "Clip c:\n    Note/((64).bytes)\n", &[]),
     ("fn f0(x): x\n", "Clip c:\n    Note/((64).f0)\n", &[]),
     (
@@ -4530,4 +4536,25 @@ fn a_slice_of_references_beside_its_refused_bound_keeps_its_type_as_in_the_repai
             "{text}"
         );
     }
+}
+
+#[test]
+fn a_destination_holding_no_instance_in_a_body_under_a_faulty_head_draws_destination_type_as_the_repaired_head_does_476()
+ {
+    let old = Compiler::new(&symphonyscript_fixtures::vocabulary())
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
+    let new =
+        Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("the vocabulary compiles");
+    let text = "state section(0)\nlet sections = [verse, chorus, bridge]\nClip intro:\n    for s in sections:\n        Starts: 1s\n";
+    let sources = [source(text)];
+    let found = new
+        .checked_by_new_core(&sources)
+        .expect("the new core takes the program");
+    let classes = reviewed::moved(text, &drawn(&old.check(&sources)), &drawn(&found))
+        .unwrap_or_else(|unexplained| panic!("{text}: {unexplained:?}"));
+    assert!(
+        classes.len() == 1 && classes.iter().all(|class| class.ledger == "476"),
+        "{text}"
+    );
 }

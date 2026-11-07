@@ -5606,7 +5606,7 @@ pub const CLASSES: &[Class] = &[
     },
     Class {
         ledger: "476",
-        rule: "a placement or a wire in the body of a placement `for` whose head holds a fault, or reads a name that names nothing (`for s in sections:` over `[verse, chorus]` undeclared, with `Starts+: s`), draws its unknown attribute, flag or parameter names and its `to` paths' resolution faults over the destination's written candidates (`Plays | gain=to.hook: (if true then chorus else verse)`) and a call of a loop name its not-callable (`Valve/s when i( < 2` under `for i, s in stages:`), as the program with the head repaired to any valid iterable does, a head of no iteration included (the repair rule, DECISIONS.md 2026-11-03), where the old engine is silent in such a body (`for i in zz:` with `Lamp | foo=1` or `Lamp~`)",
+        rule: "a placement or a wire in the body of a placement `for` whose head holds a fault, or reads a name that names nothing (`for s in sections:` over `[verse, chorus]` undeclared, with `Starts+: s`), draws its unknown attribute, flag or parameter names and its `to` paths' resolution faults over the destination's written candidates (`Plays | gain=to.hook: (if true then chorus else verse)`) and a call of a loop name its not-callable (`Valve/s when i( < 2` under `for i, s in stages:`), as the program with the head repaired to any valid iterable does, a head of no iteration included (the repair rule, DECISIONS.md 2026-11-03), where the old engine is silent in such a body (`for i in zz:` with `Lamp | foo=1` or `Lamp~`, and a destination that holds no instance its destination-type, `Starts: 1s` under `for s in sections:` over `[verse, chorus, bridge]` undeclared)",
         explains: member_name_in_an_unexpanded_loop_body,
     },
     Class {
@@ -6534,6 +6534,7 @@ fn member_name_in_an_unexpanded_loop_body(seen: &Seen<'_>, change: Change, at: &
                 | "unknown-parameter"
                 | "misplaced-to"
                 | "not-callable"
+                | "destination-type"
         )
     {
         return false;
