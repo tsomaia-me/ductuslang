@@ -4087,3 +4087,33 @@ fn a_member_call_in_a_value_nothing_uses_draws_nothing_where_the_old_engine_draw
         );
     }
 }
+
+const NAMES_IN_BODIES_OF_FAULTY_HEADS: [&str; 5] = [
+    "Rig r:\n    for i in zz:\n        Lamp | foo=1\n",
+    "Rig r:\n    for i in zz:\n        Lamp~\n",
+    "pattern P():\n    Lamp\nRig r:\n    for i in zz:\n        P | foo=1\n",
+    "Clip intro:\n    for s in zz:\n        Starts | foo=1: intro\n",
+    "Clip intro:\n    for s in zz:\n        Starts* | foo=1: s\n",
+];
+
+#[test]
+fn a_member_name_in_the_body_of_a_loop_whose_head_holds_a_fault_draws_as_in_the_repaired_program_476()
+ {
+    let old = Compiler::new(&symphonyscript_fixtures::vocabulary())
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
+    let new =
+        Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("the vocabulary compiles");
+    for text in NAMES_IN_BODIES_OF_FAULTY_HEADS {
+        let sources = [source(text)];
+        let found = new
+            .checked_by_new_core(&sources)
+            .expect("the new core takes the program");
+        let classes = reviewed::moved(text, &drawn(&old.check(&sources)), &drawn(&found))
+            .unwrap_or_else(|unexplained| panic!("{text}: {unexplained:?}"));
+        assert!(
+            classes.len() == 1 && classes.iter().all(|class| class.ledger == "476"),
+            "{text}"
+        );
+    }
+}

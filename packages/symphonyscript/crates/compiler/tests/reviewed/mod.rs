@@ -5594,6 +5594,11 @@ pub const CLASSES: &[Class] = &[
         rule: "a member call in the value of a let nothing uses or in the body of a function nothing calls draws nothing, since code nothing uses has its names resolved and nothing else checked (SPEC §6.5) and whether the member names anything depends on its receiver's type, where the old engine draws not-callable or unknown-name at it in some programs and not in others (`let xs = [1, 2]` with `let n = xs.size()` and no placement reading `n`, or `let n = [1, 2][0].keys()`)",
         explains: member_call_in_an_unused_value,
     },
+    Class {
+        ledger: "476",
+        rule: "a placement or a wire in the body of a placement `for` whose head holds a fault draws its unknown attribute, flag or parameter names, as the program with the head repaired to any valid iterable does, a head of no iteration included (the repair rule, DECISIONS.md 2026-11-03), where the old engine is silent in such a body (`for i in zz:` with `Lamp | foo=1` or `Lamp~`)",
+        explains: member_name_in_an_unexpanded_loop_body,
+    },
 ];
 
 fn annotated_let_value(seen: &Seen<'_>, at: &Drawn) -> bool {
@@ -6428,4 +6433,33 @@ fn member_call_in_an_unused_value(seen: &Seen<'_>, change: Change, at: &Drawn) -
         }
     }
     owner.is_some_and(|name| !used.contains(name))
+}
+
+fn member_name_in_an_unexpanded_loop_body(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
+    if change != Change::Added
+        || !matches!(
+            at.0.as_str(),
+            "unknown-attribute" | "unknown-flag" | "unknown-parameter"
+        )
+    {
+        return false;
+    }
+    let lines = lines_at(seen.program);
+    let line = seen.line(at.1);
+    let Some((_, text)) = lines.get(line) else {
+        return false;
+    };
+    let depth = text.len() - text.trim_start().len();
+    let head = lines.iter().take(line).rev().find(|(_, earlier)| {
+        let indent = earlier.len() - earlier.trim_start().len();
+        indent < depth && !earlier.trim().is_empty()
+    });
+    let Some((start, head)) = head else {
+        return false;
+    };
+    head.trim_start().starts_with("for ")
+        && seen
+            .old
+            .iter()
+            .any(|drawn| drawn.1 >= *start && drawn.2 <= start + head.len())
 }

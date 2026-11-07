@@ -3197,3 +3197,29 @@ fn a_bundle_for_expands_as_a_for_over_its_members_and_draws_empty_bundle_where_i
  {
     assert_eq!(same_as_the_old_engine(&BUNDLE_LOOPS), 28);
 }
+
+const UNRUN_BODY_WIRES: [&[&str]; 9] = [
+    &["Clip intro:\n    for s in 0..0:\n        Starts | foo=1: s\n"],
+    &["Clip intro:\n    for s in 0..0:\n        Starts | gain=1 + true: s\n"],
+    &["Clip intro:\n    for s in 0..0:\n        Starts/(1 + true) when 2 + true: s\n"],
+    &["Clip intro:\n    for s in 0..0:\n        Starts* | foo=1: s\n"],
+    &["Clip intro:\n    for s in 0..0:\n        Starts*~: intro\n"],
+    &["Rig r:\n    for i in 0..0:\n        Lamp*~ | foo=1 strobe\n"],
+    &[
+        "pattern P():\n    Lamp\n",
+        "Rig r:\n    for i in 0..0:\n        P*\n",
+    ],
+    &[
+        "state section(0)\n",
+        "let sections = [verse, chorus, bridge]\n",
+        "Clip intro:\n    for s in sections:\n        Starts: s\n",
+        "Clip outro:\n    Plays: sections[section]\n",
+    ],
+    &["Clip intro:\n    for s in 0..0:\n        Starts | foo=zz: s\n"],
+];
+
+#[test]
+fn a_wire_in_a_body_no_iteration_runs_draws_its_unknown_flag_and_attribute_names_whatever_its_destination_beside_a_valid_twin_in_every_order()
+ {
+    assert_eq!(same_as_the_old_engine(&UNRUN_BODY_WIRES), 140);
+}

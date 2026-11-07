@@ -901,8 +901,12 @@ impl Core<'_> {
                             .iter()
                             .rev(),
                     ),
-                    ItemRec::Wire(wire) if self.bare_wire(wire)? => {}
+                    ItemRec::Wire(wire)
+                        if wire.flags.0 == wire.flags.1 && self.bare_wire(wire)? => {}
                     ItemRec::Wire(wire) if self.plain_wire(wire)? => self.unrun_wire(wire, file)?,
+                    ItemRec::Wire(wire) if self.unrun_shape(wire)? => {
+                        self.unrun_wire(wire, file)?
+                    }
                     ItemRec::When(_) => items.extend(self.when_items(child).into_iter().rev()),
                     ItemRec::Bundle(_) => items.extend(self.bundle_items(child)),
                     ItemRec::Paren(inner) if inner != NONE => items.push(inner),
@@ -944,6 +948,22 @@ impl Core<'_> {
         };
         let kind_text = decl.name.clone();
         let names: Vec<String> = decl.attrs.iter().map(|attr| attr.name.clone()).collect();
+        let flags: Vec<Option<char>> = decl.attrs.iter().map(|attr| attr.flag).collect();
+        for at in placement.flags.0..placement.flags.1 {
+            let flag = *self
+                .ir
+                .flags
+                .get(at as usize)
+                .ok_or(Internal::missed("IR flag"))?;
+            if !flags.contains(&Some(flag.flag)) {
+                let span = self.span(file, flag.lo, flag.hi);
+                self.draw(
+                    Code::UnknownFlag,
+                    span,
+                    format!("`{kind_text}` has no attribute flagged `{}`", flag.flag),
+                );
+            }
+        }
         for at in placement.attrs.0..placement.attrs.1 {
             let entry = *self
                 .ir
@@ -1588,6 +1608,28 @@ impl Core<'_> {
         Ok(true)
     }
 
+    fn unrun_shape(&self, wire: WireRec) -> Result<bool, Internal> {
+        let known = self
+            .ir
+            .name_text(wire.kind)
+            .filter(|_| self.ir.named(wire.kind))
+            .is_some_and(|name| self.vocabulary.wire_kind_named(name).is_some());
+        if !known || wire.attrs_cut {
+            return Ok(false);
+        }
+        for at in wire.attrs.0..wire.attrs.1 {
+            let entry = *self
+                .ir
+                .attr_entries
+                .get(at as usize)
+                .ok_or(Internal::missed("IR attribute"))?;
+            if !matches!(entry.form, AttrForm::Value(_)) {
+                return Ok(false);
+            }
+        }
+        Ok(true)
+    }
+
     fn unrun_wire(&mut self, wire: WireRec, file: u32) -> Result<(), Internal> {
         let Some(decl) = self
             .ir
@@ -1599,6 +1641,22 @@ impl Core<'_> {
         };
         let kind_text = decl.name.clone();
         let names: Vec<String> = decl.attrs.iter().map(|attr| attr.name.clone()).collect();
+        let flags: Vec<Option<char>> = decl.attrs.iter().map(|attr| attr.flag).collect();
+        for at in wire.flags.0..wire.flags.1 {
+            let flag = *self
+                .ir
+                .flags
+                .get(at as usize)
+                .ok_or(Internal::missed("IR flag"))?;
+            if !flags.contains(&Some(flag.flag)) {
+                let span = self.span(file, flag.lo, flag.hi);
+                self.draw(
+                    Code::UnknownFlag,
+                    span,
+                    format!("`{kind_text}` has no attribute flagged `{}`", flag.flag),
+                );
+            }
+        }
         for at in wire.attrs.0..wire.attrs.1 {
             let entry = *self
                 .ir

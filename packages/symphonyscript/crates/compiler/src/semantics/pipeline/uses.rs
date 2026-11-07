@@ -104,6 +104,15 @@ impl Core<'_> {
         if !self.expansion_step(span.clone()) {
             return Ok(Ok(None));
         }
+        if placement.flags.0 != placement.flags.1 {
+            let flag = *self
+                .ir
+                .flags
+                .get(placement.flags.0 as usize)
+                .ok_or(Internal::missed("IR flag"))?;
+            let flag_span = self.span(file, flag.lo, flag.hi);
+            self.draw(Code::UseForm, flag_span, "a pattern use carries no flags");
+        }
         let bound = match self.use_sources(placement, pattern, (file, env), span.clone())? {
             Ok(bound) => bound,
             Err(declined) => return Ok(Err(declined)),
@@ -245,15 +254,6 @@ impl Core<'_> {
         (file, env): (u32, u32),
         span: symphonyscript_core::Span,
     ) -> Stage<Vec<(u32, u32)>> {
-        if placement.flags.0 != placement.flags.1 {
-            let flag = *self
-                .ir
-                .flags
-                .get(placement.flags.0 as usize)
-                .ok_or(Internal::missed("IR flag"))?;
-            let span = self.span(file, flag.lo, flag.hi);
-            self.draw(Code::UseForm, span, "a pattern use carries no flags");
-        }
         let params = self.pattern_parts(pattern)?.0;
         let count = (params.1 - params.0) as usize;
         let mut sources: Vec<Option<(u32, u32)>> = vec![None; count];
