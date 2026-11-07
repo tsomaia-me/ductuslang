@@ -319,7 +319,7 @@ def shared_steps(sha, top, into, run, jobs, baselines, against, quiet=None, stre
             step("fmt", ["cargo", "fmt", "--check"], package, cargo, BUSY_LOAD),
             step("clippy", ["cargo", "clippy", "--workspace", "--all-targets", "--", "-D", "warnings"], package,
                  cargo, BUSY_LOAD),
-            step("nextest", ["cargo", "nextest", "run", "--workspace"], package, cargo, BUSY_LOAD),
+            step("nextest", ["cargo", "nextest", "run", "--workspace", "--no-fail-fast"], package, cargo, BUSY_LOAD),
             *([ignored_tests("nextest-exhaustive", EXHAUSTIVE, package, cargo, BUSY_LOAD)] if exhaustive else []),
             *([ignored_tests("nextest-stress", STRESS, package, cargo, limits["timed_steps"])] if stress else []),
             step("doctest", ["cargo", "test", "--workspace", "--doc"], package, cargo, BUSY_LOAD),
