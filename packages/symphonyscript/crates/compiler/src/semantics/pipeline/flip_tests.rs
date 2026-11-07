@@ -3735,3 +3735,18 @@ fn a_bundle_whose_pattern_uses_yield_no_member_draws_empty_bundle_beside_a_valid
  {
     assert_eq!(same_as_the_old_engine(&BUNDLES_OF_EMPTY_USES), 48);
 }
+
+const METHODS_OF_NO_NAME_ON_REFERENCES: [&[&str]; 3] = [
+    &["Clip v:\n    Note\n", "let x = v.zz(1)\nClip c | gain=x\n"],
+    &["Clip v:\n    Note\n", "Clip c | gain=v.zz(1)\n"],
+    &["Clip v:\n    Note\n", "Clip c | gain=[v, v].zz(1)\n"],
+];
+
+#[test]
+fn a_method_of_no_name_on_an_instance_reference_draws_unknown_name_at_the_method_beside_a_valid_twin_in_every_order()
+ {
+    assert_eq!(
+        same_as_the_old_engine(&METHODS_OF_NO_NAME_ON_REFERENCES),
+        18
+    );
+}

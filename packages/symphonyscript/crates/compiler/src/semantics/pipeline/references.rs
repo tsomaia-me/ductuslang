@@ -139,6 +139,19 @@ impl Core<'_> {
                 self.draw_at(Code::OperandType, node, operand_message(binary))?;
                 Ok(Ok(Some(Fact::scalar(Leaf::Bool))))
             }
+            Op::Call if self.unknown_methods.contains(&node) => {
+                let (_, callee, _, _) = self.ir.node(node)?;
+                let name = self.ir.node(callee)?.1;
+                let text = self.ir.name_text(name).unwrap_or_default().to_string();
+                let entry = *self.ir.name(name).ok_or(Internal::missed("IR name"))?;
+                let span = self.span(self.file_of(node), entry.lo, entry.hi);
+                self.draw(
+                    Code::UnknownName,
+                    span,
+                    format!("`{text}` names nothing in scope"),
+                );
+                Ok(Ok(Some(Fact::PLACEHOLDER)))
+            }
             Op::IndexFromEnd | Op::Slice | Op::For | Op::Call | Op::NamedCall => {
                 Ok(Err(Declined(Reason::NameOfInstance)))
             }
