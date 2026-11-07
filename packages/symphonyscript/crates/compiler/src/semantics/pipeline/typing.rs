@@ -1469,6 +1469,8 @@ impl Core<'_> {
                 | Op::Pow
                 | Op::Neg
                 | Op::Array
+                | Op::Call
+                | Op::NamedCall
         );
         if !refused {
             return Ok(false);

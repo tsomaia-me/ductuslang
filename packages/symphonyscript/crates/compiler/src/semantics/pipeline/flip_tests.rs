@@ -3782,7 +3782,42 @@ fn a_path_step_to_a_name_a_faults_region_skips_draws_nothing_beside_a_valid_twin
     );
 }
 
-const METHODS_OF_NO_NAME_ON_REFUSED_LETS: [&[&str]; 15] = [
+const METHODS_OF_NO_NAME_ON_REFUSED_LETS: [&[&str]; 22] = [
+    &[
+        "fn f(): 1 + true\nfn g(x): x\nfn h(x): x + 1\n",
+        "let b = f()\n",
+        "Clip c:\n    Note/(b.yy())\n    Note/((f()).yy())\n",
+    ],
+    &[
+        "fn f(): 1 + true\nfn g(x): x\nfn h(x): x + 1\n",
+        "let b = abs(true)\n",
+        "Clip c:\n    Note/(b.yy())\n    Note/((abs(true)).yy())\n",
+    ],
+    &[
+        "fn f(): 1 + true\nfn g(x): x\nfn h(x): x + 1\n",
+        "let b = h(true)\n",
+        "Clip c:\n    Note/(b.yy())\n    Note/((h(true)).yy())\n",
+    ],
+    &[
+        "fn f(): 1 + true\nfn g(x): x\nfn h(x): x + 1\n",
+        "let b = g(zz)\n",
+        "Clip c:\n    Note/(b.yy())\n    Note/((g(zz)).yy())\n",
+    ],
+    &[
+        "fn f(): 1 + true\nfn g(x): x\nfn h(x): x + 1\n",
+        "let b = h(zz)\n",
+        "Clip c:\n    Note/(b.yy())\n    Note/((h(zz)).yy())\n",
+    ],
+    &[
+        "fn f(): 1 + true\nfn g(x): x\nfn h(x): x + 1\n",
+        "let b = min(1, true)\n",
+        "Clip c:\n    Note/(b.yy())\n    Note/((min(1, true)).yy())\n",
+    ],
+    &[
+        "fn f(): 1 + true\nfn g(x): x\nfn h(x): x + 1\n",
+        "let b = h(x=true)\n",
+        "Clip c:\n    Note/(b.yy())\n    Note/((h(x=true)).yy())\n",
+    ],
     &["let b = zz\n", "Clip c:\n    Note/(b.yy())\n"],
     &["let b = 5[0]\n", "Clip c:\n    Note/(b.yy())\n"],
     &["let b = [1, [2]]\n", "Clip c:\n    Note/(b.yy())\n"],
@@ -3820,7 +3855,7 @@ fn a_method_of_no_name_on_a_let_holding_a_refused_value_draws_unknown_name_besid
  {
     assert_eq!(
         same_as_the_old_engine(&METHODS_OF_NO_NAME_ON_REFUSED_LETS),
-        144
+        312
     );
 }
 
