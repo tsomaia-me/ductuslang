@@ -3607,3 +3607,32 @@ fn a_named_wires_attribute_read_and_a_to_path_are_edges_of_the_declaration_graph
         276
     );
 }
+
+const NESTED_USE_FORM_FAULTS: [&[&str]; 4] = [
+    &[
+        "pattern V():\n    U\n",
+        "pattern U(d):\n    Note/d\n",
+        "Clip m:\n    V\n",
+    ],
+    &[
+        "pattern V():\n    U/1 | zz=2 d=3\n",
+        "pattern U(default d):\n    Note/d\n",
+        "Clip m:\n    V\n",
+    ],
+    &[
+        "pattern V():\n    U~/1\n",
+        "pattern U(default d):\n    Note/d\n",
+        "Clip m:\n    V\n    V\n",
+    ],
+    &[
+        "pattern V():\n    for i in 0..2:\n        U\n",
+        "pattern U(d):\n    Note/d\n",
+        "Clip m:\n    V\n",
+    ],
+];
+
+#[test]
+fn a_nested_uses_flag_and_argument_faults_name_the_enclosing_use_beside_a_valid_twin_in_every_order()
+ {
+    assert_eq!(same_as_the_old_engine(&NESTED_USE_FORM_FAULTS), 96);
+}

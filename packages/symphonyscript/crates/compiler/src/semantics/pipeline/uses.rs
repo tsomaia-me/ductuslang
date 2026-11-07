@@ -104,6 +104,8 @@ impl Core<'_> {
         if !self.expansion_step(span.clone()) {
             return Ok(Ok(None));
         }
+        let links = self.env_links(env);
+        let saved = std::mem::replace(&mut self.use_links, links);
         if placement.flags.0 != placement.flags.1 {
             let flag = *self
                 .ir
@@ -113,7 +115,9 @@ impl Core<'_> {
             let flag_span = self.span(file, flag.lo, flag.hi);
             self.draw(Code::UseForm, flag_span, "a pattern use carries no flags");
         }
-        let bound = match self.use_sources(placement, pattern, (file, env), span.clone())? {
+        let sources = self.use_sources(placement, pattern, (file, env), span.clone());
+        self.use_links = saved;
+        let bound = match sources? {
             Ok(bound) => bound,
             Err(declined) => return Ok(Err(declined)),
         };
