@@ -4566,3 +4566,33 @@ fn a_from_end_element_of_an_array_of_references_is_a_reference_beside_a_valid_tw
 {
     assert_eq!(same_as_the_old_engine(&FROM_END_ELEMENTS_OF_REFERENCES), 24);
 }
+
+const REFERENCES_AS_CALL_ARGUMENTS: [&[&str]; 10] = [
+    &["fn f(x): x\nClip n\n", "Clip c:\n    Note/(f(n))\n"],
+    &["fn f(x): [x, x]\nClip n\n", "Clip c:\n    Note/(f(n)[0])\n"],
+    &["fn f(x): x + 1\nClip n\n", "Clip c:\n    Note/(f(n))\n"],
+    &[
+        "fn f(x): x\nClip n\nClip m\n",
+        "Clip c:\n    Note/(f(n))\n    Note/(f(m))\n",
+    ],
+    &["fn f(x): x\nClip n\n", "Clip c:\n    Note/(f(n, 1))\n"],
+    &["fn f(x): x\nClip n\n", "Clip c:\n    Note when f(n)\n"],
+    &["fn f(x): [x][1]\nClip n\n", "Clip c:\n    Note/(f(n))\n"],
+    &[
+        "fn f(x, y): y + 300\nClip n\n",
+        "Clip c:\n    Note/(f(n, u8(2)))\n",
+    ],
+    &[
+        "fn g(x): x\nfn f(x): g(x)\nClip n\n",
+        "Clip c:\n    Note/(f(n))\n",
+    ],
+    &[
+        "fn f(x): x\nClip n\nlet r = f(n)\n",
+        "Clip c:\n    Note/(r)\n",
+    ],
+];
+
+#[test]
+fn a_reference_passed_to_a_function_is_typed_through_its_body_beside_a_valid_twin_in_every_order() {
+    assert_eq!(same_as_the_old_engine(&REFERENCES_AS_CALL_ARGUMENTS), 60);
+}
