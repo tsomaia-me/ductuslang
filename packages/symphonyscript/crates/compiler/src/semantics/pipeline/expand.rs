@@ -93,7 +93,7 @@ impl Core<'_> {
         };
         if parent == NONE && !self.ir.named(name) {
             if placement.body != NONE
-                && let Err(declined) = self.unknown_body(placement.body, file)?
+                && let Err(declined) = self.unrun_block(placement.body, (file, NONE))?
             {
                 return Ok(Err(declined));
             }

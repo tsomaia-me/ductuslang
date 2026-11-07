@@ -3653,8 +3653,11 @@ fn a_name_of_nothing_read_through_a_path_is_no_value_placeholder_and_draws_unkno
     assert_eq!(same_as_the_old_engine(&PATHS_FROM_NAMES_OF_NOTHING), 30);
 }
 
-const UNNAMED_TOP_BODIES: [&[&str]; 2] = [
-    &["Plant, cooling | mode=override:\n    Valve | zz=1\n    Loop\n    Valve~\n"],
+const UNNAMED_TOP_BODIES: [&[&str]; 3] = [
+    &[
+        "Plant, cooling | mode=override:\n    [Valve/0.2 Valve/0.4]\n    for i, s in stages:\n        Valve/s when i < 2\n    Loop as trim /0.3 | response=boiler.hold.gain * 2\n    Sensor as probe /(level * 0.5):\n        Reads: boiler.hold\n",
+    ],
+    &["Plant, cooling | mode=override:\n    Valve\n    Loop\n"],
     &[
         "Plant, cooling | mode=override:\n    Loop/0.3\n",
         "Plant fill:\n    Valve/0\n",
@@ -3664,7 +3667,7 @@ const UNNAMED_TOP_BODIES: [&[&str]; 2] = [
 #[test]
 fn a_top_level_placement_its_line_leaves_unnamed_draws_its_bodys_unknown_kinds_beside_a_valid_twin_in_every_order()
  {
-    assert_eq!(same_as_the_old_engine(&UNNAMED_TOP_BODIES), 8);
+    assert_eq!(same_as_the_old_engine(&UNNAMED_TOP_BODIES), 10);
 }
 
 const METHODS_OF_NO_NAME_ON_A_CYCLE: [&[&str]; 5] = [

@@ -5629,6 +5629,11 @@ pub const CLASSES: &[Class] = &[
         rule: "a method of no name on a cell or a let on a declaration cycle draws unknown-name at the method beside the cycle, as the program with the cycle repaired does (the repair rule, DECISIONS.md 2026-11-03; SPEC §5.7), where the old engine draws it in some top-level orders only (`state a = b.xpast(1)` before `state b = a + 1`, `let a = b.xpast(1)` before `let b = a + 1`)",
         explains: method_of_no_name_on_a_cycle,
     },
+    Class {
+        ledger: "476",
+        rule: "the body of a top-level placement whose line leaves it unnamed draws its unknown attribute and flag names (ARCHITECTURE §7.1: the body parses as usual; §7: every other fault draws its own diagnostic), where the old engine draws only the body's unknown kinds (`Plant, cooling | mode=override:` holding `Valve | zz=1` and `Valve~`)",
+        explains: member_name_in_an_unnamed_top_body,
+    },
 ];
 
 fn annotated_let_value(seen: &Seen<'_>, at: &Drawn) -> bool {
@@ -6687,4 +6692,34 @@ fn use_argument_fault_reaches(
                     .is_some_and(|rest| rest.starts_with(['/', ' ', '(', '\'']) || rest.is_empty())
                 && within(start, start + line.len() + 1)
         })
+}
+
+fn member_name_in_an_unnamed_top_body(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
+    if change != Change::Added || !matches!(at.0.as_str(), "unknown-attribute" | "unknown-flag") {
+        return false;
+    }
+    let lines = lines_at(seen.program);
+    let line = seen.line(at.1);
+    let Some(top) = lines
+        .iter()
+        .take(line)
+        .rposition(|(_, text)| !text.is_empty() && !text.starts_with(' '))
+    else {
+        return false;
+    };
+    seen.old.iter().any(|drawn| {
+        drawn.0 == "placement-syntax"
+            && seen.line(drawn.1) == top
+            && seen
+                .program
+                .get(drawn.1..drawn.2)
+                .is_some_and(|found| !found.is_empty())
+    }) && seen
+        .old
+        .iter()
+        .chain(seen.new)
+        .any(|drawn| seen.line(drawn.1) == top && seen.text(drawn) != "")
+        && lines
+            .get(top)
+            .is_some_and(|(_, text)| text.trim_end().ends_with(':'))
 }

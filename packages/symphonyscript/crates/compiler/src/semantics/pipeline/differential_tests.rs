@@ -4261,3 +4261,27 @@ fn a_method_of_no_name_on_a_cell_on_a_cycle_draws_unknown_name_in_every_order_47
         );
     }
 }
+
+#[test]
+fn an_unnamed_top_placements_body_draws_its_unknown_attribute_and_flag_names_476() {
+    let old = Compiler::new(&symphonyscript_fixtures::vocabulary())
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
+    let new =
+        Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("the vocabulary compiles");
+    for text in [
+        "Plant, cooling | mode=override:\n    Valve | zz=1\n    Loop\n    Valve~\n",
+        "Plant, cooling:\n    Valve | zz=1\n",
+    ] {
+        let sources = [source(text)];
+        let found = new
+            .checked_by_new_core(&sources)
+            .expect("the new core takes the program");
+        let classes = reviewed::moved(text, &drawn(&old.check(&sources)), &drawn(&found))
+            .unwrap_or_else(|unexplained| panic!("{text}: {unexplained:?}"));
+        assert!(
+            classes.len() == 1 && classes.iter().all(|class| class.ledger == "476"),
+            "{text}"
+        );
+    }
+}
