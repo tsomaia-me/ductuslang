@@ -4372,3 +4372,81 @@ fn a_size_of_a_choice_beside_its_refused_condition_draws_unknown_attribute_as_in
         );
     }
 }
+
+const SELF_HISTORY: &str = "state s(1)\nstate ys = (ys.past(1, []) + [s])[^3..]\n";
+
+const CAPACITIES_THROUGH_HISTORY: [(&str, &str, &[(&str, &str)]); 7] = [
+    (
+        SELF_HISTORY,
+        "Clip c:\n    Note/([1, 2][ys.capacity])\n",
+        &[("index-out-of-range", "ys.capacity")],
+    ),
+    (
+        SELF_HISTORY,
+        "Clip c:\n    Note/([1, 2, 3][ys.capacity - 1])\n",
+        &[],
+    ),
+    (
+        SELF_HISTORY,
+        "Clip c:\n    Note/([1, 2][ys.past(1).capacity])\n",
+        &[("index-out-of-range", "ys.past(1).capacity")],
+    ),
+    (
+        SELF_HISTORY,
+        "Clip c:\n    Note/([1, 2, 3, 4][ys.past(1, [1, 2, 3, 4, 5]).capacity])\n",
+        &[("index-out-of-range", "ys.past(1, [1, 2, 3, 4, 5]).capacity")],
+    ),
+    (
+        "state s(1)\nstate ys = (ys.past(1, []) + [s])[^3..]\nlet k = ys.capacity\n",
+        "Clip c:\n    Note/([1, 2][k])\n",
+        &[("index-out-of-range", "k")],
+    ),
+    (
+        "state s(1)\nstate ys = (ys.past(1, []) + [s])[^3..]\nfn f(x): [1, 2][x]\n",
+        "Clip c:\n    Note/(f(ys.capacity))\n",
+        &[("index-out-of-range", "x")],
+    ),
+    (
+        "state s(1)\nstate ys = ys.past(1, []) + [s]\n",
+        "Clip c:\n    Note/([1, 2][ys.capacity])\n",
+        &[("unbounded-state", "ys")],
+    ),
+];
+
+#[test]
+fn a_capacity_of_a_cell_reading_its_own_history_is_its_settled_capacity_where_the_old_engine_draws_internal_error_beside_a_valid_twin_in_every_order_476()
+ {
+    let old = Compiler::new(&symphonyscript_fixtures::vocabulary())
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
+    let new =
+        Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("the vocabulary compiles");
+    let mut programs = 0;
+    for (cells, placement, expected) in CAPACITIES_THROUGH_HISTORY {
+        let mut expected: Vec<(String, String)> = expected
+            .iter()
+            .map(|(code, span)| ((*code).to_string(), (*span).to_string()))
+            .collect();
+        expected.sort();
+        for order in symphonyscript_fixtures::Orders::Every.of(&[
+            cells,
+            placement,
+            "Clip twin:\n    Note/61 when true\n",
+        ]) {
+            let text = order.concat();
+            let sources = [source(&text)];
+            let found = new
+                .checked_by_new_core(&sources)
+                .unwrap_or_else(|| panic!("the new core takes {text}"));
+            assert_eq!(spanned(&text, &found), expected, "{text}");
+            let classes = reviewed::moved(&text, &drawn(&old.check(&sources)), &drawn(&found))
+                .unwrap_or_else(|unexplained| panic!("{text}: {unexplained:?}"));
+            assert!(
+                classes.len() == 1 && classes.iter().all(|class| class.ledger == "476"),
+                "{text}"
+            );
+            programs += 1;
+        }
+    }
+    assert_eq!(programs, 42);
+}

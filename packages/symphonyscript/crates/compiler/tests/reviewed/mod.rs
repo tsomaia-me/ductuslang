@@ -5641,6 +5641,11 @@ pub const CLASSES: &[Class] = &[
     },
     Class {
         ledger: "476",
+        rule: "a `capacity` of a derived cell that holds a variable array and reads its own history, or of a history read of it, is the compile-time capacity SPEC §6.6 settles (§5.7: a cell's `capacity` reads no cell), the larger of the cell's and the fallback's for a history read, and the program draws what that value draws, where the old engine draws internal-error alone (`state ys = (ys.past(1, []) + [s])[^3..]` with `[1, 2][ys.capacity]`, `[1, 2, 3][ys.capacity - 1]`, `[1, 2][ys.past(1).capacity]`, `[1, 2, 3, 4][ys.past(1, [1, 2, 3, 4, 5]).capacity]`, `let k = ys.capacity` read as `[1, 2][k]`, `fn f(x): [1, 2][x]` called as `f(ys.capacity)`; `state ys = ys.past(1, []) + [s]` with `[1, 2][ys.capacity]` drawing unbounded-state)",
+        explains: capacity_of_a_cell_reading_its_own_history,
+    },
+    Class {
+        ledger: "476",
         rule: "a path step naming a child whose placement holds a fault, an unknown kind or a syntax fault on its own line or on its parent's, reads nothing and draws nothing, as the program with the fault repaired reads the child (the repair rule, DECISIONS.md 2026-11-03), where the old engine drops the faulty placement and draws unknown-attribute at the step (`Lampstate as wash` read as `stage.wash`, `Scene dusk (| hold=8:` holding `Cue as first`)",
         explains: step_to_a_faulty_child,
     },
@@ -6827,6 +6832,47 @@ fn step_to_a_region_held_name(seen: &Seen<'_>, change: Change, at: &Drawn) -> bo
                 .get(line)
                 .map_or(0, |(_, earlier)| earlier.len() - earlier.trim_start().len());
         }
+    })
+}
+
+fn capacity_of_a_cell_reading_its_own_history(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
+    let lost = seen
+        .old
+        .iter()
+        .all(|drawn| drawn.0 == "internal-error" && drawn.1 == 0 && drawn.2 == 0);
+    !seen.old.is_empty()
+        && lost
+        && (change == Change::Added || change == Change::Removed && at.0 == "internal-error")
+        && seen
+            .program
+            .lines()
+            .filter_map(|line| line.strip_prefix("state "))
+            .filter_map(|rest| rest.split_once(" = "))
+            .any(|(name, rule)| {
+                let history = format!("{name}.past(");
+                rule.contains(&history)
+                    && (seen.program.contains(&format!("{name}.capacity"))
+                        || history_capacity_read(seen.program, &history))
+            })
+}
+
+fn history_capacity_read(program: &str, history: &str) -> bool {
+    program.match_indices(history).any(|(start, _)| {
+        let mut depth = 0usize;
+        let rest = program.get(start + history.len() - 1..).unwrap_or_default();
+        for (at, character) in rest.char_indices() {
+            match character {
+                '(' => depth += 1,
+                ')' if depth == 1 => {
+                    return rest
+                        .get(at + 1..)
+                        .is_some_and(|after| after.starts_with(".capacity"));
+                }
+                ')' => depth = depth.saturating_sub(1),
+                _ => {}
+            }
+        }
+        false
     })
 }
 

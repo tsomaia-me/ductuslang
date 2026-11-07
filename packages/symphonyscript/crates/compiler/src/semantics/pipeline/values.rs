@@ -794,6 +794,7 @@ impl Core<'_> {
                         && (self.array_members.contains_key(&node)
                             || self.expr_members.contains(&node)
                             || self.runtime_members.contains(&node)
+                            || self.capacity_members.contains(&node)
                             || self.bare_cell_read(node)?.is_some())
                     {
                         let Some(frame) = frames.last_mut() else {
@@ -1645,6 +1646,16 @@ impl Core<'_> {
             }
             Op::Stepped => Value::Error,
             Op::Variant => self.variant_value(node)?,
+            Op::Field if self.history_capacities.contains_key(&node) => {
+                pop(stack)?;
+                let (at, floor) = self
+                    .history_capacities
+                    .get(&node)
+                    .copied()
+                    .unwrap_or((NONE, 0));
+                self.cell_capacity(at)?
+                    .map_or(Value::Error, |capacity| Value::Int(capacity.max(floor)))
+            }
             Op::Field if self.expr_members.contains(&node) && self.is_bytes_member(node)? => {
                 let receiver = pop(stack)?;
                 self.bytes_value(&receiver)
@@ -1662,6 +1673,10 @@ impl Core<'_> {
                     .map_or(Value::Error, |length| Value::Int(*length)),
             },
             Op::Field if self.runtime_members.contains(&node) => Value::Error,
+            Op::Field if self.capacity_members.contains(&node) => {
+                let cell = self.cell_sizes.get(&node).copied().unwrap_or(NONE);
+                self.cell_capacity(cell)?.map_or(Value::Error, Value::Int)
+            }
             Op::Field if self.array_members.contains_key(&node) => {
                 Value::Int(self.array_members.get(&node).copied().unwrap_or(0))
             }

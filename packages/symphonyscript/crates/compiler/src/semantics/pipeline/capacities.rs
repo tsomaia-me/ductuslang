@@ -138,10 +138,7 @@ fn joined(total: i128) -> String {
 impl Core<'_> {
     pub fn settle_capacities(&mut self) -> Result<(), Internal> {
         let mark = self.diagnostics.len();
-        let outer = std::mem::replace(&mut self.inst, NONE);
-        let settled = self.solve_cells();
-        self.inst = outer;
-        let covered = settled?;
+        let covered = self.solved_cells()?;
         let outer = std::mem::replace(&mut self.inst, NONE);
         let checked = self.length_limits(&covered);
         self.inst = outer;
@@ -164,6 +161,42 @@ impl Core<'_> {
             *at += count;
         }
         Ok(())
+    }
+
+    pub fn cell_capacity(&mut self, at: u32) -> Result<Option<i128>, Internal> {
+        if self.solved_cells.is_none() && !self.solving_cells {
+            let (drawn, stop) = (self.diagnostics.len(), self.stop.clone());
+            let chain = std::mem::take(&mut self.eval_chain);
+            let covered = self.solve_alone();
+            self.eval_chain = chain;
+            let faults = self
+                .diagnostics
+                .split_off(drawn.min(self.diagnostics.len()));
+            self.stop = stop;
+            self.solved_cells = Some(covered?);
+            self.solved_faults = faults;
+        }
+        Ok(self.cell_capacities.get(&at).copied())
+    }
+
+    fn solve_alone(&mut self) -> Result<HashSet<u32>, Internal> {
+        self.solving_cells = true;
+        let outer = std::mem::replace(&mut self.inst, NONE);
+        let settled = self.solve_cells();
+        self.inst = outer;
+        self.solving_cells = false;
+        settled
+    }
+
+    fn solved_cells(&mut self) -> Result<HashSet<u32>, Internal> {
+        match self.solved_cells.take() {
+            Some(covered) => {
+                let faults = std::mem::take(&mut self.solved_faults);
+                self.diagnostics.extend(faults);
+                Ok(covered)
+            }
+            None => self.solve_alone(),
+        }
     }
 
     fn variable_cell(&self, at: u32) -> Result<bool, Internal> {

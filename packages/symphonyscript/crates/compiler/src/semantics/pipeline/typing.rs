@@ -1355,6 +1355,9 @@ impl Core<'_> {
         if !known && !fact.node && matches!(fact.leaf, Leaf::Placeholder | Leaf::Error) {
             return Ok(Ok(Fact::PLACEHOLDER));
         }
+        if let Some(measured) = self.history_member_fact(node, receiver, &fact)? {
+            return Ok(Ok(measured));
+        }
         if fact.node || self.is_reactive(receiver)? {
             return Ok(Err(Declined(Reason::Member)));
         }
@@ -1381,6 +1384,43 @@ impl Core<'_> {
                 Ok(Ok(Fact::PLACEHOLDER))
             }
         }
+    }
+
+    fn history_member_fact(
+        &mut self,
+        node: u32,
+        receiver: u32,
+        fact: &Fact,
+    ) -> Result<Option<Fact>, Internal> {
+        let (op, target, _, fallback) = self.ir.node(receiver)?;
+        let (_, _, field, _) = self.ir.node(node)?;
+        let text = self.ir.name_text(field).unwrap_or_default();
+        if op != Op::Past || fact.node || !matches!(text, "size" | "capacity") {
+            return Ok(None);
+        }
+        let DeclRef::Cell(at) = self.bound(target)? else {
+            return Ok(None);
+        };
+        let Some(length) = fact.dims.first().copied() else {
+            return Ok(None);
+        };
+        if length != ANY_LENGTH {
+            self.array_members.insert(node, i128::from(length));
+            return Ok(Some(Fact::scalar(Leaf::Int)));
+        }
+        if text != "capacity" || !self.derived(at) {
+            return Ok(None);
+        }
+        let floor = if fallback == NONE {
+            0
+        } else {
+            match self.fact(fallback)?.dims.first().copied() {
+                Some(held) if held != ANY_LENGTH => i128::from(held),
+                Some(_) | None => return Ok(None),
+            }
+        };
+        self.history_capacities.insert(node, (at, floor));
+        Ok(Some(Fact::scalar(Leaf::Int)))
     }
 
     pub fn is_bytes_member(&self, node: u32) -> Result<bool, Internal> {
@@ -1443,6 +1483,10 @@ impl Core<'_> {
             Some(ANY_LENGTH) if text == "size" => {
                 self.runtime_members.insert(node);
                 Ok(Ok(Fact::fixed(Leaf::Int, Some(EvalTy::I32))))
+            }
+            Some(ANY_LENGTH) if self.derived(at) => {
+                self.capacity_members.insert(node);
+                Ok(Ok(Fact::scalar(Leaf::Int)))
             }
             Some(ANY_LENGTH) => Ok(Err(Declined(Reason::Member))),
             Some(length) => {

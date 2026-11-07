@@ -15,6 +15,7 @@ use super::reason::Reason;
 use super::width::is_fixed_float;
 use crate::diagnostics::{Code, Diagnostic};
 use crate::semantics::Internal;
+use crate::semantics::analysis::{Written, written_destination};
 use crate::semantics::counted_walk::CountedWalk;
 use crate::semantics::ir::flat::{
     AttrForm, FlatIr, ForBlockRec, ItemRec, Iteration, NONE, Op, PlacementRec, WireRec,
@@ -983,6 +984,7 @@ impl Core<'_> {
                     ItemRec::Wire(wire) if self.plain_wire(wire)? => self.unrun_wire(wire, file)?,
                     ItemRec::Wire(wire) if self.unrun_shape(wire)? => {
                         self.unrun_wire(wire, file)?;
+                        self.unrun_destination(wire)?;
                         self.unrun_to_wires.push((wire, env));
                     }
                     ItemRec::When(_) => items.extend(self.when_items(child).into_iter().rev()),
@@ -1706,6 +1708,46 @@ impl Core<'_> {
             }
         }
         Ok(true)
+    }
+
+    fn unrun_destination(&mut self, wire: WireRec) -> Result<(), Internal> {
+        let mut node = wire.destination;
+        let mut seen = std::collections::HashSet::new();
+        loop {
+            CountedWalk::CoreWireDestination.step();
+            let holds_none = match written_destination(self.ir, node)? {
+                Written::NoInstance => true,
+                Written::Name => match self.bound(node)? {
+                    DeclRef::Cell(_) => true,
+                    DeclRef::Let(at)
+                        if !self.cyclic.get(at as usize).copied().unwrap_or(true)
+                            && seen.insert(at) =>
+                    {
+                        node = self.let_root(at)?;
+                        continue;
+                    }
+                    DeclRef::Let(_)
+                    | DeclRef::Param(_)
+                    | DeclRef::None
+                    | DeclRef::Instance(_)
+                    | DeclRef::Duplicate
+                    | DeclRef::Fn(_)
+                    | DeclRef::Pattern(_) => false,
+                },
+                Written::Choice { .. }
+                | Written::Element { .. }
+                | Written::Elements(_)
+                | Written::Run => false,
+            };
+            if holds_none {
+                self.draw_at(
+                    Code::DestinationType,
+                    wire.destination,
+                    "a destination names an instance",
+                )?;
+            }
+            return Ok(());
+        }
     }
 
     fn unrun_wire(&mut self, wire: WireRec, file: u32) -> Result<(), Internal> {

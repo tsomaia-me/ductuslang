@@ -5,6 +5,7 @@ use super::paths::End;
 use super::reason::Reason;
 use crate::diagnostics::Code;
 use crate::semantics::Internal;
+use crate::semantics::analysis::{Written, written_destination};
 use crate::semantics::counted_walk::CountedWalk;
 use crate::semantics::ir::flat::{AttrForm, NONE, Op, WireRec};
 
@@ -86,12 +87,11 @@ impl Core<'_> {
         let mut stack = vec![destination];
         while let Some(node) = stack.pop() {
             CountedWalk::CoreWireDestination.step();
-            let (op, a, _, _) = self.ir.node(node)?;
-            match op {
-                Op::If => stack.extend(self.operands(node)?.into_iter().skip(1).rev()),
-                Op::Array => stack.extend(self.operands(node)?.into_iter().rev()),
-                Op::Index => stack.push(a),
-                Op::Name => match self.bound(node)? {
+            match written_destination(self.ir, node)? {
+                Written::Choice { arms, .. } => stack.extend(arms.into_iter().rev()),
+                Written::Elements(elements) => stack.extend(elements.into_iter().rev()),
+                Written::Element { base } => stack.push(base),
+                Written::Name => match self.bound(node)? {
                     DeclRef::Instance(item) => {
                         let row = self.row_of_item.get(item as usize).copied().unwrap_or(NONE);
                         if row == NONE && !self.use_links.is_empty() {
@@ -114,8 +114,8 @@ impl Core<'_> {
                         return Ok(Err(Declined(Reason::BodyItem)));
                     }
                 },
-                Op::Int | Op::Float | Op::Bool | Op::Str | Op::Variant => return Ok(Ok(None)),
-                _ => return Ok(Err(Declined(Reason::BodyItem))),
+                Written::NoInstance => return Ok(Ok(None)),
+                Written::Run => return Ok(Err(Declined(Reason::BodyItem))),
             }
         }
         Ok(Ok(Some(candidates)))
@@ -206,11 +206,19 @@ impl Core<'_> {
 
 impl Core<'_> {
     pub fn runtime_targets(&self, destination: u32) -> Result<Option<Vec<u32>>, Internal> {
-        let (op, a, b, c) = self.ir.node(destination)?;
-        let (test, arms) = match op {
-            Op::Index if self.ir.node(a)?.0 == Op::Array => (b, self.operands(a)?),
-            Op::If => (a, vec![b, c]),
-            _ => return Ok(None),
+        let (test, arms) = match written_destination(self.ir, destination)? {
+            Written::Element { base } => match written_destination(self.ir, base)? {
+                Written::Elements(elements) => (self.ir.node(destination)?.2, elements),
+                Written::NoInstance
+                | Written::Name
+                | Written::Choice { .. }
+                | Written::Element { .. }
+                | Written::Run => return Ok(None),
+            },
+            Written::Choice { test, arms } => (test, arms),
+            Written::NoInstance | Written::Name | Written::Elements(_) | Written::Run => {
+                return Ok(None);
+            }
         };
         if self.ir.node(test)?.0 != Op::Name || !matches!(self.bound(test)?, DeclRef::Cell(_)) {
             return Ok(None);

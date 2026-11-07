@@ -4640,3 +4640,37 @@ fn an_index_a_call_returns_out_of_range_draws_at_the_returned_value_in_its_calls
  {
     assert_eq!(same_as_the_old_engine(&INDEXES_RETURNED_BY_CALLS), 36);
 }
+
+const UNRUN_DESTINATIONS: [&[&str]; 7] = [
+    &[
+        "state k(1)\n",
+        "Clip c:\n    for i in 0..0:\n        Plays: k\n",
+    ],
+    &["Clip c:\n    for i in 0..0:\n        Plays: 3\n"],
+    &[
+        "let u = true\n",
+        "Clip c:\n    for i in 0..0:\n        Plays: u\n",
+    ],
+    &[
+        "state k(1)\n",
+        "Clip c:\n    for i in 0..0:\n        Plays: (k)\n",
+    ],
+    &[
+        "Clip n\nlet u = n\n",
+        "Clip c:\n    for i in 0..0:\n        Plays: u\n",
+    ],
+    &[
+        "state k(1)\nClip n\n",
+        "Clip c:\n    for i in 0..0:\n        Plays: if true then k else n\n",
+    ],
+    &[
+        "state k(1)\n",
+        "pattern P():\n    Clip:\n        Plays: k\n",
+    ],
+];
+
+#[test]
+fn a_destination_in_an_unrun_body_or_an_unused_pattern_that_holds_no_instance_draws_destination_type_beside_a_valid_twin_in_every_order()
+ {
+    assert_eq!(same_as_the_old_engine(&UNRUN_DESTINATIONS), 38);
+}

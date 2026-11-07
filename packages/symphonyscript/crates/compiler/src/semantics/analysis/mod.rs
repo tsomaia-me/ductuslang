@@ -113,6 +113,7 @@ mod widens;
 mod width;
 mod wire;
 
+pub(crate) use answers::{Written, written_destination};
 pub(crate) use engine::Engine;
 pub(crate) use resolve::LENGTH_LIMIT;
 
