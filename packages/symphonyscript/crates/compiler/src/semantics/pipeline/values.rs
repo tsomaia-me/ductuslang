@@ -1630,12 +1630,13 @@ impl Core<'_> {
                 let receiver = pop(stack)?;
                 self.bytes_value(&receiver)
             }
-            Op::Field if self.expr_members.contains(&node) => {
-                pop(stack)?;
-                self.array_members
+            Op::Field if self.expr_members.contains(&node) => match pop(stack)? {
+                Value::Array(array) => Value::Int(i128::from(self.store.len(array))),
+                _ => self
+                    .array_members
                     .get(&node)
-                    .map_or(Value::Error, |length| Value::Int(*length))
-            }
+                    .map_or(Value::Error, |length| Value::Int(*length)),
+            },
             Op::Field if self.runtime_members.contains(&node) => Value::Error,
             Op::Field if self.array_members.contains_key(&node) => {
                 Value::Int(self.array_members.get(&node).copied().unwrap_or(0))

@@ -2163,6 +2163,13 @@ impl Core<'_> {
         let root = self.let_root(at)?;
         if self.body_of.get(self.local(root)?).copied().unwrap_or(NONE) != NONE {
             let Some(count) = self.literal_array_length(root, field)? else {
+                if matches!(
+                    self.ir.name_text(field).unwrap_or_default(),
+                    "size" | "capacity" | "bytes"
+                ) {
+                    self.expr_members.insert(node);
+                    return Ok(Ok(End::Value));
+                }
                 return Ok(Err(Declined(Reason::Member)));
             };
             self.array_members.insert(node, i128::from(count));

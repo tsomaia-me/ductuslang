@@ -4506,3 +4506,28 @@ fn a_dot_call_of_a_name_that_is_no_function_on_an_expression_draws_not_callable_
     let rows: Vec<&[&str]> = rows.iter().map(Vec::as_slice).collect();
     assert_eq!(same_as_the_old_engine(&rows), 84);
 }
+
+const MEMBERS_OF_BODY_LETS: [&[&str]; 4] = [
+    &[
+        "fn f(x):\n    let ys = [x, x] + [1]\n    ys.size\n",
+        "Clip c:\n    Note/(f(1))\n",
+    ],
+    &[
+        "fn f(xs):\n    let ys = xs + [1]\n    [1][ys.size]\n",
+        "Clip c:\n    Note/(f([1]))\n    Note/(f([1, 2]))\n",
+    ],
+    &[
+        "fn f(xs):\n    let ys = xs + [300]\n    ys.bytes[0] + ys.bytes[1]\n",
+        "Clip c:\n    Note/(f([1]))\n",
+    ],
+    &[
+        "fn f(x):\n    let ys = [x] + [true]\n    ys.size\n",
+        "Clip c:\n    Note/(f(1))\n",
+    ],
+];
+
+#[test]
+fn a_size_or_bytes_of_a_body_let_holding_an_array_expression_is_measured_in_each_body_instance_beside_a_valid_twin_in_every_order()
+ {
+    assert_eq!(same_as_the_old_engine(&MEMBERS_OF_BODY_LETS), 24);
+}
