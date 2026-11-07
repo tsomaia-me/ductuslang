@@ -1430,8 +1430,7 @@ impl Core<'_> {
                         .and_then(|at| self.attr_reads.get(at as usize))
                         .map(|read| (read.root, family, unit, read.ty));
                     let value = frame.values.pop().ok_or(Internal::missed("value stack"))?;
-                    let outer =
-                        read.map(|read| std::mem::replace(&mut self.default_scale, Some(read)));
+                    let outer = read.map(|read| self.default_scale.replace(read));
                     let value = if self.scale_conflicted(node)? {
                         value
                     } else {
