@@ -3120,3 +3120,52 @@ fn a_flag_on_a_pattern_use_draws_use_form_and_one_on_a_wire_unknown_flag_beside_
  {
     assert_eq!(same_as_the_old_engine(&FLAGGED_PATTERN_USES), 56);
 }
+
+const CELL_CAPACITIES_AND_CLOCKS: [&[&str]; 12] = [
+    &[
+        "channel[16] hits(0)\n",
+        "Rig r:\n    for i in 0..4:\n        Lamp/(0.2 * i) when hits > i\n",
+    ],
+    &["stream[4] s(0.5)\n", "Rig r:\n    Lamp/s\n"],
+    &["state[4] s(0.5)\n", "Rig r:\n    Lamp/s\n"],
+    &["stream[4] s = 1 + 2\n", "Rig r:\n    Lamp/s\n"],
+    &["channel[3000000000] s(0)\n", "Rig r:\n    Lamp/s\n"],
+    &["channel[0] s(0)\n", "Rig r:\n    Lamp/s\n"],
+    &[
+        "state a(1)\n",
+        "state b on zz = a + 1\n",
+        "Rig r:\n    Lamp/b\n",
+    ],
+    &[
+        "state a(1)\n",
+        "state b on a = a + true\n",
+        "Rig r:\n    Lamp/b\n",
+    ],
+    &[
+        "state b(0) on a = b.past(1, 0) + 1\n",
+        "Rig r:\n    Lamp/b\n",
+    ],
+    &[
+        "let x = 1 + true\n",
+        "state a(1)\n",
+        "state b on (a, x) = a + 1\n",
+        "Rig r:\n    Lamp/b\n",
+    ],
+    &[
+        "state a(1)\n",
+        "state b(0) on a = c.past(1, 0) + 1\n",
+        "state c(0) = b.past(1, 0)\n",
+        "Rig r:\n    Lamp/(b + c)\n",
+    ],
+    &[
+        "state a(1)\n",
+        "state b on (1 +) = a + 1\n",
+        "Rig r:\n    Lamp/b\n",
+    ],
+];
+
+#[test]
+fn a_cells_capacity_draws_its_misplacement_or_size_and_a_clock_its_unbuilt_construct_reading_nothing_beside_a_valid_twin_in_every_order()
+ {
+    assert_eq!(same_as_the_old_engine(&CELL_CAPACITIES_AND_CLOCKS), 354);
+}

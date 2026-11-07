@@ -664,7 +664,12 @@ impl Core<'_> {
     fn group_unrun(&self, members: &[u32]) -> bool {
         let mut own = false;
         for member in members {
-            if !self.derived(*member) {
+            let clocked = self
+                .ir
+                .cells
+                .get(*member as usize)
+                .is_some_and(|rec| rec.clock.0 != rec.clock.1);
+            if !self.derived(*member) || clocked {
                 return false;
             }
             let faulty = self

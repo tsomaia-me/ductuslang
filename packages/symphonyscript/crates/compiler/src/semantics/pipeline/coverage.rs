@@ -460,8 +460,6 @@ fn plain_cell(ir: &FlatIr, rec: &CellRec) -> bool {
     let host_fed = rec.rule == NONE && rec.init != NONE;
     let derived = rec.rule != NONE;
     (host_fed || derived)
-        && rec.clock.0 == rec.clock.1
-        && rec.capacity.is_none()
         && (scalar_annotation(ir, rec.binder)
             || ir
                 .binders

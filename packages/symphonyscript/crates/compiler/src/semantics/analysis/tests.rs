@@ -3988,7 +3988,9 @@ fn the_name_twins_draw_an_internal_error_for_a_placeholder_that_is_no_name_304()
 
 #[test]
 fn a_fixture_projects_expanded_items_are_its_instances_and_wires_and_no_cell_of_a_pattern_use() {
-    let compiler = Compiler::new(&vocabulary()).expect("the vocabulary compiles");
+    let compiler = Compiler::new(&vocabulary())
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
     for project in [music_project(), lighting_project(), control_project()] {
         let sources: Vec<Source> = project
             .files
