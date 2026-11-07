@@ -15,6 +15,7 @@ use super::reason::Reason;
 use super::width::is_fixed_float;
 use crate::diagnostics::{Code, Diagnostic};
 use crate::semantics::Internal;
+use crate::semantics::analysis::{Written, written_destination};
 use crate::semantics::counted_walk::CountedWalk;
 use crate::semantics::ir::flat::{
     AttrForm, FlatIr, ForBlockRec, ItemRec, Iteration, NONE, Op, PlacementRec, WireRec,
@@ -215,7 +216,7 @@ impl Core<'_> {
             .unwrap_or(NONE))
     }
 
-    pub fn enter_env(&mut self, env: u32) -> (u32, usize, Vec<(u32, u32)>) {
+    pub fn env_links(&self, env: u32) -> Vec<(u32, u32)> {
         let mut links = Vec::new();
         let mut at = env;
         while let Some(record) = self.envs.get(at as usize) {
@@ -224,6 +225,11 @@ impl Core<'_> {
             }
             at = record.parent;
         }
+        links
+    }
+
+    pub fn enter_env(&mut self, env: u32) -> (u32, usize, Vec<(u32, u32)>) {
+        let links = self.env_links(env);
         let saved = (
             self.inst,
             self.own_calls.len(),
@@ -270,6 +276,9 @@ impl Core<'_> {
         let ItemRec::For(rec) = *self.ir.item(item)? else {
             return Err(Internal::missed("IR for block"));
         };
+        for root in iterable_roots(rec.head) {
+            self.mark_head_members(root)?;
+        }
         let saved = self.enter_env(env);
         for root in iterable_roots(rec.head) {
             match self.reads_deferred(root) {
@@ -287,6 +296,62 @@ impl Core<'_> {
         let outcome = self.loop_head_in(item, rec, env);
         self.leave_env(saved);
         outcome
+    }
+
+    fn mark_head_members(&mut self, root: u32) -> Result<(), Internal> {
+        let mut stack = vec![root];
+        let mut kids = Vec::new();
+        while let Some(node) = stack.pop() {
+            let (op, receiver, field, _) = self.ir.node(node)?;
+            if op == Op::Field
+                && self.is_member_name(field)
+                && self.structural_receiver(receiver)?
+            {
+                self.expr_members.insert(node);
+            }
+            kids.clear();
+            self.push_operands(node, &mut kids)?;
+            stack.extend(kids.iter().copied());
+        }
+        Ok(())
+    }
+
+    fn is_member_name(&self, field: u32) -> bool {
+        matches!(
+            self.ir.name_text(field).unwrap_or_default(),
+            "size" | "capacity" | "bytes"
+        )
+    }
+
+    fn structural_receiver(&self, receiver: u32) -> Result<bool, Internal> {
+        let mut receiver = receiver;
+        loop {
+            let (op, inner, field, _) = self.ir.node(receiver)?;
+            if op == Op::Field && self.is_member_name(field) {
+                receiver = inner;
+                continue;
+            }
+            if op == Op::Field || op == Op::To {
+                return Ok(false);
+            }
+            if op != Op::Name {
+                return Ok(true);
+            }
+            return Ok(match self.bound(receiver)? {
+                DeclRef::Let(at) => self
+                    .ir
+                    .lets
+                    .get(at as usize)
+                    .is_some_and(|rec| rec.owner == NONE),
+                DeclRef::None
+                | DeclRef::Cell(_)
+                | DeclRef::Instance(_)
+                | DeclRef::Duplicate
+                | DeclRef::Param(_)
+                | DeclRef::Fn(_)
+                | DeclRef::Pattern(_) => false,
+            });
+        }
     }
 
     fn loop_head_in(&mut self, item: u32, rec: ForBlockRec, env: u32) -> Stage<Option<LoopRun>> {
@@ -446,7 +511,7 @@ impl Core<'_> {
     }
 
     pub fn reaches_cell(&self, root: u32) -> Result<u8, Internal> {
-        let mut seen = std::collections::HashSet::new();
+        let mut seen = super::column::ColumnSet::new();
         let mut stack = vec![(root, false)];
         let mut reached = NOT_A_CELL;
         let mut choice = false;
@@ -454,8 +519,21 @@ impl Core<'_> {
             if !seen.insert(current) {
                 continue;
             }
-            for node in self.deep_postorder(current)? {
-                let (op, _, _, _) = self.ir.node(node)?;
+            let mut measured = super::column::ColumnSet::new();
+            for node in self.deep_postorder(current)?.into_iter().rev() {
+                let (op, receiver, field, _) = self.ir.node(node)?;
+                if measured.contains(&node) {
+                    continue;
+                }
+                if op == Op::Field && self.expr_members.contains(&node) {
+                    if self.reaches_cell(receiver)? != NOT_A_CELL {
+                        return Ok(THROUGH_A_PATH);
+                    }
+                    if self.ir.name_text(field) != Some("bytes") {
+                        measured.extend(self.postorder(receiver)?);
+                    }
+                    continue;
+                }
                 if matches!(op, Op::Field | Op::To | Op::Past | Op::Stepped) {
                     return Ok(THROUGH_A_PATH);
                 }
@@ -608,7 +686,7 @@ impl Core<'_> {
     }
 
     fn holds_kept(&self, root: u32) -> Result<bool, Internal> {
-        let mut seen = std::collections::HashSet::new();
+        let mut seen = super::column::ColumnSet::new();
         let mut stack = vec![root];
         while let Some(current) = stack.pop() {
             if !seen.insert(current) {
@@ -861,14 +939,14 @@ impl Core<'_> {
 }
 
 impl Core<'_> {
-    pub fn unrun_names(&mut self, item: u32, file: u32) -> Stage<()> {
+    pub fn unrun_names(&mut self, item: u32, (file, env): (u32, u32)) -> Stage<()> {
         let ItemRec::For(rec) = *self.ir.item(item)? else {
             return Err(Internal::missed("IR for block"));
         };
-        self.unrun_block(rec.body, file)
+        self.unrun_block(rec.body, (file, env))
     }
 
-    pub fn unrun_block(&mut self, body: u32, file: u32) -> Stage<()> {
+    pub fn unrun_block(&mut self, body: u32, (file, env): (u32, u32)) -> Stage<()> {
         let mut blocks = vec![body];
         let mut items = Vec::new();
         while let Some(block) = blocks.pop() {
@@ -901,8 +979,14 @@ impl Core<'_> {
                             .iter()
                             .rev(),
                     ),
-                    ItemRec::Wire(wire) if self.bare_wire(wire)? => {}
+                    ItemRec::Wire(wire)
+                        if wire.flags.0 == wire.flags.1 && self.bare_wire(wire)? => {}
                     ItemRec::Wire(wire) if self.plain_wire(wire)? => self.unrun_wire(wire, file)?,
+                    ItemRec::Wire(wire) if self.unrun_shape(wire)? => {
+                        self.unrun_wire(wire, file)?;
+                        self.unrun_destination(wire)?;
+                        self.unrun_to_wires.push((wire, env));
+                    }
                     ItemRec::When(_) => items.extend(self.when_items(child).into_iter().rev()),
                     ItemRec::Bundle(_) => items.extend(self.bundle_items(child)),
                     ItemRec::Paren(inner) if inner != NONE => items.push(inner),
@@ -944,6 +1028,22 @@ impl Core<'_> {
         };
         let kind_text = decl.name.clone();
         let names: Vec<String> = decl.attrs.iter().map(|attr| attr.name.clone()).collect();
+        let flags: Vec<Option<char>> = decl.attrs.iter().map(|attr| attr.flag).collect();
+        for at in placement.flags.0..placement.flags.1 {
+            let flag = *self
+                .ir
+                .flags
+                .get(at as usize)
+                .ok_or(Internal::missed("IR flag"))?;
+            if !flags.contains(&Some(flag.flag)) {
+                let span = self.span(file, flag.lo, flag.hi);
+                self.draw(
+                    Code::UnknownFlag,
+                    span,
+                    format!("`{kind_text}` has no attribute flagged `{}`", flag.flag),
+                );
+            }
+        }
         for at in placement.attrs.0..placement.attrs.1 {
             let entry = *self
                 .ir
@@ -1031,7 +1131,7 @@ impl Core<'_> {
                 .get(at as usize)
                 .copied()
                 .ok_or(Internal::missed("a placement for"))?;
-            let key = (item, record.parent, class);
+            let key = (item, record.parent, super::column::dense(class));
             let items = match self.loop_items.get(&key) {
                 Some(items) => items.clone(),
                 None => {
@@ -1064,9 +1164,10 @@ impl Core<'_> {
             }
         };
         if !element.is_error() && !matches!(element, Value::Array(_)) {
-            self.loop_reads
-                .entry((env, node, class))
-                .or_insert_with(|| element.clone());
+            let key = (env, node, super::column::dense(class));
+            if self.loop_reads.get(&key).is_none() {
+                self.loop_reads.insert(key, element.clone());
+            }
         }
         Ok(Ok(element))
     }
@@ -1423,7 +1524,7 @@ impl Core<'_> {
 
 impl Core<'_> {
     fn outside_slice(&self, root: u32) -> Result<bool, Internal> {
-        let mut seen = std::collections::HashSet::new();
+        let mut seen = super::column::ColumnSet::new();
         let mut stack = vec![root];
         while let Some(node) = stack.pop() {
             if !seen.insert(node) {
@@ -1588,6 +1689,68 @@ impl Core<'_> {
         Ok(true)
     }
 
+    fn unrun_shape(&self, wire: WireRec) -> Result<bool, Internal> {
+        let known = self
+            .ir
+            .name_text(wire.kind)
+            .filter(|_| self.ir.named(wire.kind))
+            .is_some_and(|name| self.vocabulary.wire_kind_named(name).is_some());
+        if !known || wire.attrs_cut {
+            return Ok(false);
+        }
+        for at in wire.attrs.0..wire.attrs.1 {
+            let entry = *self
+                .ir
+                .attr_entries
+                .get(at as usize)
+                .ok_or(Internal::missed("IR attribute"))?;
+            if !matches!(entry.form, AttrForm::Value(_)) {
+                return Ok(false);
+            }
+        }
+        Ok(true)
+    }
+
+    fn unrun_destination(&mut self, wire: WireRec) -> Result<(), Internal> {
+        let mut node = wire.destination;
+        let mut seen = super::column::ColumnSet::new();
+        loop {
+            CountedWalk::CoreWireDestination.step();
+            let holds_none = match written_destination(self.ir, node)? {
+                Written::NoInstance => true,
+                Written::Name => match self.bound(node)? {
+                    DeclRef::Cell(_) => true,
+                    DeclRef::Let(at)
+                        if !self.cyclic.get(at as usize).copied().unwrap_or(true)
+                            && seen.insert(at) =>
+                    {
+                        node = self.let_root(at)?;
+                        continue;
+                    }
+                    DeclRef::Let(_)
+                    | DeclRef::Param(_)
+                    | DeclRef::None
+                    | DeclRef::Instance(_)
+                    | DeclRef::Duplicate
+                    | DeclRef::Fn(_)
+                    | DeclRef::Pattern(_) => false,
+                },
+                Written::Choice { .. }
+                | Written::Element { .. }
+                | Written::Elements(_)
+                | Written::Run => false,
+            };
+            if holds_none {
+                self.draw_at(
+                    Code::DestinationType,
+                    wire.destination,
+                    "a destination names an instance",
+                )?;
+            }
+            return Ok(());
+        }
+    }
+
     fn unrun_wire(&mut self, wire: WireRec, file: u32) -> Result<(), Internal> {
         let Some(decl) = self
             .ir
@@ -1599,6 +1762,22 @@ impl Core<'_> {
         };
         let kind_text = decl.name.clone();
         let names: Vec<String> = decl.attrs.iter().map(|attr| attr.name.clone()).collect();
+        let flags: Vec<Option<char>> = decl.attrs.iter().map(|attr| attr.flag).collect();
+        for at in wire.flags.0..wire.flags.1 {
+            let flag = *self
+                .ir
+                .flags
+                .get(at as usize)
+                .ok_or(Internal::missed("IR flag"))?;
+            if !flags.contains(&Some(flag.flag)) {
+                let span = self.span(file, flag.lo, flag.hi);
+                self.draw(
+                    Code::UnknownFlag,
+                    span,
+                    format!("`{kind_text}` has no attribute flagged `{}`", flag.flag),
+                );
+            }
+        }
         for at in wire.attrs.0..wire.attrs.1 {
             let entry = *self
                 .ir
@@ -1626,7 +1805,7 @@ impl Core<'_> {
 impl Core<'_> {
     fn reads_paths_through(&mut self, owner: u32) -> Result<bool, Internal> {
         if self.path_owners.is_none() {
-            let mut owners = std::collections::HashSet::new();
+            let mut owners = super::column::ColumnSet::new();
             for local in 0..self.ir.op.len() {
                 if self.ir.op.get(local) != Some(&Op::Field) {
                     continue;

@@ -1,6 +1,5 @@
 use super::core::Core;
 use super::core_value::CoreValue;
-use super::memo_arg::MemoArg;
 use super::memo_entry::MemoEntry;
 use super::memo_key::MemoKey;
 use super::recording::Recording;
@@ -10,7 +9,7 @@ use crate::semantics::operators::EvalTy;
 
 impl Core<'_> {
     pub fn memo_key(
-        &self,
+        &mut self,
         body: u32,
         ty: EvalTy,
         args: &[CoreValue],
@@ -19,7 +18,10 @@ impl Core<'_> {
         if self.stop.is_some() {
             return None;
         }
-        let args = args.iter().map(MemoArg::of).collect::<Option<Vec<_>>>()?;
+        let args = args
+            .iter()
+            .map(|value| self.store.held(value))
+            .collect::<Option<Vec<_>>>()?;
         Some(MemoKey {
             body,
             ty,

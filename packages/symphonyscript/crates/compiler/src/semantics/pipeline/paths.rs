@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use symphonyscript_core::{AttrDefault, Value};
 
 use super::attr_read::AttrRead;
@@ -37,11 +35,12 @@ fn same_end(one: (End, Option<EvalTy>), other: (End, Option<EvalTy>)) -> bool {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-enum End {
+pub(super) enum End {
     Row(u32),
     Use(u32),
     To,
     Attr(u32),
+    Wire(u32),
     Placeholder,
     Value,
 }
@@ -75,7 +74,7 @@ impl Core<'_> {
         Ok(self.ir.name(record.name).map(|name| name.sym.0))
     }
 
-    fn row_name_span(&self, row: u32) -> Result<symphonyscript_core::Span, Internal> {
+    pub fn row_name_span(&self, row: u32) -> Result<symphonyscript_core::Span, Internal> {
         let record = *self
             .instances
             .get(row as usize)
@@ -113,6 +112,7 @@ impl Core<'_> {
         }
         index.sort_unstable();
         self.child_index = index;
+        self.index_wire_names()?;
         self.use_index.sort_unstable();
         for row in 0..self.instances.len() {
             let row = u32::try_from(row).unwrap_or(u32::MAX);
@@ -162,13 +162,25 @@ impl Core<'_> {
                     self.draw(Code::ChildNameClash, span, message);
                 }
             }
-            while other.is_none() && body != NONE {
+            let own = self.row_name_span(row)?;
+            let mut wired = self.wire_named_before(body, sym, &own)?;
+            while other.is_none() && wired.is_none() && body != NONE {
                 body = parent.get(body as usize).copied().unwrap_or(NONE);
                 if body != NONE {
                     other = self.child_named(body, sym);
+                    if other.is_none() {
+                        wired = self
+                            .wire_named(body, sym)
+                            .map(|wire| self.wire_name_span(wire))
+                            .transpose()?;
+                    }
                 }
             }
             let held = self.placeholder_named(parent.get(row as usize).copied(), sym, row);
+            let held = match (held, wired) {
+                (Some(held), wired) => Some(earliest(held, wired)),
+                (None, wired) => wired,
+            };
             let earlier = match other {
                 Some(other) => Some(earliest(self.row_name_span(other)?, held)),
                 None => held,
@@ -186,7 +198,8 @@ impl Core<'_> {
                 );
             }
         }
-        self.placeholder_clashes(&parent)
+        self.placeholder_clashes(&parent)?;
+        self.wire_clashes(&parent)
     }
 
     fn placeholder_named(
@@ -271,7 +284,7 @@ impl Core<'_> {
         Ok(())
     }
 
-    fn child_named(&self, parent: u32, sym: u32) -> Option<u32> {
+    pub fn child_named(&self, parent: u32, sym: u32) -> Option<u32> {
         if parent == NONE {
             return None;
         }
@@ -305,6 +318,17 @@ impl Core<'_> {
             .ok_or(Internal::missed("attribute"))?
             .name
             .as_str();
+        let flagged = decl.attrs.get(attr).and_then(|attr| attr.flag);
+        for at in placement.flags.0..placement.flags.1 {
+            let flag = *self
+                .ir
+                .flags
+                .get(at as usize)
+                .ok_or(Internal::missed("IR flag"))?;
+            if Some(flag.flag) == flagged {
+                return Ok((ABSENT, flag.lo, flag.hi));
+            }
+        }
         for at in placement.attrs.0..placement.attrs.1 {
             let entry = *self
                 .ir
@@ -315,23 +339,35 @@ impl Core<'_> {
                 continue;
             }
             let AttrForm::Value(root) = entry.form else {
-                return Err(Internal::missed("a flag the coverage table leaves out"));
+                return Ok((ABSENT, entry.lo, entry.hi));
             };
             return Ok((root, entry.lo, entry.hi));
         }
         Ok((NONE, 0, 0))
     }
 
-    pub fn attr_read(&mut self, row: u32, attr: usize, ty: EvalTy) -> Result<u32, Internal> {
+    pub fn attr_read(&mut self, row: u32, attr: usize, ty: EvalTy) -> Stage<u32> {
         let key = (row, u32::try_from(attr).unwrap_or(u32::MAX));
         if let Some(found) = self.attr_index.get(&key) {
-            return Ok(*found);
+            return Ok(Ok(*found));
         }
         let record = *self
             .instances
             .get(row as usize)
             .ok_or(Internal::missed("row"))?;
         let (root, lo, hi) = self.attr_source(row, attr)?;
+        let set = if root == ABSENT {
+            let placement = self.placement(record.item)?;
+            let declared = self
+                .vocabulary
+                .node_kind(record.kind)
+                .and_then(|decl| decl.attrs.get(attr))
+                .ok_or(Internal::missed("attribute"))?;
+            Some(self.set_value(placement.flags, placement.attrs, declared)?)
+        } else {
+            None
+        };
+        let root = if set.is_some() { NONE } else { root };
         let name = self
             .vocabulary
             .node_kind(record.kind)
@@ -350,14 +386,16 @@ impl Core<'_> {
             span: self.span(record.file, lo, hi),
             key: (record.file, lo),
             cyclic: false,
+            wire: false,
+            set,
         });
         self.attr_index.insert(key, at);
         self.attr_values
             .push([None, None, None, None, None, None, None]);
-        Ok(at)
+        Ok(Ok(at))
     }
 
-    fn step_row(&mut self, node: u32, row: u32, field: u32) -> Stage<End> {
+    pub fn step_row(&mut self, node: u32, row: u32, field: u32) -> Stage<End> {
         let entry = *self.ir.name(field).ok_or(Internal::missed("IR name"))?;
         if let Some(child) = self.child_named(row, entry.sym.0) {
             return Ok(Ok(End::Row(child)));
@@ -367,6 +405,16 @@ impl Core<'_> {
         }
         if let Some(env) = self.use_named(row, entry.sym.0) {
             return Ok(Ok(End::Use(env)));
+        }
+        if let Some(wire) = self.wire_named(row, entry.sym.0) {
+            if self
+                .wires
+                .get(wire as usize)
+                .is_none_or(|found| found.env != NONE)
+            {
+                return Ok(Err(Declined(Reason::PatternUse)));
+            }
+            return Ok(Ok(End::Wire(wire)));
         }
         let kind = self
             .instances
@@ -379,7 +427,10 @@ impl Core<'_> {
             .ok_or(Internal::missed("node kind"))?;
         let text = self.ir.symbols.text(entry.sym).to_string();
         let Some(attr) = decl.attrs.iter().position(|attr| attr.name == text) else {
-            if self.may_name_any(row)? || self.names_unexpanded_child(row, entry.sym.0)? {
+            if self.may_name_any(row)?
+                || self.names_unexpanded_child(row, entry.sym.0)?
+                || self.skipped_top().binary_search(&entry.sym.0).is_ok()
+            {
                 return Ok(Ok(End::Placeholder));
             }
             let span = self.span(self.file_of(node), entry.lo, entry.hi);
@@ -392,13 +443,86 @@ impl Core<'_> {
             return Ok(Ok(End::Value));
         };
         let declared = decl.attrs.get(attr).ok_or(Internal::missed("attribute"))?;
-        let Some(ty) = super::check::expected(declared) else {
+        let mut scaled = None;
+        let read_ty = if let Some(unit) = declared.unit {
+            let scale = self.unit_scale(unit.family, unit.default_unit)?;
+            if scale != 1.0 {
+                scaled = Some((unit.family, unit.default_unit, scale));
+            }
+            super::check::plain_expected(declared)
+        } else if matches!(declared.ty.scalar, symphonyscript_core::Scalar::Enum(_)) {
+            super::check::plain_expected(declared)
+        } else {
+            super::check::expected(declared)
+        };
+        let Some(ty) = read_ty else {
             return Ok(Err(Declined(super::check::attribute_reason(declared))));
         };
-        Ok(Ok(End::Attr(self.attr_read(row, attr, ty)?)))
+        let read = match self.attr_read(row, attr, ty)? {
+            Ok(read) => read,
+            Err(declined) => return Ok(Err(declined)),
+        };
+        if let Some((family, unit, scale)) = scaled {
+            let root = self
+                .attr_reads
+                .get(read as usize)
+                .map_or(NONE, |found| found.root);
+            if root == NONE {
+                return Ok(Err(Declined(Reason::UnitAttribute)));
+            }
+            let fractional =
+                crate::semantics::operators::int_range(ty).is_some() && scale.fract() != 0.0;
+            match self.default_readable(root, fractional)? {
+                Ok(true) => {}
+                Ok(false) => return Ok(Err(Declined(Reason::UnitAttribute))),
+                Err(declined) => return Ok(Err(declined)),
+            }
+            self.scaled_reads.insert(read, (family, unit));
+        }
+        Ok(Ok(End::Attr(read)))
     }
 
-    fn path_end(&mut self, node: u32, ends: &HashMap<u32, End>) -> Stage<End> {
+    fn step_wire(&mut self, node: u32, wire: u32, field: u32) -> Stage<End> {
+        let entry = *self.ir.name(field).ok_or(Internal::missed("IR name"))?;
+        let kind = self
+            .wires
+            .get(wire as usize)
+            .ok_or(Internal::missed("wire row"))?
+            .kind;
+        let decl = self
+            .vocabulary
+            .wire_kind(kind)
+            .ok_or(Internal::missed("wire kind"))?;
+        let text = self.ir.symbols.text(entry.sym).to_string();
+        let Some(attr) = decl.attrs.iter().position(|attr| attr.name == text) else {
+            let span = self.span(self.file_of(node), entry.lo, entry.hi);
+            let owner = decl.name.clone();
+            self.draw(
+                Code::UnknownAttribute,
+                span,
+                format!("the `{owner}` wire has no child, wire or attribute `{text}`"),
+            );
+            return Ok(Ok(End::Value));
+        };
+        let declared = decl.attrs.get(attr).ok_or(Internal::missed("attribute"))?;
+        let read_ty = if let Some(unit) = declared.unit {
+            if self.unit_scale(unit.family, unit.default_unit)? != 1.0 {
+                return Ok(Err(Declined(Reason::UnitAttribute)));
+            }
+            super::check::plain_expected(declared)
+        } else {
+            super::check::expected(declared)
+        };
+        let Some(ty) = read_ty else {
+            return Ok(Err(Declined(super::check::attribute_reason(declared))));
+        };
+        match self.wire_attr_read(wire, attr, ty)? {
+            Ok(read) => Ok(Ok(End::Attr(read))),
+            Err(declined) => Ok(Err(declined)),
+        }
+    }
+
+    fn path_end(&mut self, node: u32, ends: &super::column::Column<End>) -> Stage<End> {
         let (_, receiver, field, missing) = self.ir.node(node)?;
         if missing == 1 {
             return Ok(Ok(End::Placeholder));
@@ -406,6 +530,17 @@ impl Core<'_> {
         let (op, _, _, _) = self.ir.node(receiver)?;
         let start = if op == Op::Name {
             match self.bound(receiver)? {
+                DeclRef::Instance(item) if matches!(self.ir.item(item)?, ItemRec::Wire(_)) => {
+                    let mut rows = (0u32..)
+                        .zip(self.wires.iter())
+                        .filter(|(_, row)| row.item == item)
+                        .map(|(at, _)| at);
+                    match (rows.next(), rows.next()) {
+                        (Some(wire), None) => End::Wire(wire),
+                        (None, _) => End::Placeholder,
+                        (Some(_), Some(_)) => return Ok(Err(Declined(Reason::Member))),
+                    }
+                }
                 DeclRef::Instance(item) => {
                     match self.row_of_item.get(item as usize).copied().unwrap_or(NONE) {
                         NONE => self
@@ -420,7 +555,15 @@ impl Core<'_> {
                     if self.pattern_at(owner).is_some() {
                         return self.use_param_path_end(node, owner, position, field);
                     }
+                    if owner < self.functions() {
+                        self.param_paths.insert(node);
+                        return Ok(Ok(End::Placeholder));
+                    }
                     return self.loop_name_path_end(node, receiver, position, field);
+                }
+                DeclRef::Let(_) if self.names_a_function(field)? => {
+                    self.expr_members.insert(node);
+                    End::Value
                 }
                 DeclRef::Let(at) => match self.let_reference_row(at, node, field)? {
                     Ok(row) => row,
@@ -430,7 +573,11 @@ impl Core<'_> {
                     Ok(end) => end,
                     Err(declined) => return Ok(Err(declined)),
                 },
-                DeclRef::None | DeclRef::Duplicate | DeclRef::Fn(_) | DeclRef::Pattern(_) => {
+                DeclRef::None if self.bare.contains(&receiver) || self.pi.contains(&receiver) => {
+                    return Ok(Err(Declined(Reason::Member)));
+                }
+                DeclRef::None | DeclRef::Duplicate | DeclRef::Fn(_) => End::Placeholder,
+                DeclRef::Pattern(_) => {
                     return Ok(Err(Declined(Reason::Member)));
                 }
             }
@@ -441,7 +588,7 @@ impl Core<'_> {
                 End::Placeholder
             }
         } else if op == Op::Field {
-            if self.per_inst_paths.contains(&receiver) {
+            if self.per_inst_paths.contains(&receiver) || self.param_paths.contains(&receiver) {
                 return Ok(Err(Declined(Reason::Member)));
             }
             if self.array_members.contains_key(&receiver) || self.cell_sizes.contains_key(&receiver)
@@ -456,6 +603,15 @@ impl Core<'_> {
                 )?;
                 return Ok(Ok(End::Value));
             }
+            if self.expr_members.contains(&receiver)
+                && matches!(
+                    self.ir.name_text(field).unwrap_or_default(),
+                    "size" | "capacity" | "bytes"
+                )
+            {
+                self.expr_members.insert(node);
+                return Ok(Ok(End::Value));
+            }
             *ends
                 .get(&receiver)
                 .ok_or(Internal::missed("a path's receiver"))?
@@ -465,8 +621,23 @@ impl Core<'_> {
         } {
             self.array_members.insert(node, i128::from(count));
             End::Value
+        } else if matches!(
+            self.ir.name_text(field).unwrap_or_default(),
+            "size" | "capacity" | "bytes"
+        ) || self.names_a_function(field)?
+        {
+            self.expr_members.insert(node);
+            End::Value
         } else {
-            return Ok(Err(Declined(Reason::Member)));
+            if !self.written_reference_array(receiver)? {
+                return Ok(Err(Declined(Reason::Member)));
+            }
+            self.draw_at(
+                Code::UnknownAttribute,
+                node,
+                "an array has no attributes; index it first",
+            )?;
+            End::Value
         };
         match start {
             End::Row(row) => {
@@ -477,6 +648,7 @@ impl Core<'_> {
                 Ok(Ok(end))
             }
             End::Use(env) => self.step_use(node, env, field),
+            End::Wire(wire) => self.step_wire(node, wire, field),
             End::To if self.is_field_receiver(node) => Ok(Ok(End::To)),
             End::To => self.destination_path_end(node),
             End::Attr(_) => {
@@ -504,8 +676,17 @@ impl Core<'_> {
         }
         self.index_to_wires()?;
         self.misplaced_to()?;
-        let mut ends: HashMap<u32, End> = HashMap::new();
-        let mut held: HashMap<u32, Vec<Diagnostic>> = HashMap::new();
+        for (wire, env) in std::mem::take(&mut self.unrun_to_wires) {
+            let links = self.env_links(env);
+            let saved = std::mem::replace(&mut self.use_links, links);
+            let outcome = self.unrun_to_paths(wire);
+            self.use_links = saved;
+            if let Err(declined) = outcome? {
+                return Ok(Err(declined));
+            }
+        }
+        let mut ends: super::column::Column<End> = Default::default();
+        let mut held: super::column::Column<Vec<Diagnostic>> = Default::default();
         for local in 0..self.ir.op.len() {
             if self.ir.op.get(local) != Some(&Op::Field)
                 || !self.reached.get(local).copied().unwrap_or(false)
@@ -528,6 +709,7 @@ impl Core<'_> {
                     End::Row(row) => {
                         self.path_rows.insert(node, row);
                     }
+                    End::Wire(_) => return Ok(Err(Declined(Reason::Member))),
                     End::Use(_) => return Ok(Err(Declined(Reason::PatternUse))),
                     End::Attr(at) => {
                         if let Some(slot) = self.paths.get_mut(local) {
@@ -539,11 +721,15 @@ impl Core<'_> {
             }
             ends.insert(node, end);
         }
-        let mut left: Vec<(u32, Vec<Diagnostic>)> = held.into_iter().collect();
+        let mut left: Vec<(u32, Vec<Diagnostic>)> = held
+            .iter()
+            .map(|(node, faults)| (node, faults.clone()))
+            .collect();
         left.sort_by_key(|(node, _)| *node);
         for (_, faults) in left {
             self.diagnostics.extend(faults);
         }
+        self.param_path_reads()?;
         if let Err(declined) = self.resolve_use_paths()? {
             return Ok(Err(declined));
         }
@@ -557,7 +743,7 @@ impl Core<'_> {
         &mut self,
         node: u32,
         before: usize,
-        held: &mut HashMap<u32, Vec<Diagnostic>>,
+        held: &mut super::column::Column<Vec<Diagnostic>>,
     ) -> Result<(), Internal> {
         let drawn = self
             .diagnostics
@@ -604,7 +790,7 @@ impl Core<'_> {
             .body_path_faults
             .iter()
             .filter(|(_, (_, drawn))| !*drawn)
-            .map(|(node, (faults, _))| (*node, faults.clone()))
+            .map(|(node, (faults, _))| (node, faults.clone()))
             .collect();
         left.sort_by_key(|(node, _)| *node);
         for (_, faults) in left {
@@ -665,18 +851,11 @@ impl Core<'_> {
     pub fn node_reads(&self, node: u32) -> Result<Vec<u32>, Internal> {
         let mut reads: Vec<u32> = self
             .row_reads
-            .range((node, 0)..=(node, u32::MAX))
+            .row(node)
             .map(|(_, at)| *at)
-            .chain(
-                self.env_reads
-                    .range((node, 0)..=(node, u32::MAX))
-                    .map(|(_, at)| *at),
-            )
-            .chain(
-                self.inst_reads
-                    .range((node, 0)..=(node, u32::MAX))
-                    .map(|(_, at)| *at),
-            )
+            .chain(self.choice_reads.row(node))
+            .chain(self.env_reads.row(node).map(|(_, at)| *at))
+            .chain(self.inst_reads.row(node).map(|(_, at)| *at))
             .collect();
         let at = self.paths.get(self.local(node)?).copied().unwrap_or(NONE);
         if at != NONE && !reads.contains(&at) {
@@ -699,16 +878,30 @@ impl Core<'_> {
 
 impl Core<'_> {
     pub fn default_read(&self, read: &AttrRead) -> Result<CoreValue, Internal> {
-        let kind = self
-            .instances
-            .get(read.row as usize)
-            .ok_or(Internal::missed("row"))?
-            .kind;
-        let default = self
-            .vocabulary
-            .node_kind(kind)
-            .and_then(|decl| decl.attrs.get(read.attr))
-            .and_then(|attr| attr.default.clone());
+        if let Some(value) = read.set {
+            return Ok(CoreValue::Bool(value));
+        }
+        let default = if read.wire {
+            let kind = self
+                .wires
+                .get(read.row as usize)
+                .ok_or(Internal::missed("wire row"))?
+                .kind;
+            self.vocabulary
+                .wire_kind(kind)
+                .and_then(|decl| decl.attrs.get(read.attr))
+                .and_then(|attr| attr.default.clone())
+        } else {
+            let kind = self
+                .instances
+                .get(read.row as usize)
+                .ok_or(Internal::missed("row"))?
+                .kind;
+            self.vocabulary
+                .node_kind(kind)
+                .and_then(|decl| decl.attrs.get(read.attr))
+                .and_then(|attr| attr.default.clone())
+        };
         let Some(AttrDefault::Elements(values)) = default else {
             return Ok(CoreValue::Error);
         };
@@ -725,12 +918,49 @@ impl Core<'_> {
 }
 
 impl Core<'_> {
+    fn reads_a_chosen_path(&self, root: u32) -> Result<bool, Internal> {
+        if self.deferred_to.is_empty() {
+            return Ok(false);
+        }
+        let mut seen = super::column::ColumnSet::new();
+        let mut stack = vec![root];
+        while let Some(current) = stack.pop() {
+            if !seen.insert(current) {
+                continue;
+            }
+            for node in self.deep_postorder(current)? {
+                let (op, _, _, _) = self.ir.node(node)?;
+                if op == Op::Field {
+                    if self.deferred_to.iter().any(|(path, _)| *path == node) {
+                        return Ok(true);
+                    }
+                    if let Some(read) = self.path_read(node)?
+                        && !read.cyclic
+                        && read.root != NONE
+                    {
+                        stack.push(read.root);
+                    }
+                }
+                if op == Op::Name
+                    && let DeclRef::Let(at) = self.bound(node)?
+                {
+                    stack.push(self.let_root(at)?);
+                }
+            }
+        }
+        Ok(false)
+    }
+
     pub fn type_attr_reads(&mut self) -> Stage<()> {
         for at in self.attr_order.clone() {
             let Some(read) = self.attr_reads.get(at as usize).cloned() else {
                 continue;
             };
             if read.cyclic || read.root == NONE {
+                continue;
+            }
+            if self.reads_a_chosen_path(read.root)? {
+                self.untyped_reads.push(at);
                 continue;
             }
             if let Err(declined) = self.typed_in_env(&read)? {
@@ -743,7 +973,7 @@ impl Core<'_> {
 
 impl Core<'_> {
     fn index_to_wires(&mut self) -> Result<(), Internal> {
-        let mut rows: HashMap<u32, Vec<u32>> = HashMap::new();
+        let mut rows: super::column::Column<Vec<u32>> = Default::default();
         for (at, row) in self.wires.iter().enumerate() {
             rows.entry(row.item)
                 .or_default()
@@ -827,7 +1057,7 @@ impl Core<'_> {
         Ok(())
     }
 
-    fn row_owner(&self, row: u32) -> Result<String, Internal> {
+    pub fn row_owner(&self, row: u32) -> Result<String, Internal> {
         let kind = self
             .instances
             .get(row as usize)
@@ -908,7 +1138,7 @@ impl Core<'_> {
     fn row_end_ty(&self, node: u32, wire: u32, end: End) -> Option<EvalTy> {
         match end {
             End::Attr(at) => self.attr_reads.get(at as usize).map(|read| read.ty),
-            End::Value | End::Placeholder | End::Row(_) | End::Use(_) | End::To => {
+            End::Value | End::Placeholder | End::Row(_) | End::Use(_) | End::To | End::Wire(_) => {
                 self.row_choices.get(&(node, wire)).copied()
             }
         }
@@ -922,21 +1152,32 @@ impl Core<'_> {
             .wires
             .get(wire as usize)
             .ok_or(Internal::missed("wire row"))?;
-        if row.chosen {
-            self.deferred_to.push((node, wire));
-            return Ok(Ok(End::Placeholder));
-        }
-        let targets = self.wire_targets(&row);
+        let targets = if row.chosen {
+            let destination = self.wire_rec(row.item)?.destination;
+            let Some(targets) = self.runtime_targets(destination)? else {
+                self.deferred_to.push((node, wire));
+                return Ok(Ok(End::Placeholder));
+            };
+            self.runtime_to.insert(node);
+            targets
+        } else {
+            self.wire_targets(&row)
+        };
         if targets.is_empty() {
             return Ok(Ok(End::Placeholder));
         }
-        self.end_over_candidates(node, segments, &targets)
+        let links = self.env_links(row.env);
+        let saved = std::mem::replace(&mut self.use_links, links);
+        let end = self.end_over_candidates(node, segments, &targets);
+        self.use_links = saved;
+        end
     }
 
     pub fn resolve_chosen_paths(&mut self) -> Stage<()> {
         let mut deferred = std::mem::take(&mut self.deferred_to);
         deferred.sort_unstable();
-        let mut seen: HashMap<u32, (End, Option<EvalTy>)> = HashMap::new();
+        let mut seen: super::column::Column<(End, Option<EvalTy>)> = Default::default();
+        let (mut resolved, mut chose) = (Vec::new(), false);
         for (node, wire) in deferred {
             let (segments, wires) = self.segments_to_wire(node)?;
             let several = wires.len() > 1;
@@ -952,10 +1193,14 @@ impl Core<'_> {
             if targets.is_empty() {
                 continue;
             }
+            chose = true;
             if several {
                 self.wire_now = wire;
             }
+            let links = self.env_links(row.env);
+            let saved = std::mem::replace(&mut self.use_links, links);
             let end = self.end_over_candidates(node, &segments, &targets);
+            self.use_links = saved;
             self.wire_now = NONE;
             let end = match end? {
                 Ok(end) => end,
@@ -983,6 +1228,13 @@ impl Core<'_> {
             {
                 *slot = at;
             }
+            resolved.push(at);
+        }
+        if chose {
+            self.chosen_destination_cycles()?;
+        }
+        resolved.extend(std::mem::take(&mut self.untyped_reads));
+        for at in resolved {
             let read = self
                 .attr_reads
                 .get(at as usize)
@@ -1013,7 +1265,10 @@ impl Core<'_> {
             return Ok(Ok(End::Placeholder));
         };
         if !several {
-            return Ok(Ok(End::Attr(self.attr_read(row, attr, ty)?)));
+            return match self.attr_read(row, attr, ty)? {
+                Ok(read) => Ok(Ok(End::Attr(read))),
+                Err(declined) => Ok(Err(declined)),
+            };
         }
         if let Some((other, _, _)) = found.iter().find(|(_, _, own)| *own != ty).copied() {
             let name = self
@@ -1038,6 +1293,14 @@ impl Core<'_> {
             )?;
             return Ok(Ok(End::Value));
         }
+        for (row, attr, own) in found {
+            match self.attr_read(row, attr, own)? {
+                Ok(read) => {
+                    self.choice_reads.insert((node, read));
+                }
+                Err(declined) => return Ok(Err(declined)),
+            }
+        }
         self.to_choices.insert(node, ty);
         if self.wire_now != NONE {
             self.row_choices.insert((node, self.wire_now), ty);
@@ -1045,7 +1308,7 @@ impl Core<'_> {
         Ok(Ok(End::Value))
     }
 
-    fn candidate_attr(
+    pub fn candidate_attr(
         &mut self,
         node: u32,
         segments: &[u32],
@@ -1074,10 +1337,15 @@ impl Core<'_> {
                     target = next;
                     continue;
                 }
+                Some(End::Wire(wire)) if !several => {
+                    target = End::Wire(wire);
+                    continue;
+                }
                 Some(_) => return Ok(Ok(Err(End::Placeholder))),
                 None => {}
             }
             let owner = match target {
+                End::Wire(_) => return Ok(Err(Declined(Reason::Member))),
                 End::Row(row) if self.may_name_any(row)? => {
                     return Ok(Ok(Err(End::Placeholder)));
                 }
@@ -1112,6 +1380,28 @@ impl Core<'_> {
         }
         let target = match target {
             End::Row(row) => row,
+            End::Wire(wire) => {
+                let kind = self
+                    .wires
+                    .get(wire as usize)
+                    .ok_or(Internal::missed("wire row"))?
+                    .kind;
+                let decl = self
+                    .vocabulary
+                    .wire_kind(kind)
+                    .ok_or(Internal::missed("wire kind"))?;
+                let name = self.ir.symbols.text(entry.sym).to_string();
+                if decl.attrs.iter().any(|attr| attr.name == name) {
+                    return Ok(self.step_wire(node, wire, *last)?.map(Err));
+                }
+                let owner = decl.name.clone();
+                self.draw(
+                    missing,
+                    span,
+                    format!("the destination, the `{owner}` wire, has no attribute `{name}`"),
+                );
+                return Ok(Ok(Err(End::Value)));
+            }
             End::Use(env) => {
                 let owner = self.use_pattern_name(env)?;
                 let name = self.ir.symbols.text(entry.sym).to_string();
@@ -1154,13 +1444,21 @@ impl Core<'_> {
             return Ok(Ok(Err(End::Value)));
         };
         let declared = decl.attrs.get(attr).ok_or(Internal::missed("attribute"))?;
-        let Some(ty) = super::check::expected(declared) else {
+        let read_ty = if let Some(unit) = declared.unit {
+            if self.unit_scale(unit.family, unit.default_unit)? != 1.0 {
+                return Ok(Err(Declined(Reason::UnitAttribute)));
+            }
+            super::check::plain_expected(declared)
+        } else {
+            super::check::expected(declared)
+        };
+        let Some(ty) = read_ty else {
             return Ok(Err(Declined(super::check::attribute_reason(declared))));
         };
         Ok(Ok(Ok((target, attr, ty))))
     }
 
-    fn to_step(
+    pub fn to_step(
         &self,
         target: End,
         sym: crate::semantics::ir::flat::Sym,
@@ -1173,13 +1471,16 @@ impl Core<'_> {
                 if let Some(child) = self.use_child_named(row, sym)? {
                     return Ok(Some(End::Row(child)));
                 }
+                if let Some(wire) = self.wire_named(row, sym.0) {
+                    return Ok(Some(End::Wire(wire)));
+                }
                 Ok(self.use_named(row, sym.0).map(End::Use))
             }
             End::Use(env) => {
                 CountedWalk::CorePathStep.step();
                 self.use_item_named(env, sym)
             }
-            End::To | End::Attr(_) | End::Placeholder | End::Value => Ok(None),
+            End::To | End::Attr(_) | End::Placeholder | End::Value | End::Wire(_) => Ok(None),
         }
     }
 }
@@ -1227,7 +1528,7 @@ impl Core<'_> {
         Ok(false)
     }
 
-    fn may_name_any(&self, row: u32) -> Result<bool, Internal> {
+    pub fn may_name_any(&self, row: u32) -> Result<bool, Internal> {
         let record = *self
             .instances
             .get(row as usize)
@@ -1276,7 +1577,9 @@ impl Core<'_> {
                 End::Attr(at) => {
                     self.inst_reads.insert((node, inst), at);
                 }
-                End::Row(_) | End::Use(_) | End::To => return Ok(Err(Declined(Reason::Member))),
+                End::Row(_) | End::Use(_) | End::To | End::Wire(_) => {
+                    return Ok(Err(Declined(Reason::Member)));
+                }
                 End::Value | End::Placeholder => {}
             }
             if first.is_none()
@@ -1291,11 +1594,17 @@ impl Core<'_> {
 
 impl Core<'_> {
     pub fn read_env(&self, read: &AttrRead) -> Result<u32, Internal> {
-        let env = self
-            .instances
-            .get(read.row as usize)
-            .ok_or(Internal::missed("row"))?
-            .env;
+        let env = if read.wire {
+            self.wires
+                .get(read.row as usize)
+                .ok_or(Internal::missed("wire row"))?
+                .env
+        } else {
+            self.instances
+                .get(read.row as usize)
+                .ok_or(Internal::missed("row"))?
+                .env
+        };
         if env == NONE || read.root == NONE || read.cyclic {
             return Ok(NONE);
         }
@@ -1313,12 +1622,19 @@ impl Core<'_> {
 
     pub fn typed_in_env(&mut self, read: &AttrRead) -> Stage<Fact> {
         let env = self.read_env(read)?;
-        if env == NONE {
-            return self.ensure_typed(read.root);
+        let open = (read.root, env, self.inst);
+        if !self.open_reads.insert(open) {
+            return Err(Internal::missed("an open declaration outside every cycle"));
         }
-        let saved = self.enter_env(env);
-        let typed = self.ensure_typed(read.root);
-        self.leave_env(saved);
+        let typed = if env == NONE {
+            self.ensure_typed(read.root)
+        } else {
+            let saved = self.enter_env(env);
+            let typed = self.ensure_typed(read.root);
+            self.leave_env(saved);
+            typed
+        };
+        self.open_reads.remove(&open);
         typed
     }
 }
@@ -1373,7 +1689,7 @@ impl Core<'_> {
                 .pattern_items
                 .iter()
                 .filter(|(_, at)| **at == pattern)
-                .map(|(item, _)| *item)
+                .map(|(item, _)| item)
                 .collect();
             for env in 0..u32::try_from(self.envs.len()).unwrap_or(0) {
                 let Some(record) = self.envs.get(env as usize).copied() else {
@@ -1413,7 +1729,7 @@ impl Core<'_> {
     }
 
     fn use_paths_in(&mut self, pattern: u32, env: u32, nodes: &[(u32, u32)]) -> Stage<()> {
-        let mut ends: HashMap<u32, End> = HashMap::new();
+        let mut ends: super::column::Column<End> = Default::default();
         for (at, node) in nodes {
             if *at != pattern {
                 continue;
@@ -1427,6 +1743,7 @@ impl Core<'_> {
                     End::Row(row) => {
                         self.env_path_rows.insert((*node, env), row);
                     }
+                    End::Wire(_) => return Ok(Err(Declined(Reason::Member))),
                     End::Use(_) => return Ok(Err(Declined(Reason::PatternUse))),
                     End::Attr(read) => {
                         self.env_reads.insert((*node, env), read);
@@ -1605,7 +1922,7 @@ enum Written {
 
 impl Core<'_> {
     pub fn written_paths(&mut self, pattern: u32) -> Result<(), Internal> {
-        let mut ends: HashMap<u32, Written> = HashMap::new();
+        let mut ends: super::column::Column<Written> = Default::default();
         for local in 0..self.ir.op.len() {
             if self.ir.op.get(local) != Some(&Op::Field) {
                 continue;
@@ -1745,6 +2062,9 @@ impl Core<'_> {
         if decl.attrs.iter().any(|attr| attr.name == text) {
             return Ok(Written::Attr);
         }
+        if self.skipped_top().binary_search(&entry.sym.0).is_ok() {
+            return Ok(Written::Value);
+        }
         let kind_name = decl.name.clone();
         let name = self
             .ir
@@ -1852,7 +2172,9 @@ impl Core<'_> {
                         .or_default()
                         .push((node, at));
                 }
-                End::Row(_) | End::Use(_) | End::To => return Ok(Err(Declined(Reason::Member))),
+                End::Row(_) | End::Use(_) | End::To | End::Wire(_) => {
+                    return Ok(Err(Declined(Reason::Member)));
+                }
                 End::Value | End::Placeholder => {}
             }
             if first.is_none()
@@ -1870,6 +2192,13 @@ impl Core<'_> {
         let root = self.let_root(at)?;
         if self.body_of.get(self.local(root)?).copied().unwrap_or(NONE) != NONE {
             let Some(count) = self.literal_array_length(root, field)? else {
+                if matches!(
+                    self.ir.name_text(field).unwrap_or_default(),
+                    "size" | "capacity" | "bytes"
+                ) {
+                    self.expr_members.insert(node);
+                    return Ok(Ok(End::Value));
+                }
                 return Ok(Err(Declined(Reason::Member)));
             };
             self.array_members.insert(node, i128::from(count));
@@ -1894,8 +2223,25 @@ impl Core<'_> {
         if !fact.node {
             return self.let_member(node, field, &fact);
         }
+        if !fact.dims.is_empty()
+            && matches!(
+                self.ir.name_text(field).unwrap_or_default(),
+                "size" | "capacity" | "bytes"
+            )
+        {
+            self.expr_members.insert(node);
+            return Ok(Ok(End::Value));
+        }
         if !fact.dims.is_empty() {
-            return Ok(Err(Declined(Reason::Member)));
+            if self.names_a_function(field)? {
+                return Ok(Err(Declined(Reason::Member)));
+            }
+            self.draw_at(
+                Code::UnknownAttribute,
+                node,
+                "an array has no attributes; index it first",
+            )?;
+            return Ok(Ok(End::Value));
         }
         let (drawn, stop) = (self.diagnostics.len(), self.stop.clone());
         let value = self.evaluate(root, EvalTy::Exact)?;
@@ -1923,18 +2269,57 @@ impl Core<'_> {
                 .insert(node, i128::from(length.unwrap_or(0)));
             return Ok(Ok(End::Value));
         }
+        if text == "bytes" && numeric && !fact.dims.is_empty() {
+            self.expr_members.insert(node);
+            return Ok(Ok(End::Value));
+        }
         let declared = self
             .ir
             .name(field)
             .and_then(|entry| self.decl.get(entry.sym.0 as usize))
             .is_some_and(|decl| *decl != DeclRef::None);
-        if member && numeric && fact.dims.is_empty() && !declared {
+        let special = text == "stepped";
+        if numeric && text == "dropped" {
+            self.draw_at(
+                Code::UnbuiltConstruct,
+                node,
+                "a cell's `dropped` (SPEC §12.1) is a construct this compiler does not build",
+            )?;
+            return Ok(Ok(End::Placeholder));
+        }
+        if (member || !special) && numeric && fact.dims.is_empty() && !declared {
             self.draw_at(
                 Code::UnknownAttribute,
                 node,
                 format!(
                     "`.{text}` reads an attribute of an instance or a wire, and this is a value"
                 ),
+            )?;
+            return Ok(Ok(End::Value));
+        }
+        if numeric && !fact.dims.is_empty() && text == "map" {
+            self.draw_at(
+                Code::UnbuiltConstruct,
+                node,
+                "an array's `map` (SPEC §5.7) is a construct this compiler does not build",
+            )?;
+            return Ok(Ok(End::Placeholder));
+        }
+        let function = self
+            .ir
+            .name(field)
+            .and_then(|entry| self.decl.get(entry.sym.0 as usize))
+            .is_some_and(|decl| matches!(decl, DeclRef::Fn(_)));
+        if !member
+            && !function
+            && !matches!(text.as_str(), "bytes" | "dropped")
+            && numeric
+            && !fact.dims.is_empty()
+        {
+            self.draw_at(
+                Code::UnknownAttribute,
+                node,
+                "an array has no attributes; index it first",
             )?;
             return Ok(Ok(End::Value));
         }
@@ -1948,10 +2333,10 @@ impl Core<'_> {
             return Ok(*known);
         }
         let mut lets = vec![at];
-        let mut seen = std::collections::HashSet::new();
+        let mut seen = super::column::ColumnSet::new();
         let found = self.path_free_walk(&mut lets, &mut seen);
         let free = found?;
-        for at in seen {
+        for at in seen.iter() {
             if free {
                 self.path_free.insert(at, true);
             }
@@ -1963,7 +2348,7 @@ impl Core<'_> {
     fn path_free_walk(
         &self,
         lets: &mut Vec<u32>,
-        seen: &mut std::collections::HashSet<u32>,
+        seen: &mut super::column::ColumnSet,
     ) -> Result<bool, Internal> {
         while let Some(at) = lets.pop() {
             if !seen.insert(at) {
@@ -2081,5 +2466,29 @@ impl Core<'_> {
         };
         let inside = (0..i128::from(*outer)).contains(&position);
         Ok((numeric && inside && *inner != ANY_LENGTH && *outer != ANY_LENGTH).then_some(*inner))
+    }
+}
+
+impl Core<'_> {
+    fn written_reference_array(&self, receiver: u32) -> Result<bool, Internal> {
+        let mut at = receiver;
+        while self.ir.node(at)?.0 == Op::Slice {
+            at = self.ir.node(at)?.1;
+        }
+        if self.ir.node(at)?.0 != Op::Array {
+            return Ok(false);
+        }
+        let elements = self.operands(at)?;
+        if elements.is_empty() {
+            return Ok(false);
+        }
+        for element in elements {
+            if self.ir.node(element)?.0 != Op::Name
+                || !matches!(self.bound(element)?, DeclRef::Instance(_))
+            {
+                return Ok(false);
+            }
+        }
+        Ok(true)
     }
 }

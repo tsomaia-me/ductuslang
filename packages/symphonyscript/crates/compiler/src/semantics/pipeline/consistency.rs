@@ -70,12 +70,12 @@ impl Core<'_> {
 
     fn loop_consistency(&mut self) -> Result<(), Internal> {
         let mut by_env: BTreeMap<u32, Vec<(u32, usize, CoreValue)>> = BTreeMap::new();
-        for ((env, read, class), value) in &self.loop_reads {
+        for ((env, read, class), value) in self.loop_reads.iter() {
             CountedWalk::CoreUse.step();
             by_env
-                .entry(*env)
+                .entry(env)
                 .or_default()
-                .push((*read, *class, value.clone()));
+                .push((read, class as usize, value.clone()));
         }
         let mut drawn = std::collections::BTreeSet::new();
         for (env, reads) in by_env {

@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use super::body_instance::BodyInstance;
 use super::core::{Core, Stage};
 use super::decl_ref::DeclRef;
@@ -230,7 +228,7 @@ impl Core<'_> {
         &mut self,
         node: u32,
         sym: u32,
-        memo: &mut HashMap<(u32, u32), Option<(u32, DeclRef)>>,
+        memo: &mut super::column::PairColumn<Option<(u32, DeclRef)>>,
     ) -> Result<Option<(u32, DeclRef)>, Internal> {
         let mut owner = self.body_of.get(self.local(node)?).copied().unwrap_or(NONE);
         let mut walked = Vec::new();
@@ -555,6 +553,9 @@ impl Core<'_> {
                 self.not_callables_drawn.insert(callee);
                 return Ok(Ok(Fact::PLACEHOLDER));
             }
+            if self.unbound_destination_callee(node)? {
+                return Ok(Err(Declined(Reason::DestinationValue)));
+            }
             if self.unknown_callee(node)? {
                 return Ok(Ok(Fact::PLACEHOLDER));
             }
@@ -608,7 +609,8 @@ impl Core<'_> {
         }
         let values = self.key_values(function, &args, &reactive)?;
         let key = (function, NONE, facts.clone(), reactive.clone());
-        let held: Vec<Option<MemoArg>> = values.iter().map(MemoArg::of).collect();
+        let held: Vec<Option<MemoArg>> =
+            values.iter().map(|value| self.store.held(value)).collect();
         let found = if values.is_empty() {
             self.body_index.get(&key).copied()
         } else {
@@ -660,7 +662,19 @@ impl Core<'_> {
             .value;
         let outer = std::mem::replace(&mut self.inst, body);
         let fact = self.fact(value);
+        let width = if self.is_reactive(value)?
+            && fact
+                .as_ref()
+                .is_ok_and(|fact| fact.leaf == Leaf::Float && fact.dims.is_empty())
+        {
+            Some(self.reactive_width(value)?)
+        } else {
+            None
+        };
         self.inst = outer;
+        if let Some(width) = width {
+            self.call_widths.insert((key, node), width);
+        }
         Ok(Ok(fact?))
     }
 
@@ -908,6 +922,7 @@ impl Core<'_> {
                 && !self.unknown_callee(node)?
                 && self.native_miscount(node)?.is_none()
                 && self.native_named(node)?.is_none()
+                && !self.member_dot_candidate(node)?
             {
                 return Ok(true);
             }
@@ -934,10 +949,21 @@ impl Core<'_> {
     }
 
     pub fn function_values(&mut self) -> Result<(), Internal> {
-        let mut callees = std::collections::HashSet::new();
+        let mut callees = super::column::ColumnSet::new();
         for local in 0..self.ir.op.len() {
             if matches!(self.ir.op.get(local), Some(Op::Call | Op::NamedCall)) {
                 callees.insert(self.ir.a.get(local).copied().unwrap_or(NONE));
+            }
+        }
+        let mut mapped = super::column::ColumnSet::new();
+        let dotted: Vec<u32> = self.dot_calls.iter().collect();
+        for call in dotted {
+            let (op, callee, _, _) = self.ir.node(call)?;
+            if op == Op::Call
+                && self.ir.node(callee)?.0 == Op::Name
+                && self.ir.name_text(self.ir.node(callee)?.1) == Some("map")
+            {
+                mapped.extend(self.arguments(call)?.into_iter().skip(1));
             }
         }
         for local in 0..self.ir.op.len() {
@@ -946,6 +972,7 @@ impl Core<'_> {
             if !reached
                 || !matches!(self.bind.get(local), Some(DeclRef::Fn(_)))
                 || callees.contains(&node)
+                || mapped.contains(&node)
                 || self.is_history_target(node)
             {
                 continue;
@@ -1345,11 +1372,12 @@ impl Core<'_> {
             let name = self.ir.node(callee)?.1;
             let text = self.ir.name_text(name).unwrap_or_default().to_string();
             let span = self.node_span(callee)?;
-            self.draw(
-                Code::NotCallable,
-                span,
-                format!("`{text}` is not a function"),
-            );
+            let summary = if self.dot_calls.contains(&node) {
+                "only a function or a built-in is called".to_string()
+            } else {
+                format!("`{text}` is not a function")
+            };
+            self.draw(Code::NotCallable, span, summary);
         }
         Ok(())
     }
@@ -1479,5 +1507,55 @@ impl Core<'_> {
         }
         self.inst = outer;
         Ok(found)
+    }
+}
+
+impl Core<'_> {
+    pub fn member_dot_candidate(&self, node: u32) -> Result<bool, Internal> {
+        let callee = self.ir.node(node)?.1;
+        Ok(
+            (self.member_dot_shape(node)? || self.unknown_methods.contains(&node))
+                && self.bound(callee)? == DeclRef::None,
+        )
+    }
+
+    pub fn member_dot_shape(&self, node: u32) -> Result<bool, Internal> {
+        let (op, callee, _, _) = self.ir.node(node)?;
+        if op != Op::Call || !self.dot_calls.contains(&node) || self.ir.node(callee)?.0 != Op::Name
+        {
+            return Ok(false);
+        }
+        let (_, name, _, _) = self.ir.node(callee)?;
+        let member = matches!(
+            self.ir.name_text(name).unwrap_or_default(),
+            "size" | "capacity" | "bytes" | "keys" | "values" | "map"
+        );
+        Ok(member && !self.arguments(node)?.is_empty())
+    }
+}
+
+impl Core<'_> {
+    fn unbound_destination_callee(&mut self, node: u32) -> Result<bool, Internal> {
+        let callee = self.ir.node(node)?.1;
+        if self.ir.node(callee)?.0 != Op::Name || self.bound(callee)? != DeclRef::None {
+            return Ok(false);
+        }
+        if self.destination_nodes.is_none() {
+            let mut held = super::column::ColumnSet::new();
+            for item in &self.ir.items {
+                let crate::semantics::ir::flat::ItemRec::Wire(wire) = item else {
+                    continue;
+                };
+                for found in self.postorder(wire.destination)? {
+                    CountedWalk::CoreWireDestination.step();
+                    held.insert(found);
+                }
+            }
+            self.destination_nodes = Some(held);
+        }
+        Ok(self
+            .destination_nodes
+            .as_ref()
+            .is_some_and(|held| held.contains(&node)))
     }
 }

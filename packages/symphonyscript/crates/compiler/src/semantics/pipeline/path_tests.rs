@@ -97,17 +97,24 @@ fn a_path_draws_its_unknown_attribute_cycle_and_type_faults_beside_its_valid_twi
 }
 
 #[test]
-fn a_path_from_a_let_or_a_member_to_an_instance_or_through_a_function_cycle_stays_with_the_old_engine()
+fn a_path_from_a_let_or_through_a_function_cycle_stays_with_the_old_engine_and_a_unit_attributes_read_draws_as_there()
  {
     let vocabulary = symphonyscript_fixtures::vocabulary();
     let new = Compiler::new(&vocabulary).expect("the vocabulary compiles");
     for text in [
         "let n = f()\nfn f(): c.gain\nClip c | gain=n:\n    Note/n\n",
         "let n = f()\nfn f(): m\nlet m = c.gain\nClip c | gain=n:\n    Note/n\n",
-        "Clip c:\n    Note as h /60\nClip d:\n    Note/c.h.length\n",
     ] {
         assert!(new.checked_by_new_core(&[source(text)]).is_none(), "{text}");
     }
+    let old = Compiler::new(&vocabulary)
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
+    let text = "Clip c:\n    Note as h /60\nClip d:\n    Note/c.h.length\n";
+    let found = new
+        .checked_by_new_core(&[source(text)])
+        .unwrap_or_else(|| panic!("the new core takes {text}"));
+    assert_eq!(found, old.check(&[source(text)]), "{text}");
 }
 
 const BODY_PATHS: [&str; 9] = [
@@ -319,5 +326,17 @@ fn a_path_reaching_a_cell_draws_its_cell_faults_beside_its_valid_twin() {
             .filter(|code| *code != Code::NoEntryInstance && *code != Code::UnreachableInstance)
             .collect();
         assert_eq!(found, codes, "{text}");
+    }
+}
+
+#[test]
+fn a_path_from_a_variant_or_from_pi_stays_with_the_old_engine() {
+    let vocabulary = symphonyscript_fixtures::vocabulary();
+    let new = Compiler::new(&vocabulary).expect("the vocabulary compiles");
+    for text in [
+        "let z = Saw.gain\nClip c | gain=z:\n    Note\n",
+        "Clip c | gain=pi.x:\n    Note\n",
+    ] {
+        assert!(new.checked_by_new_core(&[source(text)]).is_none(), "{text}");
     }
 }

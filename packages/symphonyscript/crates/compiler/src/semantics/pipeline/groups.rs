@@ -224,7 +224,7 @@ impl Core<'_> {
         for (group, members) in groups.iter().enumerate() {
             for member in members {
                 let root = self.cell_root(*member)?;
-                let rule: HashSet<u32> = self.postorder(root)?.into_iter().collect();
+                let rule: super::column::ColumnSet = self.postorder(root)?.into_iter().collect();
                 let reads = all.get(*member as usize).cloned().unwrap_or_default();
                 for (target, node) in reads.history {
                     if group_of.get(target as usize).copied() != u32::try_from(group).ok() {
@@ -401,9 +401,9 @@ impl Core<'_> {
         Ok(())
     }
 
-    fn group_readers(&self, members: &[u32]) -> HashMap<u32, Vec<usize>> {
-        let inside: HashSet<u32> = members.iter().copied().collect();
-        let mut readers: HashMap<u32, Vec<usize>> = HashMap::new();
+    fn group_readers(&self, members: &[u32]) -> super::column::Column<Vec<usize>> {
+        let inside: super::column::ColumnSet = members.iter().copied().collect();
+        let mut readers: super::column::Column<Vec<usize>> = Default::default();
         for (position, member) in members.iter().enumerate() {
             let Some(reads) = self.cell_reads.get(*member as usize) else {
                 continue;
@@ -515,7 +515,7 @@ impl Core<'_> {
         let warned = self.warned.clone();
         let mut queue: std::collections::BTreeSet<usize> = (0..members.len()).collect();
         let mut budget = members.len().saturating_mul(SETTLE_ROUNDS);
-        let at_of: HashMap<u32, usize> = members
+        let at_of: super::column::Column<usize> = members
             .iter()
             .enumerate()
             .map(|(at, member)| (*member, at))
@@ -552,7 +552,7 @@ impl Core<'_> {
             Ok(order) => order,
             Err(declined) => return Ok(Err(declined)),
         };
-        let mut settled = HashSet::new();
+        let mut settled = super::column::ColumnSet::new();
         for at in order.iter().copied() {
             if self.is_cyclic_cell(at) {
                 continue;
@@ -623,7 +623,7 @@ impl Core<'_> {
     }
 
     pub fn check_cells(&mut self) -> Stage<()> {
-        let mut checked = HashSet::new();
+        let mut checked = super::column::ColumnSet::new();
         for at in self.cell_order.clone().into_iter().rev() {
             if self.is_cyclic_cell(at) {
                 continue;
@@ -664,7 +664,12 @@ impl Core<'_> {
     fn group_unrun(&self, members: &[u32]) -> bool {
         let mut own = false;
         for member in members {
-            if !self.derived(*member) {
+            let clocked = self
+                .ir
+                .cells
+                .get(*member as usize)
+                .is_some_and(|rec| rec.clock.0 != rec.clock.1);
+            if !self.derived(*member) || clocked {
                 return false;
             }
             let faulty = self
@@ -757,7 +762,7 @@ impl Core<'_> {
                 }
             }
         }
-        let mut earliest: HashMap<u32, ((u32, u32), u32, u32)> = HashMap::new();
+        let mut earliest: super::column::Column<((u32, u32), u32, u32)> = Default::default();
         for (reader, target, node) in reads {
             let (Some(from), Some(to)) = (
                 component_of.get(reader as usize).copied(),
@@ -860,7 +865,7 @@ fn open_kind(fact: &Fact) -> bool {
 fn present_order(component: &[u32], all: &[CellReads]) -> Option<Vec<u32>> {
     let mut sorted = component.to_vec();
     sorted.sort_unstable();
-    let mut state: HashMap<u32, u8> = HashMap::new();
+    let mut state: super::column::Column<u8> = Default::default();
     let mut order = Vec::with_capacity(sorted.len());
     for first in sorted.iter().copied() {
         if state.contains_key(&first) {
@@ -940,7 +945,7 @@ impl Core<'_> {
         let reads: Vec<(u32, u32)> = self
             .cyclic_let_reads
             .iter()
-            .map(|(node, at)| (*node, *at))
+            .map(|(node, at)| (node, *at))
             .collect();
         if reads.is_empty() {
             return Ok(Ok(()));

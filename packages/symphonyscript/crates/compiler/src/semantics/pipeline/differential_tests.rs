@@ -2337,6 +2337,27 @@ fn a_no_entry_instance_alone_moves_only_for_a_program_whose_placement_for_runs_n
             "state s(1)\nlet ys = [s]\nClip c:\n    for x in ys:\n        Note/x\n",
             true,
         ),
+        (
+            "Clip c:\n    [for i: i32, x in 0..4: Note/(60 + i + x)]\n",
+            true,
+        ),
+        ("Clip c:\n    [for i: i32 in 0..4: Note/zz]\n", false),
+        (
+            "pattern Arp(default root, steps = 4):\n    for i in 0..steps:\n        Note/(root + i)\nClip c:\n    Arp/48 | steps=\n",
+            true,
+        ),
+        (
+            "pattern Arp(default root, steps = 4):\n    for i in 0..4:\n        Note/(root + i)\nClip c:\n    Arp/48 | steps=\n",
+            false,
+        ),
+        (
+            "state a(0.5)\n washes = [0.2, 0.5]\nClip c:\n    [for i, p in washes: Note/p]\n",
+            true,
+        ),
+        (
+            "state a(0.5)\nwashes = [0.2, 0.5]\nClip c:\n    [for i, p in [1]: Note/p]\n",
+            false,
+        ),
         ("Clip c:\n    for x in [1, 2]:\n        Note/x\n", false),
         ("Clip c:\n    for x in [1, 2]:\n        Note/zz\n", false),
         (
@@ -4051,4 +4072,434 @@ fn a_plain_value_in_a_body_reads_in_the_default_unit_its_call_reaches_and_a_defa
         );
     }
     assert_eq!(programs, 281);
+}
+
+const MEMBER_CALLS_NOTHING_USES: [&str; 7] = [
+    "let n = 1.g()\nClip twin:\n    Note/61 when true\n",
+    "let x = 1.g(x)\nClip c:\n    Note/1\n",
+    "let xs = [1, 2]\nlet n = xs.size()\n",
+    "let n = [1, 2][0].keys()\nClip twin:\n    Note/61 when true\n",
+    "let xs = [1, 2]\nlet n = xs.size()\nlet m = n + 1\nClip twin:\n    Note/61 when true\n",
+    "fn f(): [1, 2].size()\nClip twin:\n    Note/61 when true\n",
+    "Clip twin:\n    Note/61 when true\nlet xs = [1, 2]\nlet n = xs.capacity(1 + true)\n",
+];
+
+#[test]
+fn a_member_call_in_a_value_nothing_uses_draws_nothing_where_the_old_engine_draws_at_it_476() {
+    let old = Compiler::new(&symphonyscript_fixtures::vocabulary())
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
+    let new =
+        Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("the vocabulary compiles");
+    for text in MEMBER_CALLS_NOTHING_USES {
+        let sources = [source(text)];
+        let found = new
+            .checked_by_new_core(&sources)
+            .expect("the new core takes the program");
+        assert!(
+            found
+                .iter()
+                .all(|diagnostic| diagnostic.code == crate::diagnostics::Code::NoEntryInstance),
+            "{text}"
+        );
+        let classes = reviewed::moved(text, &drawn(&old.check(&sources)), &drawn(&found))
+            .unwrap_or_else(|unexplained| panic!("{text}: {unexplained:?}"));
+        assert!(
+            classes.len() == 1 && classes.iter().all(|class| class.ledger == "476"),
+            "{text}"
+        );
+    }
+}
+
+const NAMES_IN_BODIES_OF_FAULTY_HEADS: [&str; 9] = [
+    "Plant x:\n    for i, s in stages:\n        Valve/s when i( < 2\n",
+    "Clip m:\n    for i in zz:\n        Plays | gain=to.hook: (if true then chorus else verse)\nClip verse:\n    Note\nClip chorus:\n    Note as hook\n",
+    "Clip m:\n    for i in zz:\n        Plays | gain=to.hook: chorus\nClip chorus:\n    Note as hook\n",
+    "state section(0)\nlet sections = [verse, chorus, bridge]\nClip intro:\n    for s in sections:\n        Starts+: s\nClip outro:\n    Plays: sections[section]\n",
+    "Rig r:\n    for i in zz:\n        Lamp | foo=1\n",
+    "Rig r:\n    for i in zz:\n        Lamp~\n",
+    "pattern P():\n    Lamp\nRig r:\n    for i in zz:\n        P | foo=1\n",
+    "Clip intro:\n    for s in zz:\n        Starts | foo=1: intro\n",
+    "Clip intro:\n    for s in zz:\n        Starts* | foo=1: s\n",
+];
+
+#[test]
+fn a_member_name_in_the_body_of_a_loop_whose_head_holds_a_fault_draws_as_in_the_repaired_program_476()
+ {
+    let old = Compiler::new(&symphonyscript_fixtures::vocabulary())
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
+    let new =
+        Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("the vocabulary compiles");
+    for text in NAMES_IN_BODIES_OF_FAULTY_HEADS {
+        let sources = [source(text)];
+        let found = new
+            .checked_by_new_core(&sources)
+            .expect("the new core takes the program");
+        let classes = reviewed::moved(text, &drawn(&old.check(&sources)), &drawn(&found))
+            .unwrap_or_else(|unexplained| panic!("{text}: {unexplained:?}"));
+        assert!(
+            classes.len() == 1 && classes.iter().all(|class| class.ledger == "476"),
+            "{text}"
+        );
+    }
+}
+
+#[test]
+fn a_path_read_of_a_unit_attribute_whose_value_its_family_refuses_reads_the_attributes_family_476()
+{
+    let old = Compiler::new(&symphonyscript_fixtures::vocabulary())
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
+    let new =
+        Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("the vocabulary compiles");
+    for text in [
+        "Scene dusk | hold=2bars:\n    Cue/0\nScene night | hold=dusk.hold:\n    Cue/0\n",
+        "Scene night | hold=dusk.hold:\n    Cue/0\nScene dusk | hold=2bars:\n    Cue/0\n",
+    ] {
+        let sources = [source(text)];
+        let found = new
+            .checked_by_new_core(&sources)
+            .expect("the new core takes the program");
+        let classes = reviewed::moved(text, &drawn(&old.check(&sources)), &drawn(&found))
+            .unwrap_or_else(|unexplained| panic!("{text}: {unexplained:?}"));
+        assert!(
+            classes.len() == 1 && classes.iter().all(|class| class.ledger == "476"),
+            "{text}"
+        );
+    }
+}
+
+#[test]
+fn a_path_through_a_named_wire_of_a_faulty_line_placement_reads_the_wire_476() {
+    let old = Compiler::new(&symphonyscript_fixtures::vocabulary())
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
+    let new =
+        Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("the vocabulary compiles");
+    let text = "Rig stage:\n    Lamp as wash\n\nScene dusk | hold=8:\n    Cue as first /1 | fade=2\n\nScene night |( hold=dusk.hold * 1.5:\n    Cue/0 | fade=dusk.first.fade\n    Dims as soften | depth=0.4: stage.wash\n\nScene dawn | hold=night.soften.depth * 10:\n    Cue/0\n";
+    let sources = [source(text)];
+    let found = new
+        .checked_by_new_core(&sources)
+        .expect("the new core takes the program");
+    let classes = reviewed::moved(text, &drawn(&old.check(&sources)), &drawn(&found))
+        .unwrap_or_else(|unexplained| panic!("{text}: {unexplained:?}"));
+    assert!(
+        classes.len() == 1 && classes.iter().all(|class| class.ledger == "476"),
+        "{text}"
+    );
+}
+
+#[test]
+fn an_attribute_set_twice_one_entry_a_refused_bare_name_draws_duplicate_attribute_476() {
+    let old = Compiler::new(&symphonyscript_fixtures::vocabulary())
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
+    let new =
+        Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("the vocabulary compiles");
+    for text in [
+        "Rig stage:\n    Lamp as wash\n\nScene dusk | hold=8:\n    Cue as first /1 | fade=2\n\nScene night | hold=dusk.hold * 1.5:\n    Cue/0 | fade=dusk.first.u8 fade\n    Dims as soften | depth=0.4: stage.wash\n\nScene dawn | hold=night.soften.depth * 10:\n    Cue/0\n",
+        "Scene night | hold=1:\n    Cue/0 | fade=1 fade\n",
+        "Scene night | hold=1:\n    Cue/0 | fade fade=1\n",
+        "Scene night | hold=1:\n    Cue/0 | fade=zz fade\n",
+    ] {
+        let sources = [source(text)];
+        let found = new
+            .checked_by_new_core(&sources)
+            .expect("the new core takes the program");
+        let classes = reviewed::moved(text, &drawn(&old.check(&sources)), &drawn(&found))
+            .unwrap_or_else(|unexplained| panic!("{text}: {unexplained:?}"));
+        assert!(
+            classes.len() == 1 && classes.iter().all(|class| class.ledger == "476"),
+            "{text}"
+        );
+    }
+}
+
+const FAULTY_CHILDREN_AND_FAULTY_LINE_KINDS: [&str; 5] = [
+    "Rig stage:\n    Lampstate  as wash\n\nScene dusk | hold=8:\n    Cue as first /1 | fade=2\n\nScene night | hold=dusk.hold * 1.5:\n    Cue/0 | fade=dusk.first.fade\n    Dims as soften | depth=0.4: stage.wash\n\nScene dawn | hold=night.soften.depth * 10:\n    Cue/0\n",
+    "Rig stage(:\n    Lamp as wash\n\nScene dusk | hold=8:\n    Cue as first /1 | fade=2\n\nScene night | hold=dusk.hold * 1.5:\n    Cue/0 | fade=dusk.first.fade\n    Dims as soften | depth=0.4: stage.wash\n\nScene dawn | hold=night.soften.depth * 10:\n    Cue/0\n",
+    "Rig stage:\n    Lamp as wash\n\nScene dusk | hold=8:\n    xCue as first /1 | fade=2\n\nScene night | hold=dusk.hold * 1.5:\n    Cue/0 | fade=dusk.first.fade\n    Dims as soften | depth=0.4: stage.wash\n\nScene dawn | hold=night.soften.depth * 10:\n    Cue/0\n",
+    "Rig stage:\n    Lamp as wash\n\nScene dusk (| hold=8:\n    Cue as first /1 | fade=2\n\nScene night | hold=dusk.hold * 1.5:\n    Cue/0 | fade=dusk.first.fade\n    Dims as soften | depth=0.4: stage.wash\n\nScene dawn | hold=night.soften.depth * 10:\n    Cue/0\n",
+    "xpattern Wash(default level, tint = 0.0):\n    Lamp/level | hue=tint\n\nRig stage:\n    Wash/0.3 | tint=0.6\n",
+];
+
+#[test]
+fn a_step_to_a_faulty_child_and_a_kind_a_faulty_line_names_draw_nothing_as_in_the_repaired_program_476()
+ {
+    let old = Compiler::new(&symphonyscript_fixtures::vocabulary())
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
+    let new =
+        Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("the vocabulary compiles");
+    for text in FAULTY_CHILDREN_AND_FAULTY_LINE_KINDS {
+        let sources = [source(text)];
+        let found = new
+            .checked_by_new_core(&sources)
+            .expect("the new core takes the program");
+        let classes = reviewed::moved(text, &drawn(&old.check(&sources)), &drawn(&found))
+            .unwrap_or_else(|unexplained| panic!("{text}: {unexplained:?}"));
+        assert!(
+            !classes.is_empty() && classes.iter().all(|class| class.ledger == "476"),
+            "{text}"
+        );
+    }
+}
+
+#[test]
+fn a_method_of_no_name_on_a_cell_on_a_cycle_draws_unknown_name_in_every_order_476() {
+    let old = Compiler::new(&symphonyscript_fixtures::vocabulary())
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
+    let new =
+        Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("the vocabulary compiles");
+    for text in [
+        "state a = b.xpast(1)\nstate b = a + 1\n",
+        "let a = b.xpast(1)\nlet b = a + 1\n",
+        "let a = b.zz(c=1)\nlet b = a + 1\n",
+    ] {
+        let sources = [source(text)];
+        let found = new
+            .checked_by_new_core(&sources)
+            .expect("the new core takes the program");
+        let classes = reviewed::moved(text, &drawn(&old.check(&sources)), &drawn(&found))
+            .unwrap_or_else(|unexplained| panic!("{text}: {unexplained:?}"));
+        assert!(
+            classes.len() == 1 && classes.iter().all(|class| class.ledger == "476"),
+            "{text}"
+        );
+    }
+}
+
+#[test]
+fn an_unnamed_top_placements_body_draws_its_unknown_attribute_and_flag_names_476() {
+    let old = Compiler::new(&symphonyscript_fixtures::vocabulary())
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
+    let new =
+        Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("the vocabulary compiles");
+    for text in [
+        "Plant, cooling | mode=override:\n    Valve | zz=1\n    Loop\n    Valve~\n",
+        "Plant, cooling:\n    Valve | zz=1\n",
+        "Plant fill: Valve/0 (Controller//0.4 | gain=0.5)\nPlant cooling | mode=override:\n    Valve | zz=1\n    Valve~\n",
+    ] {
+        let sources = [source(text)];
+        let found = new
+            .checked_by_new_core(&sources)
+            .expect("the new core takes the program");
+        let classes = reviewed::moved(text, &drawn(&old.check(&sources)), &drawn(&found))
+            .unwrap_or_else(|unexplained| panic!("{text}: {unexplained:?}"));
+        assert!(
+            classes.len() == 1 && classes.iter().all(|class| class.ledger == "476"),
+            "{text}"
+        );
+    }
+}
+
+#[test]
+fn a_path_step_naming_nothing_beside_a_skipped_top_block_draws_unknown_attribute_as_in_the_repaired_program_476()
+ {
+    let old = Compiler::new(&symphonyscript_fixtures::vocabulary())
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
+    let new =
+        Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("the vocabulary compiles");
+    for text in [
+        "Scene opening | hold=500ms:\n    Cue/0\nstate     Cue/2 | fade=4\n    Dims as soften | depth=0.4: opening\nScene finale | hold=opening.hold * 2:\n    Cue as last /0 | fade=opening.zz.depth * 10\n",
+        "Scene finale | hold=opening.hold * 2:\n    Cue as last /0 | fade=opening.zz.depth * 10\nstate     Cue/2 | fade=4\n    Dims as soften | depth=0.4: opening\nScene opening | hold=500ms:\n    Cue/0\n",
+    ] {
+        let sources = [source(text)];
+        let found = new
+            .checked_by_new_core(&sources)
+            .expect("the new core takes the program");
+        let classes = reviewed::moved(text, &drawn(&old.check(&sources)), &drawn(&found))
+            .unwrap_or_else(|unexplained| panic!("{text}: {unexplained:?}"));
+        assert!(
+            !classes.is_empty() && classes.iter().all(|class| class.ledger == "476"),
+            "{text}"
+        );
+    }
+}
+
+#[test]
+fn a_path_step_naming_a_name_a_faults_region_holds_draws_nothing_whatever_the_fault_476() {
+    let old = Compiler::new(&symphonyscript_fixtures::vocabulary())
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
+    let new =
+        Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("the vocabulary compiles");
+    for text in [
+        "Rig stage:\n    Lamp as wash\nScene night | hold=1.5:\n    Cue/0\n | fade=1\n    Dims as soften | depth=0.4: stage.wash\nScene dawn | hold=night.soften.depth * 10:\n    Cue/0\n",
+        "Rig stage:\n    Lamp as wash\nScene night | hold=1.5:\n    Cue/0\nDims as soften | depth=0.4: stage.wash\nScene dawn | hold=night.soften.depth * 10:\n    Cue/0\n",
+        "Scene dusk | hold=8:\n    Cue \nas first /1 | fade=2\nScene night | hold=dusk.hold * 1.5:\n    Cue/0 | fade=dusk.first.fade\n",
+    ] {
+        let sources = [source(text)];
+        let found = new
+            .checked_by_new_core(&sources)
+            .expect("the new core takes the program");
+        let classes = reviewed::moved(text, &drawn(&old.check(&sources)), &drawn(&found))
+            .unwrap_or_else(|unexplained| panic!("{text}: {unexplained:?}"));
+        assert!(
+            !classes.is_empty() && classes.iter().all(|class| class.ledger == "476"),
+            "{text}"
+        );
+    }
+}
+
+#[test]
+fn a_size_of_a_choice_beside_its_refused_condition_draws_unknown_attribute_as_in_the_repaired_program_476()
+ {
+    let old = Compiler::new(&symphonyscript_fixtures::vocabulary())
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
+    let new =
+        Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("the vocabulary compiles");
+    for text in [
+        "let q = 1\nClip c:\n    Note/((if q then 1.5 else q).size)\n",
+        "Clip c:\n    Note/((if [1, 2] then i32(true) else i32(true)).size)\n",
+        "let a: i32 = (if 1.5 then 1 else 300000000000).capacity\nClip c:\n    Note/(a)\n",
+        "let q = 1\nClip c:\n    Note when ((if 1 then q else 1).bytes)\n",
+    ] {
+        let sources = [source(text)];
+        let found = new
+            .checked_by_new_core(&sources)
+            .expect("the new core takes the program");
+        let classes = reviewed::moved(text, &drawn(&old.check(&sources)), &drawn(&found))
+            .unwrap_or_else(|unexplained| panic!("{text}: {unexplained:?}"));
+        assert!(
+            classes.len() == 1 && classes.iter().all(|class| class.ledger == "476"),
+            "{text}"
+        );
+    }
+}
+
+const SELF_HISTORY: &str = "state s(1)\nstate ys = (ys.past(1, []) + [s])[^3..]\n";
+
+type ExpectedRow = (
+    &'static str,
+    &'static str,
+    &'static [(&'static str, &'static str)],
+);
+
+const CAPACITIES_THROUGH_HISTORY: [ExpectedRow; 7] = [
+    (
+        SELF_HISTORY,
+        "Clip c:\n    Note/([1, 2][ys.capacity])\n",
+        &[("index-out-of-range", "ys.capacity")],
+    ),
+    (
+        SELF_HISTORY,
+        "Clip c:\n    Note/([1, 2, 3][ys.capacity - 1])\n",
+        &[],
+    ),
+    (
+        SELF_HISTORY,
+        "Clip c:\n    Note/([1, 2][ys.past(1).capacity])\n",
+        &[("index-out-of-range", "ys.past(1).capacity")],
+    ),
+    (
+        SELF_HISTORY,
+        "Clip c:\n    Note/([1, 2, 3, 4][ys.past(1, [1, 2, 3, 4, 5]).capacity])\n",
+        &[("index-out-of-range", "ys.past(1, [1, 2, 3, 4, 5]).capacity")],
+    ),
+    (
+        "state s(1)\nstate ys = (ys.past(1, []) + [s])[^3..]\nlet k = ys.capacity\n",
+        "Clip c:\n    Note/([1, 2][k])\n",
+        &[("index-out-of-range", "k")],
+    ),
+    (
+        "state s(1)\nstate ys = (ys.past(1, []) + [s])[^3..]\nfn f(x): [1, 2][x]\n",
+        "Clip c:\n    Note/(f(ys.capacity))\n",
+        &[("index-out-of-range", "x")],
+    ),
+    (
+        "state s(1)\nstate ys = ys.past(1, []) + [s]\n",
+        "Clip c:\n    Note/([1, 2][ys.capacity])\n",
+        &[("unbounded-state", "ys")],
+    ),
+];
+
+#[test]
+fn a_capacity_of_a_cell_reading_its_own_history_is_its_settled_capacity_where_the_old_engine_draws_internal_error_beside_a_valid_twin_in_every_order_476()
+ {
+    let old = Compiler::new(&symphonyscript_fixtures::vocabulary())
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
+    let new =
+        Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("the vocabulary compiles");
+    let mut programs = 0;
+    for (cells, placement, expected) in CAPACITIES_THROUGH_HISTORY {
+        let mut expected: Vec<(String, String)> = expected
+            .iter()
+            .map(|(code, span)| ((*code).to_string(), (*span).to_string()))
+            .collect();
+        expected.sort();
+        for order in symphonyscript_fixtures::Orders::Every.of(&[
+            cells,
+            placement,
+            "Clip twin:\n    Note/61 when true\n",
+        ]) {
+            let text = order.concat();
+            let sources = [source(&text)];
+            let found = new
+                .checked_by_new_core(&sources)
+                .unwrap_or_else(|| panic!("the new core takes {text}"));
+            assert_eq!(spanned(&text, &found), expected, "{text}");
+            let classes = reviewed::moved(&text, &drawn(&old.check(&sources)), &drawn(&found))
+                .unwrap_or_else(|unexplained| panic!("{text}: {unexplained:?}"));
+            assert!(
+                classes.len() == 1 && classes.iter().all(|class| class.ledger == "476"),
+                "{text}"
+            );
+            programs += 1;
+        }
+    }
+    assert_eq!(programs, 42);
+}
+
+#[test]
+fn a_slice_of_references_beside_its_refused_bound_keeps_its_type_as_in_the_repaired_program_476() {
+    let old = Compiler::new(&symphonyscript_fixtures::vocabulary())
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
+    let new =
+        Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("the vocabulary compiles");
+    for order in symphonyscript_fixtures::Orders::Every.of(&[
+        "Clip n\nClip m\n",
+        "Clip c:\n    Note/([n, m][true..])\n",
+        "Clip twin:\n    Note/61 when true\n",
+    ]) {
+        let text = order.concat();
+        let sources = [source(&text)];
+        let found = new
+            .checked_by_new_core(&sources)
+            .unwrap_or_else(|| panic!("the new core takes {text}"));
+        let classes = reviewed::moved(&text, &drawn(&old.check(&sources)), &drawn(&found))
+            .unwrap_or_else(|unexplained| panic!("{text}: {unexplained:?}"));
+        assert!(
+            classes.len() == 1 && classes.iter().all(|class| class.ledger == "476"),
+            "{text}"
+        );
+    }
+}
+
+#[test]
+fn a_destination_holding_no_instance_in_a_body_under_a_faulty_head_draws_destination_type_as_the_repaired_head_does_476()
+ {
+    let old = Compiler::new(&symphonyscript_fixtures::vocabulary())
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
+    let new =
+        Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("the vocabulary compiles");
+    let text = "state section(0)\nlet sections = [verse, chorus, bridge]\nClip intro:\n    for s in sections:\n        Starts: 1s\n";
+    let sources = [source(text)];
+    let found = new
+        .checked_by_new_core(&sources)
+        .expect("the new core takes the program");
+    let classes = reviewed::moved(text, &drawn(&old.check(&sources)), &drawn(&found))
+        .unwrap_or_else(|unexplained| panic!("{text}: {unexplained:?}"));
+    assert!(
+        classes.len() == 1 && classes.iter().all(|class| class.ledger == "476"),
+        "{text}"
+    );
 }

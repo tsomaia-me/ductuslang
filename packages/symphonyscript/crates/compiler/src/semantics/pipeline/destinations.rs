@@ -53,7 +53,9 @@ impl Core<'_> {
             let root = self.wire_rec(row.item)?.destination;
             let saved = self.enter_env(row.env);
             let mut found = Vec::new();
+            self.choosing = u32::try_from(at).unwrap_or(u32::MAX);
             let chosen = self.chosen_destination(root, &mut found);
+            self.choosing = NONE;
             self.leave_env(saved);
             let choice = match chosen? {
                 Ok(choice) => choice,
@@ -107,6 +109,8 @@ impl Core<'_> {
                 Err(declined) => return Ok(Err(declined)),
             };
             (test, vec![b, c])
+        } else if op == Op::IndexFromEnd {
+            return Ok(Err(Declined(Reason::DestinationValue)));
         } else if op == Op::Index {
             let Some(elements) = self.reference_elements(a)? else {
                 if live
@@ -134,7 +138,12 @@ impl Core<'_> {
             if !live {
                 return Ok(Ok(Choice::Unknown));
             }
-            if op == Op::Name && matches!(self.bound(node)?, DeclRef::Param(_)) {
+            if op == Op::Call && self.callee(node)?.is_none() {
+                return Ok(Err(Declined(Reason::DestinationValue)));
+            }
+            if (op == Op::Name && matches!(self.bound(node)?, DeclRef::Param(_)))
+                || (op == Op::Call && self.callee(node)?.is_some())
+            {
                 return Ok(match self.evaluate(node, EvalTy::Exact)? {
                     Ok(Value::Node(row)) if row != NONE => {
                         found.push(row);
@@ -149,6 +158,9 @@ impl Core<'_> {
                 None => self.candidate_row(node)?,
             };
             if target == NONE {
+                if self.choosing != NONE && self.names_a_wire(node)? {
+                    self.wire_destinations.insert(self.choosing);
+                }
                 return Ok(Ok(Choice::Unknown));
             }
             found.push(target);

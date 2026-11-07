@@ -111,6 +111,13 @@ impl Core<'_> {
         })
     }
 
+    pub fn names_a_wire(&self, node: u32) -> Result<bool, Internal> {
+        Ok(match self.bind.get(self.local(node)?).copied() {
+            Some(DeclRef::Instance(item)) => matches!(self.ir.item(item), Ok(ItemRec::Wire(_))),
+            Some(_) | None => false,
+        })
+    }
+
     pub fn resolve_destinations(&mut self) -> Result<(), Internal> {
         for at in 0..self.wires.len() {
             CountedWalk::CoreWireDestination.step();
@@ -121,6 +128,9 @@ impl Core<'_> {
             let root = self.wire_rec(row.item)?.destination;
             let target = self.candidate_row(root)?;
             let first = index(self.candidates.len());
+            if target == NONE && self.names_a_wire(root)? {
+                self.wire_destinations.insert(index(at));
+            }
             if target != NONE {
                 self.candidates.push(target);
             }
@@ -213,6 +223,11 @@ impl Core<'_> {
                 .get(row.source as usize)
                 .ok_or(Internal::missed("row"))?
                 .kind;
+            if self.wire_destinations.contains(&wire) {
+                let span = self.wire_span(wire)?;
+                let message = "a destination names an instance".to_string();
+                self.draw_wire(wire, Code::DestinationType, span, message);
+            }
             for target in self.wire_targets(&row) {
                 CountedWalk::CheckWireCandidate.step();
                 let target_kind = self

@@ -1,5 +1,3 @@
-use std::collections::HashSet;
-
 use super::core::Core;
 use super::core_value::CoreValue;
 use super::decl_ref::DeclRef;
@@ -71,6 +69,18 @@ impl Core<'_> {
                 mark(&mut keyed, &mut work, function, param);
             }
         }
+        let mut paths: Vec<u32> = self.param_paths.iter().collect();
+        paths.sort_unstable();
+        for node in paths {
+            let receiver = self.ir.node(node)?.1;
+            let DeclRef::Param(position) = self.bound(receiver)? else {
+                continue;
+            };
+            let owner = self.binding_owner(receiver)?;
+            if !self.is_member_path(node)? || self.member_keys.contains(&(owner, position)) {
+                mark(&mut keyed, &mut work, owner, position);
+            }
+        }
         while let Some((callee, param)) = work.pop() {
             for call in calls.get(callee as usize).cloned().unwrap_or_default() {
                 let Some(argument) = self.arguments(call)?.get(param as usize).copied() else {
@@ -137,7 +147,7 @@ impl Core<'_> {
     ) -> Result<Vec<u32>, Internal> {
         let mut found = Vec::new();
         let mut roots = vec![root];
-        let mut lets = HashSet::new();
+        let mut lets = super::column::ColumnSet::new();
         while let Some(root) = roots.pop() {
             for node in self.postorder(root)? {
                 if self.ir.node(node)?.0 != Op::Name {

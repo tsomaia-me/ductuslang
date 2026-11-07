@@ -757,9 +757,12 @@ const LOCAL_ROW_PATHS: [&str; 8] = [
 fn a_pattern_local_path_ending_at_a_row_names_that_uses_row_and_a_wire_fault_names_the_use() {
     let vocabulary = symphonyscript_fixtures::vocabulary();
     assert_engines_agree(&vocabulary, &LOCAL_ROW_PATHS);
-    let new = Compiler::new(&vocabulary).expect("the vocabulary compiles");
-    let stand_in_name = "pattern P(default v):\n    Synth as y:\n        Osc as o /v:\n            Feeds: y.g\n        Filter as f\nTrack t:\n    P/1\n";
-    assert!(new.checked_by_new_core(&[source(stand_in_name)]).is_none());
+    assert_engines_agree(
+        &vocabulary,
+        &[
+            "pattern P(default v):\n    Synth as y:\n        Osc as o /v:\n            Feeds: y.g\n        Filter as f\nTrack t:\n    P/1\n",
+        ],
+    );
 }
 
 const REFERENCE_ARGUMENTS: [&str; 13] = [

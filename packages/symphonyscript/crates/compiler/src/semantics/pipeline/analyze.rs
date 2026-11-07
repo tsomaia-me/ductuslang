@@ -39,6 +39,11 @@ pub(crate) fn analyze(inputs: &Inputs<'_>) -> Result<Option<Run>, Internal> {
         Some((owned, calls)) => (owned, calls.as_slice()),
         None => (inputs.ir, &[][..]),
     };
+    let looped = super::bundle_fors::bundle_fors(ir);
+    let (ir, loops) = match &looped {
+        Some((owned, loops)) => (owned, loops.as_slice()),
+        None => (ir, &[][..]),
+    };
     if !covers(ir) {
         return Ok(None);
     }
@@ -48,6 +53,7 @@ pub(crate) fn analyze(inputs: &Inputs<'_>) -> Result<Option<Run>, Internal> {
     let mut stages = Stages::begin(ir.op.len());
     let mut core = Core::new(ir, inputs.vocabulary, inputs.variants, inputs.limits);
     core.dot_calls = dotted.iter().copied().collect();
+    core.bundle_loops = loops.iter().copied().collect();
     core.front_end_drawn()?;
     if let Err(reason) = stage(core.collect())? {
         return declined(reason);

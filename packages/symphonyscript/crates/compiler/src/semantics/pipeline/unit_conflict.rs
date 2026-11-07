@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
+use std::collections::{BTreeMap, HashSet, VecDeque};
 
 use symphonyscript_core::FamilyId;
 
@@ -82,16 +82,16 @@ impl Core<'_> {
         feeds: &[AttributeFeed],
     ) -> Result<(), Internal> {
         let mut found = FeedFound::default();
-        let mut summaries: HashMap<(u32, FamilyId), Vec<u32>> = HashMap::new();
+        let mut summaries: super::column::PairColumn<Vec<u32>> = Default::default();
         for body in self.callee_first_bodies() {
             let mut params = Vec::new();
             let start = (self.body_value(body)?, NONE, body);
             self.feed_walk(start, family, &summaries, &mut found, &mut params)?;
             params.sort_unstable();
             params.dedup();
-            summaries.insert((body, family), params);
+            summaries.insert((body, super::column::dense(family.index())), params);
         }
-        let mut taker_units: HashMap<(u32, u32), Vec<(usize, u32)>> = HashMap::new();
+        let mut taker_units: super::column::PairColumn<Vec<(usize, u32)>> = Default::default();
         let mut outer_units: BTreeMap<(u32, u32), Vec<(usize, u32)>> = BTreeMap::new();
         for (root, fed, unit, env, wire) in feeds {
             if *fed != family {
@@ -113,13 +113,13 @@ impl Core<'_> {
             );
             self.wire_now = NONE;
             walked?;
-            for (node, _, key) in own.reached {
+            for (node, _, key) in own.reached.iter() {
                 taker_units
                     .entry((node, key))
                     .or_default()
                     .push((*unit, *root));
             }
-            for (caller, call, _) in own.fed {
+            for (caller, call, _) in own.fed.iter() {
                 if !self.function_inst(caller) {
                     outer_units
                         .entry((caller, call))
@@ -128,7 +128,7 @@ impl Core<'_> {
                 }
             }
         }
-        let mut by_key: HashMap<u32, Vec<u32>> = HashMap::new();
+        let mut by_key: super::column::Column<Vec<u32>> = Default::default();
         let takers: Vec<(u32, FamilyId, u32)> = self.takers.clone();
         for (node, taken, key) in takers {
             if taken != family {
@@ -149,32 +149,33 @@ impl Core<'_> {
         if by_key.is_empty() {
             return Ok(());
         }
-        let typed =
-            |inst: u32, typed_as: &HashMap<u32, u32>| typed_as.get(&inst).copied().unwrap_or(inst);
-        let mut down: HashMap<(u32, u32), u32> = HashMap::new();
-        for ((caller, call), body) in &self.call_body {
+        let typed = |inst: u32, typed_as: &super::column::Column<u32>| {
+            typed_as.get(&inst).copied().unwrap_or(inst)
+        };
+        let mut down: super::column::PairColumn<u32> = Default::default();
+        for ((caller, call), body) in self.call_body.iter() {
             down.insert(
-                (typed(*caller, &self.typed_as), *call),
+                (typed(caller, &self.typed_as), call),
                 typed(*body, &self.typed_as),
             );
         }
-        let mut fed_in: HashMap<u32, Vec<(u32, u32, u32, u32)>> = HashMap::new();
-        for (caller, call, fed) in &found.fed {
-            if *fed == family {
-                let order = self.call_order(*call)?;
+        let mut fed_in: super::column::Column<Vec<(u32, u32, u32, u32)>> = Default::default();
+        for (caller, call, fed) in found.fed.iter() {
+            if fed == super::column::dense(family.index()) {
+                let order = self.call_order(call)?;
                 fed_in
-                    .entry(*caller)
+                    .entry(caller)
                     .or_default()
-                    .push((order.0, order.1, order.2, *call));
+                    .push((order.0, order.1, order.2, call));
             }
         }
         for list in fed_in.values_mut() {
             list.sort_unstable();
             list.dedup();
         }
-        let mut folds_in: HashMap<u32, Vec<u32>> = HashMap::new();
-        for (caller, body) in &found.folds {
-            folds_in.entry(*caller).or_default().push(*body);
+        let mut folds_in: super::column::Column<Vec<u32>> = Default::default();
+        for (caller, body) in found.folds.iter() {
+            folds_in.entry(caller).or_default().push(body);
         }
         for list in folds_in.values_mut() {
             list.sort_unstable();
@@ -191,7 +192,9 @@ impl Core<'_> {
             while let Some((body, chain)) = queue.pop_front() {
                 CountedWalk::CoreFamilies.step();
                 for node in by_key.get(&body).map(Vec::as_slice).unwrap_or_default() {
-                    if found.reached.contains(&(*node, family, body))
+                    if found
+                        .reached
+                        .contains(&(*node, super::column::dense(family.index()), body))
                         && self.unit_conflicted.insert((*node, body, outermost))
                     {
                         self.unit_conflicts.push(UnitConflict {

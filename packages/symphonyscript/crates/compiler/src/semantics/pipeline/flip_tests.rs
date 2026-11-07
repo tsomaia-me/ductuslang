@@ -2820,3 +2820,2270 @@ fn a_function_read_as_a_value_in_a_body_only_unchecked_roots_reach_names_the_las
         96
     );
 }
+
+const FLOAT_WIDTHS_BESIDE_A_REFUSAL: [&[&str]; 8] = [
+    &[
+        "state q(1.5)\n",
+        "fn f(a, b): a * 1e300 + b\n",
+        "Clip c:\n    Note/(f(q, 1e400))\n",
+    ],
+    &[
+        "state q(1.5)\n",
+        "fn f(a, b): a * 1e300 + b\n",
+        "Clip c:\n    Note/(i32(f(q, 1e400)))\n",
+    ],
+    &[
+        "state q(1.5)\n",
+        "fn f(a, b): a * 1e3 + b\n",
+        "Clip c:\n    Note/(i32(f(q, 1.5)))\n",
+    ],
+    &[
+        "state q(1.5)\n",
+        "fn f(a, b): a * 1e300 + b\n",
+        "Clip c:\n    Note | velocity=(f(q, 1))\n",
+    ],
+    &[
+        "state q(1.5)\n",
+        "let b = 1e400\n",
+        "Clip c:\n    Note/(q + b)\n",
+    ],
+    &[
+        "state q(1.5)\n",
+        "let b = 1e400\n",
+        "Clip c:\n    Note/(i32(q + b))\n",
+    ],
+    &[
+        "state q(1.5)\n",
+        "let b = 1e300\n",
+        "Clip c:\n    Note/(i32(q + b))\n",
+    ],
+    &["let b = 1e400\n", "Clip c:\n    Note/(i32(b))\n"],
+];
+
+#[test]
+fn a_call_reading_an_argument_cell_computes_in_f32_and_a_lets_float_literal_keeps_its_own_width_beside_a_refusal_and_its_repaired_twin_in_every_order_523()
+ {
+    assert_eq!(same_as_the_old_engine(&FLOAT_WIDTHS_BESIDE_A_REFUSAL), 174);
+}
+
+const FLAG_ATTRIBUTES: [&[&str]; 9] = [
+    &["Rig r:\n    Lamp | strobe\n"],
+    &["Rig r:\n    Lamp | !strobe level=0.5\n"],
+    &["Rig r:\n    Lamp | strobe=true\n"],
+    &["Rig r:\n    Lamp | hue\n", "Rig s:\n    Lamp | !hue\n"],
+    &["Rig r:\n    Lamp | zap strobe\n"],
+    &[
+        "Rig r:\n    Lamp | strobe strobe\n",
+        "Rig s:\n    Lamp | strobe=true !strobe\n",
+    ],
+    &["Rig r:\n    Lamp | strobe level=(1 + true)\n"],
+    &[
+        "state intensity(0.5)\n",
+        "state glow = intensity * 0.8\n",
+        "Rig stage:\n    Lamp | level=0.7\n           hue=glow\n           strobe\n",
+    ],
+    &["Rig r:\n    Lamp as a | !strobe level=0.5\n    Lamp | level=a.level\n"],
+];
+
+#[test]
+fn a_flag_attribute_sets_a_bool_attribute_and_draws_type_mismatch_unknown_or_duplicate_attribute_as_a_value_does_beside_a_valid_twin_in_every_order()
+ {
+    assert_eq!(same_as_the_old_engine(&FLAG_ATTRIBUTES), 48);
+}
+
+const PLACEMENT_FLAGS: [&[&str]; 6] = [
+    &["Rig r:\n    Lamp*\n", "Rig s:\n    Lamp\n"],
+    &["Rig r:\n    Lamp**\n"],
+    &["Rig r:\n    Lamp~\n"],
+    &["Rig r:\n    Lamp* | strobe\n"],
+    &["Rig r:\n    Lamp*/0.5 | !strobe\n"],
+    &["Rig r:\n    Lamp* as a | level=0.5\n    Lamp | level=a.level\n"],
+];
+
+#[test]
+fn a_placement_flag_sets_its_bool_attribute_and_draws_unknown_flag_or_duplicate_attribute_as_the_old_engine_does_beside_a_valid_twin_in_every_order()
+ {
+    assert_eq!(same_as_the_old_engine(&PLACEMENT_FLAGS), 16);
+}
+
+const MEMBER_DOT_CALLS: [&[&str]; 11] = [
+    &["let xs = [1, 2]\n", "Clip c:\n    Note/(xs.size())\n"],
+    &["let xs = [1, 2]\n", "Clip c:\n    Note/((xs).capacity())\n"],
+    &["Clip c:\n    Note/([1, 2][0].size())\n"],
+    &["let xs = [1, 2]\n", "Clip c:\n    Note/(xs.keys())\n"],
+    &["state q([]): i32[..4]\n", "Clip c:\n    Note/(q.size())\n"],
+    &["Clip c:\n    Note/([1, 2].size() + [1, 2][5])\n"],
+    &[
+        "fn f(v): v.values()\n",
+        "Clip c:\n    Note/(f(1) + f([1]))\n",
+    ],
+    &["fn f(v): v.size()\n", "let x = f([1])\n"],
+    &["Clip c:\n    Note/(1.5.bytes() + true.keys())\n"],
+    &[
+        "let xs = [[1], [2]]\n",
+        "Clip c | gain=xs[0].capacity():\n    Note\n",
+    ],
+    &["let xs = [1, 2]\n", "Clip c:\n    Note/(xs.size)\n"],
+];
+
+#[test]
+fn a_member_called_with_no_arguments_draws_not_callable_on_an_array_and_unknown_name_otherwise_beside_a_valid_twin_in_every_order()
+ {
+    assert_eq!(same_as_the_old_engine(&MEMBER_DOT_CALLS), 54);
+}
+
+const MEMBER_CALLS_IN_USED_LETS: [&[&str]; 6] = [
+    &[
+        "let xs = [1, 2]\n",
+        "let n = xs.size()\n",
+        "Clip c:\n    Note/(n)\n",
+    ],
+    &[
+        "let xs = [1, 2]\n",
+        "let n = xs.keys()\n",
+        "let m = n + 1\n",
+        "Clip c:\n    Note/(m)\n",
+    ],
+    &["let n = [1, 2][0].keys()\n", "Clip c:\n    Note/(n)\n"],
+    &["let n = [1, 2].map(1)\n", "Clip c | gain=n:\n    Note\n"],
+    &[
+        "let xs = [1, 2]\n",
+        "let n = xs.capacity(1 + true)\n",
+        "Clip c:\n    Note/(n)\n",
+    ],
+    &["let n = 1.5.bytes()\n", "Clip c:\n    Note/(n + 1)\n"],
+];
+
+#[test]
+fn a_member_called_in_a_used_lets_value_draws_what_one_in_a_placement_draws_beside_a_valid_twin_in_every_order()
+ {
+    assert_eq!(same_as_the_old_engine(&MEMBER_CALLS_IN_USED_LETS), 186);
+}
+
+const MEMBER_CALLS_IN_UNUSED_LETS: [(&[&str], &[Code]); 8] = [
+    (&["let n = 1.g()\n"], &[]),
+    (&["let xs = [1, 2]\n", "let n = xs.size()\n"], &[]),
+    (&["let n = [1, 2][0].keys()\n"], &[]),
+    (&["let n = [1, 2].map(1)\n"], &[]),
+    (
+        &["let xs = [1, 2]\n", "let n = xs.capacity(1 + true)\n"],
+        &[],
+    ),
+    (
+        &[
+            "let xs = [1, 2]\n",
+            "let n = xs.size()\n",
+            "let m = n + 1\n",
+        ],
+        &[],
+    ),
+    (&["fn f(): [1, 2].size()\n"], &[]),
+    (
+        &[
+            "let xs = [1, 2]\n",
+            "let n = xs.size()\n",
+            "Clip c:\n    Note/(xs[5])\n",
+        ],
+        &[Code::IndexOutOfRange],
+    ),
+];
+
+#[test]
+fn a_member_called_in_a_value_nothing_uses_draws_nothing_beside_a_valid_twin_in_every_order() {
+    assert_eq!(drawn_codes(&MEMBER_CALLS_IN_UNUSED_LETS), 68);
+}
+
+const MEMBER_DOT_CALLS_WITH_ARGUMENTS: [&[&str]; 4] = [
+    &[
+        "let xs = [1, 2]\n",
+        "Clip c:\n    Note/(xs.capacity(1 + true))\n",
+    ],
+    &["let x = 1\n", "Clip c:\n    Note/(x.size([1][4]))\n"],
+    &["let xs = [1, 2]\n", "Clip c:\n    Note/(xs.keys(q))\n"],
+    &[
+        "let xs = [1, 2]\n",
+        "Clip c:\n    Note/(xs.size(xs.size()))\n",
+    ],
+];
+
+#[test]
+fn a_member_called_with_arguments_leaves_them_unread_beside_a_valid_twin_in_every_order() {
+    assert_eq!(same_as_the_old_engine(&MEMBER_DOT_CALLS_WITH_ARGUMENTS), 24);
+}
+
+const ARRAY_MAPS: [&[&str]; 4] = [
+    &["let xs = [1, 2]\n", "Clip c:\n    Note/(xs.map(1))\n"],
+    &["let x = 1\n", "Clip c:\n    Note/(x.map(1 + true))\n"],
+    &[
+        "let xs = [1, 2]\n",
+        "Clip c:\n    Note/((xs).map(xs.size()) + 1)\n",
+    ],
+    &["fn f(v): v.map(1)\n", "Clip c:\n    Note/(f([1]))\n"],
+];
+
+#[test]
+fn an_arrays_map_draws_unbuilt_construct_at_the_call_and_a_scalars_draws_unknown_name_beside_a_valid_twin_in_every_order()
+ {
+    assert_eq!(same_as_the_old_engine(&ARRAY_MAPS), 24);
+}
+
+const ARRAY_LET_ATTRIBUTES: [&[&str]; 6] = [
+    &["let xs = [1, 2]\n", "Clip c:\n    Note/(xs.foo)\n"],
+    &["let xs = [1, 2]\n", "Clip c:\n    Note/(xs.keys + 1)\n"],
+    &["let xs = [[1], [2]]\n", "Clip c:\n    Note/(xs.foo[0])\n"],
+    &[
+        "let xs = [1, 2]\n",
+        "let y = xs.values\n",
+        "Clip c:\n    Note/(y)\n",
+    ],
+    &["let xs = [1, 2]\n", "Clip c | gain=xs.foo:\n    Note\n"],
+    &[
+        "let xs = [1, 2]\n",
+        "let foo = 1\n",
+        "Clip c:\n    Note/(xs.foo + xs.size)\n",
+    ],
+];
+
+#[test]
+fn an_array_lets_attribute_other_than_its_size_or_capacity_draws_unknown_attribute_beside_a_valid_twin_in_every_order()
+ {
+    assert_eq!(same_as_the_old_engine(&ARRAY_LET_ATTRIBUTES), 72);
+}
+
+const LET_MEMBER_READS: [&[&str]; 7] = [
+    &[
+        "let x = 1\n",
+        "Clip c:\n    Note/(x.past + x.map + x.bytes)\n",
+    ],
+    &["let xs = [1, 2]\n", "Clip c:\n    Note/(xs.dropped)\n"],
+    &[
+        "let x = 1.5\n",
+        "Clip c:\n    Note/(i32(x.dropped) + x.kind)\n",
+    ],
+    &[
+        "let xs = [1, 2]\n",
+        "Clip c:\n    Note/(xs.kind + xs.past)\n",
+    ],
+    &["let xs = [1, 2]\n", "Clip c:\n    Note/(xs.map)\n"],
+    &["let x = 1\n", "Clip c:\n    Note/(x.foo)\n"],
+    &["let x = 1\n", "Clip c | gain=x.bar:\n    Note/(x)\n"],
+];
+
+#[test]
+fn a_lets_member_read_draws_unknown_attribute_or_an_arrays_map_unbuilt_construct_beside_a_valid_twin_in_every_order()
+ {
+    assert_eq!(same_as_the_old_engine(&LET_MEMBER_READS), 42);
+}
+
+const PATHS_FROM_NAMES_OF_NO_INSTANCE: [&[&str]; 9] = [
+    &["Clip c:\n    Note/(stage.wash)\n"],
+    &["Clip c | gain=stage.wash:\n    Note\n"],
+    &["Scene dusk:\n    Cue/0 Cue/1\n    Dims | depth=0.5: stage.wash\n"],
+    &["Clip c:\n    Note/(foo.bar + 1)\n"],
+    &["fn f(): 1\n", "Clip c:\n    Note/(f.bar)\n"],
+    &["let a = 1\n", "let a = 2\n", "Clip c:\n    Note/(a.bar)\n"],
+    &["Clip c:\n    Note/(stage.wash.x[1] + stage.size)\n"],
+    &["let x = stage.wash\n", "Clip c:\n    Note/(x)\n"],
+    &["fn g(): stage.wash + true\n", "Clip c:\n    Note/(g())\n"],
+];
+
+#[test]
+fn a_path_from_a_name_of_no_instance_is_a_placeholder_beside_its_names_fault_and_a_valid_twin_in_every_order()
+ {
+    assert_eq!(same_as_the_old_engine(&PATHS_FROM_NAMES_OF_NO_INSTANCE), 52);
+}
+
+const FLAGGED_PATTERN_USES: [&[&str]; 7] = [
+    &["pattern P():\n    Lamp\n", "Rig r:\n    P*\n"],
+    &[
+        "pattern P(default v):\n    Lamp/v\n",
+        "Rig r:\n    P* /0.5\n    Lamp*\n",
+    ],
+    &["pattern P():\n    Lamp\n", "Rig r:\n    P*~ | x=1\n"],
+    &[
+        "pattern P():\n    Lamp\n",
+        "Rig r:\n    Lamp as a\n    P*\n    Dims*: a\n",
+    ],
+    &["Rig r:\n    Lamp as a\n    Dims*~: a\n    Dims: a\n"],
+    &[
+        "pattern P():\n    Lamp\n",
+        "Rig r:\n    for i in 0..2:\n        P*\n",
+    ],
+    &[
+        "pattern P():\n    Lamp\n",
+        "Rig r:\n    P*\n",
+        "Rig s:\n    Lamp* | strobe=true\n",
+    ],
+];
+
+#[test]
+fn a_flag_on_a_pattern_use_draws_use_form_and_one_on_a_wire_unknown_flag_beside_a_flagged_placement_and_a_valid_twin_in_every_order_525()
+ {
+    assert_eq!(same_as_the_old_engine(&FLAGGED_PATTERN_USES), 56);
+}
+
+const CELL_CAPACITIES_AND_CLOCKS: [&[&str]; 12] = [
+    &[
+        "channel[16] hits(0)\n",
+        "Rig r:\n    for i in 0..4:\n        Lamp/(0.2 * i) when hits > i\n",
+    ],
+    &["stream[4] s(0.5)\n", "Rig r:\n    Lamp/s\n"],
+    &["state[4] s(0.5)\n", "Rig r:\n    Lamp/s\n"],
+    &["stream[4] s = 1 + 2\n", "Rig r:\n    Lamp/s\n"],
+    &["channel[3000000000] s(0)\n", "Rig r:\n    Lamp/s\n"],
+    &["channel[0] s(0)\n", "Rig r:\n    Lamp/s\n"],
+    &[
+        "state a(1)\n",
+        "state b on zz = a + 1\n",
+        "Rig r:\n    Lamp/b\n",
+    ],
+    &[
+        "state a(1)\n",
+        "state b on a = a + true\n",
+        "Rig r:\n    Lamp/b\n",
+    ],
+    &[
+        "state b(0) on a = b.past(1, 0) + 1\n",
+        "Rig r:\n    Lamp/b\n",
+    ],
+    &[
+        "let x = 1 + true\n",
+        "state a(1)\n",
+        "state b on (a, x) = a + 1\n",
+        "Rig r:\n    Lamp/b\n",
+    ],
+    &[
+        "state a(1)\n",
+        "state b(0) on a = c.past(1, 0) + 1\n",
+        "state c(0) = b.past(1, 0)\n",
+        "Rig r:\n    Lamp/(b + c)\n",
+    ],
+    &[
+        "state a(1)\n",
+        "state b on (1 +) = a + 1\n",
+        "Rig r:\n    Lamp/b\n",
+    ],
+];
+
+#[test]
+fn a_cells_capacity_draws_its_misplacement_or_size_and_a_clock_its_unbuilt_construct_reading_nothing_beside_a_valid_twin_in_every_order()
+ {
+    assert_eq!(same_as_the_old_engine(&CELL_CAPACITIES_AND_CLOCKS), 354);
+}
+
+const BUNDLE_LOOPS: [&[&str]; 8] = [
+    &["Rig r:\n    [for i in 0..3: Lamp/(i + true)]\n"],
+    &["Rig r:\n    [for i in 0..3: Lamp/(i * 0.3) Lamp as x]\n"],
+    &[
+        "let washes = [0.2, 0.5, 0.8]\n",
+        "Rig stage:\n    [Lamp/0.2 Lamp/0.5 Lamp/0.8]\n    [for i in 0..3: Lamp/(0.2 + i * 0.3)]\n    [for i, p in washes: (Lamp/p | hue=1.0 - i * 0.2)]\n",
+    ],
+    &[
+        "Rig r:\n    [for i in 0..3: Lamp/(0.2 + i * 0.3) Lamp/i]\n    for i in 0..3:\n        [for j in 0..i: Lamp/(j + true)]\n",
+    ],
+    &["Rig r:\n    Lamp [for i in 0..3: Lamp/i]\n"],
+    &[
+        "pattern P(default n):\n    [for i in 0..n: Lamp/(i * 0.1)]\n",
+        "Rig r:\n    P/0\n    P/2\n    P/0\n",
+    ],
+    &[
+        "pattern Q():\n    Lamp\n",
+        "Rig r:\n    [for i in 0..2: Q]\n",
+    ],
+    &["Rig r:\n    [for i in [1, 2][5..]: Lamp/i]\n"],
+];
+
+#[test]
+fn a_bundle_for_expands_as_a_for_over_its_members_and_draws_empty_bundle_where_it_runs_no_iteration_beside_a_valid_twin_in_every_order()
+ {
+    assert_eq!(same_as_the_old_engine(&BUNDLE_LOOPS), 28);
+}
+
+const UNRUN_BODY_WIRES: [&[&str]; 9] = [
+    &["Clip intro:\n    for s in 0..0:\n        Starts | foo=1: s\n"],
+    &["Clip intro:\n    for s in 0..0:\n        Starts | gain=1 + true: s\n"],
+    &["Clip intro:\n    for s in 0..0:\n        Starts/(1 + true) when 2 + true: s\n"],
+    &["Clip intro:\n    for s in 0..0:\n        Starts* | foo=1: s\n"],
+    &["Clip intro:\n    for s in 0..0:\n        Starts*~: intro\n"],
+    &["Rig r:\n    for i in 0..0:\n        Lamp*~ | foo=1 strobe\n"],
+    &[
+        "pattern P():\n    Lamp\n",
+        "Rig r:\n    for i in 0..0:\n        P*\n",
+    ],
+    &[
+        "state section(0)\n",
+        "let sections = [verse, chorus, bridge]\n",
+        "Clip intro:\n    for s in sections:\n        Starts: s\n",
+        "Clip outro:\n    Plays: sections[section]\n",
+    ],
+    &["Clip intro:\n    for s in 0..0:\n        Starts | foo=zz: s\n"],
+];
+
+#[test]
+fn a_wire_in_a_body_no_iteration_runs_draws_its_unknown_flag_and_attribute_names_whatever_its_destination_beside_a_valid_twin_in_every_order()
+ {
+    assert_eq!(same_as_the_old_engine(&UNRUN_BODY_WIRES), 140);
+}
+
+const NAMED_WIRES: [&[&str]; 10] = [
+    &[
+        "Rig stage:\n    Lamp as wash\n",
+        "Scene night:\n    Dims as soften: stage.wash\n",
+        "Scene dawn | hold=night.soften.depth * 10:\n    Cue/0\n",
+    ],
+    &[
+        "Rig stage:\n    Lamp as wash\n",
+        "Scene night:\n    Dims as soften | depth=0.4: stage.wash\n    Dims as soften: stage.wash\n    Cue as soften\n",
+    ],
+    &[
+        "Rig stage:\n    Lamp as wash\n",
+        "Scene night:\n    Cue as soften\n    Dims as soften: stage.wash\n",
+    ],
+    &[
+        "Rig stage:\n    Lamp as wash\n",
+        "Scene night:\n    Dims as hold: stage.wash\n",
+    ],
+    &[
+        "Rig stage:\n    Lamp as wash\n",
+        "Scene night:\n    Dims as soften | depth=0.4: stage.wash\n",
+        "Scene dawn | hold=night.soften.depth.x:\n    Cue/0\n",
+    ],
+    &[
+        "Rig stage:\n    Lamp as wash\n",
+        "Scene night:\n    Dims as soften | depth=true: stage.wash\n",
+        "Scene dawn | hold=night.soften.depth:\n    Cue/0\n",
+    ],
+    &[
+        "Rig stage:\n    Lamp as wash\n",
+        "Scene night:\n    Dims as soften | depth=night.soften.depth: stage.wash\n",
+    ],
+    &[
+        "Rig stage:\n    Lamp as wash\n",
+        "Scene night:\n    Dims as soften | depth=0.4: stage.wash\n",
+        "Scene dawn | hold=night.soften.depth + true:\n    Cue/0\n",
+    ],
+    &["Rig stage:\n    Lamp as soften\n    Scene:\n        Dims as soften: stage.soften\n"],
+    &[
+        "Rig stage:\n    Lamp as wash\n",
+        "Scene night:\n    Dims as soften | depth=0.4: stage.wash\n    Dims as soften: stage.wash\n",
+        "Scene dawn | hold=night.soften.foo:\n    Cue/0\n",
+    ],
+];
+
+#[test]
+fn a_named_wire_is_a_child_name_whose_attributes_a_path_reads_and_clashes_with_its_siblings_beside_a_valid_twin_in_every_order()
+ {
+    assert_eq!(same_as_the_old_engine(&NAMED_WIRES), 146);
+}
+
+const UNIT_ATTRIBUTE_READS: [&[&str]; 10] = [
+    &[
+        "Scene dusk | hold=8:\n    Cue as first /1 | fade=2\n",
+        "Scene night | hold=dusk.hold * 1.5:\n    Cue/0 | fade=dusk.first.fade\n",
+    ],
+    &[
+        "Scene dusk | hold=500ms:\n    Cue/0\n",
+        "Scene night | hold=dusk.hold + 1:\n    Cue/0\n",
+    ],
+    &[
+        "Scene dusk | hold=500ms:\n    Cue/0\n",
+        "Scene night | hold=dusk.hold + 1s:\n    Cue/0\n",
+    ],
+    &[
+        "Scene dusk | hold=500ms:\n    Cue/0\n",
+        "Clip c:\n    Note/(dusk.hold)\n",
+    ],
+    &[
+        "Scene dusk:\n    Cue/0\n",
+        "Scene night | hold=dusk.hold * 2:\n    Cue/0\n",
+    ],
+    &[
+        "Scene dusk | hold=500ms:\n    Cue/0\n",
+        "let x = dusk.hold\n",
+        "Scene night | hold=x:\n    Cue/0\n",
+    ],
+    &[
+        "Scene dusk | hold=500ms:\n    Cue/0\n",
+        "Scene night | hold=dusk.hold / 1ms:\n    Cue/0\n",
+    ],
+    &[
+        "Scene dusk | hold=night.hold:\n    Cue/0\n",
+        "Scene night | hold=dusk.hold:\n    Cue/0\n",
+    ],
+    &[
+        "Scene dusk | hold=500ms:\n    Cue/0\n",
+        "Clip c:\n    Note/(i32(dusk.hold / 1ms))\n",
+    ],
+    &[
+        "Rig stage:\n    Lamp as wash\n",
+        "Scene dusk | hold=8:\n    Cue as first /1 | fade=2\n",
+        "Scene night | hold=dusk.hold * 1.5:\n    Cue/0 | fade=dusk.first.fade\n    Dims as soften | depth=0.4: stage.wash\n",
+        "Scene dawn | hold=night.soften.depth * 10:\n    Cue/0\n",
+    ],
+];
+
+#[test]
+fn a_path_read_of_a_unit_attribute_is_a_value_of_its_family_beside_a_valid_twin_in_every_order() {
+    assert_eq!(same_as_the_old_engine(&UNIT_ATTRIBUTE_READS), 192);
+}
+
+const FLAG_SET_READS: [&[&str]; 6] = [
+    &[
+        "Rig r:\n    Lamp* as a | level=0.5\n    Lamp | level=a.level hue=(if a.strobe then 1 else 0)\n",
+    ],
+    &["Rig r:\n    Lamp as a | !strobe\n    Lamp | hue=(if a.strobe then 1 else 0)\n"],
+    &["Rig r:\n    Lamp as a | strobe\n    Lamp | hue=a.strobe\n"],
+    &["Rig r:\n    Lamp* as a | strobe=false\n    Lamp | hue=(if a.strobe then 1 else 0)\n"],
+    &["Rig r:\n    Lamp* as a\n    Lamp/(a.strobe + 1)\n"],
+    &["Rig r:\n    Lamp as a | hue\n    Lamp/(a.hue)\n"],
+];
+
+#[test]
+fn a_path_read_of_an_attribute_a_flag_sets_is_the_flags_bool_beside_a_valid_twin_in_every_order() {
+    assert_eq!(same_as_the_old_engine(&FLAG_SET_READS), 12);
+}
+
+const UNKNOWN_METHODS: [&[&str]; 12] = [
+    &["Clip c:\n    Note/(1.g(2))\n"],
+    &["Clip c:\n    Note/(1.g(1 + true))\n"],
+    &["Clip c:\n    Note/((1 + 2).g())\n"],
+    &["Clip c:\n    Note/([1, 2][5].twice())\n"],
+    &["Clip c:\n    Note/((1 +).g())\n"],
+    &["Clip c:\n    Note/(5[0].g())\n"],
+    &["Clip c:\n    Note/([1, 2].g() + 1)\n"],
+    &["let n = 1.g()\n", "Clip c:\n    Note/(n)\n"],
+    &["fn f(v): v.g()\n", "Clip c:\n    Note/(f(1))\n"],
+    &["Clip c:\n    Note/(zz.g())\n"],
+    &["let a = 1\n", "let a = 2\n", "Clip c:\n    Note/(a.g())\n"],
+    &["let k = Wave::Sine\n", "Clip c:\n    Note/(k.g())\n"],
+];
+
+#[test]
+fn a_method_of_no_name_reads_its_receiver_and_draws_unknown_name_at_the_method_beside_a_valid_twin_in_every_order()
+ {
+    assert_eq!(same_as_the_old_engine(&UNKNOWN_METHODS), 58);
+}
+
+const TO_PATHS_IN_UNEXPANDED_BODIES: [&[&str]; 11] = [
+    &[
+        "let x = true\n",
+        "pattern Unused():\n    Plays | gain=to.hook: (if x then chorus else verse)\n    Plays | gain=to.hook: [chorus, verse][0]\n    Plays | gain=to.hook: (if x then chorus else chorus)\n    Plays | gain=to.zzz: (if x then verse else chorus)\n",
+        "Clip verse:\n    Note\nClip chorus:\n    Note as hook\n",
+        "Clip bridge:\n    Note as hook\nClip lane | gain=0.5\n",
+    ],
+    &[
+        "pattern Unused():\n    Plays | gain=to.hook.velocity: (if true then chorus else bridge)\n    Plays | gain=to.hook.velocity: (if true then chorus else verse)\n    Plays | gain=to.hook: [chorus, bridge][0]\n",
+        "Clip verse:\n    Note\nClip chorus:\n    Note as hook\n",
+        "Clip bridge:\n    Note as hook\nClip lane | gain=0.5\n",
+    ],
+    &[
+        "pattern Unused():\n    Plays | gain=to.hook: (if true then chorus else lane)\n    Plays | gain=to.velocity: (if true then chorus else verse)\n    Plays | gain=to.hook.velocity: (if true then chorus else (if true then verse else lane))\n",
+        "Clip verse:\n    Note\nClip chorus:\n    Note as hook\n",
+        "Clip lane | gain=0.5\n",
+    ],
+    &[
+        "pattern Unused():\n    Plays | gain=to.hook.zzz: (if true then chorus else bridge)\n    Plays | gain=to.zz.zzz: (if true then chorus else bridge)\n    Plays | gain=to.zz.zzz: chorus\n    Plays | gain=to.gain: (if true then chorus else 1)\n",
+        "Clip chorus:\n    Note as hook\n",
+        "Clip bridge:\n    Note as hook\n",
+    ],
+    &[
+        "pattern Unused(p):\n    Note as n\n    Plays | gain=to.zzz: p\n    Plays | gain=to.zzz: n\n    Plays | gain=to.zzz: zz\n",
+        "Clip verse:\n    Note\n",
+    ],
+    &[
+        "let x = true\n",
+        "pattern Used():\n    Plays | gain=to.hook: (if x then chorus else verse)\n    Plays | gain=to.zzz: (if x then verse else chorus)\n    Plays | gain=to.velocity: chorus\n",
+        "Clip verse:\n    Note\nClip chorus:\n    Note as hook\n",
+        "Clip m:\n    Used\n",
+    ],
+    &[
+        "pattern U():\n    Plays | gain=to.zzz: verse\n",
+        "Clip verse:\n    Note\n",
+        "Clip m:\n    U\n    U\n",
+    ],
+    &[
+        "pattern V():\n    U/verse\n",
+        "pattern U(default d):\n    Plays | gain=to.zzz: (if true then d else verse)\n",
+        "Clip verse:\n    Note\nClip chorus:\n    Note as hook\n",
+        "Clip m:\n    V\n    U/chorus\n",
+    ],
+    &[
+        "Clip m:\n    for i in 0..0:\n        Plays | gain=to.hook: (if true then chorus else verse)\n        Plays | gain=to.hook: chorus\n",
+        "Clip verse:\n    Note\nClip chorus:\n    Note as hook\n",
+    ],
+    &[
+        "let x = true\n",
+        "pattern U(default d):\n    for i in 0..0:\n        Plays | gain=to.hook: (if x then chorus else verse)\n",
+        "Clip verse:\n    Note\nClip chorus:\n    Note as hook\n",
+        "Clip m:\n    U/verse\n",
+    ],
+    &[
+        "pattern Unused():\n    Plays | gain=to.gain: (if true then chorus else verse)\n    Plays | gain=to.hook.velocity: (if true then chorus else bridge)\n",
+        "Clip verse:\n    Note\nClip chorus:\n    Note as hook\n",
+        "Clip bridge:\n    Note as hook\n",
+    ],
+];
+
+#[test]
+fn a_to_path_in_an_unused_pattern_or_an_unrun_body_draws_its_resolution_faults_over_the_destinations_written_candidates_beside_a_used_twin_and_a_valid_twin_in_every_order_526()
+ {
+    assert_eq!(same_as_the_old_engine(&TO_PATHS_IN_UNEXPANDED_BODIES), 612);
+}
+
+const CYCLES_THROUGH_WIRES_AND_TO_PATHS: [&[&str]; 53] = [
+    &[
+        "Clip i0 | gain=(i1.gain)\nClip i1 | gain=(o2.w2.gain)\nstate q2(0)\nClip o2 | gain=(i0.gain):\n    Plays as w2 | gain=to.gain: [o2, o2][q2]\n",
+    ],
+    &[
+        "Clip i0 | gain=(o1.w1.gain)\nClip o1 | gain=(o2.w2.gain):\n    Plays as w1 | gain=to.gain: o1\nstate q2(0)\nClip o2 | gain=(i0.gain):\n    Plays as w2 | gain=to.gain: [o2, o2][q2]\n",
+    ],
+    &[
+        "Clip i0 | gain=(o1.w1.gain)\nstate q1(0)\nClip o1 | gain=(i0.gain):\n    Plays as w1 | gain=to.gain: [o1, o1][q1]\n",
+    ],
+    &[
+        "Clip i0 | gain=(o1.w1.gain)\nstate q1(0)\nClip o1 | gain=(o2.w2.gain):\n    Plays as w1 | gain=to.gain: [o1, o1][q1]\nClip o2 | gain=(i0.gain):\n    Plays as w2 | gain=to.gain: o2\n",
+    ],
+    &[
+        "Clip i0 | gain=(o1.w1.gain)\nstate q1(0)\nClip o1 | gain=(o2.w2.gain):\n    Plays as w1 | gain=to.gain: [o1, o1][q1]\nstate q2(0)\nClip o2 | gain=(i0.gain):\n    Plays as w2 | gain=to.gain: [o2, o2][q2]\n",
+    ],
+    &[
+        "Clip i0 | gain=(o1.w1.gain)\nstate q1(0)\nClip o1 | gain=(s2.w2.gain):\n    Plays as w1 | gain=to.gain: [o1, o1][q1]\nClip s2:\n    Plays as w2 | gain=(i0.gain): s2\n",
+    ],
+    &[
+        "Clip i0 | gain=(o1.w1.gain)\nstate q1(0)\nClip o1 | gain=(u2.gain):\n    Plays as w1 | gain=to.gain: [o1, o1][q1]\npattern P2(x):\n    Clip | gain=x\nP2 u2 | x=(i0.gain)\n",
+    ],
+    &[
+        "Clip i0 | gain=(s1.w1.gain)\nClip s1:\n    Plays as w1 | gain=(o2.w2.gain): s1\nstate q2(0)\nClip o2 | gain=(i0.gain):\n    Plays as w2 | gain=to.gain: [o2, o2][q2]\n",
+    ],
+    &[
+        "Clip i0 | gain=(u1.gain)\npattern P1(x):\n    Clip | gain=x\nP1 u1 | x=(o2.w2.gain)\nstate q2(0)\nClip o2 | gain=(i0.gain):\n    Plays as w2 | gain=to.gain: [o2, o2][q2]\n",
+    ],
+    &[
+        "Clip o0 | gain=(o1.w1.gain):\n    Plays as w0 | gain=to.gain: o0\nClip o1 | gain=(o2.w2.gain):\n    Plays as w1 | gain=to.gain: o1\nstate q2(0)\nClip o2 | gain=(o0.w0.gain):\n    Plays as w2 | gain=to.gain: [o2, o2][q2]\n",
+    ],
+    &[
+        "Clip o0 | gain=(o1.w1.gain):\n    Plays as w0 | gain=to.gain: o0\nstate q1(0)\nClip o1 | gain=(o0.w0.gain):\n    Plays as w1 | gain=to.gain: [o1, o1][q1]\n",
+    ],
+    &[
+        "Clip o0 | gain=(o1.w1.gain):\n    Plays as w0 | gain=to.gain: o0\nstate q1(0)\nClip o1 | gain=(o2.w2.gain):\n    Plays as w1 | gain=to.gain: [o1, o1][q1]\nstate q2(0)\nClip o2 | gain=(o0.w0.gain):\n    Plays as w2 | gain=to.gain: [o2, o2][q2]\n",
+    ],
+    &[
+        "Clip o0 | gain=(o1.w1.gain):\n    Plays as w0 | gain=to.gain: o0\nstate q1(0)\nClip o1 | gain=(u2.gain):\n    Plays as w1 | gain=to.gain: [o1, o1][q1]\npattern P2(x):\n    Clip | gain=x\nP2 u2 | x=(o0.w0.gain)\n",
+    ],
+    &[
+        "Clip o0 | gain=(u1.gain):\n    Plays as w0 | gain=to.gain: o0\npattern P1(x):\n    Clip | gain=x\nP1 u1 | x=(o2.w2.gain)\nstate q2(0)\nClip o2 | gain=(o0.w0.gain):\n    Plays as w2 | gain=to.gain: [o2, o2][q2]\n",
+    ],
+    &[
+        "Clip s0:\n    Plays as w0 | gain=(o1.w1.gain): s0\nClip o1 | gain=(o2.w2.gain):\n    Plays as w1 | gain=to.gain: o1\nstate q2(0)\nClip o2 | gain=(s0.w0.gain):\n    Plays as w2 | gain=to.gain: [o2, o2][q2]\n",
+    ],
+    &[
+        "Clip s0:\n    Plays as w0 | gain=(o1.w1.gain): s0\nstate q1(0)\nClip o1 | gain=(o2.w2.gain):\n    Plays as w1 | gain=to.gain: [o1, o1][q1]\nClip o2 | gain=(s0.w0.gain):\n    Plays as w2 | gain=to.gain: o2\n",
+    ],
+    &[
+        "Clip s0:\n    Plays as w0 | gain=(o1.w1.gain): s0\nstate q1(0)\nClip o1 | gain=(o2.w2.gain):\n    Plays as w1 | gain=to.gain: [o1, o1][q1]\nstate q2(0)\nClip o2 | gain=(s0.w0.gain):\n    Plays as w2 | gain=to.gain: [o2, o2][q2]\n",
+    ],
+    &[
+        "Clip s0:\n    Plays as w0 | gain=(o1.w1.gain): s0\nstate q1(0)\nClip o1 | gain=(s0.w0.gain):\n    Plays as w1 | gain=to.gain: [o1, o1][q1]\n",
+    ],
+    &[
+        "Clip s0:\n    Plays as w0 | gain=(o1.w1.gain): s0\nstate q1(0)\nClip o1 | gain=(u2.gain):\n    Plays as w1 | gain=to.gain: [o1, o1][q1]\npattern P2(x):\n    Clip | gain=x\nP2 u2 | x=(s0.w0.gain)\n",
+    ],
+    &[
+        "Clip s0:\n    Plays as w0 | gain=(s1.w1.gain): s0\nClip s1:\n    Plays as w1 | gain=(o2.w2.gain): s1\nstate q2(0)\nClip o2 | gain=(s0.w0.gain):\n    Plays as w2 | gain=to.gain: [o2, o2][q2]\n",
+    ],
+    &[
+        "Clip s0:\n    Plays as w0 | gain=(u1.gain): s0\npattern P1(x):\n    Clip | gain=x\nP1 u1 | x=(o2.w2.gain)\nstate q2(0)\nClip o2 | gain=(s0.w0.gain):\n    Plays as w2 | gain=to.gain: [o2, o2][q2]\n",
+    ],
+    &[
+        "let l0 = i1.gain\nClip i1 | gain=(o2.w2.gain)\nstate q2(0)\nClip o2 | gain=(1):\n    Plays as w2 | gain=to.gain: [o2, o2][q2]\n",
+    ],
+    &[
+        "let l0 = i1.gain\nClip i1 | gain=(o2.w2.gain)\nstate q2(0)\nClip o2 | gain=(l0):\n    Plays as w2 | gain=to.gain: [o2, o2][q2]\n",
+    ],
+    &[
+        "let l0 = l1\nlet l1 = o2.w2.gain\nstate q2(0)\nClip o2 | gain=(l0):\n    Plays as w2 | gain=to.gain: [o2, o2][q2]\n",
+    ],
+    &[
+        "let l0 = o1.w1.gain\nClip o1 | gain=(o2.w2.gain):\n    Plays as w1 | gain=to.gain: o1\nstate q2(0)\nClip o2 | gain=(1):\n    Plays as w2 | gain=to.gain: [o2, o2][q2]\n",
+    ],
+    &[
+        "let l0 = o1.w1.gain\nClip o1 | gain=(o2.w2.gain):\n    Plays as w1 | gain=to.gain: o1\nstate q2(0)\nClip o2 | gain=(l0):\n    Plays as w2 | gain=to.gain: [o2, o2][q2]\n",
+    ],
+    &[
+        "let l0 = o1.w1.gain\nstate q1(0)\nClip o1 | gain=(1):\n    Plays as w1 | gain=to.gain: [o1, o1][q1]\n",
+    ],
+    &[
+        "let l0 = o1.w1.gain\nstate q1(0)\nClip o1 | gain=(i2.gain):\n    Plays as w1 | gain=to.gain: [o1, o1][q1]\nClip i2 | gain=(1)\n",
+    ],
+    &[
+        "let l0 = o1.w1.gain\nstate q1(0)\nClip o1 | gain=(i2.gain):\n    Plays as w1 | gain=to.gain: [o1, o1][q1]\nClip i2 | gain=(l0)\n",
+    ],
+    &[
+        "let l0 = o1.w1.gain\nstate q1(0)\nClip o1 | gain=(l0):\n    Plays as w1 | gain=to.gain: [o1, o1][q1]\n",
+    ],
+    &[
+        "let l0 = o1.w1.gain\nstate q1(0)\nClip o1 | gain=(o2.w2.gain):\n    Plays as w1 | gain=to.gain: [o1, o1][q1]\nClip o2 | gain=(1):\n    Plays as w2 | gain=to.gain: o2\n",
+    ],
+    &[
+        "let l0 = o1.w1.gain\nstate q1(0)\nClip o1 | gain=(o2.w2.gain):\n    Plays as w1 | gain=to.gain: [o1, o1][q1]\nClip o2 | gain=(l0):\n    Plays as w2 | gain=to.gain: o2\n",
+    ],
+    &[
+        "let l0 = o1.w1.gain\nstate q1(0)\nClip o1 | gain=(o2.w2.gain):\n    Plays as w1 | gain=to.gain: [o1, o1][q1]\nstate q2(0)\nClip o2 | gain=(1):\n    Plays as w2 | gain=to.gain: [o2, o2][q2]\n",
+    ],
+    &[
+        "let l0 = o1.w1.gain\nstate q1(0)\nClip o1 | gain=(o2.w2.gain):\n    Plays as w1 | gain=to.gain: [o1, o1][q1]\nstate q2(0)\nClip o2 | gain=(l0):\n    Plays as w2 | gain=to.gain: [o2, o2][q2]\n",
+    ],
+    &[
+        "let l0 = o1.w1.gain\nstate q1(0)\nClip o1 | gain=(s2.w2.gain):\n    Plays as w1 | gain=to.gain: [o1, o1][q1]\nClip s2:\n    Plays as w2 | gain=(1): s2\n",
+    ],
+    &[
+        "let l0 = o1.w1.gain\nstate q1(0)\nClip o1 | gain=(s2.w2.gain):\n    Plays as w1 | gain=to.gain: [o1, o1][q1]\nClip s2:\n    Plays as w2 | gain=(l0): s2\n",
+    ],
+    &[
+        "let l0 = o1.w1.gain\nstate q1(0)\nClip o1 | gain=(u2.gain):\n    Plays as w1 | gain=to.gain: [o1, o1][q1]\npattern P2(x):\n    Clip | gain=x\nP2 u2 | x=(1)\n",
+    ],
+    &[
+        "let l0 = o1.w1.gain\nstate q1(0)\nClip o1 | gain=(u2.gain):\n    Plays as w1 | gain=to.gain: [o1, o1][q1]\npattern P2(x):\n    Clip | gain=x\nP2 u2 | x=(l0)\n",
+    ],
+    &[
+        "let l0 = s1.w1.gain\nClip s1:\n    Plays as w1 | gain=(o2.w2.gain): s1\nstate q2(0)\nClip o2 | gain=(1):\n    Plays as w2 | gain=to.gain: [o2, o2][q2]\n",
+    ],
+    &[
+        "let l0 = s1.w1.gain\nClip s1:\n    Plays as w1 | gain=(o2.w2.gain): s1\nstate q2(0)\nClip o2 | gain=(l0):\n    Plays as w2 | gain=to.gain: [o2, o2][q2]\n",
+    ],
+    &[
+        "let l0 = u1.gain\npattern P1(x):\n    Clip | gain=x\nP1 u1 | x=(o2.w2.gain)\nstate q2(0)\nClip o2 | gain=(1):\n    Plays as w2 | gain=to.gain: [o2, o2][q2]\n",
+    ],
+    &[
+        "let l0 = u1.gain\npattern P1(x):\n    Clip | gain=x\nP1 u1 | x=(o2.w2.gain)\nstate q2(0)\nClip o2 | gain=(l0):\n    Plays as w2 | gain=to.gain: [o2, o2][q2]\n",
+    ],
+    &["state q0(0)\nClip o0 | gain=(o0.w0.gain):\n    Plays as w0 | gain=to.gain: [o0, o0][q0]\n"],
+    &[
+        "state q0(0)\nClip o0 | gain=(o1.w1.gain):\n    Plays as w0 | gain=to.gain: [o0, o0][q0]\nstate q1(0)\nClip o1 | gain=(o0.w0.gain):\n    Plays as w1 | gain=to.gain: [o1, o1][q1]\n",
+    ],
+    &[
+        "state q0(0)\nClip o0 | gain=(o1.w1.gain):\n    Plays as w0 | gain=to.gain: [o0, o0][q0]\nstate q1(0)\nClip o1 | gain=(o2.w2.gain):\n    Plays as w1 | gain=to.gain: [o1, o1][q1]\nstate q2(0)\nClip o2 | gain=(o0.w0.gain):\n    Plays as w2 | gain=to.gain: [o2, o2][q2]\n",
+    ],
+    &[
+        "state q0(0)\nClip o0 | gain=(o1.w1.gain):\n    Plays as w0 | gain=to.gain: [o0, o0][q0]\nstate q1(0)\nClip o1 | gain=(u2.gain):\n    Plays as w1 | gain=to.gain: [o1, o1][q1]\npattern P2(x):\n    Clip | gain=x\nP2 u2 | x=(o0.w0.gain)\n",
+    ],
+    &[
+        "state q0(0)\nClip o0 | gain=(u1.gain):\n    Plays as w0 | gain=to.gain: [o0, o0][q0]\npattern P1(x):\n    Clip | gain=x\nP1 u1 | x=(o0.w0.gain)\n",
+    ],
+    &[
+        "state q0(0)\nClip o0 | gain=(u1.gain):\n    Plays as w0 | gain=to.gain: [o0, o0][q0]\npattern P1(x):\n    Clip | gain=x\nP1 u1 | x=(u2.gain)\npattern P2(x):\n    Clip | gain=x\nP2 u2 | x=(o0.w0.gain)\n",
+    ],
+    &[
+        "Clip verse:\n    Plays as a/to.b.gain: chorus\n",
+        "Clip chorus:\n    Plays as b/to.a.gain: verse\n",
+    ],
+    &[
+        "Clip verse:\n    Plays as a/to.b.zzz: chorus\n",
+        "Clip chorus:\n    Plays as b/0.5: verse\n",
+    ],
+    &[
+        "Clip verse:\n    Plays as a/to.b.gain: chorus\n",
+        "Clip chorus:\n    Plays as b/0.5: verse\n",
+        "Clip m | gain=(verse.a.gain)\n",
+    ],
+    &[
+        "state q(0)\n",
+        "Clip a | gain=(b.gain):\n    Plays as w | gain=to.gain: [a, b][q]\n",
+        "Clip b | gain=(a.w.gain)\n",
+    ],
+    &[
+        "let l0 = o1.w1.gain\n",
+        "state q1(0)\n",
+        "Clip o1 | gain=(1):\n    Plays as w1 | gain=to.gain: [o1, o2][q1]\n",
+        "Clip o2\n",
+    ],
+];
+
+#[test]
+fn a_named_wires_attribute_read_and_a_to_path_are_edges_of_the_declaration_graph_and_a_runtime_destinations_to_read_reads_a_cell_beside_a_valid_twin_in_every_order_528()
+ {
+    assert_eq!(
+        same_as_the_old_engine(&CYCLES_THROUGH_WIRES_AND_TO_PATHS),
+        276
+    );
+}
+
+const CYCLES_THROUGH_COMPILE_TIME_DESTINATIONS: [&[&str]; 16] = [
+    &[
+        "let x = true\n",
+        "Clip a | gain=(b.gain):\n    Plays as w | gain=to.gain: if x then a else b\n",
+        "Clip b | gain=(a.w.gain)\n",
+    ],
+    &[
+        "let x = false\n",
+        "Clip a | gain=(b.gain):\n    Plays as w | gain=to.gain: if x then a else b\n",
+        "Clip b | gain=(a.w.gain)\n",
+    ],
+    &[
+        "Clip a | gain=(b.gain):\n    Plays as w | gain=to.gain: [a, b][0]\n",
+        "Clip b | gain=(a.w.gain)\n",
+    ],
+    &[
+        "Clip a | gain=(b.gain):\n    Plays as w | gain=to.gain: [a, b][1]\n",
+        "Clip b | gain=(a.w.gain)\n",
+    ],
+    &[
+        "let d = b\n",
+        "Clip a | gain=(b.gain):\n    Plays as w | gain=to.gain: d\n",
+        "Clip b | gain=(a.w.gain)\n",
+    ],
+    &[
+        "let d = a\n",
+        "Clip a | gain=(b.gain):\n    Plays as w | gain=to.gain: d\n",
+        "Clip b | gain=(a.w.gain)\n",
+    ],
+    &[
+        "Clip a | gain=(a.w.gain):\n    Plays as w | gain=to.gain: if true then a else b\n",
+        "Clip b\n",
+    ],
+    &[
+        "Clip a | gain=(a.w.gain):\n    Plays as w | gain=to.gain: if false then a else b\n",
+        "Clip b\n",
+    ],
+    &[
+        "let l0 = o1.w1.gain\n",
+        "Clip o1 | gain=(l0):\n    Plays as w1 | gain=to.gain: [o1, o1][0]\n",
+    ],
+    &[
+        "let l0 = o1.w1.gain\n",
+        "Clip o1 | gain=(1):\n    Plays as w1 | gain=to.gain: [o1, o1][0]\n",
+    ],
+    &[
+        "let x = true\n",
+        "Clip a | gain=(1):\n    Plays as w | gain=to.gain: if x then a else b\n",
+        "Clip b | gain=(a.w.gain)\n",
+    ],
+    &[
+        "let k = 1\nlet x = k > 0\n",
+        "Clip a | gain=(c.gain):\n    Plays as w | gain=to.gain: if x then b else a\n",
+        "Clip b | gain=(a.w.gain)\nClip c | gain=(b.gain)\n",
+    ],
+    &[
+        "let d = [a, b]\n",
+        "Clip a | gain=(b.gain):\n    Plays as w | gain=to.gain: d[0]\n",
+        "Clip b | gain=(a.w.gain)\n",
+    ],
+    &[
+        "state q(0)\n",
+        "Clip a | gain=(b.gain):\n    Plays as w | gain=to.gain: [a, b][q]\n",
+        "Clip b | gain=(a.w.gain)\n",
+    ],
+    &[
+        "Clip a | gain=(b.w.gain):\n    Plays as w | gain=to.gain: if true then b else a\n",
+        "Clip b | gain=(a.w.gain):\n    Plays as w | gain=to.gain: [a, b][0]\n",
+    ],
+    &[
+        "let l0 = a.w.gain\n",
+        "Clip a | gain=(b.gain):\n    Plays as w | gain=to.gain: if true then a else b\n",
+        "Clip b | gain=(l0)\n",
+    ],
+];
+
+#[test]
+fn a_to_read_through_a_destination_chosen_at_compile_time_is_an_edge_of_the_declaration_graph_beside_a_valid_twin_in_every_order_530()
+ {
+    assert_eq!(
+        same_as_the_old_engine(&CYCLES_THROUGH_COMPILE_TIME_DESTINATIONS),
+        258
+    );
+}
+
+const METHODS_OF_NO_NAME_WITH_NAMED_ARGUMENTS: [&[&str]; 16] = [
+    &["Clip c:\n    Note/(1.zz(a=2))\n"],
+    &["let x = 1.zz(a=2)\n", "Clip c:\n    Note/x\n"],
+    &["Clip c:\n    Note/([1, 2].zz(b=1)[0])\n"],
+    &["state s(1)\n", "Clip c:\n    Note/(s.zz(a=1))\n"],
+    &["Clip v\n", "Clip c:\n    Note/(v.zz(a=1))\n"],
+    &["Clip c:\n    Note/(1.zz(1, a=2))\n"],
+    &["Clip c:\n    Note/(1.zz(a=2 + true))\n"],
+    &["let y = 3\n", "Clip c:\n    Note/(y.zz(a=y))\n"],
+    &["fn f(x): x.zz(a=1)\n", "Clip c:\n    Note/(f(1))\n"],
+    &["state s(1)\n", "state t = s.zz(a=1)\n"],
+    &["let a = a.zz(b=1)\n"],
+    &["let b = a + 1\nlet a = b.zz(c=1)\n"],
+    &["Clip v\nClip w\n", "Clip c:\n    Note/([v, w].zz(a=1))\n"],
+    &[
+        "fn g(x, y): x + y\n",
+        "Clip c:\n    Note/(1.g(y=2))\n    Note/(1.g(y=2 + true))\n",
+    ],
+    &["Clip c | gain=(0.5.zz(a=1))\n"],
+    &["Clip c:\n    Note/(1.zz(a=zz))\n"],
+];
+
+#[test]
+fn a_method_of_no_name_with_named_arguments_draws_unknown_name_at_the_method_beside_a_valid_twin_in_every_order()
+ {
+    assert_eq!(
+        same_as_the_old_engine(&METHODS_OF_NO_NAME_WITH_NAMED_ARGUMENTS),
+        64
+    );
+}
+
+const METHODS_OF_NO_NAME_ON_REFUSED_RECEIVERS: [&[&str]; 19] = [
+    &["let a = (1 + true).zz()\n", "Clip c:\n    Note/(a)\n"],
+    &["let a = (true and 1).zz()\n", "Clip c:\n    Note/(a)\n"],
+    &["let a = (-true).zz()\n", "Clip c:\n    Note/(a)\n"],
+    &["let a = (1 < true).zz()\n", "Clip c:\n    Note/(a)\n"],
+    &["let a = i32(true).zz()\n", "Clip c:\n    Note/(a)\n"],
+    &["let a = [1, true].zz()\n", "Clip c:\n    Note/(a)\n"],
+    &[
+        "let a = (if 1 then 2 else 3).zz()\n",
+        "Clip c:\n    Note/(a)\n",
+    ],
+    &["let a = 5[0].zz()\n", "Clip c:\n    Note/(a)\n"],
+    &["let a = [1, 2][1.5].zz()\n", "Clip c:\n    Note/(a)\n"],
+    &["let a = (not 1).zz()\n", "Clip c:\n    Note/(a)\n"],
+    &["let a = (1 ** true).zz()\n", "Clip c:\n    Note/(a)\n"],
+    &["let a = (5[0] + 1).zz()\n", "Clip c:\n    Note/(a)\n"],
+    &["let a = [1, [2]].zz()\n", "Clip c:\n    Note/(a)\n"],
+    &["let a = (-[1, true][0]).zz()\n", "Clip c:\n    Note/(a)\n"],
+    &["let a = (1 + true + 2).zz()\n", "Clip c:\n    Note/(a)\n"],
+    &["let a = [[1], [true]].zz()\n", "Clip c:\n    Note/(a)\n"],
+    &["Clip c:\n    Note/((1 + true).zz(a=1))\n"],
+    &["state s(1)\n", "state t = (s + true).zz()\n"],
+    &["Clip c:\n    Note/((1 + true).zz(1))\n    Note/([1, [2]].zz())\n"],
+];
+
+#[test]
+fn a_method_of_no_name_on_a_refused_receiver_draws_unknown_name_beside_the_refusal_but_beside_a_scalar_base_or_a_ragged_array_beside_a_valid_twin_in_every_order_397()
+ {
+    assert_eq!(
+        same_as_the_old_engine(&METHODS_OF_NO_NAME_ON_REFUSED_RECEIVERS),
+        106
+    );
+}
+
+const METHODS_OF_NO_NAME_ON_REFUSED_LETS: [&[&str]; 22] = [
+    &[
+        "fn f(): 1 + true\nfn g(x): x\nfn h(x): x + 1\n",
+        "let b = f()\n",
+        "Clip c:\n    Note/(b.yy())\n    Note/((f()).yy())\n",
+    ],
+    &[
+        "fn f(): 1 + true\nfn g(x): x\nfn h(x): x + 1\n",
+        "let b = abs(true)\n",
+        "Clip c:\n    Note/(b.yy())\n    Note/((abs(true)).yy())\n",
+    ],
+    &[
+        "fn f(): 1 + true\nfn g(x): x\nfn h(x): x + 1\n",
+        "let b = h(true)\n",
+        "Clip c:\n    Note/(b.yy())\n    Note/((h(true)).yy())\n",
+    ],
+    &[
+        "fn f(): 1 + true\nfn g(x): x\nfn h(x): x + 1\n",
+        "let b = g(zz)\n",
+        "Clip c:\n    Note/(b.yy())\n    Note/((g(zz)).yy())\n",
+    ],
+    &[
+        "fn f(): 1 + true\nfn g(x): x\nfn h(x): x + 1\n",
+        "let b = h(zz)\n",
+        "Clip c:\n    Note/(b.yy())\n    Note/((h(zz)).yy())\n",
+    ],
+    &[
+        "fn f(): 1 + true\nfn g(x): x\nfn h(x): x + 1\n",
+        "let b = min(1, true)\n",
+        "Clip c:\n    Note/(b.yy())\n    Note/((min(1, true)).yy())\n",
+    ],
+    &[
+        "fn f(): 1 + true\nfn g(x): x\nfn h(x): x + 1\n",
+        "let b = h(x=true)\n",
+        "Clip c:\n    Note/(b.yy())\n    Note/((h(x=true)).yy())\n",
+    ],
+    &["let b = zz\n", "Clip c:\n    Note/(b.yy())\n"],
+    &["let b = 5[0]\n", "Clip c:\n    Note/(b.yy())\n"],
+    &["let b = [1, [2]]\n", "Clip c:\n    Note/(b.yy())\n"],
+    &["let b = [1, 2][zz]\n", "Clip c:\n    Note/(b.yy())\n"],
+    &[
+        "let b = zz + 1\n",
+        "Clip c:\n    Note/(b.yy())\n    Note/((zz + 1).yy())\n",
+    ],
+    &["let b = to\n", "Clip c:\n    Note/(b.yy())\n"],
+    &[
+        "let b = zz\n",
+        "let d = b\n",
+        "Clip c:\n    Note/(d.yy(a=1))\n",
+    ],
+    &["let b = 5[0] + 1\n", "Clip c:\n    Note/(b.yy())\n"],
+    &["let b = 1 + true\n", "Clip c:\n    Note/(b.yy())\n"],
+    &["let b = [1, true]\n", "Clip c:\n    Note/(b.yy())\n"],
+    &["let b = -true\n", "Clip c:\n    Note/(b.yy(a=1))\n"],
+    &["let b = i32(true)\n", "Clip c:\n    Note/(b.yy())\n"],
+    &["let b = (1 +)\n", "Clip c:\n    Note/(b.yy())\n"],
+    &[
+        "let b = 1 + true\n",
+        "let d = b\n",
+        "Clip c:\n    Note/(d.yy(a=1))\n",
+    ],
+    &[
+        "let b = [1, true]\n",
+        "let d = b\n",
+        "Clip c:\n    Note/(d.yy())\n",
+    ],
+];
+
+#[test]
+fn a_method_of_no_name_on_a_let_holding_a_refused_value_draws_unknown_name_beside_the_refusal_beside_a_valid_twin_in_every_order()
+ {
+    assert_eq!(
+        same_as_the_old_engine(&METHODS_OF_NO_NAME_ON_REFUSED_LETS),
+        312
+    );
+}
+
+const MEMBERS_OF_SLICES_JOINS_AND_CALLS: [&[&str]; 19] = [
+    &[
+        "let xs = [1, 2, 3]\nlet q = 2\n",
+        "fn f(): [1, 2]\nfn g(a): a\n",
+        "let k: u8 = 252 + xs[1..].size\nClip c:\n    Note/(k)\n",
+    ],
+    &[
+        "let xs = [1, 2, 3]\nlet q = 2\n",
+        "fn f(): [1, 2]\nfn g(a): a\n",
+        "let k: u8 = 252 + (xs + [4]).size\nClip c:\n    Note/(k)\n",
+    ],
+    &[
+        "let xs = [1, 2, 3]\nlet q = 2\n",
+        "fn f(): [1, 2]\nfn g(a): a\n",
+        "let k: u8 = 252 + f().size\nClip c:\n    Note/(k)\n",
+    ],
+    &[
+        "let xs = [1, 2, 3]\nlet q = 2\n",
+        "fn f(): [1, 2]\nfn g(a): a\n",
+        "let k: u8 = 252 + xs[0..2].capacity\nClip c:\n    Note/(k)\n",
+    ],
+    &[
+        "let xs = [1, 2, 3]\nlet q = 2\n",
+        "fn f(): [1, 2]\nfn g(a): a\n",
+        "let k: u8 = 252 + (xs + xs).capacity\nClip c:\n    Note/(k)\n",
+    ],
+    &[
+        "let xs = [1, 2, 3]\nlet q = 2\n",
+        "fn f(): [1, 2]\nfn g(a): a\n",
+        "let k: u8 = 252 + (if true then xs else [1]).size\nClip c:\n    Note/(k)\n",
+    ],
+    &[
+        "let xs = [1, 2, 3]\nlet q = 2\n",
+        "fn f(): [1, 2]\nfn g(a): a\n",
+        "let k: u8 = 252 + (if false then xs else [1]).size\nClip c:\n    Note/(k)\n",
+    ],
+    &[
+        "let xs = [1, 2, 3]\nlet q = 2\n",
+        "fn f(): [1, 2]\nfn g(a): a\n",
+        "let k: u8 = 252 + xs[1..][0..1].size\nClip c:\n    Note/(k)\n",
+    ],
+    &[
+        "let xs = [1, 2, 3]\nlet q = 2\n",
+        "fn f(): [1, 2]\nfn g(a): a\n",
+        "let k: u8 = 252 + g(xs).size\nClip c:\n    Note/(k)\n",
+    ],
+    &[
+        "let xs = [1, 2, 3]\nlet q = 2\n",
+        "fn f(): [1, 2]\nfn g(a): a\n",
+        "let k: u8 = 252 + (xs + [4]).capacity\nClip c:\n    Note/(k)\n",
+    ],
+    &[
+        "let xs = [1, 2, 3]\nlet q = 2\n",
+        "fn f(): [1, 2]\nfn g(a): a\n",
+        "let k: u8 = 252 + xs[0].size\nClip c:\n    Note/(k)\n",
+    ],
+    &[
+        "let xs = [1, 2, 3]\nlet q = 2\n",
+        "fn f(): [1, 2]\nfn g(a): a\n",
+        "let k: u8 = 252 + (1 + 2).size\nClip c:\n    Note/(k)\n",
+    ],
+    &[
+        "let xs = [1, 2, 3]\nlet q = 2\n",
+        "fn f(): [1, 2]\nfn g(a): a\n",
+        "let k: u8 = 252 + (xs + [true]).size\nClip c:\n    Note/(k)\n",
+    ],
+    &[
+        "let xs = [1, 2, 3]\nlet q = 2\n",
+        "fn f(): [1, 2]\nfn g(a): a\n",
+        "let k: u8 = 252 + xs[5..].size\nClip c:\n    Note/(k)\n",
+    ],
+    &[
+        "let xs = [1, 2, 3]\nlet q = 2\n",
+        "fn f(): [1, 2]\nfn g(a): a\n",
+        "let k: u8 = 252 + [[1, 2], [3, 4]][0].size\nClip c:\n    Note/(k)\n",
+    ],
+    &[
+        "let xs = [1, 2, 3]\nlet q = 2\n",
+        "fn f(): [1, 2]\nfn g(a): a\n",
+        "let k: u8 = 252 + xs[0..q].size\nClip c:\n    Note/(k)\n",
+    ],
+    &[
+        "fn h(a): (a + [1]).size\n",
+        "let k: u8 = 250 + h([1, 2]) + h([1, 2, 3, 4])\nClip c:\n    Note/(k)\n",
+    ],
+    &[
+        "let xs = [1, 2, 3]\n",
+        "state s(1)\nstate t = s + (xs + [1]).size\n",
+    ],
+    &[
+        "let xs = [1, 2, 3]\n",
+        "Clip c:\n    Note/((xs + [4]).size)\n    Note/(f().size)\n",
+        "fn f(): [1, 2]\n",
+    ],
+];
+
+#[test]
+fn a_size_or_capacity_of_a_slice_a_join_a_call_or_a_choice_is_its_compile_time_length_beside_a_valid_twin_in_every_order()
+ {
+    assert_eq!(
+        same_as_the_old_engine(&MEMBERS_OF_SLICES_JOINS_AND_CALLS),
+        420
+    );
+}
+
+const WIRE_NAMES_AS_PATH_RECEIVERS: [&[&str]; 9] = [
+    &["Clip verse | gain=w.gain:\n    Plays as w | gain=0.5: verse\n"],
+    &["Clip verse:\n    Plays as w | gain=0.5: verse\n    Note | velocity=w.gain\n"],
+    &[
+        "Clip verse:\n    Plays as w | gain=0.5: verse\n",
+        "Clip c | gain=w.gain\n",
+    ],
+    &["Clip verse:\n    Plays as w | gain=w.gain: verse\n"],
+    &["Clip verse:\n    Plays as w | gain=0.5: verse\n    Plays as v | gain=w.gain: verse\n"],
+    &["Clip verse:\n    Plays as w | gain=0.5: verse\n    Note | velocity=w.zz\n"],
+    &["Clip verse:\n    Plays as w | gain=0.5: verse\n    Note | velocity=w.gain.x\n"],
+    &[
+        "Clip verse:\n    for i in 0..2:\n        Plays as w | gain=0.5: verse\n        Note | velocity=w.gain\n",
+    ],
+    &["Clip verse:\n    Note as w\n    Plays as w | gain=0.5: verse\n    Note | velocity=w.gain\n"],
+];
+
+#[test]
+fn a_named_wires_name_read_as_a_path_receiver_in_its_body_reads_the_wires_attribute_beside_a_valid_twin_in_every_order()
+ {
+    assert_eq!(same_as_the_old_engine(&WIRE_NAMES_AS_PATH_RECEIVERS), 22);
+}
+
+const DOT_CALLS_OF_NAMES_THAT_ARE_NO_FUNCTION: [&[&str]; 13] = [
+    &[
+        "let zz = 1\n",
+        "Clip c:\n    Note/(1.zz(a=2))\n    Note/(1.zz(a=2 + true))\n",
+    ],
+    &[
+        "let zz = 1\n",
+        "state s(1)\n",
+        "Clip c:\n    Note/(s.zz(a=1, b=2))\n",
+    ],
+    &["let zz = 1\n", "let a = 1.zz(b=1)\nClip c:\n    Note/(1)\n"],
+    &["let zz = 1\n", "Clip c:\n    Note/(1.zz(2 + true))\n"],
+    &["let zz = 1\n", "Clip c:\n    Note/(1.zz(2))\n"],
+    &["let zz = [1, 2]\n", "Clip c:\n    Note/(1.zz())\n"],
+    &["state zz(1)\n", "Clip c:\n    Note/(1.zz())\n"],
+    &["Clip zz\n", "Clip c:\n    Note/(1.zz())\n"],
+    &["let zz = 1\n", "let a = 1.zz()\nClip c:\n    Note/(1)\n"],
+    &["fn f(x): x\n", "let g = f\n", "Clip c:\n    Note/(1.g())\n"],
+    &[
+        "let zz = 1\n",
+        "fn h(x): x.zz()\n",
+        "Clip c:\n    Note/(h(1))\n",
+    ],
+    &[
+        "let zz = 1\n",
+        "let b = 1 + true\n",
+        "Clip c:\n    Note/(b.zz())\n",
+    ],
+    &[
+        "let zz = 1\n",
+        "state s(1)\n",
+        "Clip c:\n    Note/(s.zz())\n",
+    ],
+];
+
+#[test]
+fn a_dot_call_of_a_name_that_is_no_function_draws_not_callable_at_the_call_beside_a_valid_twin_in_every_order()
+ {
+    assert_eq!(
+        same_as_the_old_engine(&DOT_CALLS_OF_NAMES_THAT_ARE_NO_FUNCTION),
+        168
+    );
+}
+
+const PATH_STEPS_TO_NAMES_A_REGION_SKIPS: [&[&str]; 3] = [
+    &[
+        "Scene opening | hold=500ms:\n    Cue/0\n",
+        "state     Cue/2 | fade=4\n    Dims as soften | depth=0.4: opening\n",
+        "Scene finale | hold=opening.hold * 2:\n    Cue as last /0 | fade=opening.soften.depth * 10\n",
+    ],
+    &[
+        "Scene opening | hold=500ms:\n    Cue/0\n",
+        "Scene finale | hold=opening.hold * 2:\n    Cue as last /0 | fade=opening.soften.depth * 10\n",
+    ],
+    &[
+        "state     Cue/2 | fade=4\n    Dims as soften | depth=0.4: opening\n",
+        "Scene finale | hold=opening.hold * 2:\n    Cue as last /0 | fade=finale.soften.depth * 10\n",
+    ],
+];
+
+#[test]
+fn a_path_step_to_a_name_a_faults_region_skips_draws_nothing_beside_a_valid_twin_in_every_order() {
+    assert_eq!(
+        same_as_the_old_engine(&PATH_STEPS_TO_NAMES_A_REGION_SKIPS),
+        36
+    );
+}
+
+const METHODS_OF_NO_NAME_ON_PARAMETERS_BOUND_TO_REFUSALS: [&[&str]; 7] = [
+    &[
+        "let b = 1 + true\n",
+        "fn f(x): x.yy()\n",
+        "Clip c:\n    Note/(f(b))\n",
+    ],
+    &["fn f(x): x.yy()\n", "Clip c:\n    Note/(f(zz))\n"],
+    &[
+        "fn f(x): x.yy()\n",
+        "Clip c:\n    Note/(f(5[0]))\n    Note/(f([1, [2]]))\n",
+    ],
+    &["fn f(x): x.yy()\n", "Clip c:\n    Note/(f(1 + true))\n"],
+    &[
+        "fn g(): 1 + true\n",
+        "fn f(x): x.yy()\n",
+        "Clip c:\n    Note/(f(g()))\n",
+    ],
+    &[
+        "let b = 1 + true\n",
+        "fn f(x): x.yy()\n",
+        "Clip c:\n    Note/(f(b))\n    Note/(f(zz))\n",
+    ],
+    &[
+        "let b = 1 + true\n",
+        "fn f(x, z): z.yy()\n",
+        "Clip c:\n    Note/(f(b, 1))\n    Note/(f(1, b))\n",
+    ],
+];
+
+#[test]
+fn a_method_of_no_name_on_a_parameter_bound_to_a_refused_argument_draws_unknown_name_in_this_call_beside_a_valid_twin_in_every_order()
+ {
+    assert_eq!(
+        same_as_the_old_engine(&METHODS_OF_NO_NAME_ON_PARAMETERS_BOUND_TO_REFUSALS),
+        114
+    );
+}
+
+const NESTED_USE_FORM_FAULTS: [&[&str]; 4] = [
+    &[
+        "pattern V():\n    U\n",
+        "pattern U(d):\n    Note/d\n",
+        "Clip m:\n    V\n",
+    ],
+    &[
+        "pattern V():\n    U/1 | zz=2 d=3\n",
+        "pattern U(default d):\n    Note/d\n",
+        "Clip m:\n    V\n",
+    ],
+    &[
+        "pattern V():\n    U~/1\n",
+        "pattern U(default d):\n    Note/d\n",
+        "Clip m:\n    V\n    V\n",
+    ],
+    &[
+        "pattern V():\n    for i in 0..2:\n        U\n",
+        "pattern U(d):\n    Note/d\n",
+        "Clip m:\n    V\n",
+    ],
+];
+
+#[test]
+fn a_nested_uses_flag_and_argument_faults_name_the_enclosing_use_beside_a_valid_twin_in_every_order()
+ {
+    assert_eq!(same_as_the_old_engine(&NESTED_USE_FORM_FAULTS), 96);
+}
+
+const PATHS_FROM_NAMES_OF_NOTHING: [&[&str]; 7] = [
+    &["state alarm(false)\n", "state gain = zz.alarm\n"],
+    &["state gain(zz.alarm)\n"],
+    &["let g = zz.alarm\n"],
+    &["state gain = zz.alarm.x\n"],
+    &["fn f(): zz.alarm\n", "state gain = f()\n"],
+    &["let g = zz.alarm + 1\n", "Clip c | gain=g\n"],
+    &["fn f(x): x + zz.alarm\n", "Clip c | gain=f(1)\n"],
+];
+
+#[test]
+fn a_name_of_nothing_read_through_a_path_is_no_value_placeholder_and_draws_unknown_name_alone_beside_a_valid_twin_in_every_order()
+ {
+    assert_eq!(same_as_the_old_engine(&PATHS_FROM_NAMES_OF_NOTHING), 30);
+}
+
+const UNNAMED_TOP_BODIES: [&[&str]; 3] = [
+    &[
+        "Plant, cooling | mode=override:\n    [Valve/0.2 Valve/0.4]\n    for i, s in stages:\n        Valve/s when i < 2\n    Loop as trim /0.3 | response=boiler.hold.gain * 2\n    Sensor as probe /(level * 0.5):\n        Reads: boiler.hold\n",
+    ],
+    &["Plant, cooling | mode=override:\n    Valve\n    Loop\n"],
+    &[
+        "Plant, cooling | mode=override:\n    Loop/0.3\n",
+        "Plant fill:\n    Valve/0\n",
+    ],
+];
+
+#[test]
+fn a_top_level_placement_its_line_leaves_unnamed_draws_its_bodys_unknown_kinds_beside_a_valid_twin_in_every_order()
+ {
+    assert_eq!(same_as_the_old_engine(&UNNAMED_TOP_BODIES), 10);
+}
+
+const METHODS_OF_NO_NAME_ON_A_CYCLE: [&[&str]; 5] = [
+    &["let a = a.xpast(1)\n"],
+    &["let b = a + 1\nlet a = b.xpast(1)\n"],
+    &[
+        "state note(60)\n",
+        "state recent = (recent.xpast(1, []) + [note])[^8..]\n",
+    ],
+    &["state a(0) = a.xpast(1) + 1\n"],
+    &["state a = (a + 1).xpast(1)\n"],
+];
+
+#[test]
+fn a_method_of_no_name_on_a_cells_own_name_in_its_cycle_draws_unknown_name_beside_a_valid_twin_in_every_order()
+ {
+    assert_eq!(same_as_the_old_engine(&METHODS_OF_NO_NAME_ON_A_CYCLE), 14);
+}
+
+const UNARY_OPERATORS_ON_REFERENCE_ARRAYS: [&[&str]; 2] = [
+    &[
+        "let sections = -[verse, chorus]\n",
+        "state s(0)\nClip m:\n    Starts: sections[s]\n",
+        "Clip verse:\n    Note\nClip chorus:\n    Note\n",
+    ],
+    &[
+        "let sections = not [verse, chorus]\n",
+        "state s(0)\nClip m:\n    Starts: sections[s]\n",
+        "Clip verse:\n    Note\nClip chorus:\n    Note\n",
+    ],
+];
+
+#[test]
+fn a_unary_operator_on_an_array_of_references_draws_array_operand_beside_a_valid_twin_in_every_order()
+ {
+    assert_eq!(
+        same_as_the_old_engine(&UNARY_OPERATORS_ON_REFERENCE_ARRAYS),
+        48
+    );
+}
+
+const BUNDLES_OF_EMPTY_USES: [&[&str]; 5] = [
+    &[
+        "pattern E():\n    for i in 0..0:\n        Note\n",
+        "Clip c:\n    [E E]\n",
+    ],
+    &[
+        "pattern E():\n    for i in 0..0:\n        Note\n",
+        "Clip c:\n    [for i in 0..2: E]\n",
+    ],
+    &[
+        "pattern E(default v):\n    for i in 0..v:\n        Note\n",
+        "Clip c:\n    [for i in 0..2: E/0]\n",
+    ],
+    &[
+        "pattern E(default v):\n    for i in 0..v:\n        Note\n",
+        "Clip c:\n    [E/1 E/0]\n",
+    ],
+    &[
+        "pattern E(default v):\n    for i in 0..v:\n        Note\n",
+        "pattern B():\n    [E/0 E/0]\n",
+        "Clip c:\n    B\n    B\n",
+    ],
+];
+
+#[test]
+fn a_bundle_whose_pattern_uses_yield_no_member_draws_empty_bundle_beside_a_valid_twin_in_every_order()
+ {
+    assert_eq!(same_as_the_old_engine(&BUNDLES_OF_EMPTY_USES), 48);
+}
+
+const METHODS_OF_NO_NAME_ON_REFERENCES: [&[&str]; 3] = [
+    &["Clip v:\n    Note\n", "let x = v.zz(1)\nClip c | gain=x\n"],
+    &["Clip v:\n    Note\n", "Clip c | gain=v.zz(1)\n"],
+    &["Clip v:\n    Note\n", "Clip c | gain=[v, v].zz(1)\n"],
+];
+
+#[test]
+fn a_method_of_no_name_on_an_instance_reference_draws_unknown_name_at_the_method_beside_a_valid_twin_in_every_order()
+ {
+    assert_eq!(
+        same_as_the_old_engine(&METHODS_OF_NO_NAME_ON_REFERENCES),
+        18
+    );
+}
+
+const PLACEMENTS_A_REGION_RUNS_INTO: [&[&str]; 3] = [
+    &[
+        "Plant fill: Valve/0 (Controller//0.4 | gain=0.5)\n\n",
+        "Plant cooling:\n    Loop/0.3\n",
+    ],
+    &[
+        "Plant fill: Valve/0 (Controller/0.4 | gain=0.5)\n",
+        "Plant cooling:\n    Loop/0.3\n",
+    ],
+    &[
+        "Plant fill: Valve/0 (Controller//0.4 | gain=0.5)\n",
+        "Plant cooling | mode=override:\n    Valve/0.1\n    Loop/0.3\n",
+    ],
+];
+
+#[test]
+fn a_top_level_placement_a_syntax_faults_region_runs_into_draws_its_bodys_faults_beside_the_repaired_twin_in_every_order()
+ {
+    assert_eq!(same_as_the_old_engine(&PLACEMENTS_A_REGION_RUNS_INTO), 18);
+}
+
+const MEMBERS_OF_FAULTY_RECEIVERS: [&[&str]; 14] = [
+    &["Clip c:\n    Note/(([1, 2][5] % true).size)\n"],
+    &["Clip c:\n    Note/(([1, 2][5] % 1).size)\n"],
+    &["Clip c:\n    Note/((if q then 1.5 else 300000000000).size)\n"],
+    &["Clip c:\n    Note/((1 / [1, 2][5]).size)\n"],
+    &["Clip c:\n    Note/((([1, 2][5]).size)[300000000000 % Wave::Saw])\n"],
+    &["Clip c:\n    Note/(([1, 2][5] < 300000000000).size)\n"],
+    &["Clip c:\n    Note/(([1, 2] + [3])[2 ** 63..].size)\n"],
+    &["Clip c:\n    Note/((if 1 > 0 then [1] else [true])[^2 ** 63..].size)\n"],
+    &["Clip c:\n    Note/(([1] + [true])[2 ** 63..].size)\n"],
+    &["Clip c:\n    Note/((5 + q).size)\n"],
+    &[
+        "let a = (if q then 1.5 else 300000000000).size\n",
+        "Clip c:\n    Note/(a)\n",
+    ],
+    &[
+        "let a = ([b] + [1]).size\n",
+        "let b = a + 1\n",
+        "Clip c:\n    Note/(a)\n",
+    ],
+    &[
+        "let xs = [1, 2]\n",
+        "Clip c:\n    Note/(([300, 1] + [u8(1)]).size)\n",
+    ],
+    &["Clip c:\n    Note/(([u8(1)] + [300])[1..].size)\n"],
+];
+
+#[test]
+fn a_size_reads_its_receivers_value_and_its_receivers_declarations_so_the_receivers_faults_draw_beside_a_valid_twin_in_every_order()
+ {
+    assert_eq!(same_as_the_old_engine(&MEMBERS_OF_FAULTY_RECEIVERS), 58);
+}
+
+const MISSED_EDGES: [(&str, &str, &str); 5] = [
+    (
+        "let x = true\nClip a | gain=(b.gain):\n    Plays as w | gain=to.gain: if x then a else b\nClip b | gain=(a.w.gain)\n",
+        "w.gain",
+        "a.gain",
+    ),
+    (
+        "Clip a | gain=(b.gain)\nClip b | gain=(a.gain)\n",
+        "b.gain",
+        "a.gain",
+    ),
+    (
+        "let a = b + 1\nlet b = a + 1\nClip c:\n    Note/(a)\n",
+        "b",
+        "a",
+    ),
+    ("let x = c.gain\nClip c | gain=(x)\n", "c.gain", "x"),
+    (
+        "let a = ([b] + [1]).size\nlet b = a + 1\nClip c:\n    Note/(a)\n",
+        "b",
+        "a",
+    ),
+];
+
+#[test]
+fn a_walk_that_meets_a_declaration_it_is_still_typing_or_evaluating_outside_every_cycle_draws_internal_error_in_bounded_work_531()
+ {
+    let new =
+        Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("the vocabulary compiles");
+    let steps = || {
+        crate::semantics::counted_walk::CountedWalk::ALL
+            .iter()
+            .map(|walk| walk.steps())
+            .sum::<u64>()
+    };
+    for (text, from, to) in MISSED_EDGES {
+        let codes = |dropped: Option<(String, String)>| {
+            super::cycles::DROPPED_EDGE.with(|edge| *edge.borrow_mut() = dropped);
+            let start = steps();
+            let found = new
+                .checked_by_new_core(&[source(text)])
+                .unwrap_or_else(|| panic!("the new core takes {text}"));
+            super::cycles::DROPPED_EDGE.with(|edge| *edge.borrow_mut() = None);
+            let codes: Vec<Code> = found.iter().map(|diagnostic| diagnostic.code).collect();
+            (codes, steps() - start)
+        };
+        let (whole, _) = codes(None);
+        assert!(whole.contains(&Code::DeclarationCycle), "{text}: {whole:?}");
+        let (missed, work) = codes(Some((from.into(), to.into())));
+        assert_eq!(missed, [Code::InternalError], "{text}");
+        assert!(work < 10_000, "{text}: {work} steps");
+    }
+}
+
+const METHODS_THROUGH_A_SECOND_CALL: [&[&str]; 7] = [
+    &[
+        "fn f(x): x.yy()\nfn h(y): f(y)\n",
+        "Clip c:\n    Note/(h(1 + true))\n",
+    ],
+    &[
+        "fn f(x): x.yy()\nfn h(y): f(y)\nfn g(z): h(z)\n",
+        "Clip c:\n    Note/(g(1 + true))\n",
+    ],
+    &[
+        "fn f(x): x.yy()\nfn h(y, w): f(w)\n",
+        "Clip c:\n    Note/(h(1, 1 + true))\n",
+    ],
+    &[
+        "fn f(x): x.yy()\nfn h(y, w): f(y)\n",
+        "Clip c:\n    Note/(h(1, 1 + true))\n",
+    ],
+    &[
+        "fn f(x): x.yy()\nfn h(y): f(y) + f(y)\n",
+        "Clip c:\n    Note/(h(1 + true))\n",
+    ],
+    &[
+        "fn f(x, w): x.yy()\nfn h(y): f(x=y, w=1)\n",
+        "Clip c:\n    Note/(h(1 + true))\n",
+    ],
+    &[
+        "fn f(x): x.yy()\nfn h(y): f(y)\n",
+        "let b = 1 + true\n",
+        "Clip c:\n    Note/(h(b))\n",
+    ],
+];
+
+#[test]
+fn a_method_of_no_name_on_a_parameter_bound_through_a_second_call_to_a_refused_argument_draws_unknown_name_in_that_chain_beside_a_valid_twin_in_every_order()
+ {
+    assert_eq!(same_as_the_old_engine(&METHODS_THROUGH_A_SECOND_CALL), 60);
+}
+
+const WIRE_NAMES_AS_VALUES_AND_DESTINATIONS: [&[&str]; 15] = [
+    &["Clip a\nClip c:\n    Plays as w: a\n    Note/(w)\n"],
+    &[
+        "Clip a\nClip c:\n    Plays as w: a\n",
+        "Clip d:\n    Note/(w)\n",
+    ],
+    &["Clip a\nClip c:\n    Plays as w: a\n    Plays: w\n"],
+    &["Clip a\nClip c:\n    Plays as w: a\n", "let x = w\n"],
+    &["Clip a\nClip c:\n    Plays as w: a\n    Note/(w + 1)\n"],
+    &["Clip a\nClip c:\n    Plays as w: a\n    Note when w\n"],
+    &["Clip a\nClip c:\n    Plays as w: a\n    Plays as v: w\n"],
+    &["Clip a\nClip c:\n    Plays as w: a\n    Plays: if true then w else a\n"],
+    &["Clip a\nClip c:\n    Plays as w: a\n    Plays: [w, a][1]\n"],
+    &[
+        "state s(true)\n",
+        "Clip a\nClip c:\n    Plays as w: a\n    Plays: if s then w else a\n",
+    ],
+    &[
+        "let w = 1\n",
+        "Clip a\nClip c:\n    Plays as w: a\n    Note/(w)\n",
+    ],
+    &["Clip a\nClip c:\n    Plays as w | gain=0.5: a\n    Plays as v | gain=to.gain: w\n"],
+    &["Clip a\nClip c:\n    Plays as w: a\n    for i in 0..2:\n        Note/(w)\n"],
+    &["Clip a\nClip c:\n    Plays as w: a\n    Note | velocity=w\n"],
+    &["Clip a\nClip c:\n    Plays as w: w\n"],
+];
+
+#[test]
+fn a_named_wires_name_read_as_a_value_or_a_destination_draws_what_a_reference_draws_and_a_destination_naming_it_draws_destination_type_beside_a_valid_twin_in_every_order()
+ {
+    assert_eq!(
+        same_as_the_old_engine(&WIRE_NAMES_AS_VALUES_AND_DESTINATIONS),
+        46
+    );
+}
+
+const BYTES_OF_INTEGER_ARRAYS: [&[&str]; 13] = [
+    &["let xs = [1, 300]\n", "Clip c:\n    Note/(xs.bytes[1])\n"],
+    &["let xs = [1.5, 2.0]\n", "Clip c:\n    Note/(xs.bytes[0])\n"],
+    &["let xs = [true]\n", "Clip c:\n    Note/(xs.bytes[0])\n"],
+    &["Clip c:\n    Note/([1, -5].bytes[1])\n"],
+    &[
+        "let xs = [i32(1), -5]\nlet ys = xs.bytes\n",
+        "Clip c:\n    Note/(ys[1])\n",
+    ],
+    &["let x = 5\n", "Clip c:\n    Note/(x.bytes[0])\n"],
+    &[
+        "let xs = [1, 300]\n",
+        "Clip c:\n    Note/(xs.bytes.size)\n    Note/([1][xs.bytes.size])\n",
+    ],
+    &[
+        "let xs = [1, 300]\n",
+        "Clip c:\n    Note/(xs.bytes[1] + u8(1))\n",
+    ],
+    &[
+        "let xs = [1, 300]\nlet y: u8 = xs.bytes[1] + 1\n",
+        "Clip c:\n    Note/(y)\n",
+    ],
+    &[
+        "let xs = [-3, 1000, 7]\n",
+        "Clip c:\n    Note/(xs.bytes[0] + xs.bytes[1] + xs.bytes[2])\n",
+    ],
+    &["let xs = [1, 300]\n", "Clip c:\n    Note/(xs.bytes[5])\n"],
+    &[
+        "let xs = [1, 300]\n",
+        "Clip c:\n    Note/(xs.bytes.bytes[0])\n",
+    ],
+    &[
+        "let xs = [1, 2]\n",
+        "Clip c:\n    Note/((xs + xs).bytes[3])\n",
+    ],
+];
+
+#[test]
+fn an_integer_arrays_bytes_saturates_each_element_into_u8_and_another_arrays_draws_operand_type_beside_a_valid_twin_in_every_order()
+ {
+    assert_eq!(same_as_the_old_engine(&BYTES_OF_INTEGER_ARRAYS), 74);
+}
+
+const MEMBERS_IN_PLACEMENT_LOOP_HEADS: [&str; 11] = [
+    "for i in 0..(xs + xs).size:\n        Note/(i)\n",
+    "for i in 0..xs.size:\n        Note/(i)\n",
+    "for i in 0..xs[0..1].size:\n        Note/(i)\n",
+    "for i in 0..(xs + [true]).size:\n        Note/(i)\n",
+    "for i in 0..xs.bytes.size:\n        Note/(i)\n",
+    "for x in xs.bytes:\n        Note/(x)\n",
+    "for i in 0..(xs + xs)[2 ** 63..].size:\n        Note/(i)\n",
+    "for i in (xs + xs).size..1:\n        Note/(i)\n",
+    "for i in 0..xs.capacity:\n        Note/(i)\n",
+    "for i, x in (xs + [3]):\n        Note/(x + i)\n",
+    "for i in 0..xs[5..].size:\n        Note/(i)\n",
+];
+
+#[test]
+fn a_size_capacity_or_bytes_in_a_placement_loop_head_is_read_before_the_loop_runs_beside_a_valid_twin_in_every_order()
+ {
+    let clips: Vec<String> = MEMBERS_IN_PLACEMENT_LOOP_HEADS
+        .iter()
+        .map(|head| format!("Clip c:\n    {head}"))
+        .collect();
+    let rows: Vec<[&str; 2]> = clips
+        .iter()
+        .map(|clip| ["let xs = [1, 2]\n", clip.as_str()])
+        .collect();
+    let rows: Vec<&[&str]> = rows.iter().map(|row| row.as_slice()).collect();
+    assert_eq!(same_as_the_old_engine(&rows), 66);
+}
+
+const NOT_CALLABLE_DOT_CALLS_ON_EXPRESSIONS: [&str; 12] = [
+    "Note/((1 + true).zz())",
+    "Note/((1 + 2).zz())",
+    "Note/([1, 2].zz())",
+    "Note/([1, 2][0].zz(3))",
+    "Note/((if true then 1 else 2).zz())",
+    "Note/(abs(1).zz())",
+    "Note/([1, 2][5].zz())",
+    "Note/((1 + true).zz(a=1))",
+    "Note/((1).zz([1, 2][5]))",
+    "Note/(([1, 2][5] + 1).zz())",
+    "Note/(zz([1, 2][5]))",
+    "Note/(zz(1 + true))",
+];
+
+#[test]
+fn a_dot_call_of_a_name_that_is_no_function_on_an_expression_draws_not_callable_and_its_receivers_faults_beside_a_valid_twin_in_every_order()
+ {
+    let clips: Vec<String> = NOT_CALLABLE_DOT_CALLS_ON_EXPRESSIONS
+        .iter()
+        .map(|note| format!("Clip c:\n    {note}\n"))
+        .collect();
+    let mut rows: Vec<Vec<&str>> = clips
+        .iter()
+        .map(|clip| vec!["let zz = 1\n", clip.as_str()])
+        .collect();
+    rows.push(vec![
+        "let zz = 1\nlet q = (1 + true).zz()\n",
+        "Clip c:\n    Note/(1)\n",
+    ]);
+    rows.push(vec![
+        "let zz = 1\nlet a = [1, 2][5].zz()\n",
+        "Clip c:\n    Note/(a)\n",
+    ]);
+    let rows: Vec<&[&str]> = rows.iter().map(Vec::as_slice).collect();
+    assert_eq!(same_as_the_old_engine(&rows), 84);
+}
+
+const MEMBERS_OF_BODY_LETS: [&[&str]; 4] = [
+    &[
+        "fn f(x):\n    let ys = [x, x] + [1]\n    ys.size\n",
+        "Clip c:\n    Note/(f(1))\n",
+    ],
+    &[
+        "fn f(xs):\n    let ys = xs + [1]\n    [1][ys.size]\n",
+        "Clip c:\n    Note/(f([1]))\n    Note/(f([1, 2]))\n",
+    ],
+    &[
+        "fn f(xs):\n    let ys = xs + [300]\n    ys.bytes[0] + ys.bytes[1]\n",
+        "Clip c:\n    Note/(f([1]))\n",
+    ],
+    &[
+        "fn f(x):\n    let ys = [x] + [true]\n    ys.size\n",
+        "Clip c:\n    Note/(f(1))\n",
+    ],
+];
+
+#[test]
+fn a_size_or_bytes_of_a_body_let_holding_an_array_expression_is_measured_in_each_body_instance_beside_a_valid_twin_in_every_order()
+ {
+    assert_eq!(same_as_the_old_engine(&MEMBERS_OF_BODY_LETS), 24);
+}
+
+const MEASURED_LITERALS: [&str; 4] = [
+    "Note/([[1, 2][5], 3].size)",
+    "Note/([3, [1, 2][5]].size)",
+    "Note/(([[1, 2][5]] + [3]).capacity)",
+    "Note/([[1, 2][5], 3][[[1, 2][5], 3].size - 1])",
+];
+
+#[test]
+fn a_size_of_an_array_literal_or_a_join_of_literals_reads_none_of_its_elements_beside_a_valid_twin_in_every_order()
+ {
+    let clips: Vec<String> = MEASURED_LITERALS
+        .iter()
+        .map(|note| format!("Clip c:\n    {note}\n"))
+        .collect();
+    let rows: Vec<[&str; 1]> = clips.iter().map(|clip| [clip.as_str()]).collect();
+    let rows: Vec<&[&str]> = rows.iter().map(|row| row.as_slice()).collect();
+    assert_eq!(same_as_the_old_engine(&rows), 8);
+}
+
+const FROM_END_ELEMENTS_OF_REFERENCES: [&[&str]; 4] = [
+    &["Clip n\nClip m\n", "Clip c:\n    Note/([n, m][^1])\n"],
+    &[
+        "Clip n\nClip m\nlet r = [n, m][^1]\n",
+        "Clip c:\n    Note/(r)\n",
+    ],
+    &["Clip n\nClip m\n", "Clip c:\n    Note/([n, m][^3])\n"],
+    &["Clip n\nClip m\n", "Clip c:\n    Note/([n, m][^true])\n"],
+];
+
+#[test]
+fn a_from_end_element_of_an_array_of_references_is_a_reference_beside_a_valid_twin_in_every_order()
+{
+    assert_eq!(same_as_the_old_engine(&FROM_END_ELEMENTS_OF_REFERENCES), 24);
+}
+
+const REFERENCES_AS_CALL_ARGUMENTS: [&[&str]; 10] = [
+    &["fn f(x): x\nClip n\n", "Clip c:\n    Note/(f(n))\n"],
+    &["fn f(x): [x, x]\nClip n\n", "Clip c:\n    Note/(f(n)[0])\n"],
+    &["fn f(x): x + 1\nClip n\n", "Clip c:\n    Note/(f(n))\n"],
+    &[
+        "fn f(x): x\nClip n\nClip m\n",
+        "Clip c:\n    Note/(f(n))\n    Note/(f(m))\n",
+    ],
+    &["fn f(x): x\nClip n\n", "Clip c:\n    Note/(f(n, 1))\n"],
+    &["fn f(x): x\nClip n\n", "Clip c:\n    Note when f(n)\n"],
+    &["fn f(x): [x][1]\nClip n\n", "Clip c:\n    Note/(f(n))\n"],
+    &[
+        "fn f(x, y): y + 300\nClip n\n",
+        "Clip c:\n    Note/(f(n, u8(2)))\n",
+    ],
+    &[
+        "fn g(x): x\nfn f(x): g(x)\nClip n\n",
+        "Clip c:\n    Note/(f(n))\n",
+    ],
+    &[
+        "fn f(x): x\nClip n\nlet r = f(n)\n",
+        "Clip c:\n    Note/(r)\n",
+    ],
+];
+
+#[test]
+fn a_reference_passed_to_a_function_is_typed_through_its_body_beside_a_valid_twin_in_every_order() {
+    assert_eq!(same_as_the_old_engine(&REFERENCES_AS_CALL_ARGUMENTS), 60);
+}
+
+const DESTINATIONS_CHOSEN_BY_A_CALL: [&[&str]; 8] = [
+    &["fn f(x): x\nClip a\n", "Clip c:\n    Plays: f(a)\n"],
+    &[
+        "fn f(x, y): if y then x else x\nClip a\n",
+        "Clip c:\n    Plays: f(a, true)\n",
+    ],
+    &["fn f(x): x\nClip c:\n    Plays: f(5)\n"],
+    &["fn f(x): [x][0]\nClip a\n", "Clip c:\n    Plays: f(a)\n"],
+    &["fn f(x): x\nClip c:\n    Note as n/60\n    Plays: f(n)\n"],
+    &["fn f(x, y): if y then x else c\nClip c:\n    Note as n/60\n    Plays: f(n, true)\n"],
+    &["fn f(x, y): if y then x else c\nClip c:\n    Note as n/60\n    Plays: f(n, false)\n"],
+    &[
+        "fn f(x): x\nstate s(true)\nClip a\nClip b\n",
+        "Clip c:\n    Plays: if s then f(a) else b\n",
+    ],
+];
+
+#[test]
+fn a_destination_chosen_by_a_function_call_is_the_instance_the_call_returns_beside_a_valid_twin_in_every_order()
+ {
+    assert_eq!(same_as_the_old_engine(&DESTINATIONS_CHOSEN_BY_A_CALL), 32);
+}
+
+const INDEXES_RETURNED_BY_CALLS: [&[&str]; 6] = [
+    &["fn f(): 3\n", "Clip c:\n    Note/([1, 2, 3][f()])\n"],
+    &[
+        "fn g(): 3\nfn f(): g()\n",
+        "Clip c:\n    Note/([1, 2, 3][f()])\n",
+    ],
+    &["fn f(x): x\n", "Clip c:\n    Note/([1, 2, 3][f(3)])\n"],
+    &["fn f(): 2\n", "Clip c:\n    Note/([1, 2, 3][f()])\n"],
+    &["fn f(): 3\n", "Clip c:\n    Note/([1, 2, 3][^f()])\n"],
+    &[
+        "fn f(): 3\nlet x = [1, 2, 3][f()]\n",
+        "Clip c:\n    Note/(x)\n",
+    ],
+];
+
+#[test]
+fn an_index_a_call_returns_out_of_range_draws_at_the_returned_value_in_its_calls_innermost_first_beside_a_valid_twin_in_every_order_534()
+ {
+    assert_eq!(same_as_the_old_engine(&INDEXES_RETURNED_BY_CALLS), 36);
+}
+
+const UNRUN_DESTINATIONS: [&[&str]; 7] = [
+    &[
+        "state k(1)\n",
+        "Clip c:\n    for i in 0..0:\n        Plays: k\n",
+    ],
+    &["Clip c:\n    for i in 0..0:\n        Plays: 3\n"],
+    &[
+        "let u = true\n",
+        "Clip c:\n    for i in 0..0:\n        Plays: u\n",
+    ],
+    &[
+        "state k(1)\n",
+        "Clip c:\n    for i in 0..0:\n        Plays: (k)\n",
+    ],
+    &[
+        "Clip n\nlet u = n\n",
+        "Clip c:\n    for i in 0..0:\n        Plays: u\n",
+    ],
+    &[
+        "state k(1)\nClip n\n",
+        "Clip c:\n    for i in 0..0:\n        Plays: if true then k else n\n",
+    ],
+    &[
+        "state k(1)\n",
+        "pattern P():\n    Clip:\n        Plays: k\n",
+    ],
+];
+
+#[test]
+fn a_destination_in_an_unrun_body_or_an_unused_pattern_that_holds_no_instance_draws_destination_type_beside_a_valid_twin_in_every_order()
+ {
+    assert_eq!(same_as_the_old_engine(&UNRUN_DESTINATIONS), 38);
+}
+
+const REFERENCE_PARAMETER_PATHS: [&[&str]; 5] = [
+    &[
+        "fn f(x): x.gain\nClip a | gain=0.5\n",
+        "Clip c:\n    Note | velocity=f(a)\n",
+    ],
+    &[
+        "fn f(x): x.zz\nClip a | gain=0.5\n",
+        "Clip c:\n    Note | velocity=f(a)\n",
+    ],
+    &[
+        "fn f(x): x.gain + 1\nClip a | gain=1.5\nClip b | gain=true\n",
+        "Clip c:\n    Note | velocity=f(a)\n    Note | velocity=f(b)\n",
+    ],
+    &["fn f(x): x.gain\n", "Clip a | gain=f(a)\n"],
+    &["fn f(x): x.gain\nfn g(y): f(y)\n", "Clip a | gain=g(a)\n"],
+];
+
+const PARAMETER_MEMBERS: [&[&str]; 7] = [
+    &[
+        "fn f(x): x.gain\nfn g(y): f(y)\nClip a | gain=0.5\n",
+        "Clip c:\n    Note | velocity=g(a)\n",
+    ],
+    &["fn f(x): x.gain\n", "Clip c:\n    Note | velocity=f(1)\n"],
+    &["fn f(x): x.size\nClip a\n", "Clip c:\n    Note/(f(a))\n"],
+    &[
+        "fn f(xs): [1, 2][xs.size]\n",
+        "Clip c:\n    Note/(f([1, 2]))\n",
+    ],
+    &[
+        "fn f(x): x.gain\nClip a | gain=300000000000\n",
+        "Clip c:\n    Note | velocity=f(a)\n",
+    ],
+    &[
+        "fn f(x): x.gain\nClip a | gain=0.5\nlet r = a\n",
+        "Clip c:\n    Note | velocity=f(r)\n",
+    ],
+    &[
+        "fn f(x): x.gain\nClip a | gain=0.5\n",
+        "Clip c:\n    for i in 0..2:\n        Note | velocity=f(a) + i\n",
+    ],
+];
+
+#[test]
+fn a_path_through_a_function_parameter_reads_the_attribute_of_the_instance_its_body_instance_holds_beside_a_valid_twin_in_every_order()
+ {
+    assert_eq!(same_as_the_old_engine(&REFERENCE_PARAMETER_PATHS), 30);
+}
+
+#[test]
+fn a_member_or_a_path_of_a_function_parameter_through_a_second_call_a_let_or_a_loop_reads_its_argument_beside_a_valid_twin_in_every_order()
+ {
+    assert_eq!(same_as_the_old_engine(&PARAMETER_MEMBERS), 42);
+}
+
+const REFERENCE_SLICES: [&[&str]; 4] = [
+    &["Clip n\nClip m\n", "Clip c:\n    Note/([n, m][0..1][0])\n"],
+    &["Clip n\nClip m\n", "Clip c:\n    Note/([n, m][0..1][1])\n"],
+    &["Clip n\nClip m\n", "Clip c:\n    Note/([n, m][1..])\n"],
+    &[
+        "Clip n\nClip m\nlet r = [n, m][1..]\n",
+        "Clip c:\n    Note/(r[0] + 1)\n",
+    ],
+];
+
+#[test]
+fn a_slice_of_an_array_of_references_is_an_array_of_references_beside_a_valid_twin_in_every_order()
+{
+    assert_eq!(same_as_the_old_engine(&REFERENCE_SLICES), 24);
+}
+
+const ENUM_PATH_READS: [&[&str]; 7] = [
+    &["Osc a | wave=Saw\n", "Osc b | wave=a.wave\n"],
+    &["Osc a | wave=Saw\n", "Osc b | wave=a.wave freq=a.wave\n"],
+    &["Osc a\n", "Osc b | wave=a.wave\n"],
+    &[
+        "Osc a | wave=Saw\n",
+        "Osc b | freq=if a.wave is Saw then 1 else 2\n",
+    ],
+    &["Osc a | wave=Nope\n", "Osc b | wave=a.wave\n"],
+    &["Plant p | mode=Manual\n", "Osc b | wave=p.mode\n"],
+    &["Osc a | wave=Saw\nlet w = a.wave\n", "Osc b | wave=w\n"],
+];
+
+#[test]
+fn a_path_read_of_an_enum_attribute_reads_its_variant_beside_a_valid_twin_in_every_order() {
+    assert_eq!(same_as_the_old_engine(&ENUM_PATH_READS), 42);
+}
+
+const REFERENCE_ARRAY_MEMBERS: [&[&str]; 7] = [
+    &[
+        "Clip n\nClip m\n",
+        "Clip c:\n    Note/([1][[n, m][0..1].size])\n",
+    ],
+    &[
+        "Clip n\nClip m\n",
+        "Clip c:\n    Note/([1][[n, m][0..2].capacity])\n",
+    ],
+    &[
+        "Clip n\nClip m\n",
+        "Clip c:\n    Note/([1, 2][[n, m].size])\n",
+    ],
+    &[
+        "Clip n\nClip m\nlet r = [n, m]\n",
+        "Clip c:\n    Note/((r + [n])[0])\n",
+    ],
+    &["Clip n\nClip m\n", "Clip c:\n    Note/(([n] + [m])[1])\n"],
+    &[
+        "Clip n\nClip m\nlet r = [n, m]\n",
+        "Clip c:\n    Note/([1][(r + [n]).size])\n",
+    ],
+    &[
+        "Clip n\nClip m\n",
+        "Clip c:\n    Note/([1, 2][([n] + [m]).capacity])\n",
+    ],
+];
+
+#[test]
+fn a_member_of_an_array_of_references_measures_it_and_a_join_of_two_is_one_beside_a_valid_twin_in_every_order()
+ {
+    assert_eq!(same_as_the_old_engine(&REFERENCE_ARRAY_MEMBERS), 42);
+}
+
+const MEMBER_NAMED_CALLS: [&[&str]; 5] = [
+    &["fn bytes(x): x\n", "Clip c:\n    Note/((64).bytes())\n"],
+    &[
+        "fn size(x): [1, 2][x]\n",
+        "Clip c:\n    Note/((5).size())\n",
+    ],
+    &["fn f0(x): x\n", "Clip c:\n    Note/((64).f0())\n"],
+    &[
+        "fn size(x): x\nlet k = 64\n",
+        "Clip c:\n    Note/(k.size())\n",
+    ],
+    &[
+        "fn bytes(x): x\n",
+        "Clip c:\n    Note/([64][([1, 2]).bytes()[0]])\n",
+    ],
+];
+
+#[test]
+fn a_member_named_dot_call_on_a_value_lacking_the_member_calls_the_function_and_an_arrays_own_member_wins_beside_a_valid_twin_in_every_order()
+ {
+    assert_eq!(same_as_the_old_engine(&MEMBER_NAMED_CALLS), 30);
+}
+
+const FUNCTION_NAMED_MEMBERS: [&[&str]; 6] = [
+    &["fn bytes(x): x\n", "Clip c:\n    Note/((64).bytes)\n"],
+    &["fn f0(x): x\n", "Clip c:\n    Note/((64).f0)\n"],
+    &[
+        "fn size(x): x\nlet k = 64\n",
+        "Clip c:\n    Note/(k.size)\n",
+    ],
+    &[
+        "fn f0(x): x\nlet k = [1, 2]\n",
+        "Clip c:\n    Note/(k.f0)\n",
+    ],
+    &[
+        "fn size(x): x\nlet k = [1, 2]\n",
+        "Clip c:\n    Note/([1][k.size])\n",
+    ],
+    &[
+        "fn bytes(x): x\n",
+        "Clip c:\n    Note/([64][([1, 2]).bytes[0]])\n",
+    ],
+];
+
+#[test]
+fn a_member_name_a_values_type_lacks_naming_a_function_draws_not_a_value_and_an_arrays_own_member_wins_beside_a_valid_twin_in_every_order()
+ {
+    assert_eq!(same_as_the_old_engine(&FUNCTION_NAMED_MEMBERS), 36);
+}
+
+const ARRAY_KEYS: [&[&str]; 6] = [
+    &[
+        "fn h(xs): (for i in 0..xs[0] into a from 0: a + i)\n",
+        "Clip k:\n    Note/([60][h([2, 5]) - 1])\n",
+    ],
+    &[
+        "fn h(xs): (for i in 0..xs[0] into a from 0: a + i)\n",
+        "Clip k:\n    Note/([60][h([3, 5]) - 1])\n",
+    ],
+    &[
+        "fn h(xs): (for i in 0..xs[0] into a from 0: a + i)\nfn g(ys): h(ys)\n",
+        "Clip k:\n    Note/([60][g([2, 5]) - 1])\n",
+    ],
+    &[
+        "fn h(xs): (for i in 0..xs[0] into a from 0: a + i)\n",
+        "Clip k:\n    Note/([60][h([2] + [5]) - 1])\n",
+    ],
+    &[
+        "fn h(xs): (for i in 0..xs[1] into a from 0: a + i)\n",
+        "Clip k:\n    Note/([60][h([5, 2][0..]) + h([2, 2]) - 2])\n",
+    ],
+    &[
+        "fn h(xs): (for i in 0..xs[0][0] into a from 0: a + i)\n",
+        "Clip k:\n    Note/([60][h([[2]]) - 1])\n",
+    ],
+];
+
+#[test]
+fn an_array_passed_to_a_function_keys_its_body_instance_by_the_arrays_elements_in_linear_work_beside_a_valid_twin_in_every_order_538()
+ {
+    assert_eq!(same_as_the_old_engine(&ARRAY_KEYS), 36);
+    let new =
+        Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("the vocabulary compiles");
+    let steps = || {
+        crate::semantics::counted_walk::CountedWalk::ALL
+            .iter()
+            .map(|walk| walk.steps())
+            .sum::<u64>()
+    };
+    let work = |sites: usize| {
+        let mut text = String::from("fn h(xs): (for i in 0..xs[0] into a from 0: a + i)\n");
+        for site in 0..sites {
+            text.push_str(&format!(
+                "Clip k{site}:\n    Note/([60][h([{}, 5]) - {}])\n",
+                2 + site % 2,
+                1 + 2 * (site % 2)
+            ));
+        }
+        let start = steps();
+        let found = new
+            .checked_by_new_core(&[source(&text)])
+            .unwrap_or_else(|| panic!("the new core takes {text}"));
+        assert!(
+            found
+                .iter()
+                .all(|diagnostic| diagnostic.code == Code::NoEntryInstance),
+            "{text}: {found:?}"
+        );
+        steps() - start
+    };
+    let (small, large) = (work(4), work(8));
+    assert!(large <= 2 * small, "{small} steps at 4 sites, {large} at 8");
+}
+
+const INSTANCE_METHOD_CALLS: [&str; 4] = [
+    "Rig stage:\n    Lamp as wash\nScene night:\n    Dims as soften | depth=0.4: stage.wash(\n\nScene dawn:\n    Cue/0\n",
+    "Rig stage:\n    Scene as dusk | hold=8:\n        Cue/0\n    Lamp as wash\nScene night:\n    Cue/0\n    Triggers: stage.dusk(\n",
+    "Rig stage:\n    Lamp as wash\nScene night:\n    Dims: stage.wash()\n",
+    "Rig stage:\n    Lamp as wash\nSession main\nScene night:\n    Cue/(stage.wash())\n",
+];
+
+#[test]
+fn a_method_call_on_an_instance_naming_its_child_or_attribute_where_no_function_has_the_name_is_declined_where_the_new_core_drew_unknown_name()
+ {
+    let new =
+        Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("the vocabulary compiles");
+    for text in INSTANCE_METHOD_CALLS {
+        assert!(new.checked_by_new_core(&[source(text)]).is_none(), "{text}");
+    }
+}
+
+const SCALED_PATH_READS: [&[&str]; 6] = [
+    &[
+        "Bar a | bar_len=i64(1)\n",
+        "Bar b | beat_len=a.bar_len + i64(9223372036854775806)\n",
+    ],
+    &[
+        "Bar a | bar_len=1\n",
+        "Bar b | beat_len=a.bar_len + i64(9223372036854775803)\n",
+    ],
+    &[
+        "let k = 2\n",
+        "Bar a | bar_len=k\n",
+        "Bar b | beat_len=a.bar_len + i64(9223372036854775800)\n",
+    ],
+    &["Bar a | bar_len=2\n", "Bar b | plain=a.bar_len\n"],
+    &[
+        "Bar a | bar_len=1\n",
+        "Bar b | beat_len=a.bar_len * 2 + a.bar_len\n",
+    ],
+    &["Bar a | bar_len=1 beat_len=a.bar_len + i64(9223372036854775806)\n"],
+];
+
+#[test]
+fn a_path_read_of_a_scaled_unit_attribute_reads_its_value_in_base_units_in_every_order_and_in_every_run_537()
+ {
+    let vocabulary = symphonyscript_fixtures::bar_vocabulary();
+    let old = Compiler::new(&vocabulary)
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
+    let twin = "Bar t | bar_len=i64(3)\n";
+    let mut programs = 0;
+    for items in SCALED_PATH_READS {
+        let mut all: Vec<&str> = items.to_vec();
+        all.push(twin);
+        for order in Orders::Every.of(&all) {
+            let text = order.concat();
+            let sources = [source(&text)];
+            let expected = old.check(&sources);
+            for _ in 0..2 {
+                let new = Compiler::new(&vocabulary).expect("the vocabulary compiles");
+                let found = new
+                    .checked_by_new_core(&sources)
+                    .unwrap_or_else(|| panic!("the new core takes {text}"));
+                assert_eq!(found, expected, "{text}");
+            }
+            programs += 1;
+        }
+    }
+    assert_eq!(programs, 50);
+    let text = "Bar a | bar_len=i64(3000000000000000000)\nBar b | beat_len=a.bar_len\n";
+    for order in Orders::Every.of(&[text, twin]) {
+        let text = order.concat();
+        let new = Compiler::new(&vocabulary).expect("the vocabulary compiles");
+        let found = new
+            .checked_by_new_core(&[source(&text)])
+            .unwrap_or_else(|| panic!("the new core takes {text}"));
+        let drawn: Vec<(Code, &str)> = found
+            .iter()
+            .map(|diagnostic| {
+                let range =
+                    diagnostic.span.range.start as usize..diagnostic.span.range.end as usize;
+                (diagnostic.code, text.get(range).unwrap_or_default())
+            })
+            .collect();
+        assert_eq!(
+            drawn,
+            [(Code::ConstantOverflow, "i64(3000000000000000000)")],
+            "{text}"
+        );
+    }
+}
+
+const UNWRITTEN_PARAMETER_PATHS: [&str; 4] = [
+    "Session main\nClip verse | gain=k.gain:\n    Note\nClip other | gain=k.gain:\n    Note\nfn f(c): c.gain\nfn h(c, d, xs, i, n): f(xs[i])\nClip k | gain=h(verse, other, [verse, other], 0, 3):\n    Note\n",
+    "Clip verse | gain=2:\n    Note\nClip other | gain=3:\n    Note\nfn f(c): c.gain\nfn h(xs, i): f(xs[i])\nClip k:\n    Note/([60][i32(h([verse, other], 1)) - 3])\n",
+    "Clip verse | gain=2:\n    Note\nfn f(c): c.gain\nClip k:\n    Note/([60][i32(f(c = verse)) - 2])\n",
+    "Clip verse | gain=2:\n    Note\nfn f(c): c.gain\nClip k:\n    Note/([60][i32(f([verse][0])) - 2])\n",
+];
+
+#[test]
+fn a_path_through_a_parameter_whose_argument_is_no_written_instance_is_declined_where_the_declaration_graph_holds_no_edge_for_its_read()
+ {
+    let new =
+        Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("the vocabulary compiles");
+    for text in UNWRITTEN_PARAMETER_PATHS {
+        assert!(new.checked_by_new_core(&[source(text)]).is_none(), "{text}");
+    }
+}
+
+const REFERENCE_ARRAY_BYTES: [&[&str]; 10] = [
+    &[
+        "Clip n | gain=2:\n    Note\nClip m:\n    Note\nlet r = [n, m]\n",
+        "Clip c:\n    Note/(r.gain)\n",
+    ],
+    &[
+        "Clip n | gain=2:\n    Note\nClip m:\n    Note\n",
+        "Clip c:\n    Note/([n, m].gain)\n",
+    ],
+    &[
+        "Clip n | gain=2:\n    Note\nClip m:\n    Note\n",
+        "Clip c:\n    Note | velocity=[n, m][0..1].zz\n",
+    ],
+    &[
+        "Clip n | gain=2:\n    Note\nClip m:\n    Note\nlet r = [n, m]\n",
+        "Clip c:\n    Note/(r.bytes[1])\n",
+    ],
+    &[
+        "Clip n | gain=2:\n    Note\nClip m:\n    Note\nlet r = [n, m]\n",
+        "Clip c:\n    Note/(r.size)\n",
+    ],
+    &[
+        "Clip n | gain=2:\n    Note\nClip m:\n    Note\nlet r = [n, m]\nlet s = r + [n]\n",
+        "Clip c:\n    Note/([60, 61, 62][r.capacity + s.size - 4])\n",
+    ],
+    &[
+        "Clip n | gain=2:\n    Note\nClip m:\n    Note\n",
+        "Clip c:\n    Note/([n, m].bytes[0])\n",
+    ],
+    &[
+        "Clip n | gain=2:\n    Note\nClip m:\n    Note\n",
+        "Clip c:\n    Note/(([n] + [m]).bytes.size)\n",
+    ],
+    &[
+        "Clip n | gain=2:\n    Note\nClip m:\n    Note\n",
+        "Clip c:\n    Note/([n, m][0..1].bytes[0])\n",
+    ],
+    &[
+        "Clip n | gain=2:\n    Note\nClip m:\n    Note\n",
+        "Clip c:\n    Note | velocity=[n, m].bytes\n",
+    ],
+];
+
+#[test]
+fn a_member_of_an_array_of_references_measures_it_its_bytes_draws_operand_type_and_another_field_unknown_attribute_beside_a_valid_twin_in_every_order()
+ {
+    assert_eq!(same_as_the_old_engine(&REFERENCE_ARRAY_BYTES), 60);
+}
+
+#[test]
+fn a_call_binding_nothing_in_a_wire_destination_is_found_in_work_linear_in_the_destinations() {
+    let new =
+        Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("the vocabulary compiles");
+    let work = |rigs: usize| {
+        let text: String = (0..rigs)
+            .map(|rig| {
+                format!("Rig stage{rig}:\n    Lamp* as flash{rig}\n    Dims: flash{rig}()\n")
+            })
+            .collect();
+        let before = crate::semantics::counted_walk::CountedWalk::CoreWireDestination.steps();
+        assert!(
+            new.checked_by_new_core(&[source(&text)]).is_none(),
+            "{text}"
+        );
+        crate::semantics::counted_walk::CountedWalk::CoreWireDestination.steps() - before
+    };
+    let (small, large) = (work(8), work(16));
+    assert!(small > 0, "{small} steps at 8 rigs");
+    assert!(large <= 2 * small, "{small} steps at 8 rigs, {large} at 16");
+}

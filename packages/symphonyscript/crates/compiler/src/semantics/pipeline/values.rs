@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use super::annotation::Refusal;
 use super::call_chain::CallChain;
 use super::core::{Core, Stage};
@@ -48,14 +46,14 @@ pub(crate) fn evaluated_in(ty: EvalTy) -> EvalTy {
 }
 
 fn merge_reach(
-    scaled: &mut std::collections::HashSet<u32>,
-    merged: &mut std::collections::HashSet<usize>,
+    scaled: &mut super::column::ColumnSet,
+    merged: &mut super::column::TripleSet,
     unit: Option<&FrameUnit>,
 ) {
     if let Some(unit) = unit
-        && merged.insert(std::rc::Rc::as_ptr(&unit.reach) as usize)
+        && merged.insert(unit.key)
     {
-        scaled.extend(unit.reach.scaled.iter().copied());
+        scaled.extend(unit.reach.scaled.iter());
     }
 }
 
@@ -405,6 +403,12 @@ impl Core<'_> {
                 }
                 operands
             }
+            Op::Field if self.expr_members.contains(&node) && self.measures_a_literal(node)? => {
+                Vec::new()
+            }
+            Op::Field if self.expr_members.contains(&node) => {
+                vec![(a, EvalTy::Exact)]
+            }
             Op::Int
             | Op::Float
             | Op::Bool
@@ -586,11 +590,16 @@ impl Core<'_> {
 
     fn read_in_env(&mut self, read: &super::attr_read::AttrRead) -> Stage<(CoreValue, EvalTy)> {
         let env = self.read_env(read)?;
+        let open = (read.root, env, self.inst);
+        if !self.open_values.insert(open) {
+            return Err(Internal::missed("an open declaration outside every cycle"));
+        }
         let saved = self.enter_env(env);
         let chain = std::mem::take(&mut self.eval_chain);
         let outcome = self.read_value(read);
         self.eval_chain = chain;
         self.leave_env(saved);
+        self.open_values.remove(&open);
         outcome
     }
 
@@ -625,15 +634,15 @@ impl Core<'_> {
     fn evaluate_frames(&mut self, root: u32, ty: EvalTy) -> Stage<CoreValue> {
         let ty = evaluated_in(ty);
         let mut outer_chains: Vec<CallChain> = Vec::new();
-        let mut open: std::collections::HashSet<u32> = std::collections::HashSet::new();
+        let mut open = super::column::ColumnSet::new();
         let unit = match self.default_scale {
             Some((scaled, family, unit, _)) if scaled == root => {
                 Some(self.frame_unit(root, self.inst, family, unit)?)
             }
             Some(_) | None => None,
         };
-        let mut scaled: std::collections::HashSet<u32> = std::collections::HashSet::new();
-        let mut merged: std::collections::HashSet<usize> = std::collections::HashSet::new();
+        let mut scaled = super::column::ColumnSet::new();
+        let mut merged = super::column::TripleSet::default();
         merge_reach(&mut scaled, &mut merged, unit.as_ref());
         let mut frames: Vec<Frame> = vec![Frame {
             owner: None,
@@ -781,7 +790,9 @@ impl Core<'_> {
                     }
                     if op == Op::Field
                         && (self.array_members.contains_key(&node)
+                            || self.expr_members.contains(&node)
                             || self.runtime_members.contains(&node)
+                            || self.capacity_members.contains(&node)
                             || self.bare_cell_read(node)?.is_some())
                     {
                         let Some(frame) = frames.last_mut() else {
@@ -806,6 +817,11 @@ impl Core<'_> {
                                 Some((self.default_read(&read)?, NONE, EvalTy::Exact))
                             }
                             Some(read) if !read.cyclic && self.read_env(&read)? != NONE => {
+                                if self.scaled_reads.contains_key(&self.read_at(node)?) {
+                                    return Ok(Err(super::declined::Declined(
+                                        super::reason::Reason::UnitAttribute,
+                                    )));
+                                }
                                 match self.read_in_env(&read)? {
                                     Ok((value, read_ty)) => Some((value, NONE, read_ty)),
                                     Err(declined) => return Ok(Err(declined)),
@@ -844,7 +860,19 @@ impl Core<'_> {
                                     let owner = u32::try_from(self.ir.lets.len())
                                         .unwrap_or(u32::MAX)
                                         .saturating_add(at);
+                                    if open.contains(&owner) {
+                                        return Err(Internal::missed(
+                                            "an open declaration outside every cycle",
+                                        ));
+                                    }
                                     open.insert(owner);
+                                    let unit = match self.scaled_reads.get(&at).copied() {
+                                        Some((family, unit)) => {
+                                            Some(self.frame_unit(root, NONE, family, unit)?)
+                                        }
+                                        None => None,
+                                    };
+                                    merge_reach(&mut scaled, &mut merged, unit.as_ref());
                                     frames.push(Frame {
                                         owner: Some(owner),
                                         ty: read_ty,
@@ -853,7 +881,7 @@ impl Core<'_> {
                                         call: None,
                                         inst: NONE,
                                         fold: None,
-                                        unit: None,
+                                        unit,
                                     });
                                 }
                             }
@@ -1393,7 +1421,16 @@ impl Core<'_> {
                     else {
                         continue;
                     };
+                    let read = frame
+                        .owner
+                        .and_then(|owner| {
+                            owner.checked_sub(u32::try_from(self.ir.lets.len()).ok()?)
+                        })
+                        .filter(|at| self.scaled_reads.contains_key(at))
+                        .and_then(|at| self.attr_reads.get(at as usize))
+                        .map(|read| (read.root, family, unit, read.ty));
                     let value = frame.values.pop().ok_or(Internal::missed("value stack"))?;
+                    let outer = read.map(|read| self.default_scale.replace(read));
                     let value = if self.scale_conflicted(node)? {
                         value
                     } else {
@@ -1404,6 +1441,9 @@ impl Core<'_> {
                     } else {
                         value
                     };
+                    if let Some(outer) = outer {
+                        self.default_scale = outer;
+                    }
                     if let Some(frame) = frames.last_mut() {
                         frame.values.push(value);
                     }
@@ -1421,6 +1461,36 @@ impl Core<'_> {
                 }
             }
         }
+    }
+
+    fn measures_a_literal(&self, node: u32) -> Result<bool, Internal> {
+        if self.is_bytes_member(node)? || !self.array_members.contains_key(&node) {
+            return Ok(false);
+        }
+        let mut stack = vec![self.ir.node(node)?.1];
+        while let Some(at) = stack.pop() {
+            let (op, left, right, _) = self.ir.node(at)?;
+            if op == Op::Add {
+                stack.extend([left, right]);
+            } else if op != Op::Array {
+                return Ok(false);
+            }
+        }
+        Ok(true)
+    }
+
+    fn bytes_value(&mut self, receiver: &CoreValue) -> CoreValue {
+        let Value::Array(array) = receiver else {
+            return Value::Error;
+        };
+        let count = usize::try_from(self.store.len(*array)).unwrap_or(0);
+        let mut bytes = Vec::with_capacity(count);
+        for position in 0..count {
+            CountedWalk::ValueRun.step();
+            let element = self.store.element(*array, position).unwrap_or(Value::Error);
+            bytes.push(crate::semantics::operators::convert(element, EvalTy::U8));
+        }
+        Value::Array(self.store.literal(bytes))
     }
 
     fn apply(&mut self, node: u32, ty: EvalTy, stack: &mut Vec<CoreValue>) -> Stage<CoreValue> {
@@ -1598,7 +1668,37 @@ impl Core<'_> {
             }
             Op::Stepped => Value::Error,
             Op::Variant => self.variant_value(node)?,
+            Op::Field if self.history_capacities.contains_key(&node) => {
+                pop(stack)?;
+                let (at, floor) = self
+                    .history_capacities
+                    .get(&node)
+                    .copied()
+                    .unwrap_or((NONE, 0));
+                self.cell_capacity(at)?
+                    .map_or(Value::Error, |capacity| Value::Int(capacity.max(floor)))
+            }
+            Op::Field if self.expr_members.contains(&node) && self.is_bytes_member(node)? => {
+                let receiver = pop(stack)?;
+                self.bytes_value(&receiver)
+            }
+            Op::Field if self.expr_members.contains(&node) && self.measures_a_literal(node)? => {
+                self.array_members
+                    .get(&node)
+                    .map_or(Value::Error, |length| Value::Int(*length))
+            }
+            Op::Field if self.expr_members.contains(&node) => match pop(stack)? {
+                Value::Array(array) => Value::Int(i128::from(self.store.len(array))),
+                _ => self
+                    .array_members
+                    .get(&node)
+                    .map_or(Value::Error, |length| Value::Int(*length)),
+            },
             Op::Field if self.runtime_members.contains(&node) => Value::Error,
+            Op::Field if self.capacity_members.contains(&node) => {
+                let cell = self.cell_sizes.get(&node).copied().unwrap_or(NONE);
+                self.cell_capacity(cell)?.map_or(Value::Error, Value::Int)
+            }
             Op::Field if self.array_members.contains_key(&node) => {
                 Value::Int(self.array_members.get(&node).copied().unwrap_or(0))
             }
@@ -1820,13 +1920,23 @@ impl Core<'_> {
     }
 
     pub fn own_float(&self, root: u32) -> Result<EvalTy, Internal> {
-        for node in self.postorder(root)? {
-            let (op, a, _, _) = self.ir.node(node)?;
-            if op == Op::Float
-                && let Some(entry) = self.ir.floats.get(a as usize)
-                && entry.value.abs() > f64::from(f32::MAX)
-            {
-                return Ok(EvalTy::F64);
+        let (mut roots, mut seen) = (vec![root], super::column::ColumnSet::new());
+        while let Some(root) = roots.pop() {
+            for node in self.postorder(root)? {
+                let (op, a, _, _) = self.ir.node(node)?;
+                if op == Op::Float
+                    && let Some(entry) = self.ir.floats.get(a as usize)
+                    && entry.value.abs() > f64::from(f32::MAX)
+                {
+                    return Ok(EvalTy::F64);
+                }
+                if op == Op::Name
+                    && let DeclRef::Let(at) = self.bound(node)?
+                    && self.fact(node)?.own().is_none()
+                    && seen.insert(at)
+                {
+                    roots.push(self.let_root(at)?);
+                }
             }
         }
         Ok(EvalTy::F32)
@@ -1907,7 +2017,7 @@ impl Core<'_> {
         }
         Ok(match fact.leaf {
             Leaf::Empty | Leaf::Int => Some(EvalTy::Exact),
-            Leaf::Float => Some(self.own_float(node)?),
+            Leaf::Float => Some(self.float_of(node)?),
             Leaf::Bool => Some(EvalTy::Bool),
             Leaf::Enum(Some(id)) => Some(EvalTy::Enum(id)),
             Leaf::Placeholder | Leaf::Error | Leaf::Enum(None) => None,
@@ -1968,8 +2078,8 @@ impl Core<'_> {
         let mut stack = vec![(root, false)];
         let mut leaves: Vec<u32> = Vec::new();
         let mut fits: Vec<u32> = Vec::new();
-        let mut unfixed = HashMap::new();
-        let mut flowing: HashMap<(u32, u32), (EvalTy, bool)> = HashMap::new();
+        let mut unfixed = super::column::PairColumn::default();
+        let mut flowing: super::column::PairColumn<(EvalTy, bool)> = Default::default();
         if let Some(ty) = expected {
             flowing.insert((self.inst, root), (ty, true));
         }
@@ -2273,11 +2383,23 @@ impl Core<'_> {
                     }
                     if let Some(body) = self.body_of_call(node) {
                         let value = self.body_value(body)?;
+                        let width = self.call_widths.get(&(self.inst_key(node)?, node)).copied();
                         leaves.push(std::mem::replace(&mut self.inst, body));
                         self.push_call(node);
                         self.own_calls.push((node, body, args));
                         stack.push((NONE, false));
                         stack.push((value, false));
+                        if let Some(width) = width
+                            && width == EvalTy::F32
+                            && self.is_reactive(value)?
+                            && self.own_ty(value)? == Some(EvalTy::F64)
+                        {
+                            stack.pop();
+                            let outcome = self.evaluate(value, width);
+                            if let Err(declined) = outcome? {
+                                return Ok(Err(declined));
+                            }
+                        }
                     }
                 }
                 Op::For => {
@@ -2363,7 +2485,7 @@ impl Core<'_> {
         &self,
         node: u32,
         own: EvalTy,
-        unfixed: &mut HashMap<(u32, u32), bool>,
+        unfixed: &mut super::column::PairColumn<bool>,
     ) -> Result<bool, Internal> {
         let (op, ..) = self.ir.node(node)?;
         if int_range(own).is_some() {
@@ -2395,7 +2517,7 @@ impl Core<'_> {
     fn reads_unfixed_number(
         &self,
         node: u32,
-        unfixed: &mut HashMap<(u32, u32), bool>,
+        unfixed: &mut super::column::PairColumn<bool>,
     ) -> Result<bool, Internal> {
         if let Some(found) = unfixed.get(&(self.inst, node)) {
             return Ok(*found);
@@ -2747,6 +2869,9 @@ fn float_fn64(name: &str, x: f64) -> f64 {
 
 impl Core<'_> {
     fn body_float(&mut self, call: u32) -> Result<Option<EvalTy>, Internal> {
+        if let Some(width) = self.call_widths.get(&(self.inst_key(call)?, call)) {
+            return Ok(Some(*width));
+        }
         let Some(body) = self.body_of_call(call) else {
             return Ok(None);
         };
@@ -2755,5 +2880,30 @@ impl Core<'_> {
         let own = self.own_ty(value);
         self.inst = outer;
         Ok(own?.filter(|ty| matches!(ty, EvalTy::F32 | EvalTy::F64)))
+    }
+}
+
+impl Core<'_> {
+    fn float_of(&self, node: u32) -> Result<EvalTy, Internal> {
+        if matches!(self.ir.node(node)?.0, Op::Call | Op::NamedCall)
+            && let Some(width) = self.call_widths.get(&(self.inst_key(node)?, node))
+        {
+            return Ok(*width);
+        }
+        self.own_float(node)
+    }
+
+    pub fn reactive_width(&self, value: u32) -> Result<EvalTy, Internal> {
+        if let Some(own) = self.fact(value)?.own() {
+            return Ok(own);
+        }
+        let (host, derived) = self.reactive_reads(value)?;
+        let argument = !host && !derived;
+        let literal = self.own_float(value)? == EvalTy::F64;
+        Ok(if host || literal && (!argument || derived) {
+            EvalTy::F64
+        } else {
+            EvalTy::F32
+        })
     }
 }

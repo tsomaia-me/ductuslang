@@ -32,7 +32,7 @@ impl Core<'_> {
     ) -> Result<Vec<u32>, Internal> {
         let mut reads = Vec::new();
         let mut stack = vec![(root, env)];
-        let mut seen = std::collections::HashSet::new();
+        let mut seen = super::column::PairSet::default();
         while let Some((root, env)) = stack.pop() {
             if !seen.insert((root, env)) {
                 continue;
@@ -135,6 +135,14 @@ impl Core<'_> {
                 self.unbound_nodes.extend(inner);
             }
         }
+        self.cycles_of_the_graph(false)
+    }
+
+    pub fn chosen_destination_cycles(&mut self) -> Result<(), Internal> {
+        self.cycles_of_the_graph(true)
+    }
+
+    fn cycles_of_the_graph(&mut self, chosen: bool) -> Result<(), Internal> {
         let lets = u32::try_from(self.ir.lets.len()).unwrap_or(u32::MAX);
         let cells = u32::try_from(self.ir.lets.len() + self.attr_reads.len()).unwrap_or(u32::MAX);
         let fns = cells + u32::try_from(self.ir.cells.len()).unwrap_or(u32::MAX);
@@ -179,21 +187,34 @@ impl Core<'_> {
             for root in self.function_roots(at)? {
                 reads.extend(self.declaration_reads(root, NONE, (lets, cells, fns))?);
             }
+            reads.extend(
+                self.param_reads
+                    .iter()
+                    .filter(|(function, _)| *function == at)
+                    .map(|(_, read)| lets + read),
+            );
             if let Some(slot) = edges.get_mut((fns + at) as usize) {
                 *slot = reads;
             }
         }
+        #[cfg(test)]
+        self.drop_test_edge(&mut edges, (lets, cells, fns));
         let components = strongly_connected(&edges);
-        for component in &components {
-            for member in component {
-                if let Some(at) = member.checked_sub(lets)
-                    && *member < cells
-                {
-                    self.attr_order.push(at);
+        if !chosen {
+            for component in &components {
+                for member in component {
+                    if let Some(at) = member.checked_sub(lets)
+                        && *member < cells
+                    {
+                        self.attr_order.push(at);
+                    }
                 }
             }
         }
         for component in components {
+            if chosen && self.holds_a_cyclic_member(&component, (lets, cells, fns)) {
+                continue;
+            }
             let mut first = None;
             for member in &component {
                 let key = self.declaration_key(*member, (lets, cells, fns))?;
@@ -236,25 +257,75 @@ impl Core<'_> {
             let cycle = shortest_cycle(&edges, &component, first);
             let mut names = Vec::new();
             for member in cycle {
-                if let Some(at) = member.checked_sub(fns) {
-                    names.push(self.fn_name(at)?);
-                    continue;
-                }
-                if let Some(at) = member.checked_sub(cells) {
-                    names.push(self.cell_name(at)?);
-                    continue;
-                }
-                match member
-                    .checked_sub(lets)
-                    .and_then(|at| self.attr_reads.get(at as usize))
-                {
-                    Some(read) => names.push((read.label.clone(), read.span.clone())),
-                    None => names.push(self.let_name(member)?),
-                }
+                names.push(self.member_name(member, (lets, cells, fns))?);
             }
             self.draw_named_cycle(names);
         }
         Ok(())
+    }
+
+    fn member_name(
+        &self,
+        member: u32,
+        (lets, cells, fns): (u32, u32, u32),
+    ) -> Result<(String, Span), Internal> {
+        if let Some(at) = member.checked_sub(fns) {
+            return self.fn_name(at);
+        }
+        if let Some(at) = member.checked_sub(cells) {
+            return self.cell_name(at);
+        }
+        match member
+            .checked_sub(lets)
+            .and_then(|at| self.attr_reads.get(at as usize))
+        {
+            Some(read) => Ok((read.label.clone(), read.span.clone())),
+            None => self.let_name(member),
+        }
+    }
+
+    #[cfg(test)]
+    fn drop_test_edge(&self, edges: &mut [Vec<u32>], bounds: (u32, u32, u32)) {
+        let Some((from, to)) = DROPPED_EDGE.with(|dropped| dropped.borrow().clone()) else {
+            return;
+        };
+        let named = |member: u32, name: &str| {
+            self.member_name(member, bounds)
+                .is_ok_and(|(own, _)| own == name)
+        };
+        for (member, reads) in (0..).zip(edges.iter_mut()) {
+            if named(member, &from) {
+                reads.retain(|read| !named(*read, &to));
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+thread_local! {
+    pub(super) static DROPPED_EDGE: std::cell::RefCell<Option<(String, String)>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+impl Core<'_> {
+    fn holds_a_cyclic_member(
+        &self,
+        component: &[u32],
+        (lets, cells, fns): (u32, u32, u32),
+    ) -> bool {
+        component.iter().any(|member| {
+            if *member >= fns {
+                false
+            } else if let Some(at) = member.checked_sub(cells) {
+                self.cell_cyclic.get(at as usize).copied().unwrap_or(false)
+            } else if let Some(at) = member.checked_sub(lets) {
+                self.attr_reads
+                    .get(at as usize)
+                    .is_some_and(|read| read.cyclic)
+            } else {
+                self.cyclic.get(*member as usize).copied().unwrap_or(false)
+            }
+        })
     }
 
     fn let_name(&self, at: u32) -> Result<(String, Span), Internal> {
@@ -497,6 +568,20 @@ impl Core<'_> {
         let op = self.ir.node(node)?.0;
         if !matches!(op, Op::Call | Op::NamedCall) {
             return Ok(Vec::new());
+        }
+        if self.member_dot_candidate(node)? {
+            return Ok(self.arguments(node)?.into_iter().skip(1).collect());
+        }
+        if self.dot_calls.contains(&node) && self.not_callable(node)? {
+            let values: Vec<u32> = if op == Op::Call {
+                self.arguments(node)?
+            } else {
+                self.named_arguments(node)?
+                    .into_iter()
+                    .map(|(_, value)| value)
+                    .collect()
+            };
+            return Ok(values.into_iter().skip(1).collect());
         }
         let Some(function) = self.callee(node)? else {
             if !self.not_callable(node)?

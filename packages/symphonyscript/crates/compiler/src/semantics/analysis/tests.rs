@@ -3844,7 +3844,9 @@ fn mutants_draw_no_placeholder(shard: usize) {
     let mut clean = 0;
     let mut index = 0;
     for (vocabulary, texts) in robustness_corpus::corpora() {
-        let compiler = Compiler::new(&vocabulary).expect("the vocabulary compiles");
+        let compiler = Compiler::new(&vocabulary)
+            .expect("the vocabulary compiles")
+            .on_the_old_engine();
         for text in &texts {
             let tokens: Vec<(usize, usize)> = kinded_tokens(text, &vocabulary)
                 .into_iter()
@@ -3902,6 +3904,111 @@ fn no_mutant_of_an_example_or_fixture_that_draws_no_error_holds_a_placeholder() 
     });
     crate::pinned_row::assert_no_failure(&failures);
     assert_eq!(clean, 40);
+}
+
+fn clean_new_core_mutant_failure(compiler: &Compiler, mutant: &str) -> Option<Option<String>> {
+    let sources = [Source {
+        path: "mutant.sym".into(),
+        text: mutant.to_string(),
+    }];
+    let (diagnostics, found) = compiler.new_core_placeholders(&sources)?;
+    if !errors_of(&diagnostics).is_empty() {
+        return None;
+    }
+    Some((!found.is_empty()).then(|| format!("{mutant:?}: {found:?}")))
+}
+
+fn new_core_mutants_draw_no_placeholder(shard: usize) {
+    let mut failures = Vec::new();
+    let mut clean = 0;
+    let mut index = 0;
+    for (vocabulary, texts) in robustness_corpus::corpora() {
+        let compiler = Compiler::new(&vocabulary).expect("the vocabulary compiles");
+        for text in &texts {
+            let tokens: Vec<(usize, usize)> = kinded_tokens(text, &vocabulary)
+                .into_iter()
+                .map(|(span, _)| span)
+                .collect();
+            for mutant in robustness_corpus::mutants(text, &tokens) {
+                index += 1;
+                if index % MUTANT_SHARDS != shard {
+                    continue;
+                }
+                let Some(failure) = clean_new_core_mutant_failure(&compiler, &mutant) else {
+                    continue;
+                };
+                clean += 1;
+                failures.extend(failure);
+            }
+        }
+    }
+    assert!(
+        clean > 400 / MUTANT_SHARDS,
+        "{clean} mutants drew no error on the new core"
+    );
+    crate::pinned_row::assert_no_failure(&failures);
+}
+
+#[test]
+fn no_mutant_of_an_example_or_fixture_that_draws_no_error_holds_a_placeholder_on_the_new_core_529()
+{
+    let corpora = robustness_corpus::corpora();
+    let (failures, clean) = covered(|rows| {
+        let mut failures = Vec::new();
+        let mut clean = 0;
+        for (corpus, (vocabulary, texts)) in corpora.iter().enumerate() {
+            let compiler = Compiler::new(vocabulary).expect("the vocabulary compiles");
+            for text in texts {
+                for (span, kind) in kinded_tokens(text, vocabulary) {
+                    for mutation in 0..robustness_corpus::MUTATIONS {
+                        if !rows.take(&[corpus, kind, mutation]) {
+                            continue;
+                        }
+                        let Some(mutant) = robustness_corpus::mutant(text, span, mutation) else {
+                            continue;
+                        };
+                        let Some(failure) = clean_new_core_mutant_failure(&compiler, &mutant)
+                        else {
+                            continue;
+                        };
+                        clean += 1;
+                        failures.extend(failure);
+                    }
+                }
+            }
+        }
+        (failures, clean)
+    });
+    crate::pinned_row::assert_no_failure(&failures);
+    assert_eq!(clean, 29);
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_no_mutant_of_an_example_or_fixture_that_draws_no_error_holds_a_placeholder_on_the_new_core_first_quarter_529()
+ {
+    new_core_mutants_draw_no_placeholder(0);
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_no_mutant_of_an_example_or_fixture_that_draws_no_error_holds_a_placeholder_on_the_new_core_second_quarter_529()
+ {
+    new_core_mutants_draw_no_placeholder(1);
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_no_mutant_of_an_example_or_fixture_that_draws_no_error_holds_a_placeholder_on_the_new_core_third_quarter_529()
+ {
+    new_core_mutants_draw_no_placeholder(2);
+}
+
+#[test]
+#[ignore = "exhaustive"]
+fn exhaustive_no_mutant_of_an_example_or_fixture_that_draws_no_error_holds_a_placeholder_on_the_new_core_fourth_quarter_529()
+ {
+    new_core_mutants_draw_no_placeholder(3);
 }
 
 const MUTANT_SHARDS: usize = 4;
@@ -3988,7 +4095,9 @@ fn the_name_twins_draw_an_internal_error_for_a_placeholder_that_is_no_name_304()
 
 #[test]
 fn a_fixture_projects_expanded_items_are_its_instances_and_wires_and_no_cell_of_a_pattern_use() {
-    let compiler = Compiler::new(&vocabulary()).expect("the vocabulary compiles");
+    let compiler = Compiler::new(&vocabulary())
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
     for project in [music_project(), lighting_project(), control_project()] {
         let sources: Vec<Source> = project
             .files

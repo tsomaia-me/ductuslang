@@ -19,6 +19,7 @@ mod scoped_reads;
 mod scrutinee_ty;
 mod shape_parts;
 mod variable;
+mod written_destination;
 
 pub(crate) use cell_read::CellRead;
 pub(crate) use combined_shape::combined_shape;
@@ -28,3 +29,4 @@ pub(crate) use layout_shaped::layout_shaped;
 pub(crate) use owner_reads::OwnerReads;
 pub(crate) use scoped_reads::ScopedReads;
 pub(crate) use shape_parts::shape_parts;
+pub(crate) use written_destination::{Written, written_destination};

@@ -84,8 +84,12 @@ impl Core<'_> {
         match op {
             Op::Array => self.reference_array(node, &facts),
             Op::If => self.reference_choice(node, a, &facts),
-            Op::Index => self.reference_element(node, (a, b), &facts),
+            Op::Index | Op::IndexFromEnd => self.reference_element(node, (a, b), &facts),
             Op::Int | Op::Float | Op::Bool | Op::Name => Ok(Err(Declined(Reason::NameOfInstance))),
+            Op::Neg | Op::Not if facts.iter().any(|fact| !fact.dims.is_empty()) => {
+                self.draw_at(Code::ArrayOperand, node, super::typing::OPERAND)?;
+                Ok(Ok(Some(Fact::ERROR)))
+            }
             Op::Neg => {
                 self.draw_at(Code::OperandType, node, "unary `-` takes a number")?;
                 Ok(Ok(Some(Fact::ERROR)))
@@ -102,6 +106,28 @@ impl Core<'_> {
                 let (_, _, code, _) = self.ir.node(node)?;
                 let converted = Self::converted_fact(code)?;
                 Ok(Ok(Some(self.keep(node, converted)?)))
+            }
+            Op::Add
+                if facts.iter().all(|fact| fact.node && !fact.dims.is_empty())
+                    && facts.windows(2).all(|pair| {
+                        pair.first().map(|fact| fact.dims.get(1..))
+                            == pair.get(1).map(|fact| fact.dims.get(1..))
+                    }) =>
+            {
+                let mut dims = facts
+                    .first()
+                    .map(|fact| fact.dims.clone())
+                    .unwrap_or_default();
+                let total = facts.iter().try_fold(0u32, |sum, fact| {
+                    fact.dims
+                        .first()
+                        .filter(|length| **length != super::folds::ANY_LENGTH)
+                        .and_then(|length| sum.checked_add(*length))
+                });
+                if let Some(first) = dims.first_mut() {
+                    *first = total.unwrap_or(super::folds::ANY_LENGTH);
+                }
+                Ok(Ok(Some(Fact::node_reference(dims))))
             }
             Op::Add | Op::Sub | Op::Mul | Op::Div | Op::IntDiv | Op::Rem | Op::Pow => {
                 let binary = binary_of(op).ok_or(Internal::missed("operator"))?;
@@ -135,7 +161,34 @@ impl Core<'_> {
                 self.draw_at(Code::OperandType, node, operand_message(binary))?;
                 Ok(Ok(Some(Fact::scalar(Leaf::Bool))))
             }
-            Op::IndexFromEnd | Op::Slice | Op::For | Op::Call | Op::NamedCall => {
+            Op::Call | Op::NamedCall
+                if self.unknown_methods.contains(&node) && self.method_names_a_member(node)? =>
+            {
+                Ok(Err(Declined(Reason::Member)))
+            }
+            Op::Call | Op::NamedCall if self.unknown_methods.contains(&node) => {
+                let (_, callee, _, _) = self.ir.node(node)?;
+                let name = self.ir.node(callee)?.1;
+                let text = self.ir.name_text(name).unwrap_or_default().to_string();
+                let entry = *self.ir.name(name).ok_or(Internal::missed("IR name"))?;
+                let span = self.span(self.file_of(node), entry.lo, entry.hi);
+                self.draw(
+                    Code::UnknownName,
+                    span,
+                    format!("`{text}` names nothing in scope"),
+                );
+                Ok(Ok(Some(Fact::PLACEHOLDER)))
+            }
+            Op::Call if self.callee(node)?.is_some() => Ok(Ok(None)),
+            Op::Slice
+                if facts
+                    .first()
+                    .is_some_and(|base| base.node && !base.dims.is_empty())
+                    && facts.iter().skip(1).all(|bound| !bound.node) =>
+            {
+                Ok(Ok(None))
+            }
+            Op::Slice | Op::For | Op::Call | Op::NamedCall => {
                 Ok(Err(Declined(Reason::NameOfInstance)))
             }
             Op::TyScalar | Op::TyArray | Op::TyName | Op::TyVar | Op::To | Op::Field => {
@@ -275,5 +328,48 @@ impl Core<'_> {
             }
             node = self.let_root(at)?;
         }
+    }
+}
+
+impl Core<'_> {
+    fn method_names_a_member(&self, call: u32) -> Result<bool, Internal> {
+        let receiver = if self.ir.node(call)?.0 == Op::NamedCall {
+            self.named_arguments(call)?.first().map(|(_, value)| *value)
+        } else {
+            self.arguments(call)?.first().copied()
+        };
+        let Some(receiver) = receiver else {
+            return Ok(false);
+        };
+        let op = self.ir.node(receiver)?.0;
+        let row = if op == Op::Field {
+            self.path_row(receiver).unwrap_or(NONE)
+        } else if op == Op::Name
+            && let DeclRef::Instance(item) = self.bound(receiver)?
+        {
+            self.row_of_item.get(item as usize).copied().unwrap_or(NONE)
+        } else {
+            NONE
+        };
+        if row == NONE {
+            return Ok(false);
+        }
+        let name = self.ir.node(self.ir.node(call)?.1)?.1;
+        let entry = *self.ir.name(name).ok_or(Internal::missed("IR name"))?;
+        if self.child_named(row, entry.sym.0).is_some()
+            || self.wire_named(row, entry.sym.0).is_some()
+        {
+            return Ok(true);
+        }
+        let kind = self
+            .instances
+            .get(row as usize)
+            .ok_or(Internal::missed("row"))?
+            .kind;
+        let text = self.ir.symbols.text(entry.sym);
+        Ok(self
+            .vocabulary
+            .node_kind(kind)
+            .is_some_and(|decl| decl.attrs.iter().any(|attr| attr.name == text)))
     }
 }

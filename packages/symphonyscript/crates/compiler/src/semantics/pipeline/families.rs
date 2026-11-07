@@ -14,9 +14,9 @@ use crate::semantics::ir::flat::{NONE, Op};
 
 #[derive(Default)]
 pub(super) struct FeedFound {
-    pub reached: std::collections::HashSet<(u32, FamilyId, u32)>,
-    pub fed: std::collections::HashSet<(u32, u32, FamilyId)>,
-    pub folds: std::collections::HashSet<(u32, u32)>,
+    pub reached: super::column::TripleSet,
+    pub fed: super::column::TripleSet,
+    pub folds: super::column::PairSet,
 }
 
 struct Link {
@@ -197,6 +197,10 @@ impl Core<'_> {
                     self.unit_position(b, position)?;
                     self.family(a)
                 }
+                Op::Field => match self.path_read(node)?.cloned() {
+                    Some(read) => self.read_family(&read),
+                    None => None,
+                },
                 Op::Past => self.family(a),
                 Op::Stepped => None,
                 Op::Slice => {
@@ -216,7 +220,6 @@ impl Core<'_> {
                 | Op::Not
                 | Op::And
                 | Op::Or
-                | Op::Field
                 | Op::To
                 | Op::Variant
                 | Op::Bad
@@ -419,12 +422,11 @@ impl Core<'_> {
         &mut self,
         start: (u32, u32, u32),
         family: FamilyId,
-        summaries: &std::collections::HashMap<(u32, FamilyId), Vec<u32>>,
+        summaries: &super::column::PairColumn<Vec<u32>>,
         found: &mut FeedFound,
         params: &mut Vec<u32>,
     ) -> Result<(), Internal> {
-        let mut walked: std::collections::HashSet<(u32, u32, u32)> =
-            std::collections::HashSet::new();
+        let mut walked: super::column::TripleSet = Default::default();
         let mut stack = vec![start];
         while let Some((node, env, inst)) = stack.pop() {
             CountedWalk::CoreFamilies.step();
@@ -434,7 +436,9 @@ impl Core<'_> {
             if !walked.insert((node, key, site)) {
                 continue;
             }
-            found.reached.insert((node, family, key));
+            found
+                .reached
+                .insert((node, super::column::dense(family.index()), key));
             if !self.has_fact(node)? {
                 continue;
             }
@@ -474,10 +478,12 @@ impl Core<'_> {
             {
                 let caller = self.inst_key(node)?;
                 let caller = self.typed_as.get(&caller).copied().unwrap_or(caller);
-                found.fed.insert((caller, node, family));
+                found
+                    .fed
+                    .insert((caller, node, super::column::dense(family.index())));
                 let arguments = self.arguments(node)?;
                 for position in summaries
-                    .get(&(body, family))
+                    .get(&(body, super::column::dense(family.index())))
                     .map(Vec::as_slice)
                     .unwrap_or_default()
                 {
@@ -504,11 +510,11 @@ impl Core<'_> {
     }
 
     pub(super) fn callee_first_bodies(&self) -> Vec<u32> {
-        let mut nested: std::collections::HashMap<u32, Vec<u32>> = std::collections::HashMap::new();
+        let mut nested: super::column::Column<Vec<u32>> = Default::default();
         let mut bodies: Vec<u32> = Vec::new();
-        for ((caller, _), body) in &self.call_body {
+        for ((caller, _), body) in self.call_body.iter() {
             if self.function_inst(*body) {
-                nested.entry(*caller).or_default().push(*body);
+                nested.entry(caller).or_default().push(*body);
                 bodies.push(*body);
             }
         }
@@ -519,7 +525,7 @@ impl Core<'_> {
             list.dedup();
         }
         let mut order = Vec::new();
-        let mut done = std::collections::HashSet::new();
+        let mut done = super::column::ColumnSet::new();
         for root in bodies {
             let mut stack = vec![(root, false)];
             while let Some((body, expanded)) = stack.pop() {
@@ -591,8 +597,7 @@ impl Core<'_> {
         families.sort_unstable_by_key(|family| family.index());
         families.dedup();
         let mut found = FeedFound::default();
-        let mut summaries: std::collections::HashMap<(u32, FamilyId), Vec<u32>> =
-            std::collections::HashMap::new();
+        let mut summaries: super::column::PairColumn<Vec<u32>> = Default::default();
         let order = self.callee_first_bodies();
         for family in &families {
             for body in &order {
@@ -601,12 +606,11 @@ impl Core<'_> {
                 self.feed_walk(start, *family, &summaries, &mut found, &mut params)?;
                 params.sort_unstable();
                 params.dedup();
-                summaries.insert((*body, *family), params);
+                summaries.insert((*body, super::column::dense(family.index())), params);
             }
         }
         let mut top = FeedFound::default();
-        let mut taker_units: std::collections::HashMap<(u32, u32), Vec<(usize, u32)>> =
-            std::collections::HashMap::new();
+        let mut taker_units: super::column::PairColumn<Vec<(usize, u32)>> = Default::default();
         let mut cell_units: std::collections::BTreeMap<u32, Vec<(usize, u32)>> =
             std::collections::BTreeMap::new();
         for (root, family, unit, env) in feeds {
@@ -626,7 +630,7 @@ impl Core<'_> {
             }
             let mut own = FeedFound::default();
             self.feed_walk((root, env, inst), family, &summaries, &mut own, &mut params)?;
-            for (node, _, key) in own.reached {
+            for (node, _, key) in own.reached.iter() {
                 taker_units
                     .entry((node, key))
                     .or_default()
@@ -643,7 +647,7 @@ impl Core<'_> {
                 }
             }
         }
-        let mut conflicted = std::collections::HashSet::new();
+        let mut conflicted = super::column::ColumnSet::new();
         let units_of = |list: &mut Vec<(usize, u32)>| -> Result<Vec<(usize, u32)>, Internal> {
             let mut keyed = Vec::with_capacity(list.len());
             for (unit, root) in list.iter() {
@@ -723,18 +727,18 @@ impl Core<'_> {
                 ),
             );
         }
-        let conflicting: std::collections::HashSet<u32> =
+        let conflicting: super::column::ColumnSet =
             conflicts.iter().map(|(node, _, _)| *node).collect();
-        let mut held = std::collections::HashSet::new();
+        let mut held = super::column::PairSet::default();
         let mut stack: Vec<(u32, u32)> = Vec::new();
         for (local, fact) in self.facts.iter().enumerate() {
             if fact.as_ref().is_some_and(open) {
                 stack.push((self.ir.base + u32::try_from(local).unwrap_or(0), NONE));
             }
         }
-        for ((inst, node), fact) in &self.body_facts {
+        for ((inst, node), fact) in self.body_facts.iter() {
             if open(fact) {
-                stack.push((*node, *inst));
+                stack.push((node, inst));
             }
         }
         while let Some((node, inst)) = stack.pop() {
@@ -751,23 +755,21 @@ impl Core<'_> {
         let mut takers = std::mem::take(&mut self.takers);
         takers.sort_unstable_by_key(|(node, family, key)| (*node, family.index(), *key));
         takers.dedup();
-        let mut sites: std::collections::HashMap<u32, Vec<(u32, u32)>> =
-            std::collections::HashMap::new();
+        let mut sites: super::column::Column<Vec<(u32, u32)>> = Default::default();
         if takers.iter().any(|(_, _, key)| *key != NONE) {
-            for ((caller, call), body) in &self.call_body {
+            for ((caller, call), body) in self.call_body.iter() {
                 let typed = |inst: &u32| self.typed_as.get(inst).copied().unwrap_or(*inst);
                 sites
                     .entry(typed(body))
                     .or_default()
-                    .push((typed(caller), *call));
+                    .push((typed(&caller), call));
             }
             for list in sites.values_mut() {
                 list.sort_unstable();
                 list.dedup();
             }
         }
-        let mut fed_memo: std::collections::HashMap<(u32, FamilyId), bool> =
-            std::collections::HashMap::new();
+        let mut fed_memo: super::column::PairColumn<bool> = Default::default();
         for (node, family, key) in takers {
             if held.contains(&(node, key)) || conflicting.contains(&node) {
                 continue;
@@ -777,15 +779,22 @@ impl Core<'_> {
                 "this plain value takes the unit family `{name}`, and its family value reaches no attribute of that family to give its unit"
             );
             let chains = if key == NONE || !self.function_inst(key) {
-                if top.reached.contains(&(node, family, key))
-                    || found.reached.contains(&(node, family, key))
+                if top
+                    .reached
+                    .contains(&(node, super::column::dense(family.index()), key))
+                    || found
+                        .reached
+                        .contains(&(node, super::column::dense(family.index()), key))
                 {
                     Vec::new()
                 } else {
                     vec![Vec::new()]
                 }
             } else {
-                let inside = found.reached.contains(&(node, family, key));
+                let inside =
+                    found
+                        .reached
+                        .contains(&(node, super::column::dense(family.index()), key));
                 if inside && self.fully_fed(key, family, &sites, &found, &top, &mut fed_memo) {
                     Vec::new()
                 } else {
@@ -814,14 +823,10 @@ impl Core<'_> {
         Ok((self.file_of(call), lo, hi))
     }
 
-    fn inner_first(
-        &self,
-        best: &std::collections::HashMap<(u32, bool), Link>,
-        from: (u32, bool),
-    ) -> Vec<u32> {
+    fn inner_first(&self, best: &super::column::PairColumn<Link>, from: (u32, bool)) -> Vec<u32> {
         let mut calls = Vec::new();
         let mut at = from;
-        while let Some(link) = best.get(&at) {
+        while let Some(link) = best.get(&(at.0, u32::from(at.1))) {
             calls.push(link.call);
             at = (link.callee, link.unfed_below);
         }
@@ -831,7 +836,7 @@ impl Core<'_> {
 
     fn better(
         &self,
-        best: &std::collections::HashMap<(u32, bool), Link>,
+        best: &super::column::PairColumn<Link>,
         candidate: (usize, u32, (u32, bool)),
         current: Option<&Link>,
     ) -> Result<bool, Internal> {
@@ -860,7 +865,7 @@ impl Core<'_> {
         key: u32,
         family: FamilyId,
         inside: bool,
-        sites: &std::collections::HashMap<u32, Vec<(u32, u32)>>,
+        sites: &super::column::Column<Vec<(u32, u32)>>,
         found: &FeedFound,
         top: &FeedFound,
     ) -> Result<Vec<Vec<u32>>, Internal> {
@@ -875,7 +880,7 @@ impl Core<'_> {
                 }
             }
         }
-        let mut waiting: std::collections::HashMap<u32, usize> = std::collections::HashMap::new();
+        let mut waiting: super::column::Column<usize> = Default::default();
         for at in &reaching {
             for (caller, _) in sites.get(at).map(Vec::as_slice).unwrap_or_default() {
                 if seen.contains(caller) {
@@ -883,8 +888,7 @@ impl Core<'_> {
                 }
             }
         }
-        let mut best: std::collections::HashMap<(u32, bool), Link> =
-            std::collections::HashMap::new();
+        let mut best: super::column::PairColumn<Link> = Default::default();
         let mut outermost: std::collections::BTreeMap<(u32, u32), Link> =
             std::collections::BTreeMap::new();
         let mut ready = vec![key];
@@ -895,15 +899,22 @@ impl Core<'_> {
                     if callee == key {
                         (!mode || !inside).then_some(0)
                     } else {
-                        best.get(&(callee, mode)).map(|link| link.length)
+                        best.get(&(callee, u32::from(mode))).map(|link| link.length)
                     }
                 })
                 .collect();
             for (caller, call) in sites.get(&callee).map(Vec::as_slice).unwrap_or_default() {
                 CountedWalk::CoreFamilies.step();
                 let function = self.function_inst(*caller);
-                let unfed_here = !found.fed.contains(&(*caller, *call, family))
-                    && !top.fed.contains(&(*caller, *call, family));
+                let unfed_here =
+                    !found
+                        .fed
+                        .contains(&(*caller, *call, super::column::dense(family.index())))
+                        && !top.fed.contains(&(
+                            *caller,
+                            *call,
+                            super::column::dense(family.index()),
+                        ));
                 for mode in [false, true] {
                     if !function && !mode {
                         continue;
@@ -921,8 +932,8 @@ impl Core<'_> {
                     };
                     let candidate = (length + 1, *call, (callee, below_mode));
                     if function {
-                        if self.better(&best, candidate, best.get(&(*caller, mode)))? {
-                            best.insert((*caller, mode), link);
+                        if self.better(&best, candidate, best.get(&(*caller, u32::from(mode))))? {
+                            best.insert((*caller, u32::from(mode)), link);
                         }
                     } else {
                         let slot = (*caller, *call);
@@ -1166,21 +1177,23 @@ impl Core<'_> {
         &self,
         body: u32,
         family: FamilyId,
-        sites: &std::collections::HashMap<u32, Vec<(u32, u32)>>,
+        sites: &super::column::Column<Vec<(u32, u32)>>,
         found: &FeedFound,
         top: &FeedFound,
-        memo: &mut std::collections::HashMap<(u32, FamilyId), bool>,
+        memo: &mut super::column::PairColumn<bool>,
     ) -> bool {
         let mut stack = vec![(body, false)];
         while let Some((at, expanded)) = stack.pop() {
-            if memo.contains_key(&(at, family)) {
+            if memo.contains_key(&(at, super::column::dense(family.index()))) {
                 continue;
             }
             let list = sites.get(&at).map(Vec::as_slice).unwrap_or_default();
             if !expanded {
                 stack.push((at, true));
                 for (caller, _) in list {
-                    if self.function_inst(*caller) && !memo.contains_key(&(*caller, family)) {
+                    if self.function_inst(*caller)
+                        && !memo.contains_key(&(*caller, super::column::dense(family.index())))
+                    {
                         stack.push((*caller, false));
                     }
                 }
@@ -1189,14 +1202,26 @@ impl Core<'_> {
             CountedWalk::CoreFamilies.step();
             let fed = !list.is_empty()
                 && list.iter().all(|(caller, call)| {
-                    let here = found.fed.contains(&(*caller, *call, family))
-                        || top.fed.contains(&(*caller, *call, family));
+                    let here =
+                        found
+                            .fed
+                            .contains(&(*caller, *call, super::column::dense(family.index())))
+                            || top.fed.contains(&(
+                                *caller,
+                                *call,
+                                super::column::dense(family.index()),
+                            ));
                     here && (!self.function_inst(*caller)
-                        || memo.get(&(*caller, family)).copied().unwrap_or(false))
+                        || memo
+                            .get(&(*caller, super::column::dense(family.index())))
+                            .copied()
+                            .unwrap_or(false))
                 });
-            memo.insert((at, family), fed);
+            memo.insert((at, super::column::dense(family.index())), fed);
         }
-        memo.get(&(body, family)).copied().unwrap_or(false)
+        memo.get(&(body, super::column::dense(family.index())))
+            .copied()
+            .unwrap_or(false)
     }
 }
 

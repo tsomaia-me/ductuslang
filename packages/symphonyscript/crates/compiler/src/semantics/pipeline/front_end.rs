@@ -83,6 +83,33 @@ impl Core<'_> {
         for (file, range) in drawn {
             self.emit_drawn(file, range)?;
         }
+        self.unreach_clocks()
+    }
+
+    fn unreach_clocks(&mut self) -> Result<(), Internal> {
+        let mut stack = Vec::new();
+        for rec in &self.ir.cells {
+            for kid in rec.clock.0..rec.clock.1 {
+                stack.push(self.kid(kid)?);
+            }
+        }
+        stack.retain(|root| *root != NONE);
+        while let Some(node) = stack.pop() {
+            let local = self.local(node)?;
+            if let Some(seen) = self.reached.get_mut(local) {
+                if !*seen {
+                    continue;
+                }
+                *seen = false;
+            }
+            let (op, a, _, _) = self.ir.node(node)?;
+            if op == Op::For {
+                stack.extend(self.function_roots(self.functions() + a)?);
+            } else if matches!(op, Op::Call | Op::NamedCall | Op::Field) {
+                stack.push(a);
+            }
+            stack.extend(self.operands(node)?.into_iter().filter(|at| *at != NONE));
+        }
         Ok(())
     }
 

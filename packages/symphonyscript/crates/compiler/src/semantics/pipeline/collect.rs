@@ -1,7 +1,6 @@
-use std::collections::HashMap;
-
 use symphonyscript_core::Span;
 
+use super::column::Column;
 use super::core::{Core, Stage};
 use super::decl_ref::DeclRef;
 use super::declined::Declined;
@@ -274,20 +273,29 @@ impl Core<'_> {
         self.scope_of.clone_from(&scope_of);
         let skipped_top = self.skipped_top();
         self.skipped_top.clone_from(&skipped_top);
-        let mut enclosing = std::collections::HashMap::new();
+        let mut enclosing = super::column::PairColumn::default();
         let type_operands = self.type_operands()?;
         let math_callees = self.math_callees()?;
-        let mut native_callees = std::collections::HashSet::new();
+        let mut native_callees = super::column::ColumnSet::new();
+        let mut member_callees = super::column::ColumnSet::new();
+        let mut method_calls = super::column::Column::new();
         for local in 0..self.ir.op.len() {
             if !matches!(self.ir.op.get(local), Some(Op::Call | Op::NamedCall)) {
                 continue;
             }
             let call = self.ir.base + u32::try_from(local).unwrap_or(0);
+            if self.member_dot_shape(call)? {
+                member_callees.insert(self.ir.node(call)?.1);
+            }
+            if self.dot_calls.contains(&call) && self.ir.node(self.ir.node(call)?.1)?.0 == Op::Name
+            {
+                method_calls.insert(self.ir.node(call)?.1, call);
+            }
             if self.native_miscount(call)?.is_some() || self.native_named(call)?.is_some() {
                 native_callees.insert(self.ir.node(call)?.1);
             }
         }
-        let mut callees = std::collections::HashSet::new();
+        let mut callees = super::column::ColumnSet::new();
         for local in 0..self.ir.op.len() {
             if matches!(self.ir.op.get(local), Some(Op::Call | Op::NamedCall)) {
                 callees.insert(self.ir.a.get(local).copied().unwrap_or(NONE));
@@ -361,6 +369,16 @@ impl Core<'_> {
                     if math_callees.contains(&node) || native_callees.contains(&node) {
                         continue;
                     }
+                    if member_callees.contains(&node) {
+                        continue;
+                    }
+                    if let Some(call) = method_calls.get(&node)
+                        && !known
+                        && text != BuiltinName::Pi.name()
+                    {
+                        self.unknown_methods.insert(*call);
+                        continue;
+                    }
                     if text == BuiltinName::Pi.name() {
                         self.pi.insert(node);
                         continue;
@@ -410,7 +428,7 @@ impl Core<'_> {
                             );
                         }
                     }
-                    if !callees.contains(&node) {
+                    if !callees.contains(&node) && !self.is_field_receiver(node) {
                         self.placeholders.push(node);
                     }
                 }
@@ -517,9 +535,9 @@ pub fn child_in_scope(scopes: &[ChildScope], scope: Option<u32>, sym: u32) -> Op
 }
 
 impl Core<'_> {
-    fn child_scopes(&self) -> Result<(Vec<ChildScope>, HashMap<u32, u32>), Internal> {
+    fn child_scopes(&self) -> Result<(Vec<ChildScope>, Column<u32>), Internal> {
         let mut scopes: Vec<ChildScope> = Vec::new();
-        let mut scope_of = HashMap::new();
+        let mut scope_of = Column::new();
         let mut stack: Vec<(u32, u32)> = self
             .ir
             .top
@@ -680,6 +698,14 @@ impl Core<'_> {
                         .name(placement.as_name)
                         .ok_or(Internal::missed("IR name"))?;
                     names.push((entry.sym.0, member));
+                } else if let Ok(ItemRec::Wire(wire)) = self.ir.item(member).copied()
+                    && self.ir.named(wire.as_name)
+                {
+                    let entry = self
+                        .ir
+                        .name(wire.as_name)
+                        .ok_or(Internal::missed("IR name"))?;
+                    names.push((entry.sym.0, member));
                 }
             }
             stack.push((child, inner));
@@ -755,8 +781,8 @@ impl Core<'_> {
 }
 
 impl Core<'_> {
-    fn type_operands(&self) -> Result<std::collections::HashSet<u32>, Internal> {
-        let mut found = std::collections::HashSet::new();
+    fn type_operands(&self) -> Result<super::column::ColumnSet, Internal> {
+        let mut found = super::column::ColumnSet::new();
         for local in 0..self.ir.op.len() {
             if !matches!(self.ir.op.get(local), Some(Op::Is | Op::IsNot)) {
                 continue;
@@ -784,11 +810,11 @@ impl Core<'_> {
             .not_values
             .iter()
             .filter(|(node, _)| !self.not_values_drawn.contains(node))
-            .map(|(node, summary)| (*node, summary.clone()))
+            .map(|(node, summary)| (node, summary.clone()))
             .collect();
         left.sort_unstable();
         let roots = self.unchecked_roots()?;
-        let mut chains: HashMap<u32, Vec<u32>> = HashMap::new();
+        let mut chains: super::column::Column<Vec<u32>> = Default::default();
         for (node, summary) in left {
             let owner = self.body_of.get(self.local(node)?).copied().unwrap_or(NONE);
             if owner < self.functions() && !chains.contains_key(&owner) {
@@ -808,7 +834,7 @@ impl Core<'_> {
     }
 
     fn unchecked_roots(&self) -> Result<Vec<u32>, Internal> {
-        let mut called = std::collections::HashSet::new();
+        let mut called = super::column::ColumnSet::new();
         for local in 0..self.ir.op.len() {
             if matches!(self.ir.op.get(local), Some(Op::Call | Op::NamedCall)) {
                 let node = self.ir.base + u32::try_from(local).unwrap_or(0);
@@ -834,7 +860,7 @@ impl Core<'_> {
     }
 
     fn first_reaching_chain(&self, target: u32, roots: &[u32]) -> Result<Vec<u32>, Internal> {
-        let mut last: HashMap<u32, Option<u32>> = HashMap::new();
+        let mut last: super::column::Column<Option<u32>> = Default::default();
         for root in roots {
             let Some(call) = self.last_reaching_call(target, &[*root], &mut last)? else {
                 continue;
@@ -857,7 +883,7 @@ impl Core<'_> {
         &self,
         target: u32,
         roots: &[u32],
-        last: &mut HashMap<u32, Option<u32>>,
+        last: &mut super::column::Column<Option<u32>>,
     ) -> Result<Option<u32>, Internal> {
         let mut found = None;
         for root in roots {
@@ -892,8 +918,8 @@ impl Core<'_> {
 }
 
 impl Core<'_> {
-    fn math_callees(&self) -> Result<std::collections::HashSet<u32>, Internal> {
-        let mut found = std::collections::HashSet::new();
+    fn math_callees(&self) -> Result<super::column::ColumnSet, Internal> {
+        let mut found = super::column::ColumnSet::new();
         for local in 0..self.ir.op.len() {
             if !matches!(self.ir.op.get(local), Some(Op::Call | Op::NamedCall)) {
                 continue;

@@ -14,7 +14,7 @@ use crate::semantics::ir::flat::{NONE, Op, binary_of};
 use crate::semantics::operators::{EvalTy, Value};
 use symphonyscript_core::BinaryOp;
 
-const OPERAND: &str = "operators and conversions apply to single values, not arrays";
+pub const OPERAND: &str = "operators and conversions apply to single values, not arrays";
 const SINGLE_OPERANDS: &str =
     "only `+` takes arrays, which it joins; every other operator takes single values";
 pub(super) const JOIN_SINGLE: &str = "`+` joins two arrays, and one of these is a single value";
@@ -67,6 +67,7 @@ impl Core<'_> {
                 out.extend([b, c].into_iter().filter(|at| *at != NONE));
             }
             Op::Stepped => out.push(a),
+            Op::Field if self.expr_members.contains(&node) => out.push(a),
             Op::Call | Op::NamedCall => out.extend(self.arguments(node)?),
             Op::For => out.extend(self.fold_operands(node)?),
             Op::Array => {
@@ -434,12 +435,20 @@ impl Core<'_> {
             Op::Index | Op::IndexFromEnd => self.index_fact(node, a, b)?,
             Op::Convert => self.convert_fact(node, a, b)?,
             Op::Call | Op::NamedCall
+                if self.dot_calls.contains(&node) && self.member_dot_call(node)? =>
+            {
+                Fact::PLACEHOLDER
+            }
+            Op::Call | Op::NamedCall
                 if self.dot_calls.contains(&node) && !self.dot_call_lands(node)? =>
             {
                 return Ok(Err(Declined(Reason::Member)));
             }
             Op::Call | Op::NamedCall => match self.call_fact(node)? {
-                Ok(fact) => fact,
+                Ok(fact) => {
+                    self.refused_argument_methods(node)?;
+                    fact
+                }
                 Err(declined) => return Ok(Err(declined)),
             },
             Op::For => match self.for_fact(node)? {
@@ -459,6 +468,12 @@ impl Core<'_> {
                 Err(declined) => return Ok(Err(declined)),
             },
             Op::Field if self.array_members.contains_key(&node) => Fact::scalar(Leaf::Int),
+            Op::Field if self.expr_members.contains(&node) => {
+                match self.expr_member_fact(node, a)? {
+                    Ok(fact) => fact,
+                    Err(declined) => return Ok(Err(declined)),
+                }
+            }
             Op::Field if self.cell_sizes.contains_key(&node) => {
                 let at = self.cell_sizes.get(&node).copied().unwrap_or(NONE);
                 match self.cell_size_fact(node, at)? {
@@ -466,26 +481,23 @@ impl Core<'_> {
                     Err(declined) => return Ok(Err(declined)),
                 }
             }
-            Op::Field => match self.path_read(node)?.cloned() {
-                Some(read) if read.cyclic => Fact::PLACEHOLDER,
-                Some(read) => {
-                    if read.root != NONE
-                        && let Err(declined) = self.typed_in_env(&read)?
-                    {
-                        return Ok(Err(declined));
-                    }
-                    match self.bare_cell_read(node)? {
-                        Some(at) => self.cell_read_fact(at)?,
-                        None => super::annotation::annotated_fact(read.ty),
+            Op::Field if self.param_paths.contains(&node) => match self.param_path_fact(node)? {
+                Ok(Some(fact)) => fact,
+                Ok(None) if self.expr_members.contains(&node) => {
+                    match self.expr_member_fact(node, a)? {
+                        Ok(fact) => fact,
+                        Err(declined) => return Ok(Err(declined)),
                     }
                 }
-                None => match self.to_choice(node) {
-                    Some(ty) => super::annotation::annotated_fact(ty),
-                    None => {
-                        self.draw_body_path_faults(node);
-                        Fact::PLACEHOLDER
-                    }
+                Ok(None) => match self.path_fact(node)? {
+                    Ok(fact) => fact,
+                    Err(declined) => return Ok(Err(declined)),
                 },
+                Err(declined) => return Ok(Err(declined)),
+            },
+            Op::Field => match self.path_fact(node)? {
+                Ok(fact) => fact,
+                Err(declined) => return Ok(Err(declined)),
             },
             Op::Variant => match self.variant_fact(node)? {
                 Ok(fact) => fact,
@@ -936,7 +948,9 @@ impl Core<'_> {
     }
 
     fn kept_slice(&mut self, node: u32, base: &Fact) -> Result<Fact, Internal> {
-        if base.dims.is_empty() || matches!(base.leaf, Leaf::Placeholder | Leaf::Error) {
+        if base.dims.is_empty()
+            || !base.node && matches!(base.leaf, Leaf::Placeholder | Leaf::Error)
+        {
             return Ok(Fact::PLACEHOLDER);
         }
         let mut kept = base.clone();
@@ -970,13 +984,13 @@ impl Core<'_> {
             )?;
             return Ok(Ok(self.kept_slice(node, &base)?));
         }
-        if self.named_placeholder(a, &base)? {
+        if !base.node && self.named_placeholder(a, &base)? {
             return Ok(Ok(Fact::PLACEHOLDER));
         }
         if not_an_array {
             return Ok(Ok(Fact::PLACEHOLDER));
         }
-        let mut refused = faulty(&base);
+        let mut refused = !base.node && faulty(&base);
         for (bound, fact) in &facts {
             if faulty(fact) {
                 refused = true;
@@ -1042,7 +1056,7 @@ impl Core<'_> {
             dims,
             fixed: base.fixed,
             read: base.read,
-            node: false,
+            node: base.node,
             family: None,
         }))
     }
@@ -1328,6 +1342,160 @@ impl Core<'_> {
 }
 
 impl Core<'_> {
+    fn expr_member_fact(&mut self, node: u32, receiver: u32) -> Stage<Fact> {
+        let fact = match self.ensure_typed(receiver)? {
+            Ok(fact) => fact,
+            Err(declined) => return Ok(Err(declined)),
+        };
+        let known = fact
+            .dims
+            .first()
+            .is_some_and(|length| *length != ANY_LENGTH);
+        if !known && !fact.node && matches!(fact.leaf, Leaf::Placeholder | Leaf::Error) {
+            return Ok(Ok(Fact::PLACEHOLDER));
+        }
+        let (_, _, field, _) = self.ir.node(node)?;
+        if !fact.node
+            && (fact.dims.is_empty() || !self.is_member_path(node)?)
+            && self.names_a_function(field)?
+        {
+            let text = self.ir.name_text(field).unwrap_or_default().to_string();
+            self.draw_helped_at(
+                Code::NotAValue,
+                node,
+                format!("`.{text}` names the function `{text}`, and a function is not a value"),
+                format!("call the function, as in `x.{text}()`"),
+            )?;
+            return Ok(Ok(Fact::PLACEHOLDER));
+        }
+        if let Some(measured) = self.history_member_fact(node, receiver, &fact)? {
+            return Ok(Ok(measured));
+        }
+        if fact.node
+            && fact.dims.len() == 1
+            && self.is_bytes_member(node)?
+            && !self.is_reactive(receiver)?
+        {
+            self.draw_at(
+                Code::OperandType,
+                node,
+                "`bytes` takes a string or an integer array",
+            )?;
+            return Ok(Ok(Fact::PLACEHOLDER));
+        }
+        if fact.node && (fact.dims.is_empty() || self.is_bytes_member(node)?)
+            || self.is_reactive(receiver)?
+        {
+            return Ok(Err(Declined(Reason::Member)));
+        }
+        if !fact.dims.is_empty() && self.is_bytes_member(node)? {
+            return self.bytes_fact(node, &fact);
+        }
+        match fact.dims.first().copied() {
+            Some(length) if length != ANY_LENGTH => {
+                self.array_members.insert(node, i128::from(length));
+                Ok(Ok(Fact::scalar(Leaf::Int)))
+            }
+            Some(_) => Ok(Err(Declined(Reason::Member))),
+            None if self.holds_an_unknown_name(receiver)? => Ok(Ok(Fact::PLACEHOLDER)),
+            None => {
+                let (_, _, field, _) = self.ir.node(node)?;
+                let text = self.ir.name_text(field).unwrap_or_default().to_string();
+                self.draw_at(
+                    Code::UnknownAttribute,
+                    node,
+                    format!(
+                        "`.{text}` reads an attribute of an instance or a wire, and this is a value"
+                    ),
+                )?;
+                Ok(Ok(Fact::PLACEHOLDER))
+            }
+        }
+    }
+
+    fn path_fact(&mut self, node: u32) -> Stage<Fact> {
+        Ok(Ok(match self.path_read(node)?.cloned() {
+            Some(read) if read.cyclic => Fact::PLACEHOLDER,
+            Some(read) => {
+                if read.root != NONE
+                    && let Err(declined) = self.typed_in_env(&read)?
+                {
+                    return Ok(Err(declined));
+                }
+                match self.bare_cell_read(node)? {
+                    Some(at) => self.cell_read_fact(at)?,
+                    None => super::annotation::annotated_fact(read.ty),
+                }
+            }
+            None => match self.to_choice(node) {
+                Some(ty) => super::annotation::annotated_fact(ty),
+                None => {
+                    self.draw_body_path_faults(node);
+                    Fact::PLACEHOLDER
+                }
+            },
+        }))
+    }
+
+    fn history_member_fact(
+        &mut self,
+        node: u32,
+        receiver: u32,
+        fact: &Fact,
+    ) -> Result<Option<Fact>, Internal> {
+        let (op, target, _, fallback) = self.ir.node(receiver)?;
+        let (_, _, field, _) = self.ir.node(node)?;
+        let text = self.ir.name_text(field).unwrap_or_default();
+        if op != Op::Past || fact.node || !matches!(text, "size" | "capacity") {
+            return Ok(None);
+        }
+        let DeclRef::Cell(at) = self.bound(target)? else {
+            return Ok(None);
+        };
+        let Some(length) = fact.dims.first().copied() else {
+            return Ok(None);
+        };
+        if length != ANY_LENGTH {
+            self.array_members.insert(node, i128::from(length));
+            return Ok(Some(Fact::scalar(Leaf::Int)));
+        }
+        if text != "capacity" || !self.derived(at) {
+            return Ok(None);
+        }
+        let floor = if fallback == NONE {
+            0
+        } else {
+            match self.fact(fallback)?.dims.first().copied() {
+                Some(held) if held != ANY_LENGTH => i128::from(held),
+                Some(_) | None => return Ok(None),
+            }
+        };
+        self.history_capacities.insert(node, (at, floor));
+        Ok(Some(Fact::scalar(Leaf::Int)))
+    }
+
+    pub fn is_bytes_member(&self, node: u32) -> Result<bool, Internal> {
+        let (op, _, field, _) = self.ir.node(node)?;
+        Ok(op == Op::Field && self.ir.name_text(field) == Some("bytes"))
+    }
+
+    fn bytes_fact(&mut self, node: u32, fact: &Fact) -> Stage<Fact> {
+        if fact.dims.len() > 1 {
+            return Ok(Err(Declined(Reason::Member)));
+        }
+        if !matches!(fact.leaf, Leaf::Int | Leaf::Empty) {
+            self.draw_at(
+                Code::OperandType,
+                node,
+                "`bytes` takes a string or an integer array",
+            )?;
+            return Ok(Ok(Fact::PLACEHOLDER));
+        }
+        let mut bytes = Fact::fixed(Leaf::Int, Some(EvalTy::U8));
+        bytes.dims.clone_from(&fact.dims);
+        Ok(Ok(bytes))
+    }
+
     fn cell_size_fact(&mut self, node: u32, at: u32) -> Stage<Fact> {
         let (_, _, field, _) = self.ir.node(node)?;
         let text = self.ir.name_text(field).unwrap_or_default().to_string();
@@ -1367,6 +1535,10 @@ impl Core<'_> {
                 self.runtime_members.insert(node);
                 Ok(Ok(Fact::fixed(Leaf::Int, Some(EvalTy::I32))))
             }
+            Some(ANY_LENGTH) if self.derived(at) => {
+                self.capacity_members.insert(node);
+                Ok(Ok(Fact::scalar(Leaf::Int)))
+            }
             Some(ANY_LENGTH) => Ok(Err(Declined(Reason::Member))),
             Some(length) => {
                 self.array_members.insert(node, i128::from(length));
@@ -1381,12 +1553,16 @@ impl Core<'_> {
         let (_, callee, _, _) = self.ir.node(node)?;
         let (_, name, _, _) = self.ir.node(callee)?;
         let text = self.ir.name_text(name).unwrap_or_default();
-        if super::calls::MEMBER_NAMES.contains(&text) {
-            return Ok(false);
-        }
         let Some(receiver) = self.arguments(node)?.first().copied() else {
             return Ok(false);
         };
+        if super::calls::MEMBER_NAMES.contains(&text) {
+            let fact = self.fact(receiver)?;
+            return Ok(!fact.node
+                && fact.dims.is_empty()
+                && fact.leaf != Leaf::Empty
+                && self.callee(node)?.is_some());
+        }
         let callable = self.callee(node)?.is_some()
             || self.math_call(node)?
             || self.math_miscount(node)?.is_some()
@@ -1396,5 +1572,352 @@ impl Core<'_> {
             || (self.math_named(node)?.is_none()
                 && matches!(receiver_fact.leaf, Leaf::Placeholder | Leaf::Error));
         Ok(!receiver_fact.node && callable && !(faulty && self.callee(node)?.is_none()))
+    }
+}
+
+impl Core<'_> {
+    fn refused_argument_methods(&mut self, call: u32) -> Result<(), Internal> {
+        if self.unknown_methods.is_empty() {
+            return Ok(());
+        }
+        let Some(function) = self.callee(call)? else {
+            return Ok(());
+        };
+        let arguments = self.arguments(call)?;
+        let mut refused = Vec::new();
+        for (position, argument) in (0u32..).zip(arguments) {
+            let fact = self.fact(argument)?;
+            if !fact.node
+                && matches!(fact.leaf, Leaf::Placeholder | Leaf::Error)
+                && self.refusal_keeps_its_methods(argument)?
+            {
+                refused.push(position);
+            }
+        }
+        let mut pending = vec![(function, refused, vec![call])];
+        let mut seen = super::column::ColumnSet::new();
+        while let Some((function, refused, chain)) = pending.pop() {
+            if refused.is_empty() || !seen.insert(function) {
+                continue;
+            }
+            self.draw_refused_methods(function, &refused, &chain)?;
+            let mut inner_calls = Vec::new();
+            for local in 0..self.ir.op.len() {
+                if self.body_of.get(local).copied() != Some(function)
+                    || !matches!(self.ir.op.get(local), Some(Op::Call | Op::NamedCall))
+                {
+                    continue;
+                }
+                let inner = self.ir.base + u32::try_from(local).unwrap_or(u32::MAX);
+                let Some(callee) = self.callee(inner)? else {
+                    continue;
+                };
+                let mut passed = Vec::new();
+                for (position, argument) in (0u32..).zip(self.arguments(inner)?) {
+                    if self.ir.node(argument)?.0 == Op::Name
+                        && let DeclRef::Param(own) = self.bound(argument)?
+                        && refused.contains(&own)
+                    {
+                        passed.push(position);
+                    }
+                }
+                let mut through = chain.clone();
+                through.push(inner);
+                inner_calls.push((callee, passed, through));
+            }
+            pending.extend(inner_calls.into_iter().rev());
+        }
+        Ok(())
+    }
+
+    fn draw_refused_methods(
+        &mut self,
+        function: u32,
+        refused: &[u32],
+        chain: &[u32],
+    ) -> Result<(), Internal> {
+        let mut methods: Vec<u32> = self.unknown_methods.iter().collect();
+        methods.sort_unstable();
+        for method in methods {
+            if self.body_of.get(self.local(method)?).copied() != Some(function) {
+                continue;
+            }
+            let (op, callee, _, _) = self.ir.node(method)?;
+            let receiver = if op == Op::NamedCall {
+                self.named_arguments(method)?
+                    .first()
+                    .map(|(_, value)| *value)
+            } else {
+                self.arguments(method)?.first().copied()
+            };
+            let Some(receiver) = receiver else {
+                continue;
+            };
+            if self.ir.node(receiver)?.0 != Op::Name {
+                continue;
+            }
+            let DeclRef::Param(position) = self.bound(receiver)? else {
+                continue;
+            };
+            if !refused.contains(&position) {
+                continue;
+            }
+            let name = self.ir.node(callee)?.1;
+            let text = self.ir.name_text(name).unwrap_or_default().to_string();
+            let entry = *self.ir.name(name).ok_or(Internal::missed("IR name"))?;
+            let span = self.span(self.file_of(method), entry.lo, entry.hi);
+            for call in chain {
+                self.push_call(*call);
+            }
+            self.draw(
+                Code::UnknownName,
+                span,
+                format!("`{text}` names nothing in scope"),
+            );
+            for _ in chain {
+                self.eval_chain.pop();
+            }
+        }
+        Ok(())
+    }
+
+    fn refusal_keeps_its_methods(&self, receiver: u32) -> Result<bool, Internal> {
+        let mut receiver = receiver;
+        let mut seen = super::column::ColumnSet::new();
+        while self.ir.node(receiver)?.0 == Op::Name
+            && let DeclRef::Let(at) = self.bound(receiver)?
+            && !self.cyclic.get(at as usize).copied().unwrap_or(true)
+            && seen.insert(at)
+        {
+            receiver = self.let_root(at)?;
+        }
+        let op = self.ir.node(receiver)?.0;
+        let refused = matches!(
+            op,
+            Op::Add
+                | Op::Sub
+                | Op::Mul
+                | Op::Div
+                | Op::IntDiv
+                | Op::Rem
+                | Op::Pow
+                | Op::Neg
+                | Op::Array
+                | Op::Call
+                | Op::NamedCall
+        );
+        if !refused {
+            return Ok(false);
+        }
+        for inner in self.deep_postorder(receiver)? {
+            if matches!(self.ir.node(inner)?.0, Op::Bad | Op::To)
+                || self.reads_a_cyclic_cell(inner)?
+            {
+                return Ok(false);
+            }
+        }
+        let span = self.node_span(receiver)?;
+        Ok(!self.diagnostics.iter().any(|drawn| {
+            matches!(
+                drawn.code,
+                Code::NotAnArray | Code::RaggedArray | Code::UnknownName
+            ) && drawn.span.file == span.file
+                && drawn.span.range.start >= span.range.start
+                && drawn.span.range.end <= span.range.end
+        }))
+    }
+
+    fn holds_an_unknown_name(&self, receiver: u32) -> Result<bool, Internal> {
+        let span = self.node_span(receiver)?;
+        Ok(self.diagnostics.iter().any(|drawn| {
+            drawn.code == Code::UnknownName
+                && drawn.span.file == span.file
+                && drawn.span.range.start >= span.range.start
+                && drawn.span.range.end <= span.range.end
+        }))
+    }
+
+    fn silences_its_methods(&self, receiver: u32) -> Result<bool, Internal> {
+        let mut receiver = receiver;
+        let mut seen = super::column::ColumnSet::new();
+        while self.ir.node(receiver)?.0 == Op::Name
+            && let DeclRef::Let(at) = self.bound(receiver)?
+            && !self.cyclic.get(at as usize).copied().unwrap_or(true)
+            && seen.insert(at)
+        {
+            receiver = self.let_root(at)?;
+        }
+        for inner in self.deep_postorder(receiver)? {
+            if self.ir.node(inner)?.0 == Op::To {
+                return Ok(true);
+            }
+        }
+        let span = self.node_span(receiver)?;
+        Ok(self.diagnostics.iter().any(|drawn| {
+            matches!(
+                drawn.code,
+                Code::NotAnArray | Code::RaggedArray | Code::UnknownName | Code::MisplacedTo
+            ) && drawn.span.file == span.file
+                && drawn.span.range.start >= span.range.start
+                && drawn.span.range.end <= span.range.end
+        }))
+    }
+
+    fn member_dot_call(&mut self, node: u32) -> Result<bool, Internal> {
+        let (op, callee, _, _) = self.ir.node(node)?;
+        let (_, name, _, _) = self.ir.node(callee)?;
+        let text = self.ir.name_text(name).unwrap_or_default().to_string();
+        if matches!(op, Op::Call | Op::NamedCall)
+            && !super::calls::MEMBER_NAMES.contains(&text.as_str())
+            && self.not_callable(node)?
+        {
+            let receiver = if op == Op::NamedCall {
+                self.named_arguments(node)?.first().map(|(_, value)| *value)
+            } else {
+                self.arguments(node)?.first().copied()
+            };
+            let Some(receiver) = receiver else {
+                return Ok(false);
+            };
+            let receiver_op = self.ir.node(receiver)?.0;
+            let plain = if receiver_op == Op::Name {
+                matches!(
+                    self.bound(receiver)?,
+                    DeclRef::Let(_) | DeclRef::Cell(_) | DeclRef::Param(_)
+                )
+            } else {
+                receiver_op != Op::Field && receiver_op != Op::To && receiver_op != Op::Str
+            };
+            if !plain {
+                return Ok(false);
+            }
+            let file = self.file_of(node);
+            let (lo, _) = self.ir.span(node)?;
+            let (_, hi) = self.ir.span(callee)?;
+            let span = self.span(file, lo, hi);
+            self.draw(
+                Code::NotCallable,
+                span,
+                "only a function or a built-in is called",
+            );
+            self.not_callables_drawn.insert(callee);
+            return Ok(true);
+        }
+        let method = self.unknown_methods.contains(&node);
+        let arguments = if op == Op::NamedCall && method {
+            self.named_arguments(node)?
+                .into_iter()
+                .map(|(_, value)| value)
+                .collect()
+        } else {
+            self.arguments(node)?
+        };
+        let ([receiver, ..], true) = (arguments.as_slice(), op == Op::Call || method) else {
+            return Ok(false);
+        };
+        if !method
+            && !matches!(
+                text.as_str(),
+                "size" | "capacity" | "bytes" | "keys" | "values" | "map"
+            )
+            || self.ir.node(*receiver)?.0 == Op::To
+        {
+            return Ok(false);
+        }
+        let fact = self.fact(*receiver)?;
+        if !method
+            && !fact.node
+            && fact.dims.is_empty()
+            && fact.leaf != Leaf::Empty
+            && self.callee(node)?.is_some()
+        {
+            return Ok(false);
+        }
+        let typed = match fact.leaf {
+            Leaf::Int | Leaf::Float | Leaf::Bool | Leaf::Empty | Leaf::Enum(Some(_)) => true,
+            Leaf::Placeholder | Leaf::Error | Leaf::Enum(None) => false,
+        };
+        let refused = !fact.node
+            && matches!(fact.leaf, Leaf::Placeholder | Leaf::Error)
+            && self.refusal_keeps_its_methods(*receiver)?;
+        if method && (refused || self.reads_a_cyclic_cell(*receiver)?) {
+            let file = self.file_of(node);
+            let entry = self.ir.name(name).ok_or(Internal::missed("IR name"))?;
+            let span = self.span(file, entry.lo, entry.hi);
+            self.draw(
+                Code::UnknownName,
+                span,
+                format!("`{text}` names nothing in scope"),
+            );
+            return Ok(true);
+        }
+        if method && !fact.node && matches!(fact.leaf, Leaf::Placeholder | Leaf::Error) {
+            let let_read = self.ir.node(*receiver)?.0 == Op::Name
+                && matches!(self.bound(*receiver)?, DeclRef::Let(_));
+            return Ok(!let_read || self.silences_its_methods(*receiver)?);
+        }
+        if fact.node || !typed {
+            return Ok(false);
+        }
+        let array = !fact.dims.is_empty() || fact.leaf == Leaf::Empty;
+        if array && text == "map" {
+            let span = self.node_span(node)?;
+            self.draw(
+                Code::UnbuiltConstruct,
+                span,
+                "an array's `map` (SPEC §5.7) is a construct this compiler does not build",
+            );
+        } else if array && matches!(text.as_str(), "size" | "capacity" | "bytes") {
+            let file = self.file_of(node);
+            let (lo, _) = self.ir.span(node)?;
+            let (_, hi) = self.ir.span(callee)?;
+            let span = self.span(file, lo, hi);
+            self.draw(
+                Code::NotCallable,
+                span,
+                "only a function or a built-in is called",
+            );
+        } else {
+            let file = self.file_of(node);
+            let entry = self.ir.name(name).ok_or(Internal::missed("IR name"))?;
+            let span = self.span(file, entry.lo, entry.hi);
+            self.draw(
+                Code::UnknownName,
+                span,
+                format!("`{text}` names nothing in scope"),
+            );
+        }
+        Ok(true)
+    }
+}
+
+impl Core<'_> {
+    fn reads_a_cyclic_cell(&self, receiver: u32) -> Result<bool, Internal> {
+        if self.ir.node(receiver)?.0 != Op::Name {
+            return Ok(false);
+        }
+        Ok(match self.bound(receiver)? {
+            DeclRef::Cell(at) => self.is_cyclic_cell(at),
+            DeclRef::Let(at) => self.cyclic.get(at as usize).copied().unwrap_or(false),
+            DeclRef::None
+            | DeclRef::Instance(_)
+            | DeclRef::Duplicate
+            | DeclRef::Param(_)
+            | DeclRef::Fn(_)
+            | DeclRef::Pattern(_) => false,
+        })
+    }
+}
+
+impl Core<'_> {
+    pub fn names_a_function(&self, field: u32) -> Result<bool, Internal> {
+        let Some(entry) = self.ir.name(field) else {
+            return Ok(false);
+        };
+        Ok(self.ir.fns.iter().any(|rec| {
+            self.ir
+                .name(rec.name)
+                .is_some_and(|named| named.sym == entry.sym)
+        }))
     }
 }

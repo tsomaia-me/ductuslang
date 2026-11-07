@@ -7,7 +7,7 @@ use super::work::Work;
 use crate::diagnostics::Code;
 use crate::semantics::Internal;
 use crate::semantics::counted_walk::CountedWalk;
-use crate::semantics::ir::flat::{ItemRec, NONE, PlacementRec, TopRec};
+use crate::semantics::ir::flat::{ABSENT, ItemRec, NONE, PlacementRec, TopRec};
 
 impl Core<'_> {
     pub fn placement(&self, item: u32) -> Result<PlacementRec, Internal> {
@@ -58,6 +58,13 @@ impl Core<'_> {
             .name_text(placement.kind)
             .filter(|_| self.ir.named(placement.kind))
         else {
+            if parent == NONE
+                && placement.body != NONE
+                && placement.body != ABSENT
+                && let Err(declined) = self.unrun_block(placement.body, (file, NONE))?
+            {
+                return Ok(Err(declined));
+            }
             return Ok(Ok(NONE));
         };
         let duplicated = self
@@ -92,6 +99,11 @@ impl Core<'_> {
             return Ok(Ok(NONE));
         };
         if parent == NONE && !self.ir.named(name) {
+            if placement.body != NONE
+                && let Err(declined) = self.unrun_block(placement.body, (file, NONE))?
+            {
+                return Ok(Err(declined));
+            }
             return Ok(Ok(NONE));
         }
         if !self.charge_item(file, placement.lo, placement.hi)? {
@@ -186,7 +198,7 @@ impl Core<'_> {
             Work::Items(block.items.0, block.items.1, record.env),
         ];
         let mut late: Vec<Work> = Vec::new();
-        let mut members: std::collections::HashSet<u32> = std::collections::HashSet::new();
+        let mut members: super::column::ColumnSet = Default::default();
         loop {
             let job = match work.pop() {
                 Some(job) => job,
@@ -206,6 +218,16 @@ impl Core<'_> {
                     (item, env)
                 }
                 Work::Item(item, env) => (item, env),
+                Work::BundleEnd(item, env, rows, (waiting, drawn)) => {
+                    if late.len() == waiting
+                        && self.diagnostics.len() == drawn
+                        && self.instances.len() == rows as usize
+                    {
+                        let file = self.env_file(env, record.file);
+                        self.empty_bundle(item, env, file)?;
+                    }
+                    continue;
+                }
                 Work::Items(at, end, env) => {
                     if at >= end {
                         continue;
@@ -263,6 +285,9 @@ impl Core<'_> {
                     }
                 }
                 ItemRec::For(_) => {
+                    if self.bundle_loops.contains(&item) {
+                        members.extend(self.bundle_loop_members(item)?);
+                    }
                     if !bound && self.head_reads_deferred(item, env)? {
                         late.push(Work::Late(item, env));
                         continue;
@@ -274,10 +299,26 @@ impl Core<'_> {
                     match run {
                         Some(run) if run.count > 0 => {
                             self.reserve_loop(&run)?;
+                            if self.bundle_loops.contains(&item)
+                                && self.only_uses(&self.bundle_loop_members(item)?)?
+                            {
+                                let rows = u32::try_from(self.instances.len()).unwrap_or(NONE);
+                                work.push(Work::BundleEnd(
+                                    item,
+                                    env,
+                                    rows,
+                                    (late.len(), self.diagnostics.len()),
+                                ));
+                            }
                             work.push(Work::Loop(run));
                         }
                         run => {
-                            if let Err(declined) = self.unrun_names(item, file)? {
+                            if run.as_ref().is_some_and(|run| !run.open)
+                                && self.bundle_loops.contains(&item)
+                            {
+                                self.empty_bundle(item, env, file)?;
+                            }
+                            if let Err(declined) = self.unrun_names(item, (file, env))? {
                                 return Ok(Err(declined));
                             }
                             if run.is_none_or(|run| run.open) {
@@ -383,6 +424,15 @@ impl Core<'_> {
                 ItemRec::Paren(inner) if inner != NONE => work.push(Work::Item(inner, env)),
                 ItemRec::Bundle(_) => {
                     members.extend(self.bundle_items(item));
+                    if self.only_uses(&self.bundle_items(item))? {
+                        let rows = u32::try_from(self.instances.len()).unwrap_or(NONE);
+                        work.push(Work::BundleEnd(
+                            item,
+                            env,
+                            rows,
+                            (late.len(), self.diagnostics.len()),
+                        ));
+                    }
                     for member in self.bundle_items(item).into_iter().rev() {
                         work.push(Work::Item(member, env));
                     }
@@ -563,7 +613,7 @@ impl Core<'_> {
 }
 
 impl Core<'_> {
-    fn in_bundle(&self, env: u32, members: &std::collections::HashSet<u32>) -> bool {
+    fn in_bundle(&self, env: u32, members: &super::column::ColumnSet) -> bool {
         let mut at = env;
         while let Some(record) = self.envs.get(at as usize) {
             if members.contains(&record.use_item) {
@@ -596,5 +646,72 @@ impl Core<'_> {
             Ok(None) => Ok(false),
             Err(declined) => Err(declined),
         })
+    }
+}
+
+impl Core<'_> {
+    fn bundle_loop_members(&self, item: u32) -> Result<Vec<u32>, Internal> {
+        let ItemRec::For(rec) = *self.ir.item(item)? else {
+            return Ok(Vec::new());
+        };
+        let block = *self
+            .ir
+            .blocks
+            .get(rec.body as usize)
+            .ok_or(Internal::missed("IR block"))?;
+        let mut found = Vec::new();
+        for at in block.items.0..block.items.1 {
+            let line = *self
+                .ir
+                .block_items
+                .get(at as usize)
+                .ok_or(Internal::missed("IR block item"))?;
+            if let ItemRec::Line(members) = *self.ir.item(line)? {
+                found.extend(
+                    self.ir
+                        .members
+                        .get(members.0 as usize..members.1 as usize)
+                        .unwrap_or_default(),
+                );
+            }
+        }
+        Ok(found)
+    }
+
+    fn empty_bundle(&mut self, item: u32, env: u32, file: u32) -> Result<(), Internal> {
+        let span = match *self.ir.item(item)? {
+            ItemRec::For(rec) => self.span(file, rec.lo, rec.hi),
+            ItemRec::Bundle(rec) => self.span(file, rec.lo, rec.hi),
+            ItemRec::Placement(_)
+            | ItemRec::Wire(_)
+            | ItemRec::Line(_)
+            | ItemRec::When(_)
+            | ItemRec::Paren(_) => return Ok(()),
+        };
+        let saved = self.enter_env(env);
+        self.draw(
+            Code::EmptyBundle,
+            span,
+            "a bundle holds at least one member after expansion",
+        );
+        self.leave_env(saved);
+        Ok(())
+    }
+}
+
+impl Core<'_> {
+    fn only_uses(&self, members: &[u32]) -> Result<bool, Internal> {
+        if members.is_empty() {
+            return Ok(false);
+        }
+        for member in members {
+            let ItemRec::Placement(placement) = *self.ir.item(*member)? else {
+                return Ok(false);
+            };
+            if self.used_pattern(placement.kind).is_none() {
+                return Ok(false);
+            }
+        }
+        Ok(true)
     }
 }

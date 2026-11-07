@@ -11,7 +11,19 @@ impl OperatorHost for Core<'_> {
     type Reference = u32;
 
     fn fault(&mut self, code: Code, node: u32, message: String) -> Result<(), Internal> {
-        self.draw_at(code, node, message)
+        let calls = self.index_calls(code, node, &message)?;
+        let Some(last) = calls.last().copied() else {
+            return self.draw_at(code, node, message);
+        };
+        let origin = self.returned_root(last)?;
+        for call in &calls {
+            self.push_call(*call);
+        }
+        let drawn = self.draw_at(code, origin, message);
+        for _ in &calls {
+            self.eval_chain.pop();
+        }
+        drawn
     }
 
     fn fault_helped(
@@ -21,10 +33,21 @@ impl OperatorHost for Core<'_> {
         message: String,
         help: String,
     ) -> Result<(), Internal> {
-        let span = self.node_span(node)?;
+        let calls = self.index_calls(code, node, &message)?;
+        let origin = match calls.last() {
+            Some(call) => self.returned_root(*call)?,
+            None => node,
+        };
+        let span = self.node_span(origin)?;
+        for call in &calls {
+            self.push_call(*call);
+        }
         let diagnostic = crate::diagnostics::Diagnostic::new(code, span, message).with_help(help);
         let diagnostic = self.chained(diagnostic);
         self.push_drawn(diagnostic);
+        for _ in &calls {
+            self.eval_chain.pop();
+        }
         Ok(())
     }
 
@@ -91,5 +114,38 @@ impl OperatorHost for Core<'_> {
 
     fn lengths(&mut self, value: &CoreValue) -> Vec<u32> {
         self.store.lengths(value)
+    }
+}
+
+impl Core<'_> {
+    fn returning_calls(&self, node: u32) -> Result<Vec<u32>, Internal> {
+        let mut calls = Vec::new();
+        let mut origin = node;
+        while self.ir.node(origin)?.0 == crate::semantics::ir::flat::Op::Call
+            && !calls.contains(&origin)
+            && let Some(_) = self.callee(origin)?
+        {
+            calls.push(origin);
+            origin = self.returned_root(origin)?;
+        }
+        Ok(calls)
+    }
+
+    fn returned_root(&self, call: u32) -> Result<u32, Internal> {
+        let function = self.callee(call)?.ok_or(Internal::missed("a callee"))?;
+        self.function_roots(function)?
+            .last()
+            .copied()
+            .ok_or(Internal::missed("a body value"))
+    }
+}
+
+impl Core<'_> {
+    fn index_calls(&self, code: Code, node: u32, message: &str) -> Result<Vec<u32>, Internal> {
+        if code == Code::IndexOutOfRange && message.starts_with("the index ") {
+            self.returning_calls(node)
+        } else {
+            Ok(Vec::new())
+        }
     }
 }

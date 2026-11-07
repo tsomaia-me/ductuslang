@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::ops::RangeInclusive;
 
 use super::core::Core;
@@ -8,7 +7,7 @@ use crate::semantics::Internal;
 use crate::semantics::counted_walk::CountedWalk;
 use crate::semantics::operators::{EvalTy, Value, int_range};
 
-pub(crate) type Index = HashMap<(u32, u32), Vec<(usize, u64)>>;
+pub(crate) type Index = super::column::PairColumn<Vec<(usize, u64)>>;
 
 #[derive(Clone, Debug)]
 pub(crate) struct InitRead {

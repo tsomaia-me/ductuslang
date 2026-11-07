@@ -6,6 +6,7 @@ mod attr_read;
 mod body_instance;
 mod bound_form;
 mod bounds;
+mod bundle_fors;
 mod call_chain;
 #[cfg(test)]
 mod call_result_tests;
@@ -18,6 +19,9 @@ mod cell_tests;
 mod cells;
 mod check;
 mod collect;
+mod column;
+#[cfg(test)]
+mod column_tests;
 mod consistency;
 mod core;
 mod core_value;
@@ -70,6 +74,7 @@ mod memo_arg;
 mod memo_entry;
 mod memo_key;
 mod need;
+mod param_paths;
 #[cfg(test)]
 mod path_tests;
 mod paths;
@@ -100,11 +105,13 @@ mod unit_reach;
 #[cfg(test)]
 mod unit_tests;
 mod unread_arg;
+mod unused_to;
 mod uses;
 mod value_keys;
 mod values;
 mod whens;
 mod width;
+mod wire_names;
 mod wire_row;
 #[cfg(test)]
 mod wire_tests;

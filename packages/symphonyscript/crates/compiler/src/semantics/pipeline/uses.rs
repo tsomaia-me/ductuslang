@@ -48,7 +48,7 @@ impl Core<'_> {
             }
             let body = self.pattern_parts(pattern)?.1;
             let file = self.pattern_file(pattern);
-            if let Err(declined) = self.unrun_block(body, file)? {
+            if let Err(declined) = self.unrun_block(body, (file, NONE))? {
                 return Ok(Err(declined));
             }
         }
@@ -104,7 +104,20 @@ impl Core<'_> {
         if !self.expansion_step(span.clone()) {
             return Ok(Ok(None));
         }
-        let bound = match self.use_sources(placement, pattern, (file, env), span.clone())? {
+        let links = self.env_links(env);
+        let saved = std::mem::replace(&mut self.use_links, links);
+        if placement.flags.0 != placement.flags.1 {
+            let flag = *self
+                .ir
+                .flags
+                .get(placement.flags.0 as usize)
+                .ok_or(Internal::missed("IR flag"))?;
+            let flag_span = self.span(file, flag.lo, flag.hi);
+            self.draw(Code::UseForm, flag_span, "a pattern use carries no flags");
+        }
+        let sources = self.use_sources(placement, pattern, (file, env), span.clone());
+        self.use_links = saved;
+        let bound = match sources? {
             Ok(bound) => bound,
             Err(declined) => return Ok(Err(declined)),
         };
@@ -856,7 +869,10 @@ impl Core<'_> {
         if !cells && (fact.fixed.is_some() || !matches!(fact.leaf, Leaf::Int | Leaf::Float)) {
             return Ok(Ok(stored.clone()));
         }
-        if let Some(value) = self.use_values.get(&(env, position, class)) {
+        if let Some(value) = self
+            .use_values
+            .get(&(env, position, super::column::dense(class)))
+        {
             return Ok(Ok(value.clone()));
         }
         let Some((root, caller)) = self
@@ -891,7 +907,7 @@ impl Core<'_> {
             Err(declined) => return Ok(Err(declined)),
         };
         self.use_values
-            .insert((env, position, class), value.clone());
+            .insert((env, position, super::column::dense(class)), value.clone());
         Ok(Ok(value))
     }
 
@@ -1291,7 +1307,7 @@ impl Core<'_> {
 
 impl Core<'_> {
     pub fn pattern_names(&mut self) -> Result<(), Internal> {
-        let mut read: std::collections::HashMap<u32, Vec<u32>> = std::collections::HashMap::new();
+        let mut read: super::column::Column<Vec<u32>> = Default::default();
         let start = self.patterns_start();
         for local in 0..self.ir.op.len() {
             if self.ir.op.get(local) != Some(&Op::Name) {
@@ -1589,7 +1605,10 @@ impl Core<'_> {
             let Some(ty) = super::check::expected(declared) else {
                 return Ok(Err(Declined(Reason::PatternUse)));
             };
-            let read = self.attr_read(row, attr, ty)?;
+            let read = match self.attr_read(row, attr, ty)? {
+                Ok(read) => read,
+                Err(declined) => return Ok(Err(declined)),
+            };
             let written = self
                 .attr_reads
                 .get(read as usize)

@@ -264,15 +264,14 @@ type Sorted<'a> = (&'a [u32], &'a [u32], &'a [u32], &'a [u32], &'a [u32]);
 fn item_landed(
     ir: &FlatIr,
     item: &ItemRec,
-    (members, in_loops, patterns, tops, blocks): Sorted<'_>,
+    (members, _, _, tops, blocks): Sorted<'_>,
     at: usize,
 ) -> bool {
     if !landed(item_slice(item)) {
         return false;
     }
     if let ItemRec::Wire(wire) = item {
-        let in_loop = u32::try_from(at).is_ok_and(|at| in_loops.binary_search(&at).is_ok());
-        return wire_landed(ir, wire, in_loop);
+        return wire_landed(ir, wire);
     }
     if let ItemRec::For(rec) = item {
         return loop_landed(ir, rec);
@@ -304,26 +303,11 @@ fn item_landed(
     let ItemRec::Placement(placement) = item else {
         return true;
     };
-    let used = ir
-        .name(placement.kind)
-        .is_some_and(|entry| patterns.binary_search(&entry.sym.0).is_ok());
     let top = u32::try_from(at).is_ok_and(|at| tops.binary_search(&at).is_ok());
-    if placement.flags.0 != placement.flags.1
-        || placement.attrs_cut
+    if placement.attrs_cut
         || placement.skipped_block.is_some()
         || (placement.inline
             && u32::try_from(at).map_or(true, |at| members.binary_search(&at).is_err()))
-    {
-        return false;
-    }
-    let entries = ir
-        .attr_entries
-        .get(placement.attrs.0 as usize..placement.attrs.1 as usize)
-        .unwrap_or_default();
-    if !used
-        && entries
-            .iter()
-            .any(|entry| !matches!(entry.form, AttrForm::Value(_)))
     {
         return false;
     }
@@ -393,9 +377,8 @@ pub(crate) fn destination_slice(op: Op) -> Slice {
         Op::Not | Op::And | Op::Or => Slice::Pending,
         Op::Lt | Op::Le | Op::Gt | Op::Ge | Op::Is | Op::IsNot => Slice::Pending,
         Op::IndexFromEnd | Op::Slice | Op::Convert | Op::For => Slice::Pending,
-        Op::Call | Op::NamedCall | Op::TyScalar | Op::TyArray | Op::TyName | Op::TyVar => {
-            Slice::Pending
-        }
+        Op::Call => Slice::Flip,
+        Op::NamedCall | Op::TyScalar | Op::TyArray | Op::TyName | Op::TyVar => Slice::Pending,
         Op::To | Op::Past | Op::Stepped | Op::Variant | Op::Bad => Slice::Pending,
         Op::Str | Op::Match | Op::MethodCall | Op::NamedMethodCall => Slice::Pending,
     }
@@ -440,10 +423,8 @@ fn instance_path(ir: &FlatIr, field: u32) -> bool {
     matches!(ir.node(node), Ok((Op::Name, ..)))
 }
 
-fn wire_landed(ir: &FlatIr, wire: &WireRec, in_loop: bool) -> bool {
-    wire.flags.0 == wire.flags.1
-        && (wire.as_name == NONE || in_loop)
-        && !wire.attrs_cut
+fn wire_landed(ir: &FlatIr, wire: &WireRec) -> bool {
+    !wire.attrs_cut
         && value_entries(ir, wire.attrs)
         && destination_candidates(ir, wire.destination).is_some()
 }
@@ -476,8 +457,6 @@ fn plain_cell(ir: &FlatIr, rec: &CellRec) -> bool {
     let host_fed = rec.rule == NONE && rec.init != NONE;
     let derived = rec.rule != NONE;
     (host_fed || derived)
-        && rec.clock.0 == rec.clock.1
-        && rec.capacity.is_none()
         && (scalar_annotation(ir, rec.binder)
             || ir
                 .binders

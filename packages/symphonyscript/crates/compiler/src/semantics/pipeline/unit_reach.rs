@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use super::column::dense;
 use std::rc::Rc;
 
 use symphonyscript_core::FamilyId;
@@ -12,8 +12,8 @@ use crate::semantics::ir::flat::{NONE, Op};
 
 #[derive(Default)]
 pub(crate) struct UnitReach {
-    pub scaled: HashSet<u32>,
-    pub entered: HashSet<u32>,
+    pub scaled: super::column::ColumnSet,
+    pub entered: super::column::ColumnSet,
     pub params: Vec<u32>,
 }
 
@@ -22,19 +22,22 @@ pub(crate) struct FrameUnit {
     pub family: FamilyId,
     pub unit: usize,
     pub reach: Rc<UnitReach>,
+    pub key: (u32, u32, u32),
 }
 
 impl Core<'_> {
     pub fn taker(&mut self, node: u32, family: FamilyId, key: u32) {
-        if self.taker_set.insert((node, family, key)) {
+        if self.taker_set.insert((node, dense(family.index()), key)) {
             self.takers.push((node, family, key));
         }
     }
 
     fn is_taker(&self, node: u32, family: FamilyId) -> Result<bool, Internal> {
         let key = self.in_body(node)?.map_or(NONE, |(inst, _)| inst);
-        Ok(self.taker_set.contains(&(node, family, key))
-            || self.taker_set.contains(&(node, family, NONE)))
+        Ok(self.taker_set.contains(&(node, dense(family.index()), key))
+            || self
+                .taker_set
+                .contains(&(node, dense(family.index()), NONE)))
     }
 
     pub fn frame_unit(
@@ -49,6 +52,7 @@ impl Core<'_> {
             family,
             unit,
             reach,
+            key: (root, inst, dense(family.index())),
         })
     }
 
@@ -62,14 +66,19 @@ impl Core<'_> {
         let mut pending = vec![(root, inst)];
         let mut outcome = Ok(());
         while let Some((at, body)) = pending.last().copied() {
-            if self.unit_reaches.contains_key(&(at, body, family)) {
+            if self
+                .unit_reaches
+                .get(&(at, body, dense(family.index())))
+                .is_some()
+            {
                 pending.pop();
                 continue;
             }
             self.inst = body;
             match self.reach_walk(at, family) {
                 Ok(Ok(reach)) => {
-                    self.unit_reaches.insert((at, body, family), Rc::new(reach));
+                    self.unit_reaches
+                        .insert((at, body, dense(family.index())), Rc::new(reach));
                     pending.pop();
                 }
                 Ok(Err(missing)) => pending.extend(missing),
@@ -82,7 +91,7 @@ impl Core<'_> {
         self.inst = outer;
         outcome?;
         self.unit_reaches
-            .get(&(root, inst, family))
+            .get(&(root, inst, dense(family.index())))
             .cloned()
             .ok_or(Internal::missed("a unit reach"))
     }
@@ -94,11 +103,11 @@ impl Core<'_> {
     ) -> Result<Result<UnitReach, Vec<(u32, u32)>>, Internal> {
         let mut reach = UnitReach::default();
         let mut missing = Vec::new();
-        let mut seen = HashSet::new();
+        let mut seen = super::column::PairSet::default();
         let mut stack = vec![(root, false)];
         while let Some((node, base)) = stack.pop() {
             CountedWalk::CoreFamilies.step();
-            if !seen.insert((node, base)) || !self.has_fact(node)? {
+            if !seen.insert((node, u32::from(base))) || !self.has_fact(node)? {
                 continue;
             }
             let fact = self.fact(node)?;
@@ -164,7 +173,11 @@ impl Core<'_> {
                     };
                     reach.entered.insert(node);
                     let value = self.body_value(body)?;
-                    let Some(inner) = self.unit_reaches.get(&(value, body, family)).cloned() else {
+                    let Some(inner) = self
+                        .unit_reaches
+                        .get(&(value, body, dense(family.index())))
+                        .cloned()
+                    else {
                         missing.push((value, body));
                         continue;
                     };
