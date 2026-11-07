@@ -4762,3 +4762,29 @@ const ENUM_PATH_READS: [&[&str]; 7] = [
 fn a_path_read_of_an_enum_attribute_reads_its_variant_beside_a_valid_twin_in_every_order() {
     assert_eq!(same_as_the_old_engine(&ENUM_PATH_READS), 42);
 }
+
+const REFERENCE_ARRAY_MEMBERS: [&[&str]; 5] = [
+    &[
+        "Clip n\nClip m\n",
+        "Clip c:\n    Note/([1][[n, m][0..1].size])\n",
+    ],
+    &[
+        "Clip n\nClip m\n",
+        "Clip c:\n    Note/([1][[n, m][0..2].capacity])\n",
+    ],
+    &[
+        "Clip n\nClip m\n",
+        "Clip c:\n    Note/([1, 2][[n, m].size])\n",
+    ],
+    &[
+        "Clip n\nClip m\nlet r = [n, m]\n",
+        "Clip c:\n    Note/((r + [n])[0])\n",
+    ],
+    &["Clip n\nClip m\n", "Clip c:\n    Note/(([n] + [m])[1])\n"],
+];
+
+#[test]
+fn a_member_of_an_array_of_references_measures_it_and_a_join_of_two_is_one_beside_a_valid_twin_in_every_order()
+ {
+    assert_eq!(same_as_the_old_engine(&REFERENCE_ARRAY_MEMBERS), 30);
+}

@@ -1367,7 +1367,12 @@ impl Core<'_> {
         if let Some(measured) = self.history_member_fact(node, receiver, &fact)? {
             return Ok(Ok(measured));
         }
-        if fact.node || self.is_reactive(receiver)? {
+        if fact.node
+            && (fact.dims.is_empty()
+                || self.is_bytes_member(node)?
+                || self.ir.node(receiver)?.0 == Op::Add)
+            || self.is_reactive(receiver)?
+        {
             return Ok(Err(Declined(Reason::Member)));
         }
         if !fact.dims.is_empty() && self.is_bytes_member(node)? {

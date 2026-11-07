@@ -107,6 +107,28 @@ impl Core<'_> {
                 let converted = Self::converted_fact(code)?;
                 Ok(Ok(Some(self.keep(node, converted)?)))
             }
+            Op::Add
+                if facts.iter().all(|fact| fact.node && !fact.dims.is_empty())
+                    && facts.windows(2).all(|pair| {
+                        pair.first().map(|fact| fact.dims.get(1..))
+                            == pair.get(1).map(|fact| fact.dims.get(1..))
+                    }) =>
+            {
+                let mut dims = facts
+                    .first()
+                    .map(|fact| fact.dims.clone())
+                    .unwrap_or_default();
+                let total = facts.iter().try_fold(0u32, |sum, fact| {
+                    fact.dims
+                        .first()
+                        .filter(|length| **length != super::folds::ANY_LENGTH)
+                        .and_then(|length| sum.checked_add(*length))
+                });
+                if let Some(first) = dims.first_mut() {
+                    *first = total.unwrap_or(super::folds::ANY_LENGTH);
+                }
+                Ok(Ok(Some(Fact::node_reference(dims))))
+            }
             Op::Add | Op::Sub | Op::Mul | Op::Div | Op::IntDiv | Op::Rem | Op::Pow => {
                 let binary = binary_of(op).ok_or(Internal::missed("operator"))?;
                 self.draw_at(Code::OperandType, node, operand_message(binary))?;
