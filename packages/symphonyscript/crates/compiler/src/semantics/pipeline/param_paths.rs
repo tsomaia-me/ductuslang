@@ -26,7 +26,7 @@ impl Core<'_> {
         nodes.sort_unstable();
         let mut calls: Vec<Vec<u32>> = vec![Vec::new(); self.functions() as usize];
         for local in 0..self.ir.op.len() {
-            if self.ir.op.get(local) != Some(&Op::Call) {
+            if !matches!(self.ir.op.get(local), Some(Op::Call | Op::NamedCall)) {
                 continue;
             }
             let node = self.ir.base + u32::try_from(local).unwrap_or(0);
@@ -51,10 +51,24 @@ impl Core<'_> {
                 }
                 for call in calls.get(callee as usize).cloned().unwrap_or_default() {
                     CountedWalk::CorePathStep.step();
-                    let Some(argument) = self.arguments(call)?.get(at as usize).copied() else {
+                    if self.ir.node(call)?.0 == Op::NamedCall {
+                        self.unwritten_params.insert((function, position));
+                        continue;
+                    }
+                    let Some(mut argument) = self.arguments(call)?.get(at as usize).copied() else {
                         continue;
                     };
+                    let mut lets = 0;
+                    while self.ir.node(argument)?.0 == Op::Name
+                        && let DeclRef::Let(held) = self.bound(argument)?
+                        && !self.cyclic.get(held as usize).copied().unwrap_or(true)
+                        && lets < self.ir.lets.len()
+                    {
+                        argument = self.let_root(held)?;
+                        lets += 1;
+                    }
                     if self.ir.node(argument)?.0 != Op::Name {
+                        self.unwritten_params.insert((function, position));
                         continue;
                     }
                     match self.bound(argument)? {
@@ -72,6 +86,8 @@ impl Core<'_> {
                             let owner = self.binding_owner(argument)?;
                             if owner < self.functions() {
                                 work.push((owner, outer));
+                            } else {
+                                self.unwritten_params.insert((function, position));
                             }
                         }
                         DeclRef::None
@@ -79,7 +95,9 @@ impl Core<'_> {
                         | DeclRef::Let(_)
                         | DeclRef::Duplicate
                         | DeclRef::Fn(_)
-                        | DeclRef::Pattern(_) => {}
+                        | DeclRef::Pattern(_) => {
+                            self.unwritten_params.insert((function, position));
+                        }
                     }
                 }
             }
@@ -153,6 +171,12 @@ impl Core<'_> {
         let DeclRef::Param(position) = self.bound(receiver)? else {
             return Err(Internal::missed("a parameter path's receiver"));
         };
+        if self
+            .unwritten_params
+            .contains(&(self.binding_owner(receiver)?, position))
+        {
+            return Ok(Err(Declined(Reason::Member)));
+        }
         let value = self
             .bodies
             .get(inst as usize)

@@ -4847,33 +4847,37 @@ fn a_member_name_a_values_type_lacks_naming_a_function_draws_not_a_value_and_an_
     assert_eq!(same_as_the_old_engine(&FUNCTION_NAMED_MEMBERS), 36);
 }
 
-const REFERENCE_ARRAY_KEYS: [&[&str]; 5] = [
+const ARRAY_KEYS: [&[&str]; 6] = [
     &[
-        "Clip verse | gain=2:\n    Note\nClip other | gain=3:\n    Note\nfn f(c): c.gain\nfn h(xs, i): f(xs[i])\n",
-        "Clip k:\n    Note/([60][i32(h([verse, other], 1)) - 3])\n",
+        "fn h(xs): (for i in 0..xs[0] into a from 0: a + i)\n",
+        "Clip k:\n    Note/([60][h([2, 5]) - 1])\n",
     ],
     &[
-        "Clip verse | gain=2:\n    Note\nClip other | gain=3:\n    Note\nfn f(c): c.gain\nfn h(xs, i): f(xs[i])\n",
-        "Clip k:\n    Note/([60][i32(h([verse, other], 0)) - 1])\n",
+        "fn h(xs): (for i in 0..xs[0] into a from 0: a + i)\n",
+        "Clip k:\n    Note/([60][h([3, 5]) - 1])\n",
     ],
     &[
-        "Clip verse | gain=2:\n    Note\nClip other | gain=3:\n    Note\nfn f(c): c.gain\nfn h(xs, i, n): if n < 1 then 0 else f(xs[i]) + h1(xs, 1 - i, n - 1)\nfn h1(xs, i, n): if n < 1 then 0 else f(xs[i]) + h2(xs, 1 - i, n - 1)\nfn h2(xs, i, n): if n < 1 then 0 else f(xs[i]) + 0\n",
-        "Clip k:\n    Note/([60][i32(h([verse, other], 0, 3)) - 7])\n",
+        "fn h(xs): (for i in 0..xs[0] into a from 0: a + i)\nfn g(ys): h(ys)\n",
+        "Clip k:\n    Note/([60][g([2, 5]) - 1])\n",
     ],
     &[
-        "Clip verse | gain=2:\n    Note\nClip other | gain=3:\n    Note\nfn f(c): c.gain\nfn h(xs, i): f(xs[i])\n",
-        "Clip k:\n    Note/([60][i32(h([verse] + [other], 1)) - 3])\n",
+        "fn h(xs): (for i in 0..xs[0] into a from 0: a + i)\n",
+        "Clip k:\n    Note/([60][h([2] + [5]) - 1])\n",
     ],
     &[
-        "Clip verse | gain=2:\n    Note\nClip other | gain=3:\n    Note\nfn f(c): c.gain\nfn h(xs, i): f(xs[i])\nfn g(i): h([verse, other], i) + h([verse, other], 1 - i)\n",
-        "Clip k:\n    Note/([60][i32(g(0)) - 5])\n",
+        "fn h(xs): (for i in 0..xs[1] into a from 0: a + i)\n",
+        "Clip k:\n    Note/([60][h([5, 2][0..]) + h([2, 2]) - 2])\n",
+    ],
+    &[
+        "fn h(xs): (for i in 0..xs[0][0] into a from 0: a + i)\n",
+        "Clip k:\n    Note/([60][h([[2]]) - 1])\n",
     ],
 ];
 
 #[test]
-fn an_array_of_references_passed_to_a_function_keys_its_body_instance_by_the_arrays_elements_in_linear_work_beside_a_valid_twin_in_every_order_538()
+fn an_array_passed_to_a_function_keys_its_body_instance_by_the_arrays_elements_in_linear_work_beside_a_valid_twin_in_every_order_538()
  {
-    assert_eq!(same_as_the_old_engine(&REFERENCE_ARRAY_KEYS), 30);
+    assert_eq!(same_as_the_old_engine(&ARRAY_KEYS), 36);
     let new =
         Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("the vocabulary compiles");
     let steps = || {
@@ -4883,14 +4887,12 @@ fn an_array_of_references_passed_to_a_function_keys_its_body_instance_by_the_arr
             .sum::<u64>()
     };
     let work = |sites: usize| {
-        let mut text = String::from(
-            "Clip verse | gain=2:\n    Note\nClip other | gain=3:\n    Note\nfn f(c): c.gain\nfn h(xs, i): f(xs[i])\n",
-        );
+        let mut text = String::from("fn h(xs): (for i in 0..xs[0] into a from 0: a + i)\n");
         for site in 0..sites {
             text.push_str(&format!(
-                "Clip k{site}:\n    Note/([60][i32(h([verse, other], {})) - {}])\n",
-                site % 2,
-                2 + site % 2
+                "Clip k{site}:\n    Note/([60][h([{}, 5]) - {}])\n",
+                2 + site % 2,
+                1 + 2 * (site % 2)
             ));
         }
         let start = steps();
@@ -4995,5 +4997,22 @@ fn a_path_read_of_a_scaled_unit_attribute_reads_its_value_in_base_units_in_every
             [(Code::ConstantOverflow, "i64(3000000000000000000)")],
             "{text}"
         );
+    }
+}
+
+const UNWRITTEN_PARAMETER_PATHS: [&str; 4] = [
+    "Session main\nClip verse | gain=k.gain:\n    Note\nClip other | gain=k.gain:\n    Note\nfn f(c): c.gain\nfn h(c, d, xs, i, n): f(xs[i])\nClip k | gain=h(verse, other, [verse, other], 0, 3):\n    Note\n",
+    "Clip verse | gain=2:\n    Note\nClip other | gain=3:\n    Note\nfn f(c): c.gain\nfn h(xs, i): f(xs[i])\nClip k:\n    Note/([60][i32(h([verse, other], 1)) - 3])\n",
+    "Clip verse | gain=2:\n    Note\nfn f(c): c.gain\nClip k:\n    Note/([60][i32(f(c = verse)) - 2])\n",
+    "Clip verse | gain=2:\n    Note\nfn f(c): c.gain\nClip k:\n    Note/([60][i32(f([verse][0])) - 2])\n",
+];
+
+#[test]
+fn a_path_through_a_parameter_whose_argument_is_no_written_instance_is_declined_where_the_declaration_graph_holds_no_edge_for_its_read()
+ {
+    let new =
+        Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("the vocabulary compiles");
+    for text in UNWRITTEN_PARAMETER_PATHS {
+        assert!(new.checked_by_new_core(&[source(text)]).is_none(), "{text}");
     }
 }
