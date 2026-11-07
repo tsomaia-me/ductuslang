@@ -138,7 +138,12 @@ impl Core<'_> {
             if !live {
                 return Ok(Ok(Choice::Unknown));
             }
-            if op == Op::Name && matches!(self.bound(node)?, DeclRef::Param(_)) {
+            if op == Op::Call && self.callee(node)?.is_none() {
+                return Ok(Err(Declined(Reason::DestinationValue)));
+            }
+            if (op == Op::Name && matches!(self.bound(node)?, DeclRef::Param(_)))
+                || (op == Op::Call && self.callee(node)?.is_some())
+            {
                 return Ok(match self.evaluate(node, EvalTy::Exact)? {
                     Ok(Value::Node(row)) if row != NONE => {
                         found.push(row);

@@ -377,9 +377,8 @@ pub(crate) fn destination_slice(op: Op) -> Slice {
         Op::Not | Op::And | Op::Or => Slice::Pending,
         Op::Lt | Op::Le | Op::Gt | Op::Ge | Op::Is | Op::IsNot => Slice::Pending,
         Op::IndexFromEnd | Op::Slice | Op::Convert | Op::For => Slice::Pending,
-        Op::Call | Op::NamedCall | Op::TyScalar | Op::TyArray | Op::TyName | Op::TyVar => {
-            Slice::Pending
-        }
+        Op::Call => Slice::Flip,
+        Op::NamedCall | Op::TyScalar | Op::TyArray | Op::TyName | Op::TyVar => Slice::Pending,
         Op::To | Op::Past | Op::Stepped | Op::Variant | Op::Bad => Slice::Pending,
         Op::Str | Op::Match | Op::MethodCall | Op::NamedMethodCall => Slice::Pending,
     }

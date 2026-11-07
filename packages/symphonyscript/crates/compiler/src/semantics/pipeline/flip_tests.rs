@@ -4596,3 +4596,26 @@ const REFERENCES_AS_CALL_ARGUMENTS: [&[&str]; 10] = [
 fn a_reference_passed_to_a_function_is_typed_through_its_body_beside_a_valid_twin_in_every_order() {
     assert_eq!(same_as_the_old_engine(&REFERENCES_AS_CALL_ARGUMENTS), 60);
 }
+
+const DESTINATIONS_CHOSEN_BY_A_CALL: [&[&str]; 8] = [
+    &["fn f(x): x\nClip a\n", "Clip c:\n    Plays: f(a)\n"],
+    &[
+        "fn f(x, y): if y then x else x\nClip a\n",
+        "Clip c:\n    Plays: f(a, true)\n",
+    ],
+    &["fn f(x): x\nClip c:\n    Plays: f(5)\n"],
+    &["fn f(x): [x][0]\nClip a\n", "Clip c:\n    Plays: f(a)\n"],
+    &["fn f(x): x\nClip c:\n    Note as n/60\n    Plays: f(n)\n"],
+    &["fn f(x, y): if y then x else c\nClip c:\n    Note as n/60\n    Plays: f(n, true)\n"],
+    &["fn f(x, y): if y then x else c\nClip c:\n    Note as n/60\n    Plays: f(n, false)\n"],
+    &[
+        "fn f(x): x\nstate s(true)\nClip a\nClip b\n",
+        "Clip c:\n    Plays: if s then f(a) else b\n",
+    ],
+];
+
+#[test]
+fn a_destination_chosen_by_a_function_call_is_the_instance_the_call_returns_beside_a_valid_twin_in_every_order()
+ {
+    assert_eq!(same_as_the_old_engine(&DESTINATIONS_CHOSEN_BY_A_CALL), 32);
+}
