@@ -1415,7 +1415,7 @@ impl Core<'_> {
         };
         if !matches!(
             text.as_str(),
-            "size" | "capacity" | "bytes" | "keys" | "values"
+            "size" | "capacity" | "bytes" | "keys" | "values" | "map"
         ) || self.ir.node(*receiver)?.0 == Op::To
         {
             return Ok(false);
@@ -1429,7 +1429,14 @@ impl Core<'_> {
             return Ok(false);
         }
         let array = !fact.dims.is_empty() || fact.leaf == Leaf::Empty;
-        if array && matches!(text.as_str(), "size" | "capacity" | "bytes") {
+        if array && text == "map" {
+            let span = self.node_span(node)?;
+            self.draw(
+                Code::UnbuiltConstruct,
+                span,
+                "an array's `map` (SPEC §5.7) is a construct this compiler does not build",
+            );
+        } else if array && matches!(text.as_str(), "size" | "capacity" | "bytes") {
             let file = self.file_of(node);
             let (lo, _) = self.ir.span(node)?;
             let (_, hi) = self.ir.span(callee)?;

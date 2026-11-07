@@ -2949,3 +2949,19 @@ const MEMBER_DOT_CALLS_WITH_ARGUMENTS: [&[&str]; 4] = [
 fn a_member_called_with_arguments_leaves_them_unread_beside_a_valid_twin_in_every_order() {
     assert_eq!(same_as_the_old_engine(&MEMBER_DOT_CALLS_WITH_ARGUMENTS), 24);
 }
+
+const ARRAY_MAPS: [&[&str]; 4] = [
+    &["let xs = [1, 2]\n", "Clip c:\n    Note/(xs.map(1))\n"],
+    &["let x = 1\n", "Clip c:\n    Note/(x.map(1 + true))\n"],
+    &[
+        "let xs = [1, 2]\n",
+        "Clip c:\n    Note/((xs).map(xs.size()) + 1)\n",
+    ],
+    &["fn f(v): v.map(1)\n", "Clip c:\n    Note/(f([1]))\n"],
+];
+
+#[test]
+fn an_arrays_map_draws_unbuilt_construct_at_the_call_and_a_scalars_draws_unknown_name_beside_a_valid_twin_in_every_order()
+ {
+    assert_eq!(same_as_the_old_engine(&ARRAY_MAPS), 24);
+}

@@ -1517,7 +1517,7 @@ impl Core<'_> {
         let (_, name, _, _) = self.ir.node(callee)?;
         let member = matches!(
             self.ir.name_text(name).unwrap_or_default(),
-            "size" | "capacity" | "bytes" | "keys" | "values"
+            "size" | "capacity" | "bytes" | "keys" | "values" | "map"
         );
         Ok(member && !self.arguments(node)?.is_empty())
     }
