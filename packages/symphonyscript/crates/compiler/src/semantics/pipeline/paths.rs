@@ -543,7 +543,7 @@ impl Core<'_> {
                     }
                     return self.loop_name_path_end(node, receiver, position, field);
                 }
-                DeclRef::Let(_) if self.field_calls.contains_key(&node) => {
+                DeclRef::Let(_) if self.names_a_function(field)? => {
                     self.expr_members.insert(node);
                     End::Value
                 }
@@ -606,7 +606,7 @@ impl Core<'_> {
         } else if matches!(
             self.ir.name_text(field).unwrap_or_default(),
             "size" | "capacity" | "bytes"
-        ) || self.field_calls.contains_key(&node)
+        ) || self.names_a_function(field)?
         {
             self.expr_members.insert(node);
             End::Value

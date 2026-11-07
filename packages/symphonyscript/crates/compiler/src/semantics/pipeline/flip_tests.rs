@@ -4819,3 +4819,30 @@ fn a_member_named_dot_call_on_a_value_lacking_the_member_calls_the_function_and_
  {
     assert_eq!(same_as_the_old_engine(&MEMBER_NAMED_CALLS), 30);
 }
+
+const FUNCTION_NAMED_MEMBERS: [&[&str]; 6] = [
+    &["fn bytes(x): x\n", "Clip c:\n    Note/((64).bytes)\n"],
+    &["fn f0(x): x\n", "Clip c:\n    Note/((64).f0)\n"],
+    &[
+        "fn size(x): x\nlet k = 64\n",
+        "Clip c:\n    Note/(k.size)\n",
+    ],
+    &[
+        "fn f0(x): x\nlet k = [1, 2]\n",
+        "Clip c:\n    Note/(k.f0)\n",
+    ],
+    &[
+        "fn size(x): x\nlet k = [1, 2]\n",
+        "Clip c:\n    Note/([1][k.size])\n",
+    ],
+    &[
+        "fn bytes(x): x\n",
+        "Clip c:\n    Note/([64][([1, 2]).bytes[0]])\n",
+    ],
+];
+
+#[test]
+fn a_member_name_a_values_type_lacks_naming_a_function_draws_not_a_value_and_an_arrays_own_member_wins_beside_a_valid_twin_in_every_order()
+ {
+    assert_eq!(same_as_the_old_engine(&FUNCTION_NAMED_MEMBERS), 36);
+}

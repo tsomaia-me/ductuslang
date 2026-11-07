@@ -67,13 +67,6 @@ impl Core<'_> {
                 out.extend([b, c].into_iter().filter(|at| *at != NONE));
             }
             Op::Stepped => out.push(a),
-            Op::Field
-                if self.field_calls.contains_key(&node)
-                    && (self.ir.node(a)?.0 != Op::Name
-                        || matches!(self.bound(a)?, DeclRef::Let(_) | DeclRef::None)) =>
-            {
-                out.extend(self.field_calls.get(&node).copied());
-            }
             Op::Field if self.expr_members.contains(&node) => out.push(a),
             Op::Call | Op::NamedCall => out.extend(self.arguments(node)?),
             Op::For => out.extend(self.fold_operands(node)?),
@@ -1361,12 +1354,19 @@ impl Core<'_> {
         if !known && !fact.node && matches!(fact.leaf, Leaf::Placeholder | Leaf::Error) {
             return Ok(Ok(Fact::PLACEHOLDER));
         }
-        if let Some(call) = self.field_calls.get(&node).copied()
-            && !fact.node
+        let (_, _, field, _) = self.ir.node(node)?;
+        if !fact.node
             && (fact.dims.is_empty() || !self.is_member_path(node)?)
+            && self.names_a_function(field)?
         {
-            self.delegated.insert(node);
-            return self.ensure_typed(call);
+            let text = self.ir.name_text(field).unwrap_or_default().to_string();
+            self.draw_helped_at(
+                Code::NotAValue,
+                node,
+                format!("`.{text}` names the function `{text}`, and a function is not a value"),
+                format!("call the function, as in `x.{text}()`"),
+            )?;
+            return Ok(Ok(Fact::PLACEHOLDER));
         }
         if let Some(measured) = self.history_member_fact(node, receiver, &fact)? {
             return Ok(Ok(measured));
@@ -1894,5 +1894,18 @@ impl Core<'_> {
             | DeclRef::Fn(_)
             | DeclRef::Pattern(_) => false,
         })
+    }
+}
+
+impl Core<'_> {
+    pub fn names_a_function(&self, field: u32) -> Result<bool, Internal> {
+        let Some(entry) = self.ir.name(field) else {
+            return Ok(false);
+        };
+        Ok(self.ir.fns.iter().any(|rec| {
+            self.ir
+                .name(rec.name)
+                .is_some_and(|named| named.sym == entry.sym)
+        }))
     }
 }

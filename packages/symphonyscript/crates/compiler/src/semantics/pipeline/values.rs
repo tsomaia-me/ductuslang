@@ -405,12 +405,6 @@ impl Core<'_> {
                 }
                 operands
             }
-            Op::Field if self.delegated.contains(&node) => self
-                .field_calls
-                .get(&node)
-                .map(|call| (*call, ty))
-                .into_iter()
-                .collect(),
             Op::Field if self.expr_members.contains(&node) && self.measures_a_literal(node)? => {
                 Vec::new()
             }
@@ -1652,7 +1646,6 @@ impl Core<'_> {
             }
             Op::Stepped => Value::Error,
             Op::Variant => self.variant_value(node)?,
-            Op::Field if self.delegated.contains(&node) => pop(stack)?,
             Op::Field if self.history_capacities.contains_key(&node) => {
                 pop(stack)?;
                 let (at, floor) = self
