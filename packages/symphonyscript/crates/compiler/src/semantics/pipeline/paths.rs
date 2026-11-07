@@ -629,7 +629,15 @@ impl Core<'_> {
             self.expr_members.insert(node);
             End::Value
         } else {
-            return Ok(Err(Declined(Reason::Member)));
+            if !self.written_reference_array(receiver)? {
+                return Ok(Err(Declined(Reason::Member)));
+            }
+            self.draw_at(
+                Code::UnknownAttribute,
+                node,
+                "an array has no attributes; index it first",
+            )?;
+            End::Value
         };
         match start {
             End::Row(row) => {
@@ -2225,7 +2233,15 @@ impl Core<'_> {
             return Ok(Ok(End::Value));
         }
         if !fact.dims.is_empty() {
-            return Ok(Err(Declined(Reason::Member)));
+            if self.names_a_function(field)? {
+                return Ok(Err(Declined(Reason::Member)));
+            }
+            self.draw_at(
+                Code::UnknownAttribute,
+                node,
+                "an array has no attributes; index it first",
+            )?;
+            return Ok(Ok(End::Value));
         }
         let (drawn, stop) = (self.diagnostics.len(), self.stop.clone());
         let value = self.evaluate(root, EvalTy::Exact)?;
@@ -2450,5 +2466,29 @@ impl Core<'_> {
         };
         let inside = (0..i128::from(*outer)).contains(&position);
         Ok((numeric && inside && *inner != ANY_LENGTH && *outer != ANY_LENGTH).then_some(*inner))
+    }
+}
+
+impl Core<'_> {
+    fn written_reference_array(&self, receiver: u32) -> Result<bool, Internal> {
+        let mut at = receiver;
+        while self.ir.node(at)?.0 == Op::Slice {
+            at = self.ir.node(at)?.1;
+        }
+        if self.ir.node(at)?.0 != Op::Array {
+            return Ok(false);
+        }
+        let elements = self.operands(at)?;
+        if elements.is_empty() {
+            return Ok(false);
+        }
+        for element in elements {
+            if self.ir.node(element)?.0 != Op::Name
+                || !matches!(self.bound(element)?, DeclRef::Instance(_))
+            {
+                return Ok(false);
+            }
+        }
+        Ok(true)
     }
 }
