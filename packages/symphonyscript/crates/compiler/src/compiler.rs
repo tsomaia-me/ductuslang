@@ -160,6 +160,24 @@ impl Compiler {
     }
 
     #[cfg(test)]
+    pub(crate) fn new_core_placeholders(
+        &self,
+        sources: &[Source],
+    ) -> Option<(Vec<Diagnostic>, Vec<ExprId>)> {
+        let mut held = Vec::new();
+        let (diagnostics, _, _) = self.analyzed_by(
+            sources,
+            |_| (),
+            |analysis, placeholders, found| {
+                held = placeholders.to_vec();
+                analyze::name_twins(analysis, placeholders, found)
+            },
+            Route::NewCoreOnly,
+        )?;
+        Some((diagnostics, held))
+    }
+
+    #[cfg(test)]
     pub(crate) fn checked_by_new_core_without_twins(
         &self,
         sources: &[Source],
