@@ -1482,8 +1482,36 @@ impl Core<'_> {
         }
         let span = self.node_span(receiver)?;
         Ok(!self.diagnostics.iter().any(|drawn| {
-            matches!(drawn.code, Code::NotAnArray | Code::RaggedArray)
-                && drawn.span.file == span.file
+            matches!(
+                drawn.code,
+                Code::NotAnArray | Code::RaggedArray | Code::UnknownName
+            ) && drawn.span.file == span.file
+                && drawn.span.range.start >= span.range.start
+                && drawn.span.range.end <= span.range.end
+        }))
+    }
+
+    fn silences_its_methods(&self, receiver: u32) -> Result<bool, Internal> {
+        let mut receiver = receiver;
+        let mut seen = std::collections::HashSet::new();
+        while self.ir.node(receiver)?.0 == Op::Name
+            && let DeclRef::Let(at) = self.bound(receiver)?
+            && !self.cyclic.get(at as usize).copied().unwrap_or(true)
+            && seen.insert(at)
+        {
+            receiver = self.let_root(at)?;
+        }
+        for inner in self.deep_postorder(receiver)? {
+            if self.ir.node(inner)?.0 == Op::To {
+                return Ok(true);
+            }
+        }
+        let span = self.node_span(receiver)?;
+        Ok(self.diagnostics.iter().any(|drawn| {
+            matches!(
+                drawn.code,
+                Code::NotAnArray | Code::RaggedArray | Code::UnknownName | Code::MisplacedTo
+            ) && drawn.span.file == span.file
                 && drawn.span.range.start >= span.range.start
                 && drawn.span.range.end <= span.range.end
         }))
@@ -1536,7 +1564,7 @@ impl Core<'_> {
         if method && !fact.node && matches!(fact.leaf, Leaf::Placeholder | Leaf::Error) {
             let let_read = self.ir.node(*receiver)?.0 == Op::Name
                 && matches!(self.bound(*receiver)?, DeclRef::Let(_));
-            return Ok(!let_read);
+            return Ok(!let_read || self.silences_its_methods(*receiver)?);
         }
         if fact.node || !typed {
             return Ok(false);
