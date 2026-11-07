@@ -328,3 +328,17 @@ fn a_path_reaching_a_cell_draws_its_cell_faults_beside_its_valid_twin() {
         assert_eq!(found, codes, "{text}");
     }
 }
+
+#[test]
+fn a_path_from_a_variant_from_pi_or_from_a_name_of_nothing_in_a_cell_rule_stays_with_the_old_engine()
+ {
+    let vocabulary = symphonyscript_fixtures::vocabulary();
+    let new = Compiler::new(&vocabulary).expect("the vocabulary compiles");
+    for text in [
+        "let z = Saw.gain\nClip c | gain=z:\n    Note\n",
+        "Clip c | gain=pi.x:\n    Note\n",
+        "state alarm(false)\nstate gain = zz.alarm\n",
+    ] {
+        assert!(new.checked_by_new_core(&[source(text)]).is_none(), "{text}");
+    }
+}

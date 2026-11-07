@@ -4090,7 +4090,8 @@ fn a_member_call_in_a_value_nothing_uses_draws_nothing_where_the_old_engine_draw
     }
 }
 
-const NAMES_IN_BODIES_OF_FAULTY_HEADS: [&str; 5] = [
+const NAMES_IN_BODIES_OF_FAULTY_HEADS: [&str; 6] = [
+    "state section(0)\nlet sections = [verse, chorus, bridge]\nClip intro:\n    for s in sections:\n        Starts+: s\nClip outro:\n    Plays: sections[section]\n",
     "Rig r:\n    for i in zz:\n        Lamp | foo=1\n",
     "Rig r:\n    for i in zz:\n        Lamp~\n",
     "pattern P():\n    Lamp\nRig r:\n    for i in zz:\n        P | foo=1\n",
