@@ -4550,3 +4550,19 @@ fn a_size_of_an_array_literal_or_a_join_of_literals_reads_none_of_its_elements_b
     let rows: Vec<&[&str]> = rows.iter().map(|row| row.as_slice()).collect();
     assert_eq!(same_as_the_old_engine(&rows), 8);
 }
+
+const FROM_END_ELEMENTS_OF_REFERENCES: [&[&str]; 4] = [
+    &["Clip n\nClip m\n", "Clip c:\n    Note/([n, m][^1])\n"],
+    &[
+        "Clip n\nClip m\nlet r = [n, m][^1]\n",
+        "Clip c:\n    Note/(r)\n",
+    ],
+    &["Clip n\nClip m\n", "Clip c:\n    Note/([n, m][^3])\n"],
+    &["Clip n\nClip m\n", "Clip c:\n    Note/([n, m][^true])\n"],
+];
+
+#[test]
+fn a_from_end_element_of_an_array_of_references_is_a_reference_beside_a_valid_twin_in_every_order()
+{
+    assert_eq!(same_as_the_old_engine(&FROM_END_ELEMENTS_OF_REFERENCES), 24);
+}

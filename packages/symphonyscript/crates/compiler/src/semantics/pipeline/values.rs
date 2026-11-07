@@ -1446,10 +1446,11 @@ impl Core<'_> {
         }
         let mut stack = vec![self.ir.node(node)?.1];
         while let Some(at) = stack.pop() {
-            match self.ir.node(at)? {
-                (Op::Array, ..) => {}
-                (Op::Add, left, right, _) => stack.extend([left, right]),
-                _ => return Ok(false),
+            let (op, left, right, _) = self.ir.node(at)?;
+            if op == Op::Add {
+                stack.extend([left, right]);
+            } else if op != Op::Array {
+                return Ok(false);
             }
         }
         Ok(true)

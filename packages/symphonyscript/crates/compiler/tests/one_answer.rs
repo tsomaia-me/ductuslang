@@ -349,6 +349,14 @@ const DECIDING_NONE: &[(&str, &str)] = &[
         "the parts of a faulty expression read in their own types, ARCHITECTURE §7's placeholder rule",
     ),
     (
+        "pipeline/unused_to.rs written_candidates",
+        "the instances a destination written in an unused pattern or an unrun body can name, read from its form without running it, so its `to` paths draw their resolution faults, SPEC §6.5 and §8.3 (ledger 526)",
+    ),
+    (
+        "pipeline/unused_to.rs runtime_targets",
+        "the instances a destination chosen by a cell's value can name, its arms read from their form, SPEC §8.3 (ledger 526)",
+    ),
+    (
         "scopes/checker.rs expr",
         "which names an expression uses, for scope checks",
     ),
@@ -386,6 +394,8 @@ const CATCH_ALLS_OUTSIDE: &[&str] = &[
     "analysis/resolve/paths.rs to_path",
     "analysis/resolve/paths.rs written_base",
     "analysis/resolve/paths.rs written_destination",
+    "pipeline/unused_to.rs runtime_targets",
+    "pipeline/unused_to.rs written_candidates",
     "scopes/checker.rs expr",
 ];
 

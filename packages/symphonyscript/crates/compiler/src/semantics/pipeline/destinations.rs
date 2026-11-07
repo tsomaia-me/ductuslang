@@ -109,6 +109,8 @@ impl Core<'_> {
                 Err(declined) => return Ok(Err(declined)),
             };
             (test, vec![b, c])
+        } else if op == Op::IndexFromEnd {
+            return Ok(Err(Declined(Reason::DestinationValue)));
         } else if op == Op::Index {
             let Some(elements) = self.reference_elements(a)? else {
                 if live

@@ -326,27 +326,30 @@ impl Core<'_> {
         let mut receiver = receiver;
         loop {
             let (op, inner, field, _) = self.ir.node(receiver)?;
-            match op {
-                Op::Field if self.is_member_name(field) => receiver = inner,
-                Op::Field | Op::To => return Ok(false),
-                Op::Name => {
-                    return Ok(match self.bound(receiver)? {
-                        DeclRef::Let(at) => self
-                            .ir
-                            .lets
-                            .get(at as usize)
-                            .is_some_and(|rec| rec.owner == NONE),
-                        DeclRef::None
-                        | DeclRef::Cell(_)
-                        | DeclRef::Instance(_)
-                        | DeclRef::Duplicate
-                        | DeclRef::Param(_)
-                        | DeclRef::Fn(_)
-                        | DeclRef::Pattern(_) => false,
-                    });
-                }
-                _ => return Ok(true),
+            if op == Op::Field && self.is_member_name(field) {
+                receiver = inner;
+                continue;
             }
+            if op == Op::Field || op == Op::To {
+                return Ok(false);
+            }
+            if op != Op::Name {
+                return Ok(true);
+            }
+            return Ok(match self.bound(receiver)? {
+                DeclRef::Let(at) => self
+                    .ir
+                    .lets
+                    .get(at as usize)
+                    .is_some_and(|rec| rec.owner == NONE),
+                DeclRef::None
+                | DeclRef::Cell(_)
+                | DeclRef::Instance(_)
+                | DeclRef::Duplicate
+                | DeclRef::Param(_)
+                | DeclRef::Fn(_)
+                | DeclRef::Pattern(_) => false,
+            });
         }
     }
 

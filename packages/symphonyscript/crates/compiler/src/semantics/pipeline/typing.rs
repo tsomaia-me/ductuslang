@@ -1680,14 +1680,14 @@ impl Core<'_> {
             let Some(receiver) = receiver else {
                 return Ok(false);
             };
-            let plain = match self.ir.node(receiver)?.0 {
-                Op::Int | Op::Float | Op::Bool => true,
-                Op::Name => matches!(
+            let receiver_op = self.ir.node(receiver)?.0;
+            let plain = if receiver_op == Op::Name {
+                matches!(
                     self.bound(receiver)?,
                     DeclRef::Let(_) | DeclRef::Cell(_) | DeclRef::Param(_)
-                ),
-                Op::Field | Op::To | Op::Str => false,
-                _ => true,
+                )
+            } else {
+                receiver_op != Op::Field && receiver_op != Op::To && receiver_op != Op::Str
             };
             if !plain {
                 return Ok(false);

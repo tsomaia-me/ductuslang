@@ -84,7 +84,7 @@ impl Core<'_> {
         match op {
             Op::Array => self.reference_array(node, &facts),
             Op::If => self.reference_choice(node, a, &facts),
-            Op::Index => self.reference_element(node, (a, b), &facts),
+            Op::Index | Op::IndexFromEnd => self.reference_element(node, (a, b), &facts),
             Op::Int | Op::Float | Op::Bool | Op::Name => Ok(Err(Declined(Reason::NameOfInstance))),
             Op::Neg | Op::Not if facts.iter().any(|fact| !fact.dims.is_empty()) => {
                 self.draw_at(Code::ArrayOperand, node, super::typing::OPERAND)?;
@@ -152,7 +152,7 @@ impl Core<'_> {
                 );
                 Ok(Ok(Some(Fact::PLACEHOLDER)))
             }
-            Op::IndexFromEnd | Op::Slice | Op::For | Op::Call | Op::NamedCall => {
+            Op::Slice | Op::For | Op::Call | Op::NamedCall => {
                 Ok(Err(Declined(Reason::NameOfInstance)))
             }
             Op::TyScalar | Op::TyArray | Op::TyName | Op::TyVar | Op::To | Op::Field => {
