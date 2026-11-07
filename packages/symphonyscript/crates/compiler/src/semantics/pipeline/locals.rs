@@ -114,15 +114,31 @@ impl Core<'_> {
         let binder = match self.decl.get(sym as usize).copied() {
             Some(DeclRef::Let(at)) => self.ir.lets.get(at as usize).map(|rec| rec.binder),
             Some(DeclRef::Cell(at)) => self.ir.cells.get(at as usize).map(|rec| rec.binder),
-            Some(
-                DeclRef::None
-                | DeclRef::Fn(_)
-                | DeclRef::Pattern(_)
-                | DeclRef::Instance(_)
-                | DeclRef::Duplicate
-                | DeclRef::Param(_),
-            )
-            | None => return Ok(None),
+            Some(DeclRef::Fn(at)) => {
+                return self.declared_span(
+                    self.ir
+                        .fns
+                        .get(at as usize)
+                        .map(|rec| (rec.name, rec.value)),
+                );
+            }
+            Some(DeclRef::Pattern(at)) => {
+                let declared = self
+                    .ir
+                    .patterns
+                    .get(at as usize)
+                    .map(|rec| (rec.name, self.ir.base));
+                return self.declared_span(declared);
+            }
+            Some(DeclRef::Instance(item)) => {
+                let declared = if let ItemRec::Placement(placement) = self.ir.item(item)? {
+                    Some((placement.as_name, self.ir.base))
+                } else {
+                    None
+                };
+                return self.declared_span(declared);
+            }
+            Some(DeclRef::None | DeclRef::Duplicate | DeclRef::Param(_)) | None => return Ok(None),
         };
         let Some(binder) = binder else {
             return Ok(None);
@@ -234,7 +250,24 @@ impl Core<'_> {
                 }
                 let summary =
                     format!("`{text}` equals a visible name, and a `for` binds only new names");
-                if vocabulary && !(enclosing || top) {
+                let duplicate = !enclosing
+                    && self.decl.get(name.sym as usize).copied() == Some(DeclRef::Duplicate);
+                let faulty_placement = if duplicate {
+                    self.faulty_placement_span(name.sym)?
+                } else {
+                    None
+                };
+                if let Some(visible) = faulty_placement {
+                    self.draw_local(
+                        Code::ForVariableClash,
+                        name.span.clone(),
+                        summary,
+                        "rename the name the `for` binds",
+                        (visible, "the visible name it equals"),
+                    );
+                    continue;
+                }
+                if (vocabulary && !(enclosing || top)) || duplicate {
                     let diagnostic =
                         Diagnostic::new(Code::ForVariableClash, name.span.clone(), summary)
                             .with_help("rename the name the `for` binds");
@@ -326,5 +359,54 @@ impl Core<'_> {
             return Ok(None);
         };
         Ok(Some(self.name_span(self.file_of(fold), placement.as_name)?))
+    }
+}
+
+impl Core<'_> {
+    fn declared_span(&self, declared: Option<(u32, u32)>) -> Result<Option<Span>, Internal> {
+        let Some((name, node)) = declared else {
+            return Ok(None);
+        };
+        if node == NONE {
+            return Ok(None);
+        }
+        let entry = *self.ir.name(name).ok_or(Internal::missed("IR name"))?;
+        let file = self.ir.files.partition_point(|file| file.names.1 <= name);
+        let file = u32::try_from(file).unwrap_or(0);
+        Ok(Some(self.span(file, entry.lo, entry.hi)))
+    }
+
+    fn faulty_placement_span(&self, sym: u32) -> Result<Option<Span>, Internal> {
+        let mut found = None;
+        let mut declared = 0;
+        for top in &self.ir.top {
+            let Some((name, decl)) = self.top_name(*top)? else {
+                continue;
+            };
+            if self.ir.name(name).is_none_or(|entry| entry.sym.0 != sym) {
+                continue;
+            }
+            declared += 1;
+            if let DeclRef::Instance(item) = decl
+                && let ItemRec::Placement(placement) = self.ir.item(item)?
+                && placement.faulty_line
+            {
+                found = Some(placement.as_name);
+            }
+            if let DeclRef::Cell(at) = decl
+                && !self
+                    .ir
+                    .cells
+                    .get(at as usize)
+                    .is_some_and(|rec| rec.faulty_line)
+                && self.faulty_declaration(*top)?
+            {
+                found = Some(name);
+            }
+        }
+        match found {
+            Some(name) if declared == 1 => self.declared_span(Some((name, self.ir.base))),
+            Some(_) | None => Ok(None),
+        }
     }
 }

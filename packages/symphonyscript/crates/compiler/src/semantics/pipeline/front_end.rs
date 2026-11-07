@@ -110,7 +110,20 @@ impl Core<'_> {
                     );
                     continue;
                 }
-                ItemRec::Bundle(_) | ItemRec::When(_) | ItemRec::Paren(_) => continue,
+                ItemRec::When(_) => {
+                    roots.extend(self.when_guards(item));
+                    items.extend(self.when_items(item));
+                    continue;
+                }
+                ItemRec::Paren(inner) if inner != NONE => {
+                    items.push(inner);
+                    continue;
+                }
+                ItemRec::Bundle(_) => {
+                    items.extend(self.bundle_items(item));
+                    continue;
+                }
+                ItemRec::Paren(_) => continue,
             };
             roots.extend([placement.default, placement.gate]);
             self.entry_roots(placement.attrs, roots);
@@ -136,6 +149,14 @@ impl Core<'_> {
                 items.push(child);
             }
         }
+        items.extend(
+            self.ir
+                .members
+                .get(block.members.0 as usize..block.members.1 as usize)
+                .unwrap_or_default()
+                .iter()
+                .filter(|member| **member != NONE),
+        );
         Ok(())
     }
 

@@ -3,11 +3,12 @@ use super::core::{Core, Stage};
 use super::decl_ref::DeclRef;
 use super::fact::Fact;
 use super::leaf::Leaf;
-use super::values::flexible;
+use super::values::{evaluated_in, flexible};
+use super::width::widens;
 use crate::diagnostics::Code;
 use crate::semantics::Internal;
 use crate::semantics::ir::flat::{NONE, Op, TopRec};
-use crate::semantics::operators::{EvalTy, Value};
+use crate::semantics::operators::{EvalTy, Value, int_range, ty_name};
 
 impl Core<'_> {
     pub fn cell_root(&self, at: u32) -> Result<u32, Internal> {
@@ -21,6 +22,9 @@ impl Core<'_> {
 
     pub fn cell_read_fact(&self, at: u32) -> Result<Fact, Internal> {
         if self.is_cyclic_cell(at) {
+            return Ok(Fact::PLACEHOLDER);
+        }
+        if self.holds_a_reference(at)? {
             return Ok(Fact::PLACEHOLDER);
         }
         if let Some(ty) = self.cell_annotation_ty(at)? {
@@ -41,6 +45,17 @@ impl Core<'_> {
             && let Some(first) = fact.dims.first_mut()
         {
             *first = super::folds::ANY_LENGTH;
+        }
+        if self.derived(at) && fact.fixed.is_some() {
+            let own = fact.own();
+            match fact.leaf {
+                Leaf::Float => fact.fixed = None,
+                Leaf::Int => {
+                    fact.fixed = None;
+                    fact.read = own;
+                }
+                Leaf::Empty | Leaf::Bool | Leaf::Enum(_) | Leaf::Placeholder | Leaf::Error => {}
+            }
         }
         if !self.derived(at) && fact.fixed.is_none() && fact.read.is_none() {
             fact.read = match fact.leaf {
@@ -64,6 +79,12 @@ impl Core<'_> {
 
     pub fn node_reactive(&mut self, node: u32) -> Result<bool, Internal> {
         let (op, _, _, _) = self.ir.node(node)?;
+        if self.unbound_nodes.contains(&node) {
+            return Ok(false);
+        }
+        if matches!(op, Op::Past | Op::Stepped) {
+            return Ok(true);
+        }
         if op == Op::Name {
             return Ok(match self.bound(node)? {
                 DeclRef::Cell(_) => true,
@@ -75,6 +96,9 @@ impl Core<'_> {
                 | DeclRef::Fn(_)
                 | DeclRef::Pattern(_) => false,
             });
+        }
+        if op == Op::Field && self.cell_sizes.contains_key(&node) {
+            return Ok(self.runtime_members.contains(&node));
         }
         if op == Op::Field {
             let Some(root) = self.read_root(node)? else {
@@ -188,11 +212,75 @@ impl Core<'_> {
     }
 
     pub fn check_own_cell(&mut self, at: u32, root: u32) -> Stage<()> {
+        self.check_compared_fits(at)?;
         Ok(match self.own_ty(root)? {
             Some(own) if self.derived(at) && !self.is_kept(root)? => {
-                self.evaluate(root, flexible(own))?.map(|_| ())
+                if let Some(width) = self.refused_width(at, root)? {
+                    return self.refuse_wider_rule(root, width);
+                }
+                let (ty, owning) = self.derived_width(at, root, own)?;
+                let owning = owning || self.owning;
+                let owning = std::mem::replace(&mut self.owning, owning);
+                let outcome = self.evaluate(root, ty);
+                self.owning = owning;
+                outcome?.map(|_| ())
             }
             Some(_) | None => self.evaluate_own(root)?,
+        })
+    }
+
+    fn refused_width(&self, at: u32, root: u32) -> Result<Option<EvalTy>, Internal> {
+        let fact = self.fact(root)?;
+        let Some(fixed) = fact.fixed else {
+            return Ok(None);
+        };
+        let reads = self
+            .rule_reads
+            .get(at as usize)
+            .copied()
+            .unwrap_or_default();
+        let read = |classes: &[usize]| {
+            classes
+                .iter()
+                .find_map(|class| reads.get(*class).copied().flatten())
+                .map(|(ty, _)| evaluated_in(ty))
+        };
+        let width = match fact.leaf {
+            Leaf::Float => read(&[2, 1]).unwrap_or(EvalTy::F32),
+            Leaf::Int => match read(&[6, 5, 4]) {
+                Some(width) => width,
+                None => return Ok(None),
+            },
+            Leaf::Empty | Leaf::Bool | Leaf::Enum(_) | Leaf::Placeholder | Leaf::Error => {
+                return Ok(None);
+            }
+        };
+        Ok(Some(width).filter(|width| !widens(fixed, *width)))
+    }
+
+    fn derived_width(&self, at: u32, root: u32, own: EvalTy) -> Result<(EvalTy, bool), Internal> {
+        let fact = self.fact(root)?;
+        let reads = self
+            .rule_reads
+            .get(at as usize)
+            .copied()
+            .unwrap_or_default();
+        let read = |classes: &[usize]| {
+            classes
+                .iter()
+                .find_map(|class| reads.get(*class).copied().flatten())
+        };
+        Ok(match fact.leaf {
+            Leaf::Float if fact.fixed.is_none() => {
+                (read(&[2, 1]).map_or(EvalTy::F32, |(ty, _)| ty), false)
+            }
+            Leaf::Int if fact.dims.is_empty() && int_range(own).is_some() => {
+                match read(&[6, 5, 4]) {
+                    Some(_) => (flexible(own), false),
+                    None => (own, true),
+                }
+            }
+            _ => (flexible(own), false),
         })
     }
 
@@ -214,14 +302,41 @@ impl Core<'_> {
                 .rev()
                 .find_map(|at| reads.get(*at).copied().flatten())
         };
+        let fact = self.fact(rec.rule)?;
+        let integer = fact.leaf == Leaf::Int;
+        let flexible_rule = integer
+            && fact.fixed.is_none()
+            && fact.dims.is_empty()
+            && !self.is_reactive(rec.rule)?
+            && !self.is_kept(rec.rule)?;
         let runs = [
             reads.first().copied().flatten(),
-            widest(&[1, 2]),
+            widest(&[1, 2]).filter(|_| !integer),
             reads.get(3).copied().flatten(),
-            widest(&[4, 5, 6]),
+            widest(&[4, 5, 6]).or(flexible_rule.then_some((EvalTy::I32, false))),
         ];
         for (ty, unflowed) in runs.into_iter().flatten() {
             if matches!(ty, EvalTy::Exact | EvalTy::Default) {
+                continue;
+            }
+            if flexible_rule && let Some(range) = int_range(ty) {
+                let chain = std::mem::take(&mut self.eval_chain);
+                let (drawn, stop) = (self.diagnostics.len(), self.stop.clone());
+                let value = self.evaluate(rec.rule, EvalTy::Exact);
+                self.diagnostics.truncate(drawn);
+                self.stop = stop;
+                self.eval_chain = chain;
+                match value? {
+                    Ok(Value::Int(value)) if !range.contains(&value) => {
+                        self.draw_at(
+                            Code::DoesNotFit,
+                            rec.rule,
+                            format!("this value does not fit `{}`", ty_name(ty)),
+                        )?;
+                    }
+                    Ok(_) => {}
+                    Err(declined) => return Ok(Err(declined)),
+                }
                 continue;
             }
             if unflowed {
@@ -269,7 +384,16 @@ impl Core<'_> {
                 }
                 Some(_) | None => None,
             };
-            if let Err(declined) = self.evaluate_own_in(root, expected)? {
+            let outcome = match self.seeded_let_ty(at, root)? {
+                Some(ty) => {
+                    let owning = std::mem::replace(&mut self.owning, true);
+                    let outcome = self.evaluate(root, ty);
+                    self.owning = owning;
+                    outcome?.map(|_| ())
+                }
+                None => self.evaluate_own_in(root, expected)?,
+            };
+            if let Err(declined) = outcome {
                 return Ok(Err(declined));
             }
             let rec = self
@@ -288,6 +412,21 @@ impl Core<'_> {
             );
         }
         Ok(Ok(()))
+    }
+
+    fn seeded_let_ty(&self, at: u32, root: u32) -> Result<Option<EvalTy>, Internal> {
+        let seeded = self
+            .cyclic_let_reads
+            .iter()
+            .any(|(node, read)| *read == at && self.let_seeds.contains_key(node));
+        if !seeded {
+            return Ok(None);
+        }
+        let fact = self.fact(root)?;
+        if !fact.dims.is_empty() || fact.leaf != Leaf::Int {
+            return Ok(None);
+        }
+        Ok(Some(fact.own().unwrap_or(EvalTy::I32)))
     }
 
     pub fn check_integer_cells(&mut self) -> Result<(), Internal> {
@@ -403,6 +542,15 @@ impl Core<'_> {
                 return self.reads_cell_directly(root);
             }
             if op == Op::Past {
+                if let DeclRef::Let(at) = self.bound(a)?
+                    && self
+                        .ir
+                        .lets
+                        .get(at as usize)
+                        .is_some_and(|rec| rec.owner == NONE)
+                {
+                    return Ok(true);
+                }
                 node = a;
                 continue;
             }
@@ -507,5 +655,12 @@ impl Core<'_> {
             return Ok(None);
         }
         Ok(Some((root, caller)))
+    }
+}
+
+impl Core<'_> {
+    pub fn holds_a_reference(&self, at: u32) -> Result<bool, Internal> {
+        let root = self.cell_root(at)?;
+        Ok(self.has_fact(root)? && self.fact(root)?.node)
     }
 }

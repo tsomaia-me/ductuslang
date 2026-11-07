@@ -4,6 +4,7 @@ use super::declined::Declined;
 use super::instance_row::InstanceRow;
 use super::reason::Reason;
 use super::work::Work;
+use crate::diagnostics::Code;
 use crate::semantics::Internal;
 use crate::semantics::counted_walk::CountedWalk;
 use crate::semantics::ir::flat::{ItemRec, NONE, PlacementRec, TopRec};
@@ -29,6 +30,9 @@ impl Core<'_> {
             }
             if !self.ir.named(placement.as_name) {
                 return Ok(Ok(NONE));
+            }
+            if placement.gate != NONE {
+                self.guards.push((placement.gate, env));
             }
             return self.top_use(item, pattern, file);
         }
@@ -66,7 +70,7 @@ impl Core<'_> {
             .filter(|_| !duplicated);
         let Some(kind) = found else {
             let reason = self.placement_kind_reason(kind_name);
-            if let Some(reason) = reason.or(placement.inline.then_some(Reason::BodyItem)) {
+            if let Some(reason) = reason {
                 return Ok(Err(Declined(reason)));
             }
             if parent != NONE {
@@ -78,7 +82,8 @@ impl Core<'_> {
                 self.unknown_kind = true;
                 self.unknown_wires = true;
             }
-            self.unknown_kind_drawn(file, placement.kind)?;
+            let hint = self.naming_hint(item, kind_name)?;
+            self.unknown_kind_hinted(file, placement.kind, hint)?;
             if placement.body != NONE
                 && let Err(declined) = self.unknown_body(placement.body, file)?
             {
@@ -176,8 +181,12 @@ impl Core<'_> {
             .blocks
             .get(body as usize)
             .ok_or(Internal::missed("IR block"))?;
-        let mut work = vec![Work::Items(block.items.0, block.items.1, record.env)];
+        let mut work = vec![
+            Work::Members(block.members.0, block.members.1, record.env),
+            Work::Items(block.items.0, block.items.1, record.env),
+        ];
         let mut late: Vec<Work> = Vec::new();
+        let mut members: std::collections::HashSet<u32> = std::collections::HashSet::new();
         loop {
             let job = match work.pop() {
                 Some(job) => job,
@@ -196,6 +205,7 @@ impl Core<'_> {
                     bound = true;
                     (item, env)
                 }
+                Work::Item(item, env) => (item, env),
                 Work::Items(at, end, env) => {
                     if at >= end {
                         continue;
@@ -244,6 +254,9 @@ impl Core<'_> {
             };
             let file = self.env_file(env, record.file);
             match *self.ir.item(item)? {
+                ItemRec::Wire(_) | ItemRec::Bundle(_) if self.in_bundle(env, &members) => {
+                    self.draw_member(item, env, file)?;
+                }
                 ItemRec::Wire(_) => {
                     if let Err(declined) = self.wire_row(item, file, parent, env)? {
                         return Ok(Err(declined));
@@ -275,10 +288,29 @@ impl Core<'_> {
                 }
                 ItemRec::Line(members) => work.push(Work::Members(members.0, members.1, env)),
                 ItemRec::Placement(placement) => {
+                    if placement.body != NONE
+                        && self.used_pattern(placement.kind).is_none()
+                        && (members.contains(&item) || self.in_bundle(env, &members))
+                    {
+                        self.draw_member(item, env, file)?;
+                    }
                     if let Some(pattern) = self.used_pattern(placement.kind) {
+                        if placement.gate != NONE {
+                            self.guards.push((placement.gate, env));
+                        }
                         if self.cyclic_pattern(pattern) {
                             self.unknown_use(parent);
                             continue;
+                        }
+                        if members.contains(&item) || self.in_bundle(env, &members) {
+                            match self.supplies_a_body(pattern)? {
+                                Ok(true) => {
+                                    self.draw_member(item, env, file)?;
+                                    continue;
+                                }
+                                Ok(false) => {}
+                                Err(declined) => return Ok(Err(declined)),
+                            }
                         }
                         let named = self.ir.named(placement.as_name);
                         if placement.has_as || named {
@@ -334,7 +366,28 @@ impl Core<'_> {
                         pending.push(row);
                     }
                 }
-                ItemRec::Bundle(_) | ItemRec::When(_) | ItemRec::Paren(_) => {
+                ItemRec::When(_) => {
+                    for guard in self.when_guards(item) {
+                        self.guards.push((guard, env));
+                    }
+                    for block in self.when_blocks(item).into_iter().rev() {
+                        let block = *self
+                            .ir
+                            .blocks
+                            .get(block as usize)
+                            .ok_or(Internal::missed("IR block"))?;
+                        work.push(Work::Members(block.members.0, block.members.1, env));
+                        work.push(Work::Items(block.items.0, block.items.1, env));
+                    }
+                }
+                ItemRec::Paren(inner) if inner != NONE => work.push(Work::Item(inner, env)),
+                ItemRec::Bundle(_) => {
+                    members.extend(self.bundle_items(item));
+                    for member in self.bundle_items(item).into_iter().rev() {
+                        work.push(Work::Item(member, env));
+                    }
+                }
+                ItemRec::Paren(_) => {
                     return Ok(Err(Declined(Reason::BodyItem)));
                 }
             }
@@ -388,6 +441,15 @@ impl Core<'_> {
 
 impl Core<'_> {
     pub fn unknown_kind_drawn(&mut self, file: u32, name: u32) -> Result<(), Internal> {
+        self.unknown_kind_hinted(file, name, None)
+    }
+
+    fn unknown_kind_hinted(
+        &mut self,
+        file: u32,
+        name: u32,
+        hint: Option<String>,
+    ) -> Result<(), Internal> {
         let entry = *self.ir.name(name).ok_or(Internal::missed("IR name"))?;
         let found = self
             .decl
@@ -417,8 +479,51 @@ impl Core<'_> {
             format!("`{text}` is not a node kind or a pattern")
         };
         let span = self.name_span(file, name)?;
-        self.draw(crate::diagnostics::Code::UnknownKind, span, message);
+        match hint {
+            Some(hint) => {
+                let diagnostic = crate::diagnostics::Diagnostic::new(
+                    crate::diagnostics::Code::UnknownKind,
+                    span,
+                    message,
+                )
+                .with_help(hint);
+                let diagnostic = self.chained(diagnostic);
+                self.push_drawn(diagnostic);
+            }
+            None => self.draw(crate::diagnostics::Code::UnknownKind, span, message),
+        }
         Ok(())
+    }
+
+    fn naming_hint(&self, item: u32, kind: &str) -> Result<Option<String>, Internal> {
+        if !self.placement(item)?.inline {
+            return Ok(None);
+        }
+        let Some(position) = self.ir.members.iter().position(|member| {
+            *member == item
+                || matches!(self.ir.item(*member), Ok(ItemRec::Paren(inner)) if *inner == item)
+        }) else {
+            return Ok(None);
+        };
+        let Some(previous) = position
+            .checked_sub(1)
+            .and_then(|at| self.ir.members.get(at))
+        else {
+            return Ok(None);
+        };
+        let earlier = match self.ir.item(*previous) {
+            Ok(ItemRec::Paren(inner)) => self.ir.item(*inner),
+            other => other,
+        };
+        if let Ok(ItemRec::Placement(earlier)) = earlier
+            && !self.ir.named(earlier.as_name)
+            && let Some(text) = self.ir.name_text(earlier.kind)
+        {
+            return Ok(Some(format!(
+                "to name the placement, write `{text} as {kind}`"
+            )));
+        }
+        Ok(None)
     }
 }
 
@@ -454,5 +559,42 @@ impl Core<'_> {
         self.env_vals
             .reserve(count.saturating_mul(run.facts.len().max(1)));
         Ok(())
+    }
+}
+
+impl Core<'_> {
+    fn in_bundle(&self, env: u32, members: &std::collections::HashSet<u32>) -> bool {
+        let mut at = env;
+        while let Some(record) = self.envs.get(at as usize) {
+            if members.contains(&record.use_item) {
+                return true;
+            }
+            at = record.parent;
+        }
+        false
+    }
+
+    fn draw_member(&mut self, item: u32, env: u32, file: u32) -> Result<(), Internal> {
+        let (lo, hi, summary) = match *self.ir.item(item)? {
+            ItemRec::Wire(rec) => (rec.lo, rec.hi, "a wire is not a member of a bundle"),
+            ItemRec::Bundle(rec) => (rec.lo, rec.hi, "a bundle is not a member of a bundle"),
+            ItemRec::Placement(rec) => (rec.lo, rec.hi, "a member of a bundle has no body"),
+            ItemRec::For(_) | ItemRec::When(_) | ItemRec::Line(_) | ItemRec::Paren(_) => {
+                return Err(Internal::missed("a bundle member"));
+            }
+        };
+        let span = self.span(file, lo, hi);
+        let saved = self.enter_env(env);
+        self.draw(Code::BundleMember, span, summary);
+        self.leave_env(saved);
+        Ok(())
+    }
+
+    fn supplies_a_body(&self, pattern: u32) -> Stage<bool> {
+        Ok(match self.stand_in(pattern)? {
+            Ok(Some(target)) => Ok(self.placement(target)?.body != NONE),
+            Ok(None) => Ok(false),
+            Err(declined) => Err(declined),
+        })
     }
 }

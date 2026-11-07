@@ -4,6 +4,7 @@ use symphonyscript_core::{Limits, Span, Vocabulary};
 
 use super::attr_read::AttrRead;
 use super::body_instance::BodyInstance;
+use super::call_chain::{CallChain, ChainArena};
 use super::core_value::CoreValue;
 use super::decl_ref::DeclRef;
 use super::declined::Declined;
@@ -55,6 +56,16 @@ pub(crate) struct Core<'a> {
     pub fitting: bool,
     pub unflowed: HashSet<u32>,
     pub unused_reads: HashSet<(u32, u32)>,
+    pub unexpected_reads: HashSet<(u32, u32)>,
+    pub compared_reads: HashSet<u32>,
+    pub placeholder_kinds: HashMap<(u32, u32), Fact>,
+    pub not_values: HashMap<u32, String>,
+    pub not_values_drawn: HashSet<u32>,
+    pub not_callables_drawn: HashSet<u32>,
+    pub cyclic_let_reads: BTreeMap<u32, u32>,
+    pub let_seeds: HashMap<u32, Fact>,
+    pub pi: HashSet<u32>,
+    pub compared_fits: Vec<(u32, u32)>,
     pub driving: bool,
     pub need: Option<Need>,
 
@@ -68,7 +79,8 @@ pub(crate) struct Core<'a> {
     pub body_kept: HashSet<(u32, u32)>,
     pub body_reactive: HashSet<(u32, u32)>,
     pub call_body: HashMap<(u32, u32), u32>,
-    pub eval_chain: Vec<u32>,
+    pub eval_chain: CallChain,
+    pub chain_arena: ChainArena,
     pub typing_locals: HashSet<(u32, u32)>,
     pub reads_cell: Vec<Option<bool>>,
     pub instances: Vec<InstanceRow>,
@@ -87,6 +99,8 @@ pub(crate) struct Core<'a> {
     pub skipped_top: Vec<u32>,
     pub reached: Vec<bool>,
     pub body_index: HashMap<BodyKey, u32>,
+    pub value_index: HashMap<(BodyKey, Vec<Option<super::memo_arg::MemoArg>>), u32>,
+    pub keyed_params: Option<Vec<Vec<bool>>>,
     pub outer_owner: HashMap<u32, u32>,
     pub call_memo: HashMap<MemoKey, MemoEntry>,
     pub recordings: Vec<Recording>,
@@ -122,6 +136,7 @@ pub(crate) struct Core<'a> {
     pub use_spans: HashMap<u32, Span>,
     pub use_args: HashMap<u32, Vec<(u32, u32)>>,
     pub use_values: HashMap<(u32, u32, usize), CoreValue>,
+    pub compile_time_folds: Vec<(u32, u32)>,
     pub use_faults: HashMap<u32, Vec<Diagnostic>>,
     pub default_faults: HashMap<(u32, u32), Vec<Diagnostic>>,
     pub typing_now: u32,
@@ -130,6 +145,12 @@ pub(crate) struct Core<'a> {
     pub inst_reads: BTreeMap<(u32, u32), u32>,
     pub path_owners: Option<std::collections::HashSet<u32>>,
     pub per_inst_paths: std::collections::HashSet<u32>,
+    pub array_members: HashMap<u32, i128>,
+    pub cell_sizes: HashMap<u32, u32>,
+    pub runtime_members: HashSet<u32>,
+    pub dot_calls: HashSet<u32>,
+    pub function_values: HashSet<u32>,
+    pub path_free: HashMap<u32, bool>,
     pub child_scopes: Vec<(u32, Vec<(u32, u32)>)>,
     pub scope_of: HashMap<u32, u32>,
     pub loops: Vec<u32>,
@@ -187,7 +208,8 @@ pub(crate) struct Core<'a> {
     pub unit_let_values: HashMap<(u32, usize, symphonyscript_core::FamilyId, usize), CoreValue>,
     pub unit_conflicted: HashSet<(u32, u32, u32)>,
     pub cycle_through_refused: bool,
-    pub scaled_accumulator: bool,
+    pub unbound_nodes: std::collections::HashSet<u32>,
+    pub guards: Vec<(u32, u32)>,
     pub unit_conflicts: Vec<super::unit_conflict::UnitConflict>,
     pub default_scale: Option<(
         u32,
@@ -230,6 +252,16 @@ impl<'a> Core<'a> {
             fitting: false,
             unflowed: HashSet::new(),
             unused_reads: HashSet::new(),
+            unexpected_reads: HashSet::new(),
+            compared_reads: HashSet::new(),
+            placeholder_kinds: HashMap::new(),
+            not_values: HashMap::new(),
+            not_values_drawn: HashSet::new(),
+            not_callables_drawn: HashSet::new(),
+            cyclic_let_reads: BTreeMap::new(),
+            let_seeds: HashMap::new(),
+            pi: HashSet::new(),
+            compared_fits: Vec::new(),
             driving: false,
             need: None,
 
@@ -243,7 +275,8 @@ impl<'a> Core<'a> {
             body_kept: HashSet::new(),
             body_reactive: HashSet::new(),
             call_body: HashMap::new(),
-            eval_chain: Vec::new(),
+            eval_chain: CallChain::default(),
+            chain_arena: ChainArena::default(),
             typing_locals: HashSet::new(),
             reads_cell: vec![None; ir.lets.len()],
             instances: Vec::new(),
@@ -262,6 +295,8 @@ impl<'a> Core<'a> {
             skipped_top: Vec::new(),
             reached: vec![false; nodes],
             body_index: HashMap::new(),
+            value_index: HashMap::new(),
+            keyed_params: None,
             outer_owner: HashMap::new(),
             call_memo: HashMap::new(),
             recordings: Vec::new(),
@@ -297,6 +332,7 @@ impl<'a> Core<'a> {
             use_spans: HashMap::new(),
             use_args: HashMap::new(),
             use_values: HashMap::new(),
+            compile_time_folds: Vec::new(),
             use_faults: HashMap::new(),
             default_faults: HashMap::new(),
             typing_now: 0,
@@ -305,6 +341,12 @@ impl<'a> Core<'a> {
             inst_reads: BTreeMap::new(),
             path_owners: None,
             per_inst_paths: std::collections::HashSet::new(),
+            array_members: HashMap::new(),
+            cell_sizes: HashMap::new(),
+            runtime_members: HashSet::new(),
+            dot_calls: HashSet::new(),
+            function_values: HashSet::new(),
+            path_free: HashMap::new(),
             child_scopes: Vec::new(),
             scope_of: HashMap::new(),
             loops: super::loops::loop_items(ir),
@@ -359,7 +401,8 @@ impl<'a> Core<'a> {
             unit_let_values: HashMap::new(),
             unit_conflicted: HashSet::new(),
             cycle_through_refused: false,
-            scaled_accumulator: false,
+            unbound_nodes: std::collections::HashSet::new(),
+            guards: Vec::new(),
             unit_conflicts: Vec::new(),
             default_scale: None,
         }
@@ -624,5 +667,11 @@ impl Core<'_> {
         } else {
             self.push_one_per_chain(diagnostic, false);
         }
+    }
+}
+
+impl Core<'_> {
+    pub fn push_call(&mut self, call: u32) {
+        self.chain_arena.push(&mut self.eval_chain, call);
     }
 }

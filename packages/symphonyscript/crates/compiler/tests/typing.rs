@@ -6617,12 +6617,13 @@ fn a_reactive_lets_value_draws_its_other_faults_as_its_placeholder_twin_does() {
         found.sort();
         found
     };
-    for (value, faults) in [
+    for (value, faults, typed) in [
         (
             "((q).size) is (true + [1, 2][5])",
             vec![Code::OperandType, Code::IndexOutOfRange],
+            vec![Code::TypeMismatch],
         ),
-        ("q.size + [1, 2][5]", vec![Code::IndexOutOfRange]),
+        ("q.size + [1, 2][5]", vec![Code::IndexOutOfRange], vec![]),
     ] {
         for (cell, refusal) in [
             (Some("state q([]): i32[..4]\n"), Code::ReactiveLet),
@@ -6642,6 +6643,9 @@ fn a_reactive_lets_value_draws_its_other_faults_as_its_placeholder_twin_does() {
                 let text = items.concat();
                 let mut expected = faults.clone();
                 expected.push(refusal);
+                if cell.is_some() {
+                    expected.extend(typed.iter().copied());
+                }
                 expected.sort();
                 assert_eq!(codes(&text), expected, "{text}");
             }

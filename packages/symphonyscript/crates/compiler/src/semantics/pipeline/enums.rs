@@ -15,6 +15,7 @@ impl Core<'_> {
     pub fn ty_text(&self, ty: EvalTy) -> Result<String, Internal> {
         Ok(match ty {
             EvalTy::Enum(id) => self.enum_name(id)?,
+            EvalTy::Str => "string".to_string(),
             other => ty_name(other).to_string(),
         })
     }

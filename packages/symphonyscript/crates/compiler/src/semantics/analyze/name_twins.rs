@@ -8,7 +8,9 @@ use crate::diagnostics::{Code, Diagnostic};
 use crate::semantics::Internal;
 use crate::semantics::collection::Variants;
 use crate::semantics::counted_walk::CountedWalk;
-use crate::semantics::ir::{ExprId, ExprKind, FlatIr, Hir, Top, adapt_file, build_flat_file};
+use crate::semantics::ir::{
+    BodyItem, ExprId, ExprKind, FlatIr, Hir, Top, adapt_file, build_flat_file,
+};
 use crate::semantics::reporting::{Report, span};
 use crate::source::Source;
 use crate::syntax::parse;
@@ -35,6 +37,9 @@ pub(crate) fn name_twins(
     placeholders: &[ExprId],
     diagnostics: &[Diagnostic],
 ) -> Result<Vec<Diagnostic>, Internal> {
+    if at_a_gate(analysis.hir, placeholders)? {
+        return whole_program(analysis, placeholders, diagnostics);
+    }
     let twins = Twins::of(analysis, placeholders)?;
     let (declarations, referenced) = declarations(analysis.vocabulary, analysis.hir);
     let Some(twin) = TwinProgram::of(analysis.hir, placeholders, &referenced)? else {
@@ -51,6 +56,37 @@ pub(crate) fn name_twins(
     );
     let null = report.finish(&twin.hir.files);
     twins.kept(analysis, &twin, (diagnostics, &null), &declarations)
+}
+
+fn at_a_gate(hir: &Hir, placeholders: &[ExprId]) -> Result<bool, Internal> {
+    let mut gates: Vec<ExprId> = hir
+        .placements
+        .iter()
+        .filter_map(|placement| placement.gate)
+        .chain(hir.wires.iter().filter_map(|wire| wire.gate))
+        .collect();
+    for block in &hir.blocks {
+        for item in &block.items {
+            if let BodyItem::When { arms, .. } = item {
+                gates.extend(arms.iter().map(|arm| arm.guard));
+            }
+        }
+    }
+    let mut spans = Vec::with_capacity(gates.len());
+    for gate in gates {
+        spans.push(span(hir, hir.expr(gate)?.loc));
+    }
+    for id in placeholders {
+        let at = span(hir, hir.expr(*id)?.loc);
+        if spans.iter().any(|gate| {
+            gate.file == at.file
+                && gate.range.start <= at.range.start
+                && at.range.end <= gate.range.end
+        }) {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 #[cfg(test)]

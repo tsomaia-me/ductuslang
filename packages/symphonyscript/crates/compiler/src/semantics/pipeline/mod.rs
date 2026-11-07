@@ -6,6 +6,7 @@ mod attr_read;
 mod body_instance;
 mod bound_form;
 mod bounds;
+mod call_chain;
 #[cfg(test)]
 mod call_result_tests;
 mod calls;
@@ -26,6 +27,7 @@ mod decl_ref;
 mod declined;
 mod destinations;
 mod detached;
+mod dot_calls;
 #[cfg(test)]
 mod enum_tests;
 mod enums;
@@ -35,10 +37,16 @@ mod extent;
 mod extreme;
 mod fact;
 mod families;
+#[cfg(test)]
+mod flip_tests;
+mod float_fit;
 mod fold_run;
 mod folds;
 mod frame;
 mod front_end;
+#[cfg(test)]
+mod gate_tests;
+mod gates;
 mod groups;
 mod history;
 #[cfg(test)]
@@ -74,6 +82,7 @@ mod reason;
 mod recording;
 mod ref_bodies;
 mod references;
+mod rule_width;
 mod run;
 mod slice;
 mod slice_transform;
@@ -90,8 +99,11 @@ mod unit_conflict;
 mod unit_reach;
 #[cfg(test)]
 mod unit_tests;
+mod unread_arg;
 mod uses;
+mod value_keys;
 mod values;
+mod whens;
 mod width;
 mod wire_row;
 #[cfg(test)]

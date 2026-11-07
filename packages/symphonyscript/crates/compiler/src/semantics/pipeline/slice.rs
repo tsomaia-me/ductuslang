@@ -5,8 +5,9 @@ pub(crate) enum Slice {
     Three,
     Four,
     Five,
+    Flip,
     DefaultFlip,
     Pending,
 }
 
-pub(crate) const LANDED: Slice = Slice::Five;
+pub(crate) const LANDED: Slice = Slice::Flip;

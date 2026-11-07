@@ -89,16 +89,44 @@ impl Core<'_> {
             Ok(false) => return Ok(Ok(Fact::PLACEHOLDER)),
             Err(declined) => return Ok(Err(declined)),
         }
-        let at = match cell {
-            Target::Cell(at) => at,
+        let (at, fact) = match cell {
+            Target::Cell(at) => (
+                Some(at),
+                match self.group_read(node)? {
+                    Some(fact) => fact,
+                    None => self.cell_read_fact(at)?,
+                },
+            ),
             Target::Let | Target::Faulty => {
                 self.compile_time_target(node, "history")?;
-                return Ok(Ok(Fact::PLACEHOLDER));
+                let kept = match self.bound(target)? {
+                    DeclRef::Let(at) if self.annotation_ty(at)?.is_some() => self.let_fact(at)?,
+                    DeclRef::Let(at)
+                        if self
+                            .ir
+                            .lets
+                            .get(at as usize)
+                            .is_some_and(|rec| rec.owner == NONE)
+                            && self.let_reads_cell(at)? =>
+                    {
+                        let root = self.let_root(at)?;
+                        if self.has_fact(root)? && self.fact(root)?.leaf != Leaf::Placeholder {
+                            self.fact(root)?
+                        } else {
+                            self.cyclic_let_reads.insert(node, at);
+                            match self.let_seeds.get(&node) {
+                                Some(seed) => seed.clone(),
+                                None => return Ok(Ok(Fact::PLACEHOLDER)),
+                            }
+                        }
+                    }
+                    _ => Fact::PLACEHOLDER,
+                };
+                if matches!(kept.leaf, Leaf::Placeholder | Leaf::Error) || kept.node {
+                    return Ok(Ok(Fact::PLACEHOLDER));
+                }
+                (None, kept)
             }
-        };
-        let fact = match self.group_read(node)? {
-            Some(fact) => fact,
-            None => self.cell_read_fact(at)?,
         };
         if fallback == NONE {
             return Ok(Ok(fact));
@@ -110,7 +138,8 @@ impl Core<'_> {
         if matches!(fact.leaf, Leaf::Placeholder | Leaf::Error) {
             return Ok(Ok(fact));
         }
-        if let Some(settled) = self.group_settled(node, at)
+        if let Some(at) = at
+            && let Some(settled) = self.group_settled(node, at)
             && !fallback_fits(&held, &settled)
         {
             self.draw_at(Code::TypeMismatch, fallback, FALLBACK_SHAPE)?;
@@ -132,7 +161,11 @@ impl Core<'_> {
             }
             return Ok(Ok(fact));
         }
-        let ty = match self.cell_annotation_ty(at)? {
+        let annotated = match at {
+            Some(at) => self.cell_annotation_ty(at)?,
+            None => None,
+        };
+        let ty = match annotated {
             Some(ty) => ty,
             None => match fact.leaf {
                 Leaf::Bool => EvalTy::Bool,
@@ -154,7 +187,7 @@ impl Core<'_> {
             Ok(Target::Cell(_)) => Ok(Ok(Fact::scalar(Leaf::Bool))),
             Ok(Target::Let) => {
                 self.compile_time_target(node, "step")?;
-                Ok(Ok(Fact::PLACEHOLDER))
+                Ok(Ok(Fact::scalar(Leaf::Bool)))
             }
             Ok(Target::Faulty) => Ok(Ok(Fact::PLACEHOLDER)),
             Err(declined) => Ok(Err(declined)),
@@ -186,7 +219,9 @@ impl Core<'_> {
                     .get(at as usize)
                     .is_some_and(|rec| rec.owner == NONE) =>
             {
-                if self.cyclic.get(at as usize).copied().unwrap_or(false) {
+                if self.cyclic.get(at as usize).copied().unwrap_or(false)
+                    && !self.let_reads_cell(at)?
+                {
                     return Ok(Ok(Target::Faulty));
                 }
                 return Ok(Ok(Target::Let));

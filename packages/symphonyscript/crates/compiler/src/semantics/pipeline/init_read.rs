@@ -8,7 +8,7 @@ use crate::semantics::Internal;
 use crate::semantics::counted_walk::CountedWalk;
 use crate::semantics::operators::{EvalTy, Value, int_range};
 
-pub(crate) type Index = HashMap<(u32, Vec<u32>), Vec<(usize, u64)>>;
+pub(crate) type Index = HashMap<(u32, u32), Vec<(usize, u64)>>;
 
 #[derive(Clone, Debug)]
 pub(crate) struct InitRead {
@@ -17,7 +17,7 @@ pub(crate) struct InitRead {
     pub cell: u32,
     pub held: Vec<CoreValue>,
     pub ty: EvalTy,
-    pub chain: Vec<u32>,
+    pub chain: u32,
     pub open: bool,
     pub pinned: bool,
     pub bound: bool,
@@ -26,7 +26,7 @@ pub(crate) struct InitRead {
 
 fn listed(index: &mut Index, entry: &InitRead, at: usize) {
     index
-        .entry((entry.node, entry.chain.clone()))
+        .entry((entry.node, entry.chain))
         .or_default()
         .push((at, entry.serial));
 }
@@ -34,10 +34,10 @@ fn listed(index: &mut Index, entry: &InitRead, at: usize) {
 fn found(
     index: &mut Index,
     reads: &[InitRead],
-    (node, chain): (u32, &[u32]),
+    (node, chain): (u32, u32),
     fits: fn(&InitRead) -> bool,
 ) -> Option<usize> {
-    let list = index.get_mut(&(node, chain.to_vec()))?;
+    let list = index.get_mut(&(node, chain))?;
     let live = |(at, serial): (usize, u64)| {
         reads.get(at).is_some_and(|entry| {
             entry.serial == serial
@@ -59,7 +59,7 @@ fn found(
 
 impl Core<'_> {
     pub fn hold_init_read(&mut self, node: u32, cell: u32, held: CoreValue, ty: EvalTy) {
-        let chain = self.eval_chain.clone();
+        let chain = self.eval_chain.id();
         self.push_init_read(InitRead {
             node,
             span: node,
@@ -101,7 +101,7 @@ impl Core<'_> {
         found(
             &mut self.init_open,
             &self.init_reads,
-            (base, &self.eval_chain),
+            (base, self.eval_chain.id()),
             |entry| !entry.bound,
         )
     }
@@ -232,9 +232,10 @@ impl Core<'_> {
     }
 
     pub fn bind_init_read(&mut self, read: u32, argument: u32, ty: EvalTy) {
-        let Some((_, caller)) = self.eval_chain.split_last() else {
+        if self.eval_chain.is_empty() {
             return;
-        };
+        }
+        let caller = self.eval_chain.caller_id();
         let Some(at) = found(
             &mut self.init_args,
             &self.init_reads,
@@ -252,7 +253,7 @@ impl Core<'_> {
         };
         entry.bound = true;
         let cell = entry.cell;
-        let chain = self.eval_chain.clone();
+        let chain = self.eval_chain.id();
         self.push_init_read(InitRead {
             node: read,
             span: read,
@@ -268,10 +269,10 @@ impl Core<'_> {
     }
 
     pub fn return_init_read(&mut self, call: u32, root: u32) {
-        let Some((_, caller)) = self.eval_chain.split_last() else {
+        if self.eval_chain.is_empty() {
             return;
-        };
-        let caller = caller.to_vec();
+        }
+        let caller = self.eval_chain.caller_id();
         let Some(at) = self.open_init_read(root) else {
             return;
         };
@@ -334,7 +335,7 @@ impl Core<'_> {
             {
                 continue;
             }
-            self.eval_chain = read.chain;
+            self.eval_chain = self.chain_arena.chain_at(read.chain);
             outcome = self.draw_init_misfit(read.cell, read.span);
             if outcome.is_err() {
                 break;

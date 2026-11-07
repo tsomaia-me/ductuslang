@@ -17,7 +17,7 @@ use symphonyscript_core::BinaryOp;
 const OPERAND: &str = "operators and conversions apply to single values, not arrays";
 const SINGLE_OPERANDS: &str =
     "only `+` takes arrays, which it joins; every other operator takes single values";
-const JOIN_SINGLE: &str = "`+` joins two arrays, and one of these is a single value";
+pub(super) const JOIN_SINGLE: &str = "`+` joins two arrays, and one of these is a single value";
 const RAGGED: &str = "the elements of an array are arrays of one length, or all single values";
 
 const NEW: u8 = 0;
@@ -120,6 +120,25 @@ impl Core<'_> {
             .value)
     }
 
+    fn history_lets(&self, root: u32) -> Result<Vec<u32>, Internal> {
+        let mut lets = Vec::new();
+        for node in self.postorder(root)? {
+            let (op, a, _, _) = self.ir.node(node)?;
+            if op == Op::Past
+                && let DeclRef::Let(at) = self.bound(a)?
+                && self
+                    .ir
+                    .lets
+                    .get(at as usize)
+                    .is_some_and(|rec| rec.owner == NONE)
+                && self.annotation_ty(at)?.is_none()
+            {
+                lets.push(at);
+            }
+        }
+        Ok(lets)
+    }
+
     fn read_lets(&self, root: u32) -> Result<Vec<u32>, Internal> {
         let mut reads = Vec::new();
         for node in self.postorder(root)? {
@@ -146,6 +165,11 @@ impl Core<'_> {
 
     pub fn ensure_typed(&mut self, root: u32) -> Stage<Fact> {
         let mut stack: Vec<(u32, bool)> = Vec::new();
+        for at in self.history_lets(root)? {
+            if self.let_state.get(at as usize) == Some(&NEW) {
+                stack.push((at, false));
+            }
+        }
         for at in self.read_lets(root)?.into_iter().rev() {
             stack.push((at, false));
         }
@@ -215,7 +239,12 @@ impl Core<'_> {
                 *slot = OPEN;
             }
             stack.push((at, true));
-            for read in self.read_lets(self.let_root(at)?)?.into_iter().rev() {
+            let root = self.let_root(at)?;
+            for read in self
+                .history_lets(root)?
+                .into_iter()
+                .chain(self.read_lets(root)?.into_iter().rev())
+            {
                 if self.let_state.get(read as usize) == Some(&NEW) {
                     stack.push((read, false));
                 }
@@ -300,14 +329,19 @@ impl Core<'_> {
             if let Err(declined) = self.enum_gate(node, &fact)? {
                 return Ok(Err(declined));
             }
-            let reactive = self.node_reactive(node)?;
-            if fact.node && reactive && self.in_body(node)?.is_some() {
-                return Ok(Err(Declined(Reason::ReactiveReference)));
+            let mut reactive = self.node_reactive(node)?;
+            if fact.node
+                && reactive
+                && self.in_body(node)?.is_some()
+                && self.reactive_local_reference(node)?
+            {
+                fact = Fact::PLACEHOLDER;
+                reactive = false;
             }
             references |= fact.node;
             self.set_fact(node, fact, reactive)?;
         }
-        if references && !self.holds_references(root) {
+        if references && !self.holds_references(root) && !self.placed_root(root)? {
             return Ok(Err(Declined(Reason::NameOfInstance)));
         }
         Ok(Ok(()))
@@ -315,6 +349,9 @@ impl Core<'_> {
 
     fn node_fact(&mut self, node: u32) -> Stage<Fact> {
         let (op, a, b, c) = self.ir.node(node)?;
+        if self.unbound_nodes.contains(&node) {
+            return Ok(Ok(Fact::PLACEHOLDER));
+        }
         if self.holds_a_missing_operand(node)? {
             return Ok(Ok(Fact::PLACEHOLDER));
         }
@@ -328,6 +365,12 @@ impl Core<'_> {
             Op::Float => self.literal_fact(node, Leaf::Float)?,
             Op::Bool => Fact::scalar(Leaf::Bool),
             Op::Name if self.is_history_target(node) => self.history_target_fact(node)?,
+            Op::Name if self.not_values.contains_key(&node) => {
+                let summary = self.not_values.get(&node).cloned().unwrap_or_default();
+                self.draw_at(Code::NotAValue, node, summary)?;
+                self.not_values_drawn.insert(node);
+                Fact::PLACEHOLDER
+            }
             Op::Name => match self.bound(node)? {
                 DeclRef::Let(at) => {
                     let root = self.let_root(at)?;
@@ -350,11 +393,16 @@ impl Core<'_> {
                         self.let_fact(at)?
                     }
                 }
+                DeclRef::Cell(at) if self.derived(at) && !self.has_fact(self.cell_root(at)?)? => {
+                    Fact::PLACEHOLDER
+                }
                 DeclRef::Cell(at) => self.cell_read_fact(at)?,
                 DeclRef::Param(position) => self.param_fact(node, position)?.0,
+                DeclRef::Fn(_) if self.function_values.contains(&node) => Fact::PLACEHOLDER,
                 DeclRef::Fn(_) | DeclRef::Pattern(_) => {
                     return Ok(Err(Declined(Reason::FunctionValue)));
                 }
+                DeclRef::None if self.pi.contains(&node) => Fact::scalar(Leaf::Float),
                 DeclRef::None if self.untyped_bare.contains(&node) => Fact::ERROR,
                 DeclRef::None if self.is_bare(node) => {
                     Fact::scalar(Leaf::Enum(self.bare_enums.get(&node).copied()))
@@ -385,6 +433,11 @@ impl Core<'_> {
             Op::Array => self.array_fact(node, a, b)?,
             Op::Index | Op::IndexFromEnd => self.index_fact(node, a, b)?,
             Op::Convert => self.convert_fact(node, a, b)?,
+            Op::Call | Op::NamedCall
+                if self.dot_calls.contains(&node) && !self.dot_call_lands(node)? =>
+            {
+                return Ok(Err(Declined(Reason::Member)));
+            }
             Op::Call | Op::NamedCall => match self.call_fact(node)? {
                 Ok(fact) => fact,
                 Err(declined) => return Ok(Err(declined)),
@@ -405,6 +458,14 @@ impl Core<'_> {
                 Ok(fact) => fact,
                 Err(declined) => return Ok(Err(declined)),
             },
+            Op::Field if self.array_members.contains_key(&node) => Fact::scalar(Leaf::Int),
+            Op::Field if self.cell_sizes.contains_key(&node) => {
+                let at = self.cell_sizes.get(&node).copied().unwrap_or(NONE);
+                match self.cell_size_fact(node, at)? {
+                    Ok(fact) => fact,
+                    Err(declined) => return Ok(Err(declined)),
+                }
+            }
             Op::Field => match self.path_read(node)?.cloned() {
                 Some(read) if read.cyclic => Fact::PLACEHOLDER,
                 Some(read) => {
@@ -522,7 +583,7 @@ impl Core<'_> {
         }
     }
 
-    fn convert_fact(&mut self, node: u32, a: u32, code: u32) -> Result<Fact, Internal> {
+    pub(super) fn converted_fact(code: u32) -> Result<Fact, Internal> {
         let target = target_ty(code).ok_or(Internal::missed("a conversion target"))?;
         let leaf = if is_fixed_float(target) {
             Leaf::Float
@@ -531,16 +592,20 @@ impl Core<'_> {
         } else {
             Leaf::Int
         };
-        let converted = Fact::fixed(leaf, Some(target));
+        Ok(Fact::fixed(leaf, Some(target)))
+    }
+
+    fn convert_fact(&mut self, node: u32, a: u32, code: u32) -> Result<Fact, Internal> {
+        let converted = Self::converted_fact(code)?;
         let operand = self.fact(a)?;
         if operand.leaf == Leaf::Placeholder {
-            return Ok(Fact::PLACEHOLDER);
+            return self.keep_kind(node, converted);
         }
         if !operand.dims.is_empty() {
             if operand.leaf != Leaf::Error {
                 self.draw_at(Code::ArrayOperand, node, OPERAND)?;
             }
-            return Ok(Fact::PLACEHOLDER);
+            return self.keep_kind(node, converted);
         }
         match operand.leaf {
             Leaf::Error => self.keep(node, converted),
@@ -1009,6 +1074,9 @@ impl Core<'_> {
             if base.dims.is_empty() && known_base && !self.named_placeholder(a, &base)? {
                 self.draw_at(Code::NotAnArray, a, "only an array is indexed")?;
             }
+            if !base.dims.is_empty() && !matches!(base.leaf, Leaf::Placeholder | Leaf::Error) {
+                return self.keep_kind(node, element_of(&base));
+            }
             return Ok(Fact::PLACEHOLDER);
         }
         if self.named_placeholder(a, &base)? {
@@ -1038,7 +1106,10 @@ impl Core<'_> {
             family: None,
         };
         if index.leaf == Leaf::Placeholder {
-            return Ok(Fact::PLACEHOLDER);
+            if base.leaf == Leaf::Error {
+                return Ok(Fact::PLACEHOLDER);
+            }
+            return self.keep_kind(node, element);
         }
         if !refused
             && !faulty_index
@@ -1182,7 +1253,7 @@ pub(crate) fn unify(a: Leaf, b: Leaf) -> Option<Leaf> {
     }
 }
 
-fn operand_message(op: BinaryOp) -> &'static str {
+pub(super) fn operand_message(op: BinaryOp) -> &'static str {
     match op {
         BinaryOp::Add => "`+` takes two numbers or two strings",
         BinaryOp::Div => "`/` takes numbers",
@@ -1212,5 +1283,118 @@ impl Core<'_> {
             }
         }
         Ok(false)
+    }
+}
+
+impl Core<'_> {
+    fn keep_kind(&mut self, node: u32, fact: Fact) -> Result<Fact, Internal> {
+        if !self.holds_a_missing_operand(node)? {
+            let key = (self.inst_key(node)?, node);
+            self.placeholder_kinds.insert(key, fact);
+        }
+        Ok(Fact::PLACEHOLDER)
+    }
+
+    pub fn placeholder_kind(&self, node: u32) -> Result<Option<Fact>, Internal> {
+        let key = (self.inst_key(node)?, node);
+        Ok(self.placeholder_kinds.get(&key).cloned())
+    }
+}
+
+fn element_of(base: &Fact) -> Fact {
+    Fact {
+        leaf: base.leaf,
+        dims: base.dims.get(1..).unwrap_or_default().to_vec(),
+        fixed: base.fixed,
+        read: base.read,
+        node: base.node,
+        family: None,
+    }
+}
+
+impl Core<'_> {
+    fn reactive_local_reference(&mut self, node: u32) -> Result<bool, Internal> {
+        let Some(rec) = self.ir.lets.iter().find(|rec| rec.value == node).copied() else {
+            return Ok(false);
+        };
+        let span = self.span(self.file_of(node), rec.lo, rec.hi);
+        self.draw(
+            Code::ReactiveNodeReference,
+            span,
+            "a value holding node references reads no cell; write the choice in the destination",
+        );
+        Ok(true)
+    }
+}
+
+impl Core<'_> {
+    fn cell_size_fact(&mut self, node: u32, at: u32) -> Stage<Fact> {
+        let (_, _, field, _) = self.ir.node(node)?;
+        let text = self.ir.name_text(field).unwrap_or_default().to_string();
+        if let Some(uses) = self.cell_uses.get_mut(at as usize) {
+            uses[0] = true;
+        }
+        if self.derived(at) && !self.has_fact(self.cell_root(at)?)? {
+            return Ok(Ok(Fact::PLACEHOLDER));
+        }
+        if self.cell_annotation_ty(at)?.is_none() && !self.has_fact(self.cell_root(at)?)? {
+            return Ok(Err(Declined(Reason::Member)));
+        }
+        let fact = self.cell_read_fact(at)?;
+        if matches!(fact.leaf, Leaf::Placeholder | Leaf::Error) {
+            return Ok(Ok(Fact::PLACEHOLDER));
+        }
+        match fact.dims.first().copied() {
+            None => {
+                let declared = self
+                    .ir
+                    .name(field)
+                    .and_then(|entry| self.decl.get(entry.sym.0 as usize))
+                    .is_some_and(|decl| *decl != DeclRef::None);
+                if declared {
+                    return Ok(Err(Declined(Reason::Member)));
+                }
+                self.draw_at(
+                    Code::UnknownAttribute,
+                    node,
+                    format!(
+                        "`.{text}` reads an attribute of an instance or a wire, and this is a value"
+                    ),
+                )?;
+                Ok(Ok(Fact::PLACEHOLDER))
+            }
+            Some(ANY_LENGTH) if text == "size" => {
+                self.runtime_members.insert(node);
+                Ok(Ok(Fact::fixed(Leaf::Int, Some(EvalTy::I32))))
+            }
+            Some(ANY_LENGTH) => Ok(Err(Declined(Reason::Member))),
+            Some(length) => {
+                self.array_members.insert(node, i128::from(length));
+                Ok(Ok(Fact::scalar(Leaf::Int)))
+            }
+        }
+    }
+}
+
+impl Core<'_> {
+    fn dot_call_lands(&self, node: u32) -> Result<bool, Internal> {
+        let (_, callee, _, _) = self.ir.node(node)?;
+        let (_, name, _, _) = self.ir.node(callee)?;
+        let text = self.ir.name_text(name).unwrap_or_default();
+        if super::calls::MEMBER_NAMES.contains(&text) {
+            return Ok(false);
+        }
+        let Some(receiver) = self.arguments(node)?.first().copied() else {
+            return Ok(false);
+        };
+        let callable = self.callee(node)?.is_some()
+            || self.math_call(node)?
+            || self.math_miscount(node)?.is_some()
+            || self.math_named(node)?.is_some();
+        let receiver_fact = self.fact(receiver)?;
+        let faulty = self.ir.node(receiver)?.0 == Op::To
+            || (self.math_named(node)?.is_none()
+                && matches!(receiver_fact.leaf, Leaf::Placeholder | Leaf::Error));
+        Ok(!receiver_fact.node && callable && !(faulty && self.callee(node)?.is_none()))
     }
 }

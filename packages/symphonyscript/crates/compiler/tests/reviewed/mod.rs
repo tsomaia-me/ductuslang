@@ -4289,6 +4289,166 @@ fn refused_variable_init(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
         })
 }
 
+fn float_literal(text: &str) -> bool {
+    let digits = text
+        .chars()
+        .take_while(|c| c.is_ascii_alphanumeric() || *c == '.')
+        .collect::<String>();
+    digits.starts_with(|c: char| c.is_ascii_digit())
+        && (digits.contains('.') || digits.contains('e'))
+        && !digits.ends_with("f32")
+        && !digits.ends_with("f64")
+}
+
+fn integer_cell_in_a_flexible_float_operation(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
+    let name = seen.text(at);
+    let reads = cell_reads(seen.program, name);
+    change == Change::Added
+        && at.0 == "integer-cell"
+        && !reads.is_empty()
+        && reads.iter().all(|(_, hi)| {
+            let after = seen.program.get(*hi..).unwrap_or_default();
+            [" + ", " - ", " * ", " / "]
+                .iter()
+                .any(|op| after.strip_prefix(op).is_some_and(float_literal))
+        })
+}
+
+fn faulty_line_names<'a>(seen: &Seen<'a>) -> Vec<&'a str> {
+    let mut names = Vec::new();
+    let mut start = 0;
+    for line in seen.program.split_inclusive('\n') {
+        let end = start + line.len();
+        let mut words = line.split_whitespace();
+        if let (Some(kind), Some(rest)) = (words.next(), words.next())
+            && !line.starts_with(' ')
+            && !matches!(
+                kind,
+                "state" | "let" | "fn" | "pattern" | "stream" | "input"
+            )
+            && seen
+                .old
+                .iter()
+                .any(|drawn| drawn.0 == "placement-syntax" && (start..end).contains(&drawn.1))
+        {
+            let name = rest
+                .split(|c: char| !(c.is_alphanumeric() || c == '_'))
+                .next()
+                .unwrap_or_default();
+            if !name.is_empty() {
+                names.push(name);
+            }
+        }
+        start = end;
+    }
+    names
+}
+
+fn history_of_a_faulty_line_name(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
+    let name = seen.text(at);
+    change == Change::Removed
+        && at.0 == "history-target"
+        && !name.is_empty()
+        && faulty_line_names(seen).contains(&name)
+}
+
+fn history_of_a_faulty_let(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
+    let text = seen.text(at);
+    let Some((name, _)) = text.split_once('.') else {
+        return false;
+    };
+    let head = format!("let {name} = ");
+    change == Change::Added
+        && at.0 == "history-target"
+        && (text.ends_with(".stepped") || text.contains(".past("))
+        && lines_at(seen.program).into_iter().any(|(start, line)| {
+            let end = start + line.len();
+            line.starts_with(&head)
+                && seen.old.iter().any(|drawn| {
+                    drawn.1 >= start + head.len() && drawn.2 <= end && drawn.0 != "reactive-let"
+                })
+                && !seen
+                    .new
+                    .iter()
+                    .any(|drawn| drawn.0 == "reactive-let" && drawn.1 == start + 4)
+        })
+}
+
+fn to_through_a_faulty_line_name(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
+    let names = faulty_line_names(seen);
+    change == Change::Removed
+        && matches!(at.0.as_str(), "to-candidates" | "unknown-attribute")
+        && seen.program.lines().any(|line| {
+            line.contains("to.")
+                && line.split_once(": ").is_some_and(|(_, candidates)| {
+                    candidates
+                        .split(|c: char| !(c.is_alphanumeric() || c == '_'))
+                        .any(|word| names.contains(&word))
+                })
+        })
+}
+
+fn not_a_value_in_an_unexpanded_loop_body(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
+    let before = seen.program.get(..at.1).unwrap_or_default();
+    let line = before.rsplit('\n').next().unwrap_or_default();
+    let depth = line.len() - line.trim_start().len();
+    let in_loop = before.lines().rev().skip(1).any(|earlier| {
+        let indent = earlier.len() - earlier.trim_start().len();
+        indent < depth && earlier.trim_start().starts_with("for ")
+    });
+    let unexpanded = seen.old.iter().any(|drawn| drawn.0 == "unknown-name");
+    change == Change::Added && at.0 == "not-a-value" && in_loop && unexpanded
+}
+
+fn loop_name_in_an_unknown_kinds_body(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
+    let name = seen.text(at);
+    let names_a_loop_variable = [
+        format!("for {name} in "),
+        format!("for {name}, "),
+        format!(", {name} in "),
+    ]
+    .iter()
+    .any(|head| seen.program.contains(head.as_str()));
+    let unknown_parent = seen.old.iter().any(|drawn| {
+        drawn.0 == "unknown-kind"
+            && drawn.1 < at.1
+            && seen.program.get(drawn.2..at.1).is_some_and(|between| {
+                between
+                    .trim_start()
+                    .strip_prefix(':')
+                    .is_some_and(|rest| rest.trim().is_empty())
+            })
+    });
+    change == Change::Added
+        && at.0 == "unknown-kind"
+        && !name.is_empty()
+        && names_a_loop_variable
+        && unknown_parent
+}
+
+fn fit_beside_a_name_that_is_no_value(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
+    change == Change::Removed
+        && matches!(at.0.as_str(), "does-not-fit" | "type-mismatch")
+        && seen.new.iter().any(|drawn| {
+            drawn.0 == "not-a-value" && seen.line(drawn.1) == seen.line(at.1) && drawn.1 < at.1
+        })
+}
+
+fn destination_of_a_refused_annotated_let(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
+    let name = seen.text(at);
+    change == Change::Added
+        && at.0 == "destination-type"
+        && !name.is_empty()
+        && lines_at(seen.program).iter().any(|(start, line)| {
+            line.strip_prefix("let ")
+                .and_then(|rest| rest.strip_prefix(name))
+                .is_some_and(|rest| rest.starts_with(':'))
+                && seen.new.iter().any(|drawn| {
+                    drawn.0 == "type-mismatch" && seen.line(drawn.1) == seen.line(*start)
+                })
+        })
+}
+
 fn integer_cell_as_a_float_start(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
     let name = seen.text(at);
     change == Change::Added
@@ -4310,18 +4470,56 @@ fn reactive_let_history_target(seen: &Seen<'_>, at: &Drawn) -> bool {
         })
 }
 
+fn history_cells_of_lets<'a>(seen: &Seen<'a>) -> Vec<&'a str> {
+    let targets: Vec<&str> = seen
+        .new
+        .iter()
+        .filter(|drawn| reactive_let_history_target(seen, drawn))
+        .filter_map(|drawn| seen.text(drawn).split_once('.').map(|(name, _)| name))
+        .collect();
+    lines_at(seen.program)
+        .into_iter()
+        .filter_map(|(_, line)| {
+            let (cell, rule) = line.strip_prefix("state ")?.split_once(" = ")?;
+            let (target, _) = rule.split_once(".past(")?;
+            targets.contains(&target).then_some(cell)
+        })
+        .collect()
+}
+
+fn read_of_a_lets_history_cell(seen: &Seen<'_>, at: &Drawn) -> bool {
+    let line = lines_at(seen.program)
+        .into_iter()
+        .rfind(|(start, _)| *start <= at.1)
+        .map(|(_, line)| line)
+        .unwrap_or_default();
+    matches!(
+        at.0.as_str(),
+        "float-to-integer" | "does-not-fit" | "condition-type" | "operand-type"
+    ) && !line.starts_with("state ")
+        && history_cells_of_lets(seen)
+            .iter()
+            .any(|cell| reads_word(line, cell))
+}
+
 fn history_of_a_reactive_let(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
     match change {
-        Change::Added => reactive_let_history_target(seen, at),
-        Change::Removed => {
-            matches!(
-                at.0.as_str(),
-                "float-to-integer" | "type-mismatch" | "does-not-fit" | "integer-cell"
-            ) && seen
-                .new
-                .iter()
-                .any(|drawn| reactive_let_history_target(seen, drawn))
+        Change::Added => {
+            reactive_let_history_target(seen, at)
+                || (matches!(
+                    at.0.as_str(),
+                    "float-to-integer"
+                        | "type-mismatch"
+                        | "does-not-fit"
+                        | "condition-type"
+                        | "operand-type"
+                        | "index-out-of-range"
+                ) && seen
+                    .new
+                    .iter()
+                    .any(|drawn| reactive_let_history_target(seen, drawn)))
         }
+        Change::Removed => read_of_a_lets_history_cell(seen, at),
         Change::Restated => false,
     }
 }
@@ -4595,6 +4793,10 @@ fn annotated_accumulator(line: &str) -> bool {
 
 fn annotated_fold(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
     let code = at.0.as_str();
+    if change == Change::Added && code == "capacity-exceeded" {
+        let text = seen.text(at);
+        return text.starts_with("for ") && annotated_accumulator(text) && text.contains("[..");
+    }
     if change != Change::Added
         || !matches!(
             code,
@@ -4734,17 +4936,48 @@ fn cell_reads(program: &str, name: &str) -> Vec<(usize, usize)> {
 
 fn integer_cell_read_beside_a_refusal(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
     let name = seen.text(at);
+    let refused = |lo: usize, hi: usize| {
+        seen.new.iter().any(|drawn| {
+            matches!(
+                drawn.0.as_str(),
+                "type-mismatch" | "operand-type" | "index-type" | "condition-type"
+            ) && drawn.1 <= lo
+                && hi <= drawn.2
+        })
+    };
     change == Change::Added
         && at.0 == "integer-cell"
         && cell_reads(seen.program, name).iter().any(|(lo, hi)| {
-            seen.new.iter().any(|drawn| {
-                matches!(
-                    drawn.0.as_str(),
-                    "type-mismatch" | "operand-type" | "index-type" | "condition-type"
-                ) && drawn.1 <= *lo
-                    && *hi <= drawn.2
-            })
+            refused(*lo, *hi)
+                || calls_of_the_body_at(seen.program, *lo)
+                    .iter()
+                    .any(|(start, end)| refused(*start, *end))
         })
+}
+
+fn calls_of_the_body_at(program: &str, at: usize) -> Vec<(usize, usize)> {
+    let Some((start, line)) = lines_at(program)
+        .into_iter()
+        .rfind(|(start, _)| *start <= at)
+    else {
+        return Vec::new();
+    };
+    let Some(name) = line
+        .strip_prefix("fn ")
+        .and_then(|rest| rest.split_once('('))
+        .map(|(name, _)| name)
+        .filter(|name| !name.is_empty())
+    else {
+        return Vec::new();
+    };
+    let call = format!("{name}(");
+    program
+        .match_indices(&call)
+        .filter(|(found, _)| {
+            word_start(program, *found) && !(start..start + line.len()).contains(found)
+        })
+        .map(|(found, _)| (found, found + call.len()))
+        .collect()
 }
 
 fn integer_cell_read_inside_a_refusal(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
@@ -4979,6 +5212,12 @@ fn choice_keeps_its_arms_type(seen: &Seen<'_>, change: Change, at: &Drawn) -> bo
                         .iter()
                         .any(|drawn| drawn.0 == "not-an-array" && (drawn.1, drawn.2) == choice.span)
             }
+            "does-not-fit" => seen.new.iter().any(|drawn| {
+                drawn.1 <= at.1
+                    && at.2 <= drawn.2
+                    && drawn.1 <= choice.span.0
+                    && choice.span.1 <= drawn.2
+            }),
             _ => false,
         }),
         Change::Restated => false,
@@ -5116,8 +5355,63 @@ pub const CLASSES: &[Class] = &[
         explains: integer_cell_as_a_float_start,
     },
     Class {
+        ledger: "476",
+        rule: "an integer host-fed cell read only as the operand of an operation with a flexible float literal is read as a float there (SPEC §4.3: a flexible float meeting an operand of fixed integer type makes the operation a float one, `f64` for an `i64` operand), so every use expects a float and the cell draws integer-cell (SPEC §4.4), also where the operation stands in a comparison, where the old engine draws nothing (`state big(1)` with `Note when big + 1e39 > 1`, `big + 1.5 > 1` or `big * 2.5 > 1`)",
+        explains: integer_cell_in_a_flexible_float_operation,
+    },
+    Class {
+        ledger: "476",
+        rule: "a placement in the body of a placement of an unknown kind, inside a placement `for` body, whose kind is a loop variable's name draws unknown-kind, as it does under a known kind and in the program with the unknown kind repaired (the repair rule; SPEC §7.1), where the old engine is silent (`for s in sections:` with `xStarts:` holding `s` on the next line)",
+        explains: loop_name_in_an_unknown_kinds_body,
+    },
+    Class {
+        ledger: "476",
+        rule: "a history read of a name declared by a placement on a line holding a syntax fault draws nothing, the name being a placeholder wherever it is used (ARCHITECTURE §7), where the old engine draws history-target at it (`xstate gate(false)` with `gate.past(2)`)",
+        explains: history_of_a_faulty_line_name,
+    },
+    Class {
+        ledger: "476",
+        rule: "a history read of a top-level let whose value drew a fault draws history-target, as the program with the value repaired to a valid compile-time value does (DECISIONS.md 2026-11-03: a diagnostic stands beside another fault exactly when the repaired program still draws it; a let has no history whatever its value holds), where the old engine draws nothing at the read (`let t = zzz` with `t.past(1, [])`)",
+        explains: history_of_a_faulty_let,
+    },
+    Class {
+        ledger: "476",
+        rule: "a cell rule's `for` expression draws range-bound at a range bound that reads a cell with no maximum beside a fault later on its line, in its head, its start or its body, as the program with that fault repaired does (DECISIONS.md 2026-11-03: a diagnostic stands beside another fault exactly when the repaired program still draws it), where the old engine draws nothing at the bound (`state total = for i in 0..n into sum from 0: sum + zz`)",
+        explains: range_bound_beside_a_faulty_fold,
+    },
+    Class {
+        ledger: "476",
+        rule: "a read of a scalar-annotated cell beside the cell's refused init keeps the cell's type, so its member draws unknown-attribute and its join with an array array-operand, as the program with the init repaired to a valid value of the cell's type does (DECISIONS.md 2026-11-03), where the old engine draws nothing at the read (`state held([]): i32` with `held.size` or `held + [note]`)",
+        explains: read_of_a_cell_beside_its_refused_init,
+    },
+    Class {
+        ledger: "476",
+        rule: "a slice whose bound holds a syntax fault is still an array, so a position of a single value draws type-mismatch at it, as the program with the bound repaired does (DECISIONS.md 2026-11-03), where the old engine draws nothing at the slice (`Note/(xs[1 % ..3])`)",
+        explains: slice_with_a_faulty_bound,
+    },
+    Class {
+        ledger: "476",
+        rule: "a `to` path whose candidate list names an instance declared by a placement on a line holding a syntax fault draws nothing of that candidate, the name being a placeholder wherever it is used (ARCHITECTURE §7), where the old engine reads the instance and draws to-candidates or unknown-attribute at the path (`Clip chorus(:` with `gain=to.hook.velocity: [chorus, bridge][section]`)",
+        explains: to_through_a_faulty_line_name,
+    },
+    Class {
+        ledger: "476",
+        rule: "a vocabulary name standing as a value in the body of a placement `for` whose iterable holds a placeholder draws not-a-value, a name resolution error, as code nothing expands draws its name resolution errors (SPEC §6.5; `let u = sin` draws it unread on both engines), where the old engine is silent in such a body (`for s in sections:` with `when Starts: s`)",
+        explains: not_a_value_in_an_unexpanded_loop_body,
+    },
+    Class {
+        ledger: "480",
+        rule: "a vocabulary name standing as a value (a node kind, a wire kind, an enum, a function) draws not-a-value and is a placeholder, so a fault at a literal beside it that holds only for some value of the name, a fit or a float in an integer position, does not stand (the placeholder rule, as beside an unknown name), where the old engine checks the literal in the position's type (`Note/(Lamp + 300000000000)`)",
+        explains: fit_beside_a_name_that_is_no_value,
+    },
+    Class {
+        ledger: "476",
+        rule: "a let annotated with a value type whose init it refuses keeps the annotated type (ARCHITECTURE §7: a value whose type an error leaves known keeps that type), so a destination naming it draws destination-type, as the program with the init repaired to a value of that type does, where the old engine reads the let as a placeholder (`let d: i32 = a` with `Plays: d`)",
+        explains: destination_of_a_refused_annotated_let,
+    },
+    Class {
         ledger: "487",
-        rule: "a history read of a top-level let reading a cell draws history-target at the read beside the let's reactive-let, as the program with the let repaired to a compile-time value does, and the read is a placeholder, so the faults the old engine drew from the let's type at its readers are gone",
+        rule: "a history read of a top-level let reading a cell draws history-target at the read beside the let's reactive-let, as the program with the let repaired to a compile-time value does, and the read of an annotated let keeps the annotated type (ARCHITECTURE §7: a value whose type an error leaves known keeps that type), so its readers draw the faults that type gives whatever value repairs the read, where the old engine reads it as a placeholder; the read of an unannotated top-level let is typed as the cell the let repaired to a `state` would be (ledger 516), a float one read as an integer drawing float-to-integer, an array one's index its range, and a fallback the repaired cell refuses its type-mismatch; a fault the old engine drew at a read of a cell whose rule is that history read is removed only where the program with the let repaired to a `state` draws none there (`Note when s > 3000000000`, `Note when s` and `not s` beside a `0` fallback of a `bool` let, `Note/(s)` beside a `0.5` fallback of an integer let reading a cell); a compile-time let is no repaired cell, so its history read stays a placeholder that draws nothing further",
         explains: history_of_a_reactive_let,
     },
     Class {
@@ -5182,7 +5476,7 @@ pub const CLASSES: &[Class] = &[
     },
     Class {
         ledger: "476",
-        rule: "an annotated fold accumulator's start and body, and an annotated loop name's elements, draw type-mismatch where they do not have the annotated type (SPEC §4.5), and the start and body of an annotated fold draw what the same expression draws as the rule of a derived cell with that annotation (SPEC §5.10, §4.2; DECISIONS.md 22:13Z), which the old engine misses",
+        rule: "an annotated fold accumulator's start and body, and an annotated loop name's elements, draw type-mismatch where they do not have the annotated type (SPEC §4.5), and the start and body of an annotated fold draw what the same expression draws as the rule of a derived cell with that annotation (SPEC §5.10, §4.2; DECISIONS.md 22:13Z), which the old engine misses; and a compile-time `for` expression whose accumulator is annotated `T[..N]` draws capacity-exceeded where the capacity its body's rule finds over the iterations its iterable can run passes N (SPEC §5.10, ledger 502), as its reactive twin does on both engines, where the old engine is silent",
         explains: annotated_fold,
     },
     Class {
@@ -5247,7 +5541,7 @@ pub const CLASSES: &[Class] = &[
     },
     Class {
         ledger: "476",
-        rule: "a choice keeps its arms' type whatever its condition holds (G18, ARCHITECTURE §7: a value whose type an error leaves known keeps that type), so beside a refused condition the faults that type gives draw at the choice, at the expression or condition holding it and at a bound beside it, a kept scalar base draws not-an-array in place of its bound's index-type (SPEC §5.5), and the old engine's type-mismatch at one arm, which only that arm taken draws, does not",
+        rule: "a choice keeps its arms' type whatever its condition holds (G18, ARCHITECTURE §7: a value whose type an error leaves known keeps that type), so beside a refused condition the faults that type gives draw at the choice, at the expression or condition holding it and at a bound beside it, a kept scalar base draws not-an-array in place of its bound's index-type (SPEC §5.5), and the old engine's type-mismatch at one arm, which only that arm taken draws, does not, nor its does-not-fit at a literal beside the choice inside an expression the new core refuses whole, which it computes in its `f32` default for the choice",
         explains: choice_keeps_its_arms_type,
     },
     Class {
@@ -5284,6 +5578,16 @@ pub const CLASSES: &[Class] = &[
         ledger: "476",
         rule: "a condition the parser ends where a syntax fault on its line begins leaves the intended condition unknown, the rest of it lying in that fault's region (ARCHITECTURE §7.1: a fault's region is the rest of its line), so the choice draws no condition-type, where the old engine types the cut condition as written (the head's reading of 15:39Z 2026-11-05)",
         explains: condition_cut_by_a_line_fault,
+    },
+    Class {
+        ledger: "476",
+        rule: "a gate whose value holds a refused index, slice bound, conversion or condition draws the faults the type those faults leave known gives, condition-type at the value where it is no `bool`, type-mismatch or array-operand at an operand of `and` or `or` (ARCHITECTURE §7: a value whose type an error leaves known keeps that type), as the program with the faults repaired draws on both engines, where the old engine is silent; and a gate that is an array choice draws one condition-type, where the old engine draws a second at the same span; a gate value refused as no `bool` is checked in its own type, so a literal inside it that does not fit draws does-not-fit (ARCHITECTURE §7: an operand that a refused condition holds is checked in its own type), where the old engine checks nothing inside it, a negated choice whose arms unify in `u8` saturating there draws constant-overflow (SPEC §4.6); and the old engine's condition-type at a slice condition whose bound holds a refused index, which the program with the index repaired draws on neither engine, does not draw",
+        explains: gate_beside_its_faults,
+    },
+    Class {
+        ledger: "476",
+        rule: "a derived cell's rule or a reactive pattern argument whose operand is a conversion of a cell to `u8` or `i32` computes in that fixed type where no integer use gives it a width, so a literal beside it that does not fit that type draws does-not-fit at the literal (SPEC §4.1: the fit check applies where a fixed-type operand gives a literal its type; §4.4 and §4.5: an integer derived cell's width is the widest its integer uses expect, else the widest of its operands), as the comparison with such a cell gives a literal the cell's type, where the old engine is silent or draws it only for some inits of the cell; such an argument read at a float use is the expression itself at that use (SPEC §6.6, ledger 483), the conversion widening into the float type before the operation (SPEC §4.2), so the literal fits, where the old engine draws does-not-fit in the conversion's type for some inits",
+        explains: fixed_type_operand_of_a_cell_rule,
     },
 ];
 
@@ -5326,6 +5630,30 @@ fn bound_beside_a_kept_choice(seen: &Seen<'_>, change: Change, at: &Drawn) -> bo
         })
 }
 
+fn gate_beside_the_twin_pass(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
+    let start = seen
+        .program
+        .get(..at.1)
+        .and_then(|before| before.rfind('\n'))
+        .map_or(0, |at| at + 1);
+    let end = seen
+        .program
+        .get(at.2..)
+        .and_then(|after| after.find('\n'))
+        .map_or(seen.program.len(), |found| at.2 + found);
+    let line = seen.program.get(start..end).unwrap_or_default();
+    let gate = line.find(" when ").map(|found| start + found);
+    change != Change::Restated
+        && gate.is_some_and(|gate| gate < at.1)
+        && seen.program.get(at.1..end).is_some_and(|rest| {
+            rest.contains('q')
+                || seen
+                    .program
+                    .get(start..at.1)
+                    .is_some_and(|head| head.contains('q'))
+        })
+}
+
 pub const TWIN_PASS_CLASSES: &[Class] = &[
     Class {
         ledger: "476, the twin pass's (R4b)",
@@ -5336,6 +5664,11 @@ pub const TWIN_PASS_CLASSES: &[Class] = &[
         ledger: "476, the twin pass's (R4b)",
         rule: "index-type at the bound or index of a read whose base is a choice over the placeholder with a refused condition, which stands since the repaired bound still draws it (G18), and which the twin pass misses because its scalar twins keep the choice's type and draw not-an-array at the base in its place",
         explains: bound_beside_a_kept_choice,
+    },
+    Class {
+        ledger: "476, the twin pass's (R4b)",
+        rule: "at a gate holding a name placeholder, the twin pass runs the whole-program twins on the old engine, so the gate draws the old engine's set (a conversion's target type, a refused condition, a choice's arms, a sliced base, an index or a fit beside the placeholder), where the new core's twins differ (488's and 497's kind)",
+        explains: gate_beside_the_twin_pass,
     },
 ];
 
@@ -5417,13 +5750,11 @@ fn placement_heads(program: &str) -> Vec<(usize, usize)> {
         .filter(|(_, line)| {
             line.starts_with(' ')
                 && line.trim_start().starts_with("for ")
-                && line.contains(" in ")
                 && !line.contains(" into ")
         })
         .map(|(start, line)| {
             let indent = line.len() - line.trim_start().len();
-            let end = line.trim_end().strip_suffix(':').unwrap_or(line.trim_end());
-            (start + indent + "for ".len(), start + end.len())
+            (start + indent + "for ".len(), start + line.trim_end().len())
         })
         .collect()
 }
@@ -5434,18 +5765,31 @@ fn let_lines<'a>(program: &'a str, head: &str) -> Vec<(usize, &'a str)> {
         .split(|c: char| !(c.is_alphanumeric() || c == '_'))
         .filter(|word| word.starts_with(|c: char| c.is_alphabetic() || c == '_'))
         .collect();
-    lines_at(program)
-        .into_iter()
-        .filter(|(_, line)| {
-            line.strip_prefix("let ").is_some_and(|rest| {
-                let name = rest
-                    .split(|c: char| !(c.is_alphanumeric() || c == '_'))
-                    .next()
-                    .unwrap_or_default();
-                names.contains(&name)
-            })
-        })
-        .collect()
+    let lines = lines_at(program);
+    let mut found = Vec::new();
+    for (at, (start, line)) in lines.iter().enumerate() {
+        let joined = match lines.get(at + 1) {
+            Some((next, text)) if let_word(line.trim()) => {
+                program.get(*start..next + text.len()).unwrap_or(line)
+            }
+            _ => line,
+        };
+        let words: Vec<&str> = joined
+            .split(|c: char| !(c.is_alphanumeric() || c == '_'))
+            .collect();
+        if words.iter().any(|word| let_word(word)) && words.iter().any(|word| names.contains(word))
+        {
+            found.push((*start, joined));
+        }
+    }
+    found
+}
+
+fn let_word(word: &str) -> bool {
+    word.starts_with("let")
+        || word
+            .strip_suffix("let")
+            .is_some_and(|lead| lead.chars().all(|c| c.is_ascii_digit()))
 }
 
 pub fn runs_no_iteration(program: &str, new: &[Drawn]) -> bool {
@@ -5457,7 +5801,7 @@ pub fn runs_no_iteration(program: &str, new: &[Drawn]) -> bool {
         within(lo, hi)
             || let_lines(program, program.get(lo..hi).unwrap_or_default())
                 .into_iter()
-                .any(|(start, line)| within(start, start + line.len()))
+                .any(|(start, line)| within(start, start + line.len() + 1) || unclosed(line))
     })
 }
 
@@ -5852,4 +6196,163 @@ fn unrun_cycle(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
             .program
             .get(at.2..)
             .is_some_and(|after| after.starts_with(")[") || after.starts_with('['))
+}
+
+fn unclosed(line: &str) -> bool {
+    let opened = line
+        .chars()
+        .filter(|c| matches!(c, '(' | '[' | '{'))
+        .count();
+    let closed = line
+        .chars()
+        .filter(|c| matches!(c, ')' | ']' | '}'))
+        .count();
+    opened > closed
+}
+
+fn gate_beside_its_faults(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
+    let line = seen.before(at).rsplit('\n').next().unwrap_or_default();
+    let Some(gate) = line.find(" when ") else {
+        return false;
+    };
+    let start = at.1 - (line.len() - gate);
+    if change == Change::Added && at.0 == "does-not-fit" {
+        return at.1 > start
+            && seen.new.iter().any(|drawn| {
+                drawn.0 == "condition-type" && drawn.1 > start && drawn.1 <= at.1 && at.2 <= drawn.2
+            });
+    }
+    if change == Change::Added && at.0 == "constant-overflow" {
+        let text = seen.text(at);
+        return at.1 > start
+            && text.starts_with("-(if ")
+            && seen.program.lines().any(|declared| {
+                declared
+                    .strip_prefix("state ")
+                    .and_then(|rest| rest.split_once('('))
+                    .is_some_and(|(name, rest)| rest.ends_with("): u8") && reads_word(text, name))
+            });
+    }
+    if change == Change::Removed {
+        let text = seen.text(at);
+        return at.0 == "condition-type"
+            && at.1 > start
+            && (seen.new.iter().any(|drawn| drawn == at)
+                || (text.ends_with("..]")
+                    && seen.old.iter().any(|drawn| {
+                        drawn.0 == "index-out-of-range" && drawn.1 > at.1 && drawn.2 <= at.2
+                    })
+                    && seen.new.iter().any(|drawn| {
+                        drawn.0 == "condition-type" && drawn.1 < at.1 && at.2 < drawn.2
+                    })));
+    }
+    change == Change::Added
+        && at.1 > start
+        && matches!(
+            at.0.as_str(),
+            "condition-type" | "type-mismatch" | "array-operand"
+        )
+        && !line.trim_start().starts_with("when")
+        && seen.old.iter().any(|drawn| {
+            drawn.0 != at.0 && drawn.1 > start && seen.line(drawn.1) == seen.line(at.1)
+        })
+}
+
+fn fixed_type_operand_of_a_cell_rule(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
+    if change == Change::Restated || at.0 != "does-not-fit" {
+        return false;
+    }
+    let literal = seen.text(at);
+    if literal.is_empty() || !literal.bytes().all(|byte| byte.is_ascii_digit()) {
+        return false;
+    }
+    let line = seen.before(at).rsplit('\n').next().unwrap_or_default();
+    let cell = |name: &str| seen.program.contains(&format!("state {name}("));
+    let converted = |text: &str| {
+        ["u8(", "i32("].iter().any(|conversion| {
+            text.rsplit_once(conversion).is_some_and(|(_, rest)| {
+                rest.split_once(')').is_some_and(|(name, operator)| {
+                    cell(name) && matches!(operator, " + " | " - " | " * ")
+                })
+            })
+        })
+    };
+    if change == Change::Removed {
+        return line.contains("/(") && converted(line);
+    }
+    if (line.starts_with("state ") || line.contains("/(")) && converted(line) {
+        return true;
+    }
+    let Some(name) = line
+        .trim_start()
+        .strip_prefix("Note when ")
+        .and_then(|rest| rest.strip_suffix(" > "))
+    else {
+        return false;
+    };
+    ["u8(", "i32("].iter().any(|conversion| {
+        seen.program
+            .contains(&format!("state {name} = {conversion}"))
+    })
+}
+
+fn range_bound_beside_a_faulty_fold(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
+    if change != Change::Added || at.0 != "range-bound" {
+        return false;
+    }
+    let line = seen.line(at.1);
+    let Some((_, text)) = lines_at(seen.program).get(line).copied() else {
+        return false;
+    };
+    let rule = text.starts_with("state ") && text.contains("into");
+    let open = text.trim_end().ends_with(':');
+    rule && !seen
+        .old
+        .iter()
+        .any(|drawn| drawn.0 == "range-bound" && drawn.1 == at.1)
+        && seen.old.iter().any(|drawn| {
+            let at_line = seen.line(drawn.1);
+            drawn.0 != "range-bound"
+                && drawn.1 >= at.2
+                && (at_line == line || (open && at_line == line + 1))
+        })
+}
+
+fn read_of_a_cell_beside_its_refused_init(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
+    if change != Change::Added || !matches!(at.0.as_str(), "unknown-attribute" | "array-operand") {
+        return false;
+    }
+    let words: Vec<&str> = seen
+        .text(at)
+        .split(|c: char| !(c.is_alphanumeric() || c == '_'))
+        .filter(|word| !word.is_empty())
+        .collect();
+    lines_at(seen.program).into_iter().any(|(start, line)| {
+        let Some((cell, rest)) = line
+            .strip_prefix("state ")
+            .and_then(|rest| rest.split_once('('))
+        else {
+            return false;
+        };
+        words.contains(&cell)
+            && rest
+                .rsplit_once("): ")
+                .is_some_and(|(_, ty)| !ty.is_empty() && ty.chars().all(char::is_alphanumeric))
+            && seen.old.iter().any(|drawn| {
+                drawn.0 == "type-mismatch" && drawn.1 >= start && drawn.2 <= start + line.len()
+            })
+    })
+}
+
+fn slice_with_a_faulty_bound(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
+    let text = seen.text(at);
+    change == Change::Added
+        && at.0 == "type-mismatch"
+        && text.contains("..")
+        && text.ends_with(']')
+        && seen.old.iter().any(|drawn| {
+            matches!(drawn.0.as_str(), "expression-syntax" | "misplaced-caret")
+                && drawn.1 >= at.1
+                && drawn.2 <= at.2
+        })
 }

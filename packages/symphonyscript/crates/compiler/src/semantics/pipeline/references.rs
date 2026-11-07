@@ -4,9 +4,10 @@ use super::declined::Declined;
 use super::fact::Fact;
 use super::leaf::Leaf;
 use super::reason::Reason;
+use super::typing::{JOIN_SINGLE, operand_message};
 use crate::diagnostics::Code;
 use crate::semantics::Internal;
-use crate::semantics::ir::flat::{AttrForm, ItemRec, NONE, Op};
+use crate::semantics::ir::flat::{AttrForm, ItemRec, NONE, Op, binary_of};
 
 const ELEMENTS: &str = "the elements of the array hold values of different types";
 
@@ -72,18 +73,67 @@ impl Core<'_> {
         if !facts.iter().any(|fact| fact.node) {
             return Ok(Ok(None));
         }
+        let joined = facts.iter().any(|fact| !fact.node && !fact.dims.is_empty());
+        if joined && binary_of(op).is_some() && op != Op::Add {
+            return Ok(Ok(None));
+        }
+        if joined && op == Op::Add && facts.iter().any(|fact| fact.node && fact.dims.is_empty()) {
+            self.draw_at(Code::ArrayOperand, node, JOIN_SINGLE)?;
+            return Ok(Ok(Some(Fact::PLACEHOLDER)));
+        }
         match op {
             Op::Array => self.reference_array(node, &facts),
             Op::If => self.reference_choice(node, a, &facts),
             Op::Index => self.reference_element(node, (a, b), &facts),
-            Op::Int | Op::Float | Op::Bool | Op::Name | Op::Neg | Op::Not | Op::Convert => {
-                Ok(Err(Declined(Reason::NameOfInstance)))
+            Op::Int | Op::Float | Op::Bool | Op::Name => Ok(Err(Declined(Reason::NameOfInstance))),
+            Op::Neg => {
+                self.draw_at(Code::OperandType, node, "unary `-` takes a number")?;
+                Ok(Ok(Some(Fact::ERROR)))
+            }
+            Op::Not => {
+                self.draw_at(Code::OperandType, node, "`not` takes a `bool`")?;
+                Ok(Ok(Some(Fact::scalar(Leaf::Bool))))
+            }
+            Op::Convert => {
+                self.draw_at(Code::ConversionType, node, "a conversion takes a number")?;
+                if facts.iter().any(|fact| !fact.dims.is_empty()) {
+                    return Ok(Ok(Some(Fact::ERROR)));
+                }
+                let (_, _, code, _) = self.ir.node(node)?;
+                let converted = Self::converted_fact(code)?;
+                Ok(Ok(Some(self.keep(node, converted)?)))
             }
             Op::Add | Op::Sub | Op::Mul | Op::Div | Op::IntDiv | Op::Rem | Op::Pow => {
-                Ok(Err(Declined(Reason::NameOfInstance)))
+                let binary = binary_of(op).ok_or(Internal::missed("operator"))?;
+                self.draw_at(Code::OperandType, node, operand_message(binary))?;
+                Ok(Ok(Some(Fact::ERROR)))
             }
-            Op::And | Op::Or | Op::Lt | Op::Le | Op::Gt | Op::Ge | Op::Is | Op::IsNot => {
-                Ok(Err(Declined(Reason::NameOfInstance)))
+            Op::And | Op::Or => {
+                let refused = |fact: &Fact| {
+                    fact.node
+                        || (fact.dims.is_empty()
+                            && !matches!(fact.leaf, Leaf::Bool | Leaf::Placeholder | Leaf::Error))
+                };
+                if facts.iter().all(refused) {
+                    let binary = binary_of(op).ok_or(Internal::missed("operator"))?;
+                    self.draw_at(Code::OperandType, node, operand_message(binary))?;
+                    return Ok(Ok(Some(Fact::scalar(Leaf::Bool))));
+                }
+                for (operand, fact) in self.operands(node)?.into_iter().zip(facts.iter()) {
+                    if fact.node && fact.dims.is_empty() {
+                        self.draw_at_root(
+                            Code::TypeMismatch,
+                            operand,
+                            "this value has the wrong type here; `bool` is expected",
+                        )?;
+                    }
+                }
+                Ok(Ok(Some(Fact::scalar(Leaf::Bool))))
+            }
+            Op::Lt | Op::Le | Op::Gt | Op::Ge | Op::Is | Op::IsNot => {
+                let binary = binary_of(op).ok_or(Internal::missed("operator"))?;
+                self.draw_at(Code::OperandType, node, operand_message(binary))?;
+                Ok(Ok(Some(Fact::scalar(Leaf::Bool))))
             }
             Op::IndexFromEnd | Op::Slice | Op::For | Op::Call | Op::NamedCall => {
                 Ok(Err(Declined(Reason::NameOfInstance)))

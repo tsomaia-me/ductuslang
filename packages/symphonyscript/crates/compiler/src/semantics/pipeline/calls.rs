@@ -5,13 +5,16 @@ use super::core::{Core, Stage};
 use super::decl_ref::DeclRef;
 use super::declined::Declined;
 use super::fact::Fact;
+use super::leaf::Leaf;
 use super::loops::loop_body;
+use super::memo_arg::MemoArg;
 use super::need::Need;
 use super::reason::Reason;
 use crate::diagnostics::{Code, Related};
 use crate::semantics::Internal;
 use crate::semantics::counted_walk::CountedWalk;
 use crate::semantics::ir::flat::{NONE, Op};
+use crate::semantics::operators::EvalTy;
 
 const NEW: u8 = 0;
 const OPEN: u8 = 1;
@@ -96,9 +99,14 @@ impl Core<'_> {
         for function in 0..self.owners() {
             for root in self.function_roots(function)? {
                 for node in self.with_receivers(root)? {
-                    let local = self.local(node)?;
-                    if let Some(slot) = self.body_of.get_mut(local) {
-                        *slot = function;
+                    let (op, callee, _, _) = self.ir.node(node)?;
+                    let named = matches!(op, Op::Call | Op::NamedCall)
+                        && self.ir.node(callee)?.0 == Op::Name;
+                    for marked in std::iter::once(node).chain(named.then_some(callee)) {
+                        let local = self.local(marked)?;
+                        if let Some(slot) = self.body_of.get_mut(local) {
+                            *slot = function;
+                        }
                     }
                 }
             }
@@ -518,6 +526,38 @@ impl Core<'_> {
 
     pub fn call_fact(&mut self, node: u32) -> Stage<Fact> {
         let Some(function) = self.callee(node)? else {
+            if self.native_fault(node)? {
+                return Ok(Ok(Fact::PLACEHOLDER));
+            }
+            if let Some(name) = self.math_named(node)? {
+                self.draw_at(
+                    Code::NamedBuiltinArguments,
+                    node,
+                    format!("the built-in `{name}` takes positional arguments only"),
+                )?;
+                return Ok(Ok(Fact::PLACEHOLDER));
+            }
+            if self.math_miscount(node)?.is_some() {
+                return self.math_count_fact(node);
+            }
+            if self.math_call(node)? {
+                return self.math_fact(node);
+            }
+            if self.not_callable(node)? {
+                let callee = self.ir.node(node)?.1;
+                let name = self.ir.node(callee)?.1;
+                let text = self.ir.name_text(name).unwrap_or_default().to_string();
+                self.draw_at(
+                    Code::NotCallable,
+                    callee,
+                    format!("`{text}` is not a function"),
+                )?;
+                self.not_callables_drawn.insert(callee);
+                return Ok(Ok(Fact::PLACEHOLDER));
+            }
+            if self.unknown_callee(node)? {
+                return Ok(Ok(Fact::PLACEHOLDER));
+            }
             return Ok(Err(Declined(Reason::FunctionValue)));
         };
         let args = self.arguments(node)?;
@@ -566,20 +606,32 @@ impl Core<'_> {
             facts.push(self.fact(*arg)?);
             reactive.push(self.is_reactive(*arg)?);
         }
+        let values = self.key_values(function, &args, &reactive)?;
         let key = (function, NONE, facts.clone(), reactive.clone());
-        let found = self.body_index.get(&key).copied();
+        let held: Vec<Option<MemoArg>> = values.iter().map(MemoArg::of).collect();
+        let found = if values.is_empty() {
+            self.body_index.get(&key).copied()
+        } else {
+            self.value_index.get(&(key.clone(), held.clone())).copied()
+        };
         let body = match found {
             Some(body) => body,
             None => {
+                let keyed = !values.is_empty();
                 self.bodies.push(BodyInstance {
                     function,
                     parent: NONE,
                     args: facts,
                     reactive_args: reactive,
                     diagnostics: Vec::new(),
+                    values,
                 });
                 let body = u32::try_from(self.bodies.len() - 1).unwrap_or(NONE);
-                self.body_index.insert(key, body);
+                if keyed {
+                    self.value_index.insert((key, held), body);
+                } else {
+                    self.body_index.insert(key, body);
+                }
                 return self.pending(Need::Body(body));
             }
         };
@@ -807,7 +859,7 @@ impl Core<'_> {
     }
 }
 
-fn chain_key(diagnostic: &crate::diagnostics::Diagnostic) -> Vec<u32> {
+pub(super) fn chain_key(diagnostic: &crate::diagnostics::Diagnostic) -> Vec<u32> {
     diagnostic
         .related
         .iter()
@@ -842,28 +894,75 @@ impl Core<'_> {
 
 impl Core<'_> {
     pub fn calls_a_non_function(&self) -> Result<bool, Internal> {
-        let mut callees = std::collections::HashSet::new();
         for local in 0..self.ir.op.len() {
             let reached = self.reached.get(local).copied().unwrap_or(false);
             if !reached || !matches!(self.ir.op.get(local), Some(Op::Call | Op::NamedCall)) {
                 continue;
             }
             let node = self.ir.base + u32::try_from(local).unwrap_or(0);
-            if self.callee(node)?.is_none() {
-                return Ok(true);
-            }
-            callees.insert(self.ir.node(node)?.1);
-        }
-        for local in 0..self.ir.op.len() {
-            let node = self.ir.base + u32::try_from(local).unwrap_or(0);
-            if matches!(self.bind.get(local), Some(DeclRef::Fn(_)))
-                && !callees.contains(&node)
-                && !self.is_history_target(node)
+            if self.callee(node)?.is_none()
+                && !self.not_callable(node)?
+                && !self.math_call(node)?
+                && self.math_miscount(node)?.is_none()
+                && self.math_named(node)?.is_none()
+                && !self.unknown_callee(node)?
+                && self.native_miscount(node)?.is_none()
+                && self.native_named(node)?.is_none()
             {
                 return Ok(true);
             }
         }
         Ok(false)
+    }
+
+    pub fn not_callable(&self, node: u32) -> Result<bool, Internal> {
+        let (op, callee, _, _) = self.ir.node(node)?;
+        if !matches!(op, Op::Call | Op::NamedCall) || self.callee(node)?.is_some() {
+            return Ok(false);
+        }
+        if self.ir.node(callee)?.0 != Op::Name {
+            return Ok(false);
+        }
+        Ok(matches!(
+            self.bound(callee)?,
+            DeclRef::Let(_)
+                | DeclRef::Cell(_)
+                | DeclRef::Param(_)
+                | DeclRef::Instance(_)
+                | DeclRef::Pattern(_)
+        ))
+    }
+
+    pub fn function_values(&mut self) -> Result<(), Internal> {
+        let mut callees = std::collections::HashSet::new();
+        for local in 0..self.ir.op.len() {
+            if matches!(self.ir.op.get(local), Some(Op::Call | Op::NamedCall)) {
+                callees.insert(self.ir.a.get(local).copied().unwrap_or(NONE));
+            }
+        }
+        for local in 0..self.ir.op.len() {
+            let node = self.ir.base + u32::try_from(local).unwrap_or(0);
+            let reached = self.reached.get(local).copied().unwrap_or(false);
+            if !reached
+                || !matches!(self.bind.get(local), Some(DeclRef::Fn(_)))
+                || callees.contains(&node)
+                || self.is_history_target(node)
+            {
+                continue;
+            }
+            let name = self.ir.a.get(local).copied().unwrap_or(NONE);
+            let text = self.ir.name_text(name).unwrap_or_default().to_string();
+            let summary = format!("`{text}` is a function, which is only called");
+            let owner = self.body_of.get(local).copied().unwrap_or(NONE);
+            if owner != NONE && owner < self.functions() {
+                self.not_values.insert(node, summary);
+                continue;
+            }
+            let span = self.node_span(node)?;
+            self.draw(Code::NotAValue, span, summary);
+            self.function_values.insert(node);
+        }
+        Ok(())
     }
 }
 
@@ -999,5 +1098,386 @@ impl Core<'_> {
             }
         }
         Ok(nodes)
+    }
+}
+
+const MATH: [(&str, u32); 15] = [
+    ("rand", 2),
+    ("lerp", 3),
+    ("abs", 1),
+    ("min", 2),
+    ("max", 2),
+    ("clamp", 3),
+    ("floor", 1),
+    ("ceil", 1),
+    ("round", 1),
+    ("sqrt", 1),
+    ("sin", 1),
+    ("cos", 1),
+    ("tan", 1),
+    ("exp", 1),
+    ("log", 1),
+];
+
+pub(crate) fn float_math(name: &str) -> bool {
+    matches!(
+        name,
+        "floor" | "ceil" | "round" | "sqrt" | "sin" | "cos" | "tan" | "exp" | "log" | "lerp"
+    )
+}
+
+pub(crate) fn math_arity(name: &str) -> Option<u32> {
+    MATH.iter()
+        .find(|(known, _)| *known == name)
+        .map(|(_, arity)| *arity)
+}
+
+impl Core<'_> {
+    pub fn math_name(&self, node: u32) -> Result<Option<&'static str>, Internal> {
+        let (op, callee, _, shape) = self.ir.node(node)?;
+        if op != Op::Call || self.ir.node(callee)?.0 != Op::Name {
+            return Ok(None);
+        }
+        if self.bound(callee)? != DeclRef::None {
+            return Ok(None);
+        }
+        let text = self
+            .ir
+            .name_text(self.ir.node(callee)?.1)
+            .unwrap_or_default();
+        Ok(MATH
+            .iter()
+            .find(|(known, arity)| *known == text && shape == 2 * arity)
+            .map(|(known, _)| *known))
+    }
+
+    pub fn math_call(&self, node: u32) -> Result<bool, Internal> {
+        Ok(self.math_name(node)?.is_some())
+    }
+
+    fn math_fact(&mut self, node: u32) -> Stage<Fact> {
+        let name = self.math_name(node)?.unwrap_or_default();
+        let mut facts = Vec::new();
+        for arg in self.arguments(node)? {
+            facts.push(self.fact(arg)?);
+        }
+        if facts.iter().any(|fact| fact.leaf == Leaf::Placeholder) {
+            return Ok(Ok(Fact::PLACEHOLDER));
+        }
+        if facts.iter().any(|fact| fact.leaf == Leaf::Error) {
+            return Ok(Ok(Fact::ERROR));
+        }
+        if facts.iter().any(|fact| !fact.dims.is_empty()) {
+            self.draw_at(
+                Code::ArrayOperand,
+                node,
+                "built-ins apply to single values, not arrays",
+            )?;
+            let mut runtime = true;
+            for (arg, fact) in self.arguments(node)?.into_iter().zip(&facts) {
+                if !fact.dims.is_empty() && !self.reads_an_array_cell(arg)? {
+                    runtime = false;
+                }
+            }
+            if !runtime {
+                return Ok(Ok(Fact::ERROR));
+            }
+            for fact in &mut facts {
+                fact.dims.clear();
+            }
+        }
+        let numeric =
+            |fact: &Fact| !fact.node && matches!(fact.leaf, Leaf::Int | Leaf::Float | Leaf::Empty);
+        if !facts.iter().all(numeric) {
+            self.draw_at(Code::OperandType, node, format!("`{name}` takes numbers"))?;
+            return Ok(Ok(Fact::ERROR));
+        }
+        if name == "rand" {
+            if facts
+                .iter()
+                .any(|fact| !matches!(fact.leaf, Leaf::Int | Leaf::Empty))
+            {
+                self.draw_at(Code::OperandType, node, "`rand` takes two integers")?;
+                return Ok(Ok(Fact::ERROR));
+            }
+            if facts.iter().any(|fact| fact.family.is_some()) {
+                self.draw_at(Code::UnitOperation, node, "`rand` takes plain numbers")?;
+                return Ok(Ok(Fact::ERROR));
+            }
+            return Ok(Ok(Fact::fixed(Leaf::Float, Some(EvalTy::F32))));
+        }
+        if name == "lerp" {
+            let third = facts.get(2).and_then(|fact| fact.family);
+            if third.is_some() {
+                self.draw_at(
+                    Code::UnitOperation,
+                    node,
+                    "the third argument of `lerp` is a plain number",
+                )?;
+                return Ok(Ok(Fact::ERROR));
+            }
+            let (first, second) = (
+                facts.first().and_then(|fact| fact.family),
+                facts.get(1).and_then(|fact| fact.family),
+            );
+            if first.is_some() && second.is_some() && first != second {
+                return Ok(Err(Declined(Reason::UnitFlow)));
+            }
+            let mut fixed = None;
+            let mut read = None;
+            for fact in &facts {
+                fixed = super::width::combined(fixed, fact.fixed, true);
+                read = super::fact::reads(read, fact.read, true);
+            }
+            let mut found = Fact::numeric(
+                Leaf::Float,
+                fixed.map(super::width::float_for),
+                read.map(super::width::float_for),
+            );
+            found.family = first.or(second);
+            return Ok(Ok(found));
+        }
+        if float_math(name) {
+            let fact = facts.first().cloned().unwrap_or(Fact::ERROR);
+            let keeps_family = matches!(name, "floor" | "ceil" | "round");
+            if !keeps_family && fact.family.is_some() {
+                self.draw_at(
+                    Code::UnitOperation,
+                    node,
+                    format!("`{name}` takes a plain number"),
+                )?;
+                return Ok(Ok(Fact::ERROR));
+            }
+            let mut found = Fact::numeric(
+                Leaf::Float,
+                fact.fixed.map(super::width::float_for),
+                fact.read.map(super::width::float_for),
+            );
+            if keeps_family {
+                found.family = fact.family;
+            }
+            return Ok(Ok(found));
+        }
+        let mut found = facts.first().cloned().unwrap_or(Fact::ERROR);
+        for fact in facts.iter().skip(1) {
+            let float = found.leaf == Leaf::Float || fact.leaf == Leaf::Float;
+            let leaf = if float { Leaf::Float } else { Leaf::Int };
+            let family = found.family;
+            found = Fact::numeric(
+                leaf,
+                super::width::combined(found.fixed, fact.fixed, float),
+                super::fact::reads(found.read, fact.read, float),
+            );
+            found.family = family;
+        }
+        Ok(Ok(found))
+    }
+}
+
+impl Core<'_> {
+    pub fn math_miscount(&self, node: u32) -> Result<Option<(&'static str, u32, u32)>, Internal> {
+        let (op, callee, _, shape) = self.ir.node(node)?;
+        if op != Op::Call || shape % 2 != 0 || self.ir.node(callee)?.0 != Op::Name {
+            return Ok(None);
+        }
+        if self.bound(callee)? != DeclRef::None {
+            return Ok(None);
+        }
+        let text = self
+            .ir
+            .name_text(self.ir.node(callee)?.1)
+            .unwrap_or_default();
+        Ok(MATH
+            .iter()
+            .find(|(known, arity)| *known == text && shape != 2 * arity)
+            .map(|(known, arity)| (*known, *arity, shape / 2)))
+    }
+
+    fn math_count_fact(&mut self, node: u32) -> Stage<Fact> {
+        let Some((name, arity, given)) = self.math_miscount(node)? else {
+            return Err(Internal::missed("a math call's count"));
+        };
+        let noun = if arity == 1 { "argument" } else { "arguments" };
+        self.draw_at(
+            Code::ArgumentCount,
+            node,
+            format!("`{name}` takes {arity} {noun}, not {given}"),
+        )?;
+        Ok(Ok(Fact::PLACEHOLDER))
+    }
+}
+
+impl Core<'_> {
+    pub fn math_named(&self, node: u32) -> Result<Option<&'static str>, Internal> {
+        let (op, callee, _, _) = self.ir.node(node)?;
+        if op != Op::NamedCall || self.ir.node(callee)?.0 != Op::Name {
+            return Ok(None);
+        }
+        if self.bound(callee)? != DeclRef::None {
+            return Ok(None);
+        }
+        let text = self
+            .ir
+            .name_text(self.ir.node(callee)?.1)
+            .unwrap_or_default();
+        Ok(MATH
+            .iter()
+            .find(|(known, _)| *known == text)
+            .map(|(known, _)| *known))
+    }
+}
+
+impl Core<'_> {
+    pub fn uncalled_not_callables(&mut self) -> Result<(), Internal> {
+        for local in 0..self.ir.op.len() {
+            let reached = self.reached.get(local).copied().unwrap_or(false);
+            if !reached || !matches!(self.ir.op.get(local), Some(Op::Call | Op::NamedCall)) {
+                continue;
+            }
+            let node = self.ir.base + u32::try_from(local).unwrap_or(0);
+            if !self.not_callable(node)? {
+                continue;
+            }
+            let callee = self.ir.node(node)?.1;
+            if self.not_callables_drawn.contains(&callee) {
+                continue;
+            }
+            let name = self.ir.node(callee)?.1;
+            let text = self.ir.name_text(name).unwrap_or_default().to_string();
+            let span = self.node_span(callee)?;
+            self.draw(
+                Code::NotCallable,
+                span,
+                format!("`{text}` is not a function"),
+            );
+        }
+        Ok(())
+    }
+}
+
+pub(super) const MEMBER_NAMES: [&str; 10] = [
+    "size", "capacity", "bytes", "map", "keys", "values", "kind", "past", "stepped", "dropped",
+];
+
+impl Core<'_> {
+    pub fn unknown_callee(&self, node: u32) -> Result<bool, Internal> {
+        let (op, callee, _, _) = self.ir.node(node)?;
+        if !matches!(op, Op::Call | Op::NamedCall)
+            || self.dot_calls.contains(&node)
+            || self.ir.node(callee)?.0 != Op::Name
+            || self.bound(callee)? != DeclRef::None
+            || self.callee(node)?.is_some()
+            || self.math_name(node)?.is_some()
+            || self.math_miscount(node)?.is_some()
+            || self.math_named(node)?.is_some()
+        {
+            return Ok(false);
+        }
+        let text = self
+            .ir
+            .name_text(self.ir.node(callee)?.1)
+            .unwrap_or_default();
+        Ok(self.vocabulary_clash(text).is_none()
+            && self.vocabulary.native_named(text).is_none()
+            && self.variants.owner(text).is_none()
+            && !MATH.iter().any(|(known, _)| *known == text))
+    }
+}
+
+impl Core<'_> {
+    fn native_callee(&self, node: u32) -> Result<Option<(String, u32)>, Internal> {
+        let (op, callee, _, _) = self.ir.node(node)?;
+        if !matches!(op, Op::Call | Op::NamedCall)
+            || self.ir.node(callee)?.0 != Op::Name
+            || self.bound(callee)? != DeclRef::None
+        {
+            return Ok(None);
+        }
+        let text = self
+            .ir
+            .name_text(self.ir.node(callee)?.1)
+            .unwrap_or_default();
+        let Some(decl) = self
+            .vocabulary
+            .native_named(text)
+            .and_then(|id| self.vocabulary.native(id))
+        else {
+            return Ok(None);
+        };
+        let arity = u32::try_from(decl.signature.params.len()).unwrap_or(u32::MAX);
+        Ok(Some((decl.name.to_string(), arity)))
+    }
+
+    pub fn native_miscount(&self, node: u32) -> Result<Option<(String, u32, u32)>, Internal> {
+        let (op, _, _, shape) = self.ir.node(node)?;
+        if op != Op::Call || shape % 2 != 0 {
+            return Ok(None);
+        }
+        Ok(self
+            .native_callee(node)?
+            .filter(|(_, arity)| shape != 2 * arity)
+            .map(|(name, arity)| (name, arity, shape / 2)))
+    }
+
+    pub fn native_named(&self, node: u32) -> Result<Option<String>, Internal> {
+        if self.ir.node(node)?.0 != Op::NamedCall {
+            return Ok(None);
+        }
+        Ok(self.native_callee(node)?.map(|(name, _)| name))
+    }
+
+    pub fn native_fault(&mut self, node: u32) -> Result<bool, Internal> {
+        if let Some(name) = self.native_named(node)? {
+            self.draw_at(
+                Code::NamedBuiltinArguments,
+                node,
+                format!("the native function `{name}` takes positional arguments only"),
+            )?;
+            return Ok(true);
+        }
+        let Some((name, arity, given)) = self.native_miscount(node)? else {
+            return Ok(false);
+        };
+        let noun = if arity == 1 { "argument" } else { "arguments" };
+        self.draw_at(
+            Code::ArgumentCount,
+            node,
+            format!("`{name}` takes {arity} {noun}, not {given}"),
+        )?;
+        Ok(true)
+    }
+}
+
+impl Core<'_> {
+    fn reads_an_array_cell(&mut self, root: u32) -> Result<bool, Internal> {
+        let outer = self.inst;
+        let mut stack = vec![(root, outer)];
+        let mut found = false;
+        while let Some((node, inst)) = stack.pop() {
+            self.inst = inst;
+            let (op, a, b, c) = self.ir.node(node)?;
+            if op == Op::Name {
+                if let DeclRef::Cell(_) = self.bound(node)?
+                    && self.fact(node).is_ok_and(|fact| !fact.dims.is_empty())
+                {
+                    found = true;
+                    break;
+                }
+                continue;
+            }
+            if op == Op::Add {
+                stack.extend([(a, inst), (b, inst)]);
+            } else if op == Op::If {
+                stack.extend([(b, inst), (c, inst)]);
+            } else if matches!(op, Op::Index | Op::IndexFromEnd | Op::Slice) {
+                stack.push((a, inst));
+            } else if op == Op::Call
+                && let Some(body) = self.body_of_call(node)
+            {
+                stack.push((self.body_value(body)?, body));
+            }
+        }
+        self.inst = outer;
+        Ok(found)
     }
 }

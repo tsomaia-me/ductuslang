@@ -7,6 +7,7 @@ use super::env::Env;
 use super::fact::Fact;
 use super::leaf::Leaf;
 use super::reason::Reason;
+use super::values::flexible;
 use crate::diagnostics::{Code, Related};
 use crate::semantics::Internal;
 use crate::semantics::counted_walk::CountedWalk;
@@ -131,7 +132,13 @@ impl Core<'_> {
                 continue;
             }
             let defaulted = defaults.get(position) == Some(&root);
-            if defaulted && let Some(cells) = self.late_reads(root, &late)? {
+            let read_late = match self.late_reads(root, &late)? {
+                Some(cells) => Some(cells),
+                None if defaulted && self.reaches_cell(root)? != 0 => Some(true),
+                None => None,
+            };
+            if defaulted && let Some(cells) = read_late {
+                self.use_spans.insert(item, span.clone());
                 facts.push(Fact::PLACEHOLDER);
                 self.env_vals.push(CoreValue::Error);
                 if let Some(slot) = reactive.last_mut() {
@@ -342,6 +349,7 @@ impl Core<'_> {
             args: facts.to_vec(),
             reactive_args: reactive,
             diagnostics: Vec::new(),
+            values: Vec::new(),
         });
         let inst = u32::try_from(self.bodies.len() - 1).unwrap_or(NONE);
         self.body_index.insert(key, inst);
@@ -391,6 +399,7 @@ impl Core<'_> {
                     args: facts,
                     reactive_args,
                     diagnostics: Vec::new(),
+                    values: Vec::new(),
                 });
                 let inst = u32::try_from(self.bodies.len() - 1).unwrap_or(NONE);
                 if indexed {
@@ -446,6 +455,18 @@ impl Core<'_> {
             });
         }
         if self.is_reactive(root)? {
+            if matches!(fact.leaf, Leaf::Int | Leaf::Float) {
+                return Ok(Ok((fact, CoreValue::Error, true)));
+            }
+            let checked = match self.own_ty(root)? {
+                Some(own) if !self.is_kept(root)? => {
+                    self.evaluate(root, flexible(own))?.map(|_| ())
+                }
+                Some(_) | None => self.evaluate_own(root)?,
+            };
+            if let Err(declined) = checked {
+                return Ok(Err(declined));
+            }
             return Ok(Ok((fact, CoreValue::Error, true)));
         }
         self.argument_value(root, fact)
@@ -596,7 +617,11 @@ impl Core<'_> {
                 let outcome = if caller == NONE && self.default_nodes.contains_key(&root) {
                     self.late_default(env, record, position, root)?
                 } else {
+                    let defaulted = caller == NONE && self.a_default(record, position, root)?;
                     let saved = self.enter_env(caller);
+                    if defaulted {
+                        self.use_links.insert(0, (record.use_item, NONE));
+                    }
                     let outcome = self.late_argument(root);
                     self.leave_env(saved);
                     outcome?
@@ -662,6 +687,18 @@ impl Core<'_> {
             }
         }
         Ok(Ok(()))
+    }
+
+    fn a_default(&self, record: Env, position: u32, root: u32) -> Result<bool, Internal> {
+        let Some(pattern) = self
+            .bodies
+            .get(record.inst as usize)
+            .and_then(|body| self.pattern_at(body.function))
+        else {
+            return Ok(false);
+        };
+        let params = self.pattern_parts(pattern)?.0;
+        Ok(self.ir.binder(params.0 + position)?.default == root)
     }
 
     fn late_default(
@@ -930,6 +967,7 @@ impl Core<'_> {
                     .get(found.items.0 as usize..found.items.1 as usize)
                     .unwrap_or_default(),
             );
+            items.extend(super::loops::member_items(self.ir, found.members));
             while let Some(item) = items.pop() {
                 match *self.ir.item(item)? {
                     ItemRec::Placement(placement) => {
@@ -950,7 +988,10 @@ impl Core<'_> {
                             .get(members.0 as usize..members.1 as usize)
                             .unwrap_or_default(),
                     ),
-                    ItemRec::Bundle(_) | ItemRec::When(_) | ItemRec::Paren(_) => {
+                    ItemRec::When(_) => items.extend(self.when_items(item)),
+                    ItemRec::Bundle(_) => items.extend(self.bundle_items(item)),
+                    ItemRec::Paren(inner) if inner != NONE => items.push(inner),
+                    ItemRec::Paren(_) => {
                         return Ok(true);
                     }
                 }
@@ -975,6 +1016,7 @@ impl Core<'_> {
                     .get(rec.items.0 as usize..rec.items.1 as usize)
                     .unwrap_or_default(),
             );
+            items.extend(super::loops::member_items(self.ir, rec.members));
             while let Some(item) = items.pop() {
                 CountedWalk::CorePatternGraph.step();
                 match *self.ir.item(item)? {
@@ -991,10 +1033,10 @@ impl Core<'_> {
                             .get(members.0 as usize..members.1 as usize)
                             .unwrap_or_default(),
                     ),
-                    ItemRec::Wire(_)
-                    | ItemRec::Bundle(_)
-                    | ItemRec::When(_)
-                    | ItemRec::Paren(_) => {}
+                    ItemRec::When(_) => items.extend(self.when_items(item)),
+                    ItemRec::Bundle(_) => items.extend(self.bundle_items(item)),
+                    ItemRec::Paren(inner) if inner != NONE => items.push(inner),
+                    ItemRec::Wire(_) | ItemRec::Paren(_) => {}
                 }
             }
         }
@@ -1330,6 +1372,7 @@ impl Core<'_> {
                     );
                 }
             }
+            self.nested_pattern_items(&items, pattern)?;
             let mut here: Vec<(u32, symphonyscript_core::Span)> = Vec::new();
             let mut bodies = Vec::new();
             for item in items {
@@ -1564,5 +1607,41 @@ impl Core<'_> {
             }
         }
         Ok(Ok(cells))
+    }
+}
+
+impl Core<'_> {
+    fn nested_pattern_items(&mut self, items: &[u32], pattern: u32) -> Result<(), Internal> {
+        let mut stack: Vec<u32> = Vec::new();
+        for item in items {
+            match *self.ir.item(*item)? {
+                ItemRec::When(_) => stack.extend(self.when_items(*item)),
+                ItemRec::Bundle(_) => stack.extend(self.bundle_items(*item)),
+                ItemRec::Paren(inner) if inner != NONE => stack.push(inner),
+                ItemRec::Placement(_)
+                | ItemRec::Wire(_)
+                | ItemRec::For(_)
+                | ItemRec::Line(_)
+                | ItemRec::Paren(_) => {}
+            }
+        }
+        while let Some(item) = stack.pop() {
+            match *self.ir.item(item)? {
+                ItemRec::Placement(placement) if self.ir.named(placement.as_name) => {
+                    self.pattern_items.insert(item, pattern);
+                }
+                ItemRec::Line(members) => stack.extend(
+                    self.ir
+                        .members
+                        .get(members.0 as usize..members.1 as usize)
+                        .unwrap_or_default(),
+                ),
+                ItemRec::When(_) => stack.extend(self.when_items(item)),
+                ItemRec::Bundle(_) => stack.extend(self.bundle_items(item)),
+                ItemRec::Paren(inner) if inner != NONE => stack.push(inner),
+                ItemRec::Placement(_) | ItemRec::Wire(_) | ItemRec::For(_) | ItemRec::Paren(_) => {}
+            }
+        }
+        Ok(())
     }
 }

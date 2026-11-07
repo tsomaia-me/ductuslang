@@ -4,6 +4,7 @@ use symphonyscript_core::{AttrDecl, AttrId, Count, NodeKind, Scalar, Span};
 
 use super::annotation::SHAPE;
 use super::attr_item::AttrItem;
+use super::call_chain::CallChain;
 use super::core::{Core, Stage};
 use super::declined::Declined;
 use super::fact::Fact;
@@ -18,6 +19,8 @@ use crate::semantics::Internal;
 use crate::semantics::counted_walk::CountedWalk;
 use crate::semantics::ir::flat::{AttrForm, NONE, Op};
 use crate::semantics::operators::{EvalTy, Value, int_range, ty_name};
+
+type Refused = (u32, u32, Vec<u32>, bool);
 
 pub(super) fn describe(count: Count) -> String {
     match count {
@@ -60,7 +63,7 @@ fn plain_expected(attr: &AttrDecl) -> Option<EvalTy> {
         Scalar::F64 => EvalTy::F64,
         Scalar::Bool => EvalTy::Bool,
         Scalar::Enum(id) => EvalTy::Enum(id),
-        Scalar::Str => return None,
+        Scalar::Str => EvalTy::Str,
     })
 }
 
@@ -210,6 +213,10 @@ impl Core<'_> {
             let saved = self.enter_env(record.env);
             self.feed_env = record.env;
             let checked = self.item_attributes(item, &decl.name, &decl.attrs, decl.default_attr);
+            let checked = match checked {
+                Ok(Ok(())) => self.bind_gate(placement.gate),
+                other => other,
+            };
             self.feed_env = NONE;
             self.leave_env(saved);
             if let Err(declined) = checked? {
@@ -234,6 +241,10 @@ impl Core<'_> {
             self.wire_now = u32::try_from(wire).unwrap_or(NONE);
             self.feed_env = row.env;
             let checked = self.item_attributes(item, &decl.name, &decl.attrs, decl.default_attr);
+            let checked = match checked {
+                Ok(Ok(())) => self.bind_gate(rec.gate),
+                other => other,
+            };
             self.wire_now = NONE;
             self.feed_env = NONE;
             self.leave_env(saved);
@@ -365,16 +376,47 @@ impl Core<'_> {
         root: u32,
         ty: EvalTy,
         reactive: bool,
-    ) -> Result<Vec<u32>, Internal> {
-        let mut stack = vec![root];
+    ) -> Result<Vec<Refused>, Internal> {
+        let (outer, base) = (self.inst, self.eval_chain.clone());
+        let mut stack = vec![(root, outer, Vec::new(), true)];
         let mut refused = Vec::new();
-        while let Some(node) = stack.pop() {
+        let outcome = self.refuse_walk(ty, reactive, &mut stack, &mut refused, &base);
+        self.inst = outer;
+        self.eval_chain = base;
+        outcome?;
+        Ok(refused)
+    }
+
+    fn refuse_walk(
+        &mut self,
+        ty: EvalTy,
+        reactive: bool,
+        stack: &mut Vec<Refused>,
+        refused: &mut Vec<Refused>,
+        base: &CallChain,
+    ) -> Result<(), Internal> {
+        while let Some((node, inst, chain, whole)) = stack.pop() {
+            self.inst = inst;
+            self.eval_chain = base.clone();
+            for call in &chain {
+                self.push_call(*call);
+            }
             let fact = self.fact(node)?;
             let Some(own) = fact.fixed.filter(|own| !widens(*own, ty)) else {
                 continue;
             };
             let (op, a, b, c) = self.ir.node(node)?;
-            let soft = reactive && fact.read.is_some();
+            if reactive
+                && matches!(op, Op::Call | Op::NamedCall)
+                && let Some(body) = self.body_of_call(node)
+            {
+                let value = self.body_value(body)?;
+                let mut inner = chain;
+                inner.push(node);
+                stack.push((value, body, inner, whole));
+                continue;
+            }
+            let soft = reactive && (fact.read.is_some() || self.adaptive_operand(node)?);
             let through = match op {
                 Op::Neg | Op::Add | Op::Sub | Op::Mul | Op::Div | Op::Rem | Op::Pow | Op::Array
                     if soft =>
@@ -440,11 +482,16 @@ impl Core<'_> {
                         ty_name(ty)
                     ),
                 )?;
-                refused.push(node);
+                refused.push((node, inst, chain.clone(), whole));
             }
-            stack.extend(through.into_iter().rev());
+            stack.extend(
+                through
+                    .into_iter()
+                    .rev()
+                    .map(|kid| (kid, inst, chain.clone(), false)),
+            );
         }
-        Ok(refused)
+        Ok(())
     }
 
     fn bind_array(&mut self, root: u32, name: &str, ty: EvalTy, length: u32) -> Stage<()> {
@@ -474,7 +521,7 @@ impl Core<'_> {
             return self.own_check(root);
         }
         if self.ir.node(root)?.0 != Op::Array {
-            return Ok(Err(Declined(Reason::ArrayAttribute)));
+            return self.bind_array_value(root, &fact, ty);
         }
         for element in self.operands(root)? {
             if let Err(declined) = self.bind_value(element, name, ty)? {
@@ -499,6 +546,17 @@ impl Core<'_> {
     ) -> Result<Option<(Code, String)>, Internal> {
         let integer = int_range(ty).is_some();
         Ok(Some(match fact.leaf {
+            Leaf::Empty | Leaf::Int | Leaf::Float | Leaf::Bool | Leaf::Enum(_)
+                if ty == EvalTy::Str =>
+            {
+                (
+                    Code::TypeMismatch,
+                    format!(
+                        "this value has the wrong type here; `{}` is expected",
+                        self.ty_text(ty)?
+                    ),
+                )
+            }
             Leaf::Bool if ty != EvalTy::Bool => (
                 Code::TypeMismatch,
                 format!(
@@ -587,7 +645,15 @@ impl Core<'_> {
             self.resolve_bare(root, id, true)?;
         }
         match fact.leaf {
-            Leaf::Placeholder | Leaf::Error => return self.detached(root, name, ty),
+            Leaf::Error if fact.node && fact.dims.is_empty() => {
+                let summary = format!(
+                    "this value has the wrong type here; `{}` is expected",
+                    self.ty_text(ty)?
+                );
+                self.draw_at_root(Code::TypeMismatch, root, summary)?;
+                return self.own_check(root);
+            }
+            Leaf::Placeholder | Leaf::Error if !fact.node => return self.detached(root, name, ty),
             _ if !fact.dims.is_empty() => {
                 let variable = self.variable_length(root)?;
                 let held = self.ty_text(ty)?;
@@ -606,6 +672,7 @@ impl Core<'_> {
                 )?;
                 return self.own_check(root);
             }
+            Leaf::Placeholder | Leaf::Error => return self.detached(root, name, ty),
             Leaf::Bool | Leaf::Empty | Leaf::Int | Leaf::Float | Leaf::Enum(_) => {
                 if let Some((code, summary)) = self.leaf_refusal(root, &fact, ty)? {
                     self.draw_at_root(code, root, summary)?;
@@ -618,11 +685,20 @@ impl Core<'_> {
             && !widens(own, ty)
         {
             let refused = self.refuse_fixed(root, ty, reactive)?;
-            if refused.contains(&root) {
+            if refused.iter().any(|(_, _, _, whole)| *whole) {
                 return self.own_check(root);
             }
-            for node in refused {
-                if let Err(declined) = self.own_check(node)? {
+            let (outer, base) = (self.inst, self.eval_chain.clone());
+            for (node, inst, chain, _) in refused {
+                self.inst = inst;
+                self.eval_chain = base.clone();
+                for call in &chain {
+                    self.push_call(*call);
+                }
+                let checked = self.own_check(node);
+                self.inst = outer;
+                self.eval_chain.clone_from(&base);
+                if let Err(declined) = checked? {
                     return Ok(Err(declined));
                 }
             }
@@ -932,5 +1008,46 @@ impl Core<'_> {
         let saved = self.enter_env(env);
         self.draw(code, span, message);
         self.leave_env(saved);
+    }
+}
+
+impl Core<'_> {
+    fn bind_array_value(&mut self, root: u32, fact: &Fact, ty: EvalTy) -> Stage<()> {
+        let Some(range) = int_range(ty) else {
+            return Ok(Err(Declined(Reason::ArrayAttribute)));
+        };
+        if self.is_reactive(root)? || fact.fixed.is_some() {
+            return Ok(Err(Declined(Reason::ArrayAttribute)));
+        }
+        if fact.leaf == Leaf::Float {
+            self.draw_at(
+                Code::TypeMismatch,
+                root,
+                "a float value stands where an integer is expected; a conversion states the rounding",
+            )?;
+            return Ok(Ok(()));
+        }
+        if fact.leaf != Leaf::Int {
+            return Ok(Err(Declined(Reason::ArrayAttribute)));
+        }
+        let value = match self.evaluate(root, EvalTy::Exact)? {
+            Ok(Value::Array(array)) => array,
+            Ok(_) => return Ok(Ok(())),
+            Err(declined) => return Ok(Err(declined)),
+        };
+        let count = self.store.len(value) as usize;
+        for position in 0..count {
+            if let Some(Value::Int(held)) = self.store.element(value, position)
+                && !range.contains(&held)
+            {
+                self.draw_at(
+                    Code::DoesNotFit,
+                    root,
+                    format!("this value does not fit `{}`", ty_name(ty)),
+                )?;
+                break;
+            }
+        }
+        Ok(Ok(()))
     }
 }

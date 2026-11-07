@@ -25,12 +25,14 @@ struct Direct {
     cells: Vec<u32>,
     history: Vec<(u32, u32)>,
     sources: Vec<Source>,
+    lets: Vec<u32>,
 }
 
 #[derive(Clone, Default, Debug)]
 pub(crate) struct CellReads {
     pub present: Vec<u32>,
     pub history: Vec<(u32, u32)>,
+    pub after: Vec<u32>,
 }
 
 const SETTLE_ROUNDS: usize = 64;
@@ -47,14 +49,37 @@ impl Core<'_> {
                     found.sources.push(Source::Fn(function));
                 }
                 if op == Op::Field
+                    && let Some(cell) = self.cell_sizes.get(&node)
+                {
+                    found.cells.push(*cell);
+                    continue;
+                }
+                if op == Op::Field
                     && let Some(root) = self.read_root(node)?
                 {
                     found.sources.push(Source::Root(root));
                     continue;
                 }
                 if matches!(op, Op::Past | Op::Stepped) {
-                    if let DeclRef::Cell(other) = self.bound(a)? {
-                        found.history.push((other, node));
+                    match self.bound(a)? {
+                        DeclRef::Cell(other) => found.history.push((other, node)),
+                        DeclRef::Let(other) => {
+                            if self.annotation_ty(other)?.is_none()
+                                && self
+                                    .ir
+                                    .lets
+                                    .get(other as usize)
+                                    .is_some_and(|rec| rec.owner == NONE)
+                            {
+                                found.lets.push(other);
+                            }
+                        }
+                        DeclRef::None
+                        | DeclRef::Instance(_)
+                        | DeclRef::Duplicate
+                        | DeclRef::Param(_)
+                        | DeclRef::Fn(_)
+                        | DeclRef::Pattern(_) => {}
                     }
                     continue;
                 }
@@ -85,11 +110,17 @@ impl Core<'_> {
         let mut reads = CellReads {
             present: direct.cells,
             history: direct.history,
+            after: Vec::new(),
         };
-        let mut pending = direct.sources;
+        let mut pending: Vec<(Source, bool)> = direct
+            .sources
+            .into_iter()
+            .map(|source| (source, false))
+            .collect();
+        pending.extend(direct.lets.into_iter().map(|at| (Source::Let(at), true)));
         let mut seen = HashSet::new();
-        while let Some(source) = pending.pop() {
-            if !seen.insert(source) {
+        while let Some((source, after)) = pending.pop() {
+            if !seen.insert((source, after)) {
                 continue;
             }
             let found = match memo.entry(source) {
@@ -103,9 +134,17 @@ impl Core<'_> {
                     entry.insert(self.direct_reads(&roots)?)
                 }
             };
-            reads.present.extend(found.cells.iter().copied());
-            reads.history.extend(found.history.iter().copied());
-            pending.extend(found.sources.iter().copied());
+            if after {
+                reads.after.extend(found.cells.iter().copied());
+                reads
+                    .after
+                    .extend(found.history.iter().map(|(target, _)| *target));
+            } else {
+                reads.present.extend(found.cells.iter().copied());
+                reads.history.extend(found.history.iter().copied());
+            }
+            pending.extend(found.sources.iter().map(|source| (*source, after)));
+            pending.extend(found.lets.iter().map(|at| (Source::Let(*at), true)));
         }
         Ok(reads)
     }
@@ -121,19 +160,36 @@ impl Core<'_> {
                 reads
                     .history
                     .retain(|(other, _)| !self.is_cyclic_cell(*other));
+                reads.after.retain(|other| !self.is_cyclic_cell(*other));
                 reads
             } else {
                 CellReads::default()
             });
         }
-        let edges: Vec<Vec<u32>> = all
-            .iter()
-            .map(|reads| {
-                let mut edges = reads.present.clone();
-                edges.extend(reads.history.iter().map(|(target, _)| *target));
-                edges
-            })
-            .collect();
+        let edges = loop {
+            let edges: Vec<Vec<u32>> = all
+                .iter()
+                .map(|reads| {
+                    let mut edges = reads.present.clone();
+                    edges.extend(reads.history.iter().map(|(target, _)| *target));
+                    edges.extend(reads.after.iter().copied());
+                    edges
+                })
+                .collect();
+            let mut closed = false;
+            for component in strongly_connected(&edges) {
+                for member in &component {
+                    if let Some(reads) = all.get_mut(*member as usize) {
+                        let before = reads.after.len();
+                        reads.after.retain(|at| !component.contains(at));
+                        closed |= reads.after.len() != before;
+                    }
+                }
+            }
+            if !closed {
+                break edges;
+            }
+        };
         let mut order = Vec::with_capacity(count as usize);
         let mut group_of = vec![NONE; count as usize];
         let mut groups = Vec::new();
@@ -529,6 +585,9 @@ impl Core<'_> {
                 return Ok(Err(declined));
             }
         }
+        if let Err(declined) = self.settle_let_cycles(&order)? {
+            return Ok(Err(declined));
+        }
         self.cell_order = order;
         Ok(Ok(()))
     }
@@ -538,6 +597,16 @@ impl Core<'_> {
             return Ok(Ok(()));
         }
         let root = self.cell_root(at)?;
+        if self.holds_a_reference(at)? {
+            let derived = self.derived(at);
+            let word = if derived { "a state" } else { "a cell" };
+            self.draw_at(
+                Code::StateValue,
+                root,
+                format!("{word} never holds a node reference"),
+            )?;
+            return Ok(Ok(()));
+        }
         if let Some(ty) = self.cell_annotation_ty(at)? {
             if let Err(declined) = self.check_cell_annotation(at, ty)? {
                 return Ok(Err(declined));
@@ -610,7 +679,12 @@ impl Core<'_> {
             let Some(reads) = self.cell_reads.get(*member as usize) else {
                 return false;
             };
-            if reads.present.iter().any(|read| !members.contains(read)) {
+            if reads
+                .present
+                .iter()
+                .chain(&reads.after)
+                .any(|read| !members.contains(read))
+            {
                 return false;
             }
             for (target, _) in &reads.history {
@@ -858,5 +932,102 @@ impl Core<'_> {
             }
         }
         Ok(())
+    }
+}
+
+impl Core<'_> {
+    fn settle_let_cycles(&mut self, order: &[u32]) -> Stage<()> {
+        let reads: Vec<(u32, u32)> = self
+            .cyclic_let_reads
+            .iter()
+            .map(|(node, at)| (*node, *at))
+            .collect();
+        if reads.is_empty() {
+            return Ok(Ok(()));
+        }
+        let mut seeded = Vec::new();
+        for (node, at) in reads {
+            let (_, _, _, fallback) = self.ir.node(node)?;
+            if fallback == NONE {
+                continue;
+            }
+            let seed = match self.ensure_typed(fallback)? {
+                Ok(fact) => fact,
+                Err(declined) => return Ok(Err(declined)),
+            };
+            if matches!(seed.leaf, Leaf::Placeholder | Leaf::Error) {
+                continue;
+            }
+            self.let_seeds.insert(node, seed);
+            seeded.push((node, at));
+        }
+        if seeded.is_empty() {
+            return Ok(Ok(()));
+        }
+        let mark = self.diagnostics.len();
+        let top = self.top_drawn.len();
+        let warned = self.warned.clone();
+        for _ in 0..SETTLE_ROUNDS {
+            if let Err(declined) = self.retype_let_cycle(order, &seeded)? {
+                return Ok(Err(declined));
+            }
+            let mut changed = false;
+            for (node, at) in &seeded {
+                let fact = self.fact(self.let_root(*at)?)?;
+                let Some(seed) = self.let_seeds.get(node).cloned() else {
+                    continue;
+                };
+                if matches!(fact.leaf, Leaf::Placeholder | Leaf::Error) || fact == seed {
+                    continue;
+                }
+                if super::typing::unify(seed.leaf, fact.leaf) == Some(fact.leaf) {
+                    self.let_seeds.insert(*node, fact);
+                    changed = true;
+                }
+            }
+            if !changed {
+                break;
+            }
+        }
+        self.diagnostics.truncate(mark);
+        self.top_drawn.truncate(top);
+        self.warned = warned;
+        let mut kept = Vec::new();
+        for (node, at) in seeded {
+            if self.fact(self.let_root(at)?)?.leaf == Leaf::Placeholder {
+                self.let_seeds.remove(&node);
+            } else {
+                kept.push((node, at));
+            }
+        }
+        self.retype_let_cycle(order, &kept)
+    }
+
+    fn retype_let_cycle(&mut self, order: &[u32], seeded: &[(u32, u32)]) -> Stage<()> {
+        for (_, at) in seeded {
+            let root = self.let_root(*at)?;
+            self.clear_rule(root)?;
+        }
+        for at in order.iter().copied() {
+            if self.is_cyclic_cell(at) {
+                continue;
+            }
+            let root = self.cell_root(at)?;
+            let reads = self.postorder(root)?;
+            if !seeded.iter().any(|(node, _)| reads.contains(node)) {
+                continue;
+            }
+            self.clear_rule(root)?;
+            if let Err(declined) = self.ensure_typed(root)? {
+                return Ok(Err(declined));
+            }
+        }
+        for (_, at) in seeded {
+            let root = self.let_root(*at)?;
+            if let Err(declined) = self.ensure_typed(root)? {
+                return Ok(Err(declined));
+            }
+        }
+        Ok(Ok(()))
     }
 }

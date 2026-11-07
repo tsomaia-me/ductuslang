@@ -40,7 +40,7 @@ impl Core<'_> {
         let value = entry.value.clone();
         let faults = entry.faults.clone();
         self.fold_steps = after;
-        self.eval_chain.push(call);
+        self.push_call(call);
         for fault in faults {
             let fault = self.chained(fault);
             self.push_drawn(fault);
@@ -94,7 +94,10 @@ impl Core<'_> {
     }
 
     pub fn unmemoized(&mut self) {
-        for recording in &mut self.recordings {
+        for recording in self.recordings.iter_mut().rev() {
+            if !recording.storable {
+                break;
+            }
             recording.storable = false;
         }
     }

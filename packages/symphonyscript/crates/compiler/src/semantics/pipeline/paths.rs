@@ -8,6 +8,8 @@ use super::core_value::CoreValue;
 use super::decl_ref::DeclRef;
 use super::declined::Declined;
 use super::fact::Fact;
+use super::folds::ANY_LENGTH;
+use super::leaf::Leaf;
 use super::reason::Reason;
 use crate::diagnostics::{Code, Diagnostic};
 use crate::semantics::Internal;
@@ -420,12 +422,15 @@ impl Core<'_> {
                     }
                     return self.loop_name_path_end(node, receiver, position, field);
                 }
-                DeclRef::None
-                | DeclRef::Duplicate
-                | DeclRef::Let(_)
-                | DeclRef::Cell(_)
-                | DeclRef::Fn(_)
-                | DeclRef::Pattern(_) => {
+                DeclRef::Let(at) => match self.let_reference_row(at, node, field)? {
+                    Ok(row) => row,
+                    Err(declined) => return Ok(Err(declined)),
+                },
+                DeclRef::Cell(at) => match self.cell_member(at, node, field)? {
+                    Ok(end) => end,
+                    Err(declined) => return Ok(Err(declined)),
+                },
+                DeclRef::None | DeclRef::Duplicate | DeclRef::Fn(_) | DeclRef::Pattern(_) => {
                     return Ok(Err(Declined(Reason::Member)));
                 }
             }
@@ -439,9 +444,27 @@ impl Core<'_> {
             if self.per_inst_paths.contains(&receiver) {
                 return Ok(Err(Declined(Reason::Member)));
             }
+            if self.array_members.contains_key(&receiver) || self.cell_sizes.contains_key(&receiver)
+            {
+                let text = self.ir.name_text(field).unwrap_or_default().to_string();
+                self.draw_at(
+                    Code::UnknownAttribute,
+                    node,
+                    format!(
+                        "`.{text}` reads an attribute of an instance or a wire, and this is a value"
+                    ),
+                )?;
+                return Ok(Ok(End::Value));
+            }
             *ends
                 .get(&receiver)
                 .ok_or(Internal::missed("a path's receiver"))?
+        } else if let Some(count) = match self.literal_array_length(receiver, field)? {
+            Some(count) => Some(count),
+            None => self.element_array_length(receiver, field)?,
+        } {
+            self.array_members.insert(node, i128::from(count));
+            End::Value
         } else {
             return Ok(Err(Declined(Reason::Member)));
         };
@@ -735,7 +758,7 @@ impl Core<'_> {
             if self.ir.dropped(item) {
                 continue;
             }
-            let mut roots = vec![wire.default];
+            let mut roots = vec![wire.default, wire.gate];
             let entries = self
                 .ir
                 .attr_entries
@@ -1195,11 +1218,10 @@ impl Core<'_> {
                         .get(members.0 as usize..members.1 as usize)
                         .unwrap_or_default(),
                 ),
-                ItemRec::Wire(_)
-                | ItemRec::Bundle(_)
-                | ItemRec::For(_)
-                | ItemRec::When(_)
-                | ItemRec::Paren(_) => {}
+                ItemRec::When(_) => items.extend(self.when_items(item)),
+                ItemRec::Paren(inner) if inner != NONE => items.push(inner),
+                ItemRec::Bundle(_) => items.extend(self.bundle_items(item)),
+                ItemRec::Wire(_) | ItemRec::For(_) | ItemRec::Paren(_) => {}
             }
         }
         Ok(false)
@@ -1525,11 +1547,10 @@ impl Core<'_> {
                         .get(members.0 as usize..members.1 as usize)
                         .unwrap_or_default(),
                 ),
-                ItemRec::Wire(_)
-                | ItemRec::Bundle(_)
-                | ItemRec::For(_)
-                | ItemRec::When(_)
-                | ItemRec::Paren(_) => {}
+                ItemRec::When(_) => items.extend(self.when_items(item)),
+                ItemRec::Paren(inner) if inner != NONE => items.push(inner),
+                ItemRec::Bundle(_) => items.extend(self.bundle_items(item)),
+                ItemRec::Wire(_) | ItemRec::For(_) | ItemRec::Paren(_) => {}
             }
         }
         Ok(None)
@@ -1692,11 +1713,10 @@ impl Core<'_> {
                         .get(members.0 as usize..members.1 as usize)
                         .unwrap_or_default(),
                 ),
-                ItemRec::Wire(_)
-                | ItemRec::Bundle(_)
-                | ItemRec::For(_)
-                | ItemRec::When(_)
-                | ItemRec::Paren(_) => {}
+                ItemRec::When(_) => items.extend(self.when_items(item)),
+                ItemRec::Paren(inner) if inner != NONE => items.push(inner),
+                ItemRec::Bundle(_) => items.extend(self.bundle_items(item)),
+                ItemRec::Wire(_) | ItemRec::For(_) | ItemRec::Paren(_) => {}
             }
         }
         Ok(None)
@@ -1842,5 +1862,224 @@ impl Core<'_> {
             }
         }
         Ok(Ok(first.unwrap_or(End::Placeholder)))
+    }
+}
+
+impl Core<'_> {
+    fn let_reference_row(&mut self, at: u32, node: u32, field: u32) -> Stage<End> {
+        let root = self.let_root(at)?;
+        if self.body_of.get(self.local(root)?).copied().unwrap_or(NONE) != NONE {
+            let Some(count) = self.literal_array_length(root, field)? else {
+                return Ok(Err(Declined(Reason::Member)));
+            };
+            self.array_members.insert(node, i128::from(count));
+            return Ok(Ok(End::Value));
+        }
+        if self.let_reads_cell(at)? {
+            return Ok(Ok(End::Placeholder));
+        }
+        if !self.path_free_let(at)? {
+            return Ok(Err(Declined(Reason::Member)));
+        }
+        let fact = match self.ensure_typed(root)? {
+            Ok(fact) => fact,
+            Err(declined) => return Ok(Err(declined)),
+        };
+        if matches!(fact.leaf, Leaf::Placeholder) {
+            return Ok(Ok(End::Placeholder));
+        }
+        if fact.leaf == Leaf::Error && !fact.node {
+            return Ok(Ok(End::Placeholder));
+        }
+        if !fact.node {
+            return self.let_member(node, field, &fact);
+        }
+        if !fact.dims.is_empty() {
+            return Ok(Err(Declined(Reason::Member)));
+        }
+        let (drawn, stop) = (self.diagnostics.len(), self.stop.clone());
+        let value = self.evaluate(root, EvalTy::Exact)?;
+        self.diagnostics.truncate(drawn);
+        self.stop = stop;
+        Ok(Ok(match value {
+            Ok(CoreValue::Node(row)) if row != NONE => End::Row(row),
+            Ok(_) => End::Placeholder,
+            Err(declined) => return Ok(Err(declined)),
+        }))
+    }
+}
+
+impl Core<'_> {
+    fn let_member(&mut self, node: u32, field: u32, fact: &Fact) -> Stage<End> {
+        let text = self.ir.name_text(field).unwrap_or_default().to_string();
+        let member = matches!(text.as_str(), "size" | "capacity");
+        let length = fact.dims.first().copied();
+        let numeric = matches!(
+            fact.leaf,
+            Leaf::Int | Leaf::Float | Leaf::Bool | Leaf::Enum(_)
+        );
+        if member && numeric && !fact.dims.is_empty() && length != Some(ANY_LENGTH) {
+            self.array_members
+                .insert(node, i128::from(length.unwrap_or(0)));
+            return Ok(Ok(End::Value));
+        }
+        let declared = self
+            .ir
+            .name(field)
+            .and_then(|entry| self.decl.get(entry.sym.0 as usize))
+            .is_some_and(|decl| *decl != DeclRef::None);
+        if member && numeric && fact.dims.is_empty() && !declared {
+            self.draw_at(
+                Code::UnknownAttribute,
+                node,
+                format!(
+                    "`.{text}` reads an attribute of an instance or a wire, and this is a value"
+                ),
+            )?;
+            return Ok(Ok(End::Value));
+        }
+        Ok(Err(Declined(Reason::Member)))
+    }
+}
+
+impl Core<'_> {
+    fn path_free_let(&mut self, at: u32) -> Result<bool, Internal> {
+        if let Some(known) = self.path_free.get(&at) {
+            return Ok(*known);
+        }
+        let mut lets = vec![at];
+        let mut seen = std::collections::HashSet::new();
+        let found = self.path_free_walk(&mut lets, &mut seen);
+        let free = found?;
+        for at in seen {
+            if free {
+                self.path_free.insert(at, true);
+            }
+        }
+        self.path_free.insert(at, free);
+        Ok(free)
+    }
+
+    fn path_free_walk(
+        &self,
+        lets: &mut Vec<u32>,
+        seen: &mut std::collections::HashSet<u32>,
+    ) -> Result<bool, Internal> {
+        while let Some(at) = lets.pop() {
+            if !seen.insert(at) {
+                continue;
+            }
+            if self.path_free.get(&at) == Some(&true) {
+                continue;
+            }
+            for read in self.postorder(self.let_root(at)?)? {
+                let op = self.ir.node(read)?.0;
+                if matches!(
+                    op,
+                    Op::Field
+                        | Op::To
+                        | Op::Call
+                        | Op::NamedCall
+                        | Op::MethodCall
+                        | Op::NamedMethodCall
+                ) {
+                    return Ok(false);
+                }
+                if op == Op::Name
+                    && let DeclRef::Let(other) = self.bound(read)?
+                {
+                    lets.push(other);
+                }
+            }
+        }
+        Ok(true)
+    }
+}
+
+impl Core<'_> {
+    fn cell_member(&mut self, at: u32, node: u32, field: u32) -> Stage<End> {
+        let text = self.ir.name_text(field).unwrap_or_default().to_string();
+        let member = matches!(text.as_str(), "size" | "capacity");
+        let annotation = self.ir.binder(self.cell_binder(at)?)?.annotation;
+        if annotation == NONE {
+            if !member {
+                return Ok(Err(Declined(Reason::Member)));
+            }
+            self.cell_sizes.insert(node, at);
+            return Ok(Ok(End::Value));
+        }
+        let (op, _, held, levels) = self.ir.node(annotation)?;
+        let variable = op == Op::TyVar && text == "capacity";
+        let fixed = op == Op::TyArray
+            && levels == 1
+            && held != ANY_LENGTH
+            && matches!(text.as_str(), "size" | "capacity");
+        if !(variable || fixed) {
+            if member && (op == Op::TyScalar || op == Op::TyVar && levels == 1) {
+                self.cell_sizes.insert(node, at);
+                return Ok(Ok(End::Value));
+            }
+            return Ok(Err(Declined(Reason::Member)));
+        }
+        self.array_members.insert(node, i128::from(held));
+        Ok(Ok(End::Value))
+    }
+}
+
+impl Core<'_> {
+    fn literal_array_length(&self, receiver: u32, field: u32) -> Result<Option<u32>, Internal> {
+        let text = self.ir.name_text(field).unwrap_or_default();
+        if !matches!(text, "size" | "capacity") {
+            return Ok(None);
+        }
+        let (op, start, count, _) = self.ir.node(receiver)?;
+        if op != Op::Array || count == 0 {
+            return Ok(None);
+        }
+        let mut kinds = Vec::new();
+        for at in start..start + count {
+            let element = self.ir.node(self.kid(at)?)?.0;
+            if !matches!(element, Op::Int | Op::Float) {
+                return Ok(None);
+            }
+            kinds.push(element);
+        }
+        Ok((!kinds.is_empty()).then_some(count))
+    }
+}
+
+impl Core<'_> {
+    fn element_array_length(&mut self, receiver: u32, field: u32) -> Result<Option<u32>, Internal> {
+        let text = self.ir.name_text(field).unwrap_or_default();
+        if !matches!(text, "size" | "capacity") {
+            return Ok(None);
+        }
+        let (op, base, index, _) = self.ir.node(receiver)?;
+        if op != Op::Index || self.ir.node(base)?.0 != Op::Name || self.ir.node(index)?.0 != Op::Int
+        {
+            return Ok(None);
+        }
+        let DeclRef::Let(at) = self.bound(base)? else {
+            return Ok(None);
+        };
+        let root = self.let_root(at)?;
+        if self.body_of.get(self.local(root)?).copied().unwrap_or(NONE) != NONE
+            || self.let_reads_cell(at)?
+            || !self.path_free_let(at)?
+        {
+            return Ok(None);
+        }
+        let Ok(fact) = self.ensure_typed(root)? else {
+            return Ok(None);
+        };
+        let numeric = matches!(fact.leaf, Leaf::Int | Leaf::Float);
+        let (Some(outer), Some(inner)) = (fact.dims.first(), fact.dims.get(1)) else {
+            return Ok(None);
+        };
+        let Ok(Ok(CoreValue::Int(position))) = self.evaluate(index, EvalTy::Exact) else {
+            return Ok(None);
+        };
+        let inside = (0..i128::from(*outer)).contains(&position);
+        Ok((numeric && inside && *inner != ANY_LENGTH && *outer != ANY_LENGTH).then_some(*inner))
     }
 }

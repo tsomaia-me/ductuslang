@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use super::annotation::Refusal;
+use super::call_chain::CallChain;
 use super::core::{Core, Stage};
 use super::core_value::CoreValue;
 use super::decl_ref::DeclRef;
@@ -128,27 +129,52 @@ impl Core<'_> {
         Ok(match (x, y) {
             (Leaf::Bool, _) | (_, Leaf::Bool) => EvalTy::Bool,
             (Leaf::Float, _) | (_, Leaf::Float) => {
-                let mut wide = false;
+                let (mut host, mut derived, mut argument, mut literal) =
+                    (false, false, false, false);
                 for (operand, fact) in [(a, &left), (b, &right)] {
-                    wide |= fact.leaf == Leaf::Float && self.is_reactive(operand)?;
-                    wide |= self.own_float(operand)? == EvalTy::F64;
+                    let (op, x, y, _) = self.ir.node(operand)?;
+                    let narrow_division = op == Op::Div
+                        && fact.dims.is_empty()
+                        && self.division_ty(x, y)? == EvalTy::F32;
+                    if fact.leaf == Leaf::Float && self.is_reactive(operand)? && !narrow_division {
+                        let (reads_host, reads_derived) = self.reactive_reads(operand)?;
+                        host |= reads_host;
+                        derived |= reads_derived;
+                        argument |= !reads_host && !reads_derived;
+                    }
+                    literal |= self.own_float(operand)? == EvalTy::F64;
                 }
-                if wide { EvalTy::F64 } else { EvalTy::F32 }
+                if host || literal && (!argument || derived) {
+                    EvalTy::F64
+                } else {
+                    EvalTy::F32
+                }
             }
             _ => EvalTy::Exact,
         })
     }
 
     fn visit(&mut self, node: u32, ty: EvalTy, steps: &mut Vec<Step>) -> Result<(), Internal> {
+        if self.unbound_nodes.contains(&node) {
+            steps.push(Step::Runtime(0));
+            return Ok(());
+        }
         let (op, a, b, _) = self.ir.node(node)?;
+        let deferred = matches!(ty, EvalTy::DefaultF32 | EvalTy::DefaultF64).then_some(ty);
+        let ty = if deferred.is_some() {
+            evaluated_in(ty)
+        } else {
+            ty
+        };
         steps.push(Step::Apply(node, ty));
         let flows = !self.unflowed.remove(&node);
         if matches!(op, Op::Name | Op::Field) && !flows {
             self.unflowed.insert(node);
         }
         self.mark_unused_reads(op, node)?;
+        self.mark_unexpected_reads(op, node)?;
         let float = matches!(ty, EvalTy::F32 | EvalTy::F64);
-        let (mut integer_flow, mut picked) = (false, false);
+        let (mut integer_flow, mut picked, mut float_pair) = (false, false, false);
         let operands: Vec<(u32, EvalTy)> = match op {
             Op::Neg
             | Op::Add
@@ -174,10 +200,24 @@ impl Core<'_> {
             Op::Neg | Op::Add | Op::Sub | Op::Mul | Op::Rem | Op::Pow => self
                 .operands(node)?
                 .into_iter()
-                .map(|at| (at, ty))
+                .map(|at| (at, deferred.unwrap_or(ty)))
                 .collect(),
+            Op::Div if deferred.is_some() => {
+                let default = deferred.unwrap_or(ty);
+                for operand in [b, a] {
+                    self.unflowed.insert(operand);
+                    let fact = self.fact(operand)?;
+                    if fact.fixed.is_none() && fact.dims.is_empty() && fact.leaf == Leaf::Int {
+                        steps.push(Step::Float(operand, ty));
+                        steps.push(Step::Visit(operand, EvalTy::Exact));
+                    } else {
+                        steps.push(Step::Visit(operand, default));
+                    }
+                }
+                return Ok(());
+            }
             Op::Div if !float => {
-                let defaulted = self.fact(a)?.fixed.is_none() && self.fact(b)?.fixed.is_none();
+                let defaulted = self.fact(a)?.own().is_none() && self.fact(b)?.own().is_none();
                 let target = self.division_ty(a, b)?;
                 for operand in [b, a] {
                     self.unflowed.insert(operand);
@@ -210,6 +250,7 @@ impl Core<'_> {
             }
             Op::Lt | Op::Le | Op::Gt | Op::Ge | Op::Is | Op::IsNot => {
                 let pair = self.pair_ty(a, b)?;
+                self.defer_compared_fit(a, b, pair)?;
                 if pair == EvalTy::Exact {
                     for operand in [b, a] {
                         self.unflowed.insert(operand);
@@ -221,10 +262,67 @@ impl Core<'_> {
                     }
                     return Ok(());
                 }
+                float_pair = matches!(pair, EvalTy::F32 | EvalTy::F64)
+                    && combined(self.fact(a)?.own(), self.fact(b)?.own(), true).is_none()
+                    && !self.is_reactive(node)?;
                 vec![(a, pair), (b, pair)]
             }
             Op::And | Op::Or => vec![(a, EvalTy::Bool), (b, EvalTy::Bool)],
             Op::Not => vec![(a, EvalTy::Bool)],
+            Op::Call if self.math_name(node)?.is_some_and(super::calls::float_math) => {
+                let target = match ty {
+                    EvalTy::F32 | EvalTy::F64 => ty,
+                    _ => match self.fact(node)?.own() {
+                        Some(EvalTy::F64) => EvalTy::F64,
+                        _ => EvalTy::F32,
+                    },
+                };
+                for arg in self.arguments(node)?.into_iter().rev() {
+                    self.unflowed.insert(arg);
+                    let fact = self.fact(arg)?;
+                    match (fact.fixed, fact.read) {
+                        _ if fact.leaf != Leaf::Int
+                            || !fact.dims.is_empty()
+                            || deferred.is_none() && matches!(ty, EvalTy::F32 | EvalTy::F64) =>
+                        {
+                            steps.push(Step::Visit(arg, target));
+                        }
+                        (None, None) => {
+                            steps.push(Step::Float(arg, target));
+                            steps.push(Step::Visit(arg, EvalTy::Exact));
+                        }
+                        (Some(own), _) => {
+                            steps.push(Step::Widen(target));
+                            steps.push(Step::Visit(arg, own));
+                        }
+                        (None, Some(_)) => steps.push(Step::Visit(arg, target)),
+                    }
+                }
+                return Ok(());
+            }
+            Op::Call if self.math_name(node)? == Some("rand") => {
+                for arg in self.arguments(node)?.into_iter().rev() {
+                    self.unflowed.insert(arg);
+                    steps.push(Step::Fit(arg, EvalTy::I64));
+                    steps.push(Step::Visit(arg, EvalTy::Exact));
+                }
+                return Ok(());
+            }
+            Op::NamedCall
+                if self.math_named(node)?.is_some() || self.native_named(node)?.is_some() =>
+            {
+                Vec::new()
+            }
+            Op::Call
+                if self.math_call(node)?
+                    || self.math_miscount(node)?.is_some()
+                    || self.native_miscount(node)?.is_some() =>
+            {
+                self.arguments(node)?
+                    .into_iter()
+                    .map(|arg| (arg, ty))
+                    .collect()
+            }
             Op::Call | Op::NamedCall => {
                 steps.pop();
                 steps.push(Step::Enter(node, ty));
@@ -232,6 +330,7 @@ impl Core<'_> {
                 for arg in self.arguments(node)? {
                     let arg_ty = match self.fact(arg)?.fixed {
                         Some(_) => self.own_ty(arg)?.unwrap_or(EvalTy::Exact),
+                        None if self.flexible_integer(arg)? => flexible(ty),
                         None => ty,
                     };
                     operands.push((arg, arg_ty));
@@ -253,11 +352,20 @@ impl Core<'_> {
                 if own == EvalTy::Exact && self.fact(a)?.fixed.is_none() {
                     steps.push(Step::Fit(a, EvalTy::I64));
                 }
-                let divided = self.ir.node(a)?.0 == Op::Div
-                    && operand.own().is_none()
+                let loose = operand.own().is_none()
+                    && operand.dims.is_empty()
                     && matches!(own, EvalTy::F32 | EvalTy::F64)
                     && !self.is_reactive(a)?;
-                vec![(a, if divided { EvalTy::Exact } else { own })]
+                let into_float = target.filter(|target| is_fixed_float(*target));
+                let read_ty = match into_float {
+                    Some(target) if loose => target,
+                    Some(_) => own,
+                    None if loose && self.ir.node(a)?.0 == Op::Div => EvalTy::Exact,
+                    None if loose && own == EvalTy::F64 => EvalTy::DefaultF64,
+                    None if loose => EvalTy::DefaultF32,
+                    None => own,
+                };
+                vec![(a, read_ty)]
             }
             Op::If => {
                 steps.pop();
@@ -284,7 +392,9 @@ impl Core<'_> {
                 }
                 None => vec![(a, ty), (b, self.integral(b)?)],
             },
-            Op::Past if self.is_own_history(node) => Vec::new(),
+            Op::Past if self.is_own_history(node) || matches!(self.bound(a)?, DeclRef::Let(_)) => {
+                Vec::new()
+            }
             Op::Past => vec![(a, ty)],
             Op::Slice => {
                 let mut operands = vec![(a, ty)];
@@ -399,7 +509,42 @@ impl Core<'_> {
                 steps.push(Step::Visit(operand, EvalTy::Exact));
                 continue;
             }
-            let apart = reactive && stopped && !self.is_reactive(operand)?;
+            if runtime
+                && matches!(operand_ty, EvalTy::F32 | EvalTy::F64)
+                && self.loose_float(operand)?
+            {
+                steps.push(Step::FloatFit(operand, operand_ty));
+                steps.push(Step::Visit(operand, operand_ty));
+                continue;
+            }
+            if compared
+                && matches!(operand_ty, EvalTy::F32 | EvalTy::F64)
+                && self.loose_float(operand)?
+            {
+                if float_pair {
+                    steps.push(Step::Widen(EvalTy::F64));
+                    steps.push(Step::FloatChoose(operand));
+                    steps.push(Step::Visit(operand, EvalTy::DefaultF64));
+                } else {
+                    steps.push(Step::FloatFit(operand, operand_ty));
+                    steps.push(Step::Visit(operand, operand_ty));
+                }
+                continue;
+            }
+            if float_pair {
+                steps.push(Step::Widen(EvalTy::F64));
+            }
+            if compared && !reactive && !self.owning && self.fact(operand)?.own().is_some() {
+                steps.push(Step::Owning(false));
+                steps.push(Step::Widen(operand_ty));
+                steps.push(Step::Visit(
+                    operand,
+                    self.own_ty(operand)?.unwrap_or(operand_ty),
+                ));
+                steps.push(Step::Owning(true));
+                continue;
+            }
+            let apart = (reactive && stopped && !self.is_reactive(operand)?) || compared;
             match self.own_width(operand, operand_ty, apart)? {
                 Some(own) if arithmetic || apart => {
                     steps.push(Step::Widen(operand_ty));
@@ -461,16 +606,16 @@ impl Core<'_> {
 
     pub fn evaluate(&mut self, root: u32, ty: EvalTy) -> Stage<CoreValue> {
         let inst = self.inst;
-        let chain = self.eval_chain.clone();
+        let (depth, chain) = (self.eval_chain.len(), self.eval_chain.id());
         let from = self.init_reads.len();
         let outcome = self.evaluate_frames(root, ty);
         self.flush_init_reads(from)?;
         self.inst = inst;
-        self.eval_chain = chain;
+        self.chain_arena.restore(&mut self.eval_chain, depth, chain);
         outcome
     }
 
-    fn enter_let_frame(&mut self, outer_chains: &mut Vec<Vec<u32>>) {
+    fn enter_let_frame(&mut self, outer_chains: &mut Vec<CallChain>) {
         if !self.eval_chain.is_empty() {
             self.unmemoized();
         }
@@ -479,7 +624,7 @@ impl Core<'_> {
 
     fn evaluate_frames(&mut self, root: u32, ty: EvalTy) -> Stage<CoreValue> {
         let ty = evaluated_in(ty);
-        let mut outer_chains: Vec<Vec<u32>> = Vec::new();
+        let mut outer_chains: Vec<CallChain> = Vec::new();
         let mut open: std::collections::HashSet<u32> = std::collections::HashSet::new();
         let unit = match self.default_scale {
             Some((scaled, family, unit, _)) if scaled == root => {
@@ -634,7 +779,11 @@ impl Core<'_> {
                         }
                         continue;
                     }
-                    if op == Op::Field && self.bare_cell_read(node)?.is_some() {
+                    if op == Op::Field
+                        && (self.array_members.contains_key(&node)
+                            || self.runtime_members.contains(&node)
+                            || self.bare_cell_read(node)?.is_some())
+                    {
                         let Some(frame) = frames.last_mut() else {
                             return Err(Internal::missed("evaluation frame"));
                         };
@@ -763,6 +912,23 @@ impl Core<'_> {
                                 {
                                     self.bind_init_read(node, argument, node_ty);
                                 }
+                                let argued = called.or_else(|| {
+                                    self.own_calls
+                                        .iter()
+                                        .rev()
+                                        .find(|(_, inst, _)| {
+                                            self.bodies
+                                                .get(*inst as usize)
+                                                .is_some_and(|body| body.function == owner)
+                                        })
+                                        .map(|(call, _, _)| *call)
+                                });
+                                let value = match argued {
+                                    Some(call) => {
+                                        self.parameter_fit(call, position, node, node_ty, value)?
+                                    }
+                                    None => value,
+                                };
                                 let value = match self
                                     .loop_element(node, owner, position, node_ty, &value)?
                                 {
@@ -895,6 +1061,8 @@ impl Core<'_> {
                         }
                         let let_ty = if self.fact(self.let_root(at)?)?.fixed.is_some() {
                             evaluated_in(node_ty)
+                        } else if matches!(node_ty, EvalTy::DefaultF32 | EvalTy::DefaultF64) {
+                            node_ty
                         } else {
                             flexible(node_ty)
                         };
@@ -1108,7 +1276,7 @@ impl Core<'_> {
                     if let Some(key) = key {
                         self.begin_recording(key, frames.len() + 1);
                     }
-                    self.eval_chain.push(call);
+                    self.push_call(call);
                     frames.push(Frame {
                         owner: None,
                         ty: call_ty,
@@ -1202,9 +1370,21 @@ impl Core<'_> {
                     {
                         let value = value.clone();
                         let links = self.use_links.iter().map(|(item, _)| *item).collect();
+                        CountedWalk::CoreCallChain.step_by(self.eval_chain.len());
                         self.uses
-                            .entry((read, class(read_ty), self.eval_chain.clone(), links))
+                            .entry((read, class(read_ty), self.eval_chain.to_vec(), links))
                             .or_insert(((element, target), value));
+                    }
+                }
+                Step::Owning(owning) => self.owning = owning,
+                Step::FloatChoose(operand) => {
+                    if let Some(value) = frame.values.pop() {
+                        self.float_choose(operand, value, &mut frame.steps, &mut frame.values)?;
+                    }
+                }
+                Step::FloatFit(operand, fit_ty) => {
+                    if let Some(value) = frame.values.pop() {
+                        self.float_fit(operand, value, fit_ty, &mut frame.values)?;
                     }
                 }
                 Step::Scale(node) => {
@@ -1219,11 +1399,11 @@ impl Core<'_> {
                     } else {
                         self.in_default_unit(node, value, family, unit)?
                     };
-                    if self.fixed_root_outside(node, &value)? {
-                        return Ok(Err(super::declined::Declined(
-                            super::reason::Reason::UnitAttribute,
-                        )));
-                    }
+                    let value = if self.fixed_root_outside(node, &value)? {
+                        self.saturated_root(node, value)?
+                    } else {
+                        value
+                    };
                     if let Some(frame) = frames.last_mut() {
                         frame.values.push(value);
                     }
@@ -1283,6 +1463,21 @@ impl Core<'_> {
                 DeclRef::Cell(at) => match self.read_cell(at, node, ty, unflowed)? {
                     Ok(value) => value,
                     Err(declined) => return Ok(Err(declined)),
+                },
+                DeclRef::None if self.pi.contains(&node) => match ty {
+                    EvalTy::F32 => Value::F32(std::f32::consts::PI),
+                    EvalTy::F64 => Value::F64(std::f64::consts::PI),
+                    EvalTy::Exact
+                    | EvalTy::Default
+                    | EvalTy::U8
+                    | EvalTy::I32
+                    | EvalTy::I64
+                    | EvalTy::DefaultF32
+                    | EvalTy::DefaultF64
+                    | EvalTy::Bool
+                    | EvalTy::Enum(_)
+                    | EvalTy::Str
+                    | EvalTy::Node => Value::Error,
                 },
                 DeclRef::None if self.is_bare(node) => self.variant_value(node)?,
                 DeclRef::Duplicate
@@ -1395,7 +1590,7 @@ impl Core<'_> {
                 )?
             }
             Op::Past => {
-                if !self.is_own_history(node) {
+                if !self.is_own_history(node) && !matches!(self.bound(a)?, DeclRef::Let(_)) {
                     pop(stack)?;
                     self.pass_init_read(node, a);
                 }
@@ -1403,6 +1598,10 @@ impl Core<'_> {
             }
             Op::Stepped => Value::Error,
             Op::Variant => self.variant_value(node)?,
+            Op::Field if self.runtime_members.contains(&node) => Value::Error,
+            Op::Field if self.array_members.contains_key(&node) => {
+                Value::Int(self.array_members.get(&node).copied().unwrap_or(0))
+            }
             Op::Field => match self.bare_cell_read(node)? {
                 Some(at) => match self.read_cell(at, node, ty, unflowed)? {
                     Ok(value) => value,
@@ -1410,6 +1609,55 @@ impl Core<'_> {
                 },
                 None => return Err(Internal::missed("a path read of a cell")),
             },
+            Op::NamedCall
+                if self.math_named(node)?.is_some() || self.native_named(node)?.is_some() =>
+            {
+                Value::Error
+            }
+            Op::Call
+                if self.math_miscount(node)?.is_some() || self.native_miscount(node)?.is_some() =>
+            {
+                for _ in self.arguments(node)? {
+                    pop(stack)?;
+                }
+                Value::Error
+            }
+            Op::Call if self.math_call(node)? => {
+                let name = self.math_name(node)?.unwrap_or_default();
+                let arity = super::calls::math_arity(name).unwrap_or(1) as usize;
+                let mut args = Vec::with_capacity(arity);
+                for _ in 0..arity {
+                    args.push(pop(stack)?);
+                }
+                args.reverse();
+                match (name, args.as_slice()) {
+                    ("abs", [Value::Int(value)]) => crate::semantics::operators::integer(
+                        self,
+                        node,
+                        ty,
+                        Some(value.saturating_abs()),
+                    )?,
+                    ("abs", [other]) => absolute(other.clone()),
+                    ("min", [x, y]) => least(x, y, true),
+                    ("max", [x, y]) => least(x, y, false),
+                    ("clamp", [x, lo, hi]) => least(&least(x, lo, false), hi, true),
+                    ("rand", [Value::Int(seed), Value::Int(n)]) => {
+                        match (i64::try_from(*seed), i64::try_from(*n)) {
+                            (Ok(seed), Ok(n)) => Value::F32(symphonyscript_core::rand(seed, n)),
+                            _ => Value::Error,
+                        }
+                    }
+                    ("lerp", [Value::F32(a), Value::F32(b), Value::F32(t)]) => {
+                        Value::F32(a + (b - a) * t)
+                    }
+                    ("lerp", [Value::F64(a), Value::F64(b), Value::F64(t)]) => {
+                        Value::F64(a + (b - a) * t)
+                    }
+                    (name, [Value::F32(x)]) => Value::F32(float_fn32(name, *x)),
+                    (name, [Value::F64(x)]) => Value::F64(float_fn64(name, *x)),
+                    _ => Value::Error,
+                }
+            }
             Op::If
             | Op::Str
             | Op::Call
@@ -1437,6 +1685,7 @@ impl Core<'_> {
                 .get_mut(at as usize)
                 .and_then(|reads| reads.get_mut(class(ty)))
             && slot.is_none()
+            && !self.compared_reads.contains(&node)
         {
             *slot = Some((ty, unflowed));
             self.read_log.push(at);
@@ -1473,6 +1722,7 @@ impl Core<'_> {
         }
         let side = match class(ty) {
             _ if self.unused_reads.remove(&(self.inst, node)) => None,
+            _ if self.unexpected_reads.remove(&(self.inst, node)) => Some(0),
             _ if self.owning => Some(0),
             1 | 2 => Some(1),
             3 => None,
@@ -1569,7 +1819,7 @@ impl Core<'_> {
         Ok(false)
     }
 
-    fn own_float(&self, root: u32) -> Result<EvalTy, Internal> {
+    pub fn own_float(&self, root: u32) -> Result<EvalTy, Internal> {
         for node in self.postorder(root)? {
             let (op, a, _, _) = self.ir.node(node)?;
             if op == Op::Float
@@ -1608,6 +1858,46 @@ impl Core<'_> {
         })
     }
 
+    fn flexible_integer(&self, arg: u32) -> Result<bool, Internal> {
+        let fact = self.fact(arg)?;
+        Ok(fact.fixed.is_none()
+            && fact.leaf == Leaf::Int
+            && fact.dims.is_empty()
+            && !self.is_reactive(arg)?)
+    }
+
+    fn parameter_fit(
+        &mut self,
+        call: u32,
+        position: u32,
+        read: u32,
+        read_ty: EvalTy,
+        value: CoreValue,
+    ) -> Result<CoreValue, Internal> {
+        if !matches!(
+            self.ir.node(call).map(|node| node.0),
+            Ok(Op::Call | Op::NamedCall)
+        ) {
+            return Ok(value);
+        }
+        let Some(argument) = self.arguments(call)?.get(position as usize).copied() else {
+            return Ok(value);
+        };
+        if let Value::Int(held) = &value
+            && (4..=6).contains(&class(read_ty))
+            && int_range(read_ty).is_some_and(|range| !range.contains(held))
+            && self.flexible_integer(argument)?
+        {
+            self.draw_at(
+                Code::DoesNotFit,
+                read,
+                format!("this value does not fit `{}`", ty_name(read_ty)),
+            )?;
+            return Ok(Value::Error);
+        }
+        Ok(value)
+    }
+
     pub fn own_ty(&self, node: u32) -> Result<Option<EvalTy>, Internal> {
         let fact = self.fact(node)?;
         if let Some(fixed) = fact.own()
@@ -1644,7 +1934,10 @@ impl Core<'_> {
     fn quiet_pick(&self, read: u32) -> Result<bool, Internal> {
         let (_, a, _, _) = self.ir.node(read)?;
         Ok(match self.view(a)? {
-            Some((array, _)) => matches!(self.fact(array)?.leaf, Leaf::Placeholder | Leaf::Error),
+            Some((array, _)) => {
+                let fact = self.fact(array)?;
+                matches!(fact.leaf, Leaf::Placeholder | Leaf::Error) && !fact.node
+            }
             None => false,
         })
     }
@@ -1943,10 +2236,23 @@ impl Core<'_> {
                 }
                 Op::Call | Op::NamedCall => {
                     let mut args = Vec::new();
+                    let body_float = self.body_float(node)?;
                     for arg in self.arguments(node)? {
                         let held = match self.own_ty(arg)? {
                             Some(own) if !self.is_kept(arg)? && !self.is_reactive(arg)? => {
                                 self.unflowed.insert(arg);
+                                let loose = self.fact(arg)?;
+                                let own = if self.flexible_integer(arg)? {
+                                    flexible(own)
+                                } else if let Some(float) = body_float
+                                    && loose.fixed.is_none()
+                                    && loose.leaf == Leaf::Float
+                                    && loose.dims.is_empty()
+                                {
+                                    float
+                                } else {
+                                    own
+                                };
                                 match self.evaluate(arg, own)? {
                                     Ok(value) => Some(value),
                                     Err(declined) => return Ok(Err(declined)),
@@ -1968,7 +2274,7 @@ impl Core<'_> {
                     if let Some(body) = self.body_of_call(node) {
                         let value = self.body_value(body)?;
                         leaves.push(std::mem::replace(&mut self.inst, body));
-                        self.eval_chain.push(node);
+                        self.push_call(node);
                         self.own_calls.push((node, body, args));
                         stack.push((NONE, false));
                         stack.push((value, false));
@@ -2243,6 +2549,87 @@ impl Core<'_> {
         Ok(local && self.is_reactive(self.let_root(at)?)?)
     }
 
+    fn mark_unexpected_reads(&mut self, op: Op, node: u32) -> Result<(), Internal> {
+        if matches!(op, Op::Name | Op::Field) {
+            return Ok(());
+        }
+        let inherited = self.unexpected_reads.remove(&(self.inst, node));
+        let marked: Vec<u32> = match op {
+            Op::Lt | Op::Le | Op::Gt | Op::Ge | Op::Is | Op::IsNot => {
+                let mut marked = Vec::new();
+                for operand in self.operands(node)? {
+                    if self.fact(operand)?.leaf != Leaf::Int {
+                        marked.push(operand);
+                    }
+                }
+                marked
+            }
+            Op::Convert if !self.fact(node)?.fixed.is_some_and(is_fixed_float) => {
+                self.operands(node)?
+            }
+            Op::Call if inherited && self.math_call(node)? => self.operands(node)?,
+            Op::Neg
+            | Op::Add
+            | Op::Sub
+            | Op::Mul
+            | Op::Div
+            | Op::IntDiv
+            | Op::Rem
+            | Op::Pow
+            | Op::If
+            | Op::Array
+            | Op::Index
+            | Op::IndexFromEnd
+            | Op::Slice
+                if inherited =>
+            {
+                self.operands(node)?
+            }
+            Op::Int
+            | Op::Float
+            | Op::Bool
+            | Op::Str
+            | Op::Name
+            | Op::Variant
+            | Op::To
+            | Op::Convert
+            | Op::Field
+            | Op::Neg
+            | Op::Add
+            | Op::Sub
+            | Op::Mul
+            | Op::Div
+            | Op::IntDiv
+            | Op::Rem
+            | Op::Pow
+            | Op::If
+            | Op::Array
+            | Op::Index
+            | Op::IndexFromEnd
+            | Op::Slice
+            | Op::Call
+            | Op::NamedCall
+            | Op::MethodCall
+            | Op::NamedMethodCall
+            | Op::Past
+            | Op::Stepped
+            | Op::Not
+            | Op::And
+            | Op::Or
+            | Op::Match
+            | Op::For
+            | Op::TyScalar
+            | Op::TyName
+            | Op::TyArray
+            | Op::TyVar
+            | Op::Bad => Vec::new(),
+        };
+        for operand in marked {
+            self.unexpected_reads.insert((self.inst, operand));
+        }
+        Ok(())
+    }
+
     fn mark_unused_reads(&mut self, op: Op, node: u32) -> Result<(), Internal> {
         if matches!(op, Op::Name | Op::Field) {
             return Ok(());
@@ -2284,5 +2671,89 @@ impl Core<'_> {
         } else {
             arrays > 0
         })
+    }
+}
+
+fn absolute(value: CoreValue) -> CoreValue {
+    match value {
+        Value::F32(value) => Value::F32(value.abs()),
+        Value::F64(value) => Value::F64(value.abs()),
+        other => other,
+    }
+}
+
+fn least(x: &CoreValue, y: &CoreValue, min: bool) -> CoreValue {
+    let pick_x = |x_first: bool| if x_first == min { x.clone() } else { y.clone() };
+    match (x, y) {
+        (Value::Int(a), Value::Int(b)) => pick_x(a <= b),
+        (Value::F32(a), Value::F32(b)) => {
+            Value::F32(float_least(f64::from(*a), f64::from(*b), min) as f32)
+        }
+        (Value::F64(a), Value::F64(b)) => Value::F64(float_least(*a, *b, min)),
+        _ => Value::Error,
+    }
+}
+
+fn float_least(a: f64, b: f64, min: bool) -> f64 {
+    if a.is_nan() {
+        return b;
+    }
+    if b.is_nan() {
+        return a;
+    }
+    if a == b {
+        let negative = a.is_sign_negative() || b.is_sign_negative();
+        let positive = a.is_sign_positive() || b.is_sign_positive();
+        return match (min, negative, positive) {
+            (true, true, _) => -a.abs(),
+            (false, _, true) => a.abs(),
+            _ => a,
+        };
+    }
+    if (a < b) == min { a } else { b }
+}
+
+fn float_fn32(name: &str, x: f32) -> f32 {
+    match name {
+        "abs" => x.abs(),
+        "floor" => x.floor(),
+        "ceil" => x.ceil(),
+        "round" => x.round(),
+        "sqrt" => x.sqrt(),
+        "sin" => x.sin(),
+        "cos" => x.cos(),
+        "tan" => x.tan(),
+        "exp" => x.exp(),
+        "log" => x.ln(),
+        _ => f32::NAN,
+    }
+}
+
+fn float_fn64(name: &str, x: f64) -> f64 {
+    match name {
+        "abs" => x.abs(),
+        "floor" => x.floor(),
+        "ceil" => x.ceil(),
+        "round" => x.round(),
+        "sqrt" => x.sqrt(),
+        "sin" => x.sin(),
+        "cos" => x.cos(),
+        "tan" => x.tan(),
+        "exp" => x.exp(),
+        "log" => x.ln(),
+        _ => f64::NAN,
+    }
+}
+
+impl Core<'_> {
+    fn body_float(&mut self, call: u32) -> Result<Option<EvalTy>, Internal> {
+        let Some(body) = self.body_of_call(call) else {
+            return Ok(None);
+        };
+        let value = self.body_value(body)?;
+        let outer = std::mem::replace(&mut self.inst, body);
+        let own = self.own_ty(value);
+        self.inst = outer;
+        Ok(own?.filter(|ty| matches!(ty, EvalTy::F32 | EvalTy::F64)))
     }
 }

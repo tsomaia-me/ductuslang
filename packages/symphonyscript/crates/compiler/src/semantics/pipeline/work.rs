@@ -5,4 +5,5 @@ pub(crate) enum Work {
     Members(u32, u32, u32),
     Loop(LoopRun),
     Late(u32, u32),
+    Item(u32, u32),
 }

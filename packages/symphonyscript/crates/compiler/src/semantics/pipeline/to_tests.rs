@@ -102,15 +102,11 @@ fn a_to_path_draws_its_unknown_attribute_and_misplaced_to_faults_beside_its_vali
 }
 
 #[test]
-fn a_to_path_in_a_gate_or_a_named_wire_stays_with_the_old_engine() {
+fn a_to_path_in_a_named_wire_stays_with_the_old_engine() {
     let vocabulary = symphonyscript_fixtures::vocabulary();
     let new = Compiler::new(&vocabulary).expect("the vocabulary compiles");
-    for text in [
-        "Clip a:\n    Plays when to.gain > 0.5: b\nClip b:\n    Note/1\n",
-        "Clip a:\n    Plays as w | gain=to.gain: b\nClip b:\n    Note/1\n",
-    ] {
-        assert!(new.checked_by_new_core(&[source(text)]).is_none(), "{text}");
-    }
+    let text = "Clip a:\n    Plays as w | gain=to.gain: b\nClip b:\n    Note/1\n";
+    assert!(new.checked_by_new_core(&[source(text)]).is_none(), "{text}");
 }
 
 const PAIR: &str = "pattern Pair(default v):\n    Note as a /v\n    Note as b /v | velocity=0.5\n";

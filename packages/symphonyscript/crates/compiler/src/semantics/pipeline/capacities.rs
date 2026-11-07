@@ -1,6 +1,8 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 
 use super::bound_form::BoundForm;
+use super::call_chain::CallChain;
+use super::calls::chain_key;
 use super::core::Core;
 use super::core_value::CoreValue;
 use super::cycles::strongly_connected;
@@ -12,7 +14,7 @@ use super::leaf::Leaf;
 use super::piecewise::Piecewise;
 use super::ratio::Ratio;
 use super::slice_transform::slice_transform;
-use crate::diagnostics::Code;
+use crate::diagnostics::{Code, Diagnostic, Related};
 use crate::semantics::Internal;
 use crate::semantics::counted_walk::CountedWalk;
 use crate::semantics::ir::flat::{NONE, Op};
@@ -34,7 +36,7 @@ enum Checking {
 struct Reach {
     node: u32,
     inst: u32,
-    chain: Vec<u32>,
+    chain: CallChain,
     total: i128,
     fold: bool,
 }
@@ -44,6 +46,7 @@ struct Walk {
     frames: Vec<(u32, Vec<Option<Extent>>)>,
     checking: Checking,
     reached: Vec<Reach>,
+    accumulators: bool,
 }
 
 impl Walk {
@@ -53,6 +56,7 @@ impl Walk {
             frames: Vec::new(),
             checking,
             reached: Vec::new(),
+            accumulators: false,
         }
     }
 
@@ -146,6 +150,10 @@ impl Core<'_> {
         let annotated = self.annotated_capacities();
         self.inst = outer;
         annotated?;
+        let outer = self.inst;
+        let folds = self.compile_time_accumulators();
+        self.inst = outer;
+        folds?;
         if let Some((at, _)) = self.stop.as_mut()
             && *at < mark
         {
@@ -626,7 +634,7 @@ impl Core<'_> {
         if matches!(fact.leaf, Leaf::Placeholder | Leaf::Error) {
             return Ok(Parts::Leaf(Extent::Fixed(0)));
         }
-        if !self.is_reactive(node)? {
+        if !walk.accumulators && !self.is_reactive(node)? {
             return Ok(Parts::Leaf(Extent::open(length)));
         }
         let (op, a, b, c) = self.ir.node(node)?;
@@ -917,7 +925,7 @@ impl Core<'_> {
         let outer = std::mem::replace(&mut self.inst, body);
         walk.frames
             .push((function, values.iter().cloned().map(Some).collect()));
-        self.eval_chain.push(node);
+        self.push_call(node);
         let found = self.extent_in(value, walk, &mut HashMap::new());
         self.eval_chain.pop();
         walk.frames.pop();
@@ -965,10 +973,15 @@ impl Core<'_> {
         let most = grown(&function, start, count);
         if let Some(annotated) = self.binder_capacity(rec.accumulator)? {
             let annotated = i128::from(annotated);
-            if walk.checking == Checking::Everything && most > annotated {
+            if (walk.checking == Checking::Everything || walk.accumulators) && most > annotated {
                 let span = self.node_span(node)?;
+                let related = self
+                    .chained(Diagnostic::new(Code::CapacityExceeded, span.clone(), ""))
+                    .related;
                 let seen = self.diagnostics.iter().any(|diagnostic| {
-                    diagnostic.code == Code::CapacityExceeded && diagnostic.span == span
+                    diagnostic.code == Code::CapacityExceeded
+                        && diagnostic.span == span
+                        && diagnostic.related == related
                 });
                 if !seen {
                     self.draw_helped_at(
@@ -1027,6 +1040,123 @@ impl Core<'_> {
 }
 
 impl Core<'_> {
+    fn compile_time_accumulators(&mut self) -> Result<(), Internal> {
+        let mut own: Vec<(u32, Vec<Diagnostic>)> = Vec::new();
+        for (node, inst) in self.compile_time_folds.clone() {
+            if self.body_of.get(self.local(node)?).copied().unwrap_or(NONE) != NONE {
+                let found = self.accumulators_in(node, inst)?;
+                if !found.is_empty() {
+                    own.push((inst, found));
+                }
+                continue;
+            }
+            self.inst = inst;
+            let mut walk = Walk::new(Checking::Nothing);
+            walk.accumulators = true;
+            self.extent_in(node, &mut walk, &mut HashMap::new())?;
+        }
+        self.draw_through_callers(own)
+    }
+
+    fn accumulators_in(&mut self, node: u32, inst: u32) -> Result<Vec<Diagnostic>, Internal> {
+        CountedWalk::CoreCapacity.step();
+        let frames = self.instance_frames(inst);
+        let depth = self.own_calls.len();
+        self.own_calls.extend(frames);
+        let chain = std::mem::take(&mut self.eval_chain);
+        let drawn = self.diagnostics.len();
+        self.inst = inst;
+        let mut walk = Walk::new(Checking::Nothing);
+        walk.accumulators = true;
+        let found = self.extent_in(node, &mut walk, &mut HashMap::new());
+        self.eval_chain = chain;
+        self.own_calls.truncate(depth);
+        found?;
+        Ok(self
+            .diagnostics
+            .split_off(drawn.min(self.diagnostics.len())))
+    }
+
+    fn draw_through_callers(&mut self, own: Vec<(u32, Vec<Diagnostic>)>) -> Result<(), Internal> {
+        let mut edges: Vec<(u32, u32, u32)> = self
+            .call_body
+            .iter()
+            .map(|((caller, call), body)| (*body, *call, *caller))
+            .collect();
+        edges.sort_unstable();
+        let mut callers: HashMap<u32, Vec<(u32, u32)>> = HashMap::new();
+        for (body, call, caller) in edges {
+            callers.entry(body).or_default().push((caller, call));
+        }
+        let mut held: HashMap<u32, Vec<Diagnostic>> = HashMap::new();
+        let mut reach = Vec::new();
+        let mut seen = HashSet::new();
+        for (inst, found) in own {
+            if seen.insert(inst) {
+                reach.push(inst);
+            }
+            let list = held.entry(inst).or_default();
+            for diagnostic in found {
+                least(list, diagnostic);
+            }
+        }
+        let mut cursor = 0;
+        while let Some(inst) = reach.get(cursor).copied() {
+            cursor += 1;
+            for (caller, _) in callers.get(&inst).map(Vec::as_slice).unwrap_or_default() {
+                if callers.contains_key(caller) && seen.insert(*caller) {
+                    reach.push(*caller);
+                }
+            }
+        }
+        let mut waiting: HashMap<u32, usize> = HashMap::new();
+        for inst in &reach {
+            for (caller, _) in callers.get(inst).map(Vec::as_slice).unwrap_or_default() {
+                if seen.contains(caller) {
+                    *waiting.entry(*caller).or_default() += 1;
+                }
+            }
+        }
+        let mut ready: VecDeque<u32> = reach
+            .iter()
+            .filter(|inst| !waiting.contains_key(inst))
+            .copied()
+            .collect();
+        while let Some(inst) = ready.pop_front() {
+            CountedWalk::CoreCapacity.step();
+            let found = held.remove(&inst).unwrap_or_default();
+            for (caller, call) in callers.get(&inst).cloned().unwrap_or_default() {
+                CountedWalk::CoreCapacity.step();
+                let link = if matches!(self.ir.node(call)?.0, Op::Call | Op::NamedCall) {
+                    Some(Related {
+                        span: self.node_span(call)?,
+                        label: "in this call".to_string(),
+                    })
+                } else {
+                    None
+                };
+                let top = !seen.contains(&caller);
+                for diagnostic in &found {
+                    let mut related = diagnostic.related.clone();
+                    related.extend(link.clone());
+                    let diagnostic = diagnostic.clone().with_related(related);
+                    if top {
+                        self.push_one_per_chain(diagnostic, false);
+                    } else {
+                        least(held.entry(caller).or_default(), diagnostic);
+                    }
+                }
+                if let Some(count) = waiting.get_mut(&caller) {
+                    *count = count.saturating_sub(1);
+                    if *count == 0 {
+                        ready.push_back(caller);
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
     fn annotated_capacities(&mut self) -> Result<(), Internal> {
         let count = u32::try_from(self.ir.cells.len()).unwrap_or(0);
         for at in 0..count {
@@ -1058,7 +1188,7 @@ impl Core<'_> {
             } else {
                 format!("slice the value to its newest {capacity} elements with `[^{capacity}..]`")
             };
-            let diagnostic = crate::diagnostics::Diagnostic::new(
+            let diagnostic = Diagnostic::new(
                 Code::CapacityExceeded,
                 span,
                 format!(
@@ -1134,5 +1264,21 @@ impl Core<'_> {
             | DeclRef::Fn(_)
             | DeclRef::Pattern(_) => false,
         })
+    }
+}
+
+fn least(held: &mut Vec<Diagnostic>, diagnostic: Diagnostic) {
+    let found = held.iter_mut().find(|seen| {
+        seen.code == diagnostic.code
+            && seen.span == diagnostic.span
+            && seen.summary == diagnostic.summary
+    });
+    match found {
+        Some(seen) => {
+            if chain_key(&diagnostic) < chain_key(seen) {
+                *seen = diagnostic;
+            }
+        }
+        None => held.push(diagnostic),
     }
 }

@@ -15,4 +15,7 @@ pub(crate) enum Step {
     Fold(u32, EvalTy),
     FoldRun(u32, EvalTy),
     Scale(u32),
+    FloatChoose(u32),
+    Owning(bool),
+    FloatFit(u32, EvalTy),
 }

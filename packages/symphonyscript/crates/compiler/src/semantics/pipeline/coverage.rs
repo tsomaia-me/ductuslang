@@ -40,7 +40,7 @@ pub(crate) fn top_slice(top: TopRec) -> Slice {
         TopRec::Cell(_) => Slice::One,
         TopRec::Fn(_) => Slice::One,
         TopRec::Pattern(_) => Slice::Three,
-        TopRec::Placeholder { .. } | TopRec::Drawn(_) | TopRec::Skip => Slice::DefaultFlip,
+        TopRec::Placeholder { .. } | TopRec::Drawn(_) | TopRec::Skip => Slice::Flip,
     }
 }
 
@@ -49,7 +49,9 @@ pub(crate) fn item_slice(item: &ItemRec) -> Slice {
         ItemRec::Placement(_) => Slice::One,
         ItemRec::Wire(_) => Slice::Two,
         ItemRec::For(_) | ItemRec::Line(_) => Slice::Three,
-        ItemRec::Bundle(_) | ItemRec::When(_) | ItemRec::Paren(_) => Slice::DefaultFlip,
+        ItemRec::When(_) => Slice::Flip,
+        ItemRec::Paren(_) => Slice::Flip,
+        ItemRec::Bundle(_) => Slice::Flip,
     }
 }
 
@@ -147,13 +149,27 @@ pub(crate) fn covers(ir: &FlatIr) -> bool {
         .filter_map(|rec| ir.name(rec.name).map(|entry| entry.sym.0))
         .collect();
     patterns.sort_unstable();
+    let mut tops: Vec<u32> = ir
+        .top
+        .iter()
+        .filter_map(|top| match top {
+            TopRec::Placement(at) => Some(*at),
+            _ => None,
+        })
+        .collect();
+    tops.sort_unstable();
+    let mut blocks = ir.block_items.clone();
+    blocks.sort_unstable();
     ir.fors.iter().all(|rec| plain_fold(ir, rec))
         && ir.cells.iter().all(|rec| plain_cell(ir, rec))
-        && ir
-            .items
-            .iter()
-            .enumerate()
-            .all(|(at, item)| item_landed(ir, item, (&members, &in_loops, &patterns), at))
+        && ir.items.iter().enumerate().all(|(at, item)| {
+            item_landed(
+                ir,
+                item,
+                (&members, &in_loops, &patterns, &tops, &blocks),
+                at,
+            )
+        })
 }
 
 fn annotated(ir: &FlatIr, binder: u32) -> bool {
@@ -164,7 +180,44 @@ fn annotated(ir: &FlatIr, binder: u32) -> bool {
 
 fn line_members(ir: &FlatIr) -> Vec<u32> {
     let mut members = Vec::new();
+    for block in &ir.blocks {
+        members.extend(
+            ir.members
+                .get(block.members.0 as usize..block.members.1 as usize)
+                .unwrap_or_default(),
+        );
+    }
     for item in &ir.items {
+        if let ItemRec::Bundle(rec) = item {
+            members.extend(
+                ir.members
+                    .get(rec.members.0 as usize..rec.members.1 as usize)
+                    .unwrap_or_default(),
+            );
+        }
+        if let ItemRec::Paren(inner) = item {
+            members.push(*inner);
+        }
+        if let ItemRec::When(rec) = item {
+            let mut blocks: Vec<u32> = ir
+                .arms
+                .get(rec.arms.0 as usize..rec.arms.1 as usize)
+                .unwrap_or_default()
+                .iter()
+                .map(|arm| arm.1)
+                .collect();
+            blocks.push(rec.otherwise);
+            for block in blocks
+                .iter()
+                .filter_map(|block| ir.blocks.get(*block as usize))
+            {
+                members.extend(
+                    ir.members
+                        .get(block.members.0 as usize..block.members.1 as usize)
+                        .unwrap_or_default(),
+                );
+            }
+        }
         if let ItemRec::Line(range) = item {
             members.extend(
                 ir.members
@@ -206,10 +259,12 @@ fn loop_children(ir: &FlatIr) -> Vec<u32> {
     found
 }
 
+type Sorted<'a> = (&'a [u32], &'a [u32], &'a [u32], &'a [u32], &'a [u32]);
+
 fn item_landed(
     ir: &FlatIr,
     item: &ItemRec,
-    (members, in_loops, patterns): (&[u32], &[u32], &[u32]),
+    (members, in_loops, patterns, tops, blocks): Sorted<'_>,
     at: usize,
 ) -> bool {
     if !landed(item_slice(item)) {
@@ -222,14 +277,38 @@ fn item_landed(
     if let ItemRec::For(rec) = item {
         return loop_landed(ir, rec);
     }
+    if let ItemRec::Paren(inner) = item {
+        return *inner != NONE;
+    }
+    if let ItemRec::Bundle(rec) = item {
+        let members = ir
+            .members
+            .get(rec.members.0 as usize..rec.members.1 as usize)
+            .unwrap_or_default();
+        return rec.each.is_none()
+            && !members.is_empty()
+            && members.iter().all(|member| {
+                let member = match ir.items.get(*member as usize) {
+                    Some(ItemRec::Paren(inner)) => inner,
+                    _ => member,
+                };
+                matches!(ir.items.get(*member as usize), Some(ItemRec::Placement(_)))
+            });
+    }
+    if let ItemRec::When(rec) = item {
+        return when_landed(ir, rec.arms, rec.otherwise);
+    }
     if matches!(item, ItemRec::Line(_)) {
-        return u32::try_from(at).is_ok_and(|at| ir.block_items.contains(&at));
+        return u32::try_from(at).is_ok_and(|at| blocks.binary_search(&at).is_ok());
     }
     let ItemRec::Placement(placement) = item else {
         return true;
     };
-    if placement.gate != NONE
-        || placement.flags.0 != placement.flags.1
+    let used = ir
+        .name(placement.kind)
+        .is_some_and(|entry| patterns.binary_search(&entry.sym.0).is_ok());
+    let top = u32::try_from(at).is_ok_and(|at| tops.binary_search(&at).is_ok());
+    if placement.flags.0 != placement.flags.1
         || placement.attrs_cut
         || placement.skipped_block.is_some()
         || (placement.inline
@@ -241,9 +320,6 @@ fn item_landed(
         .attr_entries
         .get(placement.attrs.0 as usize..placement.attrs.1 as usize)
         .unwrap_or_default();
-    let used = ir
-        .name(placement.kind)
-        .is_some_and(|entry| patterns.binary_search(&entry.sym.0).is_ok());
     if !used
         && entries
             .iter()
@@ -258,10 +334,27 @@ fn item_landed(
         return false;
     }
     ir.blocks.get(placement.body as usize).is_some_and(|block| {
-        block.members.0 == block.members.1
+        let inline = block.items.0 == block.items.1
+            && (!top || ir.named(placement.as_name))
+            && ir
+                .members
+                .get(block.members.0 as usize..block.members.1 as usize)
+                .unwrap_or_default()
+                .iter()
+                .all(|member| unnamed_member(ir, *member));
+        (block.members.0 == block.members.1 || inline)
             && block.regions.0 == block.regions.1
             && block.lets.0 == block.lets.1
     })
+}
+
+fn unnamed_member(ir: &FlatIr, member: u32) -> bool {
+    let member = match ir.items.get(member as usize) {
+        Some(ItemRec::Paren(inner)) => *inner,
+        _ => member,
+    };
+    matches!(ir.items.get(member as usize), Some(ItemRec::Placement(placement))
+        if placement.body == NONE && !ir.named(placement.as_name))
 }
 
 fn loop_landed(ir: &FlatIr, rec: &ForBlockRec) -> bool {
@@ -348,8 +441,7 @@ fn instance_path(ir: &FlatIr, field: u32) -> bool {
 }
 
 fn wire_landed(ir: &FlatIr, wire: &WireRec, in_loop: bool) -> bool {
-    wire.gate == NONE
-        && wire.flags.0 == wire.flags.1
+    wire.flags.0 == wire.flags.1
         && (wire.as_name == NONE || in_loop)
         && !wire.attrs_cut
         && value_entries(ir, wire.attrs)
@@ -368,9 +460,8 @@ pub(crate) fn reason_slice(reason: Reason) -> Slice {
         Reason::CellGroup => Slice::Pending,
         Reason::FunctionValue | Reason::Recursion => Slice::DefaultFlip,
         Reason::LocalCycle | Reason::LocalClash => Slice::Pending,
-        Reason::AnnotatedCall | Reason::CompileTimeArrayAccumulator => Slice::Pending,
         Reason::Pending => Slice::One,
-        Reason::DestinationValue | Reason::ReactiveReference | Reason::WireKind => Slice::Pending,
+        Reason::DestinationValue | Reason::WireKind => Slice::Pending,
         Reason::BareVariant | Reason::UnitAttribute | Reason::EnumAttribute => Slice::Pending,
         Reason::UnitFlow | Reason::EnumFlow => Slice::Pending,
         Reason::LoopHead | Reason::BodyItem | Reason::PatternUse => Slice::Pending,
@@ -433,7 +524,9 @@ fn plain_fold(ir: &FlatIr, rec: &ForRec) -> bool {
         && rec.accumulator != NONE
         && (rec.names.0..rec.names.1)
             .all(|binder| scalar_annotation(ir, binder) || enum_annotation(ir, binder))
-        && (scalar_annotation(ir, rec.accumulator) || variable_annotation(ir, rec.accumulator))
+        && (scalar_annotation(ir, rec.accumulator)
+            || variable_annotation(ir, rec.accumulator)
+            || enum_annotation(ir, rec.accumulator))
         && (rec.lets.0..rec.lets.1).all(|at| {
             ir.lets
                 .get(at as usize)
@@ -491,6 +584,24 @@ fn plain_block(ir: &FlatIr, body: u32) -> bool {
     ir.blocks.get(body as usize).is_some_and(|block| {
         block.items.0 != block.items.1
             && block.members.0 == block.members.1
+            && block.regions.0 == block.regions.1
+            && block.lets.0 == block.lets.1
+    })
+}
+
+fn when_landed(ir: &FlatIr, (first, end): (u32, u32), otherwise: u32) -> bool {
+    let arms = ir
+        .arms
+        .get(first as usize..end as usize)
+        .unwrap_or_default();
+    !arms.is_empty()
+        && arms.iter().all(|arm| arm.0 != NONE && arm_block(ir, arm.1))
+        && (otherwise == NONE || arm_block(ir, otherwise))
+}
+
+fn arm_block(ir: &FlatIr, body: u32) -> bool {
+    ir.blocks.get(body as usize).is_some_and(|block| {
+        (block.items.0 != block.items.1) != (block.members.0 != block.members.1)
             && block.regions.0 == block.regions.1
             && block.lets.0 == block.lets.1
     })

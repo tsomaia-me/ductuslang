@@ -342,14 +342,10 @@ fn orders(items: &[String]) -> Vec<String> {
     found
 }
 
-const REACTIVE_LET_TARGETS: [(&str, &[Code]); 8] = [
-    (
-        "state x(1)\nlet t = s * x\nstate s = t.past(1, 0)\nClip k:\n    Note/(s)\n",
-        &[Code::ReactiveLet, Code::HistoryTarget],
-    ),
+const REACTIVE_LET_TARGETS: [(&str, &[Code]); 7] = [
     (
         "state x(1)\nlet y = x + 1\nstate s = y.past(1, 0.5)\nClip k:\n    Note/(s)\n",
-        &[Code::ReactiveLet, Code::HistoryTarget],
+        &[Code::ReactiveLet, Code::HistoryTarget, Code::TypeMismatch],
     ),
     (
         "state x(1)\nlet y = x + 1\nstate p0 = y.past(1, 0)\nstate p1 = y.past(1, 0) + p0\nstate p2 = p1.past(1, 0) + y.past(2, 0)\nClip k:\n    Note/(p2)\n",

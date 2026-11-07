@@ -84,6 +84,7 @@ pub(crate) fn loop_body(ir: &FlatIr, block: u32) -> Result<(Vec<u32>, Vec<u32>),
             .get(rec.items.0 as usize..rec.items.1 as usize)
             .unwrap_or_default()
             .to_vec();
+        items.extend(member_items(ir, rec.members));
         while let Some(item) = items.pop() {
             match *ir.item(item)? {
                 ItemRec::Placement(placement) => {
@@ -107,7 +108,41 @@ pub(crate) fn loop_body(ir: &FlatIr, block: u32) -> Result<(Vec<u32>, Vec<u32>),
                     );
                 }
                 ItemRec::Paren(inner) if inner != NONE => items.push(inner),
-                ItemRec::Paren(_) | ItemRec::Bundle(_) | ItemRec::When(_) => {}
+                ItemRec::When(rec) => {
+                    let mut arms = vec![rec.otherwise];
+                    for arm in ir
+                        .arms
+                        .get(rec.arms.0 as usize..rec.arms.1 as usize)
+                        .unwrap_or_default()
+                    {
+                        roots.push(arm.0);
+                        arms.push(arm.1);
+                    }
+                    for arm in arms {
+                        if let Some(found) = ir.blocks.get(arm as usize) {
+                            items.extend(
+                                ir.block_items
+                                    .get(found.items.0 as usize..found.items.1 as usize)
+                                    .unwrap_or_default(),
+                            );
+                            items.extend(
+                                ir.members
+                                    .get(found.members.0 as usize..found.members.1 as usize)
+                                    .unwrap_or_default()
+                                    .iter()
+                                    .filter(|member| **member != NONE),
+                            );
+                        }
+                    }
+                }
+                ItemRec::Bundle(rec) => items.extend(
+                    ir.members
+                        .get(rec.members.0 as usize..rec.members.1 as usize)
+                        .unwrap_or_default()
+                        .iter()
+                        .filter(|member| **member != NONE),
+                ),
+                ItemRec::Paren(_) => {}
             }
         }
     }
@@ -815,6 +850,7 @@ impl Core<'_> {
                     args: run.facts.clone(),
                     reactive_args,
                     diagnostics: Vec::new(),
+                    values: Vec::new(),
                 });
                 let inst = u32::try_from(self.bodies.len() - 1).unwrap_or(NONE);
                 self.body_index.insert(key, inst);
@@ -847,6 +883,7 @@ impl Core<'_> {
                     .iter()
                     .rev(),
             );
+            items.extend(member_items(self.ir, found.members));
             while let Some(child) = items.pop() {
                 match *self.ir.item(child)? {
                     ItemRec::Placement(placement) => {
@@ -866,10 +903,10 @@ impl Core<'_> {
                     ),
                     ItemRec::Wire(wire) if self.bare_wire(wire)? => {}
                     ItemRec::Wire(wire) if self.plain_wire(wire)? => self.unrun_wire(wire, file)?,
-                    ItemRec::Wire(_)
-                    | ItemRec::Bundle(_)
-                    | ItemRec::When(_)
-                    | ItemRec::Paren(_) => {
+                    ItemRec::When(_) => items.extend(self.when_items(child).into_iter().rev()),
+                    ItemRec::Bundle(_) => items.extend(self.bundle_items(child)),
+                    ItemRec::Paren(inner) if inner != NONE => items.push(inner),
+                    ItemRec::Wire(_) | ItemRec::Paren(_) => {
                         return Ok(Err(Declined(Reason::BodyItem)));
                     }
                 }
@@ -949,6 +986,19 @@ impl Core<'_> {
         let head = self.loop_rec(owner)?.head;
         let names = head.names.1.saturating_sub(head.names.0);
         let class = super::values::class(ty);
+        if let Value::Int(value) = stored
+            && (head.range || position + 1 != names)
+            && matches!(class, 1 | 2)
+            && self.param_fact(node, position)?.0.fixed.is_none()
+        {
+            let float = super::values::evaluated_in(ty);
+            let iterable = if head.range {
+                head.iterable
+            } else {
+                (head.iterable.0, NONE)
+            };
+            return Ok(Ok(self.loop_float(*value, float, iterable)?));
+        }
         if head.range || position + 1 != names || class == 3 {
             return Ok(Ok(stored.clone()));
         }
@@ -1041,6 +1091,7 @@ impl Core<'_> {
                     .iter()
                     .rev(),
             );
+            items.extend(member_items(self.ir, found.members));
             while let Some(child) = items.pop() {
                 match *self.ir.item(child)? {
                     ItemRec::Placement(placement) => {
@@ -1061,10 +1112,10 @@ impl Core<'_> {
                             .iter()
                             .rev(),
                     ),
-                    ItemRec::Wire(_)
-                    | ItemRec::Bundle(_)
-                    | ItemRec::When(_)
-                    | ItemRec::Paren(_) => {
+                    ItemRec::When(_) => items.extend(self.when_items(child).into_iter().rev()),
+                    ItemRec::Bundle(_) => items.extend(self.bundle_items(child)),
+                    ItemRec::Paren(inner) if inner != NONE => items.push(inner),
+                    ItemRec::Wire(_) | ItemRec::Paren(_) => {
                         return Ok(Err(Declined(Reason::BodyItem)));
                     }
                 }
@@ -1133,6 +1184,7 @@ impl Core<'_> {
                 .get(found.items.0 as usize..found.items.1 as usize)
                 .unwrap_or_default()
                 .to_vec();
+            items.extend(member_items(self.ir, found.members));
             while let Some(child) = items.pop() {
                 match *self.ir.item(child)? {
                     ItemRec::Placement(placement) => {
@@ -1165,10 +1217,10 @@ impl Core<'_> {
                             .get(members.0 as usize..members.1 as usize)
                             .unwrap_or_default(),
                     ),
-                    ItemRec::Wire(_)
-                    | ItemRec::Bundle(_)
-                    | ItemRec::When(_)
-                    | ItemRec::Paren(_) => unknown = true,
+                    ItemRec::When(_) => items.extend(self.when_items(child)),
+                    ItemRec::Bundle(_) => items.extend(self.bundle_items(child)),
+                    ItemRec::Paren(inner) if inner != NONE => items.push(inner),
+                    ItemRec::Wire(_) | ItemRec::Paren(_) => unknown = true,
                 }
             }
         }
@@ -1219,11 +1271,19 @@ impl Core<'_> {
                         );
                         continue;
                     }
-                    ItemRec::Placement(_)
-                    | ItemRec::For(_)
-                    | ItemRec::Bundle(_)
-                    | ItemRec::When(_)
-                    | ItemRec::Paren(_) => continue,
+                    ItemRec::When(_) => {
+                        items.extend(self.when_items(child).into_iter().rev());
+                        continue;
+                    }
+                    ItemRec::Bundle(_) => {
+                        items.extend(self.bundle_items(child).into_iter().rev());
+                        continue;
+                    }
+                    ItemRec::Paren(inner) if inner != NONE => {
+                        items.push(inner);
+                        continue;
+                    }
+                    ItemRec::Placement(_) | ItemRec::For(_) | ItemRec::Paren(_) => continue,
                 };
                 if !self.ir.named(name) {
                     continue;
@@ -1264,6 +1324,7 @@ impl Core<'_> {
                 .get(found.items.0 as usize..found.items.1 as usize)
                 .unwrap_or_default()
                 .to_vec();
+            items.extend(member_items(self.ir, found.members));
             while let Some(child) = items.pop() {
                 match *self.ir.item(child)? {
                     ItemRec::Placement(placement) => {
@@ -1296,10 +1357,10 @@ impl Core<'_> {
                             .get(members.0 as usize..members.1 as usize)
                             .unwrap_or_default(),
                     ),
-                    ItemRec::Wire(_)
-                    | ItemRec::Bundle(_)
-                    | ItemRec::When(_)
-                    | ItemRec::Paren(_) => {}
+                    ItemRec::When(_) => items.extend(self.when_items(child)),
+                    ItemRec::Bundle(_) => items.extend(self.bundle_items(child)),
+                    ItemRec::Paren(inner) if inner != NONE => items.push(inner),
+                    ItemRec::Wire(_) | ItemRec::Paren(_) => {}
                 }
             }
         }
@@ -1603,6 +1664,7 @@ impl Core<'_> {
             args: run.facts.clone(),
             reactive_args: vec![false; run.facts.len()],
             diagnostics: Vec::new(),
+            values: Vec::new(),
         });
         let inst = u32::try_from(self.bodies.len() - 1).unwrap_or(NONE);
         let position = u32::try_from(run.facts.len().saturating_sub(1)).unwrap_or(NONE);
@@ -1611,4 +1673,14 @@ impl Core<'_> {
         self.owner_insts.entry(owner).or_default().push(inst);
         Ok(inst)
     }
+}
+
+pub(crate) fn member_items(ir: &FlatIr, members: (u32, u32)) -> Vec<u32> {
+    ir.members
+        .get(members.0 as usize..members.1 as usize)
+        .unwrap_or_default()
+        .iter()
+        .copied()
+        .filter(|member| *member != NONE)
+        .collect()
 }

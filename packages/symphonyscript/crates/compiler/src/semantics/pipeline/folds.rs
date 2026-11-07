@@ -3,11 +3,9 @@ use super::body_instance::BodyInstance;
 use super::core::{Core, Stage};
 use super::core_value::CoreValue;
 use super::decl_ref::DeclRef;
-use super::declined::Declined;
 use super::fact::Fact;
 use super::leaf::Leaf;
 use super::need::Need;
-use super::reason::Reason;
 use super::typing::unify;
 use super::width::{combined, is_fixed_float};
 use crate::diagnostics::{Code, Diagnostic, for_start_and_body_help};
@@ -343,8 +341,9 @@ impl Core<'_> {
             }
             break body;
         };
-        if !dims.is_empty() && !reactive.1 {
-            return Ok(Err(Declined(Reason::CompileTimeArrayAccumulator)));
+        if !dims.is_empty() && !reactive.1 && !self.compile_time_folds.contains(&(node, self.inst))
+        {
+            self.compile_time_folds.push((node, self.inst));
         }
         let key = self.inst_key(node)?;
         self.call_body.insert((key, node), body);
@@ -466,6 +465,7 @@ impl Core<'_> {
             args,
             reactive_args,
             diagnostics: Vec::new(),
+            values: Vec::new(),
         });
         let at = u32::try_from(self.bodies.len() - 1).unwrap_or(NONE);
         self.body_index.insert(key, at);

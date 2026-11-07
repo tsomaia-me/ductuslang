@@ -565,9 +565,6 @@ impl Core<'_> {
     }
 
     pub fn plain_in_family(&mut self) -> Stage<()> {
-        if self.scaled_accumulator {
-            return Ok(Err(Declined(Reason::UnitAttribute)));
-        }
         let by_family = self.units_by_family()?;
         let mixed: Vec<FamilyId> = by_family
             .iter()
@@ -1200,5 +1197,28 @@ impl Core<'_> {
             memo.insert((at, family), fed);
         }
         memo.get(&(body, family)).copied().unwrap_or(false)
+    }
+}
+
+impl Core<'_> {
+    pub fn saturated_root(
+        &mut self,
+        node: u32,
+        value: super::core_value::CoreValue,
+    ) -> Result<super::core_value::CoreValue, Internal> {
+        use crate::semantics::operators::{Value, int_range, ty_name};
+        let Some(own) = self.fact(node)?.fixed else {
+            return Ok(value);
+        };
+        let (Value::Int(held), Some(range)) = (&value, int_range(own)) else {
+            return Ok(value);
+        };
+        let saturated = (*held).clamp(*range.start(), *range.end());
+        self.draw_at(
+            Code::ConstantOverflow,
+            node,
+            format!("this `{}` operation saturates", ty_name(own)),
+        )?;
+        Ok(Value::Int(saturated))
     }
 }

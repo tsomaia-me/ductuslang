@@ -423,7 +423,16 @@ fn a_for_expression_over_a_cell_whose_accumulator_is_annotated_with_a_variable_a
     }
     let compile_time =
         "let v = for i in 0..3 into a: i32[..2] from []: a + [i]\nClip c:\n    Note/(v[0])\n";
-    assert!(new.checked_by_new_core(&[source(compile_time)]).is_none());
+    let found = new
+        .checked_by_new_core(&[source(compile_time)])
+        .unwrap_or_else(|| panic!("the new core takes {compile_time}"));
+    assert!(
+        found
+            .iter()
+            .any(|diagnostic| diagnostic.code == Code::CapacityExceeded
+                && diagnostic.summary.contains("holds up to 3")),
+        "{compile_time}"
+    );
     assert_eq!(programs, 24);
 }
 
@@ -469,6 +478,49 @@ fn a_history_read_of_a_variable_array_cell_has_the_larger_of_the_cells_capacity_
                 .filter(|code| *code != Code::NoEntryInstance)
                 .collect();
             assert_eq!(&found, codes, "{text}");
+        }
+    }
+}
+
+fn fanned_folds(depth: usize) -> String {
+    let mut text = String::from("fn f0(n): (for i in 0..n into a: i32[..3] from []: a + [i])[0]\n");
+    for level in 1..=depth {
+        let below = level - 1;
+        text.push_str(&format!("fn f{level}(n): f{below}(n) + f{below}(n * 1)\n"));
+    }
+    text.push_str(&format!("Clip c:\n    Note/(f{depth}(4))\n"));
+    text
+}
+
+#[test]
+fn a_compile_time_fold_in_a_function_body_checks_its_capacity_once_per_body_instance_linear_in_a_fanned_call_chain_521()
+ {
+    let vocabulary = symphonyscript_fixtures::vocabulary();
+    let new = Compiler::new(&vocabulary).expect("the vocabulary compiles");
+    let mut walked = Vec::new();
+    for depth in [3usize, 6, 12] {
+        let text = fanned_folds(depth);
+        let before = CountedWalk::CoreCapacity.steps();
+        let found = new
+            .checked_by_new_core(&[source(&text)])
+            .unwrap_or_else(|| panic!("the new core takes {text}"));
+        walked.push(CountedWalk::CoreCapacity.steps() - before);
+        let exceeded: Vec<_> = found
+            .iter()
+            .filter(|diagnostic| diagnostic.code == Code::CapacityExceeded)
+            .collect();
+        assert_eq!(exceeded.len(), 1, "{found:?}");
+        assert!(
+            exceeded
+                .iter()
+                .all(|diagnostic| diagnostic.related.len() == depth + 1),
+            "{found:?}"
+        );
+    }
+    assert!(walked.first().is_some_and(|steps| *steps > 0), "{walked:?}");
+    for pair in walked.windows(2) {
+        if let [smaller, larger] = pair {
+            assert!(*larger <= smaller * 5 / 2, "{walked:?}");
         }
     }
 }

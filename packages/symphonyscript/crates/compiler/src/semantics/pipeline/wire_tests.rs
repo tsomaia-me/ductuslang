@@ -188,25 +188,6 @@ fn a_to_path_over_several_candidates_draws_its_faults_beside_its_valid_twin() {
     }
 }
 
-#[test]
-fn a_reference_read_where_a_value_is_expected_stays_with_the_old_engine() {
-    let vocabulary = symphonyscript_fixtures::vocabulary();
-    let new = Compiler::new(&vocabulary).expect("the vocabulary compiles");
-    for text in [
-        "Clip a:\n    Note/1\nClip c:\n    Note/(a)\n",
-        "Clip a:\n    Note/1\nClip c:\n    Note/(a + 1)\n",
-        "let d = a\nClip a:\n    Note/1\nClip c:\n    Note/(d)\n",
-        "let q = c\nClip c:\n    Note/(if true then q else 1.5)\n",
-        "let q = c\nClip c:\n    Note | velocity=(if 1 then true else q)\n",
-        "state i(0)\nfn pick(k):\n    let t = [a, b][k]\n    k\nClip a:\n    Note/1\nClip b:\n    Note/2\nClip c:\n    Note/(pick(i))\n",
-        "let d: i32 = a\nClip a:\n    Note/1\nClip c:\n    Note/3\n    Plays: d\n",
-        "Clip a:\n    Note as h /1\nClip c | level=a.h:\n    Note/3\n",
-        "let d = a\nClip a | level=2:\n    Note/1\nClip c | level=d.level:\n    Note/3\n",
-    ] {
-        assert!(new.checked_by_new_core(&[source(text)]).is_none(), "{text}");
-    }
-}
-
 const REFERENCE_WIRES: [&str; 26] = [
     "let d = a\nClip a:\n    Note/1\nClip c:\n    Note/3\n    Plays: d\n",
     "state look(0)\nlet xs = [a, b]\nClip a:\n    Note/1\nClip b:\n    Note/2\nClip c:\n    Note/3\n    Plays: xs[look]\n",

@@ -31,7 +31,7 @@ impl Core<'_> {
         None
     }
 
-    fn top_name(&self, top: TopRec) -> Result<Option<(u32, DeclRef)>, Internal> {
+    pub(super) fn top_name(&self, top: TopRec) -> Result<Option<(u32, DeclRef)>, Internal> {
         Ok(match top {
             TopRec::Let(at) => {
                 let rec = self
@@ -98,11 +98,13 @@ impl Core<'_> {
                 .fns
                 .get(at as usize)
                 .is_some_and(|rec| rec.faulty_line),
-            TopRec::Pattern(_)
-            | TopRec::Placement(_)
-            | TopRec::Placeholder { .. }
-            | TopRec::Drawn(_)
-            | TopRec::Skip => false,
+            TopRec::Placement(item) => matches!(
+                self.ir.items.get(item as usize),
+                Some(ItemRec::Placement(placement)) if placement.faulty_line
+            ),
+            TopRec::Pattern(_) | TopRec::Placeholder { .. } | TopRec::Drawn(_) | TopRec::Skip => {
+                false
+            }
         }
     }
 
@@ -228,6 +230,7 @@ impl Core<'_> {
         self.pattern_declarations()?;
         self.pattern_cycles()?;
         self.pattern_names()?;
+        self.function_values()?;
         if self.calls_a_non_function()? {
             return Ok(Err(Declined(Reason::FunctionValue)));
         }
@@ -272,6 +275,24 @@ impl Core<'_> {
         let skipped_top = self.skipped_top();
         self.skipped_top.clone_from(&skipped_top);
         let mut enclosing = std::collections::HashMap::new();
+        let type_operands = self.type_operands()?;
+        let math_callees = self.math_callees()?;
+        let mut native_callees = std::collections::HashSet::new();
+        for local in 0..self.ir.op.len() {
+            if !matches!(self.ir.op.get(local), Some(Op::Call | Op::NamedCall)) {
+                continue;
+            }
+            let call = self.ir.base + u32::try_from(local).unwrap_or(0);
+            if self.native_miscount(call)?.is_some() || self.native_named(call)?.is_some() {
+                native_callees.insert(self.ir.node(call)?.1);
+            }
+        }
+        let mut callees = std::collections::HashSet::new();
+        for local in 0..self.ir.op.len() {
+            if matches!(self.ir.op.get(local), Some(Op::Call | Op::NamedCall)) {
+                callees.insert(self.ir.a.get(local).copied().unwrap_or(NONE));
+            }
+        }
         for local in 0..self.ir.op.len() {
             if self.ir.op.get(local) != Some(&Op::Name)
                 || !self.reached.get(local).copied().unwrap_or(false)
@@ -313,7 +334,10 @@ impl Core<'_> {
                 | DeclRef::Param(_)
                 | DeclRef::Fn(_)
                 | DeclRef::Instance(_) => {}
-                DeclRef::Pattern(_) => return Ok(Err(Declined(Reason::PatternUse))),
+                DeclRef::Pattern(_) if !callees.contains(&node) => {
+                    return Ok(Err(Declined(Reason::PatternUse)));
+                }
+                DeclRef::Pattern(_) => {}
                 DeclRef::Duplicate => self.placeholders.push(node),
                 DeclRef::None => {
                     let text = self.ir.symbols.text(entry.sym).to_string();
@@ -334,6 +358,26 @@ impl Core<'_> {
                         self.bare.insert(node);
                         continue;
                     }
+                    if math_callees.contains(&node) || native_callees.contains(&node) {
+                        continue;
+                    }
+                    if text == BuiltinName::Pi.name() {
+                        self.pi.insert(node);
+                        continue;
+                    }
+                    if let Some(what) = self
+                        .not_a_value(&text)
+                        .filter(|_| !type_operands.contains(&node))
+                    {
+                        let owner = self.body_of.get(self.local(node)?).copied().unwrap_or(NONE);
+                        if owner != NONE && owner < self.functions() {
+                            self.not_values.insert(node, format!("`{text}` is {what}"));
+                            continue;
+                        }
+                        let span = self.node_span(node)?;
+                        self.draw(Code::NotAValue, span, format!("`{text}` is {what}"));
+                        continue;
+                    }
                     if self.vocabulary_clash(&text).is_some()
                         || self.vocabulary.native_named(&text).is_some()
                         || self.variants.owner(&text).is_some()
@@ -345,13 +389,30 @@ impl Core<'_> {
                         };
                         return Ok(Err(Declined(reason)));
                     }
-                    let span = self.node_span(node)?;
-                    self.draw(
-                        Code::UnknownName,
-                        span,
-                        format!("`{text}` names nothing in scope"),
-                    );
-                    self.placeholders.push(node);
+                    let member = match text.as_str() {
+                        "len" => Some("size"),
+                        "bytes" => Some("bytes"),
+                        _ => None,
+                    };
+                    match member.filter(|_| callees.contains(&node)) {
+                        Some(member) => self.draw_helped_at(
+                            Code::UnknownName,
+                            node,
+                            format!("`{text}` names nothing in scope"),
+                            format!("write `x.{member}`"),
+                        )?,
+                        None => {
+                            let span = self.node_span(node)?;
+                            self.draw(
+                                Code::UnknownName,
+                                span,
+                                format!("`{text}` names nothing in scope"),
+                            );
+                        }
+                    }
+                    if !callees.contains(&node) {
+                        self.placeholders.push(node);
+                    }
                 }
             }
             if let Some(slot) = self.bind.get_mut(local) {
@@ -515,7 +576,23 @@ impl Core<'_> {
                     }
                     continue;
                 }
-                ItemRec::Bundle(_) | ItemRec::When(_) | ItemRec::Paren(_) => continue,
+                ItemRec::When(_) => {
+                    for child in self.when_items(item) {
+                        stack.push((child, scope));
+                    }
+                    (self.when_guards(item), (0, 0), NONE)
+                }
+                ItemRec::Paren(inner) if inner != NONE => {
+                    stack.push((inner, scope));
+                    continue;
+                }
+                ItemRec::Bundle(_) => {
+                    for member in self.bundle_items(item) {
+                        stack.push((member, scope));
+                    }
+                    continue;
+                }
+                ItemRec::Paren(_) => continue,
             };
             for entry in self
                 .ir
@@ -576,14 +653,24 @@ impl Core<'_> {
                     .get(members.0 as usize..members.1 as usize)
                     .unwrap_or_default()
                     .to_vec(),
-                ItemRec::Placement(_)
-                | ItemRec::Wire(_)
-                | ItemRec::Bundle(_)
-                | ItemRec::For(_)
-                | ItemRec::When(_)
-                | ItemRec::Paren(_) => vec![child],
+                ItemRec::When(_) => self.when_members(child)?,
+                ItemRec::Bundle(_) => self.bundle_items(child),
+                ItemRec::Placement(_) | ItemRec::Wire(_) | ItemRec::For(_) | ItemRec::Paren(_) => {
+                    vec![child]
+                }
             };
+            let mut flat = Vec::with_capacity(members.len());
             for member in members {
+                match self.ir.item(member).copied() {
+                    Ok(ItemRec::Bundle(_)) => flat.extend(self.bundle_items(member)),
+                    _ => flat.push(member),
+                }
+            }
+            for member in flat {
+                let member = match self.ir.item(member).copied() {
+                    Ok(ItemRec::Paren(inner)) if inner != NONE => inner,
+                    _ => member,
+                };
                 if let Ok(ItemRec::Placement(placement)) = self.ir.item(member).copied()
                     && self.ir.named(placement.as_name)
                     && member != own
@@ -596,6 +683,12 @@ impl Core<'_> {
                 }
             }
             stack.push((child, inner));
+        }
+        for at in block.members.0..block.members.1 {
+            let member = self.ir.members.get(at as usize).copied().unwrap_or(NONE);
+            if member != NONE {
+                stack.push((member, inner));
+            }
         }
         names.sort_unstable();
         scopes.push((scope, names));
@@ -635,5 +728,191 @@ impl Core<'_> {
             .node_kind_named(self.ir.symbols.text(entry.sym))
             .is_some();
         Ok(if node && !declared { *item } else { NONE })
+    }
+}
+
+impl Core<'_> {
+    fn not_a_value(&self, text: &str) -> Option<&'static str> {
+        if self.variants.owner(text).is_some() || text == BuiltinName::Pi.name() {
+            return None;
+        }
+        if self.vocabulary.native_named(text).is_some()
+            || BuiltinName::all().any(|builtin| builtin.name() == text)
+        {
+            return Some("a function, which is only called");
+        }
+        if self.vocabulary.node_kind_named(text).is_some() {
+            return Some("a node kind, which is only placed");
+        }
+        if self.vocabulary.wire_kind_named(text).is_some() {
+            return Some("a wire kind, which is only placed");
+        }
+        if self.vocabulary.enum_named(text).is_some() {
+            return Some("an enum, whose variants are written `Enum::Variant`");
+        }
+        None
+    }
+}
+
+impl Core<'_> {
+    fn type_operands(&self) -> Result<std::collections::HashSet<u32>, Internal> {
+        let mut found = std::collections::HashSet::new();
+        for local in 0..self.ir.op.len() {
+            if !matches!(self.ir.op.get(local), Some(Op::Is | Op::IsNot)) {
+                continue;
+            }
+            let node = self.ir.base + u32::try_from(local).unwrap_or(u32::MAX);
+            let (_, _, mut operand, _) = self.ir.node(node)?;
+            while let Ok((op, base, _, _)) = self.ir.node(operand) {
+                if op == Op::Name {
+                    found.insert(operand);
+                    break;
+                }
+                if op != Op::Index {
+                    break;
+                }
+                operand = base;
+            }
+        }
+        Ok(found)
+    }
+}
+
+impl Core<'_> {
+    pub fn uncalled_not_values(&mut self) -> Result<(), Internal> {
+        let mut left: Vec<(u32, String)> = self
+            .not_values
+            .iter()
+            .filter(|(node, _)| !self.not_values_drawn.contains(node))
+            .map(|(node, summary)| (*node, summary.clone()))
+            .collect();
+        left.sort_unstable();
+        let roots = self.unchecked_roots()?;
+        let mut chains: HashMap<u32, Vec<u32>> = HashMap::new();
+        for (node, summary) in left {
+            let owner = self.body_of.get(self.local(node)?).copied().unwrap_or(NONE);
+            if owner < self.functions() && !chains.contains_key(&owner) {
+                let chain = self.first_reaching_chain(owner, &roots)?;
+                chains.insert(owner, chain);
+            }
+            let calls = chains.get(&owner).cloned().unwrap_or_default();
+            let outer = std::mem::take(&mut self.eval_chain);
+            for call in calls {
+                self.push_call(call);
+            }
+            let span = self.node_span(node)?;
+            self.draw(Code::NotAValue, span, summary);
+            self.eval_chain = outer;
+        }
+        Ok(())
+    }
+
+    fn unchecked_roots(&self) -> Result<Vec<u32>, Internal> {
+        let mut called = std::collections::HashSet::new();
+        for local in 0..self.ir.op.len() {
+            if matches!(self.ir.op.get(local), Some(Op::Call | Op::NamedCall)) {
+                let node = self.ir.base + u32::try_from(local).unwrap_or(0);
+                if let Some(function) = self.callee(node)? {
+                    called.insert(function);
+                }
+            }
+        }
+        let mut roots = Vec::new();
+        for rec in &self.ir.lets {
+            let top = self.body_of.get(self.local(rec.value)?).copied();
+            if top.is_none_or(|owner| owner == NONE || owner >= self.functions()) {
+                roots.push(rec.value);
+            }
+        }
+        for function in 0..self.functions() {
+            if !called.contains(&function) {
+                roots.extend(self.function_roots(function)?);
+            }
+        }
+        roots.sort_unstable();
+        Ok(roots)
+    }
+
+    fn first_reaching_chain(&self, target: u32, roots: &[u32]) -> Result<Vec<u32>, Internal> {
+        let mut last: HashMap<u32, Option<u32>> = HashMap::new();
+        for root in roots {
+            let Some(call) = self.last_reaching_call(target, &[*root], &mut last)? else {
+                continue;
+            };
+            let mut chain = vec![call];
+            let mut function = self.callee(call)?;
+            while let Some(inner) = function.filter(|function| *function != target) {
+                let Some(next) = last.get(&inner).copied().flatten() else {
+                    break;
+                };
+                chain.push(next);
+                function = self.callee(next)?;
+            }
+            return Ok(chain);
+        }
+        Ok(Vec::new())
+    }
+
+    fn last_reaching_call(
+        &self,
+        target: u32,
+        roots: &[u32],
+        last: &mut HashMap<u32, Option<u32>>,
+    ) -> Result<Option<u32>, Internal> {
+        let mut found = None;
+        for root in roots {
+            for node in self.postorder(*root)? {
+                if !matches!(self.ir.node(node)?.0, Op::Call | Op::NamedCall) {
+                    continue;
+                }
+                let Some(function) = self.callee(node)? else {
+                    continue;
+                };
+                if function == target {
+                    found = Some(node);
+                    continue;
+                }
+                let reaches = match last.get(&function).copied() {
+                    Some(reaches) => reaches,
+                    None => {
+                        last.insert(function, None);
+                        let body = self.function_roots(function)?;
+                        let reaches = self.last_reaching_call(target, &body, last)?;
+                        last.insert(function, reaches);
+                        reaches
+                    }
+                };
+                if reaches.is_some() {
+                    found = Some(node);
+                }
+            }
+        }
+        Ok(found)
+    }
+}
+
+impl Core<'_> {
+    fn math_callees(&self) -> Result<std::collections::HashSet<u32>, Internal> {
+        let mut found = std::collections::HashSet::new();
+        for local in 0..self.ir.op.len() {
+            if !matches!(self.ir.op.get(local), Some(Op::Call | Op::NamedCall)) {
+                continue;
+            }
+            let callee = self.ir.a.get(local).copied().unwrap_or(NONE);
+            if self.ir.node(callee)?.0 != Op::Name {
+                continue;
+            }
+            let text = self
+                .ir
+                .name_text(self.ir.node(callee)?.1)
+                .unwrap_or_default();
+            if super::calls::math_arity(text).is_some()
+                && (self.ir.op.get(local) == Some(&Op::NamedCall)
+                    || self.ir.c.get(local).is_some_and(|shape| shape % 2 == 0))
+            {
+                found.insert(callee);
+            }
+        }
+        Ok(found)
     }
 }
