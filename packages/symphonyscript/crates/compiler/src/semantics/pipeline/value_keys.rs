@@ -71,7 +71,7 @@ impl Core<'_> {
                 mark(&mut keyed, &mut work, function, param);
             }
         }
-        let mut paths: Vec<u32> = self.param_paths.iter().copied().collect();
+        let mut paths: Vec<u32> = self.param_paths.iter().collect();
         paths.sort_unstable();
         for node in paths {
             let receiver = self.ir.node(node)?.1;

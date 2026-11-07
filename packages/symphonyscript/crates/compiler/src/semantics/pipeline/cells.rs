@@ -434,7 +434,7 @@ impl Core<'_> {
         let seeded = self
             .cyclic_let_reads
             .iter()
-            .any(|(node, read)| *read == at && self.let_seeds.contains_key(node));
+            .any(|(node, read)| *read == at && self.let_seeds.contains_key(&node));
         if !seeded {
             return Ok(None);
         }

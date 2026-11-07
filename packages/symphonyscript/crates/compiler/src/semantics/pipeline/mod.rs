@@ -19,6 +19,9 @@ mod cell_tests;
 mod cells;
 mod check;
 mod collect;
+mod column;
+#[cfg(test)]
+mod column_tests;
 mod consistency;
 mod core;
 mod core_value;

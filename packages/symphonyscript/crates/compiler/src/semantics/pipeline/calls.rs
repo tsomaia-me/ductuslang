@@ -958,7 +958,8 @@ impl Core<'_> {
             }
         }
         let mut mapped = std::collections::HashSet::new();
-        for call in self.dot_calls.clone() {
+        let dotted: Vec<u32> = self.dot_calls.iter().collect();
+        for call in dotted {
             let (op, callee, _, _) = self.ir.node(call)?;
             if op == Op::Call
                 && self.ir.node(callee)?.0 == Op::Name

@@ -1114,7 +1114,7 @@ impl Core<'_> {
         let mut edges: Vec<(u32, u32, u32)> = self
             .call_body
             .iter()
-            .map(|((caller, call), body)| (*body, *call, *caller))
+            .map(|((caller, call), body)| (*body, call, caller))
             .collect();
         edges.sort_unstable();
         let mut callers: HashMap<u32, Vec<(u32, u32)>> = HashMap::new();

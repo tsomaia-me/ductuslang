@@ -11,8 +11,8 @@ use crate::semantics::operators::{EvalTy, int_range};
 impl Core<'_> {
     pub fn check_unread_arguments(&mut self) -> Stage<()> {
         let mut unread = Vec::new();
-        for (env, args) in &self.use_args {
-            let Some(record) = self.envs.get(*env as usize) else {
+        for (env, args) in self.use_args.iter() {
+            let Some(record) = self.envs.get(env as usize) else {
                 continue;
             };
             let Some(body) = self.bodies.get(record.inst as usize) else {

@@ -1131,7 +1131,7 @@ impl Core<'_> {
                 .get(at as usize)
                 .copied()
                 .ok_or(Internal::missed("a placement for"))?;
-            let key = (item, record.parent, class);
+            let key = (item, record.parent, super::column::dense(class));
             let items = match self.loop_items.get(&key) {
                 Some(items) => items.clone(),
                 None => {
@@ -1164,9 +1164,10 @@ impl Core<'_> {
             }
         };
         if !element.is_error() && !matches!(element, Value::Array(_)) {
-            self.loop_reads
-                .entry((env, node, class))
-                .or_insert_with(|| element.clone());
+            let key = (env, node, super::column::dense(class));
+            if self.loop_reads.get(&key).is_none() {
+                self.loop_reads.insert(key, element.clone());
+            }
         }
         Ok(Ok(element))
     }
@@ -1804,7 +1805,7 @@ impl Core<'_> {
 impl Core<'_> {
     fn reads_paths_through(&mut self, owner: u32) -> Result<bool, Internal> {
         if self.path_owners.is_none() {
-            let mut owners = std::collections::HashSet::new();
+            let mut owners = super::column::ColumnSet::new();
             for local in 0..self.ir.op.len() {
                 if self.ir.op.get(local) != Some(&Op::Field) {
                     continue;

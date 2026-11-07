@@ -13,7 +13,7 @@ pub(crate) type Binding = Option<(EvalTy, bool, bool, bool, Option<Fact>, Option
 impl Core<'_> {
     pub fn share_ref_bodies(&mut self) -> Result<(), Internal> {
         let mut reads: HashMap<u32, Vec<u32>> = HashMap::new();
-        let mut nodes: Vec<u32> = self.per_inst_paths.iter().copied().collect();
+        let mut nodes: Vec<u32> = self.per_inst_paths.iter().collect();
         nodes.sort_unstable();
         for node in nodes {
             let receiver = self.ir.a.get(self.local(node)?).copied().unwrap_or(NONE);
@@ -25,7 +25,7 @@ impl Core<'_> {
         let mut insts: Vec<(u32, u32)> = self
             .owner_insts
             .iter()
-            .flat_map(|(owner, insts)| insts.iter().map(|inst| (*inst, *owner)))
+            .flat_map(|(owner, insts)| insts.iter().map(move |inst| (*inst, owner)))
             .collect();
         insts.sort_unstable();
         let mut typed: HashMap<(u32, u32, Vec<Binding>), u32> = HashMap::new();

@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use symphonyscript_core::Span;
 
+use super::column::Column;
 use super::core::{Core, Stage};
 use super::decl_ref::DeclRef;
 use super::declined::Declined;
@@ -536,9 +537,9 @@ pub fn child_in_scope(scopes: &[ChildScope], scope: Option<u32>, sym: u32) -> Op
 }
 
 impl Core<'_> {
-    fn child_scopes(&self) -> Result<(Vec<ChildScope>, HashMap<u32, u32>), Internal> {
+    fn child_scopes(&self) -> Result<(Vec<ChildScope>, Column<u32>), Internal> {
         let mut scopes: Vec<ChildScope> = Vec::new();
-        let mut scope_of = HashMap::new();
+        let mut scope_of = Column::new();
         let mut stack: Vec<(u32, u32)> = self
             .ir
             .top
@@ -811,7 +812,7 @@ impl Core<'_> {
             .not_values
             .iter()
             .filter(|(node, _)| !self.not_values_drawn.contains(node))
-            .map(|(node, summary)| (*node, summary.clone()))
+            .map(|(node, summary)| (node, summary.clone()))
             .collect();
         left.sort_unstable();
         let roots = self.unchecked_roots()?;

@@ -945,7 +945,7 @@ impl Core<'_> {
         let reads: Vec<(u32, u32)> = self
             .cyclic_let_reads
             .iter()
-            .map(|(node, at)| (*node, *at))
+            .map(|(node, at)| (node, *at))
             .collect();
         if reads.is_empty() {
             return Ok(Ok(()));

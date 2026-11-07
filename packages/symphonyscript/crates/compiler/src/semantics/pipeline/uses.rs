@@ -869,7 +869,10 @@ impl Core<'_> {
         if !cells && (fact.fixed.is_some() || !matches!(fact.leaf, Leaf::Int | Leaf::Float)) {
             return Ok(Ok(stored.clone()));
         }
-        if let Some(value) = self.use_values.get(&(env, position, class)) {
+        if let Some(value) = self
+            .use_values
+            .get(&(env, position, super::column::dense(class)))
+        {
             return Ok(Ok(value.clone()));
         }
         let Some((root, caller)) = self
@@ -904,7 +907,7 @@ impl Core<'_> {
             Err(declined) => return Ok(Err(declined)),
         };
         self.use_values
-            .insert((env, position, class), value.clone());
+            .insert((env, position, super::column::dense(class)), value.clone());
         Ok(Ok(value))
     }
 

@@ -1624,7 +1624,7 @@ impl Core<'_> {
         refused: &[u32],
         chain: &[u32],
     ) -> Result<(), Internal> {
-        let mut methods: Vec<u32> = self.unknown_methods.iter().copied().collect();
+        let mut methods: Vec<u32> = self.unknown_methods.iter().collect();
         methods.sort_unstable();
         for method in methods {
             if self.body_of.get(self.local(method)?).copied() != Some(function) {

@@ -509,9 +509,9 @@ impl Core<'_> {
     pub(super) fn callee_first_bodies(&self) -> Vec<u32> {
         let mut nested: std::collections::HashMap<u32, Vec<u32>> = std::collections::HashMap::new();
         let mut bodies: Vec<u32> = Vec::new();
-        for ((caller, _), body) in &self.call_body {
+        for ((caller, _), body) in self.call_body.iter() {
             if self.function_inst(*body) {
-                nested.entry(*caller).or_default().push(*body);
+                nested.entry(caller).or_default().push(*body);
                 bodies.push(*body);
             }
         }
@@ -735,9 +735,9 @@ impl Core<'_> {
                 stack.push((self.ir.base + u32::try_from(local).unwrap_or(0), NONE));
             }
         }
-        for ((inst, node), fact) in &self.body_facts {
+        for ((inst, node), fact) in self.body_facts.iter() {
             if open(fact) {
-                stack.push((*node, *inst));
+                stack.push((node, inst));
             }
         }
         while let Some((node, inst)) = stack.pop() {
@@ -757,12 +757,12 @@ impl Core<'_> {
         let mut sites: std::collections::HashMap<u32, Vec<(u32, u32)>> =
             std::collections::HashMap::new();
         if takers.iter().any(|(_, _, key)| *key != NONE) {
-            for ((caller, call), body) in &self.call_body {
+            for ((caller, call), body) in self.call_body.iter() {
                 let typed = |inst: &u32| self.typed_as.get(inst).copied().unwrap_or(*inst);
                 sites
                     .entry(typed(body))
                     .or_default()
-                    .push((typed(caller), *call));
+                    .push((typed(&caller), call));
             }
             for list in sites.values_mut() {
                 list.sort_unstable();

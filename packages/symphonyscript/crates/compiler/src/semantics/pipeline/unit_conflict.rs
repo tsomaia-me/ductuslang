@@ -149,12 +149,13 @@ impl Core<'_> {
         if by_key.is_empty() {
             return Ok(());
         }
-        let typed =
-            |inst: u32, typed_as: &HashMap<u32, u32>| typed_as.get(&inst).copied().unwrap_or(inst);
+        let typed = |inst: u32, typed_as: &super::column::Column<u32>| {
+            typed_as.get(&inst).copied().unwrap_or(inst)
+        };
         let mut down: HashMap<(u32, u32), u32> = HashMap::new();
-        for ((caller, call), body) in &self.call_body {
+        for ((caller, call), body) in self.call_body.iter() {
             down.insert(
-                (typed(*caller, &self.typed_as), *call),
+                (typed(caller, &self.typed_as), call),
                 typed(*body, &self.typed_as),
             );
         }

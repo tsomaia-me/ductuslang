@@ -761,7 +761,7 @@ impl Core<'_> {
             .body_path_faults
             .iter()
             .filter(|(_, (_, drawn))| !*drawn)
-            .map(|(node, (faults, _))| (*node, faults.clone()))
+            .map(|(node, (faults, _))| (node, faults.clone()))
             .collect();
         left.sort_by_key(|(node, _)| *node);
         for (_, faults) in left {
@@ -822,23 +822,11 @@ impl Core<'_> {
     pub fn node_reads(&self, node: u32) -> Result<Vec<u32>, Internal> {
         let mut reads: Vec<u32> = self
             .row_reads
-            .range((node, 0)..=(node, u32::MAX))
+            .row(node)
             .map(|(_, at)| *at)
-            .chain(
-                self.choice_reads
-                    .range((node, 0)..=(node, u32::MAX))
-                    .map(|(_, at)| *at),
-            )
-            .chain(
-                self.env_reads
-                    .range((node, 0)..=(node, u32::MAX))
-                    .map(|(_, at)| *at),
-            )
-            .chain(
-                self.inst_reads
-                    .range((node, 0)..=(node, u32::MAX))
-                    .map(|(_, at)| *at),
-            )
+            .chain(self.choice_reads.row(node))
+            .chain(self.env_reads.row(node).map(|(_, at)| *at))
+            .chain(self.inst_reads.row(node).map(|(_, at)| *at))
             .collect();
         let at = self.paths.get(self.local(node)?).copied().unwrap_or(NONE);
         if at != NONE && !reads.contains(&at) {
@@ -1672,7 +1660,7 @@ impl Core<'_> {
                 .pattern_items
                 .iter()
                 .filter(|(_, at)| **at == pattern)
-                .map(|(item, _)| *item)
+                .map(|(item, _)| item)
                 .collect();
             for env in 0..u32::try_from(self.envs.len()).unwrap_or(0) {
                 let Some(record) = self.envs.get(env as usize).copied() else {

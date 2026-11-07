@@ -22,7 +22,7 @@ impl Core<'_> {
         if self.param_paths.is_empty() {
             return Ok(());
         }
-        let mut nodes: Vec<u32> = self.param_paths.iter().copied().collect();
+        let mut nodes: Vec<u32> = self.param_paths.iter().collect();
         nodes.sort_unstable();
         let mut calls: Vec<Vec<u32>> = vec![Vec::new(); self.functions() as usize];
         for local in 0..self.ir.op.len() {
@@ -173,7 +173,7 @@ impl Core<'_> {
                 if self
                     .open_reads
                     .iter()
-                    .any(|(root, open, _)| *root == read.root && *open == env)
+                    .any(|(root, open, _)| root == read.root && open == env)
                 {
                     return Ok(Err(Declined(Reason::Member)));
                 }
