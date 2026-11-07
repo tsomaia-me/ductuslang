@@ -1,5 +1,3 @@
-use std::collections::{HashMap, HashSet};
-
 use super::core::{Core, Stage};
 use super::cycles::strongly_connected;
 use super::decl_ref::DeclRef;
@@ -13,11 +11,21 @@ use crate::semantics::Internal;
 use crate::semantics::ir::CellWord;
 use crate::semantics::ir::flat::{NONE, Op};
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 enum Source {
     Let(u32),
     Fn(u32),
     Root(u32),
+}
+
+impl Source {
+    fn key(self) -> (u32, u32) {
+        match self {
+            Source::Let(at) => (at, 0),
+            Source::Fn(at) => (at, 1),
+            Source::Root(root) => (root, 2),
+        }
+    }
 }
 
 #[derive(Clone, Default)]
@@ -36,6 +44,61 @@ pub(crate) struct CellReads {
 }
 
 const SETTLE_ROUNDS: usize = 64;
+
+struct Worklist {
+    held: Vec<bool>,
+    heap: std::collections::BinaryHeap<usize>,
+    lowest: bool,
+}
+
+impl Worklist {
+    fn full(len: usize, lowest: bool) -> Self {
+        let mut list = Worklist {
+            held: vec![false; len],
+            heap: std::collections::BinaryHeap::with_capacity(len),
+            lowest,
+        };
+        list.extend(0..len);
+        list
+    }
+
+    fn key(&self, position: usize) -> usize {
+        if self.lowest {
+            usize::MAX - position
+        } else {
+            position
+        }
+    }
+
+    fn insert(&mut self, position: usize) {
+        let key = self.key(position);
+        if let Some(held) = self.held.get_mut(position)
+            && !*held
+        {
+            *held = true;
+            self.heap.push(key);
+        }
+    }
+
+    fn extend(&mut self, positions: impl IntoIterator<Item = usize>) {
+        for position in positions {
+            self.insert(position);
+        }
+    }
+
+    fn pop(&mut self) -> Option<usize> {
+        let key = self.heap.pop()?;
+        let position = self.key(key);
+        if let Some(held) = self.held.get_mut(position) {
+            *held = false;
+        }
+        Some(position)
+    }
+
+    fn is_empty(&self) -> bool {
+        self.heap.is_empty()
+    }
+}
 
 impl Core<'_> {
     fn direct_reads(&self, roots: &[u32]) -> Result<Direct, Internal> {
@@ -104,7 +167,8 @@ impl Core<'_> {
     fn cells_read(
         &self,
         root: u32,
-        memo: &mut HashMap<Source, Direct>,
+        memo: &mut super::column::PairColumn<Direct>,
+        (seen, stamp): (&mut super::column::TripleColumn<u32>, u32),
     ) -> Result<CellReads, Internal> {
         let direct = self.direct_reads(&[root])?;
         let mut reads = CellReads {
@@ -118,21 +182,21 @@ impl Core<'_> {
             .map(|source| (source, false))
             .collect();
         pending.extend(direct.lets.into_iter().map(|at| (Source::Let(at), true)));
-        let mut seen = HashSet::new();
         while let Some((source, after)) = pending.pop() {
-            if !seen.insert((source, after)) {
+            let (id, kind) = source.key();
+            if seen.insert((id, kind, u32::from(after)), stamp) == Some(stamp) {
                 continue;
             }
-            let found = match memo.entry(source) {
-                std::collections::hash_map::Entry::Occupied(entry) => entry.into_mut(),
-                std::collections::hash_map::Entry::Vacant(entry) => {
-                    let roots = match source {
-                        Source::Let(at) => vec![self.let_root(at)?],
-                        Source::Fn(at) => self.function_roots(at)?,
-                        Source::Root(root) => vec![root],
-                    };
-                    entry.insert(self.direct_reads(&roots)?)
-                }
+            if !memo.contains_key(&(id, kind)) {
+                let roots = match source {
+                    Source::Let(at) => vec![self.let_root(at)?],
+                    Source::Fn(at) => self.function_roots(at)?,
+                    Source::Root(root) => vec![root],
+                };
+                memo.insert((id, kind), self.direct_reads(&roots)?);
+            }
+            let Some(found) = memo.get(&(id, kind)) else {
+                continue;
             };
             if after {
                 reads.after.extend(found.cells.iter().copied());
@@ -152,10 +216,11 @@ impl Core<'_> {
     fn cell_order(&mut self) -> Stage<Vec<u32>> {
         let count = u32::try_from(self.ir.cells.len()).unwrap_or(0);
         let mut all = Vec::with_capacity(count as usize);
-        let mut memo = HashMap::new();
+        let mut memo = super::column::PairColumn::default();
+        let mut seen = super::column::TripleColumn::default();
         for at in 0..count {
             all.push(if !self.is_cyclic_cell(at) {
-                let mut reads = self.cells_read(self.cell_root(at)?, &mut memo)?;
+                let mut reads = self.cells_read(self.cell_root(at)?, &mut memo, (&mut seen, at))?;
                 reads.present.retain(|other| !self.is_cyclic_cell(*other));
                 reads
                     .history
@@ -461,10 +526,10 @@ impl Core<'_> {
         let mark = self.diagnostics.len();
         let top = self.top_drawn.len();
         let warned = self.warned.clone();
-        let mut queue: std::collections::BTreeSet<usize> = (0..members.len()).collect();
+        let mut queue = Worklist::full(members.len(), true);
         let mut budget = members.len().saturating_mul(SETTLE_ROUNDS);
         loop {
-            while let Some(position) = queue.pop_first() {
+            while let Some(position) = queue.pop() {
                 if budget == 0 {
                     return Ok(Err(Declined(Reason::CellGroup)));
                 }
@@ -513,7 +578,7 @@ impl Core<'_> {
     fn check_group(&mut self, members: &[u32]) -> Stage<()> {
         let mark = self.diagnostics.len();
         let warned = self.warned.clone();
-        let mut queue: std::collections::BTreeSet<usize> = (0..members.len()).collect();
+        let mut queue = Worklist::full(members.len(), false);
         let mut budget = members.len().saturating_mul(SETTLE_ROUNDS);
         let at_of: super::column::Column<usize> = members
             .iter()
@@ -521,7 +586,7 @@ impl Core<'_> {
             .map(|(at, member)| (*member, at))
             .collect();
         self.read_log.clear();
-        while let Some(position) = queue.pop_last() {
+        while let Some(position) = queue.pop() {
             if budget == 0 {
                 return Ok(Err(Declined(Reason::CellGroup)));
             }

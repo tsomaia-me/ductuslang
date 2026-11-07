@@ -1,4 +1,4 @@
-use super::column::{Column, PairColumn, TripleSet};
+use super::column::{Column, PairColumn, TripleColumn, TripleSet};
 use crate::semantics::ir::flat::NONE;
 
 #[test]
@@ -37,4 +37,16 @@ fn a_column_holds_each_id_once_and_lists_them_in_id_order_whatever_order_they_we
     assert!(triples.contains(&(2, 1, 0)));
     assert!(triples.remove(&(2, 1, 0)));
     assert!(triples.is_empty());
+    let mut held: TripleColumn<Vec<u32>> = TripleColumn::default();
+    held.or_insert_with((9, 4, NONE), Vec::new).push(1);
+    held.or_insert_with((9, 4, NONE), Vec::new).push(2);
+    held.or_insert_with((0, 4, 1), Vec::new).push(3);
+    let listed: Vec<((u32, u32, u32), Vec<u32>)> = held
+        .iter()
+        .map(|(key, value)| (key, value.clone()))
+        .collect();
+    assert_eq!(listed, [((0, 4, 1), vec![3]), ((9, 4, NONE), vec![1, 2])]);
+    assert_eq!(held.remove(&(0, 4, 1)), Some(vec![3]));
+    assert_eq!(held.remove(&(9, 4, NONE)), Some(vec![1, 2]));
+    assert!(held.is_empty());
 }

@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashSet, VecDeque};
+use std::collections::VecDeque;
 
 use symphonyscript_core::FamilyId;
 
@@ -42,12 +42,17 @@ impl Core<'_> {
     }
 
     pub fn find_unit_conflicts(&mut self, feeds: Vec<AttributeFeed>) -> Stage<()> {
-        let mut units: BTreeMap<FamilyId, HashSet<usize>> = BTreeMap::new();
+        let mut units: super::column::Column<(FamilyId, Vec<usize>)> = Default::default();
         for (_, family, unit, _, _) in &feeds {
-            units.entry(*family).or_default().insert(*unit);
+            let (_, held) = units.or_insert_with(super::column::dense(family.index()), || {
+                (*family, Vec::new())
+            });
+            if !held.contains(unit) {
+                held.push(*unit);
+            }
         }
         let mixed: Vec<FamilyId> = units
-            .into_iter()
+            .into_values()
             .filter(|(_, units)| units.len() > 1)
             .map(|(family, _)| family)
             .collect();
@@ -92,7 +97,7 @@ impl Core<'_> {
             summaries.insert((body, super::column::dense(family.index())), params);
         }
         let mut taker_units: super::column::PairColumn<Vec<(usize, u32)>> = Default::default();
-        let mut outer_units: BTreeMap<(u32, u32), Vec<(usize, u32)>> = BTreeMap::new();
+        let mut outer_units: super::column::PairColumn<Vec<(usize, u32)>> = Default::default();
         for (root, fed, unit, env, wire) in feeds {
             if *fed != family {
                 continue;
@@ -180,14 +185,15 @@ impl Core<'_> {
         for list in folds_in.values_mut() {
             list.sort_unstable();
         }
-        for ((caller, outermost), list) in outer_units {
-            let Some((first, second)) = self.first_two_units(&list)? else {
+        let mut seen: super::column::Column<u32> = Default::default();
+        for (stamp, ((caller, outermost), list)) in (0u32..).zip(outer_units.iter()) {
+            let Some((first, second)) = self.first_two_units(list)? else {
                 continue;
             };
             let Some(start) = down.get(&(caller, outermost)).copied() else {
                 continue;
             };
-            let mut seen = HashSet::from([start]);
+            seen.insert(start, stamp);
             let mut queue = VecDeque::from([(start, vec![outermost])]);
             while let Some((body, chain)) = queue.pop_front() {
                 CountedWalk::CoreFamilies.step();
@@ -206,13 +212,13 @@ impl Core<'_> {
                     }
                 }
                 for inner in folds_in.get(&body).map(Vec::as_slice).unwrap_or_default() {
-                    if seen.insert(*inner) {
+                    if seen.insert(*inner, stamp) != Some(stamp) {
                         queue.push_back((*inner, chain.clone()));
                     }
                 }
                 for (_, _, _, call) in fed_in.get(&body).map(Vec::as_slice).unwrap_or_default() {
                     if let Some(inner) = down.get(&(body, *call)).copied()
-                        && seen.insert(inner)
+                        && seen.insert(inner, stamp) != Some(stamp)
                     {
                         let mut longer = vec![*call];
                         longer.extend(chain.iter().copied());

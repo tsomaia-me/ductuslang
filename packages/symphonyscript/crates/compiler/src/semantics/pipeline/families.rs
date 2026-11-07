@@ -611,8 +611,7 @@ impl Core<'_> {
         }
         let mut top = FeedFound::default();
         let mut taker_units: super::column::PairColumn<Vec<(usize, u32)>> = Default::default();
-        let mut cell_units: std::collections::BTreeMap<u32, Vec<(usize, u32)>> =
-            std::collections::BTreeMap::new();
+        let mut cell_units: super::column::Column<Vec<(usize, u32)>> = Default::default();
         for (root, family, unit, env) in feeds {
             let inst = self
                 .envs
@@ -648,7 +647,7 @@ impl Core<'_> {
             }
         }
         let mut conflicted = super::column::ColumnSet::new();
-        let units_of = |list: &mut Vec<(usize, u32)>| -> Result<Vec<(usize, u32)>, Internal> {
+        let units_of = |list: &[(usize, u32)]| -> Result<Vec<(usize, u32)>, Internal> {
             let mut keyed = Vec::with_capacity(list.len());
             for (unit, root) in list.iter() {
                 keyed.push((*unit, self.call_order(*root)?, *root));
@@ -663,7 +662,7 @@ impl Core<'_> {
         let mut conflicts = Vec::new();
         let mut cell_conflicts = Vec::new();
         for (node, family, key) in &self.takers {
-            if let Some(list) = taker_units.get_mut(&(*node, *key))
+            if let Some(list) = taker_units.get(&(*node, *key))
                 && mixed.contains(family)
                 && let [(_, first), (_, second), ..] = units_of(list)?.as_slice()
             {
@@ -673,11 +672,11 @@ impl Core<'_> {
                 }
             }
         }
-        for (cell, list) in &mut cell_units {
-            if !conflicted.contains(cell)
+        for (cell, list) in cell_units.iter() {
+            if !conflicted.contains(&cell)
                 && let [(_, first), (_, second), ..] = units_of(list)?.as_slice()
             {
-                cell_conflicts.push((*cell, *first, *second));
+                cell_conflicts.push((cell, *first, *second));
             }
         }
         conflicts.sort_unstable();
@@ -870,7 +869,7 @@ impl Core<'_> {
         top: &FeedFound,
     ) -> Result<Vec<Vec<u32>>, Internal> {
         let mut reaching = vec![key];
-        let mut seen = std::collections::HashSet::from([key]);
+        let mut seen: super::column::ColumnSet = [key].into_iter().collect();
         let mut cursor = 0;
         while let Some(at) = reaching.get(cursor).copied() {
             cursor += 1;
@@ -889,8 +888,7 @@ impl Core<'_> {
             }
         }
         let mut best: super::column::PairColumn<Link> = Default::default();
-        let mut outermost: std::collections::BTreeMap<(u32, u32), Link> =
-            std::collections::BTreeMap::new();
+        let mut outermost: super::column::PairColumn<Link> = Default::default();
         let mut ready = vec![key];
         while let Some(callee) = ready.pop() {
             let depths: Vec<Option<usize>> = [false, true]

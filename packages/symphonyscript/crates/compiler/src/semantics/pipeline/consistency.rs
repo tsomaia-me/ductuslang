@@ -1,10 +1,10 @@
-use std::collections::BTreeMap;
-
+use super::column::{Column, TripleSet, dense};
 use super::core::Core;
 use super::core_value::CoreValue;
 use crate::diagnostics::Code;
 use crate::semantics::Internal;
 use crate::semantics::counted_walk::CountedWalk;
+use crate::semantics::ir::flat::NONE;
 use crate::semantics::operators::Value;
 
 fn integer(class: usize) -> bool {
@@ -13,21 +13,54 @@ fn integer(class: usize) -> bool {
 
 type Reads = Vec<(u32, usize, (Vec<u32>, Vec<u32>), CoreValue)>;
 
+pub(crate) struct UseRow {
+    target: (bool, u32),
+    value: CoreValue,
+    chain: Vec<u32>,
+    links: Vec<u32>,
+}
+
 impl Core<'_> {
+    fn use_path(&mut self) -> u32 {
+        let chain = self.eval_chain.id();
+        self.use_paths
+            .path(std::iter::once(chain).chain(self.use_links.iter().map(|(item, _)| *item)))
+    }
+
+    pub fn record_use(&mut self, read: u32, class: usize, target: (bool, u32), value: CoreValue) {
+        let key = (read, dense(class), self.use_path());
+        if self.uses.get(&key).is_some() {
+            return;
+        }
+        let row = UseRow {
+            target,
+            value,
+            chain: self.eval_chain.to_vec(),
+            links: self.use_links.iter().map(|(item, _)| *item).collect(),
+        };
+        self.uses.insert(key, row);
+    }
+
     pub fn consistency(&mut self) -> Result<(), Internal> {
-        let mut by_target: BTreeMap<(bool, u32), Reads> = BTreeMap::new();
-        for ((read, class, chain, links), (target, value)) in &self.uses {
+        let mut by_target: [Column<Reads>; 2] = Default::default();
+        for ((read, class, _), row) in self.uses.iter() {
             CountedWalk::CoreUse.step();
-            if *class != 3 {
-                by_target.entry(*target).or_default().push((
-                    *read,
-                    *class,
-                    (chain.clone(), links.clone()),
-                    value.clone(),
+            let class = class as usize;
+            if class != 3
+                && let Some(column) = by_target.get_mut(usize::from(row.target.0))
+            {
+                column.entry(row.target.1).or_default().push((
+                    read,
+                    class,
+                    (row.chain.clone(), row.links.clone()),
+                    row.value.clone(),
                 ));
             }
         }
-        for (_, uses) in by_target {
+        for mut uses in by_target.into_iter().flat_map(Column::into_values) {
+            uses.sort_by(|left, right| {
+                (left.0, left.1, &left.2).cmp(&(right.0, right.1, &right.2))
+            });
             let Some((int_read, _, int_chain, int_value)) = uses
                 .iter()
                 .find(|(_, class, _, _)| integer(*class))
@@ -69,7 +102,7 @@ impl Core<'_> {
     }
 
     fn loop_consistency(&mut self) -> Result<(), Internal> {
-        let mut by_env: BTreeMap<u32, Vec<(u32, usize, CoreValue)>> = BTreeMap::new();
+        let mut by_env: Column<Vec<(u32, usize, CoreValue)>> = Column::new();
         for ((env, read, class), value) in self.loop_reads.iter() {
             CountedWalk::CoreUse.step();
             by_env
@@ -77,15 +110,15 @@ impl Core<'_> {
                 .or_default()
                 .push((read, class as usize, value.clone()));
         }
-        let mut drawn = std::collections::BTreeSet::new();
-        for (env, reads) in by_env {
+        let mut drawn = TripleSet::default();
+        for (env, reads) in by_env.iter() {
             let Some((int_read, _, int_value)) =
                 reads.iter().find(|(_, class, _)| integer(*class)).cloned()
             else {
                 continue;
             };
             let mut float = None;
-            for (read, class, value) in &reads {
+            for (read, class, value) in reads {
                 if !integer(*class) && *read != int_read && !self.same_number(&int_value, value) {
                     float = Some(*read);
                     break;
@@ -95,7 +128,9 @@ impl Core<'_> {
                 continue;
             };
             let saved = self.enter_env(env);
-            let links: Vec<u32> = self.use_links.iter().map(|(item, _)| *item).collect();
+            let links = self
+                .use_paths
+                .path(std::iter::once(NONE).chain(self.use_links.iter().map(|(item, _)| *item)));
             if drawn.insert((int_read, float_read, links)) {
                 let span = self.node_span(int_read)?;
                 let float_span = self.node_span(float_read)?;

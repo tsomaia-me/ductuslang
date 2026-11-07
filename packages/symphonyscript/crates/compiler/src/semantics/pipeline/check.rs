@@ -1,5 +1,3 @@
-use std::collections::BTreeMap;
-
 use symphonyscript_core::{AttrDecl, AttrId, Count, NodeKind, Scalar, Span};
 
 use super::annotation::SHAPE;
@@ -778,7 +776,7 @@ impl Core<'_> {
     }
 
     pub fn check_counts(&mut self) -> Result<(), Internal> {
-        let mut by_kind: BTreeMap<NodeKind, Vec<u32>> = BTreeMap::new();
+        let mut by_kind: super::column::Column<Vec<u32>> = Default::default();
         for row in self.top_instances.clone() {
             let kind = self
                 .instances
@@ -795,7 +793,10 @@ impl Core<'_> {
                 self.draw_in_row(row, Code::NotTopLevel, span, message);
                 continue;
             }
-            by_kind.entry(kind).or_default().push(row);
+            by_kind
+                .entry(super::column::dense(kind.index()))
+                .or_default()
+                .push(row);
         }
         for index in 0..self.vocabulary.node_kinds().len() {
             let kind = self
@@ -809,7 +810,10 @@ impl Core<'_> {
             let Some(count) = decl.top_level else {
                 continue;
             };
-            let found = by_kind.get(&kind).cloned().unwrap_or_default();
+            let found = by_kind
+                .get(&super::column::dense(kind.index()))
+                .cloned()
+                .unwrap_or_default();
             let name = decl.name.clone();
             if let Some(max) = count.max()
                 && let Some(extra) = found.get(max as usize)
@@ -855,7 +859,7 @@ impl Core<'_> {
         let decl = vocabulary
             .node_kind(record.kind)
             .ok_or(Internal::missed("node kind"))?;
-        let mut by_kind: BTreeMap<NodeKind, Vec<u32>> = BTreeMap::new();
+        let mut by_kind: super::column::Column<Vec<u32>> = Default::default();
         for child in record.children.0..record.children.1 {
             let kind = self
                 .instances
@@ -879,10 +883,15 @@ impl Core<'_> {
                 self.draw_in_row(child, Code::ChildNotAccepted, span, message);
                 continue;
             }
-            by_kind.entry(kind).or_default().push(child);
+            by_kind
+                .entry(super::column::dense(kind.index()))
+                .or_default()
+                .push(child);
         }
         for (kind, count) in &decl.children {
-            let found = by_kind.get(kind).map_or(&[][..], Vec::as_slice);
+            let found = by_kind
+                .get(&super::column::dense(kind.index()))
+                .map_or(&[][..], Vec::as_slice);
             let name = self.kind_name(*kind)?;
             if let Some(max) = count.max()
                 && let Some(extra) = found.get(max as usize)
