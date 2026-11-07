@@ -4619,3 +4619,24 @@ fn a_destination_chosen_by_a_function_call_is_the_instance_the_call_returns_besi
  {
     assert_eq!(same_as_the_old_engine(&DESTINATIONS_CHOSEN_BY_A_CALL), 32);
 }
+
+const INDEXES_RETURNED_BY_CALLS: [&[&str]; 6] = [
+    &["fn f(): 3\n", "Clip c:\n    Note/([1, 2, 3][f()])\n"],
+    &[
+        "fn g(): 3\nfn f(): g()\n",
+        "Clip c:\n    Note/([1, 2, 3][f()])\n",
+    ],
+    &["fn f(x): x\n", "Clip c:\n    Note/([1, 2, 3][f(3)])\n"],
+    &["fn f(): 2\n", "Clip c:\n    Note/([1, 2, 3][f()])\n"],
+    &["fn f(): 3\n", "Clip c:\n    Note/([1, 2, 3][^f()])\n"],
+    &[
+        "fn f(): 3\nlet x = [1, 2, 3][f()]\n",
+        "Clip c:\n    Note/(x)\n",
+    ],
+];
+
+#[test]
+fn an_index_a_call_returns_out_of_range_draws_at_the_returned_value_in_its_calls_innermost_first_beside_a_valid_twin_in_every_order_534()
+ {
+    assert_eq!(same_as_the_old_engine(&INDEXES_RETURNED_BY_CALLS), 36);
+}
