@@ -5624,6 +5624,11 @@ pub const CLASSES: &[Class] = &[
         rule: "a placement whose kind is a name a line holding a syntax fault declares draws no unknown-kind, the name being a placeholder wherever it is used (ARCHITECTURE §7, ledger 520), where the old engine draws unknown-kind (`xpattern Wash(default level, tint = 0.0):` with `Wash/0.3`)",
         explains: kind_named_on_a_faulty_line,
     },
+    Class {
+        ledger: "476",
+        rule: "a method of no name on a cell on a declaration cycle draws unknown-name at the method beside the cycle, as the program with the cycle repaired does (the repair rule, DECISIONS.md 2026-11-03; SPEC §5.7), where the old engine draws it in some top-level orders only (`state a = b.xpast(1)` before `state b = a + 1`)",
+        explains: method_of_no_name_on_a_cycle,
+    },
 ];
 
 fn annotated_let_value(seen: &Seen<'_>, at: &Drawn) -> bool {
@@ -6628,4 +6633,13 @@ fn kind_named_on_a_faulty_line(seen: &Seen<'_>, change: Change, at: &Drawn) -> b
                     .iter()
                     .any(|drawn| seen.line(drawn.1) == line && syntax_code(&drawn.0))
         })
+}
+
+fn method_of_no_name_on_a_cycle(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
+    change == Change::Added
+        && at.0 == "unknown-name"
+        && seen.before(at).ends_with('.')
+        && seen.after(at).starts_with('(')
+        && seen.new.iter().any(|drawn| drawn.0 == "declaration-cycle")
+        && seen.program.contains("state ")
 }

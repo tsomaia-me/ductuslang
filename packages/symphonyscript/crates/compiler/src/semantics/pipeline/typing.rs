@@ -1428,6 +1428,17 @@ impl Core<'_> {
             Leaf::Int | Leaf::Float | Leaf::Bool | Leaf::Empty | Leaf::Enum(Some(_)) => true,
             Leaf::Placeholder | Leaf::Error | Leaf::Enum(None) => false,
         };
+        if method && self.reads_a_cyclic_cell(*receiver)? {
+            let file = self.file_of(node);
+            let entry = self.ir.name(name).ok_or(Internal::missed("IR name"))?;
+            let span = self.span(file, entry.lo, entry.hi);
+            self.draw(
+                Code::UnknownName,
+                span,
+                format!("`{text}` names nothing in scope"),
+            );
+            return Ok(true);
+        }
         if method && !fact.node && matches!(fact.leaf, Leaf::Placeholder | Leaf::Error) {
             let let_read = self.ir.node(*receiver)?.0 == Op::Name
                 && matches!(self.bound(*receiver)?, DeclRef::Let(_));
@@ -1465,5 +1476,17 @@ impl Core<'_> {
             );
         }
         Ok(true)
+    }
+}
+
+impl Core<'_> {
+    fn reads_a_cyclic_cell(&self, receiver: u32) -> Result<bool, Internal> {
+        if self.ir.node(receiver)?.0 != Op::Name {
+            return Ok(false);
+        }
+        let DeclRef::Cell(at) = self.bound(receiver)? else {
+            return Ok(false);
+        };
+        Ok(self.is_cyclic_cell(at))
     }
 }
