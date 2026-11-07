@@ -1470,9 +1470,48 @@ impl Core<'_> {
                 refused.push(position);
             }
         }
-        if refused.is_empty() {
-            return Ok(());
+        let mut pending = vec![(function, refused, vec![call])];
+        let mut seen = std::collections::HashSet::new();
+        while let Some((function, refused, chain)) = pending.pop() {
+            if refused.is_empty() || !seen.insert(function) {
+                continue;
+            }
+            self.draw_refused_methods(function, &refused, &chain)?;
+            let mut inner_calls = Vec::new();
+            for local in 0..self.ir.op.len() {
+                if self.body_of.get(local).copied() != Some(function)
+                    || !matches!(self.ir.op.get(local), Some(Op::Call | Op::NamedCall))
+                {
+                    continue;
+                }
+                let inner = self.ir.base + u32::try_from(local).unwrap_or(u32::MAX);
+                let Some(callee) = self.callee(inner)? else {
+                    continue;
+                };
+                let mut passed = Vec::new();
+                for (position, argument) in (0u32..).zip(self.arguments(inner)?) {
+                    if self.ir.node(argument)?.0 == Op::Name
+                        && let DeclRef::Param(own) = self.bound(argument)?
+                        && refused.contains(&own)
+                    {
+                        passed.push(position);
+                    }
+                }
+                let mut through = chain.clone();
+                through.push(inner);
+                inner_calls.push((callee, passed, through));
+            }
+            pending.extend(inner_calls.into_iter().rev());
         }
+        Ok(())
+    }
+
+    fn draw_refused_methods(
+        &mut self,
+        function: u32,
+        refused: &[u32],
+        chain: &[u32],
+    ) -> Result<(), Internal> {
         let mut methods: Vec<u32> = self.unknown_methods.iter().copied().collect();
         methods.sort_unstable();
         for method in methods {
@@ -1503,13 +1542,17 @@ impl Core<'_> {
             let text = self.ir.name_text(name).unwrap_or_default().to_string();
             let entry = *self.ir.name(name).ok_or(Internal::missed("IR name"))?;
             let span = self.span(self.file_of(method), entry.lo, entry.hi);
-            self.push_call(call);
+            for call in chain {
+                self.push_call(*call);
+            }
             self.draw(
                 Code::UnknownName,
                 span,
                 format!("`{text}` names nothing in scope"),
             );
-            self.eval_chain.pop();
+            for _ in chain {
+                self.eval_chain.pop();
+            }
         }
         Ok(())
     }

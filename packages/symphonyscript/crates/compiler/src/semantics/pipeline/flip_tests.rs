@@ -4322,3 +4322,41 @@ fn a_walk_that_meets_a_declaration_it_is_still_typing_or_evaluating_outside_ever
         assert!(work < 10_000, "{text}: {work} steps");
     }
 }
+
+const METHODS_THROUGH_A_SECOND_CALL: [&[&str]; 7] = [
+    &[
+        "fn f(x): x.yy()\nfn h(y): f(y)\n",
+        "Clip c:\n    Note/(h(1 + true))\n",
+    ],
+    &[
+        "fn f(x): x.yy()\nfn h(y): f(y)\nfn g(z): h(z)\n",
+        "Clip c:\n    Note/(g(1 + true))\n",
+    ],
+    &[
+        "fn f(x): x.yy()\nfn h(y, w): f(w)\n",
+        "Clip c:\n    Note/(h(1, 1 + true))\n",
+    ],
+    &[
+        "fn f(x): x.yy()\nfn h(y, w): f(y)\n",
+        "Clip c:\n    Note/(h(1, 1 + true))\n",
+    ],
+    &[
+        "fn f(x): x.yy()\nfn h(y): f(y) + f(y)\n",
+        "Clip c:\n    Note/(h(1 + true))\n",
+    ],
+    &[
+        "fn f(x, w): x.yy()\nfn h(y): f(x=y, w=1)\n",
+        "Clip c:\n    Note/(h(1 + true))\n",
+    ],
+    &[
+        "fn f(x): x.yy()\nfn h(y): f(y)\n",
+        "let b = 1 + true\n",
+        "Clip c:\n    Note/(h(b))\n",
+    ],
+];
+
+#[test]
+fn a_method_of_no_name_on_a_parameter_bound_through_a_second_call_to_a_refused_argument_draws_unknown_name_in_that_chain_beside_a_valid_twin_in_every_order()
+ {
+    assert_eq!(same_as_the_old_engine(&METHODS_THROUGH_A_SECOND_CALL), 60);
+}
