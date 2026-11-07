@@ -4248,6 +4248,7 @@ fn a_method_of_no_name_on_a_cell_on_a_cycle_draws_unknown_name_in_every_order_47
     for text in [
         "state a = b.xpast(1)\nstate b = a + 1\n",
         "let a = b.xpast(1)\nlet b = a + 1\n",
+        "let a = b.zz(c=1)\nlet b = a + 1\n",
     ] {
         let sources = [source(text)];
         let found = new

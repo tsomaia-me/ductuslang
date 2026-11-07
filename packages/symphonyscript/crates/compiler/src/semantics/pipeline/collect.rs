@@ -291,9 +291,7 @@ impl Core<'_> {
             if self.member_dot_shape(call)? {
                 member_callees.insert(self.ir.node(call)?.1);
             }
-            if self.ir.node(call)?.0 == Op::Call
-                && self.dot_calls.contains(&call)
-                && self.ir.node(self.ir.node(call)?.1)?.0 == Op::Name
+            if self.dot_calls.contains(&call) && self.ir.node(self.ir.node(call)?.1)?.0 == Op::Name
             {
                 method_calls.insert(self.ir.node(call)?.1, call);
             }

@@ -139,7 +139,7 @@ impl Core<'_> {
                 self.draw_at(Code::OperandType, node, operand_message(binary))?;
                 Ok(Ok(Some(Fact::scalar(Leaf::Bool))))
             }
-            Op::Call if self.unknown_methods.contains(&node) => {
+            Op::Call | Op::NamedCall if self.unknown_methods.contains(&node) => {
                 let (_, callee, _, _) = self.ir.node(node)?;
                 let name = self.ir.node(callee)?.1;
                 let text = self.ir.name_text(name).unwrap_or_default().to_string();

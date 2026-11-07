@@ -3693,6 +3693,37 @@ fn a_to_read_through_a_destination_chosen_at_compile_time_is_an_edge_of_the_decl
     );
 }
 
+const METHODS_OF_NO_NAME_WITH_NAMED_ARGUMENTS: [&[&str]; 16] = [
+    &["Clip c:\n    Note/(1.zz(a=2))\n"],
+    &["let x = 1.zz(a=2)\n", "Clip c:\n    Note/x\n"],
+    &["Clip c:\n    Note/([1, 2].zz(b=1)[0])\n"],
+    &["state s(1)\n", "Clip c:\n    Note/(s.zz(a=1))\n"],
+    &["Clip v\n", "Clip c:\n    Note/(v.zz(a=1))\n"],
+    &["Clip c:\n    Note/(1.zz(1, a=2))\n"],
+    &["Clip c:\n    Note/(1.zz(a=2 + true))\n"],
+    &["let y = 3\n", "Clip c:\n    Note/(y.zz(a=y))\n"],
+    &["fn f(x): x.zz(a=1)\n", "Clip c:\n    Note/(f(1))\n"],
+    &["state s(1)\n", "state t = s.zz(a=1)\n"],
+    &["let a = a.zz(b=1)\n"],
+    &["let b = a + 1\nlet a = b.zz(c=1)\n"],
+    &["Clip v\nClip w\n", "Clip c:\n    Note/([v, w].zz(a=1))\n"],
+    &[
+        "fn g(x, y): x + y\n",
+        "Clip c:\n    Note/(1.g(y=2))\n    Note/(1.g(y=2 + true))\n",
+    ],
+    &["Clip c | gain=(0.5.zz(a=1))\n"],
+    &["Clip c:\n    Note/(1.zz(a=zz))\n"],
+];
+
+#[test]
+fn a_method_of_no_name_with_named_arguments_draws_unknown_name_at_the_method_beside_a_valid_twin_in_every_order()
+ {
+    assert_eq!(
+        same_as_the_old_engine(&METHODS_OF_NO_NAME_WITH_NAMED_ARGUMENTS),
+        64
+    );
+}
+
 const NESTED_USE_FORM_FAULTS: [&[&str]; 4] = [
     &[
         "pattern V():\n    U\n",

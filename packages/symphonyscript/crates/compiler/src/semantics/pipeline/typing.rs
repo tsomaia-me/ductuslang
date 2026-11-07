@@ -1409,11 +1409,18 @@ impl Core<'_> {
         let (op, callee, _, _) = self.ir.node(node)?;
         let (_, name, _, _) = self.ir.node(callee)?;
         let text = self.ir.name_text(name).unwrap_or_default().to_string();
-        let arguments = self.arguments(node)?;
-        let (Op::Call, [receiver, ..]) = (op, arguments.as_slice()) else {
+        let method = self.unknown_methods.contains(&node);
+        let arguments = if op == Op::NamedCall && method {
+            self.named_arguments(node)?
+                .into_iter()
+                .map(|(_, value)| value)
+                .collect()
+        } else {
+            self.arguments(node)?
+        };
+        let ([receiver, ..], true) = (arguments.as_slice(), op == Op::Call || method) else {
             return Ok(false);
         };
-        let method = self.unknown_methods.contains(&node);
         if !method
             && !matches!(
                 text.as_str(),
