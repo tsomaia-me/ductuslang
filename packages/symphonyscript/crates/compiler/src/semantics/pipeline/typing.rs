@@ -67,6 +67,7 @@ impl Core<'_> {
                 out.extend([b, c].into_iter().filter(|at| *at != NONE));
             }
             Op::Stepped => out.push(a),
+            Op::Field if self.expr_members.contains(&node) => out.push(a),
             Op::Call | Op::NamedCall => out.extend(self.arguments(node)?),
             Op::For => out.extend(self.fold_operands(node)?),
             Op::Array => {
@@ -1363,6 +1364,7 @@ impl Core<'_> {
                 Ok(Ok(Fact::scalar(Leaf::Int)))
             }
             Some(_) => Ok(Err(Declined(Reason::Member))),
+            None if self.holds_an_unknown_name(receiver)? => Ok(Ok(Fact::PLACEHOLDER)),
             None => {
                 let (_, _, field, _) = self.ir.node(node)?;
                 let text = self.ir.name_text(field).unwrap_or_default().to_string();
@@ -1553,6 +1555,16 @@ impl Core<'_> {
                 drawn.code,
                 Code::NotAnArray | Code::RaggedArray | Code::UnknownName
             ) && drawn.span.file == span.file
+                && drawn.span.range.start >= span.range.start
+                && drawn.span.range.end <= span.range.end
+        }))
+    }
+
+    fn holds_an_unknown_name(&self, receiver: u32) -> Result<bool, Internal> {
+        let span = self.node_span(receiver)?;
+        Ok(self.diagnostics.iter().any(|drawn| {
+            drawn.code == Code::UnknownName
+                && drawn.span.file == span.file
                 && drawn.span.range.start >= span.range.start
                 && drawn.span.range.end <= span.range.end
         }))

@@ -1584,12 +1584,19 @@ impl Core<'_> {
 
     pub fn typed_in_env(&mut self, read: &AttrRead) -> Stage<Fact> {
         let env = self.read_env(read)?;
-        if env == NONE {
-            return self.ensure_typed(read.root);
+        let open = (read.root, env, self.inst);
+        if !self.open_reads.insert(open) {
+            return Err(Internal::missed("an open declaration outside every cycle"));
         }
-        let saved = self.enter_env(env);
-        let typed = self.ensure_typed(read.root);
-        self.leave_env(saved);
+        let typed = if env == NONE {
+            self.ensure_typed(read.root)
+        } else {
+            let saved = self.enter_env(env);
+            let typed = self.ensure_typed(read.root);
+            self.leave_env(saved);
+            typed
+        };
+        self.open_reads.remove(&open);
         typed
     }
 }

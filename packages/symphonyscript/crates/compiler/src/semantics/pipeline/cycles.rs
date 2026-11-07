@@ -191,6 +191,8 @@ impl Core<'_> {
                 *slot = reads;
             }
         }
+        #[cfg(test)]
+        self.drop_test_edge(&mut edges, (lets, cells, fns));
         let components = strongly_connected(&edges);
         if !chosen {
             for component in &components {
@@ -249,27 +251,57 @@ impl Core<'_> {
             let cycle = shortest_cycle(&edges, &component, first);
             let mut names = Vec::new();
             for member in cycle {
-                if let Some(at) = member.checked_sub(fns) {
-                    names.push(self.fn_name(at)?);
-                    continue;
-                }
-                if let Some(at) = member.checked_sub(cells) {
-                    names.push(self.cell_name(at)?);
-                    continue;
-                }
-                match member
-                    .checked_sub(lets)
-                    .and_then(|at| self.attr_reads.get(at as usize))
-                {
-                    Some(read) => names.push((read.label.clone(), read.span.clone())),
-                    None => names.push(self.let_name(member)?),
-                }
+                names.push(self.member_name(member, (lets, cells, fns))?);
             }
             self.draw_named_cycle(names);
         }
         Ok(())
     }
 
+    fn member_name(
+        &self,
+        member: u32,
+        (lets, cells, fns): (u32, u32, u32),
+    ) -> Result<(String, Span), Internal> {
+        if let Some(at) = member.checked_sub(fns) {
+            return self.fn_name(at);
+        }
+        if let Some(at) = member.checked_sub(cells) {
+            return self.cell_name(at);
+        }
+        match member
+            .checked_sub(lets)
+            .and_then(|at| self.attr_reads.get(at as usize))
+        {
+            Some(read) => Ok((read.label.clone(), read.span.clone())),
+            None => self.let_name(member),
+        }
+    }
+
+    #[cfg(test)]
+    fn drop_test_edge(&self, edges: &mut [Vec<u32>], bounds: (u32, u32, u32)) {
+        let Some((from, to)) = DROPPED_EDGE.with(|dropped| dropped.borrow().clone()) else {
+            return;
+        };
+        let named = |member: u32, name: &str| {
+            self.member_name(member, bounds)
+                .is_ok_and(|(own, _)| own == name)
+        };
+        for (member, reads) in (0..).zip(edges.iter_mut()) {
+            if named(member, &from) {
+                reads.retain(|read| !named(*read, &to));
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+thread_local! {
+    pub(super) static DROPPED_EDGE: std::cell::RefCell<Option<(String, String)>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+impl Core<'_> {
     fn holds_a_cyclic_member(
         &self,
         component: &[u32],

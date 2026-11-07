@@ -405,6 +405,9 @@ impl Core<'_> {
                 }
                 operands
             }
+            Op::Field if self.expr_members.contains(&node) => {
+                vec![(a, EvalTy::Exact)]
+            }
             Op::Int
             | Op::Float
             | Op::Bool
@@ -586,11 +589,16 @@ impl Core<'_> {
 
     fn read_in_env(&mut self, read: &super::attr_read::AttrRead) -> Stage<(CoreValue, EvalTy)> {
         let env = self.read_env(read)?;
+        let open = (read.root, env, self.inst);
+        if !self.open_values.insert(open) {
+            return Err(Internal::missed("an open declaration outside every cycle"));
+        }
         let saved = self.enter_env(env);
         let chain = std::mem::take(&mut self.eval_chain);
         let outcome = self.read_value(read);
         self.eval_chain = chain;
         self.leave_env(saved);
+        self.open_values.remove(&open);
         outcome
     }
 
@@ -781,6 +789,7 @@ impl Core<'_> {
                     }
                     if op == Op::Field
                         && (self.array_members.contains_key(&node)
+                            || self.expr_members.contains(&node)
                             || self.runtime_members.contains(&node)
                             || self.bare_cell_read(node)?.is_some())
                     {
@@ -844,6 +853,11 @@ impl Core<'_> {
                                     let owner = u32::try_from(self.ir.lets.len())
                                         .unwrap_or(u32::MAX)
                                         .saturating_add(at);
+                                    if open.contains(&owner) {
+                                        return Err(Internal::missed(
+                                            "an open declaration outside every cycle",
+                                        ));
+                                    }
                                     open.insert(owner);
                                     frames.push(Frame {
                                         owner: Some(owner),
@@ -1598,6 +1612,12 @@ impl Core<'_> {
             }
             Op::Stepped => Value::Error,
             Op::Variant => self.variant_value(node)?,
+            Op::Field if self.expr_members.contains(&node) => {
+                pop(stack)?;
+                self.array_members
+                    .get(&node)
+                    .map_or(Value::Error, |length| Value::Int(*length))
+            }
             Op::Field if self.runtime_members.contains(&node) => Value::Error,
             Op::Field if self.array_members.contains_key(&node) => {
                 Value::Int(self.array_members.get(&node).copied().unwrap_or(0))

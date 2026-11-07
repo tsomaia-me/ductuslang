@@ -4235,3 +4235,90 @@ fn a_top_level_placement_a_syntax_faults_region_runs_into_draws_its_bodys_faults
  {
     assert_eq!(same_as_the_old_engine(&PLACEMENTS_A_REGION_RUNS_INTO), 18);
 }
+
+const MEMBERS_OF_FAULTY_RECEIVERS: [&[&str]; 14] = [
+    &["Clip c:\n    Note/(([1, 2][5] % true).size)\n"],
+    &["Clip c:\n    Note/(([1, 2][5] % 1).size)\n"],
+    &["Clip c:\n    Note/((if q then 1.5 else 300000000000).size)\n"],
+    &["Clip c:\n    Note/((1 / [1, 2][5]).size)\n"],
+    &["Clip c:\n    Note/((([1, 2][5]).size)[300000000000 % Wave::Saw])\n"],
+    &["Clip c:\n    Note/(([1, 2][5] < 300000000000).size)\n"],
+    &["Clip c:\n    Note/(([1, 2] + [3])[2 ** 63..].size)\n"],
+    &["Clip c:\n    Note/((if 1 > 0 then [1] else [true])[^2 ** 63..].size)\n"],
+    &["Clip c:\n    Note/(([1] + [true])[2 ** 63..].size)\n"],
+    &["Clip c:\n    Note/((5 + q).size)\n"],
+    &[
+        "let a = (if q then 1.5 else 300000000000).size\n",
+        "Clip c:\n    Note/(a)\n",
+    ],
+    &[
+        "let a = ([b] + [1]).size\n",
+        "let b = a + 1\n",
+        "Clip c:\n    Note/(a)\n",
+    ],
+    &[
+        "let xs = [1, 2]\n",
+        "Clip c:\n    Note/(([300, 1] + [u8(1)]).size)\n",
+    ],
+    &["Clip c:\n    Note/(([u8(1)] + [300])[1..].size)\n"],
+];
+
+#[test]
+fn a_size_reads_its_receivers_value_and_its_receivers_declarations_so_the_receivers_faults_draw_beside_a_valid_twin_in_every_order()
+ {
+    assert_eq!(same_as_the_old_engine(&MEMBERS_OF_FAULTY_RECEIVERS), 58);
+}
+
+const MISSED_EDGES: [(&str, &str, &str); 5] = [
+    (
+        "let x = true\nClip a | gain=(b.gain):\n    Plays as w | gain=to.gain: if x then a else b\nClip b | gain=(a.w.gain)\n",
+        "w.gain",
+        "a.gain",
+    ),
+    (
+        "Clip a | gain=(b.gain)\nClip b | gain=(a.gain)\n",
+        "b.gain",
+        "a.gain",
+    ),
+    (
+        "let a = b + 1\nlet b = a + 1\nClip c:\n    Note/(a)\n",
+        "b",
+        "a",
+    ),
+    ("let x = c.gain\nClip c | gain=(x)\n", "c.gain", "x"),
+    (
+        "let a = ([b] + [1]).size\nlet b = a + 1\nClip c:\n    Note/(a)\n",
+        "b",
+        "a",
+    ),
+];
+
+#[test]
+fn a_walk_that_meets_a_declaration_it_is_still_typing_or_evaluating_outside_every_cycle_draws_internal_error_in_bounded_work_531()
+ {
+    let new =
+        Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("the vocabulary compiles");
+    let steps = || {
+        crate::semantics::counted_walk::CountedWalk::ALL
+            .iter()
+            .map(|walk| walk.steps())
+            .sum::<u64>()
+    };
+    for (text, from, to) in MISSED_EDGES {
+        let codes = |dropped: Option<(String, String)>| {
+            super::cycles::DROPPED_EDGE.with(|edge| *edge.borrow_mut() = dropped);
+            let start = steps();
+            let found = new
+                .checked_by_new_core(&[source(text)])
+                .unwrap_or_else(|| panic!("the new core takes {text}"));
+            super::cycles::DROPPED_EDGE.with(|edge| *edge.borrow_mut() = None);
+            let codes: Vec<Code> = found.iter().map(|diagnostic| diagnostic.code).collect();
+            (codes, steps() - start)
+        };
+        let (whole, _) = codes(None);
+        assert!(whole.contains(&Code::DeclarationCycle), "{text}: {whole:?}");
+        let (missed, work) = codes(Some((from.into(), to.into())));
+        assert_eq!(missed, [Code::InternalError], "{text}");
+        assert!(work < 10_000, "{text}: {work} steps");
+    }
+}
