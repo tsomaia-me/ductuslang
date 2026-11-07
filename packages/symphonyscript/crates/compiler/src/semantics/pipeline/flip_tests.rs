@@ -4744,3 +4744,21 @@ fn a_slice_of_an_array_of_references_is_an_array_of_references_beside_a_valid_tw
 {
     assert_eq!(same_as_the_old_engine(&REFERENCE_SLICES), 24);
 }
+
+const ENUM_PATH_READS: [&[&str]; 7] = [
+    &["Osc a | wave=Saw\n", "Osc b | wave=a.wave\n"],
+    &["Osc a | wave=Saw\n", "Osc b | wave=a.wave freq=a.wave\n"],
+    &["Osc a\n", "Osc b | wave=a.wave\n"],
+    &[
+        "Osc a | wave=Saw\n",
+        "Osc b | freq=if a.wave is Saw then 1 else 2\n",
+    ],
+    &["Osc a | wave=Nope\n", "Osc b | wave=a.wave\n"],
+    &["Plant p | mode=Manual\n", "Osc b | wave=p.mode\n"],
+    &["Osc a | wave=Saw\nlet w = a.wave\n", "Osc b | wave=w\n"],
+];
+
+#[test]
+fn a_path_read_of_an_enum_attribute_reads_its_variant_beside_a_valid_twin_in_every_order() {
+    assert_eq!(same_as_the_old_engine(&ENUM_PATH_READS), 42);
+}

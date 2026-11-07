@@ -450,6 +450,8 @@ impl Core<'_> {
                 return Ok(Err(Declined(Reason::UnitAttribute)));
             }
             super::check::plain_expected(declared)
+        } else if matches!(declared.ty.scalar, symphonyscript_core::Scalar::Enum(_)) {
+            super::check::plain_expected(declared)
         } else {
             super::check::expected(declared)
         };
