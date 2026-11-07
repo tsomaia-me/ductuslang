@@ -278,11 +278,15 @@ impl Core<'_> {
         let type_operands = self.type_operands()?;
         let math_callees = self.math_callees()?;
         let mut native_callees = std::collections::HashSet::new();
+        let mut member_callees = std::collections::HashSet::new();
         for local in 0..self.ir.op.len() {
             if !matches!(self.ir.op.get(local), Some(Op::Call | Op::NamedCall)) {
                 continue;
             }
             let call = self.ir.base + u32::try_from(local).unwrap_or(0);
+            if self.member_dot_shape(call)? {
+                member_callees.insert(self.ir.node(call)?.1);
+            }
             if self.native_miscount(call)?.is_some() || self.native_named(call)?.is_some() {
                 native_callees.insert(self.ir.node(call)?.1);
             }
@@ -359,6 +363,9 @@ impl Core<'_> {
                         continue;
                     }
                     if math_callees.contains(&node) || native_callees.contains(&node) {
+                        continue;
+                    }
+                    if member_callees.contains(&node) {
                         continue;
                     }
                     if text == BuiltinName::Pi.name() {

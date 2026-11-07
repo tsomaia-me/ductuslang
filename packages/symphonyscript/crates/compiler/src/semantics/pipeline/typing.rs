@@ -434,6 +434,11 @@ impl Core<'_> {
             Op::Index | Op::IndexFromEnd => self.index_fact(node, a, b)?,
             Op::Convert => self.convert_fact(node, a, b)?,
             Op::Call | Op::NamedCall
+                if self.dot_calls.contains(&node) && self.member_dot_call(node)? =>
+            {
+                Fact::PLACEHOLDER
+            }
+            Op::Call | Op::NamedCall
                 if self.dot_calls.contains(&node) && !self.dot_call_lands(node)? =>
             {
                 return Ok(Err(Declined(Reason::Member)));
@@ -1396,5 +1401,54 @@ impl Core<'_> {
             || (self.math_named(node)?.is_none()
                 && matches!(receiver_fact.leaf, Leaf::Placeholder | Leaf::Error));
         Ok(!receiver_fact.node && callable && !(faulty && self.callee(node)?.is_none()))
+    }
+}
+
+impl Core<'_> {
+    fn member_dot_call(&mut self, node: u32) -> Result<bool, Internal> {
+        let (op, callee, _, _) = self.ir.node(node)?;
+        let (_, name, _, _) = self.ir.node(callee)?;
+        let text = self.ir.name_text(name).unwrap_or_default().to_string();
+        let arguments = self.arguments(node)?;
+        let (Op::Call, [receiver]) = (op, arguments.as_slice()) else {
+            return Ok(false);
+        };
+        if !matches!(
+            text.as_str(),
+            "size" | "capacity" | "bytes" | "keys" | "values"
+        ) || self.ir.node(*receiver)?.0 == Op::To
+        {
+            return Ok(false);
+        }
+        let fact = self.fact(*receiver)?;
+        let typed = match fact.leaf {
+            Leaf::Int | Leaf::Float | Leaf::Bool | Leaf::Empty | Leaf::Enum(Some(_)) => true,
+            Leaf::Placeholder | Leaf::Error | Leaf::Enum(None) => false,
+        };
+        if fact.node || !typed {
+            return Ok(false);
+        }
+        let array = !fact.dims.is_empty() || fact.leaf == Leaf::Empty;
+        if array && matches!(text.as_str(), "size" | "capacity" | "bytes") {
+            let file = self.file_of(node);
+            let (lo, _) = self.ir.span(node)?;
+            let (_, hi) = self.ir.span(callee)?;
+            let span = self.span(file, lo, hi);
+            self.draw(
+                Code::NotCallable,
+                span,
+                "only a function or a built-in is called",
+            );
+        } else {
+            let file = self.file_of(node);
+            let entry = self.ir.name(name).ok_or(Internal::missed("IR name"))?;
+            let span = self.span(file, entry.lo, entry.hi);
+            self.draw(
+                Code::UnknownName,
+                span,
+                format!("`{text}` names nothing in scope"),
+            );
+        }
+        Ok(true)
     }
 }

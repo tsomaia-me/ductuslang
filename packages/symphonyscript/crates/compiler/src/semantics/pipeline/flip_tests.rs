@@ -2905,3 +2905,29 @@ fn a_placement_flag_sets_its_bool_attribute_and_draws_unknown_flag_or_duplicate_
  {
     assert_eq!(same_as_the_old_engine(&PLACEMENT_FLAGS), 16);
 }
+
+const MEMBER_DOT_CALLS: [&[&str]; 11] = [
+    &["let xs = [1, 2]\n", "Clip c:\n    Note/(xs.size())\n"],
+    &["let xs = [1, 2]\n", "Clip c:\n    Note/((xs).capacity())\n"],
+    &["Clip c:\n    Note/([1, 2][0].size())\n"],
+    &["let xs = [1, 2]\n", "Clip c:\n    Note/(xs.keys())\n"],
+    &["state q([]): i32[..4]\n", "Clip c:\n    Note/(q.size())\n"],
+    &["Clip c:\n    Note/([1, 2].size() + [1, 2][5])\n"],
+    &[
+        "fn f(v): v.values()\n",
+        "Clip c:\n    Note/(f(1) + f([1]))\n",
+    ],
+    &["fn f(v): v.size()\n", "let x = f([1])\n"],
+    &["Clip c:\n    Note/(1.5.bytes() + true.keys())\n"],
+    &[
+        "let xs = [[1], [2]]\n",
+        "Clip c | gain=xs[0].capacity():\n    Note\n",
+    ],
+    &["let xs = [1, 2]\n", "Clip c:\n    Note/(xs.size)\n"],
+];
+
+#[test]
+fn a_member_called_with_no_arguments_draws_not_callable_on_an_array_and_unknown_name_otherwise_beside_a_valid_twin_in_every_order()
+ {
+    assert_eq!(same_as_the_old_engine(&MEMBER_DOT_CALLS), 54);
+}
