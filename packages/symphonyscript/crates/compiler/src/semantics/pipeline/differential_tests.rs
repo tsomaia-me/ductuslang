@@ -2337,6 +2337,11 @@ fn a_no_entry_instance_alone_moves_only_for_a_program_whose_placement_for_runs_n
             "state s(1)\nlet ys = [s]\nClip c:\n    for x in ys:\n        Note/x\n",
             true,
         ),
+        (
+            "Clip c:\n    [for i: i32, x in 0..4: Note/(60 + i + x)]\n",
+            true,
+        ),
+        ("Clip c:\n    [for i: i32 in 0..4: Note/zz]\n", false),
         ("Clip c:\n    for x in [1, 2]:\n        Note/x\n", false),
         ("Clip c:\n    for x in [1, 2]:\n        Note/zz\n", false),
         (
@@ -4189,6 +4194,36 @@ fn an_attribute_set_twice_one_entry_a_refused_bare_name_draws_duplicate_attribut
             .unwrap_or_else(|unexplained| panic!("{text}: {unexplained:?}"));
         assert!(
             classes.len() == 1 && classes.iter().all(|class| class.ledger == "476"),
+            "{text}"
+        );
+    }
+}
+
+const FAULTY_CHILDREN_AND_FAULTY_LINE_KINDS: [&str; 5] = [
+    "Rig stage:\n    Lampstate  as wash\n\nScene dusk | hold=8:\n    Cue as first /1 | fade=2\n\nScene night | hold=dusk.hold * 1.5:\n    Cue/0 | fade=dusk.first.fade\n    Dims as soften | depth=0.4: stage.wash\n\nScene dawn | hold=night.soften.depth * 10:\n    Cue/0\n",
+    "Rig stage(:\n    Lamp as wash\n\nScene dusk | hold=8:\n    Cue as first /1 | fade=2\n\nScene night | hold=dusk.hold * 1.5:\n    Cue/0 | fade=dusk.first.fade\n    Dims as soften | depth=0.4: stage.wash\n\nScene dawn | hold=night.soften.depth * 10:\n    Cue/0\n",
+    "Rig stage:\n    Lamp as wash\n\nScene dusk | hold=8:\n    xCue as first /1 | fade=2\n\nScene night | hold=dusk.hold * 1.5:\n    Cue/0 | fade=dusk.first.fade\n    Dims as soften | depth=0.4: stage.wash\n\nScene dawn | hold=night.soften.depth * 10:\n    Cue/0\n",
+    "Rig stage:\n    Lamp as wash\n\nScene dusk (| hold=8:\n    Cue as first /1 | fade=2\n\nScene night | hold=dusk.hold * 1.5:\n    Cue/0 | fade=dusk.first.fade\n    Dims as soften | depth=0.4: stage.wash\n\nScene dawn | hold=night.soften.depth * 10:\n    Cue/0\n",
+    "xpattern Wash(default level, tint = 0.0):\n    Lamp/level | hue=tint\n\nRig stage:\n    Wash/0.3 | tint=0.6\n",
+];
+
+#[test]
+fn a_step_to_a_faulty_child_and_a_kind_a_faulty_line_names_draw_nothing_as_in_the_repaired_program_476()
+ {
+    let old = Compiler::new(&symphonyscript_fixtures::vocabulary())
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
+    let new =
+        Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("the vocabulary compiles");
+    for text in FAULTY_CHILDREN_AND_FAULTY_LINE_KINDS {
+        let sources = [source(text)];
+        let found = new
+            .checked_by_new_core(&sources)
+            .expect("the new core takes the program");
+        let classes = reviewed::moved(text, &drawn(&old.check(&sources)), &drawn(&found))
+            .unwrap_or_else(|unexplained| panic!("{text}: {unexplained:?}"));
+        assert!(
+            !classes.is_empty() && classes.iter().all(|class| class.ledger == "476"),
             "{text}"
         );
     }

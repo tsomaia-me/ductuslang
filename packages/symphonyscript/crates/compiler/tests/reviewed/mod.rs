@@ -5614,6 +5614,16 @@ pub const CLASSES: &[Class] = &[
         rule: "an attribute set twice, one of its entries a bare name or `!name` on an attribute that is not a `bool`, draws duplicate-attribute beside that entry's type-mismatch (SPEC §7.6: setting an attribute twice, by any combination of entries, flags and `/expr`, is an error), where the old engine draws the type-mismatch alone (`Cue/0 | fade=dusk.first.u8 fade`, `Cue/0 | fade=1 fade`, `Cue/0 | fade fade=1`)",
         explains: duplicate_beside_a_refused_bare_name,
     },
+    Class {
+        ledger: "476",
+        rule: "a path step naming a child whose placement holds a fault, an unknown kind or a syntax fault on its own line or on its parent's, reads nothing and draws nothing, as the program with the fault repaired reads the child (the repair rule, DECISIONS.md 2026-11-03), where the old engine drops the faulty placement and draws unknown-attribute at the step (`Lampstate as wash` read as `stage.wash`, `Scene dusk (| hold=8:` holding `Cue as first`)",
+        explains: step_to_a_faulty_child,
+    },
+    Class {
+        ledger: "476",
+        rule: "a placement whose kind is a name a line holding a syntax fault declares draws no unknown-kind, the name being a placeholder wherever it is used (ARCHITECTURE §7, ledger 520), where the old engine draws unknown-kind (`xpattern Wash(default level, tint = 0.0):` with `Wash/0.3`)",
+        explains: kind_named_on_a_faulty_line,
+    },
 ];
 
 fn annotated_let_value(seen: &Seen<'_>, at: &Drawn) -> bool {
@@ -5781,8 +5791,9 @@ fn placement_heads(program: &str) -> Vec<(usize, usize)> {
             let indent = line.len() - line.trim_start().len();
             let bundle = line.trim_start().starts_with('[');
             let word = if bundle { "[for ".len() } else { "for ".len() };
-            let end = match line.find(": ") {
-                Some(colon) if bundle => colon,
+            let from = line.find(" in ").unwrap_or(0);
+            let end = match line.get(from..).and_then(|rest| rest.find(": ")) {
+                Some(colon) if bundle => from + colon,
                 Some(_) | None => line.trim_end().len(),
             };
             (start + indent + word, start + end)
@@ -6557,5 +6568,64 @@ fn duplicate_beside_a_refused_bare_name(seen: &Seen<'_>, change: Change, at: &Dr
             drawn.0 == "type-mismatch"
                 && seen.text(drawn).trim_start_matches('!') == name
                 && seen.line(drawn.1) == seen.line(at.1)
+        })
+}
+
+fn syntax_code(code: &str) -> bool {
+    code.ends_with("-syntax") || code == "unexpected-character"
+}
+
+fn faulted_line(seen: &Seen<'_>, line: usize) -> bool {
+    seen.old.iter().chain(seen.new).any(|drawn| {
+        seen.line(drawn.1) == line && (syntax_code(&drawn.0) || drawn.0 == "unknown-kind")
+    })
+}
+
+fn step_to_a_faulty_child(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
+    let name = seen.text(at);
+    if change != Change::Removed
+        || at.0 != "unknown-attribute"
+        || name.is_empty()
+        || !name.chars().all(|c| c.is_alphanumeric() || c == '_')
+        || !seen.before(at).ends_with('.')
+    {
+        return false;
+    }
+    let lines = lines_at(seen.program);
+    let declared = format!(" as {name}");
+    lines.iter().enumerate().any(|(at_line, (_, text))| {
+        let Some(found) = text.find(&declared) else {
+            return false;
+        };
+        let rest = text.get(found + declared.len()..).unwrap_or_default();
+        if rest.starts_with(|c: char| c.is_alphanumeric() || c == '_') {
+            return false;
+        }
+        let depth = text.len() - text.trim_start().len();
+        let parent = lines.iter().take(at_line).rposition(|(_, earlier)| {
+            !earlier.trim().is_empty() && earlier.len() - earlier.trim_start().len() < depth
+        });
+        faulted_line(seen, at_line) || parent.is_some_and(|parent| faulted_line(seen, parent))
+    })
+}
+
+fn kind_named_on_a_faulty_line(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
+    let name = seen.text(at);
+    if change != Change::Removed || at.0 != "unknown-kind" || name.is_empty() {
+        return false;
+    }
+    let own = seen.line(at.1);
+    lines_at(seen.program)
+        .iter()
+        .enumerate()
+        .any(|(line, (_, text))| {
+            line != own
+                && text
+                    .split(|c: char| !(c.is_alphanumeric() || c == '_'))
+                    .any(|word| word == name)
+                && seen
+                    .old
+                    .iter()
+                    .any(|drawn| seen.line(drawn.1) == line && syntax_code(&drawn.0))
         })
 }

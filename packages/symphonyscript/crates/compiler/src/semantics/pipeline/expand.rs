@@ -92,6 +92,11 @@ impl Core<'_> {
             return Ok(Ok(NONE));
         };
         if parent == NONE && !self.ir.named(name) {
+            if placement.body != NONE
+                && let Err(declined) = self.unknown_body(placement.body, file)?
+            {
+                return Ok(Err(declined));
+            }
             return Ok(Ok(NONE));
         }
         if !self.charge_item(file, placement.lo, placement.hi)? {
