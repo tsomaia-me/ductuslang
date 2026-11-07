@@ -397,7 +397,7 @@ impl Core<'_> {
         Ok(Ok(at))
     }
 
-    fn step_row(&mut self, node: u32, row: u32, field: u32) -> Stage<End> {
+    pub fn step_row(&mut self, node: u32, row: u32, field: u32) -> Stage<End> {
         let entry = *self.ir.name(field).ok_or(Internal::missed("IR name"))?;
         if let Some(child) = self.child_named(row, entry.sym.0) {
             return Ok(Ok(End::Row(child)));
@@ -535,6 +535,10 @@ impl Core<'_> {
                     if self.pattern_at(owner).is_some() {
                         return self.use_param_path_end(node, owner, position, field);
                     }
+                    if owner < self.functions() {
+                        self.param_paths.insert(node);
+                        return Ok(Ok(End::Placeholder));
+                    }
                     return self.loop_name_path_end(node, receiver, position, field);
                 }
                 DeclRef::Let(at) => match self.let_reference_row(at, node, field)? {
@@ -560,7 +564,7 @@ impl Core<'_> {
                 End::Placeholder
             }
         } else if op == Op::Field {
-            if self.per_inst_paths.contains(&receiver) {
+            if self.per_inst_paths.contains(&receiver) || self.param_paths.contains(&receiver) {
                 return Ok(Err(Declined(Reason::Member)));
             }
             if self.array_members.contains_key(&receiver) || self.cell_sizes.contains_key(&receiver)
@@ -689,6 +693,7 @@ impl Core<'_> {
         for (_, faults) in left {
             self.diagnostics.extend(faults);
         }
+        self.param_path_reads()?;
         if let Err(declined) = self.resolve_use_paths()? {
             return Ok(Err(declined));
         }

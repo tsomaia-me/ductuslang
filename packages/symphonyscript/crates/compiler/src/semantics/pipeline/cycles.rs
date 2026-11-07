@@ -187,6 +187,12 @@ impl Core<'_> {
             for root in self.function_roots(at)? {
                 reads.extend(self.declaration_reads(root, NONE, (lets, cells, fns))?);
             }
+            reads.extend(
+                self.param_reads
+                    .iter()
+                    .filter(|(function, _)| *function == at)
+                    .map(|(_, read)| lets + read),
+            );
             if let Some(slot) = edges.get_mut((fns + at) as usize) {
                 *slot = reads;
             }

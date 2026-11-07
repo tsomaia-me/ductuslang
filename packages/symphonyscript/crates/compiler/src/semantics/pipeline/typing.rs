@@ -481,26 +481,23 @@ impl Core<'_> {
                     Err(declined) => return Ok(Err(declined)),
                 }
             }
-            Op::Field => match self.path_read(node)?.cloned() {
-                Some(read) if read.cyclic => Fact::PLACEHOLDER,
-                Some(read) => {
-                    if read.root != NONE
-                        && let Err(declined) = self.typed_in_env(&read)?
-                    {
-                        return Ok(Err(declined));
-                    }
-                    match self.bare_cell_read(node)? {
-                        Some(at) => self.cell_read_fact(at)?,
-                        None => super::annotation::annotated_fact(read.ty),
+            Op::Field if self.param_paths.contains(&node) => match self.param_path_fact(node)? {
+                Ok(Some(fact)) => fact,
+                Ok(None) if self.expr_members.contains(&node) => {
+                    match self.expr_member_fact(node, a)? {
+                        Ok(fact) => fact,
+                        Err(declined) => return Ok(Err(declined)),
                     }
                 }
-                None => match self.to_choice(node) {
-                    Some(ty) => super::annotation::annotated_fact(ty),
-                    None => {
-                        self.draw_body_path_faults(node);
-                        Fact::PLACEHOLDER
-                    }
+                Ok(None) => match self.path_fact(node)? {
+                    Ok(fact) => fact,
+                    Err(declined) => return Ok(Err(declined)),
                 },
+                Err(declined) => return Ok(Err(declined)),
+            },
+            Op::Field => match self.path_fact(node)? {
+                Ok(fact) => fact,
+                Err(declined) => return Ok(Err(declined)),
             },
             Op::Variant => match self.variant_fact(node)? {
                 Ok(fact) => fact,
@@ -1384,6 +1381,30 @@ impl Core<'_> {
                 Ok(Ok(Fact::PLACEHOLDER))
             }
         }
+    }
+
+    fn path_fact(&mut self, node: u32) -> Stage<Fact> {
+        Ok(Ok(match self.path_read(node)?.cloned() {
+            Some(read) if read.cyclic => Fact::PLACEHOLDER,
+            Some(read) => {
+                if read.root != NONE
+                    && let Err(declined) = self.typed_in_env(&read)?
+                {
+                    return Ok(Err(declined));
+                }
+                match self.bare_cell_read(node)? {
+                    Some(at) => self.cell_read_fact(at)?,
+                    None => super::annotation::annotated_fact(read.ty),
+                }
+            }
+            None => match self.to_choice(node) {
+                Some(ty) => super::annotation::annotated_fact(ty),
+                None => {
+                    self.draw_body_path_faults(node);
+                    Fact::PLACEHOLDER
+                }
+            },
+        }))
     }
 
     fn history_member_fact(

@@ -555,6 +555,9 @@ impl Core<'_> {
                 self.not_callables_drawn.insert(callee);
                 return Ok(Ok(Fact::PLACEHOLDER));
             }
+            if self.unbound_destination_callee(node)? {
+                return Ok(Err(Declined(Reason::DestinationValue)));
+            }
             if self.unknown_callee(node)? {
                 return Ok(Ok(Fact::PLACEHOLDER));
             }
@@ -1528,5 +1531,26 @@ impl Core<'_> {
             "size" | "capacity" | "bytes" | "keys" | "values" | "map"
         );
         Ok(member && !self.arguments(node)?.is_empty())
+    }
+}
+
+impl Core<'_> {
+    fn unbound_destination_callee(&self, node: u32) -> Result<bool, Internal> {
+        let callee = self.ir.node(node)?.1;
+        if self.ir.node(callee)?.0 != Op::Name || self.bound(callee)? != DeclRef::None {
+            return Ok(false);
+        }
+        for item in &self.ir.items {
+            let crate::semantics::ir::flat::ItemRec::Wire(wire) = item else {
+                continue;
+            };
+            for found in self.postorder(wire.destination)? {
+                CountedWalk::CoreWireDestination.step();
+                if found == node {
+                    return Ok(true);
+                }
+            }
+        }
+        Ok(false)
     }
 }

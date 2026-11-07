@@ -4674,3 +4674,57 @@ fn a_destination_in_an_unrun_body_or_an_unused_pattern_that_holds_no_instance_dr
  {
     assert_eq!(same_as_the_old_engine(&UNRUN_DESTINATIONS), 38);
 }
+
+const REFERENCE_PARAMETER_PATHS: [&[&str]; 5] = [
+    &[
+        "fn f(x): x.gain\nClip a | gain=0.5\n",
+        "Clip c:\n    Note | velocity=f(a)\n",
+    ],
+    &[
+        "fn f(x): x.zz\nClip a | gain=0.5\n",
+        "Clip c:\n    Note | velocity=f(a)\n",
+    ],
+    &[
+        "fn f(x): x.gain + 1\nClip a | gain=1.5\nClip b | gain=true\n",
+        "Clip c:\n    Note | velocity=f(a)\n    Note | velocity=f(b)\n",
+    ],
+    &["fn f(x): x.gain\n", "Clip a | gain=f(a)\n"],
+    &["fn f(x): x.gain\nfn g(y): f(y)\n", "Clip a | gain=g(a)\n"],
+];
+
+const PARAMETER_MEMBERS: [&[&str]; 7] = [
+    &[
+        "fn f(x): x.gain\nfn g(y): f(y)\nClip a | gain=0.5\n",
+        "Clip c:\n    Note | velocity=g(a)\n",
+    ],
+    &["fn f(x): x.gain\n", "Clip c:\n    Note | velocity=f(1)\n"],
+    &["fn f(x): x.size\nClip a\n", "Clip c:\n    Note/(f(a))\n"],
+    &[
+        "fn f(xs): [1, 2][xs.size]\n",
+        "Clip c:\n    Note/(f([1, 2]))\n",
+    ],
+    &[
+        "fn f(x): x.gain\nClip a | gain=300000000000\n",
+        "Clip c:\n    Note | velocity=f(a)\n",
+    ],
+    &[
+        "fn f(x): x.gain\nClip a | gain=0.5\nlet r = a\n",
+        "Clip c:\n    Note | velocity=f(r)\n",
+    ],
+    &[
+        "fn f(x): x.gain\nClip a | gain=0.5\n",
+        "Clip c:\n    for i in 0..2:\n        Note | velocity=f(a) + i\n",
+    ],
+];
+
+#[test]
+fn a_path_through_a_function_parameter_reads_the_attribute_of_the_instance_its_body_instance_holds_beside_a_valid_twin_in_every_order()
+ {
+    assert_eq!(same_as_the_old_engine(&REFERENCE_PARAMETER_PATHS), 30);
+}
+
+#[test]
+fn a_member_or_a_path_of_a_function_parameter_through_a_second_call_a_let_or_a_loop_reads_its_argument_beside_a_valid_twin_in_every_order()
+ {
+    assert_eq!(same_as_the_old_engine(&PARAMETER_MEMBERS), 42);
+}

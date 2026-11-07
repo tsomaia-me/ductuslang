@@ -71,6 +71,7 @@ mod memo_arg;
 mod memo_entry;
 mod memo_key;
 mod need;
+mod param_paths;
 #[cfg(test)]
 mod path_tests;
 mod paths;
