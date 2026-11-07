@@ -211,6 +211,16 @@ impl Core<'_> {
                     (item, env)
                 }
                 Work::Item(item, env) => (item, env),
+                Work::BundleEnd(item, env, rows, (waiting, drawn)) => {
+                    if late.len() == waiting
+                        && self.diagnostics.len() == drawn
+                        && self.instances.len() == rows as usize
+                    {
+                        let file = self.env_file(env, record.file);
+                        self.empty_bundle(item, env, file)?;
+                    }
+                    continue;
+                }
                 Work::Items(at, end, env) => {
                     if at >= end {
                         continue;
@@ -282,6 +292,17 @@ impl Core<'_> {
                     match run {
                         Some(run) if run.count > 0 => {
                             self.reserve_loop(&run)?;
+                            if self.bundle_loops.contains(&item)
+                                && self.only_uses(&self.bundle_loop_members(item)?)?
+                            {
+                                let rows = u32::try_from(self.instances.len()).unwrap_or(NONE);
+                                work.push(Work::BundleEnd(
+                                    item,
+                                    env,
+                                    rows,
+                                    (late.len(), self.diagnostics.len()),
+                                ));
+                            }
                             work.push(Work::Loop(run));
                         }
                         run => {
@@ -396,6 +417,15 @@ impl Core<'_> {
                 ItemRec::Paren(inner) if inner != NONE => work.push(Work::Item(inner, env)),
                 ItemRec::Bundle(_) => {
                     members.extend(self.bundle_items(item));
+                    if self.only_uses(&self.bundle_items(item))? {
+                        let rows = u32::try_from(self.instances.len()).unwrap_or(NONE);
+                        work.push(Work::BundleEnd(
+                            item,
+                            env,
+                            rows,
+                            (late.len(), self.diagnostics.len()),
+                        ));
+                    }
                     for member in self.bundle_items(item).into_iter().rev() {
                         work.push(Work::Item(member, env));
                     }
@@ -642,10 +672,15 @@ impl Core<'_> {
     }
 
     fn empty_bundle(&mut self, item: u32, env: u32, file: u32) -> Result<(), Internal> {
-        let ItemRec::For(rec) = *self.ir.item(item)? else {
-            return Ok(());
+        let span = match *self.ir.item(item)? {
+            ItemRec::For(rec) => self.span(file, rec.lo, rec.hi),
+            ItemRec::Bundle(rec) => self.span(file, rec.lo, rec.hi),
+            ItemRec::Placement(_)
+            | ItemRec::Wire(_)
+            | ItemRec::Line(_)
+            | ItemRec::When(_)
+            | ItemRec::Paren(_) => return Ok(()),
         };
-        let span = self.span(file, rec.lo, rec.hi);
         let saved = self.enter_env(env);
         self.draw(
             Code::EmptyBundle,
@@ -654,5 +689,22 @@ impl Core<'_> {
         );
         self.leave_env(saved);
         Ok(())
+    }
+}
+
+impl Core<'_> {
+    fn only_uses(&self, members: &[u32]) -> Result<bool, Internal> {
+        if members.is_empty() {
+            return Ok(false);
+        }
+        for member in members {
+            let ItemRec::Placement(placement) = *self.ir.item(*member)? else {
+                return Ok(false);
+            };
+            if self.used_pattern(placement.kind).is_none() {
+                return Ok(false);
+            }
+        }
+        Ok(true)
     }
 }

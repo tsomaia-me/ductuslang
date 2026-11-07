@@ -6,4 +6,5 @@ pub(crate) enum Work {
     Loop(LoopRun),
     Late(u32, u32),
     Item(u32, u32),
+    BundleEnd(u32, u32, u32, (usize, usize)),
 }

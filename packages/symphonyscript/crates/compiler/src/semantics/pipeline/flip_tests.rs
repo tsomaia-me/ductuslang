@@ -3705,3 +3705,33 @@ fn a_unary_operator_on_an_array_of_references_draws_array_operand_beside_a_valid
         48
     );
 }
+
+const BUNDLES_OF_EMPTY_USES: [&[&str]; 5] = [
+    &[
+        "pattern E():\n    for i in 0..0:\n        Note\n",
+        "Clip c:\n    [E E]\n",
+    ],
+    &[
+        "pattern E():\n    for i in 0..0:\n        Note\n",
+        "Clip c:\n    [for i in 0..2: E]\n",
+    ],
+    &[
+        "pattern E(default v):\n    for i in 0..v:\n        Note\n",
+        "Clip c:\n    [for i in 0..2: E/0]\n",
+    ],
+    &[
+        "pattern E(default v):\n    for i in 0..v:\n        Note\n",
+        "Clip c:\n    [E/1 E/0]\n",
+    ],
+    &[
+        "pattern E(default v):\n    for i in 0..v:\n        Note\n",
+        "pattern B():\n    [E/0 E/0]\n",
+        "Clip c:\n    B\n    B\n",
+    ],
+];
+
+#[test]
+fn a_bundle_whose_pattern_uses_yield_no_member_draws_empty_bundle_beside_a_valid_twin_in_every_order()
+ {
+    assert_eq!(same_as_the_old_engine(&BUNDLES_OF_EMPTY_USES), 48);
+}
