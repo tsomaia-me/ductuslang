@@ -5017,7 +5017,19 @@ fn a_path_through_a_parameter_whose_argument_is_no_written_instance_is_declined_
     }
 }
 
-const REFERENCE_ARRAY_BYTES: [&[&str]; 4] = [
+const REFERENCE_ARRAY_BYTES: [&[&str]; 7] = [
+    &[
+        "Clip n | gain=2:\n    Note\nClip m:\n    Note\nlet r = [n, m]\n",
+        "Clip c:\n    Note/(r.bytes[1])\n",
+    ],
+    &[
+        "Clip n | gain=2:\n    Note\nClip m:\n    Note\nlet r = [n, m]\n",
+        "Clip c:\n    Note/(r.size)\n",
+    ],
+    &[
+        "Clip n | gain=2:\n    Note\nClip m:\n    Note\nlet r = [n, m]\nlet s = r + [n]\n",
+        "Clip c:\n    Note/([60, 61, 62][r.capacity + s.size - 4])\n",
+    ],
     &[
         "Clip n | gain=2:\n    Note\nClip m:\n    Note\n",
         "Clip c:\n    Note/([n, m].bytes[0])\n",
@@ -5037,7 +5049,7 @@ const REFERENCE_ARRAY_BYTES: [&[&str]; 4] = [
 ];
 
 #[test]
-fn a_bytes_of_an_array_of_references_draws_operand_type_at_the_member_beside_a_valid_twin_in_every_order()
+fn a_member_of_an_array_of_references_through_a_let_measures_it_and_its_bytes_draws_operand_type_beside_a_valid_twin_in_every_order()
  {
-    assert_eq!(same_as_the_old_engine(&REFERENCE_ARRAY_BYTES), 24);
+    assert_eq!(same_as_the_old_engine(&REFERENCE_ARRAY_BYTES), 42);
 }

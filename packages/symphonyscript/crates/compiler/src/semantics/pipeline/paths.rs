@@ -2215,6 +2215,15 @@ impl Core<'_> {
         if !fact.node {
             return self.let_member(node, field, &fact);
         }
+        if !fact.dims.is_empty()
+            && matches!(
+                self.ir.name_text(field).unwrap_or_default(),
+                "size" | "capacity" | "bytes"
+            )
+        {
+            self.expr_members.insert(node);
+            return Ok(Ok(End::Value));
+        }
         if !fact.dims.is_empty() {
             return Ok(Err(Declined(Reason::Member)));
         }
