@@ -4928,7 +4928,7 @@ fn a_method_call_on_an_instance_naming_its_child_or_attribute_where_no_function_
     }
 }
 
-const SCALED_PATH_READS: [&[&str]; 6] = [
+const SCALED_PATH_READS: [&[&str]; 5] = [
     &[
         "Bar a | bar_len=i64(1)\n",
         "Bar b | beat_len=a.bar_len + i64(9223372036854775806)\n",
@@ -4942,7 +4942,6 @@ const SCALED_PATH_READS: [&[&str]; 6] = [
         "Bar a | bar_len=k\n",
         "Bar b | beat_len=a.bar_len + i64(9223372036854775800)\n",
     ],
-    &["Bar a | bar_len=2\n", "Bar b | plain=a.bar_len\n"],
     &[
         "Bar a | bar_len=1\n",
         "Bar b | beat_len=a.bar_len * 2 + a.bar_len\n",
@@ -4976,7 +4975,7 @@ fn a_path_read_of_a_scaled_unit_attribute_reads_its_value_in_base_units_in_every
             programs += 1;
         }
     }
-    assert_eq!(programs, 50);
+    assert_eq!(programs, 44);
     let text = "Bar a | bar_len=i64(3000000000000000000)\nBar b | beat_len=a.bar_len\n";
     for order in Orders::Every.of(&[text, twin]) {
         let text = order.concat();
@@ -5086,4 +5085,71 @@ fn a_call_binding_nothing_in_a_wire_destination_is_found_in_work_linear_in_the_d
     let (small, large) = (work(8), work(16));
     assert!(small > 0, "{small} steps at 8 rigs");
     assert!(large <= 2 * small, "{small} steps at 8 rigs, {large} at 16");
+}
+
+const UNIT_PATH_POSITIONS: [(&str, &str, Code, &str); 6] = [
+    (
+        "Bar a | bar_len=1\n",
+        "Bar b | beat_len=[10, 20, 30][a.bar_len]\n",
+        Code::UnitOperation,
+        "a.bar_len",
+    ),
+    (
+        "Bar a | bar_len=1\n",
+        "Bar b | beat_len=[10, 20, 30][a.bar_len..][0]\n",
+        Code::UnitOperation,
+        "a.bar_len",
+    ),
+    (
+        "Bar a | bar_len=1\n",
+        "Bar b | beat_len=(for i in 0..a.bar_len into s from 0: s + i)\n",
+        Code::UnitOperation,
+        "a.bar_len",
+    ),
+    (
+        "Bar a | bar_len=1\n",
+        "Bar b | beat_len=[10, 20, 30][^a.bar_len]\n",
+        Code::UnitOperation,
+        "a.bar_len",
+    ),
+    (
+        "Bar a | beat_len=1\n",
+        "Bar b | beat_len=[10, 20, 30][a.beat_len]\n",
+        Code::UnitOperation,
+        "a.beat_len",
+    ),
+    (
+        "Bar a | bar_len=2\n",
+        "Bar b | plain=a.bar_len\n",
+        Code::UnitMismatch,
+        "a.bar_len",
+    ),
+];
+
+#[test]
+fn a_path_read_of_a_unit_attribute_has_its_family_in_a_program_writing_no_unit_suffix_and_draws_unit_operation_at_an_index_a_bound_or_an_offset_in_every_order_540()
+ {
+    let vocabulary = symphonyscript_fixtures::bar_vocabulary();
+    let new = Compiler::new(&vocabulary).expect("the vocabulary compiles");
+    let twin = "Bar t | plain=i64(3)\nBar p | plain=1\nBar q | beat_len=[10, 20, 30][p.plain]\n";
+    let mut programs = 0;
+    for (written, read, code, at) in UNIT_PATH_POSITIONS {
+        for order in Orders::Every.of(&[written, read, twin]) {
+            let text = order.concat();
+            let found = new
+                .checked_by_new_core(&[source(&text)])
+                .unwrap_or_else(|| panic!("the new core takes {text}"));
+            let drawn: Vec<(Code, &str)> = found
+                .iter()
+                .map(|diagnostic| {
+                    let range =
+                        diagnostic.span.range.start as usize..diagnostic.span.range.end as usize;
+                    (diagnostic.code, text.get(range).unwrap_or_default())
+                })
+                .collect();
+            assert_eq!(drawn, [(code, at)], "{text}");
+            programs += 1;
+        }
+    }
+    assert_eq!(programs, 36);
 }
