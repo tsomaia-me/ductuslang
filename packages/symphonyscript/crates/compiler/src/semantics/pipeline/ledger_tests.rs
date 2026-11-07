@@ -1163,20 +1163,20 @@ fn a_join_chain_onto_a_variable_array_cell_costs_work_and_memory_linear_in_the_c
 
 #[test]
 #[ignore = "stress"]
-fn stress_a_join_chain_onto_a_variable_array_cell_costs_time_and_memory_linear_in_the_chain_500() {
+fn stress_a_join_chain_onto_a_variable_array_cell_costs_work_and_memory_linear_in_the_chain_500() {
     assert_none(&ledger_failures(
         "500 let",
         [4_000, 8_000, 16_000],
         variable_join_chain("let"),
         &one("reactive-let"),
-        Timing::Judged,
+        Timing::Printed,
     ));
     assert_none(&ledger_failures(
         "500 state",
         [4_000, 8_000, 16_000],
         variable_join_chain("state"),
         &none,
-        Timing::Judged,
+        Timing::Printed,
     ));
 }
 
