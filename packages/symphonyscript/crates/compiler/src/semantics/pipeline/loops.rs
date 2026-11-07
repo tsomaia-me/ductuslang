@@ -275,6 +275,9 @@ impl Core<'_> {
         let ItemRec::For(rec) = *self.ir.item(item)? else {
             return Err(Internal::missed("IR for block"));
         };
+        for root in iterable_roots(rec.head) {
+            self.mark_head_members(root)?;
+        }
         let saved = self.enter_env(env);
         for root in iterable_roots(rec.head) {
             match self.reads_deferred(root) {
@@ -292,6 +295,59 @@ impl Core<'_> {
         let outcome = self.loop_head_in(item, rec, env);
         self.leave_env(saved);
         outcome
+    }
+
+    fn mark_head_members(&mut self, root: u32) -> Result<(), Internal> {
+        let mut stack = vec![root];
+        let mut kids = Vec::new();
+        while let Some(node) = stack.pop() {
+            let (op, receiver, field, _) = self.ir.node(node)?;
+            if op == Op::Field
+                && self.is_member_name(field)
+                && self.structural_receiver(receiver)?
+            {
+                self.expr_members.insert(node);
+            }
+            kids.clear();
+            self.push_operands(node, &mut kids)?;
+            stack.extend(kids.iter().copied());
+        }
+        Ok(())
+    }
+
+    fn is_member_name(&self, field: u32) -> bool {
+        matches!(
+            self.ir.name_text(field).unwrap_or_default(),
+            "size" | "capacity" | "bytes"
+        )
+    }
+
+    fn structural_receiver(&self, receiver: u32) -> Result<bool, Internal> {
+        let mut receiver = receiver;
+        loop {
+            let (op, inner, field, _) = self.ir.node(receiver)?;
+            match op {
+                Op::Field if self.is_member_name(field) => receiver = inner,
+                Op::Field | Op::To => return Ok(false),
+                Op::Name => {
+                    return Ok(match self.bound(receiver)? {
+                        DeclRef::Let(at) => self
+                            .ir
+                            .lets
+                            .get(at as usize)
+                            .is_some_and(|rec| rec.owner == NONE),
+                        DeclRef::None
+                        | DeclRef::Cell(_)
+                        | DeclRef::Instance(_)
+                        | DeclRef::Duplicate
+                        | DeclRef::Param(_)
+                        | DeclRef::Fn(_)
+                        | DeclRef::Pattern(_) => false,
+                    });
+                }
+                _ => return Ok(true),
+            }
+        }
     }
 
     fn loop_head_in(&mut self, item: u32, rec: ForBlockRec, env: u32) -> Stage<Option<LoopRun>> {
@@ -459,8 +515,21 @@ impl Core<'_> {
             if !seen.insert(current) {
                 continue;
             }
-            for node in self.deep_postorder(current)? {
-                let (op, _, _, _) = self.ir.node(node)?;
+            let mut measured = std::collections::HashSet::new();
+            for node in self.deep_postorder(current)?.into_iter().rev() {
+                let (op, receiver, field, _) = self.ir.node(node)?;
+                if measured.contains(&node) {
+                    continue;
+                }
+                if op == Op::Field && self.expr_members.contains(&node) {
+                    if self.reaches_cell(receiver)? != NOT_A_CELL {
+                        return Ok(THROUGH_A_PATH);
+                    }
+                    if self.ir.name_text(field) != Some("bytes") {
+                        measured.extend(self.postorder(receiver)?);
+                    }
+                    continue;
+                }
                 if matches!(op, Op::Field | Op::To | Op::Past | Op::Stepped) {
                     return Ok(THROUGH_A_PATH);
                 }

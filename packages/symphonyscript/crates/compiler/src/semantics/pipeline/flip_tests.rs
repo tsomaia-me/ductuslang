@@ -4439,3 +4439,32 @@ fn an_integer_arrays_bytes_saturates_each_element_into_u8_and_another_arrays_dra
  {
     assert_eq!(same_as_the_old_engine(&BYTES_OF_INTEGER_ARRAYS), 74);
 }
+
+const MEMBERS_IN_PLACEMENT_LOOP_HEADS: [&str; 11] = [
+    "for i in 0..(xs + xs).size:\n        Note/(i)\n",
+    "for i in 0..xs.size:\n        Note/(i)\n",
+    "for i in 0..xs[0..1].size:\n        Note/(i)\n",
+    "for i in 0..(xs + [true]).size:\n        Note/(i)\n",
+    "for i in 0..xs.bytes.size:\n        Note/(i)\n",
+    "for x in xs.bytes:\n        Note/(x)\n",
+    "for i in 0..(xs + xs)[2 ** 63..].size:\n        Note/(i)\n",
+    "for i in (xs + xs).size..1:\n        Note/(i)\n",
+    "for i in 0..xs.capacity:\n        Note/(i)\n",
+    "for i, x in (xs + [3]):\n        Note/(x + i)\n",
+    "for i in 0..xs[5..].size:\n        Note/(i)\n",
+];
+
+#[test]
+fn a_size_capacity_or_bytes_in_a_placement_loop_head_is_read_before_the_loop_runs_beside_a_valid_twin_in_every_order()
+ {
+    let clips: Vec<String> = MEMBERS_IN_PLACEMENT_LOOP_HEADS
+        .iter()
+        .map(|head| format!("Clip c:\n    {head}"))
+        .collect();
+    let rows: Vec<[&str; 2]> = clips
+        .iter()
+        .map(|clip| ["let xs = [1, 2]\n", clip.as_str()])
+        .collect();
+    let rows: Vec<&[&str]> = rows.iter().map(|row| row.as_slice()).collect();
+    assert_eq!(same_as_the_old_engine(&rows), 66);
+}
