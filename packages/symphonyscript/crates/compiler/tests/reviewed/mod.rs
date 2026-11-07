@@ -5626,6 +5626,11 @@ pub const CLASSES: &[Class] = &[
     },
     Class {
         ledger: "476",
+        rule: "a `size` or `capacity` of a choice whose condition is refused and whose arms are values draws unknown-attribute at the member beside the condition's fault, as the program with the condition repaired does, whichever arm the repair takes (the repair rule, DECISIONS.md 2026-11-03; SPEC §5.7: a value has no attributes), where the old engine draws nothing at the member (`(if q then 1.5 else q).size` with `let q = 1`, `(if [1, 2] then i32(true) else i32(true)).size`)",
+        explains: member_of_a_choice_beside_a_refused_condition,
+    },
+    Class {
+        ledger: "476",
         rule: "a path step naming a child whose placement holds a fault, an unknown kind or a syntax fault on its own line or on its parent's, reads nothing and draws nothing, as the program with the fault repaired reads the child (the repair rule, DECISIONS.md 2026-11-03), where the old engine drops the faulty placement and draws unknown-attribute at the step (`Lampstate as wash` read as `stage.wash`, `Scene dusk (| hold=8:` holding `Cue as first`)",
         explains: step_to_a_faulty_child,
     },
@@ -6813,4 +6818,20 @@ fn step_to_a_region_held_name(seen: &Seen<'_>, change: Change, at: &Drawn) -> bo
                 .map_or(0, |(_, earlier)| earlier.len() - earlier.trim_start().len());
         }
     })
+}
+
+fn member_of_a_choice_beside_a_refused_condition(
+    seen: &Seen<'_>,
+    change: Change,
+    at: &Drawn,
+) -> bool {
+    let text = seen.text(at);
+    change == Change::Added
+        && at.0 == "unknown-attribute"
+        && text.starts_with("(if ")
+        && (text.ends_with(").size") || text.ends_with(").capacity"))
+        && seen
+            .old
+            .iter()
+            .any(|drawn| drawn.0 == "condition-type" && drawn.1 >= at.1 && drawn.2 <= at.2)
 }

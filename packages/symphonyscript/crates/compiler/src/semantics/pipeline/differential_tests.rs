@@ -4345,3 +4345,29 @@ fn a_path_step_naming_a_name_a_faults_region_holds_draws_nothing_whatever_the_fa
         );
     }
 }
+
+#[test]
+fn a_size_of_a_choice_beside_its_refused_condition_draws_unknown_attribute_as_in_the_repaired_program_476()
+ {
+    let old = Compiler::new(&symphonyscript_fixtures::vocabulary())
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
+    let new =
+        Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("the vocabulary compiles");
+    for text in [
+        "let q = 1\nClip c:\n    Note/((if q then 1.5 else q).size)\n",
+        "Clip c:\n    Note/((if [1, 2] then i32(true) else i32(true)).size)\n",
+        "let a: i32 = (if 1.5 then 1 else 300000000000).capacity\nClip c:\n    Note/(a)\n",
+    ] {
+        let sources = [source(text)];
+        let found = new
+            .checked_by_new_core(&sources)
+            .expect("the new core takes the program");
+        let classes = reviewed::moved(text, &drawn(&old.check(&sources)), &drawn(&found))
+            .unwrap_or_else(|unexplained| panic!("{text}: {unexplained:?}"));
+        assert!(
+            classes.len() == 1 && classes.iter().all(|class| class.ledger == "476"),
+            "{text}"
+        );
+    }
+}

@@ -4531,3 +4531,22 @@ fn a_size_or_bytes_of_a_body_let_holding_an_array_expression_is_measured_in_each
  {
     assert_eq!(same_as_the_old_engine(&MEMBERS_OF_BODY_LETS), 24);
 }
+
+const MEASURED_LITERALS: [&str; 4] = [
+    "Note/([[1, 2][5], 3].size)",
+    "Note/([3, [1, 2][5]].size)",
+    "Note/(([[1, 2][5]] + [3]).capacity)",
+    "Note/([[1, 2][5], 3][[[1, 2][5], 3].size - 1])",
+];
+
+#[test]
+fn a_size_of_an_array_literal_or_a_join_of_literals_reads_none_of_its_elements_beside_a_valid_twin_in_every_order()
+ {
+    let clips: Vec<String> = MEASURED_LITERALS
+        .iter()
+        .map(|note| format!("Clip c:\n    {note}\n"))
+        .collect();
+    let rows: Vec<[&str; 1]> = clips.iter().map(|clip| [clip.as_str()]).collect();
+    let rows: Vec<&[&str]> = rows.iter().map(|row| row.as_slice()).collect();
+    assert_eq!(same_as_the_old_engine(&rows), 8);
+}

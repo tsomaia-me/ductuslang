@@ -405,6 +405,9 @@ impl Core<'_> {
                 }
                 operands
             }
+            Op::Field if self.expr_members.contains(&node) && self.measures_a_literal(node)? => {
+                Vec::new()
+            }
             Op::Field if self.expr_members.contains(&node) => {
                 vec![(a, EvalTy::Exact)]
             }
@@ -1437,6 +1440,21 @@ impl Core<'_> {
         }
     }
 
+    fn measures_a_literal(&self, node: u32) -> Result<bool, Internal> {
+        if self.is_bytes_member(node)? || !self.array_members.contains_key(&node) {
+            return Ok(false);
+        }
+        let mut stack = vec![self.ir.node(node)?.1];
+        while let Some(at) = stack.pop() {
+            match self.ir.node(at)? {
+                (Op::Array, ..) => {}
+                (Op::Add, left, right, _) => stack.extend([left, right]),
+                _ => return Ok(false),
+            }
+        }
+        Ok(true)
+    }
+
     fn bytes_value(&mut self, receiver: &CoreValue) -> CoreValue {
         let Value::Array(array) = receiver else {
             return Value::Error;
@@ -1629,6 +1647,11 @@ impl Core<'_> {
             Op::Field if self.expr_members.contains(&node) && self.is_bytes_member(node)? => {
                 let receiver = pop(stack)?;
                 self.bytes_value(&receiver)
+            }
+            Op::Field if self.expr_members.contains(&node) && self.measures_a_literal(node)? => {
+                self.array_members
+                    .get(&node)
+                    .map_or(Value::Error, |length| Value::Int(*length))
             }
             Op::Field if self.expr_members.contains(&node) => match pop(stack)? {
                 Value::Array(array) => Value::Int(i128::from(self.store.len(array))),
