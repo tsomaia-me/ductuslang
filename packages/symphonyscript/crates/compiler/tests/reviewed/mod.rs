@@ -5646,6 +5646,11 @@ pub const CLASSES: &[Class] = &[
     },
     Class {
         ledger: "476",
+        rule: "a path read of a unit attribute has the attribute's unit family whatever suffixes the program writes (SPEC §3.6: a value's family comes from its own init or expression), so the read as an index, a slice bound, a range bound or a `^` offset draws unit-operation and the read bound to an attribute of no family draws unit-mismatch (SPEC §3.6, §5.5), where the old engine, in a program that writes no unit suffix, draws nothing at the read (ledger 540; `Bar a | bar_len=1` with `[10, 20, 30][a.bar_len]`, `[10, 20, 30][a.bar_len..][0]`, `(for i in 0..a.bar_len into s from 0: s + i)`, `[10, 20, 30][^a.bar_len]`, `plain=a.bar_len`; `Bar a | beat_len=1` with `[10, 20, 30][a.beat_len]`)",
+        explains: unit_value_through_a_path_read,
+    },
+    Class {
+        ledger: "476",
         rule: "a slice of an array of references whose bound is refused keeps the array's type, so a position that takes one value draws type-mismatch beside the bound's index-type, as the program with the bound repaired to any integer does (the repair rule, DECISIONS.md 2026-11-03; ARCHITECTURE §7: a value whose type an error leaves known keeps that type), where the old engine draws the index-type alone (`Clip n`, `Clip m` with `Note/([n, m][true..])`)",
         explains: refused_slice_of_references,
     },
@@ -6911,4 +6916,18 @@ fn refused_slice_of_references(seen: &Seen<'_>, change: Change, at: &Drawn) -> b
             .old
             .iter()
             .any(|drawn| drawn.0 == "index-type" && drawn.1 >= at.1 && drawn.2 <= at.2)
+}
+
+fn unit_value_through_a_path_read(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
+    let text = seen.text(at);
+    change == Change::Added
+        && matches!(at.0.as_str(), "unit-operation" | "unit-mismatch")
+        && text.contains('.')
+        && text
+            .chars()
+            .all(|character| character == '.' || character == '_' || character.is_alphanumeric())
+        && !seen
+            .old
+            .iter()
+            .any(|drawn| drawn.1 == at.1 && drawn.2 == at.2)
 }

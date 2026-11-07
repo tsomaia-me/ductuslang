@@ -97,7 +97,7 @@ fn a_path_draws_its_unknown_attribute_cycle_and_type_faults_beside_its_valid_twi
 }
 
 #[test]
-fn a_path_from_a_let_or_through_a_function_cycle_stays_with_the_old_engine_and_a_unit_attributes_read_draws_as_there()
+fn a_path_from_a_let_or_through_a_function_cycle_stays_with_the_old_engine_and_a_unit_attributes_read_has_its_family_540()
  {
     let vocabulary = symphonyscript_fixtures::vocabulary();
     let new = Compiler::new(&vocabulary).expect("the vocabulary compiles");
@@ -114,7 +114,20 @@ fn a_path_from_a_let_or_through_a_function_cycle_stays_with_the_old_engine_and_a
     let found = new
         .checked_by_new_core(&[source(text)])
         .unwrap_or_else(|| panic!("the new core takes {text}"));
-    assert_eq!(found, old.check(&[source(text)]), "{text}");
+    let mut expected = old.check(&[source(text)]);
+    let unit = expected
+        .iter()
+        .find(|diagnostic| diagnostic.code == Code::TypeMismatch)
+        .map(|diagnostic| {
+            crate::diagnostics::Diagnostic::new(
+                Code::UnitMismatch,
+                diagnostic.span.clone(),
+                "a unit value is bound to an attribute of no unit family",
+            )
+            .with_help("use a unit of the attribute's family, as in `2s`")
+        });
+    expected.extend(unit);
+    assert_eq!(found, expected, "{text}");
 }
 
 const BODY_PATHS: [&str; 9] = [

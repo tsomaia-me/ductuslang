@@ -200,6 +200,32 @@ impl Core<'_> {
 impl Core<'_> {
     pub fn check_variants(&mut self) -> Stage<()> {
         self.enums_seen = !self.bare.is_empty();
+        let unit_names: Vec<String> = self
+            .vocabulary
+            .node_kinds()
+            .iter()
+            .flat_map(|kind| kind.attrs.iter())
+            .chain(
+                self.vocabulary
+                    .wire_kinds()
+                    .iter()
+                    .flat_map(|kind| kind.attrs.iter()),
+            )
+            .filter(|attr| attr.unit.is_some())
+            .map(|attr| attr.name.clone())
+            .collect();
+        if !unit_names.is_empty() {
+            for local in 0..self.ir.op.len() {
+                if self.ir.op.get(local) == Some(&Op::Field)
+                    && let Some(field) = self.ir.b.get(local)
+                    && let Some(text) = self.ir.name_text(*field)
+                    && unit_names.iter().any(|name| name == text)
+                {
+                    self.units_seen = true;
+                    break;
+                }
+            }
+        }
         for local in 0..self.ir.op.len() {
             let op = self.ir.op.get(local).copied();
             if matches!(op, Some(Op::Int | Op::Float))
