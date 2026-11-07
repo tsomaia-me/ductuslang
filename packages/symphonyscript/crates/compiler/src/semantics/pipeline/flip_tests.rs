@@ -4796,3 +4796,26 @@ fn a_member_of_an_array_of_references_measures_it_and_a_join_of_two_is_one_besid
  {
     assert_eq!(same_as_the_old_engine(&REFERENCE_ARRAY_MEMBERS), 42);
 }
+
+const MEMBER_NAMED_CALLS: [&[&str]; 5] = [
+    &["fn bytes(x): x\n", "Clip c:\n    Note/((64).bytes())\n"],
+    &[
+        "fn size(x): [1, 2][x]\n",
+        "Clip c:\n    Note/((5).size())\n",
+    ],
+    &["fn f0(x): x\n", "Clip c:\n    Note/((64).f0())\n"],
+    &[
+        "fn size(x): x\nlet k = 64\n",
+        "Clip c:\n    Note/(k.size())\n",
+    ],
+    &[
+        "fn bytes(x): x\n",
+        "Clip c:\n    Note/([64][([1, 2]).bytes()[0]])\n",
+    ],
+];
+
+#[test]
+fn a_member_named_dot_call_on_a_value_lacking_the_member_calls_the_function_and_an_arrays_own_member_wins_beside_a_valid_twin_in_every_order()
+ {
+    assert_eq!(same_as_the_old_engine(&MEMBER_NAMED_CALLS), 30);
+}

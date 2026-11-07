@@ -1537,12 +1537,16 @@ impl Core<'_> {
         let (_, callee, _, _) = self.ir.node(node)?;
         let (_, name, _, _) = self.ir.node(callee)?;
         let text = self.ir.name_text(name).unwrap_or_default();
-        if super::calls::MEMBER_NAMES.contains(&text) {
-            return Ok(false);
-        }
         let Some(receiver) = self.arguments(node)?.first().copied() else {
             return Ok(false);
         };
+        if super::calls::MEMBER_NAMES.contains(&text) {
+            let fact = self.fact(receiver)?;
+            return Ok(!fact.node
+                && fact.dims.is_empty()
+                && fact.leaf != Leaf::Empty
+                && self.callee(node)?.is_some());
+        }
         let callable = self.callee(node)?.is_some()
             || self.math_call(node)?
             || self.math_miscount(node)?.is_some()
@@ -1805,6 +1809,14 @@ impl Core<'_> {
             return Ok(false);
         }
         let fact = self.fact(*receiver)?;
+        if !method
+            && !fact.node
+            && fact.dims.is_empty()
+            && fact.leaf != Leaf::Empty
+            && self.callee(node)?.is_some()
+        {
+            return Ok(false);
+        }
         let typed = match fact.leaf {
             Leaf::Int | Leaf::Float | Leaf::Bool | Leaf::Empty | Leaf::Enum(Some(_)) => true,
             Leaf::Placeholder | Leaf::Error | Leaf::Enum(None) => false,
