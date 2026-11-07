@@ -5053,3 +5053,25 @@ fn a_member_of_an_array_of_references_through_a_let_measures_it_and_its_bytes_dr
  {
     assert_eq!(same_as_the_old_engine(&REFERENCE_ARRAY_BYTES), 42);
 }
+
+#[test]
+fn a_call_binding_nothing_in_a_wire_destination_is_found_in_work_linear_in_the_destinations() {
+    let new =
+        Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("the vocabulary compiles");
+    let work = |rigs: usize| {
+        let text: String = (0..rigs)
+            .map(|rig| {
+                format!("Rig stage{rig}:\n    Lamp* as flash{rig}\n    Dims: flash{rig}()\n")
+            })
+            .collect();
+        let before = crate::semantics::counted_walk::CountedWalk::CoreWireDestination.steps();
+        assert!(
+            new.checked_by_new_core(&[source(&text)]).is_none(),
+            "{text}"
+        );
+        crate::semantics::counted_walk::CountedWalk::CoreWireDestination.steps() - before
+    };
+    let (small, large) = (work(8), work(16));
+    assert!(small > 0, "{small} steps at 8 rigs");
+    assert!(large <= 2 * small, "{small} steps at 8 rigs, {large} at 16");
+}

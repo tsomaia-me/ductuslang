@@ -1535,22 +1535,27 @@ impl Core<'_> {
 }
 
 impl Core<'_> {
-    fn unbound_destination_callee(&self, node: u32) -> Result<bool, Internal> {
+    fn unbound_destination_callee(&mut self, node: u32) -> Result<bool, Internal> {
         let callee = self.ir.node(node)?.1;
         if self.ir.node(callee)?.0 != Op::Name || self.bound(callee)? != DeclRef::None {
             return Ok(false);
         }
-        for item in &self.ir.items {
-            let crate::semantics::ir::flat::ItemRec::Wire(wire) = item else {
-                continue;
-            };
-            for found in self.postorder(wire.destination)? {
-                CountedWalk::CoreWireDestination.step();
-                if found == node {
-                    return Ok(true);
+        if self.destination_nodes.is_none() {
+            let mut held = super::column::ColumnSet::new();
+            for item in &self.ir.items {
+                let crate::semantics::ir::flat::ItemRec::Wire(wire) = item else {
+                    continue;
+                };
+                for found in self.postorder(wire.destination)? {
+                    CountedWalk::CoreWireDestination.step();
+                    held.insert(found);
                 }
             }
+            self.destination_nodes = Some(held);
         }
-        Ok(false)
+        Ok(self
+            .destination_nodes
+            .as_ref()
+            .is_some_and(|held| held.contains(&node)))
     }
 }
