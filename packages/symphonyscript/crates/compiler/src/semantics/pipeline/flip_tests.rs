@@ -3724,6 +3724,64 @@ fn a_method_of_no_name_with_named_arguments_draws_unknown_name_at_the_method_bes
     );
 }
 
+const METHODS_OF_NO_NAME_ON_REFUSED_RECEIVERS: [&[&str]; 19] = [
+    &["let a = (1 + true).zz()\n", "Clip c:\n    Note/(a)\n"],
+    &["let a = (true and 1).zz()\n", "Clip c:\n    Note/(a)\n"],
+    &["let a = (-true).zz()\n", "Clip c:\n    Note/(a)\n"],
+    &["let a = (1 < true).zz()\n", "Clip c:\n    Note/(a)\n"],
+    &["let a = i32(true).zz()\n", "Clip c:\n    Note/(a)\n"],
+    &["let a = [1, true].zz()\n", "Clip c:\n    Note/(a)\n"],
+    &[
+        "let a = (if 1 then 2 else 3).zz()\n",
+        "Clip c:\n    Note/(a)\n",
+    ],
+    &["let a = 5[0].zz()\n", "Clip c:\n    Note/(a)\n"],
+    &["let a = [1, 2][1.5].zz()\n", "Clip c:\n    Note/(a)\n"],
+    &["let a = (not 1).zz()\n", "Clip c:\n    Note/(a)\n"],
+    &["let a = (1 ** true).zz()\n", "Clip c:\n    Note/(a)\n"],
+    &["let a = (5[0] + 1).zz()\n", "Clip c:\n    Note/(a)\n"],
+    &["let a = [1, [2]].zz()\n", "Clip c:\n    Note/(a)\n"],
+    &["let a = (-[1, true][0]).zz()\n", "Clip c:\n    Note/(a)\n"],
+    &["let a = (1 + true + 2).zz()\n", "Clip c:\n    Note/(a)\n"],
+    &["let a = [[1], [true]].zz()\n", "Clip c:\n    Note/(a)\n"],
+    &["Clip c:\n    Note/((1 + true).zz(a=1))\n"],
+    &["state s(1)\n", "state t = (s + true).zz()\n"],
+    &["Clip c:\n    Note/((1 + true).zz(1))\n    Note/([1, [2]].zz())\n"],
+];
+
+#[test]
+fn a_method_of_no_name_on_a_refused_receiver_draws_unknown_name_beside_the_refusal_but_beside_a_scalar_base_or_a_ragged_array_beside_a_valid_twin_in_every_order_397()
+ {
+    assert_eq!(
+        same_as_the_old_engine(&METHODS_OF_NO_NAME_ON_REFUSED_RECEIVERS),
+        106
+    );
+}
+
+const PATH_STEPS_TO_NAMES_A_REGION_SKIPS: [&[&str]; 3] = [
+    &[
+        "Scene opening | hold=500ms:\n    Cue/0\n",
+        "state     Cue/2 | fade=4\n    Dims as soften | depth=0.4: opening\n",
+        "Scene finale | hold=opening.hold * 2:\n    Cue as last /0 | fade=opening.soften.depth * 10\n",
+    ],
+    &[
+        "Scene opening | hold=500ms:\n    Cue/0\n",
+        "Scene finale | hold=opening.hold * 2:\n    Cue as last /0 | fade=opening.soften.depth * 10\n",
+    ],
+    &[
+        "state     Cue/2 | fade=4\n    Dims as soften | depth=0.4: opening\n",
+        "Scene finale | hold=opening.hold * 2:\n    Cue as last /0 | fade=finale.soften.depth * 10\n",
+    ],
+];
+
+#[test]
+fn a_path_step_to_a_name_a_faults_region_skips_draws_nothing_beside_a_valid_twin_in_every_order() {
+    assert_eq!(
+        same_as_the_old_engine(&PATH_STEPS_TO_NAMES_A_REGION_SKIPS),
+        36
+    );
+}
+
 const NESTED_USE_FORM_FAULTS: [&[&str]; 4] = [
     &[
         "pattern V():\n    U\n",

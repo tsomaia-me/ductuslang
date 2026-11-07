@@ -825,8 +825,7 @@ fn a_refused_dot_calls_receiver_is_checked_in_its_own_type_as_a_refused_operator
         ),
         (
             &["let a = [1, 2][5].twice()\n", "Clip c:\n    Note/(1)\n"],
-            // C1-10: unknown-name at the member, inverted from not-callable.
-            &[(Code::UnknownName, "twice")],
+            &[],
         ),
         (
             &["let a = [1, 2][1].twice()\n", clip],

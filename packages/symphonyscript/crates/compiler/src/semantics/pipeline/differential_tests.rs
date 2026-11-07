@@ -2350,6 +2350,14 @@ fn a_no_entry_instance_alone_moves_only_for_a_program_whose_placement_for_runs_n
             "pattern Arp(default root, steps = 4):\n    for i in 0..4:\n        Note/(root + i)\nClip c:\n    Arp/48 | steps=\n",
             false,
         ),
+        (
+            "state a(0.5)\n washes = [0.2, 0.5]\nClip c:\n    [for i, p in washes: Note/p]\n",
+            true,
+        ),
+        (
+            "state a(0.5)\nwashes = [0.2, 0.5]\nClip c:\n    [for i, p in [1]: Note/p]\n",
+            false,
+        ),
         ("Clip c:\n    for x in [1, 2]:\n        Note/x\n", false),
         ("Clip c:\n    for x in [1, 2]:\n        Note/zz\n", false),
         (
@@ -4283,6 +4291,31 @@ fn an_unnamed_top_placements_body_draws_its_unknown_attribute_and_flag_names_476
             .unwrap_or_else(|unexplained| panic!("{text}: {unexplained:?}"));
         assert!(
             classes.len() == 1 && classes.iter().all(|class| class.ledger == "476"),
+            "{text}"
+        );
+    }
+}
+
+#[test]
+fn a_path_step_naming_nothing_beside_a_skipped_top_block_draws_unknown_attribute_as_in_the_repaired_program_476()
+ {
+    let old = Compiler::new(&symphonyscript_fixtures::vocabulary())
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
+    let new =
+        Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("the vocabulary compiles");
+    for text in [
+        "Scene opening | hold=500ms:\n    Cue/0\nstate     Cue/2 | fade=4\n    Dims as soften | depth=0.4: opening\nScene finale | hold=opening.hold * 2:\n    Cue as last /0 | fade=opening.zz.depth * 10\n",
+        "Scene finale | hold=opening.hold * 2:\n    Cue as last /0 | fade=opening.zz.depth * 10\nstate     Cue/2 | fade=4\n    Dims as soften | depth=0.4: opening\nScene opening | hold=500ms:\n    Cue/0\n",
+    ] {
+        let sources = [source(text)];
+        let found = new
+            .checked_by_new_core(&sources)
+            .expect("the new core takes the program");
+        let classes = reviewed::moved(text, &drawn(&old.check(&sources)), &drawn(&found))
+            .unwrap_or_else(|unexplained| panic!("{text}: {unexplained:?}"));
+        assert!(
+            !classes.is_empty() && classes.iter().all(|class| class.ledger == "476"),
             "{text}"
         );
     }

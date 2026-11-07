@@ -1405,6 +1405,39 @@ impl Core<'_> {
 }
 
 impl Core<'_> {
+    fn refusal_keeps_its_methods(&self, receiver: u32) -> Result<bool, Internal> {
+        let op = self.ir.node(receiver)?.0;
+        let refused = matches!(
+            op,
+            Op::Add
+                | Op::Sub
+                | Op::Mul
+                | Op::Div
+                | Op::IntDiv
+                | Op::Rem
+                | Op::Pow
+                | Op::Neg
+                | Op::Array
+        );
+        if !refused {
+            return Ok(false);
+        }
+        for inner in self.deep_postorder(receiver)? {
+            if matches!(self.ir.node(inner)?.0, Op::Bad | Op::To)
+                || self.reads_a_cyclic_cell(inner)?
+            {
+                return Ok(false);
+            }
+        }
+        let span = self.node_span(receiver)?;
+        Ok(!self.diagnostics.iter().any(|drawn| {
+            matches!(drawn.code, Code::NotAnArray | Code::RaggedArray)
+                && drawn.span.file == span.file
+                && drawn.span.range.start >= span.range.start
+                && drawn.span.range.end <= span.range.end
+        }))
+    }
+
     fn member_dot_call(&mut self, node: u32) -> Result<bool, Internal> {
         let (op, callee, _, _) = self.ir.node(node)?;
         let (_, name, _, _) = self.ir.node(callee)?;
@@ -1435,7 +1468,10 @@ impl Core<'_> {
             Leaf::Int | Leaf::Float | Leaf::Bool | Leaf::Empty | Leaf::Enum(Some(_)) => true,
             Leaf::Placeholder | Leaf::Error | Leaf::Enum(None) => false,
         };
-        if method && self.reads_a_cyclic_cell(*receiver)? {
+        let refused = !fact.node
+            && matches!(fact.leaf, Leaf::Placeholder | Leaf::Error)
+            && self.refusal_keeps_its_methods(*receiver)?;
+        if method && (refused || self.reads_a_cyclic_cell(*receiver)?) {
             let file = self.file_of(node);
             let entry = self.ir.name(name).ok_or(Internal::missed("IR name"))?;
             let span = self.span(file, entry.lo, entry.hi);

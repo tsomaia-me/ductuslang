@@ -5616,6 +5616,11 @@ pub const CLASSES: &[Class] = &[
     },
     Class {
         ledger: "476",
+        rule: "a path step naming nothing the row holds draws unknown-attribute beside a top-level line holding a fault whose region skips an indented block that declares no such name, as the program with the fault repaired draws it (the repair rule, DECISIONS.md 2026-11-03; ARCHITECTURE §7: only a name the region holds is a placeholder), where the old engine draws nothing at the step (`state     Cue/2 | fade=4` holding `Dims as soften`, read as `opening.zz.depth`)",
+        explains: step_beside_a_skipped_top_block,
+    },
+    Class {
+        ledger: "476",
         rule: "a path step naming a child whose placement holds a fault, an unknown kind or a syntax fault on its own line or on its parent's, reads nothing and draws nothing, as the program with the fault repaired reads the child (the repair rule, DECISIONS.md 2026-11-03), where the old engine drops the faulty placement and draws unknown-attribute at the step (`Lampstate as wash` read as `stage.wash`, `Scene dusk (| hold=8:` holding `Cue as first`)",
         explains: step_to_a_faulty_child,
     },
@@ -5829,7 +5834,13 @@ fn let_lines<'a>(program: &'a str, head: &str) -> Vec<(usize, &'a str)> {
         let words: Vec<&str> = joined
             .split(|c: char| !(c.is_alphanumeric() || c == '_'))
             .collect();
-        if words.iter().any(|word| let_word(word)) && words.iter().any(|word| names.contains(word))
+        let declared = line
+            .trim_start()
+            .split_once('=')
+            .is_some_and(|(name, _)| line.starts_with(' ') && names.contains(&name.trim()));
+        if declared
+            || words.iter().any(|word| let_word(word))
+                && words.iter().any(|word| names.contains(word))
         {
             found.push((*start, joined));
         }
@@ -6722,4 +6733,24 @@ fn member_name_in_an_unnamed_top_body(seen: &Seen<'_>, change: Change, at: &Draw
         && lines
             .get(top)
             .is_some_and(|(_, text)| text.trim_end().ends_with(':'))
+}
+
+fn step_beside_a_skipped_top_block(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
+    let name = seen.text(at);
+    if change != Change::Added
+        || at.0 != "unknown-attribute"
+        || name.is_empty()
+        || !seen.before(at).ends_with('.')
+        || seen.program.contains(&format!(" as {name}"))
+    {
+        return false;
+    }
+    let lines = lines_at(seen.program);
+    lines.iter().enumerate().any(|(at_line, (_, text))| {
+        !text.starts_with(' ')
+            && faulted_line(seen, at_line)
+            && lines
+                .get(at_line + 1)
+                .is_some_and(|(_, next)| next.starts_with(' '))
+    })
 }
