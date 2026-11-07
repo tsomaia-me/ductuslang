@@ -1,18 +1,82 @@
+use std::collections::HashMap;
+
 use super::array_node::ArrayNode;
 use super::core_value::CoreValue;
+use super::memo_arg::MemoArg;
 use crate::diagnostics::Code;
 use crate::semantics::counted_walk::CountedWalk;
+use crate::semantics::ir::flat::NONE;
 use crate::semantics::operators::Value;
 
 const LENGTH_LIMIT: u64 = 1 << 31;
+
+#[derive(Clone, PartialEq, Eq, Hash)]
+enum Shape {
+    Dense(Vec<MemoArg>),
+    Join(u32, u32),
+    Slice(u32, u32, u32),
+}
 
 #[derive(Default)]
 pub(crate) struct Store {
     nodes: Vec<ArrayNode>,
     layouts: Vec<Vec<CoreValue>>,
+    shapes: HashMap<Shape, u32>,
+    shape_of: Vec<u32>,
 }
 
 impl Store {
+    pub fn held(&mut self, value: &CoreValue) -> Option<MemoArg> {
+        match value {
+            Value::Array(array) => self.shape(*array).map(MemoArg::Array),
+            Value::Int(_)
+            | Value::F32(_)
+            | Value::F64(_)
+            | Value::Bool(_)
+            | Value::Enum(..)
+            | Value::Str(_)
+            | Value::Node(_)
+            | Value::Error => MemoArg::of(value),
+        }
+    }
+
+    fn shape(&mut self, array: u32) -> Option<u32> {
+        if let Some(known) = self.shape_of.get(array as usize).copied()
+            && known != NONE
+        {
+            return Some(known);
+        }
+        CountedWalk::CursorStep.step();
+        let shape = match self.nodes.get(array as usize).copied()? {
+            ArrayNode::Dense { layout, start, len } => {
+                let items = self
+                    .layouts
+                    .get(layout as usize)?
+                    .get(start as usize..(start + len) as usize)?
+                    .to_vec();
+                CountedWalk::CursorStep.step_by(items.len());
+                let mut held = Vec::with_capacity(items.len());
+                for item in &items {
+                    held.push(self.held(item)?);
+                }
+                Shape::Dense(held)
+            }
+            ArrayNode::Join { left, right, .. } => {
+                Shape::Join(self.shape(left)?, self.shape(right)?)
+            }
+            ArrayNode::Slice { base, start, len } => Shape::Slice(self.shape(base)?, start, len),
+        };
+        let next = u32::try_from(self.shapes.len()).ok()?;
+        let id = *self.shapes.entry(shape).or_insert(next);
+        if self.shape_of.len() <= array as usize {
+            self.shape_of.resize(array as usize + 1, NONE);
+        }
+        if let Some(slot) = self.shape_of.get_mut(array as usize) {
+            *slot = id;
+        }
+        Some(id)
+    }
+
     pub fn literal(&mut self, items: Vec<CoreValue>) -> u32 {
         let len = u32::try_from(items.len()).unwrap_or(u32::MAX);
         let layout = u32::try_from(self.layouts.len()).unwrap_or(u32::MAX);

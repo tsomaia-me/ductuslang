@@ -4846,3 +4846,65 @@ fn a_member_name_a_values_type_lacks_naming_a_function_draws_not_a_value_and_an_
  {
     assert_eq!(same_as_the_old_engine(&FUNCTION_NAMED_MEMBERS), 36);
 }
+
+const REFERENCE_ARRAY_KEYS: [&[&str]; 5] = [
+    &[
+        "Clip verse | gain=2:\n    Note\nClip other | gain=3:\n    Note\nfn f(c): c.gain\nfn h(xs, i): f(xs[i])\n",
+        "Clip k:\n    Note/([60][i32(h([verse, other], 1)) - 3])\n",
+    ],
+    &[
+        "Clip verse | gain=2:\n    Note\nClip other | gain=3:\n    Note\nfn f(c): c.gain\nfn h(xs, i): f(xs[i])\n",
+        "Clip k:\n    Note/([60][i32(h([verse, other], 0)) - 1])\n",
+    ],
+    &[
+        "Clip verse | gain=2:\n    Note\nClip other | gain=3:\n    Note\nfn f(c): c.gain\nfn h(xs, i, n): if n < 1 then 0 else f(xs[i]) + h1(xs, 1 - i, n - 1)\nfn h1(xs, i, n): if n < 1 then 0 else f(xs[i]) + h2(xs, 1 - i, n - 1)\nfn h2(xs, i, n): if n < 1 then 0 else f(xs[i]) + 0\n",
+        "Clip k:\n    Note/([60][i32(h([verse, other], 0, 3)) - 7])\n",
+    ],
+    &[
+        "Clip verse | gain=2:\n    Note\nClip other | gain=3:\n    Note\nfn f(c): c.gain\nfn h(xs, i): f(xs[i])\n",
+        "Clip k:\n    Note/([60][i32(h([verse] + [other], 1)) - 3])\n",
+    ],
+    &[
+        "Clip verse | gain=2:\n    Note\nClip other | gain=3:\n    Note\nfn f(c): c.gain\nfn h(xs, i): f(xs[i])\nfn g(i): h([verse, other], i) + h([verse, other], 1 - i)\n",
+        "Clip k:\n    Note/([60][i32(g(0)) - 5])\n",
+    ],
+];
+
+#[test]
+fn an_array_of_references_passed_to_a_function_keys_its_body_instance_by_the_arrays_elements_in_linear_work_beside_a_valid_twin_in_every_order_538()
+ {
+    assert_eq!(same_as_the_old_engine(&REFERENCE_ARRAY_KEYS), 30);
+    let new =
+        Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("the vocabulary compiles");
+    let steps = || {
+        crate::semantics::counted_walk::CountedWalk::ALL
+            .iter()
+            .map(|walk| walk.steps())
+            .sum::<u64>()
+    };
+    let work = |sites: usize| {
+        let mut text = String::from(
+            "Clip verse | gain=2:\n    Note\nClip other | gain=3:\n    Note\nfn f(c): c.gain\nfn h(xs, i): f(xs[i])\n",
+        );
+        for site in 0..sites {
+            text.push_str(&format!(
+                "Clip k{site}:\n    Note/([60][i32(h([verse, other], {})) - {}])\n",
+                site % 2,
+                2 + site % 2
+            ));
+        }
+        let start = steps();
+        let found = new
+            .checked_by_new_core(&[source(&text)])
+            .unwrap_or_else(|| panic!("the new core takes {text}"));
+        assert!(
+            found
+                .iter()
+                .all(|diagnostic| diagnostic.code == Code::NoEntryInstance),
+            "{text}: {found:?}"
+        );
+        steps() - start
+    };
+    let (small, large) = (work(4), work(8));
+    assert!(large <= 2 * small, "{small} steps at 4 sites, {large} at 8");
+}

@@ -611,7 +611,8 @@ impl Core<'_> {
         }
         let values = self.key_values(function, &args, &reactive)?;
         let key = (function, NONE, facts.clone(), reactive.clone());
-        let held: Vec<Option<MemoArg>> = values.iter().map(MemoArg::of).collect();
+        let held: Vec<Option<MemoArg>> =
+            values.iter().map(|value| self.store.held(value)).collect();
         let found = if values.is_empty() {
             self.body_index.get(&key).copied()
         } else {
