@@ -231,6 +231,7 @@ pub(crate) struct Core<'a> {
     pub unbound_nodes: ColumnSet,
     pub guards: Vec<(u32, u32)>,
     pub unit_conflicts: Vec<super::unit_conflict::UnitConflict>,
+    pub scaled_reads: Column<(symphonyscript_core::FamilyId, usize)>,
     pub default_scale: Option<(
         u32,
         symphonyscript_core::FamilyId,
@@ -446,6 +447,7 @@ impl<'a> Core<'a> {
             unbound_nodes: Default::default(),
             guards: Vec::new(),
             unit_conflicts: Vec::new(),
+            scaled_reads: Column::new(),
             default_scale: None,
         }
     }

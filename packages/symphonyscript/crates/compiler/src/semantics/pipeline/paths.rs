@@ -445,9 +445,11 @@ impl Core<'_> {
             return Ok(Ok(End::Value));
         };
         let declared = decl.attrs.get(attr).ok_or(Internal::missed("attribute"))?;
+        let mut scaled = None;
         let read_ty = if let Some(unit) = declared.unit {
-            if self.unit_scale(unit.family, unit.default_unit)? != 1.0 {
-                return Ok(Err(Declined(Reason::UnitAttribute)));
+            let scale = self.unit_scale(unit.family, unit.default_unit)?;
+            if scale != 1.0 {
+                scaled = Some((unit.family, unit.default_unit, scale));
             }
             super::check::plain_expected(declared)
         } else if matches!(declared.ty.scalar, symphonyscript_core::Scalar::Enum(_)) {
@@ -458,10 +460,28 @@ impl Core<'_> {
         let Some(ty) = read_ty else {
             return Ok(Err(Declined(super::check::attribute_reason(declared))));
         };
-        match self.attr_read(row, attr, ty)? {
-            Ok(read) => Ok(Ok(End::Attr(read))),
-            Err(declined) => Ok(Err(declined)),
+        let read = match self.attr_read(row, attr, ty)? {
+            Ok(read) => read,
+            Err(declined) => return Ok(Err(declined)),
+        };
+        if let Some((family, unit, scale)) = scaled {
+            let root = self
+                .attr_reads
+                .get(read as usize)
+                .map_or(NONE, |found| found.root);
+            if root == NONE {
+                return Ok(Err(Declined(Reason::UnitAttribute)));
+            }
+            let fractional =
+                crate::semantics::operators::int_range(ty).is_some() && scale.fract() != 0.0;
+            match self.default_readable(root, fractional)? {
+                Ok(true) => {}
+                Ok(false) => return Ok(Err(Declined(Reason::UnitAttribute))),
+                Err(declined) => return Ok(Err(declined)),
+            }
+            self.scaled_reads.insert(read, (family, unit));
         }
+        Ok(Ok(End::Attr(read)))
     }
 
     fn step_wire(&mut self, node: u32, wire: u32, field: u32) -> Stage<End> {

@@ -819,6 +819,11 @@ impl Core<'_> {
                                 Some((self.default_read(&read)?, NONE, EvalTy::Exact))
                             }
                             Some(read) if !read.cyclic && self.read_env(&read)? != NONE => {
+                                if self.scaled_reads.contains_key(&self.read_at(node)?) {
+                                    return Ok(Err(super::declined::Declined(
+                                        super::reason::Reason::UnitAttribute,
+                                    )));
+                                }
                                 match self.read_in_env(&read)? {
                                     Ok((value, read_ty)) => Some((value, NONE, read_ty)),
                                     Err(declined) => return Ok(Err(declined)),
@@ -863,6 +868,13 @@ impl Core<'_> {
                                         ));
                                     }
                                     open.insert(owner);
+                                    let unit = match self.scaled_reads.get(&at).copied() {
+                                        Some((family, unit)) => {
+                                            Some(self.frame_unit(root, NONE, family, unit)?)
+                                        }
+                                        None => None,
+                                    };
+                                    merge_reach(&mut scaled, &mut merged, unit.as_ref());
                                     frames.push(Frame {
                                         owner: Some(owner),
                                         ty: read_ty,
@@ -871,7 +883,7 @@ impl Core<'_> {
                                         call: None,
                                         inst: NONE,
                                         fold: None,
-                                        unit: None,
+                                        unit,
                                     });
                                 }
                             }
@@ -1411,7 +1423,17 @@ impl Core<'_> {
                     else {
                         continue;
                     };
+                    let read = frame
+                        .owner
+                        .and_then(|owner| {
+                            owner.checked_sub(u32::try_from(self.ir.lets.len()).ok()?)
+                        })
+                        .filter(|at| self.scaled_reads.contains_key(at))
+                        .and_then(|at| self.attr_reads.get(at as usize))
+                        .map(|read| (read.root, family, unit, read.ty));
                     let value = frame.values.pop().ok_or(Internal::missed("value stack"))?;
+                    let outer =
+                        read.map(|read| std::mem::replace(&mut self.default_scale, Some(read)));
                     let value = if self.scale_conflicted(node)? {
                         value
                     } else {
@@ -1422,6 +1444,9 @@ impl Core<'_> {
                     } else {
                         value
                     };
+                    if let Some(outer) = outer {
+                        self.default_scale = outer;
+                    }
                     if let Some(frame) = frames.last_mut() {
                         frame.values.push(value);
                     }

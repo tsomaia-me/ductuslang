@@ -4925,3 +4925,75 @@ fn a_method_call_on_an_instance_naming_its_child_or_attribute_where_no_function_
         assert!(new.checked_by_new_core(&[source(text)]).is_none(), "{text}");
     }
 }
+
+const SCALED_PATH_READS: [&[&str]; 6] = [
+    &[
+        "Bar a | bar_len=i64(1)\n",
+        "Bar b | beat_len=a.bar_len + i64(9223372036854775806)\n",
+    ],
+    &[
+        "Bar a | bar_len=1\n",
+        "Bar b | beat_len=a.bar_len + i64(9223372036854775803)\n",
+    ],
+    &[
+        "let k = 2\n",
+        "Bar a | bar_len=k\n",
+        "Bar b | beat_len=a.bar_len + i64(9223372036854775800)\n",
+    ],
+    &["Bar a | bar_len=2\n", "Bar b | plain=a.bar_len\n"],
+    &[
+        "Bar a | bar_len=1\n",
+        "Bar b | beat_len=a.bar_len * 2 + a.bar_len\n",
+    ],
+    &["Bar a | bar_len=1 beat_len=a.bar_len + i64(9223372036854775806)\n"],
+];
+
+#[test]
+fn a_path_read_of_a_scaled_unit_attribute_reads_its_value_in_base_units_in_every_order_and_in_every_run_537()
+ {
+    let vocabulary = symphonyscript_fixtures::bar_vocabulary();
+    let old = Compiler::new(&vocabulary)
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
+    let twin = "Bar t | bar_len=i64(3)\n";
+    let mut programs = 0;
+    for items in SCALED_PATH_READS {
+        let mut all: Vec<&str> = items.to_vec();
+        all.push(twin);
+        for order in Orders::Every.of(&all) {
+            let text = order.concat();
+            let sources = [source(&text)];
+            let expected = old.check(&sources);
+            for _ in 0..2 {
+                let new = Compiler::new(&vocabulary).expect("the vocabulary compiles");
+                let found = new
+                    .checked_by_new_core(&sources)
+                    .unwrap_or_else(|| panic!("the new core takes {text}"));
+                assert_eq!(found, expected, "{text}");
+            }
+            programs += 1;
+        }
+    }
+    assert_eq!(programs, 50);
+    let text = "Bar a | bar_len=i64(3000000000000000000)\nBar b | beat_len=a.bar_len\n";
+    for order in Orders::Every.of(&[text, twin]) {
+        let text = order.concat();
+        let new = Compiler::new(&vocabulary).expect("the vocabulary compiles");
+        let found = new
+            .checked_by_new_core(&[source(&text)])
+            .unwrap_or_else(|| panic!("the new core takes {text}"));
+        let drawn: Vec<(Code, &str)> = found
+            .iter()
+            .map(|diagnostic| {
+                let range =
+                    diagnostic.span.range.start as usize..diagnostic.span.range.end as usize;
+                (diagnostic.code, text.get(range).unwrap_or_default())
+            })
+            .collect();
+        assert_eq!(
+            drawn,
+            [(Code::ConstantOverflow, "i64(3000000000000000000)")],
+            "{text}"
+        );
+    }
+}
