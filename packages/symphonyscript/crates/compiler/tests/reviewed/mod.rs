@@ -6729,7 +6729,7 @@ fn member_name_in_an_unnamed_top_body(seen: &Seen<'_>, change: Change, at: &Draw
         .old
         .iter()
         .chain(seen.new)
-        .any(|drawn| seen.line(drawn.1) == top && seen.text(drawn) != "")
+        .any(|drawn| seen.line(drawn.1) == top && !seen.text(drawn).is_empty())
         && lines
             .get(top)
             .is_some_and(|(_, text)| text.trim_end().ends_with(':'))

@@ -1523,11 +1523,16 @@ impl Core<'_> {
         let (op, callee, _, _) = self.ir.node(node)?;
         let (_, name, _, _) = self.ir.node(callee)?;
         let text = self.ir.name_text(name).unwrap_or_default().to_string();
-        if op == Op::Call
+        if matches!(op, Op::Call | Op::NamedCall)
             && !super::calls::MEMBER_NAMES.contains(&text.as_str())
             && self.not_callable(node)?
         {
-            let Some(receiver) = self.arguments(node)?.first().copied() else {
+            let receiver = if op == Op::NamedCall {
+                self.named_arguments(node)?.first().map(|(_, value)| *value)
+            } else {
+                self.arguments(node)?.first().copied()
+            };
+            let Some(receiver) = receiver else {
                 return Ok(false);
             };
             let plain = match self.ir.node(receiver)?.0 {

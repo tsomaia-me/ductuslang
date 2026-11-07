@@ -953,12 +953,23 @@ impl Core<'_> {
                 callees.insert(self.ir.a.get(local).copied().unwrap_or(NONE));
             }
         }
+        let mut mapped = std::collections::HashSet::new();
+        for call in self.dot_calls.clone() {
+            let (op, callee, _, _) = self.ir.node(call)?;
+            if op == Op::Call
+                && self.ir.node(callee)?.0 == Op::Name
+                && self.ir.name_text(self.ir.node(callee)?.1) == Some("map")
+            {
+                mapped.extend(self.arguments(call)?.into_iter().skip(1));
+            }
+        }
         for local in 0..self.ir.op.len() {
             let node = self.ir.base + u32::try_from(local).unwrap_or(0);
             let reached = self.reached.get(local).copied().unwrap_or(false);
             if !reached
                 || !matches!(self.bind.get(local), Some(DeclRef::Fn(_)))
                 || callees.contains(&node)
+                || mapped.contains(&node)
                 || self.is_history_target(node)
             {
                 continue;

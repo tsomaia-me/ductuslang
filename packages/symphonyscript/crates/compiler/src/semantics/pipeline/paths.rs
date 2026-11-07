@@ -429,10 +429,7 @@ impl Core<'_> {
             .ok_or(Internal::missed("node kind"))?;
         let text = self.ir.symbols.text(entry.sym).to_string();
         let Some(attr) = decl.attrs.iter().position(|attr| attr.name == text) else {
-            if self.may_name_any(row)?
-                || self.names_unexpanded_child(row, entry.sym.0)?
-                || self.skipped_top().binary_search(&entry.sym.0).is_ok()
-            {
+            if self.may_name_any(row)? || self.names_unexpanded_child(row, entry.sym.0)? {
                 return Ok(Ok(End::Placeholder));
             }
             let span = self.span(self.file_of(node), entry.lo, entry.hi);
@@ -2016,9 +2013,6 @@ impl Core<'_> {
         let text = self.ir.symbols.text(entry.sym).to_string();
         if decl.attrs.iter().any(|attr| attr.name == text) {
             return Ok(Written::Attr);
-        }
-        if self.skipped_top().binary_search(&entry.sym.0).is_ok() {
-            return Ok(Written::Value);
         }
         let kind_name = decl.name.clone();
         let name = self
