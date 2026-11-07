@@ -906,13 +906,6 @@ impl Core<'_> {
 
 impl Core<'_> {
     pub fn calls_a_non_function(&self) -> Result<bool, Internal> {
-        let mut in_lets = std::collections::HashSet::new();
-        for rec in &self.ir.lets {
-            let owner = self.body_of.get(self.local(rec.value)?).copied();
-            if owner.is_none_or(|owner| owner == NONE || owner >= self.functions()) {
-                in_lets.extend(self.postorder(rec.value)?);
-            }
-        }
         for local in 0..self.ir.op.len() {
             let reached = self.reached.get(local).copied().unwrap_or(false);
             if !reached || !matches!(self.ir.op.get(local), Some(Op::Call | Op::NamedCall)) {
@@ -927,7 +920,7 @@ impl Core<'_> {
                 && !self.unknown_callee(node)?
                 && self.native_miscount(node)?.is_none()
                 && self.native_named(node)?.is_none()
-                && (in_lets.contains(&node) || !self.member_dot_candidate(node)?)
+                && !self.member_dot_candidate(node)?
             {
                 return Ok(true);
             }

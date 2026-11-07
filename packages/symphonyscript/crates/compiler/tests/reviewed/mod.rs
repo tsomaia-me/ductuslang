@@ -5589,6 +5589,11 @@ pub const CLASSES: &[Class] = &[
         rule: "a derived cell's rule or a reactive pattern argument whose operand is a conversion of a cell to `u8` or `i32` computes in that fixed type where no integer use gives it a width, so a literal beside it that does not fit that type draws does-not-fit at the literal (SPEC §4.1: the fit check applies where a fixed-type operand gives a literal its type; §4.4 and §4.5: an integer derived cell's width is the widest its integer uses expect, else the widest of its operands), as the comparison with such a cell gives a literal the cell's type, where the old engine is silent or draws it only for some inits of the cell; such an argument read at a float use is the expression itself at that use (SPEC §6.6, ledger 483), the conversion widening into the float type before the operation (SPEC §4.2), so the literal fits, where the old engine draws does-not-fit in the conversion's type for some inits",
         explains: fixed_type_operand_of_a_cell_rule,
     },
+    Class {
+        ledger: "476",
+        rule: "a member call in the value of a let nothing uses or in the body of a function nothing calls draws nothing, since code nothing uses has its names resolved and nothing else checked (SPEC §6.5) and whether the member names anything depends on its receiver's type, where the old engine draws not-callable or unknown-name at it in some programs and not in others (`let xs = [1, 2]` with `let n = xs.size()` and no placement reading `n`, or `let n = [1, 2][0].keys()`)",
+        explains: member_call_in_an_unused_value,
+    },
 ];
 
 fn annotated_let_value(seen: &Seen<'_>, at: &Drawn) -> bool {
@@ -6355,4 +6360,72 @@ fn slice_with_a_faulty_bound(seen: &Seen<'_>, change: Change, at: &Drawn) -> boo
                 && drawn.1 >= at.1
                 && drawn.2 <= at.2
         })
+}
+
+fn declared_name(line: &str) -> Option<&str> {
+    let rest = line
+        .strip_prefix("let ")
+        .or_else(|| line.strip_prefix("fn "))?;
+    let end = rest
+        .find(|c: char| !(c.is_alphanumeric() || c == '_'))
+        .unwrap_or(rest.len());
+    rest.get(..end)
+}
+
+fn item_words(line: &str) -> impl Iterator<Item = &str> {
+    line.split(|c: char| !(c.is_alphanumeric() || c == '_'))
+        .filter(|word| !word.is_empty())
+}
+
+fn member_call_in_an_unused_value(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
+    if change != Change::Removed || !matches!(at.0.as_str(), "not-callable" | "unknown-name") {
+        return false;
+    }
+    let member = seen.text(at).rsplit('.').next().unwrap_or_default();
+    if !["size", "capacity", "bytes", "keys", "values"].contains(&member)
+        || !seen.after(at).starts_with('(')
+    {
+        return false;
+    }
+    let lines = lines_at(seen.program);
+    let mut items: Vec<(Option<&str>, String)> = Vec::new();
+    for (_, line) in &lines {
+        match items.last_mut() {
+            Some((_, text)) if line.starts_with(' ') => {
+                text.push('\n');
+                text.push_str(line);
+            }
+            _ => items.push((declared_name(line), (*line).to_string())),
+        }
+    }
+    let mut used: std::collections::HashSet<&str> = std::collections::HashSet::new();
+    let mut grown = true;
+    while grown {
+        grown = false;
+        for (name, text) in &items {
+            if name.is_some_and(|name| !used.contains(name)) {
+                continue;
+            }
+            let own = name.unwrap_or_default();
+            for word in item_words(text) {
+                if word != own && used.insert(word) {
+                    grown = true;
+                }
+            }
+        }
+    }
+    let line = seen.line(at.1);
+    let Some((start, _)) = lines.get(line) else {
+        return false;
+    };
+    let mut owner = None;
+    for (begin, text) in &lines {
+        if *begin > *start {
+            break;
+        }
+        if !text.starts_with(' ') {
+            owner = declared_name(text);
+        }
+    }
+    owner.is_some_and(|name| !used.contains(name))
 }

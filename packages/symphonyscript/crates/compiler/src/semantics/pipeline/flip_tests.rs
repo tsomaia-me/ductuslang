@@ -2932,6 +2932,66 @@ fn a_member_called_with_no_arguments_draws_not_callable_on_an_array_and_unknown_
     assert_eq!(same_as_the_old_engine(&MEMBER_DOT_CALLS), 54);
 }
 
+const MEMBER_CALLS_IN_USED_LETS: [&[&str]; 6] = [
+    &[
+        "let xs = [1, 2]\n",
+        "let n = xs.size()\n",
+        "Clip c:\n    Note/(n)\n",
+    ],
+    &[
+        "let xs = [1, 2]\n",
+        "let n = xs.keys()\n",
+        "let m = n + 1\n",
+        "Clip c:\n    Note/(m)\n",
+    ],
+    &["let n = [1, 2][0].keys()\n", "Clip c:\n    Note/(n)\n"],
+    &["let n = [1, 2].map(1)\n", "Clip c | gain=n:\n    Note\n"],
+    &[
+        "let xs = [1, 2]\n",
+        "let n = xs.capacity(1 + true)\n",
+        "Clip c:\n    Note/(n)\n",
+    ],
+    &["let n = 1.5.bytes()\n", "Clip c:\n    Note/(n + 1)\n"],
+];
+
+#[test]
+fn a_member_called_in_a_used_lets_value_draws_what_one_in_a_placement_draws_beside_a_valid_twin_in_every_order()
+ {
+    assert_eq!(same_as_the_old_engine(&MEMBER_CALLS_IN_USED_LETS), 186);
+}
+
+const MEMBER_CALLS_IN_UNUSED_LETS: [(&[&str], &[Code]); 7] = [
+    (&["let xs = [1, 2]\n", "let n = xs.size()\n"], &[]),
+    (&["let n = [1, 2][0].keys()\n"], &[]),
+    (&["let n = [1, 2].map(1)\n"], &[]),
+    (
+        &["let xs = [1, 2]\n", "let n = xs.capacity(1 + true)\n"],
+        &[],
+    ),
+    (
+        &[
+            "let xs = [1, 2]\n",
+            "let n = xs.size()\n",
+            "let m = n + 1\n",
+        ],
+        &[],
+    ),
+    (&["fn f(): [1, 2].size()\n"], &[]),
+    (
+        &[
+            "let xs = [1, 2]\n",
+            "let n = xs.size()\n",
+            "Clip c:\n    Note/(xs[5])\n",
+        ],
+        &[Code::IndexOutOfRange],
+    ),
+];
+
+#[test]
+fn a_member_called_in_a_value_nothing_uses_draws_nothing_beside_a_valid_twin_in_every_order() {
+    assert_eq!(drawn_codes(&MEMBER_CALLS_IN_UNUSED_LETS), 66);
+}
+
 const MEMBER_DOT_CALLS_WITH_ARGUMENTS: [&[&str]; 4] = [
     &[
         "let xs = [1, 2]\n",

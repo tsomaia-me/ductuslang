@@ -4052,3 +4052,38 @@ fn a_plain_value_in_a_body_reads_in_the_default_unit_its_call_reaches_and_a_defa
     }
     assert_eq!(programs, 281);
 }
+
+const MEMBER_CALLS_NOTHING_USES: [&str; 5] = [
+    "let xs = [1, 2]\nlet n = xs.size()\n",
+    "let n = [1, 2][0].keys()\nClip twin:\n    Note/61 when true\n",
+    "let xs = [1, 2]\nlet n = xs.size()\nlet m = n + 1\nClip twin:\n    Note/61 when true\n",
+    "fn f(): [1, 2].size()\nClip twin:\n    Note/61 when true\n",
+    "Clip twin:\n    Note/61 when true\nlet xs = [1, 2]\nlet n = xs.capacity(1 + true)\n",
+];
+
+#[test]
+fn a_member_call_in_a_value_nothing_uses_draws_nothing_where_the_old_engine_draws_at_it_476() {
+    let old = Compiler::new(&symphonyscript_fixtures::vocabulary())
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
+    let new =
+        Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("the vocabulary compiles");
+    for text in MEMBER_CALLS_NOTHING_USES {
+        let sources = [source(text)];
+        let found = new
+            .checked_by_new_core(&sources)
+            .expect("the new core takes the program");
+        assert!(
+            found
+                .iter()
+                .all(|diagnostic| diagnostic.code == crate::diagnostics::Code::NoEntryInstance),
+            "{text}"
+        );
+        let classes = reviewed::moved(text, &drawn(&old.check(&sources)), &drawn(&found))
+            .unwrap_or_else(|unexplained| panic!("{text}: {unexplained:?}"));
+        assert!(
+            classes.len() == 1 && classes.iter().all(|class| class.ledger == "476"),
+            "{text}"
+        );
+    }
+}
