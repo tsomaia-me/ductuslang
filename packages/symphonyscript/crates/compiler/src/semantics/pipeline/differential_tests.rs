@@ -4358,6 +4358,7 @@ fn a_size_of_a_choice_beside_its_refused_condition_draws_unknown_attribute_as_in
         "let q = 1\nClip c:\n    Note/((if q then 1.5 else q).size)\n",
         "Clip c:\n    Note/((if [1, 2] then i32(true) else i32(true)).size)\n",
         "let a: i32 = (if 1.5 then 1 else 300000000000).capacity\nClip c:\n    Note/(a)\n",
+        "let q = 1\nClip c:\n    Note when ((if 1 then q else 1).bytes)\n",
     ] {
         let sources = [source(text)];
         let found = new

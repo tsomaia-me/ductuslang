@@ -5636,7 +5636,7 @@ pub const CLASSES: &[Class] = &[
     },
     Class {
         ledger: "476",
-        rule: "a `size` or `capacity` of a choice whose condition is refused and whose arms are values draws unknown-attribute at the member beside the condition's fault, as the program with the condition repaired does, whichever arm the repair takes (the repair rule, DECISIONS.md 2026-11-03; SPEC §5.7: a value has no attributes), where the old engine draws nothing at the member (`(if q then 1.5 else q).size` with `let q = 1`, `(if [1, 2] then i32(true) else i32(true)).size`)",
+        rule: "a `size`, `capacity` or `bytes` of a choice whose condition is refused and whose arms are values draws unknown-attribute at the member beside the condition's fault, as the program with the condition repaired does, whichever arm the repair takes (the repair rule, DECISIONS.md 2026-11-03; SPEC §5.7: a value has no attributes), where the old engine draws nothing at the member (`(if q then 1.5 else q).size` with `let q = 1`, `(if [1, 2] then i32(true) else i32(true)).size`, `(if 1 then q else 1).bytes`)",
         explains: member_of_a_choice_beside_a_refused_condition,
     },
     Class {
@@ -6839,7 +6839,9 @@ fn member_of_a_choice_beside_a_refused_condition(
     change == Change::Added
         && at.0 == "unknown-attribute"
         && text.starts_with("(if ")
-        && (text.ends_with(").size") || text.ends_with(").capacity"))
+        && [").size", ").capacity", ").bytes"]
+            .iter()
+            .any(|member| text.ends_with(member))
         && seen
             .old
             .iter()
