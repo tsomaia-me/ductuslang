@@ -511,6 +511,10 @@ impl Core<'_> {
     }
 
     pub fn reaches_cell(&self, root: u32) -> Result<u8, Internal> {
+        self.reach_cell(root, false)
+    }
+
+    fn reach_cell(&self, root: u32, paths: bool) -> Result<u8, Internal> {
         let mut seen = super::column::ColumnSet::new();
         let mut stack = vec![(root, false)];
         let mut reached = NOT_A_CELL;
@@ -526,12 +530,22 @@ impl Core<'_> {
                     continue;
                 }
                 if op == Op::Field && self.expr_members.contains(&node) {
-                    if self.reaches_cell(receiver)? != NOT_A_CELL {
+                    if self.reach_cell(receiver, paths)? != NOT_A_CELL {
                         return Ok(THROUGH_A_PATH);
                     }
                     if self.ir.name_text(field) != Some("bytes") {
                         measured.extend(self.postorder(receiver)?);
                     }
+                    continue;
+                }
+                if paths
+                    && op == Op::Field
+                    && let Some(read) = self.head_path_read(node)?
+                {
+                    if read != NONE {
+                        stack.push((read, through_let));
+                    }
+                    measured.extend(self.postorder(receiver)?);
                     continue;
                 }
                 if matches!(op, Op::Field | Op::To | Op::Past | Op::Stepped) {
@@ -707,9 +721,16 @@ impl Core<'_> {
     }
 
     fn cell_head(&mut self, root: u32, message: &str, bound: bool) -> Stage<bool> {
-        let reached = self.reaches_cell(root)?;
+        let mut reached = self.reaches_cell(root)?;
         if reached == THROUGH_A_PATH && self.ir.node(root)?.0 == Op::If {
             return self.choice_head(root, message, bound);
+        }
+        if reached == THROUGH_A_PATH {
+            match self.head_paths(root)? {
+                Ok(true) => reached = self.reach_cell(root, true)?,
+                Ok(false) => {}
+                Err(declined) => return Ok(Err(declined)),
+            }
         }
         match reached {
             NOT_A_CELL => Ok(Ok(false)),

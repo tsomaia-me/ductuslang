@@ -52,6 +52,7 @@ mod front_end;
 mod gate_tests;
 mod gates;
 mod groups;
+mod head_paths;
 mod history;
 #[cfg(test)]
 mod history_tests;
