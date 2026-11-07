@@ -3844,7 +3844,9 @@ fn mutants_draw_no_placeholder(shard: usize) {
     let mut clean = 0;
     let mut index = 0;
     for (vocabulary, texts) in robustness_corpus::corpora() {
-        let compiler = Compiler::new(&vocabulary).expect("the vocabulary compiles");
+        let compiler = Compiler::new(&vocabulary)
+            .expect("the vocabulary compiles")
+            .on_the_old_engine();
         for text in &texts {
             let tokens: Vec<(usize, usize)> = kinded_tokens(text, &vocabulary)
                 .into_iter()

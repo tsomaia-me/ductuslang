@@ -5596,7 +5596,7 @@ pub const CLASSES: &[Class] = &[
     },
     Class {
         ledger: "476",
-        rule: "a placement or a wire in the body of a placement `for` whose head holds a fault, or reads a name that names nothing (`for s in sections:` over `[verse, chorus]` undeclared, with `Starts+: s`), draws its unknown attribute, flag or parameter names, as the program with the head repaired to any valid iterable does, a head of no iteration included (the repair rule, DECISIONS.md 2026-11-03), where the old engine is silent in such a body (`for i in zz:` with `Lamp | foo=1` or `Lamp~`)",
+        rule: "a placement or a wire in the body of a placement `for` whose head holds a fault, or reads a name that names nothing (`for s in sections:` over `[verse, chorus]` undeclared, with `Starts+: s`), draws its unknown attribute, flag or parameter names and its `to` paths' resolution faults over the destination's written candidates (`Plays | gain=to.hook: (if true then chorus else verse)`), as the program with the head repaired to any valid iterable does, a head of no iteration included (the repair rule, DECISIONS.md 2026-11-03), where the old engine is silent in such a body (`for i in zz:` with `Lamp | foo=1` or `Lamp~`)",
         explains: member_name_in_an_unexpanded_loop_body,
     },
     Class {
@@ -5608,6 +5608,11 @@ pub const CLASSES: &[Class] = &[
         ledger: "476",
         rule: "a path through a named wire of a placement whose line holds a syntax fault reads the wire, as the program with the fault repaired does (the repair rule, DECISIONS.md 2026-11-03), where the old engine drops the placement's wires and draws unknown-attribute at the wire's name (`Scene night |( hold=…` holding `Dims as soften`, read as `night.soften.depth`)",
         explains: wire_of_a_faulty_line_placement,
+    },
+    Class {
+        ledger: "476",
+        rule: "an attribute set twice, one of its entries a bare name or `!name` on an attribute that is not a `bool`, draws duplicate-attribute beside that entry's type-mismatch (SPEC §7.6: setting an attribute twice, by any combination of entries, flags and `/expr`, is an error), where the old engine draws the type-mismatch alone (`Cue/0 | fade=dusk.first.u8 fade`, `Cue/0 | fade=1 fade`, `Cue/0 | fade fade=1`)",
+        explains: duplicate_beside_a_refused_bare_name,
     },
 ];
 
@@ -6456,7 +6461,7 @@ fn member_name_in_an_unexpanded_loop_body(seen: &Seen<'_>, change: Change, at: &
     if change != Change::Added
         || !matches!(
             at.0.as_str(),
-            "unknown-attribute" | "unknown-flag" | "unknown-parameter"
+            "unknown-attribute" | "unknown-flag" | "unknown-parameter" | "misplaced-to"
         )
     {
         return false;
@@ -6533,4 +6538,24 @@ fn wire_of_a_faulty_line_placement(seen: &Seen<'_>, change: Change, at: &Drawn) 
             line.contains(&format!(" as {name} |")) || line.contains(&format!(" as {name}:"))
         });
     faulty && wire
+}
+
+fn duplicate_beside_a_refused_bare_name(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
+    if change != Change::Added || at.0 != "duplicate-attribute" {
+        return false;
+    }
+    let name = seen
+        .text(at)
+        .split('=')
+        .next()
+        .unwrap_or_default()
+        .trim()
+        .trim_start_matches('!')
+        .to_string();
+    !name.is_empty()
+        && seen.old.iter().any(|drawn| {
+            drawn.0 == "type-mismatch"
+                && seen.text(drawn).trim_start_matches('!') == name
+                && seen.line(drawn.1) == seen.line(at.1)
+        })
 }

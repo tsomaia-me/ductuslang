@@ -4090,7 +4090,9 @@ fn a_member_call_in_a_value_nothing_uses_draws_nothing_where_the_old_engine_draw
     }
 }
 
-const NAMES_IN_BODIES_OF_FAULTY_HEADS: [&str; 6] = [
+const NAMES_IN_BODIES_OF_FAULTY_HEADS: [&str; 8] = [
+    "Clip m:\n    for i in zz:\n        Plays | gain=to.hook: (if true then chorus else verse)\nClip verse:\n    Note\nClip chorus:\n    Note as hook\n",
+    "Clip m:\n    for i in zz:\n        Plays | gain=to.hook: chorus\nClip chorus:\n    Note as hook\n",
     "state section(0)\nlet sections = [verse, chorus, bridge]\nClip intro:\n    for s in sections:\n        Starts+: s\nClip outro:\n    Plays: sections[section]\n",
     "Rig r:\n    for i in zz:\n        Lamp | foo=1\n",
     "Rig r:\n    for i in zz:\n        Lamp~\n",
@@ -4164,4 +4166,30 @@ fn a_path_through_a_named_wire_of_a_faulty_line_placement_reads_the_wire_476() {
         classes.len() == 1 && classes.iter().all(|class| class.ledger == "476"),
         "{text}"
     );
+}
+
+#[test]
+fn an_attribute_set_twice_one_entry_a_refused_bare_name_draws_duplicate_attribute_476() {
+    let old = Compiler::new(&symphonyscript_fixtures::vocabulary())
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
+    let new =
+        Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("the vocabulary compiles");
+    for text in [
+        "Rig stage:\n    Lamp as wash\n\nScene dusk | hold=8:\n    Cue as first /1 | fade=2\n\nScene night | hold=dusk.hold * 1.5:\n    Cue/0 | fade=dusk.first.u8 fade\n    Dims as soften | depth=0.4: stage.wash\n\nScene dawn | hold=night.soften.depth * 10:\n    Cue/0\n",
+        "Scene night | hold=1:\n    Cue/0 | fade=1 fade\n",
+        "Scene night | hold=1:\n    Cue/0 | fade fade=1\n",
+        "Scene night | hold=1:\n    Cue/0 | fade=zz fade\n",
+    ] {
+        let sources = [source(text)];
+        let found = new
+            .checked_by_new_core(&sources)
+            .expect("the new core takes the program");
+        let classes = reviewed::moved(text, &drawn(&old.check(&sources)), &drawn(&found))
+            .unwrap_or_else(|unexplained| panic!("{text}: {unexplained:?}"));
+        assert!(
+            classes.len() == 1 && classes.iter().all(|class| class.ledger == "476"),
+            "{text}"
+        );
+    }
 }

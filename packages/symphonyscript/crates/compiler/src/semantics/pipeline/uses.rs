@@ -48,7 +48,7 @@ impl Core<'_> {
             }
             let body = self.pattern_parts(pattern)?.1;
             let file = self.pattern_file(pattern);
-            if let Err(declined) = self.unrun_block(body, file)? {
+            if let Err(declined) = self.unrun_block(body, (file, NONE))? {
                 return Ok(Err(declined));
             }
         }

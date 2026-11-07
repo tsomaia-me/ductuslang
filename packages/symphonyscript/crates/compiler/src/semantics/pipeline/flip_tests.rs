@@ -3363,3 +3363,247 @@ fn a_method_of_no_name_reads_its_receiver_and_draws_unknown_name_at_the_method_b
  {
     assert_eq!(same_as_the_old_engine(&UNKNOWN_METHODS), 58);
 }
+
+const TO_PATHS_IN_UNEXPANDED_BODIES: [&[&str]; 11] = [
+    &[
+        "let x = true\n",
+        "pattern Unused():\n    Plays | gain=to.hook: (if x then chorus else verse)\n    Plays | gain=to.hook: [chorus, verse][0]\n    Plays | gain=to.hook: (if x then chorus else chorus)\n    Plays | gain=to.zzz: (if x then verse else chorus)\n",
+        "Clip verse:\n    Note\nClip chorus:\n    Note as hook\n",
+        "Clip bridge:\n    Note as hook\nClip lane | gain=0.5\n",
+    ],
+    &[
+        "pattern Unused():\n    Plays | gain=to.hook.velocity: (if true then chorus else bridge)\n    Plays | gain=to.hook.velocity: (if true then chorus else verse)\n    Plays | gain=to.hook: [chorus, bridge][0]\n",
+        "Clip verse:\n    Note\nClip chorus:\n    Note as hook\n",
+        "Clip bridge:\n    Note as hook\nClip lane | gain=0.5\n",
+    ],
+    &[
+        "pattern Unused():\n    Plays | gain=to.hook: (if true then chorus else lane)\n    Plays | gain=to.velocity: (if true then chorus else verse)\n    Plays | gain=to.hook.velocity: (if true then chorus else (if true then verse else lane))\n",
+        "Clip verse:\n    Note\nClip chorus:\n    Note as hook\n",
+        "Clip lane | gain=0.5\n",
+    ],
+    &[
+        "pattern Unused():\n    Plays | gain=to.hook.zzz: (if true then chorus else bridge)\n    Plays | gain=to.zz.zzz: (if true then chorus else bridge)\n    Plays | gain=to.zz.zzz: chorus\n    Plays | gain=to.gain: (if true then chorus else 1)\n",
+        "Clip chorus:\n    Note as hook\n",
+        "Clip bridge:\n    Note as hook\n",
+    ],
+    &[
+        "pattern Unused(p):\n    Note as n\n    Plays | gain=to.zzz: p\n    Plays | gain=to.zzz: n\n    Plays | gain=to.zzz: zz\n",
+        "Clip verse:\n    Note\n",
+    ],
+    &[
+        "let x = true\n",
+        "pattern Used():\n    Plays | gain=to.hook: (if x then chorus else verse)\n    Plays | gain=to.zzz: (if x then verse else chorus)\n    Plays | gain=to.velocity: chorus\n",
+        "Clip verse:\n    Note\nClip chorus:\n    Note as hook\n",
+        "Clip m:\n    Used\n",
+    ],
+    &[
+        "pattern U():\n    Plays | gain=to.zzz: verse\n",
+        "Clip verse:\n    Note\n",
+        "Clip m:\n    U\n    U\n",
+    ],
+    &[
+        "pattern V():\n    U/verse\n",
+        "pattern U(default d):\n    Plays | gain=to.zzz: (if true then d else verse)\n",
+        "Clip verse:\n    Note\nClip chorus:\n    Note as hook\n",
+        "Clip m:\n    V\n    U/chorus\n",
+    ],
+    &[
+        "Clip m:\n    for i in 0..0:\n        Plays | gain=to.hook: (if true then chorus else verse)\n        Plays | gain=to.hook: chorus\n",
+        "Clip verse:\n    Note\nClip chorus:\n    Note as hook\n",
+    ],
+    &[
+        "let x = true\n",
+        "pattern U(default d):\n    for i in 0..0:\n        Plays | gain=to.hook: (if x then chorus else verse)\n",
+        "Clip verse:\n    Note\nClip chorus:\n    Note as hook\n",
+        "Clip m:\n    U/verse\n",
+    ],
+    &[
+        "pattern Unused():\n    Plays | gain=to.gain: (if true then chorus else verse)\n    Plays | gain=to.hook.velocity: (if true then chorus else bridge)\n",
+        "Clip verse:\n    Note\nClip chorus:\n    Note as hook\n",
+        "Clip bridge:\n    Note as hook\n",
+    ],
+];
+
+#[test]
+fn a_to_path_in_an_unused_pattern_or_an_unrun_body_draws_its_resolution_faults_over_the_destinations_written_candidates_beside_a_used_twin_and_a_valid_twin_in_every_order_526()
+ {
+    assert_eq!(same_as_the_old_engine(&TO_PATHS_IN_UNEXPANDED_BODIES), 612);
+}
+
+const CYCLES_THROUGH_WIRES_AND_TO_PATHS: [&[&str]; 53] = [
+    &[
+        "Clip i0 | gain=(i1.gain)\nClip i1 | gain=(o2.w2.gain)\nstate q2(0)\nClip o2 | gain=(i0.gain):\n    Plays as w2 | gain=to.gain: [o2, o2][q2]\n",
+    ],
+    &[
+        "Clip i0 | gain=(o1.w1.gain)\nClip o1 | gain=(o2.w2.gain):\n    Plays as w1 | gain=to.gain: o1\nstate q2(0)\nClip o2 | gain=(i0.gain):\n    Plays as w2 | gain=to.gain: [o2, o2][q2]\n",
+    ],
+    &[
+        "Clip i0 | gain=(o1.w1.gain)\nstate q1(0)\nClip o1 | gain=(i0.gain):\n    Plays as w1 | gain=to.gain: [o1, o1][q1]\n",
+    ],
+    &[
+        "Clip i0 | gain=(o1.w1.gain)\nstate q1(0)\nClip o1 | gain=(o2.w2.gain):\n    Plays as w1 | gain=to.gain: [o1, o1][q1]\nClip o2 | gain=(i0.gain):\n    Plays as w2 | gain=to.gain: o2\n",
+    ],
+    &[
+        "Clip i0 | gain=(o1.w1.gain)\nstate q1(0)\nClip o1 | gain=(o2.w2.gain):\n    Plays as w1 | gain=to.gain: [o1, o1][q1]\nstate q2(0)\nClip o2 | gain=(i0.gain):\n    Plays as w2 | gain=to.gain: [o2, o2][q2]\n",
+    ],
+    &[
+        "Clip i0 | gain=(o1.w1.gain)\nstate q1(0)\nClip o1 | gain=(s2.w2.gain):\n    Plays as w1 | gain=to.gain: [o1, o1][q1]\nClip s2:\n    Plays as w2 | gain=(i0.gain): s2\n",
+    ],
+    &[
+        "Clip i0 | gain=(o1.w1.gain)\nstate q1(0)\nClip o1 | gain=(u2.gain):\n    Plays as w1 | gain=to.gain: [o1, o1][q1]\npattern P2(x):\n    Clip | gain=x\nP2 u2 | x=(i0.gain)\n",
+    ],
+    &[
+        "Clip i0 | gain=(s1.w1.gain)\nClip s1:\n    Plays as w1 | gain=(o2.w2.gain): s1\nstate q2(0)\nClip o2 | gain=(i0.gain):\n    Plays as w2 | gain=to.gain: [o2, o2][q2]\n",
+    ],
+    &[
+        "Clip i0 | gain=(u1.gain)\npattern P1(x):\n    Clip | gain=x\nP1 u1 | x=(o2.w2.gain)\nstate q2(0)\nClip o2 | gain=(i0.gain):\n    Plays as w2 | gain=to.gain: [o2, o2][q2]\n",
+    ],
+    &[
+        "Clip o0 | gain=(o1.w1.gain):\n    Plays as w0 | gain=to.gain: o0\nClip o1 | gain=(o2.w2.gain):\n    Plays as w1 | gain=to.gain: o1\nstate q2(0)\nClip o2 | gain=(o0.w0.gain):\n    Plays as w2 | gain=to.gain: [o2, o2][q2]\n",
+    ],
+    &[
+        "Clip o0 | gain=(o1.w1.gain):\n    Plays as w0 | gain=to.gain: o0\nstate q1(0)\nClip o1 | gain=(o0.w0.gain):\n    Plays as w1 | gain=to.gain: [o1, o1][q1]\n",
+    ],
+    &[
+        "Clip o0 | gain=(o1.w1.gain):\n    Plays as w0 | gain=to.gain: o0\nstate q1(0)\nClip o1 | gain=(o2.w2.gain):\n    Plays as w1 | gain=to.gain: [o1, o1][q1]\nstate q2(0)\nClip o2 | gain=(o0.w0.gain):\n    Plays as w2 | gain=to.gain: [o2, o2][q2]\n",
+    ],
+    &[
+        "Clip o0 | gain=(o1.w1.gain):\n    Plays as w0 | gain=to.gain: o0\nstate q1(0)\nClip o1 | gain=(u2.gain):\n    Plays as w1 | gain=to.gain: [o1, o1][q1]\npattern P2(x):\n    Clip | gain=x\nP2 u2 | x=(o0.w0.gain)\n",
+    ],
+    &[
+        "Clip o0 | gain=(u1.gain):\n    Plays as w0 | gain=to.gain: o0\npattern P1(x):\n    Clip | gain=x\nP1 u1 | x=(o2.w2.gain)\nstate q2(0)\nClip o2 | gain=(o0.w0.gain):\n    Plays as w2 | gain=to.gain: [o2, o2][q2]\n",
+    ],
+    &[
+        "Clip s0:\n    Plays as w0 | gain=(o1.w1.gain): s0\nClip o1 | gain=(o2.w2.gain):\n    Plays as w1 | gain=to.gain: o1\nstate q2(0)\nClip o2 | gain=(s0.w0.gain):\n    Plays as w2 | gain=to.gain: [o2, o2][q2]\n",
+    ],
+    &[
+        "Clip s0:\n    Plays as w0 | gain=(o1.w1.gain): s0\nstate q1(0)\nClip o1 | gain=(o2.w2.gain):\n    Plays as w1 | gain=to.gain: [o1, o1][q1]\nClip o2 | gain=(s0.w0.gain):\n    Plays as w2 | gain=to.gain: o2\n",
+    ],
+    &[
+        "Clip s0:\n    Plays as w0 | gain=(o1.w1.gain): s0\nstate q1(0)\nClip o1 | gain=(o2.w2.gain):\n    Plays as w1 | gain=to.gain: [o1, o1][q1]\nstate q2(0)\nClip o2 | gain=(s0.w0.gain):\n    Plays as w2 | gain=to.gain: [o2, o2][q2]\n",
+    ],
+    &[
+        "Clip s0:\n    Plays as w0 | gain=(o1.w1.gain): s0\nstate q1(0)\nClip o1 | gain=(s0.w0.gain):\n    Plays as w1 | gain=to.gain: [o1, o1][q1]\n",
+    ],
+    &[
+        "Clip s0:\n    Plays as w0 | gain=(o1.w1.gain): s0\nstate q1(0)\nClip o1 | gain=(u2.gain):\n    Plays as w1 | gain=to.gain: [o1, o1][q1]\npattern P2(x):\n    Clip | gain=x\nP2 u2 | x=(s0.w0.gain)\n",
+    ],
+    &[
+        "Clip s0:\n    Plays as w0 | gain=(s1.w1.gain): s0\nClip s1:\n    Plays as w1 | gain=(o2.w2.gain): s1\nstate q2(0)\nClip o2 | gain=(s0.w0.gain):\n    Plays as w2 | gain=to.gain: [o2, o2][q2]\n",
+    ],
+    &[
+        "Clip s0:\n    Plays as w0 | gain=(u1.gain): s0\npattern P1(x):\n    Clip | gain=x\nP1 u1 | x=(o2.w2.gain)\nstate q2(0)\nClip o2 | gain=(s0.w0.gain):\n    Plays as w2 | gain=to.gain: [o2, o2][q2]\n",
+    ],
+    &[
+        "let l0 = i1.gain\nClip i1 | gain=(o2.w2.gain)\nstate q2(0)\nClip o2 | gain=(1):\n    Plays as w2 | gain=to.gain: [o2, o2][q2]\n",
+    ],
+    &[
+        "let l0 = i1.gain\nClip i1 | gain=(o2.w2.gain)\nstate q2(0)\nClip o2 | gain=(l0):\n    Plays as w2 | gain=to.gain: [o2, o2][q2]\n",
+    ],
+    &[
+        "let l0 = l1\nlet l1 = o2.w2.gain\nstate q2(0)\nClip o2 | gain=(l0):\n    Plays as w2 | gain=to.gain: [o2, o2][q2]\n",
+    ],
+    &[
+        "let l0 = o1.w1.gain\nClip o1 | gain=(o2.w2.gain):\n    Plays as w1 | gain=to.gain: o1\nstate q2(0)\nClip o2 | gain=(1):\n    Plays as w2 | gain=to.gain: [o2, o2][q2]\n",
+    ],
+    &[
+        "let l0 = o1.w1.gain\nClip o1 | gain=(o2.w2.gain):\n    Plays as w1 | gain=to.gain: o1\nstate q2(0)\nClip o2 | gain=(l0):\n    Plays as w2 | gain=to.gain: [o2, o2][q2]\n",
+    ],
+    &[
+        "let l0 = o1.w1.gain\nstate q1(0)\nClip o1 | gain=(1):\n    Plays as w1 | gain=to.gain: [o1, o1][q1]\n",
+    ],
+    &[
+        "let l0 = o1.w1.gain\nstate q1(0)\nClip o1 | gain=(i2.gain):\n    Plays as w1 | gain=to.gain: [o1, o1][q1]\nClip i2 | gain=(1)\n",
+    ],
+    &[
+        "let l0 = o1.w1.gain\nstate q1(0)\nClip o1 | gain=(i2.gain):\n    Plays as w1 | gain=to.gain: [o1, o1][q1]\nClip i2 | gain=(l0)\n",
+    ],
+    &[
+        "let l0 = o1.w1.gain\nstate q1(0)\nClip o1 | gain=(l0):\n    Plays as w1 | gain=to.gain: [o1, o1][q1]\n",
+    ],
+    &[
+        "let l0 = o1.w1.gain\nstate q1(0)\nClip o1 | gain=(o2.w2.gain):\n    Plays as w1 | gain=to.gain: [o1, o1][q1]\nClip o2 | gain=(1):\n    Plays as w2 | gain=to.gain: o2\n",
+    ],
+    &[
+        "let l0 = o1.w1.gain\nstate q1(0)\nClip o1 | gain=(o2.w2.gain):\n    Plays as w1 | gain=to.gain: [o1, o1][q1]\nClip o2 | gain=(l0):\n    Plays as w2 | gain=to.gain: o2\n",
+    ],
+    &[
+        "let l0 = o1.w1.gain\nstate q1(0)\nClip o1 | gain=(o2.w2.gain):\n    Plays as w1 | gain=to.gain: [o1, o1][q1]\nstate q2(0)\nClip o2 | gain=(1):\n    Plays as w2 | gain=to.gain: [o2, o2][q2]\n",
+    ],
+    &[
+        "let l0 = o1.w1.gain\nstate q1(0)\nClip o1 | gain=(o2.w2.gain):\n    Plays as w1 | gain=to.gain: [o1, o1][q1]\nstate q2(0)\nClip o2 | gain=(l0):\n    Plays as w2 | gain=to.gain: [o2, o2][q2]\n",
+    ],
+    &[
+        "let l0 = o1.w1.gain\nstate q1(0)\nClip o1 | gain=(s2.w2.gain):\n    Plays as w1 | gain=to.gain: [o1, o1][q1]\nClip s2:\n    Plays as w2 | gain=(1): s2\n",
+    ],
+    &[
+        "let l0 = o1.w1.gain\nstate q1(0)\nClip o1 | gain=(s2.w2.gain):\n    Plays as w1 | gain=to.gain: [o1, o1][q1]\nClip s2:\n    Plays as w2 | gain=(l0): s2\n",
+    ],
+    &[
+        "let l0 = o1.w1.gain\nstate q1(0)\nClip o1 | gain=(u2.gain):\n    Plays as w1 | gain=to.gain: [o1, o1][q1]\npattern P2(x):\n    Clip | gain=x\nP2 u2 | x=(1)\n",
+    ],
+    &[
+        "let l0 = o1.w1.gain\nstate q1(0)\nClip o1 | gain=(u2.gain):\n    Plays as w1 | gain=to.gain: [o1, o1][q1]\npattern P2(x):\n    Clip | gain=x\nP2 u2 | x=(l0)\n",
+    ],
+    &[
+        "let l0 = s1.w1.gain\nClip s1:\n    Plays as w1 | gain=(o2.w2.gain): s1\nstate q2(0)\nClip o2 | gain=(1):\n    Plays as w2 | gain=to.gain: [o2, o2][q2]\n",
+    ],
+    &[
+        "let l0 = s1.w1.gain\nClip s1:\n    Plays as w1 | gain=(o2.w2.gain): s1\nstate q2(0)\nClip o2 | gain=(l0):\n    Plays as w2 | gain=to.gain: [o2, o2][q2]\n",
+    ],
+    &[
+        "let l0 = u1.gain\npattern P1(x):\n    Clip | gain=x\nP1 u1 | x=(o2.w2.gain)\nstate q2(0)\nClip o2 | gain=(1):\n    Plays as w2 | gain=to.gain: [o2, o2][q2]\n",
+    ],
+    &[
+        "let l0 = u1.gain\npattern P1(x):\n    Clip | gain=x\nP1 u1 | x=(o2.w2.gain)\nstate q2(0)\nClip o2 | gain=(l0):\n    Plays as w2 | gain=to.gain: [o2, o2][q2]\n",
+    ],
+    &["state q0(0)\nClip o0 | gain=(o0.w0.gain):\n    Plays as w0 | gain=to.gain: [o0, o0][q0]\n"],
+    &[
+        "state q0(0)\nClip o0 | gain=(o1.w1.gain):\n    Plays as w0 | gain=to.gain: [o0, o0][q0]\nstate q1(0)\nClip o1 | gain=(o0.w0.gain):\n    Plays as w1 | gain=to.gain: [o1, o1][q1]\n",
+    ],
+    &[
+        "state q0(0)\nClip o0 | gain=(o1.w1.gain):\n    Plays as w0 | gain=to.gain: [o0, o0][q0]\nstate q1(0)\nClip o1 | gain=(o2.w2.gain):\n    Plays as w1 | gain=to.gain: [o1, o1][q1]\nstate q2(0)\nClip o2 | gain=(o0.w0.gain):\n    Plays as w2 | gain=to.gain: [o2, o2][q2]\n",
+    ],
+    &[
+        "state q0(0)\nClip o0 | gain=(o1.w1.gain):\n    Plays as w0 | gain=to.gain: [o0, o0][q0]\nstate q1(0)\nClip o1 | gain=(u2.gain):\n    Plays as w1 | gain=to.gain: [o1, o1][q1]\npattern P2(x):\n    Clip | gain=x\nP2 u2 | x=(o0.w0.gain)\n",
+    ],
+    &[
+        "state q0(0)\nClip o0 | gain=(u1.gain):\n    Plays as w0 | gain=to.gain: [o0, o0][q0]\npattern P1(x):\n    Clip | gain=x\nP1 u1 | x=(o0.w0.gain)\n",
+    ],
+    &[
+        "state q0(0)\nClip o0 | gain=(u1.gain):\n    Plays as w0 | gain=to.gain: [o0, o0][q0]\npattern P1(x):\n    Clip | gain=x\nP1 u1 | x=(u2.gain)\npattern P2(x):\n    Clip | gain=x\nP2 u2 | x=(o0.w0.gain)\n",
+    ],
+    &[
+        "Clip verse:\n    Plays as a/to.b.gain: chorus\n",
+        "Clip chorus:\n    Plays as b/to.a.gain: verse\n",
+    ],
+    &[
+        "Clip verse:\n    Plays as a/to.b.zzz: chorus\n",
+        "Clip chorus:\n    Plays as b/0.5: verse\n",
+    ],
+    &[
+        "Clip verse:\n    Plays as a/to.b.gain: chorus\n",
+        "Clip chorus:\n    Plays as b/0.5: verse\n",
+        "Clip m | gain=(verse.a.gain)\n",
+    ],
+    &[
+        "state q(0)\n",
+        "Clip a | gain=(b.gain):\n    Plays as w | gain=to.gain: [a, b][q]\n",
+        "Clip b | gain=(a.w.gain)\n",
+    ],
+    &[
+        "let l0 = o1.w1.gain\n",
+        "state q1(0)\n",
+        "Clip o1 | gain=(1):\n    Plays as w1 | gain=to.gain: [o1, o2][q1]\n",
+        "Clip o2\n",
+    ],
+];
+
+#[test]
+fn a_named_wires_attribute_read_and_a_to_path_are_edges_of_the_declaration_graph_and_a_runtime_destinations_to_read_reads_a_cell_beside_a_valid_twin_in_every_order_528()
+ {
+    assert_eq!(
+        same_as_the_old_engine(&CYCLES_THROUGH_WIRES_AND_TO_PATHS),
+        276
+    );
+}

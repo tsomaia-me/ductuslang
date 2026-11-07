@@ -215,7 +215,7 @@ impl Core<'_> {
             .unwrap_or(NONE))
     }
 
-    pub fn enter_env(&mut self, env: u32) -> (u32, usize, Vec<(u32, u32)>) {
+    pub fn env_links(&self, env: u32) -> Vec<(u32, u32)> {
         let mut links = Vec::new();
         let mut at = env;
         while let Some(record) = self.envs.get(at as usize) {
@@ -224,6 +224,11 @@ impl Core<'_> {
             }
             at = record.parent;
         }
+        links
+    }
+
+    pub fn enter_env(&mut self, env: u32) -> (u32, usize, Vec<(u32, u32)>) {
+        let links = self.env_links(env);
         let saved = (
             self.inst,
             self.own_calls.len(),
@@ -861,14 +866,14 @@ impl Core<'_> {
 }
 
 impl Core<'_> {
-    pub fn unrun_names(&mut self, item: u32, file: u32) -> Stage<()> {
+    pub fn unrun_names(&mut self, item: u32, (file, env): (u32, u32)) -> Stage<()> {
         let ItemRec::For(rec) = *self.ir.item(item)? else {
             return Err(Internal::missed("IR for block"));
         };
-        self.unrun_block(rec.body, file)
+        self.unrun_block(rec.body, (file, env))
     }
 
-    pub fn unrun_block(&mut self, body: u32, file: u32) -> Stage<()> {
+    pub fn unrun_block(&mut self, body: u32, (file, env): (u32, u32)) -> Stage<()> {
         let mut blocks = vec![body];
         let mut items = Vec::new();
         while let Some(block) = blocks.pop() {
@@ -905,7 +910,8 @@ impl Core<'_> {
                         if wire.flags.0 == wire.flags.1 && self.bare_wire(wire)? => {}
                     ItemRec::Wire(wire) if self.plain_wire(wire)? => self.unrun_wire(wire, file)?,
                     ItemRec::Wire(wire) if self.unrun_shape(wire)? => {
-                        self.unrun_wire(wire, file)?
+                        self.unrun_wire(wire, file)?;
+                        self.unrun_to_wires.push((wire, env));
                     }
                     ItemRec::When(_) => items.extend(self.when_items(child).into_iter().rev()),
                     ItemRec::Bundle(_) => items.extend(self.bundle_items(child)),

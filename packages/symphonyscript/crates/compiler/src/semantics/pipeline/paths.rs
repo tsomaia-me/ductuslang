@@ -37,7 +37,7 @@ fn same_end(one: (End, Option<EvalTy>), other: (End, Option<EvalTy>)) -> bool {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-enum End {
+pub(super) enum End {
     Row(u32),
     Use(u32),
     To,
@@ -613,6 +613,15 @@ impl Core<'_> {
         }
         self.index_to_wires()?;
         self.misplaced_to()?;
+        for (wire, env) in std::mem::take(&mut self.unrun_to_wires) {
+            let links = self.env_links(env);
+            let saved = std::mem::replace(&mut self.use_links, links);
+            let outcome = self.unrun_to_paths(wire);
+            self.use_links = saved;
+            if let Err(declined) = outcome? {
+                return Ok(Err(declined));
+            }
+        }
         let mut ends: HashMap<u32, End> = HashMap::new();
         let mut held: HashMap<u32, Vec<Diagnostic>> = HashMap::new();
         for local in 0..self.ir.op.len() {
@@ -777,6 +786,11 @@ impl Core<'_> {
             .row_reads
             .range((node, 0)..=(node, u32::MAX))
             .map(|(_, at)| *at)
+            .chain(
+                self.choice_reads
+                    .range((node, 0)..=(node, u32::MAX))
+                    .map(|(_, at)| *at),
+            )
             .chain(
                 self.env_reads
                     .range((node, 0)..=(node, u32::MAX))
@@ -951,7 +965,7 @@ impl Core<'_> {
         Ok(())
     }
 
-    fn row_owner(&self, row: u32) -> Result<String, Internal> {
+    pub fn row_owner(&self, row: u32) -> Result<String, Internal> {
         let kind = self
             .instances
             .get(row as usize)
@@ -1046,15 +1060,25 @@ impl Core<'_> {
             .wires
             .get(wire as usize)
             .ok_or(Internal::missed("wire row"))?;
-        if row.chosen {
-            self.deferred_to.push((node, wire));
-            return Ok(Ok(End::Placeholder));
-        }
-        let targets = self.wire_targets(&row);
+        let targets = if row.chosen {
+            let destination = self.wire_rec(row.item)?.destination;
+            let Some(targets) = self.runtime_targets(destination)? else {
+                self.deferred_to.push((node, wire));
+                return Ok(Ok(End::Placeholder));
+            };
+            self.runtime_to.insert(node);
+            targets
+        } else {
+            self.wire_targets(&row)
+        };
         if targets.is_empty() {
             return Ok(Ok(End::Placeholder));
         }
-        self.end_over_candidates(node, segments, &targets)
+        let links = self.env_links(row.env);
+        let saved = std::mem::replace(&mut self.use_links, links);
+        let end = self.end_over_candidates(node, segments, &targets);
+        self.use_links = saved;
+        end
     }
 
     pub fn resolve_chosen_paths(&mut self) -> Stage<()> {
@@ -1079,7 +1103,10 @@ impl Core<'_> {
             if several {
                 self.wire_now = wire;
             }
+            let links = self.env_links(row.env);
+            let saved = std::mem::replace(&mut self.use_links, links);
             let end = self.end_over_candidates(node, &segments, &targets);
+            self.use_links = saved;
             self.wire_now = NONE;
             let end = match end? {
                 Ok(end) => end,
@@ -1165,6 +1192,14 @@ impl Core<'_> {
             )?;
             return Ok(Ok(End::Value));
         }
+        for (row, attr, own) in found {
+            match self.attr_read(row, attr, own)? {
+                Ok(read) => {
+                    self.choice_reads.insert((node, read));
+                }
+                Err(declined) => return Ok(Err(declined)),
+            }
+        }
         self.to_choices.insert(node, ty);
         if self.wire_now != NONE {
             self.row_choices.insert((node, self.wire_now), ty);
@@ -1172,7 +1207,7 @@ impl Core<'_> {
         Ok(Ok(End::Value))
     }
 
-    fn candidate_attr(
+    pub fn candidate_attr(
         &mut self,
         node: u32,
         segments: &[u32],
@@ -1199,6 +1234,10 @@ impl Core<'_> {
             match self.to_step(target, entry.sym)? {
                 Some(next @ (End::Row(_) | End::Use(_))) => {
                     target = next;
+                    continue;
+                }
+                Some(End::Wire(wire)) if !several => {
+                    target = End::Wire(wire);
                     continue;
                 }
                 Some(_) => return Ok(Ok(Err(End::Placeholder))),
@@ -1240,7 +1279,28 @@ impl Core<'_> {
         }
         let target = match target {
             End::Row(row) => row,
-            End::Wire(_) => return Ok(Err(Declined(Reason::Member))),
+            End::Wire(wire) => {
+                let kind = self
+                    .wires
+                    .get(wire as usize)
+                    .ok_or(Internal::missed("wire row"))?
+                    .kind;
+                let decl = self
+                    .vocabulary
+                    .wire_kind(kind)
+                    .ok_or(Internal::missed("wire kind"))?;
+                let name = self.ir.symbols.text(entry.sym).to_string();
+                if decl.attrs.iter().any(|attr| attr.name == name) {
+                    return Ok(self.step_wire(node, wire, *last)?.map(Err));
+                }
+                let owner = decl.name.clone();
+                self.draw(
+                    missing,
+                    span,
+                    format!("the destination, the `{owner}` wire, has no attribute `{name}`"),
+                );
+                return Ok(Ok(Err(End::Value)));
+            }
             End::Use(env) => {
                 let owner = self.use_pattern_name(env)?;
                 let name = self.ir.symbols.text(entry.sym).to_string();
@@ -1297,7 +1357,7 @@ impl Core<'_> {
         Ok(Ok(Ok((target, attr, ty))))
     }
 
-    fn to_step(
+    pub fn to_step(
         &self,
         target: End,
         sym: crate::semantics::ir::flat::Sym,
@@ -1367,7 +1427,7 @@ impl Core<'_> {
         Ok(false)
     }
 
-    fn may_name_any(&self, row: u32) -> Result<bool, Internal> {
+    pub fn may_name_any(&self, row: u32) -> Result<bool, Internal> {
         let record = *self
             .instances
             .get(row as usize)

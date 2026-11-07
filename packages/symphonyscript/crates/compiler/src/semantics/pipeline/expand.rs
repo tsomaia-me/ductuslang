@@ -285,7 +285,7 @@ impl Core<'_> {
                             {
                                 self.empty_bundle(item, env, file)?;
                             }
-                            if let Err(declined) = self.unrun_names(item, file)? {
+                            if let Err(declined) = self.unrun_names(item, (file, env))? {
                                 return Ok(Err(declined));
                             }
                             if run.is_none_or(|run| run.open) {

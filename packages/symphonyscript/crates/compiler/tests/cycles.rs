@@ -256,15 +256,19 @@ const LET_LINK: usize = 0;
 
 const RUNTIME_DESTINATION_LINK: usize = 6;
 
-fn let_reads_a_runtime_destination(links: &[usize]) -> bool {
-    links.iter().enumerate().any(|(position, link)| {
-        *link == LET_LINK
-            && links
-                .iter()
-                .skip(position + 1)
-                .take_while(|later| !FUNCTION_LINKS.contains(later))
-                .any(|later| *later == RUNTIME_DESTINATION_LINK)
-    })
+fn lets_reading_a_runtime_destination(links: &[usize]) -> usize {
+    links
+        .iter()
+        .enumerate()
+        .filter(|(position, link)| {
+            **link == LET_LINK
+                && links
+                    .iter()
+                    .skip(*position + 1)
+                    .take_while(|later| !FUNCTION_LINKS.contains(later))
+                    .any(|later| *later == RUNTIME_DESTINATION_LINK)
+        })
+        .count()
 }
 
 fn cycle_items(links: &[usize], closing: Option<&str>) -> Vec<String> {
@@ -322,11 +326,8 @@ fn every_cycle_of_declarations_draws_one_declaration_cycle_in_every_order_in(
                 threads.spawn(move || {
                     let mut failures = Vec::new();
                     for cycle in chunk {
-                        let acyclic = if let_reads_a_runtime_destination(cycle) {
-                            vec![Code::ReactiveLet]
-                        } else {
-                            vec![]
-                        };
+                        let acyclic =
+                            vec![Code::ReactiveLet; lets_reading_a_runtime_destination(cycle)];
                         for (closing, wanted) in
                             [(None, vec![Code::DeclarationCycle]), (Some("1"), acyclic)]
                         {

@@ -20,7 +20,7 @@ use super::wire_row::WireRow;
 use crate::diagnostics::{Code, Diagnostic, Related};
 use crate::semantics::Internal;
 use crate::semantics::collection::Variants;
-use crate::semantics::ir::flat::{FlatIr, NONE};
+use crate::semantics::ir::flat::{FlatIr, NONE, WireRec};
 use crate::semantics::operators::EvalTy;
 
 pub(crate) type Stage<T> = Result<Result<T, Declined>, Internal>;
@@ -124,10 +124,13 @@ pub(crate) struct Core<'a> {
     pub to_wires: Vec<(u32, u32)>,
     pub body_path_faults: HashMap<u32, (Vec<Diagnostic>, bool)>,
     pub deferred_to: Vec<(u32, u32)>,
+    pub unrun_to_wires: Vec<(WireRec, u32)>,
     pub to_choices: HashMap<u32, EvalTy>,
     pub wire_now: u32,
     pub feed_env: u32,
     pub row_reads: BTreeMap<(u32, u32), u32>,
+    pub choice_reads: std::collections::BTreeSet<(u32, u32)>,
+    pub runtime_to: HashSet<u32>,
     pub row_choices: HashMap<(u32, u32), EvalTy>,
     pub ref_insts: HashMap<(u32, u32, u32), u32>,
     pub typed_as: HashMap<u32, u32>,
@@ -325,10 +328,13 @@ impl<'a> Core<'a> {
             to_wires: Vec::new(),
             body_path_faults: HashMap::new(),
             deferred_to: Vec::new(),
+            unrun_to_wires: Vec::new(),
             to_choices: HashMap::new(),
             wire_now: NONE,
             feed_env: NONE,
             row_reads: BTreeMap::new(),
+            choice_reads: std::collections::BTreeSet::new(),
+            runtime_to: HashSet::new(),
             row_choices: HashMap::new(),
             ref_insts: HashMap::new(),
             typed_as: HashMap::new(),

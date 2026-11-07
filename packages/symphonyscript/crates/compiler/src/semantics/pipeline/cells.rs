@@ -100,6 +100,9 @@ impl Core<'_> {
         if op == Op::Field && self.cell_sizes.contains_key(&node) {
             return Ok(self.runtime_members.contains(&node));
         }
+        if op == Op::Field && self.runtime_to.contains(&node) {
+            return Ok(true);
+        }
         if op == Op::Field {
             let Some(root) = self.read_root(node)? else {
                 return Ok(self.to_choice(node).is_some());
@@ -174,19 +177,25 @@ impl Core<'_> {
                 if !seen.insert(current) {
                     continue;
                 }
-                self.let_root(current)?
+                (self.let_root(current)?, NONE)
             } else if let Some(root) = paths.pop() {
                 root
             } else {
                 break;
             };
+            let (root, env) = root;
             for node in self.deep_postorder(root)? {
                 let (op, _, _, _) = self.ir.node(node)?;
                 if op == Op::Field {
-                    if let Some(inner) = self.read_root(node)?
-                        && seen_roots.insert(inner)
+                    found = found || self.runtime_to.contains(&node);
+                    if let Some(read) = self.path_read(node)?.cloned()
+                        && !read.cyclic
+                        && read.root != NONE
                     {
-                        paths.push(inner);
+                        let inner = (read.root, self.read_env(&read)?);
+                        if seen_roots.insert(inner) {
+                            paths.push(inner);
+                        }
                     }
                     continue;
                 }
@@ -196,6 +205,13 @@ impl Core<'_> {
                 match self.bound(node)? {
                     DeclRef::Cell(_) => found = true,
                     DeclRef::Let(other) => stack.push(other),
+                    DeclRef::Param(position) if env != NONE => {
+                        if let Some(argument) = self.argument_of(node, position, env)?
+                            && seen_roots.insert(argument)
+                        {
+                            paths.push(argument);
+                        }
+                    }
                     DeclRef::None
                     | DeclRef::Instance(_)
                     | DeclRef::Duplicate
@@ -610,6 +626,9 @@ impl Core<'_> {
             for node in self.deep_postorder(current)? {
                 let (op, _, _, _) = self.ir.node(node)?;
                 if op == Op::Field {
+                    if self.runtime_to.contains(&node) {
+                        return Ok(true);
+                    }
                     stack.extend(self.read_root(node)?);
                     continue;
                 }
