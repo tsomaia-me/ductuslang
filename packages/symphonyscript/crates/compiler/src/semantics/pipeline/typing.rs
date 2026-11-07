@@ -1484,9 +1484,15 @@ impl Core<'_> {
         if self.ir.node(receiver)?.0 != Op::Name {
             return Ok(false);
         }
-        let DeclRef::Cell(at) = self.bound(receiver)? else {
-            return Ok(false);
-        };
-        Ok(self.is_cyclic_cell(at))
+        Ok(match self.bound(receiver)? {
+            DeclRef::Cell(at) => self.is_cyclic_cell(at),
+            DeclRef::Let(at) => self.cyclic.get(at as usize).copied().unwrap_or(false),
+            DeclRef::None
+            | DeclRef::Instance(_)
+            | DeclRef::Duplicate
+            | DeclRef::Param(_)
+            | DeclRef::Fn(_)
+            | DeclRef::Pattern(_) => false,
+        })
     }
 }

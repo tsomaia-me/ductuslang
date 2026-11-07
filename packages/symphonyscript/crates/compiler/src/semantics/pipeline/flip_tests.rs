@@ -3667,7 +3667,9 @@ fn a_top_level_placement_its_line_leaves_unnamed_draws_its_bodys_unknown_kinds_b
     assert_eq!(same_as_the_old_engine(&UNNAMED_TOP_BODIES), 8);
 }
 
-const METHODS_OF_NO_NAME_ON_A_CYCLE: [&[&str]; 3] = [
+const METHODS_OF_NO_NAME_ON_A_CYCLE: [&[&str]; 5] = [
+    &["let a = a.xpast(1)\n"],
+    &["let b = a + 1\nlet a = b.xpast(1)\n"],
     &[
         "state note(60)\n",
         "state recent = (recent.xpast(1, []) + [note])[^8..]\n",
@@ -3679,7 +3681,7 @@ const METHODS_OF_NO_NAME_ON_A_CYCLE: [&[&str]; 3] = [
 #[test]
 fn a_method_of_no_name_on_a_cells_own_name_in_its_cycle_draws_unknown_name_beside_a_valid_twin_in_every_order()
  {
-    assert_eq!(same_as_the_old_engine(&METHODS_OF_NO_NAME_ON_A_CYCLE), 10);
+    assert_eq!(same_as_the_old_engine(&METHODS_OF_NO_NAME_ON_A_CYCLE), 14);
 }
 
 const UNARY_OPERATORS_ON_REFERENCE_ARRAYS: [&[&str]; 2] = [

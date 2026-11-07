@@ -5626,7 +5626,7 @@ pub const CLASSES: &[Class] = &[
     },
     Class {
         ledger: "476",
-        rule: "a method of no name on a cell on a declaration cycle draws unknown-name at the method beside the cycle, as the program with the cycle repaired does (the repair rule, DECISIONS.md 2026-11-03; SPEC §5.7), where the old engine draws it in some top-level orders only (`state a = b.xpast(1)` before `state b = a + 1`)",
+        rule: "a method of no name on a cell or a let on a declaration cycle draws unknown-name at the method beside the cycle, as the program with the cycle repaired does (the repair rule, DECISIONS.md 2026-11-03; SPEC §5.7), where the old engine draws it in some top-level orders only (`state a = b.xpast(1)` before `state b = a + 1`, `let a = b.xpast(1)` before `let b = a + 1`)",
         explains: method_of_no_name_on_a_cycle,
     },
 ];
@@ -6642,7 +6642,6 @@ fn method_of_no_name_on_a_cycle(seen: &Seen<'_>, change: Change, at: &Drawn) -> 
         && seen.before(at).ends_with('.')
         && seen.after(at).starts_with('(')
         && seen.new.iter().any(|drawn| drawn.0 == "declaration-cycle")
-        && seen.program.contains("state ")
 }
 
 fn use_argument_fault_reaches(

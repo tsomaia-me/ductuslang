@@ -4244,15 +4244,19 @@ fn a_method_of_no_name_on_a_cell_on_a_cycle_draws_unknown_name_in_every_order_47
         .on_the_old_engine();
     let new =
         Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("the vocabulary compiles");
-    let text = "state a = b.xpast(1)\nstate b = a + 1\n";
-    let sources = [source(text)];
-    let found = new
-        .checked_by_new_core(&sources)
-        .expect("the new core takes the program");
-    let classes = reviewed::moved(text, &drawn(&old.check(&sources)), &drawn(&found))
-        .unwrap_or_else(|unexplained| panic!("{text}: {unexplained:?}"));
-    assert!(
-        classes.len() == 1 && classes.iter().all(|class| class.ledger == "476"),
-        "{text}"
-    );
+    for text in [
+        "state a = b.xpast(1)\nstate b = a + 1\n",
+        "let a = b.xpast(1)\nlet b = a + 1\n",
+    ] {
+        let sources = [source(text)];
+        let found = new
+            .checked_by_new_core(&sources)
+            .expect("the new core takes the program");
+        let classes = reviewed::moved(text, &drawn(&old.check(&sources)), &drawn(&found))
+            .unwrap_or_else(|unexplained| panic!("{text}: {unexplained:?}"));
+        assert!(
+            classes.len() == 1 && classes.iter().all(|class| class.ledger == "476"),
+            "{text}"
+        );
+    }
 }
