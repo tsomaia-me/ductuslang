@@ -3782,6 +3782,33 @@ fn a_path_step_to_a_name_a_faults_region_skips_draws_nothing_beside_a_valid_twin
     );
 }
 
+const METHODS_OF_NO_NAME_ON_REFUSED_LETS: [&[&str]; 7] = [
+    &["let b = 1 + true\n", "Clip c:\n    Note/(b.yy())\n"],
+    &["let b = [1, true]\n", "Clip c:\n    Note/(b.yy())\n"],
+    &["let b = -true\n", "Clip c:\n    Note/(b.yy(a=1))\n"],
+    &["let b = i32(true)\n", "Clip c:\n    Note/(b.yy())\n"],
+    &["let b = (1 +)\n", "Clip c:\n    Note/(b.yy())\n"],
+    &[
+        "let b = 1 + true\n",
+        "let d = b\n",
+        "Clip c:\n    Note/(d.yy(a=1))\n",
+    ],
+    &[
+        "let b = [1, true]\n",
+        "let d = b\n",
+        "Clip c:\n    Note/(d.yy())\n",
+    ],
+];
+
+#[test]
+fn a_method_of_no_name_on_a_let_holding_a_refused_value_draws_unknown_name_beside_the_refusal_beside_a_valid_twin_in_every_order()
+ {
+    assert_eq!(
+        same_as_the_old_engine(&METHODS_OF_NO_NAME_ON_REFUSED_LETS),
+        78
+    );
+}
+
 const NESTED_USE_FORM_FAULTS: [&[&str]; 4] = [
     &[
         "pattern V():\n    U\n",

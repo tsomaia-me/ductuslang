@@ -1406,6 +1406,15 @@ impl Core<'_> {
 
 impl Core<'_> {
     fn refusal_keeps_its_methods(&self, receiver: u32) -> Result<bool, Internal> {
+        let mut receiver = receiver;
+        let mut seen = std::collections::HashSet::new();
+        while self.ir.node(receiver)?.0 == Op::Name
+            && let DeclRef::Let(at) = self.bound(receiver)?
+            && !self.cyclic.get(at as usize).copied().unwrap_or(true)
+            && seen.insert(at)
+        {
+            receiver = self.let_root(at)?;
+        }
         let op = self.ir.node(receiver)?.0;
         let refused = matches!(
             op,
