@@ -5646,7 +5646,7 @@ pub const CLASSES: &[Class] = &[
     },
     Class {
         ledger: "476",
-        rule: "a member name written without parentheses on a value whose type has no such member names the function in scope of that name, so `x.name` is `name(x)` (SPEC §5.7: `x.name` resolves to a member of `x`'s own type first and to a function in scope only when the type has no such member) and the program draws what the call draws, its body's faults with the member as the call, where the old engine draws not-a-value at the member (ledger 535: `fn bytes(x): x` with `(64).bytes`, its renamed twin `fn f0(x): x` with `(64).f0`, `fn bytes(x): [1, 2][x]` with `(5).bytes`, `fn f0(x, y): x` with `(64).f0` drawing missing-argument); an array's own `bytes` still wins (`([1, 2]).bytes[0]`)",
+        rule: "a member name written without parentheses on a value whose type has no such member names the function in scope of that name, so `x.name` is `name(x)` (SPEC §5.7: `x.name` resolves to a member of `x`'s own type first and to a function in scope only when the type has no such member) and the program draws what the call draws, its body's faults with the member as the call, where the old engine draws not-a-value at the member (ledger 535: `fn bytes(x): x` with `(64).bytes`, its renamed twin `fn f0(x): x` with `(64).f0`, `fn bytes(x): [1, 2][x]` with `(5).bytes`, `fn f0(x, y): x` with `(64).f0` drawing missing-argument, a let receiver alike, `let k = 64` with `k.size` beside `fn size(x)`, `let k = 1` with `k.f0` beside `fn f0(x): x + true`); an array's own `bytes` still wins (`([1, 2]).bytes[0]`)",
         explains: member_name_naming_a_function,
     },
     Class {
@@ -6848,15 +6848,16 @@ fn step_to_a_region_held_name(seen: &Seen<'_>, change: Change, at: &Drawn) -> bo
 
 fn function_member(seen: &Seen<'_>, at: &Drawn) -> bool {
     let text = seen.text(at);
-    text.starts_with('(')
-        && text.rsplit_once(").").is_some_and(|(_, name)| {
-            !name.is_empty()
-                && name.chars().all(|c| c.is_alphanumeric() || c == '_')
-                && seen
-                    .program
-                    .lines()
-                    .any(|line| line.starts_with(&format!("fn {name}(")))
-        })
+    text.rsplit_once('.').is_some_and(|(receiver, name)| {
+        (receiver.starts_with('(') && receiver.ends_with(')')
+            || !receiver.is_empty() && receiver.chars().all(|c| c.is_alphanumeric() || c == '_'))
+            && !name.is_empty()
+            && name.chars().all(|c| c.is_alphanumeric() || c == '_')
+            && seen
+                .program
+                .lines()
+                .any(|line| line.starts_with(&format!("fn {name}(")))
+    })
 }
 
 fn refused_slice_of_references(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {

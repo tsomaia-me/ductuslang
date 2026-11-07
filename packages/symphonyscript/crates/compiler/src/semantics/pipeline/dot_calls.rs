@@ -88,7 +88,7 @@ pub(crate) fn field_calls(ir: &FlatIr) -> Option<(FlatIr, Vec<(u32, u32, u32)>)>
             .op
             .get(receiver.checked_sub(ir.base)? as usize)
             .copied()?;
-        if matches!(receiver_op, Op::Name | Op::Field | Op::To) || ir.c.get(local) == Some(&1) {
+        if matches!(receiver_op, Op::Field | Op::To) || ir.c.get(local) == Some(&1) {
             continue;
         }
         let sym = ir.name(field)?.sym;

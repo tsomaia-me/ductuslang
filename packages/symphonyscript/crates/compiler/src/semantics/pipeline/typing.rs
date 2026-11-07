@@ -67,7 +67,11 @@ impl Core<'_> {
                 out.extend([b, c].into_iter().filter(|at| *at != NONE));
             }
             Op::Stepped => out.push(a),
-            Op::Field if self.field_calls.contains_key(&node) => {
+            Op::Field
+                if self.field_calls.contains_key(&node)
+                    && (self.ir.node(a)?.0 != Op::Name
+                        || matches!(self.bound(a)?, DeclRef::Let(_) | DeclRef::None)) =>
+            {
                 out.extend(self.field_calls.get(&node).copied());
             }
             Op::Field if self.expr_members.contains(&node) => out.push(a),

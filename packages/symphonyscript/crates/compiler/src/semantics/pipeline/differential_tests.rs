@@ -4457,7 +4457,22 @@ fn a_capacity_of_a_cell_reading_its_own_history_is_its_settled_capacity_where_th
     assert_eq!(programs, 42);
 }
 
-const FUNCTION_MEMBERS: [ExpectedRow; 5] = [
+const FUNCTION_MEMBERS: [ExpectedRow; 8] = [
+    (
+        "fn size(x): x\nlet k = 64\n",
+        "Clip c:\n    Note/(k.size)\n",
+        &[],
+    ),
+    (
+        "fn f0(x): x + true\nlet k = 1\n",
+        "Clip c:\n    Note/(k.f0)\n",
+        &[("operand-type", "x + true")],
+    ),
+    (
+        "fn size(x): x\nlet k = [1, 2]\n",
+        "Clip c:\n    Note/([1][k.size])\n",
+        &[("index-out-of-range", "k.size")],
+    ),
     ("fn bytes(x): x\n", "Clip c:\n    Note/((64).bytes)\n", &[]),
     ("fn f0(x): x\n", "Clip c:\n    Note/((64).f0)\n", &[]),
     (
@@ -4509,7 +4524,7 @@ fn a_member_name_a_values_type_lacks_calls_the_function_of_that_name_where_the_o
             programs += 1;
         }
     }
-    assert_eq!(programs, 30);
+    assert_eq!(programs, 48);
 }
 
 #[test]

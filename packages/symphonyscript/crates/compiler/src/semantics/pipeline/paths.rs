@@ -543,6 +543,10 @@ impl Core<'_> {
                     }
                     return self.loop_name_path_end(node, receiver, position, field);
                 }
+                DeclRef::Let(_) if self.field_calls.contains_key(&node) => {
+                    self.expr_members.insert(node);
+                    End::Value
+                }
                 DeclRef::Let(at) => match self.let_reference_row(at, node, field)? {
                     Ok(row) => row,
                     Err(declined) => return Ok(Err(declined)),
