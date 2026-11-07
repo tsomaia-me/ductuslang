@@ -726,6 +726,16 @@ impl Core<'_> {
                 CountedWalk::ValueRun.step();
                 match owner {
                     Some(at) if at as usize >= self.ir.lets.len() => {
+                        let range = self
+                            .attr_reads
+                            .get(at as usize - self.ir.lets.len())
+                            .and_then(|read| int_range(read.ty));
+                        let value = match (&value, range) {
+                            (Value::Int(held), Some(range)) if !range.contains(held) => {
+                                Value::Error
+                            }
+                            _ => value,
+                        };
                         if let Some(slot) = self
                             .attr_values
                             .get_mut(at as usize - self.ir.lets.len())

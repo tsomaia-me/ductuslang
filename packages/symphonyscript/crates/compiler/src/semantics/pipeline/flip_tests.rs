@@ -5153,3 +5153,39 @@ fn a_path_read_of_a_unit_attribute_has_its_family_in_a_program_writing_no_unit_s
     }
     assert_eq!(programs, 36);
 }
+
+const LOOP_HEAD_PATHS: [&[&str]; 11] = [
+    &["Session main\nClip c:\n    Note as n/3\n    for i in 0..n.pitch:\n        Note/(60 + i)\n"],
+    &[
+        "Session main\nClip c:\n    Note as n | pitch=3\n    for i in n.pitch..5:\n        Note/(i * 1000000000)\n",
+    ],
+    &[
+        "Session main\nClip c:\n    Note as n/3\n    for i in [n.pitch, 2]:\n        Note/(i + true)\n",
+    ],
+    &[
+        "state s(0)\n",
+        "Session main\nClip c:\n    Note as n/s\n    for i in 0..n.pitch:\n        Note/i\n",
+    ],
+    &["Session main\nClip c:\n    Note as n/3\n    for i in 0..n.velocity:\n        Note/i\n"],
+    &[
+        "Clip c:\n    Note as m/(n.pitch + 1)\n    Note as n/2\n    for i in 0..m.pitch:\n        Note/(60 + i * 1000000000)\n",
+    ],
+    &["Clip c:\n    Note as n\n    for i in 0..n.pitch:\n        Note/(i * 100000000)\n"],
+    &[
+        "let k = 4\n",
+        "Clip c:\n    Note as n/k\n    for i in 0..n.pitch:\n        for j in 0..n.pitch:\n            Note/(i + j + 2147483640)\n",
+    ],
+    &[
+        "Session main\nClip c:\n    Note as n/(3000000000)\n    for i in 0..n.pitch:\n        Note/i\n    Note/((for i in 0..n.pitch into a from 0: a + 1))\n",
+    ],
+    &["Session main\nClip c:\n    Note as n/(1 / 0)\n    for i in 0..n.pitch:\n        Note/i\n"],
+    &[
+        "Session main\nClip c:\n    Note as n/3\n    for i in 0..n.pitch:\n        Note/(n.velocity + i)\n",
+    ],
+];
+
+#[test]
+fn a_placement_loop_head_reading_an_attribute_path_of_an_expanded_instance_takes_the_attributes_fitted_value_and_draws_what_the_old_engine_draws_beside_a_valid_twin_in_every_order()
+ {
+    assert_eq!(same_as_the_old_engine(&LOOP_HEAD_PATHS), 30);
+}
