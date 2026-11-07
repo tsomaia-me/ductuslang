@@ -332,16 +332,3 @@ impl Core<'_> {
         Ok(false)
     }
 }
-
-impl Core<'_> {
-    pub fn in_cell_rule(&self, node: u32) -> Result<bool, Internal> {
-        for rec in &self.ir.cells {
-            for root in [rec.rule, rec.init] {
-                if root != NONE && self.postorder(root)?.contains(&node) {
-                    return Ok(true);
-                }
-            }
-        }
-        Ok(false)
-    }
-}

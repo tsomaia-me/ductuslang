@@ -434,7 +434,7 @@ impl Core<'_> {
                             );
                         }
                     }
-                    if !callees.contains(&node) {
+                    if !callees.contains(&node) && !self.is_field_receiver(node) {
                         self.placeholders.push(node);
                     }
                 }

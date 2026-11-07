@@ -3636,3 +3636,19 @@ fn a_nested_uses_flag_and_argument_faults_name_the_enclosing_use_beside_a_valid_
  {
     assert_eq!(same_as_the_old_engine(&NESTED_USE_FORM_FAULTS), 96);
 }
+
+const PATHS_FROM_NAMES_OF_NOTHING: [&[&str]; 7] = [
+    &["state alarm(false)\n", "state gain = zz.alarm\n"],
+    &["state gain(zz.alarm)\n"],
+    &["let g = zz.alarm\n"],
+    &["state gain = zz.alarm.x\n"],
+    &["fn f(): zz.alarm\n", "state gain = f()\n"],
+    &["let g = zz.alarm + 1\n", "Clip c | gain=g\n"],
+    &["fn f(x): x + zz.alarm\n", "Clip c | gain=f(1)\n"],
+];
+
+#[test]
+fn a_name_of_nothing_read_through_a_path_is_no_value_placeholder_and_draws_unknown_name_alone_beside_a_valid_twin_in_every_order()
+ {
+    assert_eq!(same_as_the_old_engine(&PATHS_FROM_NAMES_OF_NOTHING), 30);
+}

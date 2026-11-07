@@ -531,9 +531,6 @@ impl Core<'_> {
                     Ok(end) => end,
                     Err(declined) => return Ok(Err(declined)),
                 },
-                DeclRef::None if self.in_cell_rule(node)? => {
-                    return Ok(Err(Declined(Reason::Member)));
-                }
                 DeclRef::None if self.bare.contains(&receiver) || self.pi.contains(&receiver) => {
                     return Ok(Err(Declined(Reason::Member)));
                 }
