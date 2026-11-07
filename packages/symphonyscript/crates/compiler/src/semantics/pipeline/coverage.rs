@@ -426,8 +426,7 @@ fn instance_path(ir: &FlatIr, field: u32) -> bool {
 }
 
 fn wire_landed(ir: &FlatIr, wire: &WireRec, in_loop: bool) -> bool {
-    wire.flags.0 == wire.flags.1
-        && (wire.as_name == NONE || in_loop)
+    (wire.as_name == NONE || in_loop)
         && !wire.attrs_cut
         && value_entries(ir, wire.attrs)
         && destination_candidates(ir, wire.destination).is_some()

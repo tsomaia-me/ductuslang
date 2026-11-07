@@ -3091,3 +3091,32 @@ fn a_path_from_a_name_of_no_instance_is_a_placeholder_beside_its_names_fault_and
  {
     assert_eq!(same_as_the_old_engine(&PATHS_FROM_NAMES_OF_NO_INSTANCE), 52);
 }
+
+const FLAGGED_PATTERN_USES: [&[&str]; 7] = [
+    &["pattern P():\n    Lamp\n", "Rig r:\n    P*\n"],
+    &[
+        "pattern P(default v):\n    Lamp/v\n",
+        "Rig r:\n    P* /0.5\n    Lamp*\n",
+    ],
+    &["pattern P():\n    Lamp\n", "Rig r:\n    P*~ | x=1\n"],
+    &[
+        "pattern P():\n    Lamp\n",
+        "Rig r:\n    Lamp as a\n    P*\n    Dims*: a\n",
+    ],
+    &["Rig r:\n    Lamp as a\n    Dims*~: a\n    Dims: a\n"],
+    &[
+        "pattern P():\n    Lamp\n",
+        "Rig r:\n    for i in 0..2:\n        P*\n",
+    ],
+    &[
+        "pattern P():\n    Lamp\n",
+        "Rig r:\n    P*\n",
+        "Rig s:\n    Lamp* | strobe=true\n",
+    ],
+];
+
+#[test]
+fn a_flag_on_a_pattern_use_draws_use_form_and_one_on_a_wire_unknown_flag_beside_a_flagged_placement_and_a_valid_twin_in_every_order_525()
+ {
+    assert_eq!(same_as_the_old_engine(&FLAGGED_PATTERN_USES), 56);
+}

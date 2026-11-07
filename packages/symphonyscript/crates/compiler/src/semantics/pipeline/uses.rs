@@ -245,6 +245,15 @@ impl Core<'_> {
         (file, env): (u32, u32),
         span: symphonyscript_core::Span,
     ) -> Stage<Vec<(u32, u32)>> {
+        if placement.flags.0 != placement.flags.1 {
+            let flag = *self
+                .ir
+                .flags
+                .get(placement.flags.0 as usize)
+                .ok_or(Internal::missed("IR flag"))?;
+            let span = self.span(file, flag.lo, flag.hi);
+            self.draw(Code::UseForm, span, "a pattern use carries no flags");
+        }
         let params = self.pattern_parts(pattern)?.0;
         let count = (params.1 - params.0) as usize;
         let mut sources: Vec<Option<(u32, u32)>> = vec![None; count];
