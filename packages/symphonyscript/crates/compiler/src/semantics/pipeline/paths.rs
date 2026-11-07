@@ -1948,10 +1948,7 @@ impl Core<'_> {
             .name(field)
             .and_then(|entry| self.decl.get(entry.sym.0 as usize))
             .is_some_and(|decl| *decl != DeclRef::None);
-        let special = matches!(
-            text.as_str(),
-            "bytes" | "map" | "past" | "stepped" | "dropped"
-        );
+        let special = text == "stepped";
         if numeric && text == "dropped" {
             self.draw_at(
                 Code::UnbuiltConstruct,

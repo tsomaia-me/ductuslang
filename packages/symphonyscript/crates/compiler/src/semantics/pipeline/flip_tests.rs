@@ -2989,7 +2989,11 @@ fn an_array_lets_attribute_other_than_its_size_or_capacity_draws_unknown_attribu
     assert_eq!(same_as_the_old_engine(&ARRAY_LET_ATTRIBUTES), 72);
 }
 
-const LET_MEMBER_READS: [&[&str]; 6] = [
+const LET_MEMBER_READS: [&[&str]; 7] = [
+    &[
+        "let x = 1\n",
+        "Clip c:\n    Note/(x.past + x.map + x.bytes)\n",
+    ],
     &["let xs = [1, 2]\n", "Clip c:\n    Note/(xs.dropped)\n"],
     &[
         "let x = 1.5\n",
@@ -3007,5 +3011,5 @@ const LET_MEMBER_READS: [&[&str]; 6] = [
 #[test]
 fn a_lets_member_read_draws_unknown_attribute_or_an_arrays_map_unbuilt_construct_beside_a_valid_twin_in_every_order()
  {
-    assert_eq!(same_as_the_old_engine(&LET_MEMBER_READS), 36);
+    assert_eq!(same_as_the_old_engine(&LET_MEMBER_READS), 42);
 }
