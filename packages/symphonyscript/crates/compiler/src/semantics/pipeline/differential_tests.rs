@@ -4103,7 +4103,8 @@ fn a_member_call_in_a_value_nothing_uses_draws_nothing_where_the_old_engine_draw
     }
 }
 
-const NAMES_IN_BODIES_OF_FAULTY_HEADS: [&str; 8] = [
+const NAMES_IN_BODIES_OF_FAULTY_HEADS: [&str; 9] = [
+    "Plant x:\n    for i, s in stages:\n        Valve/s when i( < 2\n",
     "Clip m:\n    for i in zz:\n        Plays | gain=to.hook: (if true then chorus else verse)\nClip verse:\n    Note\nClip chorus:\n    Note as hook\n",
     "Clip m:\n    for i in zz:\n        Plays | gain=to.hook: chorus\nClip chorus:\n    Note as hook\n",
     "state section(0)\nlet sections = [verse, chorus, bridge]\nClip intro:\n    for s in sections:\n        Starts+: s\nClip outro:\n    Plays: sections[section]\n",
