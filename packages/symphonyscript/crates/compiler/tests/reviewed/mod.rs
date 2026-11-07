@@ -5651,6 +5651,11 @@ pub const CLASSES: &[Class] = &[
     },
     Class {
         ledger: "476",
+        rule: "a slice of an array of references whose bound is refused keeps the array's type, so a position that takes one value draws type-mismatch beside the bound's index-type, as the program with the bound repaired to any integer does (the repair rule, DECISIONS.md 2026-11-03; ARCHITECTURE §7: a value whose type an error leaves known keeps that type), where the old engine draws the index-type alone (`Clip n`, `Clip m` with `Note/([n, m][true..])`)",
+        explains: refused_slice_of_references,
+    },
+    Class {
+        ledger: "476",
         rule: "a path step naming a child whose placement holds a fault, an unknown kind or a syntax fault on its own line or on its parent's, reads nothing and draws nothing, as the program with the fault repaired reads the child (the repair rule, DECISIONS.md 2026-11-03), where the old engine drops the faulty placement and draws unknown-attribute at the step (`Lampstate as wash` read as `stage.wash`, `Scene dusk (| hold=8:` holding `Cue as first`)",
         explains: step_to_a_faulty_child,
     },
@@ -6851,6 +6856,19 @@ fn function_member(seen: &Seen<'_>, at: &Drawn) -> bool {
                     .lines()
                     .any(|line| line.starts_with(&format!("fn {name}(")))
         })
+}
+
+fn refused_slice_of_references(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
+    let text = seen.text(at);
+    change == Change::Added
+        && at.0 == "type-mismatch"
+        && text.starts_with('[')
+        && text.ends_with("..]")
+        && text.contains("][")
+        && seen
+            .old
+            .iter()
+            .any(|drawn| drawn.0 == "index-type" && drawn.1 >= at.1 && drawn.2 <= at.2)
 }
 
 fn member_name_naming_a_function(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {

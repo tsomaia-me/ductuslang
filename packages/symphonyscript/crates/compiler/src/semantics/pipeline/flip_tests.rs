@@ -4728,3 +4728,19 @@ fn a_member_or_a_path_of_a_function_parameter_through_a_second_call_a_let_or_a_l
  {
     assert_eq!(same_as_the_old_engine(&PARAMETER_MEMBERS), 42);
 }
+
+const REFERENCE_SLICES: [&[&str]; 4] = [
+    &["Clip n\nClip m\n", "Clip c:\n    Note/([n, m][0..1][0])\n"],
+    &["Clip n\nClip m\n", "Clip c:\n    Note/([n, m][0..1][1])\n"],
+    &["Clip n\nClip m\n", "Clip c:\n    Note/([n, m][1..])\n"],
+    &[
+        "Clip n\nClip m\nlet r = [n, m][1..]\n",
+        "Clip c:\n    Note/(r[0] + 1)\n",
+    ],
+];
+
+#[test]
+fn a_slice_of_an_array_of_references_is_an_array_of_references_beside_a_valid_twin_in_every_order()
+{
+    assert_eq!(same_as_the_old_engine(&REFERENCE_SLICES), 24);
+}

@@ -4505,3 +4505,29 @@ fn a_member_name_a_values_type_lacks_calls_the_function_of_that_name_where_the_o
     }
     assert_eq!(programs, 30);
 }
+
+#[test]
+fn a_slice_of_references_beside_its_refused_bound_keeps_its_type_as_in_the_repaired_program_476() {
+    let old = Compiler::new(&symphonyscript_fixtures::vocabulary())
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
+    let new =
+        Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("the vocabulary compiles");
+    for order in symphonyscript_fixtures::Orders::Every.of(&[
+        "Clip n\nClip m\n",
+        "Clip c:\n    Note/([n, m][true..])\n",
+        "Clip twin:\n    Note/61 when true\n",
+    ]) {
+        let text = order.concat();
+        let sources = [source(&text)];
+        let found = new
+            .checked_by_new_core(&sources)
+            .unwrap_or_else(|| panic!("the new core takes {text}"));
+        let classes = reviewed::moved(&text, &drawn(&old.check(&sources)), &drawn(&found))
+            .unwrap_or_else(|unexplained| panic!("{text}: {unexplained:?}"));
+        assert!(
+            classes.len() == 1 && classes.iter().all(|class| class.ledger == "476"),
+            "{text}"
+        );
+    }
+}

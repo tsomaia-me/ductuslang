@@ -951,7 +951,9 @@ impl Core<'_> {
     }
 
     fn kept_slice(&mut self, node: u32, base: &Fact) -> Result<Fact, Internal> {
-        if base.dims.is_empty() || matches!(base.leaf, Leaf::Placeholder | Leaf::Error) {
+        if base.dims.is_empty()
+            || !base.node && matches!(base.leaf, Leaf::Placeholder | Leaf::Error)
+        {
             return Ok(Fact::PLACEHOLDER);
         }
         let mut kept = base.clone();
@@ -985,13 +987,13 @@ impl Core<'_> {
             )?;
             return Ok(Ok(self.kept_slice(node, &base)?));
         }
-        if self.named_placeholder(a, &base)? {
+        if !base.node && self.named_placeholder(a, &base)? {
             return Ok(Ok(Fact::PLACEHOLDER));
         }
         if not_an_array {
             return Ok(Ok(Fact::PLACEHOLDER));
         }
-        let mut refused = faulty(&base);
+        let mut refused = !base.node && faulty(&base);
         for (bound, fact) in &facts {
             if faulty(fact) {
                 refused = true;
@@ -1057,7 +1059,7 @@ impl Core<'_> {
             dims,
             fixed: base.fixed,
             read: base.read,
-            node: false,
+            node: base.node,
             family: None,
         }))
     }

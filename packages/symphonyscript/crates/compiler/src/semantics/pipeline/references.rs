@@ -153,6 +153,14 @@ impl Core<'_> {
                 Ok(Ok(Some(Fact::PLACEHOLDER)))
             }
             Op::Call if self.callee(node)?.is_some() => Ok(Ok(None)),
+            Op::Slice
+                if facts
+                    .first()
+                    .is_some_and(|base| base.node && !base.dims.is_empty())
+                    && facts.iter().skip(1).all(|bound| !bound.node) =>
+            {
+                Ok(Ok(None))
+            }
             Op::Slice | Op::For | Op::Call | Op::NamedCall => {
                 Ok(Err(Declined(Reason::NameOfInstance)))
             }
