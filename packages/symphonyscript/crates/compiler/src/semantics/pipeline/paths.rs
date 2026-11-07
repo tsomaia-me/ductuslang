@@ -606,10 +606,8 @@ impl Core<'_> {
         } else if matches!(
             self.ir.name_text(field).unwrap_or_default(),
             "size" | "capacity" | "bytes"
-        ) {
-            self.expr_members.insert(node);
-            End::Value
-        } else if self.field_calls.contains_key(&node) {
+        ) || self.field_calls.contains_key(&node)
+        {
             self.expr_members.insert(node);
             End::Value
         } else {
