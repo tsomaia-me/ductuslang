@@ -3987,6 +3987,39 @@ fn a_named_wires_name_read_as_a_path_receiver_in_its_body_reads_the_wires_attrib
     assert_eq!(same_as_the_old_engine(&WIRE_NAMES_AS_PATH_RECEIVERS), 22);
 }
 
+const DOT_CALLS_OF_NAMES_THAT_ARE_NO_FUNCTION: [&[&str]; 9] = [
+    &["let zz = 1\n", "Clip c:\n    Note/(1.zz(2))\n"],
+    &["let zz = [1, 2]\n", "Clip c:\n    Note/(1.zz())\n"],
+    &["state zz(1)\n", "Clip c:\n    Note/(1.zz())\n"],
+    &["Clip zz\n", "Clip c:\n    Note/(1.zz())\n"],
+    &["let zz = 1\n", "let a = 1.zz()\nClip c:\n    Note/(1)\n"],
+    &["fn f(x): x\n", "let g = f\n", "Clip c:\n    Note/(1.g())\n"],
+    &[
+        "let zz = 1\n",
+        "fn h(x): x.zz()\n",
+        "Clip c:\n    Note/(h(1))\n",
+    ],
+    &[
+        "let zz = 1\n",
+        "let b = 1 + true\n",
+        "Clip c:\n    Note/(b.zz())\n",
+    ],
+    &[
+        "let zz = 1\n",
+        "state s(1)\n",
+        "Clip c:\n    Note/(s.zz())\n",
+    ],
+];
+
+#[test]
+fn a_dot_call_of_a_name_that_is_no_function_draws_not_callable_at_the_call_beside_a_valid_twin_in_every_order()
+ {
+    assert_eq!(
+        same_as_the_old_engine(&DOT_CALLS_OF_NAMES_THAT_ARE_NO_FUNCTION),
+        126
+    );
+}
+
 const NESTED_USE_FORM_FAULTS: [&[&str]; 4] = [
     &[
         "pattern V():\n    U\n",

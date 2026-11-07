@@ -1358,11 +1358,12 @@ impl Core<'_> {
             let name = self.ir.node(callee)?.1;
             let text = self.ir.name_text(name).unwrap_or_default().to_string();
             let span = self.node_span(callee)?;
-            self.draw(
-                Code::NotCallable,
-                span,
-                format!("`{text}` is not a function"),
-            );
+            let summary = if self.dot_calls.contains(&node) {
+                "only a function or a built-in is called".to_string()
+            } else {
+                format!("`{text}` is not a function")
+            };
+            self.draw(Code::NotCallable, span, summary);
         }
         Ok(())
     }

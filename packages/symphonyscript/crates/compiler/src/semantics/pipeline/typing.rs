@@ -1523,6 +1523,36 @@ impl Core<'_> {
         let (op, callee, _, _) = self.ir.node(node)?;
         let (_, name, _, _) = self.ir.node(callee)?;
         let text = self.ir.name_text(name).unwrap_or_default().to_string();
+        if op == Op::Call
+            && !super::calls::MEMBER_NAMES.contains(&text.as_str())
+            && self.not_callable(node)?
+        {
+            let Some(receiver) = self.arguments(node)?.first().copied() else {
+                return Ok(false);
+            };
+            let plain = match self.ir.node(receiver)?.0 {
+                Op::Int | Op::Float | Op::Bool => true,
+                Op::Name => matches!(
+                    self.bound(receiver)?,
+                    DeclRef::Let(_) | DeclRef::Cell(_) | DeclRef::Param(_)
+                ),
+                _ => false,
+            };
+            if !plain {
+                return Ok(false);
+            }
+            let file = self.file_of(node);
+            let (lo, _) = self.ir.span(node)?;
+            let (_, hi) = self.ir.span(callee)?;
+            let span = self.span(file, lo, hi);
+            self.draw(
+                Code::NotCallable,
+                span,
+                "only a function or a built-in is called",
+            );
+            self.not_callables_drawn.insert(callee);
+            return Ok(true);
+        }
         let method = self.unknown_methods.contains(&node);
         let arguments = if op == Op::NamedCall && method {
             self.named_arguments(node)?
