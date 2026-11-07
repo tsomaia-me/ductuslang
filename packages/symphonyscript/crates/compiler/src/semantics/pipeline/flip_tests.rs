@@ -4007,6 +4007,68 @@ fn a_dot_call_of_a_name_that_is_no_function_draws_not_callable_at_the_call_besid
     );
 }
 
+const PATH_STEPS_TO_NAMES_A_REGION_SKIPS: [&[&str]; 3] = [
+    &[
+        "Scene opening | hold=500ms:\n    Cue/0\n",
+        "state     Cue/2 | fade=4\n    Dims as soften | depth=0.4: opening\n",
+        "Scene finale | hold=opening.hold * 2:\n    Cue as last /0 | fade=opening.soften.depth * 10\n",
+    ],
+    &[
+        "Scene opening | hold=500ms:\n    Cue/0\n",
+        "Scene finale | hold=opening.hold * 2:\n    Cue as last /0 | fade=opening.soften.depth * 10\n",
+    ],
+    &[
+        "state     Cue/2 | fade=4\n    Dims as soften | depth=0.4: opening\n",
+        "Scene finale | hold=opening.hold * 2:\n    Cue as last /0 | fade=finale.soften.depth * 10\n",
+    ],
+];
+
+#[test]
+fn a_path_step_to_a_name_a_faults_region_skips_draws_nothing_beside_a_valid_twin_in_every_order() {
+    assert_eq!(
+        same_as_the_old_engine(&PATH_STEPS_TO_NAMES_A_REGION_SKIPS),
+        36
+    );
+}
+
+const METHODS_OF_NO_NAME_ON_PARAMETERS_BOUND_TO_REFUSALS: [&[&str]; 7] = [
+    &[
+        "let b = 1 + true\n",
+        "fn f(x): x.yy()\n",
+        "Clip c:\n    Note/(f(b))\n",
+    ],
+    &["fn f(x): x.yy()\n", "Clip c:\n    Note/(f(zz))\n"],
+    &[
+        "fn f(x): x.yy()\n",
+        "Clip c:\n    Note/(f(5[0]))\n    Note/(f([1, [2]]))\n",
+    ],
+    &["fn f(x): x.yy()\n", "Clip c:\n    Note/(f(1 + true))\n"],
+    &[
+        "fn g(): 1 + true\n",
+        "fn f(x): x.yy()\n",
+        "Clip c:\n    Note/(f(g()))\n",
+    ],
+    &[
+        "let b = 1 + true\n",
+        "fn f(x): x.yy()\n",
+        "Clip c:\n    Note/(f(b))\n    Note/(f(zz))\n",
+    ],
+    &[
+        "let b = 1 + true\n",
+        "fn f(x, z): z.yy()\n",
+        "Clip c:\n    Note/(f(b, 1))\n    Note/(f(1, b))\n",
+    ],
+];
+
+#[test]
+fn a_method_of_no_name_on_a_parameter_bound_to_a_refused_argument_draws_unknown_name_in_this_call_beside_a_valid_twin_in_every_order()
+ {
+    assert_eq!(
+        same_as_the_old_engine(&METHODS_OF_NO_NAME_ON_PARAMETERS_BOUND_TO_REFUSALS),
+        114
+    );
+}
+
 const NESTED_USE_FORM_FAULTS: [&[&str]; 4] = [
     &[
         "pattern V():\n    U\n",

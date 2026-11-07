@@ -444,7 +444,10 @@ impl Core<'_> {
                 return Ok(Err(Declined(Reason::Member)));
             }
             Op::Call | Op::NamedCall => match self.call_fact(node)? {
-                Ok(fact) => fact,
+                Ok(fact) => {
+                    self.refused_argument_methods(node)?;
+                    fact
+                }
                 Err(declined) => return Ok(Err(declined)),
             },
             Op::For => match self.for_fact(node)? {
@@ -1447,6 +1450,68 @@ impl Core<'_> {
 }
 
 impl Core<'_> {
+    fn refused_argument_methods(&mut self, call: u32) -> Result<(), Internal> {
+        if self.unknown_methods.is_empty() {
+            return Ok(());
+        }
+        let Some(function) = self.callee(call)? else {
+            return Ok(());
+        };
+        let arguments = self.arguments(call)?;
+        let mut refused = Vec::new();
+        for (position, argument) in (0u32..).zip(arguments) {
+            let fact = self.fact(argument)?;
+            if !fact.node
+                && matches!(fact.leaf, Leaf::Placeholder | Leaf::Error)
+                && self.refusal_keeps_its_methods(argument)?
+            {
+                refused.push(position);
+            }
+        }
+        if refused.is_empty() {
+            return Ok(());
+        }
+        let mut methods: Vec<u32> = self.unknown_methods.iter().copied().collect();
+        methods.sort_unstable();
+        for method in methods {
+            if self.body_of.get(self.local(method)?).copied() != Some(function) {
+                continue;
+            }
+            let (op, callee, _, _) = self.ir.node(method)?;
+            let receiver = if op == Op::NamedCall {
+                self.named_arguments(method)?
+                    .first()
+                    .map(|(_, value)| *value)
+            } else {
+                self.arguments(method)?.first().copied()
+            };
+            let Some(receiver) = receiver else {
+                continue;
+            };
+            if self.ir.node(receiver)?.0 != Op::Name {
+                continue;
+            }
+            let DeclRef::Param(position) = self.bound(receiver)? else {
+                continue;
+            };
+            if !refused.contains(&position) {
+                continue;
+            }
+            let name = self.ir.node(callee)?.1;
+            let text = self.ir.name_text(name).unwrap_or_default().to_string();
+            let entry = *self.ir.name(name).ok_or(Internal::missed("IR name"))?;
+            let span = self.span(self.file_of(method), entry.lo, entry.hi);
+            self.push_call(call);
+            self.draw(
+                Code::UnknownName,
+                span,
+                format!("`{text}` names nothing in scope"),
+            );
+            self.eval_chain.pop();
+        }
+        Ok(())
+    }
+
     fn refusal_keeps_its_methods(&self, receiver: u32) -> Result<bool, Internal> {
         let mut receiver = receiver;
         let mut seen = std::collections::HashSet::new();

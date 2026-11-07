@@ -5616,6 +5616,11 @@ pub const CLASSES: &[Class] = &[
     },
     Class {
         ledger: "476",
+        rule: "a path step naming a name that a fault's region holds (ARCHITECTURE §7.1: the rest of the fault's line and the block indented under it) reads a placeholder and draws nothing, whatever the fault (ARCHITECTURE §7: such a name is a placeholder wherever it is used; the head's decision on the robustness-second program), where the old engine draws unknown-attribute at the step beside a dedent-mismatch, a misplaced caret, a top-level syntax fault or a top-level wire (`Dims as soften` under ` | fade=dusk.first.fade` or placed at top level, read as `night.soften.depth`)",
+        explains: step_to_a_region_held_name,
+    },
+    Class {
+        ledger: "476",
         rule: "a path step naming nothing the row holds draws unknown-attribute beside a top-level line holding a fault whose region skips an indented block that declares no such name, as the program with the fault repaired draws it (the repair rule, DECISIONS.md 2026-11-03; ARCHITECTURE §7: only a name the region holds is a placeholder), where the old engine draws nothing at the step (`state     Cue/2 | fade=4` holding `Dims as soften`, read as `opening.zz.depth`)",
         explains: step_beside_a_skipped_top_block,
     },
@@ -6752,5 +6757,60 @@ fn step_beside_a_skipped_top_block(seen: &Seen<'_>, change: Change, at: &Drawn) 
             && lines
                 .get(at_line + 1)
                 .is_some_and(|(_, next)| next.starts_with(' '))
+    })
+}
+
+fn region_fault_line(seen: &Seen<'_>, line: usize) -> bool {
+    seen.old.iter().chain(seen.new).any(|drawn| {
+        seen.line(drawn.1) == line
+            && (syntax_code(&drawn.0)
+                || matches!(
+                    drawn.0.as_str(),
+                    "unknown-kind"
+                        | "dedent-mismatch"
+                        | "unexpected-indent"
+                        | "misplaced-caret"
+                        | "top-level-wire"
+                ))
+    })
+}
+
+fn step_to_a_region_held_name(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
+    let name = seen.text(at);
+    if change != Change::Removed
+        || at.0 != "unknown-attribute"
+        || name.is_empty()
+        || !name.chars().all(|c| c.is_alphanumeric() || c == '_')
+        || !seen.before(at).ends_with('.')
+    {
+        return false;
+    }
+    let lines = lines_at(seen.program);
+    let declared = format!(" as {name}");
+    lines.iter().enumerate().any(|(at_line, (_, text))| {
+        let padded = format!(" {text}");
+        let Some(found) = padded.find(&declared) else {
+            return false;
+        };
+        let rest = padded.get(found + declared.len()..).unwrap_or_default();
+        if rest.starts_with(|c: char| c.is_alphanumeric() || c == '_') {
+            return false;
+        }
+        let mut line = at_line;
+        let mut depth = text.len() - text.trim_start().len();
+        loop {
+            if region_fault_line(seen, line) {
+                return true;
+            }
+            let Some(parent) = lines.iter().take(line).rposition(|(_, earlier)| {
+                !earlier.trim().is_empty() && earlier.len() - earlier.trim_start().len() < depth
+            }) else {
+                return false;
+            };
+            line = parent;
+            depth = lines
+                .get(line)
+                .map_or(0, |(_, earlier)| earlier.len() - earlier.trim_start().len());
+        }
     })
 }

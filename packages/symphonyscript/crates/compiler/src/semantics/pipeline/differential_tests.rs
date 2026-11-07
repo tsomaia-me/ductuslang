@@ -4320,3 +4320,28 @@ fn a_path_step_naming_nothing_beside_a_skipped_top_block_draws_unknown_attribute
         );
     }
 }
+
+#[test]
+fn a_path_step_naming_a_name_a_faults_region_holds_draws_nothing_whatever_the_fault_476() {
+    let old = Compiler::new(&symphonyscript_fixtures::vocabulary())
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
+    let new =
+        Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("the vocabulary compiles");
+    for text in [
+        "Rig stage:\n    Lamp as wash\nScene night | hold=1.5:\n    Cue/0\n | fade=1\n    Dims as soften | depth=0.4: stage.wash\nScene dawn | hold=night.soften.depth * 10:\n    Cue/0\n",
+        "Rig stage:\n    Lamp as wash\nScene night | hold=1.5:\n    Cue/0\nDims as soften | depth=0.4: stage.wash\nScene dawn | hold=night.soften.depth * 10:\n    Cue/0\n",
+        "Scene dusk | hold=8:\n    Cue \nas first /1 | fade=2\nScene night | hold=dusk.hold * 1.5:\n    Cue/0 | fade=dusk.first.fade\n",
+    ] {
+        let sources = [source(text)];
+        let found = new
+            .checked_by_new_core(&sources)
+            .expect("the new core takes the program");
+        let classes = reviewed::moved(text, &drawn(&old.check(&sources)), &drawn(&found))
+            .unwrap_or_else(|unexplained| panic!("{text}: {unexplained:?}"));
+        assert!(
+            !classes.is_empty() && classes.iter().all(|class| class.ledger == "476"),
+            "{text}"
+        );
+    }
+}
