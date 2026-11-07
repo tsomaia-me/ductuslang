@@ -5591,7 +5591,7 @@ pub const CLASSES: &[Class] = &[
     },
     Class {
         ledger: "476",
-        rule: "a member call in the value of a let nothing uses or in the body of a function nothing calls draws nothing, since code nothing uses has its names resolved and nothing else checked (SPEC §6.5) and whether the member names anything depends on its receiver's type, where the old engine draws not-callable or unknown-name at it in some programs and not in others (`let xs = [1, 2]` with `let n = xs.size()` and no placement reading `n`, or `let n = [1, 2][0].keys()`)",
+        rule: "a member call in the value of a let nothing uses or in the body of a function nothing calls draws nothing, since code nothing uses has its names resolved and nothing else checked (SPEC §6.5) and whether the member names anything depends on its receiver's type, where the old engine draws not-callable or unknown-name at it in some programs and not in others (`let xs = [1, 2]` with `let n = xs.size()` and no placement reading `n`, or `let n = [1, 2][0].keys()`; a method of no name, `let n = 1.g()`, alike)",
         explains: member_call_in_an_unused_value,
     },
     Class {
@@ -6392,7 +6392,8 @@ fn member_call_in_an_unused_value(seen: &Seen<'_>, change: Change, at: &Drawn) -
         return false;
     }
     let member = seen.text(at).rsplit('.').next().unwrap_or_default();
-    if !["size", "capacity", "bytes", "keys", "values"].contains(&member)
+    let method = at.0 == "unknown-name" && seen.before(at).ends_with('.');
+    if !(method || ["size", "capacity", "bytes", "keys", "values"].contains(&member))
         || !seen.after(at).starts_with('(')
     {
         return false;

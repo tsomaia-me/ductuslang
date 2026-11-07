@@ -4053,7 +4053,9 @@ fn a_plain_value_in_a_body_reads_in_the_default_unit_its_call_reaches_and_a_defa
     assert_eq!(programs, 281);
 }
 
-const MEMBER_CALLS_NOTHING_USES: [&str; 5] = [
+const MEMBER_CALLS_NOTHING_USES: [&str; 7] = [
+    "let n = 1.g()\nClip twin:\n    Note/61 when true\n",
+    "let x = 1.g(x)\nClip c:\n    Note/1\n",
     "let xs = [1, 2]\nlet n = xs.size()\n",
     "let n = [1, 2][0].keys()\nClip twin:\n    Note/61 when true\n",
     "let xs = [1, 2]\nlet n = xs.size()\nlet m = n + 1\nClip twin:\n    Note/61 when true\n",

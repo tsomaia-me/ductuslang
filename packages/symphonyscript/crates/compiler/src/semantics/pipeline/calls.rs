@@ -1498,7 +1498,10 @@ impl Core<'_> {
 impl Core<'_> {
     pub fn member_dot_candidate(&self, node: u32) -> Result<bool, Internal> {
         let callee = self.ir.node(node)?.1;
-        Ok(self.member_dot_shape(node)? && self.bound(callee)? == DeclRef::None)
+        Ok(
+            (self.member_dot_shape(node)? || self.unknown_methods.contains(&node))
+                && self.bound(callee)? == DeclRef::None,
+        )
     }
 
     pub fn member_dot_shape(&self, node: u32) -> Result<bool, Internal> {

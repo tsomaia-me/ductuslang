@@ -282,6 +282,7 @@ impl Core<'_> {
         let math_callees = self.math_callees()?;
         let mut native_callees = std::collections::HashSet::new();
         let mut member_callees = std::collections::HashSet::new();
+        let mut method_calls = std::collections::HashMap::new();
         for local in 0..self.ir.op.len() {
             if !matches!(self.ir.op.get(local), Some(Op::Call | Op::NamedCall)) {
                 continue;
@@ -289,6 +290,12 @@ impl Core<'_> {
             let call = self.ir.base + u32::try_from(local).unwrap_or(0);
             if self.member_dot_shape(call)? {
                 member_callees.insert(self.ir.node(call)?.1);
+            }
+            if self.ir.node(call)?.0 == Op::Call
+                && self.dot_calls.contains(&call)
+                && self.ir.node(self.ir.node(call)?.1)?.0 == Op::Name
+            {
+                method_calls.insert(self.ir.node(call)?.1, call);
             }
             if self.native_miscount(call)?.is_some() || self.native_named(call)?.is_some() {
                 native_callees.insert(self.ir.node(call)?.1);
@@ -369,6 +376,13 @@ impl Core<'_> {
                         continue;
                     }
                     if member_callees.contains(&node) {
+                        continue;
+                    }
+                    if let Some(call) = method_calls.get(&node)
+                        && !known
+                        && text != BuiltinName::Pi.name()
+                    {
+                        self.unknown_methods.insert(*call);
                         continue;
                     }
                     if text == BuiltinName::Pi.name() {

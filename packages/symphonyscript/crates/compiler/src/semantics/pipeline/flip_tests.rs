@@ -2960,7 +2960,8 @@ fn a_member_called_in_a_used_lets_value_draws_what_one_in_a_placement_draws_besi
     assert_eq!(same_as_the_old_engine(&MEMBER_CALLS_IN_USED_LETS), 186);
 }
 
-const MEMBER_CALLS_IN_UNUSED_LETS: [(&[&str], &[Code]); 7] = [
+const MEMBER_CALLS_IN_UNUSED_LETS: [(&[&str], &[Code]); 8] = [
+    (&["let n = 1.g()\n"], &[]),
     (&["let xs = [1, 2]\n", "let n = xs.size()\n"], &[]),
     (&["let n = [1, 2][0].keys()\n"], &[]),
     (&["let n = [1, 2].map(1)\n"], &[]),
@@ -2989,7 +2990,7 @@ const MEMBER_CALLS_IN_UNUSED_LETS: [(&[&str], &[Code]); 7] = [
 
 #[test]
 fn a_member_called_in_a_value_nothing_uses_draws_nothing_beside_a_valid_twin_in_every_order() {
-    assert_eq!(drawn_codes(&MEMBER_CALLS_IN_UNUSED_LETS), 66);
+    assert_eq!(drawn_codes(&MEMBER_CALLS_IN_UNUSED_LETS), 68);
 }
 
 const MEMBER_DOT_CALLS_WITH_ARGUMENTS: [&[&str]; 4] = [
@@ -3340,4 +3341,25 @@ const FLAG_SET_READS: [&[&str]; 6] = [
 #[test]
 fn a_path_read_of_an_attribute_a_flag_sets_is_the_flags_bool_beside_a_valid_twin_in_every_order() {
     assert_eq!(same_as_the_old_engine(&FLAG_SET_READS), 12);
+}
+
+const UNKNOWN_METHODS: [&[&str]; 12] = [
+    &["Clip c:\n    Note/(1.g(2))\n"],
+    &["Clip c:\n    Note/(1.g(1 + true))\n"],
+    &["Clip c:\n    Note/((1 + 2).g())\n"],
+    &["Clip c:\n    Note/([1, 2][5].twice())\n"],
+    &["Clip c:\n    Note/((1 +).g())\n"],
+    &["Clip c:\n    Note/(5[0].g())\n"],
+    &["Clip c:\n    Note/([1, 2].g() + 1)\n"],
+    &["let n = 1.g()\n", "Clip c:\n    Note/(n)\n"],
+    &["fn f(v): v.g()\n", "Clip c:\n    Note/(f(1))\n"],
+    &["Clip c:\n    Note/(zz.g())\n"],
+    &["let a = 1\n", "let a = 2\n", "Clip c:\n    Note/(a.g())\n"],
+    &["let k = Wave::Sine\n", "Clip c:\n    Note/(k.g())\n"],
+];
+
+#[test]
+fn a_method_of_no_name_reads_its_receiver_and_draws_unknown_name_at_the_method_beside_a_valid_twin_in_every_order()
+ {
+    assert_eq!(same_as_the_old_engine(&UNKNOWN_METHODS), 58);
 }

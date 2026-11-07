@@ -1413,10 +1413,13 @@ impl Core<'_> {
         let (Op::Call, [receiver, ..]) = (op, arguments.as_slice()) else {
             return Ok(false);
         };
-        if !matches!(
-            text.as_str(),
-            "size" | "capacity" | "bytes" | "keys" | "values" | "map"
-        ) || self.ir.node(*receiver)?.0 == Op::To
+        let method = self.unknown_methods.contains(&node);
+        if !method
+            && !matches!(
+                text.as_str(),
+                "size" | "capacity" | "bytes" | "keys" | "values" | "map"
+            )
+            || self.ir.node(*receiver)?.0 == Op::To
         {
             return Ok(false);
         }
@@ -1425,6 +1428,11 @@ impl Core<'_> {
             Leaf::Int | Leaf::Float | Leaf::Bool | Leaf::Empty | Leaf::Enum(Some(_)) => true,
             Leaf::Placeholder | Leaf::Error | Leaf::Enum(None) => false,
         };
+        if method && !fact.node && matches!(fact.leaf, Leaf::Placeholder | Leaf::Error) {
+            let let_read = self.ir.node(*receiver)?.0 == Op::Name
+                && matches!(self.bound(*receiver)?, DeclRef::Let(_));
+            return Ok(!let_read);
+        }
         if fact.node || !typed {
             return Ok(false);
         }
