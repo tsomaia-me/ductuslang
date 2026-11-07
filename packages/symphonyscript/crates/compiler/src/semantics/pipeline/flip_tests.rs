@@ -3169,3 +3169,31 @@ fn a_cells_capacity_draws_its_misplacement_or_size_and_a_clock_its_unbuilt_const
  {
     assert_eq!(same_as_the_old_engine(&CELL_CAPACITIES_AND_CLOCKS), 354);
 }
+
+const BUNDLE_LOOPS: [&[&str]; 8] = [
+    &["Rig r:\n    [for i in 0..3: Lamp/(i + true)]\n"],
+    &["Rig r:\n    [for i in 0..3: Lamp/(i * 0.3) Lamp as x]\n"],
+    &[
+        "let washes = [0.2, 0.5, 0.8]\n",
+        "Rig stage:\n    [Lamp/0.2 Lamp/0.5 Lamp/0.8]\n    [for i in 0..3: Lamp/(0.2 + i * 0.3)]\n    [for i, p in washes: (Lamp/p | hue=1.0 - i * 0.2)]\n",
+    ],
+    &[
+        "Rig r:\n    [for i in 0..3: Lamp/(0.2 + i * 0.3) Lamp/i]\n    for i in 0..3:\n        [for j in 0..i: Lamp/(j + true)]\n",
+    ],
+    &["Rig r:\n    Lamp [for i in 0..3: Lamp/i]\n"],
+    &[
+        "pattern P(default n):\n    [for i in 0..n: Lamp/(i * 0.1)]\n",
+        "Rig r:\n    P/0\n    P/2\n    P/0\n",
+    ],
+    &[
+        "pattern Q():\n    Lamp\n",
+        "Rig r:\n    [for i in 0..2: Q]\n",
+    ],
+    &["Rig r:\n    [for i in [1, 2][5..]: Lamp/i]\n"],
+];
+
+#[test]
+fn a_bundle_for_expands_as_a_for_over_its_members_and_draws_empty_bundle_where_it_runs_no_iteration_beside_a_valid_twin_in_every_order()
+ {
+    assert_eq!(same_as_the_old_engine(&BUNDLE_LOOPS), 28);
+}

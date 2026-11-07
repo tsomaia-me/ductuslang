@@ -263,6 +263,9 @@ impl Core<'_> {
                     }
                 }
                 ItemRec::For(_) => {
+                    if self.bundle_loops.contains(&item) {
+                        members.extend(self.bundle_loop_members(item)?);
+                    }
                     if !bound && self.head_reads_deferred(item, env)? {
                         late.push(Work::Late(item, env));
                         continue;
@@ -277,6 +280,11 @@ impl Core<'_> {
                             work.push(Work::Loop(run));
                         }
                         run => {
+                            if run.as_ref().is_some_and(|run| !run.open)
+                                && self.bundle_loops.contains(&item)
+                            {
+                                self.empty_bundle(item, env, file)?;
+                            }
                             if let Err(declined) = self.unrun_names(item, file)? {
                                 return Ok(Err(declined));
                             }
@@ -596,5 +604,50 @@ impl Core<'_> {
             Ok(None) => Ok(false),
             Err(declined) => Err(declined),
         })
+    }
+}
+
+impl Core<'_> {
+    fn bundle_loop_members(&self, item: u32) -> Result<Vec<u32>, Internal> {
+        let ItemRec::For(rec) = *self.ir.item(item)? else {
+            return Ok(Vec::new());
+        };
+        let block = *self
+            .ir
+            .blocks
+            .get(rec.body as usize)
+            .ok_or(Internal::missed("IR block"))?;
+        let mut found = Vec::new();
+        for at in block.items.0..block.items.1 {
+            let line = *self
+                .ir
+                .block_items
+                .get(at as usize)
+                .ok_or(Internal::missed("IR block item"))?;
+            if let ItemRec::Line(members) = *self.ir.item(line)? {
+                found.extend(
+                    self.ir
+                        .members
+                        .get(members.0 as usize..members.1 as usize)
+                        .unwrap_or_default(),
+                );
+            }
+        }
+        Ok(found)
+    }
+
+    fn empty_bundle(&mut self, item: u32, env: u32, file: u32) -> Result<(), Internal> {
+        let ItemRec::For(rec) = *self.ir.item(item)? else {
+            return Ok(());
+        };
+        let span = self.span(file, rec.lo, rec.hi);
+        let saved = self.enter_env(env);
+        self.draw(
+            Code::EmptyBundle,
+            span,
+            "a bundle holds at least one member after expansion",
+        );
+        self.leave_env(saved);
+        Ok(())
     }
 }
