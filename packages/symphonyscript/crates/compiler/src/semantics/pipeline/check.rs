@@ -51,7 +51,7 @@ pub(super) fn expected(attr: &AttrDecl) -> Option<EvalTy> {
     plain_expected(attr)
 }
 
-fn plain_expected(attr: &AttrDecl) -> Option<EvalTy> {
+pub(super) fn plain_expected(attr: &AttrDecl) -> Option<EvalTy> {
     if !attr.ty.lengths.is_empty() || attr.ty.capacity.is_some() {
         return None;
     }

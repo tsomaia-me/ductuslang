@@ -4117,3 +4117,28 @@ fn a_member_name_in_the_body_of_a_loop_whose_head_holds_a_fault_draws_as_in_the_
         );
     }
 }
+
+#[test]
+fn a_path_read_of_a_unit_attribute_whose_value_its_family_refuses_reads_the_attributes_family_476()
+{
+    let old = Compiler::new(&symphonyscript_fixtures::vocabulary())
+        .expect("the vocabulary compiles")
+        .on_the_old_engine();
+    let new =
+        Compiler::new(&symphonyscript_fixtures::vocabulary()).expect("the vocabulary compiles");
+    for text in [
+        "Scene dusk | hold=2bars:\n    Cue/0\nScene night | hold=dusk.hold:\n    Cue/0\n",
+        "Scene night | hold=dusk.hold:\n    Cue/0\nScene dusk | hold=2bars:\n    Cue/0\n",
+    ] {
+        let sources = [source(text)];
+        let found = new
+            .checked_by_new_core(&sources)
+            .expect("the new core takes the program");
+        let classes = reviewed::moved(text, &drawn(&old.check(&sources)), &drawn(&found))
+            .unwrap_or_else(|unexplained| panic!("{text}: {unexplained:?}"));
+        assert!(
+            classes.len() == 1 && classes.iter().all(|class| class.ledger == "476"),
+            "{text}"
+        );
+    }
+}

@@ -432,7 +432,15 @@ impl Core<'_> {
             return Ok(Ok(End::Value));
         };
         let declared = decl.attrs.get(attr).ok_or(Internal::missed("attribute"))?;
-        let Some(ty) = super::check::expected(declared) else {
+        let read_ty = if let Some(unit) = declared.unit {
+            if self.unit_scale(unit.family, unit.default_unit)? != 1.0 {
+                return Ok(Err(Declined(Reason::UnitAttribute)));
+            }
+            super::check::plain_expected(declared)
+        } else {
+            super::check::expected(declared)
+        };
+        let Some(ty) = read_ty else {
             return Ok(Err(Declined(super::check::attribute_reason(declared))));
         };
         match self.attr_read(row, attr, ty)? {
@@ -464,7 +472,15 @@ impl Core<'_> {
             return Ok(Ok(End::Value));
         };
         let declared = decl.attrs.get(attr).ok_or(Internal::missed("attribute"))?;
-        let Some(ty) = super::check::expected(declared) else {
+        let read_ty = if let Some(unit) = declared.unit {
+            if self.unit_scale(unit.family, unit.default_unit)? != 1.0 {
+                return Ok(Err(Declined(Reason::UnitAttribute)));
+            }
+            super::check::plain_expected(declared)
+        } else {
+            super::check::expected(declared)
+        };
+        let Some(ty) = read_ty else {
             return Ok(Err(Declined(super::check::attribute_reason(declared))));
         };
         match self.wire_attr_read(wire, attr, ty)? {
@@ -1248,7 +1264,15 @@ impl Core<'_> {
             return Ok(Ok(Err(End::Value)));
         };
         let declared = decl.attrs.get(attr).ok_or(Internal::missed("attribute"))?;
-        let Some(ty) = super::check::expected(declared) else {
+        let read_ty = if let Some(unit) = declared.unit {
+            if self.unit_scale(unit.family, unit.default_unit)? != 1.0 {
+                return Ok(Err(Declined(Reason::UnitAttribute)));
+            }
+            super::check::plain_expected(declared)
+        } else {
+            super::check::expected(declared)
+        };
+        let Some(ty) = read_ty else {
             return Ok(Err(Declined(super::check::attribute_reason(declared))));
         };
         Ok(Ok(Ok((target, attr, ty))))

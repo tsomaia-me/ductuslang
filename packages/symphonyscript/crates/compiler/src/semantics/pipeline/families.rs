@@ -197,6 +197,10 @@ impl Core<'_> {
                     self.unit_position(b, position)?;
                     self.family(a)
                 }
+                Op::Field => match self.path_read(node)?.cloned() {
+                    Some(read) => self.read_family(&read),
+                    None => None,
+                },
                 Op::Past => self.family(a),
                 Op::Stepped => None,
                 Op::Slice => {
@@ -216,7 +220,6 @@ impl Core<'_> {
                 | Op::Not
                 | Op::And
                 | Op::Or
-                | Op::Field
                 | Op::To
                 | Op::Variant
                 | Op::Bad

@@ -5599,6 +5599,11 @@ pub const CLASSES: &[Class] = &[
         rule: "a placement or a wire in the body of a placement `for` whose head holds a fault draws its unknown attribute, flag or parameter names, as the program with the head repaired to any valid iterable does, a head of no iteration included (the repair rule, DECISIONS.md 2026-11-03), where the old engine is silent in such a body (`for i in zz:` with `Lamp | foo=1` or `Lamp~`)",
         explains: member_name_in_an_unexpanded_loop_body,
     },
+    Class {
+        ledger: "476",
+        rule: "a path read of a unit attribute whose value the attribute's family refuses reads a value of the attribute's family (ARCHITECTURE §7: a value whose type an error leaves known keeps that type), as the program with the value repaired does, where the old engine reads the refused value's family and draws unit-mismatch again at the read (`Scene dusk | hold=2bars` with `hold=dusk.hold`)",
+        explains: read_of_a_refused_unit_attribute,
+    },
 ];
 
 fn annotated_let_value(seen: &Seen<'_>, at: &Drawn) -> bool {
@@ -6462,4 +6467,18 @@ fn member_name_in_an_unexpanded_loop_body(seen: &Seen<'_>, change: Change, at: &
             .old
             .iter()
             .any(|drawn| drawn.1 >= *start && drawn.2 <= start + head.len())
+}
+
+fn read_of_a_refused_unit_attribute(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
+    let text = seen.text(at);
+    change == Change::Removed
+        && at.0 == "unit-mismatch"
+        && text.contains('.')
+        && text
+            .chars()
+            .all(|c| c.is_alphanumeric() || c == '_' || c == '.')
+        && seen
+            .old
+            .iter()
+            .any(|drawn| drawn.0 == "unit-mismatch" && drawn != at && seen.new.contains(drawn))
 }

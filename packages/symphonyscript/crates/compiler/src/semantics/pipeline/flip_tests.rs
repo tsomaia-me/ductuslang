@@ -3274,3 +3274,54 @@ fn a_named_wire_is_a_child_name_whose_attributes_a_path_reads_and_clashes_with_i
  {
     assert_eq!(same_as_the_old_engine(&NAMED_WIRES), 146);
 }
+
+const UNIT_ATTRIBUTE_READS: [&[&str]; 10] = [
+    &[
+        "Scene dusk | hold=8:\n    Cue as first /1 | fade=2\n",
+        "Scene night | hold=dusk.hold * 1.5:\n    Cue/0 | fade=dusk.first.fade\n",
+    ],
+    &[
+        "Scene dusk | hold=500ms:\n    Cue/0\n",
+        "Scene night | hold=dusk.hold + 1:\n    Cue/0\n",
+    ],
+    &[
+        "Scene dusk | hold=500ms:\n    Cue/0\n",
+        "Scene night | hold=dusk.hold + 1s:\n    Cue/0\n",
+    ],
+    &[
+        "Scene dusk | hold=500ms:\n    Cue/0\n",
+        "Clip c:\n    Note/(dusk.hold)\n",
+    ],
+    &[
+        "Scene dusk:\n    Cue/0\n",
+        "Scene night | hold=dusk.hold * 2:\n    Cue/0\n",
+    ],
+    &[
+        "Scene dusk | hold=500ms:\n    Cue/0\n",
+        "let x = dusk.hold\n",
+        "Scene night | hold=x:\n    Cue/0\n",
+    ],
+    &[
+        "Scene dusk | hold=500ms:\n    Cue/0\n",
+        "Scene night | hold=dusk.hold / 1ms:\n    Cue/0\n",
+    ],
+    &[
+        "Scene dusk | hold=night.hold:\n    Cue/0\n",
+        "Scene night | hold=dusk.hold:\n    Cue/0\n",
+    ],
+    &[
+        "Scene dusk | hold=500ms:\n    Cue/0\n",
+        "Clip c:\n    Note/(i32(dusk.hold / 1ms))\n",
+    ],
+    &[
+        "Rig stage:\n    Lamp as wash\n",
+        "Scene dusk | hold=8:\n    Cue as first /1 | fade=2\n",
+        "Scene night | hold=dusk.hold * 1.5:\n    Cue/0 | fade=dusk.first.fade\n    Dims as soften | depth=0.4: stage.wash\n",
+        "Scene dawn | hold=night.soften.depth * 10:\n    Cue/0\n",
+    ],
+];
+
+#[test]
+fn a_path_read_of_a_unit_attribute_is_a_value_of_its_family_beside_a_valid_twin_in_every_order() {
+    assert_eq!(same_as_the_old_engine(&UNIT_ATTRIBUTE_READS), 192);
+}

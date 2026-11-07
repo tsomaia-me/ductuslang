@@ -272,3 +272,21 @@ impl Core<'_> {
         Ok(false)
     }
 }
+
+impl Core<'_> {
+    pub fn read_attr_decl(&self, read: &AttrRead) -> Option<&symphonyscript_core::AttrDecl> {
+        if read.wire {
+            let kind = self.wires.get(read.row as usize)?.kind;
+            self.vocabulary.wire_kind(kind)?.attrs.get(read.attr)
+        } else {
+            let kind = self.instances.get(read.row as usize)?.kind;
+            self.vocabulary.node_kind(kind)?.attrs.get(read.attr)
+        }
+    }
+
+    pub fn read_family(&self, read: &AttrRead) -> Option<symphonyscript_core::FamilyId> {
+        self.read_attr_decl(read)
+            .and_then(|attr| attr.unit)
+            .map(|unit| unit.family)
+    }
+}
