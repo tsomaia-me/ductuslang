@@ -1950,8 +1950,16 @@ impl Core<'_> {
             .is_some_and(|decl| *decl != DeclRef::None);
         let special = matches!(
             text.as_str(),
-            "bytes" | "map" | "kind" | "past" | "stepped" | "dropped"
+            "bytes" | "map" | "past" | "stepped" | "dropped"
         );
+        if numeric && text == "dropped" {
+            self.draw_at(
+                Code::UnbuiltConstruct,
+                node,
+                "a cell's `dropped` (SPEC §12.1) is a construct this compiler does not build",
+            )?;
+            return Ok(Ok(End::Placeholder));
+        }
         if (member || !special) && numeric && fact.dims.is_empty() && !declared {
             self.draw_at(
                 Code::UnknownAttribute,
