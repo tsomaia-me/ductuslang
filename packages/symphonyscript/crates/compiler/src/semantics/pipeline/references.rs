@@ -86,6 +86,10 @@ impl Core<'_> {
             Op::If => self.reference_choice(node, a, &facts),
             Op::Index => self.reference_element(node, (a, b), &facts),
             Op::Int | Op::Float | Op::Bool | Op::Name => Ok(Err(Declined(Reason::NameOfInstance))),
+            Op::Neg | Op::Not if facts.iter().any(|fact| !fact.dims.is_empty()) => {
+                self.draw_at(Code::ArrayOperand, node, super::typing::OPERAND)?;
+                Ok(Ok(Some(Fact::ERROR)))
+            }
             Op::Neg => {
                 self.draw_at(Code::OperandType, node, "unary `-` takes a number")?;
                 Ok(Ok(Some(Fact::ERROR)))

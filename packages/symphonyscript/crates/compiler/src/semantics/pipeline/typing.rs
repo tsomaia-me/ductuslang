@@ -14,7 +14,7 @@ use crate::semantics::ir::flat::{NONE, Op, binary_of};
 use crate::semantics::operators::{EvalTy, Value};
 use symphonyscript_core::BinaryOp;
 
-const OPERAND: &str = "operators and conversions apply to single values, not arrays";
+pub const OPERAND: &str = "operators and conversions apply to single values, not arrays";
 const SINGLE_OPERANDS: &str =
     "only `+` takes arrays, which it joins; every other operator takes single values";
 pub(super) const JOIN_SINGLE: &str = "`+` joins two arrays, and one of these is a single value";

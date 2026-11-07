@@ -3681,3 +3681,25 @@ fn a_method_of_no_name_on_a_cells_own_name_in_its_cycle_draws_unknown_name_besid
  {
     assert_eq!(same_as_the_old_engine(&METHODS_OF_NO_NAME_ON_A_CYCLE), 10);
 }
+
+const UNARY_OPERATORS_ON_REFERENCE_ARRAYS: [&[&str]; 2] = [
+    &[
+        "let sections = -[verse, chorus]\n",
+        "state s(0)\nClip m:\n    Starts: sections[s]\n",
+        "Clip verse:\n    Note\nClip chorus:\n    Note\n",
+    ],
+    &[
+        "let sections = not [verse, chorus]\n",
+        "state s(0)\nClip m:\n    Starts: sections[s]\n",
+        "Clip verse:\n    Note\nClip chorus:\n    Note\n",
+    ],
+];
+
+#[test]
+fn a_unary_operator_on_an_array_of_references_draws_array_operand_beside_a_valid_twin_in_every_order()
+ {
+    assert_eq!(
+        same_as_the_old_engine(&UNARY_OPERATORS_ON_REFERENCE_ARRAYS),
+        48
+    );
+}

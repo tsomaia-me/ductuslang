@@ -2342,6 +2342,14 @@ fn a_no_entry_instance_alone_moves_only_for_a_program_whose_placement_for_runs_n
             true,
         ),
         ("Clip c:\n    [for i: i32 in 0..4: Note/zz]\n", false),
+        (
+            "pattern Arp(default root, steps = 4):\n    for i in 0..steps:\n        Note/(root + i)\nClip c:\n    Arp/48 | steps=\n",
+            true,
+        ),
+        (
+            "pattern Arp(default root, steps = 4):\n    for i in 0..4:\n        Note/(root + i)\nClip c:\n    Arp/48 | steps=\n",
+            false,
+        ),
         ("Clip c:\n    for x in [1, 2]:\n        Note/x\n", false),
         ("Clip c:\n    for x in [1, 2]:\n        Note/zz\n", false),
         (

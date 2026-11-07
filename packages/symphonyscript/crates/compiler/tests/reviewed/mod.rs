@@ -5846,6 +5846,7 @@ pub fn runs_no_iteration(program: &str, new: &[Drawn]) -> bool {
     };
     placement_heads(program).into_iter().any(|(lo, hi)| {
         within(lo, hi)
+            || use_argument_fault_reaches(program, (lo, hi), &within)
             || let_lines(program, program.get(lo..hi).unwrap_or_default())
                 .into_iter()
                 .any(|(start, line)| within(start, start + line.len() + 1) || unclosed(line))
@@ -6642,4 +6643,45 @@ fn method_of_no_name_on_a_cycle(seen: &Seen<'_>, change: Change, at: &Drawn) -> 
         && seen.after(at).starts_with('(')
         && seen.new.iter().any(|drawn| drawn.0 == "declaration-cycle")
         && seen.program.contains("state ")
+}
+
+fn use_argument_fault_reaches(
+    program: &str,
+    (lo, hi): (usize, usize),
+    within: &dyn Fn(usize, usize) -> bool,
+) -> bool {
+    let head = program.get(lo..hi).unwrap_or_default();
+    let Some(declaration) = program
+        .get(..lo)
+        .unwrap_or_default()
+        .rsplit('\n')
+        .find(|line| line.starts_with("pattern "))
+    else {
+        return false;
+    };
+    let Some((name, params)) = declaration
+        .strip_prefix("pattern ")
+        .and_then(|rest| rest.split_once('('))
+    else {
+        return false;
+    };
+    let params: Vec<&str> = params
+        .split(|c: char| !(c.is_alphanumeric() || c == '_'))
+        .filter(|word| {
+            word.starts_with(|c: char| c.is_alphabetic() || c == '_') && *word != "default"
+        })
+        .collect();
+    let reads = head
+        .split(|c: char| !(c.is_alphanumeric() || c == '_'))
+        .any(|word| params.contains(&word));
+    reads
+        && lines_at(program).into_iter().any(|(start, line)| {
+            let trimmed = line.trim_start();
+            !line.starts_with("pattern ")
+                && trimmed.starts_with(name)
+                && trimmed
+                    .get(name.len()..)
+                    .is_some_and(|rest| rest.starts_with(['/', ' ', '(', '\'']) || rest.is_empty())
+                && within(start, start + line.len() + 1)
+        })
 }
