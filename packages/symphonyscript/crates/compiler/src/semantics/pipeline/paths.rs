@@ -860,12 +860,49 @@ impl Core<'_> {
 }
 
 impl Core<'_> {
+    fn reads_a_chosen_path(&self, root: u32) -> Result<bool, Internal> {
+        if self.deferred_to.is_empty() {
+            return Ok(false);
+        }
+        let mut seen = std::collections::HashSet::new();
+        let mut stack = vec![root];
+        while let Some(current) = stack.pop() {
+            if !seen.insert(current) {
+                continue;
+            }
+            for node in self.deep_postorder(current)? {
+                let (op, _, _, _) = self.ir.node(node)?;
+                if op == Op::Field {
+                    if self.deferred_to.iter().any(|(path, _)| *path == node) {
+                        return Ok(true);
+                    }
+                    if let Some(read) = self.path_read(node)?
+                        && !read.cyclic
+                        && read.root != NONE
+                    {
+                        stack.push(read.root);
+                    }
+                }
+                if op == Op::Name
+                    && let DeclRef::Let(at) = self.bound(node)?
+                {
+                    stack.push(self.let_root(at)?);
+                }
+            }
+        }
+        Ok(false)
+    }
+
     pub fn type_attr_reads(&mut self) -> Stage<()> {
         for at in self.attr_order.clone() {
             let Some(read) = self.attr_reads.get(at as usize).cloned() else {
                 continue;
             };
             if read.cyclic || read.root == NONE {
+                continue;
+            }
+            if self.reads_a_chosen_path(read.root)? {
+                self.untyped_reads.push(at);
                 continue;
             }
             if let Err(declined) = self.typed_in_env(&read)? {
@@ -1082,6 +1119,7 @@ impl Core<'_> {
         let mut deferred = std::mem::take(&mut self.deferred_to);
         deferred.sort_unstable();
         let mut seen: HashMap<u32, (End, Option<EvalTy>)> = HashMap::new();
+        let (mut resolved, mut chose) = (Vec::new(), false);
         for (node, wire) in deferred {
             let (segments, wires) = self.segments_to_wire(node)?;
             let several = wires.len() > 1;
@@ -1097,6 +1135,7 @@ impl Core<'_> {
             if targets.is_empty() {
                 continue;
             }
+            chose = true;
             if several {
                 self.wire_now = wire;
             }
@@ -1131,6 +1170,13 @@ impl Core<'_> {
             {
                 *slot = at;
             }
+            resolved.push(at);
+        }
+        if chose {
+            self.chosen_destination_cycles()?;
+        }
+        resolved.extend(std::mem::take(&mut self.untyped_reads));
+        for at in resolved {
             let read = self
                 .attr_reads
                 .get(at as usize)

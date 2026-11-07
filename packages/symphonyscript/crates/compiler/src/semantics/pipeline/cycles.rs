@@ -135,6 +135,14 @@ impl Core<'_> {
                 self.unbound_nodes.extend(inner);
             }
         }
+        self.cycles_of_the_graph(false)
+    }
+
+    pub fn chosen_destination_cycles(&mut self) -> Result<(), Internal> {
+        self.cycles_of_the_graph(true)
+    }
+
+    fn cycles_of_the_graph(&mut self, chosen: bool) -> Result<(), Internal> {
         let lets = u32::try_from(self.ir.lets.len()).unwrap_or(u32::MAX);
         let cells = u32::try_from(self.ir.lets.len() + self.attr_reads.len()).unwrap_or(u32::MAX);
         let fns = cells + u32::try_from(self.ir.cells.len()).unwrap_or(u32::MAX);
@@ -184,16 +192,21 @@ impl Core<'_> {
             }
         }
         let components = strongly_connected(&edges);
-        for component in &components {
-            for member in component {
-                if let Some(at) = member.checked_sub(lets)
-                    && *member < cells
-                {
-                    self.attr_order.push(at);
+        if !chosen {
+            for component in &components {
+                for member in component {
+                    if let Some(at) = member.checked_sub(lets)
+                        && *member < cells
+                    {
+                        self.attr_order.push(at);
+                    }
                 }
             }
         }
         for component in components {
+            if chosen && self.holds_a_cyclic_member(&component, (lets, cells, fns)) {
+                continue;
+            }
             let mut first = None;
             for member in &component {
                 let key = self.declaration_key(*member, (lets, cells, fns))?;
@@ -255,6 +268,26 @@ impl Core<'_> {
             self.draw_named_cycle(names);
         }
         Ok(())
+    }
+
+    fn holds_a_cyclic_member(
+        &self,
+        component: &[u32],
+        (lets, cells, fns): (u32, u32, u32),
+    ) -> bool {
+        component.iter().any(|member| {
+            if *member >= fns {
+                false
+            } else if let Some(at) = member.checked_sub(cells) {
+                self.cell_cyclic.get(at as usize).copied().unwrap_or(false)
+            } else if let Some(at) = member.checked_sub(lets) {
+                self.attr_reads
+                    .get(at as usize)
+                    .is_some_and(|read| read.cyclic)
+            } else {
+                self.cyclic.get(*member as usize).copied().unwrap_or(false)
+            }
+        })
     }
 
     fn let_name(&self, at: u32) -> Result<(String, Span), Internal> {

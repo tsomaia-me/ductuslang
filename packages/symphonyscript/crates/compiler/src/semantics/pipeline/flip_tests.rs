@@ -3608,6 +3608,91 @@ fn a_named_wires_attribute_read_and_a_to_path_are_edges_of_the_declaration_graph
     );
 }
 
+const CYCLES_THROUGH_COMPILE_TIME_DESTINATIONS: [&[&str]; 16] = [
+    &[
+        "let x = true\n",
+        "Clip a | gain=(b.gain):\n    Plays as w | gain=to.gain: if x then a else b\n",
+        "Clip b | gain=(a.w.gain)\n",
+    ],
+    &[
+        "let x = false\n",
+        "Clip a | gain=(b.gain):\n    Plays as w | gain=to.gain: if x then a else b\n",
+        "Clip b | gain=(a.w.gain)\n",
+    ],
+    &[
+        "Clip a | gain=(b.gain):\n    Plays as w | gain=to.gain: [a, b][0]\n",
+        "Clip b | gain=(a.w.gain)\n",
+    ],
+    &[
+        "Clip a | gain=(b.gain):\n    Plays as w | gain=to.gain: [a, b][1]\n",
+        "Clip b | gain=(a.w.gain)\n",
+    ],
+    &[
+        "let d = b\n",
+        "Clip a | gain=(b.gain):\n    Plays as w | gain=to.gain: d\n",
+        "Clip b | gain=(a.w.gain)\n",
+    ],
+    &[
+        "let d = a\n",
+        "Clip a | gain=(b.gain):\n    Plays as w | gain=to.gain: d\n",
+        "Clip b | gain=(a.w.gain)\n",
+    ],
+    &[
+        "Clip a | gain=(a.w.gain):\n    Plays as w | gain=to.gain: if true then a else b\n",
+        "Clip b\n",
+    ],
+    &[
+        "Clip a | gain=(a.w.gain):\n    Plays as w | gain=to.gain: if false then a else b\n",
+        "Clip b\n",
+    ],
+    &[
+        "let l0 = o1.w1.gain\n",
+        "Clip o1 | gain=(l0):\n    Plays as w1 | gain=to.gain: [o1, o1][0]\n",
+    ],
+    &[
+        "let l0 = o1.w1.gain\n",
+        "Clip o1 | gain=(1):\n    Plays as w1 | gain=to.gain: [o1, o1][0]\n",
+    ],
+    &[
+        "let x = true\n",
+        "Clip a | gain=(1):\n    Plays as w | gain=to.gain: if x then a else b\n",
+        "Clip b | gain=(a.w.gain)\n",
+    ],
+    &[
+        "let k = 1\nlet x = k > 0\n",
+        "Clip a | gain=(c.gain):\n    Plays as w | gain=to.gain: if x then b else a\n",
+        "Clip b | gain=(a.w.gain)\nClip c | gain=(b.gain)\n",
+    ],
+    &[
+        "let d = [a, b]\n",
+        "Clip a | gain=(b.gain):\n    Plays as w | gain=to.gain: d[0]\n",
+        "Clip b | gain=(a.w.gain)\n",
+    ],
+    &[
+        "state q(0)\n",
+        "Clip a | gain=(b.gain):\n    Plays as w | gain=to.gain: [a, b][q]\n",
+        "Clip b | gain=(a.w.gain)\n",
+    ],
+    &[
+        "Clip a | gain=(b.w.gain):\n    Plays as w | gain=to.gain: if true then b else a\n",
+        "Clip b | gain=(a.w.gain):\n    Plays as w | gain=to.gain: [a, b][0]\n",
+    ],
+    &[
+        "let l0 = a.w.gain\n",
+        "Clip a | gain=(b.gain):\n    Plays as w | gain=to.gain: if true then a else b\n",
+        "Clip b | gain=(l0)\n",
+    ],
+];
+
+#[test]
+fn a_to_read_through_a_destination_chosen_at_compile_time_is_an_edge_of_the_declaration_graph_beside_a_valid_twin_in_every_order_530()
+ {
+    assert_eq!(
+        same_as_the_old_engine(&CYCLES_THROUGH_COMPILE_TIME_DESTINATIONS),
+        258
+    );
+}
+
 const NESTED_USE_FORM_FAULTS: [&[&str]; 4] = [
     &[
         "pattern V():\n    U\n",

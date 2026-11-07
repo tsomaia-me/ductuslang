@@ -215,7 +215,7 @@ fn a_cycle_in_the_demand_engine_draws_its_one_rules_diagnostic() {
     support::assert_no_failure(&failures);
 }
 
-const LINKS: [(&[&str], &str); 8] = [
+const LINKS: [(&[&str], &str); 9] = [
     (&["let l{k} = {next}"], "l{k}"),
     (
         &["fn f{k}(n): if n < 1 then {next} else f{k}(n - 1)"],
@@ -247,6 +247,10 @@ const LINKS: [(&[&str], &str); 8] = [
             "P{k} u{k} | x=({next})",
         ],
         "u{k}.gain",
+    ),
+    (
+        &["Clip o{k} | gain=({next}):\n    Plays as w{k} | gain=to.gain: [o{k}, o{k}][0]"],
+        "o{k}.w{k}.gain",
     ),
 ];
 
@@ -358,7 +362,7 @@ fn every_cycle_of_declarations_draws_one_declaration_cycle_in_every_order_in(
             .flat_map(|run| run.join().expect("every run finishes"))
             .collect()
     });
-    assert_eq!(cycles.len(), 211);
+    assert_eq!(cycles.len(), 294);
     support::assert_no_failure(&failures);
 }
 
