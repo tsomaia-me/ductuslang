@@ -1193,7 +1193,7 @@ class Running(unittest.TestCase):
         self.assertEqual([commands[name] for name in ("fmt", "clippy", "nextest", "doctest", "thumbv7em")],
                          [["cargo", "fmt", "--check"],
                           ["cargo", "clippy", "--workspace", "--all-targets", "--", "-D", "warnings"],
-                          ["cargo", "nextest", "run", "--workspace"], ["cargo", "test", "--workspace", "--doc"],
+                          ["cargo", "nextest", "run", "--workspace", "--no-fail-fast"], ["cargo", "test", "--workspace", "--doc"],
                           ["cargo", "build", "-p", "symphonyscript-core", "--target", "thumbv7em-none-eabihf"]])
         self.assertEqual(commands["verdicts"][2:], ["check", "abc1234", "--profile", "dev", "--jobs", "4",
                                                     "--settle-below", "6.0", "--build", "/into/check", "--baselines",
