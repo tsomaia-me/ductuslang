@@ -510,6 +510,17 @@ impl Core<'_> {
         let (op, _, _, _) = self.ir.node(receiver)?;
         let start = if op == Op::Name {
             match self.bound(receiver)? {
+                DeclRef::Instance(item) if matches!(self.ir.item(item)?, ItemRec::Wire(_)) => {
+                    let mut rows = (0u32..)
+                        .zip(self.wires.iter())
+                        .filter(|(_, row)| row.item == item)
+                        .map(|(at, _)| at);
+                    match (rows.next(), rows.next()) {
+                        (Some(wire), None) => End::Wire(wire),
+                        (None, _) => End::Placeholder,
+                        (Some(_), Some(_)) => return Ok(Err(Declined(Reason::Member))),
+                    }
+                }
                 DeclRef::Instance(item) => {
                     match self.row_of_item.get(item as usize).copied().unwrap_or(NONE) {
                         NONE => self

@@ -3914,6 +3914,29 @@ fn a_size_or_capacity_of_a_slice_a_join_a_call_or_a_choice_is_its_compile_time_l
     );
 }
 
+const WIRE_NAMES_AS_PATH_RECEIVERS: [&[&str]; 9] = [
+    &["Clip verse | gain=w.gain:\n    Plays as w | gain=0.5: verse\n"],
+    &["Clip verse:\n    Plays as w | gain=0.5: verse\n    Note | velocity=w.gain\n"],
+    &[
+        "Clip verse:\n    Plays as w | gain=0.5: verse\n",
+        "Clip c | gain=w.gain\n",
+    ],
+    &["Clip verse:\n    Plays as w | gain=w.gain: verse\n"],
+    &["Clip verse:\n    Plays as w | gain=0.5: verse\n    Plays as v | gain=w.gain: verse\n"],
+    &["Clip verse:\n    Plays as w | gain=0.5: verse\n    Note | velocity=w.zz\n"],
+    &["Clip verse:\n    Plays as w | gain=0.5: verse\n    Note | velocity=w.gain.x\n"],
+    &[
+        "Clip verse:\n    for i in 0..2:\n        Plays as w | gain=0.5: verse\n        Note | velocity=w.gain\n",
+    ],
+    &["Clip verse:\n    Note as w\n    Plays as w | gain=0.5: verse\n    Note | velocity=w.gain\n"],
+];
+
+#[test]
+fn a_named_wires_name_read_as_a_path_receiver_in_its_body_reads_the_wires_attribute_beside_a_valid_twin_in_every_order()
+ {
+    assert_eq!(same_as_the_old_engine(&WIRE_NAMES_AS_PATH_RECEIVERS), 22);
+}
+
 const NESTED_USE_FORM_FAULTS: [&[&str]; 4] = [
     &[
         "pattern V():\n    U\n",

@@ -702,6 +702,14 @@ impl Core<'_> {
                         .name(placement.as_name)
                         .ok_or(Internal::missed("IR name"))?;
                     names.push((entry.sym.0, member));
+                } else if let Ok(ItemRec::Wire(wire)) = self.ir.item(member).copied()
+                    && self.ir.named(wire.as_name)
+                {
+                    let entry = self
+                        .ir
+                        .name(wire.as_name)
+                        .ok_or(Internal::missed("IR name"))?;
+                    names.push((entry.sym.0, member));
                 }
             }
             stack.push((child, inner));

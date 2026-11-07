@@ -265,10 +265,18 @@ impl Core<'_> {
         if named.is_empty() {
             return Ok(false);
         }
+        let receivers: std::collections::HashSet<u32> = (0..self.ir.op.len())
+            .filter(|local| self.ir.op.get(*local) == Some(&Op::Field))
+            .filter_map(|local| self.ir.a.get(local).copied())
+            .collect();
         for local in 0..self.ir.op.len() {
             if self.ir.op.get(local) != Some(&Op::Name)
                 || !self.reached.get(local).copied().unwrap_or(false)
             {
+                continue;
+            }
+            let node = self.ir.base + u32::try_from(local).unwrap_or(u32::MAX);
+            if receivers.contains(&node) {
                 continue;
             }
             let name = *self.ir.a.get(local).ok_or(Internal::missed("IR name"))?;
