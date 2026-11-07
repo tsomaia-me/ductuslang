@@ -3325,3 +3325,19 @@ const UNIT_ATTRIBUTE_READS: [&[&str]; 10] = [
 fn a_path_read_of_a_unit_attribute_is_a_value_of_its_family_beside_a_valid_twin_in_every_order() {
     assert_eq!(same_as_the_old_engine(&UNIT_ATTRIBUTE_READS), 192);
 }
+
+const FLAG_SET_READS: [&[&str]; 6] = [
+    &[
+        "Rig r:\n    Lamp* as a | level=0.5\n    Lamp | level=a.level hue=(if a.strobe then 1 else 0)\n",
+    ],
+    &["Rig r:\n    Lamp as a | !strobe\n    Lamp | hue=(if a.strobe then 1 else 0)\n"],
+    &["Rig r:\n    Lamp as a | strobe\n    Lamp | hue=a.strobe\n"],
+    &["Rig r:\n    Lamp* as a | strobe=false\n    Lamp | hue=(if a.strobe then 1 else 0)\n"],
+    &["Rig r:\n    Lamp* as a\n    Lamp/(a.strobe + 1)\n"],
+    &["Rig r:\n    Lamp as a | hue\n    Lamp/(a.hue)\n"],
+];
+
+#[test]
+fn a_path_read_of_an_attribute_a_flag_sets_is_the_flags_bool_beside_a_valid_twin_in_every_order() {
+    assert_eq!(same_as_the_old_engine(&FLAG_SET_READS), 12);
+}

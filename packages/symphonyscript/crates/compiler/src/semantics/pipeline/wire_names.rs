@@ -2,8 +2,6 @@ use symphonyscript_core::Span;
 
 use super::attr_read::AttrRead;
 use super::core::{Core, Stage};
-use super::declined::Declined;
-use super::reason::Reason;
 use crate::diagnostics::Code;
 use crate::semantics::Internal;
 use crate::semantics::counted_walk::CountedWalk;
@@ -208,9 +206,18 @@ impl Core<'_> {
             .get(wire as usize)
             .ok_or(Internal::missed("wire row"))?;
         let (root, lo, hi) = self.wire_attr_source(wire, attr)?;
-        if root == ABSENT {
-            return Ok(Err(Declined(Reason::FlagRead)));
-        }
+        let set = if root == ABSENT {
+            let rec = self.wire_rec(row.item)?;
+            let declared = self
+                .vocabulary
+                .wire_kind(row.kind)
+                .and_then(|decl| decl.attrs.get(attr))
+                .ok_or(Internal::missed("attribute"))?;
+            Some(self.set_value(rec.flags, rec.attrs, declared)?)
+        } else {
+            None
+        };
+        let root = if set.is_some() { NONE } else { root };
         let name = self
             .vocabulary
             .wire_kind(row.kind)
@@ -235,6 +242,7 @@ impl Core<'_> {
             key: (row.file, lo),
             cyclic: false,
             wire: true,
+            set,
         });
         self.wire_attr_index.insert(key, at);
         self.attr_values
@@ -288,5 +296,39 @@ impl Core<'_> {
         self.read_attr_decl(read)
             .and_then(|attr| attr.unit)
             .map(|unit| unit.family)
+    }
+}
+
+impl Core<'_> {
+    pub fn set_value(
+        &self,
+        flags: (u32, u32),
+        attrs: (u32, u32),
+        declared: &symphonyscript_core::AttrDecl,
+    ) -> Result<bool, Internal> {
+        for at in flags.0..flags.1 {
+            let flag = *self
+                .ir
+                .flags
+                .get(at as usize)
+                .ok_or(Internal::missed("IR flag"))?;
+            if Some(flag.flag) == declared.flag {
+                return Ok(true);
+            }
+        }
+        for at in attrs.0..attrs.1 {
+            let entry = *self
+                .ir
+                .attr_entries
+                .get(at as usize)
+                .ok_or(Internal::missed("IR attribute"))?;
+            if self.ir.name_text(entry.name) != Some(declared.name.as_str()) {
+                continue;
+            }
+            if let AttrForm::Set(value) = entry.form {
+                return Ok(value);
+            }
+        }
+        Ok(false)
     }
 }

@@ -358,9 +358,18 @@ impl Core<'_> {
             .get(row as usize)
             .ok_or(Internal::missed("row"))?;
         let (root, lo, hi) = self.attr_source(row, attr)?;
-        if root == ABSENT {
-            return Ok(Err(Declined(Reason::FlagRead)));
-        }
+        let set = if root == ABSENT {
+            let placement = self.placement(record.item)?;
+            let declared = self
+                .vocabulary
+                .node_kind(record.kind)
+                .and_then(|decl| decl.attrs.get(attr))
+                .ok_or(Internal::missed("attribute"))?;
+            Some(self.set_value(placement.flags, placement.attrs, declared)?)
+        } else {
+            None
+        };
+        let root = if set.is_some() { NONE } else { root };
         let name = self
             .vocabulary
             .node_kind(record.kind)
@@ -380,6 +389,7 @@ impl Core<'_> {
             key: (record.file, lo),
             cyclic: false,
             wire: false,
+            set,
         });
         self.attr_index.insert(key, at);
         self.attr_values
@@ -793,6 +803,9 @@ impl Core<'_> {
 
 impl Core<'_> {
     pub fn default_read(&self, read: &AttrRead) -> Result<CoreValue, Internal> {
+        if let Some(value) = read.set {
+            return Ok(CoreValue::Bool(value));
+        }
         let default = if read.wire {
             let kind = self
                 .wires
