@@ -2965,3 +2965,26 @@ fn an_arrays_map_draws_unbuilt_construct_at_the_call_and_a_scalars_draws_unknown
  {
     assert_eq!(same_as_the_old_engine(&ARRAY_MAPS), 24);
 }
+
+const ARRAY_LET_ATTRIBUTES: [&[&str]; 6] = [
+    &["let xs = [1, 2]\n", "Clip c:\n    Note/(xs.foo)\n"],
+    &["let xs = [1, 2]\n", "Clip c:\n    Note/(xs.keys + 1)\n"],
+    &["let xs = [[1], [2]]\n", "Clip c:\n    Note/(xs.foo[0])\n"],
+    &[
+        "let xs = [1, 2]\n",
+        "let y = xs.values\n",
+        "Clip c:\n    Note/(y)\n",
+    ],
+    &["let xs = [1, 2]\n", "Clip c | gain=xs.foo:\n    Note\n"],
+    &[
+        "let xs = [1, 2]\n",
+        "let foo = 1\n",
+        "Clip c:\n    Note/(xs.foo + xs.size)\n",
+    ],
+];
+
+#[test]
+fn an_array_lets_attribute_other_than_its_size_or_capacity_draws_unknown_attribute_beside_a_valid_twin_in_every_order()
+ {
+    assert_eq!(same_as_the_old_engine(&ARRAY_LET_ATTRIBUTES), 72);
+}

@@ -1958,6 +1958,18 @@ impl Core<'_> {
             )?;
             return Ok(Ok(End::Value));
         }
+        let special = matches!(
+            text.as_str(),
+            "bytes" | "map" | "kind" | "past" | "stepped" | "dropped"
+        );
+        if !member && !special && numeric && !fact.dims.is_empty() {
+            self.draw_at(
+                Code::UnknownAttribute,
+                node,
+                "an array has no attributes; index it first",
+            )?;
+            return Ok(Ok(End::Value));
+        }
         Ok(Err(Declined(Reason::Member)))
     }
 }
