@@ -1307,7 +1307,7 @@ impl Core<'_> {
 
 impl Core<'_> {
     pub fn pattern_names(&mut self) -> Result<(), Internal> {
-        let mut read: std::collections::HashMap<u32, Vec<u32>> = std::collections::HashMap::new();
+        let mut read: super::column::Column<Vec<u32>> = Default::default();
         let start = self.patterns_start();
         for local in 0..self.ir.op.len() {
             if self.ir.op.get(local) != Some(&Op::Name) {

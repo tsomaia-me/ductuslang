@@ -261,7 +261,7 @@ impl Core<'_> {
     fn bare_valued(
         &self,
         root: u32,
-        members: &std::collections::HashSet<u32>,
+        members: &super::column::ColumnSet,
         aliases: &mut Vec<(u32, u32)>,
     ) -> Result<bool, Internal> {
         let mut stack = vec![root];
@@ -289,10 +289,8 @@ impl Core<'_> {
         Ok(bare || !aliases.is_empty())
     }
 
-    fn enum_attribute_roots(
-        &self,
-    ) -> Result<std::collections::HashMap<u32, Option<EnumId>>, Internal> {
-        let mut roots = std::collections::HashMap::new();
+    fn enum_attribute_roots(&self) -> Result<super::column::Column<Option<EnumId>>, Internal> {
+        let mut roots = super::column::Column::new();
         let mut items: Vec<(
             u32,
             u32,
@@ -391,9 +389,8 @@ impl Core<'_> {
             )?;
             self.untyped_bare.insert(rec.init);
         }
-        let mut shaped: std::collections::HashMap<u32, Vec<(u32, u32)>> =
-            std::collections::HashMap::new();
-        let open: std::collections::HashSet<u32> = (0..self.ir.lets.len())
+        let mut shaped: super::column::Column<Vec<(u32, u32)>> = Default::default();
+        let open: super::column::ColumnSet = (0..self.ir.lets.len())
             .filter_map(|at| u32::try_from(at).ok())
             .collect();
         for (at, rec) in self.ir.lets.iter().enumerate() {
@@ -407,13 +404,13 @@ impl Core<'_> {
                 shaped.insert(at, aliases);
             }
         }
-        let mut members: std::collections::HashSet<u32> = std::collections::HashSet::new();
-        let mut refused: std::collections::HashSet<u32> = std::collections::HashSet::new();
-        let mut order: Vec<u32> = shaped.keys().copied().collect();
+        let mut members: super::column::ColumnSet = Default::default();
+        let mut refused: super::column::ColumnSet = Default::default();
+        let mut order: Vec<u32> = shaped.keys().collect();
         order.sort_unstable();
         for start in order {
             let mut stack = vec![(start, false)];
-            let mut visiting = std::collections::HashSet::new();
+            let mut visiting = super::column::ColumnSet::new();
             while let Some((at, done)) = stack.pop() {
                 if members.contains(&at) || refused.contains(&at) {
                     continue;
@@ -450,19 +447,18 @@ impl Core<'_> {
         if members.is_empty() {
             return Ok(());
         }
-        let mut parent: std::collections::HashMap<u32, u32> =
-            members.iter().map(|at| (*at, *at)).collect();
-        let find = |parent: &std::collections::HashMap<u32, u32>, mut at: u32| {
+        let mut parent: super::column::Column<u32> = members.iter().map(|at| (at, at)).collect();
+        let find = |parent: &super::column::Column<u32>, mut at: u32| {
             while let Some(up) = parent.get(&at).copied().filter(|up| *up != at) {
                 at = up;
             }
             at
         };
-        let mut internal = std::collections::HashSet::new();
-        for at in &members {
-            for (node, target) in shaped.get(at).map(Vec::as_slice).unwrap_or_default() {
+        let mut internal = super::column::ColumnSet::new();
+        for at in members.iter() {
+            for (node, target) in shaped.get(&at).map(Vec::as_slice).unwrap_or_default() {
                 internal.insert(*node);
-                let (x, y) = (find(&parent, *at), find(&parent, *target));
+                let (x, y) = (find(&parent, at), find(&parent, *target));
                 if x != y {
                     parent.insert(x.max(y), x.min(y));
                 }
@@ -511,7 +507,7 @@ impl Core<'_> {
                 (None, None) => {}
             }
         }
-        let mut reads: std::collections::HashMap<u32, Vec<u32>> = std::collections::HashMap::new();
+        let mut reads: super::column::Column<Vec<u32>> = Default::default();
         for (local, op) in self.ir.op.iter().enumerate() {
             if *op != Op::Name {
                 continue;
@@ -526,7 +522,7 @@ impl Core<'_> {
                 reads.entry(find(&parent, at)).or_default().push(node);
             }
         }
-        let mut groups: Vec<u32> = members.iter().map(|at| find(&parent, *at)).collect();
+        let mut groups: Vec<u32> = members.iter().map(|at| find(&parent, at)).collect();
         groups.sort_unstable();
         groups.dedup();
         for group in groups {
@@ -550,7 +546,6 @@ impl Core<'_> {
             }
             let mut group_lets: Vec<u32> = members
                 .iter()
-                .copied()
                 .filter(|at| find(&parent, *at) == group)
                 .collect();
             group_lets.sort_unstable();

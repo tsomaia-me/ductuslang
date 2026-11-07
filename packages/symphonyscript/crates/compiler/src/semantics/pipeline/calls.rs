@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use super::body_instance::BodyInstance;
 use super::core::{Core, Stage};
 use super::decl_ref::DeclRef;
@@ -230,7 +228,7 @@ impl Core<'_> {
         &mut self,
         node: u32,
         sym: u32,
-        memo: &mut HashMap<(u32, u32), Option<(u32, DeclRef)>>,
+        memo: &mut super::column::PairColumn<Option<(u32, DeclRef)>>,
     ) -> Result<Option<(u32, DeclRef)>, Internal> {
         let mut owner = self.body_of.get(self.local(node)?).copied().unwrap_or(NONE);
         let mut walked = Vec::new();
@@ -951,13 +949,13 @@ impl Core<'_> {
     }
 
     pub fn function_values(&mut self) -> Result<(), Internal> {
-        let mut callees = std::collections::HashSet::new();
+        let mut callees = super::column::ColumnSet::new();
         for local in 0..self.ir.op.len() {
             if matches!(self.ir.op.get(local), Some(Op::Call | Op::NamedCall)) {
                 callees.insert(self.ir.a.get(local).copied().unwrap_or(NONE));
             }
         }
-        let mut mapped = std::collections::HashSet::new();
+        let mut mapped = super::column::ColumnSet::new();
         let dotted: Vec<u32> = self.dot_calls.iter().collect();
         for call in dotted {
             let (op, callee, _, _) = self.ir.node(call)?;

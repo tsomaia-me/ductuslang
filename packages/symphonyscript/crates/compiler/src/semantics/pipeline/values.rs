@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use super::annotation::Refusal;
 use super::call_chain::CallChain;
 use super::core::{Core, Stage};
@@ -48,14 +46,14 @@ pub(crate) fn evaluated_in(ty: EvalTy) -> EvalTy {
 }
 
 fn merge_reach(
-    scaled: &mut std::collections::HashSet<u32>,
-    merged: &mut std::collections::HashSet<usize>,
+    scaled: &mut super::column::ColumnSet,
+    merged: &mut super::column::TripleSet,
     unit: Option<&FrameUnit>,
 ) {
     if let Some(unit) = unit
-        && merged.insert(std::rc::Rc::as_ptr(&unit.reach) as usize)
+        && merged.insert(unit.key)
     {
-        scaled.extend(unit.reach.scaled.iter().copied());
+        scaled.extend(unit.reach.scaled.iter());
     }
 }
 
@@ -636,15 +634,15 @@ impl Core<'_> {
     fn evaluate_frames(&mut self, root: u32, ty: EvalTy) -> Stage<CoreValue> {
         let ty = evaluated_in(ty);
         let mut outer_chains: Vec<CallChain> = Vec::new();
-        let mut open: std::collections::HashSet<u32> = std::collections::HashSet::new();
+        let mut open = super::column::ColumnSet::new();
         let unit = match self.default_scale {
             Some((scaled, family, unit, _)) if scaled == root => {
                 Some(self.frame_unit(root, self.inst, family, unit)?)
             }
             Some(_) | None => None,
         };
-        let mut scaled: std::collections::HashSet<u32> = std::collections::HashSet::new();
-        let mut merged: std::collections::HashSet<usize> = std::collections::HashSet::new();
+        let mut scaled = super::column::ColumnSet::new();
+        let mut merged = super::column::TripleSet::default();
         merge_reach(&mut scaled, &mut merged, unit.as_ref());
         let mut frames: Vec<Frame> = vec![Frame {
             owner: None,
@@ -1923,7 +1921,7 @@ impl Core<'_> {
     }
 
     pub fn own_float(&self, root: u32) -> Result<EvalTy, Internal> {
-        let (mut roots, mut seen) = (vec![root], std::collections::HashSet::new());
+        let (mut roots, mut seen) = (vec![root], super::column::ColumnSet::new());
         while let Some(root) = roots.pop() {
             for node in self.postorder(root)? {
                 let (op, a, _, _) = self.ir.node(node)?;
@@ -2081,8 +2079,8 @@ impl Core<'_> {
         let mut stack = vec![(root, false)];
         let mut leaves: Vec<u32> = Vec::new();
         let mut fits: Vec<u32> = Vec::new();
-        let mut unfixed = HashMap::new();
-        let mut flowing: HashMap<(u32, u32), (EvalTy, bool)> = HashMap::new();
+        let mut unfixed = super::column::PairColumn::default();
+        let mut flowing: super::column::PairColumn<(EvalTy, bool)> = Default::default();
         if let Some(ty) = expected {
             flowing.insert((self.inst, root), (ty, true));
         }
@@ -2488,7 +2486,7 @@ impl Core<'_> {
         &self,
         node: u32,
         own: EvalTy,
-        unfixed: &mut HashMap<(u32, u32), bool>,
+        unfixed: &mut super::column::PairColumn<bool>,
     ) -> Result<bool, Internal> {
         let (op, ..) = self.ir.node(node)?;
         if int_range(own).is_some() {
@@ -2520,7 +2518,7 @@ impl Core<'_> {
     fn reads_unfixed_number(
         &self,
         node: u32,
-        unfixed: &mut HashMap<(u32, u32), bool>,
+        unfixed: &mut super::column::PairColumn<bool>,
     ) -> Result<bool, Internal> {
         if let Some(found) = unfixed.get(&(self.inst, node)) {
             return Ok(*found);

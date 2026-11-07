@@ -32,7 +32,7 @@ impl Core<'_> {
     ) -> Result<Vec<u32>, Internal> {
         let mut reads = Vec::new();
         let mut stack = vec![(root, env)];
-        let mut seen = std::collections::HashSet::new();
+        let mut seen = super::column::PairSet::default();
         while let Some((root, env)) = stack.pop() {
             if !seen.insert((root, env)) {
                 continue;

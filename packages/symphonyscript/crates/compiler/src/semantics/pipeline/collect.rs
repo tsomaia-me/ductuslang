@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use symphonyscript_core::Span;
 
 use super::column::Column;
@@ -275,12 +273,12 @@ impl Core<'_> {
         self.scope_of.clone_from(&scope_of);
         let skipped_top = self.skipped_top();
         self.skipped_top.clone_from(&skipped_top);
-        let mut enclosing = std::collections::HashMap::new();
+        let mut enclosing = super::column::PairColumn::default();
         let type_operands = self.type_operands()?;
         let math_callees = self.math_callees()?;
-        let mut native_callees = std::collections::HashSet::new();
-        let mut member_callees = std::collections::HashSet::new();
-        let mut method_calls = std::collections::HashMap::new();
+        let mut native_callees = super::column::ColumnSet::new();
+        let mut member_callees = super::column::ColumnSet::new();
+        let mut method_calls = super::column::Column::new();
         for local in 0..self.ir.op.len() {
             if !matches!(self.ir.op.get(local), Some(Op::Call | Op::NamedCall)) {
                 continue;
@@ -297,7 +295,7 @@ impl Core<'_> {
                 native_callees.insert(self.ir.node(call)?.1);
             }
         }
-        let mut callees = std::collections::HashSet::new();
+        let mut callees = super::column::ColumnSet::new();
         for local in 0..self.ir.op.len() {
             if matches!(self.ir.op.get(local), Some(Op::Call | Op::NamedCall)) {
                 callees.insert(self.ir.a.get(local).copied().unwrap_or(NONE));
@@ -783,8 +781,8 @@ impl Core<'_> {
 }
 
 impl Core<'_> {
-    fn type_operands(&self) -> Result<std::collections::HashSet<u32>, Internal> {
-        let mut found = std::collections::HashSet::new();
+    fn type_operands(&self) -> Result<super::column::ColumnSet, Internal> {
+        let mut found = super::column::ColumnSet::new();
         for local in 0..self.ir.op.len() {
             if !matches!(self.ir.op.get(local), Some(Op::Is | Op::IsNot)) {
                 continue;
@@ -816,7 +814,7 @@ impl Core<'_> {
             .collect();
         left.sort_unstable();
         let roots = self.unchecked_roots()?;
-        let mut chains: HashMap<u32, Vec<u32>> = HashMap::new();
+        let mut chains: super::column::Column<Vec<u32>> = Default::default();
         for (node, summary) in left {
             let owner = self.body_of.get(self.local(node)?).copied().unwrap_or(NONE);
             if owner < self.functions() && !chains.contains_key(&owner) {
@@ -836,7 +834,7 @@ impl Core<'_> {
     }
 
     fn unchecked_roots(&self) -> Result<Vec<u32>, Internal> {
-        let mut called = std::collections::HashSet::new();
+        let mut called = super::column::ColumnSet::new();
         for local in 0..self.ir.op.len() {
             if matches!(self.ir.op.get(local), Some(Op::Call | Op::NamedCall)) {
                 let node = self.ir.base + u32::try_from(local).unwrap_or(0);
@@ -862,7 +860,7 @@ impl Core<'_> {
     }
 
     fn first_reaching_chain(&self, target: u32, roots: &[u32]) -> Result<Vec<u32>, Internal> {
-        let mut last: HashMap<u32, Option<u32>> = HashMap::new();
+        let mut last: super::column::Column<Option<u32>> = Default::default();
         for root in roots {
             let Some(call) = self.last_reaching_call(target, &[*root], &mut last)? else {
                 continue;
@@ -885,7 +883,7 @@ impl Core<'_> {
         &self,
         target: u32,
         roots: &[u32],
-        last: &mut HashMap<u32, Option<u32>>,
+        last: &mut super::column::Column<Option<u32>>,
     ) -> Result<Option<u32>, Internal> {
         let mut found = None;
         for root in roots {
@@ -920,8 +918,8 @@ impl Core<'_> {
 }
 
 impl Core<'_> {
-    fn math_callees(&self) -> Result<std::collections::HashSet<u32>, Internal> {
-        let mut found = std::collections::HashSet::new();
+    fn math_callees(&self) -> Result<super::column::ColumnSet, Internal> {
+        let mut found = super::column::ColumnSet::new();
         for local in 0..self.ir.op.len() {
             if !matches!(self.ir.op.get(local), Some(Op::Call | Op::NamedCall)) {
                 continue;

@@ -406,3 +406,63 @@ impl TripleSet {
 pub(crate) fn dense(index: usize) -> u32 {
     u32::try_from(index).unwrap_or(NONE)
 }
+
+impl<T> Column<T> {
+    pub fn values_mut(&mut self) -> impl Iterator<Item = &mut T> {
+        self.slots
+            .iter_mut()
+            .chain(std::iter::once(&mut self.none))
+            .filter_map(Option::as_mut)
+    }
+
+    pub fn into_values(self) -> impl Iterator<Item = T> {
+        self.slots.into_iter().chain([self.none]).flatten()
+    }
+}
+
+impl<'a, T> Entry<'a, T> {
+    pub fn or_insert(self, value: T) -> &'a mut T {
+        self.column.or_insert_with(self.id, || value)
+    }
+}
+
+impl<T> FromIterator<(u32, T)> for Column<T> {
+    fn from_iter<I: IntoIterator<Item = (u32, T)>>(pairs: I) -> Self {
+        let mut column = Column::new();
+        for (id, value) in pairs {
+            column.insert(id, value);
+        }
+        column
+    }
+}
+
+impl<T> PairColumn<T> {
+    pub fn get_mut(&mut self, key: &(u32, u32)) -> Option<&mut T> {
+        let row = self.rows.get_mut(&key.0)?;
+        let at = row
+            .binary_search_by_key(&key.1, |(second, _)| *second)
+            .ok()?;
+        row.get_mut(at).map(|(_, value)| value)
+    }
+
+    pub fn clear(&mut self) {
+        self.rows = Column::new();
+        self.len = 0;
+    }
+}
+
+impl PairSet {
+    pub fn iter(&self) -> impl Iterator<Item = (u32, u32)> + '_ {
+        self.held.iter().map(|(key, ())| key)
+    }
+}
+
+impl FromIterator<(u32, u32)> for PairSet {
+    fn from_iter<I: IntoIterator<Item = (u32, u32)>>(keys: I) -> Self {
+        let mut set = PairSet::default();
+        for key in keys {
+            set.insert(key);
+        }
+        set
+    }
+}

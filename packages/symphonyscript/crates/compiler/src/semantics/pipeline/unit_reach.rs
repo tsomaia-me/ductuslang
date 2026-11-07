@@ -1,5 +1,4 @@
 use super::column::dense;
-use std::collections::HashSet;
 use std::rc::Rc;
 
 use symphonyscript_core::FamilyId;
@@ -13,8 +12,8 @@ use crate::semantics::ir::flat::{NONE, Op};
 
 #[derive(Default)]
 pub(crate) struct UnitReach {
-    pub scaled: HashSet<u32>,
-    pub entered: HashSet<u32>,
+    pub scaled: super::column::ColumnSet,
+    pub entered: super::column::ColumnSet,
     pub params: Vec<u32>,
 }
 
@@ -23,6 +22,7 @@ pub(crate) struct FrameUnit {
     pub family: FamilyId,
     pub unit: usize,
     pub reach: Rc<UnitReach>,
+    pub key: (u32, u32, u32),
 }
 
 impl Core<'_> {
@@ -52,6 +52,7 @@ impl Core<'_> {
             family,
             unit,
             reach,
+            key: (root, inst, dense(family.index())),
         })
     }
 
@@ -102,11 +103,11 @@ impl Core<'_> {
     ) -> Result<Result<UnitReach, Vec<(u32, u32)>>, Internal> {
         let mut reach = UnitReach::default();
         let mut missing = Vec::new();
-        let mut seen = HashSet::new();
+        let mut seen = super::column::PairSet::default();
         let mut stack = vec![(root, false)];
         while let Some((node, base)) = stack.pop() {
             CountedWalk::CoreFamilies.step();
-            if !seen.insert((node, base)) || !self.has_fact(node)? {
+            if !seen.insert((node, u32::from(base))) || !self.has_fact(node)? {
                 continue;
             }
             let fact = self.fact(node)?;

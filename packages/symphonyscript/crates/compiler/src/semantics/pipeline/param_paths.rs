@@ -44,7 +44,7 @@ impl Core<'_> {
             };
             let function = self.binding_owner(receiver)?;
             let mut work = vec![(function, position)];
-            let mut seen = std::collections::HashSet::new();
+            let mut seen = super::column::PairSet::default();
             while let Some((callee, at)) = work.pop() {
                 if !seen.insert((callee, at)) {
                     continue;

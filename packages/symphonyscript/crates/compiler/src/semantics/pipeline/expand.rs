@@ -198,7 +198,7 @@ impl Core<'_> {
             Work::Items(block.items.0, block.items.1, record.env),
         ];
         let mut late: Vec<Work> = Vec::new();
-        let mut members: std::collections::HashSet<u32> = std::collections::HashSet::new();
+        let mut members: super::column::ColumnSet = Default::default();
         loop {
             let job = match work.pop() {
                 Some(job) => job,
@@ -613,7 +613,7 @@ impl Core<'_> {
 }
 
 impl Core<'_> {
-    fn in_bundle(&self, env: u32, members: &std::collections::HashSet<u32>) -> bool {
+    fn in_bundle(&self, env: u32, members: &super::column::ColumnSet) -> bool {
         let mut at = env;
         while let Some(record) = self.envs.get(at as usize) {
             if members.contains(&record.use_item) {

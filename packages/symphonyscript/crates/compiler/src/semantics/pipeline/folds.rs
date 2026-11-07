@@ -116,7 +116,7 @@ impl Core<'_> {
         Ok(owner)
     }
 
-    pub fn enclosed_names(&self) -> Result<std::collections::HashSet<(u32, u32)>, Internal> {
+    pub fn enclosed_names(&self) -> Result<super::column::PairSet, Internal> {
         let owners = self.owners();
         let mut children: Vec<Vec<u32>> = vec![Vec::new(); owners as usize];
         let mut roots = Vec::new();
@@ -131,8 +131,8 @@ impl Core<'_> {
                 None => roots.push(owner),
             }
         }
-        let mut active: std::collections::HashMap<u32, u32> = std::collections::HashMap::new();
-        let mut found = std::collections::HashSet::new();
+        let mut active: super::column::Column<u32> = Default::default();
+        let mut found = super::column::PairSet::default();
         let mut stack: Vec<(u32, bool)> =
             roots.into_iter().rev().map(|root| (root, false)).collect();
         while let Some((owner, leaving)) = stack.pop() {

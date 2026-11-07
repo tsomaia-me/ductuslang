@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::ops::Deref;
 
 use crate::semantics::counted_walk::CountedWalk;
@@ -64,7 +63,7 @@ impl CallChain {
 #[derive(Default)]
 pub(crate) struct ChainArena {
     links: Vec<(u32, u32)>,
-    ids: HashMap<(u32, u32), u32>,
+    ids: super::column::PairColumn<u32>,
 }
 
 impl ChainArena {

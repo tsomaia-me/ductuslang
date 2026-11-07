@@ -1583,7 +1583,7 @@ impl Core<'_> {
             }
         }
         let mut pending = vec![(function, refused, vec![call])];
-        let mut seen = std::collections::HashSet::new();
+        let mut seen = super::column::ColumnSet::new();
         while let Some((function, refused, chain)) = pending.pop() {
             if refused.is_empty() || !seen.insert(function) {
                 continue;
@@ -1671,7 +1671,7 @@ impl Core<'_> {
 
     fn refusal_keeps_its_methods(&self, receiver: u32) -> Result<bool, Internal> {
         let mut receiver = receiver;
-        let mut seen = std::collections::HashSet::new();
+        let mut seen = super::column::ColumnSet::new();
         while self.ir.node(receiver)?.0 == Op::Name
             && let DeclRef::Let(at) = self.bound(receiver)?
             && !self.cyclic.get(at as usize).copied().unwrap_or(true)
@@ -1727,7 +1727,7 @@ impl Core<'_> {
 
     fn silences_its_methods(&self, receiver: u32) -> Result<bool, Internal> {
         let mut receiver = receiver;
-        let mut seen = std::collections::HashSet::new();
+        let mut seen = super::column::ColumnSet::new();
         while self.ir.node(receiver)?.0 == Op::Name
             && let DeclRef::Let(at) = self.bound(receiver)?
             && !self.cyclic.get(at as usize).copied().unwrap_or(true)

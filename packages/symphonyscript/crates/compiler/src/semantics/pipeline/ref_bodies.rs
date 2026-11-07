@@ -12,7 +12,7 @@ pub(crate) type Binding = Option<(EvalTy, bool, bool, bool, Option<Fact>, Option
 
 impl Core<'_> {
     pub fn share_ref_bodies(&mut self) -> Result<(), Internal> {
-        let mut reads: HashMap<u32, Vec<u32>> = HashMap::new();
+        let mut reads: super::column::Column<Vec<u32>> = Default::default();
         let mut nodes: Vec<u32> = self.per_inst_paths.iter().collect();
         nodes.sort_unstable();
         for node in nodes {

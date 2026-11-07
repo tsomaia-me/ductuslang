@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use symphonyscript_core::{AttrDefault, Value};
 
 use super::attr_read::AttrRead;
@@ -524,7 +522,7 @@ impl Core<'_> {
         }
     }
 
-    fn path_end(&mut self, node: u32, ends: &HashMap<u32, End>) -> Stage<End> {
+    fn path_end(&mut self, node: u32, ends: &super::column::Column<End>) -> Stage<End> {
         let (_, receiver, field, missing) = self.ir.node(node)?;
         if missing == 1 {
             return Ok(Ok(End::Placeholder));
@@ -679,8 +677,8 @@ impl Core<'_> {
                 return Ok(Err(declined));
             }
         }
-        let mut ends: HashMap<u32, End> = HashMap::new();
-        let mut held: HashMap<u32, Vec<Diagnostic>> = HashMap::new();
+        let mut ends: super::column::Column<End> = Default::default();
+        let mut held: super::column::Column<Vec<Diagnostic>> = Default::default();
         for local in 0..self.ir.op.len() {
             if self.ir.op.get(local) != Some(&Op::Field)
                 || !self.reached.get(local).copied().unwrap_or(false)
@@ -715,7 +713,10 @@ impl Core<'_> {
             }
             ends.insert(node, end);
         }
-        let mut left: Vec<(u32, Vec<Diagnostic>)> = held.into_iter().collect();
+        let mut left: Vec<(u32, Vec<Diagnostic>)> = held
+            .iter()
+            .map(|(node, faults)| (node, faults.clone()))
+            .collect();
         left.sort_by_key(|(node, _)| *node);
         for (_, faults) in left {
             self.diagnostics.extend(faults);
@@ -734,7 +735,7 @@ impl Core<'_> {
         &mut self,
         node: u32,
         before: usize,
-        held: &mut HashMap<u32, Vec<Diagnostic>>,
+        held: &mut super::column::Column<Vec<Diagnostic>>,
     ) -> Result<(), Internal> {
         let drawn = self
             .diagnostics
@@ -913,7 +914,7 @@ impl Core<'_> {
         if self.deferred_to.is_empty() {
             return Ok(false);
         }
-        let mut seen = std::collections::HashSet::new();
+        let mut seen = super::column::ColumnSet::new();
         let mut stack = vec![root];
         while let Some(current) = stack.pop() {
             if !seen.insert(current) {
@@ -964,7 +965,7 @@ impl Core<'_> {
 
 impl Core<'_> {
     fn index_to_wires(&mut self) -> Result<(), Internal> {
-        let mut rows: HashMap<u32, Vec<u32>> = HashMap::new();
+        let mut rows: super::column::Column<Vec<u32>> = Default::default();
         for (at, row) in self.wires.iter().enumerate() {
             rows.entry(row.item)
                 .or_default()
@@ -1167,7 +1168,7 @@ impl Core<'_> {
     pub fn resolve_chosen_paths(&mut self) -> Stage<()> {
         let mut deferred = std::mem::take(&mut self.deferred_to);
         deferred.sort_unstable();
-        let mut seen: HashMap<u32, (End, Option<EvalTy>)> = HashMap::new();
+        let mut seen: super::column::Column<(End, Option<EvalTy>)> = Default::default();
         let (mut resolved, mut chose) = (Vec::new(), false);
         for (node, wire) in deferred {
             let (segments, wires) = self.segments_to_wire(node)?;
@@ -1720,7 +1721,7 @@ impl Core<'_> {
     }
 
     fn use_paths_in(&mut self, pattern: u32, env: u32, nodes: &[(u32, u32)]) -> Stage<()> {
-        let mut ends: HashMap<u32, End> = HashMap::new();
+        let mut ends: super::column::Column<End> = Default::default();
         for (at, node) in nodes {
             if *at != pattern {
                 continue;
@@ -1913,7 +1914,7 @@ enum Written {
 
 impl Core<'_> {
     pub fn written_paths(&mut self, pattern: u32) -> Result<(), Internal> {
-        let mut ends: HashMap<u32, Written> = HashMap::new();
+        let mut ends: super::column::Column<Written> = Default::default();
         for local in 0..self.ir.op.len() {
             if self.ir.op.get(local) != Some(&Op::Field) {
                 continue;
@@ -2307,10 +2308,10 @@ impl Core<'_> {
             return Ok(*known);
         }
         let mut lets = vec![at];
-        let mut seen = std::collections::HashSet::new();
+        let mut seen = super::column::ColumnSet::new();
         let found = self.path_free_walk(&mut lets, &mut seen);
         let free = found?;
-        for at in seen {
+        for at in seen.iter() {
             if free {
                 self.path_free.insert(at, true);
             }
@@ -2322,7 +2323,7 @@ impl Core<'_> {
     fn path_free_walk(
         &self,
         lets: &mut Vec<u32>,
-        seen: &mut std::collections::HashSet<u32>,
+        seen: &mut super::column::ColumnSet,
     ) -> Result<bool, Internal> {
         while let Some(at) = lets.pop() {
             if !seen.insert(at) {

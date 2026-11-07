@@ -1,5 +1,3 @@
-use std::collections::HashSet;
-
 use super::core::Core;
 use super::core_value::CoreValue;
 use super::decl_ref::DeclRef;
@@ -149,7 +147,7 @@ impl Core<'_> {
     ) -> Result<Vec<u32>, Internal> {
         let mut found = Vec::new();
         let mut roots = vec![root];
-        let mut lets = HashSet::new();
+        let mut lets = super::column::ColumnSet::new();
         while let Some(root) = roots.pop() {
             for node in self.postorder(root)? {
                 if self.ir.node(node)?.0 != Op::Name {

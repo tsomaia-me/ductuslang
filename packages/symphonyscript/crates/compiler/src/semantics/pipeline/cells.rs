@@ -163,8 +163,8 @@ impl Core<'_> {
         if let Some(Some(known)) = self.reads_cell.get(at as usize) {
             return Ok(*known);
         }
-        let mut seen = std::collections::HashSet::new();
-        let mut seen_roots = std::collections::HashSet::new();
+        let mut seen = super::column::ColumnSet::new();
+        let mut seen_roots = super::column::PairSet::default();
         let mut stack = vec![at];
         let mut paths = Vec::new();
         let mut found = false;
@@ -581,7 +581,7 @@ impl Core<'_> {
 
 impl Core<'_> {
     fn reads_only_annotated_cells(&self, at: u32) -> Result<bool, Internal> {
-        let mut seen = std::collections::HashSet::new();
+        let mut seen = super::column::ColumnSet::new();
         let mut stack = vec![at];
         while let Some(current) = stack.pop() {
             if !seen.insert(current) {
@@ -617,7 +617,7 @@ impl Core<'_> {
 
 impl Core<'_> {
     fn reads_cell_directly(&self, root: u32) -> Result<bool, Internal> {
-        let mut seen = std::collections::HashSet::new();
+        let mut seen = super::column::ColumnSet::new();
         let mut stack = vec![root];
         while let Some(current) = stack.pop() {
             if !seen.insert(current) {

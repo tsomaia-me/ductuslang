@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::VecDeque;
 
 use super::bound_form::BoundForm;
 use super::call_chain::CallChain;
@@ -42,7 +42,7 @@ struct Reach {
 }
 
 struct Walk {
-    cells: HashMap<u32, Piecewise>,
+    cells: super::column::Column<Piecewise>,
     frames: Vec<(u32, Vec<Option<Extent>>)>,
     checking: Checking,
     reached: Vec<Reach>,
@@ -52,7 +52,7 @@ struct Walk {
 impl Walk {
     fn new(checking: Checking) -> Walk {
         Walk {
-            cells: HashMap::new(),
+            cells: Default::default(),
             frames: Vec::new(),
             checking,
             reached: Vec::new(),
@@ -179,7 +179,7 @@ impl Core<'_> {
         Ok(self.cell_capacities.get(&at).copied())
     }
 
-    fn solve_alone(&mut self) -> Result<HashSet<u32>, Internal> {
+    fn solve_alone(&mut self) -> Result<super::column::ColumnSet, Internal> {
         self.solving_cells = true;
         let outer = std::mem::replace(&mut self.inst, NONE);
         let settled = self.solve_cells();
@@ -188,7 +188,7 @@ impl Core<'_> {
         settled
     }
 
-    fn solved_cells(&mut self) -> Result<HashSet<u32>, Internal> {
+    fn solved_cells(&mut self) -> Result<super::column::ColumnSet, Internal> {
         match self.solved_cells.take() {
             Some(covered) => {
                 let faults = std::mem::take(&mut self.solved_faults);
@@ -217,7 +217,7 @@ impl Core<'_> {
         Ok(fact.dims.first() == Some(&ANY_LENGTH) || self.variable_length(root)?)
     }
 
-    fn solve_cells(&mut self) -> Result<HashSet<u32>, Internal> {
+    fn solve_cells(&mut self) -> Result<super::column::ColumnSet, Internal> {
         let count = u32::try_from(self.ir.cells.len()).unwrap_or(0);
         let mut members = Vec::new();
         for at in 0..count {
@@ -226,7 +226,7 @@ impl Core<'_> {
                 members.push(at);
             }
         }
-        let positions: HashMap<u32, u32> = members
+        let positions: super::column::Column<u32> = members
             .iter()
             .enumerate()
             .map(|(position, at)| (*at, u32::try_from(position).unwrap_or(NONE)))
@@ -252,7 +252,7 @@ impl Core<'_> {
                 targets
             })
             .collect();
-        let mut covered = HashSet::new();
+        let mut covered = super::column::ColumnSet::new();
         for component in strongly_connected(&edges) {
             let group: Vec<u32> = component
                 .iter()
@@ -381,7 +381,7 @@ impl Core<'_> {
             .iter()
             .map(|root| {
                 Ok(self
-                    .extent_in(*root, &mut walk, &mut HashMap::new())?
+                    .extent_in(*root, &mut walk, &mut Default::default())?
                     .capacity()
                     .start()
                     .floor())
@@ -406,7 +406,7 @@ impl Core<'_> {
         let mut run: Option<Ratio> = None;
         for ((root, after), slope) in roots.iter().zip(next).zip(direction) {
             let function = self
-                .extent_in(*root, &mut walk, &mut HashMap::new())?
+                .extent_in(*root, &mut walk, &mut Default::default())?
                 .capacity();
             let shifted = function.add(&Piecewise::affine(*after, *slope).neg());
             if let Some(length) = shifted.zero_run() {
@@ -435,7 +435,7 @@ impl Core<'_> {
         walk.checking = Checking::Joins;
         for at in group {
             let root = self.cell_root(*at)?;
-            self.extent_in(root, &mut walk, &mut HashMap::new())?;
+            self.extent_in(root, &mut walk, &mut Default::default())?;
         }
         if !walk.reached.is_empty() {
             return self.draw_reaches(std::mem::take(&mut walk.reached));
@@ -555,15 +555,15 @@ impl Core<'_> {
         Ok(!array || !self.fact(node)?.dims.is_empty())
     }
 
-    fn length_limits(&mut self, covered: &HashSet<u32>) -> Result<(), Internal> {
-        let mut skipped = HashSet::new();
-        for at in covered {
-            skipped.extend(self.postorder(self.cell_root(*at)?)?);
+    fn length_limits(&mut self, covered: &super::column::ColumnSet) -> Result<(), Internal> {
+        let mut skipped = super::column::ColumnSet::new();
+        for at in covered.iter() {
+            skipped.extend(self.postorder(self.cell_root(at)?)?);
         }
         let mut walk = Walk::new(Checking::Everything);
-        let mut done = HashMap::new();
+        let mut done = super::column::Column::new();
         let first_body_owner = self.functions() + u32::try_from(self.ir.fors.len()).unwrap_or(0);
-        let mut owned: HashMap<u32, Vec<u32>> = HashMap::new();
+        let mut owned: super::column::Column<Vec<u32>> = Default::default();
         for local in 0..self.ir.op.len() {
             CountedWalk::CoreCapacity.step();
             let node = self.ir.base + u32::try_from(local).unwrap_or(0);
@@ -588,7 +588,7 @@ impl Core<'_> {
                 continue;
             };
             self.inst = inst;
-            let mut done = HashMap::new();
+            let mut done = super::column::Column::new();
             for node in nodes {
                 if self.checked_root(node)? {
                     self.extent_in(node, &mut walk, &mut done)?;
@@ -603,10 +603,10 @@ impl Core<'_> {
         &mut self,
         root: u32,
         walk: &mut Walk,
-        done: &mut HashMap<u32, Extent>,
+        done: &mut super::column::Column<Extent>,
     ) -> Result<Extent, Internal> {
-        let mut parts: HashMap<u32, Vec<u32>> = HashMap::new();
-        let mut dependent: HashSet<u32> = HashSet::new();
+        let mut parts: super::column::Column<Vec<u32>> = Default::default();
+        let mut dependent: super::column::ColumnSet = Default::default();
         let caching = walk.checking == Checking::Nothing && walk.frames.is_empty();
         let mut stack = vec![(root, false)];
         while let Some((node, ready)) = stack.pop() {
@@ -959,7 +959,7 @@ impl Core<'_> {
         walk.frames
             .push((function, values.iter().cloned().map(Some).collect()));
         self.push_call(node);
-        let found = self.extent_in(value, walk, &mut HashMap::new());
+        let found = self.extent_in(value, walk, &mut Default::default());
         self.eval_chain.pop();
         walk.frames.pop();
         self.inst = outer;
@@ -1064,7 +1064,7 @@ impl Core<'_> {
         let outer = std::mem::replace(&mut self.inst, body);
         let saved = std::mem::replace(&mut walk.checking, checking);
         walk.frames.push((owner, params));
-        let found = self.extent_in(root, walk, &mut HashMap::new());
+        let found = self.extent_in(root, walk, &mut Default::default());
         walk.frames.pop();
         walk.checking = saved;
         self.inst = outer;
@@ -1086,7 +1086,7 @@ impl Core<'_> {
             self.inst = inst;
             let mut walk = Walk::new(Checking::Nothing);
             walk.accumulators = true;
-            self.extent_in(node, &mut walk, &mut HashMap::new())?;
+            self.extent_in(node, &mut walk, &mut Default::default())?;
         }
         self.draw_through_callers(own)
     }
@@ -1101,7 +1101,7 @@ impl Core<'_> {
         self.inst = inst;
         let mut walk = Walk::new(Checking::Nothing);
         walk.accumulators = true;
-        let found = self.extent_in(node, &mut walk, &mut HashMap::new());
+        let found = self.extent_in(node, &mut walk, &mut Default::default());
         self.eval_chain = chain;
         self.own_calls.truncate(depth);
         found?;
@@ -1117,13 +1117,13 @@ impl Core<'_> {
             .map(|((caller, call), body)| (*body, call, caller))
             .collect();
         edges.sort_unstable();
-        let mut callers: HashMap<u32, Vec<(u32, u32)>> = HashMap::new();
+        let mut callers: super::column::Column<Vec<(u32, u32)>> = Default::default();
         for (body, call, caller) in edges {
             callers.entry(body).or_default().push((caller, call));
         }
-        let mut held: HashMap<u32, Vec<Diagnostic>> = HashMap::new();
+        let mut held: super::column::Column<Vec<Diagnostic>> = Default::default();
         let mut reach = Vec::new();
-        let mut seen = HashSet::new();
+        let mut seen = super::column::ColumnSet::new();
         for (inst, found) in own {
             if seen.insert(inst) {
                 reach.push(inst);
@@ -1142,7 +1142,7 @@ impl Core<'_> {
                 }
             }
         }
-        let mut waiting: HashMap<u32, usize> = HashMap::new();
+        let mut waiting: super::column::Column<usize> = Default::default();
         for inst in &reach {
             for (caller, _) in callers.get(inst).map(Vec::as_slice).unwrap_or_default() {
                 if seen.contains(caller) {
@@ -1209,7 +1209,9 @@ impl Core<'_> {
                 continue;
             }
             let mut walk = Walk::new(Checking::Nothing);
-            let holds = self.extent_in(root, &mut walk, &mut HashMap::new())?.held();
+            let holds = self
+                .extent_in(root, &mut walk, &mut Default::default())?
+                .held();
             let capacity = i128::from(capacity);
             if holds <= capacity || holds >= LIMIT {
                 continue;

@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap};
 
 use symphonyscript_core::{Limits, Span, Vocabulary};
 
@@ -211,7 +211,7 @@ pub(crate) struct Core<'a> {
     pub init_args: super::init_read::Index,
     pub init_serial: u64,
     pub cell_capacities: Column<i128>,
-    pub solved_cells: Option<HashSet<u32>>,
+    pub solved_cells: Option<ColumnSet>,
     pub solving_cells: bool,
     pub solved_faults: Vec<crate::diagnostics::Diagnostic>,
     pub extent_cache: Column<super::extent::Extent>,
@@ -424,8 +424,8 @@ impl<'a> Core<'a> {
             group_open: Default::default(),
             read_log: Vec::new(),
             init_reads: Vec::new(),
-            init_open: HashMap::new(),
-            init_args: HashMap::new(),
+            init_open: Default::default(),
+            init_args: Default::default(),
             init_serial: 0,
             cell_capacities: Default::default(),
             solved_cells: None,

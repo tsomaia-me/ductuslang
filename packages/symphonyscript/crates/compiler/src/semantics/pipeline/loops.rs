@@ -511,7 +511,7 @@ impl Core<'_> {
     }
 
     pub fn reaches_cell(&self, root: u32) -> Result<u8, Internal> {
-        let mut seen = std::collections::HashSet::new();
+        let mut seen = super::column::ColumnSet::new();
         let mut stack = vec![(root, false)];
         let mut reached = NOT_A_CELL;
         let mut choice = false;
@@ -519,7 +519,7 @@ impl Core<'_> {
             if !seen.insert(current) {
                 continue;
             }
-            let mut measured = std::collections::HashSet::new();
+            let mut measured = super::column::ColumnSet::new();
             for node in self.deep_postorder(current)?.into_iter().rev() {
                 let (op, receiver, field, _) = self.ir.node(node)?;
                 if measured.contains(&node) {
@@ -686,7 +686,7 @@ impl Core<'_> {
     }
 
     fn holds_kept(&self, root: u32) -> Result<bool, Internal> {
-        let mut seen = std::collections::HashSet::new();
+        let mut seen = super::column::ColumnSet::new();
         let mut stack = vec![root];
         while let Some(current) = stack.pop() {
             if !seen.insert(current) {
@@ -1524,7 +1524,7 @@ impl Core<'_> {
 
 impl Core<'_> {
     fn outside_slice(&self, root: u32) -> Result<bool, Internal> {
-        let mut seen = std::collections::HashSet::new();
+        let mut seen = super::column::ColumnSet::new();
         let mut stack = vec![root];
         while let Some(node) = stack.pop() {
             if !seen.insert(node) {
@@ -1713,7 +1713,7 @@ impl Core<'_> {
 
     fn unrun_destination(&mut self, wire: WireRec) -> Result<(), Internal> {
         let mut node = wire.destination;
-        let mut seen = std::collections::HashSet::new();
+        let mut seen = super::column::ColumnSet::new();
         loop {
             CountedWalk::CoreWireDestination.step();
             let holds_none = match written_destination(self.ir, node)? {

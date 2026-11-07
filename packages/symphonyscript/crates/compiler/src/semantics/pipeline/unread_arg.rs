@@ -1,5 +1,3 @@
-use std::collections::HashSet;
-
 use super::core::{Core, Stage};
 use super::decl_ref::DeclRef;
 use super::leaf::Leaf;
@@ -64,8 +62,8 @@ impl Core<'_> {
         Ok(Ok(()))
     }
 
-    fn read_params(&self) -> Result<HashSet<(u32, u32)>, Internal> {
-        let mut read = HashSet::new();
+    fn read_params(&self) -> Result<super::column::PairSet, Internal> {
+        let mut read = super::column::PairSet::default();
         let base = self.ir.end() - u32::try_from(self.ir.op.len()).unwrap_or(0);
         for local in 0..self.ir.op.len() {
             if self.ir.op.get(local).copied() != Some(Op::Name) {
