@@ -3809,6 +3809,111 @@ fn a_method_of_no_name_on_a_let_holding_a_refused_value_draws_unknown_name_besid
     );
 }
 
+const MEMBERS_OF_SLICES_JOINS_AND_CALLS: [&[&str]; 19] = [
+    &[
+        "let xs = [1, 2, 3]\nlet q = 2\n",
+        "fn f(): [1, 2]\nfn g(a): a\n",
+        "let k: u8 = 252 + xs[1..].size\nClip c:\n    Note/(k)\n",
+    ],
+    &[
+        "let xs = [1, 2, 3]\nlet q = 2\n",
+        "fn f(): [1, 2]\nfn g(a): a\n",
+        "let k: u8 = 252 + (xs + [4]).size\nClip c:\n    Note/(k)\n",
+    ],
+    &[
+        "let xs = [1, 2, 3]\nlet q = 2\n",
+        "fn f(): [1, 2]\nfn g(a): a\n",
+        "let k: u8 = 252 + f().size\nClip c:\n    Note/(k)\n",
+    ],
+    &[
+        "let xs = [1, 2, 3]\nlet q = 2\n",
+        "fn f(): [1, 2]\nfn g(a): a\n",
+        "let k: u8 = 252 + xs[0..2].capacity\nClip c:\n    Note/(k)\n",
+    ],
+    &[
+        "let xs = [1, 2, 3]\nlet q = 2\n",
+        "fn f(): [1, 2]\nfn g(a): a\n",
+        "let k: u8 = 252 + (xs + xs).capacity\nClip c:\n    Note/(k)\n",
+    ],
+    &[
+        "let xs = [1, 2, 3]\nlet q = 2\n",
+        "fn f(): [1, 2]\nfn g(a): a\n",
+        "let k: u8 = 252 + (if true then xs else [1]).size\nClip c:\n    Note/(k)\n",
+    ],
+    &[
+        "let xs = [1, 2, 3]\nlet q = 2\n",
+        "fn f(): [1, 2]\nfn g(a): a\n",
+        "let k: u8 = 252 + (if false then xs else [1]).size\nClip c:\n    Note/(k)\n",
+    ],
+    &[
+        "let xs = [1, 2, 3]\nlet q = 2\n",
+        "fn f(): [1, 2]\nfn g(a): a\n",
+        "let k: u8 = 252 + xs[1..][0..1].size\nClip c:\n    Note/(k)\n",
+    ],
+    &[
+        "let xs = [1, 2, 3]\nlet q = 2\n",
+        "fn f(): [1, 2]\nfn g(a): a\n",
+        "let k: u8 = 252 + g(xs).size\nClip c:\n    Note/(k)\n",
+    ],
+    &[
+        "let xs = [1, 2, 3]\nlet q = 2\n",
+        "fn f(): [1, 2]\nfn g(a): a\n",
+        "let k: u8 = 252 + (xs + [4]).capacity\nClip c:\n    Note/(k)\n",
+    ],
+    &[
+        "let xs = [1, 2, 3]\nlet q = 2\n",
+        "fn f(): [1, 2]\nfn g(a): a\n",
+        "let k: u8 = 252 + xs[0].size\nClip c:\n    Note/(k)\n",
+    ],
+    &[
+        "let xs = [1, 2, 3]\nlet q = 2\n",
+        "fn f(): [1, 2]\nfn g(a): a\n",
+        "let k: u8 = 252 + (1 + 2).size\nClip c:\n    Note/(k)\n",
+    ],
+    &[
+        "let xs = [1, 2, 3]\nlet q = 2\n",
+        "fn f(): [1, 2]\nfn g(a): a\n",
+        "let k: u8 = 252 + (xs + [true]).size\nClip c:\n    Note/(k)\n",
+    ],
+    &[
+        "let xs = [1, 2, 3]\nlet q = 2\n",
+        "fn f(): [1, 2]\nfn g(a): a\n",
+        "let k: u8 = 252 + xs[5..].size\nClip c:\n    Note/(k)\n",
+    ],
+    &[
+        "let xs = [1, 2, 3]\nlet q = 2\n",
+        "fn f(): [1, 2]\nfn g(a): a\n",
+        "let k: u8 = 252 + [[1, 2], [3, 4]][0].size\nClip c:\n    Note/(k)\n",
+    ],
+    &[
+        "let xs = [1, 2, 3]\nlet q = 2\n",
+        "fn f(): [1, 2]\nfn g(a): a\n",
+        "let k: u8 = 252 + xs[0..q].size\nClip c:\n    Note/(k)\n",
+    ],
+    &[
+        "fn h(a): (a + [1]).size\n",
+        "let k: u8 = 250 + h([1, 2]) + h([1, 2, 3, 4])\nClip c:\n    Note/(k)\n",
+    ],
+    &[
+        "let xs = [1, 2, 3]\n",
+        "state s(1)\nstate t = s + (xs + [1]).size\n",
+    ],
+    &[
+        "let xs = [1, 2, 3]\n",
+        "Clip c:\n    Note/((xs + [4]).size)\n    Note/(f().size)\n",
+        "fn f(): [1, 2]\n",
+    ],
+];
+
+#[test]
+fn a_size_or_capacity_of_a_slice_a_join_a_call_or_a_choice_is_its_compile_time_length_beside_a_valid_twin_in_every_order()
+ {
+    assert_eq!(
+        same_as_the_old_engine(&MEMBERS_OF_SLICES_JOINS_AND_CALLS),
+        420
+    );
+}
+
 const NESTED_USE_FORM_FAULTS: [&[&str]; 4] = [
     &[
         "pattern V():\n    U\n",

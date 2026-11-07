@@ -464,6 +464,12 @@ impl Core<'_> {
                 Err(declined) => return Ok(Err(declined)),
             },
             Op::Field if self.array_members.contains_key(&node) => Fact::scalar(Leaf::Int),
+            Op::Field if self.expr_members.contains(&node) => {
+                match self.expr_member_fact(node, a)? {
+                    Ok(fact) => fact,
+                    Err(declined) => return Ok(Err(declined)),
+                }
+            }
             Op::Field if self.cell_sizes.contains_key(&node) => {
                 let at = self.cell_sizes.get(&node).copied().unwrap_or(NONE);
                 match self.cell_size_fact(node, at)? {
@@ -1333,6 +1339,42 @@ impl Core<'_> {
 }
 
 impl Core<'_> {
+    fn expr_member_fact(&mut self, node: u32, receiver: u32) -> Stage<Fact> {
+        let fact = match self.ensure_typed(receiver)? {
+            Ok(fact) => fact,
+            Err(declined) => return Ok(Err(declined)),
+        };
+        let known = fact
+            .dims
+            .first()
+            .is_some_and(|length| *length != ANY_LENGTH);
+        if !known && !fact.node && matches!(fact.leaf, Leaf::Placeholder | Leaf::Error) {
+            return Ok(Ok(Fact::PLACEHOLDER));
+        }
+        if fact.node || self.is_reactive(receiver)? {
+            return Ok(Err(Declined(Reason::Member)));
+        }
+        match fact.dims.first().copied() {
+            Some(length) if length != ANY_LENGTH => {
+                self.array_members.insert(node, i128::from(length));
+                Ok(Ok(Fact::scalar(Leaf::Int)))
+            }
+            Some(_) => Ok(Err(Declined(Reason::Member))),
+            None => {
+                let (_, _, field, _) = self.ir.node(node)?;
+                let text = self.ir.name_text(field).unwrap_or_default().to_string();
+                self.draw_at(
+                    Code::UnknownAttribute,
+                    node,
+                    format!(
+                        "`.{text}` reads an attribute of an instance or a wire, and this is a value"
+                    ),
+                )?;
+                Ok(Ok(Fact::PLACEHOLDER))
+            }
+        }
+    }
+
     fn cell_size_fact(&mut self, node: u32, at: u32) -> Stage<Fact> {
         let (_, _, field, _) = self.ir.node(node)?;
         let text = self.ir.name_text(field).unwrap_or_default().to_string();

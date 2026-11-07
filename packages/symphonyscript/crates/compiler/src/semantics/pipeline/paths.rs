@@ -573,6 +573,12 @@ impl Core<'_> {
         } {
             self.array_members.insert(node, i128::from(count));
             End::Value
+        } else if matches!(
+            self.ir.name_text(field).unwrap_or_default(),
+            "size" | "capacity"
+        ) {
+            self.expr_members.insert(node);
+            End::Value
         } else {
             return Ok(Err(Declined(Reason::Member)));
         };
