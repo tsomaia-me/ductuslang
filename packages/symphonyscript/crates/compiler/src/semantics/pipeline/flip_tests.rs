@@ -2988,3 +2988,19 @@ fn an_array_lets_attribute_other_than_its_size_or_capacity_draws_unknown_attribu
  {
     assert_eq!(same_as_the_old_engine(&ARRAY_LET_ATTRIBUTES), 72);
 }
+
+const LET_MEMBER_READS: [&[&str]; 4] = [
+    &[
+        "let xs = [1, 2]\n",
+        "Clip c:\n    Note/(xs.kind + xs.past)\n",
+    ],
+    &["let xs = [1, 2]\n", "Clip c:\n    Note/(xs.map)\n"],
+    &["let x = 1\n", "Clip c:\n    Note/(x.foo)\n"],
+    &["let x = 1\n", "Clip c | gain=x.bar:\n    Note/(x)\n"],
+];
+
+#[test]
+fn a_lets_member_read_draws_unknown_attribute_or_an_arrays_map_unbuilt_construct_beside_a_valid_twin_in_every_order()
+ {
+    assert_eq!(same_as_the_old_engine(&LET_MEMBER_READS), 24);
+}

@@ -1948,7 +1948,11 @@ impl Core<'_> {
             .name(field)
             .and_then(|entry| self.decl.get(entry.sym.0 as usize))
             .is_some_and(|decl| *decl != DeclRef::None);
-        if member && numeric && fact.dims.is_empty() && !declared {
+        let special = matches!(
+            text.as_str(),
+            "bytes" | "map" | "kind" | "past" | "stepped" | "dropped"
+        );
+        if (member || !special) && numeric && fact.dims.is_empty() && !declared {
             self.draw_at(
                 Code::UnknownAttribute,
                 node,
@@ -1958,11 +1962,25 @@ impl Core<'_> {
             )?;
             return Ok(Ok(End::Value));
         }
-        let special = matches!(
-            text.as_str(),
-            "bytes" | "map" | "kind" | "past" | "stepped" | "dropped"
-        );
-        if !member && !special && numeric && !fact.dims.is_empty() {
+        if numeric && !fact.dims.is_empty() && text == "map" {
+            self.draw_at(
+                Code::UnbuiltConstruct,
+                node,
+                "an array's `map` (SPEC §5.7) is a construct this compiler does not build",
+            )?;
+            return Ok(Ok(End::Placeholder));
+        }
+        let function = self
+            .ir
+            .name(field)
+            .and_then(|entry| self.decl.get(entry.sym.0 as usize))
+            .is_some_and(|decl| matches!(decl, DeclRef::Fn(_)));
+        if !member
+            && !function
+            && !matches!(text.as_str(), "bytes" | "dropped")
+            && numeric
+            && !fact.dims.is_empty()
+        {
             self.draw_at(
                 Code::UnknownAttribute,
                 node,
