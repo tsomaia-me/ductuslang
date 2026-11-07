@@ -451,6 +451,17 @@ impl<T> PairColumn<T> {
     }
 }
 
+impl<T> TripleColumn<T> {
+    pub fn or_insert_with(&mut self, key: (u32, u32, u32), value: impl FnOnce() -> T) -> &mut T {
+        let len = &mut self.len;
+        let row = self.rows.or_insert_with(key.0, PairColumn::default);
+        if !row.contains_key(&(key.1, key.2)) {
+            *len += 1;
+        }
+        row.or_insert_with((key.1, key.2), value)
+    }
+}
+
 impl PairSet {
     pub fn iter(&self) -> impl Iterator<Item = (u32, u32)> + '_ {
         self.held.iter().map(|(key, ())| key)

@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 
 use symphonyscript_core::{Limits, Span, Vocabulary};
 
@@ -26,11 +26,7 @@ use crate::semantics::operators::EvalTy;
 
 pub(crate) type Stage<T> = Result<Result<T, Declined>, Internal>;
 
-pub(crate) type UseKey = (u32, usize, Vec<u32>, Vec<u32>);
-
 pub(crate) type BodyKey = (u32, u32, Vec<Fact>, Vec<bool>);
-
-pub(crate) type UseValue = ((bool, u32), CoreValue);
 
 pub(crate) struct Core<'a> {
     pub ir: &'a FlatIr,
@@ -89,7 +85,8 @@ pub(crate) struct Core<'a> {
     pub top_instances: Vec<u32>,
     pub store: Store,
     pub let_values: Vec<[Option<CoreValue>; 7]>,
-    pub uses: BTreeMap<UseKey, UseValue>,
+    pub uses: TripleColumn<super::consistency::UseRow>,
+    pub use_paths: ChainArena,
     pub fold_steps: u64,
     pub stop: Option<(usize, Diagnostic)>,
     pub fold_nodes: Vec<u32>,
@@ -227,7 +224,7 @@ pub(crate) struct Core<'a> {
     pub unit_feeds: Vec<(u32, symphonyscript_core::FamilyId, usize, u32)>,
     pub taker_set: TripleSet,
     pub unit_reaches: TripleColumn<std::rc::Rc<super::unit_reach::UnitReach>>,
-    pub unit_let_values: HashMap<(u32, usize, symphonyscript_core::FamilyId, usize), CoreValue>,
+    pub unit_let_values: TripleColumn<Column<CoreValue>>,
     pub unit_conflicted: TripleSet,
     pub cycle_through_refused: bool,
     pub unbound_nodes: ColumnSet,
@@ -307,7 +304,8 @@ impl<'a> Core<'a> {
             top_instances: Vec::new(),
             store: Store::default(),
             let_values: vec![[None, None, None, None, None, None, None]; ir.lets.len()],
-            uses: BTreeMap::new(),
+            uses: Default::default(),
+            use_paths: ChainArena::default(),
             fold_steps: 0,
             stop: None,
             fold_nodes: vec![NONE; ir.fors.len()],
@@ -445,7 +443,7 @@ impl<'a> Core<'a> {
             unit_feeds: Vec::new(),
             taker_set: Default::default(),
             unit_reaches: Default::default(),
-            unit_let_values: HashMap::new(),
+            unit_let_values: Default::default(),
             unit_conflicted: Default::default(),
             cycle_through_refused: false,
             unbound_nodes: Default::default(),

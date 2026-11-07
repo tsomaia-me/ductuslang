@@ -21,6 +21,14 @@ use crate::semantics::operators::{
 };
 use symphonyscript_core::BinaryOp;
 
+fn unit_let_key(at: u32, ty: EvalTy, family: symphonyscript_core::FamilyId) -> (u32, u32, u32) {
+    (
+        at,
+        super::column::dense(class(ty)),
+        super::column::dense(family.index()),
+    )
+}
+
 pub(crate) fn class(ty: EvalTy) -> usize {
     match ty {
         EvalTy::F32 | EvalTy::DefaultF32 => 1,
@@ -82,7 +90,8 @@ impl Core<'_> {
         match unit {
             Some((family, unit)) => self
                 .unit_let_values
-                .get(&(at, class(ty), family, unit))
+                .get(&unit_let_key(at, ty, family))
+                .and_then(|units| units.get(&super::column::dense(unit)))
                 .cloned(),
             None => self.memo(at, ty),
         }
@@ -735,7 +744,11 @@ impl Core<'_> {
                         };
                         if let Some((family, unit)) = frame_unit {
                             self.unit_let_values
-                                .insert((at, class(frame_ty), family, unit), value.clone());
+                                .or_insert_with(
+                                    unit_let_key(at, frame_ty, family),
+                                    Default::default,
+                                )
+                                .insert(super::column::dense(unit), value.clone());
                         } else if let Some(slot) = self
                             .let_values
                             .get_mut(at as usize)
@@ -1397,11 +1410,8 @@ impl Core<'_> {
                         && !matches!(value, Value::Array(_))
                     {
                         let value = value.clone();
-                        let links = self.use_links.iter().map(|(item, _)| *item).collect();
                         CountedWalk::CoreCallChain.step_by(self.eval_chain.len());
-                        self.uses
-                            .entry((read, class(read_ty), self.eval_chain.to_vec(), links))
-                            .or_insert(((element, target), value));
+                        self.record_use(read, class(read_ty), (element, target), value);
                     }
                 }
                 Step::Owning(owning) => self.owning = owning,

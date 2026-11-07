@@ -6,7 +6,7 @@ use super::declined::Declined;
 use super::reason::Reason;
 use super::run::Run;
 use super::stages::Stages;
-use crate::diagnostics::Code;
+use crate::diagnostics::Diagnostic;
 use crate::semantics::Internal;
 use crate::semantics::collection::Variants;
 use crate::semantics::ir::flat::FlatIr;
@@ -141,34 +141,48 @@ fn finished(mut core: Core<'_>) -> Run {
         core.diagnostics.truncate(at);
         core.diagnostics.push(diagnostic);
     }
-    let mut seen: std::collections::HashMap<(Code, u32, u32, Option<u32>), Vec<usize>> =
-        std::collections::HashMap::new();
-    let mut kept = Vec::new();
-    for (at, diagnostic) in core.diagnostics.iter().enumerate() {
-        let same = seen
-            .entry((
-                diagnostic.code,
-                diagnostic.span.range.start,
-                diagnostic.span.range.end,
-                diagnostic
-                    .related
-                    .last()
-                    .map(|related| related.span.range.start),
-            ))
-            .or_default();
-        if same
+    let key = |diagnostic: &Diagnostic| {
+        (
+            diagnostic.code,
+            diagnostic.span.range.start,
+            diagnostic.span.range.end,
+            diagnostic
+                .related
+                .last()
+                .map(|related| related.span.range.start),
+        )
+    };
+    let mut order: Vec<(_, usize)> = core
+        .diagnostics
+        .iter()
+        .enumerate()
+        .map(|(at, diagnostic)| (key(diagnostic), at))
+        .collect();
+    order.sort_unstable();
+    let mut kept = vec![false; core.diagnostics.len()];
+    let mut group: Vec<usize> = Vec::new();
+    let mut group_key = None;
+    for (held, at) in order {
+        if group_key != Some(held) {
+            group.clear();
+            group_key = Some(held);
+        }
+        let diagnostic = core.diagnostics.get(at);
+        if group
             .iter()
-            .any(|earlier| core.diagnostics.get(*earlier) == Some(diagnostic))
+            .any(|earlier| core.diagnostics.get(*earlier) == diagnostic)
         {
             continue;
         }
-        same.push(at);
-        kept.push(at);
+        group.push(at);
+        if let Some(keep) = kept.get_mut(at) {
+            *keep = true;
+        }
     }
     let mut diagnostics = std::mem::take(&mut core.diagnostics);
     let mut at = 0;
     diagnostics.retain(|_| {
-        let keep = kept.binary_search(&at).is_ok();
+        let keep = kept.get(at).copied().unwrap_or(false);
         at += 1;
         keep
     });

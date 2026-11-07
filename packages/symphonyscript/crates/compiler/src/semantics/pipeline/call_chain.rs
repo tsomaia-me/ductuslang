@@ -77,6 +77,10 @@ impl ChainArena {
         id
     }
 
+    pub fn path(&mut self, items: impl Iterator<Item = u32>) -> u32 {
+        items.fold(ROOT_CHAIN, |parent, item| self.intern(parent, item))
+    }
+
     pub fn push(&mut self, chain: &mut CallChain, call: u32) {
         CountedWalk::CoreCallChain.step();
         let id = self.intern(chain.id(), call);
