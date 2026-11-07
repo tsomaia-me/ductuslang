@@ -53,7 +53,9 @@ impl Core<'_> {
             let root = self.wire_rec(row.item)?.destination;
             let saved = self.enter_env(row.env);
             let mut found = Vec::new();
+            self.choosing = u32::try_from(at).unwrap_or(u32::MAX);
             let chosen = self.chosen_destination(root, &mut found);
+            self.choosing = NONE;
             self.leave_env(saved);
             let choice = match chosen? {
                 Ok(choice) => choice,
@@ -149,6 +151,9 @@ impl Core<'_> {
                 None => self.candidate_row(node)?,
             };
             if target == NONE {
+                if self.choosing != NONE && self.names_a_wire(node)? {
+                    self.wire_destinations.insert(self.choosing);
+                }
                 return Ok(Ok(Choice::Unknown));
             }
             found.push(target);

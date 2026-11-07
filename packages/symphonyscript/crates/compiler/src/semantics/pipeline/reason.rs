@@ -23,5 +23,4 @@ pub(crate) enum Reason {
     LoopHead,
     BodyItem,
     PatternUse,
-    WireName,
 }

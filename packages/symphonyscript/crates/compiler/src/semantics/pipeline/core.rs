@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use symphonyscript_core::{Limits, Span, Vocabulary};
 
@@ -130,6 +130,8 @@ pub(crate) struct Core<'a> {
     pub unrun_to_wires: Vec<(WireRec, u32)>,
     pub to_choices: HashMap<u32, EvalTy>,
     pub wire_now: u32,
+    pub wire_destinations: BTreeSet<u32>,
+    pub choosing: u32,
     pub feed_env: u32,
     pub row_reads: BTreeMap<(u32, u32), u32>,
     pub choice_reads: std::collections::BTreeSet<(u32, u32)>,
@@ -338,6 +340,8 @@ impl<'a> Core<'a> {
             unrun_to_wires: Vec::new(),
             to_choices: HashMap::new(),
             wire_now: NONE,
+            wire_destinations: BTreeSet::new(),
+            choosing: NONE,
             feed_env: NONE,
             row_reads: BTreeMap::new(),
             choice_reads: std::collections::BTreeSet::new(),

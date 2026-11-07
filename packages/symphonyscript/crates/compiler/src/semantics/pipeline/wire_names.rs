@@ -5,7 +5,7 @@ use super::core::{Core, Stage};
 use crate::diagnostics::Code;
 use crate::semantics::Internal;
 use crate::semantics::counted_walk::CountedWalk;
-use crate::semantics::ir::flat::{ABSENT, AttrForm, ItemRec, NONE, Op};
+use crate::semantics::ir::flat::{ABSENT, AttrForm, NONE};
 use crate::semantics::operators::EvalTy;
 
 impl Core<'_> {
@@ -248,44 +248,6 @@ impl Core<'_> {
         self.attr_values
             .push([None, None, None, None, None, None, None]);
         Ok(Ok(at))
-    }
-}
-
-impl Core<'_> {
-    pub fn reads_a_wire_name(&self) -> Result<bool, Internal> {
-        let mut named = std::collections::HashSet::new();
-        for item in &self.ir.items {
-            if let ItemRec::Wire(wire) = item
-                && self.ir.named(wire.as_name)
-                && let Some(entry) = self.ir.name(wire.as_name)
-            {
-                named.insert(entry.sym.0);
-            }
-        }
-        if named.is_empty() {
-            return Ok(false);
-        }
-        let receivers: std::collections::HashSet<u32> = (0..self.ir.op.len())
-            .filter(|local| self.ir.op.get(*local) == Some(&Op::Field))
-            .filter_map(|local| self.ir.a.get(local).copied())
-            .collect();
-        for local in 0..self.ir.op.len() {
-            if self.ir.op.get(local) != Some(&Op::Name)
-                || !self.reached.get(local).copied().unwrap_or(false)
-            {
-                continue;
-            }
-            let node = self.ir.base + u32::try_from(local).unwrap_or(u32::MAX);
-            if receivers.contains(&node) {
-                continue;
-            }
-            let name = *self.ir.a.get(local).ok_or(Internal::missed("IR name"))?;
-            let entry = self.ir.name(name).ok_or(Internal::missed("IR name"))?;
-            if named.contains(&entry.sym.0) {
-                return Ok(true);
-            }
-        }
-        Ok(false)
     }
 }
 

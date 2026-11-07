@@ -4360,3 +4360,39 @@ fn a_method_of_no_name_on_a_parameter_bound_through_a_second_call_to_a_refused_a
  {
     assert_eq!(same_as_the_old_engine(&METHODS_THROUGH_A_SECOND_CALL), 60);
 }
+
+const WIRE_NAMES_AS_VALUES_AND_DESTINATIONS: [&[&str]; 15] = [
+    &["Clip a\nClip c:\n    Plays as w: a\n    Note/(w)\n"],
+    &[
+        "Clip a\nClip c:\n    Plays as w: a\n",
+        "Clip d:\n    Note/(w)\n",
+    ],
+    &["Clip a\nClip c:\n    Plays as w: a\n    Plays: w\n"],
+    &["Clip a\nClip c:\n    Plays as w: a\n", "let x = w\n"],
+    &["Clip a\nClip c:\n    Plays as w: a\n    Note/(w + 1)\n"],
+    &["Clip a\nClip c:\n    Plays as w: a\n    Note when w\n"],
+    &["Clip a\nClip c:\n    Plays as w: a\n    Plays as v: w\n"],
+    &["Clip a\nClip c:\n    Plays as w: a\n    Plays: if true then w else a\n"],
+    &["Clip a\nClip c:\n    Plays as w: a\n    Plays: [w, a][1]\n"],
+    &[
+        "state s(true)\n",
+        "Clip a\nClip c:\n    Plays as w: a\n    Plays: if s then w else a\n",
+    ],
+    &[
+        "let w = 1\n",
+        "Clip a\nClip c:\n    Plays as w: a\n    Note/(w)\n",
+    ],
+    &["Clip a\nClip c:\n    Plays as w | gain=0.5: a\n    Plays as v | gain=to.gain: w\n"],
+    &["Clip a\nClip c:\n    Plays as w: a\n    for i in 0..2:\n        Note/(w)\n"],
+    &["Clip a\nClip c:\n    Plays as w: a\n    Note | velocity=w\n"],
+    &["Clip a\nClip c:\n    Plays as w: w\n"],
+];
+
+#[test]
+fn a_named_wires_name_read_as_a_value_or_a_destination_draws_what_a_reference_draws_and_a_destination_naming_it_draws_destination_type_beside_a_valid_twin_in_every_order()
+ {
+    assert_eq!(
+        same_as_the_old_engine(&WIRE_NAMES_AS_VALUES_AND_DESTINATIONS),
+        46
+    );
+}
