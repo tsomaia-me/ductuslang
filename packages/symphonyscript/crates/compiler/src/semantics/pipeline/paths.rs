@@ -447,7 +447,8 @@ impl Core<'_> {
                     Ok(end) => end,
                     Err(declined) => return Ok(Err(declined)),
                 },
-                DeclRef::None | DeclRef::Duplicate | DeclRef::Fn(_) | DeclRef::Pattern(_) => {
+                DeclRef::None | DeclRef::Duplicate | DeclRef::Fn(_) => End::Placeholder,
+                DeclRef::Pattern(_) => {
                     return Ok(Err(Declined(Reason::Member)));
                 }
             }

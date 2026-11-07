@@ -3073,3 +3073,21 @@ fn a_lets_member_read_draws_unknown_attribute_or_an_arrays_map_unbuilt_construct
  {
     assert_eq!(same_as_the_old_engine(&LET_MEMBER_READS), 42);
 }
+
+const PATHS_FROM_NAMES_OF_NO_INSTANCE: [&[&str]; 9] = [
+    &["Clip c:\n    Note/(stage.wash)\n"],
+    &["Clip c | gain=stage.wash:\n    Note\n"],
+    &["Scene dusk:\n    Cue/0 Cue/1\n    Dims | depth=0.5: stage.wash\n"],
+    &["Clip c:\n    Note/(foo.bar + 1)\n"],
+    &["fn f(): 1\n", "Clip c:\n    Note/(f.bar)\n"],
+    &["let a = 1\n", "let a = 2\n", "Clip c:\n    Note/(a.bar)\n"],
+    &["Clip c:\n    Note/(stage.wash.x[1] + stage.size)\n"],
+    &["let x = stage.wash\n", "Clip c:\n    Note/(x)\n"],
+    &["fn g(): stage.wash + true\n", "Clip c:\n    Note/(g())\n"],
+];
+
+#[test]
+fn a_path_from_a_name_of_no_instance_is_a_placeholder_beside_its_names_fault_and_a_valid_twin_in_every_order()
+ {
+    assert_eq!(same_as_the_old_engine(&PATHS_FROM_NAMES_OF_NO_INSTANCE), 52);
+}
