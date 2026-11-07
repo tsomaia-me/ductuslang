@@ -575,6 +575,15 @@ impl Core<'_> {
                 )?;
                 return Ok(Ok(End::Value));
             }
+            if self.expr_members.contains(&receiver)
+                && matches!(
+                    self.ir.name_text(field).unwrap_or_default(),
+                    "size" | "capacity" | "bytes"
+                )
+            {
+                self.expr_members.insert(node);
+                return Ok(Ok(End::Value));
+            }
             *ends
                 .get(&receiver)
                 .ok_or(Internal::missed("a path's receiver"))?
@@ -586,7 +595,7 @@ impl Core<'_> {
             End::Value
         } else if matches!(
             self.ir.name_text(field).unwrap_or_default(),
-            "size" | "capacity"
+            "size" | "capacity" | "bytes"
         ) {
             self.expr_members.insert(node);
             End::Value
@@ -2205,6 +2214,10 @@ impl Core<'_> {
         if member && numeric && !fact.dims.is_empty() && length != Some(ANY_LENGTH) {
             self.array_members
                 .insert(node, i128::from(length.unwrap_or(0)));
+            return Ok(Ok(End::Value));
+        }
+        if text == "bytes" && numeric && !fact.dims.is_empty() {
+            self.expr_members.insert(node);
             return Ok(Ok(End::Value));
         }
         let declared = self

@@ -4396,3 +4396,46 @@ fn a_named_wires_name_read_as_a_value_or_a_destination_draws_what_a_reference_dr
         46
     );
 }
+
+const BYTES_OF_INTEGER_ARRAYS: [&[&str]; 13] = [
+    &["let xs = [1, 300]\n", "Clip c:\n    Note/(xs.bytes[1])\n"],
+    &["let xs = [1.5, 2.0]\n", "Clip c:\n    Note/(xs.bytes[0])\n"],
+    &["let xs = [true]\n", "Clip c:\n    Note/(xs.bytes[0])\n"],
+    &["Clip c:\n    Note/([1, -5].bytes[1])\n"],
+    &[
+        "let xs = [i32(1), -5]\nlet ys = xs.bytes\n",
+        "Clip c:\n    Note/(ys[1])\n",
+    ],
+    &["let x = 5\n", "Clip c:\n    Note/(x.bytes[0])\n"],
+    &[
+        "let xs = [1, 300]\n",
+        "Clip c:\n    Note/(xs.bytes.size)\n    Note/([1][xs.bytes.size])\n",
+    ],
+    &[
+        "let xs = [1, 300]\n",
+        "Clip c:\n    Note/(xs.bytes[1] + u8(1))\n",
+    ],
+    &[
+        "let xs = [1, 300]\nlet y: u8 = xs.bytes[1] + 1\n",
+        "Clip c:\n    Note/(y)\n",
+    ],
+    &[
+        "let xs = [-3, 1000, 7]\n",
+        "Clip c:\n    Note/(xs.bytes[0] + xs.bytes[1] + xs.bytes[2])\n",
+    ],
+    &["let xs = [1, 300]\n", "Clip c:\n    Note/(xs.bytes[5])\n"],
+    &[
+        "let xs = [1, 300]\n",
+        "Clip c:\n    Note/(xs.bytes.bytes[0])\n",
+    ],
+    &[
+        "let xs = [1, 2]\n",
+        "Clip c:\n    Note/((xs + xs).bytes[3])\n",
+    ],
+];
+
+#[test]
+fn an_integer_arrays_bytes_saturates_each_element_into_u8_and_another_arrays_draws_operand_type_beside_a_valid_twin_in_every_order()
+ {
+    assert_eq!(same_as_the_old_engine(&BYTES_OF_INTEGER_ARRAYS), 74);
+}

@@ -1437,6 +1437,20 @@ impl Core<'_> {
         }
     }
 
+    fn bytes_value(&mut self, receiver: &CoreValue) -> CoreValue {
+        let Value::Array(array) = receiver else {
+            return Value::Error;
+        };
+        let count = usize::try_from(self.store.len(*array)).unwrap_or(0);
+        let mut bytes = Vec::with_capacity(count);
+        for position in 0..count {
+            CountedWalk::ValueRun.step();
+            let element = self.store.element(*array, position).unwrap_or(Value::Error);
+            bytes.push(crate::semantics::operators::convert(element, EvalTy::U8));
+        }
+        Value::Array(self.store.literal(bytes))
+    }
+
     fn apply(&mut self, node: u32, ty: EvalTy, stack: &mut Vec<CoreValue>) -> Stage<CoreValue> {
         let pop = |stack: &mut Vec<CoreValue>| stack.pop().ok_or(Internal::missed("value stack"));
         let (op, a, b, _) = self.ir.node(node)?;
@@ -1612,6 +1626,10 @@ impl Core<'_> {
             }
             Op::Stepped => Value::Error,
             Op::Variant => self.variant_value(node)?,
+            Op::Field if self.expr_members.contains(&node) && self.is_bytes_member(node)? => {
+                let receiver = pop(stack)?;
+                self.bytes_value(&receiver)
+            }
             Op::Field if self.expr_members.contains(&node) => {
                 pop(stack)?;
                 self.array_members

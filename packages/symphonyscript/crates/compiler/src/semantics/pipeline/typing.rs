@@ -1358,6 +1358,9 @@ impl Core<'_> {
         if fact.node || self.is_reactive(receiver)? {
             return Ok(Err(Declined(Reason::Member)));
         }
+        if !fact.dims.is_empty() && self.is_bytes_member(node)? {
+            return self.bytes_fact(node, &fact);
+        }
         match fact.dims.first().copied() {
             Some(length) if length != ANY_LENGTH => {
                 self.array_members.insert(node, i128::from(length));
@@ -1378,6 +1381,28 @@ impl Core<'_> {
                 Ok(Ok(Fact::PLACEHOLDER))
             }
         }
+    }
+
+    pub fn is_bytes_member(&self, node: u32) -> Result<bool, Internal> {
+        let (op, _, field, _) = self.ir.node(node)?;
+        Ok(op == Op::Field && self.ir.name_text(field) == Some("bytes"))
+    }
+
+    fn bytes_fact(&mut self, node: u32, fact: &Fact) -> Stage<Fact> {
+        if fact.dims.len() > 1 {
+            return Ok(Err(Declined(Reason::Member)));
+        }
+        if !matches!(fact.leaf, Leaf::Int | Leaf::Empty) {
+            self.draw_at(
+                Code::OperandType,
+                node,
+                "`bytes` takes a string or an integer array",
+            )?;
+            return Ok(Ok(Fact::PLACEHOLDER));
+        }
+        let mut bytes = Fact::fixed(Leaf::Int, Some(EvalTy::U8));
+        bytes.dims.clone_from(&fact.dims);
+        Ok(Ok(bytes))
     }
 
     fn cell_size_fact(&mut self, node: u32, at: u32) -> Stage<Fact> {
