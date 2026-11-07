@@ -5646,6 +5646,11 @@ pub const CLASSES: &[Class] = &[
     },
     Class {
         ledger: "476",
+        rule: "a member name written without parentheses on a value whose type has no such member names the function in scope of that name, so `x.name` is `name(x)` (SPEC §5.7: `x.name` resolves to a member of `x`'s own type first and to a function in scope only when the type has no such member) and the program draws what the call draws, its body's faults with the member as the call, where the old engine draws not-a-value at the member (ledger 535: `fn bytes(x): x` with `(64).bytes`, its renamed twin `fn f0(x): x` with `(64).f0`, `fn bytes(x): [1, 2][x]` with `(5).bytes`, `fn f0(x, y): x` with `(64).f0` drawing missing-argument); an array's own `bytes` still wins (`([1, 2]).bytes[0]`)",
+        explains: member_name_naming_a_function,
+    },
+    Class {
+        ledger: "476",
         rule: "a path step naming a child whose placement holds a fault, an unknown kind or a syntax fault on its own line or on its parent's, reads nothing and draws nothing, as the program with the fault repaired reads the child (the repair rule, DECISIONS.md 2026-11-03), where the old engine drops the faulty placement and draws unknown-attribute at the step (`Lampstate as wash` read as `stage.wash`, `Scene dusk (| hold=8:` holding `Cue as first`)",
         explains: step_to_a_faulty_child,
     },
@@ -6833,6 +6838,42 @@ fn step_to_a_region_held_name(seen: &Seen<'_>, change: Change, at: &Drawn) -> bo
                 .map_or(0, |(_, earlier)| earlier.len() - earlier.trim_start().len());
         }
     })
+}
+
+fn function_member(seen: &Seen<'_>, at: &Drawn) -> bool {
+    let text = seen.text(at);
+    text.starts_with('(')
+        && text.rsplit_once(").").is_some_and(|(_, name)| {
+            !name.is_empty()
+                && name.chars().all(|c| c.is_alphanumeric() || c == '_')
+                && seen
+                    .program
+                    .lines()
+                    .any(|line| line.starts_with(&format!("fn {name}(")))
+        })
+}
+
+fn member_name_naming_a_function(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {
+    let lost: Vec<&Drawn> = seen
+        .old
+        .iter()
+        .filter(|drawn| drawn.0 == "not-a-value" && function_member(seen, drawn))
+        .collect();
+    if lost.is_empty() {
+        return false;
+    }
+    match change {
+        Change::Removed => at.0 == "not-a-value" && function_member(seen, at),
+        Change::Added => {
+            lost.iter().any(|drawn| drawn.1 == at.1 && drawn.2 == at.2)
+                || seen
+                    .program
+                    .get(..at.1)
+                    .and_then(|before| before.rsplit('\n').next())
+                    .is_some_and(|line| line.starts_with("fn "))
+        }
+        Change::Restated => false,
+    }
 }
 
 fn capacity_of_a_cell_reading_its_own_history(seen: &Seen<'_>, change: Change, at: &Drawn) -> bool {

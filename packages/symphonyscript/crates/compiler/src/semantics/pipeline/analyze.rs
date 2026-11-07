@@ -39,6 +39,11 @@ pub(crate) fn analyze(inputs: &Inputs<'_>) -> Result<Option<Run>, Internal> {
         Some((owned, calls)) => (owned, calls.as_slice()),
         None => (inputs.ir, &[][..]),
     };
+    let called = super::dot_calls::field_calls(ir);
+    let (ir, fields) = match &called {
+        Some((owned, fields)) => (owned, fields.as_slice()),
+        None => (ir, &[][..]),
+    };
     let looped = super::bundle_fors::bundle_fors(ir);
     let (ir, loops) = match &looped {
         Some((owned, loops)) => (owned, loops.as_slice()),
@@ -54,6 +59,11 @@ pub(crate) fn analyze(inputs: &Inputs<'_>) -> Result<Option<Run>, Internal> {
     let mut core = Core::new(ir, inputs.vocabulary, inputs.variants, inputs.limits);
     core.dot_calls = dotted.iter().copied().collect();
     core.bundle_loops = loops.iter().copied().collect();
+    for (field, call, callee) in fields {
+        core.field_calls.insert(*field, *call);
+        core.field_files.insert(*call, *field);
+        core.field_files.insert(*callee, *field);
+    }
     core.front_end_drawn()?;
     if let Err(reason) = stage(core.collect())? {
         return declined(reason);

@@ -166,6 +166,9 @@ pub(crate) struct Core<'a> {
     pub capacity_members: HashSet<u32>,
     pub history_capacities: HashMap<u32, (u32, i128)>,
     pub dot_calls: HashSet<u32>,
+    pub field_calls: HashMap<u32, u32>,
+    pub field_files: HashMap<u32, u32>,
+    pub delegated: HashSet<u32>,
     pub bundle_loops: HashSet<u32>,
     pub unknown_methods: HashSet<u32>,
     pub function_values: HashSet<u32>,
@@ -384,6 +387,9 @@ impl<'a> Core<'a> {
             capacity_members: HashSet::new(),
             history_capacities: HashMap::new(),
             dot_calls: HashSet::new(),
+            field_calls: HashMap::new(),
+            field_files: HashMap::new(),
+            delegated: HashSet::new(),
             bundle_loops: HashSet::new(),
             unknown_methods: HashSet::new(),
             function_values: HashSet::new(),
@@ -460,6 +466,7 @@ impl<'a> Core<'a> {
     }
 
     pub fn file_of(&self, node: u32) -> u32 {
+        let node = self.field_files.get(&node).copied().unwrap_or(node);
         let at = self.ir.files.partition_point(|file| file.nodes.1 <= node);
         u32::try_from(at).unwrap_or(0)
     }

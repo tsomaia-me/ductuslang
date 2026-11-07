@@ -67,6 +67,9 @@ impl Core<'_> {
                 out.extend([b, c].into_iter().filter(|at| *at != NONE));
             }
             Op::Stepped => out.push(a),
+            Op::Field if self.field_calls.contains_key(&node) => {
+                out.extend(self.field_calls.get(&node).copied());
+            }
             Op::Field if self.expr_members.contains(&node) => out.push(a),
             Op::Call | Op::NamedCall => out.extend(self.arguments(node)?),
             Op::For => out.extend(self.fold_operands(node)?),
@@ -1351,6 +1354,13 @@ impl Core<'_> {
             .is_some_and(|length| *length != ANY_LENGTH);
         if !known && !fact.node && matches!(fact.leaf, Leaf::Placeholder | Leaf::Error) {
             return Ok(Ok(Fact::PLACEHOLDER));
+        }
+        if let Some(call) = self.field_calls.get(&node).copied()
+            && !fact.node
+            && (fact.dims.is_empty() || !self.is_member_path(node)?)
+        {
+            self.delegated.insert(node);
+            return self.ensure_typed(call);
         }
         if let Some(measured) = self.history_member_fact(node, receiver, &fact)? {
             return Ok(Ok(measured));

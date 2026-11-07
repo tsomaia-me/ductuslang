@@ -603,6 +603,9 @@ impl Core<'_> {
         ) {
             self.expr_members.insert(node);
             End::Value
+        } else if self.field_calls.contains_key(&node) {
+            self.expr_members.insert(node);
+            End::Value
         } else {
             return Ok(Err(Declined(Reason::Member)));
         };

@@ -75,3 +75,60 @@ fn names_a_function(ir: &FlatIr, method: u32) -> bool {
         .iter()
         .any(|rec| ir.name(rec.name).is_some_and(|entry| entry.sym == sym))
 }
+
+pub(crate) fn field_calls(ir: &FlatIr) -> Option<(FlatIr, Vec<(u32, u32, u32)>)> {
+    let mut found = Vec::new();
+    for local in 0..ir.op.len() {
+        if ir.op.get(local) != Some(&Op::Field) {
+            continue;
+        }
+        let receiver = *ir.a.get(local)?;
+        let field = *ir.b.get(local)?;
+        let receiver_op = ir
+            .op
+            .get(receiver.checked_sub(ir.base)? as usize)
+            .copied()?;
+        if matches!(receiver_op, Op::Name | Op::Field | Op::To) || ir.c.get(local) == Some(&1) {
+            continue;
+        }
+        let sym = ir.name(field)?.sym;
+        let mut named = ir
+            .fns
+            .iter()
+            .filter(|rec| ir.name(rec.name).is_some_and(|entry| entry.sym == sym));
+        let one = named.next().is_some_and(|rec| rec.params.0 != rec.params.1);
+        if one && named.next().is_none() {
+            found.push(local);
+        }
+    }
+    if found.is_empty() {
+        return None;
+    }
+    let mut owned = ir.clone();
+    let mut calls = Vec::new();
+    for local in found {
+        let field_node = owned.base + u32::try_from(local).ok()?;
+        let receiver = *owned.a.get(local)?;
+        let name = *owned.b.get(local)?;
+        let entry = *owned.name(name)?;
+        let callee = owned.base + u32::try_from(owned.op.len()).ok()?;
+        owned.op.push(Op::Name);
+        owned.a.push(name);
+        owned.b.push(0);
+        owned.c.push(0);
+        owned.lo.push(entry.lo);
+        owned.hi.push(entry.hi);
+        let call = owned.base + u32::try_from(owned.op.len()).ok()?;
+        let start = u32::try_from(owned.kids.len()).ok()?;
+        owned.kids.push(callee);
+        owned.kids.push(receiver);
+        owned.op.push(Op::Call);
+        owned.a.push(callee);
+        owned.b.push(start + 1);
+        owned.c.push(2);
+        owned.lo.push(*owned.lo.get(local)?);
+        owned.hi.push(*owned.hi.get(local)?);
+        calls.push((field_node, call, callee));
+    }
+    Some((owned, calls))
+}

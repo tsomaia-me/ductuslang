@@ -103,6 +103,12 @@ impl Core<'_> {
         if op == Op::Field && self.runtime_to.contains(&node) {
             return Ok(true);
         }
+        if op == Op::Field
+            && self.delegated.contains(&node)
+            && let Some(call) = self.field_calls.get(&node).copied()
+        {
+            return self.is_reactive(call);
+        }
         if op == Op::Field {
             let Some(root) = self.read_root(node)? else {
                 return Ok(self.to_choice(node).is_some());
