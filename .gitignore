@@ -47,3 +47,4 @@ test-output
 .turbo
 target
 local
+.memory/
