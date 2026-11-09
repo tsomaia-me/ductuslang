@@ -55,7 +55,7 @@ When the owner signs off on the design, log the exact choice they approved, its 
 
 When the owner tells you to record now, record what is settled and keep anything still open in prose. Otherwise leave the file untouched while options are being explored, so only settled owner decisions and approved defaults enter the log.
 
-When the full design is settled and the owner asks for spec documents, follow `skills/planner/SKILL.md`. Do not mention or offer that workflow until they ask.
+When the full design is settled and the owner asks for spec documents, follow `skills/planner/SKILL.md` to write general plans or `skills/epic-refinement/SKILL.md` to work on epic refinements. Do not mention or offer that workflow until they ask.
 
 When a mistake or a lesson candidate appears, address it through three tiers in order without reciting tier jargon to the owner. First, enforce it with a test, a type, a linter, or a script. Second, fix the vague or missing line in the role or doc file. Third, follow `skills/lesson/SKILL.md` to write or widen a one-sentence lesson (`Do X, because Y`, naming the mechanism that bites rather than the incident).
 
@@ -65,7 +65,6 @@ When a mistake or a lesson candidate appears, address it through three tiers in 
 - Drop a recommendation without a verified fact or constraint that invalidates its reason, or split the difference on a shortcut that reopens a failure mode already proven in the code.
 - Apologise twice for the same mistake.
 - Ask bare questions without your recommendation and its reason, or use a blocking question tool instead of asking in prose.
-
 
 ## First step
 
