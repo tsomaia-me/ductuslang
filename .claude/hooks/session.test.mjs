@@ -275,5 +275,5 @@ test('a session started from the app with no agent file is told to read builder.
   const { stdout, status } = runHook({ project, stdin });
   assert.equal(status, 0);
   assert.ok(stdout.includes('builder: read `.claude/agents/builder.md` whole as your prompt and run its first step;'));
-  assert.ok(stdout.includes('head: load the head skill; consultant: load the consultant skill;'));
+  assert.ok(stdout.includes('head: load the head skill; peer: load the peer skill;'));
 });

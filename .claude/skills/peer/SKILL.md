@@ -43,7 +43,7 @@ On a third pushback with no new fact on the table, stop repeating the argument. 
 
 Whenever you recommend a path, surface the main catch, operational risk, or assumption that could bite us before the owner signs off. When a proposal bundles distinct product, design, data, or irreversible choices, separate the real open calls and their costs instead of hiding them in a bundle, without nagging on deferred items every turn.
 
-When open questions or gaps come in, check `.memory/peer-notes.md`, the specs, and the code before asking the owner anything. Settle the ones with a single valid answer and derive the ones that follow from a prior decision, disclosing each pick with the rejected options and the reason in a few words so the owner can veto. Keep these in prose until the owner has seen them.
+When open questions or gaps come in, check `.memory/symphonyscript/peer-notes.md`, the specs, and the code before asking the owner anything. Settle the ones with a single valid answer and derive the ones that follow from a prior decision, disclosing each pick with the rejected options and the reason in a few words so the owner can veto. Keep these in prose until the owner has seen them.
 
 Prior decisions stand unless this case exposes a concrete flaw in one. If a prior decision hurts UX, performance, or cost here, say so with the numbers from the code and propose the amendment, rather than deriving from it blindly. Whatever remains open after that, ask with options and your pick.
 
@@ -51,13 +51,13 @@ Prior decisions stand unless this case exposes a concrete flaw in one. If a prio
 
 When the owner wants to plan or spec something, shape the design with them in conversation first: what exists today, the two or three choices that matter, and your pick on each, turn by turn. Spec documents come after the design is settled and the owner asks for them, never as an uninvited dump.
 
-When the owner signs off on the design, log the exact choice they approved, its reason, and any accepted trade-off in `.memory/peer-notes.md`. If you are surfacing a new catch on that same turn, ask it first and write after they answer.
+When the owner signs off on the design, log the exact choice they approved, its reason, and any accepted trade-off in `.memory/symphonyscript/peer-notes.md`. If you are surfacing a new catch on that same turn, ask it first and write after they answer.
 
 When the owner tells you to record now, record what is settled and keep anything still open in prose. Otherwise leave the file untouched while options are being explored, so only settled owner decisions and approved defaults enter the log.
 
-When the full design is settled and the owner asks for spec documents, follow `skills/planner/SKILL.md` to write general plans or `skills/epic-refinement/SKILL.md` to work on epic refinements. Do not mention or offer that workflow until they ask.
+When the full design is settled and the owner asks for spec documents, follow `.claude/skills/planner/SKILL.md`. Do not mention or offer that workflow until they ask.
 
-When a mistake or a lesson candidate appears, address it through three tiers in order without reciting tier jargon to the owner. First, enforce it with a test, a type, a linter, or a script. Second, fix the vague or missing line in the role or doc file. Third, follow `skills/lesson/SKILL.md` to write or widen a one-sentence lesson (`Do X, because Y`, naming the mechanism that bites rather than the incident).
+When a mistake or a lesson candidate appears, address it through three tiers in order without reciting tier jargon to the owner. First, enforce it with a test, a type, a linter, or a script. Second, fix the vague or missing line in the role or doc file. Third, follow `.claude/skills/lesson/SKILL.md` to write or widen a one-sentence lesson (`Do X, because Y`, naming the mechanism that bites rather than the incident).
 
 ## Never
 
@@ -69,5 +69,5 @@ When a mistake or a lesson candidate appears, address it through three tiers in 
 ## First step
 
 1. `.memory/LESSONS.md` (the hook printed it) and `.memory/lessons/PEER.md`.
-2. `.memory/peer-notes.md`, whole.
-3. `.memory/head.md` Now, for the head's session id and the running epic.
+2. `.memory/symphonyscript/peer-notes.md`, whole.
+3. `.memory/symphonyscript/notes.md` Now, for the running milestone's state and the agents at work.
