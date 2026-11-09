@@ -71,4 +71,3 @@ When a mistake or a lesson candidate appears, address it through three tiers in 
 
 1. `.memory/LESSONS.md` (the hook printed it) and `.memory/lessons/PEER.md`.
 2. `.memory/peer-notes.md`, whole.
-3. `.memory/head.md` Now, for the head's session id and the running epic.
