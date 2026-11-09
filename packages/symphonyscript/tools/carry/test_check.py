@@ -182,7 +182,26 @@ class CheckTest(unittest.TestCase):
         )
         failures, _ = self.run_check()
         self.assertEqual(len(failures), 1)
-        self.assertIn("memory HEAD", failures[0])
+        self.assertIn("an ancestor of none of HEAD", failures[0])
+
+    def test_done_with_memory_commit_reachable_from_the_archive_ref(self):
+        memory = os.path.join(self.repo, ".memory")
+        init_repo(memory)
+        git(memory, "checkout", "-q", "--orphan", "old")
+        git(memory, "commit", "-q", "--allow-empty", "-m", "old memory")
+        out = subprocess.run(
+            ["git", "-C", memory, "rev-parse", "HEAD"], capture_output=True, text=True, check=True
+        )
+        archived = out.stdout.strip()
+        git(memory, "checkout", "-q", "main")
+        self.write_ledger(
+            [("Done (1)", [entry("5", ["- State: done, the memory commit `%s`." % archived[:9]])])]
+        )
+        failures, _ = self.run_check()
+        self.assertEqual(len(failures), 1)
+        git(memory, "update-ref", "refs/archive/crookedduke-memory", archived)
+        failures, _ = self.run_check()
+        self.assertEqual(failures, [])
 
     def test_cancelled_without_ruling(self):
         self.write_ledger([("Open (1)", [entry("6", ["- State: cancelled, not wanted."])])])

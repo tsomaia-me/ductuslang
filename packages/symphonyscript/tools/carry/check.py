@@ -15,6 +15,7 @@ FORWARD_ONLY = ("done", "cancelled")
 BACKWARD_TARGETS = ("open", "taken", "owner")
 COMMIT = re.compile(r"`([0-9a-f]{7,40})`")
 MEMORY_COMMIT = re.compile(r"memory commit\s+`?([0-9a-f]{7,40})`?")
+MEMORY_REFS = ("HEAD", "refs/archive/crookedduke-memory")
 QUOTED = re.compile(r'"[^"\n]+"|“[^”\n]+”')
 ROUND_BRIEF = re.compile(r"^(.*?)(?:fix-)?(round|step)-(\d+)([a-z]?)-brief\.md$")
 LEDGER_HEADING = re.compile(r"^(#{1,6})\s+(?:§\s*)?Ledger\b")
@@ -147,10 +148,13 @@ def check_commits(entry, line, repo, failures):
                 "entry %s: done, commit %s is not an ancestor of main" % (entry.id, commit)
             )
     for commit in memory_commits:
-        if not is_ancestor(memory, commit, "HEAD"):
+        if not any(is_ancestor(memory, commit, ref) for ref in MEMORY_REFS):
             failures.append(
-                "entry %s: done, memory commit %s is not an ancestor of the memory HEAD"
-                % (entry.id, commit)
+                "entry %s: done, memory commit %s is an ancestor of none of %s in .memory"
+                " (the archive ref is fetched with: git -C .memory fetch"
+                " git@github.com:parlornights/CrookedDuke.git"
+                " memory:refs/archive/crookedduke-memory)"
+                % (entry.id, commit, ", ".join(MEMORY_REFS))
             )
 
 
