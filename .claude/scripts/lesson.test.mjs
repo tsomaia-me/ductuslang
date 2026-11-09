@@ -267,7 +267,7 @@ test("NONE appends the line and pushes it; the system prompt is the agent text a
     "",
     "## lessons/HEAD.md",
     "",
-    "## lessons/CONSULTANT.md",
+    "## lessons/PEER.md",
     "",
     "## lessons/BUILDER.md",
     `- B1: ${B1}`,
@@ -392,7 +392,7 @@ test("a write past twenty lessons prints the advisory and still exits 0", (t) =>
   const env = setup(t, twenty);
   answer(env, NONE_OK);
   const r = lesson(env, "BUILDER", candidate);
-  assert.equal(r.stdout, "FORM         ok\nWRITTEN BUILDER B21\nOVER BUILDER 21  the consultant widens\nPUSHED lessons/BUILDER.md\n");
+  assert.equal(r.stdout, "FORM         ok\nWRITTEN BUILDER B21\nOVER BUILDER 21  the peer widens\nPUSHED lessons/BUILDER.md\n");
   assert.equal(r.code, 0);
 });
 

@@ -8,8 +8,8 @@ source "$here/../../infra/scripts/explore-agent.sh"
 
 readonly CAP=20
 readonly MAX_CHARS=500
-readonly ORDER=(shared HEAD CONSULTANT BUILDER REVIEWER VERIFIER JUDGE DESIGNER HOTFIX EXPLORE SCRIBE)
-declare -rA LETTER=([shared]=A [HEAD]=H [CONSULTANT]=C [BUILDER]=B [REVIEWER]=R [VERIFIER]=V [JUDGE]=J [DESIGNER]=G [HOTFIX]=X [EXPLORE]=E [SCRIBE]=S)
+readonly ORDER=(shared HEAD PEER BUILDER REVIEWER VERIFIER JUDGE DESIGNER HOTFIX EXPLORE SCRIBE)
+declare -rA LETTER=([shared]=A [HEAD]=H [PEER]=C [BUILDER]=B [REVIEWER]=R [VERIFIER]=V [JUDGE]=J [DESIGNER]=G [HOTFIX]=X [EXPLORE]=E [SCRIBE]=S)
 declare -A FILE_OF=()
 for name in "${ORDER[@]}"; do
   FILE_OF[${LETTER[$name]}]="$name"
@@ -230,7 +230,7 @@ else
 fi
 
 count="$(grep -cE "^- $letter[0-9]+: " "$target" || true)"
-[ "$count" -le "$CAP" ] || say "OVER $name $count" "the consultant widens"
+[ "$count" -le "$CAP" ] || say "OVER $name $count" "the peer widens"
 
 status=0
 pushed="$(MEMORY_DIR="$memory" "$here/memory-push.sh" "$path")" || status=$?

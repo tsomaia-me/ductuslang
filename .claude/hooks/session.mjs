@@ -18,7 +18,7 @@ const NO_NOTE_LINE = 'You were compacted and left no note.';
 const CORRUPT = Symbol('corrupt');
 const NOTE_HEADING = '## Note from yourself';
 const LAST_LINE = 'Read every file your note lists, in its order.';
-export const MENU_LINE = 'head: load the head skill; consultant: load the consultant skill; builder: read `.claude/agents/builder.md` whole as your prompt and run its first step; any other role: run your file\'s first step again.';
+export const MENU_LINE = 'head: load the head skill; peer: load the peer skill; builder: read `.claude/agents/builder.md` whole as your prompt and run its first step; any other role: run your file\'s first step again.';
 
 function lastMessagesLine(sessionId) {
   return `Last ${MESSAGE_COUNT} messages: ${lastMessagesPath(sessionId)}. Read them whole.`;
