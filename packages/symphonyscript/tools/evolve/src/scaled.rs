@@ -1,7 +1,7 @@
 use symphonyscript_core::Vocabulary;
 
+use crate::copies::renamed_copies;
 use crate::program::{Program, ProgramSource};
-use crate::renamed::renamed_copies;
 
 pub fn scaled(program: &Program, vocabulary: &Vocabulary, factor: usize) -> Program {
     let copies = renamed_copies(program, vocabulary, factor.saturating_sub(1));

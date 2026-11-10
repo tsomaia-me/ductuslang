@@ -6,6 +6,7 @@ use symphonyscript_evolve::{
     Signal, Work, dedup_key, differing_codes, guarded, over_memory_bound, scaled, shrunk,
     superlinear,
 };
+use unicode_normalization::UnicodeNormalization;
 
 const CLEAN: &str = "state cutoff(0.5)
 let wobble = cutoff * 0.8
@@ -250,7 +251,7 @@ fn names_after(text: &str, marker: &str) -> Vec<String> {
 }
 
 #[test]
-fn a_wide_name_stays_unchanged_in_every_renamed_copy_and_draws_no_rename_signal() {
+fn a_wide_child_name_stays_in_every_renamed_copy_and_a_wide_top_level_name_takes_a_wide_name() {
     let checker = checker(DEFAULT_BUDGET);
     let original = program(&[("main.sym", WIDE_AND_ASCII)]);
     let scaled_text = scaled(&original, checker.vocabulary(), 4).sources[0]
@@ -259,18 +260,58 @@ fn a_wide_name_stays_unchanged_in_every_renamed_copy_and_draws_no_rename_signal(
     let names = names_after(&scaled_text, "Note as ");
     assert_eq!(names.len(), 8);
     assert_eq!(names.iter().filter(|name| *name == "\u{97f3}").count(), 4);
+    assert_eq!(names.iter().filter(|name| *name == "plain").count(), 4);
+    let mut clips = names_after(&scaled_text, "Clip ");
+    assert_eq!(clips[0], "riff:");
+    clips.sort();
+    clips.dedup();
+    assert_eq!(clips.len(), 4);
     assert_eq!(checker.finding(&original, Signal::Rename), None);
+    let wide = scaled(
+        &program(&[("main.sym", "let \u{97f3} = 1\nlet b = \u{97f3} + 1\n")]),
+        checker.vocabulary(),
+        4,
+    )
+    .sources[0]
+        .text
+        .clone();
+    let mut declared = names_after(&wide, "let ");
+    declared.retain(|name| !name.is_ascii());
+    assert_eq!(declared[0], "\u{97f3}");
+    assert!(declared.iter().all(|name| name.chars().count() == 1));
+    declared.sort();
+    declared.dedup();
+    assert_eq!(declared.len(), 4, "{wide}");
 }
 
 #[test]
-fn a_name_holding_a_decomposed_character_stays_unchanged_in_every_renamed_copy() {
+fn a_name_holding_a_decomposed_character_keeps_its_spelling_and_scalar_count_in_every_renamed_copy()
+{
     let checker = checker(DEFAULT_BUDGET);
-    let text = "let e\u{301} = 1\nlet b = e\u{301} + 1\n";
+    let text = "let e\u{301} = 1\nlet b = \u{e9} + 1\n";
     let scaled_text = scaled(&program(&[("main.sym", text)]), checker.vocabulary(), 3).sources[0]
         .text
         .clone();
-    assert_eq!(scaled_text.matches("e\u{301}").count(), 6);
+    let lines: Vec<&str> = scaled_text.lines().collect();
+    assert_eq!(lines.len(), 6);
+    assert_eq!(scaled_text.matches("e\u{301}").count(), 1);
     assert_eq!(scaled_text.matches("let b").count(), 1);
+    let mut declared = Vec::new();
+    for copy in lines.chunks(2).skip(1) {
+        let name = copy[0]
+            .strip_prefix("let ")
+            .and_then(|rest| rest.strip_suffix(" = 1"))
+            .unwrap_or_default();
+        assert_eq!(name.chars().count(), 2, "{scaled_text}");
+        assert!(name.starts_with('e') && !name.is_ascii(), "{scaled_text}");
+        let composed: String = name.nfc().collect();
+        assert!(
+            copy[1].contains(&format!(" = {composed} + 1")),
+            "{scaled_text}"
+        );
+        declared.push(composed);
+    }
+    assert_ne!(declared[0], declared[1]);
 }
 
 #[test]
@@ -288,7 +329,9 @@ fn an_ascii_name_is_still_renamed_keeping_its_scalar_count_and_case() {
         .filter_map(|rest| rest.split_whitespace().next())
         .collect();
     assert_eq!(declared.len(), 3);
-    assert_eq!(declared[2], "\u{97f3}");
+    assert_ne!(declared[2], "\u{97f3}");
+    assert_eq!(declared[2].chars().count(), 1);
+    assert!(!declared[2].is_ascii());
     assert_ne!(declared[0], "wobble");
     assert_eq!(declared[0].chars().count(), 6);
     assert!(

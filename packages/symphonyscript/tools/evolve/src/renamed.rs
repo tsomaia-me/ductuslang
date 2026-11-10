@@ -46,18 +46,6 @@ pub fn renamed(program: &Program, vocabulary: &Vocabulary) -> Option<Renamed> {
     })
 }
 
-pub fn renamed_copies(program: &Program, vocabulary: &Vocabulary, count: usize) -> Vec<Program> {
-    let identifiers = identifiers(program, vocabulary);
-    let mut naming = Naming::new(&identifiers, vocabulary);
-    (0..count)
-        .map_while(|_| {
-            naming
-                .fresh(&identifiers)
-                .map(|fresh| rewritten(program, &identifiers, &fresh))
-        })
-        .collect()
-}
-
 impl Naming {
     fn new(identifiers: &Identifiers, vocabulary: &Vocabulary) -> Naming {
         let reserved = vocabulary_names(vocabulary);
@@ -105,9 +93,9 @@ impl Naming {
     }
 }
 
-const LOWER: &[u8] = b"abcdefghijklmnopqrstuvwxyz";
-const UPPER: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-const DIGITS: &[u8] = b"abcdefghijklmnopqrstuvwxyz0123456789";
+pub(crate) const LOWER: &[u8] = b"abcdefghijklmnopqrstuvwxyz";
+pub(crate) const UPPER: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+pub(crate) const DIGITS: &[u8] = b"abcdefghijklmnopqrstuvwxyz0123456789";
 
 fn candidate(letters: &[u8], index: usize, width: usize) -> String {
     let mut result = vec![letters[index % letters.len()]];
@@ -220,12 +208,12 @@ fn continues_identifier(character: char) -> bool {
     character.is_alphanumeric() || character == '_' || character == '#'
 }
 
-fn is_identifier(name: &str) -> bool {
+pub(crate) fn is_identifier(name: &str) -> bool {
     name.chars()
         .any(|character| character != '_' && character != '#')
 }
 
-fn vocabulary_names(vocabulary: &Vocabulary) -> BTreeSet<String> {
+pub(crate) fn vocabulary_names(vocabulary: &Vocabulary) -> BTreeSet<String> {
     let mut names: BTreeSet<String> = BUILTINS
         .iter()
         .chain(KEYWORDS)

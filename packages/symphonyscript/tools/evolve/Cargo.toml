@@ -43,5 +43,9 @@ path = "src/bin/evolve_count.rs"
 name = "evolve-probe"
 path = "src/bin/evolve_probe.rs"
 
+[[bin]]
+name = "evolve-scale"
+path = "src/bin/evolve_scale.rs"
+
 [profile.dev]
 opt-level = 1

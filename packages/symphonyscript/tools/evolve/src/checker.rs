@@ -6,6 +6,7 @@ use symphonyscript::syntax::parse;
 use symphonyscript::{Code, Compiler, Diagnostic, Failed};
 use symphonyscript_core::{LimitOverrides, Vocabulary};
 
+use crate::copied_codes::copied_codes;
 use crate::differing_codes::differing_codes;
 use crate::engine::Engine;
 use crate::finding::Finding;
@@ -221,7 +222,7 @@ impl Checker {
                 differs.then_some(unique).into_iter().collect()
             }
             Signal::Scaling => self
-                .scales_superlinearly(program, &unique, work)
+                .scales_superlinearly(program, diagnostics, &unique, work)
                 .then_some(unique)
                 .into_iter()
                 .collect(),
@@ -246,7 +247,13 @@ impl Checker {
         observation != *baseline
     }
 
-    fn scales_superlinearly(&self, program: &Program, unique: &[String], work: Work) -> bool {
+    fn scales_superlinearly(
+        &self,
+        program: &Program,
+        diagnostics: &[Diagnostic],
+        unique: &[String],
+        work: Work,
+    ) -> bool {
         if work.allocations < SCALING_FLOOR {
             return false;
         }
@@ -255,21 +262,30 @@ impl Checker {
             work,
         };
         let (Some(doubled), Some(quadrupled)) = (
-            self.measured_scaled(program, DOUBLED),
-            self.measured_scaled(program, QUADRUPLED),
+            self.measured_scaled(program, diagnostics, DOUBLED),
+            self.measured_scaled(program, diagnostics, QUADRUPLED),
         ) else {
             return false;
         };
         superlinear(&once, &doubled, &quadrupled)
     }
 
-    fn measured_scaled(&self, program: &Program, factor: usize) -> Option<Measured> {
+    fn measured_scaled(
+        &self,
+        program: &Program,
+        diagnostics: &[Diagnostic],
+        factor: usize,
+    ) -> Option<Measured> {
         let Guarded::Finished { value, work, .. } =
             self.compile(&scaled(program, &self.vocabulary, factor))
         else {
             return None;
         };
-        let mut distinct_codes = sorted_codes(&value);
+        let codes = sorted_codes(&value);
+        if codes != copied_codes(program, diagnostics, factor) {
+            return None;
+        }
+        let mut distinct_codes = codes;
         distinct_codes.dedup();
         Some(Measured {
             distinct_codes,

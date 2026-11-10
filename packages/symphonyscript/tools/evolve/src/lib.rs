@@ -2,6 +2,8 @@
 
 mod arguments;
 mod checker;
+mod copied_codes;
+mod copies;
 mod dedup_key;
 mod differing_codes;
 mod engine;
@@ -33,6 +35,7 @@ mod work;
 
 pub use arguments::{Arguments, arguments};
 pub use checker::{Checker, DEFAULT_BUDGET};
+pub use copied_codes::copied_codes;
 pub use dedup_key::dedup_key;
 pub use differing_codes::differing_codes;
 pub use engine::Engine;
