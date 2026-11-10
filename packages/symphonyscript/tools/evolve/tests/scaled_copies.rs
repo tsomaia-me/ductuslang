@@ -375,3 +375,30 @@ fn copies_of_the_gates_signalled_programs_draw_the_original_codes_once_per_copy_
         assert_eq!(checker.finding(&original, Signal::Scaling), None, "{id}");
     }
 }
+
+#[test]
+fn a_program_of_many_one_letter_names_yields_every_copy_at_eight_times() {
+    let checker = checker("main");
+    let text = "state a(1)\nstate b(2)\nstate i(0)\nlet c = [a, b, a + b]\nlet d = c[i % 3] * 2\nlet e = a + b\nlet f = d - e\nlet g = a * b\nlet h = [a, b, g]\nlet j = h[i % 3] * 2\nlet k = g + d\nlet m = k + n\nlet o = p + q\n";
+    let original = program(&[("main.sym", text)]);
+    let faults = copy_faults(&checker, &original, 8);
+    assert!(faults.is_empty(), "{faults:#?}");
+}
+
+#[test]
+fn an_unknown_kind_and_an_undeclared_name_stay_as_written_in_every_copy() {
+    let checker = checker("main");
+    let text = "Phrase bass /40 | next=lead weight=0.8\nPhrase lead /55 | next=bass\nCadence ending /52 | weight=swing\n";
+    let original = program(&[("main.sym", text)]);
+    let copy = scaled(&original, checker.vocabulary(), 4).sources[0]
+        .text
+        .clone();
+    assert_eq!(copy.matches("Phrase ").count(), 8, "{copy}");
+    assert_eq!(copy.matches("Cadence ").count(), 4, "{copy}");
+    assert_eq!(copy.matches("weight=swing\n").count(), 4, "{copy}");
+    assert_eq!(copy.matches(" bass ").count(), 1, "{copy}");
+    for factor in FACTORS {
+        let faults = copy_faults(&checker, &original, factor);
+        assert!(faults.is_empty(), "{faults:#?}");
+    }
+}

@@ -97,7 +97,9 @@ impl Naming {
         while *counter < limit {
             let candidate = candidate(&letters, *counter, width);
             *counter += 1;
-            if !self.taken.contains(&candidate) {
+            if !self.taken.contains(&candidate)
+                && (candidate.is_ascii() || lexes_as_name(&candidate, &self.vocabulary))
+            {
                 return Some(candidate);
             }
         }
@@ -333,7 +335,7 @@ fn top_level_names(root: &NodeView<'_>) -> Vec<String> {
             .filter(|token| token.kind() == SyntaxKind::Ident)
             .map(|token| token.text().nfc().collect::<String>());
         if item.kind() == SyntaxKind::Placement {
-            names.extend(idents);
+            names.extend(idents.skip(1));
         } else if TOP_LEVEL_DECLARATIONS.contains(&item.kind()) {
             names.extend(idents.take(1));
         }
@@ -439,19 +441,19 @@ fn kept_names(vocabulary: &Vocabulary) -> BTreeSet<String> {
 
 fn first_letters(upper: bool) -> Vec<char> {
     let ascii = if upper { UPPER } else { LOWER };
-    let extra = if upper {
-        ('\u{391}'..='\u{3a9}')
-            .chain('\u{c0}'..='\u{de}')
-            .collect::<Vec<char>>()
-    } else {
-        ('\u{3b1}'..='\u{3c9}')
-            .chain('\u{df}'..='\u{ff}')
-            .collect::<Vec<char>>()
-    };
+    let extra = ('\u{c0}'..='\u{24f}')
+        .chain('\u{391}'..='\u{3c9}')
+        .chain('\u{400}'..='\u{45f}')
+        .filter(|letter| {
+            letter.is_alphabetic()
+                && letter.is_uppercase() == upper
+                && letter.is_lowercase() != upper
+                && letter.to_string().nfc().eq([*letter])
+        });
     ascii
         .iter()
         .map(|byte| char::from(*byte))
-        .chain(extra.into_iter().filter(|letter| letter.is_alphabetic()))
+        .chain(extra)
         .collect()
 }
 

@@ -9,7 +9,8 @@ use serde_json::{Value, json};
 use symphonyscript::syntax::parse;
 use symphonyscript::{Compiler, Diagnostic, Selector};
 use symphonyscript_evolve::{
-    Engine, Guarded, Program, arguments, copied_codes, guarded, named_vocabulary, scaled,
+    Engine, Guarded, Program, arguments, copied_codes, differing_codes, guarded, named_vocabulary,
+    scaled,
 };
 
 const USAGE: &str = "usage: evolve-scale [--budget <seconds>] [--vocabulary <name>] <programs.jsonl> <scales.jsonl>";
@@ -66,10 +67,10 @@ fn run() -> Result<(), String> {
             });
             let by_default = measured(&selected, &sources, arguments.budget);
             let by_old = measured(&old, &sources, arguments.budget);
-            let copied = match (&original, &by_default.0) {
+            let differing = match (&original, &by_default.0) {
                 (None, Some(diagnostics)) => {
                     original = Some(diagnostics.clone());
-                    Value::Bool(true)
+                    Some(Vec::new())
                 }
                 (Some(first), Some(diagnostics)) => {
                     let mut drawn: Vec<String> = diagnostics
@@ -77,14 +78,18 @@ fn run() -> Result<(), String> {
                         .map(|diagnostic| diagnostic.code.as_str().to_string())
                         .collect();
                     drawn.sort();
-                    Value::Bool(drawn == copied_codes(&program, first, factor))
+                    Some(differing_codes(
+                        &copied_codes(&program, first, factor),
+                        &drawn,
+                    ))
                 }
-                _ => Value::Null,
+                _ => None,
             };
             sizes.push(json!({
                 "factor": factor,
                 "source_bytes": copy.size(),
-                "copied": copied,
+                "copied": differing.as_ref().map(Vec::is_empty),
+                "differing": differing,
                 "front": work_of(&front),
                 "default": by_default.1,
                 "old": by_old.1,
