@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { NOTE_LIMIT } from '../scripts/grounding.mjs';
 
 import { HOOK_OUTPUT_LIMIT, MENU_LINE } from './session.mjs';
-import { LAST_MESSAGES_FILE, NOTE_FILE } from './shared.mjs';
+import { LAST_MESSAGES_FILE } from './shared.mjs';
 
 const HOOK = path.join(path.dirname(fileURLToPath(import.meta.url)), 'session.mjs');
 const ROOT = path.resolve(path.dirname(HOOK), '..', '..');
@@ -27,12 +27,17 @@ function makeProject(lessons, preferences = PREFERENCES) {
   return project;
 }
 
-function runHook({ project, source = 'startup', stdin, hook = HOOK, note }) {
-  const harness = mkdtempSync(path.join(os.tmpdir(), 'session-hook-harness-'));
-  if (note !== undefined) {
-    mkdirSync(path.join(harness, SESSION_ID));
-    writeFileSync(path.join(harness, SESSION_ID, NOTE_FILE), typeof note === 'string' ? note : JSON.stringify(note));
-  }
+function noteFileIn(memory) {
+  return path.join(memory, 'grounding', `${SESSION_ID}.json`);
+}
+
+function writeNote(memory, note) {
+  mkdirSync(path.join(memory, 'grounding'), { recursive: true });
+  writeFileSync(noteFileIn(memory), typeof note === 'string' ? note : JSON.stringify(note));
+}
+
+function runHook({ project, source = 'startup', stdin, hook = HOOK, note, harness = mkdtempSync(path.join(os.tmpdir(), 'session-hook-harness-')), memory = path.join(project, '.memory') }) {
+  if (note !== undefined) writeNote(memory, note);
   const input = stdin ?? JSON.stringify({
     session_id: SESSION_ID,
     transcript_path: path.join(harness, 'transcript.jsonl'),
@@ -40,11 +45,9 @@ function runHook({ project, source = 'startup', stdin, hook = HOOK, note }) {
     hook_event_name: 'SessionStart',
     source,
   });
-  const result = spawnSync(process.execPath, [hook], {
-    input,
-    encoding: 'utf8',
-    env: { ...process.env, CLAUDE_PROJECT_DIR: project, CLAUDE_HARNESS_DIR: harness },
-  });
+  const env = { ...process.env, CLAUDE_PROJECT_DIR: project, CLAUDE_HARNESS_DIR: harness, MEMORY_DIR: memory };
+  if (memory === null) delete env.MEMORY_DIR;
+  const result = spawnSync(process.execPath, [hook], { input, encoding: 'utf8', env });
   return { ...result, harness };
 }
 
@@ -67,7 +70,7 @@ test('compact with no note says so, then the lessons, the menu line and the last
   );
 });
 
-test('compact with a note prints the guard, the reading list and the note under the limit, and uses the note once', () => {
+test('compact with a note in the memory checkout prints the guard, the reading list and the note under the limit', () => {
   const project = makeProject(LESSONS);
   mkdirSync(path.join(project, '.memory', 'lessons'));
   writeFileSync(path.join(project, '.memory', 'lessons', 'BUILDER.md'), 'B1 Do X, because Y.');
@@ -91,7 +94,43 @@ test('compact with a note prints the guard, the reading list and the note under 
     ].join('\n'),
   );
   assert.ok(stdout.length < HOOK_OUTPUT_LIMIT);
-  assert.ok(!existsSync(path.join(harness, SESSION_ID, NOTE_FILE)));
+});
+
+test('a used note stays in the memory checkout and is not used again until a new note is written', () => {
+  const project = makeProject(LESSONS);
+  const memory = path.join(project, '.memory');
+  const note = { role: 'builder', note: 'first', time: '2026-11-11T08:00:00.000Z' };
+  const first = runHook({ project, source: 'compact', note });
+  assert.ok(first.stdout.includes('## Note from yourself\nfirst\n'));
+  assert.equal(readFileSync(noteFileIn(memory), 'utf8'), JSON.stringify(note));
+  const second = runHook({ project, source: 'compact', harness: first.harness });
+  assert.ok(second.stdout.startsWith('You were compacted and left no note.\n'));
+  assert.equal(readFileSync(noteFileIn(memory), 'utf8'), JSON.stringify(note));
+  const third = runHook({ project, source: 'compact', harness: first.harness, note: { ...note, note: 'second', time: '2026-11-11T09:00:00.000Z' } });
+  assert.ok(third.stdout.includes('## Note from yourself\nsecond\n'));
+});
+
+test('a worktree project reads the note from the memory checkout beside the main checkout', () => {
+  const repo = makeProject(LESSONS);
+  git(repo, 'init');
+  writeFileSync(path.join(repo, 'README'), 'readme\n');
+  git(repo, 'add', 'README');
+  git(repo, 'commit', '-m', 'init');
+  const worktree = path.join(repo, 'wt');
+  git(repo, 'worktree', 'add', worktree, '-b', 'wt');
+  writeNote(path.join(repo, '.memory'), { role: 'builder', note: 'from main', time: 'now' });
+  const { stdout, status } = runHook({ project: worktree, source: 'compact', memory: null });
+  assert.equal(status, 0);
+  assert.ok(stdout.includes('## Note from yourself\nfrom main\n'));
+});
+
+test('a note in the session folder is not read', () => {
+  const project = makeProject(LESSONS);
+  const harness = mkdtempSync(path.join(os.tmpdir(), 'session-hook-harness-'));
+  mkdirSync(path.join(harness, SESSION_ID));
+  writeFileSync(path.join(harness, SESSION_ID, 'grounding.json'), JSON.stringify({ role: 'builder', note: 'old place', time: 'now' }));
+  const { stdout } = runHook({ project, source: 'compact', harness });
+  assert.ok(stdout.startsWith('You were compacted and left no note.\n'));
 });
 
 test('a startup or resume session start leaves a stored note in place', () => {
@@ -100,15 +139,17 @@ test('a startup or resume session start leaves a stored note in place', () => {
     const { stdout, status, harness } = runHook({ project, source, note: { role: 'builder', note: 'kept', time: 'now' } });
     assert.equal(status, 0);
     assert.equal(stdout, `${LESSONS}\n${PREFERENCES}\n${MENU_LINE}\n`);
-    assert.ok(existsSync(path.join(harness, SESSION_ID, NOTE_FILE)));
+    assert.ok(existsSync(noteFileIn(path.join(project, '.memory'))));
+    const compacted = runHook({ project, source: 'compact', harness });
+    assert.ok(compacted.stdout.includes('## Note from yourself\nkept\n'));
   }
 });
 
 test('compact with a corrupt note says it is corrupt and keeps it', () => {
   const project = makeProject(LESSONS);
-  const { stdout, status, harness } = runHook({ project, source: 'compact', note: '{"role": "builder", "no' });
+  const { stdout, status } = runHook({ project, source: 'compact', note: '{"role": "builder", "no' });
   assert.equal(status, 0);
-  const noteFile = path.join(harness, SESSION_ID, NOTE_FILE);
+  const noteFile = noteFileIn(path.join(project, '.memory'));
   assert.ok(stdout.startsWith(`You were compacted and your note at ${noteFile} is corrupt: read it as it stands.\n${LESSONS}\n${PREFERENCES}\n${MENU_LINE}\n`));
   assert.ok(existsSync(noteFile));
 });
@@ -217,9 +258,9 @@ test('compact without a session id keeps the lessons and the menu line', () => {
 test('a subagent compacting in the session leaves the main agent note in place and gets the lessons and the menu line', () => {
   const project = makeProject(LESSONS);
   const harness = mkdtempSync(path.join(os.tmpdir(), 'session-hook-harness-'));
-  mkdirSync(path.join(harness, SESSION_ID));
-  const noteFile = path.join(harness, SESSION_ID, NOTE_FILE);
-  writeFileSync(noteFile, JSON.stringify({ role: 'builder', note: 'kept', time: 'now' }));
+  const memory = path.join(project, '.memory');
+  writeNote(memory, { role: 'builder', note: 'kept', time: 'now' });
+  const noteFile = noteFileIn(memory);
   const stdin = JSON.stringify({
     session_id: SESSION_ID,
     agent_id: 'agent-123',
@@ -231,11 +272,12 @@ test('a subagent compacting in the session leaves the main agent note in place a
   const result = spawnSync(process.execPath, [HOOK], {
     input: stdin,
     encoding: 'utf8',
-    env: { ...process.env, CLAUDE_PROJECT_DIR: project, CLAUDE_HARNESS_DIR: harness },
+    env: { ...process.env, CLAUDE_PROJECT_DIR: project, CLAUDE_HARNESS_DIR: harness, MEMORY_DIR: memory },
   });
   assert.equal(result.status, 0);
   assert.equal(result.stdout, `${LESSONS}\n${PREFERENCES}\n${MENU_LINE}\n`);
   assert.ok(existsSync(noteFile));
+  assert.ok(!existsSync(path.join(harness, SESSION_ID, 'grounding-used.json')));
 });
 
 test('a reading list in the memory checkout joins the note reading list and the no-note output, existing files only', () => {
@@ -247,7 +289,7 @@ test('a reading list in the memory checkout joins the note reading list and the 
   assert.equal(withNote.status, 0);
   assert.ok(withNote.stdout.includes(`4. ${spec} (whole)\n5. `));
   assert.ok(!withNote.stdout.includes('missing.md'));
-  const noNote = runHook({ project, source: 'compact' });
+  const noNote = runHook({ project, source: 'compact', harness: withNote.harness });
   assert.equal(noNote.status, 0);
   assert.ok(noNote.stdout.endsWith(`Read whole, in order: ${spec} (whole).\n`));
   assert.ok(!noNote.stdout.includes('missing.md'));
