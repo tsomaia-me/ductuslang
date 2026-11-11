@@ -1,12 +1,16 @@
+import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, realpathSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 export const LAST_MESSAGES_FILE = 'last-messages.md';
-export const NOTE_FILE = 'grounding.json';
+export const NOTES_FOLDER = 'grounding';
+export const USED_NOTE_FILE = 'grounding-used.json';
 export const NOTE_ADVISED_CHARACTERS = (4000).toLocaleString('en-US');
 const ROLE_NAME = /^[a-z][a-z-]*$/;
+const PLAIN_ID = /^[A-Za-z0-9_-]+$/;
+const MEMORY_DIR_SCRIPT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'scripts', 'memory-dir.sh');
 
 export function sessionFolder(sessionId) {
   const folder = path.join(process.env.CLAUDE_HARNESS_DIR || path.join(os.tmpdir(), 'claude-harness'), sessionId);
@@ -18,8 +22,31 @@ export function lastMessagesPath(sessionId) {
   return path.join(sessionFolder(sessionId), LAST_MESSAGES_FILE);
 }
 
-export function notePath(sessionId) {
-  return path.join(sessionFolder(sessionId), NOTE_FILE);
+export function usedNotePath(sessionId) {
+  return path.join(sessionFolder(sessionId), USED_NOTE_FILE);
+}
+
+export function isPlainId(sessionId) {
+  return typeof sessionId === 'string' && PLAIN_ID.test(sessionId);
+}
+
+export function memoryCheckout(cwd) {
+  try {
+    const found = execFileSync('bash', ['-c', 'source "$1" && memory_checkout', 'memory-dir', MEMORY_DIR_SCRIPT], { cwd, encoding: 'utf8', stdio: 'pipe' }).trim();
+    return found === '' ? null : path.resolve(cwd, found);
+  } catch {
+    return null;
+  }
+}
+
+export function noteRelativePath(sessionId) {
+  return path.join(NOTES_FOLDER, `${sessionId}.json`);
+}
+
+export function notePath(sessionId, cwd) {
+  if (!isPlainId(sessionId)) return null;
+  const checkout = memoryCheckout(cwd);
+  return checkout ? path.join(checkout, noteRelativePath(sessionId)) : null;
 }
 
 export function roleFile(root, role) {

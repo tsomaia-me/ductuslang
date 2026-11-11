@@ -1,10 +1,10 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { MESSAGE_COUNT } from './last-messages.mjs';
-import { isEntryPoint, lastMessagesPath, notePath, parseLine, readStdin, roleFile } from './shared.mjs';
+import { isEntryPoint, lastMessagesPath, notePath, parseLine, readStdin, roleFile, usedNotePath } from './shared.mjs';
 
 export const HOOK_OUTPUT_LIMIT = 10000;
 const LESSONS_RELATIVE_PATH = path.join('.memory', 'LESSONS.md');
@@ -24,10 +24,13 @@ function lastMessagesLine(sessionId) {
   return `Last ${MESSAGE_COUNT} messages: ${lastMessagesPath(sessionId)}. Read them whole.`;
 }
 
-function readNote(file) {
-  if (!existsSync(file)) return null;
-  const stored = parseLine(readFileSync(file, 'utf8'));
-  return typeof stored?.role === 'string' && typeof stored.note === 'string' ? stored : CORRUPT;
+function readNote(file, sessionId) {
+  if (!file || !existsSync(file)) return null;
+  const text = readFileSync(file, 'utf8');
+  const used = usedNotePath(sessionId);
+  if (existsSync(used) && readFileSync(used, 'utf8') === text) return null;
+  const stored = parseLine(text);
+  return typeof stored?.role === 'string' && typeof stored.note === 'string' ? { ...stored, text } : CORRUPT;
 }
 
 function requiredReading(memory) {
@@ -99,9 +102,11 @@ function compactHead(noteFile, stored) {
 function buildOutput(input) {
   const memory = mainCheckout(process.env.CLAUDE_PROJECT_DIR || input.cwd);
   const compacted = input.source === COMPACT_SOURCE && hasSessionId(input) && !input.agent_id;
-  const noteFile = compacted ? notePath(input.session_id) : null;
-  const stored = compacted ? readNote(noteFile) : null;
-  if (stored && stored !== CORRUPT) return { text: render(groundingParts(memory, stored, input.session_id)), usedNote: noteFile };
+  const noteFile = compacted ? notePath(input.session_id, process.env.CLAUDE_PROJECT_DIR || input.cwd) : null;
+  const stored = compacted ? readNote(noteFile, input.session_id) : null;
+  if (stored && stored !== CORRUPT) {
+    return { text: render(groundingParts(memory, stored, input.session_id)), usedNote: { file: usedNotePath(input.session_id), text: stored.text } };
+  }
   const head = compacted ? compactHead(noteFile, stored) : [];
   const tail = compacted ? [MENU_LINE, lastMessagesLine(input.session_id), ...requiredReadingLine(memory)] : [MENU_LINE];
   const lessons = memoryFilePart(LESSONS_RELATIVE_PATH, memory, HOOK_OUTPUT_LIMIT - render([...head, '', '', ...tail]).length);
@@ -113,7 +118,7 @@ async function main() {
   try {
     const { text, usedNote } = buildOutput(JSON.parse(await readStdin()));
     process.stdout.write(text);
-    if (usedNote) rmSync(usedNote, { force: true });
+    if (usedNote) writeFileSync(usedNote.file, usedNote.text);
   } catch (error) {
     process.stdout.write(`session hook failed: ${String(error.message).replace(/\s+/g, ' ')}${LINE_BREAK}`);
   }
