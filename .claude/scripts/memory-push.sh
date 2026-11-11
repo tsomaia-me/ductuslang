@@ -28,7 +28,7 @@ first_line() {
 session="${MEMORY_SESSION:-${CLAUDE_CODE_SESSION_ID:-}}"
 [ -n "$session" ] || block "no session id $paths"
 trailer="Memory-Session: $session"
-folder="${CLAUDE_HARNESS_DIR:-${TMPDIR:-/tmp}/claude-harness}/$session/memory-push"
+folder="${CLAUDE_HARNESS_DIR:-$HOME/.claude/harness}/$session/memory-push"
 
 source "$(dirname "${BASH_SOURCE[0]}")/memory-dir.sh"
 memory_dir="$(memory_checkout)" || block "no memory checkout $PWD"

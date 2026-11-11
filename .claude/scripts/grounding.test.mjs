@@ -46,3 +46,16 @@ test('refuses and stores nothing', () => {
     assert.ok(!existsSync(result.notePath));
   }
 });
+
+test('stores the note under the home folder, never the temp folder, when no harness folder is set', () => {
+  const home = mkdtempSync(path.join(os.tmpdir(), 'grounding-home-'));
+  const temp = mkdtempSync(path.join(os.tmpdir(), 'grounding-temp-'));
+  const env = { ...process.env, HOME: home, TMPDIR: temp, CLAUDE_CODE_SESSION_ID: SESSION_ID };
+  delete env.CLAUDE_HARNESS_DIR;
+  const result = spawnSync(process.execPath, [SCRIPT, '--role', 'BUILDER'], { input: 'Doing X.\n', env, encoding: 'utf8' });
+  const stored = path.join(home, '.claude', 'harness', SESSION_ID, NOTE_FILE);
+  assert.equal(result.status, 0);
+  assert.equal(result.stdout, `STORED       ${stored}\n`);
+  assert.ok(existsSync(stored));
+  assert.ok(!existsSync(path.join(temp, 'claude-harness')));
+});

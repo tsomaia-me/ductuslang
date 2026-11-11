@@ -9,7 +9,7 @@ export const NOTE_ADVISED_CHARACTERS = (4000).toLocaleString('en-US');
 const ROLE_NAME = /^[a-z][a-z-]*$/;
 
 export function sessionFolder(sessionId) {
-  const folder = path.join(process.env.CLAUDE_HARNESS_DIR || path.join(os.tmpdir(), 'claude-harness'), sessionId);
+  const folder = path.join(process.env.CLAUDE_HARNESS_DIR || path.join(os.homedir(), '.claude', 'harness'), sessionId);
   mkdirSync(folder, { recursive: true });
   return folder;
 }

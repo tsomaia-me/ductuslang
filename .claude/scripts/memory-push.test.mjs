@@ -1015,3 +1015,22 @@ test("a merge left in progress by a failed merge --abort is aborted at the start
   assert.equal(originFile(env, "x.md"), "B line one\nline two\nA appended\n");
   assert.ok(!existsSync(savedDir(env)));
 });
+
+test("saves the writer's version under the home folder, never the temp folder, when no harness folder is set", (t) => {
+  const env = setup(t);
+  const home = join(env.root, "home");
+  const temp = join(env.root, "temp");
+  mkdirSync(home);
+  mkdirSync(temp);
+  commitAndPush(env.B, "x.md", "B line one\nline two\n");
+  writeFileSync(join(env.A, "x.md"), "A line one\nline two\n");
+  const scriptEnv = { ...gitEnv, MEMORY_SESSION: session, MEMORY_DIR: env.A, HOME: home, TMPDIR: temp };
+  delete scriptEnv.CLAUDE_HARNESS_DIR;
+  const r = execScript(env.root, scriptEnv, ["x.md"]);
+  const kept = join(home, ".claude", "harness", session, "memory-push");
+  assert.equal(r.code, 1);
+  assert.match(r.stdout, /^push blocked: merge conflict x\.md \(x\.md\)/);
+  assert.ok(r.stdout.includes(`(your version: ${kept}/`));
+  assert.ok(existsSync(kept));
+  assert.ok(!existsSync(join(temp, "claude-harness")));
+});
