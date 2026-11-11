@@ -22,7 +22,7 @@
       "Deploying this repository is allowed only as CLAUDE.md's deploy rule says: the comment `@mergifyio queue` on release-please's `release: v5.N.0` pull request when the owner asked for that release, and the re-run of that merge's failed `production` job that the rule names. No other deploy is allowed: no push to a deploy branch, no edge-deploy.sh run or deploy.yml dispatch, no Cloudflare Pages or Workers API write. Reading those runs, its jobs and logs, and recording the result (the memory note, reminders, Linear) afterwards is part of it.",
       "Reading Cloudflare Access configuration (applications, their policies, and service tokens' names, ids, expiry and last-seen times, never their secret values) through the Cloudflare API to diagnose an Access refusal is allowed without asking the owner.",
       "Sending messages between this project's own Claude sessions (the head and the builder sessions it started) is allowed: briefs, sign-offs, answers and approvals of changes an owner decision or a standing owner rule covers. Relaying such an approval is not itself a production change.",
-      "Pushing to this project's ticket branches on origin (claude/cd-*), by merge and never by force or rebase, is allowed for builders; main changes only through the Mergify queue.",
+      "Pushing to this project's ticket branches on origin (claude/cd-*), by merge and never by force or rebase, is allowed for builders;",
       "Temporary break-once edits to product files in an agent's own worktree, made to show a test fails and then restored, are allowed; they are never committed or pushed."
     ]
   },
