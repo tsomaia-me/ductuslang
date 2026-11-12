@@ -1,6 +1,6 @@
 ---
 name: lesson
-description: Project-specific conventions Peer follows when writing, widening, or removing a lesson in .memory/LESSONS.md or .memory/lessons/<ROLE>.md.
+description: Project-specific conventions Peer follows when writing, widening, or removing a lesson in .claude/lessons/GENERAL.md or .claude/lessons/<ROLE>.md.
 ---
 
 # Lesson Conventions
@@ -29,13 +29,13 @@ Every lesson is one present-tense sentence under 500 characters:
 
 ## Widen over append
 
-Before adding a lesson, check `.memory/LESSONS.md` (shared across all roles) and `.memory/lessons/<ROLE>.md`:
+Before adding a lesson, check `.claude/lessons/GENERAL.md` (shared across all roles) and `.claude/lessons/<ROLE>.md`:
 
 - **Same mechanism and action:** If an existing lesson already covers the same mechanism or should have caught the incident, widen that line in place under its existing ID instead of adding a twin beside it.
-- **Shared vs. role-specific:** If the mechanism bites any role that performs the action (or matches lines across more than one role file), merge it into the shared `.memory/LESSONS.md` file and remove the role-specific duplicates.
+- **Shared vs. role-specific:** If the mechanism bites any role that performs the action (or matches lines across more than one role file), merge it into the shared `.claude/lessons/GENERAL.md` file and remove the role-specific duplicates.
 - **Cap (~20 lessons per file):** When a file crosses 20 lessons, widen overlapping lines into the general check they share and remove the redundant IDs until the file sits at or under 20. If merging would strip the concrete action or mechanism from a line, don't merge; ask the owner which lesson to drop. Never reuse a removed ID: keep a "Last ID:" line at the top of each file and bump it on every add.
 - **Removal:** Remove a lesson when the mechanism it names no longer exists.
 
 ## How to write it in the repo
 
-Edit the project's shared or role lessons file directly (`.memory/LESSONS.md` and `.memory/lessons/<ROLE>.md`), taking the ID after that file's "Last ID:" and disclosing every written, widened or removed line to the owner for veto.
+Edit the project's shared or role lessons file directly (`.claude/lessons/GENERAL.md` and `.claude/lessons/<ROLE>.md`), taking the ID after that file's "Last ID:" and disclosing every written, widened or removed line to the owner for veto.

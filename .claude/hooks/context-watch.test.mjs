@@ -14,7 +14,8 @@ const WINDOW = '348000';
 const BIG_WINDOW = '1000000';
 const SUBAGENT_HEAD = '**Your context holds ';
 const SUBAGENT_TAIL = ' Wrap up now: finish or set aside the piece in hand, commit what passes if you commit, write where you stopped and what is next where your brief keeps your progress, run your hand-back checks, and hand back. Start nothing new.';
-const NOTICE = '**Compaction at 315k; you are at 255k.** Write your note now, before any other tool call: `pnpm grounding --role <ROLE>`, with the note on stdin, under 4,000 characters. Say what you are doing, the decisions in force, the next step, and at the end the files to re-read in order. Then carry on with your work; nothing else changes, and 60k is left after the note.';
+const PROJECT = mkdtempSync(path.join(os.tmpdir(), 'context-watch-project-'));
+const NOTICE = `**Compaction at 315k; you are at 255k.** Bring your notes file, \`${path.join(PROJECT, '.claude', 'notes', '<ROLE>.md')}\`, up to date now, before any other tool call: what runs, what is owed, what is open, the next step, and at the end the files to re-read in order. Then carry on with your work; nothing else changes, and 60k is left after the notes.`;
 
 function subagentNotice(held, compactsNear, threshold = '600k') {
   const compaction = compactsNear == null ? '' : `it compacts near ${compactsNear}, and `;
@@ -74,7 +75,7 @@ function subagentLines(usage) {
 
 function runHook({ harnessDir, transcriptPath, sessionId = 'session-a', eventName = 'UserPromptSubmit', extraInput = {}, env = {} }) {
   const input = { session_id: sessionId, transcript_path: transcriptPath, cwd: harnessDir, hook_event_name: eventName, ...extraInput };
-  const childEnv = { ...process.env, CLAUDE_HARNESS_DIR: harnessDir, CLAUDE_CODE_AUTO_COMPACT_WINDOW: WINDOW, ...env };
+  const childEnv = { ...process.env, CLAUDE_PROJECT_DIR: PROJECT, CLAUDE_HARNESS_DIR: harnessDir, CLAUDE_CODE_AUTO_COMPACT_WINDOW: WINDOW, ...env };
   return spawnSync(process.execPath, [HOOK_PATH], { input: JSON.stringify(input), env: childEnv, encoding: 'utf8' });
 }
 
@@ -160,7 +161,7 @@ test('concurrent hook runs print the notice exactly once', async () => {
   const dir = tempDir();
   const transcriptPath = writeTranscript(dir, baseLines({ input: 0, cacheCreation: 0, cacheRead: 300000 }));
   const input = JSON.stringify({ session_id: 'session-a', transcript_path: transcriptPath, cwd: dir, hook_event_name: 'PostToolUse' });
-  const env = { ...process.env, CLAUDE_HARNESS_DIR: dir, CLAUDE_CODE_AUTO_COMPACT_WINDOW: WINDOW };
+  const env = { ...process.env, CLAUDE_PROJECT_DIR: PROJECT, CLAUDE_HARNESS_DIR: dir, CLAUDE_CODE_AUTO_COMPACT_WINDOW: WINDOW };
   const runOnce = () =>
     new Promise((resolve) => {
       const child = spawn(process.execPath, [HOOK_PATH], { env });

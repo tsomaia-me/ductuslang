@@ -9,8 +9,6 @@
   },
   "scripts": {
     "explore": "bash infra/scripts/explore.sh",
-    "lesson": "bash .claude/scripts/lesson.sh",
-    "grounding": "node .claude/scripts/grounding.mjs",
     "last-messages": "node .claude/hooks/last-messages.mjs"
   }
 }

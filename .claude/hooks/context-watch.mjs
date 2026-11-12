@@ -1,7 +1,7 @@
 import { closeSync, existsSync, fstatSync, openSync, readSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
-import { isEntryPoint, NOTE_ADVISED_CHARACTERS, parseLine, readStdin, sessionFolder } from './shared.mjs';
+import { isEntryPoint, notesPath, parseLine, readStdin, sessionFolder } from './shared.mjs';
 
 export const TAIL_BYTES = 262144;
 const NOTE_ROOM_TOKENS = 60000;
@@ -65,8 +65,8 @@ function thousands(tokens) {
   return `${Math.round(tokens / 1000)}k`;
 }
 
-function noticeText(compactAt) {
-  return `**Compaction at ${thousands(compactAt)}; you are at ${thousands(compactAt - NOTE_ROOM_TOKENS)}.** Write your note now, before any other tool call: \`pnpm grounding --role <ROLE>\`, with the note on stdin, under ${NOTE_ADVISED_CHARACTERS} characters. Say what you are doing, the decisions in force, the next step, and at the end the files to re-read in order. Then carry on with your work; nothing else changes, and ${thousands(NOTE_ROOM_TOKENS)} is left after the note.`;
+function noticeText(compactAt, notes) {
+  return `**Compaction at ${thousands(compactAt)}; you are at ${thousands(compactAt - NOTE_ROOM_TOKENS)}.** Bring your notes file, \`${notes}\`, up to date now, before any other tool call: what runs, what is owed, what is open, the next step, and at the end the files to re-read in order. Then carry on with your work; nothing else changes, and ${thousands(NOTE_ROOM_TOKENS)} is left after the notes.`;
 }
 
 function formatOutput(eventName, notice) {
@@ -128,7 +128,7 @@ async function main() {
     if (error.code === 'EEXIST') return;
     throw error;
   }
-  process.stdout.write(formatOutput(input.hook_event_name, noticeText(compactAt)) + '\n');
+  process.stdout.write(formatOutput(input.hook_event_name, noticeText(compactAt, notesPath(process.env.CLAUDE_PROJECT_DIR || input.cwd))) + '\n');
 }
 
 if (isEntryPoint(import.meta.url)) {
