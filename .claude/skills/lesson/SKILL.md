@@ -1,17 +1,13 @@
 ---
 name: lesson
-description: Project-specific conventions Peer follows when writing, widening, or removing a lesson in LESSONS.md or lessons/<ROLE>.md.
+description: Project-specific conventions Peer follows when writing, widening, or removing a lesson in .claude/lessons/GENERAL.md or .claude/lessons/<ROLE>.md.
 ---
 
 # Lesson Conventions
 
 ## When a lesson is written
 
-Write a lesson only after the first two tiers are ruled out:
-
-1. Can a test, type, linter, or script make the mistake impossible? Build or propose that check instead.
-2. Did a vague or missing line in a role or doc file cause it? Fix that line instead.
-3. Only when neither catches it, write or widen a lesson so every future session reads the check before acting.
+Write or widen a lesson when a mistake cost rework or the owner had to correct you, and a check would have prevented it, so every future session reads the check before acting. One-off slips with no repeatable mechanism get no lesson.
 
 When the owner gives a lesson directly (`lesson: ...`), rewrite it into the form below while keeping its point, record it, and show the written line so the owner can veto.
 
@@ -33,13 +29,13 @@ Every lesson is one present-tense sentence under 500 characters:
 
 ## Widen over append
 
-Before adding a lesson, check `LESSONS.md` (shared across all roles) and `lessons/<ROLE>.md`:
+Before adding a lesson, check `.claude/lessons/GENERAL.md` (shared across all roles) and `.claude/lessons/<ROLE>.md`:
 
 - **Same mechanism and action:** If an existing lesson already covers the same mechanism or should have caught the incident, widen that line in place under its existing ID instead of adding a twin beside it.
-- **Shared vs. role-specific:** If the mechanism bites any role that performs the action (or matches lines across more than one role file), merge it into the shared `LESSONS.md` file and remove the role-specific duplicates.
-- **Cap (~20 lessons per file):** When a file crosses 20 lessons, widen overlapping lines into the general check they share and remove the redundant IDs until the file sits at or under 20. Never reuse a removed ID.
+- **Shared vs. role-specific:** If the mechanism bites any role that performs the action (or matches lines across more than one role file), merge it into the shared `.claude/lessons/GENERAL.md` file and remove the role-specific duplicates.
+- **Cap (~20 lessons per file):** When a file crosses 20 lessons, widen overlapping lines into the general check they share and remove the redundant IDs until the file sits at or under 20. If merging would strip the concrete action or mechanism from a line, don't merge; ask the owner which lesson to drop. Never reuse a removed ID: keep a "Last ID:" line at the top of each file and bump it on every add.
+- **Removal:** Remove a lesson when the mechanism it names no longer exists.
 
 ## How to write it in the repo
 
-- **If the repo provides the lesson CLI (`pnpm lesson`):** Run `pnpm lesson <FILE> "<sentence>"` (`shared` for `LESSONS.md`, or the role name for `lessons/<ROLE>.md`). On `SIMILAR`, widen the matched line and re-run with `--replace <id> "<widened sentence>"`, or re-run with `--distinct <ids> "<sentence>"` when the mechanism is genuinely different. On an owner veto or after merging lines, remove with `pnpm lesson <FILE> --remove <id>`. In such cases, you may omit the manual check steps in the "## Widen over append" as the lesson script does that for you.
-- **If the repo has no lesson CLI:** Edit the project's shared or role lessons file directly (`.memory/LESSONS.md` and `.memory/lessons/<ROLE>.md`, or `docs/lessons/GENERAL.md` and `docs/lessons/<ROLE>.md`), taking the next unused ID for that file's prefix and disclosing the written or widened line to the owner for veto.
+Edit the project's shared or role lessons file directly (`.claude/lessons/GENERAL.md` and `.claude/lessons/<ROLE>.md`), taking the ID after that file's "Last ID:" and disclosing every written, widened or removed line to the owner for veto.
