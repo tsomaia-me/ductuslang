@@ -34,6 +34,7 @@
 - To the PLAN: a builder wraps up at 400,000 tokens (`context-watch.mjs` still says 600,000); the builder-wait sentence goes, it is a preference; night hours 18:00Z to 02:00Z with light checks only; cargo runs at `nice -n 19` and 6 jobs.
 - To SPEC §5.6: a read of an attribute in a unit family is a value of that family.
 - The head and consultant skills and the agent files still name `.memory/` and `pnpm lesson`.
+- Failing before this cleanup and still: one test of `.claude/hooks/settings.test.mjs`, 22 of `.claude/scripts/memory-push.test.mjs`; the status line names a missing `.claude/hooks/usage-status.mjs`. The root `CLAUDE.MD` still describes the old layout.
 - The test baselines sit in `.memory/symphonyscript/baselines/`; they belong beside the review tool or nowhere.
 
 ## Read
