@@ -29,7 +29,7 @@ Every lesson is one present-tense sentence under 500 characters:
 
 ## Widen over append
 
-Before adding a lesson, check `.claude/LESSONS.md` (shared across all roles) and `.memory/lessons/<ROLE>.md`:
+Before adding a lesson, check `.memory/LESSONS.md` (shared across all roles) and `.memory/lessons/<ROLE>.md`:
 
 - **Same mechanism and action:** If an existing lesson already covers the same mechanism or should have caught the incident, widen that line in place under its existing ID instead of adding a twin beside it.
 - **Shared vs. role-specific:** If the mechanism bites any role that performs the action (or matches lines across more than one role file), merge it into the shared `.memory/LESSONS.md` file and remove the role-specific duplicates.
