@@ -4,12 +4,16 @@
 
 - Compiler work is paused and no builder runs.
 - The design pass runs since the owner's go of 2026-11-13. Nothing is designed yet.
-- Two cold reviewers of the lexer and the parser run since 02:35Z on 2026-11-13, each in a private export of `6491d802` under `/home/cdagent/cargo-targets/peer-syntax-review/`: `conformance/` (Fable, high: the grammar, the layout, the tree, the tests; cargo on cpus 8-11,16,17) and `recovery/` (Opus, high: what recovery holds by run, and where it cuts, described; cargo on cpus 12-15). Each writes `REPORT.md` in its folder and deletes its `target`.
-- The speed floor is measured (2026-11-13, release, smallest of three processes on cpu 6 while the reviewers ran at nice 19 on other cores; raw rows under `/home/cdagent/cargo-targets/peer-syntax-review/floor/results/`; a cold check of the bench runs, and the table is saved under `.claude/reference/` once it returns):
-  - The large fixture project (31 files, 319 KB, 10,413 lines, 64,918 syntax nodes): lexing and parsing 16.8 ms, the IR build 14.8 ms, 487 ns a syntax node together, against the last plan's 1 µs a node for the whole compile.
-  - The last plan's inlined-call program at 1,000,000 calls written out (10 tokens and 6 nodes a call): lexing 0.31 µs, lexing and parsing 1.25 µs, the IR build 1.02 µs, 2.27 µs a call together, against its 1.5 µs target.
-  - Lexing runs at 44 to 82 MB/s and 28 to 38 ns a token; one pass that decodes each character takes 1.29 ns a byte. Non-ASCII identifiers halve the lexer's speed. Broken corpus programs cost 1.4 times a node. `dev` costs 1.3 to 1.4 times release for parsing. Work is linear in every shape. Peak memory is 48 to 82 B a node for the tree and 60 to 100 B for the IR.
-  - `perf` counters are closed on this host (`perf_event_paranoid` is 4). Delete the bench's `target` when the table is saved.
+- The two cold reviews of the lexer and the parser and the speed floor are done (2026-11-13) and saved: `.claude/reference/syntax-conformance-review.md`, `syntax-recovery-review.md`, `front-end-floor.md`. The reviewers' probes, cases and raw rows stay under `/home/cdagent/cargo-targets/peer-syntax-review/`; every `target` there is deleted. No agent runs.
+- What they found, in short:
+  - The foundations hold: layout but one sentence, the lexical rules, precedence, JSON mode, a lossless tree, and no panic, hang or stack growth on about 700,000 broken inputs.
+  - The parser refuses twelve families of valid programs (one a SPEC `sym` example), accepts two invalid forms, and five typed views answer wrong. They cluster in what was never built after the parser: qualified names, bracket arguments, patterns that stand in for wires, keyword attribute names, `json` as a member.
+  - Two paths cost time that grows with the square of the input: lines that each leave a nested group open (4,000 lines take 12 s), and one `{` left open a line, valid input included.
+  - The two message rules break in recurring shapes: a second fault on a line is silent, a mis-indented line or a tab draws two messages, a missing `let` or `fn` draws one a line of its block, and a block under any faulty line vanishes silently with its declarations.
+  - The SPEC has thirteen gaps or contradictions for a parser, chiefly: a wire-pattern line and a type's first bracket list need knowledge a parser of one file lacks, and §5.3 contradicts §5.1 on the right operand of `is`.
+  - The module has no test that states a tree, a layout sequence or a precedence.
+  - Speed, on this host as it runs, turbo off at about 2 GHz: lexing and parsing 0.26 µs a syntax node and 1.1 to 1.2 µs a written call; the IR build 0.21 to 0.24 µs a node and 0.9 to 1.0 µs a call; against the last plan's 1 µs a node and 1.5 µs a call for everything. The IR build is not shown linear.
+- Before the owner since 2026-11-13: which machine and state the speed promise is stated for; whether the parser is repaired in place as the first work unit or rewritten; and the SPEC's rulings on the thirteen gaps, which the peer brings as a batch with examples.
 - The old process's commit loop still runs on `wb` (pid 1260982, alive on 2026-11-12 at 17:53Z) with nothing to check; stop it on the owner's word.
 
 ## Settled
@@ -31,19 +35,16 @@
 
 ## Open
 
-- Whether the speed targets are reachable: lexing, parsing and the IR alone take about the whole inlined-call target. No test times the front end by the clock; its cost tests count work. The lexer and the parser have no stated share of any budget.
 - What is taken from the old code and tests, as cases and never as a yardstick.
 - The edges the placeholder rule leaves for the SPEC, to bring as one batch with examples: a name a faulty declaration declares, a name declared twice, structure that depends on a placeholder (a range bound, a use's argument), the vocabulary's counts beside a faulty placement, a limit's stop, and warnings in a program that draws errors.
-- The parser and patterns that stand in for wires. It tells a wire placement by the vocabulary's wire kinds alone (`syntax/parser/mod.rs`, `at_wire_kind`), so a use of such a pattern (SPEC §7.1) parses as a node placement with a body, and a destination that is a path, an `if`, an indexed array or a `match` has no parse there. Read from the code, not run. With "the parser needs no other file" settled, the parser cannot learn the pattern's kind, so a fix is a change to what the parser builds for such a line: a reopening outside the two settled triggers, the owner's to allow once the cold review confirms the fault by a run.
 - What ids local to each file ask of the IR: today one id space and one symbol table run across the prelude and every file (`FlatIr::after`, `Symbols::layer`), so the IR is reshaped at least there.
 - What "keep the IR" keeps. The flat IR draws `unbuilt-construct` for about forty constructs: every type but a scalar and an array of them, `type` declarations, records, sums, maps, documents, lambdas, bracket parameters, clocks, parameter markers and annotations, cells in patterns, `=>` and the package items. 25 SPEC examples are listed pending. A second, tree-shaped IR (`Hir`) is built from the flat one for the old engine.
 - Whether ARCHITECTURE §3 to §6 stand as what the compiler hands the runtime. Core holds a `Program` and no runtime.
 
 ## Owed
 
-- Before the design relies on them: one cold review of the lexer and the parser against the SPEC's grammar and layout rules; the last review read one file of them. The peer proposes one reviewer on Fable at high effort for the grammar, the layout, the tree and the tests, and one on Opus at high effort for what recovery must hold under the two rules, which also reports where recovery cuts and resumes as it finds it, described and not judged, since the placeholder rule sets nothing there. Running, see Now.
 - To the SPEC, the owner's to approve: the placeholder rule for broken programs, with its edges (see Open).
-- The speed floor of the lexer, the parser and the IR build, by the clock, on one pinned fast core (the host's CPU has fast and slow cores), release and `dev`, over the large fixture project, the valid corpus programs, generated shapes at doubling sizes and broken input.
+- To the SPEC, the owner's to rule: the thirteen gaps of `syntax-conformance-review.md` § E, as one batch with examples.
 - Agent definitions: builder, reviewer, verifier, prober, test author.
 - The loops written out: design, test, build.
 - To the SPEC: §5.6, a read of an attribute in a unit family is a value of that family (ruled). A plain label on a `match` over a unit value is accepted today and reads as refused (not ruled).
@@ -59,4 +60,5 @@
 - `.claude/reference/compiler-review.md`: what went wrong in the last build and what it measured.
 - `.claude/worktrees/docs/packages/symphonyscript/docs/ARCHITECTURE.md`, whole, as the last design and no authority; its §3 to §6 state what the compiler hands the runtime.
 - The lexer, the parser and the IR as they stand: `crates/compiler/src/syntax/` and `src/semantics/ir/` under `/home/cdagent/cargo-targets/r3/wt/packages/symphonyscript/`, by their public interfaces.
+- `.claude/reference/syntax-conformance-review.md`, `syntax-recovery-review.md` and `front-end-floor.md`: the reviews and the measurement of 2026-11-13.
 - The last plan's speed targets: `docs/PLAN.md` § Reviews in the same tree, the table alone.
