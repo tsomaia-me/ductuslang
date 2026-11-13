@@ -3,7 +3,9 @@
 ## Now
 
 - Compiler work is paused and no builder runs.
-- The design pass is open. This peer has read the four documents and the front end's interfaces and waits on the owner's go; nothing is designed, nothing is measured and no agent runs.
+- The design pass runs since the owner's go of 2026-11-13. Nothing is designed yet.
+- Two cold reviewers of the lexer and the parser run since 02:35Z on 2026-11-13, each in a private export of `6491d802` under `/home/cdagent/cargo-targets/peer-syntax-review/`: `conformance/` (Fable, high: the grammar, the layout, the tree, the tests; cargo on cpus 8-11,16,17) and `recovery/` (Opus, high: what recovery holds by run, and where it cuts, described; cargo on cpus 12-15). Each writes `REPORT.md` in its folder and deletes its `target`.
+- The speed floor is measured by this peer in `/home/cdagent/cargo-targets/peer-syntax-review/floor/`: a bench example and a shim module in a private export, inputs under `inputs/`, runs pinned to cpu 6. `perf` counters are closed on this host (`perf_event_paranoid` is 4). Delete its `target` when the table is saved.
 - The old process's commit loop still runs on `wb` (pid 1260982, alive on 2026-11-12 at 17:53Z) with nothing to check; stop it on the owner's word.
 
 ## Settled
@@ -35,9 +37,8 @@
 
 ## Owed
 
-- Before the design relies on them: one cold review of the lexer and the parser against the SPEC's grammar and layout rules; the last review read one file of them. The peer proposes one reviewer on Fable at high effort for the grammar, the layout, the tree and the tests, and one on Opus at high effort for what recovery must hold under the two rules, which also reports where recovery cuts and resumes as it finds it, described and not judged, since the placeholder rule sets nothing there. Not started; waits on the owner's go.
+- Before the design relies on them: one cold review of the lexer and the parser against the SPEC's grammar and layout rules; the last review read one file of them. The peer proposes one reviewer on Fable at high effort for the grammar, the layout, the tree and the tests, and one on Opus at high effort for what recovery must hold under the two rules, which also reports where recovery cuts and resumes as it finds it, described and not judged, since the placeholder rule sets nothing there. Running, see Now.
 - To the SPEC, the owner's to approve: the placeholder rule for broken programs, with its edges (see Open).
-- To write at go, unless the owner vetoes, in `.claude/OWNER_PREFERENCES.md`: "A choice that a cheap measurement would inform waits for the measurement; until then only the part that keeps every option open is taken."
 - The speed floor of the lexer, the parser and the IR build, by the clock, on one pinned fast core (the host's CPU has fast and slow cores), release and `dev`, over the large fixture project, the valid corpus programs, generated shapes at doubling sizes and broken input.
 - Agent definitions: builder, reviewer, verifier, prober, test author.
 - The loops written out: design, test, build.
