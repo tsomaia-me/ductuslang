@@ -7,3 +7,4 @@ One entry per preference: the rule in plain words.
 - A builder never waits idle: no gap between a hand-back and the next launch, and no waiting on a check another process runs.
 - Clean up what agents leave on the host without asking.
 - No agent reads `.env` or prints a key.
+- The code rules are self-contained: an agent learns how to write good code from them alone, never from existing code, and no rule leaves the builder to judge what is good.
