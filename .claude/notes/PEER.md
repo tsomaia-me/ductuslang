@@ -5,7 +5,11 @@
 - Compiler work is paused and no builder runs.
 - The design pass runs since the owner's go of 2026-11-13. Nothing is designed yet.
 - Two cold reviewers of the lexer and the parser run since 02:35Z on 2026-11-13, each in a private export of `6491d802` under `/home/cdagent/cargo-targets/peer-syntax-review/`: `conformance/` (Fable, high: the grammar, the layout, the tree, the tests; cargo on cpus 8-11,16,17) and `recovery/` (Opus, high: what recovery holds by run, and where it cuts, described; cargo on cpus 12-15). Each writes `REPORT.md` in its folder and deletes its `target`.
-- The speed floor is measured by this peer in `/home/cdagent/cargo-targets/peer-syntax-review/floor/`: a bench example and a shim module in a private export, inputs under `inputs/`, runs pinned to cpu 6. `perf` counters are closed on this host (`perf_event_paranoid` is 4). Delete its `target` when the table is saved.
+- The speed floor is measured (2026-11-13, release, smallest of three processes on cpu 6 while the reviewers ran at nice 19 on other cores; raw rows under `/home/cdagent/cargo-targets/peer-syntax-review/floor/results/`; a cold check of the bench runs, and the table is saved under `.claude/reference/` once it returns):
+  - The large fixture project (31 files, 319 KB, 10,413 lines, 64,918 syntax nodes): lexing and parsing 16.8 ms, the IR build 14.8 ms, 487 ns a syntax node together, against the last plan's 1 µs a node for the whole compile.
+  - The last plan's inlined-call program at 1,000,000 calls written out (10 tokens and 6 nodes a call): lexing 0.31 µs, lexing and parsing 1.25 µs, the IR build 1.02 µs, 2.27 µs a call together, against its 1.5 µs target.
+  - Lexing runs at 44 to 82 MB/s and 28 to 38 ns a token; one pass that decodes each character takes 1.29 ns a byte. Non-ASCII identifiers halve the lexer's speed. Broken corpus programs cost 1.4 times a node. `dev` costs 1.3 to 1.4 times release for parsing. Work is linear in every shape. Peak memory is 48 to 82 B a node for the tree and 60 to 100 B for the IR.
+  - `perf` counters are closed on this host (`perf_event_paranoid` is 4). Delete the bench's `target` when the table is saved.
 - The old process's commit loop still runs on `wb` (pid 1260982, alive on 2026-11-12 at 17:53Z) with nothing to check; stop it on the owner's word.
 
 ## Settled
