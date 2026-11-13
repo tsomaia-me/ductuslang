@@ -34,20 +34,19 @@
 - §16's edges, for the batch: which names a region turns into placeholders (the peer's pick: a name nothing outside a region declares, everywhere; for a region inside a body, also every name it writes, within that body and the bodies nested in it, and every path segment under that instance; a region at top level adds nothing, since a second declaration of a declared name is its own fault); which fault of several on one line draws, and whether an opener left open yields to a later fault on its line; whether an unknown unit suffix and the 2¹²⁷ literal are syntax faults with a region; what a fault on a comment-only line does; what the counts say when a fault's region is empty; which faults still draw beside a limit's stop; how much of a pattern's use stays unexpanded when one argument is a placeholder; which expression is the placeholder for a fault of legality; whether two uses of one undeclared name are one fault or two; how many messages a faulty line draws when a `for`, a pattern or a call reaches it many times.
 - What is taken from the old code and tests, as cases and never as a yardstick.
 - What "keep the IR" keeps: the flat IR draws `unbuilt-construct` for about forty constructs and 25 SPEC examples are listed pending; one id space and one symbol table run across the prelude and every file (`FlatIr::after`, `Symbols::layer`), so file-local ids reshape it at least there; a second, tree-shaped IR (`Hir`) feeds the old engine.
-- Whether ARCHITECTURE §3 to §6 stand as what the compiler hands the runtime. Core holds a `Program` and no runtime.
+- What the compiler hands the runtime. The only statement of it is the last design's, `ARCHITECTURE.md` §3 to §6 beside the SPEC, and core holds a `Program` and no runtime. Nothing else of that file is read: its §7 is the design being replaced and anchors wrongly.
 - N, the speed promise's figure.
 
 ## Owed, later
 
 - To the SPEC: §5.6, a read of an attribute in a unit family is a value of that family (ruled). A plain label on a `match` over a unit value is accepted today and reads as refused (not ruled).
-- Not the design pass's: read the old ledger and decisions record once for places where the SPEC needed a ruling, and settle each in the SPEC.
 - The syntax module imports the old engine's `semantics::analysis::fast_hash`, `semantics::counted_walk` and `semantics::reporting::order`; they move before the old engine goes.
-- Harness debts: `.claude/settings.json`, `settings.local.json`, `hooks/session.mjs` and the root `CLAUDE.MD` still name the deleted roles and the old layout; the `docs` worktree's hooks print the old layout's lessons and ask for `pnpm grounding`, and main's files are the ones in force; `context-watch.mjs` warns at 600,000 tokens against the owner's 400,000; one test of `settings.test.mjs` and 22 of `memory-push.test.mjs` fail; the status line names a missing `usage-status.mjs`.
+- The `docs` worktree's hooks print the old layout's lessons and ask for `pnpm grounding`; main's `.claude/` files are the ones in force.
 
 ## Where things are
 
 - Hosts: this one is slow (turbo off). wb2 (`ssh wb2`) is the reference. Any build: cargo by its full path, `nice -n 19`, 6 jobs; nothing heavy here from 18:00Z to 02:00Z.
-- The SPEC: `.claude/worktrees/docs/packages/symphonyscript/docs/SPEC.md`, branch `docs`; read whole. ARCHITECTURE beside it is the last design and no authority.
+- The SPEC: `.claude/worktrees/docs/packages/symphonyscript/docs/SPEC.md`, branch `docs`; read whole.
 - The code as it stands: `/home/cdagent/cargo-targets/r3/wt/packages/symphonyscript/` at `6491d802`; the lexer and parser under `crates/compiler/src/syntax/`, the IR under `src/semantics/ir/`.
 - `.claude/reference/`: `compiler-review.md` (the last build), `syntax-conformance-review.md` (grammar findings A, B, C and SPEC gaps E), `syntax-recovery-review.md` (recovery findings F, the hostile shapes, how recovery cuts today), `front-end-floor.md` (speed on both hosts), `syntax-repair-size.md` (each finding mapped to code).
-- `/home/cdagent/cargo-targets/peer-syntax-review/`: the reviewers' probes and cases (`conformance/`, `recovery/`), the bench and its rows (`floor/`), the §16 draft. On wb2 the bench's inputs and rows are under `~/cargo-targets/peer-floor/`.
+- `/home/cdagent/cargo-targets/peer-syntax-review/`: the reviewers' probes and cases (`conformance/`, `recovery/`), the bench and its rows (`floor/`), the §16 draft.
