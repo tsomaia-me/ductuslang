@@ -13,7 +13,8 @@
   - The SPEC has thirteen gaps or contradictions for a parser, chiefly: a wire-pattern line and a type's first bracket list need knowledge a parser of one file lacks, and §5.3 contradicts §5.1 on the right operand of `is`.
   - The module has no test that states a tree, a layout sequence or a precedence.
   - Speed, on this host as it runs, turbo off at about 2 GHz: lexing and parsing 0.26 µs a syntax node and 1.1 to 1.2 µs a written call; the IR build 0.21 to 0.24 µs a node and 0.9 to 1.0 µs a call; against the last plan's 1 µs a node and 1.5 µs a call for everything. The IR build is not shown linear.
-- Before the owner since 2026-11-13: which machine and state the speed promise is stated for; whether the parser is repaired in place as the first work unit or rewritten; and the SPEC's rulings on the thirteen gaps, which the peer brings as a batch with examples.
+- Running since 03:20Z on 2026-11-13: the floor's re-run on wb2 (`ssh wb2`, `~/cargo-targets/peer-floor/`, `run-wb2.sh`, rows under `results-wb2/`, `DONE` when it ends; it deletes its `target`), and one agent on Opus sizing the parser's repair finding by finding, returning text.
+- Next from the peer: the SPEC rulings as one batch (the gaps of the conformance review and the rules for a syntax fault), then the repair's size, then the owner chooses repair or rewrite.
 - The old process's commit loop still runs on `wb` (pid 1260982, alive on 2026-11-12 at 17:53Z) with nothing to check; stop it on the owner's word.
 
 ## Settled
@@ -31,7 +32,8 @@
 - Broken programs (owner, 2026-11-13): a fault leaves a placeholder with no type and no value; a check that needs a fact the placeholder holds draws nothing, and a fault that does not read it still draws. No type is kept behind a fault and no value is tried. The SPEC gains this rule.
 - Scope (owner, 2026-11-13): the design covers the whole SPEC, source to Program, and is built in slices.
 - The front end (owner, 2026-11-13): ids are local to each file, and the parser needs no other file. Nothing else about reuse or side-by-side parsing is chosen.
-- The speed promise, what it covers and each stage's share, is chosen after the floor is measured, never before; the front end stays inside the figure that is judged, so a slow one shows.
+- Speed (owner, 2026-11-13): the promise is stated for the second host, wb2, where the gate's speed rows run. A time taken on this host is never compared with a target. The last plan's two targets disagree, 1 µs a syntax node against 1.5 µs for a call of five or six nodes, and neither stands. The promise is restated as what a user feels, a project of a stated size checked in under N milliseconds on wb2, and the budgets a node derive from it; N is a product call still to make, after the thin slice. The front end stays inside the judged figure.
+- The parser (owner, 2026-11-13): no choice between repair and rewrite yet. First the SPEC's gaps and the rules for a syntax fault are settled, then the repair is sized, each finding mapped to the code it touches, with the lexer and layout counted apart from the parser, the recovery and the views. The lexer and layout are kept either way. If the repairs touch more than about half of the rest, that part is rewritten against stated trees, and the 700,000 broken inputs stay as its robustness net.
 
 ## Open
 
