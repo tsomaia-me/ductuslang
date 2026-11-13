@@ -13,8 +13,8 @@
   - The SPEC has thirteen gaps or contradictions for a parser, chiefly: a wire-pattern line and a type's first bracket list need knowledge a parser of one file lacks, and §5.3 contradicts §5.1 on the right operand of `is`.
   - The module has no test that states a tree, a layout sequence or a precedence.
   - Speed, on this host as it runs, turbo off at about 2 GHz: lexing and parsing 0.26 µs a syntax node and 1.1 to 1.2 µs a written call; the IR build 0.21 to 0.24 µs a node and 0.9 to 1.0 µs a call; against the last plan's 1 µs a node and 1.5 µs a call for everything. The IR build is not shown linear.
-- Running since 03:20Z on 2026-11-13: the floor's re-run on wb2 (`ssh wb2`, `~/cargo-targets/peer-floor/`, `run-wb2.sh`, rows under `results-wb2/`, `DONE` when it ends; it deletes its `target`), and one agent on Opus sizing the parser's repair finding by finding, returning text.
-- Next from the peer: the SPEC rulings as one batch (the gaps of the conformance review and the rules for a syntax fault), then the repair's size, then the owner chooses repair or rewrite.
+- Done on 2026-11-13 and saved, no agent runs: the floor on wb2 (`front-end-floor.md`: the large fixture's lexing and parsing 8.3 ms, its IR build about 7 ms, 0.23 µs a syntax node together; a written call 0.54 to 0.58 µs to lex and parse and about 1.0 µs with the IR; wb2 runs 2.0 to 2.2 times as fast as this host), and the repair's size (`syntax-repair-size.md`: of the lexer and layout 41 to 52 % of the lines sit in functions a fix touches, of the parser's grammar 27 to 33 %, of recovery 30 % patched or 67 % replaced, of the tree and views 4 %; the lower figures keep the recovery design, the higher replace it).
+- Before the owner since 2026-11-13, as one batch: four rulings (readings that depend on what a name names; a keyword as an attribute's name after the first entry; a syntax fault's region; where an unclosed bracket ends) and the defaults the peer takes for the other gaps and for the placeholder rule's edges unless vetoed. After the rulings the peer drafts the SPEC's sentences, and the owner chooses repair or rewrite with the size beside it.
 - The old process's commit loop still runs on `wb` (pid 1260982, alive on 2026-11-12 at 17:53Z) with nothing to check; stop it on the owner's word.
 
 ## Settled
@@ -62,5 +62,5 @@
 - `.claude/reference/compiler-review.md`: what went wrong in the last build and what it measured.
 - `.claude/worktrees/docs/packages/symphonyscript/docs/ARCHITECTURE.md`, whole, as the last design and no authority; its §3 to §6 state what the compiler hands the runtime.
 - The lexer, the parser and the IR as they stand: `crates/compiler/src/syntax/` and `src/semantics/ir/` under `/home/cdagent/cargo-targets/r3/wt/packages/symphonyscript/`, by their public interfaces.
-- `.claude/reference/syntax-conformance-review.md`, `syntax-recovery-review.md` and `front-end-floor.md`: the reviews and the measurement of 2026-11-13.
+- `.claude/reference/syntax-conformance-review.md`, `syntax-recovery-review.md`, `front-end-floor.md` and `syntax-repair-size.md`: the reviews, the measurement and the sizing of 2026-11-13.
 - The last plan's speed targets: `docs/PLAN.md` § Reviews in the same tree, the table alone.
