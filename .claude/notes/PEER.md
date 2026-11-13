@@ -8,7 +8,7 @@
   2. The design page for what the parser hands on: which productions are nodes, the three name-dependent forms, and the text after a colon settled (`Soft: Lamp/0.5` reads as a child or as a division; `Soft: [a, b][i]` starts like a bundle). Cold-reviewed, then the owner's.
   3. The §16 batch with examples (edges under Open), one an unclosed `(` on line 3 that an unrelated stray `)` on line 500 closes, showing what draws and what goes dark.
 - After those: stated trees for §7 to §9, then the trial, then the owner chooses repair or rewrite of the grammar.
-- SPEC state: the rulings outside §16 are committed and pushed on `docs` (`346bfe37`). §16 is a draft, uncommitted in the `docs` worktree, whole copy at `/home/cdagent/cargo-targets/peer-syntax-review/SPEC.full-draft.md`; one sentence of §6.5 citing §16.2 waits with it; its two cold rounds are spent. The draft still silences the counts program-wide and must take the owner's narrower rule (Settled, §16).
+- SPEC state: the SPEC's one home is `main`, `packages/symphonyscript/docs/SPEC.md`; the `docs` branch is merged and gone. The rulings outside §16 are committed. §16 is a draft that sits as an uncommitted change of that file in the main checkout, never staged until the owner approves it; whole copy at `/home/cdagent/cargo-targets/peer-syntax-review/SPEC.full-draft.md`; one sentence of §6.5 citing §16.2 waits with it; its two cold rounds are spent. The draft still silences the counts program-wide and must take the owner's narrower rule (Settled, §16). `symphonyscript/r3` carries an older copy of the SPEC.
 - On the owner's word only: stop the old commit loop on `wb` (pid 1260982); remove `minus.txt` at the repository's root.
 
 ## Settled
@@ -42,12 +42,11 @@
 
 - To the SPEC: §5.6, a read of an attribute in a unit family is a value of that family (ruled). A plain label on a `match` over a unit value is accepted today and reads as refused (not ruled).
 - The syntax module imports the old engine's `semantics::analysis::fast_hash`, `semantics::counted_walk` and `semantics::reporting::order`; they move before the old engine goes.
-- The `docs` worktree's hooks print the old layout's lessons and ask for `pnpm grounding`; main's `.claude/` files are the ones in force.
 
 ## Where things are
 
 - Hosts: this one is slow (turbo off). wb2 (`ssh wb2`) is the reference. Any build: cargo by its full path, `nice -n 19`, 6 jobs; nothing heavy here from 18:00Z to 02:00Z.
-- The SPEC: `.claude/worktrees/docs/packages/symphonyscript/docs/SPEC.md`, branch `docs`; read whole.
+- The SPEC: `packages/symphonyscript/docs/SPEC.md` on `main`; read whole. `ARCHITECTURE.md` is beside it.
 - The code as it stands: `/home/cdagent/cargo-targets/r3/wt/packages/symphonyscript/` at `6491d802`; the lexer and parser under `crates/compiler/src/syntax/`, the IR under `src/semantics/ir/`.
 - `.claude/reference/`: `compiler-review.md` (the last build), `syntax-conformance-review.md` (grammar findings A, B, C and SPEC gaps E), `syntax-recovery-review.md` (recovery findings F, the hostile shapes, how recovery cuts today), `front-end-floor.md` (speed on both hosts), `syntax-repair-size.md` (each finding mapped to code), `owner-brief-2026-11-13.md` (the owner's own words for the three owed items; write from it, not from these notes), `owner-messages-2026-11-13.md` (the owner's two messages before it, word for word: the reference machine and the targets; the four rulings and the trial), `peer-loops-proposal-2026-11-13.md` (the loops, the roles and the trial in the short lines the owner approved with gaps), `spec-16-reviews.md` (the two reviews of the §16 draft, with the programs two readers count differently), `code-standard-brief.md` (the agenda of owed item 1: what the standard is, the five topics with the first candidates, the root causes its acceptance table covers), `loops-draft-review.md` (one cold review of the refused second drafts, word for word, with a guide on top: which points feed the code standard's topics, which wait for the revision of the held loop, test and agent files, which are moot).
 - `/home/cdagent/cargo-targets/peer-syntax-review/`: the reviewers' probes and cases (`conformance/`, `recovery/`), the bench and its rows (`floor/`), the §16 draft.
