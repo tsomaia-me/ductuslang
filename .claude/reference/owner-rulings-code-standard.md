@@ -514,3 +514,105 @@ What I want next, in this order
 
 Tell me your context size before you start item 2. If you are near
 your cap, bring the notes up to date and stop there.
+
+---
+
+# Seventh: the draft is accepted in shape; the answers to its seven questions; one narrow review
+
+Good work, and the right place to stop. The draft is accepted in shape
+and is not approved yet: a few fixes and one narrow review come first.
+[Your commit is pushed.]
+
+The preference line
+
+Commit it as written.
+
+The seven questions
+
+1. The writer. Accepted: one function with the helpers only it calls.
+   Strike the escape "or a shared table named on the page". A shared
+   table has one writer too (1.7). Two passes that fill one table are
+   two tables or one pass.
+
+2. 1.6's words. All five accepted, one sharpened. `==` and `!=` on a
+   variant count as a catch-all where they choose among constructs. A
+   grammar position that requires one exact token is not a choice among
+   constructs. Name the one allowed form for it in 1.6 and show it in
+   the example, where `)` is expected.
+
+3. Marks. Accepted, all three spellings, and `// PAGE` for an invariant
+   of the accepted proposal. The spelling was shown to me in topic 3.
+
+4. Comments. Both additions accepted. Word the fourth kind as "a
+   meaning neither a name nor a type can carry", so 1.8 is tried first.
+
+5. Counters. Settle it with the gate's design, as you say. Record it as
+   open in the notes, with the note that 4.4's wording changes with it.
+
+6. Float functions. Add the sentence to 1.3.
+
+7. Names and place. Accepted: `STANDARD.md` and `FINDINGS.md` in
+   `packages/symphonyscript/docs/`, two files. The old files are deleted
+   and the two CLAUDE files fixed in the commit that lands the approved
+   standard, not before. For each old file, say first in one line what
+   it holds that the standard does not, or that nothing is lost.
+
+The veto list
+
+- Numbering: accepted. Change the acceptance table's bare numbers to
+  match.
+- The example as a piece cut from one unit, without `is` and `is not`:
+  accepted, since the breakdown says what is left out.
+- The table as the arms of two functions beside the kind enum:
+  accepted. An array would state the operators twice.
+- The four additions:
+  - No `as` cast between integer types: not as written. The good form
+    keeps the clause by storing ids as `usize`, eight bytes an id.
+    Either name the one home of the conversion, in the base layer, and
+    show a four-byte id, or drop the clause until the base layer is
+    designed. Tell me which.
+  - No lasting type that holds itself through a `Box`: keep.
+  - A buffer comes in empty and goes back empty: keep, worded as the
+    one exception to "scratch dies in its function".
+  - `unwrap`, `expect`, `unreachable!`, `panic!` and assertions named
+    in 1.11: keep.
+- Left out, 2.2's sentences on the lexer, the grammar and the IR:
+  agreed, they are a page's facts.
+- Left out, 1.5's sentence on a fault reached many times: agreed for
+  the file, but the notes must owe it. When that §16 edge is ruled the
+  sentence goes into 1.5 in the same change.
+
+The two findings not fixed
+
+Accepted as they stand. The fault half of the example is provisional:
+record in the notes that it is checked again after items 2 and 3. A
+faulty expression that leaves nodes under no root does not fit "the
+source reproduced byte for byte", and the parser's page must answer it.
+
+One more review
+
+The good form broke the standard in four places and was then rebuilt
+whole. Your 24.8 million sequences prove what it does, not that it
+keeps the standard's own lines. So one narrow cold review: the rebuilt
+good form against parts 1 to 4, and nothing else. The reviewer gets the
+two files and no word from you on what changed. That is the last
+review of this draft.
+
+The lesson
+
+Write P-9 with its reason tightened: "Run every behaviour a document
+claims of code it prints, the bad example as well as the good, before
+writing the claim, because a behaviour read off code and never run can
+be wrong, and the document then teaches a false rule."
+
+What I want next
+
+1. The answers above worked into both files, and the example compiled
+   as edition 2024, which is the workspace's.
+2. The narrow review, then its findings and what became of each.
+3. Both files brought to me for approval, with the old files' lines.
+4. Then item 2. Questions 1 to 3 are answered, so a design page can
+   name its writers, constructs and marks.
+
+Tell me your context size before you start item 2. If you are near
+your cap, bring the notes up to date and stop there.

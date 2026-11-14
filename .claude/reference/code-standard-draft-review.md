@@ -38,7 +38,34 @@ Saved by the peer session of 2026-11-14. The draft is not in the repo: `/home/cd
 
 Waiting on item 3: 1.5 gains its sentence on a fault reached many times when §16's edge is ruled.
 
-## The reviewer's report, word for word
+## The second review, of the rebuilt good form against parts 1 to 4, and what became of each finding
+
+The owner's last review of this draft, 2026-11-14. The reviewer had the two files and no word on what had changed. It compiled the block as edition 2024, ran 400,000 random token rows and the depth shapes with no panic and no hang, and found no line plainly broken beyond dispute. Its eight findings, in its words shortened, and what was done:
+
+| Finding | What was done |
+|---|---|
+| F1. The comment over `impl Op` says the level rule is decided there and nowhere else, and `prefix_operator` compared a level with a floor outside it: one rule in two places | Fixed. `Op::floor` and `Op::inside` hold every comparison of two levels, `meets` and `prefix_operator` call them, and the comment says so. |
+| F2. The mark over `stop` is not the source of the branch that ends an expression, and a group is touched in four places | Fixed in part. The ending is a page invariant with its own `// PAGE` mark on its arm, and the group's mark stands on the arm that closes it. That a nesting construct on an explicit stack is touched where it is pushed, read and closed is said under "What it does not settle" and is the parser's page's. |
+| F3. `stop` took the token's kind twice, as `kind` and as `why`, and a `Closer` answer of the classifier would type the `==` away | The double parameter is gone: `Stop::Other` carries the kind. The expectation stays, since the owner asked for it there. Asked of the owner. |
+| F4. An `==` between two levels chooses a fate, and 1.6 did not say whether that counts | 1.6 now says an `==` against a variant of our own enums. A comparison of levels is none. |
+| F5. 1.6 did not say whether a chooser's "arms" are every `match` in it | 1.6 says each arm of the `match` that picks, and that applying what a handler hands back is the chooser's own. |
+| F6. `TokId` is not made as the return of an append, and 1.12 has no place for the next id of a walk | Not fixed in 1.12, which is the owner's no-panic line. The module's first invariant says the token table never shrinks. Asked of the owner, with a wording. |
+| F7. The loop in `expression` did not say why it ends | Fixed: its comment says both questions send `End` to an arm that returns. |
+| F8. Where a mark stands, a production's mark beside its alternatives' marks, and a search that matches a prefix | 3.3 says a mark stands on the line above, is compared whole, and that a production's own mark stands where it refuses what is none of its alternatives. The row marks moved to the line above. |
+| Nit: `use TokKind::*` makes a misspelt arm a binding, which is a catch-all the compiler accepts | Taken. The classifiers write `Self::` paths, and 1.6 gains one sentence. Asked of the owner, since it was added after the rulings. |
+| Other nits | Taken: the doc of `Op::meets`, of `Stop` and of `Expr::next`; "lasting type" no longer reads as every returned value. Not taken: the counter has no reader (the gate's); `Toks::end` takes a vector by value (a stand-in). |
+
+## The old files, and what each holds that the standard does not
+
+| File | What is lost with it |
+|---|---|
+| `.claude/docs/CODING.md`, 349 lines | It is the whole repository's and not the compiler's: the root `CLAUDE.MD` cites it in five places, and `infra/scripts/__tests__/harness-only.test.mjs` lists its path. Beyond the standard it holds rules for the runtime and the kernel (a commit path that never allocates, lock-free hand-off between threads, integer time, capacity reserved when built), general Rust patterns the standard leaves out on purpose, and another product's rules. It contradicts the standard twice: no comments in any file, and tests written first by the builder. |
+| `.claude/docs/REVIEWING.md`, 494 lines | A reviewer's list of what to look for, with sources: general patterns, tests made to look good, fixes, Rust, compilers, real-time reactive languages. No rule is lost. The list itself is lost: `FINDINGS.md` says what may be reported and admitted, never where to look. |
+| `packages/symphonyscript/docs/IMPLEMENTING.md`, 45 lines | Nothing is lost. It is the old round: the head, the progress file, generated tests written by the implementer, the hand-back form. The loops replace it. |
+| `packages/symphonyscript/docs/REVIEWING.md`, 34 lines | Nothing of the standard's is lost. It is the old review's four lenses, ratings and warm review. One habit in it is the prober's and belongs in the loops: on a finding, generate its whole class before reporting. |
+| `packages/symphonyscript/docs/SMELLS.md`, 299 lines | Seventeen defects of the old engines, each with the commit and the place. The standard's lines cover their causes. What is lost is the list of the old code's concrete faults, which may serve the test author as a source of cases for the middle. |
+
+## The first reviewer's report, word for word
 
 Cold review of `/home/cdagent/cargo-targets/peer-code-standard-draft/STANDARD.md` and `FINDINGS.md`.
 
