@@ -15,11 +15,11 @@ Read the SPEC and ARCHITECTURE by their sections, not whole, unless your task sp
 
 ## Scope
 
-Everything this project needs is inside `packages/symphonyscript`. The kernel adapter also uses `packages/synaptic-kernel`; read its `CLAUDE.md`, `ARCHITECTURE.md` and `CONVENTIONS.md` before touching it. The compiler's code follows `docs/STANDARD.md`, and no existing code is a model for it. Read nothing else in the repository for this project.
+Everything this project needs is inside `packages/symphonyscript`. The kernel adapter also uses `packages/synaptic-kernel`; read its `CLAUDE.md`, `ARCHITECTURE.md` and `CONVENTIONS.md` before touching it. The compiler's code follows `docs/STANDARD.md`, and no existing code is a model for it. A reviewer reads `docs/SPEC.md` and `docs/ARCHITECTURE.md` whole. Read nothing else in the repository for this project.
 
 ## Hard rules
 
-- **The SPEC decides.** Code follows `docs/SPEC.md`. A gap or a contradiction in the documents is never resolved silently in code: its answer lands as a SPEC sentence or a stated test (`docs/STANDARD.md` 3.4), the documents change first, and the code after.
+- **The SPEC decides.** Code follows `docs/SPEC.md`. A gap or a contradiction in the SPEC is never resolved silently in code: its answer lands as a SPEC sentence or a stated test (`docs/STANDARD.md` 3.4), and the code follows it.
 - **A builder makes no call on a gap.** It writes a GAP that quotes the sentences, and keeps working on what the gap does not block.
 - **Language design belongs to the owner.** A design question states the background, the problem, the options with SymphonyScript examples, and a recommendation with its reason.
 - **`symphonyscript-core` builds without `std`.** It uses `alloc` and `libm` and nothing else.
