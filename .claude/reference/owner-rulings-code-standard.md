@@ -682,3 +682,62 @@ in, both files moved to `packages/symphonyscript/docs/`, the three
 package files gone, `SMELLS.md` moved, the two fences written, the
 package's `CLAUDE.md` fixed. Then item 2, starting with the F2
 question.
+
+---
+
+# Ninth: the landing's review; the four rulings on the fences, 1.12, the core crate and the plan
+
+The review was worth running. Your two fixes stand, and all four
+rulings go your way. [Your three commits are pushed.]
+
+1. `CODING.md` and the compiler's code
+
+It does not apply at all. Change both fences: for the code of this
+package `STANDARD.md` is the only rulebook, and no line of `CODING.md`
+binds it or is a finding's source. "Wins where they differ" was too
+weak.
+
+2. 1.12's first invariant
+
+Drop the list of ways and keep the condition: "Only the owner makes an
+id, and only for a row that exists." A table never shrinks, so every
+such id stays in range. `first`, the id after a given one and a stored
+range all fit, and no fifth way needs a ruling.
+
+Then fix one thing in the example: `read` hands back the id it was
+given at the last row to mean "no more". That is one value with two
+meanings (1.8). It returns nothing there.
+
+3. The core crate
+
+The standard binds every crate of the package, core among them. In
+core, 1.12's strict rule applies: no path can panic. The runtime's own
+rules that live only in `CODING.md`, the commit path that never
+allocates, lock-free hand-off and integer time, stay in force for core
+beside the standard until they have a home. Say this in both fences,
+so no agent on core reads itself out of either file.
+
+4. `PLAN.md`
+
+A one-line fence now: its section on how the work runs is replaced and
+binds no agent, and the plan decides nothing over the standard. The
+file itself stays; a finding may still become one PLAN line. Its
+rewrite belongs with the loops, item 4.
+
+What you disclosed
+
+- The example's overstatements: correct them in the same change as
+  ruling 2, not later. Each sentence of "What to see" is either shown
+  by a run or cut, "allocates nothing" by a counted run. That is P-9.
+- Item 4's points, which roles the package file's "Read first" covers
+  and where a GAP is sent: add them to the notes' list for the loops.
+- `SMELLS.md`'s head: say in one line what "the middle" is.
+
+What I want next
+
+1. These rulings worked in, the example's checks run again from the
+   document, and one commit.
+2. Then item 2. [Your answers to its questions go here.]
+
+Tell me your context size first. If you are near your cap, record the
+rulings in the notes and stop there.
