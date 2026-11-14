@@ -8,3 +8,4 @@ One entry per preference: the rule in plain words.
 - Clean up what agents leave on the host without asking.
 - No agent reads `.env` or prints a key.
 - The code rules are self-contained: an agent learns how to write good code from them alone, never from existing code, and no rule leaves the builder to judge what is good.
+- A session that ends leaves three things: notes that bring a fresh session to the current state (what is decided, what is being discussed, what is still to plan, design and decide, each with the path of what to read), a short handoff prompt, and any message worth keeping as it was said, saved word for word in a file the notes name.
