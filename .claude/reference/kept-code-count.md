@@ -1,6 +1,6 @@
 # The settled lines the kept syntax code breaks, at `6491d802`
 
-Counted once by the peer session on 2026-11-14, read-only, after the code standard's five topics were settled. No fix is proposed and no size is estimated. It sits beside the trial's result when the owner chooses repair or rewrite. Paths are under `crates/compiler/src/syntax/` of `/home/cdagent/cargo-targets/r3/wt/packages/symphonyscript/`. "Searched" means a pattern counted the places; "read" means each place was opened; "from the sizing" means `syntax-repair-size.md` gives the place and it was not opened again.
+Counted once by the peer session on 2026-11-14, read-only, after the code standard's five topics were settled. No fix is proposed and no size is estimated. On this count the owner ruled on 2026-11-14 that the lexer and the grammar are rewritten and the trial is dropped; the tree and the views are decided on the page for what the parser hands on. Paths are under `crates/compiler/src/syntax/` of `/home/cdagent/cargo-targets/r3/wt/packages/symphonyscript/`. "Searched" means a pattern counted the places; "read" means each place was opened; "from the sizing" means `syntax-repair-size.md` gives the place and it was not opened again.
 
 ## The parts
 
