@@ -1,5 +1,7 @@
 # SymphonyScript Plan
 
+§ How the work runs below is replaced and binds no agent, and this plan decides nothing over `docs/STANDARD.md`; the file stays as the place where a finding becomes one PLAN line.
+
 The implementation runs in five milestones. The owner approves this plan once; the head then drives the milestones in order without stopping between them and reports each one in the head notes.
 
 ## How the work runs

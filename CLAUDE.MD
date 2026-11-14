@@ -33,7 +33,7 @@ You read this file first: Claude Code loads it into every session and subagent b
 - A question, from the owner or the head, is a question: answer it with the facts, and change nothing and stop nothing because of it. 'Why did you do X?' gets the reason, not a revert; 'when is it done?' gets a time, not a hand-back. Answer, and act on nothing because of it, even a call that is yours, until a later message decides it, because a question read as a go produces the action nobody decided.
 - **Cite a ruling with its issue id** (`TIC-100 R1`), because epic and ticket rulings both count from R1.
 - Follow `.claude/docs/CODING.md` in code you write or review.
-- The SymphonyScript compiler's code follows `packages/symphonyscript/docs/STANDARD.md`, and where this file or `CODING.md` differs from the standard the standard wins, on comments (its 3.9) and on tests (its part 4) among the rest.
+- For the code of `packages/symphonyscript`, in every crate of it, `packages/symphonyscript/docs/STANDARD.md` is the only rulebook: no line of `CODING.md` binds that code or is the source of a finding on it, and where this file differs from the standard the standard wins, on comments (its 3.9) and on tests (its part 4) among the rest. One exception: in `symphonyscript-core` the runtime's rules that live only in `CODING.md`, a commit path that never allocates, lock-free hand-off between threads and integer time, stay in force beside the standard until they have a home, and in that crate the standard's strict rule applies: no path can panic (its 1.12).
 
 ## Where things are
 

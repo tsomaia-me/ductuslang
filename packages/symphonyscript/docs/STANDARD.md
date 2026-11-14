@@ -62,12 +62,7 @@ It has four parts: architecture (1), cost (2), the method from a SPEC sentence t
 
 **1.12 No panic, in two rules.**
 
-- The compiler: no input draws a panic, and the corpus tests it. A lookup by a typed id is direct indexing through the table owner's one accessor, under three invariants the module lists:
-  1. Only the owner makes an id, and only for a row that exists: as the return of the append that makes the row, as the id after one it is given, or as one of a range of rows it stored. Never past the last row.
-  2. A table never shrinks.
-  3. A bare id never meets another file's table.
-
-  The compiler's public entry is the one place that catches a panic, and no other code does.
+- The compiler: no input draws a panic, and the corpus tests it. A lookup by a typed id is direct indexing through the table owner's one accessor, under three invariants the module lists: only the owner makes an id, and only for a row that exists; a table never shrinks; a bare id never meets another file's table. The compiler's public entry is the one place that catches a panic, and no other code does.
 - The runtime: no path can panic. It runs on devices, the compiler's licence to index does not reach it, and every lookup there has an answer for every input.
 
 ## 2. Cost
@@ -148,7 +143,7 @@ One piece of a unit, written twice: as this standard asks, and as it is written 
 
 The piece is cut from the unit that reads expressions. It reads the operators of SPEC §5.1, levels 2 to 10, over names, numbers and parentheses. The real unit also holds level 1, level 11, `is` and `is not` and every other `Primary`, in the same table and on the same stack; the cut leaves them out to stay short. The example's types are its own and are no design: the real tokens and the real tree are the parser's page's, and where a syntax fault stands and what it leaves of its line are SPEC §16's.
 
-The unit takes one file's tokens, ended by an `End` token, with brackets paired by the lexer. It hands on the expression's nodes, appended to the file's tree, the root, and the first token it did not take.
+The unit takes one file's token table, whose last row is its end and holds no token, with brackets paired by the lexer. It hands on the expression's nodes, appended to the file's tree, the root, and the first token it did not take.
 
 **Step 1: the breakdown (3.1).** Every sentence of the SPEC that speaks of how these operators are written, as a list. The sentences on what they mean (§4, §5.2, §5.3) are the pages' of the units that type and evaluate.
 
@@ -189,18 +184,19 @@ Positions: an expression stands in many places, and each belongs to the code tha
 //!
 //! Job: read the one expression that starts at a given token and append its nodes to the tree.
 //! Takes: one file's token table, the token to start at, the file's tree, and scratch.
-//! Hands on: `Expr`, the root's id and the first token the expression does not take. The root
+//! Hands on: `Expr`, the root's id and the first row the expression does not take. The root
 //! of a faulty expression is a `Node::Fault`, and nothing else records the fault.
 //!
 //! Invariants
-//! - The token table's last row is `End`, and the table never shrinks. `Toks::end` is the
-//!   only way to make a table. Only `Toks` makes a `TokId`, and only for a row that exists:
-//!   `Toks::first` makes the first row's, and `Toks::read` the id after the one it is given,
-//!   never past the last row.
-//! - An expression ends before the first token that can continue it nowhere, and that token
-//!   is the caller's.
+//! - The token table's last row is its end, which holds no token, and the table never
+//!   shrinks. `Toks::end` is the only way to make a table. Only `Toks` makes a `TokId`, and
+//!   only for a row that exists.
+//! - An expression that is not faulty ends before the first token that can continue it
+//!   nowhere, or at the table's end, and that row is the caller's. A faulty one ends
+//!   before the row its fault stands at.
 //! - Brackets arrive paired: every `Open` has its `Close` later in the table. The lexer's.
-//!   Relied on at the `internal` call in `stop`, this module's one site of an impossible state.
+//!   Relied on at the `internal` call in `stop`, this module's one site of an impossible
+//!   state.
 //! - Only `Tree::push` writes the nodes, and it only appends. A `NodeId` is made only there,
 //!   as its return, so it names a row for as long as the tree lives, and a node's operands
 //!   have smaller ids than the node.
@@ -219,7 +215,6 @@ pub enum TokKind {
     Star, Slash, Div, Percent,
     Pow, // `**`
     Open, Close,
-    End,
 }
 
 /// A level of §5.1's table. A larger level binds tighter.
@@ -247,11 +242,11 @@ struct Infix { level: Level, assoc: Assoc }
 enum Starts { Leaf, Group, Prefix(Prefix), Nothing }
 
 /// What a token is where an operator is expected.
-enum Continues { Infix(Infix), Stops(Stop) }
+enum Continues { Infix(Infix), Stops }
 
-/// A token that is no infix operator: the token table's end, or another token, whose kind
-/// it carries.
-enum Stop { End, Other(TokKind) }
+/// What arrives where an operator is expected and is none: the table's end, or a token
+/// with the row after it.
+enum Stop { End, Token { kind: TokKind, after: TokId } }
 
 const fn prefix(level: u8) -> Starts {
     Starts::Prefix(Prefix { level: Level(level) })
@@ -272,7 +267,10 @@ const fn right(operand: u8) -> Assoc {
 impl TokKind {
     const fn starts(self) -> Starts {
         match self {
-            Self::Name | Self::Number => Starts::Leaf,
+            // SPEC §5.1 Primary "Name"
+            Self::Name => Starts::Leaf,
+            // SPEC §5.1 Primary "NumberLit"
+            Self::Number => Starts::Leaf,
             Self::Open => Starts::Group,
             // SPEC §5.1 NotExpr
             Self::Not => prefix(4),
@@ -280,7 +278,7 @@ impl TokKind {
             Self::Minus => prefix(9),
             Self::Or | Self::And | Self::Lt | Self::Le | Self::Gt | Self::Ge | Self::Fallback
             | Self::Plus | Self::Without | Self::Star | Self::Slash | Self::Div
-            | Self::Percent | Self::Pow | Self::Close | Self::End => Starts::Nothing,
+            | Self::Percent | Self::Pow | Self::Close => Starts::Nothing,
         }
     }
 
@@ -298,14 +296,11 @@ impl TokKind {
             Self::Plus | Self::Minus | Self::Without => infix(7, Assoc::Left),
             // SPEC §5.1 MulExpr
             Self::Star | Self::Slash | Self::Div | Self::Percent => infix(8, Assoc::Left),
-            // SPEC §5.1 PowExpr
             // The right operand of `**` is a UnaryExpr, one level looser than `**` itself,
             // so a `-` stands there: `2 ** -1`.
+            // SPEC §5.1 PowExpr
             Self::Pow => infix(10, right(9)),
-            Self::End => Continues::Stops(Stop::End),
-            Self::Name | Self::Number | Self::Not | Self::Open | Self::Close => {
-                Continues::Stops(Stop::Other(self))
-            }
+            Self::Name | Self::Number | Self::Not | Self::Open | Self::Close => Continues::Stops,
         }
     }
 }
@@ -313,24 +308,37 @@ impl TokKind {
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct TokId(usize);
 
+#[derive(Clone, Copy)]
+enum Row { Token(TokKind), End }
+
+/// What `Toks::read` finds at a row.
+pub enum Read {
+    /// A token, and the row after it: a token is never the last row.
+    Token { kind: TokKind, after: TokId },
+    /// The table's last row.
+    End,
+}
+
 /// The example's stand-in for one file's token table. Its owner is the lexer.
-pub struct Toks { kinds: Vec<TokKind> }
+pub struct Toks { rows: Vec<Row> }
 
 impl Toks {
     /// The lexer's last step.
-    pub fn end(mut kinds: Vec<TokKind>) -> Toks {
-        kinds.push(TokKind::End);
-        Toks { kinds }
+    pub fn end(kinds: Vec<TokKind>) -> Toks {
+        let mut rows: Vec<Row> = kinds.into_iter().map(Row::Token).collect();
+        rows.push(Row::End);
+        Toks { rows }
     }
 
     pub fn first(&self) -> TokId {
         TokId(0)
     }
 
-    /// The id after the last row is the last row's own.
-    pub fn read(&self, at: TokId) -> (TokKind, TokId) {
-        let after = if at.0 + 1 < self.kinds.len() { TokId(at.0 + 1) } else { at };
-        (self.kinds[at.0], after)
+    pub fn read(&self, at: TokId) -> Read {
+        match self.rows[at.0] {
+            Row::Token(kind) => Read::Token { kind, after: TokId(at.0 + 1) },
+            Row::End => Read::End,
+        }
     }
 }
 
@@ -391,8 +399,8 @@ enum Op {
 /// What becomes of a pending operator when an infix operator arrives after its right operand.
 enum Meets { Waits, Completes, Refused(FaultCode) }
 
-// SPEC §5.1 "From loosest to tightest"
 // Every comparison of two levels is in this block.
+// SPEC §5.1 "From loosest to tightest"
 impl Op {
     /// The level this operator's right operand starts at.
     fn operand(self) -> Level {
@@ -427,8 +435,8 @@ impl Op {
             Op::Prefix { .. } => Meets::Completes,
             Op::Infix { row, .. } => match row.assoc {
                 Assoc::Left | Assoc::Right { .. } => Meets::Completes,
-                // SPEC §5.1 "Comparisons do not chain"
                 // The comparisons' row is the table's one row with no associativity.
+                // SPEC §5.1 "Comparisons do not chain"
                 Assoc::None if next.level == row.level => {
                     Meets::Refused(FaultCode::ComparisonChain)
                 }
@@ -473,7 +481,7 @@ impl Scratch {
 
 pub struct Expr {
     pub root: NodeId,
-    /// The first token the expression does not take. A fault stands at it.
+    /// The first row the expression does not take. A faulty expression's fault stands at it.
     pub next: TokId,
 }
 
@@ -484,10 +492,12 @@ enum Expect { Operand, Operator(NodeId) }
 
 /// What a handler hands back for one token.
 enum Step {
-    /// An entry for the stack. An operand is expected next.
-    Push(Pending),
-    /// A complete operand. An operator is expected next.
-    Operand(NodeId),
+    /// An entry for the stack. The token is taken, and an operand is expected at the row
+    /// after it.
+    Push(Pending, TokId),
+    /// A complete operand. The token is taken, and an operator is expected at the row
+    /// after it.
+    Operand(NodeId, TokId),
     /// The expression's root. It ends before this token.
     Done(NodeId),
     Fault(Fault),
@@ -497,32 +507,35 @@ enum Step {
 pub fn expression(toks: &Toks, from: TokId, tree: &mut Tree, scratch: &mut Scratch) -> Expr {
     let mut at = from;
     let mut expect = Expect::Operand;
-    // One turn reads one token and makes one call. `complete` and `close` hold the only
-    // loops under it, and `complete` states their total. The loop ends at `End` at the
-    // latest: both questions send `End` to an arm that returns, and every other turn that
-    // does not return moves to the next row.
+    // Total: one turn a row at most, since a turn that does not return moves to the next row.
+    // The work under a turn is one handler's, and `complete` states the total of the loops
+    // the handlers hold.
     loop {
-        let (kind, after) = toks.read(at);
         let step = match expect {
-            Expect::Operand => match kind.starts() {
-                Starts::Leaf => leaf(tree, at),
-                Starts::Group => Step::Push(Pending::Group),
-                Starts::Prefix(row) => prefix_operator(scratch, at, row),
-                // SPEC §5.1 Primary
-                Starts::Nothing => Step::Fault(Fault { code: FaultCode::OperandExpected, at }),
+            Expect::Operand => match toks.read(at) {
+                Read::Token { kind, after } => match kind.starts() {
+                    Starts::Leaf => leaf(tree, at, after),
+                    Starts::Group => Step::Push(Pending::Group, after),
+                    Starts::Prefix(row) => prefix_operator(scratch, at, after, row),
+                    Starts::Nothing => Step::Fault(no_operand(at)),
+                },
+                Read::End => Step::Fault(no_operand(at)),
             },
-            Expect::Operator(operand) => match kind.continues() {
-                Continues::Infix(row) => infix_operator(tree, scratch, operand, at, row),
-                Continues::Stops(why) => stop(tree, scratch, operand, at, why),
+            Expect::Operator(operand) => match toks.read(at) {
+                Read::Token { kind, after } => match kind.continues() {
+                    Continues::Infix(row) => infix_operator(tree, scratch, operand, at, after, row),
+                    Continues::Stops => stop(tree, scratch, operand, at, Stop::Token { kind, after }),
+                },
+                Read::End => stop(tree, scratch, operand, at, Stop::End),
             },
         };
         match step {
-            Step::Push(entry) => {
+            Step::Push(entry, after) => {
                 scratch.stack.push(entry);
                 expect = Expect::Operand;
                 at = after;
             }
-            Step::Operand(node) => {
+            Step::Operand(node, after) => {
                 expect = Expect::Operator(node);
                 at = after;
             }
@@ -535,16 +548,19 @@ pub fn expression(toks: &Toks, from: TokId, tree: &mut Tree, scratch: &mut Scrat
     }
 }
 
-// SPEC §5.1 Primary "NumberLit"
-// SPEC §5.1 Primary "Name"
-fn leaf(tree: &mut Tree, at: TokId) -> Step {
-    Step::Operand(tree.push(Node::Leaf(at)))
+// SPEC §5.1 Primary
+fn no_operand(at: TokId) -> Fault {
+    Fault { code: FaultCode::OperandExpected, at }
+}
+
+fn leaf(tree: &mut Tree, at: TokId, after: TokId) -> Step {
+    Step::Operand(tree.push(Node::Leaf(at)), after)
 }
 
 /// `a and not b` is an expression, and `a + not b` is none.
-fn prefix_operator(scratch: &Scratch, at: TokId, row: Prefix) -> Step {
+fn prefix_operator(scratch: &Scratch, at: TokId, after: TokId, row: Prefix) -> Step {
     if Op::inside(row.level, Op::floor(scratch.stack.last())) {
-        Step::Push(Pending::Op(Op::Prefix { at, row }))
+        Step::Push(Pending::Op(Op::Prefix { at, row }), after)
     } else {
         Step::Fault(Fault { code: FaultCode::OperandExpected, at })
     }
@@ -555,10 +571,11 @@ fn infix_operator(
     scratch: &mut Scratch,
     operand: NodeId,
     at: TokId,
+    after: TokId,
     row: Infix,
 ) -> Step {
     match complete(tree, scratch, operand, row) {
-        Ok(left) => Step::Push(Pending::Op(Op::Infix { at, row, left })),
+        Ok(left) => Step::Push(Pending::Op(Op::Infix { at, row, left }), after),
         Err(code) => Step::Fault(Fault { code, at }),
     }
 }
@@ -566,15 +583,15 @@ fn infix_operator(
 fn stop(tree: &mut Tree, scratch: &mut Scratch, operand: NodeId, at: TokId, why: Stop) -> Step {
     let (node, under) = close(tree, scratch, operand);
     match under {
-        // PAGE "An expression ends before"
+        // PAGE "An expression that is not faulty ends before"
         Under::Nothing => Step::Done(node),
         // SPEC §5.1 Primary "'(' Expr ')'"
         Under::Group => match why {
             Stop::End => Step::Fault(internal("brackets arrive paired", at)),
             // After a group's inside this position takes one token, `)`: an expectation.
-            Stop::Other(kind) => {
+            Stop::Token { kind, after } => {
                 if kind == TokKind::Close {
-                    Step::Operand(node)
+                    Step::Operand(node, after)
                 } else {
                     Step::Fault(Fault { code: FaultCode::CloserExpected, at })
                 }
@@ -647,18 +664,18 @@ fn close(tree: &mut Tree, scratch: &mut Scratch, mut operand: NodeId) -> (NodeId
 
 **What to see in it.**
 
-- The table is data (1.4). The arms of `starts` and `continues` are §5.1's rows, each with constants and no logic. What a row's level and associativity decide is written once, in `Op::operand` and `Op::meets`. A new operator is a new arm, and in the real unit `is` and `is not` join the row of level 5.
-- The questions about a kind sit beside the enum (1.6). There are two about `TokKind`, each names every variant, and no other code matches on it. What a pending operator decides sits beside `Op` in the same way. A variant is always written with its path.
-- `==` on a kind stands once, as an expectation (1.6): in `stop`, after a group's inside, the position takes `)` and nothing else, and the other branch is that position's fault.
-- `expression` is a chooser (1.6). Each arm of its first `match` is one call or one value, and the handlers are `leaf`, `prefix_operator`, `infix_operator` and `stop`. Its second `match` drives the stack and does no construct's work.
-- The stack is explicit (2.4). `Pending::Group` is what a call of `expression` on the inside of `( )` would be. 100,000 opening parentheses, 100,000 prefix `-` and 100,000 `**` grow a `Vec`, and no function calls itself. The real unit's other nesting constructs, an index, a call's arguments, a literal's elements, are further entries of this stack, as `Group` is. None is a call of `expression`.
-- A fault is a value (1.5). `a < b < c` yields a tree whose root is `Node::Fault`. There is no list beside the tree and no flag. A later stage that meets the node gives it no type and no value and draws nothing, and the fault's one message is the catalogue's, made from `code` and `at`.
-- Impossible states are typed away, and the one that is left is named (1.11). An infix operator carries its left operand in its stack entry, and `Expect::Operator` carries the operand in hand, so no stack of operands can run empty. `Under` has two variants, so `stop` never sees an operator left on the stack after `close`. Only a right-associative row carries an operand level, so no other row can carry a wrong one. `Toks::end` is the only way to make a table, so a table always ends. The end of the tokens inside an open group cannot be typed away: it goes through `internal`, and the module's invariants list the site.
-- No input draws a panic (1.12). `Toks::read` and `Tree::node` index directly, each as its owner's one accessor, and every id names a row that exists. A `NodeId` is the return of the append that made its row. A `TokId` is the first row's, from `Toks::first`, or the id after one given to `Toks::read`, and none is past the last row.
-- Marks and comments (3.3, 3.9). Each row carries its production's mark on the line above it. The `impl` block that holds every comparison of two levels carries the table's, and the arm that refuses a chain carries its sentence's. `leaf` and the arm of `stop` that closes a group carry the marks of `Primary`'s alternatives, and the arm of the chooser that refuses what starts no operand carries `Primary`'s own. Three invariants are marked at their homes. Every other comment states an invariant, a reason, or a meaning neither a name nor a type can carry.
-- The loops state their total (2.5), and `Scratch::turn` holds the counter.
-- An expression allocates nothing (2.2). The stack is 1.1's buffer: it comes in empty and goes back empty. The tree grows by doubling.
-- The two conditions the table does not show, `2 ** -1` and `a + not b`, are constants in the rows: `**`'s operand level and `not`'s level. They came from the breakdown, which read the productions.
+- The table is data (1.4). The rows of §5.1's table are arms of `starts` and `continues`, each under the mark of its production or of its alternative, and an arm holds constants and no logic. Every comparison of two levels is in `impl Op`.
+- The questions about a kind sit beside the enum (1.6). Two are asked of `TokKind`, each names every variant, and no other `match` names one. No `match` has a catch-all arm, there is no `if let`, no `let … else` and no `matches!`, and every variant of our own enums is written with its path.
+- `==` on a kind stands once, as an expectation (1.6): in `stop`, after a group's inside, the position takes `)` and nothing else, and the other branch is that position's fault. `(a b)` draws `CloserExpected` at `b`.
+- `expression` is a chooser (1.6). Each arm that picks is one call or one value: the arms on what a token starts, on how it continues, and on the table's end. The handlers are `leaf`, `prefix_operator`, `infix_operator` and `stop`, and `no_operand` refuses. The `match` that applies a step names no token and no construct.
+- The stack is explicit (2.4). 100,000 opening parentheses with their closers, 100,000 prefix `-` and 100,000 `**` are read on a 1 MiB stack, and so are eight times as many: the depth is a `Vec`'s length.
+- A fault is a value (1.5). `a < b < c` yields a tree whose root is `Node::Fault`, with its code and its place. No list of faults stands beside the tree, and no flag.
+- Impossible states are typed away, and one that is left is named (1.11). An infix operator carries its left operand in its stack entry, and `Expect::Operator` carries the operand in hand, so there is no stack of operands to run empty. `close` returns only when it has popped a group or emptied the stack, and `Under` says which, so `stop` has no arm for an operator. Only a right-associative row carries an operand level, so no other row can carry a wrong one. `Toks::read` hands back a token together with the row after it, or the table's end with none, and a step that takes a token carries that row, so no step moves past the last row. The table's end inside an open group is not typed away: it goes through `internal`, and the module's invariants list the site. `( a` draws it.
+- No input draws a panic (1.12). `Toks::read` and `Tree::node` index directly, each as its owner's one accessor, and nothing else indexes. Only `Toks` makes a `TokId` and only `Tree::push` a `NodeId`. Every sequence of up to five of the cut's twenty token kinds is read with no panic and leaves the stack empty.
+- Marks (3.3). Every mark stands on the line above its home, and no mark stands twice. Each row of §5.1's table carries the mark of its production or of its alternative, the block that holds every comparison of two levels carries the table's, and the arm that refuses a chain carries its sentence's. The rows that start a leaf and the arm of `stop` that closes a group carry the marks of `Primary`'s alternatives, and `no_operand`, which refuses what starts no operand, carries `Primary`'s own. Three invariants carry marks.
+- The loops state their total (2.5). `expression`'s loop takes one turn a row at most. The loops under it, `complete`'s and `close`'s, state their total, and `Scratch::turn` counts the operators they complete: over a run of prefix `-` and chains of `**`, of `+` and of `** -`, each at 100,000 to 800,000 levels, that count never passes the tokens.
+- Allocation (2.2). Once its stack has grown, and while the tree's column has room, an expression allocates nothing: 900,000 tokens of sums, products, powers, prefix `-` and groups are read with no allocation. The stack is 1.1's buffer and is empty when `expression` returns, after a fault too. From an empty stack and an empty column the same tokens are read with fewer than 60 allocations.
+- The two conditions the table does not show are constants in the rows: `2 ** -1` is read by `**`'s operand level, and `a + not b` is refused by `not`'s level.
 
 **What it does not settle.** A faulty expression leaves the nodes it had completed in the column, as the module's last invariant says. A group is touched in three places, where its entry is pushed, where the stack is read and where it is closed, and its mark stands at the one where its rule is decided, the closing; how a nesting construct keeps one home on an explicit stack is the parser's page's. Where a syntax fault stands, and what the tree keeps of its line, are SPEC §16's and the parser's page's. How a growth row reads the counter is the gate's. The ids are `usize` to keep the example free of a conversion: an id's width, and the one home of the conversion that makes it, are the base layer's.
 

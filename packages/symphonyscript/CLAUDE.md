@@ -9,13 +9,13 @@ The compiler is written in Rust. It compiles a project against one vocabulary in
 1. This file.
 2. `docs/SPEC.md` §1, then the sections your task touches. The SPEC is normative.
 3. `docs/ARCHITECTURE.md`, the sections your task touches.
-4. `docs/STANDARD.md`, whole, before you write or review the compiler's code. Whoever reports on that code also reads `docs/FINDINGS.md`.
+4. `docs/STANDARD.md`, whole, before you write or review this package's code. Whoever reports on that code also reads `docs/FINDINGS.md`.
 
 Read the SPEC and ARCHITECTURE by their sections, not whole, unless your task spans all of one.
 
 ## Scope
 
-Everything this project needs is inside `packages/symphonyscript`. The kernel adapter also uses `packages/synaptic-kernel`; read its `CLAUDE.md`, `ARCHITECTURE.md` and `CONVENTIONS.md` before touching it. The compiler's code follows `docs/STANDARD.md`, and no existing code is a model for it. A reviewer reads `docs/SPEC.md` and `docs/ARCHITECTURE.md` whole. Read nothing else in the repository for this project.
+Everything this project needs is inside `packages/symphonyscript`. The kernel adapter also uses `packages/synaptic-kernel`; read its `CLAUDE.md`, `ARCHITECTURE.md` and `CONVENTIONS.md` before touching it. This package's code, in every crate, follows `docs/STANDARD.md` and no other rulebook, and no existing code is a model for it. In `symphonyscript-core` the runtime's rules that the first paragraph of `.claude/docs/CODING.md` names stay in force beside it. A reviewer reads `docs/SPEC.md` and `docs/ARCHITECTURE.md` whole. Read nothing else in the repository for this project.
 
 ## Hard rules
 

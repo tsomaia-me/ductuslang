@@ -1,6 +1,6 @@
 # Coding guidelines
 
-The SymphonyScript compiler's code follows `packages/symphonyscript/docs/STANDARD.md`, and where this file and the standard differ the standard wins, on comments (its 3.9) and on tests (its part 4) among the rest.
+For the code of `packages/symphonyscript`, in every crate of it, `packages/symphonyscript/docs/STANDARD.md` is the only rulebook: no line of this file binds that code or is the source of a finding on it, with one exception. In `symphonyscript-core` the runtime's rules that live only here stay in force beside the standard until they have a home: a commit path that never allocates (§ Hot paths, "Preallocate when built, reuse when running"), lock-free hand-off between threads (§ Hot paths) and integer time (§ Determinism). In that crate the standard's strict rule applies: no path can panic (its 1.12).
 
 What the owner expects of every line of code. Builders write to it, reviewers fail a diff against it. What the system is: `architecture/README.md`; looks and motion: `design/README.md`; commands and test runs: `running.md`.
 
