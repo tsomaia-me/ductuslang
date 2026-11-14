@@ -616,3 +616,69 @@ What I want next
 
 Tell me your context size before you start item 2. If you are near
 your cap, bring the notes up to date and stop there.
+
+---
+
+# Eighth: both files are approved; the three words; the old files; the landing
+
+Both files are approved, with the three answers below worked in at
+landing. Good work on the second pass. [Your commits are pushed.]
+
+The three words
+
+1. 1.12's first invariant. Accepted, a little wider than you wrote it,
+   so a stored range of rows is covered and the next unit does not ask
+   again: "Only the owner makes an id, and only for a row that exists:
+   as the return of the append that makes the row, as the id after one
+   it is given, or as one of a range of rows it stored. Never past the
+   last row."
+
+2. The glob sentence in 1.6. Accepted: a variant in a pattern is
+   written with its enum's path, never through a glob import.
+
+3. The expectation stays in the example.
+
+The `as` clause
+
+Dropped until the base layer is designed, as you say. The notes owe
+the clause, the four-byte id and one more thing to that page: what the
+compiler does when a table would pass 2³² rows. No limit covers source
+size today.
+
+The narrow review
+
+Accepted as answered. One finding is bigger than its row. The unfixed
+half of F2: a group is handled where it is pushed, where it is read and
+where it is closed. 1.6 asks one handler a construct, 2.4 forces an
+explicit stack, and under a stack every nested construct splits that
+way. The old parser's 121 task kinds came from this. Record it as the
+first thing the parser's page settles: how a construct that spans push,
+resume and close keeps one home. When it is settled the standard says
+it once, in 1.6.
+
+The old files
+
+Your pick, with a fence:
+- Delete the three package files at landing: `IMPLEMENTING.md`,
+  `REVIEWING.md` and `SMELLS.md` under `packages/symphonyscript/docs/`.
+- `SMELLS.md` is not lost: move it to `.claude/reference/` as a source
+  of cases for the middle. A fault in it may become a case's input,
+  never an expected value.
+- The habit from the package's `REVIEWING.md`, generate a finding's
+  whole class before reporting it, goes on the list for the loops.
+- Keep the two files under `.claude/docs/` until the runtime's rules
+  have a home. Fix them at the source: `CODING.md` opens with one
+  sentence that the compiler's code follows `STANDARD.md` and that the
+  standard wins where they differ, comments and tests named. The root
+  `CLAUDE.MD` says the same. Add "a home for the runtime's rules" to
+  the notes' list of what is not yet designed.
+
+Landing
+
+You are near your cap, so do not land it yourself. Record these rulings
+in the notes, word for word in the rulings file, and stop. The next
+session's first act is the landing commit: the three answers worked
+in, both files moved to `packages/symphonyscript/docs/`, the three
+package files gone, `SMELLS.md` moved, the two fences written, the
+package's `CLAUDE.md` fixed. Then item 2, starting with the F2
+question.
