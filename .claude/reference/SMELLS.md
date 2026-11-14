@@ -1,5 +1,7 @@
 # Smells
 
+Moved here from `packages/symphonyscript/docs/` on 2026-11-14 and kept as a source of cases for the middle: a fault listed here may become a case's input, never an expected value. It is no rule for anyone, and its good forms are no model: the compiler's code follows `packages/symphonyscript/docs/STANDARD.md`.
+
 The defects that recur in SymphonyScript's code, each with its bad form and its good form from this codebase. An implementer writes none of them; every reviewer checks the diff for each. Members are entries of the ledger, `.memory/symphonyscript/CARRY.md`.
 
 ## Classes

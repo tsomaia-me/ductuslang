@@ -9,18 +9,18 @@ The compiler is written in Rust. It compiles a project against one vocabulary in
 1. This file.
 2. `docs/SPEC.md` §1, then the sections your task touches. The SPEC is normative.
 3. `docs/ARCHITECTURE.md`, the sections your task touches.
-4. `docs/PLAN.md`: § How the work runs, and the current milestone.
+4. `docs/STANDARD.md`, whole, before you write or review the compiler's code. Whoever reports on that code also reads `docs/FINDINGS.md`.
 
-Read a document by its sections, not whole, unless your task spans all of it.
+Read the SPEC and ARCHITECTURE by their sections, not whole, unless your task spans all of one.
 
 ## Scope
 
-Everything this project needs is inside `packages/symphonyscript`. The kernel adapter also uses `packages/synaptic-kernel`; read its `CLAUDE.md`, `ARCHITECTURE.md` and `CONVENTIONS.md` before touching it. An implementer also reads the sections of `.claude/docs/CODING.md` that `docs/PLAN.md` § Code conventions names, `docs/SMELLS.md` and `docs/IMPLEMENTING.md`. A reviewer reads `docs/SPEC.md` and `docs/ARCHITECTURE.md` whole, and also the sections of `.claude/docs/REVIEWING.md` that `docs/PLAN.md` § Reviews names, `docs/SMELLS.md` and `docs/REVIEWING.md`. Read nothing else in the repository for this project.
+Everything this project needs is inside `packages/symphonyscript`. The kernel adapter also uses `packages/synaptic-kernel`; read its `CLAUDE.md`, `ARCHITECTURE.md` and `CONVENTIONS.md` before touching it. The compiler's code follows `docs/STANDARD.md`, and no existing code is a model for it. Read nothing else in the repository for this project.
 
 ## Hard rules
 
-- **The SPEC decides.** Code follows `docs/SPEC.md`. A gap or a contradiction in the documents is never resolved silently in code: it is decided as `docs/PLAN.md` § How the work runs says, the documents change first, and the code after.
-- **An implementer makes no call on a gap.** It records every gap in its progress file, keeps working on what the gap does not block, and hands back to the head.
+- **The SPEC decides.** Code follows `docs/SPEC.md`. A gap or a contradiction in the documents is never resolved silently in code: its answer lands as a SPEC sentence or a stated test (`docs/STANDARD.md` 3.4), the documents change first, and the code after.
+- **A builder makes no call on a gap.** It writes a GAP that quotes the sentences, and keeps working on what the gap does not block.
 - **Language design belongs to the owner.** A design question states the background, the problem, the options with SymphonyScript examples, and a recommendation with its reason.
 - **`symphonyscript-core` builds without `std`.** It uses `alloc` and `libm` and nothing else.
 - **`commit` never allocates.** Allocation happens in `Runtime::new` and `reload` only.

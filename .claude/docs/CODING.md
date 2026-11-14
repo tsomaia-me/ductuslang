@@ -1,5 +1,7 @@
 # Coding guidelines
 
+The SymphonyScript compiler's code follows `packages/symphonyscript/docs/STANDARD.md`, and where this file and the standard differ the standard wins, on comments (its 3.9) and on tests (its part 4) among the rest.
+
 What the owner expects of every line of code. Builders write to it, reviewers fail a diff against it. What the system is: `architecture/README.md`; looks and motion: `design/README.md`; commands and test runs: `running.md`.
 
 ## How you build

@@ -33,6 +33,7 @@ You read this file first: Claude Code loads it into every session and subagent b
 - A question, from the owner or the head, is a question: answer it with the facts, and change nothing and stop nothing because of it. 'Why did you do X?' gets the reason, not a revert; 'when is it done?' gets a time, not a hand-back. Answer, and act on nothing because of it, even a call that is yours, until a later message decides it, because a question read as a go produces the action nobody decided.
 - **Cite a ruling with its issue id** (`TIC-100 R1`), because epic and ticket rulings both count from R1.
 - Follow `.claude/docs/CODING.md` in code you write or review.
+- The SymphonyScript compiler's code follows `packages/symphonyscript/docs/STANDARD.md`, and where this file or `CODING.md` differs from the standard the standard wins, on comments (its 3.9) and on tests (its part 4) among the rest.
 
 ## Where things are
 
