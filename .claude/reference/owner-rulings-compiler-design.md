@@ -186,3 +186,15 @@ On "A separate runtime specification? No. Its content would be §12 and §13 a s
 On "Why can't the same mode run on different runtimes? It can, and my sentence was wrong by your own rule. A mode should not name a runtime.":
 
 "decided."
+
+---
+
+# Fourteenth, 2026-11-15: what a specification is and what architecture is
+
+Said by the owner in the chat to the peer, the same session. On the peer's "The rule underneath is the difference between what and how: A specification is owed for what someone can observe or rely on, and it is said once. How a thing is built is architecture.":
+
+"that is the right distinction."
+
+On the peer's "Of a runtime, the SPEC is silent only about how. What a runtime does is fully written. Sections 12 and 13 are the runtime's specification. They sit inside the SPEC because a cell has no meaning without them.", a question, answered by the peer the same day:
+
+"and there is a good reason for that, right? something tells me that too (about the fact why SPEC is and should be opinionated about what a runtime must do)."
