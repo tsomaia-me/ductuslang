@@ -1,6 +1,6 @@
 # The workflow, as shown to the owner on 2026-11-15
 
-A draft by the peer, nothing in it approved. The owner said of the reworded second principle "in a nutshell, sounds right-ish" and asked for "a simple textual mermaid diagram of the workflow (including me)", to make sure "that its as efficient as possible while ensuring the best possible quality as well" and that "there are not too much moving pieces". This is the diagram the peer showed in answer.
+The peer's model of the work. Approved by the owner for testing on 2026-11-15, the owner's words in `owner-rulings-compiler-design.md`, seventh: once the design pass is over, the first piece of work tests it in a real case, with its numbers and its quality measured, so that a fault of the model is caught and fixed early. Approved for testing is not approved as final. The owner said of the reworded second principle "in a nutshell, sounds right-ish" and asked for "a simple textual mermaid diagram of the workflow (including me)", to make sure "that its as efficient as possible while ensuring the best possible quality as well" and that "there are not too much moving pieces". This is the diagram the peer showed in answer.
 
 ```mermaid
 sequenceDiagram

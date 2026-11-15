@@ -63,3 +63,29 @@ Said by the owner in the chat to the peer, the same session. The peer had asked 
 The owner's words:
 
 "this. but this is not an authorization to botch the interpreted mode and do it half-baked. it still needs to be efficient, optimized and well-planned and well-architected."
+
+---
+
+# Seventh, 2026-11-15: the workflow is approved for testing, and the first piece of work measures it
+
+Said by the owner in the chat to the peer, the same session, on the diagram in `.claude/reference/workflow-as-shown-2026-11-15.md` and the peer's account of it (three kinds of agent beside the peer, one machine gate, five checks a piece, leaner than the pushed agent drafts).
+
+The owner's words:
+
+"I like what I see on the diagram an your leaner model. approved for testing. once the design pass is over, the first piece of work will test the model on the diagram in the real world scenario - note it down, the numbers and the quality must be measured so any fault or flaw discovered in the work model gets caught and fixed early."
+
+---
+
+# Eighth, 2026-11-15: who approves a change of the three documents
+
+Said by the owner in the chat to the peer, the same session. It completes the fifth.
+
+The peer had written: "My test for a clarification. A change is one only when the rest of the SPEC already leaves a single reading. Two readings that each fit are design and come to you. Reversing this costs one sentence." The owner's word:
+
+"yes."
+
+The peer had written: "Same rule for the other two documents. A design change to the principles or the architecture is yours, and a clarification is mine. Say so if you want every change to those." The owner's words:
+
+"same principle to those too yes. anything of ESSENCE in those docs goes to me for my approval. anything mechanical that does not change the essence gets reviewed and approved (or rejected) by you. anything of essence that derives from the prior essence cleanly and fully - also gets reviewed and approved (or rejected) by you (in the SPEC still goes to me, SPEC is the only document where every essential/design change, derived or not, goes to me. only mechanical changes can be approved by you to be applied without me there)."
+
+How the peer applies it, the peer's words and no ruling. In the SPEC the peer approves a change only when the approved sentences already fix the outcome and the change adds and removes nothing of essence: a wording, a cross-reference, a statement of what sentences about that construct already say, a contradiction where the rest decides which side stands. Where the SPEC is silent and the answer is reached by analogy, by a principle or by what is sensible, it is derived essence and goes to the owner, however clean the derivation; in doubt it goes to the owner. In the principles and the architecture the peer also approves essence that derives cleanly and fully from what the owner approved, and brings the owner everything else of essence. Every change, whoever approves it, is read cold first.
