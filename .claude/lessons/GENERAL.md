@@ -2,7 +2,7 @@
 
 Format: G-<ID>: Do X, because Y + cost when applicable.
 
-Last ID: G-15
+Last ID: G-14
 
 - G-1: Remove only a worktree you created, because another agent may be working in any other.
 - G-2: Judge a check by its own exit code with nothing chained after it, because a trailing command masks the exit.
@@ -18,4 +18,3 @@ Last ID: G-15
 - G-12: Run the tests that read a document after you edit it and before you commit, because a reworded sentence turns them red.
 - G-13: Call cargo by its full path in a command you run in the background, because a background shell may start without the profile that puts it on the path.
 - G-14: Name the machine a target was set on, and take the time on that machine, before you compare the two, because a time from another machine reads as a pass or a failure that is neither.
-- G-15: Record a preference or a lesson the owner states as a line in its file in the same reply that acknowledges it, shown for veto, because a rule that lives only in the conversation is lost when the session rotates.
