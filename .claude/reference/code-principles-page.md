@@ -39,4 +39,29 @@ The owner's next message, word for word:
 > 
 > Resembles something? well, that R&D lead in those scenarios is me and the engineering team leads are orchestrator agents (peers) and engineers are subagents.
 
-The peer put that picture into `.claude/HANDOVER.md` under "The roles", in words the owner approved with "go ahead." The owner has said nothing else on the thirteen principles.
+The peer put that picture into `.claude/HANDOVER.md` under "The roles", in words the owner approved with "go ahead." The owner has said nothing else on the thirteen principles. The owner took "The roles" out of the handover page again on 2026-11-15 (commit 2e72fd7a), so the picture now stands only in the message above.
+
+## The second principle, reworded by the third peer and shown to the owner on 2026-11-15
+
+A draft: the owner has not said yes or no to its words.
+
+What the owner wrote on it into the peer's notes, in the owner's own hand (commit 2e72fd7a), word for word:
+
+> Code standard is has been drafted, but owner dislikes the second principle and wants it changed in a way that pre-established first principles, guidelines and standards govern the execution pipeline without interruption (only exceptions would be the genuine novel cases that cannot be judged by the peer based on prior context and docs - either because it has several valid answers or no clear winner. Those primarily would be cases which neither SPEC, nor the STANDARD coverd.)
+
+And the owner's words to peer 1 the same day, 13:35 UTC, word for word:
+
+> where I want to be involved is DESIGNING those first principles guiding the code writing and reviewing process fully so that the work goes as seamlessly as possible and only involving me DURING execution if agents truly hit some uncovered path that cannot be derived from the first principles cleanly or have more than one valid answer.
+
+The rewording as shown, cold-read once on Opus with its findings worked in:
+
+> 2. **Design before code.** The SPEC, these principles and the architecture are designed with you before the work starts. The architecture names the parts of the compiler and the runtime and what each takes and passes on. Every piece of work is then designed inside them, without you. The peer writes the piece's design page, and the builder writes its plan of types and passes. Each is read by a reviewer who did not write it, and the peer accepts it before any function body is written. A question of design reaches you only when the SPEC, the architecture, these principles and the decisions already written down leave it with more than one valid answer or with no clear winner. The peer decides every other question and writes the decision down with its reason. None of the three documents changes without you. Refuses: structure that grows by accident, and work that stops to ask you what is already answered.
+
+Said to the owner with it: the first principle is left as it is, so every gap in the SPEC still comes to the owner, the language being the owner's; and the handover page's sentence, "a case the principles do not cover, cannot settle cleanly, or that has more than one valid answer", read word by word sends every uncovered case to the owner, which is wider than this text.
+
+What the cold reader found that the standard's sentences must then say, for the change of `STANDARD.md` and `FINDINGS.md` that follows the owner's yes:
+
+- Sentences that put the owner into each unit: `STANDARD.md` line 16 (the page, "approved by the owner"), line 37 (the peer "writes pages with the owner"), line 59 ("before the page was approved", so the peer then approves a library), line 122 (two lines that cannot both be met go to the owner, with no condition), line 128 (the owner approves catalogue entries with the page).
+- What the principle relies on and neither document holds: the architecture as a document (the standard uses the word only for its own part 1); a cold reader of a page (`FINDINGS.md` lists four readers and none reads a page); who accepts a page; who accepts a builder's plan (1.7 says only "the accepted proposal"); who answers a GAP and who decides an OBJECTION (3.4 and 3.6 name nobody); where the peer writes a decision and its reason; the condition for asking the owner; where a page's budgets come from.
+- On the page itself: the line under the thirteen, "the SPEC or a question to you first", and "Two principles that cannot both be met come to you", carry no condition.
+- `ARCHITECTURE.md` line 3, "A conflict between the two is a defect the owner resolves", carries no condition either; the file is being replaced.
