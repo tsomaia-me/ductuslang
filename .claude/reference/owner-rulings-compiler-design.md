@@ -153,3 +153,22 @@ And a question the owner put with it, answered by the peer the same day:
 "now I have a question: is "mode" and runtime the same thing?
 
 like whether you interpret or compile (and to what you compile) and how you run The Program - are those the same thing?"
+
+---
+
+# Twelfth, 2026-11-15: mode, runtime and target; the owner's questions on the runtime and on the contracts between layers, no ruling
+
+Said by the owner in the chat to the peer, the same session. On the peer's three definitions ("A mode is the form in which the Program reaches the runtime: as data, or as code. [...] A runtime is what runs a Program the way SPEC §12 says. [...] A target is the machine it all runs on."):
+
+"now the picture is clearer.
+
+And we already know that the SPEC is agnostic of modes.
+Now the question: is it also agnostic regarding runtime, or defines it?
+IF the answer is no and the SPEC does not define the runtime, and given that there is a possibility of multiple runtimes just like multiple modes - should we have runtime SPEC defined separately from the language spec and mode specs?
+and how (and where) do we define  the contracts/interfaces through which each layer talks to each other?
+
+I guess, and correct me here if I'm wrong, the contract of the language is The Program?"
+
+On the peer's "So a mode's specification names three things: the form the Program takes, the runtime it runs on":
+
+"does it though? if we are separating runtime from mode, and the same runtime can run for different modes, then it's only natural to ask: why can't same mode run on different runtimes?"
