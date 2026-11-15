@@ -2,7 +2,7 @@
 
 Format: P-<ID>: Do X, because Y + cost when applicable.
 
-Last ID: P-9
+Last ID: P-10
 
 - P-1: Read the document sentence again and quote it beside every rule you hand a builder, because a rule from memory is wider than its source.
 - P-2: Reread a discussion in time order and mark what each later message settled, because a retracted proposal read alone looks live.
@@ -13,3 +13,4 @@ Last ID: P-9
 - P-7: Run a cheap measurement before you bring the owner the choice it informs, and take only the part that keeps every option open until then, because a choice made before the number can hide what the number would show.
 - P-8: Brief a reviewer to return its report as text and to write no report file, because the harness blocks a subagent's report file and an agent that works around one block learns to work around the next.
 - P-9: Run every behaviour a document claims of code it prints, the bad example as well as the good, before writing the claim, because a behaviour read off code and never run can be wrong, and the document then teaches a false rule.
+- P-10: When you lack a fact, search every source your instructions let you read, other sessions' transcripts included, and when it is not there stop and ask the owner, never guess it or leave a blank in its place, because a guess or a blank is carried forward as written, and the owner pays a round trip to find and undo it.
