@@ -11,3 +11,13 @@ Relayed to the primary by the supervisor from the owner's chat on 2026-11-15. Th
 The owner's words:
 
 "it not only stays a goal, it is to be MAIN mode of the language, while interpreted mode stays as convenience secondary mode."
+
+---
+
+# Second, 2026-11-15: only settled things go in the SPEC
+
+Relayed to the primary by the supervisor from the owner's chat on 2026-11-15. The question the supervisor had put to the owner, in the supervisor's words: whether SPEC §12.5 should gain a sentence naming the two engines and their bit-identical agreement.
+
+The owner's words:
+
+"nothing open or semi-open goes in the SPEC. only settled things go in the SPEC, then cold-reviewed under heavy scrutiny and finally committed and pushed. as you said compiled mode is not designed yet ."
