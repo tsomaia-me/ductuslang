@@ -7,9 +7,9 @@ description: Project-specific conventions Peer follows when writing, widening, o
 
 ## When a lesson is written
 
-Write or widen a lesson when a mistake cost rework or the owner had to correct you, and a check would have prevented it, so every future session reads the check before acting. One-off slips with no repeatable mechanism get no lesson.
+Propose a new or widened lesson when a mistake cost rework or the owner had to correct you, and a check would have prevented it, so every future session reads the check before acting. One-off slips with no repeatable mechanism get no lesson.
 
-When the owner gives a lesson directly (`lesson: ...`), rewrite it into the form below while keeping its point, record it, and show the written line so the owner can veto.
+When the owner gives a lesson directly (`lesson: ...`), rewrite it into the form below while keeping its point, and propose it as the last section says.
 
 ## Form
 
@@ -38,4 +38,4 @@ Before adding a lesson, check `.claude/lessons/GENERAL.md` (shared across all ro
 
 ## How to write it in the repo
 
-Edit the project's shared or role lessons file directly (`.claude/lessons/GENERAL.md` and `.claude/lessons/<ROLE>.md`), taking the ID after that file's "Last ID:" and disclosing every written, widened or removed line to the owner for veto.
+A lesson line, new, widened or removed, is written as the peer skill says: after a cold review, whose reader also has the Form above, and on the owner's yes. Then edit the project's shared or role lessons file (`.claude/lessons/GENERAL.md` and `.claude/lessons/<ROLE>.md`), taking the ID after that file's "Last ID:".

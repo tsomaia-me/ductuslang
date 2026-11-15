@@ -25,4 +25,4 @@
 
 **Decided by the owner.** Generated Rust is the main mode and the interpreted mode a convenience; the compile mode is not designed yet. The loops and agent files were never approved. Ductus is a separate specification, not implemented.
 
-**Where things stand.** No compiler code is being written. On paper: the code standard, which the owner has not been walked through; a proposal on what the parser hands on, nothing decided; a draft on error messages. `.claude/notes/PEER.md` records what was filed in the owner's name, much of it drafted by agents: repeat none of it to the owner as decided.
+**Where things stand.** No compiler code is being written. On paper: the code standard, which the owner has not been walked through; a proposal on what the parser hands on, nothing decided; a draft on error messages. Much of what older notes filed in the owner's name was drafted by agents: repeat none of it to the owner as decided.
