@@ -101,3 +101,31 @@ The owner's words:
 "architecture should cover architecture of whats designed prior, in my opinion. that leaves the question - is a mode something that is architectural solution of whats designed before OR a specification of its own - extension of the original work. let's think about, what are the components of the core language: the lexer, the parser, what else? complete the list.
 
 and then we have modes and runtimes. lets settle them on high-level and what we will get will dictate where each piece goes in the docs."
+
+---
+
+# Tenth, 2026-11-15: the modes at a high level
+
+Said by the owner in the chat to the peer, the same session, each on the peer's sentence quoted before it.
+
+On "My proposal for what a mode is: when the Program meets the runtime. Interpreted. The Program arrives as data, at load. The runtime walks it and can take a new one, which is reload. Compiled. The Program is turned into Rust and built together with the runtime. Replacing it needs a new build.":
+
+"this is what I had in mind. no argument here."
+
+On where the modes are specified, the owner's words, which lean to the second choice and were not yet confirmed as a ruling when this was saved:
+
+"what I want to decide is whether a.) two modes go in the original SPEC or b.) get SPEC-s of their own. what if we have a third mode in the future - compiled, yes, but to webassembly. (a) means every other mode gets bolted on to the original SPEC, SPEC which stays agnostic and finishes its job at The Program.
+
+that leaves the clear winner: "One Program, two takers. The compiler ends at the Program in both modes. The interpreter loads it and the generator translates it. Neither reads the source." this."
+
+On "Every rule is written once. The operations of component 6 and the commit's rules live in one place. Compile-time evaluation, the interpreter and the generated Rust all call them. Equality bit for bit then holds by construction, and a test over every fixture guards the wiring. A device carries the runtime and the generated code, and no compiler. Tests of running behaviour run in both modes.":
+
+"agreed."
+
+On "One runtime or two. [...] My pick is one. How far generated code specialises storage is then measured, not guessed.", a leaning and a question, no ruling:
+
+"for starters I am leaning towards one. question: if we start with one, how difficult would it be to switch to two - one-per-mode - in the future?"
+
+On "Can a Program travel? [...] My pick: promise nothing now, and keep the Program plain data so this stays possible.":
+
+"exactly your pick. the time (and work) will tell, whether it can stay as pure, serializable data."
