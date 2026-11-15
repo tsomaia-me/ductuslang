@@ -826,3 +826,17 @@ before M3 is built. A sketch of what the runtime needs from the Program
 is owed earlier: before the open question "what the compiler hands the
 runtime" is settled, so that the Program's shape is not fixed by the
 compiler's side alone.
+
+---
+
+# Eleventh, 2026-11-15: two orders on findings against the standard, relayed
+
+Relayed to the primary by the supervisor from the owner's chat on 2026-11-15. The context is the supervisor's, in its words: the owner brought it three findings another reviewer made on `STANDARD.md` and `FINDINGS.md`; it checked each against the standard's text and put its reading to the owner; on two of them the owner ordered a record, and the third, that no approved document states the test reviewer's check, is still a question with the owner. The primary checked the three quoted phrases of the standard against its text before saving this.
+
+(a) The finding: line 3 of the standard binds "every crate", while 4.8 defines a stated test as "the program, the expected tree or the expected codes and places", a compiler's shape, and says nothing of a runtime's or a tool's case file. The supervisor's proposal: one line on the list of what the standard owes, that 4.8's case format for a non-compiler unit is its page's, settled with the runtime's design. The owner's words:
+
+"add it"
+
+(b) The finding: 3.1's "before it opens its tests" is a behavioural rule while the frozen tests sit in the builder's checkout. The supervisor's proposal: the loops and the gate enforce it, the frozen stated tests reaching the builder's branch only after the structure proposal and the breakdown are accepted, and the test author and the builder's breakdown running in parallel from the approved page. The owner's words:
+
+"do it"
