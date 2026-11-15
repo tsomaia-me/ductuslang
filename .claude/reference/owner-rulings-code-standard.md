@@ -741,3 +741,88 @@ What I want next
 
 Tell me your context size first. If you are near your cap, record the
 rulings in the notes and stop there.
+
+---
+
+# Tenth: one home is ruled; the two sentences; the check moves into the repo; the example's last review; the runtime's notes
+
+Good. The rulings are in as I gave them. Your commits are not pushed yet; push them.
+Item 2, question 1: (a) and (b) are accepted
+
+- (a) Only a production that can hold itself takes a stack; every other
+  production is a plain function that reads its parts in its
+  production's order. Make it mechanical: a production holds itself
+  when it lies on a cycle of the grammar's productions. The page lists
+  each of the 134 productions with its form, so its reviewer can check
+  the classification.
+- (b) A construct the stack splits is one type, the entry it leaves on
+  the stack, with one `impl` block that holds open, resume and close,
+  its mark above the block. The stack's enum has one variant a
+  construct, never one a place to resume at.
+- The three alternatives are refused: one handler a resume point is the
+  old form; rows of data under one interpreter is a parser library by
+  another name (1.10); recursion under a depth limit reopens 2.4.
+- One condition: the first unit carries a clock row beside the old
+  parser's 128 ns a node on wb2, so this form's cost is known before
+  the rest is built on it.
+- The standard gains its sentence in 1.6 and in 2.4, and the example's
+  group becomes a type with its block.
+
+Item 2, question 3: two expectations
+
+Accepted, your pick. A run of expectations ends in a fault drawn by
+name, never in a default that accepts. Say that in 1.6.
+
+Item 2, question 2: the two sentences
+
+Accepted as worded, with two word fixes.
+- 1.6: "What it remembers between two entries is held in the type's
+  own fields."
+- 2.4: say what a machine is in the same sentence: one loop with its
+  own stack. The standard uses the word nowhere else.
+
+Item 2, question 4: the changed example's review
+
+Yes. It is the one ruled under "The example's reviews" below: one
+narrow cold review, then the example is frozen.
+
+Your new questions
+
+2. The check moves into the repo, in a folder beside the standard. It
+   is run by hand after any edit of the standard and becomes a gate job
+   when the gate is built.
+3. Reword the first sentence to the package's code in every crate.
+4. Fix items 3 and 4 in the same edit as the group: a narrower type so
+   no impossible code can be named (1.11), and one constructor for
+   `OperandExpected` (1.4). Items 1, 2 and 5 are answered by the ruling
+   above, the counters' open point and the gate's mark script.
+
+The example's reviews
+
+It has had four, and the form in the repo has been read by none. After
+the edit above, one cold review of the good form against parts 1 to 4,
+then it is frozen. A later finding becomes a line in the notes, fixed
+when the example is next touched.
+
+Order
+
+You are at 529,000 of 700,000. Do the example's edit, its check and
+its one review in this session, then bring the notes up to date, give
+me the handoff prompt and stop. The page itself, the colon question
+first, is the next session's.
+
+For the notes, under "a home for the runtime's rules": checked against
+the SPEC on 2026-11-15. No allocation on commit is already §1.1 and
+§12.6. Lock-free hand-off is not in the SPEC (no threads; §12.1 has
+only "the runtime never waiting") and its "refuses when full" fits a
+channel only, not a stream or a state. Integer time has no subject:
+§12.2 gives the runtime no clock, and time values are seconds as
+floats. The owner decides at the runtime's design whether the third is
+kept at all.
+
+For the notes, under "Not yet designed": the runtime's build design
+(buffers, the commit, the host's hand-off of writes, reload), owed
+before M3 is built. A sketch of what the runtime needs from the Program
+is owed earlier: before the open question "what the compiler hands the
+runtime" is settled, so that the Program's shape is not fixed by the
+compiler's side alone.
