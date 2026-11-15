@@ -110,3 +110,12 @@ Proposed: `packages/symphonyscript/docs/pages/`, one file a stage for what the s
 7. Two readings of SPEC sentences this proposal rests on, for the §16 batch to confirm or change: §16.3's fault position when a tail fits neither reading (section (3)), and §5.3's "only when `..` follows the bracket" read as "when, and only when". Beside them, one asymmetry the blind run found in the productions: §3.2's `Base` gives `none` dimensions and §5.1's `AltType` does not, so `x is none[1]` is the value compare alone while `none[1]` is a type elsewhere; whether `AltType` should read `'none' Dims?` is the owner's.
 
 What is not decided here and waits for the page or the structure proposal: the node variants one by one, the row size bound, the `Parts` column's form, how the layout tokens sit in the token table, and the exact catalogue entries.
+
+## Corrections by its author, 2026-11-15
+
+Given by the session that wrote this proposal, in its last message before it was retired. Nobody has rechecked them; each names the check that would settle it.
+
+- The cost sentence of T-C, "309 lines in 40 files under `semantics/ir/`", joins two searches and is wrong as written. At `6491d802`, 309 lines under `crates/compiler/src/semantics/ir/` name `ast::`, `NodeView`, `TokenView` or `ElementView` (310 under `semantics/` in all); separately, 40 files under `semantics/` import from `syntax`. The check: the two searches run again on the old code's worktree.
+- Place 1's class "a flag run that also spells an operator" lists `Lamp** wash` and `Lamp?? wash`. Those two rest on a reading of the productions alone: the review's run had no `**` or `??` token (its flags were `*` and `+` only), so no run covers them. A consequence written nowhere above: the lexer must let `**` or `??` directly after a kind be read as two flag characters by the children reading, or that reading cannot exist. The check: a run whose alphabet holds both tokens.
+- The counts 32 and 19 that the checks leave unexplained: the review's alphabet has a qualified name as one token (`Q` in its output), and the blind run's has it as three (`Name :: Name`). That accounts for most of the gap; it was not rebuilt to the last sequence. The review's output that shows it, `neutral6.out`, is not in the repo; `neutral.py` in `review-1-scripts/` makes it again.
+- `blind-run-1.md` does not say that its length-6 enumeration and the reader's agreement were never rebuilt by another method: peer 1 rebuilt only the counts at lengths 1 to 4 by hand and ran `tests.py` (133 cases, 0 mismatches).
