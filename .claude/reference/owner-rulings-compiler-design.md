@@ -41,3 +41,25 @@ Relayed to the primary by the supervisor from the owner's chat on 2026-11-15, sa
 The owner's words:
 
 "I don't even know how those loops work. I don't know what subagents are approved. I don't know how will the loop run and work. I don't know any code standard. I am telling you - I am kept entirely under dark."
+
+---
+
+# Fifth, 2026-11-15: which changes of the SPEC come to the owner
+
+Said by the owner in the chat to the peer (session `session_01Cbzj489rxCtUNc3BffGco8`). The peer had written, with its rewording of the second principle: "Every gap in the SPEC still comes to you, because the language is yours. Say so if you want only the gaps with more than one valid answer."
+
+The owner's words:
+
+"every change in the SPEC, that changes the design, comes to me. other changes, such that don't change the design of the language, but clarify things or close the gaps within the approved design, or correct the contradictions while still not changing the design - don't come to me, but come to you and under your supervision get applied without my involvement."
+
+How the peer applies it, the peer's words and no ruling: a change is a clarification only when the rest of the SPEC already leaves one reading; where two readings are each consistent with the rest, the choice is design and goes to the owner. A clarification is cold-reviewed under heavy scrutiny before it is committed, as the second ruling asks of every change of the SPEC.
+
+---
+
+# Sixth, 2026-11-15: an edit runs in the interpreted mode, generated Rust ships, and the interpreted mode is no lesser work
+
+Said by the owner in the chat to the peer, the same session. The peer had asked where an edit runs and given three choices. The one the owner took, in the peer's words: "A. Edit interpreted, ship generated. The edit loop runs in the interpreted mode with live reload. Generated Rust is what ships and what every speed promise is stated for, and it never reloads. Cost: reload lives only in the secondary mode, and a test must hold both modes equal bit for bit." The two not taken: generated Rust for every run, each edit a compile and a restart; generated Rust that reloads where the host can load code.
+
+The owner's words:
+
+"this. but this is not an authorization to botch the interpreted mode and do it half-baked. it still needs to be efficient, optimized and well-planned and well-architected."

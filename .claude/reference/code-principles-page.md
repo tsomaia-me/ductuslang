@@ -65,3 +65,9 @@ What the cold reader found that the standard's sentences must then say, for the 
 - What the principle relies on and neither document holds: the architecture as a document (the standard uses the word only for its own part 1); a cold reader of a page (`FINDINGS.md` lists four readers and none reads a page); who accepts a page; who accepts a builder's plan (1.7 says only "the accepted proposal"); who answers a GAP and who decides an OBJECTION (3.4 and 3.6 name nobody); where the peer writes a decision and its reason; the condition for asking the owner; where a page's budgets come from.
 - On the page itself: the line under the thirteen, "the SPEC or a question to you first", and "Two principles that cannot both be met come to you", carry no condition.
 - `ARCHITECTURE.md` line 3, "A conflict between the two is a defect the owner resolves", carries no condition either; the file is being replaced.
+
+The owner's answer to that rewording, 2026-11-15, word for word:
+
+> 2 - in a nutshell, sounds right-ish. to make sure, draw me a simple textual mermaid diagram of the workflow (including me). I just need to make sure that its as efficient as possible while ensuring the best possible quality as well. I need to make sure there are not too much moving pieces basically.
+
+The diagram the peer showed in answer: `.claude/reference/workflow-as-shown-2026-11-15.md`. On gaps in the SPEC the owner ruled otherwise than the peer had left it: `.claude/reference/owner-rulings-compiler-design.md`, fifth. So the first principle's "brought to you" and the second's "None of the three documents changes without you" are both to be reworded to that ruling.
