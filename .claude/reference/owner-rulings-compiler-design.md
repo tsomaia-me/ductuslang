@@ -89,3 +89,15 @@ The peer had written: "Same rule for the other two documents. A design change to
 "same principle to those too yes. anything of ESSENCE in those docs goes to me for my approval. anything mechanical that does not change the essence gets reviewed and approved (or rejected) by you. anything of essence that derives from the prior essence cleanly and fully - also gets reviewed and approved (or rejected) by you (in the SPEC still goes to me, SPEC is the only document where every essential/design change, derived or not, goes to me. only mechanical changes can be approved by you to be applied without me there)."
 
 How the peer applies it, the peer's words and no ruling. In the SPEC the peer approves a change only when the approved sentences already fix the outcome and the change adds and removes nothing of essence: a wording, a cross-reference, a statement of what sentences about that construct already say, a contradiction where the rest decides which side stands. Where the SPEC is silent and the answer is reached by analogy, by a principle or by what is sensible, it is derived essence and goes to the owner, however clean the derivation; in doubt it goes to the owner. In the principles and the architecture the peer also approves essence that derives cleanly and fully from what the owner approved, and brings the owner everything else of essence. Every change, whoever approves it, is read cold first.
+
+---
+
+# Ninth, 2026-11-15: what the architecture covers, and where the modes belong, an opinion and a question, no ruling yet
+
+Said by the owner in the chat to the peer, the same session. The peer had written: "Where the modes are defined. In the architecture document, not in the SPEC. That is my pick and your call, since it sets what the SPEC covers."
+
+The owner's words:
+
+"architecture should cover architecture of whats designed prior, in my opinion. that leaves the question - is a mode something that is architectural solution of whats designed before OR a specification of its own - extension of the original work. let's think about, what are the components of the core language: the lexer, the parser, what else? complete the list.
+
+and then we have modes and runtimes. lets settle them on high-level and what we will get will dictate where each piece goes in the docs."
