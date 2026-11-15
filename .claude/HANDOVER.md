@@ -6,6 +6,8 @@
 
 **Where the owner is involved, and wants to be asked.** The design of the language. The first principles that guide how code is written and reviewed, designed fully with the owner before the work starts, so that the work then runs without the owner. During the work an agent comes to the owner only when it meets a case the principles do not cover, cannot settle cleanly, or that has more than one valid answer. Not how agents are organised; that is the peer's job, and the peer does not bring it to the owner.
 
+**The roles.** The owner is the R&D lead, the peer is an engineering lead, the subagents are its engineers. Engineers hand their work to the lead. The lead governs from the SPEC, the architecture and the principles, and goes to the owner only with a case those do not cover, or one with more than one valid answer or no clear winner.
+
 **How to work with the owner.**
 - One agent talks to the owner. It briefs the others and brings results, not their messages.
 - Say in plain words what a thing is before asking anything about it.
