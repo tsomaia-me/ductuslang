@@ -1,4 +1,21 @@
-# Peer notes
+## Peer notes
+
+## Where things are
+
+- **Decided by the owner.** Generated Rust is the main mode and the interpreted mode a convenience; the compile mode is not designed yet. The loops and agent files were never approved. Ductus is a separate specification, not implemented.
+
+- No compiler code has been written. Code standard is has been drafted, but owner dislikes the second principle and wants it changed in a way that pre-established first principles, guidelines and standards govern the execution pipeline without interruption (only exceptions would be the genuine novel cases that cannot be judged by the peer based on prior context and docs - either because it has several valid answers or no clear winner. Those primarily would be cases which neither SPEC, nor the STANDARD coverd.), a proposal on what the parser hands on, nothing decided; a draft on error messages.
+- The SPEC: `packages/symphonyscript/docs/SPEC.md` on `main`. The unapproved §16 draft: `.claude/reference/spec-16/spec-16-draft.patch`, its open edges in `spec-16-batch.md` beside it; the patch equals the working tree's draft byte for byte (the writer's check, 2026-11-15).
+- The code standard: `packages/symphonyscript/docs/STANDARD.md` and `FINDINGS.md`; its check, `docs/standard-check/run.sh`; its acceptance table, `.claude/reference/code-standard-acceptance.md`.
+- The owner's words as passed on, under `.claude/reference/`: `owner-rulings-compiler-design.md` (four, relayed on 2026-11-15), `owner-rulings-parser-page.md` (two; its header points to a notes line, "How the design work runs", that is now only in git history at e2557cc3), `owner-rulings-code-standard.md` (eleven), `owner-brief-2026-11-13.md`, `owner-messages-2026-11-13.md`.
+- Transcripts, on `wb` under `/home/cdagent/.claude/projects/-home-cdagent-ductuslang/`: peer 1's, `021dac70-57a2-5e77-a945-779fcf2cd322.jsonl`; the writer's, `4c9bc397-7612-5302-a9d1-3a1193f8774f.jsonl`, whose first user record is the prompt the owner sent it, drafted by agents; its rules are all in the handover page, the preferences and the rules above, but one on a blind second, which no longer runs.
+- The parser proposal and its checks: `.claude/reference/parser-page/item-2/` (`proposal.md`, `review-1.md`, `blind-run-1.md`, the scripts). The earlier trial and count: `parser-page/home/`, `parser-page/colon/`.
+- The loops as proposed, not approved: `.claude/reference/peer-loops-proposal-2026-11-13.md`, `loops-draft/first/`, `loops-draft-review.md`.
+- Two review briefs, stale and not to be used as written: `.claude/reference/review-briefs.md` describes a primary, a supervisor, a blind second and a gate review, none of which runs, and both briefs tell their reader to lay the §16 patch over the SPEC, which presents an unapproved draft as the SPEC.
+- The old code: branch `symphonyscript/r3` at `6491d802`, on `wb` at `/home/cdagent/cargo-targets/r3/wt/`; an untracked leftover file there, `packages/symphonyscript/ or type` (one echoed line of a search, a shell slip), is to be deleted once deleting is allowed. Its reviews, under `.claude/reference/`: `syntax-conformance-review.md`, `syntax-recovery-review.md`, `kept-code-count.md`, `front-end-floor.md`, `suite-timing.md`, `compiler-review.md`, `SMELLS.md`, `syntax-review/`.
+- Hosts: `wb` is this machine (its `hostname` prints `tornike`) and is slow; `wb2` (`ssh wb2`) is the reference machine. A build runs cargo by its full path, `nice -n 19`, 6 jobs; `/tmp` on `wb` is `noexec`; `grep` on `wb` is `ugrep`, where a pattern such as `'^\+\+\+'` is a syntax error and `awk` is the way round.
+- Left on the host and in the repo by older setups, by peer 1's count on 2026-11-15, not rechecked: 16 worktrees of old code and 407 GB of build output under `/home/cdagent/cargo-targets` (`review-tools-2` alone 166 GB), no process running there, the disk 32% full; 461 files under `.claude/reference`, 26 MB of them probe files under `syntax-review/`. The build output is agents' leftover, to be cleaned once deleting is allowed, each worktree looked at first. What in the repo belongs to the owner's other work (Ductus, the older harness) is not the peer's to remove.
+- The design's open questions and what is owed later: `.claude/reference/open-design-questions.md`. The older record of these notes: git history, `git show e2557cc3:.claude/notes/PEER.md`.
 
 ## Now
 
@@ -15,16 +32,25 @@
 - Rules that bind every session: a ruling of the owner's is saved word for word in its rulings file, with its date and how it reached the peer; nothing is recorded as the owner's decision unless the owner said it in the chat; no lesson or preference line is written before the owner's yes in the chat; nothing open goes into the SPEC; commits to `main` are staged by path and pushed unforced, and the shared checkout at `/home/cdagent/ductuslang` is never stashed or switched, its `SPEC.md` carrying the unapproved §16 draft as an uncommitted change that is never staged; the branch `gemini-agent-files-draft` is merged from and read into these notes by nobody; the root `CLAUDE.md` and the agent files come from another agent through the owner.
 - After a compaction, re-read in this order: `.claude/HANDOVER.md`; this file; `.claude/reference/owner-rulings-compiler-design.md`; then only what the work in hand needs.
 
-## Where things are
+## Settled
 
-- The SPEC: `packages/symphonyscript/docs/SPEC.md` on `main`. The unapproved §16 draft: `.claude/reference/spec-16/spec-16-draft.patch`, its open edges in `spec-16-batch.md` beside it; the patch equals the working tree's draft byte for byte (the writer's check, 2026-11-15).
-- The code standard: `packages/symphonyscript/docs/STANDARD.md` and `FINDINGS.md`; its check, `docs/standard-check/run.sh`; its acceptance table, `.claude/reference/code-standard-acceptance.md`.
-- The owner's words as passed on, under `.claude/reference/`: `owner-rulings-compiler-design.md` (four, relayed on 2026-11-15), `owner-rulings-parser-page.md` (two; its header points to a notes line, "How the design work runs", that is now only in git history at e2557cc3), `owner-rulings-code-standard.md` (eleven), `owner-brief-2026-11-13.md`, `owner-messages-2026-11-13.md`.
-- Transcripts, on `wb` under `/home/cdagent/.claude/projects/-home-cdagent-ductuslang/`: peer 1's, `021dac70-57a2-5e77-a945-779fcf2cd322.jsonl`; the writer's, `4c9bc397-7612-5302-a9d1-3a1193f8774f.jsonl`, whose first user record is the prompt the owner sent it, drafted by agents; its rules are all in the handover page, the preferences and the rules above, but one on a blind second, which no longer runs.
-- The parser proposal and its checks: `.claude/reference/parser-page/item-2/` (`proposal.md`, `review-1.md`, `blind-run-1.md`, the scripts). The earlier trial and count: `parser-page/home/`, `parser-page/colon/`.
-- The loops as proposed, not approved: `.claude/reference/peer-loops-proposal-2026-11-13.md`, `loops-draft/first/`, `loops-draft-review.md`.
-- Two review briefs, stale and not to be used as written: `.claude/reference/review-briefs.md` describes a primary, a supervisor, a blind second and a gate review, none of which runs, and both briefs tell their reader to lay the §16 patch over the SPEC, which presents an unapproved draft as the SPEC.
-- The old code: branch `symphonyscript/r3` at `6491d802`, on `wb` at `/home/cdagent/cargo-targets/r3/wt/`; an untracked leftover file there, `packages/symphonyscript/ or type` (one echoed line of a search, a shell slip), is to be deleted once deleting is allowed. Its reviews, under `.claude/reference/`: `syntax-conformance-review.md`, `syntax-recovery-review.md`, `kept-code-count.md`, `front-end-floor.md`, `suite-timing.md`, `compiler-review.md`, `SMELLS.md`, `syntax-review/`.
-- Hosts: `wb` is this machine (its `hostname` prints `tornike`) and is slow; `wb2` (`ssh wb2`) is the reference machine. A build runs cargo by its full path, `nice -n 19`, 6 jobs; `/tmp` on `wb` is `noexec`; `grep` on `wb` is `ugrep`, where a pattern such as `'^\+\+\+'` is a syntax error and `awk` is the way round.
-- Left on the host and in the repo by older setups, by peer 1's count on 2026-11-15, not rechecked: 16 worktrees of old code and 407 GB of build output under `/home/cdagent/cargo-targets` (`review-tools-2` alone 166 GB), no process running there, the disk 32% full; 461 files under `.claude/reference`, 26 MB of them probe files under `syntax-review/`. The build output is agents' leftover, to be cleaned once deleting is allowed, each worktree looked at first. What in the repo belongs to the owner's other work (Ductus, the older harness) is not the peer's to remove.
-- The design's open questions and what is owed later: `.claude/reference/open-design-questions.md`. The older record of these notes: git history, `git show e2557cc3:.claude/notes/PEER.md`.
+- Nothing is settled yet. Everything is a draft, except SPEC and even there the new 16th section is just a draft living in references. Everything else, including the execution processes and loops, the coding and review standards and guidelines, architecture and etc. are unproven, untested, unreviewed drafts.
+
+## Drafted on Disk (Cold-Reviewed & Fixed; Awaiting Owner Review)
+- Root `/CLAUDE.md` (note: git index currently tracks uppercase `CLAUDE.MD`; on case-sensitive Linux `/home/cdagent/ductuslang`, needs `git mv` to lowercase `CLAUDE.md` when committing).
+- `.claude/agents/builder.md`
+- `.claude/agents/test-author.md`
+- `.claude/agents/test-reviewer.md`
+- `.claude/agents/reviewer.md`
+- `.claude/agents/prober.md`
+- `.claude/agents/verifier.md`
+- `.claude/agents/explorer.md`
+
+There are committed and pushed versions of these files under .claude/agents and the on-disk versions should be cold-compared to them and final versions should get best of both. Both pushed and on-disk versions are drafts.
+
+## Pending Proposals & Open Items for Owner
+Updating `.claude/hooks/session.mjs` `MENU_LINE` (if `head` is retired or updated).
+- Owner is reviewing the 2 more `STANDARD.md` / `FINDINGS.md` observations (`STANDARD.md` line 3 "every crate" vs. `tool`/`core` I/O & non-compiler stated-test surfaces; adding explicit `Test Reviewer` row to `FINDINGS.md` to match `.claude/agents/test-reviewer.md`).
+
+## Conflicts in the notes
+Any conflicts and/or contradictions in the notes and or other docs should be resolved by fact-checking, and when unable to check: with help of the owner.
