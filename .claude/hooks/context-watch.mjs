@@ -66,7 +66,7 @@ function thousands(tokens) {
 }
 
 function noticeText(compactAt, notes) {
-  return `**Compaction at ${thousands(compactAt)}; you are at ${thousands(compactAt - NOTE_ROOM_TOKENS)}.** Bring your notes file, \`${notes}\`, up to date now, before any other tool call: what runs, what is owed, what is open, the next step, and at the end the files to re-read in order. Then carry on with your work; nothing else changes, and ${thousands(NOTE_ROOM_TOKENS)} is left after the notes.`;
+  return `**Compaction at ${thousands(compactAt)}; you are at ${thousands(compactAt - NOTE_ROOM_TOKENS)}.** Bring your notes file, \`${notes}\`, up to date now, before any other tool call: what runs, what is owed, what is open, the next step, and at the end the files to re-read in order. Then, if you are the peer, hand over to a successor as the peer skill says; any other session carries on with its work. ${thousands(NOTE_ROOM_TOKENS)} is left after the notes.`;
 }
 
 function formatOutput(eventName, notice) {

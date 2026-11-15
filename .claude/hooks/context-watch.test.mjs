@@ -15,7 +15,7 @@ const BIG_WINDOW = '1000000';
 const SUBAGENT_HEAD = '**Your context holds ';
 const SUBAGENT_TAIL = ' Wrap up now: finish or set aside the piece in hand, commit what passes if you commit, write where you stopped and what is next where your brief keeps your progress, run your hand-back checks, and hand back. Start nothing new.';
 const PROJECT = mkdtempSync(path.join(os.tmpdir(), 'context-watch-project-'));
-const NOTICE = `**Compaction at 315k; you are at 255k.** Bring your notes file, \`${path.join(PROJECT, '.claude', 'notes', '<ROLE>.md')}\`, up to date now, before any other tool call: what runs, what is owed, what is open, the next step, and at the end the files to re-read in order. Then carry on with your work; nothing else changes, and 60k is left after the notes.`;
+const NOTICE = `**Compaction at 315k; you are at 255k.** Bring your notes file, \`${path.join(PROJECT, '.claude', 'notes', '<ROLE>.md')}\`, up to date now, before any other tool call: what runs, what is owed, what is open, the next step, and at the end the files to re-read in order. Then, if you are the peer, hand over to a successor as the peer skill says; any other session carries on with its work. 60k is left after the notes.`;
 
 function subagentNotice(held, compactsNear, threshold = '600k') {
   const compaction = compactsNear == null ? '' : `it compacts near ${compactsNear}, and `;
