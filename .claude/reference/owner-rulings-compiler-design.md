@@ -172,3 +172,17 @@ I guess, and correct me here if I'm wrong, the contract of the language is The P
 On the peer's "So a mode's specification names three things: the form the Program takes, the runtime it runs on":
 
 "does it though? if we are separating runtime from mode, and the same runtime can run for different modes, then it's only natural to ask: why can't same mode run on different runtimes?"
+
+---
+
+# Thirteenth, 2026-11-15: no separate runtime specification, and a mode does not name a runtime
+
+Said by the owner in the chat to the peer, the same session.
+
+On "A separate runtime specification? No. Its content would be §12 and §13 a second time. If a second runtime ever comes, it differs only in how it is built and in what it offers, such as where it runs. That fits a short part of its own, like a mode's.", an agreement and a question, which the peer answered the same day:
+
+"while I agree with this, something tells me modes get SPEC because they are different from runtime, even though SPEC is agnostic of both modes and runtimes - you yourself suggested to have SPEC-s for modes, while you just now suggested that the runtime needs no separate SPEC, so what I wander is what is that something that is telling me all these?"
+
+On "Why can't the same mode run on different runtimes? It can, and my sentence was wrong by your own rule. A mode should not name a runtime.":
+
+"decided."
