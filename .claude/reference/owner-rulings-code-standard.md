@@ -1,6 +1,6 @@
 # The owner's rulings on the code standard, 2026-11-13 and 2026-11-14, word for word
 
-Saved by the peer session that held the conversation, so that the standard, the parser's page and the loops are written from the owner's words and not from the notes' short lines. Each message answers the peer's message on the topic named; the settled lines the answers produced are in the notes under Settled. Where a later message changes an earlier one, the later stands. The numbers and letters (lines 1 to 10, 2.1 to 2.8, 3.1 to 3.6, 4.1 to 4.9, 5.1 to 5.7, choices A to L) are those of the notes.
+Saved by the peer session that held the conversation, so that the standard, the parser's page and the loops are written from the owner's words and not from the notes' short lines. Each message answers the peer's message on the topic named; the settled lines the answers produced are in the notes under Settled. Where a later message changes an earlier one, the later stands. The numbers and letters (lines 1 to 10, 2.1 to 2.8, 3.1 to 3.6, 4.1 to 4.9, 5.1 to 5.7, choices A to L) are those of the notes. Corrected on 2026-11-15: these are messages the owner passed on to the peer; four carry bracketed blanks from a draft (lines 524, 625, 691 and 740), the last unfilled, "[Your answers to its questions go here.]", so this file shows what the owner forwarded, and the owner said on 2026-11-15 not to know the loops, the subagents or the code standard (`owner-rulings-compiler-design.md`, fourth message).
 
 ---
 

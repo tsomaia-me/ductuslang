@@ -1,6 +1,6 @@
 # Two earlier messages of the owner, 2026-11-13, word for word
 
-Saved by the peer session. The owner's last message is in `owner-brief-2026-11-13.md`. Where a later message changes an earlier one, the later stands.
+Saved by the peer session. The owner's last message is in `owner-brief-2026-11-13.md`. Where a later message changes an earlier one, the later stands. Corrected on 2026-11-15: these are messages the owner passed on to the peer, and parts of them were written to the owner by an adviser, not by the owner (line 41, "the rule came from my advice and not from you"; line 68, "Your SPEC does not mention it, so this is yours to rule"), so this file shows what the owner forwarded and not what the owner wrote.
 
 ---
 

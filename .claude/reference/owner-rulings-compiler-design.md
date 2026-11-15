@@ -31,3 +31,13 @@ Relayed to the primary by the supervisor from the owner's chat on 2026-11-15. Th
 The owner's words:
 
 "I did not approve any loops, tests, processes or anything post STANDARD.md"
+
+---
+
+# Fourth, 2026-11-15: the owner on the record made in the owner's name
+
+Relayed to the primary by the supervisor from the owner's chat on 2026-11-15, said after the correction above.
+
+The owner's words:
+
+"I don't even know how those loops work. I don't know what subagents are approved. I don't know how will the loop run and work. I don't know any code standard. I am telling you - I am kept entirely under dark."
