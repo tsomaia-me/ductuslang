@@ -129,3 +129,27 @@ On "One runtime or two. [...] My pick is one. How far generated code specialises
 On "Can a Program travel? [...] My pick: promise nothing now, and keep the Program plain data so this stays possible.":
 
 "exactly your pick. the time (and work) will tell, whether it can stay as pure, serializable data."
+
+---
+
+# Eleventh, 2026-11-15: contracts against interfaces, always; the modes get specifications of their own; what the SPEC keeps
+
+Said by the owner in the chat to the peer, the same session, each on the peer's text quoted before it.
+
+On the three things the peer said keep a later switch to two runtimes contained ("The Program is the only hand-off. [...] Generated code meets the runtime through a narrow, stated seam. [...] Hosts and consumers are written against an interface, not against the runtime itself."):
+
+"all three should hold, EVEN IF we were sure we would never want second runtime, why? first, those three ensure the right design: define contract against abstraction (interface), pass the implementation. that is like clean code 101.  and second, however "sure" you are in the present, you can never speak for your future self: define the way your future self would thank you for, especially when it costs nothing because you are not rewriting anything, but are in the very moment of designing the whole thing."
+
+On "I read you as choosing b: modes get specifications of their own, and the SPEC stays free of them. [...] Confirm, and I record it as your ruling.":
+
+"your reading is correct."
+
+On "The SPEC keeps §12 and §13, said once for every mode. It ends at the Program and what a Program means. Each mode's specification says only what differs: when the Program meets the runtime, whether it offers reload, what a host is written against, and what it promises. The architecture says how all of it is built.":
+
+"I am on board with this."
+
+And a question the owner put with it, answered by the peer the same day:
+
+"now I have a question: is "mode" and runtime the same thing?
+
+like whether you interpret or compile (and to what you compile) and how you run The Program - are those the same thing?"
