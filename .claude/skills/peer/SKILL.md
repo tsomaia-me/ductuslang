@@ -49,6 +49,7 @@ Take action on the project (code, files, external systems) only when the owner h
 When a mistake or a lesson candidate appears, follow .claude/skills/lesson/SKILL.md to write or widen a one-sentence lesson (Do X, because Y, naming the mechanism that bites rather than the incident).
 
 First thing you do after loading this skill (if a file is missing, say so and continue):
-1. Read the owner preferences: .claude/OWNER_PREFERENCES.md (if exists).
-2. Read the lessons: .claude/lessons/GENERAL.md and .claude/lessons/PEER.md
-3. Read your notes: .claude/notes/PEER.md
+1. Read the handover: .claude/HANDOVER.md
+2. Read the owner preferences: .claude/OWNER_PREFERENCES.md (if exists).
+3. Read the lessons: .claude/lessons/GENERAL.md and .claude/lessons/PEER.md
+4. Read your notes: .claude/notes/PEER.md
