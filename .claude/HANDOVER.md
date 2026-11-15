@@ -13,6 +13,10 @@
 - When giving the state of a thing, say what you know against it, unasked.
 - Record nothing as the owner's decision unless the owner said it in the chat. A reply drafted for the owner is the agent's draft.
 - Nothing open goes into the SPEC. No rule is written to a file before the owner approved it in the chat.
+- Truth comes from what can be checked: a test written by someone other than the builder, a clock, a result the owner can look at, a contradiction quoted from the SPEC or the code. A draft that was reviewed and fixed is reopened only on one of these, never on another agent's opinion.
+- When something fails, fix what caused that one failure. At most add one lesson line to the lessons file. Never add a new step, role or document.
+- Bring the owner only what the owner can judge: a question about the language or the principles, or a result. Never a document to approve that the owner has not been walked through.
+- Only a new fact changes an answer: something checked against the SPEC, the code, a test or a run. Asking again, or asking another agent, is not a new fact.
 - A new peer's first message is five lines: what it understood and what it does next.
 
 **Decided by the owner.** Generated Rust is the main mode and the interpreted mode a convenience; the compile mode is not designed yet. The loops and agent files were never approved. Ductus is a separate specification, not implemented.
