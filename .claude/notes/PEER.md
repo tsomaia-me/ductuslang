@@ -1,5 +1,16 @@
-# Peer notes
+## Peer notes
 
+## Where things are
+
+- The SPEC: `packages/symphonyscript/docs/SPEC.md` on `main`. The unapproved §16 draft: `.claude/reference/spec-16/spec-16-draft.patch`, its open edges in `spec-16-batch.md` beside it.
+- The code standard: `packages/symphonyscript/docs/STANDARD.md` and `FINDINGS.md`; its check, `docs/standard-check/run.sh`; its acceptance table, `.claude/reference/code-standard-acceptance.md`.
+- The owner's words as passed on, under `.claude/reference/`: `owner-rulings-compiler-design.md` (four, relayed on 2026-11-15), `owner-rulings-parser-page.md` (two), `owner-rulings-code-standard.md` (eleven), `owner-brief-2026-11-13.md`, `owner-messages-2026-11-13.md`.
+- The parser proposal and its checks: `.claude/reference/parser-page/item-2/` (`proposal.md`, `review-1.md`, `blind-run-1.md`, the scripts). The earlier trial and count: `parser-page/home/`, `parser-page/colon/`.
+- The loops as proposed, not approved: `.claude/reference/peer-loops-proposal-2026-11-13.md`, `loops-draft/first/`, `loops-draft-review.md`.
+- The old code: branch `symphonyscript/r3` at `6491d802`, on `wb` at `/home/cdagent/cargo-targets/r3/wt/`. Its reviews, under `.claude/reference/`: `syntax-conformance-review.md`, `syntax-recovery-review.md`, `kept-code-count.md`, `front-end-floor.md`, `suite-timing.md`, `compiler-review.md`, `SMELLS.md`, `syntax-review/`.
+- The two fixed review briefs: `.claude/reference/review-briefs.md`.
+- Hosts: `wb` is this machine and is slow; `wb2` (`ssh wb2`) is the reference machine. A build runs cargo by its full path, `nice -n 19`, 6 jobs; `/tmp` on `wb` is `noexec`.
+- The design's open questions and what is owed later: `.claude/reference/open-design-questions.md`. The older record of these notes: git history, `git show e2557cc3:.claude/notes/PEER.md`.<<<<<<< HEAD
 ## Now
 
 - Read `.claude/HANDOVER.md` first, before anything else in this file or in the repo: the one page a new peer starts from, its text confirmed by the owner in the chat on 2026-11-15. The owner is reached through one peer only: since 2026-11-15 that is peer 2, the session titled "SymphonyScript peer 2", which succeeded the supervisor; where these lines say the supervisor, they mean peer 2. The primary sends its messages to peer 2 (the `send_message` tool of the Claude Code Remote server, session `session_01Cbzj46qA3RG5U2uqJ44nnM`), pushes `main` for it when it asks, after a look at what a commit touches, puts no question to the owner, and ends a turn with a line or two of plain fact.
@@ -28,3 +39,31 @@
 - The two fixed review briefs: `.claude/reference/review-briefs.md`.
 - Hosts: `wb` is this machine and is slow; `wb2` (`ssh wb2`) is the reference machine. A build runs cargo by its full path, `nice -n 19`, 6 jobs; `/tmp` on `wb` is `noexec`.
 - The design's open questions and what is owed later: `.claude/reference/open-design-questions.md`. The older record of these notes: git history, `git show e2557cc3:.claude/notes/PEER.md`.
+=======
+## Settled
+- `packages/symphonyscript/docs/STANDARD.md` and `packages/symphonyscript/docs/FINDINGS.md` are settled (reopenable on concrete flaw + recommendation).
+- Two binding loop orders (2026-11-15):
+  1. Frozen stated tests reach the builder's branch only after its `structure proposal` and `breakdown` are accepted.
+  2. `test-author` and the builder's `breakdown` (+ `structure proposal`) work in parallel from the approved `page`.
+- Legacy `packages/symphonyscript/CLAUDE.md` and `.claude/docs/CODING.md` (plus `.claude/docs/REVIEWING.md` and 0-byte `.claude/docs/running.md`) are obsolete ("garbage"); root `/CLAUDE.md` and `.claude/agents/*.md` replace them alongside `STANDARD.md` and `FINDINGS.md`.
+- `#![forbid(unsafe_code)]` across crates by default; `unsafe` requires explicit owner authorization in an isolated module.
+- Three `OWNER_PREFERENCES.md` updates approved and written (approved lessons/preferences commit gate, self-contained open items, quote-block draft-first approval with verbatim replaced/removed lines).
+
+## Drafted on Disk (Cold-Reviewed & Fixed; Awaiting Owner Review)
+- Root `/CLAUDE.md` (note: git index currently tracks uppercase `CLAUDE.MD`; on case-sensitive Linux `/home/cdagent/ductuslang`, needs `git mv` to lowercase `CLAUDE.md` when committing).
+- `.claude/agents/builder.md`
+- `.claude/agents/test-author.md`
+- `.claude/agents/test-reviewer.md`
+- `.claude/agents/reviewer.md`
+- `.claude/agents/prober.md`
+- `.claude/agents/verifier.md`
+- `.claude/agents/explorer.md`
+
+## Pending Proposals & Open Items for Owner
+- Proposed quote-block edits to `.claude/skills/peer/SKILL.md` (lines 22, 33, 37, 41–42, 47, 49) and `.claude/skills/lesson/SKILL.md` (lines 3, 8–12, 39–41) presented in chat and held from disk until owner approves exact text.
+- Cleanup decisions before committing:
+  1. Deleting `packages/symphonyscript/CLAUDE.md` (critical: Claude Code auto-loads subdirectory `CLAUDE.md` files and it injects retired `.claude/docs/CODING.md`) and `.claude/docs/{CODING,REVIEWING,running}.md`.
+  2. Renaming Git's tracked uppercase `CLAUDE.MD` -> lowercase `CLAUDE.md` (`git mv`) so the case-sensitive Linux runner loads it.
+  3. Updating `.claude/hooks/session.mjs` `MENU_LINE` (if `head` is retired or updated).
+- Owner is reviewing the 2 remaining `STANDARD.md` / `FINDINGS.md` observations (`STANDARD.md` line 3 "every crate" vs. `tool`/`core` I/O & non-compiler stated-test surfaces; adding explicit `Test Reviewer` row to `FINDINGS.md` to match `.claude/agents/test-reviewer.md`).
+>>>>>>> gemini-agent-files-draft
