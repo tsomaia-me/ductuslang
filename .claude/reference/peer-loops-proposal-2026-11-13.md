@@ -1,6 +1,6 @@
 # The peer's proposal of 2026-11-13: the loops, the roles and the trial
 
-The three sections of the peer's message as the owner read them, word for word. The owner approved them with the gaps and fixes in `owner-brief-2026-11-13.md` items 4 and 5, which stand over this text: the verifier's job and model change, a dispute line and the meaning of "shown to fail once" are added, the stated trees for §7 to §9 come before the trial and the rest after it, a baseline is recorded first, and the 320-line stop is in no builder's brief.
+The three sections of the peer's message as the owner read them, word for word. The owner did not approve the loops or the roles: `owner-brief-2026-11-13.md` opens "Items 2 and 3 come back to me once the gaps below are closed", heads its item 4 "The loops: four gaps", says "No agent starts before I approve them" and asks back "The loops revised, and the agent files' text after its cold review"; on 2026-11-15 the owner said "I did not approve any loops, tests, processes or anything post STANDARD.md" (`owner-rulings-compiler-design.md`, third message). Inside item 4 the owner's own words define the verifier's job and say "With that job the verifier runs on Opus at high. The other models stand as you picked". In item 5 the trial's budgets and pass lines are approved with fixes; the trial was dropped on 2026-11-14. This text binds nobody; it is kept for the revision of the loops.
 
 ---
 

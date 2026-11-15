@@ -21,3 +21,13 @@ Relayed to the primary by the supervisor from the owner's chat on 2026-11-15. Th
 The owner's words:
 
 "nothing open or semi-open goes in the SPEC. only settled things go in the SPEC, then cold-reviewed under heavy scrutiny and finally committed and pushed. as you said compiled mode is not designed yet ."
+
+---
+
+# Third, 2026-11-15: no loops, tests or processes were approved
+
+Relayed to the primary by the supervisor from the owner's chat on 2026-11-15. The context, in the supervisor's words: it had drafted a prompt for the agent that writes the agent files and told it the notes' Settled lines hold "the loops as I approved them".
+
+The owner's words:
+
+"I did not approve any loops, tests, processes or anything post STANDARD.md"
