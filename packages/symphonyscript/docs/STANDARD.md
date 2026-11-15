@@ -1,6 +1,6 @@
 # The code standard
 
-This document is the bar for every line of the SymphonyScript compiler's code, as the SPEC is the bar for the language. The SPEC decides what the code does; this document decides how it is written. A builder reads it whole before it writes, and learns the form from it alone: no existing code, kept or old, is a model. A reviewer cites its lines by number. What a reviewer may report is `FINDINGS.md`.
+This document is the bar for every line of code in `packages/symphonyscript`, in every crate, as the SPEC is the bar for the language. The SPEC decides what the code does; this document decides how it is written. A builder reads it whole before it writes, and learns the form from it alone: no existing code, kept or old, is a model. A reviewer cites its lines by number. What a reviewer may report is `FINDINGS.md`.
 
 A unit's page bounds what its builder touches. Inside that bound every line here holds.
 
@@ -48,7 +48,7 @@ It has four parts: architecture (1), cost (2), the method from a SPEC sentence t
 
 **1.5 A fault is a value.** A fault leaves a placeholder, or a region, in the data. A placeholder has no type and no value: no type is kept behind a fault, and no value is tried. Silence comes only from that data: a check that needs a fact a placeholder would give finds none and draws nothing, and a fault that reads no placeholder draws. Nothing reads the message list to decide what to check, draw or build. Nothing de-duplicates it or keeps a flag beside it. Ordering the list for output, and returning failure when it is not empty, are allowed at the compiler's edge and nowhere else.
 
-**1.6 Every construct is handled or refused by name.** In a stage a construct has one handler: one function, with the helpers only it calls. Constructs that one sentence lists as the forms of one rule are rows of data and share that rule's handler (1.4). Code that picks among handlers is a chooser, and it does none of the handlers' work: each arm of the `match` that picks is one call or one value. Applying what a handler hands back, and moving to the next piece of input, are the chooser's own. There is no fallback path: a construct a stage does not handle is refused by its name, with the catalogue's message for it, and never falls to another construct's handler or to a default. No `match` on one of our own enums has a catch-all arm. An `if let`, a `let … else` or a `matches!` that names a variant of one of our own enums is a catch-all arm, and so is an `==` or a `!=` against such a variant where it chooses among constructs. A variant in a pattern is written with its enum's path, never through a glob import, because a misspelt bare name is a binding, and a binding is a catch-all arm the compiler accepts. One form of `==` is allowed, the expectation: at a grammar position that takes one exact token, the code compares the kind with that one variant, and the other branch is that position's fault and picks no handler. Each question about a kind is answered once, by a function beside the enum that names every variant, so that a new variant stops the build at every question it must answer.
+**1.6 Every construct is handled or refused by name.** In a stage a construct has one handler: one function, with the helpers only it calls. A construct whose production holds itself, directly or through others, cannot wait in a call for its inside (2.4): it leaves an entry on a stack and is entered again each time a part of its inside is complete. Its handler is then one type, that entry, with the one `impl` block that holds every way into it, and its mark stands above the block. What it remembers between two entries is held in the type's own fields. The stack's enum has one variant a construct, never one a place inside a construct to resume at. Outside its block an entry is only handed back by a chooser or asked a question beside that enum. Constructs that one sentence lists as the forms of one rule are rows of data and share that rule's handler (1.4). Code that picks among handlers is a chooser, and it does none of the handlers' work: each arm of the `match` that picks is one call or one value. Applying what a handler hands back, and moving to the next piece of input, are the chooser's own. There is no fallback path: a construct a stage does not handle is refused by its name, with the catalogue's message for it, and never falls to another construct's handler or to a default. No `match` on one of our own enums has a catch-all arm. An `if let`, a `let … else` or a `matches!` that names a variant of one of our own enums is a catch-all arm, and so is an `==` or a `!=` against such a variant where it chooses among constructs. A variant in a pattern is written with its enum's path, never through a glob import, because a misspelt bare name is a binding, and a binding is a catch-all arm the compiler accepts. One form of `==` is allowed, the expectation: at a grammar position that takes one exact token, the code compares the kind with that one variant, and the other branch is that position's fault and picks no handler. A position that takes one of a few exact tokens is a run of expectations, and the run ends in a fault drawn by name, never in a default that accepts. Each question about a kind is answered once, by a function beside the enum that names every variant, so that a new variant stops the build at every question it must answer.
 
 **1.7 The page names the edges, and the proposal names the inside.** The page names what crosses a stage's edge, and the tables that stages share, each with its one writer. Inside a stage, the builder's first hand-back is a structure proposal: the lasting types, each with its one writer and its layout (2.3), the passes in their order, the counts of 2.2, and the invariants. It is read cold against parts 1 to 3 before any body is written. The builder builds to the accepted proposal. A lasting type or a pass the accepted proposal does not hold comes in by an amendment: the same hand-back, read the same way, before its body is written.
 
@@ -82,7 +82,7 @@ A node here is what a stage makes one of for a piece of the source: a token, a t
 
 **2.3 The default layout.** Unless the page names another: a dense column indexed by id, in the order the source fixes, for what every id has; a side table appended in id order and searched by halving, for what few have; an interner. A hash map's key is content, never an id, a node or an address. The hash and its key are the page's.
 
-**2.4 No recursion on depth.** No function calls itself, directly or through others, on a path whose depth the source or an option sizes. The functions Rust writes count: a type that holds itself through a `Box` is dropped, cloned and compared by self-calls on that depth, so no lasting type holds itself. Each stage whose input nests carries a check of 100,000 levels on a 1 MiB stack, a gate job (4.7).
+**2.4 No recursion on depth.** No function calls itself, directly or through others, on a path whose depth the source or an option sizes. Only such a path takes a stack: a production holds itself when it lies on a cycle of the grammar's productions, and a production that cannot hold itself reads its parts by calls, in the order its production writes them. A call into a machine, one loop with its own stack, that never calls back is no self-call. The page lists each production of its stage with its form, an entry on a stack or a function. The functions Rust writes count: a type that holds itself through a `Box` is dropped, cloned and compared by self-calls on that depth, so no lasting type holds itself. Each stage whose input nests carries a check of 100,000 levels on a 1 MiB stack, a gate job (4.7).
 
 **2.5 A loop states its total.** A loop whose turn is not constant says in a comment what its total is and why the input bounds it, and holds the counter its page's growth row names. The comment is a claim, and the reviewer checks it as one.
 
@@ -175,7 +175,7 @@ The unit takes one file's token table, whose last row is its end and holds no to
 
 Positions: an expression stands in many places, and each belongs to the code that reads it. This piece starts at the token its caller names and reports where it stopped.
 
-**Step 2: the structure proposal (1.7).** One pass over the tokens: `expression`, with its handlers and helpers. One table: `Tree`, a dense column of `Node` indexed by `NodeId`, in the order the nodes are completed; its writer is `expression`, through `Tree::push`. One buffer of 1.1's exception: `Scratch`, whose capacity lasts and whose contents are the pass's scratch. Counts: one pass; no allocation a token or a node; no hash operation; no copy of text. Invariants: the seven the module opens with. The first three are the page's, of what the unit takes and hands on.
+**Step 2: the structure proposal (1.7).** One pass over the tokens: `expression`, with its handlers and helpers. One table: `Tree`, a dense column of `Node` indexed by `NodeId`, in the order the nodes are completed; its writer is `expression`, through `Tree::push`. One buffer of 1.1's exception: `Scratch`, whose capacity lasts and whose contents are the pass's scratch: a stack of pending operators and of open constructs. Every production of the cut lies on a cycle of the grammar, through `'(' Expr ')'`, so each construct that has an inside leaves an entry: the operators, rows of one rule, share `Op`, and the group's is `Group`. Counts: one pass; no allocation a token or a node; no hash operation; no copy of text. Invariants: the seven the module opens with. The first three are the page's, of what the unit takes and hands on.
 
 **Step 3: the code.** Constructors for `Tree` and `Scratch` are left out.
 
@@ -195,8 +195,8 @@ Positions: an expression stands in many places, and each belongs to the code tha
 //!   nowhere, or at the table's end, and that row is the caller's. A faulty one ends
 //!   before the row its fault stands at.
 //! - Brackets arrive paired: every `Open` has its `Close` later in the table. The lexer's.
-//!   Relied on at the `internal` call in `stop`, this module's one site of an impossible
-//!   state.
+//!   Relied on at the `internal` call in `Group::resume`, this module's one site of an
+//!   impossible state.
 //! - Only `Tree::push` writes the nodes, and it only appends. A `NodeId` is made only there,
 //!   as its return, so it names a row for as long as the tree lives, and a node's operands
 //!   have smaller ids than the node.
@@ -397,7 +397,7 @@ enum Op {
 }
 
 /// What becomes of a pending operator when an infix operator arrives after its right operand.
-enum Meets { Waits, Completes, Refused(FaultCode) }
+enum Meets { Waits, Completes, Chains }
 
 // Every comparison of two levels is in this block.
 // SPEC §5.1 "From loosest to tightest"
@@ -410,14 +410,6 @@ impl Op {
                 Assoc::Left | Assoc::None => Level(row.level.0 + 1),
                 Assoc::Right { operand } => operand,
             },
-        }
-    }
-
-    /// The level an operand read now must start at, `top` being the innermost stack entry.
-    fn floor(top: Option<&Pending>) -> Level {
-        match top {
-            None | Some(Pending::Group) => LOOSEST,
-            Some(Pending::Op(op)) => op.operand(),
         }
     }
 
@@ -437,9 +429,7 @@ impl Op {
                 Assoc::Left | Assoc::Right { .. } => Meets::Completes,
                 // The comparisons' row is the table's one row with no associativity.
                 // SPEC §5.1 "Comparisons do not chain"
-                Assoc::None if next.level == row.level => {
-                    Meets::Refused(FaultCode::ComparisonChain)
-                }
+                Assoc::None if next.level == row.level => Meets::Chains,
                 Assoc::None => Meets::Completes,
             },
         }
@@ -454,11 +444,40 @@ impl Op {
     }
 }
 
+/// An entry of the stack: a pending operator, or a construct whose inside is being read.
 #[derive(Clone, Copy)]
-enum Pending {
-    /// An open `(`.
-    Group,
-    Op(Op),
+enum Pending { Op(Op), Nest(Nest) }
+
+impl Pending {
+    /// The level an operand starts at when this entry is the innermost.
+    fn floor(self) -> Level {
+        match self {
+            Pending::Op(op) => op.operand(),
+            Pending::Nest(nest) => nest.floor(),
+        }
+    }
+}
+
+/// The constructs whose inside nests: one variant a construct, and never one a place inside
+/// a construct to resume at.
+#[derive(Clone, Copy)]
+enum Nest { Group(Group) }
+
+// The questions the stack's readers ask of an open construct.
+impl Nest {
+    /// The level an operand starts at directly inside this construct.
+    fn floor(self) -> Level {
+        match self {
+            Nest::Group(group) => group.floor(),
+        }
+    }
+
+    /// This construct's inside is complete, and `why` arrives after it.
+    fn resume(self, inside: NodeId, at: TokId, why: Stop) -> Step {
+        match self {
+            Nest::Group(group) => group.resume(inside, at, why),
+        }
+    }
 }
 
 /// What `expression` keeps between two calls: its stack's capacity, so that an expression
@@ -471,6 +490,14 @@ pub struct Scratch {
 }
 
 impl Scratch {
+    /// The level an operand read now starts at: the innermost entry's, or an expression's own.
+    fn floor(&self) -> Level {
+        match self.stack.last() {
+            Some(top) => top.floor(),
+            None => LOOSEST,
+        }
+    }
+
     fn turn(&mut self) {
         #[cfg(test)]
         {
@@ -515,7 +542,7 @@ pub fn expression(toks: &Toks, from: TokId, tree: &mut Tree, scratch: &mut Scrat
             Expect::Operand => match toks.read(at) {
                 Read::Token { kind, after } => match kind.starts() {
                     Starts::Leaf => leaf(tree, at, after),
-                    Starts::Group => Step::Push(Pending::Group, after),
+                    Starts::Group => Group::open(after),
                     Starts::Prefix(row) => prefix_operator(scratch, at, after, row),
                     Starts::Nothing => Step::Fault(no_operand(at)),
                 },
@@ -524,7 +551,9 @@ pub fn expression(toks: &Toks, from: TokId, tree: &mut Tree, scratch: &mut Scrat
             Expect::Operator(operand) => match toks.read(at) {
                 Read::Token { kind, after } => match kind.continues() {
                     Continues::Infix(row) => infix_operator(tree, scratch, operand, at, after, row),
-                    Continues::Stops => stop(tree, scratch, operand, at, Stop::Token { kind, after }),
+                    Continues::Stops => {
+                        stop(tree, scratch, operand, at, Stop::Token { kind, after })
+                    }
                 },
                 Read::End => stop(tree, scratch, operand, at, Stop::End),
             },
@@ -559,10 +588,10 @@ fn leaf(tree: &mut Tree, at: TokId, after: TokId) -> Step {
 
 /// `a and not b` is an expression, and `a + not b` is none.
 fn prefix_operator(scratch: &Scratch, at: TokId, after: TokId, row: Prefix) -> Step {
-    if Op::inside(row.level, Op::floor(scratch.stack.last())) {
+    if Op::inside(row.level, scratch.floor()) {
         Step::Push(Pending::Op(Op::Prefix { at, row }), after)
     } else {
-        Step::Fault(Fault { code: FaultCode::OperandExpected, at })
+        Step::Fault(no_operand(at))
     }
 }
 
@@ -575,8 +604,8 @@ fn infix_operator(
     row: Infix,
 ) -> Step {
     match complete(tree, scratch, operand, row) {
-        Ok(left) => Step::Push(Pending::Op(Op::Infix { at, row, left }), after),
-        Err(code) => Step::Fault(Fault { code, at }),
+        Left::Operand(left) => Step::Push(Pending::Op(Op::Infix { at, row, left }), after),
+        Left::Chain => Step::Fault(Fault { code: FaultCode::ComparisonChain, at }),
     }
 }
 
@@ -585,38 +614,63 @@ fn stop(tree: &mut Tree, scratch: &mut Scratch, operand: NodeId, at: TokId, why:
     match under {
         // PAGE "An expression that is not faulty ends before"
         Under::Nothing => Step::Done(node),
-        // SPEC §5.1 Primary "'(' Expr ')'"
-        Under::Group => match why {
+        Under::Nest(nest) => nest.resume(node, at, why),
+    }
+}
+
+/// An open `(`.
+#[derive(Clone, Copy)]
+struct Group;
+
+// SPEC §5.1 Primary "'(' Expr ')'"
+impl Group {
+    /// `(` arrives where an operand is expected.
+    fn open(after: TokId) -> Step {
+        Step::Push(Pending::Nest(Nest::Group(Group)), after)
+    }
+
+    /// Its inside is an `Expr`, which starts at the loosest level.
+    fn floor(self) -> Level {
+        LOOSEST
+    }
+
+    /// Its inside is complete, and `why` arrives after it.
+    fn resume(self, inside: NodeId, at: TokId, why: Stop) -> Step {
+        match why {
             Stop::End => Step::Fault(internal("brackets arrive paired", at)),
             // After a group's inside this position takes one token, `)`: an expectation.
             Stop::Token { kind, after } => {
                 if kind == TokKind::Close {
-                    Step::Operand(node, after)
+                    self.close(inside, after)
                 } else {
                     Step::Fault(Fault { code: FaultCode::CloserExpected, at })
                 }
             }
-        },
+        }
+    }
+
+    /// A group makes no node of its own: it is its inside.
+    fn close(self, inside: NodeId, after: TokId) -> Step {
+        Step::Operand(inside, after)
     }
 }
 
-/// `next` arrives after `operand`. The result is `next`'s left operand.
-fn complete(
-    tree: &mut Tree,
-    scratch: &mut Scratch,
-    mut operand: NodeId,
-    next: Infix,
-) -> Result<NodeId, FaultCode> {
+/// What `complete` hands back: `next`'s left operand, or word that `next` chains a comparison.
+enum Left { Operand(NodeId), Chain }
+
+/// `next` arrives after `operand`.
+fn complete(tree: &mut Tree, scratch: &mut Scratch, mut operand: NodeId, next: Infix) -> Left {
     // Total: an operator is pushed once and completed once, and one token pushes at most one,
     // so the turns of this loop and of `close`'s over a file are at most the file's tokens.
     loop {
         let top = match scratch.stack.last() {
             Some(&Pending::Op(top)) => top,
-            Some(Pending::Group) | None => return Ok(operand),
+            // The operators under an open construct wait until its inside is complete.
+            Some(Pending::Nest(_)) | None => return Left::Operand(operand),
         };
         match top.meets(next) {
-            Meets::Waits => return Ok(operand),
-            Meets::Refused(code) => return Err(code),
+            Meets::Waits => return Left::Operand(operand),
+            Meets::Chains => return Left::Chain,
             Meets::Completes => {}
         }
         scratch.stack.pop();
@@ -627,8 +681,8 @@ fn complete(
 
 /// What `close` found under the operators it completed.
 enum Under {
-    /// An open group, which `close` popped.
-    Group,
+    /// An open construct, which `close` popped.
+    Nest(Nest),
     Nothing,
 }
 
@@ -637,7 +691,7 @@ fn close(tree: &mut Tree, scratch: &mut Scratch, mut operand: NodeId) -> (NodeId
     loop {
         let top = match scratch.stack.pop() {
             Some(Pending::Op(top)) => top,
-            Some(Pending::Group) => return (operand, Under::Group),
+            Some(Pending::Nest(nest)) => return (operand, Under::Nest(nest)),
             None => return (operand, Under::Nothing),
         };
         scratch.turn();
@@ -664,20 +718,21 @@ fn close(tree: &mut Tree, scratch: &mut Scratch, mut operand: NodeId) -> (NodeId
 
 **What to see in it.**
 
-- The table is data (1.4). The rows of §5.1's table are arms of `starts` and `continues`, each under the mark of its production or of its alternative, and an arm holds constants and no logic. Every comparison of two levels is in `impl Op`.
+- The table is data (1.4). The rows of §5.1's table are arms of `starts` and `continues`, each under the mark of its production or of its alternative, and an arm holds constants and no logic. Every comparison of two levels is in `impl Op`. Each fault code is built in one place.
 - The questions about a kind sit beside the enum (1.6). Two are asked of `TokKind`, each names every variant, and no other `match` names one. No `match` has a catch-all arm, there is no `if let`, no `let … else` and no `matches!`, and every variant of our own enums is written with its path.
-- `==` on a kind stands once, as an expectation (1.6): in `stop`, after a group's inside, the position takes `)` and nothing else, and the other branch is that position's fault. `(a b)` draws `CloserExpected` at `b`.
-- `expression` is a chooser (1.6). Each arm that picks is one call or one value: the arms on what a token starts, on how it continues, and on the table's end. The handlers are `leaf`, `prefix_operator`, `infix_operator` and `stop`, and `no_operand` refuses. The `match` that applies a step names no token and no construct.
+- `==` on a kind stands once, as an expectation (1.6): in `Group::resume`, after a group's inside, the position takes `)` and nothing else, and the other branch is that position's fault. `(a b)` draws `CloserExpected` at `b`.
+- `expression` is a chooser (1.6). Each arm that picks is one call or one value: the arms on what a token starts, on how it continues, and on the table's end. The handlers it calls are `leaf`, `prefix_operator`, `infix_operator` and `stop`, the group's handler is its type, entered here through `Group::open`, and `no_operand` refuses. The `match` that applies a step names no token and no construct.
+- The group is one type with one block (1.6). `Group` is the entry an open `(` leaves on the stack, and its `impl` block, under its mark, holds every way into it: where it opens, the level its inside starts at, where it is resumed and where it closes. Outside that block the group is named in seven lines: its own declaration, the two declarations that list it, `Starts` and `Nest`, the row that classifies `(`, and three arms that are one call each. The operators read `Pending::Nest` and never which construct is open.
 - The stack is explicit (2.4). 100,000 opening parentheses with their closers, 100,000 prefix `-` and 100,000 `**` are read on a 1 MiB stack, and so are eight times as many: the depth is a `Vec`'s length.
 - A fault is a value (1.5). `a < b < c` yields a tree whose root is `Node::Fault`, with its code and its place. No list of faults stands beside the tree, and no flag.
-- Impossible states are typed away, and one that is left is named (1.11). An infix operator carries its left operand in its stack entry, and `Expect::Operator` carries the operand in hand, so there is no stack of operands to run empty. `close` returns only when it has popped a group or emptied the stack, and `Under` says which, so `stop` has no arm for an operator. Only a right-associative row carries an operand level, so no other row can carry a wrong one. `Toks::read` hands back a token together with the row after it, or the table's end with none, and a step that takes a token carries that row, so no step moves past the last row. The table's end inside an open group is not typed away: it goes through `internal`, and the module's invariants list the site. `( a` draws it.
+- Impossible states are typed away, and one that is left is named (1.11). An infix operator carries its left operand in its stack entry, and `Expect::Operator` carries the operand in hand, so there is no stack of operands to run empty. `close` returns only when it has popped an open construct or emptied the stack, and `Under` says which, so `stop` has no arm for an operator. An operator's one refusal is `Meets::Chains`, and `complete` hands it on as `Left::Chain`, so neither can carry a fault code that an operator cannot draw. Only a right-associative row carries an operand level, so no other row can carry a wrong one. `Toks::read` hands back a token together with the row after it, or the table's end with none, and a step that takes a token carries that row, so no step moves past the last row. The table's end inside an open group is not typed away: it goes through `internal`, and the module's invariants list the site. `( a` draws it.
 - No input draws a panic (1.12). `Toks::read` and `Tree::node` index directly, each as its owner's one accessor, and nothing else indexes. Only `Toks` makes a `TokId` and only `Tree::push` a `NodeId`. Every sequence of up to five of the cut's twenty token kinds is read with no panic and leaves the stack empty.
-- Marks (3.3). Every mark stands on the line above its home, and no mark stands twice. Each row of §5.1's table carries the mark of its production or of its alternative, the block that holds every comparison of two levels carries the table's, and the arm that refuses a chain carries its sentence's. The rows that start a leaf and the arm of `stop` that closes a group carry the marks of `Primary`'s alternatives, and `no_operand`, which refuses what starts no operand, carries `Primary`'s own. Three invariants carry marks.
+- Marks (3.3). Every mark stands on the line above its home, and no mark stands twice. Each row of §5.1's table carries the mark of its production or of its alternative, the block that holds every comparison of two levels carries the table's, and the arm that finds a chain carries its sentence's. The rows that start a leaf and the group's block carry the marks of `Primary`'s alternatives, and `no_operand`, which refuses what starts no operand, carries `Primary`'s own. Three invariants carry marks.
 - The loops state their total (2.5). `expression`'s loop takes one turn a row at most. The loops under it, `complete`'s and `close`'s, state their total, and `Scratch::turn` counts the operators they complete: over a run of prefix `-` and chains of `**`, of `+` and of `** -`, each at 100,000 to 800,000 levels, that count never passes the tokens.
 - Allocation (2.2). Once its stack has grown, and while the tree's column has room, an expression allocates nothing: 900,000 tokens of sums, products, powers, prefix `-` and groups are read with no allocation. The stack is 1.1's buffer and is empty when `expression` returns, after a fault too. From an empty stack and an empty column the same tokens are read with fewer than 60 allocations.
 - The two conditions the table does not show are constants in the rows: `2 ** -1` is read by `**`'s operand level, and `a + not b` is refused by `not`'s level.
 
-**What it does not settle.** A faulty expression leaves the nodes it had completed in the column, as the module's last invariant says. A group is touched in three places, where its entry is pushed, where the stack is read and where it is closed, and its mark stands at the one where its rule is decided, the closing; how a nesting construct keeps one home on an explicit stack is the parser's page's. Where a syntax fault stands, and what the tree keeps of its line, are SPEC §16's and the parser's page's. How a growth row reads the counter is the gate's. The ids are `usize` to keep the example free of a conversion: an id's width, and the one home of the conversion that makes it, are the base layer's.
+**What it does not settle.** A faulty expression leaves the nodes it had completed in the column, as the module's last invariant says. Where a syntax fault stands, and what the tree keeps of its line, are SPEC §16's and the parser's page's. How a growth row reads the counter is the gate's. The ids are `usize` to keep the example free of a conversion: an id's width, and the one home of the conversion that makes it, are the base layer's.
 
 **The same piece, as it is written unasked.** It passes a first look and the tests of valid programs.
 
