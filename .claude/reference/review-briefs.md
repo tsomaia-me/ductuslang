@@ -39,7 +39,7 @@ you ran and what you did not.
 
 ## The blind second's prompt
 
-Started by the owner as a fresh session from the same commit as the primary, on a branch cut for it and deleted after the comparison. It sees nothing of the primary's answer.
+Gemini alone answers as the blind second: the owner starts it as a fresh session from the same commit as the primary, on a branch cut for it and deleted after the comparison, and closes it after its answer, because its tool compacted after one question. It sees nothing of the primary's answer. Fable at Max is an extra run only on the owner's order, with the same prompt.
 
 ```
 You are the owner's peer for SymphonyScript's compiler design. Read
@@ -62,4 +62,6 @@ Bring it to me with the options, their costs and wins, and your pick.
 Rebuild every count you rely on from its source; do not run again the
 script that produced it. Quote the SPEC sentence beside each claim you make
 about the language. Decide nothing that has two valid answers: put it to me.
+If your tool compacts your context before you answer, say so at the top of
+your answer.
 ```

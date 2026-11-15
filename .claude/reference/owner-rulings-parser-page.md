@@ -1,6 +1,6 @@
 # The owner's rulings on the parser's page and on how the design work runs, word for word
 
-Saved by the session that held the conversation. The path the first message confirms is written out in the notes, Now, "How the design work runs"; the two calls are in the notes, Settled, "The colon question".
+Saved by the session that held the conversation. The path the first message confirms, and what the second changes in it, are written out in the notes, Now, "How the design work runs", and the second also into `review-briefs.md`; the two calls are in the notes, Settled, "The colon question".
 
 ---
 
@@ -15,3 +15,9 @@ the draft for Gemini.
 
 The control session is stopped. Put the shared checkout back on main,
 drop the duplicate stash, and delete `sub` here and on origin.
+
+---
+
+# Second, 2026-11-15: who the primary is, who the blind second is, and when Fable at Max runs
+
+The primary peer is a Claude session on wb and the one writer of the notes. Gemini alone answers as the blind second, in a fresh session each time, closed after its answer, because its tool compacted after one question. Fable at Max is an extra run only on my order.
