@@ -9,7 +9,7 @@
 - `#![forbid(unsafe_code)]` across crates by default; `unsafe` requires explicit owner authorization in an isolated module.
 - Three `OWNER_PREFERENCES.md` updates approved and written (approved lessons/preferences commit gate, self-contained open items, quote-block draft-first approval with verbatim replaced/removed lines).
 
-## Drafted on Disk (Awaiting Cold Review & Owner Sign-Off)
+## Drafted on Disk (Cold-Reviewed & Fixed; Awaiting Owner Review)
 - Root `/CLAUDE.md` (note: git index currently tracks uppercase `CLAUDE.MD`; on case-sensitive Linux `/home/cdagent/ductuslang`, needs `git mv` to lowercase `CLAUDE.md` when committing).
 - `.claude/agents/builder.md`
 - `.claude/agents/test-author.md`
@@ -19,7 +19,10 @@
 - `.claude/agents/verifier.md`
 - `.claude/agents/explorer.md`
 
-## Open for Owner
-- Exact quote-block diffs for `.claude/skills/peer/SKILL.md` and `.claude/skills/lesson/SKILL.md` (to align both skills with the newly approved draft-first quote-block rule; held from disk until owner approves exact lines).
-- Cleanup confirmation once root `/CLAUDE.md` is approved: removing legacy `packages/symphonyscript/CLAUDE.md` (so Claude Code does not load two `CLAUDE.md` files), renaming tracked `CLAUDE.MD` -> `CLAUDE.md` in git index for Linux case-sensitivity, and updating `.claude/hooks/session.mjs` `MENU_LINE` if `head` is retired.
+## Pending Proposals & Open Items for Owner
+- Proposed quote-block edits to `.claude/skills/peer/SKILL.md` (lines 22, 33, 37, 41–42, 47, 49) and `.claude/skills/lesson/SKILL.md` (lines 3, 8–12, 39–41) presented in chat and held from disk until owner approves exact text.
+- Cleanup decisions before committing:
+  1. Deleting `packages/symphonyscript/CLAUDE.md` (critical: Claude Code auto-loads subdirectory `CLAUDE.md` files and it injects retired `.claude/docs/CODING.md`) and `.claude/docs/{CODING,REVIEWING,running}.md`.
+  2. Renaming Git's tracked uppercase `CLAUDE.MD` -> lowercase `CLAUDE.md` (`git mv`) so the case-sensitive Linux runner loads it.
+  3. Updating `.claude/hooks/session.mjs` `MENU_LINE` (if `head` is retired or updated).
 - Owner is reviewing the 2 remaining `STANDARD.md` / `FINDINGS.md` observations (`STANDARD.md` line 3 "every crate" vs. `tool`/`core` I/O & non-compiler stated-test surfaces; adding explicit `Test Reviewer` row to `FINDINGS.md` to match `.claude/agents/test-reviewer.md`).
