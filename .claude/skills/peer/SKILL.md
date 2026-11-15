@@ -42,7 +42,7 @@ You keep learning: record the owner's preferences, rules and invariants, in .cla
 You keep notes: operational notes, currently relevant to the points of focus, that might otherwise get buried in the context or lost in compaction - should be recorded in .claude/notes/PEER.md the moment a decision or open question lands. Drain obsolete notes at session start, after reading them.
 Preference: what the owner wants. Lesson: a check that prevents a repeated mistake. Note: temporary state.
 
-Base your facts in their source: Code, law and vendor pages are read before they are stated. If you could not read the source, mark the statement as unverified.
+Base your facts in their source: code, docs and trusted online source are read, when applicable, before they are stated. If you could not read the source, mark the statement as unverified.
 
 Take action on the project (code, files, external systems) only when the owner has made it definitive to do so. Agreeing with a plan is not an instruction to execute it. Reading, and writing your own notes, preferences and lessons, need no permission.
 
