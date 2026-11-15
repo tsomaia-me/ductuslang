@@ -1,0 +1,178 @@
+#### json-obj (ok)
+let a = json {"a": 1}
+#### json-arr (ok)
+let a = json [1, "b"]
+#### json-str (ok)
+let a = json "text"
+#### json-num (ok)
+let a = json 12.5
+#### json-true (ok)
+let a = json true
+#### json-false (ok)
+let a = json false
+#### json-null (ok)
+let a = json null
+#### json-empty-obj (ok)
+let a = json {}
+#### json-empty-arr (ok)
+let a = json []
+#### json-neg (ok)
+let a = json -1
+#### json-neg-in-arr (ok)
+let a = json [-1, -0.5, -1e3, -0]
+#### json-numbers (ok)
+let a = json [0, 10, 0.5, 1e5, 1E5, 1e+5, 1e-5, 1.5e10, 0.0, 0e0, 123456789012345678901234567890]
+#### json-nested (ok)
+let a = json {"a": {"b": [1, {"c": null}], "d": []}, "e": {}}
+#### json-names (ok)
+let a = json {"count": count, "msg": ("hi {name}"), "echo": items}
+#### json-path (ok)
+let a = json {"a": x.y.z, "b": lib::v, "c": lib::v.w, "d": Mode::Manual}
+#### json-paren-expr (ok)
+let a = json {"a": (1 + 2), "b": (if c then 1 else 2), "c": (f(x)), "d": ([1, 2]), "e": (0x10), "f": (5ms), "g": (1_000)}
+#### json-paren-nested-json (ok)
+let a = json {"a": (json {"b": (json [1, (x)])})}
+#### json-paren-for (ok)
+let a = json [(for x in xs into s from 0: s + x)]
+#### json-multiline (ok)
+let a = json {
+"a": 1,
+    "b": [
+1,
+2
+]
+}
+#### json-top-name (ok)
+let a = json name
+#### json-top-path (ok)
+let a = json name.field
+#### json-top-paren (ok)
+let a = json (1 + 2)
+#### json-escapes (ok)
+let a = json "q\" b\\ s\/ \b \f \n \r \t \u00e9 \uD83D\uDE00"
+#### json-no-interpolation (ok)
+let a = json "a {b} c // not comment"
+#### json-key-escapes (ok)
+let a = json {"k\n\u0041": 1}
+#### json-as-operand (ok)
+let a = v is json {"a": 1}
+#### json-in-call (ok)
+let a = f(json {"a": 1}, json [1], json 2, json "s", json null)
+#### json-as-attr (ok)
+Rig r | d=json {"a": 1} e=2
+#### json-json-after-json (ok)
+let a = [json 1, json 2, json -3]
+#### json-json-index-after (ok)
+let a = json {"a": 1}["a"]
+#### json-json-field-after (ok)
+let a = json [1].size
+#### json-to-path (ok)
+Clip v:
+    Plays | gain=json {"g": to.gain}: w
+#### json-true-false-in-obj (ok)
+let a = json {"t": true, "f": false, "n": null}
+#### json-keyword-member-path (ok)
+let a = json {"a": x.state, "b": x.json}
+#### json-type-json (ok)
+state body(json {}): json[..65536]
+#### json-type-json-no-budget (ok)
+fn f(a: json) -> json: a
+#### json-type-json-optional (ok)
+let a: json[..256]? = b
+#### json-type-json-dims (ok)
+let a: json[..8][4] = b
+#### json-type-and-lit (ok)
+let a: json = json {}
+#### json-whitespace-free (ok)
+let a = json{"a":1}
+#### json-json-tab-separated (ok)
+let a = json	[1]
+#### json-trailing-comma-obj (refuse)
+let a = json {"a": 1,}
+#### json-trailing-comma-arr (refuse)
+let a = json [1,]
+#### json-bare-key (refuse)
+let a = json {a: 1}
+#### json-single-quote (refuse)
+let a = json {'a': 1}
+#### json-number-key (refuse)
+let a = json {1: 2}
+#### json-leading-zero (refuse)
+let a = json 01
+#### json-leading-zero-in-arr (refuse)
+let a = json [007]
+#### json-hex (refuse)
+let a = json [0x10]
+#### json-separator (refuse)
+let a = json [1_000]
+#### json-suffix (refuse)
+let a = json [5ms]
+#### json-type-suffix (refuse)
+let a = json [5i32]
+#### json-leading-point (refuse)
+let a = json [.5]
+#### json-trailing-point (refuse)
+let a = json [5.]
+#### json-exp-no-digits (refuse)
+let a = json [1e]
+#### json-plus-sign (refuse)
+let a = json [+1]
+#### json-double-minus (refuse)
+let a = json [--1]
+#### json-minus-name (refuse)
+let a = json [-x]
+#### json-minus-alone (refuse)
+let a = json -
+#### json-none-word (refuse)
+let a = json [none]
+#### json-expr-unparenthesized (refuse)
+let a = json [1 + 2]
+#### json-call-unparenthesized (refuse)
+let a = json [f(x)]
+#### json-index-unparenthesized (refuse)
+let a = json {"a": xs[0]}
+#### json-language-string-escape (refuse)
+let a = json "\{"
+#### json-bad-escape (refuse)
+let a = json "\q"
+#### json-bad-u-escape (refuse)
+let a = json "\u12G4"
+#### json-short-u-escape (refuse)
+let a = json "\u12"
+#### json-control-char (refuse)
+let a = json "a	b"
+#### json-unterminated (refuse)
+let a = json "abc
+#### json-missing-colon (refuse)
+let a = json {"a" 1}
+#### json-missing-value (refuse)
+let a = json {"a":}
+#### json-missing-comma (refuse)
+let a = json [1 2]
+#### json-double-comma (refuse)
+let a = json [1,,2]
+#### json-empty-literal (refuse)
+let a = json
+#### json-to-alone (refuse)
+Clip v:
+    Plays | gain=json {"g": to}: w
+#### json-interp-string-key (refuse)
+let a = json {("k"): 1}
+#### json-nan (refuse)
+let a = json [NaN]
+#### json-comment-inside-is-comment-ok? (refuse)
+let a = json [1, // c
+2]
+#### json-null-outside (refuse)
+let a = [null]
+#### json-unclosed-obj (refuse)
+let a = json {"a": 1
+let b = 2
+#### json-paren-empty (refuse)
+let a = json [()]
+#### json-lambda-in-paren (refuse)
+let a = json [(x: x)]
+#### json-qualified-then-call (refuse)
+let a = json [lib::f(1)]
+#### json-true-suffix (refuse)
+let a = json [truex, 1]

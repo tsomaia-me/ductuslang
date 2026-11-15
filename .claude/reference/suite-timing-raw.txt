@@ -1,0 +1,22 @@
+cold_build_all exit=0 secs=324.569950915
+noop_build_all exit=0 secs=.343041109
+run_all exit=0 secs=45.286743288
+run_all_again exit=0 secs=14.393922864
+touch_build_one_target exit=0 secs=5.121412782
+touch_build_all_integration exit=0 secs=11.454126058
+touch_build_lib_tests exit=0 secs=6.912304276
+touch_run_one_target exit=0 secs=5.794728359
+touch_run_lib_filter exit=0 secs=7.301712521
+testedit_run_one_target exit=0 secs=5.825479141
+one_binary_first_build exit=0 secs=213.562955574
+touch_build_one_binary exit=0 secs=17.730906734
+run_one_binary exit=0 secs=28.284281588
+done
+settle exit=0 secs=13.621503525
+real_edit_one_large_target exit=0 secs=7.477295437
+real_edit_one_small_target exit=0 secs=7.416332815
+real_edit_all_integration exit=0 secs=14.523017344
+real_edit_lib_tests exit=0 secs=15.925157829
+real_edit_lib_only exit=0 secs=6.774175709
+testedit_small_target exit=0 secs=.681929895
+real_edit_run_small_target exit=0 secs=7.242551976

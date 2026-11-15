@@ -1,0 +1,21 @@
+--- diagnostics (1)
+  PatternSyntax 9..10 ":" :: expected `(` and the parameters, found `:`
+--- detached [] at_layout []
+--- tree
+File 0..21
+  PatternDecl 0..21
+    PatternKw "pattern"
+    Ident "P"
+    PatternParamList 9..9
+    Colon ":"
+    Block 10..21
+      Newline "\n"
+      Indent ""
+      Placement 15..21
+        Ident "Cue"
+        DefaultArg 18..20
+          Slash "/"
+          Literal 19..20
+            Number "1"
+        Newline "\n"
+      Dedent ""

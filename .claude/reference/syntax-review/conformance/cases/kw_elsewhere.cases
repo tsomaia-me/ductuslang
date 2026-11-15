@@ -1,0 +1,432 @@
+#### kw-elsewhere-placement-name state (refuse)
+Rig r:
+    Lamp as state
+#### kw-elsewhere-top-name state (refuse)
+Rig state
+#### kw-elsewhere-kind state (refuse)
+Rig r:
+    state as x
+#### kw-elsewhere-param state (refuse)
+fn f(state): 1
+#### kw-elsewhere-fn-name state (refuse)
+fn state(x): 1
+#### kw-elsewhere-named-arg state (refuse)
+let a = f(state=1)
+#### kw-elsewhere-lambda-param state (refuse)
+let a = state: 1
+#### kw-elsewhere-loop-var state (refuse)
+Rig r:
+    for state in 0..3:
+        Lamp
+#### kw-elsewhere-accumulator state (refuse)
+let a = for x in xs into state from 0: x
+#### kw-elsewhere-generic state (refuse)
+fn f[state](x): 1
+#### kw-elsewhere-binding-head state (refuse)
+Pad kick | hit => state
+#### kw-elsewhere-type-name state (refuse)
+type state = i32
+#### kw-elsewhere-cell-name state (refuse)
+state state(0)
+#### kw-elsewhere-use state (refuse)
+use state
+#### kw-elsewhere-publish state (refuse)
+publish state
+#### kw-elsewhere-map-key-is-expr state
+let m = {state: 1}
+#### kw-elsewhere-placement-name out (refuse)
+Rig r:
+    Lamp as out
+#### kw-elsewhere-top-name out (refuse)
+Rig out
+#### kw-elsewhere-kind out (refuse)
+Rig r:
+    out as x
+#### kw-elsewhere-param out (refuse)
+fn f(out): 1
+#### kw-elsewhere-fn-name out (refuse)
+fn out(x): 1
+#### kw-elsewhere-named-arg out (refuse)
+let a = f(out=1)
+#### kw-elsewhere-lambda-param out (refuse)
+let a = out: 1
+#### kw-elsewhere-loop-var out (refuse)
+Rig r:
+    for out in 0..3:
+        Lamp
+#### kw-elsewhere-accumulator out (refuse)
+let a = for x in xs into out from 0: x
+#### kw-elsewhere-generic out (refuse)
+fn f[out](x): 1
+#### kw-elsewhere-binding-head out (refuse)
+Pad kick | hit => out
+#### kw-elsewhere-type-name out (refuse)
+type out = i32
+#### kw-elsewhere-cell-name out (refuse)
+state out(0)
+#### kw-elsewhere-use out (refuse)
+use out
+#### kw-elsewhere-publish out (refuse)
+publish out
+#### kw-elsewhere-map-key-is-expr out
+let m = {out: 1}
+#### kw-elsewhere-placement-name node (refuse)
+Rig r:
+    Lamp as node
+#### kw-elsewhere-top-name node (refuse)
+Rig node
+#### kw-elsewhere-kind node (refuse)
+Rig r:
+    node as x
+#### kw-elsewhere-param node (refuse)
+fn f(node): 1
+#### kw-elsewhere-fn-name node (refuse)
+fn node(x): 1
+#### kw-elsewhere-named-arg node (refuse)
+let a = f(node=1)
+#### kw-elsewhere-lambda-param node (refuse)
+let a = node: 1
+#### kw-elsewhere-loop-var node (refuse)
+Rig r:
+    for node in 0..3:
+        Lamp
+#### kw-elsewhere-accumulator node (refuse)
+let a = for x in xs into node from 0: x
+#### kw-elsewhere-generic node (refuse)
+fn f[node](x): 1
+#### kw-elsewhere-binding-head node (refuse)
+Pad kick | hit => node
+#### kw-elsewhere-type-name node (refuse)
+type node = i32
+#### kw-elsewhere-cell-name node (refuse)
+state node(0)
+#### kw-elsewhere-use node (refuse)
+use node
+#### kw-elsewhere-publish node (refuse)
+publish node
+#### kw-elsewhere-map-key-is-expr node
+let m = {node: 1}
+#### kw-elsewhere-placement-name default (refuse)
+Rig r:
+    Lamp as default
+#### kw-elsewhere-top-name default (refuse)
+Rig default
+#### kw-elsewhere-kind default (refuse)
+Rig r:
+    default as x
+#### kw-elsewhere-param default (refuse)
+fn f(default): 1
+#### kw-elsewhere-fn-name default (refuse)
+fn default(x): 1
+#### kw-elsewhere-named-arg default (refuse)
+let a = f(default=1)
+#### kw-elsewhere-lambda-param default (refuse)
+let a = default: 1
+#### kw-elsewhere-loop-var default (refuse)
+Rig r:
+    for default in 0..3:
+        Lamp
+#### kw-elsewhere-accumulator default (refuse)
+let a = for x in xs into default from 0: x
+#### kw-elsewhere-generic default (refuse)
+fn f[default](x): 1
+#### kw-elsewhere-binding-head default (refuse)
+Pad kick | hit => default
+#### kw-elsewhere-type-name default (refuse)
+type default = i32
+#### kw-elsewhere-cell-name default (refuse)
+state default(0)
+#### kw-elsewhere-use default (refuse)
+use default
+#### kw-elsewhere-publish default (refuse)
+publish default
+#### kw-elsewhere-map-key-is-expr default
+let m = {default: 1}
+#### kw-elsewhere-placement-name type (refuse)
+Rig r:
+    Lamp as type
+#### kw-elsewhere-top-name type (refuse)
+Rig type
+#### kw-elsewhere-kind type (refuse)
+Rig r:
+    type as x
+#### kw-elsewhere-param type (refuse)
+fn f(type): 1
+#### kw-elsewhere-fn-name type (refuse)
+fn type(x): 1
+#### kw-elsewhere-named-arg type (refuse)
+let a = f(type=1)
+#### kw-elsewhere-lambda-param type (refuse)
+let a = type: 1
+#### kw-elsewhere-loop-var type (refuse)
+Rig r:
+    for type in 0..3:
+        Lamp
+#### kw-elsewhere-accumulator type (refuse)
+let a = for x in xs into type from 0: x
+#### kw-elsewhere-generic type (refuse)
+fn f[type](x): 1
+#### kw-elsewhere-binding-head type (refuse)
+Pad kick | hit => type
+#### kw-elsewhere-type-name type (refuse)
+type type = i32
+#### kw-elsewhere-cell-name type (refuse)
+state type(0)
+#### kw-elsewhere-use type (refuse)
+use type
+#### kw-elsewhere-publish type (refuse)
+publish type
+#### kw-elsewhere-map-key-is-expr type
+let m = {type: 1}
+#### kw-elsewhere-placement-name from (refuse)
+Rig r:
+    Lamp as from
+#### kw-elsewhere-top-name from (refuse)
+Rig from
+#### kw-elsewhere-kind from (refuse)
+Rig r:
+    from as x
+#### kw-elsewhere-param from (refuse)
+fn f(from): 1
+#### kw-elsewhere-fn-name from (refuse)
+fn from(x): 1
+#### kw-elsewhere-named-arg from (refuse)
+let a = f(from=1)
+#### kw-elsewhere-lambda-param from (refuse)
+let a = from: 1
+#### kw-elsewhere-loop-var from (refuse)
+Rig r:
+    for from in 0..3:
+        Lamp
+#### kw-elsewhere-accumulator from (refuse)
+let a = for x in xs into from from 0: x
+#### kw-elsewhere-generic from (refuse)
+fn f[from](x): 1
+#### kw-elsewhere-binding-head from (refuse)
+Pad kick | hit => from
+#### kw-elsewhere-type-name from (refuse)
+type from = i32
+#### kw-elsewhere-cell-name from (refuse)
+state from(0)
+#### kw-elsewhere-use from (refuse)
+use from
+#### kw-elsewhere-publish from (refuse)
+publish from
+#### kw-elsewhere-map-key-is-expr from
+let m = {from: 1}
+#### kw-elsewhere-placement-name none (refuse)
+Rig r:
+    Lamp as none
+#### kw-elsewhere-top-name none (refuse)
+Rig none
+#### kw-elsewhere-kind none (refuse)
+Rig r:
+    none as x
+#### kw-elsewhere-param none (refuse)
+fn f(none): 1
+#### kw-elsewhere-fn-name none (refuse)
+fn none(x): 1
+#### kw-elsewhere-named-arg none (refuse)
+let a = f(none=1)
+#### kw-elsewhere-lambda-param none (refuse)
+let a = none: 1
+#### kw-elsewhere-loop-var none (refuse)
+Rig r:
+    for none in 0..3:
+        Lamp
+#### kw-elsewhere-accumulator none (refuse)
+let a = for x in xs into none from 0: x
+#### kw-elsewhere-generic none (refuse)
+fn f[none](x): 1
+#### kw-elsewhere-binding-head none (refuse)
+Pad kick | hit => none
+#### kw-elsewhere-type-name none (refuse)
+type none = i32
+#### kw-elsewhere-cell-name none (refuse)
+state none(0)
+#### kw-elsewhere-use none (refuse)
+use none
+#### kw-elsewhere-publish none (refuse)
+publish none
+#### kw-elsewhere-map-key-is-expr none
+let m = {none: 1}
+#### kw-elsewhere-placement-name use (refuse)
+Rig r:
+    Lamp as use
+#### kw-elsewhere-top-name use (refuse)
+Rig use
+#### kw-elsewhere-kind use (refuse)
+Rig r:
+    use as x
+#### kw-elsewhere-param use (refuse)
+fn f(use): 1
+#### kw-elsewhere-fn-name use (refuse)
+fn use(x): 1
+#### kw-elsewhere-named-arg use (refuse)
+let a = f(use=1)
+#### kw-elsewhere-lambda-param use (refuse)
+let a = use: 1
+#### kw-elsewhere-loop-var use (refuse)
+Rig r:
+    for use in 0..3:
+        Lamp
+#### kw-elsewhere-accumulator use (refuse)
+let a = for x in xs into use from 0: x
+#### kw-elsewhere-generic use (refuse)
+fn f[use](x): 1
+#### kw-elsewhere-binding-head use (refuse)
+Pad kick | hit => use
+#### kw-elsewhere-type-name use (refuse)
+type use = i32
+#### kw-elsewhere-cell-name use (refuse)
+state use(0)
+#### kw-elsewhere-use use (refuse)
+use use
+#### kw-elsewhere-publish use (refuse)
+publish use
+#### kw-elsewhere-map-key-is-expr use
+let m = {use: 1}
+#### kw-elsewhere-placement-name true (refuse)
+Rig r:
+    Lamp as true
+#### kw-elsewhere-top-name true (refuse)
+Rig true
+#### kw-elsewhere-kind true (refuse)
+Rig r:
+    true as x
+#### kw-elsewhere-param true (refuse)
+fn f(true): 1
+#### kw-elsewhere-fn-name true (refuse)
+fn true(x): 1
+#### kw-elsewhere-named-arg true (refuse)
+let a = f(true=1)
+#### kw-elsewhere-lambda-param true (refuse)
+let a = true: 1
+#### kw-elsewhere-loop-var true (refuse)
+Rig r:
+    for true in 0..3:
+        Lamp
+#### kw-elsewhere-accumulator true (refuse)
+let a = for x in xs into true from 0: x
+#### kw-elsewhere-generic true (refuse)
+fn f[true](x): 1
+#### kw-elsewhere-binding-head true (refuse)
+Pad kick | hit => true
+#### kw-elsewhere-type-name true (refuse)
+type true = i32
+#### kw-elsewhere-cell-name true (refuse)
+state true(0)
+#### kw-elsewhere-use true (refuse)
+use true
+#### kw-elsewhere-publish true (refuse)
+publish true
+#### kw-elsewhere-map-key-is-expr true
+let m = {true: 1}
+#### kw-elsewhere-placement-name i32 (refuse)
+Rig r:
+    Lamp as i32
+#### kw-elsewhere-top-name i32 (refuse)
+Rig i32
+#### kw-elsewhere-kind i32 (refuse)
+Rig r:
+    i32 as x
+#### kw-elsewhere-param i32 (refuse)
+fn f(i32): 1
+#### kw-elsewhere-fn-name i32 (refuse)
+fn i32(x): 1
+#### kw-elsewhere-named-arg i32 (refuse)
+let a = f(i32=1)
+#### kw-elsewhere-lambda-param i32 (refuse)
+let a = i32: 1
+#### kw-elsewhere-loop-var i32 (refuse)
+Rig r:
+    for i32 in 0..3:
+        Lamp
+#### kw-elsewhere-accumulator i32 (refuse)
+let a = for x in xs into i32 from 0: x
+#### kw-elsewhere-generic i32 (refuse)
+fn f[i32](x): 1
+#### kw-elsewhere-binding-head i32 (refuse)
+Pad kick | hit => i32
+#### kw-elsewhere-type-name i32 (refuse)
+type i32 = i32
+#### kw-elsewhere-cell-name i32 (refuse)
+state i32(0)
+#### kw-elsewhere-use i32 (refuse)
+use i32
+#### kw-elsewhere-publish i32 (refuse)
+publish i32
+#### kw-elsewhere-map-key-is-expr i32
+let m = {i32: 1}
+#### kw-elsewhere-placement-name json (refuse)
+Rig r:
+    Lamp as json
+#### kw-elsewhere-top-name json (refuse)
+Rig json
+#### kw-elsewhere-kind json (refuse)
+Rig r:
+    json as x
+#### kw-elsewhere-param json (refuse)
+fn f(json): 1
+#### kw-elsewhere-fn-name json (refuse)
+fn json(x): 1
+#### kw-elsewhere-named-arg json (refuse)
+let a = f(json=1)
+#### kw-elsewhere-lambda-param json (refuse)
+let a = json: 1
+#### kw-elsewhere-loop-var json (refuse)
+Rig r:
+    for json in 0..3:
+        Lamp
+#### kw-elsewhere-accumulator json (refuse)
+let a = for x in xs into json from 0: x
+#### kw-elsewhere-generic json (refuse)
+fn f[json](x): 1
+#### kw-elsewhere-binding-head json (refuse)
+Pad kick | hit => json
+#### kw-elsewhere-type-name json (refuse)
+type json = i32
+#### kw-elsewhere-cell-name json (refuse)
+state json(0)
+#### kw-elsewhere-use json (refuse)
+use json
+#### kw-elsewhere-publish json (refuse)
+publish json
+#### kw-elsewhere-map-key-is-expr json
+let m = {json: 1}
+#### kw-elsewhere-placement-name to (refuse)
+Rig r:
+    Lamp as to
+#### kw-elsewhere-top-name to (refuse)
+Rig to
+#### kw-elsewhere-kind to (refuse)
+Rig r:
+    to as x
+#### kw-elsewhere-param to (refuse)
+fn f(to): 1
+#### kw-elsewhere-fn-name to (refuse)
+fn to(x): 1
+#### kw-elsewhere-named-arg to (refuse)
+let a = f(to=1)
+#### kw-elsewhere-lambda-param to (refuse)
+let a = to: 1
+#### kw-elsewhere-loop-var to (refuse)
+Rig r:
+    for to in 0..3:
+        Lamp
+#### kw-elsewhere-accumulator to (refuse)
+let a = for x in xs into to from 0: x
+#### kw-elsewhere-generic to (refuse)
+fn f[to](x): 1
+#### kw-elsewhere-binding-head to (refuse)
+Pad kick | hit => to
+#### kw-elsewhere-type-name to (refuse)
+type to = i32
+#### kw-elsewhere-cell-name to (refuse)
+state to(0)
+#### kw-elsewhere-use to (refuse)
+use to
+#### kw-elsewhere-publish to (refuse)
+publish to
+#### kw-elsewhere-map-key-is-expr to
+let m = {to: 1}

@@ -1,0 +1,71 @@
+diff --git a/packages/symphonyscript/docs/SPEC.md b/packages/symphonyscript/docs/SPEC.md
+index b2ccbf6e..23709b9b 100644
+--- a/packages/symphonyscript/docs/SPEC.md
++++ b/packages/symphonyscript/docs/SPEC.md
+@@ -1043,7 +1043,7 @@ A function or pattern that nothing uses has its names resolved, cycles among its
+ 
+ A bare name that is a variant of the enum its position expects resolves to that variant (§3.4). Every other name resolves in scope.
+ 
+-Where the same text fits two forms and only what a name names tells them apart, the reading is fixed when the name resolves: a body line with a colon (§7.1, §8.1), the first bracket list after a name in a type (§6.8) and the right operand of `is` (§5.3). So `Soft: wash` is a wire to `wash` when `Soft` names a pattern that stands in for a wire, and a `Soft` holding one `wash` when it names a node kind.
++Where the same text fits two forms and only what a name names tells them apart, the reading is fixed when the name resolves: a body line with a colon (§7.1, §8.1), the first bracket list after a name in a type (§6.8) and the right operand of `is` (§5.3). So `Soft: wash` is a wire to `wash` when `Soft` names a pattern that stands in for a wire, and a `Soft` holding one `wash` when it names a node kind. A name that resolves to nothing fixes neither reading, and nothing after the colon, in the bracket list or in the right operand is resolved or checked (§16.2).
+ 
+ ### 6.6 Derived cells
+ 
+@@ -1972,3 +1972,57 @@ A commit the project requires replaces every version the build requires of that
+ A vocabulary has a name and a version (§10.1, §15.7). A package's `Package` item states the vocabulary it is written for as `"<name>@<version>"`, the lowest version it accepts within that version's major: `vocabulary: "lighting@2.1.0"`. A project's states the vocabulary of the framework that runs it (ARCHITECTURE §9). A library that states none uses no kind, enum, unit, attribute or prelude name. A library written for a vocabulary of another name than the project's, of another major, or of a higher version, is an error naming the library and both vocabularies, and so is a project whose framework's vocabulary differs that way from the one it states.
+ 
+ A vocabulary raises its major when it removes or changes a kind, an attribute, an enum variant, a unit or a name its prelude publishes, and its minor when it adds one.
++
++## 16. Faults
++
++### 16.1 Messages
++
++A fault is one breach of a rule that this document calls an error, and its message is that error's diagnostic. A program with a fault is rejected. Every fault draws its own message, and one fault draws one message: nothing is drawn for what another fault left unknown.
++
++### 16.2 Placeholders
++
++A fault leaves a placeholder where the faulty name, type or value would stand. A placeholder has no type and no value. A check that needs a fact a placeholder would give draws nothing, and what it would have yielded is a placeholder in turn; a fault that reads no placeholder draws its message as it does in any program.
++
++- Every use of a name declared more than once (§6.5) reads a placeholder.
++- Structure that a placeholder decides, a `for` whose range bound is one or a use whose argument decides what it places, is not expanded, and its body is code that nothing expands (§6.5).
++- The counts and the warnings of §10.2 are not drawn for a program that holds a placeholder placement or wire, a region (§16.3) or structure that is not expanded.
++- A warning of any other rule is drawn where it reads no placeholder.
++- A limit's error that stops the compilation (§4.6) stops it here too, and no fault found after it draws.
++
++```sym-error
++Rig stage:
++    Lamp/(glow * 2) | hue=tint + 1
++```
++
++This is an error twice: `glow` and `tint` name nothing, and each draws its message; the product, the sum and the two attributes read placeholders and draw nothing.
++
++### 16.3 Syntax faults
++
++A fault of §2.2 to §2.6's rules or of a production is a syntax fault. It stands at the first token that continues no production; when that token begins a line or is a layout token, it stands at the end of the line before. Its line is the text between two `NEWLINE` tokens (§2.2), so the lines a closed bracket or an attribute clause continues it over belong to it. Its region is the rest of its line and the block indented under that line, and an `else` that continues a `when` on that line lies in it with its block. The region is not read: nothing in it draws a message, nothing in it is declared or placed, and a name written in it is a placeholder at every use in the program.
++
++Every item its line writes, a declaration, a placement or an arm, is a placeholder. An item's name, when it stands before the fault, is declared; no other name on the line is resolved, and nothing of the line draws but the fault.
++
++- A closer closes the nearest open `(`, `[` or `{` of its shape, and one with none to close is a fault at the closer. An opener left open, at the end of the file or when a closer closes one opened before it, is a fault at the opener and suspends no layout.
++- A line whose indentation lands on no column of the stack (§2.2) is one fault at that line. Its region holds every following line indented at or deeper than its column, up to the first line indented less, and the stack after the region is as it was before the line.
++- A tab in a line's leading whitespace is one fault at the tab, and counts as one column. A line that draws it draws no other fault of indentation.
++- A block indented under a line that opens none is one fault at its first line, and the whole block is its region.
++
++```sym-error
++let base = 48 +
++
++Clip melody:
++    Note/(base + 7)
++```
++
++This is an error once: the `let` lacks an operand; `base` is declared and names a placeholder, so the pitch draws nothing.
++
++```sym-error
++Scene dusk | hold=:
++    Cue/0.5
++    Cue/ | fade=
++
++state gain(1.0
++state trim(0.5)
++```
++
++This is an error twice: the attribute `hold` lacks its value, and its region holds both cues, so the second cue's own fault draws nothing; and nothing closes the `(` of `gain`. `dusk` and `gain` name placeholders, and `trim` is a cell.

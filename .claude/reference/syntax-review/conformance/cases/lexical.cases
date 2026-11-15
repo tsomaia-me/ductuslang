@@ -1,0 +1,212 @@
+#### comment-eol [tokens]
+let a = 1 // comment ; == != ^ "
+// whole line
+let b = 2 //
+#### comment-in-string-is-text [tokens]
+let a = "http://x // not a comment"
+#### comment-in-interpolation (starts comment => string unterminated)
+let a = "x {1 // c} y"
+#### no-block-comment (error)
+let a = 1 /* c */ + 2
+#### slash-slash-after-kind-is-comment [tokens]
+Rig r:
+    Lamp//0.5
+#### ident-hash-forms [tokens]
+let C#4 = 1
+let lamp#2 = C#4
+let #1 = 2
+let _x = 3
+let x_ = 4
+let _#a = 5
+let a# = 6
+#### ident-only-underscore (error)
+let _ = 1
+#### ident-only-underscores-hash (error)
+let _#_ = 1
+#### ident-only-hash (error)
+let # = 1
+#### ident-unicode [esc tokens]
+let caf<U+00E9> = 1
+let <U+65E5><U+672C> = 2
+let <U+03B1>1 = 3
+#### ident-starts-with-digit-continue (error)
+let 1abc = 1
+#### ident-starts-with-combining (error) [esc]
+let <U+0301>a = 1
+#### ident-nfd-kept-bytes [esc tokens]
+let Cafe<U+0301> = 1
+let b = Caf<U+00E9>
+#### ident-emoji (error) [esc]
+let <U+1F600> = 1
+#### reserved-recurrent (error)
+let recurrent = 1
+#### reserved-string (error)
+let string = 1
+#### reserved-string-as-type (error)
+state s(""): string
+#### null-outside-json (error)
+let a = null
+#### null-as-name (error)
+let null = 1
+#### null-in-json (ok)
+let a = json null
+let b = json {"a": null}
+let c = json [null, null]
+#### null-in-json-paren (error)
+let b = json {"a": (null)}
+#### nullable-ident (ok)
+let nullable = 1
+let b = json {"a": nullable}
+#### eqeq (error -> is)
+let a = b == c
+#### bangeq (error -> is not)
+let a = b != c
+#### eq-eq-spaced (not the token)
+let a = b = = c
+#### caret-in-index (ok)
+let a = xs[^1]
+let b = xs[^2..]
+let c = xs[1..^1]
+let d = xs[..^1]
+let e = xs[^(n + 1)]
+#### caret-elsewhere-binary (error)
+let a = b ^ c
+#### caret-elsewhere-prefix (error)
+let a = ^1
+#### caret-not-at-start-of-bound (error)
+let a = xs[1 + ^1]
+#### caret-twice (error)
+let a = xs[^^1]
+#### caret-in-paren-in-index (error)
+let a = xs[(^1)]
+#### caret-in-type-dim (error)
+let a: i32[^1] = b
+#### number-underscore-ok [tokens]
+let a = 1_000_000
+let b = 0xFF_FF
+let c = 1_0.0_1
+let d = 1e1_0
+let e = 0b1_0
+let f = 0o7_7
+#### number-underscore-double (error)
+let a = 1__0
+#### number-underscore-trailing (error)
+let a = 1_
+#### number-underscore-before-point (error)
+let a = 1_.5
+#### number-underscore-after-point (error)
+let a = 1._5
+#### number-underscore-in-exponent-start (error)
+let a = 1e_5
+#### number-underscore-after-prefix (error)
+let a = 0x_FF
+#### number-underscore-before-suffix (error)
+let a = 5_ms
+#### number-leading-underscore-is-ident [tokens]
+let a = _1
+#### float-leading-point (error)
+let a = .5
+#### float-trailing-point (error)
+let a = 5.
+#### float-ok [tokens]
+let a = 0.5
+let b = 12.25e3
+let c = 2e3
+let d = 2E-3
+let e = 2e+3
+let f = 1.0f32
+let g = 2e3f64
+#### exponent-vs-suffix [tokens]
+let a = 2e3
+let b = 2eighths
+let c = 2e
+let d = 2e+
+let e = 2ex
+#### prefixed-vs-suffix [tokens]
+let a = 0bars
+let b = 0b1
+let c = 0x
+let d = 0xg
+let e = 0o8
+let f = 0b2
+let g = 0X1F
+let h = 0B1
+#### suffix-type-ok [tokens]
+let a = 5i64
+let b = 0.5f64
+let c = 5u8
+let d = 5f32
+let e = 5i32
+#### suffix-int-on-float (error)
+let a = 0.5i32
+let b = 2e3u8
+let c = 1.0i64
+#### suffix-unit-ok [tokens]
+let a = 200ms
+let b = 2bars
+let c = 1.5s
+let d = 3kpa
+let e = 4beats
+let f = 1pa
+#### suffix-unknown (error)
+let a = 5xyz
+let b = 5bool
+let c = 5str
+let d = 5ms2
+#### suffix-with-whitespace-is-not-suffix
+let a = 5 ms
+#### suffix-on-prefixed (error)
+let a = 0b12
+let b = 0xFFms
+let c = 0o17i32
+#### prefixed-hex-eats-f32 [tokens]
+let a = 0xFFf32
+#### magnitude-limit-ok
+let a = 170141183460469231731687303715884105727
+let b = 0x7FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF
+#### magnitude-limit (error)
+let a = 170141183460469231731687303715884105728
+let b = 0x80000000000000000000000000000000
+let c = 999999999999999999999999999999999999999999999999999999
+#### magnitude-with-suffix-and-underscore (error)
+let a = 170_141_183_460_469_231_731_687_303_715_884_105_728i64
+#### magnitude-float-not-checked
+let a = 170141183460469231731687303715884105728.0
+let b = 1e400
+#### minus-is-operator [tokens tree]
+let a = -5
+let b = n-1
+let c = 2 - -3
+#### string-escapes-ok [tokens]
+let s = "a\"b\\c\nd\te\{f} g } h"
+#### string-escape-bad (error)
+let s = "a\qb"
+let t = "a\}b"
+let u = "A"
+let v = "\r"
+let w = "\0"
+#### string-backslash-at-end (error)
+let s = "abc\
+#### string-interp-nested-strings [tree]
+let s = "a {"b {"c"} d"} e"
+#### string-interp-with-map-braces
+let s = "v {m["k"] ?? {"a": 1}["a"]}"
+#### string-empty-interp (error)
+let s = "a {} b"
+#### string-unclosed-interp (error)
+let s = "a {b"
+#### string-rbrace-outside-interp-ordinary [tokens]
+let s = "a } b }} c"
+#### string-single-quote-not-string (error)
+let s = 'abc'
+#### string-with-tab-and-unicode [esc tokens]
+let s = "a<TAB>b<U+65E5>c"
+#### string-with-lone-cr [esc]
+let s = "a<CR>b"
+#### bom-at-start (spec silent) [esc]
+<BOM>let a = 1
+#### stray-characters (error)
+let a = 1 & 2
+let b = 1 @ 2
+let c = `x`
+let d = a \ b

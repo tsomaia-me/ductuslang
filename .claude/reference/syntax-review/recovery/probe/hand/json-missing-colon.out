@@ -1,0 +1,26 @@
+--- diagnostics (1)
+  JsonSyntax 18..19 "1" :: expected `:` after the key, found `1`
+--- detached [] at_layout []
+--- tree
+File 0..31
+  LetDecl 0..21
+    LetKw "let"
+    Ident "j"
+    Eq "="
+    JsonLit 8..20
+      JsonKw "json"
+      JsonObject 13..20
+        LBrace "{"
+        JsonEntry 14..19
+          JsonString "\"a\""
+          JsonAtom 18..19
+            JsonNumber "1"
+        RBrace "}"
+    Newline "\n"
+  LetDecl 21..31
+    LetKw "let"
+    Ident "t"
+    Eq "="
+    Literal 29..30
+      Number "1"
+    Newline "\n"

@@ -1,0 +1,19 @@
+--- diagnostics (1)
+  FnSyntax 7..8 "\n" :: expected `:` and the body, found the end of the line
+--- detached [] at_layout [7..8]
+--- tree
+File 0..14
+  FnDecl 0..8
+    FnKw "fn"
+    Ident "f"
+    ParamList 4..7
+      LParen "("
+      Param 5..6
+        Ident "x"
+      RParen ")"
+    Newline "\n"
+  ErrorNode 12..14
+    Indent ""
+    Ident "x"
+    Newline "\n"
+    Dedent ""

@@ -1,0 +1,358 @@
+#### file-empty (ok)
+#### file-only-comments (ok)
+// nothing
+
+// more
+#### top-indented-first-line (refuse)
+    let a = 1
+#### top-expression (refuse)
+1 + 2
+#### top-wire (refuse)
+Triggers: night
+#### top-when (refuse)
+when x:
+    Lamp
+#### top-for (refuse)
+for i in 0..3:
+    Rig r
+#### top-bundle (refuse)
+[Lamp Lamp]
+#### top-paren-placement (refuse)
+(Rig r | x=1)
+#### cell-host-fed (ok)
+state setpoint(0.5)
+state steps([true, false])
+state name(""): str[..32]
+state hit(Hit {})
+stream reading(0.0)
+channel[16] alarm(0)
+stream[4] mic(0.0): f32
+stream tick(none)
+#### cell-derived (ok)
+state c1 = a + b
+state c2 on b = a + b
+state c4 on (a, b) = a + b
+state held(0.0) on gate = if gate then level else held.past(1)
+state s(0): i32 on (a) = a
+stream t: f32 = a
+channel k on x.y = 1
+state q on -1 = 1
+state q2 on true = 1
+state q3 on "s" = 1
+state q4 on lib::c = 1
+state q5 on lib::c.d = 1
+state q6 on to.x = 1
+#### cell-neither (refuse)
+state x
+#### cell-neither-typed (refuse)
+state x: i32
+#### cell-clock-without-rule (refuse)
+state x(0) on gate
+#### cell-clock-before-type (refuse)
+state x(0) on gate: i32 = 1
+#### cell-type-before-init (refuse)
+state x: i32 (0)
+#### cell-two-inits (refuse)
+state x(0)(1)
+#### cell-empty-init (refuse)
+state x()
+#### cell-init-two-values (refuse)
+state x(1, 2)
+#### cell-clock-expr-unparenthesized (refuse)
+state x on a + b = 1
+#### cell-clock-empty-list (refuse)
+state x on () = 1
+#### cell-clock-trailing-comma (refuse)
+state x on (a,) = 1
+#### cell-clock-call-atom (refuse)
+state x on f(a) = 1
+#### cell-capacity-forms (ok)
+channel[1_6] a(0)
+stream[1] b(0)
+state[4] c(0)
+#### cell-capacity-not-digits (refuse)
+channel[N] a(0)
+#### cell-capacity-hex (refuse)
+channel[0x10] a(0)
+#### cell-capacity-suffix (refuse)
+channel[16i32] a(0)
+#### cell-capacity-expr (refuse)
+channel[8 + 8] a(0)
+#### cell-capacity-empty (refuse)
+channel[] a(0)
+#### cell-capacity-after-name (refuse)
+channel a[16](0)
+#### cell-rule-match (ok)
+state level = match mode:
+    Auto: 1.0
+    Manual: 0.8
+    else: 0.6
+#### cell-rule-for-block (ok)
+state high = for x in readings into kept from []:
+    let keep = x > 60
+    if keep then kept + [x] else kept
+#### cell-rule-lambda (refuse)
+state f = x: x + 1
+#### cell-rule-missing (refuse)
+state x =
+#### cell-init-and-rule-with-type-and-clock (ok)
+state held(0.0): f64 on gate = if gate then level else held.past(1)
+#### let-forms (ok)
+let a = 1
+let b: i32 = 2
+let c = x: x * 2
+let d = (a, b): a + b
+let e = (x: i32) -> bool: x > 60
+let f: (f64) -> f64 = x: x + 1
+let g = (): 1
+let h = match a:
+    1: 2
+    else: 3
+let i = for x in xs into s from 0:
+    s + x
+let j = for x in xs into s from 0: s + x
+let k: (x: f64, y: i32) -> f64 = bar
+#### let-no-value (refuse)
+let a
+#### let-no-name (refuse)
+let = 1
+#### let-init-parens (refuse)
+let a(1)
+#### let-two-names (refuse)
+let a, b = 1
+#### let-lambda-annotated-single-unparenthesized (refuse)
+let e = x: i32: x > 60
+#### let-lambda-destructure (refuse)
+let e = ((a, b)): a + b
+#### let-lambda-param-default (refuse)
+let e = (a = 1): a
+#### let-lambda-trailing-comma (refuse)
+let e = (a,): a
+#### let-lambda-result-without-parens (refuse)
+let e = x -> i32: x
+#### fn-forms (ok)
+fn ratio(x): 10 ** (x / 20)
+fn tier(rank: i32, base: i32 = 100) -> i32:
+    let cycles: i32 = rank div 4
+    base + [0, 5, 15, 40][rank % 4] + 50 * cycles
+fn none_params(): 1
+fn rise(cell x): x.past(1)
+fn g(cell x: i32 = 1, y = x) -> f32?: 1.0
+fn m(x):
+    match x:
+        0: 1
+        else: 2
+fn fl(xs):
+    for x in xs into n from 0:
+        n + x
+fn lam(xs):
+    let keep = p: p > 60
+    let big = (p: i32) -> bool: p > 100
+    count(xs, keep)
+fn mm(x):
+    let a = match x:
+        0: 1
+        else: 2
+    let b = for y in ys into s from 0:
+        s + y
+    a + b
+fn gen[T, const N: i32](xs: T[N]) -> T: xs[0]
+fn gen2[T: f32 | f64](a: T, b: T) -> T: (a + b) / 2
+fn takes(f: (i32) -> bool, g: (x: f64, y: f64) -> f64, h: () -> i32): 1
+#### fn-no-params-parens (refuse)
+fn f: 1
+#### fn-no-body (refuse)
+fn f(x):
+#### fn-eq-body (refuse)
+fn f(x) = x + 1
+#### fn-body-two-values (refuse)
+fn f(x):
+    x
+    x + 1
+#### fn-body-let-after-value (refuse)
+fn f(x):
+    x
+    let a = 1
+#### fn-body-only-lets (refuse)
+fn f(x):
+    let a = 1
+#### fn-param-trailing-comma (refuse)
+fn f(a, b,): 1
+#### fn-param-marker-state (refuse)
+fn f(state x): 1
+#### fn-param-marker-const (refuse)
+fn f(const x): 1
+#### fn-param-marker-out (refuse)
+fn f(out x): 1
+#### fn-param-default-marker (refuse)
+fn f(default x): 1
+#### fn-param-children (refuse)
+fn f(children xs: Note*): 1
+#### fn-param-type-after-default (refuse)
+fn f(x = 1: i32): 1
+#### fn-result-without-type (refuse)
+fn f(x) ->: 1
+#### fn-nested-fn (refuse)
+fn f(x):
+    fn g(y): y
+    g(x)
+#### fn-body-state (refuse)
+fn f(x):
+    state s(0)
+    s + x
+#### fn-generic-empty (refuse)
+fn f[](x): 1
+#### fn-generic-trailing-comma (refuse)
+fn f[T,](x): 1
+#### fn-generic-const-after-name (refuse)
+fn f[N const](x): 1
+#### fn-inline-with-local-let (refuse)
+fn f(x): let a = 1
+#### type-forms (ok)
+type Band:
+    low: f32
+    high: f32
+type Shape = Circle | Square
+type Id = i64
+type Stack[T, const N]:
+    items: T[..N]
+    top: i32
+type Pair[A, B]:
+    left: A
+    right: B
+type Grid[const W: i32, const H: i32] = f32[W][H]
+type Opt[T] = T?
+type Fnless = (i32?)[..4]
+type M = {str[..8]: i32}[..16]
+type J = json[..64]
+type K:
+    state: i32
+    json: json[..8]
+    type: str[..4]
+#### type-inline-fields (refuse)
+type Band: low: f32
+#### type-empty-block (refuse)
+type Band:
+#### type-field-no-type (refuse)
+type Band:
+    low
+#### type-field-default (refuse)
+type Band:
+    low: f32 = 1
+#### type-two-fields-one-line (refuse)
+type Band:
+    low: f32, high: f32
+#### type-alias-and-fields (refuse)
+type Band = f32:
+    low: f32
+#### type-nested-block-in-fields (refuse)
+type Band:
+    low: f32
+        high: f32
+#### type-no-name (refuse)
+type = i32
+#### pattern-forms (ok)
+pattern Arp(default root, steps = 4, gap = 4) -> (Note*):
+    for i in 0..steps:
+        Note/(root + i * gap)
+pattern Bank(default base: f32) -> Plant:
+    Plant:
+        Valve/base Valve/(base + 0.25) Valve/(base + 0.5)
+pattern Voice(default root: i32, const steps = 4) -> (Note*, Starts):
+    state gain(1.0)
+    let k = 2
+    state g2 = gain * k
+    for i in 0..steps:
+        Note/(root + i) | velocity=gain
+    Starts: intro
+pattern Drum(default out channel hit: Hit, gain: f32 = 1.0) -> Pad:
+    Pad | hit => hit gain=gain
+pattern Section(default root: i32, children notes: Note*, children links: Plays*) -> Clip:
+    Clip | gain=0.8:
+        Note/root
+        notes
+        Plays: intro
+        links
+pattern Flash(default start: f32, children groups: [Lamp+]*) -> Rig:
+    Rig:
+        Lamp/start
+        groups
+pattern Burst(children lamps: Lamp{2+}) -> ([Lamp{2+}]):
+    [lamps]
+pattern M(const a, cell b, state c, stream d, channel e, out f, out state g, out stream h, out channel i, default const j = 1):
+    Lamp
+pattern G[K, const N](xs: K[N]) -> (Lamp{3}, Lamp{..4}, Lamp{2..4}, node+, wire*, lib::Thing, [node]{2}):
+    Lamp
+pattern NoParams():
+    Lamp
+#### pattern-inline-body (refuse)
+pattern P(): Lamp
+#### pattern-empty-body (refuse)
+pattern P():
+#### pattern-only-decls (refuse)
+pattern P():
+    state g(1.0)
+    let k = 2
+#### pattern-decl-after-item (refuse)
+pattern P():
+    Lamp
+    state g(1.0)
+#### pattern-let-after-item (refuse)
+pattern P():
+    Lamp
+    let k = 2
+#### pattern-no-parens (refuse)
+pattern P:
+    Lamp
+#### pattern-result-type-syntax (refuse)
+pattern P() -> i32[3]:
+    Lamp
+#### pattern-placement-type-empty-list (refuse)
+pattern P() -> ():
+    Lamp
+#### pattern-placement-type-trailing-comma (refuse)
+pattern P() -> (Lamp,):
+    Lamp
+#### pattern-count-forms-bad-1 (refuse)
+pattern P() -> Lamp{}:
+    Lamp
+#### pattern-count-forms-bad-2 (refuse)
+pattern P() -> Lamp{2..}:
+    Lamp
+#### pattern-count-forms-bad-3 (refuse)
+pattern P() -> Lamp{+}:
+    Lamp
+#### pattern-count-forms-bad-4 (refuse)
+pattern P() -> Lamp{2+..4}:
+    Lamp
+#### pattern-count-forms-bad-5 (refuse)
+pattern P() -> Lamp{N}:
+    Lamp
+#### pattern-count-two (refuse)
+pattern P() -> Lamp+*:
+    Lamp
+#### pattern-marker-order-default-after-marker (refuse)
+pattern P(const default x):
+    Lamp
+#### pattern-marker-two-kinds (refuse)
+pattern P(state stream x):
+    Lamp
+#### pattern-marker-out-const (refuse)
+pattern P(out const x):
+    Lamp
+#### pattern-children-with-default-word (refuse)
+pattern P(default children xs: Note*):
+    Lamp
+#### pattern-children-no-type (refuse)
+pattern P(children xs):
+    Lamp
+#### pattern-children-default-value (refuse)
+pattern P(children xs: Note* = 1):
+    Lamp
+#### pattern-in-body (refuse)
+Rig r:
+    pattern P():
+        Lamp
+#### pattern-bundle-of-bundle-entry (ok)
+pattern P(children g: [[Lamp]]):
+    Lamp

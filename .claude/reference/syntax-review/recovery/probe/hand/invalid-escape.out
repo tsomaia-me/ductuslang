@@ -1,0 +1,14 @@
+--- diagnostics (1)
+  InvalidEscape 12..14 "\\q" :: `\q` is not an escape
+--- detached [] at_layout []
+--- tree
+File 0..16
+  LetDecl 0..16
+    LetKw "let"
+    Ident "x"
+    Eq "="
+    StringLit 8..15
+      StringStart "\""
+      StringText "abc\\q"
+      StringEnd "\""
+    Newline "\n"

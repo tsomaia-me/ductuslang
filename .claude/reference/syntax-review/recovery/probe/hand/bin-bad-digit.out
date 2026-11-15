@@ -1,0 +1,12 @@
+--- diagnostics (1)
+  PrefixedSuffix 11..12 "2" :: `2` directly follows a prefixed literal, which takes no suffix
+--- detached [] at_layout []
+--- tree
+File 0..13
+  LetDecl 0..13
+    LetKw "let"
+    Ident "x"
+    Eq "="
+    Literal 8..12
+      Number "0b12"
+    Newline "\n"

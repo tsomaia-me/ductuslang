@@ -1,0 +1,4 @@
+Rig r:
+    when :
+        Lamp/1
+    Lamp/2

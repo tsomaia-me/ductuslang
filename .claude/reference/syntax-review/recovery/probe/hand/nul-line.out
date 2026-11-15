@@ -1,0 +1,22 @@
+--- diagnostics (1)
+  UnexpectedCharacter 10..11 "\0" :: unexpected `\0`
+--- detached [] at_layout []
+--- tree
+File 0..22
+  LetDecl 0..10
+    LetKw "let"
+    Ident "x"
+    Eq "="
+    Literal 8..9
+      Number "1"
+    Newline "\n"
+  ErrorNode 10..11
+    Error "\0"
+  Newline "\n"
+  LetDecl 12..22
+    LetKw "let"
+    Ident "y"
+    Eq "="
+    Literal 20..21
+      Number "2"
+    Newline "\n"

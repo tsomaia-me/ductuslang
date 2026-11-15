@@ -1,0 +1,36 @@
+--- diagnostics (1)
+  ExpressionSyntax 25..26 ":" :: expected `)`, found `:`
+--- detached [] at_layout []
+--- tree
+File 0..42
+  Placement 0..42
+    Ident "Rig"
+    Ident "r"
+    Body 5..42
+      Colon ":"
+      Block 6..42
+        Newline "\n"
+        Indent ""
+        ForBlock 11..42
+          ForKw "for"
+          Ident "i"
+          InKw "in"
+          RangeExpr 20..25
+            Literal 20..21
+              Number "0"
+            Dot2 ".."
+            ParenExpr 23..25
+              LParen "("
+              Literal 24..25
+                Number "3"
+          Colon ":"
+          Block 35..42
+            Members 35..41
+              Placement 35..41
+                Ident "Lamp"
+                DefaultArg 39..41
+                  Slash "/"
+                  NameRef 40..41
+                    Ident "i"
+            Newline ""
+        Dedent ""

@@ -1,0 +1,21 @@
+--- diagnostics (1)
+  TabIndentation 7..8 "\t" :: a tab in leading whitespace; indent with spaces
+--- detached [] at_layout []
+--- tree
+File 0..15
+  Placement 0..15
+    Ident "Rig"
+    Ident "r"
+    Body 5..15
+      Colon ":"
+      Block 6..15
+        Newline "\n"
+        Indent ""
+        Placement 8..15
+          Ident "Lamp"
+          DefaultArg 12..14
+            Slash "/"
+            Literal 13..14
+              Number "1"
+          Newline "\n"
+        Dedent ""

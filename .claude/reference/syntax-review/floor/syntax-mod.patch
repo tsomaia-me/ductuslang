@@ -1,0 +1,11 @@
+--- /home/cdagent/cargo-targets/r3/wt/packages/symphonyscript/crates/compiler/src/syntax/mod.rs	2026-11-11 08:12:02.608787780 +0000
++++ /home/cdagent/cargo-targets/peer-syntax-review/floor/packages/symphonyscript/crates/compiler/src/syntax/mod.rs	2026-11-13 02:32:26.560920417 +0000
+@@ -5,6 +5,8 @@
+ mod cost_tests;
+ mod descendants;
+ mod element_view;
++#[doc(hidden)]
++pub mod floor;
+ #[cfg(test)]
+ pub(crate) mod front_end_goldens;
+ mod lex;

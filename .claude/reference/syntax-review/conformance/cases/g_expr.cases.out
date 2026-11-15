@@ -1,0 +1,196 @@
+#### primary-forms (ok) [ ]  lex-diags=0 parse-diags=0
+#### to-alone-in-expr (ok) [ ]  lex-diags=0 parse-diags=0
+#### conversion-bool (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG expression-syntax 1:9 8..12 `bool` :: expected an expression, found `bool` [help: give every operator its operands and close every bracket]
+#### conversion-str (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG expression-syntax 1:9 8..11 `str` :: expected an expression, found `str` [help: give every operator its operands and close every bracket]
+#### conversion-no-arg (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG expression-syntax 1:13 12..13 `)` :: expected an expression, found `)` [help: give every operator its operands and close every bracket]
+#### conversion-two-args (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG conversion-syntax 1:14 13..14 `,` :: expected `)`, found `,` [help: parenthesize the converted value, as in `i32(x)`]
+#### conversion-no-parens (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG conversion-syntax 1:13 12..13 `1` :: expected `(` after the conversion's type, found `1` [help: parenthesize the converted value, as in `i32(x)`]
+#### paren-empty (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG expression-syntax 1:10 9..10 `)` :: expected an expression, found `)` [help: give every operator its operands and close every bracket]
+#### paren-tuple (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG expression-syntax 1:11 10..11 `,` :: expected `)`, found `,` [help: give every operator its operands and close every bracket]
+#### binary-missing-rhs (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG expression-syntax 1:12 11..12 `\n` :: expected an expression, found the end of the line [help: give every operator its operands and close every bracket]
+#### binary-missing-lhs (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG expression-syntax 1:9 8..9 `*` :: expected an expression, found `*` [help: give every operator its operands and close every bracket]
+#### unary-plus (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG expression-syntax 1:9 8..9 `+` :: expected an expression, found `+` [help: give every operator its operands and close every bracket]
+#### op-double (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG expression-syntax 1:13 12..13 `/` :: expected an expression, found `/` [help: give every operator its operands and close every bracket]
+#### bang-not (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG expression-syntax 1:9 8..9 `!` :: expected an expression, found `!` [help: give every operator its operands and close every bracket]
+#### amp-pipe-ops (refuse) [ ]  lex-diags=1 parse-diags=1
+  DIAG unexpected-character 1:11 10..12 `&&` :: unexpected `&&` [help: remove the character, or write the word the language uses, as in `and`]
+#### pipe-op (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG let-syntax 1:11 10..11 `|` :: expected the end of the line, found `|` [help: write `let`, a name, `=` and the value, as in `let one = 1`]
+#### shift-ops (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG expression-syntax 1:12 11..12 `<` :: expected an expression, found `<` [help: give every operator its operands and close every bracket]
+#### tilde (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG expression-syntax 1:9 8..9 `~` :: expected an expression, found `~` [help: give every operator its operands and close every bracket]
+#### percent-and-div (ok) [ ]  lex-diags=0 parse-diags=0
+#### ternary (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG let-syntax 1:11 10..11 `?` :: expected the end of the line, found `?` [help: write `let`, a name, `=` and the value, as in `let one = 1`]
+#### field-forms (ok) [ ]  lex-diags=0 parse-diags=0
+#### field-number (refuse) [ ]  lex-diags=1 parse-diags=1
+  DIAG float-digits 1:10 9..11 `.0` :: a float needs a digit before its point [help: write digits on both sides of the point, as in `0.5`]
+#### field-missing (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG expression-syntax 1:11 10..11 `\n` :: expected an attribute name after `.`, found the end of the line [help: give every operator its operands and close every bracket]
+#### field-double-dot (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG let-syntax 1:10 9..11 `..` :: expected the end of the line, found `..` [help: write `let`, a name, `=` and the value, as in `let one = 1`]
+#### index-forms (ok) [ ]  lex-diags=0 parse-diags=0
+#### index-empty (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG expression-syntax 1:12 11..12 `]` :: expected an expression, found `]` [help: give every operator its operands and close every bracket]
+#### index-two (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG expression-syntax 1:13 12..13 `,` :: expected `]`, found `,` [help: give every operator its operands and close every bracket]
+#### index-three-dots (refuse) [ ]  lex-diags=1 parse-diags=1
+  DIAG float-digits 1:15 14..16 `.2` :: a float needs a digit before its point [help: write digits on both sides of the point, as in `0.5`]
+#### index-range-three (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG expression-syntax 1:16 15..17 `..` :: expected `]`, found `..` [help: give every operator its operands and close every bracket]
+#### index-caret-after-range-operand (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG misplaced-caret 1:16 15..16 `^` :: `^` counts from an array's end and stands only at the start of an index or a slice bound [help: write `^` only at the start of an index or a slice bound, as in `xs[^1]`]
+#### call-forms (ok) [ ]  lex-diags=0 parse-diags=0
+#### call-named-keyword-name (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG expression-syntax 1:11 10..15 `state` :: expected an expression, found `state` [help: give every operator its operands and close every bracket]
+#### call-missing-comma (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG expression-syntax 1:13 12..13 `2` :: expected `,` or `)`, found `2` [help: give every operator its operands and close every bracket]
+#### call-leading-comma (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG expression-syntax 1:11 10..11 `,` :: expected an expression, found `,` [help: give every operator its operands and close every bracket]
+#### call-lambda-annotated-unparenthesized (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG conversion-syntax 1:17 16..17 `:` :: expected `(` after the conversion's type, found `:` [help: parenthesize the converted value, as in `i32(x)`]
+#### lambda-in-array (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG expression-syntax 1:10 9..10 `x` :: a lambda stands only as an argument or as a `let`'s value [help: pass the lambda as an argument, as in `count(readings, p: p > 60)`, or name it with a `let`, as in `let keep = p: p > 60`]
+#### lambda-in-parens (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG expression-syntax 1:10 9..10 `x` :: a lambda stands only as an argument or as a `let`'s value [help: pass the lambda as an argument, as in `count(readings, p: p > 60)`, or name it with a `let`, as in `let keep = p: p > 60`]
+#### lambda-as-operand (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG let-syntax 1:14 13..14 `:` :: expected the end of the line, found `:` [help: write `let`, a name, `=` and the value, as in `let one = 1`]
+#### lambda-in-if (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG expression-syntax 1:20 19..20 `:` :: expected `else`, found `:` [help: give every operator its operands and close every bracket]
+#### lambda-body-lambda (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG let-syntax 1:13 12..13 `:` :: expected the end of the line, found `:` [help: write `let`, a name, `=` and the value, as in `let one = 1`]
+#### lambda-in-record-field (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG record-syntax 1:16 15..16 `:` :: expected `,` or `}`, found `:` [help: write `type`, a name and `:` with a field per line, or `=` and a type, as in `type Id = i64`; a record literal names its type and its fields in braces, as in `Chord {root: 60}`]
+#### lambda-in-interp (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG expression-syntax 1:13 12..13 `x` :: a lambda stands only as an argument or as a `let`'s value [help: pass the lambda as an argument, as in `count(readings, p: p > 60)`, or name it with a `let`, as in `let keep = p: p > 60`]
+#### lambda-in-index (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG expression-syntax 1:12 11..12 `i` :: a lambda stands only as an argument or as a `let`'s value [help: pass the lambda as an argument, as in `count(readings, p: p > 60)`, or name it with a `let`, as in `let keep = p: p > 60`]
+#### lambda-arg-body-if (ok) [ ]  lex-diags=0 parse-diags=0
+#### record-forms (ok) [ ]  lex-diags=0 parse-diags=0
+#### record-missing-colon (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG record-syntax 1:19 18..19 `1` :: expected `:` and the field's value, found `1` [help: write `type`, a name and `:` with a field per line, or `=` and a type, as in `type Id = i64`; a record literal names its type and its fields in braces, as in `Chord {root: 60}`]
+#### record-eq (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG record-syntax 1:19 18..19 `=` :: expected `:` and the field's value, found `=` [help: write `type`, a name and `:` with a field per line, or `=` and a type, as in `type Id = i64`; a record literal names its type and its fields in braces, as in `Chord {root: 60}`]
+#### record-positional (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG record-syntax 1:15 14..15 `1` :: expected a field's name, found `1` [help: write `type`, a name and `:` with a field per line, or `=` and a type, as in `type Id = i64`; a record literal names its type and its fields in braces, as in `Chord {root: 60}`]
+#### record-double-comma (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG record-syntax 1:22 21..22 `,` :: expected a field's name, found `,` [help: write `type`, a name and `:` with a field per line, or `=` and a type, as in `type Id = i64`; a record literal names its type and its fields in braces, as in `Chord {root: 60}`]
+#### record-only-comma (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG record-syntax 1:15 14..15 `,` :: expected a field's name, found `,` [help: write `type`, a name and `:` with a field per line, or `=` and a type, as in `type Id = i64`; a record literal names its type and its fields in braces, as in `Chord {root: 60}`]
+#### record-string-key (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG record-syntax 1:15 14..15 `\"` :: expected a field's name, found `"` [help: write `type`, a name and `:` with a field per line, or `=` and a type, as in `type Id = i64`; a record literal names its type and its fields in braces, as in `Chord {root: 60}`]
+#### record-unclosed (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG record-syntax 2:1 21..24 `let` :: expected `,` or `}`, found `let` [help: write `type`, a name and `:` with a field per line, or `=` and a type, as in `type Id = i64`; a record literal names its type and its fields in braces, as in `Chord {root: 60}`]
+#### record-shorthand (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG record-syntax 1:18 17..18 `}` :: expected `:` and the field's value, found `}` [help: write `type`, a name and `:` with a field per line, or `=` and a type, as in `type Id = i64`; a record literal names its type and its fields in braces, as in `Chord {root: 60}`]
+#### map-forms (ok) [ ]  lex-diags=0 parse-diags=0
+#### map-missing-value (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG map-syntax 1:13 12..13 `}` :: expected `:` and the entry's value, found `}` [help: write the entries in braces, each a key, `:` and a value, separated by commas, as in `{"host": 1}`]
+#### map-missing-colon (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG map-syntax 1:14 13..14 `1` :: expected `:` and the entry's value, found `1` [help: write the entries in braces, each a key, `:` and a value, separated by commas, as in `{"host": 1}`]
+#### map-double-comma (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG map-syntax 1:17 16..17 `,` :: expected an entry's key, found `,` [help: write the entries in braces, each a key, `:` and a value, separated by commas, as in `{"host": 1}`]
+#### map-only-comma (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG map-syntax 1:10 9..10 `,` :: expected an entry's key, found `,` [help: write the entries in braces, each a key, `:` and a value, separated by commas, as in `{"host": 1}`]
+#### map-eq (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG map-syntax 1:14 13..14 `=` :: expected `:` and the entry's value, found `=` [help: write the entries in braces, each a key, `:` and a value, separated by commas, as in `{"host": 1}`]
+#### map-key-if (ok) [ ]  lex-diags=0 parse-diags=0
+#### map-key-lambda-like (ok) [ ]  lex-diags=0 parse-diags=0
+#### string-forms (ok) [ ]  lex-diags=0 parse-diags=0
+#### type-forms (ok) [ ]  lex-diags=0 parse-diags=0
+#### type-double-optional (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG type-syntax 1:11 10..12 `??` :: a type takes one `?`, and `T?` already holds `none` [help: write a size in each bracket of the type, as in `i32[3]` or `i32[..10]`]
+#### type-optional-then-dims (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG let-syntax 1:12 11..12 `[` :: expected `=` and the value, found `[` [help: write `let`, a name, `=` and the value, as in `let one = 1`]
+#### type-empty-dim (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG type-syntax 1:12 11..12 `]` :: expected a size, found `]` [help: write a size in each bracket of the type, as in `i32[3]` or `i32[..10]`]
+#### type-open-capacity (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG type-syntax 1:14 13..14 `]` :: expected a size, found `]` [help: write a size in each bracket of the type, as in `i32[3]` or `i32[..10]`]
+#### type-map-no-capacity (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG type-syntax 1:24 23..24 `=` :: expected the map's capacity `[..N]`, found `=` [help: write the map type's capacity after its braces, as in `{str[..8]: i32}[..16]`]
+#### type-map-fixed-size (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG type-syntax 1:23 22..23 `[` :: expected the map's capacity `[..N]`, found `[` [help: write the map type's capacity after its braces, as in `{str[..8]: i32}[..16]`]
+#### type-map-no-value (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG type-syntax 1:17 16..17 `}` :: expected `:` between the key type and the value type, found `}` [help: write a size in each bracket of the type, as in `i32[3]` or `i32[..10]`]
+#### type-sum-trailing-pipe (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG type-syntax 1:14 13..14 `=` :: expected a type, found `=` [help: write a size in each bracket of the type, as in `i32[3]` or `i32[..10]`]
+#### type-sum-leading-pipe (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG type-syntax 1:8 7..8 `|` :: expected a type, found `|` [help: write a size in each bracket of the type, as in `i32[3]` or `i32[..10]`]
+#### type-fn-no-result (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG type-syntax 1:17 16..17 `=` :: expected a type, found `=` [help: write a size in each bracket of the type, as in `i32[3]` or `i32[..10]`]
+#### type-fn-in-sum (refuse) [ ]  lex-diags=0 parse-diags=0
+#### type-fn-result-fn (ok) [ ]  lex-diags=0 parse-diags=0
+#### type-paren-empty (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG type-syntax 1:9 8..9 `)` :: expected a type, found `)` [help: write a size in each bracket of the type, as in `i32[3]` or `i32[..10]`]
+#### type-tuple (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG type-syntax 1:12 11..12 `,` :: expected `)`, found `,` [help: write a size in each bracket of the type, as in `i32[3]` or `i32[..10]`]
+#### type-str-fixed (ok) [ ]  lex-diags=0 parse-diags=0
+#### type-generic-empty-args (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG type-syntax 1:14 13..14 `]` :: expected a size, found `]` [help: write a size in each bracket of the type, as in `i32[3]` or `i32[..10]`]
+#### type-missing (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG type-syntax 1:8 7..8 `=` :: expected a type, found `=` [help: write a size in each bracket of the type, as in `i32[3]` or `i32[..10]`]
+#### type-number (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG type-syntax 1:8 7..8 `5` :: expected a type, found `5` [help: write a size in each bracket of the type, as in `i32[3]` or `i32[..10]`]
+#### type-node-wire-not-types (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG type-syntax 1:8 7..11 `node` :: expected a type, found `node` [help: write a size in each bracket of the type, as in `i32[3]` or `i32[..10]`]
+#### type-size-expr-forms (ok) [ ]  lex-diags=0 parse-diags=0
+#### generics-forms (ok) [ ]  lex-diags=0 parse-diags=0
+#### generics-on-let (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG let-syntax 1:6 5..6 `[` :: expected `=` and the value, found `[` [help: write `let`, a name, `=` and the value, as in `let one = 1`]
+#### generics-on-cell (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG cell-syntax 1:8 7..8 `[` :: expected `(` and the init, or `=` and the rule, found `[` [help: declare the cell at top level as `state`, `stream` or `channel`, a name, an init in parentheses, a rule after `=` or both, as in `state level(0)` or `state count = level + 1`]
+#### generics-const-const (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG generic-syntax 1:12 11..16 `const` :: expected a bracket parameter's name, found `const` [help: write the bracket parameters after the name, each a name or `const` and a name, as in `fn first[T, const N](xs: T[N])`]
+#### generic-call-with-brackets-is-index (ok) [ ]  lex-diags=0 parse-diags=1
+  DIAG conversion-syntax 1:14 13..14 `]` :: expected `(` after the conversion's type, found `]` [help: parenthesize the converted value, as in `i32(x)`]
+#### for-expr-forms (ok) [ ]  lex-diags=0 parse-diags=0
+#### for-expr-no-into (refuse) [ ]  lex-diags=0 parse-diags=2
+  DIAG for-syntax 1:20 19..20 `:` :: expected `into`, found `:` [help: write `for <name> in <iterable> into <name> from <start>:`]
+  DIAG expression-syntax 2:1 23..23 `` :: expected the `for` expression's body, indented [help: write the body after `:`, as in `for x in xs into sum from 0: sum + x`, or on the lines below, indented]
+#### for-expr-no-from (refuse) [ ]  lex-diags=0 parse-diags=2
+  DIAG for-syntax 1:31 30..31 `+` :: expected `from` and the start, found `+` [help: write `for <name> in <iterable> into <name> from <start>:`]
+  DIAG expression-syntax 2:1 34..34 `` :: expected the `for` expression's body, indented [help: write the body after `:`, as in `for x in xs into sum from 0: sum + x`, or on the lines below, indented]
+#### for-expr-no-body (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG expression-syntax 2:1 35..38 `let` :: expected the `for` expression's body, indented [help: write the body after `:`, as in `for x in xs into sum from 0: sum + x`, or on the lines below, indented]
+#### for-expr-from-before-into (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG for-syntax 1:21 20..24 `from` :: expected `into`, found `from` [help: write `for <name> in <iterable> into <name> from <start>:`]
+#### for-expr-block-two-values (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG expression-syntax 3:5 49..50 `s` :: a `for` expression's block ends with one value [help: give every operator its operands and close every bracket]
+#### for-expr-block-let-last (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG expression-syntax 3:1 49..49 `` :: expected an expression, found the end of the block [help: give every operator its operands and close every bracket]
+#### for-expr-block-match-value (refuse) [ ]  lex-diags=0 parse-diags=2
+  DIAG match-position 2:5 39..44 `match` :: a match is the whole value of a let, a function body or a wire destination [help: make the `match` the whole value of a `let`]
+  DIAG expression-syntax 3:9 56..57 `0` :: a `for` expression's block ends with one value [help: give every operator its operands and close every bracket]
+#### for-expr-block-in-parens (refuse) [ ]  lex-diags=0 parse-diags=0
+#### for-expr-as-operand (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG unparenthesized-for 1:13 12..15 `for` :: a `for` expression that is not the whole value of a `let`, a local `let`, a derived cell's rule or a function body stands in parentheses [help: parenthesize the `for` expression, as in `1 + (for x in xs into sum from 0: sum + x)`]
+#### for-expr-as-arg (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG unparenthesized-for 1:11 10..13 `for` :: a `for` expression that is not the whole value of a `let`, a local `let`, a derived cell's rule or a function body stands in parentheses [help: parenthesize the `for` expression, as in `1 + (for x in xs into sum from 0: sum + x)`]
+#### for-expr-as-gate (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG unparenthesized-for 2:15 21..24 `for` :: a `for` expression that is not the whole value of a `let`, a local `let`, a derived cell's rule or a function body stands in parentheses [help: parenthesize the `for` expression, as in `1 + (for x in xs into sum from 0: sum + x)`]
+#### for-expr-as-scrutinee (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG unparenthesized-for 1:15 14..17 `for` :: a `for` expression that is not the whole value of a `let`, a local `let`, a derived cell's rule or a function body stands in parentheses [help: parenthesize the `for` expression, as in `1 + (for x in xs into sum from 0: sum + x)`]
+#### for-expr-as-start (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG unparenthesized-for 1:33 32..35 `for` :: a `for` expression that is not the whole value of a `let`, a local `let`, a derived cell's rule or a function body stands in parentheses [help: parenthesize the `for` expression, as in `1 + (for x in xs into sum from 0: sum + x)`]
+#### for-expr-as-iterable (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG unparenthesized-for 1:18 17..20 `for` :: a `for` expression that is not the whole value of a `let`, a local `let`, a derived cell's rule or a function body stands in parentheses [help: parenthesize the `for` expression, as in `1 + (for x in xs into sum from 0: sum + x)`]
+#### for-expr-as-default-arg (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG default-arg-syntax 2:10 16..19 `for` :: expected a literal, a name, a path or a parenthesized expression after `/`, found `for` [help: parenthesize the value, as in `Lamp/(base * 0.5)`]
+#### for-expr-as-array-element (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG unparenthesized-for 1:10 9..12 `for` :: a `for` expression that is not the whole value of a `let`, a local `let`, a derived cell's rule or a function body stands in parentheses [help: parenthesize the `for` expression, as in `1 + (for x in xs into sum from 0: sum + x)`]
+#### for-expr-acc-keyword (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG for-syntax 1:26 25..27 `in` :: expected the accumulator's name, found `in` [help: write `for <name> in <iterable> into <name> from <start>:`]
+CASES 106

@@ -1,0 +1,4 @@
+let x = match y:
+    1: 2
+    3 4
+    else: 5

@@ -1,0 +1,35 @@
+--- diagnostics (2)
+  BundleSyntax 24..25 "[" :: a bundle is not a member of another bundle
+  BundleSyntax 31..31 "" :: expected `]`, found the end of the line
+--- detached [31..31] at_layout [31..31]
+--- tree
+File 0..31
+  Placement 0..31
+    Ident "Scene"
+    Ident "s"
+    Body 7..31
+      Colon ":"
+      Block 8..31
+        Newline "\n"
+        Indent ""
+        Line 13..20
+          Bundle 13..19
+            LBracket "["
+            Placement 14..19
+              Ident "Cue"
+              DefaultArg 17..19
+                Slash "/"
+                Literal 18..19
+                  Number "1"
+          Newline ""
+        Line 24..31
+          Bundle 24..30
+            LBracket "["
+            Placement 25..30
+              Ident "Cue"
+              DefaultArg 28..30
+                Slash "/"
+                Literal 29..30
+                  Number "2"
+          Newline ""
+        Dedent ""

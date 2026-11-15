@@ -1,0 +1,1 @@
+depth fn-type n=100000 broken=true bytes=600018 ok time=112.83074ms diags=1 whole=ok nest=ok first=Some("LetSyntax 600011..600013 expected `=` and the value, found `->`")

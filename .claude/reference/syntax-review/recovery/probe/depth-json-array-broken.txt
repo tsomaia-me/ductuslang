@@ -1,0 +1,1 @@
+depth json-array n=100000 broken=true bytes=100015 ok time=161.638321ms diags=1 whole=ok nest=ok first=Some("JsonSyntax 100015..100015 expected `,` or `]`, found the end of the line")

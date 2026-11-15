@@ -1,0 +1,19 @@
+#### five-lines [tokens]
+let s = "a\qb"
+let t = "a\}b"
+let u = "A"
+let v = "\r"
+let w = "\0"
+#### two-lines-b [tokens]
+let t = "a\}b"
+let u = "A"
+#### two-lines-c [tokens]
+let t = "a\qb"
+let u = "A"
+#### after-brace-text [tokens]
+let t = "a}b"
+let u = "\q"
+#### after-brace-text-ident [tokens]
+let t = "}"
+let u = 1__0
+let v = (

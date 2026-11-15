@@ -1,0 +1,23 @@
+--- diagnostics (1)
+  FnSyntax 9..12 "let" :: expected the function body, indented
+--- detached [9..12] at_layout []
+--- tree
+File 0..19
+  FnDecl 0..9
+    FnKw "fn"
+    Ident "f"
+    ParamList 4..7
+      LParen "("
+      Param 5..6
+        Ident "x"
+      RParen ")"
+    Colon ":"
+    FnBody 8..9
+      Newline "\n"
+  LetDecl 9..19
+    LetKw "let"
+    Ident "y"
+    Eq "="
+    Literal 17..18
+      Number "1"
+    Newline "\n"

@@ -1,0 +1,2 @@
+state s(1 1)
+let y = s

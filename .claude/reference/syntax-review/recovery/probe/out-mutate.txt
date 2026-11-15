@@ -1,0 +1,2 @@
+programs 400 mutants 323830
+[mutants] total 323830 panics 0 not_whole 0 not_nested 0 bad_spans 0 clean_with_recovery 0 slowest 161.176896ms (item 27251)

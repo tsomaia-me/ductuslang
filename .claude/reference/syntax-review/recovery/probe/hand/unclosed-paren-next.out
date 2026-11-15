@@ -1,0 +1,25 @@
+--- diagnostics (1)
+  ExpressionSyntax 15..18 "let" :: expected `)`, found `let`
+--- detached [15..18] at_layout [15..18]
+--- tree
+File 0..25
+  LetDecl 0..15
+    LetKw "let"
+    Ident "x"
+    Eq "="
+    ParenExpr 8..14
+      LParen "("
+      BinaryExpr 9..14
+        Literal 9..10
+          Number "1"
+        Plus "+"
+        Literal 13..14
+          Number "2"
+    Newline ""
+  LetDecl 15..25
+    LetKw "let"
+    Ident "y"
+    Eq "="
+    Literal 23..24
+      Number "3"
+    Newline "\n"

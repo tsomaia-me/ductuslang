@@ -1,0 +1,20 @@
+--- diagnostics (1)
+  JsonSyntax 20..22 "\\x" :: `\x` is not an escape of JSON text
+--- detached [] at_layout []
+--- tree
+File 0..25
+  LetDecl 0..25
+    LetKw "let"
+    Ident "j"
+    Eq "="
+    JsonLit 8..24
+      JsonKw "json"
+      JsonObject 13..24
+        LBrace "{"
+        JsonEntry 14..23
+          JsonString "\"a\""
+          Colon ":"
+          JsonAtom 19..23
+            JsonString "\"\\x\""
+        RBrace "}"
+    Newline "\n"

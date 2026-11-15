@@ -1,0 +1,44 @@
+#### members-adjacent-paren (refuse)
+Rig r:
+    Lamp(Lamp)
+#### members-adjacent-bundle (refuse)
+Rig r:
+    Lamp[Lamp Lamp]
+#### members-adjacent-parens (refuse)
+Rig r:
+    (Lamp)(Lamp)
+#### members-adjacent-bundles (refuse)
+Rig r:
+    [Lamp][Lamp]
+#### members-adjacent-after-default-paren (refuse)
+Rig r:
+    Lamp/(1)Lamp
+#### members-adjacent-after-string (refuse)
+Rig r:
+    Lamp/"a"Lamp
+#### members-adjacent-in-bundle (refuse)
+Rig r:
+    [Lamp/(1)Lamp(Lamp)]
+#### attr-entries-adjacent-string (refuse)
+Rig r:
+    Lamp | a="x"b=2
+#### attr-entries-adjacent-bang (refuse)
+Rig r:
+    Lamp | strobe!strobe
+#### attr-entries-adjacent-paren (refuse)
+Rig r:
+    Lamp | a=(1)b=2
+#### attr-pipe-adjacent (ok)
+Rig r:
+    Lamp|level=1
+#### double-as (refuse)
+Rig r:
+    Lamp as a as b
+#### typeargs-trailing-comma (refuse)
+let a: Stack[i32, 8,] = x
+#### is-not-not (refuse)
+let a = x is not not y
+#### label-minus-space
+let a = match x:
+    - 1: 1
+    else: 2

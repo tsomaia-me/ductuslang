@@ -1,0 +1,12 @@
+--- diagnostics (1)
+  LetSyntax 4..6 "in" :: expected the let's name, found `in`
+--- detached [] at_layout []
+--- tree
+File 0..11
+  LetDecl 0..11
+    LetKw "let"
+    ErrorNode 4..10
+      InKw "in"
+      Eq "="
+      Number "1"
+    Newline "\n"

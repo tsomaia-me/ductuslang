@@ -1,0 +1,1 @@
+depth pow n=100000 broken=true bytes=500009 ok time=81.043303ms diags=1 whole=ok nest=ok first=Some("ExpressionSyntax 500008..500009 expected an expression, found the end of the line")

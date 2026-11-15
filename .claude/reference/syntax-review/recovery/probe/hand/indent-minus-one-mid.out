@@ -1,0 +1,25 @@
+--- diagnostics (1)
+  DedentMismatch 20..21 "O" :: this line's indentation, 3, matches no enclosing block; the enclosing block is at 0
+--- detached [] at_layout []
+--- tree
+File 0..32
+  Placement 0..20
+    Ident "Synth"
+    Ident "s"
+    Body 7..20
+      Colon ":"
+      Block 8..20
+        Newline "\n"
+        Indent ""
+        Placement 13..17
+          Ident "Osc"
+          Newline "\n"
+        Dedent ""
+  Placement 20..24
+    Ident "Osc"
+    Newline "\n"
+  ErrorNode 28..32
+    Indent ""
+    Ident "Osc"
+    Newline "\n"
+    Dedent ""

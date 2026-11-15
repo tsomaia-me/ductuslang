@@ -1,0 +1,33 @@
+#### interp-json (ok) [tokens]
+let s = "{json {"a": [1, (x)]}} tail {json null}"
+#### interp-nested-brace-string (ok)
+let s = "a {"}"} b {m["{"]} c"
+#### clause-continuation-bang-and-keyword (ok) [tokens]
+Rig r:
+    Lamp | level=1
+           !strobe
+           state=2
+           hue=3
+#### clause-continuation-in-inline-body-parent (ok)
+Scene s | hold=1
+          fade=2: Cue Cue
+#### wire-clause-continuation-then-match (ok)
+Scene s:
+    Dims | depth=1
+           limit=2: match look:
+        0: a
+        else: b
+#### sum-type-pipe-then-deeper-aligned-line (refuse)
+type Shape = Circle | Square
+                      Tri
+#### let-sum-annotation-then-block (ok)
+fn f(a):
+    let s: Circle | Square = match a:
+        0: x
+        else: y
+    s
+#### generic-constraint-pipe-in-brackets (ok)
+fn mid[T: f32 | f64](a: T,
+                     b: T) -> T: (a + b) / 2
+#### int-with-float-suffix-magnitude
+let a = 170141183460469231731687303715884105728f64

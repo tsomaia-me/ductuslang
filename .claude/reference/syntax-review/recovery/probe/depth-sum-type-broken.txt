@@ -1,0 +1,1 @@
+depth sum-type n=100000 broken=true bytes=600017 ok time=63.518298ms diags=1 whole=ok nest=ok first=Some("TypeSyntax 600013..600014 expected a type, found `=`")

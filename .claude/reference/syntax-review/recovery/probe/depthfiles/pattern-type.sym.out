@@ -1,0 +1,1 @@
+depth file n=0 broken=false bytes=100019 ok time=148.820955ms diags=1 whole=ok nest=ok first=Some("PatternSyntax 100019..100019 expected `]`, found the end of the line")

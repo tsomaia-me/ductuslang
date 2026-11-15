@@ -1,0 +1,125 @@
+#### json-obj (ok) [ ]  lex-diags=0 parse-diags=0
+#### json-arr (ok) [ ]  lex-diags=0 parse-diags=0
+#### json-str (ok) [ ]  lex-diags=0 parse-diags=0
+#### json-num (ok) [ ]  lex-diags=0 parse-diags=0
+#### json-true (ok) [ ]  lex-diags=0 parse-diags=0
+#### json-false (ok) [ ]  lex-diags=0 parse-diags=0
+#### json-null (ok) [ ]  lex-diags=0 parse-diags=0
+#### json-empty-obj (ok) [ ]  lex-diags=0 parse-diags=0
+#### json-empty-arr (ok) [ ]  lex-diags=0 parse-diags=0
+#### json-neg (ok) [ ]  lex-diags=0 parse-diags=0
+#### json-neg-in-arr (ok) [ ]  lex-diags=0 parse-diags=0
+#### json-numbers (ok) [ ]  lex-diags=0 parse-diags=0
+#### json-nested (ok) [ ]  lex-diags=0 parse-diags=0
+#### json-names (ok) [ ]  lex-diags=0 parse-diags=0
+#### json-path (ok) [ ]  lex-diags=0 parse-diags=0
+#### json-paren-expr (ok) [ ]  lex-diags=0 parse-diags=0
+#### json-paren-nested-json (ok) [ ]  lex-diags=0 parse-diags=0
+#### json-paren-for (ok) [ ]  lex-diags=0 parse-diags=0
+#### json-multiline (ok) [ ]  lex-diags=0 parse-diags=0
+#### json-top-name (ok) [ ]  lex-diags=0 parse-diags=0
+#### json-top-path (ok) [ ]  lex-diags=0 parse-diags=0
+#### json-top-paren (ok) [ ]  lex-diags=0 parse-diags=0
+#### json-escapes (ok) [ ]  lex-diags=0 parse-diags=0
+#### json-no-interpolation (ok) [ ]  lex-diags=0 parse-diags=0
+#### json-key-escapes (ok) [ ]  lex-diags=0 parse-diags=0
+#### json-as-operand (ok) [ ]  lex-diags=0 parse-diags=0
+#### json-in-call (ok) [ ]  lex-diags=0 parse-diags=0
+#### json-as-attr (ok) [ ]  lex-diags=0 parse-diags=0
+#### json-json-after-json (ok) [ ]  lex-diags=0 parse-diags=0
+#### json-json-index-after (ok) [ ]  lex-diags=0 parse-diags=0
+#### json-json-field-after (ok) [ ]  lex-diags=0 parse-diags=0
+#### json-to-path (ok) [ ]  lex-diags=0 parse-diags=0
+#### json-true-false-in-obj (ok) [ ]  lex-diags=0 parse-diags=0
+#### json-keyword-member-path (ok) [ ]  lex-diags=0 parse-diags=0
+#### json-type-json (ok) [ ]  lex-diags=0 parse-diags=0
+#### json-type-json-no-budget (ok) [ ]  lex-diags=0 parse-diags=0
+#### json-type-json-optional (ok) [ ]  lex-diags=0 parse-diags=0
+#### json-type-json-dims (ok) [ ]  lex-diags=0 parse-diags=0
+#### json-type-and-lit (ok) [ ]  lex-diags=0 parse-diags=0
+#### json-whitespace-free (ok) [ ]  lex-diags=0 parse-diags=0
+#### json-json-tab-separated (ok) [ ]  lex-diags=0 parse-diags=0
+#### json-trailing-comma-obj (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG json-syntax 1:22 21..22 `}` :: expected a key in double quotes, found `}` [help: write the document as JSON text after `json`, as in `json {"count": 16}`]
+#### json-trailing-comma-arr (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG json-syntax 1:17 16..17 `]` :: expected a JSON value, found `]` [help: write the document as JSON text after `json`, as in `json {"count": 16}`]
+#### json-bare-key (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG json-syntax 1:15 14..15 `a` :: expected a key in double quotes, found `a` [help: write the document as JSON text after `json`, as in `json {"count": 16}`]
+#### json-single-quote (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG json-syntax 1:15 14..15 `\'` :: expected a key in double quotes, found `'` [help: write the document as JSON text after `json`, as in `json {"count": 16}`]
+#### json-number-key (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG json-syntax 1:15 14..15 `1` :: expected a key in double quotes, found `1` [help: write the document as JSON text after `json`, as in `json {"count": 16}`]
+#### json-leading-zero (refuse) [ ]  lex-diags=1 parse-diags=1
+  DIAG json-syntax 1:14 13..15 `01` :: a number in JSON text has no leading zero [help: write the document as JSON text after `json`, as in `json {"count": 16}`]
+#### json-leading-zero-in-arr (refuse) [ ]  lex-diags=1 parse-diags=1
+  DIAG json-syntax 1:15 14..17 `007` :: a number in JSON text has no leading zero [help: write the document as JSON text after `json`, as in `json {"count": 16}`]
+#### json-hex (refuse) [ ]  lex-diags=1 parse-diags=1
+  DIAG json-syntax 1:16 15..18 `x10` :: `x10` directly follows a number in JSON text, which has no prefix, separator or suffix [help: write the document as JSON text after `json`, as in `json {"count": 16}`]
+#### json-separator (refuse) [ ]  lex-diags=1 parse-diags=1
+  DIAG json-syntax 1:16 15..19 `_000` :: `_000` directly follows a number in JSON text, which has no prefix, separator or suffix [help: write the document as JSON text after `json`, as in `json {"count": 16}`]
+#### json-suffix (refuse) [ ]  lex-diags=1 parse-diags=1
+  DIAG json-syntax 1:16 15..17 `ms` :: `ms` directly follows a number in JSON text, which has no prefix, separator or suffix [help: write the document as JSON text after `json`, as in `json {"count": 16}`]
+#### json-type-suffix (refuse) [ ]  lex-diags=1 parse-diags=1
+  DIAG json-syntax 1:16 15..18 `i32` :: `i32` directly follows a number in JSON text, which has no prefix, separator or suffix [help: write the document as JSON text after `json`, as in `json {"count": 16}`]
+#### json-leading-point (refuse) [ ]  lex-diags=1 parse-diags=1
+  DIAG float-digits 1:15 14..16 `.5` :: a float needs a digit before its point [help: write digits on both sides of the point, as in `0.5`]
+#### json-trailing-point (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG json-syntax 1:16 15..16 `.` :: expected `,` or `]`, found `.` [help: write the document as JSON text after `json`, as in `json {"count": 16}`]
+#### json-exp-no-digits (refuse) [ ]  lex-diags=1 parse-diags=1
+  DIAG json-syntax 1:16 15..16 `e` :: `e` directly follows a number in JSON text, which has no prefix, separator or suffix [help: write the document as JSON text after `json`, as in `json {"count": 16}`]
+#### json-plus-sign (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG json-syntax 1:15 14..15 `+` :: expected a JSON value, found `+` [help: write the document as JSON text after `json`, as in `json {"count": 16}`]
+#### json-double-minus (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG json-syntax 1:16 15..16 `-` :: expected a number after `-` in JSON text, found `-` [help: write the document as JSON text after `json`, as in `json {"count": 16}`]
+#### json-minus-name (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG json-syntax 1:16 15..16 `x` :: expected a number after `-` in JSON text, found `x` [help: write the document as JSON text after `json`, as in `json {"count": 16}`]
+#### json-minus-alone (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG json-syntax 1:15 14..15 `\n` :: expected a number after `-` in JSON text, found the end of the line [help: write the document as JSON text after `json`, as in `json {"count": 16}`]
+#### json-none-word (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG json-syntax 1:15 14..18 `none` :: expected a JSON value, found `none` [help: write the document as JSON text after `json`, as in `json {"count": 16}`]
+#### json-expr-unparenthesized (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG json-syntax 1:17 16..17 `+` :: expected `,` or `]`, found `+` [help: write the document as JSON text after `json`, as in `json {"count": 16}`]
+#### json-call-unparenthesized (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG json-syntax 1:16 15..16 `(` :: expected `,` or `]`, found `(` [help: write the document as JSON text after `json`, as in `json {"count": 16}`]
+#### json-index-unparenthesized (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG json-syntax 1:22 21..22 `[` :: expected `,` or `}`, found `[` [help: write the document as JSON text after `json`, as in `json {"count": 16}`]
+#### json-language-string-escape (refuse) [ ]  lex-diags=1 parse-diags=1
+  DIAG json-syntax 1:15 14..16 `\\{` :: `\{` is not an escape of JSON text [help: write the document as JSON text after `json`, as in `json {"count": 16}`]
+#### json-bad-escape (refuse) [ ]  lex-diags=1 parse-diags=1
+  DIAG json-syntax 1:15 14..16 `\\q` :: `\q` is not an escape of JSON text [help: write the document as JSON text after `json`, as in `json {"count": 16}`]
+#### json-bad-u-escape (refuse) [ ]  lex-diags=1 parse-diags=1
+  DIAG json-syntax 1:15 14..18 `\\u12` :: `\u` in JSON text is followed by four hexadecimal digits [help: write the document as JSON text after `json`, as in `json {"count": 16}`]
+#### json-short-u-escape (refuse) [ ]  lex-diags=1 parse-diags=1
+  DIAG json-syntax 1:15 14..18 `\\u12` :: `\u` in JSON text is followed by four hexadecimal digits [help: write the document as JSON text after `json`, as in `json {"count": 16}`]
+#### json-control-char (refuse) [ ]  lex-diags=1 parse-diags=1
+  DIAG json-syntax 1:16 15..16 `\t` :: a control character stands in a JSON string only as an escape [help: write the document as JSON text after `json`, as in `json {"count": 16}`]
+#### json-unterminated (refuse) [ ]  lex-diags=1 parse-diags=1
+  DIAG json-syntax 1:14 13..17 `\"abc` :: this JSON string does not end on its line [help: write the document as JSON text after `json`, as in `json {"count": 16}`]
+#### json-missing-colon (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG json-syntax 1:19 18..19 `1` :: expected `:` after the key, found `1` [help: write the document as JSON text after `json`, as in `json {"count": 16}`]
+#### json-missing-value (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG json-syntax 1:19 18..19 `}` :: expected a JSON value, found `}` [help: write the document as JSON text after `json`, as in `json {"count": 16}`]
+#### json-missing-comma (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG json-syntax 1:17 16..17 `2` :: expected `,` or `]`, found `2` [help: write the document as JSON text after `json`, as in `json {"count": 16}`]
+#### json-double-comma (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG json-syntax 1:17 16..17 `,` :: expected a JSON value, found `,` [help: write the document as JSON text after `json`, as in `json {"count": 16}`]
+#### json-empty-literal (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG json-syntax 1:13 12..13 `\n` :: expected a JSON value, found the end of the line [help: write the document as JSON text after `json`, as in `json {"count": 16}`]
+#### json-to-alone (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG json-syntax 2:31 38..39 `}` :: expected `.` and a name after `to`, found `}` [help: write the document as JSON text after `json`, as in `json {"count": 16}`]
+#### json-interp-string-key (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG json-syntax 1:15 14..15 `(` :: expected a key in double quotes, found `(` [help: write the document as JSON text after `json`, as in `json {"count": 16}`]
+#### json-nan (refuse) [ ]  lex-diags=0 parse-diags=0
+#### json-comment-inside-is-comment-ok? (refuse) [ ]  lex-diags=0 parse-diags=0
+#### json-null-outside (refuse) [ ]  lex-diags=1 parse-diags=1
+  DIAG reserved-word 1:10 9..13 `null` :: `null` is reserved and cannot be used [help: choose another name]
+#### json-unclosed-obj (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG json-syntax 2:1 21..24 `let` :: expected `,` or `}`, found `let` [help: write the document as JSON text after `json`, as in `json {"count": 16}`]
+#### json-paren-empty (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG expression-syntax 1:16 15..16 `)` :: expected an expression, found `)` [help: give every operator its operands and close every bracket]
+#### json-lambda-in-paren (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG expression-syntax 1:16 15..16 `x` :: a lambda stands only as an argument or as a `let`'s value [help: pass the lambda as an argument, as in `count(readings, p: p > 60)`, or name it with a `let`, as in `let keep = p: p > 60`]
+#### json-qualified-then-call (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG json-syntax 1:21 20..21 `(` :: expected `,` or `]`, found `(` [help: write the document as JSON text after `json`, as in `json {"count": 16}`]
+#### json-true-suffix (refuse) [ ]  lex-diags=0 parse-diags=0
+CASES 84

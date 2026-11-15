@@ -1,0 +1,19 @@
+--- diagnostics (2)
+  LetSyntax 13..16 "let" :: a `let` line stands only at the start of a pattern body
+  PlacementSyntax 21..21 "" :: a block holds at least one body item
+--- detached [] at_layout [21..21]
+--- tree
+File 0..21
+  Placement 0..21
+    Ident "Synth"
+    Ident "s"
+    Body 7..21
+      Colon ":"
+      Block 8..21
+        Newline "\n"
+        Indent ""
+        LocalLet 13..21
+          LetKw "let"
+          Ident "Osc"
+          Newline "\n"
+        Dedent ""

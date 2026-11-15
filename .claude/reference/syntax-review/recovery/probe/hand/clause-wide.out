@@ -1,0 +1,31 @@
+--- diagnostics (1)
+  ClauseColumn 47..48 "f" :: this line lines up with the attribute clause only on screen; its first entry is at column 16
+--- detached [] at_layout []
+--- tree
+File 0..54
+  Placement 0..54
+    Ident "Scene"
+    Ident "s"
+    Body 7..54
+      Colon ":"
+      Block 8..54
+        Newline "\n"
+        Indent ""
+        Placement 13..54
+          Ident "Cue"
+          AsKw "as"
+          Ident "名"
+          Attrs 24..53
+            Pipe "|"
+            AttrEntry 26..30
+              Ident "at"
+              Eq "="
+              Literal 29..30
+                Number "1"
+            AttrEntry 47..53
+              Ident "fade"
+              Eq "="
+              Literal 52..53
+                Number "2"
+          Newline "\n"
+        Dedent ""

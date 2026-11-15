@@ -1,0 +1,4 @@
+fn f(x):
+    a = x
+    let b = 1
+    b

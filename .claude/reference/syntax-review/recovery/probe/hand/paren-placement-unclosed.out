@@ -1,0 +1,31 @@
+--- diagnostics (1)
+  PlacementSyntax 24..27 "Cue" :: expected `)`, found `Cue`
+--- detached [] at_layout []
+--- tree
+File 0..30
+  Placement 0..30
+    Ident "Scene"
+    Ident "s"
+    Body 7..30
+      Colon ":"
+      Block 8..30
+        Newline "\n"
+        Indent ""
+        Line 13..20
+          ParenPlacement 13..19
+            LParen "("
+            Placement 14..19
+              Ident "Cue"
+              DefaultArg 17..19
+                Slash "/"
+                Literal 18..19
+                  Number "1"
+          Newline ""
+        Placement 24..30
+          Ident "Cue"
+          DefaultArg 27..29
+            Slash "/"
+            Literal 28..29
+              Number "2"
+          Newline "\n"
+        Dedent ""

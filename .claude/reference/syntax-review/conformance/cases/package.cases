@@ -1,0 +1,70 @@
+#### package-forms (ok)
+Package {
+    name: "gradients",
+    version: "2.4.1",
+    license: "MIT",
+    authors: ["Ada Lovelace <ada@example.com>"],
+}
+
+require "github.com/acme/util@1.2.0"
+require "github.com/other/scales@1.0.0" as oscales
+require "./local"
+require "../util"
+use util as u
+use loops
+use loops: Pid, Ramp
+use loops: Pid as Ctl, Ramp
+use math
+publish warm, cool
+publish Chase as Sweep, Bank, Band
+publish gradients::cool as Cool
+#### package-decl-with-options (ok)
+Package {name: "x", options: Options {limit: 5}, vocabulary: "lighting@2.1.0"}
+#### package-decl-then-more-on-line (refuse)
+Package {name: "x"} require "a"
+#### require-no-string (refuse)
+require util
+#### require-as-keyword (refuse)
+require "a" as state
+#### require-two-strings (refuse)
+require "a" "b"
+#### require-as-missing-name (refuse)
+require "a" as
+#### use-no-name (refuse)
+use
+#### use-colon-empty (refuse)
+use loops:
+#### use-as-and-colon (refuse)
+use loops as l: Pid
+#### use-colon-then-as-lib (refuse)
+use loops: Pid as
+#### use-trailing-comma (refuse)
+use loops: Pid,
+#### use-qualified (refuse)
+use loops::Pid
+#### use-two-libs (refuse)
+use loops, util
+#### publish-empty (refuse)
+publish
+#### publish-trailing-comma (refuse)
+publish a,
+#### publish-as-missing (refuse)
+publish a as
+#### publish-qualified-three (refuse)
+publish a::b::c
+#### publish-string (refuse)
+publish "a"
+#### package-item-indented-in-body (refuse)
+Rig r:
+    require "a"
+#### is-json-then-attr-entry (ok)
+Rig r:
+    Lamp | a=v is json b=2
+#### is-json-then-inline-member
+Rig r:
+    for i in xs: Lamp
+    when v is json: Lamp
+#### size-starting-with-brace-on-name (ok)
+let a: Band[{1: 2}.size] = x
+#### size-max-call-on-name (ok)
+let a: Band[max(N, 2)] = x

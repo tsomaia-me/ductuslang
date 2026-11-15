@@ -1,0 +1,158 @@
+# 2026-11-13T02:40:36Z profile=release round=3 load=4.99 3.32 1.87
+pack	inputs/gen_blocks_80000.pack	all	files=1	bytes=1601670	lines=80000	tokens=710000	significant=510000	nodes=360001	ir_nodes=145000	diagnostics=0	ir_failed=0
+time	scan_newlines	min_ms=1.029	median_ms=1.035	runs=400	ns_byte=0.64	ns_token=1.4	ns_sig=2.0	ns_node=2.9	ns_line=13	mb_s=1556.0
+time	chars_pass	min_ms=2.083	median_ms=2.124	runs=327	ns_byte=1.30	ns_token=2.9	ns_sig=4.1	ns_node=5.8	ns_line=26	mb_s=768.9
+time	copy_text	min_ms=0.113	median_ms=0.130	runs=400	ns_byte=0.07	ns_token=0.2	ns_sig=0.2	ns_node=0.3	ns_line=1	mb_s=14199.7
+time	lex_columns	min_ms=20.090	median_ms=20.315	runs=35	ns_byte=12.54	ns_token=28.3	ns_sig=39.4	ns_node=55.8	ns_line=251	mb_s=79.7
+time	lex_public	min_ms=23.836	median_ms=24.634	runs=29	ns_byte=14.88	ns_token=33.6	ns_sig=46.7	ns_node=66.2	ns_line=298	mb_s=67.2
+time	parse	min_ms=73.401	median_ms=74.114	runs=7	ns_byte=45.83	ns_token=103.4	ns_sig=143.9	ns_node=203.9	ns_line=918	mb_s=21.8
+time	ir_build	min_ms=81.842	median_ms=83.310	runs=0	ns_byte=51.10	ns_token=115.3	ns_sig=160.5	ns_node=227.3	ns_line=1023	mb_s=19.6
+time	drop_all	min_ms=2.246	median_ms=2.292	runs=0	ns_byte=1.40	ns_token=3.2	ns_sig=4.4	ns_node=6.2	ns_line=28	mb_s=713.2
+alloc	lex_columns	allocs=5030	bytes=11926914	peak=11599390	allocs_per_file=5030.0	peak_per_node=32.2	peak_per_byte=7.24
+alloc	parse	allocs=5043	bytes=19136182	peak=18808082	allocs_per_file=5043.0	peak_per_node=52.2	peak_per_byte=11.74
+alloc	ir_build	allocs=50312	bytes=53189241	peak=29401945	allocs_per_file=50312.0	peak_per_node=81.7	peak_per_byte=18.36
+pack	inputs/gen_documents_80000.pack	all	files=1	bytes=8046670	lines=80000	tokens=3840000	significant=2760000	nodes=1400001	ir_nodes=120000	diagnostics=0	ir_failed=0
+time	scan_newlines	min_ms=5.218	median_ms=5.273	runs=132	ns_byte=0.65	ns_token=1.4	ns_sig=1.9	ns_node=3.7	ns_line=65	mb_s=1542.2
+time	chars_pass	min_ms=10.904	median_ms=11.122	runs=63	ns_byte=1.36	ns_token=2.8	ns_sig=4.0	ns_node=7.8	ns_line=136	mb_s=737.9
+time	copy_text	min_ms=1.171	median_ms=1.221	runs=400	ns_byte=0.15	ns_token=0.3	ns_sig=0.4	ns_node=0.8	ns_line=15	mb_s=6872.2
+time	lex_columns	min_ms=118.454	median_ms=119.075	runs=7	ns_byte=14.72	ns_token=30.8	ns_sig=42.9	ns_node=84.6	ns_line=1481	mb_s=67.9
+time	lex_public	min_ms=160.498	median_ms=161.241	runs=7	ns_byte=19.95	ns_token=41.8	ns_sig=58.2	ns_node=114.6	ns_line=2006	mb_s=50.1
+time	parse	min_ms=299.076	median_ms=300.457	runs=7	ns_byte=37.17	ns_token=77.9	ns_sig=108.4	ns_node=213.6	ns_line=3738	mb_s=26.9
+time	ir_build	min_ms=256.327	median_ms=258.312	runs=0	ns_byte=31.86	ns_token=66.8	ns_sig=92.9	ns_node=183.1	ns_line=3204	mb_s=31.4
+time	drop_all	min_ms=7.498	median_ms=7.803	runs=0	ns_byte=0.93	ns_token=2.0	ns_sig=2.7	ns_node=5.4	ns_line=94	mb_s=1073.2
+alloc	lex_columns	allocs=80038	bytes=67132362	peak=61889642	allocs_per_file=80038.0	peak_per_node=44.2	peak_per_byte=7.69
+alloc	parse	allocs=80051	bytes=103344130	peak=98100834	allocs_per_file=80051.0	peak_per_node=70.1	peak_per_byte=12.19
+alloc	ir_build	allocs=120250	bytes=179875155	peak=109175377	allocs_per_file=120250.0	peak_per_node=78.0	peak_per_byte=13.57
+pack	inputs/gen_expressions_80000.pack	all	files=1	bytes=3986582	lines=79998	tokens=2319942	significant=1439964	nodes=1039975	ir_nodes=866645	diagnostics=0	ir_failed=0
+time	scan_newlines	min_ms=2.557	median_ms=2.577	runs=270	ns_byte=0.64	ns_token=1.1	ns_sig=1.8	ns_node=2.5	ns_line=32	mb_s=1558.8
+time	chars_pass	min_ms=5.174	median_ms=5.193	runs=134	ns_byte=1.30	ns_token=2.2	ns_sig=3.6	ns_node=5.0	ns_line=65	mb_s=770.5
+time	copy_text	min_ms=0.302	median_ms=0.324	runs=400	ns_byte=0.08	ns_token=0.1	ns_sig=0.2	ns_node=0.3	ns_line=4	mb_s=13206.0
+time	lex_columns	min_ms=82.904	median_ms=83.699	runs=9	ns_byte=20.80	ns_token=35.7	ns_sig=57.6	ns_node=79.7	ns_line=1036	mb_s=48.1
+time	lex_public	min_ms=109.255	median_ms=110.700	runs=7	ns_byte=27.41	ns_token=47.1	ns_sig=75.9	ns_node=105.1	ns_line=1366	mb_s=36.5
+time	parse	min_ms=236.871	median_ms=238.981	runs=7	ns_byte=59.42	ns_token=102.1	ns_sig=164.5	ns_node=227.8	ns_line=2961	mb_s=16.8
+time	ir_build	min_ms=245.916	median_ms=247.614	runs=0	ns_byte=61.69	ns_token=106.0	ns_sig=170.8	ns_node=236.5	ns_line=3074	mb_s=16.2
+time	drop_all	min_ms=6.720	median_ms=7.094	runs=0	ns_byte=1.69	ns_token=2.9	ns_sig=4.7	ns_node=6.5	ns_line=84	mb_s=593.2
+alloc	lex_columns	allocs=66705	bytes=78524170	peak=53348536	allocs_per_file=66705.0	peak_per_node=51.3	peak_per_byte=13.38
+alloc	parse	allocs=66721	bytes=124371346	peak=85242234	allocs_per_file=66721.0	peak_per_node=82.0	peak_per_byte=21.38
+alloc	ir_build	allocs=289	bytes=144295619	peak=91343871	allocs_per_file=289.0	peak_per_node=87.8	peak_per_byte=22.91
+pack	inputs/gen_faulty_80000.pack	all	files=1	bytes=2302576	lines=79992	tokens=935176	significant=667567	nodes=507583	ir_nodes=139622	diagnostics=7272	ir_failed=0
+time	scan_newlines	min_ms=1.476	median_ms=1.480	runs=400	ns_byte=0.64	ns_token=1.6	ns_sig=2.2	ns_node=2.9	ns_line=18	mb_s=1560.1
+time	chars_pass	min_ms=2.984	median_ms=3.001	runs=232	ns_byte=1.30	ns_token=3.2	ns_sig=4.5	ns_node=5.9	ns_line=37	mb_s=771.6
+time	copy_text	min_ms=0.173	median_ms=0.176	runs=400	ns_byte=0.08	ns_token=0.2	ns_sig=0.3	ns_node=0.3	ns_line=2	mb_s=13331.4
+time	lex_columns	min_ms=28.585	median_ms=28.771	runs=25	ns_byte=12.41	ns_token=30.6	ns_sig=42.8	ns_node=56.3	ns_line=357	mb_s=80.6
+time	lex_public	min_ms=31.372	median_ms=31.571	runs=23	ns_byte=13.62	ns_token=33.5	ns_sig=47.0	ns_node=61.8	ns_line=392	mb_s=73.4
+time	parse	min_ms=111.313	median_ms=112.405	runs=7	ns_byte=48.34	ns_token=119.0	ns_sig=166.7	ns_node=219.3	ns_line=1392	mb_s=20.7
+time	ir_build	min_ms=140.310	median_ms=143.406	runs=0	ns_byte=60.94	ns_token=150.0	ns_sig=210.2	ns_node=276.4	ns_line=1754	mb_s=16.4
+time	drop_all	min_ms=3.847	median_ms=3.988	runs=0	ns_byte=1.67	ns_token=4.1	ns_sig=5.8	ns_node=7.6	ns_line=48	mb_s=598.5
+alloc	lex_columns	allocs=5886	bytes=25139866	peak=20762358	allocs_per_file=5886.0	peak_per_node=40.9	peak_per_byte=9.02
+alloc	parse	allocs=84486	bytes=34328122	peak=29512955	allocs_per_file=84486.0	peak_per_node=58.1	peak_per_byte=12.82
+alloc	ir_build	allocs=14890	bytes=92048192	peak=51328671	allocs_per_file=14890.0	peak_per_node=101.1	peak_per_byte=22.29
+pack	inputs/gen_functions_80000.pack	all	files=1	bytes=2891920	lines=79996	tokens=1588492	significant=1017092	nodes=594257	ir_nodes=0	diagnostics=0	ir_failed=0
+time	scan_newlines	min_ms=1.854	median_ms=1.859	runs=375	ns_byte=0.64	ns_token=1.2	ns_sig=1.8	ns_node=3.1	ns_line=23	mb_s=1560.2
+time	chars_pass	min_ms=3.751	median_ms=3.767	runs=184	ns_byte=1.30	ns_token=2.4	ns_sig=3.7	ns_node=6.3	ns_line=47	mb_s=771.1
+time	copy_text	min_ms=0.218	median_ms=0.220	runs=400	ns_byte=0.08	ns_token=0.1	ns_sig=0.2	ns_node=0.4	ns_line=3	mb_s=13269.1
+time	lex_columns	min_ms=47.523	median_ms=48.021	runs=15	ns_byte=16.43	ns_token=29.9	ns_sig=46.7	ns_node=80.0	ns_line=594	mb_s=60.9
+time	lex_public	min_ms=66.989	median_ms=67.562	runs=11	ns_byte=23.16	ns_token=42.2	ns_sig=65.9	ns_node=112.7	ns_line=837	mb_s=43.2
+time	parse	min_ms=151.446	median_ms=151.702	runs=7	ns_byte=52.37	ns_token=95.3	ns_sig=148.9	ns_node=254.8	ns_line=1893	mb_s=19.1
+time	ir_build	min_ms=129.000	median_ms=130.271	runs=0	ns_byte=44.61	ns_token=81.2	ns_sig=126.8	ns_node=217.1	ns_line=1613	mb_s=22.4
+time	drop_all	min_ms=4.061	median_ms=4.183	runs=0	ns_byte=1.40	ns_token=2.6	ns_sig=4.0	ns_node=6.8	ns_line=51	mb_s=712.2
+alloc	lex_columns	allocs=34323	bytes=54633952	peak=37553064	allocs_per_file=34323.0	peak_per_node=63.2	peak_per_byte=12.99
+alloc	parse	allocs=34336	bytes=67649352	peak=50567888	allocs_per_file=34336.0	peak_per_node=85.1	peak_per_byte=17.49
+alloc	ir_build	allocs=103057	bytes=80626594	peak=45674233	allocs_per_file=103057.0	peak_per_node=76.9	peak_per_byte=15.79
+pack	inputs/gen_placements_80000.pack	all	files=1	bytes=2378450	lines=80000	tokens=944000	significant=680000	nodes=520001	ir_nodes=144000	diagnostics=0	ir_failed=0
+time	scan_newlines	min_ms=1.525	median_ms=1.532	runs=400	ns_byte=0.64	ns_token=1.6	ns_sig=2.2	ns_node=2.9	ns_line=19	mb_s=1559.7
+time	chars_pass	min_ms=3.082	median_ms=3.100	runs=225	ns_byte=1.30	ns_token=3.3	ns_sig=4.5	ns_node=5.9	ns_line=39	mb_s=771.6
+time	copy_text	min_ms=0.179	median_ms=0.186	runs=400	ns_byte=0.08	ns_token=0.2	ns_sig=0.3	ns_node=0.3	ns_line=2	mb_s=13272.0
+time	lex_columns	min_ms=30.986	median_ms=31.404	runs=23	ns_byte=13.03	ns_token=32.8	ns_sig=45.6	ns_node=59.6	ns_line=387	mb_s=76.8
+time	lex_public	min_ms=33.938	median_ms=34.231	runs=21	ns_byte=14.27	ns_token=36.0	ns_sig=49.9	ns_node=65.3	ns_line=424	mb_s=70.1
+time	parse	min_ms=99.853	median_ms=100.977	runs=7	ns_byte=41.98	ns_token=105.8	ns_sig=146.8	ns_node=192.0	ns_line=1248	mb_s=23.8
+time	ir_build	min_ms=112.676	median_ms=114.470	runs=0	ns_byte=47.37	ns_token=119.4	ns_sig=165.7	ns_node=216.7	ns_line=1408	mb_s=21.1
+time	drop_all	min_ms=2.705	median_ms=2.772	runs=0	ns_byte=1.14	ns_token=2.9	ns_sig=4.0	ns_node=5.2	ns_line=34	mb_s=879.2
+alloc	lex_columns	allocs=8030	bytes=17368374	peak=17040850	allocs_per_file=8030.0	peak_per_node=32.8	peak_per_byte=7.16
+alloc	parse	allocs=8043	bytes=28073152	peak=27745052	allocs_per_file=8043.0	peak_per_node=53.4	peak_per_byte=11.67
+alloc	ir_build	allocs=16306	bytes=92047661	peak=51591321	allocs_per_file=16306.0	peak_per_node=99.2	peak_per_byte=21.69
+pack	inputs/gen_plainfns_80000.pack	all	files=1	bytes=2480512	lines=79996	tokens=1371360	significant=879956	nodes=525689	ir_nodes=297128	diagnostics=0	ir_failed=0
+time	scan_newlines	min_ms=1.590	median_ms=1.595	runs=400	ns_byte=0.64	ns_token=1.2	ns_sig=1.8	ns_node=3.0	ns_line=20	mb_s=1560.0
+time	chars_pass	min_ms=3.217	median_ms=3.236	runs=216	ns_byte=1.30	ns_token=2.3	ns_sig=3.7	ns_node=6.1	ns_line=40	mb_s=771.2
+time	copy_text	min_ms=0.185	median_ms=0.190	runs=400	ns_byte=0.07	ns_token=0.1	ns_sig=0.2	ns_node=0.4	ns_line=2	mb_s=13377.7
+time	lex_columns	min_ms=41.783	median_ms=41.960	runs=17	ns_byte=16.84	ns_token=30.5	ns_sig=47.5	ns_node=79.5	ns_line=522	mb_s=59.4
+time	lex_public	min_ms=56.533	median_ms=59.593	runs=12	ns_byte=22.79	ns_token=41.2	ns_sig=64.2	ns_node=107.5	ns_line=707	mb_s=43.9
+time	parse	min_ms=128.808	median_ms=129.356	runs=7	ns_byte=51.93	ns_token=93.9	ns_sig=146.4	ns_node=245.0	ns_line=1610	mb_s=19.3
+time	ir_build	min_ms=106.766	median_ms=107.875	runs=0	ns_byte=43.04	ns_token=77.9	ns_sig=121.3	ns_node=203.1	ns_line=1335	mb_s=23.2
+time	drop_all	min_ms=0.009	median_ms=0.010	runs=0	ns_byte=0.00	ns_token=0.0	ns_sig=0.0	ns_node=0.0	ns_line=0	mb_s=289306.3
+alloc	lex_columns	allocs=34323	bytes=47640016	peak=32616168	allocs_per_file=34323.0	peak_per_node=62.0	peak_per_byte=13.15
+alloc	parse	allocs=34336	bytes=58804080	peak=43779656	allocs_per_file=34336.0	peak_per_node=83.3	peak_per_byte=17.65
+alloc	ir_build	allocs=57456	bytes=72292789	peak=44553137	allocs_per_file=57456.0	peak_per_node=84.8	peak_per_byte=17.96
+pack	inputs/gen_strings_80000.pack	all	files=1	bytes=4044350	lines=79998	tokens=1733290	significant=1413298	nodes=693317	ir_nodes=399990	diagnostics=0	ir_failed=0
+time	scan_newlines	min_ms=2.594	median_ms=2.600	runs=268	ns_byte=0.64	ns_token=1.5	ns_sig=1.8	ns_node=3.7	ns_line=32	mb_s=1559.2
+time	chars_pass	min_ms=5.248	median_ms=5.424	runs=129	ns_byte=1.30	ns_token=3.0	ns_sig=3.7	ns_node=7.6	ns_line=66	mb_s=770.7
+time	copy_text	min_ms=0.306	median_ms=0.314	runs=400	ns_byte=0.08	ns_token=0.2	ns_sig=0.2	ns_node=0.4	ns_line=4	mb_s=13224.3
+time	lex_columns	min_ms=51.310	median_ms=51.624	runs=14	ns_byte=12.69	ns_token=29.6	ns_sig=36.3	ns_node=74.0	ns_line=641	mb_s=78.8
+time	lex_public	min_ms=56.665	median_ms=56.840	runs=13	ns_byte=14.01	ns_token=32.7	ns_sig=40.1	ns_node=81.7	ns_line=708	mb_s=71.4
+time	parse	min_ms=174.273	median_ms=174.886	runs=7	ns_byte=43.09	ns_token=100.5	ns_sig=123.3	ns_node=251.4	ns_line=2178	mb_s=23.2
+time	ir_build	min_ms=201.324	median_ms=205.818	runs=0	ns_byte=49.78	ns_token=116.2	ns_sig=142.4	ns_node=290.4	ns_line=2517	mb_s=20.1
+time	drop_all	min_ms=4.022	median_ms=5.653	runs=0	ns_byte=0.99	ns_token=2.3	ns_sig=2.8	ns_node=5.8	ns_line=50	mb_s=1005.5
+alloc	lex_columns	allocs=53369	bytes=35863722	peak=32193866	allocs_per_file=53369.0	peak_per_node=46.4	peak_per_byte=7.96
+alloc	parse	allocs=80061	bytes=56129974	peak=51213722	allocs_per_file=80061.0	peak_per_node=73.9	peak_per_byte=12.66
+alloc	ir_build	allocs=106955	bytes=150634329	peak=84580013	allocs_per_file=106955.0	peak_per_node=122.0	peak_per_byte=20.91
+pack	inputs/gen_unicode_80000.pack	all	files=1	bytes=1935560	lines=80000	tokens=740000	significant=540000	nodes=320001	ir_nodes=120000	diagnostics=0	ir_failed=0
+time	scan_newlines	min_ms=1.242	median_ms=1.247	runs=400	ns_byte=0.64	ns_token=1.7	ns_sig=2.3	ns_node=3.9	ns_line=16	mb_s=1558.6
+time	chars_pass	min_ms=5.875	median_ms=5.909	runs=118	ns_byte=3.04	ns_token=7.9	ns_sig=10.9	ns_node=18.4	ns_line=73	mb_s=329.5
+time	copy_text	min_ms=0.144	median_ms=0.147	runs=400	ns_byte=0.07	ns_token=0.2	ns_sig=0.3	ns_node=0.5	ns_line=2	mb_s=13406.7
+time	lex_columns	min_ms=51.210	median_ms=51.524	runs=14	ns_byte=26.46	ns_token=69.2	ns_sig=94.8	ns_node=160.0	ns_line=640	mb_s=37.8
+time	lex_public	min_ms=53.782	median_ms=54.209	runs=13	ns_byte=27.79	ns_token=72.7	ns_sig=99.6	ns_node=168.1	ns_line=672	mb_s=36.0
+time	parse	min_ms=102.516	median_ms=103.336	runs=7	ns_byte=52.96	ns_token=138.5	ns_sig=189.8	ns_node=320.4	ns_line=1281	mb_s=18.9
+time	ir_build	min_ms=113.705	median_ms=118.111	runs=0	ns_byte=58.75	ns_token=153.7	ns_sig=210.6	ns_node=355.3	ns_line=1421	mb_s=17.0
+time	drop_all	min_ms=1.775	median_ms=2.517	runs=0	ns_byte=0.92	ns_token=2.4	ns_sig=3.3	ns_node=5.5	ns_line=22	mb_s=1090.2
+alloc	lex_columns	allocs=179814	bytes=18166704	peak=14939676	allocs_per_file=179814.0	peak_per_node=46.7	peak_per_byte=7.72
+alloc	parse	allocs=179826	bytes=26878228	peak=23650752	allocs_per_file=179826.0	peak_per_node=73.9	peak_per_byte=12.22
+alloc	ir_build	allocs=20310	bytes=83185109	peak=44352745	allocs_per_file=20310.0	peak_per_node=138.6	peak_per_byte=22.91
+pack	inputs/large.pack	all	files=31	bytes=319388	lines=10413	tokens=142385	significant=100645	nodes=64918	ir_nodes=31903	diagnostics=0	ir_failed=0
+time	scan_newlines	min_ms=0.205	median_ms=0.205	runs=400	ns_byte=0.64	ns_token=1.4	ns_sig=2.0	ns_node=3.2	ns_line=20	mb_s=1561.0
+time	chars_pass	min_ms=0.412	median_ms=0.419	runs=400	ns_byte=1.29	ns_token=2.9	ns_sig=4.1	ns_node=6.3	ns_line=40	mb_s=775.6
+time	copy_text	min_ms=0.013	median_ms=0.014	runs=400	ns_byte=0.04	ns_token=0.1	ns_sig=0.1	ns_node=0.2	ns_line=1	mb_s=24017.7
+time	lex_columns	min_ms=5.058	median_ms=5.135	runs=291	ns_byte=15.84	ns_token=35.5	ns_sig=50.3	ns_node=77.9	ns_line=486	mb_s=63.1
+time	lex_public	min_ms=6.106	median_ms=6.268	runs=232	ns_byte=19.12	ns_token=42.9	ns_sig=60.7	ns_node=94.1	ns_line=586	mb_s=52.3
+time	parse	min_ms=17.198	median_ms=17.772	runs=43	ns_byte=53.85	ns_token=120.8	ns_sig=170.9	ns_node=264.9	ns_line=1652	mb_s=18.6
+time	ir_build	min_ms=15.979	median_ms=17.243	runs=0	ns_byte=50.03	ns_token=112.2	ns_sig=158.8	ns_node=246.1	ns_line=1535	mb_s=20.0
+time	drop_all	min_ms=0.126	median_ms=0.276	runs=0	ns_byte=0.40	ns_token=0.9	ns_sig=1.3	ns_node=1.9	ns_line=12	mb_s=2529.1
+alloc	lex_columns	allocs=5466	bytes=2879018	peak=101580	allocs_per_file=176.3	peak_per_node=1.6	peak_per_byte=0.32
+alloc	parse	allocs=6958	bytes=4464944	peak=3086472	allocs_per_file=224.5	peak_per_node=47.5	peak_per_byte=9.66
+alloc	ir_build	allocs=6164	bytes=13287139	peak=3914042	allocs_per_file=198.8	peak_per_node=60.3	peak_per_byte=12.25
+pack	inputs/large_one_file.pack	all	files=1	bytes=319388	lines=10413	tokens=142385	significant=100645	nodes=64888	ir_nodes=31903	diagnostics=0	ir_failed=0
+time	scan_newlines	min_ms=0.204	median_ms=0.205	runs=400	ns_byte=0.64	ns_token=1.4	ns_sig=2.0	ns_node=3.1	ns_line=20	mb_s=1563.4
+time	chars_pass	min_ms=0.411	median_ms=0.422	runs=400	ns_byte=1.29	ns_token=2.9	ns_sig=4.1	ns_node=6.3	ns_line=39	mb_s=776.9
+time	copy_text	min_ms=0.012	median_ms=0.013	runs=400	ns_byte=0.04	ns_token=0.1	ns_sig=0.1	ns_node=0.2	ns_line=1	mb_s=25794.5
+time	lex_columns	min_ms=4.960	median_ms=5.135	runs=287	ns_byte=15.53	ns_token=34.8	ns_sig=49.3	ns_node=76.4	ns_line=476	mb_s=64.4
+time	lex_public	min_ms=5.421	median_ms=5.543	runs=263	ns_byte=16.97	ns_token=38.1	ns_sig=53.9	ns_node=83.5	ns_line=521	mb_s=58.9
+time	parse	min_ms=17.206	median_ms=17.821	runs=47	ns_byte=53.87	ns_token=120.8	ns_sig=171.0	ns_node=265.2	ns_line=1652	mb_s=18.6
+time	ir_build	min_ms=13.785	median_ms=14.640	runs=0	ns_byte=43.16	ns_token=96.8	ns_sig=137.0	ns_node=212.4	ns_line=1324	mb_s=23.2
+time	drop_all	min_ms=0.006	median_ms=0.006	runs=0	ns_byte=0.02	ns_token=0.0	ns_sig=0.1	ns_node=0.1	ns_line=1	mb_s=57661.7
+alloc	lex_columns	allocs=4857	bytes=2921396	peak=2593872	allocs_per_file=4857.0	peak_per_node=40.0	peak_per_byte=8.12
+alloc	parse	allocs=5853	bytes=4479438	peak=4107982	allocs_per_file=5853.0	peak_per_node=63.3	peak_per_byte=12.86
+alloc	ir_build	allocs=5191	bytes=9698767	peak=5285032	allocs_per_file=5191.0	peak_per_node=81.4	peak_per_byte=16.55
+pack	inputs/corpus.pack	clean	files=4782	bytes=2647447	lines=96481	tokens=1183015	significant=838159	nodes=592769	ir_nodes=266318	diagnostics=0	ir_failed=0
+time	scan_newlines	min_ms=1.798	median_ms=1.835	runs=400	ns_byte=0.68	ns_token=1.5	ns_sig=2.1	ns_node=3.0	ns_line=19	mb_s=1472.4
+time	chars_pass	min_ms=3.618	median_ms=3.962	runs=374	ns_byte=1.37	ns_token=3.1	ns_sig=4.3	ns_node=6.1	ns_line=37	mb_s=731.8
+time	copy_text	min_ms=0.437	median_ms=0.487	runs=400	ns_byte=0.17	ns_token=0.4	ns_sig=0.5	ns_node=0.7	ns_line=5	mb_s=6053.5
+time	lex_columns	min_ms=48.786	median_ms=49.474	runs=31	ns_byte=18.43	ns_token=41.2	ns_sig=58.2	ns_node=82.3	ns_line=506	mb_s=54.3
+time	lex_public	min_ms=58.266	median_ms=59.329	runs=26	ns_byte=22.01	ns_token=49.3	ns_sig=69.5	ns_node=98.3	ns_line=604	mb_s=45.4
+time	parse	min_ms=160.020	median_ms=161.626	runs=7	ns_byte=60.44	ns_token=135.3	ns_sig=190.9	ns_node=270.0	ns_line=1659	mb_s=16.5
+time	ir_build	min_ms=157.422	median_ms=158.800	runs=0	ns_byte=59.46	ns_token=133.1	ns_sig=187.8	ns_node=265.6	ns_line=1632	mb_s=16.8
+time	drop_all	min_ms=5.841	median_ms=6.674	runs=0	ns_byte=2.21	ns_token=4.9	ns_sig=7.0	ns_node=9.9	ns_line=61	mb_s=453.2
+alloc	lex_columns	allocs=83224	bytes=24445522	peak=16488	allocs_per_file=17.4	peak_per_node=0.0	peak_per_byte=0.01
+alloc	parse	allocs=149798	bytes=47528931	peak=28828947	allocs_per_file=31.3	peak_per_node=48.6	peak_per_byte=10.89
+alloc	ir_build	allocs=96079	bytes=105469506	peak=37573314	allocs_per_file=20.1	peak_per_node=63.4	peak_per_byte=14.19
+pack	inputs/corpus.pack	faulty	files=15511	bytes=9311574	lines=384212	tokens=4005092	significant=2837874	nodes=1599127	ir_nodes=549053	diagnostics=67710	ir_failed=0
+time	scan_newlines	min_ms=6.444	median_ms=6.729	runs=223	ns_byte=0.69	ns_token=1.6	ns_sig=2.3	ns_node=4.0	ns_line=17	mb_s=1444.9
+time	chars_pass	min_ms=13.875	median_ms=15.117	runs=100	ns_byte=1.49	ns_token=3.5	ns_sig=4.9	ns_node=8.7	ns_line=36	mb_s=671.1
+time	copy_text	min_ms=1.725	median_ms=2.508	runs=400	ns_byte=0.19	ns_token=0.4	ns_sig=0.6	ns_node=1.1	ns_line=4	mb_s=5397.7
+time	lex_columns	min_ms=167.443	median_ms=168.562	runs=9	ns_byte=17.98	ns_token=41.8	ns_sig=59.0	ns_node=104.7	ns_line=436	mb_s=55.6
+time	lex_public	min_ms=201.433	median_ms=201.819	runs=8	ns_byte=21.63	ns_token=50.3	ns_sig=71.0	ns_node=126.0	ns_line=524	mb_s=46.2
+time	parse	min_ms=556.553	median_ms=558.026	runs=7	ns_byte=59.77	ns_token=139.0	ns_sig=196.1	ns_node=348.0	ns_line=1449	mb_s=16.7
+time	ir_build	min_ms=507.696	median_ms=513.866	runs=0	ns_byte=54.52	ns_token=126.8	ns_sig=178.9	ns_node=317.5	ns_line=1321	mb_s=18.3
+time	drop_all	min_ms=40.268	median_ms=46.599	runs=0	ns_byte=4.32	ns_token=10.1	ns_sig=14.2	ns_node=25.2	ns_line=105	mb_s=231.2
+alloc	lex_columns	allocs=327285	bytes=84014542	peak=27000	allocs_per_file=21.1	peak_per_node=0.0	peak_per_byte=0.00
+alloc	parse	allocs=1216552	bytes=214301646	peak=115839618	allocs_per_file=78.4	peak_per_node=72.4	peak_per_byte=12.44
+alloc	ir_build	allocs=465989	bytes=325682804	peak=118257200	allocs_per_file=30.0	peak_per_node=74.0	peak_per_byte=12.70
+# 2026-11-13T02:42:21Z end load=6.47 4.26 2.37

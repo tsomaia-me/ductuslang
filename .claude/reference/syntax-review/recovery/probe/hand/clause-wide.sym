@@ -1,0 +1,3 @@
+Scene s:
+    Cue as 名 | at=1
+                fade=2

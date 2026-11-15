@@ -1,0 +1,36 @@
+--- diagnostics (3)
+  PlacementSyntax 2..3 "=" :: expected the top-level instance's name, found `=`
+  PlacementSyntax 17..18 "1" :: expected a placement, found `1`
+  PlacementSyntax 26..30 "else" :: expected a placement, found `else`
+--- detached [] at_layout []
+--- tree
+File 0..44
+  Placement 0..34
+    Ident "x"
+    ErrorNode 2..11
+      Eq "="
+      MatchKw "match"
+      Ident "w"
+    Body 11..34
+      Colon ":"
+      Block 12..34
+        Newline "\n"
+        Indent ""
+        ErrorNode 17..21
+          Number "1"
+          Colon ":"
+          Number "2"
+        Newline "\n"
+        ErrorNode 26..33
+          ElseKw "else"
+          Colon ":"
+          Number "3"
+        Newline "\n"
+        Dedent ""
+  LetDecl 34..44
+    LetKw "let"
+    Ident "y"
+    Eq "="
+    Literal 42..43
+      Number "1"
+    Newline "\n"

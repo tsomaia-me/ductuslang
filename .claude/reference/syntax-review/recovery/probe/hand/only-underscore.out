@@ -1,0 +1,12 @@
+--- diagnostics (1)
+  InvalidIdentifier 4..5 "_" :: `_` is not an identifier: it holds only `_` and `#`
+--- detached [] at_layout []
+--- tree
+File 0..10
+  LetDecl 0..10
+    LetKw "let"
+    Ident "_"
+    Eq "="
+    Literal 8..9
+      Number "1"
+    Newline "\n"

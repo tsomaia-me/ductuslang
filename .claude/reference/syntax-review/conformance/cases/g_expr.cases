@@ -1,0 +1,374 @@
+#### primary-forms (ok)
+let a = 1
+let b = true
+let c = "s"
+let d = Band {low: 1}
+let e = {"k": 1}
+let f = json {"a": 1}
+let g = none
+let h = name
+let i = lib::name
+let k = u8(1) + i32(2) + i64(3) + f32(4) + f64(5)
+let l = [1, 2]
+let m = (1)
+let n = ((1))
+#### to-alone-in-expr (ok)
+Clip v:
+    Plays | gain=to: w
+#### conversion-bool (refuse)
+let a = bool(1)
+#### conversion-str (refuse)
+let a = str(1)
+#### conversion-no-arg (refuse)
+let a = i32()
+#### conversion-two-args (refuse)
+let a = i32(1, 2)
+#### conversion-no-parens (refuse)
+let a = i32 1
+#### paren-empty (refuse)
+let a = ()
+#### paren-tuple (refuse)
+let a = (1, 2)
+#### binary-missing-rhs (refuse)
+let a = 1 +
+#### binary-missing-lhs (refuse)
+let a = * 2
+#### unary-plus (refuse)
+let a = +1
+#### op-double (refuse)
+let a = 1 * / 2
+#### bang-not (refuse)
+let a = !b
+#### amp-pipe-ops (refuse)
+let a = b && c
+#### pipe-op (refuse)
+let a = b || c
+#### shift-ops (refuse)
+let a = b << 2
+#### tilde (refuse)
+let a = ~b
+#### percent-and-div (ok)
+let a = 7 % 2 div 3 / 4 * 5
+#### ternary (refuse)
+let a = b ? 1 : 2
+#### field-forms (ok)
+let a = x.y.z
+let b = x.size
+let c = [1, 2].size
+let d = "s".size
+let e = f(x).y
+let g = (a + b).c
+let h = x.past(1)
+let i = x.past(1, 0)
+let j = scenes[0].hold
+let k = Band {low: 1}.low
+let l = 5.size
+#### field-number (refuse)
+let a = x.0
+#### field-missing (refuse)
+let a = x.
+#### field-double-dot (refuse)
+let a = x..y
+#### index-forms (ok)
+let a = xs[0]
+let b = xs[i + 1]
+let c = xs[^1]
+let d = xs[1..]
+let e = xs[..2]
+let f = xs[1..2]
+let g = xs[^2..^1]
+let h = xs[..]
+let i = xs[0][1][2]
+let j = xs[if a then 0 else 1]
+let k = m["k"]
+let l = xs[a..b + 1]
+let m2 = xs[a + 1..b]
+let n = xs[..^k]
+let o = (m + n)[^64..]
+#### index-empty (refuse)
+let a = xs[]
+#### index-two (refuse)
+let a = xs[1, 2]
+#### index-three-dots (refuse)
+let a = xs[1...2]
+#### index-range-three (refuse)
+let a = xs[1..2..3]
+#### index-caret-after-range-operand (refuse)
+let a = xs[1..2^]
+#### call-forms (ok)
+let a = f()
+let b = f(1)
+let c = f(1, 2)
+let d = f(x=1, y=2)
+let e = f(g(h(1)))
+let f2 = x.f(a, b)
+let g = f(p: p > 60)
+let h = f(xs, (p: i32) -> bool: p < 48)
+let i = f(xs, (a, b): a + b)
+let j = f(keep=p: p > 1, xs=ys)
+let k = f((): 1)
+let l = f(x)(y)
+let m = f((x))
+let n = f((x), (y: i32): y)
+let o = f(-1, not a, if a then b else c)
+#### call-named-keyword-name (refuse)
+let a = f(state=1)
+#### call-missing-comma (refuse)
+let a = f(1 2)
+#### call-leading-comma (refuse)
+let a = f(, 1)
+#### call-lambda-annotated-unparenthesized (refuse)
+let a = f(p: i32: p)
+#### lambda-in-array (refuse)
+let a = [x: x + 1]
+#### lambda-in-parens (refuse)
+let a = (x: x + 1)
+#### lambda-as-operand (refuse)
+let a = 1 + x: x
+#### lambda-in-if (refuse)
+let a = if c then x: x else y: y
+#### lambda-body-lambda (refuse)
+let a = x: y: x + y
+#### lambda-in-record-field (refuse)
+let a = R {f: x: x}
+#### lambda-in-interp (refuse)
+let a = "v {x: x}"
+#### lambda-in-index (refuse)
+let a = xs[i: i]
+#### lambda-arg-body-if (ok)
+let a = f(x: if x then 1 else 2, y)
+#### record-forms (ok)
+let a = Band {low: 0.2, high: 0.8}
+let b = Band {}
+let c = Band {low: 1,}
+let d = lib::Band {low: 1}
+let e = Stack[i32, 8] {}
+let f = Stack[i32, 4 * 2] {items: [], top: 0}
+let g = Pair {left: 1i32, right: true}
+let h = Outer {inner: Inner {x: 1}, xs: [Band {}, Band {low: 1}]}
+let i = R {state: 1, json: 2, type: 3}
+#### record-missing-colon (refuse)
+let a = Band {low 1}
+#### record-eq (refuse)
+let a = Band {low = 1}
+#### record-positional (refuse)
+let a = Band {1, 2}
+#### record-double-comma (refuse)
+let a = Band {low: 1,, high: 2}
+#### record-only-comma (refuse)
+let a = Band {,}
+#### record-string-key (refuse)
+let a = Band {"low": 1}
+#### record-unclosed (refuse)
+let a = Band {low: 1
+let b = 2
+#### record-shorthand (refuse)
+let a = Band {low}
+#### map-forms (ok)
+let a = {}
+let b = {"host": host}
+let c = {1: "a", 2: "b",}
+let d = {Auto: 1, Manual: 2}
+let e = {a + 1: b + 2}
+let f = {"k": {"n": 1}}
+let g = {name: 1}
+let h = {x.y: 1, f(z): 2, -1: 3, (a): 4, [1]: 5, true: 6, none: 7, "s{i}": 8}
+let i = headers + {"host": host}
+let j = {"a": 1}["a"] ?? 0
+#### map-missing-value (refuse)
+let a = {"k"}
+#### map-missing-colon (refuse)
+let a = {"k" 1}
+#### map-double-comma (refuse)
+let a = {"k": 1,, "j": 2}
+#### map-only-comma (refuse)
+let a = {,}
+#### map-eq (refuse)
+let a = {"k" = 1}
+#### map-key-if (ok)
+let a = {if c then 1 else 2: 3}
+#### map-key-lambda-like (ok)
+let a = {x: y}
+#### string-forms (ok)
+let a = ""
+let b = "plain"
+let c = "a {x} b {y + 1} c"
+let d = "{x}"
+let e = "{"{"{1}"}"}"
+let f = "kit/{i}.wav"
+let g = "esc \" \\ \n \t \{ }"
+let h = "{f("a", "b")}"
+let i = "{m["k"] ?? "d"}"
+let j = "{if a then "x" else "y"}"
+let k = "{R {a: 1}.a}"
+let l = "{ {1: 2}[1] ?? 0 }"
+#### type-forms (ok)
+let a: i32 = 1
+let b: u8 = 1
+let c: i64 = 1
+let d: f32 = 1
+let e: f64 = 1
+let f: bool = true
+let g: str = "s"
+let h: str[..32] = "s"
+let i: str[..32][4] = x
+let j: i32[3] = x
+let k: i32[3][2] = x
+let l: i32[..10] = x
+let m: i32[3][..10] = x
+let n: i32[..4][..10] = x
+let o: i32? = x
+let p: i32[..4]? = x
+let q: (i32?)[..4] = x
+let r: Circle | Square = x
+let s: i32 | none | str[..4] = x
+let t: {str[..32]: str[..256]}[..32] = x
+let u: json = x
+let v: json[..64] = x
+let w: Band = x
+let x1: lib::Band = x
+let y: Stack[i32, 8] = x
+let z: Stack[i32, 8][4] = x
+let a1: Band[4] = x
+let a2: T[..N + 1] = x
+let a3: T[N * 2] = x
+let a4: (f64) -> f64 = x
+let a5: (x: f64, y: i32) -> bool = x
+let a6: () -> i32 = x
+let a7: none = x
+let a8: Valve[3] = x
+let a9: {Mode: i32?}[..4]? = x
+let b1: json[..8][4] = x
+let b2: ((i32))[2] = x
+let b3: Stack[T, N][M][..K]? = x
+let b4: {i32: {str[..4]: f32}[..2]}[..3] = x
+let b5: lib::Stack[i32, 8] = x
+let b6: Pair[Band[4], i32[2]] = x
+let b7: (a: i32[3], b: json) -> Stack[i32, 8] = x
+#### type-double-optional (refuse)
+let a: i32?? = x
+#### type-optional-then-dims (refuse)
+let a: i32?[3] = x
+#### type-empty-dim (refuse)
+let a: i32[] = x
+#### type-open-capacity (refuse)
+let a: i32[..] = x
+#### type-map-no-capacity (refuse)
+let a: {str[..4]: i32} = x
+#### type-map-fixed-size (refuse)
+let a: {str[..4]: i32}[8] = x
+#### type-map-no-value (refuse)
+let a: {str[..4]}[..8] = x
+#### type-sum-trailing-pipe (refuse)
+let a: i32 | = x
+#### type-sum-leading-pipe (refuse)
+let a: | i32 = x
+#### type-fn-no-result (refuse)
+let a: (i32) -> = x
+#### type-fn-in-sum (refuse)
+let a: (i32) -> i32 | none = x
+#### type-fn-result-fn (ok)
+let a: (i32) -> (i32) -> i32 = x
+#### type-paren-empty (refuse)
+let a: () = x
+#### type-tuple (refuse)
+let a: (i32, f32) = x
+#### type-str-fixed (ok)
+let a: str[4] = x
+#### type-generic-empty-args (refuse)
+let a: Stack[] = x
+#### type-missing (refuse)
+let a: = x
+#### type-number (refuse)
+let a: 5 = x
+#### type-node-wire-not-types (refuse)
+let a: node = x
+#### type-size-expr-forms (ok)
+let a: i32[N] = x
+let b: i32[(N)] = x
+let c: i32[N div 2] = x
+let d: i32[max(N, 2)] = x
+let e: i32[..if a then 1 else 2] = x
+let f: i32[1_000] = x
+let g: i32[0x10] = x
+let h: i32[3 + 1] = x
+#### generics-forms (ok)
+fn a[T](x: T) -> T: x
+fn b[const N](xs: i32[N]) -> i32[N + 1]: xs + [0]
+fn c[T: f32 | f64, const N: i32](a: T[N]) -> T: a[0]
+fn d[T: Numeric](a: T) -> T: a
+pattern P[K, const N](xs: K[N]):
+    Lamp
+type S[T, const N]:
+    items: T[..N]
+type A[A, const N] = A[N]
+#### generics-on-let (refuse)
+let a[T] = 1
+#### generics-on-cell (refuse)
+state a[T](0)
+#### generics-const-const (refuse)
+fn f[const const N](x): 1
+#### generic-call-with-brackets-is-index (ok)
+let a = f[i32](x)
+#### for-expr-forms (ok)
+let a = for x in xs into s from 0: s + x
+let b = for i, x in xs into s: i32 from 0: s + i * x
+let c = for i: i32, x: f32 in xs into s: f32 from 0.0: s + x
+let d = for i in 1..readings.size into n from 0: if readings[i] > readings[i - 1] then n + 1 else n
+let e = for k, v in counts into sum from 0: sum + v
+let f = 1 + (for i, x in readings into sum from 0: sum + i * x)
+let g = for x in xs into kept from []:
+    let keep = x > 60
+    let more = match x:
+        0: 1
+        else: 2
+    if keep then kept + [x] else kept
+let h = f((for x in xs into s from 0: s + x), 2)
+let i = for x in (for y in ys into a from []: a + [y]) into s from 0: s + x
+let j = for x in xs into s from start: s
+#### for-expr-no-into (refuse)
+let a = for x in xs: x
+#### for-expr-no-from (refuse)
+let a = for x in xs into s: s + x
+#### for-expr-no-body (refuse)
+let a = for x in xs into s from 0:
+let b = 1
+#### for-expr-from-before-into (refuse)
+let a = for x in xs from 0 into s: s + x
+#### for-expr-block-two-values (refuse)
+let a = for x in xs into s from 0:
+    s + x
+    s
+#### for-expr-block-let-last (refuse)
+let a = for x in xs into s from 0:
+    let k = 1
+#### for-expr-block-match-value (refuse)
+let a = for x in xs into s from 0:
+    match x:
+        0: s
+        else: s + 1
+#### for-expr-block-in-parens (refuse)
+let a = (for x in xs into s from 0:
+    s + x)
+#### for-expr-as-operand (refuse)
+let a = 1 + for x in xs into s from 0: s + x
+#### for-expr-as-arg (refuse)
+let a = f(for x in xs into s from 0: s + x)
+#### for-expr-as-gate (refuse)
+Rig r:
+    Lamp when for x in xs into s from false: s or x
+#### for-expr-as-scrutinee (refuse)
+let a = match for x in xs into s from 0: s + x:
+    0: 1
+    else: 2
+#### for-expr-as-start (refuse)
+let a = for x in xs into s from for y in ys into t from 0: t + y: s + x
+#### for-expr-as-iterable (refuse)
+let a = for x in for y in ys into t from []: t + [y] into s from 0: s + x
+#### for-expr-as-default-arg (refuse)
+Rig r:
+    Lamp/for x in xs into s from 0: s + x
+#### for-expr-as-array-element (refuse)
+let a = [for x in xs into s from 0: s + x]
+#### for-expr-acc-keyword (refuse)
+let a = for x in xs into in from 0: x

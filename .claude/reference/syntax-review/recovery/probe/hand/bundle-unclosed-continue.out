@@ -1,0 +1,52 @@
+--- diagnostics (1)
+  BundleSyntax 36..41 "Scene" :: expected `]`, found `Scene`
+--- detached [36..41] at_layout [36..41]
+--- tree
+File 0..55
+  Placement 0..36
+    Ident "Scene"
+    Ident "s"
+    Body 7..36
+      Colon ":"
+      Block 8..36
+        Newline "\n"
+        Indent ""
+        Line 13..36
+          Bundle 13..35
+            LBracket "["
+            Placement 14..19
+              Ident "Cue"
+              DefaultArg 17..19
+                Slash "/"
+                Literal 18..19
+                  Number "1"
+            Placement 20..25
+              Ident "Cue"
+              DefaultArg 23..25
+                Slash "/"
+                Literal 24..25
+                  Number "2"
+            Placement 30..35
+              Ident "Cue"
+              DefaultArg 33..35
+                Slash "/"
+                Literal 34..35
+                  Number "3"
+          Newline ""
+        Dedent ""
+  Placement 36..55
+    Ident "Scene"
+    Ident "t"
+    Body 43..55
+      Colon ":"
+      Block 44..55
+        Newline "\n"
+        Indent ""
+        Placement 49..55
+          Ident "Cue"
+          DefaultArg 52..54
+            Slash "/"
+            Literal 53..54
+              Number "4"
+          Newline "\n"
+        Dedent ""

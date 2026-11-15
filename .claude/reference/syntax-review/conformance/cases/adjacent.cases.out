@@ -1,0 +1,19 @@
+#### members-adjacent-paren (refuse) [ ]  lex-diags=0 parse-diags=0
+#### members-adjacent-bundle (refuse) [ ]  lex-diags=0 parse-diags=0
+#### members-adjacent-parens (refuse) [ ]  lex-diags=0 parse-diags=0
+#### members-adjacent-bundles (refuse) [ ]  lex-diags=0 parse-diags=0
+#### members-adjacent-after-default-paren (refuse) [ ]  lex-diags=0 parse-diags=0
+#### members-adjacent-after-string (refuse) [ ]  lex-diags=0 parse-diags=0
+#### members-adjacent-in-bundle (refuse) [ ]  lex-diags=0 parse-diags=0
+#### attr-entries-adjacent-string (refuse) [ ]  lex-diags=0 parse-diags=0
+#### attr-entries-adjacent-bang (refuse) [ ]  lex-diags=0 parse-diags=0
+#### attr-entries-adjacent-paren (refuse) [ ]  lex-diags=0 parse-diags=0
+#### attr-pipe-adjacent (ok) [ ]  lex-diags=0 parse-diags=0
+#### double-as (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG placement-syntax 2:15 21..23 `as` :: expected the end of the line, found `as` [help: write `as` and the name right after the kind, as in `Lamp as key /0.7`]
+#### typeargs-trailing-comma (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG generic-syntax 1:21 20..21 `]` :: expected a type or a compile-time value, found `]` [help: write the bracket parameters after the name, each a name or `const` and a name, as in `fn first[T, const N](xs: T[N])`]
+#### is-not-not (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG expression-syntax 1:18 17..20 `not` :: expected an expression, found `not` [help: give every operator its operands and close every bracket]
+#### label-minus-space [ ]  lex-diags=0 parse-diags=0
+CASES 15

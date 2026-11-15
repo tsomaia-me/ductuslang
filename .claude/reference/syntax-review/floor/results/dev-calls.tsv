@@ -1,0 +1,13 @@
+# calls dev
+pack	inputs/calls_1000000.pack	all	files=1	bytes=13628657	lines=20003	tokens=10060031	significant=7080024	nodes=6040015	ir_nodes=4980004	diagnostics=0	ir_failed=0
+time	scan_newlines	min_ms=10.332	median_ms=10.386	runs=144	ns_byte=0.76	ns_token=1.0	ns_sig=1.5	ns_node=1.7	ns_line=517	mb_s=1319.1
+time	chars_pass	min_ms=40.336	median_ms=40.529	runs=37	ns_byte=2.96	ns_token=4.0	ns_sig=5.7	ns_node=6.7	ns_line=2017	mb_s=337.9
+time	copy_text	min_ms=0.885	median_ms=0.959	runs=400	ns_byte=0.06	ns_token=0.1	ns_sig=0.1	ns_node=0.1	ns_line=44	mb_s=15404.2
+time	lex_columns	min_ms=591.488	median_ms=592.937	runs=7	ns_byte=43.40	ns_token=58.8	ns_sig=83.5	ns_node=97.9	ns_line=29570	mb_s=23.0
+time	lex_public	min_ms=705.405	median_ms=710.624	runs=7	ns_byte=51.76	ns_token=70.1	ns_sig=99.6	ns_node=116.8	ns_line=35265	mb_s=19.3
+time	parse	min_ms=1646.490	median_ms=1655.569	runs=7	ns_byte=120.81	ns_token=163.7	ns_sig=232.6	ns_node=272.6	ns_line=82312	mb_s=8.3
+time	ir_build	min_ms=1256.112	median_ms=1262.816	runs=0	ns_byte=92.17	ns_token=124.9	ns_sig=177.4	ns_node=208.0	ns_line=62796	mb_s=10.8
+time	drop_all	min_ms=22.898	median_ms=24.482	runs=0	ns_byte=1.68	ns_token=2.3	ns_sig=3.2	ns_node=3.8	ns_line=1145	mb_s=595.2
+alloc	lex_columns	allocs=20040	bytes=288983096	peak=192271936	allocs_per_file=20040.0	peak_per_node=31.8	peak_per_byte=14.11
+alloc	parse	allocs=20057	bytes=445714401	peak=301302369	allocs_per_file=20057.0	peak_per_node=49.9	peak_per_byte=22.11
+alloc	ir_build	allocs=181	bytes=364880871	peak=289850619	allocs_per_file=181.0	peak_per_node=48.0	peak_per_byte=21.27

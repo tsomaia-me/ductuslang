@@ -1,0 +1,25 @@
+--- diagnostics (1)
+  UnterminatedString 8..12 "\"a{b" :: this string does not end on its line
+--- detached [] at_layout []
+--- tree
+File 0..23
+  LetDecl 0..13
+    LetKw "let"
+    Ident "s"
+    Eq "="
+    StringLit 8..12
+      StringStart "\""
+      StringText "a"
+      Interpolation 10..12
+        InterpStart "{"
+        NameRef 11..12
+          Ident "b"
+        ErrorNode 12..12
+    Newline "\n"
+  LetDecl 13..23
+    LetKw "let"
+    Ident "t"
+    Eq "="
+    Literal 21..22
+      Number "1"
+    Newline "\n"

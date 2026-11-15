@@ -1,0 +1,16 @@
+--- diagnostics (1)
+  ReservedWord 8..14 "string" :: `string` is reserved and cannot be used
+--- detached [] at_layout []
+--- tree
+File 0..19
+  LetDecl 0..19
+    LetKw "let"
+    Ident "x"
+    Eq "="
+    BinaryExpr 8..18
+      NameRef 8..14
+        Ident "string"
+      Plus "+"
+      Literal 17..18
+        Number "1"
+    Newline "\n"

@@ -1,0 +1,22 @@
+#### is-json-dims [sexpr tokens]
+let v = x is json[2]
+#### type-json-dims [sexpr tokens]
+let a: json[2] = x
+#### size-shapes [sexpr]
+let a: i32[3] = x
+let b: i32[0x10] = x
+let c: i32[N] = x
+let d: i32[1_000][..8] = x
+let e: str[..32] = x
+let f: {str[..N]: i32}[..4] = x
+#### bare-pattern-and-children-lines [sexpr]
+pattern Section(default root: i32, children notes: Note*) -> Clip:
+    Clip | gain=0.8:
+        Note/root
+        notes
+        notes when on_air
+        [notes]
+#### loop-head-shapes [sexpr]
+Rig r:
+    for i: i32, p in xs: Lamp
+let a = for i, x: f32 in 0..n into s: f64 from 0.0: s + x

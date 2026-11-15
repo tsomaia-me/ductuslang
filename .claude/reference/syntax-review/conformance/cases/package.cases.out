@@ -1,0 +1,45 @@
+#### package-forms (ok) [ ]  lex-diags=0 parse-diags=0
+#### package-decl-with-options (ok) [ ]  lex-diags=0 parse-diags=0
+#### package-decl-then-more-on-line (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG package-syntax 1:21 20..27 `require` :: expected the end of the line, found `require` [help: write `require` and a source in quotes, `use` and a library's name, or `publish` and the names, as in `use scales: major`]
+#### require-no-string (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG package-syntax 1:9 8..12 `util` :: expected the library's source in quotes, found `util` [help: write the source as a string, as in `require "github.com/acme/util@1.2.0"`]
+#### require-as-keyword (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG package-syntax 1:16 15..20 `state` :: expected the library's name after `as`, found `state` [help: write `require` and a source in quotes, `use` and a library's name, or `publish` and the names, as in `use scales: major`]
+#### require-two-strings (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG package-syntax 1:13 12..13 `\"` :: expected the end of the line, found `"` [help: write `require` and a source in quotes, `use` and a library's name, or `publish` and the names, as in `use scales: major`]
+#### require-as-missing-name (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG package-syntax 1:15 14..15 `\n` :: expected the library's name after `as`, found the end of the line [help: write `require` and a source in quotes, `use` and a library's name, or `publish` and the names, as in `use scales: major`]
+#### use-no-name (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG package-syntax 1:4 3..4 `\n` :: expected the library's name, found the end of the line [help: write `require` and a source in quotes, `use` and a library's name, or `publish` and the names, as in `use scales: major`]
+#### use-colon-empty (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG package-syntax 1:11 10..11 `\n` :: expected a name the library publishes, found the end of the line [help: write `require` and a source in quotes, `use` and a library's name, or `publish` and the names, as in `use scales: major`]
+#### use-as-and-colon (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG package-syntax 1:15 14..15 `:` :: expected the end of the line, found `:` [help: write `require` and a source in quotes, `use` and a library's name, or `publish` and the names, as in `use scales: major`]
+#### use-colon-then-as-lib (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG package-syntax 1:18 17..18 `\n` :: expected the name after `as`, found the end of the line [help: write `require` and a source in quotes, `use` and a library's name, or `publish` and the names, as in `use scales: major`]
+#### use-trailing-comma (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG package-syntax 1:16 15..16 `\n` :: expected a name the library publishes, found the end of the line [help: write `require` and a source in quotes, `use` and a library's name, or `publish` and the names, as in `use scales: major`]
+#### use-qualified (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG package-syntax 1:10 9..11 `::` :: expected the end of the line, found `::` [help: write `require` and a source in quotes, `use` and a library's name, or `publish` and the names, as in `use scales: major`]
+#### use-two-libs (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG package-syntax 1:10 9..10 `,` :: expected the end of the line, found `,` [help: write `require` and a source in quotes, `use` and a library's name, or `publish` and the names, as in `use scales: major`]
+#### publish-empty (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG package-syntax 1:8 7..8 `\n` :: expected a name to publish, found the end of the line [help: write `require` and a source in quotes, `use` and a library's name, or `publish` and the names, as in `use scales: major`]
+#### publish-trailing-comma (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG package-syntax 1:11 10..11 `\n` :: expected a name to publish, found the end of the line [help: write `require` and a source in quotes, `use` and a library's name, or `publish` and the names, as in `use scales: major`]
+#### publish-as-missing (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG package-syntax 1:13 12..13 `\n` :: expected the name after `as`, found the end of the line [help: write `require` and a source in quotes, `use` and a library's name, or `publish` and the names, as in `use scales: major`]
+#### publish-qualified-three (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG package-syntax 1:13 12..14 `::` :: expected the end of the line, found `::` [help: write `require` and a source in quotes, `use` and a library's name, or `publish` and the names, as in `use scales: major`]
+#### publish-string (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG package-syntax 1:9 8..9 `\"` :: expected a name to publish, found `"` [help: write `require` and a source in quotes, `use` and a library's name, or `publish` and the names, as in `use scales: major`]
+#### package-item-indented-in-body (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG placement-syntax 2:5 11..18 `require` :: expected a placement, found `require` [help: write the kind, then `as` and a name, a `/` value, a `when` gate and `|` attributes, in that order, as in `Lamp as key /0.7 | hue=0.3`]
+#### is-json-then-attr-entry (ok) [ ]  lex-diags=0 parse-diags=1
+  DIAG placement-syntax 2:25 31..32 `=` :: expected the end of the line, found `=` [help: write the kind, then `as` and a name, a `/` value, a `when` gate and `|` attributes, in that order, as in `Lamp as key /0.7 | hue=0.3`]
+#### is-json-then-inline-member [ ]  lex-diags=0 parse-diags=0
+#### size-starting-with-brace-on-name (ok) [ ]  lex-diags=0 parse-diags=1
+  DIAG type-syntax 1:14 13..14 `1` :: expected a type, found `1` [help: write a size in each bracket of the type, as in `i32[3]` or `i32[..10]`]
+#### size-max-call-on-name (ok) [ ]  lex-diags=0 parse-diags=0
+CASES 24

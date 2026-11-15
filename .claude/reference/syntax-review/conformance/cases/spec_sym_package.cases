@@ -1,0 +1,18 @@
+#### §15.2 1 sym-package L1888
+Package {
+    name: "gradients",
+    version: "2.4.1",
+    license: "MIT",
+    authors: ["Ada Lovelace <ada@example.com>"],
+}
+
+require "github.com/acme/util@1.2.0"
+use util as u
+
+publish warm, cool
+#### §15.5 1 sym-package L1947
+use gradients: warm
+
+publish Chase as Sweep, Bank, Band
+publish warm
+publish gradients::cool as Cool

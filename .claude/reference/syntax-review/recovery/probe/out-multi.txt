@@ -1,0 +1,11 @@
+programs 400 cases 15573
+[multi] total 15573 panics 0 not_whole 0 not_nested 0 bad_spans 0 clean_with_recovery 0 slowest 540.808µs (item 15377)
+category                         total  exact  fewer  more
+mixed                              1431   1089    342      0
+mixed/inside-skip                  1164     44   1120      0
+one-line                            361     92    269      0
+one-line/inside-skip                854     19    834      1
+separate-items                     9483   9388     95      0
+separate-items/inside-skip           39     30      9      0
+separate-lines-one-item            1791   1716     75      0
+separate-lines-one-item/inside-skip    450     31    419      0

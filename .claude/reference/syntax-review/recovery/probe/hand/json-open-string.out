@@ -1,0 +1,26 @@
+--- diagnostics (1)
+  JsonSyntax 19..21 "\"x" :: this JSON string does not end on its line
+--- detached [] at_layout []
+--- tree
+File 0..32
+  LetDecl 0..22
+    LetKw "let"
+    Ident "j"
+    Eq "="
+    JsonLit 8..21
+      JsonKw "json"
+      JsonObject 13..21
+        LBrace "{"
+        JsonEntry 14..21
+          JsonString "\"a\""
+          Colon ":"
+          JsonAtom 19..21
+            JsonString "\"x"
+    Newline ""
+  LetDecl 22..32
+    LetKw "let"
+    Ident "t"
+    Eq "="
+    Literal 30..31
+      Number "1"
+    Newline "\n"

@@ -1,0 +1,29 @@
+--- diagnostics (2)
+  TabIndentation 19..20 "\t" :: a tab in leading whitespace; indent with spaces
+  DedentMismatch 20..21 "C" :: this line's indentation, 1, matches no enclosing block; the enclosing block is at 0
+--- detached [] at_layout []
+--- tree
+File 0..26
+  Placement 0..20
+    Ident "Scene"
+    Ident "s"
+    Body 7..20
+      Colon ":"
+      Block 8..20
+        Newline "\n"
+        Indent ""
+        Placement 13..19
+          Ident "Cue"
+          DefaultArg 16..18
+            Slash "/"
+            Literal 17..18
+              Number "1"
+          Newline "\n"
+        Dedent ""
+  Placement 20..26
+    Ident "Cue"
+    DefaultArg 23..25
+      Slash "/"
+      Literal 24..25
+        Number "2"
+    Newline "\n"

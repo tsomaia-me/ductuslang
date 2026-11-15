@@ -1,0 +1,42 @@
+--- /home/cdagent/cargo-targets/r3/wt/packages/symphonyscript/crates/compiler/src/syntax/parsed.rs	2026-11-11 08:12:02.608787780 +0000
++++ /home/cdagent/cargo-targets/peer-syntax-review/recovery/packages/symphonyscript/crates/compiler/src/syntax/parsed.rs	2026-11-13 02:32:27.756921864 +0000
+@@ -60,6 +60,39 @@
+         File::cast(self.root())
+     }
+ 
++    // REVIEW PROBE: read-only accessors added by the reviewer; no behaviour change.
++    pub fn probe_tokens(&self) -> Vec<(SyntaxKind, u32, u32)> {
++        let n = self.tokens.kinds.len();
++        (0..n)
++            .map(|i| {
++                let s = self.tokens.starts.get(i).copied().unwrap_or(u32::MAX);
++                let e = self.tokens.starts.get(i + 1).copied().unwrap_or(u32::MAX);
++                (self.tokens.kinds[i], s, e)
++            })
++            .collect()
++    }
++    pub fn probe_starts_len(&self) -> usize {
++        self.tokens.starts.len()
++    }
++    pub fn probe_nodes(&self) -> Vec<(SyntaxKind, u32, u32, u32)> {
++        (0..self.tree.len())
++            .map(|i| {
++                (
++                    self.tree.kinds[i],
++                    self.tree.first_tokens[i],
++                    self.tree.end_tokens[i],
++                    self.tree.first_descs[i],
++                )
++            })
++            .collect()
++    }
++    pub fn probe_detached(&self) -> Vec<Range<u32>> {
++        self.detached.clone()
++    }
++    pub fn probe_at_layout(&self) -> Vec<Range<u32>> {
++        self.at_layout.clone()
++    }
++
+     pub(crate) fn text(&self) -> &str {
+         &self.text
+     }

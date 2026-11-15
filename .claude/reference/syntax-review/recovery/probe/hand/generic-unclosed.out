@@ -1,0 +1,25 @@
+--- diagnostics (1)
+  GenericSyntax 6..7 "(" :: expected `,` or `]`, found `(`
+--- detached [] at_layout []
+--- tree
+File 0..16
+  FnDecl 0..16
+    FnKw "fn"
+    Ident "f"
+    GenericParams 4..6
+      LBracket "["
+      GenericParam 5..6
+        Ident "T"
+    ParamList 6..12
+      LParen "("
+      Param 7..11
+        Ident "x"
+        Colon ":"
+        TypeRef 10..11
+          Ident "T"
+      RParen ")"
+    Colon ":"
+    FnBody 14..16
+      NameRef 14..15
+        Ident "x"
+      Newline ""

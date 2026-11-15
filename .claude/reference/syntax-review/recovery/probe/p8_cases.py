@@ -1,0 +1,31 @@
+# Property 8 probes: one fault kind each, with a declaration on or after the faulty line.
+cases = {
+ 'a-mid-line-token': 'let x = = 1\nlet y = 2\n',
+ 'b-missing-name': 'let = 1\nlet y = 2\n',
+ 'c-fault-after-name-cell': 'state s(1 1)\nlet y = s\n',
+ 'd-stray-closer': 'let x = 1)\nlet y = 2\n',
+ 'e-unclosed-then-let': 'let x = f(1\nlet y = 2\n',
+ 'f-unclosed-then-placement': 'let x = f(1\nClip c:\n    Note/1\n',
+ 'g-unclosed-then-junk': 'let x = f(1\n1 2 3\nClip c:\n    Note/1\nlet y = 2\n',
+ 'h-unclosed-then-named-in-body': 'Scene s:\n    Cue/(1\n    Cue as k/2\n    Cue/3\n',
+ 'i-unclosed-swallows-header': 'let x = f(1\nClip c = :\n    Note/1\nlet y = 2\n',
+ 'j-open-string': 'let x = "abc\nlet y = 2\n',
+ 'k-dedent-mismatch': 'Rig r:\n    Lamp as a/1\n  Lamp as b/2\n    Lamp as c/3\nlet y = 2\n',
+ 'l-unexpected-indent': 'let x = 1\n    let z = 2\nlet y = 3\n',
+ 'm-tab': 'Rig r:\n\tLamp as a/1\n    Lamp as b/2\n',
+ 'n-header-fault-with-colon': 'Rig r = :\n    Lamp as a/1\nlet y = 2\n',
+ 'o-header-fault-no-colon': 'Rig r = 1\n    Lamp as a/1\nlet y = 2\n',
+ 'p-missing-colon': 'Rig r\n    Lamp as a/1\nlet y = 2\n',
+ 'q-missing-indent': 'Rig r:\nLamp as a/1\nlet y = 2\n',
+ 'r-body-line-fault': 'Rig r:\n    Lamp as a/1 = 2\n    Lamp as b/2\n',
+ 's-fn-header-fault': 'fn f(x:\n    x\nlet y = 2\n',
+ 't-fn-body-fault': 'fn f(x):\n    let a = = x\n    a\nlet y = 2\n',
+ 'u-pattern-misplaced-let': 'pattern P():\n    Cue/1\n    let a = 1\n    Cue/a\n',
+ 'v-lexer-error-token': 'let x = 1 ; let z = 2\nlet y = 2\n',
+ 'w-cr-alone': 'let x = 1\rlet z = 2\nlet y = 3\n',
+ 'x-match-arm-fault': 'let x = match w:\n    1 2: 3\n    else: 4\nlet y = 2\n',
+ 'y-unclosed-in-fn-body': 'fn f(x):\n    let a = (x\n    let b = 2\n    a\nlet y = 2\n',
+ 'z-type-fault': 'type T:\n    a i32\n    b: f32\nlet y = 2\n',
+}
+for k, v in cases.items():
+    open('probe/p8/' + k + '.sym', 'w', newline='').write(v)

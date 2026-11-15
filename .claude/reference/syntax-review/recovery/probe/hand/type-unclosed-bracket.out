@@ -1,0 +1,28 @@
+--- diagnostics (1)
+  TypeSyntax 13..14 "=" :: expected `]`, found `=`
+--- detached [] at_layout []
+--- tree
+File 0..25
+  LetDecl 0..25
+    LetKw "let"
+    Ident "x"
+    Colon ":"
+    TypeRef 7..12
+      I32Kw "i32"
+      LBracket "["
+      Size 11..12
+        Literal 11..12
+          Number "3"
+    Eq "="
+    ArrayLit 15..24
+      LBracket "["
+      Literal 16..17
+        Number "1"
+      Comma ","
+      Literal 19..20
+        Number "2"
+      Comma ","
+      Literal 22..23
+        Number "3"
+      RBracket "]"
+    Newline ""

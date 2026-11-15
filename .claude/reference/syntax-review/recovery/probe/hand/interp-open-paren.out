@@ -1,0 +1,31 @@
+--- diagnostics (1)
+  ExpressionSyntax 14..15 "}" :: expected `,` or `)`, found `}`
+--- detached [] at_layout []
+--- tree
+File 0..27
+  LetDecl 0..17
+    LetKw "let"
+    Ident "s"
+    Eq "="
+    StringLit 8..16
+      StringStart "\""
+      StringText "a"
+      Interpolation 10..15
+        InterpStart "{"
+        CallExpr 11..14
+          NameRef 11..12
+            Ident "f"
+          ArgList 12..14
+            LParen "("
+            Literal 13..14
+              Number "1"
+        InterpEnd "}"
+      StringEnd "\""
+    Newline "\n"
+  LetDecl 17..27
+    LetKw "let"
+    Ident "t"
+    Eq "="
+    Literal 25..26
+      Number "1"
+    Newline "\n"

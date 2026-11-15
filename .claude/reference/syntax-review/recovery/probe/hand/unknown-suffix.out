@@ -1,0 +1,12 @@
+--- diagnostics (1)
+  UnknownSuffix 9..12 "foo" :: `foo` is neither a type suffix nor a unit of the vocabulary
+--- detached [] at_layout []
+--- tree
+File 0..13
+  LetDecl 0..13
+    LetKw "let"
+    Ident "x"
+    Eq "="
+    Literal 8..12
+      Number "5foo"
+    Newline "\n"

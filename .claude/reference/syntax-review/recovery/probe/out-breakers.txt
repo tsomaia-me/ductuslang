@@ -1,0 +1,2 @@
+clean (no diagnostic): 4782
+[probe/data/breakers.bin] total 20293 panics 0 not_whole 0 not_nested 0 bad_spans 0 clean_with_recovery 0 slowest 494.835µs (item 6302)

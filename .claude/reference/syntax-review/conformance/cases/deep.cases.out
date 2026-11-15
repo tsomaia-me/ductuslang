@@ -1,0 +1,6 @@
+#### deep-parens (ok) [ ]  lex-diags=0 parse-diags=0
+#### deep-arrays (ok) [ ]  lex-diags=0 parse-diags=0
+#### deep-not (ok) [ ]  lex-diags=0 parse-diags=0
+#### deep-blocks (ok) [ ]  lex-diags=0 parse-diags=0
+#### long-chain (ok) [ ]  lex-diags=0 parse-diags=0
+CASES 5

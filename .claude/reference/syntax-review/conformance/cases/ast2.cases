@@ -1,0 +1,16 @@
+#### json-dim
+let a: json[2] = x
+let b: json[2][3] = x
+let c: i32[2] = x
+#### lambda-zero-vs-one
+let a = f((): 1, x: 1)
+#### placement-entry-counts
+pattern P(children a: Lamp+, children b: Lamp*, children c: Lamp, children d: Lamp{2}, children e: [Lamp+]*) -> (lib::Thing+, node, wire*):
+    Lamp
+#### record-lit-names
+let a = lib::Band {low: 1}
+let b = Stack[i32, 8] {}
+#### nfc-names
+let Café = 1
+Rig r:
+    Lamp | Café=1

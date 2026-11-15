@@ -1,0 +1,12 @@
+--- diagnostics (1)
+  ReservedWord 4..13 "recurrent" :: `recurrent` is reserved and cannot be used
+--- detached [] at_layout []
+--- tree
+File 0..18
+  LetDecl 0..18
+    LetKw "let"
+    Ident "recurrent"
+    Eq "="
+    Literal 16..17
+      Number "1"
+    Newline "\n"

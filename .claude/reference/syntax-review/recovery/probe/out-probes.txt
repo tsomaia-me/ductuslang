@@ -1,0 +1,2 @@
+clean (no diagnostic): 353
+[probe/data/probes.bin] total 375 panics 0 not_whole 0 not_nested 0 bad_spans 0 clean_with_recovery 0 slowest 244.436454ms (item 250)

@@ -1,0 +1,18 @@
+--- diagnostics (0)
+--- detached [] at_layout []
+--- tree
+File 0..31
+  LetDecl 0..15
+    LetKw "let"
+    Ident "名前"
+    Eq "="
+    Literal 13..14
+      Number "1"
+    Newline "\n"
+  LetDecl 15..31
+    LetKw "let"
+    Ident "é"
+    Eq "="
+    NameRef 24..30
+      Ident "名前"
+    Newline "\n"

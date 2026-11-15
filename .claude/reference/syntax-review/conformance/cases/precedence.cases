@@ -1,0 +1,166 @@
+#### or-left [sexpr]
+let v = a or b or c
+#### and-left [sexpr]
+let v = a and b and c
+#### or-and [sexpr]
+let v = a or b and c or d
+#### not-prefix [sexpr]
+let v = not not a
+let w = not a and b
+let x = not a is b
+let y = a and not b or c
+#### not-binds-looser-than-cmp [sexpr]
+let v = not a < b
+#### not-as-operand-of-cmp (grammar refuses)
+let v = a < not b
+#### not-as-operand-of-add (grammar refuses)
+let v = a + not b
+#### cmp-ops [sexpr]
+let a1 = a is b
+let a2 = a is not b
+let a3 = a < b
+let a4 = a <= b
+let a5 = a > b
+let a6 = a >= b
+#### cmp-no-chain-lt (error)
+let v = a < b < c
+#### cmp-no-chain-is (error)
+let v = a is b is c
+#### cmp-no-chain-mixed (error)
+let v = a < b is c
+#### cmp-no-chain-is-not (error)
+let v = a is not b is not c
+#### cmp-no-chain-alt (error)
+let v = a is i32 is b
+#### cmp-parenthesized-chain (ok) [sexpr]
+let v = (a < b) is c
+#### cmp-under-and [sexpr]
+let v = a < b and c > d or e is f
+#### fallback-right [sexpr]
+let v = a ?? b ?? c
+#### fallback-vs-cmp [sexpr]
+let v = port ?? 80 > 1024
+#### fallback-vs-add [sexpr]
+let v = x ?? base + 1
+let w = (x ?? 0) + 1
+let y = a + b ?? c + d
+#### fallback-unary [sexpr]
+let v = x ?? -1
+let w = -x ?? 1
+#### fallback-right-operand-of-cmp [sexpr]
+let v = a < b ?? c
+#### add-left [sexpr]
+let v = a + b - c + d
+let w = a - b - c
+#### without-level [sexpr]
+let v = m without k + n
+let w = m + n without k
+let x = m without a without b
+#### mul-left [sexpr]
+let v = a * b / c div d % e
+#### add-mul [sexpr]
+let v = a + b * c - d / e
+#### unary-minus [sexpr]
+let v = -a * b
+let w = a * -b
+let x = - - a
+let y = a - -b
+#### pow-right [sexpr]
+let v = a ** b ** c
+#### pow-unary [sexpr]
+let v = -2 ** 2
+let w = 2 ** -1
+let x = 2 ** -3 ** 2
+let y = -a ** -b ** -c
+#### pow-vs-mul [sexpr]
+let v = a * b ** c * d
+#### pow-right-operand-unary-then-postfix [sexpr]
+let v = a ** b.c[0](1)
+#### postfix-left [sexpr]
+let v = a.b[0](1).c[1..2](x, y)
+#### postfix-binds-tighter-than-pow-and-unary [sexpr]
+let v = -a.b ** c[0]
+#### if-right [sexpr]
+let v = if a then b else if c then d else e
+let w = if a then if b then c else d else e
+#### if-branch-extends [sexpr]
+let v = if a then b + 1 else c or d
+#### if-condition-is-expr [sexpr]
+let v = if if a then b else c then d else e
+#### if-operand-unparenthesized (error)
+let v = base + if high then 12 else 0
+#### if-operand-parenthesized (ok) [sexpr]
+let v = base + (if high then 12 else 0)
+#### if-left-operand (error)
+let v = if a then b else c + (if x then 1 else 2) * if y then 1 else 2
+#### if-whole-value-positions (ok)
+let v = if a then 1 else 2
+state s = if a then 1 else 2
+fn f(x): if x then 1 else 2
+let w = f(if a then 1 else 2, [if a then 1 else 2], y=3)
+Rig r:
+    Lamp | level=if a then 1 else 2 hue=3
+    Lamp when if a then b else c
+    Lamp/(if a then 1 else 2)
+#### if-in-index-and-interp (ok)
+let v = xs[if a then 0 else 1]
+let s = "x {if a then 1 else 2}"
+let m = {if a then 1 else 2: if b then 3 else 4}
+let r = R {x: if a then 1 else 2}
+#### if-missing-else (error)
+let v = if a then b
+#### if-else-then-operator [sexpr]
+let v = if a then b else c ?? d
+#### for-level1 [sexpr]
+let v = for x in xs into s from 0: s + x or y
+#### for-body-if [sexpr]
+let v = for x in xs into s from 0: if x then s else s + 1
+#### is-right-operand-forms [sexpr]
+let a1 = x is none
+let a2 = x is not none
+let a3 = x is Circle
+let a4 = x is i32
+let a5 = x is not f64
+let a6 = x is bool
+let a7 = x is str
+let a8 = x is str[..8]
+let a9 = x is json
+let b1 = x is json[..16]
+let b2 = x is {str[..4]: i32}[..8]
+let b3 = x is i32[3]
+let b4 = x is Band[4]
+let b5 = x is lib::Circle
+let b6 = x is Mode::Manual
+let b7 = x is 5
+let b8 = x is "bob"
+let b9 = x is [1, 2]
+let c1 = x is json {"a": 1}
+let c2 = x is i32(y)
+let c3 = x is y + 1
+let c4 = x is y ?? z
+let c5 = x is -1
+let c6 = x is not y.z
+let c7 = x is {1: 2}
+#### is-alt-then-and [sexpr]
+let v = x is i32 and y is none or z is not str
+#### named-vs-positional
+let a = tier(3, 48)
+let b = tier(rank=3, base=48)
+let c = x.f(a, b)
+let d = x.f(k=1)
+#### mixed-args (error)
+let a = tier(3, base=48)
+#### mixed-args-named-first (error)
+let a = tier(rank=3, 48)
+#### args-trailing-comma (grammar refuses)
+let a = f(1, 2,)
+#### args-empty (ok)
+let a = f()
+#### array-trailing-comma (ok) [sexpr]
+let a = [1, 2,]
+let b = []
+let c = [[1, 2], [3]]
+#### array-double-comma (error)
+let a = [1,, 2]
+#### array-leading-comma (error)
+let a = [, 1]

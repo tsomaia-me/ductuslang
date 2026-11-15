@@ -1,0 +1,12 @@
+--- diagnostics (1)
+  IntegerTooLarge 8..50 "999999999999999999999999999999999999999999" :: an integer literal's magnitude must stay below 2^127
+--- detached [] at_layout []
+--- tree
+File 0..51
+  LetDecl 0..51
+    LetKw "let"
+    Ident "x"
+    Eq "="
+    Literal 8..50
+      Number "999999999999999999999999999999999999999999"
+    Newline "\n"

@@ -1,0 +1,17 @@
+--- diagnostics (1)
+  ExpressionSyntax 8..9 "\n" :: expected an expression, found the end of the line
+--- detached [] at_layout [8..9]
+--- tree
+File 0..19
+  LetDecl 0..9
+    LetKw "let"
+    Ident "x"
+    Eq "="
+    Newline "\n"
+  LetDecl 9..19
+    LetKw "let"
+    Ident "y"
+    Eq "="
+    Literal 17..18
+      Number "1"
+    Newline "\n"

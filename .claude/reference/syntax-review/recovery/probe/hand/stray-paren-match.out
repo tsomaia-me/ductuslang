@@ -1,0 +1,26 @@
+--- diagnostics (2)
+  ExpressionSyntax 16..17 "w" :: a lambda stands only as an argument or as a `let`'s value
+  MatchSyntax 40..40 "" :: expected the match arms, indented
+--- detached [40..40] at_layout []
+--- tree
+File 0..40
+  LetDecl 0..40
+    LetKw "let"
+    Ident "v"
+    Eq "="
+    MatchBlock 8..40
+      MatchKw "match"
+      ParenExpr 14..24
+        LParen "("
+        Lambda 16..24
+          Ident "w"
+          Colon ":"
+          Literal 23..24
+            Number "1"
+      Colon ":"
+      ErrorNode 26..39
+        Number "2"
+        ElseKw "else"
+        Colon ":"
+        Number "3"
+      Newline ""

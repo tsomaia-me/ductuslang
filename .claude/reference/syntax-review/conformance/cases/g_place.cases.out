@@ -1,0 +1,264 @@
+#### top-placement-forms (ok) [ ]  lex-diags=0 parse-diags=0
+#### top-placement-unnamed (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG placement-syntax 1:6 5..6 `\n` :: expected the top-level instance's name, found the end of the line [help: name the top-level instance, as in `Plant boiler`]
+#### top-placement-unnamed-body (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG placement-syntax 1:6 5..6 `:` :: expected the top-level instance's name, found `:` [help: name the top-level instance, as in `Plant boiler`]
+#### top-placement-as-without-name (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG placement-syntax 1:9 8..9 `\n` :: expected the top-level instance's name, found the end of the line [help: name the top-level instance, as in `Plant boiler`]
+#### top-placement-default-before-name (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG placement-syntax 1:7 6..7 `/` :: expected the top-level instance's name, found `/` [help: name the top-level instance, as in `Plant boiler`]
+#### top-placement-attrs-before-gate (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG placement-syntax 1:13 12..16 `when` :: expected the end of the line, found `when` [help: write the kind, then `as` and a name, a `/` value, a `when` gate and `|` attributes, in that order, as in `Lamp as key /0.7 | hue=0.3`]
+#### top-placement-gate-before-default (refuse) [ ]  lex-diags=0 parse-diags=0
+#### top-placement-two-names (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG placement-syntax 1:14 13..18 `other` :: expected the end of the line, found `other` [help: write the kind, then `as` and a name, a `/` value, a `when` gate and `|` attributes, in that order, as in `Lamp as key /0.7 | hue=0.3`]
+#### top-placement-name-late (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG placement-syntax 1:5 4..5 `/` :: expected the top-level instance's name, found `/` [help: name the top-level instance, as in `Plant boiler`]
+#### top-placement-two-gates (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG placement-syntax 1:14 13..17 `when` :: expected the end of the line, found `when` [help: write the kind, then `as` and a name, a `/` value, a `when` gate and `|` attributes, in that order, as in `Lamp as key /0.7 | hue=0.3`]
+#### top-placement-two-defaults (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG placement-syntax 1:10 9..10 `/` :: expected the end of the line, found `/` [help: write the kind, then `as` and a name, a `/` value, a `when` gate and `|` attributes, in that order, as in `Lamp as key /0.7 | hue=0.3`]
+#### top-placement-two-pipes (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG placement-syntax 1:13 12..13 `|` :: expected the end of the line, found `|` [help: write the kind, then `as` and a name, a `/` value, a `when` gate and `|` attributes, in that order, as in `Lamp as key /0.7 | hue=0.3`]
+#### child-placement-forms (ok) [ ]  lex-diags=0 parse-diags=0
+#### child-named-without-as (ok) [ ]  lex-diags=0 parse-diags=0
+#### child-as-in-wrong-place (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG placement-syntax 2:14 24..26 `as` :: expected the end of the line, found `as` [help: write `as` and the name right after the kind, as in `Lamp as key /0.7`]
+#### child-as-after-gate (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG placement-syntax 2:17 27..29 `as` :: expected the end of the line, found `as` [help: write `as` and the name right after the kind, as in `Lamp as key /0.7`]
+#### inline-gate (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG placement-syntax 2:17 27..31 `Lamp` :: expected the end of the line, found `Lamp` [help: write the kind, then `as` and a name, a `/` value, a `when` gate and `|` attributes, in that order, as in `Lamp as key /0.7 | hue=0.3`]
+#### inline-attrs-then-member (ok) [ ]  lex-diags=0 parse-diags=0
+#### inline-member-then-attrs (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG inline-placement 2:15 25..26 `|` :: a placement with a gate, an attribute clause or a body is parenthesized or written on its own line [help: parenthesize the placement or write it on its own line]
+#### inline-member-then-gate (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG inline-placement 2:15 25..29 `when` :: a placement with a gate, an attribute clause or a body is parenthesized or written on its own line [help: parenthesize the placement or write it on its own line]
+#### inline-member-then-body (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG inline-placement 2:15 25..26 `:` :: a placement with a gate, an attribute clause or a body is parenthesized or written on its own line [help: parenthesize the placement or write it on its own line]
+#### paren-placement-with-body (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG placement-syntax 2:11 21..22 `:` :: expected `)`, found `:` [help: add the missing `)` that closes the parenthesized placement]
+#### paren-placement-then-body (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG inline-placement 2:12 22..23 `:` :: a placement with a gate, an attribute clause or a body is parenthesized or written on its own line [help: parenthesize the placement or write it on its own line]
+#### paren-empty (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG placement-syntax 2:6 16..17 `)` :: expected a placement inside the parentheses, found `)` [help: write the kind, then `as` and a name, a `/` value, a `when` gate and `|` attributes, in that order, as in `Lamp as key /0.7 | hue=0.3`]
+#### paren-two-placements (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG placement-syntax 2:11 21..25 `Lamp` :: expected `)`, found `Lamp` [help: add the missing `)` that closes the parenthesized placement]
+#### paren-nested (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG placement-syntax 2:6 16..17 `(` :: expected a placement inside the parentheses, found `(` [help: write the kind, then `as` and a name, a `/` value, a `when` gate and `|` attributes, in that order, as in `Lamp as key /0.7 | hue=0.3`]
+#### paren-unclosed (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG placement-syntax 4:1 38..38 `` :: expected `)`, found the end of the line [help: add the missing `)` that closes the parenthesized placement]
+#### body-inline-empty (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG placement-syntax 3:5 26..30 `Lamp` :: expected an indented block, found `Lamp` [help: indent the body's items on the lines after the `:`]
+#### body-block-empty (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG placement-syntax 2:1 11..11 `` :: expected an indented block, found the end of the file [help: indent the body's items on the lines after the `:`]
+#### body-inline-with-attrs-unparenthesized (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG inline-placement 1:28 27..28 `|` :: expected the end of the line, found `|` [help: parenthesize the placement or write it on its own line]
+#### body-inline-wire (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG misplaced-wire 1:13 12..20 `Triggers` :: `Triggers` is a wire kind; a wire placement stands on its own line [help: place the wire on its own line, outside the bundle]
+#### body-inline-then-block (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG unexpected-indent 2:5 20..24 `Lamp` :: this line is indented, but the line before it opens no block [help: indent a line only under a line that opens a block]
+#### body-inline-for (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG placement-syntax 1:12 11..14 `for` :: expected a placement, found `for` [help: write the kind, then `as` and a name, a `/` value, a `when` gate and `|` attributes, in that order, as in `Lamp as key /0.7 | hue=0.3`]
+#### flags-forms (ok) [ ]  lex-diags=0 parse-diags=0
+#### flags-space-before (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG placement-syntax 2:10 20..21 `*` :: expected the end of the line, found `*` [help: write the kind, then `as` and a name, a `/` value, a `when` gate and `|` attributes, in that order, as in `Lamp as key /0.7 | hue=0.3`]
+#### flags-ident-after (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG flag-syntax 2:10 20..24 `wash` :: an identifier character directly after flags; separate them with a space [help: end the flags before the next name, as in `Lamp*`]
+#### flags-digit-after (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG flag-syntax 2:10 20..21 `2` :: an identifier character directly after flags; separate them with a space [help: end the flags before the next name, as in `Lamp*`]
+#### flags-other-char (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG placement-syntax 2:9 19..20 `%` :: expected the end of the line, found `%` [help: write the kind, then `as` and a name, a `/` value, a `when` gate and `|` attributes, in that order, as in `Lamp as key /0.7 | hue=0.3`]
+#### flags-other-char-hash-is-ident (ok) [ ]  lex-diags=0 parse-diags=0
+#### default-arg-atoms (ok) [ ]  lex-diags=0 parse-diags=0
+#### default-arg-to-in-wire (ok) [ ]  lex-diags=0 parse-diags=0
+#### default-arg-to-alone (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG default-arg-syntax 2:13 24..25 `:` :: expected `.` and a name after `to`, found `:` [help: follow `to` with `.` and an attribute name, as in `to.gain`]
+#### default-arg-none (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG default-arg-syntax 2:10 20..24 `none` :: expected a literal, a name, a path or a parenthesized expression after `/`, found `none` [help: parenthesize the value, as in `Lamp/(base * 0.5)`]
+#### default-arg-array (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG default-arg-syntax 2:10 20..21 `[` :: expected a literal, a name, a path or a parenthesized expression after `/`, found `[` [help: parenthesize the value, as in `Lamp/(base * 0.5)`]
+#### default-arg-expr-unparenthesized (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG placement-syntax 2:15 25..26 `+` :: expected the end of the line, found `+` [help: write the kind, then `as` and a name, a `/` value, a `when` gate and `|` attributes, in that order, as in `Lamp as key /0.7 | hue=0.3`]
+#### default-arg-index-unparenthesized (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG default-arg-syntax 2:16 26..27 `[` :: an unparenthesized `/` value ends before `[` [help: parenthesize the whole value, as in `Lamp/(levels[i])`]
+#### default-arg-call-unparenthesized (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG default-arg-syntax 2:11 21..22 `(` :: an unparenthesized `/` value ends before `(` [help: parenthesize the whole value, as in `Lamp/(f(x))`]
+#### default-arg-neg-name (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG default-arg-syntax 2:10 20..21 `-` :: expected a literal, a name, a path or a parenthesized expression after `/`, found `-` [help: parenthesize the value, as in `Lamp/(base * 0.5)`]
+#### default-arg-double-neg (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG default-arg-syntax 2:10 20..21 `-` :: expected a literal, a name, a path or a parenthesized expression after `/`, found `-` [help: parenthesize the value, as in `Lamp/(base * 0.5)`]
+#### default-arg-empty (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG default-arg-syntax 2:10 20..21 `\n` :: expected a literal, a name, a path or a parenthesized expression after `/`, found the end of the line [help: parenthesize the value, as in `Lamp/(base * 0.5)`]
+#### default-arg-empty-parens (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG expression-syntax 2:11 21..22 `)` :: expected an expression, found `)` [help: give every operator its operands and close every bracket]
+#### default-arg-conversion (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG default-arg-syntax 2:10 20..23 `f32` :: expected a literal, a name, a path or a parenthesized expression after `/`, found `f32` [help: parenthesize the value, as in `Lamp/(base * 0.5)`]
+#### default-arg-record (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG placement-syntax 2:15 25..26 `{` :: expected the end of the line, found `{` [help: write the kind, then `as` and a name, a `/` value, a `when` gate and `|` attributes, in that order, as in `Lamp as key /0.7 | hue=0.3`]
+#### default-arg-json (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG default-arg-syntax 2:10 20..24 `json` :: expected a literal, a name, a path or a parenthesized expression after `/`, found `json` [help: parenthesize the value, as in `Lamp/(base * 0.5)`]
+#### attr-forms (ok) [ ]  lex-diags=0 parse-diags=1
+  DIAG attribute-syntax 7:23 191..195 `cell` :: expected a name after `::`, found `cell` [help: write each entry as `name=value`, `name` or `!name`]
+#### attr-empty (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG attribute-syntax 2:11 21..22 `\n` :: expected an attribute after `|`, found the end of the line [help: write each entry as `name=value`, `name` or `!name`]
+#### attr-double-pipe (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG attribute-syntax 2:11 21..22 `|` :: expected an attribute after `|`, found `|` [help: write each entry as `name=value`, `name` or `!name`]
+#### attr-comma-separated (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG placement-syntax 2:19 29..30 `,` :: expected the end of the line, found `,` [help: write the kind, then `as` and a name, a `/` value, a `when` gate and `|` attributes, in that order, as in `Lamp as key /0.7 | hue=0.3`]
+#### attr-bang-with-value (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG attribute-syntax 2:19 29..30 `=` :: `!name` sets an attribute to false and takes no value [help: write each entry as `name=value`, `name` or `!name`]
+#### attr-bind-expr (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG placement-syntax 2:20 30..31 `+` :: expected the end of the line, found `+` [help: write the kind, then `as` and a name, a `/` value, a `when` gate and `|` attributes, in that order, as in `Lamp as key /0.7 | hue=0.3`]
+#### attr-bind-literal (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG attribute-syntax 2:18 28..29 `5` :: expected the host-fed cell after `=>`, found `5` [help: name the cell the attribute binds, as in `reading => level`]
+#### attr-bind-index (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG placement-syntax 2:23 33..34 `[` :: expected the end of the line, found `[` [help: write the kind, then `as` and a name, a `/` value, a `when` gate and `|` attributes, in that order, as in `Lamp as key /0.7 | hue=0.3`]
+#### attr-bind-to (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG attribute-syntax 2:18 28..30 `to` :: expected the host-fed cell after `=>`, found `to` [help: name the cell the attribute binds, as in `reading => level`]
+#### attr-bind-nothing (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG attribute-syntax 2:17 27..28 `\n` :: expected the host-fed cell after `=>`, found the end of the line [help: name the cell the attribute binds, as in `reading => level`]
+#### attr-value-missing (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG expression-syntax 2:18 28..29 `\n` :: expected an expression, found the end of the line [help: give every operator its operands and close every bracket]
+#### attr-value-for-unparenthesized (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG unparenthesized-for 2:18 28..31 `for` :: a `for` expression that is not the whole value of a `let`, a local `let`, a derived cell's rule or a function body stands in parentheses [help: parenthesize the `for` expression, as in `1 + (for x in xs into sum from 0: sum + x)`]
+#### attr-value-lambda (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG expression-syntax 2:19 29..30 `x` :: a lambda stands only as an argument or as a `let`'s value [help: pass the lambda as an argument, as in `count(readings, p: p > 60)`, or name it with a `let`, as in `let keep = p: p > 60`]
+#### attr-value-match (refuse) [ ]  lex-diags=0 parse-diags=3
+  DIAG match-position 2:18 28..33 `match` :: a match is the whole value of a let, a function body or a wire destination [help: make the `match` the whole value of a `let`]
+  DIAG placement-syntax 3:9 45..46 `0` :: expected a placement, found `0` [help: write the kind, then `as` and a name, a `/` value, a `when` gate and `|` attributes, in that order, as in `Lamp as key /0.7 | hue=0.3`]
+  DIAG placement-syntax 4:9 58..62 `else` :: expected a placement, found `else` [help: write the kind, then `as` and a name, a `/` value, a `when` gate and `|` attributes, in that order, as in `Lamp as key /0.7 | hue=0.3`]
+#### attr-number-name (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG attribute-syntax 2:12 22..23 `5` :: expected an attribute after `|`, found `5` [help: write each entry as `name=value`, `name` or `!name`]
+#### wire-forms (ok) [ ]  lex-diags=0 parse-diags=0
+#### wire-match-then-more-items (ok) [ ]  lex-diags=0 parse-diags=0
+#### wire-destination-missing-after-colon (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG expression-syntax 2:14 25..26 `\n` :: expected an expression, found the end of the line [help: give every operator its operands and close every bracket]
+#### wire-destination-block (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG expression-syntax 2:14 25..26 `\n` :: expected an expression, found the end of the line [help: give every operator its operands and close every bracket]
+#### wire-two-destinations (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG wire-syntax 2:21 32..36 `dawn` :: expected the end of the line, found `dawn` [help: end the wire with `:` and its destination, as in `Triggers: night`]
+#### wire-inline-with-others (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG misplaced-wire 2:9 20..28 `Triggers` :: `Triggers` is a wire kind; a wire placement stands on its own line [help: place the wire on its own line, outside the bundle]
+#### wire-in-parens (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG misplaced-wire 2:6 17..25 `Triggers` :: `Triggers` is a wire kind; a wire placement stands on its own line [help: place the wire on its own line, outside the bundle]
+#### wire-in-bundle (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG misplaced-wire 2:10 21..29 `Triggers` :: `Triggers` is a wire kind; a wire placement stands on its own line [help: place the wire on its own line, outside the bundle]
+#### wire-inline-children (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG misplaced-wire 1:13 12..20 `Triggers` :: `Triggers` is a wire kind; a wire placement stands on its own line [help: place the wire on its own line, outside the bundle]
+#### wire-dest-for-unparenthesized (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG unparenthesized-for 2:15 26..29 `for` :: a `for` expression that is not the whole value of a `let`, a local `let`, a derived cell's rule or a function body stands in parentheses [help: parenthesize the `for` expression, as in `1 + (for x in xs into sum from 0: sum + x)`]
+#### bundle-forms (ok) [ ]  lex-diags=0 parse-diags=0
+#### bundle-empty (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG bundle-syntax 2:6 16..17 `]` :: expected a member of the bundle, found `]` [help: close the bundle with `]`, as in `[Valve Valve]`]
+#### bundle-nested (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG bundle-syntax 2:6 16..17 `[` :: a bundle is not a member of another bundle [help: close the bundle with `]`, as in `[Valve Valve]`]
+#### bundle-for-no-members (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG bundle-syntax 2:20 30..31 `]` :: expected a member, found `]` [help: close the bundle with `]`, as in `[Valve Valve]`]
+#### bundle-two-fors (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG bundle-syntax 2:26 36..39 `for` :: expected `]`, found `for` [help: close the bundle with `]`, as in `[Valve Valve]`]
+#### bundle-member-gate-unparenthesized (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG bundle-syntax 2:11 21..25 `when` :: expected `]`, found `when` [help: close the bundle with `]`, as in `[Valve Valve]`]
+#### bundle-member-attrs-unparenthesized (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG bundle-syntax 2:11 21..22 `|` :: expected `]`, found `|` [help: close the bundle with `]`, as in `[Valve Valve]`]
+#### bundle-with-body (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG inline-placement 2:12 22..23 `:` :: a placement with a gate, an attribute clause or a body is parenthesized or written on its own line [help: parenthesize the placement or write it on its own line]
+#### bundle-with-gate (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG inline-placement 2:17 27..31 `when` :: a placement with a gate, an attribute clause or a body is parenthesized or written on its own line [help: parenthesize the placement or write it on its own line]
+#### bundle-comma (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG bundle-syntax 2:10 20..21 `,` :: expected `]`, found `,` [help: close the bundle with `]`, as in `[Valve Valve]`]
+#### bundle-for-members-before-colon (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG bundle-syntax 2:20 30..34 `Lamp` :: expected `:` and the members, found `Lamp` [help: close the bundle with `]`, as in `[Valve Valve]`]
+#### for-forms (ok) [ ]  lex-diags=0 parse-diags=0
+#### for-three-names (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG for-syntax 2:13 23..24 `,` :: expected `in`, found `,` [help: write `for <name> in <iterable>:` with one name or two]
+#### for-no-in (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG for-syntax 2:11 21..22 `0` :: expected `in`, found `0` [help: write `for <name> in <iterable>:` with one name or two]
+#### for-no-iterable (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG for-syntax 2:13 23..24 `:` :: expected the iterable, found `:` [help: write `for <name> in <iterable>:` with one name or two]
+#### for-no-colon (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG for-syntax 2:18 28..29 `\n` :: expected `:` and the body, found the end of the line [help: write `for <name> in <iterable>:` with one name or two]
+#### for-empty-block (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG placement-syntax 3:5 34..38 `Lamp` :: expected an indented block, found `Lamp` [help: indent the body's items on the lines after the `:`]
+#### for-range-three (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG for-syntax 2:18 28..30 `..` :: expected `:` and the body, found `..` [help: write `for <name> in <iterable>:` with one name or two]
+#### for-range-open (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG expression-syntax 2:17 27..28 `:` :: expected an expression, found `:` [help: give every operator its operands and close every bracket]
+#### for-range-open-low (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG expression-syntax 2:14 24..26 `..` :: expected an expression, found `..` [help: give every operator its operands and close every bracket]
+#### for-with-gate-on-for (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG for-syntax 2:19 29..33 `when` :: expected `:` and the body, found `when` [help: write `for <name> in <iterable>:` with one name or two]
+#### for-inline-wire (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG misplaced-wire 2:20 28..36 `Triggers` :: `Triggers` is a wire kind; a wire placement stands on its own line [help: place the wire on its own line, outside the bundle]
+#### for-paren-names (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG for-syntax 2:9 19..20 `(` :: expected the loop variable, found `(` [help: write `for <name> in <iterable>:` with one name or two]
+#### when-forms (ok) [ ]  lex-diags=0 parse-diags=0
+#### when-guard-only-else (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG when-syntax 4:1 44..44 `` :: a `when:` block holds at least one guard [help: end the condition with `:` and indent the block under it]
+#### when-guard-empty (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG when-syntax 3:5 28..33 `Valve` :: expected the guards, indented [help: end the condition with `:` and indent the block under it]
+#### when-else-not-last (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG when-syntax 5:9 69..70 `b` :: `else` is the last arm of a `when` block [help: end the condition with `:` and indent the block under it]
+#### when-two-else (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG placement-syntax 4:5 52..56 `else` :: expected a placement, found `else` [help: write the kind, then `as` and a name, a `/` value, a `when` gate and `|` attributes, in that order, as in `Lamp as key /0.7 | hue=0.3`]
+#### when-else-if (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG when-syntax 3:10 41..45 `when` :: expected `:` after `else`, found `when` [help: end the condition with `:` and indent the block under it]
+#### when-else-without-when (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG placement-syntax 3:5 28..32 `else` :: expected a placement, found `else` [help: write the kind, then `as` and a name, a `/` value, a `when` gate and `|` attributes, in that order, as in `Lamp as key /0.7 | hue=0.3`]
+#### when-no-colon (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG when-syntax 2:11 24..25 `\n` :: expected `:` after the condition, found the end of the line [help: end the condition with `:` and indent the block under it]
+#### when-guards-inline (refuse) [ ]  lex-diags=0 parse-diags=2
+  DIAG when-syntax 2:11 24..25 `a` :: expected the guards on the following lines, found `a` [help: end the condition with `:` and indent the block under it]
+  DIAG when-syntax 3:1 33..33 `` :: expected the guards, indented [help: end the condition with `:` and indent the block under it]
+#### when-empty-block (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG placement-syntax 3:5 30..35 `Valve` :: expected an indented block, found `Valve` [help: indent the body's items on the lines after the `:`]
+#### when-else-condition (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG when-syntax 3:10 41..42 `b` :: expected `:` after `else`, found `b` [help: end the condition with `:` and indent the block under it]
+#### when-condition-form-with-guards (refuse) [ ]  lex-diags=0 parse-diags=0
+#### when-else-misaligned-deeper (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG placement-syntax 4:9 48..52 `else` :: expected a placement, found `else` [help: write the kind, then `as` and a name, a `/` value, a `when` gate and `|` attributes, in that order, as in `Lamp as key /0.7 | hue=0.3`]
+#### match-forms (ok) [ ]  lex-diags=0 parse-diags=0
+#### match-no-arms (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG match-syntax 2:1 17..20 `let` :: expected the match arms, indented [help: end the `match` line with `:` and indent its arms under it]
+#### match-only-else (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG match-syntax 3:1 29..29 `` :: a match holds at least one arm before `else:` [help: end the `match` line with `:` and indent its arms under it]
+#### match-else-not-last (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG match-syntax 4:5 42..43 `1` :: `else:` is the last arm of a match [help: end the `match` line with `:` and indent its arms under it]
+#### match-two-else (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG match-syntax 4:5 42..46 `else` :: `else:` is the last arm of a match [help: end the `match` line with `:` and indent its arms under it]
+#### match-arm-block (refuse) [ ]  lex-diags=0 parse-diags=2
+  DIAG expression-syntax 2:7 23..24 `\n` :: expected an expression, found the end of the line [help: give every operator its operands and close every bracket]
+  DIAG match-syntax 3:9 32..33 `1` :: expected an arm label, a variant name or a literal, found an indented line [help: end the `match` line with `:` and indent its arms under it]
+#### match-arm-expr-label (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG match-syntax 2:7 23..24 `+` :: expected `:` after the arm label, found `+` [help: end the `match` line with `:` and indent its arms under it]
+#### match-arm-neg-name (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG match-syntax 2:5 21..22 `-` :: expected an arm label, a variant name or a literal, found `-` [help: end the `match` line with `:` and indent its arms under it]
+#### match-arm-two-labels (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG match-syntax 2:6 22..23 `,` :: expected `:` after the arm label, found `,` [help: end the `match` line with `:` and indent its arms under it]
+#### match-arm-paren-type (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG match-syntax 2:5 21..22 `(` :: expected an arm label, a variant name or a literal, found `(` [help: end the `match` line with `:` and indent its arms under it]
+#### match-arm-sum-type (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG match-syntax 2:9 25..26 `|` :: expected `:` after the arm label, found `|` [help: end the `match` line with `:` and indent its arms under it]
+#### match-as-operand (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG match-position 1:13 12..17 `match` :: a match is the whole value of a let, a function body or a wire destination [help: make the `match` the whole value of a `let`]
+#### match-in-parens (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG match-position 1:10 9..14 `match` :: a match is the whole value of a let, a function body or a wire destination [help: make the `match` the whole value of a `let`]
+#### match-as-argument (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG match-position 1:11 10..15 `match` :: a match is the whole value of a let, a function body or a wire destination [help: make the `match` the whole value of a `let`]
+#### match-as-attr-value (refuse) [ ]  lex-diags=0 parse-diags=3
+  DIAG match-position 1:11 10..15 `match` :: a match is the whole value of a let, a function body or a wire destination [help: make the `match` the whole value of a `let`]
+  DIAG placement-syntax 2:5 23..24 `0` :: expected a placement, found `0` [help: write the kind, then `as` and a name, a `/` value, a `when` gate and `|` attributes, in that order, as in `Lamp as key /0.7 | hue=0.3`]
+  DIAG placement-syntax 3:5 32..36 `else` :: expected a placement, found `else` [help: write the kind, then `as` and a name, a `/` value, a `when` gate and `|` attributes, in that order, as in `Lamp as key /0.7 | hue=0.3`]
+#### match-as-gate (refuse) [ ]  lex-diags=0 parse-diags=3
+  DIAG match-position 2:15 21..26 `match` :: a match is the whole value of a let, a function body or a wire destination [help: make the `match` the whole value of a `let`]
+  DIAG placement-syntax 3:9 38..39 `0` :: expected a placement, found `0` [help: write the kind, then `as` and a name, a `/` value, a `when` gate and `|` attributes, in that order, as in `Lamp as key /0.7 | hue=0.3`]
+  DIAG placement-syntax 4:9 54..58 `else` :: expected a placement, found `else` [help: write the kind, then `as` and a name, a `/` value, a `when` gate and `|` attributes, in that order, as in `Lamp as key /0.7 | hue=0.3`]
+#### match-as-arm-value (refuse) [ ]  lex-diags=0 parse-diags=2
+  DIAG match-position 2:8 24..29 `match` :: a match is the whole value of a let, a function body or a wire destination [help: make the `match` the whole value of a `let`]
+  DIAG match-syntax 3:9 41..42 `0` :: expected an arm label, a variant name or a literal, found an indented line [help: end the `match` line with `:` and indent its arms under it]
+#### match-inline-arms (refuse) [ ]  lex-diags=0 parse-diags=2
+  DIAG match-syntax 1:18 17..18 `0` :: a match's arms start on the following lines [help: end the `match` line with `:` and indent its arms under it]
+  DIAG match-syntax 2:1 22..22 `` :: expected the match arms, indented [help: end the `match` line with `:` and indent its arms under it]
+#### match-arm-for-unparenthesized (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG unparenthesized-for 2:8 24..27 `for` :: a `for` expression that is not the whole value of a `let`, a local `let`, a derived cell's rule or a function body stands in parentheses [help: parenthesize the `for` expression, as in `1 + (for x in xs into sum from 0: sum + x)`]
+#### match-in-pattern-let-and-cell (ok) [ ]  lex-diags=0 parse-diags=0
+CASES 135

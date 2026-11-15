@@ -1,0 +1,767 @@
+################ a-mid-line-token
+|let x = = 1
+|let y = 2
+--- diagnostics (1)
+  ExpressionSyntax 8..9 "=" :: expected an expression, found `=`
+--- detached [] at_layout []
+File 0..22
+  LetDecl 0..12
+    LetKw "let"
+    Ident "x"
+    Eq "="
+    ErrorNode 8..11
+      Eq "="
+      Number "1"
+  LetDecl 12..22
+    LetKw "let"
+    Ident "y"
+    Eq "="
+    Literal 20..21
+      Number "2"
+################ b-missing-name
+|let = 1
+|let y = 2
+--- diagnostics (1)
+  LetSyntax 4..5 "=" :: expected the let's name, found `=`
+--- detached [] at_layout []
+File 0..18
+  LetDecl 0..8
+    LetKw "let"
+    Eq "="
+    Literal 6..7
+      Number "1"
+  LetDecl 8..18
+    LetKw "let"
+    Ident "y"
+    Eq "="
+    Literal 16..17
+      Number "2"
+################ c-fault-after-name-cell
+|state s(1 1)
+|let y = s
+--- diagnostics (1)
+  CellSyntax 10..11 "1" :: expected `)`, found `1`
+--- detached [] at_layout []
+File 0..23
+  CellDecl 0..13
+    StateKw "state"
+    Ident "s"
+    Init 7..9
+      LParen "("
+      Literal 8..9
+        Number "1"
+    ErrorNode 10..12
+      Number "1"
+      RParen ")"
+  LetDecl 13..23
+    LetKw "let"
+    Ident "y"
+    Eq "="
+    NameRef 21..22
+      Ident "s"
+################ d-stray-closer
+|let x = 1)
+|let y = 2
+--- diagnostics (1)
+  LetSyntax 9..10 ")" :: expected the end of the line, found `)`
+--- detached [] at_layout []
+File 0..21
+  LetDecl 0..11
+    LetKw "let"
+    Ident "x"
+    Eq "="
+    Literal 8..9
+      Number "1"
+    ErrorNode 9..10
+      RParen ")"
+  LetDecl 11..21
+    LetKw "let"
+    Ident "y"
+    Eq "="
+    Literal 19..20
+      Number "2"
+################ e-unclosed-then-let
+|let x = f(1
+|let y = 2
+--- diagnostics (1)
+  ExpressionSyntax 12..15 "let" :: expected `,` or `)`, found `let`
+--- detached [12..15] at_layout [12..15]
+File 0..22
+  LetDecl 0..12
+    LetKw "let"
+    Ident "x"
+    Eq "="
+    CallExpr 8..11
+      NameRef 8..9
+        Ident "f"
+      ArgList 9..11
+        LParen "("
+        Literal 10..11
+          Number "1"
+  LetDecl 12..22
+    LetKw "let"
+    Ident "y"
+    Eq "="
+    Literal 20..21
+      Number "2"
+################ f-unclosed-then-placement
+|let x = f(1
+|Clip c:
+|    Note/1
+--- diagnostics (1)
+  ExpressionSyntax 12..16 "Clip" :: expected `,` or `)`, found `Clip`
+--- detached [12..16] at_layout [12..16]
+File 0..31
+  LetDecl 0..12
+    LetKw "let"
+    Ident "x"
+    Eq "="
+    CallExpr 8..11
+      NameRef 8..9
+        Ident "f"
+      ArgList 9..11
+        LParen "("
+        Literal 10..11
+          Number "1"
+  Placement 12..31
+    Ident "Clip"
+    Ident "c"
+    Body 18..31
+      Colon ":"
+      Block 19..31
+        Placement 24..31
+          Ident "Note"
+          DefaultArg 28..30
+            Slash "/"
+            Literal 29..30
+              Number "1"
+################ g-unclosed-then-junk
+|let x = f(1
+|1 2 3
+|Clip c:
+|    Note/1
+|let y = 2
+--- diagnostics (1)
+  ExpressionSyntax 12..13 "1" :: expected `,` or `)`, found `1`
+--- detached [] at_layout []
+File 0..47
+  LetDecl 0..18
+    LetKw "let"
+    Ident "x"
+    Eq "="
+    CallExpr 8..11
+      NameRef 8..9
+        Ident "f"
+      ArgList 9..11
+        LParen "("
+        Literal 10..11
+          Number "1"
+    ErrorNode 12..17
+      Number "1"
+      Number "2"
+      Number "3"
+  Placement 18..37
+    Ident "Clip"
+    Ident "c"
+    Body 24..37
+      Colon ":"
+      Block 25..37
+        Placement 30..37
+          Ident "Note"
+          DefaultArg 34..36
+            Slash "/"
+            Literal 35..36
+              Number "1"
+  LetDecl 37..47
+    LetKw "let"
+    Ident "y"
+    Eq "="
+    Literal 45..46
+      Number "2"
+################ h-unclosed-then-named-in-body
+|Scene s:
+|    Cue/(1
+|    Cue as k/2
+|    Cue/3
+--- diagnostics (1)
+  DefaultArgSyntax 24..27 "Cue" :: expected `)`, found `Cue`
+--- detached [24..27] at_layout [24..27]
+File 0..45
+  Placement 0..45
+    Ident "Scene"
+    Ident "s"
+    Body 7..45
+      Colon ":"
+      Block 8..45
+        Placement 13..20
+          Ident "Cue"
+          DefaultArg 16..19
+            Slash "/"
+            ParenExpr 17..19
+              LParen "("
+              Literal 18..19
+                Number "1"
+        Placement 24..35
+          Ident "Cue"
+          AsKw "as"
+          Ident "k"
+          DefaultArg 32..34
+            Slash "/"
+            Literal 33..34
+              Number "2"
+        Placement 39..45
+          Ident "Cue"
+          DefaultArg 42..44
+            Slash "/"
+            Literal 43..44
+              Number "3"
+################ i-unclosed-swallows-header
+|let x = f(1
+|Clip c = :
+|    Note/1
+|let y = 2
+--- diagnostics (2)
+  ExpressionSyntax 12..16 "Clip" :: expected `,` or `)`, found `Clip`
+  PlacementSyntax 19..20 "=" :: expected the end of the line, found `=`
+--- detached [12..16] at_layout [12..16]
+File 0..44
+  LetDecl 0..12
+    LetKw "let"
+    Ident "x"
+    Eq "="
+    CallExpr 8..11
+      NameRef 8..9
+        Ident "f"
+      ArgList 9..11
+        LParen "("
+        Literal 10..11
+          Number "1"
+  Placement 12..34
+    Ident "Clip"
+    Ident "c"
+    ErrorNode 19..20
+      Eq "="
+    Body 21..34
+      Colon ":"
+      Block 22..34
+        Placement 27..34
+          Ident "Note"
+          DefaultArg 31..33
+            Slash "/"
+            Literal 32..33
+              Number "1"
+  LetDecl 34..44
+    LetKw "let"
+    Ident "y"
+    Eq "="
+    Literal 42..43
+      Number "2"
+################ j-open-string
+|let x = "abc
+|let y = 2
+--- diagnostics (1)
+  UnterminatedString 8..12 "\"abc" :: this string does not end on its line
+--- detached [] at_layout []
+File 0..23
+  LetDecl 0..13
+    LetKw "let"
+    Ident "x"
+    Eq "="
+    StringLit 8..12
+      StringStart "\""
+      StringText "abc"
+  LetDecl 13..23
+    LetKw "let"
+    Ident "y"
+    Eq "="
+    Literal 21..22
+      Number "2"
+################ k-dedent-mismatch
+|Rig r:
+|    Lamp as a/1
+|  Lamp as b/2
+|    Lamp as c/3
+|let y = 2
+--- diagnostics (2)
+  DedentMismatch 25..26 "L" :: this line's indentation, 2, matches no enclosing block; the enclosing block is at 0
+  UnexpectedIndent 41..45 "Lamp" :: this line is indented, but the line before it opens no block
+--- detached [] at_layout []
+File 0..63
+  Placement 0..25
+    Ident "Rig"
+    Ident "r"
+    Body 5..25
+      Colon ":"
+      Block 6..25
+        Placement 11..23
+          Ident "Lamp"
+          AsKw "as"
+          Ident "a"
+          DefaultArg 20..22
+            Slash "/"
+            Literal 21..22
+              Number "1"
+  Placement 25..37
+    Ident "Lamp"
+    AsKw "as"
+    Ident "b"
+    DefaultArg 34..36
+      Slash "/"
+      Literal 35..36
+        Number "2"
+  ErrorNode 41..53
+    Ident "Lamp"
+    AsKw "as"
+    Ident "c"
+    Slash "/"
+    Number "3"
+  LetDecl 53..63
+    LetKw "let"
+    Ident "y"
+    Eq "="
+    Literal 61..62
+      Number "2"
+################ l-unexpected-indent
+|let x = 1
+|    let z = 2
+|let y = 3
+--- diagnostics (1)
+  UnexpectedIndent 14..17 "let" :: this line is indented, but the line before it opens no block
+--- detached [] at_layout []
+File 0..34
+  LetDecl 0..10
+    LetKw "let"
+    Ident "x"
+    Eq "="
+    Literal 8..9
+      Number "1"
+  ErrorNode 14..24
+    LetKw "let"
+    Ident "z"
+    Eq "="
+    Number "2"
+  LetDecl 24..34
+    LetKw "let"
+    Ident "y"
+    Eq "="
+    Literal 32..33
+      Number "3"
+################ m-tab
+|Rig r:
+|	Lamp as a/1
+|    Lamp as b/2
+--- diagnostics (2)
+  TabIndentation 7..8 "\t" :: a tab in leading whitespace; indent with spaces
+  UnexpectedIndent 24..28 "Lamp" :: this line is indented, but the line before it opens no block
+--- detached [] at_layout []
+File 0..36
+  Placement 0..36
+    Ident "Rig"
+    Ident "r"
+    Body 5..36
+      Colon ":"
+      Block 6..36
+        Placement 8..20
+          Ident "Lamp"
+          AsKw "as"
+          Ident "a"
+          DefaultArg 17..19
+            Slash "/"
+            Literal 18..19
+              Number "1"
+        ErrorNode 24..36
+          Ident "Lamp"
+          AsKw "as"
+          Ident "b"
+          Slash "/"
+          Number "2"
+################ n-header-fault-with-colon
+|Rig r = :
+|    Lamp as a/1
+|let y = 2
+--- diagnostics (1)
+  PlacementSyntax 6..7 "=" :: expected the end of the line, found `=`
+--- detached [] at_layout []
+File 0..36
+  Placement 0..26
+    Ident "Rig"
+    Ident "r"
+    ErrorNode 6..7
+      Eq "="
+    Body 8..26
+      Colon ":"
+      Block 9..26
+        Placement 14..26
+          Ident "Lamp"
+          AsKw "as"
+          Ident "a"
+          DefaultArg 23..25
+            Slash "/"
+            Literal 24..25
+              Number "1"
+  LetDecl 26..36
+    LetKw "let"
+    Ident "y"
+    Eq "="
+    Literal 34..35
+      Number "2"
+################ o-header-fault-no-colon
+|Rig r = 1
+|    Lamp as a/1
+|let y = 2
+--- diagnostics (1)
+  PlacementSyntax 6..7 "=" :: expected the end of the line, found `=`
+--- detached [] at_layout []
+File 0..36
+  Placement 0..10
+    Ident "Rig"
+    Ident "r"
+    ErrorNode 6..9
+      Eq "="
+      Number "1"
+  ErrorNode 14..26
+    Ident "Lamp"
+    AsKw "as"
+    Ident "a"
+    Slash "/"
+    Number "1"
+  LetDecl 26..36
+    LetKw "let"
+    Ident "y"
+    Eq "="
+    Literal 34..35
+      Number "2"
+################ p-missing-colon
+|Rig r
+|    Lamp as a/1
+|let y = 2
+--- diagnostics (1)
+  UnexpectedIndent 10..14 "Lamp" :: this line is indented, but the line before it opens no block
+--- detached [] at_layout []
+File 0..32
+  Placement 0..6
+    Ident "Rig"
+    Ident "r"
+  ErrorNode 10..22
+    Ident "Lamp"
+    AsKw "as"
+    Ident "a"
+    Slash "/"
+    Number "1"
+  LetDecl 22..32
+    LetKw "let"
+    Ident "y"
+    Eq "="
+    Literal 30..31
+      Number "2"
+################ q-missing-indent
+|Rig r:
+|Lamp as a/1
+|let y = 2
+--- diagnostics (1)
+  PlacementSyntax 7..11 "Lamp" :: expected an indented block, found `Lamp`
+--- detached [7..11] at_layout []
+File 0..29
+  Placement 0..7
+    Ident "Rig"
+    Ident "r"
+    Body 5..7
+      Colon ":"
+      Block 6..7
+  Placement 7..19
+    Ident "Lamp"
+    AsKw "as"
+    Ident "a"
+    DefaultArg 16..18
+      Slash "/"
+      Literal 17..18
+        Number "1"
+  LetDecl 19..29
+    LetKw "let"
+    Ident "y"
+    Eq "="
+    Literal 27..28
+      Number "2"
+################ r-body-line-fault
+|Rig r:
+|    Lamp as a/1 = 2
+|    Lamp as b/2
+--- diagnostics (1)
+  PlacementSyntax 23..24 "=" :: expected the end of the line, found `=`
+--- detached [] at_layout []
+File 0..43
+  Placement 0..43
+    Ident "Rig"
+    Ident "r"
+    Body 5..43
+      Colon ":"
+      Block 6..43
+        Placement 11..27
+          Ident "Lamp"
+          AsKw "as"
+          Ident "a"
+          DefaultArg 20..22
+            Slash "/"
+            Literal 21..22
+              Number "1"
+          ErrorNode 23..26
+            Eq "="
+            Number "2"
+        Placement 31..43
+          Ident "Lamp"
+          AsKw "as"
+          Ident "b"
+          DefaultArg 40..42
+            Slash "/"
+            Literal 41..42
+              Number "2"
+################ s-fn-header-fault
+|fn f(x:
+|    x
+|let y = 2
+--- diagnostics (1)
+  FnSyntax 14..17 "let" :: expected `)`, found `let`
+--- detached [14..17] at_layout [14..17]
+File 0..24
+  FnDecl 0..14
+    FnKw "fn"
+    Ident "f"
+    ParamList 4..13
+      LParen "("
+      Param 5..13
+        Ident "x"
+        Colon ":"
+        TypeRef 12..13
+          Ident "x"
+  LetDecl 14..24
+    LetKw "let"
+    Ident "y"
+    Eq "="
+    Literal 22..23
+      Number "2"
+################ t-fn-body-fault
+|fn f(x):
+|    let a = = x
+|    a
+|let y = 2
+--- diagnostics (1)
+  ExpressionSyntax 21..22 "=" :: expected an expression, found `=`
+--- detached [] at_layout []
+File 0..41
+  FnDecl 0..31
+    FnKw "fn"
+    Ident "f"
+    ParamList 4..7
+      LParen "("
+      Param 5..6
+        Ident "x"
+      RParen ")"
+    Colon ":"
+    FnBody 8..31
+      LocalLet 13..25
+        LetKw "let"
+        Ident "a"
+        Eq "="
+        ErrorNode 21..24
+          Eq "="
+          Ident "x"
+      NameRef 29..30
+        Ident "a"
+  LetDecl 31..41
+    LetKw "let"
+    Ident "y"
+    Eq "="
+    Literal 39..40
+      Number "2"
+################ u-pattern-misplaced-let
+|pattern P():
+|    Cue/1
+|    let a = 1
+|    Cue/a
+--- diagnostics (1)
+  PatternSyntax 27..30 "let" :: a `let` line stands only at the start of a pattern body
+--- detached [] at_layout []
+File 0..47
+  PatternDecl 0..47
+    PatternKw "pattern"
+    Ident "P"
+    PatternParamList 9..11
+      LParen "("
+      RParen ")"
+    Colon ":"
+    Block 12..47
+      Placement 17..23
+        Ident "Cue"
+        DefaultArg 20..22
+          Slash "/"
+          Literal 21..22
+            Number "1"
+      LocalLet 27..37
+        LetKw "let"
+        Ident "a"
+        Eq "="
+        Literal 35..36
+          Number "1"
+      Placement 41..47
+        Ident "Cue"
+        DefaultArg 44..46
+          Slash "/"
+          NameRef 45..46
+            Ident "a"
+################ v-lexer-error-token
+|let x = 1 ; let z = 2
+|let y = 2
+--- diagnostics (1)
+  Semicolon 10..11 ";" :: a semicolon is not allowed; end the line instead
+--- detached [] at_layout []
+File 0..32
+  LetDecl 0..22
+    LetKw "let"
+    Ident "x"
+    Eq "="
+    Literal 8..9
+      Number "1"
+    ErrorNode 10..21
+      Error ";"
+      LetKw "let"
+      Ident "z"
+      Eq "="
+      Number "2"
+  LetDecl 22..32
+    LetKw "let"
+    Ident "y"
+    Eq "="
+    Literal 30..31
+      Number "2"
+################ w-cr-alone
+|let x = 1let z = 2
+|let y = 3
+--- diagnostics (1)
+  UnexpectedCharacter 9..10 "\r" :: unexpected `\r`
+--- detached [] at_layout []
+File 0..30
+  LetDecl 0..20
+    LetKw "let"
+    Ident "x"
+    Eq "="
+    Literal 8..9
+      Number "1"
+    ErrorNode 9..19
+      Error "\r"
+      LetKw "let"
+      Ident "z"
+      Eq "="
+      Number "2"
+  LetDecl 20..30
+    LetKw "let"
+    Ident "y"
+    Eq "="
+    Literal 28..29
+      Number "3"
+################ x-match-arm-fault
+|let x = match w:
+|    1 2: 3
+|    else: 4
+|let y = 2
+--- diagnostics (1)
+  MatchSyntax 23..24 "2" :: expected `:` after the arm label, found `2`
+--- detached [] at_layout []
+File 0..50
+  LetDecl 0..40
+    LetKw "let"
+    Ident "x"
+    Eq "="
+    MatchBlock 8..40
+      MatchKw "match"
+      NameRef 14..15
+        Ident "w"
+      Colon ":"
+      MatchArm 21..28
+        Literal 21..22
+          Number "1"
+        Literal 23..24
+          Number "2"
+        ErrorNode 24..27
+          Colon ":"
+          Number "3"
+      ElseArm 32..40
+        ElseKw "else"
+        Colon ":"
+        Literal 38..39
+          Number "4"
+  LetDecl 40..50
+    LetKw "let"
+    Ident "y"
+    Eq "="
+    Literal 48..49
+      Number "2"
+################ y-unclosed-in-fn-body
+|fn f(x):
+|    let a = (x
+|    let b = 2
+|    a
+|let y = 2
+--- diagnostics (1)
+  ExpressionSyntax 28..31 "let" :: expected `)`, found `let`
+--- detached [28..31] at_layout [28..31]
+File 0..54
+  FnDecl 0..44
+    FnKw "fn"
+    Ident "f"
+    ParamList 4..7
+      LParen "("
+      Param 5..6
+        Ident "x"
+      RParen ")"
+    Colon ":"
+    FnBody 8..44
+      LocalLet 13..28
+        LetKw "let"
+        Ident "a"
+        Eq "="
+        ParenExpr 21..23
+          LParen "("
+          NameRef 22..23
+            Ident "x"
+      LocalLet 28..38
+        LetKw "let"
+        Ident "b"
+        Eq "="
+        Literal 36..37
+          Number "2"
+      NameRef 42..43
+        Ident "a"
+  LetDecl 44..54
+    LetKw "let"
+    Ident "y"
+    Eq "="
+    Literal 52..53
+      Number "2"
+################ z-type-fault
+|type T:
+|    a i32
+|    b: f32
+|let y = 2
+--- diagnostics (1)
+  RecordSyntax 14..17 "i32" :: expected `:` and the field's type, found `i32`
+--- detached [] at_layout []
+File 0..39
+  TypeDecl 0..29
+    TypeKw "type"
+    Ident "T"
+    Colon ":"
+    FieldDecl 12..18
+      Ident "a"
+      ErrorNode 14..17
+        I32Kw "i32"
+    FieldDecl 22..29
+      Ident "b"
+      Colon ":"
+      TypeRef 25..28
+        F32Kw "f32"
+  LetDecl 29..39
+    LetKw "let"
+    Ident "y"
+    Eq "="
+    Literal 37..38
+      Number "2"

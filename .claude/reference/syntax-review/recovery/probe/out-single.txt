@@ -1,0 +1,10 @@
+programs 200 cases 62120
+[single] total 62120 panics 0 not_whole 0 not_nested 0 bad_spans 0 clean_with_recovery 0 slowest 3.080606ms (item 40353)
+category                         total  exact  fewer  more
+delete-token                      26956  25040   1798    118
+indent-minus-one                   1594   1255    239    100
+indent-plus-one                    3138   2865    239     34
+missing-closer                     1877   1876      0      1
+open-string                           5      5      0      0
+stray-token                       26956  26017    905     34
+tab-for-space                      1594   1594      0      0

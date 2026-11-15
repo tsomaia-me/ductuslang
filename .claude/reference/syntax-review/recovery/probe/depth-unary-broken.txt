@@ -1,0 +1,1 @@
+depth unary n=100000 broken=true bytes=100009 ok time=26.435393ms diags=1 whole=ok nest=ok first=Some("ExpressionSyntax 100008..100009 expected an expression, found the end of the line")

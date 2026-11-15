@@ -1,0 +1,35 @@
+--- diagnostics (1)
+  UnexpectedIndent 37..41 "fade" :: this line is indented, but the line before it opens no block
+--- detached [] at_layout []
+--- tree
+File 0..44
+  Placement 0..44
+    Ident "Scene"
+    Ident "s"
+    Body 7..44
+      Colon ":"
+      Block 8..44
+        Newline "\n"
+        Indent ""
+        Placement 13..26
+          Ident "Cue"
+          DefaultArg 16..18
+            Slash "/"
+            Literal 17..18
+              Number "1"
+          Attrs 19..25
+            Pipe "|"
+            AttrEntry 21..25
+              Ident "at"
+              Eq "="
+              Literal 24..25
+                Number "1"
+          Newline "\n"
+        ErrorNode 37..44
+          Indent ""
+          Ident "fade"
+          Eq "="
+          Number "2"
+          Newline "\n"
+          Dedent ""
+        Dedent ""

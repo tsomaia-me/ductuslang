@@ -1,0 +1,25 @@
+--- diagnostics (1)
+  UnterminatedString 10..18 "\"abc, 1)" :: this string does not end on its line
+--- detached [] at_layout []
+--- tree
+File 0..29
+  LetDecl 0..19
+    LetKw "let"
+    Ident "x"
+    Eq "="
+    CallExpr 8..18
+      NameRef 8..9
+        Ident "f"
+      ArgList 9..18
+        LParen "("
+        StringLit 10..18
+          StringStart "\""
+          StringText "abc, 1)"
+    Newline ""
+  LetDecl 19..29
+    LetKw "let"
+    Ident "y"
+    Eq "="
+    Literal 27..28
+      Number "2"
+    Newline "\n"

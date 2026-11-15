@@ -1,0 +1,36 @@
+--- diagnostics (2)
+  PlacementSyntax 9..12 "Cue" :: expected an indented block, found `Cue`
+  PlacementSyntax 12..13 "/" :: expected the top-level instance's name, found `/`
+--- detached [9..12] at_layout []
+--- tree
+File 0..34
+  Placement 0..9
+    Ident "Scene"
+    Ident "s"
+    Body 7..9
+      Colon ":"
+      Block 8..9
+        Newline "\n"
+  Placement 9..15
+    Ident "Cue"
+    DefaultArg 12..14
+      Slash "/"
+      Literal 13..14
+        Number "1"
+    Newline "\n"
+  Placement 15..34
+    Ident "Scene"
+    Ident "t"
+    Body 22..34
+      Colon ":"
+      Block 23..34
+        Newline "\n"
+        Indent ""
+        Placement 28..34
+          Ident "Cue"
+          DefaultArg 31..33
+            Slash "/"
+            Literal 32..33
+              Number "2"
+          Newline "\n"
+        Dedent ""

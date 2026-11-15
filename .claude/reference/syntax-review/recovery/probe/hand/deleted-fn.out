@@ -1,0 +1,28 @@
+--- diagnostics (2)
+  PlacementSyntax 1..2 "(" :: expected the top-level instance's name, found `(`
+  LetSyntax 10..13 "let" :: a `let` line stands only at the start of a pattern body
+--- detached [] at_layout []
+--- tree
+File 0..26
+  Placement 0..26
+    Ident "f"
+    ErrorNode 1..4
+      LParen "("
+      Ident "x"
+      RParen ")"
+    Body 4..26
+      Colon ":"
+      Block 5..26
+        Newline "\n"
+        Indent ""
+        LocalLet 10..20
+          LetKw "let"
+          Ident "a"
+          Eq "="
+          NameRef 18..19
+            Ident "x"
+          Newline "\n"
+        Placement 24..26
+          Ident "a"
+          Newline "\n"
+        Dedent ""

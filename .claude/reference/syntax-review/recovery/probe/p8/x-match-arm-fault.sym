@@ -1,0 +1,4 @@
+let x = match w:
+    1 2: 3
+    else: 4
+let y = 2

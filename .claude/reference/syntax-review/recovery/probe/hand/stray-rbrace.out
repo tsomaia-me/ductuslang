@@ -1,0 +1,18 @@
+--- diagnostics (1)
+  UnexpectedCharacter 13..14 "}" :: unexpected `}`
+--- detached [] at_layout []
+--- tree
+File 0..15
+  LetDecl 0..15
+    LetKw "let"
+    Ident "x"
+    Eq "="
+    BinaryExpr 8..13
+      Literal 8..9
+        Number "1"
+      Plus "+"
+      Literal 12..13
+        Number "2"
+    ErrorNode 13..14
+      Error "}"
+    Newline "\n"

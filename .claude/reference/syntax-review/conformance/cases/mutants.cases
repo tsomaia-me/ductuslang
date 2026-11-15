@@ -1,0 +1,6712 @@
+#### mut1 del of §1.1 1 sym L15
+state intensity(0.5)
+state glow = intensity * 0.8
+
+Scene dusk:
+    Cue/0 Cue/2 Cue
+    [Cue/6 Cue/6]
+    Cue/8 | fade=glow
+    Triggers: night
+
+Scene night:
+    Cue/0
+    Triggers: dusk
+
+#### mut2 trunc of §1.1 1 sym L15
+state intensity(0.5)
+state glow = intensity * 0.8
+
+Scene dusk:
+    Cue/0 Cue/2 Cue/4
+    [Cue/6 Cue/6]
+    Cue/8 | fade=glow
+    Triggers: night
+
+Scene night:
+    Cue
+#### mut3 del-line of §1.1 1 sym L15
+state intensity(0.5)
+
+Scene dusk:
+    Cue/0 Cue/2 Cue/4
+    [Cue/6 Cue/6]
+    Cue/8 | fade=glow
+    Triggers: night
+
+Scene night:
+    Cue/0
+    Triggers: dusk
+
+#### mut4 del-line of §1.1 1 sym L15
+state glow = intensity * 0.8
+
+Scene dusk:
+    Cue/0 Cue/2 Cue/4
+    [Cue/6 Cue/6]
+    Cue/8 | fade=glow
+    Triggers: night
+
+Scene night:
+    Cue/0
+    Triggers: dusk
+
+#### mut5 del of §1.1 1 sym L15
+state intensity(0.5)
+state glow = intensity * 0.8
+
+Scene dusk:
+    Cue/0 Cue/2 Cue/4
+    [Cue/6 Cue/6]
+    Cue/8 | fade=glow
+    riggers: night
+
+Scene night:
+    Cue/0
+    Triggers: dusk
+
+#### mut6 dup-line of §1.1 1 sym L15
+state intensity(0.5)
+state glow = intensity * 0.8
+
+Scene dusk:
+    Cue/0 Cue/2 Cue/4
+    [Cue/6 Cue/6]
+    Cue/8 | fade=glow
+    Cue/8 | fade=glow
+    Triggers: night
+
+Scene night:
+    Cue/0
+    Triggers: dusk
+
+#### mut7 del of §1.1 1 sym L15
+state intensity(05)
+state glow = intensity * 0.8
+
+Scene dusk:
+    Cue/0 Cue/2 Cue/4
+    [Cue/6 Cue/6]
+    Cue/8 | fade=glow
+    Triggers: night
+
+Scene night:
+    Cue/0
+    Triggers: dusk
+
+#### mut8 dup-line of §1.1 1 sym L15
+state intensity(0.5)
+state intensity(0.5)
+state glow = intensity * 0.8
+
+Scene dusk:
+    Cue/0 Cue/2 Cue/4
+    [Cue/6 Cue/6]
+    Cue/8 | fade=glow
+    Triggers: night
+
+Scene night:
+    Cue/0
+    Triggers: dusk
+
+#### mut9 trunc of §1.1 1 sym L15
+state intensity(0.5)
+state glow = intensity * 0.8
+
+Scene dusk:
+    Cue/0 Cue/2 Cue/4
+    [Cue/6 Cue/6]
+    Cue/8 | fade=glow
+    Triggers: night
+#### mut10 del-line of §1.1 1 sym L15
+state glow = intensity * 0.8
+
+Scene dusk:
+    Cue/0 Cue/2 Cue/4
+    [Cue/6 Cue/6]
+    Cue/8 | fade=glow
+    Triggers: night
+
+Scene night:
+    Cue/0
+    Triggers: dusk
+
+#### mut11 del-line of §1.1 1 sym L15
+state intensity(0.5)
+state glow = intensity * 0.8
+
+Scene dusk:
+    Cue/0 Cue/2 Cue/4
+    [Cue/6 Cue/6]
+    Triggers: night
+
+Scene night:
+    Cue/0
+    Triggers: dusk
+
+#### mut12 del of §1.1 1 sym L15
+state intensty(0.5)
+state glow = intensity * 0.8
+
+Scene dusk:
+    Cue/0 Cue/2 Cue/4
+    [Cue/6 Cue/6]
+    Cue/8 | fade=glow
+    Triggers: night
+
+Scene night:
+    Cue/0
+    Triggers: dusk
+
+#### mut13 ins of §3.3 1 sym L209
+state name(""): str[..32]
+
+Track l^ead | title="lead: {name}":
+    Piano
+
+Kit drums:
+    for i in 0..8:
+        Sampler | file="kit/{i}.wav"
+
+#### mut14 del-line of §3.3 1 sym L209
+state name(""): str[..32]
+Track lead | title="lead: {name}":
+    Piano
+
+Kit drums:
+    for i in 0..8:
+        Sampler | file="kit/{i}.wav"
+
+#### mut15 del-line of §3.3 1 sym L209
+state name(""): str[..32]
+
+    Piano
+
+Kit drums:
+    for i in 0..8:
+        Sampler | file="kit/{i}.wav"
+
+#### mut16 del-line of §3.3 1 sym L209
+state name(""): str[..32]
+
+Track lead | title="lead: {name}":
+
+Kit drums:
+    for i in 0..8:
+        Sampler | file="kit/{i}.wav"
+
+#### mut17 trunc of §3.3 1 sym L209
+state name(""): str[..32]
+
+Track lead | title="lead: {name}":
+    Piano
+
+Kit drums:
+    for i i
+#### mut18 trunc of §3.3 1 sym L209
+state name(""): str[..32]
+
+Track lead | title="lead: {name}":
+    Piano
+
+Kit drums:
+    for i in 0..8:
+        Sampler | file="kit/{i}.wav"
+
+#### mut19 del-line of §3.3 1 sym L209
+state name(""): str[..32]
+
+Track lead | title="lead: {name}":
+
+Kit drums:
+    for i in 0..8:
+        Sampler | file="kit/{i}.wav"
+
+#### mut20 del-line of §3.3 1 sym L209
+state name(""): str[..32]
+
+Track lead | title="lead: {name}":
+    Piano
+
+Kit drums:
+        Sampler | file="kit/{i}.wav"
+
+#### mut21 dup-line of §3.3 1 sym L209
+state name(""): str[..32]
+
+Track lead | title="lead: {name}":
+    Piano
+
+Kit drums:
+    for i in 0..8:
+        Sampler | file="kit/{i}.wav"
+        Sampler | file="kit/{i}.wav"
+
+#### mut22 ins of §3.3 1 sym L209
+state name(""): str[..32]
+
+Track lead | title="lead: {name}":
+    Piano
+
+Kit drums:
+    for :i in 0..8:
+        Sampler | file="kit/{i}.wav"
+
+#### mut23 del of §3.3 1 sym L209
+state name(""): str[..32]
+
+Track lead | title=lead: {name}":
+    Piano
+
+Kit drums:
+    for i in 0..8:
+        Sampler | file="kit/{i}.wav"
+
+#### mut24 del-line of §3.3 1 sym L209
+state name(""): str[..32]
+
+Track lead | title="lead: {name}":
+    Piano
+
+Kit drums:
+    for i in 0..8:
+
+#### mut25 dup-line of §3.6 1 sym L244
+Scene dusk:
+    Cue | at=500ms
+    Cue | at=2
+    Cue | at=2
+
+#### mut26 trunc of §3.6 1 sym L244
+Scene dusk:
+    Cue | at=500ms
+    Cue
+#### mut27 del-line of §3.6 1 sym L244
+Scene dusk:
+    Cue | at=500ms
+    Cue | at=2
+#### mut28 ins of §3.6 1 sym L244
+Scene dusk{:
+    Cue | at=500ms
+    Cue | at=2
+
+#### mut29 dup-line of §3.6 1 sym L244
+Scene dusk:
+Scene dusk:
+    Cue | at=500ms
+    Cue | at=2
+
+#### mut30 trunc of §3.6 1 sym L244
+Scene dusk:
+    Cue | at=500ms
+    Cue | a
+#### mut31 del-line of §3.6 1 sym L244
+Scene dusk:
+    Cue | at=500ms
+
+#### mut32 ins of §3.6 1 sym L244
+Scene dusk:
+    Cue |日 at=500ms
+    Cue | at=2
+
+#### mut33 del-line of §3.6 1 sym L244
+Scene dusk:
+    Cue | at=500ms
+    Cue | at=2
+#### mut34 trunc of §3.6 1 sym L244
+Scen
+#### mut35 dup-line of §3.6 1 sym L244
+Scene dusk:
+Scene dusk:
+    Cue | at=500ms
+    Cue | at=2
+
+#### mut36 ins of §3.6 1 sym L244
+Sce..ne dusk:
+    Cue | at=500ms
+    Cue | at=2
+
+#### mut37 dup-line of §3.8 1 sym L284
+type Band:
+    low: f32
+    high: f32
+
+state band(Band {low: 0.2, high: 0.8})
+state band(Band {low: 0.2, high: 0.8})
+
+Plant boiler:
+    Controller as loop | target=band.low gain=band.high - band.low
+
+#### mut38 ins of §3.8 1 sym L284
+type Band:
+    low: f32
+    high: f32
+
+state band(Band {low: 0.2, high: 0.8})
+
+Plant boiler:
+    C(ontroller as loop | target=band.low gain=band.high - band.low
+
+#### mut39 ins of §3.8 1 sym L284
+type Band:
+    low: f32
+    high: f32
+
+state band(Band {low: 0.2, high: 0.8})
+
+Plant boiler:
+    Controller as loop | }target=band.low gain=band.high - band.low
+
+#### mut40 trunc of §3.8 1 sym L284
+type Band:
+    low: f32
+    high: f32
+
+state band(Band {low: 0.2, high: 0.8})
+
+Plant boiler:
+    Controller as loop | target=band.low gain=band.high - band.
+#### mut41 trunc of §3.8 1 sym L284
+type Band:
+    low: f32
+    high: f32
+
+state band(Band {low: 0.2, high: 0.8})
+
+Plant boiler:
+    Controller as loop | target=b
+#### mut42 ins of §3.8 1 sym L284
+type Band:
+    low: f32
+    high: f32
+
+state band(Band {{low: 0.2, high: 0.8})
+
+Plant boiler:
+    Controller as loop | target=band.low gain=band.high - band.low
+
+#### mut43 dup-line of §3.8 1 sym L284
+type Band:
+    low: f32
+    high: f32
+
+state band(Band {low: 0.2, high: 0.8})
+
+Plant boiler:
+Plant boiler:
+    Controller as loop | target=band.low gain=band.high - band.low
+
+#### mut44 trunc of §3.8 1 sym L284
+type Band:
+    low: f32
+    high: f32
+
+state band(Band {low: 0.2, high: 0.8})
+
+Plant boiler:
+    Controller as loop | target=ba
+#### mut45 dup-line of §3.8 1 sym L284
+type Band:
+    low: f32
+    high: f32
+
+state band(Band {low: 0.2, high: 0.8})
+
+Plant boiler:
+Plant boiler:
+    Controller as loop | target=band.low gain=band.high - band.low
+
+#### mut46 ins of §3.8 1 sym L284
+type Band:
+    low: f32
+    high: f32
+
+state band(Band {low: 0.2, high: 0.8})
+
+Plant boiler:
+    Controller as loop | target=band.low gain=b{and.high - band.low
+
+#### mut47 del-line of §3.8 1 sym L284
+type Band:
+    low: f32
+    high: f32
+
+
+Plant boiler:
+    Controller as loop | target=band.low gain=band.high - band.low
+
+#### mut48 ins of §3.8 1 sym L284
+type Band:
+    low: f32
+    high: f32
+
+state band(Band {low: 0.2, high: 0.8})
+
+Plant boiler:
+    Controlle,r as loop | target=band.low gain=band.high - band.low
+
+#### mut49 del of §3.9 1 sym L305
+type Circle:
+    r: f32
+type Square:
+    side: f32
+type Shape = Circle | Square
+
+state port(none): i32?
+state shape(Square {side: 1}): Shape
+
+state bound = port ?? 80
+state area = match shape:
+   Circle: pi * shape.r * shape.r
+    Square: shape.side * shape.side
+
+#### mut50 del of §3.9 1 sym L305
+type Circle:
+    r: f32
+type Square:
+    sde: f32
+type Shape = Circle | Square
+
+state port(none): i32?
+state shape(Square {side: 1}): Shape
+
+state bound = port ?? 80
+state area = match shape:
+    Circle: pi * shape.r * shape.r
+    Square: shape.side * shape.side
+
+#### mut51 del of §3.9 1 sym L305
+type Circle:
+    r: f32
+type Square:
+    side: f32
+type Shape = Circle | Square
+
+state port(none): i32?
+state shape(Sqare {side: 1}): Shape
+
+state bound = port ?? 80
+state area = match shape:
+    Circle: pi * shape.r * shape.r
+    Square: shape.side * shape.side
+
+#### mut52 del-line of §3.9 1 sym L305
+type Circle:
+    r: f32
+    side: f32
+type Shape = Circle | Square
+
+state port(none): i32?
+state shape(Square {side: 1}): Shape
+
+state bound = port ?? 80
+state area = match shape:
+    Circle: pi * shape.r * shape.r
+    Square: shape.side * shape.side
+
+#### mut53 ins of §3.9 1 sym L305
+type Circle:
+    r: f32
+type Square:
+    side: f32
+type Shape = Circle | Square
+
+state port(none): i32?
+state shape(Square {side: 1}):( Shape
+
+state bound = port ?? 80
+state area = match shape:
+    Circle: pi * shape.r * shape.r
+    Square: shape.side * shape.side
+
+#### mut54 dup-line of §3.9 1 sym L305
+type Circle:
+    r: f32
+type Square:
+    side: f32
+type Shape = Circle | Square
+
+state port(none): i32?
+state shape(Square {side: 1}): Shape
+
+
+state bound = port ?? 80
+state area = match shape:
+    Circle: pi * shape.r * shape.r
+    Square: shape.side * shape.side
+
+#### mut55 del-line of §3.9 1 sym L305
+type Circle:
+    r: f32
+type Square:
+    side: f32
+type Shape = Circle | Square
+
+state port(none): i32?
+state shape(Square {side: 1}): Shape
+
+state area = match shape:
+    Circle: pi * shape.r * shape.r
+    Square: shape.side * shape.side
+
+#### mut56 del of §3.9 1 sym L305
+type Circle:
+    r: f32
+type Square:
+    side: f32
+type Shape = Circle | Square
+
+state port(none): i32?
+state shape(Square {side: 1}): Shape
+
+state bound = port ??
+state area = match shape:
+    Circle: pi * shape.r * shape.r
+    Square: shape.side * shape.side
+
+#### mut57 del-line of §3.9 1 sym L305
+type Circle:
+    r: f32
+type Square:
+    side: f32
+type Shape = Circle | Square
+
+state port(none): i32?
+state shape(Square {side: 1}): Shape
+
+state bound = port ?? 80
+    Circle: pi * shape.r * shape.r
+    Square: shape.side * shape.side
+
+#### mut58 dup-line of §3.9 1 sym L305
+type Circle:
+    r: f32
+type Square:
+    side: f32
+type Shape = Circle | Square
+
+state port(none): i32?
+state shape(Square {side: 1}): Shape
+
+state bound = port ?? 80
+state area = match shape:
+    Circle: pi * shape.r * shape.r
+    Square: shape.side * shape.side
+
+
+#### mut59 dup-line of §3.9 1 sym L305
+type Circle:
+    r: f32
+type Square:
+    side: f32
+type Shape = Circle | Square
+
+state port(none): i32?
+state port(none): i32?
+state shape(Square {side: 1}): Shape
+
+state bound = port ?? 80
+state area = match shape:
+    Circle: pi * shape.r * shape.r
+    Square: shape.side * shape.side
+
+#### mut60 trunc of §3.9 1 sym L305
+type Circle:
+    r: f32
+type Square:
+    side: f32
+type Shape = Circle | Square
+
+state port(none): i32?
+state shape(Square {side: 1}): Shape
+
+state bound = port ?? 80
+state area = match shape:
+    Circ
+#### mut61 dup-line of §3.10 1 sym L347
+state headers({}): {str[..32]: str[..256]}[..32]
+state headers({}): {str[..32]: str[..256]}[..32]
+state req(Request {})
+
+state host = headers["host"] ?? "localhost"
+state trimmed = headers without ["cookie", "set-cookie"]
+state with_host = headers + {"host": host}
+state hits({}): {str[..64]: i32}[..64] = (hits.past(1) + {req.path: (hits.past(1)[req.path] ?? 0) + 1})[^64..]
+
+#### mut62 trunc of §3.10 1 sym L347
+state headers({}): {str[..32]: str[..256]}[..32]
+state req(Request {})
+
+state host = headers["hos
+#### mut63 dup-line of §3.10 1 sym L347
+state headers({}): {str[..32]: str[..256]}[..32]
+state req(Request {})
+
+
+state host = headers["host"] ?? "localhost"
+state trimmed = headers without ["cookie", "set-cookie"]
+state with_host = headers + {"host": host}
+state hits({}): {str[..64]: i32}[..64] = (hits.past(1) + {req.path: (hits.past(1)[req.path] ?? 0) + 1})[^64..]
+
+#### mut64 ins of §3.10 1 sym L347
+state headers({}): {str[..32]: str[..256]}[..32]
+state r日eq(Request {})
+
+state host = headers["host"] ?? "localhost"
+state trimmed = headers without ["cookie", "set-cookie"]
+state with_host = headers + {"host": host}
+state hits({}): {str[..64]: i32}[..64] = (hits.past(1) + {req.path: (hits.past(1)[req.path] ?? 0) + 1})[^64..]
+
+#### mut65 trunc of §3.10 1 sym L347
+state headers({}): {str[..
+#### mut66 del-line of §3.10 1 sym L347
+state headers({}): {str[..32]: str[..256]}[..32]
+state req(Request {})
+state host = headers["host"] ?? "localhost"
+state trimmed = headers without ["cookie", "set-cookie"]
+state with_host = headers + {"host": host}
+state hits({}): {str[..64]: i32}[..64] = (hits.past(1) + {req.path: (hits.past(1)[req.path] ?? 0) + 1})[^64..]
+
+#### mut67 trunc of §3.10 1 sym L347
+state headers({}): {str[..32]: str[..256]}[..32]
+state req(Request {})
+
+state host = headers["host"] ?? "localhost"
+state trimmed = headers without ["cookie", "set-cookie"]
+state with_host = headers + {"host": host}
+state hits({}): {str[..64]: i32}[..64] = (hits.past(1) + {
+#### mut68 del-line of §3.10 1 sym L347
+state req(Request {})
+
+state host = headers["host"] ?? "localhost"
+state trimmed = headers without ["cookie", "set-cookie"]
+state with_host = headers + {"host": host}
+state hits({}): {str[..64]: i32}[..64] = (hits.past(1) + {req.path: (hits.past(1)[req.path] ?? 0) + 1})[^64..]
+
+#### mut69 del of §3.10 1 sym L347
+state headers({}): {str[..32]: str[.6]}[..32]
+state req(Request {})
+
+state host = headers["host"] ?? "localhost"
+state trimmed = headers without ["cookie", "set-cookie"]
+state with_host = headers + {"host": host}
+state hits({}): {str[..64]: i32}[..64] = (hits.past(1) + {req.path: (hits.past(1)[req.path] ?? 0) + 1})[^64..]
+
+#### mut70 del of §3.10 1 sym L347
+state headers({}): {str[..32]: str[..256]}[..32]
+state req(Request {})
+
+state host = headers["host"] ?? "localhost"
+state trimmed = headers without ["cookie", "set-cookie"]
+state with_host = hers + {"host": host}
+state hits({}): {str[..64]: i32}[..64] = (hits.past(1) + {req.path: (hits.past(1)[req.path] ?? 0) + 1})[^64..]
+
+#### mut71 ins of §3.10 1 sym L347
+state headers({}): {str[..32]: str[..256]}[..32]
+state req(Request {})
+
+state host = headers["host"] ?? "localhost"
+state trimmed日 = headers without ["cookie", "set-cookie"]
+state with_host = headers + {"host": host}
+state hits({}): {str[..64]: i32}[..64] = (hits.past(1) + {req.path: (hits.past(1)[req.path] ?? 0) + 1})[^64..]
+
+#### mut72 dup-line of §3.10 1 sym L347
+state headers({}): {str[..32]: str[..256]}[..32]
+state req(Request {})
+state req(Request {})
+
+state host = headers["host"] ?? "localhost"
+state trimmed = headers without ["cookie", "set-cookie"]
+state with_host = headers + {"host": host}
+state hits({}): {str[..64]: i32}[..64] = (hits.past(1) + {req.path: (hits.past(1)[req.path] ?? 0) + 1})[^64..]
+
+#### mut73 dup-line of §3.11 1 sym L385
+state body(json {}): json[..65536]
+
+state items = body["items"]
+state count = items.size
+state qty = items[0]["qty"] ?? 1
+state name: str[..64] = body["customer"]["name"] ?? "anonymous"
+state order: Order = body["order"] ?? Order {}
+state is_list = items.kind is Array
+state is_list = items.kind is Array
+state anonymous = body["customer"]["name"] is none
+state reply = json {"ok": true, "count": count, "echo": items, "order": order}
+
+#### mut74 dup-line of §3.11 1 sym L385
+state body(json {}): json[..65536]
+
+state items = body["items"]
+state count = items.size
+state qty = items[0]["qty"] ?? 1
+state qty = items[0]["qty"] ?? 1
+state name: str[..64] = body["customer"]["name"] ?? "anonymous"
+state order: Order = body["order"] ?? Order {}
+state is_list = items.kind is Array
+state anonymous = body["customer"]["name"] is none
+state reply = json {"ok": true, "count": count, "echo": items, "order": order}
+
+#### mut75 del of §3.11 1 sym L385
+state body(json {}): json[..65536]
+
+state iems = body["items"]
+state count = items.size
+state qty = items[0]["qty"] ?? 1
+state name: str[..64] = body["customer"]["name"] ?? "anonymous"
+state order: Order = body["order"] ?? Order {}
+state is_list = items.kind is Array
+state anonymous = body["customer"]["name"] is none
+state reply = json {"ok": true, "count": count, "echo": items, "order": order}
+
+#### mut76 ins of §3.11 1 sym L385
+state body(json {}): json[..65536]
+
+state items = body["items"]
+state count = items.size
+state qty = items[0]["qty"] ?? 1
+state name: str[..64] = body["customer"]["name"] ?? "anonymous"
+state order: Order = body["order"] ?? Order {}
+state is_list = items.kind is Array
+state anonymous = body["customer"]["name"] is none
+state reply = json {"ok": true, "count": count, "echo": items,  when "order": order}
+
+#### mut77 dup-line of §3.11 1 sym L385
+state body(json {}): json[..65536]
+
+state items = body["items"]
+state items = body["items"]
+state count = items.size
+state qty = items[0]["qty"] ?? 1
+state name: str[..64] = body["customer"]["name"] ?? "anonymous"
+state order: Order = body["order"] ?? Order {}
+state is_list = items.kind is Array
+state anonymous = body["customer"]["name"] is none
+state reply = json {"ok": true, "count": count, "echo": items, "order": order}
+
+#### mut78 trunc of §3.11 1 sym L385
+state body(json {}): json[..65536]
+
+state items = body["items"]
+state count = items.size
+state qty = items[0]["qty"] ?? 1
+state name: str[..64] = body["customer"]["name"] ?? "anonymous"
+state order: Order = body["order"] ?? Order {}
+state is_list = items.kind is A
+#### mut79 del-line of §3.11 1 sym L385
+state body(json {}): json[..65536]
+
+state items = body["items"]
+state count = items.size
+state qty = items[0]["qty"] ?? 1
+state order: Order = body["order"] ?? Order {}
+state is_list = items.kind is Array
+state anonymous = body["customer"]["name"] is none
+state reply = json {"ok": true, "count": count, "echo": items, "order": order}
+
+#### mut80 del-line of §3.11 1 sym L385
+
+state items = body["items"]
+state count = items.size
+state qty = items[0]["qty"] ?? 1
+state name: str[..64] = body["customer"]["name"] ?? "anonymous"
+state order: Order = body["order"] ?? Order {}
+state is_list = items.kind is Array
+state anonymous = body["customer"]["name"] is none
+state reply = json {"ok": true, "count": count, "echo": items, "order": order}
+
+#### mut81 del-line of §3.11 1 sym L385
+state body(json {}): json[..65536]
+
+state items = body["items"]
+state count = items.size
+state name: str[..64] = body["customer"]["name"] ?? "anonymous"
+state order: Order = body["order"] ?? Order {}
+state is_list = items.kind is Array
+state anonymous = body["customer"]["name"] is none
+state reply = json {"ok": true, "count": count, "echo": items, "order": order}
+
+#### mut82 trunc of §3.11 1 sym L385
+state body(json {}): json[..65536]
+
+state items = body["items"]
+state count = items.size
+state qty = items[0]["qty"] ?? 1
+state name: str[..64] = body["customer"]["name"] ?? "anonymous"
+state order: Order = body["order"] ?? Order {}
+state is_list = items.kind is Array
+state anonymous = body["customer"]["name"] is none
+state rep
+#### mut83 ins of §3.11 1 sym L385
+state body(json {}): json[..65536]
+
+state items = body["items"]
+state count = items.size
+state qty = items[0]["qty"] ?? 1
+state name: str[..64] = body["customer"]["name"] ?? "anonymous"
+state order: Order = body["order"] ?? Order {}
+state is_list = items.kind is Array
+state anonymous = body["customer"]["name"] is none
+state reply = json {"ok": true, "cou for nt": count, "echo": items, "order": order}
+
+#### mut84 del of §3.11 1 sym L385
+state body(json {}): json[..65536]
+
+state items = body["items"]
+state count = items.size
+state qty = items[0]["qty"] ?? 1
+state name: str[..64] = body["customer"]["name"] ?? "anonymous"
+ste order: Order = body["order"] ?? Order {}
+state is_list = items.kind is Array
+state anonymous = body["customer"]["name"] is none
+state reply = json {"ok": true, "count": count, "echo": items, "order": order}
+
+#### mut85 del-line of §4.1 1 sym L416
+let base = 48
+
+Clip melody:
+    Note/(base + 7)
+
+    Osc | freq=(base * 2.5)
+
+#### mut86 del of §4.1 1 sym L416
+let base = 48
+
+Clip melody:
+    Note/(base + 7)
+
+Synth lead:
+    Osc | freq=(base2.5)
+
+#### mut87 del of §4.1 1 sym L416
+let base = 48
+
+Clip melo:
+    Note/(base + 7)
+
+Synth lead:
+    Osc | freq=(base * 2.5)
+
+#### mut88 del of §4.1 1 sym L416
+let base = 48
+
+Clip melody:
+ Note/(base + 7)
+
+Synth lead:
+    Osc | freq=(base * 2.5)
+
+#### mut89 ins of §4.1 1 sym L416
+let base = 48
+
+Clip melody:
+    Note/(base + 7)
+
+Synth lead:
+   when   Osc | freq=(base * 2.5)
+
+#### mut90 trunc of §4.1 1 sym L416
+let
+#### mut91 dup-line of §4.1 1 sym L416
+let base = 48
+
+Clip melody:
+    Note/(base + 7)
+
+
+Synth lead:
+    Osc | freq=(base * 2.5)
+
+#### mut92 del-line of §4.1 1 sym L416
+let base = 48
+
+Clip melody:
+    Note/(base + 7)
+
+    Osc | freq=(base * 2.5)
+
+#### mut93 ins of §4.1 1 sym L416
+let base = 48
+
+Clip melody:
+    Note/(base + 7)
+
+Synth le	ad:
+    Osc | freq=(base * 2.5)
+
+#### mut94 del of §4.1 1 sym L416
+let base =48
+
+Clip melody:
+    Note/(base + 7)
+
+Synth lead:
+    Osc | freq=(base * 2.5)
+
+#### mut95 dup-line of §4.1 1 sym L416
+let base = 48
+
+Clip melody:
+    Note/(base + 7)
+    Note/(base + 7)
+
+Synth lead:
+    Osc | freq=(base * 2.5)
+
+#### mut96 del of §4.1 1 sym L416
+let base = 48
+
+Clip melody:
+    Note/(base 7)
+
+Synth lead:
+    Osc | freq=(base * 2.5)
+
+#### mut97 dup-line of §4.2 1 sym L445
+state demand(0.5)
+
+Plant boiler:
+Plant boiler:
+    Valve | open=demand * 0.8
+
+#### mut98 trunc of §4.2 1 sym L445
+state dema
+#### mut99 del of §4.2 1 sym L445
+state demand(0.5)
+
+Plant boiler:
+    Valve | openemand * 0.8
+
+#### mut100 dup-line of §4.2 1 sym L445
+state demand(0.5)
+
+Plant boiler:
+Plant boiler:
+    Valve | open=demand * 0.8
+
+#### mut101 dup-line of §4.2 1 sym L445
+state demand(0.5)
+
+Plant boiler:
+    Valve | open=demand * 0.8
+    Valve | open=demand * 0.8
+
+#### mut102 trunc of §4.2 1 sym L445
+state demand(0.5)
+
+Plant boiler:
+    Valve | open=d
+#### mut103 del of §4.2 1 sym L445
+state demand(0.5)
+
+Pant boiler:
+    Valve | open=demand * 0.8
+
+#### mut104 del of §4.2 1 sym L445
+stademand(0.5)
+
+Plant boiler:
+    Valve | open=demand * 0.8
+
+#### mut105 del of §4.2 1 sym L445
+state demand(0.5)
+
+Plant boiler:
+    Valve | open=demand * 
+
+#### mut106 ins of §4.2 1 sym L445
+state demand(0.5)
+
+Plant boiler:
+    Valve | open=demand * 0{.8
+
+#### mut107 trunc of §4.2 1 sym L445
+state demand(0.5
+#### mut108 trunc of §4.2 1 sym L445
+s
+#### mut109 del of §4.4 1 sym L468
+state dim(0.5)
+
+Rig stage:
+    Lamp | level=dim
+
+Scene dusk:
+    Cu| fade=dim * 4
+
+#### mut110 del of §4.4 1 sym L468
+state dim(0.5)
+
+Rig stag:
+    Lamp | level=dim
+
+Scene dusk:
+    Cue | fade=dim * 4
+
+#### mut111 del of §4.4 1 sym L468
+state dim(0.5)
+
+Rig stage:
+    Lp | level=dim
+
+Scene dusk:
+    Cue | fade=dim * 4
+
+#### mut112 del of §4.4 1 sym L468
+state dim(0.5)
+
+Rig stage:
+    Lamp | level=dim
+
+Scene dusk:
+   e | fade=dim * 4
+
+#### mut113 ins of §4.4 1 sym L468
+state dim(0.5)
+
+Rig stage:
+    Lamp | lev/el=dim
+
+Scene dusk:
+    Cue | fade=dim * 4
+
+#### mut114 del of §4.4 1 sym L468
+state dim(0.5)
+
+Rig stage:
+    Lamp | level=dim
+
+Scen dusk:
+    Cue | fade=dim * 4
+
+#### mut115 dup-line of §4.4 1 sym L468
+state dim(0.5)
+
+Rig stage:
+    Lamp | level=dim
+
+Scene dusk:
+    Cue | fade=dim * 4
+    Cue | fade=dim * 4
+
+#### mut116 del of §4.4 1 sym L468
+state dim(0.5)
+
+Rig stage:
+    Lamp | level=dim
+
+Scene dusk:
+   e | fade=dim * 4
+
+#### mut117 del-line of §4.4 1 sym L468
+
+Rig stage:
+    Lamp | level=dim
+
+Scene dusk:
+    Cue | fade=dim * 4
+
+#### mut118 del of §4.4 1 sym L468
+state dim(0.5)
+
+Rig stage:
+    Lamp | level=dim
+
+Scene d:
+    Cue | fade=dim * 4
+
+#### mut119 del of §4.4 1 sym L468
+tate dim(0.5)
+
+Rig stage:
+    Lamp | level=dim
+
+Scene dusk:
+    Cue | fade=dim * 4
+
+#### mut120 dup-line of §4.4 1 sym L468
+state dim(0.5)
+
+
+Rig stage:
+    Lamp | level=dim
+
+Scene dusk:
+    Cue | fade=dim * 4
+
+#### mut121 ins of §4.4 2 sym L484
+state a,(1)
+state b = a + 0.5
+
+Plant boiler:
+    Valve when b > 1
+
+#### mut122 trunc of §4.4 2 sym L484
+state a(1)
+state b = a + 0.5
+
+Plant boiler:
+    Valve when b 
+#### mut123 del of §4.4 2 sym L484
+state a1)
+state b = a + 0.5
+
+Plant boiler:
+    Valve when b > 1
+
+#### mut124 trunc of §4.4 2 sym L484
+state a(1)
+state b = a + 0.5
+
+Plant
+#### mut125 del-line of §4.4 2 sym L484
+state a(1)
+state b = a + 0.5
+
+    Valve when b > 1
+
+#### mut126 trunc of §4.4 2 sym L484
+sta
+#### mut127 ins of §4.4 2 sym L484
+state a(1)
+state b = a + 0.5
+
+Plant boiler:
+    Valve wh日en b > 1
+
+#### mut128 del-line of §4.4 2 sym L484
+state a(1)
+state b = a + 0.5
+
+Plant boiler:
+
+#### mut129 ins of §4.4 2 sym L484
+state a(1)
+state b = a + ==0.5
+
+Plant boiler:
+    Valve when b > 1
+
+#### mut130 del-line of §4.4 2 sym L484
+state a(1)
+state b = a + 0.5
+
+    Valve when b > 1
+
+#### mut131 del of §4.4 2 sym L484
+state a(1)
+state b = a + 0.5
+
+Plant boiler:
+    Valve when b > 1
+#### mut132 del-line of §4.4 2 sym L484
+state a(1)
+
+Plant boiler:
+    Valve when b > 1
+
+#### mut133 del of §5.4 1 sym L587
+state alarm(false)
+state standby(false)
+state gain = if arm then 0.9 else if standby then 0.3 else 0.6
+
+#### mut134 dup-line of §5.4 1 sym L587
+state alarm(false)
+state standby(false)
+state gain = if alarm then 0.9 else if standby then 0.3 else 0.6
+
+
+#### mut135 trunc of §5.4 1 sym L587
+state alarm(false)
+state standby(false)
+
+#### mut136 del of §5.4 1 sym L587
+state alarm(false)
+state standby(false)
+state gain = if alarm then 0.9 else if standbthen 0.3 else 0.6
+
+#### mut137 del of §5.4 1 sym L587
+state alafalse)
+state standby(false)
+state gain = if alarm then 0.9 else if standby then 0.3 else 0.6
+
+#### mut138 trunc of §5.4 1 sym L587
+state alarm(false)
+state standby(false
+#### mut139 del of §5.4 1 sym L587
+state alarm(false)
+state standby(false)
+state gain = if alarm then 0.9 else if standby then 0.3 els.6
+
+#### mut140 ins of §5.4 1 sym L587
+state alarm(false)
+state standby(false)
+state gain = if alarm then 0.9 else if sta{ndby then 0.3 else 0.6
+
+#### mut141 del of §5.4 1 sym L587
+state alarm(false)
+state standbyalse)
+state gain = if alarm then 0.9 else if standby then 0.3 else 0.6
+
+#### mut142 trunc of §5.4 1 sym L587
+state alarm(false)
+state sta
+#### mut143 dup-line of §5.4 1 sym L587
+state alarm(false)
+state standby(false)
+state standby(false)
+state gain = if alarm then 0.9 else if standby then 0.3 else 0.6
+
+#### mut144 del of §5.4 1 sym L587
+state alarm(false)
+state standby(false)
+state gain = if alarm then 0.9 else if standb then 0.3 else 0.6
+
+#### mut145 dup-line of §5.4 2 sym L595
+state mode(Mode::Manual)
+
+state level = match mode:
+    Auto: 1.0
+    Manual: 0.8
+    Manual: 0.8
+    else: 0.6
+
+#### mut146 ins of §5.4 2 sym L595
+state mode(Mode::Manual)
+
+state level = match mode:^
+    Auto: 1.0
+    Manual: 0.8
+    else: 0.6
+
+#### mut147 ins of §5.4 2 sym L595
+state mode(Mode::Manual)
+    
+state level = match mode:
+    Auto: 1.0
+    Manual: 0.8
+    else: 0.6
+
+#### mut148 ins of §5.4 2 sym L595
+state mode((Mode::Manual)
+
+state level = match mode:
+    Auto: 1.0
+    Manual: 0.8
+    else: 0.6
+
+#### mut149 del-line of §5.4 2 sym L595
+state mode(Mode::Manual)
+
+state level = match mode:
+    Manual: 0.8
+    else: 0.6
+
+#### mut150 trunc of §5.4 2 sym L595
+state mode(Mode::Manual)
+
+state level = match mode:
+    
+#### mut151 ins of §5.4 2 sym L595
+state mode(Mode::Manual)
+
+state level = match mod for e:
+    Auto: 1.0
+    Manual: 0.8
+    else: 0.6
+
+#### mut152 ins of §5.4 2 sym L595
+state mode(Mode::Manual)
+
+state level = match mode:
+    Auto: 1.0
+    Manual: 0 for .8
+    else: 0.6
+
+#### mut153 trunc of §5.4 2 sym L595
+state mo
+#### mut154 trunc of §5.4 2 sym L595
+state mode(Mode::Manual)
+
+sta
+#### mut155 ins of §5.4 2 sym L595
+state mode|(Mode::Manual)
+
+state level = match mode:
+    Auto: 1.0
+    Manual: 0.8
+    else: 0.6
+
+#### mut156 del of §5.4 2 sym L595
+stateode(Mode::Manual)
+
+state level = match mode:
+    Auto: 1.0
+    Manual: 0.8
+    else: 0.6
+
+#### mut157 del of §5.5 1 sym L633
+state a(1)
+state b(2)
+state i(0)
+state c = [a, ba + b]
+
+#### mut158 ins of §5.5 1 sym L633
+state a(1)
+state b(2)
+state i(0)
+state c = [a, b, a + ;b]
+
+#### mut159 del-line of §5.5 1 sym L633
+state a(1)
+state b(2)
+state i(0)
+state c = [a, b, a + b]
+#### mut160 dup-line of §5.5 1 sym L633
+state a(1)
+state b(2)
+state i(0)
+state i(0)
+state c = [a, b, a + b]
+
+#### mut161 ins of §5.5 1 sym L633
+state) a(1)
+state b(2)
+state i(0)
+state c = [a, b, a + b]
+
+#### mut162 del of §5.5 1 sym L633
+state a(1)
+state b(2)
+state i(0)
+state c = [a, b, a b]
+
+#### mut163 trunc of §5.5 1 sym L633
+state a(1)
+state b(2)
+state i(0)
+state c = [a, b, a + b]
+
+#### mut164 trunc of §5.5 1 sym L633
+state a(1)
+state 
+#### mut165 trunc of §5.5 1 sym L633
+state a(1)
+state b(2)
+state i(0)
+state c
+#### mut166 ins of §5.5 1 sym L633
+state a(1)
+state b(2)
+state i(0)
+state c = [a, b, a[ + b]
+
+#### mut167 del of §5.5 1 sym L633
+state a(1)
+state b(2)
+state i(0)
+statec = [a, b, a + b]
+
+#### mut168 trunc of §5.5 1 sym L633
+state a(1)
+state
+#### mut169 trunc of §5.5 2 sym L648
+state held([]): i32[..10]
+state step(0)
+state note(60)
+
+state played = held + [note]
+
+Clip arp:
+    Note/(played[ste
+#### mut170 del-line of §5.5 2 sym L648
+state held([]): i32[..10]
+state step(0)
+state note(60)
+
+state played = held + [note]
+
+    Note/(played[step % played.size])
+
+#### mut171 del-line of §5.5 2 sym L648
+state held([]): i32[..10]
+state step(0)
+
+state played = held + [note]
+
+Clip arp:
+    Note/(played[step % played.size])
+
+#### mut172 del-line of §5.5 2 sym L648
+state held([]): i32[..10]
+state step(0)
+state note(60)
+state played = held + [note]
+
+Clip arp:
+    Note/(played[step % played.size])
+
+#### mut173 del of §5.5 2 sym L648
+state held([]): i32[..10]
+ste step(0)
+state note(60)
+
+state played = held + [note]
+
+Clip arp:
+    Note/(played[step % played.size])
+
+#### mut174 del of §5.5 2 sym L648
+state held([): i32[..10]
+state step(0)
+state note(60)
+
+state played = held + [note]
+
+Clip arp:
+    Note/(played[step % played.size])
+
+#### mut175 ins of §5.5 2 sym L648
+state held([]): i32[..10]
+state step(0)
+state note(60)
+
+state played = held + [ for note]
+
+Clip arp:
+    Note/(played[step % played.size])
+
+#### mut176 ins of §5.5 2 sym L648
+state held([]): i32[..10]
+state step(0)
+state note(6==0)
+
+state played = held + [note]
+
+Clip arp:
+    Note/(played[step % played.size])
+
+#### mut177 del of §5.5 2 sym L648
+state held([]): i32[..10]
+state step(0)
+state note(60)
+
+state played = held + [note]
+
+Clip arp:
+    Note/(played[step % played.se])
+
+#### mut178 trunc of §5.5 2 sym L648
+state held([]): i32[..10]
+state step(0)
+state note(60)
+
+state played = held + [note]
+
+Cl
+#### mut179 trunc of §5.5 2 sym L648
+state held([]): i32[..10]
+state step(0)
+state note(60)
+
+state pl
+#### mut180 trunc of §5.5 2 sym L648
+sta
+#### mut181 del-line of §5.6 1 sym L669
+Rig stage:
+    Lamp as wash
+
+Scene dusk | hold=8:
+    Cue as first /1 | fade=2
+
+Scene night | hold=dusk.hold * 1.5:
+    Cue/0 | fade=dusk.first.fade
+
+Scene dawn | hold=night.soften.depth * 10:
+    Cue/0
+
+#### mut182 del-line of §5.6 1 sym L669
+Rig stage:
+    Lamp as wash
+
+Scene dusk | hold=8:
+    Cue as first /1 | fade=2
+
+Scene night | hold=dusk.hold * 1.5:
+    Dims as soften | depth=0.4: stage.wash
+
+Scene dawn | hold=night.soften.depth * 10:
+    Cue/0
+
+#### mut183 dup-line of §5.6 1 sym L669
+Rig stage:
+    Lamp as wash
+    Lamp as wash
+
+Scene dusk | hold=8:
+    Cue as first /1 | fade=2
+
+Scene night | hold=dusk.hold * 1.5:
+    Cue/0 | fade=dusk.first.fade
+    Dims as soften | depth=0.4: stage.wash
+
+Scene dawn | hold=night.soften.depth * 10:
+    Cue/0
+
+#### mut184 dup-line of §5.6 1 sym L669
+Rig stage:
+    Lamp as wash
+
+Scene dusk | hold=8:
+    Cue as first /1 | fade=2
+
+Scene night | hold=dusk.hold * 1.5:
+    Cue/0 | fade=dusk.first.fade
+    Dims as soften | depth=0.4: stage.wash
+
+Scene dawn | hold=night.soften.depth * 10:
+Scene dawn | hold=night.soften.depth * 10:
+    Cue/0
+
+#### mut185 del-line of §5.6 1 sym L669
+Rig stage:
+    Lamp as wash
+
+Scene dusk | hold=8:
+    Cue as first /1 | fade=2
+
+    Cue/0 | fade=dusk.first.fade
+    Dims as soften | depth=0.4: stage.wash
+
+Scene dawn | hold=night.soften.depth * 10:
+    Cue/0
+
+#### mut186 ins of §5.6 1 sym L669
+Rig stage:
+    Lamp as wash
+
+Scene dusk | hold=8:
+    Cue as first /1 | fade=2
+
+Scene night | hold=dusk.hold * 1.5:
+    Cue/0 | f=>ade=dusk.first.fade
+    Dims as soften | depth=0.4: stage.wash
+
+Scene dawn | hold=night.soften.depth * 10:
+    Cue/0
+
+#### mut187 del of §5.6 1 sym L669
+Rig stage:
+    Lamp as wash
+
+Scene dusk | hold=8:
+    C as first /1 | fade=2
+
+Scene night | hold=dusk.hold * 1.5:
+    Cue/0 | fade=dusk.first.fade
+    Dims as soften | depth=0.4: stage.wash
+
+Scene dawn | hold=night.soften.depth * 10:
+    Cue/0
+
+#### mut188 del of §5.6 1 sym L669
+Rig stage:
+    Lamp as wash
+
+Scene dusk | hold=8:
+  Cue as first /1 | fade=2
+
+Scene night | hold=dusk.hold * 1.5:
+    Cue/0 | fade=dusk.first.fade
+    Dims as soften | depth=0.4: stage.wash
+
+Scene dawn | hold=night.soften.depth * 10:
+    Cue/0
+
+#### mut189 trunc of §5.6 1 sym L669
+Rig stage:
+    Lamp as wash
+
+Scene dusk | hold=8:
+    Cue as first /1 | fade=2
+
+Scene ni
+#### mut190 del of §5.6 1 sym L669
+Rig stage:
+    Lamp as wash
+
+Scene dusk | hold=8:
+    Cue as first /1 | fade=2
+
+Scene night | hold=dusk.hold * 1.5:
+    Cue/0 | fade=dusk.first.fade
+    Dims as soften | depth=0.4: stage.wash
+
+Scene dawn | hold=nigt.soften.depth * 10:
+    Cue/0
+
+#### mut191 ins of §5.6 1 sym L669
+Rig stage:
+    Lam^p as wash
+
+Scene dusk | hold=8:
+    Cue as first /1 | fade=2
+
+Scene night | hold=dusk.hold * 1.5:
+    Cue/0 | fade=dusk.first.fade
+    Dims as soften | depth=0.4: stage.wash
+
+Scene dawn | hold=night.soften.depth * 10:
+    Cue/0
+
+#### mut192 trunc of §5.6 1 sym L669
+Rig stage:
+    Lamp as wash
+
+Scene dusk |
+#### mut193 dup-line of §5.10 1 sym L757
+state readings([]): i32[..10]
+
+state high = for x in readings into kept from []:
+    let keep = x > 60
+    if keep then kept + [x] else kept
+    if keep then kept + [x] else kept
+
+state total = 1 + (for i, x in readings into sum from 0: sum + i * x)
+
+#### mut194 del of §5.10 1 sym L757
+state readings([]): i32[..10]
+
+state high = for x in readings into kept from []:
+    let keep = x > 60
+    if keep then kept + [x] else kept
+
+state total1 + (for i, x in readings into sum from 0: sum + i * x)
+
+#### mut195 trunc of §5.10 1 sym L757
+state readings([]): i32[..10]
+
+state high = for x in readings into kept fro
+#### mut196 del of §5.10 1 sym L757
+state readings([]): i32[..10]
+
+state high = for x in readings into kept from []:
+    let keep = x > 60
+    if keep thn kept + [x] else kept
+
+state total = 1 + (for i, x in readings into sum from 0: sum + i * x)
+
+#### mut197 dup-line of §5.10 1 sym L757
+state readings([]): i32[..10]
+state readings([]): i32[..10]
+
+state high = for x in readings into kept from []:
+    let keep = x > 60
+    if keep then kept + [x] else kept
+
+state total = 1 + (for i, x in readings into sum from 0: sum + i * x)
+
+#### mut198 ins of §5.10 1 sym L757
+state readings([]): i32[..10]
+
+state high = for x in readings into     kept from []:
+    let keep = x > 60
+    if keep then kept + [x] else kept
+
+state total = 1 + (for i, x in readings into sum from 0: sum + i * x)
+
+#### mut199 ins of §5.10 1 sym L757
+state readings([]): i32[..10]
+
+state high = for x in readings into kept from []:
+    let keep = x > 60
+    if keep then kept + [x] else kept:
+
+state total = 1 + (for i, x in readings into sum from 0: sum + i * x)
+
+#### mut200 ins of §5.10 1 sym L757
+state re"adings([]): i32[..10]
+
+state high = for x in readings into kept from []:
+    let keep = x > 60
+    if keep then kept + [x] else kept
+
+state total = 1 + (for i, x in readings into sum from 0: sum + i * x)
+
+#### mut201 del of §5.10 1 sym L757
+state readings([]): i32[..10]
+
+state high = for x in readings into kept from []:
+    let kep = x > 60
+    if keep then kept + [x] else kept
+
+state total = 1 + (for i, x in readings into sum from 0: sum + i * x)
+
+#### mut202 dup-line of §5.10 1 sym L757
+state readings([]): i32[..10]
+
+
+state high = for x in readings into kept from []:
+    let keep = x > 60
+    if keep then kept + [x] else kept
+
+state total = 1 + (for i, x in readings into sum from 0: sum + i * x)
+
+#### mut203 ins of §5.10 1 sym L757
+state readings([]): i32[..10]
+
+state high = for x in readings into kept from []:
+    let keep = x > 60
+    if keep then k for ept + [x] else kept
+
+state total = 1 + (for i, x in readings into sum from 0: sum + i * x)
+
+#### mut204 del of §5.10 1 sym L757
+state readings([]): i32[..10]
+
+state high = for x in readings into kept from []:
+    let keep = x > 60
+    if keep then kept + [x] else kept
+
+state total = 1 + (for i,x in readings into sum from 0: sum + i * x)
+
+#### mut205 trunc of §6.1 1 sym L803
+state setpoint(0.5)
+state steps([true, false, false, true, false, false, true, false])
+state name(""): str[..32]
+state hit(Hit {}
+#### mut206 ins of §6.1 1 sym L803
+state setpoint(0.5)
+sta[te steps([true, false, false, true, false, false, true, false])
+state name(""): str[..32]
+state hit(Hit {})
+stream reading(0.0)
+channel[16] alarm(0)
+
+#### mut207 dup-line of §6.1 1 sym L803
+state setpoint(0.5)
+state steps([true, false, false, true, false, false, true, false])
+state name(""): str[..32]
+state hit(Hit {})
+stream reading(0.0)
+stream reading(0.0)
+channel[16] alarm(0)
+
+#### mut208 dup-line of §6.1 1 sym L803
+state setpoint(0.5)
+state setpoint(0.5)
+state steps([true, false, false, true, false, false, true, false])
+state name(""): str[..32]
+state hit(Hit {})
+stream reading(0.0)
+channel[16] alarm(0)
+
+#### mut209 ins of §6.1 1 sym L803
+state setpoint(0.5)
+state steps([true, false, false, true, false, false, tru..e, false])
+state name(""): str[..32]
+state hit(Hit {})
+stream reading(0.0)
+channel[16] alarm(0)
+
+#### mut210 trunc of §6.1 1 sym L803
+state setpoint(0.5)
+state steps([true, false, false, true, 
+#### mut211 del-line of §6.1 1 sym L803
+state setpoint(0.5)
+state steps([true, false, false, true, false, false, true, false])
+state name(""): str[..32]
+state hit(Hit {})
+stream reading(0.0)
+channel[16] alarm(0)
+#### mut212 del-line of §6.1 1 sym L803
+state setpoint(0.5)
+state steps([true, false, false, true, false, false, true, false])
+state name(""): str[..32]
+stream reading(0.0)
+channel[16] alarm(0)
+
+#### mut213 dup-line of §6.1 1 sym L803
+state setpoint(0.5)
+state steps([true, false, false, true, false, false, true, false])
+state steps([true, false, false, true, false, false, true, false])
+state name(""): str[..32]
+state hit(Hit {})
+stream reading(0.0)
+channel[16] alarm(0)
+
+#### mut214 del-line of §6.1 1 sym L803
+state setpoint(0.5)
+state steps([true, false, false, true, false, false, true, false])
+state name(""): str[..32]
+state hit(Hit {})
+stream reading(0.0)
+
+#### mut215 trunc of §6.1 1 sym L803
+state setpoint(0.5)
+state steps([true
+#### mut216 dup-line of §6.1 1 sym L803
+state setpoint(0.5)
+state steps([true, false, false, true, false, false, true, false])
+state name(""): str[..32]
+state hit(Hit {})
+stream reading(0.0)
+channel[16] alarm(0)
+channel[16] alarm(0)
+
+#### mut217 del of §6.2 1 sym L822
+state section(0)
+
+let sections = [verse, chorus, bridge]
+
+Clip intro:
+    for s in sections:
+        Starts: s
+
+Clip outro:
+    Ps: sections[section]
+
+#### mut218 del-line of §6.2 1 sym L822
+
+let sections = [verse, chorus, bridge]
+
+Clip intro:
+    for s in sections:
+        Starts: s
+
+Clip outro:
+    Plays: sections[section]
+
+#### mut219 del of §6.2 1 sym L822
+state section(0)
+
+let sections = [verse, chorus, bridge]
+
+Clip intro:
+    for s in sections:
+        Starts: s
+
+Clip outro:
+    Plays: sections[sectin]
+
+#### mut220 trunc of §6.2 1 sym L822
+state s
+#### mut221 ins of §6.2 1 sym L822
+state section(0)
+
+let sections = []verse, chorus, bridge]
+
+Clip intro:
+    for s in sections:
+        Starts: s
+
+Clip outro:
+    Plays: sections[section]
+
+#### mut222 dup-line of §6.2 1 sym L822
+state section(0)
+
+let sections = [verse, chorus, bridge]
+
+Clip intro:
+    for s in sections:
+        Starts: s
+
+Clip outro:
+Clip outro:
+    Plays: sections[section]
+
+#### mut223 trunc of §6.2 1 sym L822
+state sectio
+#### mut224 del of §6.2 1 sym L822
+state section(0)
+
+let sections = [verse, chorus, bridge]
+
+Clip intro:
+    for s in sections:
+        Starts: s
+
+Clip outro:
+    Plays: stions[section]
+
+#### mut225 trunc of §6.2 1 sym L822
+state section(0)
+
+let sections = [verse, chorus, bridge]
+
+Clip intr
+#### mut226 trunc of §6.2 1 sym L822
+state section(0)
+
+let sections = [verse, chorus, bridge]
+
+Clip intro:
+    for s in sections:
+        Starts: s
+
+Clip
+#### mut227 del-line of §6.2 1 sym L822
+state section(0)
+let sections = [verse, chorus, bridge]
+
+Clip intro:
+    for s in sections:
+        Starts: s
+
+Clip outro:
+    Plays: sections[section]
+
+#### mut228 trunc of §6.2 1 sym L822
+state section(0)
+
+let sections = [verse, chorus, bridge]
+
+Clip intro:
+    for s in sections:
+        Starts: s
+
+Clip outro:
+    Plays:
+#### mut229 ins of §6.3 1 sym L857
+fn ratio(x): 10 ** (x / 20)
+
+fn tier(rank: i32, base: i32 = 100) -> i32:
+    let cycles: i32 = rank div 4
+    base + [0, .5, 15, 40][rank % 4] + 50 * cycles
+
+#### mut230 ins of §6.3 1 sym L857
+fn ratio(x): 10 ** :(x / 20)
+
+fn tier(rank: i32, base: i32 = 100) -> i32:
+    let cycles: i32 = rank div 4
+    base + [0, 5, 15, 40][rank % 4] + 50 * cycles
+
+#### mut231 del of §6.3 1 sym L857
+fn ratio(x): 10 ** (x / 20)
+
+fn tier(rank: i32, base32 = 100) -> i32:
+    let cycles: i32 = rank div 4
+    base + [0, 5, 15, 40][rank % 4] + 50 * cycles
+
+#### mut232 dup-line of §6.3 1 sym L857
+fn ratio(x): 10 ** (x / 20)
+
+fn tier(rank: i32, base: i32 = 100) -> i32:
+    let cycles: i32 = rank div 4
+    let cycles: i32 = rank div 4
+    base + [0, 5, 15, 40][rank % 4] + 50 * cycles
+
+#### mut233 dup-line of §6.3 1 sym L857
+fn ratio(x): 10 ** (x / 20)
+
+fn tier(rank: i32, base: i32 = 100) -> i32:
+    let cycles: i32 = rank div 4
+    base + [0, 5, 15, 40][rank % 4] + 50 * cycles
+
+
+#### mut234 trunc of §6.3 1 sym L857
+fn ratio(x): 10 ** (x / 20)
+
+fn tier(rank: i32, base: i32 = 100) -> i32:
+
+#### mut235 trunc of §6.3 1 sym L857
+fn ratio(x): 10 ** (x / 20)
+
+fn tier(rank: i32, ba
+#### mut236 del of §6.3 1 sym L857
+fn ratio(x): 10 ** (x / 20)
+
+fn tier(rank: i32, base: i32 = 100) -> i32:
+    let cycles: i32 = rank div 4
+    base + [0, 5, 15, 40][rank % 4] + 50 * cycl
+
+#### mut237 ins of §6.3 1 sym L857
+fn ratio(x): 10 ** (x / 20)
+
+fn tier(rank: i32, base: i32 = 100) 日-> i32:
+    let cycles: i32 = rank div 4
+    base + [0, 5, 15, 40][rank % 4] + 50 * cycles
+
+#### mut238 del of §6.3 1 sym L857
+fn ratio(x): 10 ** (x / 20)
+
+fn tier(rank: i32, base: i32 = 100) -> i32:
+    let cycles: i32 = rank div 4
+    base + [0, 5, 15, 40][rank % 4] + 5 * cycles
+
+#### mut239 trunc of §6.3 1 sym L857
+fn ratio(x): 10 ** (x / 20)
+
+fn tier(rank: i32, base: i32 = 100) -> i32:
+    let cycles: i32 = rank div 4
+    base + [0, 5,
+#### mut240 ins of §6.3 1 sym L857
+fn ratio(x): 10 ** (x / 20)
+
+fn tier(rank: i32, base: i32 = 100) -> i32:
+    let cycles: i32 = rank div 4
+    base + [0, 5, ,15, 40][rank % 4] + 50 * cycles
+
+#### mut241 del of §6.3 2 sym L867
+fn fib(n): i < 2 then n else fib(n - 1) + fib(n - 2)
+
+let lengths = [fib(3), fib(4), fib(5), fib(6)]
+
+#### mut242 ins of §6.3 2 sym L867
+fn fib(n): if n < 2 then n else fib(n - 1) + fib(n - 2)
+
+let l=>engths = [fib(3), fib(4), fib(5), fib(6)]
+
+#### mut243 ins of §6.3 2 sym L867
+fn fib(n): if n < 2 then n else fib(n - 1) + fib(n - 2)
+
+let lengt==hs = [fib(3), fib(4), fib(5), fib(6)]
+
+#### mut244 dup-line of §6.3 2 sym L867
+fn fib(n): if n < 2 then n else fib(n - 1) + fib(n - 2)
+fn fib(n): if n < 2 then n else fib(n - 1) + fib(n - 2)
+
+let lengths = [fib(3), fib(4), fib(5), fib(6)]
+
+#### mut245 del of §6.3 2 sym L867
+fn fib(n): if n < 2 then n else fib(n - 1) + fib(n - 2)
+
+let lengths =fib(3), fib(4), fib(5), fib(6)]
+
+#### mut246 dup-line of §6.3 2 sym L867
+fn fib(n): if n < 2 then n else fib(n - 1) + fib(n - 2)
+fn fib(n): if n < 2 then n else fib(n - 1) + fib(n - 2)
+
+let lengths = [fib(3), fib(4), fib(5), fib(6)]
+
+#### mut247 dup-line of §6.3 2 sym L867
+fn fib(n): if n < 2 then n else fib(n - 1) + fib(n - 2)
+fn fib(n): if n < 2 then n else fib(n - 1) + fib(n - 2)
+
+let lengths = [fib(3), fib(4), fib(5), fib(6)]
+
+#### mut248 del-line of §6.3 2 sym L867
+fn fib(n): if n < 2 then n else fib(n - 1) + fib(n - 2)
+
+let lengths = [fib(3), fib(4), fib(5), fib(6)]
+#### mut249 dup-line of §6.3 2 sym L867
+fn fib(n): if n < 2 then n else fib(n - 1) + fib(n - 2)
+
+
+let lengths = [fib(3), fib(4), fib(5), fib(6)]
+
+#### mut250 trunc of §6.3 2 sym L867
+fn fib(n): if n < 2 then n
+#### mut251 trunc of §6.3 2 sym L867
+fn fib(n): if n < 2 then n else fib(n - 1) + fib(n - 2)
+
+let lengths = [fi
+#### mut252 del-line of §6.3 2 sym L867
+fn fib(n): if n < 2 then n else fib(n - 1) + fib(n - 2)
+
+
+#### mut253 del of §6.3 3 sym L873
+state readings([]): i32[..10]
+
+state lowest = for x in readings into low from 100: min(low, 
+Plant boiler:
+    Valve/lowest
+
+#### mut254 trunc of §6.3 3 sym L873
+state readings([]): i32[..10]
+
+state lowest = for x in readings into lo
+#### mut255 del of §6.3 3 sym L873
+state readings([]): i32[..10]
+
+state lowest = for x in readings into low from 100: min(low, x
+Plant boiler:
+    Valve/lowest
+
+#### mut256 dup-line of §6.3 3 sym L873
+state readings([]): i32[..10]
+state readings([]): i32[..10]
+
+state lowest = for x in readings into low from 100: min(low, x)
+
+Plant boiler:
+    Valve/lowest
+
+#### mut257 trunc of §6.3 3 sym L873
+state readings([]): i32[..10]
+
+state low
+#### mut258 dup-line of §6.3 3 sym L873
+state readings([]): i32[..10]
+
+state lowest = for x in readings into low from 100: min(low, x)
+
+
+Plant boiler:
+    Valve/lowest
+
+#### mut259 del of §6.3 3 sym L873
+state readings([]): i32[..10]
+
+state lowest = for x in readings into low from00: min(low, x)
+
+Plant boiler:
+    Valve/lowest
+
+#### mut260 dup-line of §6.3 3 sym L873
+state readings([]): i32[..10]
+
+state lowest = for x in readings into low from 100: min(low, x)
+state lowest = for x in readings into low from 100: min(low, x)
+
+Plant boiler:
+    Valve/lowest
+
+#### mut261 ins of §6.3 3 sym L873
+state readings([]): i32[..10]
+(
+state lowest = for x in readings into low from 100: min(low, x)
+
+Plant boiler:
+    Valve/lowest
+
+#### mut262 ins of §6.3 3 sym L873
+state readings([]): i32[..10]
+
+state lowest = for x in readings into low from 100: ;min(low, x)
+
+Plant boiler:
+    Valve/lowest
+
+#### mut263 del of §6.3 3 sym L873
+state readings([]): i32[..10]
+ate lowest = for x in readings into low from 100: min(low, x)
+
+Plant boiler:
+    Valve/lowest
+
+#### mut264 ins of §6.3 3 sym L873
+sta|te readings([]): i32[..10]
+
+state lowest = for x in readings into low from 100: min(low, x)
+
+Plant boiler:
+    Valve/lowest
+
+#### mut265 trunc of §6.4 1 sym L936
+pattern Arp(default root, steps = 4, gap = 4) -> (Note*):
+    for i in 0..steps:
+        Note/(
+#### mut266 dup-line of §6.4 1 sym L936
+pattern Arp(default root, steps = 4, gap = 4) -> (Note*):
+    for i in 0..steps:
+    for i in 0..steps:
+        Note/(root + i * gap)
+
+Clip verse:
+    Arp/48
+    Arp/60 | steps=8 gap=3
+
+#### mut267 dup-line of §6.4 1 sym L936
+pattern Arp(default root, steps = 4, gap = 4) -> (Note*):
+    for i in 0..steps:
+        Note/(root + i * gap)
+
+Clip verse:
+Clip verse:
+    Arp/48
+    Arp/60 | steps=8 gap=3
+
+#### mut268 ins of §6.4 1 sym L936
+pattern Arp(]default root, steps = 4, gap = 4) -> (Note*):
+    for i in 0..steps:
+        Note/(root + i * gap)
+
+Clip verse:
+    Arp/48
+    Arp/60 | steps=8 gap=3
+
+#### mut269 ins of §6.4 1 sym L936
+pattern Arp(d..efault root, steps = 4, gap = 4) -> (Note*):
+    for i in 0..steps:
+        Note/(root + i * gap)
+
+Clip verse:
+    Arp/48
+    Arp/60 | steps=8 gap=3
+
+#### mut270 del of §6.4 1 sym L936
+pattern Arp(default root, steps = 4, g = 4) -> (Note*):
+    for i in 0..steps:
+        Note/(root + i * gap)
+
+Clip verse:
+    Arp/48
+    Arp/60 | steps=8 gap=3
+
+#### mut271 del-line of §6.4 1 sym L936
+pattern Arp(default root, steps = 4, gap = 4) -> (Note*):
+    for i in 0..steps:
+        Note/(root + i * gap)
+
+Clip verse:
+    Arp/60 | steps=8 gap=3
+
+#### mut272 ins of §6.4 1 sym L936
+pattern Arp(default root, steps = 4, gap = 4) ->. (Note*):
+    for i in 0..steps:
+        Note/(root + i * gap)
+
+Clip verse:
+    Arp/48
+    Arp/60 | steps=8 gap=3
+
+#### mut273 trunc of §6.4 1 sym L936
+pattern Arp(default root, steps = 4, gap = 4) -> (Note*):
+    for i in 0..steps:
+        Note/(root + i * gap
+#### mut274 dup-line of §6.4 1 sym L936
+pattern Arp(default root, steps = 4, gap = 4) -> (Note*):
+    for i in 0..steps:
+        Note/(root + i * gap)
+
+
+Clip verse:
+    Arp/48
+    Arp/60 | steps=8 gap=3
+
+#### mut275 trunc of §6.4 1 sym L936
+pattern Arp(default 
+#### mut276 dup-line of §6.4 1 sym L936
+pattern Arp(default root, steps = 4, gap = 4) -> (Note*):
+    for i in 0..steps:
+        Note/(root + i * gap)
+        Note/(root + i * gap)
+
+Clip verse:
+    Arp/48
+    Arp/60 | steps=8 gap=3
+
+#### mut277 dup-line of §6.4 2 sym L946
+pattern Bank(default base: f32) -> Plant:
+pattern Bank(default base: f32) -> Plant:
+    Plant:
+        Valve/base Valve/(base + 0.25) Valve/(base + 0.5)
+
+Bank manifold /0
+Bank header /0.25
+
+#### mut278 del of §6.4 2 sym L946
+pattern Bank(default base: f32) -> Plant:
+    Plant:
+        Valve/base Valve/(base + 0.25) Valve/(base + 0.5)
+
+Bank manifold /0
+Bank header/0.25
+
+#### mut279 dup-line of §6.4 2 sym L946
+pattern Bank(default base: f32) -> Plant:
+    Plant:
+        Valve/base Valve/(base + 0.25) Valve/(base + 0.5)
+        Valve/base Valve/(base + 0.25) Valve/(base + 0.5)
+
+Bank manifold /0
+Bank header /0.25
+
+#### mut280 ins of §6.4 2 sym L946
+pattern Bank(default base: f32) -> Plant:
+    Plant:
+        Valve/base |Valve/(base + 0.25) Valve/(base + 0.5)
+
+Bank manifold /0
+Bank header /0.25
+
+#### mut281 dup-line of §6.4 2 sym L946
+pattern Bank(default base: f32) -> Plant:
+    Plant:
+        Valve/base Valve/(base + 0.25) Valve/(base + 0.5)
+
+Bank manifold /0
+Bank header /0.25
+Bank header /0.25
+
+#### mut282 ins of §6.4 2 sym L946
+pattern Bank(default base: f32) -> Plant:
+    Plant:
+         json Valve/base Valve/(base + 0.25) Valve/(base + 0.5)
+
+Bank manifold /0
+Bank header /0.25
+
+#### mut283 dup-line of §6.4 2 sym L946
+pattern Bank(default base: f32) -> Plant:
+pattern Bank(default base: f32) -> Plant:
+    Plant:
+        Valve/base Valve/(base + 0.25) Valve/(base + 0.5)
+
+Bank manifold /0
+Bank header /0.25
+
+#### mut284 del of §6.4 2 sym L946
+pattern Bank(default base: f32) -> Plant:
+   Plant:
+        Valve/base Valve/(base + 0.25) Valve/(base + 0.5)
+
+Bank manifold /0
+Bank header /0.25
+
+#### mut285 del-line of §6.4 2 sym L946
+pattern Bank(default base: f32) -> Plant:
+    Plant:
+        Valve/base Valve/(base + 0.25) Valve/(base + 0.5)
+
+Bank manifold /0
+Bank header /0.25
+#### mut286 del-line of §6.4 2 sym L946
+pattern Bank(default base: f32) -> Plant:
+        Valve/base Valve/(base + 0.25) Valve/(base + 0.5)
+
+Bank manifold /0
+Bank header /0.25
+
+#### mut287 ins of §6.4 2 sym L946
+pattern Bank(default base: f32) -> Plant:
+    Plant:
+        Valve/base Valve/(base + 0.25) Valve/(base + 0.5)
+
+Ban0xk manifold /0
+Bank header /0.25
+
+#### mut288 dup-line of §6.4 2 sym L946
+pattern Bank(default base: f32) -> Plant:
+    Plant:
+    Plant:
+        Valve/base Valve/(base + 0.25) Valve/(base + 0.5)
+
+Bank manifold /0
+Bank header /0.25
+
+#### mut289 del of §6.4 3 sym L957
+pattern Chase(default start, again: Scene):
+    Scene:
+        Cue/start Cue/(start + 1)
+        Triggers: again
+
+Chase dusk /0 | again=dusk
+#### mut290 del of §6.4 3 sym L957
+pattern Chase(default srt, again: Scene):
+    Scene:
+        Cue/start Cue/(start + 1)
+        Triggers: again
+
+Chase dusk /0 | again=dusk
+
+#### mut291 ins of §6.4 3 sym L957
+pattern Chase(default s:tart, again: Scene):
+    Scene:
+        Cue/start Cue/(start + 1)
+        Triggers: again
+
+Chase dusk /0 | again=dusk
+
+#### mut292 ins of §6.4 3 sym L957
+pattern Chase(default start, again: Scene):
+    Scene:
+        Cue/start Cue/(start + 1)
+     .   Triggers: again
+
+Chase dusk /0 | again=dusk
+
+#### mut293 trunc of §6.4 3 sym L957
+pattern Chase(default start, again: Scene):
+    Sce
+#### mut294 dup-line of §6.4 3 sym L957
+pattern Chase(default start, again: Scene):
+    Scene:
+        Cue/start Cue/(start + 1)
+        Triggers: again
+        Triggers: again
+
+Chase dusk /0 | again=dusk
+
+#### mut295 del of §6.4 3 sym L957
+pattern Chase(default start, again: Scene):
+    Scene:
+        Cue/start Cue/(start + 1)
+        Triggers: again
+
+Chase dusk /0 | agaidusk
+
+#### mut296 ins of §6.4 3 sym L957
+pattern Chase(default start, again: Scene):
+    Scene:
+        Cue/st0xart Cue/(start + 1)
+        Triggers: again
+
+Chase dusk /0 | again=dusk
+
+#### mut297 dup-line of §6.4 3 sym L957
+pattern Chase(default start, again: Scene):
+    Scene:
+        Cue/start Cue/(start + 1)
+        Cue/start Cue/(start + 1)
+        Triggers: again
+
+Chase dusk /0 | again=dusk
+
+#### mut298 del of §6.4 3 sym L957
+pattern Chase(default start, again: Scene):
+    Scene:
+        Cue/start Cue/(start + 1)
+     Triggers: again
+
+Chase dusk /0 | again=dusk
+
+#### mut299 del-line of §6.4 3 sym L957
+pattern Chase(default start, again: Scene):
+    Scene:
+        Cue/start Cue/(start + 1)
+        Triggers: again
+
+
+#### mut300 trunc of §6.4 3 sym L957
+pattern Chase(default start, again: Scene):
+    Scene:
+
+#### mut301 del of §6.4 4 sym L968
+pattern Cap(ceiling = 0.5) -> Drives:
+    Drives | limit=ceiling
+
+Pla boiler:
+    Valve as feed
+    Controller as loop:
+        Cap as choke | ceiling=0.3: feed
+
+#### mut302 dup-line of §6.4 4 sym L968
+pattern Cap(ceiling = 0.5) -> Drives:
+    Drives | limit=ceiling
+
+Plant boiler:
+    Valve as feed
+    Controller as loop:
+        Cap as choke | ceiling=0.3: feed
+        Cap as choke | ceiling=0.3: feed
+
+#### mut303 trunc of §6.4 4 sym L968
+pattern Cap(ceiling = 0.5) -> Drives:
+    Drives | limit=ceiling
+
+Plant boiler:
+#### mut304 trunc of §6.4 4 sym L968
+pattern Cap(ceiling = 0.5) -> Dr
+#### mut305 dup-line of §6.4 4 sym L968
+pattern Cap(ceiling = 0.5) -> Drives:
+    Drives | limit=ceiling
+
+Plant boiler:
+    Valve as feed
+    Controller as loop:
+        Cap as choke | ceiling=0.3: feed
+
+
+#### mut306 trunc of §6.4 4 sym L968
+
+#### mut307 del-line of §6.4 4 sym L968
+pattern Cap(ceiling = 0.5) -> Drives:
+    Drives | limit=ceiling
+
+Plant boiler:
+    Valve as feed
+    Controller as loop:
+        Cap as choke | ceiling=0.3: feed
+#### mut308 del of §6.4 4 sym L968
+pattern Cap(ceiling = 0.5) -> Drives:
+    Drives | limit=ceiling
+
+Plant boiler:
+    Valve as feed
+    Controller a loop:
+        Cap as choke | ceiling=0.3: feed
+
+#### mut309 del of §6.4 4 sym L968
+pattern Cap(ceiling = 0.5) -> Drives:
+    Drives | limit=eiling
+
+Plant boiler:
+    Valve as feed
+    Controller as loop:
+        Cap as choke | ceiling=0.3: feed
+
+#### mut310 trunc of §6.4 4 sym L968
+pattern Cap(ceiling = 0.5) -> Drives:
+    Drives | limit=ceiling
+
+Plant boiler:
+    Valve as feed
+    Controller as loop:
+        Cap
+#### mut311 trunc of §6.4 4 sym L968
+pattern Cap(ceiling = 0.5) -> Drives:
+    Drives | limit=ceiling
+
+Plant boiler:
+    Valve as feed
+    Controller as l
+#### mut312 trunc of §6.4 4 sym L968
+pattern Cap(ceiling = 0.5) -> Drives:
+    Drives | limit=ceiling
+
+Plant boiler:
+    Valve as feed
+    Controller as loop:
+        Cap as chok
+#### mut313 del of §6.4 5 sym L980
+attern Voice(default root: i32, const steps = 4) -> (Note*, Starts):
+    state gain(1.0)
+    for i in 0..steps:
+        Note/(root + i) | velocity=gain
+    Starts: intro
+
+Clip verse:
+    Voice as low /48
+    Voice/60 | steps=8
+
+#### mut314 trunc of §6.4 5 sym L980
+pattern Voice(default root: i32, const steps = 4) -> (Note*, Starts):
+    state gain(1.0)
+    for i in 0..steps:
+        Note/(root + i) | veloci
+#### mut315 ins of §6.4 5 sym L980
+pattern Voice(default root: i32, const steps = 4) -> (Note*, Starts):
+    state gain(1.0)
+    for i in 0..steps:
+        Note/(root + i) | velocity=gain
+    Starts: {intro
+
+Clip verse:
+    Voice as low /48
+    Voice/60 | steps=8
+
+#### mut316 ins of §6.4 5 sym L980
+pattern Voice(default root: i32, const steps = 4) -> (Note*, Starts):
+    state gain(1.0)
+    for i in 0..steps:
+        Note/(root + i) | velocity=gain
+    Sta for rts: intro
+
+Clip verse:
+    Voice as low /48
+    Voice/60 | steps=8
+
+#### mut317 dup-line of §6.4 5 sym L980
+pattern Voice(default root: i32, const steps = 4) -> (Note*, Starts):
+    state gain(1.0)
+    state gain(1.0)
+    for i in 0..steps:
+        Note/(root + i) | velocity=gain
+    Starts: intro
+
+Clip verse:
+    Voice as low /48
+    Voice/60 | steps=8
+
+#### mut318 trunc of §6.4 5 sym L980
+pattern Voice(default roo
+#### mut319 del-line of §6.4 5 sym L980
+pattern Voice(default root: i32, const steps = 4) -> (Note*, Starts):
+    state gain(1.0)
+    for i in 0..steps:
+        Note/(root + i) | velocity=gain
+    Starts: intro
+
+Clip verse:
+    Voice as low /48
+    Voice/60 | steps=8
+#### mut320 dup-line of §6.4 5 sym L980
+pattern Voice(default root: i32, const steps = 4) -> (Note*, Starts):
+    state gain(1.0)
+    for i in 0..steps:
+        Note/(root + i) | velocity=gain
+    Starts: intro
+    Starts: intro
+
+Clip verse:
+    Voice as low /48
+    Voice/60 | steps=8
+
+#### mut321 del-line of §6.4 5 sym L980
+    state gain(1.0)
+    for i in 0..steps:
+        Note/(root + i) | velocity=gain
+    Starts: intro
+
+Clip verse:
+    Voice as low /48
+    Voice/60 | steps=8
+
+#### mut322 del-line of §6.4 5 sym L980
+pattern Voice(default root: i32, const steps = 4) -> (Note*, Starts):
+    state gain(1.0)
+    for i in 0..steps:
+        Note/(root + i) | velocity=gain
+
+Clip verse:
+    Voice as low /48
+    Voice/60 | steps=8
+
+#### mut323 ins of §6.4 5 sym L980
+pattern Voice(default root: i32, const steps = 4) -> (Note*, Starts):
+    state gain(1.0)
+    for i in 0..steps:
+            Note/(root + i) | velocity=gain
+    Starts: intro
+
+Clip verse:
+    Voice as low /48
+    Voice/60 | steps=8
+
+#### mut324 del of §6.4 5 sym L980
+pattern Voice(default root: i32, const steps = 4) -> (Note*, Starts):
+    state gain(1.0)
+    for i in 0..steps:
+        Note/(root + i) | velocity=gain
+    Starts: tro
+
+Clip verse:
+    Voice as low /48
+    Voice/60 | steps=8
+
+#### mut325 del of §6.4 6 sym L994
+pattern Drum(default out channel hit: Hit, gain: f32 = 1.0) -> Pad:
+    Pad | hit => hit gain=gain
+
+pattern Section(default root: i32, children notes: Note*, children links: Plays*) -> Clip:
+    Clip | gain=0.8:
+        Note/root
+        notes
+        Plays: intro
+     links
+
+channel kick_hit(Hit {})
+
+Drum kick /kick_hit | gain=0.9
+
+Section bass /36:
+    Note/43 | velocity=0.6
+    Plays: verse
+
+#### mut326 trunc of §6.4 6 sym L994
+pattern Drum(default out channel hit: Hit, gain: f32 = 1.0) -> Pad:
+    Pad | hit => hit gain=gain
+
+pattern Section(default ro
+#### mut327 ins of §6.4 6 sym L994
+pattern Drum(default out channel hit: Hit, gain: f32 = 1.0) -> Pad:
+    Pad | hit => hit gain=gain
+
+pattern Section(default root: i32, children notes: Note*, children links: Plays*) -> Clip:
+    Clip | gain=0.8):
+        Note/root
+        notes
+        Plays: intro
+        links
+
+channel kick_hit(Hit {})
+
+Drum kick /kick_hit | gain=0.9
+
+Section bass /36:
+    Note/43 | velocity=0.6
+    Plays: verse
+
+#### mut328 del of §6.4 6 sym L994
+pattern Drudefault out channel hit: Hit, gain: f32 = 1.0) -> Pad:
+    Pad | hit => hit gain=gain
+
+pattern Section(default root: i32, children notes: Note*, children links: Plays*) -> Clip:
+    Clip | gain=0.8:
+        Note/root
+        notes
+        Plays: intro
+        links
+
+channel kick_hit(Hit {})
+
+Drum kick /kick_hit | gain=0.9
+
+Section bass /36:
+    Note/43 | velocity=0.6
+    Plays: verse
+
+#### mut329 dup-line of §6.4 6 sym L994
+pattern Drum(default out channel hit: Hit, gain: f32 = 1.0) -> Pad:
+    Pad | hit => hit gain=gain
+
+
+pattern Section(default root: i32, children notes: Note*, children links: Plays*) -> Clip:
+    Clip | gain=0.8:
+        Note/root
+        notes
+        Plays: intro
+        links
+
+channel kick_hit(Hit {})
+
+Drum kick /kick_hit | gain=0.9
+
+Section bass /36:
+    Note/43 | velocity=0.6
+    Plays: verse
+
+#### mut330 del of §6.4 6 sym L994
+pattern Drum(default out channel hit: Hit, gain: f32 = 1.0) -> Pad:
+    Pad | hit => hit gain=gain
+
+pattern Section(default root: i children notes: Note*, children links: Plays*) -> Clip:
+    Clip | gain=0.8:
+        Note/root
+        notes
+        Plays: intro
+        links
+
+channel kick_hit(Hit {})
+
+Drum kick /kick_hit | gain=0.9
+
+Section bass /36:
+    Note/43 | velocity=0.6
+    Plays: verse
+
+#### mut331 ins of §6.4 6 sym L994
+pattern Drum(default out channel hit: Hit, gain: f32 = 1.0) -> Pad:
+    Pad | hit => hit gain=gain
+
+pattern Section(default root: i32, children notes: Note*, children links: Plays*) -> Clip:
+    Clip | gain=0.8:
+     :   Note/root
+        notes
+        Plays: intro
+        links
+
+channel kick_hit(Hit {})
+
+Drum kick /kick_hit | gain=0.9
+
+Section bass /36:
+    Note/43 | velocity=0.6
+    Plays: verse
+
+#### mut332 trunc of §6.4 6 sym L994
+pattern Drum(default out channel hit: Hit, gain: f32 = 1.0) -> Pad:
+    Pad | hit => hit gain=gain
+
+pattern Section(default root: i32, children notes: Note*, children links: Plays*) -> Clip:
+    Clip | gain=0.8:
+        Note/root
+        notes
+        
+#### mut333 ins of §6.4 6 sym L994
+pattern Drum(default out channel hit: Hit, gain: f32 = 1.0) -> Pad:
+    Pad | hit => hit gain=gain
+
+pattern Section(default root: i32, children notes: Note*, children links: Plays*) -> Clip:
+    Clip | gain=0.8:
+        Note/root
+        notes
+        Plays: intro
+        links
+
+channel kick_hit(Hit {})
+
+Drum kick /kick_hit | gain=0.9
+
+Section bass /36:
+=>    Note/43 | velocity=0.6
+    Plays: verse
+
+#### mut334 ins of §6.4 6 sym L994
+pattern Drum(default out channel hit: Hit, gain: f32 = 1.0) -> Pad:
+    Pad | hit => hit gain=gain
+
+pattern Section(default root: i32, children notes: Note*, children links: Plays*) -> Clip:
+    Clip | gain=0.8:
+   ,     Note/root
+        notes
+        Plays: intro
+        links
+
+channel kick_hit(Hit {})
+
+Drum kick /kick_hit | gain=0.9
+
+Section bass /36:
+    Note/43 | velocity=0.6
+    Plays: verse
+
+#### mut335 del of §6.4 6 sym L994
+pattern Drum(default out channel hit: Hit, gain: f32 = 1.0) -> Pad:
+    Pad | hit => hit gain=gain
+
+pattern Section(default root: i32, children notes: Note*, children links: Plays*) -> Clip:
+    Clip | ain=0.8:
+        Note/root
+        notes
+        Plays: intro
+        links
+
+channel kick_hit(Hit {})
+
+Drum kick /kick_hit | gain=0.9
+
+Section bass /36:
+    Note/43 | velocity=0.6
+    Plays: verse
+
+#### mut336 del-line of §6.4 6 sym L994
+pattern Drum(default out channel hit: Hit, gain: f32 = 1.0) -> Pad:
+    Pad | hit => hit gain=gain
+pattern Section(default root: i32, children notes: Note*, children links: Plays*) -> Clip:
+    Clip | gain=0.8:
+        Note/root
+        notes
+        Plays: intro
+        links
+
+channel kick_hit(Hit {})
+
+Drum kick /kick_hit | gain=0.9
+
+Section bass /36:
+    Note/43 | velocity=0.6
+    Plays: verse
+
+#### mut337 dup-line of §6.4 7 sym L1016
+pattern Flash(default start: f32, children groups: [Lamp+]*) -> Rig:
+    Rig:
+        Lamp/start
+        groups
+        groups
+
+pattern Burst(children lamps: Lamp{2+}) -> ([Lamp{2+}]):
+    [lamps]
+
+Flash opener /0.1:
+    [Lamp/0.2 Lamp/0.5 Lamp/0.8]
+    [Lamp/0.3 Lamp/0.6]
+
+Rig finale:
+    Burst: Lamp/0.2 Lamp/0.5 Lamp/0.8
+
+#### mut338 del of §6.4 7 sym L1016
+pattern Flash(default start: f32, children groups: [Lamp+]*) -> Rig:
+    Rig:
+        Lamp/start
+        groups
+
+pattern Burst(children lamps: Lamp{2+}) -> ([Lmp{2+}]):
+    [lamps]
+
+Flash opener /0.1:
+    [Lamp/0.2 Lamp/0.5 Lamp/0.8]
+    [Lamp/0.3 Lamp/0.6]
+
+Rig finale:
+    Burst: Lamp/0.2 Lamp/0.5 Lamp/0.8
+
+#### mut339 del of §6.4 7 sym L1016
+pattern Flash(default start: f32, children groups: [Lamp+]*) -> Rig:
+    Rig:
+        Lamp/start
+        groups
+
+pattern Burst(children lamps: Lamp{2+}) -> ([Lamp{2+}]):
+    [lamps]
+
+Flash opener /0.1:
+    [Lamp/0.2 Lamp/0.5 Lamp/0.8]
+   Lamp/0.3 Lamp/0.6]
+
+Rig finale:
+    Burst: Lamp/0.2 Lamp/0.5 Lamp/0.8
+
+#### mut340 trunc of §6.4 7 sym L1016
+pattern Flash(default start: f32, children groups: [Lamp+]*) -> Rig:
+    Rig:
+        Lamp/start
+        groups
+
+pattern Burst(children lamps: Lamp{2+}
+#### mut341 del-line of §6.4 7 sym L1016
+pattern Flash(default start: f32, children groups: [Lamp+]*) -> Rig:
+    Rig:
+        groups
+
+pattern Burst(children lamps: Lamp{2+}) -> ([Lamp{2+}]):
+    [lamps]
+
+Flash opener /0.1:
+    [Lamp/0.2 Lamp/0.5 Lamp/0.8]
+    [Lamp/0.3 Lamp/0.6]
+
+Rig finale:
+    Burst: Lamp/0.2 Lamp/0.5 Lamp/0.8
+
+#### mut342 dup-line of §6.4 7 sym L1016
+pattern Flash(default start: f32, children groups: [Lamp+]*) -> Rig:
+    Rig:
+        Lamp/start
+        groups
+
+pattern Burst(children lamps: Lamp{2+}) -> ([Lamp{2+}]):
+    [lamps]
+    [lamps]
+
+Flash opener /0.1:
+    [Lamp/0.2 Lamp/0.5 Lamp/0.8]
+    [Lamp/0.3 Lamp/0.6]
+
+Rig finale:
+    Burst: Lamp/0.2 Lamp/0.5 Lamp/0.8
+
+#### mut343 del-line of §6.4 7 sym L1016
+pattern Flash(default start: f32, children groups: [Lamp+]*) -> Rig:
+    Rig:
+        groups
+
+pattern Burst(children lamps: Lamp{2+}) -> ([Lamp{2+}]):
+    [lamps]
+
+Flash opener /0.1:
+    [Lamp/0.2 Lamp/0.5 Lamp/0.8]
+    [Lamp/0.3 Lamp/0.6]
+
+Rig finale:
+    Burst: Lamp/0.2 Lamp/0.5 Lamp/0.8
+
+#### mut344 trunc of §6.4 7 sym L1016
+pattern Flash(default start: f32, children groups: [Lamp+]*) -> Rig:
+    Rig:
+        Lamp/start
+        groups
+
+pattern Burst(children lamps: Lamp{2+}) -> ([Lamp{2+}]):
+    [lamps]
+
+Flash opener /0.1:
+#### mut345 trunc of §6.4 7 sym L1016
+pattern Flash(default start: f32, children groups: [Lamp+]*) -> Rig:
+    Rig:
+        Lamp/start
+        grou
+#### mut346 del of §6.4 7 sym L1016
+pattern Flash(default start: f32, children groups: [Lamp+]*) -> Rig:
+    Rig:
+        Lamp/start
+        groups
+
+pattern Burst(children lamps: Lamp{2+}) -> ([Lamp{2+}]):
+    [lamps]
+
+Flash opener /0.1:
+    [Lamp/0.2 Lamp/0.5 Lamp/0.8]
+    [Lamp/0.3 Lamp/0.6]
+
+Rig finale:
+    Burst: Lamp/0.2 Lamp/0.5 Lamp.8
+
+#### mut347 trunc of §6.4 7 sym L1016
+pattern Flash(default star
+#### mut348 dup-line of §6.4 7 sym L1016
+pattern Flash(default start: f32, children groups: [Lamp+]*) -> Rig:
+    Rig:
+        Lamp/start
+        groups
+
+pattern Burst(children lamps: Lamp{2+}) -> ([Lamp{2+}]):
+    [lamps]
+
+
+Flash opener /0.1:
+    [Lamp/0.2 Lamp/0.5 Lamp/0.8]
+    [Lamp/0.3 Lamp/0.6]
+
+Rig finale:
+    Burst: Lamp/0.2 Lamp/0.5 Lamp/0.8
+
+#### mut349 ins of §6.6 1 sym L1053
+state a(1)
+stream b(2)
+state c1 = a + b
+state c2 on b = a + b
+state c3 on a = a + b
+state c when 4 on (a, b) = a + b
+
+#### mut350 trunc of §6.6 1 sym L1053
+state a(1)
+str
+#### mut351 ins of §6.6 1 sym L1053
+state a(1)
+stream b(2")
+state c1 = a + b
+state c2 on b = a + b
+state c3 on a = a + b
+state c4 on (a, b) = a + b
+
+#### mut352 del-line of §6.6 1 sym L1053
+state a(1)
+stream b(2)
+state c1 = a + b
+state c2 on b = a + b
+state c3 on a = a + b
+
+#### mut353 trunc of §6.6 1 sym L1053
+state a(1)
+stream b(2)
+state c1 = a + b
+state c2 on b = a +
+#### mut354 dup-line of §6.6 1 sym L1053
+state a(1)
+stream b(2)
+state c1 = a + b
+state c2 on b = a + b
+state c3 on a = a + b
+state c4 on (a, b) = a + b
+
+
+#### mut355 ins of §6.6 1 sym L1053
+state a(1)
+stream b(2)
+state c1 = a + b
+state c==2 on b = a + b
+state c3 on a = a + b
+state c4 on (a, b) = a + b
+
+#### mut356 trunc of §6.6 1 sym L1053
+state a(1)
+stream b(2
+#### mut357 trunc of §6.6 1 sym L1053
+
+#### mut358 trunc of §6.6 1 sym L1053
+state a(1)
+stream b(2)
+state c1 = a
+#### mut359 dup-line of §6.6 1 sym L1053
+state a(1)
+state a(1)
+stream b(2)
+state c1 = a + b
+state c2 on b = a + b
+state c3 on a = a + b
+state c4 on (a, b) = a + b
+
+#### mut360 del of §6.6 1 sym L1053
+state a(1)
+stream b(2)
+state c1 = a + b
+state c2 on b = a + b
+state c3  a = a + b
+state c4 on (a, b) = a + b
+
+#### mut361 ins of §6.6 2 sym L1068
+state gate(false)
+state level(0.0)
+state reading(60)
+
+state held(0.0) on gate = if gate the.n level else held.past(1)
+state previous = reading.past(1, -1)
+state recent([]) = (recent.past(1) + [reading])[^8..]
+
+#### mut362 trunc of §6.6 2 sym L1068
+state gate(false)
+state level(0.0)
+state reading(60)
+
+state held(0.0) on gate = if gate then level else held.p
+#### mut363 dup-line of §6.6 2 sym L1068
+state gate(false)
+state level(0.0)
+state reading(60)
+
+
+state held(0.0) on gate = if gate then level else held.past(1)
+state previous = reading.past(1, -1)
+state recent([]) = (recent.past(1) + [reading])[^8..]
+
+#### mut364 del-line of §6.6 2 sym L1068
+state gate(false)
+state level(0.0)
+state reading(60)
+
+state held(0.0) on gate = if gate then level else held.past(1)
+state previous = reading.past(1, -1)
+state recent([]) = (recent.past(1) + [reading])[^8..]
+#### mut365 ins of §6.6 2 sym L1068
+state gate(false)
+state level(0.0)
+state reading(	60)
+
+state held(0.0) on gate = if gate then level else held.past(1)
+state previous = reading.past(1, -1)
+state recent([]) = (recent.past(1) + [reading])[^8..]
+
+#### mut366 dup-line of §6.6 2 sym L1068
+state gate(false)
+state gate(false)
+state level(0.0)
+state reading(60)
+
+state held(0.0) on gate = if gate then level else held.past(1)
+state previous = reading.past(1, -1)
+state recent([]) = (recent.past(1) + [reading])[^8..]
+
+#### mut367 dup-line of §6.6 2 sym L1068
+state gate(false)
+state level(0.0)
+state reading(60)
+
+
+state held(0.0) on gate = if gate then level else held.past(1)
+state previous = reading.past(1, -1)
+state recent([]) = (recent.past(1) + [reading])[^8..]
+
+#### mut368 dup-line of §6.6 2 sym L1068
+state gate(false)
+state gate(false)
+state level(0.0)
+state reading(60)
+
+state held(0.0) on gate = if gate then level else held.past(1)
+state previous = reading.past(1, -1)
+state recent([]) = (recent.past(1) + [reading])[^8..]
+
+#### mut369 trunc of §6.6 2 sym L1068
+state gate(false)
+state level(0.0)
+state reading(60)
+
+state held(0.0) on gate = if gate then lev
+#### mut370 trunc of §6.6 2 sym L1068
+state gate(false)
+state level(0.0)
+state reading(60)
+
+state held(0.0) on gate = if gate then level else held.past(1)
+s
+#### mut371 trunc of §6.6 2 sym L1068
+state gate(false)
+state level(0.0)
+state reading(60)
+
+state held(0.0) on gate = if gate then level else held.past(1)
+state previous = reading.past(1, -1)
+state recent([]) = (recent.past(1) + [reading])[^8.
+#### mut372 del of §6.6 2 sym L1068
+state gate(false)
+state level(0.0)
+state reading(60)
+
+state held() on gate = if gate then level else held.past(1)
+state previous = reading.past(1, -1)
+state recent([]) = (recent.past(1) + [reading])[^8..]
+
+#### mut373 del-line of §6.6 3 sym L1080
+channel alarm(0)
+state shift(0)
+state alarms(0) on (alarm, shift) = if shift.stepped then 0 else alarms.past(1) + 1
+
+#### mut374 ins of §6.6 3 sym L1080
+channel alarm(0)
+state shift(0)
+
+state alarms(    0) on (alarm, shift) = if shift.stepped then 0 else alarms.past(1) + 1
+
+#### mut375 trunc of §6.6 3 sym L1080
+channel alarm(0)
+state shift(0)
+
+state alarms(0) on (alarm, shift) = if shift.
+#### mut376 ins of §6.6 3 sym L1080
+channel alarm(0)
+state shift(0)
+
+|state alarms(0) on (alarm, shift) = if shift.stepped then 0 else alarms.past(1) + 1
+
+#### mut377 trunc of §6.6 3 sym L1080
+channel alarm(0)
+state shift(0)
+
+state
+#### mut378 del-line of §6.6 3 sym L1080
+state shift(0)
+
+state alarms(0) on (alarm, shift) = if shift.stepped then 0 else alarms.past(1) + 1
+
+#### mut379 del of §6.6 3 sym L1080
+chanel alarm(0)
+state shift(0)
+
+state alarms(0) on (alarm, shift) = if shift.stepped then 0 else alarms.past(1) + 1
+
+#### mut380 dup-line of §6.6 3 sym L1080
+channel alarm(0)
+state shift(0)
+
+state alarms(0) on (alarm, shift) = if shift.stepped then 0 else alarms.past(1) + 1
+state alarms(0) on (alarm, shift) = if shift.stepped then 0 else alarms.past(1) + 1
+
+#### mut381 ins of §6.6 3 sym L1080
+channel alarm(0)
+state shift(0)
+
+state alarms(0) on (alarm, shift) = if shift.stepped then 0 else ala^rms.past(1) + 1
+
+#### mut382 dup-line of §6.6 3 sym L1080
+channel alarm(0)
+state shift(0)
+state shift(0)
+
+state alarms(0) on (alarm, shift) = if shift.stepped then 0 else alarms.past(1) + 1
+
+#### mut383 del of §6.6 3 sym L1080
+channel alarm(0)
+state shift(0)
+
+state alarms(0) on (alarm, shit) = if shift.stepped then 0 else alarms.past(1) + 1
+
+#### mut384 ins of §6.6 3 sym L1080
+channel alarm(0)
+state shift(0)
+
+state alarms(0) on (alarm, shift) = if shift.stepped then 0 else alar=>ms.past(1) + 1
+
+#### mut385 del of §6.7 1 sym L1129
+fn count(xs, keep: (i32) -> bool):
+    for x in xs into n from 0: if keep(x) then n + 1 else n
+
+state readings([]): i32[..10]
+state threshold(60)
+
+state high = count(readings, p: p > 60)
+state low = count(readings, (p: i32) -> bool: p < 48)
+state above = count(readings, p: p > threshold)
+
+fn is_high(p): p > 60
+
+state named = count(readings, is_high)
+
+fn count_high(xs):
+    let keep = p: p > 6   count(xs, keep)
+
+state local = count_high(readings)
+
+#### mut386 ins of §6.7 1 sym L1129
+fn count(xs, keep: (i32) -> bool):
+    for x in xs into n from 0: if keep(x) then n + 1 else n
+
+state readings([]): i32[    ..10]
+state threshold(60)
+
+state high = count(readings, p: p > 60)
+state low = count(readings, (p: i32) -> bool: p < 48)
+state above = count(readings, p: p > threshold)
+
+fn is_high(p): p > 60
+
+state named = count(readings, is_high)
+
+fn count_high(xs):
+    let keep = p: p > 60
+    count(xs, keep)
+
+state local = count_high(readings)
+
+#### mut387 ins of §6.7 1 sym L1129
+fn count(xs, keep: (i32) -> bool):
+    for x in xs into n from 0: if keep(x) then n + 1 else n
+
+state readings([]): i32[..10]
+state threshold(60)
+
+state high = count(readings, p: p > 60)
+state low = count(readings, (p: i32) -> bool: p .< 48)
+state above = count(readings, p: p > threshold)
+
+fn is_high(p): p > 60
+
+state named = count(readings, is_high)
+
+fn count_high(xs):
+    let keep = p: p > 60
+    count(xs, keep)
+
+state local = count_high(readings)
+
+#### mut388 del-line of §6.7 1 sym L1129
+fn count(xs, keep: (i32) -> bool):
+    for x in xs into n from 0: if keep(x) then n + 1 else n
+state readings([]): i32[..10]
+state threshold(60)
+
+state high = count(readings, p: p > 60)
+state low = count(readings, (p: i32) -> bool: p < 48)
+state above = count(readings, p: p > threshold)
+
+fn is_high(p): p > 60
+
+state named = count(readings, is_high)
+
+fn count_high(xs):
+    let keep = p: p > 60
+    count(xs, keep)
+
+state local = count_high(readings)
+
+#### mut389 del of §6.7 1 sym L1129
+fn count(xs, keep: (i32) -> bool):
+    for x in xs into n from 0: if keep(x) then n + 1 else n
+
+state readings([]): i32[..10]
+state threshold(60)
+
+state high = count(readings, p: p > 60)
+state low = count(readings, (p: i32) -> bool: p < 48)
+state above = count(rdings, p: p > threshold)
+
+fn is_high(p): p > 60
+
+state named = count(readings, is_high)
+
+fn count_high(xs):
+    let keep = p: p > 60
+    count(xs, keep)
+
+state local = count_high(readings)
+
+#### mut390 del of §6.7 1 sym L1129
+fn count(xs, keep: (i32) -> bool):
+    for x in xs into n from 0: if keep(x) then n + 1 else n
+
+state readings([]): i32[..10]
+state threshold(60)
+
+state high = count(readings, p: p > 60)
+state low = count(readings, (p: i32) -> bool: p < 48)
+state above = count(readings, p: p > threshold)
+
+fn is_high(p): p > 60
+
+state named = count(readings, is_high)
+
+fn count_high(xs):
+    let keep  p: p > 60
+    count(xs, keep)
+
+state local = count_high(readings)
+
+#### mut391 trunc of §6.7 1 sym L1129
+fn count(xs, keep: (i32) -> bool):
+    for x in xs into n from 0: if keep(x) then n + 1 else n
+
+state readings([]): i32[..10]
+state threshold(60)
+
+state high = count(readings, p: p > 60)
+state low = count(rea
+#### mut392 trunc of §6.7 1 sym L1129
+fn count(xs, keep: (i32) -> bool):
+    for x in xs into n from 0: if keep(x) then n + 1 else n
+
+state readings([]): i32[..10]
+state threshold(60)
+
+state high = count(readings, p: p > 60)
+state low = count(readings, (p: i32) -> bool: p < 48)
+state above = count(readings, p: p > threshold)
+
+fn is_high(p): p > 60
+
+state named = count
+#### mut393 del-line of §6.7 1 sym L1129
+fn count(xs, keep: (i32) -> bool):
+    for x in xs into n from 0: if keep(x) then n + 1 else n
+
+state readings([]): i32[..10]
+state threshold(60)
+
+state high = count(readings, p: p > 60)
+state low = count(readings, (p: i32) -> bool: p < 48)
+state above = count(readings, p: p > threshold)
+
+fn is_high(p): p > 60
+
+state named = count(readings, is_high)
+
+fn count_high(xs):
+    let keep = p: p > 60
+    count(xs, keep)
+state local = count_high(readings)
+
+#### mut394 del of §6.7 1 sym L1129
+fn count(xs, keep: (i32) -> bool):
+    for x in xs into n from 0: if keep(x) then n + 1 else n
+
+state readings([]): i32[..10]
+state threshold(60)
+
+state high = count(adings, p: p > 60)
+state low = count(readings, (p: i32) -> bool: p < 48)
+state above = count(readings, p: p > threshold)
+
+fn is_high(p): p > 60
+
+state named = count(readings, is_high)
+
+fn count_high(xs):
+    let keep = p: p > 60
+    count(xs, keep)
+
+state local = count_high(readings)
+
+#### mut395 trunc of §6.7 1 sym L1129
+fn count(xs, keep: (i32) -> bool):
+    for x in xs into n from 0: if keep(x) then n + 1 else n
+
+state readings([]): i32[..10]
+state threshold(60)
+
+state high = count(readings, p: p > 60)
+state low = count(readings, (p: i32) -> bool: p < 48)
+state above = count(readings, p: p > threshold)
+
+fn is_high(p): p > 60
+
+state named = count(readings, is_high)
+
+fn count_high(xs):
+    let keep = p: p > 60
+    count(xs, keep)
+
+state local = count_high(readings)
+#### mut396 ins of §6.7 1 sym L1129
+fn count(xs, keep: (i32) -> bool):
+ 日   for x in xs into n from 0: if keep(x) then n + 1 else n
+
+state readings([]): i32[..10]
+state threshold(60)
+
+state high = count(readings, p: p > 60)
+state low = count(readings, (p: i32) -> bool: p < 48)
+state above = count(readings, p: p > threshold)
+
+fn is_high(p): p > 60
+
+state named = count(readings, is_high)
+
+fn count_high(xs):
+    let keep = p: p > 60
+    count(xs, keep)
+
+state local = count_high(readings)
+
+#### mut397 del of §6.7 2 sym L1155
+fn bar(seed, f: (x: f4) -> f64): f(x=seed) * 2
+
+let inc = x: x + 1
+let twice = bar
+let a = bar(1.0, inc)
+let b = twice(1.0, inc)
+let c = inc(2.0)
+
+#### mut398 dup-line of §6.7 2 sym L1155
+fn bar(seed, f: (x: f64) -> f64): f(x=seed) * 2
+
+let inc = x: x + 1
+let twice = bar
+let a = bar(1.0, inc)
+let b = twice(1.0, inc)
+let c = inc(2.0)
+
+
+#### mut399 del of §6.7 2 sym L1155
+fn bar(seed, f: (x: f64) -> f64): f(x=seed)  2
+
+let inc = x: x + 1
+let twice = bar
+let a = bar(1.0, inc)
+let b = twice(1.0, inc)
+let c = inc(2.0)
+
+#### mut400 dup-line of §6.7 2 sym L1155
+fn bar(seed, f: (x: f64) -> f64): f(x=seed) * 2
+
+let inc = x: x + 1
+let twice = bar
+let twice = bar
+let a = bar(1.0, inc)
+let b = twice(1.0, inc)
+let c = inc(2.0)
+
+#### mut401 trunc of §6.7 2 sym L1155
+fn bar(seed, f: (x: f64) -> f64): f(x=seed) * 2
+
+let inc = x: x + 1
+let twice = bar
+let a = bar(1.0, inc)
+let b = twice(1.0, inc)
+let c =
+#### mut402 ins of §6.7 2 sym L1155
+fn bar(seed, f: (x: f64) -> f64): f(x=seed) * 2
+
+let inc = x: x + 1
+let twi|ce = bar
+let a = bar(1.0, inc)
+let b = twice(1.0, inc)
+let c = inc(2.0)
+
+#### mut403 ins of §6.7 2 sym L1155
+fn bar(seed, f: (x: f64) -> f64): f(x=seed) * 2
+
+let inc = x: x + 1
+let twice = bar
+let a = bar(1.0, inc)
+let b = twice(1.0, inc)
+let c = inc(2.0	)
+
+#### mut404 ins of §6.7 2 sym L1155
+fn bar(seed, f: (x: f64) -> f64): f(x=seed) * 2
+
+let inc = x: x +" 1
+let twice = bar
+let a = bar(1.0, inc)
+let b = twice(1.0, inc)
+let c = inc(2.0)
+
+#### mut405 del of §6.7 2 sym L1155
+fn bar(seed, f: (x: f64) -> f64): f(x=seed) * 2
+
+let inc = x: x + 1
+let twice = bar
+let a = bar(1.0, inc)
+let b  twice(1.0, inc)
+let c = inc(2.0)
+
+#### mut406 del of §6.7 2 sym L1155
+fn bar(seed, f: (x: f64) -> f64): f(x=seed) * 2
+
+let inc = x:  + 1
+let twice = bar
+let a = bar(1.0, inc)
+let b = twice(1.0, inc)
+let c = inc(2.0)
+
+#### mut407 del-line of §6.7 2 sym L1155
+fn bar(seed, f: (x: f64) -> f64): f(x=seed) * 2
+
+let inc = x: x + 1
+let a = bar(1.0, inc)
+let b = twice(1.0, inc)
+let c = inc(2.0)
+
+#### mut408 trunc of §6.7 2 sym L1155
+fn bar(seed, f: (x: f64) -> f64): f(x=seed) * 2
+
+let inc = x: x + 1
+let twice = bar
+#### mut409 ins of §6.7 3 sym L1167
+let g = 2
+let dbl = x: x * g
+
+fn f(x):
+    let g =: 3
+    dbl(x)
+
+let ten = f(5)
+
+#### mut410 del-line of §6.7 3 sym L1167
+let g = 2
+let dbl = x: x * g
+
+    let g = 3
+    dbl(x)
+
+let ten = f(5)
+
+#### mut411 dup-line of §6.7 3 sym L1167
+let g = 2
+let g = 2
+let dbl = x: x * g
+
+fn f(x):
+    let g = 3
+    dbl(x)
+
+let ten = f(5)
+
+#### mut412 trunc of §6.7 3 sym L1167
+let g = 2
+let
+#### mut413 del of §6.7 3 sym L1167
+let g = 2
+let dbl = x: x * g
+
+fn f(x):
+    let g = 3
+    dbl)
+
+let ten = f(5)
+
+#### mut414 trunc of §6.7 3 sym L1167
+let g = 2
+let dbl = x: x * g
+
+fn f(x):
+    let 
+#### mut415 del of §6.7 3 sym L1167
+let g = 2
+let dbl = x: x * g
+
+fn f(x)
+    let g = 3
+    dbl(x)
+
+let ten = f(5)
+
+#### mut416 del of §6.7 3 sym L1167
+let g 
+let dbl = x: x * g
+
+fn f(x):
+    let g = 3
+    dbl(x)
+
+let ten = f(5)
+
+#### mut417 del of §6.7 3 sym L1167
+let g = 2
+let dbl = x: x * g
+
+fn f(x):
+    let g = 3
+    dbl(x)
+
+let ten =f(5)
+
+#### mut418 del-line of §6.7 3 sym L1167
+let g = 2
+let dbl = x: x * g
+fn f(x):
+    let g = 3
+    dbl(x)
+
+let ten = f(5)
+
+#### mut419 del-line of §6.7 3 sym L1167
+let g = 2
+let dbl = x: x * g
+
+fn f(x):
+    dbl(x)
+
+let ten = f(5)
+
+#### mut420 trunc of §6.7 3 sym L1167
+
+#### mut421 del-line of §6.8 1 sym L1236
+type Stack[T, const N]:
+    items: T[..N]
+    top: i32
+
+fn push[T, const N](s: Stack[T, N], x: T) -> Stack[T, N]:
+    Stack[T, N] {items: (s.items + [x])[..N], top: s.top + 1}
+
+fn first[T, const N: i32](xs: T[N]) -> T: xs[0]
+
+fn mid[T: f32 | f64](a: T, b: T) -> T: (a + b) / 2
+
+state total(10): i32
+
+let ids: i32[3] = [10, 20, 30]
+let start = Stack[i32, 8] {}
+let big = Stack[i32, 4 * 2] {}
+let pushed = push(start, total)
+let centre = mid(0.25f32, 0.75f32)
+
+    Valve/(first(ids))
+
+#### mut422 del of §6.8 1 sym L1236
+type Stack[T, const N]:
+    items: T[..N]
+    top: i32
+
+fn push[T, const N](s: Stack[T, N], x: T) -> Stack[T, N]:
+    Stack[T, N] {items: (s.items + [x])[..N], top: s.top + 1}
+
+fnfirst[T, const N: i32](xs: T[N]) -> T: xs[0]
+
+fn mid[T: f32 | f64](a: T, b: T) -> T: (a + b) / 2
+
+state total(10): i32
+
+let ids: i32[3] = [10, 20, 30]
+let start = Stack[i32, 8] {}
+let big = Stack[i32, 4 * 2] {}
+let pushed = push(start, total)
+let centre = mid(0.25f32, 0.75f32)
+
+Plant boiler:
+    Valve/(first(ids))
+
+#### mut423 ins of §6.8 1 sym L1236
+type Stack[T, const N]:
+    items: T[..N]
+    top: i32
+
+fn push[T, const N](s: Stack[T, N], x: T) -> Stack[T, N]:
+    Stack[T, N] {items: (s.items + [x])[..N], top: s.top + 1}
+
+fn first[T,{ const N: i32](xs: T[N]) -> T: xs[0]
+
+fn mid[T: f32 | f64](a: T, b: T) -> T: (a + b) / 2
+
+state total(10): i32
+
+let ids: i32[3] = [10, 20, 30]
+let start = Stack[i32, 8] {}
+let big = Stack[i32, 4 * 2] {}
+let pushed = push(start, total)
+let centre = mid(0.25f32, 0.75f32)
+
+Plant boiler:
+    Valve/(first(ids))
+
+#### mut424 del of §6.8 1 sym L1236
+type Stack[T, const N]    items: T[..N]
+    top: i32
+
+fn push[T, const N](s: Stack[T, N], x: T) -> Stack[T, N]:
+    Stack[T, N] {items: (s.items + [x])[..N], top: s.top + 1}
+
+fn first[T, const N: i32](xs: T[N]) -> T: xs[0]
+
+fn mid[T: f32 | f64](a: T, b: T) -> T: (a + b) / 2
+
+state total(10): i32
+
+let ids: i32[3] = [10, 20, 30]
+let start = Stack[i32, 8] {}
+let big = Stack[i32, 4 * 2] {}
+let pushed = push(start, total)
+let centre = mid(0.25f32, 0.75f32)
+
+Plant boiler:
+    Valve/(first(ids))
+
+#### mut425 del-line of §6.8 1 sym L1236
+type Stack[T, const N]:
+    items: T[..N]
+    top: i32
+
+fn push[T, const N](s: Stack[T, N], x: T) -> Stack[T, N]:
+    Stack[T, N] {items: (s.items + [x])[..N], top: s.top + 1}
+
+fn first[T, const N: i32](xs: T[N]) -> T: xs[0]
+
+fn mid[T: f32 | f64](a: T, b: T) -> T: (a + b) / 2
+
+state total(10): i32
+
+let ids: i32[3] = [10, 20, 30]
+let start = Stack[i32, 8] {}
+let big = Stack[i32, 4 * 2] {}
+let pushed = push(start, total)
+let centre = mid(0.25f32, 0.75f32)
+
+Plant boiler:
+
+#### mut426 del of §6.8 1 sym L1236
+type Stack[T, const N]:
+    items: T[..N]
+    top: i32
+
+fn push[T, const N](s: Stack[T, N], x: T) -> Stack[T, N]:
+    Stack[T, N] {items: (s.items + [x])[..N], top: s.top + 1}
+
+fn first[T, const N: i32](xs: T[N]) -> T: xs[0]
+
+fn mid[T: f32 | f64](a: T, b: T) -> T: (a + b) / 2
+
+state total(10): i32
+
+let ids: i32[3] = [10, 20, 30]
+let start = Stack[i32, 8] {}
+let big = Stack[i32, 4 * 2] {}
+let pushed = push(start, total)
+let centre = mid(0.25f32, 0.75f32)
+
+Plant boler:
+    Valve/(first(ids))
+
+#### mut427 ins of §6.8 1 sym L1236
+type Stack[T, const N]:
+    items: T[..N]
+    top: i32
+
+fn push[T, const N](s: Stack[T, N], x: T) -> Stack[T, N]:
+    Stack[T, N] {items: (s.items + [x])[..N], top: s.top + 1}
+
+fn first[T, const N: i32](xs: T[N]) -> T: xs[0]
+
+fn mid[T: f32 | f64](a: T, b: T) -> T: (a + b) / 2
+
+state total(10): i32
+
+let ids: i32[3] = [10, 20, 30]
+let start = Stack[i32, 8] {}
+let big = Stack[i32, 4 * 2] {}
+let pushed = push(start, tot^al)
+let centre = mid(0.25f32, 0.75f32)
+
+Plant boiler:
+    Valve/(first(ids))
+
+#### mut428 ins of §6.8 1 sym L1236
+type Stack[T, const N]:
+    items: T[..N]
+    top: i32
+
+fn push[T, const N](s: Stack[T, N], x: T) -> Stack[T, N]:
+    Stack[T, N] {items: (s.items + [x])[..N], top: s.top + 1}
+
+fn first[T, const N: i32](xs: T[N]) -> T: xs[0]
+
+fn mid[T: f32 | f64](a: T, b: T) -> T: (a + b) / 2
+
+state total(10): i32
+
+let ids: i32[3] = [10, 20, 30]
+let start = Stac}k[i32, 8] {}
+let big = Stack[i32, 4 * 2] {}
+let pushed = push(start, total)
+let centre = mid(0.25f32, 0.75f32)
+
+Plant boiler:
+    Valve/(first(ids))
+
+#### mut429 ins of §6.8 1 sym L1236
+type Stack[T, const N]:
+    items: T[..N]
+    top: i32
+
+fn push[T, const N](s: Stack[T, N], x: T) -> Stack[T, N]:
+    Stack[T, N] {items: (s.items + [x])[..N], top: s.top + 1}
+
+fn first[T, const N: i32](xs: T[N]) -> T: xs[0]
+
+fn mid[T: f32 | f64](a: T, b: T) -> T: (a + b) / 2
+
+state total(10): i32
+
+let ids: i32[3] =[ [10, 20, 30]
+let start = Stack[i32, 8] {}
+let big = Stack[i32, 4 * 2] {}
+let pushed = push(start, total)
+let centre = mid(0.25f32, 0.75f32)
+
+Plant boiler:
+    Valve/(first(ids))
+
+#### mut430 trunc of §6.8 1 sym L1236
+type Stack[T, const N]:
+    items: T[..N]
+    top: i32
+
+fn push[T, const N](s: Stack[T, N], x: T) -> Sta
+#### mut431 dup-line of §6.8 1 sym L1236
+type Stack[T, const N]:
+    items: T[..N]
+    top: i32
+
+fn push[T, const N](s: Stack[T, N], x: T) -> Stack[T, N]:
+    Stack[T, N] {items: (s.items + [x])[..N], top: s.top + 1}
+
+fn first[T, const N: i32](xs: T[N]) -> T: xs[0]
+
+fn mid[T: f32 | f64](a: T, b: T) -> T: (a + b) / 2
+
+state total(10): i32
+
+let ids: i32[3] = [10, 20, 30]
+let start = Stack[i32, 8] {}
+let big = Stack[i32, 4 * 2] {}
+let pushed = push(start, total)
+let centre = mid(0.25f32, 0.75f32)
+let centre = mid(0.25f32, 0.75f32)
+
+Plant boiler:
+    Valve/(first(ids))
+
+#### mut432 trunc of §6.8 1 sym L1236
+type Stack[T, const N]:
+    items: T[..N]
+    top: i32
+
+fn push[T, const N](s: Stack[T, N], x: T) -> Stack[T, N]:
+    Stack[T, N] {items: (s.items + [x])[..N], top: s.top + 1}
+
+fn first[T, const N: i32](xs: T[N]) -> T: xs[0]
+
+fn mid[T: f32 | f64](
+#### mut433 trunc of §6.8 2 sym L1262
+fn padded[const N](xs: i32[N]) -> i32[N + 1]: xs + [0]
+
+fn mean[const N](xs: f32[N]) -> f32: (for x in x
+#### mut434 dup-line of §6.8 2 sym L1262
+fn padded[const N](xs: i32[N]) -> i32[N + 1]: xs + [0]
+
+fn mean[const N](xs: f32[N]) -> f32: (for x in xs into total from 0.0: total + x) / N
+
+let rows = padded([10, 20, 30])
+let average = mean([0.25f32, 0.5f32, 0.75f32])
+let average = mean([0.25f32, 0.5f32, 0.75f32])
+
+#### mut435 del of §6.8 2 sym L1262
+fn padded[const N](xs: i32[N]) -> i32[N + 1]: xs + [0]
+
+fn mean[const N](xs: f32[N]) -> f32: (for x in xs into total from 0.0: total + x) / let rows = padded([10, 20, 30])
+let average = mean([0.25f32, 0.5f32, 0.75f32])
+
+#### mut436 trunc of §6.8 2 sym L1262
+fn padded[const N](xs: i32[N]) -> i32[N + 1]: xs + [0]
+
+fn mean[const N](xs: f32[N]) -> f32: (for x in xs into total from 0.0: total + x
+#### mut437 del of §6.8 2 sym L1262
+fn padded[const N](xs: i32[N]) -> i32[N + 1]: xs + [0]
+
+fn mean[const N](xs: f32[N]) -> f32: (for x in xs into total from 0.0: total + x) / N
+
+let rows = padded([10, 2 30])
+let average = mean([0.25f32, 0.5f32, 0.75f32])
+
+#### mut438 ins of §6.8 2 sym L1262
+fn padded[const N](xs: i32[N]) -> i32[N + 1]: xs + [0]
+
+fn mean[const N](xs: f32[N]) -> f32: (for x in xs into total from 0.0: total + x) / N
+
+let rows = padded([10, 20, 30])
+let^ average = mean([0.25f32, 0.5f32, 0.75f32])
+
+#### mut439 ins of §6.8 2 sym L1262
+fn padded[const N](xs: i32[N]) -> i32[N + 1]: xs + [0]
+
+fn mean[const N]^(xs: f32[N]) -> f32: (for x in xs into total from 0.0: total + x) / N
+
+let rows = padded([10, 20, 30])
+let average = mean([0.25f32, 0.5f32, 0.75f32])
+
+#### mut440 ins of §6.8 2 sym L1262
+fn padded[con when st N](xs: i32[N]) -> i32[N + 1]: xs + [0]
+
+fn mean[const N](xs: f32[N]) -> f32: (for x in xs into total from 0.0: total + x) / N
+
+let rows = padded([10, 20, 30])
+let average = mean([0.25f32, 0.5f32, 0.75f32])
+
+#### mut441 ins of §6.8 2 sym L1262
+fn padded[const N](xs: i32[N]) -> i32[N + 1]: xs + [0]
+
+fn mean[const N](xs: f32[N]) -> f32: (for x in xs into total from 0.0: total + x) / N
+
+le^t rows = padded([10, 20, 30])
+let average = mean([0.25f32, 0.5f32, 0.75f32])
+
+#### mut442 trunc of §6.8 2 sym L1262
+fn padded[const N](xs: i32[N]) -> i32[N + 1]: xs + [0]
+
+fn mean[const N](xs: f32[N]) -> f32: (for x in xs 
+#### mut443 ins of §6.8 2 sym L1262
+fn padded[const N](xs: i32[N]) -> i32[N + 1]: xs + [0]
+
+fn mean[const N](xs: f32[N]) -> f32: (for x in xs into total from 0.0: total + x) / N
+
+let rows = padded([10, 20, 30])
+let average = mean([0.25f32, 0.5f32, 0.75f32])..
+
+#### mut444 dup-line of §6.8 2 sym L1262
+fn padded[const N](xs: i32[N]) -> i32[N + 1]: xs + [0]
+
+fn mean[const N](xs: f32[N]) -> f32: (for x in xs into total from 0.0: total + x) / N
+
+let rows = padded([10, 20, 30])
+let average = mean([0.25f32, 0.5f32, 0.75f32])
+let average = mean([0.25f32, 0.5f32, 0.75f32])
+
+#### mut445 del of §6.8 3 sym L1291
+type Pair[A, B]:
+    left: A
+    right: B
+
+let p = air {left: 1i32, right: true}
+
+#### mut446 del of §6.8 3 sym L1291
+type Pair[A, B]:
+    left: A
+    right: B
+
+let p = Pairleft: 1i32, right: true}
+
+#### mut447 trunc of §6.8 3 sym L1291
+type Pair[A, B
+#### mut448 del-line of §6.8 3 sym L1291
+type Pair[A, B]:
+    left: A
+
+let p = Pair {left: 1i32, right: true}
+
+#### mut449 del of §6.8 3 sym L1291
+type Pair[A, B]:
+    left: A
+    right: B
+
+let p = Pair {lft: 1i32, right: true}
+
+#### mut450 trunc of §6.8 3 sym L1291
+t
+#### mut451 del of §6.8 3 sym L1291
+type Pair[A, B]:
+    left: A
+    right: B
+
+let p = Pair {left: 1i32, rt: true}
+
+#### mut452 trunc of §6.8 3 sym L1291
+type Pair[A, B]:
+    left: A
+    right: B
+
+let p =
+#### mut453 del-line of §6.8 3 sym L1291
+type Pair[A, B]:
+    left: A
+
+let p = Pair {left: 1i32, right: true}
+
+#### mut454 del of §6.8 3 sym L1291
+type Pair[A, B]:
+    left: A
+    right: B
+
+let p = Pair {left: 132, right: true}
+
+#### mut455 ins of §6.8 3 sym L1291
+type Pair[A, B]:
+    left: A
+    right: B
+
+l}et p = Pair {left: 1i32, right: true}
+
+#### mut456 del of §6.8 3 sym L1291
+type Pair[A, B]:
+    left: A
+    right: B
+
+let p = Pair {left: 1i3, right: true}
+
+#### mut457 dup-line of §7.3 1 sym L1363
+Rig stage:
+    Scene as dusk | hold=8:
+        Cue/0 Cue/2
+        Dims: wash
+    Lamp as wash
+    Lamp
+
+Scene night:
+Scene night:
+    Cue/0
+    Triggers: stage.dusk
+
+#### mut458 ins of §7.3 1 sym L1363
+Rig stage:
+    Scene as dusk | hold=8:
+        Cue{/0 Cue/2
+        Dims: wash
+    Lamp as wash
+    Lamp
+
+Scene night:
+    Cue/0
+    Triggers: stage.dusk
+
+#### mut459 dup-line of §7.3 1 sym L1363
+Rig stage:
+    Scene as dusk | hold=8:
+        Cue/0 Cue/2
+        Dims: wash
+    Lamp as wash
+    Lamp
+    Lamp
+
+Scene night:
+    Cue/0
+    Triggers: stage.dusk
+
+#### mut460 del-line of §7.3 1 sym L1363
+Rig stage:
+    Scene as dusk | hold=8:
+        Cue/0 Cue/2
+        Dims: wash
+    Lamp as wash
+    Lamp
+
+Scene night:
+    Cue/0
+    Triggers: stage.dusk
+#### mut461 trunc of §7.3 1 sym L1363
+Rig stage:
+    Scene as dusk | hold=8:
+        Cue/0 Cue/2
+        Dims: wash
+    Lamp as wash
+    
+#### mut462 del of §7.3 1 sym L1363
+Rig stage:
+    Scene as dusk | hold=8:
+     Cue/0 Cue/2
+        Dims: wash
+    Lamp as wash
+    Lamp
+
+Scene night:
+    Cue/0
+    Triggers: stage.dusk
+
+#### mut463 del-line of §7.3 1 sym L1363
+Rig stage:
+    Scene as dusk | hold=8:
+        Cue/0 Cue/2
+    Lamp as wash
+    Lamp
+
+Scene night:
+    Cue/0
+    Triggers: stage.dusk
+
+#### mut464 del of §7.3 1 sym L1363
+Rig stage:
+    Scene as dusk | hold=8:
+        Cue/0 Cue/2
+        Dims: wash
+    Lamp as wash
+    Lamp
+
+Scene night:
+   e/0
+    Triggers: stage.dusk
+
+#### mut465 trunc of §7.3 1 sym L1363
+Rig stage:
+    Scene as dusk | hold=8:
+        Cue/0 Cu
+#### mut466 del-line of §7.3 1 sym L1363
+Rig stage:
+    Scene as dusk | hold=8:
+        Dims: wash
+    Lamp as wash
+    Lamp
+
+Scene night:
+    Cue/0
+    Triggers: stage.dusk
+
+#### mut467 ins of §7.3 1 sym L1363
+Rig stage:
+    Scene as dusk | hold=8:
+        Cue/0 Cue/2
+        Dims: wash
+    Lamp as wash
+   ] Lamp
+
+Scene night:
+    Cue/0
+    Triggers: stage.dusk
+
+#### mut468 del of §7.3 1 sym L1363
+Rig stage:
+    Scene as dusk | hold=8:      Cue/0 Cue/2
+        Dims: wash
+    Lamp as wash
+    Lamp
+
+Scene night:
+    Cue/0
+    Triggers: stage.dusk
+
+#### mut469 del of §7.6 1 sym L1413
+state intensity(0.5)
+state glow = intensity * 0.8
+
+Rig stage:
+    Lamp | level=0.7
+           hue=glow
+          strobe
+
+#### mut470 del-line of §7.6 1 sym L1413
+state glow = intensity * 0.8
+
+Rig stage:
+    Lamp | level=0.7
+           hue=glow
+           strobe
+
+#### mut471 ins of §7.6 1 sym L1413
+state intensity(0.5)
+state glow = intensity * 0.8
+
+Rig stage:
+    Lamp | level=0.7
+  ]         hue=glow
+           strobe
+
+#### mut472 del-line of §7.6 1 sym L1413
+state intensity(0.5)
+state glow = intensity * 0.8
+
+Rig stage:
+    Lamp | level=0.7
+           hue=glow
+           strobe
+#### mut473 ins of §7.6 1 sym L1413
+state intensity(0.5)
+state glow = intensity * 0.8
+
+Rig stage:
+    Lamp.. | level=0.7
+           hue=glow
+           strobe
+
+#### mut474 ins of §7.6 1 sym L1413
+state intensity(0.5)
+state glow = intensity * 0.8
+
+Ri\g stage:
+    Lamp | level=0.7
+           hue=glow
+           strobe
+
+#### mut475 dup-line of §7.6 1 sym L1413
+state intensity(0.5)
+state glow = intensity * 0.8
+
+Rig stage:
+    Lamp | level=0.7
+           hue=glow
+           strobe
+           strobe
+
+#### mut476 ins of §7.6 1 sym L1413
+state intensity(0.5)
+state glow = intensity * 0.8
+
+Rig stage:
+    Lamp | level=0.7
+ ==          hue=glow
+           strobe
+
+#### mut477 dup-line of §7.6 1 sym L1413
+state intensity(0.5)
+state glow = intensity * 0.8
+
+
+Rig stage:
+    Lamp | level=0.7
+           hue=glow
+           strobe
+
+#### mut478 trunc of §7.6 1 sym L1413
+st
+#### mut479 dup-line of §7.6 1 sym L1413
+state intensity(0.5)
+state glow = intensity * 0.8
+
+Rig stage:
+    Lamp | level=0.7
+           hue=glow
+           strobe
+
+
+#### mut480 dup-line of §7.6 1 sym L1413
+state intensity(0.5)
+state glow = intensity * 0.8
+
+Rig stage:
+    Lamp | level=0.7
+           hue=glow
+           strobe
+
+
+#### mut481 del of §7.7 1 sym L1435
+Plant fill: Valve/0 Valve/0.5 (Controller/0.4 | gain=5)
+
+#### mut482 trunc of §7.7 1 sym L1435
+Plant fill: Valve/0 Valve
+#### mut483 del of §7.7 1 sym L1435
+Planfill: Valve/0 Valve/0.5 (Controller/0.4 | gain=0.5)
+
+#### mut484 ins of §7.7 1 sym L1435
+Plant fill: Valve/0 Valve/0[.5 (Controller/0.4 | gain=0.5)
+
+#### mut485 dup-line of §7.7 1 sym L1435
+Plant fill: Valve/0 Valve/0.5 (Controller/0.4 | gain=0.5)
+Plant fill: Valve/0 Valve/0.5 (Controller/0.4 | gain=0.5)
+
+#### mut486 del of §7.7 1 sym L1435
+Plnt fill: Valve/0 Valve/0.5 (Controller/0.4 | gain=0.5)
+
+#### mut487 ins of §7.7 1 sym L1435
+Plant fill: Valve/0 Valve/0.5 (Controller/0.4 0x| gain=0.5)
+
+#### mut488 del-line of §7.7 1 sym L1435
+
+#### mut489 del-line of §7.7 1 sym L1435
+Plant fill: Valve/0 Valve/0.5 (Controller/0.4 | gain=0.5)
+#### mut490 del of §7.7 1 sym L1435
+Plant fill: Valve/0 Valve/0.5 (Controller0.4 | gain=0.5)
+
+#### mut491 trunc of §7.7 1 sym L1435
+Plant fill: Valve/0 Valve/0.5 (Controller/0.4 | gain=0
+#### mut492 trunc of §7.7 1 sym L1435
+Plant fill: Valve/0 Valve/0.5 (Controll
+#### mut493 del of §7.8 1 sym L1452
+Rig flash:
+    [Lamp/0.2 Lamp/0.5 Lamp/0.8]
+    [r i in 0..3: Lamp/(0.2 + i * 0.3)]
+    [for i, p in [0.2, 0.5, 0.8]: (Lamp/p | hue=1.0 - i * 0.2)]
+
+#### mut494 del of §7.8 1 sym L1452
+Rig flash:
+    [Lamp/0.2 Lamp/0.5 Lamp/0.8]
+    [for i in 0..3: Lamp/(0.2i * 0.3)]
+    [for i, p in [0.2, 0.5, 0.8]: (Lamp/p | hue=1.0 - i * 0.2)]
+
+#### mut495 trunc of §7.8 1 sym L1452
+Rig flash:
+    [Lamp/0.2 Lamp/0.5 Lamp/0.8]
+    [for i i
+#### mut496 del-line of §7.8 1 sym L1452
+Rig flash:
+    [Lamp/0.2 Lamp/0.5 Lamp/0.8]
+    [for i, p in [0.2, 0.5, 0.8]: (Lamp/p | hue=1.0 - i * 0.2)]
+
+#### mut497 ins of §7.8 1 sym L1452
+Rig flash:
+    [Lamp/0.2 Lamp/0.5 Lamp/0日.8]
+    [for i in 0..3: Lamp/(0.2 + i * 0.3)]
+    [for i, p in [0.2, 0.5, 0.8]: (Lamp/p | hue=1.0 - i * 0.2)]
+
+#### mut498 dup-line of §7.8 1 sym L1452
+Rig flash:
+    [Lamp/0.2 Lamp/0.5 Lamp/0.8]
+    [Lamp/0.2 Lamp/0.5 Lamp/0.8]
+    [for i in 0..3: Lamp/(0.2 + i * 0.3)]
+    [for i, p in [0.2, 0.5, 0.8]: (Lamp/p | hue=1.0 - i * 0.2)]
+
+#### mut499 del-line of §7.8 1 sym L1452
+Rig flash:
+    [Lamp/0.2 Lamp/0.5 Lamp/0.8]
+    [for i in 0..3: Lamp/(0.2 + i * 0.3)]
+
+#### mut500 del-line of §7.8 1 sym L1452
+Rig flash:
+    [Lamp/0.2 Lamp/0.5 Lamp/0.8]
+    [for i, p in [0.2, 0.5, 0.8]: (Lamp/p | hue=1.0 - i * 0.2)]
+
+#### mut501 del of §7.8 1 sym L1452
+Rig flash:
+    [Lamp/0.2 Lamp/0.5 Lamp/0.8]
+    [for i in 0..3: Lamp/(0.2 + i * 0.3)]
+    [for i, p in [0.2, 0.5, 0.8]: (Lamp/p |ue=1.0 - i * 0.2)]
+
+#### mut502 trunc of §7.8 1 sym L1452
+Rig flash:
+    [Lamp/0.2 Lamp/0.5 Lamp/0.8]
+    [for i in 0..3: Lamp/(0.2 + i * 0.3)]
+    [for 
+#### mut503 del of §7.8 1 sym L1452
+Rig flash:
+    [Lamp/0.2 Lamp/0.5 Lamp/0.8]
+    [f i in 0..3: Lamp/(0.2 + i * 0.3)]
+    [for i, p in [0.2, 0.5, 0.8]: (Lamp/p | hue=1.0 - i * 0.2)]
+
+#### mut504 ins of §7.8 1 sym L1452
+Rig flash:
+    [Lamp/0.2 Lamp/0.5 Lamp/0.,8]
+    [for i in 0..3: Lamp/(0.2 + i * 0.3)]
+    [for i, p in [0.2, 0.5, 0.8]: (Lamp/p | hue=1.0 - i * 0.2)]
+
+#### mut505 dup-line of §7.9 1 sym L1479
+state steps([true, false, false, true, false, false, true, false])
+state levels([0.2, 0.2, 0.8, 0.2, 0.5, 0.2, 0.8, 1.0])
+
+
+Rig chase:
+    for i in 0..8:
+        Lamp/(levels[i]) when steps[i]
+
+let ramp = [0.2, 0.5, 0.8]
+
+Rig fade_in:
+    for i, p in ramp:
+        Lamp/p | hue=1.0 - i * 0.2
+
+#### mut506 trunc of §7.9 1 sym L1479
+state steps([true, false, false, true, false, false, true, false])
+state levels([0.2, 0.2, 0.8, 0.2, 0.5, 0.2, 0.8, 1.0])
+
+Rig chase:
+ 
+#### mut507 trunc of §7.9 1 sym L1479
+state steps([true, false, false, true, false, false, true, false])
+state levels([0.2, 0.2, 0.8, 0.2, 0.5, 0.2, 0.8, 1.0])
+
+Rig chase:
+    for i in 0..8:
+        Lamp/(levels[i]) when steps[i]
+
+let ramp = [0.2, 0.5, 0.8]
+
+Rig fade_in:
+    for i, p in ramp:
+        Lamp/p 
+#### mut508 dup-line of §7.9 1 sym L1479
+state steps([true, false, false, true, false, false, true, false])
+state levels([0.2, 0.2, 0.8, 0.2, 0.5, 0.2, 0.8, 1.0])
+
+Rig chase:
+    for i in 0..8:
+        Lamp/(levels[i]) when steps[i]
+
+let ramp = [0.2, 0.5, 0.8]
+
+
+Rig fade_in:
+    for i, p in ramp:
+        Lamp/p | hue=1.0 - i * 0.2
+
+#### mut509 del-line of §7.9 1 sym L1479
+state steps([true, false, false, true, false, false, true, false])
+state levels([0.2, 0.2, 0.8, 0.2, 0.5, 0.2, 0.8, 1.0])
+
+Rig chase:
+    for i in 0..8:
+        Lamp/(levels[i]) when steps[i]
+
+let ramp = [0.2, 0.5, 0.8]
+
+Rig fade_in:
+    for i, p in ramp:
+
+#### mut510 ins of §7.9 1 sym L1479
+state steps([true, false, false, true, false, false, /true, false])
+state levels([0.2, 0.2, 0.8, 0.2, 0.5, 0.2, 0.8, 1.0])
+
+Rig chase:
+    for i in 0..8:
+        Lamp/(levels[i]) when steps[i]
+
+let ramp = [0.2, 0.5, 0.8]
+
+Rig fade_in:
+    for i, p in ramp:
+        Lamp/p | hue=1.0 - i * 0.2
+
+#### mut511 ins of §7.9 1 sym L1479
+state steps([true, false, false, true, false, false, true, false])
+state levels([0.2, 0.2, 0.8, 0.2, 0.5, 0.2, 0.8, 1.0])
+
+Rig chase:
+    for i in 0..8:
+        Lamp/(levels[i]) when steps[i]
+
+let ramp| = [0.2, 0.5, 0.8]
+
+Rig fade_in:
+    for i, p in ramp:
+        Lamp/p | hue=1.0 - i * 0.2
+
+#### mut512 ins of §7.9 1 sym L1479
+state steps([true, false, false, true, false, false, true, false])
+state levels([0.2, 0.2, 0.8, 0.2, 0.5, 0.2, 0.8, 1.0])
+
+Rig chase:
+    for i in 0..8:
+        Lamp/(levels[i]) when steps[i]
+\
+let ramp = [0.2, 0.5, 0.8]
+
+Rig fade_in:
+    for i, p in ramp:
+        Lamp/p | hue=1.0 - i * 0.2
+
+#### mut513 ins of §7.9 1 sym L1479
+state steps([true, false, false, true, false, false, true, false])
+state l    evels([0.2, 0.2, 0.8, 0.2, 0.5, 0.2, 0.8, 1.0])
+
+Rig chase:
+    for i in 0..8:
+        Lamp/(levels[i]) when steps[i]
+
+let ramp = [0.2, 0.5, 0.8]
+
+Rig fade_in:
+    for i, p in ramp:
+        Lamp/p | hue=1.0 - i * 0.2
+
+#### mut514 dup-line of §7.9 1 sym L1479
+state steps([true, false, false, true, false, false, true, false])
+state levels([0.2, 0.2, 0.8, 0.2, 0.5, 0.2, 0.8, 1.0])
+
+Rig chase:
+Rig chase:
+    for i in 0..8:
+        Lamp/(levels[i]) when steps[i]
+
+let ramp = [0.2, 0.5, 0.8]
+
+Rig fade_in:
+    for i, p in ramp:
+        Lamp/p | hue=1.0 - i * 0.2
+
+#### mut515 del-line of §7.9 1 sym L1479
+state steps([true, false, false, true, false, false, true, false])
+state levels([0.2, 0.2, 0.8, 0.2, 0.5, 0.2, 0.8, 1.0])
+
+Rig chase:
+    for i in 0..8:
+        Lamp/(levels[i]) when steps[i]
+
+let ramp = [0.2, 0.5, 0.8]
+
+Rig fade_in:
+    for i, p in ramp:
+
+#### mut516 ins of §7.9 1 sym L1479
+state steps([true, false for , false, true, false, false, true, false])
+state levels([0.2, 0.2, 0.8, 0.2, 0.5, 0.2, 0.8, 1.0])
+
+Rig chase:
+    for i in 0..8:
+        Lamp/(levels[i]) when steps[i]
+
+let ramp = [0.2, 0.5, 0.8]
+
+Rig fade_in:
+    for i, p in ramp:
+        Lamp/p | hue=1.0 - i * 0.2
+
+#### mut517 ins of §7.9 2 sym L1496
+state readings([]): i32[..10]
+state counts({}): {str[..16]: i32}[..8]
+
+state rises = for i in 1..readings.size into n from 0: if ..readings[i] > readings[i - 1] then n + 1 else n
+state total = for k, v in counts into sum from 0: sum + v
+state names = for k in counts into all from "": all + k
+
+#### mut518 trunc of §7.9 2 sym L1496
+state readings([]): i32[..10]
+state counts({}): {str[..16]: i32}[..8]
+
+state rises = for i in 1..readings.size into n from 0: if readings[i] > readings[i - 1] t
+#### mut519 del of §7.9 2 sym L1496
+state readings([]: i32[..10]
+state counts({}): {str[..16]: i32}[..8]
+
+state rises = for i in 1..readings.size into n from 0: if readings[i] > readings[i - 1] then n + 1 else n
+state total = for k, v in counts into sum from 0: sum + v
+state names = for k in counts into all from "": all + k
+
+#### mut520 del-line of §7.9 2 sym L1496
+state readings([]): i32[..10]
+state counts({}): {str[..16]: i32}[..8]
+
+state rises = for i in 1..readings.size into n from 0: if readings[i] > readings[i - 1] then n + 1 else n
+state total = for k, v in counts into sum from 0: sum + v
+
+#### mut521 dup-line of §7.9 2 sym L1496
+state readings([]): i32[..10]
+state counts({}): {str[..16]: i32}[..8]
+
+state rises = for i in 1..readings.size into n from 0: if readings[i] > readings[i - 1] then n + 1 else n
+state total = for k, v in counts into sum from 0: sum + v
+state total = for k, v in counts into sum from 0: sum + v
+state names = for k in counts into all from "": all + k
+
+#### mut522 trunc of §7.9 2 sym L1496
+state readings([]): i32[..10]
+state counts({}): {str[..16]: i32}[..8]
+
+state rises = for i in 1..readings.size into n from 0: if readings[i] > readings[i - 1] then n + 1 else n
+state tot
+#### mut523 dup-line of §7.9 2 sym L1496
+state readings([]): i32[..10]
+state counts({}): {str[..16]: i32}[..8]
+state counts({}): {str[..16]: i32}[..8]
+
+state rises = for i in 1..readings.size into n from 0: if readings[i] > readings[i - 1] then n + 1 else n
+state total = for k, v in counts into sum from 0: sum + v
+state names = for k in counts into all from "": all + k
+
+#### mut524 trunc of §7.9 2 sym L1496
+state readings([]): i32
+#### mut525 trunc of §7.9 2 sym L1496
+state readings([]): i32[..1
+#### mut526 ins of §7.9 2 sym L1496
+state readings([]): i32[..10]
+state counts({}): {str[..16]: i32}[..8]
+
+state rises = for i in 1..readings.size into n from 0: if readings[i] > readings[i - 1] then n + 1 else n
+state total = for k, v in counts into sum from 0: sum + v
+state names = for k in counts into all from "": all + k
+
+
+#### mut527 del-line of §7.9 2 sym L1496
+state readings([]): i32[..10]
+state counts({}): {str[..16]: i32}[..8]
+state rises = for i in 1..readings.size into n from 0: if readings[i] > readings[i - 1] then n + 1 else n
+state total = for k, v in counts into sum from 0: sum + v
+state names = for k in counts into all from "": all + k
+
+#### mut528 del of §7.9 2 sym L1496
+state readings([]): i32[..10]
+state counts({}): {str[..16]: i32}[..8]
+
+state rises = for i in 1..readings.size into n from 0: if readings[i] > readings[i - 1] then n + 1 else n
+state total = for k, v in counts into sum from 0: sum + v
+state names = for k in counts into allrom "": all + k
+
+#### mut529 ins of §8.1 1 sym L1536
+Scene dusk:
+    Cue/0 Cue/1
+    Triggers: night
+    Cue/2
+    Dims | depth\=0.5: stage.wash
+
+#### mut530 del of §8.1 1 sym L1536
+Scene dusk:
+    C/0 Cue/1
+    Triggers: night
+    Cue/2
+    Dims | depth=0.5: stage.wash
+
+#### mut531 dup-line of §8.1 1 sym L1536
+Scene dusk:
+    Cue/0 Cue/1
+    Cue/0 Cue/1
+    Triggers: night
+    Cue/2
+    Dims | depth=0.5: stage.wash
+
+#### mut532 trunc of §8.1 1 sym L1536
+Scene dusk:
+    C
+#### mut533 del of §8.1 1 sym L1536
+Scene dusk:
+    Cue/0 Cue/1
+   riggers: night
+    Cue/2
+    Dims | depth=0.5: stage.wash
+
+#### mut534 trunc of §8.1 1 sym L1536
+Scene dusk:
+
+#### mut535 del of §8.1 1 sym L1536
+Scene dusk:
+    Cue/0 Cue/1
+    Triggers: night
+    Cue/2
+    Dims | depth=0.5: se.wash
+
+#### mut536 dup-line of §8.1 1 sym L1536
+Scene dusk:
+    Cue/0 Cue/1
+    Triggers: night
+    Triggers: night
+    Cue/2
+    Dims | depth=0.5: stage.wash
+
+#### mut537 trunc of §8.1 1 sym L1536
+S
+#### mut538 del-line of §8.1 1 sym L1536
+Scene dusk:
+    Cue/0 Cue/1
+    Cue/2
+    Dims | depth=0.5: stage.wash
+
+#### mut539 del-line of §8.1 1 sym L1536
+Scene dusk:
+    Cue/0 Cue/1
+    Triggers: night
+    Dims | depth=0.5: stage.wash
+
+#### mut540 del-line of §8.1 1 sym L1536
+Scene dusk:
+    Cue/0 Cue/1
+    Triggers: night
+    Cue/2
+    Dims | depth=0.5: stage.wash
+#### mut541 del of §8.2 1 sym L1559
+state look(0)
+state flash_on(false)
+
+Scene dusk:
+    Cue/0 Cue/2
+    Triggers: [night, dawn, noon][look]
+
+Scene night:
+    Cue0
+    Triggers: if flash_on then flash else dusk
+
+#### mut542 trunc of §8.2 1 sym L1559
+
+#### mut543 del-line of §8.2 1 sym L1559
+state flash_on(false)
+
+Scene dusk:
+    Cue/0 Cue/2
+    Triggers: [night, dawn, noon][look]
+
+Scene night:
+    Cue/0
+    Triggers: if flash_on then flash else dusk
+
+#### mut544 del of §8.2 1 sym L1559
+state look(0)
+state flash_on(false)
+
+Scene dusk:
+    Cue/0 Cue/2
+    Triggers: [night, dawn, noon][look
+
+Scene night:
+    Cue/0
+    Triggers: if flash_on then flash else dusk
+
+#### mut545 trunc of §8.2 1 sym L1559
+state look(0)
+state flash_on(false)
+
+Sce
+#### mut546 trunc of §8.2 1 sym L1559
+state look(0)
+state flash_
+#### mut547 del-line of §8.2 1 sym L1559
+state look(0)
+state flash_on(false)
+
+Scene dusk:
+    Cue/0 Cue/2
+    Triggers: [night, dawn, noon][look]
+
+Scene night:
+    Cue/0
+    Triggers: if flash_on then flash else dusk
+#### mut548 del of §8.2 1 sym L1559
+state look(0)
+state flash_on(false)
+
+Scene dusk:
+  Cue/0 Cue/2
+    Triggers: [night, dawn, noon][look]
+
+Scene night:
+    Cue/0
+    Triggers: if flash_on then flash else dusk
+
+#### mut549 del-line of §8.2 1 sym L1559
+state look(0)
+state flash_on(false)
+
+Scene dusk:
+    Cue/0 Cue/2
+    Triggers: [night, dawn, noon][look]
+
+Scene night:
+    Cue/0
+
+#### mut550 del-line of §8.2 1 sym L1559
+state look(0)
+state flash_on(false)
+
+Scene dusk:
+    Cue/0 Cue/2
+    Triggers: [night, dawn, noon][look]
+
+Scene night:
+    Cue/0
+    Triggers: if flash_on then flash else dusk
+#### mut551 dup-line of §8.2 1 sym L1559
+state look(0)
+state flash_on(false)
+
+Scene dusk:
+    Cue/0 Cue/2
+    Triggers: [night, dawn, noon][look]
+
+Scene night:
+    Cue/0
+    Triggers: if flash_on then flash else dusk
+    Triggers: if flash_on then flash else dusk
+
+#### mut552 del-line of §8.2 1 sym L1559
+state look(0)
+state flash_on(false)
+
+Scene dusk:
+    Triggers: [night, dawn, noon][look]
+
+Scene night:
+    Cue/0
+    Triggers: if flash_on then flash else dusk
+
+#### mut553 ins of §8.3 1 sym L1580
+state section(0)..
+
+Clip verse:
+    Plays | gain=to.hook.velocity: [chorus, bridge][section]
+
+Clip chorus:
+    Note as hook /72 | velocity=0.9
+
+Clip bridge:
+    Note as hook /67 | velocity=0.6
+
+#### mut554 dup-line of §8.3 1 sym L1580
+state section(0)
+
+Clip verse:
+    Plays | gain=to.hook.velocity: [chorus, bridge][section]
+
+Clip chorus:
+    Note as hook /72 | velocity=0.9
+
+Clip bridge:
+Clip bridge:
+    Note as hook /67 | velocity=0.6
+
+#### mut555 dup-line of §8.3 1 sym L1580
+state section(0)
+
+Clip verse:
+    Plays | gain=to.hook.velocity: [chorus, bridge][section]
+
+Clip chorus:
+    Note as hook /72 | velocity=0.9
+    Note as hook /72 | velocity=0.9
+
+Clip bridge:
+    Note as hook /67 | velocity=0.6
+
+#### mut556 dup-line of §8.3 1 sym L1580
+state section(0)
+
+
+Clip verse:
+    Plays | gain=to.hook.velocity: [chorus, bridge][section]
+
+Clip chorus:
+    Note as hook /72 | velocity=0.9
+
+Clip bridge:
+    Note as hook /67 | velocity=0.6
+
+#### mut557 dup-line of §8.3 1 sym L1580
+state section(0)
+
+Clip verse:
+Clip verse:
+    Plays | gain=to.hook.velocity: [chorus, bridge][section]
+
+Clip chorus:
+    Note as hook /72 | velocity=0.9
+
+Clip bridge:
+    Note as hook /67 | velocity=0.6
+
+#### mut558 trunc of §8.3 1 sym L1580
+state section(0)
+
+Clip verse:
+    Plays | gain=to.hook.ve
+#### mut559 del of §8.3 1 sym L1580
+state section(0)
+
+Clip verse:
+    Plays | gain=to.hook.velocity: [rus, bridge][section]
+
+Clip chorus:
+    Note as hook /72 | velocity=0.9
+
+Clip bridge:
+    Note as hook /67 | velocity=0.6
+
+#### mut560 trunc of §8.3 1 sym L1580
+state sec
+#### mut561 ins of §8.3 1 sym L1580
+state section(0)
+
+Clip verse:
+    Plays | gain=to.hook.velocity: [chorus, bridge][sec=>tion]
+
+Clip chorus:
+    Note as hook /72 | velocity=0.9
+
+Clip bridge:
+    Note as hook /67 | velocity=0.6
+
+#### mut562 ins of §8.3 1 sym L1580
+state section..(0)
+
+Clip verse:
+    Plays | gain=to.hook.velocity: [chorus, bridge][section]
+
+Clip chorus:
+    Note as hook /72 | velocity=0.9
+
+Clip bridge:
+    Note as hook /67 | velocity=0.6
+
+#### mut563 dup-line of §8.3 1 sym L1580
+state section(0)
+
+Clip verse:
+    Plays | gain=to.hook.velocity: [chorus, bridge][section]
+
+Clip chorus:
+    Note as hook /72 | velocity=0.9
+
+Clip bridge:
+    Note as hook /67 | velocity=0.6
+
+
+#### mut564 ins of §8.3 1 sym L1580
+state section(0)
+
+Clip verse:
+    Plays | gain=to.hook.velocity: [chorus, bridge][section]
+
+Clip chorus:
+    Note as hook /72 | veloc
+ity=0.9
+
+Clip bridge:
+    Note as hook /67 | velocity=0.6
+
+#### mut565 trunc of §9.1 1 sym L1607
+Clip verse:
+    Note/60
+   
+#### mut566 trunc of §9.1 1 sym L1607
+Clip verse:
+    Note/60
+    Note/62 when fill_on
+    Plays when 
+#### mut567 ins of §9.1 1 sym L1607
+Clip verse:
+    Note/:60
+    Note/62 when fill_on
+    Plays when looping: chorus
+
+#### mut568 del of §9.1 1 sym L1607
+Clip verse:
+    Note/60
+ Note/62 when fill_on
+    Plays when looping: chorus
+
+#### mut569 del of §9.1 1 sym L1607
+Clip verse:
+    Note/60
+    Note/62 when ll_on
+    Plays when looping: chorus
+
+#### mut570 del-line of §9.1 1 sym L1607
+Clip verse:
+    Note/62 when fill_on
+    Plays when looping: chorus
+
+#### mut571 del-line of §9.1 1 sym L1607
+Clip verse:
+    Note/60
+    Note/62 when fill_on
+
+#### mut572 del-line of §9.1 1 sym L1607
+    Note/60
+    Note/62 when fill_on
+    Plays when looping: chorus
+
+#### mut573 dup-line of §9.1 1 sym L1607
+Clip verse:
+    Note/60
+    Note/60
+    Note/62 when fill_on
+    Plays when looping: chorus
+
+#### mut574 ins of §9.1 1 sym L1607
+Clip verse:
+    Note/60
+    Note/62 when fill_on
+    Plays when looping: .chorus
+
+#### mut575 dup-line of §9.1 1 sym L1607
+Clip verse:
+    Note/60
+    Note/62 when fill_on
+    Plays when looping: chorus
+
+
+#### mut576 trunc of §9.1 1 sym L1607
+Clip verse:
+    Note/60
+    Note/62 when fill_on
+    Plays when looping: c
+#### mut577 del of §9.2 1 sym L1625
+Plant boiler:
+    Valve/0.1
+    when alarm_on:
+        Valve/0.3 Valve/0.5
+    else:
+        Valve/0.3
+    when:
+        phase is 0: Valve/0.6
+       phase is 1: Valve/0.7
+        else: Valve/0.9
+
+#### mut578 trunc of §9.2 1 sym L1625
+Plant bo
+#### mut579 trunc of §9.2 1 sym L1625
+Plant boiler:
+    Valve/0.1
+
+#### mut580 del of §9.2 1 sym L1625
+Plant boiler:
+    Valve/0.1
+    when alarm_on:
+        Valve/0.3 Valve/0.5
+    else:
+        Valve/0.3
+    when:
+        phase is 0: Valve/0.6
+        phase is: Valve/0.7
+        else: Valve/0.9
+
+#### mut581 trunc of §9.2 1 sym L1625
+Plant boiler:
+    Valve/0.1
+    when
+#### mut582 trunc of §9.2 1 sym L1625
+Plant b
+#### mut583 trunc of §9.2 1 sym L1625
+Plant boiler:
+    Valve/0.1
+    whe
+#### mut584 trunc of §9.2 1 sym L1625
+Plant boiler:
+    Valve/0.1
+    when alarm_on:
+        Valve/0.3 Valve/0.5
+    else:
+        Valve/0.3
+    when:
+        phase is 0: Valve/0.6
+        phase is 1: Valve/0.7
+     
+#### mut585 trunc of §9.2 1 sym L1625
+Plant boiler:
+    Valve/0.1
+    when alarm_on:
+        Valve/0.3 Valve/0.5
+    else:
+        Valve/0.3
+    when:
+        phase is 0: Valve/0.6
+        phase is 1: Valve/0.7
+        else: V
+#### mut586 del-line of §9.2 1 sym L1625
+Plant boiler:
+    Valve/0.1
+    when alarm_on:
+        Valve/0.3 Valve/0.5
+    else:
+    when:
+        phase is 0: Valve/0.6
+        phase is 1: Valve/0.7
+        else: Valve/0.9
+
+#### mut587 del-line of §9.2 1 sym L1625
+Plant boiler:
+    Valve/0.1
+    when alarm_on:
+        Valve/0.3 Valve/0.5
+    else:
+        Valve/0.3
+    when:
+        phase is 0: Valve/0.6
+        phase is 1: Valve/0.7
+        else: Valve/0.9
+#### mut588 dup-line of §9.2 1 sym L1625
+Plant boiler:
+    Valve/0.1
+    Valve/0.1
+    when alarm_on:
+        Valve/0.3 Valve/0.5
+    else:
+        Valve/0.3
+    when:
+        phase is 0: Valve/0.6
+        phase is 1: Valve/0.7
+        else: Valve/0.9
+
+#### mut589 del of §10.2 1 sym L1692
+channel hit(Hit{})
+
+Pad kick | hit => hit
+
+#### mut590 trunc of §10.2 1 sym L1692
+channel
+#### mut591 trunc of §10.2 1 sym L1692
+ch
+#### mut592 ins of §10.2 1 sym L1692
+channel hit(Hit {})
+
+Pad kick | hit => h json it
+
+#### mut593 del of §10.2 1 sym L1692
+channe hit(Hit {})
+
+Pad kick | hit => hit
+
+#### mut594 del of §10.2 1 sym L1692
+channel hit(Hit {})
+
+Pad kick | hit => hi
+#### mut595 ins of §10.2 1 sym L1692
+channel hit(Hit {})
+^
+Pad kick | hit => hit
+
+#### mut596 trunc of §10.2 1 sym L1692
+channel hit(Hit 
+#### mut597 ins of §10.2 1 sym L1692
+channel hit(Hit {})
+
+P
+ad kick | hit => hit
+
+#### mut598 ins of §10.2 1 sym L1692
+cha    nnel hit(Hit {})
+
+Pad kick | hit => hit
+
+#### mut599 del-line of §10.2 1 sym L1692
+channel hit(Hit {})
+
+Pad kick | hit => hit
+#### mut600 del-line of §10.2 1 sym L1692
+
+Pad kick | hit => hit
+
+#### mut601 trunc of §3.9 1 sym-error L323
+state demand(none): f32?
+
+Plant boiler:
+    Valve as
+#### mut602 del-line of §3.9 1 sym-error L323
+
+Plant boiler:
+    Valve as feed | open=demand
+
+#### mut603 dup-line of §3.9 1 sym-error L323
+state demand(none): f32?
+state demand(none): f32?
+
+Plant boiler:
+    Valve as feed | open=demand
+
+#### mut604 del-line of §3.9 1 sym-error L323
+state demand(none): f32?
+Plant boiler:
+    Valve as feed | open=demand
+
+#### mut605 del-line of §3.9 1 sym-error L323
+state demand(none): f32?
+
+    Valve as feed | open=demand
+
+#### mut606 dup-line of §3.9 1 sym-error L323
+state demand(none): f32?
+state demand(none): f32?
+
+Plant boiler:
+    Valve as feed | open=demand
+
+#### mut607 del of §3.9 1 sym-error L323
+state demand(none): f32?
+
+Plant boiler:
+    Valve as feed | open=dend
+
+#### mut608 trunc of §3.9 1 sym-error L323
+state 
+#### mut609 dup-line of §3.9 1 sym-error L323
+state demand(none): f32?
+state demand(none): f32?
+
+Plant boiler:
+    Valve as feed | open=demand
+
+#### mut610 del of §3.9 1 sym-error L323
+state demand(none): f32?
+
+Plant boiler:
+    Valve as feed | op=demand
+
+#### mut611 del-line of §3.9 1 sym-error L323
+state demand(none): f32?
+
+    Valve as feed | open=demand
+
+#### mut612 ins of §3.9 1 sym-error L323
+state demand(none): "f32?
+
+Plant boiler:
+    Valve as feed | open=demand
+
+#### mut613 dup-line of §3.11 1 sym-error L400
+state body(json {}): json[..4096]
+
+
+state small: json[..256] = body["items"]
+
+#### mut614 trunc of §3.11 1 sym-error L400
+state body(jso
+#### mut615 del-line of §3.11 1 sym-error L400
+
+state small: json[..256] = body["items"]
+
+#### mut616 ins of §3.11 1 sym-error L400
+state body(json {}): json[..4096]
+
+state ]small: json[..256] = body["items"]
+
+#### mut617 dup-line of §3.11 1 sym-error L400
+state body(json {}): json[..4096]
+state body(json {}): json[..4096]
+
+state small: json[..256] = body["items"]
+
+#### mut618 trunc of §3.11 1 sym-error L400
+state body(json {}): json[..4096]
+
+state small: json[.
+#### mut619 del of §3.11 1 sym-error L400
+state body(json {}): json[..4096]
+
+state small:son[..256] = body["items"]
+
+#### mut620 dup-line of §3.11 1 sym-error L400
+state body(json {}): json[..4096]
+
+
+state small: json[..256] = body["items"]
+
+#### mut621 del of §3.11 1 sym-error L400
+state body(json {}): json[..4096]
+
+state small: on[..256] = body["items"]
+
+#### mut622 del-line of §3.11 1 sym-error L400
+
+state small: json[..256] = body["items"]
+
+#### mut623 del-line of §3.11 1 sym-error L400
+state body(json {}): json[..4096]
+
+
+#### mut624 del of §3.11 1 sym-error L400
+state body(json {}): json[..4096]
+
+state small: json[..256] = bodyitems"]
+
+#### mut625 ins of §4.1 1 sym-error L430
+Clip melody:
+    Note/300000000000
+}
+#### mut626 dup-line of §4.1 1 sym-error L430
+Clip melody:
+    Note/300000000000
+
+
+#### mut627 del-line of §4.1 1 sym-error L430
+    Note/300000000000
+
+#### mut628 ins of §4.1 1 sym-error L430
+Clip mel==ody:
+    Note/300000000000
+
+#### mut629 del-line of §4.1 1 sym-error L430
+    Note/300000000000
+
+#### mut630 ins of §4.1 1 sym-error L430
+Clip melody:
+    0xNote/300000000000
+
+#### mut631 del of §4.1 1 sym-error L430
+Clip meloy:
+    Note/300000000000
+
+#### mut632 del-line of §4.1 1 sym-error L430
+Clip melody:
+    Note/300000000000
+#### mut633 del of §4.1 1 sym-error L430
+Clip melody:
+    Note/00000000000
+
+#### mut634 del of §4.1 1 sym-error L430
+Clip melody:
+    Not300000000000
+
+#### mut635 del of §4.1 1 sym-error L430
+Clip mdy:
+    Note/300000000000
+
+#### mut636 del of §4.1 1 sym-error L430
+Clip mody:
+    Note/300000000000
+
+#### mut637 del of §5.10 1 sym-error L769
+state readings([]):32[..10]
+
+state total = 1 + for x in readings into sum from 0: sum + x
+
+#### mut638 dup-line of §5.10 1 sym-error L769
+state readings([]): i32[..10]
+
+state total = 1 + for x in readings into sum from 0: sum + x
+state total = 1 + for x in readings into sum from 0: sum + x
+
+#### mut639 trunc of §5.10 1 sym-error L769
+state readings([]): i32[.
+#### mut640 trunc of §5.10 1 sym-error L769
+state readings([]): i32[..10]
+
+state total = 1 + for x in readings into sum from 
+#### mut641 del of §5.10 1 sym-error L769
+state readings([]): i32[..10]
+
+stattotal = 1 + for x in readings into sum from 0: sum + x
+
+#### mut642 trunc of §5.10 1 sym-error L769
+state readings([]): i32[..10]
+
+state total = 1 + for x in r
+#### mut643 dup-line of §5.10 1 sym-error L769
+state readings([]): i32[..10]
+
+state total = 1 + for x in readings into sum from 0: sum + x
+
+
+#### mut644 del of §5.10 1 sym-error L769
+state readings([]): i32[..10]
+
+state total = 1 + for x in readings into sum from 0: sum 
+
+#### mut645 ins of §5.10 1 sym-error L769
+state readings([]): i32[..10]
+
+state total = 1 + for x in readings into sum from== 0: sum + x
+
+#### mut646 del of §5.10 1 sym-error L769
+ste readings([]): i32[..10]
+
+state total = 1 + for x in readings into sum from 0: sum + x
+
+#### mut647 dup-line of §5.10 1 sym-error L769
+state readings([]): i32[..10]
+state readings([]): i32[..10]
+
+state total = 1 + for x in readings into sum from 0: sum + x
+
+#### mut648 dup-line of §5.10 1 sym-error L769
+state readings([]): i32[..10]
+
+state total = 1 + for x in readings into sum from 0: sum + x
+
+
+#### mut649 del-line of §5.10 2 sym-error L777
+fn count(xs): xs.size
+state readings([]): i32[..10]
+
+state high = count(for x in readings into kept from []: if x > 60 then kept + [x] else kept)
+
+#### mut650 trunc of §5.10 2 sym-error L777
+fn count(xs): xs.size
+
+state readings([]): i32
+#### mut651 dup-line of §5.10 2 sym-error L777
+fn count(xs): xs.size
+
+state readings([]): i32[..10]
+state readings([]): i32[..10]
+
+state high = count(for x in readings into kept from []: if x > 60 then kept + [x] else kept)
+
+#### mut652 trunc of §5.10 2 sym-error L777
+fn count(xs): xs.size
+
+state readings([]): i32[..10]
+
+state high =
+#### mut653 del of §5.10 2 sym-error L777
+fn count(xs): xs.size
+
+state readings([]): i32[..10]
+
+state high = count(for x in readings into kept from [ if x > 60 then kept + [x] else kept)
+
+#### mut654 ins of §5.10 2 sym-error L777
+fn count(xs): xs.size
+
+state readings([]^): i32[..10]
+
+state high = count(for x in readings into kept from []: if x > 60 then kept + [x] else kept)
+
+#### mut655 dup-line of §5.10 2 sym-error L777
+fn count(xs): xs.size
+fn count(xs): xs.size
+
+state readings([]): i32[..10]
+
+state high = count(for x in readings into kept from []: if x > 60 then kept + [x] else kept)
+
+#### mut656 del-line of §5.10 2 sym-error L777
+fn count(xs): xs.size
+
+state readings([]): i32[..10]
+
+state high = count(for x in readings into kept from []: if x > 60 then kept + [x] else kept)
+#### mut657 ins of §5.10 2 sym-error L777
+fn count(xs): xs.size
+
+state readings([]): i320x[..10]
+
+state high = count(for x in readings into kept from []: if x > 60 then kept + [x] else kept)
+
+#### mut658 dup-line of §5.10 2 sym-error L777
+fn count(xs): xs.size
+
+state readings([]): i32[..10]
+
+
+state high = count(for x in readings into kept from []: if x > 60 then kept + [x] else kept)
+
+#### mut659 trunc of §5.10 2 sym-error L777
+fn count(xs): xs.size
+
+stat
+#### mut660 del-line of §5.10 2 sym-error L777
+fn count(xs): xs.size
+state readings([]): i32[..10]
+
+state high = count(for x in readings into kept from []: if x > 60 then kept + [x] else kept)
+
+#### mut661 del of §6.3 1 sym-error L884
+state n(5)
+
+fn fib(kif k < 2 then k else fib(k - 1) + fib(k - 2)
+
+Rig stage:
+    Lamp/(fib(n))
+
+#### mut662 trunc of §6.3 1 sym-error L884
+state n(5)
+
+fn fib(k): if k < 2 then k else 
+#### mut663 dup-line of §6.3 1 sym-error L884
+state n(5)
+
+fn fib(k): if k < 2 then k else fib(k - 1) + fib(k - 2)
+
+Rig stage:
+Rig stage:
+    Lamp/(fib(n))
+
+#### mut664 dup-line of §6.3 1 sym-error L884
+state n(5)
+
+fn fib(k): if k < 2 then k else fib(k - 1) + fib(k - 2)
+
+Rig stage:
+Rig stage:
+    Lamp/(fib(n))
+
+#### mut665 ins of §6.3 1 sym-error L884
+st for ate n(5)
+
+fn fib(k): if k < 2 then k else fib(k - 1) + fib(k - 2)
+
+Rig stage:
+    Lamp/(fib(n))
+
+#### mut666 dup-line of §6.3 1 sym-error L884
+state n(5)
+
+fn fib(k): if k < 2 then k else fib(k - 1) + fib(k - 2)
+
+Rig stage:
+    Lamp/(fib(n))
+    Lamp/(fib(n))
+
+#### mut667 del of §6.3 1 sym-error L884
+state n(5)
+
+fn fib(k): if k < 2 then k else fib(k - 1) + fk - 2)
+
+Rig stage:
+    Lamp/(fib(n))
+
+#### mut668 dup-line of §6.3 1 sym-error L884
+state n(5)
+
+fn fib(k): if k < 2 then k else fib(k - 1) + fib(k - 2)
+
+Rig stage:
+Rig stage:
+    Lamp/(fib(n))
+
+#### mut669 trunc of §6.3 1 sym-error L884
+state n(5)
+
+fn fib(k): if k < 2 then k else fib(k - 1) + fib(k - 2)
+
+Rig stage:
+    Lamp/(fib(n))
+#### mut670 del-line of §6.3 1 sym-error L884
+state n(5)
+
+
+Rig stage:
+    Lamp/(fib(n))
+
+#### mut671 trunc of §6.3 1 sym-error L884
+state n(5)
+
+fn fib(k): if k < 2 then k else fib(k - 1) + fib(k - 2)
+
+Rig stage:
+ 
+#### mut672 ins of §6.3 1 sym-error L884
+state n(5)
+
+fn fib(k): if k < 2 ;then k else fib(k - 1) + fib(k - 2)
+
+Rig stage:
+    Lamp/(fib(n))
+
+#### mut673 trunc of §6.6 1 sym-error L1097
+state reading(60)
+
+state recent = recent.past(1, []
+#### mut674 trunc of §6.6 1 sym-error L1097
+s
+#### mut675 dup-line of §6.6 1 sym-error L1097
+state reading(60)
+
+state recent = recent.past(1, []) + [reading]
+state recent = recent.past(1, []) + [reading]
+
+#### mut676 trunc of §6.6 1 sym-error L1097
+state reading(60)
+
+state recent =
+#### mut677 ins of §6.6 1 sym-error L1097
+state reading(60)
+
+state rec when ent = recent.past(1, []) + [reading]
+
+#### mut678 del-line of §6.6 1 sym-error L1097
+state reading(60)
+state recent = recent.past(1, []) + [reading]
+
+#### mut679 dup-line of §6.6 1 sym-error L1097
+state reading(60)
+
+
+state recent = recent.past(1, []) + [reading]
+
+#### mut680 del of §6.6 1 sym-error L1097
+state reading(60)
+
+stte recent = recent.past(1, []) + [reading]
+
+#### mut681 dup-line of §6.6 1 sym-error L1097
+state reading(60)
+
+
+state recent = recent.past(1, []) + [reading]
+
+#### mut682 ins of §6.6 1 sym-error L1097
+state reading(60)
+,
+state recent = recent.past(1, []) + [reading]
+
+#### mut683 dup-line of §6.6 1 sym-error L1097
+state reading(60)
+
+state recent = recent.past(1, []) + [reading]
+state recent = recent.past(1, []) + [reading]
+
+#### mut684 dup-line of §6.6 1 sym-error L1097
+state reading(60)
+
+state recent = recent.past(1, []) + [reading]
+state recent = recent.past(1, []) + [reading]
+
+#### mut685 ins of §6.7 1 sym-error L1180
+state g=>(x: x + 1)
+
+#### mut686 ins of §6.7 1 sym-error L1180
+state g(x: x^ + 1)
+
+#### mut687 dup-line of §6.7 1 sym-error L1180
+state g(x: x + 1)
+state g(x: x + 1)
+
+#### mut688 ins of §6.7 1 sym-error L1180
+state g(:x: x + 1)
+
+#### mut689 ins of §6.7 1 sym-error L1180
+state g(x json : x + 1)
+
+#### mut690 dup-line of §6.7 1 sym-error L1180
+state g(x: x + 1)
+state g(x: x + 1)
+
+#### mut691 del of §6.7 1 sym-error L1180
+state g(x: + 1)
+
+#### mut692 trunc of §6.7 1 sym-error L1180
+state g(x: x
+#### mut693 del-line of §6.7 1 sym-error L1180
+state g(x: x + 1)
+#### mut694 del-line of §6.7 1 sym-error L1180
+state g(x: x + 1)
+#### mut695 trunc of §6.7 1 sym-error L1180
+state g(x: x + 1)
+
+#### mut696 del of §6.7 1 sym-error L1180
+tate g(x: x + 1)
+
+#### mut697 ins of §6.7 2 sym-error L1186
+fn bar(n): n + 1
+
+let baz = bar
+let same = baz is bar
+
+Plant boiler:
+    Valve when| same
+
+#### mut698 trunc of §6.7 2 sym-error L1186
+fn bar(n): n + 1
+
+let baz = bar
+let same = baz is bar
+
+Plant boiler:
+    Valv
+#### mut699 del of §6.7 2 sym-error L1186
+fn bar(n): n + 1
+
+let baz = bar
+let same = baz is bar
+
+Plant boiler:
+    Vlve when same
+
+#### mut700 dup-line of §6.7 2 sym-error L1186
+fn bar(n): n + 1
+
+let baz = bar
+let same = baz is bar
+
+Plant boiler:
+Plant boiler:
+    Valve when same
+
+#### mut701 del of §6.7 2 sym-error L1186
+fn bar(n): n + 1
+
+l baz = bar
+let same = baz is bar
+
+Plant boiler:
+    Valve when same
+
+#### mut702 del of §6.7 2 sym-error L1186
+fn bar(n): n + 1
+
+let baz = bar
+let same = baz is bar
+
+Plant boiler:  Valve when same
+
+#### mut703 del-line of §6.7 2 sym-error L1186
+fn bar(n): n + 1
+let baz = bar
+let same = baz is bar
+
+Plant boiler:
+    Valve when same
+
+#### mut704 del-line of §6.7 2 sym-error L1186
+fn bar(n): n + 1
+
+let baz = bar
+let same = baz is bar
+Plant boiler:
+    Valve when same
+
+#### mut705 dup-line of §6.7 2 sym-error L1186
+fn bar(n): n + 1
+
+let baz = bar
+let same = baz is bar
+let same = baz is bar
+
+Plant boiler:
+    Valve when same
+
+#### mut706 trunc of §6.7 2 sym-error L1186
+fn bar(n): n + 1
+
+let baz = bar
+let same = baz is bar
+
+Plant boiler
+#### mut707 trunc of §6.7 2 sym-error L1186
+fn bar(n): n + 1
+
+let baz = bar
+let same = baz is bar
+
+P
+#### mut708 trunc of §6.7 2 sym-error L1186
+fn bar(n): n + 1
+
+let baz = bar
+let same = baz is bar
+
+Plant boiler:
+  
+#### mut709 dup-line of §6.7 3 sym-error L1198
+let f = x: f(x)
+
+
+Plant boiler:
+    Valve/(f(1))
+
+#### mut710 dup-line of §6.7 3 sym-error L1198
+let f = x: f(x)
+
+Plant boiler:
+    Valve/(f(1))
+    Valve/(f(1))
+
+#### mut711 trunc of §6.7 3 sym-error L1198
+let f = x: f(x)
+
+Plant boiler:
+    
+#### mut712 dup-line of §6.7 3 sym-error L1198
+let f = x: f(x)
+
+
+Plant boiler:
+    Valve/(f(1))
+
+#### mut713 dup-line of §6.7 3 sym-error L1198
+let f = x: f(x)
+
+
+Plant boiler:
+    Valve/(f(1))
+
+#### mut714 del of §6.7 3 sym-error L1198
+let f = x: f(x)
+
+Plant boiler:
+ Valve/(f(1))
+
+#### mut715 trunc of §6.7 3 sym-error L1198
+let f = x: f(x)
+
+Plant boiler:
+    Val
+#### mut716 ins of §6.7 3 sym-error L1198
+let f = x:== f(x)
+
+Plant boiler:
+    Valve/(f(1))
+
+#### mut717 del-line of §6.7 3 sym-error L1198
+let f = x: f(x)
+
+Plant boiler:
+
+#### mut718 ins of §6.7 3 sym-error L1198
+let f = x: f(x)
+
+Plant boiler:
+    Valve/(==f(1))
+
+#### mut719 dup-line of §6.7 3 sym-error L1198
+let f = x: f(x)
+
+Plant boiler:
+    Valve/(f(1))
+    Valve/(f(1))
+
+#### mut720 trunc of §6.7 3 sym-error L1198
+let f = x: f(x)
+
+Plant boiler:
+    Valve/(f
+#### mut721 ins of §6.7 4 sym-error L1207
+fn apply(f: (i32) -> i3..2, x: i32) -> i32: f(x)
+
+Rig stage:
+    Lamp/(apply((a, b): a + b, 60))
+
+#### mut722 trunc of §6.7 4 sym-error L1207
+fn apply(f: (i32) -> i32, x: i32) -> i32: f(x)
+
+Rig stage:
+    Lamp/(apply((a, b):
+#### mut723 del-line of §6.7 4 sym-error L1207
+
+Rig stage:
+    Lamp/(apply((a, b): a + b, 60))
+
+#### mut724 ins of §6.7 4 sym-error L1207
+fn apply(f: (i32) -> i32, x: i32) -> i32: f(x)
+
+Rig stage:
+    Lamp/(apply((a, b): a + .b, 60))
+
+#### mut725 del-line of §6.7 4 sym-error L1207
+fn apply(f: (i32) -> i32, x: i32) -> i32: f(x)
+
+Rig stage:
+
+#### mut726 del of §6.7 4 sym-error L1207
+fn apply(f: (i32) -> i32, x: i32) -> i32: f(x)
+
+Rig stage:
+   Lamp/(apply((a, b): a + b, 60))
+
+#### mut727 dup-line of §6.7 4 sym-error L1207
+fn apply(f: (i32) -> i32, x: i32) -> i32: f(x)
+
+
+Rig stage:
+    Lamp/(apply((a, b): a + b, 60))
+
+#### mut728 trunc of §6.7 4 sym-error L1207
+fn apply(f: (i32) -> i32, x: i32) -> i32: f
+#### mut729 ins of §6.7 4 sym-error L1207
+fn apply(f: (i32) -> i32, x: i32) -> i32: f(x)
+
+Rig stage:
+    Lamp/(apply((a, b): a     + b, 60))
+
+#### mut730 del-line of §6.7 4 sym-error L1207
+fn apply(f: (i32) -> i32, x: i32) -> i32: f(x)
+
+Rig stage:
+    Lamp/(apply((a, b): a + b, 60))
+#### mut731 ins of §6.7 4 sym-error L1207
+fn apply(f: (i32) -> i32, ^x: i32) -> i32: f(x)
+
+Rig stage:
+    Lamp/(apply((a, b): a + b, 60))
+
+#### mut732 dup-line of §6.7 4 sym-error L1207
+fn apply(f: (i32) -> i32, x: i32) -> i32: f(x)
+
+Rig stage:
+Rig stage:
+    Lamp/(apply((a, b): a + b, 60))
+
+#### mut733 trunc of §6.8 1 sym-error L1273
+fn shorter[const N](xs: i32[N]) -> i32[N - 1]: xs[1..]
+
+Rig stage:
+   
+#### mut734 ins of §6.8 1 sym-error L1273
+fn shorter[const N](xs: i32[N]) -> i3	2[N - 1]: xs[1..]
+
+Rig stage:
+    Lamp/(shorter([60]).size)
+
+#### mut735 dup-line of §6.8 1 sym-error L1273
+fn shorter[const N](xs: i32[N]) -> i32[N - 1]: xs[1..]
+
+Rig stage:
+Rig stage:
+    Lamp/(shorter([60]).size)
+
+#### mut736 ins of §6.8 1 sym-error L1273
+fn shorter[const N](xs: i32[N]) -> i32[N - 1]: xs[1..]
+
+Rig stag for e:
+    Lamp/(shorter([60]).size)
+
+#### mut737 del of §6.8 1 sym-error L1273
+fn shorter[const N](xs: i32[N]) -> i32[N - 1xs[1..]
+
+Rig stage:
+    Lamp/(shorter([60]).size)
+
+#### mut738 trunc of §6.8 1 sym-error L1273
+fn shorter[const N](xs: i32[N]) -> i32[N - 1]: xs[1..]
+
+Rig sta
+#### mut739 del of §6.8 1 sym-error L1273
+fn shorter[const N](xs: i32[N]) -> i32[N -]: xs[1..]
+
+Rig stage:
+    Lamp/(shorter([60]).size)
+
+#### mut740 ins of §6.8 1 sym-error L1273
+fn shorter[const N](xs: i32[N]) -> i32[N - 1]: xs[1..]
+
+Rig stage:
+    Lamp/(shorter([60]).{size)
+
+#### mut741 trunc of §6.8 1 sym-error L1273
+fn shorter[const N](xs: i32[N]) -> i32[N - 1]: xs[1..]
+
+Rig stage:
+    Lamp
+#### mut742 dup-line of §6.8 1 sym-error L1273
+fn shorter[const N](xs: i32[N]) -> i32[N - 1]: xs[1..]
+
+Rig stage:
+    Lamp/(shorter([60]).size)
+
+
+#### mut743 del-line of §6.8 1 sym-error L1273
+fn shorter[const N](xs: i32[N]) -> i32[N - 1]: xs[1..]
+
+Rig stage:
+    Lamp/(shorter([60]).size)
+#### mut744 dup-line of §6.8 1 sym-error L1273
+fn shorter[const N](xs: i32[N]) -> i32[N - 1]: xs[1..]
+
+Rig stage:
+Rig stage:
+    Lamp/(shorter([60]).size)
+
+#### mut745 trunc of §6.8 2 sym-error L1282
+fn half[const
+#### mut746 del of §6.8 2 sym-error L1282
+fn ha[const N](xs: i32[N]) -> i32[N / 2]: xs[..N div 2]
+
+Plant boiler:
+    Valve/(half([1, 2, 3, 4])[0])
+
+#### mut747 trunc of §6.8 2 sym-error L1282
+fn half[const N](xs: i32[N]) -> i32[N / 2]: xs[..N div 2]
+
+Plant boiler:
+    
+#### mut748 del-line of §6.8 2 sym-error L1282
+fn half[const N](xs: i32[N]) -> i32[N / 2]: xs[..N div 2]
+
+Plant boiler:
+    Valve/(half([1, 2, 3, 4])[0])
+#### mut749 dup-line of §6.8 2 sym-error L1282
+fn half[const N](xs: i32[N]) -> i32[N / 2]: xs[..N div 2]
+
+Plant boiler:
+    Valve/(half([1, 2, 3, 4])[0])
+
+
+#### mut750 del-line of §6.8 2 sym-error L1282
+
+Plant boiler:
+    Valve/(half([1, 2, 3, 4])[0])
+
+#### mut751 trunc of §6.8 2 sym-error L1282
+fn half[const N](xs: i32[N]
+#### mut752 dup-line of §6.8 2 sym-error L1282
+fn half[const N](xs: i32[N]) -> i32[N / 2]: xs[..N div 2]
+
+
+Plant boiler:
+    Valve/(half([1, 2, 3, 4])[0])
+
+#### mut753 del of §6.8 2 sym-error L1282
+fn half[cons N](xs: i32[N]) -> i32[N / 2]: xs[..N div 2]
+
+Plant boiler:
+    Valve/(half([1, 2, 3, 4])[0])
+
+#### mut754 trunc of §6.8 2 sym-error L1282
+fn half[const N](xs: i32[N]) -> i32[N / 2]: xs[..N di
+#### mut755 trunc of §6.8 2 sym-error L1282
+fn half[const N](xs: i32[N]) -> i32[N / 2]: xs[..N div 2]
+
+Plant boiler:
+    Valve/
+#### mut756 del of §6.8 2 sym-error L1282
+fn half[const N](xs: i32[N]) -> i32[N / 2]: xs[N div 2]
+
+Plant boiler:
+    Valve/(half([1, 2, 3, 4])[0])
+
+#### mut757 ins of §6.8 3 sym-error L1301
+fn same[T](a: T, b: T) -> T: a
+
+C}lip c:
+    Note/(same(60i32, true))
+
+#### mut758 trunc of §6.8 3 sym-error L1301
+fn same[T](a: T, b: T) -> T: a
+
+Clip c:
+    Note/(sam
+#### mut759 trunc of §6.8 3 sym-error L1301
+fn same[T](a: T, b: T) -> T: a
+
+Clip c:
+
+#### mut760 del-line of §6.8 3 sym-error L1301
+fn same[T](a: T, b: T) -> T: a
+
+Clip c:
+    Note/(same(60i32, true))
+#### mut761 dup-line of §6.8 3 sym-error L1301
+fn same[T](a: T, b: T) -> T: a
+
+Clip c:
+    Note/(same(60i32, true))
+
+
+#### mut762 trunc of §6.8 3 sym-error L1301
+fn same[T](a: T, b: T) -> T: a
+
+Clip c:
+    Note/(same(60i32, true
+#### mut763 dup-line of §6.8 3 sym-error L1301
+fn same[T](a: T, b: T) -> T: a
+
+Clip c:
+    Note/(same(60i32, true))
+
+
+#### mut764 dup-line of §6.8 3 sym-error L1301
+fn same[T](a: T, b: T) -> T: a
+fn same[T](a: T, b: T) -> T: a
+
+Clip c:
+    Note/(same(60i32, true))
+
+#### mut765 dup-line of §6.8 3 sym-error L1301
+fn same[T](a: T, b: T) -> T: a
+
+Clip c:
+    Note/(same(60i32, true))
+
+
+#### mut766 dup-line of §6.8 3 sym-error L1301
+fn same[T](a: T, b: T) -> T: a
+
+Clip c:
+    Note/(same(60i32, true))
+    Note/(same(60i32, true))
+
+#### mut767 trunc of §6.8 3 sym-error L1301
+fn same[T](a:
+#### mut768 del of §6.8 3 sym-error L1301
+fn same[T](a: T, b: T) -> T: a
+
+Clip c:
+    Note/(same(60i32 true))
+
+#### mut769 trunc of §6.8 4 sym-error L1310
+fn tail[const N](xs: i32[N + 1]) -> i32[N]: xs[1..]
+
+Clip c:
+    Note/(tail([60,
+#### mut770 trunc of §6.8 4 sym-error L1310
+fn tail[const N](xs: i32[N + 1]) -> i32[N]: xs[1..]
+
+C
+#### mut771 trunc of §6.8 4 sym-error L1310
+f
+#### mut772 del of §6.8 4 sym-error L1310
+fn tail[cont N](xs: i32[N + 1]) -> i32[N]: xs[1..]
+
+Clip c:
+    Note/(tail([60, 64, 67])[0])
+
+#### mut773 dup-line of §6.8 4 sym-error L1310
+fn tail[const N](xs: i32[N + 1]) -> i32[N]: xs[1..]
+fn tail[const N](xs: i32[N + 1]) -> i32[N]: xs[1..]
+
+Clip c:
+    Note/(tail([60, 64, 67])[0])
+
+#### mut774 del-line of §6.8 4 sym-error L1310
+fn tail[const N](xs: i32[N + 1]) -> i32[N]: xs[1..]
+Clip c:
+    Note/(tail([60, 64, 67])[0])
+
+#### mut775 del of §6.8 4 sym-error L1310
+fn tail[const N](xs: i32[N + 1]) -> i32[N]: xs[1..]
+
+Clipc:
+    Note/(tail([60, 64, 67])[0])
+
+#### mut776 del of §6.8 4 sym-error L1310
+fn tail[const N](xs: i32[N + 1]) -> i32[N]: xs.]
+
+Clip c:
+    Note/(tail([60, 64, 67])[0])
+
+#### mut777 ins of §6.8 4 sym-error L1310
+fn tail[co..nst N](xs: i32[N + 1]) -> i32[N]: xs[1..]
+
+Clip c:
+    Note/(tail([60, 64, 67])[0])
+
+#### mut778 dup-line of §6.8 4 sym-error L1310
+fn tail[const N](xs: i32[N + 1]) -> i32[N]: xs[1..]
+
+Clip c:
+    Note/(tail([60, 64, 67])[0])
+    Note/(tail([60, 64, 67])[0])
+
+#### mut779 ins of §6.8 4 sym-error L1310
+fn tail[const N](xs: i32[N + 1]) -> i32[N]: xs[1..]
+
+Clip c:
+    Note/(tail([60, 64, )67])[0])
+
+#### mut780 trunc of §6.8 4 sym-error L1310
+fn tail[const N](xs: i32[N + 1]) -> i32[N]: xs[1..]
+
+Clip c:
+    Note/(tail([60, 64, 67])[0
+#### mut781 trunc of §6.8 5 sym-error L1319
+t
+#### mut782 del-line of §6.8 5 sym-error L1319
+type Pair[A, B]:
+    right: B
+
+let p = Pair {left: 1i32}
+
+Rig stage:
+    Lamp/(p.left)
+
+#### mut783 ins of §6.8 5 sym-error L1319
+type Pair[A, B]:
+    left: A
+    right: B
+
+let p 
+= Pair {left: 1i32}
+
+Rig stage:
+    Lamp/(p.left)
+
+#### mut784 del-line of §6.8 5 sym-error L1319
+type Pair[A, B]:
+    left: A
+
+let p = Pair {left: 1i32}
+
+Rig stage:
+    Lamp/(p.left)
+
+#### mut785 del-line of §6.8 5 sym-error L1319
+    left: A
+    right: B
+
+let p = Pair {left: 1i32}
+
+Rig stage:
+    Lamp/(p.left)
+
+#### mut786 ins of §6.8 5 sym-error L1319
+type Pair[A, B]:
+    left: A
+    right: \B
+
+let p = Pair {left: 1i32}
+
+Rig stage:
+    Lamp/(p.left)
+
+#### mut787 dup-line of §6.8 5 sym-error L1319
+type Pair[A, B]:
+    left: A
+    right: B
+
+let p = Pair {left: 1i32}
+
+Rig stage:
+    Lamp/(p.left)
+    Lamp/(p.left)
+
+#### mut788 del of §6.8 5 sym-error L1319
+type Pair[A, B]:
+    left: A
+    right: B
+
+let p = Pair {left: 1i32}
+
+Rig stage:
+    Lmp/(p.left)
+
+#### mut789 ins of §6.8 5 sym-error L1319
+type Pair[A, B..]:
+    left: A
+    right: B
+
+let p = Pair {left: 1i32}
+
+Rig stage:
+    Lamp/(p.left)
+
+#### mut790 dup-line of §6.8 5 sym-error L1319
+type Pair[A, B]:
+    left: A
+    right: B
+
+let p = Pair {left: 1i32}
+
+Rig stage:
+    Lamp/(p.left)
+    Lamp/(p.left)
+
+#### mut791 dup-line of §6.8 5 sym-error L1319
+type Pair[A, B]:
+    left: A
+    right: B
+
+let p = Pair {left: 1i32}
+let p = Pair {left: 1i32}
+
+Rig stage:
+    Lamp/(p.left)
+
+#### mut792 del-line of §6.8 5 sym-error L1319
+type Pair[A, B]:
+    left: A
+    right: B
+
+let p = Pair {left: 1i32}
+Rig stage:
+    Lamp/(p.left)
+
+#### mut793 ins of §7.9 1 sym-error L1507
+Plant boiler:
+    )for i, k in 0..4:
+        Valve/(0.1 + k)
+
+#### mut794 del-line of §7.9 1 sym-error L1507
+Plant boiler:
+    for i, k in 0..4:
+
+#### mut795 del-line of §7.9 1 sym-error L1507
+    for i, k in 0..4:
+        Valve/(0.1 + k)
+
+#### mut796 del of §7.9 1 sym-error L1507
+Plant boiler:
+    for i, k in 0..4:
+        Valve/(0. k)
+
+#### mut797 ins of §7.9 1 sym-error L1507
+Plant boiler:
+    for i, k in 0..4:
+        Valve/(0.\1 + k)
+
+#### mut798 del of §7.9 1 sym-error L1507
+Plant boiler:
+    for i, k  0..4:
+        Valve/(0.1 + k)
+
+#### mut799 dup-line of §7.9 1 sym-error L1507
+Plant boiler:
+    for i, k in 0..4:
+    for i, k in 0..4:
+        Valve/(0.1 + k)
+
+#### mut800 dup-line of §7.9 1 sym-error L1507
+Plant boiler:
+    for i, k in 0..4:
+        Valve/(0.1 + k)
+        Valve/(0.1 + k)
+
+#### mut801 trunc of §7.9 1 sym-error L1507
+Plant boiler:
+    for i, k in 0..4:
+        
+#### mut802 ins of §7.9 1 sym-error L1507
+Plant boiler:
+    fo|r i, k in 0..4:
+        Valve/(0.1 + k)
+
+#### mut803 del of §7.9 1 sym-error L1507
+Plant boiler:
+    for i, k 0..4:
+        Valve/(0.1 + k)
+
+#### mut804 trunc of §7.9 1 sym-error L1507
+Plant boiler:
+    for i, k in 0..4:
+        Valve/(0.1 + k
+#### mut805 del of §7.9 2 sym-error L1515
+state n(4)
+
+state total = for i in 0 into sum from 0: sum + i
+
+Rig stage:
+    Lamp/total
+
+#### mut806 ins of §7.9 2 sym-error L1515
+state n(4)
+
+state .total = for i in 0..n into sum from 0: sum + i
+
+Rig stage:
+    Lamp/total
+
+#### mut807 dup-line of §7.9 2 sym-error L1515
+state n(4)
+
+state total = for i in 0..n into sum from 0: sum + i
+state total = for i in 0..n into sum from 0: sum + i
+
+Rig stage:
+    Lamp/total
+
+#### mut808 trunc of §7.9 2 sym-error L1515
+state n(4)
+
+state total = for i in 0..n into sum from 0: sum + i
+
+Ri
+#### mut809 del-line of §7.9 2 sym-error L1515
+state n(4)
+
+state total = for i in 0..n into sum from 0: sum + i
+Rig stage:
+    Lamp/total
+
+#### mut810 del of §7.9 2 sym-error L1515
+state n(4)
+
+state total = for i in 0..n into sumom 0: sum + i
+
+Rig stage:
+    Lamp/total
+
+#### mut811 ins of §7.9 2 sym-error L1515
+state n(4)
+
+state total = for日 i in 0..n into sum from 0: sum + i
+
+Rig stage:
+    Lamp/total
+
+#### mut812 dup-line of §7.9 2 sym-error L1515
+state n(4)
+
+state total = for i in 0..n into sum from 0: sum + i
+
+
+Rig stage:
+    Lamp/total
+
+#### mut813 del of §7.9 2 sym-error L1515
+state n(4)
+
+state total = for i in 0..n into sum from 0: sum + i
+
+Rig stage:
+    Lamp/tota
+#### mut814 trunc of §7.9 2 sym-error L1515
+state n(4)
+
+state total = for i in 0..n into sum from 0: sum + i
+
+Rig stage
+#### mut815 dup-line of §7.9 2 sym-error L1515
+state n(4)
+
+state total = for i in 0..n into sum from 0: sum + i
+
+Rig stage:
+Rig stage:
+    Lamp/total
+
+#### mut816 del-line of §7.9 2 sym-error L1515
+state n(4)
+
+state total = for i in 0..n into sum from 0: sum + i
+
+Rig stage:
+    Lamp/total
+#### mut817 trunc of §10.2 1 sym-error L1698
+Pad kick | 
+#### mut818 dup-line of §10.2 1 sym-error L1698
+Pad kick | hit=Hit {}
+
+
+#### mut819 ins of §10.2 1 sym-error L1698
+Pad kick | hit=H json it {}
+
+#### mut820 del-line of §10.2 1 sym-error L1698
+
+#### mut821 del of §10.2 1 sym-error L1698
+Pad kik | hit=Hit {}
+
+#### mut822 del of §10.2 1 sym-error L1698
+Paick | hit=Hit {}
+
+#### mut823 ins of §10.2 1 sym-error L1698
+Pad kick \| hit=Hit {}
+
+#### mut824 ins of §10.2 1 sym-error L1698
+Pad kick | hit=Hit; {}
+
+#### mut825 del of §10.2 1 sym-error L1698
+Pad kick | hit=Ht {}
+
+#### mut826 dup-line of §10.2 1 sym-error L1698
+Pad kick | hit=Hit {}
+
+
+#### mut827 ins of §10.2 1 sym-error L1698
+Pad.. kick | hit=Hit {}
+
+#### mut828 trunc of §10.2 1 sym-error L1698
+Pad kick | hit
+#### mut829 ins of §15.2 1 sym-package L1888
+Package {
+    name: "gradients",
+    ve日rsion: "2.4.1",
+    license: "MIT",
+    authors: ["Ada Lovelace <ada@example.com>"],
+}
+
+require "github.com/acme/util@1.2.0"
+use util as u
+
+publish warm, cool
+
+#### mut830 ins of §15.2 1 sym-package L1888
+Package| {
+    name: "gradients",
+    version: "2.4.1",
+    license: "MIT",
+    authors: ["Ada Lovelace <ada@example.com>"],
+}
+
+require "github.com/acme/util@1.2.0"
+use util as u
+
+publish warm, cool
+
+#### mut831 del-line of §15.2 1 sym-package L1888
+    name: "gradients",
+    version: "2.4.1",
+    license: "MIT",
+    authors: ["Ada Lovelace <ada@example.com>"],
+}
+
+require "github.com/acme/util@1.2.0"
+use util as u
+
+publish warm, cool
+
+#### mut832 trunc of §15.2 1 sym-package L1888
+Package {
+    name: "gra
+#### mut833 del-line of §15.2 1 sym-package L1888
+Package {
+    name: "gradients",
+    version: "2.4.1",
+    license: "MIT",
+    authors: ["Ada Lovelace <ada@example.com>"],
+}
+
+use util as u
+
+publish warm, cool
+
+#### mut834 del-line of §15.2 1 sym-package L1888
+Package {
+    name: "gradients",
+    version: "2.4.1",
+    authors: ["Ada Lovelace <ada@example.com>"],
+}
+
+require "github.com/acme/util@1.2.0"
+use util as u
+
+publish warm, cool
+
+#### mut835 ins of §15.2 1 sym-package L1888
+Package {
+    name: "gradients",
+    version: "2.4.1",
+    license^: "MIT",
+    authors: ["Ada Lovelace <ada@example.com>"],
+}
+
+require "github.com/acme/util@1.2.0"
+use util as u
+
+publish warm, cool
+
+#### mut836 dup-line of §15.2 1 sym-package L1888
+Package {
+    name: "gradients",
+    version: "2.4.1",
+    license: "MIT",
+    authors: ["Ada Lovelace <ada@example.com>"],
+}
+
+require "github.com/acme/util@1.2.0"
+use util as u
+
+
+publish warm, cool
+
+#### mut837 del of §15.2 1 sym-package L1888
+Package {
+    name: "gradients",
+    version: "2.4.1",
+    license: "MIT",
+    authors: ["Ada Lovelace <ada@example.com>"],
+}
+
+require "github.com/acme/uti1.2.0"
+use util as u
+
+publish warm, cool
+
+#### mut838 ins of §15.2 1 sym-package L1888
+Package {"
+    name: "gradients",
+    version: "2.4.1",
+    license: "MIT",
+    authors: ["Ada Lovelace <ada@example.com>"],
+}
+
+require "github.com/acme/util@1.2.0"
+use util as u
+
+publish warm, cool
+
+#### mut839 dup-line of §15.2 1 sym-package L1888
+Package {
+    name: "gradients",
+    name: "gradients",
+    version: "2.4.1",
+    license: "MIT",
+    authors: ["Ada Lovelace <ada@example.com>"],
+}
+
+require "github.com/acme/util@1.2.0"
+use util as u
+
+publish warm, cool
+
+#### mut840 trunc of §15.2 1 sym-package L1888
+Package
+#### mut841 del-line of §15.5 1 sym-package L1947
+use gradients: warm
+
+publish warm
+publish gradients::cool as Cool
+
+#### mut842 dup-line of §15.5 1 sym-package L1947
+use gradients: warm
+
+publish Chase as Sweep, Bank, Band
+publish warm
+publish warm
+publish gradients::cool as Cool
+
+#### mut843 del-line of §15.5 1 sym-package L1947
+use gradients: warm
+
+publish Chase as Sweep, Bank, Band
+publish warm
+publish gradients::cool as Cool
+#### mut844 trunc of §15.5 1 sym-package L1947
+use gradients: warm
+
+publish Chase as Sweep, Bank,
+#### mut845 trunc of §15.5 1 sym-package L1947
+use gradients: warm
+
+publish Chase as Sweep, Bank, Band
+publish warm
+publish gradients::co
+#### mut846 ins of §15.5 1 sym-package L1947
+use gradients: warm
+
+publish Cha\se as Sweep, Bank, Band
+publish warm
+publish gradients::cool as Cool
+
+#### mut847 trunc of §15.5 1 sym-package L1947
+use gradients: warm
+
+publish 
+#### mut848 del-line of §15.5 1 sym-package L1947
+use gradients: warm
+
+publish Chase as Sweep, Bank, Band
+publish gradients::cool as Cool
+
+#### mut849 dup-line of §15.5 1 sym-package L1947
+use gradients: warm
+
+
+publish Chase as Sweep, Bank, Band
+publish warm
+publish gradients::cool as Cool
+
+#### mut850 del of §15.5 1 sym-package L1947
+use gradients: warm
+
+publish Chase as Sweep, Ba Band
+publish warm
+publish gradients::cool as Cool
+
+#### mut851 del of §15.5 1 sym-package L1947
+use gradients: warm
+
+publishChase as Sweep, Bank, Band
+publish warm
+publish gradients::cool as Cool
+
+#### mut852 ins of §15.5 1 sym-package L1947
+use gradients: warm
+
+publish Cha)se as Sweep, Bank, Band
+publish warm
+publish gradients::cool as Cool
+

@@ -1,0 +1,14 @@
+--- diagnostics (1)
+  UnexpectedCharacter 10..11 "\u{7}" :: unexpected `\u{7}`
+--- detached [] at_layout []
+--- tree
+File 0..12
+  LetDecl 0..12
+    LetKw "let"
+    Ident "x"
+    Eq "="
+    Literal 8..9
+      Number "1"
+    ErrorNode 10..11
+      Error "\u{7}"
+    Newline "\n"

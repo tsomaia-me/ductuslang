@@ -1,0 +1,11 @@
+--- diagnostics (1)
+  LetSyntax 4..5 "=" :: expected the let's name, found `=`
+--- detached [] at_layout []
+--- tree
+File 0..8
+  LetDecl 0..8
+    LetKw "let"
+    Eq "="
+    Literal 6..7
+      Number "1"
+    Newline "\n"

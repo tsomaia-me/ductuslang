@@ -1,0 +1,18 @@
+--- diagnostics (1)
+  UnexpectedCharacter 9..10 "\r" :: unexpected `\r`
+--- detached [] at_layout []
+--- tree
+File 0..20
+  LetDecl 0..20
+    LetKw "let"
+    Ident "x"
+    Eq "="
+    Literal 8..9
+      Number "1"
+    ErrorNode 9..19
+      Error "\r"
+      LetKw "let"
+      Ident "y"
+      Eq "="
+      Number "2"
+    Newline "\n"

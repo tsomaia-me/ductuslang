@@ -1,0 +1,28 @@
+#### wide-scalar-column-17 (valid continuation) [esc tokens]
+Rig r:
+    Lamp as <U+65E5><U+672C> | level=1
+                 hue=2
+#### wide-display-column-19 (error naming column) [esc tokens]
+Rig r:
+    Lamp as <U+65E5><U+672C> | level=1
+                   hue=2
+#### wide-other-column-18 (plain indent error) [esc]
+Rig r:
+    Lamp as <U+65E5><U+672C> | level=1
+                  hue=2
+#### combining-display-column-19 (zero-width: error naming column?) [esc]
+Rig r:
+    Lamp as Cafe<U+0301> | level=1
+                   hue=2
+#### clause-after-multiline-bracket [tokens]
+Rig r:
+    Lamp | level=max(1,
+2)
+           hue=1
+#### clause-two-continuations-then-dedent [tokens]
+Rig r:
+    Scene as s | hold=1
+                 hold=2
+                 hold=3:
+        Cue
+    Lamp

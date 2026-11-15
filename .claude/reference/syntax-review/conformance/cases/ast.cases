@@ -1,0 +1,111 @@
+#### types
+let a: i32[3][..10] = x
+let b: i32[..10][3] = x
+let c: i32[..4][..10] = x
+let d: T[..N][3] = x
+let e: T[N][..8] = x
+let f: str[..32][4] = x
+let g: Stack[i32, 8][4] = x
+let h: lib::Band[2]? = x
+let i: (i32?)[..4] = x
+let j: {str[..4]: i32}[..8][2] = x
+let k: Circle | Square | none = x
+let l: (x: f64, i32) -> bool = x
+let m: json[..64][2] = x
+let n: none = x
+#### attrs
+Pad kick | hit => hit gain=gain !strobe strobe state=1 hit2 => low.gain
+#### args
+let a = count(readings, p: p > 60)
+let b = f((p: i32) -> bool: p < 48, xs)
+let c = f(keep=p: p, xs=ys)
+let d = f(1, 2)
+#### lambdas
+let a = x: x * 2
+let b = (a, b): a + b
+let c = (x: i32) -> bool: x > 60
+let d = (): 1
+#### cells
+state setpoint(0.5)
+channel[16] alarm(0)
+state name(""): str[..32]
+state c2 on b = a + b
+state c4 on (a, b) = a + b
+state held(0.0): f64 on gate = if gate then level else held.past(1)
+state level = match mode:
+    Auto: 1.0
+    else: 0.6
+state high = for x in readings into kept from []:
+    let keep = x > 60
+    if keep then kept + [x] else kept
+state s: i32[3] = [1, 2, 3]
+#### lets
+let a = 1
+let b: i32 = 2
+let h = match a:
+    1: 2
+    -1: 3
+    "s": 4
+    i32: 5
+    Circle: 6
+    else: 3
+#### fns
+fn tier(cell rank: i32, base: i32 = 100, plain, d = 1) -> i32:
+    let cycles: i32 = rank div 4
+    base + cycles
+fn gen[T: f32 | f64, const N: i32](xs: T[N]) -> T: xs[0]
+fn m(x):
+    match x:
+        0: 1
+        else: 2
+#### patterns
+pattern Drum[K](default out channel hit: Hit, gain: f32 = 1.0, const n = 2, children notes: Note*, plain) -> (Pad, [Lamp{2+}]*, node+):
+    state g(1.0)
+    let k = 2
+    Pad | hit => hit gain=gain
+    notes
+#### placements
+Rig stage
+Rig as stage2 /0.5 when on | hue=1:
+    Lamp
+    Lamp as wash
+    Lamp'* as key /0.7 when a | hue=0.3
+    Lamp/level
+    Lamp | level
+    Scene: Cue/0 Cue as c /2 [Cue Cue] (Cue when x | fade=1)
+    [Lamp for i, p: f32 in xs: Lamp/p]
+    Dims as soften /0.5 when a | depth=0.4: stage.wash
+    Triggers: match look:
+        0: night
+        else: dawn
+    for i: i32 in 0..8:
+        Lamp
+    when a:
+        Lamp
+    else: Lamp
+    when:
+        b: Lamp
+        else: Lamp
+#### exprs
+let a = x is not y
+let b = x is not i32
+let c = xs[1..^2]
+let d = xs[..3]
+let e = xs[^1]
+let f = xs[2..]
+let g = if a then b else c
+let h = for i: i32, x in xs into s: f32 from 0.0: s + x
+let i = -x ** 2
+let j = f32(x) + lib::v + Mode::Manual
+let k = "a {x} b"
+let l = x.state.y
+let m = Stack[i32, 8] {items: [], top: 0}
+let n = {1: 2, 3: 4}
+let o = json {"a": [1, -2, x.y, (z + 1)], "b": null}
+#### types-decls
+type Stack[T, const N: i32]:
+    items: T[..N]
+    state: i32
+type Shape = Circle | Square
+publish Chase as Sweep, Bank, gradients::cool as Cool
+use loops: Pid as Ctl, Ramp

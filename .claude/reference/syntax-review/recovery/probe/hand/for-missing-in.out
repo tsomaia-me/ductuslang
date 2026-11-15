@@ -1,0 +1,35 @@
+--- diagnostics (1)
+  ForSyntax 17..18 "0" :: expected `in`, found `0`
+--- detached [] at_layout []
+--- tree
+File 0..38
+  Placement 0..38
+    Ident "Rig"
+    Ident "r"
+    Body 5..38
+      Colon ":"
+      Block 6..38
+        Newline "\n"
+        Indent ""
+        ForBlock 11..38
+          ForKw "for"
+          Ident "i"
+          RangeExpr 17..21
+            Literal 17..18
+              Number "0"
+            Dot2 ".."
+            Literal 20..21
+              Number "3"
+          Colon ":"
+          Block 22..38
+            Newline "\n"
+            Indent ""
+            Placement 31..38
+              Ident "Lamp"
+              DefaultArg 35..37
+                Slash "/"
+                NameRef 36..37
+                  Ident "i"
+              Newline "\n"
+            Dedent ""
+        Dedent ""

@@ -1,0 +1,1960 @@
+#### kw-member-attr-first let
+Rig r:
+    Lamp | let=1 level=2
+#### kw-member-attr-later let
+Rig r:
+    Lamp | level=2 let=1
+#### kw-member-attr-bare-first let
+Rig r:
+    Lamp | let
+#### kw-member-attr-bare-later let
+Rig r:
+    Lamp | strobe let
+#### kw-member-attr-bang let
+Rig r:
+    Lamp | strobe !let
+#### kw-member-attr-bind-later let
+Rig r:
+    Lamp | strobe let => c
+#### kw-member-dot let
+state a = x.let + 1
+#### kw-member-dot-chain let
+state a = x.let.let
+#### kw-member-dot-defaultarg let
+Rig r:
+    Lamp/x.let
+#### kw-member-dot-binding let
+Pad kick | hit => low.let
+#### kw-member-dot-to let
+Clip v:
+    Plays | gain=to.let: w
+#### kw-member-record-key let
+let r = R {let: 1, x: 2}
+#### kw-member-record-key-later let
+let r = R {x: 2, let: 1}
+#### kw-member-type-field let
+type R:
+    let: i32
+    x: f32
+#### kw-member-json-path let
+let d = json {"a": x.let}
+#### kw-member-attr-first state
+Rig r:
+    Lamp | state=1 level=2
+#### kw-member-attr-later state
+Rig r:
+    Lamp | level=2 state=1
+#### kw-member-attr-bare-first state
+Rig r:
+    Lamp | state
+#### kw-member-attr-bare-later state
+Rig r:
+    Lamp | strobe state
+#### kw-member-attr-bang state
+Rig r:
+    Lamp | strobe !state
+#### kw-member-attr-bind-later state
+Rig r:
+    Lamp | strobe state => c
+#### kw-member-dot state
+state a = x.state + 1
+#### kw-member-dot-chain state
+state a = x.state.state
+#### kw-member-dot-defaultarg state
+Rig r:
+    Lamp/x.state
+#### kw-member-dot-binding state
+Pad kick | hit => low.state
+#### kw-member-dot-to state
+Clip v:
+    Plays | gain=to.state: w
+#### kw-member-record-key state
+let r = R {state: 1, x: 2}
+#### kw-member-record-key-later state
+let r = R {x: 2, state: 1}
+#### kw-member-type-field state
+type R:
+    state: i32
+    x: f32
+#### kw-member-json-path state
+let d = json {"a": x.state}
+#### kw-member-attr-first stream
+Rig r:
+    Lamp | stream=1 level=2
+#### kw-member-attr-later stream
+Rig r:
+    Lamp | level=2 stream=1
+#### kw-member-attr-bare-first stream
+Rig r:
+    Lamp | stream
+#### kw-member-attr-bare-later stream
+Rig r:
+    Lamp | strobe stream
+#### kw-member-attr-bang stream
+Rig r:
+    Lamp | strobe !stream
+#### kw-member-attr-bind-later stream
+Rig r:
+    Lamp | strobe stream => c
+#### kw-member-dot stream
+state a = x.stream + 1
+#### kw-member-dot-chain stream
+state a = x.stream.stream
+#### kw-member-dot-defaultarg stream
+Rig r:
+    Lamp/x.stream
+#### kw-member-dot-binding stream
+Pad kick | hit => low.stream
+#### kw-member-dot-to stream
+Clip v:
+    Plays | gain=to.stream: w
+#### kw-member-record-key stream
+let r = R {stream: 1, x: 2}
+#### kw-member-record-key-later stream
+let r = R {x: 2, stream: 1}
+#### kw-member-type-field stream
+type R:
+    stream: i32
+    x: f32
+#### kw-member-json-path stream
+let d = json {"a": x.stream}
+#### kw-member-attr-first channel
+Rig r:
+    Lamp | channel=1 level=2
+#### kw-member-attr-later channel
+Rig r:
+    Lamp | level=2 channel=1
+#### kw-member-attr-bare-first channel
+Rig r:
+    Lamp | channel
+#### kw-member-attr-bare-later channel
+Rig r:
+    Lamp | strobe channel
+#### kw-member-attr-bang channel
+Rig r:
+    Lamp | strobe !channel
+#### kw-member-attr-bind-later channel
+Rig r:
+    Lamp | strobe channel => c
+#### kw-member-dot channel
+state a = x.channel + 1
+#### kw-member-dot-chain channel
+state a = x.channel.channel
+#### kw-member-dot-defaultarg channel
+Rig r:
+    Lamp/x.channel
+#### kw-member-dot-binding channel
+Pad kick | hit => low.channel
+#### kw-member-dot-to channel
+Clip v:
+    Plays | gain=to.channel: w
+#### kw-member-record-key channel
+let r = R {channel: 1, x: 2}
+#### kw-member-record-key-later channel
+let r = R {x: 2, channel: 1}
+#### kw-member-type-field channel
+type R:
+    channel: i32
+    x: f32
+#### kw-member-json-path channel
+let d = json {"a": x.channel}
+#### kw-member-attr-first fn
+Rig r:
+    Lamp | fn=1 level=2
+#### kw-member-attr-later fn
+Rig r:
+    Lamp | level=2 fn=1
+#### kw-member-attr-bare-first fn
+Rig r:
+    Lamp | fn
+#### kw-member-attr-bare-later fn
+Rig r:
+    Lamp | strobe fn
+#### kw-member-attr-bang fn
+Rig r:
+    Lamp | strobe !fn
+#### kw-member-attr-bind-later fn
+Rig r:
+    Lamp | strobe fn => c
+#### kw-member-dot fn
+state a = x.fn + 1
+#### kw-member-dot-chain fn
+state a = x.fn.fn
+#### kw-member-dot-defaultarg fn
+Rig r:
+    Lamp/x.fn
+#### kw-member-dot-binding fn
+Pad kick | hit => low.fn
+#### kw-member-dot-to fn
+Clip v:
+    Plays | gain=to.fn: w
+#### kw-member-record-key fn
+let r = R {fn: 1, x: 2}
+#### kw-member-record-key-later fn
+let r = R {x: 2, fn: 1}
+#### kw-member-type-field fn
+type R:
+    fn: i32
+    x: f32
+#### kw-member-json-path fn
+let d = json {"a": x.fn}
+#### kw-member-attr-first pattern
+Rig r:
+    Lamp | pattern=1 level=2
+#### kw-member-attr-later pattern
+Rig r:
+    Lamp | level=2 pattern=1
+#### kw-member-attr-bare-first pattern
+Rig r:
+    Lamp | pattern
+#### kw-member-attr-bare-later pattern
+Rig r:
+    Lamp | strobe pattern
+#### kw-member-attr-bang pattern
+Rig r:
+    Lamp | strobe !pattern
+#### kw-member-attr-bind-later pattern
+Rig r:
+    Lamp | strobe pattern => c
+#### kw-member-dot pattern
+state a = x.pattern + 1
+#### kw-member-dot-chain pattern
+state a = x.pattern.pattern
+#### kw-member-dot-defaultarg pattern
+Rig r:
+    Lamp/x.pattern
+#### kw-member-dot-binding pattern
+Pad kick | hit => low.pattern
+#### kw-member-dot-to pattern
+Clip v:
+    Plays | gain=to.pattern: w
+#### kw-member-record-key pattern
+let r = R {pattern: 1, x: 2}
+#### kw-member-record-key-later pattern
+let r = R {x: 2, pattern: 1}
+#### kw-member-type-field pattern
+type R:
+    pattern: i32
+    x: f32
+#### kw-member-json-path pattern
+let d = json {"a": x.pattern}
+#### kw-member-attr-first type
+Rig r:
+    Lamp | type=1 level=2
+#### kw-member-attr-later type
+Rig r:
+    Lamp | level=2 type=1
+#### kw-member-attr-bare-first type
+Rig r:
+    Lamp | type
+#### kw-member-attr-bare-later type
+Rig r:
+    Lamp | strobe type
+#### kw-member-attr-bang type
+Rig r:
+    Lamp | strobe !type
+#### kw-member-attr-bind-later type
+Rig r:
+    Lamp | strobe type => c
+#### kw-member-dot type
+state a = x.type + 1
+#### kw-member-dot-chain type
+state a = x.type.type
+#### kw-member-dot-defaultarg type
+Rig r:
+    Lamp/x.type
+#### kw-member-dot-binding type
+Pad kick | hit => low.type
+#### kw-member-dot-to type
+Clip v:
+    Plays | gain=to.type: w
+#### kw-member-record-key type
+let r = R {type: 1, x: 2}
+#### kw-member-record-key-later type
+let r = R {x: 2, type: 1}
+#### kw-member-type-field type
+type R:
+    type: i32
+    x: f32
+#### kw-member-json-path type
+let d = json {"a": x.type}
+#### kw-member-attr-first default
+Rig r:
+    Lamp | default=1 level=2
+#### kw-member-attr-later default
+Rig r:
+    Lamp | level=2 default=1
+#### kw-member-attr-bare-first default
+Rig r:
+    Lamp | default
+#### kw-member-attr-bare-later default
+Rig r:
+    Lamp | strobe default
+#### kw-member-attr-bang default
+Rig r:
+    Lamp | strobe !default
+#### kw-member-attr-bind-later default
+Rig r:
+    Lamp | strobe default => c
+#### kw-member-dot default
+state a = x.default + 1
+#### kw-member-dot-chain default
+state a = x.default.default
+#### kw-member-dot-defaultarg default
+Rig r:
+    Lamp/x.default
+#### kw-member-dot-binding default
+Pad kick | hit => low.default
+#### kw-member-dot-to default
+Clip v:
+    Plays | gain=to.default: w
+#### kw-member-record-key default
+let r = R {default: 1, x: 2}
+#### kw-member-record-key-later default
+let r = R {x: 2, default: 1}
+#### kw-member-type-field default
+type R:
+    default: i32
+    x: f32
+#### kw-member-json-path default
+let d = json {"a": x.default}
+#### kw-member-attr-first const
+Rig r:
+    Lamp | const=1 level=2
+#### kw-member-attr-later const
+Rig r:
+    Lamp | level=2 const=1
+#### kw-member-attr-bare-first const
+Rig r:
+    Lamp | const
+#### kw-member-attr-bare-later const
+Rig r:
+    Lamp | strobe const
+#### kw-member-attr-bang const
+Rig r:
+    Lamp | strobe !const
+#### kw-member-attr-bind-later const
+Rig r:
+    Lamp | strobe const => c
+#### kw-member-dot const
+state a = x.const + 1
+#### kw-member-dot-chain const
+state a = x.const.const
+#### kw-member-dot-defaultarg const
+Rig r:
+    Lamp/x.const
+#### kw-member-dot-binding const
+Pad kick | hit => low.const
+#### kw-member-dot-to const
+Clip v:
+    Plays | gain=to.const: w
+#### kw-member-record-key const
+let r = R {const: 1, x: 2}
+#### kw-member-record-key-later const
+let r = R {x: 2, const: 1}
+#### kw-member-type-field const
+type R:
+    const: i32
+    x: f32
+#### kw-member-json-path const
+let d = json {"a": x.const}
+#### kw-member-attr-first cell
+Rig r:
+    Lamp | cell=1 level=2
+#### kw-member-attr-later cell
+Rig r:
+    Lamp | level=2 cell=1
+#### kw-member-attr-bare-first cell
+Rig r:
+    Lamp | cell
+#### kw-member-attr-bare-later cell
+Rig r:
+    Lamp | strobe cell
+#### kw-member-attr-bang cell
+Rig r:
+    Lamp | strobe !cell
+#### kw-member-attr-bind-later cell
+Rig r:
+    Lamp | strobe cell => c
+#### kw-member-dot cell
+state a = x.cell + 1
+#### kw-member-dot-chain cell
+state a = x.cell.cell
+#### kw-member-dot-defaultarg cell
+Rig r:
+    Lamp/x.cell
+#### kw-member-dot-binding cell
+Pad kick | hit => low.cell
+#### kw-member-dot-to cell
+Clip v:
+    Plays | gain=to.cell: w
+#### kw-member-record-key cell
+let r = R {cell: 1, x: 2}
+#### kw-member-record-key-later cell
+let r = R {x: 2, cell: 1}
+#### kw-member-type-field cell
+type R:
+    cell: i32
+    x: f32
+#### kw-member-json-path cell
+let d = json {"a": x.cell}
+#### kw-member-attr-first out
+Rig r:
+    Lamp | out=1 level=2
+#### kw-member-attr-later out
+Rig r:
+    Lamp | level=2 out=1
+#### kw-member-attr-bare-first out
+Rig r:
+    Lamp | out
+#### kw-member-attr-bare-later out
+Rig r:
+    Lamp | strobe out
+#### kw-member-attr-bang out
+Rig r:
+    Lamp | strobe !out
+#### kw-member-attr-bind-later out
+Rig r:
+    Lamp | strobe out => c
+#### kw-member-dot out
+state a = x.out + 1
+#### kw-member-dot-chain out
+state a = x.out.out
+#### kw-member-dot-defaultarg out
+Rig r:
+    Lamp/x.out
+#### kw-member-dot-binding out
+Pad kick | hit => low.out
+#### kw-member-dot-to out
+Clip v:
+    Plays | gain=to.out: w
+#### kw-member-record-key out
+let r = R {out: 1, x: 2}
+#### kw-member-record-key-later out
+let r = R {x: 2, out: 1}
+#### kw-member-type-field out
+type R:
+    out: i32
+    x: f32
+#### kw-member-json-path out
+let d = json {"a": x.out}
+#### kw-member-attr-first children
+Rig r:
+    Lamp | children=1 level=2
+#### kw-member-attr-later children
+Rig r:
+    Lamp | level=2 children=1
+#### kw-member-attr-bare-first children
+Rig r:
+    Lamp | children
+#### kw-member-attr-bare-later children
+Rig r:
+    Lamp | strobe children
+#### kw-member-attr-bang children
+Rig r:
+    Lamp | strobe !children
+#### kw-member-attr-bind-later children
+Rig r:
+    Lamp | strobe children => c
+#### kw-member-dot children
+state a = x.children + 1
+#### kw-member-dot-chain children
+state a = x.children.children
+#### kw-member-dot-defaultarg children
+Rig r:
+    Lamp/x.children
+#### kw-member-dot-binding children
+Pad kick | hit => low.children
+#### kw-member-dot-to children
+Clip v:
+    Plays | gain=to.children: w
+#### kw-member-record-key children
+let r = R {children: 1, x: 2}
+#### kw-member-record-key-later children
+let r = R {x: 2, children: 1}
+#### kw-member-type-field children
+type R:
+    children: i32
+    x: f32
+#### kw-member-json-path children
+let d = json {"a": x.children}
+#### kw-member-attr-first if
+Rig r:
+    Lamp | if=1 level=2
+#### kw-member-attr-later if
+Rig r:
+    Lamp | level=2 if=1
+#### kw-member-attr-bare-first if
+Rig r:
+    Lamp | if
+#### kw-member-attr-bare-later if
+Rig r:
+    Lamp | strobe if
+#### kw-member-attr-bang if
+Rig r:
+    Lamp | strobe !if
+#### kw-member-attr-bind-later if
+Rig r:
+    Lamp | strobe if => c
+#### kw-member-dot if
+state a = x.if + 1
+#### kw-member-dot-chain if
+state a = x.if.if
+#### kw-member-dot-defaultarg if
+Rig r:
+    Lamp/x.if
+#### kw-member-dot-binding if
+Pad kick | hit => low.if
+#### kw-member-dot-to if
+Clip v:
+    Plays | gain=to.if: w
+#### kw-member-record-key if
+let r = R {if: 1, x: 2}
+#### kw-member-record-key-later if
+let r = R {x: 2, if: 1}
+#### kw-member-type-field if
+type R:
+    if: i32
+    x: f32
+#### kw-member-json-path if
+let d = json {"a": x.if}
+#### kw-member-attr-first then
+Rig r:
+    Lamp | then=1 level=2
+#### kw-member-attr-later then
+Rig r:
+    Lamp | level=2 then=1
+#### kw-member-attr-bare-first then
+Rig r:
+    Lamp | then
+#### kw-member-attr-bare-later then
+Rig r:
+    Lamp | strobe then
+#### kw-member-attr-bang then
+Rig r:
+    Lamp | strobe !then
+#### kw-member-attr-bind-later then
+Rig r:
+    Lamp | strobe then => c
+#### kw-member-dot then
+state a = x.then + 1
+#### kw-member-dot-chain then
+state a = x.then.then
+#### kw-member-dot-defaultarg then
+Rig r:
+    Lamp/x.then
+#### kw-member-dot-binding then
+Pad kick | hit => low.then
+#### kw-member-dot-to then
+Clip v:
+    Plays | gain=to.then: w
+#### kw-member-record-key then
+let r = R {then: 1, x: 2}
+#### kw-member-record-key-later then
+let r = R {x: 2, then: 1}
+#### kw-member-type-field then
+type R:
+    then: i32
+    x: f32
+#### kw-member-json-path then
+let d = json {"a": x.then}
+#### kw-member-attr-first else
+Rig r:
+    Lamp | else=1 level=2
+#### kw-member-attr-later else
+Rig r:
+    Lamp | level=2 else=1
+#### kw-member-attr-bare-first else
+Rig r:
+    Lamp | else
+#### kw-member-attr-bare-later else
+Rig r:
+    Lamp | strobe else
+#### kw-member-attr-bang else
+Rig r:
+    Lamp | strobe !else
+#### kw-member-attr-bind-later else
+Rig r:
+    Lamp | strobe else => c
+#### kw-member-dot else
+state a = x.else + 1
+#### kw-member-dot-chain else
+state a = x.else.else
+#### kw-member-dot-defaultarg else
+Rig r:
+    Lamp/x.else
+#### kw-member-dot-binding else
+Pad kick | hit => low.else
+#### kw-member-dot-to else
+Clip v:
+    Plays | gain=to.else: w
+#### kw-member-record-key else
+let r = R {else: 1, x: 2}
+#### kw-member-record-key-later else
+let r = R {x: 2, else: 1}
+#### kw-member-type-field else
+type R:
+    else: i32
+    x: f32
+#### kw-member-json-path else
+let d = json {"a": x.else}
+#### kw-member-attr-first match
+Rig r:
+    Lamp | match=1 level=2
+#### kw-member-attr-later match
+Rig r:
+    Lamp | level=2 match=1
+#### kw-member-attr-bare-first match
+Rig r:
+    Lamp | match
+#### kw-member-attr-bare-later match
+Rig r:
+    Lamp | strobe match
+#### kw-member-attr-bang match
+Rig r:
+    Lamp | strobe !match
+#### kw-member-attr-bind-later match
+Rig r:
+    Lamp | strobe match => c
+#### kw-member-dot match
+state a = x.match + 1
+#### kw-member-dot-chain match
+state a = x.match.match
+#### kw-member-dot-defaultarg match
+Rig r:
+    Lamp/x.match
+#### kw-member-dot-binding match
+Pad kick | hit => low.match
+#### kw-member-dot-to match
+Clip v:
+    Plays | gain=to.match: w
+#### kw-member-record-key match
+let r = R {match: 1, x: 2}
+#### kw-member-record-key-later match
+let r = R {x: 2, match: 1}
+#### kw-member-type-field match
+type R:
+    match: i32
+    x: f32
+#### kw-member-json-path match
+let d = json {"a": x.match}
+#### kw-member-attr-first when
+Rig r:
+    Lamp | when=1 level=2
+#### kw-member-attr-later when
+Rig r:
+    Lamp | level=2 when=1
+#### kw-member-attr-bare-first when
+Rig r:
+    Lamp | when
+#### kw-member-attr-bare-later when
+Rig r:
+    Lamp | strobe when
+#### kw-member-attr-bang when
+Rig r:
+    Lamp | strobe !when
+#### kw-member-attr-bind-later when
+Rig r:
+    Lamp | strobe when => c
+#### kw-member-dot when
+state a = x.when + 1
+#### kw-member-dot-chain when
+state a = x.when.when
+#### kw-member-dot-defaultarg when
+Rig r:
+    Lamp/x.when
+#### kw-member-dot-binding when
+Pad kick | hit => low.when
+#### kw-member-dot-to when
+Clip v:
+    Plays | gain=to.when: w
+#### kw-member-record-key when
+let r = R {when: 1, x: 2}
+#### kw-member-record-key-later when
+let r = R {x: 2, when: 1}
+#### kw-member-type-field when
+type R:
+    when: i32
+    x: f32
+#### kw-member-json-path when
+let d = json {"a": x.when}
+#### kw-member-attr-first for
+Rig r:
+    Lamp | for=1 level=2
+#### kw-member-attr-later for
+Rig r:
+    Lamp | level=2 for=1
+#### kw-member-attr-bare-first for
+Rig r:
+    Lamp | for
+#### kw-member-attr-bare-later for
+Rig r:
+    Lamp | strobe for
+#### kw-member-attr-bang for
+Rig r:
+    Lamp | strobe !for
+#### kw-member-attr-bind-later for
+Rig r:
+    Lamp | strobe for => c
+#### kw-member-dot for
+state a = x.for + 1
+#### kw-member-dot-chain for
+state a = x.for.for
+#### kw-member-dot-defaultarg for
+Rig r:
+    Lamp/x.for
+#### kw-member-dot-binding for
+Pad kick | hit => low.for
+#### kw-member-dot-to for
+Clip v:
+    Plays | gain=to.for: w
+#### kw-member-record-key for
+let r = R {for: 1, x: 2}
+#### kw-member-record-key-later for
+let r = R {x: 2, for: 1}
+#### kw-member-type-field for
+type R:
+    for: i32
+    x: f32
+#### kw-member-json-path for
+let d = json {"a": x.for}
+#### kw-member-attr-first in
+Rig r:
+    Lamp | in=1 level=2
+#### kw-member-attr-later in
+Rig r:
+    Lamp | level=2 in=1
+#### kw-member-attr-bare-first in
+Rig r:
+    Lamp | in
+#### kw-member-attr-bare-later in
+Rig r:
+    Lamp | strobe in
+#### kw-member-attr-bang in
+Rig r:
+    Lamp | strobe !in
+#### kw-member-attr-bind-later in
+Rig r:
+    Lamp | strobe in => c
+#### kw-member-dot in
+state a = x.in + 1
+#### kw-member-dot-chain in
+state a = x.in.in
+#### kw-member-dot-defaultarg in
+Rig r:
+    Lamp/x.in
+#### kw-member-dot-binding in
+Pad kick | hit => low.in
+#### kw-member-dot-to in
+Clip v:
+    Plays | gain=to.in: w
+#### kw-member-record-key in
+let r = R {in: 1, x: 2}
+#### kw-member-record-key-later in
+let r = R {x: 2, in: 1}
+#### kw-member-type-field in
+type R:
+    in: i32
+    x: f32
+#### kw-member-json-path in
+let d = json {"a": x.in}
+#### kw-member-attr-first into
+Rig r:
+    Lamp | into=1 level=2
+#### kw-member-attr-later into
+Rig r:
+    Lamp | level=2 into=1
+#### kw-member-attr-bare-first into
+Rig r:
+    Lamp | into
+#### kw-member-attr-bare-later into
+Rig r:
+    Lamp | strobe into
+#### kw-member-attr-bang into
+Rig r:
+    Lamp | strobe !into
+#### kw-member-attr-bind-later into
+Rig r:
+    Lamp | strobe into => c
+#### kw-member-dot into
+state a = x.into + 1
+#### kw-member-dot-chain into
+state a = x.into.into
+#### kw-member-dot-defaultarg into
+Rig r:
+    Lamp/x.into
+#### kw-member-dot-binding into
+Pad kick | hit => low.into
+#### kw-member-dot-to into
+Clip v:
+    Plays | gain=to.into: w
+#### kw-member-record-key into
+let r = R {into: 1, x: 2}
+#### kw-member-record-key-later into
+let r = R {x: 2, into: 1}
+#### kw-member-type-field into
+type R:
+    into: i32
+    x: f32
+#### kw-member-json-path into
+let d = json {"a": x.into}
+#### kw-member-attr-first from
+Rig r:
+    Lamp | from=1 level=2
+#### kw-member-attr-later from
+Rig r:
+    Lamp | level=2 from=1
+#### kw-member-attr-bare-first from
+Rig r:
+    Lamp | from
+#### kw-member-attr-bare-later from
+Rig r:
+    Lamp | strobe from
+#### kw-member-attr-bang from
+Rig r:
+    Lamp | strobe !from
+#### kw-member-attr-bind-later from
+Rig r:
+    Lamp | strobe from => c
+#### kw-member-dot from
+state a = x.from + 1
+#### kw-member-dot-chain from
+state a = x.from.from
+#### kw-member-dot-defaultarg from
+Rig r:
+    Lamp/x.from
+#### kw-member-dot-binding from
+Pad kick | hit => low.from
+#### kw-member-dot-to from
+Clip v:
+    Plays | gain=to.from: w
+#### kw-member-record-key from
+let r = R {from: 1, x: 2}
+#### kw-member-record-key-later from
+let r = R {x: 2, from: 1}
+#### kw-member-type-field from
+type R:
+    from: i32
+    x: f32
+#### kw-member-json-path from
+let d = json {"a": x.from}
+#### kw-member-attr-first as
+Rig r:
+    Lamp | as=1 level=2
+#### kw-member-attr-later as
+Rig r:
+    Lamp | level=2 as=1
+#### kw-member-attr-bare-first as
+Rig r:
+    Lamp | as
+#### kw-member-attr-bare-later as
+Rig r:
+    Lamp | strobe as
+#### kw-member-attr-bang as
+Rig r:
+    Lamp | strobe !as
+#### kw-member-attr-bind-later as
+Rig r:
+    Lamp | strobe as => c
+#### kw-member-dot as
+state a = x.as + 1
+#### kw-member-dot-chain as
+state a = x.as.as
+#### kw-member-dot-defaultarg as
+Rig r:
+    Lamp/x.as
+#### kw-member-dot-binding as
+Pad kick | hit => low.as
+#### kw-member-dot-to as
+Clip v:
+    Plays | gain=to.as: w
+#### kw-member-record-key as
+let r = R {as: 1, x: 2}
+#### kw-member-record-key-later as
+let r = R {x: 2, as: 1}
+#### kw-member-type-field as
+type R:
+    as: i32
+    x: f32
+#### kw-member-json-path as
+let d = json {"a": x.as}
+#### kw-member-attr-first on
+Rig r:
+    Lamp | on=1 level=2
+#### kw-member-attr-later on
+Rig r:
+    Lamp | level=2 on=1
+#### kw-member-attr-bare-first on
+Rig r:
+    Lamp | on
+#### kw-member-attr-bare-later on
+Rig r:
+    Lamp | strobe on
+#### kw-member-attr-bang on
+Rig r:
+    Lamp | strobe !on
+#### kw-member-attr-bind-later on
+Rig r:
+    Lamp | strobe on => c
+#### kw-member-dot on
+state a = x.on + 1
+#### kw-member-dot-chain on
+state a = x.on.on
+#### kw-member-dot-defaultarg on
+Rig r:
+    Lamp/x.on
+#### kw-member-dot-binding on
+Pad kick | hit => low.on
+#### kw-member-dot-to on
+Clip v:
+    Plays | gain=to.on: w
+#### kw-member-record-key on
+let r = R {on: 1, x: 2}
+#### kw-member-record-key-later on
+let r = R {x: 2, on: 1}
+#### kw-member-type-field on
+type R:
+    on: i32
+    x: f32
+#### kw-member-json-path on
+let d = json {"a": x.on}
+#### kw-member-attr-first without
+Rig r:
+    Lamp | without=1 level=2
+#### kw-member-attr-later without
+Rig r:
+    Lamp | level=2 without=1
+#### kw-member-attr-bare-first without
+Rig r:
+    Lamp | without
+#### kw-member-attr-bare-later without
+Rig r:
+    Lamp | strobe without
+#### kw-member-attr-bang without
+Rig r:
+    Lamp | strobe !without
+#### kw-member-attr-bind-later without
+Rig r:
+    Lamp | strobe without => c
+#### kw-member-dot without
+state a = x.without + 1
+#### kw-member-dot-chain without
+state a = x.without.without
+#### kw-member-dot-defaultarg without
+Rig r:
+    Lamp/x.without
+#### kw-member-dot-binding without
+Pad kick | hit => low.without
+#### kw-member-dot-to without
+Clip v:
+    Plays | gain=to.without: w
+#### kw-member-record-key without
+let r = R {without: 1, x: 2}
+#### kw-member-record-key-later without
+let r = R {x: 2, without: 1}
+#### kw-member-type-field without
+type R:
+    without: i32
+    x: f32
+#### kw-member-json-path without
+let d = json {"a": x.without}
+#### kw-member-attr-first is
+Rig r:
+    Lamp | is=1 level=2
+#### kw-member-attr-later is
+Rig r:
+    Lamp | level=2 is=1
+#### kw-member-attr-bare-first is
+Rig r:
+    Lamp | is
+#### kw-member-attr-bare-later is
+Rig r:
+    Lamp | strobe is
+#### kw-member-attr-bang is
+Rig r:
+    Lamp | strobe !is
+#### kw-member-attr-bind-later is
+Rig r:
+    Lamp | strobe is => c
+#### kw-member-dot is
+state a = x.is + 1
+#### kw-member-dot-chain is
+state a = x.is.is
+#### kw-member-dot-defaultarg is
+Rig r:
+    Lamp/x.is
+#### kw-member-dot-binding is
+Pad kick | hit => low.is
+#### kw-member-dot-to is
+Clip v:
+    Plays | gain=to.is: w
+#### kw-member-record-key is
+let r = R {is: 1, x: 2}
+#### kw-member-record-key-later is
+let r = R {x: 2, is: 1}
+#### kw-member-type-field is
+type R:
+    is: i32
+    x: f32
+#### kw-member-json-path is
+let d = json {"a": x.is}
+#### kw-member-attr-first not
+Rig r:
+    Lamp | not=1 level=2
+#### kw-member-attr-later not
+Rig r:
+    Lamp | level=2 not=1
+#### kw-member-attr-bare-first not
+Rig r:
+    Lamp | not
+#### kw-member-attr-bare-later not
+Rig r:
+    Lamp | strobe not
+#### kw-member-attr-bang not
+Rig r:
+    Lamp | strobe !not
+#### kw-member-attr-bind-later not
+Rig r:
+    Lamp | strobe not => c
+#### kw-member-dot not
+state a = x.not + 1
+#### kw-member-dot-chain not
+state a = x.not.not
+#### kw-member-dot-defaultarg not
+Rig r:
+    Lamp/x.not
+#### kw-member-dot-binding not
+Pad kick | hit => low.not
+#### kw-member-dot-to not
+Clip v:
+    Plays | gain=to.not: w
+#### kw-member-record-key not
+let r = R {not: 1, x: 2}
+#### kw-member-record-key-later not
+let r = R {x: 2, not: 1}
+#### kw-member-type-field not
+type R:
+    not: i32
+    x: f32
+#### kw-member-json-path not
+let d = json {"a": x.not}
+#### kw-member-attr-first and
+Rig r:
+    Lamp | and=1 level=2
+#### kw-member-attr-later and
+Rig r:
+    Lamp | level=2 and=1
+#### kw-member-attr-bare-first and
+Rig r:
+    Lamp | and
+#### kw-member-attr-bare-later and
+Rig r:
+    Lamp | strobe and
+#### kw-member-attr-bang and
+Rig r:
+    Lamp | strobe !and
+#### kw-member-attr-bind-later and
+Rig r:
+    Lamp | strobe and => c
+#### kw-member-dot and
+state a = x.and + 1
+#### kw-member-dot-chain and
+state a = x.and.and
+#### kw-member-dot-defaultarg and
+Rig r:
+    Lamp/x.and
+#### kw-member-dot-binding and
+Pad kick | hit => low.and
+#### kw-member-dot-to and
+Clip v:
+    Plays | gain=to.and: w
+#### kw-member-record-key and
+let r = R {and: 1, x: 2}
+#### kw-member-record-key-later and
+let r = R {x: 2, and: 1}
+#### kw-member-type-field and
+type R:
+    and: i32
+    x: f32
+#### kw-member-json-path and
+let d = json {"a": x.and}
+#### kw-member-attr-first or
+Rig r:
+    Lamp | or=1 level=2
+#### kw-member-attr-later or
+Rig r:
+    Lamp | level=2 or=1
+#### kw-member-attr-bare-first or
+Rig r:
+    Lamp | or
+#### kw-member-attr-bare-later or
+Rig r:
+    Lamp | strobe or
+#### kw-member-attr-bang or
+Rig r:
+    Lamp | strobe !or
+#### kw-member-attr-bind-later or
+Rig r:
+    Lamp | strobe or => c
+#### kw-member-dot or
+state a = x.or + 1
+#### kw-member-dot-chain or
+state a = x.or.or
+#### kw-member-dot-defaultarg or
+Rig r:
+    Lamp/x.or
+#### kw-member-dot-binding or
+Pad kick | hit => low.or
+#### kw-member-dot-to or
+Clip v:
+    Plays | gain=to.or: w
+#### kw-member-record-key or
+let r = R {or: 1, x: 2}
+#### kw-member-record-key-later or
+let r = R {x: 2, or: 1}
+#### kw-member-type-field or
+type R:
+    or: i32
+    x: f32
+#### kw-member-json-path or
+let d = json {"a": x.or}
+#### kw-member-attr-first div
+Rig r:
+    Lamp | div=1 level=2
+#### kw-member-attr-later div
+Rig r:
+    Lamp | level=2 div=1
+#### kw-member-attr-bare-first div
+Rig r:
+    Lamp | div
+#### kw-member-attr-bare-later div
+Rig r:
+    Lamp | strobe div
+#### kw-member-attr-bang div
+Rig r:
+    Lamp | strobe !div
+#### kw-member-attr-bind-later div
+Rig r:
+    Lamp | strobe div => c
+#### kw-member-dot div
+state a = x.div + 1
+#### kw-member-dot-chain div
+state a = x.div.div
+#### kw-member-dot-defaultarg div
+Rig r:
+    Lamp/x.div
+#### kw-member-dot-binding div
+Pad kick | hit => low.div
+#### kw-member-dot-to div
+Clip v:
+    Plays | gain=to.div: w
+#### kw-member-record-key div
+let r = R {div: 1, x: 2}
+#### kw-member-record-key-later div
+let r = R {x: 2, div: 1}
+#### kw-member-type-field div
+type R:
+    div: i32
+    x: f32
+#### kw-member-json-path div
+let d = json {"a": x.div}
+#### kw-member-attr-first to
+Rig r:
+    Lamp | to=1 level=2
+#### kw-member-attr-later to
+Rig r:
+    Lamp | level=2 to=1
+#### kw-member-attr-bare-first to
+Rig r:
+    Lamp | to
+#### kw-member-attr-bare-later to
+Rig r:
+    Lamp | strobe to
+#### kw-member-attr-bang to
+Rig r:
+    Lamp | strobe !to
+#### kw-member-attr-bind-later to
+Rig r:
+    Lamp | strobe to => c
+#### kw-member-dot to
+state a = x.to + 1
+#### kw-member-dot-chain to
+state a = x.to.to
+#### kw-member-dot-defaultarg to
+Rig r:
+    Lamp/x.to
+#### kw-member-dot-binding to
+Pad kick | hit => low.to
+#### kw-member-dot-to to
+Clip v:
+    Plays | gain=to.to: w
+#### kw-member-record-key to
+let r = R {to: 1, x: 2}
+#### kw-member-record-key-later to
+let r = R {x: 2, to: 1}
+#### kw-member-type-field to
+type R:
+    to: i32
+    x: f32
+#### kw-member-json-path to
+let d = json {"a": x.to}
+#### kw-member-attr-first true
+Rig r:
+    Lamp | true=1 level=2
+#### kw-member-attr-later true
+Rig r:
+    Lamp | level=2 true=1
+#### kw-member-attr-bare-first true
+Rig r:
+    Lamp | true
+#### kw-member-attr-bare-later true
+Rig r:
+    Lamp | strobe true
+#### kw-member-attr-bang true
+Rig r:
+    Lamp | strobe !true
+#### kw-member-attr-bind-later true
+Rig r:
+    Lamp | strobe true => c
+#### kw-member-dot true
+state a = x.true + 1
+#### kw-member-dot-chain true
+state a = x.true.true
+#### kw-member-dot-defaultarg true
+Rig r:
+    Lamp/x.true
+#### kw-member-dot-binding true
+Pad kick | hit => low.true
+#### kw-member-dot-to true
+Clip v:
+    Plays | gain=to.true: w
+#### kw-member-record-key true
+let r = R {true: 1, x: 2}
+#### kw-member-record-key-later true
+let r = R {x: 2, true: 1}
+#### kw-member-type-field true
+type R:
+    true: i32
+    x: f32
+#### kw-member-json-path true
+let d = json {"a": x.true}
+#### kw-member-attr-first false
+Rig r:
+    Lamp | false=1 level=2
+#### kw-member-attr-later false
+Rig r:
+    Lamp | level=2 false=1
+#### kw-member-attr-bare-first false
+Rig r:
+    Lamp | false
+#### kw-member-attr-bare-later false
+Rig r:
+    Lamp | strobe false
+#### kw-member-attr-bang false
+Rig r:
+    Lamp | strobe !false
+#### kw-member-attr-bind-later false
+Rig r:
+    Lamp | strobe false => c
+#### kw-member-dot false
+state a = x.false + 1
+#### kw-member-dot-chain false
+state a = x.false.false
+#### kw-member-dot-defaultarg false
+Rig r:
+    Lamp/x.false
+#### kw-member-dot-binding false
+Pad kick | hit => low.false
+#### kw-member-dot-to false
+Clip v:
+    Plays | gain=to.false: w
+#### kw-member-record-key false
+let r = R {false: 1, x: 2}
+#### kw-member-record-key-later false
+let r = R {x: 2, false: 1}
+#### kw-member-type-field false
+type R:
+    false: i32
+    x: f32
+#### kw-member-json-path false
+let d = json {"a": x.false}
+#### kw-member-attr-first none
+Rig r:
+    Lamp | none=1 level=2
+#### kw-member-attr-later none
+Rig r:
+    Lamp | level=2 none=1
+#### kw-member-attr-bare-first none
+Rig r:
+    Lamp | none
+#### kw-member-attr-bare-later none
+Rig r:
+    Lamp | strobe none
+#### kw-member-attr-bang none
+Rig r:
+    Lamp | strobe !none
+#### kw-member-attr-bind-later none
+Rig r:
+    Lamp | strobe none => c
+#### kw-member-dot none
+state a = x.none + 1
+#### kw-member-dot-chain none
+state a = x.none.none
+#### kw-member-dot-defaultarg none
+Rig r:
+    Lamp/x.none
+#### kw-member-dot-binding none
+Pad kick | hit => low.none
+#### kw-member-dot-to none
+Clip v:
+    Plays | gain=to.none: w
+#### kw-member-record-key none
+let r = R {none: 1, x: 2}
+#### kw-member-record-key-later none
+let r = R {x: 2, none: 1}
+#### kw-member-type-field none
+type R:
+    none: i32
+    x: f32
+#### kw-member-json-path none
+let d = json {"a": x.none}
+#### kw-member-attr-first u8
+Rig r:
+    Lamp | u8=1 level=2
+#### kw-member-attr-later u8
+Rig r:
+    Lamp | level=2 u8=1
+#### kw-member-attr-bare-first u8
+Rig r:
+    Lamp | u8
+#### kw-member-attr-bare-later u8
+Rig r:
+    Lamp | strobe u8
+#### kw-member-attr-bang u8
+Rig r:
+    Lamp | strobe !u8
+#### kw-member-attr-bind-later u8
+Rig r:
+    Lamp | strobe u8 => c
+#### kw-member-dot u8
+state a = x.u8 + 1
+#### kw-member-dot-chain u8
+state a = x.u8.u8
+#### kw-member-dot-defaultarg u8
+Rig r:
+    Lamp/x.u8
+#### kw-member-dot-binding u8
+Pad kick | hit => low.u8
+#### kw-member-dot-to u8
+Clip v:
+    Plays | gain=to.u8: w
+#### kw-member-record-key u8
+let r = R {u8: 1, x: 2}
+#### kw-member-record-key-later u8
+let r = R {x: 2, u8: 1}
+#### kw-member-type-field u8
+type R:
+    u8: i32
+    x: f32
+#### kw-member-json-path u8
+let d = json {"a": x.u8}
+#### kw-member-attr-first i32
+Rig r:
+    Lamp | i32=1 level=2
+#### kw-member-attr-later i32
+Rig r:
+    Lamp | level=2 i32=1
+#### kw-member-attr-bare-first i32
+Rig r:
+    Lamp | i32
+#### kw-member-attr-bare-later i32
+Rig r:
+    Lamp | strobe i32
+#### kw-member-attr-bang i32
+Rig r:
+    Lamp | strobe !i32
+#### kw-member-attr-bind-later i32
+Rig r:
+    Lamp | strobe i32 => c
+#### kw-member-dot i32
+state a = x.i32 + 1
+#### kw-member-dot-chain i32
+state a = x.i32.i32
+#### kw-member-dot-defaultarg i32
+Rig r:
+    Lamp/x.i32
+#### kw-member-dot-binding i32
+Pad kick | hit => low.i32
+#### kw-member-dot-to i32
+Clip v:
+    Plays | gain=to.i32: w
+#### kw-member-record-key i32
+let r = R {i32: 1, x: 2}
+#### kw-member-record-key-later i32
+let r = R {x: 2, i32: 1}
+#### kw-member-type-field i32
+type R:
+    i32: i32
+    x: f32
+#### kw-member-json-path i32
+let d = json {"a": x.i32}
+#### kw-member-attr-first i64
+Rig r:
+    Lamp | i64=1 level=2
+#### kw-member-attr-later i64
+Rig r:
+    Lamp | level=2 i64=1
+#### kw-member-attr-bare-first i64
+Rig r:
+    Lamp | i64
+#### kw-member-attr-bare-later i64
+Rig r:
+    Lamp | strobe i64
+#### kw-member-attr-bang i64
+Rig r:
+    Lamp | strobe !i64
+#### kw-member-attr-bind-later i64
+Rig r:
+    Lamp | strobe i64 => c
+#### kw-member-dot i64
+state a = x.i64 + 1
+#### kw-member-dot-chain i64
+state a = x.i64.i64
+#### kw-member-dot-defaultarg i64
+Rig r:
+    Lamp/x.i64
+#### kw-member-dot-binding i64
+Pad kick | hit => low.i64
+#### kw-member-dot-to i64
+Clip v:
+    Plays | gain=to.i64: w
+#### kw-member-record-key i64
+let r = R {i64: 1, x: 2}
+#### kw-member-record-key-later i64
+let r = R {x: 2, i64: 1}
+#### kw-member-type-field i64
+type R:
+    i64: i32
+    x: f32
+#### kw-member-json-path i64
+let d = json {"a": x.i64}
+#### kw-member-attr-first f32
+Rig r:
+    Lamp | f32=1 level=2
+#### kw-member-attr-later f32
+Rig r:
+    Lamp | level=2 f32=1
+#### kw-member-attr-bare-first f32
+Rig r:
+    Lamp | f32
+#### kw-member-attr-bare-later f32
+Rig r:
+    Lamp | strobe f32
+#### kw-member-attr-bang f32
+Rig r:
+    Lamp | strobe !f32
+#### kw-member-attr-bind-later f32
+Rig r:
+    Lamp | strobe f32 => c
+#### kw-member-dot f32
+state a = x.f32 + 1
+#### kw-member-dot-chain f32
+state a = x.f32.f32
+#### kw-member-dot-defaultarg f32
+Rig r:
+    Lamp/x.f32
+#### kw-member-dot-binding f32
+Pad kick | hit => low.f32
+#### kw-member-dot-to f32
+Clip v:
+    Plays | gain=to.f32: w
+#### kw-member-record-key f32
+let r = R {f32: 1, x: 2}
+#### kw-member-record-key-later f32
+let r = R {x: 2, f32: 1}
+#### kw-member-type-field f32
+type R:
+    f32: i32
+    x: f32
+#### kw-member-json-path f32
+let d = json {"a": x.f32}
+#### kw-member-attr-first f64
+Rig r:
+    Lamp | f64=1 level=2
+#### kw-member-attr-later f64
+Rig r:
+    Lamp | level=2 f64=1
+#### kw-member-attr-bare-first f64
+Rig r:
+    Lamp | f64
+#### kw-member-attr-bare-later f64
+Rig r:
+    Lamp | strobe f64
+#### kw-member-attr-bang f64
+Rig r:
+    Lamp | strobe !f64
+#### kw-member-attr-bind-later f64
+Rig r:
+    Lamp | strobe f64 => c
+#### kw-member-dot f64
+state a = x.f64 + 1
+#### kw-member-dot-chain f64
+state a = x.f64.f64
+#### kw-member-dot-defaultarg f64
+Rig r:
+    Lamp/x.f64
+#### kw-member-dot-binding f64
+Pad kick | hit => low.f64
+#### kw-member-dot-to f64
+Clip v:
+    Plays | gain=to.f64: w
+#### kw-member-record-key f64
+let r = R {f64: 1, x: 2}
+#### kw-member-record-key-later f64
+let r = R {x: 2, f64: 1}
+#### kw-member-type-field f64
+type R:
+    f64: i32
+    x: f32
+#### kw-member-json-path f64
+let d = json {"a": x.f64}
+#### kw-member-attr-first bool
+Rig r:
+    Lamp | bool=1 level=2
+#### kw-member-attr-later bool
+Rig r:
+    Lamp | level=2 bool=1
+#### kw-member-attr-bare-first bool
+Rig r:
+    Lamp | bool
+#### kw-member-attr-bare-later bool
+Rig r:
+    Lamp | strobe bool
+#### kw-member-attr-bang bool
+Rig r:
+    Lamp | strobe !bool
+#### kw-member-attr-bind-later bool
+Rig r:
+    Lamp | strobe bool => c
+#### kw-member-dot bool
+state a = x.bool + 1
+#### kw-member-dot-chain bool
+state a = x.bool.bool
+#### kw-member-dot-defaultarg bool
+Rig r:
+    Lamp/x.bool
+#### kw-member-dot-binding bool
+Pad kick | hit => low.bool
+#### kw-member-dot-to bool
+Clip v:
+    Plays | gain=to.bool: w
+#### kw-member-record-key bool
+let r = R {bool: 1, x: 2}
+#### kw-member-record-key-later bool
+let r = R {x: 2, bool: 1}
+#### kw-member-type-field bool
+type R:
+    bool: i32
+    x: f32
+#### kw-member-json-path bool
+let d = json {"a": x.bool}
+#### kw-member-attr-first str
+Rig r:
+    Lamp | str=1 level=2
+#### kw-member-attr-later str
+Rig r:
+    Lamp | level=2 str=1
+#### kw-member-attr-bare-first str
+Rig r:
+    Lamp | str
+#### kw-member-attr-bare-later str
+Rig r:
+    Lamp | strobe str
+#### kw-member-attr-bang str
+Rig r:
+    Lamp | strobe !str
+#### kw-member-attr-bind-later str
+Rig r:
+    Lamp | strobe str => c
+#### kw-member-dot str
+state a = x.str + 1
+#### kw-member-dot-chain str
+state a = x.str.str
+#### kw-member-dot-defaultarg str
+Rig r:
+    Lamp/x.str
+#### kw-member-dot-binding str
+Pad kick | hit => low.str
+#### kw-member-dot-to str
+Clip v:
+    Plays | gain=to.str: w
+#### kw-member-record-key str
+let r = R {str: 1, x: 2}
+#### kw-member-record-key-later str
+let r = R {x: 2, str: 1}
+#### kw-member-type-field str
+type R:
+    str: i32
+    x: f32
+#### kw-member-json-path str
+let d = json {"a": x.str}
+#### kw-member-attr-first json
+Rig r:
+    Lamp | json=1 level=2
+#### kw-member-attr-later json
+Rig r:
+    Lamp | level=2 json=1
+#### kw-member-attr-bare-first json
+Rig r:
+    Lamp | json
+#### kw-member-attr-bare-later json
+Rig r:
+    Lamp | strobe json
+#### kw-member-attr-bang json
+Rig r:
+    Lamp | strobe !json
+#### kw-member-attr-bind-later json
+Rig r:
+    Lamp | strobe json => c
+#### kw-member-dot json
+state a = x.json + 1
+#### kw-member-dot-chain json
+state a = x.json.json
+#### kw-member-dot-defaultarg json
+Rig r:
+    Lamp/x.json
+#### kw-member-dot-binding json
+Pad kick | hit => low.json
+#### kw-member-dot-to json
+Clip v:
+    Plays | gain=to.json: w
+#### kw-member-record-key json
+let r = R {json: 1, x: 2}
+#### kw-member-record-key-later json
+let r = R {x: 2, json: 1}
+#### kw-member-type-field json
+type R:
+    json: i32
+    x: f32
+#### kw-member-json-path json
+let d = json {"a": x.json}
+#### kw-member-attr-first node
+Rig r:
+    Lamp | node=1 level=2
+#### kw-member-attr-later node
+Rig r:
+    Lamp | level=2 node=1
+#### kw-member-attr-bare-first node
+Rig r:
+    Lamp | node
+#### kw-member-attr-bare-later node
+Rig r:
+    Lamp | strobe node
+#### kw-member-attr-bang node
+Rig r:
+    Lamp | strobe !node
+#### kw-member-attr-bind-later node
+Rig r:
+    Lamp | strobe node => c
+#### kw-member-dot node
+state a = x.node + 1
+#### kw-member-dot-chain node
+state a = x.node.node
+#### kw-member-dot-defaultarg node
+Rig r:
+    Lamp/x.node
+#### kw-member-dot-binding node
+Pad kick | hit => low.node
+#### kw-member-dot-to node
+Clip v:
+    Plays | gain=to.node: w
+#### kw-member-record-key node
+let r = R {node: 1, x: 2}
+#### kw-member-record-key-later node
+let r = R {x: 2, node: 1}
+#### kw-member-type-field node
+type R:
+    node: i32
+    x: f32
+#### kw-member-json-path node
+let d = json {"a": x.node}
+#### kw-member-attr-first wire
+Rig r:
+    Lamp | wire=1 level=2
+#### kw-member-attr-later wire
+Rig r:
+    Lamp | level=2 wire=1
+#### kw-member-attr-bare-first wire
+Rig r:
+    Lamp | wire
+#### kw-member-attr-bare-later wire
+Rig r:
+    Lamp | strobe wire
+#### kw-member-attr-bang wire
+Rig r:
+    Lamp | strobe !wire
+#### kw-member-attr-bind-later wire
+Rig r:
+    Lamp | strobe wire => c
+#### kw-member-dot wire
+state a = x.wire + 1
+#### kw-member-dot-chain wire
+state a = x.wire.wire
+#### kw-member-dot-defaultarg wire
+Rig r:
+    Lamp/x.wire
+#### kw-member-dot-binding wire
+Pad kick | hit => low.wire
+#### kw-member-dot-to wire
+Clip v:
+    Plays | gain=to.wire: w
+#### kw-member-record-key wire
+let r = R {wire: 1, x: 2}
+#### kw-member-record-key-later wire
+let r = R {x: 2, wire: 1}
+#### kw-member-type-field wire
+type R:
+    wire: i32
+    x: f32
+#### kw-member-json-path wire
+let d = json {"a": x.wire}
+#### kw-member-attr-first require
+Rig r:
+    Lamp | require=1 level=2
+#### kw-member-attr-later require
+Rig r:
+    Lamp | level=2 require=1
+#### kw-member-attr-bare-first require
+Rig r:
+    Lamp | require
+#### kw-member-attr-bare-later require
+Rig r:
+    Lamp | strobe require
+#### kw-member-attr-bang require
+Rig r:
+    Lamp | strobe !require
+#### kw-member-attr-bind-later require
+Rig r:
+    Lamp | strobe require => c
+#### kw-member-dot require
+state a = x.require + 1
+#### kw-member-dot-chain require
+state a = x.require.require
+#### kw-member-dot-defaultarg require
+Rig r:
+    Lamp/x.require
+#### kw-member-dot-binding require
+Pad kick | hit => low.require
+#### kw-member-dot-to require
+Clip v:
+    Plays | gain=to.require: w
+#### kw-member-record-key require
+let r = R {require: 1, x: 2}
+#### kw-member-record-key-later require
+let r = R {x: 2, require: 1}
+#### kw-member-type-field require
+type R:
+    require: i32
+    x: f32
+#### kw-member-json-path require
+let d = json {"a": x.require}
+#### kw-member-attr-first use
+Rig r:
+    Lamp | use=1 level=2
+#### kw-member-attr-later use
+Rig r:
+    Lamp | level=2 use=1
+#### kw-member-attr-bare-first use
+Rig r:
+    Lamp | use
+#### kw-member-attr-bare-later use
+Rig r:
+    Lamp | strobe use
+#### kw-member-attr-bang use
+Rig r:
+    Lamp | strobe !use
+#### kw-member-attr-bind-later use
+Rig r:
+    Lamp | strobe use => c
+#### kw-member-dot use
+state a = x.use + 1
+#### kw-member-dot-chain use
+state a = x.use.use
+#### kw-member-dot-defaultarg use
+Rig r:
+    Lamp/x.use
+#### kw-member-dot-binding use
+Pad kick | hit => low.use
+#### kw-member-dot-to use
+Clip v:
+    Plays | gain=to.use: w
+#### kw-member-record-key use
+let r = R {use: 1, x: 2}
+#### kw-member-record-key-later use
+let r = R {x: 2, use: 1}
+#### kw-member-type-field use
+type R:
+    use: i32
+    x: f32
+#### kw-member-json-path use
+let d = json {"a": x.use}
+#### kw-member-attr-first publish
+Rig r:
+    Lamp | publish=1 level=2
+#### kw-member-attr-later publish
+Rig r:
+    Lamp | level=2 publish=1
+#### kw-member-attr-bare-first publish
+Rig r:
+    Lamp | publish
+#### kw-member-attr-bare-later publish
+Rig r:
+    Lamp | strobe publish
+#### kw-member-attr-bang publish
+Rig r:
+    Lamp | strobe !publish
+#### kw-member-attr-bind-later publish
+Rig r:
+    Lamp | strobe publish => c
+#### kw-member-dot publish
+state a = x.publish + 1
+#### kw-member-dot-chain publish
+state a = x.publish.publish
+#### kw-member-dot-defaultarg publish
+Rig r:
+    Lamp/x.publish
+#### kw-member-dot-binding publish
+Pad kick | hit => low.publish
+#### kw-member-dot-to publish
+Clip v:
+    Plays | gain=to.publish: w
+#### kw-member-record-key publish
+let r = R {publish: 1, x: 2}
+#### kw-member-record-key-later publish
+let r = R {x: 2, publish: 1}
+#### kw-member-type-field publish
+type R:
+    publish: i32
+    x: f32
+#### kw-member-json-path publish
+let d = json {"a": x.publish}
+#### kw-member-attr-first recurrent
+Rig r:
+    Lamp | recurrent=1 level=2
+#### kw-member-attr-later recurrent
+Rig r:
+    Lamp | level=2 recurrent=1
+#### kw-member-attr-bare-first recurrent
+Rig r:
+    Lamp | recurrent
+#### kw-member-attr-bare-later recurrent
+Rig r:
+    Lamp | strobe recurrent
+#### kw-member-attr-bang recurrent
+Rig r:
+    Lamp | strobe !recurrent
+#### kw-member-attr-bind-later recurrent
+Rig r:
+    Lamp | strobe recurrent => c
+#### kw-member-dot recurrent
+state a = x.recurrent + 1
+#### kw-member-dot-chain recurrent
+state a = x.recurrent.recurrent
+#### kw-member-dot-defaultarg recurrent
+Rig r:
+    Lamp/x.recurrent
+#### kw-member-dot-binding recurrent
+Pad kick | hit => low.recurrent
+#### kw-member-dot-to recurrent
+Clip v:
+    Plays | gain=to.recurrent: w
+#### kw-member-record-key recurrent
+let r = R {recurrent: 1, x: 2}
+#### kw-member-record-key-later recurrent
+let r = R {x: 2, recurrent: 1}
+#### kw-member-type-field recurrent
+type R:
+    recurrent: i32
+    x: f32
+#### kw-member-json-path recurrent
+let d = json {"a": x.recurrent}
+#### kw-member-attr-first string
+Rig r:
+    Lamp | string=1 level=2
+#### kw-member-attr-later string
+Rig r:
+    Lamp | level=2 string=1
+#### kw-member-attr-bare-first string
+Rig r:
+    Lamp | string
+#### kw-member-attr-bare-later string
+Rig r:
+    Lamp | strobe string
+#### kw-member-attr-bang string
+Rig r:
+    Lamp | strobe !string
+#### kw-member-attr-bind-later string
+Rig r:
+    Lamp | strobe string => c
+#### kw-member-dot string
+state a = x.string + 1
+#### kw-member-dot-chain string
+state a = x.string.string
+#### kw-member-dot-defaultarg string
+Rig r:
+    Lamp/x.string
+#### kw-member-dot-binding string
+Pad kick | hit => low.string
+#### kw-member-dot-to string
+Clip v:
+    Plays | gain=to.string: w
+#### kw-member-record-key string
+let r = R {string: 1, x: 2}
+#### kw-member-record-key-later string
+let r = R {x: 2, string: 1}
+#### kw-member-type-field string
+type R:
+    string: i32
+    x: f32
+#### kw-member-json-path string
+let d = json {"a": x.string}
+#### kw-member-attr-first null
+Rig r:
+    Lamp | null=1 level=2
+#### kw-member-attr-later null
+Rig r:
+    Lamp | level=2 null=1
+#### kw-member-attr-bare-first null
+Rig r:
+    Lamp | null
+#### kw-member-attr-bare-later null
+Rig r:
+    Lamp | strobe null
+#### kw-member-attr-bang null
+Rig r:
+    Lamp | strobe !null
+#### kw-member-attr-bind-later null
+Rig r:
+    Lamp | strobe null => c
+#### kw-member-dot null
+state a = x.null + 1
+#### kw-member-dot-chain null
+state a = x.null.null
+#### kw-member-dot-defaultarg null
+Rig r:
+    Lamp/x.null
+#### kw-member-dot-binding null
+Pad kick | hit => low.null
+#### kw-member-dot-to null
+Clip v:
+    Plays | gain=to.null: w
+#### kw-member-record-key null
+let r = R {null: 1, x: 2}
+#### kw-member-record-key-later null
+let r = R {x: 2, null: 1}
+#### kw-member-type-field null
+type R:
+    null: i32
+    x: f32
+#### kw-member-json-path null
+let d = json {"a": x.null}

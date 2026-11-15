@@ -1,0 +1,24 @@
+--- diagnostics (1)
+  ExpressionSyntax 14..17 "let" :: expected `,` or `]`, found `let`
+--- detached [14..17] at_layout [14..17]
+--- tree
+File 0..24
+  LetDecl 0..14
+    LetKw "let"
+    Ident "x"
+    Eq "="
+    ArrayLit 8..13
+      LBracket "["
+      Literal 9..10
+        Number "1"
+      Comma ","
+      Literal 12..13
+        Number "2"
+    Newline ""
+  LetDecl 14..24
+    LetKw "let"
+    Ident "y"
+    Eq "="
+    Literal 22..23
+      Number "3"
+    Newline "\n"

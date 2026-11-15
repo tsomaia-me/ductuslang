@@ -1,0 +1,12 @@
+--- diagnostics (1)
+  UnexpectedCharacter 4..8 "🎵" :: unexpected `🎵`
+--- detached [] at_layout []
+--- tree
+File 0..13
+  LetDecl 0..13
+    LetKw "let"
+    ErrorNode 4..12
+      Error "🎵"
+      Eq "="
+      Number "1"
+    Newline "\n"

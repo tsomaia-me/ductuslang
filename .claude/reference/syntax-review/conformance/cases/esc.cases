@@ -1,0 +1,4 @@
+#### u-escape [tokens]
+let u = "\u0041"
+#### u-escape-2 [tokens]
+let u = "a\u0041 \x41 \b \f \/ \'"

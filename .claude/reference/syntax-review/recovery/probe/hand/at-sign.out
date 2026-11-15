@@ -1,0 +1,15 @@
+--- diagnostics (1)
+  LetSyntax 10..11 "@" :: expected the end of the line, found `@`
+--- detached [] at_layout []
+--- tree
+File 0..14
+  LetDecl 0..14
+    LetKw "let"
+    Ident "x"
+    Eq "="
+    Literal 8..9
+      Number "1"
+    ErrorNode 10..13
+      At "@"
+      Number "2"
+    Newline "\n"

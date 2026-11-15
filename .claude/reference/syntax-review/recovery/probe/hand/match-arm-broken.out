@@ -1,0 +1,36 @@
+--- diagnostics (1)
+  MatchSyntax 32..33 "4" :: expected `:` after the arm label, found `4`
+--- detached [] at_layout []
+--- tree
+File 0..46
+  LetDecl 0..46
+    LetKw "let"
+    Ident "x"
+    Eq "="
+    MatchBlock 8..46
+      MatchKw "match"
+      NameRef 14..15
+        Ident "y"
+      Colon ":"
+      Newline "\n"
+      Indent ""
+      MatchArm 21..26
+        Literal 21..22
+          Number "1"
+        Colon ":"
+        Literal 24..25
+          Number "2"
+        Newline "\n"
+      MatchArm 30..34
+        Literal 30..31
+          Number "3"
+        Literal 32..33
+          Number "4"
+        Newline "\n"
+      ElseArm 38..46
+        ElseKw "else"
+        Colon ":"
+        Literal 44..45
+          Number "5"
+        Newline "\n"
+      Dedent ""

@@ -1,0 +1,189 @@
+#### file-empty (ok) [ ]  lex-diags=0 parse-diags=0
+#### file-only-comments (ok) [ ]  lex-diags=0 parse-diags=0
+#### top-indented-first-line (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG unexpected-indent 1:5 4..7 `let` :: this line is indented, but the line before it opens no block [help: indent a line only under a line that opens a block]
+#### top-expression (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG top-level-syntax 1:1 0..1 `1` :: expected a declaration or a placement, found `1` [help: declare the value, as in `let five = 5`]
+#### top-wire (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG top-level-wire 1:1 0..8 `Triggers` :: `Triggers` is a wire kind, and a wire is placed inside its source's body [help: place the wire inside its source's body]
+#### top-when (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG top-level-syntax 1:1 0..4 `when` :: expected a declaration or a placement, found `when` [help: declare the value, as in `let five = 5`]
+#### top-for (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG top-level-syntax 1:1 0..3 `for` :: expected a declaration or a placement, found `for` [help: declare the value, as in `let five = 5`]
+#### top-bundle (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG top-level-syntax 1:1 0..1 `[` :: expected a declaration or a placement, found `[` [help: declare the value, as in `let five = 5`]
+#### top-paren-placement (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG top-level-syntax 1:1 0..1 `(` :: expected a declaration or a placement, found `(` [help: declare the value, as in `let five = 5`]
+#### cell-host-fed (ok) [ ]  lex-diags=0 parse-diags=0
+#### cell-derived (ok) [ ]  lex-diags=0 parse-diags=1
+  DIAG cell-syntax 12:19 295..296 `.` :: expected `(` and the init, or `=` and the rule, found `.` [help: declare the cell at top level as `state`, `stream` or `channel`, a name, an init in parentheses, a rule after `=` or both, as in `state level(0)` or `state count = level + 1`]
+#### cell-neither (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG cell-syntax 1:8 7..8 `\n` :: a cell has an init in parentheses, a rule after `=`, or both [help: write `state <name>(<init>)` for a cell the host writes, or `state <name> = <rule>` for a cell the program computes]
+#### cell-neither-typed (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG cell-syntax 1:13 12..13 `\n` :: a cell has an init in parentheses, a rule after `=`, or both [help: write `state <name>(<init>)` for a cell the host writes, or `state <name> = <rule>` for a cell the program computes]
+#### cell-clock-without-rule (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG cell-syntax 1:19 18..19 `\n` :: a clock stands on a derived cell, before `=` and its rule [help: write the rule after the clock, as in `state held(0) on gate = level`, or remove the clock]
+#### cell-clock-before-type (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG cell-syntax 1:19 18..19 `:` :: expected `=` and the rule, or the end of the line, found `:` [help: declare the cell at top level as `state`, `stream` or `channel`, a name, an init in parentheses, a rule after `=` or both, as in `state level(0)` or `state count = level + 1`]
+#### cell-type-before-init (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG cell-syntax 1:14 13..14 `(` :: expected `(` and the init, or `=` and the rule, found `(` [help: declare the cell at top level as `state`, `stream` or `channel`, a name, an init in parentheses, a rule after `=` or both, as in `state level(0)` or `state count = level + 1`]
+#### cell-two-inits (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG cell-syntax 1:11 10..11 `(` :: expected `=` and the rule, or the end of the line, found `(` [help: declare the cell at top level as `state`, `stream` or `channel`, a name, an init in parentheses, a rule after `=` or both, as in `state level(0)` or `state count = level + 1`]
+#### cell-empty-init (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG expression-syntax 1:9 8..9 `)` :: expected an expression, found `)` [help: give every operator its operands and close every bracket]
+#### cell-init-two-values (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG cell-syntax 1:10 9..10 `,` :: expected `)`, found `,` [help: declare the cell at top level as `state`, `stream` or `channel`, a name, an init in parentheses, a rule after `=` or both, as in `state level(0)` or `state count = level + 1`]
+#### cell-clock-expr-unparenthesized (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG cell-syntax 1:14 13..14 `+` :: expected `(` and the init, or `=` and the rule, found `+` [help: declare the cell at top level as `state`, `stream` or `channel`, a name, an init in parentheses, a rule after `=` or both, as in `state level(0)` or `state count = level + 1`]
+#### cell-clock-empty-list (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG expression-syntax 1:13 12..13 `)` :: expected an expression, found `)` [help: give every operator its operands and close every bracket]
+#### cell-clock-trailing-comma (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG expression-syntax 1:15 14..15 `)` :: expected an expression, found `)` [help: give every operator its operands and close every bracket]
+#### cell-clock-call-atom (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG cell-syntax 1:13 12..13 `(` :: expected `(` and the init, or `=` and the rule, found `(` [help: declare the cell at top level as `state`, `stream` or `channel`, a name, an init in parentheses, a rule after `=` or both, as in `state level(0)` or `state count = level + 1`]
+#### cell-capacity-forms (ok) [ ]  lex-diags=0 parse-diags=0
+#### cell-capacity-not-digits (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG cell-syntax 1:9 8..9 `N` :: expected a capacity in digits, found `N` [help: write the capacity in digits, as in `stream[16] readings(0)`]
+#### cell-capacity-hex (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG cell-syntax 1:9 8..12 `0x10` :: expected a capacity in digits, found `0x10` [help: write the capacity in digits, as in `stream[16] readings(0)`]
+#### cell-capacity-suffix (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG cell-syntax 1:9 8..13 `16i32` :: expected a capacity in digits, found `16i32` [help: write the capacity in digits, as in `stream[16] readings(0)`]
+#### cell-capacity-expr (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG cell-syntax 1:11 10..11 `+` :: expected `]`, found `+` [help: declare the cell at top level as `state`, `stream` or `channel`, a name, an init in parentheses, a rule after `=` or both, as in `state level(0)` or `state count = level + 1`]
+#### cell-capacity-empty (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG cell-syntax 1:9 8..9 `]` :: expected a capacity in digits, found `]` [help: write the capacity in digits, as in `stream[16] readings(0)`]
+#### cell-capacity-after-name (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG cell-syntax 1:10 9..10 `[` :: expected `(` and the init, or `=` and the rule, found `[` [help: declare the cell at top level as `state`, `stream` or `channel`, a name, an init in parentheses, a rule after `=` or both, as in `state level(0)` or `state count = level + 1`]
+#### cell-rule-match (ok) [ ]  lex-diags=0 parse-diags=0
+#### cell-rule-for-block (ok) [ ]  lex-diags=0 parse-diags=0
+#### cell-rule-lambda (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG cell-syntax 1:12 11..12 `:` :: expected the end of the line, found `:` [help: declare the cell at top level as `state`, `stream` or `channel`, a name, an init in parentheses, a rule after `=` or both, as in `state level(0)` or `state count = level + 1`]
+#### cell-rule-missing (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG expression-syntax 1:10 9..10 `\n` :: expected an expression, found the end of the line [help: give every operator its operands and close every bracket]
+#### cell-init-and-rule-with-type-and-clock (ok) [ ]  lex-diags=0 parse-diags=0
+#### let-forms (ok) [ ]  lex-diags=0 parse-diags=0
+#### let-no-value (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG let-syntax 1:6 5..6 `\n` :: expected `=` and the value, found the end of the line [help: write `let`, a name, `=` and the value, as in `let one = 1`]
+#### let-no-name (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG let-syntax 1:5 4..5 `=` :: expected the let's name, found `=` [help: write `let`, a name, `=` and the value, as in `let one = 1`]
+#### let-init-parens (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG let-syntax 1:6 5..6 `(` :: expected `=` and the value, found `(` [help: write `let`, a name, `=` and the value, as in `let one = 1`]
+#### let-two-names (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG let-syntax 1:6 5..6 `,` :: expected `=` and the value, found `,` [help: write `let`, a name, `=` and the value, as in `let one = 1`]
+#### let-lambda-annotated-single-unparenthesized (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG conversion-syntax 1:15 14..15 `:` :: expected `(` after the conversion's type, found `:` [help: parenthesize the converted value, as in `i32(x)`]
+#### let-lambda-destructure (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG lambda-syntax 1:10 9..10 `(` :: expected a parameter name, found `(` [help: write the lambda as a name, `:` and its body, or its parameters in parentheses, `:` and its body, as in `(a, b): a + b`]
+#### let-lambda-param-default (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG lambda-syntax 1:12 11..12 `=` :: expected `,` or `)`, found `=` [help: write the lambda as a name, `:` and its body, or its parameters in parentheses, `:` and its body, as in `(a, b): a + b`]
+#### let-lambda-trailing-comma (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG lambda-syntax 1:12 11..12 `)` :: expected a parameter name, found `)` [help: write the lambda as a name, `:` and its body, or its parameters in parentheses, `:` and its body, as in `(a, b): a + b`]
+#### let-lambda-result-without-parens (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG let-syntax 1:11 10..12 `->` :: expected the end of the line, found `->` [help: write `let`, a name, `=` and the value, as in `let one = 1`]
+#### fn-forms (ok) [ ]  lex-diags=0 parse-diags=0
+#### fn-no-params-parens (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG fn-syntax 1:5 4..5 `:` :: expected `(` and the parameters, found `:` [help: write `fn`, a name, its parameters, `:` and the body, as in `fn double(x): x * 2`]
+#### fn-no-body (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG fn-syntax 2:1 9..9 `` :: expected the function body, indented [help: write `fn`, a name, its parameters, `:` and the body, as in `fn double(x): x * 2`]
+#### fn-eq-body (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG fn-syntax 1:9 8..9 `=` :: expected `:` and the body, found `=` [help: write `:` before a function's body, as in `fn double(x): x * 2`]
+#### fn-body-two-values (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG fn-syntax 3:5 19..20 `x` :: a function body ends with one value [help: write `fn`, a name, its parameters, `:` and the body, as in `fn double(x): x * 2`]
+#### fn-body-let-after-value (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG fn-syntax 3:5 19..22 `let` :: a function body ends with one value [help: write `fn`, a name, its parameters, `:` and the body, as in `fn double(x): x * 2`]
+#### fn-body-only-lets (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG expression-syntax 3:1 23..23 `` :: expected an expression, found the end of the block [help: give every operator its operands and close every bracket]
+#### fn-param-trailing-comma (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG fn-syntax 1:11 10..11 `)` :: expected a parameter name, found `)` [help: write `fn`, a name, its parameters, `:` and the body, as in `fn double(x): x * 2`]
+#### fn-param-marker-state (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG fn-syntax 1:6 5..10 `state` :: a function parameter takes the marker `cell` alone, not `state` [help: mark the parameter `cell`, as in `fn rise(cell x): x.past(1)`, or write no marker]
+#### fn-param-marker-const (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG fn-syntax 1:6 5..10 `const` :: a function parameter takes the marker `cell` alone, not `const` [help: mark the parameter `cell`, as in `fn rise(cell x): x.past(1)`, or write no marker]
+#### fn-param-marker-out (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG fn-syntax 1:6 5..8 `out` :: a function parameter takes the marker `cell` alone, not `out` [help: mark the parameter `cell`, as in `fn rise(cell x): x.past(1)`, or write no marker]
+#### fn-param-default-marker (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG fn-syntax 1:6 5..12 `default` :: expected a parameter name, found `default` [help: write `fn`, a name, its parameters, `:` and the body, as in `fn double(x): x * 2`]
+#### fn-param-children (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG fn-syntax 1:6 5..13 `children` :: expected a parameter name, found `children` [help: write `fn`, a name, its parameters, `:` and the body, as in `fn double(x): x * 2`]
+#### fn-param-type-after-default (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG fn-syntax 1:11 10..11 `:` :: expected `)`, found `:` [help: write `fn`, a name, its parameters, `:` and the body, as in `fn double(x): x * 2`]
+#### fn-result-without-type (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG type-syntax 1:11 10..11 `:` :: expected a type, found `:` [help: write a size in each bracket of the type, as in `i32[3]` or `i32[..10]`]
+#### fn-nested-fn (refuse) [ ]  lex-diags=0 parse-diags=2
+  DIAG expression-syntax 2:5 13..15 `fn` :: expected an expression, found `fn` [help: give every operator its operands and close every bracket]
+  DIAG fn-syntax 3:5 28..29 `g` :: a function body ends with one value [help: write `fn`, a name, its parameters, `:` and the body, as in `fn double(x): x * 2`]
+#### fn-body-state (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG cell-syntax 2:5 13..18 `state` :: a `state` is declared at top level [help: declare the cell at top level as `state`, `stream` or `channel`, a name, an init in parentheses, a rule after `=` or both, as in `state level(0)` or `state count = level + 1`]
+#### fn-generic-empty (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG generic-syntax 1:6 5..6 `]` :: expected a bracket parameter's name, found `]` [help: write the bracket parameters after the name, each a name or `const` and a name, as in `fn first[T, const N](xs: T[N])`]
+#### fn-generic-trailing-comma (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG generic-syntax 1:8 7..8 `]` :: expected a bracket parameter's name, found `]` [help: write the bracket parameters after the name, each a name or `const` and a name, as in `fn first[T, const N](xs: T[N])`]
+#### fn-generic-const-after-name (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG generic-syntax 1:8 7..12 `const` :: expected `,` or `]`, found `const` [help: write the bracket parameters after the name, each a name or `const` and a name, as in `fn first[T, const N](xs: T[N])`]
+#### fn-inline-with-local-let (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG expression-syntax 1:10 9..12 `let` :: expected an expression, found `let` [help: give every operator its operands and close every bracket]
+#### type-forms (ok) [ ]  lex-diags=0 parse-diags=0
+#### type-inline-fields (refuse) [ ]  lex-diags=0 parse-diags=2
+  DIAG record-syntax 1:12 11..14 `low` :: a record type's fields stand on the following lines [help: write each field on its own line under the `type` line, as in `low: f32`]
+  DIAG record-syntax 2:1 20..20 `` :: expected the record's fields, indented [help: write `type`, a name and `:` with a field per line, or `=` and a type, as in `type Id = i64`; a record literal names its type and its fields in braces, as in `Chord {root: 60}`]
+#### type-empty-block (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG record-syntax 2:1 11..11 `` :: expected the record's fields, indented [help: write `type`, a name and `:` with a field per line, or `=` and a type, as in `type Id = i64`; a record literal names its type and its fields in braces, as in `Chord {root: 60}`]
+#### type-field-no-type (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG record-syntax 2:8 18..19 `\n` :: expected `:` and the field's type, found the end of the line [help: write `type`, a name and `:` with a field per line, or `=` and a type, as in `type Id = i64`; a record literal names its type and its fields in braces, as in `Chord {root: 60}`]
+#### type-field-default (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG record-syntax 2:14 24..25 `=` :: expected the end of the line, found `=` [help: write `type`, a name and `:` with a field per line, or `=` and a type, as in `type Id = i64`; a record literal names its type and its fields in braces, as in `Chord {root: 60}`]
+#### type-two-fields-one-line (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG record-syntax 2:13 23..24 `,` :: expected the end of the line, found `,` [help: write `type`, a name and `:` with a field per line, or `=` and a type, as in `type Id = i64`; a record literal names its type and its fields in braces, as in `Chord {root: 60}`]
+#### type-alias-and-fields (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG record-syntax 1:16 15..16 `:` :: expected the end of the line, found `:` [help: write `type`, a name and `:` with a field per line, or `=` and a type, as in `type Id = i64`; a record literal names its type and its fields in braces, as in `Chord {root: 60}`]
+#### type-nested-block-in-fields (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG unexpected-indent 3:9 32..36 `high` :: this line is indented, but the line before it opens no block [help: indent a line only under a line that opens a block]
+#### type-no-name (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG record-syntax 1:6 5..6 `=` :: expected the type's name, found `=` [help: write `type`, a name and `:` with a field per line, or `=` and a type, as in `type Id = i64`; a record literal names its type and its fields in braces, as in `Chord {root: 60}`]
+#### pattern-forms (ok) [ ]  lex-diags=0 parse-diags=0
+#### pattern-inline-body (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG pattern-syntax 1:14 13..17 `Lamp` :: a pattern's body is an indented block on the following lines [help: write `pattern`, a name, its parameters, `:` and an indented body, as in `pattern Hit(x):`]
+#### pattern-empty-body (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG placement-syntax 2:1 13..13 `` :: expected an indented block, found the end of the file [help: indent the body's items on the lines after the `:`]
+#### pattern-only-decls (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG placement-syntax 4:1 44..44 `` :: a block holds at least one body item [help: put a placement, a wire, a `for` or a `when` in the block]
+#### pattern-decl-after-item (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG cell-syntax 3:5 26..31 `state` :: a `state` is declared at top level [help: declare the cell at top level as `state`, `stream` or `channel`, a name, an init in parentheses, a rule after `=` or both, as in `state level(0)` or `state count = level + 1`]
+#### pattern-let-after-item (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG pattern-syntax 3:5 26..29 `let` :: a `let` line stands only at the start of a pattern body [help: write `pattern`, a name, its parameters, `:` and an indented body, as in `pattern Hit(x):`]
+#### pattern-no-parens (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG pattern-syntax 1:10 9..10 `:` :: expected `(` and the parameters, found `:` [help: write `pattern`, a name, its parameters, `:` and an indented body, as in `pattern Hit(x):`]
+#### pattern-result-type-syntax (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG pattern-syntax 1:16 15..18 `i32` :: expected a kind, a pattern, `node`, `wire` or a bundle, found `i32` [help: write `pattern`, a name, its parameters, `:` and an indented body, as in `pattern Hit(x):`]
+#### pattern-placement-type-empty-list (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG pattern-syntax 1:17 16..17 `)` :: expected a kind, a pattern, `node`, `wire` or a bundle, found `)` [help: write `pattern`, a name, its parameters, `:` and an indented body, as in `pattern Hit(x):`]
+#### pattern-placement-type-trailing-comma (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG pattern-syntax 1:22 21..22 `)` :: expected a kind, a pattern, `node`, `wire` or a bundle, found `)` [help: write `pattern`, a name, its parameters, `:` and an indented body, as in `pattern Hit(x):`]
+#### pattern-count-forms-bad-1 (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG pattern-syntax 1:21 20..21 `}` :: expected a count in digits, found `}` [help: write `pattern`, a name, its parameters, `:` and an indented body, as in `pattern Hit(x):`]
+#### pattern-count-forms-bad-2 (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG pattern-syntax 1:24 23..24 `}` :: expected a count in digits, found `}` [help: write `pattern`, a name, its parameters, `:` and an indented body, as in `pattern Hit(x):`]
+#### pattern-count-forms-bad-3 (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG pattern-syntax 1:21 20..21 `+` :: expected a count in digits, found `+` [help: write `pattern`, a name, its parameters, `:` and an indented body, as in `pattern Hit(x):`]
+#### pattern-count-forms-bad-4 (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG pattern-syntax 1:23 22..24 `..` :: expected `}`, found `..` [help: write `pattern`, a name, its parameters, `:` and an indented body, as in `pattern Hit(x):`]
+#### pattern-count-forms-bad-5 (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG pattern-syntax 1:21 20..21 `N` :: expected a count in digits, found `N` [help: write `pattern`, a name, its parameters, `:` and an indented body, as in `pattern Hit(x):`]
+#### pattern-count-two (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG pattern-syntax 1:21 20..21 `*` :: expected `:` and the body, found `*` [help: write `pattern`, a name, its parameters, `:` and an indented body, as in `pattern Hit(x):`]
+#### pattern-marker-order-default-after-marker (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG pattern-syntax 1:17 16..23 `default` :: expected a parameter name, found `default` [help: write `pattern`, a name, its parameters, `:` and an indented body, as in `pattern Hit(x):`]
+#### pattern-marker-two-kinds (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG pattern-syntax 1:17 16..22 `stream` :: expected a parameter name, found `stream` [help: write `pattern`, a name, its parameters, `:` and an indented body, as in `pattern Hit(x):`]
+#### pattern-marker-out-const (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG pattern-syntax 1:15 14..19 `const` :: expected a parameter name, found `const` [help: write `pattern`, a name, its parameters, `:` and an indented body, as in `pattern Hit(x):`]
+#### pattern-children-with-default-word (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG pattern-syntax 1:19 18..26 `children` :: expected a parameter name, found `children` [help: write `pattern`, a name, its parameters, `:` and an indented body, as in `pattern Hit(x):`]
+#### pattern-children-no-type (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG pattern-syntax 1:22 21..22 `)` :: expected `:` and the placement type of the `children` parameter, found `)` [help: write `pattern`, a name, its parameters, `:` and an indented body, as in `pattern Hit(x):`]
+#### pattern-children-default-value (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG pattern-syntax 1:30 29..30 `=` :: expected `)`, found `=` [help: write `pattern`, a name, its parameters, `:` and an indented body, as in `pattern Hit(x):`]
+#### pattern-in-body (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG placement-syntax 2:5 11..18 `pattern` :: expected a placement, found `pattern` [help: write the kind, then `as` and a name, a `/` value, a `when` gate and `|` attributes, in that order, as in `Lamp as key /0.7 | hue=0.3`]
+#### pattern-bundle-of-bundle-entry (ok) [ ]  lex-diags=0 parse-diags=0
+CASES 99

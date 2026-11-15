@@ -1,0 +1,592 @@
+total 1798
+## '=' x569
+    '    Note/74 | velocity=scaled(level, 0.85) brightness=brightness'
+ -> '    Note/74 | velocity=scaled(level, 0.85) brightness brightness'
+## 'x' x236
+    'fn clamp01(x):'
+ -> 'fn clamp01():'
+## '-' x66
+    '        Note/(root + 8) | velocity=soften(bump(0.6, lift), weight) brightness=thick - shade'
+ -> '        Note/(root + 8) | velocity=soften(bump(0.6, lift), weight) brightness=thick  shade'
+## '/' x65
+    '        Note/root Note/(root + 3) Note/(root + 7) Note/(root + 10)'
+ -> '        Note root Note/(root + 3) Note/(root + 7) Note/(root + 10)'
+## '+' x63
+    '    v * amount + (pace - 1) * 0.12'
+ -> '    v * amount  (pace - 1) * 0.12'
+## 'c' x47
+    'let mixed = c[i % 3] * 0.5 + c[(i + 1) % 3] * 0.25'
+ -> 'let mixed = [i % 3] * 0.5 + c[(i + 1) % 3] * 0.25'
+## '*' x34
+    '    x * (1 + mutation) + energy'
+ -> '    x  (1 + mutation) + energy'
+## 'fib' x26
+    '    if n < 2 then n else fib(n - 1) + fib(n - 2)'
+ -> '    if n < 2 then n else (n - 1) + fib(n - 2)'
+## 'default' x25
+    'pattern Loop(default root, again, weight, octaves, shade):'
+ -> 'pattern Loop( root, again, weight, octaves, shade):'
+## 'Piano' x24
+    '    Piano'
+ -> '    '
+## '1' x22
+    '    a * (1 - t) + b * t'
+ -> '    a * ( - t) + b * t'
+## 'accent' x20
+    '    Note/70 | velocity=0.55 brightness=edge accent'
+ -> '    Note/70 | velocity=0.55 brightness=edge '
+## 'n' x18
+    'fn fib(n):'
+ -> 'fn fib():'
+## 'i' x13
+    'fn r(i): if i < 1 then held[0] else r(i - 1) + f19(i)'
+ -> 'fn r(): if i < 1 then held[0] else r(i - 1) + f19(i)'
+## '3' x11
+    'let fib3 = fib(3)'
+ -> 'let fib3 = fib()'
+## 'lift' x11
+    '        Note/(root + 16) | velocity=fade(0.2, energy + tone) brightness=lift - drift'
+ -> '        Note/(root + 16) | velocity=fade(0.2, energy + tone) brightness= - drift'
+## '2' x10
+    'let pair = [1bars, 2]'
+ -> 'let pair = [1bars, ]'
+## 'false' x10
+    'state steps([true, false, false, true, false, false, true, false])'
+ -> 'state steps([true, false, false, true, false, false, true, ])'
+## 'mutated' x9
+    'let mutatedLengths = [fib(mutated[0]), fib(mutated[1]), fib(mutated[2]), fib(mutated[3])]'
+ -> 'let mutatedLengths = [fib([0]), fib(mutated[1]), fib(mutated[2]), fib(mutated[3])]'
+## 'weight' x9
+    '        Note/(root + 17) | velocity=soften(0.25, weight - shade) brightness=sway'
+ -> '        Note/(root + 17) | velocity=soften(0.25,  - shade) brightness=sway'
+## 'f6' x9
+    'fn f7(x): f6(x) + f6(x)'
+ -> 'fn f7(x): (x) + f6(x)'
+## 'f0' x8
+    'fn f1(x): f0(x) + f0(x)'
+ -> 'fn f1(x): (x) + f0(x)'
+## 'f1' x8
+    'fn f2(x): f1(x) + f1(x)'
+ -> 'fn f2(x): (x) + f1(x)'
+## 'f2' x8
+    'fn f3(x): f2(x) + f2(x)'
+ -> 'fn f3(x): (x) + f2(x)'
+## 'f3' x8
+    'fn f4(x): f3(x) + f3(x)'
+ -> 'fn f4(x): (x) + f3(x)'
+## 'f4' x8
+    'fn f5(x): f4(x) + f4(x)'
+ -> 'fn f5(x): (x) + f4(x)'
+## 'f5' x8
+    'fn f6(x): f5(x) + f5(x)'
+ -> 'fn f6(x): (x) + f5(x)'
+## 'f7' x8
+    'fn f8(x): f7(x) + f7(x)'
+ -> 'fn f8(x): (x) + f7(x)'
+## 'f8' x8
+    'fn f9(x): f8(x) + f8(x)'
+ -> 'fn f9(x): (x) + f8(x)'
+## 'f9' x8
+    'fn f10(x): f9(x) + f9(x)'
+ -> 'fn f10(x): (x) + f9(x)'
+## 'f10' x8
+    'fn f11(x): f10(x) + f10(x)'
+ -> 'fn f11(x): (x) + f10(x)'
+## 'f11' x8
+    'fn f12(x): f11(x) + f11(x)'
+ -> 'fn f12(x): (x) + f11(x)'
+## 'f12' x8
+    'fn f13(x): f12(x) + f12(x)'
+ -> 'fn f13(x): (x) + f12(x)'
+## 'f13' x8
+    'fn f14(x): f13(x) + f13(x)'
+ -> 'fn f14(x): (x) + f13(x)'
+## 'f14' x8
+    'fn f15(x): f14(x) + f14(x)'
+ -> 'fn f15(x): (x) + f14(x)'
+## 'f15' x8
+    'fn f16(x): f15(x) + f15(x)'
+ -> 'fn f16(x): (x) + f15(x)'
+## '1.0' x8
+    '    x * (1.0 - amount) + lift * amount'
+ -> '    x * ( - amount) + lift * amount'
+## '..' x8
+    'state held([]): i32[..10]'
+ -> 'state held([]): i32[10]'
+## 'offsets' x8
+    'let mix = scaled[idx] + offsets[idx]'
+ -> 'let mix = scaled[idx] + [idx]'
+## 'drive' x7
+    'let grit = clamp01(drive) * tempo_bias'
+ -> 'let grit = clamp01() * tempo_bias'
+## 'pulse' x7
+    'let warm = pulse - shift * 0.4'
+ -> 'let warm =  - shift * 0.4'
+## 'wobble' x7
+    'let bright = wobble - rate * 0.15'
+ -> 'let bright =  - rate * 0.15'
+## 'f16' x7
+    'fn f17(x): f16(x) + f16(x)'
+ -> 'fn f17(x): (x) + f16(x)'
+## 'f32' x7
+    '    Note/(i32(gone) + 60) | velocity=f32(gone) + 0.5'
+ -> '    Note/(i32(gone) + 60) | velocity=(gone) + 0.5'
+## 'b' x7
+    '    Note/(b[0])'
+ -> '    Note/([0])'
+## '^' x7
+    'state b = a.past(1, [])[^4..]'
+ -> 'state b = a.past(1, [])[4..]'
+## '4' x6
+    'let fib4 = fib(4)'
+ -> 'let fib4 = fib()'
+## 'pace' x6
+    '    v * amount + (pace - 1) * 0.12'
+ -> '    v * amount + ( - 1) * 0.12'
+## '.' x6
+    '    Plays as outro | transpose=intro.lift.transpose: intro'
+ -> '    Plays as outro | transpose=intro.lift transpose: intro'
+## ',' x6
+    'let sat = [300, -1, 70000, 255, 256].bytes'
+ -> 'let sat = [300 -1, 70000, 255, 256].bytes'
+## 'f17' x6
+    'fn f18(x): f17(x) + f17(x)'
+ -> 'fn f18(x): (x) + f17(x)'
+## 'f18' x6
+    'fn f19(x): f18(x) + f18(x)'
+ -> 'fn f19(x): (x) + f18(x)'
+## 'r' x6
+    'fn r(i): if i < 1 then held[0] else r(i - 1) + f19(i)'
+ -> 'fn r(i): if i < 1 then held[0] else (i - 1) + f19(i)'
+## 'v' x6
+    '    v - shift * 0.25'
+ -> '    - shift * 0.25'
+## 'tone' x6
+    '        Note/root | velocity=bend(0.52, lead) brightness=ramp(tone)'
+ -> '        Note/root | velocity=bend(0.52, lead) brightness=ramp()'
+## 'clamp01' x5
+    'let brightness = clamp01(scaled(cutoff, level) + resonance * 0.75)'
+ -> 'let brightness = (scaled(cutoff, level) + resonance * 0.75)'
+## '**' x5
+    'let level = 10 ** ((-4 + drive * 10) / 20)'
+ -> 'let level = 10  ((-4 + drive * 10) / 20)'
+## 'note' x5
+    'let m = "GET" + label(note)'
+ -> 'let m = "GET" + label()'
+## 'true' x5
+    'state steps([true, true, false, true, false, false, true, true])'
+ -> 'state steps([true, true, false, true, false, false, true, ])'
+## 'steps' x5
+    '    root + steps[index] + octave * 12'
+ -> '    root + [index] + octave * 12'
+## '5' x4
+    'let fib5 = fib(5)'
+ -> 'let fib5 = fib()'
+## 'mutate' x4
+    'let mutated = [mutate(fib3), mutate(fib4), mutate(fib5), mutate(fib6)]'
+ -> 'let mutated = [(fib3), mutate(fib4), mutate(fib5), mutate(fib6)]'
+## 'tension' x4
+    'let drift = tension - energy'
+ -> 'let drift =  - energy'
+## 'k' x4
+    'fn pw(k): if k < 1 then 1 else 3 * pw(k - 1)'
+ -> 'fn pw(): if k < 1 then 1 else 3 * pw(k - 1)'
+## 'spread' x4
+    'let lift = spread - density * 2'
+ -> 'let lift =  - density * 2'
+## 'f19' x4
+    'fn r(i): if i < 1 then held[0] else r(i - 1) + f19(i)'
+ -> 'fn r(i): if i < 1 then held[0] else r(i - 1) + (i)'
+## '64' x4
+    'let xs = [60, 62, 64]'
+ -> 'let xs = [60, 62, ]'
+## 'amount' x4
+    '    v * amount - (pulse - 1) * 0.08'
+ -> '    v *  - (pulse - 1) * 0.08'
+## 'a' x4
+    '    Plays: [b, a][section % 2]'
+ -> '    Plays: [b, ][section % 2]'
+## '0' x4
+    'state s = if gate then held else s.past(1, [0])'
+ -> 'state s = if gate then held else s.past(1, [])'
+## '0.45' x4
+    'let edge = tension * 0.45 - shimmer * 0.2'
+ -> 'let edge = tension *  - shimmer * 0.2'
+## 'tilt' x4
+    'let glow = tilt(mid)'
+ -> 'let glow = (mid)'
+## 'swing' x4
+    '    Note/74 | velocity=0.9 brightness=swing accent'
+ -> '    Note/74 | velocity=0.9 brightness= accent'
+## 'velocity_for' x4
+    '    Note/60 | velocity=velocity_for(0) length=lengths[0] * beat'
+ -> '    Note/60 | velocity=(0) length=lengths[0] * beat'
+## 'lengths' x4
+    '    Note/60 | velocity=velocity_for(0) length=lengths[0] * beat'
+ -> '    Note/60 | velocity=velocity_for(0) length=[0] * beat'
+## '6' x3
+    'let fib6 = fib(6)'
+ -> 'let fib6 = fib()'
+## 'sway' x3
+    'let lift = groove * 0.6 + sway - drift * 0.35'
+ -> 'let lift = groove * 0.6 +  - drift * 0.35'
+## 'pair' x3
+    '    Note | length=(pair[1])'
+ -> '    Note | length=([1])'
+## 'db' x3
+    'let level = db(-6 + drive * 12)'
+ -> 'let level = (-6 + drive * 12)'
+## 'peak' x3
+    '    Note/81 | velocity=0.85 brightness=peak accent'
+ -> '    Note/81 | velocity=0.85 brightness= accent'
+## 'u8' x3
+    'let gone = u8(nan)'
+ -> 'let gone = (nan)'
+## 'not' x3
+    '    Note when not gate | velocity=a * 0.5 pitch=64'
+ -> '    Note when  gate | velocity=a * 0.5 pitch=64'
+## 'shimmer' x3
+    '    Note/69 | velocity=0.35 brightness=shimmer accent'
+ -> '    Note/69 | velocity=0.35 brightness= accent'
+## 'depth' x3
+    '    Note/(depth - 1000)'
+ -> '    Note/( - 1000)'
+## 'bend' x3
+    'fn bend(n): if n < 1 then 1.0 else bend(n - 1) * 0.8 + n * 0.1'
+ -> 'fn bend(n): if n < 1 then 1.0 else (n - 1) * 0.8 + n * 0.1'
+## 'packed' x3
+    '    Note/(packed[0]) | velocity=f32(packed[1]) / 255'
+ -> '    Note/([0]) | velocity=f32(packed[1]) / 255'
+## 'level' x2
+    '    Note/70 | velocity=clamp01(level) brightness=brightness'
+ -> '    Note/70 | velocity=clamp01() brightness=brightness'
+## 'fib6' x2
+    'let lengths = [fib3, fib4, fib5, fib6]'
+ -> 'let lengths = [fib3, fib4, fib5, ]'
+## '11' x2
+    '    root + [0, 2, 4, 5, 7, 9, 11][(degree + mode) % 7] + 12 * octave'
+ -> '    root + [0, 2, 4, 5, 7, 9, ][(degree + mode) % 7] + 12 * octave'
+## 'pw' x2
+    'fn pw(k): if k < 1 then 1 else 3 * pw(k - 1)'
+ -> 'fn pw(k): if k < 1 then 1 else 3 * (k - 1)'
+## '1.5' x2
+    '    Osc | freq=[[220, 440], [880, 1760]][1][0 + 1] rate=[0.5, 1.5][k]'
+ -> '    Osc | freq=[[220, 440], [880, 1760]][1][0 + 1] rate=[0.5, ][k]'
+## 'energy' x2
+    '    v * p + (energy - 0.5) * 0.2'
+ -> '    v * p + ( - 0.5) * 0.2'
+## '1.8' x2
+    'let edge = clamp(base_warmth * 1.8 - 0.1, 0, 1)'
+ -> 'let edge = clamp(base_warmth *  - 0.1, 0, 1)'
+## 'drift' x2
+    'let lean = clamp(drift - swell * 0.4, 0, 1)'
+ -> 'let lean = clamp( - swell * 0.4, 0, 1)'
+## 'edge' x2
+    '    Note/70 | velocity=0.55 brightness=edge accent'
+ -> '    Note/70 | velocity=0.55 brightness= accent'
+## '256' x2
+    'let sat = [300, -1, 70000, 255, 256].bytes'
+ -> 'let sat = [300, -1, 70000, 255, ].bytes'
+## 'i32' x2
+    '    Note/(i32(gone) + 60) | velocity=f32(gone) + 0.5'
+ -> '    Note/((gone) + 60) | velocity=f32(gone) + 0.5'
+## 'crest' x2
+    'let edge = push * crest - raise * 0.2'
+ -> 'let edge = push *  - raise * 0.2'
+## 'bridge' x2
+    '    Plays | gain=to.hook.velocity: [chorus, bridge][section]'
+ -> '    Plays | gain=to.hook.velocity: [chorus, ][section]'
+## 'amt' x2
+    '    v * amt - (pace - 1) * 0.08'
+ -> '    v *  - (pace - 1) * 0.08'
+## 'f' x2
+    'fn g(i): f(i + 1) + 1'
+ -> 'fn g(i): (i + 1) + 1'
+## 'runtime' x2
+    '    Note/(runtime[0]) | brightness=f32(runtime[1]) / 255'
+ -> '    Note/([0]) | brightness=f32(runtime[1]) / 255'
+## 'héllo"' x2
+    'let word = "héllo".bytes'
+ -> 'let word = "".bytes'
+## 'iano' x2
+    '    Piano'
+ -> '    Starts: c'
+## 'éllo".' x2
+    '    Note/("héllo".bytes.size + 60) | length=word.size / 4'
+ -> '    Note/("".bytes.size + 60) | length=word.size / 4'
+## 'shift' x2
+    'let idx = shift - 1'
+ -> 'let idx =  - 1'
+## 'scaled' x2
+    'let mix = scaled[idx] + offsets[idx]'
+ -> 'let mix = [idx] + offsets[idx]'
+## 'mix' x2
+    'let tension = drive * mix - blend * 0.1'
+ -> 'let tension = drive *  - blend * 0.1'
+## '0.6' x2
+    'let spread = width * 0.6 - shimmer * 0.1'
+ -> 'let spread = width *  - shimmer * 0.1'
+## '67' x2
+    'let a = if flag then [60, 64] else [60, 64, 67]'
+ -> 'let a = if flag then [60, 64] else [60, 64, ]'
+## 'chosen' x2
+    '    Note/(chosen[0])'
+ -> '    Note/([0])'
+## 'fib3' x1
+    'let mutated = [mutate(fib3), mutate(fib4), mutate(fib5), mutate(fib6)]'
+ -> 'let mutated = [mutate(), mutate(fib4), mutate(fib5), mutate(fib6)]'
+## 'fib4' x1
+    'let mutated = [mutate(fib3), mutate(fib4), mutate(fib5), mutate(fib6)]'
+ -> 'let mutated = [mutate(fib3), mutate(), mutate(fib5), mutate(fib6)]'
+## 'fib5' x1
+    'let mutated = [mutate(fib3), mutate(fib4), mutate(fib5), mutate(fib6)]'
+ -> 'let mutated = [mutate(fib3), mutate(fib4), mutate(), mutate(fib6)]'
+## 'thick' x1
+    '        Note/(root + 8) | velocity=soften(bump(0.6, lift), weight) brightness=thick - shade'
+ -> '        Note/(root + 8) | velocity=soften(bump(0.6, lift), weight) brightness= - shade'
+## '30' x1
+    'let big = pw(30)'
+ -> 'let big = pw()'
+## '440' x1
+    '    Osc | freq=[[220, 440], [880, 1760]][1][0 + 1] rate=[0.5, 1.5][k]'
+ -> '    Osc | freq=[[220, ], [880, 1760]][1][0 + 1] rate=[0.5, 1.5][k]'
+## '1760' x1
+    '    Osc | freq=[[220, 440], [880, 1760]][1][0 + 1] rate=[0.5, 1.5][k]'
+ -> '    Osc | freq=[[220, 440], [880, ]][1][0 + 1] rate=[0.5, 1.5][k]'
+## '4000' x1
+    '    Filter | cutoff=[1000, 2000, 4000][2 div 2]'
+ -> '    Filter | cutoff=[1000, 2000, ][2 div 2]'
+## 'warm' x1
+    '        Note/(root + 11) | velocity=fade(0.7, depth + shift) brightness=warm - tone * 0.5'
+ -> '        Note/(root + 11) | velocity=fade(0.7, depth + shift) brightness= - tone * 0.5'
+## '62' x1
+    'state base([60, 62])'
+ -> 'state base([60, ])'
+## 'doubled' x1
+    '    Note/(doubled[1])'
+ -> '    Note/([1])'
+## 'lean' x1
+    '    Note/76 | velocity=0.7 brightness=lean accent'
+ -> '    Note/76 | velocity=0.7 brightness= accent'
+## 'swell' x1
+    '    Note/72 | velocity=swell(tension) brightness=tension'
+ -> '    Note/72 | velocity=(tension) brightness=tension'
+## 'sat' x1
+    '        Note/(sat[i])'
+ -> '        Note/([i])'
+## 'round' x1
+    'let base = 48 + round(drive * 12)'
+ -> 'let base = 48 + (drive * 12)'
+## 'held' x1
+    'fn r(i): if i < 1 then held[0] else r(i - 1) + f19(i)'
+ -> 'fn r(i): if i < 1 then [0] else r(i - 1) + f19(i)'
+## '10' x1
+    'let tail = xs[1..10]'
+ -> 'let tail = xs[1..]'
+## 'xs' x1
+    '    Note/(xs[0])'
+ -> '    Note/([0])'
+## 'tail' x1
+    '    Note/(tail[2])'
+ -> '    Note/([2])'
+## 'base' x1
+    'let offset = (base - shift * 0.2)'
+ -> 'let offset = ( - shift * 0.2)'
+## 'color' x1
+    'let fade = color - tempo * 0.15'
+ -> 'let fade =  - tempo * 0.15'
+## '0.8' x1
+    'let bright = warmth * 0.8 - 0.1'
+ -> 'let bright = warmth *  - 0.1'
+## 'rate' x1
+    '    v * depth + (rate - 1) * 0.15'
+ -> '    v * depth + ( - 1) * 0.15'
+## 'trim' x1
+    'let loudness = db(trim)'
+ -> 'let loudness = db()'
+## 'scale' x1
+    '        Note/(scale(degree + i * 2)) | velocity=db(-3 * i)'
+ -> '        Note/((degree + i * 2)) | velocity=db(-3 * i)'
+## 'low' x1
+    '    Note/(low - 1)'
+ -> '    Note/( - 1)'
+## '0.2' x1
+    'let mixed = c[idx0] * 0.4 + c[idx1] * 0.2 - c[idx2] * 0.1'
+ -> 'let mixed = c[idx0] * 0.4 + c[idx1] *  - c[idx2] * 0.1'
+## 'GET' x1
+    'let m = "GET" + label(note)'
+ -> 'let m = "" + label(note)'
+## 'label' x1
+    'let m = "GET" + label(note)'
+ -> 'let m = "GET" + (note)'
+## 'wide' x1
+    '    Note/(wide - 2147483647 + 60)'
+ -> '    Note/( - 2147483647 + 60)'
+## 's' x1
+    '    Note/(s[step % n]) | velocity=f32(n) / 10'
+ -> '    Note/([step % n]) | velocity=f32(n) / 10'
+## 'tempo' x1
+    'let spread = (tempo - 90) / 60'
+ -> 'let spread = ( - 90) / 60'
+## '16' x1
+    '        Note/(root + 16 - octaves) | velocity=contour(0.4, weight, spread) brightness=shimmer + edge'
+ -> '        Note/(root +  - octaves) | velocity=contour(0.4, weight, spread) brightness=shimmer + edge'
+## 'mid' x1
+    'let glow = tilt(mid)'
+ -> 'let glow = tilt()'
+## 'g4' x1
+    '    Note/71 | velocity=clamp(glow + air, 0.2, 1.0) brightness=tilt(g4)'
+ -> '    Note/71 | velocity=clamp(glow + air, 0.2, 1.0) brightness=tilt()'
+## '0.55' x1
+    '    v + amount * 0.55 - 0.03'
+ -> '    v + amount *  - 0.03'
+## 'ramp' x1
+    '        Note/root | velocity=bend(0.52, lead) brightness=ramp(tone)'
+ -> '        Note/root | velocity=bend(0.52, lead) brightness=(tone)'
+## 'bridge_vel' x1
+    '    Note/62 | velocity=lift(bridge_vel) brightness=pad_bright'
+ -> '    Note/62 | velocity=lift() brightness=pad_bright'
+## 'groove' x1
+    '    Note/69 | velocity=clamp01(groove)'
+ -> '    Note/69 | velocity=clamp01()'
+## '2.0' x1
+    'let swing = wobble * 2.0 - 0.1'
+ -> 'let swing = wobble *  - 0.1'
+## 'gain_base' x1
+    '    Note/65 | velocity=gain_base - offset brightness=mutation'
+ -> '    Note/65 | velocity= - offset brightness=mutation'
+## 'recent' x1
+    '    Note/(recent[0]) | brightness=recent.size / 16'
+ -> '    Note/([0]) | brightness=recent.size / 16'
+## '0.9' x1
+    'let kick_vel = 0.9 - swing * 0.5'
+ -> 'let kick_vel =  - swing * 0.5'
+## 'gain_hi' x1
+    '    Note/65 | velocity=gain_hi - shimmer brightness=mutation'
+ -> '    Note/65 | velocity= - shimmer brightness=mutation'
+## '|' x1
+    '    Note as hook /72 | accent'
+ -> '    Note as hook /72  accent'
+## 'as' x1
+    '    Note as hook /60'
+ -> '    Note  hook /60'
+## 'sin' x1
+    '    gene + rate * sin(gene * 6.2831)'
+ -> '    gene + rate * (gene * 6.2831)'
+## 'g' x1
+    'fn f(i): g(i)'
+ -> 'fn f(i): (i)'
+## '65' x1
+    'let notes = [60, 62, 65]'
+ -> 'let notes = [60, 62, ]'
+## 'notes' x1
+    '        Note/(notes[i - 1])'
+ -> '        Note/([i - 1])'
+## 'bright' x1
+    '        Note/root | velocity=swell(0.7, lead, weight) brightness=bright(tone)'
+ -> '        Note/root | velocity=swell(0.7, lead, weight) brightness=(tone)'
+## 'groups' x1
+    '        groups'
+ -> '        '
+## ':' x1
+    '    Burst: Lamp/0.2 Lamp/0.5 Lamp/0.8'
+ -> '    Burst Lamp/0.2 Lamp/0.5 Lamp/0.8'
+## '?' x1
+    'state port(none): i32?'
+ -> 'state port(none): i32'
+## 'Square' x1
+    'state shape(Square {side: 1}): Shape'
+ -> 'state shape( {side: 1}): Shape'
+## 'long' x1
+    'fn span(long): if long then 2bars else 500ms'
+ -> 'fn span(): if long then 2bars else 500ms'
+## 'span' x1
+    '    Note/60 | length=span(true)'
+ -> '    Note/60 | length=(true)'
+## 'morph' x1
+    'let tension = mixed * morph - swing'
+ -> 'let tension = mixed *  - swing'
+## 'f20' x1
+    'fn r(i): if i < 1 then 0 else r(i - 1) + f20(i)'
+ -> 'fn r(i): if i < 1 then 0 else r(i - 1) + (i)'
+## 'shifted' x1
+    'let tail = shifted - 0.15'
+ -> 'let tail =  - 0.15'
+## 'ord[' x1
+    '    Note/(word[1]) | velocity=0.5'
+ -> '    Note/([1]) | velocity=0.5'
+## 'd' x1
+    'let e = [a * 2, b * 2, d]'
+ -> 'let e = [a * 2, b * 2, ]'
+## 'e' x1
+    '    Note/69 | velocity=d brightness=e[i]'
+ -> '    Note/69 | velocity=d brightness=[i]'
+## '0.4' x1
+    'let air = shimmer * 0.4 - tension * 0.1'
+ -> 'let air = shimmer *  - tension * 0.1'
+## 'air' x1
+    '        Note/(root + 6) | velocity=fade(swell(0.45, lift, pulse), weight) brightness=air - bite'
+ -> '        Note/(root + 6) | velocity=fade(swell(0.45, lift, pulse), weight) brightness= - bite'
+## '1320' x1
+    '    Osc | freq=[440, 880, 1320][steps div 2]'
+ -> '    Osc | freq=[440, 880, ][steps div 2]'
+## '220' x1
+    '    Osc | freq=[[110, 220], [330, 660]][1][steps % 2] * 2'
+ -> '    Osc | freq=[[110, ], [330, 660]][1][steps % 2] * 2'
+## '660' x1
+    '    Osc | freq=[[110, 220], [330, 660]][1][steps % 2] * 2'
+ -> '    Osc | freq=[[110, 220], [330, ]][1][steps % 2] * 2'
+## 'cutoff' x1
+    '    Osc | freq=(base * 3.0) detune=(cutoff - 0.5)'
+ -> '    Osc | freq=(base * 3.0) detune=( - 0.5)'
+## 'ladder' x1
+    '    Note/(ladder[0])'
+ -> '    Note/([0])'
+## 'bite' x1
+    '    Note/70 | velocity=0.55 brightness=bite accent'
+ -> '    Note/70 | velocity=0.55 brightness= accent'
+## '48' x1
+    '    0: [48]'
+ -> '    0: []'
+## '52' x1
+    '    1: [48, 52]'
+ -> '    1: [48, ]'
+## '59' x1
+    '    else: [48, 52, 55, 59]'
+ -> '    else: [48, 52, 55, ]'
+## 'big' x1
+    '    Note | velocity=big - 1 gain_unused_placeholder_removed'
+ -> '    Note | velocity= - 1 gain_unused_placeholder_removed'
+## 'gain_unused_placeholder_removed' x1
+    '    Note | velocity=big - 1 gain_unused_placeholder_removed'
+ -> '    Note | velocity=big - 1 '
+## '300000000000' x1
+    '    Note/([x, 1.5, 300000000000][2])'
+ -> '    Note/([x, 1.5, ][2])'
+## '<' x1
+    'let tone = if transpose > 2 then 0.9 else if transpose < -2 then 0.2 else 0.5'
+ -> 'let tone = if transpose > 2 then 0.9 else if transpose  -2 then 0.2 else 0.5'
+## 'high' x1
+    '    Note/(high + 2) Note/(high - 1) [Note/(root + 3) Note/(root + 8)]'
+ -> '    Note/(high + 2) Note/( - 1) [Note/(root + 3) Note/(root + 8)]'
+## 'root' x1
+    'let tension = drive * mix + root - bend * 0.75'
+ -> 'let tension = drive * mix +  - bend * 0.75'
+## 'warp' x1
+    '    Note/72 | velocity=pulse * 0.8 brightness=warp - swing'
+ -> '    Note/72 | velocity=pulse * 0.8 brightness= - swing'
+## '71' x1
+    'let spare_row = [[60, 64], [67, 71]][1][5]'
+ -> 'let spare_row = [[60, 64], [67, ]][1][5]'
+## 't' x1
+    'fn dur_for(t):'
+ -> 'fn dur_for():'
+## 'dur_for' x1
+    '    Walk/60 | steps=3 gap=5 length=dur_for(tension)'
+ -> '    Walk/60 | steps=3 gap=5 length=(tension)'
+## 'flag' x1
+    'fn pick(flag): if flag then [60, 64] else [60, 64, 67]'
+ -> 'fn pick(): if flag then [60, 64] else [60, 64, 67]'
+## 'pick' x1
+    'let chosen = pick(true)'
+ -> 'let chosen = (true)'

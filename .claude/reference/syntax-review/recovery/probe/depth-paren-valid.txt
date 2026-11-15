@@ -1,0 +1,1 @@
+depth paren n=100000 broken=false bytes=200010 ok time=89.807313ms diags=0 whole=ok nest=ok first=None

@@ -1,0 +1,1 @@
+depth type-paren n=100000 broken=true bytes=100015 ok time=172.8168ms diags=1 whole=ok nest=ok first=Some("TypeSyntax 100011..100012 expected `)`, found `=`")

@@ -1,0 +1,13 @@
+--- diagnostics (1)
+  UnexpectedCharacter 5..8 "\u{200b}" :: unexpected `\u{200b}`
+--- detached [] at_layout []
+--- tree
+File 0..12
+  LetDecl 0..12
+    LetKw "let"
+    Ident "x"
+    ErrorNode 5..11
+      Error "\u{200b}"
+      Eq "="
+      Number "1"
+    Newline "\n"

@@ -1,0 +1,12 @@
+--- diagnostics (1)
+  FloatTypeSuffix 11..14 "i32" :: `i32` is an integer type; a float literal cannot take it
+--- detached [] at_layout []
+--- tree
+File 0..15
+  LetDecl 0..15
+    LetKw "let"
+    Ident "x"
+    Eq "="
+    Literal 8..14
+      Number "0.5i32"
+    Newline "\n"

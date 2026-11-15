@@ -1,0 +1,1 @@
+depth if n=100000 broken=true bytes=1000015 ok time=360.380088ms diags=1 whole=ok nest=ok first=Some("ExpressionSyntax 1000014..1000015 expected an expression, found the end of the line")

@@ -1,0 +1,18 @@
+--- diagnostics (1)
+  LetSyntax 13..14 ")" :: expected the end of the line, found `)`
+--- detached [] at_layout []
+--- tree
+File 0..15
+  LetDecl 0..15
+    LetKw "let"
+    Ident "x"
+    Eq "="
+    BinaryExpr 8..13
+      Literal 8..9
+        Number "1"
+      Plus "+"
+      Literal 12..13
+        Number "2"
+    ErrorNode 13..14
+      RParen ")"
+    Newline "\n"

@@ -1,0 +1,95 @@
+#### §3.9 1 sym-error L323
+state demand(none): f32?
+
+Plant boiler:
+    Valve as feed | open=demand
+#### §3.11 1 sym-error L400
+state body(json {}): json[..4096]
+
+state small: json[..256] = body["items"]
+#### §4.1 1 sym-error L430
+Clip melody:
+    Note/300000000000
+#### §5.10 1 sym-error L769
+state readings([]): i32[..10]
+
+state total = 1 + for x in readings into sum from 0: sum + x
+#### §5.10 2 sym-error L777
+fn count(xs): xs.size
+
+state readings([]): i32[..10]
+
+state high = count(for x in readings into kept from []: if x > 60 then kept + [x] else kept)
+#### §6.3 1 sym-error L884
+state n(5)
+
+fn fib(k): if k < 2 then k else fib(k - 1) + fib(k - 2)
+
+Rig stage:
+    Lamp/(fib(n))
+#### §6.6 1 sym-error L1097
+state reading(60)
+
+state recent = recent.past(1, []) + [reading]
+#### §6.7 1 sym-error L1180
+state g(x: x + 1)
+#### §6.7 2 sym-error L1186
+fn bar(n): n + 1
+
+let baz = bar
+let same = baz is bar
+
+Plant boiler:
+    Valve when same
+#### §6.7 3 sym-error L1198
+let f = x: f(x)
+
+Plant boiler:
+    Valve/(f(1))
+#### §6.7 4 sym-error L1207
+fn apply(f: (i32) -> i32, x: i32) -> i32: f(x)
+
+Rig stage:
+    Lamp/(apply((a, b): a + b, 60))
+#### §6.8 1 sym-error L1273
+fn shorter[const N](xs: i32[N]) -> i32[N - 1]: xs[1..]
+
+Rig stage:
+    Lamp/(shorter([60]).size)
+#### §6.8 2 sym-error L1282
+fn half[const N](xs: i32[N]) -> i32[N / 2]: xs[..N div 2]
+
+Plant boiler:
+    Valve/(half([1, 2, 3, 4])[0])
+#### §6.8 3 sym-error L1301
+fn same[T](a: T, b: T) -> T: a
+
+Clip c:
+    Note/(same(60i32, true))
+#### §6.8 4 sym-error L1310
+fn tail[const N](xs: i32[N + 1]) -> i32[N]: xs[1..]
+
+Clip c:
+    Note/(tail([60, 64, 67])[0])
+#### §6.8 5 sym-error L1319
+type Pair[A, B]:
+    left: A
+    right: B
+
+let p = Pair {left: 1i32}
+
+Rig stage:
+    Lamp/(p.left)
+#### §7.9 1 sym-error L1507
+Plant boiler:
+    for i, k in 0..4:
+        Valve/(0.1 + k)
+#### §7.9 2 sym-error L1515
+state n(4)
+
+state total = for i in 0..n into sum from 0: sum + i
+
+Rig stage:
+    Lamp/total
+#### §10.2 1 sym-error L1698
+Pad kick | hit=Hit {}

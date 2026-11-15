@@ -1,0 +1,17 @@
+--- diagnostics (1)
+  ExpressionSyntax 19..20 "\n" :: expected `else`, found the end of the line
+--- detached [] at_layout [19..20]
+--- tree
+File 0..20
+  LetDecl 0..20
+    LetKw "let"
+    Ident "x"
+    Eq "="
+    IfExpr 8..19
+      IfKw "if"
+      NameRef 11..12
+        Ident "a"
+      ThenKw "then"
+      Literal 18..19
+        Number "1"
+    Newline "\n"

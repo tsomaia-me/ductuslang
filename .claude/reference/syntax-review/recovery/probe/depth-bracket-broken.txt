@@ -1,0 +1,1 @@
+depth bracket n=100000 broken=true bytes=100010 ok time=181.842529ms diags=1 whole=ok nest=ok first=Some("ExpressionSyntax 100010..100010 expected `,` or `]`, found the end of the line")

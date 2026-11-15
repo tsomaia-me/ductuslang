@@ -1,0 +1,28 @@
+--- diagnostics (1)
+  TabIndentation 11..12 "\t" :: a tab in leading whitespace; indent with spaces
+--- detached [] at_layout []
+--- tree
+File 0..29
+  Placement 0..29
+    Ident "Scene"
+    Ident "s"
+    Body 7..29
+      Colon ":"
+      Block 8..29
+        Newline "\n"
+        Indent ""
+        Placement 13..19
+          Ident "Cue"
+          DefaultArg 16..18
+            Slash "/"
+            Literal 17..18
+              Number "1"
+          Newline "\n"
+        Placement 23..29
+          Ident "Cue"
+          DefaultArg 26..28
+            Slash "/"
+            Literal 27..28
+              Number "2"
+          Newline "\n"
+        Dedent ""

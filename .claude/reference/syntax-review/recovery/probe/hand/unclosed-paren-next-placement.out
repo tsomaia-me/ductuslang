@@ -1,0 +1,34 @@
+--- diagnostics (1)
+  ExpressionSyntax 15..20 "Scene" :: expected `)`, found `Scene`
+--- detached [15..20] at_layout [15..20]
+--- tree
+File 0..34
+  LetDecl 0..15
+    LetKw "let"
+    Ident "x"
+    Eq "="
+    ParenExpr 8..14
+      LParen "("
+      BinaryExpr 9..14
+        Literal 9..10
+          Number "1"
+        Plus "+"
+        Literal 13..14
+          Number "2"
+    Newline ""
+  Placement 15..34
+    Ident "Scene"
+    Ident "s"
+    Body 22..34
+      Colon ":"
+      Block 23..34
+        Newline "\n"
+        Indent ""
+        Placement 28..34
+          Ident "Cue"
+          DefaultArg 31..33
+            Slash "/"
+            Literal 32..33
+              Number "1"
+          Newline "\n"
+        Dedent ""

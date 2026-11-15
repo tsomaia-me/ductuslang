@@ -1,0 +1,35 @@
+--- diagnostics (1)
+  UnexpectedIndent 27..31 "Note" :: this line is indented, but the line before it opens no block
+--- detached [] at_layout []
+--- tree
+File 0..45
+  Placement 0..45
+    Ident "Clip"
+    Ident "c"
+    Body 6..45
+      Colon ":"
+      Block 7..45
+        Newline "\n"
+        Indent ""
+        Placement 12..19
+          Ident "Note"
+          DefaultArg 16..18
+            Slash "/"
+            Literal 17..18
+              Number "1"
+          Newline "\n"
+        ErrorNode 27..38
+          Indent ""
+          Ident "Note"
+          Slash "/"
+          Number "2"
+          Newline "\n"
+          Dedent ""
+        Placement 38..45
+          Ident "Note"
+          DefaultArg 42..44
+            Slash "/"
+            Literal 43..44
+              Number "3"
+          Newline "\n"
+        Dedent ""

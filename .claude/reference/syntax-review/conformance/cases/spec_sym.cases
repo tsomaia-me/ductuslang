@@ -1,0 +1,435 @@
+#### §1.1 1 sym L15
+state intensity(0.5)
+state glow = intensity * 0.8
+
+Scene dusk:
+    Cue/0 Cue/2 Cue/4
+    [Cue/6 Cue/6]
+    Cue/8 | fade=glow
+    Triggers: night
+
+Scene night:
+    Cue/0
+    Triggers: dusk
+#### §3.3 1 sym L209
+state name(""): str[..32]
+
+Track lead | title="lead: {name}":
+    Piano
+
+Kit drums:
+    for i in 0..8:
+        Sampler | file="kit/{i}.wav"
+#### §3.6 1 sym L244
+Scene dusk:
+    Cue | at=500ms
+    Cue | at=2
+#### §3.8 1 sym L284
+type Band:
+    low: f32
+    high: f32
+
+state band(Band {low: 0.2, high: 0.8})
+
+Plant boiler:
+    Controller as loop | target=band.low gain=band.high - band.low
+#### §3.9 1 sym L305
+type Circle:
+    r: f32
+type Square:
+    side: f32
+type Shape = Circle | Square
+
+state port(none): i32?
+state shape(Square {side: 1}): Shape
+
+state bound = port ?? 80
+state area = match shape:
+    Circle: pi * shape.r * shape.r
+    Square: shape.side * shape.side
+#### §3.10 1 sym L347
+state headers({}): {str[..32]: str[..256]}[..32]
+state req(Request {})
+
+state host = headers["host"] ?? "localhost"
+state trimmed = headers without ["cookie", "set-cookie"]
+state with_host = headers + {"host": host}
+state hits({}): {str[..64]: i32}[..64] = (hits.past(1) + {req.path: (hits.past(1)[req.path] ?? 0) + 1})[^64..]
+#### §3.11 1 sym L385
+state body(json {}): json[..65536]
+
+state items = body["items"]
+state count = items.size
+state qty = items[0]["qty"] ?? 1
+state name: str[..64] = body["customer"]["name"] ?? "anonymous"
+state order: Order = body["order"] ?? Order {}
+state is_list = items.kind is Array
+state anonymous = body["customer"]["name"] is none
+state reply = json {"ok": true, "count": count, "echo": items, "order": order}
+#### §4.1 1 sym L416
+let base = 48
+
+Clip melody:
+    Note/(base + 7)
+
+Synth lead:
+    Osc | freq=(base * 2.5)
+#### §4.2 1 sym L445
+state demand(0.5)
+
+Plant boiler:
+    Valve | open=demand * 0.8
+#### §4.4 1 sym L468
+state dim(0.5)
+
+Rig stage:
+    Lamp | level=dim
+
+Scene dusk:
+    Cue | fade=dim * 4
+#### §4.4 2 sym L484
+state a(1)
+state b = a + 0.5
+
+Plant boiler:
+    Valve when b > 1
+#### §5.4 1 sym L587
+state alarm(false)
+state standby(false)
+state gain = if alarm then 0.9 else if standby then 0.3 else 0.6
+#### §5.4 2 sym L595
+state mode(Mode::Manual)
+
+state level = match mode:
+    Auto: 1.0
+    Manual: 0.8
+    else: 0.6
+#### §5.5 1 sym L633
+state a(1)
+state b(2)
+state i(0)
+state c = [a, b, a + b]
+#### §5.5 2 sym L648
+state held([]): i32[..10]
+state step(0)
+state note(60)
+
+state played = held + [note]
+
+Clip arp:
+    Note/(played[step % played.size])
+#### §5.6 1 sym L669
+Rig stage:
+    Lamp as wash
+
+Scene dusk | hold=8:
+    Cue as first /1 | fade=2
+
+Scene night | hold=dusk.hold * 1.5:
+    Cue/0 | fade=dusk.first.fade
+    Dims as soften | depth=0.4: stage.wash
+
+Scene dawn | hold=night.soften.depth * 10:
+    Cue/0
+#### §5.10 1 sym L757
+state readings([]): i32[..10]
+
+state high = for x in readings into kept from []:
+    let keep = x > 60
+    if keep then kept + [x] else kept
+
+state total = 1 + (for i, x in readings into sum from 0: sum + i * x)
+#### §6.1 1 sym L803
+state setpoint(0.5)
+state steps([true, false, false, true, false, false, true, false])
+state name(""): str[..32]
+state hit(Hit {})
+stream reading(0.0)
+channel[16] alarm(0)
+#### §6.2 1 sym L822
+state section(0)
+
+let sections = [verse, chorus, bridge]
+
+Clip intro:
+    for s in sections:
+        Starts: s
+
+Clip outro:
+    Plays: sections[section]
+#### §6.3 1 sym L857
+fn ratio(x): 10 ** (x / 20)
+
+fn tier(rank: i32, base: i32 = 100) -> i32:
+    let cycles: i32 = rank div 4
+    base + [0, 5, 15, 40][rank % 4] + 50 * cycles
+#### §6.3 2 sym L867
+fn fib(n): if n < 2 then n else fib(n - 1) + fib(n - 2)
+
+let lengths = [fib(3), fib(4), fib(5), fib(6)]
+#### §6.3 3 sym L873
+state readings([]): i32[..10]
+
+state lowest = for x in readings into low from 100: min(low, x)
+
+Plant boiler:
+    Valve/lowest
+#### §6.4 1 sym L936
+pattern Arp(default root, steps = 4, gap = 4) -> (Note*):
+    for i in 0..steps:
+        Note/(root + i * gap)
+
+Clip verse:
+    Arp/48
+    Arp/60 | steps=8 gap=3
+#### §6.4 2 sym L946
+pattern Bank(default base: f32) -> Plant:
+    Plant:
+        Valve/base Valve/(base + 0.25) Valve/(base + 0.5)
+
+Bank manifold /0
+Bank header /0.25
+#### §6.4 3 sym L957
+pattern Chase(default start, again: Scene):
+    Scene:
+        Cue/start Cue/(start + 1)
+        Triggers: again
+
+Chase dusk /0 | again=dusk
+#### §6.4 4 sym L968
+pattern Cap(ceiling = 0.5) -> Drives:
+    Drives | limit=ceiling
+
+Plant boiler:
+    Valve as feed
+    Controller as loop:
+        Cap as choke | ceiling=0.3: feed
+#### §6.4 5 sym L980
+pattern Voice(default root: i32, const steps = 4) -> (Note*, Starts):
+    state gain(1.0)
+    for i in 0..steps:
+        Note/(root + i) | velocity=gain
+    Starts: intro
+
+Clip verse:
+    Voice as low /48
+    Voice/60 | steps=8
+#### §6.4 6 sym L994
+pattern Drum(default out channel hit: Hit, gain: f32 = 1.0) -> Pad:
+    Pad | hit => hit gain=gain
+
+pattern Section(default root: i32, children notes: Note*, children links: Plays*) -> Clip:
+    Clip | gain=0.8:
+        Note/root
+        notes
+        Plays: intro
+        links
+
+channel kick_hit(Hit {})
+
+Drum kick /kick_hit | gain=0.9
+
+Section bass /36:
+    Note/43 | velocity=0.6
+    Plays: verse
+#### §6.4 7 sym L1016
+pattern Flash(default start: f32, children groups: [Lamp+]*) -> Rig:
+    Rig:
+        Lamp/start
+        groups
+
+pattern Burst(children lamps: Lamp{2+}) -> ([Lamp{2+}]):
+    [lamps]
+
+Flash opener /0.1:
+    [Lamp/0.2 Lamp/0.5 Lamp/0.8]
+    [Lamp/0.3 Lamp/0.6]
+
+Rig finale:
+    Burst: Lamp/0.2 Lamp/0.5 Lamp/0.8
+#### §6.6 1 sym L1053
+state a(1)
+stream b(2)
+state c1 = a + b
+state c2 on b = a + b
+state c3 on a = a + b
+state c4 on (a, b) = a + b
+#### §6.6 2 sym L1068
+state gate(false)
+state level(0.0)
+state reading(60)
+
+state held(0.0) on gate = if gate then level else held.past(1)
+state previous = reading.past(1, -1)
+state recent([]) = (recent.past(1) + [reading])[^8..]
+#### §6.6 3 sym L1080
+channel alarm(0)
+state shift(0)
+
+state alarms(0) on (alarm, shift) = if shift.stepped then 0 else alarms.past(1) + 1
+#### §6.7 1 sym L1129
+fn count(xs, keep: (i32) -> bool):
+    for x in xs into n from 0: if keep(x) then n + 1 else n
+
+state readings([]): i32[..10]
+state threshold(60)
+
+state high = count(readings, p: p > 60)
+state low = count(readings, (p: i32) -> bool: p < 48)
+state above = count(readings, p: p > threshold)
+
+fn is_high(p): p > 60
+
+state named = count(readings, is_high)
+
+fn count_high(xs):
+    let keep = p: p > 60
+    count(xs, keep)
+
+state local = count_high(readings)
+#### §6.7 2 sym L1155
+fn bar(seed, f: (x: f64) -> f64): f(x=seed) * 2
+
+let inc = x: x + 1
+let twice = bar
+let a = bar(1.0, inc)
+let b = twice(1.0, inc)
+let c = inc(2.0)
+#### §6.7 3 sym L1167
+let g = 2
+let dbl = x: x * g
+
+fn f(x):
+    let g = 3
+    dbl(x)
+
+let ten = f(5)
+#### §6.8 1 sym L1236
+type Stack[T, const N]:
+    items: T[..N]
+    top: i32
+
+fn push[T, const N](s: Stack[T, N], x: T) -> Stack[T, N]:
+    Stack[T, N] {items: (s.items + [x])[..N], top: s.top + 1}
+
+fn first[T, const N: i32](xs: T[N]) -> T: xs[0]
+
+fn mid[T: f32 | f64](a: T, b: T) -> T: (a + b) / 2
+
+state total(10): i32
+
+let ids: i32[3] = [10, 20, 30]
+let start = Stack[i32, 8] {}
+let big = Stack[i32, 4 * 2] {}
+let pushed = push(start, total)
+let centre = mid(0.25f32, 0.75f32)
+
+Plant boiler:
+    Valve/(first(ids))
+#### §6.8 2 sym L1262
+fn padded[const N](xs: i32[N]) -> i32[N + 1]: xs + [0]
+
+fn mean[const N](xs: f32[N]) -> f32: (for x in xs into total from 0.0: total + x) / N
+
+let rows = padded([10, 20, 30])
+let average = mean([0.25f32, 0.5f32, 0.75f32])
+#### §6.8 3 sym L1291
+type Pair[A, B]:
+    left: A
+    right: B
+
+let p = Pair {left: 1i32, right: true}
+#### §7.3 1 sym L1363
+Rig stage:
+    Scene as dusk | hold=8:
+        Cue/0 Cue/2
+        Dims: wash
+    Lamp as wash
+    Lamp
+
+Scene night:
+    Cue/0
+    Triggers: stage.dusk
+#### §7.6 1 sym L1413
+state intensity(0.5)
+state glow = intensity * 0.8
+
+Rig stage:
+    Lamp | level=0.7
+           hue=glow
+           strobe
+#### §7.7 1 sym L1435
+Plant fill: Valve/0 Valve/0.5 (Controller/0.4 | gain=0.5)
+#### §7.8 1 sym L1452
+Rig flash:
+    [Lamp/0.2 Lamp/0.5 Lamp/0.8]
+    [for i in 0..3: Lamp/(0.2 + i * 0.3)]
+    [for i, p in [0.2, 0.5, 0.8]: (Lamp/p | hue=1.0 - i * 0.2)]
+#### §7.9 1 sym L1479
+state steps([true, false, false, true, false, false, true, false])
+state levels([0.2, 0.2, 0.8, 0.2, 0.5, 0.2, 0.8, 1.0])
+
+Rig chase:
+    for i in 0..8:
+        Lamp/(levels[i]) when steps[i]
+
+let ramp = [0.2, 0.5, 0.8]
+
+Rig fade_in:
+    for i, p in ramp:
+        Lamp/p | hue=1.0 - i * 0.2
+#### §7.9 2 sym L1496
+state readings([]): i32[..10]
+state counts({}): {str[..16]: i32}[..8]
+
+state rises = for i in 1..readings.size into n from 0: if readings[i] > readings[i - 1] then n + 1 else n
+state total = for k, v in counts into sum from 0: sum + v
+state names = for k in counts into all from "": all + k
+#### §8.1 1 sym L1536
+Scene dusk:
+    Cue/0 Cue/1
+    Triggers: night
+    Cue/2
+    Dims | depth=0.5: stage.wash
+#### §8.2 1 sym L1559
+state look(0)
+state flash_on(false)
+
+Scene dusk:
+    Cue/0 Cue/2
+    Triggers: [night, dawn, noon][look]
+
+Scene night:
+    Cue/0
+    Triggers: if flash_on then flash else dusk
+#### §8.3 1 sym L1580
+state section(0)
+
+Clip verse:
+    Plays | gain=to.hook.velocity: [chorus, bridge][section]
+
+Clip chorus:
+    Note as hook /72 | velocity=0.9
+
+Clip bridge:
+    Note as hook /67 | velocity=0.6
+#### §9.1 1 sym L1607
+Clip verse:
+    Note/60
+    Note/62 when fill_on
+    Plays when looping: chorus
+#### §9.2 1 sym L1625
+Plant boiler:
+    Valve/0.1
+    when alarm_on:
+        Valve/0.3 Valve/0.5
+    else:
+        Valve/0.3
+    when:
+        phase is 0: Valve/0.6
+        phase is 1: Valve/0.7
+        else: Valve/0.9
+#### §10.2 1 sym L1692
+channel hit(Hit {})
+
+Pad kick | hit => hit

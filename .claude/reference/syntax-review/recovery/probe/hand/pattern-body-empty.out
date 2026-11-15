@@ -1,0 +1,30 @@
+--- diagnostics (1)
+  PlacementSyntax 13..18 "Scene" :: expected an indented block, found `Scene`
+--- detached [13..18] at_layout []
+--- tree
+File 0..32
+  PatternDecl 0..13
+    PatternKw "pattern"
+    Ident "P"
+    PatternParamList 9..11
+      LParen "("
+      RParen ")"
+    Colon ":"
+    Block 12..13
+      Newline "\n"
+  Placement 13..32
+    Ident "Scene"
+    Ident "s"
+    Body 20..32
+      Colon ":"
+      Block 21..32
+        Newline "\n"
+        Indent ""
+        Placement 26..32
+          Ident "Cue"
+          DefaultArg 29..31
+            Slash "/"
+            Literal 30..31
+              Number "1"
+          Newline "\n"
+        Dedent ""

@@ -1,0 +1,28 @@
+--- diagnostics (1)
+  DedentMismatch 21..22 "N" :: this line's indentation, 2, matches no enclosing block; the enclosing block is at 0
+--- detached [] at_layout []
+--- tree
+File 0..28
+  Placement 0..21
+    Ident "Clip"
+    Ident "c"
+    Body 6..21
+      Colon ":"
+      Block 7..21
+        Newline "\n"
+        Indent ""
+        Placement 12..19
+          Ident "Note"
+          DefaultArg 16..18
+            Slash "/"
+            Literal 17..18
+              Number "1"
+          Newline "\n"
+        Dedent ""
+  Placement 21..28
+    Ident "Note"
+    DefaultArg 25..27
+      Slash "/"
+      Literal 26..27
+        Number "2"
+    Newline "\n"

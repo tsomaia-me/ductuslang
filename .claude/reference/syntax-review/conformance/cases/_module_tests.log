@@ -1,0 +1,32 @@
+   Compiling symphonyscript v0.1.0 (/home/cdagent/cargo-targets/peer-syntax-review/conformance/packages/symphonyscript/crates/compiler)
+    Finished `test` profile [optimized + debuginfo] target(s) in 4m 16s
+     Running unittests src/lib.rs (target/debug/deps/symphonyscript-1209477c9c0ba655)
+
+running 23 tests
+test syntax::cost_tests::stress_lexing_and_parsing_the_figure_programs_cost_work_linear_in_their_bytes_and_tokens ... ignored, stress
+test syntax::ast::tests::the_typed_view_reads_a_hand_built_tree ... ok
+test syntax::front_end_goldens::stress_the_front_end_keeps_its_recorded_hir_and_placeholders_on_the_deep_array_type_and_calls ... ignored, stress
+test syntax::front_end_goldens::stress_the_front_end_keeps_its_recorded_hir_and_placeholders_on_the_deep_expressions_and_bodies ... ignored, stress
+test syntax::front_end_goldens::stress_the_front_end_keeps_its_recorded_hir_and_placeholders_on_the_first_quarter_of_the_robustness_corpus ... ignored, stress
+test syntax::front_end_goldens::stress_the_front_end_keeps_its_recorded_hir_and_placeholders_on_the_fourth_quarter_of_the_robustness_corpus ... ignored, stress
+test syntax::front_end_goldens::stress_the_front_end_keeps_its_recorded_hir_and_placeholders_on_the_large_project_the_nests_and_the_generated_files ... ignored, stress
+test syntax::front_end_goldens::stress_the_front_end_keeps_its_recorded_hir_and_placeholders_on_the_second_quarter_of_the_robustness_corpus ... ignored, stress
+test syntax::front_end_goldens::stress_the_front_end_keeps_its_recorded_hir_and_placeholders_on_the_third_quarter_of_the_robustness_corpus ... ignored, stress
+test syntax::cost_tests::parsing_the_figure_programs_reads_the_next_significant_token_a_bounded_number_of_times_a_node ... ok
+test syntax::cost_tests::parsing_the_figure_programs_runs_a_bounded_number_of_parser_tasks_a_node ... ok
+test syntax::front_end_goldens::the_front_end_keeps_its_recorded_hir_and_placeholders_on_the_fixture_projects ... ok
+test syntax::cost_tests::lexing_and_parsing_the_figure_programs_hold_their_columns_within_twice_the_layouts_bytes ... ok
+test syntax::cost_tests::lexing_and_parsing_the_figure_programs_cost_work_linear_in_their_bytes_and_tokens ... ok
+test syntax::cost_tests::the_tree_and_each_column_it_derives_hold_the_layouts_bytes_a_node_at_any_size ... ok
+test syntax::parser::tests::repeated_faults::stress_repeated_faults_cost_work_linear_in_their_number ... ignored, stress
+test syntax::front_end_goldens::the_front_end_keeps_its_recorded_hir_and_placeholders_on_every_spec_and_lesson_example ... ok
+test syntax::front_end_goldens::the_front_end_keeps_its_recorded_hir_and_placeholders_on_the_parser_tests_programs ... ok
+test syntax::parser::tests::kind_reads::the_parser_reads_each_tokens_kind_a_constant_number_of_times_429 ... ok
+test syntax::lexer::tests::indentation_stacks_are_stored_once_per_line_that_opens_a_bracket ... ok
+test syntax::parser::tests::single_faults::recovery_cost_grows_linearly_with_the_number_of_fault_items ... ok
+test syntax::front_end_goldens::the_front_end_keeps_its_recorded_hir_and_placeholders_on_the_covered_robustness_mutants ... ok
+test syntax::parser::tests::single_faults::faults_in_generated_files_are_each_reported_once_at_their_span ... ok
+
+test result: ok. 14 passed; 0 failed; 9 ignored; 0 measured; 822 filtered out; finished in 0.91s
+
+exit=0

@@ -1,0 +1,13 @@
+--- diagnostics (1)
+  UnexpectedCharacter 4..6 "\u{301}" :: unexpected `\u{301}`
+--- detached [] at_layout []
+--- tree
+File 0..12
+  LetDecl 0..12
+    LetKw "let"
+    ErrorNode 4..11
+      Error "\u{301}"
+      Ident "x"
+      Eq "="
+      Number "1"
+    Newline "\n"

@@ -1,0 +1,23 @@
+--- diagnostics (1)
+  RecordSyntax 14..17 "i32" :: expected `:` and the field's type, found `i32`
+--- detached [] at_layout []
+--- tree
+File 0..29
+  TypeDecl 0..29
+    TypeKw "type"
+    Ident "T"
+    Colon ":"
+    Newline "\n"
+    Indent ""
+    FieldDecl 12..18
+      Ident "a"
+      ErrorNode 14..17
+        I32Kw "i32"
+      Newline "\n"
+    FieldDecl 22..29
+      Ident "b"
+      Colon ":"
+      TypeRef 25..28
+        F32Kw "f32"
+      Newline "\n"
+    Dedent ""

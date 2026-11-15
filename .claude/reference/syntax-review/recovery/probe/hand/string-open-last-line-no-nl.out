@@ -1,0 +1,13 @@
+--- diagnostics (1)
+  UnterminatedString 8..12 "\"abc" :: this string does not end on its line
+--- detached [] at_layout []
+--- tree
+File 0..12
+  LetDecl 0..12
+    LetKw "let"
+    Ident "x"
+    Eq "="
+    StringLit 8..12
+      StringStart "\""
+      StringText "abc"
+    Newline ""

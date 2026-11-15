@@ -1,0 +1,1 @@
+depth paren n=100000 broken=true bytes=100010 ok time=198.073226ms diags=1 whole=ok nest=ok first=Some("ExpressionSyntax 100010..100010 expected `)`, found the end of the line")

@@ -1,0 +1,16 @@
+#### interp-json (ok) [tokens ]  lex-diags=0 parse-diags=0
+  TOKENS LetKw(let) Ident(s) Eq(=) StringStart(\") InterpStart({) JsonKw(json) LBrace({) JsonString(\"a\") Colon(:) LBracket([) JsonNumber(1) Comma(,) LParen(() Ident(x) RParen()) RBracket(]) RBrace(}) InterpEnd(}) StringText( tail ) InterpStart({) JsonKw(json) JsonNull(null) InterpEnd(}) StringEnd(\") Newline
+#### interp-nested-brace-string (ok) [ ]  lex-diags=1 parse-diags=1
+  DIAG unterminated-string 1:9 8..30 `\"a {\"}\"} b {m[\"{\"]} c\"` :: this string does not end on its line [help: close the string with `"` on its line]
+#### clause-continuation-bang-and-keyword (ok) [tokens ]  lex-diags=0 parse-diags=0
+  TOKDIFF keyword-to-ident renames only
+  TOKENS Ident(Rig) Ident(r) Colon(:) Newline Indent Ident(Lamp) Pipe(|) Ident(level) Eq(=) Number(1) Bang(!) Ident(strobe) StateKw(state) Eq(=) Number(2) Ident(hue) Eq(=) Number(3) Newline Dedent
+#### clause-continuation-in-inline-body-parent (ok) [ ]  lex-diags=0 parse-diags=0
+#### wire-clause-continuation-then-match (ok) [ ]  lex-diags=0 parse-diags=0
+#### sum-type-pipe-then-deeper-aligned-line (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG record-syntax 2:23 51..54 `Tri` :: expected the end of the line, found `Tri` [help: write `type`, a name and `:` with a field per line, or `=` and a type, as in `type Id = i64`; a record literal names its type and its fields in braces, as in `Chord {root: 60}`]
+#### let-sum-annotation-then-block (ok) [ ]  lex-diags=0 parse-diags=0
+#### generic-constraint-pipe-in-brackets (ok) [ ]  lex-diags=0 parse-diags=0
+#### int-with-float-suffix-magnitude [ ]  lex-diags=1 parse-diags=1
+  DIAG integer-too-large 1:9 8..47 `170141183460469231731687303715884105728` :: an integer literal's magnitude must stay below 2^127 [help: write an integer whose magnitude is below 2¹²⁷]
+CASES 9

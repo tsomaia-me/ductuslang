@@ -1,0 +1,5 @@
+Rig r:
+    Lamp as a/1
+  Lamp as b/2
+    Lamp as c/3
+let y = 2

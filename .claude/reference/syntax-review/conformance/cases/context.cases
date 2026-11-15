@@ -1,0 +1,129 @@
+#### is-map-literal-indexed (ok) [sexpr]
+let v = x is {"a": 1}["a"]
+#### is-map-literal-indexed-num (ok)
+let v = x is {1: 2}[1]
+#### is-map-literal-plain (ok) [sexpr]
+let v = x is {1: 2}
+#### is-map-type (ok) [sexpr]
+let v = x is {str[..4]: i32}[..8]
+#### is-json-forms (ok) [sexpr]
+let a = x is json
+let b = x is json and y
+let c = x is json[..8]
+let d = x is json [1, 2]
+let e = x is json name
+let f = if x is json then 1 else 2
+let g = x is json ?? 1
+#### is-scalar-then-paren-space (ok) [sexpr]
+let a = x is i32 (y)
+#### is-not-forms (ok) [sexpr]
+let a = x is not none
+let b = x is not i32
+let c = x is not y
+let d = not x is not y
+#### is-paren-type (refuse)
+let a = x is (i32?)
+#### is-sum-type (refuse)
+let a = x is i32 | f32
+#### is-fn-type (refuse)
+let a = x is (i32) -> i32
+#### for-from-bare-name-in-parens (ok)
+let a = 1 + (for x in xs into s from start: s + x)
+let b = [(for x in xs into s from start: s)]
+let c = f((for x in xs into s from start: s))
+let d = xs[(for x in xs into s from start: s)]
+let e = "v {(for x in xs into s from start: s)}"
+state g((for x in xs into s from start: s))
+let h = i32((for x in xs into s from start: s))
+#### for-iterable-bare-name-in-parens (ok)
+let a = (for x in xs into s from 0: s)
+#### lambda-body-match (refuse)
+let f = x: match x:
+    0: 1
+    else: 2
+#### match-in-local-let-of-for-block (ok)
+let a = for x in xs into s from 0:
+    let k = match x:
+        0: 1
+        else: 2
+    let j = for y in ys into t from 0:
+        t + y
+    s + k + j
+#### for-block-in-pattern-let-and-cell (ok)
+pattern P(xs):
+    let a = for x in xs into s from 0:
+        s + x
+    state c = for x in xs into s from 0:
+        s + x
+    Lamp/a
+#### match-destination-with-gate-and-attrs (ok) [tree]
+Scene dusk:
+    Triggers as t when on_air | gain=1: match look:
+        0: night
+        else: dawn
+#### slash-division-in-gate (ok) [sexpr]
+Rig r:
+    Lamp when a / b > 1
+    Lamp | level=a / b hue=c /2
+    Lamp/x when y / 2 > 1 | level=z / 3
+    for i in 0..n / 2: Lamp/i
+#### slash-after-atom (refuse)
+Rig r:
+    Lamp/x / 2
+#### slash-two-defaults-inline (refuse)
+Rig r:
+    Lamp/x /y
+#### slash-free-whitespace (ok) [sexpr]
+Rig r:
+    Lamp as a / b
+    Lamp / 0.5
+    [Lamp/x Lamp /y Lamp / z]
+#### lamp-wash-two-placements (ok) [sexpr]
+Rig r:
+    Lamp wash/0.5
+#### wire-kind-as-name-in-other-positions (ok)
+let Triggers = 1
+Rig r:
+    Lamp as Triggers
+    Lamp/Triggers
+    Lamp | level=Triggers
+#### wire-kind-as-inline-member (refuse)
+Scene s:
+    Cue Triggers
+#### wire-kind-in-bundle (refuse)
+Scene s:
+    [Cue Dims]
+#### wire-kind-as-top-name (ok)
+Rig Triggers
+#### wire-kind-nfd-spelling [esc]
+Scene s:
+    Triggers: night
+#### record-vs-placement-top (ok) [sexpr]
+Package {name: "x"}
+#### record-literal-after-name-anywhere (ok) [sexpr]
+let a = f(Band {low: 1}, {1: 2}, json {"a": 1})
+#### brace-after-non-type-name-is-record [sexpr]
+let a = x {low: 1}
+#### brace-after-keyword-map (ok) [sexpr]
+let a = m without {1: 2} + {3: 4}
+#### name-colon-contexts (ok) [sexpr]
+let f = x: x
+let m = {x: x}
+let r = R {x: x}
+let c = g(x: x)
+let n = g(x=x)
+#### guard-vs-match-arm-name-colon (ok) [sexpr]
+Plant p:
+    when:
+        flag: Valve
+        else: Valve
+let v = match shape:
+    Circle: shape
+    else: other
+#### dims-vs-args (shape heuristic) [sexpr]
+let a: Band[4] = x
+let b: Stack[i32, 8][4] = x
+let c: Box[T] = x
+let d: Grid[N + 1, M] = x
+let e: Wrap[N + 1] = x
+let f: Two[A, B] = x

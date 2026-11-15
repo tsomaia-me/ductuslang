@@ -1,0 +1,18 @@
+--- diagnostics (1)
+  LetSyntax 12..13 "\"" :: expected the end of the line, found `"`
+--- detached [] at_layout []
+--- tree
+File 0..16
+  LetDecl 0..16
+    LetKw "let"
+    Ident "x"
+    Eq "="
+    StringLit 8..11
+      StringStart "\""
+      StringText "a"
+      StringEnd "\""
+    ErrorNode 12..15
+      StringStart "\""
+      StringText "b"
+      StringEnd "\""
+    Newline "\n"

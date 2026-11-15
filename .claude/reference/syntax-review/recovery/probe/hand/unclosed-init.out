@@ -1,0 +1,20 @@
+--- diagnostics (1)
+  CellSyntax 10..13 "let" :: expected `)`, found `let`
+--- detached [10..13] at_layout [10..13]
+--- tree
+File 0..20
+  CellDecl 0..10
+    StateKw "state"
+    Ident "x"
+    Init 7..9
+      LParen "("
+      Literal 8..9
+        Number "1"
+    Newline ""
+  LetDecl 10..20
+    LetKw "let"
+    Ident "y"
+    Eq "="
+    Literal 18..19
+      Number "2"
+    Newline "\n"

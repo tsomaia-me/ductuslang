@@ -1,0 +1,12 @@
+--- diagnostics (1)
+  UnexpectedCharacter 0..3 "\u{feff}" :: unexpected `\u{feff}`
+--- detached [] at_layout []
+--- tree
+File 0..13
+  ErrorNode 0..12
+    Error "\u{feff}"
+    LetKw "let"
+    Ident "x"
+    Eq "="
+    Number "1"
+  Newline "\n"

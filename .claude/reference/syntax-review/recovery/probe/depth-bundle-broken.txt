@@ -1,0 +1,1 @@
+depth bundle n=100000 broken=true bytes=100017 ok time=221.282234ms diags=1 whole=ok nest=ok first=Some("BundleSyntax 14..15 a bundle is not a member of another bundle")

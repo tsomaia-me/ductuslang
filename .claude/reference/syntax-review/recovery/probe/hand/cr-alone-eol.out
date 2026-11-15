@@ -1,0 +1,18 @@
+--- diagnostics (0)
+--- detached [] at_layout []
+--- tree
+File 0..22
+  LetDecl 0..11
+    LetKw "let"
+    Ident "x"
+    Eq "="
+    Literal 8..9
+      Number "1"
+    Newline "\r\n"
+  LetDecl 11..22
+    LetKw "let"
+    Ident "y"
+    Eq "="
+    Literal 19..20
+      Number "2"
+    Newline "\r\n"

@@ -1,0 +1,13 @@
+--- diagnostics (1)
+  UnexpectedCharacter 5..7 "\u{a0}" :: unexpected `\u{a0}`
+--- detached [] at_layout []
+--- tree
+File 0..11
+  LetDecl 0..11
+    LetKw "let"
+    Ident "x"
+    ErrorNode 5..10
+      Error "\u{a0}"
+      Eq "="
+      Number "1"
+    Newline "\n"

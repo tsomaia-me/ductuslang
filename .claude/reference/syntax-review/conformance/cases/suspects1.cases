@@ -1,0 +1,98 @@
+#### wirepattern-simple-dest [tree]
+Plant boiler:
+    Controller as loop:
+        Cap as choke | ceiling=0.3: feed
+#### wirepattern-path-dest
+Scene night:
+    Soft | depth=0.4: stage.wash
+#### wirepattern-if-dest
+Scene night:
+    Soft: if flash_on then flash else dusk
+#### wirepattern-index-dest
+Scene night:
+    Soft: [night, dawn, noon][look]
+#### wirepattern-match-dest
+Scene night:
+    Soft: match look:
+        0: dusk
+        else: dawn
+#### wirekind-path-dest (control)
+Scene night:
+    Dims | depth=0.4: stage.wash
+#### wire-no-destination-in-pattern
+pattern Cap(ceiling = 0.5) -> Drives:
+    Drives | limit=ceiling
+#### wire-no-destination-bare
+pattern Link() -> Triggers:
+    Triggers
+#### qualified-kind-top
+gradients::Sweep dusk /0
+#### qualified-kind-child
+Rig stage:
+    util::Blink as b
+    util::Blink/0.5
+#### qualified-kind-inline
+Rig stage: util::Blink util::Blink
+#### qualified-wire-kind
+Scene night:
+    util::Soft: dusk
+#### kind-named-input-top
+pattern input() -> Rig:
+    Rig:
+        Lamp
+
+input stage
+#### kind-named-input-as (control)
+input as stage
+#### attr-keyword-nonfirst-eq (control)
+Rig r:
+    Lamp | level=1 channel=2
+#### attr-keyword-nonfirst-bare
+Rig r:
+    Lamp | level=1 channel
+#### attr-keyword-nonfirst-bind
+Rig r:
+    Lamp | level=1 out => c
+#### attr-keyword-first-bind (control)
+Rig r:
+    Lamp | out => c level=1
+#### attr-keyword-nonfirst-bang (control)
+Rig r:
+    Lamp | level=1 !out
+#### attr-keyword-continuation-line
+Rig r:
+    Lamp | level=1
+           out => c
+#### attr-keyword-op-name
+Rig r:
+    Lamp | level=x or=1 and=2 is=3 div=4 not=5 without=6 if=7 in=8
+#### dot-json-index
+state a = r.json[0]
+#### dot-json-index-string
+state a = r.json["k"]
+#### dot-json-minus-hex
+state a = r.json - 0x10
+#### dot-json-minus-unit
+state a = r.json - 2bars
+#### dot-json-then-size (control)
+state a = r.json.size
+#### dot-json-index-interp
+state a = r.json["k{i}"]
+#### type-json-dim
+fn f(a: json[2]) -> i32: 1
+#### type-json-dim-expr
+fn f[const N](a: json[N + 0x2]) -> i32: 1
+#### record-qualified-typeargs
+let s = util::Stack[i32, 8] {}
+#### record-qualified (control)
+let s = util::Band {low: 1}
+#### record-typeargs (control)
+let s = Stack[i32, 8] {}
+#### defaultarg-qualified-path
+Rig r:
+    Lamp/util::base.low
+#### defaultarg-qualified (control)
+Rig r:
+    Lamp/Mode::Manual
+#### binding-qualified-path (control)
+Pad kick | hit => util::cells.hit

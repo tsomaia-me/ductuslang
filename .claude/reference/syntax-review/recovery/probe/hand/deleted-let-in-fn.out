@@ -1,0 +1,34 @@
+--- diagnostics (2)
+  FnSyntax 15..16 "=" :: expected the end of the line, found `=`
+  FnSyntax 23..26 "let" :: a function body ends with one value
+--- detached [] at_layout []
+--- tree
+File 0..39
+  FnDecl 0..39
+    FnKw "fn"
+    Ident "f"
+    ParamList 4..7
+      LParen "("
+      Param 5..6
+        Ident "x"
+      RParen ")"
+    Colon ":"
+    FnBody 8..39
+      Newline "\n"
+      Indent ""
+      NameRef 13..14
+        Ident "a"
+      ErrorNode 15..18
+        Eq "="
+        Ident "x"
+      Newline "\n"
+      ErrorNode 23..32
+        LetKw "let"
+        Ident "b"
+        Eq "="
+        Number "1"
+      Newline "\n"
+      ErrorNode 37..38
+        Ident "b"
+      Newline "\n"
+      Dedent ""

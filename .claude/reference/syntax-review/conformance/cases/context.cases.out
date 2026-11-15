@@ -1,0 +1,128 @@
+#### is-map-literal-indexed (ok) [sexpr ]  lex-diags=0 parse-diags=1
+  DIAG type-syntax 1:15 14..15 `\"` :: expected a type, found `"` [help: write a size in each bracket of the type, as in `i32[3]` or `i32[..10]`]
+  SEXPR (LetDecl let v = (x is (AltType (TypeRef (MapType { (TypeRef ) (TypeRef ))))) (ErrorNode " a " : 1 } [ " a " ]))
+#### is-map-literal-indexed-num (ok) [ ]  lex-diags=0 parse-diags=1
+  DIAG type-syntax 1:15 14..15 `1` :: expected a type, found `1` [help: write a size in each bracket of the type, as in `i32[3]` or `i32[..10]`]
+#### is-map-literal-plain (ok) [sexpr ]  lex-diags=0 parse-diags=0
+  SEXPR (LetDecl let v = (x is (MapLit { (MapEntry 1 : 2) })))
+#### is-map-type (ok) [sexpr ]  lex-diags=0 parse-diags=0
+  SEXPR (LetDecl let v = (x is (AltType (TypeRef (MapType { (TypeRef (StrType str [ .. 4 ])) : (TypeRef i32) } [ .. 8 ])))))
+#### is-json-forms (ok) [sexpr ]  lex-diags=0 parse-diags=1
+  DIAG type-syntax 7:19 166..168 `??` :: a type takes one `?`, and `T?` already holds `none` [help: write a size in each bracket of the type, as in `i32[3]` or `i32[..10]`]
+  SEXPR (LetDecl let a = (x is (AltType (TypeRef (JsonType json)))))
+  SEXPR (LetDecl let b = ((x is (AltType (TypeRef (JsonType json)))) and y))
+  SEXPR (LetDecl let c = (x is (AltType (TypeRef (JsonType json [ .. 8 ])))))
+  SEXPR (LetDecl let d = (x is (JsonLit json (JsonArray [ (JsonAtom 1) , (JsonAtom 2) ]))))
+  SEXPR (LetDecl let e = (x is (JsonLit json name)))
+  SEXPR (LetDecl let f = (IfExpr if (x is (AltType (TypeRef (JsonType json)))) then 1 else 2))
+  SEXPR (LetDecl let g = (x is (AltType (TypeRef (JsonType json)))) (ErrorNode ?? 1))
+#### is-scalar-then-paren-space (ok) [sexpr ]  lex-diags=0 parse-diags=0
+  SEXPR (LetDecl let a = (x is (Conversion i32 ( y ))))
+#### is-not-forms (ok) [sexpr ]  lex-diags=0 parse-diags=0
+  SEXPR (LetDecl let a = (x is not none))
+  SEXPR (LetDecl let b = (x is not (AltType (TypeRef i32))))
+  SEXPR (LetDecl let c = (x is not y))
+  SEXPR (LetDecl let d = (not (x is not y)))
+#### is-paren-type (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG conversion-syntax 1:18 17..18 `?` :: expected `(` after the conversion's type, found `?` [help: parenthesize the converted value, as in `i32(x)`]
+#### is-sum-type (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG let-syntax 1:18 17..18 `|` :: expected the end of the line, found `|` [help: write `let`, a name, `=` and the value, as in `let one = 1`]
+#### is-fn-type (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG conversion-syntax 1:18 17..18 `)` :: expected `(` after the conversion's type, found `)` [help: parenthesize the converted value, as in `i32(x)`]
+#### for-from-bare-name-in-parens (ok) [ ]  lex-diags=0 parse-diags=0
+#### for-iterable-bare-name-in-parens (ok) [ ]  lex-diags=0 parse-diags=0
+#### lambda-body-match (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG match-position 1:12 11..16 `match` :: a match is the whole value of a let, a function body or a wire destination [help: make the `match` the whole value of a `let`]
+#### match-in-local-let-of-for-block (ok) [ ]  lex-diags=0 parse-diags=0
+#### for-block-in-pattern-let-and-cell (ok) [ ]  lex-diags=0 parse-diags=0
+#### match-destination-with-gate-and-attrs (ok) [tree ]  lex-diags=0 parse-diags=0
+    File@0..100
+      Placement@0..100
+        Ident "Scene"
+        Ident "dusk"
+        Body@10..100
+          Colon ":"
+          Block@11..100
+            Newline "\n"
+            Indent ""
+            WirePlacement@16..100
+              Ident "Triggers"
+              AsKw "as"
+              Ident "t"
+              Gate@30..41
+                WhenKw "when"
+                NameRef@35..41
+                  Ident "on_air"
+              Attrs@42..50
+                Pipe "|"
+                AttrEntry@44..50
+                  Ident "gain"
+                  Eq "="
+                  Literal@49..50
+                    Number "1"
+              Colon ":"
+              Destination@52..100
+                MatchBlock@52..100
+                  MatchKw "match"
+                  NameRef@58..62
+                    Ident "look"
+                  Colon ":"
+                  Newline "\n"
+                  Indent ""
+                  MatchArm@72..81
+                    Literal@72..73
+                      Number "0"
+                    Colon ":"
+                    NameRef@75..80
+                      Ident "night"
+                    Newline "\n"
+                  ElseArm@89..100
+                    ElseKw "else"
+                    Colon ":"
+                    NameRef@95..99
+                      Ident "dawn"
+                    Newline "\n"
+                  Dedent ""
+            Dedent ""
+#### slash-division-in-gate (ok) [sexpr ]  lex-diags=0 parse-diags=0
+  SEXPR (Placement Rig r (Body : (Block (Placement Lamp (Gate when ((a / b) > 1))) (Placement Lamp (Attrs | (AttrEntry level = (a / b)) (AttrEntry hue = (c / 2)))) (Placement Lamp (DefaultArg / x) (Gate when ((y / 2) > 1)) (Attrs | (AttrEntry level = (z / 3)))) (ForBlock for i in (RangeExpr 0 .. (n / 2)) : (Block (Members (Placement Lamp (DefaultArg / i))))))))
+#### slash-after-atom (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG placement-syntax 2:12 18..19 `/` :: expected the end of the line, found `/` [help: write the kind, then `as` and a name, a `/` value, a `when` gate and `|` attributes, in that order, as in `Lamp as key /0.7 | hue=0.3`]
+#### slash-two-defaults-inline (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG placement-syntax 2:12 18..19 `/` :: expected the end of the line, found `/` [help: write the kind, then `as` and a name, a `/` value, a `when` gate and `|` attributes, in that order, as in `Lamp as key /0.7 | hue=0.3`]
+#### slash-free-whitespace (ok) [sexpr ]  lex-diags=0 parse-diags=0
+  SEXPR (Placement Rig r (Body : (Block (Placement Lamp as a (DefaultArg / b)) (Placement Lamp (DefaultArg / 0.5)) (Line (Bundle [ (Placement Lamp (DefaultArg / x)) (Placement Lamp (DefaultArg / y)) (Placement Lamp (DefaultArg / z)) ])))))
+#### lamp-wash-two-placements (ok) [sexpr ]  lex-diags=0 parse-diags=0
+  SEXPR (Placement Rig r (Body : (Block (Line (Placement Lamp) (Placement wash (DefaultArg / 0.5))))))
+#### wire-kind-as-name-in-other-positions (ok) [ ]  lex-diags=0 parse-diags=0
+#### wire-kind-as-inline-member (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG misplaced-wire 2:9 17..25 `Triggers` :: `Triggers` is a wire kind; a wire placement stands on its own line [help: place the wire on its own line, outside the bundle]
+#### wire-kind-in-bundle (refuse) [ ]  lex-diags=0 parse-diags=1
+  DIAG misplaced-wire 2:10 18..22 `Dims` :: `Dims` is a wire kind; a wire placement stands on its own line [help: place the wire on its own line, outside the bundle]
+#### wire-kind-as-top-name (ok) [ ]  lex-diags=0 parse-diags=0
+#### wire-kind-nfd-spelling [esc ]  lex-diags=0 parse-diags=0
+#### record-vs-placement-top (ok) [sexpr ]  lex-diags=0 parse-diags=0
+  SEXPR (PackageDecl (RecordLit Package { (Field name : (StringLit " x ")) }))
+#### record-literal-after-name-anywhere (ok) [sexpr ]  lex-diags=0 parse-diags=0
+  SEXPR (LetDecl let a = (CallExpr f (ArgList ( (RecordLit Band { (Field low : 1) }) , (MapLit { (MapEntry 1 : 2) }) , (JsonLit json (JsonObject { (JsonEntry "a" : (JsonAtom 1)) })) ))))
+#### brace-after-non-type-name-is-record [sexpr ]  lex-diags=0 parse-diags=0
+  SEXPR (LetDecl let a = (RecordLit x { (Field low : 1) }))
+#### brace-after-keyword-map (ok) [sexpr ]  lex-diags=0 parse-diags=0
+  SEXPR (LetDecl let a = ((m without (MapLit { (MapEntry 1 : 2) })) + (MapLit { (MapEntry 3 : 4) })))
+#### name-colon-contexts (ok) [sexpr ]  lex-diags=0 parse-diags=0
+  SEXPR (LetDecl let f = (Lambda x : x))
+  SEXPR (LetDecl let m = (MapLit { (MapEntry x : x) }))
+  SEXPR (LetDecl let r = (RecordLit R { (Field x : x) }))
+  SEXPR (LetDecl let c = (CallExpr g (ArgList ( (Lambda x : x) ))))
+  SEXPR (LetDecl let n = (CallExpr g (ArgList ( (NamedArg x = x) ))))
+#### guard-vs-match-arm-name-colon (ok) [sexpr ]  lex-diags=0 parse-diags=0
+  SEXPR (Placement Plant p (Body : (Block (WhenBlock when : (GuardArm flag : (Block (Members (Placement Valve)))) (WhenElse else : (Block (Members (Placement Valve))))))))
+  SEXPR (LetDecl let v = (MatchBlock match shape : (MatchArm Circle : shape) (ElseArm else : other)))
+#### dims-vs-args (shape heuristic) [sexpr ]  lex-diags=0 parse-diags=0
+  SEXPR (LetDecl let a : (TypeRef Band [ 4 ]) = x)
+  SEXPR (LetDecl let b : (TypeRef Stack (TypeArgs [ (TypeRef i32) , 8 ]) [ 4 ]) = x)
+  SEXPR (LetDecl let c : (TypeRef Box [ (Size T) ]) = x)
+  SEXPR (LetDecl let d : (TypeRef Grid (TypeArgs [ (N + 1) , (TypeRef M) ])) = x)
+  SEXPR (LetDecl let e : (TypeRef Wrap [ (Size (N + 1)) ]) = x)
+  SEXPR (LetDecl let f : (TypeRef Two (TypeArgs [ (TypeRef A) , (TypeRef B) ])) = x)
+CASES 33

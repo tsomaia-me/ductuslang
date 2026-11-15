@@ -1,0 +1,33 @@
+--- diagnostics (1)
+  ExpressionSyntax 24..25 "\n" :: expected an expression, found the end of the line
+--- detached [] at_layout [24..25]
+--- tree
+File 0..35
+  Placement 0..35
+    Ident "Scene"
+    Ident "s"
+    Body 7..35
+      Colon ":"
+      Block 8..35
+        Newline "\n"
+        Indent ""
+        Placement 13..25
+          Ident "Cue"
+          DefaultArg 16..18
+            Slash "/"
+            Literal 17..18
+              Number "1"
+          Attrs 19..24
+            Pipe "|"
+            AttrEntry 21..24
+              Ident "at"
+              Eq "="
+          Newline "\n"
+        Placement 29..35
+          Ident "Cue"
+          DefaultArg 32..34
+            Slash "/"
+            Literal 33..34
+              Number "2"
+          Newline "\n"
+        Dedent ""

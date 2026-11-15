@@ -1,0 +1,19 @@
+--- diagnostics (1)
+  ExpressionSyntax 10..11 "\n" :: expected an expression, found the end of the line
+--- detached [] at_layout [10..11]
+--- tree
+File 0..22
+  CellDecl 0..11
+    StateKw "state"
+    Ident "s"
+    Eq "="
+    Newline "\n"
+  CellDecl 11..22
+    StateKw "state"
+    Ident "t"
+    Init 18..21
+      LParen "("
+      Literal 19..20
+        Number "1"
+      RParen ")"
+    Newline "\n"

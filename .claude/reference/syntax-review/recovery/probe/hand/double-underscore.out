@@ -1,0 +1,13 @@
+--- diagnostics (2)
+  MisplacedUnderscore 9..10 "_" :: an underscore may only separate two digits
+  MisplacedUnderscore 10..11 "_" :: an underscore may only separate two digits
+--- detached [] at_layout []
+--- tree
+File 0..13
+  LetDecl 0..13
+    LetKw "let"
+    Ident "x"
+    Eq "="
+    Literal 8..12
+      Number "1__0"
+    Newline "\n"

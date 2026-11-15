@@ -1,0 +1,566 @@
+#### types  parse-diags=0
+  File `let a: i32[3][..10] = x\nlet b: i32[..10][3] = x\nlet c: i32` :: items=14
+    LetDecl `let a: i32[3][..10] = x` :: name=`a` ty=`i32[3][..10]` value=`x` lambda=- match_block=-
+      TypeRef `i32[3][..10]` :: base=`i32` enum_name=- lengths=[`3`] capacity=`10`
+      NameRef `x` :: name=`x`
+    LetDecl `let b: i32[..10][3] = x` :: name=`b` ty=`i32[..10][3]` value=`x` lambda=- match_block=-
+      TypeRef `i32[..10][3]` :: base=`i32` enum_name=- lengths=[`3`] capacity=`10`
+      NameRef `x` :: name=`x`
+    LetDecl `let c: i32[..4][..10] = x` :: name=`c` ty=`i32[..4][..10]` value=`x` lambda=- match_block=-
+      TypeRef `i32[..4][..10]` :: base=`i32` enum_name=- lengths=[`10`] capacity=`4`
+      NameRef `x` :: name=`x`
+    LetDecl `let d: T[..N][3] = x` :: name=`d` ty=`T[..N][3]` value=`x` lambda=- match_block=-
+      TypeRef `T[..N][3]` :: base=`T` enum_name=`T` lengths=[] capacity=`3`
+        Size `N` :: value=`N`
+          NameRef `N` :: name=`N`
+      NameRef `x` :: name=`x`
+    LetDecl `let e: T[N][..8] = x` :: name=`e` ty=`T[N][..8]` value=`x` lambda=- match_block=-
+      TypeRef `T[N][..8]` :: base=`T` enum_name=`T` lengths=[] capacity=`8`
+        Size `N` :: value=`N`
+          NameRef `N` :: name=`N`
+      NameRef `x` :: name=`x`
+    LetDecl `let f: str[..32][4] = x` :: name=`f` ty=`str[..32][4]` value=`x` lambda=- match_block=-
+      TypeRef `str[..32][4]` :: base=- enum_name=- lengths=[`4`] capacity=-
+        StrType `str[..32]` (no accessors probed)
+      NameRef `x` :: name=`x`
+    LetDecl `let g: Stack[i32, 8][4] = x` :: name=`g` ty=`Stack[i32, 8][4]` value=`x` lambda=- match_block=-
+      TypeRef `Stack[i32, 8][4]` :: base=`Stack` enum_name=`Stack` lengths=[`4`] capacity=-
+        TypeArgs `[i32, 8]` (no accessors probed)
+          TypeRef `i32` :: base=`i32` enum_name=- lengths=[] capacity=-
+          Literal `8` :: token=`8` kind=Some(Number)
+      NameRef `x` :: name=`x`
+    LetDecl `let h: lib::Band[2]? = x` :: name=`h` ty=`lib::Band[2]?` value=`x` lambda=- match_block=-
+      TypeRef `lib::Band[2]?` :: base=- enum_name=- lengths=[`2`] capacity=-
+        QualifiedName `lib::Band` :: package=`lib` name=`Band`
+      NameRef `x` :: name=`x`
+    LetDecl `let i: (i32?)[..4] = x` :: name=`i` ty=`(i32?)[..4]` value=`x` lambda=- match_block=-
+      TypeRef `(i32?)[..4]` :: base=- enum_name=- lengths=[] capacity=`4`
+        ParenType `(i32?)` :: inner=`i32?`
+          TypeRef `i32?` :: base=`i32` enum_name=- lengths=[] capacity=-
+      NameRef `x` :: name=`x`
+    LetDecl `let j: {str[..4]: i32}[..8][2] = x` :: name=`j` ty=`{str[..4]: i32}[..8][2]` value=`x` lambda=- match_block=-
+      TypeRef `{str[..4]: i32}[..8][2]` :: base=- enum_name=- lengths=[`2`] capacity=-
+        MapType `{str[..4]: i32}[..8]` :: key_and_value=[`str[..4]`, `i32`]
+          TypeRef `str[..4]` :: base=- enum_name=- lengths=[] capacity=-
+            StrType `str[..4]` (no accessors probed)
+          TypeRef `i32` :: base=`i32` enum_name=- lengths=[] capacity=-
+      NameRef `x` :: name=`x`
+    LetDecl `let k: Circle | Square | none = x` :: name=`k` ty=`Circle | Square | none` value=`x` lambda=- match_block=-
+      SumType `Circle | Square | none` :: alternatives=[`Circle`, `Square`, `none`]
+        TypeRef `Circle` :: base=`Circle` enum_name=`Circle` lengths=[] capacity=-
+        TypeRef `Square` :: base=`Square` enum_name=`Square` lengths=[] capacity=-
+        TypeRef `none` :: base=- enum_name=- lengths=[] capacity=-
+      NameRef `x` :: name=`x`
+    LetDecl `let l: (x: f64, i32) -> bool = x` :: name=`l` ty=`(x: f64, i32) -> bool` value=`x` lambda=- match_block=-
+      FnType `(x: f64, i32) -> bool` :: params=[`x: f64`, `i32`] result=`bool`
+        FnParam `x: f64` :: name=`x` ty=`f64`
+          TypeRef `f64` :: base=`f64` enum_name=- lengths=[] capacity=-
+        FnParam `i32` :: name=- ty=`i32`
+          TypeRef `i32` :: base=`i32` enum_name=- lengths=[] capacity=-
+        TypeRef `bool` :: base=`bool` enum_name=- lengths=[] capacity=-
+      NameRef `x` :: name=`x`
+    LetDecl `let m: json[..64][2] = x` :: name=`m` ty=`json[..64][2]` value=`x` lambda=- match_block=-
+      TypeRef `json[..64][2]` :: base=- enum_name=- lengths=[`2`] capacity=-
+        JsonType `json[..64]` (no accessors probed)
+      NameRef `x` :: name=`x`
+    LetDecl `let n: none = x` :: name=`n` ty=`none` value=`x` lambda=- match_block=-
+      TypeRef `none` :: base=- enum_name=- lengths=[] capacity=-
+      NameRef `x` :: name=`x`
+#### attrs  parse-diags=0
+  File `Pad kick | hit => hit gain=gain !strobe strobe state=1 hit2 ` :: items=1
+    Placement `Pad kick | hit => hit gain=gain !strobe strobe state=1 hit2 ` :: kind=`Pad` flags=- has_as=false name=`kick` default_arg=- gate=- attrs=`| hit => hit gain=gain !strobe strobe state=1 hit2 => low.gain` body=-
+      Attrs `| hit => hit gain=gain !strobe strobe state=1 hit2 => low.ga` :: entries=[`hit => hit`, `gain=gain`, `!strobe`, `strobe`, `state=1`, `hit2 => low.gain`]
+        AttrEntry `hit => hit` :: is_negated=false name=`hit` value=`hit`
+          NameRef `hit` :: name=`hit`
+        AttrEntry `gain=gain` :: is_negated=false name=`gain` value=`gain`
+          NameRef `gain` :: name=`gain`
+        AttrEntry `!strobe` :: is_negated=true name=`strobe` value=-
+        AttrEntry `strobe` :: is_negated=false name=`strobe` value=-
+        AttrEntry `state=1` :: is_negated=false name=`state` value=`1`
+          Literal `1` :: token=`1` kind=Some(Number)
+        AttrEntry `hit2 => low.gain` :: is_negated=false name=`hit2` value=`low.gain`
+          FieldExpr `low.gain` :: receiver=`low` field=`gain`
+            NameRef `low` :: name=`low`
+#### args  parse-diags=0
+  File `let a = count(readings, p: p > 60)\nlet b = f((p: i32) -> bo` :: items=4
+    LetDecl `let a = count(readings, p: p > 60)` :: name=`a` ty=- value=`count(readings, p: p > 60)` lambda=- match_block=-
+      CallExpr `count(readings, p: p > 60)` :: callee=`count` args=`(readings, p: p > 60)`
+        NameRef `count` :: name=`count`
+        ArgList `(readings, p: p > 60)` :: positional=[`readings`] lambdas=[`p: p > 60`] named=[]
+          NameRef `readings` :: name=`readings`
+          Lambda `p: p > 60` :: params=- body=`p > 60`
+            BinaryExpr `p > 60` :: lhs=`p` op=`>` is_not=false rhs=`60` alt_type=-
+              NameRef `p` :: name=`p`
+              Literal `60` :: token=`60` kind=Some(Number)
+    LetDecl `let b = f((p: i32) -> bool: p < 48, xs)` :: name=`b` ty=- value=`f((p: i32) -> bool: p < 48, xs)` lambda=- match_block=-
+      CallExpr `f((p: i32) -> bool: p < 48, xs)` :: callee=`f` args=`((p: i32) -> bool: p < 48, xs)`
+        NameRef `f` :: name=`f`
+        ArgList `((p: i32) -> bool: p < 48, xs)` :: positional=[`xs`] lambdas=[`(p: i32) -> bool: p < 48`] named=[]
+          Lambda `(p: i32) -> bool: p < 48` :: params=`p: i32` body=`p < 48`
+            LambdaParams `p: i32` :: params=[`p: i32`]
+              LambdaParam `p: i32` :: name=`p` ty=`i32`
+                TypeRef `i32` :: base=`i32` enum_name=- lengths=[] capacity=-
+            FnResult `-> bool` :: ty=`bool`
+              TypeRef `bool` :: base=`bool` enum_name=- lengths=[] capacity=-
+            BinaryExpr `p < 48` :: lhs=`p` op=`<` is_not=false rhs=`48` alt_type=-
+              NameRef `p` :: name=`p`
+              Literal `48` :: token=`48` kind=Some(Number)
+          NameRef `xs` :: name=`xs`
+    LetDecl `let c = f(keep=p: p, xs=ys)` :: name=`c` ty=- value=`f(keep=p: p, xs=ys)` lambda=- match_block=-
+      CallExpr `f(keep=p: p, xs=ys)` :: callee=`f` args=`(keep=p: p, xs=ys)`
+        NameRef `f` :: name=`f`
+        ArgList `(keep=p: p, xs=ys)` :: positional=[] lambdas=[`p: p`] named=[`keep=p: p`, `xs=ys`]
+          NamedArg `keep=p: p` :: name=`keep` value=-
+            Lambda `p: p` :: params=- body=`p`
+              NameRef `p` :: name=`p`
+          NamedArg `xs=ys` :: name=`xs` value=`ys`
+            NameRef `ys` :: name=`ys`
+    LetDecl `let d = f(1, 2)` :: name=`d` ty=- value=`f(1, 2)` lambda=- match_block=-
+      CallExpr `f(1, 2)` :: callee=`f` args=`(1, 2)`
+        NameRef `f` :: name=`f`
+        ArgList `(1, 2)` :: positional=[`1`, `2`] lambdas=[] named=[]
+          Literal `1` :: token=`1` kind=Some(Number)
+          Literal `2` :: token=`2` kind=Some(Number)
+#### lambdas  parse-diags=0
+  File `let a = x: x * 2\nlet b = (a, b): a + b\nlet c = (x: i32) ->` :: items=4
+    LetDecl `let a = x: x * 2` :: name=`a` ty=- value=- lambda=`x: x * 2` match_block=-
+      Lambda `x: x * 2` :: params=- body=`x * 2`
+        BinaryExpr `x * 2` :: lhs=`x` op=`*` is_not=false rhs=`2` alt_type=-
+          NameRef `x` :: name=`x`
+          Literal `2` :: token=`2` kind=Some(Number)
+    LetDecl `let b = (a, b): a + b` :: name=`b` ty=- value=- lambda=`(a, b): a + b` match_block=-
+      Lambda `(a, b): a + b` :: params=`a, b` body=`a + b`
+        LambdaParams `a, b` :: params=[`a`, `b`]
+          LambdaParam `a` :: name=`a` ty=-
+          LambdaParam `b` :: name=`b` ty=-
+        BinaryExpr `a + b` :: lhs=`a` op=`+` is_not=false rhs=`b` alt_type=-
+          NameRef `a` :: name=`a`
+          NameRef `b` :: name=`b`
+    LetDecl `let c = (x: i32) -> bool: x > 60` :: name=`c` ty=- value=- lambda=`(x: i32) -> bool: x > 60` match_block=-
+      Lambda `(x: i32) -> bool: x > 60` :: params=`x: i32` body=`x > 60`
+        LambdaParams `x: i32` :: params=[`x: i32`]
+          LambdaParam `x: i32` :: name=`x` ty=`i32`
+            TypeRef `i32` :: base=`i32` enum_name=- lengths=[] capacity=-
+        FnResult `-> bool` :: ty=`bool`
+          TypeRef `bool` :: base=`bool` enum_name=- lengths=[] capacity=-
+        BinaryExpr `x > 60` :: lhs=`x` op=`>` is_not=false rhs=`60` alt_type=-
+          NameRef `x` :: name=`x`
+          Literal `60` :: token=`60` kind=Some(Number)
+    LetDecl `let d = (): 1` :: name=`d` ty=- value=- lambda=`(): 1` match_block=-
+      Lambda `(): 1` :: params=- body=`1`
+        Literal `1` :: token=`1` kind=Some(Number)
+#### cells  parse-diags=0
+  File `state setpoint(0.5)\nchannel[16] alarm(0)\nstate name(""): s` :: items=9
+    CellDecl `state setpoint(0.5)` :: word=`state` has_capacity=false capacity=- name=`setpoint` init=`(0.5)` ty=- clock=- has_rule=false value=- match_block=-
+      Init `(0.5)` :: value=`0.5`
+        Literal `0.5` :: token=`0.5` kind=Some(Number)
+    CellDecl `channel[16] alarm(0)` :: word=`channel` has_capacity=true capacity=`16` name=`alarm` init=`(0)` ty=- clock=- has_rule=false value=- match_block=-
+      Init `(0)` :: value=`0`
+        Literal `0` :: token=`0` kind=Some(Number)
+    CellDecl `state name(""): str[..32]` :: word=`state` has_capacity=false capacity=- name=`name` init=`("")` ty=`str[..32]` clock=- has_rule=false value=- match_block=-
+      Init `("")` :: value=`""`
+        StringLit `""` :: parts=[] is_terminated=true
+      TypeRef `str[..32]` :: base=- enum_name=- lengths=[] capacity=-
+        StrType `str[..32]` (no accessors probed)
+    CellDecl `state c2 on b = a + b` :: word=`state` has_capacity=false capacity=- name=`c2` init=- ty=- clock=`on b` has_rule=true value=`a + b` match_block=-
+      Clock `on b` :: is_list=false entries=[`b`]
+        NameRef `b` :: name=`b`
+      BinaryExpr `a + b` :: lhs=`a` op=`+` is_not=false rhs=`b` alt_type=-
+        NameRef `a` :: name=`a`
+        NameRef `b` :: name=`b`
+    CellDecl `state c4 on (a, b) = a + b` :: word=`state` has_capacity=false capacity=- name=`c4` init=- ty=- clock=`on (a, b)` has_rule=true value=`a + b` match_block=-
+      Clock `on (a, b)` :: is_list=true entries=[`a`, `b`]
+        NameRef `a` :: name=`a`
+        NameRef `b` :: name=`b`
+      BinaryExpr `a + b` :: lhs=`a` op=`+` is_not=false rhs=`b` alt_type=-
+        NameRef `a` :: name=`a`
+        NameRef `b` :: name=`b`
+    CellDecl `state held(0.0): f64 on gate = if gate then level else held.` :: word=`state` has_capacity=false capacity=- name=`held` init=`(0.0)` ty=`f64` clock=`on gate` has_rule=true value=`if gate then level else held.past(1)` match_block=-
+      Init `(0.0)` :: value=`0.0`
+        Literal `0.0` :: token=`0.0` kind=Some(Number)
+      TypeRef `f64` :: base=`f64` enum_name=- lengths=[] capacity=-
+      Clock `on gate` :: is_list=false entries=[`gate`]
+        NameRef `gate` :: name=`gate`
+      IfExpr `if gate then level else held.past(1)` :: condition=`gate` then_branch=`level` else_branch=`held.past(1)`
+        NameRef `gate` :: name=`gate`
+        NameRef `level` :: name=`level`
+        CallExpr `held.past(1)` :: callee=`held.past` args=`(1)`
+          FieldExpr `held.past` :: receiver=`held` field=`past`
+            NameRef `held` :: name=`held`
+          ArgList `(1)` :: positional=[`1`] lambdas=[] named=[]
+            Literal `1` :: token=`1` kind=Some(Number)
+    CellDecl `state level = match mode:\n    Auto: 1.0\n    else: 0.6` :: word=`state` has_capacity=false capacity=- name=`level` init=- ty=- clock=- has_rule=true value=- match_block=`match mode:\n    Auto: 1.0\n    else: 0.6`
+      MatchBlock `match mode:\n    Auto: 1.0\n    else: 0.6` :: scrutinee=`mode` arms=[`Auto: 1.0`] else_arm=`else: 0.6`
+        NameRef `mode` :: name=`mode`
+        MatchArm `Auto: 1.0` :: label=`Auto` alt_type=- value=`1.0`
+          NameRef `Auto` :: name=`Auto`
+          Literal `1.0` :: token=`1.0` kind=Some(Number)
+        ElseArm `else: 0.6` :: value=`0.6`
+          Literal `0.6` :: token=`0.6` kind=Some(Number)
+    CellDecl `state high = for x in readings into kept from []:\n    let k` :: word=`state` has_capacity=false capacity=- name=`high` init=- ty=- clock=- has_rule=true value=`for x in readings into kept from []:\n    let keep = x > 60\n    if keep then kept + [x] else kept` match_block=-
+      ForExprBlock `for x in readings into kept from []:\n    let keep = x > 60\` :: head=`for x in readings into kept from []:` is_block=true lets=[`let keep = x > 60`] body=`if keep then kept + [x] else kept`
+        ForExprHead `for x in readings into kept from []:` :: loop_head.names=[("x", None)] loop_head.iterable=`readings` accumulator=`kept` accumulator_type=- start=`[]`
+          NameRef `readings` :: name=`readings`
+          ArrayLit `[]` :: elements=[]
+        LocalLet `let keep = x > 60` :: name=`keep` ty=- value=`x > 60` lambda=- match_block=-
+          BinaryExpr `x > 60` :: lhs=`x` op=`>` is_not=false rhs=`60` alt_type=-
+            NameRef `x` :: name=`x`
+            Literal `60` :: token=`60` kind=Some(Number)
+        IfExpr `if keep then kept + [x] else kept` :: condition=`keep` then_branch=`kept + [x]` else_branch=`kept`
+          NameRef `keep` :: name=`keep`
+          BinaryExpr `kept + [x]` :: lhs=`kept` op=`+` is_not=false rhs=`[x]` alt_type=-
+            NameRef `kept` :: name=`kept`
+            ArrayLit `[x]` :: elements=[`x`]
+              NameRef `x` :: name=`x`
+          NameRef `kept` :: name=`kept`
+    CellDecl `state s: i32[3] = [1, 2, 3]` :: word=`state` has_capacity=false capacity=- name=`s` init=- ty=`i32[3]` clock=- has_rule=true value=`[1, 2, 3]` match_block=-
+      TypeRef `i32[3]` :: base=`i32` enum_name=- lengths=[`3`] capacity=-
+      ArrayLit `[1, 2, 3]` :: elements=[`1`, `2`, `3`]
+        Literal `1` :: token=`1` kind=Some(Number)
+        Literal `2` :: token=`2` kind=Some(Number)
+        Literal `3` :: token=`3` kind=Some(Number)
+#### lets  parse-diags=0
+  File `let a = 1\nlet b: i32 = 2\nlet h = match a:\n    1: 2\n    -` :: items=3
+    LetDecl `let a = 1` :: name=`a` ty=- value=`1` lambda=- match_block=-
+      Literal `1` :: token=`1` kind=Some(Number)
+    LetDecl `let b: i32 = 2` :: name=`b` ty=`i32` value=`2` lambda=- match_block=-
+      TypeRef `i32` :: base=`i32` enum_name=- lengths=[] capacity=-
+      Literal `2` :: token=`2` kind=Some(Number)
+    LetDecl `let h = match a:\n    1: 2\n    -1: 3\n    "s": 4\n    i32: ` :: name=`h` ty=- value=- lambda=- match_block=`match a:\n    1: 2\n    -1: 3\n    "s": 4\n    i32: 5\n    Circle: 6\n    else: 3`
+      MatchBlock `match a:\n    1: 2\n    -1: 3\n    "s": 4\n    i32: 5\n    C` :: scrutinee=`a` arms=[`1: 2`, `-1: 3`, `"s": 4`, `i32: 5`, `Circle: 6`] else_arm=`else: 3`
+        NameRef `a` :: name=`a`
+        MatchArm `1: 2` :: label=`1` alt_type=- value=`2`
+          Literal `1` :: token=`1` kind=Some(Number)
+          Literal `2` :: token=`2` kind=Some(Number)
+        MatchArm `-1: 3` :: label=`-1` alt_type=- value=`3`
+          PrefixExpr `-1` :: op=`-` operand=`1`
+            Literal `1` :: token=`1` kind=Some(Number)
+          Literal `3` :: token=`3` kind=Some(Number)
+        MatchArm `"s": 4` :: label=`"s"` alt_type=- value=`4`
+          StringLit `"s"` :: parts=["T:s"] is_terminated=true
+          Literal `4` :: token=`4` kind=Some(Number)
+        MatchArm `i32: 5` :: label=- alt_type=`i32` value=`5`
+          AltType `i32` :: ty=`i32`
+            TypeRef `i32` :: base=`i32` enum_name=- lengths=[] capacity=-
+          Literal `5` :: token=`5` kind=Some(Number)
+        MatchArm `Circle: 6` :: label=`Circle` alt_type=- value=`6`
+          NameRef `Circle` :: name=`Circle`
+          Literal `6` :: token=`6` kind=Some(Number)
+        ElseArm `else: 3` :: value=`3`
+          Literal `3` :: token=`3` kind=Some(Number)
+#### fns  parse-diags=0
+  File `fn tier(cell rank: i32, base: i32 = 100, plain, d = 1) -> i3` :: items=3
+    FnDecl `fn tier(cell rank: i32, base: i32 = 100, plain, d = 1) -> i3` :: name=`tier` generic_params=- params=[`cell rank: i32`, `base: i32 = 100`, `plain`, `d = 1`] result=`-> i32` body=`let cycles: i32 = rank div 4\n    base + cycles`
+      ParamList `(cell rank: i32, base: i32 = 100, plain, d = 1)` (no accessors probed)
+        Param `cell rank: i32` :: marker=`cell` name=`rank` ty=`i32` default_value=-
+          TypeRef `i32` :: base=`i32` enum_name=- lengths=[] capacity=-
+        Param `base: i32 = 100` :: marker=- name=`base` ty=`i32` default_value=`100`
+          TypeRef `i32` :: base=`i32` enum_name=- lengths=[] capacity=-
+          Literal `100` :: token=`100` kind=Some(Number)
+        Param `plain` :: marker=- name=`plain` ty=- default_value=-
+        Param `d = 1` :: marker=- name=`d` ty=- default_value=`1`
+          Literal `1` :: token=`1` kind=Some(Number)
+      FnResult `-> i32` :: ty=`i32`
+        TypeRef `i32` :: base=`i32` enum_name=- lengths=[] capacity=-
+      FnBody `let cycles: i32 = rank div 4\n    base + cycles` :: lets=[`let cycles: i32 = rank div 4`] value=`base + cycles` match_block=-
+        LocalLet `let cycles: i32 = rank div 4` :: name=`cycles` ty=`i32` value=`rank div 4` lambda=- match_block=-
+          TypeRef `i32` :: base=`i32` enum_name=- lengths=[] capacity=-
+          BinaryExpr `rank div 4` :: lhs=`rank` op=`div` is_not=false rhs=`4` alt_type=-
+            NameRef `rank` :: name=`rank`
+            Literal `4` :: token=`4` kind=Some(Number)
+        BinaryExpr `base + cycles` :: lhs=`base` op=`+` is_not=false rhs=`cycles` alt_type=-
+          NameRef `base` :: name=`base`
+          NameRef `cycles` :: name=`cycles`
+    FnDecl `fn gen[T: f32 | f64, const N: i32](xs: T[N]) -> T: xs[0]` :: name=`gen` generic_params=`[T: f32 | f64, const N: i32]` params=[`xs: T[N]`] result=`-> T` body=`xs[0]`
+      GenericParams `[T: f32 | f64, const N: i32]` :: params=[`T: f32 | f64`, `const N: i32`]
+        GenericParam `T: f32 | f64` :: is_const=false name=`T` constraint=`f32 | f64`
+          SumType `f32 | f64` :: alternatives=[`f32`, `f64`]
+            TypeRef `f32` :: base=`f32` enum_name=- lengths=[] capacity=-
+            TypeRef `f64` :: base=`f64` enum_name=- lengths=[] capacity=-
+        GenericParam `const N: i32` :: is_const=true name=`N` constraint=`i32`
+          TypeRef `i32` :: base=`i32` enum_name=- lengths=[] capacity=-
+      ParamList `(xs: T[N])` (no accessors probed)
+        Param `xs: T[N]` :: marker=- name=`xs` ty=`T[N]` default_value=-
+          TypeRef `T[N]` :: base=`T` enum_name=`T` lengths=[] capacity=-
+            Size `N` :: value=`N`
+              NameRef `N` :: name=`N`
+      FnResult `-> T` :: ty=`T`
+        TypeRef `T` :: base=`T` enum_name=`T` lengths=[] capacity=-
+      FnBody `xs[0]` :: lets=[] value=`xs[0]` match_block=-
+        IndexExpr `xs[0]` :: base=`xs` is_slice=false index=`0` lower=`0` upper=-
+          NameRef `xs` :: name=`xs`
+          Bound `0` :: from_end=false value=`0`
+            Literal `0` :: token=`0` kind=Some(Number)
+    FnDecl `fn m(x):\n    match x:\n        0: 1\n        else: 2` :: name=`m` generic_params=- params=[`x`] result=- body=`match x:\n        0: 1\n        else: 2`
+      ParamList `(x)` (no accessors probed)
+        Param `x` :: marker=- name=`x` ty=- default_value=-
+      FnBody `match x:\n        0: 1\n        else: 2` :: lets=[] value=- match_block=`match x:\n        0: 1\n        else: 2`
+        MatchBlock `match x:\n        0: 1\n        else: 2` :: scrutinee=`x` arms=[`0: 1`] else_arm=`else: 2`
+          NameRef `x` :: name=`x`
+          MatchArm `0: 1` :: label=`0` alt_type=- value=`1`
+            Literal `0` :: token=`0` kind=Some(Number)
+            Literal `1` :: token=`1` kind=Some(Number)
+          ElseArm `else: 2` :: value=`2`
+            Literal `2` :: token=`2` kind=Some(Number)
+#### patterns  parse-diags=0
+  File `pattern Drum[K](default out channel hit: Hit, gain: f32 = 1.` :: items=1
+    PatternDecl `pattern Drum[K](default out channel hit: Hit, gain: f32 = 1.` :: name=`Drum` generic_params=`[K]` params=[`default out channel hit: Hit`, `gain: f32 = 1.0`, `const n = 2`, `children notes: Note*`, `plain`] placement_type=`(Pad, [Lamp{2+}]*, node+)` body=`state g(1.0)\n    let k = 2\n    Pad | hit => hit gain=gain\n    notes`
+      GenericParams `[K]` :: params=[`K`]
+        GenericParam `K` :: is_const=false name=`K` constraint=-
+      PatternParamList `(default out channel hit: Hit, gain: f32 = 1.0, const n = 2,` (no accessors probed)
+        PatternParam `default out channel hit: Hit` :: is_default=true is_children=false markers=[`out`, `channel`] name=`hit` ty=`Hit` placement_type=- default_value=-
+          TypeRef `Hit` :: base=`Hit` enum_name=`Hit` lengths=[] capacity=-
+        PatternParam `gain: f32 = 1.0` :: is_default=false is_children=false markers=[] name=`gain` ty=`f32` placement_type=- default_value=`1.0`
+          TypeRef `f32` :: base=`f32` enum_name=- lengths=[] capacity=-
+          Literal `1.0` :: token=`1.0` kind=Some(Number)
+        PatternParam `const n = 2` :: is_default=false is_children=false markers=[`const`] name=`n` ty=- placement_type=- default_value=`2`
+          Literal `2` :: token=`2` kind=Some(Number)
+        PatternParam `children notes: Note*` :: is_default=false is_children=true markers=[] name=`notes` ty=- placement_type=`Note*` default_value=-
+          PlacementType `Note*` :: entries=[`Note*`]
+            PlacementEntry `Note*` :: bundle=- count=-
+        PatternParam `plain` :: is_default=false is_children=false markers=[] name=`plain` ty=- placement_type=- default_value=-
+      PlacementType `(Pad, [Lamp{2+}]*, node+)` :: entries=[`Pad`, `[Lamp{2+}]*`, `node+`]
+        PlacementEntry `Pad` :: bundle=- count=-
+        PlacementEntry `[Lamp{2+}]*` :: bundle=`Lamp{2+}` count=-
+          PlacementEntry `Lamp{2+}` :: bundle=- count=`{2+}`
+            Count `{2+}` (no accessors probed)
+        PlacementEntry `node+` :: bundle=- count=-
+      Block `state g(1.0)\n    let k = 2\n    Pad | hit => hit gain=gain\` :: lets=[`let k = 2`] cells=[`state g(1.0)`] items=[`Pad | hit => hit gain=gain`, `notes`] members=-
+        CellDecl `state g(1.0)` :: word=`state` has_capacity=false capacity=- name=`g` init=`(1.0)` ty=- clock=- has_rule=false value=- match_block=-
+          Init `(1.0)` :: value=`1.0`
+            Literal `1.0` :: token=`1.0` kind=Some(Number)
+        LocalLet `let k = 2` :: name=`k` ty=- value=`2` lambda=- match_block=-
+          Literal `2` :: token=`2` kind=Some(Number)
+        Placement `Pad | hit => hit gain=gain` :: kind=`Pad` flags=- has_as=false name=- default_arg=- gate=- attrs=`| hit => hit gain=gain` body=-
+          Attrs `| hit => hit gain=gain` :: entries=[`hit => hit`, `gain=gain`]
+            AttrEntry `hit => hit` :: is_negated=false name=`hit` value=`hit`
+              NameRef `hit` :: name=`hit`
+            AttrEntry `gain=gain` :: is_negated=false name=`gain` value=`gain`
+              NameRef `gain` :: name=`gain`
+        Placement `notes` :: kind=`notes` flags=- has_as=false name=- default_arg=- gate=- attrs=- body=-
+#### placements  parse-diags=1
+  File `Rig stage\nRig as stage2 /0.5 when on | hue=1:\n    Lamp\n  ` :: items=2
+    Placement `Rig stage` :: kind=`Rig` flags=- has_as=false name=`stage` default_arg=- gate=- attrs=- body=-
+    Placement `Rig as stage2 /0.5 when on | hue=1:\n    Lamp\n    Lamp as w` :: kind=`Rig` flags=- has_as=true name=`stage2` default_arg=`/0.5` gate=`when` attrs=- body=`:\n    Lamp\n    Lamp as wash\n    Lamp'* as key /0.7 when a | hue=0.3\n    Lamp/level\n    Lamp | level\n    Scene: Cue/0 Cue as c /2 [Cue Cue] (Cue when x | fade=1)\n    [Lamp for i, p: f32 in xs: Lamp/p]\n    Dims as soften /0.5 when a | depth=0.4: stage.wash\n    Triggers: match look:\n        0: night\n        else: dawn\n    for i: i32 in 0..8:\n        Lamp\n    when a:\n        Lamp\n    else: Lamp\n    when:\n        b: Lamp\n        else: Lamp`
+      DefaultArg `/0.5` :: value=`0.5`
+        Literal `0.5` :: token=`0.5` kind=Some(Number)
+      Gate `when` :: condition=-
+      ErrorNode `on | hue=1` (no accessors probed)
+      Body `:\n    Lamp\n    Lamp as wash\n    Lamp'* as key /0.7 when a` :: block=`Lamp\n    Lamp as wash\n    Lamp'* as key /0.7 when a | hue=0.3\n    Lamp/level\n    Lamp | level\n    Scene: Cue/0 Cue as c /2 [Cue Cue] (Cue when x | fade=1)\n    [Lamp for i, p: f32 in xs: Lamp/p]\n    Dims as soften /0.5 when a | depth=0.4: stage.wash\n    Triggers: match look:\n        0: night\n        else: dawn\n    for i: i32 in 0..8:\n        Lamp\n    when a:\n        Lamp\n    else: Lamp\n    when:\n        b: Lamp\n        else: Lamp`
+        Block `Lamp\n    Lamp as wash\n    Lamp'* as key /0.7 when a | hue=` :: lets=[] cells=[] items=[`Lamp`, `Lamp as wash`, `Lamp'* as key /0.7 when a | hue=0.3`, `Lamp/level`, `Lamp | level`, `Scene: Cue/0 Cue as c /2 [Cue Cue] (Cue when x | fade=1)`, `[Lamp for i, p: f32 in xs: Lamp/p]`, `Dims as soften /0.5 when a | depth=0.4: stage.wash`, `Triggers: match look:\n        0: night\n        else: dawn`, `for i: i32 in 0..8:\n        Lamp`, `when a:\n        Lamp\n    else: Lamp`, `when:\n        b: Lamp\n        else: Lamp`] members=-
+          Placement `Lamp` :: kind=`Lamp` flags=- has_as=false name=- default_arg=- gate=- attrs=- body=-
+          Placement `Lamp as wash` :: kind=`Lamp` flags=- has_as=true name=`wash` default_arg=- gate=- attrs=- body=-
+          Placement `Lamp'* as key /0.7 when a | hue=0.3` :: kind=`Lamp` flags=`'*` has_as=true name=`key` default_arg=`/0.7` gate=`when a` attrs=`| hue=0.3` body=-
+            Flags `'*` :: chars=['\'', '*']
+            DefaultArg `/0.7` :: value=`0.7`
+              Literal `0.7` :: token=`0.7` kind=Some(Number)
+            Gate `when a` :: condition=`a`
+              NameRef `a` :: name=`a`
+            Attrs `| hue=0.3` :: entries=[`hue=0.3`]
+              AttrEntry `hue=0.3` :: is_negated=false name=`hue` value=`0.3`
+                Literal `0.3` :: token=`0.3` kind=Some(Number)
+          Placement `Lamp/level` :: kind=`Lamp` flags=- has_as=false name=- default_arg=`/level` gate=- attrs=- body=-
+            DefaultArg `/level` :: value=`level`
+              NameRef `level` :: name=`level`
+          Placement `Lamp | level` :: kind=`Lamp` flags=- has_as=false name=- default_arg=- gate=- attrs=`| level` body=-
+            Attrs `| level` :: entries=[`level`]
+              AttrEntry `level` :: is_negated=false name=`level` value=-
+          Placement `Scene: Cue/0 Cue as c /2 [Cue Cue] (Cue when x | fade=1)` :: kind=`Scene` flags=- has_as=false name=- default_arg=- gate=- attrs=- body=`: Cue/0 Cue as c /2 [Cue Cue] (Cue when x | fade=1)`
+            Body `: Cue/0 Cue as c /2 [Cue Cue] (Cue when x | fade=1)` :: block=`Cue/0 Cue as c /2 [Cue Cue] (Cue when x | fade=1)`
+              Block `Cue/0 Cue as c /2 [Cue Cue] (Cue when x | fade=1)` :: lets=[] cells=[] items=[] members=`Cue/0 Cue as c /2 [Cue Cue] (Cue when x | fade=1)`
+                Members `Cue/0 Cue as c /2 [Cue Cue] (Cue when x | fade=1)` :: members=[`Cue/0`, `Cue as c /2`, `[Cue Cue]`, `(Cue when x | fade=1)`]
+                  Placement `Cue/0` :: kind=`Cue` flags=- has_as=false name=- default_arg=`/0` gate=- attrs=- body=-
+                    DefaultArg `/0` :: value=`0`
+                      Literal `0` :: token=`0` kind=Some(Number)
+                  Placement `Cue as c /2` :: kind=`Cue` flags=- has_as=true name=`c` default_arg=`/2` gate=- attrs=- body=-
+                    DefaultArg `/2` :: value=`2`
+                      Literal `2` :: token=`2` kind=Some(Number)
+                  Bundle `[Cue Cue]` :: members=[`Cue`, `Cue`] bundle_for=-
+                    Placement `Cue` :: kind=`Cue` flags=- has_as=false name=- default_arg=- gate=- attrs=- body=-
+                    Placement `Cue` :: kind=`Cue` flags=- has_as=false name=- default_arg=- gate=- attrs=- body=-
+                  ParenPlacement `(Cue when x | fade=1)` :: placement=`Cue when x | fade=1`
+                    Placement `Cue when x | fade=1` :: kind=`Cue` flags=- has_as=false name=- default_arg=- gate=`when x` attrs=`| fade=1` body=-
+                      Gate `when x` :: condition=`x`
+                        NameRef `x` :: name=`x`
+                      Attrs `| fade=1` :: entries=[`fade=1`]
+                        AttrEntry `fade=1` :: is_negated=false name=`fade` value=`1`
+                          Literal `1` :: token=`1` kind=Some(Number)
+          Line `[Lamp for i, p: f32 in xs: Lamp/p]` :: members=[`[Lamp for i, p: f32 in xs: Lamp/p]`]
+            Bundle `[Lamp for i, p: f32 in xs: Lamp/p]` :: members=[`Lamp`] bundle_for=`for i, p: f32 in xs: Lamp/p`
+              Placement `Lamp` :: kind=`Lamp` flags=- has_as=false name=- default_arg=- gate=- attrs=- body=-
+              BundleFor `for i, p: f32 in xs: Lamp/p` :: head.names=[("i", None), ("p", Some("f32"))] head.iterable=`xs` members=[`Lamp/p`]
+                TypeRef `f32` :: base=`f32` enum_name=- lengths=[] capacity=-
+                NameRef `xs` :: name=`xs`
+                Placement `Lamp/p` :: kind=`Lamp` flags=- has_as=false name=- default_arg=`/p` gate=- attrs=- body=-
+                  DefaultArg `/p` :: value=`p`
+                    NameRef `p` :: name=`p`
+          WirePlacement `Dims as soften /0.5 when a | depth=0.4: stage.wash` :: kind=`Dims` flags=- has_as=true name=`soften` default_arg=`/0.5` gate=`when a` attrs=`| depth=0.4` destination=`stage.wash`
+            DefaultArg `/0.5` :: value=`0.5`
+              Literal `0.5` :: token=`0.5` kind=Some(Number)
+            Gate `when a` :: condition=`a`
+              NameRef `a` :: name=`a`
+            Attrs `| depth=0.4` :: entries=[`depth=0.4`]
+              AttrEntry `depth=0.4` :: is_negated=false name=`depth` value=`0.4`
+                Literal `0.4` :: token=`0.4` kind=Some(Number)
+            Destination `stage.wash` :: value=`stage.wash` match_block=-
+              FieldExpr `stage.wash` :: receiver=`stage` field=`wash`
+                NameRef `stage` :: name=`stage`
+          WirePlacement `Triggers: match look:\n        0: night\n        else: dawn` :: kind=`Triggers` flags=- has_as=false name=- default_arg=- gate=- attrs=- destination=`match look:\n        0: night\n        else: dawn`
+            Destination `match look:\n        0: night\n        else: dawn` :: value=- match_block=`match look:\n        0: night\n        else: dawn`
+              MatchBlock `match look:\n        0: night\n        else: dawn` :: scrutinee=`look` arms=[`0: night`] else_arm=`else: dawn`
+                NameRef `look` :: name=`look`
+                MatchArm `0: night` :: label=`0` alt_type=- value=`night`
+                  Literal `0` :: token=`0` kind=Some(Number)
+                  NameRef `night` :: name=`night`
+                ElseArm `else: dawn` :: value=`dawn`
+                  NameRef `dawn` :: name=`dawn`
+          ForBlock `for i: i32 in 0..8:\n        Lamp` :: head.names=[("i", Some("i32"))] head.iterable=`0..8` block=`Lamp`
+            TypeRef `i32` :: base=`i32` enum_name=- lengths=[] capacity=-
+            RangeExpr `0..8` :: start=`0` end=`8`
+              Literal `0` :: token=`0` kind=Some(Number)
+              Literal `8` :: token=`8` kind=Some(Number)
+            Block `Lamp` :: lets=[] cells=[] items=[`Lamp`] members=-
+              Placement `Lamp` :: kind=`Lamp` flags=- has_as=false name=- default_arg=- gate=- attrs=- body=-
+          WhenBlock `when a:\n        Lamp\n    else: Lamp` :: condition=`a` block=`Lamp` guard_arms=[] else_branch=`else: Lamp`
+            NameRef `a` :: name=`a`
+            Block `Lamp` :: lets=[] cells=[] items=[`Lamp`] members=-
+              Placement `Lamp` :: kind=`Lamp` flags=- has_as=false name=- default_arg=- gate=- attrs=- body=-
+            WhenElse `else: Lamp` :: block=`Lamp`
+              Block `Lamp` :: lets=[] cells=[] items=[] members=`Lamp`
+                Members `Lamp` :: members=[`Lamp`]
+                  Placement `Lamp` :: kind=`Lamp` flags=- has_as=false name=- default_arg=- gate=- attrs=- body=-
+          WhenBlock `when:\n        b: Lamp\n        else: Lamp` :: condition=- block=- guard_arms=[`b: Lamp`] else_branch=`else: Lamp`
+            GuardArm `b: Lamp` :: guard=`b` block=`Lamp`
+              NameRef `b` :: name=`b`
+              Block `Lamp` :: lets=[] cells=[] items=[] members=`Lamp`
+                Members `Lamp` :: members=[`Lamp`]
+                  Placement `Lamp` :: kind=`Lamp` flags=- has_as=false name=- default_arg=- gate=- attrs=- body=-
+            WhenElse `else: Lamp` :: block=`Lamp`
+              Block `Lamp` :: lets=[] cells=[] items=[] members=`Lamp`
+                Members `Lamp` :: members=[`Lamp`]
+                  Placement `Lamp` :: kind=`Lamp` flags=- has_as=false name=- default_arg=- gate=- attrs=- body=-
+#### exprs  parse-diags=0
+  File `let a = x is not y\nlet b = x is not i32\nlet c = xs[1..^2]\` :: items=15
+    LetDecl `let a = x is not y` :: name=`a` ty=- value=`x is not y` lambda=- match_block=-
+      BinaryExpr `x is not y` :: lhs=`x` op=`is` is_not=true rhs=`y` alt_type=-
+        NameRef `x` :: name=`x`
+        NameRef `y` :: name=`y`
+    LetDecl `let b = x is not i32` :: name=`b` ty=- value=`x is not i32` lambda=- match_block=-
+      BinaryExpr `x is not i32` :: lhs=`x` op=`is` is_not=true rhs=- alt_type=`i32`
+        NameRef `x` :: name=`x`
+        AltType `i32` :: ty=`i32`
+          TypeRef `i32` :: base=`i32` enum_name=- lengths=[] capacity=-
+    LetDecl `let c = xs[1..^2]` :: name=`c` ty=- value=`xs[1..^2]` lambda=- match_block=-
+      IndexExpr `xs[1..^2]` :: base=`xs` is_slice=true index=- lower=`1` upper=`^2`
+        NameRef `xs` :: name=`xs`
+        Bound `1` :: from_end=false value=`1`
+          Literal `1` :: token=`1` kind=Some(Number)
+        Bound `^2` :: from_end=true value=`2`
+          Literal `2` :: token=`2` kind=Some(Number)
+    LetDecl `let d = xs[..3]` :: name=`d` ty=- value=`xs[..3]` lambda=- match_block=-
+      IndexExpr `xs[..3]` :: base=`xs` is_slice=true index=- lower=- upper=`3`
+        NameRef `xs` :: name=`xs`
+        Bound `3` :: from_end=false value=`3`
+          Literal `3` :: token=`3` kind=Some(Number)
+    LetDecl `let e = xs[^1]` :: name=`e` ty=- value=`xs[^1]` lambda=- match_block=-
+      IndexExpr `xs[^1]` :: base=`xs` is_slice=false index=`^1` lower=`^1` upper=-
+        NameRef `xs` :: name=`xs`
+        Bound `^1` :: from_end=true value=`1`
+          Literal `1` :: token=`1` kind=Some(Number)
+    LetDecl `let f = xs[2..]` :: name=`f` ty=- value=`xs[2..]` lambda=- match_block=-
+      IndexExpr `xs[2..]` :: base=`xs` is_slice=true index=- lower=`2` upper=-
+        NameRef `xs` :: name=`xs`
+        Bound `2` :: from_end=false value=`2`
+          Literal `2` :: token=`2` kind=Some(Number)
+    LetDecl `let g = if a then b else c` :: name=`g` ty=- value=`if a then b else c` lambda=- match_block=-
+      IfExpr `if a then b else c` :: condition=`a` then_branch=`b` else_branch=`c`
+        NameRef `a` :: name=`a`
+        NameRef `b` :: name=`b`
+        NameRef `c` :: name=`c`
+    LetDecl `let h = for i: i32, x in xs into s: f32 from 0.0: s + x` :: name=`h` ty=- value=`for i: i32, x in xs into s: f32 from 0.0: s + x` lambda=- match_block=-
+      ForExpr `for i: i32, x in xs into s: f32 from 0.0: s + x` :: head=`for i: i32, x in xs into s: f32 from 0.0:` is_block=false lets=[] body=`s + x`
+        ForExprHead `for i: i32, x in xs into s: f32 from 0.0:` :: loop_head.names=[("i", Some("i32")), ("x", None)] loop_head.iterable=`xs` accumulator=`s` accumulator_type=`f32` start=`0.0`
+          TypeRef `i32` :: base=`i32` enum_name=- lengths=[] capacity=-
+          NameRef `xs` :: name=`xs`
+          TypeRef `f32` :: base=`f32` enum_name=- lengths=[] capacity=-
+          Literal `0.0` :: token=`0.0` kind=Some(Number)
+        BinaryExpr `s + x` :: lhs=`s` op=`+` is_not=false rhs=`x` alt_type=-
+          NameRef `s` :: name=`s`
+          NameRef `x` :: name=`x`
+    LetDecl `let i = -x ** 2` :: name=`i` ty=- value=`-x ** 2` lambda=- match_block=-
+      PrefixExpr `-x ** 2` :: op=`-` operand=`x ** 2`
+        BinaryExpr `x ** 2` :: lhs=`x` op=`**` is_not=false rhs=`2` alt_type=-
+          NameRef `x` :: name=`x`
+          Literal `2` :: token=`2` kind=Some(Number)
+    LetDecl `let j = f32(x) + lib::v + Mode::Manual` :: name=`j` ty=- value=`f32(x) + lib::v + Mode::Manual` lambda=- match_block=-
+      BinaryExpr `f32(x) + lib::v + Mode::Manual` :: lhs=`f32(x) + lib::v` op=`+` is_not=false rhs=`Mode::Manual` alt_type=-
+        BinaryExpr `f32(x) + lib::v` :: lhs=`f32(x)` op=`+` is_not=false rhs=`lib::v` alt_type=-
+          Conversion `f32(x)` :: target=`f32` operand=`x`
+            NameRef `x` :: name=`x`
+          VariantRef `lib::v` :: enum_name=`lib` variant=`v`
+        VariantRef `Mode::Manual` :: enum_name=`Mode` variant=`Manual`
+    LetDecl `let k = "a {x} b"` :: name=`k` ty=- value=`"a {x} b"` lambda=- match_block=-
+      StringLit `"a {x} b"` :: parts=["T:a ", "I:`x`", "T: b"] is_terminated=true
+        Interpolation `{x}` :: value=`x`
+          NameRef `x` :: name=`x`
+    LetDecl `let l = x.state.y` :: name=`l` ty=- value=`x.state.y` lambda=- match_block=-
+      FieldExpr `x.state.y` :: receiver=`x.state` field=`y`
+        FieldExpr `x.state` :: receiver=`x` field=`state`
+          NameRef `x` :: name=`x`
+    LetDecl `let m = Stack[i32, 8] {items: [], top: 0}` :: name=`m` ty=- value=`Stack[i32, 8] {items: [], top: 0}` lambda=- match_block=-
+      RecordLit `Stack[i32, 8] {items: [], top: 0}` :: fields=[`items: []`, `top: 0`]
+        TypeArgs `[i32, 8]` (no accessors probed)
+          TypeRef `i32` :: base=`i32` enum_name=- lengths=[] capacity=-
+          Literal `8` :: token=`8` kind=Some(Number)
+        Field `items: []` :: name=`items` value=`[]`
+          ArrayLit `[]` :: elements=[]
+        Field `top: 0` :: name=`top` value=`0`
+          Literal `0` :: token=`0` kind=Some(Number)
+    LetDecl `let n = {1: 2, 3: 4}` :: name=`n` ty=- value=`{1: 2, 3: 4}` lambda=- match_block=-
+      MapLit `{1: 2, 3: 4}` :: entries=[`1: 2`, `3: 4`]
+        MapEntry `1: 2` :: key_and_value=[`1`, `2`]
+          Literal `1` :: token=`1` kind=Some(Number)
+          Literal `2` :: token=`2` kind=Some(Number)
+        MapEntry `3: 4` :: key_and_value=[`3`, `4`]
+          Literal `3` :: token=`3` kind=Some(Number)
+          Literal `4` :: token=`4` kind=Some(Number)
+    LetDecl `let o = json {"a": [1, -2, x.y, (z + 1)], "b": null}` :: name=`o` ty=- value=`json {"a": [1, -2, x.y, (z + 1)], "b": null}` lambda=- match_block=-
+      JsonLit `json {"a": [1, -2, x.y, (z + 1)], "b": null}` :: value=`{"a": [1, -2, x.y, (z + 1)], "b": null}`
+        JsonObject `{"a": [1, -2, x.y, (z + 1)], "b": null}` :: entries=[`"a": [1, -2, x.y, (z + 1)]`, `"b": null`]
+          JsonEntry `"a": [1, -2, x.y, (z + 1)]` :: key=`"a"` value=`[1, -2, x.y, (z + 1)]`
+            JsonArray `[1, -2, x.y, (z + 1)]` :: values=[`1`, `-2`, `x.y`, `(z + 1)`]
+              JsonAtom `1` :: tokens=[`1`]
+              JsonAtom `-2` :: tokens=[`-`, `2`]
+              FieldExpr `x.y` :: receiver=`x` field=`y`
+                NameRef `x` :: name=`x`
+              ParenExpr `(z + 1)` :: inner=`z + 1`
+                BinaryExpr `z + 1` :: lhs=`z` op=`+` is_not=false rhs=`1` alt_type=-
+                  NameRef `z` :: name=`z`
+                  Literal `1` :: token=`1` kind=Some(Number)
+          JsonEntry `"b": null` :: key=`"b"` value=`null`
+            JsonAtom `null` :: tokens=[`null`]
+#### types-decls  parse-diags=0
+  File `type Stack[T, const N: i32]:\n    items: T[..N]\n    state: ` :: items=4
+    TypeDecl `type Stack[T, const N: i32]:\n    items: T[..N]\n    state: ` :: name=`Stack` generic_params=`[T, const N: i32]` alias=- fields=[`items: T[..N]`, `state: i32`]
+      GenericParams `[T, const N: i32]` :: params=[`T`, `const N: i32`]
+        GenericParam `T` :: is_const=false name=`T` constraint=-
+        GenericParam `const N: i32` :: is_const=true name=`N` constraint=`i32`
+          TypeRef `i32` :: base=`i32` enum_name=- lengths=[] capacity=-
+      FieldDecl `items: T[..N]` :: name=`items` ty=`T[..N]`
+        TypeRef `T[..N]` :: base=`T` enum_name=`T` lengths=[] capacity=-
+          Size `N` :: value=`N`
+            NameRef `N` :: name=`N`
+      FieldDecl `state: i32` :: name=`state` ty=`i32`
+        TypeRef `i32` :: base=`i32` enum_name=- lengths=[] capacity=-
+    TypeDecl `type Shape = Circle | Square` :: name=`Shape` generic_params=- alias=`Circle | Square` fields=[]
+      SumType `Circle | Square` :: alternatives=[`Circle`, `Square`]
+        TypeRef `Circle` :: base=`Circle` enum_name=`Circle` lengths=[] capacity=-
+        TypeRef `Square` :: base=`Square` enum_name=`Square` lengths=[] capacity=-
+    Publish `publish Chase as Sweep, Bank, gradients::cool as Cool` :: names=[`Chase as Sweep`, `Bank`, `gradients::cool as Cool`]
+      PublishName `Chase as Sweep` (no accessors probed)
+      PublishName `Bank` (no accessors probed)
+      PublishName `gradients::cool as Cool` (no accessors probed)
+        QualifiedName `gradients::cool` :: package=`gradients` name=`cool`
+    Use `use loops: Pid as Ctl, Ramp` :: names=[`Pid as Ctl`, `Ramp`]
+      UseName `Pid as Ctl` (no accessors probed)
+      UseName `Ramp` (no accessors probed)

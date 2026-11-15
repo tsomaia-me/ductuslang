@@ -1,0 +1,13 @@
+--- diagnostics (0)
+--- detached [] at_layout []
+--- tree
+File 0..18
+  LetDecl 0..18
+    LetKw "let"
+    Ident "x"
+    Eq "="
+    StringLit 8..17
+      StringStart "\""
+      StringText "🎵名"
+      StringEnd "\""
+    Newline "\n"

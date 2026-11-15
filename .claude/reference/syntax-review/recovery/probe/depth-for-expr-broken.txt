@@ -1,0 +1,1 @@
+depth for-expr n=100000 broken=true bytes=2900009 ok time=486.313481ms diags=2 whole=ok nest=ok first=Some("UnparenthesizedFor 37..40 a `for` expression that is not the whole value of a `let`, a local `let`, a derived cell's rule or a function body stands in parentheses")

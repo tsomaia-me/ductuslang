@@ -1,0 +1,1 @@
+depth map n=100000 broken=true bytes=400010 ok time=274.346769ms diags=1 whole=ok nest=ok first=Some("MapSyntax 400010..400010 expected `,` or `}`, found the end of the line")

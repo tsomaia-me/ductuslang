@@ -1,0 +1,1 @@
+depth record n=100000 broken=true bytes=1200010 ok time=294.164934ms diags=1 whole=ok nest=ok first=Some("RecordSyntax 1200010..1200010 expected `,` or `}`, found the end of the line")

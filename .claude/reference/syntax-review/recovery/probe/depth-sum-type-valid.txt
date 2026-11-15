@@ -1,0 +1,1 @@
+depth sum-type n=100000 broken=false bytes=600015 ok time=62.252635ms diags=0 whole=ok nest=ok first=None

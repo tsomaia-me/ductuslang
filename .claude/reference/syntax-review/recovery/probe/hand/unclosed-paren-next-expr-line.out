@@ -1,0 +1,36 @@
+--- diagnostics (2)
+  ExpressionSyntax 32..33 "a" :: expected `)`, found `a`
+  ExpressionSyntax 38..38 "" :: expected an expression, found the end of the block
+--- detached [] at_layout [38..38]
+--- tree
+File 0..38
+  FnDecl 0..38
+    FnKw "fn"
+    Ident "f"
+    ParamList 4..7
+      LParen "("
+      Param 5..6
+        Ident "x"
+      RParen ")"
+    Colon ":"
+    FnBody 8..38
+      Newline "\n"
+      Indent ""
+      LocalLet 13..38
+        LetKw "let"
+        Ident "a"
+        Eq "="
+        ParenExpr 21..27
+          LParen "("
+          BinaryExpr 22..27
+            NameRef 22..23
+              Ident "x"
+            Plus "+"
+            Literal 26..27
+              Number "1"
+        ErrorNode 32..37
+          Ident "a"
+          Star "*"
+          Number "2"
+        Newline ""
+      Dedent ""

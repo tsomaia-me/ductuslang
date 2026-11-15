@@ -1,0 +1,12 @@
+--- diagnostics (1)
+  FloatDigits 8..10 ".5" :: a float needs a digit before its point
+--- detached [] at_layout []
+--- tree
+File 0..11
+  LetDecl 0..11
+    LetKw "let"
+    Ident "x"
+    Eq "="
+    Literal 8..10
+      Number ".5"
+    Newline "\n"

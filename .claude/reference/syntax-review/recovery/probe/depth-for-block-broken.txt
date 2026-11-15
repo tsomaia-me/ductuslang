@@ -1,0 +1,1 @@
+depth for-block n=10000 broken=true bytes=50145015 ok time=309.26867ms diags=5000 whole=ok nest=ok first=Some("ForSyntax 34..35 expected the iterable, found `:`")

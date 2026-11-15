@@ -1,0 +1,220 @@
+#### indent-dedent-basic [tokens]
+Rig a:
+    Scene b:
+        Cue
+    Lamp
+Rig c:
+    Lamp
+#### dedent-two-levels-at-once [tokens]
+Rig a:
+    Scene b:
+        Cue
+Rig c:
+    Lamp
+#### dedent-mismatch (error)
+Rig a:
+        Lamp
+    Lamp
+#### dedent-mismatch-below (error)
+Rig a:
+    Scene b:
+        Cue
+  Lamp
+#### last-line-no-linebreak [esc tokens]
+Rig a:
+    Scene b:
+        Cue<NOEOL>
+#### last-line-no-linebreak-top [esc tokens]
+state x(1)<NOEOL>
+#### eof-after-blank-lines [esc tokens]
+Rig a:
+    Lamp
+
+  
+<NOEOL>
+#### tab-leading (error) [esc]
+Rig a:
+<TAB>Lamp
+#### tab-leading-after-spaces (error) [esc]
+Rig a:
+    <TAB>Lamp
+#### tab-between-tokens (ok) [esc tokens]
+Rig<TAB>a:
+    Lamp<TAB>|<TAB>level=1<TAB>hue=2
+#### tab-in-blank-line (ok?) [esc]
+Rig a:
+<TAB>
+    Lamp
+#### tab-before-comment-only-line [esc]
+Rig a:
+<TAB>// note
+    Lamp
+#### tab-leading-inside-paren (suspended) [esc]
+let a = (1 +
+<TAB>2)
+#### crlf [esc tokens]
+Rig a:<CR>
+    Lamp | level=1<CR>
+           hue=2<CR>
+    // c<CR>
+<CR>
+    Lamp<CR>
+#### crlf-comment-and-string [esc tokens]
+let s = "a" // c<CR>
+let t = 1<CR>
+#### lone-cr (error?) [esc]
+let a = 1<CR>let b = 2
+#### blank-and-comment-lines-odd-indent [tokens]
+Rig a:
+        // deeper comment
+  // shallower comment
+
+            
+    Lamp
+// col0 comment
+    Lamp
+#### comment-between-clause-lines [tokens]
+Rig a:
+    Lamp | level=0.7
+  // interleaved comment
+
+           hue=1
+#### suspend-paren-multiline [tokens]
+let a = (1 +
+2
+        + 3)
+#### suspend-bracket-multiline [tokens]
+let a = [
+1,
+    2,
+  3
+]
+#### suspend-record-braces [tokens]
+let r = Band {
+low: 1,
+        high: 2
+}
+#### suspend-map-braces [tokens]
+let m = {
+"a": 1,
+    "b": 2
+}
+#### suspend-json-braces [tokens]
+let d = json {
+"a": [1,
+2],
+    "b": null
+}
+#### suspend-map-type-braces
+state h({}): {
+    str[..32]: i32
+}[..8]
+#### suspend-call-args-in-body
+Rig a:
+    Lamp | level=max(
+    1,
+  2
+        )
+    Lamp
+#### suspend-inside-body-then-dedent [tokens]
+Rig a:
+    Scene s:
+        Cue/(1 +
+2)
+    Lamp
+#### suspend-bundle-multiline
+Rig flash:
+    [Lamp/0.2
+    Lamp/0.5
+Lamp/0.8]
+    Lamp
+#### suspend-bundle-for-multiline
+Rig flash:
+    [for i in 0..3:
+    Lamp/(0.2 + i * 0.3)]
+#### suspend-paren-placement-multiline
+Plant fill:
+    (Controller/0.4
+    | gain=0.5
+    target=1)
+#### suspend-params-multiline
+fn tier(
+rank: i32,
+base: i32 = 100
+) -> i32: rank + base
+#### suspend-interp-braces-not-layout
+let s = "a {if x then "b" else "c"} d"
+#### string-one-line (error)
+let s = "abc
+def"
+#### clause-continuation-basic [tokens tree]
+Rig stage:
+    Lamp | level=0.7
+           hue=glow
+           strobe
+#### clause-continuation-off-by-one-less (error)
+Rig stage:
+    Lamp | level=0.7
+          hue=glow
+#### clause-continuation-off-by-one-more (error)
+Rig stage:
+    Lamp | level=0.7
+            hue=glow
+#### clause-continuation-top-level [tokens]
+Pad kick | gain=1
+           hit => hit
+#### clause-continuation-then-body [tokens]
+Scene s | hold=8
+          fade=2:
+    Cue
+#### clause-closed-by-colon-then-aligned-line [tokens]
+Scene s | hold=8:
+          Cue
+#### clause-colon2-closes-nothing [tokens]
+Rig r:
+    Lamp | wave=Wave::Saw
+           hue=1
+#### clause-colon-inside-brackets-closes-nothing [tokens]
+Rig r:
+    Lamp | cfg=Band {low: 1}
+           hue=1
+#### clause-first-entry-after-space-run [tokens]
+Rig r:
+    Lamp |    level=1
+              hue=2
+#### clause-continuation-wire [tokens]
+Scene s:
+    Dims | depth=0.5
+           limit=1: stage.wash
+#### clause-continuation-of-continuation-wide (error with column) [esc]
+Rig r:
+    Lamp as <U+65E5><U+672C> | level=1
+                      hue=2
+#### clause-continuation-wide-correct-scalar-column [esc tokens]
+Rig r:
+    Lamp as <U+65E5><U+672C> | level=1
+                    hue=2
+#### clause-continuation-combining-scalars [esc tokens]
+Rig r:
+    Lamp as Cafe<U+0301> | level=1
+                    hue=2
+#### clause-continuation-astral [esc tokens]
+Rig r:
+    Lamp as <U+20000> | level=1
+                hue=2
+#### clause-pipe-at-line-end (error)
+Rig r:
+    Lamp |
+           hue=2
+#### clause-column-not-deeper-than-top
+Rig r:
+    Lamp
+    | level=1
+#### semicolon (error)
+let a = 1; let b = 2
+#### semicolon-in-string-and-comment (ok)
+let a = "x; y" // z; w
+#### semicolon-in-interpolation (error)
+let a = "x {1; 2} y"
+#### semicolon-in-json-string (ok)
+let a = json {"k;": "v;"}

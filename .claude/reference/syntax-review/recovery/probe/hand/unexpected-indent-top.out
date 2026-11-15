@@ -1,0 +1,27 @@
+--- diagnostics (1)
+  UnexpectedIndent 12..15 "let" :: this line is indented, but the line before it opens no block
+--- detached [] at_layout []
+--- tree
+File 0..32
+  LetDecl 0..10
+    LetKw "let"
+    Ident "x"
+    Eq "="
+    Literal 8..9
+      Number "1"
+    Newline "\n"
+  ErrorNode 12..22
+    Indent ""
+    LetKw "let"
+    Ident "y"
+    Eq "="
+    Number "2"
+    Newline "\n"
+    Dedent ""
+  LetDecl 22..32
+    LetKw "let"
+    Ident "z"
+    Eq "="
+    Literal 30..31
+      Number "3"
+    Newline "\n"

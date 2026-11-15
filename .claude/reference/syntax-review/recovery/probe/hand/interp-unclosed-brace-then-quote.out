@@ -1,0 +1,23 @@
+--- diagnostics (1)
+  UnterminatedString 8..17 "\"a{1 + 2\"" :: this string does not end on its line
+--- detached [] at_layout []
+--- tree
+File 0..18
+  LetDecl 0..18
+    LetKw "let"
+    Ident "x"
+    Eq "="
+    StringLit 8..17
+      StringStart "\""
+      StringText "a"
+      Interpolation 10..17
+        InterpStart "{"
+        BinaryExpr 11..16
+          Literal 11..12
+            Number "1"
+          Plus "+"
+          Literal 15..16
+            Number "2"
+        ErrorNode 16..17
+          StringStart "\""
+    Newline "\n"

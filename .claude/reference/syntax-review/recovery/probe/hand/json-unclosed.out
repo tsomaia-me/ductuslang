@@ -1,0 +1,26 @@
+--- diagnostics (1)
+  JsonSyntax 21..24 "let" :: expected `,` or `}`, found `let`
+--- detached [21..24] at_layout [21..24]
+--- tree
+File 0..31
+  LetDecl 0..21
+    LetKw "let"
+    Ident "j"
+    Eq "="
+    JsonLit 8..20
+      JsonKw "json"
+      JsonObject 13..20
+        LBrace "{"
+        JsonEntry 14..20
+          JsonString "\"a\""
+          Colon ":"
+          JsonAtom 19..20
+            JsonNumber "1"
+    Newline ""
+  LetDecl 21..31
+    LetKw "let"
+    Ident "t"
+    Eq "="
+    Literal 29..30
+      Number "1"
+    Newline "\n"

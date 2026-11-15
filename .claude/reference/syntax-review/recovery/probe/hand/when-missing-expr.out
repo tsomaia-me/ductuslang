@@ -1,0 +1,35 @@
+--- diagnostics (1)
+  WhenSyntax 32..33 "\n" :: expected `:` after the guard, found the end of the line
+--- detached [] at_layout [32..33]
+--- tree
+File 0..44
+  Placement 0..44
+    Ident "Rig"
+    Ident "r"
+    Body 5..44
+      Colon ":"
+      Block 6..44
+        Newline "\n"
+        Indent ""
+        WhenBlock 11..37
+          WhenKw "when"
+          Colon ":"
+          Newline "\n"
+          Indent ""
+          GuardArm 26..33
+            BinaryExpr 26..32
+              NameRef 26..30
+                Ident "Lamp"
+              Slash "/"
+              Literal 31..32
+                Number "1"
+            Newline "\n"
+          Dedent ""
+        Placement 37..44
+          Ident "Lamp"
+          DefaultArg 41..43
+            Slash "/"
+            Literal 42..43
+              Number "2"
+          Newline "\n"
+        Dedent ""

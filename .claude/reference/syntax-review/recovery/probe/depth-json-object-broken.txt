@@ -1,0 +1,1 @@
+depth json-object n=100000 broken=true bytes=600015 ok time=206.107298ms diags=1 whole=ok nest=ok first=Some("JsonSyntax 600015..600015 expected `,` or `}`, found the end of the line")

@@ -1,0 +1,29 @@
+--- diagnostics (1)
+  JsonSyntax 21..22 "}" :: expected a key in double quotes, found `}`
+--- detached [] at_layout []
+--- tree
+File 0..33
+  LetDecl 0..23
+    LetKw "let"
+    Ident "j"
+    Eq "="
+    JsonLit 8..22
+      JsonKw "json"
+      JsonObject 13..22
+        LBrace "{"
+        JsonEntry 14..20
+          JsonString "\"a\""
+          Colon ":"
+          JsonAtom 19..20
+            JsonNumber "1"
+        Comma ","
+        JsonEntry 21..21
+        RBrace "}"
+    Newline "\n"
+  LetDecl 23..33
+    LetKw "let"
+    Ident "t"
+    Eq "="
+    Literal 31..32
+      Number "1"
+    Newline "\n"
