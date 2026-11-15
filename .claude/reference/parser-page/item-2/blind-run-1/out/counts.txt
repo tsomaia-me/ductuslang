@@ -1,0 +1,39 @@
+alphabet (58 token kinds): % ( ) * ** + , - -> . .. / : :: < <= = > >= ? ?? JsonNumber JsonString Name Number String [ ] ^ and bool div else f32 f64 false for from i32 i64 if in into is json none not null or str then to true u8 without { | }
+
+counts per length n (sequences of exactly n tokens):
+   n              Type              Expr           AltType          Fallback          TypeArgs               Dim         Type∩Expr  AltType∩Fallback      TypeArgs∩Dim     viable(T|E|A)
+   1                10                 7                10                 7                 0                 0                 2                 2                 0                22   (0.0s, 1 memo states)
+   2                10                22                 0                15                 0                 0                 0                 0                 0               301   (0.0s, 16 memo states)
+   3               111               910                 1               489                 7                 7                 3                 1                 7              4503   (0.2s, 130 memo states)
+   4               302              4863                64              2160                22                22                14                 7                22             62711   (1.3s, 936 memo states)
+   5              1900            107763               249             38843               959               910                61                29               910            927210   (10.5s, 6584 memo states)
+   6             14890            800555              7826            261005              5171              4863              1899               939              4863          13442865   (79.6s, 46140 memo states)
+ sum             17223            914120              8150            302519              6159              5802              1979               978              5802          14437612
+
+intersection Type∩Expr: 1979 sequences up to length 6, 10 shapes
+shape                                    count    by length                                example (source text)
+Name                                     1        n1:1                                     a
+none                                     1        n1:1                                     none
+( … )                                    19       n3:2 n5:3 n6:14                          (a)
+Name :: Name                             1        n3:1                                     a::b
+Name [ … ]                               939      n4:7 n5:22 n6:910                        a[b]
+none [ … ]                               939      n4:7 n5:22 n6:910                        none[a]
+Name [ .. … ]                            29       n5:7 n6:22                               a[..b]
+none [ .. … ]                            29       n5:7 n6:22                               none[..a]
+( … ) [ … ]                              14       n6:14                                    (a)[b]
+Name :: Name [ … ]                       7        n6:7                                     a::b[c]
+
+intersection AltType∩Fallback: 978 sequences up to length 6, 6 shapes
+shape                                    count    by length                                example (source text)
+Name                                     1        n1:1                                     a
+none                                     1        n1:1                                     none
+Name :: Name                             1        n3:1                                     a::b
+Name [ … ]                               939      n4:7 n5:22 n6:910                        a[b]
+Name [ .. … ]                            29       n5:7 n6:22                               a[..b]
+Name :: Name [ … ]                       7        n6:7                                     a::b[c]
+
+intersection TypeArgs∩Dim: 5802 sequences up to length 6, 1 shapes
+shape                                    count    by length                                example (source text)
+[ … ]                                    5802     n3:7 n4:22 n5:910 n6:4863                [a]
+
+time 92.3s; distinct (state,n) memo entries 46140; distinct state tuples 39556

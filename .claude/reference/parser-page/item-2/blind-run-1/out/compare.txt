@@ -1,0 +1,9 @@
+position free     N=6: 0 disagreements; 356488 distinct (reader, recogniser) pairs, 0 reader-alone states, 56.5s
+   sequences compared, by length (distinct state pairs reached, agree/disagree): n0:1/0 n1:14/0 n2:101/0 n3:755/0 n4:5645/0 n5:41726/0 n6:308246/0
+position is       N=6: 0 disagreements; 247994 distinct (reader, recogniser) pairs, 0 reader-alone states, 38.8s
+   sequences compared, by length (distinct state pairs reached, agree/disagree): n0:1/0 n1:11/0 n2:70/0 n3:519/0 n4:3894/0 n5:28962/0 n6:214537/0
+position typearg  N=6: 0 disagreements; 356488 distinct (reader, recogniser) pairs, 0 reader-alone states, 54.9s
+   sequences compared, by length (distinct state pairs reached, agree/disagree): n0:1/0 n1:14/0 n2:101/0 n3:755/0 n4:5645/0 n5:41726/0 n6:308246/0
+position bracket  N=6: 0 disagreements; 56799 distinct (reader, recogniser) pairs, 0 reader-alone states, 13.3s
+   sequences compared, by length (distinct state pairs reached, agree/disagree): n0:1/0 n1:1/0 n2:15/0 n3:117/0 n4:890/0 n5:6642/0 n6:49133/0
+total disagreements: 0

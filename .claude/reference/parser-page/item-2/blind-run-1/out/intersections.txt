@@ -1,0 +1,36 @@
+intersection Type∩Expr up to length 7: 13771 sequences, 14 shapes (52.2s, 19673 memo entries)
+   by length: n1:2 n2:0 n3:3 n4:14 n5:61 n6:1899 n7:11792
+   shape                                        count   by length                                        example (source text)
+   Name                                         1       n1:1                                             a
+   none                                         1       n1:1                                             none
+   ( … )                                        80      n3:2 n5:3 n6:14 n7:61                            (a)
+   Name :: Name                                 1       n3:1                                             a::b
+   Name [ … ]                                   5802    n4:7 n5:22 n6:910 n7:4863                        a[b]
+   none [ … ]                                   5802    n4:7 n5:22 n6:910 n7:4863                        none[a]
+   Name [ .. … ]                                939     n5:7 n6:22 n7:910                                a[..b]
+   none [ .. … ]                                939     n5:7 n6:22 n7:910                                none[..a]
+   ( … ) [ … ]                                  58      n6:14 n7:44                                      (a)[b]
+   Name :: Name [ … ]                           29      n6:7 n7:22                                       a::b[c]
+   ( … ) [ .. … ]                               14      n7:14                                            (a)[..b]
+   Name :: Name [ .. … ]                        7       n7:7                                             a::b[..c]
+   Name [ … ] [ … ]                             49      n7:49                                            a[b][c]
+   none [ … ] [ … ]                             49      n7:49                                            none[a][b]
+
+intersection AltType∩Fallback up to length 7: 6829 sequences, 8 shapes (29.3s, 10701 memo entries)
+   by length: n1:2 n2:0 n3:1 n4:7 n5:29 n6:939 n7:5851
+   shape                                        count   by length                                        example (source text)
+   Name                                         1       n1:1                                             a
+   none                                         1       n1:1                                             none
+   Name :: Name                                 1       n3:1                                             a::b
+   Name [ … ]                                   5802    n4:7 n5:22 n6:910 n7:4863                        a[b]
+   Name [ .. … ]                                939     n5:7 n6:22 n7:910                                a[..b]
+   Name :: Name [ … ]                           29      n6:7 n7:22                                       a::b[c]
+   Name :: Name [ .. … ]                        7       n7:7                                             a::b[..c]
+   Name [ … ] [ … ]                             49      n7:49                                            a[b][c]
+
+intersection TypeArgs∩Dim up to length 7: 113565 sequences, 1 shapes (77.4s, 43569 memo entries)
+   by length: n1:0 n2:0 n3:7 n4:22 n5:910 n6:4863 n7:107763
+   shape                                        count   by length                                        example (source text)
+   [ … ]                                        113565  n3:7 n4:22 n5:910 n6:4863 n7:107763              [a]
+
+time 162.7s
