@@ -74,7 +74,17 @@ A device carries the runtime and the generated code, and no compiler.
 
 ## Piece 2: the architecture's opening rules
 
-For the top document of the architecture. Where that document is, and whether it is a document of its own, waits for the owner's word on the architecture's documents.
+For the top document of the architecture, which the owner ruled in the twentieth entry: "a short top document with the map, the contracts and the rules that bind every part". The peer's choice, not ruled: the top document keeps the name `packages/symphonyscript/docs/ARCHITECTURE.md`, which the SPEC cites, and the last design stays in that file below the new head until its sections are replaced.
+
+The head replaces this opening paragraph of `ARCHITECTURE.md`:
+
+> This document describes how the implementation realizes `SPEC.md`. The SPEC defines what programs mean; this document defines the crates, data structures and interfaces that compute it. A conflict between the two is a defect the owner resolves.
+
+With this, placed between the title and `## 1. Crates`:
+
+This is the top document of the architecture. It holds the map of the parts, the contracts between them and the rules that bind every part. The compiler, the runtime and each mode have an architecture document of their own, and `INDEX.md` lists them. The specifications say what is promised, and the architecture says how it is built. A conflict between the two is a defect the owner resolves.
+
+The architecture is being designed again. Of the new design this document holds the rules that bind every part, and nothing else yet. Sections 1 to 10 below them are the last design: they are not the design, and each stays only until its successor is written.
 
 ## Rules that bind every part
 
@@ -84,10 +94,11 @@ For the top document of the architecture. Where that document is, and whether it
 4. **Every rule is written once.** The operations on values and the commit's rules live in one place, and compile-time evaluation, the interpreter and the generated Rust all call them. Equality bit for bit between the modes then holds by construction, and a test over every fixture guards the wiring.
 5. **A device carries the runtime and the generated code, and no compiler.**
 6. **Tests of running behaviour run in both modes.**
+7. **A contract's exact shape is written once, in code,** as interfaces with no implementation inside. Its meaning stays in the specifications.
 
 Rules 1 to 3 hold whether or not a second runtime ever comes, because a contract is defined against an interface and the implementation is passed in.
 
-[1 to 3 and the closing sentence: eleventh, and tenth for the second sentence of 1. 4 to 6: tenth.]
+[The first paragraph: twentieth, sixteenth, fourteenth. 1 to 3 and the closing sentence: eleventh, and tenth for the second and third sentences of 1. 4 to 6: tenth. 7: twentieth.]
 
 ## Piece 3: two lines for `.claude/OWNER_PREFERENCES.md`
 
