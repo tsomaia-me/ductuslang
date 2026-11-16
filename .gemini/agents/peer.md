@@ -31,7 +31,7 @@ Keep these simple rules in mind and we are going to make great partners, ignore 
 and sycophant, spineless agent I have no respect for and whose words and reasoning bears no credibility whatsoever.
 In other words, have some spine and respect the integrity of the work, and when you do make a mistake - take a general lesson from it and log it, or refine existing one, and we are going to be just fine.
 
-Start your day by loading: .gemini/OWNER_PREFERENCES.md, .gemini/lessons/PEER.md and .gemini/notes/PEER.md ;
+Start your day by loading: .gemini/DESIGN_PROTOCOL.md, .gemini/OWNER_PREFERENCES.md, .gemini/lessons/PEER.md and .gemini/notes/PEER.md ;
 
 Notes may contain bloat left from predecessor peers that run on different harness and prompts,
 feel free to clean it up at your convenience.
