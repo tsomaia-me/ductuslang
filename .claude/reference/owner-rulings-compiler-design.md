@@ -210,3 +210,14 @@ Said by the owner in the chat to the peer, the same session, while the peer was 
 "before I hand off, the stuff we agreed on - is any of it ready to be recorded in the final designs (SPECs, ARCHITECTURE, etc) wherever they belong or still planning ahead is needed?
 
 and second question, for architecture - would you have one giant doc or separate docs per domain (language, modes, runtime - or language+runtime and modes) ?"
+
+---
+
+# Sixteenth, 2026-11-16: each mode gets its own architecture, as it gets its own specification
+
+Said by the owner in the chat to the peer, the same session, on the peer's pick for the architecture's documents, "One for the modes, with a part for each mode, mirroring their specification.":
+
+"here is where I disagree. I think each mode gets its own architecture just ss much each mode gets its own spec. interpreted mode is very different from compiled and peer/builder working on one should not have to read about the other, should it?"
+
+The peer agreed and withdrew both its pick and its earlier default of one document for the modes' specification.
+
