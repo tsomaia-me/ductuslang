@@ -251,3 +251,11 @@ Said by the owner in the chat to the peer, the same session, on the peer's messa
 
 The two lines were cold-read after that, and their words changed in small ways; the changed words are in `lines-waiting-for-yes.md` and go to the owner for the yes to the words.
 
+---
+
+# Nineteenth, 2026-11-16: yes to the two lines' words and to the handoff note
+
+Said by the owner in the chat to the peer, the same session, on the final words of the peer skill's handover paragraph and of the preference on questions, shown in quote blocks after their cold read, and on designer 1's handoff note with the successor's prompt:
+
+"yes."
+
