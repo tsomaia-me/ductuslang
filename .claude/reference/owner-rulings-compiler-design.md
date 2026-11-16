@@ -345,3 +345,17 @@ Then, on the peer's message that put three questions, each as two or three optio
 each of these three questions need proper reasoning and architecting, none which you offered. you just expect me to give yes or no on complex questions setting the course for the entire language that follows. very, very unprofessional behavior. treating a complex, systems-level language as something to rubber stamp decisions on is not a bar I expect from peer designer."
 
 The peer's note, no ruling. The peer withdrew the three as posed and answered with the model they follow from. The same message had asked three smaller things, which the owner's words do not answer: one runtime as a ruling, WebAssembly as a target of the compiled mode and no third mode, and where a gap in the SPEC stops being the peer's.
+
+---
+
+# Twenty-fifth, 2026-11-16: what a peer is grounded on, and where each kind of thing is kept
+
+Said by the owner in the chat to the peer, designer 2, in three messages, on the size of a peer's grounding and on the notes.
+
+"btw grounding alone of the peer takes up 200k, its too much. find where the bloat is and propose concrete cuts, compressions and redirections to anything non-essential to other reference voluntary files.
+
+nothing should contain steering language btw "This is settled". nothing should limit the peer"
+
+"nothing should contain my direct words, history or bedtime stories. everything is to be declarative, directive. whats settled, cold-reviewed and done is contained in SPEC files and ARCHITECTURE files. the final designs.
+
+whats ruled, but not yet reviewed or approved goes to draft files. what only exist as decisions go in operational notes (not directly my raw words). what is being discussed and what are yet to discuss go to notes. what's so unclear here, please, please why are you torturing me"

@@ -1,61 +1,70 @@
 # Peer notes
 
-The format of this file, set on 2026-11-16 at the owner's word (asked for in the seventeenth entry of the rulings file and agreed in the eighteenth): the seven headings below, in this order, and no others; under 12 KB; state only, which is what runs, what is owed, what is open and who. The design lives in `design-state.md` and then in the documents, the owner's words in the rulings file, and nothing is kept in both. A line goes when it stops being relevant, and history goes nowhere but git.
+Final designs are the SPEC and the architecture files. What is ruled and not yet reviewed is in the draft files. These notes hold the decisions that stand nowhere else, what is in discussion and what is yet to discuss. Every line is a plain statement. No history, no quoted words.
 
-## Read first, in this order, before your first message
+## Read first
 
-1. `.claude/HANDOVER.md`.
+1. `.claude/HANDOVER.md`
 2. This file.
-3. The index of the documents, `packages/symphonyscript/docs/INDEX.md`.
-4. The SPEC whole, `packages/symphonyscript/docs/SPEC.md`.
-5. `.claude/reference/owner-rulings-compiler-design.md`: the owner's words, one for one, twenty-four entries.
-6. `.claude/reference/design-state.md`: the design as it stands.
+3. `packages/symphonyscript/docs/INDEX.md`
+4. `packages/symphonyscript/docs/SPEC.md`, whole.
+5. `packages/symphonyscript/docs/drafts/MODES.md` and `packages/symphonyscript/docs/drafts/ARCHITECTURE.md`.
 
-Nothing else is read before the first message. Every other file is read only when the item in hand needs it, and secondary reading goes to subagents. After a compaction: the same list, without the SPEC unless the item in hand is the language.
+After a compaction: the same, without the SPEC unless the work in hand is the language.
 
-## Where the work stands
+## Decisions
 
-- No compiler code is written and none is being written. A design pass is under way; `design-state.md` says what is settled, what is proposed and what comes next.
-- What the owner ruled is settled. Everything else is an unproven draft: the code standard and the findings file, the §16 draft, the loops and agent files, and `packages/symphonyscript/docs/ARCHITECTURE.md`, which is the last design, is being replaced and is never given to the owner as the design.
-- Ductus is the owner's other work in this repository and not the peer's to touch.
-- In hand with the owner: the layers and their contracts, and what runs a Program on a machine. Not answered by the owner: the list of the contracts.
-- The next piece owed is named by the twenty-fourth entry. It holds the three questions as the peer put them, whether the interpreted mode may be what a finished product runs, which threads may write, and whether the runtime's core runs without an operating system from the start, and the owner's answer to each in the owner's own words. What the peer has said to the owner on them since stands in `design-state.md`, and the owner has answered none of it.
-- Drafted, read cold twice and not shown as text: the pieces that answer the owner's question of the fifteenth entry, what of the agreed things is ready to be recorded in the final documents. `.claude/reference/ready-pieces-draft.md` holds the drafts and what is open in each.
-- Put to the owner on 2026-11-16, not answered: one runtime as a ruling; whether WebAssembly is a target of the compiled mode and no third mode; where, in the SPEC, a gap that the SPEC's own sentences settle stops being the peer's.
-- Held, at the owner's pace: the batch of reworded lines, `.claude/reference/standard-batch-1-draft.md`, not cold-read, not shown. Before it is shown it takes in what was ruled after it was drafted.
+- No compiler code is written during the design pass.
+- Only settled text goes into the SPEC, after a cold review under heavy scrutiny.
+- A specification states what someone can observe or rely on, and states it once. How a thing is built is architecture.
+- A change of essence in the SPEC is the owner's to approve, derived or not. In the code standard and the architecture, new essence is the owner's, and essence that derives cleanly and fully from approved essence is the peer's. A mechanical change, one that changes no essence, is the peer's in all three.
+- The design of the interfaces between the layers goes to the owner before it is written.
+- A question that sets the design's course goes to the owner reasoned and architected, not as a choice of options.
+- The work model is approved for testing: a peer, a tester, a builder and a fresh reader, one machine gate, five checks a piece. The first piece of work after the design pass tests it, with its numbers and its quality measured.
+- No loops file, agent file or process is approved. None is written, and no agent of the work model starts, without the owner's approval.
+- How agents are organised is the peer's to design. The owner approves the files once, as a result, before anything runs.
+- `packages/symphonyscript/docs/ARCHITECTURE.md` is the last design. It is being replaced and is not the design.
+- `.claude/reference/` is a scratchpad for the design pass. It is cleaned and removed when the pass ends, and what lasts moves into the documents first.
+- Ductus is separate work in this repository. The peer does not touch it.
 
-## Who and how
+## In discussion
 
-- One peer talks to the owner and is the one writer of these notes: "SymphonyScript designer 2", session `session_01Cbzj49BnKWbDEJwU7egSfJ`, on Fable 5.2 at xhigh, since the owner's yes of 2026-11-16 (the twenty-second entry). Designer 1 is retired. A retired peer's title starts with "[retired]". In the rulings file, "the peer" up to the nineteenth entry is designer 1, and the designer 2 of the twentieth entry was an earlier session of that title. In its first four entries the supervisor is an earlier session that talked to the owner and the primary one that wrote the notes; neither exists now.
-- What runs: nothing. No agent runs between turns; reading and checking go to short-lived subagents, started from no agent file.
-- Rules that bind every session and stand in no other file: nothing is recorded as the owner's decision unless the owner said it in the chat, and a ruling is saved word for word in the rulings file as it lands; who approves a change of the SPEC, the code standard and the architecture is the table in `design-state.md`; no agent file or loops file is written without the owner's approval, and no agent of the work model starts before it; how agents are organised is the peer's to design, and the owner approves the files once, as a result, before anything runs; the shared checkout at `/home/cdagent/ductuslang` is never stashed or switched, and nothing unapproved is left lying in its working tree, where a commit of everything can sweep it in.
+- **What runs a Program on a machine.** On the table: a running Program is passive and the host owns time; a cell's word, `state`, `stream` or `channel`, is where inputs wait for a commit. Open inside it: whether a cell's pending buffer is the hand-off between execution contexts, a thread or an interrupt; what arrival order across cells (SPEC §12.1) means when producers run at once; whether a `state` is written across contexts; what the shipped part asks of the machine, where the proposal is arithmetic and one block of memory at load (to check against SPEC §12.6); where the interpreted mode runs.
+- **The contracts between the layers.** On the table, seven crossings: a framework to the compiler (the vocabulary, SPEC §10); the compiler to the interpreter and the generator (the Program, §11); the compiler to a tool (faults, positions, the memory and work figures); a mode and the runtime (the seam); a host to the runtime (load, handles, writes, commit, reload); the runtime to a consumer (values, changes, the reload report); what computes a rule to a framework's native functions while the Program runs (§10.1).
+- **The seam between a mode and the runtime.** Open: one rule's value a crossing with the runtime calling, or generated code going through the cells in the Program's order and calling the shared code for every decision. A generator that carries a rule of the commit is ruled out. It is measured before it is fixed.
+- **One runtime for both modes to start with.** A leaning, no decision.
+- **WebAssembly.** A target of the compiled mode, or a third mode.
+- **Load in the compiled mode.** SPEC §1.1, §12.3, §12.6 and §14 speak of a Program loaded as data and replaced by reload. Proposal: load exists in both modes and one host code runs both.
+- **A page on what every mode shares,** beside the modes' specifications.
+- **Where, in the SPEC, a gap stops being the peer's to close.**
+- **Lines that wait for the owner's yes:** `.claude/reference/lines-waiting-for-yes.md`. A lesson on working out the model before a design choice goes to the owner; a widening of lesson P-4; a preference that the repo holds everything a session needs.
 
-## Owed, in order
+## Yet to discuss
 
-The design conversation leads, in the order `design-state.md` gives under Next and at the owner's pace. This list is taken when that conversation pauses or an item blocks it. Items 1 and 2 are the peer's to do, cold-read, with no approval of the owner needed. Items 3 and 4 wait for the end of the design pass.
+- The outline of the architecture: the interfaces first; then the compiler's parts (packages and files, lexer, parser, names and scope, types and inference, values and their operations, compile-time evaluation, expansion, cells and their order, the vocabulary's checks, faults, the Program); the runtime, changes and consumers, reload; the interpreter, the generator, the tool.
+- The rest of the compiled mode: how the same results are held, the speed figure, what a host gets beyond the shared interface. A thin slice through the whole compiler is built early to measure before budgets are set. It is not designed.
+- Faults, SPEC §16: a draft and about ten open edges, in `.claude/reference/spec-16/`. The parser waits on them.
+- What the parser hands on: seven questions, in `.claude/reference/parser-page/item-2/proposal.md`.
+- Small language questions: `.claude/reference/open-design-questions.md`.
+- The code standard, `STANDARD.md` with `FINDINGS.md`: a draft. A batch of reworded lines is held in `.claude/reference/standard-batch-1-draft.md`. Its line 3 binds every crate while its 1.3 and 4.8 fit only the compiler's stages. Three rules of the runtime have no home: a commit path that never allocates, lock-free hand-off between threads, integer time (`.claude/docs/CODING.md`).
+- What the SPEC needs once the modes and the architecture are final: its first paragraph names `ARCHITECTURE.md`; seven sentences cite its sections, and some lean on them (§13.5, §15.2); §12.5 and the agreement of the modes; §13 and which mode offers reload.
+- The first piece of work that tests the work model. Proposed: the number reader of SPEC §2.6 in a throwaway crate. What it measures is named before it starts.
 
-1. The owner's order of 2026-11-15, half done: "delete the build output and make sure there are mechanisms that keep it drained when obsolete". The output is deleted. The mechanism waits until the files that run builds are settled; the owner was told.
-2. The session hooks, which print what a session starts with. `.claude/hooks/session.mjs` is to print `.claude/HANDOVER.md` first when the file exists, with tests, and to tell a peer to drain these notes past a set size; its menu line names the head and the builder of an older harness; the context hook's notice asks for the files to re-read "at the end" of the notes, while the format has them first. One test of `.claude/hooks/` fails and failed before this pass, `settings.test.mjs`; the other 49 pass. The root rules file is tracked as `CLAUDE.MD` and does not load on `wb`, where Claude Code looks for `CLAUDE.md`; the owner was told and has not said to rename it. Nothing runs the index's test by itself.
-3. Before any execution starts, by the owner's word of 2026-11-15: the pushed agent files, the root `CLAUDE.MD` and `.claude/agents/`, are reviewed properly. A cold reader's digest of them: `.claude/reference/pipeline-drafts-digest-2026-11-15.md`.
-4. The first piece of work, once the design pass is over (the seventh entry): it tests the work model in a real case, with its numbers and its quality measured; what is measured is named before it starts. The peer's pick so far is the number reader of SPEC §2.6 in a throwaway crate; the owner is owed one line, that it is the number reader and not the expression reader of §5.1 announced earlier, which the standard's example already holds.
+## Owed by the peer
 
-## Waiting for the owner's yes, none written, not to be pushed
+- A mechanism that keeps build output drained.
+- The session hooks: `session.mjs` prints the handover page first and tells a peer to drain these notes past a set size; its menu line names roles of an older harness; `settings.test.mjs` fails.
+- The agent files in `.claude/agents/` and the root `CLAUDE.MD` are reviewed before any execution. `CLAUDE.MD` does not load under that name, and renaming it is the owner's.
+- After a change of the index, or when a document it names moves: `node --test packages/symphonyscript/docs/index-check.test.mjs`. Nothing runs it by itself.
 
-- A new lesson, P-16, on working out the model before a design choice goes to the owner: cold-read once, shown on 2026-11-16, its words in `.claude/reference/lines-waiting-for-yes.md`.
-- A widening of lesson P-4 and a preference that the repo holds everything a session needs; their text is at the end of `.claude/reference/open-design-questions.md`, and `.claude/reference/lines-waiting-for-yes.md` points to it.
-- Two findings on the standard, for when the standard is in hand. Its line 3 binds every crate, while 1.3 and 4.8 are written for the compiler's stages, so the tool's file reading and the runtime's tests do not fit. And three rules of the runtime have no lasting home: `.claude/docs/CODING.md`, a page of the older harness, keeps them in force "until they have a home": a commit path that never allocates, lock-free hand-off between threads, integer time.
+## Where things are
 
-## Where to find things, only when an item needs them
-
-- The lasting documents are in the index. After a change of it, or when a document it names moves: `node --test packages/symphonyscript/docs/index-check.test.mjs`.
-- `.claude/reference/` is a scratchpad for this design pass, cleaned and removed when the pass ends (the twenty-first entry); what lasts moves into the documents before then.
-- The code standard's thirteen principles in plain words, with the owner's words on the second: `.claude/reference/code-principles-page.md`.
-- Two more files of the owner's words, from earlier parts of this pass: `.claude/reference/owner-rulings-code-standard.md` and `.claude/reference/owner-rulings-parser-page.md`. The first holds messages that call the code standard approved; its own opening says they were forwarded with blanks from a draft, and in the fourth entry of the main rulings file the owner says not to know any code standard. The index marks the standard a draft.
-- The work model's diagram: `.claude/reference/workflow-as-shown-2026-11-15.md`.
-- Faults: `.claude/reference/spec-16/`; the draft of §16 is `spec-16-draft.patch` there and stands in no checkout's SPEC. The parser's hand-on: `.claude/reference/parser-page/item-2/proposal.md`. Other open questions of the design: `.claude/reference/open-design-questions.md`.
+- The peer is "SymphonyScript designer 2", session `session_01Cbzj49BnKWbDEJwU7egSfJ`. It is the one writer of these notes. Nothing runs between turns; reading and checking go to short-lived subagents started from no agent file.
+- The record of the owner's words, kept word for word and added to as they land, is `.claude/reference/owner-rulings-compiler-design.md`, with two older files beside it, `owner-rulings-code-standard.md` and `owner-rulings-parser-page.md`. It is a record to check a statement against, not reading for a start.
+- The work model's diagram: `.claude/reference/workflow-as-shown-2026-11-15.md`. The code standard's principles in plain words: `.claude/reference/code-principles-page.md`.
 - What `rustc` costs on generated code, a stand-in measurement: `.claude/reference/compile-mode/rustc-probe.md`.
-- The old code, a source of cases and never a yardstick: branch `symphonyscript/r3`, on `wb` at `/home/cdagent/cargo-targets/r3/wt/`.
+- The old code, a source of cases and no yardstick: branch `symphonyscript/r3`, on `wb` at `/home/cdagent/cargo-targets/r3/wt/`.
 
 ## The host
 
-`wb` is this machine (its `hostname` prints `tornike`) and is slow; `wb2` (`ssh wb2`) is the reference machine. A build runs cargo by its full path, `nice -n 19`, 6 jobs. `/tmp` on `wb` is `noexec`. `grep` on `wb` is `ugrep`; `awk` is the way round its pattern errors. Worktrees of older work remain beside the shared checkout; a peer removes only a worktree it made.
+`wb` is this machine (its `hostname` prints `tornike`) and is slow; `wb2` (`ssh wb2`) is the reference machine. A build runs cargo by its full path, `nice -n 19`, 6 jobs. `/tmp` on `wb` is `noexec`. `grep` on `wb` is `ugrep`; `awk` is the way round its pattern errors. The shared checkout at `/home/cdagent/ductuslang` is used by other sessions and by the owner; it is not stashed or switched, and nothing unapproved is left lying in its working tree. Worktrees of older work remain beside it; a peer removes only a worktree it made.
