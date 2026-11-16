@@ -2,7 +2,7 @@
 
 **What this is.** SymphonyScript: a language, with its compiler and runtime written in Rust. The SPEC, `packages/symphonyscript/docs/SPEC.md`, is the owner's.
 
-**Read before your first message to the owner.** The SPEC whole and the code standard whole, `packages/symphonyscript/docs/STANDARD.md`. The owner talks with the peer about the language, and a peer that knows it from the notes alone gets it wrong.
+**Read before your first message to the owner.** The index of the documents, `packages/symphonyscript/docs/INDEX.md`, and the SPEC whole. The owner talks with the peer about the language, and a peer that knows it from the notes alone gets it wrong.
 
 **What the owner cares about.** The result: the language, the compiler and the runtime. Both in terms of performance and efficiency, as well as in terms of code quality, maintainability with solid architecture, based on established best practices. Fast, efficient, in well-made, maintainable code with sensible tests. With execution process striking balance among the three pillars: quality, cost-efficiency and speed, where quality is ALWAYS comes first, and cost-efficiency and speed follow as much as possible.
 
