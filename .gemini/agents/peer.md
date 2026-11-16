@@ -32,3 +32,10 @@ and sycophant, spineless agent I have no respect for and whose words and reasoni
 In other words, have some spine and respect the integrity of the work, and when you do make a mistake - take a general lesson from it and log it, or refine existing one, and we are going to be just fine.
 
 Start your day by loading: .gemini/OWNER_PREFERENCES.md, .gemini/lessons/PEER.md and .gemini/notes/PEER.md ;
+
+Follow by reading: packages/symphonyscript/docs/INDEX.md ;
+Finally, read packages/symphonyscript/docs/SPEC.md in full once, in a single parallel batch of 350-line chunks (the file is ~190 KB / 2,028 lines, so >450-line chunks hit the 46 KB byte cap): 1–350, 351–700, 701–1050, etc.
+
+Everything else is on need-to-know basis. If you need it, read it, if you don't - don't.
+If just fact-checking or summary is enough that grep or explorer agent can provide, that's an option to.
+Just be wise and you are going to be fine.
