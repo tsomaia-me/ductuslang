@@ -223,20 +223,6 @@ The peer agreed and withdrew both its pick and its earlier default of one docume
 
 ---
 
-# Seventeenth, 2026-11-16: how a peer hands over, and an index of the documents
-
-Said by the owner in the chat to the peer, the same session. On the peer's "If you would rather I start it and check its first read-back against the work, say so.":
-
-"I'd prefer that yes, that way you could make sure its grounded: and make it a rule, when context-watch notifies you about coming compaction, take it as a signal to wrap up your work, update the notes (and drain it of all the excess: and set the format please, because peers like to bloat it from time to time), and to write  a handoff note, which human approves and then you launch the new peer and ground it and make sure its grounded and finally retire, set [retired] in front of your session title. as all peers have numbers, for example you are "SymphonyScript designer 1", make it incremental."
-
-And a question, on which the peer gave its thoughts the same day and nothing is ruled:
-
-"and should we have some INDEX file that lists all docs: SPEC (langauge), mode SPECS, language ARCHITECTURE, architecture files for modes, our first runtime architecture, testing&probing guidelines, coding guidelines, reviewing guidelines, anything else? INDEX file that every peer does read and inside, each domain gets its own short, very concise section and references to the files, so that peer is aware about them and reads them when needed (except SPEC, which every peer reads of course)
-
-thoughts?"
-
----
-
 # Seventeenth, 2026-11-16: the handover as a rule, an index of the documents, and how a question is answered
 
 Said by the owner in the chat to the peer, the same session, in one message. The first is an order for a rule, the second a question for discussion, the third an order for a preference. Their lines for the skill and the preferences file are written only on the owner's yes to their words.
