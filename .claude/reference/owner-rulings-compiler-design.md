@@ -313,3 +313,17 @@ Said by the owner in the chat to the peer, designer 1, on its message that showe
 "yes and yes"
 
 The peer's reading: the first yes is to the rule's words, the second to the successor. The same message asked the owner to push a branch to `main`, which is not a thing a yes answers.
+
+---
+
+# Twenty-third, 2026-11-16: the shared checkout cleared, the index approved, the handover page's reading line approved
+
+Said by the owner in the chat to the peer, designer 2 (session `session_01Cbzj49BnKWbDEJwU7egSfJ`), on its first message, which put three numbered matters. The first asked three things of the shared checkout, where a commit named `cmt` and a merge after it, neither pushed and neither the peer's, had committed the §16 draft into `SPEC.md` and `minus.txt`: "May I take the two commits off local main?", "May the §16 draft then come out of `SPEC.md` in that checkout?" and "Does `minus.txt` go?". The second showed the index whole in a quote block, the words that are now `packages/symphonyscript/docs/INDEX.md`. The third showed a new reading line for the handover page beside the line it replaces, the words that are now in `.claude/HANDOVER.md`.
+
+The owner's words:
+
+"1 - yes, yes and yes
+2 - approved
+3 - proposal approved."
+
+The peer's note, no ruling. The message ended with six decisions of the peer's for the owner's veto, and the owner vetoed none; they stand as the peer's: a document that is not written has no file name in the index; the page on what every mode has in common is not listed until the owner rules on that page; the old `ARCHITECTURE.md` keeps one line, marked as not the current design; the agent files keep one line and no path; the code standard and the findings file are marked "a draft"; `PLAN.md` and the test inputs beside the SPEC are not listed.
