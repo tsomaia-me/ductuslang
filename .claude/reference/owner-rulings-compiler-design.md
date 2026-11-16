@@ -327,3 +327,21 @@ The owner's words:
 3 - proposal approved."
 
 The peer's note, no ruling. The message ended with six decisions of the peer's for the owner's veto, and the owner vetoed none; they stand as the peer's: a document that is not written has no file name in the index; the page on what every mode has in common is not listed until the owner rules on that page; the old `ARCHITECTURE.md` keeps one line, marked as not the current design; the agent files keep one line and no path; the code standard and the findings file are marked "a draft"; `PLAN.md` and the test inputs beside the SPEC are not listed.
+
+---
+
+# Twenty-fourth, 2026-11-16: waiting on a cold read, and three questions put as options; a correction, no ruling
+
+Said by the owner in the chat to the peer, designer 2. First, while the peer waited for a cold read of drafts and had said what the next piece was:
+
+"so you are saying we cannot this time, while the cold review runs, to answer few more questions and sketch out few more pieces in the design?"
+
+Then, on the peer's message that put three questions, each as two or three options with a pick: whether the interpreted mode may be what a finished product runs, which threads may write, and whether the runtime's core runs without an operating system from the start:
+
+"1 - bolted-on suggestion.
+2 - this is bigger quesiton to settle than with a simple yes or no.
+3 - unclear question, not answering until its made clear.
+
+each of these three questions need proper reasoning and architecting, none which you offered. you just expect me to give yes or no on complex questions setting the course for the entire language that follows. very, very unprofessional behavior. treating a complex, systems-level language as something to rubber stamp decisions on is not a bar I expect from peer designer."
+
+The peer's note, no ruling. The peer withdrew the three as posed and answered with the model they follow from. The same message had asked three smaller things, which the owner's words do not answer: one runtime as a ruling, WebAssembly as a target of the compiled mode and no third mode, and where a gap in the SPEC stops being the peer's.

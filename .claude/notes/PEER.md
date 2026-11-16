@@ -8,7 +8,7 @@ The format of this file, set on 2026-11-16 at the owner's word (the seventeenth 
 2. This file.
 3. The index of the documents, `packages/symphonyscript/docs/INDEX.md`.
 4. The SPEC whole, `packages/symphonyscript/docs/SPEC.md`.
-5. `.claude/reference/owner-rulings-compiler-design.md`: the owner's words, one for one, twenty-three entries.
+5. `.claude/reference/owner-rulings-compiler-design.md`: the owner's words, one for one, twenty-four entries.
 6. `.claude/reference/design-state.md`: the design as it stands.
 
 Nothing else is read before the first message. Every other file is read only when the item in hand needs it, and secondary reading goes to subagents. After a compaction: the same list, without the SPEC unless the item in hand is the language.
@@ -20,7 +20,9 @@ Nothing else is read before the first message. Every other file is read only whe
 - Ductus is the owner's other work in this repository and not the peer's to touch.
 - In hand with the owner: the layers and their contracts. Not answered by the owner: the list of the four contracts.
 - The pieces that answer the owner's question of the fifteenth entry, what of the agreed things is ready to be recorded in the final documents, are drafted and were read cold twice: `.claude/reference/ready-pieces-draft.md` holds the drafts and what is open in each. The modes' specifications and the line on who approves a change are not shown as text, since they hinge on questions that are the owner's; the architecture's opening rules are the peer's to write, with the outline.
-- Put to the owner on 2026-11-16, not answered: whether the interpreted mode may be what a finished product runs; which threads may write, commit and read; whether the runtime's core runs without an operating system from the start; one runtime, as a ruling; whether WebAssembly is a target of the compiled mode and no third mode; where, in the SPEC, a gap that the SPEC's own sentences already settle stops being the peer's.
+- Three questions the peer put to the owner as options on 2026-11-16 are withdrawn at the owner's word (the twenty-fourth entry): the interpreted mode in a finished product, which threads write, a core without an operating system. In their place the peer gave the model they follow from: a running Program has no life of its own and the host owns time, and the cell's word is the place where inputs wait for a commit. The owner has not yet answered it.
+- Owed from that, each read cold before it is shown: a design note on the hand-off between execution contexts (whether the cell's pending buffer is that hand-off; what arrival order across cells, SPEC §12.1, means with concurrent producers, the peer's analysis of that race being unchecked; whether a `state` is written across contexts), with the SPEC sentences it touches quoted and the last design's scheme examined; then one on what the shipped part asks of the machine, where the peer proposes that loading takes one block of the size SPEC §12.6 gives, to be checked against that section.
+- Put to the owner on 2026-11-16, not answered: one runtime as a ruling; whether WebAssembly is a target of the compiled mode and no third mode; where, in the SPEC, a gap that the SPEC's own sentences settle stops being the peer's.
 - Held, at the owner's pace: the batch of reworded lines, `.claude/reference/standard-batch-1-draft.md`, not cold-read, not shown. Before it is shown it takes in what was ruled after it was drafted.
 
 ## Who and how
@@ -40,6 +42,7 @@ The design conversation leads, in the order `design-state.md` gives under Next a
 
 ## Waiting for the owner's yes, none written, not to be pushed
 
+- A new lesson, P-16, on working out the model before a design choice goes to the owner: cold-read once, shown on 2026-11-16, its words in `.claude/reference/lines-waiting-for-yes.md`.
 - A widening of lesson P-4 and a preference that the repo holds everything a session needs; their text is at the end of `.claude/reference/open-design-questions.md`, and `.claude/reference/lines-waiting-for-yes.md` points to it.
 - Two findings on the standard, for when the standard is in hand. Its line 3 binds every crate, while 1.3 and 4.8 are written for the compiler's stages, so the tool's file reading and the runtime's tests do not fit. And three rules of the runtime have no lasting home: `.claude/docs/CODING.md`, a page of the older harness, keeps them in force "until they have a home": a commit path that never allocates, lock-free hand-off between threads, integer time.
 
