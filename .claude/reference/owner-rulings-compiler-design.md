@@ -235,3 +235,23 @@ And a question, on which the peer gave its thoughts the same day and nothing is 
 
 thoughts?"
 
+---
+
+# Seventeenth, 2026-11-16: the handover as a rule, an index of the documents, and how a question is answered
+
+Said by the owner in the chat to the peer, the same session, in one message. The first is an order for a rule, the second a question for discussion, the third an order for a preference. Their lines for the skill and the preferences file are written only on the owner's yes to their words.
+
+On the peer's offer to start the successor and check its first read-back against the work:
+
+"I'd prefer that yes, that way you could make sure its grounded: and make it a rule, when context-watch notifies you about coming compaction, take it as a signal to wrap up your work, update the notes (and drain it of all the excess: and set the format please, because peers like to bloat it from time to time), and to write  a handoff note, which human approves and then you launch the new peer and ground it and make sure its grounded and finally retire, set [retired] in front of your session title. as all peers have numbers, for example you are "SymphonyScript designer 1", make it incremental."
+
+On the documents:
+
+"and should we have some INDEX file that lists all docs: SPEC (langauge), mode SPECS, language ARCHITECTURE, architecture files for modes, our first runtime architecture, testing&probing guidelines, coding guidelines, reviewing guidelines, anything else? INDEX file that every peer does read and inside, each domain gets its own short, very concise section and references to the files, so that peer is aware about them and reads them when needed (except SPEC, which every peer reads of course)
+
+thoughts?"
+
+On the handover and on questions:
+
+"don't start any hangover yet until we discuss the questions I raised here. and make it a preference: when my prompt contains a question that needs ongoing dicussion, instead of one-off answer - answering it gets the priority over taking further actions. when it contains simple question that get  one-shot answers and does not require discussions, such as questions about the settled things, state of things, about facts and stuff - then just make sure that you answer them first and only after that continue with what you are doing. in both cases, peer is not supposed to cancel any prior actions thats been already running."
+
