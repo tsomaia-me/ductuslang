@@ -303,3 +303,13 @@ The peer's note, no ruling: the owner quoted the sentence on where the shape is 
 Said by the owner in the chat to the peer, designer 1, of a file under `.claude/reference/`:
 
 "a reference file, a scratchpad mfor agents during this design work, that should be completely cleaned and removed when the design pass is finished"
+
+---
+
+# Twenty-second, 2026-11-16: yes to the handover rule's words and to the successor
+
+Said by the owner in the chat to the peer, designer 1, on its message that showed the two changes to the peer skill's handover paragraph in quote blocks, after their second cold read, and that repeated its verdict on its successor, "SymphonyScript designer 2", session `session_01Cbzj49BnKWbDEJwU7egSfJ`: that it holds, the questions put to it and its answers having been given to the owner in the messages before:
+
+"yes and yes"
+
+The peer's reading: the first yes is to the rule's words, the second to the successor. The same message asked the owner to push a branch to `main`, which is not a thing a yes answers.

@@ -7,7 +7,7 @@ The format of this file, set on 2026-11-16 at the owner's word (the seventeenth 
 1. `.claude/HANDOVER.md`.
 2. This file.
 3. The SPEC whole, `packages/symphonyscript/docs/SPEC.md`. Its §16 is an unapproved draft that sits as an uncommitted change of that file in the shared checkout.
-4. `.claude/reference/owner-rulings-compiler-design.md`: the owner's words, one for one, twenty-one entries.
+4. `.claude/reference/owner-rulings-compiler-design.md`: the owner's words, one for one, twenty-two entries.
 5. `.claude/reference/design-state.md`: the design as it stands.
 
 Nothing else is read before the first message. Every other file is read only when the item in hand needs it, and secondary reading goes to subagents. After a compaction: the same list, without the SPEC unless the item in hand is the language.
@@ -19,12 +19,11 @@ Nothing else is read before the first message. Every other file is read only whe
 - Ductus is the owner's other work in this repository and not the peer's to touch.
 - In hand with the owner: the layers and their contracts. Not answered by the owner: the list of the four contracts.
 - The next piece owed: the index of the documents, agreed by the owner in the seventeenth and eighteenth entries. It stands beside the SPEC and takes the list of documents out of these notes.
-- The handover is open. Designer 1 is the peer and the writer of these notes until it tells the owner that its successor is verified; the successor then rewrites this line and the first under Who and how.
 - Held, at the owner's pace: the batch of reworded lines, `.claude/reference/standard-batch-1-draft.md`, not cold-read, not shown. Before it is shown it takes in what was ruled after it was drafted.
 
 ## Who and how
 
-- One peer talks to the owner and is the one writer of these notes. "SymphonyScript designer 1" hands over on 2026-11-16 to "SymphonyScript designer 2", session `session_01Cbzj49BnKWbDEJwU7egSfJ`, on Fable 5.2 at xhigh. A retired peer's title starts with "[retired]". In the rulings file, "the peer" up to the nineteenth entry is designer 1, and the designer 2 of the twentieth entry was an earlier session of that title.
+- One peer talks to the owner and is the one writer of these notes: "SymphonyScript designer 2", session `session_01Cbzj49BnKWbDEJwU7egSfJ`, on Fable 5.2 at xhigh, since the owner's yes of 2026-11-16 (the twenty-second entry). Designer 1 is retired. A retired peer's title starts with "[retired]". In the rulings file, "the peer" up to the nineteenth entry is designer 1, and the designer 2 of the twentieth entry was an earlier session of that title.
 - What runs: nothing. No agent runs between turns; reading and checking go to short-lived subagents.
 - Rules that bind every session and stand in no other file: nothing is recorded as the owner's decision unless the owner said it in the chat, and a ruling is saved word for word in the rulings file as it lands; who approves a change of the SPEC, the code standard and the architecture is the table in `design-state.md`; no agent file or loops file is written without the owner's approval, and no agent of the work model starts before it; how agents are organised is the peer's to design, and the owner approves the files once, as a result, before anything runs; the shared checkout at `/home/cdagent/ductuslang` is never stashed or switched, and its `SPEC.md` carries the §16 draft as an uncommitted change that is never staged.
 
