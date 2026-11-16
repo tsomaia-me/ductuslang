@@ -259,3 +259,18 @@ Said by the owner in the chat to the peer, the same session, on the final words 
 
 "yes."
 
+---
+
+# Twentieth, 2026-11-16: where the contracts' exact shape is written, and the architecture's documents
+
+Said by the owner in the chat to the peer, designer 2 (session `session_01Cbzj47fDGft1eyp2vyvysD`), each on the peer's sentence quoted before it. Both sentences are from designer 2's first message, which put the two unanswered things to the owner again, each with its pick.
+
+The first stood under "The four contracts, and where their exact shape is written", after a line that listed the four: the vocabulary (a framework and the language), the Program (the language and whatever runs or translates it), the rule seam (a mode and a runtime), and writes, commits and changes (a runtime and a framework). On "their meaning stays in the specifications, and their exact shape is written once, in code, as interfaces with no implementation inside. That design comes to you first.":
+
+"this."
+
+On "a short top document with the map, the contracts and the rules that bind every part, plus one for the compiler, one for the runtime, and one for each mode, which you ruled.":
+
+"this."
+
+The peer's note, no ruling: the owner quoted the sentence on where the shape is written and not the line that lists the four contracts. The list is settled with the design of the interfaces, which comes to the owner first; in the same message the peer had said it holds the count open at one place, what the compiler hands a tool, faults and their positions.
