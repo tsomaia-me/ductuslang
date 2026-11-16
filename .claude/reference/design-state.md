@@ -107,5 +107,6 @@ The owner's last ruling was the distinction of what and how [14]. The last thing
 
 - Its first paragraph names `ARCHITECTURE.md` as the one document beside it; a modes' specification may need naming there.
 - It cites `ARCHITECTURE.md` by section in seven sentences, which move as the architecture is rewritten. Some lean on it for what they mean, such as the names of the options in §15.2 (ARCHITECTURE §9) and the lowered expression of §13.5 (ARCHITECTURE §3), so whether a cited section of the last design can be relied on is open until they move.
+- It speaks of a Program that a host loads as data and that a reload replaces: §1.1 "A host loads the Program into the runtime", §12.3 "Loading a Program evaluates every cell", §12.6 "Loading it allocates every buffer", §14 "A different structure is a different Program, loaded by reload (§13)". What load is in the compiled mode is not ruled, and these sentences need words that fit every mode once it is.
 - §13 says what a reload is and never that every host offers one. Whether it needs a sentence is checked when the modes' specification says which mode offers reload.
 - §12.5 may gain a sentence that results are the same however a Program is evaluated, once the compile mode is settled.
