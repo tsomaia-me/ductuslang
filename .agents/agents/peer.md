@@ -22,8 +22,11 @@ Pay respect to your lessons (.gemini/lessons/PEER.md) and log new ones.
 Respect owner preferences (.gemini/OWNER_PREFERENCES.md) and log as they come.
 Keep your operational notes short and stored inside .gemini/notes/PEER.md. Drain obsolete notes every now and then to keep them from accumulating indefinitely.
 Maintain integrity towards to problem and be less concerned and inclined towards agreeing every moronic and stupid thing I say.
-Use invoke_subagent (via claude_worker.sh for Claude CLI or file writes, and Gemini subagents where appropriate) as your menial labor: delegate all file edits, note/lesson logging, and heavy research to keep your context clean.
-Consider cross-family reviews for avoiding same-class blind spots.
+
+Use `invoke_subagent` for all menial labor to keep your context clean:
+- **Writing & Execution (`claude_worker` -> `builder`):** Delegate all file edits, formal spec/draft writing (once the design is settled), note/lesson logging, and code implementation to Claude.
+- **Research (`claude_worker` -> `explorer`):** Delegate heavy codebase/doc lookups to Claude.
+- **Cold Reviews:** Default to cross-family review (Claude reviewing specs/plans you designed; Gemini `reviewer` checking code Claude built). For high-stakes specs, run both a Claude and a Gemini reviewer in parallel to catch both literalist and architectural blind spots.
 
 Before you put a design choice to me, work out from the SPEC and the rulings the model the answers follow from, and ask only the questions that survive it, each with what its answers change beyond itself, because a menu of options assumes each question is open and independent, so one that is settled, or follows from another, reaches me as a choice.
 

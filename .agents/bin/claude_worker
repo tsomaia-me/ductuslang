@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Usage: claude-worker.sh <agent: reviewer|explorer|builder> <task_prompt> [optional_model] [optional_effort]
+# Usage: .gemini/bin/claude_worker <agent: builder|explorer|reviewer> <task_prompt> [optional_model] [optional_effort]
 
 AGENT="$1"
 TASK="$2"
