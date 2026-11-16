@@ -241,3 +241,13 @@ On the handover and on questions:
 
 "don't start any hangover yet until we discuss the questions I raised here. and make it a preference: when my prompt contains a question that needs ongoing dicussion, instead of one-off answer - answering it gets the priority over taking further actions. when it contains simple question that get  one-shot answers and does not require discussions, such as questions about the settled things, state of things, about facts and stuff - then just make sure that you answer them first and only after that continue with what you are doing. in both cases, peer is not supposed to cancel any prior actions thats been already running."
 
+---
+
+# Eighteenth, 2026-11-16: yes to the index, the handover rule, the notes' format and the preference on questions
+
+Said by the owner in the chat to the peer, the same session, on the peer's message that gave its thoughts on the index (one job, lasting documents only, a section a domain, every peer and agent starts from it, the tester gets a guideline document of its own), the draft of the peer skill's handover paragraph, the notes' format as set, and the draft of the preference on questions, the last two lines marked as not yet cold-read:
+
+"yes to all"
+
+The two lines were cold-read after that, and their words changed in small ways; the changed words are in `lines-waiting-for-yes.md` and go to the owner for the yes to the words.
+
