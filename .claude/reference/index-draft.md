@@ -19,7 +19,7 @@ The peer keeps this page. A document gets its line here in the change that creat
 | draft | Written, and not approved. It can still change, and no work starts on it before the owner approves it. |
 | not written | No file yet. |
 | proposed | Whether it becomes a document of its own is not ruled. |
-| being replaced | It holds the last version until its successor is written. That version is not the design. |
+| being replaced | It holds the previous version until its successor is written. That version is not the design. |
 | old | Of the old build. Nobody works from it. |
 
 ## The language
@@ -52,7 +52,7 @@ Each mode has a specification and an architecture of its own.
 
 | Document | What it is for | Standing | Who reads it, when |
 |---|---|---|---|
-| `ARCHITECTURE.md` | The architecture's top document: the map of the parts, the contracts between them, and the rules that bind every part. Until that is written it holds the last design, of the old build. | being replaced | Whoever the SPEC sends to one of its sections, for that section. Nobody takes the last design as the design. |
+| `ARCHITECTURE.md` | The architecture's top document: the map of the parts, the contracts between them, and the rules that bind every part. Until that is written it holds the previous design, of the old build. | being replaced | Whoever the SPEC sends to one of its sections, for that section. Nobody takes the previous design as the design. |
 
 ## Writing code, testing it, reviewing it
 
@@ -85,4 +85,4 @@ With this:
 
 ## The cold read, 2026-11-16
 
-One fresh reader on Opus, given the draft and its goal. Taken: the meanings of "not written", "draft" and "old"; the readers of `ARCHITECTURE.md`, `PLAN.md`, the agent files, the standard and the findings file; the modes' rows widened from "a host" to "someone"; a row for `.claude/docs/CODING.md` and `REVIEWING.md`; that the peer's own files and a piece's design page are not listed; the root's `CLAUDE.MD` named by its place; the handover line's "the index lists". Folded in beside it: the owner's ruling of the same day on the architecture's documents (the twentieth entry). Checked and kept: the standard and the findings file stand as drafts, by the corrected head of `owner-rulings-code-standard.md` and the fourth entry of the compiler-design rulings. Not taken: a caveat on the SPEC's §16, which sits only in the shared checkout's working tree and is no part of the committed file.
+One fresh reader on Opus, given the draft and its goal. Taken: the meanings of "not written", "draft" and "old"; the readers of `ARCHITECTURE.md`, `PLAN.md`, the agent files, the standard and the findings file; the modes' rows widened from "a host" to "someone"; a row for `.claude/docs/CODING.md` and `REVIEWING.md`; that the peer's own files and a piece's design page are not listed; the root's `CLAUDE.MD` named by its place; the handover line's "the index lists". Folded in beside it: the owner's ruling of the same day on the architecture's documents (the twentieth entry). Checked and kept: the standard and the findings file stand as drafts, by the corrected head of `owner-rulings-code-standard.md` and the fourth entry of the compiler-design rulings. Not taken: a caveat on the SPEC's §16, which sits only in the shared checkout's working tree and is no part of the committed file. Changed after the readers of the three ready pieces: "the last design" reads as the final one as well as the one before, so the page says "previous" in its three places.
