@@ -118,6 +118,8 @@ On where the modes are specified, the owner's words, which lean to the second ch
 
 that leaves the clear winner: "One Program, two takers. The compiler ends at the Program in both modes. The interpreter loads it and the generator translates it. Neither reads the source." this."
 
+The peer's note, added on 2026-11-16: the owner's "this." rules One Program, two takers, and the choice of specifications of their own was confirmed in the eleventh entry.
+
 On "Every rule is written once. The operations of component 6 and the commit's rules live in one place. Compile-time evaluation, the interpreter and the generated Rust all call them. Equality bit for bit then holds by construction, and a test over every fixture guards the wiring. A device carries the runtime and the generated code, and no compiler. Tests of running behaviour run in both modes.":
 
 "agreed."
@@ -198,3 +200,13 @@ Said by the owner in the chat to the peer, the same session. On the peer's "The 
 On the peer's "Of a runtime, the SPEC is silent only about how. What a runtime does is fully written. Sections 12 and 13 are the runtime's specification. They sit inside the SPEC because a cell has no meaning without them.", a question, answered by the peer the same day:
 
 "and there is a good reason for that, right? something tells me that too (about the fact why SPEC is and should be opinionated about what a runtime must do)."
+
+---
+
+# Fifteenth, 2026-11-16: two questions before the handover, no ruling
+
+Said by the owner in the chat to the peer, the same session, while the peer was preparing its handover. The peer's answers are in `design-state.md` under Proposed.
+
+"before I hand off, the stuff we agreed on - is any of it ready to be recorded in the final designs (SPECs, ARCHITECTURE, etc) wherever they belong or still planning ahead is needed?
+
+and second question, for architecture - would you have one giant doc or separate docs per domain (language, modes, runtime - or language+runtime and modes) ?"
