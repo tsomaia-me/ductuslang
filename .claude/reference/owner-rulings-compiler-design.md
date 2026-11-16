@@ -274,3 +274,11 @@ On "a short top document with the map, the contracts and the rules that bind eve
 "this."
 
 The peer's note, no ruling: the owner quoted the sentence on where the shape is written and not the line that lists the four contracts. The list is settled with the design of the interfaces, which comes to the owner first; in the same message the peer had said it holds the count open at one place, what the compiler hands a tool, faults and their positions.
+
+---
+
+# Twenty-first, 2026-11-16: what the reference folder is
+
+Said by the owner in the chat to the peer, designer 1, of a file under `.claude/reference/`:
+
+"a reference file, a scratchpad mfor agents during this design work, that should be completely cleaned and removed when the design pass is finished"
