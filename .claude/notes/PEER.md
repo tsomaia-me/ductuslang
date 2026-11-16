@@ -50,7 +50,6 @@ The design conversation leads, in the order `design-state.md` gives under Next a
 - The work model's diagram: `.claude/reference/workflow-as-shown-2026-11-15.md`.
 - Faults: `.claude/reference/spec-16/`. The parser's hand-on: `.claude/reference/parser-page/item-2/proposal.md`. Other open questions of the design: `.claude/reference/open-design-questions.md`.
 - What `rustc` costs on generated code, a stand-in measurement: `.claude/reference/compile-mode/rustc-probe.md`.
-- The peer's earlier loops draft, not approved: `.claude/reference/loops-draft/first/`.
 - The old code, a source of cases and of programs, never a yardstick for a tree, a message or a design, and no builder learns the form from it: `packages/symphonyscript/crates` on `main`, and at a newer state the branch `symphonyscript/r3`, on `wb` at `/home/cdagent/cargo-targets/r3/wt/`; its reviews are under `.claude/reference/`. What becomes of it is not designed.
 - The owner's earlier words: the other `owner-*.md` files under `.claude/reference/`. Much of what older notes filed in the owner's name was drafted by agents and is repeated to the owner as decided nowhere; that older record is `git show e2557cc3:.claude/notes/PEER.md`.
 - Transcripts, on `wb` under `/home/cdagent/.claude/projects/-home-cdagent-ductuslang/`: the third peer's, `494ae3bd-cbaa-5c23-8e7b-04e7fe71874c.jsonl`; peer 1's, `021dac70-57a2-5e77-a945-779fcf2cd322.jsonl`, with the owner's own words of 2026-11-15, 13:11 to 14:02 UTC, on what the owner wants.
