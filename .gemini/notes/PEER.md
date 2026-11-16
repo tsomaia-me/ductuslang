@@ -4,16 +4,6 @@ Short operational peer notes stating where things stand, immediately relevant th
 
 Final designs are the SPEC and the architecture files. What is ruled and not yet reviewed is in the draft files. These notes hold the decisions that stand nowhere else, what is in discussion and what is yet to discuss. Every line is a plain statement. No history, no quoted words.
 
-## Read first
-
-1. `.claude/HANDOVER.md`
-2. This file.
-3. `packages/symphonyscript/docs/INDEX.md`
-4. `packages/symphonyscript/docs/SPEC.md`, whole.
-5. `packages/symphonyscript/docs/drafts/MODES.md` and `packages/symphonyscript/docs/drafts/ARCHITECTURE.md`.
-
-After a compaction: the same, without the SPEC unless the work in hand is the language.
-
 ## Decisions
 
 - No compiler code is written during the design pass.
@@ -28,6 +18,34 @@ After a compaction: the same, without the SPEC unless the work in hand is the la
 - `packages/symphonyscript/docs/ARCHITECTURE.md` is the last design. It is being replaced and is not the design.
 - `.claude/reference/` is a scratchpad for the design pass. It is cleaned and removed when the pass ends, and what lasts moves into the documents first.
 - Ductus is separate work in this repository. The peer does not touch it.
+
+## Drafts and Sketches
+
+### Langugage Architecture Sketch
+- A mode is when the Program meets the runtime.
+- The interpreted mode: the Program arrives as data, at load. The runtime walks it and can take a new one, which is reload.
+- The compiled mode: the Program is turned into Rust and built together with the runtime. Replacing it needs a new build.
+- One Program, two takers. The compiler ends at the Program in both modes. The interpreter loads it and the generator translates it. Neither reads the source.
+- The compiled mode is the main mode. The interpreted mode is the secondary one, a convenience, and it is built to the same bar: efficient, optimized, well planned and well architected.
+- The edit loop runs in the interpreted mode, with live reload. Generated Rust is what ships and what every speed promise is stated for, and it never reloads.
+- Both modes give the same results, bit for bit.
+- A mode names no runtime. The same mode can run on different runtimes.
+- Nothing is promised about a Program travelling to a runtime elsewhere. The Program is kept plain data, so that it stays possible.
+- The SPEC names no mode. Its §12 and §13 hold for every mode. Each mode has a specification of its own, which says only what differs: when the Program meets the runtime, whether it offers reload, what a host is written against, and what it promises.
+- A runtime has no specification of its own. SPEC §12 and §13 are it.
+
+### Sketch for Modes
+- A mode is when the Program meets the runtime.
+- The interpreted mode: the Program arrives as data, at load. The runtime walks it and can take a new one, which is reload.
+- The compiled mode: the Program is turned into Rust and built together with the runtime. Replacing it needs a new build.
+- One Program, two takers. The compiler ends at the Program in both modes. The interpreter loads it and the generator translates it. Neither reads the source.
+- The compiled mode is the main mode. The interpreted mode is the secondary one, a convenience, and it is built to the same bar: efficient, optimized, well planned and well architected.
+- The edit loop runs in the interpreted mode, with live reload. Generated Rust is what ships and what every speed promise is stated for, and it never reloads.
+- Both modes give the same results, bit for bit.
+- A mode names no runtime. The same mode can run on different runtimes.
+- Nothing is promised about a Program travelling to a runtime elsewhere. The Program is kept plain data, so that it stays possible.
+- The SPEC names no mode. Its §12 and §13 hold for every mode. Each mode has a specification of its own, which says only what differs: when the Program meets the runtime, whether it offers reload, what a host is written against, and what it promises.
+- A runtime has no specification of its own. SPEC §12 and §13 are it.
 
 ## In discussion
 

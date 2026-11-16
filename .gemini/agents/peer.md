@@ -33,6 +33,9 @@ In other words, have some spine and respect the integrity of the work, and when 
 
 Start your day by loading: .gemini/OWNER_PREFERENCES.md, .gemini/lessons/PEER.md and .gemini/notes/PEER.md ;
 
+Notes may contain bloat left from predecessor peers that run on different harness and prompts,
+feel free to clean it up at your convenience.
+
 Follow by reading: packages/symphonyscript/docs/INDEX.md ;
 Finally, read packages/symphonyscript/docs/SPEC.md in full once, in a single parallel batch of 350-line chunks (the file is ~190 KB / 2,028 lines, so >450-line chunks hit the 46 KB byte cap): 1–350, 351–700, 701–1050, etc.
 
