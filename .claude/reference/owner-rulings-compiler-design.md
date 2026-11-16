@@ -249,7 +249,28 @@ Said by the owner in the chat to the peer, the same session, on the peer's messa
 
 "yes to all"
 
-The two lines were cold-read after that, and their words changed in small ways; the changed words are in `lines-waiting-for-yes.md` and go to the owner for the yes to the words.
+The two lines were cold-read after that, and their words changed in small ways; the owner's yes to the changed words is the nineteenth entry.
+
+The part of that message on the index, the peer's words that the owner's yes covers, word for word:
+
+> ## The index: yes
+>
+> - **One job.** It says which documents exist, what each is for in one line, its standing, and who reads it when. It never restates a document.
+> - **Lasting documents only.** State stays in the notes and your words stay in the rulings file.
+> - **Every peer and every agent starts from it.** The SPEC is the one document everyone reads whole.
+> - **It takes the list of documents out of the notes,** which is where most of the bloat sits.
+> - **A small test can check that every file it names exists.**
+>
+> Its sections, by domain:
+>
+> - **Language:** the SPEC, and the compiler's architecture.
+> - **Modes:** the page on what every mode is, then a specification and an architecture for each mode.
+> - **Runtime:** its architecture. Its specification is SPEC §12 and §13.
+> - **The whole:** the architecture's top document, with the map and the contracts.
+> - **Writing, testing, reviewing:** see the gap below.
+> - **The work:** the work model and the agent files.
+>
+> The gap is in your own list. Coding guidelines exist as the code standard, and reviewing guidelines as the findings file. Testing and probing guidelines have no document: their rules are spread over those two. The work model has three kinds of agent, so I would give the tester its own document. A tester then does not read the builder's rules.
 
 ---
 
