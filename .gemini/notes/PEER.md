@@ -1,5 +1,7 @@
 # Peer notes
 
+Short operational peer notes stating where things stand, immediately relevant things that are settled but not yet implemented or went to the official plan, things being settled and things yet to discuss, kept up-to-date by the current peer and stripped off of obsolete notes on timely manner.
+
 Final designs are the SPEC and the architecture files. What is ruled and not yet reviewed is in the draft files. These notes hold the decisions that stand nowhere else, what is in discussion and what is yet to discuss. Every line is a plain statement. No history, no quoted words.
 
 ## Read first
