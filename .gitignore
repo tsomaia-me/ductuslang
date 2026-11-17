@@ -50,3 +50,4 @@ local
 .memory/
 .env
 .claude/worktrees/
+.gemini/runs/
